@@ -4380,6 +4380,7 @@ The 6,000 target is far off. Ticket: cut the held command/skill allowances in `p
 prioritising what loads into context (skill/agent descriptions, commands) over on-disk reference files; measure
 per-session loaded characters as well as total lines; record both in `BUDGETS.md`. The scorecard prose row stays
 **Behind** until this lands. The post-1.0 review decides whether 6,000 is the right target.
+PARTLY CLOSED 2026-10-19 (L-0726 slices 1 and 2): `review.md` is 46 lines and `promote.md` 96, both with a 12,288-byte ceiling, the README is under 800 lines, and `BUDGETS.md` states the measured gap by area. The 6,000 target moves to the Phase 4 close-out after L-0724 and L-0725, with a skill-trim ticket (not filed).
 Also: wire `scripts/check_instructions.py` into CI once T2 clears its 4 intentional red findings
 (`review.md:450,465` qa-reviewer dispatch; README `guard.sh`/`.ps1` citations).
 

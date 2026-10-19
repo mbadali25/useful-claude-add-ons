@@ -241,7 +241,11 @@ def test_the_kimi_verify_rule_is_timed_not_a_placeholder():
         rules = json.load(fh)["rules"]
     rule = next(r for r in rules if "plugin/crew/hooks/scripts/kimi_probe.py" in r["paths"])
 
-    assert "placeholder" not in rule["why"] and "timed" in rule["why"].lower()
+    with open(os.path.join(CREW, "..", "..", "docs", "crew", "verify-rationale.md"),
+              encoding="utf-8") as fh:
+        rationale = fh.read().split(f"## {rule['id']}\n", 1)[1].split("\n## ", 1)[0]
+
+    assert "placeholder" not in rule["why"] + rationale and "timed" in rationale.lower()
 
 
 def _step_1b_rows():

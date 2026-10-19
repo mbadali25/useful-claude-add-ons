@@ -74,6 +74,40 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CREW = os.path.join(ROOT, "plugin", "crew")
 ALLOWANCE_PATH = os.path.join(CREW, ".budget-allowance.json")
 COMMAND_MAX_LINES = 120
+# A command file is loaded whole into context, so bytes bound it as lines do:
+# a file can stay under 120 lines with very long ones. Enforced for every
+# command file not listed in .budget-allowance.json; a listed file records its
+# own "bytes" ceiling there and may not grow past it.
+COMMAND_MAX_BYTES = 12288
+README_MAX_LINES = 800
+README_REL = "plugin/crew/README.md"
+VERIFY_JSON_REL = ".crew/verify.json"
+VERIFY_RATIONALE_REL = "docs/crew/verify-rationale.md"
+VERIFY_WHY_MAX = 300
+KEBAB_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+# The README's index of sections that moved out: a section with this exact
+# title holding lines or table rows of `<old title> -> <new path>` (or a
+# `| old title | new path |` row). An old title that starts with a section
+# number (`7. The roster`, `13c. Memory`) lets a `README.md section 7`
+# pointer resolve to the index instead of dangling.
+MOVED_SECTIONS_HEADING = "Moved sections"
+# Documents that cite README sections and are kept current. History (the
+# CHANGELOG, TODO, ticket records, handoffs) describes what was true then and
+# is deliberately not scanned.
+README_POINTER_SCAN_GLOBS = (
+    "README.md",
+    "plugin/**/*.md",
+    "docs/guides/**/*.md",
+    "docs/crew/**/*.md",
+    ".crew/codemap/*.md",
+)
+# `README.md section 7`, `README.md` §13c, `crew README, section 12b`: the word
+# README, optional `.md`, only punctuation or spaces, then `section` or `§`
+# and the number. Letters between README and the keyword (`README, CONFIG
+# §19`) mean the number belongs to another document and is not matched.
+README_POINTER_RE = re.compile(
+    r"README(?:\.md)?[\s,:`()*_-]{0,6}(?:§|sections?\s)\s*(\d+[a-z]?)\b"
+)
 ALLOWED_REASONS = (
     "held: awaiting owner decision on T2 deletions",
     "T8: to trim",
@@ -225,15 +259,23 @@ def load_allowance(fail) -> dict:
             not isinstance(entry, dict)
             or not isinstance(entry.get("lines"), int)
             or not _reason_allowed(entry.get("reason"))
+            or ("bytes" in entry and (isinstance(entry["bytes"], bool)
+                                      or not isinstance(entry["bytes"], int)))
         ):
             fail(
                 f"{rel(ALLOWANCE_PATH)}: entry '{path}' must be "
-                '{"lines": <int>, "reason": one of ' + repr(ALLOWED_REASONS) +
+                '{"lines": <int>, optional "bytes": <int>, "reason": one of ' + repr(ALLOWED_REASONS) +
                 ' or "raised: <why>"}'
             )
             continue
         out[path] = entry
     return out
+
+
+def _byte_size(path: str) -> int:
+    """File size in bytes, read as bytes: never a decoded character count."""
+    with open(path, "rb") as handle:
+        return len(handle.read())
 
 
 def check_command_budget(allowance: dict, fail) -> None:
@@ -248,12 +290,23 @@ def check_command_budget(allowance: dict, fail) -> None:
     """
     for path in sorted(glob.glob(os.path.join(CREW, "commands", "**", "*.md"), recursive=True)):
         path_rel = rel(path)
+        size = _byte_size(path)
         if path_rel in allowance:
+            if "bytes" not in allowance[path_rel] and size > COMMAND_MAX_BYTES:
+                fail(
+                    f"{path_rel}: {size} bytes, budget {COMMAND_MAX_BYTES} "
+                    "and listed in .budget-allowance.json with no bytes allowance"
+                )
             continue
         lines = len(read(path).splitlines())
         if lines > COMMAND_MAX_LINES:
             fail(
                 f"{path_rel}: {lines} lines, budget {COMMAND_MAX_LINES} "
+                "and not listed in .budget-allowance.json"
+            )
+        if size > COMMAND_MAX_BYTES:
+            fail(
+                f"{path_rel}: {size} bytes, budget {COMMAND_MAX_BYTES} "
                 "and not listed in .budget-allowance.json"
             )
 
@@ -280,6 +333,14 @@ def check_allowance_growth(allowance: dict, fail) -> None:
                 f"{entry['lines']} ({entry['reason']}) - update the file, "
                 "not just the allowance"
             )
+        if isinstance(entry.get("bytes"), int):
+            size = _byte_size(path)
+            if size > entry["bytes"]:
+                fail(
+                    f"{path_rel}: grew to {size} bytes, allowance recorded "
+                    f"{entry['bytes']} ({entry['reason']}) - update the file, "
+                    "not just the allowance"
+                )
 
 
 def check_allowance_paths_exist(allowance: dict, fail) -> None:
@@ -682,6 +743,140 @@ def check_policy_ids(fail) -> None:
                     )
 
 
+def check_readme_ceiling(fail) -> None:
+    """plugin/crew/README.md is read whole by anyone who opens it, so it has a
+    line ceiling like a command does; what outgrows it moves under docs/crew/
+    with an entry in its "Moved sections" index."""
+    path = os.path.join(ROOT, *README_REL.split("/"))
+    if not os.path.isfile(path):
+        return
+    lines = len(read(path).splitlines())
+    if lines > README_MAX_LINES:
+        fail(f"{README_REL}: {lines} lines, ceiling {README_MAX_LINES}")
+
+
+def _fence_free_lines(text: str) -> list[tuple[int, str]]:
+    """(1-based line number, line) outside fenced code blocks."""
+    out = []
+    fenced = False
+    for number, line in enumerate(text.splitlines(), start=1):
+        if line.lstrip().startswith(("```", "~~~")):
+            fenced = not fenced
+            continue
+        if not fenced:
+            out.append((number, line))
+    return out
+
+
+def check_verify_rationale(fail) -> None:
+    """In THIS repo every rule in .crew/verify.json has a unique kebab-case
+    `id` and a `why` of at most VERIFY_WHY_MAX characters; the rationale that
+    no longer fits lives in docs/crew/verify-rationale.md under exactly one
+    `## <id>` heading per rule, with no heading left over. A repo without
+    .crew/verify.json has nothing to check."""
+    path = os.path.join(ROOT, *VERIFY_JSON_REL.split("/"))
+    if not os.path.isfile(path):
+        return
+    try:
+        data = json.loads(read(path))
+    except ValueError as exc:
+        fail(f"{VERIFY_JSON_REL}: not valid JSON ({exc})")
+        return
+    rules = data.get("rules") if isinstance(data, dict) else None
+    if not isinstance(rules, list):
+        fail(f"{VERIFY_JSON_REL}: no rules list")
+        return
+    ids: list[str] = []
+    seen: set[str] = set()
+    for index, rule in enumerate(rules):
+        if not isinstance(rule, dict):
+            fail(f"{VERIFY_JSON_REL}: rules[{index}] is not an object")
+            continue
+        rule_id = rule.get("id")
+        if not isinstance(rule_id, str) or not rule_id:
+            fail(f"{VERIFY_JSON_REL}: rules[{index}] has no id")
+        elif not KEBAB_RE.match(rule_id):
+            fail(f"{VERIFY_JSON_REL}: rules[{index}] id '{rule_id}' is not kebab-case")
+        elif rule_id in seen:
+            fail(f"{VERIFY_JSON_REL}: duplicate id '{rule_id}' (rules[{index}])")
+        else:
+            seen.add(rule_id)
+            ids.append(rule_id)
+        why = rule.get("why")
+        if isinstance(why, str) and len(why) > VERIFY_WHY_MAX:
+            fail(f"{VERIFY_JSON_REL}: rules[{index}] why is {len(why)} chars, "
+                 f"cap {VERIFY_WHY_MAX} - move the rest to {VERIFY_RATIONALE_REL}")
+    doc = os.path.join(ROOT, *VERIFY_RATIONALE_REL.split("/"))
+    if not os.path.isfile(doc):
+        fail(f"{VERIFY_RATIONALE_REL}: missing")
+        return
+    headings: dict[str, int] = {}
+    for _number, line in _fence_free_lines(read(doc)):
+        match = re.match(r"^## (.+?)\s*$", line)
+        if match:
+            headings[match.group(1)] = headings.get(match.group(1), 0) + 1
+    for rule_id in ids:
+        if rule_id not in headings:
+            fail(f"{VERIFY_RATIONALE_REL}: no '## {rule_id}' heading for rule '{rule_id}'")
+    for heading, count in sorted(headings.items()):
+        if count > 1:
+            fail(f"{VERIFY_RATIONALE_REL}: heading '## {heading}' appears more than once")
+        if heading not in seen:
+            fail(f"{VERIFY_RATIONALE_REL}: orphan heading '{heading}' matches no rule id")
+
+
+def _readme_resolvable_sections(readme_text: str) -> set[str]:
+    """Section labels a README pointer may name: the numbered headings
+    (`## 13c. Memory`), and the numbered old titles listed inside the
+    MOVED_SECTIONS_HEADING block (which ends at the next heading of the same
+    or a higher level)."""
+    found: set[str] = set()
+    in_index = False
+    index_level = 0
+    for _number, line in _fence_free_lines(readme_text):
+        heading = re.match(r"^(#{1,6})\s+(.*?)\s*$", line)
+        if heading:
+            level = len(heading.group(1))
+            title = heading.group(2)
+            if in_index and level <= index_level:
+                in_index = False
+            if title == MOVED_SECTIONS_HEADING:
+                in_index, index_level = True, level
+                continue
+            numbered = re.match(r"^(\d+[a-z]?)[.\s]", title + " ")
+            if numbered:
+                found.add(numbered.group(1))
+            continue
+        if in_index:
+            cell = re.split(r"->|→|\|", line.lstrip(" \t|-*>"), maxsplit=1)[0]
+            numbered = re.match(r"^\s*(?:§\s*)?(\d+[a-z]?)[.\s)]", cell + " ")
+            if numbered:
+                found.add(numbered.group(1))
+    return found
+
+
+def check_readme_pointers(fail) -> None:
+    """A `README.md section N` / `README.md §N` pointer in a maintained
+    document must resolve to a numbered README heading or to a numbered entry
+    in the README's "Moved sections" index; otherwise it points at a section
+    that no longer exists."""
+    readme = os.path.join(ROOT, *README_REL.split("/"))
+    sections = _readme_resolvable_sections(read(readme)) if os.path.isfile(readme) else set()
+    seen_paths: set[str] = set()
+    for pattern in README_POINTER_SCAN_GLOBS:
+        for path in glob.glob(os.path.join(ROOT, *pattern.split("/")), recursive=True):
+            path_rel = rel(path)
+            if path_rel in seen_paths or "node_modules" in path_rel or not os.path.isfile(path):
+                continue
+            seen_paths.add(path_rel)
+            for lineno, line in enumerate(read(path).splitlines(), start=1):
+                for match in README_POINTER_RE.finditer(line):
+                    label = match.group(1)
+                    if label not in sections:
+                        fail(f"{path_rel}:{lineno}: README section {label} resolves to "
+                             f"no README heading or '{MOVED_SECTIONS_HEADING}' index entry")
+
+
 def main() -> int:
     args = sys.argv[1:]
     base = None
@@ -707,6 +902,9 @@ def main() -> int:
     check_stale_names(fail)
     check_broken_references(fail)
     check_policy_ids(fail)
+    check_readme_ceiling(fail)
+    check_verify_rationale(fail)
+    check_readme_pointers(fail)
 
     if problems:
         print(f"{len(problems)} problem(s):")

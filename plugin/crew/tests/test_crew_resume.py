@@ -1630,7 +1630,7 @@ def test_a_failed_author_removal_leaves_no_entry_behind(fx, monkeypatch):
 
 # --- T-0042 step 7: every wait reason is named where people read ------------
 
-_DOCS = ("plugin/crew/README.md", "plugin/crew/skills/crew-context/SKILL.md",
+_DOCS = ("docs/crew/reference/16-context-handoff.md", "plugin/crew/skills/crew-context/SKILL.md",
          "docs/guides/crew/src/auto-cycle.md", "plugin/crew/CONFIG.md")
 _REASON_PHRASES = ("internal error", "automatic PreCompact skeleton", "written by another session",
                    "no record of which session wrote", "could not be identified",

@@ -407,7 +407,7 @@ state to the board.</p>
 <p>Deeper: <a href="memory-and-obsidian.md">Memory and Obsidian</a>.</p>
 <h2 id="multi-session-work">Multi-Session Work</h2>
 <p>Source: <code>plugin/crew/hooks/scripts/crew_train.py</code> and
-<code>plugin/crew/README.md</code>, section 10.</p>
+<code>docs/crew/reference/10-the-daily-loop.md</code> (moved out of the crew README's section 10).</p>
 <p>Several sessions can work one repository at once, each in its own git
 worktree:</p>
 <ul>
@@ -477,7 +477,7 @@ Cause: a corrupt <code>StartupProfileData-NonInteractive</code> file in
 write: several pwsh processes (a snap install, here) rewriting that one file
 at once. Fix: move that file aside; pwsh rebuilds it on the next start. crew's
 own test suites now give every pwsh they spawn a throwaway <code>XDG_CACHE_HOME</code>,
-so they cannot corrupt it (<code>plugin/crew/README.md</code>, section 25). Ticket
+so they cannot corrupt it (<code>docs/crew/reference/25-command-and-agent-reference.md</code>, moved out of the crew README's section 25). Ticket
 T-0506 tracks the cause.</p>
 <p><strong><code>--accept</code> refuses: "the tree has changed since that review".</strong>
 Cause: you ran <code>review_ledger.py --accept</code> from a checkout whose tree is not

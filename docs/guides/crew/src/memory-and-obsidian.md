@@ -302,8 +302,8 @@ and run the command again. Crew never rewrites a note for you. A note written by
 an older crew for an origin with capitals in it holds the id lowercased; crew
 refuses it as another repo's and names the line to change it to.
 
-The full rules, including every refusal, are in the crew README, section 13c
-("Optional: an Obsidian Kanban board"), in `plugin/crew/README.md`.
+The full rules, including every refusal, are in the crew README's former section 13c
+("Optional: an Obsidian Kanban board"), now `docs/crew/reference/13c-optional-an-obsidian-kanban-board.md`.
 
 ## Native memories as vault pointers
 

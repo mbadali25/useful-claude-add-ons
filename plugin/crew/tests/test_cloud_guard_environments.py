@@ -2580,8 +2580,9 @@ DOCUMENTED_NOT_CAUGHT = [
 
 
 def _readme_not_caught():
-    path = os.path.join(os.path.dirname(cloud_guard.__file__), os.pardir,
-                        os.pardir, "README.md")
+    path = os.path.join(os.path.dirname(cloud_guard.__file__), os.pardir, os.pardir,
+                        os.pardir, os.pardir, "docs", "crew", "reference",
+                        "11-configuration-reference.md")
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
     match = re.search(r"^(#+) What the guard does not catch\n(.*?)(?=^#{1,4} )",

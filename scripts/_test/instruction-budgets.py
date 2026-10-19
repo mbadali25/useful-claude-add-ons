@@ -440,6 +440,96 @@ def run_main_wiring() -> str:
         return output
 
 
+def _padded_command(total_bytes: int, lines: int = 100) -> str:
+    """A command file of EXACTLY `total_bytes` bytes spread over `lines` lines
+    (frontmatter included), so a byte ceiling is probed at its boundary and
+    the line budget is never what trips."""
+    head = FRONTMATTER
+    body_lines = lines - len(FRONTMATTER.splitlines())
+    remaining = total_bytes - len(head.encode("utf-8"))
+    base, extra = divmod(remaining, body_lines)
+    rows = []
+    for index in range(body_lines):
+        width = base + (1 if index < extra else 0)
+        rows.append("x" * (width - 1) + "\n")
+    text = head + "".join(rows)
+    assert len(text.encode("utf-8")) == total_bytes, (len(text.encode("utf-8")), total_bytes)
+    return text
+
+
+def run_command_bytes(command: str, total_bytes: int, allowance=None):
+    """check_command_budget on one command file of an exact byte size."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _write(os.path.join(tmp, "plugin", "crew", "commands", command),
+               _padded_command(total_bytes))
+        if allowance is not None:
+            _write(os.path.join(tmp, "plugin", "crew", ".budget-allowance.json"),
+                   json.dumps(allowance))
+        loaded = _load_allowance(tmp) if allowance is not None else {}
+        return _patched(tmp, CHECKER.check_command_budget, loaded)
+
+
+def run_bytes_growth(recorded_bytes: int, total_bytes: int,
+                     path_rel: str = "plugin/crew/commands/autopilot.md",
+                     reason: str = "T8: to trim", with_bytes: bool = True):
+    """load_allowance then check_command_budget and check_allowance_growth on
+    a command file of an exact byte size whose allowance records `bytes`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _write(os.path.join(tmp, path_rel), _padded_command(total_bytes))
+        entry = {"lines": 100, "reason": reason}
+        if with_bytes:
+            entry["bytes"] = recorded_bytes
+        _write(os.path.join(tmp, "plugin", "crew", ".budget-allowance.json"),
+               json.dumps({path_rel: entry}))
+        with _root_at(tmp):
+            problems: list[str] = []
+            allowance = CHECKER.load_allowance(problems.append)
+            CHECKER.check_command_budget(allowance, problems.append)
+            CHECKER.check_allowance_growth(allowance, problems.append)
+            return problems
+
+
+def run_malformed_bytes():
+    with tempfile.TemporaryDirectory() as tmp:
+        _write(os.path.join(tmp, "plugin", "crew", ".budget-allowance.json"),
+               json.dumps({"plugin/crew/commands/x.md":
+                           {"lines": 5, "bytes": "many", "reason": "T8: to trim"}}))
+        with _root_at(tmp):
+            problems: list[str] = []
+            CHECKER.load_allowance(problems.append)
+            return problems
+
+
+def run_readme_ceiling(lines: int):
+    with tempfile.TemporaryDirectory() as tmp:
+        _write(os.path.join(tmp, "plugin", "crew", "README.md"), "row\n" * lines)
+        return _patched(tmp, CHECKER.check_readme_ceiling)
+
+
+def _verify_rules(*rules):
+    return json.dumps({"version": 1, "rules": list(rules)})
+
+
+def run_verify_rationale(rules_json, rationale):
+    """check_verify_rationale on a fixture repo: `.crew/verify.json` plus an
+    optional `docs/crew/verify-rationale.md` (None = the file is absent, and
+    rules_json None = there is no verify.json at all)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        if rules_json is not None:
+            _write(os.path.join(tmp, ".crew", "verify.json"), rules_json)
+        if rationale is not None:
+            _write(os.path.join(tmp, "docs", "crew", "verify-rationale.md"), rationale)
+        return _patched(tmp, CHECKER.check_verify_rationale)
+
+
+def run_readme_pointers(readme: str, citing: str, citing_path="docs/guides/x.md"):
+    """check_readme_pointers: a README body and one document citing it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _write(os.path.join(tmp, "plugin", "crew", "README.md"), readme)
+        _write(os.path.join(tmp, citing_path), citing)
+        return _patched(tmp, CHECKER.check_readme_pointers)
+
+
 def main() -> int:
     passed = failed = 0
 
@@ -860,6 +950,95 @@ def main() -> int:
         "a hand-written hooks.json (any other shape) is never treated as generated",
         CHECKER._codex_hooks_looks_generated(handwritten_hooks_json) is False,
     )
+
+
+    # --- byte ceiling (BC5): review.md / promote.md lose their allowances ----
+    check("review.md at 121 lines with no allowance is red",
+          run_command_budget(121 - len(FRONTMATTER.splitlines()), allowance=None,
+                             command_path="review.md"), True, "review.md: 121 lines")
+    check("review.md at 120 lines with no allowance is allowed",
+          run_command_budget(120 - len(FRONTMATTER.splitlines()), allowance=None,
+                             command_path="review.md"), False)
+    check("promote.md at 12,289 bytes with no allowance is red and names file and bytes",
+          run_command_bytes("promote.md", 12289), True, "promote.md: 12289 bytes")
+    check("promote.md at exactly 12,288 bytes is allowed",
+          run_command_bytes("promote.md", 12288), False)
+    check_true("COMMAND_MAX_BYTES is 12288", CHECKER.COMMAND_MAX_BYTES == 12288)
+    check("a listed file with a bytes allowance one byte over it is red",
+          run_bytes_growth(recorded_bytes=21186, total_bytes=21187), True, "grew to 21187 bytes")
+    check("a listed file exactly at its bytes allowance is allowed",
+          run_bytes_growth(recorded_bytes=21186, total_bytes=21186), False)
+    check("a listed command over 12,288 bytes with no bytes entry is red",
+          run_bytes_growth(recorded_bytes=0, total_bytes=13000, with_bytes=False),
+          True, "no bytes allowance")
+    check("a listed command under the byte ceiling needs no bytes entry",
+          run_bytes_growth(recorded_bytes=0, total_bytes=9000, with_bytes=False), False)
+    check("an allowance entry whose bytes is not an int is red",
+          run_malformed_bytes(), True, "bytes")
+    real_allowance = CHECKER.load_allowance(lambda _msg: None)
+    check_true("the real allowance has dropped review.md and promote.md",
+               "plugin/crew/commands/review.md" not in real_allowance
+               and "plugin/crew/commands/promote.md" not in real_allowance)
+    check_true("the real allowance records bytes for autopilot, model, verify and onboard",
+               all(isinstance(real_allowance.get(f"plugin/crew/commands/{n}.md", {}).get("bytes"), int)
+                   for n in ("autopilot", "model", "verify", "onboard")))
+
+    # --- README ceiling (BC5) -----------------------------------------------
+    check("README at 801 lines is red", run_readme_ceiling(801), True, "README.md: 801 lines")
+    check("README at 800 lines is allowed", run_readme_ceiling(800), False)
+
+    # --- verify.json ids and rationale doc (AC8) ----------------------------
+    good_rules = _verify_rules({"id": "alpha-rule", "why": "short"},
+                               {"id": "beta", "why": "x" * 300})
+    good_doc = "# Rationale\n\n## alpha-rule\n\ntext\n\n## beta\n\ntext\n"
+    check("verify rules with unique ids, a 300-char why and a matching doc pass",
+          run_verify_rationale(good_rules, good_doc), False)
+    check("a duplicate verify rule id is red",
+          run_verify_rationale(_verify_rules({"id": "dup", "why": "a"}, {"id": "dup", "why": "b"}),
+                               "## dup\n"), True, "duplicate id 'dup'")
+    check("a 301-char why is red",
+          run_verify_rationale(_verify_rules({"id": "alpha", "why": "x" * 301}), "## alpha\n"),
+          True, "301 chars")
+    check("an orphan rationale heading is red",
+          run_verify_rationale(good_rules, good_doc + "\n## gone-rule\n"), True,
+          "orphan heading 'gone-rule'")
+    check("a rule with no rationale heading is red",
+          run_verify_rationale(good_rules, "## alpha-rule\n"), True, "no '## beta' heading")
+    check("a rule with no id is red",
+          run_verify_rationale(_verify_rules({"why": "a"}), ""), True, "has no id")
+    check("a non-kebab-case id is red",
+          run_verify_rationale(_verify_rules({"id": "Not_Kebab", "why": "a"}), "## Not_Kebab\n"),
+          True, "kebab-case")
+    check("a repeated rationale heading is red",
+          run_verify_rationale(good_rules, good_doc + "\n## beta\n"), True, "more than once")
+    check("a missing rationale doc is red",
+          run_verify_rationale(good_rules, None), True, "verify-rationale.md")
+    check("a repo with no .crew/verify.json has nothing to check",
+          run_verify_rationale(None, None), False)
+
+    # --- README pointers (AC10) ---------------------------------------------
+    readme = ("# crew\n\n## 1. What this is\n\n## 13c. Memory\n\n"
+              "## Moved sections\n\n| Old section | New home |\n|---|---|\n"
+              "| 7. The roster | docs/crew/reference/roster.md |\n"
+              "- 9. Hooks -> docs/crew/reference/hooks.md\n\n## Diagrams\n")
+    check("a dangling `README.md section 99` is red",
+          run_readme_pointers(readme, "See `README.md` section 99 for it.\n"),
+          True, "section 99")
+    check("a dangling `README.md §99` is red",
+          run_readme_pointers(readme, "See README.md §99.\n"), True, "section 99")
+    check("a pointer to a numbered README heading passes",
+          run_readme_pointers(readme, "See README.md section 1 and README.md section 13c.\n"), False)
+    check("a pointer to a Moved sections index row passes",
+          run_readme_pointers(readme, "See README.md section 7 and README.md §9.\n"), False)
+    check("an index-looking line after the Moved sections block does not resolve a pointer",
+          run_readme_pointers(readme + "\n- 42. Stray -> nowhere.md\n", "README.md section 42\n"),
+          True, "section 42")
+    check("a README with no Moved sections block resolves only headings",
+          run_readme_pointers("## 1. A\n", "README.md section 7\n"), True, "section 7")
+    check("prose that mentions README or CONFIG without a section number is ignored",
+          run_readme_pointers(readme, "The README has sections; see CONFIG §19.\n"), False)
+    check_true("the index heading name is a constant",
+               CHECKER.MOVED_SECTIONS_HEADING == "Moved sections")
 
     print(f"\ninstruction-budgets: {passed} passed, {failed} failed")
     return 1 if failed else 0
