@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@304e58b11
+anchor: useful-claude-add-ons@48db91a13
 verified: 2026-10-04
 
 ## Re-derive provenance
@@ -745,8 +745,8 @@ Read in full on `T-0016-build` after review round 1 and the merge of main ce2354
 - DERIVED: every process fact goes through `_proc`, and `CREW_AUTOCLEAR_PROC_STUB`
   (`crew_autocycle.py:101`) replaces the whole table, read only while CREW_AUTOCLEAR_INHIBIT is set
   (`_stubs_allowed`, `:409`, as is the window stub); the suite's fixtures are
-  `plugin/crew/tests/crew_fixtures.py:1334` (`write_session_record`), `:1334` (`proc_stub`) and
-  `:1357` (`bind_session`), which T-0017 builds on.
+  `plugin/crew/tests/crew_fixtures.py:1538` (`write_session_record`), `:1560` (`proc_stub`) and
+  `:1583` (`bind_session`), which T-0017 builds on.
 - JUDGEMENT: the hook-anchored checks still run first in the bash flavour (their lines are
   sabotage anchors); `prove_target` is the stricter proof and the one that decides.
 
@@ -1012,28 +1012,28 @@ harness path, so they land in their own lane.
 
 **The delta gate (L-0522).** DERIVED (re-found by content on rush/h3-review). `check_receipt`
 (`plugin/crew/hooks/scripts/review_ledger.py:869`, `base_sha=None`) runs check E
-(`review_delta.excluded_check`, `plugin/crew/hooks/scripts/review_delta.py:248`, called at
+(`review_delta.excluded_check`, `plugin/crew/hooks/scripts/review_delta.py:277`, called at
 `review_ledger.py:894`) before EITHER success return: `.work`, `graphify-out` and
 `.crew/metrics.md` diffed over receipt base -> reviewed head, reviewed head -> HEAD and reviewed
-head -> the index (`index_tree` `review_delta.py:179`), only `EXCLUDED_EXCEPTIONS` (`:77`, the two
+head -> the index (`index_tree` `review_delta.py:192`), only `EXCLUDED_EXCEPTIONS` (`:89`, the two
 graph files, status M, mode 100644, not binary) allowed. L-0739, DERIVED: the bundle appends the
 committed text changes under `review_patch.INCLUDABLE` (`.work`, `.crew/metrics.md`,
 `plugin/crew/hooks/scripts/review_patch.py:168`) from base -> HEAD's commit trees
 (`included_patch` `:384`, appended at `:563`; `included_entries` `:375` drops what
 `why_not_included` `:356` names - binary, non-100644, ignored per `git check-ignore --no-index`);
-the first range of check E (`_excluded_problem` `review_delta.py:234`) passes those, then
-`_bundle_carried` (`:263`) requires the receipt's hash to be the reviewed head's rebuilt bundle or
-today's; `reviewed_bundle` (`:202`) and `delta` (`:370`) carry the same section. JUDGEMENT: an
+the first range of check E (`_excluded_problem` `review_delta.py:236`) passes those, then
+`_bundle_carried` (`:265`) requires the receipt's hash to be the reviewed head's rebuilt bundle or
+today's; `reviewed_bundle` (`:202`) and `delta` (`:372`) carry the same section (`reviewed_bundle` takes a `merged` pin since L-0770). JUDGEMENT: an
 empty section leaves the bundle bytes unchanged, so pre-L-0739 receipts stay valid. On a hash
 mismatch `review_delta.judge`
-(`:684`, called at `review_ledger.py:910`) decides: the reviewed head rebuilds the reviewed
-bundle through T-0100's rule (`reviewed_bundle` `:189`, `review_patch._ticket_base_tree` with
-`head=` at `plugin/crew/hooks/scripts/review_patch.py:272`, `merged_main.resolve(..., head)`), is
+(`:721`, called at `review_ledger.py:910`) decides: the reviewed head rebuilds the reviewed
+bundle through T-0100's rule (`reviewed_bundle` `:202`, `review_patch._ticket_base_tree` with
+`head=` at `plugin/crew/hooks/scripts/review_patch.py:403`, `merged_main.resolve(..., head)` at `:415` unless a `merged` pin is passed), is
 an ancestor of HEAD, the integration base is the pinned `base_sha` or the train entry's ref
-(`integration_ref` `:283`; never `_default_ref`), one merge base, a clean checkout
-(`_clean_head_tree` `:309`, `checkout_problem` `:320`), then the per-path interdiff of the
+(`integration_ref` `:317`; never `_default_ref`), one merge base, a clean checkout
+(`_clean_head_tree` `:343`, `checkout_problem` `:354`), then the per-path interdiff of the
 reviewed bundle's base tree -> reviewed head against base -> `HEAD^{tree}`: byte identity outside
-the allowlist (`_match` `:357`, `fnmatchcase`); code maps, rules and diagrams compared with only
+the allowlist (`_match` `:394`, `fnmatchcase`); code maps, rules and diagrams compared with only
 their anchor sha normalised (`_anchor_normalised` `:396`; a failure there is `ANCHORED_BEYOND`
 `:64`); manifests compared as raw bytes outside the bumped plugin's version tokens
 (`_manifest_version_only` `:584`, `_json_spans` `:462`). `review_run.preflight` short-circuits a
@@ -1937,8 +1937,8 @@ Citations under `plugin/crew/hooks/scripts/`.
   `:465`, `:482`), `recurring_findings` (`recurring_findings.py:377`) and
   `crew_standards.selfcheck_path` (`crew_standards.py:325`). `crew_status`
   counts archived folders apart (`crew_status.py:113`); `crew_migrate`
-  labels caches by tracker (`_cache_source`, `crew_migrate.py:353`) and skips
-  an archived target (`:497`).
+  labels caches by tracker (`_cache_source`, `crew_migrate.py:421`) and skips
+  an archived target (`:572`).
 - JUDGEMENT: the harness modules (`crew_ticket`, `scope_guard`,
   `approval_hook`, `review_*`) still read the live folder; a structural test
   (`plugin/crew/tests/test_crew_ticket.py`, `test_no_module_builds_ticket_paths_itself`)
@@ -2850,9 +2850,9 @@ Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each n
 - DERIVED: temp hygiene. The auto-clear sender's first command unlinks it
   (`plugin/crew/hooks/scripts/auto-clear.sh:364`; the last-line `rm` at `:384` is the Git Bash
   fallback). `plugin/crew/hooks/scripts/_test/run-tests.sh:39-41` keeps every fixture on
-  `_CREW_TEST_TMP` behind one EXIT trap. `plugin/crew/tests/conftest.py:123`
+  `_CREW_TEST_TMP` behind one EXIT trap. `plugin/crew/tests/conftest.py:223`
   (`_isolated_tmpdir`) gives every test its own `TMPDIR`/`TEMP`/`TMP` and `tempfile.tempdir`, and
-  `crew_fixtures.shim_env` copies them (`plugin/crew/tests/crew_fixtures.py:1304`). Tests:
+  `crew_fixtures.shim_env` copies them (`plugin/crew/tests/crew_fixtures.py:1499`). Tests:
   `plugin/crew/tests/test_tmp_hygiene.py`.
 - JUDGEMENT: `verify-gate.sh`'s `CHANGED_FILE` (`plugin/crew/hooks/scripts/verify-gate.sh:1196`)
   is still removed only on the straight-line path (`:1613`), so a gate killed mid-run leaks it;
@@ -3055,23 +3055,25 @@ Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each n
   that commit is an ancestor of the ticket start, and returns `commit None`
   with a reason starting `could not tell` for no ref, a configured base branch
   naming no commit (T-0061's own reason), a detached HEAD or a git error.
-  `merged_main.keep` (`plugin/crew/hooks/scripts/merged_main.py:106`) is the one drop rule: a
+  `merged_main.keep` (`plugin/crew/hooks/scripts/merged_main.py:150`) is the one drop rule: a
   path stays when it differs from the start AND from the merged commit.
   `review_patch._ticket_base_tree`
-  (`plugin/crew/hooks/scripts/review_patch.py:271`) builds the synthetic base
+  (`plugin/crew/hooks/scripts/review_patch.py:403`) builds the synthetic base
   tree (the start's tree with each dropped path set to its working-state
   entry, and each kept path main changed since the fork -- the merge-base of
-  the start and the merged commit, `plugin/crew/hooks/scripts/review_patch.py:296`
+  the start and the merged commit, `plugin/crew/hooks/scripts/review_patch.py:427`
   -- set to the merged commit's entry, so main's lines are context; one second
   temporary index) that `compute` diffs from
-  (`plugin/crew/hooks/scripts/review_patch.py:424`); the manifest carries
+  (`plugin/crew/hooks/scripts/review_patch.py:551`); the manifest carries
   `merged_main` (with `dropped` and `diffed_from_merged`) and `bundle_base_tree`
-  (`plugin/crew/hooks/scripts/review_patch.py:462`). `merged_main.fork` is
+  (`plugin/crew/hooks/scripts/review_patch.py:606`). `merged_main.fork` is
   that merge-base; when git gives no answer it is null with a `fork_reason`
-  (`plugin/crew/hooks/scripts/review_patch.py:302`), every path main also
+  (`plugin/crew/hooks/scripts/review_patch.py:437`), every path main also
   changed stays diffed from the start, and `_merged_field`
-  (`plugin/crew/hooks/scripts/review_patch.py:558`) prints
-  `diffed-from-merged=could-not-tell`. The completion audit
+  (`plugin/crew/hooks/scripts/review_patch.py:700`) prints
+  `diffed-from-merged=could-not-tell`. DERIVED (L-0770): `merged_main.pinned`
+  (`plugin/crew/hooks/scripts/merged_main.py:109`) answers for a named merged commit, and
+  `_ticket_base_tree` / `reviewed_bundle` take it as `merged=` in place of `resolve`. The completion audit
   applies the same rule in `changed_paths(top, base, merged)`
   (`plugin/crew/hooks/scripts/completion_audit.py:173`), where `_as_merged`
   (`plugin/crew/hooks/scripts/completion_audit.py:194`) keeps an untracked
