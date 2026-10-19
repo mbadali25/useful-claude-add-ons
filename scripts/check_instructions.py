@@ -236,6 +236,18 @@ def rel(path: str) -> str:
     return os.path.relpath(path, ROOT).replace(os.sep, "/")
 
 
+def _entry_valid(entry: object) -> bool:
+    """One allowance entry: int `lines`, an allowed `reason`, and, when present,
+    an int (not bool) `bytes`."""
+    if not isinstance(entry, dict) or not isinstance(entry.get("lines"), int):
+        return False
+    if not _reason_allowed(entry.get("reason")):
+        return False
+    if "bytes" in entry:
+        return isinstance(entry["bytes"], int) and not isinstance(entry["bytes"], bool)
+    return True
+
+
 def load_allowance(fail) -> dict:
     """Read `.budget-allowance.json`, or {} with a failure if it is missing
     or malformed -- silently treating a broken allowance file as "no
@@ -255,13 +267,7 @@ def load_allowance(fail) -> dict:
         return {}
     out = {}
     for path, entry in data.items():
-        if (
-            not isinstance(entry, dict)
-            or not isinstance(entry.get("lines"), int)
-            or not _reason_allowed(entry.get("reason"))
-            or ("bytes" in entry and (isinstance(entry["bytes"], bool)
-                                      or not isinstance(entry["bytes"], int)))
-        ):
+        if not _entry_valid(entry):
             fail(
                 f"{rel(ALLOWANCE_PATH)}: entry '{path}' must be "
                 '{"lines": <int>, optional "bytes": <int>, "reason": one of ' + repr(ALLOWED_REASONS) +
