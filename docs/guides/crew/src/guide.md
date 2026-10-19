@@ -297,7 +297,8 @@ skipped phase is visible. It is off until `autopilot.mode` is exactly `plan`
 (one ticket per run) or `backlog`. `/crew:autopilot --goal <slug>` works a goal's
 minted tickets one at a time in dependency order, each through its own
 approval; `backlog` goes on to the next ticket while `autopilot.maxTicketsPerRun`
-(3) and `autopilot.maxTokensPerSession` (2,000,000) allow, and every stop prints
+(3) and `autopilot.maxTokensPerSession` (2,000,000 input plus output tokens, each assistant
+message counted once) allow, and every stop prints
 `resume: /crew:autopilot --goal <slug>` (L-0541).
 
 The five `autopilot.*` settings are personal: set them in the repo's
