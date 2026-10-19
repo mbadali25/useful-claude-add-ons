@@ -449,6 +449,21 @@ def check_allowance_no_silent_raise(allowance: dict, fail, base: str | None = No
         base_entry = base_allowance.get(path_rel)
         if not isinstance(base_entry, dict) or not isinstance(base_entry.get("lines"), int):
             continue  # new entry at HEAD, not a raise of an existing ceiling
+        base_bytes, head_bytes = base_entry.get("bytes"), entry.get("bytes")
+        if (isinstance(base_bytes, int) and isinstance(head_bytes, int)
+                and head_bytes > base_bytes):
+            if RAISED_REASON_RE.match(entry["reason"]):
+                print(
+                    f"{rel(ALLOWANCE_PATH)}: {path_rel} byte ceiling raised "
+                    f"{base_bytes} -> {head_bytes} ({entry['reason']})"
+                )
+            else:
+                fail(
+                    f"{rel(ALLOWANCE_PATH)}: {path_rel} byte ceiling raised "
+                    f"{base_bytes} -> {head_bytes} in this change "
+                    f"(from {ref}) without an explicit 'raised: <why>' reason - "
+                    "defeats the no-growth invariant"
+                )
         if entry["lines"] <= base_entry["lines"]:
             continue
         if RAISED_REASON_RE.match(entry["reason"]):

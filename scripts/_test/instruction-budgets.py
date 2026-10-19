@@ -180,7 +180,8 @@ def _git(cwd, *args):
 
 
 def run_ceiling_check(base_lines: int, base_reason: str,
-                       head_lines: int, head_reason: str):
+                       head_lines: int, head_reason: str,
+                       base_bytes: int | None = None, head_bytes: int | None = None):
     """A real throwaway git history: one commit records `.budget-allowance.json`
     at `base_lines`/`base_reason`; the working tree then holds `head_lines`/
     `head_reason` UNCOMMITTED, the same shape as a ceiling raised in the
@@ -196,7 +197,8 @@ def run_ceiling_check(base_lines: int, base_reason: str,
             os.path.join(tmp, "plugin", "crew", ".budget-allowance.json"),
             json.dumps({
                 "plugin/crew/commands/fixture.md":
-                    {"lines": base_lines, "reason": base_reason},
+                    {"lines": base_lines, "reason": base_reason,
+                     **({"bytes": base_bytes} if base_bytes is not None else {})},
             }),
         )
         _git(tmp, "init", "-q")
@@ -212,7 +214,8 @@ def run_ceiling_check(base_lines: int, base_reason: str,
             os.path.join(tmp, "plugin", "crew", ".budget-allowance.json"),
             json.dumps({
                 "plugin/crew/commands/fixture.md":
-                    {"lines": head_lines, "reason": head_reason},
+                    {"lines": head_lines, "reason": head_reason,
+                     **({"bytes": head_bytes} if head_bytes is not None else {})},
             }),
         )
         with _root_at(tmp):
@@ -724,6 +727,28 @@ def main() -> int:
         "BLOCK3: a ceiling that did not move is allowed regardless of reason text",
         run_ceiling_check(base_lines=100, base_reason="T8: to trim",
                            head_lines=100, head_reason="T8: to trim"),
+        False,
+    )
+    check(
+        "a byte ceiling raised with no reason change fails",
+        run_ceiling_check(base_lines=100, base_reason="T8: to trim",
+                          head_lines=100, head_reason="T8: to trim",
+                          base_bytes=1000, head_bytes=1001),
+        True,
+        "byte ceiling raised",
+    )
+    check(
+        "a byte ceiling raised WITH the explicit 'raised: <why>' reason passes",
+        run_ceiling_check(base_lines=100, base_reason="T8: to trim",
+                          head_lines=100, head_reason="raised: bytes needed the room",
+                          base_bytes=1000, head_bytes=1001),
+        False,
+    )
+    check(
+        "a byte ceiling that did not move passes",
+        run_ceiling_check(base_lines=100, base_reason="T8: to trim",
+                          head_lines=100, head_reason="T8: to trim",
+                          base_bytes=1000, head_bytes=1000),
         False,
     )
     check(
