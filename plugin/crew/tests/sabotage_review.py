@@ -2189,7 +2189,8 @@ REVIEW_FIX_MUTATIONS = (
      'if isinstance(c, dict) and c.get("eligible") and isinstance(c.get("provider"), str)]',
      _SP + "test_a_models_row_that_is_not_well_formed_is_not_eligible_and_not_a_crash"),
     ("L-0726: a verify rule that is not an object is skipped as no specialist", REVIEW_RUN,
-     '        if not isinstance(rule, dict):\n            return "unknown", {}, f"{path}: rule {number} is not an object"\n',
+     '        if not isinstance(rule, dict):\n'
+     '            return "unknown", {}, f"{path}: rule {number} is not an object"\n',
      '        if not isinstance(rule, dict):\n            continue\n',
      _SP + "test_prepare_a_verify_rule_that_is_not_an_object_is_could_not_tell"),
     ("L-0726: a dispatch file that is not a regular file still supplies a timestamp", REVIEW_RUN,
@@ -2205,7 +2206,7 @@ REVIEW_FIX_MUTATIONS = (
      '    if False:\n',
      _SP + "test_a_failed_scope_base_with_an_answer_is_not_a_base"),
     ("L-0726: a descendant holding a child's pipe holds the wait open", REVIEW_RUN,
-     '            if proc.stdout:\n                proc.stdout.close()\n',
-     '            proc.communicate()\n',
+     '                    proc.communicate(timeout=POST_KILL_TIMEOUT)\n',
+     '                    proc.communicate()\n',
      _SP + "test_a_descendant_holding_the_pipe_open_cannot_hold_the_wait_open"),
 )

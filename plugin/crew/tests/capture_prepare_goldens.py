@@ -76,7 +76,9 @@ def capture(scenario, markdown, work):
     done = subprocess.run(["bash", str(script)], cwd=root, env=env, capture_output=True,
                           text=True, encoding="utf-8", stdin=subprocess.DEVNULL, check=False)
     out = {"exit.txt": f"{done.returncode}\n"}
-    norm = lambda text: fx.normalise_root(text, root)  # noqa: E731
+    def norm(text):
+        return fx.normalise_root(text, root)
+
     facts = {}
     for line in done.stdout.splitlines():
         found = re.match(r"authors=(.*?) source=(.*?) eligible=(.*)$", line)
