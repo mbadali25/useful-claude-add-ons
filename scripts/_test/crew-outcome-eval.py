@@ -1010,7 +1010,7 @@ def main() -> int:
         with tempfile.TemporaryDirectory(prefix="crew-outcome-suite.") as tmp:
             try:
                 ok, detail = case(tmp)
-            except Exception as exc:  # pylint: disable=broad-exception-caught
+            except Exception as exc:  # noqa: BLE001 - a case that raises is a failed case, reported; pylint: disable=broad-exception-caught
                 ok, detail = False, f"raised {type(exc).__name__}: {exc}"
         if ok:
             passed += 1
