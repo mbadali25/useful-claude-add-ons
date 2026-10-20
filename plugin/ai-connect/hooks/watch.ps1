@@ -29,6 +29,7 @@ if ($acctHome -and ([Environment]::OSVersion.Platform -eq 'Win32NT') `
         $prefix = $project.TrimEnd('\', '/') + '\'
         if (($userHome.TrimEnd('\', '/') + '\').StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
             $userHome = $acctHome
+            $env:USERPROFILE = $acctHome
         }
     }
 }
@@ -121,10 +122,10 @@ if (-not $python) {
     [Console]::Error.WriteLine("ai-connect watch.ps1: no venv found (looked in $(Join-Path $root 'venv'), in deploy's %USERPROFILE%\AppData\Local\ai-connect\venv or under AI_CONNECT_HOME, and at AI_CONNECT_VENV; a variable that is not an absolute path under your home, outside the project, is ignored) - run $(Join-Path $root 'install.cmd') -Client (again after each plugin update), or $(Join-Path (Join-Path $root 'deploy') 'deploy.ps1') peer once")
     exit 1
 }
-# A project's settings can set PYTHONPATH and friends, which would make a trusted interpreter
-# import the repository's code
-foreach ($name in 'PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP', 'PYTHONINSPECT', 'PYTHONUSERBASE', 'PYTHONEXECUTABLE') {
-    Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+# A project's settings can set PYTHONPATH, PYTHONPYCACHEPREFIX and the like, which would make a
+# trusted interpreter import the repository's code: every PYTHON* variable is dropped
+foreach ($item in @(Get-ChildItem Env: | Where-Object { $_.Name -like 'PYTHON*' })) {
+    Remove-Item -LiteralPath "Env:$($item.Name)" -ErrorAction SilentlyContinue
 }
 & $python (Join-Path $app $watcher)
 exit $LASTEXITCODE

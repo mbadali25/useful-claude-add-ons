@@ -436,11 +436,13 @@ def test_python_variables_from_the_project_do_not_reach_the_interpreter(tmp_path
     for relative in ("bin/python", "Scripts/python.exe"):
         (machine.root / "venv" / relative).write_text(
             f'#!/bin/sh\nprintf "own\\n%s" "$1" > "{machine.marker}"\n'
-            f'echo "PP=${{PYTHONPATH:-}}|PS=${{PYTHONSTARTUP:-}}|PH=${{PYTHONHOME:-}}"\nexit {WAKE}\n',
+            'echo "PP=${PYTHONPATH:-}|PS=${PYTHONSTARTUP:-}|PH=${PYTHONHOME:-}'
+            '|PC=${PYTHONPYCACHEPREFIX:-}"\n' f'exit {WAKE}\n',
             encoding="utf-8", newline="\n")
     result = machine.run(hook, windows=as_windows(hook), extra_env={
-        "PYTHONPATH": "./x", "PYTHONSTARTUP": "./s.py", "PYTHONHOME": "./h"})
-    assert (result.returncode, result.stdout.strip()) == (WAKE, "PP=|PS=|PH="), result.stderr
+        "PYTHONPATH": "./x", "PYTHONSTARTUP": "./s.py", "PYTHONHOME": "./h",
+        "PYTHONPYCACHEPREFIX": "./c"})
+    assert (result.returncode, result.stdout.strip()) == (WAKE, "PP=|PS=|PH=|PC="), result.stderr
 
 
 @pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)

@@ -12,6 +12,11 @@ if [ "${OS:-}" = "Windows_NT" ]; then
     exit 0
 fi
 
+# The tools below are looked up on a fixed PATH, not on one a project's settings could set; the
+# caller's PATH is put back before the watcher starts.
+ORIG_PATH="$PATH"
+PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WATCHER="integrations/claude-code/aiconnect_watch.py"
 # The installer writes this outside the plugin directory (config_loader.py's
@@ -22,13 +27,17 @@ WATCHER="integrations/claude-code/aiconnect_watch.py"
 # project the session runs in is ignored (as if unset): a repository cannot move "the user's
 # home" into itself. Other HOMEs are left alone (a test or a container may set its own).
 ACCT_HOME="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)"
-if [ -n "$ACCT_HOME" ] && [ -n "${HOME:-}" ]; then
+if [ -z "$ACCT_HOME" ]; then
+    ACCT_HOME="$(cd "$(eval echo "~$(id -un 2>/dev/null)")" 2>/dev/null && pwd -P)"
+fi
+if [ -n "${HOME:-}" ]; then
     _h="$(cd "$HOME" 2>/dev/null && pwd -P)"
-    if [ "$_h" != "$(cd "$ACCT_HOME" 2>/dev/null && pwd -P)" ]; then
+    if [ -z "$ACCT_HOME" ] || [ "$_h" != "$(cd "$ACCT_HOME" 2>/dev/null && pwd -P)" ]; then
         for _proj in "${CLAUDE_PROJECT_DIR:-}" "$PWD"; do
             [ -n "$_proj" ] || continue
             _p="$(cd "$_proj" 2>/dev/null && pwd -P)" || continue
-            case "$_h/" in "$_p"/*) HOME="" ;; esac
+            # With the account home unknown a HOME inside the project is ignored too
+            case "$_h/" in "$_p"/*) HOME="$ACCT_HOME"; export HOME ;; esac
         done
     fi
 fi
@@ -110,7 +119,10 @@ if [ -z "$PYTHON" ]; then
     echo "ai-connect watch.sh: no venv found (looked in $ROOT/venv, in deploy's ~/.local/share/ai-connect/venv or under AI_CONNECT_HOME, and at AI_CONNECT_VENV; a variable that is not an absolute path under your home, outside the project, is ignored) - run $ROOT/install.sh --client (again after each plugin update), or $ROOT/deploy/deploy.sh peer once" >&2
     exit 1
 fi
-# A project's settings can set PYTHONPATH and friends, which would make a trusted interpreter
-# import the repository's code
-exec env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP -u PYTHONINSPECT -u PYTHONUSERBASE -u PYTHONEXECUTABLE \
-    "$PYTHON" "$APP/$WATCHER"
+# A project's settings can set PYTHONPATH, PYTHONPYCACHEPREFIX and the like, which would make a
+# trusted interpreter import the repository's code: every PYTHON* variable is dropped.
+for _v in $(env | sed -n 's/^\(PYTHON[A-Za-z0-9_]*\)=.*/\1/p'); do
+    unset "$_v"
+done
+PATH="$ORIG_PATH"
+exec "$PYTHON" "$APP/$WATCHER"
