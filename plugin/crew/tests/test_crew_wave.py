@@ -1822,7 +1822,7 @@ def test_start_json_argv_runs_and_prints_the_lane_prompt(tmp_path):
     _, out = _json_start(tmp_path)
 
     ran = subprocess.run([sys.executable] + out["launches"][0]["argv"][1:], capture_output=True,
-                         text=True, check=False, stdin=subprocess.DEVNULL)
+                         text=True, encoding="utf-8", check=False, stdin=subprocess.DEVNULL)
 
     assert (ran.returncode, ran.stdout.startswith("Ticket ID: T-1\n")) == (0, True)
 

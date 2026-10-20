@@ -9,6 +9,8 @@ import re
 import shutil
 import subprocess
 
+import pytest
+
 import context  # noqa: F401  pylint: disable=unused-import
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -22,7 +24,7 @@ def _run(tmp_path, scenario):
     path = tmp_path / "scenario.json"
     path.write_text(json.dumps(scenario), encoding="utf-8")
     ran = subprocess.run([node, STUB, WORKFLOW, str(path)], capture_output=True, text=True,
-                         check=False, stdin=subprocess.DEVNULL, timeout=60)
+                         encoding="utf-8", check=False, stdin=subprocess.DEVNULL, timeout=60)
     assert ran.returncode == 0, ran.stderr
     return json.loads(ran.stdout.strip().splitlines()[-1])
 
@@ -195,3 +197,17 @@ def test_a_pinned_lane_model_reaches_the_lane_agent_and_an_unpinned_lane_sets_no
     options = {c["label"]: c["options"] for c in out["calls"] if c["label"].startswith("lane ")}
     assert (options["lane L-0001"].get("model"), "model" in options["lane L-0002"]) == (
         "claude-sonnet-5-5", False)
+
+
+@pytest.mark.parametrize("slug", ["Bad_Slug", "Has.Dot", "-lead", "", "x" * 65, "a b", 7, None])
+def test_a_set_arg_outside_crew_waves_slug_grammar_is_rejected_before_any_agent_runs(tmp_path, slug):
+    out = _run(tmp_path, {"args": {"set": slug}, "agents": []})
+
+    assert (sorted(out["result"]), out["calls"]) == (["error"], [])
+
+
+@pytest.mark.parametrize("slug", ["s", "my-wave", "a" * 64, "0day"])
+def test_a_set_arg_inside_the_grammar_reaches_the_start_agent(tmp_path, slug):
+    out = _run(tmp_path, {"args": {"set": slug}, "agents": [_start(), _collect()]})
+
+    assert slug in out["calls"][0]["prompt"]

@@ -11,7 +11,7 @@ export const meta = {
 // A lane agent also keeps the lane's own rules: lane-init, review, lane-done (the lane prompt).
 
 const LANE_STATES = ['clean', 'findings', 'question', 'failed']
-const SLUG = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/ // crew_wave.check_slug's grammar
 
 const START_SCHEMA = {
   type: 'object',
@@ -61,7 +61,7 @@ const text = (value) => (typeof value === 'string' ? value : '')
 
 const slug = isObject(args) ? args.set : undefined
 if (typeof slug !== 'string' || !SLUG.test(slug)) {
-  return { error: 'args.set must be the wave set slug, e.g. {"set": "my-wave"}' }
+  return { error: 'args.set must be the wave set slug (a-z, 0-9, "-", at most 64 characters), e.g. {"set": "my-wave"}' }
 }
 const scriptsHint = isObject(args) && typeof args.scripts === 'string' ? args.scripts : ''
 
