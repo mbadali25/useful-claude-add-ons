@@ -9,6 +9,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.44: the crew test suite no longer dies with WinError 6 under the Stop hook on Windows
+
+- **Summary.** `crew` 1.2.44: on Windows the crew test suite no longer fails with `[WinError 6] The handle is invalid` when the Stop hook's verify gate runs it, so the gate reports real test results.
+- **Cause.** pytest's default `--capture=fd` closes the Win32 stdin handle, and `subprocess.run` without `stdin=` reads that handle (`GetStdHandle`), not fd 0, so it fails in `subprocess._make_inheritable`. `test_context_watch_python_resolver.py` failed at collection; elsewhere 107 tests failed. Reproduced with `cmd /c "python -m pytest ... <NUL"`.
+- **Fix.** `plugin/crew/tests/_stdin_guard.py`, installed by `conftest.py`, points `STD_INPUT_HANDLE` at an owned NUL handle capture cannot close. `pytest_rule.py` starts its pytest children with `stdin=subprocess.DEVNULL`. Pinned by `test_stdin_guard.py`, sabotage-checked. Not run: the real Stop hook end to end.
+
 ### Changed — crew 1.2.43: every crew test runs under a home of its own (L-0709)
 
 - **Summary.** `crew` 1.2.43: the crew test suite no longer reads your real

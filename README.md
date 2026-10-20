@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.44**: The crew test suite no longer dies with WinError 6 under the Stop hook on Windows. `crew` 1.2.44: on Windows the crew test suite no longer fails with `[WinError 6] The handle is invalid` when the Stop hook's verify gate runs it, so the gate reports real test results.
 - **crew 1.2.43**: Every crew test runs under a home of its own. `crew` 1.2.43: the crew test suite no longer reads your real `~/.claude/crew/config.json`: every test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops failing on settings you chose.
-- **crew 1.2.42**: The wave sabotage table covers the lane launch model. `crew` 1.2.42 adds a mutation to the wave sabotage table so a developer model pin that never reaches the lane launch line turns a test red.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
