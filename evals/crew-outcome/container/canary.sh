@@ -4,7 +4,7 @@
 # paths it is given, github.com, or any host service, and MUST reach the model
 # API hosts through the proxy.
 #
-# Usage: canary.sh <out-file> <host-path>...
+# Usage: canary.sh <out-file> <host checkout> <task store> <earlier run dir> [<host-path>...]
 #   <host-path>: a path on the host that must not exist inside the container
 #   (the host checkout, the task store, an earlier run dir that reuses the same
 #   ticket id). Env: DOCKER (default /usr/bin/docker), PYTHON (default
@@ -26,6 +26,12 @@ if [ "$#" -lt 4 ]; then
 fi
 OUT="$1"
 shift
+for p in "$@"; do
+  if [ ! -e "$p" ]; then
+    echo "canary: $p does not exist on the host; a path that was never there proves nothing" >&2
+    exit 2
+  fi
+done
 for tool in "$DOCKER" "$PYTHON"; do
   if [ ! -x "$tool" ]; then
     echo "canary: $tool is not executable; set DOCKER / PYTHON to absolute paths" >&2

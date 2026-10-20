@@ -253,7 +253,10 @@ def place(repo, rel, source):
         here = os.path.join(here, part)
         if os.path.islink(here):
             os.unlink(here)
-        os.makedirs(here, exist_ok=True)
+        try:
+            os.makedirs(here, exist_ok=True)
+        except FileExistsError:
+            fail(f"grading: {rel} needs a directory at {part!r} but the run repo has a file there")
     dest = os.path.join(here, parts[-1])
     if os.path.islink(dest):
         os.unlink(dest)
@@ -504,7 +507,7 @@ def subagent_ids(path):
     return found
 
 
-def codex_usage(repo, home, model):
+def codex_usage(repo, home, model, proxy_log=None):
     """(tokens, cost): the sum of every `turn.completed` usage in the run's
     codex-events.jsonl files. UNKNOWN when a Codex session exists in the run's
     own CODEX_HOME that no events file accounts for, when an events file does
@@ -551,12 +554,35 @@ def codex_usage(repo, home, model):
     if sessions and not turns:
         # a Codex session ran but no events file recorded a completed turn: nothing was measured
         return UNKNOWN, UNKNOWN
+    if not events and not sessions and proxy_log is not None and codex_hosts_allowed(proxy_log) != 0:
+        # the host-side proxy saw traffic to a Codex/OpenAI host the arm's own files do not account for
+        return UNKNOWN, UNKNOWN
     if not events and not sessions and codex_review_rounds(repo) != 0:
         # a completed Codex review in the ledger with no events file and no session log: uncounted
         return UNKNOWN, UNKNOWN
     if not events:
         return total, 0.0
     return total, codex_cost(total, model)
+
+
+def codex_hosts_allowed(proxy_log):
+    """How many allowed CONNECTs the proxy logged to OpenAI hosts; -1 when the log
+    cannot be read. The proxy is a host process the arm cannot write to, so unlike
+    the arm's own files this count is not scrubbable."""
+    count = 0
+    try:
+        with open(proxy_log, encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                rec = json.loads(line)
+                host = str(rec.get("host", "")) if isinstance(rec, dict) else ""
+                if isinstance(rec, dict) and rec.get("decision") == "allow" and (
+                        host == "api.openai.com" or host == "chatgpt.com" or host.endswith(".chatgpt.com")):
+                    count += 1
+    except (OSError, ValueError):
+        return -1
+    return count
 
 
 def codex_review_rounds(repo):
@@ -851,7 +877,8 @@ def invoke(docker, run, name, inner, timeout):
             subprocess.run([docker, "rm", "-f", name], capture_output=True, check=False)
             probe = subprocess.run([docker, "inspect", "-f", "{{.State.Running}}", name], capture_output=True,
                                    text=True, check=False)
-            if probe.returncode == 0 and probe.stdout.strip() == "true":
+            gone = probe.returncode != 0 and "no such" in (probe.stderr or "").lower()
+            if not gone and (probe.returncode != 0 or probe.stdout.strip() == "true"):
                 fail(f"container {name} timed out and could not be stopped; not grading a run that may still be writing")
         text = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
         return 124, text, True
@@ -1143,7 +1170,8 @@ def run_once(ctx, task, arm, attempt, carried_cost=0.0):
     wall = round(clock() - started, 1)
     tokens, claude_cost, models = claude_usage(run["home"], driven["sessions"])
     codex_model = arm.get("reviewer", {}).get("model") if arm["arm"] == "crew" else None
-    codex_tokens, codex_cost_usd = codex_usage(run["repo"], run["home"], codex_model)
+    codex_tokens, codex_cost_usd = codex_usage(run["repo"], run["home"], codex_model,
+                                               os.path.join(run["proxylog"], "proxy.jsonl"))
     own_cost = add_costs(claude_cost, codex_cost_usd)
     cost = add_costs(own_cost, carried_cost) if carried_cost != UNKNOWN else UNKNOWN
     reasons = contamination(task, run["home"], run["repo"], os.path.join(run["proxylog"], "proxy.jsonl"), arm,
@@ -1324,8 +1352,11 @@ def canary_fingerprint(eval_dir):
     in-container wrapper. Any change to them makes an earlier canary stale."""
     digest = hashlib.sha256()
     for name in ("proxy-allowlist.txt", "proxy.py", "eval-run.py"):
-        with open(os.path.join(eval_dir, "container", name), "rb") as fh:
-            digest.update(name.encode() + b"\0" + fh.read() + b"\0")
+        try:
+            with open(os.path.join(eval_dir, "container", name), "rb") as fh:
+                digest.update(name.encode() + b"\0" + fh.read() + b"\0")
+        except OSError as exc:
+            fail(f"canary fingerprint: cannot read container/{name}: {exc}")
     return digest.hexdigest()
 
 

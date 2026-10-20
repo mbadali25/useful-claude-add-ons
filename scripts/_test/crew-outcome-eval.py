@@ -1126,6 +1126,51 @@ def case_the_canary_fails_when_its_proxy_log_does_not_parse(tmp):
     return "does not parse" in canary and "rc=1" in canary and "except OSError" not in canary, "does not parse" in canary
 
 
+def case_an_indeterminate_container_state_after_a_failed_kill_stops_the_run(tmp):
+    fix = Fix(tmp)
+    docker = os.path.join(tmp, "blind-docker")
+    write(docker, "#!/bin/sh\ncase \"$1\" in run) sleep 30;; kill) exit 1;; inspect) exit 1;; rm) exit 1;; esac\n", EXEC)
+    gone = os.path.join(tmp, "gone-docker")
+    write(gone, "#!/bin/sh\ncase \"$1\" in run) sleep 30;; kill) exit 1;; inspect) echo 'Error: No such object' >&2; exit 1;; rm) exit 0;; esac\n", EXEC)
+    run = {"repo": "/r/repo", "home": "/r/home", "proxylog": "/r/log", "dir": "/r", "proxysock": "/r/sock"}
+    with patched_env(fix.env):
+        blind = refused(eval_mod.invoke, docker, run, "n", ["x"], 1)
+        code, _text, timed = eval_mod.invoke(gone, run, "n", ["x"], 1)
+    return bool(blind and "could not be stopped" in blind) and (code, timed) == (124, True), (blind, code, timed)
+
+
+def case_proxy_traffic_to_openai_with_no_codex_files_makes_usage_unknown(tmp):
+    repo = os.path.join(tmp, "crepo")
+    os.makedirs(repo)
+    home = os.path.join(tmp, "chome")
+    log = os.path.join(tmp, "proxy.jsonl")
+    write(log, json.dumps({"host": "chatgpt.com", "decision": "allow"}) + "\n")
+    seen = eval_mod.codex_usage(repo, home, "m", log)
+    write(log, json.dumps({"host": "api.anthropic.com", "decision": "allow"}) + "\n"
+          + json.dumps({"host": "chatgpt.com", "decision": "deny"}) + "\n")
+    none_seen = eval_mod.codex_usage(repo, home, "m", log)
+    write(log, "not json\n")
+    unreadable = eval_mod.codex_usage(repo, home, "m", log)
+    ok = seen == (UNKNOWN, UNKNOWN) and unreadable == (UNKNOWN, UNKNOWN) and none_seen[1] == 0.0
+    return ok, (seen, none_seen, unreadable)
+
+
+def case_the_canary_script_refuses_host_paths_that_do_not_exist(tmp):
+    script = os.path.join(REAL_EVAL_DIR, "container", "canary.sh")
+    out = subprocess.run(["/bin/bash", script, os.path.join(tmp, "out.txt"), "/nope/a", "/nope/b", "/nope/c"],
+                         capture_output=True, text=True, check=False, env=dict(os.environ, DOCKER="/bin/true"))
+    return out.returncode == 2 and "does not exist on the host" in out.stderr, (out.returncode, out.stderr[:200])
+
+
+def case_a_file_where_the_base_has_a_directory_is_a_refusal_not_a_traceback(tmp):
+    repo = os.path.join(tmp, "copy")
+    write(os.path.join(repo, "tests"), "i am a file\n")
+    src = os.path.join(tmp, "src.py")
+    write(src, "x\n")
+    message = refused(eval_mod.place, repo, "tests/conftest.py", src)
+    return bool(message and "needs a directory" in message), message
+
+
 def case_autopilot_stopped_only_on_a_readable_stop_0_keeps_going(tmp):
     def shell(text, code=0):
         return lambda command: (code, text)
@@ -1411,6 +1456,10 @@ CASES = (
     ("must-block: a CLI error result is unscorable whatever its message", case_a_cli_error_result_is_unscorable_whatever_its_message),
     ("must-block: a completed Codex review with no usage files is UNKNOWN (refunded and non-Codex rounds are not)", case_a_completed_codex_review_with_no_usage_files_is_unknown),
     ("must-block: the canary fails when its proxy log does not parse", case_the_canary_fails_when_its_proxy_log_does_not_parse),
+    ("must-block: an indeterminate container state after a failed kill stops the run (a container that is gone does not)", case_an_indeterminate_container_state_after_a_failed_kill_stops_the_run),
+    ("must-block: proxy traffic to OpenAI with no Codex files makes usage UNKNOWN (none seen, or a denied host, is zero)", case_proxy_traffic_to_openai_with_no_codex_files_makes_usage_unknown),
+    ("must-block: the canary script refuses host paths that do not exist", case_the_canary_script_refuses_host_paths_that_do_not_exist),
+    ("must-block: a file where the base has a directory is a refusal, not a traceback", case_a_file_where_the_base_has_a_directory_is_a_refusal_not_a_traceback),
 )
 
 # pylint: enable=line-too-long
