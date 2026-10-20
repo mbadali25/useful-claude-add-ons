@@ -27,9 +27,8 @@ WATCHER="integrations/claude-code/aiconnect_watch.py"
 # project the session runs in is ignored (as if unset): a repository cannot move "the user's
 # home" into itself. Other HOMEs are left alone (a test or a container may set its own).
 ACCT_HOME="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)"
-if [ -z "$ACCT_HOME" ]; then
-    ACCT_HOME="$(cd "$(eval echo "~$(id -un 2>/dev/null)")" 2>/dev/null && pwd -P)"
-fi
+# Where the account database cannot be read (macOS has no getent), ACCT_HOME stays empty and a
+# HOME inside the project is ignored; a HOME elsewhere is left alone.
 if [ -n "${HOME:-}" ]; then
     _h="$(cd "$HOME" 2>/dev/null && pwd -P)"
     if [ -z "$ACCT_HOME" ] || [ "$_h" != "$(cd "$ACCT_HOME" 2>/dev/null && pwd -P)" ]; then
