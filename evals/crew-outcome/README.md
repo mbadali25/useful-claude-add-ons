@@ -17,7 +17,7 @@ set, spike). No scored run has happened yet; nothing here claims an outcome.
 | Path | What |
 |---|---|
 | `arms/crew.json`, `arms/baseline.json` | The two arm protocols: pinned author and reviewer model and effort, crew config, CLI flags, prompts, review parse rule, wall-clock limits |
-| `container/` | `Dockerfile`, `proxy.py` + `proxy-allowlist.txt` (the allowlisting proxy), `canary.sh` (the isolation canary) |
+| `container/` | `Dockerfile`, `codex-shim.sh` (the `codex` on PATH), `proxy.py` + `proxy-allowlist.txt` (the allowlisting proxy), `canary.sh` (the isolation canary) |
 | `tasks/<name>/` | `task.json`, `statement.md`, `grading/` (frozen hidden tests and test config); `tasks/selection-notes.md` is the selection record |
 | `spike/` | The throwaway S task and `run-spike.py`, the spike through the harness itself |
 | `../../scripts/crew-outcome-eval.py` | The harness: `validate`, `run`, `report` |
@@ -58,9 +58,15 @@ The arm runs in a container whose only mounts are that run's `repo` and `home`, 
 `--internal` (no route out). The only way out is the allowlisting proxy, a host process bound to that network's gateway
 address (`container/proxy.py`, `container/proxy-allowlist.txt`: `api.anthropic.com`, `api.openai.com`, `chatgpt.com`
 and its subdomains, CONNECT on 443 only). It logs every decision to `<run>/proxylog/proxy.jsonl`, outside the mounts.
-The container runs as uid 1000 (not root), with `--cap-drop ALL`, `no-new-privileges` and
-`--security-opt seccomp=unconfined` (Codex's own sandbox needs unprivileged user namespaces, which Docker's default
-seccomp profile denies; without it the crew arm's review ends INCOMPLETE). The CLI is started with
+The container runs as uid 1000 (not root), with `--cap-drop ALL`, `no-new-privileges`, no `--privileged`, no `--cap-add`
+and no `seccomp=unconfined` or `apparmor=unconfined`. Codex's own sandbox cannot start in a container on this host
+(see Spike), so the image puts a `codex` shim first on `PATH` (`container/codex-shim.sh`): it rewrites `--sandbox
+read-only` (also `-s`, `--sandbox=`) to `--sandbox danger-full-access` and passes everything else through, which makes the
+**container the only boundary**. That is a treatment difference from crew as shipped (the Codex reviewer is not held
+read-only) and the results doc says so. It is acceptable only because the container has: no host mounts beyond the run's
+`repo` and `home`; no network beyond the proxy's two model hosts; and no secrets beyond the two short-lived access tokens
+above (no cloud, SSH or git credentials, no environment passthrough, no connectors). Codex can read those two tokens; they
+expire within hours and cannot be refreshed. The CLI is started with
 `--strict-mcp-config` and an empty server list, so none of the owner's claude.ai connectors (Gmail, Drive, ...) load.
 
 `container/canary.sh` runs a scripted shell in that container behind that proxy with no model call and no credential. It
@@ -138,7 +144,9 @@ The frozen procedure ran over all 258 `done` rows of `.work/INDEX.md` on 2026-10
 | `t-0107-gizmoduck-routine-cli` | T-0107 | L | 656 = `gizmoduck.py` 649 + `bootstrap.sh` 4 + `bootstrap.ps1` 3 | 32 of 99 | 9 | 72 |
 
 No S task exists, and M and L have one each, so under the verdict rule **every bucket is "could not tell"** (fewer than
-2 tasks) unless the owner widens the selection. 219 of the 256 rejects touch `plugin/crew/`, 9 have no tests, 7 have
+2 tasks). Owner-approved decision 2026-10-20 (spec "Amendment 2026-10-20", A3): the selection is **not widened**. The only
+routes (relaxing the frozen `plugin/crew/` rule, or inventing synthetic tasks) are not cheap and change what is measured;
+the 2-task run is the **accepted baseline**, published as per-task observations, never as a bucket verdict. 219 of the 256 rejects touch `plugin/crew/`, 9 have no tests, 7 have
 tests that are standalone scripts with no pytest node ids, and 21 fall under other reasons; every reject with its
 reason, the INDEX rows walked and the ambiguities in the procedure are in `tasks/selection-notes.md`. `validate --all`
 passes for both tasks (hidden tests fail at base, pass at reference, regression ids pass at both).
@@ -186,29 +194,25 @@ which is the terminal stop: the code is committed in the run repo, nothing is pu
 the config and a git identity in the container's environment; both are now in the arm file and the harness. It took
 141 s and 0.52 USD on the S task.
 
-**Blocker found: Codex's own sandbox cannot start in a Docker container on this host.** `review_run.py` runs
-`codex exec --json --sandbox read-only`; inside the container every Codex shell command fails with
-`bwrap: Failed to make / slave: Permission denied`, so Codex never reads the diff and the round is recorded
-`INCOMPLETE` (reviewer class, not refunded; a second `/crew:autopilot run` then stops at `split-check-unknown` because the
-INCOMPLETE round's `.crew/metrics.md` row is unreadable to the split check). Measured by hand:
+**Blocker found, resolved 2026-10-20 (owner decision): Codex's own sandbox cannot start in a Docker container on this host.**
+`review_run.py` runs `codex exec --json --sandbox read-only`; inside the container every Codex shell command failed with
+`bwrap: Failed to make / slave: Permission denied`, so Codex never read the diff and the round was recorded `INCOMPLETE`.
+Measured by hand:
 
 | Container options (uid 1000, `--cap-drop ALL`, `no-new-privileges`) | Result |
 |---|---|
 | Docker default seccomp | `unshare --user` is denied |
-| `seccomp=unconfined` (what the harness uses) | `unshare --user` works; making `/` a slave mount is denied (Docker's default AppArmor profile is the likely cause; not isolated further) |
+| `seccomp=unconfined` | `unshare --user` works; making `/` a slave mount is denied (Docker's default AppArmor profile is the likely cause; not isolated further) |
 | `seccomp=unconfined` + `apparmor=unconfined` | `/proc/self/uid_map` write denied (the host's `kernel.apparmor_restrict_unprivileged_userns = 1`) |
 | `+ cap-add SYS_ADMIN` | no change |
 | Codex `use_legacy_landlock` | "the filesystem sandbox requires bubblewrap" |
 
-Making it work needs a container that is root with `CAP_SYS_ADMIN` and no AppArmor profile, or a host AppArmor change.
-Neither was done: the plan says that if crew cannot run unattended with the pinned config or the container cannot hold
-Codex, the design changes and the spec is amended, with no workaround inside this ticket.
-
-For the owner's decision, evidence only: a `codex` wrapper earlier on `PATH` in the container that rewrites
-`--sandbox read-only` to `--sandbox danger-full-access` (the container is then the sandbox) made the whole crew arm work:
-the shimmed run (the one just described) ran spec, plan, implement, one Codex review (`CLEAN`, 0 BLOCK / 0 FIX / 0 NIT, `gpt-6-sol`), done, and the
-`ship` stop, in 141 s. Its cost is that the Codex reviewer is no longer held read-only (the container is the only
-boundary), which is a treatment difference from crew as shipped. It is not in the harness.
+Resolution: the `codex` shim (see Isolation), spec "Amendment 2026-10-20". A first shimmed run (with `seccomp=unconfined`)
+ran spec, plan, implement, one Codex review (`CLEAN`, `gpt-6-sol`), done and the `ship` stop in 141 s. After the
+amendment the image was rebuilt, `canary.sh` passed, and `spike/run-spike.py` was re-run through the harness with
+`seccomp=unconfined` removed (default seccomp and AppArmor): baseline scored (3 `/code-review` cycles, 0.19 USD), crew
+scored with 1 review cycle, 0 incomplete attempts, 0.95 USD Claude list price, Codex 213,887 input / 1,106 output tokens
+(unpriced, so the crew run's `costUsd` is UNKNOWN), 0 escaped defects, 274 s.
 
 Codex usage as `review_run.py` leaves it in `codex-events.jsonl` (the same five keys the spec quoted):
 `{"type":"turn.completed","usage":{"input_tokens":102324,"cached_input_tokens":76800,"cache_write_input_tokens":0,"output_tokens":633,"reasoning_output_tokens":159}}`.

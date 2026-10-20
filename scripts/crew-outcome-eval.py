@@ -591,10 +591,8 @@ def arm_docker_argv(docker, run, name, net, user, proxy_addr, inner):
     uid, gid = user
     return [docker, "run", "--rm", "--name", name, "--network", net, "--user", f"{uid}:{gid}",
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-            # Codex's own sandbox needs unprivileged user namespaces, which Docker's default
-            # seccomp profile denies (spike: "the sandbox cannot create a namespace"). The
-            # boundary that matters here is the mounts, the internal network and the proxy.
-            "--security-opt", "seccomp=unconfined",
+            # No seccomp or AppArmor relaxation: the image's `codex` shim runs Codex with
+            # `--sandbox danger-full-access`, so this container is the only boundary.
             "-v", f"{run['repo']}:/run/repo", "-v", f"{run['home']}:/run/home",
             "-e", "HOME=/run/home", "-e", "CLAUDE_CONFIG_DIR=/run/home/.claude",
             "-e", "CODEX_HOME=/run/home/.codex", "-e", f"HTTPS_PROXY=http://{proxy_addr}",

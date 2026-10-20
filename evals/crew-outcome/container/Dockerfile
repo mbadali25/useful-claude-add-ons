@@ -11,6 +11,9 @@ RUN apt-get update \
 RUN npm install -g @anthropic-ai/claude-code@2.1.303 @openai/codex@0.162.1 \
  && npm cache clean --force
 
+COPY codex-shim.sh /opt/eval-shim/codex
+ENV PATH=/opt/eval-shim:$PATH
+
 # The base image's `node` user is uid 1000. Claude Code refuses
 # --dangerously-skip-permissions as root, so an arm never runs as root.
 USER node

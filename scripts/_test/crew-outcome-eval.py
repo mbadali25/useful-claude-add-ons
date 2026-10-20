@@ -719,13 +719,34 @@ def case_every_cli_json_is_kept_beside_the_run(tmp):
     return len(kept) == 2 and kept[0].endswith(".json"), kept
 
 
-def case_the_argv_carries_git_identity_and_the_userns_seccomp_option(tmp):
+def case_the_argv_carries_git_identity_and_the_isolation_options(tmp):
     run = {"repo": "/r/repo", "home": "/r/home", "proxylog": "/r/log", "dir": "/r"}
     argv = eval_mod.arm_docker_argv("/usr/bin/docker", run, "n", "net", ("1000", "1000"), "10.0.0.1:3128", ["x"])
     joined = " ".join(argv)
-    ok = ("GIT_AUTHOR_NAME=" in joined and "GIT_COMMITTER_EMAIL=" in joined and "seccomp=unconfined" in joined
-          and "--user 1000:1000" in joined)
+    mounts = [argv[i + 1] for i, a in enumerate(argv) if a == "-v"]
+    ok = ("GIT_AUTHOR_NAME=" in joined and "GIT_COMMITTER_EMAIL=" in joined and "--user 1000:1000" in joined
+          and "--cap-drop ALL" in joined and "no-new-privileges" in joined and "--privileged" not in joined
+          and "seccomp=unconfined" not in joined and "apparmor=unconfined" not in joined
+          and "--cap-add" not in joined and "--network net" in joined
+          and mounts == ["/r/repo:/run/repo", "/r/home:/run/home"])
     return ok, joined
+
+
+def case_the_codex_shim_rewrites_only_the_read_only_sandbox(tmp):
+    stub = os.path.join(tmp, "realcodex")
+    with open(stub, "w", newline="\n") as fh:
+        fh.write('#!/bin/sh\nfor a; do printf "%s\\n" "$a"; done\n')
+    os.chmod(stub, 0o755)
+    shim = os.path.join(REPO, "evals", "crew-outcome", "container", "codex-shim.sh")
+    env = dict(os.environ, CODEX_REAL=stub)
+    out = subprocess.run(["/bin/sh", shim, "exec", "--json", "--sandbox", "read-only", "-m", "a b", "-s", "read-only",
+                          "--sandbox=read-only", "--sandbox", "workspace-write", "read-only"],
+                         capture_output=True, text=True, env=env, check=False)
+    want = ["exec", "--json", "--sandbox", "danger-full-access", "-m", "a b", "-s", "danger-full-access",
+            "--sandbox=danger-full-access", "--sandbox", "workspace-write", "read-only"]
+    docker = open(os.path.join(REPO, "evals", "crew-outcome", "container", "Dockerfile")).read()
+    wired = "codex-shim.sh /opt/eval-shim/codex" in docker and "PATH=/opt/eval-shim:" in docker
+    return out.stdout.splitlines() == want and wired, (out.stdout, out.stderr, wired)
 
 
 def case_autopilot_stopped_only_on_a_readable_stop_0_keeps_going(tmp):
@@ -953,7 +974,8 @@ CASES = (
     ("must-allow: an exhausted paid failure keeps its spend as unscoredSpendUsd", case_an_exhausted_paid_failure_keeps_its_spend),
     ("must-allow: a session's cumulative CLI cost counts once", case_cli_cost_counts_each_session_once_not_cumulatively),
     ("must-allow: every CLI JSON is kept beside the run", case_every_cli_json_is_kept_beside_the_run),
-    ("must-allow: the argv carries a git identity and the user-namespace seccomp option", case_the_argv_carries_git_identity_and_the_userns_seccomp_option),
+    ("must-block: the argv carries a git identity, drops capabilities, mounts only repo and home, and has no unconfined seccomp or apparmor", case_the_argv_carries_git_identity_and_the_isolation_options),
+    ("must-allow: the codex shim rewrites only the read-only sandbox value, and the image puts it first on PATH", case_the_codex_shim_rewrites_only_the_read_only_sandbox),
     ("must-block: only a readable stop=0 keeps the crew arm going", case_autopilot_stopped_only_on_a_readable_stop_0_keeps_going),
     ("must-allow: a crew arm assigns a ticket, then resumes while autopilot says stop=0", case_a_crew_arm_assigns_a_ticket_then_resumes_while_autopilot_says_stop_0),
     ("must-block: a crew arm whose assign fails is unscorable", case_a_crew_arm_whose_assign_fails_is_unscorable),
