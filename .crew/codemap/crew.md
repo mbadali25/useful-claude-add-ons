@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@c1d365d72
+anchor: useful-claude-add-ons@9ba355d7c
 verified: 2026-10-20
 
 ## Re-derive provenance
@@ -5513,3 +5513,6 @@ past commits, not claims about the present file. No behaviour documented here ch
 
 
 **Re-anchored `a2755ab5a` -> `c1d365d72` on 2026-10-20 (L-0850 / PR #656 close: merge of origin/main `dd03907bb`, crew 1.2.58 re-set).** Per-path re-verify, citation by citation: every `path:line` into a file changed since `a2755ab5a` was re-mapped by diffing that file at the old anchor against HEAD. Two live citations moved: `plugin/crew/hooks/scripts/crew_shell.py:245` -> `:264` and `plugin/crew/hooks/scripts/crew_wave.py:787` -> `:792` (main landed changes above both). `crew-hook.sh` is now 339 lines (was 334: the `_armed` refactor, `7b7fe165b`); no other citation into it moved. The Hooks section already described the dispatcher and the 16 registrations, edited in the L-0850 lane; `hooks.json`, `crew_hook.py`, `crew-hook.ps1` and `crew_instructions.py` are unchanged since that edit, so their citations were not touched. JUDGEMENT: citations written as a bare file name (`autopilot.md:`, `plugin.json:`) sit only in the earlier re-anchor paragraphs above and were not re-mapped; they describe those moments and are not live claims. Not re-read word for word: the sections the lane did not change.
+
+
+**Re-anchored `c1d365d72` -> `9ba355d7c` on 2026-10-20 (L-0850 / PR #656 close: the docs and artifact refresh commit, owner waiver 2026-10-20).** `git diff 9ba355d7c~1 9ba355d7c` changes only docs, diagrams, codemap, rules and graph output; the one code-adjacent text is `plugin/crew/README.md` (+2 lines after line 366, inside section 25) and `SECURITY.md` (+4 lines after line 46). Every live `path:line` citation into those two files was checked: this note has none at or after those lines outside its re-anchor history paragraphs (whose lines describe past moments and are not re-mapped), and `plugin/crew/BUDGETS.md` only changed a count in place (line 11, line-neutral). No citation changed. NOT re-read word for word: prose claims whose cited lines did not move.
