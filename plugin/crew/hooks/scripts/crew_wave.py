@@ -823,8 +823,8 @@ def role_model(top, role, cfg=None):
 
 
 def _launch(top, slug, ticket, resume):
-    """(the `launch` line, the lane-prompt argv), both from this ticket and this reserved
-    round: `start --json` carries the argv, so the two cannot disagree."""
+    """(the `launch` line, the lane-prompt argv, the pinned model or None), all from this
+    ticket and this reserved round: `start --json` carries the argv, so the two cannot disagree."""
     model, _ = role_model(top, "developer")
     argv = ["python3", _plain_path(os.path.join(SCRIPTS, "crew_wave.py")), "lane-prompt",
             "--root", _plain_path(top), "--set", slug, "--ticket", ticket]
@@ -832,7 +832,7 @@ def _launch(top, slug, ticket, resume):
         argv += ["--resume-round", str(resume)]
     command = " ".join(shlex.quote(word) for word in argv)
     launch = LAUNCH if model is None else LAUNCH[:-1] + f", model: {model})"
-    return f"launch {ticket}: {launch} prompt: the output of `{command}`", argv
+    return f"launch {ticket}: {launch} prompt: the output of `{command}`", argv, model
 
 
 def _valid_receipts(receipts):
@@ -853,7 +853,8 @@ def start_path(top, slug):
 
 def start(root, slug):
     """`{"stop", "stopReason", "plan", "lines", "launches"}`; `launches` is
-    `[{"ticket", "argv"}]`, one per `launch` line in the same order. Writes a `pending` lane file
+    `[{"ticket", "argv"[, "model"]}]`, one per `launch` line in the same order (`model` only
+    when the developer role pins one, as the line's `model:` does). Writes a `pending` lane file
     for each new wave-1 lane and `start.json` (base commit, lanes, receipt
     kinds at start); prints one isolated launch per lane to (re)launch. Never
     reserves a review round, places a worktree or launches an agent."""
@@ -926,9 +927,9 @@ def start(root, slug):
             write_lane(top, slug, ticket, lane)
         if ticket not in lanes:
             lanes.append(ticket)
-        text, argv = _launch(top, slug, ticket, _reserved_round(top, ticket))
+        text, argv, model = _launch(top, slug, ticket, _reserved_round(top, ticket))
         lines.append(text)
-        launches.append({"ticket": ticket, "argv": argv})
+        launches.append(dict({"ticket": ticket, "argv": argv}, **({"model": model} if model else {})))
     _write_json(start_path(top, slug), {"base": record.get("base") or base, "lanes": lanes,
                                         "later": result["later"], "receipts": receipts})
     lines += [f"later: {ticket} - {why}" for ticket, why in result["later"]]

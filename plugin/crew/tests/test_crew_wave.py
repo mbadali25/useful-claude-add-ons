@@ -1884,3 +1884,16 @@ def test_lane_prompt_carries_ticket_id(tmp_path):
     assert (found, all(pattern.match(lines[0]) for lines in found.values()),
             all(text.splitlines()[0] == f"Ticket ID: {t}" for t, text in got.items())) == (
         {"L-0101": ["Ticket ID: L-0101"], "L-0102": ["Ticket ID: L-0102"]}, True, True)
+
+
+def test_start_json_launch_carries_the_pinned_model_only_when_pinned(tmp_path):
+    pinned = _repo(tmp_path / "a", raw=json.dumps({"scope": {"mode": "block"}, "dev": {"roles": {
+        "developer": {"provider": "claude", "model": "claude-sonnet-5-5"}}}}))
+    plain = _repo(tmp_path / "b")
+    got = []
+    for root in (pinned, plain):
+        _wave(root, [_row("T-1")], [("T-1", ("src/**",))])
+        _set(root, "s", ["T-1"])
+        got.append(json.loads(_cli("start", "--root", root, "--set", "s", "--json").stdout)["launches"][0])
+
+    assert (got[0].get("model"), "model" in got[1]) == ("claude-sonnet-5-5", False)

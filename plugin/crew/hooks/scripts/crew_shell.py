@@ -50,6 +50,7 @@ PYTHONS = ("python3", "python")
 
 PWSH7 = "C:/Program Files/PowerShell/7/pwsh.exe"
 GITBASH_DEFAULT = "C:/Program Files/Git/bin/bash.exe"
+STRICT_RUN_TIMEOUT = 5
 
 _DRIVE = re.compile(r"^([A-Za-z]):(?:[\\/](.*))?$")
 _GITBASH_DRIVE = re.compile(r"^/([A-Za-z])(?:/(.*))?$")
@@ -235,10 +236,25 @@ def _is_launcher(path):
     return "/windows/system32/" in norm or "/windowsapps/" in norm
 
 
-def resolve_gitbash(runner=None, exists=os.path.isfile, which=shutil.which):
+def _runs_clean(path, runner):
+    """True when `path -c 'exit 0'` exits 0 within STRICT_RUN_TIMEOUT; a run that cannot start,
+    times out or exits otherwise is False (never believed unrun)."""
+    try:
+        code, _, _ = runner([path, "-c", "exit 0"], STRICT_RUN_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return code == 0
+
+
+def resolve_gitbash(runner=None, exists=os.path.isfile, which=shutil.which, strict=False):
     """Git Bash's `bash.exe`, absolutely: three levels above `git --exec-path`
     plus `bin/bash.exe`, else the default install path, else a PATH `bash`
-    that is not WSL's launcher. `(None, reason)` naming every path tried."""
+    that is not WSL's launcher. `(None, reason)` naming every path tried.
+
+    `strict=True` (the hook dispatcher's, L-0727) takes only those two derived
+    candidates: never a PATH `bash`, never a `usr/bin/bash.exe` (the MSYS bash
+    that answers 127 for Git-for-Windows scripts), and only one that runs
+    `-c 'exit 0'`. The default is unchanged."""
     runner = runner or capture
     try:
         # The git which() resolves (L-1508): CreateProcess would skip a git.cmd.
@@ -254,8 +270,13 @@ def resolve_gitbash(runner=None, exists=os.path.isfile, which=shutil.which):
     tried = []
     for path in candidates:
         tried.append(path)
-        if not _is_launcher(path) and exists(path):
-            return path, f"Git Bash at {path}"
+        if _is_launcher(path) or not exists(path):
+            continue
+        if strict and ("/usr/bin/" in path.replace("\\", "/").lower() or not _runs_clean(path, runner)):
+            continue
+        return path, f"Git Bash at {path}"
+    if strict:
+        return None, "Git Bash not found (strict; tried " + ", ".join(tried) + ")"
     found = which("bash")
     if found:
         tried.append(found)

@@ -93,6 +93,8 @@ def frontmatter(path):
 AGENTS = {os.path.basename(f)[:-3] for f in glob.glob("agents/*.md")}
 COMMANDS = {os.path.basename(f)[:-3] for f in glob.glob("commands/*.md")}
 SKILLS = {os.path.basename(os.path.dirname(f)) for f in glob.glob("skills/*/SKILL.md")}
+# A plugin workflow (workflows/<name>.js) is run as /crew:<name>, so a command may name it.
+WORKFLOWS = {os.path.basename(f)[:-3] for f in glob.glob("workflows/*.js")}
 
 # Roles that are deliberately NOT on the default tier. Anything absent from this
 # map must declare `sonnet`; see check_agents for why each exception exists.
@@ -231,7 +233,7 @@ def check_commands():
 
         for match in re.finditer(r"`?crew:([a-z-]+)`?", body):
             target = match.group(1)
-            if target in COMMANDS or target in SKILLS or target in AGENTS:
+            if target in COMMANDS or target in SKILLS or target in AGENTS or target in WORKFLOWS:
                 continue
             bad(f"{name}: references crew:{target}, which is not an agent, command or skill")
 

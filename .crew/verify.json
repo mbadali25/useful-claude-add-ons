@@ -1015,7 +1015,16 @@
       "seconds": 2,
       "run": ["python3 -m pytest plugin/crew/tests/test_done_check2_gate.py -q"],
       "reach": "local",
-      "why": "L-0710 (feature half, review round 2 FIX, owner ruling 2026-10-08): /crew:done check 2's local path runs review_gate.gate_state and needs GATE VERIFIED, because an empty verify record plus a marker at HEAD both survive an uncommitted... Full rationale: docs/crew/verify-rationale.md#done-check2-gate" }
+      "why": "L-0710 (feature half, review round 2 FIX, owner ruling 2026-10-08): /crew:done check 2's local path runs review_gate.gate_state and needs GATE VERIFIED, because an empty verify record plus a marker at HEAD both survive an uncommitted... Full rationale: docs/crew/verify-rationale.md#done-check2-gate" },
+    { "id": "crew-wave-workflow",
+      "paths": ["plugin/crew/workflows/**", "plugin/crew/hooks/scripts/crew_wave.py",
+                "plugin/crew/tests/test_crew_wave_workflow.py", "plugin/crew/tests/workflow_stub.mjs",
+                "plugin/crew/tests/test_autopilot_frozen.py", "plugin/crew/tests/autopilot_frozen.json",
+                "plugin/crew/tests/fixtures/workflow_worktree_payload.json"],
+      "seconds": 10,
+      "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_crew_wave_workflow.py plugin/crew/tests/test_autopilot_frozen.py plugin/crew/tests/test_crew_wave.py -q"],
+      "reach": "local",
+      "why": "L-0727: wave.js runs under node against a stub runtime (a lost lane is unknown, concurrency <= maxLanes, isolation worktree); 17 crew_autopilot*.py frozen by hash. 289 passed in 4s with pytest_rule on 4 CPUs, 2026-10-19." }
   ],
 
   "default": ["bash _verify/smoke.sh"],
