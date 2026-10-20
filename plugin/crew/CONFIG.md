@@ -907,7 +907,7 @@ launches nothing. A plugin cannot change the session model, so where the main se
 coordinates, the pin has no effect unless the owner sets the session model.
 
 `dev.roles.developer` with `provider: claude` and a `model` is now used for wave lanes:
-`crew_wave.py start` writes `Agent(subagent_type: general-purpose, isolation: worktree, model: <id>)`.
+`crew_wave.py start` writes `Agent(subagent_type: general-purpose, isolation: worktree, model: <id>)`. `crew_wave.py start --json` carries the same pin as `launches[].model`, and the `wave` workflow (`/crew:wave`) passes it as the lane agent's `model`.
 Only an explicit `dev.roles.<role>.model` counts: a `dev.claude.model` block default is not a pin and
 changes nothing. Unset, a non-claude provider, or a model that is not a claude id or alias (`gpt-6`
 under `provider: claude`) leaves the launch line byte-identical to 1.2.37. A role pin with a claude

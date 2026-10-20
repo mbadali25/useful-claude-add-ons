@@ -86,6 +86,8 @@ MARKER = "crew:generated"
 NOTE = "note: "  # reported, never drift
 KEEP_START, KEEP_END = "<!-- crew:keep:start -->", "<!-- crew:keep:end -->"
 SCRIPT = "crew-context"
+# Every script name a generated .codex/hooks.json command may run: today's, and the dispatcher's.
+GENERATED_SCRIPTS = (SCRIPT, "crew-hook")
 VAULT_MATCHER = "mcp__.*(obsidian|vault|basic[-_]memory).*"
 
 # The one table both harnesses' registrations are rendered from. `codex`
@@ -464,8 +466,9 @@ project_doc_fallback_filenames = ["CLAUDE.md"]
 
 def _codex_hooks_generated(text):
     """JSON has no comment to carry the marker, so a hooks.json is ours when
-    it parses and every hook in it runs crew-context -- which is all the
-    generator ever writes. A file with anything else in it is someone's."""
+    it parses and every hook in it runs crew-context, or crew-hook (the single
+    dispatcher that replaces it, L-0727) -- which is all the generator ever
+    writes. A file with anything else in it is someone's."""
     try:
         data = json.loads(text)
     except (TypeError, ValueError):
@@ -479,8 +482,9 @@ def _codex_hooks_generated(text):
             hooks = entry.get("hooks") if isinstance(entry, dict) else None
             for hook in hooks if isinstance(hooks, list) else [None]:
                 commands.append(hook.get("command") if isinstance(hook, dict) else None)
-    return bool(commands) and all(isinstance(c, str) and f"/hooks/scripts/{SCRIPT}." in c
-                                  for c in commands)
+    return bool(commands) and all(
+        isinstance(c, str) and any(f"/hooks/scripts/{name}." in c for name in GENERATED_SCRIPTS)
+        for c in commands)
 
 
 def codex(root, plugin_root, check=False, force=False):
