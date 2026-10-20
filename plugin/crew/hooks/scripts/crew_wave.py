@@ -822,9 +822,14 @@ def role_model(top, role, cfg=None):
     return model.lower(), ""
 
 
+class _Launch(str):
+    """A `launch` line that also carries the lane-prompt `argv` and the pinned `model` (or
+    None) it was built from, so `start --json` lists exactly the lines it prints."""
+    argv = ()
+    model = None
+
+
 def _launch(top, slug, ticket, resume):
-    """(the `launch` line, the lane-prompt argv, the pinned model or None), all from this
-    ticket and this reserved round: `start --json` carries the argv, so the two cannot disagree."""
     model, _ = role_model(top, "developer")
     argv = ["python3", _plain_path(os.path.join(SCRIPTS, "crew_wave.py")), "lane-prompt",
             "--root", _plain_path(top), "--set", slug, "--ticket", ticket]
@@ -832,7 +837,9 @@ def _launch(top, slug, ticket, resume):
         argv += ["--resume-round", str(resume)]
     command = " ".join(shlex.quote(word) for word in argv)
     launch = LAUNCH if model is None else LAUNCH[:-1] + f", model: {model})"
-    return f"launch {ticket}: {launch} prompt: the output of `{command}`", argv, model
+    line = _Launch(f"launch {ticket}: {launch} prompt: the output of `{command}`")
+    line.argv, line.model = argv, model
+    return line
 
 
 def _valid_receipts(receipts):
@@ -927,9 +934,9 @@ def start(root, slug):
             write_lane(top, slug, ticket, lane)
         if ticket not in lanes:
             lanes.append(ticket)
-        text, argv, model = _launch(top, slug, ticket, _reserved_round(top, ticket))
-        lines.append(text)
-        launches.append(dict({"ticket": ticket, "argv": argv}, **({"model": model} if model else {})))
+        lines.append(_launch(top, slug, ticket, _reserved_round(top, ticket)))
+        launches.append(dict({"ticket": ticket, "argv": list(lines[-1].argv)},
+                             **({"model": lines[-1].model} if lines[-1].model else {})))
     _write_json(start_path(top, slug), {"base": record.get("base") or base, "lanes": lanes,
                                         "later": result["later"], "receipts": receipts})
     lines += [f"later: {ticket} - {why}" for ticket, why in result["later"]]

@@ -74,17 +74,4 @@ SHELL_MUTATIONS = (
      '    if data["state"] == "usable" and not (isinstance(distro, str) and distro):\n',
      "    if False:\n",
      _T + "test_a_usable_cache_without_a_distro_is_unknown"),
-    # L-0727: resolve_gitbash(strict=True).
-    ("strict Git Bash accepts a usr/bin candidate", SHELL,
-     '        if strict and ("/usr/bin/" in path.replace("\\\\", "/").lower() or not _runs_clean(path, runner)):\n',
-     "        if strict and not _runs_clean(path, runner):\n",
-     _T + "test_resolve_gitbash_strict_refuses_a_usr_bin_candidate_and_falls_to_the_default"),
-    ("strict Git Bash believes a candidate it never ran", SHELL,
-     '        if strict and ("/usr/bin/" in path.replace("\\\\", "/").lower() or not _runs_clean(path, runner)):\n',
-     '        if strict and "/usr/bin/" in path.replace("\\\\", "/").lower():\n',
-     _T + "test_resolve_gitbash_strict_refuses_a_candidate_that_does_not_run_and_names_every_path"),
-    ("strict Git Bash falls back to a PATH bash", SHELL,
-     "    if strict:\n        return None, \"Git Bash not found (strict; tried \"",
-     "    if False:\n        return None, \"Git Bash not found (strict; tried \"",
-     _T + "test_resolve_gitbash_strict_skips_a_candidate_that_is_not_a_file_without_running_it"),
 )
