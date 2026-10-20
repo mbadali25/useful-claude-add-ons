@@ -33,11 +33,13 @@ import re
 import shutil
 import socket
 import statistics
+import stat
 import subprocess
 import sys
 import tarfile
 import tempfile
 import time
+import uuid
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -66,10 +68,15 @@ TEST_TIMEOUT_SECONDS = 120
 PYTEST_GRADABLE_EXITS = (0, 1)
 DEFAULT_MAX_COST_USD = 150.0
 DEFAULT_FIRST_RUN_ESTIMATE_USD = 25.0
-PROXY_PORT = 3128
+CONTAINER_PROXY = "http://127.0.0.1:3128"
+EVAL_RUN = "/opt/eval-shim/eval-run"
 MIN_HIDDEN_LINE = 60
 HIDDEN_LINES_TO_FLAG = 3
 RUN_UID = "1000"
+# Every container the harness starts (an arm, or grading) gets these and nothing more.
+ISOLATION_OPTIONS = ("--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "1024",
+                     "--memory", "6g")
+MAX_ARM_FILE_BYTES = 64 * 1024 * 1024
 GIT_IDENTITY = ("-c", "user.name=crew-outcome-eval", "-c", "user.email=eval@invalid")
 
 # Codex list prices, USD per million tokens, per model. A model with no row makes
@@ -94,6 +101,17 @@ def which(name):
     if not path:
         fail(f"{name} not found on PATH (set CREW_OUTCOME_{name.upper()} to its absolute path)")
     return os.path.abspath(path)
+
+
+def open_arm_file(path):
+    """Open a file the arm could have written, for reading. A FIFO or device would
+    hang or mislead the host and a huge file would be read whole, so anything that
+    is not a regular file under MAX_ARM_FILE_BYTES is an OSError (callers turn that
+    into UNKNOWN or a contamination reason, never into a clean reading)."""
+    info = os.lstat(path)
+    if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_ARM_FILE_BYTES:
+        raise OSError(f"{path}: not a regular file of at most {MAX_ARM_FILE_BYTES} bytes")
+    return open(path, encoding="utf-8", errors="replace")  # noqa: SIM115 - returned to a with-block
 
 
 def read_json(path):
@@ -150,6 +168,9 @@ def load_task(task_dir):
     for key in ("regressionInventory", "gradingFiles"):
         if not isinstance(task[key], list) or not all(isinstance(i, str) and i for i in task[key]):
             fail(f"{task['name']}: {key} must be a list of non-empty strings")
+    for rel in task["gradingFiles"] + [i.split("::", 1)[0] for i in task["regressionInventory"]]:
+        if os.path.isabs(rel) or ".." in rel.replace("\\", "/").split("/"):
+            fail(f"{task['name']}: {rel!r} must be a path inside the repository")
     for rel in task["gradingFiles"]:
         if not os.path.isfile(frozen_path(task_dir, rel)):
             fail(f"{task['name']}: grading file {rel} has no frozen copy ({rel}.frozen) under grading/")
@@ -219,6 +240,23 @@ def reference_reachable(repo, sha):
     return git("cat-file", "-e", sha + "^{commit}", cwd=repo, check=False).returncode == 0
 
 
+def place(repo, rel, source):
+    """Copy `source` to repo/rel without following any symlink the arm planted on
+    the way: a link on the path (or at the destination) is removed first, so the
+    write lands inside the copy."""
+    here = repo
+    parts = rel.replace("\\", "/").split("/")
+    for part in parts[:-1]:
+        here = os.path.join(here, part)
+        if os.path.islink(here):
+            os.unlink(here)
+        os.makedirs(here, exist_ok=True)
+    dest = os.path.join(here, parts[-1])
+    if os.path.islink(dest):
+        os.unlink(dest)
+    shutil.copyfile(source, dest)
+
+
 def overlay(task, repo, base_tree, hidden):
     """Put the frozen grading set into `repo`. `hidden` False is the regression
     view: the regression inventory's test files come from the base tree (a
@@ -231,27 +269,36 @@ def overlay(task, repo, base_tree, hidden):
         for rel in keep:
             src = os.path.join(base_tree, rel)
             if os.path.isfile(src):
-                dest = os.path.join(repo, rel)
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                shutil.copyfile(src, dest)
+                place(repo, rel, src)
     for rel in task["gradingFiles"]:
         if not hidden and rel in keep:
             continue
-        dest = os.path.join(repo, rel)
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        shutil.copyfile(frozen_path(task["dir"], rel), dest)
+        place(repo, rel, frozen_path(task["dir"], rel))
 
 
-def run_tests(task, repo, ids):
+def grade_docker_argv(docker, name, user, repo, command):
+    """The `docker run` that grades one copy of a run repo. The copy was written by
+    the arm, so its code runs here and not on the host: no network, the same
+    capability, user and resource limits as an arm, and the copy as the only mount."""
+    uid, gid = user
+    return [docker, "run", "--rm", "--name", name, "--network", "none", "--user", f"{uid}:{gid}",
+            *ISOLATION_OPTIONS, "-v", f"{repo}:/run/repo", "-w", "/run/repo",
+            "-e", "HOME=/tmp", "-e", "PYTHONDONTWRITEBYTECODE=1", IMAGE, *command]
+
+
+def run_tests(task, repo, ids, docker=None):
     """{test id: status} for the expected `ids`, by `-rA` lines; an id with no
-    line (not collected, deleted, crashed run) is MISSING. Only PASSED passes."""
-    cmd = [sys.executable if task["testCommand"][0] in ("python3", "python") else task["testCommand"][0],
-           *task["testCommand"][1:]]
-    env = {k: v for k, v in os.environ.items() if k in ("PATH", "TMPDIR", "LANG", "LC_ALL")}
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    line (not collected, deleted, crashed run) is MISSING. Only PASSED passes.
+    The test command runs in the eval image, never on the host."""
+    docker = docker or which("docker")
+    uid, gid, chown = container_user()
+    if chown:
+        subprocess.run(["/bin/chown", "-R", f"{uid}:{gid}", repo], check=False, capture_output=True)
+    name = f"crew-outcome-grade-{os.getpid()}-{uuid.uuid4().hex[:10]}"
+    argv = grade_docker_argv(docker, name, (uid, gid), repo, task["testCommand"])
     try:
-        out = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False, env=env,
-                             stdin=subprocess.DEVNULL, timeout=TEST_TIMEOUT_SECONDS)
+        out = subprocess.run(argv, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL,
+                             timeout=TEST_TIMEOUT_SECONDS)
         text = out.stdout
         if out.returncode not in PYTEST_GRADABLE_EXITS:
             # pytest exits 0 (all passed) or 1 (some failed) for a run that finished; 2 (interrupted),
@@ -259,6 +306,7 @@ def run_tests(task, repo, ids):
             # trusted even if it printed PASSED lines first (GEN-01: could not tell is not clean).
             text = ""
     except subprocess.TimeoutExpired as exc:
+        subprocess.run([docker, "rm", "-f", name], capture_output=True, check=False)
         text = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
     status = {}
     lines = [ln.rstrip("\n") for ln in text.splitlines()]
@@ -273,7 +321,7 @@ def run_tests(task, repo, ids):
     return status
 
 
-def graded_status(task, repo, base_tree, tmp):
+def graded_status(task, repo, base_tree, tmp, docker=None):
     """({regression id: status}, {hidden id: status}) from two copies of `repo`:
     the regression view and the full grading set (see `overlay`)."""
     out = []
@@ -281,24 +329,24 @@ def graded_status(task, repo, base_tree, tmp):
         copy = os.path.join(tmp, "hidden" if hidden else "regression")
         shutil.copytree(repo, copy, symlinks=True, ignore=shutil.ignore_patterns(".git"))
         overlay(task, copy, base_tree, hidden)
-        out.append(run_tests(task, copy, ids))
+        out.append(run_tests(task, copy, ids, docker))
     return out[0], out[1]
 
 
-def grade(task, repo, source_repo):
-    """Grade a run repo outside the container, on copies of it: every expected
-    id must report PASSED."""
+def grade(task, repo, source_repo, docker=None):
+    """Grade a run repo on copies of it, in a fresh no-network container (the arm's
+    code never runs on the host): every expected id must report PASSED."""
     with tempfile.TemporaryDirectory(prefix="crew-outcome-grade.") as tmp:
         base_tree = os.path.join(tmp, "base")
         export_tree(source_repo, task["base"], base_tree)
-        regression, hidden = graded_status(task, repo, base_tree, tmp)
+        regression, hidden = graded_status(task, repo, base_tree, tmp, docker)
     escaped = [name for name, ids in task["defects"].items() if any(hidden[i] != "PASSED" for i in ids)]
     failed = [i for i in task["regressionInventory"] if regression[i] != "PASSED"]
     return {"escapedDefects": len(escaped), "defectsTotal": len(task["defects"]),
             "escapedDefectNames": escaped, "regressionTestsFailed": len(failed)}
 
 
-def validate_task(task, source_repo):
+def validate_task(task, source_repo, docker=None):
     """Refuse a task whose hidden tests pass at base or fail at reference, whose
     regression inventory does not pass at base or at reference, or whose base or
     reference sha is not resolvable in the source repository."""
@@ -313,7 +361,7 @@ def validate_task(task, source_repo):
             init_repo(tree)
             scratch = os.path.join(tmp, label + "-scratch")
             os.makedirs(scratch)
-            regression, hidden = graded_status(task, tree, tree, scratch)
+            regression, hidden = graded_status(task, tree, tree, scratch, docker)
             bad = [i for i in task["regressionInventory"] if regression[i] != "PASSED"]
             if bad:
                 problems.append(f"{task['name']}: regression tests do not pass at {label}: {', '.join(bad)}")
@@ -349,6 +397,12 @@ def claude_usage(home):
         files.extend(crew_metrics._session_files(os.path.join(projects, slug), errors))
     if errors or not files:
         return UNKNOWN, UNKNOWN, ["transcripts cannot be listed" if errors else "no transcripts"]
+    for path, _parent in files:
+        try:
+            with open_arm_file(path):
+                pass
+        except OSError:
+            return UNKNOWN, UNKNOWN, [f"{os.path.basename(path)} is not a readable transcript"]
     messages = {}
     named_agents, have_agents = set(), set()
     for path, parent in files:
@@ -377,7 +431,7 @@ def subagent_ids(path):
     """The agent ids a main transcript's tool results name."""
     found = set()
     try:
-        with open(path, encoding="utf-8", errors="replace") as fh:
+        with open_arm_file(path) as fh:
             for line in fh:
                 if '"agentId"' not in line:
                     continue
@@ -412,7 +466,7 @@ def codex_usage(repo, home, model):
     turns = 0
     for path in events:
         try:
-            with open(path, encoding="utf-8") as fh:
+            with open_arm_file(path) as fh:
                 for line in fh:
                     line = line.strip()
                     if not line:
@@ -479,9 +533,11 @@ def contamination(task, home, repo, proxy_log, arm, source_repo):
     hits = set()
     for path in texts:
         try:
-            with open(path, encoding="utf-8", errors="replace") as fh:
+            with open_arm_file(path) as fh:
                 body = fh.read()
         except OSError:
+            if "unreadable arm file" not in reasons:
+                reasons.append("unreadable arm file")
             continue
         for needle, label in needles.items():
             if needle in body and label not in reasons:
@@ -618,64 +674,63 @@ def container_user():
     return str(os.geteuid()), str(os.getegid()), False
 
 
-def arm_docker_argv(docker, run, name, net, user, proxy_addr, inner):
+def arm_docker_argv(docker, run, name, user, inner):
     """The `docker run` for one arm invocation. The only mounts are this run's
-    repo and homes: the host checkout, the task store and earlier runs are not
-    among them (the canary proves they are not visible). The network is
-    `--internal`; the only way out is the allowlisting proxy at `proxy_addr`."""
+    repo and home and the proxy's socket directory: the host checkout, the task
+    store and earlier runs are not among them (the canary proves they are not
+    visible). `--network none`: the container has a loopback and nothing else, so
+    the host's own services (ssh, a docker API, a database) are not reachable;
+    the only way out is `eval-run`, which forwards 127.0.0.1:3128 to the
+    allowlisting proxy's unix socket."""
     uid, gid = user
-    return [docker, "run", "--rm", "--name", name, "--network", net, "--user", f"{uid}:{gid}",
-            "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+    return [docker, "run", "--rm", "--name", name, "--network", "none", "--user", f"{uid}:{gid}",
+            *ISOLATION_OPTIONS,
             # No seccomp or AppArmor relaxation: the image's `codex` shim runs Codex with
             # `--sandbox danger-full-access`, so this container is the only boundary.
             "-v", f"{run['repo']}:/run/repo", "-v", f"{run['home']}:/run/home",
+            "-v", f"{run['proxysock']}:/run/proxy",
             "-e", "HOME=/run/home", "-e", "CLAUDE_CONFIG_DIR=/run/home/.claude",
-            "-e", "CODEX_HOME=/run/home/.codex", "-e", f"HTTPS_PROXY=http://{proxy_addr}",
+            "-e", "CODEX_HOME=/run/home/.codex", "-e", f"HTTPS_PROXY={CONTAINER_PROXY}",
             "-e", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", "-e", "DISABLE_AUTOUPDATER=1",
             "-e", "GIT_AUTHOR_NAME=crew-outcome-eval", "-e", "GIT_AUTHOR_EMAIL=eval@invalid",
             "-e", "GIT_COMMITTER_NAME=crew-outcome-eval", "-e", "GIT_COMMITTER_EMAIL=eval@invalid",
-            "-w", "/run/repo", IMAGE, *inner]
+            "-w", "/run/repo", IMAGE, EVAL_RUN, *inner]
 
 
-class Network:
-    """The per-run `--internal` network and the allowlisting proxy, a host
-    process bound to that network's gateway address (this host forwards no
-    container traffic, and a proxy in a container would need egress). Both are
-    removed on exit; the proxy's decisions are in <run>/proxylog/proxy.jsonl."""
+class Proxy:
+    """The allowlisting proxy for one run: a host process listening on a unix
+    socket in the run's proxysock directory (mounted into the arm container as
+    /run/proxy). The container has no network at all; this socket is its only
+    way out. The proxy's decisions are in <run>/proxylog/proxy.jsonl."""
 
-    def __init__(self, docker, run, container_dir, tag, port=PROXY_PORT):
-        self.docker, self.run, self.container_dir, self.port = docker, run, container_dir, port
-        self.net = f"crew-outcome-int-{tag}"
+    def __init__(self, run, container_dir):
+        self.run, self.container_dir = run, container_dir
+        self.sock = os.path.join(run["proxysock"], "proxy.sock")
         self.proc = None
-        self.gateway = None
-
-    @property
-    def addr(self):
-        return f"{self.gateway}:{self.port}"
 
     def __enter__(self):
-        sh(self.docker, "network", "create", "--internal", self.net)
-        self.gateway = sh(self.docker, "network", "inspect", self.net, "-f",
-                          "{{(index .IPAM.Config 0).Gateway}}").strip()
         log = os.path.join(self.run["proxylog"], "proxy.jsonl")
         # created empty here so that a missing log later means it was removed, not that nothing happened
         with open(log, "a", encoding="utf-8"):
             pass
         self.proc = subprocess.Popen(
             [sys.executable, os.path.join(self.container_dir, "proxy.py"),
-             os.path.join(self.container_dir, "proxy-allowlist.txt"), log, self.gateway, str(self.port)],
+             os.path.join(self.container_dir, "proxy-allowlist.txt"), log, self.sock],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
             if self.proc.poll() is not None:
                 break
+            probe = socket.socket(socket.AF_UNIX)
             try:
-                socket.create_connection((self.gateway, self.port), timeout=1).close()
+                probe.connect(self.sock)
                 return self
             except OSError:
                 time.sleep(0.1)
+            finally:
+                probe.close()
         self.__exit__()
-        return fail(f"the proxy did not start on {self.addr}")
+        return fail(f"the proxy did not start on {self.sock}")
 
     def __exit__(self, *_exc):
         if self.proc is not None:
@@ -684,7 +739,6 @@ class Network:
                 self.proc.wait(timeout=5)
             if self.proc.poll() is None:
                 self.proc.kill()
-        subprocess.run([self.docker, "network", "rm", self.net], capture_output=True, check=False)
         return False
 
 
@@ -695,9 +749,9 @@ def sh(*argv):
     return out.stdout
 
 
-def invoke(docker, run, net, name, inner, timeout):
+def invoke(docker, run, name, inner, timeout):
     """One arm invocation in the container. (exit code, stdout, timed_out)."""
-    argv = arm_docker_argv(docker, run, name, net.net, container_user()[:2], net.addr, inner)
+    argv = arm_docker_argv(docker, run, name, container_user()[:2], inner)
     try:
         out = subprocess.run(argv, capture_output=True, text=True, check=False, timeout=timeout,
                              stdin=subprocess.DEVNULL)
@@ -731,8 +785,15 @@ def strip_codex_auth(source, dest):
     # an unauthenticated api.openai.com call (spike: 401), so a placeholder stays;
     # it is useless anywhere, and auth.openai.com is not on the proxy allowlist.
     tokens["refresh_token"] = "refresh-token-removed"
-    data = {**data, "tokens": tokens}
-    write_private(dest, json.dumps(data))
+    # An allowlist, not a copy: no OPENAI_API_KEY and no other key the owner's file carries.
+    # last_refresh stays: without it Codex tries to refresh the login at auth.openai.com, which
+    # the proxy refuses (spike 2026-10-20). id_token stays because Codex needs it to read the
+    # account (it names the account and email: accepted, README Isolation).
+    kept = {k: tokens[k] for k in ("access_token", "id_token", "account_id", "refresh_token") if k in tokens}
+    out = {"auth_mode": data.get("auth_mode", "chatgpt"), "tokens": kept}
+    if "last_refresh" in data:
+        out["last_refresh"] = data["last_refresh"]
+    write_private(dest, json.dumps(out))
 
 
 def write_private(path, text):
@@ -749,8 +810,8 @@ def prepare_run(task, arm, source_repo, runs_dir, attempt, crew_plugin, env=None
     stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
     run_dir = os.path.join(os.path.abspath(runs_dir), f"{task['name']}-{arm['arm']}-a{attempt}-{stamp}-{os.getpid()}")
     run = {"dir": run_dir, "repo": os.path.join(run_dir, "repo"), "home": os.path.join(run_dir, "home"),
-           "proxylog": os.path.join(run_dir, "proxylog")}
-    for key in ("repo", "home", "proxylog"):
+           "proxylog": os.path.join(run_dir, "proxylog"), "proxysock": os.path.join(run_dir, "proxysock")}
+    for key in ("repo", "home", "proxylog", "proxysock"):
         os.makedirs(run[key])
     export_tree(source_repo, task["base"], run["repo"])
     init_repo(run["repo"])
@@ -848,7 +909,7 @@ def crew_rounds(repo):
         if not name.endswith(".json"):
             continue
         try:
-            with open(os.path.join(base, name), encoding="utf-8") as fh:
+            with open_arm_file(os.path.join(base, name)) as fh:
                 data = json.load(fh)
         except (OSError, ValueError):
             incomplete += 1
@@ -880,7 +941,7 @@ class Clock:
         return time.monotonic()
 
 
-def drive_arm(docker, run, net, task, arm, clock):
+def drive_arm(docker, run, task, arm, clock):
     """Run the arm's protocol. Returns {sessions, exit, cycles, incomplete,
     cliTotalCostUsd, failure} where failure is a harness/auth/container/API
     problem (the run is then unscorable) or None."""
@@ -899,7 +960,7 @@ def drive_arm(docker, run, net, task, arm, clock):
         if remaining <= 0:
             return None
         name = f"crew-outcome-arm-{os.path.basename(run['dir'])}-{len(out['sessions'])}"
-        code, text, timed_out = invoke(docker, run, net, name, cli_argv(arm, prompt, resume), remaining)
+        code, text, timed_out = invoke(docker, run, name, cli_argv(arm, prompt, resume), remaining)
         data = parse_cli_json(text)
         out["exit"] = code
         if data is None:
@@ -926,7 +987,7 @@ def drive_arm(docker, run, net, task, arm, clock):
     def shell(command):
         remaining = max(limit - (clock() - started), 1)
         name = f"crew-outcome-sh-{os.path.basename(run['dir'])}-{int(clock())}"
-        code, text, _timed = invoke(docker, run, net, name, ["/bin/bash", "-c", command], min(remaining, 600))
+        code, text, _timed = invoke(docker, run, name, ["/bin/bash", "-c", command], min(remaining, 600))
         return code, text
 
     if arm["arm"] == "crew":
@@ -979,9 +1040,8 @@ def run_once(ctx, task, arm, attempt, carried_cost=0.0):
     run = prepare_run(task, arm, ctx["source_repo"], ctx["runs_dir"], attempt, ctx["crew_plugin"], ctx.get("env"))
     clock = ctx.get("clock") or Clock()
     started = clock()
-    with Network(ctx["docker"], run, ctx["container_dir"], os.path.basename(run["dir"])[-24:].lower(),
-                 ctx.get("proxy_port", PROXY_PORT)) as net:
-        driven = drive_arm(ctx["docker"], run, net, task, arm, clock)
+    with Proxy(run, ctx["container_dir"]):
+        driven = drive_arm(ctx["docker"], run, task, arm, clock)
     wall = round(clock() - started, 1)
     tokens, claude_cost, models = claude_usage(run["home"])
     codex_model = arm.get("reviewer", {}).get("model") if arm["arm"] == "crew" else None
@@ -996,7 +1056,7 @@ def run_once(ctx, task, arm, attempt, carried_cost=0.0):
         status = "contaminated"
     else:
         status = "scored"
-    graded = grade(task, run["repo"], ctx["source_repo"]) if status != "unscorable" else {
+    graded = grade(task, run["repo"], ctx["source_repo"], ctx["docker"]) if status != "unscorable" else {
         "escapedDefects": None, "defectsTotal": len(task["defects"]), "regressionTestsFailed": None}
     return {"task": task["name"], "bucket": task["bucket"], "arm": arm["arm"], "attempt": attempt,
             "runStatus": status, "escapedDefects": graded["escapedDefects"],
@@ -1161,22 +1221,31 @@ def cmd_validate(args):
     return 0
 
 
-def canary_ok(results_path):
+def canary_ok(results_path, docker=None):
     path = os.path.join(os.path.dirname(os.path.abspath(results_path)), "canary.txt")
     try:
         with open(path, encoding="utf-8") as fh:
-            return CANARY_PASS in fh.read().splitlines()[-1:]
-    except (OSError, IndexError):
+            lines = fh.read().splitlines()
+    except OSError:
         return False
+    if not lines or CANARY_PASS not in lines[-1:]:
+        return False
+    if docker:
+        # the canary vouches for one image: its first line records the id it ran against
+        out = subprocess.run([docker, "image", "inspect", "-f", "{{.Id}}", IMAGE], capture_output=True, text=True,
+                             check=False, stdin=subprocess.DEVNULL)
+        return out.returncode == 0 and f"image={out.stdout.strip()}" in lines[0].split()
+    return True
 
 
 def cmd_run(args):
     arms = check_method(args.eval_dir)
     tasks = selected_tasks(args)
-    if not canary_ok(args.results):
-        fail("no passing canary: run evals/crew-outcome/container/canary.sh and keep its output as "
-             "canary.txt beside the results file")
-    ctx = {"docker": which("docker"), "source_repo": args.source_repo, "runs_dir": args.runs_dir,
+    docker = which("docker")
+    if not canary_ok(args.results, docker):
+        fail("no passing canary for the current image: run evals/crew-outcome/container/canary.sh and keep its "
+             "output as canary.txt beside the results file")
+    ctx = {"docker": docker, "source_repo": args.source_repo, "runs_dir": args.runs_dir,
            "results": args.results, "crew_plugin": args.crew_plugin,
            "container_dir": os.path.join(args.eval_dir, "container")}
     os.makedirs(args.runs_dir, exist_ok=True)

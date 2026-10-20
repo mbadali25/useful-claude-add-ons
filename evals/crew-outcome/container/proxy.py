@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Allowlisting CONNECT proxy for the L-0728 outcome eval arms.
 
-Usage: proxy.py <allowlist-file> <log-file> <bind-address> [port]
+Usage: proxy.py <allowlist-file> <log-file> <unix-socket-path>
+       proxy.py <allowlist-file> <log-file> <bind-address> <port>
 
-It runs on the HOST, bound to the arm network's gateway address only (the arm
-network is `--internal`: containers have no route out but can reach that
-address). A host process needs no container egress, which this host
-(net.ipv4.ip_forward = 0) does not give.
+It runs on the HOST. The harness gives it a unix socket in a directory that is
+mounted into the arm container, which has `--network none`: the socket is the
+container's only way out (container/eval-run forwards a loopback port to it).
+A host process needs no container egress, which this host
+(net.ipv4.ip_forward = 0) does not give, and a socket exposes none of the
+host's other listening services. The TCP form remains for the canary's checks.
 
 Only `CONNECT host:443` to an allowlisted host is tunnelled. Plain HTTP and any
 other CONNECT is answered 403. Every decision is appended to <log-file> as one
@@ -15,6 +18,7 @@ JSON line, so the grader can see which hosts an arm tried to reach.
 
 import asyncio
 import json
+import os
 import sys
 import time
 
@@ -96,8 +100,13 @@ def make_handler(hosts, log_path):
 
 async def main(argv):
     hosts = load_allowlist(argv[1])
-    port = int(argv[4]) if len(argv) > 4 else 3128
-    server = await asyncio.start_server(make_handler(hosts, argv[2]), argv[3], port)
+    if argv[3].startswith("/"):
+        if os.path.exists(argv[3]):
+            os.unlink(argv[3])
+        server = await asyncio.start_unix_server(make_handler(hosts, argv[2]), path=argv[3])
+        os.chmod(argv[3], 0o666)
+    else:
+        server = await asyncio.start_server(make_handler(hosts, argv[2]), argv[3], int(argv[4]))
     async with server:
         await server.serve_forever()
 

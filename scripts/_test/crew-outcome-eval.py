@@ -48,7 +48,7 @@ UNKNOWN = "UNKNOWN"
 DOCKER_STUB = '''#!PYTHON
 import json, os, subprocess, sys
 argv = sys.argv[1:]
-with open(os.environ["STUB_DOCKER_LOG"], "a", encoding="utf-8") as fh:
+with open(os.environ.get("STUB_DOCKER_LOG", os.devnull), "a", encoding="utf-8") as fh:
     fh.write(json.dumps(argv) + "\\n")
 if argv[:2] == ["network", "inspect"]:
     print("127.0.0.1")
@@ -65,13 +65,16 @@ if argv[:1] == ["run"] and "--rm" in argv:
             k, _, v = argv[i + 1].partition("=")
             env[k] = v
         i += 1
-    env["HOME"] = mounts["/run/home"]
-    env["CLAUDE_CONFIG_DIR"] = mounts["/run/home"] + "/.claude"
-    env["CODEX_HOME"] = mounts["/run/home"] + "/.codex"
     inner = argv[argv.index("crew-outcome-eval:1") + 1:]
+    if inner and inner[0] == "/opt/eval-shim/eval-run":
+        inner = inner[1:]
+    if "/run/home" in mounts:
+        env["HOME"] = mounts["/run/home"]
+        env["CLAUDE_CONFIG_DIR"] = mounts["/run/home"] + "/.claude"
+        env["CODEX_HOME"] = mounts["/run/home"] + "/.codex"
     if inner[0] == "/usr/local/bin/claude":
         inner[0] = os.environ["STUB_CLAUDE"]
-    else:
+    elif "/run/home" in mounts:
         inner = [part.replace("/run/home", mounts["/run/home"]) for part in inner]
     sys.exit(subprocess.run(inner, cwd=mounts["/run/repo"], env=env, check=False).returncode)
 sys.exit(0)
@@ -198,7 +201,8 @@ class Fix:
             {"claudeAiOauth": {"accessToken": "AT", "refreshToken": "RT-SECRET", "expiresAt": 9999999999999},
              "mcpOAuth": {"x": {"accessToken": "MCP-SECRET"}}}))
         write(os.path.join(self.codex_home, "auth.json"), json.dumps(
-            {"auth_mode": "chatgpt", "tokens": {"access_token": "AT", "refresh_token": "RT-SECRET", "id_token": "ID"}}))
+            {"auth_mode": "chatgpt", "OPENAI_API_KEY": "KEY-SECRET", "last_refresh": "2026-10-20T00:00:00Z",
+             "tokens": {"access_token": "AT", "refresh_token": "RT-SECRET", "id_token": "ID", "extra": "EXTRA-SECRET"}}))
         write(os.path.join(self.home, "owner-secret.txt"), "SECRET-OWNER-FILE")
         self.bin = os.path.join(tmp, "bin")
         write(os.path.join(self.bin, "docker"), DOCKER_STUB.replace("#!PYTHON", "#!" + sys.executable), EXEC)
@@ -235,10 +239,7 @@ class Fix:
         os.makedirs(container, exist_ok=True)
         for name in ("proxy.py", "proxy-allowlist.txt"):
             shutil.copyfile(os.path.join(REAL_EVAL_DIR, "container", name), os.path.join(container, name))
-        with socket.socket() as probe:
-            probe.bind(("127.0.0.1", 0))
-            port = probe.getsockname()[1]
-        return {"proxy_port": port, "docker": os.path.join(self.bin, "docker"), "source_repo": self.src,
+        return {"docker": os.path.join(self.bin, "docker"), "source_repo": self.src,
                 "runs_dir": self.runs,
                 "results": self.results, "crew_plugin": os.path.join(REPO, "plugin", "crew"),
                 "container_dir": container, "env": self.env}
@@ -345,21 +346,23 @@ def case_auth_files_carry_no_refresh_token_and_nothing_else_of_the_owners(tmp):
         for name in names:
             blob += slurp(os.path.join(here, name))
     ok = ("RT-SECRET" not in blob and "MCP-SECRET" not in blob and "SECRET-OWNER-FILE" not in blob
+          and "KEY-SECRET" not in blob and "EXTRA-SECRET" not in blob and "2026-10-20T00:00:00Z" in blob
           and '"accessToken": "AT"' in blob and '"access_token": "AT"' in blob and "WebFetch" in blob)
-    return ok, [w for w in ("RT-SECRET", "MCP-SECRET", "SECRET-OWNER-FILE") if w in blob]
+    return ok, [w for w in ("RT-SECRET", "MCP-SECRET", "SECRET-OWNER-FILE", "KEY-SECRET", "EXTRA-SECRET") if w in blob]
 
 
 def case_docker_argv_mounts_only_the_run_dirs(tmp):
     fix = Fix(tmp)
-    run = {"repo": "/r/run1/repo", "home": "/r/run1/home", "proxylog": "/r/run1/proxylog", "dir": "/r/run1"}
-    argv = eval_mod.arm_docker_argv("/usr/bin/docker", run, "n", "net", ("1000", "1000"), "10.0.0.1:3128",
-                                    ["/usr/local/bin/claude"])
+    run = {"repo": "/r/run1/repo", "home": "/r/run1/home", "proxylog": "/r/run1/proxylog", "dir": "/r/run1",
+           "proxysock": "/r/run1/proxysock"}
+    argv = eval_mod.arm_docker_argv("/usr/bin/docker", run, "n", ("1000", "1000"), ["/usr/local/bin/claude"])
     mounts = [argv[i + 1] for i, a in enumerate(argv) if a == "-v"]
     sources = [m.split(":")[0] for m in mounts]
     forbidden = [fix.src, REPO, fix.task_root, os.path.join(tmp, "runs", "earlier")]
     clean = not any(os.path.commonpath([s, f]) == f for s in sources for f in forbidden if f.startswith("/"))
-    ok = (sources == ["/r/run1/repo", "/r/run1/home"] and clean and "--privileged" not in argv
-          and "--network" in argv and "HTTPS_PROXY=http://10.0.0.1:3128" in argv and "ALL" in argv)
+    ok = (sources == ["/r/run1/repo", "/r/run1/home", "/r/run1/proxysock"] and clean and "--privileged" not in argv
+          and argv[argv.index("--network") + 1] == "none" and "HTTPS_PROXY=http://127.0.0.1:3128" in argv
+          and "ALL" in argv and argv[argv.index("crew-outcome-eval:1") + 1] == "/opt/eval-shim/eval-run")
     return ok, mounts
 
 
@@ -659,14 +662,17 @@ def case_an_unparseable_review_counts_as_incomplete_not_a_cycle(tmp):
     return result["reviewCycles"] == 0 and result["reviewAttemptsIncomplete"] == 2, result
 
 
-def case_a_stub_run_through_docker_uses_the_internal_network_and_proxy(tmp):
+def case_a_stub_run_through_docker_has_no_network_and_reaches_only_the_proxy_socket(tmp):
     fix = Fix(tmp)
     run_arm(fix, "ok", STUB_RESULT="No findings.")
     calls = [json.loads(x) for x in slurp(fix.docker_log).splitlines()]
-    verbs = [c[:2] for c in calls]
-    ok = (calls[0][:3] == ["network", "create", "--internal"] and verbs[1] == ["network", "inspect"]
-          and verbs[-1] == ["network", "rm"] and not any(c[:2] == ["run", "-d"] for c in calls))
-    return ok, verbs
+    runs = [c for c in calls if c[:1] == ["run"]]
+    arm_runs = [c for c in runs if any(a.endswith(":/run/proxy") for a in c)]
+    ok = (bool(arm_runs) and len(arm_runs) < len(runs)
+          and not any(c[:1] == ["network"] for c in calls)
+          and all(c[c.index("--network") + 1] == "none" for c in runs)
+          and not any(c[:2] == ["run", "-d"] for c in calls))
+    return ok, [c[:2] for c in calls]
 
 
 def case_a_contaminated_run_is_marked_and_still_costed(tmp):
@@ -720,15 +726,15 @@ def case_every_cli_json_is_kept_beside_the_run(tmp):
 
 
 def case_the_argv_carries_git_identity_and_the_isolation_options(tmp):
-    run = {"repo": "/r/repo", "home": "/r/home", "proxylog": "/r/log", "dir": "/r"}
-    argv = eval_mod.arm_docker_argv("/usr/bin/docker", run, "n", "net", ("1000", "1000"), "10.0.0.1:3128", ["x"])
+    run = {"repo": "/r/repo", "home": "/r/home", "proxylog": "/r/log", "dir": "/r", "proxysock": "/r/sock"}
+    argv = eval_mod.arm_docker_argv("/usr/bin/docker", run, "n", ("1000", "1000"), ["x"])
     joined = " ".join(argv)
     mounts = [argv[i + 1] for i, a in enumerate(argv) if a == "-v"]
     ok = ("GIT_AUTHOR_NAME=" in joined and "GIT_COMMITTER_EMAIL=" in joined and "--user 1000:1000" in joined
           and "--cap-drop ALL" in joined and "no-new-privileges" in joined and "--privileged" not in joined
           and "seccomp=unconfined" not in joined and "apparmor=unconfined" not in joined
-          and "--cap-add" not in joined and "--network net" in joined
-          and mounts == ["/r/repo:/run/repo", "/r/home:/run/home"])
+          and "--cap-add" not in joined and "--network none" in joined
+          and mounts == ["/r/repo:/run/repo", "/r/home:/run/home", "/r/sock:/run/proxy"])
     return ok, joined
 
 
@@ -871,6 +877,108 @@ def case_a_compact_json_findings_array_parses_as_findings(tmp):
     got = [eval_mod.review_verdict(arm, compact), eval_mod.review_verdict(arm, pretty),
            eval_mod.review_verdict(arm, "[]"), eval_mod.review_verdict(arm, "no idea")]
     return got == ["findings", "findings", "clean", "unparseable"], got
+
+
+def case_grading_runs_in_a_no_network_container_with_only_the_copy_mounted(tmp):
+    argv = eval_mod.grade_docker_argv("/usr/bin/docker", "n", ("1000", "1000"), "/r/copy", ["python3", "-m", "pytest"])
+    joined = " ".join(argv)
+    mounts = [argv[i + 1] for i, a in enumerate(argv) if a == "-v"]
+    ok = ("--network none" in joined and "--cap-drop ALL" in joined and "no-new-privileges" in joined
+          and "--pids-limit" in joined and "--memory" in joined and "--user 1000:1000" in joined
+          and "--privileged" not in joined and "--cap-add" not in joined and "seccomp" not in joined
+          and mounts == ["/r/copy:/run/repo"] and argv[-3:] == ["python3", "-m", "pytest"])
+    return ok, joined
+
+
+def case_grading_goes_through_docker_and_not_the_host_python(tmp):
+    fix = Fix(tmp)
+    with patched_env(fix.env):
+        graded(fix)
+    log = [json.loads(line) for line in slurp(fix.docker_log).splitlines()]
+    runs = [a for a in log if a[:1] == ["run"]]
+    return len(runs) == 2 and all("none" == a[a.index("--network") + 1] for a in runs), runs
+
+
+def case_the_arm_and_grading_share_the_isolation_options(tmp):
+    run = {"repo": "/r/repo", "home": "/r/home", "proxylog": "/r/log", "dir": "/r", "proxysock": "/r/sock"}
+    arm = eval_mod.arm_docker_argv("/usr/bin/docker", run, "n", ("1000", "1000"), ["x"])
+    grade = eval_mod.grade_docker_argv("/usr/bin/docker", "n", ("1000", "1000"), "/r/c", ["x"])
+    joined_arm, joined_grade = " ".join(arm), " ".join(grade)
+    shared = " ".join(eval_mod.ISOLATION_OPTIONS)
+    return shared in joined_arm and shared in joined_grade, (shared, joined_arm)
+
+
+def case_overlay_does_not_write_through_a_symlink_the_arm_planted(tmp):
+    fix = Fix(tmp)
+    outside = os.path.join(tmp, "outside")
+    write(os.path.join(outside, "victim.txt"), "OWNER FILE\n")
+
+    def plant(repo):
+        os.remove(os.path.join(repo, "tests", "test_calc.py"))
+        os.symlink(os.path.join(outside, "victim.txt"), os.path.join(repo, "tests", "test_calc.py"))
+        os.symlink(outside, os.path.join(repo, "linkdir"))
+
+    graded(fix, mutate=plant)
+    return slurp(os.path.join(outside, "victim.txt")) == "OWNER FILE\n", slurp(os.path.join(outside, "victim.txt"))
+
+
+def case_overlay_replaces_a_symlinked_directory_on_the_path(tmp):
+    fix = Fix(tmp)
+    outside = os.path.join(tmp, "outside-dir")
+    os.makedirs(outside)
+    repo = os.path.join(tmp, "copy")
+    os.makedirs(repo)
+    os.symlink(outside, os.path.join(repo, "tests"))
+    eval_mod.place(repo, "tests/test_calc.py", os.path.join(fix.task_dir, "grading", "conftest.py.frozen"))
+    ok = os.listdir(outside) == [] and os.path.isfile(os.path.join(repo, "tests", "test_calc.py")) \
+        and not os.path.islink(os.path.join(repo, "tests"))
+    return ok, os.listdir(outside)
+
+
+def case_load_refuses_a_grading_path_that_leaves_the_repository(tmp):
+    got = []
+    for key, value in (("gradingFiles", ["../evil.py"]), ("gradingFiles", ["/etc/passwd"]),
+                       ("regressionInventory", ["../x.py::t"])):
+        fix = Fix(os.path.join(tmp, f"{key}{len(got)}"))
+        fix.task[key] = value
+        write(os.path.join(fix.task_dir, "task.json"), json.dumps(fix.task))
+        got.append(refused(fix.load))
+    return all(got) and "inside the repository" in got[0], got
+
+
+def case_a_fifo_where_a_transcript_or_events_file_belongs_is_unknown_not_a_hang(tmp):
+    repo, home = codex_events(tmp, [], sessions=1)
+    os.makedirs(repo, exist_ok=True)
+    os.mkfifo(os.path.join(repo, "codex-events.jsonl"))
+    codex = eval_mod.codex_usage(repo, home, "m")
+    fix = Fix(os.path.join(tmp, "c"))
+    task = fix.load()
+    run = eval_mod.prepare_run(task, fix.arm, fix.src, fix.runs, 1, os.path.join(fix.tmp, "plugin-crew"), fix.env)
+    os.mkfifo(os.path.join(run["repo"], "codex-events.jsonl"))
+    log = os.path.join(run["proxylog"], "proxy.jsonl")
+    write(log, "")
+    reasons = eval_mod.contamination(task, run["home"], run["repo"], log, fix.arm, fix.src)
+    return codex == (UNKNOWN, UNKNOWN) and reasons == ["unreadable arm file"], (codex, reasons)
+
+
+def case_a_canary_for_another_image_does_not_open_the_gate(tmp):
+    fix = Fix(tmp)
+    canary = os.path.join(os.path.dirname(fix.results), "canary.txt")
+    docker = os.path.join(fix.bin, "docker")
+    write(os.path.join(fix.bin, "docker"), "#!/bin/sh\necho sha256:current\n", EXEC)
+    write(canary, "canary: t image=sha256:old network=n\nPASS x\ncanary: PASS\n")
+    stale = eval_mod.canary_ok(fix.results, docker)
+    write(canary, "canary: t image=sha256:current network=n\nPASS x\ncanary: PASS\n")
+    current = eval_mod.canary_ok(fix.results, docker)
+    return (stale, current) == (False, True), (stale, current)
+
+
+def case_the_canary_mirrors_the_arm_isolation_options_and_probes_the_gateway(tmp):
+    canary = open(os.path.join(REAL_EVAL_DIR, "container", "canary.sh"), encoding="utf-8").read()
+    shared = " ".join(eval_mod.ISOLATION_OPTIONS)
+    ok = (shared in canary and "--network none" in canary and "/sys/class/net" in canary
+          and "network create" not in canary and "eval-run" in canary)
+    return ok, (shared in canary, "--network none" in canary, "/sys/class/net" in canary)
 
 
 def case_autopilot_stopped_only_on_a_readable_stop_0_keeps_going(tmp):
@@ -1091,7 +1199,7 @@ CASES = (
     ("must-allow: a stub baseline run is scored and costed", case_a_stub_baseline_run_is_scored_and_costed),
     ("must-allow: the baseline loop fixes findings and stops at three cycles", case_a_baseline_run_fixes_findings_then_stops_at_three_cycles),
     ("must-block: an unparseable review is incomplete, not a cycle", case_an_unparseable_review_counts_as_incomplete_not_a_cycle),
-    ("must-allow: a run goes through an internal network, with the proxy a host process, and removes the network", case_a_stub_run_through_docker_uses_the_internal_network_and_proxy),
+    ("must-allow: a run has no docker network at all and reaches only the proxy socket", case_a_stub_run_through_docker_has_no_network_and_reaches_only_the_proxy_socket),
     ("must-block: a run that names the reference is contaminated", case_a_contaminated_run_is_marked_and_still_costed),
     ("must-block: a missing subagent transcript makes the whole run's cost UNKNOWN", case_a_missing_subagent_transcript_makes_the_run_cost_unknown),
     ("must-allow: a paid unscorable attempt's cost is carried into its rerun", case_a_paid_unscorable_attempt_is_carried_into_its_rerun),
@@ -1132,6 +1240,15 @@ CASES = (
     ("must-block: a Codex session with no completed turn makes usage UNKNOWN", case_codex_session_with_no_completed_turn_makes_usage_unknown),
     ("must-block: a grading run that crashes after PASSED lines is MISSING (exit 0 and 1 still grade)", case_a_grading_run_that_crashes_after_printing_passed_lines_is_missing),
     ("must-allow: compact and pretty JSON findings arrays both parse as findings", case_a_compact_json_findings_array_parses_as_findings),
+    ("must-block: grading runs in a no-network container with only the copy mounted", case_grading_runs_in_a_no_network_container_with_only_the_copy_mounted),
+    ("must-block: grading goes through docker, never the host python", case_grading_goes_through_docker_and_not_the_host_python),
+    ("must-allow: the arm and grading containers share the isolation options", case_the_arm_and_grading_share_the_isolation_options),
+    ("must-block: the overlay does not write through a symlink the arm planted", case_overlay_does_not_write_through_a_symlink_the_arm_planted),
+    ("must-allow: the overlay replaces a symlinked directory on the path and writes inside the copy", case_overlay_replaces_a_symlinked_directory_on_the_path),
+    ("must-block: a grading path that leaves the repository does not load", case_load_refuses_a_grading_path_that_leaves_the_repository),
+    ("must-block: a FIFO where a transcript or events file belongs is UNKNOWN or a reason, not a hang", case_a_fifo_where_a_transcript_or_events_file_belongs_is_unknown_not_a_hang),
+    ("must-block: a canary for another image does not open the run gate (the current image's does)", case_a_canary_for_another_image_does_not_open_the_gate),
+    ("must-block: the canary mirrors the arm isolation options, has no network and checks the interfaces", case_the_canary_mirrors_the_arm_isolation_options_and_probes_the_gateway),
 )
 
 # pylint: enable=line-too-long
@@ -1142,6 +1259,10 @@ def main() -> int:
         print("  NOT RUN  crew-outcome-eval: the stubs are POSIX executables; not a pass")
         return 0
     passed = failed = 0
+    stub_dir = tempfile.mkdtemp(prefix="crew-outcome-stub.")
+    stub = os.path.join(stub_dir, "docker")
+    write(stub, DOCKER_STUB.replace("#!PYTHON", "#!" + sys.executable), EXEC)
+    os.environ["CREW_OUTCOME_DOCKER"] = stub
     for name, case in CASES:
         with tempfile.TemporaryDirectory(prefix="crew-outcome-suite.") as tmp:
             try:
@@ -1154,6 +1275,7 @@ def main() -> int:
         else:
             failed += 1
             print(f"  FAIL {name}\n       got {detail}")
+    shutil.rmtree(stub_dir, ignore_errors=True)
     shutil.rmtree(os.path.join(REPO, "scripts", "__pycache__"), ignore_errors=True)
     print(f"\ncrew-outcome-eval: {passed} passed, {failed} failed")
     return 1 if failed else 0

@@ -17,7 +17,7 @@ set, spike). No scored run has happened yet; nothing here claims an outcome.
 | Path | What |
 |---|---|
 | `arms/crew.json`, `arms/baseline.json` | The two arm protocols: pinned author and reviewer model and effort, crew config, CLI flags, prompts, review parse rule, wall-clock limits |
-| `container/` | `Dockerfile`, `codex-shim.sh` (the `codex` on PATH), `proxy.py` + `proxy-allowlist.txt` (the allowlisting proxy), `canary.sh` (the isolation canary) |
+| `container/` | `Dockerfile`, `codex-shim.sh` (the `codex` on PATH), `eval-run.py` (the in-container wrapper that forwards a loopback port to the proxy socket), `proxy.py` + `proxy-allowlist.txt` (the allowlisting proxy), `canary.sh` (the isolation canary) |
 | `tasks/<name>/` | `task.json`, `statement.md`, `grading/` (frozen hidden tests and test config); `tasks/selection-notes.md` is the selection record |
 | `spike/` | The throwaway S task and `run-spike.py`, the spike through the harness itself |
 | `../../scripts/crew-outcome-eval.py` | The harness: `validate`, `run`, `report` |
@@ -38,7 +38,8 @@ python3 scripts/crew-outcome-eval.py report --results results/results.jsonl
 ```
 
 `run` refuses to start without `canary.txt` (last line `canary: PASS`) beside the results file. The host needs
-`docker`, `git`, `python3` with `pytest` and `PyYAML` (the graded tests run on the host, outside the container), and the
+`docker` and `git` and `python3` (the graded tests run in the same image, in a container with no network and nothing
+mounted but the copy under test; no arm-written code runs on the host), and the
 owner's Claude and Codex logins (see Isolation).
 
 ## Isolation (spec U10)
@@ -54,27 +55,36 @@ commit is not reachable; the harness refuses a run where it is), its own `.git` 
 - a `settings.json` denying `WebFetch` and `WebSearch`, and, for Codex, a `config.toml` turning off plugin sync (which
   reaches `github.com` at startup).
 
-The arm runs in a container whose only mounts are that run's `repo` and `home`, on a Docker network created with
-`--internal` (no route out). The only way out is the allowlisting proxy, a host process bound to that network's gateway
-address (`container/proxy.py`, `container/proxy-allowlist.txt`: `api.anthropic.com`, `api.openai.com`, `chatgpt.com`
-and its subdomains, CONNECT on 443 only). It logs every decision to `<run>/proxylog/proxy.jsonl`, outside the mounts.
-The container runs as uid 1000 (not root), with `--cap-drop ALL`, `no-new-privileges`, no `--privileged`, no `--cap-add`
-and no `seccomp=unconfined` or `apparmor=unconfined`. Codex's own sandbox cannot start in a container on this host
+The arm runs in a container whose only mounts are that run's `repo` and `home` and the proxy's socket directory, with
+`--network none`: a loopback and no other interface, so none of the host's own listening services (ssh, a docker API, a
+database) is reachable. (An earlier design used an `--internal` Docker network with the proxy bound to its gateway; the
+canary found the host's sshd answering on that gateway address, so it was dropped.) The only way out is the allowlisting
+proxy, a host process listening on a unix socket in that directory (`container/proxy.py`, `container/proxy-allowlist.txt`:
+`api.anthropic.com`, `api.openai.com`, `chatgpt.com` and its subdomains, CONNECT on 443 only); `container/eval-run.py`,
+which wraps every command in the container, listens on `127.0.0.1:3128` and forwards each connection to that socket. The
+proxy logs every decision to `<run>/proxylog/proxy.jsonl`, outside the mounts.
+The container runs as uid 1000 (not root), with `--cap-drop ALL`, `no-new-privileges`, `--pids-limit 1024`, `--memory 6g`,
+no `--privileged`, no `--cap-add` and no `seccomp=unconfined` or `apparmor=unconfined`. Grading uses the same options with
+`--network none` and the copy under test as its only mount, so the arm's code (its modules, any `conftest.py`, `.pth`
+file or `pytest.ini`) never runs on the host, and a symlink the arm planted cannot make the host overwrite a file. Codex's own sandbox cannot start in a container on this host
 (see Spike), so the image puts a `codex` shim first on `PATH` (`container/codex-shim.sh`): it rewrites `--sandbox
 read-only` (also `-s`, `--sandbox=`) to `--sandbox danger-full-access` and passes everything else through, which makes the
 **container the only boundary**. That is a treatment difference from crew as shipped (the Codex reviewer is not held
 read-only) and the results doc says so. It is acceptable only because the container has: no host mounts beyond the run's
-`repo` and `home`; no network beyond the proxy's two model hosts; and no secrets beyond the two short-lived access tokens
-above (no cloud, SSH or git credentials, no environment passthrough, no connectors). Codex can read those two tokens; they
-expire within hours and cannot be refreshed. The CLI is started with
+`repo` and `home` (and the proxy socket); no network beyond the proxy's model hosts; and no secrets beyond the two short-lived access tokens
+above (no cloud, SSH or git credentials, no environment passthrough, no connectors). Codex can read those two tokens and the
+Codex `id_token` (it names the account and its email; Codex needs it to read the login); the access tokens expire within
+hours and cannot be refreshed. The Codex auth copy is an allowlist (`auth_mode`, `access_token`, `id_token`, `account_id`,
+the placeholder refresh token, `last_refresh`), so an `OPENAI_API_KEY` in the owner's file never reaches a run. The CLI is started with
 `--strict-mcp-config` and an empty server list, so none of the owner's claude.ai connectors (Gmail, Drive, ...) load.
 
-`container/canary.sh` runs a scripted shell in that container behind that proxy with no model call and no credential. It
-must fail to see the host checkout, the task store and an earlier run directory that reuses the same ticket id, must
-fail to reach `github.com`, `codeload.github.com` and `api.github.com` through the proxy and every host directly, and must
-reach the two model API hosts through the proxy. On this host `net.ipv4.ip_forward` is 0, so a container could not reach
-the internet even on the default network; the canary's "direct is unreachable" lines therefore hold for two reasons here,
-and the internal network is what keeps them true on a host that does forward.
+`container/canary.sh` runs a scripted shell in that container, with the same options an arm gets, behind that proxy, with no
+model call and no credential. It must fail to see the host checkout, the task store and an earlier run directory that
+reuses the same ticket id, must have no network interface but loopback, must fail to reach `github.com`,
+`codeload.github.com` and `api.github.com` through the proxy and every host directly, must not resolve an external name,
+and must reach the two model API hosts through the proxy. `run` refuses unless `canary.txt` beside the results file ends in
+`canary: PASS` and its first line names the id of the image that is current (`docker image inspect`), so a canary does not
+vouch for a rebuilt image.
 
 A run is flagged `contaminated` (excluded from the verdict and listed) only on evidence of reference access: the
 reference commit sha or the reference PR's URL in a Claude transcript or Codex event; three or more distinct,
@@ -165,7 +175,10 @@ About 3 USD of Claude list price in all; the Codex sessions were small and are u
 
 **Canary (U10): PASS.** Output of `canary.sh` (kept as `canary.txt` beside any results): the host checkout, the task
 store and an earlier run dir are not visible; `github.com`, `codeload.github.com`, `api.github.com` are refused through the
-proxy and every host is unreachable directly; `api.anthropic.com` and `chatgpt.com` are reachable through the proxy.
+proxy and every host is unreachable directly; `api.anthropic.com` and `chatgpt.com` are reachable through the proxy. The
+first design (an `--internal` network with the proxy on its gateway) failed an added probe: the gateway address answered
+on the host's port 22. The container now has `--network none` and reaches the proxy only through its unix socket; the
+canary checks that loopback is the only interface and that no external name resolves.
 
 **U3, the CLI JSON.** `claude -p ... --output-format json` prints one object with these keys: `api_error_status`,
 `duration_api_ms`, `duration_ms`, `is_error`, `modelUsage` (per model: `inputTokens`, `outputTokens`,
@@ -212,9 +225,11 @@ ran spec, plan, implement, one Codex review (`CLEAN`, `gpt-6-sol`), done and the
 amendment the image was rebuilt (the shim is `chmod 0755` in the Dockerfile and executable in git), `canary.sh` passed
 under the same options the scored runs use (default seccomp and AppArmor, `--cap-drop ALL`, `no-new-privileges`, uid 1000;
 an earlier canary ran with `seccomp=unconfined` and did not prove that), and `spike/run-spike.py` was re-run through the
-harness at the Slice 2 close: baseline scored (3 `/code-review` cycles, 0.21 USD), crew scored with 1 review cycle,
-0 incomplete attempts, 0.63 USD Claude list price, Codex 229,644 input / 1,377 output tokens (unpriced, so the crew run's
-`costUsd` is UNKNOWN), 0 escaped defects, 175 s.
+harness at the Slice 2 close, after the container moved to `--network none` with the proxy on a unix socket and grading
+moved into the image (one intermediate run was `contaminated`: with `last_refresh` dropped from the Codex login, Codex tried
+to refresh it at `auth.openai.com` and the proxy refused, which is why `last_refresh` is kept): baseline scored
+(3 `/code-review` cycles, 0.17 USD), crew scored with 2 review cycles, 0 incomplete attempts, 0.89 USD Claude list price,
+Codex 447,286 input / 2,568 output tokens (unpriced, so the crew run's `costUsd` is UNKNOWN), 0 escaped defects, 293 s.
 
 Codex usage as `review_run.py` leaves it in `codex-events.jsonl` (the same five keys the spec quoted):
 `{"type":"turn.completed","usage":{"input_tokens":102324,"cached_input_tokens":76800,"cache_write_input_tokens":0,"output_tokens":633,"reasoning_output_tokens":159}}`.
