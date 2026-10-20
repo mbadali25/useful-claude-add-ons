@@ -264,10 +264,23 @@ run, after the grading hardening below; an earlier run of the same design had 2 
 Codex usage as `review_run.py` leaves it in `codex-events.jsonl` (the same five keys the spec quoted):
 `{"type":"turn.completed","usage":{"input_tokens":102324,"cached_input_tokens":76800,"cache_write_input_tokens":0,"output_tokens":633,"reasoning_output_tokens":159}}`.
 
-**Not shown by the spike:** one crew FINDINGS -> fix -> re-review cycle (the only completed Codex round was `CLEAN`;
-`autopilot.reviewPolicy: fix-and-rereview` and `commands/autopilot.md` section 3's `phase=fix` are as documented but were
-not exercised); the baseline arm on a real task; a timeout (`docker kill`) mid-arm; the Windows host path. The S task's
-statement is 3 lines; a real task's run is much longer than 141 s.
+**FINDINGS -> fix -> re-review (spec U1), shown 2026-10-20 on the L-0851 head `aa3e98726`** (crew arm only, one run of
+`spike/run-spike.py --arms crew`, canary PASS for the rebuilt image, through the harness and the same container options as
+a scored run). One `claude -p` ran spec, plan, self-approval, implement, then Codex review round 1 = `FINDINGS`
+(`FIX|slug.py:11|Unicode characters that lowercase to ASCII are kept instead of treated as separators`, plus one NIT about a
+hook marker file in `.crew/`); autopilot's `phase=fix` committed `Treat non-ASCII as separators before lowercasing (T-0001
+review round 1)`; Codex review round 2 on the fixed commit = `FINDINGS` with the NIT only (0 FIX, 0 BLOCK); the arm then
+stopped at `accept-review`, the terminal stop that needs a person (`autopilot.reviewPolicy: fix-and-rereview` as pinned).
+The ledger in the run repo has two rounds, both completed, no INCOMPLETE; the row: `runStatus scored`, `reviewCycles 2`,
+`reviewAttemptsIncomplete 0`, `escapedDefects 0`, `endedBy stop`, 257.9 s, Claude list price 0.68 USD, Codex 405,691 input
+(348,672 cached) / 3,083 output tokens (unpriced, so `costUsd` is UNKNOWN), the CLI's own `total_cost_usd` 0.51. Spend for
+this spike step: one run, 0.68 USD Claude list price plus the unpriced Codex usage, against the 10 USD stop set in the
+plan (the spec's 150 USD cap is for Slice 3). Earlier runs of the same design, before the L-0851 fixes, gave `CLEAN` in
+round 1 and, once, 2 cycles; the FINDINGS cycle depends on what the model writes, so this is one observed cycle, not a rate.
+
+**Not shown by the spike:** the baseline arm on a real task; a timeout (`docker kill`) mid-arm; the Windows host path; a
+FINDINGS cycle on a real (not throwaway) task. The S task's statement is 3 lines; a real task's run is much longer than
+the 258 s measured here.
 
 Other things the spike found, all handled in the harness: claude.ai account connectors try to load through
 `mcp-proxy.anthropic.com` (refused; `--strict-mcp-config` with no servers stops it); Codex syncs plugins from
