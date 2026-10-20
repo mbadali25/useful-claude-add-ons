@@ -229,8 +229,16 @@ def test_both_registrations_on_one_payload_run_every_applicable_row_exactly_once
     assert all(code == 0 for _, code, _, _ in results), results
 
 
+# The golden is recorded from the per-script `.sh` run, which never sees a PowerShell tool call; on
+# Windows the promote-gate twin DOES run for one, and blocks a declared deploy in this fixture (no
+# rollback runbook). That divergence is the point of the twin, and
+# test_a_power_shell_declared_deploy_is_blocked_natively_by_promote_gate_ps1 pins it.
+TWIN_BLOCKS_NATIVELY = frozenset({"powershell-declared-deploy"})
+
+
 @native
-@pytest.mark.parametrize("case", sorted(k for k in rgh.load_golden() if not k[0] and k[4] and not k[3]),
+@pytest.mark.parametrize("case", sorted(k for k in rgh.load_golden()
+                                        if not k[0] and k[4] and not k[3] and k[2] not in TWIN_BLOCKS_NATIVELY),
                          ids=h.golden_ids)
 def test_both_registrations_together_equal_the_golden_single_result(case, tmp_path):
     record = rgh.load_golden()[case]

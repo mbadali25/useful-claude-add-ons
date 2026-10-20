@@ -2049,7 +2049,7 @@ def _git_force_push(args):
         if arg in ("--force", "-f", "--force-with-lease") \
                 or arg.startswith("--force-with-lease="):
             return f"git push {arg}"
-        if re.match(r"^-[a-zA-Z]*f[a-zA-Z]*$", arg):
+        if re.match(r"^-[a-zA-Z]*F[a-zA-Z]*$", arg):
             return f"git push {arg}"
     # A leading `+` on any refspec forces that ref. Every positional is
     # checked, not only those after the remote: an option's value (`-o x`)

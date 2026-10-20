@@ -93,11 +93,11 @@ _armed() {
   [ -n "$root" ] && [ -d "$root" ] || return 0
   # with no HOME the global config cannot be looked for: could not tell
   [ -n "${HOME:-}" ] || return 0
-  local path
-  # the config files are looked for by name under .crew/, not by a path spelled out here: no hook
+  local path crewdir="$root/.crew"
+  # the config files are looked for by name under the .crew directory, not by a path spelled out here: no hook
   # script names its own config path (tests/test_worktree_config_shell.py); the resolver is the
   # dispatcher's (crew_common.repo_config_dir), and this is only its superset
-  for path in "$root/.crew/${CREW_CONFIG_NAMES%% *}" "$root/.crew/${CREW_CONFIG_NAMES##* }" "$root/.crew" "$root/.git" \
+  for path in "$crewdir/${CREW_CONFIG_NAMES%% *}" "$crewdir/${CREW_CONFIG_NAMES##* }" "$crewdir" "$root/.git" \
               "$HOME/.claude/crew/${CREW_CONFIG_NAMES%% *}"; do
     case "$path" in
       */.git)

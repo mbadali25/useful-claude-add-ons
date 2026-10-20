@@ -30,7 +30,10 @@ needs_pwsh = pytest.mark.skipif(PWSH is None, reason="pwsh not installed - crew-
 # The launcher for this OS: sh on POSIX, ps1 on Windows. ps1 on POSIX is the
 # fake-OS model and runs as a slow case.
 FLAVOURS = ("sh",) if not WINDOWS else ("ps1",)
-POSIX_FLAVOURS = ("sh", pytest.param("ps1", marks=crew_fixtures.SLOW))
+# On Windows the .sh launcher exits 0 by design (the PowerShell launcher is the single path), so a
+# fault case is only meaningful there for ps1.
+POSIX_FLAVOURS = (("sh", pytest.param("ps1", marks=crew_fixtures.SLOW)) if not WINDOWS
+                  else (pytest.param("ps1", marks=crew_fixtures.SLOW),))
 
 
 def launcher_argv(flavour, event, harness="claude"):

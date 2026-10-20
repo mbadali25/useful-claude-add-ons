@@ -30,6 +30,9 @@ HOOKS_JSON = os.path.join(PLUGIN, "hooks", "hooks.json")
 SH_TEXT = h.read_text(os.path.join(SCRIPTS, "crew-hook.sh"))
 PS1_TEXT = h.read_text(os.path.join(SCRIPTS, "crew-hook.ps1"))
 BASH = "bash"
+# A bare `bash` on Windows is WSL's launcher, and the sh launcher is not a Windows path (it exits 0
+# there); the same table-equality is proven on the POSIX hosts.
+not_on_windows = pytest.mark.skipif(h.WINDOWS, reason="the sh launcher is not a Windows path")
 
 
 def _hooks():
@@ -155,6 +158,7 @@ def _table_rows(event, harness):
     return lines
 
 
+@not_on_windows
 @pytest.mark.parametrize("harness", ["claude", "codex"])
 @pytest.mark.parametrize("event", crew_hook.EVENTS)
 def test_the_no_python_list_in_crew_hook_sh_equals_the_table(event, harness):
@@ -270,6 +274,7 @@ def test_the_ps1_flavour_guard_trusts_the_platform_not_only_the_environment():
     assert default in PS1_TEXT
 
 
+@not_on_windows
 @pytest.mark.parametrize("matcher,tool,runs", [
     ("Write|Edit", "Edit", True), ("Write|Edit", "Bash", False), ("", "Bash", True), ("Bash", "", True),
     ("@vault", "mcp__obsidian__search", True), ("@vault", "Read", False),
