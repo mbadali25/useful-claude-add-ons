@@ -9,6 +9,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.57: wave lanes run as a Claude Code workflow, the autopilot modules are frozen, and the Git Bash resolver has a strict mode (L-0727, slice 1)
+
+- **Summary.** `crew` 1.2.57: `/crew:autopilot wave` now fans its lanes out through the plugin's `wave` workflow (`/crew:wave`), a lane that fails or returns nothing readable is reported `unknown` instead of clean, and every lane brief opens with a `Ticket ID:` line.
+- **New.** `plugin/crew/workflows/wave.js` (`/crew:wave` with `{"set": "<slug>"}`): one `isolation: worktree` agent per lane, never more than `maxLanes` at once, then `crew_wave.py collect --json`. `crew_wave.py start --json` gains `launches: [{ticket, argv[, model]}]`, one per `launch` line, in the same order.
+- **Changed.** `commands/autopilot.md` section 7 runs `/crew:wave` instead of launching one Agent per `launch` line. Every lane brief from `crew_wave.lane_prompt` starts with `Ticket ID: <id>` (cost attribution, L-0728).
+- **Frozen.** The 17 `crew_autopilot*.py` modules are held by a sha256 and line-count manifest (`tests/autopilot_frozen.json`, `tests/test_autopilot_frozen.py`); only a bug fix or a removal may change one.
+- **Strict Git Bash.** `crew_shell.resolve_gitbash(strict=True)` takes only the `git --exec-path`-derived or default `bin/bash.exe`, never a PATH `bash` or a `usr/bin/bash.exe`, and only one that runs `-c 'exit 0'`. The default is unchanged; the hook dispatcher (a later slice) is its first caller.
+- **Codex hooks.** `crew_instructions._codex_hooks_generated` recognises a `.codex/hooks.json` whose commands run `crew-hook` as well as `crew-context`.
+- **Docs.** ADR 0007 (codex-plugin-cc evaluated, not adopted) and ADR 0008 (native resume does not cover session typing). No config key, command, skill, agent or hook registration changes. Measured first: a workflow agent's PreToolUse payload carries `agent_type: workflow-subagent` and a `cwd` under `<main>/.claude/worktrees/`, the root `lane-init` already admits (`tests/fixtures/workflow_worktree_payload.json`).
+
 ### Fixed — crew 1.2.56: a hook-script child that ignores its kill can no longer hold a review step open (L-0836)
 
 - **Summary.** `crew` 1.2.56: a review step that runs a helper script gives up on a hung or unkillable helper after the bound instead of waiting on it, and the codemap notes it reads must be regular files.
