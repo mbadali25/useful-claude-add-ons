@@ -1,0 +1,22 @@
+{
+ "armed": false,
+ "case": "manual",
+ "event": "PreCompact",
+ "harness": "claude",
+ "no_python": true,
+ "payload": "{\"hook_event_name\": \"PreCompact\", \"trigger\": \"manual\", \"session_id\": \"s-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "handoff-write.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "handoff-write.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

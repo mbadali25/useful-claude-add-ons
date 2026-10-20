@@ -1,0 +1,24 @@
+{
+ "armed": false,
+ "case": "codex-session",
+ "event": "SessionStart",
+ "harness": "codex",
+ "no_python": true,
+ "payload": "{\"hook_event_name\": \"SessionStart\", \"source\": \"startup\", \"session_id\": \"s-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "crew-context.sh",
+    "--harness",
+    "codex"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "stderr": "crew context: no usable python (stub or unusable interpreter) - no code-map or recall context this event\n",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

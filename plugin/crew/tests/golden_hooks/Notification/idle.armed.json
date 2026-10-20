@@ -1,0 +1,23 @@
+{
+ "armed": true,
+ "case": "idle",
+ "event": "Notification",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"Notification\", \"notification_type\": \"idle_prompt\", \"message\": \"waiting\", \"session_id\": \"s-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "notify.sh",
+    "hook"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "notify.sh",
+   "stderr": "crew-notify: notification_type idle_prompt is not a question; nothing sent\n",
+   "stdout": "quiet\n",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

@@ -1,0 +1,22 @@
+{
+ "armed": true,
+ "case": "multiedit-out-of-touch",
+ "event": "PreToolUse",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"MultiEdit\", \"tool_input\": {\"file_path\": \"{ROOT}/other/keep.py\"}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "scope-guard.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "scope-guard.sh",
+   "stderr": "SCOPE GUARD: refused MultiEdit on <ROOT>/other/keep.py.\n  Reason: other/keep.py is outside T-1's spec ## Touch.\n  To widen scope: amend .work/tickets/T-1/spec.md ## Touch (and plan.md), then ask the user to type\n  `/crew:approve T-1`. (scope.mode is block)\n",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

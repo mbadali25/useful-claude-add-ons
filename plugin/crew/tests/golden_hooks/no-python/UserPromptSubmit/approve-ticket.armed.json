@@ -1,0 +1,33 @@
+{
+ "armed": true,
+ "case": "approve-ticket",
+ "event": "UserPromptSubmit",
+ "harness": "claude",
+ "no_python": true,
+ "payload": "{\"hook_event_name\": \"UserPromptSubmit\", \"prompt\": \"/crew:approve T-2\", \"session_id\": \"s-1\", \"prompt_id\": \"p-2\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "crew-context.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "stderr": "crew context: no usable python (stub or unusable interpreter) - no code-map or recall context this event\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "approval-hook.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "approval-hook.sh",
+   "stderr": "crew: /crew:approve was NOT recorded -- no usable python to validate the plan.\n",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

@@ -1,0 +1,33 @@
+{
+ "armed": true,
+ "case": "write-restricted-role",
+ "event": "PreToolUse",
+ "harness": "claude",
+ "no_python": true,
+ "payload": "{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"Write\", \"tool_input\": {\"file_path\": \"{ROOT}/src/app.py\"}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"agent_type\": \"crew:reviewer\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "role-write-guard.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "role-write-guard.sh",
+   "stderr": "role-write-guard: no usable python found - python is unavailable, so guards.roleWrites (off/report/allowances) cannot be evaluated for restricted role 'reviewer' - install python, or the write is blocked.\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "scope-guard.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "scope-guard.sh",
+   "stderr": "SCOPE GUARD: no usable python - cannot judge this call; failing closed because .crew/config.json does not provably set scope.mode off.\n",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

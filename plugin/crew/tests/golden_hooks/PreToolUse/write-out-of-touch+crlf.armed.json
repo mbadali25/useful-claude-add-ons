@@ -1,0 +1,33 @@
+{
+ "armed": true,
+ "case": "write-out-of-touch",
+ "event": "PreToolUse",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\r\n \"hook_event_name\": \"PreToolUse\",\r\n \"tool_name\": \"Write\",\r\n \"tool_input\": {\r\n  \"file_path\": \"{ROOT}/other/keep.py\"\r\n },\r\n \"session_id\": \"s-1\",\r\n \"tool_use_id\": \"tu-1\",\r\n \"cwd\": \"{ROOT}\"\r\n}\r\n",
+ "rows": [
+  {
+   "argv": [
+    "role-write-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "role-write-guard.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "scope-guard.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "scope-guard.sh",
+   "stderr": "SCOPE GUARD: refused Write on <ROOT>/other/keep.py.\n  Reason: other/keep.py is outside T-1's spec ## Touch.\n  To widen scope: amend .work/tickets/T-1/spec.md ## Touch (and plan.md), then ask the user to type\n  `/crew:approve T-1`. (scope.mode is block)\n",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": "crlf"
+}

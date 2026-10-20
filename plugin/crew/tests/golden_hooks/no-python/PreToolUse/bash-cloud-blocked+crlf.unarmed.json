@@ -1,0 +1,55 @@
+{
+ "armed": false,
+ "case": "bash-cloud-blocked",
+ "event": "PreToolUse",
+ "harness": "claude",
+ "no_python": true,
+ "payload": "{\r\n \"hook_event_name\": \"PreToolUse\",\r\n \"tool_name\": \"Bash\",\r\n \"tool_input\": {\r\n  \"command\": \"aws ec2 terminate-instances --instance-ids i-0123456789abcdef0\"\r\n },\r\n \"session_id\": \"s-1\",\r\n \"tool_use_id\": \"tu-1\",\r\n \"cwd\": \"{ROOT}\"\r\n}\r\n",
+ "rows": [
+  {
+   "argv": [
+    "promote-gate.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "promote-gate.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "cloud-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "cloud-guard.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "env-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "env-guard.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "scope-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "scope-guard.sh",
+   "stderr": "scope-guard: no usable python - not judged (scope.mode is off).\n",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": "crlf"
+}

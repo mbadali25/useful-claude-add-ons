@@ -1,0 +1,55 @@
+{
+ "armed": true,
+ "case": "bash-cloud-blocked",
+ "event": "PreToolUse",
+ "harness": "claude",
+ "no_python": true,
+ "payload": "﻿{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"Bash\", \"tool_input\": {\"command\": \"aws ec2 terminate-instances --instance-ids i-0123456789abcdef0\"}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "promote-gate.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "promote-gate.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "cloud-guard.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "cloud-guard.sh",
+   "stderr": "cloud-guard: no usable python, and guards.cloudGuard is armed - refusing rather than letting this command through unjudged.\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "env-guard.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "env-guard.sh",
+   "stderr": "env-guard: no usable python, and guards.envGuard is armed - refusing rather than letting this command through unjudged.\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "scope-guard.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "scope-guard.sh",
+   "stderr": "SCOPE GUARD: no usable python - cannot judge this call; failing closed because .crew/config.json does not provably set scope.mode off.\n",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": "bom"
+}

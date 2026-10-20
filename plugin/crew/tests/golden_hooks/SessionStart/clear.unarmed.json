@@ -1,0 +1,44 @@
+{
+ "armed": false,
+ "case": "clear",
+ "event": "SessionStart",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"SessionStart\", \"source\": \"clear\", \"session_id\": \"s-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "handoff-read.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "handoff-read.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "platform-sync.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "platform-sync.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "crew-context.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

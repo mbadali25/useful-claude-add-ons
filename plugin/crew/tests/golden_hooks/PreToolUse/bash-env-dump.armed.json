@@ -1,0 +1,55 @@
+{
+ "armed": true,
+ "case": "bash-env-dump",
+ "event": "PreToolUse",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"Bash\", \"tool_input\": {\"command\": \"printenv\"}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "promote-gate.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "promote-gate.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "cloud-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "cloud-guard.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "env-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "env-guard.sh",
+   "stderr": "",
+   "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"crew env guard: refused (env-dump:printenv): this command would print the process environment into the agent's context, where credentials end up in the transcript. Read the one non-secret variable you need by name, or use the credential without printing it. guards.envGuard decides this (plugin/crew/README.md, \\\"Environment guard\\\").\"}}\n",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "scope-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "scope-guard.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

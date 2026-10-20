@@ -1,0 +1,44 @@
+{
+ "armed": true,
+ "case": "startup",
+ "event": "SessionStart",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"SessionStart\", \"source\": \"startup\", \"session_id\": \"s-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "handoff-read.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "handoff-read.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "platform-sync.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "platform-sync.sh",
+   "stderr": "",
+   "stdout": "## platform - config said unset, this is linux; updated 3 field(s) in .crew/config.json\n- platform.os: None -> 'linux'\n- platform.repoFilesystem: None -> 'native'\n- platform.shell: None -> 'bash'\n",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "crew-context.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "stderr": "",
+   "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"crew context (startup): branch main @ 5e12f97e.\"}}\n",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

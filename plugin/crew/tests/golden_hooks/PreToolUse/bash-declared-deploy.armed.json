@@ -1,0 +1,55 @@
+{
+ "armed": true,
+ "case": "bash-declared-deploy",
+ "event": "PreToolUse",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"Bash\", \"tool_input\": {\"command\": \"deploy-prod\"}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "promote-gate.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "promote-gate.sh",
+   "stderr": "PROMOTION BLOCKED (prod, sha 5e12f97, tree <ROOT>):\n  - the rollback runbook 'runbook.md' does not exist. No verified rollback, no deploy.\nThese are the pre-deploy gates from .crew/verify.json. Fix them, or set\nverifyGate:false in .crew/config.json if this repo should not be gated.\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "cloud-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "cloud-guard.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "env-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "env-guard.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "scope-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "scope-guard.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}
