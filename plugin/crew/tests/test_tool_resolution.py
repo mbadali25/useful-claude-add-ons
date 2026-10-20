@@ -76,7 +76,7 @@ ALLOWLIST = (
      "gate": "skills/notify/scripts/notifyd.py:301", "gate_text": 'if os.name == "nt":'},
     {"file": "plugin/crew/hooks/scripts/crew_shell.py", "function": "run", "tool": "bash",
      "reason": "POSIX only: run() takes `bash -c` only off native Windows",
-     "gate": "plugin/crew/hooks/scripts/crew_shell.py:776", "gate_text": "if not on_windows():"},
+     "gate": "plugin/crew/hooks/scripts/crew_shell.py:797", "gate_text": "if not on_windows():"},
     {"file": "plugin/crew/hooks/scripts/webtest_guard.py", "function": "check_visual", "tool": "npx",
      "reason": "Linux only: check_visual returns before npx off Linux (then off the pinned Playwright container)",
      "gate": "plugin/crew/hooks/scripts/webtest_guard.py:673",
