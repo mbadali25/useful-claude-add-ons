@@ -1,10 +1,11 @@
 {
  "armed": false,
  "case": "plain",
+ "dirty": "",
  "event": "UserPromptSubmit",
  "harness": "claude",
  "no_python": false,
- "payload": "{\"hook_event_name\": \"UserPromptSubmit\", \"prompt\": \"hello\", \"session_",
+ "payload": "{\"hook_event_name\": \"UserPromptSubmit\", \"prompt\": \"hello\", \"session_id\": \"s-1\", \"prompt_id\": \"p-1\", \"cwd\": \"{ROOT}\"",
  "rows": [
   {
    "argv": [

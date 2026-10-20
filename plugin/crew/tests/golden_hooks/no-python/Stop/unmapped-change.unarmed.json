@@ -1,6 +1,7 @@
 {
  "armed": false,
  "case": "unmapped-change",
+ "dirty": "src/app.py",
  "event": "Stop",
  "harness": "claude",
  "no_python": true,

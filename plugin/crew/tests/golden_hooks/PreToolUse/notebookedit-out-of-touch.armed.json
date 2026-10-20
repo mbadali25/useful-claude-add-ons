@@ -1,6 +1,7 @@
 {
  "armed": true,
  "case": "notebookedit-out-of-touch",
+ "dirty": "",
  "event": "PreToolUse",
  "harness": "claude",
  "no_python": false,

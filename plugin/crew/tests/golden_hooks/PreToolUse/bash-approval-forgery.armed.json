@@ -1,6 +1,7 @@
 {
  "armed": true,
  "case": "bash-approval-forgery",
+ "dirty": "",
  "event": "PreToolUse",
  "harness": "claude",
  "no_python": false,

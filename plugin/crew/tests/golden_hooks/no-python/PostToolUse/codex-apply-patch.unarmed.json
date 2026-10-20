@@ -1,6 +1,7 @@
 {
  "armed": false,
  "case": "codex-apply-patch",
+ "dirty": "",
  "event": "PostToolUse",
  "harness": "codex",
  "no_python": true,

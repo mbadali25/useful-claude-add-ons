@@ -69,7 +69,10 @@ def _cases():
     """(event, case, payload, kind): kind 'tool' payloads get `cwd` filled in at run time.
     The matrix of plan Step 6."""
     cases = []
-    add = lambda event, name, payload: cases.append((event, name, payload))  # noqa: E731
+
+    def add(event, name, payload):
+        cases.append((event, name, payload))
+
     add("PreToolUse", "bash-plain", _tool("Bash", command="ls -la"))
     add("PreToolUse", "bash-cloud-blocked", _tool("Bash", command=CLOUD))
     add("PreToolUse", "bash-env-dump", _tool("Bash", command="printenv"))
@@ -149,7 +152,7 @@ def _encode(payload, variant, root):
     if variant == "bom":
         data = b"\xef\xbb\xbf" + data
     if variant == "malformed":
-        data = data[: max(len(data) // 2, 1)]
+        data = text.rstrip().rstrip("}").encode("utf-8")
     return data
 
 
@@ -194,7 +197,8 @@ def build_repo(base, armed, dirty=None):
 
 def env_for(root, home, path=None, plugin=PLUGIN):
     """A constructed environment, never a copy of the real one."""
-    keep = {key: os.environ[key] for key in ("LANG", "LC_ALL", "SystemRoot", "TERM") if key in os.environ}
+    names = ("LANG", "LC_ALL", "SystemRoot", "TERM", "XDG_CACHE_HOME")
+    keep = {key: os.environ[key] for key in names if key in os.environ}
     env = dict(keep, HOME=home, USERPROFILE=home, CLAUDE_PROJECT_DIR=root, CLAUDE_PLUGIN_ROOT=plugin,
                PATH=path if path is not None else os.environ.get("PATH", ""),
                PYTHONDONTWRITEBYTECODE="1", TMPDIR=os.path.join(os.path.dirname(home), "tmp"))
@@ -211,6 +215,7 @@ def normalise(text, root, home, extra=()):
         if old:
             text = text.replace(old, new).replace(old.replace("\\", "/"), new)
     text = re.sub(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z?", "<TIME>", text)
+    text = re.sub(r"column \d+", "column <N>", text)
     return re.sub(r"\b1[67]\d{8}\b", "<EPOCH>", text)
 
 
@@ -315,8 +320,9 @@ def record_one(event, name, variant, payload, harness, armed, entries, no_python
                          "exit": result["exit"], "timed_out": result["timed_out"],
                          "stdout": normalise(result["stdout"], root, home),
                          "stderr": normalise(result["stderr"], root, home)})
+        shown = data.decode("utf-8", "replace").replace(root.replace("\\", "/"), "{ROOT}")
         return {"event": event, "case": name, "variant": variant, "harness": harness, "armed": armed,
-                "no_python": no_python, "payload": data.decode("utf-8", "replace").replace(root.replace("\\", "/"), "{ROOT}"),
+                "dirty": dirty or "", "no_python": no_python, "payload": shown,
                 "rows": rows}
     finally:
         shutil.rmtree(base, ignore_errors=True)
@@ -370,7 +376,8 @@ def check():
             if old is None:
                 drift.append(f"unrecorded: {key}")
             elif old["rows"] != record["rows"]:
-                drift.append(f"changed: {key}\n  recorded {json.dumps(old['rows'])[:600]}\n  now      {json.dumps(record['rows'])[:600]}")
+                was, now = json.dumps(old["rows"])[:600], json.dumps(record["rows"])[:600]
+                drift.append(f"changed: {key}\n  recorded {was}\n  now      {now}")
     drift += [f"not run: {key}" for key in golden if key not in seen]
     print(f"{len(drift)} drift")
     for line in drift:
@@ -408,14 +415,22 @@ def _event_seconds(label, event, data, env, root):
     started = time.monotonic()
     if label == "before":
         tool = json.loads(data).get("tool_name")
-        procs = [subprocess.Popen([crew_fixtures.resolve_bash() or "bash", os.path.join(SCRIPTS, e["script"]), *e["extra"]],  # pylint: disable=consider-using-with
-                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd=root)
+        bash = crew_fixtures.resolve_bash() or "bash"
+        procs = [subprocess.Popen([bash, os.path.join(SCRIPTS, e["script"]), *e["extra"]],  # pylint: disable=consider-using-with
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  env=env, cwd=root)
                  for e in rows_for(event, tool, registrations())]
     else:
-        procs = [subprocess.Popen([crew_fixtures.resolve_bash() or "bash", os.path.join(SCRIPTS, "crew-hook.sh"), event],  # pylint: disable=consider-using-with
-                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd=root)]
+        launcher = [crew_fixtures.resolve_bash() or "bash", os.path.join(SCRIPTS, "crew-hook.sh"), event]
+        procs = [subprocess.Popen(launcher, stdin=subprocess.PIPE, stdout=subprocess.PIPE,  # pylint: disable=consider-using-with
+                                  stderr=subprocess.PIPE, env=env, cwd=root)]
+    # Claude Code hands every hook its payload at once, so the payload goes to every
+    # process before any is waited on; communicating one at a time would serialise them.
     for proc in procs:
-        proc.communicate(data, timeout=RUN_CAP)
+        proc.stdin.write(data)
+        proc.stdin.close()
+    for proc in procs:
+        proc.communicate(timeout=RUN_CAP)
     return time.monotonic() - started
 
 
@@ -431,7 +446,8 @@ def main(argv=None):
                               capture_output=True, text=True, check=True, cwd=PLUGIN).stdout
         os.makedirs(GOLDEN, exist_ok=True)
         with open(REGISTRATIONS, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(json.dumps({"ref": args.registrations_from, "entries": flatten_hooks_json(text)}, indent=1) + "\n")
+            entries = flatten_hooks_json(text)
+            handle.write(json.dumps({"ref": args.registrations_from, "entries": entries}, indent=1) + "\n")
     if args.record:
         write_all()
     if args.latency:

@@ -1,6 +1,7 @@
 {
  "armed": false,
  "case": "write-restricted-role",
+ "dirty": "",
  "event": "PreToolUse",
  "harness": "claude",
  "no_python": true,

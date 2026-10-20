@@ -1,6 +1,7 @@
 {
  "armed": false,
  "case": "startup",
+ "dirty": "",
  "event": "SessionStart",
  "harness": "claude",
  "no_python": false,

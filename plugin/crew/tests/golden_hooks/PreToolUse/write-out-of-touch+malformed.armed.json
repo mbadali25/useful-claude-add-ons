@@ -1,10 +1,11 @@
 {
  "armed": true,
  "case": "write-out-of-touch",
+ "dirty": "",
  "event": "PreToolUse",
  "harness": "claude",
  "no_python": false,
- "payload": "{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"Write\", \"tool_input\": {\"file_path\": \"/tmp/crew-golden-19t",
+ "payload": "{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"Write\", \"tool_input\": {\"file_path\": \"{ROOT}/other/keep.py\"}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"cwd\": \"{ROOT}\"",
  "rows": [
   {
    "argv": [

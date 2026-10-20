@@ -1,6 +1,7 @@
 {
  "armed": true,
  "case": "read-no-match",
+ "dirty": "",
  "event": "PreToolUse",
  "harness": "claude",
  "no_python": false,

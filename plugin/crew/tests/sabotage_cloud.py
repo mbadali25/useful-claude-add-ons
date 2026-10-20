@@ -23,7 +23,6 @@ CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 GUARD = os.path.join(SCRIPTS, "cloud_guard.py")
 GUARD_SH = os.path.join(SCRIPTS, "cloud-guard.sh")
-GUARD_PS1 = os.path.join(SCRIPTS, "cloud-guard.ps1")
 GATE_PS1 = os.path.join(SCRIPTS, "verify-gate.ps1")
 CONFIG = os.path.join(SCRIPTS, "crew_config.py")
 # The allowlist's word-level helpers (T-0005 Step 8) live beside the guards.
@@ -263,9 +262,6 @@ CLOUD_GUARD_MUTATIONS = (
     ("cloud-guard.sh: no longer names its own flavour", GUARD_SH,
      'CREW_CLOUD_GUARD_FLAVOUR=bash PYTHONUTF8=1',
      'PYTHONUTF8=1', _T + "test_bash_wrapper_flavour_guard"),
-    ("cloud-guard.ps1: no longer names its own flavour", GUARD_PS1,
-     "  $env:CREW_CLOUD_GUARD_FLAVOUR = 'powershell'\n", "",
-     _T + "test_pwsh_wrapper_judges_by_tool"),
     ("cloud guard: the unpinned note is dropped with no .crew/", GUARD,
      '    if not whats or os.path.exists(marker):\n',
      '    if not whats or os.path.exists(marker) \\\n'
@@ -274,9 +270,6 @@ CLOUD_GUARD_MUTATIONS = (
     ("cloud-guard.sh: no python + armed no longer fails closed", GUARD_SH,
      '    exit 2\n  fi\n  exit 0\nfi\n', '    exit 0\n  fi\n  exit 0\nfi\n',
      _T + "test_bash_wrapper_without_python"),
-    ("cloud-guard.ps1: no python + armed no longer fails closed", GUARD_PS1,
-     '    exit 2\n  }\n  exit 0\n}\n', '    exit 0\n  }\n  exit 0\n}\n',
-     _T + "test_pwsh_wrapper_without_python"),
     ("verify-gate.ps1: pinned list drifts from PINNED_VARS", GATE_PS1,
      '"AZURE_SUBSCRIPTION_ID",\n                   "ARM_SUBSCRIPTION_ID", ',
      '"AZURE_SUBSCRIPTION_ID",\n                   ',

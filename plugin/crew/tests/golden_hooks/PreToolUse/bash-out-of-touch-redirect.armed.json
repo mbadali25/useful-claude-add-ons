@@ -1,6 +1,7 @@
 {
  "armed": true,
  "case": "bash-out-of-touch-redirect",
+ "dirty": "",
  "event": "PreToolUse",
  "harness": "claude",
  "no_python": false,

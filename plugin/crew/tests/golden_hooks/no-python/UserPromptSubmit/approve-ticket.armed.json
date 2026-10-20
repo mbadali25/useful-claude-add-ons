@@ -1,6 +1,7 @@
 {
  "armed": true,
  "case": "approve-ticket",
+ "dirty": "",
  "event": "UserPromptSubmit",
  "harness": "claude",
  "no_python": true,

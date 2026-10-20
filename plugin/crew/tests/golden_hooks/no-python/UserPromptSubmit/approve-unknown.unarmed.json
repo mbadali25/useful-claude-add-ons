@@ -1,6 +1,7 @@
 {
  "armed": false,
  "case": "approve-unknown",
+ "dirty": "",
  "event": "UserPromptSubmit",
  "harness": "claude",
  "no_python": true,

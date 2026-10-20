@@ -1,6 +1,7 @@
 {
  "armed": false,
  "case": "codex-session",
+ "dirty": "",
  "event": "SessionStart",
  "harness": "codex",
  "no_python": false,

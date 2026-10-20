@@ -1,6 +1,7 @@
 {
  "armed": true,
  "case": "reviewer",
+ "dirty": "",
  "event": "SubagentStart",
  "harness": "claude",
  "no_python": false,

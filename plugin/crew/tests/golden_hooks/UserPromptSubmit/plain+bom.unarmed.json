@@ -1,6 +1,7 @@
 {
  "armed": false,
  "case": "plain",
+ "dirty": "",
  "event": "UserPromptSubmit",
  "harness": "claude",
  "no_python": false,

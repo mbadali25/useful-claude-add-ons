@@ -1,6 +1,7 @@
 {
  "armed": false,
  "case": "permission",
+ "dirty": "",
  "event": "Notification",
  "harness": "claude",
  "no_python": true,

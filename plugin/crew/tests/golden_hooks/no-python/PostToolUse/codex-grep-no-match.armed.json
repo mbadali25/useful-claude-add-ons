@@ -1,6 +1,7 @@
 {
  "armed": true,
  "case": "codex-grep-no-match",
+ "dirty": "",
  "event": "PostToolUse",
  "harness": "codex",
  "no_python": true,

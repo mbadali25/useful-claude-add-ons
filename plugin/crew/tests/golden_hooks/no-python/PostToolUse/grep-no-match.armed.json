@@ -1,6 +1,7 @@
 {
  "armed": true,
  "case": "grep-no-match",
+ "dirty": "",
  "event": "PostToolUse",
  "harness": "claude",
  "no_python": true,

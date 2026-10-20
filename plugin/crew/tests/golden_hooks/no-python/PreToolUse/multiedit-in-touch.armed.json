@@ -1,6 +1,7 @@
 {
  "armed": true,
  "case": "multiedit-in-touch",
+ "dirty": "",
  "event": "PreToolUse",
  "harness": "claude",
  "no_python": true,

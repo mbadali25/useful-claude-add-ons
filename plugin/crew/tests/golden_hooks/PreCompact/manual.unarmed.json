@@ -1,6 +1,7 @@
 {
  "armed": false,
  "case": "manual",
+ "dirty": "",
  "event": "PreCompact",
  "harness": "claude",
  "no_python": false,

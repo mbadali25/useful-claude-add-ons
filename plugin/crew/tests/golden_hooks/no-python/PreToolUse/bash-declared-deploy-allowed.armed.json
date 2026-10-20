@@ -1,6 +1,7 @@
 {
  "armed": true,
  "case": "bash-declared-deploy-allowed",
+ "dirty": "",
  "event": "PreToolUse",
  "harness": "claude",
  "no_python": true,

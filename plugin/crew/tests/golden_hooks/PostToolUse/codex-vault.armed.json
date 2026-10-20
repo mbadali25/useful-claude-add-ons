@@ -1,6 +1,7 @@
 {
  "armed": true,
  "case": "codex-vault",
+ "dirty": "",
  "event": "PostToolUse",
  "harness": "codex",
  "no_python": false,

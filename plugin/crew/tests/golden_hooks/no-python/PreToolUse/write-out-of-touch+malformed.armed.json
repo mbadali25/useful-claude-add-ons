@@ -1,10 +1,11 @@
 {
  "armed": true,
  "case": "write-out-of-touch",
+ "dirty": "",
  "event": "PreToolUse",
  "harness": "claude",
  "no_python": true,
- "payload": "{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"Write\", \"tool_input\": {\"file_path\": \"/tmp/crew-golden-rru",
+ "payload": "{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"Write\", \"tool_input\": {\"file_path\": \"{ROOT}/other/keep.py\"}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"cwd\": \"{ROOT}\"",
  "rows": [
   {
    "argv": [
@@ -13,7 +14,7 @@
    "exit": 2,
    "flavour": "bash",
    "script": "promote-gate.sh",
-   "stderr": "jq: parse error: Unfinished string at EOF at line 1, column 105\nPROMOTION BLOCKED: no usable python, and jq could not read the tool payload, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+.\n",
+   "stderr": "jq: parse error: Unfinished JSON term at EOF at line 1, column <N>\nPROMOTION BLOCKED: no usable python, and jq could not read the tool payload, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+.\n",
    "stdout": "",
    "timed_out": false
   },

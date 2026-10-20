@@ -1,6 +1,7 @@
 {
  "armed": true,
  "case": "mcp-obsidian",
+ "dirty": "",
  "event": "PostToolUse",
  "harness": "claude",
  "no_python": false,

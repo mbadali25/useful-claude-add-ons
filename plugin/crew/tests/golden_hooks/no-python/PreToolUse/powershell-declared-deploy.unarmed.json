@@ -1,6 +1,7 @@
 {
  "armed": false,
  "case": "powershell-declared-deploy",
+ "dirty": "",
  "event": "PreToolUse",
  "harness": "claude",
  "no_python": true,
