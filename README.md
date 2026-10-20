@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.58**: The review prompt shows a literal four-field finding and a literal READ line. `crew` 1.2.58: the instructions every reviewer reads now include one example finding line and one example READ line, so a reviewer is less likely to print a finding with too few fields or a part path without its directory and have the round read INCOMPLETE.
 - **crew 1.2.57**: Wave lanes run as a Claude Code workflow, the autopilot modules are frozen, and the Git Bash resolver has a strict mode. `crew` 1.2.57: `/crew:autopilot wave` now fans its lanes out through the plugin's `wave` workflow (`/crew:wave`), a lane that fails or returns nothing readable is reported `unknown` instead of clean, and every lane brief opens with a `Ticket ID:` line.
-- **crew 1.2.56**: A hook-script child that ignores its kill can no longer hold a review step open. `crew` 1.2.56: a review step that runs a helper script gives up on a hung or unkillable helper after the bound instead of waiting on it, and the codemap notes it reads must be regular files.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

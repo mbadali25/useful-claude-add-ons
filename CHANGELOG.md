@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.58: the review prompt shows a literal four-field finding and a literal READ line (L-0858)
+
+- **Summary.** `crew` 1.2.58: the instructions every reviewer reads now include one example finding line and one example READ line, so a reviewer is less likely to print a finding with too few fields or a part path without its directory and have the round read INCOMPLETE.
+- `review_prompt.PROMPT_HEAD` states that a defect line has exactly four non-blank fields (reproduction last), that a line with fewer than four is discarded, and gives one example of the form.
+- `review_prompt._bundle_block` tells the reviewer to copy a part path character for character, directory included (or give only the bare file name), and gives `READ|<path>` built from the first listed part's exact path.
+- The parser (`review_verdict`) is unchanged. Evidence: Codex rounds 1 and 2 of L-0851 were INCOMPLETE for these two reasons. The six `golden/prepare` prompts gain the same inserted lines.
+
 ### Changed — crew 1.2.57: wave lanes run as a Claude Code workflow, the autopilot modules are frozen, and the Git Bash resolver has a strict mode (L-0727, slice 1)
 
 - **Summary.** `crew` 1.2.57: `/crew:autopilot wave` now fans its lanes out through the plugin's `wave` workflow (`/crew:wave`), a lane that fails or returns nothing readable is reported `unknown` instead of clean, and every lane brief opens with a `Ticket ID:` line.
