@@ -427,6 +427,21 @@ def test_the_project_directory_named_by_claude_is_not_trusted_either(tmp_path, e
 
 
 @pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_a_relative_home_with_a_cdpath_does_not_make_the_projects_venv_the_default(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """HOME=bin and CDPATH make `cd bin` land in /usr/bin, outside the project, while HOME itself stays a
+    path relative to the project: the venv planted under it must not run."""
+    need(hook)
+    if WINDOWS or as_windows(hook):
+        pytest.skip("POSIX cd and CDPATH; watch.ps1 takes the profile from the OS")
+    machine = Machine(tmp_path)
+    machine.add_config()
+    planted_home = machine.project / "bin"
+    machine.add_venv(planted_home / ".local" / "share" / "ai-connect" / "venv", "evil")
+    result = machine.run(hook, windows=False, cwd=machine.project, extra_env={"HOME": "bin", "CDPATH": "/usr"})
+    assert not machine.marker.exists(), result.stderr
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
 def test_python_variables_from_the_project_do_not_reach_the_interpreter(tmp_path, event, hook):  # pylint: disable=unused-argument
     """PYTHONPATH and friends would make a trusted interpreter import the repository's code: they are dropped."""
     stubs(hook)
@@ -452,6 +467,9 @@ def test_a_home_moved_into_the_project_does_not_make_the_projects_venv_the_defau
     if WINDOWS or as_windows(hook):
         pytest.skip("the account home is read from the account database off Windows; watch.ps1 is not asked here")
     (tmp_path / "project").mkdir()
+    account = Path(os.path.expanduser("~" + (os.environ.get("USER") or "root")))
+    if (account / ".local" / "share" / "ai-connect" / "venv").exists():
+        pytest.skip("this account has a real deploy venv, which the moved-HOME guard would legitimately use")
     inner = tmp_path / "project" / "fakehome"
     machine = Machine(tmp_path, home=inner)
     machine.add_config()

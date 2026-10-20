@@ -16,6 +16,13 @@ fi
 # caller's PATH is put back before the watcher starts.
 ORIG_PATH="$PATH"
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+# CDPATH makes a relative `cd` land somewhere else, and a relative HOME is a project-relative path
+# once the project is the working directory: neither is accepted.
+unset CDPATH
+case "${HOME:-}" in
+    /*) ;;
+    *) HOME="" ;;
+esac
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WATCHER="integrations/claude-code/aiconnect_watch.py"
