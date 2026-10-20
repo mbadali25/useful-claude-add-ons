@@ -197,7 +197,11 @@ def build_repo(base, armed, dirty=None):
 
 def env_for(root, home, path=None, plugin=PLUGIN):
     """A constructed environment, never a copy of the real one."""
-    names = ("LANG", "LC_ALL", "SystemRoot", "TERM", "XDG_CACHE_HOME")
+    # What a process needs just to start: the platform's own variables on Windows
+    # (they are absent on POSIX and so add nothing there).
+    names = ("LANG", "LC_ALL", "TERM", "XDG_CACHE_HOME", "SystemRoot", "SYSTEMROOT", "windir", "COMSPEC",
+             "PATHEXT", "TEMP", "TMP", "ProgramFiles", "ProgramFiles(x86)", "ProgramData", "APPDATA",
+             "LOCALAPPDATA")
     keep = {key: os.environ[key] for key in names if key in os.environ}
     env = dict(keep, HOME=home, USERPROFILE=home, CLAUDE_PROJECT_DIR=root, CLAUDE_PLUGIN_ROOT=plugin,
                PATH=path if path is not None else os.environ.get("PATH", ""),
