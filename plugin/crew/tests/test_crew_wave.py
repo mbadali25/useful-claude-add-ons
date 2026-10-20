@@ -1815,7 +1815,7 @@ def test_start_json_launch_argv_is_the_lane_prompt_command(tmp_path):
 
     assert (argv[0], os.path.basename(argv[1]), argv[2:]) == (
         "python3", "crew_wave.py",
-        ["lane-prompt", "--root", str(root), "--set", "s", "--ticket", "T-1"])
+        ["lane-prompt", "--root", crew_wave._plain_path(str(root)), "--set", "s", "--ticket", "T-1"])  # pylint: disable=protected-access
 
 
 def test_start_json_argv_runs_and_prints_the_lane_prompt(tmp_path):
