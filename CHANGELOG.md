@@ -19,8 +19,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   `${AI_CONNECT_HOME:-~/.local/share/ai-connect}/venv`, on Windows
   `%USERPROFILE%\AppData\Local\ai-connect\venv`. With deploy's venv the watcher script runs from deploy's
   copy of the plugin beside it when there is one.
-- **Unchanged.** Installed but never set up, the hooks stay silent. Set up with no venv anywhere, the error
-  now names every place it looked.
+- **Security.** `AI_CONNECT_VENV` and `AI_CONNECT_HOME` choose the program the hook starts, and a project's
+  settings can set environment variables, so each is used only as an absolute path (no `..`) under the home,
+  outside the project, and only on a machine that has been set up; `AI_CONNECT_VENV`'s `bin/python` must be the
+  user's own (Linux, macOS). Otherwise it is ignored.
+- **Unchanged.** Installed but never set up, the hooks stay silent whatever the variables say. Set up with no
+  venv anywhere, the error names the places it looked, not the values of the variables.
 
 ### Changed — crew 1.2.57: wave lanes run as a Claude Code workflow, the autopilot modules are frozen, and the Git Bash resolver has a strict mode (L-0727, slice 1)
 

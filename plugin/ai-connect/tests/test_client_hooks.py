@@ -116,12 +116,21 @@ class Machine:
         # watch.ps1 writes the script's path with backslashes, which only Windows reads as separators
         return label, Path(script if WINDOWS else script.replace("\\", "/"))
 
-    def run(self, hook: dict, windows: bool, extra_env: dict | None = None) -> subprocess.CompletedProcess:
+    @property
+    def project(self) -> Path:
+        """The directory the session runs in, which is the hook's working directory: beside the home, not under it."""
+        path = self.tmp / "project"
+        path.mkdir(exist_ok=True)
+        return path
+
+    def run(self, hook: dict, windows: bool, extra_env: dict | None = None,
+            cwd: Path | None = None) -> subprocess.CompletedProcess:
         """Run one hooks.json command line as Claude Code does: ${CLAUDE_PLUGIN_ROOT} filled in, then the
-        flavour's shell. windows: answer as a Windows machine does ($OS is Windows_NT there)."""
+        flavour's shell. windows: answer as a Windows machine does ($OS is Windows_NT there). cwd: the
+        project directory, by default one beside the home."""
         command = hook["command"].replace("${CLAUDE_PLUGIN_ROOT}", str(self.root))
         env = {k: v for k, v in os.environ.items()
-               if k not in ("OS", "CLAUDE_CONFIG_DIR", "AI_CONNECT_HOME", "AI_CONNECT_VENV")}
+               if k not in ("OS", "CLAUDE_CONFIG_DIR", "CLAUDE_PROJECT_DIR", "AI_CONNECT_HOME", "AI_CONNECT_VENV")}
         env.update(HOME=str(self.home), USERPROFILE=str(self.home), CLAUDE_PLUGIN_ROOT=str(self.root),
                    # A private PowerShell startup cache: two pwsh sharing one can corrupt it (scripts/pwsh-isolated.sh)
                    XDG_CACHE_HOME=str(self.xdg_cache))
@@ -133,7 +142,7 @@ class Machine:
         else:
             argv = ["sh", "-c", command]
         return subprocess.run(argv, capture_output=True, text=True, check=False, env=env,
-                              stdin=subprocess.DEVNULL, timeout=120)
+                              stdin=subprocess.DEVNULL, timeout=120, cwd=cwd or self.project)
 
 
 def runs_here(hook: dict) -> bool:
@@ -235,14 +244,14 @@ def test_venv_lost_after_an_update_is_an_error_naming_the_fix(tmp_path, event, h
     result = machine.run(hook, windows=as_windows(hook))
     assert result.returncode == 1 and result.stdout == ""
     installer = "install.cmd" if flavour(hook) == "powershell" else "install.sh"
-    assert "no venv at" in result.stderr and installer in result.stderr, result.stderr
+    assert "no venv found" in result.stderr and installer in result.stderr, result.stderr
     assert "after each plugin update" in result.stderr
     assert str(machine.root) in result.stderr  # the directory to run it in: the cache path is not guessable
     assert not machine.marker.exists()
     # Both places a venv is looked for are named, and the other way to get one
-    deploy_venv, deploy = machine.deploy_home(hook) / "venv", "deploy.ps1" if as_windows(hook) else "deploy.sh"
-    stderr = result.stderr if WINDOWS else result.stderr.replace("\\", "/")
-    assert str(deploy_venv) in stderr and deploy in stderr, result.stderr
+    deploy_venv = r"%USERPROFILE%\AppData\Local\ai-connect\venv" if as_windows(hook) else "~/.local/share/ai-connect/venv"
+    deploy = "deploy.ps1" if as_windows(hook) else "deploy.sh"
+    assert deploy_venv in result.stderr and deploy in result.stderr, result.stderr
 
 
 # ---------------------------------------------------------------- which venv: three places, in order
@@ -291,7 +300,7 @@ def test_ai_connect_home_moves_deploys_place(tmp_path, event, hook):  # pylint: 
     stubs(hook)
     machine = Machine(tmp_path)
     machine.add_config()
-    moved = tmp_path / "moved home"
+    moved = machine.home / "moved home"
     machine.add_venv(moved / "venv", "moved")
     script = machine.add_deployed_app(moved)
     machine.add_venv(machine.deploy_home(hook) / "venv", "default")
@@ -321,7 +330,7 @@ def test_ai_connect_venv_comes_first(tmp_path, event, hook):  # pylint: disable=
     stubs(hook)
     machine = Machine(tmp_path)
     machine.add_config()
-    named = tmp_path / "named venv"
+    named = machine.home / "named venv"
     machine.add_venv(named, "named")
     machine.add_venv()
     home = machine.deploy_home(hook)
@@ -341,25 +350,115 @@ def test_an_ai_connect_venv_with_no_python_falls_through(tmp_path, event, hook):
     home = machine.deploy_home(hook)
     machine.add_venv(home / "venv", "deploy")
     script = machine.add_deployed_app(home)
-    result = machine.run(hook, windows=as_windows(hook), extra_env={"AI_CONNECT_VENV": str(tmp_path / "nothing")})
+    result = machine.run(hook, windows=as_windows(hook), extra_env={"AI_CONNECT_VENV": str(machine.home / "nothing")})
     assert (result.returncode, result.stderr) == (WAKE, "")
     assert machine.started() == ("deploy", script)
 
 
 @pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
-def test_set_up_and_no_venv_in_any_place_names_all_three(tmp_path, event, hook):  # pylint: disable=unused-argument
-    """Config, and AI_CONNECT_VENV and AI_CONNECT_HOME both pointing at nothing: exit 1, each place named."""
+def test_set_up_and_no_venv_in_any_place_names_the_places_not_the_variables(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """Config, and AI_CONNECT_VENV and AI_CONNECT_HOME both pointing at nothing: exit 1, the places named,
+    the variables' values not echoed."""
     need(hook)
     machine = Machine(tmp_path)
     machine.add_config()
-    named, moved = tmp_path / "nothing", tmp_path / "moved home"
+    named, moved = machine.home / "nothing-named", machine.home / "nothing-moved"
     result = machine.run(hook, windows=as_windows(hook),
                          extra_env={"AI_CONNECT_VENV": str(named), "AI_CONNECT_HOME": str(moved)})
     assert result.returncode == 1 and result.stdout == ""
-    stderr = result.stderr if WINDOWS else result.stderr.replace("\\", "/")
-    for place in (named, machine.root / "venv", moved / "venv"):
-        assert str(place) in stderr, result.stderr
-    assert "AI_CONNECT_VENV" in stderr
+    assert str(machine.root / "venv") in result.stderr and "AI_CONNECT_VENV" in result.stderr
+    assert "nothing-named" not in result.stderr and "nothing-moved" not in result.stderr, result.stderr
+    assert not machine.marker.exists()
+
+
+# ---------------------------------------------------------------- the variables are not trusted
+#
+# AI_CONNECT_VENV and AI_CONNECT_HOME pick the interpreter this hook starts at every SessionStart and Stop,
+# and a project's settings.json can set environment variables. A value is used only when it is an absolute
+# path with no '..' under the user's home and outside the project the session runs in. Each must-block case
+# plants a stub 'python' where the attacker can put one and checks it is NOT run; the must-allow cases above
+# (named venv, AI_CONNECT_HOME under the home) and below keep the legitimate uses working.
+
+
+def planted(machine: Machine, where: Path) -> None:
+    machine.add_venv(where, "evil")
+
+
+@pytest.mark.parametrize("variable", ["AI_CONNECT_VENV", "AI_CONNECT_HOME"])
+@pytest.mark.parametrize("kind", ["inside-the-project", "outside-the-home", "relative", "dotdot"])
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_a_variable_that_is_not_trusted_never_runs_a_planted_interpreter(tmp_path, event, hook, variable, kind):  # pylint: disable=unused-argument
+    """The planted python is where the variable points; the machine has a real deploy venv. The real one runs."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    home = machine.deploy_home(hook)
+    machine.add_venv(home / "venv", "deploy")
+    # a copy of the plugin with the watcher, so a hijacked AI_CONNECT_HOME would be visible as a script path
+    machine.add_deployed_app(home)
+    # AI_CONNECT_HOME is the directory that holds venv/, AI_CONNECT_VENV is the venv itself
+    leaf = "venv" if variable == "AI_CONNECT_HOME" else ""
+    spot = {"inside-the-project": machine.project / "evil", "outside-the-home": tmp_path / "elsewhere",
+            "relative": machine.project / "evil", "dotdot": machine.home / "ok"}[kind]
+    planted(machine, spot / leaf)
+    value = {"relative": "evil", "dotdot": str(machine.home / "ok" / ".." / "ok")}.get(kind, str(spot))
+    result = machine.run(hook, windows=as_windows(hook), extra_env={variable: value}, cwd=machine.project)
+    assert (result.returncode, result.stderr) == (WAKE, "")
+    label, _ = machine.started()
+    assert label == "deploy", f"{variable}={value} ({kind}) ran the {label} interpreter"
+
+
+@pytest.mark.parametrize("variable", ["AI_CONNECT_VENV", "AI_CONNECT_HOME"])
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_the_project_directory_named_by_claude_is_not_trusted_either(tmp_path, event, hook, variable):  # pylint: disable=unused-argument
+    """CLAUDE_PROJECT_DIR is the project even when the hook's working directory is somewhere else."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    project = machine.home / "src" / "repo"
+    leaf = "venv" if variable == "AI_CONNECT_HOME" else ""
+    planted(machine, project / "evil" / leaf)
+    value = str(project / "evil")
+    result = machine.run(hook, windows=as_windows(hook), extra_env={variable: value, "CLAUDE_PROJECT_DIR": str(project)},
+                         cwd=tmp_path)
+    assert result.returncode == 1 and not machine.marker.exists(), result.stderr
+    assert "evil" not in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_a_trusted_variable_still_works_when_the_project_is_the_home(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """A session started in the home directory: everything under the home is not 'inside the project'."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    named = machine.home / "named venv"
+    machine.add_venv(named, "named")
+    result = machine.run(hook, windows=as_windows(hook), extra_env={"AI_CONNECT_VENV": str(named)}, cwd=machine.home)
+    assert (result.returncode, result.stderr) == (WAKE, "")
+    assert machine.started() == ("named", machine.root / WATCHER)
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_a_venv_chosen_by_variable_needs_the_config(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """AI_CONNECT_VENV names a good venv, but the machine was never set up: silent, not an error per event."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    named = machine.home / "named venv"
+    machine.add_venv(named, "named")
+    result = machine.run(hook, windows=as_windows(hook), extra_env={"AI_CONNECT_VENV": str(named)})
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+    assert not machine.marker.exists()
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_a_home_chosen_by_variable_needs_the_config(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """The same for AI_CONNECT_HOME: a venv under it does not make an unconfigured machine run the watcher."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    moved = machine.home / "moved home"
+    machine.add_venv(moved / "venv", "moved")
+    result = machine.run(hook, windows=as_windows(hook), extra_env={"AI_CONNECT_HOME": str(moved)})
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
     assert not machine.marker.exists()
 
 

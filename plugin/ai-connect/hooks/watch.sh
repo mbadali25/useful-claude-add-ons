@@ -19,16 +19,44 @@ WATCHER="integrations/claude-code/aiconnect_watch.py"
 # "set up, then the venv went with the old plugin directory".
 CONFIG="${HOME:-}/.config/ai-connect/config.yaml"
 
+# AI_CONNECT_VENV and AI_CONNECT_HOME choose which interpreter this hook starts on every
+# SessionStart and Stop, and a project's settings.json can set environment variables. So a
+# value is used only when it names a directory that is an absolute path with no '..', that
+# lies under the user's own home (real paths compared), and that is not inside the project
+# the session runs in (the current directory, CLAUDE_PROJECT_DIR): a repository cannot
+# plant the interpreter this hook runs. A value that fails is ignored, as if unset.
+HOME_REAL=""
+if [ -n "${HOME:-}" ]; then
+    HOME_REAL="$(cd "$HOME" 2>/dev/null && pwd -P)" || HOME_REAL=""
+fi
+trusted_dir() {
+    case "$1" in /*) ;; *) return 1 ;; esac
+    case "/$1/" in */../*) return 1 ;; esac
+    _real="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+    [ -n "$HOME_REAL" ] || return 1
+    case "$_real/" in "$HOME_REAL"/*) ;; *) return 1 ;; esac
+    for _proj in "${CLAUDE_PROJECT_DIR:-}" "$PWD"; do
+        [ -n "$_proj" ] || continue
+        _p="$(cd "$_proj" 2>/dev/null && pwd -P)" || continue
+        # A project directory that is the home or above it holds everything under the home
+        case "$HOME_REAL/" in "$_p"/*) continue ;; esac
+        case "$_real/" in "$_p"/*) return 1 ;; esac
+    done
+    return 0
+}
+
 # Where deploy/deploy.py (deploy.sh, setup.sh) installs: deploy_core.py's
 # APP_HOME, with the venv in it and a copy of the plugin beside that. Empty
-# when there is neither an AI_CONNECT_HOME nor a HOME to look under.
-DEPLOY_HOME="${AI_CONNECT_HOME:-}"
-if [ -z "$DEPLOY_HOME" ] && [ -n "${HOME:-}" ]; then
+# when there is neither a trusted AI_CONNECT_HOME nor a HOME to look under.
+DEPLOY_HOME=""
+if [ -n "${AI_CONNECT_HOME:-}" ] && trusted_dir "$AI_CONNECT_HOME"; then
+    DEPLOY_HOME="$AI_CONNECT_HOME"
+elif [ -n "${HOME:-}" ]; then
     DEPLOY_HOME="$HOME/.local/share/ai-connect"
 fi
 
 # The first venv that is there, in this order. watch.ps1 has the same three.
-#   1. AI_CONNECT_VENV, the variable deploy_core.py reads for its venv
+#   1. AI_CONNECT_VENV, the variable deploy_core.py reads for its venv (trusted, see above)
 #   2. the plugin directory's own venv, where install.sh creates it
 #   3. deploy's venv
 # APP is the directory the watcher script is run from. With deploy's venv it is
@@ -36,13 +64,18 @@ fi
 # `deploy peer --register-mcp`): the MCP server of this machine runs from that
 # copy, with that venv. `deploy peer --install-hooks` alone makes the venv and
 # no copy, and then the watcher is this plugin's own.
+# Anything chosen through a variable needs the config too: a machine that was never set
+# up stays silent whatever the variables say.
 PYTHON=""
 APP="$ROOT"
-if [ -n "${AI_CONNECT_VENV:-}" ] && [ -x "$AI_CONNECT_VENV/bin/python" ]; then
+if [ -e "$CONFIG" ] && [ -n "${AI_CONNECT_VENV:-}" ] && [ -x "$AI_CONNECT_VENV/bin/python" ] \
+        && trusted_dir "$AI_CONNECT_VENV" \
+        && [ -n "$(find "$AI_CONNECT_VENV/bin/python" -maxdepth 0 -user "$(id -u)" 2>/dev/null)" ]; then
     PYTHON="$AI_CONNECT_VENV/bin/python"
 elif [ -x "$ROOT/venv/bin/python" ]; then
     PYTHON="$ROOT/venv/bin/python"
-elif [ -n "$DEPLOY_HOME" ] && [ -x "$DEPLOY_HOME/venv/bin/python" ]; then
+elif [ -n "$DEPLOY_HOME" ] && [ -x "$DEPLOY_HOME/venv/bin/python" ] \
+        && { [ -e "$CONFIG" ] || [ "$DEPLOY_HOME" = "${HOME:-}/.local/share/ai-connect" ]; }; then
     PYTHON="$DEPLOY_HOME/venv/bin/python"
     if [ -f "$DEPLOY_HOME/app/$WATCHER" ]; then
         APP="$DEPLOY_HOME/app"
@@ -57,15 +90,9 @@ if [ -z "$PYTHON" ]; then
     fi
     # Set up, and no venv anywhere it is looked for. The plugin cache directory
     # changes on every plugin update, so a venv install.sh made inside it does
-    # not come along; deploy's lives outside it and does.
-    LOOKED="$ROOT/venv"
-    if [ -n "$DEPLOY_HOME" ]; then
-        LOOKED="$LOOKED or $DEPLOY_HOME/venv"
-    fi
-    if [ -n "${AI_CONNECT_VENV:-}" ]; then
-        LOOKED="$AI_CONNECT_VENV (AI_CONNECT_VENV) or $LOOKED"
-    fi
-    echo "ai-connect watch.sh: no venv at $LOOKED - run $ROOT/install.sh --client (again after each plugin update), or $ROOT/deploy/deploy.sh peer once" >&2
+    # not come along; deploy's lives outside it and does. The message names
+    # places, not the values of the variables.
+    echo "ai-connect watch.sh: no venv found (looked in $ROOT/venv, in deploy's ~/.local/share/ai-connect/venv or under AI_CONNECT_HOME, and at AI_CONNECT_VENV; a variable that is not an absolute path under your home, outside the project, is ignored) - run $ROOT/install.sh --client (again after each plugin update), or $ROOT/deploy/deploy.sh peer once" >&2
     exit 1
 fi
 exec "$PYTHON" "$APP/$WATCHER"
