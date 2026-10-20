@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@adb3c2a7 on 2026-10-09. Verify before trusting.
+%% Generated from useful-claude-add-ons@c1d365d7 on 2026-10-20. Verify before trusting.
 %% Anchors: plugin/crew/commands/implement.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_refresh_check.py, plugin/crew/hooks/scripts/crew_standards.py
 %% Purpose: /crew:implement from the approval check to handing over to /crew:review: the plan steps under the scope guard, the refresh-artifacts loop and the required standards self-check.
 %% Embed: none
@@ -42,9 +42,9 @@ flowchart TB
         im2 --> im3a["changed-file list, verify<br/>:59, :69"]
         im3a --> im3["step 6: tests, then /crew:docs<br/>:88-91"]
         im3 --> rf1{"crew_refresh_check.py<br/>:94"}
-        rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
+        rf1 -- refresh --> rf2["run the named refresh,<br/>commit, re-run"]
         rf2 --> rf1
-        rf1 -- "fresh-uncommitted" --> rf3["commit the paths its<br/>uncommitted: line lists, re-run<br/>:99"]
+        rf1 -- uncommitted --> rf3["commit the paths its<br/>uncommitted: line lists, re-run<br/>:99"]
         rf3 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
         rf1 -- fresh --> sc1["required standards self-check<br/>:106-110"]
@@ -57,3 +57,5 @@ flowchart TB
     stop["Stop hooks every turn:<br/>verify-gate, completion-audit<br/>hooks.json:36-37"] -.- im2
 %% T-0063 (#368) merges origin/main c9263465 (rerere off): main split this diagram into parts (#375); T-0063's edits re-applied here.
 %% New rf3 node and its two edges (implement.md:99, re-read with grep -n on batch-7-build after the merge). rf1 :94 holds.
+%% Re-anchored adb3c2a7 -> c1d365d7 (L-0850, crew 1.2.58): of the Anchors paths only hooks.json changed. hooks.json:12-15 (PreToolUse) and :36-37 (Stop) hold after the 36 -> 16 registration rewrite (re-read), and crew_hook.py TABLE runs scope-guard.sh (:75), verify-gate.sh (:81) and completion-audit.sh (:83). No node or edge changed.
+%% Edge labels "refresh with ..." and "fresh-uncommitted" shortened to "refresh" and "uncommitted" (same branches) so the readability check passes; it reported one label overlap at HEAD.

@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@a2755ab5a
-verified: 2026-10-19
+anchor: useful-claude-add-ons@c1d365d72
+verified: 2026-10-20
 
 ## Re-derive provenance
 
@@ -204,7 +204,7 @@ deny > ask > allow, `decision: "block"` and `continue: false` win, `additionalCo
 repo or that cannot be told; in an armed repo a guard row that times out, a missing script, or an
 exception in the dispatcher is exit 2 with a named reason on `BLOCKING_EVENTS` (`PreToolUse`,
 `UserPromptSubmit`, `Stop`, `:47`); an unarmed repo gets exit 0 (`_settle` `:539`, `_fault` `:613`).
-The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 334 lines; `crew-hook.ps1`, 482) supervise
+The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 339 lines; `crew-hook.ps1`, 482) supervise
 rather than exec it: exit 0 and 2 pass through, anything else becomes the armed/unarmed fault above,
 under one deadline (`CREW_HOOK_DEADLINE`, the registration timeout minus 5 s). `crew-hook.sh` exits 0 on
 Windows (`uname -s` MINGW/MSYS/CYGWIN; `OS=Windows_NT` only when uname names no POSIX kernel) and
@@ -2684,7 +2684,7 @@ citations taken with `grep -n` there.
   (`problems`, `:315`). Guard tests stub a failing tool reachable only through `shutil.which`
   (`plugin/crew/tests/tool_fixtures.py:31`).
 - DERIVED: `crew_shell.resolve_gitbash` runs the resolved git through its injectable `runner`
-  (`plugin/crew/hooks/scripts/crew_shell.py:245`); the lint knows `runner`, `execute` and
+  (`plugin/crew/hooks/scripts/crew_shell.py:264`); the lint knows `runner`, `execute` and
   obsidian-vault's `_run_bounded` as argv wrappers (`WRAPPERS`, `:180`).
 - JUDGEMENT: the lint sees a literal at the call, or in a name the same function assigns once. An
   argv built in another function, or reassigned, is not checked.
@@ -2854,7 +2854,7 @@ Derived on `rush/g3c-contracts`, not at this map's `anchor:`; re-find each name 
 
 Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each name by content.
 
-- DERIVED: `plugin/crew/hooks/scripts/crew_wave.py:787` `role_model(top, role, cfg=None)` resolves
+- DERIVED: `plugin/crew/hooks/scripts/crew_wave.py:792` `role_model(top, role, cfg=None)` resolves
   `dev.roles.<role>` through `crew_state.resolve_role` and returns a lowercased model only for a pin
   whose provider is exactly `claude`, whose text matches `MODEL_ID` (`:781`) and whose family is a
   claude one; a provider-less pin under a non-claude block, a miscased provider, a non-claude model on
@@ -5510,3 +5510,6 @@ by up to the rule's index; several were already inexact on main before the slice
 provenance, not current claims; re-derive them with `/crew:onboard --refresh crew`, tracked under
 L-0837/L-0764). The `plugin/crew/README.md:<line>` citations are the same: historical provenance of
 past commits, not claims about the present file. No behaviour documented here changed.
+
+
+**Re-anchored `a2755ab5a` -> `c1d365d72` on 2026-10-20 (L-0850 / PR #656 close: merge of origin/main `dd03907bb`, crew 1.2.58 re-set).** Per-path re-verify, citation by citation: every `path:line` into a file changed since `a2755ab5a` was re-mapped by diffing that file at the old anchor against HEAD. Two live citations moved: `plugin/crew/hooks/scripts/crew_shell.py:245` -> `:264` and `plugin/crew/hooks/scripts/crew_wave.py:787` -> `:792` (main landed changes above both). `crew-hook.sh` is now 339 lines (was 334: the `_armed` refactor, `7b7fe165b`); no other citation into it moved. The Hooks section already described the dispatcher and the 16 registrations, edited in the L-0850 lane; `hooks.json`, `crew_hook.py`, `crew-hook.ps1` and `crew_instructions.py` are unchanged since that edit, so their citations were not touched. JUDGEMENT: citations written as a bare file name (`autopilot.md:`, `plugin.json:`) sit only in the earlier re-anchor paragraphs above and were not re-mapped; they describe those moments and are not live claims. Not re-read word for word: the sections the lane did not change.

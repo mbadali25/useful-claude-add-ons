@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@f808e5f0 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@c1d365d7 on 2026-10-20. Verify before trusting.
 %% Anchors: plugin/crew/commands/approve.md, plugin/crew/commands/plan.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% Purpose: How /crew:approve, typed by the user only, records or refuses a plan approval through the approval hook, including the group-approval path, and how the ticket then moves to planned.
 %% Embed: none
@@ -30,5 +30,6 @@ flowchart TB
         apg -- "confirmed, every hash unchanged" --> ap2
     end
 
-    ap2 --> planned["spec.md 'status: planned',<br/>move --to planned<br/>plan.md:60-63"]
+    ap2 --> planned["spec.md 'status: planned',<br/>move --to planned<br/>plan.md:70-73"]
     planned --> to_im0>"next: implement part<br/>crew_ticket.py validate"]
+%% Re-anchored f808e5f0 -> c1d365d7 (L-0850, crew 1.2.58): of the Anchors paths hooks.json, plan.md, crew_ticket.py and crew_tracker.py changed. hooks.json:8-9 still holds (UserPromptSubmit, one launcher per shell; crew_hook.py TABLE :70 runs approval-hook.sh). plan.md gained ten lines at :44, so the status-planned citation moved plan.md:60-63 -> :70-73 (re-read). No node cites a line in crew_ticket.py or crew_tracker.py. No node or edge changed.

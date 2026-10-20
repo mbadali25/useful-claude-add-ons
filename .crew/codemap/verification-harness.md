@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@291801622
-verified: 2026-10-01
+anchor: useful-claude-add-ons@c1d365d72
+verified: 2026-10-20
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -903,7 +903,7 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
 - `scripts/check-marketplace.py:519` — `check_versions`.
 - `scripts/check-marketplace.py:565`, `:673` — `count_crew_markdown_lines`,
   `check_self_claims`.
-- `scripts/check_instructions.py:685` — `main()`, nine checks.
+- `scripts/check_instructions.py:909` — `main()`: `load_allowance` and twelve `check_*` calls.
 - `.github/workflows/instruction-budgets.yml:71-93` — the `github.event.before`
   base-sha fix for a `push` to `main`.
 
@@ -2655,3 +2655,5 @@ moved for it because the earlier sections were not re-verified against the commi
 **Re-anchored `926f1277` -> `09e31dba` on 2026-10-10 (L-0753, after merging main `e77532e01`).** Per-path check `git diff --name-only 926f1277..09e31dba`: main's L-0759 (#595: `plugin/crew/tests/test_promote_gate_review.py`, crew 1.2.19) and L-0760 (#596: `.github/workflows/runner-autostart.yml`, SECURITY.md) plus the version and CHANGELOG/README lines moved. No claim in this map moved.
 
 **Re-anchored `09e31dba` -> `0bf364417` on 2026-10-17 (L-0796, crew 1.2.39, quiet Stop gate).** Scope of this check is the ticket's own change, `git diff --name-only 786687e60..0bf364417`: `verify-gate.sh` (+258) and `verify-gate.ps1` (+343) grew above most of their cited lines, `verify_fingerprint.py` gained 5 lines at `:192`, `crew_fixtures.py` 7 lines, the sabotage tables a few lines in place, and `CONFIG.md` one 44-line insertion at `:3056` (after every `CONFIG.md` line cited here). Every cited `verify-gate.sh` / `.ps1` / `crew_fixtures.py` / `sabotage*.py` / `CONFIG.md` line was shifted by the hunks of that diff (a script walking the `-U0` hunks, no cited line fell inside a hunk); version lines (`plugin.json:3`, `marketplace.json`, `PLUGINS.md`, `BUDGETS.md`) and README lines changed in place and moved nothing. NOT VERIFIED: that each shifted citation still says what its sentence claims. This pass did not re-read them, and drift from the commits between `09e31dba` and `786687e60` is not re-derived here; `/crew:onboard --refresh` is the full pass. Nothing was executed for this note.
+
+**Re-anchored `291801622` -> `c1d365d72` on 2026-10-20 (L-0850 / PR #656 close).** Per-path re-verify of every `path:line` outside the re-anchor history paragraphs, by diffing each cited file at `291801622` against HEAD. Moved: `scripts/check_instructions.py` `main()` `:685` -> `:909` (main landed it; it now makes `load_allowance` plus twelve `check_*` calls, no longer nine, so the line-906 entry is corrected); the `.crew/verify.json:672-684` entry for `crew-hook-dispatcher` is already current at HEAD (the rule opens at `:672`). `.crew/verify.json:673` in the L-0680 paragraph and the other historical re-anchor paragraphs are history, not live claims, and were not re-mapped. NOT re-read word for word: claims whose cited lines did not move.

@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@a54ca704 on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@c1d365d7 on 2026-10-20. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew-context.sh
 %% Purpose: What crew 1.0 does when a session starts: hooks.json fans out to three SessionStart hooks, each drawn in its own file, plus the on-demand /crew:status report.
 %% Embed: none
@@ -221,3 +221,4 @@ flowchart TB
 %% T-0040-land's side (git diff --name-only). No node or edge changed.
 %% Re-anchored 3bb32980 / 328fdf4a -> a54ca704 (T-0040-land's merge of origin/main 844bfc36); the
 %% merge note above names every line that moved.
+%% Re-anchored a54ca704 -> c1d365d7 (L-0850, crew 1.2.58 one dispatcher): of the Anchors paths hooks.json, crew-context.sh and handoff-read.sh changed. hooks.json now registers one SessionStart launcher per shell (plugin/crew/hooks/hooks.json:3-6, re-read), and crew_hook.py TABLE (:66-68) runs handoff-read.sh, platform-sync.sh and crew-context.sh, so the "runs 3 scripts" node holds. crew-context.sh passes --flavour sh and handoff-read.sh resolves the repo config dir; no node cites a line in either. No node or edge changed.
