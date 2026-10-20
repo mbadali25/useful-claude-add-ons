@@ -964,12 +964,20 @@ def main() -> int:
         "type": "command",
         "command": 'bash "x/hooks/scripts/crew-context.sh" --harness codex',
     }]}]}})
+    dispatcher_hooks_json = json.dumps({"hooks": {"SessionStart": [{"hooks": [{
+        "type": "command",
+        "command": 'bash "x/hooks/scripts/crew-hook.sh" SessionStart',
+    }]}]}})
     handwritten_hooks_json = json.dumps({"hooks": {"SessionStart": [{"hooks": [{
         "type": "command", "command": "echo hi",
     }]}]}})
     check_true(
         "a hooks.json shaped like crew_instructions.py's own output is recognised as generated",
         CHECKER._codex_hooks_looks_generated(generated_hooks_json) is True,
+    )
+    check_true(
+        "a hooks.json shaped like the crew-hook dispatcher's output is recognised as generated",
+        CHECKER._codex_hooks_looks_generated(dispatcher_hooks_json) is True,
     )
     check_true(
         "a hand-written hooks.json (any other shape) is never treated as generated",
