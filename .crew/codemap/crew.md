@@ -164,27 +164,64 @@ only `reviewer.md` itself (naming its own predecessor in prose) and
 
 ## Hooks
 
-`plugin/crew/hooks/hooks.json` registers **eight** events and **34** hook
-entries across **13** distinct scripts (26 files, one `.sh` + one `.ps1`
-each — every bash `command` has a `shell: "powershell"` sibling on the same
-event, per CLAUDE.md's Windows rule), re-derived by parsing the JSON:
+DERIVED at `8f2267e60` (L-0850, L-0727 slice 2; parsed from the JSON and from
+`crew_hook.TABLE`). `plugin/crew/hooks/hooks.json` registers **eight** events and **16** entries
+(`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SubagentStart`, `PreCompact`,
+`Notification`, `Stop`, at `plugin/crew/hooks/hooks.json:3`, `:7`, `:11`, `:17`, `:23`, `:27`, `:31`,
+`:35`): per event one `bash` launcher entry (`crew-hook.sh <Event>`) and one `shell: "powershell"`
+entry (`crew-hook.ps1 <Event>`), the Windows rule from CLAUDE.md. It no longer names a hook script.
+Before L-0850 it registered 36 entries (one pair per script per matcher). The file is generated:
+`crew_instructions.claude_hooks` (`plugin/crew/hooks/scripts/crew_instructions.py:407`) renders it
+from `crew_hook.EVENTS`, `crew_hook.REGISTERED_MATCHER` and `crew_hook.event_timeout`
+(`plugin/crew/hooks/scripts/crew_hook.py:98`, `:88`, `:103`), and
+`plugin/crew/tests/test_hooks_json_shape.py` holds the file, `TABLE` and `crew-hook.sh`'s static
+list equal. Decision record: `docs/adr/0009-hook-single-dispatch.md`.
 
-| Event | Entries | Line | Scripts |
+`plugin/crew/hooks/scripts/crew_hook.py` (597 lines) is the dispatcher the launchers run. Its
+`TABLE` (`:65`) is 18 rows (`Row`: event, matcher, script, extra, timeout, guard, twin, codex) over
+**14** distinct `.sh` scripts, each with a `.ps1` twin in the directory (checked by `os.path.exists`).
+Row counts per event, with the registration timeout `event_timeout` gives (largest row + `EVENT_SLACK`
+10, `:44`):
+
+| Event | Rows | Timeout | Scripts (matcher) |
 |---|---|---|---|
-| `SessionStart` | 6 | `plugin/crew/hooks/hooks.json:3` | `handoff-read`, `platform-sync`, `crew-context` |
-| `UserPromptSubmit` | 4 | `:11` | `crew-context`, `approval-hook` |
-| `PreToolUse` | 10 | `:17` | `promote-gate` (`Bash`/`PowerShell`), `role-write-guard` (`Write\|Edit`), `cloud-guard` (`Bash\|PowerShell`), `env-guard` (`Bash\|PowerShell`, L-0772), `scope-guard` (`Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|PowerShell`) |
-| `PostToolUse` | 4 | `:35` | `crew-context` (`Read\|Edit\|Write\|MultiEdit`, and again on an `mcp__.*(obsidian\|vault\|basic[-_]memory).*` matcher) |
-| `SubagentStart` | 2 | `:45` | `crew-context` |
-| `PreCompact` | 2 | `:49` | `handoff-write` |
-| `Notification` | 2 | `:53` | `notify` |
-| `Stop` | 6 | `:57` | `verify-gate`, `context-watch`, `completion-audit` |
+| `SessionStart` | 3 | 30 | `handoff-read`, `platform-sync`, `crew-context` |
+| `UserPromptSubmit` | 2 | 30 | `crew-context`, `approval-hook` |
+| `PreToolUse` | 5 | 30 | `promote-gate` (`Bash`; its `.ps1` twin judges a `PowerShell` call on Windows), `role-write-guard` (`Write\|Edit`), `cloud-guard` and `env-guard` (`Bash\|PowerShell`), `scope-guard` (`Write\|Edit\|MultiEdit\|NotebookEdit\|Bash\|PowerShell`) |
+| `PostToolUse` | 2 | 20 | `crew-context` (`Read\|Edit\|Write\|MultiEdit`, and again on `VAULT_MATCHER`, `mcp__.*(obsidian\|vault\|basic[-_]memory).*`) |
+| `SubagentStart` | 1 | 25 | `crew-context` |
+| `PreCompact` | 1 | 40 | `handoff-write` |
+| `Notification` | 1 | 25 | `notify` (extra arg `hook`) |
+| `Stop` | 3 | 610 | `verify-gate`, `context-watch`, `completion-audit` |
 
-This is a materially different shape from the pre-1.0 hooks file (5 events,
-20 entries, 10 scripts) — new events (`UserPromptSubmit`, `PostToolUse`,
-`SubagentStart`) exist because `crew-context` (context-budget/handoff-carry)
-and `approval-hook` (plan-approval-by-user-prompt) are new hooks, and
-`PreToolUse` grew from 2 pairs to 4 (`cloud-guard`, `scope-guard` are new).
+`select` (`:124`, pure) picks the rows for one payload (matcher per Claude Code's rule in `matches`,
+`:108`; an unreadable tool name runs every row of the event; identical argv run once; a row's `codex`
+field is the Codex-harness matcher, `None` meaning not registered there). `dispatch` (`:453`) runs the
+chosen scripts concurrently and `merge` (`:178`, pure) folds their results into the one Claude Code
+sees, per the module docstring (`:2-27`): exit 2 from any child wins, `permissionDecision` ranks
+deny > ask > allow, `decision: "block"` and `continue: false` win, `additionalContext` and
+`systemMessage` concatenate in table order. Fail closed: `armed` (`:277`) is True when crew governs the
+repo or that cannot be told; in an armed repo a guard row that times out, a missing script, or an
+exception in the dispatcher is exit 2 with a named reason on `BLOCKING_EVENTS` (`PreToolUse`,
+`UserPromptSubmit`, `Stop`, `:47`); an unarmed repo gets exit 0 (`_settle` `:524`, `_fault` `:590`).
+The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 265 lines; `crew-hook.ps1`, 458) supervise
+rather than exec it: exit 0 and 2 pass through, anything else becomes the armed/unarmed fault above,
+under one deadline (`CREW_HOOK_DEADLINE`, the registration timeout minus 5 s). `crew-hook.sh` exits 0 on
+Windows (`uname -s` MINGW/MSYS/CYGWIN or `OS=Windows_NT`, `crew-hook.sh:40-42`) and `crew-hook.ps1`
+exits 0 unless `$env:OS -eq 'Windows_NT'` (`crew-hook.ps1:34`), so each platform runs exactly one
+launcher. With no usable python `crew-hook.sh` runs the event's `.sh` scripts directly from a static
+list and `crew-hook.ps1` fails an armed repo closed on the three blocking events. Tests:
+`plugin/crew/tests/test_crew_hook_parity.py`, `test_crew_hook_merge.py`, `test_crew_hook_faults.py`,
+`test_crew_hook_windows.py`, `test_hooks_json_shape.py`, recorded goldens in
+`plugin/crew/tests/golden_hooks/` (`record_golden_hooks.py`), harness `crew_hook_harness.py`, and
+`sabotage_crew_hook.py`; `.crew/verify.json` rule `crew-hook-dispatcher` maps them. JUDGEMENT: the
+exact line numbers in `crew-hook.sh`/`crew-hook.ps1` beyond those cited were not read word for word
+this pass; the two launcher bodies past their header comments and the `crew_hook.py` child runner
+(`run_child`, `_kill_tree`, `_pump`) were not re-read.
+
+The pre-1.0 shape (5 events, 20 entries) and the crew 1.0 shape (34 entries across 13 scripts) are
+superseded by the above; the per-script hooks themselves (`crew-context`, `approval-hook`,
+`scope-guard` and the rest) are unchanged in that diff, each still registered through `TABLE`.
 
 **Role-write-guard fails closed without python.**
 `plugin/crew/hooks/scripts/role-write-guard.sh:380-386` resolves its own
@@ -200,9 +237,14 @@ not tell" never collapses into "allowed".
 
 **Event claims dedupe emitting hooks on Windows.** `event_claim.py`'s module
 docstring (`plugin/crew/hooks/scripts/event_claim.py:1-16`) states the
-problem it exists for: every hook is registered twice (bash + PowerShell),
-and on Windows both flavours run for one event since no `.sh` may stand
-itself down by OS (CLAUDE.md's own landmine). For a **blocking** hook
+problem it exists for: every hook was registered twice (bash + PowerShell),
+and on Windows both flavours ran for one event since no `.sh` may stand
+itself down by OS (CLAUDE.md's own landmine). Since L-0850 the registered
+launchers do stand themselves down by OS (`crew-hook.sh` exits 0 on Windows,
+`crew-hook.ps1` exits 0 elsewhere, see above), so one flavour runs per event;
+the claim stays in `notify` and `handoff-write` (re-checked by grep at
+`8f2267e60`: `notify.sh:40`, `handoff-write.sh:40`) as defence in depth, its
+premise below is the pre-L-0850 one and is not re-derived. For a **blocking** hook
 (scope-guard, completion-audit, cloud-guard, role-write-guard, approval-hook,
 verify-gate) that is only wasted latency and both flavours still run — a
 claim would let whichever flavour lost its python decide alone, which is
@@ -1110,8 +1152,7 @@ a module importing it keeps its own setting. `main` registers `deploy-allowed` a
 `crew_state.AUTOPILOT_DEFAULTS` (`plugin/crew/hooks/scripts/crew_state.py:1134-1135`,
 `{"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk"}`
 since T-0072 and T-0010 merged), deep-copied into `default_config()`
-(`plugin/crew/hooks/scripts/crew_config.py:400`). It registers no hook -
-`plugin/crew/hooks/hooks.json` is unchanged since `a0c0847e`.
+(`plugin/crew/hooks/scripts/crew_config.py:400`). It registers no hook (`plugin/crew/hooks/hooks.json` changed only in L-0850, for the dispatcher launchers).
 
 `crew_ticket.parse_risk` (`plugin/crew/hooks/scripts/crew_ticket.py:509`)
 also landed in T-0004: it reads `risk:` from the spec header line only, and
@@ -1360,8 +1401,7 @@ open question dropped the ask entirely. `settings` (`:564`) reads
 called first in the UserPromptSubmit branch (`:937`): Claude harness only,
 `crew_route` imported inside a `try`, so any exception drops only the route
 line and logs `route: "error"` (`:1070` keeps that log line when nothing else
-is emitted). No new hook and no new skill: `plugin/crew/hooks/hooks.json` is
-unchanged. Tests: `plugin/crew/tests/test_crew_route.py`,
+is emitted). No new hook and no new skill (`plugin/crew/hooks/hooks.json` is launcher-only since L-0850; the route line is emitted from `crew_context`, run by the `crew-context` `UserPromptSubmit` `TABLE` row). Tests: `plugin/crew/tests/test_crew_route.py`,
 `plugin/crew/tests/test_crew_route_hook.py`; mutations
 `plugin/crew/tests/sabotage_route.py` (registered at
 `plugin/crew/tests/sabotage.py:78`); `.crew/verify.json` rule 31 (`:372-381`; rule 30 at `:325-333` after T-0094 merged `8ab733d7`, until L-0516 inserted rule 10),
@@ -1452,8 +1492,8 @@ DERIVED at `f05ed74e` (T-0040's branch, after review round 1), read in full; pos
 with `grep -n` on T-0040-land after review round 2's fixes. `plugin/crew/hooks/scripts/crew_shell.py` (1056 lines)
 picks the shell crew's long-running jobs run in on native Windows. It is a CLI
 (`probe`, `measure`, `classify`, `run`; `main` at `:1033`) and a library for
-`crew_status.py`. It imports no crew module at import time. No hook calls it:
-`plugin/crew/hooks/hooks.json` and `crew_platform.py` are unchanged. `host_os` (`:59`) gives
+`crew_status.py`. It imports no crew module at import time. No hook calls it
+(`crew_platform.py` unchanged since the earlier anchor; `hooks.json` is launcher-only since L-0850). `host_os` (`:59`) gives
 `windows`, `windows-bash`, `linux`, `macos`, `wsl` or `other`, and `on_windows` (`:82`) gates
 everything: off native Windows `probe` returns `n/a`, `status_line` returns None, and `run`
 (`:768`) execs `["bash", "-c", cmd]` with no config read and no message, mapping a
@@ -1628,11 +1668,11 @@ plus `.crew/verify.json`.
 
 New on main since `6c497a14` (#227, #228). `python3 plugin/crew/hooks/scripts/crew_instructions.py
 rules --root .` writes one `.claude/rules/<subsystem>.md` per code-map note that yields any paths
-(`expected_rules`, `plugin/crew/hooks/scripts/crew_instructions.py:169`; `render_rule`, `:123`):
+(`expected_rules`, `plugin/crew/hooks/scripts/crew_instructions.py:175`; `render_rule`, `:129`):
 a `paths:` frontmatter derived from the note's own citations, a `crew:generated` marker carrying
-the sha256 of everything the rule is rendered from (`rule_digest`, `:105`), the note's anchor,
+the sha256 of everything the rule is rendered from (`rule_digest`, `:111`), the note's anchor,
 INDEX.md's Covers cell for it, and the note's Landmines headlines (else its Entry points), capped at
-`RULES_MAX_LINES` = 30 (`:81`). `--check` (`rules`, `:191`) writes nothing and reports each rule
+`RULES_MAX_LINES` = 30 (`:83`). `--check` (`rules`, `:197`) writes nothing and reports each rule
 file missing, stale or orphaned; a hand-written file at a generated path is never overwritten and
 fails `--check`. `.crew/verify.json` rule 25 (`.crew/verify.json:326`) runs `--check` for any change under
 `.claude/rules/**` or `.crew/codemap/**`, so **a code-map edit without a regeneration fails the Stop
@@ -2087,8 +2127,7 @@ hide the change - a fallback, or (since review round 3) a recorded base with
 a commit behind it naming the ticket (`_named_behind`, `:1286`) - makes the
 whole answer `unknown`, and every artifact measured against that base with it
 (`_unconfirmed`, `:1303`; `ticket_freshness`, `:1325`). It is a CLI the
-commands call, not a hook - `plugin/crew/hooks/hooks.json` is unchanged since
-`f2bb919b`.
+commands call, not a hook - no `TABLE` row runs it (`plugin/crew/hooks/hooks.json` changed only in L-0850).
 
 - **`fresh` means current and committed (T-0063, crew 1.0.349).** DERIVED on T-0063-build at `309575c2`; its line numbers are that
   commit's, not the anchor's.
@@ -2627,7 +2666,7 @@ citations taken with `grep -n` there.
   existing `except (OSError, ...)` takes the path a missing bare name took. `git_out` (`:87`) runs
   it.
 - DERIVED: the sites that run `require_tool`'s path: `plugin/crew/hooks/scripts/ci_receipt.py:140`
-  and `:148` (moved by L-0673's two patterns), `plugin/crew/hooks/scripts/crew_instructions.py:293`,
+  and `:148` (moved by L-0673's two patterns), `plugin/crew/hooks/scripts/crew_instructions.py:296`,
   `plugin/crew/hooks/scripts/crew_refresh_check.py:507`, `:517`, `:548`,
   `plugin/crew/hooks/scripts/crew_state.py:2283`, `plugin/crew/hooks/scripts/crew_status.py:56`,
   `plugin/crew/hooks/scripts/crew_tracker.py:540` and `:980`,
@@ -2990,6 +3029,14 @@ Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each n
   DERIVED (T-0038).
 
 ## Unverified at this anchor
+
+**Partial re-verification at `8f2267e60` (2026-10-20, L-0850 / L-0727 slice 2).** The file's `anchor:`
+is NOT moved: 258 files under `plugin/crew/` changed between `a2755ab5a` and `8f2267e60` and this pass
+re-verified only the following, against `8f2267e60`: `## Hooks` (hooks.json, `crew_hook.py`, the two
+launchers, the event-claim premise), the `.claude/rules/` section's `crew_instructions.py` line numbers
+(they moved +3 to +6), and the four "hooks.json is unchanged" statements (now rewritten). Every other
+claim in this file is as of its own cited anchor and is **unverified at `8f2267e60`**; a `path:line`
+elsewhere in this file may have moved. Re-derive with `/crew:onboard --refresh crew`.
 
 - No hook was executed and no pytest run was made part of this pass; every
   claim about *behaviour* is read from source, not observed running under
@@ -5449,7 +5496,7 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 
 **Re-anchored `926f1277` -> `09e31dba` on 2026-10-10 (L-0753, after merging main `e77532e01`).** Per-path check `git diff --name-only 926f1277..09e31dba`: main's L-0759 (#595: `plugin/crew/tests/test_promote_gate_review.py`, crew 1.2.19) and L-0760 (#596: `.github/workflows/runner-autostart.yml`, SECURITY.md) plus the version and CHANGELOG/README lines moved. No claim in this map moved.
 
-**L-0772 (environment-dump guard), measured on `L-0772-env-guard` at `a1004dad`, 2026-10-11.** New: `plugin/crew/hooks/scripts/env_guard.py` (the PreToolUse judge: a bash and a PowerShell reader over the command text, `findings(text, shell)`, `resolve_mode`, `_crude_armed`, `main`) with wrappers `plugin/crew/hooks/scripts/env-guard.sh` / `plugin/crew/hooks/scripts/env-guard.ps1`, registered in `plugin/crew/hooks/hooks.json` on `Bash|PowerShell` (PreToolUse now 10 entries, 36 in all). `plugin/crew/hooks/scripts/crew_guards.py:206` adds `ENV_GUARD_NAMES` to `ALL_GUARD_NAMES` (`:213`, now twelve names with `deployWorkflow`), so `RATCHETED_KEYS` is 15 keys and `crew_config._RATCHETED` 16 (executed). `PROD_READ_COMMANDS` no longer lists `printenv`, a bare `env` with nothing left to run classifies as a write, and `_classify_shell` asks `env_guard.findings` first (lazy import; `env_guard` imports nothing from crew at top level, asserted by `plugin/crew/tests/test_env_guard.py`). Suites: `plugin/crew/tests/test_env_guard.py`, `plugin/crew/tests/test_env_guard_config.py`, `plugin/crew/tests/test_guards_env_dump.py`, the `.crew/verify.json` env-guard rule. The rest of this map was not re-derived by this note; the anchor line is unchanged and `/crew:onboard --refresh crew` remains the full refresh.
+**L-0772 (environment-dump guard), measured on `L-0772-env-guard` at `a1004dad`, 2026-10-11.** New: `plugin/crew/hooks/scripts/env_guard.py` (the PreToolUse judge: a bash and a PowerShell reader over the command text, `findings(text, shell)`, `resolve_mode`, `_crude_armed`, `main`) with wrappers `plugin/crew/hooks/scripts/env-guard.sh` / `plugin/crew/hooks/scripts/env-guard.ps1`, registered in `plugin/crew/hooks/hooks.json` on `Bash|PowerShell` (PreToolUse then 10 entries, 36 in all; superseded by L-0850, see ## Hooks: 16 launcher entries, 5 PreToolUse rows in `crew_hook.TABLE`). `plugin/crew/hooks/scripts/crew_guards.py:206` adds `ENV_GUARD_NAMES` to `ALL_GUARD_NAMES` (`:213`, now twelve names with `deployWorkflow`), so `RATCHETED_KEYS` is 15 keys and `crew_config._RATCHETED` 16 (executed). `PROD_READ_COMMANDS` no longer lists `printenv`, a bare `env` with nothing left to run classifies as a write, and `_classify_shell` asks `env_guard.findings` first (lazy import; `env_guard` imports nothing from crew at top level, asserted by `plugin/crew/tests/test_env_guard.py`). Suites: `plugin/crew/tests/test_env_guard.py`, `plugin/crew/tests/test_env_guard_config.py`, `plugin/crew/tests/test_guards_env_dump.py`, the `.crew/verify.json` env-guard rule. The rest of this map was not re-derived by this note; the anchor line is unchanged and `/crew:onboard --refresh crew` remains the full refresh.
 
 **Re-anchored `09e31dba` -> `0bf364417` on 2026-10-17 (L-0796, crew 1.2.39, quiet Stop gate).** Scope of this check is the ticket's own change, `git diff --name-only 786687e60..0bf364417`: `verify-gate.sh` (+258) and `verify-gate.ps1` (+343) grew above most of their cited lines, `verify_fingerprint.py` gained 5 lines at `:192`, `crew_fixtures.py` 7 lines, the sabotage tables a few lines in place, and `CONFIG.md` one 44-line insertion at `:3056` (after every `CONFIG.md` line cited here). Every cited `verify-gate.sh` / `.ps1` / `crew_fixtures.py` / `sabotage*.py` / `CONFIG.md` line was shifted by the hunks of that diff (a script walking the `-U0` hunks, no cited line fell inside a hunk); version lines (`plugin.json:3`, `marketplace.json`, `PLUGINS.md`, `BUDGETS.md`) and README lines changed in place and moved nothing. NOT VERIFIED: that each shifted citation still says what its sentence claims. This pass did not re-read them, and drift from the commits between `09e31dba` and `786687e60` is not re-derived here; `/crew:onboard --refresh` is the full pass. Nothing was executed for this note.
 
