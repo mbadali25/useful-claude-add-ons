@@ -227,7 +227,7 @@
       "name": "ai-connect",
       "source": "./plugin/ai-connect",
       "description": "Peer messaging between Claude Code sessions across machines - a self-hosted WebSocket bridge, an MCP client per session, a hook that wakes an idle session on a new message, and busy/idle/waiting state hooks its installer writes into your settings. Hardened fork of Peuqui/AI-Connect (MIT): per-peer tokens, no name takeover, peer content framed as untrusted, VPN-scoped listener. The watcher hook runs once installed and is silent until the plugin's own installer has run; that installer registers the MCP server and the state hooks.",
-      "version": "0.2.0"
+      "version": "0.2.1"
     },
     {
       "name": "angular-lsp",
