@@ -113,6 +113,14 @@ of the FIXes are fixed in this PR; the fifth is accepted below:
   repo directory first); an unresolved PowerShell is a row error.
 - An unset `HOME` now counts as armed in the bash launcher's check.
 
+A second read of the fixes (crew:security again, 0 BLOCK, 2 FIX, 6 NOTE) closed both BLOCKs and added two more fixes:
+the PowerShell launcher now wraps everything after its functions in one try/catch that exits 2 for an armed blocking
+event (without it a terminating error ended the script with no exit code, and the registration's
+`exit $LASTEXITCODE` said 0), and the watchdog sets its TERM trap before its sleeper starts and ends the sleeper through
+the job table. Noted, not fixed: a watchdog can signal a pid its script has already reaped, only at the deadline; the
+no-python path counts a non-guard script that crashes as a fault on blocking events (it over-blocks, never under-blocks);
+a PATH-planted `uname` or `python3` is the same trust as before.
+
 Accepted, not fixed: the fast path trusts the first `python3` on PATH to run `crew_hook.py` when it exits 0.
 Whoever controls PATH for the hook already controls the interpreter every guard script runs under, as before.
 A payload over 8 MiB (a `Write` of a very large file) is a fault and is refused when armed.

@@ -204,7 +204,7 @@ deny > ask > allow, `decision: "block"` and `continue: false` win, `additionalCo
 repo or that cannot be told; in an armed repo a guard row that times out, a missing script, or an
 exception in the dispatcher is exit 2 with a named reason on `BLOCKING_EVENTS` (`PreToolUse`,
 `UserPromptSubmit`, `Stop`, `:47`); an unarmed repo gets exit 0 (`_settle` `:539`, `_fault` `:613`).
-The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 333 lines; `crew-hook.ps1`, 466) supervise
+The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 334 lines; `crew-hook.ps1`, 482) supervise
 rather than exec it: exit 0 and 2 pass through, anything else becomes the armed/unarmed fault above,
 under one deadline (`CREW_HOOK_DEADLINE`, the registration timeout minus 5 s). `crew-hook.sh` exits 0 on
 Windows (`uname -s` MINGW/MSYS/CYGWIN; `OS=Windows_NT` only when uname names no POSIX kernel) and

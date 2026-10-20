@@ -138,6 +138,16 @@ CREW_HOOK_MUTATIONS = (
      "    *[!A-Za-z0-9_\\|]*) return 0 ;;\n",
      "",
      _S + "test_the_no_python_tool_matcher_runs_a_row_it_cannot_judge[mcp__.*(x|y)-Read-True]"),
+    # Security re-read of the fixes (2026-10-20): the PowerShell launcher's exit code on an unexpected
+    # error, and the no-python watchdog's sleeper.
+    ("an unexpected error in the ps1 launcher is exit 0 again (an allow)", PS1,
+     "  if (@('PreToolUse', 'UserPromptSubmit', 'Stop') -contains $HookEvent -and $crewCatchArmed) { exit 2 }\n",
+     "  if (@('PreToolUse', 'UserPromptSubmit', 'Stop') -contains $HookEvent -and $crewCatchArmed) { exit 0 }\n",
+     _S + "test_the_ps1_launcher_catches_an_unexpected_error_and_exits_2_for_an_armed_blocking_event"),
+    ("the no-python watchdog's sleeper can outlive its stop and hold the launcher's pipes", SH,
+     '    sleep "$secs" >/dev/null 2>&1 &\n',
+     '    sleep "$secs" &\n',
+     _S + "test_the_sh_watchdog_sets_its_trap_before_the_sleeper_starts_and_ends_it_through_the_job_table"),
     ("a same-line-count behavioural edit to a frozen autopilot module", PASTE,
      '"\\\\u0020" * len(run.group())',
      '"\\\\u0021" * len(run.group())',

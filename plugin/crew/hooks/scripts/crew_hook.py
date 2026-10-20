@@ -310,7 +310,7 @@ def _kill_tree(proc):
         taskkill = os.path.join(os.environ.get("SystemRoot") or "C:\\Windows", "System32", "taskkill.exe")
         try:
             subprocess.run([taskkill, "/T", "/F", "/PID", str(proc.pid)], capture_output=True,
-                           timeout=10, check=False)
+                           timeout=2, check=False)  # bounded well inside the 5 s the deadline keeps back
         except (OSError, subprocess.SubprocessError):
             pass
         try:

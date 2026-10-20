@@ -168,16 +168,17 @@ _tool_matches() {
 }
 
 # Kill `$2...` after `$1` seconds unless the watchdog is stopped first. Sets WATCHDOG
-# to the watchdog's pid; stop it with `_unwatch`. The TERM trap ends the sleeper too.
+# to the watchdog's pid; stop it with `_unwatch`. The TERM trap is set BEFORE the sleeper
+# starts and ends it through the job table (`jobs -p`), which has it from the fork, so a
+# stop that arrives at once cannot orphan it; the sleeper holds none of the launcher's pipes.
 _watchdog() {
   local secs="$1"
   shift
   local victims="$*"
   (
-    sleep "$secs" &
-    sleeper=$!
-    trap 'kill "$sleeper" 2>/dev/null; exit 0' TERM
-    wait "$sleeper"
+    trap 'kill $(jobs -p) 2>/dev/null; exit 0' TERM
+    sleep "$secs" >/dev/null 2>&1 &
+    wait $!
     # shellcheck disable=SC2086
     kill -KILL $victims 2>/dev/null
   ) &

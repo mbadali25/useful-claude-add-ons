@@ -237,6 +237,26 @@ def test_no_registration_names_a_hook_script_directly():
     assert scripts == {"crew-hook.sh", "crew-hook.ps1"}
 
 
+def test_the_ps1_launcher_catches_an_unexpected_error_and_exits_2_for_an_armed_blocking_event():
+    """Security re-read (L-0850): without it a terminating error ends the script with no exit code and the
+    registration's `exit $LASTEXITCODE` says 0. The try opens before the first statement that can fail and
+    closes at the end of the file; the flavour guard stays outside it, as test_flavour_guard.py requires."""
+    opened = PS1_TEXT.index("\ntry {\n# Registration timeout")
+    catch = PS1_TEXT[PS1_TEXT.rindex("\n} catch {"):]
+
+    assert PS1_TEXT.index("if ($env:OS -ne 'Windows_NT') { exit 0 }") < opened
+    assert PS1_TEXT.index("function Resolve-CrewPython") < opened < PS1_TEXT.index("$crewTimeouts = @{")
+    assert "Test-CrewArmed" in catch and "-and $crewCatchArmed) { exit 2 }" in catch and catch.rstrip().endswith("}")
+
+
+def test_the_sh_watchdog_sets_its_trap_before_the_sleeper_starts_and_ends_it_through_the_job_table():
+    start = SH_TEXT.index("_watchdog() {")
+    body = SH_TEXT[start:SH_TEXT.index("\n}\n", start)]
+
+    assert body.index("trap 'kill $(jobs -p)") < body.index('sleep "$secs"')
+    assert 'sleep "$secs" >/dev/null 2>&1 &' in body
+
+
 def test_the_ps1_flavour_guard_trusts_the_platform_not_only_the_environment():
     """Security pass (L-0850): on Windows this launcher is the only one that runs, so an unset or
     changed OS variable must not make it exit 0. Real Windows is told by the platform."""

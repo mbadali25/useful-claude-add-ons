@@ -277,6 +277,11 @@ if ($PrintPython) {
   exit 0
 }
 
+# Everything from here to the end runs inside one try. A terminating error outside every inner
+# try/catch would otherwise end the script with no exit code, and the registration's
+# `exit $LASTEXITCODE` then says 0: an allow. The block is not re-indented, to keep the code below
+# diffable against the carriers it was written beside (security pass, L-0850).
+try {
 # Registration timeout (s) per event, from hooks.json: the largest hook in the
 # event plus 10. A test asserts this equals crew_hook.event_timeout.
 $crewTimeouts = @{
@@ -464,3 +469,14 @@ if ($null -eq $crewCode -or ($crewCode -ne 0 -and $crewCode -ne 2)) {
   Exit-Fault "crew_hook.py failed (exit $crewCode)"
 }
 exit $crewCode
+} catch {
+  # An unexpected error: fail closed on the events where a hook may block, unless the repo is known
+  # to be unarmed. Test-CrewArmed may not exist yet if the error came early, and then counts as armed.
+  [Console]::Error.WriteLine("crew-hook: unexpected error: $($_.Exception.Message)")
+  $crewCatchArmed = $true
+  if (Get-Command -Name Test-CrewArmed -CommandType Function -ErrorAction SilentlyContinue) {
+    $crewCatchArmed = Test-CrewArmed
+  }
+  if (@('PreToolUse', 'UserPromptSubmit', 'Stop') -contains $HookEvent -and $crewCatchArmed) { exit 2 }
+  exit 0
+}
