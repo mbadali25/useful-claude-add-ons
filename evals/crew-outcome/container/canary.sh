@@ -79,7 +79,7 @@ check "chatgpt.com via proxy reachable" ok "$(reach https://chatgpt.com)"
 exit $fail
 '
 
-"$DOCKER" run --rm --network "$NET" --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges --security-opt seccomp=unconfined \
+"$DOCKER" run --rm --network "$NET" --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges \
   -v "$WORK/repo:/run/repo" -v "$WORK/home:/run/home" -e HOME=/run/home -e "PROXY_ADDR=$GW:3128" \
   "$IMAGE" /bin/bash -c "$PROBE" canary "$@" >> "$OUT" 2>&1
 rc=$?

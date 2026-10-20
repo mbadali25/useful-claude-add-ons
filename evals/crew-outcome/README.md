@@ -161,7 +161,7 @@ both arms; and hidden tests that need something the statement cannot state stay 
 Run on this host (Linux 7.0.0-38-generic, Docker 29.1.3, `net.ipv4.ip_forward = 0`) at crew 1.2.56
 (`8fd3df757`), image `crew-outcome-eval:1` (Claude Code 2.1.303, codex-cli 0.162.1, node 22, Debian bookworm),
 throwaway task `evals/crew-outcome/spike/` (a `slugify` function; `run-spike.py` reproduces it through the harness).
-About 2.5 USD of Claude list price in all; the Codex sessions were small and are unpriced.
+About 3 USD of Claude list price in all; the Codex sessions were small and are unpriced.
 
 **Canary (U10): PASS.** Output of `canary.sh` (kept as `canary.txt` beside any results): the host checkout, the task
 store and an earlier run dir are not visible; `github.com`, `codeload.github.com`, `api.github.com` are refused through the
@@ -209,10 +209,12 @@ Measured by hand:
 
 Resolution: the `codex` shim (see Isolation), spec "Amendment 2026-10-20". A first shimmed run (with `seccomp=unconfined`)
 ran spec, plan, implement, one Codex review (`CLEAN`, `gpt-6-sol`), done and the `ship` stop in 141 s. After the
-amendment the image was rebuilt, `canary.sh` passed, and `spike/run-spike.py` was re-run through the harness with
-`seccomp=unconfined` removed (default seccomp and AppArmor): baseline scored (3 `/code-review` cycles, 0.19 USD), crew
-scored with 1 review cycle, 0 incomplete attempts, 0.95 USD Claude list price, Codex 213,887 input / 1,106 output tokens
-(unpriced, so the crew run's `costUsd` is UNKNOWN), 0 escaped defects, 274 s.
+amendment the image was rebuilt (the shim is `chmod 0755` in the Dockerfile and executable in git), `canary.sh` passed
+under the same options the scored runs use (default seccomp and AppArmor, `--cap-drop ALL`, `no-new-privileges`, uid 1000;
+an earlier canary ran with `seccomp=unconfined` and did not prove that), and `spike/run-spike.py` was re-run through the
+harness at the Slice 2 close: baseline scored (3 `/code-review` cycles, 0.21 USD), crew scored with 1 review cycle,
+0 incomplete attempts, 0.63 USD Claude list price, Codex 229,644 input / 1,377 output tokens (unpriced, so the crew run's
+`costUsd` is UNKNOWN), 0 escaped defects, 175 s.
 
 Codex usage as `review_run.py` leaves it in `codex-events.jsonl` (the same five keys the spec quoted):
 `{"type":"turn.completed","usage":{"input_tokens":102324,"cached_input_tokens":76800,"cache_write_input_tokens":0,"output_tokens":633,"reasoning_output_tokens":159}}`.

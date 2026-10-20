@@ -22,7 +22,7 @@
     "fix": "A reviewer reported the findings below. Fix every one that is a real defect in the code you wrote, then reply with a one-line summary. Do not ask questions; no human is available.\n\n{findings}"
   },
   "reviewParse": {
-    "findings": "^\\s*\"summary\":",
+    "findings": "\"summary\"\\s*:",
     "noFindings": "^\\[\\]\\s*$"
   },
   "proxyIgnoreHosts": []

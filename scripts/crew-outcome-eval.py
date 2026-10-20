@@ -63,6 +63,7 @@ TASK_KEYS = ("name", "ticket", "base", "reference", "bucket", "referenceLines", 
 ARM_KEYS = ("arm", "author", "reviewer", "wallClockMinutes", "cli", "prompts")
 ARM_EXTRA_KEYS = {"crew": ("crewConfig", "assignment"), "baseline": ("reviewParse",)}
 TEST_TIMEOUT_SECONDS = 120
+PYTEST_GRADABLE_EXITS = (0, 1)
 DEFAULT_MAX_COST_USD = 150.0
 DEFAULT_FIRST_RUN_ESTIMATE_USD = 25.0
 PROXY_PORT = 3128
@@ -126,12 +127,19 @@ def load_task(task_dir):
         fail(f"{task_dir}/task.json lacks: {', '.join(missing)}")
     if task["bucket"] not in BUCKETS:
         fail(f"{task['name']}: bucket {task['bucket']!r} is not one of S, M, L")
+    if not isinstance(task["name"], str) or not task["name"]:
+        fail(f"{task_dir}/task.json: name must be a non-empty string")
+    for key in ("ticket", "base", "reference", "statementFile"):
+        if not isinstance(task[key], str) or not task[key]:
+            fail(f"{task['name']}: {key} must be a non-empty string")
+    if isinstance(task["referenceLines"], bool) or not isinstance(task["referenceLines"], int):
+        fail(f"{task['name']}: referenceLines must be an integer")
     if not isinstance(task["defects"], dict) or not task["defects"]:
         fail(f"{task['name']}: defects must be a non-empty object")
     seen = {}
     for defect, ids in task["defects"].items():
-        if not isinstance(ids, list) or not ids:
-            fail(f"{task['name']}: defect {defect!r} has no test ids")
+        if not isinstance(ids, list) or not ids or not all(isinstance(i, str) and i for i in ids):
+            fail(f"{task['name']}: defect {defect!r} must list test ids as non-empty strings")
         for test_id in ids:
             if test_id in seen:
                 fail(f"{task['name']}: test {test_id} is in defects {seen[test_id]!r} and {defect!r} "
@@ -139,6 +147,9 @@ def load_task(task_dir):
             seen[test_id] = defect
     if not isinstance(task["testCommand"], list) or not all(isinstance(a, str) for a in task["testCommand"]):
         fail(f"{task['name']}: testCommand must be an argv list")
+    for key in ("regressionInventory", "gradingFiles"):
+        if not isinstance(task[key], list) or not all(isinstance(i, str) and i for i in task[key]):
+            fail(f"{task['name']}: {key} must be a list of non-empty strings")
     for rel in task["gradingFiles"]:
         if not os.path.isfile(frozen_path(task_dir, rel)):
             fail(f"{task['name']}: grading file {rel} has no frozen copy ({rel}.frozen) under grading/")
@@ -242,6 +253,11 @@ def run_tests(task, repo, ids):
         out = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, check=False, env=env,
                              stdin=subprocess.DEVNULL, timeout=TEST_TIMEOUT_SECONDS)
         text = out.stdout
+        if out.returncode not in PYTEST_GRADABLE_EXITS:
+            # pytest exits 0 (all passed) or 1 (some failed) for a run that finished; 2 (interrupted),
+            # 3 (internal error), 4 (usage), 5 (nothing collected) or a signal is a run that cannot be
+            # trusted even if it printed PASSED lines first (GEN-01: could not tell is not clean).
+            text = ""
     except subprocess.TimeoutExpired as exc:
         text = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
     status = {}
@@ -393,6 +409,7 @@ def codex_usage(repo, home, model):
     for here, _dirs, names in os.walk(os.path.join(home, ".codex", "sessions")):
         sessions.extend(n for n in names if n.endswith(".jsonl"))
     total = {"input": 0, "cachedInput": 0, "output": 0, "reasoning": 0}
+    turns = 0
     for path in events:
         try:
             with open(path, encoding="utf-8") as fh:
@@ -403,6 +420,10 @@ def codex_usage(repo, home, model):
                     rec = json.loads(line)
                     usage = rec.get("usage") if isinstance(rec, dict) and rec.get("type") == "turn.completed" else None
                     if isinstance(usage, dict):
+                        turns += 1
+                        for needed in ("input_tokens", "output_tokens"):
+                            if isinstance(usage.get(needed), bool) or not isinstance(usage.get(needed), int):
+                                return UNKNOWN, UNKNOWN
                         total["input"] += int(usage.get("input_tokens") or 0)
                         total["cachedInput"] += int(usage.get("cached_input_tokens") or 0)
                         total["output"] += int(usage.get("output_tokens") or 0)
@@ -410,6 +431,9 @@ def codex_usage(repo, home, model):
         except (OSError, ValueError, TypeError):
             return UNKNOWN, UNKNOWN
     if len(sessions) > len(events):
+        return UNKNOWN, UNKNOWN
+    if sessions and not turns:
+        # a Codex session ran but no events file recorded a completed turn: nothing was measured
         return UNKNOWN, UNKNOWN
     if not events:
         return total, 0.0
@@ -466,9 +490,13 @@ def contamination(task, home, repo, proxy_log, arm, source_repo):
     if len(hits) >= HIDDEN_LINES_TO_FLAG:
         reasons.append("hidden test content")
     ignore = set(arm.get("proxyIgnoreHosts", []))
-    for host in proxy_denied_hosts(proxy_log):
-        if host not in ignore:
-            reasons.append(f"network host {host}")
+    denied = proxy_denied_hosts(proxy_log)
+    if denied is None:
+        reasons.append("network audit unreadable")
+    else:
+        for host in denied:
+            if host not in ignore:
+                reasons.append(f"network host {host}")
     return reasons
 
 
@@ -495,18 +523,24 @@ def hidden_content_lines(task, source_repo):
 
 
 def proxy_denied_hosts(proxy_log):
+    """The hosts the proxy refused, or None when the log is missing or has a line
+    that is not a JSON object: an unreadable network audit is not a clean one."""
     hosts = []
     try:
         with open(proxy_log, encoding="utf-8") as fh:
             for line in fh:
+                if not line.strip():
+                    continue
                 try:
                     rec = json.loads(line)
                 except ValueError:
-                    continue
+                    return None
+                if not isinstance(rec, dict):
+                    return None
                 if rec.get("decision") == "deny":
                     hosts.append(rec.get("host") or rec.get("request") or "?")
     except OSError:
-        pass
+        return None
     return hosts
 
 
@@ -525,8 +559,9 @@ def read_results(path):
                     row = json.loads(line)
                 except ValueError:
                     fail(f"{path}:{number}: not JSON; results are append-only full lines")
-                if isinstance(row, dict):
-                    rows.append(row)
+                if not isinstance(row, dict):
+                    fail(f"{path}:{number}: not a JSON object; results are append-only full rows")
+                rows.append(row)
     except FileNotFoundError:
         return []
     except OSError as exc:
@@ -623,6 +658,9 @@ class Network:
         self.gateway = sh(self.docker, "network", "inspect", self.net, "-f",
                           "{{(index .IPAM.Config 0).Gateway}}").strip()
         log = os.path.join(self.run["proxylog"], "proxy.jsonl")
+        # created empty here so that a missing log later means it was removed, not that nothing happened
+        with open(log, "a", encoding="utf-8"):
+            pass
         self.proc = subprocess.Popen(
             [sys.executable, os.path.join(self.container_dir, "proxy.py"),
              os.path.join(self.container_dir, "proxy-allowlist.txt"), log, self.gateway, str(self.port)],
@@ -979,6 +1017,9 @@ def run_chain(ctx, task, arm):
     append_result(ctx["results"], first)
     if first["runStatus"] != "unscorable":
         return first
+    guard = ctx.get("before_rerun")
+    if guard:
+        guard()
     carried = first["ownCostUsd"]
     second = run_once(ctx, task, arm, 2, carried)
     if second["runStatus"] == "unscorable":
@@ -1143,8 +1184,11 @@ def cmd_run(args):
     for task in tasks:
         for arm_name in chosen:
             for _ in range(args.runs):
-                budget_check(read_results(args.results), task["bucket"], arm_name, args.max_cost_usd,
-                             args.first_run_estimate_usd)
+                def check(bucket=task["bucket"], name=arm_name):
+                    return budget_check(read_results(args.results), bucket, name, args.max_cost_usd,
+                                        args.first_run_estimate_usd)
+                check()
+                ctx["before_rerun"] = check
                 row = run_chain(ctx, task, arms[arm_name])
                 print(f"run: {row['task']} {row['arm']} -> {row['runStatus']} cost={row['costUsd']}")
     return 0

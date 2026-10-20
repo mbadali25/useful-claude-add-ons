@@ -749,6 +749,130 @@ def case_the_codex_shim_rewrites_only_the_read_only_sandbox(tmp):
     return out.stdout.splitlines() == want and wired, (out.stdout, out.stderr, wired)
 
 
+def case_the_shim_and_canary_are_executable_in_git_and_the_image(tmp):
+    container = os.path.join(REAL_EVAL_DIR, "container")
+    listing = subprocess.run(["git", "ls-files", "-s", "--", "evals/crew-outcome/container"], cwd=REPO,
+                             capture_output=True, text=True, check=False).stdout.splitlines()
+    modes = {line.split("\t")[1].rsplit("/", 1)[1]: line.split()[0] for line in listing}
+    docker = open(os.path.join(container, "Dockerfile"), encoding="utf-8").read()
+    ok = (modes.get("codex-shim.sh") == "100755" and modes.get("canary.sh") == "100755"
+          and "chmod 0755 /opt/eval-shim/codex" in docker)
+    return ok, (modes, "chmod" in docker)
+
+
+def case_the_canary_runs_under_the_scored_isolation_settings(tmp):
+    canary = open(os.path.join(REAL_EVAL_DIR, "container", "canary.sh"), encoding="utf-8").read()
+    ok = ("--cap-drop ALL" in canary and "no-new-privileges" in canary and "--user 1000:1000" in canary
+          and "seccomp" not in canary and "apparmor" not in canary and "--privileged" not in canary
+          and "--cap-add" not in canary)
+    return ok, [w for w in ("seccomp", "apparmor", "--privileged", "--cap-add") if w in canary]
+
+
+def case_load_refuses_a_malformed_task_with_a_refusal_not_a_traceback(tmp):
+    results = []
+    for key, value in (("defects", {"d": [[1]]}), ("gradingFiles", None), ("regressionInventory", [3]),
+                       ("testCommand", "pytest"), ("referenceLines", "3"), ("base", None)):
+        fix = Fix(os.path.join(tmp, key))
+        fix.task[key] = value
+        write(os.path.join(fix.task_dir, "task.json"), json.dumps(fix.task))
+        try:
+            results.append((key, refused(fix.load) is not None))
+        except Exception as exc:  # noqa: BLE001 - the case reports a traceback as the failure it is
+            results.append((key, f"raised {type(exc).__name__}"))
+    return all(flag is True for _, flag in results), results
+
+
+def case_a_non_object_results_line_is_refused_not_dropped(tmp):
+    path = os.path.join(tmp, "results.jsonl")
+    write(path, json.dumps(row()) + "\n[]\n")
+    message = refused(eval_mod.read_results, path)
+    good = os.path.join(tmp, "good.jsonl")
+    write(good, json.dumps(row()) + "\n\n" + json.dumps(row()) + "\n")
+    return bool(message and "not a JSON object" in message) and len(eval_mod.read_results(good)) == 2, message
+
+
+def case_an_unreadable_proxy_log_is_a_contamination_reason(tmp):
+    fix = Fix(tmp)
+    task = fix.load()
+    run = eval_mod.prepare_run(task, fix.arm, fix.src, fix.runs, 1, os.path.join(fix.tmp, "plugin-crew"), fix.env)
+    missing = eval_mod.contamination(task, run["home"], run["repo"], os.path.join(tmp, "nope.jsonl"), fix.arm, fix.src)
+    bad = os.path.join(tmp, "bad.jsonl")
+    write(bad, '{"host": "a", "decision": "allow"}\nnot json\n')
+    malformed = eval_mod.contamination(task, run["home"], run["repo"], bad, fix.arm, fix.src)
+    shape = os.path.join(tmp, "shape.jsonl")
+    write(shape, "[]\n")
+    wrong_shape = eval_mod.contamination(task, run["home"], run["repo"], shape, fix.arm, fix.src)
+    ok = (missing == ["network audit unreadable"] and malformed == ["network audit unreadable"]
+          and wrong_shape == ["network audit unreadable"])
+    return ok, (missing, malformed, wrong_shape)
+
+
+def case_an_empty_proxy_log_is_a_clean_audit(tmp):
+    reasons = run_with_text(Fix(tmp), "x", [])
+    return reasons == [], reasons
+
+
+def case_a_rerun_after_an_unscorable_attempt_is_budget_checked_first(tmp):
+    fix = Fix(tmp)
+    fix.env.update({"STUB_MODE": "always-fail"})
+    ctx = fix.ctx()
+
+    def over_budget():
+        raise eval_mod.EvalError("budget: spent 9.00 + projected 1.00 would pass --max-cost-usd 5.00")
+
+    ctx["before_rerun"] = over_budget
+    with patched_env(fix.env):
+        message = refused(eval_mod.run_chain, ctx, fix.load(), fix.arm)
+    rows = eval_mod.read_results(fix.results)
+    ok = bool(message and "budget" in message) and len(rows) == 1 and rows[0]["runStatus"] == "unscorable"
+    return ok, (message, len(rows))
+
+
+def case_a_rerun_within_budget_still_happens(tmp):
+    fix = Fix(tmp)
+    fix.env.update({"STUB_MODE": "fail-first", "STUB_RESULT": "No findings."})
+    ctx = fix.ctx()
+    calls = []
+    ctx["before_rerun"] = lambda: calls.append(1)
+    with patched_env(fix.env):
+        final = eval_mod.run_chain(ctx, fix.load(), fix.arm)
+    return calls == [1] and final["runStatus"] == "scored", (calls, final["runStatus"])
+
+
+def case_codex_turn_without_usage_fields_makes_usage_unknown(tmp):
+    repo, home = codex_events(tmp, [{}], sessions=1)
+    empty = eval_mod.codex_usage(repo, home, "m")
+    partial_repo, partial_home = codex_events(os.path.join(tmp, "p"), [{"input_tokens": 5}], sessions=1)
+    partial = eval_mod.codex_usage(partial_repo, partial_home, "m")
+    ok = empty == (UNKNOWN, UNKNOWN) and partial == (UNKNOWN, UNKNOWN)
+    return ok, (empty, partial)
+
+
+def case_codex_session_with_no_completed_turn_makes_usage_unknown(tmp):
+    repo, home = codex_events(tmp, [], sessions=1)
+    write(os.path.join(repo, "codex-events.jsonl"), json.dumps({"type": "thread.started"}) + "\n")
+    return eval_mod.codex_usage(repo, home, "m") == (UNKNOWN, UNKNOWN), eval_mod.codex_usage(repo, home, "m")
+
+
+def case_a_grading_run_that_crashes_after_printing_passed_lines_is_missing(tmp):
+    def task_for(code):
+        script = f"import sys; print('PASSED tests/x.py::a'); sys.exit({code})"
+        return {"testCommand": ["python3", "-c", script]}
+
+    got = {code: eval_mod.run_tests(task_for(code), tmp, ["tests/x.py::a"])["tests/x.py::a"] for code in (0, 1, 2, 3, 5)}
+    ok = got == {0: "PASSED", 1: "PASSED", 2: "MISSING", 3: "MISSING", 5: "MISSING"}
+    return ok, got
+
+
+def case_a_compact_json_findings_array_parses_as_findings(tmp):
+    arm = eval_mod.check_method(REAL_EVAL_DIR)["baseline"]
+    compact = '[{"file":"x","line":1,"summary":"bug"}]'
+    pretty = '[\n  {\n    "summary": "bug"\n  }\n]'
+    got = [eval_mod.review_verdict(arm, compact), eval_mod.review_verdict(arm, pretty),
+           eval_mod.review_verdict(arm, "[]"), eval_mod.review_verdict(arm, "no idea")]
+    return got == ["findings", "findings", "clean", "unparseable"], got
+
+
 def case_autopilot_stopped_only_on_a_readable_stop_0_keeps_going(tmp):
     def shell(text, code=0):
         return lambda command: (code, text)
@@ -996,6 +1120,18 @@ CASES = (
     ("must-allow: every real task loads", case_every_real_task_loads),
     ("must-allow: the report command runs on a results file", case_cli_report_runs_on_a_results_file),
     ("must-block: validate needs --task or --all", case_cli_refuses_without_a_task_selection),
+    ("must-allow: the shim and the canary are executable in git and the image makes the shim executable", case_the_shim_and_canary_are_executable_in_git_and_the_image),
+    ("must-block: the canary runs under the scored isolation settings, no seccomp or apparmor relaxation", case_the_canary_runs_under_the_scored_isolation_settings),
+    ("must-block: a malformed task.json is a refusal, not a traceback", case_load_refuses_a_malformed_task_with_a_refusal_not_a_traceback),
+    ("must-block: a non-object results line is refused, not dropped (blank lines are allowed)", case_a_non_object_results_line_is_refused_not_dropped),
+    ("must-block: a missing or malformed proxy log is a contamination reason", case_an_unreadable_proxy_log_is_a_contamination_reason),
+    ("must-allow: an empty proxy log is a clean audit", case_an_empty_proxy_log_is_a_clean_audit),
+    ("must-block: a rerun after an unscorable attempt is budget-checked first", case_a_rerun_after_an_unscorable_attempt_is_budget_checked_first),
+    ("must-allow: a rerun within budget still happens", case_a_rerun_within_budget_still_happens),
+    ("must-block: a Codex turn without usage fields makes usage UNKNOWN", case_codex_turn_without_usage_fields_makes_usage_unknown),
+    ("must-block: a Codex session with no completed turn makes usage UNKNOWN", case_codex_session_with_no_completed_turn_makes_usage_unknown),
+    ("must-block: a grading run that crashes after PASSED lines is MISSING (exit 0 and 1 still grade)", case_a_grading_run_that_crashes_after_printing_passed_lines_is_missing),
+    ("must-allow: compact and pretty JSON findings arrays both parse as findings", case_a_compact_json_findings_array_parses_as_findings),
 )
 
 # pylint: enable=line-too-long
