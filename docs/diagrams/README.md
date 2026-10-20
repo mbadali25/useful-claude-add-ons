@@ -1013,7 +1013,7 @@ What crew 1.0 does when a session starts: hooks.json fans out to three SessionSt
 ```mermaid
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
-    start --> reg["3 SessionStart pairs<br/>hooks.json:3-10"]
+    start --> reg["SessionStart launcher<br/>runs 3 scripts<br/>hooks.json:3-6"]
 
     reg --> HR["handoff-read<br/>process-crew-brief-handoff-read.mmd"]
     reg --> PS["platform-sync<br/>process-crew-brief-platform-sync.mmd"]
@@ -1075,7 +1075,7 @@ How /crew:approve, typed by the user only, records or refuses a plan approval th
 flowchart TB
     subgraph approve["/crew:approve - typed by the user only"]
         ap0["user types /crew:approve id<br/>approve.md:5"]
-        ap0 --> ap1{"approval-hook verdict?<br/>hooks.json:14"}
+        ap0 --> ap1{"approval-hook verdict?<br/>hooks.json:8-9"}
         ap1 -- refused --> apx([prompt blocked, reason shown<br/>:15])
         ap1 -- recorded --> ap2["approval.json =<br/>digest(spec.md, plan.md)<br/>:12-13"]
         ap1 -- "several ids, a range,<br/>or plain text" --> apg["PENDING list, nothing recorded<br/>until the user's --confirm<br/>approve.md:27-32"]
@@ -1089,7 +1089,7 @@ flowchart TB
 | Box | Details |
 |---|---|
 | `ap0` | approve.md:5 disable-model-invocation |
-| `ap1` | approval-hook (UserPromptSubmit) hooks.json:14; approve.md:9 |
+| `ap1` | approval-hook (UserPromptSubmit) hooks.json:8-9; approve.md:9 |
 | `ap2` | header status value normalised; approved_via user-prompt |
 | `apg` | user's own /crew:approve --confirm records one receipt per ticket, or none |
 | `planned` | spec.md header 'status: planned' keeps the approval, crew_tracker.py move --to planned |
@@ -1195,13 +1195,13 @@ flowchart TB
 
     im5 --> to_pf0>"next: review part<br/>preflight first"]
 
-    stop["Stop hooks every turn:<br/>verify-gate, completion-audit<br/>hooks.json:58, :62"] -.- im2
+    stop["Stop hooks every turn:<br/>verify-gate, completion-audit<br/>hooks.json:36-37"] -.- im2
 ```
 
 | Box | Details |
 |---|---|
 | `im0` | crew_ticket.py validate |
-| `im2` | recurring-findings checklist for the Touch paths, then steps in order; hooks.json:31 (PreToolUse, Touch) |
+| `im2` | recurring-findings checklist for the Touch paths, then steps in order; hooks.json:12-15 (PreToolUse, Touch) |
 | `sc1` | crew_standards.py init, answer every row, crew_standards.py stamp until exit 0 |
 | `im4` | spec.md header 'status: review' (keeps the approval), crew_tracker.py move --to review (Review lane: review outstanding) |
 

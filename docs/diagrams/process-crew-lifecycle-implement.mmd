@@ -24,12 +24,12 @@
 %%     `status: review`, which keeps the approval (:107-109), and crew_tracker.py
 %%     move --to review (:110-111); then /crew:review last (:112). :114-118
 %%     step 7: done is /crew:done's.
-%%     Scope guard: plugin/crew/hooks/hooks.json:31 (scope-guard.sh, PreToolUse).
-%%     Stop hooks: plugin/crew/hooks/hooks.json:58 (verify-gate.sh), :62 (completion-audit.sh).
+%%     Scope guard: plugin/crew/hooks/hooks.json:12-15 (PreToolUse launcher; crew_hook.py runs scope-guard.sh).
+%%     Stop hooks: plugin/crew/hooks/hooks.json:36-37 (Stop launcher; crew_hook.py runs verify-gate.sh and completion-audit.sh).
 %% --
 %% Note im0: crew_ticket.py validate
 %% Note im2: recurring-findings checklist for the Touch paths, then steps in order;
-%%    hooks.json:31 (PreToolUse, Touch)
+%%    hooks.json:12-15 (PreToolUse, Touch)
 %% Note sc1: crew_standards.py init, answer every row, crew_standards.py stamp until exit 0
 %% Note im4: spec.md header 'status: review' (keeps the approval), crew_tracker.py move --to
 %%    review (Review lane: review outstanding)
@@ -54,6 +54,6 @@ flowchart TB
 
     im5 --> to_pf0>"next: review part<br/>preflight first"]
 
-    stop["Stop hooks every turn:<br/>verify-gate, completion-audit<br/>hooks.json:58, :62"] -.- im2
+    stop["Stop hooks every turn:<br/>verify-gate, completion-audit<br/>hooks.json:36-37"] -.- im2
 %% T-0063 (#368) merges origin/main c9263465 (rerere off): main split this diagram into parts (#375); T-0063's edits re-applied here.
 %% New rf3 node and its two edges (implement.md:99, re-read with grep -n on batch-7-build after the merge). rf1 :94 holds.
