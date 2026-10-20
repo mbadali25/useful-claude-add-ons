@@ -20,7 +20,7 @@ interactive session implements it, an independent reviewer reads the finished
 change, and deterministic gates block on failure instead of giving an
 opinion.
 
-crew 1.1 ships four agents. Each one exists because it buys something a
+crew 1.1 ships four agents (plus one transport agent, below). Each one exists because it buys something a
 prompt cannot: an isolated context window, a restricted tool set, or
 independent eyes.
 
@@ -30,6 +30,14 @@ independent eyes.
 | `reviewer` | The Claude rung of the review order, used when Codex or Kimi is not available | Writes nothing to the tree |
 | `security` | Read-only review of risky changes | No Write or Edit |
 | `researcher` | Reads external sources only | Does not edit the repo |
+
+A fifth file, `session-relay`, is not a role: it is a transport agent on Haiku 5.5 that carries messages between sessions (SendMessage and ListAgents only; no Read, Write, Edit or Bash).
+
+**The coordinator is a model pin, not a role.** Set `dev.roles.coordinator` (for example
+`{"provider": "claude", "model": "claude-opus-5-5"}`) and `dev.roles.developer` (for example
+`{"provider": "claude", "model": "claude-sonnet-5-5"}`) in `/crew:model`. A wave prints the
+coordinator pin and puts the developer model on every lane launch. Both default to unset, which
+changes nothing.
 
 **Running agents on Kimi.** Claude Code runs subagents on Claude models only,
 so `explorer`, `researcher` and `security` can hand their task to the Kimi Code
@@ -289,7 +297,8 @@ skipped phase is visible. It is off until `autopilot.mode` is exactly `plan`
 (one ticket per run) or `backlog`. `/crew:autopilot --goal <slug>` works a goal's
 minted tickets one at a time in dependency order, each through its own
 approval; `backlog` goes on to the next ticket while `autopilot.maxTicketsPerRun`
-(3) and `autopilot.maxTokensPerSession` (2,000,000) allow, and every stop prints
+(3) and `autopilot.maxTokensPerSession` (2,000,000 input plus output tokens, each assistant
+message counted once) allow, and every stop prints
 `resume: /crew:autopilot --goal <slug>` (L-0541).
 
 The five `autopilot.*` settings are personal: set them in the repo's
@@ -353,7 +362,7 @@ Deeper: [Memory and Obsidian](memory-and-obsidian.md).
 ## Multi-session work
 
 Source: `plugin/crew/hooks/scripts/crew_train.py` and
-`plugin/crew/README.md`, section 10.
+`docs/crew/reference/10-the-daily-loop.md` (moved out of the crew README's section 10).
 
 Several sessions can work one repository at once, each in its own git
 worktree:
@@ -436,7 +445,7 @@ Cause: a corrupt `StartupProfileData-NonInteractive` file in
 write: several pwsh processes (a snap install, here) rewriting that one file
 at once. Fix: move that file aside; pwsh rebuilds it on the next start. crew's
 own test suites now give every pwsh they spawn a throwaway `XDG_CACHE_HOME`,
-so they cannot corrupt it (`plugin/crew/README.md`, section 25). Ticket
+so they cannot corrupt it (`docs/crew/reference/25-command-and-agent-reference.md`, moved out of the crew README's section 25). Ticket
 T-0506 tracks the cause.
 
 **`--accept` refuses: "the tree has changed since that review".**

@@ -685,7 +685,7 @@ CONTEXT_DEFAULTS = {
         # overrides an aggressive percentage on a large window --
         # at 0.8/100k a 1M window fired at 900k, and lowering only
         # warnAt would still have fired at 900k. Both had to move.
-        "warnAt": 0.5,
+        "warnAt": 0.4,
         "budgetTokens": None,
         "reserveTokens": 0,
         "handoffPath": ".work/HANDOFF.md",
@@ -1212,6 +1212,7 @@ ROLE_TIERS = {
     "security": 1,
     "researcher": 2,
 }
+TRANSPORT_AGENTS = frozenset({"session-relay"})  # L-0797: shipped, not roles
 
 # The tier that is about parallelism rather than about roles -- no role lives
 # here, so `tier_for_roles` can never return it and a config that declares it

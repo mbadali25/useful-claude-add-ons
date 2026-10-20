@@ -1618,11 +1618,12 @@ def test_status_lists_presented_claims_first_with_one_recommended_action(capsys,
 # --- Step 6: docs ---------------------------------------------------------------
 
 def test_readme_documents_channels_ttl_recovery_and_no_force():
-    readme = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "README.md")
+    readme = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))), "docs", "crew", "reference", "16-context-handoff.md")
     with open(readme, encoding="utf-8") as handle:
         text = handle.read()
     section = text[text.index("### Cross-session claims"):]
-    section = section[:section.index("\n## ")]
+    section = section[:section.index("\n### Cross-session messages")]
 
     for needle in ("crew-coord/<channel>", "30 minutes", "owner unknown", "never force", "recover",
                    "crew_coord.py status", "release --break", "peer-written", "pre-push",

@@ -93,6 +93,8 @@ def frontmatter(path):
 AGENTS = {os.path.basename(f)[:-3] for f in glob.glob("agents/*.md")}
 COMMANDS = {os.path.basename(f)[:-3] for f in glob.glob("commands/*.md")}
 SKILLS = {os.path.basename(os.path.dirname(f)) for f in glob.glob("skills/*/SKILL.md")}
+# A plugin workflow (workflows/<name>.js) is run as /crew:<name>, so a command may name it.
+WORKFLOWS = {os.path.basename(f)[:-3] for f in glob.glob("workflows/*.js")}
 
 # Roles that are deliberately NOT on the default tier. Anything absent from this
 # map must declare `sonnet`; see check_agents for why each exception exists.
@@ -101,7 +103,12 @@ SKILLS = {os.path.basename(os.path.dirname(f)) for f in glob.glob("skills/*/SKIL
 # other role, and with the `localgpu` semantic index disabled or unavailable
 # it has only Read/Grep/Glob, so a wrong map is inherited by everything built
 # on it -- see CHANGELOG.md's 1.0.9 entry and README's model-tiers section.
-MODEL_TIER = {"reviewer": "opus", "explorer": "opus"}
+#
+# `session-relay` (L-0797) is the other direction: a transport-only relay with
+# no judgement to exercise, pinned to the full id `claude-haiku-5-5` (Haiku 5.5,
+# owner decision 2026-10-16) to keep message passing cheap. The id is accepted for
+# this one agent only: no general `claude-*` pass.
+MODEL_TIER = {"reviewer": "opus", "explorer": "opus", "session-relay": "claude-haiku-5-5"}
 
 # T-0041: crew verifies before it states. The rule is a phrase every agent and
 # the always-loaded best-practices skill carries, so a prompt rewrite that drops
@@ -226,7 +233,7 @@ def check_commands():
 
         for match in re.finditer(r"`?crew:([a-z-]+)`?", body):
             target = match.group(1)
-            if target in COMMANDS or target in SKILLS or target in AGENTS:
+            if target in COMMANDS or target in SKILLS or target in AGENTS or target in WORKFLOWS:
                 continue
             bad(f"{name}: references crew:{target}, which is not an agent, command or skill")
 
@@ -279,7 +286,7 @@ def check_agents():
             ok(f"{name}: tools")
 
         model = fields.get("model", "inherit")
-        if model not in ("inherit", "opus", "sonnet", "haiku"):
+        if model not in ("inherit", "opus", "sonnet", "haiku") and model != MODEL_TIER.get(name[:-3]):
             bad(f"{name}: unrecognised model '{model}'")
         elif model != MODEL_TIER.get(name[:-3], "sonnet"):
             # The tiering is a design decision, not a default: reviewer is the
@@ -337,6 +344,13 @@ def check_skills():
 # wave's lane prompt (crew_wave.lane_prompt, rendered from this source file)
 # never names one. KNOWN_TOOLS keeps both: they are real tools, valid elsewhere.
 BRIDGE_TOOLS = ("SendMessage", "ListAgents")
+# L-0797: the one carve-out. The owner's rule is that every peer message goes
+# through ONE relay subagent, so the relay is granted the bridge tools; the hub
+# rule still holds because the main session dispatches it and owns its replies.
+# Keyed by agent name, with the reason; an entry is a reviewed decision.
+BRIDGE_ALLOWED = {
+    "session-relay": "the single transport agent peer messages go through (L-0797)",
+}
 LANE_PROMPT_SOURCE = "hooks/scripts/crew_wave.py"
 
 
@@ -348,7 +362,9 @@ def check_bridge_tools():
         fields, _ = frontmatter(path)
         granted = [raw.strip() for raw in str((fields or {}).get("tools", "")).split(",")]
         held = [tool for tool in BRIDGE_TOOLS if tool in granted]
-        if held:
+        if held and name[:-3] in BRIDGE_ALLOWED:
+            ok(f"{name}: bridge tools allowed - {BRIDGE_ALLOWED[name[:-3]]}")
+        elif held:
             bad(f"{name}: grants {', '.join(held)} - the main session is the hub; an agent never "
                 "messages another session (L-0637)")
         else:

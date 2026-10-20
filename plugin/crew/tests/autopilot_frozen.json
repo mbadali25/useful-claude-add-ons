@@ -1,0 +1,74 @@
+{
+  "note": "crew_autopilot*.py is frozen (L-0727): new lane or wave behaviour goes in plugin/crew/workflows/. Only a bug fix or a removal may change one of these files, and then the same PR updates tests/autopilot_frozen.json (python3 tests/test_autopilot_frozen.py --write) and its body says why and names L-0727.",
+  "files": {
+    "crew_autopilot.py": {
+      "sha256": "0e57f46a0aab55bf0a4b6c05ac5919b0857fd8a66d8db2a3f75efaa28ddfee6d",
+      "lines": 3393
+    },
+    "crew_autopilot_backlog.py": {
+      "sha256": "d0f7cc3c41063c746c8607375905852f45c5c4d24eaeae0bc91fbb3a6587473d",
+      "lines": 618
+    },
+    "crew_autopilot_deploy.py": {
+      "sha256": "c901a05d597cea0bb6daed4cf79e1968aa84412f16d737a46c419fc89b4375eb",
+      "lines": 165
+    },
+    "crew_autopilot_docs.py": {
+      "sha256": "30ff29771bc64289c4890580850da87b7665949120c2f0eb54deb6c4df57dbd0",
+      "lines": 324
+    },
+    "crew_autopilot_fences.py": {
+      "sha256": "bda43c793ca63bc9602e4a6df0ccfe282b84d61e417fd3027955db80c7fd53ad",
+      "lines": 111
+    },
+    "crew_autopilot_fix.py": {
+      "sha256": "d2cef700a8ba0f183022496d71d24a91a2a8a0925662414ab02bbd50e99b6895",
+      "lines": 198
+    },
+    "crew_autopilot_gates.py": {
+      "sha256": "d4dcb074cad69b95330f95bb1436ce0b85378402e7becaa9f398b01cea75cbb5",
+      "lines": 260
+    },
+    "crew_autopilot_goal.py": {
+      "sha256": "478fcf1792b19738b68c5b1335cf903d401f50bbdc5bafb349e22cd53e90251b",
+      "lines": 595
+    },
+    "crew_autopilot_handoff.py": {
+      "sha256": "9cb4f2aab9566cc49b895a56ed87f28b58b83d89a29349bdd5d5da3c69563b73",
+      "lines": 292
+    },
+    "crew_autopilot_owner.py": {
+      "sha256": "b546f6367108423f5f8a273c033a6fbb0d3120bafaeafd421253ef301c7e84a1",
+      "lines": 241
+    },
+    "crew_autopilot_paste.py": {
+      "sha256": "63a59dbb41f0bef5f9efa6b621f7e23630300eb8badd41007bdba283a795a8af",
+      "lines": 99
+    },
+    "crew_autopilot_questions.py": {
+      "sha256": "548e9cd281def5ff47dc3c95b9f9ed94af88b0e88b3bd0fcc87bdeff483072f4",
+      "lines": 46
+    },
+    "crew_autopilot_replan.py": {
+      "sha256": "4372797cec7151fdbcdb6ec2076650f0dc6a09a80bc29e4629e0706557d55025",
+      "lines": 141
+    },
+    "crew_autopilot_sleep.py": {
+      "sha256": "5712508f42c912564759e1ac4db9fe9546039fe88102680bd1eb981fcf15682d",
+      "lines": 551
+    },
+    "crew_autopilot_slices.py": {
+      "sha256": "13c25293da8d6598b77822c184f81d850a028f261e147e228677df0434637405",
+      "lines": 607
+    },
+    "crew_autopilot_split.py": {
+      "sha256": "69d9651d824b527ece68ee9399cb2dcb00dc4545ddcab08804dcebb1f2493469",
+      "lines": 264
+    },
+    "crew_autopilot_stops.py": {
+      "sha256": "ceb82f9d6749652c59043ab692b877adf984751d3d2f5be3292b8bb2a6f06866",
+      "lines": 105
+    }
+  },
+  "totalLines": 8010
+}

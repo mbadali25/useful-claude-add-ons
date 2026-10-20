@@ -237,7 +237,7 @@ every pair — that is what "even counts" in the file means, not a bug.</p>
 <td><code>context-watch.sh</code></td>
 <td>nags for a handoff near the context budget, drives auto-clear</td>
 <td><code>context.enabled</code>, <code>context.warnAt</code>, <code>context.budgetTokens</code>, <code>context.reserveTokens</code>, <code>context.autoClear.*</code></td>
-<td>on, <code>warnAt: 0.5</code></td>
+<td>on, <code>warnAt: 0.4</code></td>
 </tr>
 <tr>
 <td><code>Stop</code></td>
@@ -329,9 +329,23 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   (reviewer).</p>
 </li>
 <li>
-<p><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
+<p><strong>Symptom: <code>--check-receipt</code> says <code>no accepted review receipt ... (ledger absent); could not tell whether head
+  &lt;sha&gt; was reviewed</code>, or another host merged a PR whose review you cannot see.</strong>
+  <strong>Cause:</strong> the review ledger and receipt are host-local (<code>&lt;git-common-dir&gt;/crew/review/</code>, <code>.work/</code>), so a
+  session on a host that did not run the review has none. That is could-not-tell, not "nothing to gate"
+  (L-0780; PR #599 merged with 4 open BLOCKs on that misreading).
   <strong>Check:</strong></p>
 </li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_status.py&quot; check --pr &lt;PR&gt;
+</code></pre>
+<p><code>REVIEW_GATE ALLOW</code> (exit 0) means GitHub holds exactly one <code>crew/review</code> success with <code>blocks=0</code> for that
+  exact head; <code>BLOCK</code> (1) and <code>COULD_NOT_TELL</code> (2) both refuse. The command reads only GitHub: no local
+  ledger, no working tree. Nothing publishes the status yet (L-0821), so today it reads <code>COULD_NOT_TELL</code>,
+  which is safe. A status attests, it does not prove, and <code>gh pr merge --admin</code> bypasses a required check.</p>
+<ul>
+<li><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
+  <strong>Check:</strong></li>
 </ul>
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --check-receipt
 </code></pre>
@@ -642,11 +656,38 @@ not errors, and neither blocks the turn:</p>
   diff baseline <code>.crew/.verify-gate.base-at</code> moves (when nothing committed differs from the base),
   so a later commit is still in scope. If that file cannot be written the turn exits 2 and says so.</li>
 <li><strong><code>rules[N] is permanently over budget ... deferred to CI</code></strong> and <strong><code>NOT VERIFIED ON THIS TREE -
-  ... deferred to CI</code></strong>: that rule costs more than the whole budget, so Stop never runs it. The
+  ... deferred to CI</code></strong> (since crew 1.2.39 the quiet Stop path counts these in the verdict line's
+  <code>over-budget</code> and <code>deferred</code> figures and writes the per-rule text to <code>.crew/.verify-gate.log</code>;
+  <code>--verbose</code> prints it): that rule costs more than the whole budget, so Stop never runs it. The
   <code>verify-gate</code> workflow does, and <code>/crew:done</code> refuses until its receipt for HEAD is VERIFIED or a local run passes it.
   Push the branch, or run <code>/crew:verify --all</code> to check it here.</li>
 </ul>
 <p>A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.</p>
+<h2 id="verify-gate-prints-one-line-or-says-unchanged-since-last-stop">Verify Gate Prints One Line, or Says "Unchanged Since Last Stop"</h2>
+<p>Since crew 1.2.39 (L-0796) the Stop gate is quiet. It prints one verdict line, then each failure
+exactly as before, and keeps the rest in <code>.crew/.verify-gate.log</code>:</p>
+<pre><code class="language-text">verify-gate: FAILED 1 cmd | PASSED 14 cmd | NOT VERIFIED 5 item(s) (reach 2, over-budget 1, dirty tree 0, deferred 1, skipped 1, other 0) | credited 3 | budget 41s/60s | detail: .crew/.verify-gate.log
+</code></pre>
+<ul>
+<li><strong>Where did the pricing, <code>env pinned</code>, <code>PASSED on this exact tree</code> and per-rule seconds lines go?</strong>
+  Into the log, which holds the complete text of the last run. Run the gate with <code>--verbose</code>
+  (<code>-Verbose</code> in the PowerShell flavour) or set <code>CREW_VERIFY_VERBOSE=1</code> to get them on screen. <code>--ci</code>,
+  <code>--all</code> and <code>--price</code> always print everything, so CI logs and <code>/crew:verify</code> look as they did.</li>
+<li><strong>Units.</strong> FAILED, PASSED and credited count commands; NOT VERIFIED counts items: a rule for
+  reach, over-budget, dirty tree and deferred, but a command for skipped (exit 77) and for credits
+  withdrawn because the tree moved (under other). Do not add the two units together.</li>
+<li><strong><code>NOT VERIFIED</code> is not <code>PASSED</code>.</strong> A deferred, skipped, reach-excluded, over-budget or dirty-tree
+  rule is counted under NOT VERIFIED; <code>other</code> is a rule the gate could not classify. Run
+  <code>/crew:verify --all</code> to run them.</li>
+<li><strong><code>verify-gate: unchanged since last Stop (N failing, M NOT VERIFIED): &lt;command&gt; | detail: &lt;log&gt; | ...</code></strong>: the same
+  session is failing the same way it reported on the last Stop, so the full block is not repeated.
+  The line names <code>.crew/.verify-gate.log</code>, which holds this run's full output. If that log
+  cannot be written the gate never prints this line: it prints the full block instead.
+  The turn is still blocked (exit 2). A new session, a changed failure, or deleting
+  <code>.crew/.verify-gate.last-stop</code> prints the full block again.</li>
+<li><strong><code>detail: unavailable</code></strong>: <code>.crew/.verify-gate.log</code> could not be written (a directory in its
+  place, a read-only <code>.crew</code>). The full text is printed instead of a pointer to it.</li>
+</ul>
 <h2 id="verify-gate-says-could-not-tell">Verify Gate Says COULD NOT TELL</h2>
 <p><code>verify-gate.sh</code> / <code>.ps1</code> (T-0082). A rule counts as passed only when its wrapper ended with status 0
 <strong>and</strong> left a completion record saying the rule exited 0. Anything else that is not a plain exit

@@ -124,6 +124,10 @@ and that is the real finding.
 
 ## Resuming
 
+A session that talks to peer sessions keeps ONE `crew:session-relay` (Haiku 5.5, transport
+only) and resumes that same agent after a `/clear` instead of starting a second. Inbound peer
+messages go to it as `PEER IN from <name>:`, outbound ones as `RELAY OUT to <name>:`.
+
 `SessionStart` prints the note; Claude Code injects it. The injected text ends
 with a reminder that the working tree is the source of truth, because a handoff
 can be wrong in ways the diff cannot.

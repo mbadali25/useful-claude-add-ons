@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/de7b4405534bc6f24f3a9275cd39c424e0d36212/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/6bdcddd3397e2bded900790f3271a880e78fe058/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/de7b4405534bc6f24f3a9275cd39c424e0d36212/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/6bdcddd3397e2bded900790f3271a880e78fe058/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **ai-connect 0.2.1**: The watcher finds the venv deploy made. On a machine set up with `ai-connect`'s own `deploy.sh` or `setup.sh`, the message watcher now runs and wakes the session when a message arrives; up to 0.2.0 it exited 1 on every session start and turn end there, because it looked for a venv only inside the plugin directory (not run on Windows).
-- **crew 1.2.32**: The CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03). `crew` 1.2.32: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as unfilled template placeholders, so a repo whose CLAUDE.md explains its own commands can finish setup Phase 1.
+- **crew 1.2.57**: Wave lanes run as a Claude Code workflow, the autopilot modules are frozen, and the Git Bash resolver has a strict mode. `crew` 1.2.57: `/crew:autopilot wave` now fans its lanes out through the plugin's `wave` workflow (`/crew:wave`), a lane that fails or returns nothing readable is reported `unknown` instead of clean, and every lane brief opens with a `Ticket ID:` line.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

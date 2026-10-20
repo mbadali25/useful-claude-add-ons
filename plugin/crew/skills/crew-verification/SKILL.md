@@ -105,11 +105,16 @@ without ever running.
 | `agents` | `/crew:review` - the hook cannot spawn a subagent, so specialist review is a review-time concern |
 | `agents`, continued | any installed subagent, not only crew's own. See below. |
 | `environments` and everything under it | `/crew:promote` |
+| `id` | optional, a unique kebab-case name. `coveredBy` resolves against it under `--all`; it never changes what a rule runs or its key |
 | `why`, `anchor`, `version` | **nothing.** They are notes for the next human. |
 
 `why` is worth writing anyway: a rule whose reason nobody remembers gets deleted
 the first time it is inconvenient. `anchor` records the sha the map was built
 against, so you can tell how stale it is. Neither changes what runs.
+
+In this repo every rule has an `id` and `why` is capped at 300 characters; the full
+rationale for rule `<id>` is the `## <id>` section of `docs/crew/verify-rationale.md`.
+Other repos keep `why` uncapped and need no rationale file.
 
 ### `agents` can name any installed subagent
 

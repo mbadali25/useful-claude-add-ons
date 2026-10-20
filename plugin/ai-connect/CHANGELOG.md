@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.2.1] - 2026-10-13
+## [0.2.1] - 2026-10-20
 
 ### Fixed
 - The watcher hooks (`hooks/watch.sh`, `hooks/watch.ps1`) looked for a venv only in the plugin directory, where `install.sh` / `install.cmd` create it. `deploy/deploy.sh bridge|peer` and `deploy/setup.sh` (and their `.ps1` twins) install outside it (`deploy_core.py`'s `APP_HOME`), so on a machine they set up the watcher exited 1 at every SessionStart and Stop with `no venv at <plugin directory>/venv`, and no session was ever woken by a message. Seen on a Linux Bridge machine

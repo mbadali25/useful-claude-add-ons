@@ -84,6 +84,11 @@ SCHEMA = 1
 SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 
 
+def _plain_path(path):
+    """`path` as one argv word: '/' for '\\' on Windows, where a lane's Bash is Git Bash."""
+    return path.replace("\\", "/") if os.name == "nt" else path
+
+
 def _shell_path(path):
     """`path` as a lane's Bash command line names it: quoted, and on Windows with '/' for
     '\\'. A lane's Bash is Git Bash there, where '/' is native and needs no quoting, so a
@@ -778,13 +783,63 @@ def _receipt_mark(top, ticket):
     return [receipt.get("kind"), receipt.get("round"), receipt.get("accepted_at")]
 
 
+MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-]*(?:\[[A-Za-z0-9]+\])?\Z")
+
+
+CLAUDE_MODEL_HEADS = ("claude", "opus", "sonnet", "haiku")
+
+
+def role_model(top, role, cfg=None):
+    """`(model, warning)` for a `dev.roles.<role>` pin that is a claude pin with a model:
+    what the dispatcher passes as the Agent `model`. `(None, "")` when no role pin is set
+    (a block default is not a pin) or the pin is another provider's; `(None, why)` when the
+    pin cannot be honoured (not a model id, no provider under a non-claude block, a
+    miscased provider, a claude provider with a non-claude model), so an odd value is named,
+    never put on a line. `cfg` is a resolved config, so one caller reads the layers once."""
+    if cfg is None:
+        cfg = crew_config.resolve_config(top)
+    pin = crew_state.dict_or_empty(crew_state.dict_or_empty(
+        crew_state.dict_or_empty(cfg.get("dev")).get("roles")).get(role))
+    model = pin.get("model")
+    if not model:
+        return None, ""
+    where = f"dev.roles.{role}"
+    named = pin.get("provider")
+    if isinstance(named, str) and named != "claude" and named.strip().lower() == "claude":
+        return None, f"{where}.provider {named!r} is not 'claude' (case matters); no model pinned"
+    row = crew_state.resolve_role(cfg, "dev", role)
+    if row["provider"] != "claude":
+        if (not named and isinstance(model, str)
+                and crew_state.family(None, model) in CLAUDE_MODEL_HEADS):
+            return None, (f"{where}.model {model!r} has no provider and "
+                          f"dev.provider is {row['provider']!r}; no model pinned "
+                          f"(set {where}.provider to claude)")
+        return None, ""
+    if not isinstance(model, str) or not MODEL_ID.match(model):
+        return None, f"{where}.model {model!r} is not a model id; no model pinned"
+    if crew_state.family(None, model) not in CLAUDE_MODEL_HEADS:
+        return None, f"{where}.model {model!r} is not a claude model; no model pinned"
+    return model.lower(), ""
+
+
+class _Launch(str):
+    """A `launch` line that also carries the lane-prompt `argv` and the pinned `model` (or
+    None) it was built from, so `start --json` lists exactly the lines it prints."""
+    argv = ()
+    model = None
+
+
 def _launch(top, slug, ticket, resume):
-    command = (f"python3 {_shell_path(os.path.join(SCRIPTS, 'crew_wave.py'))} lane-prompt "
-               f"--root {_shell_path(top)} "
-               f"--set {slug} --ticket {ticket}")
+    model, _ = role_model(top, "developer")
+    argv = ["python3", _plain_path(os.path.join(SCRIPTS, "crew_wave.py")), "lane-prompt",
+            "--root", _plain_path(top), "--set", slug, "--ticket", ticket]
     if resume is not None:
-        command += f" --resume-round {resume}"
-    return f"launch {ticket}: {LAUNCH} prompt: the output of `{command}`"
+        argv += ["--resume-round", str(resume)]
+    command = " ".join(shlex.quote(word) for word in argv)
+    launch = LAUNCH if model is None else LAUNCH[:-1] + f", model: {model})"
+    line = _Launch(f"launch {ticket}: {launch} prompt: the output of `{command}`")
+    line.argv, line.model = argv, model
+    return line
 
 
 def _valid_receipts(receipts):
@@ -804,7 +859,9 @@ def start_path(top, slug):
 
 
 def start(root, slug):
-    """`{"stop", "stopReason", "plan", "lines"}`. Writes a `pending` lane file
+    """`{"stop", "stopReason", "plan", "lines", "launches"}`; `launches` is
+    `[{"ticket", "argv"[, "model"]}]`, one per `launch` line in the same order (`model` only
+    when the developer role pins one, as the line's `model:` does). Writes a `pending` lane file
     for each new wave-1 lane and `start.json` (base commit, lanes, receipt
     kinds at start); prints one isolated launch per lane to (re)launch. Never
     reserves a review round, places a worktree or launches an agent."""
@@ -812,7 +869,7 @@ def start(root, slug):
     result = plan(top, slug=slug)
     if result["stop"]:
         return {"stop": True, "stopReason": result["stopReason"], "plan": result,
-                "lines": [f"stop: {result['stopReason']}"]}
+                "lines": [f"stop: {result['stopReason']}"], "launches": []}
     code, base = _git(top, "rev-parse", "HEAD")
     if code != 0 or not base:
         raise WaveError("could not read the main checkout's HEAD for the lanes' base commit")
@@ -834,6 +891,13 @@ def start(root, slug):
     versions = dict(result["land"])
     started = list(lanes)
     lines = []
+    launches = []
+    cfg = crew_config.resolve_config(top)
+    _, lane_warning = role_model(top, "developer", cfg)
+    coordinator, coordinator_warning = role_model(top, "coordinator", cfg)
+    lines += [f"warning: {w}" for w in (lane_warning, coordinator_warning) if w]
+    if coordinator:
+        lines.append(f"coordinator: model {coordinator}")
     for ticket in result["wave"]:
         if started and ticket not in started:
             # A relaunch replans from today's approvals, without the lanes already running:
@@ -871,10 +935,12 @@ def start(root, slug):
         if ticket not in lanes:
             lanes.append(ticket)
         lines.append(_launch(top, slug, ticket, _reserved_round(top, ticket)))
+        launches.append(dict({"ticket": ticket, "argv": list(lines[-1].argv)},
+                             **({"model": lines[-1].model} if lines[-1].model else {})))
     _write_json(start_path(top, slug), {"base": record.get("base") or base, "lanes": lanes,
                                         "later": result["later"], "receipts": receipts})
     lines += [f"later: {ticket} - {why}" for ticket, why in result["later"]]
-    return {"stop": False, "stopReason": "", "plan": result, "lines": lines}
+    return {"stop": False, "stopReason": "", "plan": result, "lines": lines, "launches": launches}
 
 
 def _same_bytes(one, two):
@@ -1048,6 +1114,7 @@ def lane_prompt(root, slug, ticket, resume_round=None):
     done = (f"{script('crew_wave.py')} lane-done --main {main} --set {slug} --ticket {ticket} "
             "--state <clean|findings|question|failed> --reason \"<one line>\"")
     return "\n".join([
+        f"Ticket ID: {ticket}",
         f"You are lane {ticket} of wave {slug}. Your current directory is your own isolated "
         "worktree: work only here (--root .) and never write to another checkout's path. "
         "Never ask the owner anything; a question goes to a file and the lane stops.",

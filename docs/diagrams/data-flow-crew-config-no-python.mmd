@@ -3,6 +3,7 @@
 %% Re-drawn for L-0772 on 2026-10-11: the environment guard's fallback (EG1-EG3), read at L-0772-env-guard.
 %% Re-drawn for T-0096 on 2026-10-04: the cloud guard's fallback (CG1-CG3), read at T-0096-build.
 %% Purpose: What three guards do when they cannot find python: role-write-guard.sh cannot read guards.roleWrites, so it always blocks a restricted role; cloud-guard.sh reads cloudGuard crudely from the resolved repo file and the machine file, and refuses when armed or when git cannot name a lane's main checkout; env-guard.sh does the same for envGuard.
+%% Embed: none
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
 %%  6. role-write-guard.sh's no-python fallback (:301-346) is a NEW, narrower
 %%     contract, not the old policy-reading fallback (removed): without a
