@@ -67,6 +67,13 @@ TASK_KEYS = ("name", "ticket", "base", "reference", "bucket", "referenceLines", 
 ARM_KEYS = ("arm", "author", "reviewer", "wallClockMinutes", "cli", "prompts")
 ARM_EXTRA_KEYS = {"crew": ("crewConfig", "assignment"), "baseline": ("reviewParse",)}
 TEST_TIMEOUT_SECONDS = 120
+CLAUDE_OAUTH_KEEP = ("accessToken", "expiresAt", "scopes", "subscriptionType", "rateLimitTier")
+# `docker kill` / `rm` / `inspect` after a timeout get a bound of their own: a cleanup that hangs
+# must not hang the evaluation (L-0851).
+CLEANUP_TIMEOUT_SECONDS = 30
+# `docker run` itself failing (125), the command not invokable (126) or not found (127) is the
+# container, not the code under test.
+DOCKER_INFRA_EXITS = (125, 126, 127)
 PYTEST_GRADABLE_EXITS = (0, 1)
 RESULT_WORDS = ("PASSED", "FAILED", "ERROR", "SKIPPED", "XFAIL", "XPASS")
 DEFAULT_MAX_COST_USD = 150.0
@@ -95,6 +102,23 @@ class EvalError(Exception):
 
 def fail(message):
     raise EvalError(message)
+
+
+class GradingInfra(Exception):
+    """Grading could not be carried out (container failed to start, timed out, or docker is
+    missing). It says nothing about the code under test, so it is never a defect and never
+    MISSING tests: the run is recorded unscored (`runStatus: infra`) with its cost."""
+
+
+def bounded(argv):
+    """(returncode, stdout, stderr) of a cleanup command, or None when it did not answer in
+    CLEANUP_TIMEOUT_SECONDS."""
+    try:
+        out = subprocess.run(argv, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL,
+                             timeout=CLEANUP_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        return None
+    return out.returncode, out.stdout, out.stderr
 
 
 def which(name):
@@ -329,15 +353,21 @@ def run_tests(task, repo, ids, docker=None):
     try:
         out = subprocess.run(argv, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL,
                              timeout=TEST_TIMEOUT_SECONDS)
+        if out.returncode in DOCKER_INFRA_EXITS:
+            raise GradingInfra(f"grading container exited {out.returncode}: {(out.stderr or '').strip()[:200]}")
         text = out.stdout
         if out.returncode not in PYTEST_GRADABLE_EXITS:
             # pytest exits 0 (all passed) or 1 (some failed) for a run that finished; 2 (interrupted),
             # 3 (internal error), 4 (usage), 5 (nothing collected) or a signal is a run that cannot be
             # trusted even if it printed PASSED lines first (GEN-01: could not tell is not clean).
             text = ""
-    except subprocess.TimeoutExpired:
-        subprocess.run([docker, "rm", "-f", name], capture_output=True, check=False)
-        text = ""
+    except subprocess.TimeoutExpired as exc:
+        removed = bounded([docker, "rm", "-f", name])
+        raise GradingInfra(f"grading container timed out after {TEST_TIMEOUT_SECONDS}s"
+                           + ("" if removed is not None else f" and docker rm -f gave no answer in "
+                              f"{CLEANUP_TIMEOUT_SECONDS}s")) from exc
+    except OSError as exc:
+        raise GradingInfra(f"grading container could not be started: {exc}") from exc
     status = {}
     lines = summary_lines(text)
     for test_id in ids:
@@ -534,7 +564,11 @@ def codex_usage(repo, home, model, proxy_log=None):
                     rec = json.loads(line)
                     if isinstance(rec, dict) and rec.get("type") == "thread.started":
                         threads.add(str(rec.get("thread_id")))
-                    usage = rec.get("usage") if isinstance(rec, dict) and rec.get("type") == "turn.completed" else None
+                    completed = isinstance(rec, dict) and rec.get("type") == "turn.completed"
+                    usage = rec.get("usage") if completed else None
+                    if completed and not isinstance(usage, dict):
+                        # a finished turn that reports no usage was not measured: not a zero
+                        return UNKNOWN, UNKNOWN
                     if isinstance(usage, dict):
                         turns += 1
                         for needed in ("input_tokens", "output_tokens"):
@@ -632,8 +666,12 @@ def contamination(task, home, repo, proxy_log, arm, source_repo):
     host that is not on the arm's ignore list. Text that exists in the base tree
     (README, marketplace.json) never flags a run."""
     needles = {task["reference"]: "reference sha"}
+    patterns = {}
     if task.get("referencePr"):
-        needles[f"/pull/{task['referencePr']}"] = "reference PR URL"
+        number = re.escape(str(task["referencePr"]))
+        # whole numbers only: /pull/2730 and #2730 are not PR 273; a bare #273 counts, an HTML entity &#273; does not
+        patterns["reference PR URL"] = re.compile(rf"/pull/{number}(?![0-9A-Za-z_])")
+        patterns["reference PR number"] = re.compile(rf"(?<!&)#{number}(?![0-9A-Za-z_])")
     texts = []
     roots = [os.path.join(home, ".claude", "projects"), os.path.join(home, ".codex", "sessions")]
     for root in roots:
@@ -643,7 +681,7 @@ def contamination(task, home, repo, proxy_log, arm, source_repo):
         texts.extend(os.path.join(here, n) for n in names if n == "codex-events.jsonl")
     hidden_lines = hidden_content_lines(task, source_repo)
     reasons = []
-    hits = set()
+    most_hits = 0
     for path in texts:
         try:
             with open_arm_file(path) as fh:
@@ -655,8 +693,13 @@ def contamination(task, home, repo, proxy_log, arm, source_repo):
         for needle, label in needles.items():
             if needle in body and label not in reasons:
                 reasons.append(label)
-        hits.update(line for line in hidden_lines if line in body or json.dumps(line)[1:-1] in body)
-    if len(hits) >= HIDDEN_LINES_TO_FLAG:
+        for label, pattern in patterns.items():
+            if label not in reasons and pattern.search(body):
+                reasons.append(label)
+        # the threshold is three distinctive lines in ONE file: lines found in different files are not summed
+        in_file = {line for line in hidden_lines if line in body or json.dumps(line)[1:-1] in body}
+        most_hits = max(most_hits, len(in_file))
+    if most_hits >= HIDDEN_LINES_TO_FLAG:
         reasons.append("hidden test content")
     ignore = set(arm.get("proxyIgnoreHosts", []))
     denied = proxy_denied_hosts(proxy_log)
@@ -872,13 +915,12 @@ def invoke(docker, run, name, inner, timeout):
                              stdin=subprocess.DEVNULL)
         return out.returncode, out.stdout, False
     except subprocess.TimeoutExpired as exc:
-        killed = subprocess.run([docker, "kill", name], capture_output=True, check=False)
-        if killed.returncode != 0:
-            subprocess.run([docker, "rm", "-f", name], capture_output=True, check=False)
-            probe = subprocess.run([docker, "inspect", "-f", "{{.State.Running}}", name], capture_output=True,
-                                   text=True, check=False)
-            gone = probe.returncode != 0 and "no such" in (probe.stderr or "").lower()
-            if not gone and (probe.returncode != 0 or probe.stdout.strip() == "true"):
+        killed = bounded([docker, "kill", name])
+        if killed is None or killed[0] != 0:
+            bounded([docker, "rm", "-f", name])
+            probe = bounded([docker, "inspect", "-f", "{{.State.Running}}", name])
+            gone = probe is not None and probe[0] != 0 and "no such" in (probe[2] or "").lower()
+            if not gone and (probe is None or probe[0] != 0 or probe[1].strip() == "true"):
                 fail(f"container {name} timed out and could not be stopped; not grading a run that may still be writing")
         text = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
         return 124, text, True
@@ -891,8 +933,9 @@ def strip_claude_auth(source, dest):
     """Only the OAuth access token, never the refresh token: the run cannot
     rotate the owner's login."""
     data = read_json(source)
-    oauth = dict(data.get("claudeAiOauth") or {})
-    oauth.pop("refreshToken", None)
+    entry = data.get("claudeAiOauth") if isinstance(data.get("claudeAiOauth"), dict) else {}
+    # An allowlist, not a copy minus one key: any other field the owner's file carries stays behind.
+    oauth = {k: entry[k] for k in CLAUDE_OAUTH_KEEP if k in entry}
     if not oauth:
         fail(f"{source} has no claudeAiOauth entry")
     write_private(dest, json.dumps({"claudeAiOauth": oauth}))
@@ -1072,7 +1115,8 @@ def drive_arm(docker, run, task, arm, clock):
     with open(os.path.join(task["dir"], task["statementFile"]), encoding="utf-8") as fh:
         statement = fh.read()
     values = {"statement": statement, "ticket": task["ticket"]}
-    out = {"sessions": [], "exit": 0, "cycles": 0, "incomplete": 0, "cliTotalCostUsd": 0.0, "failure": None}
+    out = {"sessions": [], "exit": 0, "cycles": 0, "incomplete": 0, "cliTotalCostUsd": 0.0, "failure": None,
+           "endedBy": "stop"}
     cli_cost = {}
     kept = [0]
     session = None
@@ -1093,11 +1137,16 @@ def drive_arm(docker, run, task, arm, clock):
         if data.get("is_error"):
             out["failure"] = "CLI reported an error: " + str(data.get("result", ""))[:200]
             return None
+        if code != 0:
+            out["failure"] = f"CLI exited {code} although its JSON reports no error"
+            return None
+        if not isinstance(data.get("session_id"), str) or not data["session_id"]:
+            out["failure"] = "CLI JSON has no session_id, so its transcript and cost cannot be checked"
+            return None
         kept[0] += 1
         write_private(os.path.join(run["dir"], "cli", f"{kept[0]:02d}.json"), text)
-        sid = data.get("session_id")
-        if isinstance(sid, str):
-            out["sessions"].append(sid)
+        sid = data["session_id"]
+        out["sessions"].append(sid)
         # The CLI reports `total_cost_usd` for the whole session so far, so a `--resume`
         # repeats what the invocation before it reported (spike): the last value counts.
         cost = data.get("total_cost_usd")
@@ -1128,8 +1177,11 @@ def drive_arm(docker, run, task, arm, clock):
             data = step(render(arm["prompts"]["resume"], values), data.get("session_id"))
         else:
             if data and not data.get("timedOut") and not autopilot_stopped(shell, values["ticket"]):
-                out["failure"] = (f"resume cap ({resumes}) reached while autopilot still says stop=0; "
-                                  "not graded as if it had stopped")
+                # Graded as it stands, like a wall-clock stop (spec U1), and said so in the row: the harness
+                # cap ended the arm, autopilot did not.
+                out["endedBy"] = "resume-cap"
+        if data and data.get("timedOut"):
+            out["endedBy"] = "wall-clock"
         out["cycles"], out["incomplete"] = crew_rounds(run["repo"])
     else:
         data = step(render(arm["prompts"]["implement"], values), None)
@@ -1182,8 +1234,16 @@ def run_once(ctx, task, arm, attempt, carried_cost=0.0):
         status = "contaminated"
     else:
         status = "scored"
-    graded = grade(task, run["repo"], ctx["source_repo"], ctx["docker"]) if status != "unscorable" else {
-        "escapedDefects": None, "defectsTotal": len(task["defects"]), "regressionTestsFailed": None}
+    graded = {"escapedDefects": None, "defectsTotal": len(task["defects"]), "regressionTestsFailed": None}
+    failure = driven["failure"]
+    if status != "unscorable":
+        try:
+            graded = grade(task, run["repo"], ctx["source_repo"], ctx["docker"])
+        except GradingInfra as exc:
+            # not a verdict on the code: unscored, with the cost the arm already spent
+            status, failure = "infra", f"grading infra failure: {exc}"
+        except Exception as exc:  # noqa: BLE001 - the attempt is paid for: its row is written whatever grading raised; pylint: disable=broad-exception-caught
+            status, failure = "error", f"grading raised {type(exc).__name__}: {exc}"
     return {"task": task["name"], "bucket": task["bucket"], "arm": arm["arm"], "attempt": attempt,
             "runStatus": status, "escapedDefects": graded["escapedDefects"],
             "defectsTotal": graded["defectsTotal"], "regressionTestsFailed": graded["regressionTestsFailed"],
@@ -1191,7 +1251,7 @@ def run_once(ctx, task, arm, attempt, carried_cost=0.0):
             "tokens": tokens, "claudeCostUsd": claude_cost, "codexTokens": codex_tokens,
             "codexCostUsd": codex_cost_usd, "costUsd": cost, "ownCostUsd": own_cost,
             "cliTotalCostUsd": driven["cliTotalCostUsd"], "wallSeconds": wall, "exit": driven["exit"],
-            "failure": driven["failure"], "contamination": reasons, "unpriced": models if models else [],
+            "endedBy": driven["endedBy"], "failure": failure, "contamination": reasons, "unpriced": models if models else [],
             "runDir": run["dir"]}
 
 
@@ -1255,6 +1315,16 @@ def bucket_verdict(rows, bucket):
                           "cost": statistics.median(float(r["costUsd"]) for r in runs) + spend}
         per_task[task] = entry
     result["tasks"] = sorted(per_task)
+    capped = [r for r in scored if r.get("endedBy") == "resume-cap"]
+    if capped:
+        result["lines"].append(f"note: {len(capped)} crew run(s) were graded at the harness resume cap, not at an "
+                               "autopilot stop (the arm was still asked for work)")
+    unscored = [r for r in mine if r.get("runStatus") in ("infra", "error")]
+    if unscored:
+        names = ", ".join(sorted(f"{r.get('task')}/{r.get('arm')}" for r in unscored))
+        result["lines"].append(f"could not tell: {len(unscored)} run(s) unscored by a grading infrastructure failure "
+                               f"or error, not by the code under test ({names})")
+        return result
     if unknown_cost or unknown_chain:
         result["lines"].append("could not tell: a cost input is UNKNOWN")
         return result

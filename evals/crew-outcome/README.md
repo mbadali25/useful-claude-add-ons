@@ -124,9 +124,20 @@ base tree (the repo path in `README.md`, `.claude-plugin/marketplace.json`) neve
 | `cliTotalCostUsd` | The CLI's own `total_cost_usd`, per session (the CLI reports it cumulatively across `--resume`, so only the last value of each session counts). A cross-check, never the cost. |
 | `wallSeconds` | Monotonic clock over the whole arm. |
 
-A run is `unscorable` (rerun once) only for a harness, auth, container or API failure; an agent that stops early or times
-out is graded as it left the repo. A chain that ends unscorable keeps its spend as `unscoredSpendUsd`, which counts in
-the arm's task cost.
+A run is `unscorable` (rerun once) only for a harness, auth, container or API failure of the ARM (a CLI that exits
+non-zero or prints no `session_id` included); an agent that stops early or times out is graded as it left the repo. A
+chain that ends unscorable keeps its spend as `unscoredSpendUsd`, which counts in the arm's task cost.
+
+Grading has its own two non-verdicts, both written as a row with the arm's cost and neither rerun (the arm already
+ran and was paid for): `infra` (the grading container exited 125, 126 or 127, timed out, or docker could not be
+started; `docker rm -f` after a timeout is bounded too) and `error` (grading raised). Neither is a defect and neither is
+MISSING tests: `escapedDefects` and `regressionTestsFailed` are null, and a bucket with such a row says "could not
+tell" and names it. A pytest exit other than 0 or 1 (interrupted, internal error, no tests collected) is still the
+code's own failure and its tests are MISSING.
+
+`endedBy` says why the arm stopped: `stop` (autopilot or the arm ended it), `wall-clock`, or `resume-cap` (crew arm:
+the harness's `maxResumes` ran out while autopilot still said `stop=0`). A `resume-cap` run is graded as it stands, like
+a wall-clock stop, and the report says how many runs were graded that way; it is never silently dropped.
 
 ## Method (frozen before the first scored run)
 
@@ -144,7 +155,8 @@ the arm's task cost.
 - **Crew arm**: `crew_ticket.py assign` (the harness writes the staging file from the statement; README "assign") makes a
   ticket whose direction is already approved, then `/crew:autopilot run <ticket>`; after each run the harness asks
   autopilot's own `next` and resumes (`--resume`, at most 3 times) only while it says `stop=0`. The arm ends at the first
-  `stop=1` (a person is needed, `accept-review` included, or the ticket is closed) or at the wall-clock limit. Config:
+  `stop=1` (a person is needed, `accept-review` included, or the ticket is closed), at the wall-clock limit, or when the
+  3 resumes are used up (`endedBy: resume-cap`, graded as it stands and reported as such). Config:
   `autopilot.mode: plan`, `approval: self`, `questions: self`, `reviewPolicy: fix-and-rereview`,
   `scope.allowCliApproval: true`, the Codex model pinned, everything else crew's default.
 - **Baseline arm**: implement, run `/code-review`, fix every reported finding, repeat until a cycle reports no findings

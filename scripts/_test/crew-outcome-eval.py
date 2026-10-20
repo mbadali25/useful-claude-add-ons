@@ -32,6 +32,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 import contextlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -116,11 +117,16 @@ if failing:
 if mode == "error-json":
     print(json.dumps({"type": "result", "is_error": True, "session_id": sid, "result": "something odd", "total_cost_usd": 0.1}))
     sys.exit(1)
-if mode in ("ok", "mentions-reference", "subagent-missing", "fail-first"):
+if mode in ("ok", "mentions-reference", "subagent-missing", "fail-first", "exit3-ok-json", "no-session-id"):
     with open("calc.py", "a") as fh:
         fh.write("\\n\\ndef mul(a, b):\\n    return a * b\\n")
-print(json.dumps({"type": "result", "is_error": False, "session_id": sid,
-                  "result": os.environ.get("STUB_RESULT", "done"), "total_cost_usd": 0.5 * calls}))
+payload = {"type": "result", "is_error": False, "session_id": sid,
+           "result": os.environ.get("STUB_RESULT", "done"), "total_cost_usd": 0.5 * calls}
+if mode == "no-session-id":
+    del payload["session_id"]
+print(json.dumps(payload))
+if mode == "exit3-ok-json":
+    sys.exit(3)
 '''
 
 
@@ -896,10 +902,10 @@ def case_a_grading_run_that_hangs_after_its_summary_is_missing(tmp):
     saved = eval_mod.TEST_TIMEOUT_SECONDS
     eval_mod.TEST_TIMEOUT_SECONDS = 1
     try:
-        status = eval_mod.run_tests({"testCommand": ["python3", "-c", script]}, tmp, ["tests/x.py::a"])
+        message = raises_infra(eval_mod.run_tests, {"testCommand": ["python3", "-c", script]}, tmp, ["tests/x.py::a"])
     finally:
         eval_mod.TEST_TIMEOUT_SECONDS = saved
-    return status == {"tests/x.py::a": "MISSING"}, status
+    return bool(message and "timed out" in message), message
 
 
 def case_an_arm_edited_pytest_config_is_restored_for_grading(tmp):
@@ -1189,9 +1195,9 @@ def case_a_crew_arm_assigns_a_ticket_then_resumes_while_autopilot_says_stop_0(tm
     index = slurp(os.path.join(result["runDir"], "repo", ".work", "INDEX.md"))
     calls = int(slurp(fix.env["STUB_STATE"]))
     ok = ("T-0001" in index and calls == 1 + arm["cli"]["maxResumes"]
-          and "resume cap (3) reached while autopilot still says stop=0" in (result["failure"] or "")
-          and result["runStatus"] == "unscorable")
-    return ok, (index, calls, result["failure"])
+          and result["endedBy"] == "resume-cap" and result["failure"] is None
+          and result["runStatus"] == "scored" and result["escapedDefects"] == 0)
+    return ok, (index, calls, result["failure"], result["runStatus"], result.get("endedBy"))
 
 
 def case_a_crew_arm_whose_assign_fails_is_unscorable(tmp):
@@ -1347,6 +1353,173 @@ def case_cli_refuses_without_a_task_selection(tmp):
 
 
 # The case names read as sentences; wrapping them would make the table harder to scan.
+# --------------------------------------------------------------------------
+# L-0851 successor plan: infra is not a defect, the paid row is always written, the cap is scored
+
+def raises_infra(func, *args, **kwargs):
+    try:
+        func(*args, **kwargs)
+    except eval_mod.GradingInfra as exc:
+        return str(exc)
+    return None
+
+
+def case_a_grading_container_that_fails_to_run_is_infra_not_missing_tests(tmp):
+    got = {}
+    for code in (125, 126, 127):
+        task = {"testCommand": ["python3", "-c", f"import sys; sys.exit({code})"]}
+        got[code] = raises_infra(eval_mod.run_tests, task, tmp, ["tests/x.py::a"])
+    missing_docker = raises_infra(eval_mod.run_tests, {"testCommand": ["true"]}, tmp, ["tests/x.py::a"],
+                                  os.path.join(tmp, "no-such-docker"))
+    ok = all(message and "exit" in message for message in got.values()) and bool(missing_docker)
+    return ok, (got, missing_docker)
+
+
+def case_a_docker_rm_that_hangs_after_a_grading_timeout_does_not_hang_the_run(tmp):
+    docker = os.path.join(tmp, "hang-docker")
+    write(docker, "#!/bin/sh\ncase \"$1\" in run) exec sleep 30;; rm) exec sleep 30;; esac\n", EXEC)
+    saved = (eval_mod.TEST_TIMEOUT_SECONDS, eval_mod.CLEANUP_TIMEOUT_SECONDS)
+    eval_mod.TEST_TIMEOUT_SECONDS = eval_mod.CLEANUP_TIMEOUT_SECONDS = 1
+    started = time.monotonic()
+    try:
+        message = raises_infra(eval_mod.run_tests, {"testCommand": ["true"]}, tmp, ["tests/x.py::a"], docker)
+    finally:
+        eval_mod.TEST_TIMEOUT_SECONDS, eval_mod.CLEANUP_TIMEOUT_SECONDS = saved
+    elapsed = time.monotonic() - started
+    return bool(message and "timed out" in message) and elapsed < 15, (message, elapsed)
+
+
+def run_chain_with_grade(fix, grade_func, mode="ok"):
+    fix.env.update({"STUB_MODE": mode, "STUB_RESULT": "No findings."})
+    ctx = fix.ctx()
+    saved = eval_mod.grade
+    eval_mod.grade = grade_func
+    try:
+        with patched_env(fix.env):
+            final = eval_mod.run_chain(ctx, fix.load(), fix.arm)
+    finally:
+        eval_mod.grade = saved
+    return final, eval_mod.read_results(fix.results)
+
+
+def case_a_grading_infra_failure_is_an_unscored_infra_row_with_its_cost_and_no_rerun(tmp):
+    def infra(*_args, **_kwargs):
+        raise eval_mod.GradingInfra("grading container exited 125")
+
+    final, rows = run_chain_with_grade(Fix(tmp), infra)
+    ok = (len(rows) == 1 and final["runStatus"] == "infra" and final["escapedDefects"] is None
+          and final["regressionTestsFailed"] is None and final["ownCostUsd"] > 0
+          and "exited 125" in final["failure"])
+    return ok, rows
+
+
+def case_a_grading_exception_still_writes_a_row_with_the_paid_cost(tmp):
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("boom in grading")
+
+    final, rows = run_chain_with_grade(Fix(tmp), boom)
+    ok = (len(rows) == 1 and final["runStatus"] == "error" and final["ownCostUsd"] > 0
+          and final["escapedDefects"] is None and "boom in grading" in final["failure"])
+    return ok, rows
+
+
+def case_a_scored_run_still_grades_through_the_same_wrapper(tmp):
+    final, rows = run_chain_with_grade(Fix(tmp), eval_mod.grade)
+    return len(rows) == 1 and final["runStatus"] == "scored" and final["escapedDefects"] == 0, rows
+
+
+def case_an_infra_or_error_row_makes_its_bucket_could_not_tell_and_is_named(tmp):
+    rows = two_tasks() + [{"task": "c", "bucket": "S", "arm": "crew", "attempt": 1, "runStatus": "infra",
+                           "escapedDefects": None, "costUsd": 2.0, "ownCostUsd": 2.0, "failure": "grading container exited 125"}]
+    verdict = eval_mod.bucket_verdict(rows, "S")
+    plain = eval_mod.bucket_verdict(two_tasks(), "S")
+    ok = (verdict["verdict"] == "could not tell" and "unscored" in " ".join(verdict["lines"])
+          and plain["verdict"] == "break-even")
+    return ok, (verdict, plain["verdict"])
+
+
+def case_a_crew_run_that_hits_the_resume_cap_is_graded_and_marked(tmp):
+    fix = Fix(tmp)
+    arm = eval_mod.load_arm(os.path.join(REAL_EVAL_DIR, "arms", "crew.json"))
+    result, _ = run_arm(fix, "ok", arm=arm, STUB_RESULT="working")
+    text = eval_mod.report_text([result])
+    ok = (result["runStatus"] == "scored" and result["endedBy"] == "resume-cap"
+          and "resume cap" in text)
+    return ok, (result["runStatus"], result.get("endedBy"), text)
+
+
+def case_a_run_that_stops_on_its_own_is_not_marked_as_capped(tmp):
+    fix = Fix(tmp)
+    result, _ = run_arm(fix, "ok", STUB_RESULT="No findings.")
+    return result["runStatus"] == "scored" and result["endedBy"] != "resume-cap", result.get("endedBy")
+
+
+def case_a_cli_that_exits_nonzero_with_ok_json_is_unscorable(tmp):
+    fix = Fix(tmp)
+    result, _ = run_arm(fix, "exit3-ok-json", STUB_RESULT="No findings.")
+    return result["runStatus"] == "unscorable" and "exited 3" in (result["failure"] or ""), result["failure"]
+
+
+def case_a_cli_json_without_a_session_id_is_unscorable(tmp):
+    fix = Fix(tmp)
+    result, _ = run_arm(fix, "no-session-id", STUB_RESULT="No findings.")
+    return result["runStatus"] == "unscorable" and "session_id" in (result["failure"] or ""), result["failure"]
+
+
+def case_a_completed_codex_turn_without_usage_makes_usage_unknown(tmp):
+    repo, home = codex_events(tmp, [USAGE], sessions=1)
+    write(os.path.join(repo, ".work", "review", "r0", "codex-events.jsonl"),
+          json.dumps({"type": "thread.started", "thread_id": "thread-0"}) + "\n"
+          + json.dumps({"type": "turn.completed", "usage": USAGE}) + "\n"
+          + json.dumps({"type": "turn.completed"}) + "\n")
+    got = eval_mod.codex_usage(repo, home, "m")
+    return got == (UNKNOWN, UNKNOWN), got
+
+
+def case_a_bare_reference_pr_number_is_flagged_but_a_longer_number_is_not(tmp):
+    def reasons_for(name, text):
+        base = os.path.join(tmp, name)
+        os.makedirs(base)
+        return run_with_text(Fix(base), text)
+
+    flagged = [reasons_for(f"f{n}", text) for n, text in enumerate(
+        ("see #4242 for the fix", "https://github.com/x/y/pull/4242/files", "PR #4242.", "x/y#4242"))]
+    clean = [reasons_for(f"c{n}", text) for n, text in enumerate(
+        ("issue #42420", "https://github.com/x/y/pull/42420", "colour #4242a1", "id 14242 and &#4242;"))]
+    ok = (flagged == [["reference PR number"], ["reference PR URL"], ["reference PR number"], ["reference PR number"]]
+          and all(r == [] for r in clean))
+    return ok, (flagged, clean)
+
+
+def case_hidden_test_lines_spread_over_separate_files_do_not_flag_a_run(tmp):
+    fix = Fix(tmp)
+    task = fix.load()
+    run = eval_mod.prepare_run(task, fix.arm, fix.src, fix.runs, 1, os.path.join(tmp, "plugin-crew"), fix.env)
+    log = os.path.join(run["proxylog"], "proxy.jsonl")
+    write(log, "")
+    for n, line in enumerate((LONG1, LONG2, LONG3)):
+        write(os.path.join(run["home"], ".claude", "projects", "-run-repo", f"s{n}.jsonl"), json.dumps({"text": line}) + "\n")
+    spread = eval_mod.contamination(task, run["home"], run["repo"], log, fix.arm, fix.src)
+    write(os.path.join(run["home"], ".claude", "projects", "-run-repo", "one.jsonl"),
+          json.dumps({"text": LONG1 + "\n" + LONG2 + "\n" + LONG3}) + "\n")
+    together = eval_mod.contamination(task, run["home"], run["repo"], log, fix.arm, fix.src)
+    return spread == [] and together == ["hidden test content"], (spread, together)
+
+
+def case_the_claude_auth_copy_is_an_allowlist_of_oauth_fields(tmp):
+    source = os.path.join(tmp, "creds.json")
+    write(source, json.dumps({"claudeAiOauth": {"accessToken": "AT", "refreshToken": "RT", "expiresAt": 1,
+                                                 "scopes": ["user:inference"], "subscriptionType": "max",
+                                                 "apiKey": "OTHER-SECRET", "cloudToken": "CLOUD-SECRET"}}))
+    dest = os.path.join(tmp, "out", "creds.json")
+    eval_mod.strip_claude_auth(source, dest)
+    blob = slurp(dest)
+    kept = json.loads(blob)["claudeAiOauth"]
+    ok = ("OTHER-SECRET" not in blob and "CLOUD-SECRET" not in blob and "RT" not in kept.values()
+          and kept["accessToken"] == "AT" and kept["expiresAt"] == 1 and kept["scopes"] == ["user:inference"])
+    return ok, blob
+
+
 # pylint: disable=line-too-long
 CASES = (
     ("must-allow: validate accepts a task whose hidden tests fail at base and pass at reference", case_validate_accepts_a_good_task),
@@ -1400,7 +1573,7 @@ CASES = (
     ("must-block: the argv carries a git identity, drops capabilities, mounts only repo and home, and has no unconfined seccomp or apparmor", case_the_argv_carries_git_identity_and_the_isolation_options),
     ("must-allow: the codex shim rewrites only the read-only sandbox value, and the image puts it first on PATH", case_the_codex_shim_rewrites_only_the_read_only_sandbox),
     ("must-block: only a readable stop=0 keeps the crew arm going", case_autopilot_stopped_only_on_a_readable_stop_0_keeps_going),
-    ("must-allow: a crew arm assigns a ticket, resumes while autopilot says stop=0, and a run that hits the resume cap is unscorable", case_a_crew_arm_assigns_a_ticket_then_resumes_while_autopilot_says_stop_0),
+    ("must-allow: a crew arm assigns a ticket, resumes while autopilot says stop=0, and a run that hits the resume cap is graded and marked", case_a_crew_arm_assigns_a_ticket_then_resumes_while_autopilot_says_stop_0),
     ("must-block: a crew arm whose assign fails is unscorable", case_a_crew_arm_whose_assign_fails_is_unscorable),
     ("must-block: run needs a passing canary", case_run_refuses_without_a_passing_canary),
     ("must-block: a missing docker is a refusal, never a bare name", case_docker_missing_is_a_refusal_not_a_bare_name),
@@ -1442,7 +1615,7 @@ CASES = (
     ("must-block: the canary mirrors the arm isolation options, has no network and checks the interfaces", case_the_canary_mirrors_the_arm_isolation_options_and_probes_the_gateway),
     ("must-allow: a -qq run with no counts line still reads its summary", case_a_qq_run_with_no_counts_line_still_reads_its_summary),
     ("must-block: a printed PASSED line cannot override a real failure (only pytest's own summary counts)", case_a_printed_passed_line_cannot_override_a_real_failure),
-    ("must-block: a grading run that hangs after its summary is MISSING", case_a_grading_run_that_hangs_after_its_summary_is_missing),
+    ("must-block: a grading run that hangs after its summary is unscored infra, never MISSING tests", case_a_grading_run_that_hangs_after_its_summary_is_missing),
     ("must-block: an arm-edited pytest config (pytest.ini, conftest, sitecustomize) is restored for grading", case_an_arm_edited_pytest_config_is_restored_for_grading),
     ("must-block: a Claude CLI session without a transcript makes cost UNKNOWN", case_a_claude_cli_session_without_a_transcript_makes_cost_unknown),
     ("must-block: a Codex session no events file names makes usage UNKNOWN", case_a_codex_session_no_events_file_names_makes_usage_unknown),
@@ -1460,6 +1633,20 @@ CASES = (
     ("must-block: proxy traffic to OpenAI with no Codex files makes usage UNKNOWN (none seen, or a denied host, is zero)", case_proxy_traffic_to_openai_with_no_codex_files_makes_usage_unknown),
     ("must-block: the canary script refuses host paths that do not exist", case_the_canary_script_refuses_host_paths_that_do_not_exist),
     ("must-block: a file where the base has a directory is a refusal, not a traceback", case_a_file_where_the_base_has_a_directory_is_a_refusal_not_a_traceback),
+    ("must-block: a grading container that exits 125/126/127 or is missing is infra, not MISSING tests", case_a_grading_container_that_fails_to_run_is_infra_not_missing_tests),
+    ("must-block: a docker rm that hangs after a grading timeout does not hang the run", case_a_docker_rm_that_hangs_after_a_grading_timeout_does_not_hang_the_run),
+    ("must-block: a grading infra failure is an unscored infra row with its cost and is not rerun", case_a_grading_infra_failure_is_an_unscored_infra_row_with_its_cost_and_no_rerun),
+    ("must-block: a grading exception still writes a row with the paid cost", case_a_grading_exception_still_writes_a_row_with_the_paid_cost),
+    ("must-allow: a scored run still grades through the same wrapper", case_a_scored_run_still_grades_through_the_same_wrapper),
+    ("must-block: an infra or error row makes its bucket could not tell and is named", case_an_infra_or_error_row_makes_its_bucket_could_not_tell_and_is_named),
+    ("must-block: a crew run that hits the resume cap is graded and marked in the row and the report", case_a_crew_run_that_hits_the_resume_cap_is_graded_and_marked),
+    ("must-allow: a run that stops on its own is not marked as capped", case_a_run_that_stops_on_its_own_is_not_marked_as_capped),
+    ("must-block: a CLI that exits nonzero with ok JSON is unscorable", case_a_cli_that_exits_nonzero_with_ok_json_is_unscorable),
+    ("must-block: CLI JSON without a session id is unscorable", case_a_cli_json_without_a_session_id_is_unscorable),
+    ("must-block: a completed Codex turn without usage makes usage UNKNOWN", case_a_completed_codex_turn_without_usage_makes_usage_unknown),
+    ("must-block: a bare reference PR number is flagged; a longer number or entity is not", case_a_bare_reference_pr_number_is_flagged_but_a_longer_number_is_not),
+    ("must-block: hidden-test lines spread over separate files do not flag a run (three in one file do)", case_hidden_test_lines_spread_over_separate_files_do_not_flag_a_run),
+    ("must-block: the Claude auth copy is an allowlist of OAuth fields", case_the_claude_auth_copy_is_an_allowlist_of_oauth_fields),
 )
 
 # pylint: enable=line-too-long
