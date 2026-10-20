@@ -12,6 +12,9 @@ export const meta = {
 
 const LANE_STATES = ['clean', 'findings', 'question', 'failed']
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/ // crew_wave.check_slug's grammar
+const TICKET = /^[A-Za-z]+-[0-9]+$/
+const MODEL = /^[A-Za-z0-9][A-Za-z0-9._\-]*(\[1m\])?$/
+const MAX_LANES = 16 // the platform's own concurrent-agent ceiling
 
 const START_SCHEMA = {
   type: 'object',
@@ -63,13 +66,10 @@ const slug = isObject(args) ? args.set : undefined
 if (typeof slug !== 'string' || !SLUG.test(slug)) {
   return { error: 'args.set must be the wave set slug (a-z, 0-9, "-", at most 64 characters), e.g. {"set": "my-wave"}' }
 }
-const scriptsHint = isObject(args) && typeof args.scripts === 'string' ? args.scripts : ''
-
-const locate = `Find crew's hooks/scripts directory (the one holding crew_wave.py): ${scriptsHint
-  ? `use ${scriptsHint}`
-  : 'use $CLAUDE_PLUGIN_ROOT/hooks/scripts when that variable is set; otherwise the newest installed crew plugin, ' +
-    '`ls -d ~/.claude/plugins/cache/*/crew/*/hooks/scripts | sort -V | tail -1`; inside the crew repo itself, plugin/crew/hooks/scripts'}. ` +
-  'Check that crew_wave.py is there; if not, return stop=true with stopReason naming what you tried.'
+const locate = "Find crew's hooks/scripts directory (the one holding crew_wave.py): use $CLAUDE_PLUGIN_ROOT/hooks/scripts " +
+  'when that variable is set; otherwise the newest installed crew plugin, ' +
+  '`ls -d ~/.claude/plugins/cache/*/crew/*/hooks/scripts | sort -V | tail -1`; inside the crew repo itself, ' +
+  'plugin/crew/hooks/scripts. Check that crew_wave.py is there; if not, return stop=true with stopReason naming what you tried.'
 
 // ---- Start ---------------------------------------------------------------------------------
 phase('Start')
@@ -98,11 +98,18 @@ if (typeof started.stop !== 'boolean' || !Array.isArray(started.lanes) ||
   return { error: 'start result is missing stop, lanes or a positive maxLanes; nothing was launched' }
 }
 for (const lane of started.lanes) {
-  if (!isObject(lane) || typeof lane.ticket !== 'string' || !lane.ticket) {
-    return { error: 'start result has a lane without a ticket; nothing was launched' }
+  if (!isObject(lane) || typeof lane.ticket !== 'string' || !TICKET.test(lane.ticket)) {
+    return { error: 'start result has a lane without a ticket id; nothing was launched' }
   }
   if (typeof lane.prompt !== 'string' || !lane.prompt.trim()) {
     return { error: `start result has an empty lane prompt for ${lane.ticket}; nothing was launched` }
+  }
+  // crew_wave.lane_prompt opens every brief with this line; a prompt without it did not come from there.
+  if (!lane.prompt.startsWith(`Ticket ID: ${lane.ticket}\n`)) {
+    return { error: `the lane prompt for ${lane.ticket} does not open with its Ticket ID line; nothing was launched` }
+  }
+  if (lane.model !== undefined && (typeof lane.model !== 'string' || !MODEL.test(lane.model))) {
+    return { error: `start result has an unreadable model for ${lane.ticket}; nothing was launched` }
   }
 }
 const seen = new Set()
@@ -115,7 +122,7 @@ for (const lane of started.lanes) {
 
 // ---- Lanes ---------------------------------------------------------------------------------
 phase('Lanes')
-const maxLanes = started.maxLanes
+const maxLanes = Math.min(started.maxLanes, MAX_LANES)
 const queue = started.lanes.slice()
 const results = {}
 

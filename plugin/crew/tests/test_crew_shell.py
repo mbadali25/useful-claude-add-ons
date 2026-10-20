@@ -398,6 +398,16 @@ def test_resolve_gitbash_strict_refuses_a_candidate_that_exits_non_zero():
     assert path is None, reason
 
 
+def test_resolve_gitbash_strict_refuses_a_relative_derived_candidate():
+    runs = []
+
+    path, reason = crew_shell.resolve_gitbash(
+        runner=_strict_runner(b"/usr/local/libexec/git-core\n", runs),
+        exists=lambda p: p == "usr/bin/bash.exe" or p == "usr/bin", which=_never, strict=True)
+
+    assert (path, runs) == (None, []), reason
+
+
 def test_resolve_gitbash_strict_refuses_a_candidate_that_hangs():
     def runner(argv, timeout):
         if argv[-1] == "--exec-path":

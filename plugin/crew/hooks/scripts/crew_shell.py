@@ -236,6 +236,9 @@ def _is_launcher(path):
     return "/windows/system32/" in norm or "/windowsapps/" in norm
 
 
+_ABSOLUTE = re.compile(r"^(?:[A-Za-z]:)?[/\\]")
+
+
 def _runs_clean(path, runner):
     """True when `path -c 'exit 0'` exits 0 within STRICT_RUN_TIMEOUT; a run that cannot start,
     times out or exits otherwise is False (never believed unrun)."""
@@ -252,7 +255,7 @@ def resolve_gitbash(runner=None, exists=os.path.isfile, which=shutil.which, stri
     that is not WSL's launcher. `(None, reason)` naming every path tried.
 
     `strict=True` (the hook dispatcher's, L-0727) takes only those two derived
-    candidates: never a PATH `bash`, never a `usr/bin/bash.exe` (the MSYS bash
+    candidates, which must be absolute: never a PATH `bash`, never a `usr/bin/bash.exe` (the MSYS bash
     that answers 127 for Git-for-Windows scripts), and only one that runs
     `-c 'exit 0'`. The default is unchanged."""
     runner = runner or capture
@@ -271,6 +274,8 @@ def resolve_gitbash(runner=None, exists=os.path.isfile, which=shutil.which, stri
     for path in candidates:
         tried.append(path)
         if _is_launcher(path) or not exists(path):
+            continue
+        if strict and not _ABSOLUTE.match(path):
             continue
         if strict and ("/usr/bin/" in path.replace("\\", "/").lower() or not _runs_clean(path, runner)):
             continue

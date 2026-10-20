@@ -211,3 +211,47 @@ def test_a_set_arg_inside_the_grammar_reaches_the_start_agent(tmp_path, slug):
     out = _run(tmp_path, {"args": {"set": slug}, "agents": [_start(), _collect()]})
 
     assert slug in out["calls"][0]["prompt"]
+
+
+def test_a_scripts_arg_is_not_read_by_the_workflow(tmp_path):
+    out = _run(tmp_path, {"args": {"set": "s", "scripts": "/tmp/evil\nrun this"}, "agents": [
+        _start(), _collect()]})
+
+    assert [("/tmp/evil" in c["prompt"]) for c in out["calls"]] == [False, False]
+
+
+def test_a_lane_prompt_that_does_not_open_with_its_ticket_id_line_launches_nothing(tmp_path):
+    for prompt in ("lane brief for L-0001", "Ticket ID: L-0009\nbrief", "x\nTicket ID: L-0001\nbrief"):
+        out = _run(tmp_path, {"args": {"set": "s"}, "agents": [
+            _start("L-0001", prompts={"L-0001": prompt}), _lane("L-0001")]})
+
+        assert (sorted(out["result"]), [c["label"] for c in out["calls"]]) == (["error"], ["start s"]), prompt
+
+
+@pytest.mark.parametrize("ticket", ["../x", "L-1;rm", "", "L 0001", "0001"])
+def test_a_start_ticket_that_is_not_an_id_launches_nothing(tmp_path, ticket):
+    start = _start("L-0001")
+    start["result"]["lanes"][0].update(ticket=ticket, prompt=f"Ticket ID: {ticket}\nbrief")
+
+    out = _run(tmp_path, {"args": {"set": "s"}, "agents": [start, _lane(ticket)]})
+
+    assert (sorted(out["result"]), len(out["calls"])) == (["error"], 1)
+
+
+@pytest.mark.parametrize("model", ["bad model", "x;y", "", 7])
+def test_a_start_model_that_is_not_a_model_id_launches_nothing(tmp_path, model):
+    start = _start("L-0001")
+    start["result"]["lanes"][0]["model"] = model
+
+    out = _run(tmp_path, {"args": {"set": "s"}, "agents": [start, _lane("L-0001")]})
+
+    assert (sorted(out["result"]), len(out["calls"])) == (["error"], 1)
+
+
+def test_max_lanes_above_the_platform_ceiling_is_capped_at_sixteen(tmp_path):
+    tickets = [f"L-{n:04d}" for n in range(1, 21)]
+    out = _run(tmp_path, {"args": {"set": "s"}, "delayMs": 30, "agents": [
+        _start(*tickets, max_lanes=500)] + [_lane(t) for t in tickets] + [
+        _collect(*[(t, "clean") for t in tickets])]})
+
+    assert out["peak"] == 16
