@@ -113,6 +113,9 @@ if mode == "mentions-reference":
 if failing:
     print("boom")
     sys.exit(3)
+if mode == "error-json":
+    print(json.dumps({"type": "result", "is_error": True, "session_id": sid, "result": "something odd", "total_cost_usd": 0.1}))
+    sys.exit(1)
 if mode in ("ok", "mentions-reference", "subagent-missing", "fail-first"):
     with open("calc.py", "a") as fh:
         fh.write("\\n\\ndef mul(a, b):\\n    return a * b\\n")
@@ -1090,6 +1093,39 @@ def case_the_canary_mirrors_the_arm_isolation_options_and_probes_the_gateway(tmp
     return ok, (shared in canary, "--network none" in canary, "/sys/class/net" in canary)
 
 
+def case_a_malformed_or_non_finite_results_row_spends_unknown_not_zero(tmp):
+    got = [eval_mod.spend_of(r) for r in ({}, {"ownCostUsd": float("nan")}, {"costUsd": None}, {"costUsd": -1},
+                                           {"ownCostUsd": "3"}, {"ownCostUsd": float("inf")})]
+    good = [eval_mod.spend_of({"costUsd": 2}), eval_mod.spend_of({"ownCostUsd": 1.5, "costUsd": 9})]
+    return got == [UNKNOWN] * 6 and good == [2.0, 1.5], (got, good)
+
+
+def case_a_cli_error_result_is_unscorable_whatever_its_message(tmp):
+    fix = Fix(tmp)
+    result, _ = run_arm(fix, "error-json")
+    return result["runStatus"] == "unscorable" and "CLI reported an error" in (result["failure"] or ""), result["failure"]
+
+
+def case_a_completed_codex_review_with_no_usage_files_is_unknown(tmp):
+    repo = os.path.join(tmp, "crepo")
+    home = os.path.join(tmp, "chome")
+    ledger = {"rounds": [{"provider": "codex", "refunded": False, "verdict": "CLEAN"}]}
+    write(os.path.join(repo, ".git", "crew", "review", "T-1.json"), json.dumps(ledger))
+    bare = eval_mod.codex_usage(repo, home, "m")
+    refunded = {"rounds": [{"provider": "codex", "refunded": True}, {"provider": "kimi", "refunded": False}]}
+    write(os.path.join(repo, ".git", "crew", "review", "T-1.json"), json.dumps(refunded))
+    none_counted = eval_mod.codex_usage(repo, home, "m")
+    write(os.path.join(repo, ".git", "crew", "review", "T-1.json"), "not json")
+    unreadable = eval_mod.codex_usage(repo, home, "m")
+    ok = bare == (UNKNOWN, UNKNOWN) and unreadable == (UNKNOWN, UNKNOWN) and none_counted[1] == 0.0
+    return ok, (bare, none_counted, unreadable)
+
+
+def case_the_canary_fails_when_its_proxy_log_does_not_parse(tmp):
+    canary = open(os.path.join(REAL_EVAL_DIR, "container", "canary.sh"), encoding="utf-8").read()
+    return "does not parse" in canary and "rc=1" in canary and "except OSError" not in canary, "does not parse" in canary
+
+
 def case_autopilot_stopped_only_on_a_readable_stop_0_keeps_going(tmp):
     def shell(text, code=0):
         return lambda command: (code, text)
@@ -1107,8 +1143,9 @@ def case_a_crew_arm_assigns_a_ticket_then_resumes_while_autopilot_says_stop_0(tm
     result, _ = run_arm(fix, "ok", arm=arm, STUB_RESULT="working")
     index = slurp(os.path.join(result["runDir"], "repo", ".work", "INDEX.md"))
     calls = int(slurp(fix.env["STUB_STATE"]))
-    ok = ("T-0001" in index and calls == 1 + arm["cli"]["maxResumes"] and result["failure"] is None
-          and result["runStatus"] == "scored")
+    ok = ("T-0001" in index and calls == 1 + arm["cli"]["maxResumes"]
+          and "resume cap (3) reached while autopilot still says stop=0" in (result["failure"] or "")
+          and result["runStatus"] == "unscorable")
     return ok, (index, calls, result["failure"])
 
 
@@ -1318,7 +1355,7 @@ CASES = (
     ("must-block: the argv carries a git identity, drops capabilities, mounts only repo and home, and has no unconfined seccomp or apparmor", case_the_argv_carries_git_identity_and_the_isolation_options),
     ("must-allow: the codex shim rewrites only the read-only sandbox value, and the image puts it first on PATH", case_the_codex_shim_rewrites_only_the_read_only_sandbox),
     ("must-block: only a readable stop=0 keeps the crew arm going", case_autopilot_stopped_only_on_a_readable_stop_0_keeps_going),
-    ("must-allow: a crew arm assigns a ticket, then resumes while autopilot says stop=0", case_a_crew_arm_assigns_a_ticket_then_resumes_while_autopilot_says_stop_0),
+    ("must-allow: a crew arm assigns a ticket, resumes while autopilot says stop=0, and a run that hits the resume cap is unscorable", case_a_crew_arm_assigns_a_ticket_then_resumes_while_autopilot_says_stop_0),
     ("must-block: a crew arm whose assign fails is unscorable", case_a_crew_arm_whose_assign_fails_is_unscorable),
     ("must-block: run needs a passing canary", case_run_refuses_without_a_passing_canary),
     ("must-block: a missing docker is a refusal, never a bare name", case_docker_missing_is_a_refusal_not_a_bare_name),
@@ -1370,6 +1407,10 @@ CASES = (
     ("must-block: the budget flags refuse NaN, infinity and non-positive amounts", case_the_budget_flags_refuse_nan_infinity_and_non_positive_amounts),
     ("must-block: a second run on one results file is refused while the first holds it", case_a_second_run_on_one_results_file_is_refused),
     ("must-allow: the T-0107 task names its reference PR", case_the_t_0107_task_names_its_reference_pr),
+    ("must-block: a malformed or non-finite results row spends UNKNOWN, not zero (valid rows still count)", case_a_malformed_or_non_finite_results_row_spends_unknown_not_zero),
+    ("must-block: a CLI error result is unscorable whatever its message", case_a_cli_error_result_is_unscorable_whatever_its_message),
+    ("must-block: a completed Codex review with no usage files is UNKNOWN (refunded and non-Codex rounds are not)", case_a_completed_codex_review_with_no_usage_files_is_unknown),
+    ("must-block: the canary fails when its proxy log does not parse", case_the_canary_fails_when_its_proxy_log_does_not_parse),
 )
 
 # pylint: enable=line-too-long

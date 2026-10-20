@@ -95,21 +95,20 @@ exit $fail
   "$IMAGE" /opt/eval-shim/eval-run /bin/bash -c "$PROBE" canary "$@" >> "$OUT" 2>&1
 rc=$?
 
-{
-  echo "--- proxy log (host, decision) ---"
-  "$PYTHON" - "$WORK/proxy.jsonl" <<'PY'
+echo "--- proxy log (host, decision) ---" >> "$OUT"
+"$PYTHON" - "$WORK/proxy.jsonl" >> "$OUT" 2>&1 <<'PY'
 import json
 import sys
 
-try:
-    lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
-except OSError:
-    lines = []
-for line in lines:
-    record = json.loads(line)
-    print(record.get("host") or record.get("request"), record["decision"])
+with open(sys.argv[1], encoding="utf-8") as fh:
+    for line in fh.read().splitlines():
+        record = json.loads(line)
+        print(record.get("host") or record.get("request"), record["decision"])
 PY
-} >> "$OUT" 2>&1
+if [ "$?" -ne 0 ]; then
+  echo "FAIL the proxy log is missing or does not parse" >> "$OUT"
+  rc=1
+fi
 
 if [ "$rc" -eq 0 ]; then echo "canary: PASS" >> "$OUT"; else echo "canary: FAIL" >> "$OUT"; fi
 cat "$OUT"

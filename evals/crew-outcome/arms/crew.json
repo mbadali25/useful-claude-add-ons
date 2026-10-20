@@ -25,8 +25,7 @@
       "--mcp-config", "{\"mcpServers\":{}}",
       "--plugin-dir", "/run/home/plugins/crew"
     ],
-    "maxResumes": 3,
-    "apiErrorRegex": "(?i)(authentication|oauth|credit balance|rate limit|overloaded|api error|401|403|429|5\\d\\d)"
+    "maxResumes": 3
   },
   "prompts": {
     "start": "/crew:autopilot run {ticket}",

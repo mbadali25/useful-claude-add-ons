@@ -13,8 +13,7 @@
       "--strict-mcp-config",
       "--mcp-config", "{\"mcpServers\":{}}"
     ],
-    "maxCycles": 3,
-    "apiErrorRegex": "(?i)(authentication|oauth|credit balance|rate limit|overloaded|api error|401|403|429|5\\d\\d)"
+    "maxCycles": 3
   },
   "prompts": {
     "implement": "{statement}",

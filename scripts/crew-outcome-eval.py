@@ -551,9 +551,34 @@ def codex_usage(repo, home, model):
     if sessions and not turns:
         # a Codex session ran but no events file recorded a completed turn: nothing was measured
         return UNKNOWN, UNKNOWN
+    if not events and not sessions and codex_review_rounds(repo) != 0:
+        # a completed Codex review in the ledger with no events file and no session log: uncounted
+        return UNKNOWN, UNKNOWN
     if not events:
         return total, 0.0
     return total, codex_cost(total, model)
+
+
+def codex_review_rounds(repo):
+    """How many non-refunded Codex review rounds the run repo's ledgers record; -1
+    when a ledger cannot be read (so the caller treats it as 'cannot tell')."""
+    base = os.path.join(repo, ".git", "crew", "review")
+    try:
+        names = [n for n in os.listdir(base) if n.endswith(".json")]
+    except OSError:
+        return 0
+    count = 0
+    for name in names:
+        try:
+            with open_arm_file(os.path.join(base, name)) as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            return -1
+        rows = data.get("rounds", []) if isinstance(data, dict) else None
+        if not isinstance(rows, list):
+            return -1
+        count += sum(1 for r in rows if isinstance(r, dict) and r.get("provider") == "codex" and not r.get("refunded"))
+    return count
 
 
 def codex_cost(tokens, model):
@@ -697,8 +722,10 @@ def append_result(path, row):
 def spend_of(row):
     """What this one attempt cost: its own spend, never the carried cost of an
     earlier attempt (which `costUsd` includes), so nothing is counted twice."""
-    cost = row.get("ownCostUsd", row.get("costUsd", 0))
-    return UNKNOWN if cost == UNKNOWN or cost is None else float(cost)
+    cost = row["ownCostUsd"] if "ownCostUsd" in row else row.get("costUsd", UNKNOWN)
+    if isinstance(cost, bool) or not isinstance(cost, (int, float)) or not math.isfinite(cost) or cost < 0:
+        return UNKNOWN
+    return float(cost)
 
 
 def budget_check(rows, bucket, arm, max_cost, first_run_estimate):
@@ -1036,9 +1063,8 @@ def drive_arm(docker, run, task, arm, clock):
                 return {"timedOut": True}
             out["failure"] = f"no CLI JSON (exit {code})"
             return None
-        if data.get("is_error") and arm["cli"].get("apiErrorRegex") and re.search(
-                arm["cli"]["apiErrorRegex"], str(data.get("result", ""))):
-            out["failure"] = "API or auth error: " + str(data.get("result", ""))[:200]
+        if data.get("is_error"):
+            out["failure"] = "CLI reported an error: " + str(data.get("result", ""))[:200]
             return None
         kept[0] += 1
         write_private(os.path.join(run["dir"], "cli", f"{kept[0]:02d}.json"), text)
@@ -1073,6 +1099,10 @@ def drive_arm(docker, run, task, arm, clock):
                 break
             resumes += 1
             data = step(render(arm["prompts"]["resume"], values), data.get("session_id"))
+        else:
+            if data and not data.get("timedOut") and not autopilot_stopped(shell, values["ticket"]):
+                out["failure"] = (f"resume cap ({resumes}) reached while autopilot still says stop=0; "
+                                  "not graded as if it had stopped")
         out["cycles"], out["incomplete"] = crew_rounds(run["repo"])
     else:
         data = step(render(arm["prompts"]["implement"], values), None)
