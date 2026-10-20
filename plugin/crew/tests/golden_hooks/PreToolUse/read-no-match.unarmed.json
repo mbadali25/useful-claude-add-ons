@@ -1,0 +1,11 @@
+{
+ "armed": false,
+ "case": "read-no-match",
+ "dirty": "",
+ "event": "PreToolUse",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"Read\", \"tool_input\": {\"file_path\": \"{ROOT}/src/app.py\"}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [],
+ "variant": ""
+}

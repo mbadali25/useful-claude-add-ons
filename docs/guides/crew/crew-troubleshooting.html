@@ -126,10 +126,12 @@ or behaves like an older release.</p>
   when that file still holds a 0.20 setup, or <code>.crew/crew.json</code> once <code>/crew:migrate</code> has run; <code>codemap</code> reports <code>behind:
   &lt;subsystem&gt;</code> when a map's anchor and the path diff both say it is stale.</p>
 <h2 id="hook-noise">Hook Noise</h2>
-<p>Every hook crew registers, from <code>plugin/crew/hooks/hooks.json</code>, and the config key that turns its
-behaviour up or down. All events are registered once for bash and once for PowerShell (<code>shell:
-"powershell"</code>), so a Windows machine with both <code>bash</code> and <code>pwsh</code> on <code>PATH</code> fires both halves of
-every pair — that is what "even counts" in the file means, not a bug.</p>
+<p>Every hook crew runs, and the config key that turns its behaviour up or down. <code>plugin/crew/hooks/hooks.json</code>
+registers one launcher per event per shell (<code>crew-hook.sh</code>, and <code>crew-hook.ps1</code> with <code>shell: "powershell"</code>);
+the launcher starts one dispatcher, <code>crew_hook.py &lt;Event&gt;</code>, which runs that event's scripts below at once and
+combines what they print. On Windows only the PowerShell launcher runs, so no event fires twice. When the
+launcher or dispatcher itself fails in a repo crew governs, <code>PreToolUse</code>, <code>UserPromptSubmit</code> and <code>Stop</code> refuse
+with <code>crew-hook: ... failing closed (armed repo)</code> and the cause, rather than let the call through unjudged.</p>
 <table>
 <thead>
 <tr>

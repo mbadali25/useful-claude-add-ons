@@ -1,6 +1,6 @@
 # repo-docs
-anchor: useful-claude-add-ons@291801622
-verified: 2026-10-01
+anchor: useful-claude-add-ons@9ba355d7c
+verified: 2026-10-20
 
 ## Re-derive provenance
 
@@ -91,6 +91,44 @@ or not, one at a time, and the result is 2. See "Unverified" for what a
 count of 8 could still mean that this pass did not check (a stricter
 per-construct definition of "gone," rather than file-existence).
 
+## Superseded at 9ba355d7c - read this before the sections below
+
+Re-derived 2026-10-20 (L-0850 / PR #656 close) against `9ba355d7c`, from the previous anchor `291801622`. Every
+`path:line` citation in the sections from `## Does` to `## Unverified` (31 distinct) was re-mapped by diffing its
+file at `291801622` against HEAD (`difflib`), then each unresolved one was read by hand. The `## Re-anchor provenance`
+sections and the history parentheticals describe past moments and were NOT re-mapped. Where a live statement below
+disagrees with this section, this section wins. Statements not listed here were NOT re-read at this anchor.
+
+**Citations that moved or were wrong (current values read from the tree, 2026-10-20):**
+- `render.sh:126`/`:133` (Calls out to): the file is `plugin/crew/skills/crew-diagrams/scripts/render.sh`; its `mmdc`
+  renders are at `:147` (`mmdc -i "$src" -o "$tmp" ... -s 2`) and `:160`. The "unchanged file" claim was wrong: the
+  file changed in `b6be0f87b` (2026-10-03), which moved both calls; `:72` is the `command -v mmdc` guard.
+- `plugin/crew/README.md:2331` (Landmines, `docs/runbooks/INDEX.md`): that file is 564 lines now and no longer mentions
+  `docs/runbooks/INDEX.md`. Only `plugin/crew/skills/crew-runbooks/SKILL.md:80` still describes it as a
+  symptom-keyed index; `docs/runbooks/` still holds `rollback.md` alone (`ls`), so the INDEX is still absent. The
+  `plugin/crew/README.md` half of that claim is dropped.
+- `README.md:168`/`:887` (crew counts) and `README.md:749` (obsidian-vault replaces the two claude-memories skills):
+  the root `README.md` is 435 lines, so `:887` and `:749` cannot be read. The `crew` row is `README.md:403`
+  and the obsidian-vault replacement sentence is `README.md:297` (it names `obsidian-memory-contract/profiles/`);
+  `README.md:168` is now the `19 This repo's plugins` menu row.
+- `skills/README.md:28` ("Nine new skills, taking the marketplace from 25 to 34") is now `skills/README.md:35`, the same
+  text, still under the `BEGIN skills/UPDATE.md` block (`:11`). Still not checked against git history.
+- `docs/HANDOFF.md`: newest entry still dated 2026-08-23, 58 days before this anchor's date; `docs/runbooks/rollback.md`
+  still reads `last verified: 2026-09-05` (45 days).
+- The three crew diagrams (Entry points): `data-flow-crew-config.mmd` is at `18e4afce3` (re-anchored 2026-10-18,
+  L-0789), `process-crew-brief.mmd` and `process-crew-lifecycle.mmd` at `c1d365d7` (2026-10-20). They are NOT "all at
+  `d276b268`". Their line 1 (`%% Generated from <repo>@<sha> on <date>.`) and line 2 (`%% Anchors:`) forms hold;
+  `architecture.mmd`, `data-flow.mmd` and `process.mmd` lines 1-2 still read `%% anchor: useful-claude-add-ons@1f97e51c`
+  / `%% Anchors:` (read directly).
+
+**Counts that are no longer true (measured now):** `python3 scripts/check-marketplace.py` reads `36 skills, 13 plugins`
+(the note's `35 skills, 5 plugins`); `README.md:154` states 36 skills and its menu row `:168` says 19 plugin entries;
+`SKILL_KEYS` in `scripts/install-prerequisites.sh` has 36 entries (the note's 34); crew has 5 agents, 38 commands,
+33 skills (`ls plugin/crew/agents/*.md`, `commands/*.md`, `skills/*/`), and `hooks.json` has 16 registrations in 8
+events (the note's `4 agents, 36 commands, 29 skills, 34 hook entries`; 16 is the L-0850 change). `docs/adr/` holds
+nine ADRs, `0001` to `0009` (the note's four). `INSTALLATION.md:253` reads `34 slash commands` and `33 bundled skills`
+for crew: the command count there is NOT the 38 measured; not edited here (outside this note's scope), flagged.
+
 ## Does
 Holds the repo's hand-written documentation — Mermaid diagram sources under
 `docs/diagrams/`, planning artifacts under `docs/superpowers/`, review notes
@@ -132,7 +170,7 @@ listing the directory.
 - `docs/diagrams/data-flow-crew-config.mmd:1-2`, `process-crew-brief.mmd:1`
   and `process-crew-lifecycle.mmd:1` - the three crew diagrams, each on the
   `%% Generated from <repo>@<sha> on <date>.` form, all at `d276b268` after
-  T-0021 (which added `crew_tracker.py` to each one's `%% Anchors:` line and
+  T-0021 [superseded: see the 9ba355d7c section above] (which added `crew_tracker.py` to each one's `%% Anchors:` line and
   drew the tracker calls into the lifecycle). `data-flow-crew-config` was redrawn for crew 1.0 at `6c497a14`
   (`5e937837`, the refresh branch) and re-anchored, its `%% Anchors:` paths
   unchanged in `6c497a14..f2bb919b`. `process-crew-brief` was **redrawn**:
@@ -1751,3 +1789,5 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `926f1277` -> `09e31dba` on 2026-10-10 (L-0753, after merging main `e77532e01`).** Per-path check `git diff --name-only 926f1277..09e31dba`: main's L-0759 (#595: `plugin/crew/tests/test_promote_gate_review.py`, crew 1.2.19) and L-0760 (#596: `.github/workflows/runner-autostart.yml`, SECURITY.md) plus the version and CHANGELOG/README lines moved. No claim in this map moved.
 
 **Re-anchored `09e31dba` -> `0bf364417` on 2026-10-17 (L-0796, crew 1.2.39, quiet Stop gate).** Scope of this check is the ticket's own change, `git diff --name-only 786687e60..0bf364417`: `verify-gate.sh` (+258) and `verify-gate.ps1` (+343) grew above most of their cited lines, `verify_fingerprint.py` gained 5 lines at `:192`, `crew_fixtures.py` 7 lines, the sabotage tables a few lines in place, and `CONFIG.md` one 44-line insertion at `:3056` (after every `CONFIG.md` line cited here). Every cited `verify-gate.sh` / `.ps1` / `crew_fixtures.py` / `sabotage*.py` / `CONFIG.md` line was shifted by the hunks of that diff (a script walking the `-U0` hunks, no cited line fell inside a hunk); version lines (`plugin.json:3`, `marketplace.json`, `PLUGINS.md`, `BUDGETS.md`) and README lines changed in place and moved nothing. NOT VERIFIED: that each shifted citation still says what its sentence claims. This pass did not re-read them, and drift from the commits between `09e31dba` and `786687e60` is not re-derived here; `/crew:onboard --refresh` is the full pass. Nothing was executed for this note.
+
+**Re-anchored `291801622` -> `9ba355d7c` on 2026-10-20 (L-0850 / PR #656 close, owner waiver 2026-10-20).** Re-derivation of the live sections, not a point re-verify: the 31 distinct `path:line` citations between `## Does` and `## Unverified` were diffed against HEAD; the moved ones and the counts that are no longer true are recorded in `## Superseded at 9ba355d7c`. Dropped: the `plugin/crew/README.md` half of the `docs/runbooks/INDEX.md` claim. NOT re-read at this anchor: every prose claim the Superseded section does not list, including the Landmines entries (pinned install-URL sha, the generated-block statements) and the `## Unverified` list, which carry their old anchors' dates; the `skills/README.md` "25 to 34" claim stays unverified against git history.

@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@f808e5f0 on 2026-10-03. Verify before trusting.
+%% Generated from useful-claude-add-ons@c1d365d7 on 2026-10-20. Verify before trusting.
 %% Anchors: plugin/crew/commands/approve.md, plugin/crew/commands/plan.md, plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/crew_ticket.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% Purpose: How /crew:approve, typed by the user only, records or refuses a plan approval through the approval hook, including the group-approval path, and how the ticket then moves to planned.
 %% Embed: none
@@ -12,10 +12,10 @@
 %%     UserPromptSubmit approval_hook decides before the model reads anything;
 %%     :12-13 recorded -> approval.json bound to the digest of spec.md AND plan.md;
 %%     :15 refused -> prompt blocked. Hook registered at
-%%     plugin/crew/hooks/hooks.json:14 (approval-hook.sh, UserPromptSubmit).
+%%     plugin/crew/hooks/hooks.json:8-9 (UserPromptSubmit launcher; crew_hook.py runs approval-hook.sh).
 %% --
 %% Note ap0: approve.md:5 disable-model-invocation
-%% Note ap1: approval-hook (UserPromptSubmit) hooks.json:14; approve.md:9
+%% Note ap1: approval-hook (UserPromptSubmit) hooks.json:8-9; approve.md:9
 %% Note ap2: header status value normalised; approved_via user-prompt
 %% Note apg: user's own /crew:approve --confirm records one receipt per ticket, or none
 %% Note planned: spec.md header 'status: planned' keeps the approval, crew_tracker.py move --to
@@ -23,12 +23,13 @@
 flowchart TB
     subgraph approve["/crew:approve - typed by the user only"]
         ap0["user types /crew:approve id<br/>approve.md:5"]
-        ap0 --> ap1{"approval-hook verdict?<br/>hooks.json:14"}
+        ap0 --> ap1{"approval-hook verdict?<br/>hooks.json:8-9"}
         ap1 -- refused --> apx([prompt blocked, reason shown<br/>:15])
         ap1 -- recorded --> ap2["approval.json =<br/>digest(spec.md, plan.md)<br/>:12-13"]
         ap1 -- "several ids, a range,<br/>or plain text" --> apg["PENDING list, nothing recorded<br/>until the user's --confirm<br/>approve.md:27-32"]
         apg -- "confirmed, every hash unchanged" --> ap2
     end
 
-    ap2 --> planned["spec.md 'status: planned',<br/>move --to planned<br/>plan.md:60-63"]
+    ap2 --> planned["spec.md 'status: planned',<br/>move --to planned<br/>plan.md:70-73"]
     planned --> to_im0>"next: implement part<br/>crew_ticket.py validate"]
+%% Re-anchored f808e5f0 -> c1d365d7 (L-0850, crew 1.2.58): of the Anchors paths hooks.json, plan.md, crew_ticket.py and crew_tracker.py changed. hooks.json:8-9 still holds (UserPromptSubmit, one launcher per shell; crew_hook.py TABLE :70 runs approval-hook.sh). plan.md gained ten lines at :44, so the status-planned citation moved plan.md:60-63 -> :70-73 (re-read). No node cites a line in crew_ticket.py or crew_tracker.py. No node or edge changed.

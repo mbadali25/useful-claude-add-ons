@@ -76,6 +76,14 @@ HARNESS = (
     # T-0100: the merged-main drop rule the review bundle and the completion
     # audit share; a change here moves both, so it is harness like them.
     "plugin/crew/hooks/scripts/merged_main.py",
+    # L-0727: the gates' registration and launch path. hooks.json decides which
+    # script runs for which event; crew-hook.sh/.ps1 start the dispatcher
+    # crew_hook.py, which runs every guard and merges what they say. A slip in
+    # any of the four turns a guard off without any guard's own suite noticing.
+    "plugin/crew/hooks/hooks.json",
+    "plugin/crew/hooks/scripts/crew_hook.py",
+    "plugin/crew/hooks/scripts/crew-hook.sh",
+    "plugin/crew/hooks/scripts/crew-hook.ps1",
     "plugin/crew/tests/sabotage*.py",
     "plugin/crew/tests/review_fixtures.py",
     "plugin/crew/tests/golden_build.py",
@@ -90,6 +98,8 @@ SEAM = (
     "plugin/crew/hooks/scripts/crew_status.py",
     "plugin/crew/hooks/scripts/crew_autopilot.py",
     "plugin/crew/hooks/scripts/crew_resume.py",
+    # L-0727: renders hooks.json (and the Codex hooks file) from crew_hook.TABLE.
+    "plugin/crew/hooks/scripts/crew_instructions.py",
     "plugin/crew/commands/status.md",
     "plugin/crew/commands/autopilot.md",
 )
@@ -106,6 +116,11 @@ ALONGSIDE = (
     ".claude-plugin/marketplace.json",
     ".claude/rules/**",
     "plugin/PLUGINS.md",
+    # L-0727 slice 2: both docs carry the `plugin-hooks:crew` claim marker that
+    # check-marketplace.py holds to hooks.json's entry count, so the PR that
+    # changes the count must change them.
+    "plugin/README.md",
+    "INSTALLATION.md",
     "CHANGELOG.md",
     # L-1518: root README.md's "What's new" block is generated from CHANGELOG.md.
     "README.md",
