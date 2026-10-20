@@ -12,6 +12,7 @@ or ~/.claude. `sabotage_wave.py`'s WAVE_MUTATIONS prove these can fail.
 """
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -1774,3 +1775,112 @@ def test_pinned_model_is_lowercased_on_the_launch_line(tmp_path):
     launches = [line for line in lines if line.startswith("launch ")]
 
     assert all("model: claude-sonnet-5-5)" in line for line in launches)
+
+
+# --- L-0727: start --json launches, workflow lane root, Ticket ID line ----------------------
+
+def _json_start(tmp_path, tickets=(("T-1", ("src/**",)), ("T-2", ("other/**",)))):
+    root = _repo(tmp_path)
+    _wave(root, [_row(t) for t, _ in tickets], list(tickets))
+    _set(root, "s", [t for t, _ in tickets])
+    return root, json.loads(_cli("start", "--root", root, "--set", "s", "--json").stdout)
+
+
+def test_start_json_launches_follow_the_launch_lines_in_order(tmp_path):
+    _, out = _json_start(tmp_path)
+
+    launch_lines = [line for line in out["lines"] if line.startswith("launch ")]
+    assert ([entry["ticket"] for entry in out["launches"]],
+            [line.split(":")[0] for line in launch_lines]) == (
+        ["T-1", "T-2"], ["launch T-1", "launch T-2"])
+
+
+def test_start_json_launch_argv_is_the_lane_prompt_command(tmp_path):
+    root, out = _json_start(tmp_path)
+
+    argv = out["launches"][0]["argv"]
+
+    assert (argv[0], os.path.basename(argv[1]), argv[2:]) == (
+        "python3", "crew_wave.py",
+        ["lane-prompt", "--root", str(root), "--set", "s", "--ticket", "T-1"])
+
+
+def test_start_json_argv_runs_and_prints_the_lane_prompt(tmp_path):
+    _, out = _json_start(tmp_path)
+
+    ran = subprocess.run([sys.executable] + out["launches"][0]["argv"][1:], capture_output=True,
+                         text=True, check=False, stdin=subprocess.DEVNULL)
+
+    assert (ran.returncode, ran.stdout.startswith("Ticket ID: T-1\n")) == (0, True)
+
+
+def test_start_json_launches_empty_on_a_stop(tmp_path):
+    root = _repo(tmp_path, mode="off")
+    _wave(root, [_row("T-1")], [("T-1", ("src/**",))])
+    _set(root, "s", ["T-1"])
+
+    out = json.loads(_cli("start", "--root", root, "--set", "s", "--json").stdout)
+
+    assert (out["stop"], out["launches"]) == (True, [])
+
+
+def test_start_json_refusals_stay_in_lines_and_out_of_launches(tmp_path):
+    root, first = _json_start(tmp_path)
+    crew_wave.lane_done(str(root), "s", "T-1", "failed", "gone")
+
+    again = json.loads(_cli("start", "--root", root, "--set", "s", "--json").stdout)
+
+    assert (any(line.startswith("T-1 skipped: failed") for line in again["lines"]),
+            [entry["ticket"] for entry in again["launches"]],
+            len(first["launches"])) == (True, ["T-2"], 2)
+
+
+def test_start_without_json_prints_the_same_lines_as_before(tmp_path):
+    root = _repo(tmp_path)
+    _wave(root, [_row("T-1")], [("T-1", ("src/**",))])
+    _set(root, "s", ["T-1"])
+
+    out = _cli("start", "--root", root, "--set", "s").stdout
+
+    assert out.startswith(
+        "launch T-1: Agent(subagent_type: general-purpose, isolation: worktree) prompt:")
+
+
+_WORKFLOW_FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures",
+                                 "workflow_worktree_payload.json")
+
+
+def test_lane_init_admits_the_worktree_root_a_workflow_agent_measured(tmp_path):
+    with open(_WORKFLOW_FIXTURE, encoding="utf-8") as handle:
+        measured = json.load(handle)
+    root = _started(tmp_path)
+    wt = _isolated(root, "wf_894f432e-4be-1")
+    relative = os.path.relpath(measured["payloads"][1]["cwd"], measured["main_checkout"])
+
+    ok, reason = crew_wave.lane_init(str(wt), str(root), "s", "T-1")
+
+    assert (relative.startswith(os.path.join(".claude", "worktrees") + os.sep), ok) == (True, True), reason
+
+
+@pytest.mark.parametrize("where", ["sibling", "inside"])
+def test_lane_init_refuses_a_worktree_outside_the_agent_root(tmp_path, where):
+    root = _started(tmp_path)
+    target = {"sibling": tmp_path / "sibling-wt", "inside": root / "plain" / "wt"}[where]
+    wt = _isolated(root, "x", where=target)
+
+    ok, reason = crew_wave.lane_init(str(wt), str(root), "s", "T-1")
+
+    assert (ok, ".claude/worktrees" in reason) == (False, True)
+
+
+def test_lane_prompt_carries_ticket_id(tmp_path):
+    root = _started(tmp_path, tickets=(("L-0101", ("src/**",)), ("L-0102", ("other/**",))))
+    pattern = re.compile(r"^Ticket ID: [A-Z]+-\d{4}$")
+
+    got = {t: crew_wave.lane_prompt(str(root), "s", t) for t in ("L-0101", "L-0102")}
+
+    found = {t: [line for line in text.splitlines() if line.startswith("Ticket ID")]
+             for t, text in got.items()}
+    assert (found, all(pattern.match(lines[0]) for lines in found.values()),
+            all(text.splitlines()[0] == f"Ticket ID: {t}" for t, text in got.items())) == (
+        {"L-0101": ["Ticket ID: L-0101"], "L-0102": ["Ticket ID: L-0102"]}, True, True)

@@ -84,6 +84,11 @@ SCHEMA = 1
 SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 
 
+def _plain_path(path):
+    """`path` as one argv word: '/' for '\\' on Windows, where a lane's Bash is Git Bash."""
+    return path.replace("\\", "/") if os.name == "nt" else path
+
+
 def _shell_path(path):
     """`path` as a lane's Bash command line names it: quoted, and on Windows with '/' for
     '\\'. A lane's Bash is Git Bash there, where '/' is native and needs no quoting, so a
@@ -818,14 +823,16 @@ def role_model(top, role, cfg=None):
 
 
 def _launch(top, slug, ticket, resume):
+    """(the `launch` line, the lane-prompt argv), both from this ticket and this reserved
+    round: `start --json` carries the argv, so the two cannot disagree."""
     model, _ = role_model(top, "developer")
-    command = (f"python3 {_shell_path(os.path.join(SCRIPTS, 'crew_wave.py'))} lane-prompt "
-               f"--root {_shell_path(top)} "
-               f"--set {slug} --ticket {ticket}")
+    argv = ["python3", _plain_path(os.path.join(SCRIPTS, "crew_wave.py")), "lane-prompt",
+            "--root", _plain_path(top), "--set", slug, "--ticket", ticket]
     if resume is not None:
-        command += f" --resume-round {resume}"
+        argv += ["--resume-round", str(resume)]
+    command = " ".join(shlex.quote(word) for word in argv)
     launch = LAUNCH if model is None else LAUNCH[:-1] + f", model: {model})"
-    return f"launch {ticket}: {launch} prompt: the output of `{command}`"
+    return f"launch {ticket}: {launch} prompt: the output of `{command}`", argv
 
 
 def _valid_receipts(receipts):
@@ -845,7 +852,8 @@ def start_path(top, slug):
 
 
 def start(root, slug):
-    """`{"stop", "stopReason", "plan", "lines"}`. Writes a `pending` lane file
+    """`{"stop", "stopReason", "plan", "lines", "launches"}`; `launches` is
+    `[{"ticket", "argv"}]`, one per `launch` line in the same order. Writes a `pending` lane file
     for each new wave-1 lane and `start.json` (base commit, lanes, receipt
     kinds at start); prints one isolated launch per lane to (re)launch. Never
     reserves a review round, places a worktree or launches an agent."""
@@ -853,7 +861,7 @@ def start(root, slug):
     result = plan(top, slug=slug)
     if result["stop"]:
         return {"stop": True, "stopReason": result["stopReason"], "plan": result,
-                "lines": [f"stop: {result['stopReason']}"]}
+                "lines": [f"stop: {result['stopReason']}"], "launches": []}
     code, base = _git(top, "rev-parse", "HEAD")
     if code != 0 or not base:
         raise WaveError("could not read the main checkout's HEAD for the lanes' base commit")
@@ -875,6 +883,7 @@ def start(root, slug):
     versions = dict(result["land"])
     started = list(lanes)
     lines = []
+    launches = []
     cfg = crew_config.resolve_config(top)
     _, lane_warning = role_model(top, "developer", cfg)
     coordinator, coordinator_warning = role_model(top, "coordinator", cfg)
@@ -917,11 +926,13 @@ def start(root, slug):
             write_lane(top, slug, ticket, lane)
         if ticket not in lanes:
             lanes.append(ticket)
-        lines.append(_launch(top, slug, ticket, _reserved_round(top, ticket)))
+        text, argv = _launch(top, slug, ticket, _reserved_round(top, ticket))
+        lines.append(text)
+        launches.append({"ticket": ticket, "argv": argv})
     _write_json(start_path(top, slug), {"base": record.get("base") or base, "lanes": lanes,
                                         "later": result["later"], "receipts": receipts})
     lines += [f"later: {ticket} - {why}" for ticket, why in result["later"]]
-    return {"stop": False, "stopReason": "", "plan": result, "lines": lines}
+    return {"stop": False, "stopReason": "", "plan": result, "lines": lines, "launches": launches}
 
 
 def _same_bytes(one, two):
@@ -1095,6 +1106,7 @@ def lane_prompt(root, slug, ticket, resume_round=None):
     done = (f"{script('crew_wave.py')} lane-done --main {main} --set {slug} --ticket {ticket} "
             "--state <clean|findings|question|failed> --reason \"<one line>\"")
     return "\n".join([
+        f"Ticket ID: {ticket}",
         f"You are lane {ticket} of wave {slug}. Your current directory is your own isolated "
         "worktree: work only here (--root .) and never write to another checkout's path. "
         "Never ask the owner anything; a question goes to a file and the lane stops.",
