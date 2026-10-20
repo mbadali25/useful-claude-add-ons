@@ -21,6 +21,7 @@ Run: python3 scripts/_test/crew-outcome-eval.py
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import io
 import json
@@ -957,9 +958,9 @@ def case_the_budget_flags_refuse_nan_infinity_and_non_positive_amounts(tmp):
     for text in ("nan", "inf", "-1", "0", "abc"):
         try:
             eval_mod.positive_amount(text)
-            bad.append(text)
-        except Exception:  # noqa: BLE001 - any refusal counts; argparse raises ArgumentTypeError
-            pass
+        except argparse.ArgumentTypeError:
+            continue
+        bad.append(text)
     return not bad and eval_mod.positive_amount("5") == 5.0, bad
 
 
