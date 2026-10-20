@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.58**: One dispatcher behind sixteen hook registrations. `crew` 1.2.58: `hooks.json` registers one launcher per event per shell (16 entries, not 36) and one dispatcher runs each event's hook scripts and combines them, so on Windows no event runs twice, and a launcher or dispatcher fault in a repo crew governs now refuses the call instead of letting it through unjudged.
 - **crew 1.2.57**: Wave lanes run as a Claude Code workflow, the autopilot modules are frozen, and the Git Bash resolver has a strict mode. `crew` 1.2.57: `/crew:autopilot wave` now fans its lanes out through the plugin's `wave` workflow (`/crew:wave`), a lane that fails or returns nothing readable is reported `unknown` instead of clean, and every lane brief opens with a `Ticket ID:` line.
-- **crew 1.2.56**: A hook-script child that ignores its kill can no longer hold a review step open. `crew` 1.2.56: a review step that runs a helper script gives up on a hung or unkillable helper after the bound instead of waiting on it, and the codemap notes it reads must be regular files.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

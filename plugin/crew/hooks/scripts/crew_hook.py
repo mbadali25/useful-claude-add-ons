@@ -452,7 +452,10 @@ def _trace(path, event, argv, pid):
 
 def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_bash=None,
              resolve_pwsh=None, scripts=SCRIPTS, armed_fn=None):
-    """Run the event's rows; returns (exit, stdout bytes, stderr bytes)."""
+    """Run the event's rows; returns (exit, stdout bytes, stderr bytes). `deadline_ms` is
+    the epoch deadline the launcher handed over; it is turned into a monotonic one here, so
+    a clock that steps cannot stretch or shrink any bound after this point."""
+    mono_end = time.monotonic() + (deadline_ms - now_ms()) / 1000.0
     windows = _windows() if windows is None else windows
     payload = parse_payload(raw)
     chosen = select(event, harness, payload, windows=windows, scripts=scripts)
@@ -483,7 +486,7 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
     threads = []
 
     def work(index, row, argv):
-        remaining = (deadline_ms - now_ms()) / 1000.0
+        remaining = mono_end - time.monotonic()
         own = min(float(row.timeout), remaining)
         script = os.path.join(scripts, argv[0])
         if not os.path.isfile(script):
