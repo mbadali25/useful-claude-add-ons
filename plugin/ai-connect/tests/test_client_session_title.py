@@ -266,10 +266,18 @@ def test_a_project_named_s_cannot_read_as_a_session_label_with_any_suffix(tmp_pa
     assert f"{session_label({}, tmp_path / project)}-{PID}" != session_label({}, tmp_path / "x", str(PID))
 
 
-SUFFIXES = [{}, {"AI_CONNECT_PEER_SUFFIX": "review"}, {"AI_CONNECT_PEER_SUFFIX": "s"}, {"AI_CONNECT_PEER_SUFFIX": "-x-"}]
+SUFFIXES = [
+    {},
+    {"AI_CONNECT_PEER_SUFFIX": "review"},
+    {"AI_CONNECT_PEER_SUFFIX": "s"},
+    {"AI_CONNECT_PEER_SUFFIX": "-x-"},
+]
 
 
-@pytest.mark.parametrize("project", ["deploy", "s-deploy", "S-x", "プロ", "s-" + "z" * 80, "p-s-q", "-", "s", "S", "review"])
+@pytest.mark.parametrize(
+    "project",
+    ["deploy", "s-deploy", "S-x", "プロ", "s-" + "z" * 80, "p-s-q", "-", "s", "S", "review"],
+)
 @pytest.mark.parametrize("title", ["deploy", "s-deploy", "x" * 300, "p-s-deploy", "S-Q", "review", "s"])
 def test_no_session_label_equals_any_project_label(tmp_path, project, title):
     """The invariant, both ways and across suffixes (each session has its own environment):
