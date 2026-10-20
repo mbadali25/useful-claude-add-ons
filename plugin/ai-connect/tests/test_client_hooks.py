@@ -249,7 +249,8 @@ def test_venv_lost_after_an_update_is_an_error_naming_the_fix(tmp_path, event, h
     assert str(machine.root) in result.stderr  # the directory to run it in: the cache path is not guessable
     assert not machine.marker.exists()
     # Both places a venv is looked for are named, and the other way to get one
-    deploy_venv = r"%USERPROFILE%\AppData\Local\ai-connect\venv" if as_windows(hook) else "~/.local/share/ai-connect/venv"
+    deploy_venv = (r"%USERPROFILE%\AppData\Local\ai-connect\venv" if as_windows(hook)
+                   else "~/.local/share/ai-connect/venv")
     deploy = "deploy.ps1" if as_windows(hook) else "deploy.sh"
     assert deploy_venv in result.stderr and deploy in result.stderr, result.stderr
 
@@ -419,23 +420,43 @@ def test_the_project_directory_named_by_claude_is_not_trusted_either(tmp_path, e
     leaf = "venv" if variable == "AI_CONNECT_HOME" else ""
     planted(machine, project / "evil" / leaf)
     value = str(project / "evil")
-    result = machine.run(hook, windows=as_windows(hook), extra_env={variable: value, "CLAUDE_PROJECT_DIR": str(project)},
-                         cwd=tmp_path)
+    env = {variable: value, "CLAUDE_PROJECT_DIR": str(project)}
+    result = machine.run(hook, windows=as_windows(hook), extra_env=env, cwd=machine.project)
     assert result.returncode == 1 and not machine.marker.exists(), result.stderr
     assert "evil" not in result.stderr, result.stderr
 
 
 @pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
-def test_a_trusted_variable_still_works_when_the_project_is_the_home(tmp_path, event, hook):  # pylint: disable=unused-argument
-    """A session started in the home directory: everything under the home is not 'inside the project'."""
+def test_python_variables_from_the_project_do_not_reach_the_interpreter(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """PYTHONPATH and friends would make a trusted interpreter import the repository's code: they are dropped."""
     stubs(hook)
     machine = Machine(tmp_path)
     machine.add_config()
-    named = machine.home / "named venv"
-    machine.add_venv(named, "named")
-    result = machine.run(hook, windows=as_windows(hook), extra_env={"AI_CONNECT_VENV": str(named)}, cwd=machine.home)
-    assert (result.returncode, result.stderr) == (WAKE, "")
-    assert machine.started() == ("named", machine.root / WATCHER)
+    machine.add_venv()
+    for relative in ("bin/python", "Scripts/python.exe"):
+        (machine.root / "venv" / relative).write_text(
+            f'#!/bin/sh\nprintf "own\\n%s" "$1" > "{machine.marker}"\n'
+            f'echo "PP=${{PYTHONPATH:-}}|PS=${{PYTHONSTARTUP:-}}|PH=${{PYTHONHOME:-}}"\nexit {WAKE}\n',
+            encoding="utf-8", newline="\n")
+    result = machine.run(hook, windows=as_windows(hook), extra_env={
+        "PYTHONPATH": "./x", "PYTHONSTARTUP": "./s.py", "PYTHONHOME": "./h"})
+    assert (result.returncode, result.stdout.strip()) == (WAKE, "PP=|PS=|PH="), result.stderr
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_a_home_moved_into_the_project_does_not_make_the_projects_venv_the_default(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """HOME set (by a project's settings) to a directory inside the project: its deploy-place venv is not run."""
+    need(hook)
+    if WINDOWS or as_windows(hook):
+        pytest.skip("the account home is read from the account database off Windows; watch.ps1 is not asked here")
+    (tmp_path / "project").mkdir()
+    inner = tmp_path / "project" / "fakehome"
+    machine = Machine(tmp_path, home=inner)
+    machine.add_config()
+    machine.add_venv(machine.deploy_home(hook) / "venv", "evil")
+    result = machine.run(hook, windows=False, cwd=machine.project)
+    assert not machine.marker.exists(), result.stderr
+    assert result.returncode in (0, 1)
 
 
 @pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)

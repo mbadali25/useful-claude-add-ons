@@ -17,6 +17,21 @@ WATCHER="integrations/claude-code/aiconnect_watch.py"
 # The installer writes this outside the plugin directory (config_loader.py's
 # CONFIG_PATH), so it survives a plugin update and tells "never set up" from
 # "set up, then the venv went with the old plugin directory".
+# HOME comes from the environment, which a project's settings can set; the account database
+# cannot be set that way. A HOME that is not the account's home directory and lies inside the
+# project the session runs in is ignored (as if unset): a repository cannot move "the user's
+# home" into itself. Other HOMEs are left alone (a test or a container may set its own).
+ACCT_HOME="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)"
+if [ -n "$ACCT_HOME" ] && [ -n "${HOME:-}" ]; then
+    _h="$(cd "$HOME" 2>/dev/null && pwd -P)"
+    if [ "$_h" != "$(cd "$ACCT_HOME" 2>/dev/null && pwd -P)" ]; then
+        for _proj in "${CLAUDE_PROJECT_DIR:-}" "$PWD"; do
+            [ -n "$_proj" ] || continue
+            _p="$(cd "$_proj" 2>/dev/null && pwd -P)" || continue
+            case "$_h/" in "$_p"/*) HOME="" ;; esac
+        done
+    fi
+fi
 CONFIG="${HOME:-}/.config/ai-connect/config.yaml"
 
 # AI_CONNECT_VENV and AI_CONNECT_HOME choose which interpreter this hook starts on every
@@ -95,4 +110,7 @@ if [ -z "$PYTHON" ]; then
     echo "ai-connect watch.sh: no venv found (looked in $ROOT/venv, in deploy's ~/.local/share/ai-connect/venv or under AI_CONNECT_HOME, and at AI_CONNECT_VENV; a variable that is not an absolute path under your home, outside the project, is ignored) - run $ROOT/install.sh --client (again after each plugin update), or $ROOT/deploy/deploy.sh peer once" >&2
     exit 1
 fi
-exec "$PYTHON" "$APP/$WATCHER"
+# A project's settings can set PYTHONPATH and friends, which would make a trusted interpreter
+# import the repository's code
+exec env -u PYTHONPATH -u PYTHONHOME -u PYTHONSTARTUP -u PYTHONINSPECT -u PYTHONUSERBASE -u PYTHONEXECUTABLE \
+    "$PYTHON" "$APP/$WATCHER"

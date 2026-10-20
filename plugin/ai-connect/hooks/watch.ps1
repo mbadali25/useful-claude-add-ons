@@ -17,7 +17,21 @@ $watcher = 'integrations\claude-code\aiconnect_watch.py'
 # CONFIG_PATH: Path.home(), which is USERPROFILE on Windows), so it survives a
 # plugin update and tells "never set up" from "set up, then the venv went with
 # the old plugin directory".
+# USERPROFILE comes from the environment, which a project's settings can set. On Windows, where
+# the OS names the profile directory, a USERPROFILE that is not that directory and lies inside
+# the project the session runs in is replaced by the OS's answer.
 $userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+$acctHome = [Environment]::GetFolderPath('UserProfile')
+if ($acctHome -and ([Environment]::OSVersion.Platform -eq 'Win32NT') `
+        -and ($userHome.TrimEnd('\', '/') -ne $acctHome.TrimEnd('\', '/'))) {
+    foreach ($project in @($env:CLAUDE_PROJECT_DIR, (Get-Location).ProviderPath)) {
+        if (-not $project) { continue }
+        $prefix = $project.TrimEnd('\', '/') + '\'
+        if (($userHome.TrimEnd('\', '/') + '\').StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+            $userHome = $acctHome
+        }
+    }
+}
 $config = Join-Path (Join-Path (Join-Path $userHome '.config') 'ai-connect') 'config.yaml'
 
 # AI_CONNECT_VENV and AI_CONNECT_HOME choose which interpreter this hook starts on every
@@ -106,6 +120,11 @@ if (-not $python) {
     # places, not the values of the variables.
     [Console]::Error.WriteLine("ai-connect watch.ps1: no venv found (looked in $(Join-Path $root 'venv'), in deploy's %USERPROFILE%\AppData\Local\ai-connect\venv or under AI_CONNECT_HOME, and at AI_CONNECT_VENV; a variable that is not an absolute path under your home, outside the project, is ignored) - run $(Join-Path $root 'install.cmd') -Client (again after each plugin update), or $(Join-Path (Join-Path $root 'deploy') 'deploy.ps1') peer once")
     exit 1
+}
+# A project's settings can set PYTHONPATH and friends, which would make a trusted interpreter
+# import the repository's code
+foreach ($name in 'PYTHONPATH', 'PYTHONHOME', 'PYTHONSTARTUP', 'PYTHONINSPECT', 'PYTHONUSERBASE', 'PYTHONEXECUTABLE') {
+    Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
 }
 & $python (Join-Path $app $watcher)
 exit $LASTEXITCODE
