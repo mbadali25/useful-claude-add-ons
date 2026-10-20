@@ -190,12 +190,32 @@ def test_the_ps1_restricted_roles_equal_role_write_guards():
     assert re.findall(r"'([^']+)'", mine) == re.findall(r"'([^']+)'", theirs) == list(crew_hook.RESTRICTED_ROLES)
 
 
-def test_the_crew_context_rows_carry_the_codex_matchers_of_hook_table():
-    mine = sorted((r.event, r.codex) for r in crew_hook.TABLE if r.codex is not None)
+def test_the_codex_rows_are_the_five_crew_context_rows_registered_before_the_dispatcher():
+    mine = sorted((r.event, r.script, r.codex) for r in crew_hook.TABLE if r.codex is not None)
 
-    theirs = sorted((row["event"], (row["codex"] if row["matcher"] else "")) for row in ci.HOOK_TABLE)
+    assert mine == sorted([
+        ("SessionStart", "crew-context.sh", ""), ("UserPromptSubmit", "crew-context.sh", ""),
+        ("PostToolUse", "crew-context.sh", "apply_patch|Edit|Write"),
+        ("PostToolUse", "crew-context.sh", crew_hook.VAULT_MATCHER),
+        ("SubagentStart", "crew-context.sh", "")])
 
-    assert mine == theirs
+
+def test_instruction_generator_codex_rows_are_derived_from_the_table_not_copied():
+    derived = [(row["event"], row["codex"]) for row in ci.HOOK_TABLE]
+
+    assert derived == [(r.event, r.codex or None) for r in crew_hook.TABLE if r.codex is not None]
+
+
+def test_a_table_matcher_is_an_empty_string_the_vault_regex_or_a_plain_tool_list():
+    """The no-python fallback in crew-hook.sh judges nothing else, and runs a row it cannot judge;
+    a general regex in TABLE needs that fallback taught first."""
+    import re  # pylint: disable=import-outside-toplevel
+    plain = re.compile(r"[A-Za-z0-9_|]+\Z")
+
+    odd = [(r.script, m) for r in crew_hook.TABLE for m in (r.matcher, r.codex or "")
+           if m and m != crew_hook.VAULT_MATCHER and not plain.match(m)]
+
+    assert odd == []
 
 
 def test_codex_registrations_go_through_the_launcher_with_the_harness_flag():
@@ -229,3 +249,18 @@ def test_the_ps1_flavour_guard_trusts_the_platform_not_only_the_environment():
     # parameter default (which runs before it) puts OS back on a real Windows host
     assert guard == ["if ($env:OS -ne 'Windows_NT') { exit 0 }"]
     assert default in PS1_TEXT
+
+
+@pytest.mark.parametrize("matcher,tool,runs", [
+    ("Write|Edit", "Edit", True), ("Write|Edit", "Bash", False), ("", "Bash", True), ("Bash", "", True),
+    ("@vault", "mcp__obsidian__search", True), ("@vault", "Read", False),
+    ("mcp__.*(x|y)", "Read", True),  # a regex it cannot judge: the row runs and the script decides
+])
+def test_the_no_python_tool_matcher_runs_a_row_it_cannot_judge(matcher, tool, runs):
+    start = SH_TEXT.index("_tool_matches() {")
+    function = SH_TEXT[start:SH_TEXT.index("\n}\n", start) + 3]
+
+    done = subprocess.run([BASH, "-c", f"{function}\n_tool_matches '{matcher}' '{tool}'; echo $?"],
+                          capture_output=True, text=True, check=True)
+
+    assert (done.stdout.strip() == "0") is runs

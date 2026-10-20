@@ -171,7 +171,7 @@ DERIVED at `8f2267e60` (L-0850, L-0727 slice 2; parsed from the JSON and from
 `:35`): per event one `bash` launcher entry (`crew-hook.sh <Event>`) and one `shell: "powershell"`
 entry (`crew-hook.ps1 <Event>`), the Windows rule from CLAUDE.md. It no longer names a hook script.
 Before L-0850 it registered 36 entries (one pair per script per matcher). The file is generated:
-`crew_instructions.claude_hooks` (`plugin/crew/hooks/scripts/crew_instructions.py:407`) renders it
+`crew_instructions.claude_hooks` (`plugin/crew/hooks/scripts/crew_instructions.py:404`) renders it
 from `crew_hook.EVENTS`, `crew_hook.REGISTERED_MATCHER` and `crew_hook.event_timeout`
 (`plugin/crew/hooks/scripts/crew_hook.py:98`, `:88`, `:103`), and
 `plugin/crew/tests/test_hooks_json_shape.py` holds the file, `TABLE` and `crew-hook.sh`'s static
@@ -204,7 +204,7 @@ deny > ask > allow, `decision: "block"` and `continue: false` win, `additionalCo
 repo or that cannot be told; in an armed repo a guard row that times out, a missing script, or an
 exception in the dispatcher is exit 2 with a named reason on `BLOCKING_EVENTS` (`PreToolUse`,
 `UserPromptSubmit`, `Stop`, `:47`); an unarmed repo gets exit 0 (`_settle` `:539`, `_fault` `:613`).
-The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 328 lines; `crew-hook.ps1`, 462) supervise
+The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 333 lines; `crew-hook.ps1`, 466) supervise
 rather than exec it: exit 0 and 2 pass through, anything else becomes the armed/unarmed fault above,
 under one deadline (`CREW_HOOK_DEADLINE`, the registration timeout minus 5 s). `crew-hook.sh` exits 0 on
 Windows (`uname -s` MINGW/MSYS/CYGWIN; `OS=Windows_NT` only when uname names no POSIX kernel) and
@@ -1668,9 +1668,9 @@ plus `.crew/verify.json`.
 
 New on main since `6c497a14` (#227, #228). `python3 plugin/crew/hooks/scripts/crew_instructions.py
 rules --root .` writes one `.claude/rules/<subsystem>.md` per code-map note that yields any paths
-(`expected_rules`, `plugin/crew/hooks/scripts/crew_instructions.py:175`; `render_rule`, `:129`):
+(`expected_rules`, `plugin/crew/hooks/scripts/crew_instructions.py:172`; `render_rule`, `:126`):
 a `paths:` frontmatter derived from the note's own citations, a `crew:generated` marker carrying
-the sha256 of everything the rule is rendered from (`rule_digest`, `:111`), the note's anchor,
+the sha256 of everything the rule is rendered from (`rule_digest`, `:108`), the note's anchor,
 INDEX.md's Covers cell for it, and the note's Landmines headlines (else its Entry points), capped at
 `RULES_MAX_LINES` = 30 (`:83`). `--check` (`rules`, `:197`) writes nothing and reports each rule
 file missing, stale or orphaned; a hand-written file at a generated path is never overwritten and
@@ -2666,7 +2666,7 @@ citations taken with `grep -n` there.
   existing `except (OSError, ...)` takes the path a missing bare name took. `git_out` (`:87`) runs
   it.
 - DERIVED: the sites that run `require_tool`'s path: `plugin/crew/hooks/scripts/ci_receipt.py:140`
-  and `:148` (moved by L-0673's two patterns), `plugin/crew/hooks/scripts/crew_instructions.py:296`,
+  and `:148` (moved by L-0673's two patterns), `plugin/crew/hooks/scripts/crew_instructions.py:293`,
   `plugin/crew/hooks/scripts/crew_refresh_check.py:507`, `:517`, `:548`,
   `plugin/crew/hooks/scripts/crew_state.py:2283`, `plugin/crew/hooks/scripts/crew_status.py:56`,
   `plugin/crew/hooks/scripts/crew_tracker.py:540` and `:980`,

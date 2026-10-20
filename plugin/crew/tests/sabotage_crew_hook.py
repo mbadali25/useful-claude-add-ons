@@ -21,6 +21,7 @@ HOOK = os.path.join(SCRIPTS, "crew_hook.py")
 SH = os.path.join(SCRIPTS, "crew-hook.sh")
 PS1 = os.path.join(SCRIPTS, "crew-hook.ps1")
 PASTE = os.path.join(SCRIPTS, "crew_autopilot_paste.py")
+CI = os.path.join(SCRIPTS, "crew_instructions.py")
 _P = "tests/test_crew_hook_parity.py::"
 _M = "tests/test_crew_hook_merge.py::"
 _F = "tests/test_crew_hook_faults.py::"
@@ -127,6 +128,16 @@ CREW_HOOK_MUTATIONS = (
      "[System.PlatformID]::Win32NT) { $env:OS = 'Windows_NT' })",
      "[System.PlatformID]::Unix) { $env:OS = 'Windows_NT' })",
      _S + "test_the_ps1_flavour_guard_trusts_the_platform_not_only_the_environment"),
+    # Review round (Kimi, 2026-10-20): the Codex rows must come from TABLE, and a matcher the no-python
+    # path cannot judge must run its row.
+    ("the Codex hook rows are a copy that leaves a TABLE row out", CI,
+     "    for row in crew_hook.TABLE if row.codex is not None)\n",
+     "    for row in crew_hook.TABLE if row.codex is not None and row.event != \"SubagentStart\")\n",
+     _S + "test_instruction_generator_codex_rows_are_derived_from_the_table_not_copied"),
+    ("the no-python matcher skips a row whose matcher it cannot judge", SH,
+     "    *[!A-Za-z0-9_\\|]*) return 0 ;;\n",
+     "",
+     _S + "test_the_no_python_tool_matcher_runs_a_row_it_cannot_judge[mcp__.*(x|y)-Read-True]"),
     ("a same-line-count behavioural edit to a frozen autopilot module", PASTE,
      '"\\\\u0020" * len(run.group())',
      '"\\\\u0021" * len(run.group())',

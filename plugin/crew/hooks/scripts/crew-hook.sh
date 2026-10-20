@@ -155,6 +155,11 @@ _tool_matches() {
     esac
     return 1
   fi
+  # A matcher that is not a plain |-list (a regex) cannot be judged here: run the row and
+  # let the script decide (tests/test_hooks_json_shape.py pins what TABLE may hold).
+  case "$matcher" in
+    *[!A-Za-z0-9_\|]*) return 0 ;;
+  esac
   local IFS='|'
   for name in $matcher; do
     [ "$name" = "$tool" ] && return 0

@@ -77,6 +77,7 @@ except ImportError:  # pragma: no cover - exercised only on 3.8-3.10
 
 import crew_common
 import crew_context
+import crew_hook
 from crew_common import read_text
 
 GENERATOR_VERSION = "1"
@@ -91,17 +92,13 @@ LAUNCHER = "crew-hook"
 GENERATED_SCRIPTS = (SCRIPT, "crew-hook")
 VAULT_MATCHER = "mcp__.*(obsidian|vault|basic[-_]memory).*"
 
-# The one table both harnesses' registrations are rendered from. `codex`
-# overrides a row's matcher for Codex, whose file-edit tool is `apply_patch`;
-# None there means the row is not registered for Codex at all.
-HOOK_TABLE = (
-    {"event": "SessionStart", "matcher": None, "codex": None, "timeout": 20},
-    {"event": "UserPromptSubmit", "matcher": None, "codex": None, "timeout": 15},
-    {"event": "PostToolUse", "matcher": "Read|Edit|Write|MultiEdit",
-     "codex": "apply_patch|Edit|Write", "timeout": 10},
-    {"event": "PostToolUse", "matcher": VAULT_MATCHER, "codex": VAULT_MATCHER, "timeout": 10},
-    {"event": "SubagentStart", "matcher": None, "codex": None, "timeout": 15},
-)
+# The Codex rows of `crew_hook.TABLE`, the one contract both harnesses' registrations are
+# rendered from (L-0727): there is no second list to drift. A row's `codex` is the matcher
+# Codex sees (its file-edit tool is `apply_patch`); a row with none is not registered for
+# Codex at all, and one with an empty matcher is registered without one.
+HOOK_TABLE = tuple(
+    {"event": row.event, "matcher": row.matcher or None, "codex": row.codex or None, "timeout": row.timeout}
+    for row in crew_hook.TABLE if row.codex is not None)
 
 
 def _sha(text):
