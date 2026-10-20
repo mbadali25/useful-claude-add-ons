@@ -236,7 +236,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.2.58**: One dispatcher behind sixteen hook registrations. `crew` 1.2.58: `hooks.json` registers one launcher per event per shell (16 entries, not 36) and one dispatcher runs each event's hook scripts and combines them, so on Windows no event runs twice, and a launcher or dispatcher fault in a repo crew governs now refuses the call instead of letting it through unjudged.
-- **crew 1.2.57**: Wave lanes run as a Claude Code workflow, the autopilot modules are frozen, and the Git Bash resolver has a strict mode. `crew` 1.2.57: `/crew:autopilot wave` now fans its lanes out through the plugin's `wave` workflow (`/crew:wave`), a lane that fails or returns nothing readable is reported `unknown` instead of clean, and every lane brief opens with a `Ticket ID:` line.
+- **ai-connect 0.2.1**: The watcher finds the venv deploy made. On a machine set up with `ai-connect`'s own `deploy.sh` or `setup.sh`, the message watcher now runs and wakes the session when a message arrives; up to 0.2.0 it exited 1 on every session start and turn end there, because it looked for a venv only inside the plugin directory (not run on Windows).
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

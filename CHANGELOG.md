@@ -21,6 +21,24 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Tooling.** `check-tooling-pr.py`: `hooks.json`, `crew_hook.py` and the two launchers are HARNESS, `crew_instructions.py` is a declared seam, and `INSTALLATION.md` and `plugin/README.md` (which carry the `plugin-hooks:crew` claim) ride along with a harness PR.
 - **Docs.** ADR 0009; the hooks reference, the Windows section, the troubleshooting guide and the Codex guide (rebuilt); the hook-count claims read 16. The `.ps1` twins stay in place and unregistered except the three PowerShell-tool judges; slices 3 and 4 delete them. `scripts/_test/drift-detection.sh` is not run by the gate.
 
+### Fixed — ai-connect 0.2.1: the watcher finds the venv deploy made
+
+- **Summary.** On a machine set up with `ai-connect`'s own `deploy.sh` or `setup.sh`, the message watcher
+  now runs and wakes the session when a message arrives; up to 0.2.0 it exited 1 on every session start and
+  turn end there, because it looked for a venv only inside the plugin directory (not run on Windows).
+- **Order.** `watch.sh` and `watch.ps1` use the first venv that is there: `AI_CONNECT_VENV`; the plugin
+  directory's own (`install.sh` / `install.cmd`, as before); then deploy's,
+  `${AI_CONNECT_HOME:-~/.local/share/ai-connect}/venv`, on Windows
+  `%USERPROFILE%\AppData\Local\ai-connect\venv`. With deploy's venv the watcher script runs from deploy's
+  copy of the plugin beside it when there is one.
+- **Security.** `AI_CONNECT_VENV` and `AI_CONNECT_HOME` choose the program the hook starts, and a project's
+  settings can set environment variables, so each is used only as an absolute path (no `..`) under the home,
+  outside the project, and only on a machine that has been set up; `AI_CONNECT_VENV`'s `bin/python` must be the
+  user's own (Linux, macOS). Otherwise it is ignored. The watcher also starts without any `PYTHON*`
+  variable, and ignores a home directory the project moved into itself; a project directory that is set but does not exist makes the variables untrusted.
+- **Unchanged.** Installed but never set up, the hooks stay silent whatever the variables say. Set up with no
+  venv anywhere, the error names the places it looked, not the values of the variables.
+
 ### Changed — crew 1.2.57: wave lanes run as a Claude Code workflow, the autopilot modules are frozen, and the Git Bash resolver has a strict mode (L-0727, slice 1)
 
 - **Summary.** `crew` 1.2.57: `/crew:autopilot wave` now fans its lanes out through the plugin's `wave` workflow (`/crew:wave`), a lane that fails or returns nothing readable is reported `unknown` instead of clean, and every lane brief opens with a `Ticket ID:` line.
