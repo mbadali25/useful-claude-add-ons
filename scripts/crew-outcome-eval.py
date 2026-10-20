@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
+import math
 import json
 import os
 import re
@@ -66,6 +68,7 @@ ARM_KEYS = ("arm", "author", "reviewer", "wallClockMinutes", "cli", "prompts")
 ARM_EXTRA_KEYS = {"crew": ("crewConfig", "assignment"), "baseline": ("reviewParse",)}
 TEST_TIMEOUT_SECONDS = 120
 PYTEST_GRADABLE_EXITS = (0, 1)
+RESULT_WORDS = ("PASSED", "FAILED", "ERROR", "SKIPPED", "XFAIL", "XPASS")
 DEFAULT_MAX_COST_USD = 150.0
 DEFAULT_FIRST_RUN_ESTIMATE_USD = 25.0
 CONTAINER_PROXY = "http://127.0.0.1:3128"
@@ -257,6 +260,28 @@ def place(repo, rel, source):
     shutil.copyfile(source, dest)
 
 
+TEST_CONFIG_NAMES = ("conftest.py", "pytest.ini", "tox.ini", "setup.cfg", "pyproject.toml", "sitecustomize.py",
+                     "usercustomize.py", ".coveragerc")
+
+
+def restore_test_config(repo, base_tree):
+    """Make every pytest-affecting file in `repo` the base tree's: an arm-edited or
+    arm-added conftest.py, pytest.ini, tox.ini, setup.cfg, pyproject.toml (addopts,
+    plugins, rootdir), sitecustomize or .pth is removed and the base version put
+    back, so the frozen tests run in the environment the task was validated in."""
+    for here, dirs, names in os.walk(repo):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for name in names:
+            if name in TEST_CONFIG_NAMES or name.endswith(".pth"):
+                os.unlink(os.path.join(here, name))
+    for here, dirs, names in os.walk(base_tree):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for name in names:
+            if name in TEST_CONFIG_NAMES or name.endswith(".pth"):
+                src = os.path.join(here, name)
+                place(repo, os.path.relpath(src, base_tree), src)
+
+
 def overlay(task, repo, base_tree, hidden):
     """Put the frozen grading set into `repo`. `hidden` False is the regression
     view: the regression inventory's test files come from the base tree (a
@@ -265,6 +290,8 @@ def overlay(task, repo, base_tree, hidden):
     cannot turn a visible test red; other grading files (conftest.py, fixtures)
     are the frozen ones. `hidden` True is the full grading set."""
     keep = {test_id.split("::", 1)[0] for test_id in task["regressionInventory"]}
+    if os.path.abspath(base_tree) != os.path.abspath(repo):
+        restore_test_config(repo, base_tree)
     if not hidden and os.path.abspath(base_tree) != os.path.abspath(repo):
         for rel in keep:
             src = os.path.join(base_tree, rel)
@@ -305,11 +332,11 @@ def run_tests(task, repo, ids, docker=None):
             # 3 (internal error), 4 (usage), 5 (nothing collected) or a signal is a run that cannot be
             # trusted even if it printed PASSED lines first (GEN-01: could not tell is not clean).
             text = ""
-    except subprocess.TimeoutExpired as exc:
+    except subprocess.TimeoutExpired:
         subprocess.run([docker, "rm", "-f", name], capture_output=True, check=False)
-        text = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        text = ""
     status = {}
-    lines = [ln.rstrip("\n") for ln in text.splitlines()]
+    lines = summary_lines(text)
     for test_id in ids:
         status[test_id] = "MISSING"
         for line in lines:
@@ -319,6 +346,31 @@ def run_tests(task, repo, ids, docker=None):
                 status[test_id] = word
                 break
     return status
+
+
+def summary_lines(text):
+    """The lines of pytest's `short test summary info` section and nothing else: from
+    the LAST header to the first line that is not a result line (the counts line, which
+    `-q` prints bare and `-qq` omits) or the end of output. Output the code under test prints
+    (captured stdout, a plugin, an atexit hook) sits before the header or after the
+    counts and is never read as a result. No header is no result at all, and a crash
+    or hang is caught by the exit-code allowlist and the timeout, not here. Residual, stated in the README: the
+    code under test runs inside pytest's own process and could forge the whole output;
+    this closes the stdout-echo vector, not a determined forger."""
+    lines = [ln.rstrip("\n") for ln in text.splitlines()]
+    header = None
+    for number, line in enumerate(lines):
+        if re.fullmatch(r"=+ short test summary info =+", line):
+            header = number
+    if header is None:
+        return []
+    results = []
+    for line in lines[header + 1:]:
+        if line.partition(" ")[0] in RESULT_WORDS:
+            results.append(line)
+            continue
+        return results if line.strip() else []
+    return results
 
 
 def graded_status(task, repo, base_tree, tmp, docker=None):
@@ -379,7 +431,7 @@ def validate_task(task, source_repo, docker=None):
 # --------------------------------------------------------------------------
 # usage and cost
 
-def claude_usage(home):
+def claude_usage(home, sessions=()):
     """(tokens, cost, models) over every Claude Code transcript under the run's
     own CLAUDE_CONFIG_DIR, subagent files included, each message once. Cost is
     UNKNOWN when any session is missing, unparseable or unpriced, or when a
@@ -397,6 +449,10 @@ def claude_usage(home):
         files.extend(crew_metrics._session_files(os.path.join(projects, slug), errors))
     if errors or not files:
         return UNKNOWN, UNKNOWN, ["transcripts cannot be listed" if errors else "no transcripts"]
+    have = {os.path.basename(path)[:-len(".jsonl")] for path, parent in files if not parent}
+    absent = sorted(set(sessions) - have)
+    if absent:
+        return UNKNOWN, UNKNOWN, [f"no transcript for CLI session {', '.join(absent)}"]
     for path, _parent in files:
         try:
             with open_arm_file(path):
@@ -462,6 +518,7 @@ def codex_usage(repo, home, model):
     sessions = []
     for here, _dirs, names in os.walk(os.path.join(home, ".codex", "sessions")):
         sessions.extend(n for n in names if n.endswith(".jsonl"))
+    threads = set()
     total = {"input": 0, "cachedInput": 0, "output": 0, "reasoning": 0}
     turns = 0
     for path in events:
@@ -472,6 +529,8 @@ def codex_usage(repo, home, model):
                     if not line:
                         continue
                     rec = json.loads(line)
+                    if isinstance(rec, dict) and rec.get("type") == "thread.started":
+                        threads.add(str(rec.get("thread_id")))
                     usage = rec.get("usage") if isinstance(rec, dict) and rec.get("type") == "turn.completed" else None
                     if isinstance(usage, dict):
                         turns += 1
@@ -485,6 +544,9 @@ def codex_usage(repo, home, model):
         except (OSError, ValueError, TypeError):
             return UNKNOWN, UNKNOWN
     if len(sessions) > len(events):
+        return UNKNOWN, UNKNOWN
+    if any(not any(name[:-len(".jsonl")].endswith(thread) for thread in threads) for name in sessions):
+        # a session log whose id no events file names was not measured
         return UNKNOWN, UNKNOWN
     if sessions and not turns:
         # a Codex session ran but no events file recorded a completed turn: nothing was measured
@@ -757,7 +819,13 @@ def invoke(docker, run, name, inner, timeout):
                              stdin=subprocess.DEVNULL)
         return out.returncode, out.stdout, False
     except subprocess.TimeoutExpired as exc:
-        subprocess.run([docker, "kill", name], capture_output=True, check=False)
+        killed = subprocess.run([docker, "kill", name], capture_output=True, check=False)
+        if killed.returncode != 0:
+            subprocess.run([docker, "rm", "-f", name], capture_output=True, check=False)
+            probe = subprocess.run([docker, "inspect", "-f", "{{.State.Running}}", name], capture_output=True,
+                                   text=True, check=False)
+            if probe.returncode == 0 and probe.stdout.strip() == "true":
+                fail(f"container {name} timed out and could not be stopped; not grading a run that may still be writing")
         text = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
         return 124, text, True
 
@@ -1043,7 +1111,7 @@ def run_once(ctx, task, arm, attempt, carried_cost=0.0):
     with Proxy(run, ctx["container_dir"]):
         driven = drive_arm(ctx["docker"], run, task, arm, clock)
     wall = round(clock() - started, 1)
-    tokens, claude_cost, models = claude_usage(run["home"])
+    tokens, claude_cost, models = claude_usage(run["home"], driven["sessions"])
     codex_model = arm.get("reviewer", {}).get("model") if arm["arm"] == "crew" else None
     codex_tokens, codex_cost_usd = codex_usage(run["repo"], run["home"], codex_model)
     own_cost = add_costs(claude_cost, codex_cost_usd)
@@ -1221,7 +1289,17 @@ def cmd_validate(args):
     return 0
 
 
-def canary_ok(results_path, docker=None):
+def canary_fingerprint(eval_dir):
+    """What a canary vouches for besides the image: the proxy allowlist, the proxy and the
+    in-container wrapper. Any change to them makes an earlier canary stale."""
+    digest = hashlib.sha256()
+    for name in ("proxy-allowlist.txt", "proxy.py", "eval-run.py"):
+        with open(os.path.join(eval_dir, "container", name), "rb") as fh:
+            digest.update(name.encode() + b"\0" + fh.read() + b"\0")
+    return digest.hexdigest()
+
+
+def canary_ok(results_path, docker=None, eval_dir=None):
     path = os.path.join(os.path.dirname(os.path.abspath(results_path)), "canary.txt")
     try:
         with open(path, encoding="utf-8") as fh:
@@ -1229,6 +1307,8 @@ def canary_ok(results_path, docker=None):
     except OSError:
         return False
     if not lines or CANARY_PASS not in lines[-1:]:
+        return False
+    if eval_dir is not None and f"fingerprint={canary_fingerprint(eval_dir)}" not in lines[0].split():
         return False
     if docker:
         # the canary vouches for one image: its first line records the id it ran against
@@ -1238,17 +1318,31 @@ def canary_ok(results_path, docker=None):
     return True
 
 
+def lock_results(results_path):
+    """An exclusive lock for the life of a `run`: two harness processes on one results
+    file would each pass the budget check before either appended."""
+    import fcntl  # pylint: disable=import-outside-toplevel - POSIX only, like the suite
+    handle = open(results_path + ".lock", "w", encoding="utf-8")  # noqa: SIM115 - held until the run ends
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        fail(f"another run is using {results_path} (lock held); the budget is checked per process")
+    return handle
+
+
 def cmd_run(args):
     arms = check_method(args.eval_dir)
     tasks = selected_tasks(args)
     docker = which("docker")
-    if not canary_ok(args.results, docker):
+    if not canary_ok(args.results, docker, args.eval_dir):
         fail("no passing canary for the current image: run evals/crew-outcome/container/canary.sh and keep its "
              "output as canary.txt beside the results file")
     ctx = {"docker": docker, "source_repo": args.source_repo, "runs_dir": args.runs_dir,
            "results": args.results, "crew_plugin": args.crew_plugin,
            "container_dir": os.path.join(args.eval_dir, "container")}
     os.makedirs(args.runs_dir, exist_ok=True)
+    lock = lock_results(args.results)
     chosen = [args.arm] if args.arm else list(ARMS)
     for task in tasks:
         for arm_name in chosen:
@@ -1260,6 +1354,7 @@ def cmd_run(args):
                 ctx["before_rerun"] = check
                 row = run_chain(ctx, task, arms[arm_name])
                 print(f"run: {row['task']} {row['arm']} -> {row['runStatus']} cost={row['costUsd']}")
+    lock.close()
     return 0
 
 
@@ -1267,6 +1362,17 @@ def cmd_report(args):
     rows = read_results(args.results)
     sys.stdout.write(report_text(rows))
     return 0
+
+
+def positive_amount(text):
+    """A finite amount above zero: NaN or infinity would make every budget comparison false."""
+    try:
+        value = float(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number") from exc
+    if not math.isfinite(value) or value <= 0:
+        raise argparse.ArgumentTypeError(f"{text!r} must be a finite amount above zero")
+    return value
 
 
 def build_parser():
@@ -1286,8 +1392,8 @@ def build_parser():
     run.add_argument("--results", required=True)
     run.add_argument("--runs-dir", required=True)
     run.add_argument("--crew-plugin", default=os.path.join(REPO, "plugin", "crew"))
-    run.add_argument("--max-cost-usd", type=float, default=DEFAULT_MAX_COST_USD)
-    run.add_argument("--first-run-estimate-usd", type=float, default=DEFAULT_FIRST_RUN_ESTIMATE_USD)
+    run.add_argument("--max-cost-usd", type=positive_amount, default=DEFAULT_MAX_COST_USD)
+    run.add_argument("--first-run-estimate-usd", type=positive_amount, default=DEFAULT_FIRST_RUN_ESTIMATE_USD)
     rep = sub.add_parser("report")
     rep.add_argument("--results", required=True)
     return parser

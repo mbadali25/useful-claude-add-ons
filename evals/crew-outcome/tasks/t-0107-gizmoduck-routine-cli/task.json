@@ -150,5 +150,6 @@
   "plugin/gizmoduck/scripts/_test/test_report_html.py",
   "plugin/gizmoduck/scripts/_test/test_routine_orchestration.py",
   "plugin/gizmoduck/scripts/_test/test_routine_manifest.py"
- ]
+ ],
+ "referencePr": 273
 }

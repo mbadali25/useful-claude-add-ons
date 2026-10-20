@@ -20,8 +20,8 @@ DOCKER="${DOCKER:-/usr/bin/docker}"
 PYTHON="${PYTHON:-/usr/bin/python3}"
 IMAGE="${CANARY_IMAGE:-crew-outcome-eval:1}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ "$#" -lt 2 ]; then
-  echo "usage: canary.sh <out-file> <host-path>..." >&2
+if [ "$#" -lt 4 ]; then
+  echo "usage: canary.sh <out-file> <host checkout> <task store> <earlier run dir> [<host-path>...]" >&2
   exit 2
 fi
 OUT="$1"
@@ -37,6 +37,11 @@ if ! "$DOCKER" image inspect "$IMAGE" >/dev/null 2>&1; then
   exit 2
 fi
 
+FINGERPRINT="$("$PYTHON" -c 'import hashlib, os, sys
+d = hashlib.sha256()
+for n in ("proxy-allowlist.txt", "proxy.py", "eval-run.py"):
+    d.update(n.encode() + b"\0" + open(os.path.join(sys.argv[1], n), "rb").read() + b"\0")
+print(d.hexdigest())' "$HERE")"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/canary.XXXXXX")"
 PROXY_PID=""
 mkdir -p "$WORK/repo" "$WORK/home" "$WORK/proxysock"
@@ -59,7 +64,7 @@ if ! kill -0 "$PROXY_PID" 2>/dev/null || [ ! -S "$WORK/proxysock/proxy.sock" ]; 
   exit 2
 fi
 
-echo "canary: $(date -u +%Y-%m-%dT%H:%M:%SZ) image=$("$DOCKER" image inspect -f '{{.Id}}' "$IMAGE") network=none proxy=unix-socket" > "$OUT"
+echo "canary: $(date -u +%Y-%m-%dT%H:%M:%SZ) image=$("$DOCKER" image inspect -f '{{.Id}}' "$IMAGE") network=none proxy=unix-socket fingerprint=$FINGERPRINT" > "$OUT"
 
 PROBE='
 fail=0

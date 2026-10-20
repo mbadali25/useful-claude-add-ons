@@ -86,6 +86,23 @@ and must reach the two model API hosts through the proxy. `run` refuses unless `
 `canary: PASS` and its first line names the id of the image that is current (`docker image inspect`), so a canary does not
 vouch for a rebuilt image.
 
+Grading is hardened beyond the container. Before the frozen tests run, every pytest-affecting file in the copy
+(`conftest.py`, `pytest.ini`, `tox.ini`, `setup.cfg`, `pyproject.toml`, `sitecustomize.py`, `.pth`) is replaced by the base
+tree's, so an arm cannot change the test environment. A result is read only from pytest's own `short test summary info`
+section (the last one, up to the first non-result line); a `PASSED` line the code under test prints elsewhere is ignored, a
+run that exits other than 0 or 1 or times out has no result, and a missing result is `MISSING`, which fails. Residual,
+accepted: the code under test runs inside pytest's process, so a determined forger could print a whole fake report; this
+closes the echo, not that. `run` also holds an exclusive lock on the results file (two processes would each pass the
+budget check), refuses a NaN, infinite or non-positive budget, and refuses to grade after a timed-out container could
+not be stopped. `canary.txt` is valid only for the current image and the current proxy allowlist, proxy and wrapper (a
+fingerprint on its first line); the canary needs the host checkout, the task store and an earlier run dir.
+
+**Cost baseline.** There is no Codex price row yet (`CODEX_PRICES` is empty, U9: rows only from the vendor page), so a
+crew run that used Codex review has `costUsd` UNKNOWN, the budget stops a batch on it, and the cost comparison cannot be
+produced. This is the documented baseline for Slice 2. Entering the Codex price is a Slice 3 prerequisite. Image supply
+chain, accepted: the base is pinned by digest, but Claude Code needs its postinstall, so npm transitive dependencies and
+apt packages float at build time; the canary records the image id it vouches for.
+
 A run is flagged `contaminated` (excluded from the verdict and listed) only on evidence of reference access: the
 reference commit sha or the reference PR's URL in a Claude transcript or Codex event; three or more distinct,
 distinctive lines (60+ characters, absent from the base version of that file and from the task statement) of a hidden
@@ -228,8 +245,9 @@ an earlier canary ran with `seccomp=unconfined` and did not prove that), and `sp
 harness at the Slice 2 close, after the container moved to `--network none` with the proxy on a unix socket and grading
 moved into the image (one intermediate run was `contaminated`: with `last_refresh` dropped from the Codex login, Codex tried
 to refresh it at `auth.openai.com` and the proxy refused, which is why `last_refresh` is kept): baseline scored
-(3 `/code-review` cycles, 0.17 USD), crew scored with 2 review cycles, 0 incomplete attempts, 0.89 USD Claude list price,
-Codex 447,286 input / 2,568 output tokens (unpriced, so the crew run's `costUsd` is UNKNOWN), 0 escaped defects, 293 s.
+(3 `/code-review` cycles, 0.19 USD), crew scored with 1 review cycle, 0 incomplete attempts, 0.80 USD Claude list price,
+Codex 190,878 input / 1,121 output tokens (unpriced, so the crew run's `costUsd` is UNKNOWN), 0 escaped defects, 219 s (final
+run, after the grading hardening below; an earlier run of the same design had 2 review cycles).
 
 Codex usage as `review_run.py` leaves it in `codex-events.jsonl` (the same five keys the spec quoted):
 `{"type":"turn.completed","usage":{"input_tokens":102324,"cached_input_tokens":76800,"cache_write_input_tokens":0,"output_tokens":633,"reasoning_output_tokens":159}}`.

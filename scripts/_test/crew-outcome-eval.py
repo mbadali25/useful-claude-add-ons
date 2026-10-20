@@ -489,9 +489,10 @@ def codex_events(tmp, usages, sessions=0):
     home = os.path.join(tmp, "chome")
     for n, usage in enumerate(usages):
         write(os.path.join(repo, ".work", "review", f"r{n}", "codex-events.jsonl"),
-              json.dumps({"type": "turn.completed", "usage": usage}) + "\n")
+              json.dumps({"type": "thread.started", "thread_id": f"thread-{n}"}) + "\n"
+              + json.dumps({"type": "turn.completed", "usage": usage}) + "\n")
     for n in range(sessions):
-        write(os.path.join(home, ".codex", "sessions", f"rollout-{n}.jsonl"), "{}\n")
+        write(os.path.join(home, ".codex", "sessions", f"rollout-2026-thread-{n}.jsonl"), "{}\n")
     return repo, home
 
 
@@ -862,12 +863,119 @@ def case_codex_session_with_no_completed_turn_makes_usage_unknown(tmp):
 
 def case_a_grading_run_that_crashes_after_printing_passed_lines_is_missing(tmp):
     def task_for(code):
-        script = f"import sys; print('PASSED tests/x.py::a'); sys.exit({code})"
+        script = ("import sys; print('=== short test summary info ==='); print('PASSED tests/x.py::a'); "
+                  f"print('1 passed in 0.1s'); sys.exit({code})")
         return {"testCommand": ["python3", "-c", script]}
 
     got = {code: eval_mod.run_tests(task_for(code), tmp, ["tests/x.py::a"])["tests/x.py::a"] for code in (0, 1, 2, 3, 5)}
     ok = got == {0: "PASSED", 1: "PASSED", 2: "MISSING", 3: "MISSING", 5: "MISSING"}
     return ok, got
+
+
+def case_a_qq_run_with_no_counts_line_still_reads_its_summary(tmp):
+    script = "print('=== short test summary info ==='); print('PASSED tests/x.py::a'); print('FAILED tests/x.py::b')"
+    status = eval_mod.run_tests({"testCommand": ["python3", "-c", script]}, tmp, ["tests/x.py::a", "tests/x.py::b"])
+    return status == {"tests/x.py::a": "PASSED", "tests/x.py::b": "FAILED"}, status
+
+
+def case_a_printed_passed_line_cannot_override_a_real_failure(tmp):
+    script = ("import sys; print('PASSED tests/x.py::a'); print('=== short test summary info ==='); "
+              "print('FAILED tests/x.py::a - assert 0'); print('1 failed in 0.1s'); "
+              "print('PASSED tests/x.py::b'); sys.exit(1)")
+    status = eval_mod.run_tests({"testCommand": ["python3", "-c", script]}, tmp, ["tests/x.py::a", "tests/x.py::b"])
+    return status == {"tests/x.py::a": "FAILED", "tests/x.py::b": "MISSING"}, status
+
+
+def case_a_grading_run_that_hangs_after_its_summary_is_missing(tmp):
+    script = ("import sys, time; print('=== short test summary info ==='); print('PASSED tests/x.py::a'); "
+              "print('1 passed in 0.1s'); sys.stdout.flush(); time.sleep(30)")
+    saved = eval_mod.TEST_TIMEOUT_SECONDS
+    eval_mod.TEST_TIMEOUT_SECONDS = 1
+    try:
+        status = eval_mod.run_tests({"testCommand": ["python3", "-c", script]}, tmp, ["tests/x.py::a"])
+    finally:
+        eval_mod.TEST_TIMEOUT_SECONDS = saved
+    return status == {"tests/x.py::a": "MISSING"}, status
+
+
+def case_an_arm_edited_pytest_config_is_restored_for_grading(tmp):
+    def tamper(repo):
+        write(os.path.join(repo, "pytest.ini"), "[pytest]\naddopts = -k nothing_matches\n")
+        write(os.path.join(repo, "tests", "conftest.py"), "raise RuntimeError('arm conftest')\n")
+        write(os.path.join(repo, "sitecustomize.py"), "raise SystemExit(7)\n")
+
+    result = graded(Fix(tmp), mutate=tamper)
+    return result["escapedDefects"] == 0 and result["regressionTestsFailed"] == 0, result
+
+
+def case_a_claude_cli_session_without_a_transcript_makes_cost_unknown(tmp):
+    home = transcript_home(tmp, [assistant("m1", 1000)])
+    complete = eval_mod.claude_usage(home, ["s1"])
+    missing = eval_mod.claude_usage(home, ["s1", "s2"])
+    return complete[1] != UNKNOWN and missing[1] == UNKNOWN, (complete[1], missing[1])
+
+
+def case_a_codex_session_no_events_file_names_makes_usage_unknown(tmp):
+    repo, home = codex_events(tmp, [USAGE], sessions=1)
+    write(os.path.join(repo, ".work", "review", "other", "codex-events.jsonl"),
+          json.dumps({"type": "thread.started", "thread_id": "thread-other"}) + "\n")
+    write(os.path.join(home, ".codex", "sessions", "rollout-2026-thread-unnamed.jsonl"), "{}\n")
+    return eval_mod.codex_usage(repo, home, "m") == (UNKNOWN, UNKNOWN), eval_mod.codex_usage(repo, home, "m")
+
+
+def case_a_failed_docker_kill_after_a_timeout_stops_the_run(tmp):
+    fix = Fix(tmp)
+    docker = os.path.join(tmp, "stuck-docker")
+    write(docker, "#!/bin/sh\ncase \"$1\" in run) sleep 30;; kill) exit 1;; inspect) echo true;; rm) exit 0;; esac\n", EXEC)
+    run = {"repo": "/r/repo", "home": "/r/home", "proxylog": "/r/log", "dir": "/r", "proxysock": "/r/sock"}
+    with patched_env(fix.env):
+        message = refused(eval_mod.invoke, docker, run, "n", ["x"], 1)
+    return bool(message and "could not be stopped" in message), message
+
+
+def case_a_canary_goes_stale_when_the_proxy_allowlist_changes(tmp):
+    fix = Fix(tmp)
+    eval_dir = os.path.join(tmp, "evaldir")
+    shutil.copytree(os.path.join(REAL_EVAL_DIR, "container"), os.path.join(eval_dir, "container"))
+    canary = os.path.join(os.path.dirname(fix.results), "canary.txt")
+    fingerprint = eval_mod.canary_fingerprint(eval_dir)
+    write(canary, f"canary: t image=sha256:x network=none fingerprint={fingerprint}\nPASS x\ncanary: PASS\n")
+    fresh = eval_mod.canary_ok(fix.results, None, eval_dir)
+    with open(os.path.join(eval_dir, "container", "proxy-allowlist.txt"), "a", encoding="utf-8") as fh:
+        fh.write("github.com\n")
+    stale = eval_mod.canary_ok(fix.results, None, eval_dir)
+    return (fresh, stale) == (True, False), (fresh, stale)
+
+
+def case_the_canary_script_demands_the_three_host_paths_and_records_the_fingerprint(tmp):
+    canary = open(os.path.join(REAL_EVAL_DIR, "container", "canary.sh"), encoding="utf-8").read()
+    return '"$#" -lt 4' in canary and "fingerprint=$FINGERPRINT" in canary, '"$#" -lt 4' in canary
+
+
+def case_the_budget_flags_refuse_nan_infinity_and_non_positive_amounts(tmp):
+    bad = []
+    for text in ("nan", "inf", "-1", "0", "abc"):
+        try:
+            eval_mod.positive_amount(text)
+            bad.append(text)
+        except Exception:  # noqa: BLE001 - any refusal counts; argparse raises ArgumentTypeError
+            pass
+    return not bad and eval_mod.positive_amount("5") == 5.0, bad
+
+
+def case_a_second_run_on_one_results_file_is_refused(tmp):
+    path = os.path.join(tmp, "results.jsonl")
+    first = eval_mod.lock_results(path)
+    message = refused(eval_mod.lock_results, path)
+    first.close()
+    again = eval_mod.lock_results(path)
+    again.close()
+    return bool(message and "another run" in message), message
+
+
+def case_the_t_0107_task_names_its_reference_pr(tmp):
+    task = eval_mod.load_task(os.path.join(REAL_EVAL_DIR, "tasks", "t-0107-gizmoduck-routine-cli"))
+    return task.get("referencePr") == 273, task.get("referencePr")
 
 
 def case_a_compact_json_findings_array_parses_as_findings(tmp):
@@ -1249,6 +1357,18 @@ CASES = (
     ("must-block: a FIFO where a transcript or events file belongs is UNKNOWN or a reason, not a hang", case_a_fifo_where_a_transcript_or_events_file_belongs_is_unknown_not_a_hang),
     ("must-block: a canary for another image does not open the run gate (the current image's does)", case_a_canary_for_another_image_does_not_open_the_gate),
     ("must-block: the canary mirrors the arm isolation options, has no network and checks the interfaces", case_the_canary_mirrors_the_arm_isolation_options_and_probes_the_gateway),
+    ("must-allow: a -qq run with no counts line still reads its summary", case_a_qq_run_with_no_counts_line_still_reads_its_summary),
+    ("must-block: a printed PASSED line cannot override a real failure (only pytest's own summary counts)", case_a_printed_passed_line_cannot_override_a_real_failure),
+    ("must-block: a grading run that hangs after its summary is MISSING", case_a_grading_run_that_hangs_after_its_summary_is_missing),
+    ("must-block: an arm-edited pytest config (pytest.ini, conftest, sitecustomize) is restored for grading", case_an_arm_edited_pytest_config_is_restored_for_grading),
+    ("must-block: a Claude CLI session without a transcript makes cost UNKNOWN", case_a_claude_cli_session_without_a_transcript_makes_cost_unknown),
+    ("must-block: a Codex session no events file names makes usage UNKNOWN", case_a_codex_session_no_events_file_names_makes_usage_unknown),
+    ("must-block: a failed docker kill after a timeout stops the run before grading", case_a_failed_docker_kill_after_a_timeout_stops_the_run),
+    ("must-block: a canary goes stale when the proxy allowlist changes (a fresh one opens the gate)", case_a_canary_goes_stale_when_the_proxy_allowlist_changes),
+    ("must-block: the canary script demands the three host paths and records the fingerprint", case_the_canary_script_demands_the_three_host_paths_and_records_the_fingerprint),
+    ("must-block: the budget flags refuse NaN, infinity and non-positive amounts", case_the_budget_flags_refuse_nan_infinity_and_non_positive_amounts),
+    ("must-block: a second run on one results file is refused while the first holds it", case_a_second_run_on_one_results_file_is_refused),
+    ("must-allow: the T-0107 task names its reference PR", case_the_t_0107_task_names_its_reference_pr),
 )
 
 # pylint: enable=line-too-long
