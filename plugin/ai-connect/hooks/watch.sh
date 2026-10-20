@@ -19,6 +19,13 @@ PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 # CDPATH makes a relative `cd` land somewhere else, and a relative HOME is a project-relative path
 # once the project is the working directory: neither is accepted.
 unset CDPATH
+# CLAUDE_PROJECT_DIR is set by Claude Code, but a project's settings could set it to a path that
+# does not exist, which would leave only the working directory as "the project". Set and
+# unresolvable is not trusted: no variable-chosen venv.
+PROJ_BAD=0
+if [ -n "${CLAUDE_PROJECT_DIR:-}" ] && ! (cd "$CLAUDE_PROJECT_DIR" 2>/dev/null); then
+    PROJ_BAD=1
+fi
 case "${HOME:-}" in
     /*) ;;
     *) HOME="" ;;
@@ -60,6 +67,7 @@ if [ -n "${HOME:-}" ]; then
     HOME_REAL="$(cd "$HOME" 2>/dev/null && pwd -P)" || HOME_REAL=""
 fi
 trusted_dir() {
+    [ "$PROJ_BAD" = 0 ] || return 1
     case "$1" in /*) ;; *) return 1 ;; esac
     case "/$1/" in */../*) return 1 ;; esac
     _real="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
@@ -122,11 +130,13 @@ if [ -z "$PYTHON" ]; then
     # changes on every plugin update, so a venv install.sh made inside it does
     # not come along; deploy's lives outside it and does. The message names
     # places, not the values of the variables.
-    echo "ai-connect watch.sh: no venv found (looked in $ROOT/venv, in deploy's ~/.local/share/ai-connect/venv or under AI_CONNECT_HOME, and at AI_CONNECT_VENV; a variable that is not an absolute path under your home, outside the project, is ignored) - run $ROOT/install.sh --client (again after each plugin update), or $ROOT/deploy/deploy.sh peer once" >&2
+    echo "ai-connect watch.sh: no venv found (looked in $ROOT/venv, in deploy's ~/.local/share/ai-connect/venv or under AI_CONNECT_HOME, and at AI_CONNECT_VENV; a variable that is not an absolute path under your home, outside the project, is ignored) - run $ROOT/install.sh --client (again after each plugin update), or $ROOT/deploy/deploy.sh peer (or deploy/setup.sh) once" >&2
     exit 1
 fi
 # A project's settings can set PYTHONPATH, PYTHONPYCACHEPREFIX and the like, which would make a
 # trusted interpreter import the repository's code: every PYTHON* variable is dropped.
+# macOS's venv launcher variable steers the interpreter's home the same way
+unset __PYVENV_LAUNCHER__
 for _v in $(env | sed -n 's/^\(PYTHON[A-Za-z0-9_]*\)=.*/\1/p'); do
     unset "$_v"
 done

@@ -21,6 +21,9 @@ $watcher = 'integrations\claude-code\aiconnect_watch.py'
 # the OS names the profile directory, a USERPROFILE that is not that directory and lies inside
 # the project the session runs in is replaced by the OS's answer.
 $userHome = if ($env:USERPROFILE) { $env:USERPROFILE } else { $HOME }
+# CLAUDE_PROJECT_DIR set to a path that does not exist could leave only the working directory as
+# "the project": set and unresolvable is not trusted (no variable-chosen venv).
+$projBad = [bool]$env:CLAUDE_PROJECT_DIR -and -not (Test-Path -LiteralPath $env:CLAUDE_PROJECT_DIR -PathType Container)
 $acctHome = [Environment]::GetFolderPath('UserProfile')
 if ($acctHome -and ([Environment]::OSVersion.Platform -eq 'Win32NT') `
         -and ($userHome.TrimEnd('\', '/') -ne $acctHome.TrimEnd('\', '/'))) {
@@ -53,6 +56,7 @@ function Test-Under([string]$child, [string]$parent) {
     return ($child + $sepChar).StartsWith(($parent + $sepChar), $cmp)
 }
 function Test-TrustedDir([string]$dir) {
+    if ($projBad) { return $false }
     if (-not $dir) { return $false }
     if (-not [IO.Path]::IsPathRooted($dir)) { return $false }
     if ($dir -match '(^|[\\/])\.\.([\\/]|$)') { return $false }
@@ -119,7 +123,7 @@ if (-not $python) {
     # changes on every plugin update, so a venv install.cmd made inside it does
     # not come along; deploy's lives outside it and does. The message names
     # places, not the values of the variables.
-    [Console]::Error.WriteLine("ai-connect watch.ps1: no venv found (looked in $(Join-Path $root 'venv'), in deploy's %USERPROFILE%\AppData\Local\ai-connect\venv or under AI_CONNECT_HOME, and at AI_CONNECT_VENV; a variable that is not an absolute path under your home, outside the project, is ignored) - run $(Join-Path $root 'install.cmd') -Client (again after each plugin update), or $(Join-Path (Join-Path $root 'deploy') 'deploy.ps1') peer once")
+    [Console]::Error.WriteLine("ai-connect watch.ps1: no venv found (looked in $(Join-Path $root 'venv'), in deploy's %USERPROFILE%\AppData\Local\ai-connect\venv or under AI_CONNECT_HOME, and at AI_CONNECT_VENV; a variable that is not an absolute path under your home, outside the project, is ignored) - run $(Join-Path $root 'install.cmd') -Client (again after each plugin update), or $(Join-Path (Join-Path $root 'deploy') 'deploy.ps1') peer (or setup.ps1) once")
     exit 1
 }
 # A project's settings can set PYTHONPATH, PYTHONPYCACHEPREFIX and the like, which would make a

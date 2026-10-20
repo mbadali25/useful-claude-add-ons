@@ -441,6 +441,62 @@ def test_a_relative_home_with_a_cdpath_does_not_make_the_projects_venv_the_defau
     assert not machine.marker.exists(), result.stderr
 
 
+@pytest.mark.parametrize("variable", ["AI_CONNECT_VENV", "AI_CONNECT_HOME"])
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_an_unresolvable_project_dir_trusts_no_variable_chosen_venv(tmp_path, event, hook, variable):  # pylint: disable=unused-argument
+    """CLAUDE_PROJECT_DIR set to a path that is not there leaves only the working directory as the project.
+    A session started in a subdirectory then has a venv beside it, inside the project, that passes: it must not."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    home = machine.deploy_home(hook)
+    machine.add_venv(home / "venv", "deploy")
+    machine.add_deployed_app(home)
+    leaf = "venv" if variable == "AI_CONNECT_HOME" else ""
+    # the project is under the home here, so the planted venv would otherwise pass the home test
+    inside = machine.home / "proj"
+    sub = inside / "sub"
+    sub.mkdir(parents=True)
+    planted(machine, inside / "evil" / leaf)
+    env = {variable: str(inside / "evil"), "CLAUDE_PROJECT_DIR": str(tmp_path / "does-not-exist")}
+    result = machine.run(hook, windows=as_windows(hook), extra_env=env, cwd=sub)
+    assert (result.returncode, result.stderr) == (WAKE, "")
+    assert machine.started()[0] == "deploy"
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_a_resolvable_project_dir_still_allows_a_venv_outside_it(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """The same layout with CLAUDE_PROJECT_DIR naming the real project: a venv under the home and outside
+    the project is used."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    named = machine.home / "named venv"
+    machine.add_venv(named, "named")
+    project = machine.home / "proj"
+    project.mkdir()
+    result = machine.run(hook, windows=as_windows(hook), cwd=project,
+                         extra_env={"AI_CONNECT_VENV": str(named), "CLAUDE_PROJECT_DIR": str(project)})
+    assert (result.returncode, result.stderr) == (WAKE, "")
+    assert machine.started()[0] == "named"
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_the_venv_launcher_variable_is_dropped(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """__PYVENV_LAUNCHER__ steers where a macOS interpreter looks for its home: not passed on (watch.sh)."""
+    stubs(hook)
+    if as_windows(hook):
+        pytest.skip("macOS only variable; watch.ps1 does not handle it")
+    machine = Machine(tmp_path)
+    machine.add_config()
+    machine.add_venv()
+    (machine.root / "venv" / "bin" / "python").write_text(
+        f'#!/bin/sh\nprintf "own\\n%s" "$1" > "{machine.marker}"\necho "PL=${{__PYVENV_LAUNCHER__:-}}"\n'
+        f'exit {WAKE}\n', encoding="utf-8", newline="\n")
+    result = machine.run(hook, windows=False, extra_env={"__PYVENV_LAUNCHER__": "/x/python"})
+    assert (result.returncode, result.stdout.strip()) == (WAKE, "PL="), result.stderr
+
+
 @pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
 def test_python_variables_from_the_project_do_not_reach_the_interpreter(tmp_path, event, hook):  # pylint: disable=unused-argument
     """PYTHONPATH and friends would make a trusted interpreter import the repository's code: they are dropped."""
@@ -476,7 +532,9 @@ def test_a_home_moved_into_the_project_does_not_make_the_projects_venv_the_defau
     machine.add_venv(machine.deploy_home(hook) / "venv", "evil")
     result = machine.run(hook, windows=False, cwd=machine.project)
     assert not machine.marker.exists(), result.stderr
-    assert result.returncode in (0, 1)
+    # HOME is replaced by the account's: with a real config there and no venv it is the error, else silence
+    account = Path(os.path.expanduser("~" + (os.environ.get("USER") or "root")))
+    assert result.returncode == (1 if (account / ".config" / "ai-connect" / "config.yaml").exists() else 0)
 
 
 @pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)

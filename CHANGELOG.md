@@ -23,7 +23,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   settings can set environment variables, so each is used only as an absolute path (no `..`) under the home,
   outside the project, and only on a machine that has been set up; `AI_CONNECT_VENV`'s `bin/python` must be the
   user's own (Linux, macOS). Otherwise it is ignored. The watcher also starts without any `PYTHON*`
-  variable, and ignores a home directory the project moved into itself.
+  variable, and ignores a home directory the project moved into itself; a project directory that is set but does not exist makes the variables untrusted.
 - **Unchanged.** Installed but never set up, the hooks stay silent whatever the variables say. Set up with no
   venv anywhere, the error names the places it looked, not the values of the variables.
 
