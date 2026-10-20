@@ -400,11 +400,12 @@ def test_a_stdin_larger_than_the_bound_is_a_problem_not_a_truncation():
     assert "larger than" in problem and len(data) <= crew_hook.MAX_STDIN
 
 
+@pytest.mark.skipif(h.BASH is None, reason="no working bash - the child was NOT run")
 def test_a_child_that_backgrounds_work_holding_its_pipes_does_not_hold_the_dispatcher_up():
     script = "sleep 20 & echo started"
 
     started = time.monotonic()
-    result = crew_hook.run_child(["bash", "-c", script], b"", 30, dict(os.environ))
+    result = crew_hook.run_child([h.BASH, "-c", script], b"", 30, dict(os.environ))
 
     assert result["exit"] == 0 and result["stdout"].strip() == b"started"
     assert time.monotonic() - started < 10
