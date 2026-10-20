@@ -976,6 +976,19 @@ def test_relaunch_resumes_reserved_round_without_new_reservation(tmp_path):
     assert (len(launch), "--resume-round 1" in launch[0], _rounds(root)) == (1, True, 1)
 
 
+def test_start_json_relaunch_argv_carries_the_reserved_round(tmp_path):
+    root = _started(tmp_path)
+    wt = _isolated(root)
+    crew_wave.lane_init(str(wt), str(root), "s", "T-1")
+    review_ledger.reserve(str(root), "T-1", "claude")
+    _gone(root, wt)
+
+    out = json.loads(_cli("start", "--root", root, "--set", "s", "--json").stdout)
+
+    launch = next(entry for entry in out["launches"] if entry["ticket"] == "T-1")
+    assert (launch["argv"][-2:], _rounds(root)) == (["--resume-round", "1"], 1)
+
+
 def test_relaunch_with_an_unreadable_ledger_stops_and_reserves_nothing(tmp_path):
     # The neighbour of collect's case: an unreadable ledger is not "no round reserved".
     root = _started(tmp_path)

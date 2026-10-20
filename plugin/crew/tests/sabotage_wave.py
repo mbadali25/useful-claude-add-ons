@@ -18,6 +18,8 @@ GUARD = os.path.join(_S, "scope_guard.py")
 LEDGER = os.path.join(_S, "review_ledger.py")
 
 _W = "tests/test_crew_wave.py::"
+_WF = "tests/test_crew_wave_workflow.py::"
+WAVEJS = os.path.join(CREW, "workflows", "wave.js")
 _G = "tests/test_scope_guard_wave.py::"
 
 WAVE_MUTATIONS = (
@@ -41,9 +43,22 @@ WAVE_MUTATIONS = (
      '    if status not in OPEN_STATUSES | {"direction"}:',
      _W + "test_plan_refuses_direction_status_ticket"),
     ("WAVE: a relaunch reserves a fresh review round", WAVE,
-     "        lines.append(_launch(top, slug, ticket, _reserved_round(top, ticket)))\n",
-     '        lines.append(_launch(top, slug, ticket, review_ledger.reserve(top, ticket, "claude")[1]))\n',
+     "        text, argv, model = _launch(top, slug, ticket, _reserved_round(top, ticket))\n",
+     '        text, argv, model = _launch(top, slug, ticket, review_ledger.reserve(top, ticket, "claude")[1])\n',
      _W + "test_relaunch_resumes_reserved_round_without_new_reservation"),
+    ("WAVE: start --json lists a launch the launch lines do not", WAVE,
+     "        launches.append(dict({\"ticket\": ticket, \"argv\": argv}, **({\"model\": model} if model else {})))\n",
+     "        launches.append(dict({\"ticket\": ticket, \"argv\": argv}, **({\"model\": model} if model else {})))\n"
+     "        launches.append({\"ticket\": ticket + \"-x\", \"argv\": argv})\n",
+     _W + "test_start_json_launches_follow_the_launch_lines_in_order"),
+    ("WAVE: start --json argv drops the reserved round", WAVE,
+     "        argv += [\"--resume-round\", str(resume)]\n",
+     "        pass\n",
+     _W + "test_start_json_relaunch_argv_carries_the_reserved_round"),
+    ("WAVE: the lane brief drops its Ticket ID line", WAVE,
+     "        f\"Ticket ID: {ticket}\",\n",
+     "",
+     _W + "test_lane_prompt_carries_ticket_id"),
     ("WAVE: collect reads a missing lane file as clean", WAVE,
      '        return dict(row, reason=f"its lane file is {state}")\n',
      '        return dict(row, state="clean", reason=f"its lane file is {state}")\n',
@@ -100,4 +115,29 @@ WAVE_MUTATIONS = (
      '    launch = LAUNCH if model is None else LAUNCH[:-1] + f", model: {model})"\n',
      "    launch = LAUNCH\n",
      _W + "test_launch_line_carries_developer_model"),
+    # L-0727: workflows/wave.js (run under node by test_crew_wave_workflow.py).
+    ("WAVE.JS: a lane agent runs without isolation worktree", WAVEJS,
+     "isolation: 'worktree', schema: LANE_SCHEMA",
+     "schema: LANE_SCHEMA",
+     _WF + "test_three_launches_with_max_lanes_two_peak_at_two_in_worktrees"),
+    ("WAVE.JS: every lane runs at once, past maxLanes", WAVEJS,
+     "Math.min(maxLanes, started.lanes.length)",
+     "started.lanes.length",
+     _WF + "test_three_launches_with_max_lanes_two_peak_at_two_in_worktrees"),
+    ("WAVE.JS: a rejected lane agent reads as clean", WAVEJS,
+     "    return unknown(lane.ticket, `the lane agent failed:",
+     "    return { ticket: lane.ticket, state: 'clean', reason: `the lane agent failed:",
+     _WF + "test_a_rejected_lane_agent_is_unknown_even_when_collect_says_clean"),
+    ("WAVE.JS: a lane's unknown is overwritten by collect's clean", WAVEJS,
+     "    if (mine.state === 'unknown') {",
+     "    if (false) {",
+     _WF + "test_a_rejected_lane_agent_is_unknown_even_when_collect_says_clean"),
+    ("WAVE.JS: a lane state outside the four is accepted", WAVEJS,
+     "    if (!LANE_STATES.includes(got.state)) {",
+     "    if (false) {",
+     _WF + "test_a_lane_agent_reporting_a_state_outside_the_four_is_unknown"),
+    ("WAVE.JS: a launched ticket missing from collect is dropped", WAVEJS,
+     "    } else if (error || !theirs) {",
+     "    } else if (error) {",
+     _WF + "test_a_launched_ticket_missing_from_collect_is_unknown"),
 )
