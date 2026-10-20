@@ -221,7 +221,11 @@ def test_no_registration_names_a_hook_script_directly():
 def test_the_ps1_flavour_guard_trusts_the_platform_not_only_the_environment():
     """Security pass (L-0850): on Windows this launcher is the only one that runs, so an unset or
     changed OS variable must not make it exit 0. Real Windows is told by the platform."""
-    guard = [line for line in PS1_TEXT.splitlines() if line.startswith("if (-not $crewRealWindows")]
+    guard = [line for line in PS1_TEXT.splitlines() if line.startswith("if ($env:OS -ne")]
+    default = ("[string]$CrewPlatformMarker = $(if ([System.Environment]::OSVersion.Platform -eq "
+               "[System.PlatformID]::Win32NT) { $env:OS = 'Windows_NT' })")
 
-    assert "OSVersion.Platform" in PS1_TEXT and "Win32NT" in PS1_TEXT
-    assert guard == ["if (-not $crewRealWindows -and $env:OS -ne 'Windows_NT') { exit 0 }"]
+    # the guard stays the exact line tests/test_flavour_guard.py holds every registered .ps1 to, and the
+    # parameter default (which runs before it) puts OS back on a real Windows host
+    assert guard == ["if ($env:OS -ne 'Windows_NT') { exit 0 }"]
+    assert default in PS1_TEXT
