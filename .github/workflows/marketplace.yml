@@ -90,6 +90,14 @@ jobs:
       # eval cases", a non-zero exit or an unscored result fails the run.
       - name: Plugin eval runner suite
         run: python3 scripts/_test/plugin-evals-runner.py
+      # L-0728: the outcome eval harness (scripts/crew-outcome-eval.py) against a
+      # stub docker and a stub claude: no model call, nothing billed. It proves
+      # the mounts, the auth stripping, grading, cost arithmetic, the budget
+      # rule and the verdict rule. That the real container hides the host is
+      # proved by canary.sh, run by hand (VERIFYING.md): it needs the built
+      # image, a docker daemon and the model API hosts, none of which this job has.
+      - name: Crew outcome eval suite
+        run: python3 scripts/_test/crew-outcome-eval.py
       # The version-drift check resolves "when was this version set" by walking
       # marketplace.json's history, and that walk is only monotonic on a linear
       # one. Across a merge it can stop at the merge commit, which then diffs

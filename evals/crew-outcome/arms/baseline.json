@@ -1,0 +1,29 @@
+{
+  "arm": "baseline",
+  "description": "Plain Claude Code plus /code-review: implement, run /code-review, fix every reported finding, repeat until a cycle reports no findings or 3 cycles complete.",
+  "author": {"model": "claude-sonnet-5-5", "effort": "medium"},
+  "reviewer": {"tool": "/code-review", "model": "claude-sonnet-5-5", "effort": "medium", "family": "same as the author"},
+  "wallClockMinutes": {"S": 60, "M": 120, "L": 240},
+  "settings": {},
+  "cli": {
+    "args": [
+      "--model", "claude-sonnet-5-5",
+      "--effort", "medium",
+      "--dangerously-skip-permissions",
+      "--strict-mcp-config",
+      "--mcp-config", "{\"mcpServers\":{}}"
+    ],
+    "maxCycles": 3,
+    "apiErrorRegex": "(?i)(authentication|oauth|credit balance|rate limit|overloaded|api error|401|403|429|5\\d\\d)"
+  },
+  "prompts": {
+    "implement": "{statement}",
+    "review": "/code-review",
+    "fix": "A reviewer reported the findings below. Fix every one that is a real defect in the code you wrote, then reply with a one-line summary. Do not ask questions; no human is available.\n\n{findings}"
+  },
+  "reviewParse": {
+    "findings": "^\\s*\"summary\":",
+    "noFindings": "^\\[\\]\\s*$"
+  },
+  "proxyIgnoreHosts": []
+}
