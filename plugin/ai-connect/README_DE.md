@@ -387,7 +387,7 @@ Die beiden Warteschlangen-Grenzen haben keinen „Aus“-Wert: `0` würde jede N
 |-------------------|--------------|
 | `AI_CONNECT_PEER_NAME` | Der ganze Peer-Name, statt `<client.name>:<Label>`. Er muss `client.name` oder `<client.name>:<Label>` sein (Buchstaben, Ziffern, `.`, `_`, `-`, höchstens 64) oder ein Name mit eigenem Token auf der Bridge. Der Client sendet dafür `~/.config/ai-connect/session-tokens/<name>.token`, wenn es die Datei gibt (`deploy/setup.sh session --name <name>` schreibt sie), sonst `client.token`, das die Bridge nur für `client.name` und die Namen darunter annimmt. Die Datei muss nur für den Besitzer lesbar sein (wie bei Namen pro Projekt), und `Bridge` oder `User:...` bekommt nie eines. Hat Vorrang vor `client.name_mode: per-project` |
 | `AI_CONNECT_PROJECT_DIR` | Überschreibt `client.project_dir`, das einzige Verzeichnis, aus dem Dateien geteilt werden dürfen |
-| `AI_CONNECT_PEER_SUFFIX` | STDIO-Client: wird mit Bindestrich an das Label (den Namen der Sitzung, sonst das Projekt) angehängt, `<client.name>:<Projekt>-<Zusatz>`, damit ein Harness, der eine zweite Sitzung in einem Projekt startet, ihren Namen vorher kennt (höchstens 16 Zeichen; ohne ihn hängt die zweite Sitzung ihre Prozess-ID an). `AI_CONNECT_PEER_NAME` hat Vorrang |
+| `AI_CONNECT_PEER_SUFFIX` | STDIO-Client: wird mit Bindestrich an das Label (den Namen der Sitzung, sonst das Projekt) angehängt, `<client.name>:<Label>-<Zusatz>` (`laptop:s-cross-session-review`, ohne Sitzungsnamen `laptop:my-repo-review`), damit ein Harness, der eine zweite Sitzung in einem Projekt startet, ihren Namen vorher kennt (höchstens 16 Zeichen; ohne ihn hängt die zweite Sitzung ihre Prozess-ID an). `AI_CONNECT_PEER_NAME` hat Vorrang |
 
 ## Fehlersuche
 

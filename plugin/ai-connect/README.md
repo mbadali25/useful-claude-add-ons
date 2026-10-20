@@ -387,7 +387,7 @@ The two queue caps have no "off" value: `0` would refuse every message to an off
 |----------------------|-------------|
 | `AI_CONNECT_PEER_NAME` | The whole peer name, instead of `<client.name>:<label>`. It must be `client.name` or `<client.name>:<label>` (letters, digits, `.`, `_`, `-`, at most 64), or a name with its own token on the Bridge. The client sends `~/.config/ai-connect/session-tokens/<name>.token` for it when that file is there (`deploy/setup.sh session --name <name>` writes it), else `client.token`, which the Bridge accepts for `client.name` and the names under it only. The file must be owner-only (as under per-project names), and `Bridge` or `User:...` never gets one. Wins over `client.name_mode: per-project` |
 | `AI_CONNECT_PROJECT_DIR` | Overrides `client.project_dir`, the only directory files may be shared from |
-| `AI_CONNECT_PEER_SUFFIX` | STDIO client: appended to the label (the session's name, else the project) with a hyphen, `<client.name>:<project>-<suffix>`, so a harness that starts a second session in one project knows its name beforehand (at most 16 characters; without it the second session appends its process id). `AI_CONNECT_PEER_NAME` takes precedence |
+| `AI_CONNECT_PEER_SUFFIX` | STDIO client: appended to the label (the session's name, else the project) with a hyphen, `<client.name>:<label>-<suffix>` (`laptop:s-cross-session-review`, or `laptop:my-repo-review` without a session name), so a harness that starts a second session in one project knows its name beforehand (at most 16 characters; without it the second session appends its process id). `AI_CONNECT_PEER_NAME` takes precedence |
 
 ## Troubleshooting
 

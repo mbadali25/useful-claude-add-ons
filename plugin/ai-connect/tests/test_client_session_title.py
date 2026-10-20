@@ -1,4 +1,4 @@
-"""A session's label is its Claude Code session name when there is one (0.2.1), else its
+"""A session's label is its Claude Code session name when there is one (0.2.2), else its
 project: what is read from Claude Code's own sessions directory, and every way that fails."""
 
 import builtins
