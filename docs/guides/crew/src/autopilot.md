@@ -304,7 +304,7 @@ section here when it lands.
 | Approving a goal's split, `goal:<slug>` | T-0012 | `goal:<slug>` |
 | `/crew:autopilot assign`, from plain text | L-0611 | `assign` |
 | A goal across several tickets | T-0012, L-0541 | `goal` |
-| A wave: tickets run in parallel (since L-0727 as the `/crew:wave` workflow, `{"set": "<slug>"}`) | T-0029, L-0727 | `wave` |
+| A wave: tickets run in parallel | T-0029 | `wave` |
 | Autopilot's own split into PR slices | T-0052, T-0058, T-0059 | `split` |
 | A goal that survives /clear, a branch switch and a crash (`--goal`) | T-0056 | `--goal` |
 | The full goal walkthrough | T-0012, L-0541 | `walkthrough` |
