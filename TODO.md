@@ -10,6 +10,13 @@ be wrong can be closed on evidence.
   a lint gate (`.pylintrc`'s max-module-lines note: sabotage and codemap anchors). Unblocked by a
   ticket that picks the seam (the deploy-allowed policy, or ship/focus) and moves its sabotage rows.
 
+- **Split `plugin/crew/hooks/scripts/crew_guards.py` (over `.pylintrc`'s 3400 lines).** SRL-2308's
+  review round 2 (the command-word fallback's variable and interpreter reading) took it past 3400;
+  it carries a module-level `# pylint: disable=too-many-lines`, as `crew_config.py` and
+  `crew_autopilot.py` do. The natural seam is the SRL-2308 fallback (`_CommandSplitter` through
+  `command_word_names_tool`), which `crew_guards` calls in three places; moving it needs a ticket
+  that also moves its sabotage rows.
+
 - **L-0509 harness follow-up (the Complete archive), lands alone under T-0087.** L-0509 routed
   every non-harness ticket reader through `crew_common.locate_ticket`; these harness paths still
   read only the live `.work/tickets/<id>/`: (a) `plugin/crew/hooks/scripts/crew_ticket.py`
@@ -4373,6 +4380,7 @@ The 6,000 target is far off. Ticket: cut the held command/skill allowances in `p
 prioritising what loads into context (skill/agent descriptions, commands) over on-disk reference files; measure
 per-session loaded characters as well as total lines; record both in `BUDGETS.md`. The scorecard prose row stays
 **Behind** until this lands. The post-1.0 review decides whether 6,000 is the right target.
+PARTLY CLOSED 2026-10-19 (L-0726 slices 1 and 2): `review.md` is 46 lines and `promote.md` 96, both with a 12,288-byte ceiling, the README is under 800 lines, and `BUDGETS.md` states the measured gap by area. The 6,000 target moves to the Phase 4 close-out after L-0724 and L-0725, with a skill-trim ticket (not filed).
 Also: wire `scripts/check_instructions.py` into CI once T2 clears its 4 intentional red findings
 (`review.md:450,465` qa-reviewer dispatch; README `guard.sh`/`.ps1` citations).
 

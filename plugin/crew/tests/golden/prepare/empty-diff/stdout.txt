@@ -1,0 +1,3 @@
+record=0 base=1767225600 branch=t1
+authors=claude source=config eligible=codex kimi
+nothing to review since 47a280738dd3d3c56baad8db6e02f2c73591904d: review-patch's line above says why

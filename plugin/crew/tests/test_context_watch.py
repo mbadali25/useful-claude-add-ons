@@ -109,7 +109,7 @@ def _config(auto_wrap_up=None, budget=100, reserve=0):
     of moving it. `test_auto_wrap_up_is_the_shipped_default` owns the default.
 
     `warnAt` is likewise pinned at 0.8 -- the arithmetic in these cases was
-    written against it, not against the 0.5 that ships now."""
+    written against it, not against the 0.4 that ships now."""
     cfg = {"warnAt": 0.8, "budgetTokens": budget, "handoffPath": ".work/HANDOFF.md",
            "reserveTokens": reserve,
            "autoWrapUp": False if auto_wrap_up is None else auto_wrap_up}

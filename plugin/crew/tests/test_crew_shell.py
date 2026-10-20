@@ -329,6 +329,116 @@ def test_resolve_gitbash_rejects_a_derived_system32_path():
     assert path is None
 
 
+def _strict_runner(exec_out, runs, ok=lambda path: True):
+    """git --exec-path answers `exec_out` (None: it fails); `bash -c 'exit 0'` is answered by `ok`."""
+    def runner(argv, timeout):
+        if argv[-1] == "--exec-path":
+            return (0, exec_out, b"") if exec_out is not None else (1, b"", b"")
+        runs.append((argv, timeout))
+        if not ok(argv[0]):
+            raise OSError("cannot run")
+        return 0, b"", b""
+    return runner
+
+
+def _never(_name):
+    raise AssertionError("strict mode must not read PATH")
+
+
+def test_resolve_gitbash_strict_failed_git_probe_tries_only_the_default_and_never_which():
+    runs = []
+
+    path, reason = crew_shell.resolve_gitbash(
+        runner=_strict_runner(None, runs), exists=lambda _p: True, which=_never, strict=True)
+
+    assert (path, [argv[0] for argv, _ in runs]) == (
+        "C:/Program Files/Git/bin/bash.exe", ["C:/Program Files/Git/bin/bash.exe"]), reason
+
+
+def test_resolve_gitbash_strict_takes_a_non_default_install_from_exec_path():
+    runs = []
+
+    path, reason = crew_shell.resolve_gitbash(
+        runner=_strict_runner(b"D:/Git/mingw64/libexec/git-core\n", runs),
+        exists=lambda _p: True, which=_never, strict=True)
+
+    assert (path, runs[0][0], runs[0][1:]) == (
+        "D:/Git/bin/bash.exe", ["D:/Git/bin/bash.exe", "-c", "exit 0"], (5,)), reason
+
+
+def test_resolve_gitbash_strict_refuses_a_usr_bin_candidate_and_falls_to_the_default():
+    runs = []
+
+    path, reason = crew_shell.resolve_gitbash(
+        runner=_strict_runner(b"C:/Git/usr/bin/a/b/c\n", runs), exists=lambda _p: True,
+        which=_never, strict=True)
+
+    assert (path, [argv[0] for argv, _ in runs]) == (
+        "C:/Program Files/Git/bin/bash.exe", ["C:/Program Files/Git/bin/bash.exe"]), reason
+
+
+def test_resolve_gitbash_strict_refuses_a_candidate_that_does_not_run_and_names_every_path():
+    runs = []
+
+    path, reason = crew_shell.resolve_gitbash(
+        runner=_strict_runner(b"D:/Git/mingw64/libexec/git-core\n", runs, ok=lambda _p: False),
+        exists=lambda _p: True, which=_never, strict=True)
+
+    assert path is None
+    assert "D:/Git/bin/bash.exe" in reason and "C:/Program Files/Git/bin/bash.exe" in reason
+
+
+def test_resolve_gitbash_strict_refuses_a_candidate_that_exits_non_zero():
+    def runner(argv, timeout):
+        return (0, b"D:/Git/mingw64/libexec/git-core\n", b"") if argv[-1] == "--exec-path" else (1, b"", b"")
+
+    path, reason = crew_shell.resolve_gitbash(runner=runner, exists=lambda _p: True,
+                                              which=_never, strict=True)
+
+    assert path is None, reason
+
+
+def test_resolve_gitbash_strict_refuses_a_relative_derived_candidate():
+    runs = []
+
+    path, reason = crew_shell.resolve_gitbash(
+        runner=_strict_runner(b"/usr/local/libexec/git-core\n", runs),
+        exists=lambda p: p in ("usr/bin/bash.exe", "usr/bin"), which=_never, strict=True)
+
+    assert (path, runs) == (None, []), reason
+
+
+def test_resolve_gitbash_strict_refuses_a_candidate_that_hangs():
+    def runner(argv, timeout):
+        if argv[-1] == "--exec-path":
+            return 1, b"", b""
+        raise subprocess.TimeoutExpired(argv, timeout)
+
+    path, reason = crew_shell.resolve_gitbash(runner=runner, exists=lambda _p: True,
+                                              which=_never, strict=True)
+
+    assert path is None, reason
+
+
+def test_resolve_gitbash_strict_skips_a_candidate_that_is_not_a_file_without_running_it():
+    runs = []
+
+    path, reason = crew_shell.resolve_gitbash(
+        runner=_strict_runner(None, runs), exists=lambda _p: False, which=_never, strict=True)
+
+    assert (path, runs) == (None, []), reason
+
+
+def test_resolve_gitbash_non_strict_still_falls_back_to_which_and_runs_nothing():
+    runs = []
+
+    path, _ = crew_shell.resolve_gitbash(
+        runner=_strict_runner(None, runs), exists=lambda _p: False,
+        which=lambda _name: "C:\\Program Files\\Git\\usr\\bin\\bash.exe")
+
+    assert (path, runs) == ("C:\\Program Files\\Git\\usr\\bin\\bash.exe", [])
+
+
 # --- Step 4: the probe, its states, and the machine-local cache ----------------
 
 def _utf16(text):

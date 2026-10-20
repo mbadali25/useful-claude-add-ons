@@ -6,389 +6,91 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 
 Promote to: $ARGUMENTS
 
-Follow the `crew-verification` skill, section 4. Read the `environments` block in
-`.crew/verify.json`. If there is no such block, stop and say so - build it first
-with `/crew:verify`, do not improvise a deploy sequence.
+Follow the `crew-verification` skill, section 4. Read the `environments` block in `.crew/verify.json`. If there is none, stop and say so - build it first with `/crew:verify`, do not improvise a deploy sequence. Why each rule below exists, and what is and is not enforced: `docs/crew/promote.md` (repo only).
 
 ## `--status`
 
-Print the last five rows of `.work/PROMOTIONS.md` and the current sha of each
-environment. Then stop. Say plainly whether the environments are running the
-same artifact.
+Print the last five rows of `.work/PROMOTIONS.md` and the current sha of each environment. Then stop. Say plainly whether the environments are running the same artifact.
 
 ## `--dry-run`
 
-Print the exact sequence you would run, in order, with the commands resolved
-from config (a `github` environment: `crew_ghdeploy.py check`'s output). Run
-nothing. This is the safe way to check a new `environments` block first.
+Print the exact sequence you would run, in order, with the commands resolved from config (a `github` environment: `crew_ghdeploy.py check`'s output). Run nothing.
 
 ## The sequence
 
-Run these in order. **Stop at the first failure** and report which gate failed
-with the error text verbatim.
+Run these in order. **Stop at the first failure** and report which gate failed with the error text verbatim.
 
 **Gate 1 - pre-deploy.**
-- Every environment in `requires` has, as its NEWEST `.work/PROMOTIONS.md` row for
-  the sha you are about to deploy, an all-pass row. A later failure revokes it.
-  The row must be written as the full 40-character sha: a short row never
-  counts (L-0703).
-- An accepted review covers this exact tree: a ticket's receipt standing on
-  its latest round, whose reviewed head has the same tree as the sha you are
-  deploying. A merge commit that differs from the reviewed head does not
-  count. Only `requireReview: false` plus a `reviewReason` on the environment
-  waives it; `requireHuman` does not.
-- The tree the deploy runs from is clean, is at the sha you are about to
-  deploy, and that sha is pushed. That is the tree `promote-gate` judges: the
-  Bash call's working directory, moved by a leading `cd <dir> &&` and named by
-  any `git -C <dir>` - not the session's main checkout. To deploy from a clean
-  worktree while the main checkout is dirty, run the declared command there
-  (`cd <worktree> && <deploy>`, or with the session already in the worktree).
-- `rollback` must be set: either a runbook that exists with a `last verified`
-  date inside 90 days, or the literal `"none"` plus a `rollbackReason`. An
-  absent key is a stop, not a pass - the fix is to add one of the two, in
-  `.crew/verify.json`. Production without a verified runbook has no override.
-- If `requireHuman` is set, show me the sha, the diff summary, and what the last
-  production promotion was, then wait for me to say go. Do not proceed on
-  silence.
-- **An approved change request**, if `change.requireForProduction` is true.
-  See `## The change request` below - it runs here, in gate 1. **The shipped
-  default is `false`, and at `false` this step does not exist**: promote asks
-  for no change request and behaves exactly as it did before schema 7. There
-  is nothing to do and nothing to report.
-- **The merge gate**, if this repo has one, on Bitbucket or on GitHub. See
-  `## The merge gate` below - it runs here, before gate 2. When both
-  `bitbucket.mergeGate.enabled` and `github.mergeGate.enabled` are `false`,
-  which is the shipped default for both, that section does not exist and there
-  is nothing to do or to report.
-- **The source tree is reconciled against what the target is actually
-  running.** A branch that was never reconciled will roll the environment
-  backwards: an on-box hotfix, a config value changed during an incident, a
-  file edited in place - all of it silently reverted by a deploy that reports
-  success. List the deployed artifact, hash it against the same paths in the
-  source tree, and classify **every** difference as exactly one of:
-  *roll-forward* (the source is newer and the change is intended), *on-box
-  edit* (the target has something the source does not, which this deploy would
-  clobber or delete), or *unexplained*. Any on-box edit or unexplained
-  difference is a stop - carry it into the branch, or say explicitly that it is
-  being discarded and get that agreed. Do not call a difference roll-forward
-  because the source is the branch you were told to deploy.
+- Every environment in `requires` has, as its NEWEST `.work/PROMOTIONS.md` row for the sha you are about to deploy, an all-pass row. A later failure revokes it. The row must carry the full 40-character sha: a short row never counts.
+- An accepted review covers this exact tree: a ticket's receipt standing on its latest round, whose reviewed head has the same tree as the sha you are deploying. A merge commit that differs from the reviewed head does not count. Only `requireReview: false` plus a `reviewReason` on the environment waives it; `requireHuman` does not.
+- The tree the deploy runs from is clean, is at the sha you are about to deploy, and that sha is pushed. That is the tree `promote-gate` judges: the Bash call's working directory, moved by a leading `cd <dir> &&` and named by any `git -C <dir>`. To deploy from a clean worktree while the main checkout is dirty, run the declared command there.
+- `rollback` is set: a runbook that exists with a `last verified` date inside 90 days, or the literal `"none"` plus a `rollbackReason`. An absent key is a stop, not a pass. Production without a verified runbook has no override.
+- If `requireHuman` is set, show me the sha, the diff summary, and the last production promotion, then wait for me to say go. Do not proceed on silence.
+- **An approved change request**, if `change.requireForProduction` is true: see `## The change request`. **The shipped default is `false`, and at `false` this step does not exist** - ask for nothing, report nothing.
+- **The merge gate**, if this repo has one: see `## The merge gate`. With `bitbucket.mergeGate.enabled` and `github.mergeGate.enabled` both `false` (the shipped default) that section does not exist.
+- **The source tree is reconciled against what the target is running.** List the deployed artifact, hash it against the same paths in the source tree, and classify **every** difference as exactly one of: *roll-forward* (the source is newer and the change is intended), *on-box edit* (the target has something the source does not, which this deploy would clobber), or *unexplained*. Any on-box edit or unexplained difference is a stop - carry it into the branch, or get explicit agreement that it is being discarded. A difference is not roll-forward merely because the source is the branch you were told to deploy.
 
-**Gate 2 - deploy.** Run the `deploy` commands. A non-zero exit is a stop. A
-`github` environment runs the five steps in the skill's `github-deploy.md`.
+**When the gate blocks.** `promote-gate` refusing a deploy is gate 1 failing, not an obstacle. Quote its `PROMOTION BLOCKED` line verbatim, name the precondition, fix that precondition, and run the same command again. **Never hand the owner a deploy so it skips the hook** (T-0505): if the gate is wrong, report it as a crew bug. Hand a deploy to the owner only where one is genuinely needed (`requireHuman`, or an MFA or browser approval a session cannot perform), as a question with your recommendation first - never a list of commands to paste.
 
-Then assert on what actually happened, not on the wrapper:
-- **Check the job, not the run.** A pipeline whose deploy step is conditional
-  (path filters, `if:` guards, a changed-files check) reports a green *run*
-  while having deployed nothing. Read the status of the deploy job itself and
-  say whether it executed or was skipped.
-- **Check the artifact on the box, not the log.** Hash or line-count the
-  deployed file and compare it against the source. A run that resolved the
-  wrong ref, or fetched tooling from a different ref than the code, is green
-  and wrong; the only thing that distinguishes it is reading what landed.
+**Gate 2 - deploy.** Run the `deploy` commands. A non-zero exit is a stop. A `github` environment runs the five steps in the skill's `github-deploy.md`. Then assert on what actually happened, not on the wrapper:
+- **Check the job, not the run.** A conditional deploy step (path filters, `if:` guards) reports a green *run* while deploying nothing. Read the deploy job's own status and say whether it executed or was skipped.
+- **Check the artifact on the box, not the log.** Hash or line-count the deployed file and compare it against the source. A run that resolved the wrong ref is green and wrong; only reading what landed tells them apart.
 
 Green means the workflow finished. It does not mean anything shipped.
 
-**Gate 3 - smoke.** Run the `smoke` commands against the environment just
-deployed to. A smoke suite that passes against the wrong environment is the most
-convincing wrong answer available, so echo the target URL or host first and
-confirm it matches the environment name.
+**Gate 3 - smoke.** Run the `smoke` commands against the environment just deployed to. Echo the target URL or host first and confirm it matches the environment name.
 
-**Gate 4 - regression.** Run the `regression` commands. This is the slow one and
-it is the one that catches what smoke cannot. Do not skip it because smoke was
-green - that is the whole reason it is a separate gate.
+**Gate 4 - regression.** Run the `regression` commands. Do not skip it because smoke was green.
 
-**Gate 5 - verify.** Wait `soakMinutes`, then run the `verify` commands. Report
-the actual numbers - error count, alarm state, queue depth - not "looks clean".
-A deploy that moved bytes successfully and broke the application looks identical
-to a good one until this gate runs.
-
-## When the gate blocks
-
-`promote-gate` refusing a deploy is gate 1 failing, not an obstacle to route
-around. Quote its `PROMOTION BLOCKED` line verbatim, name the precondition it
-names, and fix that precondition - record the upstream PASS row, commit or
-stash in the tree being deployed, `cd` into the tree that is at the gated sha,
-correct the rollback entry - then run the same command again.
-
-**Never hand the owner a deploy so it skips the hook.** Recommending "run it
-yourself with `!` so it does not go through the hook" turns every check above
-into a suggestion; a TSS session did exactly that when the gate judged the
-wrong tree (T-0505). If the gate is wrong, that is a crew bug to report with
-its message, not a reason to deploy past it.
-
-Hand a deploy to the owner only where one is genuinely needed: the environment
-sets `requireHuman` (show the sha, the diff summary and the last promotion, and
-ask for the yes that lets you write the marker), or the deploy has an
-interactive step a session cannot perform (an MFA prompt, a browser approval).
-Ask it as a question with your recommendation first - never as a list of
-commands to paste.
+**Gate 5 - verify.** Wait `soakMinutes`, then run the `verify` commands. Report the actual numbers - error count, alarm state, queue depth - not "looks clean".
 
 ## The change request
 
-This step runs inside gate 1, and only for `production`. It reads
-`change.requireForProduction` through `/crew:config`, not out of
-`.crew/config.json`, because a machine-global file can set it and the repo file
-would not show that.
+Runs inside gate 1, only for `production`. Read `change.requireForProduction` through `/crew:config`, not out of `.crew/config.json`. **`false` is the shipped default and means this section does not exist:** no `sdp_*` or Jira call, no read of `.work/changes/`, nothing to report. Everything below is what `true` means.
 
-**`false` is the shipped default and means this section does not exist.** No
-`sdp_*` call, no Jira call, no read of `.work/changes/`, nothing to report. Say
-nothing and move on. A repo that never asked for change control keeps promoting
-exactly as it did before schema 7.
+**A change in an APPROVED state, for THIS sha.** Not "a change exists": a change whose record names the sha you are about to deploy and whose state the backend currently reports as approved. A change without this sha is a different change and this is a stop.
 
-Everything below is what `true` means.
+**Read the state from the backend, every time** - never from the local cache, and never from this session's memory. A cached `approved` is a claim about the past. Route through `/crew:change status <id>`, which reads the backend.
 
-**A change in an APPROVED state, for THIS sha.** Not "a change exists" - not "a
-change was filed for this work" - a change whose record names the sha you are
-about to deploy and whose state the backend currently reports as approved. The
-sha goes into the change when `/crew:change new` files it; if the change you
-find does not carry it, that is a different change and this is a stop.
+**"Could not read the state" is a STOP, not a pass.** Desk down, MCP tools not connected, id resolves to nothing: report it as **not checked**, name what could not be read, and stop.
 
-**Read the state from the backend, every time** - never from the local cache,
-and never from this session's memory of having looked. `.work/changes/<id>.md`
-records what was FILED and cannot know what a change board did afterwards. A
-cached `approved` is a claim about the past. Route through `/crew:change status
-<id>`, which reads the backend and says so.
+**Outside the window is a stop.** Before gate 2, compare the current time against the change's `Scheduled Start Time` and `Scheduled End Time`; refuse outside, and say the window, the current time and which side you are on.
 
-**"Could not read the state" is a STOP, not a pass.** The desk is down, the MCP
-tools are not connected, the id resolves to nothing: each of those is an
-unknown, and an unknown here must not collapse into "no requirement found, carry
-on". Report it as **not checked**, name what could not be read, and stop - the
-same shape as an absent `rollback` key and as `guards.mergeGate` at `block`.
-This is the collapse this repo keeps rediscovering and it would be at its most
-expensive here, because the thing it waves through is a production deploy.
-
-**Outside the window is a stop.** `Scheduled Start Time` and `Scheduled End
-Time` on the change are the approved change window, not documentation of an
-intention. Before gate 2, compare the current time against them and refuse
-outside. Say the window, say the current time, and say which side of it you are
-on - "the window closed 40 minutes ago" is actionable and "outside the window"
-is not. A change board approved a change at a time; deploying at another time
-is deploying something they did not approve.
-
-Under promote's own `--dry-run`, print which change would be checked and run
-**nothing**.
+Under `--dry-run`, print which change would be checked and run **nothing**.
 
 ## The merge gate
 
-This step runs inside gate 1, before anything deploys. Two providers, one
-shape: Bitbucket reads `bitbucket.mergeGate.enabled`, `.branch` and `.preset`,
-GitHub reads `github.mergeGate.enabled` and `.branch` (there is no `preset` -
-see below). Both are documented in `plugin/crew/CONFIG.md` §8. Read them
-through `/crew:config` rather than out of `.crew/config.json`, because a
-machine-global file can set any of them and the repo file would not show it.
+Runs inside gate 1, before anything deploys. Bitbucket reads `bitbucket.mergeGate.enabled`, `.branch`, `.preset`; GitHub reads `github.mergeGate.enabled` and `.branch` (no `preset`). Read them through `/crew:config` (`plugin/crew/CONFIG.md` §8).
 
-**Route every invocation through `/crew:gate <disable|enable|status>
-<github|bitbucket>`.** Promote does not compose `merge_gate.sh` commands of its
-own. That command owns the workflow - it reads `guards.mergeGate` before
-anything else, it stops when the provider's skill is missing, and it knows the
-two scripts' argument surfaces are not interchangeable. Promote deciding for
-itself would be a second implementation of a sequence whose whole risk is the
-order of its steps.
+**Route every invocation through `/crew:gate <disable|enable|status> <github|bitbucket>`.** Promote does not compose `merge_gate.sh` commands of its own.
 
-**`guards.mergeGate` decides whether any of this may happen at all, and it
-ships as `block`.** An `enabled: true` in `bitbucket.mergeGate` or
-`github.mergeGate` says this repo HAS a gate; `guards.mergeGate` says whether
-crew may touch it. When it is `block`, report the gate's state as
-**not checked** and say which key refused - never as checked and fine. That
-collapse is the bug this repo keeps rediscovering.
+**`guards.mergeGate` ships as `block`.** At `block`, report the gate's state as **not checked** and say which key refused - never as checked and fine.
 
-**`enabled: false` - the shipped default - means do nothing at all.** No
-`merge_gate.sh` subcommand, no `/crew:gate` invocation, no Bitbucket or GitHub
-API call, not even `export`. It does **not** mean "apply the disabled preset":
-`disable` deletes branch restrictions, and that is the opposite action against
-a live repo from the one a `false` in a config file expresses. A repo that
-never asked crew for a gate keeps whatever restrictions its owner made by hand.
-There is nothing to report in this case - say nothing and move to gate 2.
+**`enabled: false` - the shipped default - means do nothing at all.** No `merge_gate.sh` subcommand, no `/crew:gate` call, no Bitbucket or GitHub API call, not even `export`. It does **not** mean "apply the disabled preset": `disable` deletes branch restrictions. Say nothing and move to gate 2.
 
 Everything below is what `enabled: true` means.
 
-**The script belongs to another marketplace entry. Reference it, never
-reimplement it.** The gate is `skills/bitbucket/scripts/merge_gate.sh` from the
-`bitbucket` skill, or `skills/github/scripts/merge_gate.sh` from the `github`
-skill, and crew bundles neither. If the script for the provider this repo uses
-is not on this machine, this is a **stop** - the same shape as an absent
-`rollback` key, not a warning to walk past. Say "`<provider>.mergeGate.enabled`
-is true and the `<provider>` skill is not installed, so the merge gate could
-not be checked", name the two fixes (install the skill, or set
-`enabled: false`), and stop. Do not hand-roll a `branch-restrictions` or a
-`branches/*/protection` API call, and do not let "could not check" become
-"checked, and fine".
+**The script belongs to another marketplace entry. Reference it, never reimplement it.** It is `skills/bitbucket/scripts/merge_gate.sh` or `skills/github/scripts/merge_gate.sh`. If the script for this repo's provider is not on this machine, this is a **stop**: say "`<provider>.mergeGate.enabled` is true and the `<provider>` skill is not installed, so the merge gate could not be checked", name the two fixes (install the skill, or set `enabled: false`), and stop. Do not hand-roll a `branch-restrictions` or `branches/*/protection` API call.
 
-**`branch` binds to one flag, and `null` means ask:**
+**`branch`:** `null` (the default) passes no `--branch` - the script resolves `.mainbranch.name`; a string passes `--branch <value>` verbatim. Never substitute `main` yourself. `--branch` is ignored with `--from-export`.
 
-| `bitbucket.mergeGate.branch` | What promote passes |
-|---|---|
-| `null` (the default) | no `--branch` at all - the script resolves `.mainbranch.name` from the Bitbucket API (`skills/bitbucket/scripts/merge_gate.sh:198-202`) |
-| a string, e.g. `"release/*"` | `--branch release/*`, verbatim |
+**`preset` is wired to nothing:** `merge_gate.sh` has no `--preset` flag; a bare `enable` applies the hardcoded `PRESET` literal, so `bitbucket.mergeGate.preset` changes nothing - say so whenever you show an `enable` command. GitHub's `enable` requires `--from-export` and rejects `--branch`.
 
-If the API has no `.mainbranch.name` the script dies asking for `--branch`
-(`skills/bitbucket/scripts/merge_gate.sh:202`). Relay that sentence and stop.
-Never substitute `main` yourself: on a repo still on `master`, or a Gitflow
-`develop`, a gate on `main` looks configured and watches a branch nobody merges
-into.
+**Nothing changes without a yes at that moment.** Config is intent, not consent. Before any invocation that changes the live repo, print the exact command with every flag resolved from config and wait. Do not proceed on silence.
+- **`disable`** (destructive: it removes protections) takes `--dry-run`: run it, show the plan, then wait for the yes.
+- **`enable`** has no `--dry-run`: the echoed command is the entire preview, so say so when you ask.
 
-One exception, which the script prints itself: `--branch` **is ignored** with
-`--from-export` (`skills/bitbucket/scripts/merge_gate.sh:464`), because each
-exported object carries its own scope. Do not report a restore as having been
-scoped to the configured branch.
+Under `--dry-run`, print the command; it runs **nothing**, `export` included (a real API call needing `repository:admin`). **Never `disable` and then a bare `enable`**: `disable` removes more kinds than `PRESET` creates (`restrict_merges` among them), so restore only with `enable --from-export <the file disable wrote>`, and name that path in the promotion row.
 
-GitHub differs in two places `/crew:gate` documents in full and promote must
-not paper over: its `export` is **branch-scoped** (classic protection is
-per-branch in the URL), and its `enable` **requires** `--from-export` and
-rejects `--branch` as a usage error. So a GitHub restore has no bare form at
-all, and there is no GitHub `preset` for a config key to select.
-
-**`preset` is wired to nothing, and promote must not pretend otherwise.**
-`merge_gate.sh` has no `--preset` flag. The preset a bare `enable` applies is
-one hardcoded JSON literal, `PRESET` at
-`skills/bitbucket/scripts/merge_gate.sh:65`, and no flag selects it. So
-`bitbucket.mergeGate.preset` changes nothing today whatever it holds. Whenever
-you show an `enable` command, say that in the same breath - otherwise the
-`"standard"` sitting in the config reads as a choice that was honoured.
-`CONFIG.md` §8 records why the key is left unwired rather than bound to that
-literal.
-
-### Nothing changes without a yes at that moment
-
-**Config is intent. It is not consent.** `enabled: true` authorises promote to
-look; it authorises no write. Before any invocation that changes the live repo,
-print the exact command - script path, subcommand, workspace, repository and
-every flag resolved from config - and wait. Do not proceed on silence. This is
-the standing rule and it does not move for a promotion that is otherwise green.
-
-The two write subcommands do not preview the same way, and the difference is
-the point:
-
-- **`disable`** takes `--dry-run`
-  (`skills/bitbucket/scripts/merge_gate.sh:317`). Run it, show the plan it
-  prints, then wait for the yes. `disable` removes protections; it is the
-  destructive direction.
-- **`enable`** has **no `--dry-run`**. `cmd_enable` parses `--branch` and
-  `--from-export` and rejects everything else
-  (`skills/bitbucket/scripts/merge_gate.sh:430-439`). The echoed command is the
-  entire preview, so say so when you ask - nobody should read that yes as
-  confirming a dry run that never happened.
-
-Under promote's own `--dry-run`, this step prints the command it would run and
-runs **nothing** - `export` included, which is a real API call and needs
-`repository:admin` exactly as a write does.
-
-**Never `disable` and then a bare `enable`.** `disable` removes more kinds than
-`PRESET` creates - `restrict_merges` and `require_no_changes_requested` among
-them (`skills/bitbucket/SKILL.md:123-126`) - so the pair silently drops whatever
-those were. The only restore is `enable --from-export <the file disable wrote>`.
-Keep that export and name its path in the promotion row.
-
-### Relay the script's outcomes; do not re-summarise them
-
-Three of its exits are not "failed", and flattening them loses the part the
-reader needs (`skills/bitbucket/scripts/merge_gate.sh:30-35`):
-
-- **exit 3 - scope undetermined, nothing was deleted.** Restrictions can be
-  scoped by a `branch_type` from the branching model instead of a glob, and the
-  script refuses to guess which types cover your branch. Quote it and stop. Do
-  not pick a `--branch-type` on my behalf.
-- **exit 4 - one or more writes failed.** The live repo is now **partially**
-  changed. Say which kinds landed and which did not; "failed" on its own reads
-  as "nothing happened", which is false.
-- **`not-available-on-this-plan`** on the three Premium-only kinds is its own
-  outcome - neither applied nor failed. Report it as itself.
+Relay the script's outcomes unflattened: **exit 3** scope undetermined, nothing was deleted (quote it, stop, pick no `--branch-type`); **exit 4** writes failed, the repo is **partially** changed (say which kinds landed); `not-available-on-this-plan` is its own outcome.
 
 ## After
 
-Append one row to `.work/PROMOTIONS.md` with the real result of every gate,
-including failures, and the full 40-character sha (`git rev-parse HEAD` of the
-tree deployed). Then:
+Append one row to `.work/PROMOTIONS.md` with the real result of every gate, failures included, and the full 40-character sha (`git rev-parse HEAD` of the tree deployed). Then:
 
-- **All gates green:** say which environment now runs which sha, and name the
-  next promotion explicitly from this environment's `promotesTo` - e.g.
-  `qa is now on a1b2c3d; next is /crew:promote production`. If `promotesTo` is
-  absent, say this is the last environment in the chain.
-- **Any gate failed:** say which gate, quote the error, and state the two
-  options - roll back using the runbook, or fix forward. Do not pick for me on
-  production. Do not resume mid-sequence afterwards; the whole sequence runs
-  again from gate 1.
+- **All gates green:** say which environment now runs which sha, and name the next promotion from this environment's `promotesTo` - e.g. `qa is now on a1b2c3d; next is /crew:promote production`. If absent, say this is the last environment in the chain.
+- **Any gate failed:** say which gate, quote the error, and state the two options - roll back using the runbook, or fix forward. Do not pick for me on production. Do not resume mid-sequence; the whole sequence runs again from gate 1.
 
 Then, for every result (a pass silent, a failure loud), send `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh deploy "<env> <sha> - <pass|FAILED at gate N>" --outcome <pass|fail>`.
 
-## What is enforced, and what is not
-
-Be precise about this, because the difference decides how much the sequence above
-can be trusted.
-
-**Enforced by `promote-gate.sh` (`PreToolUse`).** It fires on any command that contains the declared `deploy`
-text (a fragment of it is no deploy) - and, on either tool, on a workflow dispatch of a declared deploy workflow in either spelling
-(`gh workflow run` or `gh api .../dispatches`; inputs must fit one environment; a dispatch it cannot read is
-could-not-tell and blocks; a `github` entry's `shaInput` must be given once, as that full sha) - and refuses it unless, for the sha at
-HEAD **of the tree the deploy runs from**: every `requires` environment has an all-pass row in `.work/PROMOTIONS.md`;
-the `rollback` runbook is verified inside 90 days; `requireHuman` has `.crew/.approved-<env>-<sha>`;
-an accepted review receipt covers that tree (or `requireReview: false` with a
-`reviewReason`); and that tree is clean. A row counts only with the full sha.
-The review evidence proves the tracked tree deployed is one a reviewer was
-shown under a standing receipt - not that paths the bundle left out or ignored
-build output were reviewed, nor who wrote the ledger (local, unauthenticated).
-With no python the gate blocks instead of standing down. These cannot be skipped by deciding to skip them.
-
-The tree is the Bash call's `cwd`, moved by a leading `cd <dir> &&` chain and
-named by git's global `-C <dir>` inside `$(...)` (a `git -C` whose output feeds
-nothing may only name the tree the deploy runs in). It must be a worktree of the same
-repository and every literal sha in the command must be its HEAD; the directory
-the command itself runs in must be clean too, since that is where the deploy
-process runs. A command that changes directory after it starts (a later `cd`,
-`bash -c 'cd ...'`, `env -C`, `make -C`), names two trees, uses `--git-dir`,
-or puts `git` in a form the gate cannot read with certainty (an unlisted global
-option, quoted text) is refused rather than guessed at. Skip-worktree and
-assume-unchanged entries, and a `git status` that fails, are refused too. `.crew/verify.json`, `.work/PROMOTIONS.md`, the approval
-markers and `.crew/.deploy-in-flight` are read from the session's project
-directory on purpose: they are gitignored per-checkout state, so a fresh
-worktree has none of it and a throwaway one could hold a forged copy. For the
-same reason an uncommitted change to the project's `.crew/verify.json` - an edit,
-a deletion, an untracked map, compared with HEAD's copy rather than with
-`git status` - blocks any command the working or the committed map declares.
-What it cannot see: a deploy script that changes directory itself, and what a
-workflow does with a branch-name ref (`ref=development`).
-
-**Enforced by `verify-gate.sh` (`Stop`).** A deploy that wrote no
-`.work/PROMOTIONS.md` row does not end the turn. A deploy nobody wrote down is a
-deploy nobody can audit.
-
-**NOT enforced - this is on you and on me.** That `smoke`, `regression` and
-`verify` actually ran, that they ran against the environment just deployed to,
-and that the soak was really waited out. The same goes for the two gate-1/gate-2
-checks added above: the hook cannot reconcile the source tree against the live
-artifact, and it cannot tell a green run from a green run that skipped its
-deploy job. **The Bitbucket merge gate section is prose too** - no hook fires on
-`merge_gate.sh` or on `/crew:gate`, nothing checks that an `enabled: true` was
-honoured, and
-`promote-gate.sh` does not read `bitbucket.mergeGate` or `github.mergeGate` at
-all. `guards.mergeGate` is not prose - it is read by `/crew:gate` from
-`crew_config.py --guard mergeGate`, and at `block` that command refuses. But
-nothing forces promote to ROUTE through `/crew:gate`; that part is prose too.
-**The change-request section is prose in exactly the same way, and by the same
-measurement**: no hook fires on `/crew:change`, `promote-gate.sh` does not read
-`change.requireForProduction`, and nothing checks that an approved change was
-found or that the clock was inside the window. The config key is real and the
-ratchet across the two layers is real - `change.requireForProduction` resolves
-through `crew_config.resolve_ratcheted`, so a repo cannot turn the requirement
-off - but what the requirement makes promote DO is this file, and this file
-only holds if you run it.
-Those are prose,
-and prose only holds if you run it. A hook fires before a command and after
-a turn; it cannot watch the middle. The row you append is a claim, and the only
-thing that makes it worth anything is that it is written honestly - **including
-the failures**. A promotions log with no failures in it is a log nobody is
-writing to.
-
-So: `.work/PROMOTIONS.md` is the evidence, not this session's memory of what
-happened. And anything mechanisable belongs in a `.crew/verify.json` rule, where
-the hook enforces it, rather than in this sequence where it has to be remembered.
-
-## What not to do
-
-- Do not report a promotion complete on the strength of gate 2. A successful
-  deploy proves bytes moved and nothing else.
-- Do not accept a green pipeline as proof of a deploy. Green, shipped and
-  healthy are three separate claims and each needs its own evidence.
-- Do not rebuild between environments. The artifact qa proved is the artifact
-  production gets, or qa proved nothing.
-- Do not deploy to production because qa passed a week ago. Re-check the sha.
+Do not report a promotion complete on gate 2, accept a green pipeline as a deploy, rebuild between environments, or promote to production on a week-old qa pass: `.work/PROMOTIONS.md` is the evidence, not this session's memory.

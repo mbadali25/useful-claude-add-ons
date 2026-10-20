@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.2.1] - 2026-10-12
+## [0.2.2] - 2026-10-20
 
 A session is named after its Claude Code session name: `laptop:cross-session` instead of `laptop:my-repo`.
 
@@ -12,9 +12,33 @@ A session is named after its Claude Code session name: `laptop:cross-session` in
 - The STDIO client's log file follows the name: `mcp-<client.name>_<session name>.log`
 
 ### Compatibility
-- The Bridge is unchanged; only clients need 0.2.1, and they mix freely with 0.2.0 clients
+- The Bridge is unchanged; only clients need 0.2.2, and they mix freely with 0.2.1 and 0.2.0 clients
 - A named session no longer joins as `<client.name>:<project>`. Messages already waiting on the Bridge for that name stay there until a session joins under it (an unnamed session in that project); a message to the machine's name reaches every session as before
 - The watcher is unchanged: it reads the name the client recorded in `~/.config/ai-connect/sessions/<pid>` and never works one out. Token lookup is unchanged: a name with a colon uses `client.token`
+
+## [0.2.1] - 2026-10-20
+
+### Fixed
+- The watcher hooks (`hooks/watch.sh`, `hooks/watch.ps1`) looked for a venv only in the plugin directory, where `install.sh` / `install.cmd` create it. `deploy/deploy.sh bridge|peer` and `deploy/setup.sh` (and their `.ps1` twins) install outside it (`deploy_core.py`'s `APP_HOME`), so on a machine they set up the watcher exited 1 at every SessionStart and Stop with `no venv at <plugin directory>/venv`, and no session was ever woken by a message. Seen on a Linux Bridge machine
+- Both wrappers now use the first venv that is there: `AI_CONNECT_VENV` (the variable `deploy_core.py` reads); the plugin directory's own `venv/`, as before; then deploy's, `${AI_CONNECT_HOME:-~/.local/share/ai-connect}/venv`, on Windows `%USERPROFILE%\AppData\Local\ai-connect\venv` (`Path.home()` joined with `AppData\Local`, as `deploy_core.py` spells it, not `%LOCALAPPDATA%`). With deploy's venv the watcher script is run from deploy's copy of the plugin (`.../ai-connect/app`) when that holds it, and from the plugin directory otherwise: `deploy peer --install-hooks` without `--register-mcp` makes the venv and no copy
+- An `AI_CONNECT_VENV` that holds no venv is passed over, not an error by itself
+
+### Security
+- `AI_CONNECT_VENV` and `AI_CONNECT_HOME` decide which interpreter the hook starts at every SessionStart and Stop, and a project's `settings.json` can set environment variables, so a repository could plant `bin/python` and name it (security review of this change, 2 FIX). Each is now used only when it is an absolute path with no `..`, whose real location is under the user's home and not inside the project (working directory, `CLAUDE_PROJECT_DIR`), and only on a machine that has a `config.yaml`; `AI_CONNECT_VENV`'s `bin/python` must also be owned by the user (`watch.sh`). A value that fails is ignored as if unset. `watch.ps1` compares paths as text after `Resolve-Path` and does not check ownership
+- The watcher is started without any `PYTHON*` variable (a denylist missed `PYTHONPYCACHEPREFIX`), which a project's settings could set to make a trusted interpreter import the repository's code. A `HOME` (`USERPROFILE`) that differs from the account's home directory and lies inside the project is ignored
+- A `CLAUDE_PROJECT_DIR` that is set but names no directory makes both hooks refuse a venv chosen by `AI_CONNECT_VENV` / `AI_CONNECT_HOME`; `watch.sh` also drops `__PYVENV_LAUNCHER__`; the no-venv error names `setup.sh` / `setup.ps1`; README and README_DE no longer say the venv always lives in the plugin directory
+- `watch.sh` unsets `CDPATH` and ignores a relative `HOME` (with `HOME=bin` and `CDPATH=/usr`, `cd bin` resolved outside the project while later uses of `HOME` stayed project-relative)
+
+### Changed
+- With a config and no venv in any of the places, the error names each place looked at (not the values of the two variables) and both ways to get one (`install.sh --client`, or `deploy/deploy.sh peer`; `install.cmd -Client` / `deploy\deploy.ps1 peer` on Windows). With no config and no venv the hooks stay silent (0.1.11), whatever the two variables say
+
+### Tests
+- `tests/test_client_hooks.py`: one case per place and per order, for both events and both flavours: deploy's venv with and without the copy, `AI_CONNECT_HOME`, the plugin's own venv before deploy's, `AI_CONNECT_VENV` first, an `AI_CONNECT_VENV` without a venv, the error naming all three, and silence with both variables set on a machine never set up. One case asks `deploy_core.py`, on the deploy suite's fake machine (`tests/deploy_box.py`), where it installs for that HOME and puts the stub venv exactly there; the Windows spelling is held by a text tripwire on `deploy_core.py` instead. With the 0.2.0 wrapper put back (unchanged since 0.1.9), 15 cases fail per flavour
+
+- Must-block cases for the two variables (both flavours, both events): a planted `python` inside the project, outside the home, behind a relative path, behind `..`, and inside the project named by `CLAUDE_PROJECT_DIR` is never run; a good venv chosen by variable on a machine with no config stays silent; a session started in the home still honours a trusted variable. With the check removed from `watch.sh` and `watch.ps1` (and the config requirement dropped) they go red: 32 of 32 planted-interpreter cases, plus the project-directory, no-config, `PYTHON*` and moved-home cases
+
+### Known limitations
+- Not run on Windows. `watch.ps1` was run with PowerShell 7 on Linux with `OS=Windows_NT` forced, against a stub `python.exe`: its branches, not Windows, and not Windows PowerShell 5.1
 
 ## [0.2.0] - 2026-10-12
 

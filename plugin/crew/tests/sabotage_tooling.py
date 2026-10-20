@@ -765,8 +765,8 @@ TOOLING_MUTATIONS += (
         # --ci diffs against a base like Stop: a committed file is invisible.
         "--ci: the scope narrows to the changed files",
         GATE_SH,
-        'if [ "${1:-}" = "--all" ] || [ "$CI_MODE" -eq 1 ]; then\n',
-        'if [ "${1:-}" = "--all" ]; then\n',
+        'if [ "$CI_ALL_SEEN" -eq 1 ] || [ "$CI_MODE" -eq 1 ]; then\n',
+        'if [ "$CI_ALL_SEEN" -eq 1 ]; then\n',
         _CI + "test_a_rule_on_a_file_the_branch_never_changed_still_runs[sh]",
     ),
     (
@@ -845,7 +845,7 @@ TOOLING_MUTATIONS += (
     (
         "--ci: an unknown argument is ignored",
         GATE_SH,
-        ('      echo "verify-gate: unknown argument \'$CI_ARG\' - the gate accepts --all, --ci, or '
+        ('      echo "verify-gate: unknown argument \'$CI_ARG\' - the gate accepts --all, --ci, --verbose, or '
          '--price as the first argument. Nothing was verified." >&2\n      exit 2 ;;\n'),
         "      : ;;\n",
         _CI + "test_an_unknown_argument_is_a_usage_error[sh--ci]",
@@ -902,9 +902,9 @@ if shutil.which("pwsh"):
         (
             "--ci (ps1): a command exiting 77 does not fail the run",
             GATE_PS1,
-            '    [Console]::Error.WriteLine("verify-gate --ci: $skipCount command(s) exited 77 (SKIP) - '
+            '    Write-CrewErr("verify-gate --ci: $skipCount command(s) exited 77 (SKIP) - '
             'a skip is not a pass in CI")\n    $failed = $true\n',
-            '    [Console]::Error.WriteLine("verify-gate --ci: $skipCount command(s) exited 77 (SKIP) - '
+            '    Write-CrewErr("verify-gate --ci: $skipCount command(s) exited 77 (SKIP) - '
             'a skip is not a pass in CI")\n',
             _CI + "test_a_skip_is_not_a_pass_in_ci[ps1]",
         ),
@@ -932,28 +932,28 @@ if shutil.which("pwsh"):
         (
             "--ci (ps1): a disabled gate passes",
             GATE_PS1,
-            ('      [Console]::Error.WriteLine("verify-gate --ci: verifyGate is false in .crew/config.json '
+            ('      Write-CrewErr("verify-gate --ci: verifyGate is false in .crew/config.json '
              '- the gate is off, so nothing was checked. Turn it on or remove the CI job.")\n'
              '      Exit-CrewGateBlocked\n'),
-            ('      [Console]::Error.WriteLine("verify-gate --ci: verifyGate is false in .crew/config.json '
+            ('      Write-CrewErr("verify-gate --ci: verifyGate is false in .crew/config.json '
              '- the gate is off, so nothing was checked. Turn it on or remove the CI job.")\n'),
             _CI + "test_a_disabled_gate_fails_in_ci_rather_than_passing_unchecked[ps1]",
         ),
         (
             "--ci (ps1): nothing to verify passes",
             GATE_PS1,
-            ('    [Console]::Error.WriteLine("verify-gate --ci: no .crew/verify.json and no '
+            ('    Write-CrewErr("verify-gate --ci: no .crew/verify.json and no '
              '_verify/smoke.sh - nothing to verify, so nothing was checked")\n    Exit-CrewGateBlocked\n'),
-            ('    [Console]::Error.WriteLine("verify-gate --ci: no .crew/verify.json and no '
+            ('    Write-CrewErr("verify-gate --ci: no .crew/verify.json and no '
              '_verify/smoke.sh - nothing to verify, so nothing was checked")\n'),
             _CI + "test_no_map_and_no_smoke_fails_in_ci[ps1]",
         ),
         (
             "--ci (ps1): zero commands to run passes",
             GATE_PS1,
-            ('    [Console]::Error.WriteLine("verify-gate --ci: zero commands to run - $ciNothing - '
+            ('    Write-CrewErr("verify-gate --ci: zero commands to run - $ciNothing - '
              'nothing was checked")\n    Exit-CrewGateBlocked\n'),
-            ('    [Console]::Error.WriteLine("verify-gate --ci: zero commands to run - $ciNothing - '
+            ('    Write-CrewErr("verify-gate --ci: zero commands to run - $ciNothing - '
              'nothing was checked")\n'),
             _CI + "test_every_matched_rule_reach_excluded_fails[ps1]",
         ),
@@ -1002,9 +1002,9 @@ if shutil.which("pwsh"):
         (
             "--ci (ps1): a lock back-off passes",
             GATE_PS1,
-            ('    [Console]::Error.WriteLine("verify-gate --ci: $Why - this run checked nothing")\n'
+            ('    Write-CrewErr("verify-gate --ci: $Why - this run checked nothing")\n'
              '    Exit-CrewGateBlocked\n'),
-            '    [Console]::Error.WriteLine("verify-gate --ci: $Why - this run checked nothing")\n',
+            '    Write-CrewErr("verify-gate --ci: $Why - this run checked nothing")\n',
             _CI + "test_a_held_lock_fails_rather_than_backing_off_green[ps1]",
         ),
         (

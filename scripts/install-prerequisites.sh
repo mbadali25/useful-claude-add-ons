@@ -1422,7 +1422,7 @@ PLUGIN_NAME=(
   "ai-connect              - Peer messaging between sessions: bridge, MCP client, state+watch hooks"
   "angular-lsp             - Angular template language server (ngserver). LSP only, no hooks"
   "bash-lsp                - Bash language server (bash-language-server). LSP only, no hooks"
-  "crew                    - Virtual dev team: 4 agents, 38 commands, safety hooks"
+  "crew                    - Virtual dev team: 5 agents, 38 commands, safety hooks"
   "css-lsp                 - CSS/SCSS/Less language server (vscode-langservers-extracted). No hooks"
   "gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks"
   "localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks"

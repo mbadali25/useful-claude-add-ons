@@ -217,7 +217,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "obsidian": { "vaultPath": null, "boardDir": null, "board": "Board.md", "columns": { "backlog": "Backlog", "ready": "Ready", "inProgress": "In Progress", "review": "Review", "done": "Done" } },
   "memory": { "mode": "repo", "vaultPath": null, "inject": true, "recall": { "vaults": [], "maxChars": 800, "projects": [] } },
   "verifyGate": true,
-  "context": { "enabled": true, "warnAt": 0.5, "budgetTokens": null, "reserveTokens": 0, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5, "autoClear": { "enabled": null, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5, "unsafeFocus": false, "onlyRepos": null, "onlySessions": null, "wrapUp": null }, "autoWrapUp": true, "autoResume": true, "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 } },
+  "context": { "enabled": true, "warnAt": 0.4, "budgetTokens": null, "reserveTokens": 0, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5, "autoClear": { "enabled": null, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5, "unsafeFocus": false, "onlyRepos": null, "onlySessions": null, "wrapUp": null }, "autoWrapUp": true, "autoResume": true, "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 } },
   "resume": { "auto": null, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15 },
   "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
   "notify": { "provider": null, "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["blocker", "deploy", "question"], "realertHours": 6, "questionTypes": null },

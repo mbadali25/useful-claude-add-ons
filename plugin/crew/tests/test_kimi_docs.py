@@ -15,7 +15,12 @@ import subprocess
 
 import pytest
 
+import context  # noqa: F401  pylint: disable=unused-import
+import crew_state
+import review_run
+
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DOC = os.path.join(CREW, "..", "..", "docs", "crew", "review.md")
 KIMI_IDS = ("k3", "kimi-for-coding", "kimi-for-coding-highspeed")
 
 
@@ -24,16 +29,32 @@ def _read(*parts):
         return fh.read()
 
 
-def _probe_rows(text):
-    return [line for line in text.splitlines()
-            if line.startswith("| `") and "| step 2" in line]
+def _doc():
+    """docs/crew/review.md: the rationale the cut-down review.md no longer carries (L-0726)."""
+    with open(DOC, encoding="utf-8") as fh:
+        return fh.read()
 
 
-def test_review_probe_table_has_a_kimi_row_that_runs_the_probe():
-    rows = [r for r in _probe_rows(_read("commands", "review.md")) if r.startswith("| `kimi`")]
+def _report(kimi_model="k3"):
+    return {"qa": [{"role": "review", "provider": "kimi", "model": kimi_model}],
+            "qaProviders": {"codex": {"model": "gpt-x", "reasoningEffort": "high"}},
+            "qaFallThrough": [{"provider": "codex", "eligible": True},
+                              {"provider": "kimi", "eligible": True},
+                              {"provider": "claude", "eligible": False}]}
 
-    assert len(rows) == 1 and "kimi_probe" in rows[0]
-    assert "command -v kimi" not in rows[0]
+
+def _context(report=None):
+    return review_run.Context(".", "T1", ".work/review/x", report or _report(), "claude", "config")
+
+
+def test_review_walk_has_a_kimi_row_that_runs_the_review_not_a_path_check():
+    """The walk launches Kimi directly (review_run.py probes it itself); Codex is the one probed."""
+    kimi = _context().walk(["kimi"])
+    codex = _context().walk(["codex"])
+
+    assert "--provider kimi" in kimi and "--probe" not in kimi and "kimi_probe" not in kimi
+    assert "command -v kimi" not in kimi
+    assert "--probe" in codex
 
 
 def test_review_never_gates_kimi_on_path_alone():
@@ -41,10 +62,10 @@ def test_review_never_gates_kimi_on_path_alone():
 
 
 def test_review_resolves_and_runs_the_kimi_model():
-    text = _read("commands", "review.md")
-
-    assert "QA_KIMI_MODEL=$(qm kimi model)" in text
-    assert '--provider kimi --model "$QA_KIMI_MODEL"' in text
+    assert review_run.qm(_report("k3"), "kimi", "model") == "k3"
+    assert review_run.qm(_report(""), "kimi", "model") == ""
+    assert "--provider kimi --model k3" in _context().walk(["kimi"])
+    assert "--provider kimi --model ''" in _context(_report("")).walk(["kimi"])
 
 
 def test_review_description_names_kimi():
@@ -61,12 +82,14 @@ def test_review_names_no_kimi_id_outside_the_owner_three():
 
 
 def test_review_eligible_filter_keeps_kimi():
-    """L-0527: review.md's $ELIGIBLE filter named codex, copilot and claude only,
-    so a kimi the report called eligible was dropped with "no review runner"."""
-    block = _read("commands", "review.md").split("ELIGIBLE=$(python3 -c '", 1)[1]
-    block = block.split("' \"$REPORT\")", 1)[0]
+    """L-0527: the $ELIGIBLE filter named codex, copilot and claude only, so a kimi the
+    report called eligible was dropped with "no review runner"."""
+    said = []
 
-    assert block.count('("codex", "copilot", "kimi", "claude")') == 2, block
+    result = review_run.eligible(_report(), said.append)
+
+    assert result == ["codex", "kimi"] and said == []
+    assert "kimi" in review_run.PROVIDERS
 
 
 def test_the_three_ids_appear_in_crew_providers_and_model_md():
@@ -218,54 +241,59 @@ def test_the_kimi_verify_rule_is_timed_not_a_placeholder():
         rules = json.load(fh)["rules"]
     rule = next(r for r in rules if "plugin/crew/hooks/scripts/kimi_probe.py" in r["paths"])
 
-    assert "placeholder" not in rule["why"] and "timed" in rule["why"].lower()
+    with open(os.path.join(CREW, "..", "..", "docs", "crew", "verify-rationale.md"),
+              encoding="utf-8") as fh:
+        rationale = fh.read().split(f"## {rule['id']}\n", 1)[1].split("\n## ", 1)[0]
+
+    assert "placeholder" not in rule["why"] + rationale and "timed" in rationale.lower()
 
 
 def _step_1b_rows():
-    text = _read("commands", "review.md")
-    table = text.split("| `dev.provider` | Struck from QA |", 1)[1].split("\n\n", 1)[0]
+    table = _doc().split("| `dev.provider` | Struck from QA |", 1)[1].split("\n\n", 1)[0]
     return {line.split("|")[1].strip(): line for line in table.splitlines()
             if line.startswith("| `")}
 
 
 def test_review_step_1b_strikes_kimi_for_a_kimi_author():
-    """Round 1 FIX (review.md:211): the strike table had no kimi row, so a
-    kimi-authored diff gave the agent nothing to strike."""
+    """Round 1 FIX: the strike table had no kimi row, so a kimi-authored diff gave the
+    agent nothing to strike. The rule is crew_state.family's; the table is its rationale."""
     row = _step_1b_rows()["`kimi`"]
 
     assert "`kimi`" in row.split("|")[2] and "`kimi-*`" in row
+    assert crew_state.family("kimi", None) == "kimi"
 
 
 def test_review_step_1b_copilot_kimi_pin_strikes_kimi():
     assert "`kimi-*` strikes Kimi" in _step_1b_rows()["`copilot`"]
+    assert crew_state.family("copilot", "kimi-for-coding") == "kimi"
 
 
 def test_review_kimi_probe_row_spends_one_request_not_two():
-    """Round 1 NIT (review.md:240): the walk ran kimi_probe.py, and then
-    review_run.py ran it again -- two live requests per Kimi review."""
-    row = next(r for r in _probe_rows(_read("commands", "review.md"))
-               if r.startswith("| `kimi`"))
+    """Round 1 NIT: the walk ran kimi_probe.py, and then review_run.py ran it again -- two
+    live requests per Kimi review."""
+    text = _read("commands", "review.md")
+    step = text.split("**Step 2e - Kimi.**", 1)[1].split("\n\n", 1)[0]
 
-    assert "review_run.py" in row and "do not run it separately" in row
+    assert "Needs no probe from you" in step and "review_run.py` runs `kimi_probe.py` itself" in step
+    assert "--probe" not in _context().walk(["kimi"])
 
 
 def test_review_kimi_step_label_names_one_step():
-    """Round 3 NIT (review.md:431): Kimi was labelled 2d beside an existing
-    **Step 2d** heading, so the probe table's "step 2d" led to two steps."""
+    """Round 3 NIT: Kimi was labelled 2d beside an existing **Step 2d** heading, so a
+    "step 2d" led to two steps."""
     body = _read("commands", "review.md")
-    row = next(r for r in _probe_rows(body) if r.startswith("| `kimi`"))
-    label = re.search(r"\| step (2[a-z]) \|$", row).group(1)
-    headings = [h for h in re.findall(r"^\*\*Step ([^*]+)\*\*", body, re.M)
-                if re.search(rf"(^|, ){label} ", h)]
+    headings = re.findall(r"^\*\*Step ([^*]+?)\*\*", body, re.M)
+    kimi = [h for h in headings if "Kimi" in h]
+    labelled_2d = [h for h in headings if re.match(r"2d\b", h)]
 
-    assert len(headings) == 1 and f"{label} — Kimi" in headings[0], headings
+    assert len(kimi) == 1 and kimi[0].startswith("2e "), kimi
+    assert len(labelled_2d) == 1 and "Kimi" not in labelled_2d[0], labelled_2d
 
 
 def test_review_kimi_paragraph_names_what_is_set_aside():
-    """Round 3 NIT (review.md:432): the prose said only graph.out was set aside
-    while the code set aside more; it now names the same set as the code."""
-    body = _read("commands", "review.md")
-    para = next(line for line in body.splitlines()
+    """Round 3 NIT: the prose said only graph.out was set aside while the code set aside
+    more; it now names the same set as the code."""
+    para = next(line for line in _doc().splitlines()
                 if line.startswith("Kimi reads the same `$SCRATCH/prompt.txt`"))
 
     assert [t for t in ("graph.out", ".idea/", ".vscode/", ".crew/guard.log",
@@ -285,19 +313,17 @@ def _probe_changed_code():
 def test_review_md_names_the_probe_changed_exit_code():
     """An exit code review.md does not name reads as "not run", and walks to
     the next provider against a tree the probe changed."""
-    body = _read("commands", "review.md")
+    body = " ".join(_read("commands", "review.md").split())
     code = _probe_changed_code()
-    status = next(line for line in body.splitlines() if line.startswith("REVIEW_STATUS=$?"))
 
-    assert f"{code} kimi probe changed the tree" in status
-    assert (f"Exit {code} means the Kimi probe changed the working tree; stop and report the "
-            "named paths, do not walk to the next provider") in body
+    assert (f"Exit {code}, the probe changed the tree: stop and report the named paths; "
+            "do not walk to the next provider") in body
+    assert "do not walk to the next provider" in review_run.NEXT_CODES[review_run.EXIT_PROBE_CHANGED]
 
 
 def test_review_md_states_the_round_4_fingerprint_facts():
-    """crew-providers SKILL.md states the same facts in the follow-up feature
-    PR (it is outside the harness lane's ALONGSIDE)."""
-    text = " ".join(_read("commands", "review.md").split())
+    """crew-providers SKILL.md states the same facts in the follow-up feature PR."""
+    text = " ".join(_doc().split())
 
     assert [t for t in ("permission bits", "symlink", "never opened",
                         "outside the repository is could-not-tell",
@@ -306,10 +332,8 @@ def test_review_md_states_the_round_4_fingerprint_facts():
 
 
 def test_review_md_a_pinned_kimi_hard_fails_on_a_failed_probe():
-    """Round 5 of T-0028: the Kimi row said exit 2 always skips, contradicting
+    """Round 5 of T-0028: the Kimi step said exit 2 always skips, contradicting
     the rule that a pinned provider whose probe fails is an error."""
-    body = _read("commands", "review.md")
-    row = next(r for r in _probe_rows(body) if r.startswith("| `kimi`"))
+    body = " ".join(_read("commands", "review.md").split())
 
-    assert "a pinned `kimi` hard-fails" in row
-    assert "unless `qa.provider` pins `kimi`, which hard-fails instead" in body
+    assert "skip it, or hard-fail if `qa.provider` pins `kimi`" in body

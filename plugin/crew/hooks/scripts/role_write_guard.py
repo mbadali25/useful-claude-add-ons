@@ -227,12 +227,14 @@ import crew_state
 #
 # Built from `agents/*.md`'s `tools:` frontmatter on 2026-09-19, and cut to
 # the crew 1.0 roster (explorer, reviewer, security, researcher) when the
-# other agents were deleted: every shipped role is read-only.
+# other agents were deleted: every shipped role is read-only. `session-relay`
+# (L-0797) is also listed but is a transport agent, not a role.
 _DENY_ROLES = frozenset({
     "explorer",
     "researcher",
     "reviewer",
     "security",
+    "session-relay",
 })
 
 # Every remaining role whose tools line grants BOTH Write and Edit, minus

@@ -594,14 +594,24 @@ def test_a_failed_fork_lookup_is_could_not_tell(tmp_path, monkeypatch, capsys):
     assert (code, " diffed-from-merged=could-not-tell" in capsys.readouterr().err) == (0, True)
 
 
-def test_review_md_step_2_echo_names_why():
+def test_review_prepare_empty_diff_echo_names_why(tmp_path):
     """Review round 2 NIT, resolved by the spec amendment and pinned here: in the
     merged-main exit-2 case HEAD need not match $BASE, so the echo defers to
-    review-patch's own line instead of claiming it."""
-    text = pathlib.Path(_ROOT, "commands", "review.md").read_text(encoding="utf-8")
+    review-patch's own line instead of claiming it. `review_run.py --prepare`
+    owns the echo since L-0726."""
+    import review_fixtures
+    root = review_fixtures.build_prepare_repo(tmp_path / "repo", "empty-diff")
+    env = review_fixtures.prepare_env(tmp_path / "fakes", tmp_path / "home")
 
-    assert (text.count('echo "nothing to review since $BASE: review-patch\'s line above says '
-                       'why"'), "HEAD matches $BASE and the tree is clean" in text) == (1, False)
+    done = subprocess.run(
+        [sys.executable, os.path.join(_ROOT, "hooks", "scripts", "review_run.py"), "--root",
+         ".", "--prepare", "--scratch", ".work/review/x"], cwd=root, env=env,
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False)
+
+    lines = done.stdout.splitlines()
+    assert (done.returncode, sum(1 for l in lines if l.startswith("nothing to review since ")),
+            "HEAD matches $BASE and the tree is clean" in done.stdout) == (0, 1, False)
+    assert lines[-2].endswith("review-patch's line above says why")
 
 
 def test_a_start_after_the_fork_diffs_only_mains_paths_from_the_merged_commit(tmp_path):

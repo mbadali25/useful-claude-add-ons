@@ -1046,3 +1046,26 @@ def test_no_shipped_doc_tells_users_to_run_a_profile_against_project_config():
             offenders.append(f"{os.path.relpath(path, _REPO_ROOT)}:{line}")
 
     assert offenders == []
+
+
+def _codex_hooks_json(command):
+    return json.dumps({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": command}]}]}})
+
+
+@pytest.mark.parametrize("command,expected", [
+    ('bash "/x/hooks/scripts/crew-context.sh" --harness codex', True),
+    ('bash "/x/hooks/scripts/crew-hook.sh" SessionStart', True),
+    ('bash "/x/hooks/scripts/crew-hooks.sh" SessionStart', False),
+    ('bash "/x/hooks/scripts/other.sh"', False),
+    ("echo hi", False),
+])
+def test_codex_hooks_generated_recognises_the_old_and_the_new_command_shape(command, expected):
+    assert ci._codex_hooks_generated(_codex_hooks_json(command)) is expected
+
+
+def test_codex_hooks_generated_refuses_a_file_mixing_a_generated_and_a_foreign_command():
+    mixed = json.dumps({"hooks": {"SessionStart": [{"hooks": [
+        {"type": "command", "command": 'bash "/x/hooks/scripts/crew-hook.sh" SessionStart'},
+        {"type": "command", "command": "echo hi"}]}]}})
+
+    assert ci._codex_hooks_generated(mixed) is False

@@ -12,6 +12,7 @@ or ~/.claude. `sabotage_wave.py`'s WAVE_MUTATIONS prove these can fail.
 """
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -20,6 +21,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
+import crew_config
 import crew_ticket
 import crew_wave
 import review_ledger
@@ -629,6 +631,102 @@ def test_start_prints_isolated_agent_launch_per_lane(tmp_path):
         2, True, 2, True)
 
 
+def _start_with_roles(tmp_path, roles):
+    root = _repo(tmp_path, raw=json.dumps({"scope": {"mode": "block"}, "dev": {"roles": roles}}))
+    _wave(root, [_row("T-1"), _row("T-2")], [("T-1", ("src/**",)), ("T-2", ("other/**",))])
+    _set(root, "s", ["T-1", "T-2"])
+    return crew_wave.start(str(root), "s")["lines"]
+
+
+_PLAIN = "Agent(subagent_type: general-purpose, isolation: worktree) prompt:"
+
+
+def test_launch_line_carries_developer_model(tmp_path):
+    lines = _start_with_roles(tmp_path, {"developer": {"provider": "claude",
+                                                       "model": "claude-sonnet-5-5"}})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (len(launches), all(
+        "Agent(subagent_type: general-purpose, isolation: worktree, model: claude-sonnet-5-5) prompt:"
+        in line for line in launches)) == (2, True)
+
+
+def test_launch_line_unchanged_without_pin(tmp_path):
+    lines = _start_with_roles(tmp_path, {})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (len(launches), all(_PLAIN in line for line in launches),
+            any("model" in line.split(" prompt:")[0] for line in lines)) == (2, True, False)
+
+
+@pytest.mark.parametrize("pin", [{"provider": "kimi", "model": "k3"},
+                                 {"provider": "codex", "model": "gpt-6.1-sol"},
+                                 {"provider": "codex", "model": "claude-opus-5-5"},
+                                 {"provider": "claude"}])
+def test_launch_line_no_model_for_non_claude_pin(tmp_path, pin):
+    lines = _start_with_roles(tmp_path, {"developer": pin, "coordinator": pin})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (len(launches), all(_PLAIN in line for line in launches),
+            [line for line in lines if line.startswith(("warning:", "coordinator:"))]) == (
+        2, True, [])
+
+
+def _start_with_config(tmp_path, cfg):
+    root = _repo(tmp_path, raw=json.dumps({"scope": {"mode": "block"}, **cfg}))
+    _wave(root, [_row("T-1"), _row("T-2")], [("T-1", ("src/**",)), ("T-2", ("other/**",))])
+    _set(root, "s", ["T-1", "T-2"])
+    return crew_wave.start(str(root), "s")["lines"]
+
+
+def test_block_default_model_is_not_a_pin(tmp_path):
+    lines = _start_with_config(tmp_path, {"dev": {"claude": {"model": "opus"}}})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (all(_PLAIN in line for line in launches),
+            [line for line in lines if line.startswith(("warning:", "coordinator:"))]) == (
+        True, [])
+
+
+def test_pin_without_provider_warns_when_block_provider_is_not_claude(tmp_path):
+    lines = _start_with_config(tmp_path, {"dev": {"provider": "codex", "roles": {
+        "coordinator": {"model": "claude-opus-5-5"}}}})
+
+    assert (any(line.startswith("warning: dev.roles.coordinator.model") for line in lines),
+            [line for line in lines if line.startswith("coordinator:")]) == (True, [])
+
+
+def test_launch_line_refuses_an_odd_model_text(tmp_path):
+    lines = _start_with_roles(tmp_path, {"developer": {"provider": "claude",
+                                                       "model": "x) rm -rf /"}})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (all(_PLAIN in line for line in launches),
+            any(line.startswith("warning: dev.roles.developer.model") for line in lines)) == (
+        True, True)
+
+
+def test_start_reports_coordinator_pin(tmp_path):
+    lines = _start_with_roles(tmp_path, {"coordinator": {"provider": "claude",
+                                                         "model": "claude-opus-5-5"}})
+
+    assert "coordinator: model claude-opus-5-5" in lines
+
+
+@pytest.mark.parametrize("roles", [{}, {"coordinator": {"provider": "kimi",
+                                                         "model": "kimi-code/k3"}},
+                                   {"coordinator": {"provider": "claude"}}])
+def test_start_silent_without_coordinator_pin(tmp_path, roles):
+    lines = _start_with_roles(tmp_path, roles)
+
+    assert [line for line in lines if line.startswith("coordinator:")] == []
+
+
 def test_start_refuses_when_scope_not_enforcing(tmp_path):
     root = _repo(tmp_path, mode="report")
     _wave(root, [_row("T-1")], [("T-1", ("src/**",))])
@@ -876,6 +974,19 @@ def test_relaunch_resumes_reserved_round_without_new_reservation(tmp_path):
 
     launch = [line for line in out.splitlines() if line.startswith("launch T-1")]
     assert (len(launch), "--resume-round 1" in launch[0], _rounds(root)) == (1, True, 1)
+
+
+def test_start_json_relaunch_argv_carries_the_reserved_round(tmp_path):
+    root = _started(tmp_path)
+    wt = _isolated(root)
+    crew_wave.lane_init(str(wt), str(root), "s", "T-1")
+    review_ledger.reserve(str(root), "T-1", "claude")
+    _gone(root, wt)
+
+    out = json.loads(_cli("start", "--root", root, "--set", "s", "--json").stdout)
+
+    launch = next(entry for entry in out["launches"] if entry["ticket"] == "T-1")
+    assert (launch["argv"][-2:], _rounds(root)) == (["--resume-round", "1"], 1)
 
 
 def test_relaunch_with_an_unreadable_ledger_stops_and_reserves_nothing(tmp_path):
@@ -1642,3 +1753,160 @@ def test_route_cli_prints_wave_fields(tmp_path):
                           stdin=subprocess.DEVNULL)
 
     assert done.stdout.strip() == "sub=wave stop=0 ticket= set= tickets=T-1,T-2 reason="
+
+
+def test_models_lists_coordinator_pin(tmp_path, capsys):
+    root = _repo(tmp_path, raw=json.dumps({"scope": {"mode": "block"}, "dev": {"roles": {
+        "coordinator": {"provider": "claude", "model": "claude-opus-5-5"}}}}))
+
+    code = crew_config.main(["--root", str(root), "--global-path", str(tmp_path / "none.json"),
+                             "--models"])
+    rows = [line for line in capsys.readouterr().out.splitlines()
+            if line.startswith("coordinator ")]
+
+    assert (code, len(rows), "role-pin" in rows[0], "claude-opus-5-5" in rows[0]) == (
+        0, 1, True, True)
+
+
+@pytest.mark.parametrize("pin,fragment", [
+    ({"provider": "claude", "model": "gpt-6"}, "is not a claude model"),
+    ({"provider": "Claude", "model": "claude-sonnet-5-5"}, "is not 'claude'")])
+def test_unusable_claude_pin_is_named(tmp_path, pin, fragment):
+    lines = _start_with_roles(tmp_path, {"developer": pin})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+    warnings = [line for line in lines if line.startswith("warning:")]
+
+    assert (all(_PLAIN in line for line in launches), len(warnings),
+            fragment in warnings[0]) == (True, 1, True)
+
+
+def test_pinned_model_is_lowercased_on_the_launch_line(tmp_path):
+    lines = _start_with_roles(tmp_path, {"developer": {"provider": "claude",
+                                                       "model": "Claude-Sonnet-5-5"}})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert all("model: claude-sonnet-5-5)" in line for line in launches)
+
+
+# --- L-0727: start --json launches, workflow lane root, Ticket ID line ----------------------
+
+def _json_start(tmp_path, tickets=(("T-1", ("src/**",)), ("T-2", ("other/**",)))):
+    root = _repo(tmp_path)
+    _wave(root, [_row(t) for t, _ in tickets], list(tickets))
+    _set(root, "s", [t for t, _ in tickets])
+    return root, json.loads(_cli("start", "--root", root, "--set", "s", "--json").stdout)
+
+
+def test_start_json_launches_follow_the_launch_lines_in_order(tmp_path):
+    _, out = _json_start(tmp_path)
+
+    launch_lines = [line for line in out["lines"] if line.startswith("launch ")]
+    assert ([entry["ticket"] for entry in out["launches"]],
+            [line.split(":")[0] for line in launch_lines]) == (
+        ["T-1", "T-2"], ["launch T-1", "launch T-2"])
+
+
+def test_start_json_launch_argv_is_the_lane_prompt_command(tmp_path):
+    root, out = _json_start(tmp_path)
+
+    argv = out["launches"][0]["argv"]
+
+    assert (argv[0], os.path.basename(argv[1]), argv[2:]) == (
+        "python3", "crew_wave.py",
+        ["lane-prompt", "--root", crew_wave._plain_path(str(root)), "--set", "s", "--ticket", "T-1"])  # pylint: disable=protected-access
+
+
+def test_start_json_argv_runs_and_prints_the_lane_prompt(tmp_path):
+    _, out = _json_start(tmp_path)
+
+    ran = subprocess.run([sys.executable] + out["launches"][0]["argv"][1:], capture_output=True,
+                         text=True, encoding="utf-8", check=False, stdin=subprocess.DEVNULL)
+
+    assert (ran.returncode, ran.stdout.startswith("Ticket ID: T-1\n")) == (0, True)
+
+
+def test_start_json_launches_empty_on_a_stop(tmp_path):
+    root = _repo(tmp_path, mode="off")
+    _wave(root, [_row("T-1")], [("T-1", ("src/**",))])
+    _set(root, "s", ["T-1"])
+
+    out = json.loads(_cli("start", "--root", root, "--set", "s", "--json").stdout)
+
+    assert (out["stop"], out["launches"]) == (True, [])
+
+
+def test_start_json_refusals_stay_in_lines_and_out_of_launches(tmp_path):
+    root, first = _json_start(tmp_path)
+    crew_wave.lane_done(str(root), "s", "T-1", "failed", "gone")
+
+    again = json.loads(_cli("start", "--root", root, "--set", "s", "--json").stdout)
+
+    assert (any(line.startswith("T-1 skipped: failed") for line in again["lines"]),
+            [entry["ticket"] for entry in again["launches"]],
+            len(first["launches"])) == (True, ["T-2"], 2)
+
+
+def test_start_without_json_prints_the_same_lines_as_before(tmp_path):
+    root = _repo(tmp_path)
+    _wave(root, [_row("T-1")], [("T-1", ("src/**",))])
+    _set(root, "s", ["T-1"])
+
+    out = _cli("start", "--root", root, "--set", "s").stdout
+
+    assert out.startswith(
+        "launch T-1: Agent(subagent_type: general-purpose, isolation: worktree) prompt:")
+
+
+_WORKFLOW_FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures",
+                                 "workflow_worktree_payload.json")
+
+
+def test_lane_init_admits_the_worktree_root_a_workflow_agent_measured(tmp_path):
+    with open(_WORKFLOW_FIXTURE, encoding="utf-8") as handle:
+        measured = json.load(handle)
+    root = _started(tmp_path)
+    wt = _isolated(root, "wf_894f432e-4be-1")
+    relative = os.path.relpath(measured["payloads"][1]["cwd"], measured["main_checkout"])
+
+    ok, reason = crew_wave.lane_init(str(wt), str(root), "s", "T-1")
+
+    assert (relative.startswith(os.path.join(".claude", "worktrees") + os.sep), ok) == (True, True), reason
+
+
+@pytest.mark.parametrize("where", ["sibling", "inside"])
+def test_lane_init_refuses_a_worktree_outside_the_agent_root(tmp_path, where):
+    root = _started(tmp_path)
+    target = {"sibling": tmp_path / "sibling-wt", "inside": root / "plain" / "wt"}[where]
+    wt = _isolated(root, "x", where=target)
+
+    ok, reason = crew_wave.lane_init(str(wt), str(root), "s", "T-1")
+
+    assert (ok, ".claude/worktrees" in reason) == (False, True)
+
+
+def test_lane_prompt_carries_ticket_id(tmp_path):
+    root = _started(tmp_path, tickets=(("L-0101", ("src/**",)), ("L-0102", ("other/**",))))
+    pattern = re.compile(r"^Ticket ID: [A-Z]+-\d{4}$")
+
+    got = {t: crew_wave.lane_prompt(str(root), "s", t) for t in ("L-0101", "L-0102")}
+
+    found = {t: [line for line in text.splitlines() if line.startswith("Ticket ID")]
+             for t, text in got.items()}
+    assert (found, all(pattern.match(lines[0]) for lines in found.values()),
+            all(text.splitlines()[0] == f"Ticket ID: {t}" for t, text in got.items())) == (
+        {"L-0101": ["Ticket ID: L-0101"], "L-0102": ["Ticket ID: L-0102"]}, True, True)
+
+
+def test_start_json_launch_carries_the_pinned_model_only_when_pinned(tmp_path):
+    pinned = _repo(tmp_path / "a", raw=json.dumps({"scope": {"mode": "block"}, "dev": {"roles": {
+        "developer": {"provider": "claude", "model": "claude-sonnet-5-5"}}}}))
+    plain = _repo(tmp_path / "b")
+    got = []
+    for root in (pinned, plain):
+        _wave(root, [_row("T-1")], [("T-1", ("src/**",))])
+        _set(root, "s", ["T-1"])
+        got.append(json.loads(_cli("start", "--root", root, "--set", "s", "--json").stdout)["launches"][0])
+
+    assert (got[0].get("model"), "model" in got[1]) == ("claude-sonnet-5-5", False)

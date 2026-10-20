@@ -360,7 +360,7 @@ else:
         handoff = os.path.relpath(got, root).replace(os.sep, "/")
     except Exception:
         pass
-    print(c.get("warnAt",0.5), c.get("budgetTokens") or 0, handoff, str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",True)).lower(), reserve, escaped)
+    print(c.get("warnAt",0.4), c.get("budgetTokens") or 0, handoff, str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",True)).lower(), reserve, escaped)
 PY
 )
 if [ "$CFG" = "MALFORMED_CONFIG_CONTEXT_BLOCK" ]; then

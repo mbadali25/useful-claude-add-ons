@@ -55,7 +55,6 @@ CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STANDARDS = os.path.join(CREW, "hooks", "scripts", "crew_standards.py")
 REVIEW_LEDGER = os.path.join(CREW, "hooks", "scripts", "review_ledger.py")
 REVIEW_RUN = os.path.join(CREW, "hooks", "scripts", "review_run.py")
-REVIEW_MD = os.path.join(CREW, "commands", "review.md")
 GENERIC = os.path.join(CREW, "skills", "crew-standards", "references", "generic.md")
 PYTHON_SET = os.path.join(CREW, "skills", "crew-standards", "references", "python.md")
 PWSH_SET = os.path.join(CREW, "skills", "crew-standards", "references", "powershell.md")
@@ -330,16 +329,12 @@ STANDARDS_MUTATIONS = (
         'tests/test_crew_standards.py::test_refusal_branch_empty_set',
     ),
     (
-        "review.md loses the self-check refusal",
-        REVIEW_MD,
-        ("cause. Exit 2 means nothing launched and no round was spent: not on PATH (walk\n"
-         "to the next eligible provider), or `review-run: self-check: ...` - the standards\n"
-         "self-check is missing or stale for this bundle (every provider): answer\n"
-         "`.work/tickets/$TICKET/selfcheck.md`, run the `crew_standards.py stamp` it names, "
-         "rebuild."),
-        ("cause. Exit 2 means nothing launched (not on PATH) and no round was spent; walk\n"
-         "to the next eligible provider."),
-        "tests/test_lifecycle_commands.py::test_commands_name_the_standards_steps",
+        "a review_run exit 2 loses the self-check refusal's next: action",
+        REVIEW_RUN,
+        '    (2, "self-check:", False, "answer',
+        '    (2, "self-check-gone:", False, "answer',
+        "tests/test_review_prepare.py::"
+        "test_every_exit_path_prints_one_next_line_by_reason",
     ),
     (
         "a start recorded as a merge-base guess refuses the stamp",

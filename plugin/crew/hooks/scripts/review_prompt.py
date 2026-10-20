@@ -52,8 +52,10 @@ has none" from "nobody passed it"; a line saying which is the difference.
     handed over: past WEBTEST_FINDINGS_MAX the full list goes to
     `webtest-findings.txt` beside `--out`, with its own READ acknowledgement.
 
-The codemap landmines are gathered by `review.md` itself (its existing step)
-and are not repeated here.
+The codemap landmines are not part of this contract: `gather_landmines` collects
+them for `review_run.py --prepare` (L-0726; they were `review.md`'s shell loop),
+and `prompt_text` joins the contract and the landmines into the one prompt every
+provider reads.
 
 CLI: --root <repo> --ticket <id> --manifest <json> --out <file>
 """
@@ -74,6 +76,30 @@ import review_checks
 import review_gate
 import review_verdict
 import verify_record
+
+LANDMINE_CAP = 200
+NO_LANDMINES = b"No codemap note intersects this diff, so no repo-specific landmines were supplied.\n"
+CODEMAP_SECTIONS = ((re.compile(rb"^## Landmines"), re.compile(rb"^## ")),
+                    (re.compile(rb"^## Written by / Read by"), re.compile(rb"^## ")))
+CHANGED_KEYS = ("committed_files", "staged_files", "unstaged_files", "untracked_files")
+PROMPT_HEAD = """Review the change in {scratch}/diff.txt, read as the parts listed below, as a
+hostile QA engineer, against the ticket's spec and plan below.
+Output one line per defect: SEVERITY|file:line|what breaks|how to reproduce.
+SEVERITY is BLOCK, FIX, or NIT. Check: unintended behavior changes, unhandled
+error paths, boundary and empty-collection cases, concurrency, anything the
+change makes reachable that was not before, and every acceptance check.
+Output nothing but the READ lines and those lines - no code fences, no prose.
+If no defects, after the READ lines output exactly: CLEAN
+
+"""
+PROMPT_TAIL = """
+
+This repository's own recorded failure modes follow. They come from its code
+map, where each line was written because it already cost someone real time
+here. Treat them as leads to check in the diff, not as findings to repeat: a
+landmine this change does not touch is not a defect, and reporting it as one
+trains the reader to skim your output.
+"""
 
 SPEC_SECTIONS = ("Intent", "Exclusions", "Evidence", "Unknowns", "Acceptance checks")
 WEBTEST_FINDINGS_MAX = 50
@@ -455,6 +481,79 @@ def build(root, ticket, manifest, out_dir=None):
             continue
         lines += block + [""]
     return "\n".join(lines)
+
+
+def changed_files(manifest):
+    """The sorted, de-duplicated changed paths the manifest lists (committed,
+    staged, unstaged, untracked) - what `review_patch.py` bundled, not a
+    second `git diff` that could disagree with it."""
+    files = set()
+    for key in CHANGED_KEYS:
+        files.update(manifest.get(key) or [])
+    return sorted(files)
+
+
+def _lines(data):
+    """Lines of `data` split on a newline only, each keeping its newline."""
+    return re.findall(rb"[^\n]*\n|[^\n]+", data)
+
+
+def _sed_range(lines, start, end):
+    """What `sed -n '/START/,/END/p'` prints: a range opens on a START line
+    and closes on the first later END line, and may open again."""
+    out, inside = [], False
+    for line in lines:
+        if not inside:
+            if start.match(line):
+                inside = True
+                out.append(line)
+        else:
+            out.append(line)
+            if end.match(line):
+                inside = False
+    return out
+
+
+def gather_landmines(root, changed):
+    """The codemap context for the prompt, as bytes (L-0726: `review.md`'s
+    shell loop, byte for byte). For each `.crew/codemap/*.md` note except
+    INDEX.md, in name order, whose text contains a changed path as a literal,
+    its `## Landmines` and `## Written by / Read by` ranges. Over
+    LANDMINE_CAP lines it is cut and says so; empty it says that. A note that
+    cannot be read raises OSError: the caller reports could-not-tell, since
+    an unread note and a note with nothing to say look the same in a prompt."""
+    needles = [path.encode("utf-8") for path in changed if path]
+    context = b""
+    folder = os.path.join(root, ".crew", "codemap")
+    try:
+        names = sorted(os.listdir(folder))
+    except FileNotFoundError:
+        names = []
+    for name in names:
+        note = os.path.join(folder, name)
+        if (not name.endswith(".md") or name.startswith(".") or name == "INDEX.md"
+                or not os.path.exists(note)):
+            continue
+        data = review_checks.read_regular(note, root)
+        if needles and any(needle in data for needle in needles):
+            lines = _lines(data)
+            for start, end in CODEMAP_SECTIONS:
+                context += b"".join(_sed_range(lines, start, end))
+    total = context.count(b"\n")
+    if total > LANDMINE_CAP:
+        kept = b"".join(_lines(context)[:LANDMINE_CAP])
+        context = kept + (f"\n[TRUNCATED at {LANDMINE_CAP} lines of {total}. More landmines "
+                          "exist in .crew/codemap/ than fitted here.]\n").encode("utf-8")
+    return context or NO_LANDMINES
+
+
+def prompt_text(scratch, contract, context):
+    """The prompt every provider reads, as bytes: the fixed instructions
+    naming `scratch`, the contract, the landmines. Trailing newlines of the
+    two bodies are dropped and one ends the text, as the heredoc did."""
+    head = PROMPT_HEAD.format(scratch=scratch).encode("utf-8")
+    return (head + contract.rstrip(b"\n") + PROMPT_TAIL.encode("utf-8")
+            + context.rstrip(b"\n") + b"\n")
 
 
 def main(argv):
