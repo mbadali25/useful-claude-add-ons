@@ -177,7 +177,7 @@ from `crew_hook.EVENTS`, `crew_hook.REGISTERED_MATCHER` and `crew_hook.event_tim
 `plugin/crew/tests/test_hooks_json_shape.py` holds the file, `TABLE` and `crew-hook.sh`'s static
 list equal. Decision record: `docs/adr/0009-hook-single-dispatch.md`.
 
-`plugin/crew/hooks/scripts/crew_hook.py` (597 lines) is the dispatcher the launchers run. Its
+`plugin/crew/hooks/scripts/crew_hook.py` (620 lines) is the dispatcher the launchers run. Its
 `TABLE` (`:65`) is 18 rows (`Row`: event, matcher, script, extra, timeout, guard, twin, codex) over
 **14** distinct `.sh` scripts, each with a `.ps1` twin in the directory (checked by `os.path.exists`).
 Row counts per event, with the registration timeout `event_timeout` gives (largest row + `EVENT_SLACK`
@@ -196,15 +196,15 @@ Row counts per event, with the registration timeout `event_timeout` gives (large
 
 `select` (`:124`, pure) picks the rows for one payload (matcher per Claude Code's rule in `matches`,
 `:108`; an unreadable tool name runs every row of the event; identical argv run once; a row's `codex`
-field is the Codex-harness matcher, `None` meaning not registered there). `dispatch` (`:453`) runs the
+field is the Codex-harness matcher, `None` meaning not registered there). `dispatch` (`:464`) runs the
 chosen scripts concurrently and `merge` (`:178`, pure) folds their results into the one Claude Code
 sees, per the module docstring (`:2-27`): exit 2 from any child wins, `permissionDecision` ranks
 deny > ask > allow, `decision: "block"` and `continue: false` win, `additionalContext` and
-`systemMessage` concatenate in table order. Fail closed: `armed` (`:277`) is True when crew governs the
+`systemMessage` concatenate in table order. Fail closed: `armed` (`:276`) is True when crew governs the
 repo or that cannot be told; in an armed repo a guard row that times out, a missing script, or an
 exception in the dispatcher is exit 2 with a named reason on `BLOCKING_EVENTS` (`PreToolUse`,
-`UserPromptSubmit`, `Stop`, `:47`); an unarmed repo gets exit 0 (`_settle` `:524`, `_fault` `:590`).
-The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 265 lines; `crew-hook.ps1`, 458) supervise
+`UserPromptSubmit`, `Stop`, `:47`); an unarmed repo gets exit 0 (`_settle` `:539`, `_fault` `:613`).
+The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 328 lines; `crew-hook.ps1`, 462) supervise
 rather than exec it: exit 0 and 2 pass through, anything else becomes the armed/unarmed fault above,
 under one deadline (`CREW_HOOK_DEADLINE`, the registration timeout minus 5 s). `crew-hook.sh` exits 0 on
 Windows (`uname -s` MINGW/MSYS/CYGWIN; `OS=Windows_NT` only when uname names no POSIX kernel) and
