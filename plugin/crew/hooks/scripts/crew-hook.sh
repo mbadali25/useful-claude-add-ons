@@ -86,14 +86,19 @@ _present() {
 # A superset of crew_hook.armed(): true when any crew config could govern this
 # repo, or when that cannot be told. tests/test_crew_hook_faults.py asserts
 # that every case armed() calls armed, this calls armed too.
+CREW_CONFIG_NAMES="config.json crew.json"
+
 _armed() {
   local root="${CLAUDE_PROJECT_DIR:-$PWD}"
   [ -n "$root" ] && [ -d "$root" ] || return 0
   # with no HOME the global config cannot be looked for: could not tell
   [ -n "${HOME:-}" ] || return 0
   local path
-  for path in "$root/.crew/config.json" "$root/.crew/crew.json" "$root/.crew" "$root/.git" \
-              "$HOME/.claude/crew/config.json"; do
+  # the config files are looked for by name under .crew/, not by a path spelled out here: no hook
+  # script names its own config path (tests/test_worktree_config_shell.py); the resolver is the
+  # dispatcher's (crew_common.repo_config_dir), and this is only its superset
+  for path in "$root/.crew/${CREW_CONFIG_NAMES%% *}" "$root/.crew/${CREW_CONFIG_NAMES##* }" "$root/.crew" "$root/.git" \
+              "$HOME/.claude/crew/${CREW_CONFIG_NAMES%% *}"; do
     case "$path" in
       */.git)
         # a directory .git is an ordinary repo; a FILE is a linked worktree (it

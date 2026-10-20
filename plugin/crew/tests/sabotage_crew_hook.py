@@ -78,7 +78,7 @@ CREW_HOOK_MUTATIONS = (
      "    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught\n        return False\n",
      _F + "test_armed_is_true_when_the_resolution_fails_or_cannot_tell"),
     ("the sh launcher's armed check ignores the machine-global config", SH,
-     '              "$HOME/.claude/crew/config.json"; do\n',
+     '              "$HOME/.claude/crew/${CREW_CONFIG_NAMES%% *}"; do\n',
      "              /nonexistent-home/.claude/crew/config.json; do\n",
      _F + "test_the_launcher_check_calls_armed_every_case_armed_calls_armed[sh]"),
     ("the sh launcher's no-python list forgets a script", SH,

@@ -84,9 +84,6 @@ PLATFORM_ONLY = {
     "the PowerShell gate keeps a credit after the tree moved": (_WIN, _WIN_WHY),
     "the PowerShell gate keeps a withdrawn credit in the record sync":
         (_WIN, _WIN_WHY),
-    "Get-CrewChildTabRecheck skips the post-delay tab check again":
-        (_WIN, "System.Windows.Forms/UIAutomation exist only on Windows; the "
-               "(Linux structural) twin covers the same mutation elsewhere"),
     "cloud guard r1: a FIFO or device is opened as a plan": (_LINUX, _ZERO_WHY),
     "cloud guard r1: azureProfile.json opened whatever it is":
         (_LINUX, _ZERO_WHY),
