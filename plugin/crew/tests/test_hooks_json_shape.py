@@ -209,7 +209,6 @@ def test_instruction_generator_codex_rows_are_derived_from_the_table_not_copied(
 def test_a_table_matcher_is_an_empty_string_the_vault_regex_or_a_plain_tool_list():
     """The no-python fallback in crew-hook.sh judges nothing else, and runs a row it cannot judge;
     a general regex in TABLE needs that fallback taught first."""
-    import re  # pylint: disable=import-outside-toplevel
     plain = re.compile(r"[A-Za-z0-9_|]+\Z")
 
     odd = [(r.script, m) for r in crew_hook.TABLE for m in (r.matcher, r.codex or "")

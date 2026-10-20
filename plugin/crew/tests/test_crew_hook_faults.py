@@ -74,7 +74,12 @@ def _run(flavour, scripts, event, data, root, home, env_extra=None, path=None, t
     return done.returncode, done.stdout.decode("utf-8", "replace"), done.stderr.decode("utf-8", "replace")
 
 
-def _deadline(seconds):
+PS1_STARTUP = 8.0  # seconds a loaded runner may need to start pwsh, python and the dispatcher
+
+
+def _deadline(seconds, flavour="sh"):
+    """The inherited deadline, `seconds` from now; the PowerShell launcher is given its start-up on top."""
+    seconds += PS1_STARTUP if flavour == "ps1" else 0
     return {"CREW_HOOK_DEADLINE": str(int(time.time() * 1000) + int(seconds * 1000))}
 
 
@@ -111,12 +116,13 @@ def _plant_slow_guard(scripts):
 
 
 FAULTS = {
-    "exception-in-main": (_plant_exception, "dispatcher error RuntimeError: boom", dict),
-    "syntax-error-before-main": (_plant_syntax_error, "crew_hook.py failed (exit 1)", dict),
-    "table-script-missing": (_plant_missing_script, "scope-guard.sh is missing", dict),
-    "guard-past-its-timeout": (_plant_slow_guard, "scope-guard.sh timed out", lambda: _deadline(2.5)),
+    "exception-in-main": (_plant_exception, "dispatcher error RuntimeError: boom", lambda flavour: {}),
+    "syntax-error-before-main": (_plant_syntax_error, "crew_hook.py failed (exit 1)", lambda flavour: {}),
+    "table-script-missing": (_plant_missing_script, "scope-guard.sh is missing", lambda flavour: {}),
+    "guard-past-its-timeout": (_plant_slow_guard, ("scope-guard.sh timed out", "ran past the deadline", "failed (exit"),
+                               lambda flavour: _deadline(2.5, flavour)),
     "dispatcher-hangs-before-main": (_plant_hang_before_main, ("failed (exit 137)", "ran past the deadline"),
-                                     lambda: _deadline(2.0)),
+                                     lambda flavour: _deadline(2.0, flavour)),
 }
 
 needs_runner = pytest.mark.skipif(h.BASH is None and not h.WINDOWS, reason="no bash - the launcher was NOT run")
@@ -142,7 +148,7 @@ def test_a_fault_in_an_armed_repo_is_exit_2_naming_the_cause(fault, config, flav
     plant(scripts)
     root, home = _repo(tmp_path, config)
 
-    code, _, err = _run(flavour, scripts, "PreToolUse", BASH_PAYLOAD, root, home, env_extra=extra())
+    code, _, err = _run(flavour, scripts, "PreToolUse", BASH_PAYLOAD, root, home, env_extra=extra(flavour))
 
     assert code == 2, err
     assert any(part in err for part in ((reason,) if isinstance(reason, str) else reason)), err
@@ -157,7 +163,7 @@ def test_the_same_fault_in_an_unarmed_repo_is_exit_0(fault, flavour, tmp_path):
     plant(scripts)
     root, home = _repo(tmp_path, "none")
 
-    code, _, err = _run(flavour, scripts, "PreToolUse", BASH_PAYLOAD, root, home, env_extra=extra())
+    code, _, err = _run(flavour, scripts, "PreToolUse", BASH_PAYLOAD, root, home, env_extra=extra(flavour))
 
     assert code == 0, err
 
@@ -169,7 +175,7 @@ def test_a_stdin_that_never_closes_is_a_fault_not_a_hang(config, armed, flavour,
     scripts = _copy_scripts(tmp_path)
     root, home = _repo(tmp_path, config)
     env = rgh.env_for(root, home)
-    env.update(_deadline(2.5))
+    env.update(_deadline(2.5, flavour))
     env["CLAUDE_PLUGIN_ROOT"] = os.path.dirname(os.path.dirname(scripts))
     if flavour == "ps1":
         env["OS"] = "Windows_NT"

@@ -405,7 +405,6 @@ def claude_hooks():
     """hooks.json for crew's plugin manifest: one launcher per event per shell
     flavour (CLAUDE.md: a bare command goes to Git Bash on Windows). Rendered
     from `crew_hook.TABLE`, the contract the dispatcher runs (L-0727)."""
-    import crew_hook  # pylint: disable=import-outside-toplevel
     out = {}
     for event in crew_hook.EVENTS:
         timeout = crew_hook.event_timeout(event)
@@ -428,7 +427,6 @@ def default_plugin_root():
 
 
 def codex_hooks(plugin_root):
-    import crew_hook  # pylint: disable=import-outside-toplevel
     scripts = os.path.join(plugin_root, "hooks", "scripts")
     sh = os.path.join(scripts, LAUNCHER + ".sh").replace("\\", "/")
     ps = os.path.join(scripts, LAUNCHER + ".ps1").replace("/", "\\")
