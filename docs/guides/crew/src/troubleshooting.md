@@ -60,10 +60,12 @@ or behaves like an older release.
 
 ## Hook noise
 
-Every hook crew registers, from `plugin/crew/hooks/hooks.json`, and the config key that turns its
-behaviour up or down. All events are registered once for bash and once for PowerShell (`shell:
-"powershell"`), so a Windows machine with both `bash` and `pwsh` on `PATH` fires both halves of
-every pair — that is what "even counts" in the file means, not a bug.
+Every hook crew runs, and the config key that turns its behaviour up or down. `plugin/crew/hooks/hooks.json`
+registers one launcher per event per shell (`crew-hook.sh`, and `crew-hook.ps1` with `shell: "powershell"`);
+the launcher starts one dispatcher, `crew_hook.py <Event>`, which runs that event's scripts below at once and
+combines what they print. On Windows only the PowerShell launcher runs, so no event fires twice. When the
+launcher or dispatcher itself fails in a repo crew governs, `PreToolUse`, `UserPromptSubmit` and `Stop` refuse
+with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged.
 
 | Event | Script | What it does | Switch | Default |
 |---|---|---|---|---|

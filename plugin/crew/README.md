@@ -364,6 +364,8 @@ Parallelism scales on independent work units, not job titles.
 
 ## 25. Command and agent reference
 
+**Hook registrations (crew 1.2.58, L-0850).** `hooks/hooks.json` registers 16 entries, one launcher per event per shell for eight events (`crew-hook.sh`, and `crew-hook.ps1` with `shell: powershell`), where it used to register 36. The launcher starts `hooks/scripts/crew_hook.py <Event>`, which runs that event's hook scripts and merges their results (exit 2 wins; deny over ask over allow). On Windows only the PowerShell launcher acts, so no event runs twice. In a repository crew governs, a dispatcher fault, a missing hook script, a guard past its timeout or a launcher crash refuses the call (exit 2, naming the cause) on `PreToolUse`, `UserPromptSubmit` and `Stop`; in a repository it does not govern it exits 0. A hook override that names a script path no longer matches. The per-script table is in [Hooks](../../docs/crew/reference/25-command-and-agent-reference.md#hooks) and the decision is [ADR 0009](../../docs/adr/0009-hook-single-dispatch.md).
+
 ### Commands
 
 <!-- claim: plugin-command-table:crew -->

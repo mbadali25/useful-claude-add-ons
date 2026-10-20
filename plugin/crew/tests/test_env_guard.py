@@ -693,15 +693,16 @@ def test_pwsh_wrapper_without_python(tmp_path, armed):
 # --- 9: registration -----------------------------------------------------------------
 
 
-def test_registered_once_per_flavour_on_bash_and_powershell():
+def test_registered_once_in_the_dispatcher_table_with_its_powershell_twin():
+    """L-0727: hooks.json registers the PreToolUse launcher once per shell for Bash and
+    PowerShell calls; crew_hook.TABLE holds the one env-guard row, with the twin."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
     with open(os.path.join(_ROOT, "hooks", "hooks.json"), encoding="utf-8") as fh:
         pre = json.load(fh)["hooks"]["PreToolUse"]
-    entries = [(e["matcher"], h) for e in pre for h in e["hooks"]
-               if "env-guard" in h["command"]]
-    assert len(entries) == 2
-    by_script = {("ps1" if "env-guard.ps1" in h["command"] else "sh"): (m, h)
-                 for m, h in entries}
-    assert by_script["sh"][0] == by_script["ps1"][0] == "Bash|PowerShell"
-    assert by_script["ps1"][1].get("shell") == "powershell"
-    assert "shell" not in by_script["sh"][1]
-    assert by_script["sh"][1]["timeout"] == by_script["ps1"][1]["timeout"] == 15
+    launchers = [h for e in pre for h in e["hooks"]]
+    assert len(launchers) == 2 and all("crew-hook" in h["command"] for h in launchers)
+    assert {e["matcher"] for e in pre} == {crew_hook.REGISTERED_MATCHER["PreToolUse"]}
+    rows = [r for r in crew_hook.TABLE if r.script == "env-guard.sh"]
+    assert len(rows) == 1
+    assert (rows[0].event, rows[0].matcher, rows[0].twin, rows[0].timeout, rows[0].guard) == (
+        "PreToolUse", "Bash|PowerShell", "env-guard.ps1", 15, True)

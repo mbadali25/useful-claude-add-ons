@@ -77,6 +77,7 @@ except ImportError:  # pragma: no cover - exercised only on 3.8-3.10
 
 import crew_common
 import crew_context
+import crew_hook
 from crew_common import read_text
 
 GENERATOR_VERSION = "1"
@@ -86,21 +87,18 @@ MARKER = "crew:generated"
 NOTE = "note: "  # reported, never drift
 KEEP_START, KEEP_END = "<!-- crew:keep:start -->", "<!-- crew:keep:end -->"
 SCRIPT = "crew-context"
+LAUNCHER = "crew-hook"
 # Every script name a generated .codex/hooks.json command may run: today's, and the dispatcher's.
 GENERATED_SCRIPTS = (SCRIPT, "crew-hook")
 VAULT_MATCHER = "mcp__.*(obsidian|vault|basic[-_]memory).*"
 
-# The one table both harnesses' registrations are rendered from. `codex`
-# overrides a row's matcher for Codex, whose file-edit tool is `apply_patch`;
-# None there means the row is not registered for Codex at all.
-HOOK_TABLE = (
-    {"event": "SessionStart", "matcher": None, "codex": None, "timeout": 20},
-    {"event": "UserPromptSubmit", "matcher": None, "codex": None, "timeout": 15},
-    {"event": "PostToolUse", "matcher": "Read|Edit|Write|MultiEdit",
-     "codex": "apply_patch|Edit|Write", "timeout": 10},
-    {"event": "PostToolUse", "matcher": VAULT_MATCHER, "codex": VAULT_MATCHER, "timeout": 10},
-    {"event": "SubagentStart", "matcher": None, "codex": None, "timeout": 15},
-)
+# The Codex rows of `crew_hook.TABLE`, the one contract both harnesses' registrations are
+# rendered from (L-0727): there is no second list to drift. A row's `codex` is the matcher
+# Codex sees (its file-edit tool is `apply_patch`); a row with none is not registered for
+# Codex at all, and one with an empty matcher is registered without one.
+HOOK_TABLE = tuple(
+    {"event": row.event, "matcher": row.matcher or None, "codex": row.codex or None, "timeout": row.timeout}
+    for row in crew_hook.TABLE if row.codex is not None)
 
 
 def _sha(text):
@@ -404,21 +402,23 @@ def agents(root, check=False):
 # hook registrations, both harnesses, one table
 
 def claude_hooks():
-    """hooks.json entries for crew's plugin manifest: each row once per shell
-    flavour (CLAUDE.md: a bare command goes to Git Bash on Windows)."""
+    """hooks.json for crew's plugin manifest: one launcher per event per shell
+    flavour (CLAUDE.md: a bare command goes to Git Bash on Windows). Rendered
+    from `crew_hook.TABLE`, the contract the dispatcher runs (L-0727)."""
     out = {}
-    for row in HOOK_TABLE:
+    for event in crew_hook.EVENTS:
+        timeout = crew_hook.event_timeout(event)
         sh = {"type": "command",
-              "command": f'bash "${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/{SCRIPT}.sh"',
-              "timeout": row["timeout"]}
+              "command": f'bash "${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/{LAUNCHER}.sh" {event}',
+              "timeout": timeout}
         ps = {"type": "command", "shell": "powershell",
-              "command": f'& "${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/{SCRIPT}.ps1"; exit $LASTEXITCODE',
-              "timeout": row["timeout"]}
+              "command": f'& "${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/{LAUNCHER}.ps1" {event}; exit $LASTEXITCODE',
+              "timeout": timeout}
         for hook in (sh, ps):
             entry = {"hooks": [hook]}
-            if row["matcher"]:
-                entry = {"matcher": row["matcher"], "hooks": [hook]}
-            out.setdefault(row["event"], []).append(entry)
+            if crew_hook.REGISTERED_MATCHER[event]:
+                entry = {"matcher": crew_hook.REGISTERED_MATCHER[event], "hooks": [hook]}
+            out.setdefault(event, []).append(entry)
     return {"hooks": out}
 
 
@@ -428,18 +428,20 @@ def default_plugin_root():
 
 def codex_hooks(plugin_root):
     scripts = os.path.join(plugin_root, "hooks", "scripts")
-    sh = os.path.join(scripts, SCRIPT + ".sh").replace("\\", "/")
-    ps = os.path.join(scripts, SCRIPT + ".ps1").replace("/", "\\")
+    sh = os.path.join(scripts, LAUNCHER + ".sh").replace("\\", "/")
+    ps = os.path.join(scripts, LAUNCHER + ".ps1").replace("/", "\\")
     out = {}
     for row in HOOK_TABLE:
-        hook = {"type": "command", "command": f'bash "{sh}" --harness codex',
-                "commandWindows": f'powershell -NoProfile -ExecutionPolicy Bypass -File "{ps}" -Harness codex',
-                "timeout": row["timeout"]}
+        event = row["event"]
+        hook = {"type": "command", "command": f'bash "{sh}" {event} --harness codex',
+                "commandWindows": (f'powershell -NoProfile -ExecutionPolicy Bypass -File "{ps}" '
+                                   f'{event} -Harness codex'),
+                "timeout": crew_hook.event_timeout(event)}
         entry = {"hooks": [hook]}
         matcher = row["codex"] if row["matcher"] else None
         if matcher:
             entry = {"matcher": matcher, "hooks": [hook]}
-        out.setdefault(row["event"], []).append(entry)
+        out.setdefault(event, []).append(entry)
     return {"hooks": out}
 
 

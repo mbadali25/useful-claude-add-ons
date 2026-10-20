@@ -1,0 +1,45 @@
+{
+ "armed": true,
+ "case": "clean-tree",
+ "dirty": "",
+ "event": "Stop",
+ "harness": "claude",
+ "no_python": true,
+ "payload": "{\"hook_event_name\": \"Stop\", \"stop_hook_active\": false, \"session_id\": \"s-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "verify-gate.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "verify-gate.sh",
+   "stderr": "verify-gate: run ended before a verdict; unproven rules are listed below | detail: unavailable\nverify-gate: 0 rules ran - nothing changed since the last verified commit or branch point, so nothing was checked and the verified marker (.crew/.verify-verified-at) was not written.\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "context-watch.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "context-watch.sh",
+   "stderr": "crew context-watch: no usable python (stub or unusable interpreter) - context\nusage could not be measured this turn. This hook cannot tell you how full\nthe context window actually is right now, so treat it as if it might be\nfull: before ending this turn, write the handoff note to the configured handoff path (context.handoffPath in .crew/config.json; .work/HANDOFF.md if unset)\nper the crew-context skill, as a precaution. This is bounded to one forced\ncontinuation for THIS turn, not suppressed for the rest of the session --\nit will ask again on the next turn if the interpreter is still unusable\nthen.\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "completion-audit.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "completion-audit.sh",
+   "stderr": "COMPLETION AUDIT: no usable python - the tree was not audited against the ticket's scope.\n",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

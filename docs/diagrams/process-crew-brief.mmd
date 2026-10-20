@@ -1,4 +1,4 @@
-%% Generated from useful-claude-add-ons@a54ca704 on 2026-09-30. Verify before trusting.
+%% Generated from useful-claude-add-ons@c1d365d7 on 2026-10-20. Verify before trusting.
 %% Anchors: plugin/crew/hooks/hooks.json, plugin/crew/hooks/scripts/handoff-read.sh, plugin/crew/hooks/scripts/platform-sync.sh, plugin/crew/hooks/scripts/crew-context.sh
 %% Purpose: What crew 1.0 does when a session starts: hooks.json fans out to three SessionStart hooks, each drawn in its own file, plus the on-demand /crew:status report.
 %% Embed: none
@@ -128,10 +128,10 @@
 %% brief (pm-brief.sh / pm_brief.py), both removed in 1.0 - the diagram described
 %% a flow that no longer exists. Every box below was re-read at 86931b29.
 %% --
-%% Registration: plugin/crew/hooks/hooks.json:3-10 - three SessionStart pairs
-%% (sh + ps1), NO matcher key, so all six fire on every source; each script
-%% filters on payload.source itself and claims per session+source so only one
-%% flavour does the work.
+%% Registration: plugin/crew/hooks/hooks.json:3-6 - one SessionStart launcher pair
+%% (crew-hook.sh + crew-hook.ps1), NO matcher key, so it fires on every source; crew_hook.py
+%% runs the three scripts at once (L-0850) and each filters on payload.source itself and
+%% claims per session+source.
 %% Split 2026-10-03 for readability (31 nodes -> an overview plus four parts). Each part
 %% node below names its file; HR, PS and CC are repeated there as each part's entry, and
 %% the notes that explained a part's nodes (handoff-read.sh, crew_platform.py, crew_context.py,
@@ -198,10 +198,10 @@
 %% the merged tree: collect :211-240, _tracker_line :67, the HANDOFF check :231; that also
 %% corrects main's st2 citations (:65, :215, :192-216), which predate T-0087's later crew_status.py
 %% edits. The st2 node takes T-0040's shell line; no node or edge was added.
-%% Note reg: 3 SessionStart pairs, sh + ps1, no matcher; each claims per session+source
+%% Note reg: one SessionStart launcher pair, sh + ps1, no matcher; crew_hook.py runs the three scripts; each claims per session+source
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
-    start --> reg["3 SessionStart pairs<br/>hooks.json:3-10"]
+    start --> reg["SessionStart launcher<br/>runs 3 scripts<br/>hooks.json:3-6"]
 
     reg --> HR["handoff-read<br/>process-crew-brief-handoff-read.mmd"]
     reg --> PS["platform-sync<br/>process-crew-brief-platform-sync.mmd"]
@@ -221,3 +221,4 @@ flowchart TB
 %% T-0040-land's side (git diff --name-only). No node or edge changed.
 %% Re-anchored 3bb32980 / 328fdf4a -> a54ca704 (T-0040-land's merge of origin/main 844bfc36); the
 %% merge note above names every line that moved.
+%% Re-anchored a54ca704 -> c1d365d7 (L-0850, crew 1.2.58 one dispatcher): of the Anchors paths hooks.json, crew-context.sh and handoff-read.sh changed. hooks.json now registers one SessionStart launcher per shell (plugin/crew/hooks/hooks.json:3-6, re-read), and crew_hook.py TABLE (:66-68) runs handoff-read.sh, platform-sync.sh and crew-context.sh, so the "runs 3 scripts" node holds. crew-context.sh passes --flavour sh and handoff-read.sh resolves the repo config dir; no node cites a line in either. No node or edge changed.

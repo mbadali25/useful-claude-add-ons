@@ -151,10 +151,10 @@ measured.
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.2.57<!-- claim: plugin-version:crew --> |
+| **Version** | 1.2.58<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents plus the `session-relay` transport agent, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 36 hook entries<!-- claim: plugin-hooks:crew --> (14 scripts × `.sh`/`.ps1`) across 8 events, and the `wave` workflow (`/crew:wave`, in `workflows/`) |
+| **Registers** | 4 agents plus the `session-relay` transport agent, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 16 hook entries<!-- claim: plugin-hooks:crew --> (a launcher per event per shell, running 14 scripts) across 8 events, and the `wave` workflow (`/crew:wave`, in `workflows/`) |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — the entry point; its reference sections moved to `docs/crew/reference/` (see its "Moved sections" index) |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -163,8 +163,8 @@ Its central design claim is worth repeating, because it is the opposite of how m
 
 ### Hooks — the part that runs without being asked
 
-Fourteen scripts across eight events, each shipped as a `.sh`/`.ps1` pair
-registered on its own matcher or event — 36 hook entries<!-- claim: plugin-hooks:crew -->. **These are why
+Fourteen scripts across eight events, run by one dispatcher behind
+16 hook entries<!-- claim: plugin-hooks:crew --> (a launcher per event per shell). **These are why
 menu item 21 is unticked by default.**
 
 | Script | Event | What it does |

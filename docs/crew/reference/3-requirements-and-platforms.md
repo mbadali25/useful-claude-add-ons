@@ -16,13 +16,13 @@ else, and records the result in `.crew/config.json`. It distinguishes native
 Linux, macOS, WSL1, WSL2, Git Bash on Windows, and native Windows, and reports
 which toolchains are actually present.
 
-Every hook is registered **twice** in `hooks.json` — once as bash, once as its
-`.ps1` twin with `shell: powershell` — because `hooks.json` cannot know which
-shell a given machine has, so one flavour failing is expected rather than a
-fault. Only the `PreToolUse` guards branch, and they branch on which **tool** the
-command came from rather than on the OS, so a `Bash` call is judged by bash rules
-even on Windows. See
-[How the Windows half works](25-command-and-agent-reference.md#how-the-windows-half-works).
+`hooks.json` registers **one launcher per event per shell** — `crew-hook.sh`, and
+`crew-hook.ps1` with `shell: powershell` — because it cannot know which shell a
+given machine has. On Windows the PowerShell launcher is the only one that runs
+and the dispatcher it starts needs Git for Windows; elsewhere the bash launcher
+runs. The `PreToolUse` guards branch on which **tool** the command came from
+rather than on the OS, so a `Bash` call is judged by bash rules even on Windows.
+See [How the Windows half works](25-command-and-agent-reference.md#how-the-windows-half-works).
 
 **If WSL is available, run Claude Code inside it.** One shell, one code path, and
 the harness matches CI. Native Windows works but doubles the surface area for no
