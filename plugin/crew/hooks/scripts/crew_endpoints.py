@@ -555,9 +555,10 @@ def _release_endpoints_lock(lock):
     try:
         try:
             _os_unlock(fd)
-            _close_quietly(fd)
         except OSError:
             pass
+        finally:
+            _close_quietly(fd)
     finally:
         mutex.release()
 
