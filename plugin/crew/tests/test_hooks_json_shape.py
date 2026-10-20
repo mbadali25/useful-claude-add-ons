@@ -216,3 +216,12 @@ def test_no_registration_names_a_hook_script_directly():
     scripts = set(re.findall(r"hooks/scripts/([\w.-]+)", text))
 
     assert scripts == {"crew-hook.sh", "crew-hook.ps1"}
+
+
+def test_the_ps1_flavour_guard_trusts_the_platform_not_only_the_environment():
+    """Security pass (L-0850): on Windows this launcher is the only one that runs, so an unset or
+    changed OS variable must not make it exit 0. Real Windows is told by the platform."""
+    guard = [line for line in PS1_TEXT.splitlines() if line.startswith("if (-not $crewRealWindows")]
+
+    assert "OSVersion.Platform" in PS1_TEXT and "Win32NT" in PS1_TEXT
+    assert guard == ["if (-not $crewRealWindows -and $env:OS -ne 'Windows_NT') { exit 0 }"]

@@ -402,3 +402,195 @@ def test_a_child_that_backgrounds_work_holding_its_pipes_does_not_hold_the_dispa
 
     assert result["exit"] == 0 and result["stdout"].strip() == b"started"
     assert time.monotonic() - started < 10
+
+
+# --- security pass (L-0850): an undecided guard, the no-python deadline, the trace file -----------
+
+def _plant_guard_exits(code):
+    def plant(scripts):
+        with open(os.path.join(scripts, "scope-guard.sh"), "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(f"#!/usr/bin/env bash\ncat >/dev/null\nexit {code}\n")
+    return plant
+
+
+@needs_runner
+@pytest.mark.parametrize("flavour", h.POSIX_FLAVOURS)
+@pytest.mark.parametrize("config", CONFIGS)
+@pytest.mark.parametrize("code", [1, 127])
+def test_a_guard_that_exits_without_a_decision_is_a_fault_when_armed(code, config, flavour, tmp_path):
+    scripts = _copy_scripts(tmp_path)
+    _plant_guard_exits(code)(scripts)
+    root, home = _repo(tmp_path, config)
+
+    got, out, err = _run(flavour, scripts, "PreToolUse", BASH_PAYLOAD, root, home)
+
+    assert got == 2, err
+    assert f"scope-guard.sh exited {code} without a decision" in err and out == ""
+
+
+@needs_runner
+@pytest.mark.parametrize("flavour", h.POSIX_FLAVOURS)
+def test_a_guard_that_exits_without_a_decision_is_a_note_when_unarmed(flavour, tmp_path):
+    scripts = _copy_scripts(tmp_path)
+    _plant_guard_exits(1)(scripts)
+    root, home = _repo(tmp_path, "none")
+
+    got, _, err = _run(flavour, scripts, "PreToolUse", BASH_PAYLOAD, root, home)
+
+    assert got == 0, err
+
+
+@needs_runner
+@pytest.mark.parametrize("flavour", h.POSIX_FLAVOURS)
+def test_a_crashed_guard_is_not_retried_with_an_empty_payload(flavour, tmp_path):
+    """The security pass's BLOCK 2: a child's exit 1 used to come back from the dispatcher as exit 1,
+    which the launcher took for 'the interpreter failed' and retried with the stdin it had already
+    consumed, so every row ran on an empty payload and the guard fault became an allow."""
+    scripts = _copy_scripts(tmp_path)
+    _plant_guard_exits(1)(scripts)
+    trace = tmp_path / "ran.crew-trace"
+    root, home = _repo(tmp_path, "own")
+
+    got, _, err = _run(flavour, scripts, "PreToolUse", BASH_PAYLOAD, root, home,
+                       env_extra={"CREW_HOOK_TRACE_FILE": str(trace)})
+
+    lines = h.read_text(str(trace)).splitlines()
+    assert got == 2, err
+    assert sum(1 for line in lines if "scope-guard.sh" in line) == 1, lines
+
+
+@needs_runner
+@pytest.mark.parametrize("flavour", h.POSIX_FLAVOURS)
+def test_a_non_guard_row_that_crashes_does_not_block_even_when_armed(flavour, tmp_path):
+    scripts = _copy_scripts(tmp_path)
+    with open(os.path.join(scripts, "crew-context.sh"), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("#!/usr/bin/env bash\ncat >/dev/null\necho context-crashed >&2\nexit 1\n")
+    root, home = _repo(tmp_path, "own")
+    data = json.dumps({"hook_event_name": "UserPromptSubmit", "prompt": "hi", "session_id": "s-1"}).encode()
+
+    got, _, err = _run(flavour, scripts, "UserPromptSubmit", data, root, home)
+
+    assert got == 0, err
+    assert "context-crashed" in err
+
+
+def test_settle_gives_exit_2_or_0_whatever_the_children_exited():
+    row_guard = crew_hook.TABLE[crew_hook.TABLE.index(next(r for r in crew_hook.TABLE if r.script == "scope-guard.sh"))]
+    row_soft = next(r for r in crew_hook.TABLE if r.script == "crew-context.sh" and r.event == "UserPromptSubmit")
+
+    def settle(row, code, armed):
+        result = {"exit": code, "stdout": b"", "stderr": b"x\n", "timed_out": False, "error": "", "pid": 1}
+        return crew_hook._settle(row.event, [(row, [row.script])], [result], "/r", lambda _root: armed)[0]  # pylint: disable=protected-access
+
+    seen = {(code, armed): settle(row_guard, code, armed) for code in (1, 3, 127, 137, -9) for armed in (True, False)}
+    soft = {settle(row_soft, code, True) for code in (1, 3, 127, 137, -9)}
+
+    assert {k: v for k, v in seen.items() if k[1]} == {(c, True): 2 for c in (1, 3, 127, 137, -9)}
+    assert {v for k, v in seen.items() if not k[1]} == {0} and soft == {0}
+
+
+@needs_runner
+@pytest.mark.skipif(h.WINDOWS, reason="the no-python POSIX path is not a Windows path (B10)")
+@pytest.mark.parametrize("config,armed", [("own", True), ("none", False)])
+def test_with_no_python_a_wedged_guard_is_a_fault_at_the_deadline(config, armed, tmp_path):
+    scripts = _copy_scripts(tmp_path)
+    _plant_slow_guard(scripts)
+    root, home = _repo(tmp_path, config)
+    started = time.monotonic()
+
+    code, _, err = _run("sh", scripts, "PreToolUse", BASH_PAYLOAD, root, home, env_extra=_deadline(2.0),
+                        path=rgh.no_python_path(str(tmp_path)), timeout=60)
+
+    assert code == (2 if armed else 0), err
+    assert time.monotonic() - started < 20
+    # armed, the other guards (no python) block first and say so; unarmed the wedged one is the fault
+    assert armed or "scope-guard.sh exited 137 without a decision" in err
+
+
+@needs_runner
+@pytest.mark.skipif(h.WINDOWS, reason="the no-python POSIX path is not a Windows path (B10)")
+@pytest.mark.parametrize("config,armed", [("own", True), ("none", False)])
+def test_with_no_python_a_crashed_guard_is_a_fault(config, armed, tmp_path):
+    scripts = _copy_scripts(tmp_path)
+    _plant_guard_exits(1)(scripts)
+    root, home = _repo(tmp_path, config)
+
+    code, _, err = _run("sh", scripts, "PreToolUse", BASH_PAYLOAD, root, home, path=rgh.no_python_path(str(tmp_path)))
+
+    assert code == (2 if armed else 0), err
+
+
+@needs_runner
+@pytest.mark.skipif(h.WINDOWS, reason="the no-python POSIX path is not a Windows path (B10)")
+@pytest.mark.parametrize("config,armed", [("own", True), ("none", False)])
+def test_with_no_python_a_stdin_that_never_closes_is_a_fault(config, armed, tmp_path):
+    scripts = _copy_scripts(tmp_path)
+    root, home = _repo(tmp_path, config)
+    env = rgh.env_for(root, home, path=rgh.no_python_path(str(tmp_path)))
+    env.update(_deadline(2.0))
+    env["CLAUDE_PLUGIN_ROOT"] = os.path.dirname(os.path.dirname(scripts))
+    proc = subprocess.Popen([h.BASH or "bash", os.path.join(scripts, "crew-hook.sh"), "PreToolUse"],  # pylint: disable=consider-using-with
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd=root)
+    try:
+        proc.stdin.write(b'{"tool_name": "Bash"')
+        proc.stdin.flush()
+        code = proc.wait(timeout=30)
+        err = proc.stderr.read().decode("utf-8", "replace")
+    finally:
+        proc.kill()
+        proc.communicate()
+
+    assert code == (2 if armed else 0), err
+    assert "stdin did not close before the deadline" in err
+
+
+@pytest.mark.parametrize("name", ["trace.txt", "ran.log"])
+def test_a_trace_path_without_the_suffix_is_never_written(name, tmp_path):
+    target = tmp_path / name
+
+    crew_hook._trace(str(target), "PreToolUse", ["x.sh"], 1)  # pylint: disable=protected-access
+
+    assert not target.exists()
+
+
+@pytest.mark.skipif(h.WINDOWS, reason="symlinks need privileges on Windows")
+def test_a_trace_path_that_is_a_symlink_is_not_followed(tmp_path):
+    victim = tmp_path / "bashrc"
+    victim.write_text("original\n", encoding="utf-8")
+    link = tmp_path / "t.crew-trace"
+    link.symlink_to(victim)
+
+    crew_hook._trace(str(link), "PreToolUse", ["x.sh"], 1)  # pylint: disable=protected-access
+
+    assert victim.read_text(encoding="utf-8") == "original\n"
+
+
+@needs_runner
+@pytest.mark.skipif(h.WINDOWS, reason="the sh launcher is not a Windows path")
+def test_the_sh_launcher_check_is_armed_when_home_is_unset(tmp_path):
+    root, home = _repo(tmp_path, "none")
+    text = h.read_text(h.SH)
+    body = text[text.index("# Exists, or cannot be told"):text.index("_fail() {")]
+    env = {key: value for key, value in rgh.env_for(root, home).items() if key != "HOME"}
+
+    done = subprocess.run([h.BASH, "-c", f"EVENT=PreToolUse\n{body}\n_armed\necho $?\n"], capture_output=True,
+                          text=True, env=env, cwd=root, check=True)
+
+    assert done.stdout.strip() == "0"
+
+
+@needs_runner
+@pytest.mark.skipif(h.WINDOWS, reason="the no-python POSIX path is not a Windows path (B10)")
+@pytest.mark.parametrize("config,armed", [("own", True), ("none", False)])
+def test_with_no_python_the_approval_hook_crashing_is_a_fault_on_user_prompt_submit(config, armed, tmp_path):
+    """On this event no other script blocks without python, so the crashed guard is the only reason."""
+    scripts = _copy_scripts(tmp_path)
+    with open(os.path.join(scripts, "approval-hook.sh"), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write("#!/usr/bin/env bash\ncat >/dev/null\nexit 1\n")
+    root, home = _repo(tmp_path, config)
+    data = json.dumps({"hook_event_name": "UserPromptSubmit", "prompt": "hi", "session_id": "s-1"}).encode()
+
+    code, _, err = _run("sh", scripts, "UserPromptSubmit", data, root, home, path=rgh.no_python_path(str(tmp_path)))
+
+    assert code == (2 if armed else 0), err
+    assert "approval-hook.sh exited 1 without a decision" in err

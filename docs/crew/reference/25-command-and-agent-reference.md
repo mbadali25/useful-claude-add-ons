@@ -243,8 +243,9 @@ model call on your own account.
 
 ### How the Windows half works
 
-`crew-hook.ps1` is the single path on Windows; `crew-hook.sh` exits 0 there (`uname -s` MINGW*/MSYS*/CYGWIN*,
-or `OS=Windows_NT`) so no event runs twice. The dispatcher runs each `.sh` script through a strictly resolved
+`crew-hook.ps1` is the single path on Windows; `crew-hook.sh` exits 0 there (`uname -s` MINGW*/MSYS*/CYGWIN*; an `OS=Windows_NT`
+variable counts only where uname names no POSIX kernel, so it cannot switch the guards off on Linux) so no event
+runs twice. The dispatcher runs each `.sh` script through a strictly resolved
 Git Bash (`crew_shell.resolve_gitbash(strict=True)`): the `bin/bash.exe` that `git --exec-path` or the default
 install names, that runs `-c 'exit 0'`, never a PATH `bash` and never `usr/bin/bash.exe`, which exits 127 on
 these scripts where `bin/bash.exe` runs them fine. With no such Git Bash an armed repo is refused on

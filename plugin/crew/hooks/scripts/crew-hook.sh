@@ -16,8 +16,10 @@
 # before the outer timeout turns a fault into an allow.
 #
 # On Windows the PowerShell launcher is the single path (crew-hook.ps1), so this
-# one exits 0 there: `uname -s` MINGW*/MSYS*/CYGWIN* or $OS = Windows_NT. It
-# dispatches only when both say "not Windows" or cannot be read.
+# one exits 0 there: `uname -s` MINGW*/MSYS*/CYGWIN*. `$OS` = Windows_NT is
+# consulted only when uname is not a POSIX kernel's name or cannot be read: an
+# environment variable cannot stand the guards down on a Linux or macOS host
+# (security pass, L-0850; cloud-guard.sh has always said the same).
 #
 # With no usable python it runs the event's `.sh` scripts directly from the
 # static list in `_rows_for` below, in parallel, and combines them by exit code
@@ -38,8 +40,9 @@ fi
 
 case "$(uname -s 2>/dev/null)" in
   MINGW*|MSYS*|CYGWIN*) exit 0 ;;
+  Linux|Darwin|FreeBSD|OpenBSD|NetBSD|DragonFly|SunOS|AIX) ;;
+  *) [ "${OS:-}" = "Windows_NT" ] && exit 0 ;;
 esac
-[ "${OS:-}" = "Windows_NT" ] && exit 0
 
 # Registration timeout (s) per event, from hooks.json: the largest hook in the
 # event plus 10. A test asserts this equals crew_hook.event_timeout.
@@ -86,9 +89,11 @@ _present() {
 _armed() {
   local root="${CLAUDE_PROJECT_DIR:-$PWD}"
   [ -n "$root" ] && [ -d "$root" ] || return 0
+  # with no HOME the global config cannot be looked for: could not tell
+  [ -n "${HOME:-}" ] || return 0
   local path
   for path in "$root/.crew/config.json" "$root/.crew/crew.json" "$root/.crew" "$root/.git" \
-              "${HOME:-/nonexistent-home}/.claude/crew/config.json"; do
+              "$HOME/.claude/crew/config.json"; do
     case "$path" in
       */.git)
         # a directory .git is an ordinary repo; a FILE is a linked worktree (it
@@ -157,19 +162,69 @@ _tool_matches() {
   return 1
 }
 
+# Kill `$2...` after `$1` seconds unless the watchdog is stopped first. Sets WATCHDOG
+# to the watchdog's pid; stop it with `_unwatch`. The TERM trap ends the sleeper too.
+_watchdog() {
+  local secs="$1"
+  shift
+  local victims="$*"
+  (
+    sleep "$secs" &
+    sleeper=$!
+    trap 'kill "$sleeper" 2>/dev/null; exit 0' TERM
+    wait "$sleeper"
+    # shellcheck disable=SC2086
+    kill -KILL $victims 2>/dev/null
+  ) &
+  WATCHDOG=$!
+}
+
+_unwatch() {
+  kill "$WATCHDOG" 2>/dev/null
+  wait "$WATCHDOG" 2>/dev/null
+}
+
+_remaining_s() {
+  local now_s
+  printf -v now_s '%(%s)T' -1 2>/dev/null || now_s=$(date +%s 2>/dev/null) || now_s=0
+  echo $(( DEADLINE_MS / 1000 - now_s ))
+}
+
+# No python: the event's scripts run directly, each reading the payload from a file,
+# under the same deadline as the dispatcher. A script that exits 2 blocks; one that
+# exits anything else (a crash, a signal, the deadline) never decided, which is a
+# fault on the events where a hook may block.
 _run_without_python() {
-  local input tool tmp n=0 script extra matcher rc blocked=0
-  input=$(cat <&3)
+  local tool tmp n=0 script extra matcher rc i left size pids="" fault="" pid
+  local names=()
+  tmp=$(mktemp -d 2>/dev/null) || _fail "no temporary directory for the no-python path"
+  left=$(_remaining_s)
+  [ "$left" -gt 0 ] || { rm -rf "$tmp"; _fail "the python probe used the whole deadline"; }
+  # at most 8 MiB, like crew_hook.py: head stops reading there
+  head -c 8388609 <&3 >"$tmp/in" &
+  local readpid=$!
+  _watchdog "$((left + 2))" "$readpid"
+  wait "$readpid"
+  rc=$?
+  _unwatch
+  if [ "$rc" != 0 ]; then
+    rm -rf "$tmp"
+    _fail "stdin did not close before the deadline"
+  fi
+  size=$(wc -c <"$tmp/in" | tr -d ' ')
+  if [ "$size" -gt 8388608 ]; then
+    rm -rf "$tmp"
+    _fail "stdin is larger than 8388608 bytes"
+  fi
   tool=""
   # The tool name is read only from a payload that at least ends like a JSON
   # object and names it once; anything else runs every row of the event, as
   # crew_hook.py does for a payload that does not parse.
-  if [ "$(printf '%s' "$input" | grep -o '"tool_name"' | wc -l | tr -d ' ')" = 1 ] \
-     && [ "$(printf '%s' "$input" | tr -d '\r\n\t ' | tail -c 1)" = "}" ]; then
-    tool=$(printf '%s' "$input" | tr -d '\r\n' \
+  if [ "$(grep -o '"tool_name"' "$tmp/in" | wc -l | tr -d ' ')" = 1 ] \
+     && [ "$(tr -d '\r\n\t ' <"$tmp/in" | tail -c 1)" = "}" ]; then
+    tool=$(tr -d '\r\n' <"$tmp/in" \
            | sed -n 's/.*"tool_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
   fi
-  tmp=$(mktemp -d 2>/dev/null) || _fail "no temporary directory for the no-python path"
   while IFS=';' read -r script extra matcher; do
     [ -n "$script" ] || continue
     _tool_matches "$matcher" "$tool" || continue
@@ -178,21 +233,37 @@ _run_without_python() {
       _fail "$script is missing at $DIR/$script"
     fi
     n=$((n + 1))
-    ( printf '%s' "$input" | CREW_HOOK_FLAVOUR=bash bash "$DIR/$script" $extra >"$tmp/$n.out" 2>"$tmp/$n.err"
-      echo $? >"$tmp/$n.rc" ) &
+    # shellcheck disable=SC2086
+    CREW_HOOK_FLAVOUR=bash bash "$DIR/$script" $extra <"$tmp/in" >"$tmp/$n.out" 2>"$tmp/$n.err" &
+    pids="$pids $!"
+    names+=("$script")
   done < <(_rows_for)
-  wait
-  local i
+  left=$(_remaining_s)
+  _watchdog "$((left + 2))" $pids
+  i=0
+  for pid in $pids; do
+    i=$((i + 1))
+    wait "$pid"
+    echo $? >"$tmp/$i.rc"
+  done
+  _unwatch
+  local blocked=0
   for i in $(seq 1 "$n"); do
-    rc=$(cat "$tmp/$i.rc" 2>/dev/null || echo 2)
-    if [ "$rc" = 2 ]; then
-      blocked=1
-      cat "$tmp/$i.err" >&2
-    fi
+    rc=$(cat "$tmp/$i.rc" 2>/dev/null || echo 255)
+    case "$rc" in
+      0) ;;
+      2) blocked=1; cat "$tmp/$i.err" >&2 ;;
+      *) script="${names[$((i - 1))]}"; fault="$fault $script exited $rc without a decision;" ;;
+    esac
   done
   if [ "$blocked" = 1 ]; then
     rm -rf "$tmp"
     exit 2
+  fi
+  if [ -n "$fault" ]; then
+    for i in $(seq 1 "$n"); do cat "$tmp/$i.err" >&2; done
+    rm -rf "$tmp"
+    _fail "${fault# }"
   fi
   for i in $(seq 1 "$n"); do
     cat "$tmp/$i.out"
@@ -210,36 +281,28 @@ exec 3<&0
 # dispatcher that cannot run its own handling at all, and stays inside the outer
 # timeout by 3 s.
 _dispatch() {
-  local now_s remaining
-  printf -v now_s '%(%s)T' -1 2>/dev/null || now_s=$(date +%s 2>/dev/null) || now_s=0
-  remaining=$(( DEADLINE_MS / 1000 - now_s ))
+  local remaining
+  remaining=$(_remaining_s)
   [ "$remaining" -gt 0 ] || _fail "the python probe used the whole deadline"
   [ -f "$DIR/crew_hook.py" ] || _fail "crew_hook.py is missing at $DIR"
   local args=("$EVENT")
   [ "$HARNESS" = codex ] && args+=(--harness codex)
   PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$1" "$DIR/crew_hook.py" "${args[@]}" <&3 &
   local pypid=$!
-  (
-    sleep "$((remaining + 2))" &
-    sleeper=$!
-    trap 'kill "$sleeper" 2>/dev/null; exit 0' TERM
-    wait "$sleeper"
-    kill -KILL "$pypid" 2>/dev/null
-  ) &
-  local watchdog=$!
+  _watchdog "$((remaining + 2))" "$pypid"
   wait "$pypid"
   STATUS=$?
-  kill "$watchdog" 2>/dev/null
-  wait "$watchdog" 2>/dev/null
+  _unwatch
 }
 
 # Fast path: the first python3 on PATH, run as it is. Resolving a python the
 # slow, proven way (`crew_py_strict` runs a probe of its own, about 17 ms) is
 # kept for when this one cannot run the dispatcher. Exit 0 and 2 are decisions.
 # Exit 1, 126 and 127 mean the interpreter itself failed (a shim, a stub, a
-# syntax or import error) before the dispatcher ran any hook -- crew_hook.py
-# returns only 0 or 2 once it has started -- so nothing has been run twice if
-# the slow resolution below tries again.
+# syntax or import error) before the dispatcher ran any hook -- crew_hook.main
+# returns only 0 or 2 once it has started, tests/test_crew_hook_faults.py holds
+# it to that -- so nothing has been run twice, and stdin not yet read, if the
+# slow resolution below tries again.
 STATUS=
 FAST=$(type -P python3 2>/dev/null) || FAST=""
 if [ -n "$FAST" ]; then

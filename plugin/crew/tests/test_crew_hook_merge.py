@@ -178,16 +178,16 @@ def test_a_silent_child_stops_suppress_output_from_applying():
     assert merged_json("Stop", *children).get("suppressOutput") is True
 
 
-def test_a_failing_child_with_no_output_anywhere_is_exit_1_and_not_a_block():
-    result = crew_hook.merge("Stop", [child(code=1, stderr="oops"), child()])
+def test_the_merge_only_ever_says_0_or_2_whatever_the_children_exited():
+    codes = {crew_hook.merge("Stop", [child(code=code, stderr="x")])["exit"] for code in (1, 3, 127, 137, -9)}
 
-    assert result["exit"] == 1 and result["stderr"] == "oops\n"
+    assert codes == {0}
 
 
-def test_a_failing_child_does_not_hide_another_childs_output():
+def test_a_child_that_exited_oddly_keeps_its_stderr_and_does_not_hide_another_childs_output():
     result = crew_hook.merge("Stop", [child(code=1, stderr="oops"), child(pre("deny", "no"))])
 
-    assert result["exit"] == 0
+    assert result["exit"] == 0 and result["stderr"] == "oops\n"
     assert json.loads(result["stdout"])["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 

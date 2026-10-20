@@ -48,7 +48,9 @@ matched seven others.
    and the cleanup. A watchdog kills a dispatcher that cannot run its own handling 2 s after the deadline,
    so the dispatcher's own message wins the race and the outer timeout is still 3 s away.
 6. **Windows (B4, B7, B9, B10).** `crew-hook.ps1` is the single path; `crew-hook.sh` exits 0 on
-   `uname -s` MINGW*/MSYS*/CYGWIN* or `OS=Windows_NT`. The dispatcher runs `.sh` children through
+   `uname -s` MINGW*/MSYS*/CYGWIN*, and on `OS=Windows_NT` only when uname names no POSIX kernel (an
+   environment variable cannot stand the guards down on Linux or macOS), while `crew-hook.ps1` tells a real
+   Windows host by the platform and not by `$env:OS`. The dispatcher runs `.sh` children through
    `crew_shell.resolve_gitbash(strict=True)` and never a `usr/bin/bash.exe` or a PATH `bash`. A `PowerShell`
    tool call goes to a row's PowerShell twin when the file exists (cloud-guard, env-guard, promote-gate;
    `cloud_guard.py` and `env_guard.py` stand down for exactly that call), and to the `.sh` otherwise, so no
@@ -74,21 +76,46 @@ each go red.
 
 ## Latency (A6)
 
-Median of 3 warm runs on dadeush-buntu-laptop (Linux, 20 CPUs, load average about 3.6), all of an event's
+Median of 3 warm runs on dadeush-buntu-laptop (Linux, 20 CPUs, load average 5.5), all of an event's
 matching hooks started at once as Claude Code starts them, 25 interleaved runs for the figure behind them:
 
 | Event | Before (registered scripts) | After (launcher + dispatcher) | Rise | Limit |
 | --- | --- | --- | --- | --- |
-| PreToolUse(`Bash`) | 120 ms | 144 ms | 24 ms | 60 ms |
-| Stop (clean tree) | 120 ms | 147 ms | 27 ms | 100 ms |
+| PreToolUse(`Bash`) | 117 ms | 146 ms | 29 ms | 60 ms |
+| Stop (clean tree) | 124 ms | 159 ms | 35 ms | 100 ms |
 
-Two things made that number, and one first measurement was wrong. A `Popen.wait(timeout)` in the
+The security pass (below) added a deadline to the no-python path, which does not touch these figures. Two
+things made that number, and one first measurement was wrong. A `Popen.wait(timeout)` in the
 dispatcher polls with sleeps that grow to 50 ms and added about 45 ms to every hook; a blocking wait in a
 thread, joined with the timeout, does not. The launcher tries the first `python3` on PATH before the
 `crew_py_strict` probe (about 17 ms) and falls back to the probe only on exit 1, 126 or 127, which
 `crew_hook.py` never returns once it has started, so nothing runs twice. The first "before" figure fed
 each hook its payload one process at a time and so serialised them; payloads now go to every process at
 once. The files are `golden_hooks/latency-before.json` and `latency-after.json`.
+
+## Security pass
+
+The read-only pass (crew:security, 2026-10-20) found two BLOCKs, five FIXes and four NOTEs. Both BLOCKs and four
+of the FIXes are fixed in this PR; the fifth is accepted below:
+
+- `$OS` stood the bash launcher down on any host, so `OS=Windows_NT` in the hook environment switched every
+  guard off on Linux (BLOCK). Now uname decides on a POSIX kernel; the PowerShell launcher uses
+  `OSVersion.Platform`.
+- A guard that crashed (exit 1, a signal) and left no other output came back from the merge as exit 1, which
+  the launcher read as "the interpreter failed" and retried with the stdin it had already consumed, so every
+  row ran on an empty payload and the fault became an allow (BLOCK). The merge now returns only 0 or 2, and a
+  guard row that exits otherwise is a fault: exit 2 in an armed repo on PreToolUse, UserPromptSubmit and Stop,
+  a note elsewhere.
+- The no-python path had no deadline, stdin bound or size cap, and ignored a child that did not decide: it now
+  reads stdin from a bounded file, runs the scripts under the watchdog, and treats an undecided guard as above.
+- `CREW_HOOK_TRACE_FILE` is honoured only for a path ending `.crew-trace` and never through a symlink.
+- On Windows the dispatcher no longer uses a bare `taskkill` or `powershell` name (CreateProcess searches the
+  repo directory first); an unresolved PowerShell is a row error.
+- An unset `HOME` now counts as armed in the bash launcher's check.
+
+Accepted, not fixed: the fast path trusts the first `python3` on PATH to run `crew_hook.py` when it exits 0.
+Whoever controls PATH for the hook already controls the interpreter every guard script runs under, as before.
+A payload over 8 MiB (a `Write` of a very large file) is a fault and is refused when armed.
 
 ## Rejected options
 

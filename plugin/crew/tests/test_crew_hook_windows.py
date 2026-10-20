@@ -55,7 +55,7 @@ def _stub_uname(tmp_path, text):
 @pytest.mark.parametrize("uname", ["MINGW64_NT-10.0-26100", "MSYS_NT-10.0", "CYGWIN_NT-10.0"])
 def test_crew_hook_sh_exits_0_without_dispatching_when_uname_says_windows(uname, tmp_path):
     root, home = rgh.build_repo(str(tmp_path), True)
-    trace = tmp_path / "trace.txt"
+    trace = tmp_path / "trace.crew-trace"
     path = _stub_uname(tmp_path, uname) + os.pathsep + os.environ["PATH"]
 
     code, out, err = h.run_launcher("sh", "PreToolUse", _payload("Bash", command="ls"), root, home, path=path,
@@ -67,11 +67,28 @@ def test_crew_hook_sh_exits_0_without_dispatching_when_uname_says_windows(uname,
 
 @h.needs_bash
 @pytest.mark.skipif(ON_WINDOWS, reason="a POSIX shell models the OS variable here")
-def test_crew_hook_sh_exits_0_without_dispatching_when_os_is_windows_nt(tmp_path):
+def test_an_os_variable_cannot_stand_the_guards_down_on_a_posix_host(tmp_path):
+    """Security pass (L-0850): `OS=Windows_NT` in the hook environment, set by anything, must not make
+    a Linux or macOS host skip every guard. uname says Linux, so the variable says nothing."""
     root, home = rgh.build_repo(str(tmp_path), True)
-    trace = tmp_path / "trace.txt"
+    trace = tmp_path / "trace.crew-trace"
 
-    code, out, _ = h.run_launcher("sh", "PreToolUse", _payload("Bash", command="ls"), root, home,
+    code, _, err = h.run_launcher("sh", "PreToolUse", _payload("Bash", command="ls"), root, home,
+                                  env_extra={"OS": "Windows_NT", "CREW_HOOK_TRACE_FILE": str(trace)})
+
+    assert code == 0, err
+    assert trace.exists() and "cloud-guard.sh" in h.read_text(str(trace))
+
+
+@h.needs_bash
+@pytest.mark.skipif(ON_WINDOWS, reason="a POSIX shell stub models uname here")
+@pytest.mark.parametrize("uname", ["Interix", ""])
+def test_crew_hook_sh_honours_os_windows_nt_only_when_uname_is_not_a_posix_kernel(uname, tmp_path):
+    root, home = rgh.build_repo(str(tmp_path), True)
+    trace = tmp_path / "trace.crew-trace"
+    path = _stub_uname(tmp_path, uname) + os.pathsep + os.environ["PATH"]
+
+    code, out, _ = h.run_launcher("sh", "PreToolUse", _payload("Bash", command="ls"), root, home, path=path,
                                   env_extra={"OS": "Windows_NT", "CREW_HOOK_TRACE_FILE": str(trace)})
 
     assert (code, out) == (0, "") and not trace.exists()
@@ -81,7 +98,7 @@ def test_crew_hook_sh_exits_0_without_dispatching_when_os_is_windows_nt(tmp_path
 @pytest.mark.skipif(ON_WINDOWS, reason="a POSIX shell stub models uname here")
 def test_crew_hook_sh_dispatches_when_uname_cannot_be_read_and_os_is_unset(tmp_path):
     root, home = rgh.build_repo(str(tmp_path), True)
-    trace = tmp_path / "trace.txt"
+    trace = tmp_path / "trace.crew-trace"
     folder = tmp_path / "brokenuname"
     folder.mkdir()
     (folder / "uname").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
@@ -169,7 +186,7 @@ def test_the_other_events_with_no_git_bash_exit_0(event):
 @pytest.mark.skipif(ON_WINDOWS, reason="this models the twin routing; the native run is the other test")
 def test_a_power_shell_cloud_call_is_judged_by_the_twin_and_denied(tmp_path):
     root, home = rgh.build_repo(str(tmp_path), True)
-    trace = tmp_path / "trace.txt"
+    trace = tmp_path / "trace.crew-trace"
     env = rgh.env_for(root, home)
     env.update(OS="Windows_NT", CREW_HOOK_TRACE_FILE=str(trace))
     payload = _payload("PowerShell", command=rgh.CLOUD)
@@ -203,7 +220,7 @@ def _run_both_registrations(event, payload, root, home, trace):
 @native
 def test_both_registrations_on_one_payload_run_every_applicable_row_exactly_once(tmp_path):
     root, home = rgh.build_repo(str(tmp_path), True)
-    trace = str(tmp_path / "trace.txt")
+    trace = str(tmp_path / "trace.crew-trace")
 
     results = _run_both_registrations("PreToolUse", _payload("Bash", command="ls"), root, home, trace)
 
@@ -218,7 +235,7 @@ def test_both_registrations_on_one_payload_run_every_applicable_row_exactly_once
 def test_both_registrations_together_equal_the_golden_single_result(case, tmp_path):
     record = rgh.load_golden()[case]
     root, home = rgh.build_repo(str(tmp_path), True, record.get("dirty") or None)
-    trace = str(tmp_path / "trace.txt")
+    trace = str(tmp_path / "trace.crew-trace")
 
     results = _run_both_registrations(record["event"], h.payload_bytes(record, root), root, home, trace)
 
@@ -232,7 +249,7 @@ def test_both_registrations_together_equal_the_golden_single_result(case, tmp_pa
 @native
 def test_notify_and_handoff_write_side_effects_are_counted_once(tmp_path):
     root, home = rgh.build_repo(str(tmp_path), True)
-    trace = str(tmp_path / "trace.txt")
+    trace = str(tmp_path / "trace.crew-trace")
     for event, name, extra in (("Notification", "notify.sh", {"notification_type": "idle_prompt", "message": "x"}),
                                ("PreCompact", "handoff-write.sh", {"trigger": "manual"})):
         payload = json.dumps({"hook_event_name": event, "session_id": "s-1", **extra}).encode()

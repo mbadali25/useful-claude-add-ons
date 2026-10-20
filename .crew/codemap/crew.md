@@ -207,8 +207,8 @@ exception in the dispatcher is exit 2 with a named reason on `BLOCKING_EVENTS` (
 The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 265 lines; `crew-hook.ps1`, 458) supervise
 rather than exec it: exit 0 and 2 pass through, anything else becomes the armed/unarmed fault above,
 under one deadline (`CREW_HOOK_DEADLINE`, the registration timeout minus 5 s). `crew-hook.sh` exits 0 on
-Windows (`uname -s` MINGW/MSYS/CYGWIN or `OS=Windows_NT`, `crew-hook.sh:40-42`) and `crew-hook.ps1`
-exits 0 unless `$env:OS -eq 'Windows_NT'` (`crew-hook.ps1:34`), so each platform runs exactly one
+Windows (`uname -s` MINGW/MSYS/CYGWIN; `OS=Windows_NT` only when uname names no POSIX kernel) and
+`crew-hook.ps1` exits 0 unless the platform is Win32NT or `$env:OS -eq 'Windows_NT'`, so each platform runs exactly one
 launcher. With no usable python `crew-hook.sh` runs the event's `.sh` scripts directly from a static
 list and `crew-hook.ps1` fails an armed repo closed on the three blocking events. Tests:
 `plugin/crew/tests/test_crew_hook_parity.py`, `test_crew_hook_merge.py`, `test_crew_hook_faults.py`,

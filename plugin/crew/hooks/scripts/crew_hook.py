@@ -177,17 +177,16 @@ def _join(values):
 
 def merge(event, results):
     """One result from several children's. `results` are dicts with `exit`,
-    `stdout`, `stderr` (text) in registration order; returns the same keys.
-    `exit` None means the child produced no exit code and counts as a failure
-    the caller already turned into a decision; it is treated as exit 0 here."""
+    `stdout`, `stderr` (text) in registration order; returns the same keys, `exit`
+    being 2 or 0 and nothing else: a child that exited otherwise never decided, and
+    `_settle` has already turned that into a fault or a note before it gets here."""
     blockers = [r for r in results if r.get("exit") == 2]
     if blockers:
         return {"exit": 2, "stdout": "",
                 "stderr": "".join(_ensure_newline(r.get("stderr", "")) for r in blockers)}
     stderr = "".join(_ensure_newline(r.get("stderr", "")) for r in results if r.get("stderr"))
     live = [r for r in results if r.get("stdout", "").strip()]
-    failed = [r for r in results if r.get("exit") not in (0, 2, None)]
-    code = 1 if failed and not live else 0
+    code = 0
     parsed = [(r, _json_object(r["stdout"])) for r in live]
     if len(live) == 1:
         return {"exit": code, "stdout": live[0]["stdout"], "stderr": stderr}
@@ -279,6 +278,8 @@ def armed(root, home=None):
     when both the repo config (own or the main checkout's) and the machine-global
     config are positively absent. Any error is armed."""
     try:
+        if not root:
+            return True
         import crew_common  # pylint: disable=import-outside-toplevel
         crew_dir, source, _ = crew_common.repo_config_dir(root)
         if source == crew_common.SOURCE_UNKNOWN:
@@ -306,8 +307,9 @@ def _kill_tree(proc):
     if proc.poll() is not None:
         return
     if _windows():
+        taskkill = os.path.join(os.environ.get("SystemRoot") or "C:\\Windows", "System32", "taskkill.exe")
         try:
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True,
+            subprocess.run([taskkill, "/T", "/F", "/PID", str(proc.pid)], capture_output=True,
                            timeout=10, check=False)
         except (OSError, subprocess.SubprocessError):
             pass
@@ -433,18 +435,27 @@ def _argv_for(argv, scripts, bash, pwsh):
     `.sh` through bash (or the caller's resolved Git Bash)."""
     path = os.path.join(scripts, argv[0])
     if argv[0].endswith(".ps1"):
-        shell = [pwsh or "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]
-        return [*shell, path, *argv[1:]], "powershell"
+        if not pwsh:
+            return None, "powershell"  # never a bare name: CreateProcess searches the repo first
+        return [pwsh, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path, *argv[1:]], "powershell"
     if bash and bash != "bash":
         return [bash, path.replace("\\", "/"), *argv[1:]], "bash"
     return ["bash", path, *argv[1:]], "bash"
 
 
+TRACE_SUFFIX = ".crew-trace"
+
+
 def _trace(path, event, argv, pid):
-    if not path:
+    """Append `event argv pid` to the file CREW_HOOK_TRACE_FILE names, for the suites. Only
+    a path ending in `.crew-trace` is honoured and a symlink is never followed, so the
+    variable cannot point the dispatcher at a file something else reads (security pass)."""
+    if not path or not path.endswith(TRACE_SUFFIX):
         return
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
     try:
-        with open(path, "a", encoding="utf-8") as handle:
+        fd = os.open(path, flags, 0o600)
+        with os.fdopen(fd, "a", encoding="utf-8") as handle:
             handle.write(f"{event} {' '.join(argv)} {pid}\n")
     except OSError:
         pass
@@ -498,6 +509,10 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
                               "error": ""}
             return
         command, flavour = _argv_for(argv, scripts, bash, pwsh)
+        if command is None:
+            results[index] = {"exit": None, "stdout": b"", "stderr": b"", "timed_out": False, "pid": 0,
+                              "error": f"no PowerShell was found to run {argv[0]}"}
+            return
         child_env = dict(env, CREW_HOOK_FLAVOUR=flavour)
         results[index] = run_child(command, raw, own, child_env, cwd=None)
         _trace(trace, event, argv, results[index]["pid"])
@@ -523,12 +538,18 @@ def _no_bash(event, problem, root, armed_fn):
 
 def _settle(event, chosen, results, root, armed_fn):
     """Turn the children's raw results into merge input, applying B8."""
-    merge_in, notes, faults = [], [], []
+    merge_in, notes, faults, heard = [], [], [], []
     for (row, argv), res in zip(chosen, results):
         name = " ".join(argv)
-        if res["error"] or res["timed_out"]:
+        undecided = not res["error"] and not res["timed_out"] and res["exit"] not in (0, 2)
+        if res["error"] or res["timed_out"] or undecided:
             reason = res["error"] or (f"{name} timed out (its limit is {row.timeout}s, or the dispatch "
                                       "deadline) and was killed")
+            if undecided:
+                reason = f"{name} exited {res['exit']} without a decision"
+            said = _text(res["stderr"])
+            if said:
+                heard.append(said if said.endswith("\n") else said + "\n")
             if row.guard and event in BLOCKING_EVENTS:
                 faults.append(f"crew-hook: {reason}")
             else:
@@ -537,10 +558,11 @@ def _settle(event, chosen, results, root, armed_fn):
         merge_in.append({"exit": res["exit"], "stdout": _text(res["stdout"]), "stderr": _text(res["stderr"])})
     if faults and armed_fn(root):
         text = "".join(f"{line}; failing closed (armed repo).\n" for line in faults)
-        return 2, b"", text.encode("utf-8")
+        # a child that did block still gets to say why
+        return 2, b"", (merge(event, merge_in)["stderr"] + "".join(heard) + text).encode("utf-8")
     notes.extend(f"{line}; the repo is not armed, so this is not a block.\n" for line in faults)
     merged = merge(event, merge_in)
-    stderr = merged["stderr"] + "".join(notes)
+    stderr = merged["stderr"] + "".join(heard) + "".join(notes)
     return merged["exit"], merged["stdout"].encode("utf-8"), stderr.encode("utf-8")
 
 
@@ -561,9 +583,10 @@ def main(argv=None, stdin=None, stdout=None, stderr=None, env=None):
     stdout = stdout if stdout is not None else sys.stdout.buffer
     stderr = stderr if stderr is not None else sys.stderr.buffer
     event, harness = parse_args(sys.argv[1:] if argv is None else argv)
-    root = env.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    root = env.get("CLAUDE_PROJECT_DIR") or ""
     code, out, err = 0, b"", b""
     try:
+        root = root or os.getcwd()
         if event not in EVENTS:
             return 0
         try:

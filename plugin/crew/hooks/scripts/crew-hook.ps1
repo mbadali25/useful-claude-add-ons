@@ -28,10 +28,14 @@ param(
   [switch]$PrintPython
 )
 
-# Flavour guard, first executable statement: `$env:OS` is 'Windows_NT' on both
-# Windows PowerShell 5.1 and PowerShell 7 and unset elsewhere. Not `$IsWindows`,
-# which does not exist in 5.1.
-if ($env:OS -ne 'Windows_NT') { exit 0 }
+# Flavour guard, first executable statement. A real Windows host is told by the
+# platform (`OSVersion.Platform`, which exists in Windows PowerShell 5.1 as well as 7),
+# NOT by `$env:OS`: an environment variable a settings `env` block can set or unset
+# must not be able to stand the guards down on Windows, where this launcher is the only
+# one that runs (security pass, L-0850). `$env:OS` = 'Windows_NT' is still accepted so
+# the suites can run this launcher under pwsh on Linux.
+$crewRealWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+if (-not $crewRealWindows -and $env:OS -ne 'Windows_NT') { exit 0 }
 
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
