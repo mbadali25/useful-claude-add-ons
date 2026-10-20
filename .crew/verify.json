@@ -105,8 +105,8 @@
       "reach": "local",
       "why": "Re-timed 2026-10-05 after T-0054 added scripts/_test/autopilot-guide.py (the /crew:autopilot guide's example list, read against its source and built HTML): 4.8-5.1s on the 4-CPU Linux container under the shared lock, the suite... Full rationale: docs/crew/verify-rationale.md#root-docs-registration" },
 
-    { "id": "scripts-checks", "paths": ["scripts/**"],
-      "seconds": 84,
+    { "id": "scripts-checks", "paths": ["scripts/**", "evals/crew-outcome/**"],
+      "seconds": 104,
       "run": ["python3 scripts/check-marketplace.py --pending-bump",
               "python3 scripts/_test/self-claims.py",
               "python3 scripts/_test/version-drift.py",
@@ -121,9 +121,10 @@
               "bash scripts/_test/ps-install-keys.sh",
               "bash scripts/_test/uv-install.sh",
               "bash -n scripts/install-prerequisites.sh", "python3 scripts/_test/shellcheck-directives.py",
-              "python3 scripts/_test/plugin-evals-runner.py"],
+              "python3 scripts/_test/plugin-evals-runner.py",
+              "python3 scripts/_test/crew-outcome-eval.py"],
       "reach": "local",
-      "why": "L-0713 (2026-10-08) adds scripts/_test/plugin-evals-runner.py (both run-plugin-evals flavours against a stub claude): 3s on the 4-CPU Linux container with pwsh present, added to the declared 81. Full rationale: docs/crew/verify-rationale.md#scripts-checks" },
+      "why": "L-0713 (2026-10-08) adds scripts/_test/plugin-evals-runner.py (both run-plugin-evals flavours against a stub claude): 3s on the 4-CPU Linux container with pwsh present, added to the declared 81. L-0728 (2026-10-19) adds scripts/_test/crew-outcome-eval.py (the outcome harness against a stub docker and claude, one real pytest run per grading case): 20s measured, 84 + 20 = 104; evals/crew-outcome/** joins the paths because the harness reads the arm files and tasks there. Full rationale: docs/crew/verify-rationale.md#scripts-checks" },
 
     { "id": "verify-gate-suite", "paths": ["plugin/crew/hooks/scripts/verify-gate.sh",
                 "plugin/crew/hooks/scripts/verify-gate.ps1",

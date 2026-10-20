@@ -1,0 +1,36 @@
+{
+  "arm": "crew",
+  "description": "crew's lifecycle driven unattended by /crew:autopilot run on a ticket made by `crew_ticket.py assign`, ending at autopilot's first stop that needs a human (accept-review included), at a terminal stop, or at the wall-clock limit; graded as it stands.",
+  "author": {"model": "claude-sonnet-5-5", "effort": "medium"},
+  "reviewer": {"tool": "/crew:review (Codex)", "model": "gpt-6-sol", "effort": "medium", "family": "OpenAI, not the author's"},
+  "wallClockMinutes": {"S": 60, "M": 120, "L": 240},
+  "settings": {},
+  "crewConfig": {
+    "schema": 7,
+    "tracker": "files",
+    "autopilot": {"mode": "plan", "approval": "self", "questions": "self", "reviewPolicy": "fix-and-rereview"},
+    "scope": {"allowCliApproval": true},
+    "qa": {"provider": "codex", "order": ["codex"], "codex": {"model": "gpt-6-sol", "reasoningEffort": "medium"}}
+  },
+  "assignment": {
+    "risk": "med",
+    "template": "title: {title}\nrisk: {risk}\n\n## Ask\n{statement}\n\n## Options\nnone given\n\n## Recommendation\nImplement the Ask as stated.\n\n## Open questions\nnone\n"
+  },
+  "cli": {
+    "args": [
+      "--model", "claude-sonnet-5-5",
+      "--effort", "medium",
+      "--dangerously-skip-permissions",
+      "--strict-mcp-config",
+      "--mcp-config", "{\"mcpServers\":{}}",
+      "--plugin-dir", "/run/home/plugins/crew"
+    ],
+    "maxResumes": 3,
+    "apiErrorRegex": "(?i)(authentication|oauth|credit balance|rate limit|overloaded|api error|401|403|429|5\\d\\d)"
+  },
+  "prompts": {
+    "start": "/crew:autopilot run {ticket}",
+    "resume": "/crew:autopilot run {ticket}"
+  },
+  "proxyIgnoreHosts": []
+}
