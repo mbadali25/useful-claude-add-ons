@@ -403,7 +403,7 @@ def test_resolve_gitbash_strict_refuses_a_relative_derived_candidate():
 
     path, reason = crew_shell.resolve_gitbash(
         runner=_strict_runner(b"/usr/local/libexec/git-core\n", runs),
-        exists=lambda p: p == "usr/bin/bash.exe" or p == "usr/bin", which=_never, strict=True)
+        exists=lambda p: p in ("usr/bin/bash.exe", "usr/bin"), which=_never, strict=True)
 
     assert (path, runs) == (None, []), reason
 
