@@ -11,8 +11,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ### Changed — ai-connect 0.2.2: a session is labelled with its Claude Code session name
 
-- **Summary.** `ai-connect` 0.2.2: a Claude Code session joins the bridge as `laptop:cross-session`, named after its Claude Code session name, instead of `laptop:my-repo`; a session without a usable name, and every other harness, keeps the project's name.
-- **Read once.** The name is read when Claude Code starts the MCP server from `~/.claude/sessions/<pid>.json`; a `/rename` takes effect after reconnecting ai-connect from `/mcp`. Missing, unreadable or odd files fall back to the project's name without raising.
+- **Summary.** `ai-connect` 0.2.2: a Claude Code session joins the bridge as `laptop:s-cross-session`, named after its Claude Code session name, instead of `laptop:my-repo`; a session without a usable name, and every other harness, keeps the project's name.
+- **Name format change.** A session's label always starts with `s-`, and a project whose label would be `s` or start with `s-` gets `p-` in front (`s-tools` joins as `laptop:p-s-tools`), so a session renamed after another project cannot take that project's name. Every other project label is unchanged.
+- **Read once.** The name is read when Claude Code starts the MCP server from `~/.claude/sessions/<pid>.json`; a `/rename` takes effect after reconnecting ai-connect from `/mcp`. Missing, unreadable or odd files, and anything that is not a regular file (a FIFO cannot hang start-up), fall back to the project's name without raising.
 - **Compatibility.** The Bridge is unchanged; clients on 0.2.2 mix with 0.2.1 and 0.2.0 clients. Messages waiting for the old `laptop:<project>` name stay there until a session joins under it.
 
 ### Fixed — ai-connect 0.2.1: the watcher finds the venv deploy made

@@ -6,6 +6,7 @@ import json
 import os
 import re
 import socket
+import stat
 import sys
 import unicodedata
 from collections.abc import Mapping
@@ -96,10 +97,15 @@ def claude_session_title(pid: int, sessions_dir: Path) -> str:
     text under "name". Never raises.
 
     Exactly one file is opened, <sessions_dir>/<pid>.json, and the directory is not
-    listed: the <pid>.<hash>.key files beside it hold a secret.
+    listed: the <pid>.<hash>.key files beside it hold a secret. Only a regular file is
+    read: the open does not wait (O_NONBLOCK), so a FIFO there cannot hang start-up.
     """
     try:
-        with (sessions_dir / f"{int(pid)}.json").open("rb") as handle:
+        path = sessions_dir / f"{int(pid)}.json"
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+        with os.fdopen(fd, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                return ""
             raw = handle.read(_SESSION_FILE_MAX + 1)
         if len(raw) > _SESSION_FILE_MAX:
             return ""
@@ -111,22 +117,36 @@ def claude_session_title(pid: int, sessions_dir: Path) -> str:
     return title if isinstance(title, str) else ""
 
 
+# A label from a session's name starts with SESSION_PREFIX and a project's label never
+# does (compared without case): a session renamed after another project cannot take
+# that project's address. A project whose plain name starts with it gets PROJECT_ESCAPE
+SESSION_PREFIX = "s-"
+PROJECT_ESCAPE = "p-"
+
+
 def session_label(environ: Mapping[str, str], cwd: Path, title: str = "") -> str:
-    """What tells this session from the others on its machine: the session's own name
-    (title, see claude_session_title) when it has one, else its project's name; made
-    plain, with AI_CONNECT_PEER_SUFFIX appended if set.
+    """What tells this session from the others on its machine: "s-" and the session's
+    own name (title, see claude_session_title) when it has one, else its project's
+    name; made plain, with AI_CONNECT_PEER_SUFFIX appended if set.
 
     A session name with nothing plain in it counts as none. A project name with
     nothing plain in it (another script, an emoji) gets a short hash of itself
-    instead, so two such projects still differ.
+    instead, so two such projects still differ. A project name that is "s" or starts
+    with "s-" (any case) gets "p-" before it, so it cannot pass for a session's.
     """
     suffix = _plain(environ.get("AI_CONNECT_PEER_SUFFIX", ""), SUFFIX_MAX)
     room = LABEL_MAX - (len(suffix) + 1 if suffix else 0)
-    label = _plain(title, room)
-    if not label:
+    label = _plain(title, room - len(SESSION_PREFIX))
+    if label:
+        label = SESSION_PREFIX + label
+    else:
         project = _project(environ, cwd)
         digest = hashlib.sha256(project.encode(errors="backslashreplace")).hexdigest()[:8]
-        label = _plain(project, room) or "p-" + digest
+        label = _plain(project, room) or PROJECT_ESCAPE + digest
+        # A bare "s" too: with AI_CONNECT_PEER_SUFFIX, or the collision suffix "-<process
+        # id>" the Bridge client appends, it would read "s-<x>"
+        if f"{label}-".casefold().startswith(SESSION_PREFIX):
+            label = _plain(PROJECT_ESCAPE + label, room)
     return f"{label}-{suffix}" if suffix else label
 
 

@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **ai-connect 0.2.2**: A session is labelled with its Claude Code session name. `ai-connect` 0.2.2: a Claude Code session joins the bridge as `laptop:cross-session`, named after its Claude Code session name, instead of `laptop:my-repo`; a session without a usable name, and every other harness, keeps the project's name.
+- **ai-connect 0.2.2**: A session is labelled with its Claude Code session name. `ai-connect` 0.2.2: a Claude Code session joins the bridge as `laptop:s-cross-session`, named after its Claude Code session name, instead of `laptop:my-repo`; a session without a usable name, and every other harness, keeps the project's name.
 - **ai-connect 0.2.1**: The watcher finds the venv deploy made. On a machine set up with `ai-connect`'s own `deploy.sh` or `setup.sh`, the message watcher now runs and wakes the session when a message arrives; up to 0.2.0 it exited 1 on every session start and turn end there, because it looked for a venv only inside the plugin directory (not run on Windows).
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

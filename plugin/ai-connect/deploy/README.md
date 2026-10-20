@@ -273,7 +273,7 @@ hooks.
 ### A second session on one machine
 
 Since 0.2.0 every session on a machine is online by itself, as `<client.name>:<project>`
-(since 0.2.2 `<client.name>:<session name>` for a named Claude Code session) with `client.token`: nothing to set up ([ONBOARDING.md](ONBOARDING.md#several-sessions-on-one-machine)).
+(since 0.2.2 `<client.name>:s-<session name>` for a named Claude Code session) with `client.token`: nothing to set up ([ONBOARDING.md](ONBOARDING.md#several-sessions-on-one-machine)).
 Before 0.2.0 they all joined as `client.name`, and a live name cannot be taken over, so a
 second session waited on standby. A session that should have a name and a **token of its
 own** (one that can be revoked without the machine's) is still made like this:
