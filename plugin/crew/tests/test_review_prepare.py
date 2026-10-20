@@ -720,7 +720,6 @@ def test_a_child_that_gives_no_answer_is_exit_124_never_a_pass():
     assert (code, out) == (124, b"")
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Windows closes an inherited pipe on its own schedule")
 def test_a_descendant_holding_the_pipe_open_cannot_hold_the_wait_open(monkeypatch):
     monkeypatch.setattr(review_run, "POST_KILL_TIMEOUT", 1)
     script = ("import subprocess, sys, time\n"
@@ -731,6 +730,20 @@ def test_a_descendant_holding_the_pipe_open_cannot_hold_the_wait_open(monkeypatc
     code, _ = review_run._bounded([sys.executable, "-c", script], None, None, 1)  # pylint: disable=protected-access
 
     assert code == 124 and time.monotonic() - started < 6
+
+
+def test_a_child_that_survives_the_kill_cannot_hold_the_wait_open(monkeypatch):
+    def failed_kill(self):
+        raise PermissionError("kill refused")
+
+    monkeypatch.setattr(review_run, "POST_KILL_TIMEOUT", 1)
+    monkeypatch.setattr(review_run.subprocess.Popen, "kill", failed_kill)
+    started = time.monotonic()
+
+    code, out = review_run._bounded(  # pylint: disable=protected-access
+        [sys.executable, "-c", "import time; time.sleep(4)"], None, None, 0.1)
+
+    assert (code, out) == (124, b"") and time.monotonic() - started < 3
 
 
 def test_a_scope_base_that_gives_no_answer_stops_the_review_base(monkeypatch):

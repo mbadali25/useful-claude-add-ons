@@ -2128,20 +2128,46 @@ def _bounded(argv, cwd, env, timeout, stderr=None):
     pipe open after the kill gets one more bounded wait, then the pipe is
     closed (PYTHON-07: the post-kill read is bounded too)."""
     try:
-        with subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                              stdout=subprocess.PIPE, stderr=stderr) as proc:
-            try:
-                out, _ = proc.communicate(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                try:
-                    proc.communicate(timeout=POST_KILL_TIMEOUT)
-                except subprocess.TimeoutExpired:
-                    pass
-                return EXIT_TOOL_TIMEOUT, b""
-            return proc.returncode, out
+        proc = subprocess.Popen(  # pylint: disable=consider-using-with
+            argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=stderr)
     except OSError:
         return 127, b""
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _end_child(proc)
+        return EXIT_TOOL_TIMEOUT, b""
+    except BaseException:
+        _end_child(proc)
+        raise
+    return proc.returncode, out
+
+
+def _end_child(proc):
+    """Kill `proc` and wait for it at most POST_KILL_TIMEOUT, never raising.
+    Not a `with Popen` block: its __exit__ closes the pipe and calls wait()
+    with no timeout, so a child that ignores the kill (a failed kill, a
+    D-state process) or a descendant holding the pipe would hold the caller
+    past its bound (L-0836). On Windows the tree goes by taskkill /T first,
+    and the pipe is left for the garbage collector: closing a pipe a reader
+    thread is blocked on can itself block."""
+    if proc.poll() is None:
+        if review_checks._WINDOWS:  # pylint: disable=protected-access
+            _windows_taskkill(proc, [])
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        proc.communicate(timeout=POST_KILL_TIMEOUT)
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        pass
+    if not review_checks._WINDOWS and proc.stdout is not None:  # pylint: disable=protected-access
+        try:
+            proc.stdout.close()
+        except OSError:
+            pass
 
 
 def _git(root, *argv):

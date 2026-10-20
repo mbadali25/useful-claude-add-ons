@@ -2206,7 +2206,11 @@ REVIEW_FIX_MUTATIONS = (
      '    if False:\n',
      _SP + "test_a_failed_scope_base_with_an_answer_is_not_a_base"),
     ("L-0726: a descendant holding a child's pipe holds the wait open", REVIEW_RUN,
-     '                    proc.communicate(timeout=POST_KILL_TIMEOUT)\n',
-     '                    proc.communicate()\n',
+     '        proc.communicate(timeout=POST_KILL_TIMEOUT)\n',
+     '        proc.communicate()\n',
      _SP + "test_a_descendant_holding_the_pipe_open_cannot_hold_the_wait_open"),
+    ("L-0836: a failed kill leaves the wait on the child unbounded", REVIEW_RUN,
+     '            pass\n    try:\n        proc.communicate(timeout=POST_KILL_TIMEOUT)\n',
+     '            pass\n    try:\n        proc.wait()\n',
+     _SP + "test_a_child_that_survives_the_kill_cannot_hold_the_wait_open"),
 )
