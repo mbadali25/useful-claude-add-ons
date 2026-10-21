@@ -16,6 +16,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - `review_prompt._bundle_block` tells the reviewer to copy a part path character for character, directory included (or give only the bare file name), and gives `READ|<path>` built from the first listed part's exact path.
 - The parser (`review_verdict`) is unchanged. Evidence: Codex rounds 1 and 2 of L-0851 were INCOMPLETE for these two reasons. The six `golden/prepare` prompts gain the same inserted lines.
 
+### Changed — ai-connect 0.2.2: a session is labelled with its Claude Code session name
+
+- **Summary.** `ai-connect` 0.2.2: a Claude Code session joins the bridge as `laptop:s-cross-session`, named after its Claude Code session name, instead of `laptop:my-repo`; a session without a usable name, and every other harness, keeps the project's name.
+- **Name format change.** A session's label always starts with `s-`, and a project whose label would be `s` or start with `s-` gets `p-` in front (`s-tools` joins as `laptop:p-s-tools`), so a session renamed after another project cannot take that project's name. Every other project label is unchanged.
+- **Read once.** The name is read when Claude Code starts the MCP server from `~/.claude/sessions/<pid>.json`; a `/rename` takes effect after reconnecting ai-connect from `/mcp`. Missing, unreadable or odd files, and anything that is not a regular file (a FIFO cannot hang start-up), fall back to the project's name without raising.
+- **Compatibility.** The Bridge is unchanged; clients on 0.2.2 mix with 0.2.1 and 0.2.0 clients. Messages waiting for the old `laptop:<project>` name stay there until a session joins under it.
+
 ### Changed — crew 1.2.58: one dispatcher behind sixteen hook registrations (L-0727, slice 2; landed as L-0850)
 
 - **Summary.** `crew` 1.2.58: `hooks.json` registers one launcher per event per shell (16 entries, not 36) and one dispatcher runs each event's hook scripts and combines them, so on Windows no event runs twice, and a launcher or dispatcher fault in a repo crew governs now refuses the call instead of letting it through unjudged.
