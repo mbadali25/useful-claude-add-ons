@@ -734,30 +734,24 @@ _SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 RESUME_TYPING_TIMEOUT = 10
 
 
-def _resume_typing_cmd(root, session, source, flavour):
-    """This flavour's sender in resume mode, or None when it has no
-    interpreter. Each flavour starts its OWN sender: on Windows both run, and
-    the per-handoff marker lets exactly one of them type."""
-    if flavour == "sh":
-        bash = shutil.which("bash")
-        return None if not bash else [bash, os.path.join(_SCRIPTS, "auto-clear.sh"), "--resume",
-                                      "--session", session, "--source", source, "--root", root]
-    shell = shutil.which("pwsh") or shutil.which("powershell")
-    return None if not shell else [shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                                   "-File", os.path.join(_SCRIPTS, "auto-clear.ps1"), "-Resume",
-                                   "-Session", session, "-Source", source, "-Root", root,
-                                   "-Python", sys.executable]
+def _resume_typing_cmd(root, session, source):
+    """The sender in resume mode, or None when there is no bash. There is one
+    sender, `auto-clear.sh`: on native Windows the dispatcher runs this hook's
+    `.sh` under Git Bash, so it is the sender there too (L-0727 slice 3
+    deleted `auto-clear.ps1`)."""
+    bash = shutil.which("bash")
+    return None if not bash else [bash, os.path.join(_SCRIPTS, "auto-clear.sh"), "--resume",
+                                  "--session", session, "--source", source, "--root", root]
 
 
 def start_resume_typing(root, payload, flavour, harness="claude"):
-    """T-0013: on SessionStart clear|compact, run this flavour's auto-clear
-    sender in resume mode and return {status, text} from its one
-    `autoresume:` line (status typing | refused | notify | failed), or None
-    when nothing was started. Runs BEFORE the per-event context claim, so
-    each flavour's sender runs whichever flavour emits the context. Only an
-    ARMED machine pays for a sender at all. Never raises: a failure is a
-    `failed` result, and the context is emitted as before."""
-    if harness != "claude" or flavour not in ("sh", "ps1"):
+    """T-0013: on SessionStart clear|compact, run the auto-clear sender in
+    resume mode and return {status, text} from its one `autoresume:` line
+    (status typing | refused | notify | failed), or None when nothing was
+    started. Runs BEFORE the per-event context claim. Only an ARMED machine
+    pays for a sender at all, and only the `sh` flavour has one. Never raises:
+    a failure is a `failed` result, and the context is emitted as before."""
+    if harness != "claude" or flavour != "sh":
         return None
     if payload.get("hook_event_name") != "SessionStart":
         return None
@@ -769,9 +763,9 @@ def start_resume_typing(root, payload, flavour, harness="claude"):
         if not crew_resume.settings(root)["armed"]:
             return None
         session = payload.get("session_id")
-        cmd = _resume_typing_cmd(root, session if isinstance(session, str) else "", source, flavour)
+        cmd = _resume_typing_cmd(root, session if isinstance(session, str) else "", source)
         if cmd is None:
-            return {"status": "failed", "text": f"no interpreter for the {flavour} sender"}
+            return {"status": "failed", "text": "no interpreter for the sh sender"}
         done = subprocess.run(cmd, cwd=root, stdin=subprocess.DEVNULL, capture_output=True, text=True,
                               timeout=RESUME_TYPING_TIMEOUT, check=False)
     except Exception as exc:  # pylint: disable=broad-except
@@ -800,10 +794,9 @@ def _resume_typing_logged(root, payload, flavour, harness):
     return typing
 
 
-# A refusal that only means "the other flavour types this method": the sh
-# sender declining sendkeys (crew_autocycle.resolve_method) or the ps1 sender
-# declining tmux (auto-clear.ps1). On Windows both flavours run, so this one
-# saying "not typed" would be false whenever the other one types.
+# A refusal that only means "the other flavour types this method". The ps1
+# flavour (auto-clear.ps1) is gone (L-0727 slice 3), so no live sender emits
+# this shape any more; the matcher stays for a log line written before it.
 _OTHER_FLAVOURS_JOB = re.compile(r"^refused - method (\S+) is auto-clear\.(sh|ps1)'s job\b")
 _FLAVOUR_HOOK = {"sh": "bash", "ps1": "PowerShell"}
 

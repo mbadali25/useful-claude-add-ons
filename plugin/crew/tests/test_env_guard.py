@@ -2,16 +2,13 @@
 
 CLAUDE.md requires a hook that can block to carry a committed regression suite
 with must-block and must-allow cases, sabotage-tested. This is that suite for
-`hooks/scripts/env_guard.py` and its two wrappers.
+`hooks/scripts/env_guard.py` and its wrapper.
 
-Three drivers:
+Two drivers:
 
     python   `env_guard.main()` in-process for every case (fast), and
              `python3 env_guard.py` as a subprocess for a parity sample
     bash     `bash env-guard.sh`, a parity sample
-    pwsh     `pwsh -File env-guard.ps1` with `OS=Windows_NT` so its flavour
-             guard lets it run; a parity sample. Skipped, with the reason,
-             where no pwsh exists.
 
 SAFETY. Nothing here runs a command the guard judges: every case is a
 synthetic hook-input JSON handed to the guard on stdin. Every subprocess gets
@@ -42,15 +39,9 @@ _ROOT = context._ROOT  # pylint: disable=protected-access
 _SCRIPTS = os.path.join(_ROOT, "hooks", "scripts")
 _PY = os.path.join(_SCRIPTS, "env_guard.py")
 _SH = os.path.join(_SCRIPTS, "env-guard.sh")
-_PS1 = os.path.join(_SCRIPTS, "env-guard.ps1")
 
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = crew_fixtures.resolve_pwsh()
 needs_bash = pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")
-needs_pwsh = pytest.mark.skipif(
-    _PWSH is None,
-    reason="pwsh is not installed here, so env-guard.ps1 cannot be run; its "
-           "cases are written and skipped, not passed")
 
 MARKER = "xxxx-marker"
 ARMED = {"guards": {"envGuard": "block"}}
@@ -178,7 +169,7 @@ def _nested(depth):
 # --- harness ---------------------------------------------------------------------
 
 
-def _scrubbed_env(tmp_path, driver=None, extra=None):
+def _scrubbed_env(tmp_path, extra=None):
     """An ALLOWLIST environment, never a copy of the real one: what the
     interpreters need to start, the fixture's HOME and project dir, and the
     fake marker."""
@@ -193,8 +184,6 @@ def _scrubbed_env(tmp_path, driver=None, extra=None):
                 "XDG_CACHE_HOME", "PATHEXT", "COMSPEC", "MSYSTEM"):
         if key in os.environ:
             env[key] = os.environ[key]
-    if driver == "pwsh":
-        env["OS"] = "Windows_NT"
     env.update(extra or {})
     return env
 
@@ -255,7 +244,7 @@ def _argv(driver):
         return [sys.executable, _PY]
     if driver == "bash":
         return [_BASH, _SH]
-    return [_PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", _PS1]
+    raise AssertionError(driver)
 
 
 def run_hook(driver, tmp_path, tool, command, extra=None, raw=None):
@@ -264,7 +253,7 @@ def run_hook(driver, tmp_path, tool, command, extra=None, raw=None):
         {"tool_name": tool, "tool_input": {"command": command},
          "cwd": str(tmp_path / "repo")}).encode("utf-8")
     proc = subprocess.run(_argv(driver), input=body, capture_output=True,
-                          env=_scrubbed_env(tmp_path, driver, extra),
+                          env=_scrubbed_env(tmp_path, extra),
                           cwd=str(tmp_path), timeout=180, check=False)
     out = proc.stdout.decode("utf-8", "replace")
     err = proc.stderr.decode("utf-8", "replace")
@@ -554,7 +543,15 @@ def test_default_config_and_templates_read_off():
 # --- 5: flavour by tool, not OS -----------------------------------------------------
 
 
-def test_stands_down_by_tool():
+def _with_twin(monkeypatch, tmp_path, present):
+    twin = tmp_path / "env-guard.ps1"
+    if present:
+        twin.write_text("", encoding="utf-8")
+    monkeypatch.setattr(env_guard, "_PS1_TWIN", str(twin))
+
+
+def test_stands_down_by_tool(monkeypatch, tmp_path):
+    _with_twin(monkeypatch, tmp_path, True)
     sd = env_guard.stands_down
     assert sd("Bash", {env_guard.FLAVOUR_VAR: "powershell"})
     assert not sd("PowerShell", {env_guard.FLAVOUR_VAR: "powershell"})
@@ -575,10 +572,20 @@ def test_bash_flavour_judges_a_powershell_call_off_windows(monkeypatch, capsys,
 def test_bash_flavour_stands_down_for_powershell_on_windows(monkeypatch, capsys,
                                                             tmp_path):
     _fixture(tmp_path, ARMED)
+    _with_twin(monkeypatch, tmp_path, True)
     monkeypatch.setenv("OS", "Windows_NT")
     assert run_main(monkeypatch, capsys, tmp_path, "PowerShell", "gci env:",
                     flavour="bash") == ("allow", "")
     assert run_main(monkeypatch, capsys, tmp_path, "Bash", "env",
+                    flavour="bash")[0] == "deny"
+
+
+def test_bash_flavour_judges_a_powershell_call_on_windows_with_no_twin(
+        monkeypatch, capsys, tmp_path):
+    _fixture(tmp_path, ARMED)
+    _with_twin(monkeypatch, tmp_path, False)
+    monkeypatch.setenv("OS", "Windows_NT")
+    assert run_main(monkeypatch, capsys, tmp_path, "PowerShell", "gci env:",
                     flavour="bash")[0] == "deny"
 
 
@@ -612,7 +619,9 @@ _PARITY = [("Bash", "env", "deny"), ("Bash", "printenv HOME", "allow"),
            ("Bash", "set -euo pipefail", "allow"),
            ("Bash", "eval \"$X\"", "deny"),
            ("PowerShell", "gci env:", "deny"),
-           ("PowerShell", "$env:PATH", "allow")]
+           ("PowerShell", "$env:PATH", "allow"),
+           ("PowerShell", "Write-Output $env:FAKE_API_KEY", "deny"),
+           ("PowerShell", "[Environment]::GetEnvironmentVariables()", "deny")]
 
 
 @pytest.mark.parametrize("tool,command,want", _PARITY)
@@ -630,32 +639,43 @@ def test_bash_driver_parity(tmp_path, tool, command, want):
     assert (decision, code) == (want, 0), out
 
 
-@needs_pwsh
-@pytest.mark.parametrize("tool,command,want",
-                         [p for p in _PARITY if p[0] == "PowerShell"]
-                         + [("PowerShell", "Write-Output $env:FAKE_API_KEY", "deny"),
-                            ("PowerShell", "[Environment]::GetEnvironmentVariables()",
-                             "deny")])
-def test_pwsh_driver_parity(tmp_path, tool, command, want):
-    _fixture(tmp_path, ARMED)
-    decision, _, code, out = run_hook("pwsh", tmp_path, tool, command)
-    assert (decision, code) == (want, 0), out
-
-
-@needs_pwsh
-def test_pwsh_driver_stands_down_for_bash(tmp_path):
-    _fixture(tmp_path, ARMED)
-    decision, _, code, out = run_hook("pwsh", tmp_path, "Bash", "env")
-    assert (decision, code) == ("allow", 0), out
+def _hooks_farm(tmp_path, with_twin):
+    """Symlinks to every file beside env-guard.sh, plus, when asked, an empty
+    `env-guard.ps1`: env_guard.py looks for a twin where it was started
+    from, and the real directory holds none."""
+    farm = tmp_path / ("hooks-twin" if with_twin else "hooks")
+    farm.mkdir()
+    for entry in os.listdir(_SCRIPTS):
+        os.symlink(os.path.join(_SCRIPTS, entry), farm / entry)
+    if with_twin:
+        (farm / "env-guard.ps1").write_text("", encoding="utf-8")
+    return str(farm / "env-guard.sh")
 
 
 @needs_bash
+@pytest.mark.skipif(os.name == "nt", reason="symlinks a POSIX hooks farm")
 def test_bash_driver_stands_down_for_powershell_on_windows(tmp_path):
     _fixture(tmp_path, ARMED)
+    script = _hooks_farm(tmp_path, True)
+    ps_body = json.dumps({"tool_name": "PowerShell",
+                          "tool_input": {"command": "gci env:"},
+                          "cwd": str(tmp_path / "repo")}).encode("utf-8")
+    bash_body = json.dumps({"tool_name": "Bash",
+                            "tool_input": {"command": "env"},
+                            "cwd": str(tmp_path / "repo")}).encode("utf-8")
+    env = _scrubbed_env(tmp_path, {"OS": "Windows_NT"})
+    ps = subprocess.run([_BASH, script], input=ps_body, capture_output=True,
+                        env=env, cwd=str(tmp_path), timeout=180, check=False)
+    sh = subprocess.run([_BASH, script], input=bash_body, capture_output=True,
+                        env=env, cwd=str(tmp_path), timeout=180, check=False)
+    assert (ps.returncode, _parse(ps.stdout.decode("utf-8"))[0]) == (0, "allow"), ps.stderr
+    assert (sh.returncode, _parse(sh.stdout.decode("utf-8"))[0]) == (0, "deny"), sh.stderr
+
+
+@needs_bash
+def test_bash_driver_judges_powershell_on_windows_with_no_twin(tmp_path):
+    _fixture(tmp_path, ARMED)
     decision, _, code, out = run_hook("bash", tmp_path, "PowerShell", "gci env:",
-                                      extra={"OS": "Windows_NT"})
-    assert (decision, code) == ("allow", 0), out
-    decision, _, code, out = run_hook("bash", tmp_path, "Bash", "env",
                                       extra={"OS": "Windows_NT"})
     assert (decision, code) == ("deny", 0), out
 
@@ -676,16 +696,6 @@ def test_bash_wrapper_without_python(tmp_path, armed):
     way."""
     _fixture(tmp_path, ARMED if armed else {"guards": {"envGuard": "off"}})
     _, _, code, out = run_hook("bash", tmp_path, "Bash", "env", extra=_NO_PYTHON)
-    assert code == (2 if armed else 0), out
-    assert MARKER not in out
-
-
-@needs_pwsh
-@pytest.mark.parametrize("armed", [True, False], ids=["armed", "not-armed"])
-def test_pwsh_wrapper_without_python(tmp_path, armed):
-    _fixture(tmp_path, ARMED if armed else {"guards": {"envGuard": "off"}})
-    _, _, code, out = run_hook("pwsh", tmp_path, "PowerShell", "gci env:",
-                               extra=_NO_PYTHON)
     assert code == (2 if armed else 0), out
     assert MARKER not in out
 

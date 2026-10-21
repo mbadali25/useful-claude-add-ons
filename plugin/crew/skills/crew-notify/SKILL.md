@@ -224,8 +224,8 @@ bound what a miss can leak. Send the fact, not the detail — the detail is in
 the repo where it belongs.
 
 The sender is one module, `hooks/scripts/crew_notify.py` (`send`, `hook`,
-`config`); `notify.sh` and `notify.ps1` are thin wrappers that keep the
-one-sender election between the two shells. It honours a 429's `retry_after`,
+`config`); `notify.sh` is a thin wrapper that keeps the one-sender
+election (the PowerShell wrapper `notify.ps1` was deleted in L-0727 slice 3). It honours a 429's `retry_after`,
 paces sends a second apart, and always exits 0.
 
 ---

@@ -223,9 +223,9 @@ On **Linux, macOS, WSL or Git Bash**, describe the tmux path instead
 (`describe_tmux_path()` in the same module) and write nothing — there is no
 method to propose there, `auto` already resolves to it. Either way, **enabling**
 auto-clear (`context.autoClear.enabled: true`) is a separate question with its
-own yes: never bundle it into the method question, and never write `sendkeys`
-without being asked for it by name (`apply-method sendkeys --yes` refuses
-without `--yes`).
+own yes: never bundle it into the method question. `sendkeys` was removed in
+crew 1.2.60 (L-0727) and is never offered (`apply-method sendkeys` refuses by
+name, whatever `--yes` says).
 
 Tell them the threshold is read from the transcript's own usage records, not
 estimated, and that the window is derived from the model (Claude 5 family 1M,

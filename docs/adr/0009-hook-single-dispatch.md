@@ -141,6 +141,13 @@ B8 (fail closed), B9 (the scripts no longer run twice on Windows), B10 (no pytho
 delete the fourteen twins this PR leaves in place, and slice 3 updates the commands, skills and
 `INSTALLATION.md` text that still describes them.
 
+**Outcome (slice 3, L-0867, crew 1.2.60):** the ten non-harness twins (`cloud-guard`, `env-guard`,
+`role-write-guard`, `crew-context`, `handoff-read`, `handoff-write`, `notify`, `platform-sync`,
+`context-watch`, `auto-clear`) are deleted. `crew_hook.select` uses a row's `twin` only when the file exists, so
+the `cloud-guard.ps1` and `env-guard.ps1` rows in `TABLE` now route a Windows `PowerShell` call to the `.sh`
+with no dispatcher edit; those two `twin=` entries are dead and are removed by a later harness PR together with
+the four harness twins of slice 4. `promote-gate.ps1` stays.
+
 Comments that still say both flavours are registered, left for that follow-up because the files are outside
 this PR: `cloud-guard.sh`, `env-guard.sh`, `handoff-write.sh`, `context-watch.sh`, `verify-gate.sh`,
 `cloud_guard.py`, `crew_context.py`, `hook_once.py`, `event_claim.py` and the `.ps1` twins' own headers.

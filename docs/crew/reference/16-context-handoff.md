@@ -148,7 +148,7 @@ every repo. The other keys layer normally, repo over machine.
 | `tmux` | `$TMUX_PANE`, and only when that pane's pid is this session's own process or an ancestor of it | **Exact.** No focus involved. Use this if you can. |
 | `xdotool` | the one window owned by the nearest ancestor of this session's own process, hosting no other terminal; `windowTitle` narrows or, failing that, is a fallback that must match exactly one window (and refuses while another session is live) | Activates that window id, re-checks it is active, then types. |
 | `notify` | no window — types nothing | Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured command yourself. Never claims anything was cleared or compacted, because nothing was. `auto` resolves here on native Windows with no tmux pane. |
-| `sendkeys` | the same rule, from this session's own process, through `EnumWindows` (renamed from the pre-1.0 `"windows"` literal); at send time that exact window handle must have foreground | **Opt-in only — `auto` never resolves here.** Windows Terminal hosts every tab in one window and nothing outside UI Automation can tell which tab is active, so a Windows-Terminal-owned target declines and falls back to `notify`, logged to `.crew/.autoclear.log`. Request it by name after reading what it does. |
+| `sendkeys` | removed in crew 1.2.60 (L-0727 slice 3) | **Refused by name** ("sendkeys was removed in crew 1.2.60 (L-0727); use notify or tmux"); it was the Windows-only SendKeys sender in the deleted `auto-clear.ps1`. |
 | `wtype` | cannot identify a window | **Refused**, whatever `unsafeFocus` says. |
 
 #### What has to be true before it types anything
@@ -210,7 +210,6 @@ and read `.work/HANDOFF.md` before trusting the next session to resume from it.
 
 ```bash
 bash   ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/auto-clear.sh --dry-run --force
-pwsh -File ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/auto-clear.ps1 -DryRun -Force
 ```
 
 `--dry-run` prints the method, target, command and delay it *would* use and sends
@@ -275,9 +274,7 @@ after every refusal, records the run with `crew_resume.py record` (a failed
 record types nothing), and then a detached sender types. In tmux it waits
 `resume.typeDelaySeconds` (2), polls the pane up to
 `resume.readyTimeoutSeconds` (15) for an idle, empty input line, and sends
-the text and, half a second later, Enter. On native Windows it types only
-under an explicit `method: sendkeys`, after the delay, with the focus and
-tab rechecks; `auto` there is `notify` and types nothing. The context says
+the text and, half a second later, Enter. On native Windows `auto` is `notify` and types nothing. The context says
 `Auto-resume: typing /crew:done T-0001 into this session in 2s (method
 tmux); ...`, or keeps the line above and adds `Auto-resume was not typed:
 <reason>.` Refusals, each logged to `.crew/.autoclear.log` (off is silent):
@@ -310,7 +307,7 @@ instead.** The goal file `.work/autopilot/<slug>.json` keeps a `run` block
 goal-mark` and by `goal-run` itself. One function,
 `crew_autopilot.py handoff-resume --root . [--ticket <id>]`, decides the line
 for every writer: autopilot's low-context stop, `/crew:handoff`, and the
-PreCompact skeleton (`handoff-write.sh`/`.ps1`, which adds the line after
+PreCompact skeleton (`handoff-write.sh`, which adds the line after
 `head:` only while exactly one goal runs). One running goal: `resume:
 /crew:autopilot --goal <slug>`, even when a ticket is in hand. No running goal:
 the ticket form, or `resume: none`. Two running goals, or a goal file it

@@ -255,10 +255,10 @@ saying so, and the other events exit 0.
 The branch that matters is **which tool Claude used**, not which OS is running. A `Bash` tool call is bash
 syntax *even on Windows*, so judging it with PowerShell rules gets it backwards in both directions: it blocks
 the correct capture form (`DB_PASS=$(...)`) and misses the wrong one. So a `PowerShell` tool call goes to a
-row's PowerShell twin when the file exists — `promote-gate.ps1`, `cloud-guard.ps1`, `env-guard.ps1` — and
-`cloud_guard.py` and `env_guard.py` stand down for exactly that call when the twin will judge it; every other
-call, and every `PowerShell` call to a row with no twin (`scope-guard`), is judged by the `.sh`. The rest of
-the `.ps1` twins are no longer registered; slices 3 and 4 of L-0727 delete them.
+row's PowerShell twin when the file exists — `promote-gate.ps1` is the only one left (L-0727 slice 3 deleted `cloud-guard.ps1` and `env-guard.ps1`) — and
+`cloud_guard.py` and `env_guard.py` keep a stand-down for a twin that exists (dead code now); every other
+call, and every `PowerShell` call to a row whose twin is absent (`cloud-guard`, `env-guard`, `scope-guard`), is
+judged by the `.sh`. The ten twins of slice 3 are deleted; slice 4 of L-0727 deletes the four harness twins.
 
 Two things worth knowing:
 
@@ -267,7 +267,7 @@ Two things worth knowing:
   the bash one is not expected to run there at all.
 - **With no python on Windows** an armed repo is refused on the same three events and an unarmed one is not,
   except that a `PreToolUse` write by a restricted or unreadable role is still refused (the config-independent
-  fallback `role-write-guard.ps1` always had).
+  fallback the deleted `role-write-guard.ps1` always had).
 
 **`python3` is not required by the hooks.** Every hook script resolves `python3`, then `python`, then `py` — that is `crew_py()` in `hooks/scripts/_common.sh` — and `guard.sh` prefers `jq` when present. With none available the hook says so on stderr and exits 0 — loudly inert rather than silently passing.
 

@@ -442,9 +442,8 @@ def _resolver(path):
 
 
 def test_the_powershell_resolver_is_byte_for_byte_the_other_wrappers():
-    """L-0690: the four harness carriers share one probe (with its trail);
-    role-write-guard.ps1 keeps the old one until the follow-up rejoins them
-    (tests/test_ps1_python_probe.py pins both groups)."""
+    """L-0690: the four harness carriers share one probe (with its trail)
+    (tests/test_ps1_python_probe.py pins the group)."""
     assert _resolver(os.path.join(SCRIPTS, "completion-audit.ps1")) == \
         _resolver(os.path.join(SCRIPTS, "scope-guard.ps1"))
 

@@ -1,7 +1,6 @@
-"""The decisions behind auto wrap-up -> auto-clear -> auto-resume, for the bash
-flavour. `auto-clear.ps1` carries the same rules in PowerShell, because the
-native-Windows flavour must not need a python to refuse; the suite runs both
-against the same fixtures so they cannot drift.
+"""The decisions behind auto wrap-up -> auto-clear -> auto-resume. `auto-clear.sh`
+is the one sender, on POSIX and under Git Bash on Windows alike (L-0727 slice 3
+deleted `auto-clear.ps1` and the `sendkeys` method that lived in it).
 
 Three rules, each one a bug that shipped:
 
@@ -39,14 +38,13 @@ saying the handoff is written and verified and it is safe to run the
 configured command yourself -- never that anything was cleared or compacted,
 because nothing was. It needs no window and is never refused for lack of one.
 `auto` resolves to it on native Windows with no tmux pane, which is an OWNER
-DECISION, not a capability gap: `sendkeys` (auto-clear.ps1's
-`System.Windows.Forms.SendKeys`) still exists and still works, but `auto` may
-never choose it -- typing into a window it found itself is a risk `auto`
-does not get to accept on your behalf. Request `sendkeys` by name to opt in.
-**`sendkeys` is refused here outright**, whatever `cfg["method"]` says: that
-mechanism is `auto-clear.ps1`'s, and this module carries no window-typing code
-of its own beyond `tmux`/`xdotool`, which are POSIX-only in the other
-direction.
+DECISION: typing into a window the hook found itself is a risk `auto` does not
+get to accept on your behalf. The Windows `sendkeys` method
+(`System.Windows.Forms.SendKeys`, once `auto-clear.ps1`'s) was removed in crew
+1.2.60 (L-0727 slice 3, native-resume ADR 0008): **`sendkeys` is refused here
+outright**, on every platform, whatever `cfg["method"]` says, with
+`SENDKEYS_REMOVED`. This module carries no window-typing code of its own
+beyond `tmux`/`xdotool`.
 
 Also: `enabled` is a MACHINE opt-in. It is read from the machine-global
 `~/.claude/crew/config.json`; a repo may switch it off but cannot switch it
@@ -62,11 +60,11 @@ host, which is why a scratch repo could not be tested safely beside live ones.
 CLI (used by auto-clear.sh): `plan --root R --session S [--force]` prints one
 value per line -- status (off|refuse|send), reason, method, target, label,
 command, delay, key. Never raises; an internal error is a refusal.
-`resume-plan --root R --session S --source clear|compact [--flavour sh|ps1]`
+`resume-plan --root R --session S --source clear|compact`
 is T-0013's: the same eight lines with the rendered resume prompt as the
 command, then timeout, marker and decision, then ".". `probe` reads a
 `tmux capture-pane -p -e` on stdin and prints ready|busy|nonempty|noprompt.
-T-0017's wrap-up verbs, for context-watch and auto-clear.ps1: `wrapup-armed
+T-0017's wrap-up verbs, for context-watch: `wrapup-armed
 --root R --session S` prints on|off; `wrapup-check --root R` prints ok or the
 refusal reason; `wrapup-message --root R --session S --pct N` prints the
 wrap-up procedure when armed and nothing otherwise. None of them raises.
@@ -1076,10 +1074,15 @@ def _tmux_pane_pid(pane):
     return _num(out.strip(), 0)
 
 
+SENDKEYS_REMOVED = ("sendkeys was removed in crew 1.2.60 (L-0727); use notify or tmux")
+
+
 def resolve_method(cfg, env=None):
     """{"ok", "method", "target", "label", "reason"}."""
     env = os.environ if env is None else env
     method = cfg["method"]
+    if method == "sendkeys":
+        return {"ok": False, "reason": SENDKEYS_REMOVED}
     if method == "auto":
         if env.get("TMUX") and shutil.which("tmux"):
             method = "tmux"
@@ -1091,12 +1094,8 @@ def resolve_method(cfg, env=None):
         # That is what makes it the right test for "this hook is running on
         # native Windows" rather than `os.name`, which would also be "nt" for
         # a native-Windows python invoked from a POSIX-flavoured wrapper.
-        # OWNER DECISION: `auto` never resolves to `sendkeys` here, even when
-        # this flavour's own `sendkeys`-equivalent does not exist -- there is
-        # no bash SendKeys, so this branch exists only to give the same
-        # "handoff written, safe to run it yourself" notice a Windows user
-        # gets from auto-clear.ps1, when THIS flavour is the one that won the
-        # Stop hook race on that machine.
+        # OWNER DECISION: native Windows with no tmux pane gets the "handoff
+        # written, safe to run it yourself" notice, never a typed keystroke.
         elif env.get("OS") == "Windows_NT":
             method = "notify"
         else:
@@ -1109,10 +1108,6 @@ def resolve_method(cfg, env=None):
         # Never refused: it identifies no window and types nothing, so none
         # of the capability checks below apply to it.
         return {"ok": True, "method": "notify", "target": "", "label": ""}
-    if method == "sendkeys":
-        return {"ok": False, "reason": (
-            "method sendkeys is auto-clear.ps1's job; this is the POSIX flavour. Both are "
-            "registered, so the Windows one will have handled it")}
     if method == "wtype":
         return {"ok": False, "reason": (
             "method wtype types into whatever has focus and cannot identify a window, so it "
@@ -1146,8 +1141,7 @@ def resolve_method(cfg, env=None):
                 "label": (f"{win.get('title') or ''} [window {win.get('id')}, "
                           f"pid {win.get('pid')}, {found['how']}]")}
     return {"ok": False, "reason": (
-        f"unknown method '{cfg['method']}' (tmux, xdotool, notify, none, auto -- sendkeys is "
-        "auto-clear.ps1's)")}
+        f"unknown method '{cfg['method']}' (tmux, xdotool, notify, none, auto)")}
 
 
 def plan(root, session_id, force=False, global_path=None, env=None):
@@ -1289,7 +1283,7 @@ def resume_typing(global_path=None):
     return out[0], out[1]
 
 
-def resume_plan(root, session_id, source, global_path=None, env=None, flavour="sh", plugin_root=None):
+def resume_plan(root, session_id, source, global_path=None, env=None, plugin_root=None):
     """Everything auto-clear's resume mode needs, decided in one place.
 
     `plan`'s eight fields (so the senders read them unchanged), then the
@@ -1297,8 +1291,7 @@ def resume_plan(root, session_id, source, global_path=None, env=None, flavour="s
     `crew_resume.py record` takes. Order, first failure wins: T-0006's
     `decide` (off -> off; any other non-run -> refuse with its reason, after
     the narrowing below so an un-narrowed session stays silent), `in_scope`
-    (off), then the method -- `resolve_method` for the sh flavour; the ps1
-    flavour resolves `sendkeys` natively, so its plan stops before that."""
+    (off), then the method -- `resolve_method`."""
     out = dict.fromkeys(RESUME_PLAN_FIELDS, "")
     out["status"] = "refuse"
     try:
@@ -1334,15 +1327,12 @@ def resume_plan(root, session_id, source, global_path=None, env=None, flavour="s
         os.makedirs(os.path.dirname(out["marker"]), exist_ok=True)
     except OSError:
         pass
-    if flavour == "ps1":
-        out.update(status="send", method=cfg["method"])
-        return out
     got = resolve_method(cfg, env)
     if not got["ok"]:
         out["reason"] = got["reason"]
         return out
     if got["method"] == "xdotool":
-        out["reason"] = ("auto-resume types through tmux (which has a ready probe) or sendkeys only; "
+        out["reason"] = ("auto-resume types through tmux (which has a ready probe) only; "
                          "xdotool cannot see whether the input line is ready")
         return out
     if got["method"] != "notify":
@@ -1444,7 +1434,6 @@ def main(argv=None):
     p_resume.add_argument("--root", default=".")
     p_resume.add_argument("--session", default="")
     p_resume.add_argument("--source", default="")
-    p_resume.add_argument("--flavour", default="sh", choices=("sh", "ps1"))
     sub.add_parser("probe")
     p_armed = sub.add_parser("wrapup-armed")
     p_armed.add_argument("--root", default=".")
@@ -1466,7 +1455,7 @@ def main(argv=None):
         return 0
     if args.cmd == "resume-plan":
         try:
-            result = resume_plan(os.path.abspath(args.root), args.session, args.source, flavour=args.flavour)
+            result = resume_plan(os.path.abspath(args.root), args.session, args.source)
         except Exception as exc:  # pylint: disable=broad-except
             result = {"status": "refuse", "reason": f"internal error: {exc.__class__.__name__}"}
         for field in RESUME_PLAN_FIELDS:

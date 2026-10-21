@@ -1,11 +1,9 @@
-"""T-0006 through the real hook wrappers: the PreCompact record both
-`handoff-write` flavours leave, and what `crew-context` injects on a
-SessionStart after /clear or /compact.
+"""T-0006 through the real hook wrappers: the PreCompact record `handoff-write`
+leaves, and what `crew-context` injects on a SessionStart after /clear or
+/compact.
 
 Every run gets its own fixture repo and its own HOME (so the machine file is
-the fixture's, never the developer's). The .ps1 cases are told they are on
-Windows (`OS=Windows_NT`) so they run on a Linux pwsh; off a host with pwsh
-they skip and say so -- a skip there means the PowerShell flavour was NOT run.
+the fixture's, never the developer's).
 """
 import json
 import os
@@ -24,10 +22,7 @@ import crew_resume
 _SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
 _PLUGIN = context._ROOT  # pylint: disable=protected-access
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = crew_fixtures.resolve_pwsh()
-FLAVORS = [pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="bash not installed - sh NOT run")),
-           pytest.param("ps1", marks=pytest.mark.skipif(_PWSH is None, reason="pwsh not installed - ps1 NOT run"))]
-needs_pwsh = pytest.mark.skipif(_PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")
+FLAVORS = [pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="bash not installed - sh NOT run"))]
 needs_bash = pytest.mark.skipif(_BASH is None, reason="bash not installed - the sh flavour was NOT run")
 
 
@@ -68,13 +63,9 @@ def _env(root):
 
 def _run(flavor, name, root, payload, os_env=None):
     env = _env(root)
-    if flavor == "ps1":
-        env["OS"] = os_env or "Windows_NT"
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", os.path.join(_SCRIPTS, f"{name}.ps1")]
-    else:
-        if os_env:
-            env["OS"] = os_env
-        cmd = [_BASH, os.path.join(_SCRIPTS, f"{name}.sh").replace("\\", "/")]
+    if os_env:
+        env["OS"] = os_env
+    cmd = [_BASH, os.path.join(_SCRIPTS, f"{name}.sh").replace("\\", "/")]
     return subprocess.run(cmd, cwd=str(root), env=env, capture_output=True, text=True,
                           input=json.dumps(payload), check=False, timeout=120)
 
@@ -116,9 +107,9 @@ def _claude(tmp_path, name):
     re-execs `..\\usr\\bin\\bash.exe` relative to itself, so a copy has nothing
     to run, and `session_process` is None there whatever the name (T-0076).
 
-    No bash at all (a pwsh-only host) is a named skip, never a TypeError from
-    copying None: every caller that needs a `claude` ancestor goes through
-    here (T-0069, T-0042 review round 2)."""
+    No bash at all is a named skip, never a TypeError from copying None:
+    every caller that needs a `claude` ancestor goes through here (T-0069,
+    T-0042 review round 2)."""
     if _BASH is None:
         pytest.skip("bash not installed - the claude-process fixture copies bash - NOT run")
     if os.name == "nt":
@@ -130,10 +121,7 @@ def _claude(tmp_path, name):
     return str(exe)
 
 
-def _hook_cmd(flavor, name):
-    if flavor == "ps1":
-        return ["env", "OS=Windows_NT", _PWSH, "-NoProfile", "-NonInteractive", "-File",
-                os.path.join(_SCRIPTS, f"{name}.ps1")]
+def _hook_cmd(_flavor, name):
     return [_BASH, os.path.join(_SCRIPTS, f"{name}.sh")]
 
 
@@ -269,19 +257,15 @@ def test_precompact_without_a_session_writes_nothing(tmp_path):
 
 
 @needs_bash
-@needs_pwsh
-def test_precompact_record_same_in_both_flavours(tmp_path):
-    records = []
-    for flavor in ("sh", "ps1"):
-        base = tmp_path / flavor
-        base.mkdir()
-        root = _repo(base)
-        done = _run(flavor, "handoff-write", root, _precompact(root, "sess-9", "manual"))
-        with open(_record_path(root, "sess-9"), encoding="utf-8") as handle:
-            record = json.load(handle)
-        records.append((done.returncode, sorted(record), record["trigger"], isinstance(record["at"], int)))
+def test_precompact_record_holds_the_trigger_and_a_time(tmp_path):
+    root = _repo(tmp_path)
 
-    assert records[0] == records[1] == (0, ["at", "trigger"], "manual", True)
+    done = _run("sh", "handoff-write", root, _precompact(root, "sess-9", "manual"))
+    with open(_record_path(root, "sess-9"), encoding="utf-8") as handle:
+        record = json.load(handle)
+
+    assert (done.returncode, sorted(record), record["trigger"], isinstance(record["at"], int)) == \
+        (0, ["at", "trigger"], "manual", True)
 
 
 # --- step 4: what crew-context injects -------------------------------------
@@ -419,19 +403,6 @@ def test_armed_compact_after_an_auto_compact_waits(tmp_path, flavor):
     assert "Auto-resume did not start: compact was not a manual /compact." in text, text
 
 
-@needs_bash
-@needs_pwsh
-@needs_proc
-def test_exactly_one_flavour_emits_for_one_payload(tmp_path):
-    root = _repo(tmp_path)
-
-    outs = _in_claude(_claude(tmp_path, "one"), root, [("sh", "crew-context", _post_write(root)),
-                                                       ("sh", "crew-context", _start(root)),
-                                                       ("ps1", "crew-context", _start(root))])[1:]
-
-    assert (sum(bool(o) for o in outs), _RUN_LINE in "".join(outs)) == (1, True)
-
-
 @pytest.mark.parametrize("label, kwargs, author", [
     ("run", {}, True),
     ("wait", {"resume": "/crew:approve T-0001"}, False),
@@ -442,10 +413,10 @@ def test_never_emits_initial_user_message(tmp_path, label, kwargs, author):
     not when refused, not when off. `test_auto_cycle.py`'s own assertion of
     the same thing stays true beside this one. Only `run` needs the `claude`
     process fixture (it needs bash); `wait` and `off` run on either flavour,
-    so a pwsh-only host still runs them (T-0069)."""
-    flavor = "sh" if _BASH else "ps1" if _PWSH else None
-    if flavor is None:
-        pytest.skip("neither bash nor pwsh installed - the hook was NOT run")
+    so a host without /proc still runs them (T-0069)."""
+    if _BASH is None:
+        pytest.skip("bash not installed - the hook was NOT run")
+    flavor = "sh"
     base = tmp_path / label
     base.mkdir()
     out = _context(flavor, _repo(base, **kwargs), author=author)[0]
@@ -455,7 +426,7 @@ def test_never_emits_initial_user_message(tmp_path, label, kwargs, author):
 
 
 def test_the_claude_fixture_skips_by_name_without_bash(tmp_path, monkeypatch):
-    """T-0069 (T-0042 review round 2 FIX :433): on a pwsh-only host `_claude`
+    """T-0069 (T-0042 review round 2 FIX :433): on a host without bash `_claude`
     raised TypeError from `shutil.copy2(None, ...)` instead of skipping."""
     monkeypatch.setattr(sys.modules[__name__], "_BASH", None)
 
@@ -467,7 +438,7 @@ def test_the_claude_fixture_skips_by_name_without_bash(tmp_path, monkeypatch):
 def test_the_context_log_records_the_decision(tmp_path):
     root = _repo(tmp_path)
 
-    _context("sh" if _BASH else "ps1", root, author=True)
+    _context("sh", root, author=True)
 
     starts = [r for r in context_fixtures.log_records(root) if r.get("event") == "SessionStart"]
     assert starts[-1]["resume"] == {"action": "run", "reason": "", "prompt": "/crew:done T-0001"}
@@ -652,11 +623,7 @@ def test_a_later_precompact_with_no_python_leaves_no_manual_record(tmp_path, fla
     crew_resume.write_precompact_record(str(root), {"session_id": "s1", "trigger": "manual"})
     env = _env(root)
     env["PATH"] = _no_python_path(tmp_path)
-    if flavor == "ps1":
-        env["OS"] = "Windows_NT"
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", os.path.join(_SCRIPTS, "handoff-write.ps1")]
-    else:
-        cmd = [_BASH, os.path.join(_SCRIPTS, "handoff-write.sh")]
+    cmd = [_BASH, os.path.join(_SCRIPTS, "handoff-write.sh")]
 
     done = subprocess.run(cmd, cwd=str(root), env=env, capture_output=True, text=True,
                           input=json.dumps(_precompact(root, "s1", "auto")), check=False, timeout=120)
@@ -750,7 +717,7 @@ def test_a_staleness_verdict_that_raises_counts_as_stale(tmp_path, monkeypatch):
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_a_record_the_shell_could_not_remove_leaves_a_stuck_marker(tmp_path, flavor):
     """Round 4 NIT :402 in the shell half. The record's place holds a
-    non-empty directory, which `rm -f` / `Remove-Item` cannot remove; with no
+    non-empty directory, which `rm -f` cannot remove; with no
     python on PATH the marker can only come from the shell itself."""
     if os.name == "nt":
         pytest.skip("symlinked PATH fixture is POSIX-only")
@@ -759,11 +726,7 @@ def test_a_record_the_shell_could_not_remove_leaves_a_stuck_marker(tmp_path, fla
     os.makedirs(os.path.join(record, "keep"))
     env = _env(root)
     env["PATH"] = _no_python_path(tmp_path)
-    if flavor == "ps1":
-        env["OS"] = "Windows_NT"
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", os.path.join(_SCRIPTS, "handoff-write.ps1")]
-    else:
-        cmd = [_BASH, os.path.join(_SCRIPTS, "handoff-write.sh")]
+    cmd = [_BASH, os.path.join(_SCRIPTS, "handoff-write.sh")]
 
     done = subprocess.run(cmd, cwd=str(root), env=env, capture_output=True, text=True,
                           input=json.dumps(_precompact(root, "s1", "auto")), check=False, timeout=120)
@@ -883,13 +846,9 @@ def _skeleton_after(flavor, root, goals, no_python=False):
     payload = _precompact(root, "s-skel", "auto")
     if no_python:
         # `PYTHONHOME` pointing nowhere makes every interpreter fail to start,
-        # which is what each flavour's own resolver probe sees (test_cloud_guard.py).
+        # which is what the resolver probe sees (test_cloud_guard.py).
         env = dict(_env(root), PYTHONHOME=str(root.parent / "nonexistent-python-home"))
-        cmd = ([_BASH, os.path.join(_SCRIPTS, "handoff-write.sh")] if flavor == "sh" else
-               [_PWSH, "-NoProfile", "-NonInteractive", "-File",
-                os.path.join(_SCRIPTS, "handoff-write.ps1")])
-        if flavor == "ps1":
-            env["OS"] = "Windows_NT"
+        cmd = [_BASH, os.path.join(_SCRIPTS, "handoff-write.sh")]
         subprocess.run(cmd, cwd=str(root), env=env, input=json.dumps(payload),
                        capture_output=True, text=True, check=False, timeout=120)
     else:

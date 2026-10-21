@@ -33,7 +33,7 @@ def test_apply_windows_default_writes_and_prints_it(tmp_path):
     path = _global(tmp_path)
     plan = setup.plan_windows_notify_default(path=path)
     merged, changes = setup.write_autoclear_method(
-        plan["updates"]["context.autoClear.method"], consent=True, path=path)
+        plan["updates"]["context.autoClear.method"], path=path)
     assert merged["context"]["autoClear"]["method"] == "notify"
     assert changes and changes[0]["after"] == "notify"
     with open(path, encoding="utf-8") as handle:
@@ -46,7 +46,7 @@ def test_apply_windows_default_writes_and_prints_it(tmp_path):
 
 def test_init_idempotent_already_configured_no_file_change(tmp_path):
     path = _global(tmp_path)
-    setup.write_autoclear_method("notify", consent=True, path=path)
+    setup.write_autoclear_method("notify", path=path)
     with open(path, "rb") as handle:
         before = handle.read()
 
@@ -68,7 +68,7 @@ def test_migrate_idempotent_no_windows_literal_no_duplication_no_notes():
 
 def test_onboard_reports_already_configured_same_helper_as_init(tmp_path):
     path = _global(tmp_path)
-    setup.write_autoclear_method("notify", consent=True, path=path)
+    setup.write_autoclear_method("notify", path=path)
     # /crew:onboard asks the identical question /crew:init does; both must
     # agree it is already answered.
     assert setup.already_configured_global(path) is not None
@@ -121,7 +121,7 @@ def test_migrate_detects_onlyRepos_widening_and_proposes_this_repo():
 
 def test_migrate_widening_not_applied_without_yes(tmp_path):
     path = _global(tmp_path)
-    setup.write_autoclear_method("auto", consent=True, path=path)
+    setup.write_autoclear_method("auto", path=path)
     setup.write_autoclear_enabled(True, consent=True, path=path)
     with open(path, "rb") as handle:
         before = handle.read()
@@ -144,7 +144,7 @@ def test_migrate_widening_not_applied_without_yes(tmp_path):
 
 def test_migrate_widening_applied_with_yes(tmp_path):
     path = _global(tmp_path)
-    setup.write_autoclear_method("auto", consent=True, path=path)
+    setup.write_autoclear_method("auto", path=path)
     setup.write_autoclear_enabled(True, consent=True, path=path)
     merged, changes = setup.apply_onlyRepos_narrowing(
         ["/repos/my-repo"], consent=True, path=path)
@@ -166,24 +166,17 @@ def test_no_forbidden_words_anywhere():
     assert offenders == []
 
 
-# --------------------------------------------------------------- sendkeys consent
+# --------------------------------------------------------------- sendkeys removed
 
 
-def test_sendkeys_never_written_without_consent(tmp_path):
+def test_sendkeys_is_refused_and_nothing_is_written(tmp_path):
     path = _global(tmp_path)
     try:
-        setup.write_autoclear_method("sendkeys", consent=False, path=path)
+        setup.write_autoclear_method("sendkeys", path=path)
         assert False, "expected PermissionError"
-    except PermissionError:
-        pass
+    except PermissionError as exc:
+        assert "removed in crew 1.2.60" in str(exc)
     assert not os.path.exists(path)
-
-
-def test_sendkeys_written_with_explicit_consent(tmp_path):
-    path = _global(tmp_path)
-    merged, changes = setup.write_autoclear_method("sendkeys", consent=True, path=path)
-    assert merged["context"]["autoClear"]["method"] == "sendkeys"
-    assert changes
 
 
 def test_enabling_never_written_without_consent(tmp_path):
@@ -267,7 +260,7 @@ def test_apply_migrate_to_repo_does_not_widen_without_yes_widen(tmp_path):
     root = str(tmp_path / "repo")
     _write_crew_json(root, {"autoClear": {"method": "auto", "enabled": True}})
     global_path = str(tmp_path / "g.json")
-    setup.write_autoclear_method("auto", consent=True, path=global_path)
+    setup.write_autoclear_method("auto", path=global_path)
     setup.write_autoclear_enabled(True, consent=True, path=global_path)
     with open(global_path, "rb") as handle:
         before = handle.read()
@@ -285,7 +278,7 @@ def test_apply_migrate_to_repo_widens_with_yes_widen(tmp_path):
     root = str(tmp_path / "repo")
     _write_crew_json(root, {"autoClear": {"method": "auto", "enabled": True}})
     global_path = str(tmp_path / "g.json")
-    setup.write_autoclear_method("auto", consent=True, path=global_path)
+    setup.write_autoclear_method("auto", path=global_path)
     setup.write_autoclear_enabled(True, consent=True, path=global_path)
 
     plan = setup.apply_migrate_to_repo(root, global_path=global_path, yes_widen=True)
@@ -310,8 +303,8 @@ def test_apply_migrate_to_repo_converts_config_json_the_senders_actually_read(tm
     """Reproduces the review finding directly: `crew_migrate.py --apply`
     copies config.json's `context` into a new crew.json UNCONVERTED and
     keeps config.json (`commands/migrate.md`'s own table marks it
-    "retireable", never deleted). Every autoClear sender -- auto-clear.sh,
-    auto-clear.ps1, crew_autocycle.py's `_load` -- reads `.crew/config.json`
+    "retireable", never deleted). Every autoClear sender -- auto-clear.sh and
+    crew_autocycle.py's `_load` -- reads `.crew/config.json`
     only, never crew.json. Before this fix, converting crew.json alone left
     a retained legacy "windows" method live in config.json, where every
     sender still read it and refused it as unsupported."""
@@ -380,7 +373,7 @@ def test_apply_migrate_to_repo_writes_global_narrowing_before_repo_files(tmp_pat
         crew_before = handle.read()
 
     global_path = str(tmp_path / "g.json")
-    setup.write_autoclear_method("auto", consent=True, path=global_path)
+    setup.write_autoclear_method("auto", path=global_path)
     setup.write_autoclear_enabled(True, consent=True, path=global_path)
     with open(global_path, "rb") as handle:
         global_before = handle.read()
@@ -431,7 +424,7 @@ def test_apply_method_refuses_to_write_over_malformed_global_json(tmp_path):
         handle.write(original)
 
     try:
-        setup.write_autoclear_method("notify", consent=True, path=path)
+        setup.write_autoclear_method("notify", path=path)
         assert False, "expected GlobalConfigUnreadable"
     except setup.GlobalConfigUnreadable:
         pass
@@ -701,7 +694,7 @@ def test_global_file_problem_reports_invalid_utf8_instead_of_raising(tmp_path):
     assert problem is not None and "utf-8" in problem.lower()
 
     try:
-        setup.write_autoclear_method("notify", consent=True, path=path)
+        setup.write_autoclear_method("notify", path=path)
         assert False, "expected GlobalConfigUnreadable, not a raw exception"
     except setup.GlobalConfigUnreadable:
         pass
@@ -714,7 +707,7 @@ def test_global_file_problem_reports_invalid_utf8_instead_of_raising(tmp_path):
 def _widening_global(tmp_path):
     """A machine file with enabled: true and onlyRepos: null -- the widening."""
     path = str(tmp_path / "g.json")
-    setup.write_autoclear_method("auto", consent=True, path=path)
+    setup.write_autoclear_method("auto", path=path)
     setup.write_autoclear_enabled(True, consent=True, path=path)
     return path
 

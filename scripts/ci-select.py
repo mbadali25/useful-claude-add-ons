@@ -107,8 +107,8 @@ COMBINED = tuple(d for _key, _root, d in COMPONENTS if d)
 CREW = "plugin/crew/tests/"
 READERS = (
     # Repo-wide scans inside crew's suite. Every path selects the first: it
-    # reads EVERY tracked file (`git ls-files`) for a SendWait call outside
-    # auto-clear.ps1's gated child, documents included.
+    # reads EVERY tracked file (`git ls-files`) for a SendWait/SendKeys call
+    # (L-0727 slice 3 removed the one sender), documents included.
     ("*", CREW + "test_sendkeys_structural_gate.py"),
     # Walks the checkout for .md and .html and fails on a runnable
     # `codex exec --profile review|work`.
@@ -141,8 +141,8 @@ READERS = (
     # suites build with solomon-doc-builder's brand, logos and template.
     ("*assets/brand.json", "doc_builder"),
     ("skills/solomon-doc-builder/*", "doc_builder"),
-    # obsidian-vault's probe test compares its resolver with crew's.
-    ("plugin/crew/hooks/scripts/role-write-guard.ps1", "obsidian_vault"),
+    # obsidian-vault's probe test compares its resolver with crew-hook.ps1's.
+    ("plugin/crew/hooks/scripts/crew-hook.ps1", "obsidian_vault"),
 )
 
 LINT_SUFFIXES = (".py", ".pyi", ".ipynb")

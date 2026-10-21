@@ -2135,18 +2135,12 @@ def _wrapper_repo(tmp_path):
     return root, home
 
 
-def _wrapper(flavour, root, home, base, *args):
+def _wrapper(_flavour, root, home, base, *args):
     scripts = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
-    if flavour == "sh":
-        cmd = [crew_fixtures.resolve_bash(), os.path.join(scripts, "notify.sh"), *args]
-    else:
-        cmd = [crew_fixtures.resolve_pwsh(), "-NoProfile", "-File",
-               os.path.join(scripts, "notify.ps1"), *args]
+    cmd = [crew_fixtures.resolve_bash(), os.path.join(scripts, "notify.sh"), *args]
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), CREW_NOTIFY_TELEGRAM_BASE=base,
                CREW_TEST_TG_TOKEN=TOKEN, HOME=str(home), USERPROFILE=str(home))
     env.pop("OS", None)
-    if flavour == "ps1":
-        env["OS"] = "Windows_NT"
     return subprocess.run(cmd, cwd=str(root), env=env, capture_output=True,
                           stdin=subprocess.DEVNULL, check=False, timeout=120)
 
@@ -2154,8 +2148,6 @@ def _wrapper(flavour, root, home, base, *args):
 @pytest.mark.parametrize("flavour", [
     pytest.param("sh", marks=pytest.mark.skipif(crew_fixtures.resolve_bash() is None,
                                                  reason="needs bash - NOT run")),
-    pytest.param("ps1", marks=pytest.mark.skipif(crew_fixtures.resolve_pwsh() is None,
-                                                  reason="needs pwsh - NOT run")),
 ])
 def test_held_ping_is_not_sent_asleep_through_the_wrappers(tmp_path, fake, flavour):
     root, home = _wrapper_repo(tmp_path)

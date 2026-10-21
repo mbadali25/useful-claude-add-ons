@@ -26,12 +26,11 @@
 %% Note RES: which .crew/ the repo file is read from. Python: crew_common.repo_config_dir
 %%    plugin/crew/hooks/scripts/crew_common.py:96 (T-0088). bash: crew_repo_config_dir
 %%    plugin/crew/hooks/scripts/_common.sh:328; PowerShell: Get-CrewRepoConfigDir, one body copied into
-%%    cloud-guard.ps1:192, promote-gate.ps1:142, auto-clear.ps1:132 (T-0096). Own config.json or crew.json
+%%    promote-gate.ps1:142 (T-0096; the copies in cloud-guard.ps1 and auto-clear.ps1 went with L-0727 slice 3). Own config.json or crew.json
 %%    wins whole; else a linked worktree reads the main checkout's; unknown (git cannot tell) inherits
 %%    nothing. L-0680 adds the session hooks (notify, handoff-read, handoff-write, context-watch, both
-%%    flavours; the .ps1 copies at handoff-read.ps1:186, handoff-write.ps1:286,
-%%    context-watch.ps1:29). T-0051 made notify.ps1 a thin wrapper around crew_notify.py with no
-%%    resolver copy of its own.
+%%    flavours until L-0727 slice 3 deleted the .ps1 copies of those five hooks).
+%%    T-0051 made notify a thin wrapper around crew_notify.py with no resolver copy of its own.
 %%    Still own-file only: the verify gate, the scope and completion wrappers.
 %% Note TMPL: default_global_config() plugin/crew/hooks/scripts/crew_config.py:432 <b>81 leaves</b> (executed,
 %%    batch-7-build) across <b>20 blocks</b>: autopilot (T-0050's five personal keys), qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves),
