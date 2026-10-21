@@ -1074,7 +1074,7 @@ def _tmux_pane_pid(pane):
     return _num(out.strip(), 0)
 
 
-SENDKEYS_REMOVED = ("sendkeys was removed in crew 1.2.60 (L-0727); use notify or tmux")
+SENDKEYS_REMOVED = "sendkeys was removed in crew 1.2.60 (L-0727); use notify or tmux"
 
 
 def resolve_method(cfg, env=None):

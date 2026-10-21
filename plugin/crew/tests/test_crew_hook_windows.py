@@ -4,8 +4,8 @@ crew-hook.sh exits 0 there; crew-hook.ps1 runs the dispatcher, which runs `.sh`
 children through a strictly resolved Git Bash and sends a `PowerShell` tool call
 to a row's PowerShell twin when the file exists (promote-gate; cloud-guard and
 env-guard are judged by their `.sh` for a `PowerShell` call). With no strict Git Bash
-an armed repo is refused on PreToolUse, UserPromptSubmit and Stop, SessionStart gets one `systemMessage`, and every other
-event exits 0.
+an armed repo is refused on PreToolUse, UserPromptSubmit and Stop, SessionStart
+gets one `systemMessage`, and every other event exits 0.
 
 What runs on any host here is what can be modelled honestly: the launcher's
 "not on Windows" exit with a stubbed `uname` and with `OS=Windows_NT`; the Windows
