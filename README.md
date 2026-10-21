@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.59**: The review prompt shows a literal four-field finding and a literal READ line. `crew` 1.2.58: the instructions every reviewer reads now include one example finding line and one example READ line, so a reviewer is less likely to print a finding with too few fields or a part path without its directory and have the round read INCOMPLETE.
 - **ai-connect 0.2.2**: A session is labelled with its Claude Code session name. `ai-connect` 0.2.2: a Claude Code session joins the bridge as `laptop:s-cross-session`, named after its Claude Code session name, instead of `laptop:my-repo`; a session without a usable name, and every other harness, keeps the project's name.
-- **crew 1.2.58**: One dispatcher behind sixteen hook registrations. `crew` 1.2.58: `hooks.json` registers one launcher per event per shell (16 entries, not 36) and one dispatcher runs each event's hook scripts and combines them, so on Windows no event runs twice, and a launcher or dispatcher fault in a repo crew governs now refuses the call instead of letting it through unjudged.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
