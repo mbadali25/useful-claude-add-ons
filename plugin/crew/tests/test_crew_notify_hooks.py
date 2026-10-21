@@ -58,13 +58,17 @@ def test_notify_sh_has_no_send_logic():
                 True, [])
 
 
-def test_hooks_json_notification_passes_hook_and_no_matcher():
+def test_hooks_json_notification_goes_through_the_launcher_and_the_table_passes_hook():
+    """L-0727: hooks.json registers the launcher with the event name; crew_hook.TABLE is
+    where `notify.sh hook` is spelled, once, with no matcher."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
     entries = json.loads(_read(CREW / "hooks" / "hooks.json"))["hooks"]["Notification"]
 
     commands = [hook["command"] for entry in entries for hook in entry["hooks"]]
+    rows = [(r.script, r.extra, r.matcher) for r in crew_hook.TABLE if r.event == "Notification"]
     assert ([("matcher" in entry) for entry in entries], len(commands),
-            all(re.search(r'notify\.(sh|ps1)\\?" hook(;|$)', command) for command in commands)) == (
-                [False, False], 2, True)
+            all(re.search(r'crew-hook\.(sh|ps1)\\?" Notification(;|$)', command) for command in commands),
+            rows) == ([False, False], 2, True, [("notify.sh", ("hook",), "")])
 
 
 # --- the callers ------------------------------------------------------------------------------
