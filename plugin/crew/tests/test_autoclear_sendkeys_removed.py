@@ -27,7 +27,6 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autoclear_setup as setup
 import crew_autocycle
-import crew_fixtures
 import crew_keys
 import crew_platform
 

@@ -2096,4 +2096,3 @@ def test_missing_role_write_guard_py_fails_closed_bash(tmp_path):
         capture_output=True, text=True, check=False,
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), cwd=str(root))
     assert proc.returncode == 2, (proc.stdout, proc.stderr)
-

@@ -1,4 +1,4 @@
-"""The Windows direction of the flavour guard: both flavours run.
+"""The Windows direction of the flavour guard: the blocking hooks that still have a .ps1 twin.
 
 test_flavour_guard.py proves each .ps1 stands down OFF Windows. Nothing
 proved what happens ON Windows, where hooks.json's two registrations per
@@ -10,9 +10,9 @@ as the necessary condition for a double fire.
 The rule these cases hold the hooks to:
 
 * A hook that only EMITS (a ping, a transcript copy, a handoff skeleton, an
-  injected note) emits exactly ONCE per event across both flavours. They
-  take a per-event claim -- event_claim.py, crew_context.py's claim, or
-  hook_once.py for once-per-session SessionStart work.
+  injected note) emits exactly ONCE per event. Its .ps1 twin was deleted in
+  L-0727 slice 3, so the cross-flavour cases are gone; the per-event claim
+  (event_claim.py) is still held to its own contract below.
 * A hook that BLOCKS keeps running in both flavours and both reach the same
   verdict. Never loosened to save the second run.
 
@@ -120,7 +120,7 @@ def _notification(root, message="Claude needs your permission", prompt="p-1",
 
 
 def _both_notify(root, url, payload, words=None):
-    for flavour in ("sh", "ps1"):
+    for flavour in ("sh",):
         done = _run(flavour, "notify", root, payload, ("hook",), CREW_TEST_TEAMS_URL=url,
                     **_notify_home(root))
         if words is not None:
@@ -128,16 +128,11 @@ def _both_notify(root, url, payload, words=None):
     return len(_Counter.hits)
 
 
-def test_one_notification_sends_one_ping_across_both_flavours(tmp_path, teams):
-    """One ping, AND the twin stood down at the claim: it never reached
-    crew_notify.py (no result word). crew_notify's own episode rule would
-    also keep a sequential second run quiet, so the ping count alone cannot
-    tell a working claim from a bypassed one; two flavours racing on a real
-    Windows host can both pass that check before either writes."""
+def test_one_notification_sends_one_ping(tmp_path, teams):
     root = _notify_repo(tmp_path)
     words = []
 
-    assert (_both_notify(root, teams, _notification(root), words), words) == (1, ["sent", ""])
+    assert (_both_notify(root, teams, _notification(root), words), words) == (1, ["sent"])
 
 
 def test_a_second_different_notification_is_its_own_event(tmp_path, teams):
@@ -147,7 +142,7 @@ def test_a_second_different_notification_is_its_own_event(tmp_path, teams):
     assert _both_notify(root, teams, _notification(root, "Permission needed", prompt="p-2")) == 2
 
 
-def test_idle_prompt_sends_nothing_across_both_flavours(tmp_path, teams):
+def test_idle_prompt_sends_nothing(tmp_path, teams):
     root = _notify_repo(tmp_path)
 
     assert _both_notify(root, teams, _notification(root, "Claude is waiting for your input",
@@ -164,55 +159,6 @@ def test_a_notify_call_with_no_payload_always_sends(tmp_path, teams):
              CREW_TEST_TEAMS_URL=teams, **_notify_home(root))
 
     assert len(_Counter.hits) == 2
-
-
-def test_one_precompact_writes_one_transcript_copy_across_both_flavours(tmp_path):
-    """A second apart on purpose: the copy is named by the second it was
-    taken, so two flavours in the SAME second would collapse to one file
-    whether or not the claim works."""
-    root = _crew_repo(tmp_path, {})
-    transcript = root / "t.jsonl"
-    transcript.write_text("{}\n", encoding="utf-8")
-    payload = {"hook_event_name": "PreCompact", "session_id": "win-1", "cwd": str(root),
-               "transcript_path": str(transcript), "trigger": "auto"}
-
-    _run("sh", "handoff-write", root, payload)
-    time.sleep(1.2)
-    _run("ps1", "handoff-write", root, payload)
-
-    assert len(list((root / ".crew" / "transcripts").glob("*.jsonl"))) == 1
-
-
-def test_one_clear_prints_the_handoff_once_across_both_flavours(tmp_path):
-    root = _crew_repo(tmp_path, {"memory": {"inject": False}})
-    (root / ".work").mkdir()
-    (root / ".work" / "HANDOFF.md").write_text("# Handoff\nnext: ship it\n", encoding="utf-8")
-    payload = {"hook_event_name": "SessionStart", "session_id": "win-1", "cwd": str(root),
-               "source": "clear"}
-
-    outputs = [b"next: ship it" in _run(f, "handoff-read", root, payload).stdout
-               for f in ("sh", "ps1")]
-
-    assert outputs.count(True) == 1
-
-
-def test_one_session_start_injects_context_once_across_both_flavours(tmp_path):
-    root = _crew_repo(tmp_path, {})
-    payload = {"hook_event_name": "SessionStart", "session_id": "win-1", "cwd": str(root),
-               "source": "startup", "transcript_path": str(root / "t.jsonl")}
-
-    outputs = [bool(_run(f, "crew-context", root, payload).stdout.strip()) for f in ("sh", "ps1")]
-
-    assert outputs.count(True) == 1
-
-
-def test_the_two_ps1_emitters_carry_the_one_claim_function_byte_for_byte():
-    def claim_fn(stem):
-        src = (SCRIPTS / (stem + ".ps1")).read_text(encoding="utf-8")
-        start = src.index("function Test-CrewEventClaim(")
-        return src[start:src.index("\n}\n", start) + 3]
-
-    assert claim_fn("notify") == claim_fn("handoff-write")
 
 
 # --- event_claim.py itself ------------------------------------------------------

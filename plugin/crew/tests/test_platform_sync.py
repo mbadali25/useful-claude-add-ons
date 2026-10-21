@@ -11,8 +11,6 @@ covers the OS it happens to be running on. That is how a cross-platform bug
 survives: the one machine that would have caught it is the one nobody tests on.
 """
 import json
-import os
-import sys
 
 import pytest
 
