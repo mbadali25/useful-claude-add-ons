@@ -23,7 +23,6 @@ CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 GUARD = os.path.join(SCRIPTS, "cloud_guard.py")
 GUARD_SH = os.path.join(SCRIPTS, "cloud-guard.sh")
-GATE_PS1 = os.path.join(SCRIPTS, "verify-gate.ps1")
 CONFIG = os.path.join(SCRIPTS, "crew_config.py")
 # The allowlist's word-level helpers (T-0005 Step 8) live beside the guards.
 GUARDS = os.path.join(SCRIPTS, "crew_guards.py")
@@ -270,10 +269,6 @@ CLOUD_GUARD_MUTATIONS = (
     ("cloud-guard.sh: no python + armed no longer fails closed", GUARD_SH,
      '    exit 2\n  fi\n  exit 0\nfi\n', '    exit 0\n  fi\n  exit 0\nfi\n',
      _T + "test_bash_wrapper_without_python"),
-    ("verify-gate.ps1: pinned list drifts from PINNED_VARS", GATE_PS1,
-     '"AZURE_SUBSCRIPTION_ID",\n                   "ARM_SUBSCRIPTION_ID", ',
-     '"AZURE_SUBSCRIPTION_ID",\n                   ',
-     _T + "test_pinned_vars_are_one_list_in_all_three_places"),
 )
 
 # T-0005 (crew 1.0.42): the environment layer and the destroy rule. Each entry

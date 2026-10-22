@@ -129,9 +129,7 @@ LIMIT_WORKTREE_MUTATIONS = (
 COMMON_SH = os.path.join(SCRIPTS, "_common.sh")
 CLOUD_SH = os.path.join(SCRIPTS, "cloud-guard.sh")
 GATE_SH = os.path.join(SCRIPTS, "verify-gate.sh")
-GATE_PS1 = os.path.join(SCRIPTS, "verify-gate.ps1")
 SCOPE_SH = os.path.join(SCRIPTS, "scope-guard.sh")
-SCOPE_PS1 = os.path.join(SCRIPTS, "scope-guard.ps1")
 AUDIT_SH = os.path.join(SCRIPTS, "completion-audit.sh")
 REVIEW_GATE = os.path.join(SCRIPTS, "review_gate.py")
 FINGERPRINT = os.path.join(SCRIPTS, "verify_fingerprint.py")
@@ -166,10 +164,6 @@ L0681_MUTATIONS = (
      '  CREW_CFG_DIR="${CLAUDE_PROJECT_DIR:-$PWD}/.crew" CREW_CFG_SOURCE=own\n',
      _S + "test_scope_wrapper_without_python_blocks_in_a_lane_whose_main_checkout_has_a"
      "_config[scope-guard.sh]"),
-    ("scope-guard.ps1 reads unknown as provably off", SCOPE_PS1,
-     "  if ($repoCfg.Source -eq 'unknown') { return $false }\n",
-     "",
-     _S + "test_scope_wrapper_without_python_blocks_when_git_cannot_tell[scope-guard.ps1]"),
     # The pair split: review_gate.py routed, verify-gate.sh back on its own file.
     ("verify-gate.sh reads its own stand-down while review_gate.py is routed", GATE_SH,
      'CREW_REPO_CONFIG="$CREW_CFG_DIR/config.json"\n',
@@ -179,10 +173,6 @@ L0681_MUTATIONS = (
      '        config = _read(crew_common.repo_config_file(root, "config.json"))\n',
      '        config = _read(os.path.join(root, ".crew", "config.json"))\n',
      _G + "test_a_lane_inherits_the_main_checkouts_stand_down[sh]"),
-    ("verify-gate.ps1 reads its own config", GATE_PS1,
-     "$repoConfig = Join-Path (Get-CrewRepoConfigDir $root).Dir 'config.json'\n",
-     "$repoConfig = Join-Path $root '.crew/config.json'\n",
-     _G + "test_a_lane_inherits_the_main_checkouts_stand_down[ps1]"),
     ("the fingerprint hashes the own config", FINGERPRINT,
      '        path = (crew_common.repo_config_file(root, "config.json") if rel == _CONFIG\n',
      '        path = (os.path.join(root, ".crew", "config" + ".json") if rel == _CONFIG\n',
