@@ -421,7 +421,7 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # T-0009's ratcheted `guards.deployWorkflow` and the repo-only
     # `environments.workflows` map (an empty dict, so one leaf, like
     # `dev.roles`) on top of those, ported onto release/1.2.0.
-    assert "guards.deployWorkflow" in declared
+    assert {"guards.profile", "guards.overrides"} <= declared
     assert "environments.workflows" in declared
     # T-0029's repo-only `autopilot.maxLanes` and `autopilot.reviewPolicy`
     # (/crew:autopilot wave), merging release/1.2.0 into G4.
@@ -429,7 +429,6 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # `memory.recall.projects` (L-0675, G3b) on top: 152, counted by running this test
     # on rush/g6b-goals-sleep after merging release/1.2.0 (crew 1.1.20).
     assert "memory.recall.projects" in declared
-    assert "guards.envGuard" in declared
     assert len(declared) == 153
 
 
@@ -1978,9 +1977,8 @@ def test_global_non_prod_is_pruned_and_reported():
 
 
 def test_deploy_workflow_defaults_to_block_and_ratchets(tmp_path):
-    assert crew_config.default_config()["guards"]["deployWorkflow"] == "block"
-    assert crew_config.default_global_config()["guards"]["deployWorkflow"] \
-        == "block"
+    assert crew_state.PROFILE_MAP["off"]["deployWorkflow"] == "block"
+    assert crew_config.default_config()["guards"]["profile"] == "off"
     assert "guards.deployWorkflow" in crew_state.RATCHETED_KEYS
     root = tmp_path / "repo"
     crew_fixtures.make_repo(tmp_path, config={
@@ -2033,7 +2031,7 @@ def test_global_workflows_is_pruned_and_reported():
     assert kept == {"environments": {"prodUnattended": True}}
     assert ignored == ["environments.workflows"]
     assert not crew_config.is_global_path("environments.workflows")
-    assert crew_config.is_global_path("guards.deployWorkflow")
+    assert crew_config.is_global_path("guards.overrides.deployWorkflow")
 
 
 @pytest.mark.parametrize("block", [
@@ -2096,9 +2094,10 @@ def test_check_is_quiet_without_a_contradiction(tmp_path, capsys):
 
 _BAD_ENUM_VALUES = [
     ("pm.authority", "bogus"),
-    ("guards.forcePush", "yes"),
+    ("guards.overrides.forcePush", "yes"),
+    ("guards.profile", "loud"),
     ("install.policy", "always"),
-    ("guards.prodDatabase", "write"),
+    ("guards.overrides.prodDatabase", "write"),
     ("pm.ticketGranularity", "ticket"),
     ("qa.provider", "gpt"),
 ]
@@ -2303,16 +2302,17 @@ def _repo_with_global(tmp_path, repo_cfg_updates, global_cfg):
 
 def test_repo_ratchet_widening_is_marked(tmp_path, capsys):
     root, gpath = _repo_with_global(
-        tmp_path, {"guards.forcePush": "block"}, {"guards": {"forcePush": "allow"}})
+        tmp_path, {"guards.overrides.forcePush": "block"},
+        {"guards": {"forcePush": "allow"}})
 
     _, changes = crew_config.plan_repo_write(
-        str(root), {"guards.forcePush": "allow"}, gpath)
+        str(root), {"guards.overrides.forcePush": "allow"}, gpath)
     code = crew_config.main(["--root", str(root), "--repo", "--global-path",
-                             gpath, "--set", 'guards.forcePush="allow"'])
+                             gpath, "--set", 'guards.overrides.forcePush="allow"'])
 
     out = capsys.readouterr().out
     assert (code, [c["widens"] for c in changes]) == (0, [True])
-    assert "! guards.forcePush widens to" in out
+    assert "! guards.overrides.forcePush widens to" in out
     assert crew_config._RATCHETED["guards.forcePush"][2]["allow"] in out  # pylint: disable=protected-access
 
 
@@ -2362,17 +2362,18 @@ def test_a_repo_null_under_a_narrower_machine_value_does_not_widen(tmp_path, cap
 
 def test_repo_value_held_down_by_machine_is_named(tmp_path, capsys):
     root, gpath = _repo_with_global(
-        tmp_path, {"guards.forcePush": "ask"}, {"guards": {"forcePush": "block"}})
+        tmp_path, {"guards.overrides.forcePush": "ask"},
+        {"guards": {"forcePush": "block"}})
 
     _, changes = crew_config.plan_repo_write(
-        str(root), {"guards.forcePush": "allow"}, gpath)
+        str(root), {"guards.overrides.forcePush": "allow"}, gpath)
     crew_config.main(["--root", str(root), "--repo", "--global-path", gpath,
-                      "--set", 'guards.forcePush="allow"'])
+                      "--set", 'guards.overrides.forcePush="allow"'])
 
     out = capsys.readouterr().out
     assert [(c["widens"], c["heldDownBy"]) for c in changes] == [(False, "global")]
     assert "held down by the machine-global layer at block" in out
-    assert "! guards.forcePush widens" not in out
+    assert "! guards.overrides.forcePush widens" not in out
 
 
 _CONSENT_WIDENINGS = [
@@ -2395,7 +2396,7 @@ def test_repo_consent_widening_is_marked(tmp_path, capsys, dotted, narrow, wide)
 
 
 @pytest.mark.parametrize("dotted,narrow,wide", _CONSENT_WIDENINGS + [
-    ("guards.forcePush", "block", "allow")])
+    ("guards.overrides.forcePush", "block", "allow")])
 def test_narrowing_is_never_marked(tmp_path, capsys, dotted, narrow, wide):
     root, gpath = _repo_with_global(
         tmp_path, {dotted: wide}, {"guards": {"forcePush": "allow"}})
@@ -2526,7 +2527,7 @@ def _set_at(root, gpath, layer, assignment, apply=True):
 
 
 _OBJECTS_AT_LEAVES = [
-    ("pm.authority", {"a": 1}), ("guards.forcePush", {"x": "allow"}),
+    ("pm.authority", {"a": 1}), ("guards.profile", {"x": "allow"}),
     ("install.policy", {"a": 1}), ("pm.ticketGranularity", {"a": 1}),
     ("dev.provider", {"a": 1}), ("notify.chatId", {"a": 1}),
     ("notify.chatId", {}), ("qa.order", {"a": 1})]
@@ -2579,7 +2580,8 @@ def test_a_block_holding_an_object_at_a_leaf_is_refused(tmp_path, capsys, layer,
 
 
 @pytest.mark.parametrize("value", ["[1]", "[]", '["act"]'])
-@pytest.mark.parametrize("dotted", ["pm.authority", "guards.forcePush"])
+@pytest.mark.parametrize("dotted", ["pm.authority", "guards.profile",
+                                    "guards.overrides.forcePush"])
 @pytest.mark.parametrize("layer", ["machine", "repo"])
 def test_an_array_at_an_enum_key_is_refused_at_both_layers(tmp_path, capsys, layer,
                                                            dotted, value):
@@ -2617,7 +2619,7 @@ def test_fixing_the_object_at_a_leaf_in_the_same_write_is_accepted(tmp_path, cap
         0, True)
 
 
-@pytest.mark.parametrize("dotted", ["pm.authority", "guards.forcePush",
+@pytest.mark.parametrize("dotted", ["pm.authority", "guards.profile",
                                     "install.policy", "qa.provider"])
 def test_null_is_refused_for_an_enum_key_at_the_machine_layer(tmp_path, dotted):
     with pytest.raises(crew_config.GlobalWriteRefused) as caught:
@@ -2634,14 +2636,14 @@ def test_null_at_the_repo_layer_means_inherit_or_clear(tmp_path):
     gpath = str(tmp_path / "g.json")
 
     _, changes = crew_config.plan_repo_write(
-        str(root), {"guards.forcePush": None, "pm.authority": None,
+        str(root), {"guards.profile": None, "pm.authority": None,
                     "context.autoClear.enabled": None, "autopilot.mode": None},
         gpath)
     with pytest.raises(crew_config.RepoWriteRefused) as caught:
         crew_config.plan_repo_write(str(root), {"scope.mode": None}, gpath)
 
     assert {c["path"]: c.get("null") for c in changes} == {
-        "guards.forcePush": "inherits the machine-global value",
+        "guards.profile": "inherits the machine-global value",
         "pm.authority": "inherits the machine-global value",
         "context.autoClear.enabled": "clears the veto",
         # T-0050: personal, so global-settable; a repo null is silent.
@@ -2664,10 +2666,10 @@ def test_a_legacy_null_already_in_the_file_does_not_block_an_unrelated_write(
 def test_write_refuses_when_the_merged_file_holds_a_bad_enum_elsewhere(
         tmp_path, layer):
     if layer == "machine":
-        path = _global_file(tmp_path, {"guards": {"forcePush": "yes"}})
+        path = _global_file(tmp_path, {"guards": {"profile": "yes"}})
         with pytest.raises(crew_config.GlobalWriteRefused) as caught:
             crew_config.plan_global_write({"notify.chatId": "1"}, str(path))
-        bad = "guards.forcePush"
+        bad = "guards.profile"
     else:
         cfg = crew_config.default_config()
         cfg["pm"]["authority"] = "bogus"
@@ -3072,13 +3074,13 @@ def test_a_machine_block_write_marks_its_leaf_widening(tmp_path):
 
 def test_a_repo_block_write_marks_its_leaf_widening(tmp_path):
     root, gpath = _machine_and_repo(tmp_path, {"guards": {"forcePush": "allow"}},
-                                    {"guards.forcePush": "block"})
+                                    {"guards.overrides.forcePush": "block"})
 
     _, changes = crew_config.plan_repo_write(
-        str(root), {"guards": {"forcePush": "allow"}}, str(gpath))
+        str(root), {"guards": {"overrides": {"forcePush": "allow"}}}, str(gpath))
 
     assert [(c["path"], c["widens"]) for c in changes] == [
-        ("guards.forcePush", True)]
+        ("guards.overrides.forcePush", True)]
 
 
 @pytest.mark.parametrize("layer", ["machine", "repo"])
@@ -3104,13 +3106,15 @@ def test_repo_writer_takes_a_block_leaf_by_leaf(tmp_path):
     root = _repo(tmp_path)
 
     _, changes = crew_config.write_repo_config(
-        str(root), {"guards": {"forcePush": "ask"}}, str(tmp_path / "g.json"))
+        str(root), {"guards": {"overrides": {"forcePush": "ask"}}},
+        str(tmp_path / "g.json"))
 
     written = json.loads(_repo_bytes(root))
-    assert ([c["path"] for c in changes], written["guards"]["forcePush"]) == (
-        ["guards.forcePush"], "ask")
-    assert written["guards"]["mergeGate"] == crew_config.default_config()[
-        "guards"]["mergeGate"]
+    assert ([c["path"] for c in changes],
+            written["guards"]["overrides"]["forcePush"]) == (
+        ["guards.overrides.forcePush"], "ask")
+    assert written["guards"]["profile"] == crew_config.default_config()[
+        "guards"]["profile"]
 
 
 @pytest.mark.parametrize("layer,held,leaf", [
@@ -3159,13 +3163,14 @@ def test_a_repo_only_key_in_the_machine_file_does_not_block_a_write(tmp_path):
 
 def test_repo_write_refuses_when_the_machine_file_changed(tmp_path):
     root, gpath = _machine_and_repo(tmp_path, {"guards": {"forcePush": "block"}},
-                                    {"guards.forcePush": "block"})
+                                    {"guards.overrides.forcePush": "block"})
     machine = crew_config.global_snapshot(str(gpath))[2]
     before = _repo_bytes(root)
     _rewrite_with(gpath, "guards", {"forcePush": "allow"})
 
     with pytest.raises(crew_config.RepoWriteConflict) as caught:
-        crew_config.write_repo_config(str(root), {"guards.forcePush": "allow"},
+        crew_config.write_repo_config(str(root),
+                                      {"guards.overrides.forcePush": "allow"},
                                       str(gpath), expect_global=machine)
 
     assert "machine-global" in str(caught.value)

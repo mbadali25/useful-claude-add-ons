@@ -81,6 +81,12 @@ from crew_guards import (
     GUARD_NAMES,  # noqa: F401
     GUARD_POLICIES,  # noqa: F401
     GUARD_POLICY_DEFAULT,  # noqa: F401
+    GUARD_BLOCK_DEFAULTS,  # noqa: F401
+    GUARD_PROFILES,  # noqa: F401
+    PROFILE_MAP,  # noqa: F401
+    layer_guard_state,  # noqa: F401
+    layer_guard_value,  # noqa: F401
+    normalise_profile,  # noqa: F401
     INSTALL_DEFAULTS,  # noqa: F401
     INSTALL_POLICIES,  # noqa: F401
     INSTALL_POLICY_DEFAULT,  # noqa: F401

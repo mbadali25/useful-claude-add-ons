@@ -10,6 +10,7 @@ import re
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import l0725_keyset
 import crew_autocycle
 import crew_autopilot
 import crew_config
@@ -66,10 +67,10 @@ def test_ratcheted_rows_do_not_restate_tiers():
 
 def test_a_restated_tier_tuple_is_a_problem(monkeypatch):
     meta = dict(crew_keys.KEY_META)
-    meta["guards.forcePush"] = dict(meta["guards.forcePush"],
-                                    values=("block", "ask", "allow"))
+    meta["install.policy"] = dict(meta["install.policy"],
+                                  values=("manual", "ask", "auto"))
     monkeypatch.setattr(crew_keys, "KEY_META", meta)
-    assert any(p.startswith("restated tiers: guards.forcePush")
+    assert any(p.startswith("restated tiers: install.policy")
                for p in crew_keys.problems())
 
 
@@ -127,7 +128,7 @@ def test_values_agree_with_the_writers_enum_values():
             assert allowed == crew_guards.PERSONAL_KEYS[key][1], key
             continue
         assert tuple(crew_keys.values_of(key)) == allowed, key
-    assert covered >= 15
+    assert covered >= 10
 
 
 # `branch` rows whose reader checks a shape rather than a closed value list.
@@ -395,3 +396,50 @@ def test_coming_changes_name_an_existing_key():
         assert row["change"] == "new key" or row["change"].startswith("changes "), row
         if row["change"] != "new key":
             assert row["key"] in crew_keys.KEY_META, row
+
+
+# --- L-0725: families, the new guard rows, the committed key set ----------------
+
+def test_every_row_has_a_family():
+    for key, row in crew_keys.KEY_META.items():
+        assert row["family"] in crew_keys.FAMILIES, key
+
+
+def test_families_tuple_is_the_declared_ten():
+    assert crew_keys.FAMILIES == ("core", "providers", "guards", "cloud", "trackers",
+                                  "autopilot", "context", "notify", "memory",
+                                  "platform")
+
+
+def test_guards_profile_row_references_the_tuple():
+    row = crew_keys.KEY_META["guards.profile"]
+
+    assert row["values"] is crew_guards.GUARD_PROFILES
+    assert crew_keys.values_of("guards.profile") is crew_guards.GUARD_PROFILES
+
+
+def test_guards_overrides_row_is_an_open_table():
+    assert crew_keys.KEY_META["guards.overrides"]["kind"] == "open-table"
+
+
+def test_no_legacy_guard_row_remains():
+    legacy = [k for k in crew_keys.KEY_META
+              if k.startswith("guards.") and k.split(".", 1)[1] in crew_guards.ALL_GUARD_NAMES]
+
+    assert legacy == []
+
+
+def test_key_set_is_the_l0725_set():
+    repo = set(crew_config.leaf_paths(crew_config.default_config()))
+    machine = set(crew_config.leaf_paths(crew_config.default_global_config()))
+
+    assert repo | machine == l0725_keyset.L0725_KEYS
+    assert repo == l0725_keyset.L0725_REPO_KEYS
+    assert machine == l0725_keyset.L0725_MACHINE_KEYS
+    assert (len(l0725_keyset.L0725_KEYS), len(repo), len(machine)) == (87, 83, 50)
+
+
+def test_no_dropped_key_is_a_leaf():
+    leaves = _leaves()
+
+    assert not (leaves & l0725_keyset.L0725_DROPPED)

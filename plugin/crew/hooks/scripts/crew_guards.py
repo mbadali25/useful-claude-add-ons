@@ -221,6 +221,36 @@ GUARD_DEFAULTS = dict(
     + [(name, ROLE_WRITE_DEFAULT) for name in CLOUD_GUARD_NAMES]
     + [(name, ROLE_WRITE_DEFAULT) for name in ENV_GUARD_NAMES])
 
+# L-0725: the twelve per-guard keys collapse to `guards.profile` plus a
+# `guards.overrides` table. A profile is shorthand that expands, PER LAYER, to
+# one value per guard; the per-guard ratchet then runs on those values
+# unchanged. `off` is exactly `GUARD_DEFAULTS`, so a layer that sets nothing
+# resolves as it always did; `standard` is the owner's repo layer; `strict`
+# turns every switchable guard on. Written as a table, not derived, so a
+# change to one cell is a visible diff (the test holds its own copy).
+GUARD_PROFILES = ("off", "standard", "strict")
+
+# What `default_config()` and `default_global_config()` carry for `guards`:
+# the profile at `off` (= `GUARD_DEFAULTS`) and an empty overrides table. The
+# twelve per-guard names are no longer config keys; a file that still holds
+# them is read as a legacy alias (`layer_guard_state`) until `/crew:migrate`.
+GUARD_BLOCK_DEFAULTS = {"profile": "off", "overrides": {}}
+_ALWAYS_BLOCK = ("terraformApply", "forcePush", "mergeGate", "cloudDestructive",
+                 "sqlDestructive", "deployWorkflow")
+PROFILE_MAP = {
+    "off": dict(GUARD_DEFAULTS),
+    "standard": dict(
+        [(name, "block") for name in _ALWAYS_BLOCK]
+        + [("adminMerge", "ask"), ("prodDatabase", "none"),
+           ("prodServer", "none"), ("roleWrites", "report"),
+           ("cloudGuard", "block"), ("envGuard", "off")]),
+    "strict": dict(
+        [(name, "block") for name in _ALWAYS_BLOCK]
+        + [("adminMerge", "block"), ("prodDatabase", "none"),
+           ("prodServer", "none"), ("roleWrites", "block"),
+           ("cloudGuard", "block"), ("envGuard", "block")]),
+}
+
 # What counts as production, and it is a REPO-ONLY block on purpose.
 #
 # The LEVEL is a property of the machine and its owner -- "this laptop may read
@@ -577,6 +607,88 @@ RATCHETED_KEYS["environments.prodUnattended"] = (
     normalise_prod_unattended,
     prod_unattended_rank,
 )
+
+
+def normalise_profile(value):
+    """`value` as a known guard profile, else None (malformed).
+
+    None is its own answer and is NEVER read as `off`: the caller turns it into
+    the floor for every guard, because "could not tell what was meant" must not
+    wear the label of "opted out".
+    """
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in GUARD_PROFILES:
+            return cleaned
+    return None
+
+
+def _floor(name):
+    return guard_tiers(name)[0][0]
+
+
+def _tier_or_floor(name, value):
+    """`value` if it names one of `name`'s tiers (any case), else the floor."""
+    tiers = guard_tiers(name)[0]
+    if isinstance(value, str) and value.strip().lower() in tiers:
+        return value.strip().lower()
+    return _floor(name)
+
+
+def layer_guard_state(layer_cfg, name):
+    """One layer's value for guard `name`, and what it was made from.
+
+    Returns `{"value", "legacy", "conflict"}`; `value` is None only when the
+    layer holds none of profile, override or legacy key.
+
+    Two steps. BASE: a profile that is present but malformed gives the floor
+    and ends there, so no override can lift it; otherwise the layer's
+    `guards.overrides.<name>` if present (a malformed one gives the floor),
+    else the valid profile's value, else absent. LEGACY: a `guards.<name>` key
+    still in the layer (unmigrated) is the layer value alone when the base is
+    absent, so an unmigrated layer resolves exactly as it did, `ask`, `allow`
+    and `read` included; when both exist the NARROWER of the two wins by the
+    guard's own rank and the conflict is reported. The floor is `block` (or
+    `none` for the production guards), never `off`.
+    """
+    block = layer_cfg.get("guards") if isinstance(layer_cfg, dict) else None
+    if not isinstance(block, dict):
+        return {"value": None, "legacy": False, "conflict": False}
+    tiers, normalise, rank = guard_tiers(name)
+
+    base = None
+    profile_raw = block.get("profile")
+    if profile_raw is not None:
+        profile = normalise_profile(profile_raw)
+        if profile is None:
+            base = _floor(name)
+        else:
+            base = PROFILE_MAP[profile][name]
+            overrides = block.get("overrides")
+            if overrides is not None and not isinstance(overrides, dict):
+                base = _floor(name)
+            elif isinstance(overrides, dict) and overrides.get(name) is not None:
+                base = _tier_or_floor(name, overrides[name])
+    else:
+        overrides = block.get("overrides")
+        if overrides is not None and not isinstance(overrides, dict):
+            base = _floor(name)
+        elif isinstance(overrides, dict) and overrides.get(name) is not None:
+            base = _tier_or_floor(name, overrides[name])
+
+    legacy_raw = block.get(name)
+    legacy = None if legacy_raw is None else normalise(legacy_raw)
+    if legacy is None:
+        return {"value": base, "legacy": False, "conflict": False}
+    if base is None:
+        return {"value": legacy, "legacy": True, "conflict": False}
+    value = tiers[min(rank(base), rank(legacy))]
+    return {"value": value, "legacy": True, "conflict": base != legacy}
+
+
+def layer_guard_value(layer_cfg, name):
+    """`layer_guard_state(...)["value"]`: the layer's tier for `name`, or None."""
+    return layer_guard_state(layer_cfg, name)["value"]
 
 
 def ratchet_spec(dotted):

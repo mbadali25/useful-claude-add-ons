@@ -180,18 +180,8 @@
     "policy": "manual"
   },
   "guards": {
-    "terraformApply": "block",
-    "forcePush": "block",
-    "adminMerge": "block",
-    "mergeGate": "block",
-    "cloudDestructive": "block",
-    "sqlDestructive": "block",
-    "deployWorkflow": "block",
-    "prodDatabase": "none",
-    "prodServer": "none",
-    "roleWrites": "off",
-    "cloudGuard": "off",
-    "envGuard": "off"
+    "profile": "off",
+    "overrides": {}
   },
   "production": {
     "databases": [],

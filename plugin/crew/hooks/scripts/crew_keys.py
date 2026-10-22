@@ -48,6 +48,14 @@ import crew_tracker
 
 KINDS = ("tuple", "ratchet", "branch", "type", "open-table", "prose", "unvalidated")
 
+# L-0725: every row carries one of these, so a split into plugins can count the
+# core plugin's own keys. `autopilot`, `trackers` and `cloud` are the families
+# L-0724 moves out. The assignment is `_FAMILY_OF` below, applied once after
+# `KEY_META` is built, so a new row with no family is a test failure rather
+# than an omission nobody sees.
+FAMILIES = ("core", "providers", "guards", "cloud", "trackers", "autopilot",
+            "context", "notify", "memory", "platform")
+
 # Built once, so `values_of("qa.provider")` is the same object every call and
 # its tail holds `QA_PROVIDERS`' own items.
 QA_PROVIDER_VALUES = ("auto",) + crew_state.QA_PROVIDERS
@@ -79,7 +87,8 @@ FIRST = "<=0.11.0"
 def _row(summary, kind, values=None, since=None, source=None, type_=None,
          values_by_os=None):
     return {"summary": summary, "kind": kind, "values": values, "since": since,
-            "source": source, "type": type_, "values_by_os": values_by_os}
+            "source": source, "type": type_, "values_by_os": values_by_os,
+            "family": None}
 
 
 def _unv(summary, since, source, type_):
@@ -422,26 +431,15 @@ KEY_META = {
                                         "`-`, no `:`)"),
     # --- install and guards (ratcheted: the tiers live in crew_guards)
     "install.policy": _rat("Whether crew may install a missing prerequisite.", "0.19.18"),
-    "guards.terraformApply": _rat("`terraform apply` and friends.", "0.19.30"),
-    "guards.forcePush": _rat("`git push --force`.", "0.19.30"),
-    "guards.adminMerge": _rat("`gh pr merge --admin`.", "0.19.30"),
-    "guards.mergeGate": _rat("Taking a live repo's merge gate down (read by "
-                             "`/crew:gate`).", "0.19.30"),
-    "guards.cloudDestructive": _rat("Destructive cloud CLI commands.", "1.0.25"),
-    "guards.sqlDestructive": _rat("Destructive SQL.", "1.0.25"),
-    "guards.deployWorkflow": _rat("A `gh workflow run` or `gh api .../dispatches` of a "
-                                  "workflow `environments.workflows` lists.", "1.1.16"),
-    "guards.prodDatabase": _rat("How much of a declared production database crew may "
-                                "reach.", "0.19.30"),
-    "guards.prodServer": _rat("How much of a declared production host crew may reach.",
-                              "0.19.30"),
-    "guards.roleWrites": _rat("Enforce each role's write scope. Default `off`; a "
-                              "malformed value reads as `block`.", "0.19.92"),
-    "guards.cloudGuard": _rat("Whether the cloud guard judges commands at all. Default "
-                              "`off`; `report` logs only.", "1.0.25"),
-    "guards.envGuard": _rat("Refuse a command that prints the whole environment or a "
-                            "credential-named variable. Default `off`; `report` logs "
-                            "only.", "1.2.26"),
+    "guards.profile": _row("One word for the twelve guards: `off` (today's defaults), "
+                           "`standard` or `strict`. Expands per layer; each guard's "
+                           "ratchet then runs on the expanded values.", "tuple",
+                           crew_guards.GUARD_PROFILES, "1.2.62"),
+    "guards.overrides": _row("`guards.overrides.<guard>`: one guard's tier, replacing "
+                             "the profile's value for it. Each entry is checked against "
+                             "that guard's own tiers; a bad one reads as the floor.",
+                             "open-table", since="1.2.62", source=_S + "crew_guards.py",
+                             type_="object of guard name to tier"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),
     "production.hosts": _unv("Globs naming production hosts.", "0.19.30",
@@ -588,6 +586,43 @@ KEY_META = {
 }
 
 
+# Family by key. Exact keys first, then the first path segment. Anything not
+# named is `core`. Counting the core plugin's keys is "every family but
+# autopilot, trackers and cloud" (L-0724).
+_FAMILY_OF_KEY = {
+    "tracker": "trackers",
+    "tickets.baseBranch": "core",
+    "resume.auto": "context",
+    "environments.prodUnattended": "cloud",
+    "environments.nonProd": "cloud",
+    "environments.workflows": "cloud",
+}
+_FAMILY_OF_SEGMENT = {
+    "qa": "providers", "dev": "providers", "secondOpinion": "providers",
+    "guards": "guards",
+    "cloud": "cloud", "production": "cloud", "unattendedCloud": "cloud",
+    "jira": "trackers", "obsidian": "trackers", "sdp": "trackers",
+    "bitbucket": "trackers", "github": "trackers",
+    "autopilot": "autopilot",
+    "context": "context", "resume": "context",
+    "notify": "notify",
+    "memory": "memory",
+    "platform": "platform", "shellRoute": "platform",
+}
+
+
+def family_of(key):
+    """The family `key` belongs to, from `_FAMILY_OF_KEY` then its first
+    segment, else `core`."""
+    if key in _FAMILY_OF_KEY:
+        return _FAMILY_OF_KEY[key]
+    return _FAMILY_OF_SEGMENT.get(key.split(".", 1)[0], "core")
+
+
+for _key, _row_ in KEY_META.items():
+    _row_["family"] = family_of(_key)
+
+
 def _coming(key, ticket, change, summary, default, layer, values=None):
     return {"key": key, "ticket": ticket, "change": change, "summary": summary,
             "default": default, "layer": layer, "values": values}
@@ -655,6 +690,8 @@ def layer_of(key):
     if key in crew_guards.PERSONAL_KEYS:
         return "both, stricter wins"
     if crew_guards.ratchet_spec(key) is not None:
+        return "both, ratchet"
+    if key in ("guards.profile", "guards.overrides"):
         return "both, ratchet"
     if key in crew_config._RATCHETED:  # pylint: disable=protected-access
         return "both, widening warned"

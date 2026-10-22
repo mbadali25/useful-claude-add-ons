@@ -110,18 +110,17 @@ def test_the_four_guards_are_declared_in_both_layers_and_default_to_block():
     repo = crew_config.default_config()
     glob = crew_config.default_global_config()
 
-    assert set(repo["guards"]) == set(crew_state.ALL_GUARD_NAMES)
+    assert repo["guards"] == {"profile": "off", "overrides": {}}
     assert repo["guards"] == glob["guards"]
+    assert crew_config.is_global_path("guards.profile")
+    assert crew_config.is_global_path("guards.overrides.forcePush")
+    # `off` is exactly the guard defaults: the six command guards at `block`
+    # and the two production guards at `none` (their own vocabulary, so the
+    # floor is asserted in its own words).
     for name in crew_state.GUARD_NAMES:
-        assert repo["guards"][name] == "block", name
-        assert crew_config.is_global_path(f"guards.{name}"), name
-    # The two production guards share the block and the ratchet and NOT the
-    # vocabulary, so their floor is asserted in their own words. A test that
-    # looped `== "block"` over all six would either fail or, worse, be
-    # "fixed" by giving them a tier name that means nothing to them.
+        assert crew_state.PROFILE_MAP["off"][name] == "block", name
     for name in crew_state.PROD_GUARD_NAMES:
-        assert repo["guards"][name] == "none", name
-        assert crew_config.is_global_path(f"guards.{name}"), name
+        assert crew_state.PROFILE_MAP["off"][name] == "none", name
 
 
 def test_github_merge_gate_is_declared_in_both_layers_without_a_preset():
@@ -857,10 +856,9 @@ def test_the_two_production_guards_are_declared_in_both_layers_at_none():
     glob = crew_config.default_global_config()
 
     for name in crew_guards.PROD_GUARD_NAMES:
-        assert repo["guards"][name] == "none", name
-        assert glob["guards"][name] == "none", name
-        assert crew_config.is_global_path(f"guards.{name}"), name
-    assert set(repo["guards"]) == set(crew_guards.ALL_GUARD_NAMES)
+        assert crew_guards.PROFILE_MAP["off"][name] == "none", name
+        assert crew_config.is_global_path(f"guards.overrides.{name}"), name
+    assert repo["guards"] == glob["guards"] == {"profile": "off", "overrides": {}}
 
 
 def test_production_is_repo_only_and_a_global_one_is_reported():

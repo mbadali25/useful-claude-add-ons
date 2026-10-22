@@ -477,6 +477,31 @@ def _memory_lines(root, budget):
     return lines
 
 
+def _guards_line(root):
+    """`guards   profile P, overrides {...}[; unmigrated: run /crew:migrate]`
+    when this repo's `guards` block sets a profile or an override, or either
+    layer still holds a per-guard key (L-0725); else None. A failed check says
+    so rather than vanishing."""
+    try:
+        import crew_config  # pylint: disable=import-outside-toplevel
+        import crew_state  # pylint: disable=import-outside-toplevel
+        block = crew_state.load_config(root).get("guards")
+        block = block if isinstance(block, dict) else {}
+        profile, overrides = block.get("profile"), block.get("overrides")
+        layers = set()
+        for name in crew_state.ALL_GUARD_NAMES:
+            layers.update(crew_config.resolve_guard(root, name)["unmigrated"])
+        shown = []
+        if profile is not None or overrides:
+            shown.append(f"profile {profile if profile is not None else 'off'}, "
+                         f"overrides {json.dumps(overrides or {}, sort_keys=True)}")
+        if layers:
+            shown.append("unmigrated: run /crew:migrate (" + " and ".join(sorted(layers)) + " layer)")
+        return "guards   " + "; ".join(shown) if shown else None
+    except Exception as exc:  # pylint: disable=broad-except
+        return f"guards   could not tell ({exc.__class__.__name__})"
+
+
 def _inert_line(root):
     """`inert    key=value (ticket), ...` for every setting this crew does not
     act on, or None (T-0070). A failed check says so rather than vanishing."""
@@ -688,6 +713,9 @@ def collect(root, memory=False):
     lines = [f"crew status  {os.path.basename(root)}  {branch}@{head}  tree {tree}"]
     config_lines, cfg = _config_lines(root)
     lines += config_lines
+    guards = _guards_line(root)
+    if guards:
+        lines.append(guards)
     inert = _inert_line(root)
     if inert:
         lines.append(inert)

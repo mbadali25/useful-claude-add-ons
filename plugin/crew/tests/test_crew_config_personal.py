@@ -22,6 +22,7 @@ import crew_config
 import crew_fixtures
 import crew_platform
 import crew_state
+import crew_state
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(HERE, os.pardir, "hooks", "scripts")
@@ -393,7 +394,12 @@ def test_a_healed_repo_inherits_the_global_personal_values(tmp_path, monkeypatch
 def test_explain_all_lists_every_default_config_leaf(tmp_path, monkeypatch):
     root = _layers(tmp_path, monkeypatch, None, None)
     rows = crew_config.explain_config(root, all_keys=True)
-    assert [r["path"] for r in rows] == crew_config.leaf_paths(crew_config.default_config())
+    # L-0725: the twelve guards follow `guards.overrides` as derived rows (the
+    # value in force); every other row is a leaf, in order.
+    leaves = [r["path"] for r in rows
+              if r["path"] not in {f"guards.{n}" for n in crew_state.ALL_GUARD_NAMES}]
+    assert leaves == crew_config.leaf_paths(crew_config.default_config())
+    assert {r["path"] for r in rows} >= {f"guards.{n}" for n in crew_state.ALL_GUARD_NAMES}
 
 
 def test_explain_all_marks_repo_only(tmp_path, monkeypatch):

@@ -78,19 +78,27 @@ def test_empty_role_entry_is_no_pin():
     assert empty == absent
 
 
+def _menu_leaves(template):
+    """The template's leaves, with the open `guards.overrides` table shown as
+    one row per guard (L-0725)."""
+    leaves = set(crew_config.leaf_paths(template))
+    leaves.discard("guards.overrides")
+    leaves.update(f"guards.overrides.{name}" for name in crew_state.ALL_GUARD_NAMES)
+    return leaves
+
+
 def test_machine_menu_keys_are_exactly_the_global_leaves(tmp_path):
     root, gpath = _repo(tmp_path)
 
     rows = _rows(menu.menu_spec(root, "machine", gpath))
 
     writable = {_table_key(r) for r in rows if r["writable"]}
-    assert writable == set(crew_config.leaf_paths(
-        crew_config.default_global_config()))
+    assert writable == _menu_leaves(crew_config.default_global_config())
 
 
 def test_repo_menu_keys_are_real_repo_keys(tmp_path):
     root, gpath = _repo(tmp_path)
-    leaves = set(crew_config.leaf_paths(crew_config.default_config()))
+    leaves = _menu_leaves(crew_config.default_config())
 
     rows = _rows(menu.menu_spec(root, "repo", gpath))
 
@@ -120,7 +128,7 @@ def test_every_writable_setting_offers_a_selectable_value(tmp_path, layer):
 
 
 _FIXTURES = {
-    "plain": ({"guards.forcePush": "ask"}, {"pm": {"authority": "act"}}),
+    "plain": ({"guards.overrides.forcePush": "ask"}, {"pm": {"authority": "act"}}),
     "badprovider": ({"qa.provider": "gpt"}, {"qa": {"provider": "gpt"}}),
     "legacynull": ({"pm.authority": None}, {"pm": {"authority": None}}),
 }
@@ -358,9 +366,9 @@ def test_menu_offers_null_only_where_the_writer_takes_it(tmp_path):
     offered = [r["path"] for r in machine if crew_config.enum_values(r["path"])
                and None in [c["value"] for c in r["choices"]]]
     tags = {p: [c["tags"] for c in repo[p]["choices"] if c["value"] is None]
-            for p in ("guards.forcePush", "context.autoClear.enabled")}
+            for p in ("guards.overrides.forcePush", "context.autoClear.enabled")}
     assert offered == []
-    assert ["inherit machine" in t for t in tags["guards.forcePush"]] == [True]
+    assert ["inherit machine" in t for t in tags["guards.overrides.forcePush"]] == [True]
     assert ["clear veto" in t for t in tags["context.autoClear.enabled"]] == [True]
 
 
@@ -464,7 +472,7 @@ def test_a_new_default_key_appears_without_edit(tmp_path, monkeypatch):
 # --- Step 4: save -----------------------------------------------------------
 
 _MACHINE_SET = {"pm.authority": "act", "notify.provider": "telegram",
-                "guards.forcePush": "ask", "memory.mode": "vault"}
+                "guards.overrides.forcePush": "ask", "memory.mode": "vault"}
 _REPO_SET = {"tracker": "jira", "verifyGate": True, "autopilot.maxPhases": 6}
 
 
@@ -947,8 +955,8 @@ def test_delete_prints_all_three_restore_lines(tmp_path, capsys):
 
 def test_delete_preview_names_what_changes(tmp_path, capsys):
     root, gpath = _repo(tmp_path,
-                        {"scope.mode": "block", "guards.forcePush": "block",
-                         "guards.roleWrites": "block", "tracker": "jira"},
+                        {"scope.mode": "block", "guards.overrides.forcePush": "block",
+                         "guards.overrides.roleWrites": "block", "tracker": "jira"},
                         {"guards": {"forcePush": "allow", "roleWrites": "off"}})
 
     menu.delete_repo_config(root, None, False, now=_now(), global_path=gpath)
@@ -968,7 +976,7 @@ def test_delete_preview_names_what_changes(tmp_path, capsys):
 @pytest.mark.parametrize("machine,named", [("allow", True), ("block", False)])
 def test_delete_preview_names_a_guard_the_ratchet_holds(tmp_path, capsys,
                                                         machine, named):
-    root, gpath = _repo(tmp_path, {"guards.forcePush": "block"},
+    root, gpath = _repo(tmp_path, {"guards.overrides.forcePush": "block"},
                         {"guards": {"forcePush": machine}})
 
     menu.delete_repo_config(root, None, False, now=_now(), global_path=gpath)
@@ -980,7 +988,7 @@ def test_delete_preview_names_a_guard_the_ratchet_holds(tmp_path, capsys,
 
 
 def test_delete_really_does_not_widen_a_held_guard(tmp_path):
-    root, gpath = _repo(tmp_path, {"guards.forcePush": "block"},
+    root, gpath = _repo(tmp_path, {"guards.overrides.forcePush": "block"},
                         {"guards": {"forcePush": "allow"}})
 
     before = crew_config.resolve_guard(root, "forcePush", gpath)["effective"]
@@ -1299,9 +1307,9 @@ def test_repo_only_save_prints_the_machine_digest(tmp_path, capsys):
 
 
 def test_repo_only_save_refuses_when_the_machine_file_changed(tmp_path, capsys):
-    root, gpath = _repo(tmp_path, {"guards.forcePush": "block"},
+    root, gpath = _repo(tmp_path, {"guards.overrides.forcePush": "block"},
                         {"guards": {"forcePush": "block"}})
-    menu.save(root, {"repo": {"guards.forcePush": "allow"}}, apply=False,
+    menu.save(root, {"repo": {"guards.overrides.forcePush": "allow"}}, apply=False,
               global_path=gpath)
     out = capsys.readouterr().out
     reviewed = {"machine": _digest_line(out, "machine"),
@@ -1310,7 +1318,7 @@ def test_repo_only_save_refuses_when_the_machine_file_changed(tmp_path, capsys):
         handle.write(json.dumps({"guards": {"forcePush": "allow"}}))
     before = _bytes(_config(root))
 
-    code = menu.save(root, {"repo": {"guards.forcePush": "allow"}}, apply=True,
+    code = menu.save(root, {"repo": {"guards.overrides.forcePush": "allow"}}, apply=True,
                      global_path=gpath, expect=reviewed)
 
     assert code == 2
@@ -1354,11 +1362,11 @@ def test_two_layer_save_binds_the_repo_write_to_the_machine_it_wrote(tmp_path,
 
 def test_two_layer_save_judges_the_repo_against_the_saved_machine(tmp_path,
                                                                   capsys):
-    root, gpath = _repo(tmp_path, {"guards.forcePush": "ask"},
+    root, gpath = _repo(tmp_path, {"guards.overrides.forcePush": "ask"},
                         {"guards": {"forcePush": "allow"}})
 
-    menu.save(root, {"machine": {"guards.forcePush": "block"},
-                     "repo": {"guards.forcePush": "allow"}},
+    menu.save(root, {"machine": {"guards.overrides.forcePush": "block"},
+                     "repo": {"guards.overrides.forcePush": "allow"}},
               apply=False, global_path=gpath)
 
     repo_part = capsys.readouterr().out.split("repo layer - ", 1)[1]
@@ -1471,7 +1479,7 @@ def _bound(plan):
 
 def test_delete_rechecks_the_machine_file_inside_the_locks(tmp_path, capsys,
                                                            monkeypatch):
-    root, gpath = _repo(tmp_path, {"guards.forcePush": "block"},
+    root, gpath = _repo(tmp_path, {"guards.overrides.forcePush": "block"},
                         global_cfg={"guards": {"forcePush": "block"}})
     plan = menu.plan_delete(root, gpath)
     before = _bytes(_config(root))

@@ -357,7 +357,7 @@ def default_config():
         # Same rule, same ratchet, seven more keys (the six command/production
         # guards plus `roleWrites`). Both layers, because a repo
         # that may only NARROW still has to be able to say so.
-        "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
+        "guards": copy.deepcopy(crew_state.GUARD_BLOCK_DEFAULTS),
         # REPO ONLY, and the asymmetry is the design. `guards.prodDatabase`
         # and `guards.prodServer` say how much of production crew may reach,
         # which is a machine fact and ratchets; `production.databases` and
@@ -602,7 +602,7 @@ def default_global_config():
         # them arrived inside a clone written by someone else. Note what is
         # NOT here: `production.*`, the patterns the first two match against,
         # which is a repo fact.
-        "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
+        "guards": copy.deepcopy(crew_state.GUARD_BLOCK_DEFAULTS),
         # `environments.prodUnattended` and NOTHING ELSE: whether this machine
         # lets crew write to production with nobody attending is the owner's
         # answer, and it ratchets. `environments.nonProd` is absent on
@@ -842,7 +842,19 @@ def filter_global(global_cfg):
     `/crew:upgrade` and `/crew:config` read it out, because a key that
     silently does nothing is worse than one that is refused out loud.
     """
-    return _prune(global_cfg, default_global_config())
+    kept, ignored = _prune(global_cfg, default_global_config())
+    # L-0725: the twelve legacy `guards.<name>` keys are no longer template
+    # keys, but an unmigrated machine file still holds them and they are READ
+    # (as aliases for `guards.overrides.<name>`). Re-admit them, so a
+    # narrowing the owner wrote is never pruned and reported as "does nothing".
+    block = global_cfg.get("guards") if isinstance(global_cfg, dict) else None
+    if isinstance(block, dict) and isinstance(kept.get("guards"), dict):
+        for name in crew_state.ALL_GUARD_NAMES:
+            if name in block:
+                kept["guards"][name] = block[name]
+                if f"guards.{name}" in ignored:
+                    ignored.remove(f"guards.{name}")
+    return kept, ignored
 
 
 def is_global_path(dotted):
@@ -1041,11 +1053,31 @@ def resolve_ratcheted(root, dotted, path=None):
     _tiers, normalise, rank = crew_state.ratchet_spec(dotted) or (
         None, None, None)
     parts = dotted.split(".")
-    repo_value = _dig(crew_state.load_config(root), parts)
-    global_cfg, _ = filter_global(read_global_config(path))
-    global_value = _dig(global_cfg, parts)
-    repo_value = None if repo_value is _MISSING else repo_value
-    global_value = None if global_value is _MISSING else global_value
+    guard = parts[1] if (len(parts) == 2 and parts[0] == "guards"
+                         and parts[1] in crew_state.ALL_GUARD_NAMES) else None
+    unmigrated, conflicts = [], []
+    if guard is not None:
+        # L-0725: a guard's per-layer value is its profile, override and any
+        # legacy key together (`crew_state.layer_guard_state`). The machine
+        # file is read raw, not through `filter_global`, because the pruning
+        # shape no longer lists the twelve legacy names and an unmigrated
+        # machine layer must keep its narrowing, never be dropped.
+        repo_state = crew_state.layer_guard_state(
+            crew_state.load_config(root), guard)
+        global_state = crew_state.layer_guard_state(
+            read_global_config(path), guard)
+        repo_value, global_value = repo_state["value"], global_state["value"]
+        for layer, state in (("repo", repo_state), ("global", global_state)):
+            if state["legacy"]:
+                unmigrated.append(layer)
+            if state["conflict"]:
+                conflicts.append(layer)
+    else:
+        repo_value = _dig(crew_state.load_config(root), parts)
+        global_cfg, _ = filter_global(read_global_config(path))
+        global_value = _dig(global_cfg, parts)
+        repo_value = None if repo_value is _MISSING else repo_value
+        global_value = None if global_value is _MISSING else global_value
 
     effective = crew_state.effective_ratcheted(dotted, repo_value, global_value)
 
@@ -1054,13 +1086,17 @@ def resolve_ratcheted(root, dotted, path=None):
         held = "global"
     elif rank(global_value) > rank(effective):
         held = "repo"
-    return {
+    row = {
         "path": dotted,
         "effective": effective,
         "repo": normalise(repo_value),
         "global": normalise(global_value),
         "heldDownBy": held,
     }
+    if guard is not None:
+        row["unmigrated"] = unmigrated
+        row["conflicts"] = conflicts
+    return row
 
 
 def resolve_install_policy(root, path=None):
@@ -2120,7 +2156,34 @@ def explain_config(root, path=None, all_keys=False):
             "value": None if value is _MISSING else value,
             "source": source,
         })
-    return rows
+    return _with_guard_rows(rows, root, path)
+
+
+def _with_guard_rows(rows, root, path):
+    """L-0725: after the `guards.profile` and `guards.overrides` rows, one
+    ratcheted row per guard -- the value IN FORCE, which neither the profile
+    nor the overrides print on their own -- carrying `unmigrated` (the layers
+    still holding a legacy `guards.<name>`) and `conflicts`."""
+    at = max((i for i, r in enumerate(rows) if r["path"] == "guards.overrides"),
+             default=None)
+    if at is None:
+        return rows
+    extra = []
+    for name in crew_state.ALL_GUARD_NAMES:
+        dotted = f"guards.{name}"
+        ratchet = resolve_ratcheted(root, dotted, path)
+        extra.append({
+            "path": dotted,
+            "value": ratchet["effective"],
+            "source": ratchet["heldDownBy"] or "resolved",
+            "ratchet": True,
+            "heldDownBy": ratchet["heldDownBy"],
+            "repo": ratchet["repo"],
+            "global": ratchet["global"],
+            "unmigrated": ratchet["unmigrated"],
+            "conflicts": ratchet["conflicts"],
+        })
+    return rows[:at + 1] + extra + rows[at + 1:]
 
 
 def explain_findings(root, path=None):
@@ -3388,6 +3451,9 @@ def _personal_widens(dotted, before, after):
             > crew_state.personal_rank(dotted, before))
 
 
+_OVERRIDE_PREFIX = "guards.overrides."
+
+
 def enum_values(dotted):
     """The values `dotted` may take, as a tuple, or None for an open key: the
     tuple its READER normalises against, never a second list, so both writers
@@ -3395,6 +3461,12 @@ def enum_values(dotted):
     spec = crew_state.ratchet_spec(dotted)
     if spec is not None:
         return tuple(spec[0])
+    if dotted == "guards.profile":
+        return tuple(crew_state.GUARD_PROFILES)
+    if dotted.startswith(_OVERRIDE_PREFIX):
+        name = dotted[len(_OVERRIDE_PREFIX):]
+        if name in crew_state.ALL_GUARD_NAMES:
+            return tuple(crew_state.guard_tiers(name)[0])
     personal = crew_state.PERSONAL_KEYS.get(dotted)
     if personal is not None and personal[0] == "tiers":
         return tuple(personal[1])
@@ -3509,7 +3581,27 @@ _VETO_ONLY = ("a repo may only veto this (false) or clear its veto (null); "
 _FIX_FIRST = "fix that key first (it can be fixed in the same write)"
 
 
+def _guard_path_refusal(dotted):
+    """L-0725: why a `guards.*` write is refused, or None. A legacy
+    `guards.<name>` is no longer written (it is still READ, until
+    `/crew:migrate`); an override names a real guard."""
+    if dotted.startswith("guards."):
+        rest = dotted[len("guards."):]
+        if rest in crew_state.ALL_GUARD_NAMES:
+            return (f"the per-guard key is read but no longer written; use "
+                    f"guards.overrides.{rest} (or guards.profile)")
+        if rest.startswith("overrides."):
+            name = rest[len("overrides."):]
+            if name not in crew_state.ALL_GUARD_NAMES:
+                return (f"{name!r} is not a guard (guards: "
+                        + ", ".join(crew_state.ALL_GUARD_NAMES) + ")")
+    return None
+
+
 def _layer_path_refusal(dotted, layer, value):
+    reason = _guard_path_refusal(dotted)
+    if reason is not None:
+        return reason
     if layer == "machine":
         if _consent_refusal(dotted):
             return _consent_refusal(dotted)
@@ -3692,11 +3784,67 @@ def _plan_on(base, updates, layer, label, global_cfg=None):
             change["null"] = null_means(dotted, layer)
         changes.append(change)
         _set_path(merged, parts, value)
+    if any(d == "guards.profile" or d.startswith(_OVERRIDE_PREFIX)
+           for d, _v in units):
+        _fold_guard_widenings(
+            changes, _guard_derived_changes(base, merged, layer, global_cfg))
     problems = merged_problems(merged, {d for d, _v in units}, label, layer)
     if problems:
         error = GlobalWriteRefused if layer == "machine" else RepoWriteRefused
         raise error(f"refused at the {layer} layer: " + "; ".join(problems))
     return merged, changes
+
+
+def _guard_derived_changes(before_cfg, after_cfg, layer, global_cfg):
+    """One derived change per guard whose in-force value WIDENS (or is held
+    down) because a `guards.profile` / `guards.overrides.<name>` write
+    expanded differently (L-0725). The profile and override are shorthand; the
+    grant is per guard, so the `!` line is too. Marked `derived` so a caller
+    that counts what it wrote can tell them from the unit written."""
+    out = []
+    for name in crew_state.ALL_GUARD_NAMES:
+        dotted = f"guards.{name}"
+        _tiers, normalise, rank = crew_state.guard_tiers(name)
+        was_layer = crew_state.layer_guard_value(before_cfg, name)
+        now_layer = crew_state.layer_guard_value(after_cfg, name)
+        if layer == "machine":
+            if rank(now_layer) > rank(was_layer):
+                out.append({"path": dotted, "before": normalise(was_layer),
+                            "after": normalise(now_layer), "widens": True,
+                            "widensTo": normalise(now_layer), "derived": True})
+            continue
+        held = crew_state.layer_guard_value(global_cfg or {}, name)
+        was = crew_state.effective_ratcheted(dotted, was_layer, held)
+        now = crew_state.effective_ratcheted(dotted, now_layer, held)
+        widens = rank(now) > rank(was)
+        held_down = rank(now_layer) > rank(now)
+        if widens or (held_down and now_layer != was_layer):
+            change = {"path": dotted, "before": normalise(was_layer),
+                      "after": normalise(now_layer), "widens": widens,
+                      "widensTo": now, "derived": True,
+                      "globalValue": None if held is None else normalise(held)}
+            if held_down:
+                change["heldDownBy"], change["heldAt"] = "global", now
+            out.append(change)
+    return out
+
+
+def _fold_guard_widenings(changes, derived):
+    """Put each guard's widening on the change that caused it: an override
+    write carries its own guard's mark; a profile write gets one derived
+    change per guard (`derived: True`), so the `!` line names the guard."""
+    by_path = {d["path"]: d for d in derived}
+    for change in changes:
+        if not change["path"].startswith(_OVERRIDE_PREFIX):
+            continue
+        found = by_path.pop(
+            "guards." + change["path"][len(_OVERRIDE_PREFIX):], None)
+        if found is None:
+            continue
+        for field in ("widens", "widensTo", "heldDownBy", "heldAt"):
+            if field in found:
+                change[field] = found[field]
+    changes.extend(by_path.values())
 
 
 def _del_path(target, parts):
@@ -4038,6 +4186,8 @@ def widening_note(dotted, after):
     """The `!` line's text for a widening change at `dotted`."""
     if dotted in crew_state.PERSONAL_KEYS:
         return personal_widening_note(dotted, after)
+    if dotted.startswith(_OVERRIDE_PREFIX):
+        dotted = "guards." + dotted[len(_OVERRIDE_PREFIX):]
     if dotted in _RATCHETED:
         _, normalise, notes = _RATCHETED[dotted]
         return notes[normalise(after)]
@@ -4493,6 +4643,20 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
         print("  layers, never the repo's: a cloned repo may ask for less "
               "than your machine allows")
         print("  and be obeyed, and may ask for more and be refused.")
+    unmigrated = sorted({layer for row in rows
+                         for layer in row.get("unmigrated", ())})
+    if unmigrated:
+        print()
+        print("! guards: unmigrated: run /crew:migrate. The "
+              + " and ".join(unmigrated) + " layer still holds per-guard keys "
+              "(guards.<name>); they are read as guards.overrides.<name> and "
+              "not written.")
+    conflicts = sorted({layer for row in rows
+                        for layer in row.get("conflicts", ())})
+    if conflicts:
+        print("! guards: the " + " and ".join(conflicts) + " layer holds both "
+              "a per-guard key and a profile or override for the same guard; "
+              "the NARROWER wins.")
     # A repo-level onlyRepos/onlySessions is not merely lower precedence --
     # the hooks that narrow auto-clear never read it at all, so printing it
     # unlabelled would claim a restriction that is not in force.
