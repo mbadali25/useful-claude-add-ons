@@ -68,7 +68,7 @@ else
   rm -f "$PRECOMPACT_DIR"/precompact-*.json 2>/dev/null
 fi
 if [ -n "${CLAIM_PY:-}" ]; then
-  printf '%s' "$INPUT" | "$CLAIM_PY" "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/crew_resume.py")" precompact --root . >/dev/null 2>&1
+  printf '%s' "$INPUT" | "$CLAIM_PY" "$(dirname "${BASH_SOURCE[0]}")/crew_resume.py" precompact --root . >/dev/null 2>&1
 fi
 if [ ! -f "$CREW_CFG" ]; then
   # A crew.json-only repo: the record above is all this hook does there.
