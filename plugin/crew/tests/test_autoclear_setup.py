@@ -175,7 +175,7 @@ def test_sendkeys_is_refused_and_nothing_is_written(tmp_path):
         setup.write_autoclear_method("sendkeys", path=path)
         assert False, "expected PermissionError"
     except PermissionError as exc:
-        assert "removed in crew 1.2.60" in str(exc)
+        assert "removed in crew 1.2.61" in str(exc)
     assert not os.path.exists(path)
 
 

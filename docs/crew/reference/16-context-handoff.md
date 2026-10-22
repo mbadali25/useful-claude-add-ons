@@ -148,7 +148,7 @@ every repo. The other keys layer normally, repo over machine.
 | `tmux` | `$TMUX_PANE`, and only when that pane's pid is this session's own process or an ancestor of it | **Exact.** No focus involved. Use this if you can. |
 | `xdotool` | the one window owned by the nearest ancestor of this session's own process, hosting no other terminal; `windowTitle` narrows or, failing that, is a fallback that must match exactly one window (and refuses while another session is live) | Activates that window id, re-checks it is active, then types. |
 | `notify` | no window — types nothing | Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured command yourself. Never claims anything was cleared or compacted, because nothing was. `auto` resolves here on native Windows with no tmux pane. |
-| `sendkeys` | removed in crew 1.2.60 (L-0727 slice 3) | **Refused by name** ("sendkeys was removed in crew 1.2.60 (L-0727); use notify or tmux"); it was the Windows-only SendKeys sender in the deleted `auto-clear.ps1`. |
+| `sendkeys` | removed in crew 1.2.61 (L-0727 slice 3) | **Refused by name** ("sendkeys was removed in crew 1.2.61 (L-0727); use notify or tmux"); it was the Windows-only SendKeys sender in the deleted `auto-clear.ps1`. |
 | `wtype` | cannot identify a window | **Refused**, whatever `unsafeFocus` says. |
 
 #### What has to be true before it types anything

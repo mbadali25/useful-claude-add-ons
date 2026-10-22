@@ -741,7 +741,7 @@ and gets nothing created.
 - **`method: "notify"` is the native-Windows default**, resolving from
   `"auto"` "on native Windows with no tmux pane"
   (`crew_autoclear_setup.py:223-232`; `plugin/crew/hooks/scripts/crew_autocycle.py:1100`).
-  **The `sendkeys` method was removed in L-0727 slice 3 (L-0867, crew 1.2.60)** together with
+  **The `sendkeys` method was removed in L-0727 slice 3 (L-0867, crew 1.2.61)** together with
   `auto-clear.ps1`, which held the Windows keystroke sender. DERIVED: `resolve_method` refuses it with
   `SENDKEYS_REMOVED` (`plugin/crew/hooks/scripts/crew_autocycle.py:1083-1084`, constant at `:1077`),
   and `write_autoclear_method` raises `PermissionError` for it whatever the caller says

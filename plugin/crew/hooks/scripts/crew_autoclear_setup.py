@@ -7,7 +7,7 @@ METHODS`; not restated here beyond what this module needs to reason about):
 `enabled` only the global layer may turn on; `method` defaults to `"auto"`,
 which resolves to a tmux pane on Linux/macOS/WSL, to `notify` on native
 Windows with no tmux pane. `sendkeys` (the Windows keystroke sender that lived
-in `auto-clear.ps1`) was removed in crew 1.2.60 (L-0727 slice 3): it is neither
+in `auto-clear.ps1`) was removed in crew 1.2.61 (L-0727 slice 3): it is neither
 offered nor written, and `write_autoclear_method` refuses it by name.
 
 Things this module exists to make impossible by construction rather than
@@ -117,7 +117,7 @@ def _require_global_readable(path=None):
             f"it: {problem}")
 
 _SENDKEYS_NOTE = (
-    "sendkeys was removed in crew 1.2.60 (L-0727); use notify or tmux"
+    "sendkeys was removed in crew 1.2.61 (L-0727); use notify or tmux"
 )
 
 # Global-only under 1.0; a repo copy of either is never read. Every other

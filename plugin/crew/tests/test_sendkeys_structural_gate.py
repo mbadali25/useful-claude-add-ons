@@ -1,6 +1,6 @@
 """SAFETY (L-0727 slice 3): the `sendkeys` method, and with it the only code in
 the repository that pressed keys through Windows' keystroke API, was removed
-in crew 1.2.60 together with `auto-clear.ps1`. Nothing a test run, a hook or a
+in crew 1.2.61 together with `auto-clear.ps1`. Nothing a test run, a hook or a
 sabotage run can reach may call that API again unnoticed.
 
 This is a repo-wide scan, not a check of one file: every path `git ls-files`
@@ -139,7 +139,7 @@ def test_no_tracked_file_outside_documentation_and_recorded_output_calls_a_keyst
     assert not matches, (
         f"keystroke API call outside documentation and recorded output "
         f"(scanned {scanned} tracked files): {matches} -- the sendkeys method "
-        "was removed in crew 1.2.60 (L-0727)")
+        "was removed in crew 1.2.61 (L-0727)")
 
 
 def test_the_scan_pattern_matches_every_call_form_and_no_prose():
@@ -154,7 +154,7 @@ def test_the_scan_pattern_matches_every_call_form_and_no_prose():
     prose = [
         "just before SendWait in the old child",
         "test_the_inhibit_gate_sits_between_every_upstream_decision_and_sendwait()",
-        "sendkeys was removed in crew 1.2.60 (L-0727)",
+        "sendkeys was removed in crew 1.2.61 (L-0727)",
         "sock.send(b'x')",
         "stream.Send (value)",
     ]

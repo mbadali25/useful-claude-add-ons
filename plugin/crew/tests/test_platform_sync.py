@@ -334,7 +334,7 @@ def test_auto_is_valid_everywhere(tmp_path, monkeypatch):
 
 def test_notify_is_valid_everywhere_and_sendkeys_is_valid_nowhere(tmp_path, monkeypatch):
     """`notify` types nothing, so every platform implements it. `sendkeys` was
-    removed in crew 1.2.60 (L-0727): no platform lists it, and the concern
+    removed in crew 1.2.61 (L-0727): no platform lists it, and the concern
     says it was removed rather than that it does not exist on this OS."""
     for method, valid in (("notify", True), ("sendkeys", False)):
         root = _repo(tmp_path / method, context={
@@ -347,7 +347,7 @@ def test_notify_is_valid_everywhere_and_sendkeys_is_valid_nowhere(tmp_path, monk
             if valid:
                 assert not found, (method, system, found)
             else:
-                assert any("was removed in crew 1.2.60" in c for c in found), (method, system, found)
+                assert any("was removed in crew 1.2.61" in c for c in found), (method, system, found)
                 assert not any("does not exist" in c for c in found), (method, system, found)
 
 

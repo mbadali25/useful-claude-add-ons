@@ -1153,8 +1153,8 @@ command — no keystrokes appear at all.</p>
   window it found itself on Windows. <code>"notify"</code> types nothing at all; instead the <code>Stop</code> hook prints a
   <code>systemMessage</code> telling you the handoff is written and verified and it is safe to run the
   configured command yourself.</li>
-<li><strong><code>sendkeys</code> is gone.</strong> The Windows keystroke method was removed in crew 1.2.60 (L-0727): a
-  config that names it is refused with "sendkeys was removed in crew 1.2.60 (L-0727); use notify or
+<li><strong><code>sendkeys</code> is gone.</strong> The Windows keystroke method was removed in crew 1.2.61 (L-0727): a
+  config that names it is refused with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or
   tmux", and <code>crew_autoclear_setup.py apply-method sendkeys</code> refuses by name.</li>
 <li><strong>Fix:</strong> treat the <code>notify</code> message as the intended behaviour, or run the session inside tmux
   (Git Bash or WSL), where <code>auto</code> picks <code>tmux</code>. See <code>plugin/crew/CONFIG.md</code> §14.</li>
@@ -1604,7 +1604,7 @@ cleanly, clear, and pick up where it stopped.</p>
    sender in resume mode (under Git Bash on Windows). Consent is <code>resume.auto</code>; <code>context.autoClear</code> only describes the terminal.
    In tmux it waits <code>resume.typeDelaySeconds</code> (default 2), polls the pane for an idle, empty input
    line for up to <code>resume.readyTimeoutSeconds</code> (default 15), then sends the command and, half a
-   second later, Enter. On native Windows it types nothing (<code>auto</code> there is <code>notify</code>; the <code>sendkeys</code> method was removed in crew 1.2.60). It types once per
+   second later, Enter. On native Windows it types nothing (<code>auto</code> there is <code>notify</code>; the <code>sendkeys</code> method was removed in crew 1.2.61). It types once per
    handoff (a marker under <code>&lt;git-common-dir&gt;/crew/</code>) and records the run first, so a run that could
    not be recorded is never typed. The context then says <code>Auto-resume: typing /crew:done T-0001 into
    this session in 2s (method tmux)</code>, or keeps the line above and adds <code>Auto-resume was not typed:
@@ -1639,7 +1639,7 @@ in the machine-global config, because it drives this machine's keyboard:</p>
 <tr>
 <td>same</td>
 <td><code>context.autoClear.method</code></td>
-<td><code>"auto"</code> (default), <code>"tmux"</code>, <code>"xdotool"</code>, <code>"notify"</code>, <code>"none"</code> (<code>"sendkeys"</code> was removed in crew 1.2.60 and is refused)</td>
+<td><code>"auto"</code> (default), <code>"tmux"</code>, <code>"xdotool"</code>, <code>"notify"</code>, <code>"none"</code> (<code>"sendkeys"</code> was removed in crew 1.2.61 and is refused)</td>
 <td>how the cycle acts — see "Which method, and what it does" below</td>
 </tr>
 <tr>
@@ -1815,7 +1815,7 @@ arm only that repo without anyone noticing.</p>
 </tr>
 <tr>
 <td><code>sendkeys</code></td>
-<td><strong>Removed in crew 1.2.60 (L-0727 slice 3).</strong> It was the Windows-only <code>System.Windows.Forms.SendKeys</code> sender in <code>auto-clear.ps1</code>, which is deleted. A config that names it is refused with "sendkeys was removed in crew 1.2.60 (L-0727); use notify or tmux".</td>
+<td><strong>Removed in crew 1.2.61 (L-0727 slice 3).</strong> It was the Windows-only <code>System.Windows.Forms.SendKeys</code> sender in <code>auto-clear.ps1</code>, which is deleted. A config that names it is refused with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or tmux".</td>
 <td>nowhere</td>
 </tr>
 <tr>

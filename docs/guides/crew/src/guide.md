@@ -395,7 +395,7 @@ Source: `plugin/crew/skills/crew-setup/platform.md` and `CLAUDE.md`,
   `gitbash`). `/crew:status`'s `shell` line says which route is in force and
   why.
 - Auto-clear on native Windows with no tmux pane never types: `auto` resolves to
-  `notify`, which prints a message (the `sendkeys` method was removed in crew 1.2.60).
+  `notify`, which prints a message (the `sendkeys` method was removed in crew 1.2.61).
 
 Deeper: "Windows notes" in [Troubleshooting](troubleshooting.md) and
 [Auto wrap-up, clear and resume](auto-cycle.md).

@@ -41,7 +41,7 @@ because nothing was. It needs no window and is never refused for lack of one.
 DECISION: typing into a window the hook found itself is a risk `auto` does not
 get to accept on your behalf. The Windows `sendkeys` method
 (`System.Windows.Forms.SendKeys`, once `auto-clear.ps1`'s) was removed in crew
-1.2.60 (L-0727 slice 3, native-resume ADR 0008): **`sendkeys` is refused here
+1.2.61 (L-0727 slice 3, native-resume ADR 0008): **`sendkeys` is refused here
 outright**, on every platform, whatever `cfg["method"]` says, with
 `SENDKEYS_REMOVED`. This module carries no window-typing code of its own
 beyond `tmux`/`xdotool`.
@@ -1074,7 +1074,7 @@ def _tmux_pane_pid(pane):
     return _num(out.strip(), 0)
 
 
-SENDKEYS_REMOVED = "sendkeys was removed in crew 1.2.60 (L-0727); use notify or tmux"
+SENDKEYS_REMOVED = "sendkeys was removed in crew 1.2.61 (L-0727); use notify or tmux"
 
 
 def resolve_method(cfg, env=None):

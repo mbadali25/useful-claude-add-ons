@@ -14,7 +14,7 @@ Every case runs with `--dry-run` or against a fake `tmux`/`xdotool` on PATH, so
 no test can send a keystroke to the machine running it.
 
 The bash sender is the only one: the PowerShell twin and its SendKeys method
-were removed in crew 1.2.60 (L-0727), and `notify` is the Windows path.
+were removed in crew 1.2.61 (L-0727), and `notify` is the Windows path.
 """
 import json
 import os

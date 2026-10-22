@@ -1,4 +1,4 @@
-"""`sendkeys` was removed in crew 1.2.60 (L-0727 slice 3) together with
+"""`sendkeys` was removed in crew 1.2.61 (L-0727 slice 3) together with
 `auto-clear.ps1`. Every layer that used to name it must now refuse it, never
 offer it, never write it, and never let an owner's real configuration grow a
 new line because of the removal.
@@ -32,7 +32,7 @@ import crew_platform
 
 _PLUGIN = pathlib.Path(context._ROOT)  # pylint: disable=protected-access
 _SCRIPTS = _PLUGIN / "hooks" / "scripts"
-_REMOVED = "removed in crew 1.2.60"
+_REMOVED = "removed in crew 1.2.61"
 
 _ENVS = [
     pytest.param({}, id="bare"),
@@ -49,7 +49,7 @@ _ENVS = [
 
 def test_sendkeys_removed_text_is_the_agreed_sentence():
     assert crew_autocycle.SENDKEYS_REMOVED == (
-        "sendkeys was removed in crew 1.2.60 (L-0727); use notify or tmux")
+        "sendkeys was removed in crew 1.2.61 (L-0727); use notify or tmux")
 
 
 @pytest.mark.parametrize("env", _ENVS)

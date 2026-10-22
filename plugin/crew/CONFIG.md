@@ -1251,7 +1251,7 @@ for.
 | `"xdotool"` | Types into the one X11 window owned by an ancestor of this session's own process and hosting no other terminal (or matching `windowTitle`). | Linux with `xdotool` installed |
 | `"wtype"` | Refused outright — see `unsafeFocus`, above. | Wayland (declared, never granted) |
 | `"notify"` | Types nothing. Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured `command` yourself. Never claims anything was cleared or compacted, because nothing was. | everywhere |
-| `"sendkeys"` | **Removed in crew 1.2.60 (L-0727 slice 3).** The Windows-only keystroke sender lived in `auto-clear.ps1`, which is deleted; `resolve_method` and `crew_autoclear_setup.py` refuse it with "sendkeys was removed in crew 1.2.60 (L-0727); use notify or tmux", and `crew_platform` lists it for no OS. `auto` never chose it. | nowhere |
+| `"sendkeys"` | **Removed in crew 1.2.61 (L-0727 slice 3).** The Windows-only keystroke sender lived in `auto-clear.ps1`, which is deleted; `resolve_method` and `crew_autoclear_setup.py` refuse it with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or tmux", and `crew_platform` lists it for no OS. `auto` never chose it. | nowhere |
 | `"none"` | Refused outright, deliberately. | everywhere |
 
 **`auto`'s per-platform pick, an OWNER DECISION:** a tmux pane if `$TMUX` names
@@ -1407,7 +1407,7 @@ without one.
 owner-pid resolution alone cannot: `crew_autocycle.py` tries the ancestor
 terminal process's own pid first, and only reaches for `windowTitle` when that
 pid owns zero or several windows. (It also narrowed the Windows `sendkeys`
-method, removed in crew 1.2.60, L-0727 slice 3.)
+method, removed in crew 1.2.61, L-0727 slice 3.)
 
 Machine-global is the right home for `windowTitle` — a terminal's title is a
 property of the machine — but **a wrong global value now aims keystrokes at

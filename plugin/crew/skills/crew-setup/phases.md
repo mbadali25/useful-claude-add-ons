@@ -224,7 +224,7 @@ On **Linux, macOS, WSL or Git Bash**, describe the tmux path instead
 method to propose there, `auto` already resolves to it. Either way, **enabling**
 auto-clear (`context.autoClear.enabled: true`) is a separate question with its
 own yes: never bundle it into the method question. `sendkeys` was removed in
-crew 1.2.60 (L-0727) and is never offered (`apply-method sendkeys` refuses by
+crew 1.2.61 (L-0727) and is never offered (`apply-method sendkeys` refuses by
 name, whatever `--yes` says).
 
 Tell them the threshold is read from the transcript's own usage records, not

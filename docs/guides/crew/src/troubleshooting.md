@@ -927,8 +927,8 @@ command — no keystrokes appear at all.
   window it found itself on Windows. `"notify"` types nothing at all; instead the `Stop` hook prints a
   `systemMessage` telling you the handoff is written and verified and it is safe to run the
   configured command yourself.
-- **`sendkeys` is gone.** The Windows keystroke method was removed in crew 1.2.60 (L-0727): a
-  config that names it is refused with "sendkeys was removed in crew 1.2.60 (L-0727); use notify or
+- **`sendkeys` is gone.** The Windows keystroke method was removed in crew 1.2.61 (L-0727): a
+  config that names it is refused with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or
   tmux", and `crew_autoclear_setup.py apply-method sendkeys` refuses by name.
 - **Fix:** treat the `notify` message as the intended behaviour, or run the session inside tmux
   (Git Bash or WSL), where `auto` picks `tmux`. See `plugin/crew/CONFIG.md` §14.

@@ -141,7 +141,7 @@ B8 (fail closed), B9 (the scripts no longer run twice on Windows), B10 (no pytho
 delete the fourteen twins this PR leaves in place, and slice 3 updates the commands, skills and
 `INSTALLATION.md` text that still describes them.
 
-**Outcome (slice 3, L-0867, crew 1.2.60):** the ten non-harness twins (`cloud-guard`, `env-guard`,
+**Outcome (slice 3, L-0867, crew 1.2.61):** the ten non-harness twins (`cloud-guard`, `env-guard`,
 `role-write-guard`, `crew-context`, `handoff-read`, `handoff-write`, `notify`, `platform-sync`,
 `context-watch`, `auto-clear`) are deleted. `crew_hook.select` uses a row's `twin` only when the file exists, so
 the `cloud-guard.ps1` and `env-guard.ps1` rows in `TABLE` now route a Windows `PowerShell` call to the `.sh`

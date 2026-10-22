@@ -420,7 +420,7 @@ def concerns(cfg, facts):
         if method == "sendkeys":
             out.append(
                 "context.autoClear.method is 'sendkeys', which was removed in "
-                "crew 1.2.60 (L-0727) - auto-clear will stand down here. Use "
+                "crew 1.2.61 (L-0727) - auto-clear will stand down here. Use "
                 "'notify' or 'tmux' ('auto' picks per platform)"
             )
         elif method not in allowed:

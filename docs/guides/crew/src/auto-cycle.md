@@ -69,7 +69,7 @@ cleanly, clear, and pick up where it stopped.
    sender in resume mode (under Git Bash on Windows). Consent is `resume.auto`; `context.autoClear` only describes the terminal.
    In tmux it waits `resume.typeDelaySeconds` (default 2), polls the pane for an idle, empty input
    line for up to `resume.readyTimeoutSeconds` (default 15), then sends the command and, half a
-   second later, Enter. On native Windows it types nothing (`auto` there is `notify`; the `sendkeys` method was removed in crew 1.2.60). It types once per
+   second later, Enter. On native Windows it types nothing (`auto` there is `notify`; the `sendkeys` method was removed in crew 1.2.61). It types once per
    handoff (a marker under `<git-common-dir>/crew/`) and records the run first, so a run that could
    not be recorded is never typed. The context then says `Auto-resume: typing /crew:done T-0001 into
    this session in 2s (method tmux)`, or keeps the line above and adds `Auto-resume was not typed:
@@ -92,7 +92,7 @@ in the machine-global config, because it drives this machine's keyboard:
 | Where | Key | Value | Effect |
 |---|---|---|---|
 | `~/.claude/crew/config.json` (Windows: `%USERPROFILE%\.claude\crew\config.json`) | `context.autoClear.enabled` | `true` | turns auto-clear on for every crew repo on this machine |
-| same | `context.autoClear.method` | `"auto"` (default), `"tmux"`, `"xdotool"`, `"notify"`, `"none"` (`"sendkeys"` was removed in crew 1.2.60 and is refused) | how the cycle acts — see "Which method, and what it does" below |
+| same | `context.autoClear.method` | `"auto"` (default), `"tmux"`, `"xdotool"`, `"notify"`, `"none"` (`"sendkeys"` was removed in crew 1.2.61 and is refused) | how the cycle acts — see "Which method, and what it does" below |
 | same | `context.autoClear.windowTitle` | a substring of the terminal's title | fallback when the window cannot be found by process id |
 | same | `context.autoClear.delaySeconds` | `3` | wait before typing, so the prompt exists |
 | same | `context.autoClear.minHandoffLines` | `5` | a shorter handoff counts as a stub |
@@ -188,7 +188,7 @@ arm only that repo without anyone noticing.
 | `tmux` | Types the command into the `$TMUX_PANE` whose process is this session's own process or an ancestor of it. No focus involved — the most reliable method. | Linux, macOS, WSL, Git Bash on Windows, when `$TMUX` names a pane and `tmux` is on PATH |
 | `xdotool` | Types into the one X11 window owned by the nearest ancestor of this session's own process, when that window hosts no other terminal (or matching `windowTitle`). | Linux with `xdotool` on PATH and `$DISPLAY` set |
 | `notify` | Types nothing. Prints a message saying the handoff is written and verified and it is safe to run the command yourself. Never says anything was cleared or compacted — it does not know that, and it did not do it. | **native Windows**, whenever there is no tmux pane — this is the default there, not a fallback for something missing |
-| `sendkeys` | **Removed in crew 1.2.60 (L-0727 slice 3).** It was the Windows-only `System.Windows.Forms.SendKeys` sender in `auto-clear.ps1`, which is deleted. A config that names it is refused with "sendkeys was removed in crew 1.2.60 (L-0727); use notify or tmux". | nowhere |
+| `sendkeys` | **Removed in crew 1.2.61 (L-0727 slice 3).** It was the Windows-only `System.Windows.Forms.SendKeys` sender in `auto-clear.ps1`, which is deleted. A config that names it is refused with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or tmux". | nowhere |
 | `none` | Refused outright. | never |
 
 ## When it will not clear (or notify)
