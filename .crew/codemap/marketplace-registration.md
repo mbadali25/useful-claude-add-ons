@@ -2,6 +2,9 @@ anchor: useful-claude-add-ons@9ba355d7c
 verified: 2026-10-20
 paths: scripts/**, plugin/PLUGINS.md
 
+**Targeted check at `c0e582fbe` (2026-10-22, L-0725); anchor NOT moved.** Re-read: `scripts/check-marketplace.py`'s `main()` call list and line numbers, and the smoke-gap count ("Two version-check paths"); L-0725 changed that file's `check_config_reference` docstring only. Nothing else in this note was
+re-verified: a claim here is as of this note's own anchor.
+
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
 anchor (`5d1fc5fd`) predates crew 1.0's four-role rewrite
 (`c3bd8dfd` "remove the PM agent, pulse, journal and retired roles" through
@@ -189,17 +192,19 @@ claim it was wrong about was removed, not because it was corrected in place.
 
 ## Two version-check paths, still not one
 
-**DERIVED, unchanged in shape.** `scripts/check-marketplace.py`'s own
-`main()` (`:1679-1715`) calls all seventeen checks, `check_versions` included,
-at `:1699` in call order (T-0048 added `check_config_reference` at `:1701`). `_verify/smoke.sh` is confirmed byte-identical to
+**DERIVED, re-read at `c0e582fbe` (2026-10-22).** `scripts/check-marketplace.py`'s own
+`main()` (`:2057`) calls all nineteen checks, `check_versions` included,
+at `:2084` in call order (`check_config_reference` at `:2086`, defined at `:1611`; `check_verifying_doc` `:1925` and
+`check_diagram_embeds` `:1965` are the last two, after `check_crew_ignore_policy`). L-0725 changed only
+that function's docstring (`plugin/crew/CONFIG.md` is generated whole, not two tables inside it). `_verify/smoke.sh` is confirmed byte-identical to
 `5d1fc5fd` (`git diff --stat` empty) — its `run_marketplace_check()`
 (`:72-98`) still exposes the same six named groups calling the same eight
 functions (`registration`, `skills`, `plugins`, `catalogs`, `menus`,
-`hooks`), so the gap is now **nine of seventeen**: `check_versions`,
+`hooks`), so the gap is now **eleven of nineteen**: `check_versions`,
 `check_self_claims`, `check_config_reference`, `check_crew_ignore_policy`,
 `check_argument_hint_frontmatter`, `check_license_consistency`,
-`check_command_backtick_spans`, `check_description_claims` and
-`check_catalog_claims` are all invisible to `bash _verify/smoke.sh`. The
+`check_command_backtick_spans`, `check_description_claims`,
+`check_catalog_claims`, `check_verifying_doc` and `check_diagram_embeds` are all invisible to `bash _verify/smoke.sh`. The
 practical consequence is unchanged: `check_versions` is history-based
 (`version_set_at`, `bump_candidates` walking both first-parent and full
 history) and cannot answer for an uncommitted change, so a pre-commit run of

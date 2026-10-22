@@ -96,7 +96,7 @@ GUARD_POLICY_DEFAULT = "block"
 # The guards. This tuple is the ORDER the keys are declared in, so
 # `default_config()` and `default_global_config()` cannot drift into different
 # orderings of the same block. What each governs is prose and lives with the
-# prose that uses it -- `crew_config._GUARD_ACTIONS` and docs/crew/config-rationale.md.
+# prose that uses it -- `crew_guard_notes.GUARD_ACTIONS` and docs/crew/config-rationale.md.
 #
 # `mergeGate` is the odd one: it is read by `/crew:gate` rather than by the
 # command guard, because "may crew take a live repo's merge gate down" is not a

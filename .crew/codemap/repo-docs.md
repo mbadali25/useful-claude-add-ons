@@ -2,6 +2,9 @@
 anchor: useful-claude-add-ons@9ba355d7c
 verified: 2026-10-20
 
+**Targeted check at `c0e582fbe` (2026-10-22, L-0725); anchor NOT moved.** Re-read: `docs/diagrams/data-flow-crew-config.mmd` line 1 (now `7944f06d7`, redrawn for L-0725). The `docs/guides/crew/` rebuild and `docs/crew/config-rationale.md` edits L-0725 made were not checked against this note's guide claims. Nothing else in this note was
+re-verified: a claim here is as of this note's own anchor.
+
 ## Re-derive provenance
 
 Re-derived from source at `6c497a14` (crew 1.0.25, PR #225), not re-pointed
@@ -115,8 +118,7 @@ disagrees with this section, this section wins. Statements not listed here were 
   text, still under the `BEGIN skills/UPDATE.md` block (`:11`). Still not checked against git history.
 - `docs/HANDOFF.md`: newest entry still dated 2026-08-23, 58 days before this anchor's date; `docs/runbooks/rollback.md`
   still reads `last verified: 2026-09-05` (45 days).
-- The three crew diagrams (Entry points): `data-flow-crew-config.mmd` is at `18e4afce3` (re-anchored 2026-10-18,
-  L-0789), `process-crew-brief.mmd` and `process-crew-lifecycle.mmd` at `c1d365d7` (2026-10-20). They are NOT "all at
+- The three crew diagrams (Entry points): `data-flow-crew-config.mmd` is at `7944f06d7` (line 1 read at `c0e582fbe`; redrawn for L-0725, previously `18e4afce3`, L-0789), `process-crew-brief.mmd` and `process-crew-lifecycle.mmd` at `c1d365d7` (2026-10-20). They are NOT "all at
   `d276b268`". Their line 1 (`%% Generated from <repo>@<sha> on <date>.`) and line 2 (`%% Anchors:`) forms hold;
   `architecture.mmd`, `data-flow.mmd` and `process.mmd` lines 1-2 still read `%% anchor: useful-claude-add-ons@1f97e51c`
   / `%% Anchors:` (read directly).

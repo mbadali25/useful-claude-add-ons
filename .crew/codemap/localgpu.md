@@ -1,6 +1,9 @@
 anchor: useful-claude-add-ons@9ba355d7c
 verified: 2026-10-20
 
+**Targeted check at `c0e582fbe` (2026-10-22, L-0725); anchor NOT moved.** Re-measured: the `DEV_PROVIDERS` / `QA_PROVIDERS` definition and re-export lines (`crew_state.py:1267-1268`, `crew_config.py:132-133`); L-0725 moved both files. Nothing under `plugin/localgpu/` changed. Nothing else in this note was
+re-verified: a claim here is as of this note's own anchor.
+
 # localgpu
 
 Local models on the user's own GPU via Ollama. Two halves that never call
@@ -510,9 +513,9 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:130-131` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:132-133` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1450-1451` on T-0028 at `c43a54c1`, where both
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1267-1268` (re-measured at `c0e582fbe`; `:1450-1451` on T-0028 at `c43a54c1`), where both
   tuples end in `"kimi"`, so the literal tuples localgpu quotes at `:33-34` are stale there
   (`TODO.md`'s T-0028 item (f)); `:1440-1441` before T-0028, since T-0010's four `AUTOPILOT_DEFAULTS`
   lines (T-0010-solo's merge of `67caa4b8`; `:1432-1433` at `65bb3330`; `:1430-1431` on main before

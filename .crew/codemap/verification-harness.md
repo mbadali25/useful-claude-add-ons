@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@7944f06d7
-verified: 2026-10-20
+anchor: useful-claude-add-ons@c0e582fbe
+verified: 2026-10-22
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -55,6 +55,22 @@ Rule `crew-hook-dispatcher` (`.crew/verify.json:672-684`, 0-based index 56) is n
 `crew_instructions.py`, `ALONGSIDE` `plugin/README.md` and `INSTALLATION.md` (they carry the
 `plugin-hooks:crew` claim marker `check-marketplace.py` holds to hooks.json's entry count). Not
 re-read this pass: whether `check-marketplace.py` implements that marker as described.
+
+**L-0725 (2026-10-22, `c0e582fbe`).** DERIVED by `json.load` on `.crew/verify.json` (98 rules, unchanged by
+L-0725) and by reading the files named. By id, since positions moved: `command-guards`
+(`.crew/verify.json:189-195`) runs `test_guards.py`, `test_guard_profiles.py` and
+`test_guard_writers.py` (`:193`); `crew-upgrade` (`:314`, run `:323`) and `crew-migrate` (`:327`, run
+`:333`) both run `plugin/crew/tests/test_config_migrate_l0725.py`; `crew-config` (`:241-260`) maps
+`crew_config.py`, the templates and `plugin/crew/CONFIG.md`; `crew-keys` (`:794`) maps
+`crew_dropped.py`, `CONFIG.md`, `test_crew_keys.py` and `scripts/_test/config-reference.py`, and runs
+`test_crew_keys.py`, `config_reference.py --check`, `scripts/_test/config-reference.py`,
+`build.py --check` and `scripts/_test/crew-guide.py` (`:816-820`). `plugin/crew/tests/l0725_keyset.py`
+is the committed key set (87 keys, 83 repo and 50 machine leaves) and `test_crew_keys.py:414` asserts
+`(87, 83, 50)` against `crew_config`'s two default functions. `plugin/crew/CONFIG.md` is generated whole
+by `docs/guides/crew/src/config_reference.py` (`render_config_md` `:395`), so nothing in it is
+hand-written and the descoped-kill limitation entry that older notes cite as `CONFIG.md:2509-2516` is
+now `docs/crew/config-rationale.md:2532-2536`. `claude-rules-generated` (`:453`) runs
+`crew_instructions.py rules --root . --check` over `.claude/rules/**` and `.crew/codemap/**`.
 
 **DERIVED, T-0502 on `rush/g5-platform` (2026-10-05), read with `json.load`: 774 lines, 73 rules
 (the release line's map plus this branch's).** T-0502 adds rule 19 (`.crew/verify.json:305-310`):
@@ -129,7 +145,7 @@ name a handful of test files each — `crew_guards.py` (rule 5, and rule 6 since
 `test_config_menu.py`, `sabotage_config.py`, `crew_config_files.py` and `test_config_files.py`,
 `:137-141`, whose `run` adds `test_config_menu.py` and `test_config_files.py`; the 50
 `CONFIG_MENU_MUTATIONS` (by `len()` at `7d217751`) are imported at `plugin/crew/tests/sabotage.py:79`
-and appended at `:3058`), the `crew_state.py` cluster (rule 8,
+and appended at `:3077`), the `crew_state.py` cluster (rule 8,
 eleven test modules), the whole-suite rule (rule 9), `crew_upgrade.py` (rule 10), `crew_ticket.py`'s
 approval digest (rule 11) and command/agent/skill frontmatter (rule 12) are each their own entry
 now, where the previous anchor
@@ -338,8 +354,8 @@ Notable rules, re-read directly:
   live in `plugin/crew/tests/sabotage_route.py` (`ROUTE_MUTATIONS`), imported by
   `plugin/crew/tests/sabotage.py:78` and appended at `:3059`; the rule's `why` states no count.
   The config half of T-0023 is not on rule 30: `crew_config.py`, the two templates and
-  `CONFIG.md` ride rule 7, whose suite (`test_crew_config.py`) carries the leaf count and the
-  template-drift tests. `plugin/crew/skills/crew-setup/SKILL.md`, whose inline config copy
+  `CONFIG.md` ride rule 7 (`crew-config`), whose suite (`test_crew_config.py`) carries the template-drift
+  tests; the leaf count (87) is asserted by `test_crew_keys.py:414` under `crew-keys`. `plugin/crew/skills/crew-setup/SKILL.md`, whose inline config copy
   `test_crew_config.py` also checks, matches rules 0, 1 and 12 but not 7, so an edit to that copy
   alone runs no suite that compares it - a gap that predates T-0023 (T-0004 edited the same block)
   and is recorded here, not fixed.
@@ -506,7 +522,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1779-1788` and `plugin/crew/CONFIG.md:2509-2516` both state
+  `verify-gate.sh:1779-1788` and `docs/crew/config-rationale.md:2532-2536` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -514,7 +530,7 @@ that changed shape or are newly documented here:
   session-id proof that is not ownership, a leader-exited group — see
   CHANGELOG 1.0.21). What remains is only the isolation the temp-file capture
   above already guarantees; **a rule that backgrounds work and does not wait
-  on it is no longer reaped by this gate**, and `CONFIG.md` states that as the
+  on it is no longer reaped by this gate**, and `docs/crew/config-rationale.md` states that as the
   limitation to design rules around, not as a bug ticket.
 - **A rule passes only on a completion record (T-0082, H2a).** DERIVED at the
   H2a branch head (line numbers are that tree's, not this map's anchor's).
@@ -625,13 +641,12 @@ that changed shape or are newly documented here:
   (the first is once per map content; the second is scope_report.py's, captured into the same buffer in the `.ps1` (round 1)
   and printed after the verdict as in the `.sh`). `CREW_GATE_MAY_LOG` (set after the lock stage, `verify-gate.sh:1119`) keeps a backed-off run from replacing the holder's log; the repeat hash also carries `nv_digest`, a SHA-256 of the unrun rules' identities. Round 2: a buffer that cannot be split prints raw (no log, no state; the split halves, log and state are mktemp files, mode 0600); an exit-0 Stop that is not a lock back-off clears the repeat state; the session id must be a string directly inside the top-level object.
 
-
 ## `scripts/check-marketplace.py` — the direct gate
 
-**DERIVED, re-read at this anchor; `main()` is unchanged in shape from
-`5d1fc5fd`.** `main()` (`scripts/check-marketplace.py:1850-1886`) calls
-**seventeen** checks, in this order, at `:1688-1704`; T-0048 added
-`check_config_reference` (`:1375`) after `check_self_claims`:
+**DERIVED, re-read at `c0e582fbe` (2026-10-22).** `main()` (`scripts/check-marketplace.py:2057`) calls
+**nineteen** checks, in this order (the list below plus `check_verifying_doc` `:1925` and
+`check_diagram_embeds` `:1965` at the end, which older notes here do not count); T-0048 added
+`check_config_reference` (`:1611`) after `check_self_claims`:
 
 `check_registration`, `check_skill_manifests`, `check_plugin_manifests`,
 `check_argument_hint_frontmatter`, `check_license_consistency`,
@@ -640,11 +655,11 @@ that changed shape or are newly documented here:
 `check_self_claims`, `check_config_reference`, `check_description_claims`,
 `check_catalog_claims`, `check_crew_ignore_policy`.
 
-`check_config_reference` runs `docs/guides/crew/src/config_reference.py --check`
+`check_config_reference` (`scripts/check-marketplace.py:1611`) runs `docs/guides/crew/src/config_reference.py --check`
 as a subprocess (`python3 -I`), so the generator imports the checked tree's
 crew modules rather than whichever copy this interpreter loaded first. It
-fails once per stale file (`configuration-reference.md`, `plugin/crew/CONFIG.md`'s
-generated key tables), and on any other exit with the generator's message: a
+fails once per stale file (`configuration-reference.md` and `plugin/crew/CONFIG.md`, which L-0725 made
+generated whole, so a one-byte hand edit anywhere in it fails), and on any other exit with the generator's message: a
 check that did not run is a failure, never a pass. Its suite is
 `scripts/_test/config-reference.py`.
 
@@ -673,7 +688,7 @@ skills, 5 plugins`, `all checks passed`, rc 0.
 
 ## `scripts/check_instructions.py` — new since the previous anchor, CI-only
 
-**DERIVED, read in full at this anchor.** 721 lines, absent at `5d1fc5fd`.
+**DERIVED, read in full at `7944f06d7`; line count and the typed-policy-ID rule re-read at `c0e582fbe`.** 950 lines (`wc -l`), absent at `5d1fc5fd`.
 Gates crew 1.0's instruction-surface budgets file by file, per its own module
 docstring (`:1-59`): a 120-line command-file budget
 (`COMMAND_MAX_LINES`, `:76`) with `plugin/crew/.budget-allowance.json` as the
@@ -695,8 +710,9 @@ what is *exempt* — a new 1.0 file nobody remembers to list is checked, not
 silently skipped, which the comment at `:109-117` states was the opposite of
 the previous convention's failure mode; broken `${CLAUDE_PLUGIN_ROOT}` /
 Markdown-link references; and typed policy IDs — every `guards.<name>`
-reference is checked against `crew_guards.ALL_GUARD_NAMES` (`:653`, the one
-place those names are declared).
+reference is checked against `crew_guards.ALL_GUARD_NAMES` (`_guard_names`, `scripts/check_instructions.py:727`,
+the one place those names are declared) plus, since L-0725, the two names the twelve collapsed into,
+`profile` and `overrides` (`:737`), so `guards.profile` and `guards.overrides.<guard>` read as typed.
 
 `rel()` (`:195-202`) is POSIX-relative by construction: `os.path.relpath`
 joined with the OS separator and then `.replace(os.sep, "/")`, because every
@@ -895,15 +911,15 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
   (`test_crew_shell.py`, `test_status.py`) for `crew_shell.py` and `crew_status.py`, priced 17s;
   its sabotage entries split out to W-0115.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1874-1883` /
-  `plugin/crew/CONFIG.md:2509-2516` — the descoped per-rule process-group kill,
+  `docs/crew/config-rationale.md:2532-2536` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:1031-1041`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
-- `scripts/check-marketplace.py:1850` — `main()`, seventeen checks.
-- `scripts/check-marketplace.py:519` — `check_versions`.
-- `scripts/check-marketplace.py:565`, `:673` — `count_crew_markdown_lines`,
+- `scripts/check-marketplace.py:2057` — `main()`, nineteen checks.
+- `scripts/check-marketplace.py:527` — `check_versions`.
+- `scripts/check-marketplace.py:574`, `:700` — `count_crew_markdown_lines`,
   `check_self_claims`.
-- `scripts/check_instructions.py:909` — `main()`: `load_allowance` and twelve `check_*` calls.
+- `scripts/check_instructions.py:911` — `main()`: `load_allowance` and twelve `check_*` calls.
 - `.github/workflows/instruction-budgets.yml:71-93` — the `github.event.before`
   base-sha fix for a `push` to `main`.
 
@@ -941,6 +957,15 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
   absent.
 
 ## Unverified at this anchor
+
+**Partial re-verification at `c0e582fbe` (2026-10-22, L-0725).** The file's `anchor:` is moved to that
+commit, but only these were re-verified against it: the `L-0725` paragraph under the rule list, the
+`check-marketplace.py` section (check count, line numbers, `check_config_reference`), the
+`check_instructions.py` section (line count, typed policy IDs), and the `CONFIG.md` /
+`sabotage.py:3077` citations. `.crew/verify.json` is unchanged by L-0725. Every other claim, the numbered
+rule account and the older `sabotage.py` registration lines included, stays as of the earlier
+anchors named in place and is **unverified at `c0e582fbe`**. Re-derive with `/crew:onboard --refresh
+verification-harness`.
 
 **Partial re-verification at `8f2267e60` (2026-10-20, L-0850 / L-0727 slice 2).** The file's `anchor:`
 is NOT moved: 361 files under `plugin/crew`, `_verify/smoke.sh` and `scripts/check-marketplace.py`
@@ -2439,33 +2464,23 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 **Re-anchored `6053b65d` -> `3a33161c` on 2026-10-01 (L-0555 PR 1: the diagnostic CI verify-gate receipt - `plugin/crew/hooks/scripts/ci_receipt.py`, `.github/workflows/verify-gate.yml` (mmdc pinned at 12.0.0), `plugin/crew/tests/test_ci_receipt.py` - merging origin/main `ffd11270` (L-0557 #300, crew 1.0.114) at `751d6d2a` with rerere disabled, crew 1.0.116, skipping 1.0.115 claimed by another lane).** Refresh-artifact conflicts were resolved by taking main's side and redoing this pass. `git diff --name-only 6053b65d 3a33161c` outside refresh artifacts returns L-0555's paths only: the three new files, `.crew/verify.json` (one rule appended last, at `.crew/verify.json:481`), `CHANGELOG.md` (+16 lines at the top), `plugin/crew/README.md` (+23 lines in section 17), `scripts/gate-runner.py` (+2 lines in EXCLUDED_WORKFLOWS), `plugin/crew/BUDGETS.md` (count only) and the version files. A difflib re-map of every path-qualified citation into those files (history notes skipped) moved nine `CHANGELOG.md` citations in `crew.md` by +16 and six `plugin/crew/README.md` citations in `repo-docs.md` by +23; every other citation maps onto itself. No suite was executed for this note.
 
-
 **Re-anchored `3a33161c` -> `79c116b4` on 2026-10-01 (L-0555 gate fix: `ci_receipt.py` asks `review_gate.gate_state` for NO_GATE instead of reading `.crew/config.json` itself; `plugin/crew/BUDGETS.md` count corrected; crew 1.0.116 re-set at `79c116b4`).** `git diff --name-only 3a33161c 79c116b4` outside refresh artifacts returns `plugin/crew/hooks/scripts/ci_receipt.py` and `plugin/crew/BUDGETS.md` (the count line only, changed in place, so the `plugin/crew/BUDGETS.md:10` and `:11` citations keep their lines; the version files net to no change). No note cites `ci_receipt.py` at a line, so every citation maps onto itself. No suite was executed for this note.
-
 
 **Re-anchored `79c116b4` -> `8b21ecc3` on 2026-10-01 (L-0555 pre-review fix: `ci_receipt.py` resolves gh with shutil.which and folds the check reason onto one line; crew 1.0.116 re-set).** `git diff --name-only 79c116b4 8b21ecc3` outside refresh artifacts returns `plugin/crew/hooks/scripts/ci_receipt.py` and `plugin/crew/tests/test_ci_receipt.py` (the version files net to no change). No note cites either at a line, so every citation maps onto itself. No suite was executed for this note.
 
-
 **Re-anchored `8b21ecc3` -> `1e2762a0` on 2026-10-02 (L-0555 review round 1 fixes: `ci_receipt.py` requires the receipt's gate_impl to match HEAD's and its docstring says diagnostic; the verify.json rule is priced 10s from measured runs; crew 1.0.116 re-set).** `git diff --name-only 8b21ecc3 1e2762a0` outside refresh artifacts returns `plugin/crew/hooks/scripts/ci_receipt.py`, `plugin/crew/tests/test_ci_receipt.py` and `.crew/verify.json` (the last rule's line edited in place, no line moved); the version files net to no change. Every citation maps onto itself. No suite was executed for this note.
-
 
 **Re-anchored `1e2762a0` -> `b10e3895` on 2026-10-02 (L-0555 review round 2 fixes: `ci_receipt.py` treats an unreadable stand-down as UNKNOWN, re-reads the stand-down at the last look, and anchors the origin host to github.com; crew 1.0.116 re-set).** `git diff --name-only 1e2762a0 b10e3895` outside refresh artifacts returns `plugin/crew/hooks/scripts/ci_receipt.py` and `plugin/crew/tests/test_ci_receipt.py`; the version files net to no change. No code map cites a line of either file, so every citation maps onto itself. No suite was executed for this note.
 
-
 **Re-anchored `b4f04e23` -> `fa63852d` on 2026-10-02 (L-0555 merges origin/main `dd95135a`, L-0578 #304, crew 1.0.119, at `fa63852d` with rerere disabled; crew 1.0.127).** The merge took main's anchor and INDEX rows and kept both lanes' re-anchor notes. L-0555's own change against main is `ci_receipt.py`, `test_ci_receipt.py`, `.github/workflows/verify-gate.yml`, `scripts/gate-runner.py`, one `.crew/verify.json` rule (line 454 edited in place, 455 appended), `plugin/crew/README.md` (+23 lines after `:2167`), `CHANGELOG.md` (+17 lines at the top) and the version and count lines. Citations moved by difflib: `CHANGELOG.md` +17 in `crew.md`'s current-citation lines, `plugin/crew/README.md` +23 past `:2167` in `repo-docs.md` (nine). No suite was executed for this note.
-
 
 **Re-anchored `fa63852d` -> `f937576e` on 2026-10-02 (L-0555 merges origin/main `04dde5a2`, W-0120 #307, the claude- prefix renames, at `f937576e` with rerere disabled; crew 1.0.127).** Only `CHANGELOG.md` conflicted. Citations moved by difflib: this lane's `CHANGELOG.md` lines in `crew.md` +26 (W-0120's entry), `README.md:736` -> `:749` (three, in `repo-docs.md` and `install-scripts.md`) and `skills/README.md:15` -> `:28`. No suite was executed for this note.
 
-
 **Re-anchored `f937576e` -> `af59b237` on 2026-10-02 (L-0555 merges origin/main `d2ec37d3`, W-0120 #308, README install URLs re-pinned to `04dde5a2`).** The merge changed `README.md:12` and `:18` in place; no line moved. The install-URL pin landmines in `install-scripts.md` and `repo-docs.md` now state the `04dde5a2` pin, and `git log --oneline 04dde5a2..af59b237 -- scripts/install-prerequisites.sh scripts/install-prerequisites.ps1` is empty. No suite was executed for this note.
-
 
 **Re-anchored `af59b237` -> `7e18daf8` on 2026-10-02 (L-0555 merges origin/main `c7a9e649`: L-0572 #309 (subset coverage under --all, crew 1.0.126), runner auto-start #295, L-0593 #312/#313; rerere disabled; crew 1.0.127).** Conflicts: version files, CHANGELOG (both entries, L-0555's on top), BUDGETS count, `.crew/verify.json` (L-0555's rule then L-0572's), `crew.md`'s version sentence, generated rules. Main's notes for L-0572 came in unchanged. Every main-side citation into a file this branch changes resolves to the same line (difflib), except one historical `CHANGELOG.md:1396` in a past-tense note, left as written. No suite was executed for this note.
 
-
 **Re-anchored `d6e51bb8` (main) and `7e18daf8` (L-0555) -> `5467b110` on 2026-10-02 (L-0555 merges origin/main `75681fba`: L-0577 #305, T-0107 #273 (gizmoduck 0.5.5); rerere disabled; crew 1.0.127).** The header conflict took main's anchor and both sides' provenance notes, main's first; the install-URL pin bullet took main's equivalent wording. Citations moved by difflib: this lane's `CHANGELOG.md` lines in `crew.md` +86 (the entries main added). Main-side citations into files this branch changes resolve to the same text. No suite was executed for this note.
-
 
 **Re-anchored `5467b110` -> `2594c90f` on 2026-10-02 (L-0555 merges origin/main `a9b4734d`, L-0576 #306, crew 1.0.128; rerere disabled; crew 1.0.132).** 9 citation(s) moved by difflib from `5467b110` to HEAD, each checked to cite the same line text (L-0576 shifted `plugin/crew/README.md` by two lines and `docs/guides/crew/src/troubleshooting.md` by five); citations written by L-0576 itself into this map are left as main has them.
 
@@ -2642,8 +2657,6 @@ moved for it because the earlier sections were not re-verified against the commi
 
 **L-0711, 2026-10-08 (L-0711-scope-reader, on origin/main `c25ef990`); anchor NOT moved.** DERIVED: `plugin/crew/tests/test_scope_report.py` now builds crew 1.0 tickets with `scope_fixtures` (real repositories under `tmp_path`) and drives `verify-gate.sh` and, as `slow`, `verify-gate.ps1` end to end for the scope line; `plugin/crew/tests/test_completion_audit.py:322` / `:333` run a real `sed -i` against `completion_audit.py --check`. `test_scope_base.py`'s `_ticketed` writes the 1.0 layout; its four scope_report test names, which `sabotage.py` targets, are unchanged. The sabotage entries for the new reader land in the harness PR (`sabotage_scope.py`).
 
-
-
 **L-0711 harness half, 2026-10-08 (L-0711-sabotage, stacked on L-0711-scope-reader); anchor NOT moved.** DERIVED: `plugin/crew/tests/sabotage_scope.py` gains `SCOPE_REPORT` and seven `SCOPE_MUTATIONS` entries at its tail (the pre-1.0 spec location, the pre-1.0 guard, an unapproved Touch judged, the fnmatch matcher back, the report's own changed list, merged main counted, and `completion_audit.py --check` returning 0 on a refusal), each red on its named test in `test_scope_report.py` or `test_completion_audit.py`. Review round 4 adds three more (fifteen in all: an unreadable INDEX read as no open ticket, merged main's could-not-tell dropped, a file name printed raw). Review round 3 added five: the gate's stdin list keeping merged-main-identical paths, `.crew/` and `TODO.md` back as bookkeeping (two entries), an INDEX ticket with no folder read as no open ticket, and `verify-gate.sh` (`VERIFY_SH`) exiting 2 after the scope call, red on `test_both_gates_print_the_same_scope_line[sh-outside]`.
 
 **L-0709 (crew 1.2.21, 2026-10-10; not re-anchored).** New here, DERIVED from the L-0709 diff: `plugin/crew/tests/conftest.py` adds a sixth isolation channel, the home directory. `_isolate_home` (called from `pytest_configure`) records the real homes in `CREW_TEST_REAL_HOME` for xdist workers, sets a session-wide HOME/USERPROFILE/`XDG_CONFIG_HOME`/`XDG_DATA_HOME`/`XDG_STATE_HOME`, carries `PYTHONUSERBASE` and pwsh's CurrentUser module directory, and installs `crew_fixtures.home_audit`; the autouse `_isolated_home` narrows the home to `tmp_path_factory.mktemp("home")` per test and removes `CREW_TEST_REAL_HOME` from it; `pytest_runtest_setup`/`pytest_runtest_teardown` wrappers keep the audit on from the first fixture setup to the last teardown and fail the test with every path it recorded (an open under a real home, by spelling or resolved symlink, outside the checkout, interpreter and temp dir; or a spawn handed a real HOME or a directory inside one). The same conftest registers `quarantine(owner, ticket, reason)`, deselected unless `-m` names it or a command-line node id names the test (the sabotage suite's per-entry form), and refuses at collection a quarantine without owner or ticket, or a skip/skipif/xfail whose reason says flaky/timing/intermittent. `plugin/crew/tests/test_hermetic_home.py` covers all of it. JUDGEMENT: no rule in `.crew/verify.json` needed a change; rule 9 (the whole-suite rule) already matches `conftest.py` and `crew_fixtures.py`.
@@ -2657,6 +2670,5 @@ moved for it because the earlier sections were not re-verified against the commi
 **Re-anchored `09e31dba` -> `0bf364417` on 2026-10-17 (L-0796, crew 1.2.39, quiet Stop gate).** Scope of this check is the ticket's own change, `git diff --name-only 786687e60..0bf364417`: `verify-gate.sh` (+258) and `verify-gate.ps1` (+343) grew above most of their cited lines, `verify_fingerprint.py` gained 5 lines at `:192`, `crew_fixtures.py` 7 lines, the sabotage tables a few lines in place, and `CONFIG.md` one 44-line insertion at `:3056` (after every `CONFIG.md` line cited here). Every cited `verify-gate.sh` / `.ps1` / `crew_fixtures.py` / `sabotage*.py` / `CONFIG.md` line was shifted by the hunks of that diff (a script walking the `-U0` hunks, no cited line fell inside a hunk); version lines (`plugin.json:3`, `marketplace.json`, `PLUGINS.md`, `BUDGETS.md`) and README lines changed in place and moved nothing. NOT VERIFIED: that each shifted citation still says what its sentence claims. This pass did not re-read them, and drift from the commits between `09e31dba` and `786687e60` is not re-derived here; `/crew:onboard --refresh` is the full pass. Nothing was executed for this note.
 
 **Re-anchored `291801622` -> `c1d365d72` on 2026-10-20 (L-0850 / PR #656 close).** Per-path re-verify of every `path:line` outside the re-anchor history paragraphs, by diffing each cited file at `291801622` against HEAD. Moved: `scripts/check_instructions.py` `main()` `:685` -> `:909` (main landed it; it now makes `load_allowance` plus twelve `check_*` calls, no longer nine, so the line-906 entry is corrected); the `.crew/verify.json:672-684` entry for `crew-hook-dispatcher` is already current at HEAD (the rule opens at `:672`). `.crew/verify.json:673` in the L-0680 paragraph and the other historical re-anchor paragraphs are history, not live claims, and were not re-mapped. NOT re-read word for word: claims whose cited lines did not move.
-
 
 **Re-anchored `c1d365d72` -> `9ba355d7c` on 2026-10-20 (L-0850 / PR #656 close: the docs and artifact refresh commit, owner waiver 2026-10-20).** `git diff 9ba355d7c~1 9ba355d7c` changes only docs, diagrams, codemap, rules and graph output; the one code-adjacent text is `plugin/crew/README.md` (+2 lines after line 366, inside section 25) and `SECURITY.md` (+4 lines after line 46). Every live `path:line` citation into those two files was checked: this note has none at or after those lines outside its re-anchor history paragraphs (whose lines describe past moments and are not re-mapped), and `plugin/crew/BUDGETS.md` only changed a count in place (line 11, line-neutral). No citation changed. NOT re-read word for word: prose claims whose cited lines did not move.
