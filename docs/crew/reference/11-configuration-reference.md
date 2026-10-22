@@ -86,7 +86,7 @@ and machine-global. A lane that wants its own guards writes its own
 copied into each script that uses it) resolve the same directory by the same
 rules, without python. Routed through them: the incident stand-down read
 (`emergency.standDown`, in `_common.sh` for every bash gate and in
-`promote-gate.ps1`), both cloud-guard no-python fallbacks, and `auto-clear.ps1`'s
+`promote-gate.ps1`), the cloud-guard no-python fallback, and `auto-clear.sh`'s
 repo veto. In the cloud guard's fallback an `unknown` source counts as armed: a
 lane whose git cannot name its main checkout, with no usable python, refuses Bash
 until one works. Inheritance can loosen as well as tighten: an inherited
@@ -393,8 +393,8 @@ of anyone who cloned it. So `allow` needs **both** layers to say `allow`, and
 ### Cloud guard
 
 A `PreToolUse` hook on the **Bash and PowerShell** tools
-(`hooks/scripts/cloud-guard.sh` / `cloud-guard.ps1`, both delegating to
-`cloud_guard.py`). **It ships off** — `guards.cloudGuard: "off"` — because a
+(`hooks/scripts/cloud-guard.sh`, delegating to `cloud_guard.py`; its
+PowerShell twin was deleted in L-0727 slice 3, so a `PowerShell` call is judged by the `.sh`). **It ships off** — `guards.cloudGuard: "off"` — because a
 hook that can block defaults off. Set it to `report` first: every decision it
 *would* make goes to `.crew/guard.log` and nothing is refused. `block` enforces.
 A repo cannot turn off a machine-global `block`.
@@ -853,8 +853,8 @@ are a provider seam only: any key other than `aws` refuses as not implemented.
 ### Environment guard
 
 A `PreToolUse` hook on the **Bash and PowerShell** tools
-(`hooks/scripts/env-guard.sh` / `env-guard.ps1`, both delegating to
-`env_guard.py`; L-0772). It exists because a command that prints the process
+(`hooks/scripts/env-guard.sh`, delegating to `env_guard.py`; L-0772; its
+PowerShell twin was deleted in L-0727 slice 3, so a `PowerShell` call is judged by the `.sh`). It exists because a command that prints the process
 environment puts every credential in it into the agent's context, and from
 there into the session transcript on disk and the conversation sent to the
 model provider. **It ships off** — `guards.envGuard: "off"` — because a hook

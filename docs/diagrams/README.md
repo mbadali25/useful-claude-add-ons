@@ -224,10 +224,10 @@ flowchart LR
 | `NP2` | _role_write_fallback_decision() :326-346. Cannot evaluate guards.roleWrites (off/report/pm's own path allowances) at all - only tells a restricted role from an unrestricted one via the deny-list mirror |
 | `NP3` | Unrestricted role: allowed unjudged. Restricted role (pm or _DENY_ROLES) OR a role this fallback could not even read: ALWAYS BLOCKED (exit 2), regardless of what guards.roleWrites actually says :339-345 |
 | `CG1` | crew_py_strict plugin/crew/hooks/scripts/_common.sh finds no usable interpreter, or cloud_guard.py exits non-zero (cloud-guard.sh:55-78) |
-| `CG2` | _cloud_guard_armed plugin/crew/hooks/scripts/cloud-guard.sh:40; armed when the resolver is missing. The repo file is crew_repo_config_dir's (_common.sh:328): a lane with no config of its own reads the main checkout's. Twin: Test-CloudGuardArmed in cloud-guard.ps1 through Get-CrewRepoConfigDir. |
+| `CG2` | _cloud_guard_armed plugin/crew/hooks/scripts/cloud-guard.sh:40; armed when the resolver is missing. The repo file is crew_repo_config_dir's (_common.sh:328): a lane with no config of its own reads the main checkout's. (Its PowerShell twin, Test-CloudGuardArmed in cloud-guard.ps1, was deleted in L-0727 slice 3.) |
 | `CG3` | source unknown, or any cloudGuard value other than off in either file: exit 2 (refuse). Otherwise exit 0, unjudged. |
 | `EG1` | crew_py_strict finds no usable interpreter, or env_guard.py exits non-zero (env-guard.sh:53-76). |
-| `EG2` | _env_guard_armed plugin/crew/hooks/scripts/env-guard.sh:38, the same shape as _cloud_guard_armed: armed when the resolver is missing; the repo file is crew_repo_config_dir's. Twins: Test-EnvGuardArmed in env-guard.ps1, and env_guard._crude_armed in python when crew's own config readers raise. |
+| `EG2` | _env_guard_armed plugin/crew/hooks/scripts/env-guard.sh:38, the same shape as _cloud_guard_armed: armed when the resolver is missing; the repo file is crew_repo_config_dir's. Twin: env_guard._crude_armed in python when crew's own config readers raise. |
 | `EG3` | source unknown, or any envGuard value other than off in either file: exit 2 (refuse). Otherwise exit 0, unjudged. |
 
 - **Source:** `data-flow-crew-config-no-python.mmd`
@@ -336,7 +336,7 @@ flowchart TB
 | `DEF` | default_config() plugin/crew/hooks/scripts/crew_config.py:245 141 leaves (executed on batch-7-build after merging T-0011, whose three repo-only ship keys made main's 138 into 141) composed from crew_state's PM_DEFAULTS :1145, QA_DEFAULTS :1197, DEV_DEFAULTS :1207, WORKTREE_DEFAULTS :1235, CONTEXT_DEFAULTS :770, RESUME_DEFAULTS :733, AUTOPILOT_DEFAULTS :1133 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 / CHANGE_BLOCK :203 |
 | `GLB` | ~/.claude/crew/config.json read_global_config() plugin/crew/hooks/scripts/crew_config.py:767 never raises - absent, malformed or non-object all return {}, because this is reached from a SessionStart hook |
 | `REPO` | .crew/config.json - schema 7 crew_state.load_config() plugin/crew/hooks/scripts/crew_state.py:267 NOT the same file crew_context.py reads first - see the TwoFiles section below |
-| `RES` | which .crew/ the repo file is read from. Python: crew_common.repo_config_dir plugin/crew/hooks/scripts/crew_common.py:96 (T-0088). bash: crew_repo_config_dir plugin/crew/hooks/scripts/_common.sh:328; PowerShell: Get-CrewRepoConfigDir, one body copied into cloud-guard.ps1:192, promote-gate.ps1:142, auto-clear.ps1:132 (T-0096). Own config.json or crew.json wins whole; else a linked worktree reads the main checkout's; unknown (git cannot tell) inherits nothing. L-0680 adds the session hooks (notify, handoff-read, handoff-write, context-watch, both flavours; the .ps1 copies at handoff-read.ps1:186, handoff-write.ps1:286, context-watch.ps1:29). T-0051 made notify.ps1 a thin wrapper around crew_notify.py with no resolver copy of its own. Still own-file only: the verify gate, the scope and completion wrappers. |
+| `RES` | which .crew/ the repo file is read from. Python: crew_common.repo_config_dir plugin/crew/hooks/scripts/crew_common.py:96 (T-0088). bash: crew_repo_config_dir plugin/crew/hooks/scripts/_common.sh:328; PowerShell: Get-CrewRepoConfigDir, one body copied into promote-gate.ps1:142 (T-0096; the copies in cloud-guard.ps1 and auto-clear.ps1 went with L-0727 slice 3). Own config.json or crew.json wins whole; else a linked worktree reads the main checkout's; unknown (git cannot tell) inherits nothing. L-0680 adds the session hooks (notify, handoff-read, handoff-write, context-watch, both flavours until L-0727 slice 3 deleted the .ps1 copies of those five hooks). T-0051 made notify a thin wrapper around crew_notify.py with no resolver copy of its own. Still own-file only: the verify gate, the scope and completion wrappers. |
 | `TMPL` | default_global_config() plugin/crew/hooks/scripts/crew_config.py:432 81 leaves (executed, batch-7-build) across 20 blocks: autopilot (T-0050's five personal keys), qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves), notify, pm, context.autoClear (8 of 9 - unsafeFocus is excluded, see AutoClear below), resume, docs, bitbucket, github, install, guards (all TEN names), environments (prodUnattended only), change, git, route, shellRoute - the single definition both rules below are enforced against |
 | `PRUNE` | _prune() plugin/crew/hooks/scripts/crew_config.py:699 keeps only keys present in the template. Descends structurally, so naming a block grants only the leaves under it. |
 | `FILT` | filter_global() plugin/crew/hooks/scripts/crew_config.py:725 returns (kept, ignored) |
@@ -436,10 +436,10 @@ flowchart TB
 | Box | Details |
 |---|---|
 | `CFGREAD` | crew_config.py reads ONLY .crew/config.json (schema 7) module docstring :1; ratchet, guards, verify-gate.sh, /crew:config, /crew:model all route through this module |
-| `CTXREAD` | crew_context.load_crew_config() plugin/crew/hooks/scripts/crew_context.py:122-133 tries .crew/crew.json FIRST, falls back to .crew/config.json only if crew.json is absent |
+| `CTXREAD` | crew_context.load_crew_config() plugin/crew/hooks/scripts/crew_context.py:124-135 tries .crew/crew.json FIRST, falls back to .crew/config.json only if crew.json is absent |
 | `MIGRATE` | crew_migrate.py --apply the ONLY writer of .crew/crew.json (schema 1). Rewrites config.json only for a pre-0.20 config (no schema, or 1-6: the upgrade stage, _load_legacy / _plan_upgrade, T-0038), backed up and restored byte-identical by --rollback - crew_config.py keeps reading config.json regardless |
 | `OPEN` | L-0713: .crew/config.json is the repo config - /crew:init writes it and every gate reads it. Only a repo that has run --apply has BOTH files, and there crew_context, crew_resume, crew_refresh_check, crew_tracker and crew_diagrams read crew.json first. |
-| `TRKREAD` | crew_tracker.resolve() plugin/crew/hooks/scripts/crew_tracker.py:212 tracker key only: reads BOTH files (crew.json tracker.kind, config.json tracker) and answers 'could not tell' when they disagree - on the kind, on the vault, boardDir, board or lane names each yields (defaults and memory.vaultPath fallback applied; a value only one file yields counts), or on a jira/sdp block - refuses rather than picks |
+| `TRKREAD` | crew_tracker.resolve() plugin/crew/hooks/scripts/crew_tracker.py:267 tracker key only: reads BOTH files (crew.json tracker.kind, config.json tracker) and answers 'could not tell' when they disagree - on the kind, on the vault, boardDir, board or lane names each yields (defaults and memory.vaultPath fallback applied; a value only one file yields counts), or on a jira/sdp block - refuses rather than picks |
 
 - **Source:** `data-flow-crew-config-two-files.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_context.py`, `plugin/crew/hooks/scripts/crew_migrate.py`, `plugin/crew/hooks/scripts/crew_tracker.py`
@@ -908,35 +908,35 @@ The crew-context SessionStart hook: how it reads the config, applies the stale-h
 flowchart TB
     CC[crew-context]
     subgraph crewContext["crew-context (crew_context.py)"]
-        CC --> cc1{".crew/ directory?<br/>:993"}
+        CC --> cc1{".crew/ directory?<br/>:1149"}
         cc1 -- no --> ccx([emit nothing])
-        cc1 -- yes --> cc2["read crew.json else config.json<br/>:121-132"]
-        cc2 --> cc3{"memory.inject?<br/>:1000-1003"}
-        cc3 -- off --> cc4[incident banner only]
-        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:881-892"]
+        cc1 -- yes --> cc2["read crew.json else config.json<br/>:124-135"]
+        cc2 --> cc3{"memory.inject?<br/>:1159"}
+        cc3 -- off --> cc4[incident banner<br/>+ inert-settings line only]
+        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:1019-1034"]
         cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch"}
-        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:774, :980"]
+        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:722, :927"]
         stale -- no --> cc6
         arch --> cc6
-        stale -. "stale but the move failed:<br/>note stays, stale passed on (:893)" .-> cc6
-        cc6{"auto-resume armed?<br/>:900"}
+        stale -. "stale but the move failed:<br/>note stays, stale passed on (:1042)" .-> cc6
+        cc6{"auto-resume armed?<br/>:1042"}
         cc6 -- "no (off)" --> src{"source?"}
-        cc6 -- "run / wait" --> rs1["one line: ready to run,<br/>or did not start: reason<br/>resume_line :687"]
+        cc6 -- "run / wait" --> rs1["one line: ready to run,<br/>or did not start: reason<br/>resume_line :824"]
         rs1 --> src
-        src -- startup --> ptr["pointer + next action<br/>:908-910"]
-        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:911-923"]
+        src -- startup --> ptr["pointer + next action<br/>:1062-1065"]
+        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:1066-1077"]
     end
 
-    ptr --> out(["additionalContext JSON<br/>:1090"])
+    ptr --> out(["additionalContext JSON<br/>:1253"])
     full --> out
     cc4 --> out
 ```
 
 | Box | Details |
 |---|---|
-| `stale` | crew_state.py:646, :859-914 |
-| `cc6` | machine resume.auto true, no repo veto; source clear / manual compact; note written by this session (T-0042); :900, crew_resume.decide |
-| `rs1` | ready to run the re-rendered command; resume_line :687, never initialUserMessage |
+| `stale` | crew_state.py:584, :791-870 |
+| `cc6` | machine resume.auto true, no repo veto; source clear / manual compact; note written by this session (T-0042); :1042, crew_resume.decide |
+| `rs1` | ready to run the re-rendered command; resume_line :824, never initialUserMessage |
 
 - **Source:** `process-crew-brief-crew-context.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew-context.sh`, `plugin/crew/hooks/scripts/crew_context.py`, `plugin/crew/hooks/scripts/crew_resume.py`, `plugin/crew/hooks/scripts/crew_state.py`
@@ -1325,7 +1325,7 @@ flowchart LR
 
 ## Process qa audit
 
-generated by crew qa_doc.py on 2026-10-20. Verify before trusting.
+generated by crew qa_doc.py on 2026-10-22. Verify before trusting.
 
 ```mermaid
 flowchart LR
@@ -1341,7 +1341,7 @@ flowchart LR
 
 ## Process qa gates
 
-generated by crew qa_doc.py on 2026-10-20. Verify before trusting.
+generated by crew qa_doc.py on 2026-10-22. Verify before trusting.
 
 ```mermaid
 flowchart TD
@@ -1361,7 +1361,7 @@ flowchart TD
 
 ## Process qa ladder
 
-generated by crew qa_doc.py on 2026-10-20. Verify before trusting.
+generated by crew qa_doc.py on 2026-10-22. Verify before trusting.
 
 ```mermaid
 flowchart LR

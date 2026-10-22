@@ -158,8 +158,8 @@ that inherits a config, or in one where git could not tell.
 **The shell and PowerShell resolvers (crew 1.0.330, T-0096).** `crew_repo_config_dir` in
 `hooks/scripts/_common.sh` sets `CREW_CFG_DIR` and `CREW_CFG_SOURCE` (`own`, `main`
 or `unknown`) by rules 1-4 above, with no python; `Get-CrewRepoConfigDir`, one
-body copied verbatim into `cloud-guard.ps1`, `promote-gate.ps1` and
-`auto-clear.ps1`, is its PowerShell twin. `tests/test_worktree_config_shell.py`
+body copied verbatim into `promote-gate.ps1` (and, until L-0727 slice 3
+deleted them, `cloud-guard.ps1` and `auto-clear.ps1`), is its PowerShell twin. `tests/test_worktree_config_shell.py`
 holds both to `crew_common.repo_config_dir` case by case and the copies
 byte-identical. Windows PowerShell 5.1 cannot resolve a symlink the way
 `realpath` does, so on every PowerShell (7 as well) a symlink, a junction, or an
@@ -169,9 +169,9 @@ PowerShell resolver compares reads `unknown`, never `main`. It pins
 survives a console on the OEM code page. In the cloud guard's bash fallback a
 missing resolver (`_common.sh` failed to source) also counts as armed. Routed: the `emergency.standDown` read (`_common.sh`'s
 `crew_incident_active`, `promote-gate.ps1`), the cloud guard's no-python fallback
-in both flavours, where **`unknown` counts as armed**, and `auto-clear.ps1`'s repo
-veto, and (L-0680) the session hooks `notify`, `handoff-read`, `handoff-write` and
-`context-watch` in both flavours, whose writes stay in the worktree (except notify's:
+in both flavours until slice 3, where **`unknown` counts as armed**, and
+`auto-clear`'s repo veto, and (L-0680) the session hooks `notify`, `handoff-read`,
+`handoff-write` and `context-watch`, whose writes stay in the worktree (except notify's:
 since T-0051 `crew_notify.py` writes its dedupe state to `<git-common-dir>/crew/notify`,
 shared by every worktree) and whose
 inherited `context.handoffPath` stays inside the worktree (one that leaves it, or
@@ -805,8 +805,8 @@ Regenerate with `python3 docs/guides/crew/src/config_reference.py --write` from 
 | `memory.mode` | both | not validated - read by `skills/crew-memory/SKILL.md` (expects string) | `"repo"` |
 | `memory.vaultPath` | both | not validated - read by `hooks/scripts/crew_recall.py` (expects path or null) | `null` |
 | `context.autoClear.enabled` | machine-arms | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_autocycle.py`) | `null` |
-| `context.autoClear.method` | both | `auto` \| `none` \| `notify` \| `tmux` \| `xdotool` \| `wtype` \| `sendkeys`; per OS: linux: auto, none, notify, tmux, xdotool, wtype; macos: auto, none, notify, tmux; windows: auto, none, notify, sendkeys; windows-bash: auto, none, notify, tmux, sendkeys | `"auto"` |
-| `context.autoClear.windowTitle` | both | not validated - read by `hooks/scripts/auto-clear.ps1` (expects string or null) | `null` |
+| `context.autoClear.method` | both | `auto` \| `none` \| `notify` \| `tmux` \| `xdotool` \| `wtype`; per OS: linux: auto, none, notify, tmux, xdotool, wtype; macos: auto, none, notify, tmux; windows: auto, none, notify; windows-bash: auto, none, notify, tmux | `"auto"` |
+| `context.autoClear.windowTitle` | both | not validated - read by `hooks/scripts/crew_autocycle.py` (expects string or null) | `null` |
 | `context.autoClear.command` | both | not validated - read by `hooks/scripts/crew_autocycle.py` (expects string) | `"/clear"` |
 | `context.autoClear.delaySeconds` | both | number (coerced in `hooks/scripts/crew_autocycle.py`) | `3` |
 | `context.autoClear.minHandoffLines` | both | number (coerced in `hooks/scripts/crew_autocycle.py`) | `5` |
@@ -1200,8 +1200,8 @@ machine-wide switch, the OWNER DECISION (crew 1.0 F4, reversing the file-based
 gate this section used to describe) is that it works in *any* crew repo, not
 only ones that have run `/crew:init` far enough to have written a
 `.crew/config.json` of their own. "Crew repo" is read the same way both
-senders now agree: `.crew/` the DIRECTORY exists. `auto-clear.sh`/
-`auto-clear.ps1` gate on it directly; `context-watch.sh`/`.ps1` gate their OWN
+senders now agree: `.crew/` the DIRECTORY exists. `auto-clear.sh`
+gates on it directly; `context-watch.sh` gates its OWN
 handover to auto-clear the same way, while their OWN context-window warnings
 and wrap-up prompts keep requiring a real `.crew/config.json` underneath —
 sizing a token budget against nothing is not a warning worth printing, so that
@@ -1222,8 +1222,8 @@ any more. The ordering matters for a second reason beyond "is this a crew
 repo": the enabled/narrowing check must ALSO run before anything is written,
 or a disabled or narrowed-out repo stops being silent — it starts leaving a
 `.crew/.autoclear.log` behind (even one line saying "refusing") the moment it
-falls through to a refusal path instead of the silent `off` one. Both
-`auto-clear.sh` and `auto-clear.ps1` special-case `off` (the enabled check,
+falls through to a refusal path instead of the silent `off` one. `auto-clear.sh`
+special-cases `off` (the enabled check,
 then the `onlyRepos`/`onlySessions` narrowing) as an unconditional, silent
 `exit 0` reached *before* the log file or its logging function is armed —
 never a `note()`/`Write-CrewAutoClearNote` call. See `plugin/crew/tests/test_auto_clear_order.py`
@@ -1251,7 +1251,7 @@ for.
 | `"xdotool"` | Types into the one X11 window owned by an ancestor of this session's own process and hosting no other terminal (or matching `windowTitle`). | Linux with `xdotool` installed |
 | `"wtype"` | Refused outright — see `unsafeFocus`, above. | Wayland (declared, never granted) |
 | `"notify"` | Types nothing. Prints a `systemMessage` saying the handoff is written and verified and it is safe to run the configured `command` yourself. Never claims anything was cleared or compacted, because nothing was. | everywhere |
-| `"sendkeys"` | `System.Windows.Forms.SendKeys` against the one window owned by an ancestor of this session's own process (or matching `windowTitle`), confirmed still foreground at send time. **Opt-in only — `auto` never chooses it.** Windows Terminal hosts every tab in ONE OS window, so the foreground-window check alone cannot tell which tab is showing: when the target window is owned by Windows Terminal, `auto-clear.ps1` also asks UI Automation how many tabs it has. It types only when that check finds **exactly one tab** — a window with one tab has that tab selected by definition, so that case needs no further proof. Two or more tabs **always declines**, however confidently a tab's shell-set name matches `windowTitle` or reads as selected: there is no tab-to-pid mapping, so a "proven" match is still a guess about which tab is this session's, and a wrong guess types into someone else's work. UI Automation being unavailable, throwing, or finding zero tab elements declines the same way and for the same reason — "could not tell" is never treated as safe. Every decline **falls back to `notify`**, logging why to `.crew/.autoclear.log`; it never falls back to sending regardless. A non-Windows-Terminal console host (e.g. `conhost`) has no tabs to disambiguate and is unaffected by any of this. | native Windows only |
+| `"sendkeys"` | **Removed in crew 1.2.61 (L-0727 slice 3).** The Windows-only keystroke sender lived in `auto-clear.ps1`, which is deleted; `resolve_method` and `crew_autoclear_setup.py` refuse it with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or tmux", and `crew_platform` lists it for no OS. `auto` never chose it. | nowhere |
 | `"none"` | Refused outright, deliberately. | everywhere |
 
 **`auto`'s per-platform pick, an OWNER DECISION:** a tmux pane if `$TMUX` names
@@ -1259,9 +1259,9 @@ one and `tmux` is on PATH; else an X11 window if `$DISPLAY` is set and
 `xdotool` is on PATH; else **`notify`** on native Windows (`$OS` is
 `Windows_NT`, present in every process tree there — cmd, PowerShell, Git
 Bash alike — and absent inside WSL, which has its own init); else refused
-(`"no usable method"`). `auto` **never** resolves to `sendkeys`: typing into
-a window this hook found itself is a risk `auto` does not get to accept on
-your behalf. Request `sendkeys` by name to opt in to it.
+(`"no usable method"`). Typing into a window this hook found itself is a risk
+`auto` does not get to accept on your behalf, which is why native Windows
+gets `notify`, and `sendkeys` was removed.
 
 ### Which terminal: this session's own process (T-0016)
 
@@ -1269,7 +1269,7 @@ A `claude -p` child started from a session's Bash tool inherits `$TMUX`, and
 its parent's pane and window are ancestors of its hook, so a target found
 from the hook alone typed `/clear` into the **parent**. Both flavours
 (`crew_autocycle.session_owner`/`classify`/`prove_target`, and the same
-rules natively in `auto-clear.ps1`) now bind first, after the handoff checks
+rules the deleted `auto-clear.ps1` carried natively) now bind first, after the handoff checks
 and the method, before the sent-marker claim:
 
 1. **Owner.** The nearest ancestor of the hook named by a Claude Code session
@@ -1294,14 +1294,14 @@ and the method, before the sent-marker claim:
    in full (a `-p` parent may never show the message). `unknown`: `notify`
    is unchanged, `auto` falls back to plain `notify` (logged), an explicit
    typing method refuses with the reason. `terminal`: `notify` unchanged;
-   tmux, xdotool and sendkeys are proven from the owner.
+   tmux and xdotool are proven from the owner.
 4. **Target, from the owner.** tmux: the pane's pid is the owner or an
    ancestor of it, and every process from the owner up to the pane is on the
    owner's tty or on none — a pane reached through a process on another tty
    is someone else's terminal (an interactive child on its own pty under its
    parent's pane, whose parent's record is in another config dir and whose
    name is not `claude`, is caught only by this), and a tty that cannot be
-   read refuses. xdotool/sendkeys: the window is owned by a strict ancestor
+   read refuses. xdotool: the window is owned by a strict ancestor
    (never the claude process itself). The walk refuses when it passes
    through another Claude Code process or another live session record (a
    child under its parent's pane or window), or when the chain could not be
@@ -1311,9 +1311,7 @@ and the method, before the sent-marker claim:
    `tty_nr`, another live session, or a process scan that fails — because
    one terminal server owns one X window for many tabs and a sibling can be
    invisible to a record scan (`tmux attach`, ssh, another config dir, a
-   plain shell). `sendkeys` refuses a window whose owner is also above
-   another live session; Windows Terminal's one-tab rule (above) still
-   applies. A window found by `windowTitle` alone, or one with no owning
+   plain shell). A window found by `windowTitle` alone, or one with no owning
    process (pid ≤ 1), refuses whenever another live session record exists. A
    record whose process is gone or whose start time names a reused pid is
    not live (Claude Code leaves records behind when a session is killed); a
@@ -1387,8 +1385,8 @@ and the sent-marker claim):
 4. its `resume:` line parses under T-0006's grammar, or is `resume: none`.
 
 Anything that cannot be told — git failing, T-0006's `crew_resume` missing, an
-unreadable handoff — refuses. `auto-clear.sh --force` / `auto-clear.ps1 -Force`
-skip this check along with the handoff checks; they are for testing by hand
+unreadable handoff — refuses. `auto-clear.sh --force`
+skips this check along with the handoff checks; they are for testing by hand
 only — `hooks.json` and context-watch never pass them, and no config key can. A refusal is logged, shown to you as a
 `systemMessage` (`crew wrap-up: not clearing - <reason>`), and fed back to the
 model **once**, at the session's next ordinary Stop (claimed with
@@ -1399,28 +1397,17 @@ a `stop_hook_active` Stop never blocks.
 commits and crew checks the result. Crew checks that a commit happened, not
 that the step's test passed — verify-gate stands down on the forced
 continuation the commit is made on. On native Windows the check needs a
-python (`Resolve-CrewPython`): without one, context-watch.ps1 sends today's
-message and auto-clear.ps1 refuses the clear.
+python: `crew-hook.ps1` (`Resolve-CrewPython`) refuses an armed repo's
+`Stop` that names it (B10), so neither the wrap-up message nor the clear runs
+without one.
 
 ### What the widening costs
 
-`windowTitle` narrows SendKeys down to one window when owner-pid resolution
-alone cannot: `auto-clear.ps1` tries the ancestor terminal process's own pid
-first, and only reaches for `windowTitle` when that pid owns zero or several
-windows (the exact decline text is "the terminal that owns this session (pid
-N) has N windows and nothing narrows them to one - set
-context.autoClear.windowTitle"). On Windows Terminal specifically, this is
-not a rare fallback — **it is effectively mandatory as soon as more than one
-Windows Terminal window is open on the desktop.** Windows Terminal hosts
-every WINDOW (not just every tab) on one desktop inside a single process, so
-every one of a user's open Windows Terminal windows reports the SAME owning
-pid. The owner-pid walk then matches all of them, not just this session's,
-and declines unless `windowTitle` narrows the match to one — measured
-2026-09-24: four Windows Terminal windows open on one desktop all reported
-pid 14164. A repo that never sets `windowTitle` will work the day someone
-tests it with exactly one Windows Terminal window open, and silently stop
-working (declining, never sending into the wrong window — but doing nothing
-either) the day a second one opens.
+`windowTitle` narrows the `xdotool` match down to one X11 window when
+owner-pid resolution alone cannot: `crew_autocycle.py` tries the ancestor
+terminal process's own pid first, and only reaches for `windowTitle` when that
+pid owns zero or several windows. (It also narrowed the Windows `sendkeys`
+method, removed in crew 1.2.61, L-0727 slice 3.)
 
 Machine-global is the right home for `windowTitle` — a terminal's title is a
 property of the machine — but **a wrong global value now aims keystrokes at
@@ -1428,17 +1415,16 @@ the wrong window in every repo on that machine rather than in one.** That is
 the trade, taken deliberately.
 
 **`--dry-run`'s delay line never states a number for `notify`.** `notify`
-types nothing, so `delaySeconds` buys it nothing; both `auto-clear.sh` and
-`auto-clear.ps1` print `delay: n/a (notify sends no keystroke)` there instead
-of echoing the configured value (or a hardcoded `0`, which `auto-clear.ps1`
-did until this was fixed) — either would read as a real wait that
+types nothing, so `delaySeconds` buys it nothing; `auto-clear.sh`
+prints `delay: n/a (notify sends no keystroke)` there instead
+of echoing the configured value (or a hardcoded `0`, which the deleted
+`auto-clear.ps1` did until this was fixed) — either would read as a real wait that
 `delaySeconds` controls, which for `notify` it never does. A keystroke
-method (`tmux`, `xdotool`, `sendkeys`) still echoes the configured delay
+method (`tmux`, `xdotool`) still echoes the configured delay
 verbatim.
 
 Its default is `null` where the scripts fall back to `""`. The two are
-behaviourally identical (`if ($a.windowTitle)` is false for either, and
-`auto-clear.sh` does the same), and `null` wins the tiebreak: `""` can read
+behaviourally identical (`auto-clear.sh` treats either as unset), and `null` wins the tiebreak: `""` can read
 to a human as a *deliberate* blank, and on this particular key that misreading
 is dangerous.
 
@@ -1584,8 +1570,8 @@ pre-T-0006 output.
 Where the terminal can be driven, an armed machine TYPES the command
 `decide` rendered into its own session. On the SessionStart after `/clear`
 or a manual `/compact`, before its per-event claim, the context hook runs
-its own flavour's sender in resume mode (`auto-clear.sh --resume`,
-`auto-clear.ps1 -Resume`) and names what happened in the context:
+the sender in resume mode (`auto-clear.sh --resume`, under Git Bash on
+Windows) and names what happened in the context:
 `Auto-resume: typing /crew:done T-0001 into this session in 2s (method
 tmux); ...`, or T-0006's line plus `Auto-resume was not typed: <reason>.`
 
@@ -1609,8 +1595,7 @@ Order, first refusal wins, and each is logged to `.crew/.autoclear.log`
 (off is silent: not armed, or outside `onlyRepos`/`onlySessions`):
 `decide` did not return `run`; no usable method, `$TMUX` unset, or a pane
 that is not an ancestor of the hook; `wtype`; `xdotool` (no probe can see an
-X11 input line); `sendkeys` on the bash flavour or `tmux` on the PowerShell
-one; `auto` on native Windows is `notify`, which types, claims and records
+X11 input line); `sendkeys` (removed, refused by name); `auto` on native Windows is `notify`, which types, claims and records
 nothing; then, for a typing method, T-0016's binding (§14): a headless or
 unknown session refuses ("auto-resume types only into this session's own
 terminal: ..."), and the pane or window is proven from the session's own
@@ -1624,9 +1609,7 @@ sleep `typeDelaySeconds`, poll `capture-pane -p -e` every 250 ms up to
 whitespace once dim runs (the placeholder) and escapes are removed, with no
 `esc to interrupt` on screen; a non-empty line refuses at once; then
 `CREW_AUTOCLEAR_INHIBIT`; then the text, 0.5 s, and Enter (text and Enter
-in one read, over ~60 characters, are taken as a paste). sendkeys: the
-existing child, with the delay, the focus check, the tab recheck, the
-inhibit check, then `SendWait`.
+in one read, over ~60 characters, are taken as a paste).
 
 **The default and its limit.** The T-0013 spike (Claude Code 2.1.282, tmux,
 77 `/clear` and 66 `/compact` runs) saw the input ready 0.134 s after

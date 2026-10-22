@@ -1,7 +1,7 @@
 """The PowerShell gates' emergency-lane behaviour, compared with the bash pair.
 
 hooks/scripts/_test/run-tests.sh covers the bash flavour and cannot run the
-.ps1 one. That asymmetry is this plugin's recurring failure: context-watch.ps1
+.ps1 one. That asymmetry is this plugin's recurring failure: a .ps1 twin
 kept a file-size heuristic for a release after the bash flavour dropped it, so
 Windows sessions were cut short while Linux ones were not, and nothing caught
 it because the suite only fed the shared path. An emergency lane that stands

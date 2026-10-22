@@ -1,5 +1,4 @@
-"""Pins the ORDER invariant both auto-clear senders must follow, in both
-flavours:
+"""Pins the ORDER invariant the auto-clear sender must follow:
 
     1. is this a crew repo at all? (`.crew/` the directory exists -- crew
        1.0 F4 reverses this back to the directory from the `.crew/config.json`
@@ -18,13 +17,12 @@ in `test_auto_cycle.py` and CONFIG.md sec 14's own account of it).
 
 Every case below omits `--session` (`session=None`): a session-less run is the
 sharpest way to prove the order, because "no session id" is itself a
-refusal reason `note()`/`Write-CrewAutoClearNote` WOULD log -- so any of
+refusal reason `note()` WOULD log -- so any of
 these tests going red proves the enabled/narrowing check stopped running
 before that refusal, not that no refusal exists at all.
 """
 import json
 import os
-import shutil
 import subprocess
 import time
 
@@ -35,9 +33,7 @@ import crew_fixtures
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = (_ROOT + "/hooks/scripts/auto-clear.sh").replace("\\", "/")
-_PS1 = _ROOT + "/hooks/scripts/auto-clear.ps1"
 _BASH = crew_fixtures.resolve_bash()
-_PWSH_ANY = shutil.which("pwsh")
 
 SESSION = "sess-order-1"
 HANDOFF = (
@@ -48,7 +44,7 @@ HANDOFF = (
 
 def _write_machine(root, block):
     """The whole `context.autoClear` block, written to the machine-global
-    file `_run`/`_run_ps1` point HOME/USERPROFILE at -- never the real one."""
+    file `_run_sh` points HOME/USERPROFILE at -- never the real one."""
     crew = root.parent / "home" / ".claude" / "crew"
     crew.mkdir(parents=True, exist_ok=True)
     (crew / "config.json").write_text(
@@ -80,17 +76,6 @@ def _run_sh(root):
                           stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
 
 
-def _run_ps1(root):
-    home = str(root.parent / "home")
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT",
-               CREW_AUTOCLEAR_INHIBIT="1", HOME=home, USERPROFILE=home)
-    return subprocess.run(
-        [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-File", _PS1,
-         "-Root", str(root), "-DryRun"],
-        cwd=str(root), env=env, stdin=subprocess.DEVNULL,
-        capture_output=True, text=True, check=False)
-
-
 def _assert_silent(result, root):
     assert result.returncode == 0
     assert result.stdout.strip() == "", result.stdout
@@ -109,14 +94,6 @@ def test_config_present_autoclear_absent_writes_no_log_sh(tmp_path):
     _assert_silent(_run_sh(root), root)
 
 
-@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
-def test_config_present_autoclear_absent_writes_no_log_ps1(tmp_path):
-    root = _repo(tmp_path)
-    _write_machine(root, {})
-    assert (root / ".crew" / "config.json").exists()
-    _assert_silent(_run_ps1(root), root)
-
-
 # --- config.json present, repo-local enabled: false, machine says true ----
 
 
@@ -125,13 +102,6 @@ def test_config_present_enabled_false_writes_no_log_sh(tmp_path):
     root = _repo(tmp_path, repo_auto={"enabled": False})
     _write_machine(root, {"enabled": True, "method": "tmux"})
     _assert_silent(_run_sh(root), root)
-
-
-@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
-def test_config_present_enabled_false_writes_no_log_ps1(tmp_path):
-    root = _repo(tmp_path, repo_auto={"enabled": False})
-    _write_machine(root, {"enabled": True, "method": "tmux"})
-    _assert_silent(_run_ps1(root), root)
 
 
 # --- config.json present, machine on, onlyRepos excludes this repo --------
@@ -143,14 +113,6 @@ def test_config_present_only_repos_excludes_writes_no_log_sh(tmp_path):
     _write_machine(root, {"enabled": True,
                            "onlyRepos": [str(tmp_path / "some-other-repo")]})
     _assert_silent(_run_sh(root), root)
-
-
-@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
-def test_config_present_only_repos_excludes_writes_no_log_ps1(tmp_path):
-    root = _repo(tmp_path)
-    _write_machine(root, {"enabled": True,
-                           "onlyRepos": [str(tmp_path / "some-other-repo")]})
-    _assert_silent(_run_ps1(root), root)
 
 
 # --- config.json present, machine on, onlySessions excludes this session --
@@ -173,23 +135,8 @@ def test_config_present_only_sessions_excludes_writes_no_log_sh(tmp_path):
     _assert_silent(result, root)
 
 
-@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
-def test_config_present_only_sessions_excludes_writes_no_log_ps1(tmp_path):
-    root = _repo(tmp_path)
-    _write_machine(root, {"enabled": True, "onlySessions": ["some-other-session"]})
-    home = str(root.parent / "home")
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT",
-               CREW_AUTOCLEAR_INHIBIT="1", HOME=home, USERPROFILE=home)
-    result = subprocess.run(
-        [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-File", _PS1,
-         "-Root", str(root), "-Session", SESSION, "-DryRun"],
-        cwd=str(root), env=env, stdin=subprocess.DEVNULL,
-        capture_output=True, text=True, check=False)
-    _assert_silent(result, root)
-
-
 # --- structural: the gate and the "off" exit are textually BEFORE anything
-#     that can write, in both flavours ----------------------------------
+#     that can write ---------------------------------------------------
 
 
 def _lineno(lines, needle):
@@ -219,24 +166,3 @@ def test_sh_gate_and_off_exit_precede_the_logger():
     assert gate < log_var < note_def, "the crew-repo gate must precede the logger being armed"
     assert off_exit < refusal_note, (
         "the silent `off` exit must precede the general refusal that logs")
-
-
-def test_ps1_gate_and_enabled_check_precede_the_logger():
-    with open(_ROOT + "/hooks/scripts/auto-clear.ps1", encoding="utf-8") as handle:
-        lines = handle.readlines()
-    gate = _lineno(lines, 'Test-Path ".crew" -PathType Container')
-    log_var = _lineno(lines, '$log = ".crew/.autoclear.log"')
-    note_def = _lineno(lines, "function Write-CrewAutoClearNote")
-    enabled_exit = _lineno(lines, "if (-not $enabled) { exit 0 }")
-    first_stop_call = None
-    for i, line in enumerate(lines):
-        if i <= note_def:
-            continue
-        if "Stop-CrewAutoClear" in line and "function Stop-CrewAutoClear" not in line:
-            first_stop_call = i
-            break
-    assert None not in (gate, log_var, note_def, enabled_exit, first_stop_call), (
-        "one of the anchors this test relies on has moved or been renamed")
-    assert gate < log_var < note_def, "the crew-repo gate must precede the logger being armed"
-    assert enabled_exit < first_stop_call, (
-        "the silent enabled exit must precede the first refusal that logs")

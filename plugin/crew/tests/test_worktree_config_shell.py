@@ -7,11 +7,11 @@ the worktree's own file, which a lane never has (`.crew/*` is gitignored). In
 the guards' no-python fallbacks "absent" is the proof of off, so a lane whose
 main checkout armed the cloud guard let a command through unjudged. This file
 holds the two shell resolvers to the Python one case by case, and the readers
-this slice routes (`_common.sh`'s incident stand-down, both cloud-guard
-fallbacks, promote-gate.ps1's stand-down, auto-clear.ps1's repo veto) to the
+this slice routes (`_common.sh`'s incident stand-down, the cloud-guard
+fallback, promote-gate.ps1's stand-down, auto-clear.sh's repo veto) to the
 inherited layer, with must-block and must-allow cases. L-0680 adds the session
-hooks (notify, handoff-read, handoff-write, context-watch, both flavours): they
-read the resolved file, and everything they write stays in the lane.
+hooks (notify, handoff-read, handoff-write, context-watch): they read the
+resolved file, and everything they write stays in the lane.
 
 Every case builds throwaway repositories under tmp_path; nothing reads the real
 repository's config. bash cases skip where bash is absent, PowerShell cases
@@ -42,13 +42,7 @@ needs_bash = pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")
 needs_pwsh = pytest.mark.skipif(
     _PWSH is None, reason="pwsh is not installed here; the .ps1 cases are written and skipped")
 
-# notify.ps1 left this list with T-0051: it is a thin wrapper around crew_notify.py,
-# which reads the resolved repo config through crew_config.resolve_config (no
-# PowerShell resolver; test_crew_notify_hooks.py pins that it reads no config).
-PS_COPIES = ("cloud-guard", "env-guard", "promote-gate", "auto-clear",
-             "handoff-read", "handoff-write", "context-watch",  # L-0680: these three
-             "verify-gate", "scope-guard", "completion-audit")  # L-0681: these three
-HANDOFF_PATH_COPIES = ("handoff-read", "handoff-write", "context-watch")  # L-0680 review B1
+PS_COPIES = ("promote-gate", "verify-gate", "scope-guard", "completion-audit")
 SHELL_SOURCE = {crew_common.SOURCE_OWN: "own", crew_common.SOURCE_MAIN: "main",
                 crew_common.SOURCE_UNKNOWN: "unknown"}
 NO_PYTHON = {"PYTHONHOME": "/nonexistent-python-home"}
@@ -178,9 +172,9 @@ def ps_function(stem, name="Get-CrewRepoConfigDir"):
 
 
 def pwsh_resolve(tmp_path, root):
-    """(source, dir) from cloud-guard.ps1's copy of `Get-CrewRepoConfigDir`."""
+    """(source, dir) from promote-gate.ps1's copy of `Get-CrewRepoConfigDir`."""
     script = tmp_path / "resolve.ps1"
-    script.write_text(ps_function("cloud-guard") +
+    script.write_text(ps_function("promote-gate") +
                       "$r = Get-CrewRepoConfigDir $args[0]\n"
                       "Write-Output $r.Source\nWrite-Output $r.Dir\n", encoding="utf-8")
     proc = subprocess.run([_PWSH, "-NoProfile", "-NonInteractive", "-File", str(script),
@@ -247,7 +241,7 @@ def test_powershell_resolver_reads_a_non_ascii_lane_path_whatever_the_console_en
     _main, wt = _lane(base, {"scope": {"mode": "block"}})
     script = tmp_path / "resolve_latin1.ps1"
     script.write_text("[Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding(28591)\n" +
-                      ps_function("cloud-guard") +
+                      ps_function("promote-gate") +
                       "$before = [Console]::OutputEncoding.CodePage\n"
                       "$r = Get-CrewRepoConfigDir $args[0]\n"
                       "Write-Output $r.Source\n"
@@ -278,7 +272,6 @@ def _ps_copies_bytes(name):
 
 @pytest.mark.parametrize("name,expected", [
     ("Get-CrewRepoConfigDir", {s + ".ps1" for s in PS_COPIES}),
-    ("Get-CrewHandoffPath", {s + ".ps1" for s in HANDOFF_PATH_COPIES}),
 ])
 def test_powershell_resolver_copies_are_identical(name, expected):
     copies = _ps_copies_bytes(name)
@@ -317,16 +310,14 @@ def _guard_env(tmp_path, root, driver):
 
 
 def _run_guard(tmp_path, root, driver):
-    argv = ([_BASH, os.path.join(SCRIPTS, "cloud-guard.sh")] if driver == "sh" else
-            [_PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-             os.path.join(SCRIPTS, "cloud-guard.ps1")])
+    argv = [_BASH, os.path.join(SCRIPTS, "cloud-guard.sh")]
     return subprocess.run(argv, input=b'{"tool_name":"Bash","tool_input":'
                                       b'{"command":"terraform destroy"}}',
                           capture_output=True, env=_guard_env(tmp_path, root, driver),
                           cwd=str(root), timeout=120, check=False)
 
 
-GUARD_DRIVERS = [pytest.param("sh", marks=needs_bash), pytest.param("ps1", marks=needs_pwsh)]
+GUARD_DRIVERS = [pytest.param("sh", marks=needs_bash)]
 
 
 @pytest.mark.parametrize("driver", GUARD_DRIVERS)
@@ -422,29 +413,23 @@ def test_incident_stand_down_false_is_inherited(tmp_path, flavour, lane_cfg, act
     assert stood_down is active
 
 
-# --- auto-clear.ps1's repo veto ----------------------------------------------------------
+# --- auto-clear.sh's repo veto -----------------------------------------------------------
 
 def _auto_clear(root, home, flavour):
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), CREW_AUTOCLEAR_INHIBIT="1",
                HOME=str(home), USERPROFILE=str(home))
-    if flavour == "sh":
-        argv = [_BASH, os.path.join(SCRIPTS, "auto-clear.sh")]
-    else:
-        env["OS"] = "Windows_NT"
-        argv = [_PWSH, "-NoProfile", "-NonInteractive", "-File",
-                os.path.join(SCRIPTS, "auto-clear.ps1"), "-Root", str(root)]
+    argv = [_BASH, os.path.join(SCRIPTS, "auto-clear.sh")]
     return subprocess.run(argv, cwd=str(root), env=env, stdin=subprocess.DEVNULL,
                           capture_output=True, text=True, check=False, timeout=120)
 
 
-@pytest.mark.parametrize("flavour", [pytest.param("sh", marks=needs_bash),
-                                     pytest.param("ps1", marks=needs_pwsh)])
+@pytest.mark.parametrize("flavour", [pytest.param("sh", marks=needs_bash)])
 @pytest.mark.parametrize("main_enabled,armed", [(False, False), (None, True)],
                          ids=["main-vetoes", "main-silent"])
-def test_auto_clear_ps1_reads_the_inherited_repo_veto(tmp_path, flavour, main_enabled, armed):
+def test_auto_clear_reads_the_inherited_repo_veto(tmp_path, flavour, main_enabled, armed):
     """Machine opted in, main checkout's repo config vetoes, lane has `.crew/`
-    but no config: both flavours are off, as crew_autocycle.py decides for
-    auto-clear.sh. Armed, either reaches the session check and logs it."""
+    but no config: auto-clear is off, as crew_autocycle.py decides. Armed, it
+    reaches the session check and logs it."""
     main_cfg = {} if main_enabled is None else {"context": {"autoClear": {"enabled": main_enabled}}}
     _main, wt = _lane(tmp_path, main_cfg)
     (wt / ".crew").mkdir()
@@ -461,13 +446,13 @@ def test_auto_clear_ps1_reads_the_inherited_repo_veto(tmp_path, flavour, main_en
 
 # --- the session hooks (L-0680) ----------------------------------------------------------
 #
-# notify, handoff-read, handoff-write and context-watch, both flavours, read the
+# notify, handoff-read, handoff-write and context-watch read the
 # resolved repo config: a lane with none of its own reads the main checkout's,
 # its own file wins whole, and `unknown` reads nothing. Every write stays in the
 # lane. No test sends a real notification: the provider is `teams` pointed (via
 # urlEnv) at a local HTTP stub that counts the posts.
 
-SESSION_DRIVERS = [pytest.param("sh", marks=needs_bash), pytest.param("ps1", marks=needs_pwsh)]
+SESSION_DRIVERS = [pytest.param("sh", marks=needs_bash)]
 SESSION_HOOKS = ("notify", "handoff-read", "handoff-write", "context-watch")
 _URL_ENV = "CREW_L0680_STUB_URL"
 
@@ -481,18 +466,12 @@ def _session_env(tmp_path, root, flavour, extra=None):
     env.update({"HOME": str(home), "USERPROFILE": str(home), "CLAUDE_PROJECT_DIR": str(root),
                 "CREW_AUTOCLEAR_INHIBIT": "1", "PYTHONDONTWRITEBYTECODE": "1",
                 "NO_PROXY": "127.0.0.1,localhost", "no_proxy": "127.0.0.1,localhost"})
-    if flavour == "ps1":
-        env["OS"] = "Windows_NT"
     env.update(extra or {})
     return env
 
 
 def _run_session_hook(tmp_path, hook, flavour, root, payload=None, args=(), extra=None):
-    if flavour == "sh":
-        argv = [_BASH, _posix(os.path.join(SCRIPTS, hook + ".sh")), *args]
-    else:
-        argv = [_PWSH, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
-                os.path.join(SCRIPTS, hook + ".ps1"), *args]
+    argv = [_BASH, _posix(os.path.join(SCRIPTS, hook + ".sh")), *args]
     data = b"" if payload is None else json.dumps(payload).encode("utf-8")
     return subprocess.run(argv, input=data, capture_output=True, cwd=str(root),
                           env=_session_env(tmp_path, root, flavour, extra), timeout=120,
@@ -631,8 +610,7 @@ def test_handoff_write_in_a_lane_keeps_the_inherited_transcript_count(tmp_path, 
 
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
 def test_handoff_write_in_the_main_checkout_keeps_its_own_transcript_count(tmp_path, flavour):
-    """Own file. The .ps1 used to drop keepTranscripts on PowerShell 7, whose
-    ConvertFrom-Json reads a JSON integer as Int64, not [int]."""
+    """Own file: the main checkout reads its own keepTranscripts."""
     main, _wt = _lane(tmp_path, {"context": {"keepTranscripts": 1}})
     transcript = tmp_path / "session.jsonl"
     transcript.write_text('{"x": 1}\n', encoding="utf-8")
@@ -660,7 +638,7 @@ def _context_watch(tmp_path, flavour, root, extra=None, session="s-watch"):
         "stop_hook_active": False}, extra=extra)
 
 
-CONTEXT_DRIVERS = [pytest.param("sh", marks=needs_bash), pytest.param("ps1", marks=needs_pwsh),
+CONTEXT_DRIVERS = [pytest.param("sh", marks=needs_bash),
                    pytest.param("sh-no-python", marks=needs_bash)]
 
 
@@ -773,8 +751,8 @@ def test_handoff_write_never_writes_outside_the_lane(tmp_path, flavour, kind):
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
 def test_handoff_write_never_writes_outside_the_lane_through_backslashes(tmp_path, flavour, value):
     """Round-3 F1: on POSIX a backslash is a filename character, so these are one
-    in-lane name; the .ps1 used to turn them into `/` AFTER its containment check
-    and write main's file, `../x` or `//server/share/x`. On Windows they leave
+    in-lane name, never turned into `/` after the containment check to write
+    main's file, `../x` or `//server/share/x`. On Windows they leave
     the lane and fall back to the default. Either way nothing is written outside."""
     main, wt = _lane(tmp_path, None)
     _own(main, "config.json", {"context": {"handoffPath": value}})
@@ -793,9 +771,7 @@ def test_handoff_write_never_writes_outside_the_lane_through_backslashes(tmp_pat
 @pytest.mark.parametrize("flavour", [pytest.param("sh", marks=needs_bash)])
 def test_a_trailing_backslash_is_a_file_name_on_posix(tmp_path, flavour):
     """Round-3 N1: `notes\\` is a legal POSIX file name, so bash (python's
-    path rules) uses it as given. Not the .ps1: PowerShell's file cmdlets read
-    `\\` as a separator on every OS, so there it is the directory `notes/`
-    (the directory case covers it, and the backslash-escape cases above)."""
+    path rules) uses it as given."""
     if os.sep == "\\":
         pytest.skip("a separator on Windows: covered by the directory case")
     main, _wt = _lane(tmp_path, None)
@@ -809,11 +785,9 @@ def test_a_trailing_backslash_is_a_file_name_on_posix(tmp_path, flavour):
 
 
 def _dir_cases():
-    """A trailing backslash names a directory where it is a separator: always
-    for the .ps1 (PowerShell's cmdlets), only on Windows for bash."""
-    cases = [pytest.param(f, v, marks=m) for f, m in (("sh", needs_bash), ("ps1", needs_pwsh))
-             for v in (".", "./", "notes/", "notes")]
-    cases.append(pytest.param("ps1", "notes\\", marks=needs_pwsh))
+    """A trailing backslash names a directory only where it is a separator:
+    on Windows for bash."""
+    cases = [pytest.param("sh", v, marks=needs_bash) for v in (".", "./", "notes/", "notes")]
     if os.sep == "\\":
         cases.append(pytest.param("sh", "notes\\", marks=needs_bash))
     return cases
@@ -822,7 +796,7 @@ def _dir_cases():
 @pytest.mark.parametrize("flavour,value", _dir_cases())
 def test_a_directory_valued_handoff_path_is_the_default(tmp_path, flavour, value):
     """Round-2 N1: a handoffPath naming a directory (the checkout itself, or one
-    in it) cannot hold the note; both flavours use .work/HANDOFF.md and warn."""
+    in it) cannot hold the note; the hook uses .work/HANDOFF.md and warns."""
     main, _wt = _lane(tmp_path, None)
     (main / "notes").mkdir()
     _own(main, "config.json", {"context": {"handoffPath": value}})
@@ -911,10 +885,9 @@ def _seed_transcripts(root, count):
                          ids=["above-int32", "above-int64", "digit-string", "bool", "negative",
                               "zero", "float"])
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
-def test_keep_transcripts_reads_the_same_in_both_flavours(tmp_path, flavour, keep, left):
-    """F2/N2: an integer past Int32 keeps everything (the .ps1 used to fall back
-    to 5 and delete what the user kept); a non-integer, as documented
-    (CONFIG.md: expects integer), is ignored in both flavours, so 5 are kept."""
+def test_keep_transcripts_reads_integers_only(tmp_path, flavour, keep, left):
+    """F2/N2: an integer past Int32 keeps everything; a non-integer, as
+    documented (CONFIG.md: expects integer), is ignored, so 5 are kept."""
     main, _wt = _lane(tmp_path, {"context": {"keepTranscripts": keep}})
     _seed_transcripts(main, 6)
     transcript = tmp_path / "session.jsonl"
@@ -926,19 +899,12 @@ def test_keep_transcripts_reads_the_same_in_both_flavours(tmp_path, flavour, kee
     assert len(_transcripts(main)) == left
 
 
-# Lines in the eight scripts that may still name the own file outside a comment,
+# Lines in the scripts that may still name the own file outside a comment,
 # exact text and count: the user-facing default of the name a message shows, and
 # handoff-write's own-or-unknown gate, where the resolved directory is the own
 # .crew/ and tests/sabotage_resume.py (a harness path) anchors on the literal text.
 OWN_PATH_ALLOWED = {
     "handoff-write.sh": {"[ -f .crew/config.json ] || [ -f .crew/crew.json ] || exit 0": 1},
-    "handoff-write.ps1": {
-        'if (-not (Test-Path ".crew/config.json") -and -not (Test-Path ".crew/crew.json"))'
-        ' { exit 0 }': 1,
-    },
-    "context-watch.ps1": {
-        "$cfgShown = if ($repoCfg.Source -eq 'main') { $cfgPath } else { '.crew/config.json' }": 1,
-    },
 }
 
 
@@ -955,17 +921,15 @@ def _executable_mentions(path):
 
 def test_no_session_hook_names_the_own_config_path():
     for hook in SESSION_HOOKS:
-        for ext in ("sh", "ps1"):
-            name = f"{hook}.{ext}"
-            assert _executable_mentions(os.path.join(SCRIPTS, name)) == \
-                OWN_PATH_ALLOWED.get(name, {}), name
+        name = f"{hook}.sh"
+        assert _executable_mentions(os.path.join(SCRIPTS, name)) == \
+            OWN_PATH_ALLOWED.get(name, {}), name
 
 
-@pytest.mark.parametrize("flavour", [pytest.param("sh", marks=needs_bash),
-                                     pytest.param("ps1", marks=needs_pwsh)])
+@pytest.mark.parametrize("flavour", [pytest.param("sh", marks=needs_bash)])
 def test_auto_clear_knows_wrap_up_is_a_key(tmp_path, flavour):
-    """From the #356 review: auto-clear.ps1's known-key list lacked `wrapUp`
-    (crew_autocycle.KNOWN_KEYS has it), so it logged a recognised key as not."""
+    """From the #356 review: a known-key list lacked `wrapUp`
+    (crew_autocycle.KNOWN_KEYS has it), so a recognised key was logged as not."""
     main = make_repo(tmp_path, mode=None, name="main")
     (main / ".crew" / "config.json").write_text("{}", encoding="utf-8")
     home = tmp_path / "home"

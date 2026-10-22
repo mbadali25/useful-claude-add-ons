@@ -24,6 +24,10 @@ Claude Code installed on the evaluating host: 2.1.293 on 2026-10-08, 2.1.302 on 
    `method: "auto"`, `resume.auto: true`; read 2026-10-08 and 2026-10-18).
 3. **Windows `sendkeys` goes**, and `auto-clear.ps1` with it, in L-0727 slice 3 (owner decision D3).
    Nothing in slice 1 changes it. Neither owner config layer sets `sendkeys`.
+   **Outcome (slice 3, L-0867, crew 1.2.61):** done. `auto-clear.ps1` is deleted; `crew_autocycle.resolve_method`
+   and `crew_autoclear_setup.py` refuse `sendkeys` with "sendkeys was removed in crew 1.2.61 (L-0727); use
+   notify or tmux"; `crew_platform` lists it for no OS; on native Windows the resume sender is `auto-clear.sh`
+   under Git Bash, and with no tmux pane `auto` resolves to `notify`.
 
 ## Rejected option
 

@@ -1200,10 +1200,8 @@ _MARKER_RE = re.compile(r"\.crew[/\\]\S*deployWorkflow-[0-9a-f]{16}")
 
 
 def _deploy_deny(driver, tmp_path, case):
-    _id, tool, _command, opts = case
+    _id, _tool, _command, opts = case
     _repo, result = _run(driver, tmp_path, case)
-    if tcg._stood_down(driver, tool, result):  # pylint: disable=protected-access
-        return
     decision, reason, code, err = result
     assert code == 0, err
     assert decision == "deny", (case[0], decision, reason, err)
@@ -1212,10 +1210,8 @@ def _deploy_deny(driver, tmp_path, case):
 
 
 def _deploy_allow(driver, tmp_path, case):
-    _id, tool, _command, opts = case
+    _id, _tool, _command, opts = case
     repo, result = _run(driver, tmp_path, case)
-    if tcg._stood_down(driver, tool, result):  # pylint: disable=protected-access
-        return
     decision, said, code, err = result
     assert code == 0, err
     assert decision == "allow", (case[0], said, err)
@@ -1243,12 +1239,6 @@ def test_must_block_deploy_bash(tmp_path, case):
     _deploy_deny("bash", tmp_path, case)
 
 
-@pytest.mark.parametrize("case", _sample(MUST_BLOCK_DEPLOY, _DB_SAMPLE,
-                                         (tcg.needs_pwsh,)))
-def test_must_block_deploy_pwsh(tmp_path, case):
-    _deploy_deny("pwsh", tmp_path, case)
-
-
 @pytest.mark.parametrize("case", MUST_ALLOW_DEPLOY, ids=_ids(MUST_ALLOW_DEPLOY))
 def test_must_allow_deploy_python(tmp_path, case):
     _deploy_allow("python", tmp_path, case)
@@ -1258,12 +1248,6 @@ def test_must_allow_deploy_python(tmp_path, case):
                                          (tcg.needs_bash,)))
 def test_must_allow_deploy_bash(tmp_path, case):
     _deploy_allow("bash", tmp_path, case)
-
-
-@pytest.mark.parametrize("case", _sample(MUST_ALLOW_DEPLOY, _DA_SAMPLE,
-                                         (tcg.needs_pwsh,)))
-def test_must_allow_deploy_pwsh(tmp_path, case):
-    _deploy_allow("pwsh", tmp_path, case)
 
 
 @pytest.mark.parametrize("case", ASK_DEPLOY, ids=_ids(ASK_DEPLOY))

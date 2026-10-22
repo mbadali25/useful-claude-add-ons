@@ -1,30 +1,24 @@
-"""The cloud/destructive guard: must-block and must-allow, in every flavour.
+"""The cloud/destructive guard: must-block and must-allow, in every driver.
 
 CLAUDE.md requires a hook that can block to carry a committed regression suite
 with must-block and must-allow cases, sabotage-tested. This is that suite for
-`hooks/scripts/cloud_guard.py` and its two wrappers.
+`hooks/scripts/cloud_guard.py` and its wrapper.
 
-Every decision case runs three ways, each as its own test function so the
+Every decision case runs two ways, each as its own test function so the
 sabotage harness can aim at the fast one:
 
-    python   `python3 cloud_guard.py`, the module the wrappers delegate to
+    python   `python3 cloud_guard.py`, the module the wrapper delegates to
     bash     `bash cloud-guard.sh`
-    pwsh     `pwsh -File cloud-guard.ps1`, with `OS=Windows_NT` so its
-             flavour guard (which stands it down off Windows) lets it run.
-             Skipped, with the reason, where no pwsh exists.
 
-The python driver runs every case by default. The bash and pwsh drivers run a
-parity sample by default (`_B_SHELL`, `_A_SHELL`, `_I_SHELL`,
-`_DRIVERS_SAMPLE`, and the wrapper tests at the end) and the rest of the
-matrix as `slow` -- `pytest -m slow` or `--run-slow` (see conftest.py).
+The python driver runs every case by default. The bash driver runs a parity
+sample by default (`_B_SHELL`, `_A_SHELL`, `_I_SHELL`, `_DRIVERS_SAMPLE`, and
+the wrapper tests at the end) and the rest of the matrix as `slow` --
+`pytest -m slow` or `--run-slow` (see conftest.py).
 
 Each case names the TOOL whose command it is (`Bash` or `PowerShell`), and the
-same case runs through all three drivers: the tool decides the parser, never
-the flavour of the wrapper that happened to run. The tool also decides which
-flavour judges on Windows, where both run: bash judges every Bash call and the
-.ps1 every PowerShell call. So through the pwsh driver a Bash case asserts
-that the .ps1 STOOD DOWN (no output, exit 0) -- bash judges it -- and the
-switch tests below pick the tool the driver actually judges (`_tool`).
+same case runs through both drivers: the tool decides the parser, never the
+wrapper that happened to run. cloud-guard.sh judges a PowerShell-tool call
+too, so the PowerShell cases run through it unchanged.
 
 Isolation: every subprocess gets its own HOME/USERPROFILE (so the machine-
 global crew config and `~/.azure` are fixtures), its own CLAUDE_PROJECT_DIR,
@@ -53,15 +47,9 @@ _ROOT = context._ROOT  # pylint: disable=protected-access
 _SCRIPTS = os.path.join(_ROOT, "hooks", "scripts")
 _PY = os.path.join(_SCRIPTS, "cloud_guard.py")
 _SH = os.path.join(_SCRIPTS, "cloud-guard.sh")
-_PS1 = os.path.join(_SCRIPTS, "cloud-guard.ps1")
 
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = crew_fixtures.resolve_pwsh()
 needs_bash = pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")
-needs_pwsh = pytest.mark.skipif(
-    _PWSH is None,
-    reason="pwsh is not installed here, so cloud-guard.ps1 cannot be run; "
-           "its cases are written and skipped, not passed")
 
 ARMED = {"guards": {"cloudGuard": "block"}}
 
@@ -80,13 +68,9 @@ PINNED = {"guards": {"cloudGuard": "block", "cloudDestructive": "allow",
 # --- harness ----------------------------------------------------------------
 
 
-def _clean_env(tmp_path, extra=None, driver=None):
-    """The subprocess environment. `OS=Windows_NT` goes to the pwsh driver
-    ONLY: it is what lets the .ps1's flavour guard proceed, and it is also
-    what stands the BASH wrapper down for PowerShell calls -- so handing it
-    to every driver would turn each bash PowerShell case into a stand-down
-    that passes every must-allow and fails every must-block for the wrong
-    reason."""
+def _clean_env(tmp_path, extra=None):
+    """The subprocess environment: no cloud identity, no CI marker, and its
+    own HOME and project directory."""
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(("AWS_", "AZURE_", "ARM_"))
            and k not in ("CI", "CREW_UNATTENDED", "CLAUDE_PROJECT_DIR", "OS",
@@ -96,8 +80,6 @@ def _clean_env(tmp_path, extra=None, driver=None):
     env.update({"HOME": str(home), "USERPROFILE": str(home),
                 "CLAUDE_PROJECT_DIR": str(tmp_path / "repo"),
                 "PYTHONDONTWRITEBYTECODE": "1"})
-    if driver == "pwsh":
-        env["OS"] = "Windows_NT"
     env.update(extra or {})
     return env
 
@@ -121,7 +103,7 @@ def _argv(driver):
         return [sys.executable, _PY]
     if driver == "bash":
         return [_BASH, _SH]
-    return [_PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", _PS1]
+    raise AssertionError(driver)
 
 
 KILLED_UNJUDGED = "could not tell"
@@ -160,7 +142,7 @@ def run_hook(driver, tmp_path, tool, command, extra_env=None, payload=None,
     proc = subprocess.run(
         _argv(driver),
         input=raw if raw is not None else json.dumps(body).encode("utf-8"),
-        capture_output=True, env=_clean_env(tmp_path, extra_env, driver),
+        capture_output=True, env=_clean_env(tmp_path, extra_env),
         cwd=str(tmp_path), timeout=120, check=False)
     out = proc.stdout.decode("utf-8", "replace").strip()
     err = proc.stderr.decode("utf-8", "replace")
@@ -594,30 +576,10 @@ IDENTITY = [
 ]
 
 
-def _tool(driver):
-    """The tool whose calls `driver` judges: the .ps1 stands down for Bash
-    calls (bash judges those), so a switch test run through it says
-    PowerShell. Every command those tests send parses the same in both."""
-    return "PowerShell" if driver == "pwsh" else "Bash"
-
-
-def _stood_down(driver, tool, result):
-    """True -- after asserting it stood down CLEANLY -- when `driver` is the
-    .ps1 and `tool` is Bash: no output at all, exit 0."""
-    if driver != "pwsh" or tool != "Bash":
-        return False
-    decision, reason, code, err = result
-    assert (decision, reason, code) == ("allow", "", 0), (reason, err)
-    return True
-
-
 def _block(driver, tmp_path, case):
     _id, tool, command, rule = case
     _fixture(tmp_path, ARMED)
-    result = run_hook(driver, tmp_path, tool, command)
-    if _stood_down(driver, tool, result):
-        return
-    decision, reason, code, err = result
+    decision, reason, code, err = run_hook(driver, tmp_path, tool, command)
     assert code == 0, err
     assert decision == "deny", (command, decision, err)
     assert f"[{rule}]" in reason, reason
@@ -626,10 +588,7 @@ def _block(driver, tmp_path, case):
 def _allow(driver, tmp_path, case):
     _id, tool, command = case
     _fixture(tmp_path, ARMED)
-    result = run_hook(driver, tmp_path, tool, command)
-    if _stood_down(driver, tool, result):
-        return
-    decision, reason, code, err = result
+    decision, reason, code, err = run_hook(driver, tmp_path, tool, command)
     assert code == 0, err
     assert decision == "allow", (command, reason, err)
 
@@ -637,10 +596,8 @@ def _allow(driver, tmp_path, case):
 def _identity(driver, tmp_path, case):
     _id, tool, command, repo_cfg, global_cfg, env, want, rule = case
     _fixture(tmp_path, repo_cfg, global_cfg)
-    result = run_hook(driver, tmp_path, tool, command, extra_env=env)
-    if _stood_down(driver, tool, result):
-        return
-    decision, reason, code, err = result
+    decision, reason, code, err = run_hook(driver, tmp_path, tool, command,
+                                           extra_env=env)
     assert code == 0, err
     assert decision == want, (command, decision, reason, err)
     if rule:
@@ -651,9 +608,8 @@ _B_IDS = [c[0] for c in MUST_BLOCK]
 _A_IDS = [c[0] for c in MUST_ALLOW]
 _I_IDS = [c[0] for c in IDENTITY]
 
-# The bash and pwsh drivers run a parity sample by default -- one Bash and one
-# PowerShell case each, so the pwsh driver proves both its stand-down and a
-# real decision -- and the rest of each table as `slow`. The python driver
+# The bash driver runs a parity sample by default -- one Bash and one
+# PowerShell case each -- and the rest of each table as `slow`. The python driver
 # runs every case by default: that is where the decisions are made.
 _B_SHELL = crew_fixtures.parity_sample(MUST_BLOCK, _B_IDS,
                                        {"tf-apply", "ps-tf-apply"})
@@ -674,12 +630,6 @@ def test_must_block_bash(tmp_path, case):
     _block("bash", tmp_path, case)
 
 
-@needs_pwsh
-@pytest.mark.parametrize("case", _B_SHELL)
-def test_must_block_pwsh(tmp_path, case):
-    _block("pwsh", tmp_path, case)
-
-
 @pytest.mark.parametrize("case", MUST_ALLOW, ids=_A_IDS)
 def test_must_allow_python(tmp_path, case):
     _allow("python", tmp_path, case)
@@ -689,12 +639,6 @@ def test_must_allow_python(tmp_path, case):
 @pytest.mark.parametrize("case", _A_SHELL)
 def test_must_allow_bash(tmp_path, case):
     _allow("bash", tmp_path, case)
-
-
-@needs_pwsh
-@pytest.mark.parametrize("case", _A_SHELL)
-def test_must_allow_pwsh(tmp_path, case):
-    _allow("pwsh", tmp_path, case)
 
 
 @pytest.mark.parametrize("case", MUST_BLOCK, ids=_B_IDS)
@@ -746,18 +690,11 @@ def test_identity_bash(tmp_path, case):
     _identity("bash", tmp_path, case)
 
 
-@needs_pwsh
-@pytest.mark.parametrize("case", _I_SHELL)
-def test_identity_pwsh(tmp_path, case):
-    _identity("pwsh", tmp_path, case)
-
-
 # --- the switch, and what it does when on -----------------------------------
 
 _DRIVERS = [
     pytest.param("python", id="python"),
     pytest.param("bash", id="bash", marks=(needs_bash, crew_fixtures.SLOW)),
-    pytest.param("pwsh", id="pwsh", marks=(needs_pwsh, crew_fixtures.SLOW)),
 ]
 # The same drivers with the shells in the default run, for the switch tests
 # that form the per-shell parity sample: off, malformed input, ask, and a
@@ -765,7 +702,6 @@ _DRIVERS = [
 _DRIVERS_SAMPLE = [
     pytest.param("python", id="python"),
     pytest.param("bash", id="bash", marks=needs_bash),
-    pytest.param("pwsh", id="pwsh", marks=needs_pwsh),
 ]
 
 
@@ -777,7 +713,7 @@ def test_disabled_guard_allows_everything(tmp_path, driver, repo_cfg):
     """Off is the default: a repo that never set `guards.cloudGuard` runs
     `terraform destroy` exactly as it did before this hook existed."""
     _fixture(tmp_path, repo_cfg)
-    decision, reason, code, err = run_hook(driver, tmp_path, _tool(driver),
+    decision, reason, code, err = run_hook(driver, tmp_path, "Bash",
                                            "terraform destroy -auto-approve")
     assert (decision, code) == ("allow", 0), (reason, err)
 
@@ -797,7 +733,7 @@ def test_a_global_block_cannot_be_turned_off_by_a_repo(tmp_path, driver):
     `block`."""
     _fixture(tmp_path, {"guards": {"cloudGuard": "off"}},
              {"guards": {"cloudGuard": "block"}})
-    decision, _reason, _code, err = run_hook(driver, tmp_path, _tool(driver),
+    decision, _reason, _code, err = run_hook(driver, tmp_path, "Bash",
                                              "terraform destroy")
     assert decision == "deny", err
 
@@ -808,7 +744,7 @@ def test_report_mode_refuses_nothing_and_logs_what_it_would_have(tmp_path,
     """Report mode prints NO decision -- never `allow`, which would skip the
     user's own prompt -- and a visible note of what `block` would do."""
     repo = _fixture(tmp_path, {"guards": {"cloudGuard": "report"}})
-    decision, note, code, err = run_hook(driver, tmp_path, _tool(driver),
+    decision, note, code, err = run_hook(driver, tmp_path, "Bash",
                                          "terraform destroy")
     assert (decision, code) == ("allow", 0), err
     assert "report mode" in note and "would deny" in note, note
@@ -839,7 +775,7 @@ def test_report_mode_evaluates_to_no_decision(tmp_path):
                               "no-tool-input", "command-not-string"])
 def test_malformed_input_is_refused_when_armed(tmp_path, driver, raw):
     _fixture(tmp_path, ARMED)
-    decision, reason, code, err = run_hook(driver, tmp_path, _tool(driver), "",
+    decision, reason, code, err = run_hook(driver, tmp_path, "Bash", "",
                                            raw=raw)
     assert (decision, code) == ("deny", 0), (reason, err)
     assert "refusing" in reason
@@ -848,7 +784,7 @@ def test_malformed_input_is_refused_when_armed(tmp_path, driver, raw):
 @pytest.mark.parametrize("driver", _DRIVERS_SAMPLE)
 def test_malformed_input_is_not_judged_when_off(tmp_path, driver):
     _fixture(tmp_path, {"guards": {"cloudGuard": "off"}})
-    assert run_hook(driver, tmp_path, _tool(driver), "", raw=b"{not json")[:3] == (
+    assert run_hook(driver, tmp_path, "Bash", "", raw=b"{not json")[:3] == (
         "allow", "", 0)
 
 
@@ -862,12 +798,12 @@ def test_a_malformed_cloud_block_fails_closed_when_armed(tmp_path, driver,
     """`"cloud": null` is an invalid layer, not "nothing pinned": even REPORT
     mode escalates to block, and a read-only call's identity is unknown."""
     _fixture(tmp_path, {"guards": {"cloudGuard": "report"}, "cloud": cloud})
-    decision, reason, _c, err = run_hook(driver, tmp_path, _tool(driver),
+    decision, reason, _c, err = run_hook(driver, tmp_path, "Bash",
                                          "terraform destroy")
     assert decision == "deny", err
     assert "`cloud` block is malformed" in reason
     _fixture(tmp_path, {"guards": {"cloudGuard": "block"}, "cloud": cloud})
-    decision, reason, _c, err = run_hook(driver, tmp_path, _tool(driver), "aws s3 ls",
+    decision, reason, _c, err = run_hook(driver, tmp_path, "Bash", "aws s3 ls",
                                          extra_env={"CI": "1"})
     assert decision == "deny", err
     assert "could not read the identity pins" in reason
@@ -876,7 +812,7 @@ def test_a_malformed_cloud_block_fails_closed_when_armed(tmp_path, driver,
 @pytest.mark.parametrize("driver", _DRIVERS)
 def test_a_malformed_cloud_block_leaves_an_unarmed_guard_off(tmp_path, driver):
     _fixture(tmp_path, {"guards": {"cloudGuard": "off"}, "cloud": None})
-    assert run_hook(driver, tmp_path, _tool(driver), "terraform destroy")[0] == \
+    assert run_hook(driver, tmp_path, "Bash", "terraform destroy")[0] == \
         "allow"
 
 
@@ -899,13 +835,13 @@ def test_unpinned_read_only_call_is_reported_once(tmp_path, driver):
     guard.log row -- and then not again."""
     repo = _fixture(tmp_path, ARMED)
     env = {"CI": "true"}
-    decision, note, _c, err = run_hook(driver, tmp_path, _tool(driver), "aws s3 ls",
+    decision, note, _c, err = run_hook(driver, tmp_path, "Bash", "aws s3 ls",
                                        extra_env=env)
     assert decision == "allow", err
     assert "nothing is pinned" in note, note
     log = (repo / ".crew" / "guard.log").read_text(encoding="utf-8")
     assert "\tcloudIdentity\tunpinned\tallow\taws s3 ls\t" in log
-    assert run_hook(driver, tmp_path, _tool(driver), "aws s3 ls",
+    assert run_hook(driver, tmp_path, "Bash", "aws s3 ls",
                     extra_env=env)[:2] == ("allow", "")
     assert (repo / ".crew" / "guard.log").read_text(encoding="utf-8") == log
 
@@ -923,7 +859,7 @@ def test_unpinned_note_is_said_even_with_no_crew_dir(tmp_path, driver):
                                                  encoding="utf-8")
     env = {"CI": "true"}
     for _ in range(2):
-        decision, note, _c, err = run_hook(driver, tmp_path, _tool(driver),
+        decision, note, _c, err = run_hook(driver, tmp_path, "Bash",
                                            "aws s3 ls", extra_env=env)
         assert decision == "allow", err
         assert "nothing is pinned" in note and "said every time" in note, \
@@ -935,7 +871,7 @@ def test_unpinned_note_is_said_even_with_no_crew_dir(tmp_path, driver):
 def test_a_corrupt_config_fails_closed(tmp_path, driver):
     repo = _fixture(tmp_path)
     (repo / ".crew" / "config.json").write_text("{not json", encoding="utf-8")
-    decision, _reason, _code, err = run_hook(driver, tmp_path, _tool(driver),
+    decision, _reason, _code, err = run_hook(driver, tmp_path, "Bash",
                                              "terraform destroy")
     assert decision == "deny", err
 
@@ -945,7 +881,7 @@ def test_ask_policy_prompts_when_attended(tmp_path, driver):
     _fixture(tmp_path, {"guards": {"cloudGuard": "block",
                                    "terraformApply": "ask"}},
              {"guards": {"terraformApply": "ask"}})
-    decision, reason, _code, err = run_hook(driver, tmp_path, _tool(driver),
+    decision, reason, _code, err = run_hook(driver, tmp_path, "Bash",
                                             "terraform apply")
     assert decision == "ask", err
     assert "[terraformApply]" in reason
@@ -960,12 +896,12 @@ def test_ask_is_denied_when_nobody_is_attending(tmp_path, driver, how):
                                    "terraformApply": "ask"}},
              {"guards": {"terraformApply": "ask"}})
     env = how if isinstance(how, dict) else {}
-    payload = {"tool_name": _tool(driver),
+    payload = {"tool_name": "Bash",
                "tool_input": {"command": "terraform apply"},
                "cwd": str(tmp_path / "repo")}
     if isinstance(how, str):
         payload["permission_mode"] = how
-    decision, reason, _code, err = run_hook(driver, tmp_path, _tool(driver), "",
+    decision, reason, _code, err = run_hook(driver, tmp_path, "Bash", "",
                                             extra_env=env, payload=payload)
     assert decision == "deny", err
     assert ".approved-guard-terraformApply-" in reason
@@ -977,7 +913,7 @@ def test_a_live_approval_marker_lets_one_command_through(tmp_path, driver):
                                           "terraformApply": "ask"}},
                     {"guards": {"terraformApply": "ask"}})
     env = {"CREW_UNATTENDED": "1"}
-    decision, reason, _c, _e = run_hook(driver, tmp_path, _tool(driver),
+    decision, reason, _c, _e = run_hook(driver, tmp_path, "Bash",
                                         "terraform apply", extra_env=env)
     assert decision == "deny"
     marker = re.search(r"(\S*\.approved-guard-terraformApply-[0-9a-f]+)",
@@ -985,15 +921,15 @@ def test_a_live_approval_marker_lets_one_command_through(tmp_path, driver):
     assert os.path.dirname(marker) == str(repo / ".crew")
     with open(marker, "w", encoding="utf-8"):
         pass
-    assert run_hook(driver, tmp_path, _tool(driver), "terraform apply",
+    assert run_hook(driver, tmp_path, "Bash", "terraform apply",
                     extra_env=env)[0] == "allow"
     # The approval names ONE command: a different one still refuses.
-    assert run_hook(driver, tmp_path, _tool(driver), "terraform destroy",
+    assert run_hook(driver, tmp_path, "Bash", "terraform destroy",
                     extra_env=env)[0] == "deny"
     # And it expires.
     old = time.time() - 3600
     os.utime(marker, (old, old))
-    assert run_hook(driver, tmp_path, _tool(driver), "terraform apply",
+    assert run_hook(driver, tmp_path, "Bash", "terraform apply",
                     extra_env=env)[0] == "deny"
 
 
@@ -1009,13 +945,13 @@ def test_azure_default_subscription_is_read_from_the_cli_profile(tmp_path,
     # utf-8-sig: the az CLI writes this file with a BOM.
     (azure / "azureProfile.json").write_text(json.dumps(profile),
                                              encoding="utf-8-sig")
-    assert run_hook(driver, tmp_path, _tool(driver), "az group delete -n rg",
+    assert run_hook(driver, tmp_path, "Bash", "az group delete -n rg",
                     extra_env={"CREW_UNATTENDED": "1"})[0] == "allow"
     profile["subscriptions"][0]["isDefault"] = True
     profile["subscriptions"][1]["isDefault"] = False
     (azure / "azureProfile.json").write_text(json.dumps(profile),
                                              encoding="utf-8-sig")
-    assert run_hook(driver, tmp_path, _tool(driver), "az group delete -n rg",
+    assert run_hook(driver, tmp_path, "Bash", "az group delete -n rg",
                     extra_env={"CREW_UNATTENDED": "1"})[0] == "deny"
 
 
@@ -1027,7 +963,7 @@ def test_malformed_pins_make_every_cloud_identity_unknown(tmp_path, driver):
     cfg = {"guards": PINNED["guards"], "cloud": {"awsProfiles": "dev"}}
     _fixture(tmp_path, cfg, PERMISSIVE_GLOBAL)
     decision, reason, _c, err = run_hook(
-        driver, tmp_path, _tool(driver), "aws s3 ls --profile dev",
+        driver, tmp_path, "Bash", "aws s3 ls --profile dev",
         extra_env={"CREW_UNATTENDED": "1"})
     assert decision == "deny", err
     assert "could not read the identity pins" in reason
@@ -1038,11 +974,11 @@ def test_production_database_patterns_are_wired(tmp_path, driver):
     _fixture(tmp_path, {"guards": {"cloudGuard": "block"},
                         "production": {"databases": ["prod-db-*"]}})
     decision, reason, _c, err = run_hook(
-        driver, tmp_path, _tool(driver),
+        driver, tmp_path, "Bash",
         "psql -h prod-db-1 -c 'SELECT 1'")
     assert decision == "deny", err
     assert "[prodDatabase]" in reason
-    assert run_hook(driver, tmp_path, _tool(driver),
+    assert run_hook(driver, tmp_path, "Bash",
                     "psql -h dev-db-1 -c 'SELECT 1'")[0] == "allow"
 
 
@@ -1075,48 +1011,13 @@ def test_bash_wrapper_without_python(tmp_path, armed):
     assert proc.returncode == (2 if armed else 0), proc.stderr
 
 
-@needs_pwsh
-@pytest.mark.parametrize("armed", [True, False], ids=["armed", "not-armed"])
-def test_pwsh_wrapper_without_python(tmp_path, armed):
-    _fixture(tmp_path, ARMED if armed else {"guards": {"cloudGuard": "off"}})
-    proc = subprocess.run(
-        _argv("pwsh"), input=b'{"tool_name":"Bash","tool_input":'
-                             b'{"command":"terraform destroy"}}',
-        capture_output=True, env=_clean_env(tmp_path, _NO_PYTHON, "pwsh"),
-        timeout=120, check=False)
-    assert proc.returncode == (2 if armed else 0), proc.stderr
-
-
-@needs_pwsh
-@pytest.mark.parametrize("tool,want", [("Bash", "stood-down"),
-                                       ("PowerShell", "deny")])
-def test_pwsh_wrapper_judges_by_tool(tmp_path, tool, want):
-    """On Windows the .ps1 judges PowerShell calls and stands down for Bash
-    ones -- cloud-guard.sh judges every Bash call, so nothing is lost and
-    nothing is judged twice."""
-    _fixture(tmp_path, ARMED)
-    proc = subprocess.run(
-        _argv("pwsh"),
-        input=json.dumps({"tool_name": tool, "tool_input": {
-            "command": "terraform destroy"}}).encode("utf-8"),
-        capture_output=True, env=_clean_env(tmp_path, None, "pwsh"),
-        timeout=120, check=False)
-    assert proc.returncode == 0, proc.stderr
-    got = "deny" if b'"permissionDecision": "deny"' in proc.stdout else (
-        "stood-down" if not proc.stdout.strip() else proc.stdout)
-    assert got == want, proc.stderr
-
-
-@needs_pwsh
-def test_pwsh_wrapper_stands_down_off_windows(tmp_path):
-    _fixture(tmp_path, ARMED)
-    env = _clean_env(tmp_path)
-    env.pop("OS", None)
-    proc = subprocess.run(
-        _argv("pwsh"), input=b'{"tool_name":"Bash","tool_input":'
-                             b'{"command":"terraform destroy"}}',
-        capture_output=True, env=env, timeout=120, check=False)
-    assert (proc.returncode, proc.stdout) == (0, b"")
+@pytest.mark.parametrize("tool,want", [("Bash", True), ("PowerShell", False)],
+                         ids=["bash-call", "powershell-call"])
+def test_pwsh_wrapper_judges_by_tool(tool, want):
+    """A `powershell`-flavoured caller stands down for Bash calls (bash
+    judges every one of those) and judges PowerShell calls itself."""
+    environ = {cloud_guard.FLAVOUR_VAR: "powershell", "OS": "Windows_NT"}
+    assert cloud_guard.stands_down(tool, environ) is want
 
 
 def _bin_farm(tmp_path, with_powershell):
@@ -1139,32 +1040,51 @@ def _bin_farm(tmp_path, with_powershell):
     return str(farm)
 
 
+def _hooks_farm(tmp_path, with_twin):
+    """A directory of symlinks to every file beside cloud-guard.sh, plus,
+    when asked, an empty `cloud-guard.ps1` beside them. cloud_guard.py reads
+    where it lives from the path it was started by, so the farm is where it
+    looks for a twin; the real directory holds none."""
+    farm = tmp_path / ("hooks-twin" if with_twin else "hooks")
+    farm.mkdir()
+    for entry in os.listdir(_SCRIPTS):
+        os.symlink(os.path.join(_SCRIPTS, entry), farm / entry)
+    if with_twin:
+        (farm / "cloud-guard.ps1").write_text("", encoding="utf-8")
+    return str(farm / "cloud-guard.sh")
+
+
 @needs_bash
 @pytest.mark.skipif(os.name == "nt", reason="symlinks a POSIX bin farm")
-@pytest.mark.parametrize("os_value,tool,with_ps,want", [
-    ("Windows_NT", "Bash", True, "deny"),
-    ("Windows_NT", "Bash", False, "deny"),
-    ("Windows_NT", "PowerShell", True, "allow"),
-    ("Windows_NT", "PowerShell", False, "allow"),
-    (None, "PowerShell", True, "deny"),
-    (None, "Bash", True, "deny"),
+@pytest.mark.parametrize("os_value,tool,with_ps,with_twin,want", [
+    ("Windows_NT", "Bash", True, True, "deny"),
+    ("Windows_NT", "Bash", False, True, "deny"),
+    ("Windows_NT", "PowerShell", True, True, "allow"),
+    ("Windows_NT", "PowerShell", False, True, "allow"),
+    (None, "PowerShell", True, True, "deny"),
+    (None, "Bash", True, True, "deny"),
+    ("Windows_NT", "PowerShell", True, False, "deny"),
+    ("Windows_NT", "PowerShell", False, False, "deny"),
 ], ids=["windows-bash-with-powershell", "windows-bash",
         "windows-powershell-with-powershell", "windows-powershell",
-        "not-windows-powershell", "not-windows-bash"])
-def test_bash_wrapper_flavour_guard(tmp_path, os_value, tool, with_ps, want):
+        "not-windows-powershell", "not-windows-bash",
+        "windows-powershell-no-twin-with-powershell",
+        "windows-powershell-no-twin"])
+def test_bash_wrapper_flavour_guard(tmp_path, os_value, tool, with_ps,
+                                    with_twin, want):
     """By the TOOL, not the OS (review round 2): bash judges every Bash call
     whatever `OS` says and whatever is on PATH -- the old wrapper stood down
     for all of them on `OS=Windows_NT` plus any `powershell.exe`, so both
     Windows flavours could be made no-ops. It stands down for a PowerShell
-    call only where the .ps1 judges it (`OS=Windows_NT`), and judges
-    PowerShell calls everywhere else, where the .ps1 exits at its first
-    line."""
+    call only when a `.ps1` twin sits beside it and `OS=Windows_NT`; with no
+    twin on disk, which is how the plugin ships, it judges PowerShell calls
+    itself."""
     _fixture(tmp_path, ARMED)
     env = _clean_env(tmp_path, {"PATH": _bin_farm(tmp_path, with_ps)})
     if os_value:
         env["OS"] = os_value
     proc = subprocess.run(
-        [_BASH, _SH],
+        [_BASH, _hooks_farm(tmp_path, with_twin)],
         input=json.dumps({"tool_name": tool, "tool_input": {
             "command": "terraform destroy"}}).encode("utf-8"),
         capture_output=True, env=env, timeout=60, check=False)
@@ -1188,16 +1108,22 @@ def test_bash_wrapper_ignores_an_inherited_flavour(tmp_path):
     assert b'"permissionDecision": "deny"' in proc.stdout, proc.stderr
 
 
-@pytest.mark.parametrize("flavour,tool,os_value,want", [
-    ("bash", "Bash", "Windows_NT", False),
-    ("bash", "PowerShell", "Windows_NT", True),
-    ("bash", "PowerShell", None, False),
-    ("powershell", "Bash", "Windows_NT", True),
-    ("powershell", "PowerShell", "Windows_NT", False),
-    (None, "Bash", "Windows_NT", False),
-    (None, "PowerShell", "Windows_NT", False),
+@pytest.mark.parametrize("flavour,tool,os_value,twin,want", [
+    ("bash", "Bash", "Windows_NT", True, False),
+    ("bash", "PowerShell", "Windows_NT", True, True),
+    ("bash", "PowerShell", "Windows_NT", False, False),
+    ("bash", "PowerShell", None, True, False),
+    ("powershell", "Bash", "Windows_NT", False, True),
+    ("powershell", "PowerShell", "Windows_NT", False, False),
+    (None, "Bash", "Windows_NT", True, False),
+    (None, "PowerShell", "Windows_NT", True, False),
 ])
-def test_stands_down_is_decided_by_the_tool(flavour, tool, os_value, want):
+def test_stands_down_is_decided_by_the_tool(tmp_path, monkeypatch, flavour,
+                                            tool, os_value, twin, want):
+    twin_path = tmp_path / "cloud-guard.ps1"
+    if twin:
+        twin_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(cloud_guard, "_PS1_TWIN", str(twin_path))
     environ = {}
     if flavour:
         environ[cloud_guard.FLAVOUR_VAR] = flavour
@@ -1329,7 +1255,7 @@ def test_scan_does_not_judge_words_inside_arguments():
     (2304, "bash", "win32", 9),
     (3840, "bash", "win32", 15),
     (2304, "bash", "linux", None),
-    (2304, "pwsh", "win32", None),
+    (2304, "python", "win32", None),
     (137, "bash", "win32", None),
     (2, "bash", "win32", None),
     (0, "bash", "linux", None),

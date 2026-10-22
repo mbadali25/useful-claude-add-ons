@@ -1,14 +1,12 @@
 """Tests for the context-watch Stop hook: threshold detection, the
 autoWrapUp instruction branch, and the three loop-safety layers.
 
-context-watch has no Python module -- it is a Stop hook shipped as a matched
-pair of scripts (bash + native PowerShell) invoked as a subprocess by Claude
-Code. These tests run both flavours the same way Claude Code does: JSON on
-stdin, exit code and stderr as the contract.
+context-watch has no Python module -- it is a Stop hook shipped as a bash
+script invoked as a subprocess by Claude Code. These tests run it the same
+way Claude Code does: JSON on stdin, exit code and stderr as the contract.
 """
 import json
 import os
-import re
 import subprocess
 
 import pytest
@@ -20,21 +18,16 @@ _ROOT = context._ROOT  # pylint: disable=protected-access
 # Forward slashes only: MSYS bash.exe re-parses its own argv and eats bare
 # backslashes in a native Windows path passed straight through subprocess.
 _SH = (_ROOT + "/hooks/scripts/context-watch.sh").replace("\\", "/")
-_PS1 = _ROOT + "/hooks/scripts/context-watch.ps1"
 
 _BASH = crew_fixtures.resolve_bash()
 _HAS_BASH = _BASH is not None
-# Absolute, and found at its install location when it is not on PATH.
-_PWSH = crew_fixtures.resolve_pwsh()
-_HAS_PWSH = _PWSH is not None
 
-FLAVORS = [f for f, have in (("sh", _HAS_BASH), ("ps1", _HAS_PWSH)) if have]
+FLAVORS = [f for f, have in (("sh", _HAS_BASH),) if have]
 
-# Four tests (`by_flavor`) are the per-shell parity sample run by default:
-# under the threshold, over it without and with autoWrapUp, and the
-# stop_hook_active stand-down -- plus the three cross-flavour identity tests
-# at the end. Every other test (`by_flavor_matrix`) is `slow` in both
-# flavours: `pytest -m slow` or `--run-slow` (conftest.py).
+# Four tests (`by_flavor`) are the sample run by default: under the
+# threshold, over it without and with autoWrapUp, and the stop_hook_active
+# stand-down. Every other test (`by_flavor_matrix`) is `slow`:
+# `pytest -m slow` or `--run-slow` (conftest.py).
 by_flavor = pytest.mark.parametrize("flavor", FLAVORS)
 by_flavor_matrix = pytest.mark.parametrize(
     "flavor", [pytest.param(f, marks=crew_fixtures.SLOW) for f in FLAVORS])
@@ -65,20 +58,7 @@ def _run(flavor, root, transcript_path, stop_hook_active=False):
     # keystroke besides.
     env = dict(os.environ, HOME=str(root), USERPROFILE=str(root),
                CREW_AUTOCLEAR_INHIBIT="1")
-    if flavor == "sh":
-        cmd = [_BASH, _SH]
-    else:
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
-        # The .ps1 flavour now stands down unless $env:OS says Windows -- both
-        # flavours are registered for every event, so on a host with BOTH
-        # interpreters (this Linux box, since pwsh was installed) both would
-        # otherwise run the Stop hook twice. These tests are about the
-        # THRESHOLD ARITHMETIC inside the script, not about which flavour a
-        # host picks, so they tell it it is on Windows and get the real work.
-        # Without this every [ps1] case here reads as a silent pass-by-exit-0.
-        # The flavour arbitration itself is covered by
-        # hooks/scripts/_test/test_flavour_guard.py.
-        env["OS"] = "Windows_NT"
+    cmd = [_BASH, _SH]
     return subprocess.run(
         cmd, input=payload, cwd=str(root), env=env,
         capture_output=True, text=True, check=False,
@@ -163,7 +143,7 @@ def _usage_transcript(root, model, used, peak=None, sidechain_total=None,
 def test_flavors_are_discoverable():
     # If neither interpreter is on PATH, the parametrized tests below
     # silently collect zero cases and the suite still reports green.
-    assert FLAVORS, "neither bash nor pwsh is on PATH; cannot test context-watch"
+    assert FLAVORS, "bash is not on PATH; cannot test context-watch"
 
 
 @by_flavor
@@ -468,64 +448,15 @@ def test_warn_at_zero_means_always_fire(flavor, tmp_path):
     assert "10,000 of 1,000,000 tokens (1%)" in result.stderr
 
 
-def test_measured_warning_is_identical_across_flavors(tmp_path):
-    # Full-stderr parity on the measured path, digits included: both flavours
-    # truncate the percentage and format thousands the same way.
-    if not (_HAS_BASH and _HAS_PWSH):
-        pytest.skip("need both bash and pwsh on PATH to compare flavors")
-    texts = {}
-    for flavor in ("sh", "ps1"):
-        root = crew_fixtures.make_repo(
-            tmp_path / flavor, config=_config(budget=None), git=False)
-        # Haiku's table entry is 200k; a 451k peak forces the +observed
-        # branch (tier 500k), so the longest note in the script is compared.
-        transcript = _usage_transcript(
-            root, "claude-haiku-4-5-20251001", used=450_001, peak=451_000)
-        result = _run(flavor, root, transcript)
-        assert result.returncode == 2, (flavor, result.stderr)
-        assert "450,001 of 500,000 tokens (90%)" in result.stderr
-        assert "+observed" in result.stderr
-        texts[flavor] = result.stderr.replace("\r\n", "\n").strip()
-    assert texts["sh"] == texts["ps1"]
-
-
-def test_headroom_floor_warning_is_identical_across_flavors(tmp_path):
-    # The floor adds its own text to both scripts; the parity check above runs
-    # with the floor off, so without this case the two could drift on exactly
-    # the branch this feature owns.
-    if not (_HAS_BASH and _HAS_PWSH):
-        pytest.skip("need both bash and pwsh on PATH to compare flavors")
-    texts = {}
-    for flavor in ("sh", "ps1"):
-        root = crew_fixtures.make_repo(
-            tmp_path / flavor, config=_config(budget=None, reserve=100_000),
-            git=False)
-        transcript = _usage_transcript(root, "claude-opus-5", used=910_000)
-        result = _run(flavor, root, transcript)
-        assert result.returncode == 2, (flavor, result.stderr)
-        texts[flavor] = result.stderr.replace("\r\n", "\n").strip()
-    assert texts["sh"] == texts["ps1"]
-
-
-def test_auto_wrap_up_instruction_is_identical_across_flavors(tmp_path):
-    # "Both flavours must behave identically" is a real claim, not an
-    # assumption -- substring checks in the tests above would not have
-    # caught the two scripts drifting apart. Compare full stderr, not just
-    # a few keywords, for the branch this task owns.
-    if not (_HAS_BASH and _HAS_PWSH):
-        pytest.skip("need both bash and pwsh on PATH to compare flavors")
-    texts = {}
-    for flavor in ("sh", "ps1"):
-        root = crew_fixtures.make_repo(
-            tmp_path / flavor, config=_config(auto_wrap_up=True), git=False)
-        transcript = _transcript(root, _OVER_BYTES)
-        result = _run(flavor, root, transcript)
-        assert result.returncode == 2, (flavor, result.stderr)
-        # Normalize line endings (PowerShell's WriteLine emits CRLF, bash's
-        # heredoc emits LF) and the percentage digits: bash's estimate
-        # truncates (python int()) where PowerShell's rounds ([int] cast),
-        # a one-off pre-existing divergence in the shared math, not the
-        # instruction text this task owns.
-        text = result.stderr.replace("\r\n", "\n").strip()
-        texts[flavor] = re.sub(r"\d+%", "N%", text)
-    assert texts["sh"] == texts["ps1"]
+@by_flavor
+def test_measured_warning_names_the_observed_tier(flavor, tmp_path):
+    root = crew_fixtures.make_repo(
+        tmp_path, config=_config(budget=None), git=False)
+    # Haiku's table entry is 200k; a 451k peak forces the +observed
+    # branch (tier 500k), so the longest note in the script is checked.
+    transcript = _usage_transcript(
+        root, "claude-haiku-4-5-20251001", used=450_001, peak=451_000)
+    result = _run(flavor, root, transcript)
+    assert result.returncode == 2, (flavor, result.stderr)
+    assert "450,001 of 500,000 tokens (90%)" in result.stderr
+    assert "+observed" in result.stderr

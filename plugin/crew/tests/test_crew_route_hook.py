@@ -1,9 +1,6 @@
 """T-0023 step 4: the route line through crew's UserPromptSubmit context hook.
 
-Driven through both wrappers, `crew-context.sh` and `crew-context.ps1`, with
-the same payload. The .ps1 cases need pwsh and run with `OS=Windows_NT` so
-its flavour guard proceeds on a Linux host; without pwsh they skip and say so.
-`HOME` and `USERPROFILE` point into tmp_path, so the machine-global crew
+Driven through the wrapper, `crew-context.sh`. `HOME` and `USERPROFILE` point into tmp_path, so the machine-global crew
 config the hook reads is one that does not exist -- never the developer's
 real one, on POSIX or on Windows.
 """
@@ -22,12 +19,9 @@ import crew_ticket
 from context_fixtures import log_records, make_repo, payload
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "hooks" / "scripts"
-PWSH = crew_fixtures.resolve_pwsh()
 BASH = crew_fixtures.resolve_bash()
 needs_bash = pytest.mark.skipif(BASH is None,
                                 reason="bash not installed - the sh flavour was NOT run")
-needs_pwsh = pytest.mark.skipif(PWSH is None,
-                                reason="pwsh not installed - the .ps1 flavour was NOT run")
 
 SUBSYSTEMS = {"review": (["src/review/core.py"], ["REVIEW-LANDMINE the verdict is cached"])}
 # Recorded from the hook at origin/main 1e0706ac (before T-0023) for this
@@ -71,15 +65,8 @@ def _raw(root, prompt, prompt_id="p1"):
     return json.dumps(data).encode()
 
 
-def _run(flavour, tmp_path, root, raw, *args):
-    if flavour == "sh":
-        cmd, env = [BASH, str(SCRIPTS / "crew-context.sh"), *args], _env(tmp_path)
-    else:
-        if PWSH is None:
-            pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
-        ps_args = ["-Harness", args[1]] if args else []
-        cmd = [PWSH, "-NoProfile", "-File", str(SCRIPTS / "crew-context.ps1"), *ps_args]
-        env = _env(tmp_path, OS="Windows_NT")
+def _run(_flavour, tmp_path, root, raw, *args):
+    cmd, env = [BASH, str(SCRIPTS / "crew-context.sh"), *args], _env(tmp_path)
     done = subprocess.run(cmd, input=raw, cwd=root, capture_output=True, env=env, check=False,
                           timeout=60)
     out = done.stdout.decode()
@@ -91,7 +78,7 @@ def _context(out):
     return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out.strip() else ""
 
 
-FLAVOURS = ("sh", pytest.param("ps1", marks=needs_pwsh))
+FLAVOURS = ("sh",)
 
 
 @needs_bash
@@ -207,18 +194,6 @@ def test_an_ask_is_emitted_alone_when_nothing_else_is(tmp_path, flavour):
 
     assert (out.startswith("crew route: "), "T-99" in out, "ask the user" in out) == \
         (True, True, True)
-
-
-@needs_bash
-@needs_pwsh
-def test_both_flavours_same_payload_only_one_emits(tmp_path):
-    root = _repo(tmp_path, armed=True)
-    raw = _raw(root, "review T-1")
-
-    ps = _run("ps1", tmp_path, root, raw)
-    sh = _run("sh", tmp_path, root, raw)
-
-    assert (_context(ps).startswith(ROUTE), sh) == (True, "")
 
 
 @needs_bash

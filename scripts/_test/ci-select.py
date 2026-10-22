@@ -611,7 +611,7 @@ def case_readers_select_the_crew_files_and_suites_that_read_the_path():
         ("skills/solomon-doc-builder/assets/brand.json", {"doc_builder"}, set()),
         ("skills/solomon-doc-builder/assets/logo/solomon-logo-on-dark.png", {"doc_builder"}, set()),
         ("skills/some-new-brand/assets/brand.json", {"doc_builder"}, set()),
-        ("plugin/crew/hooks/scripts/role-write-guard.ps1", {"crew", "obsidian_vault"}, set()),
+        ("plugin/crew/hooks/scripts/crew-hook.ps1", {"crew", "obsidian_vault"}, set()),
         ("docs/guides/crew/src/auto-cycle.md", set(),
          {CREW + "test_crew_autopilot_policy.py", CREW + "test_crew_resume.py",
           CREW + "test_crew_train.py", CREW + "test_status_vocabulary.py",
