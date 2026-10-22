@@ -18,8 +18,8 @@ is a stop - show me its line, never pick one.
 
 | `tracker` | Backend |
 |---|---|
-| `sdp` | ServiceDesk Plus, `sdp_create module=change`, against `change.sdpTemplate` |
-| `jira` | Jira, an issue of type `change.jiraIssueType` |
+| `sdp` | ServiceDesk Plus, `sdp_create module=change`, against the `Change Management Request` template (`crew_state.CHANGE_SDP_TEMPLATE`) |
+| `jira` | Jira, an issue of type `Change` (`crew_state.CHANGE_JIRA_ISSUE_TYPE`) |
 | `files`, `obsidian` | `.work/changes/<id>.md` |
 
 **Missing tooling for the chosen backend is a stop.** If `tracker` is `sdp` and
@@ -38,9 +38,9 @@ operator now believes a change request exists.
 ### Collect
 
 The eleven template fields (`crew-change` §1) and the ten answers
-(`crew-change` §2). `change.requester`, `change.implementor` and
-`change.category` supply three of the fields when they are set; ask for them
-when they are null. Everything else is per-request — a default Priority is a
+(`crew-change` §2). Ask for the requester, the implementor and the category
+every time: no config key supplies them (`crew_state.CHANGE_REQUESTER`,
+`CHANGE_IMPLEMENTOR` and `CHANGE_CATEGORY` are all `None`). Everything else is per-request — a default Priority is a
 Priority nobody chose.
 
 Ask in **one round**, not three. Show the ten questions as the template words
@@ -127,8 +127,8 @@ transitioning it. If the attach fails, the close does not happen: there is no
 local outbox, and a closed change with no results attached cannot be repaired
 by a later note nobody looks for.
 
-`sdp.closeOnDone` still governs whether crew transitions an SDP record at all.
-At `false`, attach the results, say the change is ready to close, and leave the
+Crew never closes an SDP record itself (`crew_state.SDP_CLOSE_ON_DONE` is
+`False`). Attach the results, say the change is ready to close, and leave the
 closure to whoever owns the queue.
 
 ## 4. `list`

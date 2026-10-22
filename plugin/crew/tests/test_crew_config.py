@@ -34,6 +34,7 @@ import crew_platform
 import crew_shell
 import crew_state
 import crew_upgrade
+import l0725_keyset
 
 _TEMPLATE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), os.pardir,
@@ -429,7 +430,7 @@ def test_the_ten_keys_crew_read_but_never_declared_are_declared():
     # `memory.recall.projects` (L-0675, G3b) on top: 152, counted by running this test
     # on rush/g6b-goals-sleep after merging release/1.2.0 (crew 1.1.20).
     assert "memory.recall.projects" in declared
-    assert len(declared) == 153
+    assert len(declared) == len(l0725_keyset.L0725_REPO_KEYS)
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():
@@ -3373,23 +3374,19 @@ def test_config_md_and_setup_template_state_the_kimi_defaults():
     assert json.dumps(list(crew_config.QA_PROVIDERS)).replace('","', '", "') in text
 
 
-def test_config_md_global_key_count_is_measured():
-    """CONFIG.md §10 states the global-settable key count, the total, and
-    lists the global keys in a table. Since T-0048 that table and its count
-    line are generated (`config_reference.py`); all three are re-measured here
-    against the code: N is `len(leaf_paths(default_global_config()))`, M every
-    declared leaf, and the table holds exactly the N global keys."""
+def test_config_md_states_the_measured_key_counts():
+    """CONFIG.md is generated whole (L-0725). Its first line of counts is
+    re-measured here against the code: the total, the machine-global leaves and
+    the repo-only remainder, and every declared key has a row."""
     with open(_CONFIG_MD_PATH, encoding="utf-8") as handle:
         text = handle.read()
-    section = text[text.index("## 10. Global-settable keys"):text.index("## 11. ")]
-    match = re.search(r"(\d+) of (\d+) keys are settable in the machine-global file",
-                      section)
-    stated_global, stated_total = int(match.group(1)), int(match.group(2))
-    tabled = [key for line in section.splitlines() if line.startswith("| `")
-              for key in re.findall(r"`([^`]+)`", line.split("|")[1])]
+    match = re.search(r"(\d+) keys: (\d+) settable in the machine-global file, (\d+) repo-only",
+                      text)
+    stated_total, stated_global, stated_repo = (int(g) for g in match.groups())
     global_leaves = crew_config.leaf_paths(crew_config.default_global_config())
     total = set(crew_config.leaf_paths(crew_config.default_config())) | set(global_leaves)
 
-    assert stated_global == len(global_leaves) == len(tabled)
-    assert stated_total == len(total)
-    assert set(tabled) == set(global_leaves)
+    assert (stated_total, stated_global, stated_repo) == (
+        len(total), len(global_leaves), len(total) - len(global_leaves))
+    assert all(f"| `{key}` |" in text for key in total)
+    assert len(text.splitlines()) < 600

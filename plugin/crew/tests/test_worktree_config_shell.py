@@ -449,12 +449,13 @@ def test_auto_clear_reads_the_inherited_repo_veto(tmp_path, flavour, main_enable
 # notify, handoff-read, handoff-write and context-watch read the
 # resolved repo config: a lane with none of its own reads the main checkout's,
 # its own file wins whole, and `unknown` reads nothing. Every write stays in the
-# lane. No test sends a real notification: the provider is `teams` pointed (via
-# urlEnv) at a local HTTP stub that counts the posts.
+# lane. No test sends a real notification: the provider is `telegram` pointed (via
+# CREW_NOTIFY_TELEGRAM_BASE) at a local HTTP stub that counts the posts.
 
 SESSION_DRIVERS = [pytest.param("sh", marks=needs_bash)]
 SESSION_HOOKS = ("notify", "handoff-read", "handoff-write", "context-watch")
-_URL_ENV = "CREW_L0680_STUB_URL"
+_TOKEN_ENV = "CREW_L0680_STUB_TOKEN"
+_STUB_TOKEN = "123456789:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
 
 
 def _session_env(tmp_path, root, flavour, extra=None):
@@ -491,15 +492,15 @@ class _Stub:
                 length = int(self.headers.get("Content-Length") or 0)
                 posts.append(self.rfile.read(length))
                 self.send_response(200)
-                self.send_header("Content-Length", "2")
+                self.send_header("Content-Length", "12")
                 self.end_headers()
-                self.wfile.write(b"{}")
+                self.wfile.write(b'{"ok": true}')
 
             def log_message(self, *_args):  # pylint: disable=arguments-differ
                 return
 
         self.server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/hook"
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
@@ -516,20 +517,21 @@ def stub():
 
 
 # T-0051: the provider and events come from the repo layer (here the main
-# checkout's, inherited by the lane), but `urlEnv` is honoured from the
+# checkout's, inherited by the lane), but `tokenEnv` is honoured from the
 # machine-global file only (crew_notify.GLOBAL_ONLY_KEYS), so it is written there;
 # the global file names no provider, so a lane with its own config sends nothing.
 # `waiting` is the legacy name crew_notify.py reads as `question`.
-NOTIFY_CFG = {"notify": {"provider": "teams", "events": ["question"]}}
+NOTIFY_CFG = {"notify": {"provider": "telegram", "chatId": "4242", "events": ["question"]}}
 
 
 def _notify(tmp_path, flavour, root, stub_server):
     machine = tmp_path / "home" / ".claude" / "crew"
     machine.mkdir(parents=True, exist_ok=True)
-    (machine / "config.json").write_text(json.dumps({"notify": {"urlEnv": _URL_ENV}}),
+    (machine / "config.json").write_text(json.dumps({"notify": {"tokenEnv": _TOKEN_ENV}}),
                                          encoding="utf-8")
     return _run_session_hook(tmp_path, "notify", flavour, root, args=("waiting", "suite ping"),
-                             extra={_URL_ENV: stub_server.url})
+                             extra={_TOKEN_ENV: _STUB_TOKEN,
+                                  "CREW_NOTIFY_TELEGRAM_BASE": stub_server.url})
 
 
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
@@ -538,7 +540,7 @@ def test_notify_in_a_lane_uses_the_main_checkouts_provider(tmp_path, flavour, st
     proc = _notify(tmp_path, flavour, wt, stub)
     assert proc.returncode == 0, proc.stderr
     assert len(stub.posts) == 1, proc.stderr
-    assert b"suite ping" in stub.posts[0]
+    assert b"suite+ping" in stub.posts[0]
 
 
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
@@ -558,31 +560,6 @@ def test_notify_in_the_main_checkout_still_uses_its_own_provider(tmp_path, flavo
     assert len(stub.posts) == 1, proc.stderr
 
 
-HANDOFF_CFG = {"context": {"handoffPath": "notes/H.md"}, "memory": {"inject": False}}
-
-
-def _note(root, text):
-    (root / "notes").mkdir(exist_ok=True)
-    (root / "notes" / "H.md").write_text(text + "\n", encoding="utf-8")
-
-
-def _handoff_read(tmp_path, flavour, root, session="s-read"):
-    return _run_session_hook(tmp_path, "handoff-read", flavour, root,
-                             payload={"source": "clear", "cwd": str(root), "session_id": session})
-
-
-@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
-def test_handoff_read_in_a_lane_prints_the_note_at_the_inherited_path(tmp_path, flavour):
-    main, wt = _lane(tmp_path, HANDOFF_CFG)
-    _note(main, "MAIN CHECKOUT NOTE")
-    _note(wt, "LANE NOTE")
-    proc = _handoff_read(tmp_path, flavour, wt)
-    out = proc.stdout.decode("utf-8", "replace")
-    assert proc.returncode == 0, proc.stderr
-    assert "LANE NOTE" in out, proc.stderr
-    assert "MAIN CHECKOUT NOTE" not in out
-
-
 def _transcripts(root):
     return sorted((root / ".crew" / "transcripts").glob("*.jsonl"))
 
@@ -591,48 +568,43 @@ def _crew_listing(root):
     return sorted(str(p.relative_to(root)) for p in (root / ".crew").rglob("*"))
 
 
-@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
-def test_handoff_write_in_a_lane_keeps_the_inherited_transcript_count(tmp_path, flavour):
-    main, wt = _lane(tmp_path, {"context": {"keepTranscripts": 2}})
-    before = _crew_listing(main)
-    transcript = tmp_path / "session.jsonl"
-    transcript.write_text('{"x": 1}\n', encoding="utf-8")
-    for n in range(3):
-        if n:
-            time.sleep(1.1)  # the copy is named to the second
-        proc = _run_session_hook(tmp_path, "handoff-write", flavour, wt, payload={
-            "transcript_path": str(transcript), "trigger": "manual", "cwd": str(wt),
-            "session_id": f"s-write-{n}"})
-        assert proc.returncode == 0, proc.stderr
-    assert len(_transcripts(wt)) == 2
-    assert _crew_listing(main) == before
+def _seed_transcripts(root, count):
+    folder = root / ".crew" / "transcripts"
+    folder.mkdir(parents=True, exist_ok=True)
+    for n in range(count):
+        path = folder / f"2020010{n}-000000-auto.jsonl"
+        path.write_text("{}\n", encoding="utf-8")
+        stamp = time.time() - 3600 * (n + 1)
+        os.utime(path, (stamp, stamp))
 
 
+@pytest.mark.parametrize("keep", [0, 2, 3_000_000_000, "2", True, -1])
+@pytest.mark.parametrize("where", ["lane", "main"])
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
-def test_handoff_write_in_the_main_checkout_keeps_its_own_transcript_count(tmp_path, flavour):
-    """Own file: the main checkout reads its own keepTranscripts."""
-    main, _wt = _lane(tmp_path, {"context": {"keepTranscripts": 1}})
+def test_keep_transcripts_is_constant(tmp_path, flavour, where, keep):
+    """The inherited (or own) `context.keepTranscripts` changes nothing: the
+    hook keeps the fixed 5 newest snapshots."""
+    main, wt = _lane(tmp_path, {"context": {"keepTranscripts": keep}})
+    root = wt if where == "lane" else main
+    _seed_transcripts(root, 8)
     transcript = tmp_path / "session.jsonl"
-    transcript.write_text('{"x": 1}\n', encoding="utf-8")
-    for n in range(2):
-        if n:
-            time.sleep(1.1)
-        proc = _run_session_hook(tmp_path, "handoff-write", flavour, main, payload={
-            "transcript_path": str(transcript), "trigger": "manual", "cwd": str(main),
-            "session_id": f"s-own-{n}"})
-        assert proc.returncode == 0, proc.stderr
-    assert len(_transcripts(main)) == 1
+    transcript.write_text("{}\n", encoding="utf-8")
+    proc = _run_session_hook(tmp_path, "handoff-write", flavour, root, payload={
+        "transcript_path": str(transcript), "trigger": "manual", "cwd": str(root),
+        "session_id": f"s-keep-{flavour}-{where}"})
+    assert proc.returncode == 0, proc.stderr
+    assert len(_transcripts(root)) == 5
 
 
 def _context_cfg(**over):
-    cfg = {"warnAt": 0.8, "budgetTokens": 100, "reserveTokens": 0, "autoWrapUp": False}
+    cfg = {"warnAt": 0.8, "reserveTokens": 0}
     cfg.update(over)
     return {"context": cfg}
 
 
 def _context_watch(tmp_path, flavour, root, extra=None, session="s-watch"):
     transcript = root / "transcript.jsonl"
-    transcript.write_bytes(b"x" * 500)  # over 0.8 of a 100-token budget
+    transcript.write_bytes(b"x" * 1_000_000)  # over 0.8 of the 200k default window
     return _run_session_hook(tmp_path, "context-watch", flavour, root, payload={
         "transcript_path": str(transcript), "cwd": str(root), "session_id": session,
         "stop_hook_active": False}, extra=extra)
@@ -669,11 +641,6 @@ def test_context_watch_in_a_lane_warns_at_the_inherited_threshold(tmp_path, driv
     assert first.returncode == 2, first.stderr
     if driver == "sh-no-python":
         return  # the no-python branch asks once per turn and claims no marker, by design
-    err = first.stderr.decode("utf-8", "replace")
-    # the message names the file in force, the main checkout's, not the lane's
-    # By its full path, in whatever form the flavour prints it (Git Bash's
-    # /c/..., a Windows drive path, a resolved link): its tail names main's file.
-    assert "/main/.crew/config.json" in err.replace("\\", "/"), err
     second = _context_watch(tmp_path, flavour, wt, extra)
     assert second.returncode == 0, second.stderr
     assert len(_markers(wt)) == 1
@@ -681,33 +648,18 @@ def test_context_watch_in_a_lane_warns_at_the_inherited_threshold(tmp_path, driv
 
 
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
-def test_context_watch_in_the_main_checkout_keeps_its_message(tmp_path, flavour):
-    """Own file: the message still says `.crew/config.json`, byte for byte."""
-    main, _wt = _lane(tmp_path, _context_cfg())
-    proc = _context_watch(tmp_path, flavour, main)
-    err = proc.stderr.decode("utf-8", "replace")
-    assert proc.returncode == 2, err
-    assert "That came from .crew/config.json." in err
-
-
-@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
 def test_session_hooks_read_only_their_own_file_when_git_cannot_tell(tmp_path, flavour, stub):
     """A real lane of a main checkout whose config would make every hook act
-    (notify, an inherited handoff path, keepTranscripts, a low warnAt), with the
+    (notify, a low warnAt), with the
     lane's `.git` naming a missing directory: git cannot tell, nothing is
     inherited, and each hook behaves as with no config."""
-    loose = dict(NOTIFY_CFG, memory={"inject": False},
-                 context=dict(_context_cfg()["context"], handoffPath="notes/H.md",
-                              keepTranscripts=1))
+    loose = dict(NOTIFY_CFG, context=_context_cfg()["context"])
     main, wt = _lane(tmp_path, loose)
     (wt / ".git").unlink()  # Windows: git marks it hidden, and a hidden file cannot be opened "w"
     (wt / ".git").write_text("gitdir: " + str(tmp_path / "nowhere") + "\n", encoding="utf-8")
     (wt / ".crew").mkdir()
-    _note(wt, "LANE NOTE")
     assert _notify(tmp_path, flavour, wt, stub).returncode == 0
     assert not stub.posts
-    read = _handoff_read(tmp_path, flavour, wt)
-    assert read.returncode == 0 and b"LANE NOTE" not in read.stdout, read.stdout
     transcript = tmp_path / "session.jsonl"
     transcript.write_text("{}\n", encoding="utf-8")
     write = _run_session_hook(tmp_path, "handoff-write", flavour, wt, payload={
@@ -723,134 +675,30 @@ def test_session_hooks_read_only_their_own_file_when_git_cannot_tell(tmp_path, f
 
 # --- review round 1 ---------------------------------------------------------------------
 
-def _escaping(kind, main):
-    """An inherited handoffPath that leaves the lane, into the main checkout."""
-    return str(main / ".work" / "HANDOFF.md") if kind == "absolute" else "../main/.work/HANDOFF.md"
-
-
-ESCAPES = ["absolute", "dotdot"]
-
-
-@pytest.mark.parametrize("kind", ESCAPES)
+@pytest.mark.parametrize("value", ["notes/H.md", "../main/.work/HANDOFF.md", "notes", "."])
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
-def test_handoff_write_never_writes_outside_the_lane(tmp_path, flavour, kind):
+def test_handoff_path_is_constant(tmp_path, flavour, value):
+    """The handoff note is always `.work/HANDOFF.md` in the checkout the hook
+    runs in, whatever an inherited `context.handoffPath` says."""
     main, wt = _lane(tmp_path, None)
-    _own(main, "config.json", {"context": {"handoffPath": _escaping(kind, main)}})
-    proc = _run_session_hook(tmp_path, "handoff-write", flavour, wt, payload={
-        "transcript_path": str(tmp_path / "none.jsonl"), "trigger": "manual", "cwd": str(wt),
-        "session_id": f"s-esc-{kind}"})
-    assert proc.returncode == 0, proc.stderr
-    assert not (main / ".work").exists(), "a lane hook wrote into the main checkout"
-    assert (wt / ".work" / "HANDOFF.md").exists(), proc.stderr
-    assert b"handoffPath" in proc.stderr  # warned
-
-
-@pytest.mark.parametrize("value", ["..\\main\\.work\\HANDOFF.md", "notes\\..\\..\\x",
-                                   "\\\\server\\share\\x"],
-                         ids=["dotdot-backslash", "inner-dotdot-backslash", "unc"])
-@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
-def test_handoff_write_never_writes_outside_the_lane_through_backslashes(tmp_path, flavour, value):
-    """Round-3 F1: on POSIX a backslash is a filename character, so these are one
-    in-lane name, never turned into `/` after the containment check to write
-    main's file, `../x` or `//server/share/x`. On Windows they leave
-    the lane and fall back to the default. Either way nothing is written outside."""
-    main, wt = _lane(tmp_path, None)
-    _own(main, "config.json", {"context": {"handoffPath": value}})
-    (main / ".work").mkdir()  # a real main checkout has one; an escape must not land in it
-    proc = _run_session_hook(tmp_path, "handoff-write", flavour, wt, payload={
-        "transcript_path": str(tmp_path / "none.jsonl"), "trigger": "manual", "cwd": str(wt),
-        "session_id": f"s-bs-{flavour}"})
-    assert proc.returncode == 0, proc.stderr
-    assert not list((main / ".work").iterdir()), "a lane hook wrote into the main checkout"
-    assert not (tmp_path / "x").exists(), "a lane hook wrote beside the lane"
-    assert not os.path.exists(os.path.join(os.sep, "server", "share", "x"))
-    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(
-        n for n in ("main", "wt", "home") if (tmp_path / n).exists())
-
-
-@pytest.mark.parametrize("flavour", [pytest.param("sh", marks=needs_bash)])
-def test_a_trailing_backslash_is_a_file_name_on_posix(tmp_path, flavour):
-    """Round-3 N1: `notes\\` is a legal POSIX file name, so bash (python's
-    path rules) uses it as given."""
-    if os.sep == "\\":
-        pytest.skip("a separator on Windows: covered by the directory case")
-    main, _wt = _lane(tmp_path, None)
-    _own(main, "config.json", {"context": {"handoffPath": "notes\\"}})
-    proc = _run_session_hook(tmp_path, "handoff-write", flavour, main, payload={
-        "transcript_path": str(tmp_path / "none.jsonl"), "trigger": "manual", "cwd": str(main),
-        "session_id": f"s-trail-{flavour}"})
-    assert proc.returncode == 0, proc.stderr
-    assert (main / "notes\\").is_file(), proc.stderr
-    assert not (main / ".work" / "HANDOFF.md").exists()
-
-
-def _dir_cases():
-    """A trailing backslash names a directory only where it is a separator:
-    on Windows for bash."""
-    cases = [pytest.param("sh", v, marks=needs_bash) for v in (".", "./", "notes/", "notes")]
-    if os.sep == "\\":
-        cases.append(pytest.param("sh", "notes\\", marks=needs_bash))
-    return cases
-
-
-@pytest.mark.parametrize("flavour,value", _dir_cases())
-def test_a_directory_valued_handoff_path_is_the_default(tmp_path, flavour, value):
-    """Round-2 N1: a handoffPath naming a directory (the checkout itself, or one
-    in it) cannot hold the note; the hook uses .work/HANDOFF.md and warns."""
-    main, _wt = _lane(tmp_path, None)
     (main / "notes").mkdir()
     _own(main, "config.json", {"context": {"handoffPath": value}})
-    proc = _run_session_hook(tmp_path, "handoff-write", flavour, main, payload={
-        "transcript_path": str(tmp_path / "none.jsonl"), "trigger": "manual", "cwd": str(main),
-        "session_id": f"s-dir-{flavour}"})
+    proc = _run_session_hook(tmp_path, "handoff-write", flavour, wt, payload={
+        "transcript_path": str(tmp_path / "none.jsonl"), "trigger": "manual", "cwd": str(wt),
+        "session_id": "s-const-path"})
     assert proc.returncode == 0, proc.stderr
-    assert (main / ".work" / "HANDOFF.md").exists(), proc.stderr
-    assert b"handoffPath" in proc.stderr, proc.stderr
+    assert (wt / ".work" / "HANDOFF.md").exists(), proc.stderr
+    assert not (main / ".work").exists(), "a lane hook wrote into the main checkout"
     assert not list((main / "notes").iterdir())
 
 
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
-def test_handoff_path_reaches_the_model_with_forward_slashes(tmp_path, flavour):
-    """Windows pre-flight: the contained path came back as `notes\\H.md`."""
-    main, _wt = _lane(tmp_path, _context_cfg(handoffPath="notes/H.md", autoWrapUp=True))
+def test_context_watch_names_the_fixed_handoff_path(tmp_path, flavour):
+    main, _wt = _lane(tmp_path, _context_cfg(handoffPath="notes/H.md"))
     proc = _context_watch(tmp_path, flavour, main)
     err = proc.stderr.decode("utf-8", "replace")
     assert proc.returncode == 2, err
-    assert "notes/H.md" in err, err
-
-
-@pytest.mark.parametrize("kind", ESCAPES)
-@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
-def test_handoff_read_never_prints_a_note_outside_the_lane(tmp_path, flavour, kind):
-    main, wt = _lane(tmp_path, None)
-    _own(main, "config.json", {"context": {"handoffPath": _escaping(kind, main)},
-                               "memory": {"inject": False}})
-    (main / ".work").mkdir()
-    (main / ".work" / "HANDOFF.md").write_text("MAIN CHECKOUT NOTE\n", encoding="utf-8")
-    (wt / ".work").mkdir()
-    (wt / ".work" / "HANDOFF.md").write_text("LANE DEFAULT NOTE\n", encoding="utf-8")
-    proc = _handoff_read(tmp_path, flavour, wt)
-    out = proc.stdout.decode("utf-8", "replace")
-    assert proc.returncode == 0, proc.stderr
-    assert "MAIN CHECKOUT NOTE" not in out
-    assert "LANE DEFAULT NOTE" in out, proc.stderr
-
-
-@pytest.mark.parametrize("kind", ESCAPES)
-@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
-def test_context_watch_never_names_a_handoff_outside_the_lane(tmp_path, flavour, kind):
-    main, wt = _lane(tmp_path, None)
-    _own(main, "config.json", _context_cfg(handoffPath=_escaping(kind, main), autoWrapUp=True))
-    (wt / ".crew").mkdir()
-    proc = _context_watch(tmp_path, flavour, wt)
-    err = proc.stderr.decode("utf-8", "replace")
-    assert proc.returncode == 2, err
-    for named in (_escaping(kind, main), str(main / ".work"),
-                  os.path.join(os.path.realpath(main), ".work"), "../"):
-        assert named not in err.replace("\\", "/"), err
-    assert ".work/HANDOFF.md" in err  # forward slashes on every OS
-    # the model is told, in the message itself, why the path is not the configured one
-    assert "leaves this checkout, so the handoff goes" in err, err
+    assert ".work/HANDOFF.md" in err and "notes/H.md" not in err, err
 
 
 @pytest.mark.parametrize("flavour", SESSION_DRIVERS)
@@ -859,7 +707,7 @@ def test_handoff_write_records_a_compact_in_a_lane_whose_main_has_only_crew_json
     """F1: the inherited branch's crew.json disjunct. A main checkout retired to
     crew.json alone still gets the lane its PreCompact record, and nothing else."""
     main, wt = _lane(tmp_path, None)
-    _own(main, "crew.json", {"memory": {"inject": True}})
+    _own(main, "crew.json", {})
     proc = _run_session_hook(tmp_path, "handoff-write", flavour, wt, payload={
         "hook_event_name": "PreCompact", "transcript_path": str(tmp_path / "none.jsonl"),
         "trigger": "manual", "cwd": str(wt), "session_id": "s-crewjson"})
@@ -868,35 +716,6 @@ def test_handoff_write_records_a_compact_in_a_lane_whose_main_has_only_crew_json
     record = os.path.join(crew_resume.state_dir(str(wt)), "precompact-s-crewjson.json")
     assert os.path.exists(record), proc.stderr
     assert not (wt / ".work" / "HANDOFF.md").exists()
-
-
-def _seed_transcripts(root, count):
-    folder = root / ".crew" / "transcripts"
-    folder.mkdir(parents=True, exist_ok=True)
-    for n in range(count):
-        path = folder / f"2020010{n}-000000-auto.jsonl"
-        path.write_text("{}\n", encoding="utf-8")
-        stamp = time.time() - 3600 * (n + 1)
-        os.utime(path, (stamp, stamp))
-
-
-@pytest.mark.parametrize("keep,left", [(3_000_000_000, 7), (10 ** 20, 7), ("2", 5), (True, 5),
-                                       (-1, 5), (0, 0), (2.0, 5)],
-                         ids=["above-int32", "above-int64", "digit-string", "bool", "negative",
-                              "zero", "float"])
-@pytest.mark.parametrize("flavour", SESSION_DRIVERS)
-def test_keep_transcripts_reads_integers_only(tmp_path, flavour, keep, left):
-    """F2/N2: an integer past Int32 keeps everything; a non-integer, as
-    documented (CONFIG.md: expects integer), is ignored, so 5 are kept."""
-    main, _wt = _lane(tmp_path, {"context": {"keepTranscripts": keep}})
-    _seed_transcripts(main, 6)
-    transcript = tmp_path / "session.jsonl"
-    transcript.write_text("{}\n", encoding="utf-8")
-    proc = _run_session_hook(tmp_path, "handoff-write", flavour, main, payload={
-        "transcript_path": str(transcript), "trigger": "manual", "cwd": str(main),
-        "session_id": f"s-keep-{flavour}"})
-    assert proc.returncode == 0, proc.stderr
-    assert len(_transcripts(main)) == left
 
 
 # Lines in the scripts that may still name the own file outside a comment,

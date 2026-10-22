@@ -74,7 +74,7 @@ class _Done:
 def test_the_main_checkout_name_is_sent_as_the_project(tmp_path, stub):
     root = _git_repo(tmp_path / "acme-app")
 
-    result = crew_recall.recall("deploy checklist please", {}, root=str(root))
+    result = crew_recall.recall("deploy checklist please", root=str(root))
 
     assert _project_args(_calls(stub)[-1]) == ["--project=acme-app"]
     assert result["project"] == ["acme-app"]
@@ -86,38 +86,27 @@ def test_a_linked_worktree_sends_the_main_checkout_name(tmp_path, stub):
     lane = tmp_path / "lane-7"
     git(root, "worktree", "add", "-q", str(lane))
 
-    crew_recall.recall("deploy checklist please", {}, root=str(lane))
+    crew_recall.recall("deploy checklist please", root=str(lane))
 
     assert _project_args(_calls(stub)[-1]) == ["--project=acme-app"]
 
 
-def test_the_config_list_wins_over_the_directory_name(tmp_path, stub):
+def test_projects_is_constant(tmp_path, stub):
     root = _git_repo(tmp_path / "acme-app")
-    cfg = {"memory": {"recall": {"projects": ["crew", "Crew Plugin"]}}}
+    (root / ".crew").mkdir()
+    (root / ".crew" / "config.json").write_text(
+        json.dumps({"memory": {"recall": {"projects": ["crew", "Crew Plugin"]}}}), encoding="utf-8")
 
-    crew_recall.recall("deploy checklist please", cfg, root=str(root))
+    crew_recall.recall("deploy checklist please", root=str(root))
 
-    assert _project_args(_calls(stub)[-1]) == ["--project=crew,Crew Plugin"]
-
-
-@pytest.mark.parametrize("bad", ["a,b", "two\nlines", "acme\n", "\tacme",
-                                 "bell\x07", "sep x", 7, None, "", "   "])
-def test_unusable_project_names_are_dropped(tmp_path, stub, bad):
-    root = _git_repo(tmp_path / "acme-app")
-
-    kept = crew_recall.projects({"memory": {"recall": {"projects": [bad, " ok ", "ok"]}}}, str(root))
-    assert kept == ["ok"]
-
-    crew_recall.recall("deploy checklist please", {"memory": {"recall": {"projects": [bad]}}},
-                       root=str(root))
-    assert _project_args(_calls(stub)[-1]) == []
+    assert _project_args(_calls(stub)[-1]) == ["--project=acme-app"]
 
 
 def test_no_git_answer_sends_no_project(tmp_path, stub):
     plain = tmp_path / "not-a-repo"
     plain.mkdir()
 
-    result = crew_recall.recall("deploy checklist please", {}, root=str(plain))
+    result = crew_recall.recall("deploy checklist please", root=str(plain))
 
     assert _project_args(_calls(stub)[-1]) == []
     assert result["project"] == []
@@ -125,7 +114,7 @@ def test_no_git_answer_sends_no_project(tmp_path, stub):
 
 
 def test_no_root_sends_todays_argv(stub):
-    result = crew_recall.recall("deploy checklist please", {})
+    result = crew_recall.recall("deploy checklist please")
 
     assert _project_args(_calls(stub)[-1]) == []
     assert (result["project"], result["projectUsed"]) == ([], None)
@@ -137,7 +126,7 @@ def test_an_older_cli_is_asked_again_without_the_project(tmp_path, stub, monkeyp
     root = _git_repo(tmp_path / "acme-app")
     monkeypatch.setenv("STUB_MODE", "noproject")
 
-    result = crew_recall.recall("deploy checklist please", {}, root=str(root))
+    result = crew_recall.recall("deploy checklist please", root=str(root))
 
     calls = _calls(stub)
     assert len(calls) == 2
@@ -175,7 +164,7 @@ def test_only_exit_2_is_retried(tmp_path, stub, make, reason):
     root = _git_repo(tmp_path / "acme-app")
     seen = []
 
-    result = crew_recall.recall("deploy checklist please", {}, root=str(root), runner=make(seen))
+    result = crew_recall.recall("deploy checklist please", root=str(root), runner=make(seen))
 
     assert len(seen) == 1
     assert (result["status"], result["reason"]) == ("miss", reason)
@@ -193,7 +182,7 @@ def test_the_retry_shares_one_time_budget(tmp_path, stub, monkeypatch):
         clock[0] += kw["timeout"]  # the first call spends the whole budget
         return _Done(2)
 
-    result = crew_recall.recall("deploy checklist please", {}, root=str(root), runner=slow_then_exit_2)
+    result = crew_recall.recall("deploy checklist please", root=str(root), runner=slow_then_exit_2)
 
     assert len(seen) == 1
     assert seen[0][1] == crew_recall.CLI_TIMEOUT_SECONDS
@@ -213,7 +202,7 @@ def test_the_retry_gets_only_the_time_left(tmp_path, stub, monkeypatch):
             return _Done(2)
         return _Done(0, json.dumps([{"vault": "primary-v", "note": "a.md", "text": "A"}]))
 
-    result = crew_recall.recall("deploy checklist please", {}, root=str(root), runner=runner)
+    result = crew_recall.recall("deploy checklist please", root=str(root), runner=runner)
 
     assert seen == [crew_recall.CLI_TIMEOUT_SECONDS, crew_recall.CLI_TIMEOUT_SECONDS - 3]
     assert (result["status"], result["projectUsed"]) == ("hit", False)
@@ -223,7 +212,7 @@ def test_a_cli_that_exits_2_both_times_is_the_same_miss_as_today(tmp_path, stub,
     root = _git_repo(tmp_path / "acme-app")
     monkeypatch.setenv("STUB_MODE", "exit")
 
-    result = crew_recall.recall("deploy checklist please", {}, root=str(root))
+    result = crew_recall.recall("deploy checklist please", root=str(root))
 
     assert len(_calls(stub)) == 2
     assert (result["status"], result["reason"]) == ("miss", "cli-exit-2")
@@ -297,7 +286,7 @@ def test_this_repos_concept_outranks_another_projects_note(tmp_path, monkeypatch
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     root = _git_repo(tmp_path / "acme-app")
 
-    result = crew_recall.recall("brackenmoor sluice", {}, root=str(root))
+    result = crew_recall.recall("brackenmoor sluice", root=str(root))
 
     assert (result["status"], result["projectUsed"]) == ("hit", True), result
     first = crew_recall.label(result["snippets"][0])

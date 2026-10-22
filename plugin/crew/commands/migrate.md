@@ -1,6 +1,6 @@
 ---
 description: One-time move of a 0.20 crew setup to the 1.0 layout - preview, backup, atomic apply, rollback
-argument-hint: "[--preview | --apply | --rollback <backup-dir>]"
+argument-hint: "[--global] [--preview | --apply | --rollback <backup-dir>] [--accept-dropped <key>]..."
 allowed-tools: Bash, Read
 ---
 
@@ -18,8 +18,9 @@ On Git Bash without `python3`, use `python` or `py -3`. If none resolves, say so
 Preview writes nothing. Show me its output verbatim and point out:
 
 - every `CONFLICT` line - apply refuses while any exist; an unmigrated-block one is fixed by hand;
-- every `upgrade` line - a pre-0.20 config (no `schema`, or 1-6) is brought to the current schema in
+- every `upgrade` line - a config below the current schema (no `schema`, or 1-7) is brought to schema 8 in
   the same apply; read `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/upgrade-report.md` and relay each line as it says;
+- every `unknown` line - a key crew does not read, carried untouched and never deleted;
 - every `unmapped` key - carried into `crew.json` under `unmapped`, never dropped;
 - every `skip` line - a file that was not imported, and why;
 - every `retireable` line - an original left in place. The PM journal is no longer read; `.crew/config.json` is, whatever the line says - never remove it;
@@ -57,15 +58,15 @@ What apply does, in order:
    place with `os.replace`. If anything raises, whatever landed is undone (a file edited since it
    landed is left and named). A hard kill leaves the manifest unfinished; every
    later run reports it until you roll back.
-3. Never deletes, and overwrites exactly one file: a pre-0.20 `.crew/config.json`, whose original
+3. Never deletes, and overwrites exactly one file: a below-current `.crew/config.json`, whose original
    is in the backup and which rollback restores byte-identical. Any other existing target with
    different bytes is a conflict, found in preview. A crew.json an older crew wrote with
    `unmapped.autopilot` is one: roll that migrate back, or leave it.
 
 | From | To |
 |---|---|
-| `.crew/config.json` (schema up to 7) | copied to `.crew/crew.json` (schema 1); the original stays in use by every gate, guard and `/crew:config`; the context hook, resume and the diagram commands read `.crew/crew.json` first when it exists, so after a migrate a `memory`, `context` or `docs` setting is changed in both files |
-| `.crew/config.json` (no schema, or 1-6) | upgraded in place, then as above |
+| `.crew/config.json` (schema 8) | copied to `.crew/crew.json` (schema 1); the original stays in use by every gate, guard and `/crew:config`; the context hook, resume and the diagram commands read `.crew/crew.json` first when it exists, so after a migrate a `memory`, `context` or `docs` setting is changed in both files |
+| `.crew/config.json` (no schema, or 1-7) | upgraded in place, then as above |
 | `.work/tickets/<ID>.md` | `.work/tickets/<ID>/ticket.md` + `provenance.json` |
 | `.work/cache/<ID>.md` (Jira, SDP, Obsidian) | the same, with `source` naming the tracker |
 | `.crew/metrics.md` | `.crew/metrics.jsonl`, one object per row, missing values `UNKNOWN` |
@@ -100,11 +101,47 @@ manifest and rollback leaves them; `/crew:onboard` regenerates them.
 
 If apply printed `upgrade` lines, finish with `upgrade-report.md`'s QA audit re-run (report only).
 
+## Schema 8: the guards profile and the dropped keys (L-0725)
+
+Both config layers get the same two rewrites, the repo's `.crew/config.json` in Step 1-2 above and the
+machine file `~/.claude/crew/config.json` in the next section.
+
+- **Guards.** The twelve `guards.<name>` keys become `guards.profile` (`off`, `standard` or `strict`)
+  plus `guards.overrides`: the profile that needs the fewest overrides, a tie going off, then standard,
+  then strict. Every guard keeps the value it had in that file; only the way it is written changes.
+  A `guards` value that is not an object is a `CONFLICT`: it is left as written.
+- **Dropped keys.** The 60 keys in `hooks/scripts/crew_dropped.py` are code constants now. One holding
+  its default is removed; `tier` and `roles` (retired) are removed whatever they hold; an empty block
+  goes with them. One holding **anything else** is a `CONFLICT` that names the key and the constant that
+  replaces it, and apply **writes nothing** until you remove the key or pass `--accept-dropped <key>`
+  (repeatable, one per key) to let migrate remove it. An accepted key is kept in the backup and listed
+  in the backup manifest (`acceptedDropped`). Never print the value: it may be a path or a secret.
+  Show the person each refused key, what it did, and what replaces it, and let them decide.
+
+## The machine file
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_migrate.py" --global --preview
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_migrate.py" --global --apply [--accept-dropped <key>]...
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_migrate.py" --global --rollback <backup-dir>
+```
+
+`--global` migrates `~/.claude/crew/config.json`, which has no schema and until now no migrator. Preview
+writes nothing. Apply copies the file into `~/.claude/crew/backups/migrate-<UTC timestamp>/` (same
+folder scheme and manifest as the repo path, `scope: global`), then replaces it atomically; nothing
+else on the machine is touched. The rewrites are the two above; the machine default of
+`shellRoute.mode` is `auto`, so only another value is refused. Run it once per machine, preview first,
+and ask before applying: it changes every repo on the machine. A second run reports
+`already migrated`. Exit codes are the repo path's: 0 done or clean preview, 1 a refusal or conflict, 2 usage.
+
 ## Rollback
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_migrate.py" --root . --rollback <backup-dir>
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_migrate.py" --global --rollback <backup-dir>
 ```
+
+The second form is for a machine-file backup; a backup from the other scope is refused.
 
 Removes exactly the files apply created, and restores an upgraded `config.json` from the backup,
 after checking each still holds the bytes apply wrote. If you edited one since, rollback refuses

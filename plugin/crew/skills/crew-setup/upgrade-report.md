@@ -1,7 +1,7 @@
 # Relaying a pre-0.20 upgrade (read by /crew:migrate)
 
-`/crew:migrate` brings a pre-0.20 `.crew/config.json` (no `schema` key, or an
-integer 1-6) up to the current schema with `crew_upgrade.upgrade_config`, the
+`/crew:migrate` brings a `.crew/config.json` below the current schema (no
+`schema` key, or an integer 1-7) up to the current schema with `crew_upgrade.upgrade_config`, the
 code `/crew:upgrade` ran before T-0038 folded that command into migrate. The
 preview and apply print what that stage did as `upgrade` lines. This file says
 how to relay them. It is a migration, not a rebuild: it must not lose or
@@ -22,12 +22,10 @@ at `/crew:config`; do not fix the global file here. Migrate never writes it.
 
 ## Read each line out
 
-- **Config** — the `upgrade  ## Config` lines name the roles the migration
-  ADDED and the tier it moved from and to. Read both out.
-  An upgrade adds every ladder role at or below the tier the config already
-  declares — those are roles a later release added at a tier this repo had
-  already chosen — and it never moves a repo up a tier or removes a role.
-  State the additions even when the answer is none.
+- **Config** — the `upgrade  ## Config` lines name the guards profile the
+  migration chose and every key it removed (held its default, retired, or
+  accepted). Read them out, and state the guard line even when no override
+  was needed.
 - **May be pinned by an earlier `/crew:upgrade`** — a globally-settable leaf
   (`pm.authority`, `qa.order`, `install.policy`, any `guards.*`, ...) this
   repo's file still carries at exactly the built-in default. This run never
@@ -68,8 +66,7 @@ at `/crew:config`; do not fix the global file here. Migrate never writes it.
   repo and machine-global layers rather than the repo winning, so `auto` needs
   both layers to say `auto`; a user who sets it in one place and sees nothing
   change is not looking at a bug.
-- **Schema 5 → 6** — when the report names the `guards` block or
-  `github.mergeGate`, read the whole line out, and this time do **not** lead
+- **Schema 5 → 6** — when the report names the `guards` block, read the whole line out, and this time do **not** lead
   with what did not happen, because two things did. Every guard arrives as
   `block`, and for `guards.terraformApply` and `guards.forcePush` that is
   exactly what the guard already did — but `guards.adminMerge` refuses
@@ -99,23 +96,19 @@ at `/crew:config`; do not fix the global file here. Migrate never writes it.
   is a fact about the machine, what counts as production is a fact about the
   checkout — and that under `read` anything crew cannot positively classify as
   read-only, an interactive `psql` session included, is treated as a write and
-  refused. `github.mergeGate` is the GitHub twin of
-  `bitbucket.mergeGate`, off by default and with no `preset` key — the
-  Bitbucket one has a `preset` that binds to nothing, and it was not copied.
+  refused. The merge-gate step of `/crew:promote` is no longer
+  configured at all: it runs only on `--merge-gate <github|bitbucket>`.
 - **Schema 6 → 7** — when the report names the `change` block, read the whole
   line out, and here you **do** lead with what did not happen, because nothing
   did. `change.requireForProduction` arrives `false`, so `/crew:promote
-  production` asks for no change request, exactly as before; the other five
-  keys are null or a default template name and are read only by `/crew:change`,
-  which has to be invoked. **No promotion starts failing because someone
+  production` asks for no change request, exactly as before; `/crew:change`
+  has to be invoked. **No promotion starts failing because someone
   upgraded.** Then say what the block buys: `/crew:change new` files a change
   request into whichever tracker this repo uses — ServiceDesk Plus against the
-  `change.sdpTemplate` template, Jira as a `change.jiraIssueType` issue, or
+  `Change Management Request` template, Jira as a `Change` issue, or
   `.work/changes/<id>.md` in files mode — and refuses to file while any of the
   template's questions 1–9 is unanswered or a placeholder, naming which.
-  `change.requester` and `change.implementor` are person facts and belong in
-  the machine-global file; set them once with `/crew:config` and every repo on
-  the box files under them.
+  It asks for the requester, the implementor and the category each time.
 
   Say the one thing about `change.requireForProduction` that is **not**
   guessable, because it is the opposite of every other ratcheted key: a repo
@@ -126,15 +119,20 @@ at `/crew:config`; do not fix the global file here. Migrate never writes it.
   `true` holds on a machine that said nothing. A value that is neither `true`
   nor `false` reads as `true`, so a typo stops a production promotion and names
   the key rather than quietly waving it through. CONFIG.md §17.
-- **A machine-global theme that defeats it** — when the report warns that
-  `~/.claude/crew/config.json` still sets `docs.theme` to `"neutral"`, read it
-  out and do NOT offer to edit that file as part of `/crew:migrate`. It is
-  machine-global: every other repo on the box changes with it, and none of
-  them is the one being upgraded. The repo config is now correct and the
-  EFFECTIVE value is still neutral, which is why the warning exists — a repo
-  that looks migrated and resolves the old value is worse than one that
-  obviously did not migrate.
-- **Blocks left unmigrated** — a `pm`, `graph`, `qa`, `dev` or `roles` value
+- **Schema 7 → 8** — the twelve `guards.<name>` keys become `guards.profile`
+  plus `guards.overrides`, the profile being whichever of `off`, `standard`,
+  `strict` needs the fewest overrides (a tie goes off, standard, strict). Say
+  that **every guard keeps the value it had in this file**; the rewrite changes
+  how it is written, not what it decides. Then the dropped keys: 60 settings
+  became code constants at their old defaults. A key that held its default is
+  removed without comment; `tier` and `roles` (retired) are removed whatever
+  they held; the backup keeps all of them. A dropped key holding anything else
+  is a `CONFLICT` and migrate writes nothing until the person removes it or
+  passes `--accept-dropped <key>` for it — read each named key and its constant
+  out, and never print the value. Keys crew does not know are listed as
+  `unknown` and carried untouched. The machine file has its own pass,
+  `crew_migrate.py --global`, with the same preview, apply and rollback.
+- **Blocks left unmigrated** — a `pm`, `graph`, `qa`, `dev` or `guards` value
   that arrived as the wrong type is left exactly as the user wrote it, and
   `schema` is deliberately NOT stamped current. Migrate reports it as a
   `CONFLICT` naming each block and writes nothing - not the config, not
@@ -160,7 +158,7 @@ reads as one that succeeded:
   flag; only explicit consent in session does. Adding roles is not a
   counter-example: a role is a capability and reversible, and that flag is
   consent to write into the user's own notes outside the repo.
-- It did not remove a role, and it did not touch `~/.claude/crew/config.json`.
+- It did not touch `~/.claude/crew/config.json` (that is `crew_migrate.py --global`).
 - It did not write a single per-role model pin. Schema 3's `qa.roles` and
   `dev.roles` arrive empty; `/crew:model` and `/crew:config` own model pins.
 - It did not fix a QA audit GAP or stamp the audit (the audit above reports only).

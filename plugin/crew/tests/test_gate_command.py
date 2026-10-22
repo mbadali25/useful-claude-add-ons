@@ -222,7 +222,7 @@ def test_promote_routes_through_crew_gate_and_covers_github():
     flat = _flat(_read(_PROMOTE))
 
     assert "/crew:gate" in flat
-    assert "github.mergeGate.enabled" in flat
+    assert "--merge-gate <github|bitbucket>" in flat
     assert "guards.mergeGate" in flat
     # And it says what `block` means for promote's own report: not checked,
     # never checked-and-fine.

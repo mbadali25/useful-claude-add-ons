@@ -106,7 +106,7 @@ the step, commit only if its `Test:` passes, run `/crew:handoff --wrap-up`,
 end the turn — and auto-clear waits until the handoff's `head:` is HEAD, its
 `branch:` matches, no tracked file is modified and its `resume:` line parses
 (or is `resume: none`). A refusal is shown to you and fed back to the session
-once. Crew checks the commit, not the test (CONFIG.md §14).
+once. Crew checks the commit, not the test (`docs/crew/config-rationale.md`, "context.autoClear").
 
 It blocks **once per threshold crossing per session**: keyed on the payload's
 `session_id`, never on a `stop_hook_active` continuation, and re-armed only
@@ -172,7 +172,7 @@ every repo. The other keys layer normally, repo over machine.
    the handoff and its `resume:` line and saying the process that started it
    must start a new one. A session that cannot be identified, or whose
    entrypoint was never measured, types nothing either (`auto` falls back to
-   plain `notify`). [CONFIG.md §14](../../../plugin/crew/CONFIG.md) has every rule.
+   plain `notify`). [config-rationale.md](../config-rationale.md) ("context.autoClear") has every rule.
 6. The target window is identified uniquely (the table above), walking up
    from that process: through another Claude Code session, past a chain that
    could not be read, or into a window that hosts another terminal, it
@@ -239,7 +239,7 @@ in `~/.claude/crew/config.json` the context hook works out, on the
 `SessionStart` after `/clear` or a manual `/compact`, whether that command may
 be resumed. Only the machine file can switch it on; a `false` in
 `.crew/crew.json` or `.crew/config.json` vetoes it, and a repo `true` does
-nothing (`CONFIG.md` §14a). Never on `startup`.
+nothing (`docs/crew/config-rationale.md`, "resume.auto"). Never on `startup`.
 
 **Nothing starts on its own yet.** Claude Code 2.1.282 drops a SessionStart
 `initialUserMessage` in an interactive session (spike, 2026-09-25), so crew
@@ -285,7 +285,7 @@ empty; the input line was not ready in time; on Windows, focus lost or a tab
 not provable after the delay. The 2 s default comes from the T-0013 spike
 (input ready by 0.134 s on Claude Code 2.1.282). A delay is a guess, not a
 proof: Windows has no probe, so on a loaded machine a key can land before
-the box is ready (`CONFIG.md` §14b).
+the box is ready (a fixed 2 s delay and a 15 s probe; `docs/crew/config-rationale.md`, "resume.auto").
 
 A note resumes only in the session that wrote it (T-0042). When the note is
 written with Write, Edit or MultiEdit on an armed machine, the context hook

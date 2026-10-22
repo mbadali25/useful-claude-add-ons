@@ -3,13 +3,16 @@
     python3 crew_migrate.py [--root .] [--preview]        # default; writes nothing
     python3 crew_migrate.py [--root .] --apply            # backup, then atomic writes
     python3 crew_migrate.py [--root .] --rollback <dir>   # undo one apply, byte-identical
+    python3 crew_migrate.py --global [--preview|--apply|--rollback <dir>]   # the machine file
+    ... [--accept-dropped <key>]                          # repeatable; see below
 
 What moves, and what does not:
 
 | Source (0.20)                          | Target (1.0)                                  | Original      |
 |----------------------------------------|-----------------------------------------------|---------------|
-| `.crew/config.json` (schema <= 7)      | `.crew/crew.json` (schema 1, table below)     | kept, retireable |
-| `.crew/config.json` (no schema, or 1-6) | upgraded in place, then as above            | backed up, restored |
+| `.crew/config.json` (schema 8)         | `.crew/crew.json` (schema 1, table below)     | kept, retireable |
+| `.crew/config.json` (no schema, or 1-7) | upgraded in place, then as above            | backed up, restored |
+| `~/.claude/crew/config.json` (`--global`) | rewritten in place (guards, dropped keys)  | backed up, restored |
 | `.work/tickets/<ID>.md` (files mode)   | `.work/tickets/<ID>/ticket.md` + provenance   | kept          |
 | `.work/cache/<ID>.md` (jira/sdp/obsidian) | `.work/tickets/<ID>/ticket.md` + provenance | kept          |
 | `.crew/metrics.md`                     | `.crew/metrics.jsonl`, missing values UNKNOWN | kept          |
@@ -24,14 +27,33 @@ refuses when a target already exists with different bytes, so the only thing
 `--rollback` ever has to do is remove what apply created -- after checking the
 bytes are still the ones apply wrote.
 
-One exception, and only for a pre-0.20 config (no `schema` key, or an integer
-1-6): `.crew/config.json` is brought to the current schema by
+One exception, and only for a config below the current schema (no `schema` key,
+or an integer 1-7): `.crew/config.json` is brought to the current schema by
 `crew_upgrade.upgrade_config` -- the code `/crew:upgrade` ran -- and rewritten
 in place in the same apply, before crew.json is built from it. Its original is
 copied into the backup first, the manifest records it as `existed` with its
 `originalSha256`, and both the in-process undo and `--rollback` write those
 original bytes back. They never remove it. A block the upgrade could not
 migrate is a conflict, so a half-upgraded config never reaches crew.json.
+
+## Schema 8 (L-0725), both config layers
+
+The upgrade rewrites the twelve `guards.<name>` keys into `guards.profile`
+(`off | standard | strict`, the one needing the fewest overrides, a tie going
+off, standard, strict) plus `guards.overrides`; every guard keeps the value it
+had in that file. It removes the 60 keys in `crew_dropped.DROPPED` that hold
+their default, and `tier` and `roles` (retired) whatever they hold. A dropped key
+holding anything else is a CONFLICT -- nothing is written, each key is named
+with the constant that replaces it -- until the person removes it or passes
+`--accept-dropped <key>` for it; an accepted key is removed, kept in the backup
+and listed in the backup's manifest (`acceptedDropped`). A key crew does not
+know is carried untouched and listed as `unknown`.
+
+`--global` does the same two rewrites to the machine file, which has no schema:
+preview writes nothing; apply backs the file up under `backups/` beside it
+(same `migrate-<stamp>` folder and manifest as the repo path, `scope: global`),
+then replaces it atomically; `--global --rollback <dir>` restores it
+byte-identically.
 
 ## crew.json schema 1 -- the whole mapping
 
@@ -99,9 +121,10 @@ import tempfile
 import time
 
 import crew_common
+import crew_dropped
 
 CREW_SCHEMA = 1
-LEGACY_SCHEMA_MAX = 7
+LEGACY_SCHEMA_MAX = 8
 
 UNKNOWN = "UNKNOWN"
 
@@ -174,6 +197,9 @@ BACKUP_DIR = os.path.join(".crew", "backups")
 # The same folder as the user reads it: forward slashes on every platform, as `_rel` prints.
 BACKUP_DIR_SHOWN = ".crew/backups"
 TMP_SUFFIX = ".crew-migrate.tmp"
+# The machine file's scope: `backups/` and `config.json` beside it, no `.crew/`.
+GLOBAL_BACKUP_DIR = "backups"
+GLOBAL_CONFIG_REL = "config.json"
 
 # Every path apply may write, and so every path rollback may remove. A
 # manifest naming anything else was not written by this tool.
@@ -181,6 +207,8 @@ _TARGET_RE = re.compile(
     r"^(?:\.crew/crew\.json|\.crew/config\.json|\.crew/metrics\.jsonl"
     r"|\.crew/archive/(?:pm-journal|pm-standing)\.md"
     rf"|\.work/tickets/{crew_common.TICKET_ID_CORE}/(?:ticket(?:\.[a-z-]+)?\.md|provenance\.json))$")
+
+_GLOBAL_TARGET_RE = re.compile(r"^config\.json$")
 
 _MISSING = object()
 
@@ -510,11 +538,16 @@ def metrics_rows(text):
 
 # ---------------------------------------------------------------- the plan
 
-def build_plan(root):
-    """Read-only. Returns a plan dict; nothing on disk changes."""
+def build_plan(root, accept_dropped=()):
+    """Read-only. Returns a plan dict; nothing on disk changes.
+
+    `accept_dropped` names dropped keys (`crew_dropped.DROPPED`) that may be
+    removed although they hold a non-default value."""
     root = os.path.abspath(root)
     plan = {"root": root, "writes": [], "conflicts": [], "notes": [], "upgrade": [],
-            "retireable": [], "unmapped": [], "skipped": [], "untouched": []}
+            "retireable": [], "unmapped": [], "skipped": [], "untouched": [],
+            "unknown": [], "accepted": []}
+    _check_accepted(accept_dropped)
 
     def want(rel, data, why):
         try:
@@ -541,7 +574,7 @@ def build_plan(root):
     if cfg is None:
         if _read_bytes(os.path.join(root, ".crew", "crew.json")) is None:
             plan["notes"].append(".crew/config.json absent - no config to migrate")
-    elif upgrade is None or _plan_upgrade(plan, root, cfg, raw, upgrade):
+    elif upgrade is None or _plan_upgrade(plan, root, cfg, raw, upgrade, accept_dropped):
         if upgrade is not None:
             cfg = plan.pop("upgraded")
         crew, unmapped = to_crew(cfg)
@@ -552,6 +585,7 @@ def build_plan(root):
                 f"{UPGRADE_NOTE_PREFIX}{upgrade['from'] or 'absent'} to {cfg['schema']} in "
                 "the same apply (crew_upgrade.upgrade_config); rollback restores the original")
         plan["unmapped"] = unmapped
+        plan["unknown"] = unknown_keys(cfg, machine=False)
         plan["notes"].extend(crew.get("notes", []))
         tracker = cfg.get("tracker") if isinstance(cfg.get("tracker"), str) else "files"
         want(os.path.join(".crew", "crew.json"), _crew_json_bytes(root, crew),
@@ -624,7 +658,7 @@ def build_plan(root):
     return plan
 
 
-def _plan_upgrade(plan, root, cfg, raw, upgrade):
+def _plan_upgrade(plan, root, cfg, raw, upgrade, accept_dropped=()):
     """The pre-0.20 stage. Puts `config.json`'s in-place write first in
     `plan["writes"]` and the upgraded dict under `plan["upgraded"]`, and
     returns True; or records a conflict, writes nothing, and returns False."""
@@ -633,16 +667,19 @@ def _plan_upgrade(plan, root, cfg, raw, upgrade):
     if current != LEGACY_SCHEMA_MAX:
         raise MigrateError(f"internal: crew_upgrade's current schema is {current}, "
                            f"migrate maps {LEGACY_SCHEMA_MAX}; refusing")
-    upgraded, notes = crew_upgrade.upgrade_config(copy.deepcopy(cfg))
+    upgraded, notes = crew_upgrade.upgrade_config(copy.deepcopy(cfg), accept_dropped)
     headline = crew_upgrade._absent_global_headline(notes)  # pylint: disable=protected-access
     lines = crew_upgrade._config_lines(notes)  # pylint: disable=protected-access
     plan["upgrade"].extend(line for line in ([headline] if headline else []) + lines if line)
     if notes["unmigrated"]:
         plan["conflicts"].append(
-            ".crew/config.json: the pre-0.20 upgrade left these blocks unmigrated (wrong "
+            ".crew/config.json: the upgrade left these blocks unmigrated (wrong "
             f"type, left as written): {', '.join(notes['unmigrated'])} - fix them by hand, "
             "then preview again")
         return False
+    if _refuse_dropped(plan, ".crew/config.json", crew_upgrade, notes):
+        return False
+    plan["accepted"] = list(notes["acceptedDropped"])
     path = contained(root, CONFIG_REL)
     if os.path.lexists(path + TMP_SUFFIX):
         plan["conflicts"].append(f"{CONFIG_REL}{TMP_SUFFIX}: exists - migrate stages "
@@ -683,8 +720,126 @@ def _crew_json_bytes(root, crew):
     return _json_bytes(with_note) if _json_bytes(with_note) == current else data
 
 
+# ---------------------------------------------------------------- schema 8
+
+def _check_accepted(names):
+    """MigrateError unless every `--accept-dropped` name is a droppable key.
+    `tier` and `roles` are retired and need no accepting."""
+    bad = [key for key in names if key not in crew_dropped.DROPPED
+           or crew_dropped.DROPPED[key][1].startswith("retired:")]
+    if bad:
+        raise MigrateError("--accept-dropped names " + ", ".join(sorted(bad))
+                           + ", which is not a key migrate drops "
+                           "(crew_dropped.DROPPED, minus tier and roles)")
+
+
+def _refuse_dropped(plan, label, crew_upgrade, notes):
+    """Record a conflict for every dropped key that holds a non-default value
+    nobody accepted losing, naming the constant that replaces it. The value
+    itself is never printed: it may be a secret or a path. True if any."""
+    refused = crew_upgrade.refused_drops(notes)
+    for key, constant in refused:
+        plan["conflicts"].append(
+            f"{label}: {key} holds a non-default value, and that setting no longer "
+            f"has any effect (now {constant}) - remove the key, or pass "
+            f"--accept-dropped {key} to let migrate remove it (the backup keeps it)")
+    return bool(refused)
+
+
+def unknown_keys(cfg, machine):
+    """Dotted keys in `cfg` that crew's key set does not name, each at the
+    shallowest unknown level (`platform.tools`, not its fifteen leaves). They
+    are carried untouched and reported; none is ever deleted. `machine` adds
+    the machine-only keys to the set that is known."""
+    import crew_config  # pylint: disable=import-outside-toplevel
+    # pylint: disable=protected-access
+    known = dict(crew_config._leaf_items(crew_config.default_config()))
+    if machine:
+        known.update(dict(crew_config._leaf_items(crew_config.default_global_config())))
+    prefixes = {leaf[:i] for leaf in known for i in range(1, len(leaf) + 1)}
+    found = []
+    for parts, _value in crew_config._leaf_items(cfg):
+        if crew_config._known_leaf(parts, known):
+            continue
+        for i in range(1, len(parts) + 1):
+            if parts[:i] not in prefixes:
+                dotted = ".".join(parts[:i])
+                if dotted not in found:
+                    found.append(dotted)
+                break
+    # pylint: enable=protected-access
+    return sorted(found)
+
+
+def global_config_path():
+    """The machine file: `crew_state.GLOBAL_CONFIG_PATH`."""
+    return _upgrade_module().crew_state.GLOBAL_CONFIG_PATH
+
+
+def build_global_plan(path=None, accept_dropped=()):
+    """Read-only plan for the machine file (`~/.claude/crew/config.json`).
+
+    The same two rewrites as the repo layer (guards into a profile plus
+    overrides; the dropped keys), no schema and no crew.json. One write at most,
+    the file replaced in place; nothing is written when nothing changes."""
+    _check_accepted(accept_dropped)
+    path = os.path.abspath(path or global_config_path())
+    root = os.path.dirname(path)
+    plan = {"scope": "global", "root": root, "path": path, "writes": [], "conflicts": [],
+            "notes": [], "upgrade": [], "retireable": [], "unmapped": [], "skipped": [],
+            "untouched": [], "unknown": [], "accepted": []}
+    raw = _read_bytes(path)
+    if raw is None:
+        plan["notes"].append(f"{path} absent - no machine config to migrate")
+    else:
+        _plan_global_file(plan, path, raw, accept_dropped)
+    interrupted, unknown = scan_backups(root, GLOBAL_BACKUP_DIR, GLOBAL_BACKUP_DIR)
+    if interrupted:
+        plan["conflicts"].append(
+            f"interrupted apply at {interrupted} - run --global --rollback "
+            f"{os.path.join(root, interrupted)} first")
+    for entry in unknown:
+        plan["conflicts"].append(
+            f"could not tell whether an apply was interrupted: {entry}"
+            " - fix or remove it, then preview again")
+    return plan
+
+
+def _plan_global_file(plan, path, raw, accept_dropped):
+    try:
+        cfg = json.loads(raw.decode("utf-8-sig"))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise MigrateError(f"{path} is not valid JSON: {exc}") from exc
+    if not isinstance(cfg, dict):
+        raise MigrateError(f"{path} is not a JSON object")
+    crew_upgrade = _upgrade_module()
+    out, notes = crew_upgrade.upgrade_global(cfg, accept_dropped)
+    plan["upgrade"].extend(crew_upgrade.schema8_lines(notes))
+    plan["unknown"] = unknown_keys(out, machine=True)
+    if notes["unmigrated"]:
+        plan["conflicts"].append(
+            f"{path}: these blocks are the wrong type and were left as written: "
+            f"{', '.join(notes['unmigrated'])} - fix them by hand, then preview again")
+    _refuse_dropped(plan, path, crew_upgrade, notes)
+    if plan["conflicts"]:
+        return
+    if out == cfg:
+        plan["notes"].append(f"{path}: already migrated (nothing to change)")
+        return
+    if os.path.lexists(path + TMP_SUFFIX):
+        plan["conflicts"].append(f"{path}{TMP_SUFFIX}: exists - migrate stages through that "
+                                 "name and will not overwrite it")
+        return
+    plan["accepted"] = list(notes["acceptedDropped"])
+    plan["writes"].append({
+        "path": GLOBAL_CONFIG_REL,
+        "data": (json.dumps(out, indent=2, ensure_ascii=False) + "\n").encode("utf-8"),
+        "why": "machine file: guards profile, dropped keys (crew_upgrade.upgrade_global)",
+        "pre_sha256": _sha(raw), "replaces": True, "original": raw})
+
+
 def render_plan(plan, mode):
-    out = [f"crew migrate {mode}: {plan['root']}"]
+    out = [f"crew migrate {mode}: {plan.get('path', plan['root'])}"]
     for item in plan["writes"]:
         verb = "upgrade" if item.get("replaces") else "write"
         out.append(f"  {verb}  {item['path']}  ({item['why']})")
@@ -694,6 +849,8 @@ def render_plan(plan, mode):
         out.append(f"  note   {note}")
     for key in plan["unmapped"]:
         out.append(f"  unmapped  config key '{key}' carried under crew.json unmapped.{key}")
+    for key in plan.get("unknown", []):
+        out.append(f"  unknown  {key} (crew does not read it; carried untouched)")
     for rel, why in plan["skipped"]:
         out.append(f"  skip   {rel}: {why}")
     for rel in plan["untouched"]:
@@ -773,23 +930,25 @@ def _classify_backup(root, folder, name):
     return "skip", ""
 
 
-def scan_backups(root):
+def scan_backups(root, backup_dir=None, shown=None):
     """Walk `.crew/backups`. Returns (interrupted, unknown): the relative path
     of the first backup whose write never finished (else None), and a list of
     "<path>: <why>" for every entry that could not be read. A file or a folder
     without a manifest is not a backup and is skipped; only an absent
     `.crew/backups` means "nothing here". An entry that cannot be read is never
     reported as "nothing interrupted"."""
-    folder = os.path.join(root, BACKUP_DIR)
+    backup_dir = BACKUP_DIR if backup_dir is None else backup_dir
+    shown = BACKUP_DIR_SHOWN if shown is None else shown
+    folder = os.path.join(root, backup_dir)
     try:
         names = sorted(os.listdir(folder))
     except OSError as exc:
         # Windows raises WinError 267, not FileNotFoundError, for a dangling link.
         if os.path.lexists(folder) and not os.path.exists(folder):
-            return None, [f"{BACKUP_DIR_SHOWN}: a link to a missing target"]
+            return None, [f"{shown}: a link to a missing target"]
         if isinstance(exc, FileNotFoundError):
             return None, []
-        return None, [f"{BACKUP_DIR_SHOWN}: {_why(exc)}"]
+        return None, [f"{shown}: {_why(exc)}"]
     interrupted = None
     unknown = []
     for name in names:
@@ -801,9 +960,10 @@ def scan_backups(root):
     return interrupted, unknown
 
 
-def _new_backup_dir(root):
+def _new_backup_dir(root, backup_dir=None):
+    backup_dir = BACKUP_DIR if backup_dir is None else backup_dir
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-    base = os.path.join(root, BACKUP_DIR, f"migrate-{stamp}")
+    base = os.path.join(root, backup_dir, f"migrate-{stamp}")
     path, n = base, 1
     while os.path.exists(path):
         n += 1
@@ -845,10 +1005,14 @@ def apply_plan(plan):
     root = plan["root"]
     if not plan["writes"]:
         return None
-    backup = _new_backup_dir(root)
+    scope = plan.get("scope", "repo")
+    backup = _new_backup_dir(root, GLOBAL_BACKUP_DIR if scope == "global" else BACKUP_DIR)
     contained(root, _rel(root, backup))
     os.makedirs(backup)
-    sources = [".crew/config.json", ".crew/metrics.md"] + [f".crew/{n}" for n in JOURNAL_FILES]
+    if scope == "global":
+        sources = [GLOBAL_CONFIG_REL]
+    else:
+        sources = [".crew/config.json", ".crew/metrics.md"] + [f".crew/{n}" for n in JOURNAL_FILES]
     for rel in sources:
         data = _read_bytes(os.path.join(root, rel))
         if data is not None:
@@ -856,6 +1020,7 @@ def apply_plan(plan):
     rels = [w["path"] for w in plan["writes"] if not w.get("replaces")]
     manifest = {
         "tool": "crew_migrate", "crewSchema": CREW_SCHEMA, "state": "prepared",
+        "scope": scope, "acceptedDropped": list(plan.get("accepted", [])),
         "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "createdDirs": _missing_dirs(root, rels),
         "targets": [_manifest_target(w) for w in plan["writes"]],
@@ -971,16 +1136,16 @@ def _prune_dirs(root, rels):
             pass
 
 
-def _existed_ok(rel, target):
+def _existed_ok(rel, target, config_rel=CONFIG_REL):
     """config.json is the one target apply replaces: it must say `existed`
     and carry its original's hash. Every other target must not, or rollback
     would restore bytes over a file it should remove -- or remove a config."""
-    if rel == CONFIG_REL:
+    if rel == config_rel:
         return target.get("existed") is True and isinstance(target.get("originalSha256"), str)
     return target.get("existed", False) is False
 
 
-def _manifest_entries(root, manifest):
+def _manifest_entries(root, manifest, scope="repo"):
     """([(target, abs path)], [dir rel]) from a manifest, or MigrateError
     before anything is removed. A target must be a path apply writes, resolve
     inside the repository and pass through no symlink; a created directory
@@ -991,9 +1156,11 @@ def _manifest_entries(root, manifest):
     out = []
     for target in targets:
         rel = target.get("path") if isinstance(target, dict) else None
-        if (not isinstance(rel, str) or not _TARGET_RE.match(rel)
+        target_re = _GLOBAL_TARGET_RE if scope == "global" else _TARGET_RE
+        config_rel = GLOBAL_CONFIG_REL if scope == "global" else CONFIG_REL
+        if (not isinstance(rel, str) or not target_re.match(rel)
                 or not isinstance(target.get("sha256"), str)
-                or not _existed_ok(rel, target)):
+                or not _existed_ok(rel, target, config_rel)):
             raise MigrateError(f"manifest names {rel!r}, which migrate never writes; "
                                "refusing the whole rollback")
         out.append((target, contained(root, rel)))
@@ -1007,15 +1174,21 @@ def _manifest_entries(root, manifest):
     return out, dirs
 
 
-def rollback(root, backup):
+def rollback(root, backup, scope="repo"):
     """Undo one apply. Refuses, changing nothing, if any file apply wrote has
-    been edited since -- removing a file someone changed is data loss."""
+    been edited since -- removing a file someone changed is data loss.
+
+    `scope` is "repo" (`root` is the repository) or "global" (`root` is the
+    machine file's folder, `~/.claude/crew`); a backup made in the other scope
+    is refused."""
     root = os.path.abspath(root)
     backup = backup if os.path.isabs(backup) else os.path.join(root, backup)
-    backups = os.path.realpath(os.path.join(root, BACKUP_DIR))
+    shown = GLOBAL_BACKUP_DIR if scope == "global" else BACKUP_DIR_SHOWN
+    backups = os.path.realpath(os.path.join(
+        root, GLOBAL_BACKUP_DIR if scope == "global" else BACKUP_DIR))
     real_backup = os.path.realpath(backup)
     if real_backup == backups or not _within(real_backup, backups):
-        raise MigrateError(f"{backup} is not a backup under {BACKUP_DIR_SHOWN}; refused")
+        raise MigrateError(f"{backup} is not a backup under {shown}; refused")
     contained(root, _rel(root, backup))
     if not os.path.isdir(real_backup):
         raise MigrateError(f"{backup} is not a migrate backup (not a directory); refused")
@@ -1031,9 +1204,14 @@ def rollback(root, backup):
         raise MigrateError(f"{_manifest_path(backup)} is not valid JSON: {exc}") from exc
     if not isinstance(manifest, dict):
         raise MigrateError(f"{_manifest_path(backup)} is not a manifest")
+    made_in = manifest.get("scope", "repo")
+    if made_in != scope:
+        raise MigrateError(f"{backup} is a {made_in} backup; "
+                           + ("pass --global to roll it back" if made_in == "global"
+                              else "roll it back without --global"))
     if manifest.get("state") == "rolled-back":
         return []
-    targets, dirs = _manifest_entries(root, manifest)
+    targets, dirs = _manifest_entries(root, manifest, scope)
     originals = _backed_up_originals(backup, targets)
     edited = []
     for target, path in targets:
@@ -1086,6 +1264,12 @@ def _backed_up_originals(backup, targets):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
+    parser.add_argument("--global", dest="machine", action="store_true",
+                        help="migrate the machine file (~/.claude/crew/config.json), "
+                             "not the repository")
+    parser.add_argument("--accept-dropped", action="append", default=[], metavar="KEY",
+                        help="let a dropped key that holds a non-default value be removed "
+                             "(repeatable; the backup keeps it)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--preview", action="store_true", help="show the plan; write nothing (default)")
     mode.add_argument("--apply", action="store_true", help="back up, then write atomically")
@@ -1093,6 +1277,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
     try:
+        if args.machine:
+            return _main_global(args)
         if args.rollback:
             done = rollback(root, args.rollback)
             removed = [rel for verb, rel in done if verb == "removed"]
@@ -1100,7 +1286,7 @@ def main(argv=None):
             for verb, rel in done:
                 print(f"  {verb}  {rel}")
             return 0
-        plan = build_plan(root)
+        plan = build_plan(root, args.accept_dropped)
         if not args.apply:
             print(render_plan(plan, "preview (nothing written)"))
             return 1 if plan["conflicts"] else 0
@@ -1114,6 +1300,29 @@ def main(argv=None):
     except MigrateError as exc:
         print(f"crew migrate: {exc}", file=sys.stderr)
         return 1
+
+
+def _main_global(args):
+    """`--global`: the machine file. Same exit codes as the repo path."""
+    path = os.path.abspath(global_config_path())
+    root = os.path.dirname(path)
+    if args.rollback:
+        done = rollback(root, args.rollback, scope="global")
+        print(f"crew migrate rollback (machine file): {len(done)} file(s) restored")
+        for verb, rel in done:
+            print(f"  {verb}  {rel}")
+        return 0
+    plan = build_global_plan(path, args.accept_dropped)
+    if not args.apply:
+        print(render_plan(plan, "preview (nothing written)"))
+        return 1 if plan["conflicts"] else 0
+    print(render_plan(plan, "apply"))
+    backup = apply_plan(plan)
+    if backup is None:
+        print("nothing to write")
+    else:
+        print(f"backup: {backup}  (undo: --global --rollback {backup})")
+    return 0
 
 
 if __name__ == "__main__":

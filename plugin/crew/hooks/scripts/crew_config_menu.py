@@ -62,8 +62,7 @@ AREAS = (
 # Values the READER accepts, for keys that have no code-owned tuple. Each
 # entry names that reader. Keys absent here fall back to generated choices
 # (current, default, recommendation, values either layer holds): memory.mode,
-# pm.mode, qa/dev.codex.reasoningEffort, docs.theme, docs.reportTheme,
-# bitbucket.mergeGate.preset, and every free-text key (paths, env var names,
+# qa/dev.codex.reasoningEffort, and every free-text key (paths, env var names,
 # ids, numbers).
 _KNOWN_VALUES = {
     # plugin/crew/commands/jira-sync.md:11, plugin/crew/commands/sdp-sync.md:11,
@@ -72,8 +71,6 @@ _KNOWN_VALUES = {
     # plugin/crew/hooks/scripts/crew_notify.py `_filter` (`none` exits) and
     # `_deliver` (telegram, teams); a repo null inherits the global provider.
     "notify.provider": ("none", "telegram", "teams"),
-    # plugin/crew/commands/sdp-sync.md:63
-    "sdp.noteVisibility": ("private", "public"),
     # plugin/crew/skills/crew-providers/SKILL.md:425
     "secondOpinion.provider": ("none", "gemini", "local"),
     # plugin/crew/skills/crew-providers/SKILL.md:426
@@ -87,10 +84,6 @@ _KNOWN_VALUES = {
     "autopilot.sleep.questions": ("human", "self", "risk", None),
     # crew_sleep.DEPLOY_OVERRIDES, or null (L-0654); `all` is never a night value.
     "autopilot.sleep.deploy": (None, "nonprod", "none"),
-    # crew_sleep.read_notify_hold: null or exactly true (L-0656).
-    "autopilot.sleep.notifyHold": (None, True),
-    # plugin/crew/skills/crew-graph/SKILL.md:168
-    "graph.mode": ("code-only",),
     # plugin/crew/hooks/scripts/crew_autocycle.py reads true from the machine
     # file only; a repo false vetoes. CONFIG.md §10.
     "context.autoClear.enabled": (True, False, None),

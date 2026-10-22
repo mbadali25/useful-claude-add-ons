@@ -260,13 +260,8 @@ if [ -z "$PY" ]; then
   if printf '%s' "$CTX_BLOCK" | grep -q '"enabled"[[:space:]]*:[[:space:]]*false'; then
     exit 0
   fi
-  # handoffPath cannot be read precisely without python (see CTX_BLOCK's own
-  # approximation above), so the message names WHERE to look rather than
-  # hard-coding the shipped default as if it were certainly correct.
-  HANDOFF_NOTE="the configured handoff path (context.handoffPath in ${CFG_SHOWN}; .work/HANDOFF.md if unset)"
-  # Inherited: say the path is taken inside this checkout, so an absolute or
-  # `..` value in the main checkout's file is not read as "write there".
-  [ "$CREW_CFG_SOURCE" = main ] && HANDOFF_NOTE="the configured handoff path (context.handoffPath in ${CFG_SHOWN}, inside this checkout only; .work/HANDOFF.md if it is unset or leaves this checkout)"
+  # The handoff path is the fixed .work/HANDOFF.md (crew_state.CONTEXT_HANDOFF_PATH).
+  HANDOFF_NOTE=".work/HANDOFF.md"
   # NOT `$MARKER` -- see the header comment above this branch. Nothing is
   # claimed here; `stop_hook_active`, checked first at the top of this
   # script, is what bounds the retry Claude Code triggers after this exit 2.
@@ -311,9 +306,8 @@ STOP_HOOK_ACTIVE=$(read_json stop_hook_active)
 # once-per-session gate for this hook, reset by handoff-read.sh at the next
 # SessionStart -- that stays.
 
-CFG=$("$PY" - "$CREW_CFG" "$(dirname "$0")" << 'PY' 2>/dev/null
+CFG=$("$PY" - "$CREW_CFG" << 'PY' 2>/dev/null
 import json
-import os
 import sys
 # An unparseable file (json.load raises) is treated as "no context settings",
 # same as always -- the file's presence is already proven by bash above, and
@@ -342,25 +336,7 @@ else:
     # threshold below.
     try: reserve = max(0, int(c.get("reserveTokens", 0) or 0))
     except (TypeError, ValueError): reserve = 100_000
-    # The handoff path the message names, kept inside this checkout by the
-    # Python readers' own rule (crew_state.handoff_path): a value that leaves
-    # it -- absolute, `..`, a symlink out; in a linked worktree, the main
-    # checkout's file (L-0680) -- is the default, and the 7th field says so.
-    handoff, escaped = ".work/HANDOFF.md", "ok"
-    try:
-        sys.path.insert(0, sys.argv[2])
-        from crew_state import handoff_path
-        root = os.path.realpath(os.getcwd())
-        got = handoff_path(root, raw)
-        v = c.get("handoffPath")
-        if isinstance(v, str) and v and os.path.realpath(os.path.join(root, v)) != got:
-            escaped = "escaped"
-        elif got == root or os.path.isdir(got) or (isinstance(v, str) and v.endswith(("/", os.sep))):
-            got = os.path.join(root, ".work/HANDOFF.md")  # a directory cannot hold the note
-        handoff = os.path.relpath(got, root).replace(os.sep, "/")
-    except Exception:
-        pass
-    print(c.get("warnAt",0.4), c.get("budgetTokens") or 0, handoff, str(c.get("enabled",True)).lower(), str(c.get("autoWrapUp",True)).lower(), reserve, escaped)
+    print(c.get("warnAt",0.4), str(c.get("enabled",True)).lower(), reserve)
 PY
 )
 if [ "$CFG" = "MALFORMED_CONFIG_CONTEXT_BLOCK" ]; then
@@ -379,7 +355,9 @@ if [ -z "$CFG" ]; then
   echo "crew context-watch: python resolved but produced no config read (an unexpected interpreter failure, not a malformed config) - context warnings are OFF this turn" >&2
   exit 0
 fi
-read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP RESERVE HANDOFF_ESCAPED <<< "$CFG"
+# The handoff path is the fixed .work/HANDOFF.md (crew_state.CONTEXT_HANDOFF_PATH).
+HANDOFF=".work/HANDOFF.md"
+read -r WARN_AT ENABLED RESERVE <<< "$CFG"
 [ "$ENABLED" = "false" ] && exit 0
 
 # Read the ACTUAL window occupancy, not a guess at it.
@@ -394,13 +372,12 @@ read -r WARN_AT BUDGET HANDOFF ENABLED AUTO_WRAP_UP RESERVE HANDOFF_ESCAPED <<< 
 # not how full the window is. Measured on a real session the heuristic read 45%
 # high (950k estimated against 654k actual), which on a 200k budget is the
 # difference between "fire at 80%" and "fire on turn one, every turn".
-READ=$("$PY" - "$TRANSCRIPT" "$BUDGET" "$WARN_AT" "$RESERVE" << 'PY' 2>/dev/null
+READ=$("$PY" - "$TRANSCRIPT" "$WARN_AT" "$RESERVE" << 'PY' 2>/dev/null
 import json, re, sys
 
 path = sys.argv[1]
-configured = int(sys.argv[2] or 0)
-warn_at = float(sys.argv[3])
-reserve = int(sys.argv[4])
+warn_at = float(sys.argv[2])
+reserve = int(sys.argv[3])
 
 # Known context windows, first match wins, so the specific keys sit above the
 # generic ones. The Claude 5 family (fable, opus-5, sonnet-5) ships with 1M
@@ -471,24 +448,19 @@ if last:
 else:
     used, source = int(main_bytes / 4 * 0.75), "estimated"
 
-if configured > 0:
-    budget, how, known = configured, "configured", True
-else:
-    low = model.lower()
-    known = any(key in low for key, _ in WINDOWS)
-    budget = next((w for key, w in WINDOWS if key in low), 200_000)
-    how = f"auto:{model or 'unknown'}"
+low = model.lower()
+known = any(key in low for key, _ in WINDOWS)
+budget = next((w for key, w in WINDOWS if key in low), 200_000)
 
 # Self-correct. If this session has already held more tokens than the budget
 # claims the window is, the budget is wrong: a "[1m]" variant records its base
-# id, and an older /crew:init pinned budgetTokens: 200000 into every config
+# id, and an older /crew:init pinned a 200000 budget into every config
 # before the 1M models arrived. Observed usage cannot exceed the real window,
 # so it is the better source - but ONLY a peak the window could not hold proves
 # that. An earlier 95% margin bumped a correct 1M entry to the 2M tier once a
 # session passed 950k, and the gate then never fired at all.
 if peak > budget:
     budget = next((t for t in TIERS if t > peak * 1.05), peak * 2)
-    how = f"{how}+observed"
 
 # The threshold is the LATER of two rules, and the second one is why a 1M
 # session is no longer cut short.
@@ -532,14 +504,11 @@ elif used <= 0 or used > budget:
 else:
     why = "measured"
 trusted = 1 if why == "measured" else 0
-fmt = lambda n: format(int(n), ",d")  # noqa: E731  pylint: disable=unnecessary-lambda-assignment
-print(used, source, budget, how, over, pct, fmt(used), fmt(budget),
-      fmt(max(0, budget - used)), fmt(threshold), int(warn_at * 100),
-      fmt(reserve), trusted, why)
+print(used, source, budget, over, pct, trusted, why)
 PY
 )
 [ -z "$READ" ] && exit 0
-read -r USED SOURCE BUDGET HOW OVER PCT_H USED_H BUDGET_H REMAIN_H THRESH_H WARN_PCT RESERVE_H TRUSTED WHY <<< "$READ"
+read -r USED SOURCE BUDGET OVER PCT_H TRUSTED WHY <<< "$READ"
 [ -z "$USED" ] || [ -z "$BUDGET" ] && exit 0
 
 if [ -f "$MARKER" ]; then
@@ -582,53 +551,8 @@ fi
 MARKER_JSON=$("$PY" -c 'import json,sys,time; print(json.dumps({"session_id": sys.argv[1], "requested_at": time.time(), "used": int(sys.argv[2]), "budget": int(sys.argv[3]), "source": sys.argv[4], "trusted": sys.argv[5] == "1", "why": sys.argv[6]}))' "$SESSION_ID" "$USED" "$BUDGET" "$SOURCE" "$TRUSTED" "$WHY" 2>/dev/null)
 ( set -o noclobber; printf '%s\n' "$MARKER_JSON" > "$MARKER" ) 2>/dev/null || exit 0
 
-# Report the absolute numbers, not only the percentage. A budgetTokens that does
-# not match the model in use is otherwise invisible - it just makes the gate
-# fire early forever, and a warning that is always on is one nobody reads.
-BUDGET_NOTE=" Set context.budgetTokens in ${CFG_SHOWN} to pin it."
-case "$HOW" in
-  configured+observed)
-    BUDGET_NOTE=" context.budgetTokens in ${CFG_SHOWN} says a smaller window,
-but this session has already held more than that - and observed usage cannot
-exceed the real window, so the larger figure wins. That pin is stale; set it to
-null to let crew work the window out from the model." ;;
-  auto:*+observed)
-    BUDGET_NOTE=" The model's id said a smaller window, but this session has
-already held more than that - and observed usage cannot exceed the real window,
-so the larger figure wins. A 1M variant reports its base model id, which is why
-the id alone is not trusted. Pin it with context.budgetTokens if you prefer." ;;
-  configured)
-    BUDGET_NOTE=" That came from ${CFG_SHOWN}. Remove it to let crew work the
-window out from the model and this session's own usage." ;;
-esac
-
-NOTE=""
-if [ "$SOURCE" = "estimated" ]; then
-  NOTE="
-This figure is a fallback estimate from transcript size, not a measurement -
-no usage record was found yet. It reads high after a compaction."
-fi
-LEFT_NOTE=""
-if [ "$HANDOFF_ESCAPED" = "escaped" ]; then
-  LEFT_NOTE="
-context.handoffPath in ${CFG_SHOWN} leaves this checkout, so the handoff goes
-to ${HANDOFF} here instead."
-fi
-NOTE="${NOTE}${LEFT_NOTE}"
-
-# Name the rule that fired. A percentage alone cannot explain why an 800k
-# reading on a 1M window said nothing and 900k did.
-if [ "$RESERVE_H" = "0" ]; then
-  THRESH_NOTE="Threshold: ${THRESH_H} tokens - warnAt ${WARN_PCT}% of the window.
-context.reserveTokens is off, so no headroom floor applies."
-else
-  THRESH_NOTE="Threshold: ${THRESH_H} tokens - the later of warnAt ${WARN_PCT}% and the
-last ${RESERVE_H} tokens (context.reserveTokens), so a large window is not cut
-short by a percentage tuned for a small one."
-fi
-
-# T-0017: armed, the warning IS the wrap-up procedure, and supersedes both
-# messages below. Unarmed (or any error), crew_autocycle prints nothing and
+# T-0017: armed, the warning IS the wrap-up procedure, and supersedes the
+# message below. Unarmed (or any error), crew_autocycle prints nothing and
 # today's message goes out unchanged.
 WRAP_MSG=$("$PY" "$(dirname "$0")/crew_autocycle.py" wrapup-message --root "$PWD" --session "$SESSION_ID" --pct "$PCT_H" 2>/dev/null | tr -d '\r')
 if [ -n "$WRAP_MSG" ]; then
@@ -636,30 +560,10 @@ if [ -n "$WRAP_MSG" ]; then
   exit 2
 fi
 
-if [ "$AUTO_WRAP_UP" = "true" ]; then
 cat >&2 << MSG
 You are at roughly ${PCT_H}% of the context budget. Reach a stopping point
 now: finish or safely abandon the change in flight, write ${HANDOFF} per the
 crew-context skill, update the ticket, then tell the user the session is
-ready to clear. Do not start new work.${LEFT_NOTE}
+ready to clear. Do not start new work.
 MSG
-else
-cat >&2 << MSG
-Context: ${USED_H} of ${BUDGET_H} tokens (${PCT_H}%), read from the transcript's
-last usage record. Headroom left: ${REMAIN_H} tokens.${NOTE}
-
-Budget source: ${HOW}.${BUDGET_NOTE}
-
-${THRESH_NOTE}
-
-Before ending this turn, write the handoff note to ${HANDOFF} following the
-crew-context skill. Keep it to pointers and one short "next action" - do not
-write a long narrative summary. A session this deep into its context is the
-least reliable narrator of what it just did; the files are more trustworthy
-than the recollection.
-
-Then tell me the note is ready so I can /clear or /compact. Do not start new
-work in this session.
-MSG
-fi
 exit 2

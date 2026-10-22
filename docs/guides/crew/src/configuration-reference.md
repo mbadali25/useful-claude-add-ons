@@ -19,10 +19,10 @@ exceptions, each named in the Layer column below:
 
 - A **repo-only** key in the machine file takes effect nowhere. It is pruned on
   read and refused on write.
-- A **ratcheted** key (`install.policy`, every `guards.*`,
-  `change.requireForProduction`, `environments.prodUnattended`) resolves to
-  the narrower of the two values, so a cloned repo cannot widen what your
-  machine allows.
+- A **ratcheted** key (`install.policy`, each guard `guards.profile` and
+  `guards.overrides` expand to, `change.requireForProduction`,
+  `environments.prodUnattended`) resolves to the narrower of the two values, so
+  a cloned repo cannot widen what your machine allows.
 - A **machine-armed** key (`resume.auto`, `context.autoClear.enabled`) can be
   turned on only in the machine file. A repo can only switch it off.
 - A **personal** key (the five `autopilot.*` keys) resolves per key to the
@@ -70,20 +70,20 @@ corrupt file from the template plus that profile, as a dry run until
   `scope.allowCliApproval: true` in the repo file, which is the only file
   that key is read from. Review acceptance and production deploys still stop
   for you.
-- **Notifications.** In the machine file, set `notify.provider` and the
-  environment variable names in `notify.urlEnv` / `notify.tokenEnv`. The
-  secret stays in your environment, never in the file. Those two are
+- **Notifications.** In the machine file, set `notify.provider` and the name
+  of the environment variable holding the token in `notify.tokenEnv`. The
+  secret stays in your environment, never in the file. `tokenEnv` is
   machine-only: a repo file's value is ignored with a notice.
 
-The reasoning behind each key is in `plugin/crew/CONFIG.md`, which ships with
-the plugin.
+The key list is `plugin/crew/CONFIG.md`, which ships with the plugin; the
+reasoning behind the keys is in `docs/crew/config-rationale.md`.
 
 ## Reference (generated)
 
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**157 keys**: 89 settable in the machine-global file, 68 repo-only.
+**87 keys**: 50 settable in the machine-global file, 37 repo-only.
 
 Columns:
 
@@ -107,8 +107,6 @@ Columns:
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `schema` | repo | `7` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects integer) | 0.11.0 or earlier | Config schema version; `/crew:migrate` upgrades an older one. |
-| `tier` | repo | `0` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects integer) | 0.11.0 or earlier | Setup tier recorded by `/crew:init`. |
-| `roles` | repo | `["explorer", "reviewer"]` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects list of role names) | 0.11.0 or earlier | Optional roles installed in this repo. |
 | `tracker` | repo | `"files"` | `files` \| `obsidian` \| `jira` \| `sdp` | 0.11.0 or earlier | Where tickets live; `crew_tracker.resolve` answers `could not tell` when two configs disagree. |
 | `verifyGate` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/verify-gate.sh` (expects boolean) | 0.11.0 or earlier | Run the Stop verify gate. |
 
@@ -137,12 +135,6 @@ Columns:
 | `dev.kimi.model` | both | `null` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects string or null) | 1.0.39 | Kimi Code model id for implementation, as `qa.kimi.model`. |
 | `dev.roles` | both | `{}` | object of role pins; each pin's provider is checked (checked in `plugin/crew/hooks/scripts/crew_config.py`) | 0.16.6 | Per-role dev pins, as `qa.roles`. |
 
-### `worktree`
-
-| Setting | Layer | Default | Values | Since | Summary |
-|---|---|---|---|---|---|
-| `worktree.root` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects path or null) | 0.16.27 | Where crew creates linked worktrees; null uses the default. |
-
 ### `secondOpinion`
 
 | Setting | Layer | Default | Values | Since | Summary |
@@ -150,8 +142,6 @@ Columns:
 | `secondOpinion.provider` | both | `"none"` | not validated - read by `plugin/crew/commands/plan.md` (expects string) | 0.11.0 or earlier | Second-opinion provider for plans; `none` is off. |
 | `secondOpinion.mode` | both | `"cli"` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects string) | 0.11.0 or earlier | How the second opinion is reached. |
 | `secondOpinion.model` | both | `null` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects string or null) | 0.11.0 or earlier | Second-opinion model. |
-| `secondOpinion.keyEnv` | both | `"GEMINI_API_KEY"` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects string) | 0.11.0 or earlier | Environment variable holding the provider's API key. |
-| `secondOpinion.sendsCode` | both | `false` | not validated - read by `plugin/crew/skills/crew-providers/SKILL.md` (expects boolean) | 0.11.0 or earlier | Whether code may be sent to the second-opinion provider. |
 
 ### `jira`
 
@@ -160,26 +150,12 @@ Columns:
 | `jira.project` | repo | `null` | not validated - read by `plugin/crew/commands/jira-sync.md` (expects string or null) | 0.11.0 or earlier | Jira project key. No consumer found (CONFIG.md section 9). |
 | `jira.cloudId` | repo | `null` | not validated - read by `plugin/crew/commands/jira-sync.md` (expects string or null) | 0.19.10 | Jira cloud id, cached by `/crew:jira-sync`; read by nothing. |
 
-### `sdp`
-
-| Setting | Layer | Default | Values | Since | Summary |
-|---|---|---|---|---|---|
-| `sdp.portal` | repo | `null` | not validated - read by `plugin/crew/commands/sdp-sync.md` (expects string or null) | 0.11.0 or earlier | ServiceDesk Plus portal. |
-| `sdp.noteVisibility` | repo | `"private"` | not validated - read by `plugin/crew/commands/sdp-sync.md` (expects string) | 0.11.0 or earlier | Visibility of notes crew writes to SDP. |
-| `sdp.closeOnDone` | repo | `false` | not validated - read by `plugin/crew/commands/sdp-sync.md` (expects boolean) | 0.11.0 or earlier | Close the SDP request when the ticket is done. |
-
 ### `obsidian`
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `obsidian.vaultPath` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects path or null) | 0.11.0 or earlier | Vault holding the board; falls back to `memory.vaultPath` and must hold `.obsidian/`. |
 | `obsidian.boardDir` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects path or null) | 0.11.0 or earlier | Board folder inside the vault (relative, no `..`). |
-| `obsidian.board` | repo | `"Board.md"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects file name) | 0.11.0 or earlier | Board file name. |
-| `obsidian.columns.backlog` | repo | `"Backlog"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for backlog tickets (`direction`, `ready`, `needs-owner`). |
-| `obsidian.columns.ready` | repo | `"Ready"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for ready tickets. |
-| `obsidian.columns.inProgress` | repo | `"In Progress"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for tickets in progress. |
-| `obsidian.columns.review` | repo | `"Review"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for tickets in review. |
-| `obsidian.columns.done` | repo | `"Done"` | not validated - read by `plugin/crew/hooks/scripts/crew_tracker.py` (expects string) | 0.11.0 or earlier | Board column for closed tickets (`done`, `cancelled`, `superseded`; each checked). |
 
 ### `memory`
 
@@ -187,10 +163,6 @@ Columns:
 |---|---|---|---|---|---|
 | `memory.mode` | both | `"repo"` | not validated - read by `plugin/crew/skills/crew-memory/SKILL.md` (expects string) | 0.11.0 or earlier | Where memory lives (`repo`, or a vault). |
 | `memory.vaultPath` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_recall.py` (expects path or null) | 0.11.0 or earlier | The Obsidian vault used for memory. |
-| `memory.inject` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/crew_context.py` (expects boolean) | 1.0.25 | Inject the handoff and recall at session start; only an explicit `false` stops it. |
-| `memory.recall.vaults` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_recall.py` (expects list of vault names) | 1.0.25 | This repo's vault priority for recall; empty uses the obsidian config's roles. |
-| `memory.recall.maxChars` | repo | `800` | positive integer (coerced in `plugin/crew/hooks/scripts/crew_recall.py`) | 1.0.25 | Recall output budget; a non-positive or non-integer value reads as 800. |
-| `memory.recall.projects` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_recall.py` (expects list of project names) | 1.1.11 | Project names sent to vault recall as `--project` so this repo's notes rank first; empty sends the main checkout's directory name. |
 
 ### `context`
 
@@ -198,39 +170,26 @@ Columns:
 |---|---|---|---|---|---|
 | `context.enabled` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects boolean) | 0.11.0 or earlier | Run the context watcher. |
 | `context.warnAt` | repo | `0.4` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects number) | 0.11.0 or earlier | Fraction of the budget at which the watcher warns, wraps up and auto-clears; default 0.4 since 1.2.40 (was 0.5), an explicit value is kept. |
-| `context.budgetTokens` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects integer or null) | 0.11.0 or earlier | Context budget in tokens; null uses the model's. |
 | `context.reserveTokens` | repo | `0` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects integer or null) | 0.11.0 or earlier | Tokens held back from the budget; `null` means off. |
-| `context.handoffPath` | repo | `".work/HANDOFF.md"` | not validated - read by `plugin/crew/hooks/scripts/crew_autocycle.py` (expects path) | 0.11.0 or earlier | Where the handoff is written. |
-| `context.keepTranscripts` | repo | `5` | not validated - read by `plugin/crew/hooks/scripts/handoff-write.sh` (expects integer) | 0.11.0 or earlier | Transcripts kept by the handoff writer. |
 | `context.autoClear.enabled` | machine-arms | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 0.19.10 | Auto-clear after a wrap-up. Only the machine file can arm it (exactly `true`); a repo `false` vetoes it. |
 | `context.autoClear.method` | both | `"auto"` | `auto` \| `none` \| `notify` \| `tmux` \| `xdotool` \| `wtype`; per OS: linux: auto, none, notify, tmux, xdotool, wtype; macos: auto, none, notify, tmux; windows: auto, none, notify; windows-bash: auto, none, notify, tmux | 0.19.10 | How `/clear` is typed. `auto` picks per platform; a method this OS lacks stands auto-clear down. |
-| `context.autoClear.windowTitle` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_autocycle.py` (expects string or null) | 0.19.10 | Window title to match before typing. |
-| `context.autoClear.command` | both | `"/clear"` | not validated - read by `plugin/crew/hooks/scripts/crew_autocycle.py` (expects string) | 0.19.10 | What is typed. |
 | `context.autoClear.delaySeconds` | both | `3` | number (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 0.19.10 | Delay before typing; an unusable value warns and reads as 3. |
 | `context.autoClear.minHandoffLines` | both | `5` | number (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 0.19.10 | Shortest handoff that may be cleared after; a non-number reads as 5. |
-| `context.autoClear.unsafeFocus` | repo | `false` | not validated - read by `plugin/crew/hooks/scripts/auto-clear.sh` (expects boolean) | 0.19.11 | Consent to `wtype` typing into whatever has focus. No longer read: `auto-clear.sh` refuses `wtype` whatever this says. |
 | `context.autoClear.onlyRepos` | machine-only | `null` | list of absolute repo paths, or null (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.25 | Narrowing only, machine file only: null narrows nothing, a list arms only those repos, `[]` or a non-list arms nothing. |
 | `context.autoClear.onlySessions` | machine-only | `null` | list of session ids, or null (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.25 | As `onlyRepos`, for session ids; with both set, both must match. |
 | `context.autoClear.wrapUp` | machine-arms | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.334 | Auto wrap-up before auto-clear (T-0017): the warning becomes the wrap-up procedure and the clear waits for its results. Only the machine file arms it (exactly `true`), only where `enabled` is armed; a repo `false` vetoes it. |
-| `context.autoWrapUp` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/context-watch.sh` (expects boolean) | 0.19.10 | Ask for a wrap-up when the budget runs low. |
-| `context.autoResume` | repo | `true` | not validated - read by `plugin/crew/commands/migrate.md` (expects boolean) | 0.19.10 | Retired: read by nothing since 1.0.0; kept so `/crew:migrate` carries it. |
-| `context.staleHandoff.maxAgeHours` | repo | `72` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects integer) | 0.16.33 | A handoff older than this is archived. |
-| `context.staleHandoff.maxCommitsBehind` | repo | `3` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects integer) | 0.16.33 | A handoff this many commits behind is archived. |
 
 ### `resume`
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `resume.auto` | machine-arms | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_resume.py`) | 1.0.40 | Auto-resume after `/clear` or a manual `/compact`. Only the machine file can arm it (exactly `true`); a repo `false` vetoes it. |
-| `resume.typeDelaySeconds` | both | `2` | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.321 | Wait before auto-resume types its command: before the tmux ready probe, and the only wait on Windows. Read from the machine file only. |
-| `resume.readyTimeoutSeconds` | both | `15` | whole seconds; fraction cut, negative or non-number reads as the default (coerced in `plugin/crew/hooks/scripts/crew_autocycle.py`) | 1.0.321 | How long the tmux ready probe waits for an idle, empty input line before it types nothing. Read from the machine file only. |
 
 ### `emergency`
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `emergency.standDown` | repo | `true` | not validated - read by `plugin/crew/hooks/scripts/_common.sh` (expects boolean) | 0.11.0 or earlier | Whether a declared incident may stand gates down; `false` forbids it. |
-| `emergency.ttlMinutes` | repo | `120` | integer (coerced in `plugin/crew/hooks/scripts/crew_incident.py`) | 0.11.0 or earlier | Default incident lifetime; a non-integer reads as the default. |
 | `emergency.maxTtlMinutes` | repo | `480` | integer (coerced in `plugin/crew/hooks/scripts/crew_incident.py`) | 0.11.0 or earlier | Longest incident lifetime; never below `ttlMinutes`. |
 
 ### `notify`
@@ -238,12 +197,9 @@ Columns:
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `notify.provider` | both | `null` | telegram, teams, none or null; any other value sends nothing (coerced in `plugin/crew/hooks/scripts/crew_notify.py`) | 0.11.0 or earlier | Where notifications go: `telegram`, `teams` or `none` (off). A repo null inherits the machine provider; a repo `none` opts this repo out. |
-| `notify.urlEnv` | machine-only | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_notify.py` (expects string or null) | 0.11.0 or earlier | Name of the environment variable holding the Teams webhook URL. Honoured from the machine file only; a repo's is ignored with a notice. |
 | `notify.tokenEnv` | machine-only | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_notify.py` (expects string or null) | 0.11.0 or earlier | Name of the environment variable holding the Telegram bot token; null may be filled from the notify skill's `bot_token_env`. Honoured from the machine file only. |
 | `notify.chatId` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_notify.py` (expects string or null) | 0.11.0 or earlier | Telegram chat id; null may be filled from the notify skill's `chat_id`, and the skill's example value counts as unset. |
 | `notify.events` | both | `["blocker", "deploy", "question"]` | list of event names; an unknown name is dropped with a notice (coerced in `plugin/crew/hooks/scripts/crew_notify.py`) | 0.11.0 or earlier | Events that notify: `deploy`, `question`, and `blocker` (T-0060's four blocker reasons). The pre-1.0 names `gate`, `waiting`, `phase`, `review` and `done` are mapped with a notice. A list is one leaf. |
-| `notify.realertHours` | both | `6` | number of hours; negative or non-number reads as the default (coerced in `plugin/crew/hooks/scripts/crew_notify.py`) | 1.0.350 | The same event + ticket + reason is sent once per this many hours; a question pings once per waiting episode. |
-| `notify.questionTypes` | both | `null` | list of notification_type strings, or null; a non-list reads as null and a non-string entry is dropped (coerced in `plugin/crew/hooks/scripts/crew_notify.py`) | 1.0.350 | The Claude Code `notification_type` values that count as a question; null uses the built-in five (`crew_notify.QUESTION_TYPES`). |
 
 ### `platform`
 
@@ -254,56 +210,18 @@ Columns:
 | `platform.shell` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_platform.py` (expects string or null) | 0.11.0 or earlier | Detected shell, stamped by platform-sync. |
 | `platform.windowsHostIp` | repo | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_platform.py` (expects string or null) | 0.11.0 or earlier | Windows host IP seen from WSL. |
 
-### `shellRoute`
-
-| Setting | Layer | Default | Values | Since | Summary |
-|---|---|---|---|---|---|
-| `shellRoute.mode` | both | `null` (repo), `"auto"` (machine) | `auto` \| `wsl` \| `powershell` \| `gitbash` | 1.0.54 | The shell long-running jobs use on native Windows; null inherits, and an unknown value reads as `auto` and is named. |
-| `shellRoute.distro` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_shell.py` (expects string or null) | 1.0.54 | WSL distro to route to; null takes the default distro. |
-
 ### `pm`
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `pm.enabled` | both | `true` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects boolean) | 0.11.0 or earlier | Run the PM brief. |
-| `pm.mode` | both | `"adaptive"` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects string) | 0.11.0 or earlier | How the PM brief adapts its length. |
-| `pm.quietLines` | both | `8` | integer (coerced in `plugin/crew/hooks/scripts/crew_state.py`) | 0.11.0 or earlier | PM brief length when nothing changed. |
-| `pm.maxLines` | both | `40` | integer (coerced in `plugin/crew/hooks/scripts/crew_state.py`) | 0.11.0 or earlier | Longest PM brief. |
 | `pm.authority` | both, widening warned | `"report-only"` | `report-only` \| `act` \| `autonomous` | 0.11.0 or earlier | How much the PM may do unasked. A widening is warned about; the two layers combine by precedence. |
-| `pm.ticketGranularity` | both | `"system"` | `session` \| `system` \| `change` | 0.16.34 | How big a ticket the PM cuts. |
 | `pm.maxDispatches` | both | `3` | integer (coerced in `plugin/crew/hooks/scripts/crew_state.py`) | 0.11.0 or earlier | Roles the PM may dispatch in one pass. |
 
 ### `graph`
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `graph.enabled` | repo | `true` | not validated - read by `plugin/crew/skills/crew-graph/SKILL.md` (expects boolean) | 0.11.0 or earlier | No consumer found (CONFIG.md section 9). |
-| `graph.tool` | repo | `"graphify"` | not validated - read by `plugin/crew/skills/crew-graph/SKILL.md` (expects string) | 0.11.0 or earlier | No consumer found (CONFIG.md section 9). |
 | `graph.out` | repo | `"graphify-out"` | not validated - read by `plugin/crew/hooks/scripts/crew_state.py` (expects path) | 0.11.0 or earlier | Where the code graph is written. |
-| `graph.mode` | repo | `"code-only"` | not validated - read by `plugin/crew/skills/crew-graph/SKILL.md` (expects string) | 0.11.0 or earlier | No consumer found (CONFIG.md section 9). |
-| `graph.commitHook` | repo | `false` | not validated - read by `plugin/crew/skills/crew-graph/SKILL.md` (expects boolean) | 0.11.0 or earlier | No consumer found (CONFIG.md section 9). |
-
-### `docs`
-
-| Setting | Layer | Default | Values | Since | Summary |
-|---|---|---|---|---|---|
-| `docs.theme` | both | `null` | not validated - read by `plugin/crew/skills/crew-house-style/SKILL.md` (expects string or null) | 0.16.33 | House-style theme for built documents; null uses the skill's own choice. |
-| `docs.reportTheme` | both | `null` | not validated - read by `plugin/crew/skills/crew-house-style/SKILL.md` (expects string or null) | 0.16.33 | Theme for findings reports. |
-
-### `bitbucket`
-
-| Setting | Layer | Default | Values | Since | Summary |
-|---|---|---|---|---|---|
-| `bitbucket.mergeGate.enabled` | both | `false` | not validated - read by `plugin/crew/commands/promote.md` (expects boolean) | 0.16.33 | Let `/crew:promote` drive the Bitbucket merge gate. |
-| `bitbucket.mergeGate.branch` | both | `null` | not validated - read by `plugin/crew/commands/promote.md` (expects string or null) | 0.16.33 | Branch the Bitbucket merge gate protects. |
-| `bitbucket.mergeGate.preset` | both | `"standard"` | not validated - read by `plugin/crew/commands/promote.md` (expects string) | 0.16.33 | Selects nothing today (CONFIG.md section 9). |
-
-### `github`
-
-| Setting | Layer | Default | Values | Since | Summary |
-|---|---|---|---|---|---|
-| `github.mergeGate.enabled` | both | `false` | not validated - read by `plugin/crew/commands/promote.md` (expects boolean) | 0.19.30 | Let `/crew:promote` drive the GitHub merge gate. |
-| `github.mergeGate.branch` | both | `null` | not validated - read by `plugin/crew/commands/promote.md` (expects string or null) | 0.19.30 | Branch the GitHub merge gate protects. |
 
 ### `install`
 
@@ -315,18 +233,8 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `guards.terraformApply` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | `terraform apply` and friends. |
-| `guards.forcePush` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | `git push --force`. |
-| `guards.adminMerge` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | `gh pr merge --admin`. |
-| `guards.mergeGate` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | Taking a live repo's merge gate down (read by `/crew:gate`). |
-| `guards.cloudDestructive` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 1.0.25 | Destructive cloud CLI commands. |
-| `guards.sqlDestructive` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 1.0.25 | Destructive SQL. |
-| `guards.deployWorkflow` | both, ratchet | `"block"` | `block` \| `ask` \| `allow` (ratchet: narrower layer wins; listed narrowest first) | 1.1.16 | A `gh workflow run` or `gh api .../dispatches` of a workflow `environments.workflows` lists. |
-| `guards.prodDatabase` | both, ratchet | `"none"` | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | How much of a declared production database crew may reach. |
-| `guards.prodServer` | both, ratchet | `"none"` | `none` \| `read` \| `full` (ratchet: narrower layer wins; listed narrowest first) | 0.19.30 | How much of a declared production host crew may reach. |
-| `guards.roleWrites` | both, ratchet | `"off"` | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | 0.19.92 | Enforce each role's write scope. Default `off`; a malformed value reads as `block`. |
-| `guards.cloudGuard` | both, ratchet | `"off"` | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | 1.0.25 | Whether the cloud guard judges commands at all. Default `off`; `report` logs only. |
-| `guards.envGuard` | both, ratchet | `"off"` | `block` \| `report` \| `off` (ratchet: narrower layer wins; listed narrowest first) | 1.2.26 | Refuse a command that prints the whole environment or a credential-named variable. Default `off`; `report` logs only. |
+| `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | 1.2.62 | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
+| `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `plugin/crew/hooks/scripts/crew_guards.py`) | 1.2.62 | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
 
 ### `production`
 
@@ -355,12 +263,7 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `change.requester` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_change.py` (expects string or null) | 0.19.31 | Who requests the change. |
-| `change.implementor` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_change.py` (expects string or null) | 0.19.31 | Who implements the change. |
 | `change.requireForProduction` | both, ratchet | `false` | `true` \| `false` (ratchet: narrower layer wins; listed narrowest first) | 0.19.31 | Require an approved change request before `/crew:promote production`: a repo may turn it on, never off. |
-| `change.sdpTemplate` | both | `"Change Management Request"` | not validated - read by `plugin/crew/hooks/scripts/crew_change.py` (expects string) | 0.19.31 | SDP template for a change request. |
-| `change.jiraIssueType` | both | `"Change"` | not validated - read by `plugin/crew/hooks/scripts/crew_change.py` (expects string) | 0.19.31 | Jira issue type for a change request. |
-| `change.category` | both | `null` | not validated - read by `plugin/crew/hooks/scripts/crew_change.py` (expects string or null) | 0.19.31 | Change category. |
 
 ### `git`
 
@@ -386,13 +289,10 @@ Columns:
 | `autopilot.questions` | both, stricter wins | `"risk"` | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | 1.0.42 | Who answers a ticket's open questions under autopilot; anything else reads as `human`. |
 | `autopilot.maxAutoReplans` | repo | `0` | non-negative integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.339 | Successor plans autopilot may start by rejecting an out-of-rounds BLOCK review itself; 0 is off, and anything but a non-negative integer reads as 0, and above 5 as 5, with a warning. |
 | `autopilot.ship` | repo | `"merge"` | `pr` \| `merge` | 1.0.349 | After `/crew:done`: `pr` pushes and opens the PR; `merge` also merges it (a merge commit) once the required checks allow. Anything else reads as `pr`, with a warning. |
-| `autopilot.knownFailures` | repo | `[]` | list of check names (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.349 | Required checks whose `fail` does not block a merge, matched by exact name; anything but a list of strings reads as `[]`, with a warning. |
-| `autopilot.ciTimeoutMinutes` | repo | `60` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.349 | Minutes `ship` waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning. |
 | `autopilot.sleep.schedule` | repo | `null` | HH:MM-HH:MM or null (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | A nightly window, `HH:MM-HH:MM` in machine local time (may cross midnight); inside it the two sleep overrides apply. Anything else is could not tell: only a stricter override applies. |
 | `autopilot.sleep.approval` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.approval` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
 | `autopilot.sleep.questions` | repo | `null` | `null` \| `human` \| `self` \| `risk` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.0.332 | `autopilot.questions` inside the sleep window; null keeps the day value; anything else counts as human, the strictest, with a warning. |
 | `autopilot.sleep.deploy` | repo | `null` | `null` \| `nonprod` \| `none` (checked in `plugin/crew/hooks/scripts/crew_sleep.py`) | 1.1.21 | `autopilot.deploy` inside the sleep window (L-0654): null keeps the day value, `nonprod` or `none` replaces it; anything else, `all` included, is refused with a warning. Asleep, an effective `all` reads as `nonprod`: production never runs unattended asleep. |
-| `autopilot.sleep.notifyHold` | repo | `null` | `null` \| `true` (checked in `plugin/crew/hooks/scripts/crew_notify_hold.py`) | 1.1.21 | Inside the sleep window (L-0656): `true` holds the pings that only ask for attention (questions, Approval waiting, Review out of rounds) and counts them; the morning summary carries the count. A failure (a deploy result, a refused Stop gate, a stalled lane) is never held. Only while armed and asleep by the schedule (a manual sleep outside it holds nothing); anything but null or true holds nothing, with a warning. |
 | `autopilot.maxTicketsPerRun` | repo | `3` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot_backlog.py`) | 1.1.21 | Tickets one goal run (one session) may start; the next one stops the run. Anything but a positive integer reads as 3, with a warning. |
 | `autopilot.maxTokensPerSession` | repo | `2000000` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot_backlog.py`) | 1.1.21 | Input plus output tokens one goal session may spend, each assistant message counted once, before the run stops; a transcript that cannot be read stops too. Anything but a positive integer reads as 2000000, with a warning. |
 | `autopilot.maxLanes` | repo | `null` | positive integer or null (checked in `plugin/crew/hooks/scripts/crew_wave.py`) | 1.1.6 | Lanes one `/crew:autopilot wave` runs at once; null is the resolved `pm.maxDispatches`, a larger value is capped to it and anything but a positive integer reads as it, each with a warning. |

@@ -548,7 +548,7 @@ def test_valid_config_with_no_guards_key_is_not_corrupt_stays_off_bash(tmp_path)
     """Must-allow: a well-formed config that simply never set `guards` at
     all is not corrupt either -- `off` is the honest answer, not a forced
     `block`."""
-    root = crew_fixtures.make_repo(tmp_path, config={"change": {"requester": "x"}})
+    root = crew_fixtures.make_repo(tmp_path, config={"change": {"requireForProduction": False}})
     proc = _run_sh(root, "Write", str(root / "src" / "app.py"), "pm")
     assert proc.returncode == 0, proc.stderr
 

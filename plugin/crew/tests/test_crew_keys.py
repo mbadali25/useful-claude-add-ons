@@ -443,3 +443,133 @@ def test_no_dropped_key_is_a_leaf():
     leaves = _leaves()
 
     assert not (leaves & l0725_keyset.L0725_DROPPED)
+
+
+# --- L-0725: a dropped key has no reader ------------------------------------------
+
+_SCAN_ROOTS = (("hooks", "scripts"), ("skills",))
+_SCAN_SUFFIXES = (".py", ".sh", ".ps1")
+# Files that legitimately NAME a dropped key: the registry, and the module that
+# tells a person the key is dropped.
+_NAMES_DROPPED_KEYS = {"crew_dropped.py"}
+
+# Reviewed hits that are not readers. (path relative to plugin/crew, stripped
+# line) -> why. Empty is the goal; each entry is a sentence, not a shrug.
+_NOT_A_READER = {}
+
+
+def _scan_files():
+    out = []
+    for parts in _SCAN_ROOTS:
+        base = os.path.join(PLUGIN, *parts)
+        for dirpath, dirnames, filenames in os.walk(base):
+            dirnames[:] = [d for d in dirnames if d not in ("_test", "__pycache__", "node_modules")]
+            if os.path.basename(dirpath) == "tests":
+                continue
+            for name in filenames:
+                if name.endswith(_SCAN_SUFFIXES) and name not in _NAMES_DROPPED_KEYS:
+                    out.append(os.path.join(dirpath, name))
+    return sorted(out)
+
+
+def _triples():
+    """(key, leaf, block) for each dropped key; block is the key's parent
+    segment, or None for a top-level key."""
+    out = []
+    for key in sorted(l0725_keyset.L0725_DROPPED):
+        parts = key.split(".")
+        out.append((key, parts[-1], parts[-2] if len(parts) > 1 else None))
+    return out
+
+
+def _kept_leaves():
+    return {k.split(".")[-1] for k in l0725_keyset.L0725_KEYS}
+
+
+def _hits():
+    """Every line that reads a dropped key, by the three searches: the dotted
+    name; the block accessor (`"block"` ... `get("leaf")` / `["leaf"]` on one
+    line); and the quoted leaf when no KEPT key shares it (a leaf like `mode`
+    or `enabled` belongs to kept keys too, so only the first two searches can
+    tell a reader from a coincidence for it)."""
+    kept = _kept_leaves()
+    found = []
+    for path in _scan_files():
+        rel = os.path.relpath(path, PLUGIN).replace(os.sep, "/")
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            lines = handle.read().split("\n")
+        for key, leaf, block in _triples():
+            dotted = re.compile(r"(?<![\w.])" + re.escape(key) + r"(?![\w])")
+            access = re.compile(
+                r"""["']""" + re.escape(block) + r"""["'][^\n]{0,60}?(?:get\(\s*|\[\s*)["']"""
+                + re.escape(leaf) + r"""["']""") if block else None
+            quoted = re.compile(r"""["']""" + re.escape(leaf) + r"""["']""") \
+                if leaf not in kept else None
+            for number, line in enumerate(lines, 1):
+                text = line.strip()
+                if text.startswith(("#", "//")):
+                    continue
+                for search, pattern in (("dotted", dotted), ("block", access), ("leaf", quoted)):
+                    if pattern is not None and pattern.search(line):
+                        if (rel, text) not in _NOT_A_READER:
+                            found.append(f"{rel}:{number}: [{key}] ({search}) {text[:100]}")
+                        break
+    return found
+
+
+def test_no_dropped_key_is_read():
+    hits = _hits()
+
+    assert hits == [], "a dropped key still has a reader:\n" + "\n".join(hits[:60])
+
+
+def test_every_not_a_reader_entry_still_matches_a_line():
+    live = set()
+    for path in _scan_files():
+        rel = os.path.relpath(path, PLUGIN).replace(os.sep, "/")
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            live.update((rel, line.strip()) for line in handle.read().split("\n"))
+
+    assert set(_NOT_A_READER) <= live
+
+
+def test_dropped_registry_equals_the_committed_list():
+    import crew_dropped  # pylint: disable=import-outside-toplevel
+    assert set(crew_dropped.DROPPED) == set(l0725_keyset.L0725_DROPPED)
+    assert len(crew_dropped.DROPPED) == 60
+
+
+def test_every_dropped_constant_exists_and_holds_the_old_default():
+    import crew_dropped  # pylint: disable=import-outside-toplevel
+    for key, (default, where) in crew_dropped.DROPPED.items():
+        if where.startswith("retired"):
+            continue
+        module, name = where.split(".")
+        value = getattr(crew_state, name)
+        if key.startswith("obsidian.columns."):
+            value = value[key.rsplit(".", 1)[1]]
+        if key == "shellRoute.mode":
+            default = crew_dropped.GLOBAL_DEFAULTS[key]
+        assert module == "crew_state", key
+        assert tuple(value) == tuple(default) if isinstance(default, list) else value == default, key
+
+
+_CITATION = re.compile(r"CONFIG\.md[^§\n]{0,3}§ ?[0-9]+")
+# Recorded history and the harness files the follow-up tooling PR owns.
+_CITATION_EXEMPT_PREFIXES = (
+    ".work/", "CHANGELOG.md", "docs/tickets/", "plugin/crew/tests/golden/", "cloud-handoff-notes.md",
+    "pending-tickets.md", "docs/review/", "docs/handoff/", "plugin/crew/tests/sabotage",
+    "plugin/crew/commands/review.md", "plugin/crew/agents/reviewer.md", "graphify-out/",
+)
+
+
+def test_no_section_citations():
+    import subprocess  # pylint: disable=import-outside-toplevel
+    repo = os.path.dirname(os.path.dirname(PLUGIN))
+    listed = subprocess.run(["git", "grep", "-lE", r"CONFIG\.md[^§]{0,3}§ ?[0-9]+"], cwd=repo,
+                            capture_output=True, text=True, check=False)
+    if listed.returncode not in (0, 1):
+        pytest.skip("git grep unavailable here")
+    offenders = [p for p in listed.stdout.split() if not p.startswith(_CITATION_EXEMPT_PREFIXES)]
+
+    assert offenders == [], "CONFIG.md section citations remain in:\n" + "\n".join(offenders)

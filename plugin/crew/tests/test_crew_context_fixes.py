@@ -130,19 +130,11 @@ def test_a_snippet_from_a_vault_not_asked_for_is_dropped(tmp_path, stub, monkeyp
     assert ("OUTSIDER" in text, "INSIDER" in text) == (False, True)
 
 
-# --- memory.inject on every path --------------------------------------------
+# --- memory.inject is a fixed value on every path --------------------------------------------
 
-def test_slice_for_subagent_emits_and_logs_nothing_when_inject_is_false(tmp_path, stub, monkeypatch):
-    root = make_repo(tmp_path, config={}, inject=False)
-    monkeypatch.setenv("STUB_JSON", json.dumps([{"vault": "primary-v", "note": "a.md", "text": "NOTE"}]))
-
-    text = crew_context.slice_for_subagent(str(root), "review alpha caching", [])
-
-    assert (text, log_records(root)) == ("", [])
-
-
-def test_slice_for_subagent_emits_when_inject_is_unset_since_it_defaults_on(tmp_path, stub, monkeypatch):
-    root = make_repo(tmp_path, config={}, inject=None)
+@pytest.mark.parametrize("inject", [False, None])
+def test_slice_for_subagent_emits_whatever_memory_inject_says(tmp_path, stub, monkeypatch, inject):
+    root = make_repo(tmp_path, config={}, inject=inject)
     monkeypatch.setenv("STUB_JSON", json.dumps([{"vault": "primary-v", "note": "a.md", "text": "NOTE"}]))
 
     text = crew_context.slice_for_subagent(str(root), "review alpha caching", [])
@@ -160,8 +152,8 @@ def _handoff_repo(tmp_path, inject):
 
 
 @needs_bash
-@pytest.mark.parametrize("inject, speaks", [(True, False), (None, False), (False, True)])
-def test_handoff_read_sh_stands_down_exactly_when_memory_inject_is_on(tmp_path, inject, speaks):
+@pytest.mark.parametrize("inject, speaks", [(True, False), (None, False), (False, False)])
+def test_handoff_read_sh_never_prints_the_handoff_whatever_memory_inject_says(tmp_path, inject, speaks):
     root = _handoff_repo(tmp_path, inject)
     raw = json.dumps({"source": "resume", "cwd": str(root), "session_id": f"s-{inject}"}).encode()
     env = dict(os.environ)

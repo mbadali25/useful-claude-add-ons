@@ -60,8 +60,8 @@ def test_resolve_method_refuses_sendkeys_on_every_platform(env):
 
 
 @pytest.mark.parametrize("env", _ENVS)
-def test_resolve_method_refuses_sendkeys_even_with_a_window_title(env):
-    got = crew_autocycle.resolve_method({"method": "sendkeys", "windowTitle": "Claude"}, env)
+def test_resolve_method_refuses_sendkeys(env):
+    got = crew_autocycle.resolve_method({"method": "sendkeys"}, env)
 
     assert got["ok"] is False
     assert got["reason"] == crew_autocycle.SENDKEYS_REMOVED
@@ -69,7 +69,7 @@ def test_resolve_method_refuses_sendkeys_even_with_a_window_title(env):
 
 @pytest.mark.parametrize("env", _ENVS)
 def test_auto_never_resolves_to_sendkeys(env):
-    got = crew_autocycle.resolve_method({"method": "auto", "windowTitle": ""}, env)
+    got = crew_autocycle.resolve_method({"method": "auto"}, env)
 
     assert got.get("method") != "sendkeys"
     assert "sendkeys" not in json.dumps(got)

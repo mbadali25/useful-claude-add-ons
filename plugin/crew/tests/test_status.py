@@ -13,12 +13,15 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_shell
+import crew_state
 import crew_status
 import review_ledger
 import tool_fixtures
 from crew_fixtures import make_repo
 
 SCRIPT = os.path.join(os.path.dirname(crew_status.__file__), "crew_status.py")
+# The schema a config written today carries; `7` below means "the step before it".
+CURRENT = crew_state.SCHEMA_CURRENT
 
 
 def _stat_tree(root):
@@ -32,7 +35,7 @@ def _stat_tree(root):
 
 
 def _busy_repo(tmp_path):
-    root = make_repo(tmp_path, config={"schema": 7, "tracker": "files",
+    root = make_repo(tmp_path, config={"schema": CURRENT, "tracker": "files",
                                        "roles": ["explorer", "qa-reviewer", "dba"]},
                      metrics=[("T-1", 0, 1)], codemap={"a": "anchor: x@0000000\n"},
                      handoff=True)
@@ -109,37 +112,31 @@ def test_status_has_no_shell_line_off_windows(tmp_path, monkeypatch, host):
     assert not any(line.startswith("shell") for line in with_cache)
 
 
-PWSH7 = "C:/Program Files/PowerShell/7/pwsh.exe"
 _SPLIT = "direct (plain argv) / gitbash (bash syntax)"
 _INSTALL = "recommend `wsl --install -d Ubuntu` in an elevated shell, then reboot"
 
 
-@pytest.mark.parametrize("mode,cache,location,expected", [
-    ("auto", {"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"}, "wsl-fs",
+@pytest.mark.parametrize("cache,location,expected", [
+    ({"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"}, "wsl-fs",
      "shell    auto -> wsl (Ubuntu-24.04) - WSL2 usable and the repo is inside WSL"),
-    ("auto", {"state": "not-installed", "detail": "wsl.exe is not on PATH"}, "windows-drive",
+    ({"state": "not-installed", "detail": "wsl.exe is not on PATH"}, "windows-drive",
      f"shell    auto -> {_SPLIT} - WSL not-installed (wsl.exe is not on PATH); {_INSTALL}"),
-    ("powershell", {"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"}, "windows-drive",
-     f"shell    powershell -> {PWSH7} (plain argv) / gitbash (bash syntax) - a bash string is never handed to pwsh"),
-    ("gitbash", {"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"}, "windows-drive",
-     "shell    gitbash -> gitbash - set by shellRoute.mode"),
-    ("auto", None, "windows-drive",
+    (None, "windows-drive",
      f"shell    auto -> {_SPLIT} - WSL never probed - run /crew:config"),
-    ("auto", {"state": "broken", "detail": "wsl.exe --list --verbose timed out after 15s"}, "windows-drive",
+    ({"state": "broken", "detail": "wsl.exe --list --verbose timed out after 15s"}, "windows-drive",
      f"shell    auto -> {_SPLIT} - WSL broken (wsl.exe --list --verbose timed out after 15s)"),
-    ("native", {"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"}, "windows-drive",
-     f"shell    auto (shellRoute.mode 'native' is not a mode) -> {_SPLIT} - WSL usable but this repo is on a "
+    ({"state": "usable", "distro": "Ubuntu-24.04", "detail": "ok"}, "windows-drive",
+     f"shell    auto -> {_SPLIT} - WSL usable but this repo is on a "
      "Windows drive and not measured (crew_shell.py measure --write)"),
 ])
-def test_status_shell_line_on_windows(tmp_path, monkeypatch, mode, cache, location, expected):
-    root = make_repo(tmp_path, config={"schema": 7, "shellRoute": {"mode": mode, "distro": None}})
+def test_status_shell_line_on_windows(tmp_path, monkeypatch, cache, location, expected):
+    root = make_repo(tmp_path, config={"schema": CURRENT})
     monkeypatch.setattr(crew_shell, "host_os", lambda *a, **k: "windows-bash")
     monkeypatch.setattr(crew_shell, "repo_location", lambda _root: location)
     # Faked with repo_location, as test_crew_shell.py does: a WSL route also
     # translates the real tmp_path, which is a drive path on Windows but a POSIX
     # path on Linux CI, and to_wsl_path rightly refuses the latter.
     monkeypatch.setattr(crew_shell, "to_wsl_path", lambda p, distro=None: ("/home/u/repo", ""))
-    monkeypatch.setattr(crew_shell, "resolve_pwsh", lambda *a, **k: (PWSH7, "pwsh reason"))
     if cache is not None:
         crew_shell.write_cache(cache)
 
@@ -209,8 +206,8 @@ def test_memory_reads_the_real_context_log_of_root_not_the_session_project(tmp_p
 
 @pytest.mark.parametrize("files,expected", [
     ({}, "config   none - run /crew:init"),
-    ({"config.json": {"schema": 7, "roles": ["qa-reviewer"]}},
-     "config   .crew/config.json schema 7 - run /crew:migrate"),
+    ({"config.json": {"schema": CURRENT, "roles": ["qa-reviewer"]}},
+     f"config   .crew/config.json schema {CURRENT} - run /crew:migrate"),
     ({"crew.json": {"schema": 1, "agents": ["explorer"], "tracker": {"kind": "jira"}}},
      "config   .crew/crew.json schema 1"),
 ])
@@ -237,17 +234,18 @@ def test_fresh_init_config_is_current_and_asks_for_no_migrate(tmp_path):
 
     lines = crew_status.collect(str(root))
 
-    assert lines[1:3] == ["config   .crew/config.json schema 7",
-                          "roster   explorer, reviewer (1.0 roster: explorer, reviewer, security, researcher)"]
+    assert lines[1] == f"config   .crew/config.json schema {CURRENT}"
+    assert not any(line.startswith("roster") for line in lines)
 
 
 @pytest.mark.parametrize("config,extra", [
-    ({"schema": 7, "roles": ["explorer", "dba"]}, None),
+    ({"schema": CURRENT, "roles": ["explorer", "dba"]}, None),
     ({"schema": 6, "roles": ["explorer"]}, None),
+    ({"schema": 7, "roles": ["explorer"]}, None),
     ({"roles": ["explorer"]}, None),
-    ({"schema": 7, "roles": ["explorer"]}, ".work/tickets/T-0001.md"),
-    ({"schema": 7, "roles": ["explorer"]}, ".crew/pm-journal.md"),
-    ({"schema": 7, "roles": ["explorer"]}, ".crew/pm-standing.md"),
+    ({"schema": CURRENT, "roles": ["explorer"]}, ".work/tickets/T-0001.md"),
+    ({"schema": CURRENT, "roles": ["explorer"]}, ".crew/pm-journal.md"),
+    ({"schema": CURRENT, "roles": ["explorer"]}, ".crew/pm-standing.md"),
 ])
 def test_a_0_20_setup_still_asks_for_migrate(tmp_path, config, extra):
     root = make_repo(tmp_path, config=config)
@@ -290,7 +288,7 @@ def test_status_never_runs_a_configured_fsmonitor_hook(tmp_path):
 
 
 def test_corrupt_crew_json_is_reported_even_beside_a_valid_legacy_config(tmp_path):
-    root = make_repo(tmp_path, config={"schema": 7, "roles": ["qa-reviewer"]})
+    root = make_repo(tmp_path, config={"schema": CURRENT, "roles": ["qa-reviewer"]})
     (root / ".crew" / "crew.json").write_text("{not json", encoding="utf-8")
 
     lines = crew_status.collect(str(root))
@@ -1148,17 +1146,17 @@ def test_owner_view_is_read_only_with_a_next_md(tmp_path):
 def test_a_current_config_beside_crew_1_files_asks_for_no_migrate(tmp_path, extra):
     """A README in tickets/ is not a ticket, and crew 1.x writes the metrics
     file and the SDP cache itself, so none of them is a 0.20 marker."""
-    root = make_repo(tmp_path, config={"schema": 7, "roles": ["explorer"]})
+    root = make_repo(tmp_path, config={"schema": CURRENT, "roles": ["explorer"]})
     (root / extra).parent.mkdir(parents=True, exist_ok=True)
     (root / extra).write_text("# notes\n", encoding="utf-8")
 
     lines = crew_status.collect(str(root))
 
-    assert lines[1] == "config   .crew/config.json schema 7"
+    assert lines[1] == f"config   .crew/config.json schema {CURRENT}"
 
 
 @pytest.mark.parametrize("config,why", [
-    ({"schema": 7, "roles": "explorer"}, "`roles` is not a list"),
+    ({"schema": CURRENT, "roles": "explorer"}, "`roles` is not a list"),
     ({"schema": "7", "roles": ["explorer"]}, "`schema` is not an integer"),
     ({"schema": True, "roles": ["explorer"]}, "`schema` is not an integer"),
 ])
@@ -1173,7 +1171,7 @@ def test_an_unreadable_field_is_could_not_tell(tmp_path, config, why):
 
 @pytest.mark.parametrize("folder", [".crew", os.path.join(".work", "tickets")])
 def test_an_unlistable_folder_is_could_not_tell(tmp_path, monkeypatch, folder):
-    root = make_repo(tmp_path, config={"schema": 7, "roles": ["explorer"]})
+    root = make_repo(tmp_path, config={"schema": CURRENT, "roles": ["explorer"]})
     (root / folder).mkdir(parents=True, exist_ok=True)
     real = os.listdir
     denied = os.path.join(str(root), folder)
@@ -1193,7 +1191,7 @@ STRAY = "config.json.20260926-224458.bak"
 
 
 def _backups_repo(tmp_path, stray=True, state=None, backups_is_file=False):
-    root = make_repo(tmp_path, config={"schema": 7, "tracker": "files", "roles": ["explorer"]})
+    root = make_repo(tmp_path, config={"schema": CURRENT, "tracker": "files", "roles": ["explorer"]})
     backups = root / ".crew" / "backups"
     if backups_is_file:
         backups.write_text("not a directory\n", encoding="utf-8")

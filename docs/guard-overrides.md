@@ -64,7 +64,7 @@ separate, lighter guard: it bypasses without touching protection.
 
 **Config shape for the gates**: keep `bitbucket.mergeGate.{enabled,branch,preset}`
 and add `github.mergeGate.{enabled,branch}` — symmetrical, and `preset` is not
-copied because it binds to nothing (CONFIG.md §8).
+copied because it binds to nothing. (L-0725 later removed these merge-gate keys; see `docs/crew/config-rationale.md`, "Removed keys and migration".)
 
 ## Invariants the builders must keep
 

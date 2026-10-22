@@ -92,6 +92,7 @@ import time
 import crew_backup
 import crew_common
 import crew_config_files
+import crew_dropped
 import crew_state
 
 sys.path.insert(0, os.path.join(
@@ -541,12 +542,8 @@ def default_global_config():
         # measured rather than assumed -- see `test_autoclear_is_global_and_
         # its_siblings_are_not`. `_prune` and `is_global_path` both descend
         # structurally, so naming `context` here grants exactly the
-        # `autoClear` leaves (all but `unsafeFocus`) and nothing beside them.
-        "context": {"autoClear": {
-            key: copy.deepcopy(value)
-            for key, value in crew_state.AUTOCLEAR_DEFAULTS.items()
-            if key not in crew_state.AUTOCLEAR_CONSENT_KEYS
-        }},
+        # `autoClear` leaves and nothing beside them.
+        "context": {"autoClear": copy.deepcopy(crew_state.AUTOCLEAR_DEFAULTS)},
         # T-0006's auto-resume switch. The one place it can be switched ON
         # (`crew_resume.settings`): it starts work in this machine's session,
         # so, like `autoClear.enabled`, it is the machine owner's answer.
@@ -2403,9 +2400,13 @@ def inert_settings(root, path=None):
                 "ticket": None,
                 "kind": "repo-ignored", "layer": "repo"}
             continue
+        if len(parts) == 2 and parts[0] == "guards" and parts[1] in crew_state.ALL_GUARD_NAMES:
+            continue  # a legacy per-guard key is READ (as an override) until /crew:migrate
         if not _known_leaf(parts, known_global if layer(parts) == "global" else known):
-            effect, ticket = pending or (_UNKNOWN_EFFECT, None)
-            kind = "pending" if pending else "unknown"
+            effect, ticket = pending or (_dropped_effect(dotted) or _UNKNOWN_EFFECT, None)
+            kind = "pending" if pending else "dropped" if _dropped_effect(dotted) else "unknown"
+            if kind == "dropped":
+                ticket = "L-0725"
         elif isinstance(value, (str, int, float, bool)) \
                 and (dotted, value) in INERT_PENDING:
             effect, ticket = INERT_PENDING[(dotted, value)]
@@ -2419,10 +2420,23 @@ def inert_settings(root, path=None):
             continue  # `schema` has its own --check-global finding
         for dotted, value in _dropped_leaves(global_raw, dropped):
             entries[(dotted, "global")] = {"key": dotted, "value": value,
-                                           "effect": _GLOBAL_IGNORED_EFFECT, "ticket": None,
+                                           "effect": _dropped_effect(dotted) or _GLOBAL_IGNORED_EFFECT,
+                                           "ticket": None,
                                            "kind": "global-ignored", "layer": "global"}
     # A could-not-tell first: a line cut at `+N more` must still say it.
     return [entries[k] for k in sorted(entries, key=lambda k: (k[1] != "unreadable", k))]
+
+
+def _dropped_effect(dotted):
+    """What an L-0725 dropped key now means, or None for any other key:
+    `crew_dropped.DROPPED` pairs each with the constant that replaced it."""
+    row = crew_dropped.DROPPED.get(dotted)
+    if row is None:
+        return None
+    if row[1].startswith("retired"):
+        return f"dropped in L-0725 ({row[1]}); the value has no effect"
+    return (f"dropped in L-0725, now the constant {row[1]} "
+            f"(={row[0]!r}); the value has no effect")
 
 
 def _dropped_leaves(raw, dropped):
@@ -3481,14 +3495,10 @@ def assignments(updates):
 # Consent keys, refused at the machine layer by name and reason (the
 # structural rule behind them is still `is_global_path`).
 MACHINE_REFUSED = {
-    "context.autoClear." + key: (
-        "consent, not a capability: accepting this risk is a per-repo "
-        "decision, never granted machine-wide")
-    for key in crew_state.AUTOCLEAR_CONSENT_KEYS
+    "graph.obsidian.confirmed": (
+        "consent to write into your own notes outside the repo; no guided "
+        "flow may grant it"),
 }
-MACHINE_REFUSED["graph.obsidian.confirmed"] = (
-    "consent to write into your own notes outside the repo; no guided flow "
-    "may grant it")
 
 
 def _shape(dotted):
@@ -3962,9 +3972,6 @@ def is_repo_veto(value):
 # keys (`_PERSONAL_NOTES`, by rank). Keyed on (path, value); the note is the
 # `!` line's text.
 _REPO_WIDENING = {
-    ("context.autoClear.unsafeFocus", True): (
-        "auto-clear may send its keystroke to a window it could not confirm "
-        "is this session's -- consent, not a preference"),
     ("verifyGate", False): (
         "the verify gate stops holding the session at Stop for unverified "
         "changed paths"),

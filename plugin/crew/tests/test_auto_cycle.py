@@ -84,16 +84,14 @@ def _machine(root, enabled=True, **auto):
 
 
 def _context_cfg(**auto):
-    cfg = {"warnAt": 0.8, "budgetTokens": None, "reserveTokens": 0, "autoWrapUp": True,
-           "handoffPath": ".work/HANDOFF.md"}
+    cfg = {"warnAt": 0.8, "reserveTokens": 0}
     if auto:
         cfg["autoClear"] = auto
     return cfg
 
 
-def _repo(tmp_path, budget=None, **auto):
+def _repo(tmp_path, **auto):
     cfg = _context_cfg(**auto)
-    cfg["budgetTokens"] = budget
     return crew_fixtures.make_repo(tmp_path, config={"context": cfg}, git=False)
 
 
@@ -151,14 +149,10 @@ def _windows(tmp_path, windows):
     return {"CREW_AUTOCLEAR_WINDOW_STUB": str(path)}
 
 
-# Native Windows has no tmux, and the tmux pane check cannot confirm a pane
-# there (`crew_autocycle._ppid` has no Windows parent-pid walk, so it fails
-# closed). Where a test's property is not tmux's own, the bash flavour takes
-# the xdotool title fallback on nt instead of skipping: a stubbed xdotool,
-# DISPLAY=:0, and exactly one stubbed window whose title is configured
-# (T-0076). Linux keeps tmux.
-_SH_VIA_XDOTOOL = os.name == "nt"
-_SH_TITLE = "CrewAutoCycleTestWindow"
+# Native Windows has no tmux, and neither the tmux pane check nor the xdotool
+# owner-pid match can confirm a target there (`crew_autocycle._ppid` has no
+# Windows parent-pid walk, so both fail closed). A test that needs a sendable
+# target skips on nt.
 _NO_NATIVE_TMUX = ("no native tmux; the pane check has no Windows parent-pid walk "
                    "and fails closed (T-0076)")
 
@@ -166,8 +160,6 @@ _NO_NATIVE_TMUX = ("no native tmux; the pane check has no Windows parent-pid wal
 def _send_method(flavor):
     """The machine-file keys naming the method `_sendable`'s target uses."""
     del flavor
-    if _SH_VIA_XDOTOOL:
-        return {"method": "xdotool", "windowTitle": _SH_TITLE}
     return {"method": "tmux"}
 
 
@@ -191,14 +183,12 @@ def _bound(root, session=SESSION_A):
 def _sendable(flavor, tmp_path, root, session=SESSION_A):
     """A target the wrapper can identify uniquely, for a session bound to
     its own process (T-0016): a tmux pane whose pid is that session's
-    terminal -- on native Windows, the xdotool title fallback instead (see
-    `_SH_VIA_XDOTOOL`)."""
+    terminal. Skipped on native Windows (`_NO_NATIVE_TMUX`)."""
+    if os.name == "nt":
+        pytest.skip(_NO_NATIVE_TMUX)
     _machine(root, **_send_method(flavor))
     env = _bound(root, session)
-    if _SH_VIA_XDOTOOL:
-        env.update(_xdotool_env(tmp_path, [{"id": 4242, "pid": 999999, "title": _SH_TITLE}]))
-    else:
-        env.update(_tmux_env(tmp_path))
+    env.update(_tmux_env(tmp_path))
     return env
 
 
@@ -324,24 +314,19 @@ def test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay(tmp_pa
     `killpg` on the leader's own recorded pgid cannot reach it either --
     see TODO.md.
 
-    On native Windows the sender is the xdotool one (`_SH_VIA_XDOTOOL`):
-    the fd-3 property is the detached sender's, whichever method it types
-    with. The deadline there is 20s, not 5s, for the reason and measurement
-    `test_the_detached_sender_does_not_outlive_kill_process_group` gives --
-    still under the sender's 30s delay, so a sender holding the pipe open
-    still fails it."""
+    The deadline (5s) is under the sender's 30s delay, so a sender holding
+    the pipe open still fails it."""
+    if os.name == "nt":
+        pytest.skip(_NO_NATIVE_TMUX)
     method = _send_method("sh")
     root = _repo(tmp_path, delaySeconds=30, **method)
     _machine(root)
     _write_marker(root)
     _write_handoff(root)
-    if _SH_VIA_XDOTOOL:
-        send_env = _xdotool_env(tmp_path, [{"id": 1, "pid": 999999, "title": _SH_TITLE}])
-    else:
-        bindir = tmp_path / "fakebin"
-        crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {crew_fixtures.TERMINAL_PID}\n")
-        send_env = {"PATH": crew_fixtures.shell_path("sh", [bindir]),
-                    "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%7"}
+    bindir = tmp_path / "fakebin"
+    crew_fixtures.write_shim(bindir, "tmux", f"#!/bin/sh\necho {crew_fixtures.TERMINAL_PID}\n")
+    send_env = {"PATH": crew_fixtures.shell_path("sh", [bindir]),
+                "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%7"}
     send_env.update(_bound(root))
     home = tmp_path / "home"  # `_machine` writes to root.parent/"home" == tmp_path/"home"
     env = dict(os.environ, HOME=str(home), USERPROFILE=str(home),
@@ -351,7 +336,7 @@ def test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay(tmp_pa
                # any keystroke (auto-clear.sh).
                CREW_AUTOCLEAR_INHIBIT="spawn")
     payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
-    deadline = 20 if os.name == "nt" else 5
+    deadline = 5
 
     started = time.time()
     result = crew_fixtures.run_gate(
@@ -363,86 +348,6 @@ def test_context_watch_stdout_reaches_eof_promptly_even_with_a_long_delay(tmp_pa
     assert result.returncode == 0, result.stderr
     assert elapsed < deadline, elapsed
     assert f"sent - method {method['method']}" in _log(root), _log(root) + result.stderr
-
-
-@pytest.mark.skipif(os.name != "nt" or _BASH is None,
-                     reason="Windows job-object tree kill only, needs bash")
-def test_the_detached_sender_does_not_outlive_kill_process_group(tmp_path):
-    """The leak `crew_fixtures.popen_gate`/`kill_process_group` (fix 1)
-    exists to close, proven against the REAL sender rather than a
-    synthetic stand-in: `context-watch.sh` -> `auto-clear.sh` really
-    spawns `setsid bash $send_script ... & disown` (auto-clear.sh's own
-    comment: deliberately detached so a slow send survives the hook's own
-    death), and this test proves `kill_process_group` still reaches it.
-
-    `method="xdotool"` with a `windowTitle` that matches exactly one
-    stubbed window, not `method="tmux"`: the tmux path's ownership check
-    (`plugin/crew/hooks/scripts/crew_autocycle.py:502`, `pane_pid not in ancestors()`) depends on
-    `ps -o ppid=` to walk this process's own ancestry, which this
-    machine's bundled `ps` (cygwin 3.6.10) does not support -- confirmed
-    directly, `ancestors()` always returns only `[self]` here, so the
-    tmux-flavoured test above cannot even reach a real spawn on this host
-    (see TODO.md). The title-fallback branch of `resolve_target`
-    (`plugin/crew/hooks/scripts/crew_autocycle.py:431-440`) does not consult `ancestors()` at all
-    once exactly one stubbed window's title matches, so it reaches the
-    real spawn regardless of that gap -- same "real (harmless) detached
-    sender" shape as the tmux test, still fully PATH-shadowed
-    (`write_shim`'s default no-op stub) and still window-stubbed
-    (`CREW_AUTOCLEAR_WINDOW_STUB`), never a real xdotool call.
-    """
-    root = _repo(tmp_path, method="xdotool", windowTitle="LaneC2Marker", delaySeconds=30)
-    _machine(root)
-    _write_marker(root)
-    _write_handoff(root)
-    env = _xdotool_env(tmp_path, [{"id": 1, "pid": 999999, "title": "LaneC2Marker"}])
-    home = tmp_path / "home"
-    env = dict(os.environ, **env, **_bound(root), CREW_AUTOCLEAR_INHIBIT="spawn",
-               HOME=str(home), USERPROFILE=str(home),
-               CLAUDE_PROJECT_DIR=str(root))
-    payload = _stop(root, root / ".work" / "irrelevant.jsonl", active=True)
-
-    proc = crew_fixtures.popen_gate(
-        [_BASH, _script("sh", "context-watch")], cwd=str(root), env=env,
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    # 20s, not 5s: win-repo-2 measured this call natively on Windows
-    # (2026-09-25) at 2.0s, 2.5s and 4.5s in isolated runs, and it hit a
-    # 5s budget as `TimeoutExpired` in a full-file run under load. 20s is
-    # over 4x the slowest isolated measurement yet still under the
-    # sender's 30s `delaySeconds`, so a sender that wrongly kept the
-    # hook's stdout/stderr open (auto-clear.sh sends both to /dev/null
-    # today) still times out here instead of passing after its sleep.
-    _, err = proc.communicate(input=json.dumps(payload), timeout=20)
-    # Queried right after `communicate()` returns, via the SAME Windows Job
-    # Object `kill_process_group` is about to terminate -- not a
-    # `tasklist`/before-after pid diff: this machine runs other lanes'
-    # suites concurrently, each spawning and reaping their own `bash.exe`,
-    # so a pid that merely appeared between two snapshots is not evidence
-    # it descends from anything THIS test spawned (measured directly, that
-    # shape attributed five pids from an entirely unrelated Codex/SRL
-    # session to this test). Job membership has neither problem: only
-    # pids this fixture itself assigned or that Windows cascaded into the
-    # same job are ever members, regardless of what else is running.
-    ours = set(crew_fixtures.job_pids(proc))
-
-    assert proc.returncode == 0, err
-    assert "sent - method xdotool" in _log(root), _log(root) + err
-    assert len(ours) > 1, (
-        f"sanity: at most one live job member ({sorted(ours)}) once the "
-        "hook returned -- job_pids lists only LIVE members and the direct "
-        "child has already exited here, so the detached sender was not "
-        "running in the job and this test would prove nothing"
-    )
-
-    crew_fixtures.kill_process_group(proc)
-
-    deadline = time.time() + 10
-    survivors = {pid for pid in ours if crew_fixtures.pid_alive(pid)}
-    while survivors and time.time() < deadline:
-        time.sleep(0.2)
-        survivors = {pid for pid in ours if crew_fixtures.pid_alive(pid)}
-    assert not survivors, (
-        f"the detached sender survived kill_process_group: {sorted(survivors)} "
-        "-- the Windows job object did not reach it despite setsid")
 
 
 @by_flavor
@@ -485,7 +390,7 @@ def test_a_measured_drop_under_the_threshold_rearms_the_next_crossing(flavor, tm
 
 @by_flavor_matrix
 def test_an_estimate_under_the_threshold_does_not_rearm(flavor, tmp_path):
-    root = _repo(tmp_path, budget=100)
+    root = _repo(tmp_path)
     _write_marker(root)
     blob = root / "blob.jsonl"
     blob.write_bytes(b"x" * 100)
@@ -545,10 +450,10 @@ def test_one_sessions_start_does_not_rearm_another(flavor, tmp_path):
     ("stale", "stale-reading-before-compaction"),
 ])
 def test_the_marker_records_whether_the_reading_can_be_trusted(flavor, case, why, tmp_path):
-    root = _repo(tmp_path, budget=100 if case == "estimated" else None)
+    root = _repo(tmp_path)
     if case == "estimated":
         transcript = root / "blob.jsonl"
-        transcript.write_bytes(b"x" * 500)
+        transcript.write_bytes(b"x" * 1_000_000)
     elif case == "unknown-model":
         transcript = _transcript(root, 190_000, model="some-unlisted-model")
     else:
@@ -701,23 +606,15 @@ def test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out(flavor, machine
 
 _ME = os.getpid()
 _WINDOW_CASES = [
-    ("owner-one", [{"id": 1, "pid": _ME, "title": "zsh"}], "", "owner pid]"),
-    ("owner-two", [{"id": 1, "pid": _ME, "title": "a"}, {"id": 2, "pid": _ME, "title": "b"}], "", "2 windows"),
-    ("owner-two-title", [{"id": 1, "pid": _ME, "title": "Claude x"}, {"id": 2, "pid": _ME, "title": "b"}],
-     "claude", "owner pid + title]"),
-    ("owner-wrong-title", [{"id": 1, "pid": _ME, "title": "vim"}], "Claude", "no window whose title"),
-    ("title-none", [{"id": 1, "pid": 999999, "title": "vim"}], "Claude", "0 windows have a title"),
-    ("title-two", [{"id": 1, "pid": 999998, "title": "Claude a"}, {"id": 2, "pid": 999999, "title": "Claude b"}],
-     "Claude", "2 windows have a title"),
-    ("title-one", [{"id": 1, "pid": 999999, "title": "Claude a"}, {"id": 2, "pid": 999998, "title": "vim"}],
-     "Claude", "title fallback]"),
-    ("nothing", [{"id": 1, "pid": 999999, "title": "Claude a"}], "", "no window belongs to any ancestor"),
+    ("owner-one", [{"id": 1, "pid": _ME, "title": "zsh"}], "owner pid]"),
+    ("owner-two", [{"id": 1, "pid": _ME, "title": "a"}, {"id": 2, "pid": _ME, "title": "b"}], "2 windows"),
+    ("nothing", [{"id": 1, "pid": 999999, "title": "Claude a"}], "no window belongs to any ancestor"),
 ]
 
 
 @by_flavor_matrix
-@pytest.mark.parametrize("case,windows,title,expect", _WINDOW_CASES, ids=[c[0] for c in _WINDOW_CASES])
-def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, title, expect, tmp_path):
+@pytest.mark.parametrize("case,windows,expect", _WINDOW_CASES, ids=[c[0] for c in _WINDOW_CASES])
+def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, expect, tmp_path):
     if os.name == "nt" and any(w["pid"] == _ME for w in windows):
         pytest.skip("owner-pid matching needs an ancestor walk the bash flavour has no Windows "
                     "branch for (_ppid, crew_autocycle.py); it fails closed there (T-0076)")
@@ -726,7 +623,7 @@ def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, 
     # T-0016: the owner is the bound session's terminal, not this process.
     windows = [dict(w, pid=crew_fixtures.TERMINAL_PID) if w["pid"] == _ME else w for w in windows]
     env = dict(_bound(root), **_xdotool_env(tmp_path, windows))
-    _machine(root, method="xdotool", windowTitle=title or None)
+    _machine(root, method="xdotool")
     _write_marker(root)
     _write_handoff(root)
 
@@ -737,10 +634,10 @@ def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, 
     assert expect in (result.stdout if sent else result.stderr)
 
 
-@pytest.mark.parametrize("case,windows,title,expect", _WINDOW_CASES, ids=[c[0] for c in _WINDOW_CASES])
-def test_resolve_target_table(case, windows, title, expect):
+@pytest.mark.parametrize("case,windows,expect", _WINDOW_CASES, ids=[c[0] for c in _WINDOW_CASES])
+def test_resolve_target_table(case, windows, expect):
     del case
-    found = crew_autocycle.resolve_target(crew_autocycle.ancestors(), windows, title)
+    found = crew_autocycle.resolve_target(crew_autocycle.ancestors(), windows)
 
     assert found["ok"] is expect.endswith("]")
     assert expect.rstrip("]") in (found.get("how", "") if found["ok"] else found["reason"])
@@ -1129,9 +1026,8 @@ def test_the_machine_can_narrow_auto_clear_to_listed_repos_and_sessions(
     if expect == "armed":
         # Only an "armed" case reaches method/window resolution -- in_scope
         # refuses every "silent" one first -- so only these depend on a
-        # capability this host may genuinely lack. Native Windows needs no
-        # real tmux: `_sendable` takes the stubbed xdotool fallback there.
-        if flavor == "sh" and not _SH_VIA_XDOTOOL and not _real_tmux_on_path():
+        # capability this host may genuinely lack.
+        if flavor == "sh" and not _real_tmux_on_path():
             pytest.skip("tmux is not on PATH on this host, so this case can "
                         "only be PROVED armed by actually resolving a method "
                         "- see test_in_scope_decides_the_scope_matrix_with_"

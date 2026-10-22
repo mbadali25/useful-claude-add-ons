@@ -54,7 +54,7 @@ def _write_machine(root, block):
 def _repo(tmp_path, repo_auto=None):
     """`.crew/config.json` genuinely present (step 1 passes), optionally
     carrying its own `context.autoClear` sub-block (a repo-local opt-out)."""
-    cfg = {"context": {"warnAt": 0.8, "handoffPath": ".work/HANDOFF.md"}}
+    cfg = {"context": {"warnAt": 0.8}}
     if repo_auto is not None:
         cfg["context"]["autoClear"] = repo_auto
     root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)

@@ -43,4 +43,4 @@ It is the one key in crew a repo may only turn **on**: it ratchets across the
 two config layers like `install.policy` and the `guards.*` keys, but the
 narrower value is `true`, so a machine-global `true` survives a `false` in a
 repo you cloned. A value that is neither `true` nor `false` reads as `true`.
-CONFIG.md §17 has the table and the reasoning.
+`docs/crew/config-rationale.md` ("change.requireForProduction") has the reasoning.

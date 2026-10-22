@@ -52,11 +52,13 @@ Under promote's own `--dry-run`, print which change would be checked and run
 ## The merge gate
 
 This step runs inside gate 1, before anything deploys. Two providers, one
-shape: Bitbucket reads `bitbucket.mergeGate.enabled`, `.branch` and `.preset`,
-GitHub reads `github.mergeGate.enabled` and `.branch` (there is no `preset` -
-see below). Both are documented in `plugin/crew/CONFIG.md` §8. Read them
-through `/crew:config` rather than out of `.crew/config.json`, because a
-machine-global file can set any of them and the repo file would not show it.
+shape: Bitbucket and GitHub. The settings that once switched it on
+(`bitbucket.mergeGate.*`, `github.mergeGate.*`) were removed by L-0725 and are
+fixed values now (`crew_state.MERGE_GATE_ENABLED` is `false`,
+`MERGE_GATE_BRANCH` is `null`, `BITBUCKET_MERGE_GATE_PRESET` is `"standard"`),
+so the step is off and cannot be switched on from config. The rest of this
+section describes what promote does when a gate is in play. See
+`docs/crew/config-rationale.md`, "Removed keys and migration".
 
 **Route every invocation through `/crew:gate <disable|enable|status>
 <github|bitbucket>`.** Promote does not compose `merge_gate.sh` commands of its
@@ -73,7 +75,7 @@ crew may touch it. When it is `block`, report the gate's state as
 **not checked** and say which key refused - never as checked and fine. That
 collapse is the bug this repo keeps rediscovering.
 
-**`enabled: false` - the shipped default - means do nothing at all.** No
+**`enabled: false` - the fixed default, and the only state config can now express - means do nothing at all.** No
 `merge_gate.sh` subcommand, no `/crew:gate` invocation, no Bitbucket or GitHub
 API call, not even `export`. It does **not** mean "apply the disabled preset":
 `disable` deletes branch restrictions, and that is the opposite action against
@@ -97,7 +99,7 @@ not be checked", name the two fixes (install the skill, or set
 
 **`branch` binds to one flag, and `null` means ask:**
 
-| `bitbucket.mergeGate.branch` | What promote passes |
+| Branch (fixed at `null`) | What promote passes |
 |---|---|
 | `null` (the default) | no `--branch` at all - the script resolves `.mainbranch.name` from the Bitbucket API (`skills/bitbucket/scripts/merge_gate.sh:198-202`) |
 | a string, e.g. `"release/*"` | `--branch release/*`, verbatim |
@@ -123,11 +125,10 @@ all, and there is no GitHub `preset` for a config key to select.
 `merge_gate.sh` has no `--preset` flag. The preset a bare `enable` applies is
 one hardcoded JSON literal, `PRESET` at
 `skills/bitbucket/scripts/merge_gate.sh:65`, and no flag selects it. So
-`bitbucket.mergeGate.preset` changes nothing today whatever it holds. Whenever
+the Bitbucket preset constant changes nothing today whatever it holds. Whenever
 you show an `enable` command, say that in the same breath - otherwise the
-`"standard"` sitting in the config reads as a choice that was honoured.
-`CONFIG.md` §8 records why the key is left unwired rather than bound to that
-literal.
+`"standard"` reads as a choice that was honoured. The preset is a fixed constant
+rather than a key bound to that literal.
 
 ### Nothing changes without a yes at that moment
 

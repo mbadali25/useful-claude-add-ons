@@ -639,7 +639,7 @@ def test_a_crew_json_only_repo_still_records_a_manual_compact(tmp_path, flavor):
     the transcript and skeleton-handoff writes stay config.json-only."""
     root = _repo(tmp_path)
     (root / ".crew" / "config.json").unlink()
-    (root / ".crew" / "crew.json").write_text(json.dumps({"memory": {"inject": True}}), encoding="utf-8")
+    (root / ".crew" / "crew.json").write_text(json.dumps({}), encoding="utf-8")
     (root / ".work" / "HANDOFF.md").rename(root / ".work" / "HANDOFF.keep")
 
     done = _run(flavor, "handoff-write", root, _precompact(root, "s1", "manual"))
@@ -802,17 +802,6 @@ def test_unarmed_writes_no_author_record(tmp_path, monkeypatch):
     path = _post_in_process(tmp_path, monkeypatch, root)
 
     assert not os.path.lexists(path)
-
-
-def test_injection_off_still_records_the_author(tmp_path, monkeypatch):
-    """`memory.inject: false` turns the context hook off, not the binding: a
-    repo with injection off would otherwise never resume anything."""
-    root = _repo(tmp_path)
-    (root / ".crew" / "config.json").write_text(json.dumps({"memory": {"inject": False}}), encoding="utf-8")
-
-    path = _post_in_process(tmp_path, monkeypatch, root)
-
-    assert os.path.isfile(path)
 
 
 # --- T-0056: the PreCompact skeleton names a running goal --------------------------

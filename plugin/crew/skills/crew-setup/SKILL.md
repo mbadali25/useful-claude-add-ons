@@ -52,8 +52,8 @@ result is Windows or WSL. Three things there change whether the setup works at
 all: repo location under WSL (an order of magnitude in test runtime), `localhost`
 not reaching the Windows host under WSL2, and CRLF line endings breaking shell
 scripts with a misleading error. On native Windows it also covers choosing the
-shell route (`shellRoute.mode`: `auto`, `wsl`, `powershell`, `gitbash`), which
-`crew_shell.py probe --write` and `measure --write` inform.
+shell route, which is automatic and informed by
+`crew_shell.py probe --write` and `measure --write`.
 
 Report what it found and what you propose to create. Wait for approval.
 
@@ -189,7 +189,7 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
 
 ```json
 {
-  "schema": 7,
+  "schema": 8,
   "qa": {
     "provider": "auto",
     "order": [
@@ -350,10 +350,9 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
 `schema: 7` — this repo is born current. It never trips `upgradeNeeded`, which fires on
 any config predating the `pm` and `graph` blocks, the per-role provider table, the
 `docs.theme` default moving to null, `install.policy`, the `guards` block, or the
-`change` block. `change` is `/crew:change`'s: `requester` and `implementor` are the
-person and default into the template's Requestor Details, `sdpTemplate` and
-`jiraIssueType` name what the SDP and Jira backends file against, and
-`requireForProduction` is `false`, so `/crew:promote production` asks for no change
+`change` block. `change` is `/crew:change`'s: it asks for the requester, the implementor and
+the category every time and files against the fixed `Change Management Request` template and
+`Change` issue type, and `requireForProduction` is `false`, so `/crew:promote production` asks for no change
 request until somebody turns it on. It is the one key in crew a repo may only turn
 ON — see CONFIG.md §17. `production.databases` and
 `production.hosts` are the globs `guards.prodDatabase` and `guards.prodServer`
@@ -398,56 +397,18 @@ review that quietly ran on the fallback looks identical to one that ran on the p
 the difference matters most exactly when the pin was chosen to get a different family
 onto the diff.
 
-`docs.theme` / `docs.reportTheme`: `theme` is a doc-builder theme-pack skill name, passed
-straight through as that tool's `--brand`.
+`docs.theme` / `docs.reportTheme` are not config keys any more. The brand a document carries is
+doc-builder's own five-step resolution, and `skills/crew-house-style/SKILL.md` passes no `--brand`
+(`crew_state.DOCS_THEME` and `DOCS_REPORT_THEME` are both `None`) unless the person names one in
+the request. A `docs` block left in a config file has no effect. Say so if the user asks why their
+theme stopped applying; `/crew:migrate` reports the key as inert.
 
-**The pass-through consumer is prose, not code, and that is the whole reason this paragraph
-kept going wrong.** `skills/crew-house-style/SKILL.md` is what reads both keys — it instructs
-the model to route to `doc-builder` and pass `--brand <docs.theme>`, preferring
-`docs.reportTheme` for a findings report. A grep for `--brand` or `resolve_brand` in crew's
-own Python finds nothing, which is what this paragraph previously read as "the wiring does
-not exist"; the wiring is a skill instruction, and `tests/test_docs_routing.py` is the
-committed regression test that binds `docs.reportTheme` to the findings-report genre — it
-asserts the flag by running doc-builder's own argparse, not by grepping for the string.
-`CONFIG.md` §7 carries the consumer table for both keys, and its §9 subsection "Keys whose
-only consumer is prose" lists `docs.reportTheme`.
-
-So: this paragraph asserted the pass-through in the present tense until 2026-09-12, was
-rewritten to deny it entirely, and is corrected again on 2026-09-14. Both earlier versions
-were wrong in the same way — they treated "no Python reads it" and "nothing reads it" as the
-same sentence. Before editing it a fourth time, check `crew-house-style/SKILL.md` and
-`tests/test_docs_routing.py`, not just a grep of the scripts.
-
-A null theme passes no `--brand` at all and lets doc-builder resolve for itself, so do not
-tell the user a theme is in effect when either key is null — that is doc-builder's answer to
-give, not crew's.
-
-Both default to `null`, and null means the same thing in both: **"I have no answer, ask the
-next authority."** For `reportTheme` that authority is `docs.theme`; for `docs.theme` it is
-doc-builder's own five-step resolution. Set `reportTheme` only when reports need a different
-brand from the rest of the docs, which is the client-deliverable case.
-
-`docs.theme` shipped as `"neutral"` through 0.17.1 and `/crew:migrate` (upgrade stage) rewrites that one
-value to null — the only value the upgrade rewrites rather than preserving. Say so if the
-user asks why their config changed, and say why it was safe: **through 0.17.1 the key had no
-consumer at all**, so no value sitting in it could be a preference anyone formed by watching
-it work. That is a claim about the releases the rewrite applies to, not about today —
-`crew-house-style/SKILL.md` reads the key now, which is exactly why leaving `"neutral"` in
-place would be harmful rather than merely inert: every upgraded repo would pass an explicit
-`--brand neutral` that OVERRIDES an installed brand pack, de-branding documents that come out
-correctly branded today, with nothing in the config file changed to explain it. A user who
-did mean neutral sets it again and it is honoured. (`CONFIG.md` §7 cites this paragraph for
-that justification, so keep the historical claim here if you reword it.)
-
-`bitbucket.mergeGate`: off by default, because a gate that arrived switched on would start
-failing merges nobody asked it to watch. `branch: null` means the repo's main branch is
-resolved from the Bitbucket API rather than assumed to be `main` — a repo on `master` or a
-Gitflow `develop` would otherwise get a gate that looks configured and guards nothing.
-
-`github.mergeGate`: the same two keys for GitHub, for the same two reasons. There is no
-`preset`, and the missing key is the decision: `bitbucket.mergeGate.preset` binds to
-nothing and CONFIG.md §8 records why it stays unwired, so copying it would be shipping
-that defect a second time on purpose.
+`bitbucket.mergeGate` and `github.mergeGate` are not config keys any more. The merge-gate step of
+`/crew:promote` runs only when the person asks for it on the command line (`--merge-gate
+<github|bitbucket>`, optionally `--merge-gate-branch NAME`); a gate that arrived switched on would
+start failing merges nobody asked it to watch. Without `--merge-gate-branch` the repo's main branch
+is resolved from the provider's API rather than assumed to be `main`, and the Bitbucket preset is
+fixed at `"standard"` and binds to nothing. A `mergeGate` block left in a config file has no effect.
 
 `guards`: four keys, each `block` | `ask` | `allow`, all four arriving as `block`.
 `terraformApply`, `forcePush` and `adminMerge` are read by crew's command guard;

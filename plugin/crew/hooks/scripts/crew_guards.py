@@ -764,13 +764,11 @@ PERSONAL_KEYS = {
 # (T-0074) and `sleep` (T-0053) reached main after T-0050 was written and were
 # repo-only there; they stay repo-only until a ticket decides how their two
 # layers combine (`sleep` is a block, and `maxAutoReplans` 0 is a valid "off"
-# that the `int-min` rule would read as unrecognised). T-0011's `ship`,
-# `knownFailures` and `ciTimeoutMinutes` (batch 7) are repo-only by their spec:
-# whether a checkout's PRs merge unattended, and which of its checks may fail,
-# are facts about that checkout. T-0029's `maxLanes` and `reviewPolicy` (the wave) are repo-only too: how many lanes
+# that the `int-min` rule would read as unrecognised). T-0011's `ship`
+# (batch 7) is repo-only by its spec: whether a checkout's PRs merge unattended
+# is a fact about that checkout. T-0029's `maxLanes` and `reviewPolicy` (the wave) are repo-only too: how many lanes
 # one checkout runs, and what its lanes do with a verdict, are that checkout's.
 REPO_ONLY_AUTOPILOT = frozenset({"autopilot.maxAutoReplans", "autopilot.sleep", "autopilot.ship",
-                                 "autopilot.knownFailures", "autopilot.ciTimeoutMinutes",
                                  "autopilot.maxLanes", "autopilot.reviewPolicy",
                                  # L-0541's caps: the spec's layer is `repo`.
                                  "autopilot.maxTicketsPerRun", "autopilot.maxTokensPerSession"})

@@ -37,7 +37,7 @@ changes.
 It writes the seven derived facts above and nothing else. A preference this OS
 cannot honour - an `autoClear.method` that only exists on the other platform, a
 clone under `/mnt/`, CRLF in a committed `.sh` - is reported and left alone.
-Anything a human chose (`tracker`, `qa`, `roles`, `tier`, `notify`, `emergency`,
+Anything a human chose (`tracker`, `qa`, `notify`, `emergency`,
 the context thresholds) is never touched.
 
 Running `platform.sh` by hand is still useful for the `tools` inventory, which
@@ -188,30 +188,25 @@ python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_shell.py" run -- "<command>"
 On Git Bash without `python3`, use `python` or `py -3` with the same arguments.
 
 It prints one `crew-shell:` line on stderr naming the route and why, then runs
-the job and returns its exit code. The route comes from `shellRoute.mode`,
-settable on both config layers with `shellRoute.distro`. `shellRoute` is not
-`route`: `route` routes plain-text prompts to `/crew:` commands, and
-`shellRoute` picks the shell a job runs in.
+the job and returns its exit code. The route is always automatic (L-0725: the
+`shellRoute` config was removed, so it cannot be forced to one shell or pinned
+to a distro). `route` is a different thing: it routes plain-text prompts to
+`/crew:` commands.
 
-| Mode | Plain argv job | Bash-syntax job |
-|---|---|---|
-| `auto` (default) | WSL when chosen (below), else direct exec, no shell | WSL when chosen, else Git Bash |
-| `wsl` | WSL, or refuse with exit 3 | WSL, or refuse with exit 3 |
-| `powershell` | pwsh, or refuse with exit 3 if none resolves | Git Bash, with the line `powershell requested; job is bash syntax -> gitbash` |
-| `gitbash` | Git Bash | Git Bash |
+| Plain argv job | Bash-syntax job |
+|---|---|
+| WSL when chosen (below), else direct exec, no shell | WSL when chosen, else Git Bash |
 
-`auto` routes to WSL only when WSL is usable and either the checkout is inside
+WSL is chosen only when it is usable and either the checkout is inside
 WSL's filesystem (opened through `\\wsl$\` or `\\wsl.localhost\`), or the
 checkout is on a Windows drive and `crew_shell.py measure --write` has shown
-WSL faster than Git Bash on both forks and writes for that repo. `auto` never
-picks pwsh. `wsl` never falls back. An unrecognised mode reads as `auto`, and
-both the route line and `/crew:status` name the bad value. Every fallback is
-stated on the route line.
+WSL faster than Git Bash on both forks and writes for that repo. The route
+never picks pwsh. Every fallback is stated on the route line.
 
 **The probe.** `crew_shell.py probe --write` asks from the Windows side whether
 WSL2 is usable. It checks for `wsl.exe`, reads `wsl.exe --list --verbose`
-(UTF-16LE unless `WSL_UTF8=1`), and takes the default `*` distro unless
-`shellRoute.distro` names one. It never picks a distro by list order. It then
+(UTF-16LE unless `WSL_UTF8=1`), and takes the default `*` distro. It never
+picks a distro by list order. It then
 checks WSL2 and `command -v python3; command -v git` inside that distro, under
 `bash -lc`, the login shell a routed job runs in: a non-login `sh -c` misses
 `$HOME/.local/bin`, where `pip --user` and `pipx` put tools. The

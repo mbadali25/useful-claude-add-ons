@@ -17,9 +17,10 @@ Rules this module exists to enforce:
     entire freshness rule depends on the anchor being true.
   * A conflict between the map and the graph is written to the report, never
     applied to the map.
-  * `schema` is stamped current only when every block actually migrated, and
-    the run says what it added -- roles and tier included. Both are the same
-    rule as the anchor one, applied to the config: never claim the work.
+  * `schema` is stamped current only when every block actually migrated and
+    no dropped key holds a value nobody accepted losing, and the run says
+    what it added and removed. Both are the same rule as the anchor one,
+    applied to the config: never claim the work.
 """
 
 import argparse
@@ -40,6 +41,8 @@ sys.path.insert(0, os.path.join(
 ))
 import crew_backup  # pylint: disable=wrong-import-position
 import crew_common  # pylint: disable=wrong-import-position
+import crew_dropped  # pylint: disable=wrong-import-position
+import crew_guards  # pylint: disable=wrong-import-position
 import crew_state  # pylint: disable=wrong-import-position
 
 # Not a second copy of the PM defaults. crew_state owns them because the hook
@@ -60,101 +63,10 @@ GRAPH_BLOCK = {
     # there is no longer anything for it to mean.
 }
 
-# Which doc-builder brand crew's generated documents are written in.
-#
-# Lives here rather than in `crew_config` for the same reason `GRAPH_BLOCK`
-# does: `CONFIG_BLOCKS` below has to reference it, and `crew_config` imports
-# THIS module -- the other direction is the cyclic import `crew_config.
-# layered_state` documents.
-#
-# `theme` is a doc-builder theme-pack skill name. The INTENDED design is that
-# it feeds doc-builder's existing selection point rather than a new one -- the
-# resolved value passed as `--brand` (or `DOC_BUILDER_BRAND`), the second and
-# third rung of `resolve_brand.py`'s precedence.
-#
-# NOT BUILT AS OF 0.17.0, and this comment claimed otherwise in the present
-# tense until 2026-09-12. Nothing in crew reads either key: there is no call
-# site, because no crew agent or command invokes doc-builder at all. See
-# TODO.md, "Ticket B". Stated plainly here because a comment describing
-# unbuilt wiring is why nobody looks for the bug.
-#
-# `theme` defaults to None, meaning "pass no `--brand` and let doc-builder
-# resolve". It shipped as `"neutral"` through 0.17.1, justified by a comment
-# claiming "the default resolves to exactly what doc-builder already falls
-# back to". That was FALSE, and measurably so: doc-builder falls back to
-# neutral only when NO pack is discovered, and with a pack installed it
-# resolves THAT pack. On a checkout carrying solomon-doc-builder, default
-# resolution returns `solomon`.
-#
-# So `"neutral"` was never the no-op its author intended. Once the wiring
-# lands, passing it would be an explicit instruction that OVERRIDES an
-# installed client pack -- an upgrade would silently de-brand a Solomon
-# user's documents, with nothing in their config file changed to explain it.
-# `None` is what actually implements "the default changes nothing": it only
-# ever NARROWS from doc-builder's own behaviour, so pinning a brand becomes
-# something the user opts into deliberately.
-#
-# Both keys' `None` now mean ONE thing -- "I have no answer, ask the next
-# authority". For `reportTheme` that authority is `theme`; for `theme` it is
-# doc-builder's own five-step resolution. One rule, not two.
-#
-# `reportTheme` is null meaning "follow `theme`" -- NOT "no theme". A report
-# is the one artefact people routinely want in a different brand from the
-# docs (a client-facing deliverable out of an internal repo), and spelling
-# that as a second full default would make the common case -- one brand for
-# everything -- take two settings to state and two to keep in step.
-
-# The one value `upgrade_config` rewrites in place rather than preserving.
-#
-# Read the exception before copying it. The standing rule everywhere else in
-# this module is that a user's value is carried forward untouched or reported
-# as unmigrated -- `dropped`, `unmigrated` and the verbatim wrong-typed block
-# all exist to enforce it. This is the single documented exception, and it is
-# safe for a reason that does NOT generalise: `docs.theme` has never had a
-# consumer. No crew code has ever read it, so no user has ever been able to
-# set it and observe an effect, so no existing value can encode a considered
-# preference. It is either inherited from a template nobody edited or typed
-# with no observable result. There is no third case to preserve.
-#
-# That is why this is not a violation of the rule. Apply the same reasoning
-# before ever adding a second entry here, and if the key in question ever had
-# a working consumer, the answer is no.
-#
-# Residual cost, accepted deliberately: someone who typed `"neutral"` meaning
-# it has to retype it once the key works. They get neutral anyway unless a
-# pack is installed, so the window where it matters is narrow.
-_DOCS_THEME_REWRITTEN_FROM = "neutral"
-
-# The schema at which that rewrite stops. A config arriving at or above this
-# has already been migrated once, so a `"neutral"` in it was typed on purpose
-# after the fact and is the user's answer, not the old default. Keeping the
-# rewrite one-shot is what lets the upgrade report honestly promise that
-# setting neutral again will stick.
-_DOCS_THEME_REWRITTEN_UNTIL_SCHEMA = 4
-
-# `/crew:change`'s block. Lives here rather than in `crew_config` for the same
-# reason `GRAPH_BLOCK` and `GITHUB_BLOCK` do: `CONFIG_BLOCKS` below has to
-# reference it, and `crew_config` imports THIS module, never the reverse.
-#
-# Six keys, and every one has a consumer landing in the same change -- the bar
-# `SCHEMA_5_KEYS`' comment sets for a mandatory migration. `requester` and
-# `implementor` are read by `commands/change.md` as the defaults for the
-# template's Requestor Details and for answers 2 and 3; `sdpTemplate` and
-# `jiraIssueType` are what the SDP and Jira backends file against; `category`
-# is the template's own Category field. `requireForProduction` is read by
-# `commands/promote.md` gate 1.
-#
-# All six are nullable-or-false on arrival, which is what makes the migration
-# neutral: a repo that upgrades and never runs `/crew:change` promotes exactly
-# as it did yesterday. `requireForProduction` is the only one that could not
-# have been, and `false` is what keeps it honest -- see
-# `crew_guards.CHANGE_REQUIREMENTS` for why `false` is the default and `true`
-# is the floor, which for this one key are not the same value.
-#
-# `requester` and `implementor` are person-and-machine facts, which is why the
-# whole block is in the machine-global template too: somebody who files changes
-# under one name files them under that name in every repo, and making them say
-# so once per checkout is the friction the global layer exists to remove.
+# `/crew:change`'s block: the one key left in it. `requireForProduction` is
+# read by `commands/promote.md` gate 1 and ratchets (a repo may turn it on,
+# never off; see `crew_guards.CHANGE_REQUIREMENTS`). The other five keys of
+# the block were dropped in L-0725 (`crew_dropped.DROPPED`).
 CHANGE_BLOCK = {
     "requireForProduction": False,
 }
@@ -211,11 +123,11 @@ _ABSENT = object()
 # `graph` and `production` are deliberately absent -- both are entirely
 # repo-only, so they keep seeding every leaf regardless of what the repo
 # supplied, exactly as before this fix. `context` is also absent: it is only
-# PARTIALLY global (its `autoClear` subtree, minus `unsafeFocus`), so it gets
+# PARTIALLY global (its `autoClear` subtree only), so it gets
 # its own branch in `_prune_unsupplied_global_leaves` rather than a place in
 # this set.
 _GLOBAL_WHOLE_BLOCKS = frozenset((
-    "pm", "qa", "dev", "install", "guards", "change",
+    "pm", "qa", "dev", "install", "change",
 ))
 
 
@@ -294,8 +206,6 @@ def _prune_unsupplied_global_leaves(block_key, merged, supplied):
         supplied_auto = (supplied_auto if isinstance(supplied_auto, dict)
                          else {})
         for parts in _leaf_paths(auto):
-            if parts[0] in crew_state.AUTOCLEAR_CONSENT_KEYS:
-                continue          # repo-only; never pruned
             if _dig(supplied_auto, parts) is _ABSENT:
                 _pop_path(auto, parts)
         return merged
@@ -377,7 +287,9 @@ CONFIG_BLOCKS = (
     # actually got missed.
     ("context", crew_state.CONTEXT_DEFAULTS),
     ("install", crew_state.INSTALL_DEFAULTS),
-    ("guards", crew_state.GUARD_DEFAULTS),
+    # No `guards` row since L-0725: the twelve per-guard keys are rewritten
+    # into `guards.profile` + `guards.overrides` by `rewrite_guards`, from the
+    # incoming file, and never seeded from defaults.
     # Repo-only, one of the two blocks here that is. `default_global_config()`
     # does not carry it, so `filter_global` prunes a `production` block out
     # of a machine-global file and reports it: the level ratchets across
@@ -420,8 +332,6 @@ def _pinned_at_default(out):
     auto = ctx.get("autoClear") if isinstance(ctx, dict) else None
     if isinstance(auto, dict):
         for leaf_key, default_val in crew_state.AUTOCLEAR_DEFAULTS.items():
-            if leaf_key in crew_state.AUTOCLEAR_CONSENT_KEYS:
-                continue
             if leaf_key in auto and auto[leaf_key] == default_val:
                 found.append(f"context.autoClear.{leaf_key}")
     return sorted(found)
@@ -473,10 +383,12 @@ SCHEMA_5_KEYS = ("install.policy",)
 # strictest possible level refuses the empty set until somebody says what
 # production is. That is the property that let them ship at `none` by default,
 # and it is stated in CONFIG.md rather than left to be rediscovered.
-SCHEMA_6_KEYS = ("guards.terraformApply", "guards.forcePush",
-                 "guards.adminMerge", "guards.mergeGate",
-                 "guards.prodDatabase", "guards.prodServer",
-                 "production.databases", "production.hosts")
+#
+# L-0725: the `guards.<name>` keys left this tuple. They are no longer keys; a
+# schema 8 migration rewrites whatever a file holds into `guards.profile` and
+# `guards.overrides` (`rewrite_guards`), so reporting them as "added" would
+# name keys nothing reads. The production patterns stay.
+SCHEMA_6_KEYS = ("production.databases", "production.hosts")
 
 # The keys schema 7 introduces: the whole `change` block, for `/crew:change`.
 #
@@ -499,32 +411,179 @@ SCHEMA_6_KEYS = ("guards.terraformApply", "guards.forcePush",
 SCHEMA_7_KEYS = ("change.requireForProduction",)
 
 
-def upgrade_config(cfg):
+# Schema 8 (L-0725). Two rewrites shared by the repo layer (`upgrade_config`)
+# and the machine layer (`upgrade_global`), both pure.
+
+# The tie order when two profiles need the same number of overrides: the
+# default first, so a layer that sets nothing stays `off`.
+_PROFILE_TIE_ORDER = ("off", "standard", "strict")
+
+# `tier` and `roles`: read only for display, so they are removed even when set.
+RETIRED_KEYS = tuple(key for key, (_default, what) in crew_dropped.DROPPED.items()
+                     if what.startswith("retired:"))
+
+
+def guard_layer_values(layer_cfg):
+    """`{guard: tier}` for all twelve guards in ONE layer. A guard the layer
+    does not set is its default, which is exactly what the ratchet reads an
+    absent value as (`resolve_ratcheted` ranks `normalise(None)`), so the
+    answer below is the value the ratchet sees. A legacy `guards.<name>`, a
+    profile and an override are combined by `crew_guards.layer_guard_state`,
+    the same function the resolver uses -- never a second reading of them."""
+    values = {}
+    for name in crew_guards.ALL_GUARD_NAMES:
+        value = crew_guards.layer_guard_value(layer_cfg, name)
+        values[name] = crew_guards.GUARD_DEFAULTS[name] if value is None else value
+    return values
+
+
+def choose_profile(values):
+    """`(profile, overrides)` with the FEWEST overrides that reproduce
+    `values` (`{guard: tier}`); a tie goes off, then standard, then strict.
+    `overrides` holds only the guards whose value differs from the profile's."""
+    best = None
+    for profile in _PROFILE_TIE_ORDER:
+        table = crew_guards.PROFILE_MAP[profile]
+        overrides = {name: values[name] for name in crew_guards.ALL_GUARD_NAMES
+                     if values[name] != table[name]}
+        if best is None or len(overrides) < len(best[1]):
+            best = (profile, overrides)
+    return best
+
+
+def rewrite_guards(out, unmigrated):
+    """Rewrite `out["guards"]` in place to `{"profile", "overrides"}` and
+    return `(profile, overrides)`, or `(None, {})` when there was nothing to
+    rewrite. Every legacy `guards.<name>` key goes; any other key in the block
+    is carried. A `guards` value that is not an object is left exactly as
+    written and named in `unmigrated` (the readers treat it as corrupt and
+    block, and a migration must not turn that into a profile).
+
+    The layer's value for each guard is the same before and after: the
+    function reads the layer through `layer_guard_state` and the result is
+    checked by the tests with the same call on the output."""
+    block = out.get("guards", _ABSENT)
+    if block is _ABSENT:
+        return None, {}
+    if not isinstance(block, dict):
+        unmigrated.append("guards")
+        return None, {}
+    legacy = [key for key in block if key in crew_guards.ALL_GUARD_NAMES]
+    if not legacy and "profile" not in block and "overrides" not in block:
+        return None, {}
+    profile, overrides = choose_profile(guard_layer_values(out))
+    rewritten = {"profile": profile, "overrides": overrides}
+    for key, value in block.items():
+        if key not in legacy and key not in rewritten:
+            rewritten[key] = value
+    out["guards"] = rewritten
+    return profile, overrides
+
+
+def _same_value(left, right):
+    """Equal as JSON, so `False` is not `0` and `60` is not `60.0`: a value
+    that only compares equal in Python is not "the default" for a migration
+    that must never remove something a person set."""
+    try:
+        return (json.dumps(left, sort_keys=True)
+                == json.dumps(right, sort_keys=True))
+    except (TypeError, ValueError):
+        return False
+
+
+def _remove_path(node, parts):
+    """Delete the leaf at `parts`, then every parent the removal left empty
+    (a block that was already empty before is not touched)."""
+    for depth in range(len(parts), 0, -1):
+        parent = _dig(node, parts[:depth - 1]) if depth > 1 else node
+        if not isinstance(parent, dict):
+            return
+        if depth == len(parts):
+            parent.pop(parts[depth - 1], None)
+        elif parent.get(parts[depth - 1]) == {}:
+            parent.pop(parts[depth - 1], None)
+        else:
+            return
+
+
+def drop_keys(out, notes, accept_dropped=(), machine=False):
+    """Remove the 60 dropped keys from `out` in place, and fill `notes`.
+
+    A key holding its default (`crew_dropped.DROPPED`; for the machine file
+    `GLOBAL_DEFAULTS` first) is removed: `removedDefault`. `tier` and `roles`
+    are removed whatever they hold: `retiredRemoved`. A key holding anything
+    else is listed in `droppedNonDefault`; it is removed only when named in
+    `accept_dropped` (`acceptedDropped`), and otherwise stays in `out` and is
+    a conflict for the caller. A block the removals leave empty goes too."""
+    accept = set(accept_dropped)
+    for dotted, (default, _constant) in crew_dropped.DROPPED.items():
+        if machine and dotted in crew_dropped.GLOBAL_DEFAULTS:
+            default = crew_dropped.GLOBAL_DEFAULTS[dotted]
+        parts = tuple(dotted.split("."))
+        value = _dig(out, parts)
+        if value is _ABSENT:
+            continue
+        if dotted in RETIRED_KEYS:
+            _remove_path(out, parts)
+            notes["retiredRemoved"].append(dotted)
+        elif _same_value(value, default):
+            _remove_path(out, parts)
+            notes["removedDefault"].append(dotted)
+        else:
+            notes["droppedNonDefault"].append(dotted)
+            if dotted in accept:
+                _remove_path(out, parts)
+                notes["acceptedDropped"].append(dotted)
+
+
+def unacceptable_drops(accept_dropped):
+    """The names in `accept_dropped` that are not a droppable key: not in
+    `crew_dropped.DROPPED`, or retired (those never need accepting)."""
+    return [key for key in accept_dropped
+            if key not in crew_dropped.DROPPED or key in RETIRED_KEYS]
+
+
+def refused_drops(notes):
+    """`[(key, constant)]` for every non-default dropped key nobody accepted:
+    the conflict list. Empty means the run may write."""
+    return [(key, crew_dropped.DROPPED[key][1]) for key in notes["droppedNonDefault"]
+            if key not in notes["acceptedDropped"]]
+
+
+def upgrade_global(cfg, accept_dropped=()):
+    """The machine file (`~/.claude/crew/config.json`) brought to the L-0725
+    shape. Pure; returns `(out, notes)`. It has no schema and no blocks to
+    seed, so it does only the two schema-8 rewrites: the guards into a profile
+    plus overrides, and the dropped keys (with the machine defaults of
+    `crew_dropped.GLOBAL_DEFAULTS`). Same notes keys as `upgrade_config` for
+    those two, plus `unmigrated`."""
+    out = copy.deepcopy(dict(cfg))
+    notes = {"unmigrated": [], "guardProfile": None, "guardOverrides": {},
+             "removedDefault": [], "retiredRemoved": [],
+             "droppedNonDefault": [], "acceptedDropped": []}
+    notes["guardProfile"], notes["guardOverrides"] = rewrite_guards(
+        out, notes["unmigrated"])
+    drop_keys(out, notes, accept_dropped, machine=True)
+    return out, notes
+
+
+def upgrade_config(cfg, accept_dropped=()):
     """Bring a config up to the current schema. Pure.
 
     Returns `(out, notes)`. `out` preserves every key it does not know about;
     `notes` is what the run has to SAY, and is not optional decoration:
 
-        {"unmigrated": [...], "rolesAdded": [...], "rolesUnknown": [...],
-         "tierFrom": int, "tierTo": int, "schemaFrom": int,
+        {"unmigrated": [...], "schemaFrom": int,
          "providerKeysAdded": [...], "installKeysAdded": [...],
-         "guardKeysAdded": [...], "schemaStamped": bool}
+         "guardKeysAdded": [...], "schemaStamped": bool,
+         "guardProfile": str | None, "guardOverrides": {...},
+         "removedDefault": [...], "retiredRemoved": [...],
+         "droppedNonDefault": [...], "acceptedDropped": [...]}
 
-    Four rules, each of which used to be wrong here:
+    Rules, each of which used to be wrong here:
 
       * **Every block moves forward, not just `pm` and `graph`.** See
         `CONFIG_BLOCKS`.
-      * **`roles` moves forward too, by adding, not by reporting.** A config
-        already at tier N gets every ladder role at or below N that it is
-        missing -- the roles a later release added at a tier it already
-        claimed. An upgrade that made the user re-derive that from a report
-        would be the same "a default nobody chose" failure the guided-config
-        work exists to close. It cannot grow a crew past the tier the config
-        itself declares: a tier-0 repo gains nothing, and nothing here moves
-        a repo UP the ladder. Removal is not the mirror of this and never
-        happens here, because adding a role is reversible and removing one
-        destroys the coverage that would have told you whether the removal
-        was right.
       * **Schema 3's per-role provider table arrives EMPTY.** `qa.roles` and
         `dev.roles` are added as `{}` and `fallback` as its default value, so
         a v2 config comes out of this dispatching to exactly the provider and
@@ -534,14 +593,27 @@ def upgrade_config(cfg):
         mandatory migration that silently re-routed someone's development work
         to a different model would be indefensible. `/crew:upgrade` OFFERS the
         pins afterwards; it never writes them here.
+      * **Schema 8 (L-0725) rewrites `guards` and removes the 60 dropped keys.**
+        The twelve per-guard keys become `guards.profile` plus the fewest
+        `guards.overrides` that reproduce every guard's value in this layer
+        (`rewrite_guards`). A dropped key (`crew_dropped.DROPPED`) holding its
+        default is removed; one holding anything else is listed in
+        `droppedNonDefault` and is a conflict -- nothing may be written, and
+        `schema` is not stamped -- unless the caller names it in
+        `accept_dropped`, which removes it (the caller's backup holds it) and
+        records it in `acceptedDropped`. `tier` and `roles` are retired: always
+        removed, never a conflict.
       * **`schema` is stamped only when everything migrated.** A block that
         arrived as the wrong type is left exactly as the user wrote it and
         named in `notes["unmigrated"]`; marking that config current would
         claim work that did not happen, and the next run would skip it.
     """
-    out = dict(cfg)
-    notes = {"unmigrated": [], "rolesAdded": [], "rolesUnknown": [],
-             "tierFrom": 0, "tierTo": 0,
+    # Private copies: `_merged` hands back nested dicts of `supplied` itself,
+    # and the pruning and key removals below edit them in place. The caller's
+    # dict is never touched.
+    cfg = copy.deepcopy(dict(cfg))
+    out = copy.deepcopy(cfg)
+    notes = {"unmigrated": [],
              "schemaFrom": crew_state.int_or(cfg.get("schema", 1), 1),
              "providerKeysAdded": [], "installKeysAdded": [],
              "guardKeysAdded": [], "changeKeysAdded": [],
@@ -550,35 +622,21 @@ def upgrade_config(cfg):
              # "unmigrated", which blocks the schema stamp: a dropped key is
              # a completed migration, not a failed one.
              "droppedKeys": [],
-             # Keys whose VALUE this upgrade changed in place. Same contract
-             # as droppedKeys -- a completed migration, announced -- but a
-             # strictly heavier claim, because the key survives wearing a
-             # value the user did not write. Everything in here must be
-             # justified at its definition; see _DOCS_THEME_REWRITTEN_FROM.
-             "rewrittenKeys": [],
-             # The repo's `docs.theme` AFTER this migration, so the report can
-             # tell whether the global layer actually gets to answer. None
-             # means "no repo answer, ask global"; anything else means the
-             # repo decides and no global value can reach it. Set at the end,
-             # beside the rewrite, from `out`.
-             #
-             # It is carried in `notes` so that `_config_lines` -- which is
-             # handed only `notes` -- never has to read the config itself.
-             # That keeps one module deciding what the value is, and keeps the
-             # report builder's only file access the GLOBAL one.
-             "docsThemeAfter": None,
+             # L-0725, schema 8. See `rewrite_guards` and `drop_keys`.
+             "guardProfile": None, "guardOverrides": {},
+             "removedDefault": [], "retiredRemoved": [],
+             "droppedNonDefault": [], "acceptedDropped": [],
              # Globally-settable leaves this repo's config still carries at
              # exactly the built-in default -- most likely written by an
              # upgrade that predates `_prune_unsupplied_global_leaves`, which
              # is what made them frozen in the first place. Never removed
              # here: taking a value out of a user's file needs their yes, not
-             # an upgrade's guess. Set at the end, from `out`, same contract
-             # as `docsThemeAfter`.
+             # an upgrade's guess. Set at the end, from `out`.
              "pinnedAtDefault": [],
              # The two facts `_report`'s absent-global headline needs about
              # `pm.authority` specifically, computed here rather than by the
              # report builder reading `out` itself -- same contract as
-             # `docsThemeAfter` and `pinnedAtDefault`.
+             # `pinnedAtDefault`.
              "pmAuthorityAfter": None,
              "pmAuthorityLayer": "default"}
 
@@ -644,115 +702,27 @@ def upgrade_config(cfg):
     # A wrong-typed block (`"graph": "oops"`) is kept VERBATIM and reported in
     # `unmigrated` -- popping a key off it raises AttributeError and takes the
     # whole migration down partway, after run() has already written the file.
-    if isinstance(out.get("graph"), dict):
+    #
+    # Only below schema 7, which is where this drop has always applied: a
+    # schema 7 config was never rewritten by the upgrade, and the 7 -> 8 step
+    # deletes nothing it was not told to (L-0725, "No unknown key is deleted
+    # from a config file by migration"). There the key is carried untouched
+    # and `crew_migrate` lists it as unknown.
+    if isinstance(out.get("graph"), dict) and notes["schemaFrom"] < 7:
         if isinstance(crew_state.dict_or_empty(cfg.get("graph")).get("obsidian"),
                       dict):
             notes["droppedKeys"].append("graph.obsidian")
         out["graph"].pop("obsidian", None)
 
-    # `docs.theme` shipped as `"neutral"` through 0.17.1 on a false premise
-    # (see DOCS_BLOCK). Move it to None, which is what "the default changes
-    # nothing" actually means now that the key is about to acquire a consumer.
-    # Leaving it would hand every upgraded repo an explicit `--brand neutral`
-    # that overrides an installed pack -- a behaviour change nobody chose,
-    # arriving in a config file that did not visibly change.
-    #
-    # Only the exact old default is touched. A theme the user actually named
-    # (`"solomon"`, `"acme"`) is a value this migration has no business
-    # second-guessing, and `None` is already correct.
-    #
-    # `dict_or_empty` is the type guard, and it is the only one needed. A
-    # wrong-typed `docs` block (`docs: "oops"`) is kept VERBATIM and reported
-    # in `unmigrated`; `dict_or_empty` turns it into `{}` here, so the
-    # comparison is False and `out["docs"]` -- still the user's string -- is
-    # never indexed into. Indexing it would raise partway through, after
-    # run() had already written the file.
-    #
-    # Two guards were tried here and both turned out to be unreachable, which
-    # is worth recording because the lesson repeated within one change.
-    #
-    # First an `isinstance(out.get("docs"), dict)` wrapper: sabotaging it left
-    # the suite GREEN, because `dict_or_empty` already made it dead. Then
-    # `dict_or_empty` itself became unreachable in turn, once `schemaStamped`
-    # was added above -- a wrong-typed `docs` block cannot be stamped, so the
-    # condition short-circuits before this line is ever evaluated, and
-    # sabotaging it went green too.
-    #
-    # `schemaStamped` is the guard that actually holds, and it is the one the
-    # suite mutates. `dict_or_empty` stays as the house idiom for reading a
-    # config block, not as protection -- no test claims it, because none can.
-    # A vacuous sabotage result is the only thing that told us either time.
-    supplied_roles = cfg.get("roles", _ABSENT)
-    if supplied_roles is not _ABSENT and not (
-            isinstance(supplied_roles, list)
-            and all(isinstance(r, str) for r in supplied_roles)):
-        notes["unmigrated"].append("roles")
-    else:
-        current = [] if supplied_roles is _ABSENT else list(supplied_roles)
-        declared = crew_state.int_or(cfg.get("tier"), 0)
-        # The tier to grant from is the higher of what the config claims and
-        # what its own role list already implies -- a config saying tier 0
-        # while listing `researcher` is at tier 2 whatever the number says.
-        entitled = max(declared, crew_state.tier_for_roles(current))
-        ladder = crew_state.roles_for_tier(entitled)
-        notes["rolesAdded"] = [r for r in ladder if r not in current]
-        # `known_role`, not `ROLE_TIERS`: a domain specialist has no tier on
-        # purpose and is not an unrecognised name. Since crew 1.0 there are
-        # none (`SPECIALIST_ROLES` is empty), so a retired 0.20 role such as
-        # `node-developer` IS reported here -- it is kept, and `/crew:migrate`
-        # filters it out of the 1.0 roster.
-        notes["rolesUnknown"] = [r for r in current
-                                 if not crew_state.known_role(r)]
-        # Ladder order, then the roles that are not on it: domain specialists
-        # this repo opted into, then names crew does not recognise. BOTH are
-        # kept, for the same reason -- the user put them there.
-        #
-        # The specialist half is separate from `rolesUnknown` and easy to lose:
-        # while specialists counted as "unknown" they rode along in that list,
-        # and the moment they stopped being unknown this line silently dropped
-        # every one of them on the next upgrade. A committed test covers it.
-        kept_specialists = [r for r in current
-                            if r in crew_state.SPECIALIST_ROLES]
-        out["roles"] = ladder + kept_specialists + notes["rolesUnknown"]
-        notes["tierFrom"] = declared
-        notes["tierTo"] = entitled
-        out["tier"] = entitled
+    notes["guardProfile"], notes["guardOverrides"] = rewrite_guards(
+        out, notes["unmigrated"])
+    drop_keys(out, notes, accept_dropped)
 
-    if not notes["unmigrated"]:
+    conflicts = [key for key in notes["droppedNonDefault"]
+                 if key not in notes["acceptedDropped"]]
+    if not notes["unmigrated"] and not conflicts:
         out["schema"] = crew_state.SCHEMA_CURRENT
         notes["schemaStamped"] = True
-
-    # The `docs.theme` rewrite, deliberately placed AFTER the stamp and gated
-    # on it. Two conditions, and each closes a defect found in review.
-    #
-    # `schemaStamped` makes the rewrite ATOMIC with the migration it belongs
-    # to. It sat above this block first, and then a partly-failed run -- one
-    # wrong-typed block anywhere, say `qa: "oops"` -- rewrote the theme while
-    # leaving `schema` at 3. The user repairs the block, sets neutral back
-    # because they meant it, re-runs, and the rewrite fires a SECOND time on
-    # the still-unbumped schema and erases it again. Half a migration that
-    # keeps re-applying its own half is worse than one that did nothing.
-    #
-    # `schemaFrom` is what makes the rewrite one-shot, and what makes the
-    # report's promise true. The report tells a user who did mean neutral to
-    # set it again and says it will be honoured; without this the rewrite
-    # matches on the VALUE, so the next `--force` erases the preference they
-    # just restored, and so does every force after that. It costs no new
-    # state: a config that has been through this migration is stamped 4, so
-    # `"neutral"` seen at 4 can only have been typed deliberately afterwards,
-    # which is exactly the value the promise protects.
-    #
-    # Both caught by Codex in QA review. `dict_or_empty` stays as the type
-    # guard -- see the note at `_DOCS_THEME_REWRITTEN_FROM`.
-    if (notes["schemaStamped"]
-            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA
-            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")
-            == _DOCS_THEME_REWRITTEN_FROM):
-        notes["rewrittenKeys"].append("docs.theme")
-        out["docs"]["theme"] = None
-
-    notes["docsThemeAfter"] = (
-        crew_state.dict_or_empty(out.get("docs")).get("theme"))
 
     notes["pmAuthorityAfter"] = crew_state.normalise_authority(
         crew_state.dict_or_empty(out.get("pm")).get("authority"))
@@ -909,51 +879,54 @@ def _bump_anchor(text, head):
     return text[:end] + line + text[end:]
 
 
-def global_theme_defeats_migration():
-    """True when the machine-global config still carries the old theme default.
-
-    The repo migration is not enough on its own, and Codex caught why: repo
-    null means "no answer, ask the next authority", and the next authority is
-    the GLOBAL file. So a machine whose `~/.claude/crew/config.json` still says
-    `docs.theme: "neutral"` resolves to neutral in every repo this migration
-    has just "fixed" -- the effective value is unchanged and the repo config
-    now looks correct, which is the worse of the two states.
-
-    Reported, never rewritten. A per-repo `/crew:upgrade` silently editing a
-    machine-global file would change every OTHER repo on the machine, none of
-    which the user was upgrading. That is a cross-scope write nobody asked for,
-    so this returns a fact and `_config_lines` tells them what to do with it.
-
-    Best effort by design: a missing, unreadable or non-JSON global file simply
-    means "no global answer", which is the same state as no file at all.
-    """
-    try:
-        with open(crew_state.GLOBAL_CONFIG_PATH, encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (OSError, ValueError):
-        return False
-    return (crew_state.dict_or_empty(crew_state.dict_or_empty(data).get("docs"))
-            .get("theme") == _DOCS_THEME_REWRITTEN_FROM)
+def schema8_lines(notes):
+    """The report lines for the L-0725 rewrites: the guards profile, every key
+    removed and why, and every dropped key nobody accepted losing. Shared by
+    the repo report and by `crew_migrate --global`, whose notes carry only
+    these keys."""
+    lines = []
+    if notes["guardProfile"] is not None:
+        overrides = notes["guardOverrides"]
+        if overrides:
+            what = (f" with {len(overrides)} override(s): "
+                    + ", ".join(f"{k}={v}" for k, v in sorted(overrides.items())))
+        else:
+            what = ", no overrides"
+        lines.append(
+            f"- guards: `guards.profile` {notes['guardProfile']}{what}. The "
+            "twelve per-guard keys are gone from this file and every guard "
+            "keeps the value it had here.")
+    if notes["removedDefault"]:
+        lines.append(
+            "- removed (held their default, now a code constant): "
+            + ", ".join(notes["removedDefault"]))
+    if notes["retiredRemoved"]:
+        lines.append(
+            "- removed (retired, read only for display): "
+            + ", ".join(notes["retiredRemoved"]) + ". The backup holds them.")
+    if notes["acceptedDropped"]:
+        lines.append(
+            "- removed at your request (a non-default value, kept in the "
+            "backup only): " + ", ".join(
+                f"{key} (now {crew_dropped.DROPPED[key][1]})"
+                for key in notes["acceptedDropped"]))
+    refused = refused_drops(notes)
+    if refused:
+        lines.append(
+            "- **REFUSED, nothing written**: a dropped key holds a non-default "
+            "value and its setting no longer has any effect: "
+            + ", ".join(f"{key} (now {const})" for key, const in refused)
+            + ". Remove the key, or pass `--accept-dropped <key>` for each one "
+            "to confirm it may go. Nothing was written.")
+    return lines
 
 
 def _config_lines(notes):
     """The config half of the report: what the migration changed, and what it
-    could not. A crew that silently grows is the thing this report exists to
-    catch, so the roles it added and the tier it moved are stated every run,
-    including when the answer is "none"."""
-    lines = ["## Config"]
-    if notes["rolesAdded"]:
-        lines.append("- roles added: " + ", ".join(notes["rolesAdded"]))
-    else:
-        lines.append("- roles added: none")
-    if notes["tierFrom"] == notes["tierTo"]:
-        lines.append(f"- tier: {notes['tierTo']} (unchanged)")
-    else:
-        lines.append(f"- tier: {notes['tierFrom']} -> {notes['tierTo']}")
-    lines.append(
-        "- roles are added only up to the tier this config already declares, "
-        "and never removed. On crew 1.0, run `/crew:migrate` next."
-    )
+    could not. A crew that silently changes a file is the thing this report
+    exists to catch, so the guard rewrite and every key removed are stated
+    every run."""
+    lines = ["## Config"] + schema8_lines(notes)
     if notes["droppedKeys"]:
         lines.append(
             "- removed, not migrated: " + ", ".join(notes["droppedKeys"])
@@ -961,40 +934,6 @@ def _config_lines(notes):
             "Obsidian export was withdrawn in 0.16.13 because exporting one "
             "note per node made vaults unusably slow. Nothing to re-enable, "
             "and no setting was silently switched off."
-        )
-    # Gated on the repo having NO answer of its own. The global layer only
-    # gets to decide when the repo's value is null -- a repo that names
-    # `solomon` resolves to solomon no matter what the machine file says.
-    #
-    # Ungated, this warned that a global neutral "is the value this repo now
-    # resolves to" on a repo whose own theme was explicit, which is false, and
-    # it recommended a machine-wide edit that would have changed nothing here
-    # and something everywhere else. A warning that is wrong about the case it
-    # fires on is worse than no warning: it spends the reader's trust and then
-    # sends them to edit a file for the wrong reason. Caught by Codex.
-    if notes["docsThemeAfter"] is None and global_theme_defeats_migration():
-        lines.append(
-            "- WARNING: your machine-global config "
-            f"(`{crew_state.GLOBAL_CONFIG_PATH}`) still sets "
-            "`docs.theme` to \"neutral\", and that is the value this repo now "
-            "resolves to. Repo null means \"ask the next authority\", and the "
-            "next authority is that file -- so the effective theme did NOT "
-            "change here, while this repo's own config now reads as migrated. "
-            "Clear it there too if you did not mean it. This upgrade will not "
-            "edit it for you: it is machine-global, and every other repo on "
-            "this machine would change with it."
-        )
-    if "docs.theme" in notes["rewrittenKeys"]:
-        lines.append(
-            "- `docs.theme` was `\"neutral\"` and is now null, which means "
-            "\"pass no brand and let doc-builder resolve\". This is the one "
-            "value this upgrade rewrites rather than preserving, and it is "
-            "safe only because the key has never had a consumer -- no value "
-            "in it can be a preference you formed by seeing it work. Had it "
-            "been left, the wiring would send an explicit `--brand neutral` "
-            "that OVERRIDES an installed brand pack, de-branding documents "
-            "that are correctly branded today. If you did mean neutral, set "
-            "it again and it will now be honoured."
         )
     if notes["installKeysAdded"]:
         lines.append(
@@ -1014,24 +953,10 @@ def _config_lines(notes):
         lines.append(
             "- schema "
             f"{notes['schemaFrom']} -> {crew_state.SCHEMA_CURRENT}, which "
-            "added the `guards` block and `github.mergeGate`: "
+            "added the production patterns: "
             + ", ".join(notes["guardKeysAdded"])
-            + ". Each guard is `block` | `ask` | `allow` and arrives as "
-            "`block`. **This migration is NOT entirely behaviour-neutral, and "
-            "the two places it is not are these.** `guards.adminMerge` refuses "
-            "`gh pr merge --admin`, which no crew guard refused before, and "
-            "`guards.terraformApply` now also covers `tofu` — so a command "
-            "that ran yesterday can be refused today. Both were bypasses, not "
-            "features; if you need one back, set that guard to `ask` (crew "
-            "prints the exact command and stops until you approve THAT "
-            "command) or `allow` (crew runs it and writes a row to "
-            f"`{crew_state.GUARD_LOG_PATH}` — under `allow` nothing is "
-            "silent). `guards.terraformApply` and `guards.forcePush` at "
-            "`block` are exactly what the guard already did. A repo may only "
-            "NARROW what the global crew config allows, never widen it — the "
-            "same ratchet as `install.policy` (CONFIG.md §16). Set them with "
-            "`/crew:config` — nothing here chose anything but the floor for "
-            "you."
+            + ". They arrive empty, so the production guards match nothing "
+            "until you declare what production is with `/crew:config`."
         )
     if notes["changeKeysAdded"]:
         lines.append(
@@ -1066,9 +991,6 @@ def _config_lines(notes):
             "it did before the upgrade. To pin a model per role, run "
             "`/crew:model` — nothing here chose one for you."
         )
-    if notes["rolesUnknown"]:
-        lines.append("- kept, not on this release's ladder: "
-                     + ", ".join(notes["rolesUnknown"]))
     if notes["unmigrated"]:
         lines.append(
             "- **NOT migrated** (present but the wrong type, left exactly as "
@@ -1297,8 +1219,12 @@ def _write_upgrade_report(path, report):
             os.remove(tmp_path)
 
 
-def run(root, derived, force=False):
-    """Upgrade the repo at `root`. `derived` maps subsystem -> graph sections."""
+def run(root, derived, force=False, accept_dropped=()):
+    """Upgrade the repo at `root`. `derived` maps subsystem -> graph sections.
+
+    A dropped key holding a non-default value that `accept_dropped` does not
+    name refuses the run (`status` "refused: dropped keys"): nothing is backed
+    up or written."""
     cfg_path = os.path.join(root, ".crew", "config.json")
     if not os.path.exists(cfg_path):
         return {"status": "not a crew repo", "report": "", "notes": None,
@@ -1318,7 +1244,7 @@ def run(root, derived, force=False):
         # headline and the pinned-at-default list. Without this, a schema-
         # current repo with no machine-global config never heard about either,
         # because both were only ever computed on the write path below.
-        _, notes = upgrade_config(copy.deepcopy(cfg))
+        _, notes = upgrade_config(copy.deepcopy(cfg), accept_dropped)
         lines = []
         headline = _absent_global_headline(notes)
         if headline:
@@ -1329,10 +1255,15 @@ def run(root, derived, force=False):
         return {"status": "already current", "report": report,
                 "notes": notes, "conflicts": []}
 
+    upgraded, notes = upgrade_config(cfg, accept_dropped)
+    if refused_drops(notes):
+        report = "\n".join(_config_lines(notes)) + "\n"
+        return {"status": "refused: dropped keys", "report": report,
+                "notes": notes, "conflicts": []}
+
     backup_codemap(root)
     backup_config(root)
 
-    upgraded, notes = upgrade_config(cfg)
     # Write a sibling and rename over the target. Opening the live config
     # "w" truncates it first, so an interruption -- a kill, a full disk, a
     # serialization error -- between truncate and the last byte leaves a
@@ -1421,7 +1352,14 @@ def main(argv=None):
     parser.add_argument("--root", default=os.getcwd())
     parser.add_argument("--derived", help="path to a JSON file of graph facts")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--accept-dropped", action="append", default=[],
+                        metavar="KEY",
+                        help="let a dropped key that holds a non-default value "
+                             "be removed (repeatable)")
     args = parser.parse_args(argv)
+    bad = unacceptable_drops(args.accept_dropped)
+    if bad:
+        parser.error("not a droppable key: " + ", ".join(bad))
 
     derived = {}
     if args.derived:
@@ -1432,8 +1370,12 @@ def main(argv=None):
             except ValueError:
                 derived = {}
 
-    out = run(args.root, derived, force=args.force)
+    out = run(args.root, derived, force=args.force,
+              accept_dropped=args.accept_dropped)
     print(out["status"])
+    if out["status"] == "refused: dropped keys":
+        print(out["report"], end="", file=sys.stderr)
+        return 1
     if out["status"] == "config backup failed":
         print(out["report"], end="", file=sys.stderr)
         return 4
@@ -1446,11 +1388,16 @@ def main(argv=None):
         return 0
     notes = out.get("notes")
     if notes:
-        # Printed at the CLI, not only buried in UPGRADE.md: the roles an
-        # upgrade added and the tier it moved are the two things a user must
-        # not learn about later by noticing new agents in a dispatch.
-        print("roles added: " + (", ".join(notes["rolesAdded"]) or "none"))
-        print(f"tier: {notes['tierFrom']} -> {notes['tierTo']}")
+        if notes["guardProfile"] is not None:
+            print(f"guards: profile {notes['guardProfile']}"
+                  + (", overrides " + ", ".join(
+                      f"{k}={v}" for k, v in sorted(notes["guardOverrides"].items()))
+                     if notes["guardOverrides"] else ", no overrides"))
+        for label, key in (("removed (default)", "removedDefault"),
+                           ("removed (retired)", "retiredRemoved"),
+                           ("removed (accepted)", "acceptedDropped")):
+            if notes[key]:
+                print(f"{label}: " + ", ".join(notes[key]))
         if notes["installKeysAdded"]:
             # A key governing whether crew may RUN INSTALL COMMANDS is squarely
             # in the class the comment above describes, even arriving at its
@@ -1485,10 +1432,8 @@ def main(argv=None):
             print(f"schema {notes['schemaFrom']} -> "
                   f"{crew_state.SCHEMA_CURRENT}: added "
                   + ", ".join(notes["guardKeysAdded"])
-                  + " (each guard arrives as `block`; NOT fully "
-                    "behaviour-neutral - `guards.adminMerge` and `tofu` under "
-                    "`guards.terraformApply` are new refusals. Run "
-                    "/crew:config to set them)")
+                  + " (empty - the production guards match nothing until you "
+                    "declare what production is; run /crew:config)")
         # At the CLI and not only in UPGRADE.md, for the reason the comment
         # above `installKeysAdded` records: a repo with no `.crew/codemap/`
         # writes no UPGRADE.md at all, so a key that decides whether a
