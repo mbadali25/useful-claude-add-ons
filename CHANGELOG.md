@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.61, obsidian-vault 0.5.2: ten hook PowerShell twins deleted, the `sendkeys` auto-clear method removed (L-0727, slice 3; landed as L-0867)
+
+- **Summary.** `crew` 1.2.61: the ten PowerShell twins of crew's hook scripts are deleted, so on Windows every crew hook runs its `.sh` under Git Bash, and `context.autoClear.method: "sendkeys"` (the Windows keystroke sender) is removed and refused by name.
+- **Deleted.** `cloud-guard`, `env-guard`, `role-write-guard`, `crew-context`, `handoff-read`, `handoff-write`, `notify`, `platform-sync`, `context-watch` and `auto-clear` `.ps1`. `promote-gate.ps1` stays (the PowerShell-tool judge); the four harness twins are slice 4. A `PowerShell`-tool call now reaches `cloud-guard.sh` and `env-guard.sh`.
+- **Breaking.** A direct `pwsh notify.ps1 ...` (or any of the ten) no longer exists. `verify-gate.ps1 -Price/-All/-Ci` is documented as `bash verify-gate.sh --price/--all/--ci` (under Git Bash on Windows). `sendkeys` is refused with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or tmux"; `auto` never chose it, and on native Windows with no tmux pane it resolves to `notify`. A `.codex/hooks.json` generated before 1.2.58 stops working on Windows; regenerate it with `crew_instructions.py codex`.
+- **Also.** `event_claim.designated`: the sh flavour always emits when the claim store is unusable. obsidian-vault 0.5.2: only its probe test now reads `crew-hook.ps1`'s resolver instead of `role-write-guard.ps1`'s. Known and tracked separately: a POSIX `/d/...` path handed to native python.exe on one MSYS environment (L-0868). Not run: `scripts/_test/drift-detection.sh`.
+
 ### Fixed — crew 1.2.60: the crew test suite no longer dies with WinError 6 under the Stop hook on Windows
 
 - **Summary.** `crew` 1.2.60: on Windows the crew test suite no longer fails with `[WinError 6] The handle is invalid` when the Stop hook's verify gate runs it, so the gate reports real test results.
