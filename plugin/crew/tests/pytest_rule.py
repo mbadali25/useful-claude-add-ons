@@ -38,7 +38,10 @@ def _has_xdist():
 
 
 def _pytest(args):
-    return subprocess.run([sys.executable, "-m", "pytest", *args], check=False).returncode
+    # stdin=DEVNULL: the child must not inherit the hook's stdin (a pipe or an
+    # invalid handle under the Stop hook on Windows); pytest reads none.
+    return subprocess.run([sys.executable, "-m", "pytest", *args], check=False,
+                          stdin=subprocess.DEVNULL).returncode
 
 
 def main(argv):

@@ -18,6 +18,7 @@ import tempfile
 
 import pytest
 
+import _stdin_guard
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_config
 import crew_fixtures
@@ -27,6 +28,11 @@ import crew_state
 # site) -- see crew_fixtures.gate_processes's own docstring for what it does.
 from crew_fixtures import gate_processes  # noqa: F401  pylint: disable=unused-import
 from crew_fixtures import fixture_git_env
+
+# Windows: pytest's default fd capture closes the Win32 stdin handle, and a
+# test child started without `stdin=` then dies with [WinError 6]. See
+# _stdin_guard.py. Done at import so collection-time subprocess calls are safe.
+_stdin_guard.install()
 
 
 @pytest.fixture
