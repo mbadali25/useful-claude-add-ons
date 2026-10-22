@@ -1,6 +1,9 @@
-%% Generated from useful-claude-add-ons@388ceff31 on 2026-10-02. Verify before trusting.
+%% Generated from useful-claude-add-ons@48db91a13 on 2026-10-02. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_tracker.py
 %% Purpose: Which repo file is the config: .crew/config.json, which /crew:init writes and crew_config.py and every gate read (L-0713); .crew/crew.json exists only after /crew:migrate, and crew_context.py reads it first when it does.
+%% Embed: none
+%% Re-anchored 388ceff31 -> 48db91a13 (L-0782): crew_migrate.py changed only in its .crew/backups scan
+%%    (scan_backups); --apply is still the only writer of .crew/crew.json. No node or edge changed.
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
 %%  5. THE AUTHORITY QUESTION, settled for the docs by L-0713 (2026-10-08):
 %%     `.crew/config.json` is the repo config. `crew_migrate.py --apply`

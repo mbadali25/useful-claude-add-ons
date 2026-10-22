@@ -1,0 +1,114 @@
+{
+  "base": "128a870fa1ebd4f55d987c2ee2d2625c9ab1b17a",
+  "binary_files": [],
+  "branch": "t1",
+  "bundle_base_tree": "4e649edd21a52eae550966a32b04a3aca101f0cc",
+  "bundle_sha256": "9af1ab94db5c24f08163e462ed73a4f4d7d16a497dee957f4dd6835a29d5badf",
+  "committed_files": [
+    "src/a.py"
+  ],
+  "dirty": true,
+  "entries": [
+    {
+      "binary": false,
+      "mode_changed": false,
+      "new_id": "3d02a7638a22db880bc4cee1c396282fe7bcd1cd",
+      "new_mode": "100644",
+      "old_id": "8b23aa834ea931237f969f8e64b3c5b547084652",
+      "old_mode": "100644",
+      "old_path": "seed.txt",
+      "path": "seed.txt",
+      "score": null,
+      "status": "M",
+      "submodule": false
+    },
+    {
+      "binary": false,
+      "mode_changed": false,
+      "new_id": "b1bfde2df873c68eb18a9b0954aaf23f71e981f2",
+      "new_mode": "100644",
+      "old_id": "0000000000000000000000000000000000000000",
+      "old_mode": "000000",
+      "old_path": "src/a.py",
+      "path": "src/a.py",
+      "score": null,
+      "status": "A",
+      "submodule": false
+    },
+    {
+      "binary": false,
+      "mode_changed": false,
+      "new_id": "91db9cba2679e7de9a4bc3616ae1b187339370bc",
+      "new_mode": "100644",
+      "old_id": "0000000000000000000000000000000000000000",
+      "old_mode": "000000",
+      "old_path": "src/b.py",
+      "path": "src/b.py",
+      "score": null,
+      "status": "A",
+      "submodule": false
+    },
+    {
+      "binary": false,
+      "mode_changed": false,
+      "new_id": "49552de5697a481391cd2d511716ac9142f7af8e",
+      "new_mode": "100644",
+      "old_id": "0000000000000000000000000000000000000000",
+      "old_mode": "000000",
+      "old_path": "src/c.py",
+      "path": "src/c.py",
+      "score": null,
+      "status": "A",
+      "submodule": false
+    }
+  ],
+  "excluded": [
+    ".work/",
+    "graphify-out/",
+    ".crew/.scope-base",
+    ".crew/.verify-verified-at",
+    ".crew/.verify-gate.*",
+    ".crew/.verify-gate.lock/**",
+    ".crew/.verify-rule-out.*",
+    ".crew/.verify-rule-done.*/**",
+    ".crew/metrics.md",
+    ".crew/metrics.jsonl",
+    ".crew/guard.log",
+    ".crew/.autoclear.log",
+    ".crew/.cloud-guard-unpinned-noted"
+  ],
+  "head": "1d50f6d19c0949046aaedcf1e57da46f33ee64b0",
+  "included_excluded": [],
+  "max_part_bytes": 204800,
+  "merged_main": {
+    "applies": false,
+    "commit": "128a870fa1ebd4f55d987c2ee2d2625c9ab1b17a",
+    "diffed_from_merged": [],
+    "dropped": [],
+    "reason": "no merge of main past the ticket start 128a870fa1eb; nothing dropped",
+    "ref": "main"
+  },
+  "mode_changes": [],
+  "parts": [
+    {
+      "bytes": 864,
+      "name": "part-001-of-001.patch",
+      "path": "<ROOT>/.work/review/golden/diff.txt.parts/part-001-of-001.patch",
+      "sha256": "9af1ab94db5c24f08163e462ed73a4f4d7d16a497dee957f4dd6835a29d5badf"
+    }
+  ],
+  "parts_dir": "<ROOT>/.work/review/golden/diff.txt.parts",
+  "patch_bytes": 864,
+  "patch_path": ".work/review/golden/diff.txt",
+  "renames": [],
+  "staged_files": [
+    "src/b.py"
+  ],
+  "submodules": [],
+  "unstaged_files": [
+    "seed.txt"
+  ],
+  "untracked_files": [
+    "src/c.py"
+  ]
+}

@@ -126,10 +126,12 @@ or behaves like an older release.</p>
   when that file still holds a 0.20 setup, or <code>.crew/crew.json</code> once <code>/crew:migrate</code> has run; <code>codemap</code> reports <code>behind:
   &lt;subsystem&gt;</code> when a map's anchor and the path diff both say it is stale.</p>
 <h2 id="hook-noise">Hook Noise</h2>
-<p>Every hook crew registers, from <code>plugin/crew/hooks/hooks.json</code>, and the config key that turns its
-behaviour up or down. All events are registered once for bash and once for PowerShell (<code>shell:
-"powershell"</code>), so a Windows machine with both <code>bash</code> and <code>pwsh</code> on <code>PATH</code> fires both halves of
-every pair — that is what "even counts" in the file means, not a bug.</p>
+<p>Every hook crew runs, and the config key that turns its behaviour up or down. <code>plugin/crew/hooks/hooks.json</code>
+registers one launcher per event per shell (<code>crew-hook.sh</code>, and <code>crew-hook.ps1</code> with <code>shell: "powershell"</code>);
+the launcher starts one dispatcher, <code>crew_hook.py &lt;Event&gt;</code>, which runs that event's scripts below at once and
+combines what they print. On Windows only the PowerShell launcher runs, so no event fires twice. When the
+launcher or dispatcher itself fails in a repo crew governs, <code>PreToolUse</code>, <code>UserPromptSubmit</code> and <code>Stop</code> refuse
+with <code>crew-hook: ... failing closed (armed repo)</code> and the cause, rather than let the call through unjudged.</p>
 <table>
 <thead>
 <tr>
@@ -329,9 +331,23 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   (reviewer).</p>
 </li>
 <li>
-<p><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
+<p><strong>Symptom: <code>--check-receipt</code> says <code>no accepted review receipt ... (ledger absent); could not tell whether head
+  &lt;sha&gt; was reviewed</code>, or another host merged a PR whose review you cannot see.</strong>
+  <strong>Cause:</strong> the review ledger and receipt are host-local (<code>&lt;git-common-dir&gt;/crew/review/</code>, <code>.work/</code>), so a
+  session on a host that did not run the review has none. That is could-not-tell, not "nothing to gate"
+  (L-0780; PR #599 merged with 4 open BLOCKs on that misreading).
   <strong>Check:</strong></p>
 </li>
+</ul>
+<pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_status.py&quot; check --pr &lt;PR&gt;
+</code></pre>
+<p><code>REVIEW_GATE ALLOW</code> (exit 0) means GitHub holds exactly one <code>crew/review</code> success with <code>blocks=0</code> for that
+  exact head; <code>BLOCK</code> (1) and <code>COULD_NOT_TELL</code> (2) both refuse. The command reads only GitHub: no local
+  ledger, no working tree. Nothing publishes the status yet (L-0821), so today it reads <code>COULD_NOT_TELL</code>,
+  which is safe. A status attests, it does not prove, and <code>gh pr merge --admin</code> bypasses a required check.</p>
+<ul>
+<li><strong>Symptom: <code>/crew:done</code> refuses with a receipt error.</strong>
+  <strong>Check:</strong></li>
 </ul>
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --check-receipt
 </code></pre>

@@ -9,11 +9,180 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.44: the crew test suite no longer dies with WinError 6 under the Stop hook on Windows
+### Changed — crew 1.2.59: the review prompt shows a literal four-field finding and a literal READ line (L-0858)
 
-- **Summary.** `crew` 1.2.44: on Windows the crew test suite no longer fails with `[WinError 6] The handle is invalid` when the Stop hook's verify gate runs it, so the gate reports real test results.
-- **Cause.** pytest's default `--capture=fd` closes the Win32 stdin handle, and `subprocess.run` without `stdin=` reads that handle (`GetStdHandle`), not fd 0, so it fails in `subprocess._make_inheritable`. `test_context_watch_python_resolver.py` failed at collection; elsewhere 107 tests failed. Reproduced with `cmd /c "python -m pytest ... <NUL"`.
-- **Fix.** `plugin/crew/tests/_stdin_guard.py`, installed by `conftest.py`, points `STD_INPUT_HANDLE` at an owned NUL handle capture cannot close. `pytest_rule.py` starts its pytest children with `stdin=subprocess.DEVNULL`. Pinned by `test_stdin_guard.py`, sabotage-checked. Not run: the real Stop hook end to end.
+- **Summary.** `crew` 1.2.58: the instructions every reviewer reads now include one example finding line and one example READ line, so a reviewer is less likely to print a finding with too few fields or a part path without its directory and have the round read INCOMPLETE.
+- `review_prompt.PROMPT_HEAD` states that a defect line has exactly four non-blank fields (reproduction last), that a line with fewer than four is discarded, and gives one example of the form.
+- `review_prompt._bundle_block` tells the reviewer to copy a part path character for character, directory included (or give only the bare file name), and gives `READ|<path>` built from the first listed part's exact path.
+- The parser (`review_verdict`) is unchanged. Evidence: Codex rounds 1 and 2 of L-0851 were INCOMPLETE for these two reasons. The six `golden/prepare` prompts gain the same inserted lines.
+
+### Changed — ai-connect 0.2.2: a session is labelled with its Claude Code session name
+
+- **Summary.** `ai-connect` 0.2.2: a Claude Code session joins the bridge as `laptop:s-cross-session`, named after its Claude Code session name, instead of `laptop:my-repo`; a session without a usable name, and every other harness, keeps the project's name.
+- **Name format change.** A session's label always starts with `s-`, and a project whose label would be `s` or start with `s-` gets `p-` in front (`s-tools` joins as `laptop:p-s-tools`), so a session renamed after another project cannot take that project's name. Every other project label is unchanged.
+- **Read once.** The name is read when Claude Code starts the MCP server from `~/.claude/sessions/<pid>.json`; a `/rename` takes effect after reconnecting ai-connect from `/mcp`. Missing, unreadable or odd files, and anything that is not a regular file (a FIFO cannot hang start-up), fall back to the project's name without raising.
+- **Compatibility.** The Bridge is unchanged; clients on 0.2.2 mix with 0.2.1 and 0.2.0 clients. Messages waiting for the old `laptop:<project>` name stay there until a session joins under it.
+
+### Changed — crew 1.2.58: one dispatcher behind sixteen hook registrations (L-0727, slice 2; landed as L-0850)
+
+- **Summary.** `crew` 1.2.58: `hooks.json` registers one launcher per event per shell (16 entries, not 36) and one dispatcher runs each event's hook scripts and combines them, so on Windows no event runs twice, and a launcher or dispatcher fault in a repo crew governs now refuses the call instead of letting it through unjudged.
+- **New.** `hooks/scripts/crew_hook.py` (`TABLE`, `select`, `merge`, `armed`, `dispatch`), `crew-hook.sh` and `crew-hook.ps1`. The launchers supervise the dispatcher; the dispatcher runs the event's `.sh` scripts at once with the payload bytes, kills each with its tree at its own timeout or the whole-dispatch deadline (the registration timeout minus 5 s), and merges the results (exit 2 wins; deny over ask over allow; `decision: block` and `continue: false` win; contexts and messages joined in order; plain stdout folded into `additionalContext` when another script printed JSON). `crew_instructions.claude_hooks()` renders `hooks.json` from `TABLE`; `codex_hooks()` renders the same launcher with `--harness codex`.
+- **Breaking (B1).** `hooks.json` goes from 36 registrations to 16; a hook override naming a script path stops matching. None was found in the owner's settings.
+- **Breaking (B4, B7, B9, B10), Windows.** `crew-hook.ps1` is the single path (`crew-hook.sh` exits 0 there), so no hook runs twice. The `.sh` scripts run through a strictly resolved Git Bash and a `PowerShell` call goes to the cloud-guard, env-guard and promote-gate twins; every other `PowerShell` call is judged by the `.sh` (`scope-guard.sh`, not its twin). With no strict Git Bash, or no python, an armed repo is refused on `PreToolUse`, `UserPromptSubmit` and `Stop`; an unarmed one is not.
+- **Breaking (B8).** In an armed repo (an own, inherited or machine-global crew config, or one that cannot be told) a dispatcher fault, a missing hook script, a guard past its timeout or a launcher crash is exit 2 naming the cause on `PreToolUse`, `UserPromptSubmit` and `Stop`; elsewhere and when unarmed it is exit 0.
+- **Proof.** `record_golden_hooks.py` recorded what every `.sh` hook does for 107 payloads in armed and unarmed repos (and with no python) from the real scripts; the parity, merge, fault, shape and Windows suites replay it through the real launcher. `sabotage_crew_hook.py` adds 29 entries; the entries that mutate the ten `.ps1` twins slice 3 deletes are removed. Latency on the dev host: PreToolUse(`Bash`) 117 to 146 ms, Stop (clean tree) 124 to 159 ms (limits: +60 ms and +100 ms).
+- **Security pass.** Two BLOCKs fixed before merge: an `OS=Windows_NT` variable no longer stands the bash launcher down on Linux or macOS (uname decides; the PowerShell launcher tells Windows by the platform), and a guard that crashes is a fault instead of an exit 1 the launcher retried with the stdin it had already read. The no-python path now has the same deadline, a bounded stdin and the same fault rule; `CREW_HOOK_TRACE_FILE` is honoured only for `*.crew-trace` and never through a symlink; the Windows dispatcher no longer uses bare `taskkill`/`powershell` names. A payload over 8 MiB is a fault (refused when armed). A second read of those fixes added: the PowerShell launcher catches an unexpected error and exits 2 for an armed blocking event (a script that ended with no exit code read as an allow through `exit $LASTEXITCODE`), and the no-python watchdog can no longer orphan its sleeper.
+- **Tooling.** `check-tooling-pr.py`: `hooks.json`, `crew_hook.py` and the two launchers are HARNESS, `crew_instructions.py` is a declared seam, and `INSTALLATION.md` and `plugin/README.md` (which carry the `plugin-hooks:crew` claim) ride along with a harness PR.
+- **Docs.** ADR 0009; the hooks reference, the Windows section, the troubleshooting guide and the Codex guide (rebuilt); the hook-count claims read 16. The `.ps1` twins stay in place and unregistered except the three PowerShell-tool judges; slices 3 and 4 delete them. `scripts/_test/drift-detection.sh` is not run by the gate.
+
+### Fixed — ai-connect 0.2.1: the watcher finds the venv deploy made
+
+- **Summary.** On a machine set up with `ai-connect`'s own `deploy.sh` or `setup.sh`, the message watcher
+  now runs and wakes the session when a message arrives; up to 0.2.0 it exited 1 on every session start and
+  turn end there, because it looked for a venv only inside the plugin directory (not run on Windows).
+- **Order.** `watch.sh` and `watch.ps1` use the first venv that is there: `AI_CONNECT_VENV`; the plugin
+  directory's own (`install.sh` / `install.cmd`, as before); then deploy's,
+  `${AI_CONNECT_HOME:-~/.local/share/ai-connect}/venv`, on Windows
+  `%USERPROFILE%\AppData\Local\ai-connect\venv`. With deploy's venv the watcher script runs from deploy's
+  copy of the plugin beside it when there is one.
+- **Security.** `AI_CONNECT_VENV` and `AI_CONNECT_HOME` choose the program the hook starts, and a project's
+  settings can set environment variables, so each is used only as an absolute path (no `..`) under the home,
+  outside the project, and only on a machine that has been set up; `AI_CONNECT_VENV`'s `bin/python` must be the
+  user's own (Linux, macOS). Otherwise it is ignored. The watcher also starts without any `PYTHON*`
+  variable, and ignores a home directory the project moved into itself; a project directory that is set but does not exist makes the variables untrusted.
+- **Unchanged.** Installed but never set up, the hooks stay silent whatever the variables say. Set up with no
+  venv anywhere, the error names the places it looked, not the values of the variables.
+
+### Changed — crew 1.2.57: wave lanes run as a Claude Code workflow, the autopilot modules are frozen, and the Git Bash resolver has a strict mode (L-0727, slice 1)
+
+- **Summary.** `crew` 1.2.57: `/crew:autopilot wave` now fans its lanes out through the plugin's `wave` workflow (`/crew:wave`), a lane that fails or returns nothing readable is reported `unknown` instead of clean, and every lane brief opens with a `Ticket ID:` line.
+- **New.** `plugin/crew/workflows/wave.js` (`/crew:wave` with `{"set": "<slug>"}`): one `isolation: worktree` agent per lane, never more than `maxLanes` at once, then `crew_wave.py collect --json`. `crew_wave.py start --json` gains `launches: [{ticket, argv[, model]}]`, one per `launch` line, in the same order.
+- **Changed.** `commands/autopilot.md` section 7 runs `/crew:wave` instead of launching one Agent per `launch` line. Every lane brief from `crew_wave.lane_prompt` starts with `Ticket ID: <id>` (cost attribution, L-0728).
+- **Frozen.** The 17 `crew_autopilot*.py` modules are held by a sha256 and line-count manifest (`tests/autopilot_frozen.json`, `tests/test_autopilot_frozen.py`); only a bug fix or a removal may change one.
+- **Strict Git Bash.** `crew_shell.resolve_gitbash(strict=True)` takes only the `git --exec-path`-derived or default `bin/bash.exe`, never a PATH `bash` or a `usr/bin/bash.exe`, and only one that runs `-c 'exit 0'`. The default is unchanged; the hook dispatcher (a later slice) is its first caller.
+- **Codex hooks.** `crew_instructions._codex_hooks_generated` recognises a `.codex/hooks.json` whose commands run `crew-hook` as well as `crew-context`.
+- **Docs.** ADR 0007 (codex-plugin-cc evaluated, not adopted) and ADR 0008 (native resume does not cover session typing). No config key, command, skill, agent or hook registration changes. Measured first: a workflow agent's PreToolUse payload carries `agent_type: workflow-subagent` and a `cwd` under `<main>/.claude/worktrees/`, the root `lane-init` already admits (`tests/fixtures/workflow_worktree_payload.json`).
+
+### Fixed — crew 1.2.56: a hook-script child that ignores its kill can no longer hold a review step open (L-0836)
+
+- **Summary.** `crew` 1.2.56: a review step that runs a helper script gives up on a hung or unkillable helper after the bound instead of waiting on it, and the codemap notes it reads must be regular files.
+- `review_run._bounded` no longer uses a `with Popen` block, whose `__exit__` waits for the child with no timeout; `_end_child` kills it (Windows: `taskkill /T` first), waits at most `POST_KILL_TIMEOUT` and survives a kill that raises `OSError`.
+- `review_prompt.gather_landmines` reads codemap notes through `review_checks.read_regular`, so a symlinked note is could-not-tell.
+- The descendant-holds-the-pipe test now runs on Windows too, and a failed-kill test and sabotage entry were added.
+
+### Changed — crew 1.2.55: the instruction surface is capped: README, promote.md and verify.json rationale move out of the plugin (L-0726, slice 2)
+
+- **Summary.** `crew` 1.2.55: `plugin/crew/README.md` is an entry point of at most 800 lines, `commands/promote.md` is at most 120 lines and 12,288 bytes, and the rationale that was in them (and in `.crew/verify.json`'s `why` text) now lives under `docs/crew/`, with new gates that stop it growing back.
+- **BC1.** `plugin/crew/README.md` is rebuilt as an entry point; its reference sections moved verbatim to `docs/crew/reference/` and the README carries a "Moved sections" index (old title, new path). Section numbers and anchors of moved sections no longer resolve in the README; in-repo pointers are repointed.
+- **BC4.** In this repo every `.crew/verify.json` rule has a unique kebab-case `id` and a `why` of at most 300 characters; the full text is in `docs/crew/verify-rationale.md`, one `## <id>` section per rule. In other repos `id` stays optional and `why` uncapped.
+- **BC5.** `scripts/check_instructions.py` fails any command file over 12,288 bytes that is not in `.budget-allowance.json`, and a README over 800 lines; `review.md` and `promote.md` lose their allowances, and a listed file may not grow in bytes.
+- **BC6.** `commands/promote.md`'s rationale ("What is enforced, and what is not", "What not to do", the merge-gate background) moved to `docs/crew/promote.md`.
+- **BC7.** Rationale moved to `docs/crew/` and `docs/crew/reference/` is repo-only: a marketplace install of crew no longer carries it in `plugin/crew/`.
+- **Docs.** ADR 0006, the guides, `plugin/PLUGINS.md`, `BUDGETS.md`, the code map and the diagrams' Embed headers follow. No config key, command, skill, agent or hook changes.
+
+### Changed — crew 1.2.54: per-ticket token and cost telemetry, and a goal cap that counts each message once (L-0728, slice 1)
+
+- **Summary.** `crew` 1.2.54: `/crew:done` now records what a ticket cost: tokens split by kind and a list-price cost, counted from the Claude Code transcripts tied to that ticket and labelled an attributed lower bound, with `UNKNOWN` (never `0`) when none can be tied.
+- **B1, the row.** `crew_metrics.py record` writes schema `1.1` rows: `tokens` is an object `{input, output, cacheRead, cacheCreation, total}` (it was an integer), plus `tokensBasis`, `tokensAttribution {files, mainSessions, subagents, conflicting, conflictingMessages, unreadable}`, `pricesAsOf` and `pricesSource`. Old rows still read.
+- **B2, each message once.** `transcript_tokens` counts each assistant message once (keyed by `message.id`, else `uuid`, else file and line): Claude Code repeats a message's usage on every line it writes for it. `autopilot.maxTokensPerSession` therefore stops a goal run later than before for the same work (the stop is still `tokens > limit`); its description, CONFIG.md, the README and the guide say so.
+- **B3, the scan.** With no `--transcript`, `record` reads the transcripts under `CLAUDE_CONFIG_DIR` (or `~/.claude`) for every worktree of the repository, subagent files included, and ties a file to a ticket only by an exclusive rule: a `Ticket ID: <id>` line or `/crew:<command> <id>` in its user messages, or one linked worktree whose branch starts `<id>-`; a file that names two tickets, or cannot be read in full, belongs to none and is counted (`conflicting`, `unreadable`). It stores ids, usage and models only, never prompt text. `--no-scan` restores the old behaviour; `--transcript` with `--no-scan` exits 2.
+- **B4, cost.** `cost` is computed from a built-in dated price table (`PRICES`, list prices; Haiku 5.5 over a 100K prompt at its higher tier); an unpriced model with tokens makes it `UNKNOWN`, never a partial sum. `--cost` still overrides.
+- **B5, the fold.** `effective_ticket_metrics` folds `tokens`, `cost`, their basis, attribution and price fields as one unit: the latest 1.1 row replaces the group, `UNKNOWN` included; an `escaped` row leaves it alone.
+- **B6, compare.** `compare` selects schema 1.0 and 1.1 `record` rows.
+- **Docs.** `done.md` step 2, the README metrics table, the daily-workflow guide, the done diagram and the code map describe the 1.1 row. No hook, config key, command name or plugin path changes.
+
+### Changed — crew 1.2.53: the config ratchet diagram in crew's README cites the current line (L-0789)
+
+- **Summary.** `crew` 1.2.53 (L-0789, a refresh): the config ratchet diagram embedded in crew's README
+  cites `effective_ratcheted` at its current line, `crew_guards.py:594`, where it said `:564`. No
+  behaviour changes.
+- **Diagrams re-anchored.** `docs/diagrams/data-flow-crew-config.mmd` and
+  `data-flow-crew-config-ratchet.mmd` are re-anchored to 7c9e13349 (crew 1.2.52); since a792ce66b only `crew_migrate.py` (L-0782) changed among their anchors, and the main diagram already carried that note. Since their last anchor,
+  `CONFIG.md`, `crew_context.py` and `crew_state.py` changed for L-0805 (`context.warnAt` 0.4), and
+  L-0772 and SRL-2308 had moved the lines the ratchet part cites in `crew_guards.py` and
+  `crew_config.py`. The ratchet part's Note lines now carry the measured counts (12 guards, 15
+  read-side and 16 write-side ratchet keys) and current line numbers; no box or arrow was added or
+  removed.
+
+### Changed — crew 1.2.52: /crew:review is a script, not 230 lines of shell (L-0726, slice 1)
+
+- **Summary.** `crew` 1.2.52: `/crew:review` shrinks from 551 lines to 46 and stops asking the model to copy shell: `review_run.py --prepare` does the setup and every `review_run.py` exit ends with one `next:` line saying what to do.
+- **`review_run.py --prepare`.** Does what the snippets did before a reviewer runs, in the same order: the ticket (the one active `.work/INDEX.md` row, else stop), a claimed scratch directory, the review base (`scope_base.py --base`), dispatch staleness against that base, `crew_config.py --models --json`, the author families and `ELIGIBLE`, the bundle, `changed.txt`, the codemap landmines (capped at 200 lines), and `prompt.txt`. It reserves no round and launches no reviewer, and it reproduces `changed.txt`, the bundle, `context.txt` and `prompt.txt` byte for byte on seven fixture scenarios captured from the old snippets (`golden/prepare/`). It prints `KEY=VALUE` lines, then one `next:`.
+- **`--resolve-run --probe-status <n>`.** The live Codex probe stays `--probe`; this turns its exit code into `FALLBACK` / `RUN_PROVIDER` / `RUN_MODEL` (the one-line `python3 -c` review.md carried) and the command to run.
+- **BC2 `review.md` no longer carries shell or its variables.** `$SCRATCH`, `$ELIGIBLE`, `$AUTHORS`, `$STALE_FLAG`, `$FALLBACK`, `$RUN_PROVIDER`, `$RUN_MODEL`, `$PROBE_STATUS` and `qm()` are gone from it: anything outside crew that copied them (lane briefs, prompts, handoff recipes) calls `review_run.py --prepare` instead. Steps 2a-2e, 2d and 3.1-3.9 keep their labels; the rationale moved to `docs/crew/review.md`, which the installed plugin does not ship.
+- **BC3 Every `review_run.py` exit ends with one `next: <action>` line**, picked by reason (exit 2 and exit 9 each have several causes): `--prepare`, `--probe` (5, 6, 7), `--reserve-only`, `--round`, the run (0, 1, 2, 3, 4, 8, 9, 10) and argparse errors. A caller that parses its stdout by exact line count or by its last line sees a new last line. Exit codes are unchanged; `--ticket`, `--scratch` and `--provider` are now required by the code (with the same argparse message) rather than by argparse, so `--prepare` can omit them.
+- **BC8 An unreadable input is a stop, not a guess.** `--prepare` prints a `could not tell` line and exits 11 where the snippets carried on: an unreadable `.work/INDEX.md`, review ledger, `.crew/verify.json`, dispatch record or codemap note, a failed `git log` of the base, a failed models report or a ticket contract that did not build. A `.crew/verify.json` that is absent, empty, or has no matching rule are three different outputs. Specialists are now matched against the files the bundle carries (committed, staged, unstaged and untracked), where the old step 0b listed only `git diff --name-only HEAD` and untracked files and so found none for a change that was already committed; an agent that is not installed is `MISSING`, one that could not be checked is `unknown` (`verify_agents.py`'s answer).
+### Fixed — crew 1.2.51: `verify-gate.sh --verbose --all` runs every rule, as `--all --verbose` does (L-0710)
+
+- **Summary.** `crew` 1.2.51 makes the Bash verify gate read `--all` from anywhere in its arguments, so
+  `verify-gate.sh --verbose --all` runs every rule and records a pass instead of running as a budgeted
+  Stop that defers the expensive rules.
+- **Why.** The L-0710 successor review round (Codex, round 5) found that `--verbose` (L-0796) is accepted
+  before `--all`, while three later checks read only the first argument: the diff-baseline read, the
+  whole-tree scope and the budget flag. The PowerShell gate has switch parameters and never had the
+  problem, so the two flavours disagreed.
+- **Unchanged.** `--all` and `--ci` alone, `--all --verbose`, and the PowerShell flavour.
+
+### Changed — crew 1.2.50: a missing review ledger is could-not-tell, and `review_status.py check` reads the published `crew/review` status (L-0780)
+
+- **Summary.** `crew` 1.2.50: a missing review ledger on another host reads as "could not tell whether this head was reviewed" instead of "nothing to gate", and `review_status.py check` reads the commit status `crew/review` of one exact head, strictly and read-only.
+- **Why.** The review ledger and receipt are host-local (`<git-common-dir>/crew/review/`, `.work/`), so a session on another
+  host found none and PR #599 merged with 4 open BLOCKs, its reviewed head never gated.
+- **`review_status.py check (--pr N | --head SHA)`.** `REVIEW_GATE ALLOW|BLOCK|COULD_NOT_TELL head=<sha>` (exit 0, 1, 2) from one
+  `gh api` read. It reads no local ledger, working tree or HEAD. The reply is parsed by allowlist (strict UTF-8 JSON with no duplicate key, at most 4 MiB; the sha asked, a complete
+  list of objects, exactly one `crew/review` row, a description that fully matches the receipt schema with `blocks=0`); anything
+  unexpected, no status, `pending`, gh missing or unauthenticated, a rate limit and an API error are COULD_NOT_TELL.
+- **`--check-receipt`.** An absent ledger still refuses and now names the head and says ledgers are host-local.
+- **Not done here.** Nothing publishes the status yet: the producer (`post`) moves to L-0821, rebuilt on one validated ledger
+  read, with wiring into `/crew:done`, `check-land` and autopilot ship and a guard on a raw `gh pr merge`. Until then every
+  head reads COULD_NOT_TELL, which is safe. Requiring `crew/review` in branch protection is the repository owner's setting.
+  A status attests, it does not prove, and `gh pr merge --admin` bypasses a required check.
+
+### Fixed — crew 1.2.49: migrate backup messages name `.crew/backups` the same on Windows (L-0782)
+
+- **Summary.** `crew` 1.2.49: the `could not tell` and rollback-refusal messages about `.crew/backups` print forward slashes on Windows too, and a dangling `.crew/backups` link is reported as such there.
+- **Cause.** `scan_backups` and `--rollback` interpolated `BACKUP_DIR` (`.crew\backups` on Windows) into messages while every other path went through `_rel`; and Windows raises `WinError 267` rather than `FileNotFoundError` for a dangling link, so the "link to a missing target" wording was never reached.
+- **Fix.** Messages use `BACKUP_DIR_SHOWN` (`.crew/backups`); the dangling-link check runs before the generic `OSError` wording. Three tests simulate the backslash constant and the `WinError` on Linux.
+- **Docs.** none - no document quotes the changed wording.
+
+### Fixed — crew 1.2.48: /crew:status no longer crashes on a file in .crew/backups (L-0782)
+
+- **Summary.** `crew` 1.2.48: `/crew:status` no longer dies with a traceback when `.crew/backups/` holds a
+  file that is not a migrate backup, and says `could not tell` instead of "nothing interrupted" when it cannot read an entry.
+- **Cause.** `crew_migrate.find_interrupted` opened `<entry>/manifest.json` for every name in
+  `.crew/backups/`; for a regular file that raised `NotADirectoryError`, which nothing caught, and it
+  also returned "nothing interrupted" on any listing error. `/crew:migrate --rollback <file>` crashed the same way.
+- **Fix.** `crew_migrate.scan_backups(root)` replaces it and sorts each entry into three outcomes: not a
+  backup (a file, or a folder with no manifest: skipped), an interrupted or unparseable backup (reported
+  as before), or could not tell (a symlinked or unreadable manifest, an unlistable `.crew/backups`: named
+  with the reason). Only an absent `.crew/backups/` means clean. `/crew:status` prints
+  `migrate  could not tell - <path>: <why>` and carries on; the migrate preview lists a conflict;
+  `--rollback` of a non-directory is refused in one line. Nothing `/crew:migrate --apply` writes changes.
+- **Docs.** `status.md` migrate row and note, the quickstart troubleshooting row, the status diagram's line anchors.
+
+### Fixed — crew 1.2.47: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
+
+- **Summary.** `crew` 1.2.47 lets the review harness rebuild a round's bundle after its reviewed head
+  has merged into main (`merged_main.pinned`, `review_delta.reviewed_bundle(..., merged=)`), and makes
+  `scope_base.py --base` exit 3 instead of answering HEAD when no start is recorded on the base branch
+  itself, so `/crew:review` stops rather than reporting "nothing to review".
+- **Why.** The harness half of L-0765 (TSS-win report: a main-tip release can never pass promote-gate).
+  Once a reviewed head is in main, `merge-base <head> main` is the head, so the rebuild dropped every
+  path and no accepted round could be checked again; release mode (L-0765) needs that check. And on the
+  base branch with no record, the merge-base fallback is HEAD itself: an unknown start read as an empty
+  change.
+- **Unchanged.** Every existing caller of `reviewed_bundle` and `_ticket_base_tree` (no `merged`), and
+  `scope_base.resolve()` (its other callers run on main for merged lane tickets). A named ticket branch at
+  its fork point still gets HEAD.
+- **Round 2 FIXes closed here (L-0775).** A base branch configured on a remote other than `origin`
+  (`upstream/main`) is now the base branch too, a failed `git remote` listing is could-not-tell, and
+  the three controls the round named exist: a start recorded at the current HEAD still answers, a
+  failed ancestry probe in `merged_main.pinned` is could-not-tell, and each has a sabotage entry run red.
+- **Round 3 FIXes closed here.** A local ticket branch named like the remote base (`origin/main`) at
+  its fork point is a ticket branch and still gets HEAD, and `merged_main.pinned` reads a commit that
+  shares no history with the ticket start as could-not-tell instead of an applied pin; each has a test
+  and a sabotage entry run red.
+- **Freeze.** Landed under an explicit owner exception to the 2026-10 crew feature freeze (L-0765).
 
 ### Changed — crew 1.2.43: every crew test runs under a home of its own (L-0709)
 

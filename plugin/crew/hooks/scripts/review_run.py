@@ -230,14 +230,18 @@ train's exit is 10, not the 6 L-0526 first gave it (it reserves nothing and
 """
 import argparse
 import datetime
+import fnmatch
 import functools
 import hashlib
 import json
 import os
+import re
+import shlex
 import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 
 import crew_common
@@ -255,6 +259,7 @@ import review_metrics
 import review_patch
 import review_prompt
 import review_verdict
+import verify_agents
 import webtest_guard
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_INCOMPLETE, EXIT_REFUSED = 0, 1, 2, 3, 4
@@ -360,6 +365,7 @@ def _out(text):
     """Every stdout line review_run prints: control characters escaped
     (review_checks.one_line), so a path, reason or error can never start a
     line of its own (L-0574 review round 8 sweep). A newline is added."""
+    SAID.append(review_checks.one_line(text))
     sys.stdout.write(review_checks.one_line(text) + "\n")
     sys.stdout.flush()
 
@@ -368,6 +374,7 @@ def _err(text):
     """Every stderr message: one line, control characters escaped but the
     final newline, which every caller ends with."""
     body = text[:-1] if text.endswith("\n") else text
+    SAID.append(review_checks.one_line(body))
     sys.stderr.write(review_checks.one_line(body) + "\n")
 
 
@@ -2098,21 +2105,737 @@ def probe(args):
     return PROBE_FAILED, error or tail[0]
 
 
-# The providers this runner can launch (`kimi` since L-0527); commands/review.md
-# filters `$ELIGIBLE` to this set (and says so on stderr) instead of relying on
+# --- --prepare, --resolve-run and the `next:` line (L-0726) ------------------
+# `review.md` used to carry about 230 lines of shell that the model copied; the
+# mechanics are here now, and every exit path ends with one `next: <action>`
+# line, chosen by REASON (the same exit code means different things).
+EXIT_UNKNOWN = 11
+# A sibling hook script that has not answered in this long is could-not-tell,
+# never a pass (PYTHON-07); exit code 124, as timeout(1) uses.
+TOOL_TIMEOUT, EXIT_TOOL_TIMEOUT = 900, 124
+ACTIVE_STATUSES = ("open", "in-progress", "in progress", "review")
+SAID = []  # what this run printed, for the `next:` reasons (reset by main)
+
+
+def _script(name):
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+
+
+def _bounded(argv, cwd, env, timeout, stderr=None):
+    """(exit code, stdout bytes) of one child with its stdout captured and its
+    stderr passed through (or `stderr`). A child that has not answered in `timeout` seconds
+    is killed and reported as EXIT_TOOL_TIMEOUT; a descendant that kept the
+    pipe open after the kill gets one more bounded wait, then the pipe is
+    closed (PYTHON-07: the post-kill read is bounded too)."""
+    try:
+        proc = subprocess.Popen(  # pylint: disable=consider-using-with
+            argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=stderr)
+    except OSError:
+        return 127, b""
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _end_child(proc)
+        return EXIT_TOOL_TIMEOUT, b""
+    except BaseException:
+        _end_child(proc)
+        raise
+    return proc.returncode, out
+
+
+def _end_child(proc):
+    """Kill `proc` and wait for it at most POST_KILL_TIMEOUT, never raising.
+    Not a `with Popen` block: its __exit__ closes the pipe and calls wait()
+    with no timeout, so a child that ignores the kill (a failed kill, a
+    D-state process) or a descendant holding the pipe would hold the caller
+    past its bound (L-0836). On Windows the tree goes by taskkill /T first,
+    and the pipe is left for the garbage collector: closing a pipe a reader
+    thread is blocked on can itself block."""
+    if proc.poll() is None:
+        if review_checks._WINDOWS:  # pylint: disable=protected-access
+            _windows_taskkill(proc, [])
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        proc.communicate(timeout=POST_KILL_TIMEOUT)
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        pass
+    if not review_checks._WINDOWS and proc.stdout is not None:  # pylint: disable=protected-access
+        try:
+            proc.stdout.close()
+        except OSError:
+            pass
+
+
+def _git(root, *argv):
+    """(exit code, stdout text) of git, found through the resolver (class a:
+    never from the current directory); 127 when git cannot be found."""
+    exe = review_checks.resolve_executable("git")
+    if not exe:
+        return 127, ""
+    code, out = _bounded([exe, *argv], root, dict(os.environ, GIT_OPTIONAL_LOCKS="0"),
+                         SNAPSHOT_GIT_TIMEOUT, stderr=subprocess.DEVNULL)
+    return code, out.decode("utf-8", errors="replace")
+
+
+def _run_tool(name, *argv):
+    """(exit code, stdout bytes) of a sibling hook script. Its stderr goes
+    through unchanged; its stdout is returned, never printed, so the KEY=VALUE
+    contract on ours stays ours."""
+    code, out = _bounded([sys.executable, _script(name)] + list(argv), None, None, TOOL_TIMEOUT)
+    if code == EXIT_TOOL_TIMEOUT:
+        _err(f"review-prepare: {name} gave no answer within {TOOL_TIMEOUT}s\n")
+    return code, out
+
+
+def _unknown(what):
+    """Could-not-tell: a line and EXIT_UNKNOWN, never a guess (BC8)."""
+    _err(f"review-prepare: could not tell {what}; nothing was reserved\n")
+    return EXIT_UNKNOWN
+
+
+def active_ticket(root):
+    """(ticket, None) when `.work/INDEX.md` has exactly one active row;
+    (None, "none"|"many") otherwise; (None, reason) when it cannot be read.
+    A row is `<id> | <status> | ...`; the awk this replaces took the first
+    field of the one row whose second field was an active status."""
+    base = os.path.join(root, ".work")
+    path = os.path.join(base, "INDEX.md")
+    try:
+        raw = review_checks.read_regular(path, base)
+    except FileNotFoundError:
+        return None, "absent"
+    except OSError as exc:
+        return None, f"{path}: {exc.__class__.__name__}"
+    text = raw.decode("utf-8", errors="replace")
+    found = []
+    for line in text.split("\n"):
+        fields = line.split("|")
+        if len(fields) > 1 and fields[1].strip(" \t") in ACTIVE_STATUSES:
+            found.append(fields[0].replace(" ", ""))
+    return (found[0], None) if len(found) == 1 else (None, "none" if not found else "many")
+
+
+def claim_scratch(root_arg, root):
+    """A fresh `.work/review/<branch>-XXXXXX` directory, as the snippet's
+    `mktemp -d` made it (the branch with every character outside
+    `A-Za-z0-9._-` as `-`; the newline `git` ends its answer with counts, so
+    the name ends `--`). Returned as the caller will quote it: relative to the
+    root as given."""
+    code, branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
+    prefix = re.sub(r"[^A-Za-z0-9._-]", "-", branch if code == 0 else "") + "-"
+    parent = os.path.join(root, ".work", "review")
+    os.makedirs(parent, exist_ok=True)
+    name = os.path.basename(tempfile.mkdtemp(prefix=prefix, dir=parent))
+    shown = os.path.join(root_arg, ".work", "review", name) if root_arg != "." else \
+        f".work/review/{name}"
+    return shown.replace("\\", "/")
+
+
+def _gate_matches(path, pattern):
+    """The verify gate's own path match (verify-gate.sh `matches`): fnmatch's
+    `*` spans `/`, so the `**/`-stripped form is tried too."""
+    candidates = {pattern, pattern.replace("/**/", "/")}
+    if pattern.startswith("**/"):
+        candidates.add(pattern[3:])
+    return any(fnmatch.fnmatch(path, c) for c in candidates)
+
+
+def specialists(root, changed):
+    """(map state, {agent: [files]}, problem). `state` is `absent` (no
+    `.crew/verify.json`), `read` (it was read; the dict may be empty: no rule
+    matched), or `unknown` (it exists and cannot be read, or its rules/agents
+    are not shaped as the gate reads them)."""
+    path = os.path.join(root, ".crew", "verify.json")
+    try:
+        data = json.loads(review_checks.read_regular(path, os.path.join(root, ".crew")).decode(
+            "utf-8-sig"))
+    except FileNotFoundError:
+        return "absent", {}, None
+    except (OSError, ValueError) as exc:
+        return "unknown", {}, f"{path}: {exc.__class__.__name__}"
+    rules = data.get("rules", []) if isinstance(data, dict) else None
+    if not isinstance(rules, list):
+        return "unknown", {}, f"{path}: `rules` is not a list"
+    out = {}
+    for number, rule in enumerate(rules, 1):
+        if not isinstance(rule, dict):
+            return "unknown", {}, f"{path}: rule {number} is not an object"
+        if "agents" not in rule:
+            continue
+        agents, paths = rule["agents"], rule.get("paths", [])
+        if (not isinstance(agents, list) or not isinstance(paths, list)
+                or not all(isinstance(a, str) and a.strip() for a in agents)
+                or not all(isinstance(p, str) for p in paths)):
+            return "unknown", {}, f"{path}: rule {number}'s `agents` or `paths` is malformed"
+        hits = [f for f in changed if any(_gate_matches(f, p) for p in paths)]
+        for agent in agents:
+            if hits:
+                bucket = out.setdefault(agent.strip(), [])
+                bucket.extend(f for f in hits if f not in bucket)
+    return "read", out, None
+
+
+def agent_status(root, names):
+    """{agent: "installed"|"MISSING"|"unknown"}, by `verify_agents.check`'s
+    own resolution (the same one `/crew:status` shows)."""
+    result = verify_agents.check(root)
+    missing = set(result["missing"])
+    unknown = {item["name"] for item in result["unknown"]}
+    everything = any(item["name"] is None for item in result["unknown"])
+    return {n: ("MISSING" if n in missing else "unknown" if n in unknown or everything
+                else "installed") for n in names}
+
+
+def dispatch_stamp(root):
+    """(newest mtime as int, None) of `.work/dispatch.json` and everything in
+    `.work/dispatch.d/` (0 when neither exists), or (None, reason) when one
+    exists and cannot be read - the snippet's `|| echo 0` turned that into
+    "no record", which strikes fewer families (BC8)."""
+    stamps = []
+    for path in (os.path.join(root, ".work", "dispatch.json"),
+                 os.path.join(root, ".work", "dispatch.d")):
+        try:
+            stamps.append(os.path.getmtime(path))
+            if os.path.isfile(path):
+                review_checks.read_regular(path, os.path.dirname(path))
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            return None, f"{path}: {exc.__class__.__name__}"
+        if os.path.isdir(path):
+            try:
+                names = os.listdir(path)
+            except OSError as exc:
+                return None, f"{path}: {exc.__class__.__name__}"
+            for name in names:
+                entry = os.path.join(path, name)
+                try:
+                    stamps.append(os.path.getmtime(entry))
+                    if os.path.isfile(entry):
+                        review_checks.read_regular(entry, path)
+                except FileNotFoundError:
+                    continue
+                except OSError as exc:
+                    return None, f"{entry}: {exc.__class__.__name__}"
+    return (int(max(stamps)) if stamps else 0), None
+
+
+def review_base(root_arg, root, ticket):
+    """(base sha, None) or (None, exit code): `scope_base.py --base`, with the
+    merge-base as its stated fallback when it did not run at all."""
+    code, out = _run_tool("scope_base.py", "--root", root_arg, "--base", ticket)
+    base = out.decode("utf-8", errors="replace").strip()
+    if code == 3:
+        _err("review base: could not tell - stopping (see scope-base line above)\n")
+        return None, 3
+    if code == EXIT_TOOL_TIMEOUT:
+        return None, _unknown("the review base (scope_base.py gave no answer in time)")
+    if base and code != 0:
+        return None, _unknown(f"the review base (scope_base.py exit {code} with an answer "
+                              "that cannot be trusted)")
+    if base:
+        return base, None
+    code, branch = _git(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+    branch = branch.strip() if code == 0 else ""
+    branch = (branch[len("origin/"):] if branch.startswith("origin/") else branch) or "main"
+    code, base = _git(root, "merge-base", "HEAD", branch)
+    base = base.strip()
+    if code != 0 or not base:
+        return None, _unknown(f"the review base: scope_base.py gave none and the merge-base "
+                              f"with {branch} failed")
+    _err(f"review base: merge-base with {branch} (fallback - scope_base.py did not run)\n")
+    return base, None
+
+
+def qm(report, want, field="model"):
+    """What model/effort PROVIDER uses for the `review` role: the role pin when
+    it names that provider, else the provider's own block; "" when absent."""
+    row = next((r for r in report.get("qa") or [] if r.get("role") == "review"), {})
+    if row.get("provider") == want and row.get(field):
+        return row[field]
+    return ((report.get("qaProviders") or {}).get(want) or {}).get(field) or ""
+
+
+def report_problem(report):
+    """None when `report` is shaped as `crew_config.py --models --json`
+    writes it, else why not (PYTHON-10: checked before anything is indexed)."""
+    def rows(key, **kinds):
+        value = report.get(key)
+        return value is None or (isinstance(value, list) and all(
+            isinstance(r, dict) and all(isinstance(r.get(k), t) for k, t in kinds.items())
+            for r in value))
+    families = report.get("authorFamilies")
+    if not (families is None or (isinstance(families, list)
+                                 and all(isinstance(f, str) for f in families))):
+        return "`authorFamilies` is not a list of names"
+    if not isinstance(report.get("authorSource") or "", str):
+        return "`authorSource` is not a string"
+    if not (rows("qa", role=str) and rows("qaFallThrough", provider=str, eligible=bool)):
+        return "`qa` or `qaFallThrough` is not a list of well-formed rows"
+    providers = report.get("qaProviders")
+    if not (providers is None or (isinstance(providers, dict)
+                                  and all(isinstance(v, dict) or v is None
+                                          for v in providers.values()))):
+        return "`qaProviders` is not a map of blocks"
+    return None
+
+
+def eligible(report, warn=None):
+    """The providers that may review, in `qa.order`, with the family guard
+    already applied by the report: its `qaFallThrough` rows marked eligible,
+    minus any `review_run.py` cannot launch (named through `warn`, never
+    tried). `qa.order` itself is the report's, so this and `/crew:model`
+    cannot disagree."""
+    ok = [c["provider"] for c in report.get("qaFallThrough") or []
+          if isinstance(c, dict) and c.get("eligible") is True and isinstance(c.get("provider"), str)]
+    for provider in ok:
+        if provider not in PROVIDERS and warn:
+            warn(f"review: {provider} is eligible but has no review runner - skipped\n")
+    return [p for p in ok if p in PROVIDERS]
+
+
+def load_report(scratch):
+    """(report dict, None), or (None, reason) when models.json is missing or
+    is not the object `crew_config.py --models --json` wrote."""
+    path = os.path.join(scratch, "models.json")
+    try:
+        report = json.loads(review_checks.read_regular(path, scratch).decode("utf-8"))
+    except (OSError, ValueError) as exc:
+        return None, f"{path}: {exc.__class__.__name__}"
+    if not isinstance(report, dict):
+        return None, f"{path} is not an object"
+    problem = report_problem(report)
+    return (None, f"{path}: {problem}") if problem else (report, None)
+
+
+def _quote(*words):
+    return " ".join(shlex.quote(str(w)) for w in words)
+
+
+class Context:
+    """The values a `next:` command line repeats."""
+
+    def __init__(self, root_arg, ticket, scratch, report, authors, author_source):
+        self.root_arg, self.ticket, self.scratch = root_arg, ticket, scratch
+        self.authors, self.author_source = authors, author_source
+        self.effort = qm(report, "codex", "reasoningEffort")
+        self.models = {"codex": qm(report, "codex"), "copilot": qm(report, "copilot"),
+                       "kimi": qm(report, "kimi")}
+        self.eligible = eligible(report)
+        row = next((r for r in report.get("qa") or [] if r.get("role") == "review"), {})
+        self.pinned = row.get("provider") if row.get("provider") in PROVIDERS else None
+        self.report = report
+
+    def order(self):
+        """The providers to try, in order: the pinned one alone (a pinned
+        provider that cannot run is an error, not a cue to fall back), else
+        ELIGIBLE."""
+        return [self.pinned] if self.pinned else list(self.eligible)
+
+    def refusal(self):
+        """Why the pinned provider may not run, or None."""
+        if not self.pinned or self.pinned in self.eligible:
+            return None
+        why = next((c.get("why") for c in self.report.get("qaFallThrough") or []
+                    if isinstance(c, dict) and c.get("provider") == self.pinned), None)
+        return (f"qa.provider pins {self.pinned}, which is not eligible ({why or 'not in qa.order'}): "
+                "that is an error, not a cue to fall back; stop and tell me, or a same-family "
+                "read (step 2c) only on my word")
+
+    def command(self, *flags, tool="review_run.py", with_family=True):
+        base = ["python3", _script(tool), "--root", self.root_arg, "--ticket", self.ticket,
+                "--scratch", self.scratch]
+        tail = ["--authors", self.authors, "--author-source", self.author_source] \
+            if with_family else []
+        return _quote(*base, *flags, *tail)
+
+    def launch(self, provider, model=None):
+        return self.command("--provider", provider, "--model",
+                            self.models.get(provider, "") if model is None else model,
+                            "--effort", self.effort)
+
+    def probe(self):
+        return self.command("--provider", "codex", "--model", self.models["codex"],
+                            "--effort", self.effort, "--probe")
+
+    def resolve(self, status):
+        return self.command("--resolve-run", "--provider", "codex", "--model",
+                            self.models["codex"], "--probe-status", status)
+
+    def no_reviewer(self):
+        return (f"python3 {_quote(_script('review_ledger.py'))} --ticket {_quote(self.ticket)} "
+                "--no-reviewer --reason \"<why>\"")
+
+    def claude(self):
+        reserve = self.command("--provider", "claude", "--reserve-only")
+        record = self.command("--provider", "claude", "--round", "<ROUND>", "--output",
+                              f"{self.scratch}/out.txt", "--exit-code", "0")
+        return (f"step 2c: run {reserve} (add --same-family \"<reason>\" only on the owner's "
+                f"word), dispatch crew:reviewer on {self.scratch}/prompt.txt, "
+                f"{self.scratch}/diff.txt and {self.scratch}/manifest.json, save its output as "
+                f"{self.scratch}/out.txt, then run {record}")
+
+    def walk(self, providers, skipped=""):
+        """The `next:` text for the first of `providers` that can run."""
+        for provider in providers:
+            if provider == "codex":
+                return f"{skipped}probe Codex: {self.probe()}"
+            if provider == "claude":
+                return f"{skipped}{self.claude()}"
+            if provider == "copilot" and not self.models["copilot"]:
+                skipped += "copilot skipped: qa.copilot.model not set; "
+                continue
+            return f"{skipped}run {self.launch(provider)}"
+        return (f"{skipped}no provider left to run: record it with {self.no_reviewer()} "
+                "(INCOMPLETE, refunded), a same-family Claude read only on the owner's word")
+
+
+def resolve_run(args):
+    """`--resolve-run`: turn the Codex probe's exit code (`--probe-status`)
+    into FALLBACK / RUN_PROVIDER / RUN_MODEL, as review.md's line 326 did. A
+    probe that found Codex limited or unavailable falls a pinned `review` role
+    back through `crew_state.resolve_role`; nothing is launched."""
+    report, problem = load_report(args.scratch)
+    if report is None:
+        return _unknown(f"the models report ({problem})")
+    context = Context(args.root_arg, args.ticket, args.scratch_arg, report, args.authors or "",
+                      args.author_source or "")
+    status = args.probe_status
+    qa_model, fallback = args.model or context.models["codex"], ""
+    models = dict(context.models, codex=qa_model)
+    if status in (5, 6, 7):
+        import crew_config  # pylint: disable=import-outside-toplevel
+        whole = status in (5, 7)
+        config = crew_config.resolve_config(args.root)
+        qa = config.setdefault("qa", {})
+        if whole and crew_state.provider_for_model(qa.get("fallback")) == "codex":
+            qa.update(fallback=None)
+        gone = ("codex", qa_model or None)
+        result = crew_state.resolve_role(
+            config, "qa", "review", author=(args.authors or "").split(),
+            available=lambda p, m: p != "codex" if whole else (p, m or None) != gone)
+        _err("".join(a + "\n" for a in result["announce"]))
+        fallback = ("INCOMPLETE" if result["incomplete"]
+                    else result["provider"] + " " + (result["model"] or "")
+                    if result["fellBack"] else "")
+        _out(f"FALLBACK={fallback or 'none - no codex pin fell back'}")
+    provider = model = ""
+    if status == 0:
+        provider, model = "codex", qa_model
+    elif fallback.startswith("codex "):
+        provider, model = "codex", fallback[len("codex "):]
+    elif fallback.startswith("kimi "):
+        provider, model = "kimi", fallback[len("kimi "):]
+    elif fallback.startswith("copilot "):
+        provider, model = "copilot", fallback[len("copilot "):]
+    _out(f"RUN_PROVIDER={provider}")
+    _out(f"RUN_MODEL={model}")
+    context.models = dict(models, **({provider: model} if provider else {}))
+    if provider:
+        _out("next: " + context.walk([provider]))
+    elif fallback == "INCOMPLETE":
+        _out("next: " + context.walk([]))
+    elif context.pinned:
+        _out(f"next: qa.provider pins {context.pinned} and the probe gave exit {status}: that is "
+             "an error, not a cue to fall back; quote PROBE_DETAIL and stop")
+    else:
+        rest = [p for p in context.eligible if p != "codex"] if status in (5, 6, 7) \
+            else context.eligible
+        _out("next: " + context.walk(rest, f"codex probe exit {status}: "))
+    return EXIT_CLEAN
+
+
+def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branches,too-many-statements
+    """`--prepare`: everything /crew:review did before a reviewer runs, in
+    the order the snippets did it. Reserves no round and launches no reviewer
+    (it asks Codex nothing; `--probe` does). Prints KEY=VALUE lines, then one
+    `next:`. Exit 0 ready; 2 no single active ticket; 3 the base could not be
+    told; EXIT_UNKNOWN an input could not be read; review_patch's own code
+    when it fails; 0 with `NOTHING_TO_REVIEW=1` when the diff is empty."""
+    root_arg, root = args.root_arg, args.root
+    ticket, why = (args.ticket, None) if args.ticket else active_ticket(root)
+    if ticket is None:
+        if why in ("absent", "none", "many"):
+            said = {"absent": ".work/INDEX.md does not exist", "none": "no active row"}.get(
+                why, "several active rows")
+            _err(f"no ticket id and no single active ticket ({said}) - stop and ask\n")
+            return EXIT_USAGE
+        return _unknown(f"which ticket is active (.work/INDEX.md: {why})")
+    review_ledger.check_ticket(ticket)
+    args.ticket = ticket
+    ledger = review_ledger.status(root, ticket)
+    if ledger.get("state") == review_ledger.UNKNOWN:
+        return _unknown(f"the review ledger of {ticket} ({ledger.get('path')} will not parse)")
+    try:
+        scratch = args.scratch_arg or claim_scratch(root_arg, root)
+        args.scratch = os.path.abspath(scratch)
+        os.makedirs(args.scratch, exist_ok=True)
+    except OSError as exc:
+        return _unknown(f"the scratch directory ({exc.__class__.__name__}: {exc})")
+    _out(f"TICKET={ticket}")
+    _out(f"SCRATCH={scratch}")
+
+    base, refused = review_base(root_arg, root, ticket)
+    if base is None:
+        return refused
+    stamp, problem = dispatch_stamp(root)
+    if stamp is None:
+        return _unknown(f"the dispatch record ({problem})")
+    code, stamped = _git(root, "log", "-1", "--format=%ct", base)
+    if code != 0 or not stamped.strip().isdigit():
+        return _unknown(f"when the review base {base} was committed")
+    base_at = int(stamped.strip())
+    branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD")[1].strip()
+    stale = 0 < stamp < base_at
+    _out(f"BASE={base}")
+    _out(f"RECORD=record={stamp} base={base_at} branch={branch}")
+    _out(f"STALE={1 if stale else 0}")
+
+    report_path = os.path.join(args.scratch, "models.json")
+    code, report_bytes = _run_tool("crew_config.py", "--root", root_arg, "--models", "--json",
+                                   *(["--author-stale"] if stale else []))
+    _write_bytes(report_path, report_bytes)
+    report, problem = load_report(args.scratch)
+    if code != 0 or report is None:
+        return _unknown(f"the models report (crew_config.py --models --json exit {code}"
+                        f"{'; ' + problem if problem else ''})")
+    authors = " ".join(sorted(report.get("authorFamilies") or []))
+    source = report.get("authorSource") or ""
+    _out(f"AUTHORS={authors}")
+    _out(f"AUTHOR_SOURCE={source}")
+    dispatch = report.get("dispatch") or {}
+    _out(f"AUTHOR={report.get('authorFamily') or 'unknown'} ({source or 'unknown'})")
+    if dispatch:
+        _out("DISPATCH=" + "/".join(str(dispatch.get(k)) for k in ("role", "provider", "model")))
+    context = Context(root_arg, ticket, scratch, report, authors, source)
+    context.eligible = eligible(report, _err)
+    _out("ELIGIBLE=" + " ".join(context.eligible))
+    if context.pinned:
+        _out(f"PINNED={context.pinned}")
+    _out(f"ROUNDS_LEFT={ledger.get('rounds_left')}")
+
+    manifest = os.path.join(scratch, "manifest.json")
+    code, out = _run_tool("review_patch.py", "--root", root_arg, "--base", base, "--out",
+                          f"{scratch}/diff.txt", "--manifest", manifest)
+    if out:
+        _err(out.decode("utf-8", errors="replace"))
+    if code == 2:
+        _out("NOTHING_TO_REVIEW=1")
+        _out(f"nothing to review since {base}: review-patch's line above says why")
+        return EXIT_CLEAN
+    if code != 0:
+        _err(f"review-patch failed (exit {code}) -- see stderr above. This is a defect in "
+             "building the review input, not an empty diff to wave through.\n")
+        return code
+
+    code, out = _run_tool("review_prompt.py", "--root", root_arg, "--ticket", ticket,
+                          "--manifest", manifest, "--out", f"{scratch}/contract.txt")
+    if out:
+        _err(out.decode("utf-8", errors="replace"))
+    if code != 0:
+        return _unknown(f"the ticket contract (review_prompt.py exit {code})")
+    try:
+        files = review_prompt.changed_files(json.loads(review_checks.read_regular(
+            os.path.join(args.scratch, "manifest.json"), args.scratch).decode("utf-8")))
+        _write_bytes(os.path.join(args.scratch, "changed.txt"),
+                     "".join(f + "\n" for f in files).encode("utf-8"))
+        context_bytes = review_prompt.gather_landmines(root, files)
+        contract = review_checks.read_regular(os.path.join(args.scratch, "contract.txt"),
+                                              args.scratch)
+    except (OSError, ValueError) as exc:
+        return _unknown(f"the changed files or the codemap ({exc.__class__.__name__}: {exc})")
+    _write_bytes(os.path.join(args.scratch, "context.txt"), context_bytes)
+    _write_bytes(os.path.join(args.scratch, "prompt.txt"),
+                 review_prompt.prompt_text(scratch, contract, context_bytes))
+    _out(f"CHANGED={len(files)}")
+    state, wanted, problem = specialists(root, files)
+    if state == "unknown":
+        return _unknown(f"the specialists ({problem})")
+    gaps = agent_status(root, wanted) if wanted else {}
+    _out(f"VERIFY_MAP={state}")
+    _out(f"SPECIALISTS={len(wanted)}")
+    for agent, matched in sorted(wanted.items()):
+        _out(f"SPECIALIST={agent} {gaps[agent]} files={','.join(matched)}")
+
+    lead = "step 1: dispatch the SPECIALISTS agents on their files, then " if wanted else ""
+    _out("next: " + lead + (context.refusal() or context.walk(context.order())))
+    return EXIT_CLEAN
+
+
+def _write_bytes(path, data):
+    """`data` replaces `path` whole: written to a sibling, then renamed."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    handle, temp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-")
+    try:
+        with os.fdopen(handle, "wb") as out:
+            out.write(data)
+        os.replace(temp, path)
+    except BaseException:
+        os.unlink(temp)
+        raise
+
+
+# What `next:` says for each exit of a run, keyed by the code and by what was
+# SAID (the same code means different things). A True flag walks on to the next
+# provider of ELIGIBLE with its command; the text is one table, here.
+NEXT_REASONS = (
+    (2, "is not on PATH", True, "{provider} is not installed here"),
+    (2, "self-check:", False, "answer .work/tickets/<id>/selfcheck.md, run the crew_standards.py "
+     "stamp it names, rebuild with review_run.py --prepare, run again"),
+    (2, "the ledger changed since the gate decision", False, "run the same command again"),
+    (2, "gate could not run", False, "repair what the line above names, then run again"),
+    (2, "same-family:", True, "{provider} is the author's family (or could not be told)"),
+    (2, "kimi probe:", True, "Kimi is not ok (a pinned qa.provider kimi hard-fails instead)"),
+    (2, "copilot needs --model", True, "copilot skipped: qa.copilot.model is not set"),
+    (9, "pre-review checks", False, "fix the linter finding the line above names (or install "
+     "the tool; --allow-unverified covers COULD NOT CHECK only), rebuild with --prepare, run again"),
+    (9, "the bundle adds linter findings", False, "fix the linter finding the line above names, "
+     "rebuild with --prepare, run again"),
+    (9, "a pre-review check could not run", False, "install or repair the tool the line above "
+     "names, or pass --allow-unverified and say so, then run again"),
+)
+NEXT_CODES = {
+    EXIT_CLEAN: "step 2d (re-run any control the diff added), then step 3: report CLEAN, post "
+                "gh pr review --approve, notify",
+    EXIT_FINDINGS: "step 3: report every BLOCK and FIX verbatim; fix BLOCKs, run the gate, review "
+                   "once more; at the last round with `auto-accept: eligible` follow step 3.3",
+    EXIT_USAGE: "nothing launched, no round spent: read the review-run line above and fix what "
+                "it names",
+    EXIT_INCOMPLETE: "step 3: report INCOMPLETE (never as clean); a refunded tool failure is "
+                     "rerun once, anything else stops",
+    EXIT_REFUSED: "no round left: stop, replan the ticket (review_ledger.py --reject --by <who>); "
+                  "there is no third round",
+    EXIT_PROBE_CHANGED: "stop and report the paths named above: the Kimi probe changed the "
+                        "working tree; do not walk to the next provider",
+    EXIT_UNVERIFIED: "run the verify gate on this tree (or pass --allow-unverified and say so), "
+                     "then run again",
+    EXIT_TRAIN: "wait for the merge train: the line above names the blocker; "
+                "crew_train.py status shows the queue",
+    EXIT_UNKNOWN: "a review input could not be read: repair what the line above names, then "
+                  "run review_run.py --prepare again",
+}
+PREPARE_NEXT = {
+    EXIT_USAGE: "ask which ticket is under review, then run review_run.py --prepare --ticket <id>",
+    3: "the review base could not be told (scope-base line above): stop and report it",
+}
+
+
+def _walk_on(args, why):
+    """`next:` for a provider that cannot run: the command for the one after it."""
+    context = getattr(args, "context", None)
+    if context is None:
+        return why + ": walk to the next provider in ELIGIBLE (unless qa.provider pins this one)"
+    if context.pinned:
+        return (why + f"; qa.provider pins {context.pinned}, so this is an error, not a cue to "
+                "fall back: stop and quote it")
+    order = context.eligible
+    rest = order[order.index(args.provider) + 1:] if args.provider in order else \
+        [p for p in order if p != args.provider]
+    return context.walk(rest, why + "; ")
+
+
+def next_action(mode, code, args):
+    """The one `next:` line for this exit: `mode` is what was run, `code` its
+    exit status, `SAID` what it printed."""
+    said = "\n".join(SAID)
+    context = getattr(args, "context", None)
+    if mode == "usage":
+        return "fix the arguments (usage above) and run again"
+    if mode == "prepare":
+        if code == EXIT_CLEAN:
+            return "nothing to review: report what the review-patch line above says and stop"
+        return PREPARE_NEXT.get(code) or (NEXT_CODES[EXIT_UNKNOWN] if code == EXIT_UNKNOWN else
+                                          "review-patch failed: quote its line above, fix it, run "
+                                          "--prepare again")
+    if mode == "resolve":
+        return NEXT_CODES.get(code, "read the line above")
+    if mode == "probe":
+        if code == EXIT_CLEAN and context:
+            return "Codex answers: run " + context.launch("codex")
+        if code in (EXIT_PROBE_LIMITED, EXIT_PROBE_FAILED, EXIT_PROBE_UNKNOWN) and context:
+            return ("Codex gave no usable answer: quote PROBE_DETAIL, then run "
+                    + context.resolve(code))
+        if code == EXIT_USAGE:
+            return ("Codex was refused by the family guard or a usage error, nothing was called: "
+                    "walk to the next provider in ELIGIBLE")
+        return (f"no answer about Codex (exit {code}): stop and quote the line above; never read "
+                "it as ok or as limited")
+    if mode == "reserve" and code == EXIT_CLEAN:
+        if "ALREADY_CLEAN=1" in said:
+            return "a CLEAN receipt already covers this bundle: do not dispatch; go to step 3"
+        return ("dispatch crew:reviewer on the bundle, save its output as <scratch>/out.txt, then "
+                "run --provider claude --round <ROUND> --output <scratch>/out.txt --exit-code 0 "
+                "with the same other flags")
+    for want, needle, walks, action in NEXT_REASONS:
+        if code == want and needle in said:
+            action = action.format(provider=getattr(args, "provider", "") or "the provider")
+            return _walk_on(args, action) if walks else action
+    return NEXT_CODES.get(code, f"exit {code} is not one review_run.py defines: read the lines "
+                                "above")
+
+
+# The providers this runner can launch (`kimi` since L-0527); /crew:review walks
+# ELIGIBLE (filtered to this set, and says so on stderr) instead of relying on
 # argparse's exit 2 to skip a provider it does not name.
 PROVIDERS = ("codex", "copilot", "kimi", "claude")
 
 
+class _Parser(argparse.ArgumentParser):
+    """argparse's `error` ends with the one `next:` line every exit has."""
+
+    def error(self, message):
+        _err(f"review-run: error: {message} (review_run.py --help lists the flags)\n")
+        _out("next: " + next_action("usage", EXIT_USAGE, None))
+        raise SystemExit(EXIT_USAGE)
+
+
+def _mode(args):
+    if args.prepare:
+        return "prepare"
+    if args.resolve_run:
+        return "resolve"
+    if args.probe:
+        return "probe"
+    if args.provider == "claude":
+        return "reserve" if args.reserve_only else "round"
+    return "run"
+
+
+def _context(args):
+    """The `next:` context for a run of an already-prepared scratch, or None
+    when its models.json is not there to read (the line is then generic)."""
+    report, _problem = load_report(args.scratch)
+    if report is None:
+        return None
+    return Context(args.root_arg, args.ticket, args.scratch_arg, report,
+                   args.authors or "", args.author_source or "")
+
+
 def main(argv):
+    """Run one mode and end with exactly one `next: <action>` line, unless the
+    mode already printed its own (`--prepare`, `--resolve-run`)."""
+    del SAID[:]
+    state = {}
+    code = _main(argv, state)
+    if not any(line.startswith("next: ") for line in SAID):
+        args = state.get("args")
+        _out("next: " + next_action(state.get("mode", "run"), code, args))
+    return code
+
+
+def _main(argv, state):  # pylint: disable=too-many-branches,too-many-statements
     # Finding text and refusals quoting it reach stdout; see utf8_stdio.
     review_ledger.utf8_stdio()
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = _Parser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".")
-    parser.add_argument("--ticket", required=True)
-    parser.add_argument("--scratch", required=True)
+    parser.add_argument("--ticket")
+    parser.add_argument("--scratch")
     parser.add_argument("--manifest")
-    parser.add_argument("--provider", required=True, choices=PROVIDERS)
+    parser.add_argument("--provider", choices=PROVIDERS)
     parser.add_argument("--model", default="")
     parser.add_argument("--effort", default="")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
@@ -2123,6 +2846,15 @@ def main(argv):
     parser.add_argument("--exit-code", type=int)
     parser.add_argument("--probe", action="store_true")
     parser.add_argument("--probe-timeout", type=int, default=PROBE_TIMEOUT)
+    parser.add_argument("--prepare", action="store_true",
+                        help="do everything before a reviewer runs (ticket, scratch, specialists, "
+                             "base, staleness, eligible providers, bundle, prompt); reserves "
+                             "nothing, launches nothing (L-0726)")
+    parser.add_argument("--resolve-run", action="store_true",
+                        help="turn the Codex probe's exit code (--probe-status) into FALLBACK / "
+                             "RUN_PROVIDER / RUN_MODEL; launches nothing")
+    parser.add_argument("--probe-status", type=int,
+                        help="with --resolve-run: the exit code of the codex --probe")
     parser.add_argument("--note", default="",
                         help="claude only: why this provider ran, for the metrics row "
                              "('codex-probe=<probe exit>'; 5 means a Codex limit)")
@@ -2138,12 +2870,32 @@ def main(argv):
                         help="review a tree the verify gate has not passed; recorded in "
                              "review.json as gate.overridden")
     args = parser.parse_args(argv)
+    args.root_arg, args.scratch_arg = args.root, args.scratch
     args.root = os.path.abspath(args.root)
-    args.scratch = os.path.abspath(args.scratch)
-    args.manifest = args.manifest or os.path.join(args.scratch, "manifest.json")
+    state["mode"], state["args"] = _mode(args), args
+    if args.prepare:
+        if args.probe or args.resolve_run or args.reserve_only or args.round is not None:
+            parser.error("--prepare takes none of --probe, --resolve-run, --reserve-only, --round")
+    else:
+        needed = [flag for flag, value in (("--ticket", args.ticket), ("--scratch", args.scratch))
+                  if not value]
+        if not args.resolve_run and not args.provider:
+            needed.append("--provider")
+        if needed:
+            parser.error("the following arguments are required: " + ", ".join(needed))
+        if args.resolve_run and args.probe_status is None:
+            parser.error("--resolve-run needs --probe-status")
+        args.scratch = os.path.abspath(args.scratch)
+        args.manifest = args.manifest or os.path.join(args.scratch, "manifest.json")
+        args.context = _context(args)
 
     try:
-        review_ledger.check_ticket(args.ticket)
+        if args.ticket:
+            review_ledger.check_ticket(args.ticket)
+        if args.prepare:
+            return prepare(args)
+        if args.resolve_run:
+            return resolve_run(args)
         if args.probe:
             if args.provider != "codex":
                 parser.error("--probe is for the codex provider only")

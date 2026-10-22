@@ -1,5 +1,5 @@
-anchor: useful-claude-add-ons@304e58b11
-verified: 2026-10-01
+anchor: useful-claude-add-ons@9ba355d7c
+verified: 2026-10-20
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
@@ -38,6 +38,23 @@ them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
 ## `.crew/verify.json` — 48 rules
+
+**Re-measured at `8f2267e60` (2026-10-20, L-0850).** `.crew/verify.json` holds 98 rules there
+(`len(json.load(...)["rules"])`, run), each with an `id`; the "48" in this heading and the rule
+numbers and `.crew/verify.json:<line>` citations below are as of this note's own anchor and are
+**unverified at `8f2267e60`** (rule ids replaced positions; see `crew.md`'s L-0726 slice 2 note).
+Rule `crew-hook-dispatcher` (`.crew/verify.json:672-684`, 0-based index 56) is new in L-0727: its
+`paths` are `hooks.json`, `crew_hook.py`, `crew-hook.sh`, `crew-hook.ps1`, `crew_instructions.py`,
+`plugin/crew/tests/golden_hooks/**`, `record_golden_hooks.py`, `crew_hook_harness.py`,
+`test_crew_hook_parity.py`, `test_crew_hook_merge.py`, `test_crew_hook_faults.py`,
+`test_hooks_json_shape.py`, `test_crew_hook_windows.py`, `test_crew_instructions.py` and
+`sabotage_crew_hook.py`; it runs those six pytest files through `plugin/crew/tests/pytest_rule.py`
+(`seconds` 30, `coveredBy` `crew-suite`, `reach` `local`). DERIVED from the json, read not run.
+`scripts/check-tooling-pr.py` (`HARNESS` `:58`, `SEAM` `:97`, `ALONGSIDE` `:109`) gained at L-0727:
+`HARNESS` the four hook-registration files above (not `crew_instructions.py`), `SEAM`
+`crew_instructions.py`, `ALONGSIDE` `plugin/README.md` and `INSTALLATION.md` (they carry the
+`plugin-hooks:crew` claim marker `check-marketplace.py` holds to hooks.json's entry count). Not
+re-read this pass: whether `check-marketplace.py` implements that marker as described.
 
 **DERIVED, T-0502 on `rush/g5-platform` (2026-10-05), read with `json.load`: 774 lines, 73 rules
 (the release line's map plus this branch's).** T-0502 adds rule 19 (`.crew/verify.json:305-310`):
@@ -372,7 +389,7 @@ Notable rules, re-read directly:
   `scope_base.py`, `review_patch.py`, `review_verdict.py`, `crew_incident.py`,
   `crew_migrate.py`, `crew_metrics.py` and `crew_ticket.py` (the modules the stamp, the gate,
   `proposals` and the metric read), and since L-0522 `review_delta.py`, `review_ledger.py` and
-  `test_review_delta.py` (the delta gate; its 33 controls are L-0522's entries at the end of
+  `test_review_delta.py` (the delta gate; its 33 controls are L-0522's entries near the end of
   `REVIEW_FIX_MUTATIONS` in `plugin/crew/tests/sabotage_review.py`) → `python3 -m pytest` over the five test files plus
   `test_review_run_launch.py`, `test_review_ledger.py`, `test_lifecycle_commands.py` and (L-0522)
   `test_review_delta.py`,
@@ -385,10 +402,11 @@ Notable rules, re-read directly:
 - **Rule 38**, new in T-0087 (`.crew/verify.json:456-481` on L-0520 PR 1's merge of main `844bfc36`, below L-0520's rule 37 at `:385`; rule 37 at `:385-410` on T-0028, one below main's `:384-409` since T-0094 merged `a7524aac`, after T-0094's rule 32; rule 36 at `:374-399` on main and on `T-0087-build`'s merge of `9af34e57`, appended after T-0085's rule 35; rule 35 at `:361-386` on its merge of `a61a6f38`, appended after main's rules 32-34; rule 32 on its merge of `8ab733d7`, where T-0010's rule 28 put it last; rule 31 at `:328-353` on `T-0087-build` at `0ef73f74`): `paths` are the `HARNESS` globs
   of `scripts/check-tooling-pr.py` (the review/gate harness: `review_*.py`, both `verify-gate`
   flavours, `verify_record.py`, `verify_fingerprint.py`, `verify_price.py`, `crew_ticket.py`, the
-  approval-hook, scope-guard and completion-audit triples, `scope_base.py`, `sabotage*.py`,
+  approval-hook, scope-guard and completion-audit triples, `scope_base.py`, since L-0727
+  `hooks.json`, `crew_hook.py`, `crew-hook.sh` and `crew-hook.ps1`, `sabotage*.py`,
   `review_fixtures.py`, `golden_build.py`, `golden/**`, the reviewer's prompts and the checker
-  itself), its `SEAM` consumers (`crew_status.py`, `crew_autopilot.py`, `crew_resume.py`, the
-  status and autopilot commands), every suite the rule runs and
+  itself), its `SEAM` consumers (`crew_status.py`, `crew_autopilot.py`, `crew_resume.py`, since
+  L-0727 `crew_instructions.py`, the status and autopilot commands), every suite the rule runs and
   `plugin/crew/docs/external-tool-formats.md`, pinned by
   `test_verify_rule_paths_cover_the_harness_its_seams_and_suites` in
   `plugin/crew/tests/test_review_contracts.py` (review round 1: before it, an edit to a suite or a
@@ -567,8 +585,9 @@ that changed shape or are newly documented here:
   this debugging need.
 - **`--price` is an operator-only escape hatch**, dispatched before the stdin
   read (`verify-gate.sh:5-31`) so a terminal invocation of the flag is never
-  blocked on it, and never reachable from the Stop hook itself (`hooks.json`
-  invokes this script with no argument or `--all`, never `--price`).
+  blocked on it, and never reachable from the Stop hook itself (since L-0850 `hooks.json` registers only the
+  `crew-hook.sh`/`crew-hook.ps1` launchers; the `Stop` row that runs this script,
+  `plugin/crew/hooks/scripts/crew_hook.py:81`, carries no extra argument, so `--price` is never passed).
 - **Declared subset coverage, `--all` only (L-0572).** DERIVED at the L-0572
   branch. `plugin/crew/hooks/scripts/verify_record.py:457` `cover_declarations`
   validates `"coveredBy": "<id>"` against the rule carrying that `"id"`
@@ -884,7 +903,7 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
 - `scripts/check-marketplace.py:519` — `check_versions`.
 - `scripts/check-marketplace.py:565`, `:673` — `count_crew_markdown_lines`,
   `check_self_claims`.
-- `scripts/check_instructions.py:685` — `main()`, nine checks.
+- `scripts/check_instructions.py:909` — `main()`: `load_allowance` and twelve `check_*` calls.
 - `.github/workflows/instruction-budgets.yml:71-93` — the `github.event.before`
   base-sha fix for a `push` to `main`.
 
@@ -922,6 +941,14 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
   absent.
 
 ## Unverified at this anchor
+
+**Partial re-verification at `8f2267e60` (2026-10-20, L-0850 / L-0727 slice 2).** The file's `anchor:`
+is NOT moved: 361 files under `plugin/crew`, `_verify/smoke.sh` and `scripts/check-marketplace.py`
+changed between `291801622` and `8f2267e60`, and this pass re-checked only the L-0727 additions in the
+section above `verify.json`'s rule list, the `HARNESS` description in the T-0087 rule entry, and the
+`--price` / `hooks.json` sentence in the verify-gate section. Every other claim stays as of this
+note's own anchor and is **unverified at `8f2267e60`**. Re-derive with `/crew:onboard --refresh
+verification-harness`.
 
 - No `plugin/crew/tests/` suite was executed this pass. Every claim about
   test counts, pass/fail totals, or timing inside `.crew/verify.json`'s `why`
@@ -2628,3 +2655,8 @@ moved for it because the earlier sections were not re-verified against the commi
 **Re-anchored `926f1277` -> `09e31dba` on 2026-10-10 (L-0753, after merging main `e77532e01`).** Per-path check `git diff --name-only 926f1277..09e31dba`: main's L-0759 (#595: `plugin/crew/tests/test_promote_gate_review.py`, crew 1.2.19) and L-0760 (#596: `.github/workflows/runner-autostart.yml`, SECURITY.md) plus the version and CHANGELOG/README lines moved. No claim in this map moved.
 
 **Re-anchored `09e31dba` -> `0bf364417` on 2026-10-17 (L-0796, crew 1.2.39, quiet Stop gate).** Scope of this check is the ticket's own change, `git diff --name-only 786687e60..0bf364417`: `verify-gate.sh` (+258) and `verify-gate.ps1` (+343) grew above most of their cited lines, `verify_fingerprint.py` gained 5 lines at `:192`, `crew_fixtures.py` 7 lines, the sabotage tables a few lines in place, and `CONFIG.md` one 44-line insertion at `:3056` (after every `CONFIG.md` line cited here). Every cited `verify-gate.sh` / `.ps1` / `crew_fixtures.py` / `sabotage*.py` / `CONFIG.md` line was shifted by the hunks of that diff (a script walking the `-U0` hunks, no cited line fell inside a hunk); version lines (`plugin.json:3`, `marketplace.json`, `PLUGINS.md`, `BUDGETS.md`) and README lines changed in place and moved nothing. NOT VERIFIED: that each shifted citation still says what its sentence claims. This pass did not re-read them, and drift from the commits between `09e31dba` and `786687e60` is not re-derived here; `/crew:onboard --refresh` is the full pass. Nothing was executed for this note.
+
+**Re-anchored `291801622` -> `c1d365d72` on 2026-10-20 (L-0850 / PR #656 close).** Per-path re-verify of every `path:line` outside the re-anchor history paragraphs, by diffing each cited file at `291801622` against HEAD. Moved: `scripts/check_instructions.py` `main()` `:685` -> `:909` (main landed it; it now makes `load_allowance` plus twelve `check_*` calls, no longer nine, so the line-906 entry is corrected); the `.crew/verify.json:672-684` entry for `crew-hook-dispatcher` is already current at HEAD (the rule opens at `:672`). `.crew/verify.json:673` in the L-0680 paragraph and the other historical re-anchor paragraphs are history, not live claims, and were not re-mapped. NOT re-read word for word: claims whose cited lines did not move.
+
+
+**Re-anchored `c1d365d72` -> `9ba355d7c` on 2026-10-20 (L-0850 / PR #656 close: the docs and artifact refresh commit, owner waiver 2026-10-20).** `git diff 9ba355d7c~1 9ba355d7c` changes only docs, diagrams, codemap, rules and graph output; the one code-adjacent text is `plugin/crew/README.md` (+2 lines after line 366, inside section 25) and `SECURITY.md` (+4 lines after line 46). Every live `path:line` citation into those two files was checked: this note has none at or after those lines outside its re-anchor history paragraphs (whose lines describe past moments and are not re-mapped), and `plugin/crew/BUDGETS.md` only changed a count in place (line 11, line-neutral). No citation changed. NOT re-read word for word: prose claims whose cited lines did not move.

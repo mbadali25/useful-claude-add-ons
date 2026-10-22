@@ -60,10 +60,12 @@ or behaves like an older release.
 
 ## Hook noise
 
-Every hook crew registers, from `plugin/crew/hooks/hooks.json`, and the config key that turns its
-behaviour up or down. All events are registered once for bash and once for PowerShell (`shell:
-"powershell"`), so a Windows machine with both `bash` and `pwsh` on `PATH` fires both halves of
-every pair — that is what "even counts" in the file means, not a bug.
+Every hook crew runs, and the config key that turns its behaviour up or down. `plugin/crew/hooks/hooks.json`
+registers one launcher per event per shell (`crew-hook.sh`, and `crew-hook.ps1` with `shell: "powershell"`);
+the launcher starts one dispatcher, `crew_hook.py <Event>`, which runs that event's scripts below at once and
+combines what they print. On Windows only the PowerShell launcher runs, so no event fires twice. When the
+launcher or dispatcher itself fails in a repo crew governs, `PreToolUse`, `UserPromptSubmit` and `Stop` refuse
+with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged.
 
 | Event | Script | What it does | Switch | Default |
 |---|---|---|---|---|
@@ -164,6 +166,20 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   one plan reads `NOT refunded - refund limit 2 per plan reached` and counts. A `reviewer` or `tree`
   round always counts. Rebuild the bundle (tree), or rerun and read what the reviewer wrote
   (reviewer).
+
+- **Symptom: `--check-receipt` says `no accepted review receipt ... (ledger absent); could not tell whether head
+  <sha> was reviewed`, or another host merged a PR whose review you cannot see.**
+  **Cause:** the review ledger and receipt are host-local (`<git-common-dir>/crew/review/`, `.work/`), so a
+  session on a host that did not run the review has none. That is could-not-tell, not "nothing to gate"
+  (L-0780; PR #599 merged with 4 open BLOCKs on that misreading).
+  **Check:**
+  ```bash
+  python3 "<crew>/hooks/scripts/review_status.py" check --pr <PR>
+  ```
+  `REVIEW_GATE ALLOW` (exit 0) means GitHub holds exactly one `crew/review` success with `blocks=0` for that
+  exact head; `BLOCK` (1) and `COULD_NOT_TELL` (2) both refuse. The command reads only GitHub: no local
+  ledger, no working tree. Nothing publishes the status yet (L-0821), so today it reads `COULD_NOT_TELL`,
+  which is safe. A status attests, it does not prove, and `gh pr merge --admin` bypasses a required check.
 
 - **Symptom: `/crew:done` refuses with a receipt error.**
   **Check:**

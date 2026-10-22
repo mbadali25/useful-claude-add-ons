@@ -12,9 +12,7 @@ SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 CONTEXT = os.path.join(SCRIPTS, "crew_context.py")
 RECALL = os.path.join(SCRIPTS, "crew_recall.py")
 INSTRUCTIONS = os.path.join(SCRIPTS, "crew_instructions.py")
-CONTEXT_PS1 = os.path.join(SCRIPTS, "crew-context.ps1")
 HANDOFF_SH = os.path.join(SCRIPTS, "handoff-read.sh")
-HANDOFF_PS1 = os.path.join(SCRIPTS, "handoff-read.ps1")
 _FIXES = "tests/test_crew_context_fixes.py::"
 _WRAP = "tests/test_crew_context_wrappers.py::"
 _INSTR = "tests/test_crew_instructions.py::"
@@ -29,21 +27,6 @@ REVIEW_FIX_CONTEXT_MUTATIONS = (
      "\"$DIR\" \"$PWD\" 2>/dev/null && exit 0\n",
      "\"$DIR\" \"$PWD\" 2>/dev/null && :\n",
      _FIXES + "test_handoff_read_sh_stands_down_exactly_when_memory_inject_is_on"),
-    ("handoff-read.ps1 prints the handoff although memory.inject is on",
-     HANDOFF_PS1,
-     "if ($LASTEXITCODE -eq 0) { exit 0 }\n",
-     "if ($false) { exit 0 }\n",
-     _WRAP + "test_handoff_read_ps1_stands_down_exactly_when_memory_inject_is_on"),
-    ("the .ps1 flavour hands python its stdin plus a newline, so both flavours emit",
-     CONTEXT_PS1,
-     "  $proc.StandardInput.BaseStream.Write($stdinBytes, 0, $stdinBytes.Length)\n",
-     "  $proc.StandardInput.BaseStream.Write($stdinBytes + [byte[]](10), 0, $stdinBytes.Length + 1)\n",
-     _WRAP + "test_both_flavours_claim_the_same_event_so_only_one_emits"),
-    ("the .ps1 python probe waits on a hung candidate",
-     CONTEXT_PS1,
-     "      $crewPythonWaitMs = [Math]::Min(3000, $crewPythonRemainingMs)\n",
-     "      $crewPythonWaitMs = 600000\n",
-     _WRAP + "test_a_hung_python_candidate_is_abandoned_not_waited_on"),
     ("a failed session-state write is reported as saved",
      CONTEXT,
      "    except (OSError, TypeError, ValueError):\n        return False\n    return True\n",

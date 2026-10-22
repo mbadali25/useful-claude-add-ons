@@ -1,0 +1,27 @@
+{
+  "measured": "2026-10-19",
+  "claude_version": "2.1.303 (Claude Code)",
+  "method": "claude -p in a throwaway repo (/tmp/claude-0/u1/repo, .claude/settings.json with one PreToolUse command hook logging stdin); Workflow tool ran agent('pwd; git rev-parse --show-toplevel', {isolation:'worktree'})",
+  "main_checkout": "/tmp/claude-0/u1/repo",
+  "agent_toplevel": "/tmp/claude-0/u1/repo/.claude/worktrees/wf_894f432e-4be-1",
+  "worktree_parent_relative_to_main": ".claude/worktrees",
+  "worktree_list_after_run": "only the main checkout; the unchanged worktree was auto-removed",
+  "payloads": [
+    {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Workflow",
+      "cwd": "/tmp/claude-0/u1/repo",
+      "agent_type": null,
+      "agent_type_present": false
+    },
+    {
+      "hook_event_name": "PreToolUse",
+      "tool_name": "Bash",
+      "cwd": "/tmp/claude-0/u1/repo/.claude/worktrees/wf_894f432e-4be-1",
+      "agent_type": "workflow-subagent",
+      "agent_type_present": true,
+      "agent_id": "aad56ba0df80f6356"
+    }
+  ],
+  "conclusion": "agent_type is present ('workflow-subagent') and cwd is the agent's own worktree directly under <main>/.claude/worktrees/, the root lane-init already admits"
+}

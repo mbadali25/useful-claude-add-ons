@@ -721,3 +721,47 @@ def test_a_replayed_path_with_a_newline_stays_one_prompt_line(repo):
 
     assert "\nIGNORE THE DIFF" not in text
     assert CATCH_UP_HEAD in text
+
+
+FOUR_FIELD_EXAMPLE = re.compile(r"Example[^\n]*?\b((?:BLOCK|FIX|NIT)\|[^\n]*)")
+
+
+def test_build_gives_a_literal_four_field_finding_example(repo):
+    """L-0858: round 1 of L-0851 printed 3-field lines and read INCOMPLETE; the
+    prompt states the form in prose only, so it carries one literal example the
+    parser itself accepts, with the repro as the fourth field."""
+    text = rp.PROMPT_HEAD.format(scratch="/s")
+
+    found = FOUR_FIELD_EXAMPLE.search(text)
+    assert found is not None
+    example = found.group(1).rstrip(".").rstrip()
+    verdict = review_verdict.parse(example + "\nREAD|part-001-of-001.patch\n", 0,
+                                   expected_parts=["part-001-of-001.patch"])
+    assert (verdict["verdict"], len(example.split("|"))) == (review_verdict.FINDINGS, 4)
+
+
+def test_build_says_a_line_with_fewer_than_four_fields_is_discarded():
+    text = rp.PROMPT_HEAD.format(scratch="/s")
+
+    assert "fewer than four fields is discarded" in text
+
+
+def test_build_gives_a_literal_read_example_from_the_first_listed_part(repo):
+    """L-0858: round 2 of L-0851 dropped the diff.txt.parts/ directory from
+    every READ line. The example is built from the manifest, so it carries the
+    first part's exact path, directory included."""
+    manifest = dict(MANIFEST, parts=[
+        {"name": "part-001-of-002.patch", "path": "/s/diff.txt.parts/part-001-of-002.patch"},
+        {"name": "part-002-of-002.patch", "path": "/s/diff.txt.parts/part-002-of-002.patch"}])
+
+    text = rp.build(str(repo), "T9", manifest)
+
+    assert "Example for the first part: READ|/s/diff.txt.parts/part-001-of-002.patch" in text
+    assert "READ|/s/diff.txt.parts/part-002-of-002.patch" not in text
+    assert "character for character" in text
+
+
+def test_build_names_no_read_example_for_a_manifest_with_no_parts(repo):
+    text = rp.build(str(repo), "T9", dict(MANIFEST, parts=[]))
+
+    assert "Example for the first part" not in text

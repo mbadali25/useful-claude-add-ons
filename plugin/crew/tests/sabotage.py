@@ -2254,11 +2254,11 @@ MUTATIONS = (
         # every fresh clone hits. Merging the two leaves a step 0b that still
         # runs, still reports, and silently reviews less.
         "an absent verification map is no longer its own outcome",
-        REVIEW_DOC,
-        "| `.crew/verify.json` does not exist | `no verification map",
-        "| `.crew/verify.json` is missing or matches nothing | `no specialist",
-        ("tests/test_verify_absent_and_diagram_kind.py::"
-         "test_review_distinguishes_absent_from_matched_nothing"),
+        REVIEW_RUN,
+        '    except FileNotFoundError:\n        return "absent", {}, None',
+        '    except FileNotFoundError:\n        return "read", {}, None',
+        ("tests/test_review_prepare.py::"
+         "test_prepare_absent_valid_empty_and_unmatched_maps_are_three_outputs"),
     ),
     (
         # Drop the exit-status check on the pre-deploy verdict. The remaining
@@ -3067,9 +3067,8 @@ MUTATIONS = (
     ),
 )
 # The T1 review-fix, T3 scope, T5 cloud-guard, context, migrate, auto-cycle, T-0008 refresh-check, T-0006 resume,
-# T-0004 autopilot, T-0021 tracker, T-0023 route, T-0024 group-approval, T-0075 config menu, T-0040 shell, merge train
-# mutations live in the sabotage_*.py siblings: this file is at `.pylintrc`'s max-module-lines, and raising that
-# limit again is the move its own comment warns against.
+# T-0004 autopilot, T-0021 tracker, T-0023 route, T-0024 group-approval, T-0075 config menu, T-0040 shell, merge train,
+# L-0727 hook dispatcher mutations live in the sabotage_*.py siblings: this file is at `.pylintrc`'s max-module-lines.
 from sabotage_train import TRAIN_MUTATIONS  # noqa: E402  pylint: disable=wrong-import-position
 from sabotage_stop_budget import STOP_BUDGET_MUTATIONS  # noqa: E402  pylint: disable=wrong-import-position
 MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS + CLOUD_GUARD_MUTATIONS + SCOPE_MUTATIONS
@@ -3080,7 +3079,8 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS + KIMI_MUTATIONS + COORD_MUTATIONS
               + RECURRING_MUTATIONS + TRAIN_MUTATIONS + GITIGNORE_MUTATIONS + WAVE_MUTATIONS + GHDEPLOY_MUTATIONS
               + PROMOTE_TREE_MUTATIONS + CONTRACT_MUTATIONS + BRIDGE_MUTATIONS + sabotage_platform.PLATFORM_MUTATIONS)
-MUTATIONS += __import__("sabotage_reach_notice").REACH_NOTICE_MUTATIONS + __import__("sabotage_quiet").QUIET_MUTATIONS
+MUTATIONS += (__import__("sabotage_reach_notice").REACH_NOTICE_MUTATIONS + __import__("sabotage_quiet").QUIET_MUTATIONS
+              + __import__("sabotage_crew_hook").CREW_HOOK_MUTATIONS)
 
 # pytest's own exit codes: 0 all passed, 1 a test FAILED, 2 interrupted, 3
 # internal error, 4 usage error (what a collection failure produces), 5 nothing

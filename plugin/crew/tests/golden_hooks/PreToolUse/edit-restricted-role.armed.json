@@ -1,0 +1,34 @@
+{
+ "armed": true,
+ "case": "edit-restricted-role",
+ "dirty": "",
+ "event": "PreToolUse",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"Edit\", \"tool_input\": {\"file_path\": \"{ROOT}/src/app.py\"}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"agent_type\": \"crew:reviewer\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "role-write-guard.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "role-write-guard.sh",
+   "stderr": "ROLE WRITE BLOCKED: role `reviewer` may not write `src/app.py`.\n  Reason: role `reviewer` has no Write/Edit in its tools: grant\n  Permitted for this role: nothing (this role has no Write/Edit grant)\n  This is guards.roleWrites: block, in .crew/config.json or the machine-global config. See CONFIG.md Section 18.\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "scope-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "scope-guard.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

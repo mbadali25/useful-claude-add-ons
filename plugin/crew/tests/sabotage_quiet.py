@@ -136,4 +136,8 @@ QUIET_MUTATIONS = (
      "  if [ \"$_split_ok\" -eq 1 ] && _out=$(cat \"$1\" && printf x); then\n",
      "  if [ \"$_split_ok\" -eq 1 ]; then cat \"$1\"; return; fi\n  if false; then\n",
      _T + "test_failed_cat_of_the_plain_half_still_prints_the_failure_block"),
+    ("verify gate: --all is read from the first argument only, so --verbose --all runs as a Stop", SH,
+     "if [ \"$CI_ALL_SEEN\" -eq 1 ] || [ \"$CI_MODE\" -eq 1 ]; then\n  # --all does not diff against ANY commit.",
+     "if [ \"${1:-}\" = \"--all\" ] || [ \"$CI_MODE\" -eq 1 ]; then\n  # --all does not diff against ANY commit.",
+     _T + "test_all_runs_every_rule_whichever_order_verbose_comes_in"),
 )

@@ -1,0 +1,89 @@
+{
+  "base": "47a280738dd3d3c56baad8db6e02f2c73591904d",
+  "binary_files": [],
+  "branch": "t1",
+  "bundle_base_tree": "9a7021fce02f6b9eaacb8d70f047f289f268b441",
+  "bundle_sha256": "6630179385d13ee39e36cd19c39829579ae8cc073070884d3e5e4ac9846c0133",
+  "committed_files": [
+    "src/a.py",
+    "src/large.py"
+  ],
+  "dirty": false,
+  "entries": [
+    {
+      "binary": false,
+      "mode_changed": false,
+      "new_id": "b1bfde2df873c68eb18a9b0954aaf23f71e981f2",
+      "new_mode": "100644",
+      "old_id": "0000000000000000000000000000000000000000",
+      "old_mode": "000000",
+      "old_path": "src/a.py",
+      "path": "src/a.py",
+      "score": null,
+      "status": "A",
+      "submodule": false
+    },
+    {
+      "binary": false,
+      "mode_changed": false,
+      "new_id": "9c110aa05831c968bbcc50e1d7a18658b89758dc",
+      "new_mode": "100644",
+      "old_id": "0000000000000000000000000000000000000000",
+      "old_mode": "000000",
+      "old_path": "src/large.py",
+      "path": "src/large.py",
+      "score": null,
+      "status": "A",
+      "submodule": false
+    }
+  ],
+  "excluded": [
+    ".work/",
+    "graphify-out/",
+    ".crew/.scope-base",
+    ".crew/.verify-verified-at",
+    ".crew/.verify-gate.*",
+    ".crew/.verify-gate.lock/**",
+    ".crew/.verify-rule-out.*",
+    ".crew/.verify-rule-done.*/**",
+    ".crew/metrics.md",
+    ".crew/metrics.jsonl",
+    ".crew/guard.log",
+    ".crew/.autoclear.log",
+    ".crew/.cloud-guard-unpinned-noted"
+  ],
+  "head": "4b885cb5111d4874e3e4d1831132124b2f5688b3",
+  "included_excluded": [],
+  "max_part_bytes": 204800,
+  "merged_main": {
+    "applies": false,
+    "commit": "47a280738dd3d3c56baad8db6e02f2c73591904d",
+    "diffed_from_merged": [],
+    "dropped": [],
+    "reason": "no merge of main past the ticket start 47a280738dd3; nothing dropped",
+    "ref": "main"
+  },
+  "mode_changes": [],
+  "parts": [
+    {
+      "bytes": 204760,
+      "name": "part-001-of-002.patch",
+      "path": "<ROOT>/.work/review/golden/diff.txt.parts/part-001-of-002.patch",
+      "sha256": "17b4a4b46d2714c7474ab238f13bbdc02cc66643402599270ad0d7e53e293321"
+    },
+    {
+      "bytes": 35055,
+      "name": "part-002-of-002.patch",
+      "path": "<ROOT>/.work/review/golden/diff.txt.parts/part-002-of-002.patch",
+      "sha256": "7ebdae035eb53f04fd48c6f5a9765be86d102773c000f89d2523968e4c9a245d"
+    }
+  ],
+  "parts_dir": "<ROOT>/.work/review/golden/diff.txt.parts",
+  "patch_bytes": 239815,
+  "patch_path": ".work/review/golden/diff.txt",
+  "renames": [],
+  "staged_files": [],
+  "submodules": [],
+  "unstaged_files": [],
+  "untracked_files": []
+}

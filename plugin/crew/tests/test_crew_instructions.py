@@ -118,23 +118,26 @@ def _registrations(hooks):
 
 
 def test_codex_hooks_and_claude_hooks_come_from_the_same_table():
+    import crew_hook  # pylint: disable=import-outside-toplevel
     claude = ci.claude_hooks()
     codex = ci.codex_hooks("/opt/crew")
 
     expected = sorted((row["event"], row["matcher"]) for row in ci.HOOK_TABLE)
-    assert sorted(set(_registrations(claude))) == sorted(set(expected))
     assert sorted((e, m and next(r["matcher"] for r in ci.HOOK_TABLE if r["codex"] == m and r["event"] == e))
                   for e, m in _registrations(codex)) == expected
-    assert len(_registrations(claude)) == 2 * len(ci.HOOK_TABLE)
+    assert sorted(set(event for event, _ in _registrations(claude))) == sorted(crew_hook.EVENTS)
+    assert len(_registrations(claude)) == 2 * len(crew_hook.EVENTS)
+    assert sorted(_registrations(claude)) == sorted(
+        (event, crew_hook.REGISTERED_MATCHER[event] or None) for event in crew_hook.EVENTS for _ in range(2))
 
 
 def test_every_codex_hook_has_a_windows_command_and_passes_the_codex_harness():
-    for entries in ci.codex_hooks("/opt/crew")["hooks"].values():
+    for event, entries in ci.codex_hooks("/opt/crew")["hooks"].items():
         for entry in entries:
             hook = entry["hooks"][0]
-            assert hook["command"].endswith("--harness codex")
-            assert hook["commandWindows"].endswith("-Harness codex")
-            assert "crew-context.ps1" in hook["commandWindows"]
+            assert hook["command"] == f'bash "/opt/crew/hooks/scripts/crew-hook.sh" {event} --harness codex'
+            assert hook["commandWindows"].endswith(f"{event} -Harness codex")
+            assert "crew-hook.ps1" in hook["commandWindows"]
 
 
 def test_claude_entries_satisfy_the_marketplace_hook_command_rules():
@@ -146,17 +149,15 @@ def test_claude_entries_satisfy_the_marketplace_hook_command_rules():
                 assert hook["command"].rstrip().endswith("exit $LASTEXITCODE")
 
 
-def test_the_registered_crew_context_rows_are_exactly_the_generated_ones():
-    """hooks.json is hand-formatted, so this compares parsed rows: every
-    crew-context registration is what `claude-hooks` prints, event by event,
-    and nothing else registers crew-context."""
+def test_hooks_json_is_exactly_what_claude_hooks_prints():
+    """hooks.json is hand-formatted, so this compares parsed rows: every registration
+    is what `claude-hooks` renders from crew_hook.TABLE, event by event, and nothing
+    else is registered."""
     path = os.path.join(os.path.dirname(os.path.abspath(ci.__file__)), os.pardir, "hooks.json")
     with open(path, encoding="utf-8") as handle:
         registered = json.load(handle)["hooks"]
-    ours = {event: [row for row in rows if "crew-context" in json.dumps(row)]
-            for event, rows in registered.items()}
 
-    assert {e: rows for e, rows in ours.items() if rows} == ci.claude_hooks()["hooks"]
+    assert registered == ci.claude_hooks()["hooks"]
 
 
 def test_codex_generation_writes_both_files_and_detects_drift(tmp_path):
@@ -1046,3 +1047,26 @@ def test_no_shipped_doc_tells_users_to_run_a_profile_against_project_config():
             offenders.append(f"{os.path.relpath(path, _REPO_ROOT)}:{line}")
 
     assert offenders == []
+
+
+def _codex_hooks_json(command):
+    return json.dumps({"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": command}]}]}})
+
+
+@pytest.mark.parametrize("command,expected", [
+    ('bash "/x/hooks/scripts/crew-context.sh" --harness codex', True),
+    ('bash "/x/hooks/scripts/crew-hook.sh" SessionStart', True),
+    ('bash "/x/hooks/scripts/crew-hooks.sh" SessionStart', False),
+    ('bash "/x/hooks/scripts/other.sh"', False),
+    ("echo hi", False),
+])
+def test_codex_hooks_generated_recognises_the_old_and_the_new_command_shape(command, expected):
+    assert ci._codex_hooks_generated(_codex_hooks_json(command)) is expected
+
+
+def test_codex_hooks_generated_refuses_a_file_mixing_a_generated_and_a_foreign_command():
+    mixed = json.dumps({"hooks": {"SessionStart": [{"hooks": [
+        {"type": "command", "command": 'bash "/x/hooks/scripts/crew-hook.sh" SessionStart'},
+        {"type": "command", "command": "echo hi"}]}]}})
+
+    assert ci._codex_hooks_generated(mixed) is False

@@ -553,7 +553,8 @@ KEY_META = {
                                        "1.1.21", _S + "crew_autopilot_backlog.py",
                                        type_="positive integer"),
     "autopilot.maxTokensPerSession": _row("Input plus output tokens one goal session may "
-                                          "spend before the run stops; a transcript that "
+                                          "spend, each assistant message counted once, "
+                                          "before the run stops; a transcript that "
                                           "cannot be read stops too. Anything but a "
                                           "positive integer reads as 2000000, with a "
                                           "warning.", "branch", None, "1.1.21",
