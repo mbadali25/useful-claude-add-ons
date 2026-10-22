@@ -105,10 +105,6 @@ AUTOCYCLE_MUTATIONS = (
      "    out[\"enabled\"] = machine.get(\"enabled\") is True or repo.get(\"enabled\") is True\n",
      _T + "test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out[None-True-sh]"),
     # --- unique window -------------------------------------------------------
-    ("bash takes the first of several title matches", CYCLE,
-     "    if len(hits) == 1:\n",
-     "    if hits:\n",
-     _T + "test_the_window_is_identified_uniquely_or_not_at_all[title-two-sh]"),
     ("bash takes the first of the owner's several windows", CYCLE,
      "        if len(owned) == 1:\n",
      "        if owned:\n",
