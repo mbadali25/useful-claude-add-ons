@@ -213,7 +213,14 @@ def test_every_script_path_in_a_non_harness_hook_goes_through_the_helper(name):
         for found in _SCRIPT_PATH.finditer(line):
             if any(found.group(0).endswith("/" + script) and name == hook for hook, script in _DEFERRED):
                 continue
-            if "crew_native_path" not in line[:found.start()]:
+            if not line[:found.start()].endswith('crew_native_path "'):
                 offenders.append(f"{name}:{number}: {line.strip()}")
 
     assert offenders == []
+
+
+def test_the_deferred_caller_is_still_the_unwrapped_line():
+    source = (SCRIPTS / "handoff-write.sh").read_text(encoding="utf-8")
+
+    assert '"$CLAIM_PY" "$(dirname "${BASH_SOURCE[0]}")/crew_resume.py" precompact' in source, (
+        "handoff-write.sh now wraps crew_resume.py: delete _DEFERRED and the filter in the two tests above")

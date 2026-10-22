@@ -906,7 +906,7 @@
       "seconds": 10,
       "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_native_script_path.py -q"],
       "reach": "local",
-      "why": "L-0868: every non-harness .sh hook hands python a script path through crew_native_path (cygpath -m under MSYS, unchanged elsewhere), so a set MSYS_NO_PATHCONV cannot leave python.exe a POSIX path. Full rationale: docs/crew/verify-rationale.md#native-script-path" },
+      "why": "L-0868: every non-harness .sh hook but one call (see the rationale) hands python a script path through crew_native_path (cygpath -m under MSYS, unchanged elsewhere), so a set MSYS_NO_PATHCONV cannot leave python.exe a POSIX path. Full rationale: docs/crew/verify-rationale.md#native-script-path" },
     { "id": "ticket-state", "paths": ["plugin/crew/hooks/scripts/crew_ticket_state.py", "plugin/crew/tests/test_ticket_state.py",
                 "plugin/crew/tests/sabotage_ticket_state.py"],
       "seconds": 5,

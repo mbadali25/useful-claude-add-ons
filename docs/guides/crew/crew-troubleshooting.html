@@ -1529,12 +1529,12 @@ runs but the visual rule never passes.</p>
   rewrites a POSIX-looking script argument (<code>/tmp/...</code>, <code>/d/...</code>) into a Windows path when it starts a
   native <code>python.exe</code>, but only while <code>MSYS_NO_PATHCONV</code> is unset. Set, even to an empty string by a
   shell profile, a CI runner or a parent process, the argument reaches Python as written and Windows
-  resolves it against the current drive. Since L-0868 every <code>.sh</code> hook except the review-harness ones
+  resolves it against the current drive. Since L-0868 every <code>.sh</code> hook except the review-harness ones (and that one record)
   passes its script path through <code>crew_native_path</code>
   (<code>cygpath -m</code>, which needs no argument conversion), so the variable no longer matters for them.
   The harness hooks (<code>verify-gate.sh</code>, <code>approval-hook.sh</code>, <code>scope-guard.sh</code>, <code>completion-audit.sh</code>,
-  <code>crew-hook.sh</code>) and the PreCompact <code>crew_resume.py</code> record still depend on conversion until a
-  follow-up lands: if one fails this way, unset <code>MSYS_NO_PATHCONV</code> for the session (<code>env -u
+  <code>crew-hook.sh</code>) and the PreCompact <code>crew_resume.py</code> record in <code>handoff-write.sh</code> still depend on
+  conversion until a follow-up lands: if one fails this way, unset <code>MSYS_NO_PATHCONV</code> for the session (<code>env -u
   MSYS_NO_PATHCONV claude</code>).</li>
 <li><strong>Both flavours are always registered.</strong> <code>hooks.json</code> pairs every bash command with a <code>shell:
   "powershell"</code> sibling on the same event, so a machine with both <code>bash</code> and <code>pwsh</code> present runs
