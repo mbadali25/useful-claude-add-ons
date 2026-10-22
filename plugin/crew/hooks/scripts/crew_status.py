@@ -475,7 +475,6 @@ def _guards_line(root):
     so rather than vanishing."""
     try:
         import crew_config  # pylint: disable=import-outside-toplevel
-        import crew_state  # pylint: disable=import-outside-toplevel
         block = crew_state.load_config(root).get("guards")
         block = block if isinstance(block, dict) else {}
         profile, overrides = block.get("profile"), block.get("overrides")

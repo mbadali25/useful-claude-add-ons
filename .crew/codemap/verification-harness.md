@@ -69,7 +69,7 @@ is the committed key set (87 keys, 83 repo and 50 machine leaves) and `test_crew
 `(87, 83, 50)` against `crew_config`'s two default functions. `plugin/crew/CONFIG.md` is generated whole
 by `docs/guides/crew/src/config_reference.py` (`render_config_md` `:395`), so nothing in it is
 hand-written and the descoped-kill limitation entry that older notes cite as `CONFIG.md:2509-2516` is
-now `docs/crew/config-rationale.md:2532-2536`. `claude-rules-generated` (`:453`) runs
+now `docs/crew/config-rationale.md`:2532-2536`. `claude-rules-generated` (`:453`) runs
 `crew_instructions.py rules --root . --check` over `.claude/rules/**` and `.crew/codemap/**`.
 
 **DERIVED, T-0502 on `rush/g5-platform` (2026-10-05), read with `json.load`: 774 lines, 73 rules
@@ -522,7 +522,7 @@ that changed shape or are newly documented here:
   test file is named in rule 4's `run`; only rule 9's whole suite runs them.
 - **Per-rule process-group tracking and kill-on-signal was DESCOPED from crew
   1.0, and it is a documented limitation, not a silent gap.**
-  `verify-gate.sh:1779-1788` and `docs/crew/config-rationale.md:2532-2536` both state
+  `verify-gate.sh:1779-1788` and `docs/crew/config-rationale.md`:2532-2536` both state
   it: a third registry stage (`_crew_gate_cleanup_rule_pgid`) shipped, then was
   removed after five consecutive review rounds each found the previous
   round's fix one case short (disk fill by an orphan writer, escape on gate
@@ -911,7 +911,7 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
   (`test_crew_shell.py`, `test_status.py`) for `crew_shell.py` and `crew_status.py`, priced 17s;
   its sabotage entries split out to W-0115.
 - `plugin/crew/hooks/scripts/verify-gate.sh:1874-1883` /
-  `docs/crew/config-rationale.md:2532-2536` — the descoped per-rule process-group kill,
+  `docs/crew/config-rationale.md`:2532-2536` — the descoped per-rule process-group kill,
   documented as a standing limitation.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:1031-1041`, `:1665-1674` —
   `Resolve-CrewBash` refusal rather than a re-resolving hang.
@@ -2044,7 +2044,7 @@ fix result, not executed for this note.
 
 `7d473f24` merges origin/main `f54af3fa` (T-0072 landed as crew 1.0.51: `crew_autopilot.py`,
 `commands/autopilot.md`, `crew_state.py`'s line-neutral `AUTOPILOT_DEFAULTS` hunk at `:1086-1090`,
-`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `docs/crew/config-rationale.md, `README.md`, its
+`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `docs/crew/config-rationale.md`, `README.md`, its
 tests, `sabotage_autopilot.py`, `.crew/verify.json` rule 27's `seconds` and `why`; its notes
 anchored `9631c707`); `07354a39`, `df419a55`, `7a206c8e`, `4112498e`, `1b31ed2f` and `7ef3c4f1` are
 T-0075's review-round-4 steps 11-16 (`crew_config.py`, `crew_config_files.py`,

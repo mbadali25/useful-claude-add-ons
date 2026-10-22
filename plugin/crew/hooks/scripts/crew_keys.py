@@ -39,7 +39,6 @@ import crew_config
 import crew_guards
 import crew_notify
 import crew_platform
-import crew_shell
 import crew_sleep
 import crew_state
 import crew_ticket

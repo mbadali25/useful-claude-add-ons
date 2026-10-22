@@ -519,13 +519,17 @@ def test_rollback_byte_identical(tmp_path, machine, layer):
     if layer == "repo":
         original = _fixture_bytes("repo.config.json")
         root = _repo(tmp_path, original)
-        target, args, backups = os.path.join(root, ".crew", "config.json"), ["--root", root], (
-            lambda: _backups(root))
+        target, args = os.path.join(root, ".crew", "config.json"), ["--root", root]
+
+        def backups():
+            return _backups(root)
     else:
         original = _fixture_bytes("machine.config.json")
         _write(machine, original)
-        target, args, backups = machine, ["--global"], (
-            lambda: _backups(os.path.dirname(machine), repo=False))
+        target, args = machine, ["--global"]
+
+        def backups():
+            return _backups(os.path.dirname(machine), repo=False)
     crew_migrate.main(args + ["--apply"])
     assert _read(target) != original
     (backup,) = backups()

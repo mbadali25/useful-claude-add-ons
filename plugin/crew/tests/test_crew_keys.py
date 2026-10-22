@@ -417,7 +417,7 @@ def test_key_set_is_the_l0725_set():
 def test_no_dropped_key_is_a_leaf():
     leaves = _leaves()
 
-    assert not (leaves & l0725_keyset.L0725_DROPPED)
+    assert not leaves & l0725_keyset.L0725_DROPPED
 
 
 # --- L-0725: a dropped key has no reader ------------------------------------------
@@ -430,13 +430,15 @@ _NAMES_DROPPED_KEYS = {"crew_dropped.py"}
 
 # Reviewed hits that are not readers. (path relative to plugin/crew, stripped
 # line) -> why. Empty is the goal; each entry is a sentence, not a shrug.
+_ROLE_PINS = ('a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, '
+              'not the retired top-level key')
 _NOT_A_READER = {
     ('hooks/scripts/crew_config.py',
      'table = block.get("roles")'):
-        'a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, not the retired top-level key',
+        _ROLE_PINS,
     ('hooks/scripts/crew_config.py',
      'pinned = crew_state.dict_or_empty(block.get("roles"))'):
-        'a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, not the retired top-level key',
+        _ROLE_PINS,
     ('hooks/scripts/crew_coord.py',
      'value = coord.get("ttlMinutes", DEFAULT_TTL_MINUTES) if isinstance(coord, dict) else DEFAULT_TTL_MINUTES'):
         "the incident's own state field and the coordination claim's key; the config value is the constant",
@@ -451,7 +453,7 @@ _NOT_A_READER = {
         "the incident's own state field and the coordination claim's key; the config value is the constant",
     ('hooks/scripts/crew_migrate.py',
      'roles = legacy.get("roles")'):
-        'a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, not the retired top-level key',
+        _ROLE_PINS,
     ('hooks/scripts/crew_notify.py',
      '_say("notify.provider teams has no webhook to post to since L-0725 (notify.urlEnv is "'):
         'records that the key was removed (message or docstring)',
@@ -472,13 +474,13 @@ _NOT_A_READER = {
         "the constant's own definition",
     ('hooks/scripts/crew_state.py',
      'pin = dict_or_empty(dict_or_empty(block.get("roles")).get(role))'):
-        'a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, not the retired top-level key',
+        _ROLE_PINS,
     ('hooks/scripts/crew_state.py',
      'L-0725: this was `worktree.root`; it is fixed at `WORKTREE_ROOT` (None),'):
         'records that the key was removed (message or docstring)',
     ('hooks/scripts/crew_status.py',
      'roles = legacy.get("roles", [])'):
-        'a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, not the retired top-level key',
+        _ROLE_PINS,
     ('hooks/scripts/crew_tracker.py',
      'done = board["columns"]["done"]'):
         "the tracker's own board dictionary built from the constant",
@@ -487,7 +489,7 @@ _NOT_A_READER = {
         "the tracker's own board dictionary built from the constant",
     ('hooks/scripts/crew_wave.py',
      'crew_state.dict_or_empty(cfg.get("dev")).get("roles")).get(role))'):
-        'a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, not the retired top-level key',
+        _ROLE_PINS,
 }
 
 

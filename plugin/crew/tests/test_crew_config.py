@@ -31,7 +31,6 @@ import crew_config
 import crew_config_files
 import crew_fixtures
 import crew_platform
-import crew_shell
 import crew_state
 import crew_upgrade
 import l0725_keyset

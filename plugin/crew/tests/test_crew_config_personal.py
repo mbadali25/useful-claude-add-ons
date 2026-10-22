@@ -22,7 +22,6 @@ import crew_config
 import crew_fixtures
 import crew_platform
 import crew_state
-import crew_state
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = os.path.join(HERE, os.pardir, "hooks", "scripts")

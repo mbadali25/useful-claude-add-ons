@@ -441,14 +441,13 @@ def choose_profile(values):
     """`(profile, overrides)` with the FEWEST overrides that reproduce
     `values` (`{guard: tier}`); a tie goes off, then standard, then strict.
     `overrides` holds only the guards whose value differs from the profile's."""
-    best = None
+    candidates = []
     for profile in _PROFILE_TIE_ORDER:
         table = crew_guards.PROFILE_MAP[profile]
-        overrides = {name: values[name] for name in crew_guards.ALL_GUARD_NAMES
-                     if values[name] != table[name]}
-        if best is None or len(overrides) < len(best[1]):
-            best = (profile, overrides)
-    return best
+        candidates.append((profile, {name: values[name] for name in crew_guards.ALL_GUARD_NAMES
+                                     if values[name] != table[name]}))
+    # `min` keeps the first of equal lengths, which is the tie order.
+    return min(candidates, key=lambda pair: len(pair[1]))
 
 
 def rewrite_guards(out, unmigrated):

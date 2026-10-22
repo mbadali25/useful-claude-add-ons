@@ -1574,7 +1574,7 @@ writable (`:1863-1870`), rather than falling back to the old pipe form.
   properties the file's own test fixtures require (a rule's `exit N` exits
   only the rule, not the whole gate; a trapped signal on the gate itself is
   still handled promptly via `wait`). This is a documented limitation, not
-  a bug — the limitation entry is `docs/crew/config-rationale.md:2532-2536`
+  a bug — the limitation entry is `docs/crew/config-rationale.md`:2532-2536`
   (CONFIG.md no longer carries it: it is generated whole from the code), **not re-read this pass**.
 
 **Correction to the previous anchor's account of `crew_py`/`crew_py_strict`
@@ -2601,7 +2601,7 @@ repository's attribution adds `Co-Authored-By`; it now says the owner's instruct
 decide (`plugin/crew/skills/crew-best-practices/references/practices.md:58-62`), and
 `/crew:implement` step 2 says a dispatched prompt carries no attribution or trailer
 instruction (`plugin/crew/commands/implement.md:48-51`). docs/crew/config-rationale.md
-(`docs/crew/config-rationale.md:3052`, `git.forbiddenTrailers`) is the user-facing account.
+(`docs/crew/config-rationale.md`:3052`, `git.forbiddenTrailers`) is the user-facing account.
 
 ## Native-memory vault pointers (T-0084)
 
@@ -3250,7 +3250,7 @@ Re-derive with `/crew:onboard --refresh crew`.
   the previous anchor's detailed account of it; only the marker's
   session-scoping (a real change) was independently verified.
 - The limitation entry for the descoped per-rule process-group kill, cited by
-  `verify-gate.sh`'s comment, now lives at `docs/crew/config-rationale.md:2532-2536`; not opened.
+  `verify-gate.sh`'s comment, now lives at `docs/crew/config-rationale.md`:2532-2536`; not opened.
 
 ## Why this note has no Landmines section
 
@@ -4619,7 +4619,7 @@ Nothing else was executed for this note.
 
 `7d473f24` merges origin/main `f54af3fa` (T-0072 landed as crew 1.0.51: `crew_autopilot.py`,
 `commands/autopilot.md`, `crew_state.py`'s line-neutral `AUTOPILOT_DEFAULTS` hunk at `:1086-1090`,
-`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `docs/crew/config-rationale.md, `README.md`, its
+`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `docs/crew/config-rationale.md`, `README.md`, its
 tests, `sabotage_autopilot.py`, `.crew/verify.json` rule 27's `seconds` and `why`; its notes
 anchored `9631c707`); `07354a39`, `df419a55`, `7a206c8e`, `4112498e`, `1b31ed2f` and `7ef3c4f1` are
 T-0075's review-round-4 steps 11-16 (`crew_config.py`, `crew_config_files.py`,
