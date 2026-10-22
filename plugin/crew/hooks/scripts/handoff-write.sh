@@ -37,7 +37,7 @@ fi
 # means this flavour holds the claim and reports "sent" once both writes are
 # done; until then the twin waits, and takes over if this process dies.
 CLAIM_TOKEN=""
-CLAIM_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/event_claim.py"
+CLAIM_SCRIPT=$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/event_claim.py")
 if CLAIM_PY=$(crew_py_strict); then
   CLAIM_TOKEN=$(printf '%s' "$INPUT" | "$CLAIM_PY" "$CLAIM_SCRIPT" handoff-write . sh); [ $? -eq 10 ] && exit 0
 fi
@@ -68,7 +68,7 @@ else
   rm -f "$PRECOMPACT_DIR"/precompact-*.json 2>/dev/null
 fi
 if [ -n "${CLAIM_PY:-}" ]; then
-  printf '%s' "$INPUT" | "$CLAIM_PY" "$(dirname "${BASH_SOURCE[0]}")/crew_resume.py" precompact --root . >/dev/null 2>&1
+  printf '%s' "$INPUT" | "$CLAIM_PY" "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/crew_resume.py")" precompact --root . >/dev/null 2>&1
 fi
 if [ ! -f "$CREW_CFG" ]; then
   # A crew.json-only repo: the record above is all this hook does there.
@@ -109,7 +109,7 @@ if [ ! -f "$HANDOFF" ]; then
   # taken -- `resume: none`, no python, or anything else adds no line.
   GOAL_LINE=""
   if GOAL_PY=$(crew_py); then
-    GOAL_LINE=$("$GOAL_PY" -B "$(dirname "${BASH_SOURCE[0]}")/crew_autopilot.py" handoff-resume --root . 2>/dev/null | head -n 1 | tr -d '\r')
+    GOAL_LINE=$("$GOAL_PY" -B "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/crew_autopilot.py")" handoff-resume --root . 2>/dev/null | head -n 1 | tr -d '\r')
     [[ "$GOAL_LINE" =~ ^resume:\ /crew:autopilot\ --goal\ [a-z0-9][a-z0-9-]{0,63}$ ]] || GOAL_LINE=""
   fi
   {
