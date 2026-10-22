@@ -1,7 +1,17 @@
-%% Generated from useful-claude-add-ons@18e4afce3 on 2026-10-04, re-anchored 2026-10-18 (L-0789 refresh; see the notes below the Purpose line). Verify before trusting.
+%% Generated from useful-claude-add-ons@7944f06d7 on 2026-10-22, first drawn 2026-10-04, re-anchored 2026-10-22 (L-0867 refresh) and 2026-10-18 (L-0789 refresh; see the notes below the Purpose line). Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_shell.py
 %% Purpose: How one crew config value reaches a run, and what may set it where, as a map of the part diagrams (each box is one data-flow-crew-config-<part>.mmd); only the main flows between parts are drawn. no-python is a standalone fallback with no link to any other part, see data-flow-crew-config-no-python.mmd.
 %% Embed: none
+%% Re-anchored a792ce66b -> 7944f06d7 (L-0867 refresh, 2026-10-22): of the Anchors paths four changed (git diff --stat
+%%    18e4afce3..HEAD over this diagram's 17 Anchors paths): CONFIG.md, crew_autoclear_setup.py, crew_autocycle.py and crew_context.py.
+%%    All four are L-0867 (L-0727 slice 3): the ten hook .ps1 twins deleted and the `sendkeys` auto-clear method removed
+%%    (resolve_method now refuses it by name with SENDKEYS_REMOVED, crew_autoclear_setup.write_autoclear_method lost its
+%%    `consent` parameter and refuses sendkeys whatever is passed, resume_plan and _resume_typing_cmd lost their ps1 branch).
+%%    Re-read at 7944f06d7: this overview draws the autoClear part as one box (autoclear: 'autoClear read and writer') and
+%%    cites no line of any of the four, and CONFIG.md by section only (section headings 14 :1167, 14a :1455, 14b :1568, 15 :1624,
+%%    16 :1704, 17 :2515, 18 :2608 are all still there). The edges 'read -> autoclear' (raw files) and 'autoclear -> write'
+%%    (the same atomic writer: write_autoclear_method still ends in crew_config.write_global_config) were re-read and hold.
+%%    No node or edge changed. The verbatim edge block and the history below keep the lines and wording they were written with.
 %% Re-anchored 7c9e13349 -> 983cbc8ec (L-0728 slice 1): of the Anchors paths only CONFIG.md changed, one sentence in the autopilot.maxTokensPerSession passage (each message counted once); this diagram cites CONFIG.md by section only and no section moved. No node or edge changed.
 %% Re-anchored 388ceff31 -> 48db91a13 (L-0782): of the Anchors paths only crew_migrate.py changed, in its
 %%    .crew/backups scan (find_interrupted -> scan_backups, an unreadable entry is reported, not skipped);

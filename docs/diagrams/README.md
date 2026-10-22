@@ -436,10 +436,10 @@ flowchart TB
 | Box | Details |
 |---|---|
 | `CFGREAD` | crew_config.py reads ONLY .crew/config.json (schema 7) module docstring :1; ratchet, guards, verify-gate.sh, /crew:config, /crew:model all route through this module |
-| `CTXREAD` | crew_context.load_crew_config() plugin/crew/hooks/scripts/crew_context.py:122-133 tries .crew/crew.json FIRST, falls back to .crew/config.json only if crew.json is absent |
+| `CTXREAD` | crew_context.load_crew_config() plugin/crew/hooks/scripts/crew_context.py:124-135 tries .crew/crew.json FIRST, falls back to .crew/config.json only if crew.json is absent |
 | `MIGRATE` | crew_migrate.py --apply the ONLY writer of .crew/crew.json (schema 1). Rewrites config.json only for a pre-0.20 config (no schema, or 1-6: the upgrade stage, _load_legacy / _plan_upgrade, T-0038), backed up and restored byte-identical by --rollback - crew_config.py keeps reading config.json regardless |
 | `OPEN` | L-0713: .crew/config.json is the repo config - /crew:init writes it and every gate reads it. Only a repo that has run --apply has BOTH files, and there crew_context, crew_resume, crew_refresh_check, crew_tracker and crew_diagrams read crew.json first. |
-| `TRKREAD` | crew_tracker.resolve() plugin/crew/hooks/scripts/crew_tracker.py:212 tracker key only: reads BOTH files (crew.json tracker.kind, config.json tracker) and answers 'could not tell' when they disagree - on the kind, on the vault, boardDir, board or lane names each yields (defaults and memory.vaultPath fallback applied; a value only one file yields counts), or on a jira/sdp block - refuses rather than picks |
+| `TRKREAD` | crew_tracker.resolve() plugin/crew/hooks/scripts/crew_tracker.py:267 tracker key only: reads BOTH files (crew.json tracker.kind, config.json tracker) and answers 'could not tell' when they disagree - on the kind, on the vault, boardDir, board or lane names each yields (defaults and memory.vaultPath fallback applied; a value only one file yields counts), or on a jira/sdp block - refuses rather than picks |
 
 - **Source:** `data-flow-crew-config-two-files.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_context.py`, `plugin/crew/hooks/scripts/crew_migrate.py`, `plugin/crew/hooks/scripts/crew_tracker.py`
@@ -908,35 +908,35 @@ The crew-context SessionStart hook: how it reads the config, applies the stale-h
 flowchart TB
     CC[crew-context]
     subgraph crewContext["crew-context (crew_context.py)"]
-        CC --> cc1{".crew/ directory?<br/>:993"}
+        CC --> cc1{".crew/ directory?<br/>:1149"}
         cc1 -- no --> ccx([emit nothing])
-        cc1 -- yes --> cc2["read crew.json else config.json<br/>:121-132"]
-        cc2 --> cc3{"memory.inject?<br/>:1000-1003"}
-        cc3 -- off --> cc4[incident banner only]
-        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:881-892"]
+        cc1 -- yes --> cc2["read crew.json else config.json<br/>:124-135"]
+        cc2 --> cc3{"memory.inject?<br/>:1159"}
+        cc3 -- off --> cc4[incident banner<br/>+ inert-settings line only]
+        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:1019-1034"]
         cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch"}
-        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:774, :980"]
+        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:722, :927"]
         stale -- no --> cc6
         arch --> cc6
-        stale -. "stale but the move failed:<br/>note stays, stale passed on (:893)" .-> cc6
-        cc6{"auto-resume armed?<br/>:900"}
+        stale -. "stale but the move failed:<br/>note stays, stale passed on (:1042)" .-> cc6
+        cc6{"auto-resume armed?<br/>:1042"}
         cc6 -- "no (off)" --> src{"source?"}
-        cc6 -- "run / wait" --> rs1["one line: ready to run,<br/>or did not start: reason<br/>resume_line :687"]
+        cc6 -- "run / wait" --> rs1["one line: ready to run,<br/>or did not start: reason<br/>resume_line :824"]
         rs1 --> src
-        src -- startup --> ptr["pointer + next action<br/>:908-910"]
-        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:911-923"]
+        src -- startup --> ptr["pointer + next action<br/>:1062-1065"]
+        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:1066-1077"]
     end
 
-    ptr --> out(["additionalContext JSON<br/>:1090"])
+    ptr --> out(["additionalContext JSON<br/>:1253"])
     full --> out
     cc4 --> out
 ```
 
 | Box | Details |
 |---|---|
-| `stale` | crew_state.py:646, :859-914 |
-| `cc6` | machine resume.auto true, no repo veto; source clear / manual compact; note written by this session (T-0042); :900, crew_resume.decide |
-| `rs1` | ready to run the re-rendered command; resume_line :687, never initialUserMessage |
+| `stale` | crew_state.py:584, :791-870 |
+| `cc6` | machine resume.auto true, no repo veto; source clear / manual compact; note written by this session (T-0042); :1042, crew_resume.decide |
+| `rs1` | ready to run the re-rendered command; resume_line :824, never initialUserMessage |
 
 - **Source:** `process-crew-brief-crew-context.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew-context.sh`, `plugin/crew/hooks/scripts/crew_context.py`, `plugin/crew/hooks/scripts/crew_resume.py`, `plugin/crew/hooks/scripts/crew_state.py`
@@ -1325,7 +1325,7 @@ flowchart LR
 
 ## Process qa audit
 
-generated by crew qa_doc.py on 2026-10-20. Verify before trusting.
+generated by crew qa_doc.py on 2026-10-22. Verify before trusting.
 
 ```mermaid
 flowchart LR
@@ -1341,7 +1341,7 @@ flowchart LR
 
 ## Process qa gates
 
-generated by crew qa_doc.py on 2026-10-20. Verify before trusting.
+generated by crew qa_doc.py on 2026-10-22. Verify before trusting.
 
 ```mermaid
 flowchart TD
@@ -1361,7 +1361,7 @@ flowchart TD
 
 ## Process qa ladder
 
-generated by crew qa_doc.py on 2026-10-20. Verify before trusting.
+generated by crew qa_doc.py on 2026-10-22. Verify before trusting.
 
 ```mermaid
 flowchart LR

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@1ca58a7bd
+anchor: useful-claude-add-ons@7944f06d7
 verified: 2026-10-20
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
