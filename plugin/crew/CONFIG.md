@@ -3235,11 +3235,10 @@ changes this, and `verify.stopBudgetSeconds` decides only what Stop runs.
 operator command, never something a hook runs.** `.crew/verify.json` is
 TRACKED in this repo (`git ls-files .crew/` lists it, per the ignore policy
 in root `CLAUDE.md`), so an automatic `--price` would dirty a committed file
-on every Stop. `verify-gate.sh --price [path] [--force]` /
-`verify-gate.ps1 -Price [-PriceTarget path] [-PriceForce]` is reachable only
+on every Stop. `verify-gate.sh --price [path] [--force]` is reachable only
 by typing the flag; the Stop hook (`hooks.json`) never passes it.
 
-**`--ci` / `-Ci` is the gate as a pull request's CI job (crew 1.0.232), and
+**`--ci` is the gate as a pull request's CI job (crew 1.0.232), and
 it is not a spelling of `--all`.** Its scope is the whole map with no budget
 and no fingerprint skip, over TRACKED files only (`git ls-files`, staged
 deletions and renames included): a CI workspace's untracked files (a crew
@@ -3273,7 +3272,7 @@ in every mode: the `.sh` accepts only `--all` and `--ci` (in any position)
 and `--price` (first only), so `-ci`, `--CI` or `--ci=1` is a usage error rather than a
 Stop run in CI; the `.ps1` refuses an argument PowerShell's binder would
 have passed through (`-Bogus`, `--ci=1`, a bare word). `--ci` with `--all`
-or `--price` (`-Ci` with `-All` or `-Price`) is a usage error too. Run it from the job's checkout:
+or `--price` is a usage error too. Run it from the job's checkout:
 `bash <crew>/hooks/scripts/verify-gate.sh --ci`.
 
 **The map comes from the PR head, so a PR can weaken its own gate.** `--ci`

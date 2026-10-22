@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew**: Four harness hook PowerShell twins deleted. `crew`: the last four PowerShell hook twins (`verify-gate`, `completion-audit`, `scope-guard`, `approval-hook`) are deleted, so only `crew-hook.ps1` and `promote-gate.ps1` remain; Windows behaviour does not change because those hooks already ran their `.sh` under Git Bash.
 - **crew 1.2.61, obsidian-vault 0.5.2**: Ten hook PowerShell twins deleted, the `sendkeys` auto-clear method removed. `crew` 1.2.61: the ten PowerShell twins of crew's hook scripts are deleted, so on Windows every crew hook runs its `.sh` under Git Bash, and `context.autoClear.method: "sendkeys"` (the Windows keystroke sender) is removed and refused by name.
-- **crew 1.2.60**: The crew test suite no longer dies with WinError 6 under the Stop hook on Windows. `crew` 1.2.60: on Windows the crew test suite no longer fails with `[WinError 6] The handle is invalid` when the Stop hook's verify gate runs it, so the gate reports real test results.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
