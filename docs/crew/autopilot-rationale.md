@@ -13,64 +13,53 @@ and the reasons behind a rule. Where a test pins a clause as an instruction it
 stayed in the command (for example `section 2's first paragraph (the `coord`
 check, T-0030)`).
 
-The command is at 18,995 bytes against the 12,288 the budget asks for, so the
+The command is at 19,853 bytes against the 12,288 the budget asks for, so the
 target is not met. The rest is procedure, and a procedure cut was ruled out by
-the owner (2026-10-22). The file keeps a per-file allowance of 19,000 bytes in
+the owner (2026-10-22). The file keeps a per-file allowance of 19,900 bytes in
 `plugin/crew/.budget-allowance.json`; the Phase 4 close-out may tighten it.
+Review round 1 found four dropped instructions (the FINDINGS-stop wording, the
+refunded-INCOMPLETE rerun, the literal activate and notify prefixes) and the
+round 2 audit restored them and eight smaller ones; what is below is only what
+is left out.
 
 ## The command prefix
 
 Twenty-three lines named `python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<script>`.
 The command now defines `$H` once for that prefix and uses `$H/<script>.py`
 where the line is prose. The lines a test or a sabotage mutation reads by their
-literal text (`route`, `status`, `settings`, `resume`, `goal-run`, `next`) and the
-fenced `claim` line stay spelled out, so each still carries `-B` and runs as
+literal text (`route`, `status`, `settings`, `resume`, `goal-run`, `next`), the fenced
+`claim` line and the `approve`, `activate` and `run-stop` lines (the scope guard
+judges the first and the others had no `-B`) stay spelled out, so each still carries `-B` and runs as
 written. `-B` keeps `status` from writing a bytecode cache, and `status` is
 read-only (the clause "not even a bytecode cache" explained why).
 
 ## Section by section
 
-Intro. `sleep` "only tightens until L-1504": until that ticket lands, sleep can
-make autopilot stricter and never looser.
+Intro. `sleep` "only tightens until L-1504": the command keeps the clause.
 
 Section 0. `route --first goal`, never `--args`: the goal's text stays off every
-shell line. The cloud-launch pointer named the README. Both refusals and the
-`route` output format are unchanged.
+shell line. The cloud-launch pointer named the README.
 
 Section 1. `crew_bridge.py pending` was added by L-0636. The `-B` note: status is
 read-only to the point of not writing a bytecode cache.
 
 Section 2. The `coord` check is T-0030. `deploy` was cross-referenced to
-CONFIG.md section 20 ("nothing here deploys"). A `warning: inert:` line names a
-key this crew ignores. The `sleep-summary` warning means unreported sleep
-decisions or held pings (L-0653, L-0656); the command sends the morning summary
-itself. The handoff `resume:` line must match `branch:` and `head:` (L-0658 for
-a `--goal` line while the goal is `running`); the one-running-goal source is
-`goal-file` (L-0659); `goal-run` is L-0541; `maxTicketsPerRun` and
-`maxTokensPerSession` are the caps `backlog` goes on inside. `activate` also
-records the scope base. `claim` is T-0049; `refused:` covers held by another,
-stale and unreadable.
+CONFIG.md section 20. The `sleep-summary` warning means unreported sleep
+decisions or held pings (L-0653, L-0656). The handoff `resume:` line (L-0658),
+the one-running-goal source `goal-file` (L-0659), `goal-run` (L-0541), `claim`
+(T-0049).
 
 Section 3. `decision=` is L-0666. `ship` is T-0011, `next-slice` T-0059,
 `split-check` T-0058, `fix` T-0067, the approval policy T-0010, `auto-reject`
 T-0074 and the tracker step T-0022. `replan-check` is L-0670 and `approve`
-refuses what it refuses. `sleep-note` is L-0653: it writes only the local sleep
-log, and only for an answer taken asleep or with sleep unknown (`?`).
-`next` refreshes after implement and before a round it reaches itself, never
-after an accepted review, because that would stale the receipt. An INCOMPLETE
-round that was refunded reruns, even straight after `/crew:review`. The auto-accept
-extension is L-0510. Implement's `status: review` edit keeps the approval
-(T-0026). The FINDINGS stop names `autopilot.reviewPolicy` and ends "fixed them
-instead? run the refresh check, then /crew:review" (L-0666 over T-0043; owner
-2026-10-07). A document owed after the receipt is `docs-after-review`. The
-tracker command is Jira or SDP when delegated.
+refuses what it refuses. `sleep-note` is L-0653. The auto-accept extension is
+L-0510; implement's `status: review` edit keeps the approval (T-0026); the
+FINDINGS stop wording is L-0666 over T-0043 (owner 2026-10-07). A document owed
+after the receipt is `docs-after-review`.
 
-Section 4. A round `--auto-accept` refuses includes a verdict recovered from
-stray lines and any `ignored_lines` it could not tell; those are the owner's.
-`direction-unknown` means no INDEX row here or in the main checkout.
+Section 4. `direction-unknown` means no INDEX row here or in the main checkout.
 `auto-replan-cap` counts `maxAutoReplans` successor plans already on the ledger.
-`deploy-target` and `failed-deploy` are L-0649. `offboard-role` is offboarding or
-removing a role, `delete-map` a codemap file or a diagram.
+`deploy-target` and `failed-deploy` are L-0649.
 
 Section 5. `handoff-resume` is T-0056. `crew_notify.py run-stop` decides what
 pings; the reason is never passed on a command line because it can quote ticket
