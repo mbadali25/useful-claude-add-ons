@@ -19,7 +19,6 @@ import crew_keys
 import crew_platform
 import crew_resume
 import crew_route
-import crew_shell
 import crew_state
 import crew_ticket
 import crew_tracker
@@ -47,11 +46,11 @@ def test_no_orphan_rows():
 def test_problems_names_a_deleted_and_an_extra_row(monkeypatch):
     """The two checks above go red on the change they exist to catch."""
     meta = dict(crew_keys.KEY_META)
-    del meta["pm.maxLines"]
-    meta["pm.noSuchKey"] = meta["pm.enabled"]
+    del meta["pm.maxDispatches"]
+    meta["pm.noSuchKey"] = meta["pm.authority"]
     monkeypatch.setattr(crew_keys, "KEY_META", meta)
     found = crew_keys.problems()
-    assert "missing: pm.maxLines is a config leaf with no KEY_META row" in found
+    assert "missing: pm.maxDispatches is a config leaf with no KEY_META row" in found
     assert "orphan: pm.noSuchKey has a KEY_META row and is not a config leaf" in found
 
 
@@ -78,10 +77,8 @@ def test_a_restated_tier_tuple_is_a_problem(monkeypatch):
     ("dev.provider", crew_state.DEV_PROVIDERS),
     ("qa.order", crew_state.QA_PROVIDERS),
     ("pm.authority", crew_state.AUTHORITIES),
-    ("pm.ticketGranularity", crew_state.TICKET_GRANULARITIES),
     ("scope.mode", crew_ticket.MODES),
     ("tracker", crew_tracker.KINDS),
-    ("shellRoute.mode", crew_shell.MODES),
     ("autopilot.deploy", crew_autopilot.DEPLOY_VALUES),
     ("autopilot.approval", crew_autopilot.POLICIES),
     ("autopilot.questions", crew_autopilot.POLICIES),
@@ -134,7 +131,7 @@ def test_values_agree_with_the_writers_enum_values():
 # `branch` rows whose reader checks a shape rather than a closed value list.
 _OPEN_BRANCH_ROWS = ("autopilot.maxPhases", "autopilot.maxAutoReplans", "tickets.baseBranch",
                      "git.forbiddenTrailers", "autopilot.sleep.schedule",
-                     "autopilot.knownFailures", "autopilot.ciTimeoutMinutes", "autopilot.maxLanes",
+                     "autopilot.maxLanes",
                      "autopilot.maxTicketsPerRun", "autopilot.maxTokensPerSession")
 
 
@@ -165,15 +162,13 @@ def test_machine_arms_keys_render_as_machine_arms():
 
 def test_notify_env_name_keys_render_as_machine_only():
     """T-0051. `crew_notify.effective_config` honours `notify.tokenEnv` and
-    `notify.urlEnv` from the machine file alone; the layer is derived from the
+    `notify.tokenEnv` from the machine file alone; the layer is derived from the
     table it enforces with, never restated here."""
     import crew_notify  # pylint: disable=import-outside-toplevel
-    assert set(crew_notify.GLOBAL_ONLY_KEYS) == {"tokenEnv", "urlEnv"}
+    assert set(crew_notify.GLOBAL_ONLY_KEYS) == {"tokenEnv"}
     for name in crew_notify.GLOBAL_ONLY_KEYS:
         assert crew_keys.layer_of("notify." + name) == "machine-only"
     assert crew_keys.layer_of("notify.chatId") == "both"
-    assert crew_keys.layer_of("notify.realertHours") == "both"
-    assert crew_keys.layer_of("notify.questionTypes") == "both"
 
 
 def test_layer_follows_is_global_path():
@@ -246,26 +241,6 @@ def test_autopilot_ship_values_agree_with_the_reader(tmp_path, value):
     got = crew_autopilot.settings(_repo(tmp_path, {"autopilot": {"ship": value}}))
     assert got["ship"] == (value if value in declared else "pr")
     assert (value in declared) == (not any("autopilot.ship" in w for w in got["warnings"]))
-
-
-@pytest.mark.parametrize("value, kept", [
-    ([], True), (["ci (linux)"], True), ("ci", False), ([1], False), (None, False),
-])
-def test_autopilot_known_failures_agrees_with_the_reader(tmp_path, value, kept):
-    got = crew_autopilot.settings(_repo(tmp_path, {"autopilot": {"knownFailures": value}}))
-    assert got["knownFailures"] == (value if kept else [])
-    assert kept == (not any("knownFailures" in w for w in got["warnings"]))
-    assert crew_keys.KEY_META["autopilot.knownFailures"]["type"] == "list of check names"
-
-
-@pytest.mark.parametrize("value, kept", [(1, True), (60, True), (0, False), ("60", False),
-                                         (True, False)])
-def test_autopilot_ci_timeout_agrees_with_the_reader(tmp_path, value, kept):
-    got = crew_autopilot.settings(_repo(tmp_path,
-                                        {"autopilot": {"ciTimeoutMinutes": value}}))
-    assert got["ciTimeoutMinutes"] == (value if kept else 60)
-    assert kept == (not any("ciTimeoutMinutes" in w for w in got["warnings"]))
-    assert crew_keys.KEY_META["autopilot.ciTimeoutMinutes"]["type"] == "positive integer"
 
 
 @pytest.mark.parametrize("value, kept", [
@@ -378,10 +353,10 @@ def test_no_coming_key_is_in_code():
 
 
 def test_coming_in_code_names_a_landed_key(monkeypatch):
-    coming = crew_keys.COMING + (dict(crew_keys.COMING[0], key="pm.maxLines",
+    coming = crew_keys.COMING + (dict(crew_keys.COMING[0], key="pm.maxDispatches",
                                       ticket="T-9999"),)
     monkeypatch.setattr(crew_keys, "COMING", coming)
-    assert ("pm.maxLines", "T-9999") in crew_keys.coming_in_code()
+    assert ("pm.maxDispatches", "T-9999") in crew_keys.coming_in_code()
 
 
 def test_coming_rows_name_a_ticket():
@@ -455,7 +430,65 @@ _NAMES_DROPPED_KEYS = {"crew_dropped.py"}
 
 # Reviewed hits that are not readers. (path relative to plugin/crew, stripped
 # line) -> why. Empty is the goal; each entry is a sentence, not a shrug.
-_NOT_A_READER = {}
+_NOT_A_READER = {
+    ('hooks/scripts/crew_config.py',
+     'table = block.get("roles")'):
+        'a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, not the retired top-level key',
+    ('hooks/scripts/crew_config.py',
+     'pinned = crew_state.dict_or_empty(block.get("roles"))'):
+        'a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, not the retired top-level key',
+    ('hooks/scripts/crew_coord.py',
+     'value = coord.get("ttlMinutes", DEFAULT_TTL_MINUTES) if isinstance(coord, dict) else DEFAULT_TTL_MINUTES'):
+        "the incident's own state field and the coordination claim's key; the config value is the constant",
+    ('hooks/scripts/crew_incident.py',
+     '"ttlMinutes": ttl,'):
+        "the incident's own state field and the coordination claim's key; the config value is the constant",
+    ('hooks/scripts/crew_incident.py',
+     'ttl = _int_or(ttl_minutes, emergency["ttlMinutes"])'):
+        "the incident's own state field and the coordination claim's key; the config value is the constant",
+    ('hooks/scripts/crew_incident.py',
+     'state["ttlMinutes"] = ttl'):
+        "the incident's own state field and the coordination claim's key; the config value is the constant",
+    ('hooks/scripts/crew_migrate.py',
+     'roles = legacy.get("roles")'):
+        'a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, not the retired top-level key',
+    ('hooks/scripts/crew_notify.py',
+     '_say("notify.provider teams has no webhook to post to since L-0725 (notify.urlEnv is "'):
+        'records that the key was removed (message or docstring)',
+    ('hooks/scripts/crew_notify_hold.py',
+     'L-0725: nothing holds a ping any more. `autopilot.sleep.notifyHold` is gone'):
+        'records that the key was removed (message or docstring)',
+    ('hooks/scripts/crew_state.py',
+     'STALE_HANDOFF_DEFAULTS = {"maxAgeHours": 72, "maxCommitsBehind": 3}'):
+        "the constant's own definition",
+    ('hooks/scripts/crew_state.py',
+     'STALE_HANDOFF_MAX_AGE_HOURS = STALE_HANDOFF_DEFAULTS["maxAgeHours"]'):
+        "the constant's own definition",
+    ('hooks/scripts/crew_state.py',
+     'STALE_HANDOFF_MAX_COMMITS_BEHIND = STALE_HANDOFF_DEFAULTS["maxCommitsBehind"]'):
+        "the constant's own definition",
+    ('hooks/scripts/crew_state.py',
+     'OBSIDIAN_COLUMNS = {"backlog": "Backlog", "ready": "Ready", "inProgress": "In Progress",'):
+        "the constant's own definition",
+    ('hooks/scripts/crew_state.py',
+     'pin = dict_or_empty(dict_or_empty(block.get("roles")).get(role))'):
+        'a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, not the retired top-level key',
+    ('hooks/scripts/crew_state.py',
+     'L-0725: this was `worktree.root`; it is fixed at `WORKTREE_ROOT` (None),'):
+        'records that the key was removed (message or docstring)',
+    ('hooks/scripts/crew_status.py',
+     'roles = legacy.get("roles", [])'):
+        'a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, not the retired top-level key',
+    ('hooks/scripts/crew_tracker.py',
+     'done = board["columns"]["done"]'):
+        "the tracker's own board dictionary built from the constant",
+    ('hooks/scripts/crew_tracker.py',
+     '"in-progress": "inProgress",'):
+        "the tracker's own board dictionary built from the constant",
+    ('hooks/scripts/crew_wave.py',
+     'crew_state.dict_or_empty(cfg.get("dev")).get("roles")).get(role))'):
+        'a qa/dev role-pin table (kept) or the 0.20 legacy file read by status and migrate, not the retired top-level key',
+}
 
 
 def _scan_files():
@@ -489,9 +522,9 @@ def _kept_leaves():
 def _hits():
     """Every line that reads a dropped key, by the three searches: the dotted
     name; the block accessor (`"block"` ... `get("leaf")` / `["leaf"]` on one
-    line); and the quoted leaf when no KEPT key shares it (a leaf like `mode`
-    or `enabled` belongs to kept keys too, so only the first two searches can
-    tell a reader from a coincidence for it)."""
+    line); and the quoted leaf when it is a camelCase name no KEPT key shares (a
+    plain word like `mode`, `command` or `done` is everywhere, so only the first
+    two searches can tell a reader from a coincidence for it)."""
     kept = _kept_leaves()
     found = []
     for path in _scan_files():
@@ -499,12 +532,14 @@ def _hits():
         with open(path, encoding="utf-8", errors="replace") as handle:
             lines = handle.read().split("\n")
         for key, leaf, block in _triples():
-            dotted = re.compile(r"(?<![\w.])" + re.escape(key) + r"(?![\w])")
+            dotted = re.compile(
+                r"(?<![\w.])" + re.escape(key) + r"(?![\w])" if block else
+                r"""(?:get\(\s*|\[\s*)["']""" + re.escape(key) + r"""["']""")
             access = re.compile(
                 r"""["']""" + re.escape(block) + r"""["'][^\n]{0,60}?(?:get\(\s*|\[\s*)["']"""
                 + re.escape(leaf) + r"""["']""") if block else None
             quoted = re.compile(r"""["']""" + re.escape(leaf) + r"""["']""") \
-                if leaf not in kept else None
+                if leaf not in kept and re.search(r"[a-z][A-Z]", leaf) else None
             for number, line in enumerate(lines, 1):
                 text = line.strip()
                 if text.startswith(("#", "//")):

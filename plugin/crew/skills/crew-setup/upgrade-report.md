@@ -118,7 +118,7 @@ at `/crew:config`; do not fix the global file here. Migrate never writes it.
   cannot be defeated by a `false` in a repo somebody cloned — and a repo's own
   `true` holds on a machine that said nothing. A value that is neither `true`
   nor `false` reads as `true`, so a typo stops a production promotion and names
-  the key rather than quietly waving it through. CONFIG.md §17.
+  the key rather than quietly waving it through. docs/crew/config-rationale.md.
 - **Schema 7 → 8** — the twelve `guards.<name>` keys become `guards.profile`
   plus `guards.overrides`, the profile being whichever of `off`, `standard`,
   `strict` needs the fewest overrides (a tie goes off, standard, strict). Say
@@ -162,3 +162,24 @@ reads as one that succeeded:
 - It did not write a single per-role model pin. Schema 3's `qa.roles` and
   `dev.roles` arrive empty; `/crew:model` and `/crew:config` own model pins.
 - It did not fix a QA audit GAP or stamp the audit (the audit above reports only).
+
+## Schema 8: guards profile, removed keys, and the machine file (L-0725)
+
+Both config layers get two rewrites: the twelve `guards.<name>` keys become `guards.profile` plus
+`guards.overrides` (the fewest overrides; every guard keeps its value), and the 60 keys in
+`hooks/scripts/crew_dropped.py`, now code constants, are removed when they hold their default
+(`tier` and `roles` always). A removed key holding anything else is a `CONFLICT` naming the key and
+its constant: apply writes nothing until it is deleted or passed as `--accept-dropped <key>`
+(repeatable; kept in the backup). Never print its value. Show me each refused key and let me decide.
+
+`~/.claude/crew/config.json` had no migrator. `--global` gives it the same `--preview`, `--apply` and
+`--rollback <backup-dir>` (backups in `~/.claude/crew/backups/`, a backup of the other scope is refused):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_migrate.py" --global --preview
+python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_migrate.py" --global --apply [--accept-dropped <key>]...
+```
+
+It changes every repo on the machine: preview first, ask before applying, once per machine.
+`upgrade-report.md` has the detail.
+

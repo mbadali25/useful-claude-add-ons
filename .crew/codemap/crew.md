@@ -2606,7 +2606,7 @@ mapped by `.crew/verify.json:554-561`. The practice note it replaces said a
 repository's attribution adds `Co-Authored-By`; it now says the owner's instructions
 decide (`plugin/crew/skills/crew-best-practices/references/practices.md:58-62`), and
 `/crew:implement` step 2 says a dispatched prompt carries no attribution or trailer
-instruction (`plugin/crew/commands/implement.md:48-51`). CONFIG.md §22
+instruction (`plugin/crew/commands/implement.md:48-51`). docs/crew/config-rationale.md
 (`plugin/crew/CONFIG.md:2670`) is the user-facing account.
 
 ## Native-memory vault pointers (T-0084)
@@ -4620,7 +4620,7 @@ Nothing else was executed for this note.
 
 `7d473f24` merges origin/main `f54af3fa` (T-0072 landed as crew 1.0.51: `crew_autopilot.py`,
 `commands/autopilot.md`, `crew_state.py`'s line-neutral `AUTOPILOT_DEFAULTS` hunk at `:1086-1090`,
-`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `CONFIG.md` §20, `README.md`, its
+`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `docs/crew/config-rationale.md, `README.md`, its
 tests, `sabotage_autopilot.py`, `.crew/verify.json` rule 27's `seconds` and `why`; its notes
 anchored `9631c707`); `07354a39`, `df419a55`, `7a206c8e`, `4112498e`, `1b31ed2f` and `7ef3c4f1` are
 T-0075's review-round-4 steps 11-16 (`crew_config.py`, `crew_config_files.py`,

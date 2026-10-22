@@ -12,8 +12,7 @@ keep printing the old list. `tests/test_crew_keys.py` holds every such row to
 `is`, not `==`.
 
 Where a validator is a code branch rather than a tuple (`autopilot.mode`,
-`autopilot.maxPhases`, `autopilot.knownFailures`, `autopilot.ciTimeoutMinutes`,
-`resume.auto`, `context.autoClear.enabled`,
+`autopilot.maxPhases`, `resume.auto`, `context.autoClear.enabled`,
 `route.enabled`), the row declares the values (kind `branch`) and a test runs
 each one, and one undeclared value, through the real reader. Where crew
 validates nothing, the row says `unvalidated` and names the file that reads

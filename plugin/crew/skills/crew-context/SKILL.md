@@ -254,7 +254,7 @@ warning becomes the wrap-up procedure — finish the step, commit only if its
 `Test:` passes, run `/crew:handoff --wrap-up`, end the turn — and the clear
 waits until the handoff's `head:` is HEAD, its `branch:` matches, no tracked
 file is modified and its `resume:` line parses (or is `resume: none`). Crew
-checks the commit, not the test (CONFIG.md §14). `autoClear` is
+checks the commit, not the test (docs/crew/config-rationale.md). `autoClear` is
 experimental and presses a key on the user's behalf; its own block is
 `context.autoClear` and it refuses rather than guessing whenever it cannot
 identify what it would be typing into.

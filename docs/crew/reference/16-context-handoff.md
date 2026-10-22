@@ -92,13 +92,12 @@ at once, and that's the real finding.
 
 Anything uncertain goes under **Verify first** rather than being asserted as done.
 
-### Auto-wrap-up (on by default since 0.19.52)
+### Auto-wrap-up (always on)
 
-`context.autoWrapUp` changes what the `Stop` hook says at `warnAt`, not
-whether it fires. On (the default), it instructs the session to reach a
+Auto-wrap-up changes what the `Stop` hook says at `warnAt`, not
+whether it fires. It is fixed on (the `context.autoWrapUp` setting was removed): the hook instructs the session to reach a
 stopping point — finish or safely abandon the change in flight, write the
-handoff, update the ticket — before telling you it's ready. Off, it just asks
-you to write the handoff.
+handoff, update the ticket — before telling you it's ready.
 
 With `context.autoClear.wrapUp` armed (machine file only, and only where
 auto-clear is armed), the warning becomes the one wrap-up procedure — finish
@@ -222,14 +221,14 @@ anything the Windows side can do.
 
 ### Resuming from the handoff
 
-Since 1.0.0 the context hook (`crew-context.sh`, on by default through
-`memory.inject`) opens the next `SessionStart` after `/clear`, `/compact` or a
+Since 1.0.0 the context hook (`crew-context.sh`, always on, since
+the `memory.inject` setting was removed) opens the next `SessionStart` after `/clear`, `/compact` or a
 resume already holding the last handoff, as `additionalContext` rather than
 `initialUserMessage`. It does not make the session start working on its own:
 a human still reads the note and gives the first turn — which is the one
 moment where a subtly wrong handoff gets caught before more work is built on
-top of it. `context.autoResume` is no longer read. Set `memory.inject: false`
-and `handoff-read` prints the note instead.
+top of it. `context.autoResume` is no longer read, and memory injection cannot be
+switched off.
 
 #### Auto-resume (`resume.auto`, off by default)
 
@@ -268,12 +267,12 @@ handoff is still injected).
 command into its own session. On that SessionStart the context hook runs its
 own flavour's `auto-clear` sender in resume mode, before its context claim.
 Consent is `resume.auto`; `context.autoClear` only describes the terminal
-(`method`, `windowTitle`, `onlyRepos`, `onlySessions`). The sender claims a
+(`method`, `onlyRepos`, `onlySessions`). The sender claims a
 per-handoff marker (`<git-common-dir>/crew/resume-typed-<sha256[:16]>`) only
 after every refusal, records the run with `crew_resume.py record` (a failed
 record types nothing), and then a detached sender types. In tmux it waits
-`resume.typeDelaySeconds` (2), polls the pane up to
-`resume.readyTimeoutSeconds` (15) for an idle, empty input line, and sends
+2 seconds (fixed), polls the pane for up to
+15 seconds (fixed) for an idle, empty input line, and sends
 the text and, half a second later, Enter. On native Windows `auto` is `notify` and types nothing. The context says
 `Auto-resume: typing /crew:done T-0001 into this session in 2s (method
 tmux); ...`, or keeps the line above and adds `Auto-resume was not typed:
@@ -325,14 +324,14 @@ reading history.
 
 As a backstop for when that manual step gets missed, `handoff-read` and the
 context hook both judge the note before printing or
-injecting it, on age (`written:` vs. `context.staleHandoff.maxAgeHours`) and
+injecting it, on age (`written:` against a fixed 72 hours) and
 on whether its `head:`/`branch:` lines still describe the checkout (a `head:`
-this repo cannot verify, or `staleHandoff.maxCommitsBehind` or more commits
+this repo cannot verify, or 3 or more commits
 landed on top of it). A note either signal flags is **archived, never
 deleted** — moved to `.crew/handoffs/HANDOFF-<timestamp>.md`, so a wrong
 judgment call is recoverable rather than silently gone. See
 `crew-context/SKILL.md`'s "Staleness and archiving" for the full reasoning
-and both thresholds' defaults.
+and both thresholds (fixed; the `context.staleHandoff.*` settings were removed).
 
 `PreCompact` keeps the last five raw transcripts in `.crew/transcripts/`, which
 setup gitignores — transcripts contain everything the session saw, including any

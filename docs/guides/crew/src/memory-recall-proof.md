@@ -43,19 +43,18 @@ python3 "<crew plugin root>/hooks/scripts/crew_context.py" --slice-for-subagent 
 
 - The vaults and their roles come from `~/.claude/obsidian/config.json`. Each vault has a `role`:
   `primary`, `recall` or `ignore`. A vault with no role is `primary` if it is the default and
-  `recall` otherwise. crew **never** asks an `ignore` vault, even if the repo lists it.
-- A repo can set its own order in its crew config: `memory.recall.vaults` (an ordered list of names)
-  and `memory.recall.maxChars` (default 800). Snippets come back in that vault order first, then in
-  the order the search ranked them.
+  `recall` otherwise. crew **never** asks an `ignore` vault.
+- The vault order is the machine's roles, not a crew setting (the `memory.recall.vaults` list was
+  removed), and the answer is capped at 800 characters (fixed; `memory.recall.maxChars` was removed).
+  Snippets come back in that vault order first, then in the order the search ranked them.
 - Each recall names the repo's project, so that notes of this project rank first inside each vault:
-  `memory.recall.projects` (a list of names, repo-only) when set, otherwise the main checkout's
-  directory name (a linked worktree reports the main checkout's name). crew sends it as
+  the main checkout's directory name (the `memory.recall.projects` list was removed; a linked worktree reports the main checkout's name). crew sends it as
   `--project=<a,b>` and ranks nothing itself. An obsidian-vault CLI too old to know `--project`
   exits 2; crew then asks once more without it, inside the same 4-second budget, and the log's
   `recall` record says so: `project` is the list sent, `projectUsed` is `true` when the answer came
   from the call with the project, `false` when it came from the retry without it, and `null` when
-  no project was sent or no call answered with JSON. Set `memory.recall.projects` when the vault's `project:`
-  values do not match the checkout's folder name.
+  no project was sent or no call answered with JSON. When the vault's `project:`
+  values do not match the checkout's folder name, change the notes' `project:` values.
 - crew calls obsidian-vault's read-only CLI:
   `vault_ops.py recall --query ... --vaults a,b --max-chars N --json [--project=a,b]`. If the plugin is missing, or
   the CLI fails, times out or prints something other than JSON, the session goes on without recall

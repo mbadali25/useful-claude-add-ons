@@ -354,7 +354,7 @@ any config predating the `pm` and `graph` blocks, the per-role provider table, t
 the category every time and files against the fixed `Change Management Request` template and
 `Change` issue type, and `requireForProduction` is `false`, so `/crew:promote production` asks for no change
 request until somebody turns it on. It is the one key in crew a repo may only turn
-ON — see CONFIG.md §17. `production.databases` and
+ON — see docs/crew/config-rationale.md. `production.databases` and
 `production.hosts` are the globs `guards.prodDatabase` and `guards.prodServer`
 match commands against, and they are repo-only: the LEVEL is a machine fact, what
 IS production is a fact about this checkout. Empty lists mean those two guards

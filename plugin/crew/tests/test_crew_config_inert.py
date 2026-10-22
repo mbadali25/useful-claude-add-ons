@@ -209,7 +209,7 @@ def test_a_settable_global_key_is_quiet(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("dotted,value", [
-    ("scope.allowCliApproval", True), ("emergency.ttlMinutes", 30)])
+    ("scope.allowCliApproval", True), ("emergency.maxTtlMinutes", 30)])
 def test_a_repo_only_key_still_works_in_the_repo(tmp_path, dotted, value):
     root = crew_fixtures.make_repo(tmp_path, config=_nested(dotted, value), git=False)
     node = crew_config.resolve_config(str(root))

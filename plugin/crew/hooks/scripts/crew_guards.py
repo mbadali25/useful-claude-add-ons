@@ -87,7 +87,7 @@ INSTALLABLE = {
 # marker for THAT command exists, `allow` runs it and writes a row saying so.
 # Ordered least to most permissive and read only through `guard_policy_rank`,
 # the same contract `crew_state.AUTHORITIES` and `INSTALL_POLICIES` carry.
-# Append only, never reorder. Full reasoning in CONFIG.md §16, including the
+# Append only, never reorder. Full reasoning in docs/crew/config-rationale.md, including the
 # part a default cannot paper over: `adminMerge` and the `tofu` spelling of
 # `terraformApply` are NEW refusals, so `block` does not mean "nothing changed".
 GUARD_POLICIES = ("block", "ask", "allow")
@@ -96,7 +96,7 @@ GUARD_POLICY_DEFAULT = "block"
 # The guards. This tuple is the ORDER the keys are declared in, so
 # `default_config()` and `default_global_config()` cannot drift into different
 # orderings of the same block. What each governs is prose and lives with the
-# prose that uses it -- `crew_config._GUARD_ACTIONS` and CONFIG.md §16.
+# prose that uses it -- `crew_config._GUARD_ACTIONS` and docs/crew/config-rationale.md.
 #
 # `mergeGate` is the odd one: it is read by `/crew:gate` rather than by the
 # command guard, because "may crew take a live repo's merge gate down" is not a
@@ -577,7 +577,7 @@ def guard_tiers(name):
 #
 # `pm.authority` is deliberately NOT here -- it ratchets for the WIDENING
 # WARNING only (`crew_config._RATCHETED`), while its two layers still combine
-# by ordinary precedence. See CONFIG.md §16 for why, and for why neither table
+# by ordinary precedence. See docs/crew/config-rationale.md for why, and for why neither table
 # is derived from the other.
 RATCHETED_KEYS = {
     "install.policy": (INSTALL_POLICIES,

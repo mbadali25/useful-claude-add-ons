@@ -456,7 +456,7 @@ def test_row_shows_current_value_and_source(tmp_path):
     assert (rows["pm.authority"]["value"], rows["pm.authority"]["source"]) == (
         explain["pm.authority"]["value"], explain["pm.authority"]["source"])
     assert (rows["tracker"]["value"], rows["tracker"]["source"]) == ("jira", "repo")
-    assert rows["graph.tool"]["source"] in ("repo", "default")
+    assert rows["graph.out"]["source"] in ("repo", "default")
 
 
 def test_a_new_default_key_appears_without_edit(tmp_path, monkeypatch):

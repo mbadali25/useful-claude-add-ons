@@ -74,7 +74,8 @@ def test_following_the_quickstart_ends_with_status_clean(tmp_path):
     after = _run(env, "crew_status.py", "--root", str(root))
 
     assert after[1:3] == [f"config   .crew/config.json schema {config['schema']}",
-                          "roster   explorer, reviewer (1.0 roster: explorer, reviewer, security, researcher)"]
+                          "tracker  files (from .crew/config.json)"]
+    assert not [line for line in after if line.startswith("roster")]
     assert "gitignore current" in after
     assert not [line for line in after
                 if "migrate" in line or line.startswith("inert") or "unreadable" in line]

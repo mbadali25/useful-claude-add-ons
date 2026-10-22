@@ -25,7 +25,7 @@ summary above or below it, and do not pad it with advice.
 | Line | Source | When it says "unknown" |
 |---|---|---|
 | header | `git rev-parse`, `git status --porcelain` (no index refresh) | not a git repo |
-| `inert` | `crew_config.inert_settings`: each setting this crew does not act on, `key=value (ticket)`; absent when none (CONFIG.md §20) | `could not tell (...)` when the check failed |
+| `inert` | `crew_config.inert_settings`: each setting this crew does not act on, `key=value (ticket)`; absent when none (docs/crew/config-rationale.md) | `could not tell (...)` when the check failed |
 | `config` | `.crew/crew.json` (where `/crew:migrate` ran) or else `.crew/config.json` (what `/crew:init` writes; `- run /crew:migrate` only for a 0.20 setup) - in a linked worktree with neither, the main checkout's, shown on a second `config` line (`inherited from the main checkout (<path>) ...`, or `could not tell (...)` when git cannot name it); a linked worktree whose own file is in force while the main checkout also has one gets `... the main checkout's (<path>) is not read ...` there, naming the delete that inherits (a crew <= 1.0.59 heal wrote such defaults) | JSON unreadable |
 | `roster` | `agents` in crew.json against the 1.0 four (crew.json only) | - |
 | `tickets` / `open` / `owner` | `.work/tickets/` (live) and `.work/tickets/Complete/` (archived, counted apart), `.work/INDEX.md`; `owner` lists `needs-owner` rows, and `cancelled` / `superseded` rows are on no line | `archived: could not tell` when `Complete/` cannot be listed |

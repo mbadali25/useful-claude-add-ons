@@ -464,15 +464,8 @@ def default_global_config():
         cannot know whether `codex` is on PATH. Global is the DEFAULT, not a
         lock: a repo that wants a different reviewer still overrides it.
       * `secondOpinion` -- same reasoning: a CLI and a key that live on this
-        machine, plus `sendsCode`, which is a standing decision by the person
-        rather than by the project.
+        machine.
       * `notify` -- the person's own chat, not the project's.
-      * `worktree.root` -- which disk has room for a worktree, and which
-        directory is not synced to cloud storage, are facts about the
-        machine. Someone who keeps worktrees on a second drive keeps them
-        there for every repo; making them say so once per checkout is the
-        friction this layer exists to remove. A repo that genuinely needs
-        its own answer still overrides it.
       * `memory` -- BOTH keys. `mode` is here alongside `vaultPath` because
         the user ruled in 2026-09-05's global/repo split that memory is a
         property of the person, not of the checkout: someone who keeps their
@@ -492,7 +485,7 @@ def default_global_config():
         resolved from the API per repo, so a global value for it would be the
         one key here that genuinely IS a fact about a checkout.
       * `github` -- the same two keys for the GitHub twin, minus `preset`,
-        which is not copied because it binds to nothing (CONFIG.md §8).
+        which is not copied because it binds to nothing (docs/crew/config-rationale.md).
       * `guards` -- all four. The strongest machine fact on this list after
         `install`: it is the machine owner saying which dangerous commands
         crew may run HERE. Like `install.policy` and unlike everything else
@@ -695,8 +688,8 @@ def null_shadows(repo_cfg, global_cfg, defaults=None):
     treats that null as a supplied value, so it beat the machine-global layer
     and the global file did nothing for any repo that had been initialised --
     which is every managed repo. Measured on this template: `memory.vaultPath`,
-    `qa.codex.model`, `notify.chatId`, `secondOpinion.model` and
-    `worktree.root` all resolved to `None` with a global value set.
+    `qa.codex.model`, `notify.chatId` and `secondOpinion.model` all resolved
+    to `None` with a global value set.
 
     That is `_layer_supplies`' own rule, one case wider: an empty dict
     "mentions a key without deciding its value", and so does a null. The
@@ -3449,8 +3442,6 @@ def enum_values(dotted):
         return tuple(personal[1])
     if dotted == "pm.authority":
         return tuple(crew_state.AUTHORITIES)
-    if dotted == "pm.ticketGranularity":
-        return tuple(crew_state.TICKET_GRANULARITIES)
     if dotted == "qa.provider":
         return ("auto",) + tuple(QA_PROVIDERS)
     if dotted == "dev.provider":

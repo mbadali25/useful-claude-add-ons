@@ -69,7 +69,7 @@ gains a `notes` list and the report a `note` line. Today that is two cases:
 autopilot.mode: plan to enable"; and any `autopilot` key -> the crew.json copy
 is never read: crew reads `autopilot` from `.crew/config.json`, and the personal
 keys also from `~/.claude/crew/config.json`, where the stricter value wins
-(CONFIG.md §20a).
+(docs/crew/config-rationale.md).
 
 | config.json (<= 7) | crew.json (1)            | Note |
 |--------------------|--------------------------|------|

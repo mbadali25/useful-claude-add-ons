@@ -152,7 +152,7 @@ It is the one key in crew a repo may only turn **ON**. A machine-global `true`
 cannot be defeated by a `false` in a repo you cloned; a repo's own `true` holds
 on a machine that said nothing; and a value that is neither `true` nor `false`
 reads as `true`, so a typo stops a promotion and names the key rather than
-quietly waving it through. CONFIG.md §17.
+quietly waving it through. docs/crew/config-rationale.md.
 
 ## What not to do
 

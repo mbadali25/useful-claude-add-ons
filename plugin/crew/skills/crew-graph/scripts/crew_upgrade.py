@@ -741,7 +741,7 @@ def _keys_added(cfg, notes, dotted_keys):
     One walk for every schema list, and it descends ARBITRARILY DEEP rather
     than unpacking two parts. The two-part form (`block_key, leaf =
     dotted.split(".")`) was correct for `qa.fallback` and `install.policy` and
-    raises `ValueError` on `github.mergeGate.enabled` -- inside `upgrade_config`
+    raises `ValueError` on `guards.overrides.forcePush` -- inside `upgrade_config`
     which `run()` calls BEFORE it writes anything, so the whole migration would
     have died at the first three-part key rather than shipping a wrong answer.
     Loud, but still a bug the second nested block was always going to hit.
@@ -967,16 +967,12 @@ def _config_lines(notes):
             + ". **This one IS behaviour-neutral, with no exception to "
             "declare.** `change.requireForProduction` arrives `false`, which "
             "is what every promotion already did — `/crew:promote production` "
-            "asks for no change request, exactly as before. The other five are "
-            "null or a default template name and are read only by "
-            "`/crew:change`, which you have to invoke. Set "
-            "`change.requester` and `change.implementor` once with "
-            "`/crew:config` and every repo on this machine files under them. "
+            "asks for no change request, exactly as before. "
             "Note the direction `change.requireForProduction` ratchets, "
             "because it is the opposite of the other ratcheted keys and it is "
             "easier to read than to discover: a repo may turn the requirement "
             "ON and never off, so a machine-global `true` cannot be defeated "
-            "by a `false` in a repo you cloned (CONFIG.md §17)."
+            "by a `false` in a repo you cloned."
         )
     if notes["providerKeysAdded"]:
         lines.append(

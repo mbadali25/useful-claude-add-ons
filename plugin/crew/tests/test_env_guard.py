@@ -533,11 +533,11 @@ def test_ratchet_takes_the_narrower_layer(monkeypatch, capsys, tmp_path,
 
 
 def test_default_config_and_templates_read_off():
-    assert crew_config.default_config()["guards"]["envGuard"] == "off"
-    assert crew_config.default_global_config()["guards"]["envGuard"] == "off"
+    assert crew_config.default_config()["guards"]["profile"] == "off"
+    assert crew_config.default_global_config()["guards"]["profile"] == "off"
     for name in ("config.template.json", "global.template.json"):
         with open(os.path.join(_ROOT, "templates", name), encoding="utf-8") as fh:
-            assert json.load(fh)["guards"]["envGuard"] == "off"
+            assert json.load(fh)["guards"]["profile"] == "off"
 
 
 # --- 5: flavour by tool, not OS -----------------------------------------------------

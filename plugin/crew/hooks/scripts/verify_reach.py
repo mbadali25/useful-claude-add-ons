@@ -1,7 +1,7 @@
 """`/crew:verify --stamp-reach`: declare `reach` on the rules that have none (L-0562).
 
 A rule without `reach` is classified on every Stop by `verify_record.scan_reach`
-(CONFIG.md §19): a plain local command runs, anything with shell syntax, a
+(docs/crew/config-rationale.md): a plain local command runs, anything with shell syntax, a
 remote verb or a wrapper script is deferred and recorded as skipped. A map
 written before `reach` existed can therefore run nothing on Stop while its
 verified-at marker advances (D10, docs/review/09-qa-standards-crew.md).

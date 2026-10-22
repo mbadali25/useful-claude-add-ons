@@ -223,15 +223,23 @@ Source: `plugin/crew/hooks/scripts/scope_guard.py`,
 What is on by default, and what is not:
 
 - **Off until you arm it:** the scope guard (`scope.mode` is `off` unless
-  `/crew:init` set it), the cloud guard's hook (`guards.cloudGuard: off`),
-  the environment guard (`guards.envGuard: off`) and the role-write guard
-  (`guards.roleWrites: off`).
-- **`block` by default:** the six policy guards (`guards.terraformApply`,
+  `/crew:init` set it), the cloud guard's hook, the environment guard and the
+  role-write guard. All three are `off` under the default `guards.profile`.
+- **`block` by default:** the six policy guards (`terraformApply`,
   `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`,
   `sqlDestructive`) and the two production guards (`prodDatabase`,
   `prodServer`, which default to `none`). The policy guards take effect only
-  once `guards.cloudGuard` is armed, except `mergeGate`, which `/crew:gate`
+  once the cloud guard is armed, except `mergeGate`, which `/crew:gate`
   reads.
+
+You choose a posture with one setting, `guards.profile`: `off` (the default),
+`standard` (cloud guard `block`, role-write guard `report`, `adminMerge`
+`ask`) or `strict` (the cloud, environment and role-write guards all `block`).
+To move one guard away from the profile, set `guards.overrides.<guard>`, for
+example `guards.overrides.roleWrites: report`. The twelve per-guard keys
+(`guards.cloudGuard` and the rest) are no longer written; an old one still
+counts until `/crew:migrate` rewrites the layer. Each layer expands its own
+profile and overrides, and the narrower layer wins per guard.
 - **On by default:** the Stop verify gate (`verifyGate: true`) blocks when a
   verify rule fails.
 
@@ -247,16 +255,16 @@ ticket's start (committed, staged, unstaged and untracked), so shell-made
 writes are caught after the fact. *What it cannot see:* gitignored files
 (`.crew/*` among them) and `.work/`.
 
-**The cloud guard** (`guards.cloudGuard`, default `off`) judges Bash and
+**The cloud guard** (`guards.profile` `standard`, or `guards.overrides.cloudGuard`; default `off`) judges Bash and
 PowerShell commands: `terraform apply`, a force push, an admin merge,
 destructive cloud CLI calls, destructive SQL, and anything aimed at a declared
-production database or host. Each rule has its own `guards.*` setting. Set
+production database or host. Each rule has its own entry under `guards.overrides`. Set
 `report` first to see what `block` would cost. *What it cannot see:* a
 command hidden in an interpreter (a Python script that calls the cloud SDK),
 a variable or an encoded string. The credentials boundary that would close
 that is T-0044.
 
-**The environment guard** (`guards.envGuard`, default `off`; L-0772) refuses a
+**The environment guard** (`guards.overrides.envGuard`, or `guards.profile` `strict`; default `off`; L-0772) refuses a
 Bash or PowerShell command whose own text prints the whole process environment
 (`env`, `printenv`, bare `set`, `export -p`, `cat /proc/self/environ`,
 `Get-ChildItem env:`) or a credential-named variable (`echo "$GITHUB_TOKEN"`,
@@ -320,8 +328,9 @@ Plan approval and open questions stop too, unless `autopilot.approval` and
 After done, autopilot ships the ticket (since crew 1.0.349). `autopilot.ship`
 set to `pr` pushes the branch and opens a pull request, then stops for a
 person to merge. Set to `merge`, the default, it also merges once every
-required check passes, or fails under a name listed exactly in
-`autopilot.knownFailures`, waiting up to `autopilot.ciTimeoutMinutes`. It
+required check passes, waiting up to 60 minutes for CI (fixed). A failing
+check is never waved through by name: the known-failures list is empty and no
+setting fills it. It
 always merges with a merge commit, never a squash, a rebase or `--admin`, and
 never through a merge queue. A `high`-risk ticket, or one whose spec names no
 risk, never merges unattended when every review was same-family (Claude
@@ -391,9 +400,8 @@ Source: `plugin/crew/skills/crew-setup/platform.md` and `CLAUDE.md`,
   `shell: "powershell"`. Each twin stands down on the wrong platform.
 - `pwsh` is not on Git Bash's `PATH`, and Git Bash has no `python3`. crew's
   wrappers resolve both explicitly and fail loudly when neither resolves.
-- Long jobs follow `shellRoute.mode` (`auto`, `wsl`, `powershell` or
-  `gitbash`). `/crew:status`'s `shell` line says which route is in force and
-  why.
+- Long jobs take an automatically chosen shell route. `/crew:status`'s
+  `shell` line says which route is in force and why.
 - Auto-clear on native Windows with no tmux pane never types: `auto` resolves to
   `notify`, which prints a message (the `sendkeys` method was removed in crew 1.2.61).
 
@@ -492,8 +500,9 @@ may arm it.
 - The [configuration reference](configuration-reference.md) lists every
   setting with its allowed values, default, layer and the version it arrived
   in. It is generated from the code.
-- `plugin/crew/CONFIG.md` holds the reasoning behind each setting, and ships
-  with the plugin.
+- `plugin/crew/CONFIG.md` is the generated settings table and ships with the
+  plugin. The reasoning behind each setting is in
+  `docs/crew/config-rationale.md` in the repository.
 
 Every write a crew script makes to either file first copies the old file to
 `~/.claude/crew/backups/` and is refused if that copy fails (a hand edit is

@@ -892,7 +892,6 @@ AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approva
 # How many tickets one session's work becomes. The default is `system`: one session is one ticket, and a second
 # ticket is opened only when the work reaches into another system. Splitting per change was the pre-0.17.0 behaviour
 # and is kept as `change` for anyone who wants it back.
-TICKET_GRANULARITIES = ("session", "system", "change")
 GRANULARITY_DEFAULT = "system"
 
 

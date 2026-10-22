@@ -69,20 +69,20 @@ with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let
 
 | Event | Script | What it does | Switch | Default |
 |---|---|---|---|---|
-| `SessionStart` | `handoff-read.sh` | resets its once-per-session markers; reads back `.work/HANDOFF.md` only when `memory.inject` is false | — (always runs) | on |
+| `SessionStart` | `handoff-read.sh` | resets its once-per-session markers; reads back `.work/HANDOFF.md` only if the context hook did not inject it | — (always runs) | on |
 | `SessionStart` | `platform-sync.sh` | detects/repairs `platform.{os,wsl,shell,windowsHostIp}` | — (always runs) | on |
-| `SessionStart` / `UserPromptSubmit` / `PostToolUse` / `SubagentStart` | `crew-context.sh` | injects code-map slices and vault recall, tracks the token budget | `context.enabled` (whole hook), `memory.inject` (codemap, handoff and vault injection — on by default since 1.0.0) | `context.enabled: true`, `memory.inject: true` |
+| `SessionStart` / `UserPromptSubmit` / `PostToolUse` / `SubagentStart` | `crew-context.sh` | injects code-map slices and vault recall, tracks the token budget | `context.enabled` (whole hook; injection itself has no separate switch since 1.0.0) | `context.enabled: true` |
 | `UserPromptSubmit` | `approval-hook.sh` | records or refuses a `/crew:approve <id>` receipt | always records; enforcement depends on `scope.mode` | n/a |
-| `PreToolUse` (`Bash`/`PowerShell`) | `promote-gate.sh` | the six command/production guards plus `mergeGate` | `guards.terraformApply`, `guards.forcePush`, `guards.adminMerge`, `guards.mergeGate`, `guards.cloudDestructive`, `guards.sqlDestructive`, `guards.prodDatabase`, `guards.prodServer` | `block` / `none` (the strictest tier) |
-| `PreToolUse` (`Write`\|`Edit`) | `role-write-guard.sh` | refuses a write outside the dispatched role's declared scope | `guards.roleWrites` (`block`/`report`/`off`) | `off` |
-| `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh` | destructive `aws`/`az` commands, wrong-identity commands, and dispatches of workflows listed in `environments.workflows` (`guards.deployWorkflow`) — judged only when every word on the line is a plain literal or a single-quoted word; anything else asks, and is refused unattended | `guards.cloudGuard` (`block`/`report`/`off`) | `off` |
-| `PreToolUse` (`Bash`\|`PowerShell`) | `env-guard.sh` | a command that prints the whole environment or a credential-named variable into the agent's context; a command it cannot read is could-not-tell (L-0772) | `guards.envGuard` (`block`/`report`/`off`) | `off` |
+| `PreToolUse` (`Bash`/`PowerShell`) | `promote-gate.sh` | the six command/production guards plus `mergeGate` | `guards.profile`, or `guards.overrides.<guard>` for `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive`, `prodDatabase`, `prodServer` | `block` / `none` (the strictest tier) |
+| `PreToolUse` (`Write`\|`Edit`) | `role-write-guard.sh` | refuses a write outside the dispatched role's declared scope | `guards.overrides.roleWrites` (`block`/`report`/`off`), or `guards.profile` | `off` |
+| `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh` | destructive `aws`/`az` commands, wrong-identity commands, and dispatches of workflows listed in `environments.workflows` (`guards.overrides.deployWorkflow`) — judged only when every word on the line is a plain literal or a single-quoted word; anything else asks, and is refused unattended | `guards.overrides.cloudGuard` (`block`/`report`/`off`), or `guards.profile` | `off` |
+| `PreToolUse` (`Bash`\|`PowerShell`) | `env-guard.sh` | a command that prints the whole environment or a credential-named variable into the agent's context; a command it cannot read is could-not-tell (L-0772) | `guards.overrides.envGuard` (`block`/`report`/`off`), or `guards.profile` | `off` |
 | `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh`, environment layer (T-0005) | a terraform apply judged by its target environment, and a destroy never applied unattended | `environments.nonProd` (repo only; globs naming non-production workspaces), `environments.prodUnattended` (both layers; true only when **both** say `true`) | `[]`, `false` |
 | `PreToolUse` (`Write`\|`Edit`\|`MultiEdit`\|`NotebookEdit`\|`Bash`\|`PowerShell`) | `scope-guard.sh` | plan-approval + ticket scope guard | `scope.mode` (`off`/`report`/`block`/`auto`), `scope.allowCliApproval` | `off`, `false` |
-| `PreCompact` | `handoff-write.sh` | writes the handoff note before compaction | `context.autoWrapUp`, `context.handoffPath` | on |
-| `Notification` | `notify.sh` (`crew_notify.py hook`) | a `Question` / `Needs permission` ping when Claude stopped on a permission prompt, an AskUserQuestion or an elicitation; never `idle_prompt`; once per waiting episode | `notify.provider` (`none` or null disables it), `notify.events`, `notify.questionTypes` | off |
+| `PreCompact` | `handoff-write.sh` | writes the handoff note before compaction | — (always on; the handoff path is fixed at `.work/HANDOFF.md`) | on |
+| `Notification` | `notify.sh` (`crew_notify.py hook`) | a `Question` / `Needs permission` ping when Claude stopped on a permission prompt, an AskUserQuestion or an elicitation; never `idle_prompt`; once per waiting episode | `notify.provider` (`none` or null disables it), `notify.events` | off |
 | `Stop` | `verify-gate.sh` | runs `.crew/verify.json`'s checks | `verifyGate` (boolean) | `true` |
-| `Stop` | `context-watch.sh` | nags for a handoff near the context budget, drives auto-clear | `context.enabled`, `context.warnAt`, `context.budgetTokens`, `context.reserveTokens`, `context.autoClear.*` | on, `warnAt: 0.4` |
+| `Stop` | `context-watch.sh` | nags for a handoff near the context budget, drives auto-clear | `context.enabled`, `context.warnAt`, `context.reserveTokens`, `context.autoClear.*` | on, `warnAt: 0.4` |
 | `Stop` | `completion-audit.sh` | diffs the whole tree against the ticket's scope base | `scope.mode` | `off` |
 
 - **Blocker pings (`notify.events` has `blocker`).** `Stop gate refused` means the verify gate or the
@@ -91,12 +91,13 @@ with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let
   found another runner's in-flight marker `stale` (a dead pid, or no heartbeat inside T-0049's
   30-minute TTL) and names the owner's `crew_inflight.py clear`; `Lane state unknown` means it could
   not tell. `Approval waiting` is autopilot stopped at `approve`.
-- **Silence one hook without touching the rest:** set its own key. `guards.roleWrites: off`,
-  `guards.cloudGuard: off`, `guards.envGuard: off` and `scope.mode: off` are already the shipped defaults — a noisy session
+- **Silence one hook without touching the rest:** set its own key. `guards.profile: off` (which leaves
+  the role-write, cloud and environment guards off) and `scope.mode: off` are already the shipped defaults — a noisy session
   usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not
   that the default changed.
-- **Silence the SessionStart context specifically:** `{"memory": {"inject": false}}` stops the
-  context hook; `handoff-read.sh` then prints the handoff on resume instead.
+- **Silence the SessionStart context specifically:** `{"context": {"enabled": false}}` stops the
+  context hook and the Stop nag with it. There is no separate switch for injection since 1.0.0
+  (the `memory.inject` setting was removed).
 - **See what the context hook is actually doing:**
 
   ```bash
@@ -723,7 +724,7 @@ Do not pick the run from the Actions tab and carry on: run `crew_ghdeploy.py rec
 ## Environment guard refusals
 
 `env-guard.sh` / `env_guard.py`, a `PreToolUse` hook on `Bash` and `PowerShell` (L-0772). **Ships
-off** (`guards.envGuard: off`); turn it on with `{"guards": {"envGuard": "report"}}` and read
+off** (`guards.profile: off`); turn it on with `{"guards": {"overrides": {"envGuard": "report"}}}` and read
 `.crew/guard.log` before enforcing with `"block"`. A refusal names labels only, never a value.
 
 - **`env-dump:<form>`:** the command prints the whole environment. Read the one variable you need by
@@ -739,7 +740,7 @@ off** (`guards.envGuard: off`); turn it on with `{"guards": {"envGuard": "report
 ## Cloud guard false positives
 
 `cloud-guard.sh` / `cloud_guard.py`, a `PreToolUse` hook on `Bash` and `PowerShell`. **Ships off**
-(`guards.cloudGuard: off`); turn it on with `{"guards": {"cloudGuard": "report"}}` first to see what
+(`guards.profile: off`); turn it on with `{"guards": {"overrides": {"cloudGuard": "report"}}}` first to see what
 it *would* refuse before enforcing with `"block"`.
 
 - **SQL text that merely looks destructive is not blocked.** `DROP`/`TRUNCATE` inside a string
@@ -857,8 +858,8 @@ See [Memory and Obsidian](memory-and-obsidian.md) for setup. What goes wrong day
   find it; `cli-exit-N`, `cli-timeout`, `cli-bad-json` mean the CLI ran and failed; `no-vaults` means
   no vault is currently `primary` or `recall`; `no-hits` means the search itself found nothing. Only
   `no-hits` means "the vault genuinely has nothing relevant" — every other reason is a setup problem.
-  Also confirm `memory.inject` is not `false` in `.crew/config.json` — recall and code-map injection
-  are on by default since 1.0.0, so "no recall ever appears" with the key set to `false` is expected.
+  Also confirm `context.enabled` is not `false` — recall and code-map injection are always on since
+  1.0.0 while the context hook runs, so "no recall ever appears" with the hook switched off is expected.
   **Fix:** `$VO recall --query "<words you expect>"` directly, to separate "the CLI can't find it"
   from "the hook isn't calling the CLI". An empty answer can be the CLI's relevance floor or its
   excluded folders, not a missing note: the obsidian-vault recall CLI drops stop words, needs
@@ -931,7 +932,7 @@ command — no keystrokes appear at all.
   config that names it is refused with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or
   tmux", and `crew_autoclear_setup.py apply-method sendkeys` refuses by name.
 - **Fix:** treat the `notify` message as the intended behaviour, or run the session inside tmux
-  (Git Bash or WSL), where `auto` picks `tmux`. See `plugin/crew/CONFIG.md` §14.
+  (Git Bash or WSL), where `auto` picks `tmux`. See `plugin/crew/docs/crew/config-rationale.md.
 
 ### "bare /crew:autopilot stopped on a goal"
 
@@ -1150,28 +1151,28 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 | Key | Lives in | Values | What "off"/floor means |
 |---|---|---|---|
 | `autopilot.mode` | repo only | `off`/`plan` | `off` (the default): `/crew:autopilot` runs no phase; only the exact string `plan` arms it |
-| `memory.inject` | repo only | bool | `false`: no code-map, handoff or vault text is injected (default `true` since 1.0.0) |
-| `guards.cloudGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
-| `guards.envGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
-| `guards.roleWrites` | both layers, ratchets | `block`/`report`/`off` | `off`: every Write/Edit is allowed unconditionally |
-| `guards.terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` | both layers, ratchets | `block`/`ask`/`allow` | there is no "off" — `allow` is the most permissive tier, still logged |
-| `guards.deployWorkflow` | both layers, ratchets | `block`/`ask`/`allow` | `block` is default and floor; `allow` covers nonProd only — production without `environments.prodUnattended` in both layers, and an unknown environment, still ask (denied unattended) |
+| `guards.profile` | both layers (expands per layer) | `off`/`standard`/`strict` | `off` (the default): the cloud, environment and role-write guards are off and the others sit at their narrowest tier. Set one guard away from the profile with `guards.overrides.<guard>`; the narrower layer wins per guard |
+| `guards.overrides.cloudGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
+| `guards.overrides.envGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
+| `guards.overrides.roleWrites` | both layers, ratchets | `block`/`report`/`off` | `off`: every Write/Edit is allowed unconditionally |
+| `guards.overrides.<guard>` for `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` | both layers, ratchets | `block`/`ask`/`allow` | there is no "off" — `allow` is the most permissive tier, still logged |
+| `guards.overrides.deployWorkflow` | both layers, ratchets | `block`/`ask`/`allow` | `block` is default and floor; `allow` covers nonProd only — production without `environments.prodUnattended` in both layers, and an unknown environment, still ask (denied unattended) |
 | `environments.nonProd` | repo only | list of globs | `[]`: nothing is nonProd, so every terraform apply asks (denied unattended) |
 | `environments.prodUnattended` | both layers, ratchets (true only when both say `true`) | bool | `false` in either layer holds it down: production applies and dispatches ask |
-| `guards.prodDatabase`, `guards.prodServer` | both layers, ratchets | `none`/`read`/`full` | `none` is both the default and the floor |
+| `guards.overrides.prodDatabase`, `guards.overrides.prodServer` | both layers, ratchets | `none`/`read`/`full` | `none` is both the default and the floor |
 | `scope.mode` | repo only | `off`/`report`/`block`/`auto` | `off`: neither the edit guard nor the completion audit runs |
 | `scope.allowCliApproval` | repo only | bool | `false`: only a `/crew:approve` typed by the user counts (no `cli` or `autopilot` receipt) |
 | `verifyGate` | repo only | bool | `false`: the Stop verify gate does not run at all |
 | `context.enabled` | both layers | bool | `false`: `context-watch.sh` (the Stop nag) does nothing |
-| `context.autoClear.enabled`, `autoWrapUp` | both layers | bool | each independently disables one leg of the wrap-up/clear loop |
+| `context.autoClear.enabled` | both layers | bool | `false` disables the clear leg of the wrap-up/clear loop (the wrap-up itself is always on) |
 | `notify.provider` | both layers (a repo null inherits the global one) | `telegram`/`teams`/`none` | a repo `none` opts out even when the global file names a provider: no `question` ping, no `deploy` result (`crew_notify.py config --root .` says so) |
 | `change.requireForProduction` | both layers, ratchets (may only turn ON) | bool | `false`: promoting needs no approved change request |
-| `install.policy` | both layers, ratchets | see `plugin/crew/CONFIG.md` §"install" | narrowest tier refuses more install actions |
+| `install.policy` | both layers, ratchets | see `docs/crew/config-rationale.md`, "install.policy" | narrowest tier refuses more install actions |
 
 **A destroy is never applied unattended**, at any setting: `destroy`, `apply -destroy`, `-replace`,
 `workspace delete`, a saved plan whose sidecar lists a delete, or an apply with no sidecar at all
-asks when you are there and is denied unattended — `terraformApply: allow` and
-`environments.prodUnattended` included. The full decision table is in `plugin/crew/CONFIG.md`
+asks when you are there and is denied unattended — `guards.overrides.terraformApply: allow` and
+`environments.prodUnattended` included. The full decision table is in `docs/crew/config-rationale.md`
 (`environments.*`).
 
 `~/.claude/crew/config.json` is the machine-global layer; `.crew/config.json` is per-repo and wins
@@ -1223,8 +1224,8 @@ runs but the visual rule never passes.
   PowerShell twin stands itself down on the wrong platform (`$env:OS -ne 'Windows_NT'`) rather than
   the bash twin doing that job.
 - **Tests and checks are slow on Windows.** Read `/crew:status`'s `shell` line first. It names the
-  shell route crew's jobs take (`shellRoute.mode`: `auto`, `wsl`, `powershell`, `gitbash`) and why.
+  shell route crew's jobs take (chosen automatically; `shellRoute.mode` was removed) and why.
   `WSL never probed` means nobody ran `crew_shell.py probe --write`; `not-installed` comes with the
   `wsl --install -d Ubuntu` recommendation, which crew prints and never runs. A repo on a Windows
-  drive goes to WSL under `auto` only after `crew_shell.py measure --write` has shown WSL faster
+  drive goes to WSL only after `crew_shell.py measure --write` has shown WSL faster
   there. See "Choosing the shell route on Windows" in `plugin/crew/skills/crew-setup/platform.md`.

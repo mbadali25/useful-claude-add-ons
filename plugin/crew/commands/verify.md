@@ -203,7 +203,7 @@ exactly like an undeclared rule would be, never silently reintroduced through it
 
 `--price` refuses to time a verb-, syntax-, or wrapper-classified rule outright, in both directions,
 same as the gate. The `verifyReachUndeclared` trigger in `crew_state.py` separately flags any rule
-with no `reach` at all — see `CONFIG.md` §19 for the full classification, and `--stamp-reach` above
+with no `reach` at all — see `docs/crew/config-rationale.md for the full classification, and `--stamp-reach` above
 to declare them.
 
 ## Environment pinning

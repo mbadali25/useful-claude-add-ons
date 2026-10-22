@@ -3,8 +3,8 @@
 ## 24b. Change requests
 
 `/crew:change` files a change request. One process, three backends, selected by
-the `tracker` you already use: ServiceDesk Plus against the
-`change.sdpTemplate` template, Jira as a `change.jiraIssueType` issue, or
+the `tracker` you already use: ServiceDesk Plus against the fixed
+"Change Management Request" template, Jira as a "Change" issue, or
 `.work/changes/<id>.md` in files mode. **The content is identical in all
 three** — the wording lives once, in `skills/crew-change/SKILL.md`.
 
@@ -40,7 +40,7 @@ from the session — and refuses outside the change's scheduled window. "Could
 not read the state" is a stop, not a pass.
 
 It is the one key in crew a repo may only turn **on**: it ratchets across the
-two config layers like `install.policy` and the `guards.*` keys, but the
+two config layers like `install.policy` and the per-guard values under `guards.overrides`, but the
 narrower value is `true`, so a machine-global `true` survives a `false` in a
 repo you cloned. A value that is neither `true` nor `false` reads as `true`.
 `docs/crew/config-rationale.md` ("change.requireForProduction") has the reasoning.

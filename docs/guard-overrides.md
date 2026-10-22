@@ -37,6 +37,15 @@ guards.prodDatabase     none | read | full    — added 2026-09-13, see below
 guards.prodServer       none | read | full    — added 2026-09-13, see below
 ```
 
+**Since L-0725 (crew 1.3) these keys are no longer written.** The shipped design above
+used one key per guard. Today a layer sets `guards.profile` (`off | standard | strict`)
+and, where it needs one guard to differ, `guards.overrides.<guard>` with the same tiers
+as the table. The old `guards.<name>` keys are still read as aliases for the override
+until `/crew:migrate` rewrites the layer, and the per-guard ratchet runs unchanged on
+the per-layer values. The profile table and the expansion rule are in
+`docs/crew/config-rationale.md`, "guards - the configurable guardrails". The sections
+here describe the design as it shipped, so they keep the old key names.
+
 **Production access (added by the user after the first four).** The *level* is
 machine-global with the same ratchet (`none` < `read` < `full`; repo narrows
 only; unknown fails closed to `none`). *What counts as production* is a fact
@@ -52,7 +61,7 @@ treated as a write — unknown is not read.
 `/crew:gate <disable|enable|status> <github|bitbucket>`, and `/crew:promote`
 calling it inside gate 1 as it already does for Bitbucket. Nothing changes a
 live repo's protection unless a command was typed or a yes was given.
-`guards.mergeGate` governs whether the command may act at all.
+`guards.mergeGate` (now `guards.overrides.mergeGate`) governs whether the command may act at all.
 
 **GitHub gets a twin of `skills/bitbucket/scripts/merge_gate.sh`**, in a
 `github` skill: export the branch protection / ruleset to a file, remove it,

@@ -237,7 +237,7 @@ def test_guards_merge_gate_resolves_and_ratchets_like_the_others():
     which is exactly why it could have ended up with its own layering rule.
     It does not: it is in the one ratchet table with the other four keys."""
     assert "guards.mergeGate" in crew_state.RATCHETED_KEYS
-    assert crew_config.is_global_path("guards.mergeGate")
+    assert crew_config.is_global_path("guards.overrides.mergeGate")
     assert crew_state.effective_ratcheted(
         "guards.mergeGate", "allow", "block") == "block"
 

@@ -85,9 +85,9 @@ _KNOWN_VALUES = {
     # crew_sleep.DEPLOY_OVERRIDES, or null (L-0654); `all` is never a night value.
     "autopilot.sleep.deploy": (None, "nonprod", "none"),
     # plugin/crew/hooks/scripts/crew_autocycle.py reads true from the machine
-    # file only; a repo false vetoes. CONFIG.md §10.
+    # file only; a repo false vetoes. docs/crew/config-rationale.md.
     "context.autoClear.enabled": (True, False, None),
-    # plugin/crew/hooks/scripts/crew_resume.py, same rule. CONFIG.md §14a.
+    # plugin/crew/hooks/scripts/crew_resume.py, same rule. docs/crew/config-rationale.md.
     "resume.auto": (True, False, None),
 }
 

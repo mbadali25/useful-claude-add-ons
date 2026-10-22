@@ -310,7 +310,7 @@ be wrong can be closed on evidence.
   (T-0042 round-4 neighbour). `crew_resume.py::settings` reads each repo file through `_load`,
   which returns `{}` for a malformed or unreadable file, so it vetoes nothing - the same class as
   round 4's FIX (an unreadable veto reads as no veto). T-0006's approved plan chose it and
-  CONFIG.md §14a documents it; reported to the owner, not changed quietly.
+  docs/crew/config-rationale.md documents it; reported to the owner, not changed quietly.
 - `plugin/crew/tests/test_auto_cycle.py` (24 failures, measured both
   before and after crew-1.0-win-ps1-ac's fix, identical set both times):
   bash/tmux/symlink-flavour tests fail on this Windows dev host for
@@ -498,7 +498,7 @@ at minimum be loud.
 
 ## Correctness and verification gaps
 
-### CONFIG.md §10/§11 tables
+### docs/crew/config-rationale.md/§11 tables
 
 Found by T-0066 (2026-10-03, crew 1.0.185) while re-measuring the two headings:
 `len(leaf_paths(default_global_config()))` is 73 and the repo-only remainder is 57.
