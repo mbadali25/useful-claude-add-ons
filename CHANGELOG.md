@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.62: `commands/autopilot.md` is 1,323 bytes shorter and its rationale has a home (L-0870, slice 5 of L-0727)
+
+- **Summary.** `crew` 1.2.62: the `/crew:autopilot` command a session loads is about 6% shorter (21,176 to 19,853 bytes) with the same steps, refusals and commands, and the reasons behind its rules now live in `docs/crew/autopilot-rationale.md`.
+- **Target missed.** The slice asked for 12,288 bytes and the owner's fallback aimed at about 18,000. The command is 19,853 bytes because what is left is procedure, and a procedure cut was ruled out; `plugin/crew/.budget-allowance.json` now lists `autopilot.md` at 19,900 bytes (was 21,188) for the Phase 4 close-out to tighten.
+- **Changed.** Ticket and owner-date parentheticals and descriptions of script output moved to the rationale doc; the script directory prefix is `$H` on prose lines (the lines tests, sabotage mutations and the scope guard read stay literal). No sabotage anchor, test or golden fixture changed.
+- **Also.** Review round 2 left six FIXes (the `$H` alias and five stale codemap line citations), filed as L-0873. The verify-gate pass was recorded in a non-root clone because the ai-connect tests fail as root (L-0850).
+
 ### Changed — crew 1.2.61, obsidian-vault 0.5.2: ten hook PowerShell twins deleted, the `sendkeys` auto-clear method removed (L-0727, slice 3; landed as L-0867)
 
 - **Summary.** `crew` 1.2.61: the ten PowerShell twins of crew's hook scripts are deleted, so on Windows every crew hook runs its `.sh` under Git Bash, and `context.autoClear.method: "sendkeys"` (the Windows keystroke sender) is removed and refused by name.
