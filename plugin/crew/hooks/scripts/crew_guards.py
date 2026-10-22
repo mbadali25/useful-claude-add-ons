@@ -2579,13 +2579,29 @@ _NODE_REACH_RE = re.compile(
 _PY_ASSEMBLY_RE = re.compile(
     r"chr\s*\(|\bbytes\b|\bbytearray\b|fromhex|unhexlify|base64|b64"
     r"|\bdecode\b|\[\s*:\s*:\s*-1\s*\]|\breversed\b|\.\s*join\b"
-    r"|\.\s*format\b|%|\bord\b|\bmap\b|\bcodecs\b|\b[fF][rR]?(?=['\"])")
+    r"|\.\s*format\b|\bord\b|\bmap\b|\bcodecs\b"
+    # `%` formatting: after a string literal, or with a literal operand
+    # (`'...' % x`, `fmt % ('a',)`), never plain arithmetic (`5 % 2`).
+    r"|['\"]\s*%|%\s*['\"(\[{]"
+    # An f-string or t-string, the prefix letters in either order and case.
+    r"|\b(?:[rR][fFtT]|[fFtT][rR]?)(?=['\"])")
 _NODE_ASSEMBLY_RE = re.compile(
     r"fromCharCode|fromCodePoint|Buffer|atob|\.\s*join\b|\.\s*concat\b"
     r"|\.\s*replace|\.\s*reverse|\.\s*split|\.\s*slice|\.\s*substr"
     r"|\.\s*repeat|\$\{|\bunescape\b|decodeURI")
-# A shell expansion inside the code's text (`os.system("$T apply")`): the
-# shell the process API starts makes the name at run time.
+# A string literal, its prefix letters (any order and case) included.
+_LIT_RE = re.compile(
+    r"""(?:[A-Za-z]{1,2}(?=['"`]))?"""
+    r"""(\'\'\'(?:\\.|[^\\])*?\'\'\'|\"\"\"(?:\\.|[^\\])*?\"\"\""""
+    r"""|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)""",
+    re.S)
+# What may sit between two literals that are one name: blanks, `+`, commas,
+# brackets, `*`, `.join`, a line continuation.
+_RUN_GAP_RE = re.compile(r"(?:[\s+,\[\]()*.%]|join|\\\n)*\Z")
+# A call that starts a process, and the shell expansion in its argument.
+_PROC_CALL_RE = re.compile(
+    r"\b(?:system|popen|spawn\w*|exec\w*|fork\w*|call|run|check_output"
+    r"|check_call|Popen|getoutput|getstatusoutput|startfile)\s*\(")
 _CODE_EXPANSION_RE = re.compile(r"[$`]")
 _TOOL_SPELLINGS = ("terragrunt", "terraform", "tofu")
 
@@ -2607,38 +2623,99 @@ class InterpreterHit(str):
         return hit
 
 
-def _collapse_name(code):
-    """`code` with its escapes decoded, string prefixes dropped and every
-    character but letters and digits removed: where quotes, `+`, commas,
-    brackets, spaces and dots split a name apart, it reads whole again."""
+def _decode_escapes(text):
+    """`text` with its hex, unicode and octal escapes decoded."""
     def one(match):
         digits = match.group(1) or match.group(2) or match.group(3)
         return chr(int(digits, 8 if match.group(3) else 16))
-    text = re.sub(r"\\x([0-9a-fA-F]{2})|\\u([0-9a-fA-F]{4})|\\([0-7]{1,3})",
-                  one, code)
-    text = re.sub(r"\b[bBrRuUfF]{1,2}(?=['\"])", "", text)
-    return re.sub(r"[^a-z0-9]", "", text.lower())
+    return re.sub(r"\\x([0-9a-fA-F]{2})|\\u([0-9a-fA-F]{4})|\\([0-7]{1,3})",
+                  one, text)
+
+
+def _literal_runs(code):
+    """The text of each run of string literals that are one name when joined
+    (`'ter' 'raform'`, `'ter'+'raform'`, `"".join(["ter","raform"])`), with
+    escapes decoded and every character but letters and digits dropped. A
+    run ends at anything else: separate imports or statements never join."""
+    runs, run, last = [], [], None
+    for match in _LIT_RE.finditer(code):
+        gap = None if last is None else code[last:match.start()]
+        if run and not (gap is not None and _RUN_GAP_RE.match(gap)):
+            runs.append("".join(run))
+            run = []
+        quote = 3 if match.group(1)[:3] in ("\'\'\'", '"""') else 1
+        text = _decode_escapes(match.group(1)[quote:-quote])
+        run.append(re.sub(r"[^a-z0-9]", "", text.lower()))
+        last = match.end()
+    if run:
+        runs.append("".join(run))
+    return runs
+
+
+def _call_args(code):
+    """The argument text of each call to a process-starting function."""
+    for call in _PROC_CALL_RE.finditer(code):
+        depth, pos = 1, call.end()
+        while pos < len(code) and depth:
+            lit = _LIT_RE.match(code, pos)
+            if lit:
+                pos = lit.end()
+                continue
+            depth += (code[pos] == "(") - (code[pos] == ")")
+            pos += 1
+        yield code[call.end():pos]
+
+
+def _expansion_in_call(code):
+    """A `$` or backtick in a string literal that is (or names, through an
+    assignment) the argument of a process-starting call, or a non-literal
+    joined to another operand there (`a + b`): the name is made at run time.
+    Printed text with a `$` in it is not."""
+    for args in _call_args(code):
+        for lit in _LIT_RE.finditer(args):
+            found = _CODE_EXPANSION_RE.search(lit.group(1))
+            if found:
+                return found.group(0)
+        bare = _LIT_RE.sub('""', args)
+        if re.search(r"[\w)\]]\s*\+|\+\s*[\w(\[]", bare):
+            return "+"
+        for name in set(re.findall(r"[A-Za-z_]\w*", bare)):
+            spelled = ""
+            for assigned in re.finditer(
+                    r"\b" + re.escape(name) + r"\s*\+?=\s*" + _LIT_RE.pattern,
+                    code, re.S):
+                found = _CODE_EXPANSION_RE.search(assigned.group(1))
+                if found:
+                    return found.group(0)
+                spelled += re.sub(r"[^a-z0-9]", "", assigned.group(1).lower())
+            for tool in _TOOL_SPELLINGS:
+                if tool in spelled:
+                    return tool
+    return None
 
 
 def _built_name(code, scan, reach, assembly, label):
     """An `InterpreterHit` when `code` reaches a process (`reach`, its
     regex, read over `scan`: the code, or python's without its string text)
-    and builds the tool's name: its fragments collapse to the name, or it
-    uses an `assembly` construct (also read over `scan`). None otherwise
+    and builds the tool's name: adjacent string literals join to the name, or
+    it uses an `assembly` construct (also read over `scan`), or a shell
+    expansion or a non-literal operand feeds a process call. None otherwise
     (L-0871)."""
     reached = reach.search(scan)
     if reached is None:
         return None
-    for tool in _TOOL_SPELLINGS:
-        if tool in _collapse_name(code):
-            return InterpreterHit(tool, (
-                f"{label} code that spells {tool!r} out of fragments "
-                f"next to {reached.group(0)!r}"))
-    built = assembly.search(scan) or _CODE_EXPANSION_RE.search(code)
+    for run in _literal_runs(code):
+        for tool in _TOOL_SPELLINGS:
+            if tool in run:
+                return InterpreterHit(tool, (
+                    f"{label} code that spells {tool!r} out of fragments "
+                    f"next to {reached.group(0)!r}"))
+    built = assembly.search(scan)
+    built = built.group(0) if built else _expansion_in_call(code)
     if built is None:
         return None
-    return InterpreterHit(built.group(0), (
-        f"{label} code that builds a name at run time ({built.group(0)!r}) "
+    return InterpreterHit(built, (
+        f"{label} code that builds a name at run time ({built!r}) "
         f"next to {reached.group(0)!r}, so it could spell the tool"))
 
 

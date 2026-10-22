@@ -693,7 +693,7 @@ started some other way. Each of these runs unjudged:
   Since crew 1.2.63 (L-0871) python and node code is refused only when the
   code or the line names terraform, terragrunt or tofu, or the code reaches a
   process and builds the name (`'ter'+'raform'`, `chr(`, a join, a format, an
-  f-string, a decode, a `$` expansion in its text). `import os`, `import
+  f-string, a decode, a `$` expansion or a non-literal operand in a process call's argument). `import os`, `import
   requests`, `os.environ.get(...)` and `process.env` alone are no longer
   refused, so a command read from the environment, input or a file that the
   line never names is not caught: `python3 -c "import os; os.system(os.environ['CMD'])"`.
