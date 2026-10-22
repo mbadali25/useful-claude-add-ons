@@ -609,13 +609,8 @@ AUTOCLEAR_DEFAULTS = {
     # value of `true` alone no longer counts.
     "enabled": None,
     "method": "auto",
-    "windowTitle": None,
-    "command": "/clear",
     "delaySeconds": 3,
     "minHandoffLines": 5,
-    # Wayland only (`auto-clear.sh`, the `wtype` method). The first pass read only
-    # the .ps1 consumers: a default from one platform's consumer is half-derived.
-    "unsafeFocus": False,
     # NARROWING-ONLY, and read from the machine file only
     # (`crew_autocycle.in_scope`, `auto-clear.ps1`'s twin): null arms every
     # repo and session the machine opt-in already covers; a list arms only
@@ -641,7 +636,7 @@ AUTOCLEAR_DEFAULTS = {
 # (`crew_autocycle.resume_typing`); a repo copy is declared but never read.
 # `typeDelaySeconds` precedes the tmux ready probe (Windows' only wait; the spike
 # saw input ready 0.134 s after SessionStart); `readyTimeoutSeconds` caps the probe.
-RESUME_DEFAULTS = {"auto": None, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15}
+RESUME_DEFAULTS = {"auto": None}
 
 # T-0044 `unattendedCloud`: MACHINE file only (crew_unattended.py); a repo copy is ignored and reported.
 UNATTENDED_CLOUD_DEFAULTS = {"aws": {"readOnly": {
@@ -659,7 +654,7 @@ UNATTENDED_CLOUD_MACHINE_ONLY, UNATTENDED_CLOUD_PROVIDERS = ("unattendedCloud",)
 # `graph.obsidian.confirmed` is refused by `plan_global_write` and pruned by
 # `filter_global` because consent to act outside the repo is not a capability
 # a guided flow may hand over. Same reasoning, same treatment.
-AUTOCLEAR_CONSENT_KEYS = ("unsafeFocus",)
+AUTOCLEAR_CONSENT_KEYS = ()
 
 # Keys inside `autoClear` that are machine-only in a STRONGER sense than the
 # ordinary repo-over-global precedence every other key here resolves by:
@@ -692,34 +687,13 @@ CONTEXT_DEFAULTS = {
         # at 0.8/100k a 1M window fired at 900k, and lowering only
         # warnAt would still have fired at 900k. Both had to move.
         "warnAt": 0.4,
-        "budgetTokens": None,
         "reserveTokens": 0,
-        "handoffPath": ".work/HANDOFF.md",
-        "keepTranscripts": 5,
         # These three were read by hook scripts and declared here by
         # nothing until 0.19.10 -- `auto-clear.ps1:67`,
         # `context-watch.ps1:33` and `handoff-read.ps1:36` respectively.
         # See the `jira.cloudId` note above for why undeclared is not the
         # same as unused, and why it still cost something.
         "autoClear": copy.deepcopy(AUTOCLEAR_DEFAULTS),
-        # 0.19.52: true. Pairs with autoClear -- the wrap-up wording
-        # is what asks for the change in flight to be finished or
-        # abandoned and the ticket updated, and auto-clear fires on
-        # the turn after the handoff lands.
-        "autoWrapUp": True,
-        # 0.19.52: true, completing the loop with autoWrapUp and
-        # autoClear -- ask for the note, clear once it exists, read
-        # it back on the next session with the next action attached.
-        "autoResume": True,
-        # See STALE_HANDOFF_DEFAULTS for why these two figures
-        # specifically -- generous on purpose, since archiving a note
-        # someone is still using is worse than leaving a stale one in
-        # place for one more day.
-        "staleHandoff": {
-            "maxAgeHours": STALE_HANDOFF_DEFAULTS["maxAgeHours"],
-            "maxCommitsBehind":
-                STALE_HANDOFF_DEFAULTS["maxCommitsBehind"],
-        },
 }
 
 # Directory archived handoffs move to. Sibling to crew_incident.ARCHIVE_DIR
@@ -1046,8 +1020,8 @@ AUTONOMOUS_STOPS = (
 # T-0011, after /crew:done: `ship` `pr` opens the PR, `merge` also merges once every required check passes or fails
 # only on a name EXACTLY in `knownFailures` (else `pr`); pending past `ciTimeoutMinutes` stops, unmerged.
 AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk",
-                      "maxAutoReplans": 0, "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
-                      "sleep": dict.fromkeys(("schedule", "approval", "questions", "deploy", "notifyHold")),
+                      "maxAutoReplans": 0, "ship": "merge",
+                      "sleep": dict.fromkeys(("schedule", "approval", "questions", "deploy")),
                       "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000,
                       "maxLanes": None, "reviewPolicy": "stop"}  # T-0029 wave: crew_wave.settings
 
@@ -1059,12 +1033,7 @@ GRANULARITY_DEFAULT = "system"
 
 
 PM_DEFAULTS = {
-    "enabled": True,
-    "mode": "adaptive",
-    "quietLines": 8,
-    "maxLines": 40,
     "authority": AUTHORITY_DEFAULT,
-    "ticketGranularity": GRANULARITY_DEFAULT,
     # Guardrail. The PM stops dispatching after this many roles in one pass and
     # says what it did not get to, rather than working a queue until the context
     # runs out. Blockers found mid-task do not count against it --
@@ -1137,20 +1106,64 @@ DEV_DEFAULTS = {
 # wrong disk, and on a machine that syncs its repo parent to cloud storage is
 # an index rebuild per worktree.
 #
-# `root` is a DIRECTORY worktrees are created under, not a worktree path:
-# crew adds `<repo name>-<branch>` beneath it, so several repos can share one
-# root without colliding. `null` keeps the old behaviour exactly -- the
-# checkout's parent -- so an existing config that never gains this key
-# behaves as it always did.
-#
-# It is inheritable from the global file (see `default_global_config`)
-# because which disk has room is a fact about the machine, not about a
-# checkout: someone who keeps worktrees on D:\ keeps them there for every
-# repo, and saying so once per repo is the friction the global layer exists
-# to remove. A repo that genuinely needs its own answer still overrides it.
-WORKTREE_DEFAULTS = {
-    "root": None,
-}
+# L-0725: the fixed values. Each was a config key nobody had set to anything but
+# its default in any measured config layer (the Disposition in
+# `.work/tickets/L-0725/spec.md`); each is now a constant at that default, named
+# once here. `crew_dropped.DROPPED` pairs every old key with its constant and
+# a test holds the two together. A config still carrying one of the keys is
+# told so by `crew_config.inert_settings`, and `/crew:migrate` removes it.
+AUTOPILOT_CI_TIMEOUT_MINUTES = 60
+AUTOPILOT_KNOWN_FAILURES = ()
+AUTOPILOT_NOTIFY_HOLD = None
+MERGE_GATE_ENABLED = False
+MERGE_GATE_BRANCH = None
+BITBUCKET_MERGE_GATE_PRESET = "standard"
+CHANGE_REQUESTER = None
+CHANGE_IMPLEMENTOR = None
+CHANGE_SDP_TEMPLATE = "Change Management Request"
+CHANGE_JIRA_ISSUE_TYPE = "Change"
+CHANGE_CATEGORY = None
+AUTOCLEAR_WINDOW_TITLE = None
+AUTOCLEAR_COMMAND = "/clear"
+AUTOCLEAR_UNSAFE_FOCUS = False
+CONTEXT_AUTO_WRAP_UP = True
+CONTEXT_AUTO_RESUME = True
+CONTEXT_BUDGET_TOKENS = None
+CONTEXT_HANDOFF_PATH = _DEFAULT_HANDOFF_PATH
+CONTEXT_KEEP_TRANSCRIPTS = 5
+STALE_HANDOFF_MAX_AGE_HOURS = STALE_HANDOFF_DEFAULTS["maxAgeHours"]
+STALE_HANDOFF_MAX_COMMITS_BEHIND = STALE_HANDOFF_DEFAULTS["maxCommitsBehind"]
+DOCS_THEME = None
+DOCS_REPORT_THEME = None
+EMERGENCY_TTL_MINUTES = 120
+GRAPH_ENABLED = True
+GRAPH_TOOL = "graphify"
+GRAPH_MODE = "code-only"
+GRAPH_COMMIT_HOOK = False
+MEMORY_INJECT = True
+MEMORY_RECALL_VAULTS = ()
+MEMORY_RECALL_MAX_CHARS = 800
+MEMORY_RECALL_PROJECTS = ()
+NOTIFY_URL_ENV = None
+NOTIFY_QUESTION_TYPES = None
+NOTIFY_REALERT_HOURS = 6
+OBSIDIAN_BOARD = "Board.md"
+OBSIDIAN_COLUMNS = {"backlog": "Backlog", "ready": "Ready", "inProgress": "In Progress",
+                    "review": "Review", "done": "Done"}
+PM_ENABLED = True
+PM_MODE = "adaptive"
+PM_QUIET_LINES = 8
+PM_MAX_LINES = 40
+RESUME_TYPE_DELAY_SECONDS = 2
+RESUME_READY_TIMEOUT_SECONDS = 15
+SDP_PORTAL = None
+SDP_NOTE_VISIBILITY = "private"
+SDP_CLOSE_ON_DONE = False
+SECOND_OPINION_KEY_ENV = "GEMINI_API_KEY"
+SECOND_OPINION_SENDS_CODE = False
+SHELL_ROUTE_MODE = "auto"
+SHELL_ROUTE_DISTRO = None
+WORKTREE_ROOT = None
 
 # Every path separator this platform honours, for flattening a branch name into
 # one directory level. Derived rather than written as a regex character class:

@@ -107,10 +107,6 @@ _S = "hooks/scripts/"
 KEY_META = {
     "schema": _unv("Config schema version; `/crew:migrate` upgrades an older one.",
                    FIRST, _S + "crew_state.py", "integer"),
-    "tier": _unv("Setup tier recorded by `/crew:init`.", FIRST, _S + "crew_state.py",
-                 "integer"),
-    "roles": _unv("Optional roles installed in this repo.", FIRST, _S + "crew_state.py",
-                  "list of role names"),
     # --- qa / dev: providers and models
     "qa.provider": _row("Who reviews: `auto` walks `qa.order`; a named provider is used "
                         "as-is.", "tuple", QA_PROVIDER_VALUES, FIRST),
@@ -152,8 +148,6 @@ KEY_META = {
     "dev.roles": _row("Per-role dev pins, as `qa.roles`.", "open-table", since="0.16.6",
                       source=_S + "crew_config.py",
                       type_="object of role pins; each pin's provider is checked"),
-    "worktree.root": _unv("Where crew creates linked worktrees; null uses the default.",
-                          "0.16.27", _S + "crew_state.py", "path or null"),
     # --- secondOpinion
     "secondOpinion.provider": _unv("Second-opinion provider for plans; `none` is off.",
                                    FIRST, "commands/plan.md", "string"),
@@ -161,10 +155,6 @@ KEY_META = {
                                "skills/crew-providers/SKILL.md", "string"),
     "secondOpinion.model": _unv("Second-opinion model.", FIRST,
                                 "skills/crew-providers/SKILL.md", "string or null"),
-    "secondOpinion.keyEnv": _unv("Environment variable holding the provider's API key.",
-                                 FIRST, "skills/crew-providers/SKILL.md", "string"),
-    "secondOpinion.sendsCode": _unv("Whether code may be sent to the second-opinion "
-                                    "provider.", FIRST, "skills/crew-providers/SKILL.md", "boolean"),
     # --- trackers
     "tracker": _row("Where tickets live; `crew_tracker.resolve` answers `could not tell` "
                     "when two configs disagree.", "tuple", crew_tracker.KINDS, FIRST),
@@ -172,49 +162,16 @@ KEY_META = {
                          FIRST, "commands/jira-sync.md", "string or null"),
     "jira.cloudId": _unv("Jira cloud id, cached by `/crew:jira-sync`; read by nothing.",
                          "0.19.10", "commands/jira-sync.md", "string or null"),
-    "sdp.portal": _unv("ServiceDesk Plus portal.", FIRST, "commands/sdp-sync.md",
-                       "string or null"),
-    "sdp.noteVisibility": _unv("Visibility of notes crew writes to SDP.", FIRST,
-                               "commands/sdp-sync.md", "string"),
-    "sdp.closeOnDone": _unv("Close the SDP request when the ticket is done.", FIRST,
-                            "commands/sdp-sync.md", "boolean"),
     "obsidian.vaultPath": _unv("Vault holding the board; falls back to "
                                "`memory.vaultPath` and must hold `.obsidian/`.", FIRST,
                                _S + "crew_tracker.py", "path or null"),
     "obsidian.boardDir": _unv("Board folder inside the vault (relative, no `..`).", FIRST,
                               _S + "crew_tracker.py", "path or null"),
-    "obsidian.board": _unv("Board file name.", FIRST, _S + "crew_tracker.py",
-                           "file name"),
-    "obsidian.columns.backlog": _unv("Board column for backlog tickets "
-                                     "(`direction`, `ready`, `needs-owner`).", FIRST,
-                                     _S + "crew_tracker.py", "string"),
-    "obsidian.columns.ready": _unv("Board column for ready tickets.", FIRST,
-                                   _S + "crew_tracker.py", "string"),
-    "obsidian.columns.inProgress": _unv("Board column for tickets in progress.", FIRST,
-                                        _S + "crew_tracker.py", "string"),
-    "obsidian.columns.review": _unv("Board column for tickets in review.", FIRST,
-                                    _S + "crew_tracker.py", "string"),
-    "obsidian.columns.done": _unv("Board column for closed tickets "
-                                  "(`done`, `cancelled`, `superseded`; each checked).", FIRST,
-                                  _S + "crew_tracker.py", "string"),
     # --- memory
     "memory.mode": _unv("Where memory lives (`repo`, or a vault).", FIRST,
                         "skills/crew-memory/SKILL.md", "string"),
     "memory.vaultPath": _unv("The Obsidian vault used for memory.", FIRST,
                              _S + "crew_recall.py", "path or null"),
-    "memory.inject": _unv("Inject the handoff and recall at session start; only an "
-                          "explicit `false` stops it.", "1.0.25", _S + "crew_context.py",
-                          "boolean"),
-    "memory.recall.vaults": _unv("This repo's vault priority for recall; empty uses the "
-                                 "obsidian config's roles.", "1.0.25",
-                                 _S + "crew_recall.py", "list of vault names"),
-    "memory.recall.maxChars": _row("Recall output budget; a non-positive or non-integer "
-                                   "value reads as 800.", "type", since="1.0.25",
-                                   source=_S + "crew_recall.py", type_="positive integer"),
-    "memory.recall.projects": _unv("Project names sent to vault recall as `--project` so this "
-                                   "repo's notes rank first; empty sends the main checkout's "
-                                   "directory name.", "1.1.11", _S + "crew_recall.py",
-                                   "list of project names"),
     "verifyGate": _unv("Run the Stop verify gate.", FIRST, _S + "verify-gate.sh",
                        "boolean"),
     # --- context
@@ -224,14 +181,8 @@ KEY_META = {
                            "auto-clears; default 0.4 since 1.2.40 (was 0.5), an explicit "
                            "value is kept.", FIRST,
                            _S + "context-watch.sh", "number"),
-    "context.budgetTokens": _unv("Context budget in tokens; null uses the model's.", FIRST,
-                                 _S + "context-watch.sh", "integer or null"),
     "context.reserveTokens": _unv("Tokens held back from the budget; `null` means off.",
                                   FIRST, _S + "context-watch.sh", "integer or null"),
-    "context.handoffPath": _unv("Where the handoff is written.", FIRST,
-                                _S + "crew_autocycle.py", "path"),
-    "context.keepTranscripts": _unv("Transcripts kept by the handoff writer.", FIRST,
-                                    _S + "handoff-write.sh", "integer"),
     "context.autoClear.enabled": _row("Auto-clear after a wrap-up. Only the machine file "
                                       "can arm it (exactly `true`); a repo `false` vetoes "
                                       "it.", "branch", (None, True, False), "0.19.10",
@@ -240,11 +191,6 @@ KEY_META = {
                                      "method this OS lacks stands auto-clear down.",
                                      "tuple", AUTOCLEAR_METHOD_VALUES, "0.19.10",
                                      values_by_os=crew_platform._AUTOCLEAR_METHODS),  # pylint: disable=protected-access
-    "context.autoClear.windowTitle": _unv("Window title to match before typing.",
-                                          "0.19.10", _S + "crew_autocycle.py",
-                                          "string or null"),
-    "context.autoClear.command": _unv("What is typed.", "0.19.10", _S + "crew_autocycle.py",
-                                      "string"),
     "context.autoClear.delaySeconds": _row("Delay before typing; an unusable value warns and "
                                            "reads as 3.", "type", since="0.19.10",
                                            source=_S + "crew_autocycle.py",
@@ -254,10 +200,6 @@ KEY_META = {
                                               since="0.19.10",
                                               source=_S + "crew_autocycle.py",
                                               type_="number"),
-    "context.autoClear.unsafeFocus": _unv("Consent to `wtype` typing into whatever has "
-                                          "focus. No longer read: `auto-clear.sh` refuses "
-                                          "`wtype` whatever this says.", "0.19.11",
-                                          _S + "auto-clear.sh", "boolean"),
     "context.autoClear.onlyRepos": _row("Narrowing only, machine file only: null narrows "
                                         "nothing, a list arms only those repos, `[]` or a "
                                         "non-list arms nothing.", "type", since="1.0.25",
@@ -273,38 +215,13 @@ KEY_META = {
                                      "`true`), only where `enabled` is armed; a repo `false` "
                                      "vetoes it.", "branch", (None, True, False), "1.0.334",
                                      _S + "crew_autocycle.py"),
-    "context.autoWrapUp": _unv("Ask for a wrap-up when the budget runs low.", "0.19.10",
-                               _S + "context-watch.sh", "boolean"),
-    "context.autoResume": _unv("Retired: read by nothing since 1.0.0; kept so "
-                               "`/crew:migrate` carries it.", "0.19.10",
-                               "commands/migrate.md", "boolean"),
-    "context.staleHandoff.maxAgeHours": _unv("A handoff older than this is archived.",
-                                             "0.16.33", _S + "crew_state.py", "integer"),
-    "context.staleHandoff.maxCommitsBehind": _unv("A handoff this many commits behind is "
-                                                  "archived.", "0.16.33",
-                                                  _S + "crew_state.py", "integer"),
     "resume.auto": _row("Auto-resume after `/clear` or a manual `/compact`. Only the "
                         "machine file can arm it (exactly `true`); a repo `false` vetoes "
                         "it.", "branch", (None, True, False), "1.0.40",
                         _S + "crew_resume.py"),
-    "resume.typeDelaySeconds": _row("Wait before auto-resume types its command: before the "
-                                    "tmux ready probe, and the only wait on Windows. Read "
-                                    "from the machine file only.", "type", since="1.0.321",
-                                    source=_S + "crew_autocycle.py",
-                                    type_="whole seconds; fraction cut, negative or "
-                                          "non-number reads as the default"),
-    "resume.readyTimeoutSeconds": _row("How long the tmux ready probe waits for an idle, "
-                                       "empty input line before it types nothing. Read "
-                                       "from the machine file only.", "type",
-                                       since="1.0.321", source=_S + "crew_autocycle.py",
-                                       type_="whole seconds; fraction cut, negative or "
-                                             "non-number reads as the default"),
     # --- emergency
     "emergency.standDown": _unv("Whether a declared incident may stand gates down; "
                                 "`false` forbids it.", FIRST, _S + "_common.sh", "boolean"),
-    "emergency.ttlMinutes": _row("Default incident lifetime; a non-integer reads as the "
-                                 "default.", "type", since=FIRST,
-                                 source=_S + "crew_incident.py", type_="integer"),
     "emergency.maxTtlMinutes": _row("Longest incident lifetime; never below "
                                     "`ttlMinutes`.", "type", since=FIRST,
                                     source=_S + "crew_incident.py", type_="integer"),
@@ -315,9 +232,6 @@ KEY_META = {
                             source=_S + "crew_notify.py",
                             type_="telegram, teams, none or null; any other value sends "
                                   "nothing"),
-    "notify.urlEnv": _unv("Name of the environment variable holding the Teams webhook URL. "
-                          "Honoured from the machine file only; a repo's is ignored with a "
-                          "notice.", FIRST, _S + "crew_notify.py", "string or null"),
     "notify.tokenEnv": _unv("Name of the environment variable holding the Telegram bot "
                             "token; null may be filled from the notify skill's "
                             "`bot_token_env`. Honoured from the machine file only.", FIRST,
@@ -332,19 +246,6 @@ KEY_META = {
                           source=_S + "crew_notify.py",
                           type_="list of event names; an unknown name is dropped with a "
                                 "notice"),
-    "notify.realertHours": _row("The same event + ticket + reason is sent once per this "
-                                "many hours; a question pings once per waiting "
-                                "episode.", "type", since="1.0.350",
-                                source=_S + "crew_notify.py",
-                                type_="number of hours; negative or non-number reads as "
-                                      "the default"),
-    "notify.questionTypes": _row("The Claude Code `notification_type` values that count as "
-                                 "a question; null uses the built-in five "
-                                 "(`crew_notify.QUESTION_TYPES`).", "type",
-                                 since="1.0.350", source=_S + "crew_notify.py",
-                                 type_="list of notification_type strings, or null; a "
-                                       "non-list reads as null and a non-string entry "
-                                       "is dropped"),
     # --- platform (written by platform-sync)
     "platform.os": _unv("Detected OS, stamped by platform-sync.", FIRST,
                         _S + "crew_platform.py", "string or null"),
@@ -354,11 +255,6 @@ KEY_META = {
                            _S + "crew_platform.py", "string or null"),
     "platform.windowsHostIp": _unv("Windows host IP seen from WSL.", FIRST,
                                    _S + "crew_platform.py", "string or null"),
-    "shellRoute.mode": _row("The shell long-running jobs use on native Windows; null "
-                            "inherits, and an unknown value reads as `auto` and is named.",
-                            "tuple", crew_shell.MODES, "1.0.54"),
-    "shellRoute.distro": _unv("WSL distro to route to; null takes the default distro.",
-                              "1.0.54", _S + "crew_shell.py", "string or null"),
     # T-0044: machine file only; a repo copy is ignored and reported.
     "unattendedCloud.aws.readOnly.profile": _row(
         "The AWS profile an unattended run exports credentials from (`aws configure "
@@ -376,49 +272,16 @@ KEY_META = {
         "usable only where the repo's `environments.nonProd` agrees. Machine file only.",
         "open-table", since="1.1.10", source=_S + "crew_unattended.py"),
     # --- pm
-    "pm.enabled": _unv("Run the PM brief.", FIRST, _S + "crew_state.py", "boolean"),
-    "pm.mode": _unv("How the PM brief adapts its length.", FIRST, _S + "crew_state.py",
-                    "string"),
-    "pm.quietLines": _row("PM brief length when nothing changed.", "type", since=FIRST,
-                          source=_S + "crew_state.py", type_="integer"),
-    "pm.maxLines": _row("Longest PM brief.", "type", since=FIRST,
-                        source=_S + "crew_state.py", type_="integer"),
     "pm.authority": _row("How much the PM may do unasked. A widening is warned about; the "
                          "two layers combine by precedence.", "tuple",
                          crew_state.AUTHORITIES, FIRST),
-    "pm.ticketGranularity": _row("How big a ticket the PM cuts.", "tuple",
-                                 crew_state.TICKET_GRANULARITIES, "0.16.34"),
     "pm.maxDispatches": _row("Roles the PM may dispatch in one pass.", "type", since=FIRST,
                              source=_S + "crew_state.py", type_="integer"),
     # --- graph
-    "graph.enabled": _unv("No consumer found (CONFIG.md section 9).", FIRST,
-                          "skills/crew-graph/SKILL.md", "boolean"),
-    "graph.tool": _unv("No consumer found (CONFIG.md section 9).", FIRST,
-                       "skills/crew-graph/SKILL.md", "string"),
     "graph.out": _unv("Where the code graph is written.", FIRST, _S + "crew_state.py",
                       "path"),
-    "graph.mode": _unv("No consumer found (CONFIG.md section 9).", FIRST,
-                       "skills/crew-graph/SKILL.md", "string"),
-    "graph.commitHook": _unv("No consumer found (CONFIG.md section 9).", FIRST,
-                             "skills/crew-graph/SKILL.md", "boolean"),
     # --- docs
-    "docs.theme": _unv("House-style theme for built documents; null uses the "
-                       "skill's own choice.", "0.16.33", "skills/crew-house-style/SKILL.md",
-                       "string or null"),
-    "docs.reportTheme": _unv("Theme for findings reports.", "0.16.33",
-                             "skills/crew-house-style/SKILL.md", "string or null"),
     # --- merge gates
-    "bitbucket.mergeGate.enabled": _unv("Let `/crew:promote` drive the Bitbucket merge "
-                                        "gate.", "0.16.33", "commands/promote.md",
-                                        "boolean"),
-    "bitbucket.mergeGate.branch": _unv("Branch the Bitbucket merge gate protects.",
-                                       "0.16.33", "commands/promote.md", "string or null"),
-    "bitbucket.mergeGate.preset": _unv("Selects nothing today (CONFIG.md section 9).",
-                                       "0.16.33", "commands/promote.md", "string"),
-    "github.mergeGate.enabled": _unv("Let `/crew:promote` drive the GitHub merge gate.",
-                                     "0.19.30", "commands/promote.md", "boolean"),
-    "github.mergeGate.branch": _unv("Branch the GitHub merge gate protects.", "0.19.30",
-                                    "commands/promote.md", "string or null"),
     # --- git
     "git.forbiddenTrailers": _row("Commit trailer tokens the owner forbids, reported by "
                                   "`/crew:done`. The two layers combine by union, so a "
@@ -459,19 +322,9 @@ KEY_META = {
                                    "or `input:<name>`.", "1.1.16", _S + "crew_config.py",
                                    "object of glob to string"),
     # --- change requests
-    "change.requester": _unv("Who requests the change.", "0.19.31", _S + "crew_change.py",
-                             "string or null"),
-    "change.implementor": _unv("Who implements the change.", "0.19.31",
-                               _S + "crew_change.py", "string or null"),
     "change.requireForProduction": _rat("Require an approved change request before "
                                         "`/crew:promote production`: a repo may turn it "
                                         "on, never off.", "0.19.31"),
-    "change.sdpTemplate": _unv("SDP template for a change request.", "0.19.31",
-                               _S + "crew_change.py", "string"),
-    "change.jiraIssueType": _unv("Jira issue type for a change request.", "0.19.31",
-                                 _S + "crew_change.py", "string"),
-    "change.category": _unv("Change category.", "0.19.31", _S + "crew_change.py",
-                            "string or null"),
     # --- scope
     "scope.mode": _row("Whether the scope guard enforces a ticket's Touch list; a value "
                        "outside these fails closed to `block`.", "tuple",
@@ -521,30 +374,10 @@ KEY_META = {
                                    "never runs unattended asleep.", "branch",
                                    (None,) + crew_sleep.DEPLOY_OVERRIDES, "1.1.21",
                                    _S + "crew_sleep.py"),
-    "autopilot.sleep.notifyHold": _row("Inside the sleep window (L-0656): `true` holds the pings "
-                                       "that only ask for attention (questions, Approval waiting, "
-                                       "Review out of rounds) and counts them; the morning "
-                                       "summary carries the count. A failure (a deploy result, "
-                                       "a refused Stop gate, a stalled lane) is never held. Only "
-                                       "while armed and asleep by the schedule (a manual sleep "
-                                       "outside it holds nothing); anything but null or true "
-                                       "holds nothing, with a warning.", "branch", (None, True),
-                                       "1.1.21", _S + "crew_notify_hold.py"),
     "autopilot.ship": _row("After `/crew:done`: `pr` pushes and opens the PR; `merge` also "
                            "merges it (a merge commit) once the required checks allow. "
                            "Anything else reads as `pr`, with a warning.", "tuple",
                            crew_autopilot.SHIP_POLICIES, "1.0.349"),
-    "autopilot.knownFailures": _row("Required checks whose `fail` does not block a merge, "
-                                    "matched by exact name; anything but a list of "
-                                    "strings reads as `[]`, with a warning.", "branch",
-                                    None, "1.0.349", _S + "crew_autopilot.py",
-                                    type_="list of check names"),
-    "autopilot.ciTimeoutMinutes": _row("Minutes `ship` waits for the required checks; "
-                                       "still pending, or green only after it, stops. "
-                                       "Anything but a positive integer reads as 60, "
-                                       "with a warning.", "branch", None, "1.0.349",
-                                       _S + "crew_autopilot.py",
-                                       type_="positive integer"),
     "autopilot.maxTicketsPerRun": _row("Tickets one goal run (one session) may start; the "
                                        "next one stops the run. Anything but a positive "
                                        "integer reads as 3, with a warning.", "branch", None,

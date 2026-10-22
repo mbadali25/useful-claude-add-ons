@@ -35,15 +35,10 @@
     },
     "roles": {}
   },
-  "worktree": {
-    "root": null
-  },
   "secondOpinion": {
     "provider": "none",
     "mode": "cli",
-    "model": null,
-    "keyEnv": "GEMINI_API_KEY",
-    "sendsCode": false
+    "model": null
   },
   "memory": {
     "mode": "repo",
@@ -51,32 +46,22 @@
   },
   "notify": {
     "provider": null,
-    "urlEnv": null,
     "tokenEnv": null,
     "chatId": null,
     "events": [
       "blocker",
       "deploy",
       "question"
-    ],
-    "realertHours": 6,
-    "questionTypes": null
+    ]
   },
   "pm": {
-    "enabled": true,
-    "mode": "adaptive",
-    "quietLines": 8,
-    "maxLines": 40,
     "authority": "report-only",
-    "ticketGranularity": "system",
     "maxDispatches": 3
   },
   "context": {
     "autoClear": {
       "enabled": null,
       "method": "auto",
-      "windowTitle": null,
-      "command": "/clear",
       "delaySeconds": 3,
       "minHandoffLines": 5,
       "onlyRepos": null,
@@ -85,26 +70,7 @@
     }
   },
   "resume": {
-    "auto": null,
-    "typeDelaySeconds": 2,
-    "readyTimeoutSeconds": 15
-  },
-  "docs": {
-    "theme": null,
-    "reportTheme": null
-  },
-  "bitbucket": {
-    "mergeGate": {
-      "enabled": false,
-      "branch": null,
-      "preset": "standard"
-    }
-  },
-  "github": {
-    "mergeGate": {
-      "enabled": false,
-      "branch": null
-    }
+    "auto": null
   },
   "install": {
     "policy": "manual"
@@ -117,22 +83,13 @@
     "prodUnattended": false
   },
   "change": {
-    "requester": null,
-    "implementor": null,
-    "requireForProduction": false,
-    "sdpTemplate": "Change Management Request",
-    "jiraIssueType": "Change",
-    "category": null
+    "requireForProduction": false
   },
   "git": {
     "forbiddenTrailers": []
   },
   "route": {
     "enabled": false
-  },
-  "shellRoute": {
-    "mode": "auto",
-    "distro": null
   },
   "unattendedCloud": {
     "aws": {

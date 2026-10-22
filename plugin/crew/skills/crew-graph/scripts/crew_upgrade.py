@@ -49,13 +49,9 @@ import crew_state  # pylint: disable=wrong-import-position
 PM_BLOCK = crew_state.PM_DEFAULTS
 
 GRAPH_BLOCK = {
-    "enabled": True,
-    "tool": "graphify",
     # crew_state owns this default too -- it has to resolve the same directory
     # when no config exists at all.
     "out": crew_state.GRAPH_OUT_DEFAULT,
-    "mode": "code-only",
-    "commitHook": False,
     # There is deliberately no Obsidian export key here. The graph lives on
     # the filesystem as `graph.json` and nowhere else -- see crew-graph/
     # SKILL.md, "Why there is no Obsidian export". A config written before
@@ -107,10 +103,6 @@ GRAPH_BLOCK = {
 # docs (a client-facing deliverable out of an internal repo), and spelling
 # that as a second full default would make the common case -- one brand for
 # everything -- take two settings to state and two to keep in step.
-DOCS_BLOCK = {
-    "theme": None,
-    "reportTheme": None,
-}
 
 # The one value `upgrade_config` rewrites in place rather than preserving.
 #
@@ -140,46 +132,6 @@ _DOCS_THEME_REWRITTEN_FROM = "neutral"
 # setting neutral again will stick.
 _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA = 4
 
-# Whether a Bitbucket pull request has to pass crew's merge gate.
-#
-# `enabled` is false because a gate that arrives switched on would start
-# failing merges on a repo whose owner never asked for one; `/crew:promote`
-# and the Bitbucket skill are what turn it on.
-#
-# `branch` is null meaning "ask the API which branch this repo calls main".
-# Hardcoding `main` here would be wrong on every repo still on `master` or on
-# a Gitflow `develop`, and wrong silently -- the gate would look configured
-# and watch a branch nobody merges into.
-BITBUCKET_BLOCK = {
-    "mergeGate": {
-        "enabled": False,
-        "branch": None,
-        "preset": "standard",
-    },
-}
-
-# The GitHub twin, symmetrical to `BITBUCKET_BLOCK` minus `preset`.
-#
-# `enabled` and `branch` carry BITBUCKET_BLOCK's reasons unchanged: a gate that
-# arrived switched on would start failing merges on a repo whose owner never
-# asked for one, and a hardcoded `main` would be silently wrong on a repo still
-# on `master` or on a Gitflow `develop`.
-#
-# `preset` is NOT copied, and the asymmetry is the decision rather than an
-# oversight. `bitbucket.mergeGate.preset` binds to nothing -- `merge_gate.sh`
-# has no `--preset` flag, and CONFIG.md §8 records why the key stays unwired
-# rather than bound to a hardcoded literal. Copying a key whose only
-# documentation is an explanation of why it does nothing would be shipping the
-# same defect a second time, deliberately. `skills/github/scripts/merge_gate.sh`
-# additionally refuses to invent a gate at all: its `enable` REQUIRES
-# `--from-export`, so there is no preset for a key to select even in principle.
-GITHUB_BLOCK = {
-    "mergeGate": {
-        "enabled": False,
-        "branch": None,
-    },
-}
-
 # `/crew:change`'s block. Lives here rather than in `crew_config` for the same
 # reason `GRAPH_BLOCK` and `GITHUB_BLOCK` do: `CONFIG_BLOCKS` below has to
 # reference it, and `crew_config` imports THIS module, never the reverse.
@@ -204,12 +156,7 @@ GITHUB_BLOCK = {
 # under one name files them under that name in every repo, and making them say
 # so once per checkout is the friction the global layer exists to remove.
 CHANGE_BLOCK = {
-    "requester": None,
-    "implementor": None,
     "requireForProduction": False,
-    "sdpTemplate": "Change Management Request",
-    "jiraIssueType": "Change",
-    "category": None,
 }
 
 # The sha group must run to END OF LINE, and the prefix must be LAZY. Both,
@@ -268,8 +215,7 @@ _ABSENT = object()
 # its own branch in `_prune_unsupplied_global_leaves` rather than a place in
 # this set.
 _GLOBAL_WHOLE_BLOCKS = frozenset((
-    "pm", "qa", "dev", "worktree", "docs", "bitbucket",
-    "install", "guards", "github", "change",
+    "pm", "qa", "dev", "install", "guards", "change",
 ))
 
 
@@ -422,7 +368,6 @@ CONFIG_BLOCKS = (
     ("graph", GRAPH_BLOCK),
     ("qa", crew_state.QA_DEFAULTS),
     ("dev", crew_state.DEV_DEFAULTS),
-    ("worktree", crew_state.WORKTREE_DEFAULTS),
     # ADDED 2026-09-17, after a user reported that a schema 3 -> 7
     # upgrade left context.autoClear / autoWrapUp / autoResume /
     # staleHandoff absent. They were absent because `context` was never
@@ -431,11 +376,8 @@ CONFIG_BLOCKS = (
     # of that failure for the qa/dev table; `context` is the one that
     # actually got missed.
     ("context", crew_state.CONTEXT_DEFAULTS),
-    ("docs", DOCS_BLOCK),
-    ("bitbucket", BITBUCKET_BLOCK),
     ("install", crew_state.INSTALL_DEFAULTS),
     ("guards", crew_state.GUARD_DEFAULTS),
-    ("github", GITHUB_BLOCK),
     # Repo-only, one of the two blocks here that is. `default_global_config()`
     # does not carry it, so `filter_global` prunes a `production` block out
     # of a machine-global file and reports it: the level ratchets across
@@ -534,7 +476,6 @@ SCHEMA_5_KEYS = ("install.policy",)
 SCHEMA_6_KEYS = ("guards.terraformApply", "guards.forcePush",
                  "guards.adminMerge", "guards.mergeGate",
                  "guards.prodDatabase", "guards.prodServer",
-                 "github.mergeGate.enabled", "github.mergeGate.branch",
                  "production.databases", "production.hosts")
 
 # The keys schema 7 introduces: the whole `change` block, for `/crew:change`.
@@ -555,9 +496,7 @@ SCHEMA_6_KEYS = ("guards.terraformApply", "guards.forcePush",
 # `requireForProduction` on. Turning it on is a one-way ratchet across the two
 # config layers (a repo may turn it ON, never off), so the report says which
 # direction the key moves in before anybody sets it.
-SCHEMA_7_KEYS = ("change.requester", "change.implementor",
-                 "change.requireForProduction", "change.sdpTemplate",
-                 "change.jiraIssueType", "change.category")
+SCHEMA_7_KEYS = ("change.requireForProduction",)
 
 
 def upgrade_config(cfg):

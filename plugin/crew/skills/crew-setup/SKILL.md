@@ -190,58 +190,156 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
 ```json
 {
   "schema": 7,
-  "tier": 0,
-  "roles": ["explorer", "reviewer"],
   "qa": {
     "provider": "auto",
-    "order": ["codex", "kimi", "copilot", "claude"],
+    "order": [
+      "codex",
+      "kimi",
+      "copilot",
+      "claude"
+    ],
     "fallback": "claude-sonnet-5",
-    "codex": { "model": null, "reasoningEffort": null },
-    "copilot": { "model": null },
-    "kimi": { "model": null },
+    "codex": {
+      "model": null,
+      "reasoningEffort": null
+    },
+    "copilot": {
+      "model": null
+    },
+    "kimi": {
+      "model": null
+    },
     "roles": {}
   },
   "dev": {
     "provider": "claude",
     "fallback": "claude-sonnet-5",
-    "codex": { "model": null, "reasoningEffort": null },
-    "copilot": { "model": null },
-    "kimi": { "model": null },
+    "codex": {
+      "model": null,
+      "reasoningEffort": null
+    },
+    "copilot": {
+      "model": null
+    },
+    "kimi": {
+      "model": null
+    },
     "roles": {}
   },
-  "worktree": { "root": null },
-  "secondOpinion": { "provider": "none", "mode": "cli", "model": null, "keyEnv": "GEMINI_API_KEY", "sendsCode": false },
+  "secondOpinion": {
+    "provider": "none",
+    "mode": "cli",
+    "model": null
+  },
   "tracker": "files",
-  "jira": { "project": null, "cloudId": null },
-  "sdp": { "portal": null, "noteVisibility": "private", "closeOnDone": false },
-  "obsidian": { "vaultPath": null, "boardDir": null, "board": "Board.md", "columns": { "backlog": "Backlog", "ready": "Ready", "inProgress": "In Progress", "review": "Review", "done": "Done" } },
-  "memory": { "mode": "repo", "vaultPath": null, "inject": true, "recall": { "vaults": [], "maxChars": 800, "projects": [] } },
+  "jira": {
+    "project": null,
+    "cloudId": null
+  },
+  "obsidian": {
+    "vaultPath": null,
+    "boardDir": null
+  },
+  "memory": {
+    "mode": "repo",
+    "vaultPath": null
+  },
   "verifyGate": true,
-  "context": { "enabled": true, "warnAt": 0.4, "budgetTokens": null, "reserveTokens": 0, "handoffPath": ".work/HANDOFF.md", "keepTranscripts": 5, "autoClear": { "enabled": null, "method": "auto", "windowTitle": null, "command": "/clear", "delaySeconds": 3, "minHandoffLines": 5, "unsafeFocus": false, "onlyRepos": null, "onlySessions": null, "wrapUp": null }, "autoWrapUp": true, "autoResume": true, "staleHandoff": { "maxAgeHours": 72, "maxCommitsBehind": 3 } },
-  "resume": { "auto": null, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15 },
-  "emergency": { "standDown": true, "ttlMinutes": 120, "maxTtlMinutes": 480 },
-  "notify": { "provider": null, "urlEnv": null, "tokenEnv": null, "chatId": null, "events": ["blocker", "deploy", "question"], "realertHours": 6, "questionTypes": null },
-  "platform": { "os": null, "wsl": null, "shell": null, "windowsHostIp": null },
-  "shellRoute": { "mode": null, "distro": null },
-  "pm": { "enabled": true, "mode": "adaptive", "quietLines": 8, "maxLines": 40, "authority": "report-only", "ticketGranularity": "system", "maxDispatches": 3 },
-  "graph": { "enabled": true, "tool": "graphify", "out": "graphify-out", "mode": "code-only", "commitHook": false },
-  "docs": { "theme": null, "reportTheme": null },
-  "bitbucket": { "mergeGate": { "enabled": false, "branch": null, "preset": "standard" } },
-  "github": { "mergeGate": { "enabled": false, "branch": null } },
-  "install": {"policy": "manual"},
-  "guards": { "profile": "off", "overrides": {} },
-  "production": { "databases": [], "hosts": [] },
-  "cloud": { "awsProfiles": [], "awsRegions": [], "azureSubscriptions": [] },
-  "environments": { "nonProd": [], "prodUnattended": false, "workflows": {} },
-  "change": { "requester": null, "implementor": null, "requireForProduction": false,
-              "sdpTemplate": "Change Management Request", "jiraIssueType": "Change", "category": null },
-  "git": { "forbiddenTrailers": [] },
-  "scope": { "mode": "off", "allowCliApproval": false },
-  "autopilot": { "maxAutoReplans": 0, "sleep": { "schedule": null, "approval": null, "questions": null, "deploy": null, "notifyHold": null },
-                 "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60, "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000,
-                 "maxLanes": null, "reviewPolicy": "stop" },
-  "tickets": { "baseBranch": null },
-  "route": { "enabled": false }
+  "context": {
+    "enabled": true,
+    "warnAt": 0.4,
+    "reserveTokens": 0,
+    "autoClear": {
+      "enabled": null,
+      "method": "auto",
+      "delaySeconds": 3,
+      "minHandoffLines": 5,
+      "onlyRepos": null,
+      "onlySessions": null,
+      "wrapUp": null
+    }
+  },
+  "resume": {
+    "auto": null
+  },
+  "emergency": {
+    "standDown": true,
+    "maxTtlMinutes": 480
+  },
+  "notify": {
+    "provider": null,
+    "tokenEnv": null,
+    "chatId": null,
+    "events": [
+      "blocker",
+      "deploy",
+      "question"
+    ]
+  },
+  "platform": {
+    "os": null,
+    "wsl": null,
+    "shell": null,
+    "windowsHostIp": null
+  },
+  "pm": {
+    "authority": "report-only",
+    "maxDispatches": 3
+  },
+  "graph": {
+    "out": "graphify-out"
+  },
+  "install": {
+    "policy": "manual"
+  },
+  "guards": {
+    "profile": "off",
+    "overrides": {}
+  },
+  "production": {
+    "databases": [],
+    "hosts": []
+  },
+  "cloud": {
+    "awsProfiles": [],
+    "awsRegions": [],
+    "azureSubscriptions": []
+  },
+  "environments": {
+    "nonProd": [],
+    "prodUnattended": false,
+    "workflows": {}
+  },
+  "change": {
+    "requireForProduction": false
+  },
+  "git": {
+    "forbiddenTrailers": []
+  },
+  "scope": {
+    "mode": "off",
+    "allowCliApproval": false
+  },
+  "autopilot": {
+    "maxAutoReplans": 0,
+    "ship": "merge",
+    "sleep": {
+      "schedule": null,
+      "approval": null,
+      "questions": null,
+      "deploy": null
+    },
+    "maxTicketsPerRun": 3,
+    "maxTokensPerSession": 2000000,
+    "maxLanes": null,
+    "reviewPolicy": "stop"
+  },
+  "tickets": {
+    "baseBranch": null
+  },
+  "route": {
+    "enabled": false
+  }
 }
 ```
 

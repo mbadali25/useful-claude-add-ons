@@ -257,17 +257,12 @@ def default_config():
     """
     return {
         "schema": crew_state.SCHEMA_CURRENT,
-        "tier": 0,
-        "roles": ["explorer", "reviewer"],
         "qa": copy.deepcopy(crew_state.QA_DEFAULTS),
         "dev": copy.deepcopy(crew_state.DEV_DEFAULTS),
-        "worktree": copy.deepcopy(crew_state.WORKTREE_DEFAULTS),
         "secondOpinion": {
             "provider": "none",
             "mode": "cli",
             "model": None,
-            "keyEnv": "GEMINI_API_KEY",
-            "sendsCode": False,
         },
         "tracker": "files",
         # `cloudId` is cached by `/crew:jira-sync` (commands/jira-sync.md:25)
@@ -279,30 +274,16 @@ def default_config():
         # made it silently un-settable in the global layer. Declaring it is
         # what makes the key set the file's own answer rather than a guess.
         "jira": {"project": None, "cloudId": None},
-        "sdp": {
-            "portal": None,
-            "noteVisibility": "private",
-            "closeOnDone": False,
-        },
         "obsidian": {
             "vaultPath": None,
             "boardDir": None,
-            "board": "Board.md",
-            "columns": {
-                "backlog": "Backlog",
-                "ready": "Ready",
-                "inProgress": "In Progress",
-                "review": "Review",
-                "done": "Done",
-            },
         },
         # `inject` and `recall` are the context hook's (crew_context.py,
         # crew_recall.py). Repo-only on purpose: that hook reads the repo's
         # file and nothing else, so a machine-global value would be accepted
         # and then do nothing. `inject` is on by default since 1.0.0; see
         # crew_context.inject_enabled.
-        "memory": {"mode": "repo", "vaultPath": None, "inject": True,
-                   "recall": {"vaults": [], "maxChars": 800, "projects": []}},
+        "memory": {"mode": "repo", "vaultPath": None},
         "verifyGate": True,
         "context": copy.deepcopy(crew_state.CONTEXT_DEFAULTS),
         # T-0006. In both layers, but only the MACHINE layer can arm it:
@@ -312,7 +293,6 @@ def default_config():
         "resume": copy.deepcopy(crew_state.RESUME_DEFAULTS),
         "emergency": {
             "standDown": True,
-            "ttlMinutes": 120,
             "maxTtlMinutes": 480,
         },
         # `provider` is null, not "none": a repo that leaves it null inherits the
@@ -320,12 +300,9 @@ def default_config():
         # a deliberate opt-out that wins. crew_notify.py reads this block (T-0051).
         "notify": {
             "provider": None,
-            "urlEnv": None,
             "tokenEnv": None,
             "chatId": None,
             "events": ["blocker", "deploy", "question"],
-            "realertHours": 6,
-            "questionTypes": None,
         },
         # Left nulled deliberately -- the platform-sync SessionStart hook
         # fills these in on first run and repairs them on every later one.
@@ -343,12 +320,8 @@ def default_config():
         # a repo that chose nothing inherits the machine's value
         # (`without_null_shadows`, review round 2); unset everywhere,
         # `crew_shell.mode` reads it as `auto`.
-        "shellRoute": {"mode": None, "distro": None},
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
         "graph": copy.deepcopy(crew_upgrade.GRAPH_BLOCK),
-        "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
-        "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
-        "github": copy.deepcopy(crew_upgrade.GITHUB_BLOCK),
         # Present on BOTH sides. A repo may narrow what the machine allows --
         # see `crew_state.effective_ratcheted` -- and a key that exists only
         # globally would fail `is_global_path`'s rule that every
@@ -544,23 +517,17 @@ def default_global_config():
     return {
         "qa": copy.deepcopy(crew_state.QA_DEFAULTS),
         "dev": copy.deepcopy(crew_state.DEV_DEFAULTS),
-        "worktree": copy.deepcopy(crew_state.WORKTREE_DEFAULTS),
         "secondOpinion": {
             "provider": "none",
             "mode": "cli",
             "model": None,
-            "keyEnv": "GEMINI_API_KEY",
-            "sendsCode": False,
         },
         "memory": {"mode": "repo", "vaultPath": None},
         "notify": {
             "provider": None,
-            "urlEnv": None,
             "tokenEnv": None,
             "chatId": None,
             "events": ["blocker", "deploy", "question"],
-            "realertHours": 6,
-            "questionTypes": None,
         },
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
         # `context.autoClear` and NOTHING ELSE under `context`. How a terminal
@@ -584,9 +551,6 @@ def default_global_config():
         # (`crew_resume.settings`): it starts work in this machine's session,
         # so, like `autoClear.enabled`, it is the machine owner's answer.
         "resume": copy.deepcopy(crew_state.RESUME_DEFAULTS),
-        "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
-        "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
-        "github": copy.deepcopy(crew_upgrade.GITHUB_BLOCK),
         # How much crew may do about a skill it needs and cannot find. This is
         # a machine fact in the strongest sense on this list: it is the machine
         # owner saying how much they trust crew to run commands HERE. It was
@@ -643,7 +607,6 @@ def default_global_config():
         # T-0040. Which shell is fast is a fact about the machine (Git Bash's
         # per-fork cost differs 16-21x between two of the owner's hosts), so
         # the shell route is settable here; a repo may still override it.
-        "shellRoute": {"mode": "auto", "distro": None},
         # T-0044. Which cloud identity an unattended run holds. In THIS layer
         # only and absent from `default_config()`: `crew_unattended.py` reads
         # it from the machine file alone, `resolve_config` drops a repo copy
