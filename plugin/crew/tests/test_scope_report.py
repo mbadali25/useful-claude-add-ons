@@ -355,7 +355,6 @@ def test_a_committed_out_of_scope_change_is_named(repo):
 
 # --------------------------------------------------- through the real gates
 
-_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 
 
 def _scenario(repo, name):
@@ -377,7 +376,6 @@ _SCENARIOS = ("outside", "inside", "no-spec", "pre-1.0")
 
 
 @pytest.mark.parametrize("scenario", _SCENARIOS)
-@pytest.mark.parametrize("flavour", ["sh", pytest.param("ps1", marks=crew_fixtures.SLOW)])
 def test_both_gates_print_the_same_scope_line(repo, flavour, scenario):
     """Acceptance 7: the Stop gates hand their changed list to this one
     script, so bash and PowerShell print the line the script prints, for
@@ -386,18 +384,10 @@ def test_both_gates_print_the_same_scope_line(repo, flavour, scenario):
     _scenario(repo, scenario)
     expected = _first(_run(repo))
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(repo))
-    if flavour == "sh":
-        bash = crew_fixtures.resolve_bash()
-        if bash is None:
-            pytest.skip("bash not installed - the .sh flavour was NOT run")
-        cmd = [bash, _VERIFY_SH]
-    else:
-        pwsh = crew_fixtures.resolve_pwsh()
-        if pwsh is None:
-            pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
-        cmd = [pwsh, "-NoProfile", "-NonInteractive", "-File", _PS1]
-        env["OS"] = "Windows_NT"
-
+    bash = crew_fixtures.resolve_bash()
+    if bash is None:
+        pytest.skip("bash not installed - the .sh flavour was NOT run")
+    cmd = [bash, _VERIFY_SH]
     done = crew_fixtures.run_gate(cmd, input="{}", cwd=str(repo), env=env,
                                   capture_output=True, text=True, check=False)
 

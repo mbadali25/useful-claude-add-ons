@@ -32,9 +32,7 @@ driven by a machine-readable deferred COUNT.
 """
 import json
 import os
-import shutil
 import subprocess
-import sys
 
 import pytest
 
@@ -44,17 +42,12 @@ import context  # noqa: F401  pylint: disable=unused-import
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
-_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = shutil.which("pwsh")
 
 _FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None,
                                                 reason="needs bash")),
-    pytest.param("ps1", marks=pytest.mark.skipif(
-        not sys.platform.startswith("win") or _PWSH is None,
-        reason="the .ps1 gate is the native-Windows flavour")),
 ]
 
 # TWO rules on the same path, each fitting the 60s default ALONE but not
@@ -126,11 +119,7 @@ def _repo(tmp_path, verify_map):
 
 
 def _run(flavour, root, *extra):
-    if flavour == "sh":
-        cmd = [_BASH, _SH, *extra]
-    else:
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1,
-               *[a.replace("--all", "-All") for a in extra]]
+    cmd = [_BASH, _SH, *extra]
     return crew_fixtures.run_gate(
         cmd, input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),

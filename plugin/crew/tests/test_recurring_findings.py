@@ -122,9 +122,9 @@ def test_every_class_names_a_standard_that_exists():
 # ---- path scoping -----------------------------------------------------------------
 
 @pytest.mark.parametrize("path,expected", [
-    ("plugin/crew/hooks/scripts/verify-gate.ps1", True),
+    ("plugin/crew/hooks/scripts/promote-gate.ps1", True),
     ("scripts/install-prerequisites.sh", True),
-    ("plugin\\crew\\hooks\\scripts\\verify-gate.ps1", True),
+    ("plugin\\crew\\hooks\\scripts\\promote-gate.ps1", True),
     ("plugin/crew/README.md", False),
     ("plugin/crew/hooks/scripts/review_prompt.py", False),
 ])
@@ -315,7 +315,7 @@ def test_implementer_block_unions_touch_and_paths(tmp_path):
 
 
 def test_cli_ticket_prints_the_block_and_exits_0(tmp_path):
-    _spec(tmp_path, "L-0001", ["- `plugin/crew/hooks/scripts/verify-gate.ps1`"])
+    _spec(tmp_path, "L-0001", ["- `plugin/crew/hooks/scripts/promote-gate.ps1`"])
     result = _cli("--root", str(tmp_path), "--ticket", "L-0001")
 
     assert result.returncode == 0, result.stderr

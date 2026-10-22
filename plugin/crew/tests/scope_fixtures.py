@@ -2,9 +2,9 @@
 (test_crew_ticket.py, test_scope_guard.py, test_completion_audit.py).
 
 Everything is built under pytest's tmp_path. Nothing here touches the real
-repository, its git directory, or ~/.claude. The `.ps1` flavour runs under
-pwsh with `OS=Windows_NT` so its flavour guard proceeds on this Linux host;
-without pwsh those cases skip and say so.
+repository, its git directory, or ~/.claude. Two flavours are offered, the
+Python module and the `.sh`; the `.ps1` third went with L-0869, which deleted
+the scope-guard, completion-audit and approval-hook twins.
 """
 import json
 import os
@@ -20,12 +20,17 @@ from review_fixtures import git, init_repo
 
 SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
 PWSH = crew_fixtures.resolve_pwsh()
-# FLAVOURS runs all three by default: the per-shell parity sample uses it.
-# FLAVOUR_MATRIX runs the module by default and `sh`/`ps1` as `slow`
-# (conftest.py) -- every other flavoured test uses it. The ids are the same.
-FLAVOURS = ("module", "sh", "ps1")
-FLAVOUR_MATRIX = ("module", pytest.param("sh", marks=crew_fixtures.SLOW),
-                  pytest.param("ps1", marks=crew_fixtures.SLOW))
+# FLAVOURS runs both by default: the per-shell parity sample uses it.
+# FLAVOUR_MATRIX runs the module by default and `sh` as `slow` (conftest.py) --
+# every other flavoured test uses it. The ids are the same.
+#
+# There used to be a third flavour, `ps1`. The only hooks these fixtures drive
+# are scope_guard, completion_audit and approval_hook, and L-0869 deleted all
+# three `.ps1` twins: on Windows the dispatcher runs their `.sh` through a
+# strictly resolved Git Bash, and has since L-0727 slice 2. A `ps1` entry here
+# would now point `run_hook` at a file that does not exist.
+FLAVOURS = ("module", "sh")
+FLAVOUR_MATRIX = ("module", pytest.param("sh", marks=crew_fixtures.SLOW))
 
 needs_pwsh = pytest.mark.skipif(PWSH is None, reason="pwsh not installed - the .ps1 "
                                 "flavour was NOT run")
@@ -133,10 +138,14 @@ def run_hook(flavour, stem, payload, root):
         cmd = [crew_fixtures.resolve_bash() or "bash", os.path.join(SCRIPTS, dashed + ".sh")]
         env = env_for(root)
     else:
-        if PWSH is None:
-            pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
-        cmd = [PWSH, "-NoProfile", "-File", os.path.join(SCRIPTS, dashed + ".ps1")]
-        env = env_for(root, OS="Windows_NT")
+        # Named rather than silently skipped: a `ps1` flavour used to land here
+        # and L-0869 deleted the three `.ps1` these fixtures could run. A new
+        # flavour that reaches this branch is a mistake in the parametrize list,
+        # not a machine without a shell, and must not read as a pass.
+        raise AssertionError(
+            f"unknown hook flavour {flavour!r}; scope_fixtures runs 'module' and 'sh'. "
+            "The '.ps1' flavour went with L-0869 - on Windows the dispatcher runs "
+            "the '.sh' through Git Bash.")
     done = subprocess.run(cmd, input=data, cwd=str(root), capture_output=True, env=env,
                           check=False, timeout=120)
     return (done.returncode, done.stdout.decode("utf-8", "replace"),

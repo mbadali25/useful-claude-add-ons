@@ -1207,11 +1207,11 @@ def test_sql_client_is_read_under_every_mode(client, sql, want):
     assert cloud_guard.sql_is_destructive(sql, readings) is want
 
 
-def test_pinned_vars_are_one_list_in_all_three_places():
-    """verify_record.PINNED_VARS, verify-gate.sh (both spellings) and
-    verify-gate.ps1 must name the same variables. The comment beside
-    PINNED_VARS once claimed the gates read it; they never did, so this is
-    what keeps the three from drifting."""
+def test_pinned_vars_are_one_list_in_both_places():
+    """verify_record.PINNED_VARS and verify-gate.sh (both spellings) must name
+    the same variables. The comment beside PINNED_VARS once claimed the gates
+    read it; they never did, so this is what keeps the two from drifting.
+    (verify-gate.ps1, the third place, was deleted in L-0869.)"""
     want = set(verify_record.PINNED_VARS)
     for name in ("AWS_REGION", "AZURE_SUBSCRIPTION_ID", "ARM_SUBSCRIPTION_ID",
                  "AWS_DEFAULT_PROFILE"):
@@ -1223,12 +1223,6 @@ def test_pinned_vars_are_one_list_in_all_three_places():
     assert set(re.findall(r'"(\w+)"', py_tuple)) == want
     bash_loop = re.search(r"for v in (ENV [^;]*?); do", sh_text, re.S).group(1)
     assert set(bash_loop.replace("\\", " ").split()) == want
-    with open(os.path.join(_SCRIPTS, "verify-gate.ps1"),
-              encoding="utf-8") as handle:
-        ps_text = handle.read()
-    ps_list = re.search(r'foreach \(\$v in @\(("ENV".*?)\)\)', ps_text,
-                        re.S).group(1)
-    assert set(re.findall(r'"(\w+)"', ps_list)) == want
 
 
 def test_scan_does_not_judge_words_inside_arguments():

@@ -820,7 +820,10 @@ def first_line_within(proc, bound_s, who, consequence=""):
 
 
 def gate_bash(pwsh, ps1, env=None):
-    """The bash verify-gate.ps1's own Resolve-CrewBash picks under `env`
+    """The bash verify-gate.ps1's own Resolve-CrewBash picked under `env`
+    (verify-gate.ps1 was deleted in L-0869, so `ps1` has no live target; the
+    helper stays only until its last caller, test_verify_gate_stop_gate_record.py,
+    is retired)
     (default: this process' environment), via its `-PrintBash` probe, or
     None when it resolves none (the gate then refuses rather than run bash).
 
@@ -866,8 +869,8 @@ def msys_tmp_pinned(bash, poisoned_env):
     took: a probe of `bash` under `poisoned_env` must see `/tmp` as a
     directory, or this raises instead of running a test that would poison
     the host. The region is per installation, so `bash` must belong to the
-    same MSYS install the block's children use: for verify-gate.ps1, pass
-    `gate_bash(...)`, which asks the gate's own resolver.
+    same MSYS install the block's children use: for the deleted verify-gate.ps1
+    (L-0869), that was `gate_bash(...)`, which asked the gate's own resolver.
 
     `test_msys_tmp_pin.py` checks both halves: the hazard, on a private copy
     of the runtime, and that every crew test overriding TMP/TEMP runs here.

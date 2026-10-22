@@ -9,9 +9,8 @@ the same way. Bookkeeping is now dropped from the changed list and a refresh
 artifact is never unmapped -- while an ordinary unmapped file still fails, and
 a rule that names a refresh artifact still runs.
 
-Must-allow and must-block, through `verify-gate.sh` and `verify-gate.ps1`
-(pwsh with OS=Windows_NT; skipped BY NAME when pwsh does not resolve, and a
-skip is NOT a pass).
+Must-allow and must-block, through `verify-gate.sh`. (`verify-gate.ps1`, the
+second flavour, was deleted in L-0869.)
 """
 import json
 import os
@@ -24,14 +23,10 @@ import crew_fixtures
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
-_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = crew_fixtures.resolve_pwsh()
 
 _FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="needs bash")),
-    pytest.param("ps1", marks=pytest.mark.skipif(
-        _PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")),
 ]
 
 _CODEMAP_RULE = "test -z codemap-rule-ran"
@@ -67,10 +62,7 @@ def _repo(tmp_path, codemap_rule=False):
 
 
 def _run(flavour, root):
-    if flavour == "sh":
-        cmd = [_BASH, _SH]
-    else:
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
+    cmd = [_BASH, _SH]
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT")
     return crew_fixtures.run_gate(cmd, input="{}", cwd=str(root), env=env,
                                   capture_output=True, text=True, check=False,

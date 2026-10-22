@@ -1,5 +1,5 @@
 """Per-rule verified record, machine-local, shared by verify-gate.sh and
-verify-gate.ps1 so the two flavours cannot write two different shapes of the
+verify-gate.ps1 (deleted in L-0869) so the two flavours could not write two different shapes of the
 same file.
 
 WHY THIS EXISTS. The single sha marker (.crew/.verify-verified-at) only ever
@@ -119,7 +119,7 @@ def _save(path, data):
 
 # CANONICAL, and the ONLY place this hash is computed - verify-gate.sh
 # imports this module in-process (it is already a python interpreter) and
-# verify-gate.ps1 shells out to `rule_key` below, rather than either flavour
+# verify-gate.ps1 (deleted in L-0869) shelled out to `rule_key` below, rather than either flavour
 # hashing independently. They used to: the .sh matcher's own inline
 # `_rule_key` used `json.dumps(..., sort_keys=True)` (space-separated,
 # python's default), while the .ps1 side used `ConvertTo-Json -Compress`
@@ -162,7 +162,7 @@ def rule_key(rule):
 # Set-Item/Remove-Item); --price ran commands with NO pinning at all, so a
 # caller's inherited ENV=prod rode straight into a `seconds` measurement
 # whose whole point is to be reusable by everyone who later reads the map.
-# verify_price.py reads PINNED_VARS. verify-gate.sh and verify-gate.ps1 name
+# verify_price.py reads PINNED_VARS. verify-gate.sh and verify-gate.ps1 (deleted in L-0869) name
 # the list literally (they pin it in shell, before any python runs), and
 # `tests/test_cloud_guard.py` asserts all three spellings are this tuple -- the
 # earlier version of this comment said both gates read PINNED_VARS, which they
@@ -389,7 +389,7 @@ def scan_reach(run, repo_root):
 
 
 def cmd_scan_reach():
-    """CLI entry for verify-gate.ps1: reads {"run": [...], "root": "..."}
+    """CLI entry that existed for verify-gate.ps1 (deleted in L-0869; no caller remains, removal is a harness-only follow-up, docs/adr/0009-hook-single-dispatch.md): reads {"run": [...], "root": "..."}
     from stdin, prints `status\\tdetail` (detail empty for "local").
     verify-gate.sh and verify_price.py never call this - both already run
     inside python and import scan_reach directly."""
@@ -404,7 +404,7 @@ def cmd_scan_reach():
 
 
 def cmd_rule_key():
-    """CLI entry for verify-gate.ps1: reads a JSON object from stdin with
+    """CLI entry that existed for verify-gate.ps1 (deleted in L-0869; no caller remains, removal is a harness-only follow-up, docs/adr/0009-hook-single-dispatch.md): reads a JSON object from stdin with
     the same fields rule_key() hashes (paths, run, env, reach,
     requiresCleanTree - extra keys are ignored), prints the canonical key.
     verify-gate.sh never calls this - it imports rule_key directly, since
@@ -434,7 +434,7 @@ def cmd_time_key(cmd):
 # gate, from the superset's actual exit codes in the same invocation.
 #
 # Shared by both flavours for the same reason as scan_reach: verify-gate.sh
-# imports it, verify-gate.ps1 pipes JSON to `cover-plan`. Every way this can
+# imports it, verify-gate.ps1 (deleted in L-0869) piped JSON to `cover-plan`. Every way this can
 # go wrong resolves to RUNNING the subset, never to crediting it.
 COVERED = "covered"
 
@@ -761,7 +761,7 @@ def _int_list(value):
 
 
 def cmd_cover_plan():
-    """CLI entry for verify-gate.ps1. stdin: {"rules": [...], "always": [...],
+    """CLI entry that existed for verify-gate.ps1 (deleted in L-0869; no caller remains, removal is a harness-only follow-up, docs/adr/0009-hook-single-dispatch.md). stdin: {"rules": [...], "always": [...],
     "rule_order": [int], "rule_cmds": {"<int>": [identity]}, "cmds":
     [identity]} - the .ps1's OWN parsed map, never a second read of the
     file. stdout: {"cmds": [...], "guards": [...], "notices": [...]}. Any
@@ -946,7 +946,7 @@ def _print_owed(entries):
 
 
 def cmd_reach_notice():
-    """verify-gate.ps1's half of `reach_notice` (the .sh matcher imports it):
+    """verify-gate.ps1's (deleted in L-0869; no caller remains, harness-only follow-up) half of `reach_notice` (the .sh matcher imports it):
     stdin is a JSON list of [index, reason] pairs; prints the lines."""
     try:
         payload = json.load(sys.stdin)
