@@ -47,6 +47,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -103,8 +104,8 @@ def _set_rules(root, rules):
         json.dump({"rules": rules, "unmapped": "warn"}, handle)
 
 
-def _stop_payload(root):
-    return json.dumps({"hook_event_name": "Stop", "session_id": "s-1", "cwd": str(root),
+def _stop_payload(root, session="s-1"):
+    return json.dumps({"hook_event_name": "Stop", "session_id": session, "cwd": str(root),
                        "stop_hook_active": False}).encode()
 
 
@@ -246,50 +247,97 @@ def test_a_second_stop_on_an_unchanged_tree_reads_the_fresh_record_instead_of_re
 
 # --- the lock, through two concurrent dispatchers (G2) ---------------------------
 
-def _two_concurrent_stops(root, home, trace):
-    """Two Stop EVENTS, each through the launcher, started together.
+def _stop_proc(root, home, trace, session):
+    """One Stop EVENT through the launcher, payload fed, stdout/stderr piped.
 
-    stdin stays open for the caller to feed: `communicate(input=...)` owns
-    stdin itself and raises ValueError on a pipe the caller already closed -
-    the trap `test_verify_gate_lock_concurrent.py`'s header documents. Both
-    payloads must also go in before either result is collected, or the second
-    dispatcher sits blocked on its own stdin, the two gates run one after the
-    other and both win.
+    The payload goes in and stdin is CLOSED immediately, and the result is
+    collected later with `wait()` + `.read()`, never `communicate(input=...)`:
+    that call owns stdin itself and raises ValueError on a pipe the caller
+    already closed - the trap `test_verify_gate_lock_concurrent.py`'s header
+    documents.
     """
     env = rgh.env_for(str(root), str(home))
     if not h.WINDOWS:
         env["OS"] = "Windows_NT"
     env["CREW_HOOK_TRACE_FILE"] = str(trace)
-    return [
-        crew_fixtures.popen_gate(
-            h.launcher_argv("ps1", "Stop"), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, cwd=str(root), env=env)
-        for _ in range(2)
-    ]
+    proc = crew_fixtures.popen_gate(
+        h.launcher_argv("ps1", "Stop"), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, cwd=str(root), env=env)
+    proc.stdin.write(_stop_payload(root, session=session))
+    proc.stdin.close()
+    return proc
+
+
+def _wait_for_lock(root, bound_s=180):
+    """True once the gate has taken the lock. Polling for the lock is what
+    makes the contention DETERMINISTIC rather than a hope about timing: see
+    the lock case's docstring for the two hold lengths that were not enough."""
+    lock = os.path.join(str(root), _LOCK)
+    deadline = time.monotonic() + bound_s
+    while time.monotonic() < deadline:
+        if os.path.exists(lock):
+            return True
+        time.sleep(0.2)
+    return False
 
 
 def test_only_one_of_two_concurrent_stop_events_runs_the_gate_and_neither_leaks_the_lock(tmp_path):
-    """G2. The rule appends one line per execution and then holds for long
-    enough that a loser cannot simply arrive after the work finished and the
-    lock was cleaned up. Exactly one line between the two turns, and no lock
-    left on disk."""
+    """G2. The rule appends one line per execution and then holds, so a loser
+    cannot arrive after the work finished and the lock was already cleaned up.
+
+    The run count alone is NOT enough, and the sabotage run proved it: with
+    the lock made per-process (`LOCK=...lock.$$`) this case stayed GREEN,
+    because two gates that end up running one after the other leave the
+    second one a fresh fingerprint to skip on - one run, for a reason that has
+    nothing to do with the lock. So the assertion that makes this a LOCK test
+    is the loser's own words: backing off prints "backed off" and "NOTHING WAS
+    VERIFIED" on stderr (`test_verify_gate_lock_sh.py:140`, the ambiguity
+    fixed in crew 0.19.65). Exactly one of the two Stops must say it. Drop the
+    lock and nobody does.
+
+    The second Stop is launched once the first HOLDS the lock, rather than at
+    the same instant. Starting both together does not work: each dispatcher
+    spends over ten seconds starting pwsh and probing for python before it
+    reaches the gate, so the two arrive badly staggered and by how much varies
+    with what else is running. At a 3s hold and at a 12s hold the second gate
+    arrived after the first had finished; at 40s it contended when the case
+    ran alone and did NOT when the whole file ran. A test that is a lock test
+    only on a quiet host is not one. Polling for the lock makes the contention
+    a fact of the fixture, and both Stops are still live at once, which is what
+    the production race is.
+    """
     root, home = _gate_repo(tmp_path, [])
     marker, rule = _counter_rule(tmp_path)
-    rule["run"] = [rule["run"][0] + " && sleep 3"]
+    rule["run"] = [rule["run"][0] + " && sleep 40"]
     _set_rules(root, [rule])
     trace = tmp_path / "trace.crew-trace"
 
-    procs = _two_concurrent_stops(root, home, trace)
-    payload = _stop_payload(root)
-    for proc in procs:
-        proc.stdin.write(payload)
-        proc.stdin.close()
+    # DISTINCT session ids. Two Stops carrying the same id are one turn to
+    # anything upstream of the lock, which would make the race unreachable.
+    procs = [_stop_proc(root, home, trace, "s-0")]
+    try:
+        assert _wait_for_lock(root), (
+            "the first Stop never took the lock, so nothing was contended and "
+            "this case would have passed without testing the lock at all")
+        procs.append(_stop_proc(root, home, trace, "s-1"))
+    except BaseException:
+        for proc in procs:
+            crew_fixtures.kill_process_group(proc)
+        raise
+    errs = []
     for proc in procs:
         try:
             proc.wait(timeout=_LAUNCHER_TIMEOUT)
         except subprocess.TimeoutExpired:
             crew_fixtures.kill_process_group(proc)
             raise
+        errs.append(proc.stderr.read().decode("utf-8", "replace"))
+
+    backed_off = [err for err in errs if "backed off" in err]
+    assert len(backed_off) == 1, (
+        "exactly one of the two Stops must have found the other's lock and "
+        f"backed off; stderr: {errs}")
+    assert "NOTHING WAS VERIFIED" in backed_off[0], backed_off[0]
 
     lines = _runs(marker)
     assert len(lines) == 1, (
