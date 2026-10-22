@@ -496,6 +496,7 @@ def _stub(directory, name, body, win_body=None):
         path = directory / (name + ".cmd")
         path.write_text("@echo off\r\n" + (win_body if win_body is not None else body) + "\r\n",
                         encoding="ascii", newline="\r\n")
+        (directory / name).write_text("#!/bin/sh\n" + body + "\n", encoding="ascii", newline="\n")
         return path
     path = directory / name
     path.write_text("#!/bin/sh\n" + body + "\n", encoding="ascii", newline="\n")
@@ -537,6 +538,20 @@ def _notify_repo(tmp_path):
     (pathlib.Path(root) / ".crew" / "config.json").write_text(
         json.dumps({"notify": {"provider": "teams"}}), encoding="utf-8")
     return root
+
+
+@needs_bash
+def test_a_python3_stub_is_found_by_name_through_bash(tmp_path):
+    """Git Bash resolves `python3` to an extensionless file or a .exe, never
+    to a bare python3.cmd, so a stub that only existed as .cmd was visible to
+    PowerShell and invisible to every .sh hook."""
+    stub_dir = tmp_path / "stubs"
+    _stub(stub_dir, "python3", "exit 0", win_body="exit /b 0")
+
+    found = subprocess.run([BASH, "-c", "type -ap python3"], env=dict(os.environ, PATH=str(stub_dir)),
+                           capture_output=True, text=True, check=False, timeout=60).stdout
+
+    assert "python3" in found
 
 
 @needs_bash
