@@ -232,7 +232,7 @@ KEY_META = {
                                      "tuple", AUTOCLEAR_METHOD_VALUES, "0.19.10",
                                      values_by_os=crew_platform._AUTOCLEAR_METHODS),  # pylint: disable=protected-access
     "context.autoClear.windowTitle": _unv("Window title to match before typing.",
-                                          "0.19.10", _S + "auto-clear.ps1",
+                                          "0.19.10", _S + "crew_autocycle.py",
                                           "string or null"),
     "context.autoClear.command": _unv("What is typed.", "0.19.10", _S + "crew_autocycle.py",
                                       "string"),

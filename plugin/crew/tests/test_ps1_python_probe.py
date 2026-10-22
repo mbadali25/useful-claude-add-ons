@@ -49,14 +49,12 @@ needs_pwsh = pytest.mark.skipif(PWSH is None, reason="pwsh not installed - the .
 needs_bash = pytest.mark.skipif(BASH is None, reason="bash not installed - the parity half was NOT run")
 
 # Every crew .ps1 that resolves python carries this function, in two groups
-# until L-0690's follow-up (the other carriers and the bash twins) rejoins them:
-# the four review/gate harness carriers share the probe that reports a timeout
-# and a trail (L-0690); the rest still share role-write-guard.ps1's copy,
-# unchanged, because a harness PR cannot carry them (scripts/check-tooling-pr.py).
+# until L-0690's follow-up rejoins them: the review/gate harness carriers share
+# the probe that reports a timeout and a trail (L-0690); promote-gate.ps1 keeps
+# the older copy, unchanged, because a harness PR cannot carry it
+# (scripts/check-tooling-pr.py).
 _HARNESS_CARRIERS = ("completion-audit", "scope-guard", "approval-hook", "verify-gate", "crew-hook")
-_OTHER_CARRIERS = ("role-write-guard", "crew-context", "platform-sync", "cloud-guard", "env-guard",
-                   "handoff-read", "notify", "handoff-write", "context-watch", "auto-clear",
-                   "promote-gate")
+_OTHER_CARRIERS = ("promote-gate",)
 _CARRIERS = _HARNESS_CARRIERS + _OTHER_CARRIERS
 _NAMES = ("python3", "python", "py")
 
@@ -181,15 +179,8 @@ def _runs(interpreter):
 
 @pytest.mark.parametrize("stem", _HARNESS_CARRIERS)
 def test_the_harness_carriers_share_one_probe(stem):
-    """L-0690: the four harness carriers are byte-identical to each other."""
+    """L-0690: the harness carriers are byte-identical to each other."""
     assert _resolver(stem) == _resolver("completion-audit")
-
-
-@pytest.mark.parametrize("stem", _OTHER_CARRIERS)
-def test_the_other_carriers_still_match_role_write_guard(stem):
-    """Until L-0690's follow-up rejoins the two groups, the other carriers keep
-    role-write-guard.ps1's probe byte for byte."""
-    assert _resolver(stem) == _resolver("role-write-guard")
 
 
 @pytest.mark.parametrize("stem", _CARRIERS)
@@ -257,10 +248,9 @@ def test_an_extensionless_candidate_still_resolves_on_the_real_linux_this_suite_
     else on PATH is still found and run -- exactly what _working() already
     depends on throughout this module, pinned here directly against the one
     new code path this ticket adds. Not parametrized over every carrier:
-    `-PrintPython` is only wired on seven of the eleven (verify-gate,
-    completion-audit, scope-guard, approval-hook, crew-context,
-    platform-sync, role-write-guard); the byte-identical check above already
-    proves the other four share this exact function body."""
+    `-PrintPython` is only wired on some of the carriers; the
+    byte-identical check above proves the harness carriers share this exact
+    function body."""
     apps = tmp_path / "bin"
     _working(apps, ("python3",))
     assert _print_python([apps, _tools(tmp_path)]) == REAL

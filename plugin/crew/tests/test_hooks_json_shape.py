@@ -7,7 +7,8 @@ the rest of the system on that contract:
   * hooks.json is exactly what `crew_instructions.claude_hooks()` renders from TABLE;
   * every TABLE row is a hook that was registered before the dispatcher, with the
     same event, matcher, script, argument and timeout (the recorded entry list);
-  * every script TABLE names exists, and so does each PowerShell twin;
+  * every script TABLE names exists, and so does each PowerShell twin the plugin ships
+    (a twin whose file is gone is not used: the row's `.sh` judges the call);
   * crew-hook.sh's no-python list, and both launchers' event timeouts, equal TABLE;
   * the Codex registrations are the HOOK_TABLE rows, through the launcher.
 """
@@ -101,11 +102,26 @@ def test_hooks_json_is_what_the_instruction_generator_renders_from_the_table():
     assert _hooks() == ci.claude_hooks()["hooks"]
 
 
-def test_every_table_script_and_twin_exists():
+REMOVED_TWINS = frozenset({"cloud-guard.ps1", "env-guard.ps1"})
+
+
+def test_every_table_script_exists_and_so_does_each_twin_that_ships():
     for row in crew_hook.TABLE:
         assert os.path.isfile(os.path.join(SCRIPTS, row.script)), row.script
-        if row.twin:
+        if row.twin in REMOVED_TWINS:
+            assert not os.path.exists(os.path.join(SCRIPTS, row.twin)), row.twin
+        elif row.twin:
             assert os.path.isfile(os.path.join(SCRIPTS, row.twin)), row.twin
+
+
+def test_a_table_twin_with_no_file_is_not_used_for_a_power_shell_call_on_windows():
+    chosen = crew_hook.select("PreToolUse", "claude", {"tool_name": "PowerShell"}, windows=True)
+    argvs = [argv for _, argv in chosen]
+
+    for row in crew_hook.TABLE:
+        if row.twin and not os.path.exists(os.path.join(SCRIPTS, row.twin)):
+            assert [row.script] in argvs, row.script
+            assert [row.twin] not in argvs, row.twin
 
 
 def test_the_table_rows_are_the_hooks_that_were_registered_before_the_dispatcher():
@@ -186,12 +202,10 @@ def test_the_ps1_launcher_timeouts_equal_the_registration_timeouts():
     assert found == {event: crew_hook.event_timeout(event) for event in crew_hook.EVENTS}
 
 
-def test_the_ps1_restricted_roles_equal_role_write_guards():
+def test_the_ps1_restricted_roles_equal_the_tables():
     mine = re.search(r"\$crewRestrictedRoles = @\(([^)]*)\)", PS1_TEXT).group(1)
-    theirs_text = h.read_text(os.path.join(SCRIPTS, "role-write-guard.ps1"))
-    theirs = re.search(r"\$RestrictedRolesForFallback = @\(([^)]*)\)", theirs_text).group(1)
 
-    assert re.findall(r"'([^']+)'", mine) == re.findall(r"'([^']+)'", theirs) == list(crew_hook.RESTRICTED_ROLES)
+    assert re.findall(r"'([^']+)'", mine) == list(crew_hook.RESTRICTED_ROLES)
 
 
 def test_the_codex_rows_are_the_five_crew_context_rows_registered_before_the_dispatcher():

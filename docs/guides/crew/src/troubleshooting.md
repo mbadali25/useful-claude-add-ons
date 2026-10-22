@@ -348,7 +348,7 @@ contract itself. This section is what goes wrong with the approval and the audit
   always has one, a default that crew's SessionStart heal wrote there. `(unknown)` means git
   could not name the main checkout; then no default is written either. Of the shell and
   PowerShell readers (T-0096), the incident stand-down read (`_common.sh`,
-  `promote-gate.ps1`), both cloud-guard no-python fallbacks and `auto-clear.ps1` inherit too; in
+  `promote-gate.ps1`), the cloud-guard no-python fallback and `auto-clear.sh` inherit too; in
   the cloud guard's fallback `unknown` counts as armed. So do the session hooks (`notify`, the
   handoff scripts, `context-watch`; crew 1.0.343, L-0680): a lane notifies with the main
   checkout's settings, and a relative handoff path still names a file in the lane. Since
@@ -923,19 +923,15 @@ command — no keystrokes appear at all.
 
 - **Check `context.autoClear.method`** with `/crew:config --explain` or `crew_config.py --explain`.
   On native Windows with no tmux pane, `"auto"` (the default) resolves to `"notify"`, not to any
-  keystroke method — **this is not a bug**, it is the 1.0 owner decision: `auto` never arms
-  SendKeys on your behalf. `"notify"` types nothing at all; instead the `Stop` hook prints a
+  keystroke method — **this is not a bug**, it is the owner decision: crew does not type into a
+  window it found itself on Windows. `"notify"` types nothing at all; instead the `Stop` hook prints a
   `systemMessage` telling you the handoff is written and verified and it is safe to run the
   configured command yourself.
-- **If you want keystrokes typed for you**, ask for `sendkeys` by name — it is opt-in only, and
-  `/crew:init`, `/crew:migrate` and `/crew:onboard` all refuse to write it without an explicit yes.
-  It declines and falls back to `notify` (logged to `.crew/.autoclear.log`) inside Windows
-  Terminal specifically, because that host puts every tab in one window and nothing outside it can
-  confirm which tab is active — this is also not a bug, and switching terminal hosts is the only
-  fix.
-- **Fix:** either treat the `notify` message as the intended behaviour, or run
-  `crew_autoclear_setup.py apply-method sendkeys --yes` (`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`)
-  to opt in, after reading what SendKeys does. See `plugin/crew/CONFIG.md` §14.
+- **`sendkeys` is gone.** The Windows keystroke method was removed in crew 1.2.61 (L-0727): a
+  config that names it is refused with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or
+  tmux", and `crew_autoclear_setup.py apply-method sendkeys` refuses by name.
+- **Fix:** treat the `notify` message as the intended behaviour, or run the session inside tmux
+  (Git Bash or WSL), where `auto` picks `tmux`. See `plugin/crew/CONFIG.md` §14.
 
 ### "bare /crew:autopilot stopped on a goal"
 

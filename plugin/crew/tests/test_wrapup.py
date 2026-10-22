@@ -8,24 +8,23 @@ auto-clear refuse unless the results are on disk: the handoff's `head:` is
 HEAD, its `branch:` is the checkout, no tracked file is modified, and its
 `resume:` line parses under T-0006's grammar or is `resume: none`.
 
-Must-allow / must-block pairs, both flavours where the path exists:
+Must-allow / must-block pairs:
 
   - arming: only machine `true` + armed, in-scope `enabled` + no repo `false`;
   - the check: a committed, fresh handoff passes (also with `resume: none`);
     every missing or mismatched result refuses with its reason; untracked
     files alone do not block; "could not tell" (git failing, crew_resume
-    missing, ps1 with no python) refuses;
+    missing) refuses;
   - unarmed: plan output and context-watch's stderr, exit and marker are
     byte-identical to before;
   - escalation: a refusal is fed back once at the next non-continuation Stop,
-    never on `stop_hook_active`, and exactly once across both flavours;
+    never on `stop_hook_active`, and exactly once;
   - order: the check runs before the sent-marker claim.
 
 No case reads the developer's config or process table, types a keystroke, or
 commits outside a fixture repo: HOME, CLAUDE_CONFIG_DIR and
 CREW_AUTOCLEAR_PROC_STUB point at fixtures and CREW_AUTOCLEAR_INHIBIT is set.
-The .ps1 cases are told they are on Windows and skip without pwsh -- a skip
-there means that flavour did NOT run.
+A skip without bash means the sh flavour did NOT run.
 """
 import json
 import os
@@ -43,10 +42,8 @@ import crew_fixtures as cf
 _PLUGIN = pathlib.Path(context._ROOT)  # pylint: disable=protected-access
 _SCRIPTS = _PLUGIN / "hooks" / "scripts"
 _BASH = cf.resolve_bash()
-_PWSH = cf.resolve_pwsh()
 needs_bash = pytest.mark.skipif(_BASH is None, reason="bash not installed - the sh flavour was NOT run")
-needs_pwsh = pytest.mark.skipif(_PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")
-FLAVORS = [pytest.param("sh", marks=needs_bash), pytest.param("ps1", marks=needs_pwsh)]
+FLAVORS = [pytest.param("sh", marks=needs_bash)]
 # A test that shadows a real tool with a stub first on PATH. On Windows,
 # _BASH is Git's bin/bash.exe launcher, which prepends /mingw64/bin:/usr/bin
 # ahead of any PATH it is handed: the real git always wins and the stub is
@@ -56,8 +53,7 @@ _BASH_NO_PREPEND = cf.resolve_bash_no_prepend() if os.name == "nt" else _BASH
 SHADOW_FLAVORS = [
     pytest.param("sh", marks=pytest.mark.skipif(
         _BASH_NO_PREPEND is None,
-        reason="no bash that keeps a stub first on PATH - the sh flavour was NOT run")),
-    pytest.param("ps1", marks=needs_pwsh)]
+        reason="no bash that keeps a stub first on PATH - the sh flavour was NOT run"))]
 
 SESSION = "55555555-eeee-4eee-8eee-000000000005"
 KEY = crew_autocycle.session_key(SESSION)
@@ -147,19 +143,12 @@ class Repo:
             env.pop(name, None)
         env.update(self.env)
         env.update(extra or {})
-        if flavor == "ps1":
-            env["OS"] = "Windows_NT"
         return env
 
     def autoclear(self, flavor, *args, extra=None, bash=None):
         env = self.base_env(flavor, extra)
-        if flavor == "ps1":
-            names = {"--dry-run": "-DryRun", "--force": "-Force"}
-            cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(_SCRIPTS / "auto-clear.ps1"),
-                   "-Session", SESSION, "-Root", str(self.root), *[names.get(a, a) for a in args]]
-        else:
-            cmd = [bash or _BASH, str(_SCRIPTS / "auto-clear.sh").replace("\\", "/"),
-                   "--session", SESSION, "--root", str(self.root), *args]
+        cmd = [bash or _BASH, str(_SCRIPTS / "auto-clear.sh").replace("\\", "/"),
+               "--session", SESSION, "--root", str(self.root), *args]
         return subprocess.run(cmd, cwd=str(self.root), env=env, capture_output=True, text=True,
                               stdin=subprocess.DEVNULL, check=False, timeout=120)
 
@@ -177,10 +166,7 @@ class Repo:
                               "cwd": str(self.root), "hook_event_name": "Stop",
                               "stop_hook_active": active})
         env = self.base_env(flavor, extra)
-        if flavor == "ps1":
-            cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(_SCRIPTS / "context-watch.ps1")]
-        else:
-            cmd = [_BASH, str(_SCRIPTS / "context-watch.sh").replace("\\", "/")]
+        cmd = [_BASH, str(_SCRIPTS / "context-watch.sh").replace("\\", "/")]
         return subprocess.run(cmd, input=payload, cwd=str(self.root), env=env, capture_output=True,
                               text=True, check=False, timeout=120)
 
@@ -515,7 +501,7 @@ def _which_git(monkeypatch, git):
 
 
 def test_check_runs_the_git_which_resolves(repo, monkeypatch, tmp_path):
-    # The veto must judge the git PATH resolves the way bash, pwsh and
+    # The veto must judge the git PATH resolves the way bash and
     # shutil.which do (PATHEXT: git.cmd), not whatever a bare "git" reaches --
     # on Windows CreateProcess skips git.cmd for a later git.exe, so a failing
     # git read as a clean tree and the clear went ahead. The resolved git is
@@ -632,10 +618,6 @@ _PROCEDURE = ("crew wrap-up (context.autoClear.wrapUp) - context at 90%.",
               "its resume: line parses")
 
 
-def _norm(text):
-    return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").strip().splitlines())
-
-
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_armed_message_is_the_procedure(repo, flavor):
     repo.arm()
@@ -657,19 +639,6 @@ def test_armed_message_names_the_active_ticket(repo, monkeypatch):
     import crew_ticket  # pylint: disable=import-outside-toplevel
     monkeypatch.setattr(crew_ticket, "active_ticket", lambda root: ("T-0007", "fixture"))
     assert "Active ticket: T-0007" in crew_autocycle.wrapup_message(str(repo.root), 90)
-
-
-@needs_bash
-@needs_pwsh
-def test_armed_message_parity(tmp_path):
-    texts = []
-    for flavor in ("sh", "ps1"):
-        box = Repo(tmp_path / flavor)
-        box.arm()
-        done = box.stop(flavor)
-        assert done.returncode == 2, done.stderr
-        texts.append(_norm(done.stderr))
-    assert texts[0] == texts[1]
 
 
 def _marker_shape(box):
@@ -789,32 +758,6 @@ def test_rearm_removes_the_escalation_marker(repo, flavor):
     assert not repo.escalated().exists()
 
 
-@needs_bash
-@needs_pwsh
-def test_both_flavours_escalate_once(repo):
-    _refusing(repo)
-    codes = [repo.stop("sh").returncode, repo.stop("ps1").returncode]
-    assert sorted(codes) == [0, 2], codes
-    codes = [repo.stop("ps1").returncode, repo.stop("sh").returncode]
-    assert codes == [0, 0], codes
-
-
-def _no_python_path(tmp_path):
-    tools = tmp_path / "tools"
-    tools.mkdir()
-    cf.link_path_dirs(tools, skip=lambda name: name.startswith(("python", "py")))
-    return str(tools)
-
-
-@needs_pwsh
-def test_ps1_without_python_reads_unarmed(repo, tmp_path):
-    repo.arm()
-    done = repo.stop("ps1", extra={"PATH": _no_python_path(tmp_path)})
-    assert done.returncode == 2, done.stderr
-    assert done.stderr.startswith("You are at roughly")
-    assert "crew wrap-up" not in done.stderr
-
-
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_session_start_resets_escalation_marker(repo, flavor):
     other = repo.root / ".crew" / ".wrapup-escalated-someone-else"
@@ -823,17 +766,14 @@ def test_session_start_resets_escalation_marker(repo, flavor):
     payload = json.dumps({"session_id": SESSION, "cwd": str(repo.root), "hook_event_name": "SessionStart",
                           "source": "startup"})
     env = repo.base_env(flavor)
-    if flavor == "ps1":
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(_SCRIPTS / "handoff-read.ps1")]
-    else:
-        cmd = [_BASH, str(_SCRIPTS / "handoff-read.sh").replace("\\", "/")]
+    cmd = [_BASH, str(_SCRIPTS / "handoff-read.sh").replace("\\", "/")]
     subprocess.run(cmd, input=payload, cwd=str(repo.root), env=env, capture_output=True, text=True,
                    check=False, timeout=120)
     assert not repo.escalated().exists()
     assert other.exists()
 
 
-# --- Step 3: auto-clear shows a refusal, and the ps1 twin runs the check ----------
+# --- Step 3: auto-clear shows a refusal ----------
 
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_dry_run_send_when_wrapup_passes(repo, flavor):
@@ -910,26 +850,6 @@ def test_unarmed_autoclear_ignores_the_wrapup_results(repo, flavor):
     assert "wrap-up" not in repo.log()
 
 
-@needs_pwsh
-def test_ps1_runs_wrapup_check_when_armed(repo):
-    _refusing(repo)
-    done = repo.autoclear("ps1", "--dry-run", extra=cf.bind_session(repo.home, SESSION))
-    assert "would send" not in done.stdout
-    assert "refusing - wrap-up: the handoff's head: is not HEAD" in repo.log()
-
-
-@needs_pwsh
-def test_ps1_no_python_refuses_armed_clear(repo, tmp_path):
-    repo.arm()
-    repo.wrapped()
-    extra = cf.bind_session(repo.home, SESSION)
-    extra["PATH"] = _no_python_path(tmp_path)
-    done = repo.autoclear("ps1", extra=extra)
-    assert "refusing - wrap-up: no usable python" in repo.log(), (done.stdout, done.stderr)
-    assert not repo.sent_marker().exists()
-    assert any("no usable python" in m for m in _system_messages(done.stdout))
-
-
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_crew_resume_missing_refuses_the_clear(repo, flavor, tmp_path):
     # A copy of the hook scripts without T-0006's module: "could not tell".
@@ -939,12 +859,8 @@ def test_crew_resume_missing_refuses_the_clear(repo, flavor, tmp_path):
     repo.arm()
     repo.wrapped()
     env = repo.base_env(flavor, cf.bind_session(repo.home, SESSION))
-    if flavor == "ps1":
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(scripts / "auto-clear.ps1"),
-               "-Session", SESSION, "-Root", str(repo.root), "-DryRun"]
-    else:
-        cmd = [_BASH, str(scripts / "auto-clear.sh").replace("\\", "/"), "--session", SESSION,
-               "--root", str(repo.root), "--dry-run"]
+    cmd = [_BASH, str(scripts / "auto-clear.sh").replace("\\", "/"), "--session", SESSION,
+           "--root", str(repo.root), "--dry-run"]
     done = subprocess.run(cmd, cwd=str(repo.root), env=env, capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, check=False, timeout=120)
     assert "would send" not in done.stdout

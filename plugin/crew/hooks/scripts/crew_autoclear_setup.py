@@ -6,14 +6,15 @@ Schema (owned by `crew_state.AUTOCLEAR_DEFAULTS` / `crew_platform._AUTOCLEAR_
 METHODS`; not restated here beyond what this module needs to reason about):
 `enabled` only the global layer may turn on; `method` defaults to `"auto"`,
 which resolves to a tmux pane on Linux/macOS/WSL, to `notify` on native
-Windows with no tmux pane, and never to `sendkeys` -- that is opt-in only,
-requested by name.
+Windows with no tmux pane. `sendkeys` (the Windows keystroke sender that lived
+in `auto-clear.ps1`) was removed in crew 1.2.61 (L-0727 slice 3): it is neither
+offered nor written, and `write_autoclear_method` refuses it by name.
 
 Things this module exists to make impossible by construction rather than
 by prompt discipline:
 
-  * writing `sendkeys` to the global file without an explicit yes
-    (`write_autoclear_method`'s `consent` parameter)
+  * writing `sendkeys` to the global file at all
+    (`write_autoclear_method` refuses it, whatever the consent)
   * turning `enabled` on machine-wide without an explicit yes
     (`write_autoclear_enabled`'s `consent` parameter)
   * a repo's dead `enabled: true` (1.0 does nothing with it) or its illegal
@@ -116,11 +117,7 @@ def _require_global_readable(path=None):
             f"it: {problem}")
 
 _SENDKEYS_NOTE = (
-    "sendkeys is available as an explicit opt-in: it drives real keystrokes "
-    "(System.Windows.Forms.SendKeys) into the terminal window this session "
-    "owns, confirmed still foreground at send time, and it declines on its "
-    "own inside Windows Terminal because that host cannot confirm which tab "
-    "is active. Ask for it by name if you want it."
+    "sendkeys was removed in crew 1.2.61 (L-0727); use notify or tmux"
 )
 
 # Global-only under 1.0; a repo copy of either is never read. Every other
@@ -164,7 +161,7 @@ def describe_tmux_path():
     return ("On Linux, macOS and WSL, 'auto' types the configured command "
             "into the tmux pane this session is already running in, when "
             "$TMUX names one and tmux is on PATH. There is no keystroke "
-            "method to opt into here the way sendkeys is on Windows; nothing "
+            "method to opt into here; nothing "
             "is written without you saying yes to enabling auto-clear at "
             "all.")
 
@@ -238,23 +235,19 @@ def plan_windows_notify_default(path=None):
             "changes": changes}
 
 
-def write_autoclear_method(method, *, consent, path=None):
+def write_autoclear_method(method, *, path=None):
     """Write `context.autoClear.method` to the global layer.
 
-    `consent` must be `True` to write `"sendkeys"` -- the one value the
-    owner requirements forbid arming without an explicit yes. Every other
-    value writes normally; this is the one guard `sendkeys` needs, not a
-    generic write lock.
+    `"sendkeys"` is refused whatever the caller says (L-0727 slice 3 removed
+    the method); every other value writes normally.
 
-    Raises `GlobalConfigUnreadable` first, before the consent check, when
+    Raises `GlobalConfigUnreadable` first, before the `sendkeys` refusal, when
     the file is present but malformed -- a bad `path` argument should not
-    depend on which consent branch got there first.
+    depend on which branch got there first.
     """
     _require_global_readable(path)
-    if method == "sendkeys" and not consent:
-        raise PermissionError(
-            "sendkeys is opt-in only; pass consent=True after an explicit yes"
-        )
+    if method == "sendkeys":
+        raise PermissionError(_SENDKEYS_NOTE)
     return crew_config.write_global_config({"context.autoClear.method": method}, path)
 
 
@@ -715,7 +708,7 @@ def apply_migrate_to_repo(root, global_path=None, repo_label=None, yes_widen=Fal
     `context` block into a new `crew.json` UNCONVERTED and keeps the
     original -- `config.json` is marked "retireable", not deleted
     (`commands/migrate.md`'s own table). Every autoClear SENDER
-    (`auto-clear.sh`, `auto-clear.ps1`, `crew_autocycle.py`'s `_load`)
+    (`auto-clear.sh`, `crew_autocycle.py`'s `_load`)
     reads `.crew/config.json` only; nothing in this plugin's runtime reads
     `crew.json` for autoClear behaviour -- `crew_status.py` reads it only
     to report the migration schema. So converting `crew.json` alone (an
@@ -962,7 +955,8 @@ def main(argv=None):
     p_apply = sub.add_parser("apply-method", help="write context.autoClear.method")
     p_apply.add_argument("method")
     p_apply.add_argument("--yes", action="store_true",
-                         help="consent; required for method=sendkeys")
+                         help="accepted and ignored: no method needs consent now "
+                              "(sendkeys is refused whatever is passed)")
 
     p_enable = sub.add_parser("apply-enabled", help="write context.autoClear.enabled")
     p_enable.add_argument("value", choices=("true", "false"))
@@ -1000,8 +994,7 @@ def main(argv=None):
 
     if args.cmd == "apply-method":
         try:
-            _, changes = write_autoclear_method(
-                args.method, consent=args.yes, path=args.global_path)
+            _, changes = write_autoclear_method(args.method, path=args.global_path)
         except (PermissionError, GlobalConfigUnreadable,
                 crew_config.WriteBackupRefused) as exc:
             print(str(exc), file=sys.stderr)

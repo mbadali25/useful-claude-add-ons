@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.61, obsidian-vault 0.5.2**: Ten hook PowerShell twins deleted, the `sendkeys` auto-clear method removed. `crew` 1.2.61: the ten PowerShell twins of crew's hook scripts are deleted, so on Windows every crew hook runs its `.sh` under Git Bash, and `context.autoClear.method: "sendkeys"` (the Windows keystroke sender) is removed and refused by name.
 - **crew 1.2.60**: The crew test suite no longer dies with WinError 6 under the Stop hook on Windows. `crew` 1.2.60: on Windows the crew test suite no longer fails with `[WinError 6] The handle is invalid` when the Stop hook's verify gate runs it, so the gate reports real test results.
-- **crew 1.2.59**: The review prompt shows a literal four-field finding and a literal READ line. `crew` 1.2.58: the instructions every reviewer reads now include one example finding line and one example READ line, so a reviewer is less likely to print a finding with too few fields or a part path without its directory and have the round read INCOMPLETE.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

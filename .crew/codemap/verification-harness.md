@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@9ba355d7c
+anchor: useful-claude-add-ons@7944f06d7
 verified: 2026-10-20
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -2571,9 +2571,9 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 ## T-0096's verify rule (added 2026-10-04 on `T-0096-build`)
 
-- **DERIVED.** `.crew/verify.json:637` (the last rule): `_common.sh`, both
-  `cloud-guard` flavours, `promote-gate.ps1`, `auto-clear.ps1` and
-  `plugin/crew/tests/test_worktree_config_shell.py` map to that test file through
+- **DERIVED.** `.crew/verify.json:637` (the last rule): `_common.sh`, `cloud-guard.sh`,
+  `promote-gate.ps1` and `plugin/crew/tests/test_worktree_config_shell.py` (the `cloud-guard.ps1` and
+  `auto-clear.ps1` paths it once listed were deleted in L-0727 slice 3, L-0867) map to that test file through
   `pytest_rule.py`, priced 13s (41 passed in 12.5s with pwsh on PATH on an idle 4-CPU container; 43 after review round 1). It is
   appended, so no earlier rule number moves. This section does not move the file's
   `anchor:`.

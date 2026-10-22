@@ -2,15 +2,16 @@
 
 crew-hook.sh exits 0 there; crew-hook.ps1 runs the dispatcher, which runs `.sh`
 children through a strictly resolved Git Bash and sends a `PowerShell` tool call
-to a row's PowerShell twin when the file exists (cloud-guard, env-guard,
-promote-gate). With no strict Git Bash an armed repo is refused on PreToolUse,
-UserPromptSubmit and Stop, SessionStart gets one `systemMessage`, and every other
-event exits 0.
+to a row's PowerShell twin when the file exists (promote-gate; cloud-guard and
+env-guard are judged by their `.sh` for a `PowerShell` call). With no strict Git Bash
+an armed repo is refused on PreToolUse, UserPromptSubmit and Stop, SessionStart
+gets one `systemMessage`, and every other event exits 0.
 
 What runs on any host here is what can be modelled honestly: the launcher's
 "not on Windows" exit with a stubbed `uname` and with `OS=Windows_NT`; the Windows
 routing of `select`; the no-Git-Bash policy of `dispatch` with a stub resolver; and
-the twin routing end to end under pwsh with `OS=Windows_NT`. The cases that need a
+a `PowerShell` cloud call judged by `cloud-guard.sh` end to end under pwsh with
+`OS=Windows_NT`. The cases that need a
 real Windows host (both registrations on one payload with an exactly-once trace,
 the side effects counted once, native PowerShell must-block payloads, the resume
 status line under Git Bash, Git Bash hidden for the approval hook) skip off Windows
@@ -114,21 +115,21 @@ def test_crew_hook_sh_dispatches_when_uname_cannot_be_read_and_os_is_unset(tmp_p
 
 # --- the Windows routing of select ----------------------------------------------
 
-def _argvs(tool, windows, exists=lambda _path: True):
+def _argvs(tool, windows, exists=os.path.isfile):
     return [argv for _, argv in crew_hook.select("PreToolUse", "claude", {"tool_name": tool}, windows=windows,
                                                  exists=exists)]
 
 
-def test_a_power_shell_call_on_windows_goes_to_the_twins_and_scope_guard_sh():
+def test_a_power_shell_call_on_windows_goes_to_the_promote_gate_twin_and_the_sh_rows():
     got = _argvs("PowerShell", True)
 
-    assert got == [["promote-gate.ps1"], ["cloud-guard.ps1"], ["env-guard.ps1"], ["scope-guard.sh"]]
-
-
-def test_a_power_shell_call_on_windows_uses_the_sh_when_the_twin_file_is_absent():
-    got = _argvs("PowerShell", True, exists=lambda path: not path.endswith(("cloud-guard.ps1", "env-guard.ps1")))
-
     assert got == [["promote-gate.ps1"], ["cloud-guard.sh"], ["env-guard.sh"], ["scope-guard.sh"]]
+
+
+def test_a_power_shell_call_on_windows_uses_the_sh_when_no_twin_file_exists():
+    got = _argvs("PowerShell", True, exists=lambda _path: False)
+
+    assert got == [["cloud-guard.sh"], ["env-guard.sh"], ["scope-guard.sh"]]
 
 
 def test_a_power_shell_call_off_windows_never_selects_a_twin():
@@ -179,12 +180,12 @@ def test_the_other_events_with_no_git_bash_exit_0(event):
     assert code == 0 and out == b""
 
 
-# --- the twin routing end to end (pwsh with OS=Windows_NT on a POSIX host) -------
+# --- a PowerShell call judged by the .sh end to end (pwsh with OS=Windows_NT on a POSIX host) ---
 
 @needs_pwsh
 @h.needs_bash
-@pytest.mark.skipif(ON_WINDOWS, reason="this models the twin routing; the native run is the other test")
-def test_a_power_shell_cloud_call_is_judged_by_the_twin_and_denied(tmp_path):
+@pytest.mark.skipif(ON_WINDOWS, reason="this models the routing; the native run is the other test")
+def test_a_power_shell_cloud_call_is_judged_by_cloud_guard_sh_and_denied(tmp_path):
     root, home = rgh.build_repo(str(tmp_path), True)
     trace = tmp_path / "trace.crew-trace"
     env = rgh.env_for(root, home)
@@ -197,7 +198,7 @@ def test_a_power_shell_cloud_call_is_judged_by_the_twin_and_denied(tmp_path):
     ran = trace.read_text(encoding="utf-8")
     assert code == 0, err
     assert json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
-    assert "cloud-guard.ps1" in ran and "cloud-guard.sh" not in ran
+    assert "cloud-guard.sh" in ran and "cloud-guard.ps1" not in ran
 
 
 # --- native Windows ---------------------------------------------------------------

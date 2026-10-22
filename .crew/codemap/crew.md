@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@9ba355d7c
+anchor: useful-claude-add-ons@7944f06d7
 verified: 2026-10-20
 
 ## Re-derive provenance
@@ -254,14 +254,15 @@ a handoff skeleton), it is a visible duplicate, so `notify.sh` and
 emitting: one atomic `O_CREAT|O_EXCL` file per generation
 (`plugin/crew/hooks/scripts/event_claim.py:29-38`), so both flavours racing
 for the same event have exactly one winner.
-Since T-0051 the two notify twins are thin wrappers: they keep the claim and
-hand the payload to `plugin/crew/hooks/scripts/crew_notify.py` (`hook`,
+Since T-0051 `notify.sh` is a thin wrapper (its `notify.ps1` twin was deleted in
+L-0727 slice 3, L-0867; on Windows the dispatcher runs the `.sh` under Git Bash): it keeps the claim and
+hands the payload to `plugin/crew/hooks/scripts/crew_notify.py` (`hook`,
 `send`, `config`), which owns the config layering (`resolve_config`, so a
 lane worktree reads the main checkout's config), the `notification_type`
 filter, the subject line, the dedupe and episode records under
 `<git-common-dir>/crew/notify/`, and the Telegram/Teams send. DERIVED:
-`plugin/crew/hooks/scripts/notify.sh` and `plugin/crew/hooks/scripts/notify.ps1`
-name no provider endpoint (asserted by `plugin/crew/tests/test_crew_notify_hooks.py`).
+`plugin/crew/hooks/scripts/notify.sh`
+names no provider endpoint (asserted by `plugin/crew/tests/test_crew_notify_hooks.py`).
 
 **Blocker pings (T-0060).** DERIVED at `22fbbe9f`. `blocker` is in `EVENTS`
 (`plugin/crew/hooks/scripts/crew_notify.py:86`), with one subject per `KINDS` entry (`:90`) in
@@ -657,7 +658,7 @@ different modules read two different files as "the repo's crew config", and
 they disagree:
 
 - `crew_config.py` (used by `verify-gate.sh`,
-  `role-write-guard.ps1`'s config lookups, and everything the ratchet/guard
+  `role-write-guard.sh`'s config lookups (its `.ps1` twin was deleted in L-0727 slice 3, L-0867), and everything the ratchet/guard
   machinery above touches) reads **only** `.crew/config.json`
   (`plugin/crew/hooks/scripts/crew_config.py:1307`, through `crew_common.repo_config_file`
   since T-0088, which in a linked worktree with no config of its own reads the
@@ -739,13 +740,12 @@ and gets nothing created.
   operator's own machine.
 - **`method: "notify"` is the native-Windows default**, resolving from
   `"auto"` "on native Windows with no tmux pane"
-  (`crew_autoclear_setup.py:223-232`). **`sendkeys` is opt-in only** and
-  needs an explicit yes (the module docstring, `:9`, and
-  `write_autoclear_method`'s consent gate at `:252-255`, in the function
-  spanning `:239-256`) — because it "drives real
-  keystrokes... cannot confirm which tab of its own inside Windows Terminal"
-  it is typing into (`:117-120`), a concern distinct from, and in addition
-  to, the machine-global gate above.
+  (`crew_autoclear_setup.py:223-232`; `plugin/crew/hooks/scripts/crew_autocycle.py:1100`).
+  **The `sendkeys` method was removed in L-0727 slice 3 (L-0867, crew 1.2.61)** together with
+  `auto-clear.ps1`, which held the Windows keystroke sender. DERIVED: `resolve_method` refuses it with
+  `SENDKEYS_REMOVED` (`plugin/crew/hooks/scripts/crew_autocycle.py:1083-1084`, constant at `:1077`),
+  and `write_autoclear_method` raises `PermissionError` for it whatever the caller says
+  (`plugin/crew/hooks/scripts/crew_autoclear_setup.py:249-250`, note at `:119-120`).
 - `crew_autoclear_setup.py` is called from **three** places, confirmed by
   grep and by reading each call site: `/crew:init`'s Phase 1
   (`plugin/crew/skills/crew-setup/phases.md:191-197`, `plan-windows-default`),
@@ -780,10 +780,9 @@ Read in full on `T-0016-build` after review round 1 and the merge of main ce2354
   owner's tty or none (`:769`, review round 1). Headless becomes method
   `notify-headless`, its text from `headless_notice` (`:1024`), printed and claimed at
   `plugin/crew/hooks/scripts/auto-clear.sh:312`.
-- DERIVED: `plugin/crew/hooks/scripts/auto-clear.ps1` carries the same rules natively
-  (`Get-CrewSessionOwner` `:678`, `Get-CrewSessionClass` `:706` with no tty, the binding block from
-  `:767`, the owner-anchored window walk from `:902`); `Get-CrewProcLookup` (`:616`) tells an exited
-  parent (the top of the chain) from an unreadable one (refuse).
+- DERIVED: `auto-clear.ps1`, which carried these rules natively, was deleted in L-0727 slice 3
+  (L-0867); the rules now live only in `plugin/crew/hooks/scripts/crew_autocycle.py` (`session_owner`,
+  `classify`, `prove_target` at `:897`) run through `auto-clear.sh`.
 - DERIVED: every process fact goes through `_proc`, and `CREW_AUTOCLEAR_PROC_STUB`
   (`crew_autocycle.py:101`) replaces the whole table, read only while CREW_AUTOCLEAR_INHIBIT is set
   (`_stubs_allowed`, `:409`, as is the window stub); the suite's fixtures are
@@ -805,15 +804,13 @@ citations taken with `grep -n` there.
 - DERIVED: `plan` runs `wrapup_check` (`crew_autocycle.py:460`) after `verify_handoff` and before
   `resolve_method` (`:1157`), so a refusal (reason prefixed `wrap-up: `, `:402`) never reaches the
   binding or the sender's claim; `plugin/crew/hooks/scripts/auto-clear.sh:260` also prints it as a
-  `systemMessage`. `plugin/crew/hooks/scripts/auto-clear.ps1:727` reads `wrapUp` natively and runs
-  the same check through `crew_autocycle.py wrapup-check` (`:734`); no python refuses.
-- DERIVED: context-watch sends `wrapup_message` (`crew_autocycle.py:514`) instead of either
-  `autoWrapUp` text when armed (`plugin/crew/hooks/scripts/context-watch.sh:597`,
-  `plugin/crew/hooks/scripts/context-watch.ps1:630`), and in the marker branch escalates a failed
-  check once through `.crew/.wrapup-escalated-<key>` (`context-watch.sh:528`,
-  `context-watch.ps1:515`); the CLI verbs are `_wrapup_cli` (`crew_autocycle.py:1381`).
-  SessionStart removes the claim (`plugin/crew/hooks/scripts/handoff-read.sh:20`,
-  `plugin/crew/hooks/scripts/handoff-read.ps1:200`).
+  `systemMessage` (the `auto-clear.ps1` flavour that read `wrapUp` natively was deleted in L-0867).
+- DERIVED: context-watch sends `wrapup_message` (`crew_autocycle.py:522`) instead of either
+  `autoWrapUp` text when armed (`plugin/crew/hooks/scripts/context-watch.sh:633`; the
+  `context-watch.ps1` flavour was deleted in L-0867), and in the marker branch escalates a failed
+  check once through `.crew/.wrapup-escalated-<key>` (`context-watch.sh:61`, check at `:560`);
+  the CLI verbs are `_wrapup_cli` (`crew_autocycle.py:1394`).
+  SessionStart removes the claim (`plugin/crew/hooks/scripts/handoff-read.sh:20`; `handoff-read.ps1` deleted in L-0867).
 - DERIVED: `/crew:handoff --wrap-up` (`plugin/crew/commands/handoff.md:36`) is the one wrap-up
   procedure; `/crew:autopilot`'s context-watch step names it (`plugin/crew/commands/autopilot.md:106`).
 - JUDGEMENT: the only enforcement is the clear. Crew checks the commit and the handoff's fields,
@@ -840,13 +837,12 @@ staleness VERDICT on rather than whether the archive move succeeded, and a
 rule that raises as stale; `resume_line` (`:813`) renders the one injected
 line. Nothing starts on its own - the command is named, never sent as
 `initialUserMessage`. On `PreCompact` both `handoff-write` flavours call its
-`precompact` CLI (`write_precompact_record`,
+`precompact` CLI (since L-0867 only `handoff-write.sh` remains; `handoff-write.ps1` was deleted) (`write_precompact_record`,
 `plugin/crew/hooks/scripts/crew_resume.py:655`); `decide` trusts a `manual`
 record for 600 s and never one it could not have replaced
 (`_compact_was_manual`, `:721`). A record a later PreCompact could neither remove nor empty
 is MARKED, not predicted: `precompact-<key>.stuck` (`stuck_path` `:630`, `_mark_stuck` `:638`;
-the shell flavours write the same marker, `plugin/crew/hooks/scripts/handoff-write.sh:64-65`,
-`plugin/crew/hooks/scripts/handoff-write.ps1:430-431`), and a compact is not manual while that
+the shell hook writes the same marker, `plugin/crew/hooks/scripts/handoff-write.sh:64-65`), and a compact is not manual while that
 marker exists or cannot be stat'ed; `crew_context.prune_precompact` ages it out with the records.
 
 A handoff resumes only in the session that wrote it (T-0042). On an armed machine every
@@ -1626,15 +1622,13 @@ was discarded before the next call regardless.
   repeated defect" risk the previous anchor's note flagged as unmitigated.
   Whether the test actually catches a divergence was **not sabotage-tested**
   this pass.
-- **`Resolve-CrewPython` is still hand-copied, not shared, across all 11
-  `.ps1` hooks that call it** — `grep -rl "function Resolve-CrewPython"`
-  returns 11 files (`cloud-guard.ps1`, `crew-context.ps1`,
-  `platform-sync.ps1`, `notify.ps1`, `completion-audit.ps1`,
-  `role-write-guard.ps1`, `verify-gate.ps1`, `scope-guard.ps1`,
-  `approval-hook.ps1`, `handoff-read.ps1`, `handoff-write.ps1`); there is no
-  shared `_common.ps1` (confirmed absent by directory listing). Whether an
-  equivalent PowerShell-side parity test exists for these 11 copies the way
-  it does for the bash pair above was **not checked** this pass.
+- **`Resolve-CrewPython` is still hand-copied, not shared, across the
+  `.ps1` hooks that call it** — after L-0727 slice 3 (L-0867) deleted ten hook
+  twins, `grep -rl "function Resolve-CrewPython" plugin/crew/hooks/scripts`
+  returns 6 files (`completion-audit.ps1`, `verify-gate.ps1`, `scope-guard.ps1`,
+  `approval-hook.ps1`, `promote-gate.ps1`, `crew-hook.ps1`); there is no
+  shared `_common.ps1`. Whether an equivalent PowerShell-side parity test exists
+  for these copies the way it does for the bash pair above was **not checked** this pass.
 
 **The completion record (T-0082, H2a; DERIVED at the H2a branch head).** The
 same capture now carries a second temp file per rule, the completion record:
@@ -2889,7 +2883,7 @@ Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each n
 - DERIVED: temp hygiene. The auto-clear sender's first command unlinks it
   (`plugin/crew/hooks/scripts/auto-clear.sh:364`; the last-line `rm` at `:384` is the Git Bash
   fallback). `plugin/crew/hooks/scripts/_test/run-tests.sh:39-41` keeps every fixture on
-  `_CREW_TEST_TMP` behind one EXIT trap. `plugin/crew/tests/conftest.py:223`
+  `_CREW_TEST_TMP` behind one EXIT trap. `plugin/crew/tests/conftest.py:229`
   (`_isolated_tmpdir`) gives every test its own `TMPDIR`/`TEMP`/`TMP` and `tempfile.tempdir`, and
   `crew_fixtures.shim_env` copies them (`plugin/crew/tests/crew_fixtures.py:1499`). Tests:
   `plugin/crew/tests/test_tmp_hygiene.py`.
@@ -3915,7 +3909,7 @@ the refresh artifacts. The conflicting provenance sections keep both sides, T-00
 its line came from onto the merged tree with a line diff (`git show <side>:<path>` against the
 merge); each one that moved was re-read with `sed -n` on the merge and corrected: the version,
 1.0.44, at `.claude-plugin/marketplace.json:218` and `plugin/crew/.claude-plugin/plugin.json:3`;
-T-0004's "117 -> 119" `CHANGELOG.md:1051-1052` -> `:517-518` (T-0021's entry now sits above
+T-0004's "117 -> 119" `CHANGELOG.md:1064-1052` -> `:517-518` (T-0021's entry now sits above
 T-0042's). `.crew/verify.json` is 313 lines and 29 rules: rule 26 carries T-0042's pricing
 (62s, `seconds`/`why` changed in place) and T-0021's tracker rule is rule 28 at `:301-308`.
 `crew_resume.py`, `crew_context.py` and `crew_tracker.py` each changed on one side only, so
@@ -3994,7 +3988,7 @@ carries T-0023's `route_item` hunk on main's tree, so main's `_record_author_log
 rule at `:309-317`, after T-0021's tracker rule 28 at `:301-308`. The version is 1.0.46 at
 `.claude-plugin/marketplace.json:218` and `plugin/crew/.claude-plugin/plugin.json:3`. Config
 leaves re-executed on the merge: 122 / 68 / 54 / 0. T-0004's "117 -> 119" is now
-`CHANGELOG.md:1211-1212` (T-0023's entry sits first). `crew_tracker.py`, `crew_resume.py` and
+`CHANGELOG.md:1224-1212` (T-0023's entry sits first). `crew_tracker.py`, `crew_resume.py` and
 `role_write_guard.py` changed on one side only, so their citations stand. On the merge,
 `test_crew_route.py`, `test_crew_route_hook.py`, `test_crew_context.py`, `test_crew_tracker.py`
 and `test_crew_config.py` ran: 588 passed.
@@ -4054,7 +4048,7 @@ citation into them was re-read with `grep -n`/`sed -n` at `29a987b0`:
   `_handoff_ticket`.
 - `.crew/verify.json` - rule 26's `seconds` and `why` changed in place; `:281-289` holds, 294
   lines.
-- `CHANGELOG.md` and the tests - cited by name only here, except `CHANGELOG.md:840` (the config
+- `CHANGELOG.md` and the tests - cited by name only here, except `CHANGELOG.md:853` (the config
   key count paragraph), which did not match "116 -> 118" at `4ff7e764` either and is left as it
   was, outside this refresh.
 
@@ -4502,7 +4496,7 @@ Leaves re-executed on the merge: 122 / 68 / 54 / 0; `test_crew_config.py:279` as
 `.crew/verify.json` is 325 lines, 30 rules: autopilot rule 27 `:296-303`, tracker 28 `:304-311`,
 routing 29 `:312-320`. `sabotage.py` imports `ROUTE_MUTATIONS` at `:79` and
 `CONFIG_MENU_MUTATIONS` at `:80`, both appended at `:3053`. T-0004's "117 -> 119" is
-`CHANGELOG.md:1208-1209` (T-0075's entry now sits first). The version is 1.0.47 at
+`CHANGELOG.md:1221-1209` (T-0075's entry now sits first). The version is 1.0.47 at
 `.claude-plugin/marketplace.json:218` and `plugin/crew/.claude-plugin/plugin.json:3`; `:217`
 states 36 commands. `crew_context.py`, `crew_route.py` and the templates changed on main's side
 only, so the routing section's citations stand.
@@ -4585,7 +4579,7 @@ tracker section (+62 up to `:998`, +105 to +123 past the pinning hunks, each mat
 with the Windows pinning sentence rewritten for T-0077 (`_parent_check` removed; `_hold_dirs`
 `:1066`, `_held_check` `:1161`, `_win_open_dir` `:331`, `_WIN_PIN` `:328`) and the tracker rule
 corrected to `.crew/verify.json:345-353` (missed at `7d217751`); 87 `TRACKER_MUTATIONS`; T-0004's
-"117 -> 119" is `CHANGELOG.md:1419-1420`; the version is 1.0.50. `.crew/verify.json` did not change.
+"117 -> 119" is `CHANGELOG.md:1432-1420`; the version is 1.0.50. `.crew/verify.json` did not change.
 
 ## Re-anchor provenance - `8cabe586` + `5050ea3b` -> `5e2d71a7`, 2026-09-28 (T-0075 sabotage re-anchor, merges shipstation's main)
 
@@ -4594,7 +4588,7 @@ whole block" entry over both block guards (the T-0075 subset run found it vacuou
 rule and `value_allowed`'s shape rule each refuse a block alone), the 1.0.49/1.0.50 step-back and
 re-set (`1a3cd377`, `1afd2216`), and `5e2d71a7` merging origin/main `5050ea3b` (shipstation 1.1.1:
 `skills/shipstation/`, its marketplace entry and a CHANGELOG entry, none cited here). Moved in
-this note: T-0004's "117 -> 119" is `CHANGELOG.md:1430-1431`. `CONFIG_MENU_MUTATIONS` is still 50;
+this note: T-0004's "117 -> 119" is `CHANGELOG.md:1443-1431`. `CONFIG_MENU_MUTATIONS` is still 50;
 crew is still 1.0.50 (`1afd2216`). Nothing else this note cites changed.
 
 ## Re-anchor provenance - `5e2d71a7` + `81685adf` -> `3724731b`, 2026-09-28 (T-0075 review round 3, merge of `e6e10432`)
@@ -4744,7 +4738,7 @@ this section names it.
 The conflicting hunks were resolved by hand and re-read at `d7c7c75c` with `grep -n` per
 symbol: the version line (1.0.55), the leaf table and paragraph (re-executed: 125 / 68 / 57 / 0;
 `plugin/crew/tests/test_crew_config.py:284` asserts 125; T-0004's "117 -> 119" is
-`CHANGELOG.md:1646-1647`), the `crew.json` warning (`:911-915`), the whole `/crew:autopilot`
+`CHANGELOG.md:1659-1647`), the `crew.json` warning (`:911-915`), the whole `/crew:autopilot`
 section (T-0072's `deploy-allowed`, `_settings_at` and `DEPLOY_VALUES` merged into T-0010's
 text; every `crew_autopilot.py` and `commands/autopilot.md` citation in it re-read), the
 `deploy_allowed` paragraph, the `.crew/verify.json` rules sentence (rules 28-32), and the
@@ -4765,7 +4759,7 @@ that misattribution (a `crew_ticket.py` or `review_ledger.py` line after another
 
 Resolved by hand and re-read at `cd106b8b`: the version sentence (1.0.60; `.claude-plugin/marketplace.json:217`
 keeps T-0075's 36 slash commands), the leaf table and paragraph (re-executed: 125 / 68 / 57 / 0;
-`plugin/crew/tests/test_crew_config.py:288` asserts 125; T-0004's "117 -> 119" is `CHANGELOG.md:1770`),
+`plugin/crew/tests/test_crew_config.py:288` asserts 125; T-0004's "117 -> 119" is `CHANGELOG.md:1783`),
 `AUTOPILOT_DEFAULTS` (`crew_state.py:1094-1095`, deep-copied at `crew_config.py:384`), the autopilot and
 policy rule sentences (`.crew/verify.json` `:298-306`, `:307-313`, tracker `:314-321`, route `:322-330`,
 approval `:332-339`; `POLICY_MUTATIONS` 55 by `len()`, appended at `plugin/crew/tests/sabotage.py:3061`),
@@ -4897,7 +4891,7 @@ Checked by a script mapping every `path:N` citation outside provenance sections,
 
 ## Re-anchor provenance - `bbd9a66d` + `f79e9f58` -> `6375524b`, 2026-09-29 (T-0094 merges `8ab733d7`; review round 2's successor)
 
-`f050cd47` merges origin/main `8ab733d7` (T-0010 landed as crew 1.0.61, its code maps anchored `bbd9a66d`) into T-0094-build at `ca5b1f35` (T-0094's side anchored `f79e9f58`, plus review round 2's FIX 1 `da1532d6` and FIX 2 `ca5b1f35`). The artifact conflicts were anchor, version, provenance and cited-line text only: both sides' provenance kept, main's first; INDEX history columns joined; body hunks resolved to main's lines except T-0094's own refresh-admission paragraph and refresh-check entry point. After it, `157237c2` splits `.crew/verify.json` rule 25 (the admission suite is rule 32 at `:342-349`, rule 25 `:269-287`, every later rule moves by the merged and split lengths), restates the sabotage counts in `plugin/crew/tests/sabotage_refresh.py`, and edits `plugin/crew/README.md` and `docs/guides/crew/src/daily-workflow-scope.md` in place; `ef5b4c89` re-measures `plugin/crew/BUDGETS.md` (19,500 lines across 128 files); `fc348c89` sets crew 1.0.62; `6375524b` rebuilds the daily-workflow guide. `git diff --name-only bbd9a66d 6375524b`, refresh artifacts aside, is T-0094's files only: `.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`, the daily-workflow guide and its source, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `commands/done.md`, `commands/implement.md`, `completion_audit.py`, `crew_refresh_check.py`, `scope_guard.py` and T-0094's five test files. Every body `path:N` citation was traced to the side whose copy of this note carries its line (`8ab733d7` or `ca5b1f35`) and mapped to HEAD with a `difflib` line diff (`/root/crew-tmp/t-0094/cite_map_merge.py`, machine-local); each that did not map to itself was read with `sed -n` / `grep -n`. The script takes a bare `:N` as the last path named on its line, so some flags were that misattribution and hold; a history position ("before", "at <sha>", "since ...") was left as written. Re-derived here: `scope_guard.py`'s T-0010 citations (`:124-128`, `:243`, `:263`, `:271`, `:287`, `:132-133`, the merged file carrying T-0094's rule-6 docstring) and the refresh allowance (`:215-226`); `crew_refresh_check.py`'s positions after FIX 1's six lines (`artifact_verdicts` `:688`, the reach `:706-715`, `_rendered_verdict` `:745`, `ticket_freshness` `:956`, `main` `:1056`) and the unreadable-rule branch (`:652-654`); the round-2 tests; the verify rules 26-32 (rule 30 is T-0023's routing rule and 31 T-0024's, corrected in place with a `Corrected` clause); T-0004's "117 -> 119" at `CHANGELOG.md:1666` (review round 2 NIT 6); the version sentence (1.0.62). No test was run by this note.
+`f050cd47` merges origin/main `8ab733d7` (T-0010 landed as crew 1.0.61, its code maps anchored `bbd9a66d`) into T-0094-build at `ca5b1f35` (T-0094's side anchored `f79e9f58`, plus review round 2's FIX 1 `da1532d6` and FIX 2 `ca5b1f35`). The artifact conflicts were anchor, version, provenance and cited-line text only: both sides' provenance kept, main's first; INDEX history columns joined; body hunks resolved to main's lines except T-0094's own refresh-admission paragraph and refresh-check entry point. After it, `157237c2` splits `.crew/verify.json` rule 25 (the admission suite is rule 32 at `:342-349`, rule 25 `:269-287`, every later rule moves by the merged and split lengths), restates the sabotage counts in `plugin/crew/tests/sabotage_refresh.py`, and edits `plugin/crew/README.md` and `docs/guides/crew/src/daily-workflow-scope.md` in place; `ef5b4c89` re-measures `plugin/crew/BUDGETS.md` (19,500 lines across 128 files); `fc348c89` sets crew 1.0.62; `6375524b` rebuilds the daily-workflow guide. `git diff --name-only bbd9a66d 6375524b`, refresh artifacts aside, is T-0094's files only: `.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`, the daily-workflow guide and its source, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/BUDGETS.md`, `plugin/crew/README.md`, `commands/done.md`, `commands/implement.md`, `completion_audit.py`, `crew_refresh_check.py`, `scope_guard.py` and T-0094's five test files. Every body `path:N` citation was traced to the side whose copy of this note carries its line (`8ab733d7` or `ca5b1f35`) and mapped to HEAD with a `difflib` line diff (`/root/crew-tmp/t-0094/cite_map_merge.py`, machine-local); each that did not map to itself was read with `sed -n` / `grep -n`. The script takes a bare `:N` as the last path named on its line, so some flags were that misattribution and hold; a history position ("before", "at <sha>", "since ...") was left as written. Re-derived here: `scope_guard.py`'s T-0010 citations (`:124-128`, `:243`, `:263`, `:271`, `:287`, `:132-133`, the merged file carrying T-0094's rule-6 docstring) and the refresh allowance (`:215-226`); `crew_refresh_check.py`'s positions after FIX 1's six lines (`artifact_verdicts` `:688`, the reach `:706-715`, `_rendered_verdict` `:745`, `ticket_freshness` `:956`, `main` `:1056`) and the unreadable-rule branch (`:652-654`); the round-2 tests; the verify rules 26-32 (rule 30 is T-0023's routing rule and 31 T-0024's, corrected in place with a `Corrected` clause); T-0004's "117 -> 119" at `CHANGELOG.md:1679` (review round 2 NIT 6); the version sentence (1.0.62). No test was run by this note.
 
 ## Re-anchor provenance - `6375524b` -> `f5d0f1b1`, 2026-09-30 (T-0094 merges `a61a6f38`, crew 1.0.70)
 
@@ -5237,15 +5231,16 @@ commit. This section does not move the file's `anchor:`.
   sets `CREW_CFG_DIR` / `CREW_CFG_SOURCE` (`own`, `main`, `unknown`) by the rules of
   `crew_common.repo_config_dir` (`plugin/crew/hooks/scripts/crew_common.py:96`), with no
   python; `crew_repo_config_file` (`plugin/crew/hooks/scripts/_common.sh:391`) prints a
-  resolved path. The PowerShell twin `Get-CrewRepoConfigDir` is one body copied into
-  `plugin/crew/hooks/scripts/cloud-guard.ps1:192`, `plugin/crew/hooks/scripts/promote-gate.ps1:161`
-  and `plugin/crew/hooks/scripts/auto-clear.ps1:132`.
+  resolved path. The PowerShell twin `Get-CrewRepoConfigDir` is one body copied into the `.ps1` carriers
+  that remain (`plugin/crew/hooks/scripts/promote-gate.ps1:545`); the `cloud-guard.ps1` and
+  `auto-clear.ps1` copies went with those files in L-0727 slice 3 (L-0867).
 - **DERIVED.** Routed readers: `crew_incident_active`'s `standDown` read
   (`plugin/crew/hooks/scripts/_common.sh:460`), `_cloud_guard_armed`
   (`plugin/crew/hooks/scripts/cloud-guard.sh:40-53`, a missing resolver armed at `:42`, `unknown` at `:44`),
-  `Test-CloudGuardArmed` (`plugin/crew/hooks/scripts/cloud-guard.ps1:248-249`),
-  promote-gate's `Test-CrewIncidentActive` (`plugin/crew/hooks/scripts/promote-gate.ps1:220`)
-  and `auto-clear.ps1`'s `$repoCfg` (`plugin/crew/hooks/scripts/auto-clear.ps1:374`).
+  and promote-gate's `Test-CrewIncidentActive` (`plugin/crew/hooks/scripts/promote-gate.ps1:600`).
+  `cloud-guard.ps1`'s `Test-CloudGuardArmed` and `auto-clear.ps1`'s `$repoCfg` were deleted with their
+  files in L-0867; auto-clear's settings now come only from `crew_autocycle.settings`
+  (`plugin/crew/hooks/scripts/crew_autocycle.py:172`).
   `.crew/incident.json`, markers and logs stay in the worktree's own `.crew/`.
 - **DERIVED.** Held by `plugin/crew/tests/test_worktree_config_shell.py`: parity with the
   Python resolver on ten cases per flavour, the copies byte-identical, the cloud-guard
@@ -5268,43 +5263,35 @@ to that branch's content commits. This section does not move the file's `anchor:
   `plugin/crew/hooks/scripts/context-watch.sh:180` (after the `.crew/` directory gate, which
   stays). Python is handed the path as an argument; context-watch's no-python awk pass reads the
   same file.
-- **DERIVED.** Each `.ps1` hook carries a verbatim `Get-CrewRepoConfigDir` (now seven copies, held
-  equal by `PS_COPIES`, `plugin/crew/tests/test_worktree_config_shell.py:45`) and routes through
-  it: `plugin/crew/hooks/scripts/notify.ps1:345`, `plugin/crew/hooks/scripts/handoff-read.ps1:320`,
-  `plugin/crew/hooks/scripts/handoff-write.ps1:388`, `plugin/crew/hooks/scripts/context-watch.ps1:434`.
-  `notify.ps1` run with `&` from `context-watch.ps1` gets its own script scope, so its copy only
-  shadows the caller's identical one.
-- **JUDGEMENT (T-0051, batch 8).** The two bullets above no longer hold for notify:
-  T-0051 made `notify.sh` and `notify.ps1` thin wrappers around `crew_notify.py`, so
-  `notify.ps1` carries no `Get-CrewRepoConfigDir` (six copies remain, `PS_COPIES` in
-  `plugin/crew/tests/test_worktree_config_shell.py` names notify.ps1's removal) and
-  `crew_notify.py` reads the config itself. Its dedupe state is written to
-  `<git-common-dir>/crew/notify`, shared by every worktree, not kept in the lane. The
-  `notify.*` line cites above are pre-T-0051 and were not re-derived.
+- **DERIVED.** The `.ps1` copies of `Get-CrewRepoConfigDir` in `notify.ps1`, `handoff-read.ps1`,
+  `handoff-write.ps1` and `context-watch.ps1` are gone: those four files were deleted in L-0727
+  slice 3 (L-0867), so `PS_COPIES` is now `("promote-gate", "verify-gate", "scope-guard",
+  "completion-audit")` (`plugin/crew/tests/test_worktree_config_shell.py:45`) and the `.sh` hooks route
+  through `crew_repo_config_dir` alone. `notify.sh` reads no config path of its own: `crew_notify.py`
+  does (T-0051), and its dedupe state is written to `<git-common-dir>/crew/notify`, shared by every
+  worktree, not kept in the lane.
 - **DERIVED.** handoff-write keeps the literal own-or-unknown gate in its non-`main` branch
-  (`plugin/crew/hooks/scripts/handoff-write.sh:23`, `plugin/crew/hooks/scripts/handoff-write.ps1:396`):
-  there the resolved directory is the own `.crew/`, and `plugin/crew/tests/sabotage_resume.py`
-  (a harness path) anchors on that text. `handoff-write.ps1:484` accepts an Int64 or
-  BigInteger `keepTranscripts` (PowerShell 7's `ConvertFrom-Json`), clamped to Int32.MaxValue as
-  bash's one-liner clamps it; both flavours take an integer only (review rounds 1-2).
+  (`plugin/crew/hooks/scripts/handoff-write.sh:20`): there the resolved directory is the own
+  `.crew/`, and `plugin/crew/tests/sabotage_resume.py` (a harness path) anchors on that text.
+  The `.ps1` flavour's Int64/BigInteger `keepTranscripts` handling went with `handoff-write.ps1`
+  (L-0867); bash's one-liner clamps it to Int32.MaxValue and takes an integer only
+  (`plugin/crew/hooks/scripts/handoff-write.sh:96`).
 - **DERIVED.** context-watch's messages name the file in force: `CFG_SHOWN`
-  (`plugin/crew/hooks/scripts/context-watch.sh:182`) and `$cfgShown`
-  (`plugin/crew/hooks/scripts/context-watch.ps1:436`) are `.crew/config.json` for an own file and
-  the main checkout's full path when inherited.
+  (`plugin/crew/hooks/scripts/context-watch.sh:182`) is `.crew/config.json` for an own file and
+  the main checkout's full path when inherited (the `$cfgShown` in `context-watch.ps1` was deleted
+  in L-0867).
 - **DERIVED.** `test_no_session_hook_names_the_own_config_path`
-  (`plugin/crew/tests/test_worktree_config_shell.py:892`) fails on any executable line in the
-  eight scripts naming `.crew/config.json` or `.crew/crew.json` beyond `OWN_PATH_ALLOWED` (`:869`).
+  (`plugin/crew/tests/test_worktree_config_shell.py:922`) fails on any executable line in the
+  session-hook scripts naming `.crew/config.json` or `.crew/crew.json` beyond `OWN_PATH_ALLOWED` (`:906`).
 - **DERIVED.** The handoff path stays inside the checkout (review round 1, B1): bash through
   `crew_handoff_path` (`plugin/crew/hooks/scripts/_common.sh:405`), which calls
   `crew_state.handoff_path`, and context-watch's own read (`plugin/crew/hooks/scripts/context-watch.sh:354`);
-  PowerShell through `Get-CrewHandoffPath`, three byte-identical copies
-  (`plugin/crew/hooks/scripts/handoff-read.ps1:235`, `plugin/crew/hooks/scripts/handoff-write.ps1:335`,
-  `plugin/crew/hooks/scripts/context-watch.ps1:78`), stricter on links. An inherited absolute or
+  the PowerShell `Get-CrewHandoffPath` copies (in `handoff-read.ps1`, `handoff-write.ps1` and
+  `context-watch.ps1`) were deleted with those files in L-0867, so only the bash path remains. An inherited absolute or
   `..` value, or one naming a directory, is the lane's `.work/HANDOFF.md`, with a warning, and
   the path is printed with forward slashes on every OS (a Windows pre-flight read `.work\HANDOFF.md`);
-  context-watch's message, both flavours, says the configured path leaves the checkout. The `.ps1`
-  copies turn `\` into `/` before the check off Windows, since PowerShell's file cmdlets read it as
-  a separator there too (review round 3). Held by
+  context-watch's message says the configured path leaves the checkout. (The `.ps1` copies' `\`-to-`/`
+  step, review round 3, went with the files.) Held by
   `plugin/crew/tests/test_worktree_config_shell.py:745` and its two siblings.
 - **JUDGEMENT.** Still own-file only: the harness readers `verify-gate.*`, `scope-guard.*`,
   `completion-audit.*`, `review_gate.py` (L-0681, a tooling PR).
@@ -5367,9 +5354,8 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
   `crew_resume.render` (`_render` `:143`). CLI `goal-mark` and `handoff-resume` (`main` `:174`)
   dispatch through `EXTRA_ACTIONS` in `plugin/crew/hooks/scripts/crew_autopilot.py`.
   `crew_autopilot_backlog.goal_run` marks `running`/`stopped`/`done` itself (`_marked`).
-- DERIVED. The PreCompact skeleton asks it in both flavours and takes only an exact goal line:
-  `plugin/crew/hooks/scripts/handoff-write.sh:110-113`,
-  `plugin/crew/hooks/scripts/handoff-write.ps1:522`.
+- DERIVED. The PreCompact skeleton asks it and takes only an exact goal line:
+  `plugin/crew/hooks/scripts/handoff-write.sh:110-113` (the `handoff-write.ps1` flavour was deleted in L-0867).
 - JUDGEMENT. The function lives outside `crew_autopilot.py` (the spec names it
   `crew_autopilot.handoff_resume`) because that module sits at pylint's 3400-line limit.
 
@@ -5496,7 +5482,7 @@ The coordinator allocated 1.0.213 for the review-fix round (`_main_folder` carri
 
 **Re-anchored `926f1277` -> `09e31dba` on 2026-10-10 (L-0753, after merging main `e77532e01`).** Per-path check `git diff --name-only 926f1277..09e31dba`: main's L-0759 (#595: `plugin/crew/tests/test_promote_gate_review.py`, crew 1.2.19) and L-0760 (#596: `.github/workflows/runner-autostart.yml`, SECURITY.md) plus the version and CHANGELOG/README lines moved. No claim in this map moved.
 
-**L-0772 (environment-dump guard), measured on `L-0772-env-guard` at `a1004dad`, 2026-10-11.** New: `plugin/crew/hooks/scripts/env_guard.py` (the PreToolUse judge: a bash and a PowerShell reader over the command text, `findings(text, shell)`, `resolve_mode`, `_crude_armed`, `main`) with wrappers `plugin/crew/hooks/scripts/env-guard.sh` / `plugin/crew/hooks/scripts/env-guard.ps1`, registered in `plugin/crew/hooks/hooks.json` on `Bash|PowerShell` (PreToolUse then 10 entries, 36 in all; superseded by L-0850, see ## Hooks: 16 launcher entries, 5 PreToolUse rows in `crew_hook.TABLE`). `plugin/crew/hooks/scripts/crew_guards.py:206` adds `ENV_GUARD_NAMES` to `ALL_GUARD_NAMES` (`:213`, now twelve names with `deployWorkflow`), so `RATCHETED_KEYS` is 15 keys and `crew_config._RATCHETED` 16 (executed). `PROD_READ_COMMANDS` no longer lists `printenv`, a bare `env` with nothing left to run classifies as a write, and `_classify_shell` asks `env_guard.findings` first (lazy import; `env_guard` imports nothing from crew at top level, asserted by `plugin/crew/tests/test_env_guard.py`). Suites: `plugin/crew/tests/test_env_guard.py`, `plugin/crew/tests/test_env_guard_config.py`, `plugin/crew/tests/test_guards_env_dump.py`, the `.crew/verify.json` env-guard rule. The rest of this map was not re-derived by this note; the anchor line is unchanged and `/crew:onboard --refresh crew` remains the full refresh.
+**L-0772 (environment-dump guard), measured on `L-0772-env-guard` at `a1004dad`, 2026-10-11.** New: `plugin/crew/hooks/scripts/env_guard.py` (the PreToolUse judge: a bash and a PowerShell reader over the command text, `findings(text, shell)`, `resolve_mode`, `_crude_armed`, `main`) with wrappers `plugin/crew/hooks/scripts/env-guard.sh` / `env-guard.ps1` (the `.ps1` twin was deleted in L-0727 slice 3, L-0867), registered in `plugin/crew/hooks/hooks.json` on `Bash|PowerShell` (PreToolUse then 10 entries, 36 in all; superseded by L-0850, see ## Hooks: 16 launcher entries, 5 PreToolUse rows in `crew_hook.TABLE`). `plugin/crew/hooks/scripts/crew_guards.py:206` adds `ENV_GUARD_NAMES` to `ALL_GUARD_NAMES` (`:213`, now twelve names with `deployWorkflow`), so `RATCHETED_KEYS` is 15 keys and `crew_config._RATCHETED` 16 (executed). `PROD_READ_COMMANDS` no longer lists `printenv`, a bare `env` with nothing left to run classifies as a write, and `_classify_shell` asks `env_guard.findings` first (lazy import; `env_guard` imports nothing from crew at top level, asserted by `plugin/crew/tests/test_env_guard.py`). Suites: `plugin/crew/tests/test_env_guard.py`, `plugin/crew/tests/test_env_guard_config.py`, `plugin/crew/tests/test_guards_env_dump.py`, the `.crew/verify.json` env-guard rule. The rest of this map was not re-derived by this note; the anchor line is unchanged and `/crew:onboard --refresh crew` remains the full refresh.
 
 **Re-anchored `09e31dba` -> `0bf364417` on 2026-10-17 (L-0796, crew 1.2.39, quiet Stop gate).** Scope of this check is the ticket's own change, `git diff --name-only 786687e60..0bf364417`: `verify-gate.sh` (+258) and `verify-gate.ps1` (+343) grew above most of their cited lines, `verify_fingerprint.py` gained 5 lines at `:192`, `crew_fixtures.py` 7 lines, the sabotage tables a few lines in place, and `CONFIG.md` one 44-line insertion at `:3056` (after every `CONFIG.md` line cited here). Every cited `verify-gate.sh` / `.ps1` / `crew_fixtures.py` / `sabotage*.py` / `CONFIG.md` line was shifted by the hunks of that diff (a script walking the `-U0` hunks, no cited line fell inside a hunk); version lines (`plugin.json:3`, `marketplace.json`, `PLUGINS.md`, `BUDGETS.md`) and README lines changed in place and moved nothing. NOT VERIFIED: that each shifted citation still says what its sentence claims. This pass did not re-read them, and drift from the commits between `09e31dba` and `786687e60` is not re-derived here; `/crew:onboard --refresh` is the full pass. Nothing was executed for this note.
 
