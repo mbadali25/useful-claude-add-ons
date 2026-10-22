@@ -2491,32 +2491,37 @@ def _code_is_inert(code, hash_comments=False):
     return True
 
 
-# --- interpreter code (SRL-2308 r3) -------------------------------------------
+# --- interpreter code (SRL-2308 r3, L-0871) ----------------------------------
 #
-# Code is REFUSED when it can start a process AND (the line names the tool
-# anywhere OR the command it could start is built at run time). Code that can
-# only print, or cannot start a process, passes whatever it mentions. "Can
-# start a process" is read wide: a process API, and every way the language
-# reaches one by a name it computes. "Built at run time" is read wide too:
-# for Python, anything but literal calls on plain strings (`_py_static`);
-# for perl, ruby, node and deno, always (strings name functions there in too
-# many ways to follow), so a process API alone refuses; for PHP, whose
-# callables are strings everywhere, any code that is not inert. Code holding
-# a shell expansion the line does not resolve is made at run time: 1.2.35's
-# rule (`_verb_on_line`) decides first.
+# Python and node code is REFUSED when it can start a process AND the line
+# or the code names the tool, or when it reaches a process AND builds the
+# tool's name (`'ter'+'raform'`, `chr(`, a join, a format, an f-string, a
+# decode). A process-reaching code that names nothing and builds nothing, and
+# code that only reads its environment or imports a library (`import os`,
+# `import requests`, `process.env`), passes: "could not tell what python does"
+# is no longer a refusal on its own (L-0871). A command read from input, a
+# file or an environment variable that the line never names is therefore not
+# caught (README "What the guard does not catch"). perl, ruby, PHP and deno
+# keep the older, wider reading: a process API or any way to reach one by a
+# name the code computes. For Python, "reaches a process" is `_PY_REACH_RE`;
+# for node, `_NODE_REACH_RE`. A shell expansion the line does not resolve
+# makes the code run-time: 1.2.35's rule (`_verb_on_line`) decides first.
 
 # Python names that reach a process, or reach one by a computed name: the
 # process APIs, `os`/`posix`/`nt` themselves, attribute and frame access,
 # evaluation, and PyYAML's unsafe loaders (`!!python/object/apply:`). Read
 # over the code outside its plain string literals (`_py_without_text`): a
 # placeholder such as `"__COUNTS__"` is text; an f-string is code.
-_PY_SPAWN_RE = re.compile(
-    r"system|popen|spawn|fork|exec|subprocess|\bpty\b|\bos\b|\bposix\b|\bnt\b"
+_PY_REACH_RE = re.compile(
+    r"system|popen|spawn|fork|exec|subprocess|\bpty\b|\bposix\b|\bnt\b"
     r"|getattr|setattr|delattr|__\w+__|\bvars\b|\bglobals\b|\blocals\b"
     r"|\beval\b|\bcompile\b|breakpoint|\bhelp\b|\bmodules\b|_getframe"
     r"|\bf_(?:globals|builtins|locals|back)\b|\b(?:tb|gi|cr|ag)_frame\b"
     r"|\byaml\s*\.\s*(?!(?:safe_load|safe_load_all|safe_dump|safe_dump_all"
-    r"|dump|dump_all|YAMLError)\b)\w|\bfrom\s+yaml\s+import\b|Loader\b")
+    r"|dump|dump_all|YAMLError)\b)\w|\bfrom\s+yaml\s+import\b|Loader\b"
+    r"|ctypes|cffi|importlib|runpy|startfile")
+# The reach words and bare `os`: what the mention rule reads.
+_PY_SPAWN_RE = re.compile(_PY_REACH_RE.pattern + r"|\bos\b")
 # Modules Python code may import and still not start a process: pure data
 # and text, none with a process API (every route from one of them to `os`
 # goes through a name `_PY_SPAWN_RE` reads). Any other import may run code
@@ -2561,6 +2566,80 @@ _FAMILY_SPAWN_RE = {
         r"|Proxy|setTimeout|setInterval|setImmediate|WebAssembly|\bwith\b"
         r"|arguments"),
 }
+
+# Node code that reaches a process, or a name it computes: the mention
+# rule's list without the words that only read the environment or load a
+# library (`process`, `require`, `import`, `global`; L-0871).
+_NODE_REACH_RE = re.compile(
+    r"child|exec|spawn|fork|eval|Function|constructor|prototype|__proto__"
+    r"|Reflect|\bvm\b|[Ww]orker|Deno|Bun|binding|dlopen|module|\[|`"
+    r"|\bthis\b|\bself\b|\bwindow\b|Proxy|setTimeout|setInterval"
+    r"|setImmediate|WebAssembly|\bwith\b|arguments")
+# Ways code assembles a name at run time (L-0871), read next to a reach word.
+_PY_ASSEMBLY_RE = re.compile(
+    r"chr\s*\(|\bbytes\b|\bbytearray\b|fromhex|unhexlify|base64|b64"
+    r"|\bdecode\b|\[\s*:\s*:\s*-1\s*\]|\breversed\b|\.\s*join\b"
+    r"|\.\s*format\b|%|\bord\b|\bmap\b|\bcodecs\b|\b[fF][rR]?(?=['\"])")
+_NODE_ASSEMBLY_RE = re.compile(
+    r"fromCharCode|fromCodePoint|Buffer|atob|\.\s*join\b|\.\s*concat\b"
+    r"|\.\s*replace|\.\s*reverse|\.\s*split|\.\s*slice|\.\s*substr"
+    r"|\.\s*repeat|\$\{|\bunescape\b|decodeURI")
+# A shell expansion inside the code's text (`os.system("$T apply")`): the
+# shell the process API starts makes the name at run time.
+_CODE_EXPANSION_RE = re.compile(r"[$`]")
+_TOOL_SPELLINGS = ("terragrunt", "terraform", "tofu")
+
+
+class InterpreterReason(str):
+    """Why a line that runs interpreter code is refused: the second element
+    `_argv_trigger` returns instead of `True` (L-0871), so the finding quotes
+    the construct that caused it."""
+
+
+class InterpreterHit(str):
+    """The word naming why interpreter code may run the tool, with `why`: the
+    construct, in words, for `InterpreterReason`. A `str` to every reader."""
+    why = ""
+
+    def __new__(cls, word, why):
+        hit = super().__new__(cls, word)
+        hit.why = why
+        return hit
+
+
+def _collapse_name(code):
+    """`code` with its escapes decoded, string prefixes dropped and every
+    character but letters and digits removed: where quotes, `+`, commas,
+    brackets, spaces and dots split a name apart, it reads whole again."""
+    def one(match):
+        digits = match.group(1) or match.group(2) or match.group(3)
+        return chr(int(digits, 8 if match.group(3) else 16))
+    text = re.sub(r"\\x([0-9a-fA-F]{2})|\\u([0-9a-fA-F]{4})|\\([0-7]{1,3})",
+                  one, code)
+    text = re.sub(r"\b[bBrRuUfF]{1,2}(?=['\"])", "", text)
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def _built_name(code, scan, reach, assembly, label):
+    """An `InterpreterHit` when `code` reaches a process (`reach`, its
+    regex, read over `scan`: the code, or python's without its string text)
+    and builds the tool's name: its fragments collapse to the name, or it
+    uses an `assembly` construct (also read over `scan`). None otherwise
+    (L-0871)."""
+    reached = reach.search(scan)
+    if reached is None:
+        return None
+    for tool in _TOOL_SPELLINGS:
+        if tool in _collapse_name(code):
+            return InterpreterHit(tool, (
+                f"{label} code that spells {tool!r} out of fragments "
+                f"next to {reached.group(0)!r}"))
+    built = assembly.search(scan) or _CODE_EXPANSION_RE.search(code)
+    if built is None:
+        return None
+    return InterpreterHit(built.group(0), (
+        f"{label} code that builds a name at run time ({built.group(0)!r}) "
+        f"next to {reached.group(0)!r}, so it could spell the tool"))
 
 
 def _code_mention(code, top):
@@ -2681,9 +2760,11 @@ def _py_static(code):  # pylint: disable=too-many-return-statements,too-many-bra
 
 def _code_verdict(code, spec, top, dynamic=False, whole=False):
     """The word naming why interpreter `code` (of `spec`'s family) may run
-    the tool, or None: the rule in the section comment. `dynamic`: the code
-    holds a value made at run time; `whole`: it is a shell line
-    (`_py_spawns`)."""
+    the tool, or None: the rule in the section comment. An
+    `InterpreterHit` for python and node, carrying the construct. `dynamic`
+    is unused since L-0871 (1.2.35's rule has already run); `whole`: the code
+    is a shell line (`_py_spawns`)."""
+    del dynamic
     family = spec[7]
     if _code_is_inert(code, family != "node"):
         return None
@@ -2692,14 +2773,26 @@ def _code_verdict(code, spec, top, dynamic=False, whole=False):
         if spawn is None:
             return None
         named = _code_mention(code, top)
-        if named is None and (dynamic or not _py_static(code)):
-            named = spawn
-        return named
+        if named is not None:
+            return InterpreterHit(named, (
+                f"python code that names {named!r} and may start a process "
+                f"({spawn!r})"))
+        bare = code if whole else _py_without_text(code)
+        return _built_name(code, bare, _PY_REACH_RE, _PY_ASSEMBLY_RE, "python")
     if family == "php":
         return _code_mention(code, top) or "php"
     found = _FAMILY_SPAWN_RE[family].search(code)
-    return None if found is None else _code_mention(code, top) or \
-        found.group(0)
+    if found is None:
+        return None
+    named = _code_mention(code, top)
+    if family == "node":
+        if named is not None:
+            return InterpreterHit(named, (
+                f"node code that names {named!r} and may start a process "
+                f"({found.group(0)!r})"))
+        return _built_name(code, code, _NODE_REACH_RE, _NODE_ASSEMBLY_RE,
+                           "node")
+    return named or found.group(0)
 
 
 def _judge_code(code, spec, top, runtime, whole=False):
@@ -4261,8 +4354,10 @@ def _argv_trigger(argv, top, helpers, depth, line, tool=_TF_TOOL):
     named = None if interpreted is None else interpreted(head, args, top)
     if named is not None:
         # `python3 -c "import os; os.system('terraform apply')"`: code
-        # that names the tool and does more than print (SRL-2308 r2).
-        return named, True
+        # that names the tool and does more than print (SRL-2308 r2). A
+        # python or node hit carries the construct that caused it (L-0871).
+        why = getattr(named, "why", "")
+        return named, InterpreterReason(why) if why else True
     if head in _GATE_SHELLS:
         has_c, positional = shell_args(args)
         if has_c and positional and _HOLE not in positional[0]:
@@ -4351,6 +4446,9 @@ def _bash_trigger(text, top, helpers, depth, line=None, tool=_TF_TOOL):
         if hit is not None:
             found = found or hit[0]
             unseen = unseen or hit[1]
+            if isinstance(hit[1], InterpreterReason) and \
+                    not isinstance(unseen, InterpreterReason):
+                unseen = hit[1]  # the first interpreter's construct (L-0871)
         # An alias or `hash -p` names gh for the REST of the line only.
         line["copies"] |= tool.bash_aliases([argv], helpers)
     return None if found is None else (found, unseen)

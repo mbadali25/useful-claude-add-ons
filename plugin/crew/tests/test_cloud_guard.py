@@ -1716,6 +1716,121 @@ def test_srl2308_r2_the_refused_rows_hold_through_the_bash_hook(tmp_path,
     _block("bash", tmp_path, case + ("terraformApply",))
 
 
+# --- L-0871: interpreter code that names nothing is not could-not-tell -------
+#
+# `grep '^JIRA_' .env | python3 -c "import urllib.parse,sys; print(1)"` and a
+# heredoc with `import os` were refused as could-not-tell, and the denial
+# quoted `'^JIRA_'` or `'<<'`. Python and node code is now refused only when
+# the code or the line names terraform/terragrunt/tofu, or the code reaches a
+# process AND builds the name. Rows run through both entry points.
+L0871_ALLOW = [
+    ("l0871-ok-grep-pipe-python", "Bash",
+     "grep '^JIRA_' .env | python3 -c \"import urllib.parse,sys; print(1)\""),
+    ("l0871-ok-python-heredoc-os-environ", "Bash",
+     "python3 - <<'PY'\nimport os\nprint(os.environ.get('JIRA_EMAIL'))\nPY"),
+    ("l0871-ok-node-process-env", "Bash",
+     "node -e \"console.log(process.env.JIRA_X)\""),
+    ("l0871-ok-home-assign-import", "Bash",
+     "HOME=$T/home python3 -c \"import x\""),
+    ("l0871-ok-python-heredoc-requests", "Bash",
+     "python3 - <<'PY'\nimport requests\n"
+     "print(requests.get('https://example.com/rest').status_code)\nPY"),
+    ("l0871-ok-u1-command-from-env", "Bash",
+     "python3 -c \"import os; os.system(os.environ['CMD'])\""),
+    ("l0871-ok-source-env-then-python", "Bash",
+     "set -a; source .env; set +a; python3 - <<'PY'\nimport os\n"
+     "print(os.environ.get('JIRA_EMAIL'))\nPY"),
+]
+
+L0871_REFUSE = [
+    ("l0871-no-concat", "Bash",
+     "python3 -c \"import os; os.system('ter'+'raform apply')\""),
+    ("l0871-no-join", "Bash",
+     "python3 -c 'import os; os.system(\"\".join([\"ter\",\"raform\"])"
+     "+\" apply\")'"),
+    ("l0871-no-chr", "Bash",
+     "python3 -c \"import os; os.system(chr(116)+'erraform apply')\""),
+    ("l0871-no-bytes-fromhex", "Bash",
+     "python3 -c \"import subprocess; subprocess.run("
+     "[bytes.fromhex('7465727261666f726d').decode(),'apply'])\""),
+    ("l0871-no-escape", "Bash",
+     r"""python3 -c 'import os; os.system("\x74erraform apply")'"""),
+    ("l0871-no-tofu-concat", "Bash",
+     "python3 -c \"import os; os.system('to'+'fu apply')\""),
+    ("l0871-no-heredoc-concat", "Bash",
+     "W=$S/x; python3 - <<'EOF'\nimport os\nos.system('ter'+'raform apply')"
+     "\nEOF"),
+    ("l0871-no-node-concat", "Bash",
+     "node -e \"require('child_process').execSync('ter'+'raform apply')\""),
+    ("l0871-no-node-template", "Bash",
+     "node -e \"require('child_process').execSync(`${'ter'}raform apply`)\""),
+    ("l0871-no-shell-var-in-code", "Bash",
+     "T=terraform; python3 -c \"import os; os.system('$T apply')\""),
+    ("l0871-no-pipe-heredoc-named", "Bash",
+     "cat <<'EOF' | python3\nimport os\nos.system('terraform apply')\nEOF"),
+    ("l0871-no-named-beside-grep", "Bash",
+     "grep '^JIRA_' .env | python3 -c \"import os; "
+     "os.system('terraform apply')\""),
+    ("l0871-no-line-names-tool-python", "Bash",
+     "T=terraform; python3 -c \"import os; os.system(os.environ['CMD'])\""),
+    ("l0871-no-line-names-tool-pipe", "Bash",
+     "grep terraform main.tf | python3 -c \"import os; "
+     "os.system(os.environ['CMD'])\""),
+    ("l0871-no-line-names-tool-node", "Bash",
+     "T=terraform; node -e \"require('child_process')"
+     ".execSync(process.env.CMD)\""),
+]
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", L0871_ALLOW,
+                         ids=[c[0] for c in L0871_ALLOW])
+def test_l0871_interpreter_code_that_names_no_tool_is_allowed(tmp_path,
+                                                              driver, case):
+    _allow(driver, tmp_path, case)
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", L0871_REFUSE,
+                         ids=[c[0] for c in L0871_REFUSE])
+def test_l0871_interpreter_code_that_builds_the_tool_name_is_refused(
+        tmp_path, driver, case):
+    _block(driver, tmp_path, case + ("terraformApply",))
+
+
+L0871_MESSAGE = [
+    ("l0871-msg-chr",
+     "grep '^JIRA_' .env | python3 -c \"import os; "
+     "os.system(chr(116)+'erraform apply')\"",
+     "'chr('", "'^JIRA_'"),
+    ("l0871-msg-join",
+     "python3 - <<'PY'\nimport os\nos.system(''.join(['ter','raform']))\nPY",
+     "spells 'terraform' out of fragments", "'<<'"),
+    ("l0871-msg-named",
+     "grep '^JIRA_' .env | python3 -c \"import os; "
+     "os.system('terraform apply')\"",
+     "names 'terraform' and may start a process", "'^JIRA_'"),
+    ("l0871-msg-node-concat",
+     "node -e \"require('child_process').execSync('ter'+'raform apply')\"",
+     "node code that spells 'terraform' out of fragments", "'ter'"),
+]
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", L0871_MESSAGE,
+                         ids=[c[0] for c in L0871_MESSAGE])
+def test_l0871_a_refusal_names_the_construct_that_caused_it(tmp_path, driver,
+                                                            case):
+    _id, command, construct, unrelated = case
+    _fixture(tmp_path, ARMED)
+    decision, reason, code, err = run_hook(driver, tmp_path, "Bash", command)
+    assert code == 0, err
+    assert decision == "deny", (command, reason)
+    assert construct in reason, reason
+    assert "not a plain literal" not in reason, reason
+    assert unrelated not in reason, reason
+
+
 # --- SRL-2308 review round 2: fail closed ---------------------------------
 #
 # Codex r2 and the gate found the r1 head (3edc97bf) fail-open: a command
