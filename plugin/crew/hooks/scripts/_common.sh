@@ -386,6 +386,52 @@ crew_repo_config_dir() {
   done
 }
 
+# Whether config file $1 may arm a guard, read WITHOUT python (L-0725). Status 0
+# means armed; status 1 means the layer is PROVED off. The keys to look for follow
+# the file: `profile` and the guard's own key, e.g. `crew_guard_layer_armed F
+# profile cloudGuard`. Only the fallbacks in cloud-guard.sh and env-guard.sh call
+# it, when python could not run at all, so every doubt answers "armed".
+#
+# Off is proved only when: the file does not exist (a file that exists but is not
+# a readable regular file is armed); it ends in `}`; it holds no `\u` escape (a
+# JSON escape can spell a key without the literal token); every `"guards"` token
+# is followed by `{` on its line (so `{"guards":null}` and `{"guards":42}` are
+# armed, as the python resolvers already treat a non-object block as corrupt);
+# and every `"profile"` / guard-key value is the literal `off`, with exactly as
+# many values extracted as tokens found (a value split over two lines extracts
+# nothing, so it is armed). The old first-match read let the legacy key say `off`
+# before the override said `block`. An unrelated `"profile"` (for instance
+# `unattendedCloud.aws.readOnly.profile`) arms it: a refusal while python is
+# missing, never a pass.
+crew_guard_layer_armed() {
+  local f="$1" alt body gt go kt vals n v
+  shift
+  [ -e "$f" ] || [ -L "$f" ] || return 1
+  { [ -f "$f" ] && [ -r "$f" ]; } || return 0
+  body=$(cat -- "$f" 2>/dev/null) || return 0
+  [ -n "$body" ] || return 0
+  [ "$(printf '%s' "$body" | tr -d '[:space:]' | tail -c 1)" = "}" ] || return 0
+  case "$body" in *'\u'*) return 0 ;; esac
+  alt=$(printf '%s|' "$@")
+  alt="${alt%|}"
+  gt=$(printf '%s' "$body" | grep -oE '"guards"[[:space:]]*:' | wc -l)
+  go=$(printf '%s' "$body" | grep -oE '"guards"[[:space:]]*:[[:space:]]*\{' | wc -l)
+  [ "$gt" -eq "$go" ] || return 0
+  kt=$(printf '%s' "$body" | grep -oE "\"($alt)\"[[:space:]]*:" | wc -l)
+  vals=$(printf '%s' "$body" | grep -oE "\"($alt)\"[[:space:]]*:[[:space:]]*[^,}[:space:]]+")
+  n=0
+  while IFS= read -r v; do
+    [ -n "$v" ] || continue
+    n=$((n + 1))
+    v=$(printf '%s' "$v" | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d '"\r')
+    [ "$v" = "off" ] || return 0
+  done <<EOF_VALS
+$vals
+EOF_VALS
+  [ "$n" -eq "$kt" ] || return 0
+  return 1
+}
+
 # Print the resolved path of repo config file $1 (default config.json) for the
 # checkout at $2 (default: the cwd).
 crew_repo_config_file() {

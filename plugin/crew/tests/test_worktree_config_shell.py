@@ -1089,3 +1089,151 @@ def test_no_hook_script_names_the_own_config_path():
         rest = {t: n for t, n in found.items() if t not in messages}
         assert sum(messages.values()) == OWN_PATH_MESSAGES.get(name, 0), (name, messages)
         assert rest == OWN_PATH_ALLOWED.get(name, {}), (name, rest)
+
+
+# --- L-0725: the fallbacks stop trusting the first match ---------------------------------
+#
+# `guards.profile` and `guards.overrides.<guard>` arm the guards now, so a first
+# `"cloudGuard"` match is not the answer: the legacy key can say `off` before the
+# override says `block`, and an unrelated `"profile"` (`unattendedCloud.aws.readOnly`)
+# can precede the real one. A layer counts as unarmed only when that can be PROVED.
+
+_ARMED_CASES = {
+    "profile-standard": '{"guards":{"profile":"standard"}}',
+    "profile-strict": '{"guards":{"profile":"strict"}}',
+    "profile-malformed": '{"guards":{"profile":"loud"}}',
+    "override-block-alone": '{"guards":{"overrides":{"KEY":"block"}}}',
+    "legacy-off-before-override-block":
+        '{"guards":{"KEY":"off","overrides":{"KEY":"block"}}}',
+    "unrelated-profile-off-before-strict":
+        '{"unattendedCloud":{"aws":{"readOnly":{"profile":"off"}}},'
+        '"guards":{"profile":"strict"}}',
+    "escaped-profile-key": '{"guards":{"pro\\u0066ile":"strict"}}',
+    "escaped-guard-key": '{"guards":{"overrides":{"escKEY":"block"}}}',
+    "guards-null": '{"guards":null}',
+    "guards-42": '{"guards":42}',
+    "truncated-no-token": '{"scope":{"mode":"off"},"notes":',
+    "truncated-after-off": '{"guards":{"profile":"off"',
+    "value-split-over-lines": '{"guards":{"profile":\n"strict"}}',
+    "guards-brace-on-next-line": '{"guards":\n{"profile":"strict"}}',
+    "empty-file": "",
+    "profile-null": '{"guards":{"profile":null}}',
+}
+_ALLOWED_CASES = {
+    "neither-token": '{"scope":{"mode":"off"}}',
+    "no-guards-block": "{}",
+    "every-value-off":
+        '{"guards":{"profile":"off","overrides":{"KEY":"off"},"KEY":"off"}}',
+    "pretty-printed-off": '{\n  "guards": {\n    "profile": "off",\n'
+                          '    "overrides": {}\n  }\n}\n',
+    "crlf-off": '{\r\n  "guards": {\r\n    "profile": "off"\r\n  }\r\n}\r\n',
+}
+# (script, the guard's own key, an escaped spelling of it)
+_FALLBACKS = [("cloud-guard.sh", "cloudGuard", "cloud\\u0047uard"),
+              ("env-guard.sh", "envGuard", "env\\u0047uard")]
+
+
+def _fallback_case(text, key, escaped):
+    return text.replace("escKEY", escaped).replace("KEY", key)
+
+
+def _run_fallback(tmp_path, root, script):
+    argv = [_BASH, os.path.join(SCRIPTS, script)]
+    return subprocess.run(argv, input=b'{"tool_name":"Bash","tool_input":'
+                                      b'{"command":"terraform destroy"}}',
+                          capture_output=True, env=_guard_env(tmp_path, root, "sh"),
+                          cwd=str(root), timeout=120, check=False)
+
+
+def _write_raw(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(text.encode("utf-8"))
+
+
+@needs_bash
+@pytest.mark.parametrize("script,key,escaped", _FALLBACKS)
+@pytest.mark.parametrize("name", sorted(_ARMED_CASES))
+def test_fallback_is_armed_unless_off_is_proved(tmp_path, script, key, escaped, name):
+    main, _wt = _lane(tmp_path, None)
+    _write_raw(main / ".crew" / "config.json",
+               _fallback_case(_ARMED_CASES[name], key, escaped))
+
+    proc = _run_fallback(tmp_path, main, script)
+
+    assert proc.returncode == 2, (name, proc.stderr)
+
+
+@needs_bash
+@pytest.mark.parametrize("script,key,escaped", _FALLBACKS)
+@pytest.mark.parametrize("name", sorted(_ALLOWED_CASES))
+def test_fallback_allows_when_every_layer_is_proved_off(tmp_path, script, key, escaped, name):
+    main, _wt = _lane(tmp_path, None)
+    _write_raw(main / ".crew" / "config.json",
+               _fallback_case(_ALLOWED_CASES[name], key, escaped))
+
+    proc = _run_fallback(tmp_path, main, script)
+
+    assert proc.returncode == 0, (name, proc.stderr)
+
+
+@needs_bash
+@pytest.mark.parametrize("script,key,escaped", _FALLBACKS)
+def test_fallback_allows_when_no_config_file_exists(tmp_path, script, key, escaped):
+    main, _wt = _lane(tmp_path, None)
+
+    proc = _run_fallback(tmp_path, main, script)
+
+    assert proc.returncode == 0, proc.stderr
+
+
+@needs_bash
+@pytest.mark.parametrize("script,key,escaped", _FALLBACKS)
+@pytest.mark.parametrize("name", ["profile-strict", "guards-null", "guards-42",
+                                  "escaped-profile-key", "value-split-over-lines"])
+def test_fallback_reads_the_machine_layer_the_same_way(tmp_path, script, key, escaped, name):
+    main, _wt = _lane(tmp_path, {"guards": {"profile": "off"}})
+    _write_raw(tmp_path / "home" / ".claude" / "crew" / "config.json",
+               _fallback_case(_ARMED_CASES[name], key, escaped))
+
+    proc = _run_fallback(tmp_path, main, script)
+
+    assert proc.returncode == 2, (name, proc.stderr)
+
+
+@needs_bash
+@pytest.mark.parametrize("script,key,escaped", _FALLBACKS)
+def test_fallback_is_armed_by_a_second_layer_after_an_off_first(tmp_path, script, key, escaped):
+    main, _wt = _lane(tmp_path, {"guards": {"profile": "off"}})
+    _write_raw(tmp_path / "home" / ".claude" / "crew" / "config.json",
+               '{"guards":{"overrides":{"' + key + '":"block"}}}')
+
+    proc = _run_fallback(tmp_path, main, script)
+
+    assert proc.returncode == 2, proc.stderr
+
+
+@needs_bash
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0,
+                    reason="root reads a mode-000 file; run as a normal user")
+@pytest.mark.parametrize("script,key,escaped", _FALLBACKS)
+def test_fallback_is_armed_when_the_config_file_cannot_be_read(tmp_path, script, key, escaped):
+    main, _wt = _lane(tmp_path, {"guards": {"profile": "off"}})
+    cfg = main / ".crew" / "config.json"
+    cfg.chmod(0)
+    try:
+        proc = _run_fallback(tmp_path, main, script)
+    finally:
+        cfg.chmod(0o644)
+
+    assert proc.returncode == 2, proc.stderr
+
+
+@needs_bash
+@pytest.mark.parametrize("script,key,escaped", _FALLBACKS)
+def test_fallback_is_armed_when_the_config_is_a_directory(tmp_path, script, key, escaped):
+    main, _wt = _lane(tmp_path, None)
+    (main / ".crew" / "config.json").mkdir(parents=True)
+
+    proc = _run_fallback(tmp_path, main, script)
+
+    assert proc.returncode == 2, proc.stderr
