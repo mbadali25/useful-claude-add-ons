@@ -392,44 +392,123 @@ crew_repo_config_dir() {
 # profile cloudGuard`. Only the fallbacks in cloud-guard.sh and env-guard.sh call
 # it, when python could not run at all, so every doubt answers "armed".
 #
-# Off is proved only when: the file does not exist (a file that exists but is not
-# a readable regular file is armed); it ends in `}`; it holds no `\u` escape (a
-# JSON escape can spell a key without the literal token); every `"guards"` token
-# is followed by `{` on its line (so `{"guards":null}` and `{"guards":42}` are
-# armed, as the python resolvers already treat a non-object block as corrupt);
-# and every `"profile"` / guard-key value is the literal `off`, with exactly as
-# many values extracted as tokens found (a value split over two lines extracts
-# nothing, so it is armed). The old first-match read let the legacy key say `off`
-# before the override said `block`. An unrelated `"profile"` (for instance
-# `unattendedCloud.aws.readOnly.profile`) arms it: a refusal while python is
-# missing, never a pass.
+# Off is proved only when ALL of these hold, and any doubt is "armed":
+#   - the file does not exist (one that exists but is not a readable regular
+#     file is armed), or it is readable, at most 262144 bytes, holds no NUL byte
+#     and no control character other than tab, CR and LF (a NUL is invalid JSON
+#     to python, and bash would silently drop it), and no `\u` escape (an escape
+#     can spell a key without the literal token);
+#   - it is VALID JSON whose top level is an object: a small recursive-descent
+#     check in awk (nesting capped at 100) that rejects a trailing comma, a missing
+#     comma, unbalanced braces or brackets, trailing text, bare tokens, single
+#     quotes and raw control characters in a string. Whitespace of any kind,
+#     newlines included, may sit between tokens, as in JSON;
+#   - every `"guards"` key holds an object (so `{"guards":null}` and
+#     `{"guards":42}` are armed, as the python resolvers treat them);
+#   - every `"profile"` and guard-key value, at any depth, is EXACTLY the JSON
+#     string "off" (so `"off,block"`, `"off "`, `"OFF"`, `'off'`, a number and
+#     `true` are armed). Duplicates are fine only if each one is off. An unrelated
+#     `"profile"` (`unattendedCloud.aws.readOnly.profile`) arms it: a refusal
+#     while python is missing, never a pass;
+#   - for the cloud guard (the keys name `cloudGuard`), every `"cloud"` and
+#     `"environments"` key holds an object: python's `layer_state(cloud=True,
+#     environments=True)` calls any other shape corrupt. Stricter than python
+#     needs (it only blocks on a corrupt block when the guard is armed); the
+#     contents of a well-shaped block are not checked.
+# What this cannot do without a real JSON parser: reject a number or string that
+# the awk grammar accepts but python would not (it follows the JSON grammar, so
+# none is known), or read a file that python decodes differently (invalid UTF-8,
+# a leading BOM: the BOM arms it).
 crew_guard_layer_armed() {
-  local f="$1" alt body gt go kt vals n v
+  local f="$1" keys size plain verdict
   shift
   [ -e "$f" ] || [ -L "$f" ] || return 1
   { [ -f "$f" ] && [ -r "$f" ]; } || return 0
-  body=$(cat -- "$f" 2>/dev/null) || return 0
-  [ -n "$body" ] || return 0
-  [ "$(printf '%s' "$body" | tr -d '[:space:]' | tail -c 1)" = "}" ] || return 0
-  case "$body" in *'\u'*) return 0 ;; esac
-  alt=$(printf '%s|' "$@")
-  alt="${alt%|}"
-  gt=$(printf '%s' "$body" | grep -oE '"guards"[[:space:]]*:' | wc -l)
-  go=$(printf '%s' "$body" | grep -oE '"guards"[[:space:]]*:[[:space:]]*\{' | wc -l)
-  [ "$gt" -eq "$go" ] || return 0
-  kt=$(printf '%s' "$body" | grep -oE "\"($alt)\"[[:space:]]*:" | wc -l)
-  vals=$(printf '%s' "$body" | grep -oE "\"($alt)\"[[:space:]]*:[[:space:]]*[^,}[:space:]]+")
-  n=0
-  while IFS= read -r v; do
-    [ -n "$v" ] || continue
-    n=$((n + 1))
-    v=$(printf '%s' "$v" | sed -E 's/^[^:]*:[[:space:]]*//' | tr -d '"\r')
-    [ "$v" = "off" ] || return 0
-  done <<EOF_VALS
-$vals
-EOF_VALS
-  [ "$n" -eq "$kt" ] || return 0
-  return 1
+  size=$(LC_ALL=C wc -c <"$f" 2>/dev/null | tr -d '[:space:]') || return 0
+  case "$size" in '' | *[!0-9]*) return 0 ;; esac
+  [ "$size" -gt 0 ] && [ "$size" -le 262144 ] || return 0
+  plain=$(LC_ALL=C tr -d '\011\012\015\040-\377' <"$f" 2>/dev/null | wc -c | tr -d '[:space:]')
+  [ "$plain" = "0" ] || return 0
+  LC_ALL=C grep -q '\\u' -- "$f" 2>/dev/null && return 0
+  keys=$(printf '%s|' "$@")
+  verdict=$(LC_ALL=C awk -v keys="|$keys" '
+    function ws(   c) {
+      while ((c = substr(s, p, 1)) == " " || c == "\t" || c == "\n" || c == "\r") p++
+    }
+    function pstr(   c, start, e) {
+      p++; start = p
+      while (1) {
+        c = substr(s, p, 1)
+        if (c == "") return 0
+        if (c == "\"") { raw = substr(s, start, p - start); p++; return 1 }
+        if (c == "\n" || c == "\t" || c == "\r") return 0
+        if (c == "\\") {
+          e = substr(s, p + 1, 1)
+          if (index("\"\\/bfnrt", e) > 0 && e != "") { p += 2; continue }
+          return 0
+        }
+        p++
+      }
+    }
+    function pnum(   t) {
+      t = substr(s, p, 400)
+      if (match(t, /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?/)) { p += RLENGTH; return 1 }
+      return 0
+    }
+    function pval(d,   c) {
+      if (d > 100) return 0
+      ws(); c = substr(s, p, 1)
+      if (c == "{") return pobj(d + 1)
+      if (c == "[") return parr(d + 1)
+      if (c == "\"") return pstr()
+      if (c == "-" || (c >= "0" && c <= "9")) return pnum()
+      if (substr(s, p, 4) == "true" || substr(s, p, 4) == "null") { p += 4; return 1 }
+      if (substr(s, p, 5) == "false") { p += 5; return 1 }
+      return 0
+    }
+    function parr(d,   c) {
+      p++; ws()
+      if (substr(s, p, 1) == "]") { p++; return 1 }
+      while (1) {
+        if (!pval(d)) return 0
+        ws(); c = substr(s, p, 1)
+        if (c == ",") { p++; continue }
+        if (c == "]") { p++; return 1 }
+        return 0
+      }
+    }
+    function pobj(d,   c, k) {
+      p++; ws()
+      if (substr(s, p, 1) == "}") { p++; return 1 }
+      while (1) {
+        ws()
+        if (substr(s, p, 1) != "\"") return 0
+        if (!pstr()) return 0
+        k = raw
+        ws()
+        if (substr(s, p, 1) != ":") return 0
+        p++; ws(); c = substr(s, p, 1)
+        if (k == "guards" && c != "{") return 0
+        if (cloudmode && (k == "cloud" || k == "environments") && c != "{") return 0
+        if (k == "profile" || index(keys, "|" k "|") > 0) {
+          if (substr(s, p, 5) != "\"off\"") return 0
+        }
+        if (!pval(d)) return 0
+        ws(); c = substr(s, p, 1)
+        if (c == ",") { p++; continue }
+        if (c == "}") { p++; return 1 }
+        return 0
+      }
+    }
+    BEGIN { RS = "\001"; cloudmode = index(keys, "|cloudGuard|") > 0 }
+    { s = s $0 }
+    END {
+      p = 1; ws()
+      if (substr(s, p, 1) == "{" && pobj(0)) { ws(); if (p == length(s) + 1) { print "OFF"; exit } }
+      print "ARMED"
+    }' <"$f" 2>/dev/null) || return 0
+  [ "$verdict" = "OFF" ] && return 1
+  return 0
 }
 
 # Print the resolved path of repo config file $1 (default config.json) for the

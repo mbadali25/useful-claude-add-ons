@@ -3137,3 +3137,71 @@ What a person with an old config sees:
 - No unknown key is deleted by migration. Keys crew has never heard of are carried untouched and reported.
 - The twelve per-guard keys are not in `crew_dropped.py`: they are collapsed into `guards.profile` and `guards.overrides`, and migration writes that form. Until a layer is migrated its old keys are still read; see "guards".
 
+## Removed keys: the measured basis, per key
+
+Measured on 2026-10-18 and 2026-10-21 (224 and 185 `.crew/config.json` inputs on the build host, 221 and 181 readable, plus the owner's machine file; win-repo-2 ran the same probe on its two layers): none of the 58 keys below was ever set to anything but its default in any layer, and `tier` and `roles` were read only for display. Each is now a constant in `crew_state` at its old default (`crew_dropped.DROPPED` pairs key and constant).
+
+Seven of them used to restrict something or arm a gate, and are marked below. They are not exempt: `/crew:migrate` refuses to drop one holding a non-default value until the person deletes it or passes `--accept-dropped <key>`, and until migration runs the inert-setting line names the key and says "the restriction it set is gone". Between installing this version and running `/crew:migrate`, a config holding such a value is already ignored by the readers; no measured config held one.
+
+| Key | Old default | What a non-default value did | Restriction lost? |
+|---|---|---|---|
+| `tier` | `0` | display only | no |
+| `roles` | `['explorer', 'reviewer']` | display only | no |
+| `autopilot.ciTimeoutMinutes` | `60` | how long ship waits for CI before stopping | no |
+| `autopilot.knownFailures` | `[]` | check names a merge may ignore (a widening; dropping it is the safe direction) | no |
+| `autopilot.sleep.notifyHold` | `None` | held night pings until morning | no |
+| `bitbucket.mergeGate.enabled` | `False` | armed the Bitbucket merge gate in /crew:promote | **yes** |
+| `bitbucket.mergeGate.branch` | `None` | branch the gate watched | no |
+| `bitbucket.mergeGate.preset` | `'standard'` | bound to nothing | no |
+| `github.mergeGate.enabled` | `False` | armed the GitHub merge gate in /crew:promote | **yes** |
+| `github.mergeGate.branch` | `None` | branch the gate watched | no |
+| `change.requester` | `None` | default answer in /crew:change | no |
+| `change.implementor` | `None` | default answer in /crew:change | no |
+| `change.sdpTemplate` | `'Change Management Request'` | SDP template name | no |
+| `change.jiraIssueType` | `'Change'` | Jira issue type | no |
+| `change.category` | `None` | default answer in /crew:change | no |
+| `context.autoClear.windowTitle` | `None` | extra window-title match for the auto-clear target (widened matching) | no |
+| `context.autoClear.command` | `'/clear'` | text typed to clear | no |
+| `context.autoClear.unsafeFocus` | `False` | accepted typing into an unconfirmed window (a widening) | no |
+| `context.autoWrapUp` | `True` | turned the wrap-up instruction off | no |
+| `context.autoResume` | `True` | never read | no |
+| `context.budgetTokens` | `None` | pinned the context budget | no |
+| `context.handoffPath` | `'.work/HANDOFF.md'` | where the handoff note lives | no |
+| `context.keepTranscripts` | `5` | how many transcripts to keep | no |
+| `context.staleHandoff.maxAgeHours` | `72` | when a handoff counts as stale | no |
+| `context.staleHandoff.maxCommitsBehind` | `3` | when a handoff counts as stale | no |
+| `docs.theme` | `None` | brand passed to doc-builder | no |
+| `docs.reportTheme` | `None` | brand for reports | no |
+| `emergency.ttlMinutes` | `120` | length of a declared emergency stand-down (a shorter value was a narrowing) | **yes** |
+| `graph.enabled` | `True` | never read by code | no |
+| `graph.tool` | `'graphify'` | never read by code | no |
+| `graph.mode` | `'code-only'` | never read by code | no |
+| `graph.commitHook` | `False` | never read by code | no |
+| `memory.inject` | `True` | false stopped vault injection into the session (a narrowing) | **yes** |
+| `memory.recall.vaults` | `[]` | restricted which vaults were recalled (a narrowing) | **yes** |
+| `memory.recall.maxChars` | `800` | capped recalled text (a narrowing) | **yes** |
+| `memory.recall.projects` | `[]` | restricted which projects were recalled (a narrowing) | **yes** |
+| `notify.urlEnv` | `None` | armed webhook delivery (a feature, not a restriction) | no |
+| `notify.questionTypes` | `None` | which question types ping | no |
+| `notify.realertHours` | `6` | dedupe window for repeat pings | no |
+| `obsidian.board` | `'Board.md'` | board file name | no |
+| `obsidian.columns.backlog` | `'Backlog'` | lane name | no |
+| `obsidian.columns.ready` | `'Ready'` | lane name | no |
+| `obsidian.columns.inProgress` | `'In Progress'` | lane name | no |
+| `obsidian.columns.review` | `'Review'` | lane name | no |
+| `obsidian.columns.done` | `'Done'` | lane name | no |
+| `pm.enabled` | `True` | turned the PM report off | no |
+| `pm.mode` | `'adaptive'` | PM report mode | no |
+| `pm.quietLines` | `8` | PM report length | no |
+| `pm.maxLines` | `40` | PM report length | no |
+| `pm.ticketGranularity` | `'system'` | how many tickets a session becomes | no |
+| `resume.typeDelaySeconds` | `2` | delay before typing the resume command | no |
+| `resume.readyTimeoutSeconds` | `15` | cap on the ready probe | no |
+| `sdp.portal` | `None` | which SDP portal | no |
+| `sdp.noteVisibility` | `'private'` | private or public notes | no |
+| `sdp.closeOnDone` | `False` | close the request on done | no |
+| `secondOpinion.keyEnv` | `'GEMINI_API_KEY'` | env var holding the key | no |
+| `secondOpinion.sendsCode` | `False` | true allowed sending code to the second opinion (a widening) | no |
+| `shellRoute.mode` | `None` | forced a shell | no |
+| `shellRoute.distro` | `None` | pinned a WSL distro | no |
+| `worktree.root` | `None` | where worktrees are created | no |

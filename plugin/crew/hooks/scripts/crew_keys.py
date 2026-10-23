@@ -156,7 +156,7 @@ KEY_META = {
     # --- trackers
     "tracker": _row("Where tickets live; `crew_tracker.resolve` answers `could not tell` "
                     "when two configs disagree.", "tuple", crew_tracker.KINDS, FIRST),
-    "jira.project": _unv("Jira project key. No consumer found (CONFIG.md section 9).",
+    "jira.project": _unv("Jira project key. No consumer found (docs/crew/config-rationale.md).",
                          FIRST, "commands/jira-sync.md", "string or null"),
     "jira.cloudId": _unv("Jira cloud id, cached by `/crew:jira-sync`; read by nothing.",
                          "0.19.10", "commands/jira-sync.md", "string or null"),
@@ -285,7 +285,7 @@ KEY_META = {
                                   "`/crew:done`. The two layers combine by union, so a "
                                   "repo can add a token and never remove the machine "
                                   "owner's; a value that is not a list of tokens makes "
-                                  "the list unknown, never empty (CONFIG.md section 22).",
+                                  "the list unknown, never empty (docs/crew/config-rationale.md).",
                                   "branch", since="1.0.328",
                                   source=_S + "crew_trailers.py",
                                   type_="list of trailer tokens (letters, digits and "

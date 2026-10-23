@@ -487,7 +487,7 @@ def test_tmux_method_refuses_outside_tmux(tmp_path):
 # to describe): `context.autoClear` is a MACHINE-global switch
 # (`crew_config.py`), so it must work in any crew repo without a per-repo
 # config of its own -- "crew repo" is read as `.crew/` the DIRECTORY existing,
-# not `.crew/config.json`. See CONFIG.md sec 14 for the full account,
+# not `.crew/config.json`. See docs/crew/config-rationale.md for the full account,
 # including the file-gate period this reverses. The six states below are the
 # ones that decide silence vs. arming:
 #

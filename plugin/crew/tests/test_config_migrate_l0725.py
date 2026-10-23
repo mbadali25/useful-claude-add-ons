@@ -718,23 +718,26 @@ def test_a_malformed_legacy_value_keeps_the_value_the_resolver_gave_it(bad):
 
 
 @pytest.mark.parametrize("bad_profile", ["bogus", 3, ["standard"], {"a": 1}])
-def test_a_malformed_profile_keeps_the_floor(bad_profile):
+def test_a_malformed_profile_is_left_as_written_and_keeps_the_floor(bad_profile):
     layer = {"guards": {"profile": bad_profile, "overrides": {"cloudGuard": "off"}}}
 
-    out = _migrated(layer)
+    out, notes = crew_upgrade.upgrade_config(copy.deepcopy(layer))
 
+    assert out["guards"] == layer["guards"]
+    assert "guards.profile" in notes["unmigrated"]
+    assert notes["schemaStamped"] is False
     assert _values(out) == _values(layer)
     assert all(_values(out)[n] == crew_guards.guard_tiers(n)[0][0] for n in NAMES)
-    assert out["guards"]["profile"] in crew_guards.GUARD_PROFILES
 
 
-def test_a_malformed_overrides_table_keeps_the_floor():
+def test_a_malformed_overrides_table_is_left_as_written_and_keeps_the_floor():
     layer = {"guards": {"profile": "off", "overrides": "oops"}}
 
-    out = _migrated(layer)
+    out, notes = crew_upgrade.upgrade_config(copy.deepcopy(layer))
 
+    assert out["guards"] == layer["guards"]
+    assert "guards.overrides" in notes["unmigrated"]
     assert _values(out) == _values(layer)
-    assert out["guards"]["overrides"] != "oops"
 
 
 @pytest.mark.parametrize("bad", ["oops", ["block"], 5, True, None])
@@ -811,7 +814,7 @@ def test_equivalence_on_fixture_corpus():
         assert notes["droppedNonDefault"] == []
         assert _values(out) == _values(layer), layer.get("guards")
         assert _carried(layer, out) == (True, {})
-        assert not any(name in out.get("guards", {}) for name in NAMES)
+        assert notes["unmigrated"] or not any(name in out.get("guards", {}) for name in NAMES)
         migrated.append(out)
         glob, _ = crew_upgrade.upgrade_global(copy.deepcopy(layer))
         assert _values(glob) == _values(layer)
@@ -1022,3 +1025,231 @@ def test_an_interrupted_global_apply_blocks_the_next_run(machine, capsys):
     assert code == 1
     assert _read(machine) == before
     assert "interrupted apply at" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------- guards.overrides is never silently reshaped
+
+def test_unknown_guard_names_in_overrides_are_carried_and_reported():
+    before = {"guards": {"profile": "off", "overrides": {"futureGuard": "allow"}}}
+
+    out, notes = crew_upgrade.upgrade_global(before)
+
+    assert out["guards"]["overrides"]["futureGuard"] == "allow"
+    assert notes["unknown"] == ["guards.overrides.futureGuard"]
+    assert notes["unmigrated"] == []
+
+
+def test_unknown_guard_names_survive_a_rewrite_of_legacy_keys():
+    before = {"guards": {"forcePush": "allow", "overrides": {"futureGuard": "allow"}}}
+
+    out, notes = crew_upgrade.upgrade_global(before)
+
+    assert out["guards"]["overrides"] == {"forcePush": "allow", "futureGuard": "allow"}
+    assert notes["unknown"] == ["guards.overrides.futureGuard"]
+
+
+@pytest.mark.parametrize("guards", [
+    {"profile": "off", "overrides": ["terraformApply"]},
+    {"profile": "off", "overrides": "allow"},
+    {"overrides": 3, "forcePush": "allow"},
+    {"profile": "bogus", "forcePush": "allow"},
+    {"profile": 7, "overrides": {"forcePush": "allow"}},
+    "strict",
+    ["off"],
+])
+def test_a_malformed_guards_block_is_left_as_written_and_blocks_the_stamp(guards):
+    before = {"guards": guards}
+
+    out, notes = crew_upgrade.upgrade_global(before)
+
+    assert out["guards"] == guards
+    assert notes["unmigrated"]
+    assert notes["guardProfile"] is None
+
+
+def test_a_malformed_overrides_table_blocks_the_repo_stamp():
+    before = {"schema": 7, "guards": {"profile": "off", "overrides": ["x"]}}
+
+    out, notes = crew_upgrade.upgrade_config(before)
+
+    assert out["guards"] == before["guards"]
+    assert "guards.overrides" in notes["unmigrated"]
+    assert notes["schemaStamped"] is False
+
+
+def test_a_malformed_overrides_table_in_the_machine_file_is_a_conflict(machine, capsys):
+    original = {"guards": {"profile": "off", "overrides": ["x"]}, "tier": "full"}
+    _write(machine, original)
+    before = _read(machine)
+
+    code = crew_migrate.main(["--global", "--apply"])
+
+    assert code == 1
+    assert _read(machine) == before
+    assert "guards.overrides" in capsys.readouterr().out
+
+
+def test_unknown_guard_names_are_listed_by_the_global_preview(machine, capsys):
+    _write(machine, {"guards": {"profile": "off", "overrides": {"futureGuard": "allow"}}})
+
+    crew_migrate.main(["--global", "--apply"])
+
+    assert "unknown  guards.overrides.futureGuard " in capsys.readouterr().out
+    assert json.loads(_read(machine))["guards"]["overrides"] == {"futureGuard": "allow"}
+
+
+GUARD_LAYERS = [
+    {"guards": {"forcePush": "allow", "adminMerge": "block", "cloudGuard": "report"}},
+    {"guards": {"profile": "strict", "forcePush": "allow"}},
+    {"guards": {"profile": "standard", "overrides": {"prodServer": "read", "futureGuard": "x"},
+                "cloudGuard": "block"}},
+    {"guards": {"overrides": {"terraformApply": "bogus"}}},
+    {"guards": {"terraformApply": "bogus", "envGuard": "off"}},
+    {"guards": {"profile": "off", "overrides": {"futureGuard": "allow"}, "extra": 1}},
+]
+
+
+@pytest.mark.parametrize("layer", GUARD_LAYERS)
+def test_every_guard_keeps_its_value_through_the_rewrite(layer):
+    def read(cfg):
+        return {name: crew_guards.GUARD_DEFAULTS[name] if value is None else value
+                for name in NAMES
+                for value in [crew_guards.layer_guard_value(cfg, name)]}
+    before = read(layer)
+
+    out, _notes = crew_upgrade.upgrade_global(layer)
+
+    after = read(out)
+    assert after == before
+    assert not [name for name in NAMES if name in out["guards"]]
+
+
+# ---------------------------------------------------------------- the apply takes the config writer's lock
+
+def _edit(path, key, value, wait=None):
+    import crew_config_files  # pylint: disable=import-outside-toplevel
+
+    def mutate(parsed):
+        parsed[key] = value
+        return parsed
+    crew_config_files.update_json(path, mutate, wait=wait)
+
+
+def _between_check_and_replace(monkeypatch, action):
+    """Run `action()` once, right after the real pre-state check passed and
+    before the file is replaced: the window a concurrent writer needs."""
+    real = crew_migrate._check_pre_state  # pylint: disable=protected-access
+    calls = []
+
+    def check(root, item):
+        real(root, item)
+        if not calls:
+            calls.append(item["path"])
+            action()
+    monkeypatch.setattr(crew_migrate, "_check_pre_state", check)
+    return calls
+
+
+def test_global_apply_holds_the_machine_lock_across_check_and_replace(machine, monkeypatch):
+    import crew_config_files  # pylint: disable=import-outside-toplevel
+    _write(machine, _fixture_bytes("machine.config.json"))
+    seen = {}
+
+    def action():
+        try:
+            _edit(machine, "concurrent", "edit", wait=0.05)
+            seen["outcome"] = "wrote"
+        except crew_config_files.Busy:
+            seen["outcome"] = "busy"
+    _between_check_and_replace(monkeypatch, action)
+
+    code = crew_migrate.main(["--global", "--apply"])
+
+    assert code == 0
+    assert seen["outcome"] == "busy"
+    assert "concurrent" not in json.loads(_read(machine))
+    assert not os.path.exists(machine + ".lock")
+
+
+def test_global_apply_does_not_lose_a_writer_that_arrives_mid_apply(machine, monkeypatch):
+    import threading  # pylint: disable=import-outside-toplevel
+    _write(machine, _fixture_bytes("machine.config.json"))
+    writer = threading.Thread(target=_edit, args=(machine, "concurrent", "edit", 20))
+
+    def action():
+        writer.start()
+        writer.join(0.5)
+    _between_check_and_replace(monkeypatch, action)
+
+    code = crew_migrate.main(["--global", "--apply"])
+    writer.join(20)
+
+    after = json.loads(_read(machine))
+    assert code == 0
+    assert after["concurrent"] == "edit"
+    assert "tier" not in after
+    assert after["guards"]["profile"]
+
+
+def test_repo_apply_does_not_lose_a_writer_that_arrives_mid_apply(tmp_path, monkeypatch):
+    import threading  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, _fixture("repo.config.json"))
+    path = os.path.join(root, ".crew", "config.json")
+    writer = threading.Thread(target=_edit, args=(path, "concurrent", "edit", 20))
+
+    def action():
+        writer.start()
+        writer.join(0.5)
+    _between_check_and_replace(monkeypatch, action)
+
+    code = crew_migrate.main(["--root", root, "--apply"])
+    writer.join(20)
+
+    assert code == 0
+    assert _config(root)["concurrent"] == "edit"
+    assert not os.path.exists(path + ".lock")
+
+
+def test_global_apply_refuses_a_file_edited_after_the_preview(machine, capsys):
+    _write(machine, _fixture_bytes("machine.config.json"))
+    plan = crew_migrate.build_global_plan(machine)
+    _edit(machine, "concurrent", "edit")
+    edited = _read(machine)
+
+    with pytest.raises(crew_migrate.MigrateError) as caught:
+        crew_migrate.apply_plan(plan)
+
+    assert "config.json changed since the plan was built" in str(caught.value)
+    assert _read(machine) == edited
+    assert not os.path.exists(machine + ".lock")
+    assert [n for n in os.listdir(os.path.dirname(machine)) if n.endswith(".tmp")] == []
+
+
+def test_the_lock_is_released_when_the_replace_fails(machine, monkeypatch):
+    _write(machine, _fixture_bytes("machine.config.json"))
+    real_replace = os.replace
+
+    def replace(src, dst, *args, **kwargs):
+        if os.path.basename(dst) == "config.json":
+            raise OSError("injected")
+        return real_replace(src, dst, *args, **kwargs)
+    monkeypatch.setattr(crew_migrate.os, "replace", replace)
+
+    with pytest.raises(OSError):
+        crew_migrate.main(["--global", "--apply"])
+
+    assert not os.path.exists(machine + ".lock")
+
+
+def test_a_held_machine_lock_is_a_refusal_with_nothing_written(machine, capsys, monkeypatch):
+    import crew_config_files  # pylint: disable=import-outside-toplevel
+    _write(machine, _fixture_bytes("machine.config.json"))
+    before = _read(machine)
+    monkeypatch.setattr(crew_config_files, "LOCK_WAIT_SECONDS", 0.1)
+
+    with crew_config_files.machine_lock(machine):
+        code = crew_migrate.main(["--global", "--apply"])
+
+    assert code == 1
+    assert _read(machine) == before
+    assert "config.json.lock" in capsys.readouterr().err

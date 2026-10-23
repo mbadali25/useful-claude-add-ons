@@ -110,6 +110,7 @@ a usage error.
 """
 
 import argparse
+import contextlib
 import copy
 import hashlib
 import json
@@ -121,6 +122,7 @@ import tempfile
 import time
 
 import crew_common
+import crew_config_files
 import crew_dropped
 
 CREW_SCHEMA = 1
@@ -174,7 +176,7 @@ AUTOPILOT_NOTE = ("pm.authority: autonomous - /crew:autopilot drives one ticket;
 AUTOPILOT_FILE_NOTE = ("autopilot - the copy in crew.json is never read; crew reads autopilot "
                        "from .crew/config.json, and the personal keys also from "
                        "~/.claude/crew/config.json, where the stricter value wins "
-                       "(CONFIG.md section 20a)")
+                       "(docs/crew/config-rationale.md)")
 
 # `LETTERS-digits`, the shape the rest of crew recognises as a ticket id, any
 # prefix (crew_common.TICKET_ID, L-0509). Anchored, so it doubles as a
@@ -585,7 +587,8 @@ def build_plan(root, accept_dropped=()):
                 f"{UPGRADE_NOTE_PREFIX}{upgrade['from'] or 'absent'} to {cfg['schema']} in "
                 "the same apply (crew_upgrade.upgrade_config); rollback restores the original")
         plan["unmapped"] = unmapped
-        plan["unknown"] = unknown_keys(cfg, machine=False)
+        plan["unknown"] = sorted(set(unknown_keys(cfg, machine=False))
+                                 | set(plan.pop("upgradeUnknown", [])))
         plan["notes"].extend(crew.get("notes", []))
         tracker = cfg.get("tracker") if isinstance(cfg.get("tracker"), str) else "files"
         want(os.path.join(".crew", "crew.json"), _crew_json_bytes(root, crew),
@@ -815,7 +818,7 @@ def _plan_global_file(plan, path, raw, accept_dropped):
     crew_upgrade = _upgrade_module()
     out, notes = crew_upgrade.upgrade_global(cfg, accept_dropped)
     plan["upgrade"].extend(crew_upgrade.schema8_lines(notes))
-    plan["unknown"] = unknown_keys(out, machine=True)
+    plan["unknown"] = sorted(set(unknown_keys(out, machine=True)) | set(notes["unknown"]))
     if notes["unmigrated"]:
         plan["conflicts"].append(
             f"{path}: these blocks are the wrong type and were left as written: "
@@ -1028,6 +1031,7 @@ def apply_plan(plan):
     atomic_write(_manifest_path(backup), _json_bytes(manifest))
 
     staged, landed = [], []
+    locks = contextlib.ExitStack()
     try:
         for item in plan["writes"]:
             os.makedirs(os.path.dirname(contained(root, item["path"])), exist_ok=True)
@@ -1055,6 +1059,7 @@ def apply_plan(plan):
                 os.chmod(path + TMP_SUFFIX, mode)
         manifest["state"] = "committing"
         atomic_write(_manifest_path(backup), _json_bytes(manifest))
+        _lock_replaced(locks, root, plan["writes"], scope)
         for item, path in staged:
             _check_pre_state(root, item)
             os.replace(path + TMP_SUFFIX, path)
@@ -1074,7 +1079,28 @@ def apply_plan(plan):
                   + "\n  ".join(left), file=sys.stderr)
         atomic_write(_manifest_path(backup), _json_bytes(manifest))
         raise
+    finally:
+        locks.close()
     return backup
+
+
+def _lock_replaced(stack, root, writes, scope):
+    """Take, on `stack`, the lock the config writer takes for every file this
+    apply replaces, so its pre-state check and its `os.replace` cannot straddle
+    another writer's edit (the check re-reads under the lock). The machine file
+    uses `machine_lock`, the repo's config.json the plain `Lock`. A held lock is
+    a refusal that undoes the apply. Released by the caller on every exit."""
+    for item in writes:
+        if not item.get("replaces"):
+            continue
+        path = contained(root, item["path"])
+        lock = (crew_config_files.machine_lock(path) if scope == "global"
+                else crew_config_files.Lock(path))
+        try:
+            stack.enter_context(lock)
+        except crew_config_files.Busy as exc:
+            raise MigrateError(f"{item['path']}: {exc}; nothing written, and this apply "
+                               "is undone") from exc
 
 
 def _undo_landed(landed):

@@ -129,7 +129,7 @@ PROD_GUARD_NAMES = ("prodDatabase", "prodServer")
 
 # The third vocabulary in this block, and the second key (after
 # `change.requireForProduction`) whose DEFAULT is deliberately not its FLOOR.
-# See `ROLE_WRITE_DEFAULT` below for why, and CONFIG.md Sec18 for the full
+# See `ROLE_WRITE_DEFAULT` below for why, and docs/crew/config-rationale.md for the full
 # reasoning -- the short version is CLAUDE.md's own rule for a new hook:
 # "a plugin registering one defaults to OFF in the menu". `off` here is what
 # makes that true for `guards.roleWrites` without a second mechanism: the
@@ -648,11 +648,15 @@ def layer_guard_state(layer_cfg, name):
     still in the layer (unmigrated) is the layer value alone when the base is
     absent, so an unmigrated layer resolves exactly as it did, `ask`, `allow`
     and `read` included; when both exist the NARROWER of the two wins by the
-    guard's own rank and the conflict is reported. The floor is `block` (or
+    guard's own rank and the conflict is reported. A `guards` that is present
+    but not an object (42, a string, a list, true) gives the floor for every
+    guard; JSON null and a missing key stay absent. The floor is `block` (or
     `none` for the production guards), never `off`.
     """
     block = layer_cfg.get("guards") if isinstance(layer_cfg, dict) else None
-    if not isinstance(block, dict):
+    if block is not None and not isinstance(block, dict):
+        return {"value": _floor(name), "legacy": False, "conflict": False}
+    if block is None:
         return {"value": None, "legacy": False, "conflict": False}
     tiers, normalise, rank = guard_tiers(name)
 

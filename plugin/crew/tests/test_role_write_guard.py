@@ -1042,7 +1042,7 @@ def test_bash_already_rejects_nonzero_exit_candidate(tmp_path):
 # `guards.roleWrites` or pm's path allowances at all. Without python, a
 # restricted role's write is unconditionally blocked; `off`/`report`/pm's
 # allowances only take effect once python is available and the real
-# classifier can run. See `plugin/crew/CONFIG.md` sec 18, "Without Python,
+# classifier can run. See `docs/crew/config-rationale.md`, "Without Python,
 # a restricted role's write is always blocked".
 #
 # `_MINIMAL_COREUTILS`/`_coreutils_only_path` above give the "coreutils are
@@ -1179,7 +1179,7 @@ def test_no_python_blocks_restricted_role_even_when_role_writes_is_off_bash(tmp_
 @needs_bash
 def test_no_python_refusal_message_names_off_report_and_allowances_bash(tmp_path):
     """The refusal message text is part of the PM decision's contract
-    (`plugin/crew/CONFIG.md` sec 18, "Without Python, a restricted role's
+    (`docs/crew/config-rationale.md`, "Without Python, a restricted role's
     write is always blocked"), not just its exit code -- a caller reading
     only stderr must be told THAT `off`/`report`/pm's allowances are the
     things python's absence stops the fallback from honouring, not just
@@ -1202,7 +1202,7 @@ def test_no_python_refusal_message_names_off_report_and_allowances_bash(tmp_path
         "python is unavailable, so guards.roleWrites (off/report/allowances) "
         "cannot be evaluated for restricted role 'pm' - install python, or "
         "the write is blocked." in proc.stderr
-    ), "message text drifted from CONFIG.md sec 18's contract: " + proc.stderr
+    ), "message text drifted from docs/crew/config-rationale.md's contract: " + proc.stderr
 
 
 @needs_bash
@@ -1908,7 +1908,7 @@ def test_non_string_file_path_for_unrestricted_role_still_allows_bash(tmp_path):
 
 # --- guard.log must carry the promised reason column (round-1 FIX) ---------
 #
-# Reported 2026-09-19: the module docstring and CONFIG.md Sec18 both promise
+# Reported 2026-09-19: the module docstring and docs/crew/config-rationale.md both promise
 # `no-agent-type` and `unknown-role:<value>` are "named differently in
 # .crew/guard.log rather than merged into one unreadable 'allow' row" --
 # but the row-building code computed `reason` and never wrote it anywhere.

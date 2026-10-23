@@ -390,3 +390,45 @@ def test_a_block_under_a_scalar_setting_is_named(tmp_path):
                                    git=False)
 
     assert "autopilot.mode.foo" in [e["key"] for e in crew_config.inert_settings(str(root))]
+
+
+# --- L-0725: a removed key is named, and its value is never shown ------------
+
+_SECRETISH = "/home/someone/secret-vault-path"
+
+
+@pytest.mark.parametrize("dotted", ["worktree.root", "sdp.portal", "notify.urlEnv",
+                                    "memory.recall.vaults", "emergency.ttlMinutes",
+                                    "bitbucket.mergeGate.enabled"])
+def test_a_removed_key_is_named_and_its_value_is_not_printed(tmp_path, dotted):
+    value = _SECRETISH if dotted != "emergency.ttlMinutes" else 15
+    root = crew_fixtures.make_repo(tmp_path, config=_nested(dotted, value), git=False)
+
+    entries = crew_config.inert_settings(str(root))
+    line = crew_config.format_inert(entries, "1.2.x")
+
+    assert [e["kind"] for e in entries if e["key"] == dotted] == ["dropped"]
+    assert dotted in line
+    assert _SECRETISH not in line and "=15" not in line
+    assert "removed in L-0725" in line
+
+
+def test_a_removed_global_key_is_named_without_its_value(tmp_path, monkeypatch):
+    path = _global(tmp_path, monkeypatch, {"worktree": {"root": _SECRETISH}})
+    root = crew_fixtures.make_repo(tmp_path, config={}, git=False)
+
+    entries = crew_config.inert_settings(str(root), path)
+    line = crew_config.format_inert(entries, "1.2.x")
+
+    assert "worktree.root" in line and _SECRETISH not in line
+
+
+@pytest.mark.parametrize("dotted,narrowed", [
+    ("emergency.ttlMinutes", True), ("memory.recall.projects", True),
+    ("github.mergeGate.enabled", True), ("worktree.root", False), ("docs.theme", False)])
+def test_a_removed_key_that_restricted_something_says_so(tmp_path, dotted, narrowed):
+    root = crew_fixtures.make_repo(tmp_path, config=_nested(dotted, 1), git=False)
+
+    line = crew_config.format_inert(crew_config.inert_settings(str(root)), "1.2.x")
+
+    assert ("the restriction it set is gone" in line) is narrowed

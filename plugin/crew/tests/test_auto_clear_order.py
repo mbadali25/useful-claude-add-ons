@@ -2,7 +2,7 @@
 
     1. is this a crew repo at all? (`.crew/` the directory exists -- crew
        1.0 F4 reverses this back to the directory from the `.crew/config.json`
-       file-only gate F3 shipped, see CONFIG.md sec 14)
+       file-only gate F3 shipped, see docs/crew/config-rationale.md)
     2. is auto-clear ARMED? (the machine's `enabled`, then its
        `onlyRepos`/`onlySessions` narrowing)
     3. only THEN may anything be written -- even a single log line.
@@ -13,7 +13,7 @@ says no. If the enabled/narrowing check ever ran AFTER something that can
 write (a refusal log, a "no session id" note), a disabled or narrowed-out repo
 would stop being silent the moment some other refusal fired first -- which is
 exactly the regression a real Windows run hit once (see the module docstring
-in `test_auto_cycle.py` and CONFIG.md sec 14's own account of it).
+in `test_auto_cycle.py` and docs/crew/config-rationale.md's own account of it).
 
 Every case below omits `--session` (`session=None`): a session-less run is the
 sharpest way to prove the order, because "no session id" is itself a

@@ -101,7 +101,7 @@ def _repo_no_config(tmp_path):
     matrix. Proves `context-watch`'s OWN handover to auto-clear (the
     forced-continuation branch) reaches it on `.crew/` alone, matching
     auto-clear's own directory gate -- crew 1.0 F4's reachability fix
-    (CONFIG.md sec 14)."""
+    (docs/crew/config-rationale.md)."""
     return crew_fixtures.make_repo(tmp_path, config=None, git=False)
 
 

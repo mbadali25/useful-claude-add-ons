@@ -2486,6 +2486,12 @@ def _unreadable_config(path):
 
 
 def _inert_item(entry):
+    if entry["key"] in crew_dropped.DROPPED and entry["kind"] != "unreadable":
+        # A removed key's value is never shown: it may be a path, a URL or a
+        # name the person did not mean to put in a status line (L-0725).
+        lost = (", the restriction it set is gone"
+                if entry["key"] in crew_dropped.NARROWED else "")
+        return f"{_escaped(entry['key'])} (removed in L-0725, value ignored{lost})"
     value = entry["value"]
     shown = _escaped(value if isinstance(value, str) else json.dumps(value))
     if entry["kind"] == "unreadable":

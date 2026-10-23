@@ -12,6 +12,18 @@ The other 58 never changed behaviour from a config in any measured layer (see
 `.work/tickets/L-0725/spec.md`, Disposition), so each is now a constant in
 `crew_state` at its old default.
 
+MEASURED BASIS (so a reviewer without the ticket folder can verify it). Spec
+`L-0725`, Disposition: on 2026-10-18 and 2026-10-21 every `.crew/config.json` on
+the build host (224 and 185 inputs, 221 and 181 readable) plus the owner's machine
+file were read key by key (`setkeys.py`), and win-repo-2 ran the same probe on its
+two layers: none of the 58 keys below was ever set to anything but its default,
+and `tier`/`roles` were read only for display. The per-key evidence (what read it,
+what a non-default value used to do, and whether it narrowed anything) is the
+table "Removed keys: the measured basis, per key" in `docs/crew/config-rationale.md`.
+`NARROWED` lists the keys whose non-default value used to RESTRICT something:
+the migration refuses to drop one silently, the inert-setting line says the
+restriction is gone, and no measured config set any of them.
+
 Standard library only; no imports, so any module may use it.
 """
 
@@ -83,3 +95,16 @@ DROPPED = {
 # Keys whose default in the MACHINE file differs from the repo's: the machine
 # template wrote `auto` for the shell mode where the repo's was null (inherit).
 GLOBAL_DEFAULTS = {"shellRoute.mode": "auto"}
+
+# The keys whose non-default value used to narrow a decision or arm a gate. Not
+# an exemption from the drop: they are the ones `/crew:migrate` refuses first and
+# the inert-setting line says "the restriction it set is gone" for.
+NARROWED = frozenset((
+    "emergency.ttlMinutes",
+    "memory.inject",
+    "memory.recall.vaults",
+    "memory.recall.projects",
+    "memory.recall.maxChars",
+    "bitbucket.mergeGate.enabled",
+    "github.mergeGate.enabled",
+))

@@ -14,7 +14,7 @@
 # auto-clear.sh (the forced-continuation branch, just past the `.crew/`
 # check) reaches it on `.crew/` existing alone, matching auto-clear.sh's own
 # directory gate - `context.autoClear` is a machine-global switch and must
-# work in any crew repo (CONFIG.md sec 14). This hook's OWN context-window
+# work in any crew repo (docs/crew/config-rationale.md). This hook's OWN context-window
 # measurement and nagging, further down, is a separate question and keeps
 # requiring a real `.crew/config.json` underneath, unchanged.
 INPUT=$(cat)
@@ -157,7 +157,7 @@ cd "${CWD_RAW:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 # `.crew/config.json` -- so the forced-continuation handover to auto-clear.sh
 # just below is never blocked purely by a repo lacking a config.json, which
 # would otherwise stand this hook down before auto-clear's own (now equally
-# directory-gated) logic ever got a chance to run. See CONFIG.md sec 14.
+# directory-gated) logic ever got a chance to run. See docs/crew/config-rationale.md.
 [ -d .crew ] || exit 0
 
 if [ "$STOP_ACTIVE" = 1 ]; then

@@ -29,7 +29,9 @@ import pytest
 # isort: split
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_common
+import crew_config
 import crew_fixtures
+import crew_guards
 from review_fixtures import git, init_repo
 from scope_fixtures import make_repo
 
@@ -937,6 +939,50 @@ _ARMED_CASES = {
     "guards-brace-on-next-line": '{"guards":\n{"profile":"strict"}}',
     "empty-file": "",
     "profile-null": '{"guards":{"profile":null}}',
+    "newline-between-profile-and-colon": '{"guards":{"profile"\n:"strict"}}',
+    "cr-between-profile-and-colon": '{"guards":{"profile"\r\n:"strict"}}',
+    "newline-between-guard-key-and-colon": '{"guards":{"KEY"\n:"block"}}',
+    "newline-between-override-key-and-colon":
+        '{"guards":{"overrides":{"KEY"\n:"block"}}}',
+    "newline-between-guards-and-colon": '{"guards"\n:{"profile":"strict"}}',
+    "newline-between-guards-colon-and-brace":
+        '{"guards":\r\n{"profile":"strict"}}',
+    "value-off-comma-block": '{"guards":{"profile":"off,block"}}',
+    "value-off-space-strict": '{"guards":{"profile":"off strict"}}',
+    "value-off-brace-x": '{"guards":{"profile":"off}x"}}',
+    "value-upper-off": '{"guards":{"profile":"OFF"}}',
+    "value-off-trailing-space": '{"guards":{"profile":"off "}}',
+    "value-single-quoted-off": "{\"guards\":{\"profile\":'off'}}",
+    "value-unquoted-off": '{"guards":{"profile":off}}',
+    "value-number": '{"guards":{"profile":0}}',
+    "value-true": '{"guards":{"profile":true}}',
+    "guard-key-off-comma-block": '{"guards":{"KEY":"off,block"}}',
+    "guard-key-unquoted-off": '{"guards":{"KEY":off}}',
+    "trailing-comma": '{"guards":{"profile":"off"},}',
+    "garbage-before-close": '{"guards":{"profile":"off"} garbage }',
+    "missing-comma": '{"guards":{"profile":"off"} "x":1}',
+    "missing-comma-in-guards": '{"guards":{"profile":"off" "overrides":{}}}',
+    "unbalanced-open-brace": '{"guards":{{"profile":"off"}}',
+    "unbalanced-bracket": '{"guards":{"profile":"off"},"x":[1,2}',
+    "extra-close-brace": '{"guards":{"profile":"off"}}}',
+    "body-starts-with-text": 'x{"guards":{"profile":"off"}}',
+    "body-starts-with-junk-then-members": 'x"a":1,"guards":{"profile":"off"}}',
+    "missing-comma-in-array": '{"a":[1 2],"guards":{"profile":"off"}}',
+    "body-starts-with-array": '[{"guards":{"profile":"off"}}]}',
+    "nul-byte": '{"guards":{"profile":"off"}}\x00',
+    "nul-byte-inside": '{"guards":{"profile":"off"},"x":"a\x00b"}',
+    "over-the-size-cap": '{"guards":{"profile":"off"}}' + " " * 262144,
+    "one-of-two-profiles-not-off":
+        '{"a":{"profile":"off"},"guards":{"profile":"standard"}}',
+    "bare-tab-in-string": '{"guards":{"profile":"off"},"x":"a\tb"}',
+}
+# Malformed `cloud` / `environments` blocks: python's `layer_state(cloud=True,
+# environments=True)` calls them corrupt, which only the cloud guard reads.
+_CLOUD_ONLY_ARMED_CASES = {
+    "cloud-null": '{"guards":{"profile":"off"},"cloud":null}',
+    "cloud-42": '{"guards":{"profile":"off"},"cloud":42}',
+    "environments-string": '{"guards":{"profile":"off"},"environments":"x"}',
+    "cloud-array": '{"guards":{"profile":"off"},"cloud":[]}',
 }
 _ALLOWED_CASES = {
     "neither-token": '{"scope":{"mode":"off"}}',
@@ -946,6 +992,17 @@ _ALLOWED_CASES = {
     "pretty-printed-off": '{\n  "guards": {\n    "profile": "off",\n'
                           '    "overrides": {}\n  }\n}\n',
     "crlf-off": '{\r\n  "guards": {\r\n    "profile": "off"\r\n  }\r\n}\r\n',
+    "duplicate-profiles-all-off": '{"guards":{"profile":"off","profile":"off"}}',
+    "newline-before-colon-off": '{"guards":{"profile"\n:\n"off"}}',
+    "guards-colon-brace-split-off": '{"guards"\n:\n{"profile":"off"}}',
+    "spaced-off": '{ "guards" : { "profile" : "off" } }',
+    "valid-cloud-and-environments-blocks":
+        '{"guards":{"profile":"off"},"cloud":{"identities":["a"]},'
+        '"environments":{"nonProd":["dev"],"prodUnattended":false}}',
+    "other-valid-json-values":
+        '{"n":-1.5e+3,"t":true,"f":false,"z":null,"a":[1,[2],{"b":"c\\n"}],'
+        '"guards":{"profile":"off"}}',
+    "just-under-the-size-cap": '{"guards":{"profile":"off"}}' + " " * 262000,
 }
 # (script, the guard's own key, an escaped spelling of it)
 _FALLBACKS = [("cloud-guard.sh", "cloudGuard", "cloud\\u0047uard"),
@@ -993,6 +1050,72 @@ def test_fallback_allows_when_every_layer_is_proved_off(tmp_path, script, key, e
     proc = _run_fallback(tmp_path, main, script)
 
     assert proc.returncode == 0, (name, proc.stderr)
+
+
+@needs_bash
+@pytest.mark.parametrize("name", sorted(_CLOUD_ONLY_ARMED_CASES))
+def test_cloud_fallback_is_armed_by_a_malformed_cloud_or_environments_block(tmp_path, name):
+    main, _wt = _lane(tmp_path, None)
+    _write_raw(main / ".crew" / "config.json", _CLOUD_ONLY_ARMED_CASES[name])
+
+    proc = _run_fallback(tmp_path, main, "cloud-guard.sh")
+
+    assert proc.returncode == 2, (name, proc.stderr)
+
+
+def _bash_layer_armed(tmp_path, bodies, keys):
+    """`{name: armed}` from `crew_guard_layer_armed` over each body, one bash run."""
+    files = tmp_path / "parity"
+    files.mkdir()
+    lines = []
+    for index, name in enumerate(sorted(bodies)):
+        _write_raw(files / f"{index}.json", bodies[name])
+        lines.append(f'crew_guard_layer_armed "{_posix(files / f"{index}.json")}" {keys}; '
+                     f'echo "{index} $?"')
+    script = f'. "{_posix(COMMON_SH)}"\n' + "\n".join(lines) + "\n"
+    out = subprocess.run([_BASH, "-c", script], capture_output=True, check=True, timeout=300)
+    status = dict(row.split() for row in out.stdout.decode().splitlines())
+    return {name: status[str(i)] == "0" for i, name in enumerate(sorted(bodies))}
+
+
+def _python_layer_armed(path, guard):
+    """Whether python resolves the layer at `path` to anything but off or corrupt-free."""
+    cloud = guard == "cloudGuard"
+    if crew_config.layer_state(path, cloud=cloud, environments=cloud) == "corrupt":
+        return True
+    with open(path, encoding="utf-8") as handle:
+        layer = json.load(handle)
+    return crew_guards.layer_guard_state(layer, guard)["value"] not in (None, "off")
+
+
+@needs_bash
+@pytest.mark.parametrize("guard", ["cloudGuard", "envGuard"])
+def test_bash_layer_check_never_says_unarmed_where_python_says_armed(tmp_path, guard):
+    bodies = {}
+    for table in (_ARMED_CASES, _ALLOWED_CASES, _CLOUD_ONLY_ARMED_CASES):
+        for name, text in table.items():
+            bodies[name] = _fallback_case(text, guard, f"{guard[:3]}\\u{ord(guard[3]):04x}"
+                                                       f"{guard[4:]}")
+    bodies["override-block"] = json.dumps({"guards": {"overrides": {guard: "block"}}})
+    bodies["override-off-profile-strict"] = json.dumps(
+        {"guards": {"profile": "strict", "overrides": {guard: "off"}}})
+    bodies["legacy-block"] = json.dumps({"guards": {guard: "block"}})
+    bodies["legacy-report"] = json.dumps({"guards": {guard: "report"}})
+    keys = f"profile {guard}"
+
+    bash = _bash_layer_armed(tmp_path, bodies, keys)
+
+    unsafe = []
+    for name in sorted(bodies):
+        path = tmp_path / "py" / f"{name}.json"
+        _write_raw(path, bodies[name])
+        try:
+            python_armed = _python_layer_armed(str(path), guard)
+        except ValueError:
+            python_armed = True
+        if python_armed and not bash[name]:
+            unsafe.append(name)
+    assert unsafe == []
 
 
 @needs_bash

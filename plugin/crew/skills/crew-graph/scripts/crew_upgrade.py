@@ -450,13 +450,19 @@ def choose_profile(values):
     return min(candidates, key=lambda pair: len(pair[1]))
 
 
-def rewrite_guards(out, unmigrated):
+def rewrite_guards(out, unmigrated, unknown=None):
     """Rewrite `out["guards"]` in place to `{"profile", "overrides"}` and
     return `(profile, overrides)`, or `(None, {})` when there was nothing to
     rewrite. Every legacy `guards.<name>` key goes; any other key in the block
-    is carried. A `guards` value that is not an object is left exactly as
-    written and named in `unmigrated` (the readers treat it as corrupt and
-    block, and a migration must not turn that into a profile).
+    is carried. A guard name this code does not know inside `overrides` is
+    carried into the new table untouched and appended to `unknown` as
+    `guards.overrides.<name>`: a migration never deletes what it cannot read.
+
+    Anything the readers treat as corrupt is left exactly as written and named
+    in `unmigrated` (which blocks the schema stamp), so the person fixes it by
+    hand and a migration never turns it into a profile: a `guards` that is not
+    an object, a `profile` that is present but not a profile name, and an
+    `overrides` that is present but not an object.
 
     The layer's value for each guard is the same before and after: the
     function reads the layer through `layer_guard_state` and the result is
@@ -467,11 +473,23 @@ def rewrite_guards(out, unmigrated):
     if not isinstance(block, dict):
         unmigrated.append("guards")
         return None, {}
+    profile_raw = block.get("profile")
+    if profile_raw is not None and crew_guards.normalise_profile(profile_raw) is None:
+        unmigrated.append("guards.profile")
+    overrides_raw = block.get("overrides")
+    if overrides_raw is not None and not isinstance(overrides_raw, dict):
+        unmigrated.append("guards.overrides")
+    if "guards.profile" in unmigrated or "guards.overrides" in unmigrated:
+        return None, {}
     legacy = [key for key in block if key in crew_guards.ALL_GUARD_NAMES]
     if not legacy and "profile" not in block and "overrides" not in block:
         return None, {}
     profile, overrides = choose_profile(guard_layer_values(out))
-    rewritten = {"profile": profile, "overrides": overrides}
+    carried = {name: value for name, value in (overrides_raw or {}).items()
+               if name not in crew_guards.ALL_GUARD_NAMES}
+    if unknown is not None:
+        unknown.extend(f"guards.overrides.{name}" for name in carried)
+    rewritten = {"profile": profile, "overrides": {**overrides, **carried}}
     for key, value in block.items():
         if key not in legacy and key not in rewritten:
             rewritten[key] = value
@@ -557,11 +575,11 @@ def upgrade_global(cfg, accept_dropped=()):
     `crew_dropped.GLOBAL_DEFAULTS`). Same notes keys as `upgrade_config` for
     those two, plus `unmigrated`."""
     out = copy.deepcopy(dict(cfg))
-    notes = {"unmigrated": [], "guardProfile": None, "guardOverrides": {},
+    notes = {"unmigrated": [], "unknown": [], "guardProfile": None, "guardOverrides": {},
              "removedDefault": [], "retiredRemoved": [],
              "droppedNonDefault": [], "acceptedDropped": []}
     notes["guardProfile"], notes["guardOverrides"] = rewrite_guards(
-        out, notes["unmigrated"])
+        out, notes["unmigrated"], notes["unknown"])
     drop_keys(out, notes, accept_dropped, machine=True)
     return out, notes
 
@@ -612,7 +630,7 @@ def upgrade_config(cfg, accept_dropped=()):
     # dict is never touched.
     cfg = copy.deepcopy(dict(cfg))
     out = copy.deepcopy(cfg)
-    notes = {"unmigrated": [],
+    notes = {"unmigrated": [], "unknown": [],
              "schemaFrom": crew_state.int_or(cfg.get("schema", 1), 1),
              "providerKeysAdded": [], "installKeysAdded": [],
              "guardKeysAdded": [], "changeKeysAdded": [],
@@ -714,7 +732,7 @@ def upgrade_config(cfg, accept_dropped=()):
         out["graph"].pop("obsidian", None)
 
     notes["guardProfile"], notes["guardOverrides"] = rewrite_guards(
-        out, notes["unmigrated"])
+        out, notes["unmigrated"], notes["unknown"])
     drop_keys(out, notes, accept_dropped)
 
     conflicts = [key for key in notes["droppedNonDefault"]

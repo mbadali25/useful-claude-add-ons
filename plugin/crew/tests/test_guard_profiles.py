@@ -285,10 +285,63 @@ def test_migrated_layers_report_nothing(tmp_path):
     assert row["conflicts"] == []
 
 
-def test_non_object_guards_block_gives_no_layer_value(tmp_path):
+def test_non_object_guards_block_gives_the_floor_not_no_layer_value(tmp_path):
+    """Narrowed (round-1 review): a present non-object `guards` was "no layer
+    value" and left default-off guards off; it is now the floor."""
     row = _resolve(tmp_path, "forcePush", repo={"guards": 42})
 
     assert row["effective"] == "block"
+    assert row["repo"] == "block"
+
+
+MALFORMED_GUARDS = [42, "x", [], True, 0, ""]
+
+
+def _floor_of(name):
+    return crew_guards.guard_tiers(name)[0][0]
+
+
+@pytest.mark.parametrize("bad", MALFORMED_GUARDS, ids=repr)
+@pytest.mark.parametrize("name", NAMES)
+def test_malformed_guards_layer_value_is_the_floor(name, bad):
+    state = crew_guards.layer_guard_state({"guards": bad}, name)
+
+    assert state == {"value": _floor_of(name), "legacy": False,
+                     "conflict": False}
+    assert crew_guards.layer_guard_value({"guards": bad}, name) == _floor_of(name)
+
+
+@pytest.mark.parametrize("bad", MALFORMED_GUARDS, ids=repr)
+@pytest.mark.parametrize("name", NAMES)
+def test_malformed_guards_in_the_repo_layer_resolves_to_the_floor(
+        tmp_path, name, bad):
+    row = _resolve(tmp_path, name, repo={"guards": bad},
+                   machine=_g(profile="off"))
+
+    assert row["repo"] == _floor_of(name)
+    assert row["effective"] == _floor_of(name)
+
+
+@pytest.mark.parametrize("bad", MALFORMED_GUARDS, ids=repr)
+@pytest.mark.parametrize("name", NAMES)
+def test_malformed_guards_in_the_machine_layer_resolves_to_the_floor(
+        tmp_path, name, bad):
+    row = _resolve(tmp_path, name, repo=_g(profile="off"),
+                   machine={"guards": bad})
+
+    assert row["global"] == _floor_of(name)
+    assert row["effective"] == _floor_of(name)
+
+
+@pytest.mark.parametrize("cfg", [{"guards": None}, {}, {"guards": {}}],
+                         ids=["null", "missing", "empty-object"])
+@pytest.mark.parametrize("name", NAMES)
+def test_null_missing_or_empty_guards_stays_absent(tmp_path, name, cfg):
+    state = crew_guards.layer_guard_state(cfg, name)
+    row = _resolve(tmp_path, name, repo=cfg, machine=cfg)
+
+    assert state == {"value": None, "legacy": False, "conflict": False}
+    assert row["effective"] == crew_guards.GUARD_DEFAULTS[name]
 
 
 def test_null_profile_is_absent(tmp_path):
@@ -331,8 +384,10 @@ def test_normalise_profile_unknown_is_none():
 
 
 def test_layer_guard_value_none_only_when_layer_holds_nothing():
+    """A non-object `guards` is no longer "holds nothing": it is the floor."""
     assert crew_guards.layer_guard_value({}, "forcePush") is None
     assert crew_guards.layer_guard_value({"guards": {}}, "forcePush") is None
-    assert crew_guards.layer_guard_value({"guards": 42}, "forcePush") is None
+    assert crew_guards.layer_guard_value({"guards": None}, "forcePush") is None
+    assert crew_guards.layer_guard_value({"guards": 42}, "forcePush") == "block"
     assert crew_guards.layer_guard_value(
         {"guards": {"profile": "off"}}, "forcePush") == "block"
