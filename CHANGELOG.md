@@ -11,7 +11,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ### Added — taste-skill and ui-ux-pro-max in the Community install rows (L-0887)
 
-- **Summary.** The installers now offer `taste-skill` (art direction for frontend design) and `ui-ux-pro-max` (UI/UX styles, palettes, fonts and stacks) in the Community picker, default on, pinned to the reviewed tags v2.1.4 and v2.15.0.
+- **Summary.** The installers now offer `taste-skill` (art direction for frontend design) and `ui-ux-pro-max` (UI/UX styles, palettes, fonts and stacks) in the Community picker, opt-in (unticked by default because a tag can move and a SHA ref is rejected), pinned to the reviewed tags v2.1.4 and v2.15.0.
 - **Caveat.** Both are unaudited third-party plugins: ui-ux-pro-max's design-skill scripts call `api.muapi.ai` on explicit user action; taste-skill's scripts fetch images from Openverse, Wikimedia and the Art Institute and drive a local Chrome.
 - **Changed.** `scripts/install-prerequisites.{sh,ps1}` (same rows, same order), `scripts/_test/mcp-preflight-catalog.sh`, README and INSTALLATION. No plugin version changes; `crew` is untouched.
 

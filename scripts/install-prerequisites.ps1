@@ -1212,6 +1212,7 @@ $script:TeamCatalog = @(
 # Source repo -> marketplace name is *not* mechanical: fcakyon/claude-codex-settings
 # publishes itself as 'claude-settings', and the last field is what
 # 'plugin@marketplace' has to match.
+$script:CommunityOptIn = @('taste-skill', 'ui-ux-pro-max')
 $script:CommunityCatalog = @(
     [pscustomobject]@{ Key = 'adhd-output-style';       Selected = $true; Name = 'adhd-output-style       - ADHD-friendly output style';                Spec = 'adhd-output-style@claude-settings|fcakyon/claude-codex-settings|claude-settings' }
     [pscustomobject]@{ Key = 'azure-tools';             Selected = $true; Name = 'azure-tools             - Azure CLI/portal helpers';                  Spec = 'azure-tools@claude-settings|fcakyon/claude-codex-settings|claude-settings' }
@@ -1227,13 +1228,16 @@ $script:CommunityCatalog = @(
     # instead would make Test-MarketplaceInstalled look for a name that never exists,
     # so this row would re-add the marketplace on EVERY run while reporting success.
     [pscustomobject]@{ Key = 'eli5';              Selected = $true; Name = "eli5                    - Explain any topic like I'm 5: big visuals, few words";           Spec = 'eli5@claude-community|anthropics/claude-plugins-community|claude-community' }
-    # taste-skill and ui-ux-pro-max are unaudited third-party plugins, pinned to the tags
+    # taste-skill and ui-ux-pro-max are OPT-IN (Selected = $false, and [D] leaves them
+    # unticked via $script:CommunityOptIn): a tag can move and 'marketplace add' rejects a
+    # full SHA as a ref, so default-on would install movable, unaudited code. Reviewed
+    # 2026-10-23. They are unaudited third-party plugins, pinned to the tags
     # that were reviewed (marketplace add accepts owner/repo#ref): taste-skill v2.1.4 =
     # 6010f91a9935f1c167dfc500fb1a475681892e6b, ui-ux-pro-max-skill v2.15.0 =
     # a38d04c3d5c298c851dbe5e6ee1965ee3de42cb5. The marketplace probe matches on the last
     # field (the local name), so the '#ref' in the source does not break idempotence.
-    [pscustomobject]@{ Key = 'taste-skill';       Selected = $true; Name = "taste-skill             - art-direction skill for frontend design";                        Spec = 'taste-skill@taste-skill|Leonxlnx/taste-skill#v2.1.4|taste-skill' }
-    [pscustomobject]@{ Key = 'ui-ux-pro-max';     Selected = $true; Name = "ui-ux-pro-max           - UI/UX styles, palettes, fonts and stacks";                       Spec = 'ui-ux-pro-max@ui-ux-pro-max-skill|nextlevelbuilder/ui-ux-pro-max-skill#v2.15.0|ui-ux-pro-max-skill' }
+    [pscustomobject]@{ Key = 'taste-skill';       Selected = $false; Name = "taste-skill             - art-direction skill for frontend design";                        Spec = 'taste-skill@taste-skill|Leonxlnx/taste-skill#v2.1.4|taste-skill' }
+    [pscustomobject]@{ Key = 'ui-ux-pro-max';     Selected = $false; Name = "ui-ux-pro-max           - UI/UX styles, palettes, fonts and stacks";                       Spec = 'ui-ux-pro-max@ui-ux-pro-max-skill|nextlevelbuilder/ui-ux-pro-max-skill#v2.15.0|ui-ux-pro-max-skill' }
 )
 
 # --- Sub-picker groups --------------------------------------------------------
@@ -1610,7 +1614,7 @@ function Select-GroupInteractive {
     $labels = @($catalog | ForEach-Object { $_.Name })
     $state = @($catalog | ForEach-Object { [bool]$_.Selected })
     $sub = @($catalog | ForEach-Object { $false })
-    $defaults = @($catalog | ForEach-Object { $true })
+    $defaults = @($catalog | ForEach-Object { -not ($Group.MenuKey -eq 'community' -and $script:CommunityOptIn -contains $_.Key) })
     $saved = @($catalog | ForEach-Object { [bool]$_.Selected })
     $result = Invoke-Picker -Labels $labels -State $state -Sub $sub -Defaults $defaults `
         -Title $Group.Title `

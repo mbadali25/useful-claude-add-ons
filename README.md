@@ -161,7 +161,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 12 Obsidian MCP | The `obsidian-server` HTTP MCP endpoint (`obsidian-local-rest-api`'s built-in MCP route), bearer-authenticated with `--obsidian-mcp-key` — skipped with instructions when no key is given | `claude mcp add` |
 | 13 Supabase | The `supabase` plugin — project, database, and edge-function tooling | `anthropics/claude-plugins-official` |
 
-`taste-skill` (`Leonxlnx/taste-skill`, pinned to v2.1.4) and `ui-ux-pro-max` (`nextlevelbuilder/ui-ux-pro-max-skill`, pinned to v2.15.0) are **unaudited third-party plugins**. ui-ux-pro-max's design-skill scripts call `api.muapi.ai`, on explicit user action. taste-skill's scripts fetch images from Openverse, Wikimedia and the Art Institute, and drive a local Chrome. Untick them in the Community picker if you do not want that.
+`taste-skill` (`Leonxlnx/taste-skill`, pinned to v2.1.4) and `ui-ux-pro-max` (`nextlevelbuilder/ui-ux-pro-max-skill`, pinned to v2.15.0) are **unaudited third-party plugins and are opt-in** (unticked by default; tick them in the Community picker or pass `--community taste-skill,ui-ux-pro-max`). They are pinned to a tag because `marketplace add` rejects a full commit SHA as a ref, and a tag can be moved upstream, so they are not installed unless you ask. ui-ux-pro-max's design-skill scripts call `api.muapi.ai`, on explicit user action. taste-skill's scripts fetch images from Openverse, Wikimedia and the Art Institute, and drive a local Chrome. 
 | 14 Context7 | `ctx7 setup` — wires up version-accurate library docs for your agents | npx |
 | 15 Playwright CLI | `@playwright/cli` (`playwright-cli` on `PATH`) | npm |
 | 16 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- Taste-skill and ui-ux-pro-max in the Community install rows. The installers now offer `taste-skill` (art direction for frontend design) and `ui-ux-pro-max` (UI/UX styles, palettes, fonts and stacks) in the Community picker, default on, pinned to the reviewed tags v2.1.4 and v2.15.0.
+- Taste-skill and ui-ux-pro-max in the Community install rows. The installers now offer `taste-skill` (art direction for frontend design) and `ui-ux-pro-max` (UI/UX styles, palettes, fonts and stacks) in the Community picker, opt-in (unticked by default because a tag can move and a SHA ref is rejected), pinned to the reviewed tags v2.1.4 and v2.15.0.
 - **crew 1.2.65**: The cloud guard no longer refuses python or node code that names nothing. `crew` 1.2.65: with the cloud guard on, `python3 -c`, a python heredoc or `node -e` that neither names terraform, terragrunt or tofu nor builds that name is no longer refused as "could not tell", and a refusal now quotes the construct that caused it instead of an unrelated word on the line.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
