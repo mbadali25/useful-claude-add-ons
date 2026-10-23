@@ -2831,10 +2831,6 @@ def _built_name(code, scan, reach, assembly, label):
     reached = reach.search(scan)
     if reached is None:
         return None
-    if len(_TRIPLE_OR_TICK_RE.findall(code)) > _QUOTE_LIMIT:
-        return InterpreterHit("quotes", (
-            f"{label} code with more than {_QUOTE_LIMIT} triple quotes or "
-            f"backticks next to {reached.group(0)!r}: too many to read"))
     for run in _literal_runs(code):
         for tool in _TOOL_SPELLINGS:
             if tool in run:
@@ -2974,6 +2970,17 @@ def _code_verdict(code, spec, top, dynamic=False, whole=False):
     is a shell line (`_py_spawns`)."""
     del dynamic
     family = spec[7]
+    if family in ("python", "node") and \
+            len(_TRIPLE_OR_TICK_RE.findall(code)) > _QUOTE_LIMIT:
+        # Read before anything that scans literals, whose cost grows with
+        # each unclosed one: code that can reach a process and holds this
+        # many is refused unread, never read slowly (L-0871 CI).
+        reach = (_PY_SPAWN_RE if family == "python"
+                 else _FAMILY_SPAWN_RE[family]).search(code)
+        if reach is not None:
+            return InterpreterHit("quotes", (
+                f"{family} code with more than {_QUOTE_LIMIT} triple quotes "
+                f"or backticks next to {reach.group(0)!r}: too many to read"))
     if _code_is_inert(code, family != "node"):
         return None
     if family == "python":

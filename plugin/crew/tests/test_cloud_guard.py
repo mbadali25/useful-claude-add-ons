@@ -1970,7 +1970,7 @@ def _fan_out_code(depth):
      "python3 -c \"import os; " + _fan_out_code(40) + "; os.system(a39)\""),
     ("unclosed-triple-quotes",
      "python3 -c \"import os; os.system(x); " + "''' " * 8000 + "\""),
-])
+], ids=["fan-out-assignments", "unclosed-triple-quotes"])
 def test_l0871_hostile_code_is_read_in_bounded_time_and_refused(tmp_path, name,
                                                                 command):
     _fixture(tmp_path, ARMED)
