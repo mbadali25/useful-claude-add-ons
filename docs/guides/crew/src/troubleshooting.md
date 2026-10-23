@@ -763,7 +763,7 @@ it *would* refuse before enforcing with `"block"`.
 
 - **A `python3`/`node` line is refused as "a terraform-family line with python code that ...".**
   (L-0871, crew 1.2.63; before it the denial quoted an unrelated word such as `'^JIRA_'` or `'<<'`.)
-  With `guards.terraformApply` armed, interpreter code is refused only when it names terraform,
+  With `guards.overrides.terraformApply` armed, interpreter code is refused only when it names terraform,
   terragrunt or tofu (in the code or anywhere on the line), or reaches a process and builds the
   name: the denial says which, for example `python code that spells 'terraform' out of fragments`
   or `builds a name at run time ('chr(')`. `import os`, `import requests`, `os.environ.get(...)`

@@ -985,7 +985,7 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
 <li>
 <p><strong>A <code>python3</code>/<code>node</code> line is refused as "a terraform-family line with python code that ...".</strong>
   (L-0871, crew 1.2.63; before it the denial quoted an unrelated word such as <code>'^JIRA_'</code> or <code>'&lt;&lt;'</code>.)
-  With <code>guards.terraformApply</code> armed, interpreter code is refused only when it names terraform,
+  With <code>guards.overrides.terraformApply</code> armed, interpreter code is refused only when it names terraform,
   terragrunt or tofu (in the code or anywhere on the line), or reaches a process and builds the
   name: the denial says which, for example <code>python code that spells 'terraform' out of fragments</code>
   or <code>builds a name at run time ('chr(')</code>. <code>import os</code>, <code>import requests</code>, <code>os.environ.get(...)</code>
