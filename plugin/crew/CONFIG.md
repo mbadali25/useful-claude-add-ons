@@ -2086,10 +2086,15 @@ and `[Diagnostics.Process]::Start("terraform","destroy")` are not. A group or
 an array among terraform's own arguments is `could-not-tell` too.
 `terragrunt exec -- cmd` is unwrapped like any listed wrapper. It does not try to
 catch a program renamed by alias, function, symlink or copy, `env -S` escape
-strings, BusyBox applets, git `!` aliases, an interpreter (`python -c`, `node
--e`), a script file, a wrapper it does not list (`strace`, `systemd-run`),
+strings, BusyBox applets, git `!` aliases, an interpreter whose code never
+names the tool or builds its name (`python -c "import os; os.system(os.environ['CMD'])"`,
+`node -e`; since crew 1.2.65, L-0871, `import os`, `process.env` and a library
+import alone are not refused), a script file, a wrapper it does not list
+(`strace`, `systemd-run`),
 a program that runs another (`git bisect run`, `rg --pre`) or a container's
-entrypoint. No command-line guard can: unattended work must run interpreters
+entrypoint, or an interpreter that `eval`s a string, reaches a process through
+a construct the guard does not read, or builds the name by more than it
+follows (the guard is a heuristic against accidental runs, not a sandbox). No command-line guard can: unattended work must run interpreters
 and scripts. The real boundary is the credentials an unattended run holds:
 `crew_unattended.py launch` and `unattendedCloud` below. README, "What the
 guard does not catch", lists the commands.
