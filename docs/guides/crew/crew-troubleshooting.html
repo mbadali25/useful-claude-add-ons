@@ -1533,7 +1533,7 @@ runs but the visual rule never passes.</p>
   passes its script path and its path arguments (<code>--root</code> and config data paths) through <code>crew_native_path</code>
   (<code>cygpath -m</code>, which needs no argument conversion), so the variable no longer matters for them.
   The harness hooks (<code>verify-gate.sh</code>, <code>approval-hook.sh</code>, <code>scope-guard.sh</code>, <code>completion-audit.sh</code>,
-  <code>crew-hook.sh</code>) the PreCompact <code>crew_resume.py</code> record in <code>handoff-write.sh</code> and the <code>crew_context</code> probe at <code>handoff-read.sh:42</code> still depend on
+  <code>crew-hook.sh</code>) the PreCompact <code>crew_resume.py</code> record in <code>handoff-write.sh</code> still depend on
   conversion until a follow-up lands: if one fails this way, unset <code>MSYS_NO_PATHCONV</code> for the session (<code>env -u
   MSYS_NO_PATHCONV claude</code>).</li>
 <li><strong>Both flavours are always registered.</strong> <code>hooks.json</code> pairs every bash command with a <code>shell:
