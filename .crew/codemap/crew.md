@@ -179,7 +179,7 @@ list equal. Decision record: `docs/adr/0009-hook-single-dispatch.md`.
 
 `plugin/crew/hooks/scripts/crew_hook.py` (620 lines) is the dispatcher the launchers run. Its
 `TABLE` (`:65`) is 18 rows (`Row`: event, matcher, script, extra, timeout, guard, twin, codex) over
-**14** distinct `.sh` scripts, each with a `.ps1` twin in the directory (checked by `os.path.exists`).
+**14** distinct `.sh` scripts. Only `promote-gate.ps1` is still a `.ps1` twin in the directory; the other twins were deleted in L-0867 and L-0869, so `select` (`plugin/crew/hooks/scripts/crew_hook.py:140`) takes a twin only when `exists()` finds it and a `PowerShell` call otherwise runs the `.sh`, which Windows runs under Git Bash. The `twin=` names still in `TABLE` for `cloud-guard` and `env-guard` (`:73-74`) point at deleted files and are inert.
 Row counts per event, with the registration timeout `event_timeout` gives (largest row + `EVENT_SLACK`
 10, `:44`):
 
@@ -718,9 +718,9 @@ Owner decision, crew 1.0 lane F4 (`auto-clear.sh:67-80`), reversing the
 pre-1.0 file-based gate: **gated on the `.crew/` DIRECTORY existing, not on
 `.crew/config.json`.** `context.autoClear` is a machine-global switch read
 by `crew_config.py`, so it must work in any crew repo without that repo
-having its own config — and "crew repo" is read the same way by both the
-bash and PowerShell flavours: `[ -d .crew ] || exit 0` at `:80`, checked
-**before** `note()` (`:83-89`) can create `.crew/.autoclear.log` as a side
+having its own config — and "crew repo" is read the same way everywhere
+(the PowerShell flavour, `auto-clear.ps1`, was deleted in L-0867): `[ -d .crew ] || exit 0` at `:105`, checked
+**before** `note()` (`:108`) can create `.crew/.autoclear.log` as a side
 effect, so a fresh checkout with no `.crew/` at all stays completely silent
 and gets nothing created.
 
@@ -1618,10 +1618,11 @@ was discarded before the next call regardless.
   Whether the test actually catches a divergence was **not sabotage-tested**
   this pass.
 - **`Resolve-CrewPython` is still hand-copied, not shared, across the
-  `.ps1` hooks that call it** — after L-0727 slice 3 (L-0867) deleted ten hook
-  twins, `grep -rl "function Resolve-CrewPython" plugin/crew/hooks/scripts`
-  returns 6 files (`completion-audit.ps1`, `verify-gate.ps1`, `scope-guard.ps1`,
-  `approval-hook.ps1`, `promote-gate.ps1`, `crew-hook.ps1`); there is no
+  `.ps1` hooks that call it** — after L-0727 slice 3 (L-0867) and L-0869
+  deleted the other hook twins (`completion-audit.ps1`, `verify-gate.ps1`,
+  `scope-guard.ps1`, `approval-hook.ps1` among them; Windows runs their `.sh`
+  under Git Bash), `grep -rl "function Resolve-CrewPython" plugin/crew/hooks/scripts`
+  returns 2 files (`promote-gate.ps1:47`, `crew-hook.ps1:48`); there is no
   shared `_common.ps1`. Whether an equivalent PowerShell-side parity test exists
   for these copies the way it does for the bash pair above was **not checked** this pass.
 
@@ -3006,7 +3007,7 @@ Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each n
   machine-global file), the only writer path for `context.autoClear`.
 - `verify-gate.sh` -> `.crew/verify.json` (the rule map) and, per rule, a
   fresh subshell + temp file (see above) rather than a direct pipe.
-- `role-write-guard.sh`/`.ps1` -> `role_write_guard.py`, piped the raw hook
+- `role-write-guard.sh` (its `.ps1` twin was deleted in L-0867) -> `role_write_guard.py`, piped the raw hook
   JSON on stdin, judged, and exited 0 or 2 only.
 - `crew_migrate.py` -> both `.crew/config.json` (read; rewritten in place
   only for a pre-0.20 config - no `schema`, or 1-6 - by the upgrade stage,
@@ -3232,8 +3233,8 @@ Re-derive with `/crew:onboard --refresh crew`.
   `crew_status.py`, `crew_metrics.py`, `crew_recall.py` were read only at
   their module docstrings, not their function bodies (`crew_ticket.parse_risk`
   excepted, read in full at `07ca3972`).
-- The 11 `.ps1` hooks' bodies past their `Resolve-CrewPython` definitions
-  were not read; whether any PowerShell-side equivalent of the bash parity
+- The `.ps1` hooks' bodies past their `Resolve-CrewPython` definitions
+  were not read (11 at that pass; only `promote-gate.ps1` and `crew-hook.ps1` remain after L-0867 and L-0869); whether any PowerShell-side equivalent of the bash parity
   test exists is unknown.
 - `plugin/crew/evals/qa-reviewer-stays-read-only` (the one case left after L-0713's
   feature PR) was read: its prompt quotes 0.20's `agents/qa-reviewer.md` inline.
@@ -3279,8 +3280,8 @@ its anchor column to the integrator; T-0015 re-filled that column from
 `git diff --name-only 6c497a14 f2bb919b -- <the 39 tracked paths this note cites>` returns six:
 `.claude-plugin/marketplace.json`, `.crew/verify.json`, `README.md`, `TODO.md`,
 `plugin/crew/commands/fix.md`, `plugin/crew/commands/spec.md`. No hook script this note cites changed (`verify-gate.ps1` and
-`auto-clear.ps1` did, and this note names them only in the `Resolve-CrewPython` copy list, which
-still holds: `grep -rl "function Resolve-CrewPython" plugin/crew/hooks/scripts` returns the same 11).
+`auto-clear.ps1` did, and this note named them only in the `Resolve-CrewPython` copy list, which
+then held at 11 files; both were deleted since, in L-0869 and L-0867, and the grep now returns 2).
 Each changed file:
 
 - `plugin/crew/commands/spec.md` - T-0001 (1.0.26/1.0.27) rewrote the Touch template and added the
@@ -3681,7 +3682,7 @@ re-mapped through the `-U0` hunks of that diff and re-read with `sed -n` at `068
 - `CHANGELOG.md` - the 1.0.42 entry inserted at the top; the "116 -> 118" line `:65` -> `:101`.
 - `marketplace.json` / `plugin.json` - crew `version` only, now 1.0.42 (`:218`, `:3`); `:217`'s
   4/35/29 counts still match disk.
-- `handoff-write.sh` / `.ps1` - cited by name, plus the `.stuck` lines added to the section above.
+- `handoff-write.sh` (its `.ps1` twin was deleted in L-0867) - cited by name, plus the `.stuck` lines added to the section above.
 - `CONFIG.md`, `plugin/crew/README.md`, the test files - cited by name only.
 
 New since `6f96e627`, not re-anchored from anything: the handoff-author binding and `.stuck`
@@ -4242,15 +4243,15 @@ executed for this note.
 Of the paths this note cites, `git diff --name-only 6f96e627 a2802526` returns
 `.claude-plugin/marketplace.json`, `.crew/verify.json`, `CHANGELOG.md`, `plugin/PLUGINS.md`,
 `plugin/crew/.claude-plugin/plugin.json`, `plugin/crew/README.md`, `plugin/crew/commands/approve.md`,
-`approval-hook.sh`, `approval-hook.ps1`, `approval_hook.py`, `crew_ticket.py` and the approval
+`approval-hook.sh`, `approval-hook.ps1` (deleted since, L-0869), `approval_hook.py`, `crew_ticket.py` and the approval
 tests. Each citation into them was re-read with `grep -n`/`sed -n` at `a2802526`:
 
 - `approve.md` - the group relay inserted after `:26` (`:27-41`); `:5` and `:7-16` hold. The
   `/crew:approve` row above now names the group path.
 - `crew_ticket.py` - changed only from `:676` down (`approve(..., expect=None)` `:686`, `precheck`
   `:765`, `earlier_plan_hashes` `:800`); `parse_risk` `:505` holds.
-- `approval-hook.sh` / `approval-hook.ps1` - both still call `crew_py_strict` / define
-  `Resolve-CrewPython`, so the resolver counts (11 and 11) hold; the fast path now matches the
+- `approval-hook.sh` / `approval-hook.ps1` - at that anchor both still called `crew_py_strict` / defined
+  `Resolve-CrewPython`, so the resolver counts (11 and 11) held (the `.ps1` was deleted in L-0869); the fast path now matches the
   word `approve` in any case, and with no python only a `crew:approve` prompt blocks.
 - `.crew/verify.json` - rule 27 (T-0024) appended at `:290-297`; rule 26 `:281-288` holds (its last
   line gained only a trailing comma). 28 rules, 302 lines.
@@ -5238,9 +5239,9 @@ commit. This section does not move the file's `anchor:`.
 - **JUDGEMENT.** Still own-file only, and the next two slices: the session hooks
   (L-0680) and the harness readers `verify-gate.*`, `scope-guard.*`,
   `completion-audit.*`, `review_gate.py` (L-0681, a tooling PR). Until L-0681,
-  `verify-gate.ps1`'s inline `Test-CrewIncidentActive` reads the lane's own
+  `verify-gate.ps1`'s inline `Test-CrewIncidentActive` read the lane's own
   `standDown` while the bash gate (through `_common.sh`) and `crew_incident.py` read
-  the inherited one.
+  the inherited one. `verify-gate.ps1` was deleted in L-0869, so only the `.sh` gate remains.
 
 ## The session hooks read the resolved repo config (L-0680, slice 1)
 
