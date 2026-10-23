@@ -37,7 +37,7 @@ fi
 # means this flavour holds the claim and reports "sent" once both writes are
 # done; until then the twin waits, and takes over if this process dies.
 CLAIM_TOKEN=""
-CLAIM_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/event_claim.py"
+CLAIM_SCRIPT=$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/event_claim.py")
 if CLAIM_PY=$(crew_py_strict); then
   CLAIM_TOKEN=$(printf '%s' "$INPUT" | "$CLAIM_PY" "$CLAIM_SCRIPT" handoff-write . sh); [ $? -eq 10 ] && exit 0
 fi
@@ -93,7 +93,7 @@ if [ -f "$TRANSCRIPT" ]; then
     # An integer only, as documented (CONFIG.md); a digit string, a bool or a
     # negative is ignored and 5 are kept; past Int32.MaxValue it is clamped there
     # -- the same as handoff-write.ps1.
-    K=$("$PY" -c 'import json,sys;k=json.load(open(sys.argv[1])).get("context",{}).get("keepTranscripts",5);print(min(k,2147483647) if type(k) is int and k>=0 else 5)' "$CREW_CFG" 2>/dev/null)
+    K=$("$PY" -c 'import json,sys;k=json.load(open(sys.argv[1])).get("context",{}).get("keepTranscripts",5);print(min(k,2147483647) if type(k) is int and k>=0 else 5)' "$(crew_native_path "$CREW_CFG")" 2>/dev/null)
     case "$K" in ''|*[!0-9]*) ;; *) KEEP="$K" ;; esac
   fi
   ls -1t .crew/transcripts/*.jsonl 2>/dev/null | tail -n +$((KEEP+1)) | xargs -r rm -f
@@ -109,7 +109,7 @@ if [ ! -f "$HANDOFF" ]; then
   # taken -- `resume: none`, no python, or anything else adds no line.
   GOAL_LINE=""
   if GOAL_PY=$(crew_py); then
-    GOAL_LINE=$("$GOAL_PY" -B "$(dirname "${BASH_SOURCE[0]}")/crew_autopilot.py" handoff-resume --root . 2>/dev/null | head -n 1 | tr -d '\r')
+    GOAL_LINE=$("$GOAL_PY" -B "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/crew_autopilot.py")" handoff-resume --root . 2>/dev/null | head -n 1 | tr -d '\r')
     [[ "$GOAL_LINE" =~ ^resume:\ /crew:autopilot\ --goal\ [a-z0-9][a-z0-9-]{0,63}$ ]] || GOAL_LINE=""
   fi
   {

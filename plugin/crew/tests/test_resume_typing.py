@@ -319,6 +319,22 @@ def test_types_rendered_prompt_via_tmux_stub(fx):
 
 @needs_bash
 @needs_posix
+@pytest.mark.parametrize("pathconv", ["", "1"])
+def test_types_rendered_prompt_when_git_bash_path_conversion_is_off(fx, pathconv):
+    """L-0868: MSYS_NO_PATHCONV set, even empty, turns Git Bash's argument
+    conversion off, so a POSIX `--root`/script path reaches native python.exe
+    as written. The hook must hand python converted paths itself. The variable
+    is set here, never popped: on Linux it is inert and this passes; on
+    win-repo-2 it fails without crew_native_path on the path arguments."""
+    done = fx.sh(MSYS_NO_PATHCONV=pathconv)
+    log = fx.wait_for_sender()
+
+    assert done.stdout.strip() == f"autoresume: typing {PROMPT} in 0s (method tmux)"
+    assert f"would have typed '{PROMPT}' into {PANE}" in log, log
+
+
+@needs_bash
+@needs_posix
 def test_second_run_same_handoff_types_nothing(fx):
     """The marker alone stops it: claimed by an earlier sender whose record
     never landed, the handoff is still unused to `decide`."""
@@ -454,6 +470,18 @@ def test_tmux_unset_is_logged(fx):
     fx.machine(auto_clear={"method": "tmux"})
 
     done = fx.sh(tmux=False)
+
+    assert "$TMUX is unset" in done.stdout and "$TMUX is unset" in fx.log(), (done.stdout, fx.log())
+
+
+@needs_bash
+@pytest.mark.parametrize("pathconv", ["", "1"])
+def test_tmux_unset_is_logged_when_git_bash_path_conversion_is_off(fx, pathconv):
+    """L-0868, no tmux needed, so it RUNS on native Windows: MSYS_NO_PATHCONV
+    set (even empty) must not stop the sh sender reading its plan."""
+    fx.machine(auto_clear={"method": "tmux"})
+
+    done = fx.sh(tmux=False, MSYS_NO_PATHCONV=pathconv)
 
     assert "$TMUX is unset" in done.stdout and "$TMUX is unset" in fx.log(), (done.stdout, fx.log())
 

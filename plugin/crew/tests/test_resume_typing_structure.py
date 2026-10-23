@@ -39,8 +39,8 @@ def _sh_resume_block():
 
 def test_sh_resume_block_claims_records_then_spawns():
     block = _sh_resume_block()
-    markers = ['crew_autocycle.py" resume-plan', '[ "$STATUS" = "send" ] || refuse',
-               '( set -o noclobber; : > "$MARKER" )', 'crew_resume.py" record',
+    markers = ['crew_autocycle.py")" resume-plan', '[ "$STATUS" = "send" ] || refuse',
+               '( set -o noclobber; : > "$MARKER" )', 'crew_resume.py")" record',
                '[ "$RECORDED" = "ok" ] || refuse', 'setsid bash "$send_script"']
 
     assert -1 not in _in_order(block, markers), list(zip(markers, _in_order(block, markers)))

@@ -60,7 +60,7 @@ if [ -z "$PY" ]; then
 fi
 
 printf '%s' "$INPUT" | CREW_ENV_GUARD_FLAVOUR=bash PYTHONUTF8=1 \
-  PYTHONIOENCODING=utf-8 "$PY" "$DIR/env_guard.py"
+  PYTHONIOENCODING=utf-8 "$PY" "$(crew_native_path "$DIR/env_guard.py")"
 status=$?
 
 if [ "$status" -ne 0 ]; then
