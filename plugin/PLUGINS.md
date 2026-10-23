@@ -151,7 +151,7 @@ measured.
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.2.67<!-- claim: plugin-version:crew --> |
+| **Version** | 1.2.68<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents plus the `session-relay` transport agent, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 16 hook entries<!-- claim: plugin-hooks:crew --> (a launcher per event per shell, running 14 scripts) across 8 events, and the `wave` workflow (`/crew:wave`, in `workflows/`) |
@@ -377,7 +377,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-plan` | Turn an approved spec into a step-by-step plan — files, tests and risk per step, no placeholders, self-reviewed against Touch. Backs `/crew:plan`; adapted from `superpowers` (MIT, `NOTICE.md`) |
 | `crew-execute` | Execute an approved plan task by task — TDD per step, a ruling instead of a silent deviation. Backs `/crew:implement`; adapted from `superpowers` (MIT, `NOTICE.md`) |
 | `crew-standards` | Build-time development standards mined from crew's own QA reviews, generic and per-language (Python and PowerShell so far; other stacks list candidates in their `stack-*` skill); the required pre-review self-check, the reviewer's checklist appendix and the findings-to-standards loop. The one source for code-level rules; the recurring-findings probes are derived from it. Backs `/crew:plan`, `/crew:implement`, `/crew:review` |
-| `crew-qa-standards` | Harness (H1-H11), review-process (R1-R12), gate and environment (G1-G5, E1-E7) standards with a report-only audit and a generated QA-process doc; also the recurring-findings probe index, derived from `crew-standards` (each class names the standards it echoes; the standard wins on a conflict). Backs `/crew:init`, `/crew:migrate`, `/crew:implement` step 2 |
+| `crew-qa-standards` | Harness (H1-H11), review-process (R1-R12), gate and environment (G1-G5, E1-E7) standards with a report-only audit and a generated QA-process doc; a functional (API, CLI, job, webhook) QA checklist; the able-to-fail rule and the benchmark questions; also the recurring-findings probe index, derived from `crew-standards` (each class names the standards it echoes; the standard wins on a conflict). Backs `/crew:init`, `/crew:migrate`, `/crew:implement` step 2 |
 | `stack-angular` | Angular and AngularJS pitfalls, checks and `verify.json` wiring — change detection, RxJS, subscription leaks, injector hierarchy; no gated Angular set yet (set `NG` when earned), its Angular 2+ candidate standards |
 | `stack-bash` | Bash pitfalls, checks and `verify.json` wiring — quoting, pipeline exit codes, Git Bash surprises |
 | `stack-dotnet` | .NET pitfalls, checks and `verify.json` wiring — DI lifetimes, async, EF Core change tracking, a short .NET Framework 4.8 section; no gated .NET set yet, its candidate standards, conventions and test-framework defaults |

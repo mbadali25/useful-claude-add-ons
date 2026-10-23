@@ -29,10 +29,17 @@ does not keep a separate ledger file the way upstream's does.
 
 ## Per step
 
-1. Read the step's Files, Test and Risk.
+1. Read the step's Files, Test and Risk. Then pick the smallest complete change,
+   in this order: what the codebase already has (a helper, component, service or
+   pattern); the standard library or a platform feature; a dependency already
+   installed. Add no dependency for a few lines, and no option, flag or config
+   nobody asked for.
 2. Write the test first. Run it. Confirm it fails for the reason the step
    expects, not for an unrelated reason (a typo, a missing import) that would
-   pass trivially once fixed and prove nothing about the real code.
+   pass trivially once fixed and prove nothing about the real code. An expected
+   value is a literal, a worked example or the spec's number, never the code's own
+   computation repeated in the test: that assertion passes by construction and
+   cannot go red.
 3. Implement the minimal change the step describes.
 4. Run the test again. Confirm it passes.
 5. Move to the next step. Do not batch several steps' tests into one run at

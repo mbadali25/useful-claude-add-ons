@@ -520,7 +520,7 @@ def wrapup_check(root, cfg):
 
 
 def wrapup_message(root, pct):
-    """The one wrap-up procedure context-watch sends, in both flavours."""
+    """The one wrap-up procedure context-watch.sh sends."""
     try:
         import crew_ticket  # pylint: disable=import-outside-toplevel
         ticket, _source = crew_ticket.active_ticket(root)
