@@ -201,12 +201,21 @@ def load_task(task_dir):
     if not isinstance(task["testCommand"], list) or not all(isinstance(a, str) for a in task["testCommand"]):
         fail(f"{task['name']}: testCommand must be an argv list")
     task.setdefault("hiddenRegression", [])
-    for key in ("regressionInventory", "gradingFiles", "hiddenRegression"):
+    task.setdefault("unscoredHidden", [])
+    for key in ("regressionInventory", "gradingFiles", "hiddenRegression", "unscoredHidden"):
         if not isinstance(task[key], list) or not all(isinstance(i, str) and i for i in task[key]):
             fail(f"{task['name']}: {key} must be a list of non-empty strings")
-    for test_id in task["hiddenRegression"]:
-        if test_id in seen or test_id in task["regressionInventory"]:
-            fail(f"{task['name']}: hiddenRegression test {test_id} is also a defect or regression test")
+    for key in ("hiddenRegression", "unscoredHidden"):
+        for test_id in task[key]:
+            if test_id in seen or test_id in task["regressionInventory"] or (
+                    key == "unscoredHidden" and test_id in task["hiddenRegression"]):
+                fail(f"{task['name']}: {key} test {test_id} is also in another group")
+    statement = task["statementFile"]
+    if os.path.isabs(statement) or ".." in statement.replace("\\", "/").split("/"):
+        fail(f"{task['name']}: statementFile {statement!r} must be a path inside the task directory")
+    for rel in task["gradingFiles"]:
+        if os.path.basename(rel).startswith("test_") and rel not in task["testCommand"]:
+            fail(f"{task['name']}: grading test file {rel} is not named in testCommand, so it would never run")
     for rel in task["gradingFiles"] + [i.split("::", 1)[0] for i in task["regressionInventory"]]:
         if os.path.isabs(rel) or ".." in rel.replace("\\", "/").split("/"):
             fail(f"{task['name']}: {rel!r} must be a path inside the repository")
@@ -239,9 +248,11 @@ def hidden_ids(task):
 
 
 def hidden_run_ids(task):
-    """Every id the hidden view must report: the defect tests and the hidden tests that
-    pass both before and after (a new test file the base cannot restore for the regression view)."""
-    return hidden_ids(task) + task["hiddenRegression"]
+    """Every id the hidden view must report: the defect tests, the hidden tests that pass
+    both before and after (a new test file the base cannot restore for the regression view)
+    and the hidden tests listed as unscored (the statement cannot state them; they must still
+    pass at the reference, and grading never counts them)."""
+    return hidden_ids(task) + task["hiddenRegression"] + task["unscoredHidden"]
 
 
 def load_arm(path):
@@ -500,13 +511,16 @@ def validate_task(task, source_repo, docker=None):
             if bad:
                 problems.append(f"{task['name']}: regression tests do not pass at {label}: {', '.join(bad)}")
             known_ids = set(hidden_run_ids(task)) | set(task["regressionInventory"])
-            stuck = [i for i in task["hiddenRegression"] if hidden[i] != "PASSED"]
+            stuck = [i for i in task["hiddenRegression"] + task["unscoredHidden"] if hidden[i] != "PASSED"
+                     and (label == "reference" or i in task["hiddenRegression"])]
             if stuck:
-                problems.append(f"{task['name']}: hiddenRegression tests do not pass at {label}: {', '.join(stuck)}")
+                problems.append(f"{task['name']}: hiddenRegression/unscoredHidden tests do not pass at {label}: "
+                                f"{', '.join(stuck)}")
             loose = sorted(i for i in hidden if i not in known_ids)
             if loose and label == "reference":
                 problems.append(f"{task['name']}: hidden tests in no defect group and not in regressionInventory "
-                                f"(unscored by design, so each must be grouped or moved): {', '.join(loose[:5])}"
+                                "(each must be listed in a group, regressionInventory, hiddenRegression or "
+                                f"unscoredHidden): {', '.join(loose[:5])}"
                                 + (f" and {len(loose) - 5} more" if len(loose) > 5 else ""))
             if label == "base":
                 passing = [i for i in hidden_ids(task) if hidden[i] == "PASSED"]
@@ -1412,7 +1426,7 @@ def run_chain(ctx, task, arm):
             raise
     carried = first["ownCostUsd"]
     second = run_once(ctx, task, arm, 2, carried)
-    if second["runStatus"] == "unscorable":
+    if second["runStatus"] in ("unscorable", "infra", "error"):
         second["unscoredSpendUsd"] = second["costUsd"]
         second["costUsd"] = UNKNOWN if second["costUsd"] == UNKNOWN else 0.0
     append_result(ctx["results"], second)

@@ -115,7 +115,7 @@ base tree (the repo path in `README.md`, `.claude-plugin/marketplace.json`) neve
 
 | Metric | Definition |
 |---|---|
-| `escapedDefects` | Number of named defects with at least one hidden test that does not report PASSED after grading (fail, error, skip and not collected alike). `task.json` groups the hidden test ids into non-overlapping defects. Every hidden test must be in a defect group, in `regressionInventory`, or in `hiddenRegression` (hidden tests that pass both before and after, graded in the hidden view and counted in `regressionTestsFailed`); `validate` sweeps every grading test file and refuses a task with a hidden test in none of them, so nothing is ungrouped and unscored. |
+| `escapedDefects` | Number of named defects with at least one hidden test that does not report PASSED after grading (fail, error, skip and not collected alike). `task.json` groups the hidden test ids into non-overlapping defects. Every hidden test is listed: in a defect group (scored), in `regressionInventory`, in `hiddenRegression` (passes before and after; counted in `regressionTestsFailed`) or in `unscoredHidden` (hardening the statement cannot state; must pass at the reference, never counted). `validate` sweeps every grading test file and refuses a task with a hidden test in none of them. |
 | `regressionTestsFailed` | Base-passing visible test ids from the frozen inventory that do not pass after. Reported beside the verdict, never added to `escapedDefects`. |
 | `reviewCycles` | A completed review with a parsed verdict. Crew: a ledger round with verdict CLEAN or FINDINGS. Baseline: a `/code-review` invocation whose output parses by the rule in `arms/baseline.json`. |
 | `reviewAttemptsIncomplete` | Errored, refused, INCOMPLETE or unparseable review attempts. Each arm retries an errored review at most once. |
@@ -181,8 +181,8 @@ The frozen procedure ran over all 258 `done` rows of `.work/INDEX.md` on 2026-10
 
 | Task | Ticket | Bucket | Lines (how measured) | Hidden tests scored | Defects | Regression ids |
 |---|---|---|---|---|---|---|
-| `t-0108-nuclei-safe-defaults` | T-0108 | M | 263 = `gizmoduck.py` 138 + `scanners/nuclei.py` 117 + `routine.py` 8 | 49 of 148 | 10 | 160 |
-| `t-0107-gizmoduck-routine-cli` | T-0107 | L | 656 = `gizmoduck.py` 649 + `bootstrap.sh` 4 + `bootstrap.ps1` 3 | 32 of 99 | 9 | 72 |
+| `t-0108-nuclei-safe-defaults` | T-0108 | M | 263 = `gizmoduck.py` 138 + `scanners/nuclei.py` 117 + `routine.py` 8 | 49 of 148 (99 listed as unscored, 6 as hidden regression) | 10 | 160 |
+| `t-0107-gizmoduck-routine-cli` | T-0107 | L | 656 = `gizmoduck.py` 649 + `bootstrap.sh` 4 + `bootstrap.ps1` 3 | 32 of 99 (67 listed as unscored, 2 as hidden regression) | 9 | 72 |
 
 No S task exists, and M and L have one each, so under the verdict rule **every bucket is "could not tell"** (fewer than
 2 tasks). Owner-approved decision 2026-10-20 (spec "Amendment 2026-10-20", A3): the selection is **not widened**. The only
@@ -194,8 +194,9 @@ passes for both tasks (hidden tests fail at base, pass at reference, regression 
 
 Two judgement calls the owner may overturn, both recorded in the notes: the statements carry the interface the checks
 drive (function names, a few constants, for T-0107 the stderr texts), because without it nearly every defect escapes for
-both arms; and hidden tests that need something the statement cannot state stay in `grading/` but are in no defect
-(99 of 148 for T-0108, 67 of 99 for T-0107), so they are neither scored nor counted as regressions.
+both arms; and hidden tests that need something the statement cannot state stay in `grading/` and are listed in `unscoredHidden`
+(99 of 148 for T-0108, 67 of 99 for T-0107), so they are neither scored nor counted as regressions; they must still pass at
+the reference.
 
 ## Spike, 2026-10-19 (Slice 2 Step 6; resolves U1, U2, U3, U10)
 

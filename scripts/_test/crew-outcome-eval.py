@@ -1478,6 +1478,62 @@ def case_hidden_regression_tests_are_graded_and_may_not_overlap_other_groups(tmp
     return bool(message and "hiddenRegression" in message) and result["regressionTestsFailed"] == 1, (message, result)
 
 
+def case_an_unscored_hidden_test_is_not_counted_but_must_pass_at_reference(tmp):
+    fix = Fix(tmp)
+    fix.task["unscoredHidden"] = ["tests/test_calc.py::test_loose"]
+    write(os.path.join(fix.task_dir, "task.json"), json.dumps(fix.task))
+    frozen = os.path.join(fix.task_dir, "grading", "tests", "test_calc.py.frozen")
+    write(frozen, slurp(frozen) + "\n\ndef test_loose():\n    assert True\n")
+    task = fix.load()
+    problems = eval_mod.validate_task(task, fix.src)
+    run = eval_mod.prepare_run(task, fix.arm, fix.src, fix.runs, 1, os.path.join(fix.tmp, "plugin-crew"), fix.env)
+    write(os.path.join(run["repo"], "calc.py"), CALC_BASE + "\n\ndef mul(a, b):\n    return a * b\n")
+    graded_ok = eval_mod.grade(task, run["repo"], fix.src)
+    write(frozen, slurp(frozen).replace("assert True", "assert False"))
+    broken = eval_mod.validate_task(fix.load(), fix.src)
+    ok = (problems == [] and graded_ok["escapedDefects"] == 0
+          and any("unscoredHidden" in p and "reference" in p for p in broken))
+    return ok, (problems, graded_ok, broken)
+
+
+def case_a_task_with_an_escaping_statement_path_or_unlisted_test_file_is_refused(tmp):
+    got = []
+    fix = Fix(tmp)
+    fix.task["statementFile"] = "../statement.md"
+    write(os.path.join(os.path.dirname(fix.task_dir), "statement.md"), "outside the task directory\n")
+    write(os.path.join(fix.task_dir, "task.json"), json.dumps(fix.task))
+    message = refused(fix.load)
+    got.append(bool(message and "inside the task directory" in message))
+    fix2 = Fix(tmp + "-b")
+    fix2.task["testCommand"] = [a for a in fix2.task["testCommand"] if a != "tests/test_calc.py"]
+    write(os.path.join(fix2.task_dir, "task.json"), json.dumps(fix2.task))
+    got.append(refused(fix2.load))
+    return all(got), got
+
+
+def case_a_second_attempt_that_ends_in_grading_infra_keeps_the_whole_chain_spend(tmp):
+    fix = Fix(tmp)
+    saved = eval_mod.grade
+    calls = []
+
+    def infra_on_second(*args):
+        calls.append(1)
+        raise eval_mod.GradingInfra("exited 125")
+    eval_mod.grade = infra_on_second
+    try:
+        fix.env.update({"STUB_MODE": "fail-first", "STUB_RESULT": "No findings."})
+        ctx = fix.ctx()
+        with patched_env(fix.env):
+            eval_mod.run_chain(ctx, fix.load(), fix.arm)
+    finally:
+        eval_mod.grade = saved
+    rows = eval_mod.read_results(fix.results)
+    last = rows[-1]
+    ok = (len(rows) == 2 and rows[0]["runStatus"] == "unscorable" and last["runStatus"] == "infra"
+          and eval_mod.known(last.get("unscoredSpendUsd")) and last["unscoredSpendUsd"] >= rows[0]["ownCostUsd"])
+    return ok, rows
+
+
 def case_a_scored_row_with_a_wrong_type_cost_is_refused(tmp):
     path = os.path.join(tmp, "results-cost.jsonl")
     write(path, json.dumps({"task": "a", "bucket": "S", "arm": "crew", "runStatus": "scored", "attempt": 1,
@@ -1848,6 +1904,9 @@ CASES = (
     ("must-block: a paid grading infra row keeps its spend", case_a_paid_grading_infra_row_keeps_its_spend_for_the_paired_cost),
     ("must-block: wrong-shape auth JSON is a refusal", case_wrong_shape_auth_json_is_a_refusal_not_a_traceback),
     ("must-block: hidden regression tests are graded and may not overlap", case_hidden_regression_tests_are_graded_and_may_not_overlap_other_groups),
+    ("must-block: an unscored hidden test is not counted but must pass at reference", case_an_unscored_hidden_test_is_not_counted_but_must_pass_at_reference),
+    ("must-block: an escaping statement path or unlisted test file is refused", case_a_task_with_an_escaping_statement_path_or_unlisted_test_file_is_refused),
+    ("must-block: a second attempt ending in grading infra keeps the chain spend", case_a_second_attempt_that_ends_in_grading_infra_keeps_the_whole_chain_spend),
     ("must-block: a scored row with a wrong-type cost is refused", case_a_scored_row_with_a_wrong_type_cost_is_refused),
     ("must-block: an exception in the arm driver still writes a paid row", case_an_exception_in_the_arm_driver_still_writes_a_paid_row),
     ("must-block: a grading infra failure is retried once", case_a_grading_infra_failure_is_retried_once_before_the_run_is_unscored),
