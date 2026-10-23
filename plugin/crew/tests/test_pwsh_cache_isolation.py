@@ -564,7 +564,6 @@ def test_conftest_premise_needs_a_per_test_value(line, covers):
 # other lanes edit files that hold pwsh spawns). A refactor that hides one
 # from the scan fails here and names it, rather than leaving the rule vacuous.
 SENTINELS = (
-    ("plugin/crew/tests/scope_fixtures.py", "run_hook", None),
     ("plugin/crew/hooks/scripts/_test/test_flavour_guard.py", "pwsh", None),
     ("plugin/obsidian-vault/hooks/scripts/_test/test_flavour_guard.py", "pwsh", None),
     ("plugin/obsidian-vault/hooks/scripts/_test/test_memory_ops.py", None, None),

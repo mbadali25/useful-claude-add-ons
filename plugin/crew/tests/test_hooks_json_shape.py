@@ -12,6 +12,7 @@ the rest of the system on that contract:
   * crew-hook.sh's no-python list, and both launchers' event timeouts, equal TABLE;
   * the Codex registrations are the HOOK_TABLE rows, through the launcher.
 """
+import glob
 import json
 import os
 import re
@@ -103,6 +104,32 @@ def test_hooks_json_is_what_the_instruction_generator_renders_from_the_table():
 
 
 REMOVED_TWINS = frozenset({"cloud-guard.ps1", "env-guard.ps1"})
+
+# L-0727's whole point, stated as one number. Fourteen of the sixteen hook
+# `.ps1` files are gone (slice 1-4; L-0869 took the last four: verify-gate,
+# completion-audit, scope-guard, approval-hook). Two are left, and they are
+# left for different reasons:
+#
+#   crew-hook.ps1   - the launcher itself, the single Windows entry point
+#   promote-gate.ps1 - the one surviving `twin=`, because a `PowerShell` tool
+#                      call has to be judged by PowerShell to see its text
+#
+# This is deliberately a GLOB and not a check of `row.twin`: none of the four
+# L-0869 deleted ever had a `twin=` row (they have been judged by their `.sh`
+# since slice 2), so a `row.twin` assertion cannot see them come back. A
+# re-added `.ps1` beside the launcher is exactly the regression to catch -
+# whether or not any TABLE row points at it.
+HOOK_PS1_LEFT = ["crew-hook.ps1", "promote-gate.ps1"]
+
+
+def test_only_the_launcher_and_the_one_surviving_twin_remain_as_hook_ps1():
+    found = sorted(os.path.basename(p) for p in glob.glob(os.path.join(SCRIPTS, "*.ps1")))
+
+    assert found == HOOK_PS1_LEFT, (
+        f"hooks/scripts holds {found}; L-0727 leaves exactly {HOOK_PS1_LEFT}. A new "
+        "hook .ps1 needs its own ticket: on Windows the dispatcher runs the .sh "
+        "through a strictly resolved Git Bash, so a twin is only ever justified for "
+        "a PowerShell tool call whose text PowerShell itself must read.")
 
 
 def test_every_table_script_exists_and_so_does_each_twin_that_ships():

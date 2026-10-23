@@ -22,9 +22,8 @@ every exit 2 leaves a line on stdout, because Claude Code downgrades a Stop
 hook that exits 2 with empty stdout and a "No such file" stderr to
 non-blocking ("Hook script appears to be missing").
 
-Both flavours: `verify-gate.ps1` runs under pwsh with OS=Windows_NT, as
-`test_verify_gate_bookkeeping.py` runs it, and is skipped BY NAME when pwsh
-does not resolve - a skip is not a pass.
+One flavour: `verify-gate.sh`. (`verify-gate.ps1` was the other, run under pwsh
+with OS=Windows_NT, until L-0869 deleted it.)
 """
 import json
 import os
@@ -41,15 +40,11 @@ import verify_record
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SCRIPTS = os.path.join(_ROOT, "hooks", "scripts")
 _SH = os.path.join(_SCRIPTS, "verify-gate.sh")
-_PS1 = os.path.join(_SCRIPTS, "verify-gate.ps1")
 _RECORD_PY = os.path.join(_SCRIPTS, "verify_record.py")
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = crew_fixtures.resolve_pwsh()
 
 _FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="needs bash")),
-    pytest.param("ps1", marks=pytest.mark.skipif(
-        _PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")),
 ]
 
 _HEADER = "declare no `reach`, so Stop did NOT run them"
@@ -100,11 +95,7 @@ def _repo(tmp_path, rules, sentinel=None):
 
 
 def _run(flavour, root, *extra):
-    if flavour == "sh":
-        cmd = [_BASH, _SH, *extra]
-    else:
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1,
-               *[{"--all": "-All", "--ci": "-Ci"}.get(a, a) for a in extra]]
+    cmd = [_BASH, _SH, *extra]
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT")
     return crew_fixtures.run_gate(cmd, input="{}", cwd=str(root), env=env,
                                   capture_output=True, text=True, check=False,
