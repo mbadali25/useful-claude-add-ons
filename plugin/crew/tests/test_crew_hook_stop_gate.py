@@ -44,6 +44,7 @@ no case here sends one.
 """
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -56,11 +57,21 @@ import crew_fixtures
 import crew_hook_harness as h
 import crew_ticket
 import record_golden_hooks as rgh
+import scope_fixtures
 
 pytestmark = [
     h.needs_pwsh,
     pytest.mark.skipif(h.BASH is None, reason="needs bash - the dispatcher's children are .sh"),
 ]
+
+# One case here cannot run in the pwsh-on-POSIX model; its docstring carries
+# the measurement. Spec A10 makes the win-repo-2 run the evidence for it, so a
+# skip THERE is a failed acceptance, not a pass.
+native_only = pytest.mark.skipif(
+    not h.WINDOWS,
+    reason="needs a real Windows host: the python handoff to approval-hook.sh is wrong "
+           "under pwsh-on-POSIX (measured, see the test's docstring), and spec A10 makes "
+           "the native run the evidence")
 
 # The dispatcher's Stop row allows the gate 600s. A rule here is `exit 0` or a
 # 3s sleep, so anything near this is a hang, not a slow host.
@@ -501,17 +512,22 @@ def test_an_edit_inside_the_touch_list_is_allowed_through_the_dispatcher(tmp_pat
     assert ran.count("scope-guard.sh") == 1, ran
 
 
-def test_an_edit_under_an_unapproved_ticket_is_blocked_until_the_approval_hook_approves_it(tmp_path):
-    """G4, the approval hook. `approval-hook.sh` is a UserPromptSubmit row
-    (`crew_hook.TABLE:70`), so "through the dispatcher" means the
-    `/crew:approve` prompt; the block on an unapproved ticket comes from
-    scope-guard reading the receipt that the approval hook writes. Both halves
-    go through `crew-hook.ps1`, which is the point: nothing else did.
+def _approve_prompt(root):
+    return json.dumps({"hook_event_name": "UserPromptSubmit", "prompt": "/crew:approve T-2",
+                       "cwd": str(root), "session_id": "s-1", "prompt_id": "p-1"}).encode()
 
-    T-2 exists unapproved and unactivated in the armed fixture. Activating it
-    makes it the ticket in force, and an edit inside its OWN Touch list
-    (`src/**`) must still be refused, because an active ticket is not an
-    approved one.
+
+def test_an_edit_under_an_unapproved_ticket_is_refused_and_a_real_receipt_unblocks_it(tmp_path):
+    """G4, the half that runs everywhere. An ACTIVE ticket is not an APPROVED
+    one: T-2 exists unapproved in the armed fixture, and activating it makes
+    an edit inside its OWN Touch list (`src/**`) refused anyway. The receipt
+    the approval hook writes is what changes the decision, and the decision is
+    read by scope-guard through the dispatcher both times.
+
+    The approval itself is taken in-process here (`scope_fixtures.approve_as_user`
+    -> `approval_hook.handle`, which writes `approved_via: user-prompt`, not a
+    forged receipt). Driving the `/crew:approve` prompt through the launcher is
+    the next test, which needs a real Windows host - see its reason.
     """
     root, home = _audited_repo(tmp_path)
     crew_ticket.activate(root, "T-2")
@@ -522,17 +538,55 @@ def test_an_edit_under_an_unapproved_ticket_is_blocked_until_the_approval_hook_a
     assert before == 2, f"an edit under an unapproved ticket must be refused; stderr: {before_err}"
     assert _children(trace).count("scope-guard.sh") == 1, _children(trace)
 
-    approve = json.dumps({"hook_event_name": "UserPromptSubmit", "prompt": "/crew:approve T-2",
-                          "cwd": str(root), "session_id": "s-1", "prompt_id": "p-1"}).encode()
-    approval_trace = tmp_path / "approve.crew-trace"
-    code, _, err = h.run_launcher("ps1", "UserPromptSubmit", approve, root, home,
-                                  env_extra={"CREW_HOOK_TRACE_FILE": str(approval_trace)},
+    scope_fixtures.approve_as_user(pathlib.Path(root), "T-2")
+    _record_base(root, "T-2")
+
+    after_trace = tmp_path / "after.crew-trace"
+    after, _, after_err = _pre_tool_use(root, home, "src/app.py", after_trace)
+
+    assert after == 0, f"with T-2 approved the same edit must pass; stderr: {after_err}"
+    assert _children(after_trace).count("scope-guard.sh") == 1, _children(after_trace)
+
+
+@native_only
+def test_the_approval_hook_records_an_approval_through_the_dispatcher(tmp_path):
+    """G4, the approval hook itself. `approval-hook.sh` is a **UserPromptSubmit**
+    row (`crew_hook.TABLE:70`), so "through the dispatcher" means the
+    `/crew:approve` prompt, not a PreToolUse Edit as spec item 6 words it.
+
+    WHY THIS ONE NEEDS A REAL WINDOWS HOST, measured rather than assumed. The
+    rest of this file runs under pwsh on Linux with `OS=Windows_NT`, and did -
+    12 of 13 cases passed there, including every other `.sh` child that needs
+    python. This one does not, and the model is what breaks, not the hook:
+
+        approval-hook.sh: line 28: /: Is a directory
+        crew: /crew:approve was NOT recorded -- approval_hook.py did not run
+        to a decision (exit 126).
+
+    `$PY` arrives as `/`, where `crew_py_strict` invoked directly in the same
+    WSL (bare, under a minimal env, and with `OS=Windows_NT`) answers
+    `/usr/bin/python3` every time. So the python handoff from a pwsh-on-POSIX
+    dispatcher to THIS child is wrong in the fake-OS model; on Windows, where
+    the dispatcher actually runs, the case passes. Left as a follow-up rather
+    than chased here: a harness PR lands alone, and nothing in production runs
+    `crew-hook.ps1` on a POSIX host.
+    """
+    root, home = _audited_repo(tmp_path)
+    crew_ticket.activate(root, "T-2")
+    trace = tmp_path / "approve.crew-trace"
+
+    code, _, err = h.run_launcher("ps1", "UserPromptSubmit", _approve_prompt(root), root, home,
+                                  env_extra={"CREW_HOOK_TRACE_FILE": str(trace)},
                                   timeout=_LAUNCHER_TIMEOUT)
 
+    ran = _children(trace)
     assert code == 0, f"the approval prompt itself must not be refused; stderr: {err}"
-    ran = _children(approval_trace)
     assert ran.count("approval-hook.sh") == 1, ran
     assert "approval-hook.ps1" not in ran, ran
+    receipt = os.path.join(crew_ticket.common_dir(root), "crew", "tickets", "T-2", "approval.json")
+    assert os.path.exists(receipt), f"the hook ran but recorded nothing; stderr: {err}"
+    with open(receipt, encoding="utf-8") as handle:
+        assert json.load(handle).get("approved_via") == "user-prompt", receipt
     _record_base(root, "T-2")
 
     after_trace = tmp_path / "after.crew-trace"
