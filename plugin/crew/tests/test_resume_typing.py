@@ -475,6 +475,18 @@ def test_tmux_unset_is_logged(fx):
 
 
 @needs_bash
+@pytest.mark.parametrize("pathconv", ["", "1"])
+def test_tmux_unset_is_logged_when_git_bash_path_conversion_is_off(fx, pathconv):
+    """L-0868, no tmux needed, so it RUNS on native Windows: MSYS_NO_PATHCONV
+    set (even empty) must not stop the sh sender reading its plan."""
+    fx.machine(auto_clear={"method": "tmux"})
+
+    done = fx.sh(tmux=False, MSYS_NO_PATHCONV=pathconv)
+
+    assert "$TMUX is unset" in done.stdout and "$TMUX is unset" in fx.log(), (done.stdout, fx.log())
+
+
+@needs_bash
 def test_notify_types_nothing_and_claims_nothing(fx):
     done = fx.sh(tmux=False, OS="Windows_NT")
 
