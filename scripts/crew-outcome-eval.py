@@ -71,6 +71,7 @@ CLAUDE_OAUTH_KEEP = ("accessToken", "expiresAt", "scopes", "subscriptionType", "
 # `docker kill` / `rm` / `inspect` after a timeout get a bound of their own: a cleanup that hangs
 # must not hang the evaluation (L-0851).
 CLEANUP_TIMEOUT_SECONDS = 30
+GIT_TIMEOUT_SECONDS = 300
 # `docker run` itself failing (125), the command not invokable (126) or not found (127) is the
 # container, not the code under test.
 DOCKER_INFRA_EXITS = (125, 126, 127)
@@ -155,8 +156,11 @@ def read_json(path):
 
 
 def git(*args, cwd=None, check=True, text=True, env=None):
-    out = subprocess.run([which("git"), *args], cwd=cwd, capture_output=True, text=text,
-                         check=False, stdin=subprocess.DEVNULL, env=env)
+    try:
+        out = subprocess.run([which("git"), *args], cwd=cwd, capture_output=True, text=text,
+                             check=False, stdin=subprocess.DEVNULL, env=env, timeout=GIT_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        fail(f"git {' '.join(args[:3])} gave no answer in {GIT_TIMEOUT_SECONDS}s")
     if check and out.returncode != 0:
         detail = out.stderr.strip() if text else out.stderr.decode("utf-8", "replace").strip()
         fail(f"git {' '.join(args[:3])} failed ({out.returncode}): {detail}")
@@ -351,7 +355,12 @@ def run_tests(task, repo, ids, docker=None):
     docker = docker or which("docker")
     uid, gid, chown = container_user()
     if chown:
-        subprocess.run(["/bin/chown", "-R", f"{uid}:{gid}", repo], check=False, capture_output=True)
+        owned = subprocess.run(["/bin/chown", "-R", f"{uid}:{gid}", repo], check=False, capture_output=True,
+                               text=True)
+        if owned.returncode != 0:
+            # the container could not read the copy: that is the harness, not the code under test
+            raise GradingInfra(f"chown of the grading copy failed ({owned.returncode}): "
+                               f"{(owned.stderr or '').strip()[:200]}")
     name = f"crew-outcome-grade-{os.getpid()}-{uuid.uuid4().hex[:10]}"
     argv = grade_docker_argv(docker, name, (uid, gid), repo, task["testCommand"])
     try:
@@ -505,8 +514,7 @@ def claude_usage(home, sessions=()):
             return UNKNOWN, UNKNOWN, [f"{os.path.basename(path)} does not parse"]
         if parent:
             have_agents.add(re.sub(r"^agent-|\.jsonl$", "", os.path.basename(path)))
-        else:
-            named_agents |= subagent_ids(path)
+        named_agents |= subagent_ids(path)
         for key, (kinds, model) in found.items():
             old = messages.get(key)
             if old is None or sum(kinds) > sum(old[0]):
@@ -577,6 +585,10 @@ def codex_usage(repo, home, model, proxy_log=None):
                         turns += 1
                         for needed in ("input_tokens", "output_tokens"):
                             if isinstance(usage.get(needed), bool) or not isinstance(usage.get(needed), int):
+                                return UNKNOWN, UNKNOWN
+                        for optional in ("cached_input_tokens", "reasoning_output_tokens"):
+                            value = usage.get(optional)
+                            if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
                                 return UNKNOWN, UNKNOWN
                         total["input"] += int(usage.get("input_tokens") or 0)
                         total["cachedInput"] += int(usage.get("cached_input_tokens") or 0)
@@ -777,6 +789,8 @@ def read_results(path):
                     fail(f"{path}:{number}: not JSON; results are append-only full lines")
                 if not isinstance(row, dict):
                     fail(f"{path}:{number}: not a JSON object; results are append-only full rows")
+                if not all(isinstance(row.get(k), str) for k in ("task", "bucket", "arm", "runStatus") if k in row):
+                    fail(f"{path}:{number}: task, bucket, arm and runStatus must be strings")
                 rows.append(row)
     except FileNotFoundError:
         return []
@@ -948,7 +962,7 @@ def strip_claude_auth(source, dest):
 
 def strip_codex_auth(source, dest):
     data = read_json(source)
-    tokens = dict(data.get("tokens") or {})
+    tokens = dict(data.get("tokens")) if isinstance(data.get("tokens"), dict) else {}
     if not tokens:
         fail(f"{source} has no tokens entry")
     # Codex treats a login with no refresh token as signed out and falls back to

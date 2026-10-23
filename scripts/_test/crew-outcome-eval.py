@@ -1403,6 +1403,61 @@ def case_a_grading_container_that_fails_to_run_is_infra_not_missing_tests(tmp):
     return ok, (got, missing_docker)
 
 
+def case_a_failed_chown_of_the_grading_copy_is_infra_not_a_defect(tmp):
+    saved = eval_mod.container_user
+    eval_mod.container_user = lambda: ("1000", "1000", True)
+    try:
+        message = raises_infra(eval_mod.run_tests, {"testCommand": ["true"]}, os.path.join(tmp, "no-such-repo"),
+                               ["tests/x.py::a"], os.path.join(tmp, "no-such-docker"))
+    finally:
+        eval_mod.container_user = saved
+    return bool(message and "chown" in message), message
+
+
+def case_malformed_optional_codex_counts_make_usage_unknown(tmp):
+    got = []
+    for bad in (None, True, "5"):
+        usage = dict(USAGE, cached_input_tokens=bad)
+        if bad is None:
+            usage.pop("cached_input_tokens")
+            got.append(True)
+            continue
+        repo, home = codex_events(tmp, [usage], sessions=1)
+        got.append(eval_mod.codex_usage(repo, home, "gpt-6-sol")[0] == UNKNOWN)
+    return all(got), got
+
+
+def case_a_wrong_shape_results_row_is_refused_not_a_crash(tmp):
+    path = os.path.join(tmp, "results-bad.jsonl")
+    write(path, json.dumps({"bucket": "S", "runStatus": "scored", "task": []}) + "\n")
+    try:
+        eval_mod.read_results(path)
+    except eval_mod.EvalError as exc:
+        return "must be strings" in str(exc), str(exc)
+    return False, "accepted"
+
+
+def case_a_git_that_never_answers_is_bounded(tmp):
+    stub = os.path.join(tmp, "hang-git")
+    write(stub, "#!/bin/sh\nexec sleep 30\n", EXEC)
+    saved = (os.environ.get("CREW_OUTCOME_GIT"), eval_mod.GIT_TIMEOUT_SECONDS)
+    os.environ["CREW_OUTCOME_GIT"] = stub
+    eval_mod.GIT_TIMEOUT_SECONDS = 1
+    started = time.monotonic()
+    try:
+        eval_mod.git("status")
+        message = None
+    except eval_mod.EvalError as exc:
+        message = str(exc)
+    finally:
+        eval_mod.GIT_TIMEOUT_SECONDS = saved[1]
+        if saved[0] is None:
+            del os.environ["CREW_OUTCOME_GIT"]
+        else:
+            os.environ["CREW_OUTCOME_GIT"] = saved[0]
+    return bool(message and "no answer" in message) and time.monotonic() - started < 15, message
+
+
 def case_a_docker_rm_that_hangs_after_a_grading_timeout_does_not_hang_the_run(tmp):
     docker = os.path.join(tmp, "hang-docker")
     write(docker, "#!/bin/sh\ncase \"$1\" in run) exec sleep 30;; rm) exec sleep 30;; esac\n", EXEC)
@@ -1580,6 +1635,10 @@ CASES = (
     ("must-allow: Codex cost is computed from a dated price row", case_codex_cost_uses_a_dated_price_row),
     ("must-allow: the pinned Codex reviewer model has a price row and a known cost", case_pinned_codex_model_has_a_price_row_and_a_known_cost),
     ("must-allow: a wrong-shape review ledger counts as incomplete, never raises", case_crew_rounds_wrong_shape_ledger_is_incomplete_not_an_exception),
+    ("must-block: a failed chown of the grading copy is infra, not a defect", case_a_failed_chown_of_the_grading_copy_is_infra_not_a_defect),
+    ("must-block: malformed optional Codex counts make usage UNKNOWN", case_malformed_optional_codex_counts_make_usage_unknown),
+    ("must-block: a wrong-shape results row is refused, not a crash", case_a_wrong_shape_results_row_is_refused_not_a_crash),
+    ("must-block: a git that never answers is bounded", case_a_git_that_never_answers_is_bounded),
     ("must-block: contamination flags the reference sha", case_contamination_flags_the_reference_sha),
     ("must-block: contamination flags the reference PR URL", case_contamination_flags_the_reference_pr_url),
     ("must-allow: README text and the repo path never flag a run", case_contamination_does_not_flag_readme_text_or_the_repo_path),
