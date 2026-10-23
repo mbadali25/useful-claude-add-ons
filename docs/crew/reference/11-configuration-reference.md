@@ -690,7 +690,7 @@ started some other way. Each of these runs unjudged:
   `python3 deploy.py`. Since crew 1.2.36 (SRL-2308) code on the command line,
   or fed by a heredoc or here-string, that names terraform and does more than
   print is refused: `python3 -c 'import os; os.system("terraform destroy")'`.
-  Since crew 1.2.64 (L-0871) python and node code is refused only when the
+  Since crew 1.2.65 (L-0871) python and node code is refused only when the
   code or the line names terraform, terragrunt or tofu, or the code reaches a
   process and builds the name (`'ter'+'raform'`, `chr(`, a join, a format, an
   f-string, a decode, a `$` expansion or a non-literal operand in a process call's argument). `import os`, `import

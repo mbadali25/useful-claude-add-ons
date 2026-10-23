@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — crew 1.2.64: the cloud guard no longer refuses python or node code that names nothing (L-0871)
+### Changed — crew 1.2.65: the cloud guard no longer refuses python or node code that names nothing (L-0871)
 
-- **Summary.** `crew` 1.2.64: with the cloud guard on, `python3 -c`, a python heredoc or `node -e` that neither names terraform, terragrunt or tofu nor builds that name is no longer refused as "could not tell", and a refusal now quotes the construct that caused it instead of an unrelated word on the line.
+- **Summary.** `crew` 1.2.65: with the cloud guard on, `python3 -c`, a python heredoc or `node -e` that neither names terraform, terragrunt or tofu nor builds that name is no longer refused as "could not tell", and a refusal now quotes the construct that caused it instead of an unrelated word on the line.
 - **Still refused.** Code that names the tool and can start a process; code that reaches a process and builds the name (adjacent literals, `+`, `%`, `.format`, f-strings, `join`, `chr`, `bytes`, escapes, a shell expansion in a process argument, or a name assembled through any chain of assignments, aliases and `getattr(os, ...)` calls). Code too hostile to read in bounded time is refused unread.
 - **Known limits.** A command read from input, a file or an environment variable that the line never names, `eval` of a string, and obfuscation beyond the listed constructs are not caught; the guard is a heuristic against accidental runs (spec "Known limits", README "What the guard does not catch").
 - **Also.** Every bypass found in review is a must-block row in `plugin/crew/tests/test_cloud_guard.py`, each sabotage-tested.

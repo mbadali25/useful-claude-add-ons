@@ -2088,7 +2088,7 @@ an array among terraform's own arguments is `could-not-tell` too.
 catch a program renamed by alias, function, symlink or copy, `env -S` escape
 strings, BusyBox applets, git `!` aliases, an interpreter whose code never
 names the tool or builds its name (`python -c "import os; os.system(os.environ['CMD'])"`,
-`node -e`; since crew 1.2.64, L-0871, `import os`, `process.env` and a library
+`node -e`; since crew 1.2.65, L-0871, `import os`, `process.env` and a library
 import alone are not refused), a script file, a wrapper it does not list
 (`strace`, `systemd-run`),
 a program that runs another (`git bisect run`, `rg --pre`) or a container's
