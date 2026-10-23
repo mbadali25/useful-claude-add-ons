@@ -1866,6 +1866,18 @@ L0871_REFUSE = [
      """python3 -c "import runpy; runpy.run_path('x', {'a': 'ter'+'raform apply'})\""""),
     ("l0871-no-node-module-reach", "Bash",
      """node -e "module.require('x').go('ter'+'raform apply')\""""),
+    ("l0871-no-alias-of-os-system", "Bash",
+     """python3 -c "import os; s=os.system; a='ter'; s(a+'raform apply')\""""),
+    ("l0871-no-alias-from-import-as", "Bash",
+     """python3 -c "from os import system as s; a='ter'; s(a+'raform apply')\""""),
+    ("l0871-no-alias-node-execsync", "Bash",
+     """node -e "const e=require('child_process').execSync; let a='ter'; a+='raform'; e(a)\""""),
+    ("l0871-no-comment-between-literals", "Bash",
+     "python3 -c \"import os; os.system('ter'#x\n'raform apply')\""),
+    ("l0871-no-node-comment-between-literals", "Bash",
+     "node -e \"require('child_process').execSync('ter'/*x*/+'raform apply')\""),
+    ("l0871-no-flood-of-triple-quotes", "Bash",
+     "python3 -c \"import os; os.system(x); " + "''' " * 400 + "\""),
     ("l0871-no-line-names-tool-python", "Bash",
      "T=terraform; python3 -c \"import os; os.system(os.environ['CMD'])\""),
     ("l0871-no-line-names-tool-pipe", "Bash",
@@ -1924,6 +1936,30 @@ def test_l0871_a_refusal_names_the_construct_that_caused_it(tmp_path, driver,
     assert construct in reason, reason
     assert "not a plain literal" not in reason, reason
     assert unrelated not in reason, reason
+
+
+def _fan_out_code(depth):
+    """Python that names a value through `depth` assignments, each reading the
+    one before twice: 2**depth literals if read without a memo."""
+    lines = ["a0='x'"] + [f"a{i}=[a{i - 1},a{i - 1}]" for i in range(1, depth)]
+    return "; ".join(lines)
+
+
+@pytest.mark.parametrize("name,command", [
+    ("fan-out-assignments",
+     "python3 -c \"import os; " + _fan_out_code(40) + "; os.system(a39)\""),
+    ("unclosed-triple-quotes",
+     "python3 -c \"import os; os.system(x); " + "''' " * 8000 + "\""),
+])
+def test_l0871_hostile_code_is_read_in_bounded_time_and_refused(tmp_path, name,
+                                                                command):
+    _fixture(tmp_path, ARMED)
+    started = time.monotonic()
+    decision, reason, code, err = run_hook("python", tmp_path, "Bash", command)
+    elapsed = time.monotonic() - started
+    assert code == 0, err
+    assert decision == "deny", (name, reason)
+    assert elapsed < 8, (name, elapsed)
 
 
 # --- SRL-2308 review round 2: fail closed ---------------------------------

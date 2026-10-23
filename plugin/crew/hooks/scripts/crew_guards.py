@@ -2597,7 +2597,8 @@ _LIT_RE = re.compile(
     re.S)
 # What may sit between two literals that are one name: blanks, `+`, commas,
 # brackets, `*`, `.join`, a line continuation.
-_RUN_GAP_RE = re.compile(r"(?:[\s+,\[\]()*.%]|join|\\\n)*\Z")
+_RUN_GAP_RE = re.compile(
+    r"(?:[\s+,\[\]()*.%]|join|\\\n|\#[^\n]*|//[^\n]*|/\*[\s\S]*?\*/)*\Z")
 # A call that starts a process, and the shell expansion in its argument.
 _PROC_CALL_RE = re.compile(
     r"\b(?:system|popen|spawn\w*|exec\w*|fork\w*|call|run|check_output"
@@ -2652,9 +2653,41 @@ def _literal_runs(code):
     return runs
 
 
-def _call_args(code):
-    """The argument text of each call to a process-starting function."""
-    for call in _PROC_CALL_RE.finditer(code):
+# Unclosed triple quotes and backticks make each literal scan run to the end
+# of the code: more than this many and the code is refused unread.
+_TRIPLE_OR_TICK_RE = re.compile(r"\'\'\'|\"\"\"|`")
+_QUOTE_LIMIT = 300
+_PROC_WORD_RE = re.compile(
+    r"\b(?:system|popen|spawn\w*|exec\w*|fork\w*|call|run|check_output"
+    r"|check_call|Popen|getoutput|getstatusoutput|startfile)\b")
+_IMPORT_AS_RE = re.compile(r"\bimport\s+([^;\n]+)")
+
+
+def _proc_aliases(code, assigned):
+    """Names bound to a process-starting function (`s = os.system`,
+    `from os import system as s`, `const e = require('child_process')
+    .execSync`), so `s(...)` is read as the call it is."""
+    found = set()
+    for name, rows in assigned.items():
+        if any(_PROC_WORD_RE.search(_LIT_RE.sub('""', rhs)) for _, rhs in rows):
+            found.add(name)
+    for clause in _IMPORT_AS_RE.finditer(code):
+        for item in clause.group(1).split(","):
+            parts = item.split()
+            if len(parts) == 3 and parts[1] == "as" and \
+                    _PROC_WORD_RE.search(parts[0]):
+                found.add(parts[2])
+    return found
+
+
+def _call_args(code, aliases=()):
+    """The argument text of each call to a process-starting function, or to
+    a name bound to one (`aliases`)."""
+    calls = list(_PROC_CALL_RE.finditer(code))
+    if aliases:
+        calls += re.finditer(r"\b(?:" + "|".join(map(re.escape, aliases))
+                             + r")\s*\(", code)
+    for call in sorted(calls, key=lambda found: found.start()):
         depth, pos = 1, call.end()
         while pos < len(code) and depth:
             lit = _LIT_RE.match(code, pos)
@@ -2700,13 +2733,28 @@ def _assignments(code):
     return found
 
 
-def _spelling(name, assigned, seen=()):
+_SPELL_LIMIT = 4096
+
+
+def _spelling(name, assigned, memo, seen=()):
     """(letters, why): the letters and digits of every string literal that
     went into `name` through assignments, however many names deep (`a = 'ter'`,
     `b = a + 'ra'`, `c = b + 'form'`), in order; `why` is a `$` or backtick
-    in one of them, or `+` where a name is joined to another operand."""
+    in one of them, or `+` where a name is joined to another operand (also
+    when the chain is too long to follow: it is refused, never read slowly).
+    `memo` holds each finished name, so a chain that fans out is read once."""
+    if name in memo:
+        return memo[name]
+    memo[name] = result = _spell(name, assigned, memo, seen)
+    return result
+
+
+def _spell(name, assigned, memo, seen):
+    """`_spelling`, uncached."""
     spelled = ""
     for operator, rhs in assigned.get(name, ()):
+        if len(spelled) > _SPELL_LIMIT:
+            return spelled, "+"
         bare = _LIT_RE.sub('""', rhs)
         if operator == "+" and re.search(r"[\w)\]]|[(\[]", bare):
             return spelled, "+"
@@ -2722,11 +2770,13 @@ def _spelling(name, assigned, seen=()):
                     token.group(1)[quote:-quote]).lower())
             elif token.group(0) in assigned and token.group(0) not in seen \
                     and token.group(0) != name:
-                inner, why = _spelling(token.group(0), assigned,
+                inner, why = _spelling(token.group(0), assigned, memo,
                                        seen + (name,))
                 if why:
                     return spelled, why
                 spelled += inner
+                if len(spelled) > _SPELL_LIMIT:
+                    return spelled[:_SPELL_LIMIT], "+"
     return spelled, None
 
 
@@ -2738,7 +2788,8 @@ def _expansion_in_call(code):
     a name the call uses): the name is made at run time. Printed text with a
     `$` in it is not."""
     assigned = _assignments(code)
-    for args in _call_args(code):
+    memo = {}
+    for args in _call_args(code, _proc_aliases(code, assigned)):
         for lit in _LIT_RE.finditer(args):
             found = _CODE_EXPANSION_RE.search(lit.group(1))
             if found:
@@ -2747,7 +2798,7 @@ def _expansion_in_call(code):
         if re.search(r"[\w)\]]\s*\+|\+\s*[\w(\[]", bare):
             return "+"
         for name in sorted(set(_NAME_RE.findall(bare))):
-            spelled, why = _spelling(name, assigned)
+            spelled, why = _spelling(name, assigned, memo)
             if why:
                 return why
             for tool in _TOOL_SPELLINGS:
@@ -2766,6 +2817,10 @@ def _built_name(code, scan, reach, assembly, label):
     reached = reach.search(scan)
     if reached is None:
         return None
+    if len(_TRIPLE_OR_TICK_RE.findall(code)) > _QUOTE_LIMIT:
+        return InterpreterHit("quotes", (
+            f"{label} code with more than {_QUOTE_LIMIT} triple quotes or "
+            f"backticks next to {reached.group(0)!r}: too many to read"))
     for run in _literal_runs(code):
         for tool in _TOOL_SPELLINGS:
             if tool in run:
