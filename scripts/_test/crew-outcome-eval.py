@@ -728,7 +728,7 @@ def case_a_paid_unscorable_attempt_is_carried_into_its_rerun(tmp):
         final = eval_mod.run_chain(ctx, fix.load(), fix.arm)
     rows = eval_mod.read_results(fix.results)
     ok = (len(rows) == 2 and rows[0]["runStatus"] == "unscorable" and final["runStatus"] == "scored"
-          and final["costUsd"] == round(rows[0]["ownCostUsd"] + final["ownCostUsd"], 6))
+          and rows[0]["unscoredSpendUsd"] == rows[0]["ownCostUsd"] and final["costUsd"] == final["ownCostUsd"])
     return ok, rows
 
 
@@ -863,8 +863,8 @@ def case_a_rerun_after_an_unscorable_attempt_is_budget_checked_first(tmp):
     with patched_env(fix.env):
         message = refused(eval_mod.run_chain, ctx, fix.load(), fix.arm)
     rows = eval_mod.read_results(fix.results)
-    ok = (bool(message and "budget" in message) and len(rows) == 2 and rows[0]["runStatus"] == "unscorable"
-          and eval_mod.known(rows[1].get("unscoredSpendUsd")) and rows[1]["ownCostUsd"] == 0.0)
+    ok = (bool(message and "budget" in message) and len(rows) == 1 and rows[0]["runStatus"] == "unscorable"
+          and eval_mod.known(rows[0].get("unscoredSpendUsd")))
     return ok, (message, rows)
 
 
@@ -1530,8 +1530,61 @@ def case_a_second_attempt_that_ends_in_grading_infra_keeps_the_whole_chain_spend
     rows = eval_mod.read_results(fix.results)
     last = rows[-1]
     ok = (len(rows) == 2 and rows[0]["runStatus"] == "unscorable" and last["runStatus"] == "infra"
-          and eval_mod.known(last.get("unscoredSpendUsd")) and last["unscoredSpendUsd"] >= rows[0]["ownCostUsd"])
+          and eval_mod.known(last.get("unscoredSpendUsd")) and eval_mod.known(rows[0].get("unscoredSpendUsd")))
     return ok, rows
+
+
+def case_an_arm_settings_object_can_add_but_never_remove_the_web_denials(tmp):
+    got = [eval_mod.merged_settings({"permissions": {}})["permissions"]["deny"],
+           eval_mod.merged_settings({"permissions": {"deny": ["Bash(rm:*)"]}})["permissions"]["deny"],
+           eval_mod.merged_settings({"permissions": None})["permissions"]["deny"],
+           eval_mod.merged_settings({})["permissions"]["deny"]]
+    want = ["WebFetch", "WebSearch"]
+    ok = got == [want, want + ["Bash(rm:*)"], want, want]
+    return ok, got
+
+
+def case_a_wrong_shape_arm_file_is_refused_before_any_run(tmp):
+    bad = [("baseline", ["reviewParse"], None), ("baseline", ["reviewParse", "findings"], 5),
+           ("baseline", ["reviewParse", "noFindings"], "("), ("baseline", ["cli", "args"], "--model x"),
+           ("baseline", ["cli", "maxCycles"], -1), ("baseline", ["prompts", "review"], None),
+           ("baseline", ["settings"], []), ("baseline", ["settings"], {"permissions": {"deny": "WebFetch"}}),
+           ("baseline", ["proxyIgnoreHosts"], "github.com"), ("baseline", ["author"], None),
+           ("crew", ["crewConfig"], []), ("crew", ["assignment"], {"template": 1, "risk": "med"}),
+           ("crew", ["reviewer"], {"tool": "x"}), ("crew", ["cli", "maxResumes"], "3"),
+           ("baseline", ["arm"], "other")]
+    got = []
+    for number, (name, keys, value) in enumerate(bad):
+        arm = json.loads(slurp(os.path.join(REAL_EVAL_DIR, "arms", name + ".json")))
+        node = arm
+        for key in keys[:-1]:
+            node = node[key]
+        node[keys[-1]] = value
+        path = os.path.join(tmp, f"arm{number}.json")
+        write(path, json.dumps(arm))
+        got.append(bool(refused(eval_mod.load_arm, path)))
+    return all(got), got
+
+
+def case_a_clock_that_expires_between_invocations_ends_the_arm_as_wall_clock(tmp):
+    fix = Fix(tmp)
+    state = os.path.join(tmp, "stub-state")
+    fix.env.update({"STUB_MODE": "ok", "STUB_RESULT": "No findings."})
+    ctx = fix.ctx()
+    ctx["clock"] = lambda: 10 ** 9 if os.path.exists(state) else 0
+    with patched_env(fix.env):
+        task = fix.load()
+        run = eval_mod.prepare_run(task, fix.arm, fix.src, fix.runs, 1, os.path.join(fix.tmp, "plugin-crew"), fix.env)
+        driven = eval_mod.drive_arm(ctx["docker"], run, task, fix.arm, ctx["clock"])
+    return driven["endedBy"] == "wall-clock", driven
+
+
+def case_validate_all_fails_on_a_task_directory_without_task_json(tmp):
+    root = os.path.join(tmp, "tasks")
+    os.makedirs(os.path.join(root, "t-broken"))
+    write(os.path.join(root, "notes.md"), "not a task\n")
+    message = refused(eval_mod.task_dirs, root)
+    return bool(message and "no task.json" in message), message
 
 
 def case_a_scored_row_with_a_wrong_type_cost_is_refused(tmp):
@@ -1907,6 +1960,10 @@ CASES = (
     ("must-block: an unscored hidden test is not counted but must pass at reference", case_an_unscored_hidden_test_is_not_counted_but_must_pass_at_reference),
     ("must-block: an escaping statement path or unlisted test file is refused", case_a_task_with_an_escaping_statement_path_or_unlisted_test_file_is_refused),
     ("must-block: a second attempt ending in grading infra keeps the chain spend", case_a_second_attempt_that_ends_in_grading_infra_keeps_the_whole_chain_spend),
+    ("must-block: arm settings can add but never remove the web denials", case_an_arm_settings_object_can_add_but_never_remove_the_web_denials),
+    ("must-block: a wrong-shape arm file is refused before any run", case_a_wrong_shape_arm_file_is_refused_before_any_run),
+    ("must-block: a clock that expires between invocations ends the arm as wall-clock", case_a_clock_that_expires_between_invocations_ends_the_arm_as_wall_clock),
+    ("must-block: validate --all fails on a task directory without task.json", case_validate_all_fails_on_a_task_directory_without_task_json),
     ("must-block: a scored row with a wrong-type cost is refused", case_a_scored_row_with_a_wrong_type_cost_is_refused),
     ("must-block: an exception in the arm driver still writes a paid row", case_an_exception_in_the_arm_driver_still_writes_a_paid_row),
     ("must-block: a grading infra failure is retried once", case_a_grading_infra_failure_is_retried_once_before_the_run_is_unscored),
@@ -1935,7 +1992,7 @@ CASES = (
     ("must-allow: a run has no docker network at all and reaches only the proxy socket", case_a_stub_run_through_docker_has_no_network_and_reaches_only_the_proxy_socket),
     ("must-block: a run that names the reference is contaminated", case_a_contaminated_run_is_marked_and_still_costed),
     ("must-block: a missing subagent transcript makes the whole run's cost UNKNOWN", case_a_missing_subagent_transcript_makes_the_run_cost_unknown),
-    ("must-allow: a paid unscorable attempt's cost is carried into its rerun", case_a_paid_unscorable_attempt_is_carried_into_its_rerun),
+    ("must-allow: a paid unscorable attempt keeps its spend on its own row", case_a_paid_unscorable_attempt_is_carried_into_its_rerun),
     ("must-allow: an exhausted paid failure keeps its spend as unscoredSpendUsd", case_an_exhausted_paid_failure_keeps_its_spend),
     ("must-allow: a session's cumulative CLI cost counts once", case_cli_cost_counts_each_session_once_not_cumulatively),
     ("must-allow: every CLI JSON is kept beside the run", case_every_cli_json_is_kept_beside_the_run),

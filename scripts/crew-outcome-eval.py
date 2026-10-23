@@ -200,6 +200,9 @@ def load_task(task_dir):
             seen[test_id] = defect
     if not isinstance(task["testCommand"], list) or not all(isinstance(a, str) for a in task["testCommand"]):
         fail(f"{task['name']}: testCommand must be an argv list")
+    if "referencePr" in task and (isinstance(task["referencePr"], bool)
+                                  or not isinstance(task["referencePr"], (int, str)) or task["referencePr"] in ("", 0)):
+        fail(f"{task['name']}: referencePr must be a PR number")
     task.setdefault("hiddenRegression", [])
     task.setdefault("unscoredHidden", [])
     for key in ("regressionInventory", "gradingFiles", "hiddenRegression", "unscoredHidden"):
@@ -233,7 +236,15 @@ def task_dirs(tasks_root):
         names = sorted(os.listdir(tasks_root))
     except OSError as exc:
         fail(f"{tasks_root}: cannot list tasks: {exc}")
-    return [os.path.join(tasks_root, n) for n in names if os.path.isfile(os.path.join(tasks_root, n, "task.json"))]
+    dirs = []
+    for name in names:
+        path = os.path.join(tasks_root, name)
+        if not os.path.isdir(path) or name.startswith("."):
+            continue
+        if not os.path.isfile(os.path.join(path, "task.json")):
+            fail(f"{path}: task directory has no task.json")
+        dirs.append(path)
+    return dirs
 
 
 def frozen_path(task_dir, rel):
@@ -268,7 +279,54 @@ def load_arm(path):
         fail(f"{path}: wallClockMinutes must map S, M, L to positive numbers")
     if set(minutes) != set(BUCKETS):
         fail(f"{path}: wallClockMinutes needs exactly S, M, L")
+    check_arm_shape(path, arm)
     return arm
+
+
+ARM_PROMPTS = {"crew": ("start", "resume"), "baseline": ("implement", "review", "fix")}
+
+
+def check_arm_shape(path, arm):
+    """Every field the run reads is checked here, before any billed invocation: a wrong
+    type or a null is a refusal, never a traceback after a paid call."""
+    def need(ok, what):
+        if not ok:
+            fail(f"{path}: {what}")
+
+    def strings(value):
+        return isinstance(value, list) and all(isinstance(v, str) for v in value)
+
+    def count(value):
+        return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+    need(arm["arm"] in ARMS, f"arm must be one of {', '.join(ARMS)}")
+    for key in ("author", "reviewer", "cli", "prompts"):
+        need(isinstance(arm[key], dict), f"{key} must be an object")
+    need(strings(arm["cli"].get("args")), "cli.args must be a list of strings")
+    for key in ("maxResumes", "maxCycles"):
+        need(key not in arm["cli"] or count(arm["cli"][key]), f"cli.{key} must be a non-negative integer")
+    for key in ARM_PROMPTS[arm["arm"]]:
+        need(isinstance(arm["prompts"].get(key), str) and arm["prompts"][key], f"prompts.{key} must be a string")
+    need(isinstance(arm.get("settings", {}), dict), "settings must be an object")
+    permissions = arm.get("settings", {}).get("permissions", {})
+    need(isinstance(permissions, dict), "settings.permissions must be an object")
+    need(strings(permissions.get("deny", [])), "settings.permissions.deny must be a list of strings")
+    need(strings(arm.get("proxyIgnoreHosts", [])), "proxyIgnoreHosts must be a list of strings")
+    if arm["arm"] == "crew":
+        need(isinstance(arm["crewConfig"], dict), "crewConfig must be an object")
+        need(isinstance(arm["assignment"], dict) and isinstance(arm["assignment"].get("template"), str)
+             and isinstance(arm["assignment"].get("risk"), str), "assignment needs string template and risk")
+        model = arm["reviewer"].get("model")
+        need(isinstance(model, str) and model, "reviewer.model must be a string")
+    else:
+        rule = arm["reviewParse"]
+        need(isinstance(rule, dict) and all(isinstance(rule.get(k), str) for k in ("findings", "noFindings")),
+             "reviewParse needs string findings and noFindings patterns")
+        for key in ("findings", "noFindings"):
+            try:
+                re.compile(rule[key])
+            except re.error as exc:
+                fail(f"{path}: reviewParse.{key} is not a valid pattern: {exc}")
 
 
 def check_method(eval_dir):
@@ -1068,6 +1126,19 @@ def write_private(path, text):
         fh.write(text)
 
 
+MANDATORY_DENY = ("WebFetch", "WebSearch")
+
+
+def merged_settings(extra):
+    """The run's settings.json: whatever the arm adds, with the mandatory denials always present."""
+    settings = dict(extra)
+    permissions = dict(settings.get("permissions") or {})
+    deny = [d for d in permissions.get("deny") or [] if d not in MANDATORY_DENY]
+    permissions["deny"] = [*MANDATORY_DENY, *deny]
+    settings["permissions"] = permissions
+    return settings
+
+
 def prepare_run(task, arm, source_repo, runs_dir, attempt, crew_plugin, env=None):
     """The run directory: repo (fresh git init from the base tree), home with
     auth files only, and the arm's own settings."""
@@ -1088,7 +1159,7 @@ def prepare_run(task, arm, source_repo, runs_dir, attempt, crew_plugin, env=None
                       os.path.join(run["home"], ".claude", ".credentials.json"))
     strip_codex_auth(os.path.join(codex_src, "auth.json"), os.path.join(run["home"], ".codex", "auth.json"))
     write_private(os.path.join(run["home"], ".codex", "config.toml"), CODEX_CONFIG)
-    settings = {"permissions": {"deny": ["WebFetch", "WebSearch"]}, **arm.get("settings", {})}
+    settings = merged_settings(arm.get("settings", {}))
     write_private(os.path.join(run["home"], ".claude", "settings.json"), json.dumps(settings))
     write_private(os.path.join(run["home"], ".claude.json"),
                   json.dumps({"hasCompletedOnboarding": True, "theme": "dark"}))
@@ -1236,13 +1307,15 @@ def drive_arm(docker, run, task, arm, clock, holder=None):
     def step(prompt, resume):
         remaining = limit - (clock() - started)
         if remaining <= 0:
-            return None
+            out["endedBy"] = "wall-clock"
+            return {"timedOut": True}
         name = f"crew-outcome-arm-{os.path.basename(run['dir'])}-{len(out['sessions'])}"
         code, text, timed_out = invoke(docker, run, name, cli_argv(arm, prompt, resume), remaining)
         data = parse_cli_json(text)
         out["exit"] = code
         if data is None:
             if timed_out:
+                out["endedBy"] = "wall-clock"
                 return {"timedOut": True}
             out["failure"] = f"no CLI JSON (exit {code})"
             return None
@@ -1403,32 +1476,23 @@ def run_once(ctx, task, arm, attempt, carried_cost=0.0):
 
 
 def run_chain(ctx, task, arm):
-    """One scored-or-exhausted chain: an unscorable attempt is rerun once and its
-    cost is carried into the rerun; a chain that ends unscorable keeps its spend
-    as `unscoredSpendUsd`."""
+    """One scored-or-exhausted chain: an unscorable attempt is rerun once. Every
+    attempt's own spend is recorded on its own row (`unscoredSpendUsd` when the
+    attempt did not produce a score), so a refused rerun leaves exactly one row for
+    attempt 1 and nothing is counted twice."""
     first = run_once(ctx, task, arm, 1)
-    if first["runStatus"] in ("infra", "error"):
-        # paid, and never rerun: its spend belongs to the arm's task cost like an unscorable chain's
+    if first["runStatus"] in ("unscorable", "infra", "error"):
         first["unscoredSpendUsd"] = first["ownCostUsd"]
     append_result(ctx["results"], first)
     if first["runStatus"] != "unscorable":
         return first
     guard = ctx.get("before_rerun")
     if guard:
-        try:
-            guard()
-        except BaseException as exc:
-            # the chain ends here: its paid first attempt is recorded as unscored spend, once
-            append_result(ctx["results"], {
-                "task": first["task"], "bucket": first["bucket"], "arm": first["arm"], "attempt": 1,
-                "runStatus": "unscorable", "ownCostUsd": 0.0, "costUsd": 0.0,
-                "unscoredSpendUsd": first["ownCostUsd"], "failure": f"rerun refused: {exc}"})
-            raise
-    carried = first["ownCostUsd"]
-    second = run_once(ctx, task, arm, 2, carried)
+        guard()
+    second = run_once(ctx, task, arm, 2)
     if second["runStatus"] in ("unscorable", "infra", "error"):
-        second["unscoredSpendUsd"] = second["costUsd"]
-        second["costUsd"] = UNKNOWN if second["costUsd"] == UNKNOWN else 0.0
+        second["unscoredSpendUsd"] = second["ownCostUsd"]
+        second["costUsd"] = UNKNOWN if second["ownCostUsd"] == UNKNOWN else 0.0
     append_result(ctx["results"], second)
     return second
 
