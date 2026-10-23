@@ -1076,7 +1076,12 @@ def test_cloud_fallback_is_armed_by_a_malformed_cloud_or_environments_block(tmp_
 
 
 def _bash_layer_armed(tmp_path, bodies, keys):
-    """`{name: armed}` from `crew_guard_layer_armed` over each body, one bash run."""
+    """`{name: armed}` from `crew_guard_layer_armed` over each body, one bash run.
+
+    The script goes in on stdin. As a `-c` argument (about 13,000 characters) bash on the
+    Windows runner stopped at "unexpected EOF" on line 45 (run 39990494910), so a long script
+    is not passed on the command line.
+    """
     files = tmp_path / "parity"
     files.mkdir()
     lines = []
@@ -1085,7 +1090,8 @@ def _bash_layer_armed(tmp_path, bodies, keys):
         lines.append(f'crew_guard_layer_armed "{_posix(files / f"{index}.json")}" {keys}; '
                      f'echo "{index} $?"')
     script = f'. "{_posix(COMMON_SH)}"\n' + "\n".join(lines) + "\n"
-    out = subprocess.run([_BASH, "-c", script], capture_output=True, check=True, timeout=300)
+    out = subprocess.run([_BASH, "-s"], input=script.encode("utf-8"), capture_output=True,
+                         check=True, timeout=300)
     status = dict(row.split() for row in out.stdout.decode().splitlines())
     return {name: status[str(i)] == "0" for i, name in enumerate(sorted(bodies))}
 
