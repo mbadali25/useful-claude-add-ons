@@ -258,7 +258,8 @@ def test_every_script_path_in_a_non_harness_hook_goes_through_the_helper(name):
 @pytest.mark.parametrize("name", _NON_HARNESS)
 def test_every_root_and_data_path_argument_goes_through_the_helper(name):
     unwrapped = re.compile(
-        r'--root "\$PWD"|"\$PY" - "\$CREW_CFG"|"\$DIR" "\$PWD"|json\.load\(open\(sys\.argv\[1\]\)\).*\' "\$CREW_CFG" 2>')
+        r'--root "\$PWD"|"\$PY" - "\$CREW_CFG"|"\$DIR" "\$PWD"'
+        r'|json\.load\(open\(sys\.argv\[1\]\)\).*\' "\$CREW_CFG" 2>')
     offenders = []
     for number, line in enumerate((SCRIPTS / name).read_text(encoding="utf-8").splitlines(), 1):
         if line.lstrip().startswith("#"):
