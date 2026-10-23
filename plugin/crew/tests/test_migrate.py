@@ -584,7 +584,8 @@ def test_autopilot_note_names_both_files_and_the_stricter_rule():
     note = crew_migrate.AUTOPILOT_FILE_NOTE
 
     assert ("never read" in note, ".crew/config.json" in note,
-            "~/.claude/crew/config.json" in note, "stricter" in note, "20a" in note) == (
+            "~/.claude/crew/config.json" in note, "stricter" in note,
+            "config-rationale" in note) == (
         True, True, True, True, True)
 
 
