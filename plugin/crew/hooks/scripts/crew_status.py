@@ -488,7 +488,7 @@ def _guards_line(root):
         if layers:
             shown.append("unmigrated: run /crew:migrate (" + " and ".join(sorted(layers)) + " layer)")
         return "guards   " + "; ".join(shown) if shown else None
-    except Exception as exc:  # pylint: disable=broad-except
+    except (OSError, ValueError, KeyError, TypeError, ImportError) as exc:
         return f"guards   could not tell ({exc.__class__.__name__})"
 
 
