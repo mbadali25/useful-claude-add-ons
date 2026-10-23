@@ -160,7 +160,6 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 9–11 MCP servers | AWS API, Azure, Playwright | `claude mcp add` |
 | 12 Obsidian MCP | The `obsidian-server` HTTP MCP endpoint (`obsidian-local-rest-api`'s built-in MCP route), bearer-authenticated with `--obsidian-mcp-key` — skipped with instructions when no key is given | `claude mcp add` |
 | 13 Supabase | The `supabase` plugin — project, database, and edge-function tooling | `anthropics/claude-plugins-official` |
-
 | 14 Context7 | `ctx7 setup` — wires up version-accurate library docs for your agents | npx |
 | 15 Playwright CLI | `@playwright/cli` (`playwright-cli` on `PATH`) | npm |
 | 16 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
