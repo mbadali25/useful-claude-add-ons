@@ -9,6 +9,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.68: text-only prompt improvements, functional QA checklist, able-to-fail rule, deploy-evidence wording (L-0872)
+
+- **Summary.** `crew` 1.2.68: prompt text only. `crew-execute` gains a reuse-first ladder and a no-tautological-assertion rule; `crew-debugging` and `/crew:debug` require a red-capable command before Phase 2 and tagged debug logs; `/crew:handoff` says to reference by path and redact secrets; `crew-qa-standards` gains a functional (API, CLI, job, webhook) QA checklist and an able-to-fail rule with benchmark questions; `/crew:promote` reports a deploy with merged sha, deployed sha and health result, else `unverified`. Two stale comments fixed. NOTICE.md credits Pocock, Ponytail, gstack and pstack (all MIT).
+
 ### Changed — crew 1.2.67: four harness hook PowerShell twins deleted (L-0869, slice 4 of L-0727)
 
 - **Summary.** `crew` 1.2.67: the last four PowerShell hook twins (`verify-gate`, `completion-audit`, `scope-guard`, `approval-hook`) are deleted, so only `crew-hook.ps1` and `promote-gate.ps1` remain; Windows behaviour does not change because those hooks already ran their `.sh` under Git Bash.
