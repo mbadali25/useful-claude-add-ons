@@ -260,5 +260,6 @@
   "plugin/gizmoduck/scripts/_test/test_scanner_nuclei.py",
   "plugin/gizmoduck/scripts/_test/test_routine_orchestration.py",
   "plugin/gizmoduck/scripts/_test/test_report_grouping.py"
- ]
+ ],
+ "referencePr": 451
 }

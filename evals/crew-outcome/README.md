@@ -115,7 +115,7 @@ base tree (the repo path in `README.md`, `.claude-plugin/marketplace.json`) neve
 
 | Metric | Definition |
 |---|---|
-| `escapedDefects` | Number of named defects with at least one hidden test that does not report PASSED after grading (fail, error, skip and not collected alike). `task.json` groups the hidden test ids into non-overlapping defects. |
+| `escapedDefects` | Number of named defects with at least one hidden test that does not report PASSED after grading (fail, error, skip and not collected alike). `task.json` groups the hidden test ids into non-overlapping defects. A failing test in a hidden-only test file that no group names counts as one more escaped defect (`ungrouped-hidden-tests`). |
 | `regressionTestsFailed` | Base-passing visible test ids from the frozen inventory that do not pass after. Reported beside the verdict, never added to `escapedDefects`. |
 | `reviewCycles` | A completed review with a parsed verdict. Crew: a ledger round with verdict CLEAN or FINDINGS. Baseline: a `/code-review` invocation whose output parses by the rule in `arms/baseline.json`. |
 | `reviewAttemptsIncomplete` | Errored, refused, INCOMPLETE or unparseable review attempts. Each arm retries an errored review at most once. |

@@ -352,19 +352,32 @@ def grade_docker_argv(docker, name, user, repo, command):
             "-e", "HOME=/tmp", "-e", "PYTHONDONTWRITEBYTECODE=1", IMAGE, *command]
 
 
-def run_tests(task, repo, ids, docker=None):
+CHOWN_TIMEOUT_SECONDS = 300
+
+
+def chown_tree(uid, gid, *paths):
+    """None when the trees now belong to uid:gid, else why not (failed or stalled)."""
+    try:
+        owned = subprocess.run(["/bin/chown", "-R", f"{uid}:{gid}", *paths], check=False, capture_output=True,
+                               text=True, stdin=subprocess.DEVNULL, timeout=CHOWN_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        return f"gave no answer in {CHOWN_TIMEOUT_SECONDS}s"
+    if owned.returncode != 0:
+        return f"exit {owned.returncode}: {(owned.stderr or '').strip()[:200]}"
+    return None
+
+
+def run_tests(task, repo, ids, docker=None, sweep=()):
     """{test id: status} for the expected `ids`, by `-rA` lines; an id with no
     line (not collected, deleted, crashed run) is MISSING. Only PASSED passes.
     The test command runs in the eval image, never on the host."""
     docker = docker or which("docker")
     uid, gid, chown = container_user()
     if chown:
-        owned = subprocess.run(["/bin/chown", "-R", f"{uid}:{gid}", repo], check=False, capture_output=True,
-                               text=True)
-        if owned.returncode != 0:
+        problem = chown_tree(uid, gid, repo)
+        if problem:
             # the container could not read the copy: that is the harness, not the code under test
-            raise GradingInfra(f"chown of the grading copy failed ({owned.returncode}): "
-                               f"{(owned.stderr or '').strip()[:200]}")
+            raise GradingInfra(f"chown of the grading copy failed ({problem})")
     name = f"crew-outcome-grade-{os.getpid()}-{uuid.uuid4().hex[:10]}"
     argv = grade_docker_argv(docker, name, (uid, gid), repo, task["testCommand"])
     try:
@@ -395,6 +408,13 @@ def run_tests(task, repo, ids, docker=None):
                     rest == test_id or rest.startswith(test_id + " - ")):
                 status[test_id] = word
                 break
+    # every other result in a hidden-only test file is read too: a hidden test nobody grouped is
+    # still a hidden test
+    for line in lines:
+        word, _, rest = line.partition(" ")
+        found = rest.split(" - ", 1)[0]
+        if word in RESULT_WORDS and found not in status and found.split("::", 1)[0] in sweep:
+            status[found] = word
     return status
 
 
@@ -427,11 +447,13 @@ def graded_status(task, repo, base_tree, tmp, docker=None):
     """({regression id: status}, {hidden id: status}) from two copies of `repo`:
     the regression view and the full grading set (see `overlay`)."""
     out = []
+    keep = {test_id.split("::", 1)[0] for test_id in task["regressionInventory"]}
     for hidden, ids in ((False, task["regressionInventory"]), (True, hidden_ids(task))):
         copy = os.path.join(tmp, "hidden" if hidden else "regression")
         shutil.copytree(repo, copy, symlinks=True, ignore=shutil.ignore_patterns(".git"))
         overlay(task, copy, base_tree, hidden)
-        out.append(run_tests(task, copy, ids, docker))
+        sweep = {rel for rel in task["gradingFiles"] if rel not in keep and os.path.basename(rel).startswith("test_")}
+        out.append(run_tests(task, copy, ids, docker, sweep if hidden else ()))
     return out[0], out[1]
 
 
@@ -443,6 +465,9 @@ def grade(task, repo, source_repo, docker=None):
         export_tree(source_repo, task["base"], base_tree)
         regression, hidden = graded_status(task, repo, base_tree, tmp, docker)
     escaped = [name for name, ids in task["defects"].items() if any(hidden[i] != "PASSED" for i in ids)]
+    grouped = set(hidden_ids(task))
+    if any(status != "PASSED" for test_id, status in hidden.items() if test_id not in grouped):
+        escaped.append("ungrouped-hidden-tests")
     failed = [i for i in task["regressionInventory"] if regression[i] != "PASSED"]
     return {"escapedDefects": len(escaped), "defectsTotal": len(task["defects"]),
             "escapedDefectNames": escaped, "regressionTestsFailed": len(failed)}
@@ -468,7 +493,7 @@ def validate_task(task, source_repo, docker=None):
             if bad:
                 problems.append(f"{task['name']}: regression tests do not pass at {label}: {', '.join(bad)}")
             if label == "base":
-                passing = [i for i in hidden if hidden[i] == "PASSED"]
+                passing = [i for i in hidden_ids(task) if hidden[i] == "PASSED"]
                 if passing:
                     problems.append(f"{task['name']}: hidden tests pass at base: {', '.join(passing)}")
             else:
@@ -702,7 +727,7 @@ def contamination(task, home, repo, proxy_log, arm, source_repo):
         for here, _dirs, names in os.walk(root):
             texts.extend(os.path.join(here, n) for n in names if n.endswith(".jsonl"))
     for here, _dirs, names in os.walk(repo):
-        texts.extend(os.path.join(here, n) for n in names if n == "codex-events.jsonl")
+        texts.extend(os.path.join(here, n) for n in names if n in ("codex-events.jsonl", "probe-events.jsonl"))
     hidden_lines = hidden_content_lines(task, source_repo)
     reasons = []
     most_hits = 0
@@ -799,6 +824,13 @@ def read_results(path):
                     fail(f"{path}:{number}: not a JSON object; results are append-only full rows")
                 if not all(isinstance(row.get(k), str) for k in ("task", "bucket", "arm", "runStatus")):
                     fail(f"{path}:{number}: task, bucket, arm and runStatus must be present strings")
+                for key in ("costUsd", "ownCostUsd", "unscoredSpendUsd", "claudeCostUsd", "escapedDefects",
+                            "regressionTestsFailed"):
+                    value = row.get(key)
+                    if key in row and value is not None and value != UNKNOWN and (
+                            isinstance(value, bool) or not isinstance(value, (int, float))
+                            or not math.isfinite(value) or value < 0):
+                        fail(f"{path}:{number}: {key} must be a non-negative number, null or {UNKNOWN}")
                 rows.append(row)
     except FileNotFoundError:
         return []
@@ -1027,8 +1059,9 @@ def prepare_run(task, arm, source_repo, runs_dir, attempt, crew_plugin, env=None
         write_private(os.path.join(run["repo"], ".crew", "config.json"), json.dumps(arm["crewConfig"]))
         write_assignment(run, task, arm)
     if os.geteuid() == 0:
-        subprocess.run(["/bin/chown", "-R", f"{RUN_UID}:{RUN_UID}", run["repo"], run["home"]],
-                       check=False, capture_output=True)
+        problem = chown_tree(RUN_UID, RUN_UID, run["repo"], run["home"])
+        if problem:
+            fail(f"chown of the run directory failed ({problem}); nothing was started")
     return run
 
 
@@ -1143,7 +1176,7 @@ class Clock:
         return time.monotonic()
 
 
-def drive_arm(docker, run, task, arm, clock):
+def drive_arm(docker, run, task, arm, clock, holder=None):
     """Run the arm's protocol. Returns {sessions, exit, cycles, incomplete,
     cliTotalCostUsd, failure} where failure is a harness/auth/container/API
     problem (the run is then unscorable) or None."""
@@ -1152,8 +1185,9 @@ def drive_arm(docker, run, task, arm, clock):
     with open(os.path.join(task["dir"], task["statementFile"]), encoding="utf-8") as fh:
         statement = fh.read()
     values = {"statement": statement, "ticket": task["ticket"]}
-    out = {"sessions": [], "exit": 0, "cycles": 0, "incomplete": 0, "cliTotalCostUsd": 0.0, "failure": None,
-           "endedBy": "stop"}
+    out = holder if holder is not None else {}
+    out.update({"sessions": [], "exit": 0, "cycles": 0, "incomplete": 0, "cliTotalCostUsd": 0.0, "failure": None,
+                "endedBy": "stop"})
     cli_cost = {}
     kept = [0]
     session = None
@@ -1270,8 +1304,15 @@ def run_once(ctx, task, arm, attempt, carried_cost=0.0):
     run = prepare_run(task, arm, ctx["source_repo"], ctx["runs_dir"], attempt, ctx["crew_plugin"], ctx.get("env"))
     clock = ctx.get("clock") or Clock()
     started = clock()
-    with Proxy(run, ctx["container_dir"]):
-        driven = drive_arm(ctx["docker"], run, task, arm, clock)
+    holder = {"sessions": [], "exit": 0, "cycles": 0, "incomplete": 0, "cliTotalCostUsd": UNKNOWN,
+              "failure": None, "endedBy": "stop"}
+    try:
+        with Proxy(run, ctx["container_dir"]):
+            driven = drive_arm(ctx["docker"], run, task, arm, clock, holder)
+    except Exception as exc:  # noqa: BLE001 - the invocations before it were paid for: the row is still written; pylint: disable=broad-exception-caught
+        driven = holder
+        driven["failure"] = f"arm driver raised {type(exc).__name__}: {exc}"
+        driven["cliTotalCostUsd"] = UNKNOWN
     wall = round(clock() - started, 1)
     tokens, claude_cost, models = claude_usage(run["home"], driven["sessions"])
     codex_model = arm.get("reviewer", {}).get("model") if arm["arm"] == "crew" else None
@@ -1298,7 +1339,11 @@ def run_once(ctx, task, arm, attempt, carried_cost=0.0):
     graded = {"escapedDefects": None, "defectsTotal": len(task["defects"]), "regressionTestsFailed": None}
     if status not in ("unscorable", "error"):
         try:
-            graded = grade(task, run["repo"], ctx["source_repo"], ctx["docker"])
+            try:
+                graded = grade(task, run["repo"], ctx["source_repo"], ctx["docker"])
+            except GradingInfra:
+                # grading is cheap next to the paid arm: one retry before the run is called unscored
+                graded = grade(task, run["repo"], ctx["source_repo"], ctx["docker"])
         except GradingInfra as exc:
             # not a verdict on the code: unscored, with the cost the arm already spent
             status, failure = "infra", f"grading infra failure: {exc}"

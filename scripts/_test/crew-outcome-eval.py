@@ -1404,6 +1404,101 @@ def case_a_grading_container_that_fails_to_run_is_infra_not_missing_tests(tmp):
     return ok, (got, missing_docker)
 
 
+def graded_with_ungrouped_hidden_test(tmp, break_mul):
+    fix = Fix(tmp)
+    task = fix.load()
+    write(os.path.join(task["dir"], "grading", "tests", "test_extra.py.frozen"),
+          "from calc import mul\n\n\ndef test_extra_ungrouped():\n    assert mul(2, 3) == 6\n")
+    task["gradingFiles"] = task["gradingFiles"] + ["tests/test_extra.py"]
+    task["testCommand"] = task["testCommand"] + ["tests/test_extra.py"]
+    run = eval_mod.prepare_run(task, fix.arm, fix.src, fix.runs, 1, os.path.join(fix.tmp, "plugin-crew"), fix.env)
+    body = "return a + b" if break_mul else "return a * b"
+    write(os.path.join(run["repo"], "calc.py"), CALC_BASE + "\n\ndef mul(a, b):\n    " + body + "\n")
+    return eval_mod.grade(task, run["repo"], fix.src)
+
+
+def case_a_failing_hidden_test_outside_every_defect_group_still_escapes(tmp):
+    broken = graded_with_ungrouped_hidden_test(tmp, True)
+    fine = graded_with_ungrouped_hidden_test(tmp + "-ok", False)
+    name = "ungrouped-hidden-tests"
+    ok = name in broken["escapedDefectNames"] and name not in fine["escapedDefectNames"]
+    return ok, (broken, fine)
+
+
+def case_a_scored_row_with_a_wrong_type_cost_is_refused(tmp):
+    path = os.path.join(tmp, "results-cost.jsonl")
+    write(path, json.dumps({"task": "a", "bucket": "S", "arm": "crew", "runStatus": "scored", "attempt": 1,
+                            "costUsd": "oops"}) + "\n")
+    message = refused(eval_mod.read_results, path)
+    return bool(message and "costUsd" in message), message
+
+
+def case_an_exception_in_the_arm_driver_still_writes_a_paid_row(tmp):
+    fix = Fix(tmp)
+    saved = eval_mod.drive_arm
+
+    def half_done(*args):
+        args[-1]["sessions"] = ["sess-1"]
+        raise RuntimeError("docker vanished")
+    eval_mod.drive_arm = half_done
+    try:
+        result, _ = run_arm(fix, "ok", STUB_RESULT="No findings.")
+    finally:
+        eval_mod.drive_arm = saved
+    return result["runStatus"] == "unscorable" and "arm driver raised" in (result["failure"] or ""), result
+
+
+def case_a_grading_infra_failure_is_retried_once_before_the_run_is_unscored(tmp):
+    fix = Fix(tmp)
+    calls = []
+    saved = eval_mod.grade
+
+    def flaky(*args):
+        calls.append(1)
+        if len(calls) == 1:
+            raise eval_mod.GradingInfra("grading container exited 125")
+        return saved(*args)
+    eval_mod.grade = flaky
+    try:
+        result, _ = run_arm(fix, "ok", STUB_RESULT="No findings.")
+    finally:
+        eval_mod.grade = saved
+    return result["runStatus"] == "scored" and len(calls) == 2, (result["runStatus"], len(calls))
+
+
+def case_a_stalled_or_failed_run_dir_chown_refuses_before_any_paid_work(tmp):
+    saved = eval_mod.chown_tree
+    eval_mod.chown_tree = lambda *a: "gave no answer in 300s"
+    fix = Fix(tmp)
+    saved_geteuid = os.geteuid
+    os.geteuid = lambda: 0
+    try:
+        task = fix.load()
+        message = refused(eval_mod.prepare_run, task, fix.arm, fix.src, fix.runs, 1,
+                          os.path.join(fix.tmp, "plugin-crew"), fix.env)
+    finally:
+        os.geteuid = saved_geteuid
+        eval_mod.chown_tree = saved
+    return bool(message and "chown" in message), message
+
+
+def case_contamination_reads_the_probe_events_file(tmp):
+    fix = Fix(tmp)
+    task = fix.load()
+    home = os.path.join(tmp, "home")
+    repo = os.path.join(tmp, "repo")
+    os.makedirs(os.path.join(home, ".claude", "projects"))
+    write(os.path.join(repo, ".work", "review", "x", "probe-events.jsonl"),
+          json.dumps({"text": task["reference"]}) + "\n")
+    reasons = eval_mod.contamination(task, home, repo, os.path.join(tmp, "none.jsonl"), fix.arm, fix.src)
+    return "reference sha" in reasons, reasons
+
+
+def case_t_0108_names_its_reference_pr(tmp):
+    task = eval_mod.read_json(os.path.join(REAL_EVAL_DIR, "tasks", "t-0108-nuclei-safe-defaults", "task.json"))
+    return task.get("referencePr") == 451, task.get("referencePr")
+
+
 def case_an_errored_baseline_review_is_incomplete_and_retried_once(tmp):
     fix = Fix(tmp)
     result, _ = run_arm(fix, "fail-second", STUB_RESULT="No findings.")
@@ -1694,6 +1789,13 @@ CASES = (
     ("must-block: a contamination check that raises still writes a row", case_a_contamination_check_that_raises_still_writes_a_row),
     ("must-block: a wrong-shape wallClockMinutes is a refusal", case_a_wrong_shape_wall_clock_is_a_refusal_not_a_traceback),
     ("must-block: Codex counts that cannot be true make usage UNKNOWN", case_codex_counts_that_cannot_be_true_make_usage_unknown),
+    ("must-block: a failing hidden test outside every defect group still escapes", case_a_failing_hidden_test_outside_every_defect_group_still_escapes),
+    ("must-block: a scored row with a wrong-type cost is refused", case_a_scored_row_with_a_wrong_type_cost_is_refused),
+    ("must-block: an exception in the arm driver still writes a paid row", case_an_exception_in_the_arm_driver_still_writes_a_paid_row),
+    ("must-block: a grading infra failure is retried once", case_a_grading_infra_failure_is_retried_once_before_the_run_is_unscored),
+    ("must-block: a stalled or failed run-dir chown refuses before paid work", case_a_stalled_or_failed_run_dir_chown_refuses_before_any_paid_work),
+    ("must-block: contamination reads probe-events.jsonl", case_contamination_reads_the_probe_events_file),
+    ("must-block: T-0108 names its reference PR", case_t_0108_names_its_reference_pr),
     ("must-block: a failed chown of the grading copy is infra, not a defect", case_a_failed_chown_of_the_grading_copy_is_infra_not_a_defect),
     ("must-block: malformed optional Codex counts make usage UNKNOWN", case_malformed_optional_codex_counts_make_usage_unknown),
     ("must-block: a wrong-shape results row is refused, not a crash", case_a_wrong_shape_results_row_is_refused_not_a_crash),
