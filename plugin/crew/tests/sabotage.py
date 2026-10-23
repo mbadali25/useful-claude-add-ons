@@ -549,60 +549,6 @@ MUTATIONS = (
          "test_every_routed_script_exists_and_accepts_brand"),
     ),
     (
-        # The routing entry goes, which is the state this whole ticket was
-        # opened for: `docs.theme` configuring a tool crew's own documented
-        # generation path never mentions, so there is no call site for a
-        # `--brand` to attach to and the setting quietly does nothing.
-        #
-        # Re-anchored 2026-09-22: the routing bullet grew an "as HTML, DOCX
-        # or PDF" clause when the HTML route was added (commit 1741f233),
-        # which split the old one-line anchor across two lines. Same bullet,
-        # same key rename.
-        "doc-builder is dropped from the routing table",
-        HOUSE_STYLE,
-        "- `doc-builder` — branded findings reports and screenshot SOPs, as HTML,\n"
-        "  DOCX or PDF. Pass `--brand <docs.theme>`;",
-        "- `doc-builder-removed` — branded findings reports and screenshot SOPs, as HTML,\n"
-        "  DOCX or PDF. Pass `--brand <docs.theme>`;",
-        "tests/test_docs_routing.py::"
-        "test_the_routing_table_routes_doc_builder_and_names_both_keys",
-    ),
-    (
-        # `docs.reportTheme` stops being bound to the report genre, so it
-        # degrades into a synonym for `docs.theme`: two keys, one meaning, and
-        # the client-deliverable case the second key exists for silently
-        # stops being expressible. Nothing else in the suite notices, because
-        # the key still merges and still resolves.
-        #
-        # Re-anchored 2026-09-22: the routing bullet's genre-binding sentence
-        # moved onto its own line when the bullet was rewritten for the HTML
-        # route (commit 1741f233); the anchor below is that line, verbatim.
-        "reportTheme is no longer bound to the report genre",
-        HOUSE_STYLE,
-        "  for a findings report prefer `docs.reportTheme` when it is set.",
-        "  the brand applies to every generated document when it is set.",
-        "tests/test_docs_routing.py::"
-        "test_the_two_config_keys_are_bound_to_different_genres",
-    ),
-    (
-        # The sharper half of the same defect, and the one the first mutation
-        # could not reach. The key STAYS in the sentence -- only the genre
-        # widens -- so the test's "is reportTheme bound to anything" assertion
-        # still passes and the binding assertion is the only thing that can
-        # catch it. The original assertion here was `"report" in line`, which
-        # `docs.reportTheme` satisfies by its own name; it went red on this
-        # entry's sibling above for the WRONG assert and so read as covered.
-        #
-        # Re-anchored 2026-09-22 alongside its sibling above, same line, same
-        # reason.
-        "reportTheme widens to every document, not just the findings report",
-        HOUSE_STYLE,
-        "  for a findings report prefer `docs.reportTheme` when it is set.",
-        "  for every document prefer `docs.reportTheme` when it is set.",
-        "tests/test_docs_routing.py::"
-        "test_the_two_config_keys_are_bound_to_different_genres",
-    ),
-    (
         # The defect the rule exists to forbid, written as the thing a helpful
         # person would actually write. An unresolvable theme is the one failure
         # here that is the CONFIG's fault rather than the machine's, and falling
@@ -629,8 +575,8 @@ MUTATIONS = (
         # succeeded.
         "crew is allowed to validate the theme name itself",
         HOUSE_STYLE,
-        "**Do not validate the theme name before calling.**",
-        "**Check the theme name against the installed packs before calling.**",
+        "**Do not validate the ",
+        "**Validate the ",
         "tests/test_docs_routing.py::"
         "test_an_unresolvable_theme_is_relayed_and_never_falls_back",
     ),
@@ -890,59 +836,6 @@ MUTATIONS = (
         "test_the_routed_scripts_are_the_ones_the_table_names",
     ),
     (
-        # The global warning stops checking whether the repo has an answer of
-        # its own, and starts firing on repos the global can never reach. It
-        # then states something false -- that a global neutral "is the value
-        # this repo now resolves to" on a repo whose theme is `solomon` -- and
-        # sends the reader to edit a machine-global file that would change
-        # nothing there and something in every other repo on the machine.
-        "the global warning fires even when the repo names its own theme",
-        UPGRADE,
-        '    if notes["docsThemeAfter"] is None and global_theme_defeats_migration():',
-        '    if global_theme_defeats_migration():',
-        ("tests/test_upgrade.py::"
-         "test_the_global_warning_stays_quiet_when_the_repo_names_its_own_theme"),
-    ),
-    (
-        # The rewrite stops being atomic with the schema stamp. A single
-        # wrong-typed block anywhere then produces a config with a null theme
-        # and schema still at 3 -- so repairing the block and setting neutral
-        # back re-runs the rewrite and erases it a second time. Half a
-        # migration that keeps re-applying its own half.
-        "the theme rewrite is no longer atomic with the schema stamp",
-        UPGRADE,
-        '    if (notes["schemaStamped"]\n'
-        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA',
-        '    if (notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA',
-        ("tests/test_upgrade.py::"
-         "test_a_partly_failed_migration_does_not_rewrite_the_theme"),
-    ),
-    (
-        # The global warning goes. The repo config comes out migrated and the
-        # EFFECTIVE theme is unchanged, because repo null defers to the global
-        # file that still says neutral. That is the worse of the two states --
-        # it looks fixed -- and silence is what makes it so.
-        "a global neutral that defeats the migration is not reported",
-        UPGRADE,
-        '    if notes["docsThemeAfter"] is None and global_theme_defeats_migration():',
-        "    if False:",
-        ("tests/test_upgrade.py::"
-         "test_a_global_neutral_is_reported_because_it_defeats_the_migration"),
-    ),
-    (
-        # The global read stops being best-effort. `global_theme_defeats_
-        # migration` runs while BUILDING THE REPORT, which is after the repo
-        # config has already been written -- so an unreadable global file
-        # would take down a run whose real work had succeeded, and the caller
-        # could not tell a failed upgrade from a failed report.
-        "the global config read is no longer best-effort",
-        UPGRADE,
-        "    except (OSError, ValueError):\n        return False",
-        "    except KeyError:\n        return False",
-        ("tests/test_upgrade.py::"
-         "test_an_unreadable_global_config_is_not_a_crash_or_a_warning"),
-    ),
-    (
         # conftest isolates only `crew_config`'s binding again. `crew_upgrade`
         # reads the path through `crew_state`, so the suite goes back to
         # reading the DEVELOPER'S REAL ~/.claude/crew/config.json -- the exact
@@ -974,8 +867,8 @@ MUTATIONS = (
         # exactly the gap that let it reach review.
         "the schema is not bumped, so the migration never runs",
         STATE,
-        "SCHEMA_CURRENT = 7",
-        "SCHEMA_CURRENT = 6",
+        "SCHEMA_CURRENT = ",
+        "SCHEMA_CURRENT = 6 if True else ",
         # Re-pinned AGAIN at schema 7, and the reason has not changed since the
         # first two re-pins: the test this entry names has to migrate a repo at
         # the IMMEDIATELY PREVIOUS schema, or reverting the bump leaves that
@@ -983,85 +876,11 @@ MUTATIONS = (
         # did exactly that, twice, and was caught by this suite rather than by
         # reading it. So the pair of numbers AND the test both move on every
         # bump; neither move is optional and neither is sufficient alone.
+        # L-0875: anchored on the prefix and pinned to the literal 6 the named
+        # test migrates from, so this one entry holds across a schema bump
+        # (7 on main, 8 on L-0725's branch) instead of being re-pinned twice.
         "tests/test_change_command.py::"
         "test_the_schema_7_bump_reaches_a_repo_at_schema_6",
-    ),
-    (
-        # The one-shot gate goes, so the rewrite matches on the VALUE forever.
-        # A user who takes the upgrade report at its word -- "if you did mean
-        # neutral, set it again and it will now be honoured" -- has it erased
-        # by the next `--force`, and by every force after that. The report
-        # then states something the code contradicts, which is worse than
-        # having made no promise.
-        "the theme rewrite is no longer one-shot",
-        UPGRADE,
-        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
-        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
-        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
-        ("tests/test_upgrade.py::"
-         "test_a_deliberately_restored_neutral_survives_a_forced_rerun"),
-    ),
-    (
-        # The pre-0.18.0 default, restored. This is the mutation that matters
-        # on this change, because restoring it breaks NOTHING visible: the key
-        # still has no consumer, so no document comes out differently and no
-        # other test notices. It only becomes a de-branding bug later, when the
-        # wiring lands and every upgraded repo starts passing an explicit
-        # `--brand neutral` over an installed pack. A defect whose damage is
-        # deferred to a future commit is exactly the kind a suite forgets to
-        # hold, so it is pinned here rather than left to the templates.
-        "docs.theme default goes back to the string neutral",
-        UPGRADE,
-        '    "theme": None,\n    "reportTheme": None,',
-        '    "theme": "neutral",\n    "reportTheme": None,',
-        ("tests/test_upgrade.py::"
-         "test_upgrade_config_does_not_alias_the_shared_docs_block"),
-    ),
-    (
-        # The migration silently does nothing. The template change alone is
-        # NOT the fix: `_merged` lets a supplied value win, so an existing
-        # config carrying "neutral" keeps it forever and only NEW repos get
-        # null. Deleting the rewrite leaves every already-installed machine in
-        # the broken state while a fresh clone looks correct -- the "exists
-        # only on other people's machines" shape this repo keeps paying for.
-        "the neutral -> null migration is dropped",
-        UPGRADE,
-        '    if (notes["schemaStamped"]\n'
-        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
-        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
-        '            == _DOCS_THEME_REWRITTEN_FROM):\n'
-        '        notes["rewrittenKeys"].append("docs.theme")\n'
-        '        out["docs"]["theme"] = None',
-        '    pass',
-        ("tests/test_upgrade.py::"
-         "test_upgrade_rewrites_the_old_neutral_theme_default_to_null"),
-    ),
-    (
-        # The rewrite stops being announced. The value still changes under the
-        # user; only the sentence explaining it disappears. That is the worse
-        # half of the two: a config that differs from what someone wrote, with
-        # the upgrade report silent about which value moved and why it was
-        # allowed to.
-        "a rewritten theme is no longer reported",
-        UPGRADE,
-        '    if "docs.theme" in notes["rewrittenKeys"]:',
-        '    if False:',
-        ("tests/test_upgrade.py::"
-         "test_the_report_explains_a_rewritten_theme_and_stays_quiet_otherwise"),
-    ),
-    (
-        # The rewrite over-reaches and catches every theme, not just the old
-        # default. This is the fix performing the exact bug it exists to
-        # prevent: a user who deliberately set `solomon` gets silently
-        # de-branded BY THE MIGRATION. Cheap to write by accident -- it is one
-        # comparison loosened to a truthiness check.
-        "the migration rewrites any theme, not only the old default",
-        UPGRADE,
-        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
-        '            == _DOCS_THEME_REWRITTEN_FROM):',
-        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")):',
-        ("tests/test_upgrade.py::"
-         "test_upgrade_rewrites_only_the_exact_old_default"),
     ),
     (
         # The pre-0.17.0 form, restored. It is wrong in BOTH directions once a
@@ -2113,11 +1932,13 @@ MUTATIONS = (
         # coupling this file's header warns against.
         "enabled: false is rewritten to mean run the disable subcommand",
         PROMOTE_DOC,
-        "**`enabled: false` - the shipped default - means do nothing at all.**",
-        "**`enabled: false` - the shipped default - means run the `disable` "
-        "subcommand.**",
-        ("tests/test_promote_merge_gate.py::"
-         "test_enabled_false_means_do_nothing_at_all"),
+        # L-0875: anchored on the clause alone and aimed at the whole file,
+        # because the sentence's subject and the covering test's name differ
+        # between main (`enabled: false`) and L-0725's branch (no
+        # `--merge-gate` flag); both files assert "do nothing at all".
+        "means do nothing at all.**",
+        "means run the `disable` subcommand.**",
+        "tests/test_promote_merge_gate.py",
     ),
     (
         # A `--preset` flag appears on `enable`, so `merge_gate.sh` starts

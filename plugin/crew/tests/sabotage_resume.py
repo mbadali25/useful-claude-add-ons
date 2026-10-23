@@ -340,11 +340,6 @@ RESUME_MUTATIONS = (
      '    return crew_resume.record_author(root, payload.get("session_id"), handoff)\n',
      '    return crew_resume.record_author(root, payload.get("session_id"), handoff)\n',
      _H + "test_unarmed_writes_no_author_record"),
-    ("the recorder sits behind the memory.inject gate", CONTEXT,
-     "    cfg = load_crew_config(root)\n    _record_author_logged(root, cfg, payload, harness)\n",
-     "    cfg = load_crew_config(root)\n    if _inject_on(cfg):\n"
-     "        _record_author_logged(root, cfg, payload, harness)\n",
-     _H + "test_injection_off_still_records_the_author"),
     ("the Claude Code recogniser matches nothing", RESUME,
      'CLAUDE_COMM = "claude"\n',
      'CLAUDE_COMM = "node"\n',

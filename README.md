@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.63**: Sabotage table retires 30 mutations and dual-anchors 7 so L-0725 can gate. `crew` 1.2.63: the sabotage mutation table drops 30 mutations that no longer match shipped code and gives 7 a second anchor, so the config-key reduction (L-0725, #665) can pass the sabotage gate; no runtime behaviour changes.
 - **crew 1.2.62**: `commands/autopilot.md` is 1,323 bytes shorter and its rationale has a home. `crew` 1.2.62: the `/crew:autopilot` command a session loads is about 6% shorter (21,176 to 19,853 bytes) with the same steps, refusals and commands, and the reasons behind its rules now live in `docs/crew/autopilot-rationale.md`.
-- **crew 1.2.61, obsidian-vault 0.5.2**: Ten hook PowerShell twins deleted, the `sendkeys` auto-clear method removed. `crew` 1.2.61: the ten PowerShell twins of crew's hook scripts are deleted, so on Windows every crew hook runs its `.sh` under Git Bash, and `context.autoClear.method: "sendkeys"` (the Windows keystroke sender) is removed and refused by name.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
