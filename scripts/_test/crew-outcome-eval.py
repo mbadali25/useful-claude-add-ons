@@ -94,7 +94,7 @@ count = 1
 if os.path.exists(state):
     count = int(open(state).read()) + 1
 open(state, "w").write(str(count))
-failing = (mode == "fail-first" and count == 1) or mode == "always-fail"
+failing = (mode == "fail-first" and count == 1) or (mode == "fail-second" and count == 2) or mode == "always-fail"
 argv = sys.argv[1:]
 resumed = argv[argv.index("--resume") + 1] if "--resume" in argv else None
 sid = resumed or "sess-%d" % count
@@ -121,7 +121,7 @@ if failing:
 if mode == "error-json":
     print(json.dumps({"type": "result", "is_error": True, "session_id": sid, "result": "something odd", "total_cost_usd": 0.1}))
     sys.exit(1)
-if mode in ("ok", "mentions-reference", "subagent-missing", "fail-first", "exit3-ok-json", "no-session-id"):
+if mode in ("ok", "mentions-reference", "subagent-missing", "fail-first", "fail-second", "exit3-ok-json", "no-session-id"):
     with open("calc.py", "a") as fh:
         fh.write("\\n\\ndef mul(a, b):\\n    return a * b\\n")
 payload = {"type": "result", "is_error": False, "session_id": sid,
@@ -863,8 +863,9 @@ def case_a_rerun_after_an_unscorable_attempt_is_budget_checked_first(tmp):
     with patched_env(fix.env):
         message = refused(eval_mod.run_chain, ctx, fix.load(), fix.arm)
     rows = eval_mod.read_results(fix.results)
-    ok = bool(message and "budget" in message) and len(rows) == 1 and rows[0]["runStatus"] == "unscorable"
-    return ok, (message, len(rows))
+    ok = (bool(message and "budget" in message) and len(rows) == 2 and rows[0]["runStatus"] == "unscorable"
+          and eval_mod.known(rows[1].get("unscoredSpendUsd")) and rows[1]["ownCostUsd"] == 0.0)
+    return ok, (message, rows)
 
 
 def case_a_rerun_within_budget_still_happens(tmp):
@@ -1213,7 +1214,7 @@ def case_autopilot_stopped_only_on_a_readable_stop_0_keeps_going(tmp):
            eval_mod.autopilot_stopped(shell("garbage"), "T-1"),
            eval_mod.autopilot_stopped(shell("", 1), "T-1"),
            eval_mod.autopilot_stopped(shell("stop=0", 1), "T-1")]
-    return got == [False, True, True, True, True], got
+    return got == [False, True, None, None, None], got
 
 
 def case_a_crew_arm_assigns_a_ticket_then_resumes_while_autopilot_says_stop_0(tmp):
@@ -1403,6 +1404,59 @@ def case_a_grading_container_that_fails_to_run_is_infra_not_missing_tests(tmp):
     return ok, (got, missing_docker)
 
 
+def case_an_errored_baseline_review_is_incomplete_and_retried_once(tmp):
+    fix = Fix(tmp)
+    result, _ = run_arm(fix, "fail-second", STUB_RESULT="No findings.")
+    ok = result["runStatus"] == "scored" and result["reviewAttemptsIncomplete"] == 1 and result["reviewCycles"] == 1
+    return ok, result
+
+
+def case_a_failed_autopilot_probe_is_a_harness_failure_not_a_stop(tmp):
+    fix = Fix(tmp)
+    arm = eval_mod.load_arm(os.path.join(REAL_EVAL_DIR, "arms", "crew.json"))
+    saved = eval_mod.autopilot_stopped
+    eval_mod.autopilot_stopped = lambda shell, ticket: None
+    try:
+        result, _ = run_arm(fix, "ok", arm=arm, STUB_RESULT="working")
+    finally:
+        eval_mod.autopilot_stopped = saved
+    return result["runStatus"] == "unscorable" and "probe" in (result["failure"] or ""), result
+
+
+def case_a_contamination_check_that_raises_still_writes_a_row(tmp):
+    fix = Fix(tmp)
+    saved = eval_mod.contamination
+
+    def boom(*_args):
+        raise eval_mod.EvalError("git show timed out")
+    eval_mod.contamination = boom
+    try:
+        result, _ = run_arm(fix, "ok", STUB_RESULT="No findings.")
+    finally:
+        eval_mod.contamination = saved
+    return result["runStatus"] == "error" and "contamination check" in (result["failure"] or ""), result
+
+
+def case_a_wrong_shape_wall_clock_is_a_refusal_not_a_traceback(tmp):
+    results = []
+    for bad in (1, {"S": 1, "M": 2, "L": -3}, {"S": True, "M": 2, "L": 3}):
+        arm_dir = os.path.join(tmp, f"arm{len(results)}")
+        os.makedirs(arm_dir)
+        arm = json.loads(slurp(os.path.join(REAL_EVAL_DIR, "arms", "baseline.json")))
+        arm["wallClockMinutes"] = bad
+        write(os.path.join(arm_dir, "a.json"), json.dumps(arm))
+        results.append(refused(eval_mod.load_arm, os.path.join(arm_dir, "a.json")))
+    return all(results), results
+
+
+def case_codex_counts_that_cannot_be_true_make_usage_unknown(tmp):
+    got = []
+    for patch in ({"cached_input_tokens": USAGE["input_tokens"] + 5}, {"input_tokens": -1}):
+        repo, home = codex_events(tmp, [dict(USAGE, **patch)], sessions=1)
+        got.append(eval_mod.codex_usage(repo, home, "gpt-6-sol")[0] == UNKNOWN)
+    return all(got), got
+
+
 def case_a_failed_chown_of_the_grading_copy_is_infra_not_a_defect(tmp):
     saved = eval_mod.container_user
     eval_mod.container_user = lambda: ("1000", "1000", True)
@@ -1433,7 +1487,7 @@ def case_a_wrong_shape_results_row_is_refused_not_a_crash(tmp):
     try:
         eval_mod.read_results(path)
     except eval_mod.EvalError as exc:
-        return "must be strings" in str(exc), str(exc)
+        return "present strings" in str(exc), str(exc)
     return False, "accepted"
 
 
@@ -1635,6 +1689,11 @@ CASES = (
     ("must-allow: Codex cost is computed from a dated price row", case_codex_cost_uses_a_dated_price_row),
     ("must-allow: the pinned Codex reviewer model has a price row and a known cost", case_pinned_codex_model_has_a_price_row_and_a_known_cost),
     ("must-allow: a wrong-shape review ledger counts as incomplete, never raises", case_crew_rounds_wrong_shape_ledger_is_incomplete_not_an_exception),
+    ("must-block: an errored baseline review is incomplete and retried once", case_an_errored_baseline_review_is_incomplete_and_retried_once),
+    ("must-block: a failed autopilot probe is a harness failure, not a stop", case_a_failed_autopilot_probe_is_a_harness_failure_not_a_stop),
+    ("must-block: a contamination check that raises still writes a row", case_a_contamination_check_that_raises_still_writes_a_row),
+    ("must-block: a wrong-shape wallClockMinutes is a refusal", case_a_wrong_shape_wall_clock_is_a_refusal_not_a_traceback),
+    ("must-block: Codex counts that cannot be true make usage UNKNOWN", case_codex_counts_that_cannot_be_true_make_usage_unknown),
     ("must-block: a failed chown of the grading copy is infra, not a defect", case_a_failed_chown_of_the_grading_copy_is_infra_not_a_defect),
     ("must-block: malformed optional Codex counts make usage UNKNOWN", case_malformed_optional_codex_counts_make_usage_unknown),
     ("must-block: a wrong-shape results row is refused, not a crash", case_a_wrong_shape_results_row_is_refused_not_a_crash),

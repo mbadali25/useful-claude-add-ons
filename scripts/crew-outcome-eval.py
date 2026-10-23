@@ -241,7 +241,11 @@ def load_arm(path):
     missing = [k for k in ARM_KEYS + ARM_EXTRA_KEYS.get(arm.get("arm"), ()) if k not in arm]
     if missing:
         fail(f"{path} lacks: {', '.join(missing)}")
-    if set(arm["wallClockMinutes"]) != set(BUCKETS):
+    minutes = arm["wallClockMinutes"]
+    if not isinstance(minutes, dict) or any(isinstance(v, bool) or not isinstance(v, (int, float)) or v <= 0
+                                            for v in minutes.values()):
+        fail(f"{path}: wallClockMinutes must map S, M, L to positive numbers")
+    if set(minutes) != set(BUCKETS):
         fail(f"{path}: wallClockMinutes needs exactly S, M, L")
     return arm
 
@@ -590,6 +594,10 @@ def codex_usage(repo, home, model, proxy_log=None):
                             value = usage.get(optional)
                             if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
                                 return UNKNOWN, UNKNOWN
+                        counts = [usage.get(k) or 0 for k in ("input_tokens", "cached_input_tokens",
+                                                              "output_tokens", "reasoning_output_tokens")]
+                        if (any(c < 0 for c in counts) or counts[1] > counts[0] or counts[3] > counts[2]):
+                            return UNKNOWN, UNKNOWN
                         total["input"] += int(usage.get("input_tokens") or 0)
                         total["cachedInput"] += int(usage.get("cached_input_tokens") or 0)
                         total["output"] += int(usage.get("output_tokens") or 0)
@@ -789,8 +797,8 @@ def read_results(path):
                     fail(f"{path}:{number}: not JSON; results are append-only full lines")
                 if not isinstance(row, dict):
                     fail(f"{path}:{number}: not a JSON object; results are append-only full rows")
-                if not all(isinstance(row.get(k), str) for k in ("task", "bucket", "arm", "runStatus") if k in row):
-                    fail(f"{path}:{number}: task, bucket, arm and runStatus must be strings")
+                if not all(isinstance(row.get(k), str) for k in ("task", "bucket", "arm", "runStatus")):
+                    fail(f"{path}:{number}: task, bucket, arm and runStatus must be present strings")
                 rows.append(row)
     except FileNotFoundError:
         return []
@@ -1118,12 +1126,14 @@ def crew_rounds(repo):
 
 def autopilot_stopped(shell, ticket):
     """True when autopilot's own `next` says `stop=1` (a person is needed, or the
-    ticket is closed), or says nothing readable: only an explicit `stop=0` keeps
-    the arm going."""
+    ticket is closed), False on an explicit `stop=0`, and None when the probe
+    itself failed or said nothing readable: that is a harness fault, never a stop."""
     code, text = shell(f"python3 -B {PLUGIN_IN_CONTAINER}/hooks/scripts/crew_autopilot.py next --root . "
                        f"--ticket {ticket} --phases-run 0 --last-command '' --runner autopilot")
     found = re.search(r"\bstop=([01])\b", text)
-    return code != 0 or not found or found.group(1) == "1"
+    if code != 0 or not found:
+        return None
+    return found.group(1) == "1"
 
 
 class Clock:
@@ -1198,12 +1208,20 @@ def drive_arm(docker, run, task, arm, clock):
         data = step(render(arm["prompts"]["start"], values), None)
         resumes = 0
         while data and not data.get("timedOut") and resumes < arm["cli"].get("maxResumes", 0):
-            if autopilot_stopped(shell, values["ticket"]):
+            stopped = autopilot_stopped(shell, values["ticket"])
+            if stopped is None:
+                out["failure"] = "autopilot status probe failed or was unreadable"
+                return out
+            if stopped:
                 break
             resumes += 1
             data = step(render(arm["prompts"]["resume"], values), data.get("session_id"))
         else:
-            if data and not data.get("timedOut") and not autopilot_stopped(shell, values["ticket"]):
+            stopped = autopilot_stopped(shell, values["ticket"]) if data and not data.get("timedOut") else True
+            if stopped is None:
+                out["failure"] = "autopilot status probe failed or was unreadable"
+                return out
+            if not stopped:
                 # Graded as it stands, like a wall-clock stop (spec U1), and said so in the row: the harness
                 # cap ended the arm, autopilot did not.
                 out["endedBy"] = "resume-cap"
@@ -1217,6 +1235,14 @@ def drive_arm(docker, run, task, arm, clock):
         attempts = 0
         while data and not data.get("timedOut") and cycles < arm["cli"].get("maxCycles", 3):
             review = step(render(arm["prompts"]["review"], values), None)
+            if review is None and out["failure"]:
+                # an errored review is an incomplete attempt, retried once like an unparseable one
+                incomplete += 1
+                attempts += 1
+                if attempts > 1:
+                    break
+                out["failure"] = None
+                continue
             if not review or review.get("timedOut"):
                 break
             verdict = review_verdict(arm, str(review.get("result", "")))
@@ -1253,17 +1279,24 @@ def run_once(ctx, task, arm, attempt, carried_cost=0.0):
                                                os.path.join(run["proxylog"], "proxy.jsonl"))
     own_cost = add_costs(claude_cost, codex_cost_usd)
     cost = add_costs(own_cost, carried_cost) if carried_cost != UNKNOWN else UNKNOWN
-    reasons = contamination(task, run["home"], run["repo"], os.path.join(run["proxylog"], "proxy.jsonl"), arm,
-                            ctx["source_repo"])
-    if driven["failure"]:
+    failure = driven["failure"]
+    try:
+        reasons = contamination(task, run["home"], run["repo"], os.path.join(run["proxylog"], "proxy.jsonl"), arm,
+                                ctx["source_repo"])
+        check_failed = False
+    except Exception as exc:  # noqa: BLE001 - the attempt is paid for: its row is written whatever the check raised; pylint: disable=broad-exception-caught
+        reasons, check_failed = [], True
+        failure = failure or f"contamination check raised {type(exc).__name__}: {exc}"
+    if check_failed:
+        status = "error"
+    elif driven["failure"]:
         status = "unscorable"
     elif reasons:
         status = "contaminated"
     else:
         status = "scored"
     graded = {"escapedDefects": None, "defectsTotal": len(task["defects"]), "regressionTestsFailed": None}
-    failure = driven["failure"]
-    if status != "unscorable":
+    if status not in ("unscorable", "error"):
         try:
             graded = grade(task, run["repo"], ctx["source_repo"], ctx["docker"])
         except GradingInfra as exc:
@@ -1293,7 +1326,15 @@ def run_chain(ctx, task, arm):
         return first
     guard = ctx.get("before_rerun")
     if guard:
-        guard()
+        try:
+            guard()
+        except BaseException as exc:
+            # the chain ends here: its paid first attempt is recorded as unscored spend, once
+            append_result(ctx["results"], {
+                "task": first["task"], "bucket": first["bucket"], "arm": first["arm"], "attempt": 1,
+                "runStatus": "unscorable", "ownCostUsd": 0.0, "costUsd": 0.0,
+                "unscoredSpendUsd": first["ownCostUsd"], "failure": f"rerun refused: {exc}"})
+            raise
     carried = first["ownCostUsd"]
     second = run_once(ctx, task, arm, 2, carried)
     if second["runStatus"] == "unscorable":
@@ -1471,8 +1512,11 @@ def canary_ok(results_path, docker=None, eval_dir=None):
         return False
     if docker:
         # the canary vouches for one image: its first line records the id it ran against
-        out = subprocess.run([docker, "image", "inspect", "-f", "{{.Id}}", IMAGE], capture_output=True, text=True,
-                             check=False, stdin=subprocess.DEVNULL)
+        try:
+            out = subprocess.run([docker, "image", "inspect", "-f", "{{.Id}}", IMAGE], capture_output=True,
+                                 text=True, check=False, stdin=subprocess.DEVNULL, timeout=CLEANUP_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            return False
         return out.returncode == 0 and f"image={out.stdout.strip()}" in lines[0].split()
     return True
 
