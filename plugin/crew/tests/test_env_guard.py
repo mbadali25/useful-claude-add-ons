@@ -229,6 +229,7 @@ def run_main(monkeypatch, capsys, tmp_path, tool, command, raw=None,
          "cwd": str(tmp_path / "repo")}).encode("utf-8")
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path / "repo"))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     if flavour is None:
         monkeypatch.delenv(env_guard.FLAVOUR_VAR, raising=False)
     else:
