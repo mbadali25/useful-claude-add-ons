@@ -9,6 +9,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.63: sabotage table retires 30 mutations and dual-anchors 7 so L-0725 can gate (L-0875)
+
+- **Summary.** `crew` 1.2.63: the sabotage mutation table drops 30 mutations that no longer match shipped code and gives 7 a second anchor, so the config-key reduction (L-0725, #665) can pass the sabotage gate; no runtime behaviour changes.
+- **Changed.** `plugin/crew/tests/sabotage*.py` only (tests); no hook, command or skill file changed.
+
 ### Changed — crew 1.2.62: `commands/autopilot.md` is 1,323 bytes shorter and its rationale has a home (L-0870, slice 5 of L-0727)
 
 - **Summary.** `crew` 1.2.62: the `/crew:autopilot` command a session loads is about 6% shorter (21,176 to 19,853 bytes) with the same steps, refusals and commands, and the reasons behind its rules now live in `docs/crew/autopilot-rationale.md`.
