@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.67**: The crew-outcome eval harness, container isolation and a two-task baseline. `crew` 1.2.67: the repo now carries the harness that measures whether crew's process beats a plain Claude run on real tasks (isolated container, frozen hidden tests, two baseline tasks); no crew runtime behaviour changes, and the measured results come in slice 3.
-- **crew 1.2.66**: Sh hooks hand native python a path it can open, with or without Git Bash path conversion. `crew` 1.2.66: on Windows, the bash hooks no longer fail with `can't open file 'D:\\tmp\\...'` when `MSYS_NO_PATHCONV` is set in the environment (even empty), because they now convert script and path arguments themselves.
+- **crew 1.2.68**: The crew-outcome eval harness, container isolation and a two-task baseline. `crew` 1.2.68: the repo now carries the harness that measures whether crew's process beats a plain Claude run on real tasks (isolated container, frozen hidden tests, two baseline tasks); no crew runtime behaviour changes, and the measured results come in slice 3. The Codex reviewer's list price (`gpt-6-sol`) is now pinned, so a crew run's cost is no longer UNKNOWN (T-0509 folded in).
+- **crew 1.2.67**: Four harness hook PowerShell twins deleted. `crew` 1.2.67: the last four PowerShell hook twins (`verify-gate`, `completion-audit`, `scope-guard`, `approval-hook`) are deleted, so only `crew-hook.ps1` and `promote-gate.ps1` remain; Windows behaviour does not change because those hooks already ran their `.sh` under Git Bash.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

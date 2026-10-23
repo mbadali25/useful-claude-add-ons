@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@7944f06d7
+anchor: useful-claude-add-ons@358d7df7a
 verified: 2026-10-20
 
 ## Does
@@ -399,7 +399,7 @@ violation visible at all. (JUDGEMENT.)
     Rebuilt with `str(...)` and string concatenation instead (same
     `<major>:<minor>:<impl>:<executable>` output shape, zero `%`), matching how crew's own
     `Resolve-CrewPython` (once in `role-write-guard.ps1`, deleted in L-0727 slice 3 / L-0867; the same
-    function survives in `plugin/crew/hooks/scripts/verify-gate.ps1:398`) already avoided the same
+    function survived in `verify-gate.ps1`, deleted in L-0869, and survives in `plugin/crew/hooks/scripts/crew-hook.ps1:48`) already avoided the same
     trap by printing a `json.dumps(...)` line, which likewise never contains a bare `%`. Pinned by
     `check_no_percent_reaches_cmd` and `check_cmd_bat_routing_present` in
     `test_python_probe_proof.py`, which check the source statically (whether a `%` reaches `cmd.exe`

@@ -27,13 +27,17 @@ import io
 import json
 import os
 import shutil
-import socket
 import stat
 import subprocess
 import sys
 import tempfile
 import time
 import contextlib
+
+def read_text(path):
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -212,7 +216,8 @@ class Fix:
              "mcpOAuth": {"x": {"accessToken": "MCP-SECRET"}}}))
         write(os.path.join(self.codex_home, "auth.json"), json.dumps(
             {"auth_mode": "chatgpt", "OPENAI_API_KEY": "KEY-SECRET", "last_refresh": "2026-10-20T00:00:00Z",
-             "tokens": {"access_token": "AT", "refresh_token": "RT-SECRET", "id_token": "ID", "extra": "EXTRA-SECRET"}}))
+             "tokens": {"access_token": "AT", "refresh_token": "RT-SECRET", "id_token": "ID",
+                        "extra": "EXTRA-SECRET"}}))
         write(os.path.join(self.home, "owner-secret.txt"), "SECRET-OWNER-FILE")
         self.bin = os.path.join(tmp, "bin")
         write(os.path.join(self.bin, "docker"), DOCKER_STUB.replace("#!PYTHON", "#!" + sys.executable), EXEC)
@@ -768,7 +773,7 @@ def case_the_argv_carries_git_identity_and_the_isolation_options(tmp):
 
 def case_the_codex_shim_rewrites_only_the_read_only_sandbox(tmp):
     stub = os.path.join(tmp, "realcodex")
-    with open(stub, "w", newline="\n") as fh:
+    with open(stub, "w", newline="\n", encoding="utf-8") as fh:
         fh.write('#!/bin/sh\nfor a; do printf "%s\\n" "$a"; done\n')
     os.chmod(stub, 0o755)
     shim = os.path.join(REPO, "evals", "crew-outcome", "container", "codex-shim.sh")
@@ -778,7 +783,7 @@ def case_the_codex_shim_rewrites_only_the_read_only_sandbox(tmp):
                          capture_output=True, text=True, env=env, check=False)
     want = ["exec", "--json", "--sandbox", "danger-full-access", "-m", "a b", "-s", "danger-full-access",
             "--sandbox=danger-full-access", "--sandbox", "workspace-write", "read-only"]
-    docker = open(os.path.join(REPO, "evals", "crew-outcome", "container", "Dockerfile")).read()
+    docker = read_text(os.path.join(REPO, "evals", "crew-outcome", "container", "Dockerfile"))
     wired = "codex-shim.sh /opt/eval-shim/codex" in docker and "PATH=/opt/eval-shim:" in docker
     return out.stdout.splitlines() == want and wired, (out.stdout, out.stderr, wired)
 
@@ -788,14 +793,14 @@ def case_the_shim_and_canary_are_executable_in_git_and_the_image(tmp):
     listing = subprocess.run(["git", "ls-files", "-s", "--", "evals/crew-outcome/container"], cwd=REPO,
                              capture_output=True, text=True, check=False).stdout.splitlines()
     modes = {line.split("\t")[1].rsplit("/", 1)[1]: line.split()[0] for line in listing}
-    docker = open(os.path.join(container, "Dockerfile"), encoding="utf-8").read()
+    docker = read_text(os.path.join(container, "Dockerfile"))
     ok = (modes.get("codex-shim.sh") == "100755" and modes.get("canary.sh") == "100755"
           and "chmod 0755 /opt/eval-shim/codex" in docker)
     return ok, (modes, "chmod" in docker)
 
 
 def case_the_canary_runs_under_the_scored_isolation_settings(tmp):
-    canary = open(os.path.join(REAL_EVAL_DIR, "container", "canary.sh"), encoding="utf-8").read()
+    canary = read_text(os.path.join(REAL_EVAL_DIR, "container", "canary.sh"))
     ok = ("--cap-drop ALL" in canary and "no-new-privileges" in canary and "--user 1000:1000" in canary
           and "seccomp" not in canary and "apparmor" not in canary and "--privileged" not in canary
           and "--cap-add" not in canary)
@@ -894,7 +899,8 @@ def case_a_grading_run_that_crashes_after_printing_passed_lines_is_missing(tmp):
                   f"print('1 passed in 0.1s'); sys.exit({code})")
         return {"testCommand": ["python3", "-c", script]}
 
-    got = {code: eval_mod.run_tests(task_for(code), tmp, ["tests/x.py::a"])["tests/x.py::a"] for code in (0, 1, 2, 3, 5)}
+    got = {code: eval_mod.run_tests(task_for(code), tmp, ["tests/x.py::a"])["tests/x.py::a"]
+           for code in (0, 1, 2, 3, 5)}
     ok = got == {0: "PASSED", 1: "PASSED", 2: "MISSING", 3: "MISSING", 5: "MISSING"}
     return ok, got
 
@@ -953,7 +959,8 @@ def case_a_codex_session_no_events_file_names_makes_usage_unknown(tmp):
 def case_a_failed_docker_kill_after_a_timeout_stops_the_run(tmp):
     fix = Fix(tmp)
     docker = os.path.join(tmp, "stuck-docker")
-    write(docker, "#!/bin/sh\ncase \"$1\" in run) sleep 30;; kill) exit 1;; inspect) echo true;; rm) exit 0;; esac\n", EXEC)
+    write(docker, "#!/bin/sh\ncase \"$1\" in run) sleep 30;; kill) exit 1;; inspect) echo true;; rm) exit 0;; "
+          "esac\n", EXEC)
     run = {"repo": "/r/repo", "home": "/r/home", "proxylog": "/r/log", "dir": "/r", "proxysock": "/r/sock"}
     with patched_env(fix.env):
         message = refused(eval_mod.invoke, docker, run, "n", ["x"], 1)
@@ -975,7 +982,7 @@ def case_a_canary_goes_stale_when_the_proxy_allowlist_changes(tmp):
 
 
 def case_the_canary_script_demands_the_three_host_paths_and_records_the_fingerprint(tmp):
-    canary = open(os.path.join(REAL_EVAL_DIR, "container", "canary.sh"), encoding="utf-8").read()
+    canary = read_text(os.path.join(REAL_EVAL_DIR, "container", "canary.sh"))
     return '"$#" -lt 4' in canary and "fingerprint=$FINGERPRINT" in canary, '"$#" -lt 4' in canary
 
 
@@ -1109,7 +1116,7 @@ def case_a_canary_for_another_image_does_not_open_the_gate(tmp):
 
 
 def case_the_canary_mirrors_the_arm_isolation_options_and_probes_the_gateway(tmp):
-    canary = open(os.path.join(REAL_EVAL_DIR, "container", "canary.sh"), encoding="utf-8").read()
+    canary = read_text(os.path.join(REAL_EVAL_DIR, "container", "canary.sh"))
     shared = " ".join(eval_mod.ISOLATION_OPTIONS)
     ok = (shared in canary and "--network none" in canary and "/sys/class/net" in canary
           and "network create" not in canary and "eval-run" in canary)
@@ -1126,7 +1133,8 @@ def case_a_malformed_or_non_finite_results_row_spends_unknown_not_zero(tmp):
 def case_a_cli_error_result_is_unscorable_whatever_its_message(tmp):
     fix = Fix(tmp)
     result, _ = run_arm(fix, "error-json")
-    return result["runStatus"] == "unscorable" and "CLI reported an error" in (result["failure"] or ""), result["failure"]
+    failure = result["failure"]
+    return result["runStatus"] == "unscorable" and "CLI reported an error" in (failure or ""), failure
 
 
 def case_a_completed_codex_review_with_no_usage_files_is_unknown(tmp):
@@ -1145,16 +1153,19 @@ def case_a_completed_codex_review_with_no_usage_files_is_unknown(tmp):
 
 
 def case_the_canary_fails_when_its_proxy_log_does_not_parse(tmp):
-    canary = open(os.path.join(REAL_EVAL_DIR, "container", "canary.sh"), encoding="utf-8").read()
-    return "does not parse" in canary and "rc=1" in canary and "except OSError" not in canary, "does not parse" in canary
+    canary = read_text(os.path.join(REAL_EVAL_DIR, "container", "canary.sh"))
+    parses = "does not parse" in canary
+    return parses and "rc=1" in canary and "except OSError" not in canary, parses
 
 
 def case_an_indeterminate_container_state_after_a_failed_kill_stops_the_run(tmp):
     fix = Fix(tmp)
     docker = os.path.join(tmp, "blind-docker")
-    write(docker, "#!/bin/sh\ncase \"$1\" in run) sleep 30;; kill) exit 1;; inspect) exit 1;; rm) exit 1;; esac\n", EXEC)
+    write(docker, "#!/bin/sh\ncase \"$1\" in run) sleep 30;; kill) exit 1;; inspect) exit 1;; rm) exit 1;; "
+          "esac\n", EXEC)
     gone = os.path.join(tmp, "gone-docker")
-    write(gone, "#!/bin/sh\ncase \"$1\" in run) sleep 30;; kill) exit 1;; inspect) echo 'Error: No such object' >&2; exit 1;; rm) exit 0;; esac\n", EXEC)
+    write(gone, "#!/bin/sh\ncase \"$1\" in run) sleep 30;; kill) exit 1;; "
+          "inspect) echo 'Error: No such object' >&2; exit 1;; rm) exit 0;; esac\n", EXEC)
     run = {"repo": "/r/repo", "home": "/r/home", "proxylog": "/r/log", "dir": "/r", "proxysock": "/r/sock"}
     with patched_env(fix.env):
         blind = refused(eval_mod.invoke, docker, run, "n", ["x"], 1)
@@ -1447,7 +1458,8 @@ def case_a_scored_run_still_grades_through_the_same_wrapper(tmp):
 
 def case_an_infra_or_error_row_makes_its_bucket_could_not_tell_and_is_named(tmp):
     rows = two_tasks() + [{"task": "c", "bucket": "S", "arm": "crew", "attempt": 1, "runStatus": "infra",
-                           "escapedDefects": None, "costUsd": 2.0, "ownCostUsd": 2.0, "failure": "grading container exited 125"}]
+                           "escapedDefects": None, "costUsd": 2.0, "ownCostUsd": 2.0,
+                           "failure": "grading container exited 125"}]
     verdict = eval_mod.bucket_verdict(rows, "S")
     plain = eval_mod.bucket_verdict(two_tasks(), "S")
     ok = (verdict["verdict"] == "could not tell" and "unscored" in " ".join(verdict["lines"])
@@ -1515,7 +1527,8 @@ def case_hidden_test_lines_spread_over_separate_files_do_not_flag_a_run(tmp):
     log = os.path.join(run["proxylog"], "proxy.jsonl")
     write(log, "")
     for n, line in enumerate((LONG1, LONG2, LONG3)):
-        write(os.path.join(run["home"], ".claude", "projects", "-run-repo", f"s{n}.jsonl"), json.dumps({"text": line}) + "\n")
+        write(os.path.join(run["home"], ".claude", "projects", "-run-repo", f"s{n}.jsonl"),
+              json.dumps({"text": line}) + "\n")
     spread = eval_mod.contamination(task, run["home"], run["repo"], log, fix.arm, fix.src)
     write(os.path.join(run["home"], ".claude", "projects", "-run-repo", "one.jsonl"),
           json.dumps({"text": LONG1 + "\n" + LONG2 + "\n" + LONG3}) + "\n")

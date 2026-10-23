@@ -9,13 +9,23 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.2.67: the crew-outcome eval harness, container isolation and a two-task baseline (L-0728 slice 2, L-0851)
+### Added — crew 1.2.68: the crew-outcome eval harness, container isolation and a two-task baseline (L-0728 slice 2, L-0851)
 
-- **Summary.** `crew` 1.2.67: the repo now carries the harness that measures whether crew's process beats a plain Claude run on real tasks (isolated container, frozen hidden tests, two baseline tasks); no crew runtime behaviour changes, and the measured results come in slice 3.
+- **Summary.** `crew` 1.2.68: the repo now carries the harness that measures whether crew's process beats a plain Claude run on real tasks (isolated container, frozen hidden tests, two baseline tasks); no crew runtime behaviour changes, and the measured results come in slice 3. The Codex reviewer's list price (`gpt-6-sol`) is now pinned, so a crew run's cost is no longer UNKNOWN (T-0509 folded in).
 - **Added.** `scripts/crew-outcome-eval.py` (validate, run, report) with `evals/crew-outcome/` (method, arm protocols, container image, network proxy and canary, spike, tasks t-0107 and t-0108) and its suite `scripts/_test/crew-outcome-eval.py`, registered in `marketplace.yml`, `gate-runner.py` and `.crew/verify.json`.
-- **Behaviour.** A grading infrastructure failure or timeout is an unscored `infra` row, never an escaped defect; a grading exception still writes the paid row; a crew run that hits the harness resume cap is graded as it stands and marked `endedBy: resume-cap`; Codex cost is `UNKNOWN` until slice 3 supplies a price.
+- **Behaviour.** A grading infrastructure failure or timeout is an unscored `infra` row, never an escaped defect; a grading exception still writes the paid row; a crew run that hits the harness resume cap is graded as it stands and marked `endedBy: resume-cap`; Codex cost is a lower bound at the short-context list price (read 2026-10-23).
 - **Spike.** The crew arm showed a Codex FINDINGS, fix, re-review cycle (2 review cycles, 0.68 USD Claude list price, Codex unpriced).
 - **Docs.** none - evals/ and scripts/ only, no plugin/crew change.
+
+### Changed — crew 1.2.67: four harness hook PowerShell twins deleted (L-0869, slice 4 of L-0727)
+
+- **Summary.** `crew` 1.2.67: the last four PowerShell hook twins (`verify-gate`, `completion-audit`, `scope-guard`, `approval-hook`) are deleted, so only `crew-hook.ps1` and `promote-gate.ps1` remain; Windows behaviour does not change because those hooks already ran their `.sh` under Git Bash.
+- **Deleted.** `verify-gate.ps1` (3051 lines), `completion-audit.ps1` (462), `scope-guard.ps1` (419) and `approval-hook.ps1` (316). This is the last four of the fourteen hook `.ps1` files L-0727 deletes. `hooks.json` has named none of the four since L-0727 slice 2; the dispatcher (`crew_hook.TABLE`) already ran `approval-hook.sh`, `scope-guard.sh`, `verify-gate.sh` and `completion-audit.sh`.
+- **Breaking (B2).** A direct `pwsh verify-gate.ps1 -Ci` (also `-Price` and `-All`) no longer works; use `bash verify-gate.sh --ci` / `--price` / `--all`. A `.codex/hooks.json` that points at any of the four must be regenerated with `crew_instructions.py codex`.
+- **Risk accepted by the owner.** Fail-closed stays: on an armed repo, no Git Bash or a launch fault on PreToolUse, UserPromptSubmit or Stop exits 2 and names the cause; an unarmed repo exits 0.
+- **Left for a harness-only follow-up.** The four `HARNESS` entries in `scripts/check-tooling-pr.py`, the now-dead stdin-JSON subcommands in `verify_record.py`, and a stale comment at `_test/test_flavour_guard.py:358` (recorded in `docs/adr/0009-hook-single-dispatch.md`).
+- **Verified.** `verify-gate.sh --all` exit 0 at d0d0807e6 (non-root clone); gate-runner at de70ca092: pytest-combined 22,293 passed, sabotage non-RED set a subset of the main baseline; native Windows (win-repo-2) at de70ca092: stop-gate 14/14 with 0 skipped, items 3 to 9 pass, sabotage S4 to S9 6/6 red. Review: round 2 (Kimi) was INCOMPLETE (226 output lines matched no part of the contract) and was rejected; a successor plan opened a fresh budget; round 1 of that budget: 0 BLOCK, 2 FIX, accepted. Independent Claude read and the security pass: 0 BLOCK. Every FIX and NIT is quoted in L-0882 and L-0884; the Windows timing fragility is L-0886.
+- **Follow-ups.** L-0876 to L-0880, L-0882, L-0884, L-0886.
 
 ### Fixed — crew 1.2.66: sh hooks hand native python a path it can open, with or without Git Bash path conversion (L-0868)
 

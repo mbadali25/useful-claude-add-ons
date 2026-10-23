@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@7944f06d7
+anchor: useful-claude-add-ons@358d7df7a
 verified: 2026-10-20
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -68,7 +68,7 @@ paragraphs below read older trees and do not count this rule.
 
 **T-0068 (DERIVED, `json.load` and `grep -n` on `T-0068-build` after merging origin/main, 2026-10-04): 565 lines, 52 rules.** The last rule (`.crew/verify.json:569-576`) is T-0068's: `review_patch.py`, `review_ledger.py` and their two test files, running `test_review_patch.py` and `test_review_ledger.py`; before it only the catch-all named either file. Rule 4 (the gate) runs `test_verify_gate_bookkeeping.py` too, rule 12 (`crew_ticket.py`) runs and lists `test_crew_bookkeeping.py`; `default` is `:563` and `unmapped` `:564`. The headings and counts below read older trees.
 
-**The gate never reports crew's bookkeeping or a refresh artifact as unmapped (T-0068, DERIVED).** `verify-gate.sh` imports `completion_audit.classify_paths` (`plugin/crew/hooks/scripts/verify-gate.sh:1486`), drops `bookkeeping` from `changed` (`:1218`) and never appends an `artifact` to `unmatched` (`:1297`), so a rule naming `.crew/codemap/**` still runs. `verify-gate.ps1` pipes `$changed` to `completion_audit.py --classify` (`plugin/crew/hooks/scripts/verify-gate.ps1:1458`), accepts the answer only when every line echoes its path in order, then filters (`:1275`) and skips artifacts at `$unmapped` (`:1357`). Any failure leaves every path `other`: unmapped, never mapped, and stderr says `could not tell`. The kinds come from `crew_ticket.CREW_BOOKKEEPING_PATHS` and `crew_refresh_check.REFRESH_ARTIFACT_PATHS`; `plugin/crew/tests/test_verify_gate_bookkeeping.py` holds the must-allow and must-block pair in both flavours.
+**The gate never reports crew's bookkeeping or a refresh artifact as unmapped (T-0068, DERIVED).** `verify-gate.sh` imports `completion_audit.classify_paths` (`plugin/crew/hooks/scripts/verify-gate.sh:1632`), drops `bookkeeping` from `changed` (`:1639`) and never appends an `artifact` to `unmatched` (`:1718`), so a rule naming `.crew/codemap/**` still runs. There was a `verify-gate.ps1` twin that piped `$changed` to `completion_audit.py --classify`; it is deleted (L-0869) and Windows runs this `.sh` under Git Bash. Any failure leaves every path `other`: unmapped, never mapped, and stderr says `could not tell` (`:1635`). The kinds come from `crew_ticket.CREW_BOOKKEEPING_PATHS` and `crew_refresh_check.REFRESH_ARTIFACT_PATHS`; `plugin/crew/tests/test_verify_gate_bookkeeping.py` holds the must-allow and must-block pair in both flavours.
 
 **DERIVED, read with `json.load` on L-0574 after merging main `e0c70fc9` (2026-10-02): 533 lines, 48 rules.** Main's `e0c70fc9` map is 506 lines and 48 rules (rule 46 L-0555's `ci_receipt.py`, 47 L-0572's subset cover, 48 L-0575's recurring findings, last); L-0574 adds no rule, only the top-level `preReview` block and its `_note_preReview`. The "45 rules" heading above this note was already behind main's map before L-0574 merged it.
 
@@ -346,7 +346,7 @@ Notable rules, re-read directly:
 - **Rule 31**, new at `a2802526` (`.crew/verify.json:398-406` on T-0094's merge of `8ab733d7`, `:333-340` since T-0010's merge of `e878cc31`, `:328-335` since its merge of `f96e9ec9` put
   T-0010's rule 28 above it; `:325-332` on T-0075's branch; rule 30 at `:320-327` on main since T-0024's landing merge; rule 27 at
   `:290-297` on its branch until the merge of main put it after rule 29, T-0024): `paths`
-  `approval_hook.py`, `approval-hook.sh`, `approval-hook.ps1`, `crew_ticket.py`,
+  `approval_hook.py`, `approval-hook.sh`, `crew_ticket.py`,
   `test_approval_hook.py`, `test_approval_group.py` and `sabotage_approval.py` → `python3 -m
   pytest plugin/crew/tests/test_approval_hook.py plugin/crew/tests/test_approval_group.py
   plugin/crew/tests/test_crew_ticket.py -q`, priced 18s (its `why` records 18.1s, 290 passed and
@@ -453,11 +453,11 @@ measurements, except where a command was actually re-run above.
   use the same bound. Rule 11 runs `test_sabotage_bound.py`;
   seven sabotage entries for the bound at `sabotage_tooling.py:1057` onward.
 
-## `verify-gate.sh` / `verify-gate.ps1` — the rule runner
+## `verify-gate.sh` — the rule runner (its `.ps1` twin was deleted by L-0869)
 
-**DERIVED, read directly at this anchor.** 1863 lines (`.sh`) / 1956 lines
-(`.ps1`, 1917 at `6c497a14`; the +39 is T-0002's three fixes below), both grown
-substantially since `5d1fc5fd`. Landmarks
+**DERIVED, read directly at this anchor.** 1863 lines (`.sh`; 2880 at `358d7df7a`, so the
+`:NNNN` citations in this section that were not re-read there are as of the older anchor),
+grown substantially since `5d1fc5fd`; the `.ps1` twin (1956 lines then) is deleted. Landmarks
 that changed shape or are newly documented here:
 
 - **Bounded stdin, not unbounded.** The Stop hook's JSON payload is read with
@@ -485,13 +485,10 @@ that changed shape or are newly documented here:
   at `RULE_OUT_CAP` (env-overridable for tests only, clamped to `1..1048576`,
   `:1663-1682`), and read with `tail -c`, not `head -c` (`:1684-1695`) — a
   failing rule's diagnostic is at the *end* of its output, and the old
-  `head -c` form discarded exactly that. `verify-gate.ps1:1869-2003` (through
-  its `Remove-Item` cleanup; cited as `:1655-1712` at `6c497a14`) is the
-  documented twin: `[System.IO.Path]::GetTempFileName()`, the same `.crew/`
-  fallback, a `Length` snapshot instead of a streaming `Get-Content` (which the
-  comment at `:1624-1637` says was measured to grow past 1 GiB in five seconds
-  against a `sh -c 'yes &'` rule before this fix), and the same 1 MiB cap
-  (`:1704-1709`, was `:1691-1696`). **Three fixes landed in this block in crew
+  `head -c` form discarded exactly that. A `verify-gate.ps1` twin once did the
+  same with `GetTempFileName()` and a `Length` snapshot; L-0869 deleted it, so
+  this `.sh` is the only implementation and Windows runs it under Git Bash.
+  **Three fixes landed in this block in crew
   1.0.28 (T-0002, `f2bb919b`)**, each with its own new test file: the bash
   wrapper now copies `CREW_VERIFY_RULE_CMD`/`CREW_VERIFY_RULE_OUT` into shell
   locals and `unset`s both before `eval` (`:1699`, reasoning `:1687-1698`), so
@@ -537,21 +534,11 @@ that changed shape or are newly documented here:
   TERM/INT/HUP traps name the command in flight (`RULE_IN_FLIGHT`, cleared at
   `:2105` the moment `wait` returns), printed from the trap because the
   cleanup dispatcher discards stderr; `:1849` registers the rule's temp file
-  and record directory for cleanup on a signalled exit. `verify-gate.ps1` is
-  the twin in the same order: `:1951` resets `$rc`, `$ruleRec` and `$ruleWhy`
-  to `$null` every rule (the stale `$rc` that let a rule whose bash could not
-  start inherit the previous rule's pass), `:2042` the private record
-  directory (`New-Item` refuses an existing name; 0700 off Windows; `.crew/`
-  fallbacks absolute from `$root`, since `[IO.File]::Open` resolves relative
-  paths against the process directory), `:2108` the wrapper (record path in
-  `CREW_VERIFY_RULE_DONE`, unset before `eval`, kept as the shell variable
-  `RULE_DONE_FILE`), the call wrapped in try/catch so a launch failure leaves
-  `$rc` `$null`, `:2123` the bounded read, `:2238` the table, `:2259` the
-  output, `:2297` the summary. `verify_record.py:988` - `_sync`'s branch for
+  and record directory for cleanup on a signalled exit. The `verify-gate.ps1`
+  twin that mirrored this order is deleted (L-0869). `verify_record.py:988` - `_sync`'s branch for
   any other status - is where `unknown` lands: the rule's record entry is left
   as it was. Tests: `plugin/crew/tests/test_verify_gate_rule_completion.py`
-  (sh and ps1; ps1 runs wherever pwsh exists; the [ps1] halves are `slow`
-  apart from a smoke set of three), in its own rule beside the subset-cover
+  (sh only since L-0869 deleted the ps1 twin), in its own rule beside the subset-cover
   rule (review F1: inside rule 4 it made that rule chronic); sabotage entries
   in `plugin/crew/tests/sabotage_tooling.py:1117` onward. JUDGEMENT: the gate
   still has no per-rule deadline (L-0674, held) - a hung rule is waited for.
@@ -563,26 +550,9 @@ that changed shape or are newly documented here:
   (`:1248-1273`, unchanged in shape from the previous anchor) is the second,
   independent line of defence in case some *other* broken-but-resolvable
   interpreter slips past `crew_py_strict` the same way.
-- **`.ps1`'s own stdin guard: `$null |` on every subprocess call.**
-  `verify-gate.ps1:1852-1855` and repeated at every `git`/interpreter-probe
-  call site (`:452-523`, `:1434`, `:1700`, `:1898`; the last two
-  were `:1687`, `:1859` at `6c497a14`) — a closed stdin
-  handed to the child, the PowerShell twin of `verify-gate.sh`'s `</dev/null`
-  redirect (`:1571-1572`, `:1640`). Without it, a rule or a git call that reads
-  stdin parks the whole gate the same way an unclosed pipe does.
-  Not `:1907` (the record sync): it pipes `$payloadJson` into
-  `verify_record.py sync`, which reads it, so its stdin is the payload,
-  not `$null` — a `grep '\$null |'` hit there is the `2>$null |` redirect.
-- **`Resolve-CrewBash` refuses rather than invoking a name that would
-  re-resolve to the same rejected shim.** `verify-gate.ps1:1028-1038` (the smoke
-  step) and `:1665-1674` (per-rule): when `Resolve-CrewBash` finds no
-  natively-launchable candidate, the gate prints "no usable bash resolved …
-  refusing rather than invoking a name that would re-resolve to the same
-  rejected shim and hang" and fails that step/rule with `rc=1`, through the
-  same branch every other rule failure goes through — never a hang with no
-  output. `--diagnose-bash` (`:22-30`) prints the path `Resolve-CrewBash` would
-  use and exits 0 without touching stdin, `.crew/`, or any check, for exactly
-  this debugging need.
+- **The `.ps1` stdin guard (`$null |`) and `Resolve-CrewBash` are gone.** They
+  lived only in `verify-gate.ps1`, deleted by L-0869; the `.sh` keeps its
+  `</dev/null` redirects. How Windows finds bash for it is not re-derived here.
 - **`--price` is an operator-only escape hatch**, dispatched before the stdin
   read (`verify-gate.sh:5-31`) so a terminal invocation of the flag is never
   blocked on it, and never reachable from the Stop hook itself (since L-0850 `hooks.json` registers only the
@@ -601,9 +571,7 @@ that changed shape or are newly documented here:
   (`plugin/crew/hooks/scripts/verify-gate.sh:1582`) and credits a position in
   `cover_credit` (`plugin/crew/hooks/scripts/verify-gate.sh:1910`) only when
   every guard position is `pass` and the snapshot taken before the first
-  command equals the one at the first credit; the `.ps1` reaches the same
-  planner through `verify_record.py cover-plan`
-  (`plugin/crew/hooks/scripts/verify-gate.ps1:1627`). A credited command is
+  command equals the one at the first credit. A credited command is
   logged `COVERED by rules[N]` and synced as status `covered`, which `_sync`
   treats as clean but never caches as a timing. JUDGEMENT: this repo declares
   `rules[9]` as `crew-suite`; with xdist installed its non-wallclock tests run
@@ -617,13 +585,10 @@ that changed shape or are newly documented here:
   `_crew_gate_quiet_flush` (`:287`, called from `_crew_gate_exit_line` at `:12`, so from both EXIT traps) splits the buffer,
   rewrites `.crew/.verify-gate.log` by temp file then `mv`, prints the verdict line and the untagged lines, and keeps the
   per-session repeat state in `.crew/.verify-gate.last-stop`. `CREW_GATE_READY=1` is set after the run loop (`:2696`): an exit
-  before it prints the WHOLE buffer (held-back deferral, over-budget and stop-budget notices included) and a pointer to the log, with no verdict. The `.ps1` twin buffers in memory (`Write-CrewErr` / `Write-CrewDetail`,
-  `verify-gate.ps1:120`) and flushes in the `finally` that wraps the script from `Start-CrewQuiet` (`Invoke-CrewQuietFlush`,
-  `:191`). The saved stderr pipe is fd 4 (`exec 4>&2` in `_crew_gate_quiet_install`); the rule subshell launch closes it (`4>&-`), because a rule that backgrounds a process would otherwise hold the hook's stderr pipe open until it exits. The verdict counts FAILED/PASSED in commands and NOT VERIFIED in rules. The record's `NOT VERIFIED ON THIS TREE` lines from `verify_record.py report|sync` go through
+  before it prints the WHOLE buffer (held-back deferral, over-budget and stop-budget notices included) and a pointer to the log, with no verdict. (The `.ps1` twin that buffered in memory is deleted, L-0869.) The saved stderr pipe is fd 4 (`exec 4>&2` in `_crew_gate_quiet_install`); the rule subshell launch closes it (`4>&-`), because a rule that backgrounds a process would otherwise hold the hook's stderr pipe open until it exits. The verdict counts FAILED/PASSED in commands and NOT VERIFIED in rules. The record's `NOT VERIFIED ON THIS TREE` lines from `verify_record.py report|sync` go through
   `_crew_gate_owed_filter` (one counted line stays). The suites that assert the per-rule text get `CREW_VERIFY_VERBOSE=1`
   from `crew_fixtures.popen_gate`. JUDGEMENT: the three-line `reach_notice` and the `outside-scope:` line still print
-  (the first is once per map content; the second is scope_report.py's, captured into the same buffer in the `.ps1` (round 1)
-  and printed after the verdict as in the `.sh`). `CREW_GATE_MAY_LOG` (set after the lock stage, `verify-gate.sh:1119`) keeps a backed-off run from replacing the holder's log; the repeat hash also carries `nv_digest`, a SHA-256 of the unrun rules' identities. Round 2: a buffer that cannot be split prints raw (no log, no state; the split halves, log and state are mktemp files, mode 0600); an exit-0 Stop that is not a lock back-off clears the repeat state; the session id must be a string directly inside the top-level object.
+  (the first is once per map content; the second is scope_report.py's, captured into the same buffer and printed after the verdict). `CREW_GATE_MAY_LOG` (set after the lock stage, `verify-gate.sh:1119`) keeps a backed-off run from replacing the holder's log; the repeat hash also carries `nv_digest`, a SHA-256 of the unrun rules' identities. Round 2: a buffer that cannot be split prints raw (no log, no state; the split halves, log and state are mktemp files, mode 0600); an exit-0 Stop that is not a lock back-off clears the repeat state; the session id must be a string directly inside the top-level object.
 
 
 ## `scripts/check-marketplace.py` — the direct gate
@@ -851,11 +816,11 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
 - `.crew/verify.json:241-247` (rule 11) — the T-0026 approval-digest suite.
 - `.crew/verify.json:256-260` (rule 13) — the crew-diagrams `render.sh`
   exit-77 port.
-- `plugin/crew/hooks/scripts/verify-gate.sh:64-67` — the bounded single-read
+- `plugin/crew/hooks/scripts/verify-gate.sh:462` — the bounded single-read
   stdin gate.
-- `plugin/crew/hooks/scripts/verify-gate.sh:2064-2190` /
-  `verify-gate.ps1:1869-2003` — temp-file rule-output capture, 1 MiB tail cap,
-  no-pipe fallback refusal.
+- `plugin/crew/hooks/scripts/verify-gate.sh:2506-2521` — temp-file rule-output
+  capture (`RULE_OUT_FILE`, `RULE_DONE_DIR`) with the `.crew/` fallbacks, 1 MiB
+  tail cap, no-pipe fallback refusal.
 - `.crew/verify.json:326` (rule 24) — the `.claude/rules/` sync check.
 - `.crew/verify.json:327-346` (rule 25) — the T-0008 refresh-check suite;
   `plugin/crew/tests/sabotage.py:74`, `:3058` — `sabotage_refresh.py`'s
@@ -897,8 +862,6 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
 - `plugin/crew/hooks/scripts/verify-gate.sh:1874-1883` /
   `plugin/crew/CONFIG.md:2509-2516` — the descoped per-rule process-group kill,
   documented as a standing limitation.
-- `plugin/crew/hooks/scripts/verify-gate.ps1:1031-1041`, `:1665-1674` —
-  `Resolve-CrewBash` refusal rather than a re-resolving hang.
 - `scripts/check-marketplace.py:1850` — `main()`, seventeen checks.
 - `scripts/check-marketplace.py:519` — `check_versions`.
 - `scripts/check-marketplace.py:565`, `:673` — `count_crew_markdown_lines`,
@@ -934,8 +897,8 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
 - `pwsh` — resolved by absolute path first (`.crew/verify.json`'s rule 14 `sh
   -c` probe list), never a bare `pwsh`, per CLAUDE.md's landmine about Git
   Bash's PATH.
-- `bash` on Windows — `Resolve-CrewBash` in `verify-gate.ps1`, refusing rather
-  than re-resolving on failure (above).
+- `bash` on Windows — the Stop gate is `verify-gate.sh` under Git Bash; the
+  deleted `verify-gate.ps1`'s `Resolve-CrewBash` no longer exists (L-0869).
 - `ruff` / `pylint` / `npm` / `mmdc` — each behind a tool-presence probe that
   exits 77 (this repo's SKIP convention) rather than failing when the tool is
   absent.

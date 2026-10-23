@@ -152,6 +152,25 @@ Comments that still say both flavours are registered, left for that follow-up be
 this PR: `cloud-guard.sh`, `env-guard.sh`, `handoff-write.sh`, `context-watch.sh`, `verify-gate.sh`,
 `cloud_guard.py`, `crew_context.py`, `hook_once.py`, `event_claim.py` and the `.ps1` twins' own headers.
 
+**Outcome (slice 4, L-0869):** the four harness twins (`verify-gate.ps1`, `completion-audit.ps1`,
+`scope-guard.ps1`, `approval-hook.ps1`) are deleted. Two hook `.ps1` files remain: `crew-hook.ps1` and
+`promote-gate.ps1`. Windows behaviour is unchanged, since `hooks.json` already named none of the four. A direct
+`pwsh verify-gate.ps1 -Ci` (`-Price`, `-All`) no longer works; use `bash verify-gate.sh --ci` / `--price` / `--all`.
+
+Left for a harness-only follow-up, because each touches the review/gate harness or a test outside this PR:
+
+- (a) the four now-dead `HARNESS` entries in `scripts/check-tooling-pr.py`;
+- (b) the now-dead stdin-JSON CLI subcommands in `plugin/crew/hooks/scripts/verify_record.py` (around lines 392
+  (cover-plan), 407, 764 and 949 (reach_notice)), which existed only so `verify-gate.ps1` could reach that code
+  without importing Python;
+- (c) the stale comment at `plugin/crew/hooks/scripts/_test/test_flavour_guard.py:358`, which names
+  `completion-audit.ps1`'s marker file.
+- (d) the comments that still name a deleted twin, all inside `plugin/crew/hooks/scripts/`: `verify-gate.sh`
+  (lines 437, 807, 1264, 1553, 2594), `completion_audit.py:94`, `scope_guard.py:5`, `scope_report.py:4` and
+  `:121`, `crew-hook.ps1` (52, 77, 88) and `promote-gate.ps1` (51, 60, 71, 597). The edits
+  would touch hook scripts that the harness rule watches, so they wait for the same harness-only follow-up
+  (L-0884).
+
 ## Trigger to re-evaluate
 
 A Claude Code per-OS hook registration, or a single hook command that runs on every shell. Re-check then

@@ -1,8 +1,8 @@
-"""approval_hook.py and its .sh / .ps1 wrappers: the UserPromptSubmit hook that
+"""approval_hook.py and its .sh wrapper: the UserPromptSubmit hook that
 records a plan approval only from the user's own `/crew:approve <id>` prompt.
 It can BLOCK a prompt (exit 2) when an approval was asked for and not
-recorded, so must-block and must-allow run through the module, bash and
-PowerShell (pwsh with OS=Windows_NT; skipped, and said so, without pwsh).
+recorded, so must-block and must-allow run through the module and bash. The
+.ps1 wrapper was deleted in L-0869; crew-hook.ps1 is the PowerShell carrier now.
 """
 import hashlib
 import json
@@ -16,7 +16,7 @@ import context  # noqa: F401  pylint: disable=unused-import
 import approval_hook
 import crew_fixtures
 import crew_ticket
-from scope_fixtures import (FLAVOUR_MATRIX, FLAVOURS, PWSH, SCRIPTS, common_dir, make_repo,
+from scope_fixtures import (FLAVOUR_MATRIX, FLAVOURS, SCRIPTS, common_dir, make_repo,
                             make_ticket, prompt, run_hook)
 
 # FLAVOURS tests are the per-shell parity sample (a receipt recorded, a block,
@@ -184,14 +184,12 @@ def _no_python_env(tmp_path, root):
     return dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT", PATH=str(folder))
 
 
-@pytest.mark.parametrize("shell", ["sh", "ps1"])
+@pytest.mark.parametrize("shell", ["sh"])
 @pytest.mark.parametrize("text,expected", [("/crew:approve T-1", 2), ("hello", 0),
                                            ("approve T-1", 0),
                                            ("does the reviewer approve this?", 0)])
 def test_without_python_only_an_approve_prompt_is_blocked(tmp_path, repo, shell, text,
                                                           expected):
-    if shell == "ps1" and PWSH is None:
-        pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
     # A hardcoded "/bin/bash" doesn't exist on Windows at all (WinError 2,
     # FileNotFoundError) -- resolve_bash() is the same proven lookup
     # run_hook()/scope_fixtures.py already use for the "sh" flavour
@@ -200,8 +198,7 @@ def test_without_python_only_an_approve_prompt_is_blocked(tmp_path, repo, shell,
     if shell == "sh" and bash is None:
         pytest.skip("no working bash on PATH - the sh flavour was NOT run")
     make_ticket(repo)
-    cmd = ([PWSH, "-NoProfile", "-File", os.path.join(SCRIPTS, "approval-hook.ps1")]
-           if shell == "ps1" else [bash, os.path.join(SCRIPTS, "approval-hook.sh")])
+    cmd = [bash, os.path.join(SCRIPTS, "approval-hook.sh")]
 
     done = subprocess.run(cmd, input=json.dumps(prompt(repo, text)).encode(), cwd=str(repo),
                           capture_output=True, env=_no_python_env(tmp_path, repo),
@@ -210,26 +207,6 @@ def test_without_python_only_an_approve_prompt_is_blocked(tmp_path, repo, shell,
     assert done.returncode == expected, done.stderr
 
 
-def _resolver(path):
-    src = pathlib.Path(path).read_text(encoding="utf-8")
-    start = src.index("function Resolve-CrewPython {")
-    return src[start:src.index("\n}\n", start) + 3]
-
-
-def test_the_powershell_resolver_is_byte_for_byte_the_harness_carriers():
-    """L-0690: the four harness carriers share one probe (with its trail);
-    tests/test_ps1_python_probe.py pins both groups."""
-    assert _resolver(os.path.join(SCRIPTS, "approval-hook.ps1")) == \
-        _resolver(os.path.join(SCRIPTS, "completion-audit.ps1"))
-
-
-def test_the_flavour_guard_is_the_first_executable_statement():
-    lines = pathlib.Path(SCRIPTS, "approval-hook.ps1").read_text(encoding="utf-8").splitlines()
-    code = [l for l in lines if l.strip() and not l.lstrip().startswith("#")]
-
-    assert code[code.index(")") + 1] == "if ($env:OS -ne 'Windows_NT') { exit 0 }"
-
-
-@pytest.mark.parametrize("name", ["approval-hook.sh", "approval-hook.ps1", "approval_hook.py"])
+@pytest.mark.parametrize("name", ["approval-hook.sh", "approval_hook.py"])
 def test_every_new_file_is_lf_only(name):
     assert b"\r" not in pathlib.Path(SCRIPTS, name).read_bytes()

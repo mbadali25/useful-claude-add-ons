@@ -925,7 +925,8 @@ def invoke(docker, run, name, inner, timeout):
             probe = bounded([docker, "inspect", "-f", "{{.State.Running}}", name])
             gone = probe is not None and probe[0] != 0 and "no such" in (probe[2] or "").lower()
             if not gone and (probe is None or probe[0] != 0 or probe[1].strip() == "true"):
-                fail(f"container {name} timed out and could not be stopped; not grading a run that may still be writing")
+                fail(f"container {name} timed out and could not be stopped; "
+                     "not grading a run that may still be writing")
         text = exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
         return 124, text, True
 
@@ -1263,7 +1264,8 @@ def run_once(ctx, task, arm, attempt, carried_cost=0.0):
             "tokens": tokens, "claudeCostUsd": claude_cost, "codexTokens": codex_tokens,
             "codexCostUsd": codex_cost_usd, "costUsd": cost, "ownCostUsd": own_cost,
             "cliTotalCostUsd": driven["cliTotalCostUsd"], "wallSeconds": wall, "exit": driven["exit"],
-            "endedBy": driven["endedBy"], "failure": failure, "contamination": reasons, "unpriced": models if models else [],
+            "endedBy": driven["endedBy"], "failure": failure, "contamination": reasons,
+            "unpriced": models if models else [],
             "runDir": run["dir"]}
 
 
@@ -1464,8 +1466,10 @@ def canary_ok(results_path, docker=None, eval_dir=None):
 def lock_results(results_path):
     """An exclusive lock for the life of a `run`: two harness processes on one results
     file would each pass the budget check before either appended."""
-    import fcntl  # pylint: disable=import-outside-toplevel - POSIX only, like the suite
-    handle = open(results_path + ".lock", "w", encoding="utf-8")  # noqa: SIM115 - held until the run ends
+    # POSIX only, like the suite
+    import fcntl  # pylint: disable=import-outside-toplevel
+    # held until the run ends, so not a `with` block
+    handle = open(results_path + ".lock", "w", encoding="utf-8")  # noqa: SIM115  # pylint: disable=consider-using-with
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:

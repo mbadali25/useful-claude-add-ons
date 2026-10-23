@@ -1,4 +1,4 @@
-"""The Windows direction of the flavour guard: the blocking hooks that still have a .ps1 twin.
+"""The Windows direction of the flavour guard: the blocking hooks, .sh against .py.
 
 test_flavour_guard.py proves each .ps1 stands down OFF Windows. Nothing
 proved what happens ON Windows, where hooks.json's two registrations per
@@ -16,8 +16,8 @@ The rule these cases hold the hooks to:
 * A hook that BLOCKS keeps running in both flavours and both reach the same
   verdict. Never loosened to save the second run.
 
-Simulated here with `OS=Windows_NT` for the .ps1 (so its flavour guard
-proceeds) and the .sh run as-is, on the same payload, in the same repo.
+Simulated here with the .sh and the .py run side by side, on the same
+payload, in the same repo (the .ps1 twins went with L-0869).
 """
 import http.server
 import json
@@ -36,11 +36,10 @@ from review_fixtures import init_repo
 from scope_fixtures import edit, make_repo, ready, run_hook, stop
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "hooks" / "scripts"
-PWSH = crew_fixtures.resolve_pwsh()
 BASH = crew_fixtures.resolve_bash()
 
-pytestmark = pytest.mark.skipif(PWSH is None or BASH is None,
-                                reason="needs pwsh and bash - the Windows direction was NOT run")
+pytestmark = pytest.mark.skipif(BASH is None,
+                                reason="needs bash - the Windows direction was NOT run")
 
 
 def _env(root, windows, **extra):
@@ -54,12 +53,10 @@ def _env(root, windows, **extra):
 
 def _run(flavour, stem, root, payload, args=(), **extra):
     data = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
-    if flavour == "sh":
-        cmd = [BASH, str(SCRIPTS / (stem + ".sh")), *args]
-    else:
-        cmd = [PWSH, "-NoProfile", "-File", str(SCRIPTS / (stem + ".ps1")), *args]
+    assert flavour == "sh", flavour
+    cmd = [BASH, str(SCRIPTS / (stem + ".sh")), *args]
     return subprocess.run(cmd, input=data, cwd=str(root), capture_output=True,
-                          env=_env(root, flavour == "ps1", **extra), check=False, timeout=120)
+                          env=_env(root, False, **extra), check=False, timeout=120)
 
 
 def _crew_repo(tmp_path, config):
@@ -250,6 +247,6 @@ def test_a_blocking_hook_reaches_the_same_verdict_in_both_flavours(tmp_path, ste
             (root / "other" / "keep.py").write_text("x = 2\n", encoding="utf-8")
         payload = stop(root)
 
-    codes = [run_hook(flavour, stem, payload, root)[0] for flavour in ("sh", "ps1")]
+    codes = [run_hook(flavour, stem, payload, root)[0] for flavour in ("sh", "module")]
 
     assert codes == [expected, expected]
