@@ -235,8 +235,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.67**: The crew-outcome eval harness, container isolation and a two-task baseline. `crew` 1.2.67: the repo now carries the harness that measures whether crew's process beats a plain Claude run on real tasks (isolated container, frozen hidden tests, two baseline tasks); no crew runtime behaviour changes, and the measured results come in slice 3.
 - **crew 1.2.66**: Sh hooks hand native python a path it can open, with or without Git Bash path conversion. `crew` 1.2.66: on Windows, the bash hooks no longer fail with `can't open file 'D:\\tmp\\...'` when `MSYS_NO_PATHCONV` is set in the environment (even empty), because they now convert script and path arguments themselves.
-- **crew 1.2.65**: The cloud guard no longer refuses python or node code that names nothing. `crew` 1.2.65: with the cloud guard on, `python3 -c`, a python heredoc or `node -e` that neither names terraform, terragrunt or tofu nor builds that name is no longer refused as "could not tell", and a refusal now quotes the construct that caused it instead of an unrelated word on the line.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

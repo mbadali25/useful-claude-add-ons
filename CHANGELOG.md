@@ -9,6 +9,14 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.2.67: the crew-outcome eval harness, container isolation and a two-task baseline (L-0728 slice 2, L-0851)
+
+- **Summary.** `crew` 1.2.67: the repo now carries the harness that measures whether crew's process beats a plain Claude run on real tasks (isolated container, frozen hidden tests, two baseline tasks); no crew runtime behaviour changes, and the measured results come in slice 3.
+- **Added.** `scripts/crew-outcome-eval.py` (validate, run, report) with `evals/crew-outcome/` (method, arm protocols, container image, network proxy and canary, spike, tasks t-0107 and t-0108) and its suite `scripts/_test/crew-outcome-eval.py`, registered in `marketplace.yml`, `gate-runner.py` and `.crew/verify.json`.
+- **Behaviour.** A grading infrastructure failure or timeout is an unscored `infra` row, never an escaped defect; a grading exception still writes the paid row; a crew run that hits the harness resume cap is graded as it stands and marked `endedBy: resume-cap`; Codex cost is `UNKNOWN` until slice 3 supplies a price.
+- **Spike.** The crew arm showed a Codex FINDINGS, fix, re-review cycle (2 review cycles, 0.68 USD Claude list price, Codex unpriced).
+- **Docs.** none - evals/ and scripts/ only, no plugin/crew change.
+
 ### Fixed — crew 1.2.66: sh hooks hand native python a path it can open, with or without Git Bash path conversion (L-0868)
 
 - **Summary.** `crew` 1.2.66: on Windows, the bash hooks no longer fail with `can't open file 'D:\\tmp\\...'` when `MSYS_NO_PATHCONV` is set in the environment (even empty), because they now convert script and path arguments themselves.
