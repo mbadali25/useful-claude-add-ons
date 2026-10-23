@@ -17,9 +17,7 @@ _WRAP = "tests/test_crew_context_wrappers.py::"
 _INSTR = "tests/test_crew_instructions.py::"
 _OFF = "  # pylint: disable=using-constant-test\n"
 
-# The T6 review round: one per finding that changed code. The .ps1 ones need
-# pwsh; on a host without it their tests SKIP (exit 0) and these read as
-# STILL GREEN, which is the honest answer there -- nothing was tested.
+# The T6 review round: one per finding that changed code.
 REVIEW_FIX_CONTEXT_MUTATIONS = (
     ("a failed session-state write is reported as saved",
      CONTEXT,

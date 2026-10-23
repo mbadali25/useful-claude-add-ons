@@ -42,9 +42,7 @@ other.
 """
 import json
 import os
-import shutil
 import subprocess
-import sys
 import time
 
 import pytest
@@ -55,17 +53,12 @@ import context  # noqa: F401  pylint: disable=unused-import
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
-_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = shutil.which("pwsh")
 
 _FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None,
                                                 reason="needs bash")),
-    pytest.param("ps1", marks=pytest.mark.skipif(
-        not sys.platform.startswith("win") or _PWSH is None,
-        reason="the .ps1 gate is the native-Windows flavour")),
 ]
 
 # TTL of 3s against a rule that STATES 8s and sleeps 6s. The window is
@@ -113,10 +106,8 @@ def _repo(tmp_path, verify_map=None):
     return root
 
 
-def _cmd(flavour):
-    if flavour == "sh":
-        return [_BASH, _SH]
-    return [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1]
+def _cmd(flavour):  # pylint: disable=unused-argument
+    return [_BASH, _SH]
 
 
 def _env(root, ttl=_TTL):
@@ -306,91 +297,13 @@ _CROSS_RULE = {
 }
 
 
-@pytest.mark.skipif(
-    _BASH is None or not sys.platform.startswith("win") or _PWSH is None,
-    reason="cross-flavour agreement needs both on the same machine",
-)
-def test_each_flavour_honours_a_deadline_the_other_published(tmp_path):
-    """The whole point of the lock. A deadline one flavour writes has to mean
-    the same thing to the other, or the pair reclaims each other's live locks
-    and both run.
-
-    THE WRITER ACTUALLY WRITES IT. This case used to fabricate both halves --
-    it created the lock directory itself, wrote a token, wrote a deadline, and
-    named the flavours only in the failure message. Nothing in it ran the
-    writer, so removing deadline publication from both gates left it green:
-    the token it planted was FRESH, so the age window alone forced the
-    back-off it asserted. It was a test that passed without the feature it is
-    named after, which is the vacuous shape sabotage.py exists to find and
-    which sabotage.py could not find here, because no mutation of the source
-    could reach it.
-
-    So the holder is a real gate process of the WRITER flavour, the deadline
-    on disk is the one that gate published, and the token's age is asserted to
-    be PAST the TTL before the challenger runs -- which is what makes the
-    back-off attributable to the deadline and to nothing else.
-    """
-    for writer, reader in (("ps1", "sh"), ("sh", "ps1")):
-        root = _repo(tmp_path / (writer + "-to-" + reader), _CROSS_RULE)
-        holder = subprocess.Popen(  # pylint: disable=consider-using-with
-            _cmd(writer), stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, cwd=str(root), env=_env(root),
-            text=True)
-        try:
-            holder.stdin.write("{}")
-            holder.stdin.close()
-            token = _lock(root) / "token"
-            deadline = _lock(root) / "deadline"
-            # Both things this case needs are timed from the moment the gate
-            # ACQUIRED the lock, not from Popen, so fork/exec of bash.exe or
-            # pwsh shifts them together and a fixed sleep(6) can land before
-            # either one. It did: the sh flavour published no deadline yet.
-            # Poll for both instead -- the same mechanism removed from the
-            # sleep(4) above, and its neighbour, which is where this repo's
-            # CLAUDE.md says to look the moment one of these is fixed.
-            bound = time.monotonic() + 40
-            age = -1.0
-            while True:
-                assert holder.poll() is None, (
-                    writer + " finished before the challenger could arrive. "
-                    "If deadline=False here the flavour never published one "
-                    "at all, which is the defect this case exists to catch, "
-                    "not a slow start: deadline=" + str(deadline.exists())
-                    + " token age=" + str(age)
-                )
-                if token.exists():
-                    age = time.time() - token.stat().st_mtime
-                if deadline.exists() and age > float(_TTL):
-                    break
-                assert time.monotonic() < bound, (
-                    "the " + writer + " flavour never reached the premise "
-                    "within 40s: deadline=" + str(deadline.exists())
-                    + " token age=" + str(age) + " against a " + _TTL + "s TTL"
-                )
-                time.sleep(0.25)
-            assert age > float(_TTL), (
-                "the premise: the token has to be OLDER than the " + _TTL
-                + "s TTL, or the age window would force the back-off on its "
-                "own and the deadline would never be consulted. age="
-                + str(age)
-            )
-
-            result = _run(reader, root)
-            assert "backed off" in result.stderr, (
-                "the " + reader + " flavour ignored a deadline the " + writer
-                + " flavour published, so it would reclaim a live lock. "
-                + result.stderr
-            )
-            assert "may run for another" in result.stderr, (
-                "and it has to back off on the DEADLINE, not on the age "
-                "window -- the token is already past the TTL. "
-                + result.stderr
-            )
-        finally:
-            try:
-                holder.wait(timeout=40)
-            except subprocess.TimeoutExpired:
-                holder.kill()
+# `test_each_flavour_honours_a_deadline_the_other_published` stood here: one
+# flavour wrote a lock deadline and the other had to honour rather than
+# reclaim it, or the pair ran two gates in the same turn. L-0869 deleted
+# verify-gate.ps1, so there is no other flavour to publish to. The property
+# that survives - two concurrent gates produce one run and leave no lock - is
+# test_verify_gate_lock_concurrent.py, which L-0869 rewrote to race two `.sh`
+# Stops instead of two flavours.
 
 
 # --- the in-rule refresh, proven from inside a running rule -----------------
@@ -612,37 +525,13 @@ def test_a_parseable_future_deadline_still_holds_the_lock(flavour, tmp_path):
     assert "may run for another" in result.stderr, result.stderr
 
 
-@pytest.mark.skipif(
-    _BASH is None or not sys.platform.startswith("win") or _PWSH is None,
-    reason="parity needs both flavours on the same machine",
-)
-@pytest.mark.parametrize("value", ["9999999999", "0012", "2147483647"])
-def test_both_flavours_read_the_same_deadline_the_same_way(value, tmp_path):
-    """The values where the two implementations used to part company, and the
-    reason the PowerShell half now casts to [long] rather than [int].
-
-    Measured before the fix, on an aged token with a deadline of 9999999999:
-    bash backed off and PowerShell RAN, because [int] overflows Int32 and the
-    catch silently produced 0. That is not a synthetic input -- every
-    legitimate deadline crosses Int32 max on 2038-01-19, after which the pair
-    would have disagreed about every live lock on every machine.
-
-    `0012` is the other side of it: pure digits, so both accept it, and both
-    have to read it as twelve rather than as octal ten.
-    """
-    verdicts = {}
-    for flavour in ("sh", "ps1"):
-        root = _repo(tmp_path / (flavour + "-" + value), _RECLAIM_RULE)
-        _abandoned_lock(root, value)
-        result = _run(flavour, root)
-        verdicts[flavour] = "backed off" in result.stderr
-
-    assert verdicts["sh"] == verdicts["ps1"], (
-        "the two flavours disagreed about a deadline of " + value
-        + ": sh backed off=" + str(verdicts["sh"]) + ", ps1 backed off="
-        + str(verdicts["ps1"]) + ". A lock one flavour honours and the other "
-        "reclaims is two gates running the same turn."
-    )
+# `test_both_flavours_read_the_same_deadline_the_same_way` stood here. It
+# parametrized the deadline values where verify-gate.sh and verify-gate.ps1
+# used to part company (9999999999, 0012, 2147483647) and asserted both read
+# them identically. L-0869 deleted verify-gate.ps1, so there is no second
+# reader to disagree. How the ONE flavour reads those values is still pinned,
+# by test_a_zero_prefixed_ttl_is_decimal_and_still_publishes_a_deadline below
+# and by the TTL-seam cases it heads.
 
 
 # ------------------------------------------- the TTL seam is read as DECIMAL

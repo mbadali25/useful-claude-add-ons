@@ -1,7 +1,7 @@
-"""completion_audit.py and its .sh / .ps1 wrappers: the Stop-time whole-tree
+"""completion_audit.py and its .sh wrapper: the Stop-time whole-tree
 scope audit, plus the `--check` form `/crew:done` calls. A BLOCKING hook, so
-must-block and must-allow run through the module, bash and PowerShell (pwsh
-with OS=Windows_NT; skipped, and said so, without pwsh).
+must-block and must-allow run through the module and bash. The .ps1 wrapper
+was deleted in L-0869; crew-hook.ps1 is the PowerShell carrier now.
 
 The case the edit guard cannot see is the reason this exists: a file written
 by the shell never reaches PreToolUse.
@@ -21,8 +21,8 @@ import crew_fixtures
 import crew_ticket
 import merged_main_fixtures
 from review_fixtures import git
-from scope_fixtures import (FLAVOUR_MATRIX, FLAVOURS, PWSH, SCRIPTS, make_repo, make_ticket,
-                            needs_pwsh, ready, run_hook, stop)
+from scope_fixtures import (FLAVOUR_MATRIX, FLAVOURS, SCRIPTS, make_repo, make_ticket,
+                            ready, run_hook, stop)
 
 # Per-shell parity sample, run by default: the FLAVOURS tests (a block, an
 # allow, mode off, report mode's message on stdout), and a sample of each
@@ -179,34 +179,30 @@ def test_the_audit_lists_paths_without_building_the_review_bundle(repo, monkeypa
     assert (ok, "other/made-by-sed.py" in lines[1]) == (False, True)
 
 
-@pytest.mark.parametrize("shell", ["sh", "ps1"])
+@pytest.mark.parametrize("shell", ["sh"])
 @pytest.mark.parametrize("spacing", crew_fixtures.sample_params([
     pytest.param('"stop_hook_active":  true', id="two-spaces"),
     pytest.param('"stop_hook_active"\n:\ttrue', id="newline-tab"),
     pytest.param('"stop_hook_active" :\r\n true', id="crlf")], {"newline-tab"}))
 def test_stop_hook_active_is_seen_in_any_json_whitespace_even_when_python_crashes(
         tmp_path, shell, spacing):
-    if shell == "ps1" and PWSH is None:
-        pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
     root = make_repo(tmp_path, mode="block")
     ready(root)
     raw = ('{"hook_event_name": "Stop", ' + spacing + ', "cwd": ' + json.dumps(str(root))
            + '}').encode()
 
-    done = _wrapper(tmp_path, root, "completion-audit", shell, raw)
+    done = _wrapper(tmp_path, root, "completion-audit", raw)
 
     assert done.returncode == 0, done.stderr
 
 
-@pytest.mark.parametrize("shell", ["sh", "ps1"])
+@pytest.mark.parametrize("shell", ["sh"])
 def test_a_crashed_python_never_blocks_two_stops_in_a_row(tmp_path, shell):
-    if shell == "ps1" and PWSH is None:
-        pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
     root = make_repo(tmp_path, mode="block")
     ready(root)
     raw = json.dumps(dict(stop(root), session_id=f"loop-{shell}")).encode()
 
-    codes = [_wrapper(tmp_path, root, "completion-audit", shell, raw).returncode
+    codes = [_wrapper(tmp_path, root, "completion-audit", raw).returncode
              for _ in range(3)]
 
     assert codes == [2, 0, 2]
@@ -435,57 +431,17 @@ def test_a_mode_change_with_the_same_content_is_a_change(repo):
 _WRAPPERS = ("scope-guard", "completion-audit")
 
 
-def _resolver(path):
-    src = pathlib.Path(path).read_text(encoding="utf-8")
-    start = src.index("function Resolve-CrewPython {")
-    return src[start:src.index("\n}\n", start) + 3]
-
-
-def test_the_powershell_resolver_is_byte_for_byte_the_other_wrappers():
-    """L-0690: the four harness carriers share one probe (with its trail)
-    (tests/test_ps1_python_probe.py pins the group)."""
-    assert _resolver(os.path.join(SCRIPTS, "completion-audit.ps1")) == \
-        _resolver(os.path.join(SCRIPTS, "scope-guard.ps1"))
-
-
-@pytest.mark.parametrize("stem", _WRAPPERS)
-def test_the_flavour_guard_is_the_first_executable_statement(stem):
-    lines = pathlib.Path(SCRIPTS, stem + ".ps1").read_text(encoding="utf-8").splitlines()
-    code = [l for l in lines if l.strip() and not l.lstrip().startswith("#")]
-
-    assert code[code.index(")") + 1] == "if ($env:OS -ne 'Windows_NT') { exit 0 }"
-
-
-@pytest.mark.parametrize("name", ["scope-guard.sh", "scope-guard.ps1", "scope_guard.py",
-                                  "completion-audit.sh", "completion-audit.ps1",
+@pytest.mark.parametrize("name", ["scope-guard.sh", "scope_guard.py", "completion-audit.sh",
                                   "completion_audit.py", "crew_ticket.py"])
 def test_every_new_file_is_lf_only(name):
     assert b"\r" not in pathlib.Path(SCRIPTS, name).read_bytes()
 
 
-@needs_pwsh
-@pytest.mark.parametrize("stem", _WRAPPERS)
-def test_the_powershell_flavour_stands_down_off_windows(stem, repo):
-    ready(repo)
-    (repo / "other" / "made-by-sed.py").write_text("y = 2\n", encoding="utf-8")
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(repo))
-    env.pop("OS", None)
-    payload = stop(repo) if stem == "completion-audit" else {
-        "tool_name": "Write", "tool_input": {"file_path": str(repo / "other" / "x.py")},
-        "cwd": str(repo)}
-
-    done = subprocess.run([PWSH, "-NoProfile", "-File", os.path.join(SCRIPTS, stem + ".ps1")],
-                          input=json.dumps(payload).encode(), cwd=str(repo),
-                          capture_output=True, env=env, check=False, timeout=120)
-
-    assert (done.returncode, done.stdout, done.stderr) == (0, b"", b"")
-
-
 def _broken_python(tmp_path):
     """A `python3` that passes the interpreter probe and then crashes. The
-    .ps1 probe demands a JSON proof (burn-in FAIL 3), so it answers that one
-    with the JSON a real CPython 3.12 would print; bash's probe gets the bare
-    path it asks for."""
+    deleted .ps1 probe demanded a JSON proof (burn-in FAIL 3), so the fake still
+    answers that one with the JSON a real CPython 3.12 would print; bash's probe
+    gets the bare path it asks for."""
     folder = tmp_path / "fakebin"
     folder.mkdir()
     fake = folder / "python3"
@@ -510,8 +466,8 @@ def _no_python(tmp_path):
     return folder
 
 
-def _wrapper(tmp_path, root, stem, shell, raw, python="crashed"):
-    """Run one wrapper with a `python3` that passes the probe and crashes, or
+def _wrapper(tmp_path, root, stem, raw, python="crashed"):
+    """Run one bash wrapper with a `python3` that passes the probe and crashes, or
     (`python="missing"`) with no python on PATH at all."""
     if python == "missing":
         path = str(_no_python(tmp_path))
@@ -520,47 +476,46 @@ def _wrapper(tmp_path, root, stem, shell, raw, python="crashed"):
         folder = fake if fake.is_dir() else _broken_python(tmp_path)
         path = os.pathsep.join([str(folder), "/usr/bin", "/bin"])
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT", PATH=path)
-    cmd = ([PWSH, "-NoProfile", "-File", os.path.join(SCRIPTS, stem + ".ps1")]
-           if shell == "ps1" else [crew_fixtures.resolve_bash(), os.path.join(SCRIPTS, stem + ".sh")])
+    cmd = [crew_fixtures.resolve_bash(), os.path.join(SCRIPTS, stem + ".sh")]
     return subprocess.run(cmd, input=raw, cwd=str(root), capture_output=True, env=env,
                           check=False, timeout=120)
 
 
 # Every shape the no-python readers cannot PROVE is off must fail closed;
 # python itself reads a corrupt config or an unknown mode as block. bash has no
-# JSON parser, so from bash ANY present config is unprovable (expected 2);
-# PowerShell proves "off" with System.Text.Json. Columns: config, bash, pwsh.
+# JSON parser, so from bash ANY present config is unprovable (expected 2).
+# Columns: config, bash. (The pwsh column went with the .ps1 wrappers, L-0869.)
 _CONFIGS = [
-    pytest.param('{"scope": {"mode": "block"}}', 2, 2, id="block"),
-    pytest.param('{"scope": {"mode": "auto"}}', 2, 2, id="auto"),
-    pytest.param('{"scope": {"mode": "report"}}', 2, 2, id="report"),
-    pytest.param('{"scope": {"mode": "bogus"}}', 2, 2, id="bogus"),
-    pytest.param('{"scope": {"mode": "off"}', 2, 2, id="unbalanced"),
-    pytest.param('{"scope": {"mode": "off"}} trailing', 2, 2, id="trailing"),
-    pytest.param('{"scope": {"mode": "off"}, "x": {"scope": 1}}', 2, 2, id="two-scopes"),
-    pytest.param('{"scope": {"mode": "off", "mode": "block"}}', 2, 2, id="two-modes"),
-    pytest.param('{"scope": "off"}', 2, 2, id="scope-not-object"),
-    pytest.param('{"install": {}}', 2, 2, id="no-scope-key"),
-    pytest.param('{', 2, 2, id="corrupt"),
-    pytest.param('{"scope":{"mode":"off"},}', 2, 2, id="trailing-comma"),
-    pytest.param('{"scope":{"mode":"off",}}', 2, 2, id="inner-trailing-comma"),
-    pytest.param('{/* c */"scope":{"mode":"off"}}', 2, 2, id="comment"),
-    pytest.param("{'scope':{'mode':'off'}}", 2, 2, id="single-quotes"),
-    pytest.param('{scope:{mode:"off"}}', 2, 2, id="bare-keys"),
-    pytest.param('{"scope":{"mode":"off"},"sc\\u006fpe":{"mode":"block"}}', 2, 2,
+    pytest.param('{"scope": {"mode": "block"}}', 2, id="block"),
+    pytest.param('{"scope": {"mode": "auto"}}', 2, id="auto"),
+    pytest.param('{"scope": {"mode": "report"}}', 2, id="report"),
+    pytest.param('{"scope": {"mode": "bogus"}}', 2, id="bogus"),
+    pytest.param('{"scope": {"mode": "off"}', 2, id="unbalanced"),
+    pytest.param('{"scope": {"mode": "off"}} trailing', 2, id="trailing"),
+    pytest.param('{"scope": {"mode": "off"}, "x": {"scope": 1}}', 2, id="two-scopes"),
+    pytest.param('{"scope": {"mode": "off", "mode": "block"}}', 2, id="two-modes"),
+    pytest.param('{"scope": "off"}', 2, id="scope-not-object"),
+    pytest.param('{"install": {}}', 2, id="no-scope-key"),
+    pytest.param('{', 2, id="corrupt"),
+    pytest.param('{"scope":{"mode":"off"},}', 2, id="trailing-comma"),
+    pytest.param('{"scope":{"mode":"off",}}', 2, id="inner-trailing-comma"),
+    pytest.param('{/* c */"scope":{"mode":"off"}}', 2, id="comment"),
+    pytest.param("{'scope':{'mode':'off'}}", 2, id="single-quotes"),
+    pytest.param('{scope:{mode:"off"}}', 2, id="bare-keys"),
+    pytest.param('{"scope":{"mode":"off"},"sc\\u006fpe":{"mode":"block"}}', 2,
                  id="escaped-duplicate-scope"),
-    pytest.param('{"scope":{"mode":["off"]}}', 2, 2, id="mode-not-string"),
-    pytest.param('{"scope": {"mode": "off"}}', 2, 0, id="off"),
+    pytest.param('{"scope":{"mode":["off"]}}', 2, id="mode-not-string"),
+    pytest.param('{"scope": {"mode": "off"}}', 2, id="off"),
     pytest.param('\ufeff{\n  "scope": {\n    "mode": "off",\n    "allowCliApproval": false\n'
-                 '  }\n}\n', 2, 0, id="off-template-bom"),
-    pytest.param(None, 0, 0, id="absent"),
+                 '  }\n}\n', 2, id="off-template-bom"),
+    pytest.param(None, 0, id="absent"),
 ]
-# By default: `off` (the one row bash and pwsh answer differently) and
-# `corrupt` (fails closed in both); the other rows are `slow`.
+# By default: `off` (a provably-off config still exits 2 from bash) and
+# `corrupt`; the other rows are `slow`.
 _CONFIGS_SHELL = crew_fixtures.sample_params(_CONFIGS, {"off", "corrupt"})
 
 
-def _run_config(tmp_path, stem, shell, config, python):
+def _run_config(tmp_path, stem, config, python):
     root = make_repo(tmp_path, mode=None)
     config_path = root / ".crew" / "config.json"
     if config is None:
@@ -570,61 +525,53 @@ def _run_config(tmp_path, stem, shell, config, python):
     payload = stop(root) if stem == "completion-audit" else {
         "tool_name": "Write", "tool_input": {"file_path": str(root / "src" / "app.py")},
         "cwd": str(root)}
-    return _wrapper(tmp_path, root, stem, shell, json.dumps(payload).encode(), python)
+    return _wrapper(tmp_path, root, stem, json.dumps(payload).encode(), python)
 
 
 @pytest.mark.parametrize("stem", _WRAPPERS)
-@pytest.mark.parametrize("shell", ["sh", "ps1"])
-@pytest.mark.parametrize("config,sh_expected,ps1_expected", _CONFIGS_SHELL)
+@pytest.mark.parametrize("shell", ["sh"])
+@pytest.mark.parametrize("config,sh_expected", _CONFIGS_SHELL)
 def test_a_crashed_python_fails_closed_unless_scope_is_provably_off(tmp_path, stem, shell,
-                                                                    config, sh_expected,
-                                                                    ps1_expected):
-    if shell == "ps1" and PWSH is None:
-        pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
+                                                                    config, sh_expected):
     if shell == "sh" and crew_fixtures.resolve_bash() is None:
         pytest.skip("no usable bash - the sh flavour was NOT run")
 
-    done = _run_config(tmp_path, stem, shell, config, "crashed")
+    done = _run_config(tmp_path, stem, config, "crashed")
 
-    assert done.returncode == (sh_expected if shell == "sh" else ps1_expected), done.stderr
+    assert done.returncode == sh_expected, done.stderr
 
 
 @pytest.mark.parametrize("stem", _WRAPPERS)
-@pytest.mark.parametrize("shell", ["sh", "ps1"])
-@pytest.mark.parametrize("config,sh_expected,ps1_expected", _CONFIGS_SHELL)
+@pytest.mark.parametrize("shell", ["sh"])
+@pytest.mark.parametrize("config,sh_expected", _CONFIGS_SHELL)
 def test_no_python_fails_closed_unless_scope_is_provably_off(tmp_path, stem, shell, config,
-                                                             sh_expected, ps1_expected):
-    if shell == "ps1" and PWSH is None:
-        pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
+                                                             sh_expected):
     if shell == "sh" and crew_fixtures.resolve_bash() is None:
         pytest.skip("no usable bash - the sh flavour was NOT run")
 
-    done = _run_config(tmp_path, stem, shell, config, "missing")
+    done = _run_config(tmp_path, stem, config, "missing")
 
-    assert done.returncode == (sh_expected if shell == "sh" else ps1_expected), done.stderr
+    assert done.returncode == sh_expected, done.stderr
 
 
 @pytest.mark.parametrize("stem", _WRAPPERS)
-@pytest.mark.parametrize("shell", ["sh", "ps1"])
-@pytest.mark.parametrize("mode,sh_expected,ps1_expected",
+@pytest.mark.parametrize("shell", ["sh"])
+@pytest.mark.parametrize("mode,sh_expected",
                          crew_fixtures.sample_params(
-                             [pytest.param("block", 2, 2, id="block-2-2"),
-                              pytest.param("auto", 2, 2, id="auto-2-2"),
-                              pytest.param("off", 2, 0, id="off-2-0")], {"off-2-0"}))
+                             [pytest.param("block", 2, id="block-2-2"),
+                              pytest.param("auto", 2, id="auto-2-2"),
+                              pytest.param("off", 2, id="off-2-0")], {"off-2-0"}))
 def test_a_crashed_python_fails_closed_only_where_scope_is_armed(tmp_path, stem, shell,
-                                                                 mode, sh_expected,
-                                                                 ps1_expected):
-    if shell == "ps1" and PWSH is None:
-        pytest.skip("pwsh not installed - the .ps1 flavour was NOT run")
+                                                                 mode, sh_expected):
     root = make_repo(tmp_path, mode=mode)
     ready(root)
     payload = stop(root) if stem == "completion-audit" else {
         "tool_name": "Write", "tool_input": {"file_path": str(root / "src" / "app.py")},
         "cwd": str(root)}
 
-    done = _wrapper(tmp_path, root, stem, shell, json.dumps(payload).encode())
+    done = _wrapper(tmp_path, root, stem, json.dumps(payload).encode())
 
-    assert done.returncode == (sh_expected if shell == "sh" else ps1_expected), done.stderr
+    assert done.returncode == sh_expected, done.stderr
 
 
 def _sh_function(stem, name):
@@ -633,17 +580,9 @@ def _sh_function(stem, name):
     return src[start:src.index("\n}\n", start) + 3]
 
 
-def _ps_function(stem, name):
-    src = pathlib.Path(SCRIPTS, stem + ".ps1").read_text(encoding="utf-8")
-    start = src.index(f"function {name} {{")
-    return src[start:src.index("\n}\n", start) + 3]
-
-
 def test_the_provably_off_readers_are_byte_for_byte_twins():
     assert _sh_function("scope-guard", "_scope_provably_off") == \
         _sh_function("completion-audit", "_scope_provably_off")
-    assert _ps_function("scope-guard", "Test-ScopeProvablyOff") == \
-        _ps_function("completion-audit", "Test-ScopeProvablyOff")
 
 
 # --- merged main (T-0100) --------------------------------------------------------------
@@ -914,7 +853,7 @@ def test_a_guard_log_row_never_deadlocks_the_audit(tmp_path):
     assert completion_audit.audit(str(root), "T-1") == (True, [])
 
 
-# --- T-0068: --classify, the verify gate's .ps1 flavour's one classifier -----------
+# --- T-0068: --classify, the verify gate's classifier (its .ps1 flavour is gone) -----------
 
 def _classify(root, text):
     """`text` reaches the classifier byte for byte and its output comes back

@@ -565,7 +565,7 @@ block() {
 ENVNAME=${ENVNAMES:-workflow dispatch}
 ENVNAME=${ENVNAME//$'\n'/,}
 DISPATCH=$(CREW_HEAD_MAP="$HEAD_MAP" CREW_MAP_DIRTY="$MAP_DIRTY" PYTHONIOENCODING=utf-8 \
-  "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_dispatch.py" "$CMD") \
+  "$PY" "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/_promote_dispatch.py")" "$CMD") \
   || block "the command could not be read as a workflow dispatch (_promote_dispatch.py failed). This is not a pass."
 DISPATCH=$(crew_strip_cr "$DISPATCH")
 while IFS=$'\t' read -r kind tok; do
@@ -621,7 +621,7 @@ if [ -n "$RUN_CWD" ]; then
   BASE=$(resolve_dir "$BASE" "$RUN_CWD")
   [ -z "$BASE" ] && block "the command runs from '$RUN_CWD', which does not exist, so it is not inside a git worktree - cannot establish what is being deployed."
 fi
-RECORDS=$(PYTHONIOENCODING=utf-8 "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py" "$CMD") \
+RECORDS=$(PYTHONIOENCODING=utf-8 "$PY" "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py")" "$CMD") \
   || block "the deploy command could not be parsed for the directory it runs from (_promote_tree.py failed). This is not a pass."
 # Windows Python ends every record with CRLF and `$(...)` drops only the last
 # line's: a `cd` record followed by another kept its CR, so `cd "<dir>\r"`
@@ -711,7 +711,7 @@ FULL=$(git -C "$TREE" rev-parse HEAD 2>/dev/null)
 # the full HEAD of the tree judged here. `_promote_github.py` decides it for
 # both flavours (promote-gate.ps1 runs it too); a helper that fails blocks.
 GH_RULE=$(printf '%s' "$CMD" | PYTHONIOENCODING=utf-8 \
-  "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_github.py" --shell bash --full "$FULL" \
+  "$PY" "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/_promote_github.py")" --shell bash --full "$FULL" \
   --envs "$ENVNAME" -) \
   || block "the github entry's sha rule could not be checked (_promote_github.py failed). This is not a pass."
 GH_RULE=$(crew_strip_cr "$GH_RULE")
@@ -924,7 +924,7 @@ fi
 # kills its search when that passes. Its reasons join VERDICT, so the emergency lane and the
 # message below treat them like every other unmet precondition; a non-zero
 # exit is could-not-tell and blocks like the check above.
-REVIEW=$("$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_review.py" "$TREE" "$FULL" \
+REVIEW=$("$PY" "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/_promote_review.py")" "$TREE" "$FULL" \
   "$GATE_DEADLINE" "${ENVLIST[@]}")
 REVIEW_STATUS=$?
 if [ "$REVIEW_STATUS" -ne 0 ] && crew_incident_active; then

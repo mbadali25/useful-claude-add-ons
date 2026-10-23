@@ -238,7 +238,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - Taste-skill and ui-ux-pro-max in the Community install rows. The installers now offer `taste-skill` (art direction for frontend design) and `ui-ux-pro-max` (UI/UX styles, palettes, fonts and stacks) in the Community picker, opt-in (unticked by default because a tag can move and a SHA ref is rejected), pinned to the reviewed tags v2.1.4 and v2.15.0.
-- **crew 1.2.65**: The cloud guard no longer refuses python or node code that names nothing. `crew` 1.2.65: with the cloud guard on, `python3 -c`, a python heredoc or `node -e` that neither names terraform, terragrunt or tofu nor builds that name is no longer refused as "could not tell", and a refusal now quotes the construct that caused it instead of an unrelated word on the line.
+- **crew 1.2.67**: Four harness hook PowerShell twins deleted. `crew` 1.2.67: the last four PowerShell hook twins (`verify-gate`, `completion-audit`, `scope-guard`, `approval-hook`) are deleted, so only `crew-hook.ps1` and `promote-gate.ps1` remain; Windows behaviour does not change because those hooks already ran their `.sh` under Git Bash.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -649,7 +649,7 @@ contract itself. This section is what goes wrong with the approval and the audit
   re-run when it is idle. The other PowerShell hooks and the bash twins do not report this yet.</li>
 </ul>
 <h2 id="verify-gate-says-0-rules-ran-or-deferred-to-ci">Verify Gate Says 0 Rules Ran, or Deferred to CI</h2>
-<p><code>verify-gate.sh</code> / <code>.ps1</code> (L-0710). The Stop gate runs only the rules mapped to what changed since
+<p><code>verify-gate.sh</code> (L-0710). The Stop gate runs only the rules mapped to what changed since
 its marker, cheapest first, inside <code>verify.stopBudgetSeconds</code> (default 60). Two lines are expected,
 not errors, and neither blocks the turn:</p>
 <ul>
@@ -691,7 +691,7 @@ exactly as before, and keeps the rest in <code>.crew/.verify-gate.log</code>:</p
   place, a read-only <code>.crew</code>). The full text is printed instead of a pointer to it.</li>
 </ul>
 <h2 id="verify-gate-says-could-not-tell">Verify Gate Says COULD NOT TELL</h2>
-<p><code>verify-gate.sh</code> / <code>.ps1</code> (T-0082). A rule counts as passed only when its wrapper ended with status 0
+<p><code>verify-gate.sh</code> (T-0082). A rule counts as passed only when its wrapper ended with status 0
 <strong>and</strong> left a completion record saying the rule exited 0. Anything else that is not a plain exit
 status is FAILED as "could not tell": the gate prints <code>VERIFY FAILED: &lt;cmd&gt;</code>, then
 <code>verify-gate: COULD NOT TELL (&lt;reason&gt;): &lt;cmd&gt;</code>, exits 2, and neither marker advances. The summary
@@ -708,13 +708,12 @@ adds <code>verify-gate: N rule command(s) COULD NOT BE JUDGED - counted as FAILE
 <li><strong>"no completion record"</strong>: the wrapper ended 0 but the record is missing, empty, not 1-3 digits or
   above 255 - the shape a native Windows kill that reports exit 0 leaves. Nothing about the rule can
   be told from that run.</li>
-<li><strong>"the rule's shell could not be started"</strong> (<code>.ps1</code> only): the resolved bash vanished or would not
+<li><strong>"the rule's shell could not be started"</strong> (the PowerShell gate, deleted in L-0869, only; no current message): the resolved bash vanished or would not
   launch for this rule. Before T-0082 this rule silently inherited the previous rule's pass.</li>
 <li><strong>"cannot create an output-capture file or a completion-record file"</strong> or <strong>"no usable bash
   resolved"</strong>: the existing refusals, now named as could-not-tell.</li>
-<li><strong>"the gate received TERM while this command was running"</strong> (<code>.sh</code> only): the gate itself was
-  signalled mid-rule; it still exits 128+N. A killed <code>.ps1</code> gate prints nothing (PowerShell has no
-  signal trap); the marker not advancing covers it.</li>
+<li><strong>"the gate received TERM while this command was running"</strong> the gate itself was
+  signalled mid-rule; it still exits 128+N.</li>
 </ul>
 <p>The command log carries status <code>unknown</code> for such a rule; the record sync leaves that rule's entry as
 it was and the tree-pass cache never stores it. The gate still waits as long as a rule runs - a hung
@@ -1537,6 +1536,17 @@ runs but the visual rule never passes.</p>
   then <code>py</code>, and fails loudly on stderr rather than silently standing down when none resolves (see
   "no-python fail-closed", above). If a hook you expect to run says nothing at all, check for a
   usable Python on <code>PATH</code> first.</li>
+<li><strong><code>can't open file 'D:\tmp\...\crew_autocycle.py'</code> (or any <code>.py</code> under <code>hooks/scripts</code>).</strong> Git Bash
+  rewrites a POSIX-looking script argument (<code>/tmp/...</code>, <code>/d/...</code>) into a Windows path when it starts a
+  native <code>python.exe</code>, but only while <code>MSYS_NO_PATHCONV</code> is unset. Set, even to an empty string by a
+  shell profile, a CI runner or a parent process, the argument reaches Python as written and Windows
+  resolves it against the current drive. Since L-0868 every <code>.sh</code> hook except the review-harness ones (and that one record)
+  passes its script path and its path arguments (<code>--root</code> and config data paths) through <code>crew_native_path</code>
+  (<code>cygpath -m</code>, which needs no argument conversion), so the variable no longer matters for them.
+  The harness hooks (<code>verify-gate.sh</code>, <code>approval-hook.sh</code>, <code>scope-guard.sh</code>, <code>completion-audit.sh</code>,
+  <code>crew-hook.sh</code>) the PreCompact <code>crew_resume.py</code> record in <code>handoff-write.sh</code> still depend on
+  conversion until a follow-up lands: if one fails this way, unset <code>MSYS_NO_PATHCONV</code> for the session (<code>env -u
+  MSYS_NO_PATHCONV claude</code>).</li>
 <li><strong>Both flavours are always registered.</strong> <code>hooks.json</code> pairs every bash command with a <code>shell:
   "powershell"</code> sibling on the same event, so a machine with both <code>bash</code> and <code>pwsh</code> present runs
   both. This is not double-firing to fix — it is how the same hook reaches both shells; each

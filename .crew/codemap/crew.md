@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@7944f06d7
+anchor: useful-claude-add-ons@358d7df7a
 verified: 2026-10-20
 
 ## Re-derive provenance
@@ -1625,9 +1625,9 @@ was discarded before the next call regardless.
   this pass.
 - **`Resolve-CrewPython` is still hand-copied, not shared, across the
   `.ps1` hooks that call it** — after L-0727 slice 3 (L-0867) deleted ten hook
-  twins, `grep -rl "function Resolve-CrewPython" plugin/crew/hooks/scripts`
-  returns 6 files (`completion-audit.ps1`, `verify-gate.ps1`, `scope-guard.ps1`,
-  `approval-hook.ps1`, `promote-gate.ps1`, `crew-hook.ps1`); there is no
+  twins and L-0869 the last four (`completion-audit`, `verify-gate`, `scope-guard`,
+  `approval-hook`), `git grep -l "function Resolve-CrewPython" -- plugin/crew/hooks/scripts`
+  returns 2 files (`promote-gate.ps1:47`, `crew-hook.ps1:48`); there is no
   shared `_common.ps1`. Whether an equivalent PowerShell-side parity test exists
   for these copies the way it does for the bash pair above was **not checked** this pass.
 

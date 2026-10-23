@@ -1,4 +1,4 @@
-"""`verify-gate.sh --ci` / `verify-gate.ps1 -Ci`: the gate as a pull request's CI job.
+"""`verify-gate.sh --ci` (and formerly `verify-gate.ps1 -Ci`, deleted in L-0869): the gate as a pull request's CI job.
 
 Scope is the whole map over TRACKED files (no Stop budget, no fingerprint
 skip), the reach filter is Stop's (a `network`/`host` rule, or an undeclared
@@ -19,12 +19,10 @@ rule, a rule on a file the branch never changed, a matching fingerprint left
 by Stop (the rules still run), and an untracked unmapped file under
 `"unmapped": "fail"`.
 
-The .ps1 flavour runs wherever pwsh exists: `OS=Windows_NT` gets it past its
-flavour guard on Linux and macOS, the seam `scope_fixtures.run_hook` uses.
+The .ps1 flavour (deleted in L-0869) once ran here under pwsh; only `sh` remains.
 """
 import json
 import os
-import shutil
 import subprocess
 
 import pytest
@@ -35,22 +33,15 @@ import context  # noqa: F401  pylint: disable=unused-import
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
-_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = shutil.which("pwsh")
 
-# Rule time (L-1503): every .ps1 case is `slow` - deselected from the
-# promote/verify rule's default run, run by CI's `-m slow` jobs
-# (crew-shell-matrix (ubuntu-latest), crew-windows-slow) - except the one
-# parity case on _FLAVOURS_DEFAULT. Every .sh case runs by default.
+# Rule time (L-1503): the .ps1 cases were `slow` (verify-gate.ps1, deleted in
+# L-0869); every .sh case runs by default.
 _FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="needs bash")),
-    pytest.param("ps1", marks=[pytest.mark.skipif(_PWSH is None, reason="needs pwsh"),
-                               pytest.mark.slow]),
 ]
 _FLAVOURS_DEFAULT = [
     _FLAVOURS[0],
-    pytest.param("ps1", marks=pytest.mark.skipif(_PWSH is None, reason="needs pwsh")),
 ]
 
 _MARKER = os.path.join(".crew", ".verify-verified-at")
@@ -93,15 +84,10 @@ def _touch(path):
 
 
 def _run(flavour, root, *args, payload="{}", cwd=None):
-    if flavour == "sh":
-        cmd = [_BASH, _SH, *args]
-    else:
-        flags = {"--ci": "-Ci", "--all": "-All", "--price": "-Price"}
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1,
-               *[flags.get(a, a) for a in args]]
-    # OS=Windows_NT: the .ps1's flavour guard proceeds only on Windows; this
-    # is the seam the suite uses to run it under pwsh elsewhere. The .sh
-    # ignores it.
+    assert flavour == "sh"
+    cmd = [_BASH, _SH, *args]
+    # OS=Windows_NT: the seam the .ps1 flavour guard needed (verify-gate.ps1,
+    # deleted in L-0869). The .sh ignores it; kept so the env is unchanged.
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT")
     return crew_fixtures.run_gate(cmd, input=payload, cwd=str(cwd or root), env=env,
                                   capture_output=True, text=True, check=False,
@@ -436,13 +422,8 @@ def test_a_stop_hook_active_payload_does_not_end_a_ci_run(flavour, tmp_path):
     assert "VERIFY FAILED: exit 1" in done.stderr
 
 
-# PowerShell binds `-ci` and `--CI` to -Ci itself (case-insensitive), so the
-# .ps1's unknown forms are the ones its binder does not take: an unknown
-# switch, `--ci=1`, and a bare word (which would bind to -PriceTarget).
 _UNKNOWN = [pytest.param("sh", a, id=f"sh-{a}", marks=_FLAVOURS[0].marks)
             for a in ("-ci", "--CI", "--ci=1", "--bogus")]
-_UNKNOWN += [pytest.param("ps1", a, id=f"ps1-{a}", marks=_FLAVOURS[1].marks)
-             for a in ("-Bogus", "--ci=1", "stray")]
 
 
 @pytest.mark.parametrize("flavour,arg", _UNKNOWN)
@@ -471,29 +452,6 @@ def test_ci_and_price_together_is_a_usage_error(flavour, order, tmp_path):
     assert done.returncode == 2, done.stderr
     assert "cannot be combined" in done.stderr
     assert (root / ".crew" / "verify.json").read_text(encoding="utf-8") == before
-
-
-@pytest.mark.skipif(_PWSH is None, reason="needs pwsh")
-@pytest.mark.slow
-def test_the_ps1_with_ci_off_windows_fails_instead_of_standing_down(tmp_path):
-    """MUST-BLOCK: the flavour guard's silent exit 0 is for the hook pair. A CI
-    job calling the .ps1 with -Ci on Linux or macOS (pwsh is preinstalled on
-    ubuntu runners) must not get a green job that checked nothing."""
-    out = tmp_path / "ran.txt"
-    root = _repo(tmp_path, [_rule(_touch(out), reach="local")])
-    env = {k: v for k, v in os.environ.items() if k != "OS"}
-    env["CLAUDE_PROJECT_DIR"] = str(root)
-
-    done = crew_fixtures.run_gate([_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1, "-Ci"],
-                                  input="{}", cwd=str(root), env=env, capture_output=True,
-                                  text=True, check=False,
-                                  timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
-
-    # Refused at parameter binding (the flavour guard must stay the first
-    # statement), which PowerShell reports as exit 1: non-zero is the point.
-    assert done.returncode != 0, done.stderr
-    assert "native-Windows flavour" in done.stderr
-    assert not out.exists()
 
 
 @pytest.mark.parametrize("blank", ["", "   "], ids=["empty", "spaces"])

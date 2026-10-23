@@ -471,7 +471,7 @@ contract itself. This section is what goes wrong with the approval and the audit
 
 ## Verify gate says 0 rules ran, or deferred to CI
 
-`verify-gate.sh` / `.ps1` (L-0710). The Stop gate runs only the rules mapped to what changed since
+`verify-gate.sh` (L-0710). The Stop gate runs only the rules mapped to what changed since
 its marker, cheapest first, inside `verify.stopBudgetSeconds` (default 60). Two lines are expected,
 not errors, and neither blocks the turn:
 
@@ -518,7 +518,7 @@ verify-gate: FAILED 1 cmd | PASSED 14 cmd | NOT VERIFIED 5 item(s) (reach 2, ove
 
 ## Verify gate says COULD NOT TELL
 
-`verify-gate.sh` / `.ps1` (T-0082). A rule counts as passed only when its wrapper ended with status 0
+`verify-gate.sh` (T-0082). A rule counts as passed only when its wrapper ended with status 0
 **and** left a completion record saying the rule exited 0. Anything else that is not a plain exit
 status is FAILED as "could not tell": the gate prints `VERIFY FAILED: <cmd>`, then
 `verify-gate: COULD NOT TELL (<reason>): <cmd>`, exits 2, and neither marker advances. The summary
@@ -535,13 +535,12 @@ adds `verify-gate: N rule command(s) COULD NOT BE JUDGED - counted as FAILED`. T
 - **"no completion record"**: the wrapper ended 0 but the record is missing, empty, not 1-3 digits or
   above 255 - the shape a native Windows kill that reports exit 0 leaves. Nothing about the rule can
   be told from that run.
-- **"the rule's shell could not be started"** (`.ps1` only): the resolved bash vanished or would not
+- **"the rule's shell could not be started"** (the PowerShell gate, deleted in L-0869, only; no current message): the resolved bash vanished or would not
   launch for this rule. Before T-0082 this rule silently inherited the previous rule's pass.
 - **"cannot create an output-capture file or a completion-record file"** or **"no usable bash
   resolved"**: the existing refusals, now named as could-not-tell.
-- **"the gate received TERM while this command was running"** (`.sh` only): the gate itself was
-  signalled mid-rule; it still exits 128+N. A killed `.ps1` gate prints nothing (PowerShell has no
-  signal trap); the marker not advancing covers it.
+- **"the gate received TERM while this command was running"** the gate itself was
+  signalled mid-rule; it still exits 128+N.
 
 The command log carries status `unknown` for such a rule; the record sync leaves that rule's entry as
 it was and the tree-pass cache never stores it. The gate still waits as long as a rule runs - a hung
@@ -1228,6 +1227,17 @@ runs but the visual rule never passes.
   then `py`, and fails loudly on stderr rather than silently standing down when none resolves (see
   "no-python fail-closed", above). If a hook you expect to run says nothing at all, check for a
   usable Python on `PATH` first.
+- **`can't open file 'D:\tmp\...\crew_autocycle.py'` (or any `.py` under `hooks/scripts`).** Git Bash
+  rewrites a POSIX-looking script argument (`/tmp/...`, `/d/...`) into a Windows path when it starts a
+  native `python.exe`, but only while `MSYS_NO_PATHCONV` is unset. Set, even to an empty string by a
+  shell profile, a CI runner or a parent process, the argument reaches Python as written and Windows
+  resolves it against the current drive. Since L-0868 every `.sh` hook except the review-harness ones (and that one record)
+  passes its script path and its path arguments (`--root` and config data paths) through `crew_native_path`
+  (`cygpath -m`, which needs no argument conversion), so the variable no longer matters for them.
+  The harness hooks (`verify-gate.sh`, `approval-hook.sh`, `scope-guard.sh`, `completion-audit.sh`,
+  `crew-hook.sh`) the PreCompact `crew_resume.py` record in `handoff-write.sh` still depend on
+  conversion until a follow-up lands: if one fails this way, unset `MSYS_NO_PATHCONV` for the session (`env -u
+  MSYS_NO_PATHCONV claude`).
 - **Both flavours are always registered.** `hooks.json` pairs every bash command with a `shell:
   "powershell"` sibling on the same event, so a machine with both `bash` and `pwsh` present runs
   both. This is not double-firing to fix — it is how the same hook reaches both shells; each
