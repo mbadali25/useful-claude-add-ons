@@ -1716,6 +1716,272 @@ def test_srl2308_r2_the_refused_rows_hold_through_the_bash_hook(tmp_path,
     _block("bash", tmp_path, case + ("terraformApply",))
 
 
+# --- L-0871: interpreter code that names nothing is not could-not-tell -------
+#
+# `grep '^JIRA_' .env | python3 -c "import urllib.parse,sys; print(1)"` and a
+# heredoc with `import os` were refused as could-not-tell, and the denial
+# quoted `'^JIRA_'` or `'<<'`. Python and node code is now refused only when
+# the code or the line names terraform/terragrunt/tofu, or the code reaches a
+# process AND builds the name. Rows run through both entry points.
+L0871_ALLOW = [
+    ("l0871-ok-grep-pipe-python", "Bash",
+     "grep '^JIRA_' .env | python3 -c \"import urllib.parse,sys; print(1)\""),
+    ("l0871-ok-python-heredoc-os-environ", "Bash",
+     "python3 - <<'PY'\nimport os\nprint(os.environ.get('JIRA_EMAIL'))\nPY"),
+    ("l0871-ok-node-process-env", "Bash",
+     "node -e \"console.log(process.env.JIRA_X)\""),
+    ("l0871-ok-home-assign-import", "Bash",
+     "HOME=$T/home python3 -c \"import x\""),
+    ("l0871-ok-python-heredoc-requests", "Bash",
+     "python3 - <<'PY'\nimport requests\n"
+     "print(requests.get('https://example.com/rest').status_code)\nPY"),
+    ("l0871-ok-u1-command-from-env", "Bash",
+     "python3 -c \"import os; os.system(os.environ['CMD'])\""),
+    ("l0871-ok-modulo-arithmetic", "Bash",
+     "python3 -c \"import os; os.system('echo ok'); print(5 % 2)\""),
+    ("l0871-ok-dollar-in-printed-text", "Bash",
+     "python3 -c \"import os; os.system('echo ok'); print('$')\""),
+    ("l0871-ok-dollar-var-in-printed-text", "Bash",
+     "python3 -c 'import os; os.system(\"echo ok\"); print(\"$HOME\")'"),
+    ("l0871-ok-separate-imports-not-a-name", "Bash",
+     "python3 -c \"import ter, raform; import os; os.system('echo ok')\""),
+    ("l0871-ok-separate-literals-not-a-name", "Bash",
+     "python3 -c \"import os; os.system('echo ok'); print('ter'); "
+     "x = 1; print('raform')\""),
+    ("l0871-ok-literal-only-plus-chain", "Bash",
+     """python3 -c "import os; msg='hello '+'world'; cmd=msg; os.system(cmd)\""""),
+    ("l0871-ok-assigned-literal-command", "Bash",
+     """python3 -c "import os; cmd='echo ok'; os.system(cmd)\""""),
+    ("l0871-ok-plus-in-a-name-the-call-does-not-use", "Bash",
+     """python3 -c "import os; x = a + b; os.system('echo ok')\""""),
+    ("l0871-ok-command-from-env-through-a-name", "Bash",
+     """python3 -c "import os; part=os.environ['A']; cmd=part; os.system(cmd)\""""),
+    ("l0871-ok-raw-string-escape-is-text", "Bash",
+     """python3 -c "import os; os.system(r'\\x74erraform apply')\""""),
+    ("l0871-ok-ctypes-sizeof", "Bash",
+     """python3 -c "import ctypes; print(ctypes.sizeof(ctypes.c_int))\""""),
+    ("l0871-ok-node-module-typeof", "Bash",
+     """node -e "var m=module; console.log(typeof m)\""""),
+    ("l0871-ok-source-env-then-python", "Bash",
+     "set -a; source .env; set +a; python3 - <<'PY'\nimport os\n"
+     "print(os.environ.get('JIRA_EMAIL'))\nPY"),
+]
+
+L0871_REFUSE = [
+    ("l0871-no-concat", "Bash",
+     "python3 -c \"import os; os.system('ter'+'raform apply')\""),
+    ("l0871-no-join", "Bash",
+     "python3 -c 'import os; os.system(\"\".join([\"ter\",\"raform\"])"
+     "+\" apply\")'"),
+    ("l0871-no-chr", "Bash",
+     "python3 -c \"import os; os.system(chr(116)+'erraform apply')\""),
+    ("l0871-no-bytes-fromhex", "Bash",
+     "python3 -c \"import subprocess; subprocess.run("
+     "[bytes.fromhex('7465727261666f726d').decode(),'apply'])\""),
+    ("l0871-no-escape", "Bash",
+     r"""python3 -c 'import os; os.system("\x74erraform apply")'"""),
+    ("l0871-no-tofu-concat", "Bash",
+     "python3 -c \"import os; os.system('to'+'fu apply')\""),
+    ("l0871-no-heredoc-concat", "Bash",
+     "W=$S/x; python3 - <<'EOF'\nimport os\nos.system('ter'+'raform apply')"
+     "\nEOF"),
+    ("l0871-no-node-concat", "Bash",
+     "node -e \"require('child_process').execSync('ter'+'raform apply')\""),
+    ("l0871-no-node-template", "Bash",
+     "node -e \"require('child_process').execSync(`${'ter'}raform apply`)\""),
+    ("l0871-no-shell-var-in-code", "Bash",
+     "T=terraform; python3 -c \"import os; os.system('$T apply')\""),
+    ("l0871-no-pipe-heredoc-named", "Bash",
+     "cat <<'EOF' | python3\nimport os\nos.system('terraform apply')\nEOF"),
+    ("l0871-no-named-beside-grep", "Bash",
+     "grep '^JIRA_' .env | python3 -c \"import os; "
+     "os.system('terraform apply')\""),
+    ("l0871-no-rf-string", "Bash",
+     """python3 -c "import os; part=os.environ['CMD']; os.system(rf'{part} apply')\""""),
+    ("l0871-no-fr-string", "Bash",
+     """python3 -c "import os; part=os.environ['CMD']; os.system(fr'{part} apply')\""""),
+    ("l0871-no-Rf-string", "Bash",
+     """python3 -c "import os; part=os.environ['CMD']; os.system(Rf'{part} apply')\""""),
+    ("l0871-no-fR-string", "Bash",
+     """python3 -c "import os; part=os.environ['CMD']; os.system(fR'{part} apply')\""""),
+    ("l0871-no-rb-fragments", "Bash",
+     """python3 -c "import os; os.system(Rb'ter' rb'raform apply')\""""),
+    ("l0871-no-percent-after-literal", "Bash",
+     """python3 -c "import os; os.system('ter%sform apply' % 'ra')\""""),
+    ("l0871-no-percent-var-format", "Bash",
+     """python3 -c "import os; t='ter%sform'; os.system(t % 'ra')\""""),
+    ("l0871-no-dollar-in-process-arg", "Bash",
+     """python3 -c 'import os; os.system("$CMD")'"""),
+    ("l0871-no-dollar-in-assigned-command", "Bash",
+     """python3 -c 'import os; c="$TF apply"; os.system(c)'"""),
+    ("l0871-no-adjacent-literals", "Bash",
+     """python3 -c "import os; os.system('ter' 'raform apply')\""""),
+    ("l0871-no-empty-literal-splice", "Bash",
+     """python3 -c "import os; os.system('ter'""'raform apply')\""""),
+    ("l0871-no-augmented-assign", "Bash",
+     """python3 -c "import os; c='ter'; c+='raform'; os.system(c)\""""),
+    ("l0871-no-variable-concat", "Bash",
+     """python3 -c "import os; a='ter'; b='raform'; os.system(a+b+' apply')\""""),
+    ("l0871-no-bytes-list", "Bash",
+     """python3 -c "import os; os.system(bytes([116,101,114,114,97,102,111,114,109]).decode()+' apply')\""""),
+    ("l0871-no-getattr-system", "Bash",
+     """python3 -c "import os; getattr(os,'sys'+'tem')('ter'+'raform apply')\""""),
+    ("l0871-no-dunder-import", "Bash",
+     """python3 -c "__import__('os').system('ter'+'raform apply')\""""),
+    ("l0871-no-heredoc-rf", "Bash",
+     "python3 - <<'PY'\nimport os\np = os.environ['CMD']\nos.system(rf'{p} apply')\nPY"),
+    ("l0871-no-heredoc-bytes", "Bash",
+     "python3 - <<'PY'\nimport os\nos.system(bytes([116,101,114,114,97,102,111,114,109]).decode())\nPY"),
+    ("l0871-no-node-split-module-name", "Bash",
+     """node -e "require('child_'+'process').execSync('terra'+'form apply')\""""),
+    ("l0871-no-node-variable-concat", "Bash",
+     """node -e "const a='ter'; require('child_process').execSync(a+'raform apply')\""""),
+    ("l0871-no-assigned-name-plus-literal", "Bash",
+     """python3 -c "import os; part='ter'; cmd=part+'raform apply'; os.system(cmd)\""""),
+    ("l0871-no-three-hop-chain", "Bash",
+     """python3 -c "import os; a='ter'; b=a+'ra'; c=b+'form apply'; os.system(c)\""""),
+    ("l0871-no-name-plus-name-chain", "Bash",
+     """python3 -c "import os; a='ter'; b='raform'; c=a+b; os.system(c)\""""),
+    ("l0871-no-name-plus-name-two-hops", "Bash",
+     """python3 -c "import os; a='ter'; b='raform'; c=a+b; d=c; os.system(d)\""""),
+    ("l0871-no-augmented-name-join", "Bash",
+     """python3 -c "import os; a='ter'; b='raform'; c=a; c+=b; os.system(c)\""""),
+    ("l0871-no-annotated-assignment", "Bash",
+     """python3 -c "import os; part='ter'; cmd: str = part + 'raform'; os.system(cmd)\""""),
+    ("l0871-no-fstring-chain", "Bash",
+     """python3 -c "import os; a='ter'; c=f'{a}raform'; os.system(c)\""""),
+    ("l0871-no-percent-chain", "Bash",
+     """python3 -c "import os; t='ter%sform'; c=t % 'ra'; os.system(c)\""""),
+    ("l0871-no-format-chain", "Bash",
+     """python3 -c "import os; c='ter{}form'.format('ra'); os.system(c)\""""),
+    ("l0871-no-join-chain", "Bash",
+     """python3 -c "import os; c=''.join(['ter','raform']); os.system(c)\""""),
+    ("l0871-no-heredoc-chain-over-lines", "Bash",
+     "python3 - <<'PY'\nimport os\npart = 'ter'\ncmd = part + 'raform apply'\nos.system(cmd)\nPY"),
+    ("l0871-no-node-chain", "Bash",
+     """node -e "const a='ter'; const c=a+'raform'; require('child_process').execSync(c)\""""),
+    ("l0871-no-ctypes-reach", "Bash",
+     """python3 -c "import ctypes; ctypes.CDLL(None).go('ter'+'raform apply')\""""),
+    ("l0871-no-importlib-reach", "Bash",
+     """python3 -c "import importlib; importlib.import_module('x').go('ter'+'raform apply')\""""),
+    ("l0871-no-runpy-reach", "Bash",
+     """python3 -c "import runpy; runpy.run_path('x', {'a': 'ter'+'raform apply'})\""""),
+    ("l0871-no-node-module-reach", "Bash",
+     """node -e "module.require('x').go('ter'+'raform apply')\""""),
+    ("l0871-no-percent-name-only-operands", "Bash",
+     """python3 -c "import os; t='ter%sform'; b='ra'; c=t % b; os.system(c)\""""),
+    ("l0871-no-percent-name-only-in-call", "Bash",
+     """python3 -c "import os; t='ter%sform'; b='ra'; os.system(t % b)\""""),
+    ("l0871-no-format-name-operand", "Bash",
+     """python3 -c "import os; t='ter{}form'; b='ra'; c=t.format(b); os.system(c)\""""),
+    ("l0871-no-join-name-operand", "Bash",
+     """python3 -c "import os; a='ter'; b='raform'; c=''.join([a,b]); os.system(c)\""""),
+    ("l0871-no-fstring-name-operands", "Bash",
+     """python3 -c "import os; a='ter'; b='raform'; c=f'{a}{b}'; os.system(c)\""""),
+    ("l0871-no-augmented-name-chain", "Bash",
+     """python3 -c "import os; a='ter'; b='raform'; c=''; c+=a; c+=b; os.system(c)\""""),
+    ("l0871-no-getattr-reached-call", "Bash",
+     """python3 -c "import os; part='ter'; cmd=part+'raform apply'; getattr(os,'system')(cmd)\""""),
+    ("l0871-no-deep-assignment-chain", "Bash",
+     "python3 -c \"import os; a0='x'; "
+     + "; ".join(f"a{i}=a{i - 1}" for i in range(1, 2000))
+     + "; os.system(a1999)\""),
+    ("l0871-no-alias-of-os-system", "Bash",
+     """python3 -c "import os; s=os.system; a='ter'; s(a+'raform apply')\""""),
+    ("l0871-no-alias-from-import-as", "Bash",
+     """python3 -c "from os import system as s; a='ter'; s(a+'raform apply')\""""),
+    ("l0871-no-alias-node-execsync", "Bash",
+     """node -e "const e=require('child_process').execSync; let a='ter'; a+='raform'; e(a)\""""),
+    ("l0871-no-comment-between-literals", "Bash",
+     "python3 -c \"import os; os.system('ter'#x\n'raform apply')\""),
+    ("l0871-no-node-comment-between-literals", "Bash",
+     "node -e \"require('child_process').execSync('ter'/*x*/+'raform apply')\""),
+    ("l0871-no-flood-of-triple-quotes", "Bash",
+     "python3 -c \"import os; os.system(x); " + "''' " * 400 + "\""),
+    ("l0871-no-line-names-tool-python", "Bash",
+     "T=terraform; python3 -c \"import os; os.system(os.environ['CMD'])\""),
+    ("l0871-no-line-names-tool-pipe", "Bash",
+     "grep terraform main.tf | python3 -c \"import os; "
+     "os.system(os.environ['CMD'])\""),
+    ("l0871-no-line-names-tool-node", "Bash",
+     "T=terraform; node -e \"require('child_process')"
+     ".execSync(process.env.CMD)\""),
+]
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", L0871_ALLOW,
+                         ids=[c[0] for c in L0871_ALLOW])
+def test_l0871_interpreter_code_that_names_no_tool_is_allowed(tmp_path,
+                                                              driver, case):
+    _allow(driver, tmp_path, case)
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", L0871_REFUSE,
+                         ids=[c[0] for c in L0871_REFUSE])
+def test_l0871_interpreter_code_that_builds_the_tool_name_is_refused(
+        tmp_path, driver, case):
+    _block(driver, tmp_path, case + ("terraformApply",))
+
+
+L0871_MESSAGE = [
+    ("l0871-msg-chr",
+     "grep '^JIRA_' .env | python3 -c \"import os; "
+     "os.system(chr(116)+'erraform apply')\"",
+     "'chr('", "'^JIRA_'"),
+    ("l0871-msg-join",
+     "python3 - <<'PY'\nimport os\nos.system(''.join(['ter','raform']))\nPY",
+     "spells 'terraform' out of fragments", "'<<'"),
+    ("l0871-msg-named",
+     "grep '^JIRA_' .env | python3 -c \"import os; "
+     "os.system('terraform apply')\"",
+     "names 'terraform' and may start a process", "'^JIRA_'"),
+    ("l0871-msg-node-concat",
+     "node -e \"require('child_process').execSync('ter'+'raform apply')\"",
+     "node code that spells 'terraform' out of fragments", "'execSync'"),
+]
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", L0871_MESSAGE,
+                         ids=[c[0] for c in L0871_MESSAGE])
+def test_l0871_a_refusal_names_the_construct_that_caused_it(tmp_path, driver,
+                                                            case):
+    _id, command, construct, unrelated = case
+    _fixture(tmp_path, ARMED)
+    decision, reason, code, err = run_hook(driver, tmp_path, "Bash", command)
+    assert code == 0, err
+    assert decision == "deny", (command, reason)
+    assert construct in reason, reason
+    assert "not a plain literal" not in reason, reason
+    assert unrelated not in reason, reason
+
+
+def _fan_out_code(depth):
+    """Python that names a value through `depth` assignments, each reading the
+    one before twice: 2**depth literals if read without a memo."""
+    lines = ["a0='x'"] + [f"a{i}=[a{i - 1},a{i - 1}]" for i in range(1, depth)]
+    return "; ".join(lines)
+
+
+@pytest.mark.parametrize("name,command", [
+    ("fan-out-assignments",
+     "python3 -c \"import os; " + _fan_out_code(40) + "; os.system(a39)\""),
+    ("unclosed-triple-quotes",
+     "python3 -c \"import os; os.system(x); " + "''' " * 8000 + "\""),
+], ids=["fan-out-assignments", "unclosed-triple-quotes"])
+def test_l0871_hostile_code_is_read_in_bounded_time_and_refused(tmp_path, name,
+                                                                command):
+    _fixture(tmp_path, ARMED)
+    started = time.monotonic()
+    decision, reason, code, err = run_hook("python", tmp_path, "Bash", command)
+    elapsed = time.monotonic() - started
+    assert code == 0, err
+    assert decision == "deny", (name, reason)
+    assert elapsed < 8, (name, elapsed)
+
+
 # --- SRL-2308 review round 2: fail closed ---------------------------------
 #
 # Codex r2 and the gate found the r1 head (3edc97bf) fail-open: a command

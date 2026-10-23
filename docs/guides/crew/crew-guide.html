@@ -322,8 +322,10 @@ PowerShell commands: <code>terraform apply</code>, a force push, an admin merge,
 destructive cloud CLI calls, destructive SQL, and anything aimed at a declared
 production database or host. Each rule has its own entry under <code>guards.overrides</code>. Set
 <code>report</code> first to see what <code>block</code> would cost. <em>What it cannot see:</em> a
-command hidden in an interpreter (a Python script that calls the cloud SDK),
-a variable or an encoded string. The credentials boundary that would close
+command hidden in an interpreter (a Python script that calls the cloud SDK, or
+code that reads the command from an environment variable), a variable or an
+encoded string. For <code>terraform apply</code> an interpreter line is refused only when
+the code or the line names the tool or builds its name. The credentials boundary that would close
 that is T-0044.</p>
 <p><strong>The environment guard</strong> (<code>guards.overrides.envGuard</code>, or <code>guards.profile</code> <code>strict</code>; default <code>off</code>; L-0772) refuses a
 Bash or PowerShell command whose own text prints the whole process environment
