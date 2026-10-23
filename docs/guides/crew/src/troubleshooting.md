@@ -60,10 +60,12 @@ or behaves like an older release.
 
 ## Hook noise
 
-Every hook crew registers, from `plugin/crew/hooks/hooks.json`, and the config key that turns its
-behaviour up or down. All events are registered once for bash and once for PowerShell (`shell:
-"powershell"`), so a Windows machine with both `bash` and `pwsh` on `PATH` fires both halves of
-every pair — that is what "even counts" in the file means, not a bug.
+Every hook crew runs, and the config key that turns its behaviour up or down. `plugin/crew/hooks/hooks.json`
+registers one launcher per event per shell (`crew-hook.sh`, and `crew-hook.ps1` with `shell: "powershell"`);
+the launcher starts one dispatcher, `crew_hook.py <Event>`, which runs that event's scripts below at once and
+combines what they print. On Windows only the PowerShell launcher runs, so no event fires twice. When the
+launcher or dispatcher itself fails in a repo crew governs, `PreToolUse`, `UserPromptSubmit` and `Stop` refuse
+with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged.
 
 | Event | Script | What it does | Switch | Default |
 |---|---|---|---|---|
@@ -346,7 +348,7 @@ contract itself. This section is what goes wrong with the approval and the audit
   always has one, a default that crew's SessionStart heal wrote there. `(unknown)` means git
   could not name the main checkout; then no default is written either. Of the shell and
   PowerShell readers (T-0096), the incident stand-down read (`_common.sh`,
-  `promote-gate.ps1`), both cloud-guard no-python fallbacks and `auto-clear.ps1` inherit too; in
+  `promote-gate.ps1`), the cloud-guard no-python fallback and `auto-clear.sh` inherit too; in
   the cloud guard's fallback `unknown` counts as armed. So do the session hooks (`notify`, the
   handoff scripts, `context-watch`; crew 1.0.343, L-0680): a lane notifies with the main
   checkout's settings, and a relative handoff path still names a file in the lane. Since
@@ -759,6 +761,17 @@ it *would* refuse before enforcing with `"block"`.
   --help` (or `-h`) is the exception: gh prints help and dispatches nothing, so the line is not
   judged at all; terraform's `--help` still is.
 
+- **A `python3`/`node` line is refused as "a terraform-family line with python code that ...".**
+  (L-0871, crew 1.2.63; before it the denial quoted an unrelated word such as `'^JIRA_'` or `'<<'`.)
+  With `guards.terraformApply` armed, interpreter code is refused only when it names terraform,
+  terragrunt or tofu (in the code or anywhere on the line), or reaches a process and builds the
+  name: the denial says which, for example `python code that spells 'terraform' out of fragments`
+  or `builds a name at run time ('chr(')`. `import os`, `import requests`, `os.environ.get(...)`
+  and `node -e "console.log(process.env.X)"` alone are allowed. **Fix:** write the command plainly
+  (`terraform apply` as its own command, where it is judged), or keep the name out of code that
+  starts a process. Code that reads its command from the environment or a file and never names the
+  tool is not caught (the credentials boundary is the control).
+
 - **A workflow dispatch is refused as "could not tell" although it looks fine.** With
   `environments.workflows` set, a `gh workflow run` or `gh api .../dispatches` line is judged only
   when every word on it is a plain literal (letters, digits, `_./:=@%+,-`) or one whole
@@ -921,19 +934,15 @@ command — no keystrokes appear at all.
 
 - **Check `context.autoClear.method`** with `/crew:config --explain` or `crew_config.py --explain`.
   On native Windows with no tmux pane, `"auto"` (the default) resolves to `"notify"`, not to any
-  keystroke method — **this is not a bug**, it is the 1.0 owner decision: `auto` never arms
-  SendKeys on your behalf. `"notify"` types nothing at all; instead the `Stop` hook prints a
+  keystroke method — **this is not a bug**, it is the owner decision: crew does not type into a
+  window it found itself on Windows. `"notify"` types nothing at all; instead the `Stop` hook prints a
   `systemMessage` telling you the handoff is written and verified and it is safe to run the
   configured command yourself.
-- **If you want keystrokes typed for you**, ask for `sendkeys` by name — it is opt-in only, and
-  `/crew:init`, `/crew:migrate` and `/crew:onboard` all refuse to write it without an explicit yes.
-  It declines and falls back to `notify` (logged to `.crew/.autoclear.log`) inside Windows
-  Terminal specifically, because that host puts every tab in one window and nothing outside it can
-  confirm which tab is active — this is also not a bug, and switching terminal hosts is the only
-  fix.
-- **Fix:** either treat the `notify` message as the intended behaviour, or run
-  `crew_autoclear_setup.py apply-method sendkeys --yes` (`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`)
-  to opt in, after reading what SendKeys does. See `plugin/crew/CONFIG.md` §14.
+- **`sendkeys` is gone.** The Windows keystroke method was removed in crew 1.2.61 (L-0727): a
+  config that names it is refused with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or
+  tmux", and `crew_autoclear_setup.py apply-method sendkeys` refuses by name.
+- **Fix:** treat the `notify` message as the intended behaviour, or run the session inside tmux
+  (Git Bash or WSL), where `auto` picks `tmux`. See `plugin/crew/CONFIG.md` §14.
 
 ### "bare /crew:autopilot stopped on a goal"
 
@@ -1219,6 +1228,17 @@ runs but the visual rule never passes.
   then `py`, and fails loudly on stderr rather than silently standing down when none resolves (see
   "no-python fail-closed", above). If a hook you expect to run says nothing at all, check for a
   usable Python on `PATH` first.
+- **`can't open file 'D:\tmp\...\crew_autocycle.py'` (or any `.py` under `hooks/scripts`).** Git Bash
+  rewrites a POSIX-looking script argument (`/tmp/...`, `/d/...`) into a Windows path when it starts a
+  native `python.exe`, but only while `MSYS_NO_PATHCONV` is unset. Set, even to an empty string by a
+  shell profile, a CI runner or a parent process, the argument reaches Python as written and Windows
+  resolves it against the current drive. Since L-0868 every `.sh` hook except the review-harness ones (and that one record)
+  passes its script path and its path arguments (`--root` and config data paths) through `crew_native_path`
+  (`cygpath -m`, which needs no argument conversion), so the variable no longer matters for them.
+  The harness hooks (`verify-gate.sh`, `approval-hook.sh`, `scope-guard.sh`, `completion-audit.sh`,
+  `crew-hook.sh`) the PreCompact `crew_resume.py` record in `handoff-write.sh` still depend on
+  conversion until a follow-up lands: if one fails this way, unset `MSYS_NO_PATHCONV` for the session (`env -u
+  MSYS_NO_PATHCONV claude`).
 - **Both flavours are always registered.** `hooks.json` pairs every bash command with a `shell:
   "powershell"` sibling on the same event, so a machine with both `bash` and `pwsh` present runs
   both. This is not double-firing to fix — it is how the same hook reaches both shells; each

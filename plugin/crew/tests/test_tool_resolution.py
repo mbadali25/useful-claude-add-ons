@@ -59,7 +59,7 @@ SUBPROCESS_FNS = {"run", "Popen", "check_output", "check_call", "call"}
 ALLOWLIST = (
     {"file": "plugin/crew/hooks/scripts/crew_autocycle.py", "function": "_proc",
      "tool": "ps", "reason": "POSIX only: _proc returns before ps on native Windows",
-     "gate": "plugin/crew/hooks/scripts/crew_autocycle.py:651",
+     "gate": "plugin/crew/hooks/scripts/crew_autocycle.py:649",
      "gate_text": 'if found is not None or os.name == "nt":'},
     {"file": "plugin/crew/hooks/scripts/crew_platform.py", "function": "_wsl_facts",
      "tool": "ip", "reason": "WSL2 only: _wsl_facts is called only when platform.system() is Linux",
@@ -458,7 +458,7 @@ def test_a_gate_weakened_on_its_own_line_goes_red():
     got = [p for p in problems(list(_repo_sites()), cited) if "no longer reads" in p]
 
     assert got == ["('plugin/crew/hooks/scripts/crew_autocycle.py', '_proc', 'ps'): gate "
-                   "plugin/crew/hooks/scripts/crew_autocycle.py:651 no longer reads 'os.name == \"nt\"'"]
+                   "plugin/crew/hooks/scripts/crew_autocycle.py:649 no longer reads 'os.name == \"nt\"'"]
 
 
 # --- per site: the resolved path runs, and an unresolved tool fails as before --------

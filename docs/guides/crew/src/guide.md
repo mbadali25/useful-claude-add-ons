@@ -252,8 +252,10 @@ PowerShell commands: `terraform apply`, a force push, an admin merge,
 destructive cloud CLI calls, destructive SQL, and anything aimed at a declared
 production database or host. Each rule has its own `guards.*` setting. Set
 `report` first to see what `block` would cost. *What it cannot see:* a
-command hidden in an interpreter (a Python script that calls the cloud SDK),
-a variable or an encoded string. The credentials boundary that would close
+command hidden in an interpreter (a Python script that calls the cloud SDK, or
+code that reads the command from an environment variable), a variable or an
+encoded string. For `terraform apply` an interpreter line is refused only when
+the code or the line names the tool or builds its name. The credentials boundary that would close
 that is T-0044.
 
 **The environment guard** (`guards.envGuard`, default `off`; L-0772) refuses a
@@ -394,8 +396,8 @@ Source: `plugin/crew/skills/crew-setup/platform.md` and `CLAUDE.md`,
 - Long jobs follow `shellRoute.mode` (`auto`, `wsl`, `powershell` or
   `gitbash`). `/crew:status`'s `shell` line says which route is in force and
   why.
-- Auto-clear on Windows types only with `context.autoClear.method:
-  "sendkeys"`, and only after checking the window has focus.
+- Auto-clear on native Windows with no tmux pane never types: `auto` resolves to
+  `notify`, which prints a message (the `sendkeys` method was removed in crew 1.2.61).
 
 Deeper: "Windows notes" in [Troubleshooting](troubleshooting.md) and
 [Auto wrap-up, clear and resume](auto-cycle.md).

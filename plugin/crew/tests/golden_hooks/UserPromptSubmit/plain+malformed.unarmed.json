@@ -1,0 +1,34 @@
+{
+ "armed": false,
+ "case": "plain",
+ "dirty": "",
+ "event": "UserPromptSubmit",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"UserPromptSubmit\", \"prompt\": \"hello\", \"session_id\": \"s-1\", \"prompt_id\": \"p-1\", \"cwd\": \"{ROOT}\"",
+ "rows": [
+  {
+   "argv": [
+    "crew-context.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "approval-hook.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "approval-hook.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": "malformed"
+}

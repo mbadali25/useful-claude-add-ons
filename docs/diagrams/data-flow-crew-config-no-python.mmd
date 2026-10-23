@@ -23,13 +23,13 @@
 %%    cloud_guard.py exits non-zero (cloud-guard.sh:55-78)
 %% Note CG2: _cloud_guard_armed plugin/crew/hooks/scripts/cloud-guard.sh:40; armed when the resolver is missing. The repo file is
 %%    crew_repo_config_dir's (_common.sh:328): a lane with no config of its own reads the main checkout's.
-%%    Twin: Test-CloudGuardArmed in cloud-guard.ps1 through Get-CrewRepoConfigDir.
+%%    (Its PowerShell twin, Test-CloudGuardArmed in cloud-guard.ps1, was deleted in L-0727 slice 3.)
 %% Note CG3: source unknown, or any cloudGuard value other than off in either file: exit 2 (refuse).
 %%    Otherwise exit 0, unjudged.
 %% Note EG1: crew_py_strict finds no usable interpreter, or env_guard.py exits non-zero (env-guard.sh:53-76).
 %% Note EG2: _env_guard_armed plugin/crew/hooks/scripts/env-guard.sh:38, the same shape as _cloud_guard_armed: armed when
-%%    the resolver is missing; the repo file is crew_repo_config_dir's. Twins: Test-EnvGuardArmed in env-guard.ps1,
-%%    and env_guard._crude_armed in python when crew's own config readers raise.
+%%    the resolver is missing; the repo file is crew_repo_config_dir's. Twin:
+%%    env_guard._crude_armed in python when crew's own config readers raise.
 %% Note EG3: source unknown, or any envGuard value other than off in either file: exit 2 (refuse). Otherwise
 %%    exit 0, unjudged.
 flowchart LR

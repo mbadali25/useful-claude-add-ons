@@ -744,7 +744,7 @@ the plugin.</p>
 <td><code>context.autoClear.method</code></td>
 <td>both</td>
 <td><code>"auto"</code></td>
-<td><code>auto</code> | <code>none</code> | <code>notify</code> | <code>tmux</code> | <code>xdotool</code> | <code>wtype</code> | <code>sendkeys</code>; per OS: linux: auto, none, notify, tmux, xdotool, wtype; macos: auto, none, notify, tmux; windows: auto, none, notify, sendkeys; windows-bash: auto, none, notify, tmux, sendkeys</td>
+<td><code>auto</code> | <code>none</code> | <code>notify</code> | <code>tmux</code> | <code>xdotool</code> | <code>wtype</code>; per OS: linux: auto, none, notify, tmux, xdotool, wtype; macos: auto, none, notify, tmux; windows: auto, none, notify; windows-bash: auto, none, notify, tmux</td>
 <td>0.19.10</td>
 <td>How <code>/clear</code> is typed. <code>auto</code> picks per platform; a method this OS lacks stands auto-clear down.</td>
 </tr>
@@ -752,7 +752,7 @@ the plugin.</p>
 <td><code>context.autoClear.windowTitle</code></td>
 <td>both</td>
 <td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/auto-clear.ps1</code> (expects string or null)</td>
+<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_autocycle.py</code> (expects string or null)</td>
 <td>0.19.10</td>
 <td>Window title to match before typing.</td>
 </tr>

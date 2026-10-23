@@ -2,12 +2,11 @@
 
 ### Hooks
 
-Fourteen scripts across eight events, each with a `.sh` and a `.ps1` twin
-registered on its own matcher or event — 36 hook entries<!-- claim: plugin-hooks:crew --> total. crew 1.0 removed
-`pm-brief` and `pm-pulse`. The sentence said eight and sixteen until 0.16.7
-while the table below it already listed all ten; the prose was the half that
-went stale. Until 0.20.25 it was the table's turn: it said eleven and thirty
-with three hooks registered and unlisted.
+Fourteen scripts across eight events, run by one dispatcher behind 16 hook entries<!-- claim: plugin-hooks:crew -->:
+`hooks.json` registers one launcher per event per shell (`crew-hook.sh`, and `crew-hook.ps1` with
+`shell: powershell`), and the launcher starts `crew_hook.py <Event>`, which runs that event's scripts below
+(L-0850). The table lists the scripts, which are unchanged; the `.sh` is the one that runs. crew 1.0 removed
+`pm-brief` and `pm-pulse`.
 
 | Script | Event | Behavior |
 |---|---|---|
@@ -26,18 +25,23 @@ with three hooks registered and unlisted.
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript, writes a skeleton handoff |
 | `notify.sh` / `.ps1` | `Notification` (`hook`) | Thin wrappers around `crew_notify.py`: a `question` ping for the permission and elicitation types only, never `idle_prompt`, one per waiting episode. `/crew:promote` calls `notify.sh deploy ... --outcome` itself. Outbound only; never reads. |
 
-Both flavours are registered **on every event, on purpose** — not because
-each fires everywhere, but because `hooks.json` cannot know which shell a
-given machine has. On Windows, the `.sh` side can fail outright depending on
-which `bash` resolves first on `PATH`: measured, Git for Windows' `usr/bin/bash.exe`
-exits 127 on these scripts where its own `bin/bash.exe` runs them fine. The
-`.ps1` twin — registered with a `shell: powershell` field, which Claude Code
-documents and does read — is what actually gates the machine when that
-happens; one flavour failing there is expected, not a bug. The reverse gap —
-no `bash` at all — is why the pairing exists in the first place. What is
-**not** verified is real hook-runner behavior with no `pwsh` on Linux; that
-combination was never exercised, so treat it as unconfirmed rather than
-assumed fine.
+**Registration and dispatch.** `hooks.json` has no hook script paths in it: eight events, two entries each.
+`crew_hook.TABLE` is the contract for what a launcher runs (event, matcher, script, argument, timeout,
+whether it can block, the PowerShell twin, the Codex matcher), `crew_instructions.py` renders `hooks.json`
+and the Codex hooks file from it, and `tests/test_hooks_json_shape.py` holds them equal. The dispatcher runs
+the event's rows at once with the payload bytes it was given, and combines what they print:
+
+- exit 2 from any script wins, with each blocker's stderr;
+- `permissionDecision` is deny over ask over allow;
+- `decision: "block"` and `continue: false` win;
+- `additionalContext` and `systemMessage` are joined in order, and plain stdout is folded into
+  `additionalContext` when another script printed JSON.
+
+In a repo crew governs ("armed": a repo config, a linked worktree's main checkout config, or the machine
+config) a dispatcher fault, a missing script or a guard past its timeout is exit 2 with the cause named, on
+`PreToolUse`, `UserPromptSubmit` and `Stop`; anywhere else it is exit 0. Without python the POSIX launcher
+runs the scripts itself and each script's own fallback decides. The design, the merge rule and the latency
+figures are in [ADR 0009](../../adr/0009-hook-single-dispatch.md).
 
 **Every hook is inert until a repository has `.crew/config.json`.** Installing the
 plugin arms nothing; `/crew:init` in a given repo is what turns the gates on there.
@@ -239,21 +243,31 @@ model call on your own account.
 
 ### How the Windows half works
 
-Every event is registered **twice** in `hooks.json`, once per flavour, with `shell: powershell` on the PowerShell side — a field Claude Code documents and does read; setting it runs that entry via PowerShell on Windows without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`, since hooks spawn the interpreter directly. `promote-gate.sh`/`promote-gate.ps1` are additionally registered on separate `Bash` / `PowerShell` matchers at `PreToolUse` (`cloud-guard.sh`/`cloud-guard.ps1` share one `Bash|PowerShell` matcher and branch on `tool_name` inside `cloud_guard.py`), so the branch is **which tool Claude used**, not which OS is running:
+`crew-hook.ps1` is the single path on Windows; `crew-hook.sh` exits 0 there (`uname -s` MINGW*/MSYS*/CYGWIN*; an `OS=Windows_NT`
+variable counts only where uname names no POSIX kernel, so it cannot switch the guards off on Linux) so no event
+runs twice. The dispatcher runs each `.sh` script through a strictly resolved
+Git Bash (`crew_shell.resolve_gitbash(strict=True)`): the `bin/bash.exe` that `git --exec-path` or the default
+install names, that runs `-c 'exit 0'`, never a PATH `bash` and never `usr/bin/bash.exe`, which exits 127 on
+these scripts where `bin/bash.exe` runs them fine. With no such Git Bash an armed repo is refused on
+`PreToolUse`, `UserPromptSubmit` and `Stop` ("Git for Windows"), `SessionStart` prints one `systemMessage`
+saying so, and the other events exit 0.
 
-```json
-{ "matcher": "Bash",       "hooks": [{ "type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/promote-gate.sh\"", "timeout": 20 }] },
-{ "matcher": "PowerShell", "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/promote-gate.ps1\"; exit $LASTEXITCODE", "timeout": 20 }] }
-```
-
-That distinction is load-bearing. A `Bash` tool call is bash syntax *even on Windows*, so judging it with PowerShell rules gets it backwards in both directions: it blocks the correct capture form (`DB_PASS=$(...)`) and misses the wrong one. Branch on the tool and each command is judged by the rules of the language it is written in. (`hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging a command from inside a single bash-registered script — the other valid shape for the same problem. It is **called**, not dead code: `promote-gate.sh:27` invokes it. With the dual-matcher registration above in place it never actually fires, because a `PowerShell` tool call reaches `promote-gate.ps1` directly and never enters `promote-gate.sh` — so it is a belt-and-braces second path, and deleting it on the assumption that nothing calls it would silently remove the fallback for anyone who registers one of these scripts on a single matcher.)
-
-The other six hooks judge no command, so both flavours are simply wired to their event with no branch: `verify-gate.sh`/`.ps1`, `context-watch.sh`/`.ps1`, `handoff-read.sh`/`.ps1`, `handoff-write.sh`/`.ps1`, `crew-context.sh`/`.ps1`, and `notify.sh`/`.ps1` are all registered in `hooks.json`, one entry per flavour per event.
+The branch that matters is **which tool Claude used**, not which OS is running. A `Bash` tool call is bash
+syntax *even on Windows*, so judging it with PowerShell rules gets it backwards in both directions: it blocks
+the correct capture form (`DB_PASS=$(...)`) and misses the wrong one. So a `PowerShell` tool call goes to a
+row's PowerShell twin when the file exists — `promote-gate.ps1` is the only one left (L-0727 slice 3 deleted `cloud-guard.ps1` and `env-guard.ps1`) — and
+`cloud_guard.py` and `env_guard.py` keep a stand-down for a twin that exists (dead code now); every other
+call, and every `PowerShell` call to a row whose twin is absent (`cloud-guard`, `env-guard`, `scope-guard`), is
+judged by the `.sh`. The ten twins of slice 3 are deleted; slice 4 of L-0727 deletes the four harness twins.
 
 Two things worth knowing:
 
-- **`hooks.json` has no way to know in advance which shell a given machine actually has**, so both flavours are wired and one is expected to fail — that is by design, not a bug. On Windows this is measured, not hypothetical: Git for Windows ships two `bash.exe` binaries, and `usr/bin/bash.exe` exits 127 running these scripts where `bin/bash.exe` runs them fine, so which one resolves first on `PATH` decides whether the `.sh` side works at all. The `.ps1` twin is what actually gates the machine when it doesn't.
-- **A bare `command` string with no `shell` field still goes to Git Bash on Windows** (PowerShell only when Git Bash isn't installed), not to whatever `bash` a non-MSYS parent process might resolve to. Versions of this plugin before 0.2.0 relied on the `.sh` side deferring to a `.ps1` twin that was never actually invoked, so on Windows the command guard blocked nothing and the `Stop` gate ran nothing — fixed by registering both flavours explicitly instead of assuming one would pick up the other's slack.
+- **A bare `command` string with no `shell` field still goes to Git Bash on Windows** (PowerShell only when
+  Git Bash isn't installed), which is why the PowerShell launcher is registered with `shell: powershell` and
+  the bash one is not expected to run there at all.
+- **With no python on Windows** an armed repo is refused on the same three events and an unarmed one is not,
+  except that a `PreToolUse` write by a restricted or unreadable role is still refused (the config-independent
+  fallback the deleted `role-write-guard.ps1` always had).
 
 **`python3` is not required by the hooks.** Every hook script resolves `python3`, then `python`, then `py` — that is `crew_py()` in `hooks/scripts/_common.sh` — and `guard.sh` prefers `jq` when present. With none available the hook says so on stderr and exits 0 — loudly inert rather than silently passing.
 

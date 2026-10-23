@@ -1,0 +1,24 @@
+{
+ "armed": true,
+ "case": "permission",
+ "dirty": "",
+ "event": "Notification",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"Notification\", \"notification_type\": \"permission_prompt\", \"message\": \"needs permission\", \"session_id\": \"s-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "notify.sh",
+    "hook"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "notify.sh",
+   "stderr": "crew-notify: notify.provider is none; nothing sent\n",
+   "stdout": "off\n",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

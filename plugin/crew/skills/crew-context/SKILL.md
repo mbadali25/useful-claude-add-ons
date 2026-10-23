@@ -36,8 +36,8 @@ the next session opens already holding the handoff. The one manual step is the
 
 No hook input reports token count, but the JSONL transcript that hooks receive
 as `transcript_path` does: every assistant turn carries `message.usage`, and
-the last one is the real prompt size. `context-watch.sh` and its PowerShell
-twin read that - see "How the reading is taken" below. `/context` should agree
+the last one is the real prompt size. `context-watch.sh` reads that (under Git
+Bash on Windows) - see "How the reading is taken" below. `/context` should agree
 with the watcher to within a turn; if it does not, the budget is wrong, not
 the reading, and the warning prints both numbers so you can see which.
 
@@ -49,10 +49,10 @@ that gate a `Stop` hook returning exit 2 will fire on every turn and trap the
 session in a loop. It never blocks on a `stop_hook_active` continuation, but
 that continuation is the turn it hands to auto-clear.
 
-The claim is taken atomically - `set -o noclobber` in bash, `FileMode::CreateNew`
-in PowerShell - because on Windows with Git Bash installed **both** flavours
-really do run on the same `Stop`, and a test-then-create lets both through and
-prints the warning twice.
+The claim is taken atomically - `set -o noclobber` in bash - so two `Stop` hooks
+firing together cannot both pass a test-then-create and print the warning twice
+(before L-0727 slice 3, native Windows ran a PowerShell flavour beside the bash
+one).
 
 **The marker is per session.** It used to be one file per repository, so two
 terminals in one repo shared it: the first to cross the threshold silenced the
@@ -160,7 +160,7 @@ does nothing), the injected handoff on `clear` or a manual `/compact` also
 names the next command from the `resume:` line — `Auto-resume: ready to run
 /crew:done T-0001.`, saying it did not start from the hook, so press Enter or
 type it — or says `Auto-resume did not start: <reason>.` Where the terminal
-can be driven (tmux, or `method: sendkeys` on Windows) crew types it instead
+can be driven (tmux) crew types it instead
 (T-0013): `Auto-resume: typing /crew:done T-0001 into this session in 2s
 (method tmux)`, after `resume.typeDelaySeconds` and, in tmux, a probe for an
 idle, empty input line; once per handoff, the run recorded first. A refused
@@ -278,13 +278,14 @@ The `Stop` watch reads the transcript's **last `message.usage` record** and adds
 the actual prompt size - the window occupancy, measured by the thing that filled
 it, not inferred.
 
-Both flavours used to estimate from transcript file size (`bytes / 4 * 0.75`).
+The watcher used to estimate from transcript file size (`bytes / 4 * 0.75`).
 That reads high, because the transcript is cumulative: it keeps every turn ever
 written, including ones a compaction already discarded. Measured on real
 sessions it read 158%, 195% and 664% of a 200k budget - it fired on turn one,
 every session. The PowerShell flavour kept that heuristic for a release after
 the bash one dropped it, so Windows sessions were cut short while Linux ones
-were not; the test suite now feeds real usage records to both.
+were not; that flavour is gone (L-0727 slice 3) and the test suite feeds real
+usage records to the one watcher.
 
 **Subagent turns are not counted.** Claude Code writes Agent-tool transcripts
 to `<session>/subagents/*.jsonl`, which the watcher never opens; the main

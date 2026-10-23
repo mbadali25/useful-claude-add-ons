@@ -86,7 +86,7 @@ and machine-global. A lane that wants its own guards writes its own
 copied into each script that uses it) resolve the same directory by the same
 rules, without python. Routed through them: the incident stand-down read
 (`emergency.standDown`, in `_common.sh` for every bash gate and in
-`promote-gate.ps1`), both cloud-guard no-python fallbacks, and `auto-clear.ps1`'s
+`promote-gate.ps1`), the cloud-guard no-python fallback, and `auto-clear.sh`'s
 repo veto. In the cloud guard's fallback an `unknown` source counts as armed: a
 lane whose git cannot name its main checkout, with no usable python, refuses Bash
 until one works. Inheritance can loosen as well as tighten: an inherited
@@ -393,8 +393,8 @@ of anyone who cloned it. So `allow` needs **both** layers to say `allow`, and
 ### Cloud guard
 
 A `PreToolUse` hook on the **Bash and PowerShell** tools
-(`hooks/scripts/cloud-guard.sh` / `cloud-guard.ps1`, both delegating to
-`cloud_guard.py`). **It ships off** — `guards.cloudGuard: "off"` — because a
+(`hooks/scripts/cloud-guard.sh`, delegating to `cloud_guard.py`; its
+PowerShell twin was deleted in L-0727 slice 3, so a `PowerShell` call is judged by the `.sh`). **It ships off** — `guards.cloudGuard: "off"` — because a
 hook that can block defaults off. Set it to `report` first: every decision it
 *would* make goes to `.crew/guard.log` and nothing is refused. `block` enforces.
 A repo cannot turn off a machine-global `block`.
@@ -689,7 +689,15 @@ started some other way. Each of these runs unjudged:
   `python3 -c "import os; os.system(os.environ['TF'] + ' destroy')"`,
   `python3 deploy.py`. Since crew 1.2.36 (SRL-2308) code on the command line,
   or fed by a heredoc or here-string, that names terraform and does more than
-  print is refused: `python3 -c 'import os; os.system("terraform destroy")'`
+  print is refused: `python3 -c 'import os; os.system("terraform destroy")'`.
+  Since crew 1.2.65 (L-0871) python and node code is refused only when the
+  code or the line names terraform, terragrunt or tofu, or the code reaches a
+  process and builds the name (`'ter'+'raform'`, `chr(`, a join, a format, an
+  f-string, a decode, a `$` expansion or a non-literal operand in a process call's argument). `import os`, `import
+  requests`, `os.environ.get(...)` and `process.env` alone are no longer
+  refused, so a command read from the environment, input or a file that the
+  line never names is not caught: `python3 -c "import os; os.system(os.environ['CMD'])"`.
+  A refusal that remains quotes the construct that caused it
 - awk and sed on a line crew reads cleanly: `awk 'BEGIN{system("terraform
   destroy")}'`, `echo terraform destroy | sed e` (as in 1.2.35; on a line crew
   cannot read, or after a run-time assignment, they are refused since crew
@@ -853,8 +861,8 @@ are a provider seam only: any key other than `aws` refuses as not implemented.
 ### Environment guard
 
 A `PreToolUse` hook on the **Bash and PowerShell** tools
-(`hooks/scripts/env-guard.sh` / `env-guard.ps1`, both delegating to
-`env_guard.py`; L-0772). It exists because a command that prints the process
+(`hooks/scripts/env-guard.sh`, delegating to `env_guard.py`; L-0772; its
+PowerShell twin was deleted in L-0727 slice 3, so a `PowerShell` call is judged by the `.sh`). It exists because a command that prints the process
 environment puts every credential in it into the agent's context, and from
 there into the session transcript on disk and the conversation sent to the
 model provider. **It ships off** — `guards.envGuard: "off"` — because a hook

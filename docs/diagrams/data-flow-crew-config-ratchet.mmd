@@ -1,7 +1,17 @@
-%% Generated from useful-claude-add-ons@18e4afce3 on 2026-10-02, re-anchored 2026-10-18 (L-0789 refresh; see the notes below the Purpose line). Verify before trusting.
+%% Generated from useful-claude-add-ons@7944f06d7 on 2026-10-22, first drawn 2026-10-02, re-anchored 2026-10-22 (L-0867 refresh) and 2026-10-18 (L-0789 refresh; see the notes below the Purpose line). Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py
 %% Purpose: The keys that do not follow repo-beats-global: the two ratchet tables (read side and write side), the fifteen keys that resolve by the lower rank, and how a corrupt config file forces the role-write guard to block.
 %% Embed: none
+%% Re-anchored a792ce66b -> 7944f06d7 (L-0867 refresh, 2026-10-22): of the Anchors paths only CONFIG.md changed
+%%    (git diff 18e4afce3..HEAD over this diagram's five Anchors paths: CONFIG.md only; crew_guards.py, crew_config.py,
+%%    role_write_guard.py and test_install_policy.py are untouched). The change is L-0867 (L-0727 slice 3): the deleted hook .ps1 twins
+%%    and the removed sendkeys method, in section 14 prose and the context.autoClear.method / windowTitle table rows. Nothing in it is
+%%    a node or edge drawn here. Re-checked at 7944f06d7 with grep -n: section headings 15 install.policy :1624, 16 guards :1704,
+%%    17 change :2515, 18 guards.roleWrites :2608 (this diagram cites them by number only; the :1641/:1721/:2532/:2625 in the
+%%    2026-10-18 note below were the lines at that anchor and are history). Every crew_guards.py / crew_config.py / role_write_guard.py
+%%    line in the Note lines below was re-read at 7944f06d7 and still holds: RATCHETED_KEYS :552, effective_ratcheted :594,
+%%    resolve_ratcheted :1006 (call :1050), _RATCHETED :3204-:3333, layer_state :1095, role_write_guard :763-:770,
+%%    normalise_role_writes :479, role_writes_rank :505, guard_tiers :519. No node or edge changed.
 %% Re-anchored 7c9e13349 -> 983cbc8ec (L-0728 slice 1): of the Anchors paths only CONFIG.md changed, one sentence in the autopilot.maxTokensPerSession passage (each message counted once); this diagram cites CONFIG.md by section only and no section moved. No node or edge changed.
 %% Re-anchored 0bf364417 -> a792ce66b (L-0789 refresh, 2026-10-18): of the Anchors paths only CONFIG.md changed since
 %%    the last note (git diff --stat 0bf364417..a792ce66b over this diagram's five Anchors paths), and nothing in it is a node or edge

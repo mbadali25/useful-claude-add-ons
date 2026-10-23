@@ -35,7 +35,7 @@ Every diagram in this directory, with what it shows and whether it is readable. 
 | [Process crew lifecycle approve](#process-crew-lifecycle-approve) | PASS |
 | [Process crew lifecycle brainstorm](#process-crew-lifecycle-brainstorm) | PASS |
 | [Process crew lifecycle done](#process-crew-lifecycle-done) | PASS |
-| [Process crew lifecycle implement](#process-crew-lifecycle-implement) | FAIL |
+| [Process crew lifecycle implement](#process-crew-lifecycle-implement) | PASS |
 | [Process crew lifecycle review](#process-crew-lifecycle-review) | PASS |
 | [Process crew lifecycle spec plan](#process-crew-lifecycle-spec-plan) | PASS |
 | [Process crew lifecycle](#process-crew-lifecycle) | PASS |
@@ -224,10 +224,10 @@ flowchart LR
 | `NP2` | _role_write_fallback_decision() :326-346. Cannot evaluate guards.roleWrites (off/report/pm's own path allowances) at all - only tells a restricted role from an unrestricted one via the deny-list mirror |
 | `NP3` | Unrestricted role: allowed unjudged. Restricted role (pm or _DENY_ROLES) OR a role this fallback could not even read: ALWAYS BLOCKED (exit 2), regardless of what guards.roleWrites actually says :339-345 |
 | `CG1` | crew_py_strict plugin/crew/hooks/scripts/_common.sh finds no usable interpreter, or cloud_guard.py exits non-zero (cloud-guard.sh:55-78) |
-| `CG2` | _cloud_guard_armed plugin/crew/hooks/scripts/cloud-guard.sh:40; armed when the resolver is missing. The repo file is crew_repo_config_dir's (_common.sh:328): a lane with no config of its own reads the main checkout's. Twin: Test-CloudGuardArmed in cloud-guard.ps1 through Get-CrewRepoConfigDir. |
+| `CG2` | _cloud_guard_armed plugin/crew/hooks/scripts/cloud-guard.sh:40; armed when the resolver is missing. The repo file is crew_repo_config_dir's (_common.sh:328): a lane with no config of its own reads the main checkout's. (Its PowerShell twin, Test-CloudGuardArmed in cloud-guard.ps1, was deleted in L-0727 slice 3.) |
 | `CG3` | source unknown, or any cloudGuard value other than off in either file: exit 2 (refuse). Otherwise exit 0, unjudged. |
 | `EG1` | crew_py_strict finds no usable interpreter, or env_guard.py exits non-zero (env-guard.sh:53-76). |
-| `EG2` | _env_guard_armed plugin/crew/hooks/scripts/env-guard.sh:38, the same shape as _cloud_guard_armed: armed when the resolver is missing; the repo file is crew_repo_config_dir's. Twins: Test-EnvGuardArmed in env-guard.ps1, and env_guard._crude_armed in python when crew's own config readers raise. |
+| `EG2` | _env_guard_armed plugin/crew/hooks/scripts/env-guard.sh:38, the same shape as _cloud_guard_armed: armed when the resolver is missing; the repo file is crew_repo_config_dir's. Twin: env_guard._crude_armed in python when crew's own config readers raise. |
 | `EG3` | source unknown, or any envGuard value other than off in either file: exit 2 (refuse). Otherwise exit 0, unjudged. |
 
 - **Source:** `data-flow-crew-config-no-python.mmd`
@@ -336,7 +336,7 @@ flowchart TB
 | `DEF` | default_config() plugin/crew/hooks/scripts/crew_config.py:245 141 leaves (executed on batch-7-build after merging T-0011, whose three repo-only ship keys made main's 138 into 141) composed from crew_state's PM_DEFAULTS :1145, QA_DEFAULTS :1197, DEV_DEFAULTS :1207, WORKTREE_DEFAULTS :1235, CONTEXT_DEFAULTS :770, RESUME_DEFAULTS :733, AUTOPILOT_DEFAULTS :1133 - repo-only (re-exported from crew_guards: INSTALL_DEFAULTS :48, GUARD_DEFAULTS :198, PRODUCTION_DEFAULTS :222, CLOUD_DEFAULTS :239 - repo-only, ENVIRONMENTS_DEFAULTS :251 - nonProd repo-only), and crew_upgrade's GRAPH_BLOCK :48 / DOCS_BLOCK :107 / BITBUCKET_BLOCK :150 / GITHUB_BLOCK :173 / CHANGE_BLOCK :203 |
 | `GLB` | ~/.claude/crew/config.json read_global_config() plugin/crew/hooks/scripts/crew_config.py:767 never raises - absent, malformed or non-object all return {}, because this is reached from a SessionStart hook |
 | `REPO` | .crew/config.json - schema 7 crew_state.load_config() plugin/crew/hooks/scripts/crew_state.py:267 NOT the same file crew_context.py reads first - see the TwoFiles section below |
-| `RES` | which .crew/ the repo file is read from. Python: crew_common.repo_config_dir plugin/crew/hooks/scripts/crew_common.py:96 (T-0088). bash: crew_repo_config_dir plugin/crew/hooks/scripts/_common.sh:328; PowerShell: Get-CrewRepoConfigDir, one body copied into cloud-guard.ps1:192, promote-gate.ps1:142, auto-clear.ps1:132 (T-0096). Own config.json or crew.json wins whole; else a linked worktree reads the main checkout's; unknown (git cannot tell) inherits nothing. L-0680 adds the session hooks (notify, handoff-read, handoff-write, context-watch, both flavours; the .ps1 copies at handoff-read.ps1:186, handoff-write.ps1:286, context-watch.ps1:29). T-0051 made notify.ps1 a thin wrapper around crew_notify.py with no resolver copy of its own. Still own-file only: the verify gate, the scope and completion wrappers. |
+| `RES` | which .crew/ the repo file is read from. Python: crew_common.repo_config_dir plugin/crew/hooks/scripts/crew_common.py:96 (T-0088). bash: crew_repo_config_dir plugin/crew/hooks/scripts/_common.sh:328; PowerShell: Get-CrewRepoConfigDir, one body copied into promote-gate.ps1:142 (T-0096; the copies in cloud-guard.ps1 and auto-clear.ps1 went with L-0727 slice 3). Own config.json or crew.json wins whole; else a linked worktree reads the main checkout's; unknown (git cannot tell) inherits nothing. L-0680 adds the session hooks (notify, handoff-read, handoff-write, context-watch, both flavours until L-0727 slice 3 deleted the .ps1 copies of those five hooks). T-0051 made notify a thin wrapper around crew_notify.py with no resolver copy of its own. Still own-file only: the verify gate, the scope and completion wrappers. |
 | `TMPL` | default_global_config() plugin/crew/hooks/scripts/crew_config.py:432 81 leaves (executed, batch-7-build) across 20 blocks: autopilot (T-0050's five personal keys), qa, dev, worktree, secondOpinion, memory (2 of 5 repo leaves), notify, pm, context.autoClear (8 of 9 - unsafeFocus is excluded, see AutoClear below), resume, docs, bitbucket, github, install, guards (all TEN names), environments (prodUnattended only), change, git, route, shellRoute - the single definition both rules below are enforced against |
 | `PRUNE` | _prune() plugin/crew/hooks/scripts/crew_config.py:699 keeps only keys present in the template. Descends structurally, so naming a block grants only the leaves under it. |
 | `FILT` | filter_global() plugin/crew/hooks/scripts/crew_config.py:725 returns (kept, ignored) |
@@ -436,10 +436,10 @@ flowchart TB
 | Box | Details |
 |---|---|
 | `CFGREAD` | crew_config.py reads ONLY .crew/config.json (schema 7) module docstring :1; ratchet, guards, verify-gate.sh, /crew:config, /crew:model all route through this module |
-| `CTXREAD` | crew_context.load_crew_config() plugin/crew/hooks/scripts/crew_context.py:122-133 tries .crew/crew.json FIRST, falls back to .crew/config.json only if crew.json is absent |
+| `CTXREAD` | crew_context.load_crew_config() plugin/crew/hooks/scripts/crew_context.py:124-135 tries .crew/crew.json FIRST, falls back to .crew/config.json only if crew.json is absent |
 | `MIGRATE` | crew_migrate.py --apply the ONLY writer of .crew/crew.json (schema 1). Rewrites config.json only for a pre-0.20 config (no schema, or 1-6: the upgrade stage, _load_legacy / _plan_upgrade, T-0038), backed up and restored byte-identical by --rollback - crew_config.py keeps reading config.json regardless |
 | `OPEN` | L-0713: .crew/config.json is the repo config - /crew:init writes it and every gate reads it. Only a repo that has run --apply has BOTH files, and there crew_context, crew_resume, crew_refresh_check, crew_tracker and crew_diagrams read crew.json first. |
-| `TRKREAD` | crew_tracker.resolve() plugin/crew/hooks/scripts/crew_tracker.py:212 tracker key only: reads BOTH files (crew.json tracker.kind, config.json tracker) and answers 'could not tell' when they disagree - on the kind, on the vault, boardDir, board or lane names each yields (defaults and memory.vaultPath fallback applied; a value only one file yields counts), or on a jira/sdp block - refuses rather than picks |
+| `TRKREAD` | crew_tracker.resolve() plugin/crew/hooks/scripts/crew_tracker.py:267 tracker key only: reads BOTH files (crew.json tracker.kind, config.json tracker) and answers 'could not tell' when they disagree - on the kind, on the vault, boardDir, board or lane names each yields (defaults and memory.vaultPath fallback applied; a value only one file yields counts), or on a jira/sdp block - refuses rather than picks |
 
 - **Source:** `data-flow-crew-config-two-files.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_context.py`, `plugin/crew/hooks/scripts/crew_migrate.py`, `plugin/crew/hooks/scripts/crew_tracker.py`
@@ -908,35 +908,35 @@ The crew-context SessionStart hook: how it reads the config, applies the stale-h
 flowchart TB
     CC[crew-context]
     subgraph crewContext["crew-context (crew_context.py)"]
-        CC --> cc1{".crew/ directory?<br/>:993"}
+        CC --> cc1{".crew/ directory?<br/>:1149"}
         cc1 -- no --> ccx([emit nothing])
-        cc1 -- yes --> cc2["read crew.json else config.json<br/>:121-132"]
-        cc2 --> cc3{"memory.inject?<br/>:1000-1003"}
-        cc3 -- off --> cc4[incident banner only]
-        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:881-892"]
+        cc1 -- yes --> cc2["read crew.json else config.json<br/>:124-135"]
+        cc2 --> cc3{"memory.inject?<br/>:1159"}
+        cc3 -- off --> cc4[incident banner<br/>+ inert-settings line only]
+        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:1019-1034"]
         cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch"}
-        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:774, :980"]
+        stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:722, :927"]
         stale -- no --> cc6
         arch --> cc6
-        stale -. "stale but the move failed:<br/>note stays, stale passed on (:893)" .-> cc6
-        cc6{"auto-resume armed?<br/>:900"}
+        stale -. "stale but the move failed:<br/>note stays, stale passed on (:1042)" .-> cc6
+        cc6{"auto-resume armed?<br/>:1042"}
         cc6 -- "no (off)" --> src{"source?"}
-        cc6 -- "run / wait" --> rs1["one line: ready to run,<br/>or did not start: reason<br/>resume_line :687"]
+        cc6 -- "run / wait" --> rs1["one line: ready to run,<br/>or did not start: reason<br/>resume_line :824"]
         rs1 --> src
-        src -- startup --> ptr["pointer + next action<br/>:908-910"]
-        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:911-923"]
+        src -- startup --> ptr["pointer + next action<br/>:1062-1065"]
+        src -- "resume/clear/compact/fork" --> full["full note, next action first,<br/>then the auto-resume line<br/>:1066-1077"]
     end
 
-    ptr --> out(["additionalContext JSON<br/>:1090"])
+    ptr --> out(["additionalContext JSON<br/>:1253"])
     full --> out
     cc4 --> out
 ```
 
 | Box | Details |
 |---|---|
-| `stale` | crew_state.py:646, :859-914 |
-| `cc6` | machine resume.auto true, no repo veto; source clear / manual compact; note written by this session (T-0042); :900, crew_resume.decide |
-| `rs1` | ready to run the re-rendered command; resume_line :687, never initialUserMessage |
+| `stale` | crew_state.py:584, :791-870 |
+| `cc6` | machine resume.auto true, no repo veto; source clear / manual compact; note written by this session (T-0042); :1042, crew_resume.decide |
+| `rs1` | ready to run the re-rendered command; resume_line :824, never initialUserMessage |
 
 - **Source:** `process-crew-brief-crew-context.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew-context.sh`, `plugin/crew/hooks/scripts/crew_context.py`, `plugin/crew/hooks/scripts/crew_resume.py`, `plugin/crew/hooks/scripts/crew_state.py`
@@ -992,15 +992,15 @@ What /crew:status reads when run on demand, and the one place it differs from th
 ```mermaid
 flowchart TB
     subgraph status["/crew:status (on demand)"]
-        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets, waiting, review<br/>+ same-family share ... gitignore,<br/>handoff :665-704"]
-        st2 -. "? checks fixed .work/HANDOFF.md (:695),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
+        st1["status.md:14<br/>crew_status.py --root ."] --> st2["report lines:<br/>git header, config, roster,<br/>tracker, tickets, waiting, review<br/>+ same-family share ... gitignore,<br/>handoff :681-723"]
+        st2 -. "? checks fixed .work/HANDOFF.md (:711),<br/>not handoffPath, no stale rule" .-> st3([report, capped at 40 lines])
         st1 -. "--owner" .-> st4["owner_items: autopilot's phase per open ticket<br/>(no bundle rebuild, no gh)"]
     end
 ```
 
 | Box | Details |
 |---|---|
-| `st2` | git header, config file, roster, tracker (crew_tracker.resolve, :267), tickets, waiting (crew_autopilot_owner.owner_items, L-0551), review ledgers and the same-family share (L-0712), verify, shell (Windows only, T-0040), codemap freshness, gitignore (T-0039), metrics, handoff, interrupted migrate :665-704 |
+| `st2` | git header, config file, roster, tracker (crew_tracker.resolve, :267), tickets, waiting (crew_autopilot_owner.owner_items, L-0551), review ledgers and the same-family share (L-0712), verify, shell (Windows only, T-0040), codemap freshness, gitignore (T-0039), metrics, handoff, interrupted migrate :681-723 |
 
 - **Source:** `process-crew-brief-status.mmd`
 - **Drawn from:** `plugin/crew/commands/status.md`, `plugin/crew/hooks/scripts/crew_status.py`, `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_autopilot_owner.py`
@@ -1013,7 +1013,7 @@ What crew 1.0 does when a session starts: hooks.json fans out to three SessionSt
 ```mermaid
 flowchart TB
     start([Session starts<br/>source: startup / resume / clear / compact / fork])
-    start --> reg["3 SessionStart pairs<br/>hooks.json:3-10"]
+    start --> reg["SessionStart launcher<br/>runs 3 scripts<br/>hooks.json:3-6"]
 
     reg --> HR["handoff-read<br/>process-crew-brief-handoff-read.mmd"]
     reg --> PS["platform-sync<br/>process-crew-brief-platform-sync.mmd"]
@@ -1024,7 +1024,7 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `reg` | 3 SessionStart pairs, sh + ps1, no matcher; each claims per session+source |
+| `reg` | one SessionStart launcher pair, sh + ps1, no matcher; crew_hook.py runs the three scripts; each claims per session+source |
 
 - **Source:** `process-crew-brief.mmd`
 - **Drawn from:** `plugin/crew/hooks/hooks.json`, `plugin/crew/hooks/scripts/handoff-read.sh`, `plugin/crew/hooks/scripts/platform-sync.sh`, `plugin/crew/hooks/scripts/crew-context.sh`
@@ -1075,21 +1075,21 @@ How /crew:approve, typed by the user only, records or refuses a plan approval th
 flowchart TB
     subgraph approve["/crew:approve - typed by the user only"]
         ap0["user types /crew:approve id<br/>approve.md:5"]
-        ap0 --> ap1{"approval-hook verdict?<br/>hooks.json:14"}
+        ap0 --> ap1{"approval-hook verdict?<br/>hooks.json:8-9"}
         ap1 -- refused --> apx([prompt blocked, reason shown<br/>:15])
         ap1 -- recorded --> ap2["approval.json =<br/>digest(spec.md, plan.md)<br/>:12-13"]
         ap1 -- "several ids, a range,<br/>or plain text" --> apg["PENDING list, nothing recorded<br/>until the user's --confirm<br/>approve.md:27-32"]
         apg -- "confirmed, every hash unchanged" --> ap2
     end
 
-    ap2 --> planned["spec.md 'status: planned',<br/>move --to planned<br/>plan.md:60-63"]
+    ap2 --> planned["spec.md 'status: planned',<br/>move --to planned<br/>plan.md:70-73"]
     planned --> to_im0>"next: implement part<br/>crew_ticket.py validate"]
 ```
 
 | Box | Details |
 |---|---|
 | `ap0` | approve.md:5 disable-model-invocation |
-| `ap1` | approval-hook (UserPromptSubmit) hooks.json:14; approve.md:9 |
+| `ap1` | approval-hook (UserPromptSubmit) hooks.json:8-9; approve.md:9 |
 | `ap2` | header status value normalised; approved_via user-prompt |
 | `apg` | user's own /crew:approve --confirm records one receipt per ticket, or none |
 | `planned` | spec.md header 'status: planned' keeps the approval, crew_tracker.py move --to planned |
@@ -1145,23 +1145,23 @@ flowchart TB
         dn2 -- pass --> dn3{"3 completion audit<br/>passes?<br/>:36-47"}
         dn3 -- pass --> dn5{"4 artifacts current and committed<br/>crew_refresh_check.py, read-only<br/>:49-61"}
         dn5 -- fresh --> dn6{"5 documents owed<br/>crew_docs_check.py, read-only<br/>:63-71"}
-        dn6 -- "none MISSING" --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:73-101"]
+        dn6 -- "none MISSING" --> dn4["trailer report, then<br/>'status: done', move --to done,<br/>report + Not verified<br/>:73-100"]
         dn1 -- fail --> dnx([refuse done])
         dn2 -- fail --> dnx
         dn3 -- fail --> dnx
         dn5 -- "stale / unknown /<br/>fresh-uncommitted" --> dnx
         dn6 -- "MISSING / unknown" --> dnx
-        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:103-106"}
-        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:108-113"}
-        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :113-114"]
-        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:115-120" --> to_im5>"back: implement part<br/>then /crew:review last"]
+        dn4 --> ln0{"train armed?<br/>crew_train.py status<br/>done.md:102-105"}
+        ln0 -- yes --> ln1{"check-land passes?<br/>done.md:107-112"}
+        ln1 -- LAND_OK --> ln2["you run the printed gh pr merge,<br/>then release --merged sha<br/>(crew never merges) :112-113"]
+        ln1 -- "refused: catch-up, resolve,<br/>bump, refresh, commit, gate,<br/>review again if the receipt is stale<br/>:114-119" --> to_im5>"back: implement part<br/>then /crew:review last"]
     end
 ```
 
 | Box | Details |
 |---|---|
 | `dn3` | (refresh artifacts: re-anchor or regeneration the change reaches) |
-| `dn4` | first a report, never a check (done.md:73-81): crew_trailers.py --check lists git.forbiddenTrailers over the ticket's own commits as clean / FINDING / unknown, copied to the close note and PR body; never refuses, never rewrites. Then spec.md 'status: done' (keeps the approval), crew_tracker.py move --to done, crew_metrics record, then the report with its Not verified list (done.md:99-101) |
+| `dn4` | first a report, never a check (done.md:73-81): crew_trailers.py --check lists git.forbiddenTrailers over the ticket's own commits as clean / FINDING / unknown, copied to the close note and PR body; never refuses, never rewrites. Then spec.md 'status: done' (keeps the approval), crew_tracker.py move --to done, crew_metrics record (schema 1.1 row, tokens and cost an attributed lower bound), then the report with its Not verified list (done.md:98-100) |
 | `ln1` | crew_train.py check-land: holds the train, merge-tree clean, base unmoved in Touch, receipt + gate |
 | `ln2` | --merge --match-head-commit sha |
 
@@ -1183,9 +1183,9 @@ flowchart TB
         im2 --> im3a["changed-file list, verify<br/>:59, :69"]
         im3a --> im3["step 6: tests, then /crew:docs<br/>:88-91"]
         im3 --> rf1{"crew_refresh_check.py<br/>:94"}
-        rf1 -- "refresh with ..." --> rf2["run the named refresh,<br/>commit, re-run"]
+        rf1 -- refresh --> rf2["run the named refresh,<br/>commit, re-run"]
         rf2 --> rf1
-        rf1 -- "fresh-uncommitted" --> rf3["commit the paths its<br/>uncommitted: line lists, re-run<br/>:99"]
+        rf1 -- uncommitted --> rf3["commit the paths its<br/>uncommitted: line lists, re-run<br/>:99"]
         rf3 --> rf1
         rf1 -- "stop" --> rfx([report the reason, stop])
         rf1 -- fresh --> sc1["required standards self-check<br/>:106-110"]
@@ -1195,19 +1195,19 @@ flowchart TB
 
     im5 --> to_pf0>"next: review part<br/>preflight first"]
 
-    stop["Stop hooks every turn:<br/>verify-gate, completion-audit<br/>hooks.json:58, :62"] -.- im2
+    stop["Stop hooks every turn:<br/>verify-gate, completion-audit<br/>hooks.json:36-37"] -.- im2
 ```
 
 | Box | Details |
 |---|---|
 | `im0` | crew_ticket.py validate |
-| `im2` | recurring-findings checklist for the Touch paths, then steps in order; hooks.json:31 (PreToolUse, Touch) |
+| `im2` | recurring-findings checklist for the Touch paths, then steps in order; hooks.json:12-15 (PreToolUse, Touch) |
 | `sc1` | crew_standards.py init, answer every row, crew_standards.py stamp until exit 0 |
 | `im4` | spec.md header 'status: review' (keeps the approval), crew_tracker.py move --to review (Review lane: review outstanding) |
 
 - **Source:** `process-crew-lifecycle-implement.mmd`
 - **Drawn from:** `plugin/crew/commands/implement.md`, `plugin/crew/hooks/hooks.json`, `plugin/crew/hooks/scripts/crew_ticket.py`, `plugin/crew/hooks/scripts/crew_tracker.py`, `plugin/crew/hooks/scripts/crew_refresh_check.py`, `plugin/crew/hooks/scripts/crew_standards.py`
-- **Readability:** FAIL: 1 label overlap(s)
+- **Readability:** PASS: 15 nodes, no crossings, nothing drawn through a node
 
 ## Process crew lifecycle review
 
@@ -1221,14 +1221,14 @@ flowchart TB
         kp0 -- "ok; or not ok: exit 2,<br/>no round spent, the next<br/>provider's preflight :450" --> pf0
         pf0{"preflight (#264):<br/>receipt, gate, budget?"}
         pf0 -- "CLEAN receipt: CLEAN,<br/>no round, no self-check" --> rcpt
-        pf0 -- "gate not passed or unknown:<br/>exit 9, no round spent,<br/>self-check not asked<br/>review.md:449" --> fx0
+        pf0 -- "gate not passed or unknown:<br/>exit 9, no round spent,<br/>self-check not asked<br/>review_run.py next: (exit 9)" --> fx0
         pf0 -- "go on" --> pr0{"pre-review checks<br/>pass? (L-0574)"}
-        pr0 -- "NEW finding or COULD NOT CHECK:<br/>exit 9, no round spent<br/>review.md:449" --> fx0["run the verify gate, or fix<br/>the finding or the tool,<br/>then review again"]
+        pr0 -- "NEW finding or COULD NOT CHECK:<br/>exit 9, no round spent<br/>review_run.py next: (exit 9)" --> fx0["run the verify gate, or fix<br/>the finding or the tool,<br/>then review again"]
         fx0 --> to_im5
         pr0 -- "pass / n/a / none configured,<br/>override recorded, or an active<br/>incident (skip logged)" --> rv0{"self-check<br/>stamped?"}
         pf0 -- "no rounds left or NEEDS_REPLAN:<br/>budget refusal answers first<br/>review_run.py:850-861" --> replan
-        rv0 -- "no: exit 2,<br/>no round spent<br/>review.md:446-449" --> to_sc1
-        rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run<br/>Codex / Kimi / Copilot /<br/>crew:reviewer fallback<br/>review.md:25-28, :431"]
+        rv0 -- "no: exit 2,<br/>no round spent<br/>review_run.py next: (exit 2)" --> to_sc1
+        rv0 -- "yes (or no approval receipt,<br/>or an incident: skip logged)" --> rv1["reserve a round, run<br/>Codex / Kimi / Copilot /<br/>crew:reviewer fallback<br/>review.md intro, step 2a-2e"]
         rv1 --> rv2{"verdict (the script's)<br/>:440, :482-486"}
         rv2 -- "CLEAN (exact: no other line)" --> rcpt["receipt written<br/>:510"]
         rv2 -- "FINDINGS (stray prose<br/>ignored and named)" --> rv3{"final round,<br/>0 BLOCK?"}
@@ -1247,7 +1247,7 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `kp0` | --provider kimi only (L-0527): ledger status, the "before" fingerprint, then kimi_probe BEFORE preflight and reserve; what Kimi leaves running is ended first review.md:240, :431-432, :450-451 |
+| `kp0` | --provider kimi only (L-0527): ledger status, the "before" fingerprint, then kimi_probe BEFORE preflight and reserve; what Kimi leaves running is ended first review.md step 2e |
 | `pf0` | preflight (#264), first for every other provider: a CLEAN receipt covers this bundle? verify gate passed this tree? review_run.py:672, :846 |
 | `pr0` | no linter finding the bundle adds against its base? could every configured linter check? review_run.py prereview_gate :731 |
 | `rv0` | self-check stamped for this bundle and standards set? review_run.py standards_gate |
@@ -1325,7 +1325,7 @@ flowchart LR
 
 ## Process qa audit
 
-generated by crew qa_doc.py on 2026-10-09. Verify before trusting.
+generated by crew qa_doc.py on 2026-10-22. Verify before trusting.
 
 ```mermaid
 flowchart LR
@@ -1336,19 +1336,19 @@ flowchart LR
 ```
 
 - **Source:** `process-qa-audit.mmd`
-- **Drawn from:** `.crew/verify.json`, `.github/workflows/instruction-budgets.yml`, `.github/workflows/marketplace.yml`, `.github/workflows/mcp-servers.yml`, `.github/workflows/plugin-evals.yml`, `.github/workflows/publish-mcp-servers.yml`, `.github/workflows/pylint.yml`, `.github/workflows/pytest-crew.yml`
+- **Drawn from:** `.crew/verify.json`, `.github/workflows/instruction-budgets.yml`, `.github/workflows/marketplace.yml`, `.github/workflows/mcp-servers.yml`, `.github/workflows/plugin-evals.yml`, `.github/workflows/publish-mcp-servers.yml`, `.github/workflows/pylint.yml`, `.github/workflows/pytest-ai-connect.yml`
 - **Readability:** PASS: 5 nodes, no crossings, nothing drawn through a node
 
 ## Process qa gates
 
-generated by crew qa_doc.py on 2026-10-09. Verify before trusting.
+generated by crew qa_doc.py on 2026-10-22. Verify before trusting.
 
 ```mermaid
 flowchart TD
-  edit(["change"]) --> stop["Stop gate<br/>94 rule(s) in .crew/verify.json"]
+  edit(["change"]) --> stop["Stop gate<br/>98 rule(s) in .crew/verify.json"]
   stop -->|red| fix1["fix, then the Stop gate runs again"]
   stop -->|green| review["review<br/>(/crew:review)"]
-  review --> ci["CI<br/>10 workflow file(s)"]
+  review --> ci["CI<br/>11 workflow file(s)"]
   ci -->|red| fix2["fix, push, CI runs again"]
   ci -->|green| merge(["merge"])
   merge --> ladder["promotion ladder<br/>(see the ladder diagram)"]
@@ -1356,12 +1356,12 @@ flowchart TD
 ```
 
 - **Source:** `process-qa-gates.mmd`
-- **Drawn from:** `.crew/verify.json`, `.github/workflows/instruction-budgets.yml`, `.github/workflows/marketplace.yml`, `.github/workflows/mcp-servers.yml`, `.github/workflows/plugin-evals.yml`, `.github/workflows/publish-mcp-servers.yml`, `.github/workflows/pylint.yml`, `.github/workflows/pytest-crew.yml`
+- **Drawn from:** `.crew/verify.json`, `.github/workflows/instruction-budgets.yml`, `.github/workflows/marketplace.yml`, `.github/workflows/mcp-servers.yml`, `.github/workflows/plugin-evals.yml`, `.github/workflows/publish-mcp-servers.yml`, `.github/workflows/pylint.yml`, `.github/workflows/pytest-ai-connect.yml`
 - **Readability:** PASS: 8 nodes, no crossings, nothing drawn through a node
 
 ## Process qa ladder
 
-generated by crew qa_doc.py on 2026-10-09. Verify before trusting.
+generated by crew qa_doc.py on 2026-10-22. Verify before trusting.
 
 ```mermaid
 flowchart LR

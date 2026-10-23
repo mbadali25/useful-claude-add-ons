@@ -393,7 +393,7 @@ PY=$(_resolve_role_write_python) || {
 # twin, where a caller's environment explicitly unsetting these could still
 # reach python; set here too so neither flavour depends on the CALLER never
 # having touched them.
-printf '%s' "$INPUT" | PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$DIR/role_write_guard.py"
+printf '%s' "$INPUT" | PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$(crew_native_path "$DIR/role_write_guard.py")"
 status=$?
 
 if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then

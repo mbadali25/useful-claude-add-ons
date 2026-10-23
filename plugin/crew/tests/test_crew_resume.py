@@ -814,7 +814,7 @@ def test_precompact_write_leaves_no_tmp_when_the_replace_fails(fx, monkeypatch):
 
 def test_precompact_tmp_files_older_than_a_day_are_pruned(fx):
     """Review round 2 NIT :209: a writer killed between open and os.replace
-    (handoff-write.ps1 does that at 10 s) leaves `precompact-<key>.json.<pid>.tmp`."""
+    (a hook killed at its timeout does that) leaves `precompact-<key>.json.<pid>.tmp`."""
     state = crew_resume.state_dir(str(fx.root))
     os.makedirs(state, exist_ok=True)
     old = os.path.join(state, "precompact-old.json.123.tmp")

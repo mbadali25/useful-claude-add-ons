@@ -16,9 +16,7 @@ Must-block / must-allow pairs for each rule the cycle depends on:
   - the handoff and its next action come back after a clear, inside the
     3,000-char resume budget, with no initialUserMessage.
 
-Both flavours run wherever their interpreter exists. The .ps1 ones are told
-they are on Windows (`OS=Windows_NT`) and get a stubbed window list through
-CREW_AUTOCLEAR_WINDOW_STUB, so they run on a Linux pwsh too. Every run sets
+The rules run through the bash wrappers wherever bash exists. Every run sets
 CREW_AUTOCLEAR_INHIBIT and points HOME at the fixture: no case can read the
 developer's real opt-in, enumerate a real window, or send a keystroke.
 """
@@ -27,8 +25,6 @@ import os
 import pathlib
 import shutil
 import subprocess
-import sys
-import tempfile
 import time
 
 import pytest
@@ -40,13 +36,12 @@ import crew_fixtures
 
 _SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = crew_fixtures.resolve_pwsh()
-FLAVORS = [f for f, have in (("sh", _BASH), ("ps1", _PWSH)) if have]
-# There is no python driver here: the rules live in the two wrappers. Four
-# tests (`by_flavor`) are the per-shell parity sample run by default -- a
-# wrap-up block, a stop_hook_active stand-down, a clear sent, and the resume
-# end to end. Every other test (`by_flavor_matrix`) is `slow` in both
-# flavours: `pytest -m slow` or `--run-slow` (conftest.py).
+FLAVORS = [f for f, have in (("sh", _BASH),) if have]
+# There is no python driver here: the rules live in the bash wrappers. Four
+# tests (`by_flavor`) are the sample run by default -- a wrap-up block, a
+# stop_hook_active stand-down, a clear sent, and the resume end to end. Every
+# other test (`by_flavor_matrix`) is `slow`: `pytest -m slow` or `--run-slow`
+# (conftest.py).
 by_flavor = pytest.mark.parametrize("flavor", FLAVORS)
 by_flavor_matrix = pytest.mark.parametrize(
     "flavor", [pytest.param(f, marks=crew_fixtures.SLOW) for f in FLAVORS])
@@ -56,14 +51,13 @@ SESSION_B = "22222222-bbbb-4bbb-8bbb-000000000002"
 GOOD_HANDOFF = (
     "# Handoff\nwritten: now\nticket: T-1\nbranch: x\nhead: y\n\n"
     "## Done\n- a thing\n\n## Next action\nRun the NEXT-ACTION-TOKEN migration.\n")
-_PS_ARGS = {"--session": "-Session", "--dry-run": "-DryRun", "--root": "-Root", "--force": "-Force"}
 
 
 # --- plumbing --------------------------------------------------------------
 
 def _script(flavor, name):
     path = os.path.join(_SCRIPTS, f"{name}.{flavor}")
-    return path.replace("\\", "/") if flavor == "sh" else path
+    return path.replace("\\", "/")
 
 
 def _invoke(flavor, name, root, payload=None, args=(), env_extra=None):
@@ -72,12 +66,7 @@ def _invoke(flavor, name, root, payload=None, args=(), env_extra=None):
                CLAUDE_PROJECT_DIR=str(root),
                CREW_VAULT_OPS=str(root.parent / "absent-vault-ops.py"),
                CREW_OBSIDIAN_CONFIG=str(root.parent / "absent-obsidian.json"))
-    if flavor == "ps1":
-        env["OS"] = "Windows_NT"
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _script(flavor, name),
-               *[_PS_ARGS.get(a, a) for a in args]]
-    else:
-        cmd = [_BASH, _script(flavor, name), *args]
+    cmd = [_BASH, _script(flavor, name), *args]
     if env_extra:
         env.update(env_extra)
     return subprocess.run(cmd, cwd=str(root), env=env, capture_output=True, text=True,
@@ -175,14 +164,8 @@ _NO_NATIVE_TMUX = ("no native tmux; the pane check has no Windows parent-pid wal
 
 
 def _send_method(flavor):
-    """The machine-file keys naming the method `_sendable`'s target uses.
-
-    `method="sendkeys"` is explicit for ps1: since `auto` now resolves to
-    `notify` on native Windows (the owner decision this method never
-    exercises), a helper whose whole job is a WINDOW target has to ask for
-    the method that still uses one."""
-    if flavor == "ps1":
-        return {"method": "sendkeys"}
+    """The machine-file keys naming the method `_sendable`'s target uses."""
+    del flavor
     if _SH_VIA_XDOTOOL:
         return {"method": "xdotool", "windowTitle": _SH_TITLE}
     return {"method": "tmux"}
@@ -206,19 +189,16 @@ def _bound(root, session=SESSION_A):
 
 
 def _sendable(flavor, tmp_path, root, session=SESSION_A):
-    """A target each flavour can identify uniquely, for a session bound to
+    """A target the wrapper can identify uniquely, for a session bound to
     its own process (T-0016): a tmux pane whose pid is that session's
-    terminal for bash -- on native Windows, the xdotool title fallback
-    instead (see `_SH_VIA_XDOTOOL`) -- and one stubbed window owned by that
-    terminal for PowerShell."""
+    terminal -- on native Windows, the xdotool title fallback instead (see
+    `_SH_VIA_XDOTOOL`)."""
     _machine(root, **_send_method(flavor))
     env = _bound(root, session)
-    if flavor == "sh" and _SH_VIA_XDOTOOL:
+    if _SH_VIA_XDOTOOL:
         env.update(_xdotool_env(tmp_path, [{"id": 4242, "pid": 999999, "title": _SH_TITLE}]))
-    elif flavor == "sh":
-        env.update(_tmux_env(tmp_path))
     else:
-        env.update(_windows(tmp_path, [{"id": 4242, "pid": crew_fixtures.TERMINAL_PID, "title": "Claude Code"}]))
+        env.update(_tmux_env(tmp_path))
     return env
 
 
@@ -239,7 +219,7 @@ def _log(root):
 
 
 def test_flavors_are_discoverable():
-    assert FLAVORS, "neither bash nor pwsh is available - nothing here ran"
+    assert FLAVORS, "bash is not available - nothing here ran"
 
 
 def test_log_autoclear_survives_a_lone_surrogate_in_the_message(tmp_path):
@@ -468,11 +448,11 @@ def test_the_detached_sender_does_not_outlive_kill_process_group(tmp_path):
 @by_flavor
 def test_the_forced_continuation_reaches_auto_clear_with_no_repo_config_json(flavor, tmp_path):
     """crew 1.0 F4 reachability fix. Before it, `context-watch.sh:81` /
-    `context-watch.ps1:25` stood the whole hook down on a missing
+    `context-watch.sh` stood the whole hook down on a missing
     `.crew/config.json`, so a `.crew/` directory the machine had still opted
     in for (a fresh checkout, or one that ran `/crew:init` for something
     other than auto-clear) never reached the forced-continuation handover
-    below -- even though auto-clear.sh/.ps1's OWN gate now arms on `.crew/`
+    below -- even though auto-clear.sh's OWN gate now arms on `.crew/`
     alone (test_auto_clear.py's state (2)). This is the caller-level proof
     that the handover actually runs end to end through context-watch, not
     only when auto-clear is invoked directly."""
@@ -688,45 +668,15 @@ def test_an_unusable_delay_seconds_is_logged_and_the_default_still_applies(flavo
     assert "delaySeconds" in log and "not a usable number" in log, log
 
 
-@pytest.mark.skipif("ps1" not in FLAVORS, reason="needs pwsh")
-def test_an_empty_delay_seconds_array_is_logged_and_the_default_still_applies(tmp_path):
-    """F1 (crew-1.0-win-ps1-ac): `delaySeconds: []` is a present, unusable
-    value, not an absent one -- but the old probe (Get-CrewAutoClearValue,
-    which returns via `return`) let PowerShell unroll that empty array
-    through the function's output stream into zero pipeline objects, so it
-    arrived back as plain $null: indistinguishable from the key never
-    having been set, and the guard below never fired. .sh is not this
-    ticket's file and is not asserted here."""
+@by_flavor_matrix
+def test_an_empty_delay_seconds_array_is_logged_and_the_default_still_applies(flavor, tmp_path):
     root = _repo(tmp_path)
-    env = _sendable("ps1", tmp_path, root)
-    _machine(root, method="sendkeys", delaySeconds=[])
+    env = _sendable(flavor, tmp_path, root)
+    _machine(root, **_send_method(flavor), delaySeconds=[])
     _write_marker(root)
     _write_handoff(root)
 
-    result = _invoke("ps1", "auto-clear", root, args=("--session", SESSION_A, "--dry-run"), env_extra=env)
-
-    assert "delay: 3s" in result.stdout, result.stdout + result.stderr
-    log = _log(root)
-    assert "delaySeconds" in log and "not a usable number" in log, log
-
-
-@pytest.mark.skipif("ps1" not in FLAVORS, reason="needs pwsh")
-def test_a_negative_delay_seconds_is_logged_and_the_default_still_applies(tmp_path):
-    """F2 (crew-1.0-win-ps1-ac): `delaySeconds: -1` casts to [int] cleanly
-    in PowerShell, so a bare try/[int]$Value/catch reads it as usable --
-    castable is not usable. Uncaught, that lets the parent log "sent" for a
-    delay whose detached child dies at `Start-Sleep -Seconds -1`, after the
-    parent has already committed. The fix floors the EFFECTIVE $delay to
-    the default here, not just the warning text, so the value that reaches
-    Start-Sleep can never be negative. .sh is not this ticket's file and is
-    not asserted here."""
-    root = _repo(tmp_path)
-    env = _sendable("ps1", tmp_path, root)
-    _machine(root, method="sendkeys", delaySeconds=-1)
-    _write_marker(root)
-    _write_handoff(root)
-
-    result = _invoke("ps1", "auto-clear", root, args=("--session", SESSION_A, "--dry-run"), env_extra=env)
+    result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"), env_extra=env)
 
     assert "delay: 3s" in result.stdout, result.stdout + result.stderr
     log = _log(root)
@@ -738,7 +688,7 @@ def test_a_negative_delay_seconds_is_logged_and_the_default_still_applies(tmp_pa
 def test_only_the_machine_can_opt_in_and_a_repo_can_only_opt_out(flavor, machine, repo, tmp_path):
     root = _repo(tmp_path, **({} if repo is None else {"enabled": repo}))
     env = _sendable(flavor, tmp_path, root)
-    _machine(root, enabled=machine, **(_send_method(flavor) if flavor == "sh" else {}))
+    _machine(root, enabled=machine, **_send_method(flavor))
     _write_marker(root)
     _write_handoff(root)
 
@@ -765,60 +715,18 @@ _WINDOW_CASES = [
 ]
 
 
-@pytest.fixture
-def _real_foreign_pid():
-    """A PID that (a) really backs a running process, so ps1's owner-safety
-    Get-Process check can resolve it for real, and (b) is not an ancestor of
-    this test process, so it still exercises the title-fallback path rather
-    than owner-pid matching. Spawned and killed by the test -- this is what
-    _WINDOW_CASES' fabricated 999999 should have been for the one case that
-    needs its pid to survive a REAL Get-Process call (title-one); the other
-    fake-999999 cases (title-none, title-two, nothing) all decline BEFORE
-    $target is ever resolved, so they never reach Get-Process and do not
-    need this.
-    """
-    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as proc:
-        try:
-            yield proc.pid
-        finally:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-
-
 @by_flavor_matrix
 @pytest.mark.parametrize("case,windows,title,expect", _WINDOW_CASES, ids=[c[0] for c in _WINDOW_CASES])
-def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, title, expect, tmp_path, request):
-    if flavor == "ps1" and case == "title-one":
-        # Fixed 2026-09-24, closing the TODO.md deferral: the fabricated pid
-        # 999999 never backed a real process, so ps1's owner-safety check
-        # (a REAL Get-Process call) correctly declined it -- that check was
-        # right, the fixture was not. No seam was added to auto-clear.ps1;
-        # this swaps the fake pid for one that genuinely backs a running,
-        # non-ancestor process, which is exactly what owner-one/owner-two-
-        # title already do with os.getpid(). CREW_AUTOCLEAR_OWNER_STUB
-        # (a5008632) is NOT reused here -- it was reverted for letting any
-        # environment falsify a window's owner at runtime, in production.
-        real_pid = request.getfixturevalue("_real_foreign_pid")
-        windows = [dict(w, pid=real_pid) if w["pid"] == 999999 else w for w in windows]
-    if flavor == "sh" and os.name == "nt" and any(w["pid"] == _ME for w in windows):
+def test_the_window_is_identified_uniquely_or_not_at_all(flavor, case, windows, title, expect, tmp_path):
+    if os.name == "nt" and any(w["pid"] == _ME for w in windows):
         pytest.skip("owner-pid matching needs an ancestor walk the bash flavour has no Windows "
                     "branch for (_ppid, crew_autocycle.py); it fails closed there (T-0076)")
     del case
     root = _repo(tmp_path)
     # T-0016: the owner is the bound session's terminal, not this process.
     windows = [dict(w, pid=crew_fixtures.TERMINAL_PID) if w["pid"] == _ME else w for w in windows]
-    if flavor == "sh":
-        env = dict(_bound(root), **_xdotool_env(tmp_path, windows))
-        _machine(root, method="xdotool", windowTitle=title or None)
-    else:
-        env = dict(_bound(root), **_windows(tmp_path, windows))
-        # Explicit: `auto` now resolves to `notify` on native Windows and
-        # never touches window resolution at all, so this window-targeting
-        # matrix has to request `sendkeys` by name to exercise it.
-        _machine(root, method="sendkeys", windowTitle=title or None)
+    env = dict(_bound(root), **_xdotool_env(tmp_path, windows))
+    _machine(root, method="xdotool", windowTitle=title or None)
     _write_marker(root)
     _write_handoff(root)
 
@@ -836,83 +744,6 @@ def test_resolve_target_table(case, windows, title, expect):
 
     assert found["ok"] is expect.endswith("]")
     assert expect.rstrip("]") in (found.get("how", "") if found["ok"] else found["reason"])
-
-
-# --- Resolve-CrewLinkRoot: drive/UNC/rootless symlink targets ----------------
-#
-# auto-clear.ps1 has its own hand-rolled symlink walker (crew_autocycle.py
-# uses os.path.realpath and has no equivalent code at all), and the piece
-# that classifies a symlink TARGET's root cannot be integration-tested here:
-# [System.IO.Path]::GetPathRoot's answer for a drive letter or a UNC share
-# depends on the ACTUAL OS the .NET runtime is on, and Get-Item's own
-# `.LinkTarget` lookup needs the component to exist for REAL on THIS
-# filesystem at every hop -- neither is true on Linux/macOS for a Windows
-# drive letter. So this extracts and runs the live function directly
-# (never a hand-copied duplicate) rather than driving it through a real
-# symlink chain, which only a real Windows host can do end to end.
-
-def _extract_ps1_function(source, name):
-    """Pull `function <name>(...) { ... }`'s exact text out of a .ps1 file by
-    brace-counting. The rest of auto-clear.ps1 is a live Stop hook and every
-    path through it ends in `exit`, which would kill the whole pwsh process
-    if the file were dot-sourced whole just to reach one function."""
-    marker = f"function {name}("
-    start = source.index(marker)
-    brace_start = source.index("{", start)
-    depth = 0
-    for i in range(brace_start, len(source)):
-        if source[i] == "{":
-            depth += 1
-        elif source[i] == "}":
-            depth -= 1
-            if depth == 0:
-                return source[start:i + 1]
-    raise AssertionError(f"unbalanced braces extracting {name} from the source")
-
-
-_RESOLVE_CREW_LINK_ROOT_CASES = [
-    ("C:/repo", "C:/", "repo", False),
-    ("//srv/share/repo", "//srv/share/", "repo", False),
-    ("//srv/share", "//srv/share/", "", False),
-    ("/repo", None, "repo", True),
-    ("repo", None, None, None),
-    ("../rel", None, None, None),
-]
-
-
-@pytest.mark.skipif(_PWSH is None, reason="needs pwsh")
-@pytest.mark.parametrize("target,root,remainder,rootless", _RESOLVE_CREW_LINK_ROOT_CASES,
-                         ids=[c[0] for c in _RESOLVE_CREW_LINK_ROOT_CASES])
-def test_resolve_crew_link_root_classifies_drive_unc_and_rootless_targets(
-        target, root, remainder, rootless):
-    """Regression, Codex FIX|auto-clear.ps1:211: a drive-root-relative target
-    (`\\repo`, i.e. `/repo` once backslashes are replaced) used to be read
-    as fully qualified and become the WHOLE new root, throwing the alias's
-    own drive away -- `C:\\alias -> \\repo` resolved to `\\repo`, not
-    `C:\\repo`. A rootless target must instead take the link's OWN drive
-    (Rootless=True, Root=$null, and the caller keeps its current root); a
-    real drive letter or a UNC share stays fully qualified as itself
-    (Rootless=False); an ordinary relative target gets no classification at
-    all (None)."""
-    # `target` is interpolated as a single-quoted literal, not passed as an
-    # argument: `pwsh -Command <script> <arg>...` joins every extra arg onto
-    # the SAME command line rather than binding them to $args, so a leading
-    # "/" in `target` parses as a second, unrelated command.
-    assert "'" not in target
-    source = pathlib.Path(_script("ps1", "auto-clear")).read_text(encoding="utf-8")
-    func = _extract_ps1_function(source, "Resolve-CrewLinkRoot")
-    script = (func + f"\n$r = Resolve-CrewLinkRoot '{target}'\n"
-              "if ($null -eq $r) { Write-Output 'NONE' } "
-              "else { Write-Output \"$($r.Root)|$($r.Remainder)|$($r.Rootless)\" }\n")
-    result = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-Command", script],
-        capture_output=True, text=True, check=False, timeout=30, stdin=subprocess.DEVNULL)
-    out = result.stdout.strip()
-
-    if root is None and remainder is None:
-        assert out == "NONE", result.stderr
-    else:
-        assert out == f"{root or ''}|{remainder}|{rootless}", result.stderr
 
 
 @pytest.mark.skipif(_BASH is None, reason="needs bash")
@@ -956,7 +787,7 @@ def test_wtype_is_refused_even_with_unsafe_focus(tmp_path):
 
 
 # --- OWNER DECISION: `auto` resolves to `notify` on native Windows, never to
-# `sendkeys` -------------------------------------------------------------
+# `auto` never resolves to a removed method ------------------------------
 
 _NO_CAPABILITY_ENV = {"TMUX": "", "DISPLAY": "", "TMUX_PANE": ""}
 
@@ -964,10 +795,10 @@ _NO_CAPABILITY_ENV = {"TMUX": "", "DISPLAY": "", "TMUX_PANE": ""}
 @by_flavor
 def test_auto_resolves_to_notify_on_native_windows_and_never_to_sendkeys(flavor, tmp_path):
     """Both senders: `auto` with no tmux pane and no X11 must choose `notify`,
-    never the SendKeys-equivalent method, on native Windows. ps1 is always
-    told OS=Windows_NT by `_invoke`; sh is told the same here explicitly --
-    this is the one place a bash session can legitimately be "native
-    Windows" (Git Bash), and the owner decision applies there too."""
+    never the SendKeys-equivalent method, on native Windows. The bash flavour
+    is told OS=Windows_NT here explicitly -- this is the one place a bash
+    session can legitimately be "native Windows" (Git Bash), and the owner
+    decision applies there too."""
     root = _repo(tmp_path)  # method left at the default, "auto"
     _machine(root)
     _write_marker(root)
@@ -985,9 +816,9 @@ def test_auto_resolves_to_notify_on_native_windows_and_never_to_sendkeys(flavor,
 @by_flavor
 def test_notify_dry_run_never_reports_a_delay_number(flavor, tmp_path):
     """`notify` types nothing, so `delaySeconds` buys it no wait -- printing
-    the configured number (or, as `auto-clear.ps1` used to, a hardcoded `0`)
-    would read as a real delay `notify` never takes. Both flavours print the
-    identical `n/a` text instead; `_repo`'s configured delaySeconds (9, not
+    the configured number (or a hardcoded `0`)
+    would read as a real delay `notify` never takes. The plan prints
+    `n/a` text instead; `_repo`'s configured delaySeconds (9, not
     the default 3) proves the printed text is not simply the default."""
     root = _repo(tmp_path, delaySeconds=9)
     _machine(root)
@@ -1007,9 +838,9 @@ def test_notify_dry_run_never_reports_a_delay_number(flavor, tmp_path):
 @by_flavor
 def test_notifys_dry_run_plan_has_no_target_line(flavor, tmp_path):
     """PARITY (item 3): `notify` identifies no window, so LABEL/target is
-    always empty for it. `auto-clear.ps1` has never printed a `target:` line
-    there; `auto-clear.sh` used to print an empty one (`target: ` with
-    nothing after it) regardless. Both now omit the line entirely."""
+    always empty for it. `auto-clear.sh` used to print an empty `target:` line
+    (`target: ` with nothing after it) regardless; it now omits the line
+    entirely."""
     root = _repo(tmp_path)
     _machine(root)
     _write_marker(root)
@@ -1026,7 +857,7 @@ def test_notifys_dry_run_plan_has_no_target_line(flavor, tmp_path):
 # --- the configured delay, at several values, on the keystroke methods -----
 #
 # `notify` types nothing, so its own delay handling is covered above; a
-# keystroke method (tmux/sendkeys) has a real wait, and it is this value --
+# keystroke method (tmux/xdotool) has a real wait, and it is this value --
 # not the schema default of 3 -- that must reach both the dry-run plan and
 # the sent-log line. Several values, none of them 3, so a hard-coded
 # fallback would fail every one of them, not merely the ones that happen to
@@ -1122,25 +953,14 @@ def test_auto_does_not_resolve_to_notify_off_windows_with_no_capability(flavor, 
     _write_marker(root)
     _write_handoff(root)
 
-    # sh gets OS="" (read exactly as unset): on native Windows it would
+    # OS="" (read exactly as unset): on native Windows the wrapper would
     # otherwise inherit this process's OS=Windows_NT and correctly resolve
     # to `notify`, which is the OTHER test's case, not this one.
-    off_windows = {"OS": ""} if flavor == "sh" else {}
     result = _invoke(flavor, "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
-                     env_extra=dict(_NO_CAPABILITY_ENV, **off_windows))
+                     env_extra=dict(_NO_CAPABILITY_ENV, OS=""))
 
-    if flavor == "sh":
-        # The .sh flavour has no forced OS -- `_invoke` passes this test
-        # process's own environment through, which carries OS=Windows_NT on
-        # a native Windows host, so the OS="" above is what makes this the
-        # off-Windows case on every host.
-        assert "would send" not in result.stdout
-        assert "no usable method" in result.stderr
-    else:
-        # `_invoke` always forces OS=Windows_NT for ps1 -- that IS this
-        # flavour's native platform, so `auto` resolves to `notify` here
-        # regardless, and that is the correct answer, not a refusal.
-        assert "method: notify" in result.stdout, result.stdout
+    assert "would send" not in result.stdout
+    assert "no usable method" in result.stderr
 
 
 @by_flavor
@@ -1185,68 +1005,6 @@ def test_notify_is_not_suppressed_by_the_test_suites_own_inhibit_flag(flavor, tm
     assert "sent - method notify" in _log(root), _log(root)
 
 
-@pytest.mark.skipif(_PWSH is None, reason="needs pwsh")
-@pytest.mark.skipif(not os.path.isdir("/proc"), reason=(
-    "proves the fake process's name via /proc/<pid>/comm, which only exists on Linux -- "
-    "real Windows Terminal needs no rename trick, and this is not the place to test that"))
-def test_sendkeys_declines_and_falls_back_to_notify_when_the_owner_is_windows_terminal(tmp_path):
-    """requirement: `sendkeys` must resolve the owning window, then decline
-    rather than type when it cannot verify the window is showing the ONLY
-    tab -- Windows Terminal hosts every tab in one window and nothing short
-    of UI Automation (not a dependency here) can ask it which tab is
-    active, so a window OWNED BY Windows Terminal always declines. Proved
-    against a REAL process whose executable is literally named
-    `WindowsTerminal` (a renamed `bash`, invoked so it does not exec-replace
-    itself away) -- `Get-Process -Id ...).ProcessName` reads that name from
-    the OS, not from a stub, so this is not the window-list fake and is the
-    one thing in this file that has to run a real subprocess to prove."""
-    exe = shutil.which("bash")
-    if exe is None:
-        pytest.skip("needs bash to build the fake WindowsTerminal process")
-    root = _repo(tmp_path)
-    wtbin = tmp_path / "wtbin" / "WindowsTerminal"
-    wtbin.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy(exe, wtbin)
-    wtbin.chmod(0o755)
-    with subprocess.Popen([str(wtbin), "-c", "trap : TERM; sleep 30 & wait"]) as proc:
-        try:
-            deadline = time.time() + 5
-            while time.time() < deadline and _proc_comm(proc.pid) != "WindowsTerminal":
-                time.sleep(0.05)
-            assert _proc_comm(proc.pid) == "WindowsTerminal", (
-                "the renamed process never reported comm=WindowsTerminal on this host")
-            _machine(root, method="sendkeys", windowTitle="Claude")
-            env = dict(_bound(root), **_windows(tmp_path, [{"id": 1, "pid": proc.pid, "title": "Claude - a tab"}]))
-            _write_marker(root)
-            _write_handoff(root)
-
-            dry = _invoke("ps1", "auto-clear", root, args=("--session", SESSION_A, "--dry-run"),
-                         env_extra=env)
-            result = _invoke("ps1", "auto-clear", root, args=("--session", SESSION_A), env_extra=env)
-        finally:
-            proc.terminate()
-            proc.wait(timeout=5)
-
-    assert "would decline" in dry.stdout, dry.stdout + dry.stderr
-    assert "cannot verify the active tab" in dry.stdout
-    assert result.returncode == 0
-    log = _log(root)
-    assert "declined sendkeys" in log, log
-    assert "cannot verify the active tab" in log
-    assert "sent notify instead" in log
-    payload = json.loads(result.stdout)
-    assert "safe to run" in payload["systemMessage"]
-    assert "cleared" not in payload["systemMessage"]
-
-
-def _proc_comm(pid):
-    try:
-        with open(f"/proc/{pid}/comm", encoding="ascii") as handle:
-            return handle.read().strip()
-    except OSError:
-        return ""
-
-
 # --- narrowing: onlyRepos / onlySessions -------------------------------------
 #
 # `enabled: true` in the machine file arms every Claude session on the host.
@@ -1257,7 +1015,7 @@ def _proc_comm(pid):
 
 def _scoped(flavor, tmp_path, root, session=SESSION_A, **scope):
     env = _sendable(flavor, tmp_path, root)
-    _machine(root, **(_send_method(flavor) if flavor == "sh" else {}), **scope)
+    _machine(root, **_send_method(flavor), **scope)
     _write_marker(root, session)
     _write_handoff(root)
     return _invoke(flavor, "auto-clear", root, args=("--session", session, "--dry-run"),
@@ -1297,43 +1055,6 @@ def _real_tmux_on_path():
     return shutil.which("tmux") is not None
 
 
-_OWNER_WINDOW_CAPABLE = None
-
-
-def _pwsh_can_resolve_an_owner_window():
-    """Probes the REAL (non-stubbed) window walk once: does any window on
-    this host belong to an ancestor of this process? A non-interactive
-    runner -- a scheduled task, a headless CI agent -- has none, and no
-    "armed" ps1-flavour case can be proved there either, independent of
-    whether the narrowing decision itself is right. Memoized: this spawns a
-    real pwsh and is not free. Requests `sendkeys` explicitly: `auto` no
-    longer reaches window resolution at all (it resolves to `notify` on
-    native Windows), so a probe of the WINDOW capability has to ask for the
-    method that still uses one."""
-    global _OWNER_WINDOW_CAPABLE  # pylint: disable=global-statement
-    if _OWNER_WINDOW_CAPABLE is not None:
-        return _OWNER_WINDOW_CAPABLE
-    if _PWSH is None:
-        _OWNER_WINDOW_CAPABLE = False
-        return False
-    scratch = tempfile.mkdtemp(prefix="crew-owner-window-probe-")
-    try:
-        base = pathlib.Path(scratch)
-        root = crew_fixtures.make_repo(base, config={"context": {"warnAt": 0.8}}, git=False)
-        _machine(root, method="sendkeys")
-        env = dict(os.environ, HOME=str(base / "home"), USERPROFILE=str(base / "home"),
-                   CLAUDE_PROJECT_DIR=str(root), CREW_AUTOCLEAR_INHIBIT="1", OS="Windows_NT")
-        result = subprocess.run(
-            [_PWSH, "-NoProfile", "-NonInteractive", "-File", _script("ps1", "auto-clear"),
-             "-Force", "-DryRun", "-Root", str(root)],
-            cwd=str(root), env=env, stdin=subprocess.DEVNULL,
-            capture_output=True, text=True, check=False, timeout=30)
-        _OWNER_WINDOW_CAPABLE = "would send" in result.stdout
-    finally:
-        shutil.rmtree(scratch, ignore_errors=True)
-    return _OWNER_WINDOW_CAPABLE
-
-
 _ROOT_TOKEN = "{root}"
 _SCOPE_CASES = [
     ("absent", {}, "armed"),
@@ -1349,18 +1070,14 @@ _SCOPE_CASES = [
     # NOT authorise the space-free repo -- an unlisted repo must never be
     # in scope. crew_autocycle.normalise_repo_path stopped stripping it
     # (see test_a_trailing_space_in_an_only_repos_entry_does_not_authorise_
-    # the_bare_path for the direct unit test); this case proves
-    # auto-clear.ps1's ConvertTo-CrewScopePath now matches, end to end,
-    # through the real wrapper of each flavour.
+    # the_bare_path for the direct unit test); this case proves it end to end
+    # through the real wrapper.
     ("repo-trailing-space", {"onlyRepos": [_ROOT_TOKEN + " "]}, "silent"),
     # A backslash is a legal POSIX filename character, not a separator on
     # bash's flavour (crew_autocycle.normalise_repo_path, fixed in review
     # round 1 of crew-1.0-burnin-fix4 -- see test_in_scope_does_not_collapse_
-    # backslash_and_slash_on_posix for the direct unit test). auto-clear.ps1
-    # keeps its existing backslash handling -- real Windows paths always use
-    # backslash as a separator, so ps1's answer is unchanged and correct
-    # there; only bash's answer flips with this fix.
-    ("repo-backslashes", {"onlyRepos": ["{root\\}"]}, {"sh": "silent", "ps1": "armed"}),
+    # backslash_and_slash_on_posix for the direct unit test).
+    ("repo-backslashes", {"onlyRepos": ["{root\\}"]}, "silent"),
     ("repo-other", {"onlyRepos": ["{root}-other"]}, "silent"),
     ("repo-parent", {"onlyRepos": ["{parent}"]}, "silent"),
     ("repos-empty", {"onlyRepos": []}, "silent"),
@@ -1406,11 +1123,9 @@ def test_the_machine_can_narrow_auto_clear_to_listed_repos_and_sessions(
         request.applymarker(pytest.mark.xfail(os.name == "nt", strict=True, reason=(
             "on native Windows the sh flavour's python applies Win32 path rules "
             "(normalise_repo_path windows=os.name == 'nt'), so this entry arms where "
-            "POSIX refuses it -- an sh/ps1 parity divergence the owner has not ruled "
+            "POSIX refuses it -- a POSIX/Win32 divergence the owner has not ruled "
             "on (T-0076 spec, Unknowns); the hook is deliberately unchanged")))
     del case
-    if isinstance(expect, dict):
-        expect = expect[flavor]
     if expect == "armed":
         # Only an "armed" case reaches method/window resolution -- in_scope
         # refuses every "silent" one first -- so only these depend on a
@@ -1422,13 +1137,6 @@ def test_the_machine_can_narrow_auto_clear_to_listed_repos_and_sessions(
                         "- see test_in_scope_decides_the_scope_matrix_with_"
                         "no_subprocess_on_every_os for the narrowing decision "
                         "itself, which does not need tmux")
-        if flavor == "ps1" and not _pwsh_can_resolve_an_owner_window():
-            pytest.skip("no window on this host belongs to any ancestor of "
-                        "this process (a non-interactive runner), so this "
-                        "case can only be PROVED armed by actually resolving "
-                        "one - see test_in_scope_decides_the_scope_matrix_"
-                        "with_no_subprocess_on_every_os for the narrowing "
-                        "decision itself, which does not need a window")
     root = _repo(tmp_path)
 
     result = _scoped(flavor, tmp_path, root, **{k: _fill(v, root) for k, v in scope.items()})
@@ -1440,7 +1148,7 @@ def test_the_machine_can_narrow_auto_clear_to_listed_repos_and_sessions(
 def test_in_scope_decides_the_scope_matrix_with_no_subprocess_on_every_os(
         case, scope, expect, tmp_path):
     """The exact `_SCOPE_CASES` table the wrapper test above drives through a
-    real bash/pwsh, proved here straight against `crew_autocycle.in_scope` --
+    real bash, proved here straight against `crew_autocycle.in_scope` --
     no subprocess, no tmux, no window system, so this runs identically on a
     host that has neither and would otherwise skip every "armed" case above.
     POSIX only (`windows=False`): the "sh" expectation applies, since that is
@@ -1450,8 +1158,6 @@ def test_in_scope_decides_the_scope_matrix_with_no_subprocess_on_every_os(
     root is POSIX-shaped (`_posix_shaped`), so the same rules see the same
     shape of path."""
     del case
-    if isinstance(expect, dict):
-        expect = expect["sh"]
     root = _posix_shaped(tmp_path, "repo")
     cfg = {key: _fill(value, root) for key, value in scope.items()}
 
@@ -1472,129 +1178,6 @@ def test_a_symlink_to_the_repo_in_only_repos_arms_it(flavor, tmp_path):
     result = _scoped(flavor, tmp_path, root, onlyRepos=[str(link)])
 
     assert _armed_or_silent(result, root) == "armed"
-
-
-@by_flavor
-def test_a_chained_relative_symlink_in_only_repos_resolves_from_its_own_parent(flavor, tmp_path):
-    """A/link1 -> ../B/link2 -> inner/repo: each hop must resolve against the
-    symlink that names it. Review round 1 (crew-1.0-burnin-fix4):
-    auto-clear.ps1's own Resolve-CrewRealPath resolved every hop against the
-    FIRST link's parent, so this chain silently resolved to A/inner/repo
-    instead of B/inner/repo and disabled auto-clear for a listed repo.
-    crew_autocycle.py has no equivalent bug -- it uses os.path.realpath --
-    so this is ps1-only."""
-    if flavor != "ps1":
-        pytest.skip("only auto-clear.ps1 has its own symlink-chase implementation")
-    b_dir = tmp_path / "B"
-    root = _repo(b_dir / "inner")
-    a_dir = tmp_path / "A"
-    a_dir.mkdir()
-    try:
-        (b_dir / "link2").symlink_to(os.path.join("inner", "repo"), target_is_directory=True)
-        (a_dir / "link1").symlink_to(os.path.join("..", "B", "link2"), target_is_directory=True)
-    except OSError as exc:
-        pytest.skip(f"cannot create a symlink here: {exc}")
-
-    result = _scoped(flavor, tmp_path, root, onlyRepos=[str(a_dir / "link1")])
-
-    assert _armed_or_silent(result, root) == "armed"
-
-
-@by_flavor
-def test_a_symlinked_component_inside_a_substituted_target_still_resolves(flavor, tmp_path):
-    """alias -> B, A/link -> ../alias/inner/repo: `alias` is a symlink
-    INSIDE the target `link` substitutes to, not a symlink named directly
-    by the path being walked. Review round 2 (crew-1.0-r3-autocycle):
-    auto-clear.ps1's Resolve-CrewRealPath only re-chased a symlink chain
-    hanging off the ORIGINAL path component ("link"); once its target was
-    substituted, "alias" inside that substituted string was walked as an
-    ordinary directory name and never itself resolved, so the listed path
-    stayed under `alias` and did not match a run from `B/inner/repo`.
-    crew_autocycle.py has no equivalent bug -- os.path.realpath resolves
-    every component of a substituted target too -- so this is ps1-only."""
-    if flavor != "ps1":
-        pytest.skip("only auto-clear.ps1 has its own symlink-chase implementation")
-    b_dir = tmp_path / "B"
-    root = _repo(b_dir / "inner")
-    a_dir = tmp_path / "A"
-    a_dir.mkdir()
-    alias = tmp_path / "alias"
-    try:
-        alias.symlink_to(b_dir, target_is_directory=True)
-        (a_dir / "link").symlink_to(
-            os.path.join("..", "alias", "inner", "repo"), target_is_directory=True)
-    except OSError as exc:
-        pytest.skip(f"cannot create a symlink here: {exc}")
-
-    result = _scoped(flavor, tmp_path, root, onlyRepos=[str(a_dir / "link")])
-
-    assert _armed_or_silent(result, root) == "armed"
-
-
-@by_flavor
-def test_a_dotdot_after_a_symlinked_component_resolves_before_it_collapses(flavor, tmp_path):
-    """alias -> B/nested, A/link -> ../alias/../repo: the substituted target
-    string has a ".." AFTER the symlinked component "alias", not before it.
-    Review round 3 (crew-1.0-r4-scope): auto-clear.ps1 built that substituted
-    target with .NET's GetFullPath, which collapses ".." purely LEXICALLY --
-    "alias/.." cancelled to nothing before the walk ever asked whether
-    "alias" is itself a symlink -- so A/link resolved to the lexical sibling
-    "repo" instead of the real "B/repo", and an unrelated, unlisted repo
-    sitting at that lexical path got armed by a listing that never named it.
-    crew_autocycle.py has no equivalent bug -- os.path.realpath resolves
-    every component, ".." included, against what the walk has actually
-    reached so far -- so this is ps1-only."""
-    if flavor != "ps1":
-        pytest.skip("only auto-clear.ps1 has its own symlink-chase implementation")
-    b_dir = tmp_path / "B"
-    (b_dir / "nested").mkdir(parents=True)
-    real_root = _repo(b_dir)
-    decoy_root = _repo(tmp_path)
-    a_dir = tmp_path / "A"
-    a_dir.mkdir()
-    alias = tmp_path / "alias"
-    try:
-        alias.symlink_to(b_dir / "nested", target_is_directory=True)
-        (a_dir / "link").symlink_to(
-            os.path.join("..", "alias", "..", "repo"), target_is_directory=True)
-    except OSError as exc:
-        pytest.skip(f"cannot create a symlink here: {exc}")
-
-    decoy_result = _scoped(flavor, tmp_path, decoy_root, onlyRepos=[str(a_dir / "link")])
-    real_result = _scoped(flavor, tmp_path, real_root, session=SESSION_B,
-                           onlyRepos=[str(a_dir / "link")])
-
-    # The invariant: an unlisted repo must never be in scope. The decoy sits
-    # at the LEXICAL result of the old, buggy collapse; only the real,
-    # symlink-resolved repo was ever listed.
-    assert _armed_or_silent(decoy_result, decoy_root) == "silent"
-    assert _armed_or_silent(real_result, real_root) == "armed"
-
-
-@by_flavor
-def test_a_symlink_cycle_in_only_repos_fails_closed(flavor, tmp_path):
-    """A self-referential symlink in an onlyRepos entry must never resolve
-    to a partial path that happens to match something real. Review round 2
-    raised auto-clear.ps1's old 8-hop-per-component bound (too low for a
-    legitimate long chain, and silently kept whatever partial path it had
-    reached on exceeding it) to a single bound across the whole walk, and
-    made exceeding THAT an explicit failure -- the entry normalises to ""
-    and therefore matches nothing, rather than arming (or silently
-    disarming) on an unresolvable value."""
-    if flavor != "ps1":
-        pytest.skip("crew_autocycle.py's os.path.realpath is cycle-safe by construction")
-    loop_dir = tmp_path / "loop"
-    loop_dir.mkdir()
-    loop_link = loop_dir / "loop"
-    try:
-        loop_link.symlink_to(loop_link, target_is_directory=True)
-    except OSError as exc:
-        pytest.skip(f"cannot create a symlink here: {exc}")
-    root = _repo(tmp_path)
-
-    result = _scoped(flavor, tmp_path, root, onlyRepos=[str(loop_link)])
-
-    assert _armed_or_silent(result, root) == "silent"
 
 
 @by_flavor
@@ -1734,8 +1317,7 @@ def test_windows_repo_matching_does_not_casefold_a_sharp_s():
     "runs realpath only when windows= matches the host, so windows=False on native "
     "Windows is lexical and refuses the C:\\ tmp_path outright (T-0076)"))
 def test_normalise_repo_path_resolves_a_dotdot_after_a_symlinked_component(tmp_path):
-    """The Python twin's realpath call must not share auto-clear.ps1's
-    lexical-collapse bug: `os.path.realpath` resolves every component of a
+    """The Python realpath call must not collapse a `..` lexically: `os.path.realpath` resolves every component of a
     symlink's target, INCLUDING a `..` that comes after another symlinked
     component, against what has actually been resolved on disk so far --
     never against the raw, unresolved target string. `alias -> B/nested`,

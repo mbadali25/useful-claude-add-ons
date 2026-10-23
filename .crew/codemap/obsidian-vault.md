@@ -1,6 +1,6 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@291801622
-verified: 2026-10-04
+anchor: useful-claude-add-ons@7944f06d7
+verified: 2026-10-20
 
 ## Does
 Turns one or more Obsidian vaults into Claude Code's durable memory: a PostToolUse guard that
@@ -398,7 +398,8 @@ violation visible at all. (JUDGEMENT.)
     Python's `'%d:%d:%s:' % (...)` formatting - three `%` that a `.cmd`-only Python always failed on.
     Rebuilt with `str(...)` and string concatenation instead (same
     `<major>:<minor>:<impl>:<executable>` output shape, zero `%`), matching how crew's own
-    `Resolve-CrewPython` (`plugin/crew/hooks/scripts/role-write-guard.ps1`) already avoided the same
+    `Resolve-CrewPython` (once in `role-write-guard.ps1`, deleted in L-0727 slice 3 / L-0867; the same
+    function survives in `plugin/crew/hooks/scripts/verify-gate.ps1:398`) already avoided the same
     trap by printing a `json.dumps(...)` line, which likewise never contains a bare `%`. Pinned by
     `check_no_percent_reaches_cmd` and `check_cmd_bat_routing_present` in
     `test_python_probe_proof.py`, which check the source statically (whether a `%` reaches `cmd.exe`
@@ -1364,3 +1365,8 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `926f1277` -> `09e31dba` on 2026-10-10 (L-0753, after merging main `e77532e01`).** Per-path check `git diff --name-only 926f1277..09e31dba`: main's L-0759 (#595: `plugin/crew/tests/test_promote_gate_review.py`, crew 1.2.19) and L-0760 (#596: `.github/workflows/runner-autostart.yml`, SECURITY.md) plus the version and CHANGELOG/README lines moved. No claim in this map moved.
 
 **Re-anchored `09e31dba` -> `0bf364417` on 2026-10-17 (L-0796, crew 1.2.39, quiet Stop gate).** Scope of this check is the ticket's own change, `git diff --name-only 786687e60..0bf364417`: `verify-gate.sh` (+258) and `verify-gate.ps1` (+343) grew above most of their cited lines, `verify_fingerprint.py` gained 5 lines at `:192`, `crew_fixtures.py` 7 lines, the sabotage tables a few lines in place, and `CONFIG.md` one 44-line insertion at `:3056` (after every `CONFIG.md` line cited here). Every cited `verify-gate.sh` / `.ps1` / `crew_fixtures.py` / `sabotage*.py` / `CONFIG.md` line was shifted by the hunks of that diff (a script walking the `-U0` hunks, no cited line fell inside a hunk); version lines (`plugin.json:3`, `marketplace.json`, `PLUGINS.md`, `BUDGETS.md`) and README lines changed in place and moved nothing. NOT VERIFIED: that each shifted citation still says what its sentence claims. This pass did not re-read them, and drift from the commits between `09e31dba` and `786687e60` is not re-derived here; `/crew:onboard --refresh` is the full pass. Nothing was executed for this note.
+
+**Re-anchored `291801622` -> `c1d365d72` on 2026-10-20 (L-0850 / PR #656 close).** Per-path re-verify: every `path:line` outside the re-anchor history paragraphs was re-mapped by diffing its file at `291801622` against HEAD; none moved or was lost, so no citation changed. The paths this PR changes that this note names (`.claude-plugin/marketplace.json`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `INSTALLATION.md`, `README.md`) changed by version bumps and registration text, line-neutral for what is cited. NOT re-read word for word: prose claims whose cited lines did not move.
+
+
+**Re-anchored `c1d365d72` -> `9ba355d7c` on 2026-10-20 (L-0850 / PR #656 close: the docs and artifact refresh commit, owner waiver 2026-10-20).** `git diff 9ba355d7c~1 9ba355d7c` changes only docs, diagrams, codemap, rules and graph output; the one code-adjacent text is `plugin/crew/README.md` (+2 lines after line 366, inside section 25) and `SECURITY.md` (+4 lines after line 46). Every live `path:line` citation into those two files was checked: this note has none at or after those lines outside its re-anchor history paragraphs (whose lines describe past moments and are not re-mapped), and `plugin/crew/BUDGETS.md` only changed a count in place (line 11, line-neutral). No citation changed. NOT re-read word for word: prose claims whose cited lines did not move.

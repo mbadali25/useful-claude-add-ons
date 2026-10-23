@@ -1,6 +1,9 @@
 Review the change in .work/review/golden/diff.txt, read as the parts listed below, as a
 hostile QA engineer, against the ticket's spec and plan below.
 Output one line per defect: SEVERITY|file:line|what breaks|how to reproduce.
+Every defect line has exactly those four fields, all non-blank, the reproduction
+last; a line with fewer than four fields is discarded and makes the review
+INCOMPLETE. Example of the form: FIX|src/a.py:42|returns None for an empty list|call f([]) and read the result
 SEVERITY is BLOCK, FIX, or NIT. Check: unintended behavior changes, unhandled
 error paths, boundary and empty-collection cases, concurrency, anything the
 change makes reachable that was not before, and every acceptance check.

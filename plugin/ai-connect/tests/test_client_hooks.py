@@ -7,12 +7,16 @@ did not: four `mcp_tool` hooks reported "MCP server 'ai-connect' not
 connected" on every prompt, tool call, permission request and turn end, and
 the watcher exited 1 at every session start and turn end.
 
-Three states, told apart by what the installer leaves outside the plugin
-directory (~/.config/ai-connect/config.yaml) and inside it (venv):
+Three states, told apart by the config an installer leaves outside the plugin
+directory (~/.config/ai-connect/config.yaml) and by a venv:
 
 - never set up (no config, no venv): silent, exit 0
 - set up (config and venv): the watcher runs and its exit code comes through
 - venv lost after a plugin update (config, no venv): exit 1, naming the fix
+
+A venv is looked for in three places, in order: AI_CONNECT_VENV, the plugin
+directory (install.sh), and where deploy puts it, outside the plugin directory
+(deploy.sh, setup.sh). The last section has one case per place and per order.
 
 Each test builds a throwaway plugin root and HOME; nothing real is read.
 The command lines are the ones in hooks/hooks.json, run as Claude Code runs
@@ -25,6 +29,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -38,6 +43,8 @@ PWSH = shutil.which("pwsh") or next(
 # What the stub watcher prints and exits with: a wake, which only a watcher that really ran can produce
 WOKEN = "stub watcher ran"
 WAKE = 2
+# The watcher script, relative to the plugin directory and to deploy's copy of it
+WATCHER = Path("integrations", "claude-code", "aiconnect_watch.py")
 
 
 def hook_commands() -> list[tuple[str, dict]]:
@@ -57,13 +64,15 @@ IDS = [f"{event}-{flavour(hook)}" for event, hook in COMMANDS]
 class Machine:
     """A plugin root and a HOME that exist only for one test."""
 
-    def __init__(self, tmp_path: Path):
+    def __init__(self, tmp_path: Path, home: Path | None = None):
+        self.tmp = tmp_path
         self.root = tmp_path / "plugin root"  # a space: the cache path has one on some machines
-        self.home = tmp_path / "home"
-        self.home.mkdir()
+        # home: a fake machine's that is already there (deploy_box.Box makes its own)
+        self.home = home or tmp_path / "home"
+        self.home.mkdir(exist_ok=True)
         # pwsh's startup cache: the test's own, beside the home rather than under it (L-0557)
         self.xdg_cache = tmp_path / "xdg-cache"
-        self.xdg_cache.mkdir()
+        self.xdg_cache.mkdir(exist_ok=True)
         shutil.copytree(ROOT / "hooks", self.root / "hooks")
         self.marker = tmp_path / "watcher-ran"
 
@@ -72,23 +81,60 @@ class Machine:
         config.parent.mkdir(parents=True)
         config.write_text("client:\n  name: test\n", encoding="utf-8")
 
-    def add_venv(self) -> None:
-        """A venv whose 'python' is a stub: it notes that the watcher was started, and with which script."""
-        for relative in ("venv/bin/python", "venv/Scripts/python.exe"):
-            stub = self.root / relative
+    def inside(self, path: Path) -> Path:
+        """path, once it is known to lie under this test's tmp dir: nothing is written anywhere else."""
+        if not path.resolve().is_relative_to(self.tmp.resolve()):
+            raise AssertionError(f"{path} is outside this test's tmp dir {self.tmp}")
+        return path
+
+    def add_venv(self, venv: Path | None = None, label: str = "own") -> None:
+        """A venv whose 'python' is a stub: it notes which venv it is (label) and which script it was
+        started on. venv: where, the plugin directory's own by default."""
+        venv = self.inside(venv or self.root / "venv")
+        for relative in ("bin/python", "Scripts/python.exe"):
+            stub = venv / relative
             stub.parent.mkdir(parents=True)
-            stub.write_text(f'#!/bin/sh\nprintf "%s" "$1" > "{self.marker}"\necho "{WOKEN}"\nexit {WAKE}\n',
-                            encoding="utf-8", newline="\n")
+            stub.write_text(f'#!/bin/sh\nprintf "%s\\n%s" "{label}" "$1" > "{self.marker}"\necho "{WOKEN}"\n'
+                            f'exit {WAKE}\n', encoding="utf-8", newline="\n")
             stub.chmod(0o755)
 
-    def run(self, hook: dict, windows: bool) -> subprocess.CompletedProcess:
+    def deploy_home(self, hook: dict) -> Path:
+        """Where deploy installs on the machine this flavour acts on (deploy_core.py's APP_HOME)."""
+        parts = ("AppData", "Local") if flavour(hook) == "powershell" else (".local", "share")
+        return self.home.joinpath(*parts, "ai-connect")
+
+    def add_deployed_app(self, deploy_home: Path) -> Path:
+        """Deploy's copy of the plugin, as far as the hook looks at it: the watcher script is there."""
+        script = self.inside(deploy_home) / "app" / WATCHER
+        script.parent.mkdir(parents=True)
+        script.write_text("# never run: the venv's python is a stub\n", encoding="utf-8")
+        return script
+
+    def started(self) -> tuple[str, Path]:
+        """Which venv's Python ran (its label), and the script it was given."""
+        label, script = self.marker.read_text(encoding="utf-8").split("\n", 1)
+        # watch.ps1 writes the script's path with backslashes, which only Windows reads as separators
+        return label, Path(script if WINDOWS else script.replace("\\", "/"))
+
+    @property
+    def project(self) -> Path:
+        """The directory the session runs in, which is the hook's working directory: beside the home, not under it."""
+        path = self.tmp / "project"
+        path.mkdir(exist_ok=True)
+        return path
+
+    def run(self, hook: dict, windows: bool, extra_env: dict | None = None,
+            cwd: Path | None = None) -> subprocess.CompletedProcess:
         """Run one hooks.json command line as Claude Code does: ${CLAUDE_PLUGIN_ROOT} filled in, then the
-        flavour's shell. windows: answer as a Windows machine does ($OS is Windows_NT there)."""
+        flavour's shell. windows: answer as a Windows machine does ($OS is Windows_NT there). cwd: the
+        project directory, by default one beside the home."""
         command = hook["command"].replace("${CLAUDE_PLUGIN_ROOT}", str(self.root))
-        env = {k: v for k, v in os.environ.items() if k not in ("OS", "CLAUDE_CONFIG_DIR", "AI_CONNECT_HOME")}
+        env = {k: v for k, v in os.environ.items()
+               if k not in ("OS", "CLAUDE_CONFIG_DIR", "CLAUDE_PROJECT_DIR", "AI_CONNECT_HOME", "AI_CONNECT_VENV")}
         env.update(HOME=str(self.home), USERPROFILE=str(self.home), CLAUDE_PLUGIN_ROOT=str(self.root),
                    # A private PowerShell startup cache: two pwsh sharing one can corrupt it (scripts/pwsh-isolated.sh)
                    XDG_CACHE_HOME=str(self.xdg_cache))
+        env.update(extra_env or {})
         if windows:
             env["OS"] = "Windows_NT"
         if flavour(hook) == "powershell":
@@ -96,7 +142,7 @@ class Machine:
         else:
             argv = ["sh", "-c", command]
         return subprocess.run(argv, capture_output=True, text=True, check=False, env=env,
-                              stdin=subprocess.DEVNULL, timeout=120)
+                              stdin=subprocess.DEVNULL, timeout=120, cwd=cwd or self.project)
 
 
 def runs_here(hook: dict) -> bool:
@@ -171,8 +217,7 @@ def test_set_up_the_watcher_runs_and_its_exit_code_comes_through(tmp_path, event
     machine.add_venv()
     result = machine.run(hook, windows=as_windows(hook))
     assert (result.returncode, result.stdout.strip(), result.stderr) == (WAKE, WOKEN, "")
-    started = Path(machine.marker.read_text(encoding="utf-8"))
-    assert started == machine.root / "integrations" / "claude-code" / "aiconnect_watch.py"
+    assert machine.started() == ("own", machine.root / WATCHER)
 
 
 @pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
@@ -199,10 +244,365 @@ def test_venv_lost_after_an_update_is_an_error_naming_the_fix(tmp_path, event, h
     result = machine.run(hook, windows=as_windows(hook))
     assert result.returncode == 1 and result.stdout == ""
     installer = "install.cmd" if flavour(hook) == "powershell" else "install.sh"
-    assert "no venv at" in result.stderr and installer in result.stderr, result.stderr
+    assert "no venv found" in result.stderr and installer in result.stderr, result.stderr
     assert "after each plugin update" in result.stderr
     assert str(machine.root) in result.stderr  # the directory to run it in: the cache path is not guessable
     assert not machine.marker.exists()
+    # Both places a venv is looked for are named, and the other way to get one
+    deploy_venv = (r"%USERPROFILE%\AppData\Local\ai-connect\venv" if as_windows(hook)
+                   else "~/.local/share/ai-connect/venv")
+    deploy = "deploy.ps1" if as_windows(hook) else "deploy.sh"
+    assert deploy_venv in result.stderr and deploy in result.stderr, result.stderr
+
+
+# ---------------------------------------------------------------- which venv: three places, in order
+#
+# 1. AI_CONNECT_VENV  2. the plugin directory's own (install.sh / install.cmd)  3. deploy's, outside the
+# plugin directory (deploy.sh / setup.sh and their .ps1 twins). Up to 0.2.0 only the second was looked
+# at, so on a machine deploy had set up the watcher exited 1 on every event and no session was ever woken.
+
+
+def stubs(hook: dict) -> None:
+    need(hook)
+    if WINDOWS:
+        pytest.skip("the stub venv Python is a shell script")
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_deploys_venv_runs_the_watcher_from_deploys_copy(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """The machine deploy set up: no venv in the plugin directory, one at deploy's place with the copy of
+    the plugin beside it. The watcher runs, with that venv and from that copy."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    home = machine.deploy_home(hook)
+    machine.add_venv(home / "venv", "deploy")
+    script = machine.add_deployed_app(home)
+    result = machine.run(hook, windows=as_windows(hook))
+    assert (result.returncode, result.stdout.strip(), result.stderr) == (WAKE, WOKEN, "")
+    assert machine.started() == ("deploy", script)
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_deploys_venv_without_a_copy_runs_the_plugins_watcher(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """`deploy peer --install-hooks` alone makes the venv and no copy of the plugin."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    machine.add_venv(machine.deploy_home(hook) / "venv", "deploy")
+    result = machine.run(hook, windows=as_windows(hook))
+    assert (result.returncode, result.stderr) == (WAKE, "")
+    assert machine.started() == ("deploy", machine.root / WATCHER)
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_ai_connect_home_moves_deploys_place(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """AI_CONNECT_HOME is where deploy installs when it is set, and the default place is then not looked at."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    moved = machine.home / "moved home"
+    machine.add_venv(moved / "venv", "moved")
+    script = machine.add_deployed_app(moved)
+    machine.add_venv(machine.deploy_home(hook) / "venv", "default")
+    result = machine.run(hook, windows=as_windows(hook), extra_env={"AI_CONNECT_HOME": str(moved)})
+    assert (result.returncode, result.stderr) == (WAKE, "")
+    assert machine.started() == ("moved", script)
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_the_plugins_own_venv_comes_before_deploys(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """Both there: install.sh's layout is used as before, with the plugin's own watcher."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    machine.add_venv()
+    home = machine.deploy_home(hook)
+    machine.add_venv(home / "venv", "deploy")
+    machine.add_deployed_app(home)
+    result = machine.run(hook, windows=as_windows(hook))
+    assert (result.returncode, result.stderr) == (WAKE, "")
+    assert machine.started() == ("own", machine.root / WATCHER)
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_ai_connect_venv_comes_first(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """All three there: AI_CONNECT_VENV's is used, on the plugin's own watcher."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    named = machine.home / "named venv"
+    machine.add_venv(named, "named")
+    machine.add_venv()
+    home = machine.deploy_home(hook)
+    machine.add_venv(home / "venv", "deploy")
+    machine.add_deployed_app(home)
+    result = machine.run(hook, windows=as_windows(hook), extra_env={"AI_CONNECT_VENV": str(named)})
+    assert (result.returncode, result.stderr) == (WAKE, "")
+    assert machine.started() == ("named", machine.root / WATCHER)
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_an_ai_connect_venv_with_no_python_falls_through(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """The variable names a directory without a venv: the next place that has one is used."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    home = machine.deploy_home(hook)
+    machine.add_venv(home / "venv", "deploy")
+    script = machine.add_deployed_app(home)
+    result = machine.run(hook, windows=as_windows(hook), extra_env={"AI_CONNECT_VENV": str(machine.home / "nothing")})
+    assert (result.returncode, result.stderr) == (WAKE, "")
+    assert machine.started() == ("deploy", script)
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_set_up_and_no_venv_in_any_place_names_the_places_not_the_variables(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """Config, and AI_CONNECT_VENV and AI_CONNECT_HOME both pointing at nothing: exit 1, the places named,
+    the variables' values not echoed."""
+    need(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    named, moved = machine.home / "nothing-named", machine.home / "nothing-moved"
+    result = machine.run(hook, windows=as_windows(hook),
+                         extra_env={"AI_CONNECT_VENV": str(named), "AI_CONNECT_HOME": str(moved)})
+    assert result.returncode == 1 and result.stdout == ""
+    assert str(machine.root / "venv") in result.stderr and "AI_CONNECT_VENV" in result.stderr
+    assert "nothing-named" not in result.stderr and "nothing-moved" not in result.stderr, result.stderr
+    assert not machine.marker.exists()
+
+
+# ---------------------------------------------------------------- the variables are not trusted
+#
+# AI_CONNECT_VENV and AI_CONNECT_HOME pick the interpreter this hook starts at every SessionStart and Stop,
+# and a project's settings.json can set environment variables. A value is used only when it is an absolute
+# path with no '..' under the user's home and outside the project the session runs in. Each must-block case
+# plants a stub 'python' where the attacker can put one and checks it is NOT run; the must-allow cases above
+# (named venv, AI_CONNECT_HOME under the home) and below keep the legitimate uses working.
+
+
+def planted(machine: Machine, where: Path) -> None:
+    machine.add_venv(where, "evil")
+
+
+@pytest.mark.parametrize("variable", ["AI_CONNECT_VENV", "AI_CONNECT_HOME"])
+@pytest.mark.parametrize("kind", ["inside-the-project", "outside-the-home", "relative", "dotdot"])
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_a_variable_that_is_not_trusted_never_runs_a_planted_interpreter(tmp_path, event, hook, variable, kind):  # pylint: disable=unused-argument
+    """The planted python is where the variable points; the machine has a real deploy venv. The real one runs."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    home = machine.deploy_home(hook)
+    machine.add_venv(home / "venv", "deploy")
+    # a copy of the plugin with the watcher, so a hijacked AI_CONNECT_HOME would be visible as a script path
+    machine.add_deployed_app(home)
+    # AI_CONNECT_HOME is the directory that holds venv/, AI_CONNECT_VENV is the venv itself
+    leaf = "venv" if variable == "AI_CONNECT_HOME" else ""
+    spot = {"inside-the-project": machine.project / "evil", "outside-the-home": tmp_path / "elsewhere",
+            "relative": machine.project / "evil", "dotdot": machine.home / "ok"}[kind]
+    planted(machine, spot / leaf)
+    value = {"relative": "evil", "dotdot": str(machine.home / "ok" / ".." / "ok")}.get(kind, str(spot))
+    result = machine.run(hook, windows=as_windows(hook), extra_env={variable: value}, cwd=machine.project)
+    assert (result.returncode, result.stderr) == (WAKE, "")
+    label, _ = machine.started()
+    assert label == "deploy", f"{variable}={value} ({kind}) ran the {label} interpreter"
+
+
+@pytest.mark.parametrize("variable", ["AI_CONNECT_VENV", "AI_CONNECT_HOME"])
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_the_project_directory_named_by_claude_is_not_trusted_either(tmp_path, event, hook, variable):  # pylint: disable=unused-argument
+    """CLAUDE_PROJECT_DIR is the project even when the hook's working directory is somewhere else."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    project = machine.home / "src" / "repo"
+    leaf = "venv" if variable == "AI_CONNECT_HOME" else ""
+    planted(machine, project / "evil" / leaf)
+    value = str(project / "evil")
+    env = {variable: value, "CLAUDE_PROJECT_DIR": str(project)}
+    result = machine.run(hook, windows=as_windows(hook), extra_env=env, cwd=machine.project)
+    assert result.returncode == 1 and not machine.marker.exists(), result.stderr
+    assert "evil" not in result.stderr, result.stderr
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_a_relative_home_with_a_cdpath_does_not_make_the_projects_venv_the_default(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """HOME=bin and CDPATH make `cd bin` land in /usr/bin, outside the project, while HOME itself stays a
+    path relative to the project: the venv planted under it must not run."""
+    need(hook)
+    if WINDOWS or as_windows(hook):
+        pytest.skip("POSIX cd and CDPATH; watch.ps1 takes the profile from the OS")
+    machine = Machine(tmp_path)
+    machine.add_config()
+    planted_home = machine.project / "bin"
+    machine.add_venv(planted_home / ".local" / "share" / "ai-connect" / "venv", "evil")
+    result = machine.run(hook, windows=False, cwd=machine.project, extra_env={"HOME": "bin", "CDPATH": "/usr"})
+    assert not machine.marker.exists(), result.stderr
+
+
+@pytest.mark.parametrize("variable", ["AI_CONNECT_VENV", "AI_CONNECT_HOME"])
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_an_unresolvable_project_dir_trusts_no_variable_chosen_venv(tmp_path, event, hook, variable):  # pylint: disable=unused-argument
+    """CLAUDE_PROJECT_DIR set to a path that is not there leaves only the working directory as the project.
+    A session started in a subdirectory then has a venv beside it, inside the project, that passes: it must not."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    home = machine.deploy_home(hook)
+    machine.add_venv(home / "venv", "deploy")
+    machine.add_deployed_app(home)
+    leaf = "venv" if variable == "AI_CONNECT_HOME" else ""
+    # the project is under the home here, so the planted venv would otherwise pass the home test
+    inside = machine.home / "proj"
+    sub = inside / "sub"
+    sub.mkdir(parents=True)
+    planted(machine, inside / "evil" / leaf)
+    env = {variable: str(inside / "evil"), "CLAUDE_PROJECT_DIR": str(tmp_path / "does-not-exist")}
+    result = machine.run(hook, windows=as_windows(hook), extra_env=env, cwd=sub)
+    assert (result.returncode, result.stderr) == (WAKE, "")
+    assert machine.started()[0] == "deploy"
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_a_resolvable_project_dir_still_allows_a_venv_outside_it(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """The same layout with CLAUDE_PROJECT_DIR naming the real project: a venv under the home and outside
+    the project is used."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    named = machine.home / "named venv"
+    machine.add_venv(named, "named")
+    project = machine.home / "proj"
+    project.mkdir()
+    result = machine.run(hook, windows=as_windows(hook), cwd=project,
+                         extra_env={"AI_CONNECT_VENV": str(named), "CLAUDE_PROJECT_DIR": str(project)})
+    assert (result.returncode, result.stderr) == (WAKE, "")
+    assert machine.started()[0] == "named"
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_the_venv_launcher_variable_is_dropped(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """__PYVENV_LAUNCHER__ steers where a macOS interpreter looks for its home: not passed on (watch.sh)."""
+    stubs(hook)
+    if as_windows(hook):
+        pytest.skip("macOS only variable; watch.ps1 does not handle it")
+    machine = Machine(tmp_path)
+    machine.add_config()
+    machine.add_venv()
+    (machine.root / "venv" / "bin" / "python").write_text(
+        f'#!/bin/sh\nprintf "own\\n%s" "$1" > "{machine.marker}"\necho "PL=${{__PYVENV_LAUNCHER__:-}}"\n'
+        f'exit {WAKE}\n', encoding="utf-8", newline="\n")
+    result = machine.run(hook, windows=False, extra_env={"__PYVENV_LAUNCHER__": "/x/python"})
+    assert (result.returncode, result.stdout.strip()) == (WAKE, "PL="), result.stderr
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_python_variables_from_the_project_do_not_reach_the_interpreter(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """PYTHONPATH and friends would make a trusted interpreter import the repository's code: they are dropped."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    machine.add_config()
+    machine.add_venv()
+    for relative in ("bin/python", "Scripts/python.exe"):
+        (machine.root / "venv" / relative).write_text(
+            f'#!/bin/sh\nprintf "own\\n%s" "$1" > "{machine.marker}"\n'
+            'echo "PP=${PYTHONPATH:-}|PS=${PYTHONSTARTUP:-}|PH=${PYTHONHOME:-}'
+            '|PC=${PYTHONPYCACHEPREFIX:-}"\n' f'exit {WAKE}\n',
+            encoding="utf-8", newline="\n")
+    result = machine.run(hook, windows=as_windows(hook), extra_env={
+        "PYTHONPATH": "./x", "PYTHONSTARTUP": "./s.py", "PYTHONHOME": "./h",
+        "PYTHONPYCACHEPREFIX": "./c"})
+    assert (result.returncode, result.stdout.strip()) == (WAKE, "PP=|PS=|PH=|PC="), result.stderr
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_a_home_moved_into_the_project_does_not_make_the_projects_venv_the_default(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """HOME set (by a project's settings) to a directory inside the project: its deploy-place venv is not run."""
+    need(hook)
+    if WINDOWS or as_windows(hook):
+        pytest.skip("the account home is read from the account database off Windows; watch.ps1 is not asked here")
+    (tmp_path / "project").mkdir()
+    account = Path(os.path.expanduser("~" + (os.environ.get("USER") or "root")))
+    if (account / ".local" / "share" / "ai-connect" / "venv").exists():
+        pytest.skip("this account has a real deploy venv, which the moved-HOME guard would legitimately use")
+    inner = tmp_path / "project" / "fakehome"
+    machine = Machine(tmp_path, home=inner)
+    machine.add_config()
+    machine.add_venv(machine.deploy_home(hook) / "venv", "evil")
+    result = machine.run(hook, windows=False, cwd=machine.project)
+    assert not machine.marker.exists(), result.stderr
+    # HOME is replaced by the account's: with a real config there and no venv it is the error, else silence
+    account = Path(os.path.expanduser("~" + (os.environ.get("USER") or "root")))
+    assert result.returncode == (1 if (account / ".config" / "ai-connect" / "config.yaml").exists() else 0)
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_a_venv_chosen_by_variable_needs_the_config(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """AI_CONNECT_VENV names a good venv, but the machine was never set up: silent, not an error per event."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    named = machine.home / "named venv"
+    machine.add_venv(named, "named")
+    result = machine.run(hook, windows=as_windows(hook), extra_env={"AI_CONNECT_VENV": str(named)})
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+    assert not machine.marker.exists()
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_a_home_chosen_by_variable_needs_the_config(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """The same for AI_CONNECT_HOME: a venv under it does not make an unconfigured machine run the watcher."""
+    stubs(hook)
+    machine = Machine(tmp_path)
+    moved = machine.home / "moved home"
+    machine.add_venv(moved / "venv", "moved")
+    result = machine.run(hook, windows=as_windows(hook), extra_env={"AI_CONNECT_HOME": str(moved)})
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+    assert not machine.marker.exists()
+
+
+@pytest.mark.parametrize(("event", "hook"), COMMANDS, ids=IDS)
+def test_never_set_up_stays_silent_with_both_variables_set(tmp_path, event, hook):  # pylint: disable=unused-argument
+    """No config and no venv anywhere: the variables alone do not make the hook speak."""
+    need(hook)
+    result = Machine(tmp_path).run(hook, windows=as_windows(hook),
+                                   extra_env={"AI_CONNECT_VENV": str(tmp_path / "nothing"),
+                                              "AI_CONNECT_HOME": str(tmp_path / "moved home")})
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+
+
+def test_deploys_place_is_the_one_deploy_core_computes(box):
+    """Not a second copy of the path: deploy_core.py is asked, on deploy's own fake machine (deploy_box.Box),
+    where it installs for that HOME, and watch.sh finds a venv put exactly there."""
+    hook = next((hook for _, hook in COMMANDS if flavour(hook) == "bash"), None)
+    assert hook is not None, "hooks.json has no bash watcher"
+    stubs(hook)
+    # The box names its own venv through AI_CONNECT_VENV; asked for here is where deploy puts one unasked
+    env = {k: v for k, v in box.env.items() if k != "AI_CONNECT_VENV"}
+    asked = subprocess.run(
+        [sys.executable, "-c", "import sys; sys.path.insert(0, sys.argv[1]); import deploy_core as d; "
+                               "print(d.APP_HOME); print(d.VENV); print(d.APP)", str(ROOT / "deploy")],
+        capture_output=True, text=True, check=True, env=env, stdin=subprocess.DEVNULL, timeout=60, cwd=box.project)
+    app_home, venv, app = (Path(line) for line in asked.stdout.splitlines())
+    machine = Machine(box.tmp, home=box.home)
+    assert (app_home, venv, app) == (machine.deploy_home(hook), app_home / "venv", box.app)
+    machine.add_config()
+    machine.add_venv(venv, "deploy")
+    script = machine.add_deployed_app(app_home)
+    assert script == app / WATCHER
+    result = machine.run(hook, windows=False)
+    assert (result.returncode, result.stderr) == (WAKE, "")
+    assert machine.started() == ("deploy", script)
+
+
+def test_the_windows_place_is_still_the_one_deploy_core_spells():
+    """watch.ps1's AppData\\Local cannot be asked of deploy_core.py off Windows. This is the tripwire
+    instead: if the line that spells both places changes, the two watch wrappers have to follow."""
+    source = (ROOT / "deploy" / "deploy_core.py").read_text(encoding="utf-8")
+    assert '*(("AppData", "Local") if os.name == "nt" else (".local", "share")), "ai-connect"))' in source
+    assert 'VENV = Path(os.environ.get("AI_CONNECT_VENV") or APP_HOME / "venv")' in source
+    wrapper = (ROOT / "hooks" / "watch.ps1").read_text(encoding="utf-8")
+    assert "'AppData') 'Local') 'ai-connect'" in wrapper and "$env:USERPROFILE" in wrapper
 
 
 def test_the_three_states_are_run_for_at_least_one_flavour():

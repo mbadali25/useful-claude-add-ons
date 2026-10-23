@@ -85,6 +85,9 @@ CHANGED_KEYS = ("committed_files", "staged_files", "unstaged_files", "untracked_
 PROMPT_HEAD = """Review the change in {scratch}/diff.txt, read as the parts listed below, as a
 hostile QA engineer, against the ticket's spec and plan below.
 Output one line per defect: SEVERITY|file:line|what breaks|how to reproduce.
+Every defect line has exactly those four fields, all non-blank, the reproduction
+last; a line with fewer than four fields is discarded and makes the review
+INCOMPLETE. Example of the form: FIX|src/a.py:42|returns None for an empty list|call f([]) and read the result
 SEVERITY is BLOCK, FIX, or NIT. Check: unintended behavior changes, unhandled
 error paths, boundary and empty-collection cases, concurrency, anything the
 change makes reachable that was not before, and every acceptance check.
@@ -148,6 +151,10 @@ def _bundle_block(manifest):
            "other directory counts for nothing; a part with no READ line makes the review "
            "INCOMPLETE."]
     out += [f"  {p['path']}" for p in parts]
+    if parts:
+        out += ["Copy the path character for character, directory included (or give only "
+                "the bare file name).",
+                f"Example for the first part: READ|{parts[0]['path']}"]
     # Three states, one line each (T-0099): an empty list is a manifest saying
     # nothing was left out; no key, or anything but a list of non-blank strings,
     # is one that cannot say, and must not read as either of the known answers.
