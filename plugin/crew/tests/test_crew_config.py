@@ -2060,6 +2060,16 @@ def test_repo_ratchet_widening_is_marked(tmp_path, capsys):
     assert "! guards.overrides.forcePush widens to" in out
     assert crew_config._RATCHETED["guards.forcePush"][2]["allow"] in out  # pylint: disable=protected-access
 
+    spec_dir = tmp_path / "spec"
+    spec_dir.mkdir()
+    spec_root, spec_gpath = _repo_with_global(
+        spec_dir, {"install.policy": "manual"}, {"install": {"policy": "auto"}})
+
+    _, spec_changes = crew_config.plan_repo_write(
+        str(spec_root), {"install.policy": "auto"}, spec_gpath)
+
+    assert [c["widens"] for c in spec_changes] == [True]
+
 
 def test_a_repo_null_that_widens_is_described_by_the_value_in_force(tmp_path, capsys):
     """T-0103 (T-0075 round-6 NIT 2): a repo `null` on `pm.authority`

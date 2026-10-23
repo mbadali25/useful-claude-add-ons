@@ -1037,7 +1037,12 @@ def test_upgrade_report_documents_the_current_migration():
     current = crew_state.SCHEMA_CURRENT
     doc = (pathlib.Path(__file__).resolve().parents[1] / "skills" / "crew-setup"
            / "upgrade-report.md").read_text(encoding="utf-8")
-    assert f"**Schema {current - 1} → {current}**" in doc
+    hops = [f"**Schema {schema - 1} → {schema}**" for schema in range(3, current + 1)]
+
+    missing = [hop for hop in hops if hop not in doc]
+
+    assert f"**Schema {current - 1} → {current}**" in hops
+    assert missing == []
 
 
 # --- T-0065 item 8: UPGRADE.md keeps every earlier run below the new one -------
