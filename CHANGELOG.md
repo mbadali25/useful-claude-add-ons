@@ -9,6 +9,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.67: four harness hook PowerShell twins deleted (L-0869, slice 4 of L-0727)
+
+- **Summary.** `crew` 1.2.67: the last four PowerShell hook twins (`verify-gate`, `completion-audit`, `scope-guard`, `approval-hook`) are deleted, so only `crew-hook.ps1` and `promote-gate.ps1` remain; Windows behaviour does not change because those hooks already ran their `.sh` under Git Bash.
+- **Deleted.** `verify-gate.ps1` (3051 lines), `completion-audit.ps1` (462), `scope-guard.ps1` (419) and `approval-hook.ps1` (316). This is the last four of the fourteen hook `.ps1` files L-0727 deletes. `hooks.json` has named none of the four since L-0727 slice 2; the dispatcher (`crew_hook.TABLE`) already ran `approval-hook.sh`, `scope-guard.sh`, `verify-gate.sh` and `completion-audit.sh`.
+- **Breaking (B2).** A direct `pwsh verify-gate.ps1 -Ci` (also `-Price` and `-All`) no longer works; use `bash verify-gate.sh --ci` / `--price` / `--all`. A `.codex/hooks.json` that points at any of the four must be regenerated with `crew_instructions.py codex`.
+- **Risk accepted by the owner.** Fail-closed stays: on an armed repo, no Git Bash or a launch fault on PreToolUse, UserPromptSubmit or Stop exits 2 and names the cause; an unarmed repo exits 0.
+- **Left for a harness-only follow-up.** The four `HARNESS` entries in `scripts/check-tooling-pr.py`, the now-dead stdin-JSON subcommands in `verify_record.py`, and a stale comment at `_test/test_flavour_guard.py:358` (recorded in `docs/adr/0009-hook-single-dispatch.md`).
+- **Verified.** `verify-gate.sh --all` exit 0 at d0d0807e6 (non-root clone); gate-runner at de70ca092: pytest-combined 22,293 passed, sabotage non-RED set a subset of the main baseline; native Windows (win-repo-2) at de70ca092: stop-gate 14/14 with 0 skipped, items 3 to 9 pass, sabotage S4 to S9 6/6 red. Review: round 2 (Kimi) was INCOMPLETE (226 output lines matched no part of the contract) and was rejected; a successor plan opened a fresh budget; round 1 of that budget: 0 BLOCK, 2 FIX, accepted. Independent Claude read and the security pass: 0 BLOCK. Every FIX and NIT is quoted in L-0882 and L-0884; the Windows timing fragility is L-0886.
+- **Follow-ups.** L-0876 to L-0880, L-0882, L-0884, L-0886.
+
 ### Fixed — crew 1.2.66: sh hooks hand native python a path it can open, with or without Git Bash path conversion (L-0868)
 
 - **Summary.** `crew` 1.2.66: on Windows, the bash hooks no longer fail with `can't open file 'D:\\tmp\\...'` when `MSYS_NO_PATHCONV` is set in the environment (even empty), because they now convert script and path arguments themselves.
@@ -34,13 +44,6 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Changed.** Ticket and owner-date parentheticals and descriptions of script output moved to the rationale doc; the script directory prefix is `$H` on prose lines (the lines tests, sabotage mutations and the scope guard read stay literal). No sabotage anchor, test or golden fixture changed.
 - **Also.** Review round 2 left six FIXes (the `$H` alias and five stale codemap line citations), filed as L-0873. The verify-gate pass was recorded in a non-root clone because the ai-connect tests fail as root (L-0850).
 
-### Changed — crew: four harness hook PowerShell twins deleted (L-0869, slice 4 of L-0727)
-
-- **Summary.** `crew`: the last four PowerShell hook twins (`verify-gate`, `completion-audit`, `scope-guard`, `approval-hook`) are deleted, so only `crew-hook.ps1` and `promote-gate.ps1` remain; Windows behaviour does not change because those hooks already ran their `.sh` under Git Bash.
-- **Deleted.** `verify-gate.ps1` (3051 lines), `completion-audit.ps1` (462), `scope-guard.ps1` (419) and `approval-hook.ps1` (316). This is the last four of the fourteen hook `.ps1` files L-0727 deletes. `hooks.json` has named none of the four since L-0727 slice 2; the dispatcher (`crew_hook.TABLE`) already ran `approval-hook.sh`, `scope-guard.sh`, `verify-gate.sh` and `completion-audit.sh`.
-- **Breaking (B2).** A direct `pwsh verify-gate.ps1 -Ci` (also `-Price` and `-All`) no longer works; use `bash verify-gate.sh --ci` / `--price` / `--all`. A `.codex/hooks.json` that points at any of the four must be regenerated with `crew_instructions.py codex`.
-- **Risk accepted by the owner.** Fail-closed stays: on an armed repo, no Git Bash or a launch fault on PreToolUse, UserPromptSubmit or Stop exits 2 and names the cause; an unarmed repo exits 0.
-- **Left for a harness-only follow-up.** The four `HARNESS` entries in `scripts/check-tooling-pr.py`, the now-dead stdin-JSON subcommands in `verify_record.py`, and a stale comment at `_test/test_flavour_guard.py:358` (recorded in `docs/adr/0009-hook-single-dispatch.md`).
 ### Changed — crew 1.2.61, obsidian-vault 0.5.2: ten hook PowerShell twins deleted, the `sendkeys` auto-clear method removed (L-0727, slice 3; landed as L-0867)
 
 - **Summary.** `crew` 1.2.61: the ten PowerShell twins of crew's hook scripts are deleted, so on Windows every crew hook runs its `.sh` under Git Bash, and `context.autoClear.method: "sendkeys"` (the Windows keystroke sender) is removed and refused by name.
