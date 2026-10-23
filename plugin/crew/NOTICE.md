@@ -165,9 +165,10 @@ licensed; the copyright holder is named so the notice travels with crew's copy.
   `skills/crew-execute/SKILL.md`.
 - **gstack** - <https://github.com/garrytan/gstack> at `b04cc358`, copyright 2026 Garry Tan, MIT.
   The functional QA contract map and evidence rules, from `qa/sections/system-functional.md`,
-  `qa/sections/scope.md` and `qa/sections/exploratory.md`, and the deploy-evidence idea of
-  separating merged, deployed and verified. Used in
-  `skills/crew-qa-standards/references/functional-qa.md` and `commands/promote.md`.
+  `qa/sections/scope.md` and `qa/sections/exploratory.md`. Used in
+  `skills/crew-qa-standards/references/functional-qa.md`. The deploy-evidence wording in
+  `commands/promote.md` is the owner's rule; gstack's `land-and-deploy` skill (`SKILL.md`) is cited
+  there only as prior art for the vocabulary, and no text is taken from it.
 - **pstack** (the `pstack/` directory of <https://github.com/cursor/plugins>) at `8b3326d9`,
   copyright 2026 Lauren Tan, MIT, per `pstack/LICENSE`. The seven benchmark questions, from
   `skills/benchmark-checklist/SKILL.md`, and the "able to fail" rule, from

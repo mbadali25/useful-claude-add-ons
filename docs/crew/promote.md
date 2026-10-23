@@ -264,4 +264,4 @@ A promotion is reported with the merged sha, the deployed sha read back from the
 health-check result of gate 3; a missing fact makes it `unverified`. A green pipeline proves a
 merge or a dispatch, not what the target runs, and a running target is not a healthy one, so each
 link needs its own evidence. The wording follows the owner's rule (merged is not deployed, deployed
-is not verified) and the evidence vocabulary in gstack's land-and-deploy skill (see `NOTICE.md`).
+is not verified); gstack's land-and-deploy skill is prior art for the vocabulary (see `NOTICE.md`).
