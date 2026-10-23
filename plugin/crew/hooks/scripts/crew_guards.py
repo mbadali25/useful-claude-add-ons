@@ -2633,6 +2633,15 @@ def _decode_escapes(text):
                   one, text)
 
 
+def _literal_text(match):
+    """The text of a string literal: escapes decoded unless it is a raw
+    string (`r'\\x74'` is the four characters it shows)."""
+    quote = 3 if match.group(1)[:3] in ("\'\'\'", '"""') else 1
+    text = match.group(1)[quote:-quote]
+    prefix = match.group(0)[:match.start(1) - match.start(0)]
+    return text if "r" in prefix.lower() else _decode_escapes(text)
+
+
 def _literal_runs(code):
     """The text of each run of string literals that are one name when joined
     (`'ter' 'raform'`, `'ter'+'raform'`, `"".join(["ter","raform"])`), with
@@ -2644,9 +2653,7 @@ def _literal_runs(code):
         if run and not (gap is not None and _RUN_GAP_RE.match(gap)):
             runs.append("".join(run))
             run = []
-        quote = 3 if match.group(1)[:3] in ("\'\'\'", '"""') else 1
-        text = _decode_escapes(match.group(1)[quote:-quote])
-        run.append(re.sub(r"[^a-z0-9]", "", text.lower()))
+        run.append(re.sub(r"[^a-z0-9]", "", _literal_text(match).lower()))
         last = match.end()
     if run:
         runs.append("".join(run))
@@ -2684,6 +2691,7 @@ def _call_args(code, aliases=()):
     """The argument text of each call to a process-starting function, or to
     a name bound to one (`aliases`)."""
     calls = list(_PROC_CALL_RE.finditer(code))
+    calls += re.finditer(r"\b(?:getattr|__import__)\s*\([^()]*\)\s*\(", code)
     if aliases:
         calls += re.finditer(r"\b(?:" + "|".join(map(re.escape, aliases))
                              + r")\s*\(", code)
@@ -2699,6 +2707,11 @@ def _call_args(code, aliases=()):
         yield code[call.end():pos]
 
 
+# `a + b`, `t % b`, `x +'s'`: an operand joined to another by an operator that
+# builds a string. Read over code with its literals blanked, so `5 % 2` beside
+# no name is the only arithmetic it can mistake (L-0871 round 4).
+_JOIN_OP_RE = re.compile(r"[\w)\]]\s*[+%]|[+%]\s*[\w(\[]")
+_SPELL_DEPTH = 40
 _ASSIGN_RE = re.compile(
     r"\s*(?:(?:const|let|var)\s+)?([A-Za-z_]\w*)\s*(?::[^=]*?)?(\+|:)?=(?!=)(.*)\Z",
     re.S)
@@ -2745,6 +2758,8 @@ def _spelling(name, assigned, memo, seen=()):
     `memo` holds each finished name, so a chain that fans out is read once."""
     if name in memo:
         return memo[name]
+    if len(seen) > _SPELL_DEPTH:
+        return "", "+"
     memo[name] = result = _spell(name, assigned, memo, seen)
     return result
 
@@ -2758,16 +2773,15 @@ def _spell(name, assigned, memo, seen):
         bare = _LIT_RE.sub('""', rhs)
         if operator == "+" and re.search(r"[\w)\]]|[(\[]", bare):
             return spelled, "+"
-        if re.search(r"[\w)\]]\s*\+|\+\s*[\w(\[]", bare):
+        if _JOIN_OP_RE.search(bare):
             return spelled, "+"
         for token in re.finditer(_LIT_RE.pattern + r"|[A-Za-z_]\w*", rhs, re.S):
             if token.group(1) is not None:
                 found = _CODE_EXPANSION_RE.search(token.group(1))
                 if found:
                     return spelled, found.group(0)
-                quote = 3 if token.group(1)[:3] in ("'''", '"""') else 1
-                spelled += re.sub(r"[^a-z0-9]", "", _decode_escapes(
-                    token.group(1)[quote:-quote]).lower())
+                spelled += re.sub(r"[^a-z0-9]", "",
+                                  _literal_text(token).lower())
             elif token.group(0) in assigned and token.group(0) not in seen \
                     and token.group(0) != name:
                 inner, why = _spelling(token.group(0), assigned, memo,
@@ -2795,7 +2809,7 @@ def _expansion_in_call(code):
             if found:
                 return found.group(0)
         bare = _LIT_RE.sub('""', args)
-        if re.search(r"[\w)\]]\s*\+|\+\s*[\w(\[]", bare):
+        if _JOIN_OP_RE.search(bare):
             return "+"
         for name in sorted(set(_NAME_RE.findall(bare))):
             spelled, why = _spelling(name, assigned, memo)
