@@ -440,7 +440,7 @@ crew_repo_config_file() {
 # config (L-0680): an absolute path there would name the main checkout's file.
 # Any failure prints the default, which is inside the checkout.
 crew_handoff_path() {
-  "$1" - "$(dirname "${BASH_SOURCE[0]}")" "$2" << 'PY'
+  "$1" - "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")")" "$(crew_native_path "$2")" << 'PY'
 import json, os, sys
 default = ".work/HANDOFF.md"
 try:

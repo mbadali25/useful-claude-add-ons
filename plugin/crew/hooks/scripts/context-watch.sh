@@ -311,7 +311,7 @@ STOP_HOOK_ACTIVE=$(read_json stop_hook_active)
 # once-per-session gate for this hook, reset by handoff-read.sh at the next
 # SessionStart -- that stays.
 
-CFG=$("$PY" - "$CREW_CFG" "$(dirname "$0")" << 'PY' 2>/dev/null
+CFG=$("$PY" - "$(crew_native_path "$CREW_CFG")" "$(crew_native_path "$(dirname "$0")")" << 'PY' 2>/dev/null
 import json
 import os
 import sys
@@ -556,8 +556,8 @@ if [ -f "$MARKER" ]; then
   # noclobber claim makes exactly one flavour escalate when both run, and a
   # session whose clear was already sent is not nagged about it.
   if [ ! -f "$SENT_MARKER" ] &&
-     [ "$("$PY" "$(crew_native_path "$(dirname "$0")/crew_autocycle.py")" wrapup-armed --root "$PWD" --session "$SESSION_ID" 2>/dev/null | tr -d '\r')" = "on" ]; then
-    WRAP_WHY=$("$PY" "$(crew_native_path "$(dirname "$0")/crew_autocycle.py")" wrapup-check --root "$PWD" 2>/dev/null | tr -d '\r')
+     [ "$("$PY" "$(crew_native_path "$(dirname "$0")/crew_autocycle.py")" wrapup-armed --root "$(crew_native_path "$PWD")" --session "$SESSION_ID" 2>/dev/null | tr -d '\r')" = "on" ]; then
+    WRAP_WHY=$("$PY" "$(crew_native_path "$(dirname "$0")/crew_autocycle.py")" wrapup-check --root "$(crew_native_path "$PWD")" 2>/dev/null | tr -d '\r')
     if [ "$WRAP_WHY" != "ok" ] && ( set -o noclobber; : > "$ESCALATED" ) 2>/dev/null; then
       printf 'crew wrap-up incomplete: %s. Fix exactly that, run /crew:handoff --wrap-up again, end the turn.\n' \
         "${WRAP_WHY:-the wrap-up check gave no answer}" >&2
@@ -630,7 +630,7 @@ fi
 # T-0017: armed, the warning IS the wrap-up procedure, and supersedes both
 # messages below. Unarmed (or any error), crew_autocycle prints nothing and
 # today's message goes out unchanged.
-WRAP_MSG=$("$PY" "$(crew_native_path "$(dirname "$0")/crew_autocycle.py")" wrapup-message --root "$PWD" --session "$SESSION_ID" --pct "$PCT_H" 2>/dev/null | tr -d '\r')
+WRAP_MSG=$("$PY" "$(crew_native_path "$(dirname "$0")/crew_autocycle.py")" wrapup-message --root "$(crew_native_path "$PWD")" --session "$SESSION_ID" --pct "$PCT_H" 2>/dev/null | tr -d '\r')
 if [ -n "$WRAP_MSG" ]; then
   printf '%s\n' "$WRAP_MSG" >&2
   exit 2

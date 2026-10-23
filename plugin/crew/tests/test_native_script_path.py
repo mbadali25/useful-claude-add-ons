@@ -33,7 +33,7 @@ SCRIPTS = pathlib.Path(os.path.realpath(pathlib.Path(__file__).resolve().parent.
 BASH = crew_fixtures.resolve_bash()
 needs_bash = pytest.mark.skipif(BASH is None, reason="bash not installed - the sh flavour was NOT run")
 needs_linux_fixture = pytest.mark.skipif(
-    os.name == "nt", reason="needs native Windows; the Linux fixture ran (win-repo-2 runs the native variant)")
+    os.name == "nt", reason="Linux-fixture test, skipped on nt: win-repo-2 runs the native variant there")
 DRIVE = "D:/winfx"
 PATHCONV = [pytest.param(None, id="unset"), pytest.param("", id="empty"), pytest.param("1", id="one")]
 
@@ -43,12 +43,12 @@ case "$*" in *"print(sys.executable)"*) echo "$0"; exit 0 ;; esac
 args=()
 for a in "$@"; do
   case "$a" in
-    *.py)
-      case "$a" in
-        /*) printf 'REJECT\\t%%s\\n' "$a" >> "$CREW_TEST_PY_LOG"
-            echo "can't open file '$a': [Errno 2] No such file or directory" >&2; exit 2 ;;
-        %(drive)s/*) printf 'SCRIPT\\t%%s\\n' "$a" >> "$CREW_TEST_PY_LOG"; a="${a#%(drive)s}" ;;
-      esac ;;
+    /dev/*) ;;
+    /*) printf 'REJECT\\t%%s\\n' "$a" >> "$CREW_TEST_PY_LOG"
+        echo "can't open file '$a': [Errno 2] No such file or directory" >&2; exit 2 ;;
+    %(drive)s/*)
+      case "$a" in *.py) kind=SCRIPT ;; *) kind=ARG ;; esac
+      printf '%%s\\t%%s\\n' "$kind" "$a" >> "$CREW_TEST_PY_LOG"; a="${a#%(drive)s}" ;;
   esac
   args+=("$a")
 done
@@ -100,6 +100,7 @@ class Run:
                               env=self.env, capture_output=True, timeout=120, check=False)
         lines = self.log.read_text(encoding="utf-8").splitlines() if self.log.exists() else []
         seen = [ln.split("\t", 1) for ln in lines]
+        self.args = [p for k, p in seen if k == "ARG"]
         return done, [p for k, p in seen if k == "SCRIPT"], [p for k, p in seen if k == "REJECT"]
 
 
@@ -141,6 +142,32 @@ def test_caller_hands_python_a_native_script_path(tmp_path, case, pathconv):
     assert rejected == [], f"python was handed a POSIX script path: {rejected}\n{done.stderr}"
     for name in expected:
         assert f"{DRIVE}{SCRIPTS}/{name}" in scripts, f"{name} never reached python converted: {scripts}\n{done.stderr}"
+
+
+# id -> (script, args, stdin, the path arguments that must reach python converted)
+PATH_ARGS = {
+    "auto-clear-plan-root": ("auto-clear.sh", ["--session", "s1"], "", "root"),
+    "auto-clear-resume-plan-root": ("auto-clear.sh", ["--resume", "--session", "s1", "--source", "compact"], "",
+                                    "root"),
+    "handoff-read-data-paths": ("handoff-read.sh", [], _CLEAR, "scripts"),
+    "handoff-write-handoff-path": ("handoff-write.sh", [], _PRECOMPACT, "scripts"),
+}
+
+
+@needs_bash
+@needs_linux_fixture
+@pytest.mark.parametrize("pathconv", PATHCONV)
+@pytest.mark.parametrize("case", sorted(PATH_ARGS))
+def test_caller_hands_python_native_path_arguments(tmp_path, case, pathconv):
+    script, args, stdin, want = PATH_ARGS[case]
+    run = Run(tmp_path, pathconv)
+
+    done, _, rejected = run.run(script, args, stdin)
+    rejected = [path for path in rejected if (script, os.path.basename(path)) not in _DEFERRED]
+    expected = f"{DRIVE}{run.root}" if want == "root" else f"{DRIVE}{SCRIPTS}"
+
+    assert rejected == [], f"python was handed a POSIX path argument: {rejected}\n{done.stderr}"
+    assert expected in run.args, f"{expected} never reached python as an argument: {run.args}\n{done.stderr}"
 
 
 @needs_bash
@@ -215,6 +242,19 @@ def test_every_script_path_in_a_non_harness_hook_goes_through_the_helper(name):
                 continue
             if not line[:found.start()].endswith('crew_native_path "'):
                 offenders.append(f"{name}:{number}: {line.strip()}")
+
+    assert offenders == []
+
+
+@pytest.mark.parametrize("name", _NON_HARNESS)
+def test_every_root_and_data_path_argument_goes_through_the_helper(name):
+    unwrapped = re.compile(r'--root "\$PWD"|"\$PY" - "\$CREW_CFG"|"\$DIR" "\$PWD"')
+    offenders = []
+    for number, line in enumerate((SCRIPTS / name).read_text(encoding="utf-8").splitlines(), 1):
+        if line.lstrip().startswith("#"):
+            continue
+        if unwrapped.search(line) and 'bash "$(dirname' not in line:
+            offenders.append(f"{name}:{number}: {line.strip()}")
 
     assert offenders == []
 
