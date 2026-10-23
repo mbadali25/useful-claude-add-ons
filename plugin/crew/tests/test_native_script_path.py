@@ -97,8 +97,8 @@ class Run:
         self.args = []
 
     def run(self, script, args=(), stdin=""):
-        done = subprocess.run([BASH, str(SCRIPTS / script), *args], input=stdin, text=True, cwd=self.root,
-                              env=self.env, capture_output=True, timeout=120, check=False)
+        done = subprocess.run([BASH, str(SCRIPTS / script), *args], input=stdin, text=True, encoding="utf-8",
+                              cwd=self.root, env=self.env, capture_output=True, timeout=120, check=False)
         lines = self.log.read_text(encoding="utf-8").splitlines() if self.log.exists() else []
         seen = [ln.split("\t", 1) for ln in lines]
         self.args = [p for k, p in seen if k == "ARG"]
@@ -200,7 +200,8 @@ def test_helper_on_a_posix_host_hands_the_input_path_unchanged(tmp_path):
 def test_helper_is_identity_off_windows(tmp_path, given):
     script = f'. "{SCRIPTS}/_common.sh"; crew_native_path "$1"'
 
-    done = subprocess.run([BASH, "-c", script, "_", given], capture_output=True, text=True, check=False)
+    done = subprocess.run([BASH, "-c", script, "_", given], capture_output=True, text=True, encoding="utf-8",
+                          check=False)
 
     assert (done.returncode, done.stdout) == (0, given)
 
@@ -214,8 +215,8 @@ def test_helper_falls_back_to_the_input_when_cygpath_fails(tmp_path):
     env = dict(os.environ, PATH=str(bindir) + os.pathsep + os.environ["PATH"])
     script = f'. "{SCRIPTS}/_common.sh"; crew_native_path "$1"'
 
-    done = subprocess.run([BASH, "-c", script, "_", "/d/x/y.py"], capture_output=True, text=True, env=env,
-                          check=False)
+    done = subprocess.run([BASH, "-c", script, "_", "/d/x/y.py"], capture_output=True, text=True,
+                          encoding="utf-8", env=env, check=False)
 
     assert (done.returncode, done.stdout) == (0, "/d/x/y.py")
 
@@ -256,7 +257,8 @@ def test_every_script_path_in_a_non_harness_hook_goes_through_the_helper(name):
 
 @pytest.mark.parametrize("name", _NON_HARNESS)
 def test_every_root_and_data_path_argument_goes_through_the_helper(name):
-    unwrapped = re.compile(r'--root "\$PWD"|"\$PY" - "\$CREW_CFG"|"\$DIR" "\$PWD"')
+    unwrapped = re.compile(
+        r'--root "\$PWD"|"\$PY" - "\$CREW_CFG"|"\$DIR" "\$PWD"|json\.load\(open\(sys\.argv\[1\]\)\).*\' "\$CREW_CFG" 2>')
     offenders = []
     for number, line in enumerate((SCRIPTS / name).read_text(encoding="utf-8").splitlines(), 1):
         if line.lstrip().startswith("#"):
