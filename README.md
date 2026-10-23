@@ -67,7 +67,7 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 3 | This repo's marketplace + its skills — **→ picks individual skills** (`notify` asks about setup) | x |
 | 4 | Team plugins — superpowers, frontend-design, excalidraw-generator — **→ picks which** | x |
 | 5 | `find-skills` skill | x |
-| 6 | Community marketplaces + plugins — **→ picks which** (adhd-output-style, azure-tools, anthropic-office-skills, agent-browser, ppt-master) | x |
+| 6 | Community marketplaces + plugins — **→ picks which** (adhd-output-style, azure-tools, anthropic-office-skills, agent-browser, ppt-master, taste-skill, ui-ux-pro-max) | x |
 | 7 | `claude-code-setup` plugin | x |
 | 8 | `task-observer` skill | x |
 | 9 | MCP server — AWS (`awslabs.aws-api-mcp-server`) | |
@@ -154,12 +154,14 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 36 skills<!-- claim: skills-count --> in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
 | 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
-| 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master`, `voltagent-infra`, `voltagent-qa-sec` | 4 marketplaces (only the ones behind a ticked plugin) |
+| 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master`, `voltagent-infra`, `voltagent-qa-sec`, `eli5`, `taste-skill`, `ui-ux-pro-max` | 7 marketplaces (only the ones behind a ticked plugin) |
 | 7 claude-code-setup | Analyses a codebase and recommends hooks/skills/MCP servers | `anthropics/claude-plugins-official` |
 | 8 task-observer | Watches a session for reusable-skill opportunities | `rebelytics/one-skill-to-rule-them-all` |
 | 9–11 MCP servers | AWS API, Azure, Playwright | `claude mcp add` |
 | 12 Obsidian MCP | The `obsidian-server` HTTP MCP endpoint (`obsidian-local-rest-api`'s built-in MCP route), bearer-authenticated with `--obsidian-mcp-key` — skipped with instructions when no key is given | `claude mcp add` |
 | 13 Supabase | The `supabase` plugin — project, database, and edge-function tooling | `anthropics/claude-plugins-official` |
+
+`taste-skill` (`Leonxlnx/taste-skill`, pinned to v2.1.4) and `ui-ux-pro-max` (`nextlevelbuilder/ui-ux-pro-max-skill`, pinned to v2.15.0) are **unaudited third-party plugins**. ui-ux-pro-max's design-skill scripts call `api.muapi.ai`, on explicit user action. taste-skill's scripts fetch images from Openverse, Wikimedia and the Art Institute, and drive a local Chrome. Untick them in the Community picker if you do not want that.
 | 14 Context7 | `ctx7 setup` — wires up version-accurate library docs for your agents | npx |
 | 15 Playwright CLI | `@playwright/cli` (`playwright-cli` on `PATH`) | npm |
 | 16 SkillUI | `skillui` + `playwright` + the Chromium browser build | npm |
@@ -235,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- Taste-skill and ui-ux-pro-max in the Community install rows. The installers now offer `taste-skill` (art direction for frontend design) and `ui-ux-pro-max` (UI/UX styles, palettes, fonts and stacks) in the Community picker, default on, pinned to the reviewed tags v2.1.4 and v2.15.0.
 - **crew 1.2.65**: The cloud guard no longer refuses python or node code that names nothing. `crew` 1.2.65: with the cloud guard on, `python3 -c`, a python heredoc or `node -e` that neither names terraform, terragrunt or tofu nor builds that name is no longer refused as "could not tell", and a refusal now quotes the construct that caused it instead of an unrelated word on the line.
-- **crew 1.2.63**: Sabotage table retires 30 mutations and dual-anchors 7 so L-0725 can gate. `crew` 1.2.63: the sabotage mutation table drops 30 mutations that no longer match shipped code and gives 7 a second anchor, so the config-key reduction (L-0725, #665) can pass the sabotage gate; no runtime behaviour changes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

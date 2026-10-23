@@ -1070,7 +1070,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'own-skills';        Default = $true;  Name = "This repo's marketplace + its skills" }
     [pscustomobject]@{ Key = 'team';              Default = $true;  Name = 'Team plugins: superpowers, frontend-design, excalidraw-generator, github' }
     [pscustomobject]@{ Key = 'find-skills';       Default = $true;  Name = 'find-skills skill (vercel-labs/skills)' }
-    [pscustomobject]@{ Key = 'community';         Default = $true;  Name = 'Community marketplaces + plugins (adhd-output-style, azure-tools, voltagent, ...)' }
+    [pscustomobject]@{ Key = 'community';         Default = $true;  Name = 'Community marketplaces + plugins (adhd-output-style, azure-tools, voltagent, taste-skill, ...)' }
     [pscustomobject]@{ Key = 'claude-code-setup'; Default = $true;  Name = 'claude-code-setup plugin (anthropics/claude-plugins-official)' }
     [pscustomobject]@{ Key = 'task-observer';     Default = $true;  Name = 'task-observer skill (rebelytics/one-skill-to-rule-them-all)' }
     [pscustomobject]@{ Key = 'aws-mcp';           Default = $false; Name = 'MCP server: AWS (awslabs.aws-api-mcp-server)' }
@@ -1227,6 +1227,13 @@ $script:CommunityCatalog = @(
     # instead would make Test-MarketplaceInstalled look for a name that never exists,
     # so this row would re-add the marketplace on EVERY run while reporting success.
     [pscustomobject]@{ Key = 'eli5';              Selected = $true; Name = "eli5                    - Explain any topic like I'm 5: big visuals, few words";           Spec = 'eli5@claude-community|anthropics/claude-plugins-community|claude-community' }
+    # taste-skill and ui-ux-pro-max are unaudited third-party plugins, pinned to the tags
+    # that were reviewed (marketplace add accepts owner/repo#ref): taste-skill v2.1.4 =
+    # 6010f91a9935f1c167dfc500fb1a475681892e6b, ui-ux-pro-max-skill v2.15.0 =
+    # a38d04c3d5c298c851dbe5e6ee1965ee3de42cb5. The marketplace probe matches on the last
+    # field (the local name), so the '#ref' in the source does not break idempotence.
+    [pscustomobject]@{ Key = 'taste-skill';       Selected = $true; Name = "taste-skill             - art-direction skill for frontend design";                        Spec = 'taste-skill@taste-skill|Leonxlnx/taste-skill#v2.1.4|taste-skill' }
+    [pscustomobject]@{ Key = 'ui-ux-pro-max';     Selected = $true; Name = "ui-ux-pro-max           - UI/UX styles, palettes, fonts and stacks";                       Spec = 'ui-ux-pro-max@ui-ux-pro-max-skill|nextlevelbuilder/ui-ux-pro-max-skill#v2.15.0|ui-ux-pro-max-skill' }
 )
 
 # --- Sub-picker groups --------------------------------------------------------

@@ -575,6 +575,24 @@ check "its marketplace NAME is the local one" "claude-community"                
 check "the repo name is never used as a marketplace name" 0 \
   "$(grep -c '|claude-plugins-community$' "$SCRIPT")"
 
+echo "17b. taste-skill and ui-ux-pro-max: pinned sources, local names the probe can find"
+# The source field carries '#<tag>'; the probe matches the LAST field, so the pin must
+# not leak into it or the row would re-add the marketplace on every run.
+taste="$(spec_for COMMUNITY taste-skill || printf '')"
+uipro="$(spec_for COMMUNITY ui-ux-pro-max || printf '')"
+check "taste-skill is in the community catalog"   yes "$([ -n "$taste" ] && echo yes || echo no)"
+check "ui-ux-pro-max is in the community catalog" yes "$([ -n "$uipro" ] && echo yes || echo no)"
+check "taste-skill's plugin@marketplace"          "taste-skill@taste-skill"                "${taste%%|*}"
+rest="${taste#*|}"
+check "taste-skill's source is pinned to v2.1.4"  "Leonxlnx/taste-skill#v2.1.4"           "${rest%%|*}"
+check "taste-skill's local name has no pin"       "taste-skill"                            "${rest#*|}"
+check "ui-ux-pro-max's plugin@marketplace"        "ui-ux-pro-max@ui-ux-pro-max-skill"      "${uipro%%|*}"
+rest="${uipro#*|}"
+check "ui-ux-pro-max's source is pinned to v2.15.0" "nextlevelbuilder/ui-ux-pro-max-skill#v2.15.0" "${rest%%|*}"
+check "ui-ux-pro-max's local name has no pin"     "ui-ux-pro-max-skill"                    "${rest#*|}"
+check "they follow eli5 in the same order"        "eli5 taste-skill ui-ux-pro-max" \
+  "$(printf '%s ' "${COMMUNITY_KEYS[@]}" | sed 's/.* \(eli5 taste-skill ui-ux-pro-max\) $/\1/')"
+
 echo "18. github is ANTHROPIC'S plugin, and this repo's own github skill is untouched"
 # The two readings of "github skills". Evidence for choosing this one: this repo's own
 # 'github' is ALREADY installed by the own-skills row - it is in SKILL_KEYS and
@@ -640,6 +658,22 @@ check "the add names the SOURCE, not the local name" 0 \
 check "and eli5 is installed from claude-community" 1 \
   "$(grep -c 'plugin install eli5@claude-community' "$E2E/calls")"
 
+echo "20b. end to end: taste-skill and ui-ux-pro-max add their pinned sources once each"
+: > "$E2E/calls"
+CLAUDE_CONFIG_DIR="$E2E/cfg" PATH="$E2E/bin:$PATH" \
+  bash "$SCRIPT" --select community --community taste-skill,ui-ux-pro-max >"$TMP/out" 2>"$TMP/err"
+check "the taste-skill marketplace step names the pinned source" yes "$(on_out 'Marketplace: Leonxlnx/taste-skill#v2.1.4')"
+check "the ui-ux-pro-max plugin step names the local name"       yes "$(on_out 'Plugin: ui-ux-pro-max@ui-ux-pro-max-skill')"
+check "one pinned 'marketplace add' for taste-skill" 1 \
+  "$(grep -c 'plugin marketplace add Leonxlnx/taste-skill#v2.1.4' "$E2E/calls")"
+check "one pinned 'marketplace add' for ui-ux-pro-max" 1 \
+  "$(grep -c 'plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill#v2.15.0' "$E2E/calls")"
+check "taste-skill is installed from its local name" 1 \
+  "$(grep -c 'plugin install taste-skill@taste-skill' "$E2E/calls")"
+check "ui-ux-pro-max is installed from its local name" 1 \
+  "$(grep -c 'plugin install ui-ux-pro-max@ui-ux-pro-max-skill' "$E2E/calls")"
+check "nothing else was registered" 2 "$(grep -c 'plugin marketplace add' "$E2E/calls")"
+
 echo "21. and a second run re-adds nothing"
 # The marketplace probe reads 'claude plugin marketplace list --json'. Feeding it the
 # registration the first run would have made is what makes idempotence observable
@@ -703,6 +737,8 @@ ps_spec() {
 }
 check "eli5's Spec matches the .sh"         "$eli5" "$(ps_spec CommunityCatalog eli5)"
 check "github's Spec matches the .sh"       "$gh"   "$(ps_spec TeamCatalog github)"
+check "taste-skill's Spec matches the .sh"   "$taste" "$(ps_spec CommunityCatalog taste-skill)"
+check "ui-ux-pro-max's Spec matches the .sh" "$uipro" "$(ps_spec CommunityCatalog ui-ux-pro-max)"
 check "the .ps1 never uses the repo name as a marketplace name" 0 \
   "$(grep -c "|claude-plugins-community'" "$PS1SCRIPT")"
 
