@@ -72,7 +72,7 @@ step to skip silently.
 Produce this, and nothing that edits the tree:
 
 - **Symptom** — what was observed, and the exact error text with its exit code.
-- **Reproduction** — the command that triggers it, and whether it is reliable.
+- **Reproduction** — the one command you ran that goes red on the symptom (output shown, secrets redacted), and whether it is reliable. Tag any debug log you add `[DEBUG-xxxx]` so cleanup is one grep.
   If it is not reproducible, say so plainly; a cause asserted without a
   reproduction is a guess with a citation.
 - **Evidence read** — which codemap notes, schema note, graph and verify rules
