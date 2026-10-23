@@ -12,7 +12,7 @@ cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 MODE="${1:-}"
 CREW_PY=$(crew_py) || exit 0
 [ -n "$CREW_PY" ] || exit 0
-NOTIFY_PY="$(dirname "${BASH_SOURCE[0]}")/crew_notify.py"
+NOTIFY_PY=$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/crew_notify.py")
 
 if [ "$MODE" != "hook" ]; then
   # A command calling this by hand passes no payload, is not a hook event and
@@ -37,7 +37,7 @@ cat > "$PAYLOAD_FILE"
 # of them send it (keyed on the payload, so the next Notification is new).
 # Exit 10 is the only "the other flavour has it"; anything else sends.
 CLAIM_TOKEN=""
-CLAIM_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/event_claim.py"
+CLAIM_SCRIPT=$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/event_claim.py")
 if [ -s "$PAYLOAD_FILE" ] && CLAIM_PY=$(crew_py_strict); then
   CLAIM_TOKEN=$("$CLAIM_PY" "$CLAIM_SCRIPT" notify . sh < "$PAYLOAD_FILE"); [ $? -eq 10 ] && exit 0
 fi

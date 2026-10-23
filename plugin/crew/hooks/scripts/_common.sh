@@ -349,6 +349,43 @@ crew_py_strict() {
   return 1
 }
 
+# --- A script path native python can open (L-0868) -------------------------
+#
+# Print $1 in a form a NATIVE interpreter can open when this shell runs under
+# MSYS/Cygwin (Git Bash), and $1 unchanged everywhere else. Every
+# `"$PY" "$DIR/x.py"` caller wraps its script path in this.
+#
+# Why: Git Bash rewrites a POSIX-looking argument (`/d/repo/x.py`, `/tmp/x.py`)
+# into a Windows path when it execs a native program -- but only while
+# MSYS_NO_PATHCONV is unset. Set, even to the empty string (a user profile, a
+# CI runner or a parent process can do that), the argument reaches python.exe
+# as written and Windows resolves it against the current drive:
+# `can't open file 'D:\tmp\...'`. `cygpath -m` does not depend on argument
+# conversion, so the result is right in either state. `-m`, not `-w`: mixed
+# `D:/d/repo/x.py` has no backslashes to survive `printf %q`, `$(...)` or `tr`,
+# and python.exe accepts it.
+#
+# This is about SCRIPT paths only. It does not change the form `crew_py` /
+# `crew_py_strict` return for the interpreter itself (the DECIDED CONTRACT in
+# `crew_py_strict`: POSIX-shaped, what this bash execs), and it never sets
+# MSYS_NO_PATHCONV or MSYS2_ARG_CONV_EXCL, which would make conversion OFF the
+# norm. Fail open: no MSYS kernel, no `cygpath`, or a `cygpath` that fails or
+# prints nothing all print the input, never an empty string. It only changes
+# the path text, never an exit code, so a blocking hook decides as before.
+crew_native_path() {
+  local given="$1" native
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*) ;;
+    *) printf '%s' "$given"; return 0 ;;
+  esac
+  if command -v cygpath >/dev/null 2>&1 \
+     && native=$(cygpath -m -- "$given" 2>/dev/null) && [ -n "$native" ]; then
+    printf '%s' "${native%$'\r'}"
+  else
+    printf '%s' "$given"
+  fi
+}
+
 # --- The repo config's directory (T-0096) ---------------------------------
 #
 # Sets CREW_CFG_DIR (the `.crew/` to read config.json or crew.json from) and
@@ -403,7 +440,7 @@ crew_repo_config_file() {
 # config (L-0680): an absolute path there would name the main checkout's file.
 # Any failure prints the default, which is inside the checkout.
 crew_handoff_path() {
-  "$1" - "$(dirname "${BASH_SOURCE[0]}")" "$2" << 'PY'
+  "$1" - "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")")" "$(crew_native_path "$2")" << 'PY'
 import json, os, sys
 default = ".work/HANDOFF.md"
 try:
