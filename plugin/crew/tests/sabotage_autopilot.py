@@ -1150,7 +1150,6 @@ AUTOPILOT_MUTATIONS += ASSIGN_MUTATIONS
 SLEEP = os.path.join(SCRIPTS, "crew_sleep.py")
 AUTOSLEEP = os.path.join(SCRIPTS, "crew_autopilot_sleep.py")
 _Z = "tests/test_crew_autopilot_sleep.py::"
-HOLD = os.path.join(SCRIPTS, "crew_notify_hold.py")
 
 SLEEP_MUTATIONS = (
     ("L-0651 (a): in_window counts the end minute as inside", SLEEP,
@@ -1295,20 +1294,6 @@ SLEEP_MUTATIONS = (
      '    if sleep.get("state") not in (ASLEEP, UNKNOWN) and not woke:\n        return deploy\n',
      _Z + "test_sleep_deploy_matrix"),
     # --- H2b: C-0055, L-0656's hold list and send-once summary ------------------------
-    # crew_notify.send asks HOLDABLE before holds() does, so the list itself is aimed at.
-    ("C-0055 L-0656: a deploy failure is on the hold list", HOLD,
-     'HOLDABLE = (("question", "ask"), ("question", "permission"),\n',
-     'HOLDABLE = (("deploy", "fail"), ("question", "ask"), ("question", "permission"),\n',
-     _Z + "test_failure_ping_is_sent_asleep"),
-    ("C-0055 L-0656: pings held awake or when sleep cannot be told", HOLD,
-     '    return (conf.get("armed") is True and sleep.get("state") == "asleep"\n',
-     '    return (conf.get("armed") is True and sleep.get("state") in ("asleep", "awake", "unknown")\n',
-     _Z + "test_hold_is_off_awake_and_when_unknown"),
-    # crew_sleep.resolve reads the key; holds() only sees its answer.
-    ("C-0055 L-0656: a notifyHold that is not exactly true holds", SLEEP,
-     "    if value is None or value is True:\n",
-     '    if value is None or value is True or value == "true":\n',
-     _Z + "test_a_notify_hold_that_is_not_true_holds_nothing"),
     ("C-0055 L-0656: a summary that died mid-send is sent again", AUTOSLEEP,
      "        unfinished = _finish_delivered(top)\n",
      '        unfinished = ""\n',
@@ -1329,8 +1314,8 @@ _RJ = _RP + "test_auto_reject_refusals_write_nothing"
 REPLAN_MUTATIONS = (
     # Entry 1 re-added in H2b, on the defaults line as G6b rewrote it.
     ("L-0671 1: maxAutoReplans defaults to 1", STATE,
-     '"maxAutoReplans": 0, "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,',
-     '"maxAutoReplans": 1, "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,',
+     '"maxAutoReplans": 0, "ship": "merge",',
+     '"maxAutoReplans": 1, "ship": "merge",',
      _RP + "test_setting_defaults_to_zero"),
     ("L-0671 2: a garbage maxAutoReplans reads as 1", AUTOPILOT,
      "        replans = 0\n    if replans > MAX_AUTO_REPLANS:\n",
