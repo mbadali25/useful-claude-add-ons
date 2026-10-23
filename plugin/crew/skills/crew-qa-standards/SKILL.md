@@ -13,6 +13,10 @@ it:
 - [`references/review.md`](references/review.md): R1-R12, how an LLM review is run and how a PR reports.
 - [`references/environments.md`](references/environments.md): G1-G5 and E1-E7, gate rules that
   can fail and QA environments that are isolated, rehearsed and deployed loudly (L-0618).
+- [`references/functional-qa.md`](references/functional-qa.md): what to exercise for an API, CLI,
+  job or webhook change, the evidence to keep, and what counts as pass or fail.
+- [`references/measurements.md`](references/measurements.md): A1, every check states how it would
+  fail and was seen to fail; M1, the seven questions before a performance number is reported.
 - [`references/steward-template.md`](references/steward-template.md): the repo's PR-loop skill.
 - [`references/recurring-findings.md`](references/recurring-findings.md): the defect classes earlier
   reviews kept finding, keyed by path globs. Not read whole: `hooks/scripts/recurring_findings.py`

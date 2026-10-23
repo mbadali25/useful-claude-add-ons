@@ -257,3 +257,11 @@ the hook enforces it, rather than in this sequence where it has to be remembered
 - Do not rebuild between environments. The artifact qa proved is the artifact
   production gets, or qa proved nothing.
 - Do not deploy to production because qa passed a week ago. Re-check the sha.
+
+## Reporting a deploy: three facts (L-0872)
+
+A promotion is reported with the merged sha, the deployed sha read back from the target, and the
+health-check result of gate 3; a missing fact makes it `unverified`. A green pipeline proves a
+merge or a dispatch, not what the target runs, and a running target is not a healthy one, so each
+link needs its own evidence. The wording follows the owner's rule (merged is not deployed, deployed
+is not verified) and the evidence vocabulary in gstack's land-and-deploy skill (see `NOTICE.md`).
