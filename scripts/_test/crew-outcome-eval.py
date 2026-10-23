@@ -1404,25 +1404,78 @@ def case_a_grading_container_that_fails_to_run_is_infra_not_missing_tests(tmp):
     return ok, (got, missing_docker)
 
 
-def graded_with_ungrouped_hidden_test(tmp, break_mul):
+def case_an_ungrouped_hidden_test_is_unscored_in_grading_and_refused_by_validate(tmp):
     fix = Fix(tmp)
     task = fix.load()
-    write(os.path.join(task["dir"], "grading", "tests", "test_extra.py.frozen"),
-          "from calc import mul\n\n\ndef test_extra_ungrouped():\n    assert mul(2, 3) == 6\n")
-    task["gradingFiles"] = task["gradingFiles"] + ["tests/test_extra.py"]
-    task["testCommand"] = task["testCommand"] + ["tests/test_extra.py"]
+    frozen = os.path.join(task["dir"], "grading", "tests", "test_calc.py.frozen")
+    write(frozen, slurp(frozen) + "\n\ndef test_loose():\n    assert False\n")
+    problems = eval_mod.validate_task(task, fix.src)
     run = eval_mod.prepare_run(task, fix.arm, fix.src, fix.runs, 1, os.path.join(fix.tmp, "plugin-crew"), fix.env)
-    body = "return a + b" if break_mul else "return a * b"
-    write(os.path.join(run["repo"], "calc.py"), CALC_BASE + "\n\ndef mul(a, b):\n    " + body + "\n")
-    return eval_mod.grade(task, run["repo"], fix.src)
+    write(os.path.join(run["repo"], "calc.py"), CALC_BASE + "\n\ndef mul(a, b):\n    return a * b\n")
+    result = eval_mod.grade(task, run["repo"], fix.src)
+    refused_loose = any("no defect group" in p and "test_loose" in p for p in problems)
+    ok = refused_loose and result["escapedDefects"] == 0 and result["escapedDefects"] <= result["defectsTotal"]
+    return ok, (problems, result)
 
 
-def case_a_failing_hidden_test_outside_every_defect_group_still_escapes(tmp):
-    broken = graded_with_ungrouped_hidden_test(tmp, True)
-    fine = graded_with_ungrouped_hidden_test(tmp + "-ok", False)
-    name = "ungrouped-hidden-tests"
-    ok = name in broken["escapedDefectNames"] and name not in fine["escapedDefectNames"]
-    return ok, (broken, fine)
+def case_an_events_file_without_a_completed_turn_makes_codex_usage_unknown(tmp):
+    repo, home = codex_events(tmp, [], sessions=0)
+    write(os.path.join(repo, "codex-events.jsonl"), json.dumps({"type": "thread.started", "thread_id": "t1"}) + "\n"
+          + json.dumps({"type": "turn.failed"}) + "\n")
+    tokens, cost = eval_mod.codex_usage(repo, home, "gpt-6-sol")
+    return tokens == UNKNOWN and cost == UNKNOWN, (tokens, cost)
+
+
+def case_a_results_row_without_attempt_is_refused(tmp):
+    path = os.path.join(tmp, "results-noattempt.jsonl")
+    write(path, json.dumps({"task": "a", "bucket": "S", "arm": "crew", "runStatus": "contaminated"}) + "\n")
+    message = refused(eval_mod.read_results, path)
+    return bool(message and "attempt" in message), message
+
+
+def case_a_paid_grading_infra_row_keeps_its_spend_for_the_paired_cost(tmp):
+    fix = Fix(tmp)
+    saved = eval_mod.grade
+
+    def always_infra(*_args):
+        raise eval_mod.GradingInfra("grading container exited 125")
+    eval_mod.grade = always_infra
+    try:
+        fix.env.update({"STUB_MODE": "ok", "STUB_RESULT": "No findings."})
+        ctx = fix.ctx()
+        with patched_env(fix.env):
+            row = eval_mod.run_chain(ctx, fix.load(), fix.arm)
+    finally:
+        eval_mod.grade = saved
+    rows = eval_mod.read_results(fix.results)
+    ok = row["runStatus"] == "infra" and rows[0].get("unscoredSpendUsd") == rows[0]["ownCostUsd"] and len(rows) == 1
+    return ok, rows
+
+
+def case_wrong_shape_auth_json_is_a_refusal_not_a_traceback(tmp):
+    got = []
+    for func in (eval_mod.strip_codex_auth, eval_mod.strip_claude_auth):
+        source = os.path.join(tmp, func.__name__ + ".json")
+        write(source, "[]")
+        got.append(refused(func, source, os.path.join(tmp, "dest.json")))
+    return all(got), got
+
+
+def case_hidden_regression_tests_are_graded_and_may_not_overlap_other_groups(tmp):
+    fix = Fix(tmp)
+    fix.task["hiddenRegression"] = ["tests/test_calc.py::test_mul"]
+    write(os.path.join(fix.task_dir, "task.json"), json.dumps(fix.task))
+    message = refused(fix.load)
+    fix2 = Fix(tmp + "-b")
+    fix2.task["hiddenRegression"] = ["tests/test_calc.py::test_loose_pass"]
+    frozen = os.path.join(fix2.task_dir, "grading", "tests", "test_calc.py.frozen")
+    write(frozen, slurp(frozen) + "\n\ndef test_loose_pass():\n    assert False\n")
+    write(os.path.join(fix2.task_dir, "task.json"), json.dumps(fix2.task))
+    task = fix2.load()
+    run = eval_mod.prepare_run(task, fix2.arm, fix2.src, fix2.runs, 1, os.path.join(fix2.tmp, "plugin-crew"), fix2.env)
+    write(os.path.join(run["repo"], "calc.py"), CALC_BASE + "\n\ndef mul(a, b):\n    return a * b\n")
+    result = eval_mod.grade(task, run["repo"], fix2.src)
+    return bool(message and "hiddenRegression" in message) and result["regressionTestsFailed"] == 1, (message, result)
 
 
 def case_a_scored_row_with_a_wrong_type_cost_is_refused(tmp):
@@ -1789,7 +1842,12 @@ CASES = (
     ("must-block: a contamination check that raises still writes a row", case_a_contamination_check_that_raises_still_writes_a_row),
     ("must-block: a wrong-shape wallClockMinutes is a refusal", case_a_wrong_shape_wall_clock_is_a_refusal_not_a_traceback),
     ("must-block: Codex counts that cannot be true make usage UNKNOWN", case_codex_counts_that_cannot_be_true_make_usage_unknown),
-    ("must-block: a failing hidden test outside every defect group still escapes", case_a_failing_hidden_test_outside_every_defect_group_still_escapes),
+    ("must-block: an ungrouped hidden test is unscored in grading and refused by validate", case_an_ungrouped_hidden_test_is_unscored_in_grading_and_refused_by_validate),
+    ("must-block: an events file without a completed turn makes Codex usage UNKNOWN", case_an_events_file_without_a_completed_turn_makes_codex_usage_unknown),
+    ("must-block: a results row without attempt is refused", case_a_results_row_without_attempt_is_refused),
+    ("must-block: a paid grading infra row keeps its spend", case_a_paid_grading_infra_row_keeps_its_spend_for_the_paired_cost),
+    ("must-block: wrong-shape auth JSON is a refusal", case_wrong_shape_auth_json_is_a_refusal_not_a_traceback),
+    ("must-block: hidden regression tests are graded and may not overlap", case_hidden_regression_tests_are_graded_and_may_not_overlap_other_groups),
     ("must-block: a scored row with a wrong-type cost is refused", case_a_scored_row_with_a_wrong_type_cost_is_refused),
     ("must-block: an exception in the arm driver still writes a paid row", case_an_exception_in_the_arm_driver_still_writes_a_paid_row),
     ("must-block: a grading infra failure is retried once", case_a_grading_infra_failure_is_retried_once_before_the_run_is_unscored),

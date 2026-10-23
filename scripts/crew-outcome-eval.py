@@ -200,9 +200,13 @@ def load_task(task_dir):
             seen[test_id] = defect
     if not isinstance(task["testCommand"], list) or not all(isinstance(a, str) for a in task["testCommand"]):
         fail(f"{task['name']}: testCommand must be an argv list")
-    for key in ("regressionInventory", "gradingFiles"):
+    task.setdefault("hiddenRegression", [])
+    for key in ("regressionInventory", "gradingFiles", "hiddenRegression"):
         if not isinstance(task[key], list) or not all(isinstance(i, str) and i for i in task[key]):
             fail(f"{task['name']}: {key} must be a list of non-empty strings")
+    for test_id in task["hiddenRegression"]:
+        if test_id in seen or test_id in task["regressionInventory"]:
+            fail(f"{task['name']}: hiddenRegression test {test_id} is also a defect or regression test")
     for rel in task["gradingFiles"] + [i.split("::", 1)[0] for i in task["regressionInventory"]]:
         if os.path.isabs(rel) or ".." in rel.replace("\\", "/").split("/"):
             fail(f"{task['name']}: {rel!r} must be a path inside the repository")
@@ -232,6 +236,12 @@ def frozen_path(task_dir, rel):
 
 def hidden_ids(task):
     return [test_id for ids in task["defects"].values() for test_id in ids]
+
+
+def hidden_run_ids(task):
+    """Every id the hidden view must report: the defect tests and the hidden tests that
+    pass both before and after (a new test file the base cannot restore for the regression view)."""
+    return hidden_ids(task) + task["hiddenRegression"]
 
 
 def load_arm(path):
@@ -443,17 +453,16 @@ def summary_lines(text):
     return results
 
 
-def graded_status(task, repo, base_tree, tmp, docker=None):
+def graded_status(task, repo, base_tree, tmp, docker=None, sweep_all=False):
     """({regression id: status}, {hidden id: status}) from two copies of `repo`:
     the regression view and the full grading set (see `overlay`)."""
     out = []
-    keep = {test_id.split("::", 1)[0] for test_id in task["regressionInventory"]}
-    for hidden, ids in ((False, task["regressionInventory"]), (True, hidden_ids(task))):
+    for hidden, ids in ((False, task["regressionInventory"]), (True, hidden_run_ids(task))):
         copy = os.path.join(tmp, "hidden" if hidden else "regression")
         shutil.copytree(repo, copy, symlinks=True, ignore=shutil.ignore_patterns(".git"))
         overlay(task, copy, base_tree, hidden)
-        sweep = {rel for rel in task["gradingFiles"] if rel not in keep and os.path.basename(rel).startswith("test_")}
-        out.append(run_tests(task, copy, ids, docker, sweep if hidden else ()))
+        sweep = {rel for rel in task["gradingFiles"] if os.path.basename(rel).startswith("test_")}
+        out.append(run_tests(task, copy, ids, docker, sweep if hidden and sweep_all else ()))
     return out[0], out[1]
 
 
@@ -465,10 +474,8 @@ def grade(task, repo, source_repo, docker=None):
         export_tree(source_repo, task["base"], base_tree)
         regression, hidden = graded_status(task, repo, base_tree, tmp, docker)
     escaped = [name for name, ids in task["defects"].items() if any(hidden[i] != "PASSED" for i in ids)]
-    grouped = set(hidden_ids(task))
-    if any(status != "PASSED" for test_id, status in hidden.items() if test_id not in grouped):
-        escaped.append("ungrouped-hidden-tests")
     failed = [i for i in task["regressionInventory"] if regression[i] != "PASSED"]
+    failed += [i for i in task["hiddenRegression"] if hidden[i] != "PASSED"]
     return {"escapedDefects": len(escaped), "defectsTotal": len(task["defects"]),
             "escapedDefectNames": escaped, "regressionTestsFailed": len(failed)}
 
@@ -488,10 +495,19 @@ def validate_task(task, source_repo, docker=None):
             init_repo(tree)
             scratch = os.path.join(tmp, label + "-scratch")
             os.makedirs(scratch)
-            regression, hidden = graded_status(task, tree, tree, scratch, docker)
+            regression, hidden = graded_status(task, tree, tree, scratch, docker, sweep_all=True)
             bad = [i for i in task["regressionInventory"] if regression[i] != "PASSED"]
             if bad:
                 problems.append(f"{task['name']}: regression tests do not pass at {label}: {', '.join(bad)}")
+            known_ids = set(hidden_run_ids(task)) | set(task["regressionInventory"])
+            stuck = [i for i in task["hiddenRegression"] if hidden[i] != "PASSED"]
+            if stuck:
+                problems.append(f"{task['name']}: hiddenRegression tests do not pass at {label}: {', '.join(stuck)}")
+            loose = sorted(i for i in hidden if i not in known_ids)
+            if loose and label == "reference":
+                problems.append(f"{task['name']}: hidden tests in no defect group and not in regressionInventory "
+                                f"(unscored by design, so each must be grouped or moved): {', '.join(loose[:5])}"
+                                + (f" and {len(loose) - 5} more" if len(loose) > 5 else ""))
             if label == "base":
                 passing = [i for i in hidden_ids(task) if hidden[i] == "PASSED"]
                 if passing:
@@ -634,8 +650,8 @@ def codex_usage(repo, home, model, proxy_log=None):
     if any(not any(name[:-len(".jsonl")].endswith(thread) for thread in threads) for name in sessions):
         # a session log whose id no events file names was not measured
         return UNKNOWN, UNKNOWN
-    if sessions and not turns:
-        # a Codex session ran but no events file recorded a completed turn: nothing was measured
+    if (sessions or events) and not turns:
+        # a Codex session ran, or an events file exists, but no completed turn was recorded: nothing was measured
         return UNKNOWN, UNKNOWN
     if not events and not sessions and proxy_log is not None and codex_hosts_allowed(proxy_log) != 0:
         # the host-side proxy saw traffic to a Codex/OpenAI host the arm's own files do not account for
@@ -831,6 +847,8 @@ def read_results(path):
                     fail(f"{path}:{number}: not a JSON object; results are append-only full rows")
                 if not all(isinstance(row.get(k), str) for k in ("task", "bucket", "arm", "runStatus")):
                     fail(f"{path}:{number}: task, bucket, arm and runStatus must be present strings")
+                if isinstance(row.get("attempt"), bool) or not isinstance(row.get("attempt"), int):
+                    fail(f"{path}:{number}: attempt must be present and an integer")
                 for key in ("costUsd", "ownCostUsd", "unscoredSpendUsd", "claudeCostUsd", "escapedDefects",
                             "regressionTestsFailed"):
                     value = row.get(key)
@@ -997,6 +1015,8 @@ def strip_claude_auth(source, dest):
     """Only the OAuth access token, never the refresh token: the run cannot
     rotate the owner's login."""
     data = read_json(source)
+    if not isinstance(data, dict):
+        fail(f"{source} is not a JSON object")
     entry = data.get("claudeAiOauth") if isinstance(data.get("claudeAiOauth"), dict) else {}
     # An allowlist, not a copy minus one key: any other field the owner's file carries stays behind.
     oauth = {k: entry[k] for k in CLAUDE_OAUTH_KEEP if k in entry}
@@ -1007,6 +1027,8 @@ def strip_claude_auth(source, dest):
 
 def strip_codex_auth(source, dest):
     data = read_json(source)
+    if not isinstance(data, dict):
+        fail(f"{source} is not a JSON object")
     tokens = dict(data.get("tokens")) if isinstance(data.get("tokens"), dict) else {}
     if not tokens:
         fail(f"{source} has no tokens entry")
@@ -1371,6 +1393,9 @@ def run_chain(ctx, task, arm):
     cost is carried into the rerun; a chain that ends unscorable keeps its spend
     as `unscoredSpendUsd`."""
     first = run_once(ctx, task, arm, 1)
+    if first["runStatus"] in ("infra", "error"):
+        # paid, and never rerun: its spend belongs to the arm's task cost like an unscorable chain's
+        first["unscoredSpendUsd"] = first["ownCostUsd"]
     append_result(ctx["results"], first)
     if first["runStatus"] != "unscorable":
         return first
@@ -1414,7 +1439,8 @@ def bucket_verdict(rows, bucket):
                   if r["arm"] == arm and known(r.get("regressionTestsFailed"))]
         result["regressions"][arm] = statistics.median(values) if values else None
     unknown_cost = [r for r in mine if r.get("runStatus") == "scored" and not known(r.get("costUsd"))]
-    unknown_chain = [r for r in mine if r.get("runStatus") == "unscorable" and r.get("unscoredSpendUsd") == UNKNOWN]
+    unknown_chain = [r for r in mine if r.get("runStatus") in ("unscorable", "infra", "error")
+                     and r.get("unscoredSpendUsd") == UNKNOWN]
     tasks = sorted({r["task"] for r in mine})
     per_task = {}
     for task in tasks:
