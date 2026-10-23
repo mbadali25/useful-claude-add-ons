@@ -2666,11 +2666,78 @@ def _call_args(code):
         yield code[call.end():pos]
 
 
+_ASSIGN_RE = re.compile(
+    r"\s*(?:(?:const|let|var)\s+)?([A-Za-z_]\w*)\s*(?::[^=]*?)?(\+|:)?=(?!=)(.*)\Z",
+    re.S)
+_NAME_RE = re.compile(r"[A-Za-z_]\w*")
+
+
+def _statements(code):
+    """`code` split at `;` and newlines outside string literals."""
+    out, start, pos = [], 0, 0
+    while pos < len(code):
+        lit = _LIT_RE.match(code, pos)
+        if lit:
+            pos = lit.end()
+            continue
+        if code[pos] in ";\n":
+            out.append(code[start:pos])
+            start = pos + 1
+        pos += 1
+    out.append(code[start:])
+    return out
+
+
+def _assignments(code):
+    """name -> [(operator, right-hand side)] for each `name = ...`,
+    `name += ...`, `name: T = ...` and `name := ...` statement, in order."""
+    found = {}
+    for statement in _statements(code):
+        match = _ASSIGN_RE.match(statement)
+        if match:
+            found.setdefault(match.group(1), []).append(
+                (match.group(2) or "", match.group(3)))
+    return found
+
+
+def _spelling(name, assigned, seen=()):
+    """(letters, why): the letters and digits of every string literal that
+    went into `name` through assignments, however many names deep (`a = 'ter'`,
+    `b = a + 'ra'`, `c = b + 'form'`), in order; `why` is a `$` or backtick
+    in one of them, or `+` where a name is joined to another operand."""
+    spelled = ""
+    for operator, rhs in assigned.get(name, ()):
+        bare = _LIT_RE.sub('""', rhs)
+        if operator == "+" and re.search(r"[\w)\]]|[(\[]", bare):
+            return spelled, "+"
+        if re.search(r"[\w)\]]\s*\+|\+\s*[\w(\[]", bare):
+            return spelled, "+"
+        for token in re.finditer(_LIT_RE.pattern + r"|[A-Za-z_]\w*", rhs, re.S):
+            if token.group(1) is not None:
+                found = _CODE_EXPANSION_RE.search(token.group(1))
+                if found:
+                    return spelled, found.group(0)
+                quote = 3 if token.group(1)[:3] in ("'''", '"""') else 1
+                spelled += re.sub(r"[^a-z0-9]", "", _decode_escapes(
+                    token.group(1)[quote:-quote]).lower())
+            elif token.group(0) in assigned and token.group(0) not in seen \
+                    and token.group(0) != name:
+                inner, why = _spelling(token.group(0), assigned,
+                                       seen + (name,))
+                if why:
+                    return spelled, why
+                spelled += inner
+    return spelled, None
+
+
 def _expansion_in_call(code):
-    """A `$` or backtick in a string literal that is (or names, through an
-    assignment) the argument of a process-starting call, or a non-literal
-    joined to another operand there (`a + b`): the name is made at run time.
-    Printed text with a `$` in it is not."""
+    """A `$` or backtick in a string literal that is (or names, through any
+    chain of assignments) the argument of a process-starting call, a name
+    that spells the tool out of the literals assigned along that chain, or a
+    non-literal joined to another operand (`a + b`, also in an assignment of
+    a name the call uses): the name is made at run time. Printed text with a
+    `$` in it is not."""
+    assigned = _assignments(code)
     for args in _call_args(code):
         for lit in _LIT_RE.finditer(args):
             found = _CODE_EXPANSION_RE.search(lit.group(1))
@@ -2679,15 +2746,10 @@ def _expansion_in_call(code):
         bare = _LIT_RE.sub('""', args)
         if re.search(r"[\w)\]]\s*\+|\+\s*[\w(\[]", bare):
             return "+"
-        for name in set(re.findall(r"[A-Za-z_]\w*", bare)):
-            spelled = ""
-            for assigned in re.finditer(
-                    r"\b" + re.escape(name) + r"\s*\+?=\s*" + _LIT_RE.pattern,
-                    code, re.S):
-                found = _CODE_EXPANSION_RE.search(assigned.group(1))
-                if found:
-                    return found.group(0)
-                spelled += re.sub(r"[^a-z0-9]", "", assigned.group(1).lower())
+        for name in sorted(set(_NAME_RE.findall(bare))):
+            spelled, why = _spelling(name, assigned)
+            if why:
+                return why
             for tool in _TOOL_SPELLINGS:
                 if tool in spelled:
                     return tool
