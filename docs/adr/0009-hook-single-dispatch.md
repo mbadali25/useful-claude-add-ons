@@ -169,7 +169,7 @@ Left for a harness-only follow-up, because each touches the review/gate harness 
   (lines 437, 807, 1264, 1553, 2594), `completion_audit.py:94`, `scope_guard.py:5`, `scope_report.py:4` and
   `:121`, `crew-hook.ps1` (52, 77, 88) and `promote-gate.ps1` (51, 60, 71, 597). The edits
   would touch hook scripts that the harness rule watches, so they wait for the same harness-only follow-up
-  (L-0881).
+  (L-0884).
 
 ## Trigger to re-evaluate
 
