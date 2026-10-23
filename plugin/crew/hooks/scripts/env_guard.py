@@ -1913,7 +1913,7 @@ def _layer_text_armed(text):
         return True
     try:
         parsed = json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):
         return True
     if not isinstance(parsed, dict):
         return True

@@ -2485,8 +2485,13 @@ def _unreadable_config(path):
     return None if isinstance(data, dict) else f"{os.path.basename(path)} is not a JSON object"
 
 
+def _is_removed_key(key):
+    """A key L-0725 removed, or anything under the retired `tier`/`roles`."""
+    return key in crew_dropped.DROPPED or key.split(".")[0] in ("tier", "roles")
+
+
 def _inert_item(entry):
-    if entry["key"] in crew_dropped.DROPPED and entry["kind"] != "unreadable":
+    if _is_removed_key(entry["key"]) and entry["kind"] != "unreadable":
         # A removed key's value is never shown: it may be a path, a URL or a
         # name the person did not mean to put in a status line (L-0725).
         lost = (", the restriction it set is gone"
@@ -4842,7 +4847,8 @@ def main(argv=None):
     if args.inert:
         entries = inert_settings(args.root, args.global_path)
         if args.json:
-            print(json.dumps(entries, indent=2))
+            print(json.dumps([dict(e, value="<hidden: removed key>")
+                              if _is_removed_key(e["key"]) else e for e in entries], indent=2))
         elif not entries:
             print("inert settings: none")
         else:

@@ -811,3 +811,9 @@ def test_registered_once_in_the_dispatcher_table_with_its_powershell_twin():
     assert len(rows) == 1
     assert (rows[0].event, rows[0].matcher, rows[0].twin, rows[0].timeout, rows[0].guard) == (
         "PreToolUse", "Bash|PowerShell", "env-guard.ps1", 15, True)
+
+
+def test_a_deeply_nested_config_arms_instead_of_crashing():
+    deep = "[" * 100000 + "]" * 100000
+
+    assert env_guard._layer_text_armed('{"x":' + deep + "}") is True

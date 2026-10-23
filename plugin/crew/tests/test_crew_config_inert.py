@@ -432,3 +432,20 @@ def test_a_removed_key_that_restricted_something_says_so(tmp_path, dotted, narro
     line = crew_config.format_inert(crew_config.inert_settings(str(root)), "1.2.x")
 
     assert ("the restriction it set is gone" in line) is narrowed
+
+
+def test_the_children_of_the_retired_roles_key_are_not_printed(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"roles": {"pm": "SECRETROLE"}}, git=False)
+
+    line = crew_config.format_inert(crew_config.inert_settings(str(root)), "1.2.x")
+
+    assert "SECRETROLE" not in line and "roles.pm" in line
+
+
+def test_inert_json_hides_the_value_of_a_removed_key(tmp_path, capsys):
+    root = crew_fixtures.make_repo(tmp_path, config=_nested("worktree.root", _SECRETISH), git=False)
+
+    crew_config.main(["--root", str(root), "--inert", "--json"])
+
+    out = capsys.readouterr().out
+    assert _SECRETISH not in out and "worktree.root" in out

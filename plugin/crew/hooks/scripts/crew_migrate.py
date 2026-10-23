@@ -683,6 +683,7 @@ def _plan_upgrade(plan, root, cfg, raw, upgrade, accept_dropped=()):
     if _refuse_dropped(plan, ".crew/config.json", crew_upgrade, notes):
         return False
     plan["accepted"] = list(notes["acceptedDropped"])
+    plan["upgradeUnknown"] = list(notes.get("unknown", []))
     path = contained(root, CONFIG_REL)
     if os.path.lexists(path + TMP_SUFFIX):
         plan["conflicts"].append(f"{CONFIG_REL}{TMP_SUFFIX}: exists - migrate stages "
@@ -851,9 +852,9 @@ def render_plan(plan, mode):
     for note in plan["notes"]:
         out.append(f"  note   {note}")
     for key in plan["unmapped"]:
-        out.append(f"  unmapped  config key '{key}' carried under crew.json unmapped.{key}")
+        out.append(f"  unmapped  config key '{_shown(key)}' carried under crew.json unmapped.{_shown(key)}")
     for key in plan.get("unknown", []):
-        out.append(f"  unknown  {key} (crew does not read it; carried untouched)")
+        out.append(f"  unknown  {_shown(key)} (crew does not read it; carried untouched)")
     for rel, why in plan["skipped"]:
         out.append(f"  skip   {rel}: {why}")
     for rel in plan["untouched"]:
@@ -931,6 +932,14 @@ def _classify_backup(root, folder, name):
     if state not in ("applied", "rolled-back"):
         return "interrupted", rel
     return "skip", ""
+
+
+def _shown(text):
+    """`text` with every non-printable character escaped: a config key is
+    whatever a file holds, and these lines reach a terminal (`completion_audit.
+    shown`, the helper `crew_config._escaped` uses)."""
+    from completion_audit import shown  # pylint: disable=import-outside-toplevel
+    return shown(text)
 
 
 def scan_backups(root, backup_dir=None, shown=None):

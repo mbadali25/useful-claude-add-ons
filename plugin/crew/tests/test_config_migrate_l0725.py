@@ -232,6 +232,28 @@ def test_preview_writes_nothing_for_the_repo_layer(tmp_path, capsys):
     assert "upgrade  - guards: `guards.profile` standard" in capsys.readouterr().out
 
 
+def test_repo_preview_reports_an_unknown_guard_override(tmp_path, capsys):
+    """Round-1 security F1: the repo path carried an unknown override name and
+    never said so (`upgradeUnknown` was read and never set)."""
+    body = json.dumps({"schema": 7, "guards": {"profile": "off",
+                                               "overrides": {"futureGuard": "allow"}}}).encode()
+    root = _repo(tmp_path, body)
+
+    crew_migrate.main(["--root", root])
+
+    assert "unknown  guards.overrides.futureGuard" in capsys.readouterr().out
+
+
+def test_an_unknown_key_with_a_control_character_is_escaped_in_the_preview(tmp_path, capsys):
+    body = json.dumps({"schema": 7, "odd\x1b[31mkey": 1}).encode()
+    root = _repo(tmp_path, body)
+
+    crew_migrate.main(["--root", root])
+
+    out = capsys.readouterr().out
+    assert "\x1b" not in out
+
+
 # ---------------------------------------------------------------- the machine layer
 
 def test_owner_machine_layer(machine, capsys):
