@@ -134,7 +134,7 @@ PY=$(crew_py_strict)
 if [ "$RESUME" -eq 1 ]; then
   say() { printf 'autoresume: %s\n' "$1"; }
   refuse() { note "refusing - auto-resume: $1"; say "refused - $1"; exit 0; }
-  PLAN=$("$PY" "$DIR/crew_autocycle.py" resume-plan --root "$PWD" --session "$SESSION" --source "$SOURCE" 2>/dev/null | tr -d '\r')
+  PLAN=$("$PY" "$(crew_native_path "$DIR/crew_autocycle.py")" resume-plan --root "$(crew_native_path "$PWD")" --session "$SESSION" --source "$SOURCE" 2>/dev/null | tr -d '\r')
   mapfile -t P <<< "$PLAN"
   [ "${#P[@]}" -ge 12 ] || refuse "could not read the resume plan from crew_autocycle.py"
   STATUS="${P[0]}"; REASON="${P[1]}"; RESOLVED="${P[2]}"; TARGET="${P[3]}"
@@ -163,7 +163,7 @@ if [ "$RESUME" -eq 1 ]; then
   [ "$RESOLVED" = "tmux" ] || refuse "method $RESOLVED cannot type a resume"
   mkdir -p "$(dirname "$MARKER")" 2>/dev/null
   ( set -o noclobber; : > "$MARKER" ) 2>/dev/null || refuse "this handoff was already typed once (marker $(basename "$MARKER") exists)"
-  RECORD=$(printf '%s' "$DECISION" | "$PY" "$DIR/crew_resume.py" record --root "$PWD" --decision-json - 2>/dev/null | tr -d '\r')
+  RECORD=$(printf '%s' "$DECISION" | "$PY" "$(crew_native_path "$DIR/crew_resume.py")" record --root "$(crew_native_path "$PWD")" --decision-json - 2>/dev/null | tr -d '\r')
   RECORDED=$("$PY" -c 'import json,sys
 try:
     d = json.loads(sys.argv[1])
@@ -176,7 +176,7 @@ print("ok" if isinstance(d, dict) and d.get("ok") is True else (isinstance(d, di
     echo '#!/usr/bin/env bash'
     printf 'trap %q EXIT\n' "rm -f -- $(printf '%q' "$send_script")"
     printf 'LOG=%q; PY=%q; AC=%q; PANE=%q; TEXT=%q; TIMEOUT=%q\n' \
-      "$PWD/$LOG" "$PY" "$DIR/crew_autocycle.py" "$TARGET" "$COMMAND" "$TIMEOUT"
+      "$PWD/$LOG" "$PY" "$(crew_native_path "$DIR/crew_autocycle.py")" "$TARGET" "$COMMAND" "$TIMEOUT"
     cat <<'SENDER'
 note() { printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "auto-resume: $1" >> "$LOG" 2>/dev/null; }
 probe() { tmux capture-pane -p -e -t "$PANE" 2>/dev/null | "$PY" "$AC" probe 2>/dev/null | tr -d '\r'; }
@@ -239,7 +239,7 @@ FORCE_ARG=()
 # One value per line, read with mapfile: an empty field must stay a line (tab
 # is IFS whitespace, and a tab-separated read once shifted every field after
 # an empty reason). CR stripped first -- python on Windows writes \r\n.
-PLAN=$("$PY" "$DIR/crew_autocycle.py" plan --root "$PWD" --session "$SESSION" "${FORCE_ARG[@]}" 2>/dev/null | tr -d '\r')
+PLAN=$("$PY" "$(crew_native_path "$DIR/crew_autocycle.py")" plan --root "$(crew_native_path "$PWD")" --session "$SESSION" "${FORCE_ARG[@]}" 2>/dev/null | tr -d '\r')
 mapfile -t P <<< "$PLAN"
 if [ "${#P[@]}" -lt 8 ]; then
   note "refusing - could not read the plan from crew_autocycle.py"
