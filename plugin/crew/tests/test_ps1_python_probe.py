@@ -4,9 +4,15 @@ Windows burn-in FAIL 3 (docs/review/06-windows-burn-in.md, 2c): on a host
 whose `python`, `python3` and `py` were all working WindowsApps App Execution
 Aliases, the old `Resolve-CrewPython` rejected each by PATH before executing
 it and took only the first match per name, so it never reached the real
-python.exe further down PATH. completion-audit.ps1 then blocked every Stop
-with "no usable python" while `_common.sh`'s `crew_py` accepted the alias and
-its bash twin proceeded.
+python.exe further down PATH. completion-audit.ps1 (deleted in L-0869) then
+blocked every Stop with "no usable python" while `_common.sh`'s `crew_py`
+accepted the alias and its bash twin proceeded.
+
+The carriers are crew-hook.ps1 and promote-gate.ps1 since L-0869. crew-hook.ps1
+is the one with the `-PrintPython` seam and the only Stop/PreToolUse launcher,
+so the hook-level cases (what a hook says when the probe times out or finds
+nothing) drive it; they used to drive completion-audit.ps1, scope-guard.ps1,
+approval-hook.ps1 and verify-gate.ps1.
 
 The fixtures model that host on Linux: directories of stub executables on a
 PATH built for the test, with a directory named WindowsApps. pwsh runs the
@@ -49,11 +55,12 @@ needs_pwsh = pytest.mark.skipif(PWSH is None, reason="pwsh not installed - the .
 needs_bash = pytest.mark.skipif(BASH is None, reason="bash not installed - the parity half was NOT run")
 
 # Every crew .ps1 that resolves python carries this function, in two groups
-# until L-0690's follow-up rejoins them: the review/gate harness carriers share
+# until L-0690's follow-up rejoins them: the review/gate harness carrier shares
 # the probe that reports a timeout and a trail (L-0690); promote-gate.ps1 keeps
 # the older copy, unchanged, because a harness PR cannot carry it
-# (scripts/check-tooling-pr.py).
-_HARNESS_CARRIERS = ("completion-audit", "scope-guard", "approval-hook", "verify-gate", "crew-hook")
+# (scripts/check-tooling-pr.py). The harness group was five carriers until
+# L-0867/L-0869 deleted the other four; the two groups' copies are not equal.
+_HARNESS_CARRIERS = ("crew-hook",)
 _OTHER_CARRIERS = ("promote-gate",)
 _CARRIERS = _HARNESS_CARRIERS + _OTHER_CARRIERS
 _NAMES = ("python3", "python", "py")
@@ -132,7 +139,7 @@ def _tools(tmp_path):
     return tools
 
 
-def _print_python_run(path_entries, stem="completion-audit"):
+def _print_python_run(path_entries, stem="crew-hook"):
     env = dict(os.environ, OS="Windows_NT", PATH=os.pathsep.join(map(str, path_entries)))
     done = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File",
                            str(SCRIPTS / (stem + ".ps1")), "-PrintPython"],
@@ -142,7 +149,7 @@ def _print_python_run(path_entries, stem="completion-audit"):
     return done
 
 
-def _print_python(path_entries, stem="completion-audit"):
+def _print_python(path_entries, stem="crew-hook"):
     return _print_python_run(path_entries, stem).stdout.strip()
 
 
@@ -176,12 +183,6 @@ def _runs(interpreter):
 
 
 # --- one probe, everywhere -----------------------------------------------------
-
-@pytest.mark.parametrize("stem", _HARNESS_CARRIERS)
-def test_the_harness_carriers_share_one_probe(stem):
-    """L-0690: the harness carriers are byte-identical to each other."""
-    assert _resolver(stem) == _resolver("completion-audit")
-
 
 @pytest.mark.parametrize("stem", _CARRIERS)
 def test_no_ps1_rejects_a_candidate_by_its_path_or_takes_only_the_first_match(stem):
@@ -248,9 +249,8 @@ def test_an_extensionless_candidate_still_resolves_on_the_real_linux_this_suite_
     else on PATH is still found and run -- exactly what _working() already
     depends on throughout this module, pinned here directly against the one
     new code path this ticket adds. Not parametrized over every carrier:
-    `-PrintPython` is only wired on some of the carriers; the
-    byte-identical check above proves the harness carriers share this exact
-    function body."""
+    `-PrintPython` is only wired on crew-hook.ps1; the string-level checks
+    above cover the extension gate in both carriers."""
     apps = tmp_path / "bin"
     _working(apps, ("python3",))
     assert _print_python([apps, _tools(tmp_path)]) == REAL
@@ -393,38 +393,44 @@ def test_a_proven_python_37_is_rejected_by_both_flavours(tmp_path):
     assert (_print_python(path), _bash_resolver("crew_py_strict", path)) == ("", "")
 
 
-def _stop_audit(tmp_path, config):
-    """completion-audit.ps1 on a Stop with no usable python. Its documented
-    behaviour: fail CLOSED (exit 2, "no usable python") unless scope.mode is
-    provably off, and never twice in a row for the same session."""
+def _stop_hook(tmp_path, armed):
+    """crew-hook.ps1 on a Stop with no usable python. Its documented
+    behaviour: fail CLOSED (exit 2, "no usable python") in an armed repo and
+    let the Stop through in one that is not. Armed means `.crew/` exists;
+    unarmed is a bare directory with no `.crew`, no `.git` and a HOME that
+    holds no `.claude/crew/config.json`. (completion-audit.ps1 keyed this on
+    scope.mode instead; it was deleted in L-0869.)"""
     root = tmp_path / "repo"
-    (root / ".crew").mkdir(parents=True)
-    if config is not None:
-        (root / ".crew" / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    root.mkdir(parents=True)
+    if armed:
+        (root / ".crew").mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
     apps = tmp_path / "Microsoft" / "WindowsApps"
     _broken(apps)
     env = dict(os.environ, OS="Windows_NT", CLAUDE_PROJECT_DIR=str(root),
+               USERPROFILE=str(home), HOME=str(home),
                PATH=os.pathsep.join([str(apps), str(_tools(tmp_path))]))
     payload = json.dumps({"hook_event_name": "Stop", "stop_hook_active": False,
                           "session_id": f"probe-{tmp_path.name}", "cwd": str(root)})
-    done = subprocess.run([PWSH, "-NoProfile", "-File", str(SCRIPTS / "completion-audit.ps1")],
+    done = subprocess.run([PWSH, "-NoProfile", "-File", str(SCRIPTS / "crew-hook.ps1"), "Stop"],
                           input=payload, cwd=str(root), env=env, capture_output=True,
                           text=True, check=False, timeout=60)
     return done.returncode, done.stderr
 
 
 @needs_pwsh
-def test_no_python_fails_the_completion_audit_closed_when_scope_is_armed(tmp_path):
-    code, err = _stop_audit(tmp_path, {"scope": {"mode": "block"}})
+def test_no_python_fails_the_hook_closed_when_the_repo_is_armed(tmp_path):
+    code, err = _stop_hook(tmp_path, armed=True)
 
-    assert (code, "COMPLETION AUDIT: no usable python" in err) == (2, True)
+    assert (code, "crew-hook: no usable python was found and crew governs this repo" in err) == (2, True)
 
 
 @needs_pwsh
-def test_no_python_lets_the_stop_through_when_scope_is_provably_off(tmp_path):
-    code, err = _stop_audit(tmp_path, None)
+def test_no_python_lets_the_stop_through_when_the_repo_is_not_armed(tmp_path):
+    code, err = _stop_hook(tmp_path, armed=False)
 
-    assert (code, "no usable python - not audited (scope.mode is off)" in err) == (0, True)
+    assert (code, "crew-hook: no usable python was found; no hook ran." in err) == (0, True)
 
 
 # --- L-0690: a timed-out probe says so, and a failed probe shows its trail -----
@@ -448,7 +454,7 @@ def _stop(tmp_path, path_entries, config, session="l0690"):
     payload = json.dumps({"hook_event_name": "Stop", "stop_hook_active": False,
                           "session_id": f"{session}-{tmp_path.name}",
                           "cwd": str(tmp_path / "repo")})
-    return _hook_run(tmp_path, "completion-audit", path_entries, payload, config)
+    return _hook_run(tmp_path, "crew-hook", path_entries, payload, config, ("Stop",))
 
 
 def _trail(err):
@@ -468,7 +474,7 @@ def test_a_timed_out_probe_says_so_and_never_no_python(tmp_path):
     code, err = _stop(tmp_path, [hang, _tools(tmp_path)], {"scope": {"mode": "block"}})
 
     assert code == 2, err
-    assert "COMPLETION AUDIT: the python probe timed out" in err
+    assert "crew-hook: the python probe timed out, so python could not be found" in err
     assert "no usable python" not in err
     summary, *rows = _trail(err)
     assert "timed-out" in summary
@@ -505,8 +511,8 @@ def test_a_refused_candidate_is_still_no_usable_python(tmp_path):
     code, err = _stop(tmp_path, [apps, _tools(tmp_path)], {"scope": {"mode": "block"}})
 
     assert code == 2, err
-    assert ("COMPLETION AUDIT: no usable python - the tree was not audited against the "
-            "ticket's scope.") in err.splitlines()
+    assert ("crew-hook: no usable python was found and crew governs this repo; failing "
+            "closed. Install python 3.8 or later.") in err.splitlines()
     assert "rejected" in _trail(err)[0]
     assert "timed out" not in err
 
@@ -516,8 +522,8 @@ def test_no_python_on_path_is_not_found(tmp_path):
     code, err = _stop(tmp_path, [_tools(tmp_path)], {"scope": {"mode": "block"}})
 
     assert code == 2, err
-    assert ("COMPLETION AUDIT: no usable python - the tree was not audited against the "
-            "ticket's scope.") in err.splitlines()
+    assert ("crew-hook: no usable python was found and crew governs this repo; failing "
+            "closed. Install python 3.8 or later.") in err.splitlines()
     assert len(_trail(err)) == 1, _trail(err)
     assert "not-found" in _trail(err)[0]
 
@@ -534,38 +540,50 @@ def test_a_found_python_prints_no_probe_line(tmp_path, stem):
 
 
 @needs_pwsh
-def test_block_once_and_scope_off_keep_their_exit_codes_on_a_timeout(tmp_path):
+def test_an_armed_repo_blocks_and_an_unarmed_one_allows_on_a_timeout(tmp_path):
+    """Was test_block_once_and_scope_off_keep_their_exit_codes_on_a_timeout,
+    which drove completion-audit.ps1's block-once-per-session and scope.mode
+    off. Those two behaviours died with that script; crew-hook.ps1's own
+    exit codes on a timeout are armed -> 2 and not armed -> 0."""
     hang = tmp_path / "hang"
     _hung(hang)
     path = [hang, _tools(tmp_path)]
+    stop = json.dumps({"hook_event_name": "Stop", "stop_hook_active": False,
+                       "session_id": "l0690-off"})
 
-    first = _stop(tmp_path, path, {"scope": {"mode": "block"}})
-    second = _stop(tmp_path, path, {"scope": {"mode": "block"}})
-    off_root = tmp_path / "off"
-    off = _hook_run(tmp_path, "completion-audit", path,
-                    json.dumps({"hook_event_name": "Stop", "stop_hook_active": False,
-                                "session_id": "l0690-off"}), root=off_root)
+    armed = _stop(tmp_path, path, {"scope": {"mode": "block"}})
+    # A bare directory: no .crew, no .git, and a HOME with no crew config.
+    bare = tmp_path / "off"
+    bare.mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+    unarmed = subprocess.run(
+        [PWSH, "-NoProfile", "-File", str(SCRIPTS / "crew-hook.ps1"), "Stop"],
+        input=stop, cwd=str(bare), capture_output=True, text=True, check=False, timeout=120,
+        env=dict(os.environ, OS="Windows_NT", CLAUDE_PROJECT_DIR=str(bare),
+                 USERPROFILE=str(home), HOME=str(home),
+                 PATH=os.pathsep.join(map(str, path))))
 
-    assert first[0] == 2, first[1]
-    assert second[0] == 0 and "Not blocking again" in second[1], second[1]
-    assert "the python probe timed out" in second[1]
-    assert off[0] == 0, off[1]
-    assert ("completion audit: the python probe timed out - not audited (scope.mode is off)."
-            in off[1].splitlines())
+    assert armed[0] == 2, armed[1]
+    assert "the python probe timed out" in armed[1]
+    assert unarmed.returncode == 0, unarmed.stderr
+    assert ("crew-hook: the python probe timed out, so python could not be found; no hook ran."
+            in unarmed.stderr.splitlines())
 
 
 @needs_pwsh
-@pytest.mark.parametrize("stem,payload,args,code,text", [
-    ("scope-guard", json.dumps({"tool_name": "Write",
-                                "tool_input": {"file_path": "src/a.py", "content": "x"}}),
-     (), 2, "SCOPE GUARD: the python probe timed out"),
-    ("approval-hook", json.dumps({"prompt": "/crew:approve T-1"}), (), 2,
-     "the python probe timed out"),
-    ("verify-gate", "{}", ("-Price",), 1, "the python probe timed out"),
-], ids=["scope-guard", "approval-hook", "verify-gate-price"])
-def test_each_harness_hook_names_a_timeout(tmp_path, stem, payload, args, code, text):
+@pytest.mark.parametrize("event,payload", [
+    ("PreToolUse", json.dumps({"tool_name": "Write",
+                               "tool_input": {"file_path": "src/a.py", "content": "x"}})),
+    ("UserPromptSubmit", json.dumps({"prompt": "/crew:approve T-1"})),
+], ids=["pre-tool-use", "user-prompt-submit"])
+def test_each_blocking_event_names_a_timeout(tmp_path, event, payload):
+    """Was test_each_harness_hook_names_a_timeout over scope-guard,
+    approval-hook and verify-gate -Price; crew-hook.ps1 is the one launcher
+    left, so the cases are its two other blocking events."""
     hang = tmp_path / "hang"
     _hung(hang)
+    stem, args, code, text = "crew-hook", (event,), 2, "the python probe timed out"
 
     got, err = _hook_run(tmp_path, stem, [hang, _tools(tmp_path)], payload,
                          {"scope": {"mode": "block"}}, args)
@@ -700,34 +718,3 @@ def test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout(tmp_p
         f"({bash_resolved!r}) -- the final candidate's wait must be capped "
         "to what remains of the 8s deadline, not a flat 3s/3000ms, or the "
         "total overruns the 10s hook timeout this bounds against")
-
-
-# --- the burn-in host, end to end ----------------------------------------------
-
-@needs_pwsh
-@needs_bash
-def test_the_burn_in_host_audits_in_both_flavours_instead_of_blocking_in_one(tmp_path):
-    """Same PATH, same Stop, same repo: both flavours reach python and agree.
-    Before the fix the .ps1 exited 2 "no usable python" and the .sh exited 0."""
-    root = tmp_path / "repo"
-    (root / ".crew").mkdir(parents=True)
-    (root / ".crew" / "config.json").write_text(json.dumps({"scope": {"mode": "block"}}),
-                                                encoding="utf-8")
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
-    apps = tmp_path / "Microsoft" / "WindowsApps"
-    _working(apps)
-    real = tmp_path / "AppData" / "Local" / "Python" / "bin"
-    _working(real, ("python",))
-    path = os.pathsep.join([str(apps), str(real), str(_tools(tmp_path))])
-    payload = json.dumps({"hook_event_name": "Stop", "stop_hook_active": False,
-                          "session_id": "burn-in", "cwd": str(root)})
-    results = []
-    for cmd, extra in (([BASH, str(SCRIPTS / "completion-audit.sh")], {}),
-                       ([PWSH, "-NoProfile", "-File", str(SCRIPTS / "completion-audit.ps1")],
-                        {"OS": "Windows_NT"})):
-        env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), PATH=path, **extra)
-        done = subprocess.run(cmd, input=payload, cwd=str(root), env=env, capture_output=True,
-                              text=True, check=False, timeout=60)
-        results.append((done.returncode, "no usable python" in done.stderr))
-
-    assert results == [(0, False), (0, False)]

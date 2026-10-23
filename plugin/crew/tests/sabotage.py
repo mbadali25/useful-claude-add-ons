@@ -162,13 +162,12 @@ MERGE_GATE = os.path.join(
 # flavour, and "one flavour stands down and nothing notices" is this plugin's
 # recurring failure rather than a hypothetical one.
 PROMOTE_PS1 = os.path.join(CREW, "hooks", "scripts", "promote-gate.ps1")
-# The Stop gate and its matched PowerShell pair, plus the two setup scripts
+# The Stop gate, plus the two setup scripts
 # that read the same `.crew/verify.json`. Four files rather than one because
 # "a `run` entry is one command" is a claim about the MAP, and a rule the gate
 # refuses while setup happily resolves it is the disagreement the rejection
 # exists to remove -- so each reader is sabotaged separately.
 VERIFY_SH = os.path.join(CREW, "hooks", "scripts", "verify-gate.sh")
-VERIFY_PS1 = os.path.join(CREW, "hooks", "scripts", "verify-gate.ps1")
 # The digest BOTH gates skip on, in one file so the two flavours cannot
 # disagree about whether a turn changed anything. Sabotaged here rather than
 # through either gate because it is the WRITER of the digest: a test that
@@ -2284,24 +2283,6 @@ MUTATIONS = (
          "test_a_lock_path_that_is_a_file_does_not_stand_the_gate_down"),
     ),
     (
-        # The matched pair's half. verify-gate.ps1 never had the framing bug
-        # -- it reads objects, not text -- so this is not a duplicate of the
-        # first entry: it is the claim that the PAIR agrees. With the refusal
-        # gone the same map blocks the turn on bash and passes it here.
-        #
-        # The fixture still exits 2 under this mutation, because `bash -c`
-        # runs both halves and the second rule is `exit 1`. The status
-        # assertion therefore still passes and only the message assertion
-        # catches it, which is the shape this file's header asks for.
-        "the PowerShell gate stops rejecting a `run` entry it cannot "
-        "represent",
-        VERIFY_PS1,
-        "if ($null -ne $bad) {\n  Write-CrewErr($bad)",
-        "if ($false) {\n  Write-CrewErr($bad)",
-        ("tests/test_verify_gate_rule_framing.py::"
-         "test_the_powershell_gate_refuses_the_same_map_by_name"),
-    ),
-    (
         # Setup's half. resolve-tools.sh writes the table a user pastes back
         # into verify.json, and a multi-line entry tokenised into junk came
         # out as MISSING TOOLS -- names nobody wrote, beside real ones. The
@@ -2416,59 +2397,6 @@ MUTATIONS = (
          "test_a_rule_that_fits_is_not_split_across_its_commands[sh]"),
     ),
     (
-        # The matched pair's half, and not a duplicate. The arithmetic lives
-        # in a python heredoc on one side and in PowerShell on the other, so a
-        # fix applied to one flavour reads as done while the other still
-        # splits the rule -- this plugin has shipped exactly that shape, and a
-        # round of this branch left the bash half wrapped in `if false` with
-        # every test still green.
-        # RE-ANCHORED in 0.19.95, with its bash twin and for the same
-        # reason. RE-ANCHORED AGAIN in 0.19.93 (the per-rule record): the
-        # `else` branch grew a chronic-vs-acute classification block, so the
-        # closing brace this find string ends on moved further down.
-        # RE-ANCHORED AGAIN in round 3 (identity dedup case-sensitivity,
-        # Codex BLOCK verify-gate.ps1:901): `-notcontains` on $deferred
-        # became `-cnotcontains` everywhere in the identity/dedup path, this
-        # line included, so PowerShell's default CASE-INSENSITIVE string
-        # comparison could no longer collapse two commands whose identities
-        # differ only in case (e.g. ENV=dev vs ENV=DEV) into one.
-        "the PowerShell Stop budget charges each command the rule's cost",
-        VERIFY_PS1,
-        "    } elseif (($spent + $ruleSecs[$ri]) -le $budget) {\n"
-        "      # WHOLE, in the rule's own `run` order. Half a rule is not a "
-        "cheaper\n"
-        "      # rule; it is a rule nobody can say ran.\n"
-        "      foreach ($c in $fresh) { [void]$keep.Add($c) }\n"
-        "      $spent += $ruleSecs[$ri]\n"
-        "    } else {\n"
-        "      foreach ($c in $fresh) { if ($deferred -cnotcontains $c) { "
-        "[void]$deferred.Add($c) } }\n"
-        "      # CHRONIC vs ACUTE -- the twin split in verify-gate.sh. A "
-        "rule whose\n"
-        "      # own cost exceeds the whole budget can never fit regardless "
-        "of\n"
-        "      # ordering (chronic); one that would fit alone but lost to "
-        "this\n"
-        "      # turn's contention is acute and still blocks the baseline, "
-        "same as\n"
-        "      # before this feature existed.\n"
-        "      if (-not $chronicRules.Contains($ri) -and -not "
-        "$acuteRules.Contains($ri)) {\n"
-        "        if ($ruleSecs[$ri] -gt $budget) { "
-        "[void]$chronicRules.Add($ri) }\n"
-        "        else { [void]$acuteRules.Add($ri) }\n"
-        "      }\n"
-        "    }\n",
-        "    } else {\n"
-        "      foreach ($c in $fresh) {\n"
-        "        if (($spent + $cost[$c]) -le $budget) { [void]$keep.Add($c); "
-        "$spent += $cost[$c] }\n"
-        "        elseif ($deferred -cnotcontains $c) { "
-        "[void]$deferred.Add($c) }\n      }\n    }\n",
-        ("tests/test_verify_gate_stop_budget.py::"
-         "test_both_flavours_charge_the_rule_once"),
-    ),
-    (
         # The deadline read goes back to DELETING what it cannot parse instead
         # of refusing it. `tr -dc "0-9"` turns -9999999999 into 9999999999 --
         # a deadline in the year 2286 -- so the gate backed off announcing
@@ -2487,66 +2415,6 @@ MUTATIONS = (
         "tr -dc \"0-9\")\n",
         ("tests/test_verify_gate_lock_window.py::"
          "test_an_unparseable_deadline_is_not_a_held_lock[negative-huge-sh]"),
-    ),
-    (
-        # The PowerShell half, and NOT the same defect: this flavour never
-        # coerced a sign, it silently overflowed. `[int]` on a deadline past
-        # Int32 max throws, the catch produces 0, and the lock reads as
-        # unheld -- measured, on an aged token with a deadline of 9999999999
-        # bash backed off while PowerShell RAN. Every legitimate deadline
-        # crosses that boundary on 2038-01-19, so the pair would have
-        # disagreed about every live lock from that date.
-        "the PowerShell deadline read overflows Int32 again",
-        VERIFY_PS1,
-        "      $holdDeadline = 0\n"
-        "      try {\n"
-        "        $raw = (Get-Content -Raw -ErrorAction Stop (Join-Path $lock "
-        "\'deadline\')).Trim()\n"
-        "        if ($raw -match \'^[0-9]+$\') { $holdDeadline = [long]$raw }"
-        "\n      } catch { $holdDeadline = 0 }\n",
-        "      $holdDeadline = try { [int]((Get-Content -Raw -ErrorAction "
-        "Stop (Join-Path $lock \'deadline\')).Trim()) } catch { 0 }\n",
-        ("tests/test_verify_gate_lock_window.py::"
-         "test_both_flavours_read_the_same_deadline_the_same_way"),
-    ),
-    (
-        # DEADLINE PUBLICATION REMOVED ENTIRELY, bash side. This is the
-        # mutation the cross-flavour case could not be made to fail under
-        # before it was rewritten: it fabricated the lock, the token and the
-        # deadline itself, and the token it planted was fresh enough that the
-        # AGE WINDOW forced the back-off it asserted -- so the test passed
-        # with the whole feature deleted from both gates. It now runs a real
-        # holder of the writer flavour and asserts the token is already past
-        # the TTL, which is what makes the back-off attributable to the
-        # deadline.
-        "the bash gate stops publishing a deadline at all",
-        VERIFY_SH,
-        "lock_extend() {\n"
-        "  [ \"$UNLOCKED\" -eq 0 ] || return 0\n"
-        "  [ \"$(cat \"$LOCK/token\" 2>/dev/null)\" = "
-        "\"${LOCK_TOKEN:-}\" ] || return 0\n"
-        "  printf \'%s\\n\' \"$(( $(date +%s) + $(lock_window) ))\" > "
-        "\"$LOCK/deadline\" 2>/dev/null || true\n"
-        "}\n",
-        "lock_extend() {\n  return 0\n}\n",
-        ("tests/test_verify_gate_lock_window.py::"
-         "test_each_flavour_honours_a_deadline_the_other_published"),
-    ),
-    (
-        # The matched pair's half: deadline publication removed on the
-        # PowerShell side. Separate entry because the cross-flavour case runs
-        # BOTH directions, and one flavour still publishing would leave the
-        # other direction green -- which is exactly how a one-flavour fix
-        # reads as done in this plugin.
-        "the PowerShell gate stops publishing a deadline at all",
-        VERIFY_PS1,
-        "      $deadline = $epoch + (Get-CrewLockWindow -Ttl $Ttl -MaxCost "
-        "$MaxCost)\n      Set-Content -Path (Join-Path $LockPath "
-        "\'deadline\') -Value $deadline -Encoding ascii -ErrorAction Stop\n",
-        "      $deadline = $epoch + (Get-CrewLockWindow -Ttl $Ttl -MaxCost "
-        "$MaxCost)\n      $null = $deadline\n",
-        ("tests/test_verify_gate_lock_window.py::"
-         "test_each_flavour_honours_a_deadline_the_other_published"),
     ),
     (
         # The TTL seam read as octal again. `08` is all digits, so it passes
@@ -2583,20 +2451,6 @@ MUTATIONS = (
          "test_an_always_command_is_not_deferred_by_a_priced_rule[sh]"),
     ),
     (
-        # The matched pair's half. The budget arithmetic is a python heredoc
-        # on one side and PowerShell on the other, and the report confirmed
-        # the defect was present in both -- so one flavour fixed reads as
-        # done while the other still defers the mandatory check.
-        # RE-ANCHORED in 0.19.95 with its bash twin.
-        "the PowerShell budget lets a priced rule defer an `always` command",
-        VERIFY_PS1,
-        "    foreach ($c in $ruleCmds[$ri]) { if ($mandatory.ContainsKey($c))"
-        " { $isMust = $true } }\n",
-        "    foreach ($c in $ruleCmds[$ri]) { }\n",
-        ("tests/test_verify_gate_stop_budget.py::"
-         "test_an_always_command_is_not_deferred_by_a_priced_rule[ps1]"),
-    ),
-    (
         # The FINER half, and a separate entry because `always` still works
         # under it: only the "unconditional-until-priced" level is deleted, so
         # a command named by an unpriced rule AND a priced one goes back to
@@ -2610,18 +2464,6 @@ MUTATIONS = (
         "for ri in rule_order:\n    pass\n",
         ("tests/test_verify_gate_stop_budget.py::"
          "test_an_unpriced_rule_makes_its_commands_unconditional[sh]"),
-    ),
-    (
-        # Its PowerShell twin.
-        "the PowerShell gate stops making an unpriced rule unconditional",
-        VERIFY_PS1,
-        "foreach ($ri in $ruleOrder) {\n"
-        "  if (-not $ruleSecs.ContainsKey($ri)) {\n"
-        "    foreach ($c in $ruleCmds[$ri]) { $mandatory[$c] = $true }\n"
-        "  }\n}\n",
-        "foreach ($ri in $ruleOrder) { }\n",
-        ("tests/test_verify_gate_stop_budget.py::"
-         "test_an_unpriced_rule_makes_its_commands_unconditional[ps1]"),
     ),
     (
         # A gitlink goes back to being read as a file. `open()` on a directory
@@ -2685,31 +2527,6 @@ MUTATIONS = (
         "[c for c in cmds if c in cost and c in mandatory], []\n",
         ("tests/test_verify_gate_stop_budget.py::"
          "test_a_mandatory_command_keeps_its_place_inside_its_rule[sh]"),
-    ),
-    (
-        # The PowerShell half of the charge defect. Separate, because the
-        # arithmetic is a python heredoc on one side and PowerShell on the
-        # other and the report confirmed BOTH flavours carried it.
-        "the PowerShell gate charges a mandatory command twice",
-        VERIFY_PS1,
-        "  $overrun = [System.Collections.ArrayList]@()\n",
-        "  $overrun = [System.Collections.ArrayList]@()\n"
-        "  foreach ($c in @($cmds | Where-Object { $cost.ContainsKey($_) -and "
-        "$mandatory.ContainsKey($_) })) { [void]$keep.Add($c); "
-        "$spent += $cost[$c] }\n",
-        ("tests/test_verify_gate_stop_budget.py::"
-         "test_a_mandatory_rule_is_charged_once_against_the_rest_of_the_budget[ps1]"),
-    ),
-    (
-        # And the PowerShell half of the ORDER defect, hoist without charge.
-        "the PowerShell gate hoists a mandatory command out of its rule",
-        VERIFY_PS1,
-        "  $overrun = [System.Collections.ArrayList]@()\n",
-        "  $overrun = [System.Collections.ArrayList]@()\n"
-        "  foreach ($c in @($cmds | Where-Object { $cost.ContainsKey($_) -and "
-        "$mandatory.ContainsKey($_) })) { [void]$keep.Add($c) }\n",
-        ("tests/test_verify_gate_stop_budget.py::"
-         "test_a_mandatory_command_keeps_its_place_inside_its_rule[ps1]"),
     ),
     (
         # work.md stops recording where the ticket starts. Everything else

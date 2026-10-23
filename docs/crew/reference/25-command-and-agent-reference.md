@@ -258,7 +258,7 @@ the correct capture form (`DB_PASS=$(...)`) and misses the wrong one. So a `Powe
 row's PowerShell twin when the file exists — `promote-gate.ps1` is the only one left (L-0727 slice 3 deleted `cloud-guard.ps1` and `env-guard.ps1`) — and
 `cloud_guard.py` and `env_guard.py` keep a stand-down for a twin that exists (dead code now); every other
 call, and every `PowerShell` call to a row whose twin is absent (`cloud-guard`, `env-guard`, `scope-guard`), is
-judged by the `.sh`. The ten twins of slice 3 are deleted; slice 4 of L-0727 deletes the four harness twins.
+judged by the `.sh`. The ten twins of slice 3 are deleted; slice 4 (L-0869) deleted the four harness twins (`verify-gate`, `completion-audit`, `scope-guard`, `approval-hook`), so `promote-gate.ps1` and `crew-hook.ps1` are the only hook `.ps1` files left.
 
 Two things worth knowing:
 

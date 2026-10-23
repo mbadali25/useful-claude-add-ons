@@ -13,8 +13,6 @@ import os
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SH = os.path.join(CREW, "hooks", "scripts", "verify-gate.sh")
-PS1 = os.path.join(CREW, "hooks", "scripts", "verify-gate.ps1")
-_TP = "tests/test_verify_gate_quiet_ps1.py::"
 _T = "tests/test_verify_gate_quiet.py::"
 _CREDITED = (
     "    \"verify-gate: \"*\" command(s) passed on this exact tree in an earlier run "
@@ -71,23 +69,6 @@ QUIET_MUTATIONS = (
     ("quiet gate: the verdict drops its units", SH,
      "NOT VERIFIED $G_NVTXT item(s) (reach", "NOT VERIFIED $G_NVTXT (reach",
      _T + "test_verdict_names_its_units"),
-    ("quiet gate (ps1): every notice reads as informational", PS1,
-     "if ($Line -cmatch $pattern) { return $true } }\n  return $false",
-     "if ($Line -cmatch $pattern) { return $true } }\n  return $true",
-     _TP + "test_ps1_unknown_notice_line_still_prints"),
-    ("quiet gate (ps1): an unwritable log prints nothing instead of the full text", PS1,
-     "$body = if ($logOk) { $plainLines } else { $fullLines }",
-     "$body = if ($logOk) { $plainLines } else { @() }",
-     _TP + "test_ps1_unwritable_log_degrades_to_full_output"),
-    ("quiet gate (ps1): an unchanged repeat ignores an unwritable log", PS1,
-     "  if (-not $logOk) { $unchanged = $false }\n", "",
-     _TP + "test_ps1_unchanged_repeat_with_unwritable_log_prints_failure_in_full"),
-    ("quiet gate (ps1): the session id is ignored by the repeat check", PS1,
-     "$stateParts[0] -ceq $script:CrewSession -and ", "",
-     _TP + "test_ps1_other_session_prints_full_block_and_unchanged_names_the_log"),
-    ("quiet gate (ps1): the unchanged line drops the detail-log pointer", PS1,
-     " | detail: $detail | /crew:verify --all runs every rule\")", "\")",
-     _TP + "test_ps1_other_session_prints_full_block_and_unchanged_names_the_log"),
     ("quiet gate: a backed-off run may replace the lock holder's detail log", SH,
      "[ \"$CREW_GATE_MAY_LOG\" -eq 1 ] && [ -s \"$_buf\" ]", "[ -s \"$_buf\" ]",
      _T + "test_backed_off_run_leaves_the_lock_holders_log_alone"),
@@ -100,15 +81,6 @@ QUIET_MUTATIONS = (
     ("quiet gate: a payload with two session ids picks one", SH,
      "| wc -l | tr -d '[:space:]')\" = 1 ]; then\n", "| wc -l | tr -d '[:space:]')\" -ge 1 ]; then\n",
      _T + "test_ambiguous_session_id_prints_the_full_block_every_time"),
-    ("quiet gate (ps1): a backed-off run may replace the lock holder's detail log", PS1,
-     "  if ($script:CrewMayLog -and $fullLines.Count -gt 0", "  if ($fullLines.Count -gt 0",
-     _TP + "test_ps1_backed_off_run_leaves_the_lock_holders_log_alone"),
-    ("quiet gate (ps1): reach-excluded always/default commands are left out of NOT VERIFIED", PS1,
-     "  $reach += $(if ($null -ne $fallbackNotices) { $fallbackNotices.Count } else { 0 })\n", "",
-     _TP + "test_ps1_reach_excluded_always_command_counts_as_not_verified"),
-    ("quiet gate (ps1): the repeat check hashes counts but not which rules were not run", PS1,
-     "$other $fail $nvDigest`n", "$other $fail`n",
-     _TP + "test_ps1_repeat_check_follows_which_rules_were_not_run"),
     ("quiet gate: a failed split of the stderr buffer is trusted", SH,
      "    rm -f \"$_plain_t\" \"$_full_t\" 2>/dev/null\n    _plain=\"$_buf\"; _full=\"$_buf\"\n",
      "    _plain=\"$_plain_t\"; _full=\"$_full_t\"\n",
@@ -121,13 +93,6 @@ QUIET_MUTATIONS = (
      "    if [ $((_qi_o - _qi_c)) -eq 1 ] && [ \"$_qi_ao\" = \"$_qi_ac\" ]; then\n",
      "    if true; then\n",
      _T + "test_a_session_id_that_is_not_a_top_level_string_prints_the_full_block"),
-    ("quiet gate (ps1): an exit-0 Stop leaves the repeat state in place", PS1,
-     "  if ($rc -eq 0 -and -not $script:CrewBackedOff) {\n"
-     "    Remove-Item -LiteralPath \".crew/.verify-gate.last-stop\" -Force -ErrorAction SilentlyContinue\n  }\n", "",
-     _TP + "test_ps1_exit_zero_stop_clears_the_repeat_state"),
-    ("quiet gate (ps1): a nested session id is taken as the session", PS1,
-     "  if ($braces -ne 1 -or $brackets -ne 0) { return \"\" }\n", "",
-     _TP + "test_ps1_a_session_id_that_is_not_a_top_level_string_prints_the_full_block"),
     ("quiet gate: the repeat state is written through a guessable, umask-mode temp name", SH,
      "      _statetmp=$(mktemp \".crew/.verify-gate.last-stop.tmpXXXXXX\" 2>/dev/null) || _statetmp=\"\"\n",
      "      _statetmp=\".crew/.verify-gate.last-stop.tmp$$\"\n",

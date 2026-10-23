@@ -624,7 +624,7 @@ def test_an_unusable_store_sends_one_ping_through_the_sh(tmp_path, teams):
 def _print_python(path_entries):
     env = dict(os.environ, OS="Windows_NT", PATH=os.pathsep.join(map(str, path_entries)))
     done = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File",
-                           str(SCRIPTS / "completion-audit.ps1"), "-PrintPython"],
+                           str(SCRIPTS / "crew-hook.ps1"), "-PrintPython"],
                           env=env, stdin=subprocess.DEVNULL, capture_output=True,
                           text=True, check=False, timeout=120)
     assert done.returncode == 0, done.stderr

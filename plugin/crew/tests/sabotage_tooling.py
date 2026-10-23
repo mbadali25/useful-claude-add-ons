@@ -6,8 +6,6 @@ the runner, its restore guarantees and its reporting are all `sabotage.py`'s.
 Run that file, not this one.
 """
 import os
-import shutil
-import sys
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
@@ -282,10 +280,8 @@ TOOLING_MUTATIONS = (
 
 # L-0572: declared subset coverage under `verify-gate --all`. Each mutation
 # makes the gate credit a subset it must run, or makes the record treat a
-# credit as a measurement. The .ps1 ones need pwsh to run their test, so
-# they are appended only where it exists (a skipped test reads as green).
+# credit as a measurement.
 GATE_SH = os.path.join(SCRIPTS, "verify-gate.sh")
-GATE_PS1 = os.path.join(SCRIPTS, "verify-gate.ps1")
 _COVER = "tests/test_verify_gate_subset_cover.py::"
 TOOLING_MUTATIONS += (
     (
@@ -424,23 +420,6 @@ TOOLING_MUTATIONS += (
         "tests/test_review_gate_receipt.py::test_a_verdict_that_needs_no_upgrade_never_asks_for_a_receipt",
     ),
 )
-if shutil.which("pwsh"):
-    TOOLING_MUTATIONS += (
-        (
-            "ps1: a superset that failed still credits its subsets",
-            GATE_PS1,
-            ' -or $statusAt[$pi] -ne "pass") {\n',
-            ") {\n",
-            _COVER + "test_superset_not_passing_runs_subset[1-ps1]",
-        ),
-        (
-            "ps1: Stop mode plans coverage too",
-            GATE_PS1,
-            "if ($All -and $matchPy -and (Test-Path $verifyRecordScript)) {\n",
-            "if ($matchPy -and (Test-Path $verifyRecordScript)) {\n",
-            _COVER + "test_stop_mode_never_credits[ps1]",
-        ),
-    )
 
 # Outside the plugin: present only in the marketplace repo, never in an
 # installed copy, so these are appended only when their targets exist.
@@ -597,59 +576,6 @@ TOOLING_MUTATIONS += (
          "test_refs_that_cannot_be_listed_mean_no_stable_snapshot"),
     ),
 )
-if shutil.which("pwsh"):
-    TOOLING_MUTATIONS += (
-        (
-            # Its PowerShell twin.
-            "the PowerShell gate lets a dearer measurement replace a declared price",
-            GATE_PS1,
-            "              if (($cached -is [int] -or $cached -is [long]) -and $cached -gt 0 -and\n"
-            "                  $cached -lt [double]$r.seconds) {\n",
-            "              if (($cached -is [int] -or $cached -is [long]) -and $cached -gt 0) {\n",
-            ("tests/test_verify_gate_stop_budget.py::"
-             "test_a_dearer_measurement_never_defers_a_declared_rule[ps1]"),
-        ),
-        (
-            # Its PowerShell twin.
-            "the PowerShell gate charges a rule that passed on this exact tree",
-            GATE_PS1,
-            "    $ruleSecs[$ri] = [double]0\n",
-            "    $null = $ri\n",
-            ("tests/test_verify_gate_tree_cache.py::"
-             "test_an_acutely_deferred_stop_converges_on_an_unchanged_tree[ps1]"),
-        ),
-        (
-            "the PowerShell gate saves the tree-pass cache after the tree moved",
-            GATE_PS1,
-            "    if ($treePre -and $treePre -eq $treePost) {\n",
-            "    if ($treePre) {\n",
-            ("tests/test_verify_gate_tree_cache.py::"
-             "test_a_rule_that_edits_the_tree_leaves_no_cache[ps1]"),
-        ),
-        (
-            "the PowerShell gate credits from the tree-pass cache under -All",
-            GATE_PS1,
-            "    if ($treePre -and $stopMode) {\n",
-            "    if ($treePre) {\n",
-            "tests/test_verify_gate_tree_cache.py::test_all_never_credits[ps1]",
-        ),
-        (
-            "the PowerShell gate keeps a credit after the tree moved",
-            GATE_PS1,
-            "      if ($treeN -gt 0) {\n        $treeMoved = $true\n      }\n",
-            "      if ($treeN -gt 0) {\n        $treeMoved = $false\n      }\n",
-            ("tests/test_verify_gate_tree_cache.py::"
-             "test_a_tree_that_moves_after_a_credit_withdraws_it[ps1]"),
-        ),
-        (
-            "the PowerShell gate keeps a withdrawn credit in the record sync",
-            GATE_PS1,
-            "  $cmdLog = [System.Collections.ArrayList]@(@($cmdLog) | Where-Object { -not $_.Contains('tree') })\n",
-            "  $cmdLog = [System.Collections.ArrayList]@($cmdLog)\n",
-            ("tests/test_verify_gate_tree_cache.py::"
-             "test_a_withdrawn_credit_never_clears_the_rule_s_record[ps1]"),
-        ),
-    )
 
 # The gate exports CLAUDE_PLUGIN_ROOT to its rule commands when unset.
 TOOLING_MUTATIONS += (
@@ -692,18 +618,6 @@ TOOLING_MUTATIONS += (
          "test_a_gate_started_by_a_relative_path_still_finds_its_root"),
     ),
 )
-# The .ps1 cases run only on native Windows (verify-gate.ps1 exits early
-# elsewhere), so its mutation would survive anywhere else.
-if sys.platform.startswith("win") and shutil.which("pwsh"):
-    TOOLING_MUTATIONS += (
-        (
-            "the PowerShell gate does not set CLAUDE_PLUGIN_ROOT for its rule commands",
-            GATE_PS1,
-            "  $env:CLAUDE_PLUGIN_ROOT = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path\n",
-            "  $null = 0\n",
-            "tests/test_verify_gate_plugin_root.py::test_an_unset_plugin_root_is_the_gates_own",
-        ),
-    )
 
 # `verify-gate --ci`: the gate as a pull request's CI job. One mutation per
 # behaviour; each must turn its named case in test_verify_gate_ci_mode.py red.
@@ -888,155 +802,6 @@ TOOLING_MUTATIONS += (
         _CI + "test_a_held_lock_fails_rather_than_backing_off_green[sh]",
     ),
 )
-# Their PowerShell twins. The .ps1 cases run wherever pwsh exists (the suite
-# sets OS=Windows_NT past the flavour guard), so these are appended there.
-if shutil.which("pwsh"):
-    TOOLING_MUTATIONS += (
-        (
-            "--ci (ps1): the reach filter is not applied",
-            GATE_PS1,
-            "$reachFilter = $stopMode -or $Ci\n",
-            "$reachFilter = $stopMode\n",
-            _CI + "test_a_network_rule_is_excluded_named_and_does_not_fail[ps1]",
-        ),
-        (
-            "--ci (ps1): a command exiting 77 does not fail the run",
-            GATE_PS1,
-            '    Write-CrewErr("verify-gate --ci: $skipCount command(s) exited 77 (SKIP) - '
-            'a skip is not a pass in CI")\n    $failed = $true\n',
-            '    Write-CrewErr("verify-gate --ci: $skipCount command(s) exited 77 (SKIP) - '
-            'a skip is not a pass in CI")\n',
-            _CI + "test_a_skip_is_not_a_pass_in_ci[ps1]",
-        ),
-        (
-            "--ci (ps1): a pass advances the verified marker",
-            GATE_PS1,
-            "never writes them, by design\")\n  }\n  exit 0\n",
-            "never writes them, by design\")\n  }\n",
-            _CI + "test_a_passing_map_exits_0_and_records_nothing[ps1]",
-        ),
-        (
-            "--ci (ps1): a requiresCleanTree rule is excluded",
-            GATE_PS1,
-            "            if ($stopMode -and $r.requiresCleanTree -eq $true) {\n",
-            "            if ($r.requiresCleanTree -eq $true) {\n",
-            _CI + "test_a_requires_clean_tree_rule_runs[ps1]",
-        ),
-        (
-            "--ci (ps1): the scope narrows to the changed files",
-            GATE_PS1,
-            "if ($All -or $Ci) {\n  # -All does not diff",
-            "if ($All) {\n  # -All does not diff",
-            _CI + "test_a_rule_on_a_file_the_branch_never_changed_still_runs[ps1]",
-        ),
-        (
-            "--ci (ps1): a disabled gate passes",
-            GATE_PS1,
-            ('      Write-CrewErr("verify-gate --ci: verifyGate is false in .crew/config.json '
-             '- the gate is off, so nothing was checked. Turn it on or remove the CI job.")\n'
-             '      Exit-CrewGateBlocked\n'),
-            ('      Write-CrewErr("verify-gate --ci: verifyGate is false in .crew/config.json '
-             '- the gate is off, so nothing was checked. Turn it on or remove the CI job.")\n'),
-            _CI + "test_a_disabled_gate_fails_in_ci_rather_than_passing_unchecked[ps1]",
-        ),
-        (
-            "--ci (ps1): nothing to verify passes",
-            GATE_PS1,
-            ('    Write-CrewErr("verify-gate --ci: no .crew/verify.json and no '
-             '_verify/smoke.sh - nothing to verify, so nothing was checked")\n    Exit-CrewGateBlocked\n'),
-            ('    Write-CrewErr("verify-gate --ci: no .crew/verify.json and no '
-             '_verify/smoke.sh - nothing to verify, so nothing was checked")\n'),
-            _CI + "test_no_map_and_no_smoke_fails_in_ci[ps1]",
-        ),
-        (
-            "--ci (ps1): zero commands to run passes",
-            GATE_PS1,
-            ('    Write-CrewErr("verify-gate --ci: zero commands to run - $ciNothing - '
-             'nothing was checked")\n    Exit-CrewGateBlocked\n'),
-            ('    Write-CrewErr("verify-gate --ci: zero commands to run - $ciNothing - '
-             'nothing was checked")\n'),
-            _CI + "test_every_matched_rule_reach_excluded_fails[ps1]",
-        ),
-        (
-            "--ci (ps1): no tracked files passes",
-            GATE_PS1,
-            ('or nothing is tracked) - nothing was checked")\n    Exit-CrewGateBlocked\n'),
-            ('or nothing is tracked) - nothing was checked")\n'),
-            _CI + "test_no_tracked_files_fails[ps1]",
-        ),
-        (
-            "--ci (ps1): a project dir that cannot be entered passes",
-            GATE_PS1,
-            "  try { Set-Location $root -ErrorAction Stop }\n",
-            "  try { Set-Location $root }\n",
-            _CI + "test_a_project_dir_that_cannot_be_entered_fails[ps1]",
-        ),
-        (
-            "--ci (ps1): a Stop fingerprint skips the run",
-            GATE_PS1,
-            "if (-not $All -and -not $Ci) {\n  try {\n    $fpPy = Resolve-CrewPython\n",
-            "if (-not $All) {\n  try {\n    $fpPy = Resolve-CrewPython\n",
-            _CI + "test_a_stop_fingerprint_never_skips_a_ci_run[ps1]",
-        ),
-        (
-            "--ci (ps1): untracked files are in scope",
-            GATE_PS1,
-            "  if (-not $Ci) {\n    $changed += ($null | git -c core.quotePath=false ls-files --others",
-            "  if ($true) {\n    $changed += ($null | git -c core.quotePath=false ls-files --others",
-            _CI + "test_an_untracked_unmapped_file_is_not_in_scope[ps1]",
-        ),
-        (
-            "--ci (ps1): a stop_hook_active payload ends the run",
-            GATE_PS1,
-            "if (-not $Ci -and [Console]::IsInputRedirected) {\n",
-            "if ([Console]::IsInputRedirected) {\n",
-            _CI + "test_a_stop_hook_active_payload_does_not_end_a_ci_run[ps1]",
-        ),
-        (
-            "--ci (ps1): an incident stands the run down",
-            GATE_PS1,
-            "if ($Ci) {\n  if (Test-Path .crew/incident.json) {\n",
-            "if ($false) {\n  if (Test-Path .crew/incident.json) {\n",
-            _CI + "test_an_incident_does_not_stand_a_ci_run_down[ps1]",
-        ),
-        (
-            "--ci (ps1): a lock back-off passes",
-            GATE_PS1,
-            ('    Write-CrewErr("verify-gate --ci: $Why - this run checked nothing")\n'
-             '    Exit-CrewGateBlocked\n'),
-            '    Write-CrewErr("verify-gate --ci: $Why - this run checked nothing")\n',
-            _CI + "test_a_held_lock_fails_rather_than_backing_off_green[ps1]",
-        ),
-        (
-            "--ci (ps1): an unknown argument is ignored",
-            GATE_PS1,
-            "if ($args.Count -gt 0 -or ($PSBoundParameters.ContainsKey('PriceTarget') -and -not $Price)) {\n",
-            "if ($false) {\n",
-            _CI + "test_an_unknown_argument_is_a_usage_error[ps1---ci=1]",
-        ),
-        (
-            "--ci (ps1): -Ci -Price is accepted",
-            GATE_PS1,
-            "if ($Price -and $Ci) {\n",
-            "if ($false) {\n",
-            _CI + "test_ci_and_price_together_is_a_usage_error[ps1-ci-price]",
-        ),
-        (
-            # Off Windows the flavour guard's silent exit 0 is reached first.
-            "--ci (ps1): -Ci off Windows stands down green",
-            GATE_PS1,
-            "  [ValidateScript({ if ($env:OS -ne 'Windows_NT') { throw ",
-            "  [ValidateScript({ if ($false) { throw ",
-            _CI + "test_the_ps1_with_ci_off_windows_fails_instead_of_standing_down",
-        ),
-        (
-            "--ci (ps1): a blank command counts as a check",
-            GATE_PS1,
-            "          if ($Ci -and [string]::IsNullOrWhiteSpace([string]$c)) { continue }\n",
-            "",
-            _CI + "test_a_map_of_blank_commands_checks_nothing_and_fails[ps1-empty]",
-        ),
-    )
 TOOLING_MUTATIONS += (
     (
         # A blank rule command runs and "passes" under --ci.
@@ -1117,7 +882,7 @@ TOOLING_MUTATIONS += (
 )
 
 # T-0082: a rule passes only on a completion record. Each mutation names the
-# test that must catch it; the .ps1 ones run wherever pwsh exists.
+# test that must catch it.
 _DONE = "tests/test_verify_gate_rule_completion.py::"
 TOOLING_MUTATIONS += (
     (
@@ -1220,84 +985,3 @@ TOOLING_MUTATIONS += (
         _DONE + "test_a_signalled_gate_leaves_no_record_file",
     ),
 )
-if shutil.which("pwsh"):
-    TOOLING_MUTATIONS += (
-        (
-            "(g) ps1: $rc not reset per rule",
-            GATE_PS1,
-            "  $rc = $null\n  $ruleRec = $null\n",
-            "  $ruleRec = $null\n",
-            _DONE + "test_ps1_launch_failure_does_not_inherit_the_previous_status",
-        ),
-        (
-            "(h) ps1: a missing record takes the wrapper's status",
-            GATE_PS1,
-            '      $ruleWhy = "no completion record"\n',
-            "      $ruleRec = $rc\n",
-            _DONE + "test_no_completion_record_could_not_tell[record-vanished-ps1]",
-        ),
-        (
-            "(i) ps1: unknown does not set $failed",
-            GATE_PS1,
-            "    $failed = $true\n    $unknownCount++\n",
-            "    $unknownCount++\n",
-            _DONE + "test_unknown_never_advances_the_marker[ps1]",
-        ),
-        (
-            "ps1: a status above 128 reads as a plain failure",
-            GATE_PS1,
-            "    } elseif ($ruleRec -gt 128) {\n",
-            "    } elseif ($false) {\n",
-            _DONE + "test_a_rule_killed_mid_run_could_not_tell[ps1]",
-        ),
-        (
-            "ps1: the .crew/ fallbacks are relative to the process directory",
-            GATE_PS1,
-            '    $crewDir = Join-Path $root ".crew"\n',
-            '    $crewDir = ".crew"\n',
-            _DONE + "test_ps1_fallback_record_from_a_subdirectory_passes",
-        ),
-        (
-            "ps1: the record directory is left world-readable",
-            GATE_PS1,
-            "          [System.IO.File]::SetUnixFileMode($candidate, "
-            "[System.IO.UnixFileMode]'UserRead, UserWrite, UserExecute')\n",
-            "",
-            _DONE + "test_the_record_lives_in_a_private_directory[ps1]",
-        ),
-        (
-            "ps1: a record with a leading zero is read",
-            GATE_PS1,
-            "'\\A(0|[1-9][0-9]{0,2})\\n\\z'",
-            "'\\A[0-9]{1,3}\\n\\z'",
-            _DONE + "test_unreadable_record_could_not_tell[leading-zero-ps1]",
-        ),
-        (
-            "ps1: 255 is called a signal",
-            GATE_PS1,
-            "    } elseif ($ruleRec -gt 192) {\n",
-            "    } elseif ($false) {\n",
-            _DONE + "test_a_255_record_is_not_called_a_signal[ps1]",
-        ),
-        (
-            "ps1: pass on the record alone (wrapper status not read)",
-            GATE_PS1,
-            "    } elseif ($rc -ne 0) {\n      $ruleWhy = \"the rule's runner",
-            "    } elseif ($false) {\n      $ruleWhy = \"the rule's runner",
-            _DONE + "test_no_completion_record_could_not_tell[wrapper-killed-ps1]",
-        ),
-        (
-            "ps1: a record above 255 is read as a status",
-            GATE_PS1,
-            " -and [int]$recText.Trim() -le 255)",
-            ")",
-            _DONE + "test_unreadable_record_could_not_tell[256-ps1]",
-        ),
-        (
-            "ps1: unknown is logged as pass",
-            GATE_PS1,
-            '    $cmdStatus = "unknown"\n',
-            '    $cmdStatus = "pass"\n',
-            _DONE + "test_unknown_status_is_never_recorded_clean[ps1]",
-        ),
-    )
