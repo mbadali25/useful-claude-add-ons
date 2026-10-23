@@ -9,6 +9,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.64: sh hooks hand native python a path it can open, with or without Git Bash path conversion (L-0868)
+
+- **Summary.** `crew` 1.2.64: on Windows, the bash hooks no longer fail with `can't open file 'D:\\tmp\\...'` when `MSYS_NO_PATHCONV` is set in the environment (even empty), because they now convert script and path arguments themselves.
+- **Changed.** New `crew_native_path` in `_common.sh` (`cygpath -m` under MSYS/Cygwin, the input unchanged elsewhere and on any cygpath failure, never an exit-code change) wraps the script path and the `--root "$PWD"`, config and data path arguments in auto-clear, handoff-read, notify, context-watch, crew-context, platform-sync, cloud-guard, env-guard, role-write-guard and promote-gate. `handoff-write.sh:71` and the harness callers are deferred to L-0874; `crew_context`'s `shutil.which("bash")` is L-0881; cygpath hardening is L-0883.
+- **Verified.** Gate `verify-gate.sh --all` exit 0; Kimi review CLEAN; native Windows (win-repo-2) 94 passed, 0 failed with `MSYS_NO_PATHCONV` unset, empty and 1 when Git `usr\\bin` is first on PATH.
+
 ### Changed — crew 1.2.63: sabotage table retires 30 mutations and dual-anchors 7 so L-0725 can gate (L-0875)
 
 - **Summary.** `crew` 1.2.63: the sabotage mutation table drops 30 mutations that no longer match shipped code and gives 7 a second anchor, so the config-key reduction (L-0725, #665) can pass the sabotage gate; no runtime behaviour changes.
