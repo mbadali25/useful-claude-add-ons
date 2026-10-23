@@ -44,7 +44,12 @@ needs_bash = pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")
 needs_pwsh = pytest.mark.skipif(
     _PWSH is None, reason="pwsh is not installed here; the .ps1 cases are written and skipped")
 
-PS_COPIES = ("promote-gate", "verify-gate", "scope-guard", "completion-audit")
+# The .ps1 files that carry their own copy of Get-CrewRepoConfigDir. L-0869
+# deleted verify-gate.ps1, scope-guard.ps1 and completion-audit.ps1, so
+# promote-gate.ps1 is the last copy - which is also why
+# test_powershell_resolver_copies_are_identical still earns its keep: it holds
+# that copy to the same bytes as any future one, and to crew_common's answer.
+PS_COPIES = ("promote-gate",)
 SHELL_SOURCE = {crew_common.SOURCE_OWN: "own", crew_common.SOURCE_MAIN: "main",
                 crew_common.SOURCE_UNKNOWN: "unknown"}
 NO_PYTHON = {"PYTHONHOME": "/nonexistent-python-home"}
@@ -767,8 +772,8 @@ def test_auto_clear_knows_wrap_up_is_a_key(tmp_path, flavour):
 
 # --- L-0681: the verify gate, the review gate's twin, the fingerprint and the scope wrappers --
 
-_GATE = {"sh": os.path.join(SCRIPTS, "verify-gate.sh"), "ps1": os.path.join(SCRIPTS, "verify-gate.ps1")}
-GATE_FLAVOURS = [pytest.param("sh", marks=needs_bash), pytest.param("ps1", marks=needs_pwsh)]
+_GATE = {"sh": os.path.join(SCRIPTS, "verify-gate.sh")}
+GATE_FLAVOURS = [pytest.param("sh", marks=needs_bash)]
 _RED_MAP = {"version": 1, "rules": [{"paths": ["**"], "seconds": 5, "run": ["exit 1"],
                                      "reach": "local", "why": "fixture"}],
             "always": [], "default": [], "unmapped": "ignore"}
@@ -785,10 +790,8 @@ def _gate_lane(tmp_path, main_cfg, own_cfg=None):
     return wt
 
 
-def _run_gate(root, flavour, ci=False):
-    cmd = ([_BASH, _GATE["sh"]] + (["--ci"] if ci else []) if flavour == "sh" else
-           [_PWSH, "-NoProfile", "-NonInteractive", "-File", _GATE["ps1"]]
-           + (["-Ci"] if ci else []))
+def _run_gate(root, flavour, ci=False):  # pylint: disable=unused-argument
+    cmd = [_BASH, _GATE["sh"]] + (["--ci"] if ci else [])
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT")
     return crew_fixtures.run_gate(cmd, input="{}", cwd=str(root), env=env,
                                   capture_output=True, text=True, check=False,
@@ -822,14 +825,25 @@ def test_fingerprint_follows_the_resolved_config(tmp_path):
     assert verify_fingerprint.fingerprint(str(wt), []) == pinned
 
 
-@needs_pwsh
+@needs_bash
 @pytest.mark.parametrize("own_cfg,gated", [(None, True), ({}, False)],
                          ids=["inherits-standDown-false", "own-config-without-the-key"])
-def test_verify_gate_ps1_incident_stand_down_false_is_inherited(tmp_path, own_cfg, gated):
+def test_verify_gate_incident_stand_down_false_is_inherited(tmp_path, own_cfg, gated):
+    """A lane with no config of its own inherits the main checkout's
+    `emergency.standDown: false`, so an open incident does NOT stand the gate
+    down; a lane whose own config omits the key falls back to the default and
+    is stood down.
+
+    This was `..._ps1_...` and ran only under pwsh, which made it the one
+    `standDown` inheritance case with no bash cover at all. L-0869 deleted
+    verify-gate.ps1, so it now drives verify-gate.sh - the flavour the
+    dispatcher has run on Windows since L-0727 slice 2, and the only one on
+    POSIX. It is the same assertion against the gate that actually runs.
+    """
     wt = _gate_lane(tmp_path, {"emergency": {"standDown": False}}, own_cfg)
     _own(wt, "incident.json", {"id": "INC-T", "summary": "suite",
                                "expiresAtEpoch": int(time.time()) + 3600})
-    proc = _run_gate(wt, "ps1")
+    proc = _run_gate(wt, "sh")
     assert (proc.returncode == 2) is gated, proc.stderr
 
 
@@ -838,17 +852,13 @@ _WRAPPERS = {
     "scope-guard.sh": b'{"tool_name":"Write","tool_input":{"file_path":"src/app.py","content":"x"}}',
     "completion-audit.sh": b'{"session_id":"s-l0681","stop_hook_active":false}',
 }
-_WRAPPERS["scope-guard.ps1"] = _WRAPPERS["scope-guard.sh"]
-_WRAPPERS["completion-audit.ps1"] = _WRAPPERS["completion-audit.sh"]
-WRAPPER_DRIVERS = [pytest.param(w, marks=needs_bash if w.endswith(".sh") else needs_pwsh)
-                   for w in _WRAPPERS]
+WRAPPER_DRIVERS = [pytest.param(w, marks=needs_bash) for w in _WRAPPERS]
 
 
 def _run_wrapper(tmp_path, root, wrapper):
     script = os.path.join(SCRIPTS, wrapper)
-    argv = ([_BASH, script] if wrapper.endswith(".sh") else
-            [_PWSH, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script])
-    env = _guard_env(tmp_path, root, "sh" if wrapper.endswith(".sh") else "ps1")
+    argv = [_BASH, script]
+    env = _guard_env(tmp_path, root, "sh")
     tmp = str(tmp_path)
     env = dict(env, TMPDIR=tmp, TEMP=tmp, TMP=tmp)
     with crew_fixtures.msys_tmp_pinned(_BASH, env):
@@ -880,21 +890,23 @@ def test_scope_wrapper_without_python_allows_when_no_checkout_has_a_config(
     assert proc.returncode == 0, proc.stderr
 
 
-@needs_pwsh
-@pytest.mark.parametrize("wrapper", ["scope-guard.ps1", "completion-audit.ps1"])
-def test_scope_wrapper_ps1_without_python_allows_an_inherited_strict_off(tmp_path, wrapper):
-    """PowerShell 7 parses the resolved file strictly, so a main checkout that
-    says exactly `{"scope": {"mode": "off"}}` is provably off in its lane."""
-    _main, wt = _lane(tmp_path, {"scope": {"mode": "off"}})
-    proc = _run_wrapper(tmp_path, wt, wrapper)
-    assert proc.returncode == 0, proc.stderr
+# There used to be a `..._ps1_without_python_allows_an_inherited_strict_off`
+# case here, driving scope-guard.ps1 and completion-audit.ps1. It was
+# PowerShell-7-specific by design: pwsh parses the resolved config strictly, so
+# a main checkout saying exactly `{"scope": {"mode": "off"}}` was PROVABLY off
+# in its lane and the wrapper allowed. The bash wrapper without python
+# deliberately CANNOT tell, and blocks instead - that is
+# test_scope_wrapper_without_python_blocks_when_git_cannot_tell above, which
+# stays. Porting the deleted case to `.sh` would have asserted the opposite of
+# the surviving wrapper's documented behaviour, so L-0869 dropped it rather
+# than translating it.
 
 
 # Every hook script outside the session hooks above: a line that names the own
 # config path outside a comment is a user-facing message (echo / WriteLine), and
 # these are the counts; anything else must be in OWN_PATH_ALLOWED.
 OWN_PATH_MESSAGES = {"promote-gate.sh": 1, "promote-gate.ps1": 1, "scope-guard.sh": 2,
-                     "scope-guard.ps1": 3, "verify-gate.sh": 3, "verify-gate.ps1": 1}
+                     "verify-gate.sh": 3}
 
 
 def test_no_hook_script_names_the_own_config_path():

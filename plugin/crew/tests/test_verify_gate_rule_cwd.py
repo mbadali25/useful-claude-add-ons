@@ -1,4 +1,7 @@
-"""verify-gate.ps1 runs every rule in ONE PowerShell process, and that leaked.
+"""A rule's `cd`, exit status and env prefix stay inside that rule.
+
+History: verify-gate.ps1 (deleted in L-0869) ran every rule in ONE PowerShell
+process, and that leaked.
 
 Measured 2026-09-13 on aws-managed-services (T-0019 there): the gate failed
 at every Stop with `bash -n scripts/ci_changed.sh`, pytest "no tests ran" and
@@ -18,16 +21,20 @@ loop, each confirmed with a two-line pwsh experiment:
   once the cwd had moved it found no token, kept the lock, and the next Stop
   within the 700 s TTL was silently ungated after a failing one.
 
-verify-gate.sh has none of these: it evals each rule inside `$(...)`, which
-is a subshell, so a `cd` cannot leak and the exit status is the rule's own.
-This file pins the .ps1 flavour to the same contract.
+verify-gate.sh has none of these by construction: it evals each rule inside an
+explicit nested subshell (`( ( eval "$c" ); ... ) &`, verify-gate.sh:2569, with
+the rationale at :2527-2563), so a `cd` cannot leak and the exit status is the
+rule's own.
 
-Windows + pwsh only, as test_gates_powershell.py: this is the native-Windows
-half of the pair and there is nothing to compare on a POSIX runner.
+L-0869 deleted verify-gate.ps1, and with it the flavour this file used to pin.
+The fixtures were already BASH rules - the gate hands every rule to bash in
+either flavour - so rather than delete them the suite now drives verify-gate.sh
+and pins the surviving flavour to the contract the docstring above only ever
+asserted by reasoning. That also makes it portable: it used to be Windows +
+pwsh only, and now runs anywhere bash does.
 """
 import json
 import os
-import shutil
 import subprocess
 import sys
 
@@ -37,24 +44,21 @@ import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
-_VERIFY_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
-_PWSH = shutil.which("pwsh")
+_VERIFY_SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
+_BASH = crew_fixtures.resolve_bash()
 # The interpreter running this suite, quoted for a BASH command line.
 #
 # It used to be quoted for PowerShell (`& 'C:\...\python.exe'`), because the
 # gate evaluated each rule with Invoke-Expression. It no longer does: rules are
-# handed to bash, which is the only way the .ps1 can honour the same contract
-# as verify-gate.sh, whose rules have always been bash. A rule written in
-# PowerShell syntax could never have run on the sh side, so these fixtures were
-# testing a rule shape that only half the matched pair could execute.
+# handed to bash, which is the only way the two flavours could honour one
+# contract while both existed. A rule written in PowerShell syntax could never
+# have run on the sh side, so these fixtures were always bash - which is why
+# they port to verify-gate.sh unchanged.
 # Backslashes are turned into forward slashes because Git Bash execs that form
 # and treats a backslash inside single quotes as a literal character.
 _PY = "'" + sys.executable.replace("\\", "/").replace("'", "'\\''") + "'"
 
-pytestmark = pytest.mark.skipif(
-    not sys.platform.startswith("win") or _PWSH is None,
-    reason="the .ps1 gate is the native-Windows flavour; needs Windows + pwsh",
-)
+pytestmark = pytest.mark.skipif(_BASH is None, reason="needs bash")
 
 
 def _git(root, *args):
@@ -69,8 +73,8 @@ def _py_exit_unless(condition, code):
 
 
 def _repo(tmp_path, rules):
-    """A committed repo with one untracked file per rule, named so that
-    `Sort-Object -Unique` on the changed set orders the rules as given:
+    """A committed repo with one untracked file per rule, named so that the
+    gate's `sort -u` of the changed set orders the rules as given:
     rule N fires on `rN.py`. The rules are the whole test."""
     root = tmp_path / "repo"
     (root / ".crew").mkdir(parents=True)
@@ -99,7 +103,7 @@ def _repo(tmp_path, rules):
 
 def _run_verify(root):
     return crew_fixtures.run_gate(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _VERIFY_PS1],
+        [_BASH, _VERIFY_SH],
         input=json.dumps({}), cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
         capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,

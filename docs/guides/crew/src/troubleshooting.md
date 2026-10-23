@@ -472,7 +472,7 @@ contract itself. This section is what goes wrong with the approval and the audit
 
 ## Verify gate says 0 rules ran, or deferred to CI
 
-`verify-gate.sh` / `.ps1` (L-0710). The Stop gate runs only the rules mapped to what changed since
+`verify-gate.sh` (L-0710). The Stop gate runs only the rules mapped to what changed since
 its marker, cheapest first, inside `verify.stopBudgetSeconds` (default 60). Two lines are expected,
 not errors, and neither blocks the turn:
 
@@ -519,7 +519,7 @@ verify-gate: FAILED 1 cmd | PASSED 14 cmd | NOT VERIFIED 5 item(s) (reach 2, ove
 
 ## Verify gate says COULD NOT TELL
 
-`verify-gate.sh` / `.ps1` (T-0082). A rule counts as passed only when its wrapper ended with status 0
+`verify-gate.sh` (T-0082). A rule counts as passed only when its wrapper ended with status 0
 **and** left a completion record saying the rule exited 0. Anything else that is not a plain exit
 status is FAILED as "could not tell": the gate prints `VERIFY FAILED: <cmd>`, then
 `verify-gate: COULD NOT TELL (<reason>): <cmd>`, exits 2, and neither marker advances. The summary
@@ -536,13 +536,12 @@ adds `verify-gate: N rule command(s) COULD NOT BE JUDGED - counted as FAILED`. T
 - **"no completion record"**: the wrapper ended 0 but the record is missing, empty, not 1-3 digits or
   above 255 - the shape a native Windows kill that reports exit 0 leaves. Nothing about the rule can
   be told from that run.
-- **"the rule's shell could not be started"** (`.ps1` only): the resolved bash vanished or would not
+- **"the rule's shell could not be started"** (the PowerShell gate, deleted in L-0869, only; no current message): the resolved bash vanished or would not
   launch for this rule. Before T-0082 this rule silently inherited the previous rule's pass.
 - **"cannot create an output-capture file or a completion-record file"** or **"no usable bash
   resolved"**: the existing refusals, now named as could-not-tell.
-- **"the gate received TERM while this command was running"** (`.sh` only): the gate itself was
-  signalled mid-rule; it still exits 128+N. A killed `.ps1` gate prints nothing (PowerShell has no
-  signal trap); the marker not advancing covers it.
+- **"the gate received TERM while this command was running"** the gate itself was
+  signalled mid-rule; it still exits 128+N.
 
 The command log carries status `unknown` for such a rule; the record sync leaves that rule's entry as
 it was and the tree-pass cache never stores it. The gate still waits as long as a rule runs - a hung

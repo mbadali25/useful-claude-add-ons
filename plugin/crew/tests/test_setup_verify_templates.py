@@ -304,7 +304,8 @@ def test_diagram_case_fails_on_no_sources_even_without_mmdc(tmp_path):
 
 def test_smoke_tail_survives_the_verify_gate_filter(tmp_path):
     """crew's verify gate, with no .crew/verify.json, relays only the lines of a
-    failed smoke run that start `FAIL` or `SMOKE:` (verify-gate.sh, verify-gate.ps1).
+    failed smoke run that start `FAIL` or `SMOKE:` (verify-gate.sh; verify-gate.ps1
+    was deleted in L-0869).
     The cause must be among them."""
     repo, env = _repo(tmp_path)
     # The cause is printed by the check, not part of its command line, which
