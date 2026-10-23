@@ -39,7 +39,7 @@ PY=$(crew_py) || { echo "crew handoff-read: no usable python - the handoff note 
 # crew-context.sh, which injects it inside its own SessionStart budget --
 # printing it here too would put it in the session twice. Same reader as that hook (crew_context.inject_enabled).
 # After the resets above, which other hooks' once-per-session gates rely on.
-"$PY" -c 'import sys; sys.path.insert(0, sys.argv[1]); import crew_context as c; sys.exit(0 if c.inject_enabled(c.find_root(sys.argv[2])) else 1)' "$DIR" "$PWD" 2>/dev/null && exit 0
+"$PY" -c 'import sys; sys.path.insert(0, sys.argv[1]); import crew_context as c; sys.exit(0 if c.inject_enabled(c.find_root(sys.argv[2])) else 1)' "$(crew_native_path "$DIR")" "$(crew_native_path "$PWD")" 2>/dev/null && exit 0
 "$PY" "$(crew_native_path "$DIR/hook_once.py")" handoff-read "${SESSION}-${SOURCE}" || exit 0
 
 # L-0680: the repo config is the resolved one (_common.sh's crew_repo_config_dir,
