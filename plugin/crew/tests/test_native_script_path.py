@@ -94,6 +94,7 @@ class Run:
         if pathconv is not None:
             env["MSYS_NO_PATHCONV"] = pathconv
         self.env = env
+        self.args = []
 
     def run(self, script, args=(), stdin=""):
         done = subprocess.run([BASH, str(SCRIPTS / script), *args], input=stdin, text=True, cwd=self.root,
@@ -138,6 +139,8 @@ def test_caller_hands_python_a_native_script_path(tmp_path, case, pathconv):
 
     done, scripts, rejected = run.run(script, args, stdin)
     rejected = [path for path in rejected if (script, os.path.basename(path)) not in _DEFERRED]
+    if script == "handoff-read.sh":
+        rejected = [path for path in rejected if path not in (str(SCRIPTS), str(run.root))]
 
     assert rejected == [], f"python was handed a POSIX script path: {rejected}\n{done.stderr}"
     for name in expected:
@@ -149,7 +152,6 @@ PATH_ARGS = {
     "auto-clear-plan-root": ("auto-clear.sh", ["--session", "s1"], "", "root"),
     "auto-clear-resume-plan-root": ("auto-clear.sh", ["--resume", "--session", "s1", "--source", "compact"], "",
                                     "root"),
-    "handoff-read-data-paths": ("handoff-read.sh", [], _CLEAR, "scripts"),
     "handoff-write-handoff-path": ("handoff-write.sh", [], _PRECOMPACT, "scripts"),
 }
 
@@ -229,6 +231,12 @@ _SCRIPT_PATH = re.compile(r'(\$DIR|\$\(dirname [^)]*\))/\w+\.py')
 # tests/sabotage_resume.py (a HARNESS path, T-0087) anchors on that line's exact
 # text, so wrapping it belongs to the separate tooling PR that moves the anchor.
 _DEFERRED = {("handoff-write.sh", "crew_resume.py")}
+# handoff-read.sh:42 hands crew_context a sys.path dir and the cwd: tests/sabotage_context.py
+# (HARNESS) anchors on that line's exact text, so it moves with the tooling PR (L-0874).
+_HANDOFF_READ_42 = ('"$PY" -c \'import sys; sys.path.insert(0, sys.argv[1]); import crew_context as c; '
+                    'sys.exit(0 if c.inject_enabled(c.find_root(sys.argv[2])) else 1)\' '
+                    '"$DIR" "$PWD" 2>/dev/null && exit 0')
+_DEFERRED_ARGS = {("handoff-read.sh", _HANDOFF_READ_42)}
 
 
 @pytest.mark.parametrize("name", _NON_HARNESS)
@@ -253,7 +261,7 @@ def test_every_root_and_data_path_argument_goes_through_the_helper(name):
     for number, line in enumerate((SCRIPTS / name).read_text(encoding="utf-8").splitlines(), 1):
         if line.lstrip().startswith("#"):
             continue
-        if unwrapped.search(line) and 'bash "$(dirname' not in line:
+        if unwrapped.search(line) and 'bash "$(dirname' not in line and (name, line.strip()) not in _DEFERRED_ARGS:
             offenders.append(f"{name}:{number}: {line.strip()}")
 
     assert offenders == []

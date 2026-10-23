@@ -1222,10 +1222,10 @@ runs but the visual rule never passes.
   native `python.exe`, but only while `MSYS_NO_PATHCONV` is unset. Set, even to an empty string by a
   shell profile, a CI runner or a parent process, the argument reaches Python as written and Windows
   resolves it against the current drive. Since L-0868 every `.sh` hook except the review-harness ones (and that one record)
-  passes its script path and its path arguments (`--root`, `sys.path` and config data paths) through `crew_native_path`
+  passes its script path and its path arguments (`--root` and config data paths) through `crew_native_path`
   (`cygpath -m`, which needs no argument conversion), so the variable no longer matters for them.
   The harness hooks (`verify-gate.sh`, `approval-hook.sh`, `scope-guard.sh`, `completion-audit.sh`,
-  `crew-hook.sh`) and the PreCompact `crew_resume.py` record in `handoff-write.sh` still depend on
+  `crew-hook.sh`) the PreCompact `crew_resume.py` record in `handoff-write.sh` and the `crew_context` probe at `handoff-read.sh:42` still depend on
   conversion until a follow-up lands: if one fails this way, unset `MSYS_NO_PATHCONV` for the session (`env -u
   MSYS_NO_PATHCONV claude`).
 - **Both flavours are always registered.** `hooks.json` pairs every bash command with a `shell:
