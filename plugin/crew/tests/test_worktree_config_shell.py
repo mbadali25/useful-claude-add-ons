@@ -1032,8 +1032,9 @@ def test_fallback_is_armed_by_a_second_layer_after_an_off_first(tmp_path, script
 
 
 @needs_bash
-@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0,
-                    reason="root reads a mode-000 file; run as a normal user")
+@pytest.mark.skipif((hasattr(os, "geteuid") and os.geteuid() == 0) or os.name == "nt",
+                    reason="root reads a mode-000 file, and Windows has no mode bits; "
+                           "run as a normal user on POSIX")
 @pytest.mark.parametrize("script,key,escaped", _FALLBACKS)
 def test_fallback_is_armed_when_the_config_file_cannot_be_read(tmp_path, script, key, escaped):
     main, _wt = _lane(tmp_path, {"guards": {"profile": "off"}})

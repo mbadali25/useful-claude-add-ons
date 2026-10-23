@@ -463,7 +463,10 @@ def test_config_values_survive_a_crlf_writing_python(tmp_path):
     # tmux, or on native Windows the xdotool window (see _sendable).
     method, target = (config["method"], "%9" if config["method"] == "tmux" else "4242")
     assert f"method: {method}" in out, "a CR in the config values would break this"
-    assert f"target: {target}" in out
+    if method == "tmux":
+        assert f"target: {target}" in out
+    else:
+        assert f"[window {target}" in out
 
 
 @pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")
