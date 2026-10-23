@@ -808,6 +808,13 @@ def proxy_denied_hosts(proxy_log):
 # --------------------------------------------------------------------------
 # budget
 
+def number_or_unknown(value):
+    """A recorded amount: null, UNKNOWN, or a finite non-negative number (never a bool)."""
+    if value is None or value == UNKNOWN:
+        return True
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0
+
+
 def read_results(path):
     rows = []
     try:
@@ -827,9 +834,7 @@ def read_results(path):
                 for key in ("costUsd", "ownCostUsd", "unscoredSpendUsd", "claudeCostUsd", "escapedDefects",
                             "regressionTestsFailed"):
                     value = row.get(key)
-                    if key in row and value is not None and value != UNKNOWN and (
-                            isinstance(value, bool) or not isinstance(value, (int, float))
-                            or not math.isfinite(value) or value < 0):
+                    if key in row and not number_or_unknown(value):
                         fail(f"{path}:{number}: {key} must be a non-negative number, null or {UNKNOWN}")
                 rows.append(row)
     except FileNotFoundError:
