@@ -92,8 +92,12 @@ GIT_IDENTITY = ("-c", "user.name=crew-outcome-eval", "-c", "user.email=eval@inva
 # Codex list prices, USD per million tokens, per model. A model with no row makes
 # the Codex cost UNKNOWN (U9). Rows are added only from the vendor page, with the
 # date and URL they were read on.
-CODEX_PRICES_AS_OF = None
-CODEX_PRICES = {}
+# gpt-6-sol, Standard tier, short context (up to 272K input tokens per call), read 2026-10-23 from
+# https://developers.openai.com/api/docs/pricing (the row: $2.00 input, $0.20 cached input, $10.00 output).
+# Over 272K input tokens in one call the page charges 4.00 / 0.40 / 15.00. Codex reports usage per turn, not
+# per call, so a call over 272K cannot be seen: the cost here is a LOWER BOUND at the short-context rate (README).
+CODEX_PRICES_AS_OF = "2026-10-23"
+CODEX_PRICES = {"gpt-6-sol": {"input": 2.00, "cachedInput": 0.20, "output": 10.00}}
 
 
 class EvalError(Exception):
@@ -1079,8 +1083,16 @@ def crew_rounds(repo):
         except (OSError, ValueError):
             incomplete += 1
             continue
-        for row in data.get("rounds", []) if isinstance(data, dict) else []:
-            if row.get("verdict") in ("CLEAN", "FINDINGS"):
+        rows = data.get("rounds", []) if isinstance(data, dict) else None
+        if not isinstance(rows, list):
+            # an arm-written ledger of the wrong shape cannot be counted: incomplete, never an exception
+            # that would lose the paid attempt's row
+            incomplete += 1
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                incomplete += 1
+            elif row.get("verdict") in ("CLEAN", "FINDINGS"):
                 cycles += 1
             elif row.get("status") != "reserved" or row.get("verdict") == "INCOMPLETE":
                 incomplete += 1

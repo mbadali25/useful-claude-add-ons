@@ -97,9 +97,11 @@ budget check), refuses a NaN, infinite or non-positive budget, and refuses to gr
 not be stopped. `canary.txt` is valid only for the current image and the current proxy allowlist, proxy and wrapper (a
 fingerprint on its first line); the canary needs the host checkout, the task store and an earlier run dir.
 
-**Cost baseline.** There is no Codex price row yet (`CODEX_PRICES` is empty, U9: rows only from the vendor page), so a
-crew run that used Codex review has `costUsd` UNKNOWN, the budget stops a batch on it, and the cost comparison cannot be
-produced. This is the documented baseline for Slice 2. Entering the Codex price is a Slice 3 prerequisite. Image supply
+**Cost baseline.** `CODEX_PRICES` carries one row, `gpt-6-sol` (the pinned crew reviewer): Standard tier, short context,
+USD per million tokens, input 2.00, cached input 0.20, output 10.00, read on 2026-10-23 from
+https://developers.openai.com/api/docs/pricing (`CODEX_PRICES_AS_OF`). The same page charges 4.00 / 0.40 / 15.00 for a call
+with more than 272K input tokens; Codex reports usage per turn, not per call, so such a call cannot be seen and the Codex
+cost is a lower bound at the short-context rate. A model with no row still makes the cost UNKNOWN. Image supply
 chain, accepted: the base is pinned by digest, but Claude Code needs its postinstall, so npm transitive dependencies and
 apt packages float at build time; the canary records the image id it vouches for.
 
@@ -119,7 +121,7 @@ base tree (the repo path in `README.md`, `.claude-plugin/marketplace.json`) neve
 | `reviewAttemptsIncomplete` | Errored, refused, INCOMPLETE or unparseable review attempts. Each arm retries an errored review at most once. |
 | `tokens` | Claude tokens split `{input, output, cacheRead, cacheCreation, total}`, every transcript in the run's own Claude home including subagent files, each message once (`crew_metrics`). |
 | `claudeCostUsd` | List price of those tokens from `crew_metrics.PRICES`; UNKNOWN when a session's transcript is missing or does not parse, a subagent file a transcript names is missing, or a model is unpriced. |
-| `codexTokens`, `codexCostUsd` | The sum of every `turn.completed` usage in the run's `codex-events.jsonl` files. UNKNOWN when a Codex session exists in the run's own `CODEX_HOME` that no events file accounts for, or the model has no price row (none yet: `CODEX_PRICES` is empty). |
+| `codexTokens`, `codexCostUsd` | The sum of every `turn.completed` usage in the run's `codex-events.jsonl` files. UNKNOWN when a Codex session exists in the run's own `CODEX_HOME` that no events file accounts for, or the model has no price row (only `gpt-6-sol` has one). |
 | `costUsd` | `claudeCostUsd + codexCostUsd`, plus the cost of any unscorable attempt this run replaced; UNKNOWN if any part is. |
 | `cliTotalCostUsd` | The CLI's own `total_cost_usd`, per session (the CLI reports it cumulatively across `--resume`, so only the last value of each session counts). A cross-check, never the cost. |
 | `wallSeconds` | Monotonic clock over the whole arm. |
@@ -292,7 +294,7 @@ out, so the placeholder stays.
 
 - A scored run of either arm on a real task; every figure above is from the one throwaway task.
 - That an access token outlives a long run (Claude's expires in hours; the harness does not check).
-- `CODEX_PRICES` is empty: Codex cost is UNKNOWN for every run until a price row for the pinned model is read from the
-  vendor page and dated here. The verdict is "could not tell" for any bucket until then.
+- Codex cost is a lower bound: the price row is the short-context rate, and a call over 272K input tokens (charged 4.00 /
+  0.40 / 15.00) is not visible in per-turn usage.
 - The harness on Windows; the host needs `docker`, so only the stub suite runs in CI.
 - That statements written from the Intent alone are solvable by either arm (no agent was run on a real statement).

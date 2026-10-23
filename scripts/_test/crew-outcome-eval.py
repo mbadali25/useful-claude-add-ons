@@ -538,6 +538,23 @@ def case_codex_cost_uses_a_dated_price_row(tmp):
     return cost == expected, (cost, expected)
 
 
+def case_crew_rounds_wrong_shape_ledger_is_incomplete_not_an_exception(tmp):
+    repo = os.path.join(tmp, "ledger-repo")
+    write(os.path.join(repo, ".git", "crew", "review", "a.json"), json.dumps({"rounds": ["x", {"verdict": "CLEAN"}]}))
+    write(os.path.join(repo, ".git", "crew", "review", "b.json"), json.dumps({"rounds": 5}))
+    cycles, incomplete = eval_mod.crew_rounds(repo)
+    return (cycles, incomplete) == (1, 2), (cycles, incomplete)
+
+
+def case_pinned_codex_model_has_a_price_row_and_a_known_cost(tmp):
+    with open(os.path.join(REAL_EVAL_DIR, "arms", "crew.json"), encoding="utf-8") as fh:
+        model = json.load(fh)["reviewer"]["model"]
+    repo, home = codex_events(tmp, [USAGE], sessions=1)
+    _tokens, cost = eval_mod.codex_usage(repo, home, model)
+    expected = round((600 * 2.00 + 400 * 0.20 + 50 * 10.00) / 1e6, 6)
+    return model in eval_mod.CODEX_PRICES and eval_mod.CODEX_PRICES_AS_OF and cost == expected, (model, cost, expected)
+
+
 # --------------------------------------------------------------------------
 # contamination
 
@@ -1548,6 +1565,8 @@ CASES = (
     ("must-block: a Codex session with no events file makes usage UNKNOWN", case_codex_session_without_an_events_file_makes_usage_unknown),
     ("must-allow: a run with no Codex call costs zero", case_no_codex_call_is_zero_cost),
     ("must-allow: Codex cost is computed from a dated price row", case_codex_cost_uses_a_dated_price_row),
+    ("must-allow: the pinned Codex reviewer model has a price row and a known cost", case_pinned_codex_model_has_a_price_row_and_a_known_cost),
+    ("must-allow: a wrong-shape review ledger counts as incomplete, never raises", case_crew_rounds_wrong_shape_ledger_is_incomplete_not_an_exception),
     ("must-block: contamination flags the reference sha", case_contamination_flags_the_reference_sha),
     ("must-block: contamination flags the reference PR URL", case_contamination_flags_the_reference_pr_url),
     ("must-allow: README text and the repo path never flag a run", case_contamination_does_not_flag_readme_text_or_the_repo_path),
