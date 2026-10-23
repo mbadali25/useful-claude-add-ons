@@ -165,6 +165,11 @@ Left for a harness-only follow-up, because each touches the review/gate harness 
   without importing Python;
 - (c) the stale comment at `plugin/crew/hooks/scripts/_test/test_flavour_guard.py:358`, which names
   `completion-audit.ps1`'s marker file.
+- (d) the comments that still name a deleted twin, all inside `plugin/crew/hooks/scripts/`: `verify-gate.sh`
+  (lines 437, 807, 1264, 1553, 2594), `completion_audit.py:94`, `scope_guard.py:5`, `scope_report.py:4` and
+  `:121`, `crew-hook.ps1` (52, 77, 88) and `promote-gate.ps1` (51, 60, 71, 597). The edits
+  would touch hook scripts that the harness rule watches, so they wait for the same harness-only follow-up
+  (L-0881).
 
 ## Trigger to re-evaluate
 

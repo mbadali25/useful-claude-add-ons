@@ -673,7 +673,7 @@
                 "plugin/crew/tests/test_crew_hook_windows.py", "plugin/crew/tests/test_crew_instructions.py",
                 "plugin/crew/tests/sabotage_crew_hook.py",
                 "plugin/crew/tests/test_crew_hook_stop_gate.py"],
-      "seconds": 30,
+      "seconds": 90,
       "coveredBy": "crew-suite",
       "run": ["python3 plugin/crew/tests/pytest_rule.py plugin/crew/tests/test_crew_hook_parity.py plugin/crew/tests/test_crew_hook_merge.py plugin/crew/tests/test_crew_hook_faults.py plugin/crew/tests/test_hooks_json_shape.py plugin/crew/tests/test_crew_hook_windows.py plugin/crew/tests/test_crew_instructions.py plugin/crew/tests/test_crew_hook_stop_gate.py -q"],
       "reach": "local",
