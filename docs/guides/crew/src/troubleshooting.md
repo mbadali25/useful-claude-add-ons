@@ -535,7 +535,7 @@ adds `verify-gate: N rule command(s) COULD NOT BE JUDGED - counted as FAILED`. T
 - **"no completion record"**: the wrapper ended 0 but the record is missing, empty, not 1-3 digits or
   above 255 - the shape a native Windows kill that reports exit 0 leaves. Nothing about the rule can
   be told from that run.
-- **"the rule's shell could not be started"** (the deleted `verify-gate.ps1` only; no current message): the resolved bash vanished or would not
+- **"the rule's shell could not be started"** (the PowerShell gate, deleted in L-0869, only; no current message): the resolved bash vanished or would not
   launch for this rule. Before T-0082 this rule silently inherited the previous rule's pass.
 - **"cannot create an output-capture file or a completion-record file"** or **"no usable bash
   resolved"**: the existing refusals, now named as could-not-tell.

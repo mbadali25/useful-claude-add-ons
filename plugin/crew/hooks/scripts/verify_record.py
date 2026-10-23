@@ -389,8 +389,9 @@ def scan_reach(run, repo_root):
 
 
 def cmd_scan_reach():
-    """CLI entry that existed for verify-gate.ps1 (deleted in L-0869; no caller remains, removal is a harness-only follow-up, docs/adr/0009-hook-single-dispatch.md): reads {"run": [...], "root": "..."}
-    from stdin, prints `status\\tdetail` (detail empty for "local").
+    """CLI entry that existed for verify-gate.ps1 (deleted in L-0869; no caller remains, removal is a harness-only follow-up,
+    docs/adr/0009-hook-single-dispatch.md):
+    reads {"run": [...], "root": "..."} from stdin, prints `status\\tdetail` (detail empty for "local").
     verify-gate.sh and verify_price.py never call this - both already run
     inside python and import scan_reach directly."""
     try:
@@ -404,7 +405,9 @@ def cmd_scan_reach():
 
 
 def cmd_rule_key():
-    """CLI entry that existed for verify-gate.ps1 (deleted in L-0869; no caller remains, removal is a harness-only follow-up, docs/adr/0009-hook-single-dispatch.md): reads a JSON object from stdin with
+    """CLI entry that existed for verify-gate.ps1 (deleted in L-0869; no caller remains, removal is a harness-only follow-up,
+    docs/adr/0009-hook-single-dispatch.md):
+    reads a JSON object from stdin with
     the same fields rule_key() hashes (paths, run, env, reach,
     requiresCleanTree - extra keys are ignored), prints the canonical key.
     verify-gate.sh never calls this - it imports rule_key directly, since
@@ -761,7 +764,9 @@ def _int_list(value):
 
 
 def cmd_cover_plan():
-    """CLI entry that existed for verify-gate.ps1 (deleted in L-0869; no caller remains, removal is a harness-only follow-up, docs/adr/0009-hook-single-dispatch.md). stdin: {"rules": [...], "always": [...],
+    """CLI entry that existed for verify-gate.ps1 (deleted in L-0869; no caller remains, removal is a harness-only follow-up,
+    docs/adr/0009-hook-single-dispatch.md).
+    stdin: {"rules": [...], "always": [...],
     "rule_order": [int], "rule_cmds": {"<int>": [identity]}, "cmds":
     [identity]} - the .ps1's OWN parsed map, never a second read of the
     file. stdout: {"cmds": [...], "guards": [...], "notices": [...]}. Any
@@ -946,7 +951,8 @@ def _print_owed(entries):
 
 
 def cmd_reach_notice():
-    """verify-gate.ps1's (deleted in L-0869; no caller remains, harness-only follow-up) half of `reach_notice` (the .sh matcher imports it):
+    """verify-gate.ps1's (deleted in L-0869; no caller remains, harness-only
+    follow-up) half of `reach_notice` (the .sh matcher imports it):
     stdin is a JSON list of [index, reason] pairs; prints the lines."""
     try:
         payload = json.load(sys.stdin)

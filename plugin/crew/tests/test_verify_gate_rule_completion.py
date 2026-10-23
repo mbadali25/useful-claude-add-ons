@@ -461,5 +461,3 @@ def test_the_record_lives_in_a_private_directory(flavour, tmp_path):
     assert lines[0] == "rc", lines
     if not sys.platform.startswith("win"):
         assert lines[1] == "700", lines
-
-

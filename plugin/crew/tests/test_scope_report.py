@@ -376,9 +376,9 @@ _SCENARIOS = ("outside", "inside", "no-spec", "pre-1.0")
 
 
 @pytest.mark.parametrize("scenario", _SCENARIOS)
-def test_both_gates_print_the_same_scope_line(repo, flavour, scenario):
+def test_both_gates_print_the_same_scope_line(repo, scenario):
     """Acceptance 7: the Stop gates hand their changed list to this one
-    script, so bash and PowerShell print the line the script prints, for
+    script, so the bash gate prints the line the script prints, for
     acceptance checks 1-4. Neither blocks on it: report-only, so the gate
     exits 0 on these trees (nothing else in them can block)."""
     _scenario(repo, scenario)

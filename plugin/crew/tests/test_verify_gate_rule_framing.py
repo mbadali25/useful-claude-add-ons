@@ -277,5 +277,3 @@ def test_map_audit_refuses_the_same_map_by_name(tmp_path):
     assert "rules[0].run[0]" in result.stderr, result.stderr
     assert "refusing to audit" in result.stderr, result.stderr
     assert "no rule" not in result.stdout, result.stdout
-
-
