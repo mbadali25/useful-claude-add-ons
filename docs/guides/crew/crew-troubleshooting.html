@@ -982,6 +982,18 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
   judged at all; terraform's <code>--help</code> still is.</p>
 </li>
 <li>
+<p><strong>A <code>python3</code>/<code>node</code> line is refused as "a terraform-family line with python code that ...".</strong>
+  (L-0871, crew 1.2.63; before it the denial quoted an unrelated word such as <code>'^JIRA_'</code> or <code>'&lt;&lt;'</code>.)
+  With <code>guards.terraformApply</code> armed, interpreter code is refused only when it names terraform,
+  terragrunt or tofu (in the code or anywhere on the line), or reaches a process and builds the
+  name: the denial says which, for example <code>python code that spells 'terraform' out of fragments</code>
+  or <code>builds a name at run time ('chr(')</code>. <code>import os</code>, <code>import requests</code>, <code>os.environ.get(...)</code>
+  and <code>node -e "console.log(process.env.X)"</code> alone are allowed. <strong>Fix:</strong> write the command plainly
+  (<code>terraform apply</code> as its own command, where it is judged), or keep the name out of code that
+  starts a process. Code that reads its command from the environment or a file and never names the
+  tool is not caught (the credentials boundary is the control).</p>
+</li>
+<li>
 <p><strong>A workflow dispatch is refused as "could not tell" although it looks fine.</strong> With
   <code>environments.workflows</code> set, a <code>gh workflow run</code> or <code>gh api .../dispatches</code> line is judged only
   when every word on it is a plain literal (letters, digits, <code>_./:=@%+,-</code>) or one whole

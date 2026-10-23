@@ -760,6 +760,17 @@ it *would* refuse before enforcing with `"block"`.
   --help` (or `-h`) is the exception: gh prints help and dispatches nothing, so the line is not
   judged at all; terraform's `--help` still is.
 
+- **A `python3`/`node` line is refused as "a terraform-family line with python code that ...".**
+  (L-0871, crew 1.2.63; before it the denial quoted an unrelated word such as `'^JIRA_'` or `'<<'`.)
+  With `guards.terraformApply` armed, interpreter code is refused only when it names terraform,
+  terragrunt or tofu (in the code or anywhere on the line), or reaches a process and builds the
+  name: the denial says which, for example `python code that spells 'terraform' out of fragments`
+  or `builds a name at run time ('chr(')`. `import os`, `import requests`, `os.environ.get(...)`
+  and `node -e "console.log(process.env.X)"` alone are allowed. **Fix:** write the command plainly
+  (`terraform apply` as its own command, where it is judged), or keep the name out of code that
+  starts a process. Code that reads its command from the environment or a file and never names the
+  tool is not caught (the credentials boundary is the control).
+
 - **A workflow dispatch is refused as "could not tell" although it looks fine.** With
   `environments.workflows` set, a `gh workflow run` or `gh api .../dispatches` line is judged only
   when every word on it is a plain literal (letters, digits, `_./:=@%+,-`) or one whole
