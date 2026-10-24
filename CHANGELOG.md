@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.79: the sabotage suite reports no STILL GREEN and no unproven entry (L-0897, L-0906, L-0903)
+
+- **Summary.** `crew` 1.2.79: the gate's sabotage step now goes red by a real assertion for every entry it keeps, so a vacuous test can no longer pass as coverage; no behaviour a user runs changes.
+- Ten of the twelve STILL GREEN entries are retargeted or re-aimed at a test that fails under their mutation (one new row each where none existed: `test_review_auto_accept.py` row-key-gone, `test_cloud_guard_environments.py` taint row, `test_cloud_guard_deploy.py` string piped to `iex`; `test_review_limit.py` now reserves a round so its marker cases reach the shape check). Two PowerShell r7 entries (a lone quoted string, colon-bound values) are removed and recorded as unfalsifiable in `sabotage_cloud.py`, with the measurement behind it.
+- L-0906: `the deploy default is all` names a surviving test; `approve writes beside the receipt` no longer breaks the module (it was exit 4). L-0903: two entries for the php value-letter and info-only guard halves. The `_interp_codes` docstring NIT stays open: it edits production code, which a harness PR cannot carry.
+- `mcp-servers/node_modules` installed with `npm ci`; the gate's `mcp-servers-npm-test` step runs (69 pass). Tests and sabotage entries only. Docs: none.
+
 ### Fixed — crew 1.2.76: the Stop gate re-prices a rule from its latest measurement both ways, and a dead record sync no longer advances the verified marker (L-0905)
 
 - **Summary.** `crew` 1.2.76: a rule that really costs more on this machine than its declared `seconds` is now priced at what it cost and deferred when that is over the Stop budget, a large rule set no longer fails the record sync with "Argument list too long", and a record sync that did not run no longer marks the tree verified.
