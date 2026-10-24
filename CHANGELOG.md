@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — the 30 rules that cost more than the Stop budget on Windows are priced as such in `.crew/verify.json` (L-0904)
+### Changed — crew 1.2.77: the 30 rules that cost more than the Stop budget on Windows are priced as such in `.crew/verify.json` (L-0904)
 
-- **Summary.** A cold Windows checkout no longer runs 30 slow rules at Stop; they are priced at what win-repo-2 measured and deferred to CI until `/crew:verify --all` times them on that host.
+- **Summary.** `crew` 1.2.77: a cold Windows checkout no longer runs 30 slow rules at Stop; they are priced at what win-repo-2 measured and deferred to CI until `/crew:verify --all` times them on that host.
 - `.crew/verify.json` `seconds` for 30 rules (by `id`) now carry the Windows figure, and each `why` states it as `Windows <N>s (win-repo-2, ...)`; no `paths`, `run`, `reach` or `id` changes. L-0905's per-machine cache replaces these numbers after a clean run on a host: run `/crew:verify --all` once per host after this lands.
 - Tests: `plugin/crew/tests/test_verify_map_prices.py` (a rule is never priced below the Windows figure its `why` states; the 30 all state one).
 
