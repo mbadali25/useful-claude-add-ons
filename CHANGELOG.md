@@ -15,6 +15,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - `verify-gate.sh` prices a rule at its cached measurement in both directions (the latest valid positive integer wins; it was `min(declared, cached)`, so a slow rule kept its stale cheap price and never deferred its neighbour). A rule re-priced over the budget alone is chronic and runs only under `/crew:verify --all`, which re-measures it; the notice (`priced at Ns, measured on this machine, above its declared Ds`) names that. The matched-rule JSON now reaches the record sync through a temp file instead of one argv element (a single argument is capped at 128 KiB on Linux, the whole command line at 32,767 characters on Windows). The sync status is nonzero when any stage of its pipeline failed, and `verify_record.py sync` refuses an empty payload, so the marker does not advance on a record that was never written. Breaking: a rule measured over the budget on a machine stops running at Stop there; a failed sync now holds the marker.
 - Tests: `test_verify_gate_reprice.py`, `test_verify_gate_sync_payload.py`, one case in `test_verify_gate_quiet.py`; nine `sabotage_*.py` entries, each confirmed red. Docs: `plugin/crew/CONFIG.md` Pricing paragraph.
 
+### Added — taste-skill and ui-ux-pro-max in the Community install rows (L-0887)
+
+- **Summary.** The installers now offer `taste-skill` (art direction for frontend design) and `ui-ux-pro-max` (UI/UX styles, palettes, fonts and stacks) in the Community picker, opt-in (unticked by default because a tag can move and a SHA ref is rejected), pinned to the reviewed tags v2.1.4 and v2.15.0.
+- **Caveat.** Both are unaudited third-party plugins: ui-ux-pro-max's design-skill scripts call `api.muapi.ai` on explicit user action; taste-skill's scripts fetch images from Openverse, Wikimedia and the Art Institute and drive a local Chrome.
+- **Changed.** `scripts/install-prerequisites.{sh,ps1}` (same rows, same order), `scripts/_test/mcp-preflight-catalog.sh`, `scripts/_test/menu-groups.sh`, README and INSTALLATION. No plugin version changes; `crew` is untouched.
+
 ### Fixed — crew 1.2.75: the cloud guard no longer reads a php option value or `php -v` as code (L-0853)
 
 - **Summary.** `crew` 1.2.75: `php -dxdebug.mode=coverage vendor/bin/phpunit`, `php -v`, `php -m`, `php --ini` and `xargs php -l` are no longer refused by the terraform-apply guard; php given code (`-r`, a heredoc, a pipe) is still refused.
