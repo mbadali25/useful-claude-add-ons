@@ -124,6 +124,7 @@ import time
 import crew_common
 import crew_config_files
 import crew_dropped
+import crew_guards
 
 CREW_SCHEMA = 1
 LEGACY_SCHEMA_MAX = 8
@@ -431,9 +432,16 @@ def _load_legacy(root):
     if schema <= 0:
         raise MigrateError(f".crew/config.json schema {schema} is not a schema crew ever "
                            "wrote; nothing is migrated")
-    if schema < LEGACY_SCHEMA_MAX:
+    if schema < LEGACY_SCHEMA_MAX or _holds_legacy_guard_key(cfg):
         return cfg, data, {"from": schema}
     return cfg, data, None
+
+
+def _holds_legacy_guard_key(cfg):
+    """Whether `cfg["guards"]` still carries a per-guard key (`guards.<name>`),
+    which the guard rewrite owns even in a file already stamped current."""
+    block = cfg.get("guards")
+    return isinstance(block, dict) and any(key in crew_guards.ALL_GUARD_NAMES for key in block)
 
 
 # ---------------------------------------------------------------- tickets
@@ -792,7 +800,10 @@ def build_global_plan(path=None, accept_dropped=()):
     plan = {"scope": "global", "root": root, "path": path, "writes": [], "conflicts": [],
             "notes": [], "upgrade": [], "retireable": [], "unmapped": [], "skipped": [],
             "untouched": [], "unknown": [], "accepted": []}
-    raw = _read_bytes(path)
+    try:
+        raw = _read_bytes(path)
+    except OSError as exc:
+        raise MigrateError(f"cannot read {path}: {_why(exc)}; nothing is migrated") from exc
     if raw is None:
         plan["notes"].append(f"{path} absent - no machine config to migrate")
     else:

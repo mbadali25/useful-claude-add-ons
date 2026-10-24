@@ -1290,3 +1290,21 @@ def test_a_held_machine_lock_is_a_refusal_with_nothing_written(machine, capsys, 
     assert code == 1
     assert _read(machine) == before
     assert "config.json.lock" in capsys.readouterr().err
+
+
+def test_a_schema_8_repo_still_carrying_a_legacy_guard_key_is_rewritten(tmp_path):
+    root = _repo(tmp_path, json.dumps({"schema": 8, "guards": {"forcePush": "block"}}).encode())
+
+    code = crew_migrate.main(["--root", root, "--apply"])
+
+    assert code == 0
+    assert "forcePush" not in _config(root).get("guards", {})
+
+
+def test_an_unreadable_machine_config_is_a_conflict_not_a_traceback(machine, capsys):
+    os.makedirs(machine)
+
+    code = crew_migrate.main(["--global", "--preview"])
+
+    assert code == 1
+    assert "cannot read" in capsys.readouterr().err

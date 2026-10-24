@@ -461,8 +461,9 @@ def rewrite_guards(out, unmigrated, unknown=None):
     Anything the readers treat as corrupt is left exactly as written and named
     in `unmigrated` (which blocks the schema stamp), so the person fixes it by
     hand and a migration never turns it into a profile: a `guards` that is not
-    an object, a `profile` that is present but not a profile name, and an
-    `overrides` that is present but not an object.
+    an object, a `profile` that is present but not a profile name (JSON null
+    included), and an `overrides` that is present but not an object (null
+    included).
 
     The layer's value for each guard is the same before and after: the
     function reads the layer through `layer_guard_state` and the result is
@@ -473,11 +474,10 @@ def rewrite_guards(out, unmigrated, unknown=None):
     if not isinstance(block, dict):
         unmigrated.append("guards")
         return None, {}
-    profile_raw = block.get("profile")
-    if profile_raw is not None and crew_guards.normalise_profile(profile_raw) is None:
+    if "profile" in block and crew_guards.normalise_profile(block["profile"]) is None:
         unmigrated.append("guards.profile")
     overrides_raw = block.get("overrides")
-    if overrides_raw is not None and not isinstance(overrides_raw, dict):
+    if "overrides" in block and not isinstance(overrides_raw, dict):
         unmigrated.append("guards.overrides")
     if "guards.profile" in unmigrated or "guards.overrides" in unmigrated:
         return None, {}

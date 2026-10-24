@@ -650,8 +650,14 @@ def layer_guard_state(layer_cfg, name):
     and `read` included; when both exist the NARROWER of the two wins by the
     guard's own rank and the conflict is reported. A `guards` that is present
     but not an object (42, a string, a list, true) gives the floor for every
-    guard; JSON null and a missing key stay absent. The floor is `block` (or
-    `none` for the production guards), never `off`.
+    guard; a `guards` that is JSON null, like a missing one, stays absent (as
+    before this change). INSIDE a `guards` object a key that is present is read
+    as written, so an explicit null `profile`, `overrides` or override value is
+    malformed and gives the floor, never absent. The one exception is the
+    UNMIGRATED legacy `guards.<name>`: null there is absent, as it was before
+    this change (tests/test_env_guard.py pins `envGuard: null` as off), so a
+    layer that never set the new keys resolves exactly as it did. The floor is `block` (or `none` for the
+    production guards), never `off`.
     """
     block = layer_cfg.get("guards") if isinstance(layer_cfg, dict) else None
     if block is not None and not isinstance(block, dict):
@@ -661,33 +667,40 @@ def layer_guard_state(layer_cfg, name):
     tiers, normalise, rank = guard_tiers(name)
 
     base = None
-    profile_raw = block.get("profile")
-    if profile_raw is not None:
-        profile = normalise_profile(profile_raw)
+    if "profile" in block:
+        profile = normalise_profile(block["profile"])
         if profile is None:
             base = _floor(name)
         else:
             base = PROFILE_MAP[profile][name]
-            overrides = block.get("overrides")
-            if overrides is not None and not isinstance(overrides, dict):
-                base = _floor(name)
-            elif isinstance(overrides, dict) and overrides.get(name) is not None:
-                base = _tier_or_floor(name, overrides[name])
+            base = _apply_overrides(block, name, base)
     else:
-        overrides = block.get("overrides")
-        if overrides is not None and not isinstance(overrides, dict):
-            base = _floor(name)
-        elif isinstance(overrides, dict) and overrides.get(name) is not None:
-            base = _tier_or_floor(name, overrides[name])
+        base = _apply_overrides(block, name, None)
 
     legacy_raw = block.get(name)
-    legacy = None if legacy_raw is None else normalise(legacy_raw)
-    if legacy is None:
+    if legacy_raw is None:
         return {"value": base, "legacy": False, "conflict": False}
+    legacy = normalise(legacy_raw)
     if base is None:
         return {"value": legacy, "legacy": True, "conflict": False}
     value = tiers[min(rank(base), rank(legacy))]
     return {"value": value, "legacy": True, "conflict": base != legacy}
+
+
+def _apply_overrides(block, name, base):
+    """`base` after the layer's `guards.overrides` has its say about `name`.
+
+    A key that is present is read as written: `overrides` that is not an
+    object, or a value for `name` that names no tier (JSON null included),
+    gives the floor. Only a key that is missing leaves `base` alone."""
+    if "overrides" not in block:
+        return base
+    overrides = block["overrides"]
+    if not isinstance(overrides, dict):
+        return _floor(name)
+    if name in overrides:
+        return _tier_or_floor(name, overrides[name])
+    return base
 
 
 def layer_guard_value(layer_cfg, name):

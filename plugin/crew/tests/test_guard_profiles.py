@@ -344,11 +344,11 @@ def test_null_missing_or_empty_guards_stays_absent(tmp_path, name, cfg):
     assert row["effective"] == crew_guards.GUARD_DEFAULTS[name]
 
 
-def test_null_profile_is_absent(tmp_path):
+def test_null_profile_is_malformed_and_gives_the_floor(tmp_path):
     row = _resolve(tmp_path, "adminMerge",
                    repo=_g(profile=None, overrides={"adminMerge": "ask"}))
 
-    assert row["repo"] == "ask"
+    assert row["repo"] == "block"
 
 
 # The owner's two layers, sanitised: the same per-guard values before (legacy
@@ -391,3 +391,21 @@ def test_layer_guard_value_none_only_when_layer_holds_nothing():
     assert crew_guards.layer_guard_value({"guards": 42}, "forcePush") == "block"
     assert crew_guards.layer_guard_value(
         {"guards": {"profile": "off"}}, "forcePush") == "block"
+
+
+@pytest.mark.parametrize("block", [
+    {"profile": None, "overrides": {"cloudGuard": "off"}},
+    {"profile": "off", "overrides": None},
+    {"profile": "off", "overrides": {"cloudGuard": None}},
+])
+def test_an_explicit_null_in_the_new_keys_gives_the_floor_never_absent(block):
+    state = crew_guards.layer_guard_state({"guards": block}, "cloudGuard")
+
+    assert state["value"] == "block"
+
+
+def test_a_null_legacy_guard_key_is_still_absent():
+    state = crew_guards.layer_guard_state({"guards": {"profile": "off", "cloudGuard": None}},
+                                          "cloudGuard")
+
+    assert state == {"value": "off", "legacy": False, "conflict": False}

@@ -1205,3 +1205,15 @@ def test_unmigrated_report_points_at_migrate():
     said = "\n".join(crew_upgrade._config_lines(  # pylint: disable=protected-access
         crew_upgrade.upgrade_config({"qa": "oops"})[1]))
     assert ("/crew:migrate" in said, "run `/crew:upgrade` again" in said) == (True, False)
+
+
+@pytest.mark.parametrize("block", [
+    {"profile": None, "overrides": {"cloudGuard": "off"}},
+    {"profile": "off", "overrides": None},
+])
+def test_a_null_profile_or_overrides_is_left_as_written_and_not_stamped(block):
+    got, notes = crew_upgrade.upgrade_config({"schema": 7, "guards": dict(block)})
+
+    assert got["guards"] == block
+    assert notes["schemaStamped"] is False
+    assert any(item.startswith("guards.") for item in notes["unmigrated"])
