@@ -235,7 +235,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.74**: Crew config from 157 keys to 87, guards profile, generated CONFIG.md. `crew` 1.2.74: the config shrinks from 157 keys to 87 (60 keys became constants at their old defaults), the twelve `guards.<name>` keys are replaced by `guards.profile` (`off | standard | strict`) plus `guards.overrides`, and `/crew:migrate` carries a schema 7 setup to schema 8.
+- **crew 1.2.75**: Crew config from 157 keys to 87, guards profile, generated CONFIG.md. `crew` 1.2.74: the config shrinks from 157 keys to 87 (60 keys became constants at their old defaults), the twelve `guards.<name>` keys are replaced by `guards.profile` (`off | standard | strict`) plus `guards.overrides`, and `/crew:migrate` carries a schema 7 setup to schema 8.
 - **crew 1.2.69**: Sabotage entry retargeted to a test id that survives L-0725. `crew` 1.2.69: test harness only. The sabotage entry "merged machine file keeps a consent key" now names `[machine-obsidian]` instead of `[machine-unsafeFocus]`, because L-0725 (#665) removes `context.autoClear.unsafeFocus` and the old id would collect nothing (exit 4). Checked with the mutation applied: `[machine-obsidian]` fails (RED, a real assertion). No behaviour change for users.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
