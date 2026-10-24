@@ -1053,8 +1053,21 @@ def cmd_sync():
         price it instead of running it forever.
     """
     try:
-        payload = json.load(sys.stdin)
-    except (OSError, ValueError):
+        raw = sys.stdin.read()
+    except OSError:
+        raw = ""
+    if not raw.strip():
+        # An empty payload means the producer upstream of this pipe died
+        # before printing (an exec that failed): refusing is the only answer
+        # that cannot let the caller advance its verified marker on nothing.
+        print("verify_record: sync refused an empty payload (the producer "
+              "printed nothing); the record was not written", file=sys.stderr)
+        return False
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        payload = {}
+    if not isinstance(payload, dict):
         payload = {}
     sha = payload.get("sha") or ""
     matched = payload.get("matched_rules") or []
@@ -1242,9 +1255,10 @@ def _sync(sha, matched, cmd_log, all_run=False):
         # Only a rule whose every command actually RAN has a wall time worth
         # caching. A credited command took 0s here and costs its full price
         # wherever it runs, so caching it would price the rule as free.
-        # Cached for EVERY rule, declared `seconds` or not: the gates price a
-        # declared rule at min(declared, cached), so a stale over-statement
-        # stops reading as chronic once one clean run here measures it.
+        # Cached for EVERY rule, declared `seconds` or not: the gate prices a
+        # rule at its cached measurement when one is valid (latest wins), so a
+        # stale declared price, over- or under-stated, is replaced once one
+        # clean run here measures it.
         if all(s == "pass" for s in statuses):
             # STORE EVEN 0s, as max(1, ceil(...)). `if total > 0` used to
             # discard a subsecond measurement outright, so a genuinely fast

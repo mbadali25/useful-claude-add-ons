@@ -740,9 +740,10 @@ def test_the_neighbouring_shapes_do_not_reorder_a_rule(flavour, case,
 #
 # Declared `seconds` are timed once on one host and go stale. A rule stated
 # over the budget ALONE is chronic and never runs at Stop, however fast it
-# really is here. The gate prices a declared rule at min(declared, cached):
-# a cheaper measurement can turn a chronic deferral into a run; a dearer one
-# can never turn a run into a deferral.
+# really is here. A valid cached measurement replaces the declared price in
+# BOTH directions (the dearer direction is test_verify_gate_reprice.py): a
+# cheaper one can turn a chronic deferral into a run, a dearer one a run into
+# a deferral.
 
 _BIG_ALONE = {
     "version": 1,
@@ -781,23 +782,6 @@ def test_a_cheaper_measurement_runs_a_rule_its_declared_price_defers(flavour, tm
         "deferred. " + result.stderr)
     assert "priced at 3s, measured on this machine, below its declared 90" in result.stderr, (
         result.stderr)
-
-
-@pytest.mark.parametrize("flavour", _FLAVOURS)
-def test_a_dearer_measurement_never_defers_a_declared_rule(flavour, tmp_path):
-    """MUST-BLOCK the wrong direction. Declared 5s, a stale cache says 999s:
-    replacing instead of taking the minimum would make it chronic and stop
-    it running at Stop at all."""
-    root = _repo(tmp_path, _CHEAP_ALONE)
-    _seed_timing(root, _CHEAP_ALONE, 999)
-
-    result = _run(flavour, root)
-
-    assert result.returncode == 0, result.stderr
-    assert "echo RAN-cheap-5" in _ran(result), (
-        "a cached measurement ABOVE the declared price deferred the rule. "
-        + result.stderr)
-    assert "below its declared" not in result.stderr, result.stderr
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)

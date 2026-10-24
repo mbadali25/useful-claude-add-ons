@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.76**: The Stop gate re-prices a rule from its latest measurement both ways, and a dead record sync no longer advances the verified marker. `crew` 1.2.76: a rule that really costs more on this machine than its declared `seconds` is now priced at what it cost and deferred when that is over the Stop budget, a large rule set no longer fails the record sync with "Argument list too long", and a record sync that did not run no longer marks the tree verified.
 - Taste-skill and ui-ux-pro-max in the Community install rows. The installers now offer `taste-skill` (art direction for frontend design) and `ui-ux-pro-max` (UI/UX styles, palettes, fonts and stacks) in the Community picker, opt-in (unticked by default because a tag can move and a SHA ref is rejected), pinned to the reviewed tags v2.1.4 and v2.15.0.
-- **crew 1.2.75**: The cloud guard no longer reads a php option value or `php -v` as code. `crew` 1.2.75: `php -dxdebug.mode=coverage vendor/bin/phpunit`, `php -v`, `php -m`, `php --ini` and `xargs php -l` are no longer refused by the terraform-apply guard; php given code (`-r`, a heredoc, a pipe) is still refused.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
