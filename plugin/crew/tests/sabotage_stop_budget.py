@@ -73,4 +73,44 @@ STOP_BUDGET_MUTATIONS = (
      '  if [ -f "$BASE_AT" ]; then\n    CAND=$(head',
      '  if [ -e "$BASE_AT" ]; then\n    CAND=$(head',
      _T + "test_a_baseline_that_is_a_fifo_refuses_the_turn_without_hanging[sh]"),
+    # L-0905: the pricing floor, the sync payload and the dead producer.
+    ("a cached zero prices a declared rule (the positive floor is dropped)", SH,
+     "                            and cached > 0):\n"
+     "                        rule_secs[ri] = cached\n"
+     "                        if cached < secs:\n",
+     "                            and cached >= 0):\n"
+     "                        rule_secs[ri] = cached\n"
+     "                        if cached < secs:\n",
+     "tests/test_verify_gate_stop_budget.py::test_an_unusable_measurement_leaves_the_declared_price[0-sh]"),
+    ("the sync payload rides on argv again", SH,
+     'with open(sys.argv[1], encoding="utf-8") as fh:\n    extras = json.loads(fh.read())\n',
+     "extras = json.loads(sys.argv[1])\n",
+     "tests/test_verify_gate_sync_payload.py::test_a_payload_over_the_argv_limit_reaches_the_record[sh]"),
+    ("the sync payload rides on argv again (call site)", SH,
+     "' \"$EXTRAS_FILE\" \"$SYNC_SHA\"",
+     "' \"$EXTRAS\" \"$SYNC_SHA\"",
+     "tests/test_verify_gate_sync_payload.py::test_a_payload_over_the_argv_limit_reaches_the_record[sh]"),
+    ("only the last pipeline stage decides the sync status", SH,
+     'if [ "$SYNC_STATUS" -eq 0 ] && { [ "${SYNC_PIPE[0]}"',
+     'if false && { [ "${SYNC_PIPE[0]}"',
+     "tests/test_verify_gate_sync_payload.py::test_a_failed_sync_producer_does_not_advance_the_marker[sh]"),
+    ("an empty sync payload is accepted", RECORD,
+     "    if not raw.strip():\n",
+     "    if False:\n",
+     "tests/test_verify_gate_sync_payload.py::test_an_empty_sync_payload_is_refused"),
+    ("a rule child inherits the hook's stdin", SH,
+     '>"$RULE_OUT_FILE" 2>&1 </dev/null 4>&- &',
+     '>"$RULE_OUT_FILE" 2>&1 4>&- &',
+     "tests/test_verify_gate_sync_payload.py::test_the_rule_child_redirects_stdin_from_devnull_in_the_run_line"),
+    ("a cached true prices a rule with no declared seconds", SH,
+     "                    if (isinstance(cached, int) and not isinstance(cached, bool)\n"
+     "                            and cached > 0):\n"
+     "                        rule_secs[ri] = cached\n"
+     "                        measured_used[ri] = True\n",
+     "                    if (isinstance(cached, int)\n"
+     "                            and cached > 0):\n"
+     "                        rule_secs[ri] = cached\n"
+     "                        measured_used[ri] = True\n",
+     "tests/test_verify_gate_reprice.py::"
+     "test_an_unusable_measurement_does_not_price_a_rule_with_no_declared_seconds[True-sh]"),
 )

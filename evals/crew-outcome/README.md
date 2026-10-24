@@ -165,6 +165,11 @@ a wall-clock stop, and the report says how many runs were graded that way; it is
   3 resumes are used up (`endedBy: resume-cap`, graded as it stands and reported as such). Config:
   `autopilot.mode: plan`, `approval: self`, `questions: self`, `reviewPolicy: fix-and-rereview`,
   `scope.allowCliApproval: true`, the Codex model pinned, everything else crew's default.
+  **No codemap in the crew arm** (`removePaths: [".crew/codemap"]`, arm file): this repository's map places only some
+  Touch entries (not `CHANGELOG.md`, `README.md` or `.claude-plugin/marketplace.json`), so autopilot's size check reads
+  `subsystems` as unknown and stops at `split-check-unknown` before writing any code. With no codemap the measure is
+  `unmeasured` and does not stop. It is a treatment difference (crew runs as on a repository not yet onboarded, without
+  codemap context) and the results doc says so.
 - **Baseline arm**: implement, run `/code-review`, fix every reported finding, repeat until a cycle reports no findings
   or 3 cycles complete.
 - **Verdict**: per task, the median over that arm's scored runs (at least 2 known runs per arm per task, else the task

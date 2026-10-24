@@ -437,11 +437,11 @@ Notable rules, re-read directly:
   `test_tooling_alone_checker_passes_its_must_block_must_allow_suite`. JUDGEMENT: it overlaps rules 0, 9, 11, 15, 31 and 35 by
   path; that overlap is the point, since it adds the tooling-alone check those rules lack.
 
-**Still unresolved at this anchor:** a declared `seconds` figure is only
-overwritten by measurement when the rule carries *no* `seconds` at all
-(`plugin/crew/hooks/scripts/verify_record.py`, gated on `if
-rule.get("unknown")`) — a stale declared number is otherwise permanent until
-someone edits the JSON by hand. This pass did not audit every rule's `seconds`
+**Superseded by L-0905 (crew 1.2.76):** this paragraph recorded that a declared
+`seconds` figure was only overwritten by measurement when the rule carried *no*
+`seconds`. `verify-gate.sh` now prices a rule at a valid cached measurement in
+both directions (latest wins), so a stale declared number no longer outlives one
+clean run on that machine. The audit caveat that follows is unchanged: this pass did not audit every rule's `seconds`
 against a fresh timing; it re-read the file's own `_note` and each `why` field
 for what they claim and reports those claims as claims, not as independent
 measurements, except where a command was actually re-run above.

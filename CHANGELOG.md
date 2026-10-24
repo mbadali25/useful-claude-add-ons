@@ -9,6 +9,20 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.77: crew config from 157 keys to 87, guards profile, generated CONFIG.md (L-0725)
+
+- **Summary.** `crew` 1.2.77: the config shrinks from 157 keys to 87 (60 keys became constants at their old defaults), the twelve `guards.<name>` keys are replaced by `guards.profile` (`off | standard | strict`) plus `guards.overrides`, and `/crew:migrate` carries a schema 7 setup to schema 8.
+- **Breaking.** The old `guards.<name>` keys are still read as aliases for `guards.overrides.<name>` until `/crew:migrate` runs; a config carrying a removed key is told so by the inert-setting report, and `/crew:migrate` refuses while a removed key holds a non-default value unless `--accept-dropped <key>`. `CONFIG.md` is generated whole (217 lines, was 3,897) and its rationale moved to `docs/crew/config-rationale.md`; `CONFIG.md §N` citations are gone.
+- The no-python fallbacks in `cloud-guard.sh` and `env-guard.sh` no longer trust the first match; a layer is unarmed only when `off` can be proved.
+- Equivalence against the base on the full host corpus: 181 of 181 readable inputs identical, 0 differences.
+- Review round 2 fixes: the no-python guard fallback no longer reads a config path whose parent is a file (or cannot be searched) as absent, and `/crew:migrate --global --rollback` now holds the config writer's lock from its edited-since check through the restore.
+
+### Fixed — crew 1.2.76: the Stop gate re-prices a rule from its latest measurement both ways, and a dead record sync no longer advances the verified marker (L-0905)
+
+- **Summary.** `crew` 1.2.76: a rule that really costs more on this machine than its declared `seconds` is now priced at what it cost and deferred when that is over the Stop budget, a large rule set no longer fails the record sync with "Argument list too long", and a record sync that did not run no longer marks the tree verified.
+- `verify-gate.sh` prices a rule at its cached measurement in both directions (the latest valid positive integer wins; it was `min(declared, cached)`, so a slow rule kept its stale cheap price and never deferred its neighbour). A rule re-priced over the budget alone is chronic and runs only under `/crew:verify --all`, which re-measures it; the notice (`priced at Ns, measured on this machine, above its declared Ds`) names that. The matched-rule JSON now reaches the record sync through a temp file instead of one argv element (a single argument is capped at 128 KiB on Linux, the whole command line at 32,767 characters on Windows). The sync status is nonzero when any stage of its pipeline failed, and `verify_record.py sync` refuses an empty payload, so the marker does not advance on a record that was never written. Breaking: a rule measured over the budget on a machine stops running at Stop there; a failed sync now holds the marker.
+- Tests: `test_verify_gate_reprice.py`, `test_verify_gate_sync_payload.py`, one case in `test_verify_gate_quiet.py`; nine `sabotage_*.py` entries, each confirmed red. Docs: `plugin/crew/CONFIG.md` Pricing paragraph.
+
 ### Added — taste-skill and ui-ux-pro-max in the Community install rows (L-0887)
 
 - **Summary.** The installers now offer `taste-skill` (art direction for frontend design) and `ui-ux-pro-max` (UI/UX styles, palettes, fonts and stacks) in the Community picker, opt-in (unticked by default because a tag can move and a SHA ref is rejected), pinned to the reviewed tags v2.1.4 and v2.15.0.
@@ -28,14 +42,6 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Behaviour.** A grading infrastructure failure or timeout is an unscored `infra` row, never an escaped defect; a grading exception still writes the paid row; a crew run that hits the harness resume cap is graded as it stands and marked `endedBy: resume-cap`; Codex cost is a lower bound at the short-context list price (read 2026-10-23).
 - **Spike.** The crew arm showed a Codex FINDINGS, fix, re-review cycle (2 review cycles, 0.68 USD Claude list price, Codex unpriced).
 - **Docs.** none - evals/ and scripts/ only, no plugin/crew change.
-
-### Changed — crew 1.2.75: crew config from 157 keys to 87, guards profile, generated CONFIG.md (L-0725)
-
-- **Summary.** `crew` 1.2.75: the config shrinks from 157 keys to 87 (60 keys became constants at their old defaults), the twelve `guards.<name>` keys are replaced by `guards.profile` (`off | standard | strict`) plus `guards.overrides`, and `/crew:migrate` carries a schema 7 setup to schema 8.
-- **Breaking.** The old `guards.<name>` keys are still read as aliases for `guards.overrides.<name>` until `/crew:migrate` runs; a config carrying a removed key is told so by the inert-setting report, and `/crew:migrate` refuses while a removed key holds a non-default value unless `--accept-dropped <key>`. `CONFIG.md` is generated whole (217 lines, was 3,897) and its rationale moved to `docs/crew/config-rationale.md`; `CONFIG.md §N` citations are gone.
-- The no-python fallbacks in `cloud-guard.sh` and `env-guard.sh` no longer trust the first match; a layer is unarmed only when `off` can be proved.
-- Equivalence against the base on the full host corpus: 181 of 181 readable inputs identical, 0 differences.
-- Review round 2 fixes: the no-python guard fallback no longer reads a config path whose parent is a file (or cannot be searched) as absent, and `/crew:migrate --global --rollback` now holds the config writer's lock from its edited-since check through the restore.
 
 ### Changed — crew 1.2.69: sabotage entry retargeted to a test id that survives L-0725 (L-0898)
 
