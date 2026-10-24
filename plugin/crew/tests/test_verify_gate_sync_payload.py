@@ -30,7 +30,7 @@ _PAD = 600
 def _big_map():
     rules = []
     for index in range(_RULES):
-        command = "echo rule-%d # %s" % (index, "x" * _PAD)
+        command = f"echo rule-{index} # {'x' * _PAD}"
         rules.append({"paths": ["a.py"], "seconds": 90, "run": [command],
                       "why": "chronic: persisted by name, never run, so the suite is fast"})
     return {"version": 1, "rules": rules, "default": [], "unmapped": "ignore"}
@@ -103,9 +103,9 @@ def test_a_failed_sync_producer_does_not_advance_the_marker(flavour, tmp_path):
     assert "NOT advancing the marker" in result.stderr, result.stderr
 
 
-def test_an_empty_sync_payload_is_refused():
+def test_an_empty_sync_payload_is_refused(tmp_path):
     """verify_record.py sync on an empty stdin exits nonzero and says why."""
-    result = subprocess.run([sys.executable, _RECORD_PY, "sync"], input="",
+    result = subprocess.run([sys.executable, _RECORD_PY, "sync"], input="", cwd=str(tmp_path),
                             capture_output=True, text=True, check=False,
                             timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
 
@@ -118,7 +118,8 @@ _GATE_SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
 
 def test_the_rule_child_redirects_stdin_from_devnull_in_the_run_line():
     """MUST-ALLOW guard. The run line that starts a rule keeps `</dev/null`."""
-    text = open(_GATE_SH, encoding="utf-8").read()
+    with open(_GATE_SH, encoding="utf-8") as handle:
+        text = handle.read()
 
     run_lines = [ln for ln in text.splitlines()
                  if 'eval "$c"' in ln and "RULE_DONE_FILE" in ln]
@@ -131,10 +132,10 @@ def test_the_rule_child_redirects_stdin_from_devnull_in_the_run_line():
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_the_rule_child_redirects_stdin_from_devnull(flavour, tmp_path):
     """On POSIX, fd 0 of a rule child is the null device."""
+    probe = "import os,sys;sys.exit(0 if os.path.samestat(os.fstat(0), os.stat('/dev/null')) else 1)"
     verify_map = {"version": 1, "rules": [
         {"paths": ["a.py"], "seconds": 1,
-         "run": ["python3 -c \"import os,sys;sys.exit(0 if os.path.samestat(os.fstat(0), os.stat('/dev/null')) else 1)\" "
-                 "|| python -c \"import os,sys;sys.exit(0 if os.path.samestat(os.fstat(0), os.stat('/dev/null')) else 1)\""],
+         "run": [f'python3 -c "{probe}" || python -c "{probe}"'],
          "why": "stdin is /dev/null"}],
         "default": [], "unmapped": "ignore"}
     root = _repo(tmp_path, verify_map)

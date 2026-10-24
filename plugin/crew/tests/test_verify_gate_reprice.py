@@ -8,12 +8,9 @@ is deferred (counted NOT VERIFIED) and runs only under `--all`, which also
 re-measures it.
 """
 import json
-import os
 import re
 
 import pytest
-
-import verify_record
 
 import context  # noqa: F401  pylint: disable=unused-import
 from test_verify_gate_stop_budget import (  # pylint: disable=wrong-import-order
@@ -84,6 +81,7 @@ def test_a_slow_rule_measured_over_two_runs_defers_its_neighbour(flavour, tmp_pa
     first = _run(flavour, root)
     timings_path = root / ".crew" / _TIMINGS
     timings = json.loads(timings_path.read_text(encoding="utf-8"))
+    import verify_record  # pylint: disable=import-outside-toplevel
     neighbour = verify_record.rule_key(verify_map["rules"][1])
     timings["rules"][neighbour] = 58
     timings_path.write_text(json.dumps(timings), encoding="utf-8")
