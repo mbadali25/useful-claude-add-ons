@@ -312,6 +312,8 @@ def check_arm_shape(path, arm):
     need(isinstance(permissions, dict), "settings.permissions must be an object")
     need(strings(permissions.get("deny", [])), "settings.permissions.deny must be a list of strings")
     need(strings(arm.get("proxyIgnoreHosts", [])), "proxyIgnoreHosts must be a list of strings")
+    need(count(arm["cli"].get("maxResumes" if arm["arm"] == "crew" else "maxCycles")),
+         "cli.maxResumes (crew) or cli.maxCycles (baseline) must be present: the protocol is pinned, not defaulted")
     if arm["arm"] == "crew":
         need(isinstance(arm["crewConfig"], dict), "crewConfig must be an object")
         need(isinstance(arm["assignment"], dict) and isinstance(arm["assignment"].get("template"), str)
@@ -923,8 +925,8 @@ def read_results(path):
                     fail(f"{path}:{number}: not a JSON object; results are append-only full rows")
                 if not all(isinstance(row.get(k), str) for k in ("task", "bucket", "arm", "runStatus")):
                     fail(f"{path}:{number}: task, bucket, arm and runStatus must be present strings")
-                if isinstance(row.get("attempt"), bool) or not isinstance(row.get("attempt"), int):
-                    fail(f"{path}:{number}: attempt must be present and an integer")
+                if row.get("attempt") not in (1, 2) or isinstance(row.get("attempt"), bool):
+                    fail(f"{path}:{number}: attempt must be 1 or 2 (a chain is one attempt and one rerun)")
                 for key in ("costUsd", "ownCostUsd", "unscoredSpendUsd", "claudeCostUsd", "escapedDefects",
                             "regressionTestsFailed"):
                     value = row.get(key)
@@ -1498,7 +1500,6 @@ def run_chain(ctx, task, arm):
     if second["runStatus"] in ("unscorable", "infra", "error"):
         # costUsd carries the first attempt, so this is the whole chain's spend
         second["unscoredSpendUsd"] = second["costUsd"]
-        second["costUsd"] = UNKNOWN if second["costUsd"] == UNKNOWN else 0.0
     append_result(ctx["results"], second)
     return second
 
@@ -1644,6 +1645,9 @@ def report_text(rows):
 def selected_tasks(args):
     dirs = task_dirs(args.tasks_dir)
     tasks = [load_task(d) for d in dirs]
+    names = [t["name"] for t in tasks]
+    if len(set(names)) != len(names):
+        fail(f"{args.tasks_dir}: two task directories share a task name")
     if args.task:
         tasks = [t for t in tasks if t["name"] == args.task]
         if not tasks:
@@ -1708,7 +1712,7 @@ def lock_results(results_path):
     # POSIX only, like the suite
     import fcntl  # pylint: disable=import-outside-toplevel
     # held until the run ends, so not a `with` block
-    handle = open(results_path + ".lock", "w", encoding="utf-8")  # noqa: SIM115  # pylint: disable=consider-using-with
+    handle = open(os.path.realpath(results_path) + ".lock", "w", encoding="utf-8")  # noqa: SIM115  # pylint: disable=consider-using-with
     try:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
@@ -1721,6 +1725,14 @@ def cmd_run(args):
     arms = check_method(args.eval_dir)
     tasks = selected_tasks(args)
     docker = which("docker")
+    problems = []
+    for task in tasks:
+        # every precondition `validate` enforces holds before anything is billed
+        problems.extend(validate_task(task, args.source_repo, docker))
+    if problems:
+        for problem in problems:
+            print("validate: " + problem, file=sys.stderr)
+        fail("run refused: the selected task(s) do not validate")
     if not canary_ok(args.results, docker, args.eval_dir):
         fail("no passing canary for the current image: run evals/crew-outcome/container/canary.sh and keep its "
              "output as canary.txt beside the results file")
@@ -1785,10 +1797,20 @@ def build_parser():
     return parser
 
 
+def resolve_paths(args):
+    """Every path the command shares state through is resolved once, here, so an alias (a symlink,
+    a relative spelling) cannot give two processes two locks or two budgets for one file."""
+    for name in ("eval_dir", "tasks_dir", "source_repo", "results", "runs_dir", "crew_plugin"):
+        value = getattr(args, name, None)
+        if value:
+            setattr(args, name, os.path.realpath(value))
+
+
 def main(argv):
     args = build_parser().parse_args(argv)
     if args.tasks_dir is None:
         args.tasks_dir = os.path.join(args.eval_dir, "tasks")
+    resolve_paths(args)
     try:
         with contextlib.suppress(AttributeError):
             if args.command == "run" and args.runs < 1:

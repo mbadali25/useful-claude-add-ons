@@ -22,6 +22,7 @@ Run: python3 scripts/_test/crew-outcome-eval.py
 from __future__ import annotations
 
 import argparse
+import contextlib
 import importlib.util
 import io
 import json
@@ -32,7 +33,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import contextlib
 
 def read_text(path):
     with open(path, encoding="utf-8") as fh:
@@ -742,7 +742,7 @@ def case_an_exhausted_paid_failure_keeps_its_spend(tmp):
     rows = eval_mod.read_results(fix.results)
     ok = (len(rows) == 2 and final["runStatus"] == "unscorable"
           and isinstance(final.get("unscoredSpendUsd"), float) and final["unscoredSpendUsd"] > 0
-          and final["costUsd"] == 0.0)
+          and final["costUsd"] == final["unscoredSpendUsd"])
     return ok, rows
 
 
@@ -1627,6 +1627,59 @@ def case_a_non_finite_wall_clock_limit_is_refused(tmp):
     return bool(message), message
 
 
+def case_run_validates_every_task_before_any_billed_work(tmp):
+    fix = Fix(tmp)
+    fix.task["reference"] = "0" * 40
+    write(os.path.join(fix.task_dir, "task.json"), json.dumps(fix.task))
+    write(os.path.join(os.path.dirname(fix.results), "canary.txt"), "PASS something\ncanary: PASS\n")
+    errors = io.StringIO()
+    with patched_env(fix.env), contextlib.redirect_stderr(errors):
+        code = eval_mod.main(["--tasks-dir", fix.task_root, "--eval-dir", REAL_EVAL_DIR, "--source-repo", fix.src,
+                              "run", "--task", fix.task["name"], "--results", fix.results, "--runs-dir", fix.runs])
+    ran = os.path.exists(fix.results) or os.path.isdir(fix.runs) and bool(os.listdir(fix.runs))
+    return code == 2 and "do not validate" in errors.getvalue() and not ran, (code, errors.getvalue()[:300], ran)
+
+
+def case_two_task_directories_with_one_name_are_refused(tmp):
+    fix = Fix(tmp)
+    shutil.copytree(fix.task_dir, os.path.join(fix.task_root, "copy-of-task"))
+    args = argparse.Namespace(tasks_dir=fix.task_root, task=None, all=True)
+    message = refused(eval_mod.selected_tasks, args)
+    return bool(message and "share a task name" in message), message
+
+
+def case_a_symlink_alias_of_the_results_file_shares_one_lock(tmp):
+    path = os.path.join(tmp, "results.jsonl")
+    write(path, "")
+    alias = os.path.join(tmp, "alias.jsonl")
+    os.symlink(path, alias)
+    first = eval_mod.lock_results(path)
+    try:
+        message = refused(eval_mod.lock_results, alias)
+    finally:
+        first.close()
+    return bool(message and "another run" in message), message
+
+
+def case_a_fabricated_third_attempt_row_is_refused(tmp):
+    path = os.path.join(tmp, "results-a3.jsonl")
+    write(path, json.dumps({"task": "a", "bucket": "S", "arm": "crew", "runStatus": "scored", "attempt": 3}) + "\n")
+    message = refused(eval_mod.read_results, path)
+    return bool(message and "attempt" in message), message
+
+
+def case_a_missing_pinned_protocol_limit_in_an_arm_is_refused(tmp):
+    got = []
+    for name, key in (("crew", "maxResumes"), ("baseline", "maxCycles")):
+        arm = json.loads(slurp(os.path.join(REAL_EVAL_DIR, "arms", name + ".json")))
+        del arm["cli"][key]
+        path = os.path.join(tmp, name + ".json")
+        write(path, json.dumps(arm))
+        message = refused(eval_mod.load_arm, path)
+        got.append(bool(message and "pinned" in message))
+    return all(got), got
+
+
 def case_a_scored_row_with_a_wrong_type_cost_is_refused(tmp):
     path = os.path.join(tmp, "results-cost.jsonl")
     write(path, json.dumps({"task": "a", "bucket": "S", "arm": "crew", "runStatus": "scored", "attempt": 1,
@@ -2007,6 +2060,11 @@ CASES = (
     ("must-block: a scored retry chain costs the whole chain and the task uses the median of chains", case_a_scored_retry_chain_costs_the_whole_chain_and_the_task_uses_the_median_of_chains),
     ("must-block: transcripts reached through a symlink make usage UNKNOWN", case_transcripts_reached_through_a_symlink_make_usage_unknown),
     ("must-block: a non-finite wall-clock limit is refused", case_a_non_finite_wall_clock_limit_is_refused),
+    ("must-block: run validates every task before any billed work", case_run_validates_every_task_before_any_billed_work),
+    ("must-block: two task directories with one name are refused", case_two_task_directories_with_one_name_are_refused),
+    ("must-block: a symlink alias of the results file shares one lock", case_a_symlink_alias_of_the_results_file_shares_one_lock),
+    ("must-block: a fabricated third attempt row is refused", case_a_fabricated_third_attempt_row_is_refused),
+    ("must-block: a missing pinned protocol limit in an arm is refused", case_a_missing_pinned_protocol_limit_in_an_arm_is_refused),
     ("must-block: a scored row with a wrong-type cost is refused", case_a_scored_row_with_a_wrong_type_cost_is_refused),
     ("must-block: an exception in the arm driver still writes a paid row", case_an_exception_in_the_arm_driver_still_writes_a_paid_row),
     ("must-block: a grading infra failure is retried once", case_a_grading_infra_failure_is_retried_once_before_the_run_is_unscored),
