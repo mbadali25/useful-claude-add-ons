@@ -26,7 +26,7 @@ _CROSSING = (
 
 
 def _rules():
-    with open(_MAP, encoding="utf-8") as fh:
+    with open(_MAP, encoding="utf-8", errors="strict") as fh:
         return json.load(fh)["rules"]
 
 
