@@ -1167,7 +1167,6 @@ def test_every_guard_keeps_its_value_through_the_rewrite(layer):
 # ---------------------------------------------------------------- the apply takes the config writer's lock
 
 def _edit(path, key, value, wait=None):
-    import crew_config_files  # pylint: disable=import-outside-toplevel
 
     def mutate(parsed):
         parsed[key] = value
@@ -1191,7 +1190,6 @@ def _between_check_and_replace(monkeypatch, action):
 
 
 def test_global_apply_holds_the_machine_lock_across_check_and_replace(machine, monkeypatch):
-    import crew_config_files  # pylint: disable=import-outside-toplevel
     _write(machine, _fixture_bytes("machine.config.json"))
     seen = {}
 
@@ -1282,7 +1280,6 @@ def test_the_lock_is_released_when_the_replace_fails(machine, monkeypatch):
 
 
 def test_a_held_machine_lock_is_a_refusal_with_nothing_written(machine, capsys, monkeypatch):
-    import crew_config_files  # pylint: disable=import-outside-toplevel
     _write(machine, _fixture_bytes("machine.config.json"))
     before = _read(machine)
     monkeypatch.setattr(crew_config_files, "LOCK_WAIT_SECONDS", 0.1)
