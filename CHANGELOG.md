@@ -9,6 +9,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.75: the cloud guard no longer reads a php option value or `php -v` as code (L-0853)
+
+- **Summary.** `crew` 1.2.75: `php -dxdebug.mode=coverage vendor/bin/phpunit`, `php -v`, `php -m`, `php --ini` and `xargs php -l` are no longer refused by the terraform-apply guard; php given code (`-r`, a heredoc, a pipe) is still refused.
+- `_interp_codes` in `crew_guards.py` read the `r` in an attached php option value (`-dxdebug.mode=coverage`, `-dmemory_limit=-1`) as the `-r` code option, and read a php command with no script and only `-v`, `-m`, `-i`, `-l`, `-h` or `--version`, `--ini` as code on stdin. Value letters now take their attached value, and those report-only options mark the run as reading nothing. Because one such word made the whole line could-not-tell, the denial also quoted the first glob, quoted pattern, heredoc or sed expression of the line; those lines are allowed again.
+- Tests: `L0853_ALLOW` and `L0853_REFUSE` in `plugin/crew/tests/test_cloud_guard.py`, through both drivers. Sabotage-checked by hand: reverting either half turns the matching allow rows red. No `sabotage*.py` entry (harness path; follow-up).
+
 ### Added — crew 1.2.74: the crew-outcome eval harness, container isolation and a two-task baseline (L-0728 slice 2, L-0851)
 
 - **Summary.** `crew` 1.2.74: the repo now carries the harness that measures whether crew's process beats a plain Claude run on real tasks (isolated container, frozen hidden tests, two baseline tasks); no crew runtime behaviour changes, and the measured results come in slice 3. The Codex reviewer's list price (`gpt-6-sol`) is now pinned, so the Codex part of a crew run's cost is priced; the run's total stays UNKNOWN when Claude usage cannot be counted (T-0509 folded in).
