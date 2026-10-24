@@ -1,0 +1,39 @@
+# SENTINEL, NOT 0. This used to start at 0 ("success") and only get
+# reassigned INSIDE the `-n "$PY"` / `-f "$SYNC_PY"` guards -- so with no
+# python on PATH, or verify_record.py missing, SYNC_STATUS silently stayed
+# 0 and the decision below read "sync succeeded" from a sync that never
+# even RAN. Found by the powershell-security-hardening review: hide python,
+# add a reach-excluded rule, run Stop once -- the notice printed, the
+# record was never touched, and both markers advanced anyway. 99 means "not
+# yet confirmed"; only a sync that actually completed may set it to 0.
+SYNC_STATUS=99
+if [ -n "$PY" ] && [ -n "$EXTRAS" ]; then
+  SYNC_PY="$FP_DIR/verify_record.py"
+  if [ -f "$SYNC_PY" ]; then
+    SYNC_SHA=$(git rev-parse HEAD 2>/dev/null)
+    "$PY" -c '
+import json, sys
+try:
+    sys.stdout.reconfigure(newline="\n")
+except (AttributeError, ValueError):
+    pass
+extras = json.loads(sys.argv[1])
+cmd_log = []
+for line in sys.stdin.read().split("\n"):
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        cmd_log.append(json.loads(line))
+    except ValueError:
+        pass
+print(json.dumps({"sha": sys.argv[2], "all": sys.argv[3] == "--all", "matched_rules": extras.get("matched_rules", []), "cmd_log": cmd_log}))
+' "$EXTRAS" "$SYNC_SHA" "$BUDGET_FLAG" <<< "$CMD_LOG" | tr -d '\r' | gate_record_sync "$PY" "$SYNC_PY"
+    SYNC_STATUS=${PIPESTATUS[2]}
+  else
+    echo "verify-gate: could not sync the record (verify_record.py not found at $SYNC_PY); NOT advancing the marker" >&2
+  fi
+else
+  echo "verify-gate: could not sync the record (no python, or the matcher produced no record data); NOT advancing the marker" >&2
+fi
+

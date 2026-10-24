@@ -1,0 +1,68 @@
+verify-gate: env pinned - ENV=unset AWS_PROFILE=unset AWS_DEFAULT_REGION=unset KUBECONFIG=unset TF_WORKSPACE=unset AWS_REGION=unset AWS_DEFAULT_PROFILE=unset AZURE_SUBSCRIPTION_ID=unset ARM_SUBSCRIPTION_ID=unset TF_VAR_environment=unset
+verify-gate: 1s  python3 plugin/crew/hooks/scripts/crew_instructions.py rules --root . --check
+verify-gate: env pinned - ENV=unset AWS_PROFILE=unset AWS_DEFAULT_REGION=unset KUBECONFIG=unset TF_WORKSPACE=unset AWS_REGION=unset AWS_DEFAULT_PROFILE=unset AZURE_SUBSCRIPTION_ID=unset ARM_SUBSCRIPTION_ID=unset TF_VAR_environment=unset
+verify-gate: 2s  (cd plugin/crew && python3 hooks/scripts/_test/validate-prompts.py)
+verify-gate: env pinned - ENV=unset AWS_PROFILE=unset AWS_DEFAULT_REGION=unset KUBECONFIG=unset TF_WORKSPACE=unset AWS_REGION=unset AWS_DEFAULT_PROFILE=unset AZURE_SUBSCRIPTION_ID=unset ARM_SUBSCRIPTION_ID=unset TF_VAR_environment=unset
+verify-gate: 2s  python3 -m pytest plugin/crew/tests/test_verify_reach.py -q
+verify-gate: env pinned - ENV=unset AWS_PROFILE=unset AWS_DEFAULT_REGION=unset KUBECONFIG=unset TF_WORKSPACE=unset AWS_REGION=unset AWS_DEFAULT_PROFILE=unset AZURE_SUBSCRIPTION_ID=unset ARM_SUBSCRIPTION_ID=unset TF_VAR_environment=unset
+verify-gate: 9s  bash skills/doc-builder/scripts/_test/checklist.sh
+verify-gate: env pinned - ENV=unset AWS_PROFILE=unset AWS_DEFAULT_REGION=unset KUBECONFIG=unset TF_WORKSPACE=unset AWS_REGION=unset AWS_DEFAULT_PROFILE=unset AZURE_SUBSCRIPTION_ID=unset ARM_SUBSCRIPTION_ID=unset TF_VAR_environment=unset
+verify-gate: 9s  python3 -m pytest plugin/crew/tests/test_done_check2_gate.py -q
+verify-gate: env pinned - ENV=unset AWS_PROFILE=unset AWS_DEFAULT_REGION=unset KUBECONFIG=unset TF_WORKSPACE=unset AWS_REGION=unset AWS_DEFAULT_PROFILE=unset AZURE_SUBSCRIPTION_ID=unset ARM_SUBSCRIPTION_ID=unset TF_VAR_environment=unset
+verify-gate: 22s  python3 -m pytest plugin/crew/tests/test_crew_trailers.py -q
+verify-gate: env pinned - ENV=unset AWS_PROFILE=unset AWS_DEFAULT_REGION=unset KUBECONFIG=unset TF_WORKSPACE=unset AWS_REGION=unset AWS_DEFAULT_PROFILE=unset AZURE_SUBSCRIPTION_ID=unset ARM_SUBSCRIPTION_ID=unset TF_VAR_environment=unset
+VERIFY FAILED: python3 -m pytest plugin/crew/tests/test_diagram_check.py plugin/crew/tests/test_diagram_doc.py -q
+C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\Lib\subprocess.py:555: in run
+    with Popen(*popenargs, **kwargs) as process:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\Lib\subprocess.py:1005: in __init__
+    errread, errwrite) = self._get_handles(stdin, stdout, stderr)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\Lib\subprocess.py:1380: in _get_handles
+    p2cread = self._make_inheritable(p2cread)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <Popen: returncode: None args: ['C:\\Program Files\\Git\\bin\\bash.exe', 'C:...>, handle = 496
+
+    def _make_inheritable(self, handle):
+        """Return a duplicate of handle, which is inheritable"""
+>       h = _winapi.DuplicateHandle(
+            _winapi.GetCurrentProcess(), handle,
+            _winapi.GetCurrentProcess(), 0, 1,
+            _winapi.DUPLICATE_SAME_ACCESS)
+E       OSError: [WinError 6] The handle is invalid
+
+C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\Lib\subprocess.py:1431: OSError
+=============================================================================================================================== short test summary info ===============================================================================================================================
+FAILED plugin/crew/tests/test_diagram_doc.py::test_render_sh_records_the_source_hash_and_rerenders_on_a_new_one - OSError: [WinError 6] The handle is invalid
+1 failed, 49 passed in 1.61s
+verify-gate: 6s  python3 -m pytest plugin/crew/tests/test_diagram_check.py plugin/crew/tests/test_diagram_doc.py -q
+verify-gate: env pinned - ENV=unset AWS_PROFILE=unset AWS_DEFAULT_REGION=unset KUBECONFIG=unset TF_WORKSPACE=unset AWS_REGION=unset AWS_DEFAULT_PROFILE=unset AZURE_SUBSCRIPTION_ID=unset ARM_SUBSCRIPTION_ID=unset TF_VAR_environment=unset
+VERIFY FAILED: python3 -m pytest plugin/crew/tests/test_qa_audit.py plugin/crew/tests/test_qa_audit_env.py plugin/crew/tests/test_qa_doc.py plugin/crew/tests/test_path_link_farm.py plugin/crew/tests/test_sabotage_harness.py::test_every_shipped_anchor_is_present_in_its_target_exactly_once -q
+C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\Lib\subprocess.py:1005: in __init__
+    errread, errwrite) = self._get_handles(stdin, stdout, stderr)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\Lib\subprocess.py:1380: in _get_handles
+    p2cread = self._make_inheritable(p2cread)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <Popen: returncode: None args: ['git', '-C', 'D:\\temp\\pytest-of-d3ade\\pyt...>, handle = 496
+
+    def _make_inheritable(self, handle):
+        """Return a duplicate of handle, which is inheritable"""
+>       h = _winapi.DuplicateHandle(
+            _winapi.GetCurrentProcess(), handle,
+            _winapi.GetCurrentProcess(), 0, 1,
+            _winapi.DUPLICATE_SAME_ACCESS)
+E       OSError: [WinError 6] The handle is invalid
+
+C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\Lib\subprocess.py:1431: OSError
+=============================================================================================================================== short test summary info ===============================================================================================================================
+FAILED plugin/crew/tests/test_qa_audit_env.py::test_g4_an_unignored_untracked_build_dir_is_a_gap - OSError: [WinError 6] The handle is invalid
+FAILED plugin/crew/tests/test_qa_audit_env.py::test_g4_an_ignored_build_dir_passes - OSError: [WinError 6] The handle is invalid
+FAILED plugin/crew/tests/test_qa_audit_env.py::test_g4_a_failed_ls_files_is_unknown_not_untracked - OSError: [WinError 6] The handle is invalid
+FAILED plugin/crew/tests/test_qa_audit_env.py::test_stamp_writes_head_and_refuses_without_crew - OSError: [WinError 6] The handle is invalid
+4 failed, 264 passed, 6 skipped in 4.92s
+verify-gate: 7s  python3 -m pytest plugin/crew/tests/test_qa_audit.py plugin/crew/tests/test_qa_audit_env.py plugin/crew/tests/test_qa_doc.py plugin/crew/tests/test_path_link_farm.py plugin/crew/tests/test_sabotage_harness.py::test_every_shipped_anchor_is_present_in_its_target_exactly_once -q

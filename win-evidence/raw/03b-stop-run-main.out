@@ -1,0 +1,32 @@
+verify-gate: FAILED 1 cmd | PASSED 17 cmd | NOT VERIFIED 76 item(s) (reach 0, over-budget 8, dirty tree 0, deferred 68, skipped 0, other 0) | credited 0 | budget 598s/60s | detail: .crew/.verify-gate.log
+outside-scope: (no open ticket)
+VERIFY FAILED: python3 -m pytest plugin/crew/tests/test_recurring_findings.py plugin/crew/tests/test_review_prompt.py -q
+    with Popen(*popenargs, **kwargs) as process:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\Lib\subprocess.py:1005: in __init__
+    errread, errwrite) = self._get_handles(stdin, stdout, stderr)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\Lib\subprocess.py:1422: in _get_handles
+    errwrite = self._make_inheritable(errwrite)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <Popen: returncode: None args: ['git', 'init', '-q', 'D:\\temp\\pytest-of-d3...>
+handle = 1232
+
+    def _make_inheritable(self, handle):
+        """Return a duplicate of handle, which is inheritable"""
+>       h = _winapi.DuplicateHandle(
+            _winapi.GetCurrentProcess(), handle,
+            _winapi.GetCurrentProcess(), 0, 1,
+            _winapi.DUPLICATE_SAME_ACCESS)
+E       OSError: [WinError 6] The handle is invalid
+
+C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\Lib\subprocess.py:1431: OSError
+=========================== short test summary info ===========================
+FAILED plugin/crew/tests/test_recurring_findings.py::test_data_comes_from_the_plugin_not_the_root
+1 failed, 161 passed, 11 skipped in 38.36s
+C:/Users/d3ade/.claude/plugins/cache/useful-claude-add-ons/crew/1.2.68/hooks/scripts/verify-gate.sh: line 2826: /c/Users/d3ade/AppData/Local/Python/pythoncore-3.14-64/python.exe: Argument list too long
+verify-gate: Stop does not run reach-excluded, over-budget, dirty-tree or deferred rules; /crew:verify --all runs every rule.
+VERIFY GATE: BLOCKED (exit 2) - this Stop did not pass; the reason is in the lines above. Work is not complete.
+VERIFY_GATE_EXIT=2

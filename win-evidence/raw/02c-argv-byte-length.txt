@@ -1,0 +1,23 @@
+repo=C:/repos/personal/useful-claude-add-ons
+marker=734b8214
+head=32122ca33f2a7f5c8e789d9fb2d35455ba98ce69
+changed_files=1620
+changed_list_bytes=69693
+matcher_exit=0
+extras_bytes=37237
+sync_sha_bytes=40
+budget_flag_bytes=0
+matched_rules=96
+
+argv[0] $PY (as bash execs it)           65 bytes
+argv[1] -c                                2 bytes
+argv[2] inline python script            483 bytes
+argv[3] $EXTRAS (record 6 JSON)       37237 bytes
+argv[4] $SYNC_SHA                        40 bytes
+argv[5] $BUDGET_FLAG (empty on Stop)        0 bytes
+sum of argv elements                  37827 bytes
++ one terminator per element          37833 bytes
+
+Windows CreateProcess lpCommandLine hard limit      32767 chars
+argv[3] alone exceeds that limit by                4470 chars
+whole vector exceeds it by                         5066 chars

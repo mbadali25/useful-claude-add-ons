@@ -1,0 +1,25 @@
+uname:        MINGW64_NT-10.0-26200 dadeush-desktop 3.6.10-710e5275.x86_64 2026-07-28 09:32 UTC x86_64 Msys
+bash:         5.3.15(2)-release
+python:       3.14.6 (tags/v3.14.6:c63aec6, Jun 10 2026, 10:26:10) [MSC v.1944 64 bit (AMD64)]
+env bytes:    7991
+
+== fixed sizes ==
+   1000  rc=0  1000
+   8000  rc=0  8000
+  16000  rc=0  16000
+  30000  rc=0  30000
+  32000  rc=0  32000
+  32500  rc=0  32500
+  32700  rc=126  D:/temp/claude/repro-e2big.sh: line 17: C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\python.exe: Argument list too long
+  32767  rc=126  D:/temp/claude/repro-e2big.sh: line 17: C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\python.exe: Argument list too long
+  32800  rc=126  D:/temp/claude/repro-e2big.sh: line 17: C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\python.exe: Argument list too long
+  33000  rc=126  D:/temp/claude/repro-e2big.sh: line 17: C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\python.exe: Argument list too long
+  37237  rc=126  D:/temp/claude/repro-e2big.sh: line 17: C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\python.exe: Argument list too long
+
+== bisect last size that execs ==
+largest single argv element that execs: 32684 bytes
+smallest that fails:                    32685 bytes
+
+== the raw error, verbatim ==
+D:/temp/claude/repro-e2big.sh: line 41: C:\Users\d3ade\AppData\Local\Python\pythoncore-3.14-64\python.exe: Argument list too long
+exit=126

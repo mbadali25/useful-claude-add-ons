@@ -1,0 +1,13 @@
+tag=main
+worktree=D:\temp\claude\wt-winmain
+head=3e7d397da67c3e628550fc1973b5847a136d159f
+started=2026-10-24T00:06:29.592-05:00
+ended=2026-10-24T00:17:31.177-05:00
+wall_seconds=661.585
+exit_code=0
+capped=no
+cap_seconds=700
+cpu_total_pct_before=40
+cpu_total_pct_after=15
+process_count_before=910
+logical_processors=20

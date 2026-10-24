@@ -1,0 +1,9 @@
+verify-gate: FAILED 1 cmd | PASSED 12 cmd | NOT VERIFIED 83 item(s) (reach 0, over-budget 38, dirty tree 0, deferred 45, skipped 0, other 0) | credited 0 | budget 65s/60s | detail: .crew/.verify-gate.log
+outside-scope: (no open ticket)
+UNMAPPED CHANGES - .crew/verify.json has no rule for:
+win-evidence/stophook-winerror6.md
+Add a rule (or mark it deliberately unchecked) before reporting this complete.
+C:/Users/d3ade/.claude/plugins/cache/useful-claude-add-ons/crew/1.2.68/hooks/scripts/verify-gate.sh: line 2826: /c/Users/d3ade/AppData/Local/Python/pythoncore-3.14-64/python.exe: Argument list too long
+verify-gate: Stop does not run reach-excluded, over-budget, dirty-tree or deferred rules; /crew:verify --all runs every rule.
+VERIFY GATE: BLOCKED (exit 2) - this Stop did not pass; the reason is in the lines above. Work is not complete.
+VERIFY_GATE_EXIT=2

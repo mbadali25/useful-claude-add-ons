@@ -1,0 +1,13 @@
+tag=repriced
+worktree=D:\temp\claude\wt-winrun
+head=89fb57963ae7bf8de1d0e9a9c7472210bba0e067
+started=2026-10-24T00:04:35.997-05:00
+ended=2026-10-24T00:06:27.037-05:00
+wall_seconds=111.04
+exit_code=0
+capped=no
+cap_seconds=700
+cpu_total_pct_before=32.9
+cpu_total_pct_after=45.5
+process_count_before=908
+logical_processors=20
