@@ -2437,8 +2437,10 @@ def _interp_codes(spec, words):  # pylint: disable=too-many-branches
                 if letter not in code + value and any(c in code
                                                       for c in tail):
                     # A code letter later in the bundle may be one: `-lne`,
-                    # `-pe`, `-i.bak -e` (SRL-2308 r3, fail closed: reading
-                    # a value as code can only refuse more).
+                    # `-pe`, `-i.bak -e` (SRL-2308 r3, fail closed for the
+                    # flag letters that take no value). A value letter
+                    # (php `-d`, python `-W`) owns its tail, so `-dx=coverage`
+                    # is not skipped to find the `r` (L-0853).
                     continue
                 if letter in code + value + script_letters:
                     if not tail and index + 1 < len(words):
