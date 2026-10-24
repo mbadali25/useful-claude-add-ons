@@ -9,6 +9,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — taste-skill and ui-ux-pro-max in the Community install rows (L-0887)
+
+- **Summary.** The installers now offer `taste-skill` (art direction for frontend design) and `ui-ux-pro-max` (UI/UX styles, palettes, fonts and stacks) in the Community picker, opt-in (unticked by default because a tag can move and a SHA ref is rejected), pinned to the reviewed tags v2.1.4 and v2.15.0.
+- **Caveat.** Both are unaudited third-party plugins: ui-ux-pro-max's design-skill scripts call `api.muapi.ai` on explicit user action; taste-skill's scripts fetch images from Openverse, Wikimedia and the Art Institute and drive a local Chrome.
+- **Changed.** `scripts/install-prerequisites.{sh,ps1}` (same rows, same order), `scripts/_test/mcp-preflight-catalog.sh`, `scripts/_test/menu-groups.sh`, README and INSTALLATION. No plugin version changes; `crew` is untouched.
+
 ### Fixed — crew 1.2.75: the cloud guard no longer reads a php option value or `php -v` as code (L-0853)
 
 - **Summary.** `crew` 1.2.75: `php -dxdebug.mode=coverage vendor/bin/phpunit`, `php -v`, `php -m`, `php --ini` and `xargs php -l` are no longer refused by the terraform-apply guard; php given code (`-r`, a heredoc, a pipe) is still refused.
