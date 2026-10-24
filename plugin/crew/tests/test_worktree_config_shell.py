@@ -1198,3 +1198,15 @@ def test_fallback_is_armed_when_the_config_is_a_directory(tmp_path, script, key,
     proc = _run_fallback(tmp_path, main, script)
 
     assert proc.returncode == 2, proc.stderr
+
+
+@needs_bash
+@pytest.mark.parametrize("script,key,escaped", _FALLBACKS)
+def test_fallback_is_armed_when_the_config_parent_is_a_file(tmp_path, script, key, escaped):
+    main, _wt = _lane(tmp_path, None)
+    shutil.rmtree(main / ".crew")
+    (main / ".crew").write_text("not a directory", encoding="utf-8")
+
+    proc = _run_fallback(tmp_path, main, script)
+
+    assert proc.returncode == 2, proc.stderr

@@ -423,6 +423,26 @@ crew_repo_config_dir() {
   done
 }
 
+# Whether the absence of file $1 is PROVED: the nearest ancestor that exists is a
+# searchable directory, so the lookup can only have failed with "no such file".
+# A parent that is a file (`/etc/passwd/config.json`), a dangling link or a
+# directory that cannot be searched says nothing about the file: not proved.
+crew_guard_absent_proved() {
+  local d="$1"
+  while :; do
+    case "$d" in
+      */*) d="${d%/*}"; [ -n "$d" ] || d=/ ;;
+      *) d=. ;;
+    esac
+    if [ -d "$d" ]; then
+      [ -x "$d" ] && return 0
+      return 1
+    fi
+    { [ -e "$d" ] || [ -L "$d" ]; } && return 1
+    case "$d" in / | .) return 1 ;; esac
+  done
+}
+
 # Whether config file $1 may arm a guard, read WITHOUT python (L-0725). Status 0
 # means armed; status 1 means the layer is PROVED off. The keys to look for follow
 # the file: `profile` and the guard's own key, e.g. `crew_guard_layer_armed F
@@ -430,8 +450,9 @@ crew_repo_config_dir() {
 # it, when python could not run at all, so every doubt answers "armed".
 #
 # Off is proved only when ALL of these hold, and any doubt is "armed":
-#   - the file does not exist (one that exists but is not a readable regular
-#     file is armed), or it is readable, at most 262144 bytes, holds no NUL byte
+#   - the file does not exist and the nearest existing ancestor is a searchable
+#     directory (one that exists but is not a readable regular file, or whose
+#     parent is a file, is armed), or it is readable, at most 262144 bytes, holds no NUL byte
 #     and no control character other than tab, CR and LF (a NUL is invalid JSON
 #     to python, and bash would silently drop it), and no `\u` escape (an escape
 #     can spell a key without the literal token);
@@ -459,7 +480,10 @@ crew_repo_config_dir() {
 crew_guard_layer_armed() {
   local f="$1" keys size plain verdict
   shift
-  [ -e "$f" ] || [ -L "$f" ] || return 1
+  if ! { [ -e "$f" ] || [ -L "$f" ]; }; then
+    crew_guard_absent_proved "$f" && return 1
+    return 0
+  fi
   { [ -f "$f" ] && [ -r "$f" ]; } || return 0
   size=$(LC_ALL=C wc -c <"$f" 2>/dev/null | tr -d '[:space:]') || return 0
   case "$size" in '' | *[!0-9]*) return 0 ;; esac

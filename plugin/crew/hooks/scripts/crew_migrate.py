@@ -1247,35 +1247,41 @@ def rollback(root, backup, scope="repo"):
     if manifest.get("state") == "rolled-back":
         return []
     targets, dirs = _manifest_entries(root, manifest, scope)
-    originals = _backed_up_originals(backup, targets)
-    edited = []
-    for target, path in targets:
-        current = _read_bytes(path)
-        if target.get("existed"):
-            if current is None or _sha(current) not in (target["sha256"],
-                                                        target["originalSha256"]):
+    with contextlib.ExitStack() as locks:
+        # The config writer's lock is held from the edited-since check to the
+        # last restore, so a concurrent edit cannot land between the hash read
+        # and the replace and then be overwritten.
+        _lock_replaced(locks, root, [{"path": t["path"], "replaces": True}
+                                     for t, _ in targets if t.get("existed")], scope)
+        originals = _backed_up_originals(backup, targets)
+        edited = []
+        for target, path in targets:
+            current = _read_bytes(path)
+            if target.get("existed"):
+                if current is None or _sha(current) not in (target["sha256"],
+                                                            target["originalSha256"]):
+                    edited.append(target["path"])
+            elif current is not None and _sha(current) != target["sha256"]:
                 edited.append(target["path"])
-        elif current is not None and _sha(current) != target["sha256"]:
-            edited.append(target["path"])
-    if edited:
-        raise MigrateError("edited since apply, not removed or restored; resolve by hand:\n  "
-                           + "\n  ".join(edited))
-    removed = []
-    for target, path in targets:
-        staged = _read_bytes(path + TMP_SUFFIX)
-        if staged is not None and _sha(staged) == target["sha256"]:
-            os.remove(path + TMP_SUFFIX)
-        if target.get("existed"):
-            if _sha(_read_bytes(path)) == target["sha256"]:
-                atomic_write(path, originals[target["path"]], _mode_of(path))
-                removed.append(("restored", target["path"]))
-        elif os.path.exists(path):
-            os.remove(path)
-            removed.append(("removed", target["path"]))
-    _prune_dirs(root, dirs)
-    manifest["state"] = "rolled-back"
-    atomic_write(_manifest_path(backup), _json_bytes(manifest))
-    return removed
+        if edited:
+            raise MigrateError("edited since apply, not removed or restored; resolve by hand:\n  "
+                               + "\n  ".join(edited))
+        removed = []
+        for target, path in targets:
+            staged = _read_bytes(path + TMP_SUFFIX)
+            if staged is not None and _sha(staged) == target["sha256"]:
+                os.remove(path + TMP_SUFFIX)
+            if target.get("existed"):
+                if _sha(_read_bytes(path)) == target["sha256"]:
+                    atomic_write(path, originals[target["path"]], _mode_of(path))
+                    removed.append(("restored", target["path"]))
+            elif os.path.exists(path):
+                os.remove(path)
+                removed.append(("removed", target["path"]))
+        _prune_dirs(root, dirs)
+        manifest["state"] = "rolled-back"
+        atomic_write(_manifest_path(backup), _json_bytes(manifest))
+        return removed
 
 
 def _backed_up_originals(backup, targets):

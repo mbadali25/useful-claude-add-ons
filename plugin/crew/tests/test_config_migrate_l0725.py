@@ -26,6 +26,7 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_config_files
 import crew_dropped
 import crew_guards
 import crew_migrate
@@ -575,6 +576,23 @@ def test_rollback_refuses_a_file_edited_since_apply(machine, capsys):
     assert code == 1
     assert _read(machine) == edited
     assert "edited since apply" in capsys.readouterr().err
+
+
+def test_rollback_holds_the_config_writer_lock_and_refuses_while_it_is_held(machine, capsys):
+    original = _fixture_bytes("machine.config.json")
+    _write(machine, original)
+    crew_migrate.main(["--global", "--apply"])
+    (backup,) = _backups(os.path.dirname(machine), repo=False)
+    migrated = _read(machine)
+
+    with crew_config_files.machine_lock(machine):
+        code = crew_migrate.main(["--global", "--rollback", backup])
+
+    assert code == 1
+    assert _read(machine) == migrated
+    assert "nothing written" in capsys.readouterr().err
+    assert crew_migrate.main(["--global", "--rollback", backup]) == 0
+    assert _read(machine) == original
 
 
 def test_rollback_refuses_a_backup_from_the_other_scope(tmp_path, machine, capsys):
