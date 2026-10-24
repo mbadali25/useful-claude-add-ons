@@ -96,7 +96,7 @@ check "chatgpt.com via proxy reachable" ok "$(reach https://chatgpt.com)"
 exit $fail
 '
 
-"$DOCKER" run --rm --network none --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges --pids-limit 1024 --memory 6g \
+"$DOCKER" run --rm --network none --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges --pids-limit 4096 --memory 6g \
   -v "$WORK/repo:/run/repo" -v "$WORK/home:/run/home" -v "$WORK/proxysock:/run/proxy" -e HOME=/run/home \
   "$IMAGE" /opt/eval-shim/eval-run /bin/bash -c "$PROBE" canary "$@" >> "$OUT" 2>&1
 rc=$?
