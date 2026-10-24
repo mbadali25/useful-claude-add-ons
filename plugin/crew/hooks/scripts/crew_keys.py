@@ -299,7 +299,7 @@ KEY_META = {
     "emergency.maxTtlMinutes": _row("Longest incident lifetime; never below "
                                     "`ttlMinutes`.", "type", since=FIRST,
                                     source=_S + "crew_incident.py", type_="integer"),
-    # --- notify (crew_notify.py since T-0051; notify.sh / notify.ps1 are wrappers)
+    # --- notify (crew_notify.py since T-0051; notify.sh is a wrapper)
     "notify.provider": _row("Where notifications go: `telegram`, `teams` or `none` (off). A "
                             "repo null inherits the machine provider; a repo `none` opts "
                             "this repo out.", "type", since=FIRST,

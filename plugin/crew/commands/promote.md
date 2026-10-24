@@ -91,6 +91,8 @@ Append one row to `.work/PROMOTIONS.md` with the real result of every gate, fail
 - **All gates green:** say which environment now runs which sha, and name the next promotion from this environment's `promotesTo` - e.g. `qa is now on a1b2c3d; next is /crew:promote production`. If absent, say this is the last environment in the chain.
 - **Any gate failed:** say which gate, quote the error, and state the two options - roll back using the runbook, or fix forward. Do not pick for me on production. Do not resume mid-sequence; the whole sequence runs again from gate 1.
 
+**Report every deploy with three facts:** the merged sha, the deployed sha (read back from the target, not from the pipeline log), and the health-check result (gate 3). If any of the three is missing, the deploy is reported `unverified`, whatever the pipeline said. Merged is not deployed, and deployed is not verified.
+
 Then, for every result (a pass silent, a failure loud), send `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh deploy "<env> <sha> - <pass|FAILED at gate N>" --outcome <pass|fail>`.
 
 Do not report a promotion complete on gate 2, accept a green pipeline as a deploy, rebuild between environments, or promote to production on a week-old qa pass: `.work/PROMOTIONS.md` is the evidence, not this session's memory.

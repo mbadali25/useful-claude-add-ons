@@ -29,6 +29,9 @@ Then add the two things only you know: the **next action** in one concrete
 sentence, and any **dead ends** already tried so the next session does not repeat
 them.
 
+Reference specs, plans, review outputs and PRs by path or URL; do not copy their content
+into the note. Redact secrets, tokens and personal data from anything you write.
+
 Keep it under 40 lines. Pointers, not narrative. If you find yourself writing
 paragraphs of what happened, you are producing the least reliable part of the
 note — a session this deep into its context remembers worse than the diff does.
