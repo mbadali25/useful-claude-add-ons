@@ -128,6 +128,12 @@ claude plugin install azure-tools@claude-settings
 claude plugin install anthropic-office-skills@claude-settings
 claude plugin install agent-browser@agent-browser
 claude plugin install ppt-master@ppt-master
+# Opt-in (unticked by default), unaudited third-party design plugins, pinned to the reviewed
+# tags (v2.1.4, v2.15.0); a full SHA is rejected as a ref and a tag can move.
+claude plugin marketplace add Leonxlnx/taste-skill#v2.1.4
+claude plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill#v2.15.0
+claude plugin install taste-skill@taste-skill
+claude plugin install ui-ux-pro-max@ui-ux-pro-max-skill
 ```
 
 Every install passes `--scope` (`user` by default; change it with `-InstallScope` / `--scope`).

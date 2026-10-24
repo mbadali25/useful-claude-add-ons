@@ -1240,7 +1240,7 @@ MENU_NAME=(
   "This repo's marketplace + its skills"
   "Team plugins: superpowers, frontend-design, excalidraw-generator, github"
   "find-skills skill (vercel-labs/skills)"
-  "Community marketplaces + plugins (adhd-output-style, azure-tools, voltagent, ...)"
+  "Community marketplaces + plugins (adhd-output-style, azure-tools, voltagent, taste-skill, ...)"
   "claude-code-setup plugin (anthropics/claude-plugins-official)"
   "task-observer skill (rebelytics/one-skill-to-rule-them-all)"
   "MCP server: AWS (awslabs.aws-api-mcp-server)"
@@ -1492,9 +1492,19 @@ unset _i
 # marketplace_installed look for a name that never exists, so the row would re-add
 # the marketplace on EVERY run while reporting success - the same class of silent
 # re-do the fcakyon/claude-settings note above exists to prevent.
+#
+# taste-skill and ui-ux-pro-max are unaudited third-party plugins, pinned to the tags
+# that were reviewed (marketplace add accepts owner/repo#ref, verified against a
+# throwaway config dir): Leonxlnx/taste-skill v2.1.4 = 6010f91a9935f1c167dfc500fb1a475681892e6b,
+# nextlevelbuilder/ui-ux-pro-max-skill v2.15.0 = a38d04c3d5c298c851dbe5e6ee1965ee3de42cb5.
+# A tag can move and a full SHA is not accepted as a ref, so both rows are OPT-IN
+# (unticked by default, see COMMUNITY_OPT_IN). Bump the tags deliberately after a fresh
+# review (reviewed 2026-10-23). The marketplace
+# probe matches on the last field (the local name), which is why the '#ref' in the
+# source field does not break idempotence.
 COMMUNITY_KEYS=(
   "adhd-output-style" "azure-tools" "anthropic-office-skills" "agent-browser" "ppt-master"
-  "voltagent-infra" "voltagent-qa-sec" "eli5"
+  "voltagent-infra" "voltagent-qa-sec" "eli5" "taste-skill" "ui-ux-pro-max"
 )
 COMMUNITY_NAME=(
   "adhd-output-style       - ADHD-friendly output style"
@@ -1505,6 +1515,8 @@ COMMUNITY_NAME=(
   "voltagent-infra         - VoltAgent DevOps/cloud subagents: k8s, Terraform, AWS/Azure, SRE"
   "voltagent-qa-sec        - VoltAgent testing/security subagents: review, pentest, QA"
   "eli5                    - Explain any topic like I'm 5: big visuals, few words"
+  "taste-skill             - art-direction skill for frontend design"
+  "ui-ux-pro-max           - UI/UX styles, palettes, fonts and stacks"
 )
 COMMUNITY_SPEC=(
   "adhd-output-style@claude-settings|fcakyon/claude-codex-settings|claude-settings"
@@ -1515,9 +1527,23 @@ COMMUNITY_SPEC=(
   "voltagent-infra@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents"
   "voltagent-qa-sec@voltagent-subagents|VoltAgent/awesome-claude-code-subagents|voltagent-subagents"
   "eli5@claude-community|anthropics/claude-plugins-community|claude-community"
+  "taste-skill@taste-skill|Leonxlnx/taste-skill#v2.1.4|taste-skill"
+  "ui-ux-pro-max@ui-ux-pro-max-skill|nextlevelbuilder/ui-ux-pro-max-skill#v2.15.0|ui-ux-pro-max-skill"
 )
+# Opt-in rows start UNTICKED (and [D]/reset leaves them unticked): a tag can be moved
+# upstream and the SHA form of '#ref' is not accepted by 'marketplace add' (verified:
+# "Remote branch <sha> not found"), so default-on would install movable, unaudited
+# third-party code. --community taste-skill,ui-ux-pro-max (or ticking them) still works.
+COMMUNITY_OPT_IN=("taste-skill" "ui-ux-pro-max")
+community_opt_in() {
+  local k
+  for k in "${COMMUNITY_OPT_IN[@]}"; do [ "$k" = "$1" ] && return 0; done
+  return 1
+}
 COMMUNITY_STATE=()
-for _i in "${!COMMUNITY_KEYS[@]}"; do COMMUNITY_STATE+=(1); done
+for _i in "${!COMMUNITY_KEYS[@]}"; do
+  if community_opt_in "${COMMUNITY_KEYS[$_i]}"; then COMMUNITY_STATE+=(0); else COMMUNITY_STATE+=(1); fi
+done
 unset _i
 
 # --- Generic sub-picker groups ------------------------------------------------
@@ -1992,7 +2018,11 @@ pick_group_interactive() {
     PICK_LABEL+=("$(group_name "$prefix" "$i")")
     PICK_STATE+=("$(group_state "$prefix" "$i")")
     PICK_SUB+=(0)
-    PICK_DEFAULT+=(1)
+    if [ "$prefix" = "COMMUNITY" ] && community_opt_in "$(group_key "$prefix" "$i")"; then
+      PICK_DEFAULT+=(0)
+    else
+      PICK_DEFAULT+=(1)
+    fi
     saved+=("$(group_state "$prefix" "$i")")
   done
   PICK_CURSOR=0; PICK_TOP=0

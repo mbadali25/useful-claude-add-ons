@@ -2507,6 +2507,11 @@ _INTERPRETERS = (
      ("rBRE", "dczt", "", "f", (), (), None, "php")),
     (re.compile(r"^deno$"), ("", "", "", "", (), (), "eval", "node")),
 )
+# Options that only report or check and never run code, so an interpreter
+# given one and no script is not reading code from stdin (L-0853: `php -v`,
+# `xargs php -l`). Per family: `(letters, long options)`.
+_INFO_ONLY = {"php": ("vmilh", ("--version", "--ini", "--modules", "--info",
+                                "--syntax-check", "--help"))}
 # The tool named in interpreter code: a word or a path's last part, never a
 # directory (`terraform/x`) or a dotted file (`terraform.tfstate`).
 _CODE_MENTION_RE = re.compile(
@@ -2534,7 +2539,8 @@ def _interp_codes(spec, words):  # pylint: disable=too-many-branches
     word it is in; `stdin` true when it is given no code, script or module,
     so it runs what it reads from stdin."""
     code, value, rest, script_letters, long_code, long_value, sub = spec[:7]
-    codes, script, index = [], False, 0
+    info_letters, info_long = _INFO_ONLY.get(spec[7], ("", ()))
+    codes, script, info, index = [], False, False, 0
     while index < len(words) and not script:
         word = words[index]
         if word in ("-", "--"):
@@ -2548,13 +2554,20 @@ def _interp_codes(spec, words):  # pylint: disable=too-many-branches
                 codes.append((index, words[index]))
             elif name in long_value and not equals:
                 index += 1
+            elif name in info_long:
+                info = True
         elif word.startswith("-") and len(word) > 1:
             for pos in range(1, len(word)):
                 letter, tail = word[pos], word[pos + 1:]
-                if letter not in code and any(c in code for c in tail):
+                if letter in info_letters:
+                    info = True
+                if letter not in code + value and any(c in code
+                                                      for c in tail):
                     # A code letter later in the bundle may be one: `-lne`,
-                    # `-pe`, `-i.bak -e` (SRL-2308 r3, fail closed: reading
-                    # a value as code can only refuse more).
+                    # `-pe`, `-i.bak -e` (SRL-2308 r3, fail closed for the
+                    # flag letters that take no value). A value letter
+                    # (php `-d`, python `-W`) owns its tail, so `-dx=coverage`
+                    # is not skipped to find the `r` (L-0853).
                     continue
                 if letter in code + value + script_letters:
                     if not tail and index + 1 < len(words):
@@ -2578,7 +2591,7 @@ def _interp_codes(spec, words):  # pylint: disable=too-many-branches
         else:
             script = True
         index += 1
-    return codes, not codes and not script
+    return codes, not codes and not script and not info
 
 
 def _code_is_inert(code, hash_comments=False):

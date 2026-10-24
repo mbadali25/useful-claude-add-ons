@@ -1710,6 +1710,74 @@ def test_srl2308_r2_the_refused_rows_hold_through_the_bash_hook(tmp_path,
     _block("bash", tmp_path, case + ("terraformApply",))
 
 
+# --- L-0853: php options and report-only runs are not code on stdin ----------
+#
+# `php -dxdebug.mode=coverage vendor/bin/phpunit` read the `r` in `coverage` as
+# the -r code option, and `php -v` (or `xargs php -l`) with no script read as
+# code on stdin; either refused the whole line, and the denial then quoted the
+# first quoted word, glob or heredoc of that line instead of the php. A php
+# option with an attached value is a value; -v -m -i -l -h and --version --ini
+# run nothing. Code given or piped to php stays refused.
+L0853_ALLOW = [
+    ("l0853-php-d-attached-coverage", "Bash",
+     "php -dxdebug.mode=coverage vendor/bin/phpunit"),
+    ("l0853-php-d-attached-memory", "Bash",
+     "php -dmemory_limit=-1 vendor/bin/phpunit"),
+    ("l0853-php-d-attached-script", "Bash", "php -ddisplay_errors=1 a.php"),
+    ("l0853-php-v", "Bash", "php -v"),
+    ("l0853-php-m", "Bash", "php -m"),
+    ("l0853-php-ini", "Bash", "php --ini"),
+    ("l0853-php-l-xargs", "Bash", "git ls-files '*.php' | xargs php -l"),
+    ("l0853-php-v-then-l", "Bash", "php -v && php -l a.php"),
+    ("l0853-php-versioned-abs-path", "Bash", "/usr/bin/php8.3 -v | head -1"),
+    ("l0853-php-versioned-name", "Bash", "php7.4 -v"),
+    ("l0853-php-v-in-longer-line", "Bash",
+     "cd X && ls .github/workflows; php -v | head -1; ls TSSLive | head -50"),
+    ("l0853-php-v-after-glob", "Bash",
+     "ls TSSLive/phpunit* TSSwebsite/phpunit* 2>&1 | head; php -v | head -1"),
+    ("l0853-php-v-after-quoted-pattern", "Bash",
+     "grep -rn 'a|b' TSSLive/lib/Paginator* ; ls TSSLive/tests | head -30; "
+     "php -v | head -1"),
+    ("l0853-php-v-after-escaped-quote", "Bash",
+     "grep -n \"run:\\|phpunit\" x; php -v"),
+    ("l0853-php-v-after-heredoc", "Bash",
+     "python3 - <<'E'\nprint(1)\nE\ngit diff --stat; php -l a.phtml; "
+     "php -v|head -1"),
+    ("l0853-php-v-after-sed", "Bash",
+     "f=a.phtml && sed -i 's/\\r$//; s/$/\\r/' $f && file $f && "
+     "git diff --stat && php -l $f && php -v | head -1"),
+]
+L0853_REFUSE = [
+    ("l0853-php-d-then-r", "Bash",
+     "php -dfoo=1 -r 'system(\"terraform apply\");'"),
+    ("l0853-php-d-then-r-concat", "Bash",
+     "php -dx=1 -r 'system(\"terra\".\"form apply\");'"),
+    ("l0853-php-heredoc", "Bash",
+     "php <<'EOF'\nsystem(\"terraform apply\");\nEOF"),
+    ("l0853-php-piped-code", "Bash",
+     "echo 'system(\"terraform apply\");' | php"),
+    ("l0853-php-piped-code-n", "Bash",
+     "echo 'system(\"terraform apply\");' | php -n"),
+    ("l0853-php-vr-bundle", "Bash", "php -vr 'system(\"terraform apply\");'"),
+    ("l0853-php-l-then-r", "Bash",
+     "php -l -r 'system(\"terraform apply\");'"),
+]
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", L0853_ALLOW, ids=[c[0] for c in L0853_ALLOW])
+def test_l0853_a_php_option_or_report_only_run_is_allowed(tmp_path, driver,
+                                                          case):
+    _allow(driver, tmp_path, case)
+
+
+@pytest.mark.parametrize("driver", _R2_DRIVERS)
+@pytest.mark.parametrize("case", L0853_REFUSE, ids=[c[0] for c in L0853_REFUSE])
+def test_l0853_php_code_that_runs_terraform_is_still_refused(tmp_path, driver,
+                                                             case):
+    _block(driver, tmp_path, case + ("terraformApply",))
+
+
 # --- L-0871: interpreter code that names nothing is not could-not-tell -------
 #
 # `grep '^JIRA_' .env | python3 -c "import urllib.parse,sys; print(1)"` and a

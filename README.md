@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/6bdcddd3397e2bded900790f3271a880e78fe058/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/c369bf985e818f6c2841a90cd30747cc48db98c8/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/6bdcddd3397e2bded900790f3271a880e78fe058/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/c369bf985e818f6c2841a90cd30747cc48db98c8/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -67,7 +67,7 @@ Terminals that can't read a key press one at a time — no `stty`, `TERM=dumb`, 
 | 3 | This repo's marketplace + its skills — **→ picks individual skills** (`notify` asks about setup) | x |
 | 4 | Team plugins — superpowers, frontend-design, excalidraw-generator — **→ picks which** | x |
 | 5 | `find-skills` skill | x |
-| 6 | Community marketplaces + plugins — **→ picks which** (adhd-output-style, azure-tools, anthropic-office-skills, agent-browser, ppt-master) | x |
+| 6 | Community marketplaces + plugins — **→ picks which** (adhd-output-style, azure-tools, anthropic-office-skills, agent-browser, ppt-master, taste-skill, ui-ux-pro-max) | x |
 | 7 | `claude-code-setup` plugin | x |
 | 8 | `task-observer` skill | x |
 | 9 | MCP server — AWS (`awslabs.aws-api-mcp-server`) | |
@@ -154,7 +154,7 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 3 This repo | The `useful-claude-add-ons` marketplace and, by default, all 36 skills<!-- claim: skills-count --> in [`skills/`](skills/) — narrow it with → in the menu or `--skills` | this repo |
 | 4 Team plugins | `superpowers`, `frontend-design`, `excalidraw-generator` | 3 marketplaces (only the ones behind a ticked plugin) |
 | 5 find-skills | The `find-skills` skill, into the user skills dir | `vercel-labs/skills` |
-| 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master`, `voltagent-infra`, `voltagent-qa-sec` | 4 marketplaces (only the ones behind a ticked plugin) |
+| 6 Community | `adhd-output-style`, `azure-tools`, `anthropic-office-skills`, `agent-browser`, `ppt-master`, `voltagent-infra`, `voltagent-qa-sec`, `eli5`, `taste-skill`, `ui-ux-pro-max` | 7 marketplaces (only the ones behind a ticked plugin) |
 | 7 claude-code-setup | Analyses a codebase and recommends hooks/skills/MCP servers | `anthropics/claude-plugins-official` |
 | 8 task-observer | Watches a session for reusable-skill opportunities | `rebelytics/one-skill-to-rule-them-all` |
 | 9–11 MCP servers | AWS API, Azure, Playwright | `claude mcp add` |
@@ -172,6 +172,8 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 23 AWS Pricing | `uvx awslabs.aws-pricing-mcp-server@latest`, installing `uv` first if it is absent — the same bootstrap row 9 does. The one of these three that **does** need credentials: the Price List API is an AWS API call, not a document fetch, and the role needs `pricing:*`. The calls are free of charge | `uvx` + `claude mcp add` |
 | 24 Microsoft Learn | A remote HTTP endpoint (`https://learn.microsoft.com/api/mcp`). One server for three of this repo's domains — `learn.microsoft.com` carries the Azure, SharePoint and Power Automate / Power Platform documentation, so `intune-graph`, `power-automate-api` and the SharePoint skills all resolve against it rather than against three separate servers | `claude mcp add --transport http` |
 | 25 Perplexity | `npx -y @perplexity-ai/mcp-server`, registered with `--env PERPLEXITY_API_KEY=<key>` so the CLI has the key when it launches the server. Unlike row 21 this **does** write the key into the MCP registration — so it lands on disk in `~/.claude.json`, the same place row 12's bearer token goes, and the server gets it whatever environment the `claude` process was launched from. The key comes from `--perplexity-api-key` / `-PerplexityApiKey` or `PERPLEXITY_API_KEY`, is never printed, and with neither set the row explains how to get one and skips. This is the server the [`web-research`](skills/web-research/) skill calls | `claude mcp add` |
+
+`taste-skill` (`Leonxlnx/taste-skill`, pinned to v2.1.4) and `ui-ux-pro-max` (`nextlevelbuilder/ui-ux-pro-max-skill`, pinned to v2.15.0) are **unaudited third-party plugins and are opt-in** (unticked by default; tick them in the Community picker or pass `--community taste-skill,ui-ux-pro-max`). They are pinned to a tag because `marketplace add` rejects a full commit SHA as a ref, and a tag can be moved upstream, so they are not installed unless you ask. ui-ux-pro-max's design-skill scripts call `api.muapi.ai`, on explicit user action. taste-skill's scripts fetch images from Openverse, Wikimedia and the Art Institute, and drive a local Chrome. 
 
 Items 1–8 are the default set. Everything from 9 on is opt-in.
 
@@ -235,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.75**: Crew config from 157 keys to 87, guards profile, generated CONFIG.md. `crew` 1.2.75: the config shrinks from 157 keys to 87 (60 keys became constants at their old defaults), the twelve `guards.<name>` keys are replaced by `guards.profile` (`off | standard | strict`) plus `guards.overrides`, and `/crew:migrate` carries a schema 7 setup to schema 8.
-- **crew 1.2.69**: Sabotage entry retargeted to a test id that survives L-0725. `crew` 1.2.69: test harness only. The sabotage entry "merged machine file keeps a consent key" now names `[machine-obsidian]` instead of `[machine-unsafeFocus]`, because L-0725 (#665) removes `context.autoClear.unsafeFocus` and the old id would collect nothing (exit 4). Checked with the mutation applied: `[machine-obsidian]` fails (RED, a real assertion). No behaviour change for users.
+- Taste-skill and ui-ux-pro-max in the Community install rows. The installers now offer `taste-skill` (art direction for frontend design) and `ui-ux-pro-max` (UI/UX styles, palettes, fonts and stacks) in the Community picker, opt-in (unticked by default because a tag can move and a SHA ref is rejected), pinned to the reviewed tags v2.1.4 and v2.15.0.
+- **crew 1.2.75**: The cloud guard no longer reads a php option value or `php -v` as code. `crew` 1.2.75: `php -dxdebug.mode=coverage vendor/bin/phpunit`, `php -v`, `php -m`, `php --ini` and `xargs php -l` are no longer refused by the terraform-apply guard; php given code (`-r`, a heredoc, a pipe) is still refused.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
