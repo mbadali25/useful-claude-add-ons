@@ -1,0 +1,13 @@
+# test_routine_cli.py's T-0108 manifest: one target on Nuclei's safe
+# defaults, one opted out of the tag exclusion by name with its own rate.
+# Every host is an RFC 6761 `.invalid` name; no scanner is ever reached
+# (every in-process run injects a FakeRegistry).
+authorized_by: "ACME-0108 - test harness, authorized to test these names"
+targets:
+  - name: site-safe
+    kind: web
+    url: https://nuclei-safe.invalid/
+  - name: site-intrusive
+    kind: web
+    url: https://nuclei-intrusive.invalid/
+    options: {nuclei_intrusive: true, nuclei_rate_limit: 10}
