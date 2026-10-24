@@ -360,7 +360,7 @@ def case_remove_paths_refuses_a_prefix_sibling_a_symlink_escape_and_bad_entries(
     results = {}
     for entry in ("../tree-evil", "link/victim.txt", "link-evil/victim.txt", "", ".", "a\\b", "..\\x", "/etc"):
         results[entry] = refused(eval_mod.remove_arm_paths, base, [entry])
-    survived = os.path.exists(os.path.join(sibling, "victim.txt")) and os.path.exists(os.path.join(outside, "victim.txt"))
+    survived = all(os.path.exists(os.path.join(d, "victim.txt")) for d in (sibling, outside))
     return survived and all(results.values()), (survived, results)
 
 
@@ -370,7 +370,8 @@ def case_remove_paths_removes_a_symlink_inside_the_repo_without_following_it(tmp
     write(os.path.join(base, "real", "a.txt"), "x")
     os.symlink("real", os.path.join(base, "alias"))
     eval_mod.remove_arm_paths(base, ["alias"])
-    return sorted(os.listdir(base)) == ["real"] and os.path.exists(os.path.join(base, "real", "a.txt")), os.listdir(base)
+    kept = os.path.exists(os.path.join(base, "real", "a.txt"))
+    return sorted(os.listdir(base)) == ["real"] and kept, os.listdir(base)
 
 
 def case_prepare_refuses_when_the_reference_is_reachable(tmp):
