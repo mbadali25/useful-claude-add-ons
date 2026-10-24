@@ -14,7 +14,7 @@
    "exit": 2,
    "flavour": "bash",
    "script": "role-write-guard.sh",
-   "stderr": "ROLE WRITE BLOCKED: role `reviewer` may not write `src/app.py`.\n  Reason: role `reviewer` has no Write/Edit in its tools: grant\n  Permitted for this role: nothing (this role has no Write/Edit grant)\n  This is guards.roleWrites: block, in .crew/config.json or the machine-global config. See CONFIG.md Section 18.\n",
+   "stderr": "ROLE WRITE BLOCKED: role `reviewer` may not write `src/app.py`.\n  Reason: role `reviewer` has no Write/Edit in its tools: grant\n  Permitted for this role: nothing (this role has no Write/Edit grant)\n  This is guards.roleWrites: block, in .crew/config.json or the machine-global config. See docs/crew/config-rationale.md.\n",
    "stdout": "",
    "timed_out": false
   },

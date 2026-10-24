@@ -168,8 +168,7 @@ turned on per machine, in `~/.claude/crew/config.json` (Windows:
 
 To turn it off again, set `context.autoClear.enabled` to `false` in the same file. To turn it off in
 one repository, set it to `false` in that repository's `.crew/config.json`; setting it to `true`
-there does not turn it on. On Windows Terminal, also set `context.autoClear.windowTitle` to a
-substring of this session's tab title. See `auto-cycle.md` for the full key list and for what each
+there does not turn it on. See `auto-cycle.md` for the full key list and for what each
 line in `.crew/.autoclear.log` means.
 
 Check: after a wrap-up, `.crew/.autoclear.log` has a `sent` line or a `refusing - <reason>` line.

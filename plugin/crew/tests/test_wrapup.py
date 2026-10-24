@@ -74,8 +74,7 @@ class Repo:
 
     def __init__(self, tmp_path, repo_auto=None, machine_auto=None):
         self.tmp = tmp_path
-        context_cfg = {"handoffPath": ".work/HANDOFF.md", "warnAt": 0.8, "budgetTokens": None,
-                       "reserveTokens": 0, "autoWrapUp": True}
+        context_cfg = {"warnAt": 0.8, "reserveTokens": 0}
         if repo_auto is not None:
             context_cfg["autoClear"] = repo_auto
         self.root = cf.make_repo(tmp_path, config={"context": context_cfg})
@@ -261,7 +260,7 @@ def test_wrapup_armed_cli_prints_on_or_off(repo):
 # --- Step 1: the check ---------------------------------------------------------
 
 def _check(box):
-    return crew_autocycle.wrapup_check(str(box.root), box.cfg())
+    return crew_autocycle.wrapup_check(str(box.root))
 
 
 def test_check_passes_committed_fresh_handoff(repo):
@@ -353,15 +352,15 @@ def test_check_ignores_a_tracked_handoff_itself(repo):
     assert _check(repo) == (True, "")
 
 
-def _subdir_repo(tmp_path, handoff_rel=".work/HANDOFF.md"):
+def _subdir_repo(tmp_path):
     """A git repo at `top` whose crew root is `top/sub`: git status names
-    paths from the top, handoffPath is relative to `sub`."""
+    paths from the top, the handoff path is relative to `sub`."""
+    handoff_rel = ".work/HANDOFF.md"
     top = tmp_path / "top"
     sub = top / "sub"
     (sub / ".crew").mkdir(parents=True)
     (top / ".work").mkdir()
-    (sub / ".crew" / "config.json").write_text(json.dumps({"context": {"handoffPath": handoff_rel}}),
-                                              encoding="utf-8")
+    (sub / ".crew" / "config.json").write_text("{}", encoding="utf-8")
     _git(top, "init", "-q")
     _git(top, "config", "user.email", "t@example.invalid")
     _git(top, "config", "user.name", "T")
@@ -371,37 +370,32 @@ def _subdir_repo(tmp_path, handoff_rel=".work/HANDOFF.md"):
         path.write_text("placeholder\n", encoding="utf-8")
     _git(top, "add", "-A")
     _git(top, "commit", "-q", "-m", "fixture")
-    gpath = tmp_path / "machine.json"
-    gpath.write_text(json.dumps({"context": {"autoClear": {"enabled": True, "wrapUp": True}}}),
-                     encoding="utf-8")
-    cfg = crew_autocycle.settings(str(sub), str(gpath))
-
     def write_handoff():
         branch = _git(top, "rev-parse", "--abbrev-ref", "HEAD")
         head = _git(top, "rev-parse", "HEAD")[:7]
         (sub / handoff_rel).write_text(
             f"# H\nbranch: {branch}\nhead: {head}\nresume: {RESUME}\n", encoding="utf-8")
-    return top, sub, cfg, write_handoff
+    return top, sub, write_handoff
 
 
 def test_check_exempts_the_handoff_when_root_is_a_subdirectory(tmp_path):
-    _top, sub, cfg, write_handoff = _subdir_repo(tmp_path)
+    _top, sub, write_handoff = _subdir_repo(tmp_path)
     write_handoff()             # sub/.work/HANDOFF.md, tracked, now modified
-    assert crew_autocycle.wrapup_check(str(sub), cfg) == (True, "")
+    assert crew_autocycle.wrapup_check(str(sub)) == (True, "")
 
 
 def test_check_does_not_exempt_a_top_level_namesake_from_a_subdirectory(tmp_path):
-    top, sub, cfg, write_handoff = _subdir_repo(tmp_path)
+    top, sub, write_handoff = _subdir_repo(tmp_path)
     write_handoff()
     (top / ".work" / "HANDOFF.md").write_text("uncommitted work\n", encoding="utf-8")
-    ok, why = crew_autocycle.wrapup_check(str(sub), cfg)
+    ok, why = crew_autocycle.wrapup_check(str(sub))
     assert not ok and "1 tracked file is modified (.work/HANDOFF.md)" in why
 
 
 def test_check_counts_the_source_of_a_rename_onto_the_handoff(tmp_path):
     # `git mv sub/work.py sub/.work/HANDOFF.md`: the destination is exempt,
     # the staged deletion of its source is uncommitted work and must block.
-    top, sub, cfg, write_handoff = _subdir_repo(tmp_path)
+    top, sub, write_handoff = _subdir_repo(tmp_path)
     _git(top, "rm", "-q", "sub/.work/HANDOFF.md")
     (sub / "work.py").write_text("print('work')\n", encoding="utf-8")
     _git(top, "add", "sub/work.py")
@@ -409,16 +403,9 @@ def test_check_counts_the_source_of_a_rename_onto_the_handoff(tmp_path):
     (sub / ".work").mkdir(exist_ok=True)
     _git(top, "mv", "sub/work.py", "sub/.work/HANDOFF.md")
     write_handoff()
-    ok, why = crew_autocycle.wrapup_check(str(sub), cfg)
+    ok, why = crew_autocycle.wrapup_check(str(sub))
     assert not ok, why
     assert "1 tracked file is modified (sub/work.py)" in why
-
-
-def test_check_exempts_an_absolute_handoff_path_inside_the_root(tmp_path):
-    handoff = tmp_path / "top" / "sub" / ".work" / "HANDOFF.md"
-    _top, sub, cfg, write_handoff = _subdir_repo(tmp_path, str(handoff))
-    write_handoff()
-    assert crew_autocycle.wrapup_check(str(sub), cfg) == (True, "")
 
 
 def test_git_output_is_decoded_as_utf8_whatever_the_locale(monkeypatch, tmp_path):
@@ -432,12 +419,6 @@ def test_git_output_is_decoded_as_utf8_whatever_the_locale(monkeypatch, tmp_path
     crew_autocycle._git_out(str(tmp_path), "status")  # pylint: disable=protected-access
     assert seen.get("encoding") == "utf-8"
     assert seen.get("errors") == "surrogateescape"
-
-
-def test_check_exempts_a_handoff_path_git_would_quote(tmp_path):
-    _top, sub, cfg, write_handoff = _subdir_repo(tmp_path, ".work/HANDÖFF notes.md")
-    write_handoff()
-    assert crew_autocycle.wrapup_check(str(sub), cfg) == (True, "")
 
 
 def test_check_refuses_missing_resume(repo):
@@ -523,11 +504,10 @@ def test_check_refuses_when_git_does_not_resolve(repo, monkeypatch):
 
 
 def test_check_refuses_outside_a_git_repo(tmp_path):
-    root = cf.make_repo(tmp_path, config={"context": {"handoffPath": ".work/HANDOFF.md"}}, git=False)
+    root = cf.make_repo(tmp_path, config={}, git=False)
     (root / ".work" / "HANDOFF.md").write_text(
         f"# H\nbranch: main\nhead: abcdef1\nresume: {RESUME}\n", encoding="utf-8")
-    cfg = crew_autocycle.settings(str(root), str(tmp_path / "absent.json"))
-    ok, why = crew_autocycle.wrapup_check(str(root), cfg)
+    ok, why = crew_autocycle.wrapup_check(str(root))
     assert not ok and "git" in why
 
 
@@ -649,7 +629,7 @@ def _marker_shape(box):
 
 @pytest.mark.parametrize("flavor", FLAVORS)
 @pytest.mark.parametrize("auto_wrap_up", [True, False])
-def test_unarmed_messages_unchanged_for_both_autowrapup_values(tmp_path, flavor, auto_wrap_up):
+def test_unarmed_messages_ignore_the_dropped_autowrapup_key(tmp_path, flavor, auto_wrap_up):
     seen = []
     unarmed = ({"enabled": True}, {"enabled": True, "wrapUp": None},
                {"enabled": False, "wrapUp": True}, {"wrapUp": True}, {"enabled": True, "wrapUp": "true"})
@@ -663,7 +643,7 @@ def test_unarmed_messages_unchanged_for_both_autowrapup_values(tmp_path, flavor,
         done = box.stop(flavor)
         seen.append((done.returncode, done.stderr, _marker_shape(box)))
     assert seen[0][0] == 2
-    assert seen[0][1].startswith("You are at roughly" if auto_wrap_up else "Context:")
+    assert seen[0][1].startswith("You are at roughly")
     assert all(item == seen[0] for item in seen), seen
 
 

@@ -24,17 +24,17 @@ that differs between backends is where the text lands.
 | Impact | asked per request |
 | Urgency | asked per request |
 | Impact Details | asked per request — the blast radius in prose, not a repeat of Impact |
-| Requester name | `change.requester`, asked when it is null |
-| Implementor of Change | `change.implementor`, asked when it is null — and it is also answer 2 |
+| Requester name | asked per request |
+| Implementor of Change | asked per request — and it is also answer 2 |
 | Scheduled Start Time | asked per request — and it is also part of answer 3 |
 | Scheduled End Time | asked per request — and it is also part of answer 3 |
 | Subject | asked per request |
-| Category | `change.category`, asked when it is null |
+| Category | asked per request |
 | Description | the ten answers in §2, in order, verbatim question then answer |
 
-`Requester name` and `Implementor of Change` default from config because they
-are facts about a person, not about a request. Everything else is per-request:
-a default Priority is a Priority nobody chose.
+`Requester name` and `Implementor of Change` are asked every time: no config
+key holds them. Everything else is per-request too: a default Priority is a
+Priority nobody chose.
 
 **Scheduled Start Time and Scheduled End Time are the change window**, and they
 are not decoration. When `change.requireForProduction` is true they are what
@@ -114,7 +114,7 @@ Reached through the `sdp_*` MCP tools, the same ones `/crew:sdp-sync` and the
 
 | Template field | SDP |
 |---|---|
-| — | `template` = `change.sdpTemplate` (ships as `Change Management Request`) |
+| — | `template` = `Change Management Request` (fixed: `crew_state.CHANGE_SDP_TEMPLATE`) |
 | Subject | `subject` |
 | Priority / Impact / Urgency / Category | resolve each against `sdp_list_metadata` **first** |
 | Impact Details | `impact_details` |
@@ -138,7 +138,7 @@ Reached through the Jira MCP tools, as `/crew:jira-sync` does.
 
 | Template field | Jira |
 |---|---|
-| — | issue type = `change.jiraIssueType` (ships as `Change`) |
+| — | issue type = `Change` (fixed: `crew_state.CHANGE_JIRA_ISSUE_TYPE`) |
 | Subject | `summary` |
 | Priority | `priority` |
 | Category | `labels`, plus `components` where the project has them |

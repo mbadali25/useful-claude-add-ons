@@ -13,7 +13,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -81,6 +80,12 @@ from crew_guards import (
     GUARD_NAMES,  # noqa: F401
     GUARD_POLICIES,  # noqa: F401
     GUARD_POLICY_DEFAULT,  # noqa: F401
+    GUARD_BLOCK_DEFAULTS,  # noqa: F401
+    GUARD_PROFILES,  # noqa: F401
+    PROFILE_MAP,  # noqa: F401
+    layer_guard_state,  # noqa: F401
+    layer_guard_value,  # noqa: F401
+    normalise_profile,  # noqa: F401
     INSTALL_DEFAULTS,  # noqa: F401
     INSTALL_POLICIES,  # noqa: F401
     INSTALL_POLICY_DEFAULT,  # noqa: F401
@@ -187,7 +192,10 @@ from crew_health import (
 # an existing repo's promotions changes, because `requireForProduction` lands
 # `false`, but the repo does gain a command it did not have. See
 # `crew_upgrade.SCHEMA_7_KEYS`.
-SCHEMA_CURRENT = 7
+# 8 (L-0725) rewrites the twelve `guards.<name>` keys into `guards.profile` plus
+# `guards.overrides` and removes the 60 keys `crew_dropped.DROPPED` lists. A
+# schema 7 repo reads `upgradeNeeded` until `/crew:migrate` runs.
+SCHEMA_CURRENT = 8
 
 # The machine-global config file. `crew_config` owns the LAYERING and re-exports
 # this name; the path itself lives here for the same reason `PM_DEFAULTS` and
@@ -410,117 +418,26 @@ def read_work(root):
     }
 
 
-# Terminal processes whose MainWindowTitle is worth offering for
-# `context.autoClear.windowTitle`, mapped to WHY the title may not hold.
-# `None` means the title is fixed and can be used as-is.
-#
-# Windows Terminal and the VS Code terminal both retitle on tab or editor
-# change, so a value read now is not a value that keeps matching. That is not
-# a reason to refuse to look -- it is a reason to say so when offering it.
-TERMINAL_PROCESSES = {
-    "WindowsTerminal": "Windows Terminal retitles on every tab switch - pin "
-                       "the tab title first, or match a substring that does "
-                       "not move",
-    "Code": "the VS Code window title follows the active editor",
-    "conhost": None,
-    "cmd": None,
-    "powershell": None,
-    "pwsh": None,
-    "alacritty": None,
-    "WezTerm": None,
-}
-
-
-def detect_window_titles():
-    """Candidate terminal window titles, read from the OS, newest first.
-
-    For `context.autoClear.windowTitle`. The Windows flavour of auto-clear
-    matches this against the foreground window before sending keystrokes, so a
-    wrong value types into the wrong window -- which is why this MEASURES
-    rather than guesses, and why every candidate carries what is uncertain
-    about it.
-
-    Windows only. The posix flavour targets a tmux pane by id and needs no
-    title at all, so there is nothing to detect there and an empty list is the
-    honest answer rather than a fabricated one.
-
-    `stable` is the field that matters. A Windows Terminal window title follows
-    its ACTIVE TAB, so a title detected now can stop matching the moment the
-    user switches tabs -- a value that is correct when written and wrong when
-    used. Those are reported with `stable: False` and a reason, so the caller
-    can say so instead of presenting a moving target as a setting.
-    """
-    if not sys.platform.startswith("win"):
-        return []
-    script = (
-        "Get-Process | Where-Object { $_.MainWindowTitle } | "
-        "Select-Object ProcessName,MainWindowTitle | ConvertTo-Json -Compress")
-    for exe in ("pwsh", "powershell"):
-        found = shutil.which(exe)
-        if not found:
-            continue
-        try:
-            out = subprocess.run(
-                [found, "-NoProfile", "-NonInteractive", "-Command", script],
-                capture_output=True, text=True, check=False, timeout=20,
-                stdin=subprocess.DEVNULL).stdout
-            rows = json.loads(out) if out.strip() else []
-        except (OSError, ValueError, subprocess.SubprocessError):
-            continue
-        if isinstance(rows, dict):
-            rows = [rows]
-        out_rows = []
-        for row in rows:
-            name = str(row.get("ProcessName") or "")
-            title = str(row.get("MainWindowTitle") or "").strip()
-            if name not in TERMINAL_PROCESSES or not title:
-                continue
-            reason = TERMINAL_PROCESSES[name]
-            out_rows.append({
-                "process": name,
-                "title": title,
-                "stable": reason is None,
-                "why": reason or "a fixed window title",
-            })
-        return out_rows
-    return []
-
-
 def read_auto_clear(cfg):
     """Whether `context.autoClear` is switched on but cannot act here.
 
-    `enabled` is consent, not capability. The bash flavour can target a tmux
-    pane exactly; the native-Windows flavour has exactly one method, SendKeys
-    against a title-matched foreground window, and it refuses outright without
-    `windowTitle` rather than typing into whatever happens to have focus.
-
-    So on Windows with no `windowTitle`, `enabled: true` is a setting that
-    reads as on and does nothing. `inert` is that state as its OWN value
-    rather than an absence, so the brief can say it instead of the user
-    discovering it in `.crew/.autoclear.log`.
+    `enabled` is consent, not capability. The bash flavour targets a tmux pane
+    exactly; with none, the method resolves to `notify`. `inert` is that
+    state as its OWN value rather than an absence.
     """
     ctx = dict_or_empty(cfg.get("context"))
     auto = dict_or_empty(ctx.get("autoClear"))
     enabled = auto.get("enabled") is True
-    title = auto.get("windowTitle") or None
     system = dict_or_empty(cfg.get("platform")).get("os")
     return {
         "enabled": enabled,
-        "windowTitle": title,
         "os": system,
         # ALWAYS False since 0.19.57, and kept rather than deleted so a
         # reader gets an honest answer instead of a KeyError.
         #
-        # It used to be True for "enabled on Windows with no windowTitle",
-        # because the script refused outright in that state. It no longer
-        # refuses: it walks its own ancestors to the first process that owns a
-        # window and targets that process id, which is exact where a title was
-        # a guess that expired -- the detector read three different titles for
-        # the same window in one session.
-        #
         # Nothing Python can see at SessionStart distinguishes "will act" from
-        # "cannot act" any more; only the script knows, at send time, and it
-        # writes that to .crew/.autoclear.log. Reporting a healthy state as a
+        # "cannot act"; only the script knows, at send time, and it writes
+        # that to .crew/.autoclear.log. Reporting a healthy state as a
         # finding is worse than reporting nothing, so this stops claiming to
         # know.
         "inert": False,
@@ -586,12 +503,10 @@ STALE_HANDOFF_DEFAULTS = {"maxAgeHours": 72, "maxCommitsBehind": 3}
 # The `context.autoClear` block, defined ONCE because both templates carry it
 # and a second literal is a second thing to drift. Values are the fallbacks the
 # hook scripts already apply, read out of them rather than out of any doc:
-# `auto-clear.ps1:78-82` for method/delaySeconds/command/windowTitle/
-# minHandoffLines, and `:69` for enabled, which exits unless it is exactly true.
-#
-# `windowTitle` is None here and `""` in the script. The script treats both as
-# "not set" (`if ($a.windowTitle)` is false for either), and null is what
-# "not set" means everywhere else in this file, so null is the honest default.
+# `auto-clear.ps1:78-82` for method/delaySeconds/minHandoffLines, and `:69` for
+# enabled, which exits unless it is exactly true. `command`, `windowTitle` and
+# `unsafeFocus` are fixed values (AUTOCLEAR_COMMAND, AUTOCLEAR_WINDOW_TITLE,
+# AUTOCLEAR_UNSAFE_FOCUS) and not part of the block.
 AUTOCLEAR_DEFAULTS = {
     # OFF by default, and a MACHINE opt-in: the scripts
     # (`crew_autocycle.settings`, `auto-clear.ps1`) act only when the
@@ -603,13 +518,8 @@ AUTOCLEAR_DEFAULTS = {
     # value of `true` alone no longer counts.
     "enabled": None,
     "method": "auto",
-    "windowTitle": None,
-    "command": "/clear",
     "delaySeconds": 3,
     "minHandoffLines": 5,
-    # Wayland only (`auto-clear.sh`, the `wtype` method). The first pass read only
-    # the .ps1 consumers: a default from one platform's consumer is half-derived.
-    "unsafeFocus": False,
     # NARROWING-ONLY, and read from the machine file only
     # (`crew_autocycle.in_scope`, `auto-clear.ps1`'s twin): null arms every
     # repo and session the machine opt-in already covers; a list arms only
@@ -628,32 +538,18 @@ AUTOCLEAR_DEFAULTS = {
 # exactly `true`, and a repo `false` in `.crew/crew.json` or
 # `.crew/config.json` vetoes it -- a repo value can never switch it on. Null
 # rather than false so the /crew:init template, which writes every key, does
-# not veto a machine opt-in. `context.autoResume` is a different, retired key
-# and stays unread.
+# not veto a machine opt-in.
 #
-# T-0013: how auto-resume TYPES, read from the MACHINE file only
-# (`crew_autocycle.resume_typing`); a repo copy is declared but never read.
-# `typeDelaySeconds` precedes the tmux ready probe (Windows' only wait; the spike
-# saw input ready 0.134 s after SessionStart); `readyTimeoutSeconds` caps the probe.
-RESUME_DEFAULTS = {"auto": None, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15}
+# T-0013: how auto-resume TYPES is fixed (`crew_autocycle.resume_typing`):
+# RESUME_TYPE_DELAY_SECONDS precedes the tmux ready probe (Windows' only wait;
+# the spike saw input ready 0.134 s after SessionStart) and
+# RESUME_READY_TIMEOUT_SECONDS caps the probe.
+RESUME_DEFAULTS = {"auto": None}
 
 # T-0044 `unattendedCloud`: MACHINE file only (crew_unattended.py); a repo copy is ignored and reported.
 UNATTENDED_CLOUD_DEFAULTS = {"aws": {"readOnly": {
     "profile": None, "identity": None, "region": None}, "nonProd": {}}}
 UNATTENDED_CLOUD_MACHINE_ONLY, UNATTENDED_CLOUD_PROVIDERS = ("unattendedCloud",), ("aws",)
-
-# Keys inside `autoClear` that are CONSENT rather than capability, and so are
-# declared but never granted machine-wide. `unsafeFocus: true` accepts that
-# `wtype` types into whatever currently has focus, which Wayland offers no way
-# to check. The rest of the block is a description of the machine and belongs
-# in the global layer; this is a decision about accepting a risk, and one
-# `true` set once would accept it for every repo on the box.
-#
-# The repo already draws this line and enforces it the same way:
-# `graph.obsidian.confirmed` is refused by `plan_global_write` and pruned by
-# `filter_global` because consent to act outside the repo is not a capability
-# a guided flow may hand over. Same reasoning, same treatment.
-AUTOCLEAR_CONSENT_KEYS = ("unsafeFocus",)
 
 # Keys inside `autoClear` that are machine-only in a STRONGER sense than the
 # ordinary repo-over-global precedence every other key here resolves by:
@@ -686,62 +582,19 @@ CONTEXT_DEFAULTS = {
         # at 0.8/100k a 1M window fired at 900k, and lowering only
         # warnAt would still have fired at 900k. Both had to move.
         "warnAt": 0.4,
-        "budgetTokens": None,
         "reserveTokens": 0,
-        "handoffPath": ".work/HANDOFF.md",
-        "keepTranscripts": 5,
         # These three were read by hook scripts and declared here by
         # nothing until 0.19.10 -- `auto-clear.ps1:67`,
         # `context-watch.ps1:33` and `handoff-read.ps1:36` respectively.
         # See the `jira.cloudId` note above for why undeclared is not the
         # same as unused, and why it still cost something.
         "autoClear": copy.deepcopy(AUTOCLEAR_DEFAULTS),
-        # 0.19.52: true. Pairs with autoClear -- the wrap-up wording
-        # is what asks for the change in flight to be finished or
-        # abandoned and the ticket updated, and auto-clear fires on
-        # the turn after the handoff lands.
-        "autoWrapUp": True,
-        # 0.19.52: true, completing the loop with autoWrapUp and
-        # autoClear -- ask for the note, clear once it exists, read
-        # it back on the next session with the next action attached.
-        "autoResume": True,
-        # See STALE_HANDOFF_DEFAULTS for why these two figures
-        # specifically -- generous on purpose, since archiving a note
-        # someone is still using is worse than leaving a stale one in
-        # place for one more day.
-        "staleHandoff": {
-            "maxAgeHours": STALE_HANDOFF_DEFAULTS["maxAgeHours"],
-            "maxCommitsBehind":
-                STALE_HANDOFF_DEFAULTS["maxCommitsBehind"],
-        },
 }
 
 # Directory archived handoffs move to. Sibling to crew_incident.ARCHIVE_DIR
 # (".crew/incidents") -- same convention, one archive directory per kind of
 # record crew keeps.
 HANDOFF_ARCHIVE_DIR = ".crew/handoffs"
-
-
-def _stale_handoff_config(cfg):
-    """Resolved `{maxAgeHours, maxCommitsBehind}` for this repo.
-
-    Falls back to STALE_HANDOFF_DEFAULTS on anything missing or wrong-typed --
-    config is hand-edited, and a bad value here must degrade to the default,
-    not raise out of a SessionStart hook.
-    """
-    block = dict_or_empty(dict_or_empty(cfg.get("context")).get("staleHandoff"))
-    age = block.get("maxAgeHours")
-    behind = block.get("maxCommitsBehind")
-    return {
-        "maxAgeHours": (
-            age if isinstance(age, (int, float)) and age > 0
-            else STALE_HANDOFF_DEFAULTS["maxAgeHours"]
-        ),
-        "maxCommitsBehind": (
-            behind if isinstance(behind, int) and behind >= 0
-            else STALE_HANDOFF_DEFAULTS["maxCommitsBehind"]
-        ),
-    }
 
 
 def _handoff_field(pattern, text):
@@ -770,22 +623,14 @@ def _handoff_written_epoch(text):
 
 
 def handoff_path(root, cfg):
-    """Where the handoff note lives, honouring `context.handoffPath`.
+    """Where the handoff note lives: the fixed `CONTEXT_HANDOFF_PATH`.
 
     `contained_path`, not a bare join -- this path is read wholesale into hook
-    output and, under `context.autoResume`, into the model's context (see
-    contained_path's own docstring for the exfiltration risk a bad config
-    value carries). Shared by handoff_staleness / archive_stale_handoff so the
-    file they judge and archive is the same one handoff-read.sh prints and
-    crew_context.py injects -- not a second path convention.
+    output and into the model's context. Shared by handoff_staleness /
+    archive_stale_handoff so the file they judge and archive is the same one
+    handoff-read.sh prints and crew_context.py injects.
     """
-    context_cfg = dict_or_empty(cfg.get("context"))
-    configured = context_cfg.get("handoffPath")
-    value = (
-        configured if isinstance(configured, str) and configured
-        else _DEFAULT_HANDOFF_PATH
-    )
-    return contained_path(root, value, _DEFAULT_HANDOFF_PATH)
+    return contained_path(root, CONTEXT_HANDOFF_PATH, CONTEXT_HANDOFF_PATH)
 
 
 def handoff_staleness(root, handoff_text, cfg=None, now=None, mtime=None):
@@ -801,7 +646,6 @@ def handoff_staleness(root, handoff_text, cfg=None, now=None, mtime=None):
     as the age fallback described above _HANDOFF_WRITTEN_RE.
     """
     now = time.time() if now is None else now
-    limits = _stale_handoff_config(cfg or {})
     reasons = []
 
     written = _handoff_written_epoch(handoff_text)
@@ -812,10 +656,10 @@ def handoff_staleness(root, handoff_text, cfg=None, now=None, mtime=None):
     age_hours = None
     if written is not None:
         age_hours = max(0.0, (now - written) / 3600.0)
-        if age_hours >= limits["maxAgeHours"]:
+        if age_hours >= STALE_HANDOFF_MAX_AGE_HOURS:
             reasons.append(
                 f"{age_hours:.0f}h old ({age_source}), at or past the "
-                f"configured {limits['maxAgeHours']:.0f}h limit"
+                f"configured {STALE_HANDOFF_MAX_AGE_HOURS:.0f}h limit"
             )
 
     noted_branch = _handoff_field(_HANDOFF_BRANCH_RE, handoff_text)
@@ -855,11 +699,11 @@ def handoff_staleness(root, handoff_text, cfg=None, now=None, mtime=None):
                 )
                 if count and count.isdigit():
                     commits_behind = int(count)
-                    if commits_behind >= limits["maxCommitsBehind"]:
+                    if commits_behind >= STALE_HANDOFF_MAX_COMMITS_BEHIND:
                         reasons.append(
                             f"{commits_behind} commit(s) have landed on top "
                             "of the noted head, at or past the configured "
-                            f"{limits['maxCommitsBehind']} limit"
+                            f"{STALE_HANDOFF_MAX_COMMITS_BEHIND} limit"
                         )
 
     return {
@@ -1037,28 +881,22 @@ AUTONOMOUS_STOPS = (
 # else `none` (crew_autopilot.deploy_allowed). Every AUTONOMOUS_STOPS entry binds it too (autopilot.md names each).
 # `approval`/`questions` (T-0010) are `human|self|risk`: `risk` acts only on a spec header `risk: low`, else `human`;
 # approval also needs `scope.allowCliApproval: true`. `sleep` (T-0053): crew_sleep.py. `maxAutoReplans` (T-0074): 0 off.
-# T-0011, after /crew:done: `ship` `pr` opens the PR, `merge` also merges once every required check passes or fails
-# only on a name EXACTLY in `knownFailures` (else `pr`); pending past `ciTimeoutMinutes` stops, unmerged.
+# T-0011, after /crew:done: `ship` `pr` opens the PR, `merge` also merges once every required check passes (else
+# `pr`); pending past AUTOPILOT_CI_TIMEOUT_MINUTES stops, unmerged (L-0725: no failure is excused).
 AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk", "questions": "risk",
-                      "maxAutoReplans": 0, "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
-                      "sleep": dict.fromkeys(("schedule", "approval", "questions", "deploy", "notifyHold")),
+                      "maxAutoReplans": 0, "ship": "merge",
+                      "sleep": dict.fromkeys(("schedule", "approval", "questions", "deploy")),
                       "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000,
                       "maxLanes": None, "reviewPolicy": "stop"}  # T-0029 wave: crew_wave.settings
 
 # How many tickets one session's work becomes. The default is `system`: one session is one ticket, and a second
 # ticket is opened only when the work reaches into another system. Splitting per change was the pre-0.17.0 behaviour
 # and is kept as `change` for anyone who wants it back.
-TICKET_GRANULARITIES = ("session", "system", "change")
 GRANULARITY_DEFAULT = "system"
 
 
 PM_DEFAULTS = {
-    "enabled": True,
-    "mode": "adaptive",
-    "quietLines": 8,
-    "maxLines": 40,
     "authority": AUTHORITY_DEFAULT,
-    "ticketGranularity": GRANULARITY_DEFAULT,
     # Guardrail. The PM stops dispatching after this many roles in one pass and
     # says what it did not get to, rather than working a queue until the context
     # runs out. Blockers found mid-task do not count against it --
@@ -1131,20 +969,64 @@ DEV_DEFAULTS = {
 # wrong disk, and on a machine that syncs its repo parent to cloud storage is
 # an index rebuild per worktree.
 #
-# `root` is a DIRECTORY worktrees are created under, not a worktree path:
-# crew adds `<repo name>-<branch>` beneath it, so several repos can share one
-# root without colliding. `null` keeps the old behaviour exactly -- the
-# checkout's parent -- so an existing config that never gains this key
-# behaves as it always did.
-#
-# It is inheritable from the global file (see `default_global_config`)
-# because which disk has room is a fact about the machine, not about a
-# checkout: someone who keeps worktrees on D:\ keeps them there for every
-# repo, and saying so once per repo is the friction the global layer exists
-# to remove. A repo that genuinely needs its own answer still overrides it.
-WORKTREE_DEFAULTS = {
-    "root": None,
-}
+# L-0725: the fixed values. Each was a config key nobody had set to anything but
+# its default in any measured config layer (the Disposition in
+# `.work/tickets/L-0725/spec.md`); each is now a constant at that default, named
+# once here. `crew_dropped.DROPPED` pairs every old key with its constant and
+# a test holds the two together. A config still carrying one of the keys is
+# told so by `crew_config.inert_settings`, and `/crew:migrate` removes it.
+AUTOPILOT_CI_TIMEOUT_MINUTES = 60
+AUTOPILOT_KNOWN_FAILURES = ()
+AUTOPILOT_NOTIFY_HOLD = None
+MERGE_GATE_ENABLED = False
+MERGE_GATE_BRANCH = None
+BITBUCKET_MERGE_GATE_PRESET = "standard"
+CHANGE_REQUESTER = None
+CHANGE_IMPLEMENTOR = None
+CHANGE_SDP_TEMPLATE = "Change Management Request"
+CHANGE_JIRA_ISSUE_TYPE = "Change"
+CHANGE_CATEGORY = None
+AUTOCLEAR_WINDOW_TITLE = None
+AUTOCLEAR_COMMAND = "/clear"
+AUTOCLEAR_UNSAFE_FOCUS = False
+CONTEXT_AUTO_WRAP_UP = True
+CONTEXT_AUTO_RESUME = True
+CONTEXT_BUDGET_TOKENS = None
+CONTEXT_HANDOFF_PATH = _DEFAULT_HANDOFF_PATH
+CONTEXT_KEEP_TRANSCRIPTS = 5
+STALE_HANDOFF_MAX_AGE_HOURS = STALE_HANDOFF_DEFAULTS["maxAgeHours"]
+STALE_HANDOFF_MAX_COMMITS_BEHIND = STALE_HANDOFF_DEFAULTS["maxCommitsBehind"]
+DOCS_THEME = None
+DOCS_REPORT_THEME = None
+EMERGENCY_TTL_MINUTES = 120
+GRAPH_ENABLED = True
+GRAPH_TOOL = "graphify"
+GRAPH_MODE = "code-only"
+GRAPH_COMMIT_HOOK = False
+MEMORY_INJECT = True
+MEMORY_RECALL_VAULTS = ()
+MEMORY_RECALL_MAX_CHARS = 800
+MEMORY_RECALL_PROJECTS = ()
+NOTIFY_URL_ENV = None
+NOTIFY_QUESTION_TYPES = None
+NOTIFY_REALERT_HOURS = 6
+OBSIDIAN_BOARD = "Board.md"
+OBSIDIAN_COLUMNS = {"backlog": "Backlog", "ready": "Ready", "inProgress": "In Progress",
+                    "review": "Review", "done": "Done"}
+PM_ENABLED = True
+PM_MODE = "adaptive"
+PM_QUIET_LINES = 8
+PM_MAX_LINES = 40
+RESUME_TYPE_DELAY_SECONDS = 2
+RESUME_READY_TIMEOUT_SECONDS = 15
+SDP_PORTAL = None
+SDP_NOTE_VISIBILITY = "private"
+SDP_CLOSE_ON_DONE = False
+SECOND_OPINION_KEY_ENV = "GEMINI_API_KEY"
+SECOND_OPINION_SENDS_CODE = False
+SHELL_ROUTE_MODE = "auto"
+SHELL_ROUTE_DISTRO = None
+WORKTREE_ROOT = None
 
 # Every path separator this platform honours, for flattening a branch name into
 # one directory level. Derived rather than written as a regex character class:
@@ -1165,7 +1047,7 @@ def _repo_digest(repo_root, length=6):
 
     The worktree leaf carries it because a directory BASENAME does not say
     which repo: two checkouts called `myrepo` under different parents share
-    one leaf, and with a shared `worktree.root` one repo's worktree lands in
+    one leaf, and with a shared worktree directory one repo's worktree lands in
     the other's. Both directories look correct, which is what makes the
     collision expensive rather than merely wrong.
 
@@ -1278,20 +1160,6 @@ def authority_rank(value):
     ordered; nothing else may compare authority strings.
     """
     return AUTHORITIES.index(normalise_authority(value))
-
-
-def normalise_granularity(value):
-    """`value` as a known ticket granularity, else the default.
-
-    Unlike authority, no value here is more permissive than another -- this
-    setting buys nobody a capability, it only decides how the same work is
-    filed. So the fallback is the documented default rather than an extreme.
-    """
-    if isinstance(value, str):
-        cleaned = value.strip().lower()
-        if cleaned in TICKET_GRANULARITIES:
-            return cleaned
-    return GRANULARITY_DEFAULT
 
 
 def merge_defaults(defaults, supplied, discarded=None, _path=""):
@@ -2895,37 +2763,24 @@ def int_or(value, default):
 
 
 
-def worktree_root(cfg, repo_root):
-    """The directory a crew worktree for `repo_root` should be created under.
+def worktree_root(repo_root):
+    """The directory a crew worktree for `repo_root` should be created under:
+    the checkout's parent, which is git's own habit.
 
-    `worktree.root` is resolved here rather than at each call site so the
-    answer is the same one every time: `/crew:emergency` running two candidate
-    fixes side by side and a tier-3 parallel session have to agree, or the
-    second one adds a worktree the first cannot find.
-
-    An unset, blank or non-string `root` means the checkout's parent, which is
-    git's own habit and what crew did before the key existed. `~` and
-    environment variables are expanded because this value is typed by hand
-    into a config file, where `~/worktrees` is what a person writes and
-    `os.path.join` would otherwise create a literal `~` directory. A relative
-    path is resolved against `repo_root`, not against the process's working
-    directory: a hook runs from wherever the session happens to be, so
-    anything else would put worktrees somewhere different depending on which
-    directory the user was in when the gate fired.
+    L-0725: this was `worktree.root`; it is fixed at `WORKTREE_ROOT` (None),
+    and a config that still carries the key has no effect on it. Resolved here
+    rather than at each call site so the answer is the same one every time:
+    `/crew:emergency` running two candidate fixes side by side and a tier-3
+    parallel session have to agree, or the second one adds a worktree the
+    first cannot find.
 
     Returns an absolute path. It is NOT created here -- a resolver that makes
     directories cannot be called to report what the setting says.
     """
-    root = dict_or_empty(cfg.get("worktree")).get("root")
-    if not isinstance(root, str) or not root.strip():
-        return os.path.abspath(os.path.join(repo_root, os.pardir))
-    expanded = os.path.expanduser(os.path.expandvars(root.strip()))
-    if not os.path.isabs(expanded):
-        expanded = os.path.join(repo_root, expanded)
-    return os.path.abspath(expanded)
+    return os.path.abspath(os.path.join(repo_root, os.pardir))
 
 
-def worktree_path(cfg, repo_root, branch):
+def worktree_path(repo_root, branch):
     r"""Where the worktree for `branch` goes: `<worktree_root>/<repo>-<branch>`.
 
     The repo name is in the leaf so that several repos can share one root
@@ -2973,7 +2828,7 @@ def worktree_path(cfg, repo_root, branch):
     if not cleaned or set(cleaned) <= {"."}:
         cleaned = "detached"
     leaf = f"{os.path.basename(os.path.abspath(repo_root))}-{_repo_digest(repo_root)}-{cleaned}"
-    return os.path.join(worktree_root(cfg, repo_root), leaf)
+    return os.path.join(worktree_root(repo_root), leaf)
 
 
 def evaluate_triggers(state):
@@ -3063,7 +2918,7 @@ def collect(root, cfg_override=None):
     """Full crew state for a repository. Never raises.
 
     `cfg_override`, when given, replaces the config used for every SETTING
-    below -- `pm`, `tier`, `roles`, `tracker`, `knowledge`, `diagrams`,
+    below -- `pm`, `tracker`, `knowledge`, `diagrams`,
     `endpoints` -- but never for `schema` or `isCrew`, both facts about the repo's own
     `.crew/config.json` that must not change depending on what is layered on
     top of it. Ignored entirely for a directory this function does not
@@ -3085,25 +2940,23 @@ def collect(root, cfg_override=None):
     is_crew = bool(raw_cfg)
     cfg = cfg_override if (is_crew and cfg_override is not None) else raw_cfg
     pm = dict(PM_DEFAULTS)
-    supplied = cfg.get("pm")
-    if isinstance(supplied, dict):
-        pm.update(supplied)
+    supplied = dict_or_empty(cfg.get("pm"))
+    for key in PM_DEFAULTS:
+        if key in supplied:
+            pm[key] = supplied[key]
+    # L-0725: the other pm settings are fixed values, whatever a config says.
+    pm.update(enabled=PM_ENABLED, mode=PM_MODE, quietLines=PM_QUIET_LINES,
+              maxLines=PM_MAX_LINES, ticketGranularity=GRANULARITY_DEFAULT)
 
-    # Coerce every numeric field once, here, so nothing downstream has to guess.
-    # These come from a hand-edited JSON file: the types are whatever someone
-    # typed, and an unguarded comparison against one is a TypeError that takes
-    # out every session in the repo.
-    for key, default in (("quietLines", 8), ("maxLines", 40),
-                         ("maxDispatches", 3)):
-        pm[key] = int_or(pm.get(key, default), default)
+    # Coerce the one numeric field once, here, so nothing downstream has to guess.
+    # It comes from a hand-edited JSON file: the type is whatever someone typed,
+    # and an unguarded comparison against one is a TypeError that takes out
+    # every session in the repo.
+    pm["maxDispatches"] = int_or(pm.get("maxDispatches", 3), 3)
     # Normalised once, here, for the same reason as the numbers: every consumer
     # downstream then reads a value that is guaranteed to be one of AUTHORITIES,
     # and none of them has to re-decide what a typo means.
     pm["authority"] = normalise_authority(pm.get("authority"))
-    pm["ticketGranularity"] = normalise_granularity(pm.get("ticketGranularity"))
-
-    tier = cfg.get("tier")
-    roles = cfg.get("roles")
 
     state = {
         "isCrew": is_crew,
@@ -3135,8 +2988,6 @@ def collect(root, cfg_override=None):
         # by me, on the commit that introduced these keys.
         "schemaDeclared": raw_cfg.get("schema") if raw_cfg else None,
         "schemaKeyPresent": bool(raw_cfg) and "schema" in raw_cfg,
-        "tier": tier if isinstance(tier, int) and not isinstance(tier, bool) else None,
-        "roles": roles if isinstance(roles, list) else [],
         "tracker": cfg.get("tracker"),
         "pm": pm,
         "health": read_metrics(root),
@@ -3225,17 +3076,8 @@ def main(argv=None):
                              "ledger record, right after that scan lands")
     parser.add_argument("--worktree-path", metavar="BRANCH", default=None,
                         help="print where a worktree for BRANCH belongs, per "
-                             "the resolved worktree.root, and exit. Creates "
+                             "the checkout's parent directory, and exit. Creates "
                              "nothing. Pass '-' for the root directory alone")
-    parser.add_argument("--detect-window-title", action="store_true",
-                        help="read candidate terminal window titles from the "
-                             "OS, for context.autoClear.windowTitle, and "
-                             "print them as JSON. Each carries `stable`: "
-                             "false means the title follows something that "
-                             "moves (a Windows Terminal tab, a VS Code "
-                             "editor) and will stop matching. Windows only - "
-                             "the posix flavour targets a tmux pane by id and "
-                             "needs no title. Reads only; writes nothing")
     parser.add_argument("--archive-stale-handoff", action="store_true",
                         help="judge the configured handoff note against the "
                              "staleness signals (age, and whether its noted "
@@ -3248,42 +3090,15 @@ def main(argv=None):
     root = args.root or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     if args.worktree_path is not None:
         # A command that has to place a worktree shells out to THIS, rather
-        # than composing a path from the config itself. Without it the setting
-        # was only prose: `worktree.root` existed, `worktree_path` computed the
-        # answer, and nothing a command could actually run returned it -- so
-        # two lanes placing worktrees seconds apart would each invent their
-        # own. Raised by the Codex review of this change, which called the key
-        # unused and was right.
-        #
-        # Layered, not raw: the machine-global file has to apply, so the RAW
-        # `.crew/config.json` is the wrong input -- reading it here would
-        # ignore the global setting this key exists to support.
-        #
-        # But this module must NOT import `crew_config`. That is not a style
-        # preference: `crew_config`'s own docstring says `crew_state` importing
-        # it makes "a real cyclic import rather than a stylistic one", and an
-        # earlier version of this branch did it anyway, inside the function, on
-        # the theory that a deferred import is not a cycle. It is -- pylint
-        # reported `crew_config -> crew_state` and `crew_config ->
-        # crew_upgrade -> crew_state` as R0401, and the comment justifying it
-        # sat four lines above the import it was wrong about.
-        #
-        # So the layering is done by the CALLER. `crew_config.py` already
-        # imports this module legitimately, in the one permitted direction, and
-        # carries the `--worktree-path` flag; this path resolves from whatever
-        # config it is handed and defaults to the unconfigured answer. A hook
-        # must never die because the config layer is unhappy, and the
-        # unconfigured answer is the checkout's parent -- what crew did before
-        # this key existed.
-        cfg = load_config(root) or {}
+        # than composing a path itself, so two lanes placing worktrees seconds
+        # apart agree on one answer.
         if args.worktree_path == "-":
-            print(worktree_root(cfg, root))
+            print(worktree_root(root))
         else:
-            print(worktree_path(cfg, root, args.worktree_path))
+            print(worktree_path(root, args.worktree_path))
         return 0
     if args.archive_stale_handoff:
-        # Same layered config as --worktree-path above, and the same reason:
-        # a bad or absent config must degrade to the unconfigured defaults,
+        # A bad or absent config must degrade to the unconfigured defaults,
         # never raise out of a SessionStart hook. Always returns 0 -- this is
         # a judgment call reported as JSON, not a command that can fail the
         # caller; handoff-read.sh reads `archived`/`archivedPath` off stdout
@@ -3385,12 +3200,6 @@ def main(argv=None):
                   "or its id is not safe to use in a path", file=sys.stderr)
             return 2
         print(path)
-        return 0
-    if args.detect_window_title:
-        # Reads only. The caller decides what to do with an unstable title --
-        # this prints what is there and why it may not hold, and never writes
-        # the config itself. Which window gets typed into is the user's call.
-        print(json.dumps(detect_window_titles(), indent=2, sort_keys=True))
         return 0
     print(json.dumps(collect(root), indent=2, sort_keys=True))
     return 0

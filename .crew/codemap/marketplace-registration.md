@@ -2,6 +2,9 @@ anchor: useful-claude-add-ons@9ba355d7c
 verified: 2026-10-20
 paths: scripts/**, plugin/PLUGINS.md
 
+**Targeted check at `c0e582fbe` (2026-10-22, L-0725); anchor NOT moved.** Re-read: `scripts/check-marketplace.py`'s `main()` call list and line numbers, and the smoke-gap count ("Two version-check paths"); L-0725 changed that file's `check_config_reference` docstring only. Nothing else in this note was
+re-verified: a claim here is as of this note's own anchor.
+
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
 anchor (`5d1fc5fd`) predates crew 1.0's four-role rewrite
 (`c3bd8dfd` "remove the PM agent, pulse, journal and retired roles" through
@@ -189,17 +192,19 @@ claim it was wrong about was removed, not because it was corrected in place.
 
 ## Two version-check paths, still not one
 
-**DERIVED, unchanged in shape.** `scripts/check-marketplace.py`'s own
-`main()` (`:1679-1715`) calls all seventeen checks, `check_versions` included,
-at `:1699` in call order (T-0048 added `check_config_reference` at `:1701`). `_verify/smoke.sh` is confirmed byte-identical to
+**DERIVED, re-read at `c0e582fbe` (2026-10-22).** `scripts/check-marketplace.py`'s own
+`main()` (`:2057`) calls all nineteen checks, `check_versions` included,
+at `:2084` in call order (`check_config_reference` at `:2086`, defined at `:1611`; `check_verifying_doc` `:1925` and
+`check_diagram_embeds` `:1965` are the last two, after `check_crew_ignore_policy`). L-0725 changed only
+that function's docstring (`plugin/crew/CONFIG.md` is generated whole, not two tables inside it). `_verify/smoke.sh` is confirmed byte-identical to
 `5d1fc5fd` (`git diff --stat` empty) — its `run_marketplace_check()`
 (`:72-98`) still exposes the same six named groups calling the same eight
 functions (`registration`, `skills`, `plugins`, `catalogs`, `menus`,
-`hooks`), so the gap is now **nine of seventeen**: `check_versions`,
+`hooks`), so the gap is now **eleven of nineteen**: `check_versions`,
 `check_self_claims`, `check_config_reference`, `check_crew_ignore_policy`,
 `check_argument_hint_frontmatter`, `check_license_consistency`,
-`check_command_backtick_spans`, `check_description_claims` and
-`check_catalog_claims` are all invisible to `bash _verify/smoke.sh`. The
+`check_command_backtick_spans`, `check_description_claims`,
+`check_catalog_claims`, `check_verifying_doc` and `check_diagram_embeds` are all invisible to `bash _verify/smoke.sh`. The
 practical consequence is unchanged: `check_versions` is history-based
 (`version_set_at`, `bump_candidates` walking both first-parent and full
 history) and cannot answer for an uncommitted change, so a pre-commit run of
@@ -834,7 +839,7 @@ at `c817782f`: `all checks passed`.
 `git diff --name-only c817782f 926443d8` is T-0010's round-3 fix (`caabb005`), the BUDGETS.md
 count, the version step-back and re-set, and this refresh. Of the paths this note cites, `plugin/crew/README.md`, `plugin/crew/CONFIG.md` and
 `plugin/crew/BUDGETS.md` changed: README two lines rewritten in place (`:792`, `:818`),
-CONFIG.md's §20 one-writer paragraph grew six lines, and `BUDGETS.md:11`'s count moved
+docs/crew/config-rationale.md one-writer paragraph grew six lines, and `BUDGETS.md:11`'s count moved
 18,917 -> 18,923 on the same line. No citation this note makes moved (checked with `difflib`
 over every cited path). Nothing was executed.
 
@@ -1007,7 +1012,7 @@ at `3724731b`: `marketplace: 34 skills, 5 plugins`, `all checks passed`.
 
 `7d473f24` merges origin/main `f54af3fa` (T-0072 landed as crew 1.0.51: `crew_autopilot.py`,
 `commands/autopilot.md`, `crew_state.py`'s line-neutral `AUTOPILOT_DEFAULTS` hunk at `:1086-1090`,
-`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `CONFIG.md` §20, `README.md`, its
+`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `docs/crew/config-rationale.md`, `README.md`, its
 tests, `sabotage_autopilot.py`, `.crew/verify.json` rule 27's `seconds` and `why`; its notes
 anchored `9631c707`); `07354a39`, `df419a55`, `7a206c8e`, `4112498e`, `1b31ed2f` and `7ef3c4f1` are
 T-0075's review-round-4 steps 11-16 (`crew_config.py`, `crew_config_files.py`,

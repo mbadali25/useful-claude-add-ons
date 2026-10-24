@@ -26,7 +26,7 @@
 %%    status.md gained the migrate `could not tell` row. No node or edge changed.
 %% /crew:status: commands/status.md:14 -> crew_status.py; :681-723 report lines.
 %% /crew:status checks the fixed path .work/HANDOFF.md (crew_status.py:711),
-%% not context.handoffPath, and does not apply the stale rule.
+%% not a configured path (context.handoffPath was removed by L-0725; the path is fixed), and does not apply the stale rule.
 %% Note st2: git header, config file, roster, tracker (crew_tracker.resolve, :267), tickets,
 %%    waiting (crew_autopilot_owner.owner_items, L-0551), review ledgers and the same-family share
 %%    (L-0712), verify, shell (Windows only, T-0040), codemap freshness, gitignore (T-0039), metrics,

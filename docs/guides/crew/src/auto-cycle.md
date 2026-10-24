@@ -67,8 +67,8 @@ cleanly, clear, and pick up where it stopped.
 
    **Crew types it where it can (T-0013).** The context hook runs the `auto-clear.sh`
    sender in resume mode (under Git Bash on Windows). Consent is `resume.auto`; `context.autoClear` only describes the terminal.
-   In tmux it waits `resume.typeDelaySeconds` (default 2), polls the pane for an idle, empty input
-   line for up to `resume.readyTimeoutSeconds` (default 15), then sends the command and, half a
+   In tmux it waits 2 seconds, polls the pane for an idle, empty input
+   line for up to 15 seconds (both fixed), then sends the command and, half a
    second later, Enter. On native Windows it types nothing (`auto` there is `notify`; the `sendkeys` method was removed in crew 1.2.61). It types once per
    handoff (a marker under `<git-common-dir>/crew/`) and records the run first, so a run that could
    not be recorded is never typed. The context then says `Auto-resume: typing /crew:done T-0001 into
@@ -86,23 +86,20 @@ cleanly, clear, and pick up where it stopped.
 
 ## Turning it on and off
 
-Wrap-up and resume are on by default. Auto-clear is **off** by default. You turn it on per machine,
+Wrap-up and resume are on by default, and fixed that way: `context.autoWrapUp`, `context.autoResume` and `memory.inject` were removed, so the wrap-up instruction and the handoff injection cannot be switched off. Auto-clear is **off** by default. You turn it on per machine,
 in the machine-global config, because it drives this machine's keyboard:
 
 | Where | Key | Value | Effect |
 |---|---|---|---|
 | `~/.claude/crew/config.json` (Windows: `%USERPROFILE%\.claude\crew\config.json`) | `context.autoClear.enabled` | `true` | turns auto-clear on for every crew repo on this machine |
 | same | `context.autoClear.method` | `"auto"` (default), `"tmux"`, `"xdotool"`, `"notify"`, `"none"` (`"sendkeys"` was removed in crew 1.2.61 and is refused) | how the cycle acts — see "Which method, and what it does" below |
-| same | `context.autoClear.windowTitle` | a substring of the terminal's title | fallback when the window cannot be found by process id |
 | same | `context.autoClear.delaySeconds` | `3` | wait before typing, so the prompt exists |
 | same | `context.autoClear.minHandoffLines` | `5` | a shorter handoff counts as a stub |
 | `.crew/config.json` (the repo) | `context.autoClear.enabled` | `false` | switches auto-clear off in this repo. A repo can switch it off, but `true` here does not switch it on. |
 | `~/.claude/crew/config.json` | `resume.auto` | `true` | names the next command from the handoff's `resume:` line after `/clear` or a manual `/compact` (off by default) |
 | `.crew/crew.json` or `.crew/config.json` (the repo) | `resume.auto` | `false` | vetoes auto-resume in this repo. `true` here does not switch it on. |
 | `~/.claude/crew/config.json` | `context.autoClear.wrapUp` | `true` | turns the wrap-up into the wrap-up procedure and makes the clear wait for its results (off by default; acts only where `enabled` is armed). A repo `false` vetoes it; a repo `true` does nothing. |
-| `.crew/config.json` | `context.autoWrapUp` | `false` | replaces the wrap-up instruction with a plain handoff request. It still blocks once. Armed `wrapUp` supersedes both wordings. |
 | `.crew/config.json` | `context.enabled` | `false` | turns off the whole context watcher, wrap-up included |
-| `.crew/config.json` | `memory.inject` | `false` | `handoff-read` prints the handoff for you to read, without extracting the next action. `context.autoResume` is no longer read. |
 
 `/crew:config --show` shows where each value comes from. `/crew:config` with no argument (or
 `/crew:config-setup`) opens a menu that sets either file from a list of values, with a dry run
@@ -201,7 +198,7 @@ fallback), just not a keystroke.
 | Log says | Meaning |
 |---|---|
 | `not trustworthy (estimated-from-transcript-size)` | no usage record was found, so the reading was an estimate |
-| `not trustworthy (unknown-window)` | the model's context window is unknown and `context.budgetTokens` is not set |
+| `not trustworthy (unknown-window)` | the model's context window is unknown (there is no budget setting to fall back on) |
 | `not trustworthy (stale-reading-before-compaction)` | the last reading came from before a compaction |
 | `the wrap-up marker is empty or not JSON` | the marker was not written by this version of the hook. Nothing clears on it. |
 | `predates this session's wrap-up request` | the handoff on disk is older than the request, probably left by an earlier session |
@@ -233,7 +230,7 @@ id and that process's start time. Only a session whose record says kind `interac
 entrypoint `cli`, with a controlling terminal (native Windows has none to read), is typed into.
 Every rule below walks up from that process, not from the hook, and refuses when the walk passes
 through another Claude Code session — a child started from a session's Bash tool inherits `$TMUX`,
-and without this its parent's pane is the one that got `/clear`. CONFIG.md §14 has the full rules and
+and without this its parent's pane is the one that got `/clear`. docs/crew/config-rationale.md has the full rules and
 their limits (Windows' entrypoint is unmeasured; macOS cannot check the start time).
 
 - **tmux (Linux, macOS, WSL):** the pane in `$TMUX_PANE`, and only when that pane's process is this

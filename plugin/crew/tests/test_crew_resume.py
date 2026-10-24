@@ -1631,7 +1631,7 @@ def test_a_failed_author_removal_leaves_no_entry_behind(fx, monkeypatch):
 # --- T-0042 step 7: every wait reason is named where people read ------------
 
 _DOCS = ("docs/crew/reference/16-context-handoff.md", "plugin/crew/skills/crew-context/SKILL.md",
-         "docs/guides/crew/src/auto-cycle.md", "plugin/crew/CONFIG.md")
+         "docs/guides/crew/src/auto-cycle.md", "docs/crew/config-rationale.md")
 _REASON_PHRASES = ("internal error", "automatic PreCompact skeleton", "written by another session",
                    "no record of which session wrote", "could not be identified",
                    "changed since its author session wrote it", "handoff-author.json",
@@ -1644,7 +1644,7 @@ def test_the_author_record_residual_is_named_as_an_accepted_risk():
     blank and marker all fail while `os.access` says writable -- is named in
     CONFIG.md's accepted risks and in `_mark_author_stuck`'s docstring."""
     repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    with open(os.path.join(repo, "plugin/crew/CONFIG.md"), encoding="utf-8") as handle:
+    with open(os.path.join(repo, "docs/crew/config-rationale.md"), encoding="utf-8") as handle:
         config = " ".join(handle.read().split())
     risks = config[config.index("**Accepted risks.**"):]
     risks = risks[:risks.index("**Unchanged")]

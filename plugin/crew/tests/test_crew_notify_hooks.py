@@ -123,7 +123,7 @@ def _repo(tmp_path, name):
     (root / ".crew").mkdir()
     (root / ".crew" / "config.json").write_text(json.dumps({"notify": {
         "provider": "telegram", "chatId": "4242",
-        "events": ["deploy", "question"], "realertHours": 6, "questionTypes": None}}),
+        "events": ["deploy", "question"]}}),
         encoding="utf-8")
     home = _home(root)
     (home / ".claude" / "crew").mkdir(parents=True)

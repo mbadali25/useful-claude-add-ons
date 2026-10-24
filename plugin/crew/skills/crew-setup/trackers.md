@@ -40,15 +40,12 @@ Only if the user chose ServiceDesk Plus.
    registered at user or session scope, and a per-repo one would prompt for
    approval in every repository the plugin is enabled in.
 2. Set `tracker: "sdp"` and create `.work/cache/`.
-3. Write the two settings that are decisions rather than lookups, and say what
-   each means before writing it:
-   - `sdp.noteVisibility` - `"private"` (the default) keeps crew's push note off
-     the requester-visible thread. `"public"` only where the requester is an
-     engineer who wants it.
-   - `sdp.closeOnDone` - `false` (the default) means crew transitions a request
-     and leaves closure to whoever owns the queue. `true` only for a queue that
-     is genuinely the user's.
-   `sdp.portal` stays `null` unless the connector serves more than one instance.
+3. Say what crew will and will not do, because none of it is configurable:
+   - Crew's push note is always private, so it stays off the requester-visible
+     thread.
+   - Crew transitions a request and leaves closure to whoever owns the queue.
+   - If the connector serves more than one instance, ask which portal to use;
+     there is no `sdp.portal` setting.
 
 Tell them the local key is `SDP-<id>`, not the bare request number: the rest of
 crew - `/crew:status`, `/crew:implement`, the index - recognises a ticket by its

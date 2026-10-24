@@ -29,7 +29,7 @@ BASE = {
     "verifyGate": True,
     "qa": {"provider": "auto"},
     "context": {"warnAt": 0.8, "reserveTokens": 100000},
-    "emergency": {"standDown": True, "ttlMinutes": 120},
+    "emergency": {"standDown": True, "maxTtlMinutes": 480},
     "notify": {"provider": "none"},
 }
 
@@ -233,7 +233,7 @@ def test_preferences_survive_a_repair(tmp_path, monkeypatch):
     assert after["roles"] == ["explorer", "qa-reviewer"]
     assert after["qa"] == {"provider": "auto"}
     assert after["context"] == {"warnAt": 0.8, "reserveTokens": 100000}
-    assert after["emergency"] == {"standDown": True, "ttlMinutes": 120}
+    assert after["emergency"] == {"standDown": True, "maxTtlMinutes": 480}
     assert after["notify"] == {"provider": "none"}
     assert after["schema"] == 2
 

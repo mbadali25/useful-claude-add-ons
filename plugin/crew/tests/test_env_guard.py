@@ -229,6 +229,7 @@ def run_main(monkeypatch, capsys, tmp_path, tool, command, raw=None,
          "cwd": str(tmp_path / "repo")}).encode("utf-8")
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path / "repo"))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     if flavour is None:
         monkeypatch.delenv(env_guard.FLAVOUR_VAR, raising=False)
     else:
@@ -474,6 +475,101 @@ def test_failed_reader_with_no_armed_layer_allows(monkeypatch, capsys, tmp_path)
         ("allow", "")
 
 
+_CRUDE_ARMED = {
+    "profile-strict-no-envguard": '{"guards":{"profile":"strict"}}',
+    "profile-standard": '{"guards":{"profile":"standard"}}',
+    "profile-malformed": '{"guards":{"profile":"loud"}}',
+    "profile-null": '{"guards":{"profile":null}}',
+    "profile-off-envguard-block": '{"guards":{"profile":"off","envGuard":"block"}}',
+    "override-block-alone": '{"guards":{"overrides":{"envGuard":"block"}}}',
+    "override-block-under-profile-off":
+        '{"guards":{"profile":"off","overrides":{"envGuard":"block"}}}',
+    "overrides-not-an-object": '{"guards":{"profile":"off","overrides":42}}',
+    "legacy-envguard-report": '{"guards":{"envGuard":"report"}}',
+    "guards-null": '{"guards":null}',
+    "guards-42": '{"guards":42}',
+    "newline-between-key-and-colon": '{"guards":{"profile"\n:"strict"}}',
+    "value-off-comma-block": '{"guards":{"profile":"off,block"}}',
+    "value-upper-off": '{"guards":{"profile":"OFF"}}',
+    "value-off-trailing-space": '{"guards":{"profile":"off "}}',
+    "value-unquoted-off": '{"guards":{"profile":off}}',
+    "value-number": '{"guards":{"profile":0}}',
+    "trailing-comma": '{"guards":{"profile":"off"},}',
+    "garbage-before-close": '{"guards":{"profile":"off"} garbage }',
+    "missing-comma": '{"guards":{"profile":"off"} "x":1}',
+    "unbalanced-braces": '{"guards":{{"profile":"off"}}',
+    "not-an-object": '[{"guards":{"profile":"off"}}]',
+    "text-before-object": 'x{"guards":{"profile":"off"}}',
+    "empty-file": "",
+    "nul-byte": '{"guards":{"profile":"off"}}\x00',
+    "over-the-size-cap": '{"guards":{"profile":"off"}}' + " " * 262144,
+}
+_CRUDE_UNARMED = {
+    "empty-object": "{}",
+    "no-guards": '{"scope":{"mode":"off"}}',
+    "profile-off": '{"guards":{"profile":"off"}}',
+    "profile-off-envguard-off":
+        '{"guards":{"profile":"off","envGuard":"off","overrides":{"envGuard":"off"}}}',
+    "only-other-guards-armed": '{"guards":{"cloudGuard":"block"}}',
+    "newline-before-colon-off": '{"guards":{"profile"\n:\n"off"}}',
+    "pretty-printed-off": '{\n  "guards": {\n    "profile": "off"\n  }\n}\n',
+}
+
+
+def _failed_reader_verdict(monkeypatch, capsys, tmp_path, raw_repo=None, global_raw=None):
+    _fixture(tmp_path, raw_repo=raw_repo)
+    if global_raw is not None:
+        glob = tmp_path / "home" / ".claude" / "crew"
+        glob.mkdir(parents=True, exist_ok=True)
+        (glob / "config.json").write_bytes(global_raw.encode("utf-8"))
+    _reader_fails(monkeypatch)
+    return run_main(monkeypatch, capsys, tmp_path, "Bash", "env")[0]
+
+
+@pytest.mark.parametrize("name", sorted(_CRUDE_ARMED))
+def test_failed_reader_is_armed_by_a_layer_that_is_not_proved_off(monkeypatch, capsys,
+                                                                tmp_path, name):
+    (tmp_path / "repo" / ".crew").mkdir(parents=True)
+    (tmp_path / "repo" / ".crew" / "config.json").write_bytes(
+        _CRUDE_ARMED[name].encode("utf-8"))
+
+    verdict = _failed_reader_verdict(monkeypatch, capsys, tmp_path)
+
+    assert verdict == "deny"
+
+
+@pytest.mark.parametrize("name", sorted(_CRUDE_ARMED))
+def test_failed_reader_is_armed_by_the_machine_layer_too(monkeypatch, capsys, tmp_path, name):
+    verdict = _failed_reader_verdict(monkeypatch, capsys, tmp_path,
+                                     raw_repo='{"guards":{"profile":"off"}}',
+                                     global_raw=_CRUDE_ARMED[name])
+
+    assert verdict == "deny"
+
+
+@pytest.mark.parametrize("name", sorted(_CRUDE_UNARMED))
+def test_failed_reader_allows_when_every_layer_is_proved_off(monkeypatch, capsys, tmp_path, name):
+    verdict = _failed_reader_verdict(monkeypatch, capsys, tmp_path,
+                                     raw_repo=_CRUDE_UNARMED[name])
+
+    assert verdict == "allow"
+
+
+def test_failed_reader_with_no_config_file_allows(monkeypatch, capsys, tmp_path):
+    verdict = _failed_reader_verdict(monkeypatch, capsys, tmp_path)
+
+    assert verdict == "allow"
+
+
+def test_failed_reader_is_armed_when_the_config_path_is_a_directory(monkeypatch, capsys,
+                                                                  tmp_path):
+    (tmp_path / "repo" / ".crew" / "config.json").mkdir(parents=True)
+
+    verdict = _failed_reader_verdict(monkeypatch, capsys, tmp_path)
+
+    assert verdict == "deny"
+
+
 def test_other_tools_are_not_judged(monkeypatch, capsys, tmp_path):
     _fixture(tmp_path, ARMED)
     raw = json.dumps({"tool_name": "Write", "tool_input": {
@@ -533,11 +629,11 @@ def test_ratchet_takes_the_narrower_layer(monkeypatch, capsys, tmp_path,
 
 
 def test_default_config_and_templates_read_off():
-    assert crew_config.default_config()["guards"]["envGuard"] == "off"
-    assert crew_config.default_global_config()["guards"]["envGuard"] == "off"
+    assert crew_config.default_config()["guards"]["profile"] == "off"
+    assert crew_config.default_global_config()["guards"]["profile"] == "off"
     for name in ("config.template.json", "global.template.json"):
         with open(os.path.join(_ROOT, "templates", name), encoding="utf-8") as fh:
-            assert json.load(fh)["guards"]["envGuard"] == "off"
+            assert json.load(fh)["guards"]["profile"] == "off"
 
 
 # --- 5: flavour by tool, not OS -----------------------------------------------------
@@ -716,3 +812,9 @@ def test_registered_once_in_the_dispatcher_table_with_its_powershell_twin():
     assert len(rows) == 1
     assert (rows[0].event, rows[0].matcher, rows[0].twin, rows[0].timeout, rows[0].guard) == (
         "PreToolUse", "Bash|PowerShell", "env-guard.ps1", 15, True)
+
+
+def test_a_deeply_nested_config_arms_instead_of_crashing():
+    deep = "[" * 100000 + "]" * 100000
+
+    assert env_guard._layer_text_armed('{"x":' + deep + "}") is True

@@ -213,106 +213,18 @@ def test_upgrade_config_adds_pm_and_graph_blocks():
     for THIS repo."""
     got = _cfg({"tier": 0})
     assert "pm" not in got
-    assert got["graph"]["mode"] == "code-only"
+    assert got["graph"] == {"out": "graphify-out"}
     # `graph.obsidian` was removed in 0.16.13. Asserting its ABSENCE is the
     # point: a key with no consumer that survives an upgrade reads, to anyone
     # inspecting the config, as a feature merely switched off.
     assert "obsidian" not in got["graph"]
 
 
-def test_upgrade_config_recognises_the_docs_and_bitbucket_blocks():
-    """A block left out of `CONFIG_BLOCKS` entirely is invisible -- the
-    0.16.0 qa/dev bug: the config is stamped current and the feature reads
-    its default forever, with nothing anywhere saying why. Both blocks are
-    in it, proven here by feeding each a partial value and watching the
-    repo's OWN leaf survive the merge.
-
-    `docs` and `bitbucket` are wholly globally-settable (`crew_config.
-    default_global_config()` copies each block whole), so as of this fix an
-    untouched leaf is no longer SEEDED -- see
-    `test_upgrade_config_does_not_clobber_a_configured_theme_or_merge_gate`
-    for that half. This is the complementary case: the repo's own value does
-    not vanish, and a repo that never mentions either block gets neither key
-    at all, rather than the block's built-in default written to disk where
-    it would outrank a value set later in `~/.claude/crew/config.json`
-    forever.
-    """
-    got = _cfg({"tier": 0, "roles": ["explorer", "qa-reviewer"],
-                "qa": {"provider": "codex"},
-                "docs": {"theme": "acme"},
-                "bitbucket": {"mergeGate": {"enabled": True}}})
-    assert got["docs"]["theme"] == "acme"
-    assert got["bitbucket"]["mergeGate"]["enabled"] is True
-
-    bare = _cfg({"tier": 0, "roles": ["explorer", "qa-reviewer"],
-                "qa": {"provider": "codex"}})
-    assert "docs" not in bare
-    assert "bitbucket" not in bare
-
-
-def test_upgrade_config_does_not_clobber_a_configured_theme_or_merge_gate():
-    """Partial blocks fill in the repo's OWN value only -- they do not
-    replace it and they do not seed a sibling the repo never wrote. Someone
-    who set a theme before the rest of the block existed keeps it, and
-    `reportTheme` / `branch` / `preset` -- every sibling leaf this repo never
-    mentioned -- stay absent rather than pinned at the built-in default,
-    since all three are globally-settable (see `_prune_unsupplied_global_
-    leaves`); a global value can still reach this repo for them."""
-    got = _cfg({"docs": {"theme": "acme"},
-                "bitbucket": {"mergeGate": {"enabled": True}}})
-    assert got["docs"] == {"theme": "acme"}
-    assert got["bitbucket"]["mergeGate"] == {"enabled": True}
-
-
-def test_upgrade_config_does_not_alias_the_shared_docs_block():
-    """Same aliasing trap as `graph` and the provider blocks: `upgrade_config`
-    deepcopies the block before merging, and a run that stopped doing so would
-    let one upgraded repo's theme leak into the next one in the process.
-
-    `docs`/`bitbucket` are entirely globally-settable, so `{"docs": {},
-    "bitbucket": {}}` -- an explicitly-empty dict at each block, which counts
-    as `supplied` at the block level and so survives pruning -- still has
-    every LEAF inside it pruned right back out, and for `bitbucket.mergeGate`
-    the now-empty container is then stripped too (`_strip_empty_dicts`).
-    There is nothing left in the RESULT to mutate, so this is proven the same
-    way as the provider-blocks version: on the shared TEMPLATE's own keys
-    surviving the `.pop()` calls that emptied the copy, not on a post-hoc
-    mutation of a dict that no longer exists in the result.
-    """
-    crew_upgrade.upgrade_config({"docs": {}, "bitbucket": {}})
-    assert crew_upgrade.DOCS_BLOCK == {"theme": None, "reportTheme": None}
-    assert crew_upgrade.BITBUCKET_BLOCK["mergeGate"] == {
-        "enabled": False, "branch": None, "preset": "standard"}
-
-
-def test_a_retired_specialist_is_kept_and_reported_as_unknown():
-    """`rolesUnknown` drives a report line reading "kept, not on this
-    release's ladder". crew 1.0 retired every specialist, so a 0.20 config
-    that onboarded `node-developer` is told exactly that -- the same line a
-    typo gets -- and the role is kept for `/crew:migrate` to filter.
-    """
-    out, notes = crew_upgrade.upgrade_config(
-        {"roles": ["explorer", "node-developer", "wharrgarbl"], "tier": 0})
-
-    assert "node-developer" in notes["rolesUnknown"]
-    assert "wharrgarbl" in notes["rolesUnknown"]
-    assert "node-developer" in out["roles"]
-
-
-def test_a_specialist_survives_the_upgrade_it_did_not_ask_for():
-    out, _notes = crew_upgrade.upgrade_config(
-        {"roles": ["explorer", "node-developer"], "tier": 2})
-
-    assert "node-developer" in out["roles"], "an opted-in role must not vanish"
-    # ...and the upgrade still must not ADD one.
-    assert "sharepoint-developer" not in out["roles"]
-
-
 def test_upgrade_config_preserves_unknown_keys():
     # A config written by a newer crew than the one running must survive.
     got = _cfg({"somethingNew": {"a": 1}, "tier": 2})
     assert got["somethingNew"] == {"a": 1}
-    assert got["tier"] == 2
+    assert "tier" not in got
 
 
 def test_upgrade_config_does_not_clobber_an_existing_pm_block():
@@ -368,7 +280,7 @@ def test_a_legitimate_nested_override_still_wins():
     assert got["qa"]["codex"]["model"] == "gpt-5.6-luna"
     assert "reasoningEffort" not in got["qa"]["codex"]
     # and an untouched repo-only block is still defaulted whole
-    assert got["graph"]["mode"] == "code-only"
+    assert got["graph"] == {"out": "graphify-out"}
 
 
 def test_graph_obsidian_is_dropped_and_reported_not_migrated():
@@ -400,8 +312,8 @@ def test_upgrade_config_does_not_alias_the_shared_graph_block():
     # and deep-copied by default_config(); a shared reference would let one
     # repo's config mutate the template every other repo is built from.
     assert got["graph"] is not crew_upgrade.GRAPH_BLOCK
-    got["graph"]["mode"] = "mutated"
-    assert crew_upgrade.GRAPH_BLOCK["mode"] == "code-only"
+    got["graph"]["out"] = "mutated"
+    assert crew_upgrade.GRAPH_BLOCK["out"] == "graphify-out"
 
 
 def test_backup_is_taken_before_any_write(tmp_path):
@@ -579,11 +491,9 @@ def test_bom_prefixed_config_upgrades_normally(tmp_path):
     out = crew_upgrade.run(str(root), {})
     assert out["status"] == "upgraded"
     cfg = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
-    assert cfg["tier"] == 2
-    # Roles migrate forward now, so this is a superset rather than an
-    # equality -- what this test is about is that the BOM did not eat the
-    # file, not the ladder.
-    assert {"explorer", "dba"} <= set(cfg["roles"])
+    # `tier` and `roles` are retired (L-0725) and removed; what this test is
+    # about is that the BOM did not eat the file.
+    assert "tier" not in cfg and "roles" not in cfg
     assert cfg["tracker"] == "jira"
     assert cfg["jira"] == {"cloudId": "abc", "project": "PROJ"}
     assert cfg["myCustomKey"] == {"anything": "goes"}
@@ -609,7 +519,7 @@ def test_null_schema_does_not_raise(tmp_path):
     assert out["status"] == "upgraded"
     cfg = json.loads((root / ".crew" / "config.json").read_text(encoding="utf-8"))
     assert cfg["schema"] == crew_state.SCHEMA_CURRENT
-    assert cfg["tier"] == 1
+    assert "tier" not in cfg
 
 
 def test_absent_config_is_unchanged(tmp_path):
@@ -681,56 +591,6 @@ def test_upgrade_config_does_not_alias_the_shared_provider_blocks():
     assert set(crew_state.DEV_DEFAULTS["copilot"]) == {"model"}
 
 
-def test_upgrade_adds_roles_the_declared_tier_already_entitles():
-    """Adding, not reporting: the decision the spec records. A repo already at
-    tier 2 gets the tier-2 roles later releases added."""
-    got, notes = crew_upgrade.upgrade_config(
-        {"tier": 2, "roles": ["explorer", "reviewer"]})
-    for role in ("security", "researcher"):
-        assert role in got["roles"], role
-    assert notes["rolesAdded"] == ["security", "researcher"]
-    assert notes["tierFrom"] == 2 and notes["tierTo"] == 2
-
-
-def test_upgrade_never_grows_a_crew_past_its_declared_tier():
-    """The guard that keeps "add the new roles" from meaning "add every role".
-    Nothing moves a repo UP a tier."""
-    got, notes = crew_upgrade.upgrade_config(
-        {"tier": 0, "roles": ["explorer", "reviewer"]})
-    assert got["roles"] == ["explorer", "reviewer"]
-    assert not notes["rolesAdded"]
-    assert notes["tierTo"] == 0
-
-
-def test_upgrade_recomputes_tier_from_the_roles_actually_listed():
-    """A config claiming tier 0 while listing `researcher` is at tier 2
-    whatever the number says -- and the report has to name the move."""
-    got, notes = crew_upgrade.upgrade_config(
-        {"tier": 0, "roles": ["explorer", "researcher"]})
-    assert got["tier"] == 2
-    assert notes["tierFrom"] == 0 and notes["tierTo"] == 2
-    assert "security" in got["roles"]
-
-
-def test_upgrade_keeps_a_role_this_release_does_not_know():
-    got, notes = crew_upgrade.upgrade_config(
-        {"tier": 1, "roles": ["explorer", "house-style-cop"]})
-    assert "house-style-cop" in got["roles"]
-    assert notes["rolesUnknown"] == ["house-style-cop"]
-    # Unknown to the ladder means its tier is genuinely unknown; guessing one
-    # would move a crew up on the strength of a string nobody recognises.
-    assert notes["tierTo"] == 1
-
-
-def test_upgrade_never_removes_a_role():
-    """Offboarding keeps its explicit-yes gate; nothing here may take a role
-    away. Removing one destroys the coverage that would have told you whether
-    the removal was right."""
-    before = ["explorer", "qa-reviewer", "planner", "something-custom"]
-    got, _ = crew_upgrade.upgrade_config({"tier": 2, "roles": before})
-    assert set(before) <= set(got["roles"])
-
-
 def test_a_wrong_typed_block_is_left_alone_and_schema_is_not_stamped():
     """`schema` stamped current unconditionally is how the whole class of bug
     stayed invisible: the next run reports "already current" and skips."""
@@ -740,13 +600,6 @@ def test_a_wrong_typed_block_is_left_alone_and_schema_is_not_stamped():
         assert notes["unmigrated"] == [key], key
         assert notes["schemaStamped"] is False, key
         assert "schema" not in got, key
-
-
-def test_wrong_typed_roles_is_reported_not_silently_replaced():
-    got, notes = crew_upgrade.upgrade_config({"roles": "explorer", "tier": 2})
-    assert got["roles"] == "explorer"
-    assert notes["unmigrated"] == ["roles"]
-    assert "schema" not in got
 
 
 def test_run_reports_unmigrated_blocks_in_its_status(tmp_path):
@@ -759,18 +612,6 @@ def test_run_reports_unmigrated_blocks_in_its_status(tmp_path):
     # being marked done with a block nobody migrated.
     again = crew_upgrade.run(str(root), {})
     assert again["status"] == "upgraded with unmigrated blocks"
-
-
-def test_the_report_states_roles_added_and_the_tier_move(tmp_path):
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"tier": 2, "roles": ["explorer", "reviewer"]},
-        codemap={"auth": V1_MAP})
-    out = crew_upgrade.run(str(root), {})
-    assert "## Config" in out["report"]
-    assert "roles added: security" in out["report"]
-    assert "researcher" in out["report"]
-    written = (root / ".crew" / "codemap" / "UPGRADE.md").read_text(encoding="utf-8")
-    assert written == out["report"]
 
 
 # --- 0.16.0: schema 2 -> 3, the per-role provider table --------------------
@@ -916,17 +757,6 @@ def test_an_unmigrated_block_is_not_reported_as_having_gained_v3_keys():
     assert not any(k.startswith("qa.") for k in notes["providerKeysAdded"])
 
 
-def test_the_report_says_so_when_nothing_was_added(tmp_path):
-    """Stated every run, including when the answer is none -- a report that
-    only speaks up on change cannot be trusted when it is silent."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"tier": 0, "roles": ["explorer", "reviewer"]},
-        codemap={"auth": V1_MAP})
-    out = crew_upgrade.run(str(root), {})
-    assert "roles added: none" in out["report"]
-    assert "tier: 0 (unchanged)" in out["report"]
-
-
 # --- the anchor REWRITE, at every sha length -------------------------------
 # `test_anchor_is_bumped_only_on_a_touched_file` above asserts `head in auth`,
 # a SUBSTRING check, and the fixture anchor is `0000000` -- seven characters.
@@ -1027,166 +857,6 @@ def test_a_repo_name_made_of_hex_does_not_confuse_the_rewrite(tmp_path):
     assert _derived_anchor(text) == head, text
 
 
-def test_upgrade_rewrites_the_old_neutral_theme_default_to_null():
-    """The one value this migration rewrites rather than preserving, and the
-    reason it has to. `docs.theme` shipped as `"neutral"` through 0.17.1. Left
-    alone, every upgraded repo would pass an explicit `--brand neutral` once
-    the wiring lands -- which OVERRIDES an installed brand pack rather than
-    agreeing with it, so a Solomon user's correctly-branded documents would
-    silently come out neutral with nothing in their config file changed to
-    explain it. Rewriting is safe here and nowhere else, because the key has
-    never had a consumer: no value in it can be a preference someone formed by
-    watching it work."""
-    cfg = {"docs": {"theme": "neutral"}}
-    got, notes = crew_upgrade.upgrade_config(cfg)
-
-    assert got["docs"]["theme"] is None
-    assert notes["rewrittenKeys"] == ["docs.theme"]
-    # Rewriting is a COMPLETED migration, like droppedKeys -- it must not
-    # block the schema stamp the way `unmigrated` does.
-    assert notes["unmigrated"] == []
-    assert notes["schemaStamped"] is True
-    # Pure: the caller's dict is not edited under them.
-    assert cfg["docs"]["theme"] == "neutral"
-
-
-def test_upgrade_rewrites_only_the_exact_old_default():
-    """A theme the user actually named is not this migration's business, and
-    `None` is already the answer. Only the literal old default moves -- a
-    rewrite that also caught `"solomon"` would be the silent de-branding this
-    change exists to prevent, performed by the fix itself."""
-    for supplied in ("solomon", "acme", "Neutral", "neutral-ish", ""):
-        got, notes = crew_upgrade.upgrade_config({"docs": {"theme": supplied}})
-        assert got["docs"]["theme"] == supplied, supplied
-        assert notes["rewrittenKeys"] == [], supplied
-
-    got, notes = crew_upgrade.upgrade_config({"docs": {"theme": None}})
-    assert got["docs"]["theme"] is None
-    assert notes["rewrittenKeys"] == []
-
-
-def test_a_wrong_typed_docs_block_is_not_rewritten_and_is_reported():
-    """The crash this guard exists for. A `docs` block that is a string is
-    kept VERBATIM and reported in `unmigrated`; indexing into it to rewrite a
-    theme would raise partway through, after `run()` has already written the
-    file. Same shape as the `graph.obsidian` drop above."""
-    got, notes = crew_upgrade.upgrade_config({"docs": "oops"})
-
-    assert got["docs"] == "oops"
-    assert "docs" in notes["unmigrated"]
-    assert notes["rewrittenKeys"] == []
-    assert notes["schemaStamped"] is False
-
-
-def test_the_report_explains_a_rewritten_theme_and_stays_quiet_otherwise():
-    """A value changed under the user has to be announced, or the config
-    differs from what they wrote with nothing saying so. The converse matters
-    as much: a repo that never carried the old default must not be told its
-    theme was rewritten."""
-    _, notes = crew_upgrade.upgrade_config({"docs": {"theme": "neutral"}})
-    said = "\n".join(crew_upgrade._config_lines(notes))
-    assert "docs.theme" in said
-    assert "neutral" in said
-    # It must say WHY it was safe, not merely that it happened.
-    assert "never had a consumer" in said
-
-    _, quiet = crew_upgrade.upgrade_config({"docs": {"theme": "solomon"}})
-    assert "docs.theme" not in "\n".join(
-        crew_upgrade._config_lines(quiet))
-
-
-def test_the_theme_migration_actually_reaches_an_existing_repo(tmp_path):
-    """The defect that made the migration dead on arrival, as an end-to-end
-    run rather than a call to `upgrade_config`.
-
-    `run()` returns "already current" for any config at or above
-    SCHEMA_CURRENT without ever calling `upgrade_config`. Ship the rewrite
-    without bumping the schema and it reaches only repos that were ALREADY
-    behind -- which is nobody it was written for, since every existing config
-    sits at the then-current number. A fresh clone looks correct while every
-    installed machine keeps the old default forever.
-
-    This is the test that fails if someone adds a future migration to
-    `upgrade_config` and forgets the bump, so it asserts the delivery
-    mechanism and not just the transformation."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"schema": 3, "tier": 0,
-                          "docs": {"theme": "neutral"}})
-
-    result = crew_upgrade.run(str(root), {})
-
-    assert result["status"] != "already current"
-    assert result["notes"]["rewrittenKeys"] == ["docs.theme"]
-    written = json.loads((root / ".crew" / "config.json").read_text("utf-8"))
-    assert written["docs"]["theme"] is None
-    assert written["schema"] == crew_state.SCHEMA_CURRENT
-
-
-def test_a_deliberately_restored_neutral_survives_a_forced_rerun(tmp_path):
-    """The upgrade report tells a user who did mean neutral to set it again
-    and promises it will be honoured. Without the schema gate that promise is
-    false: the rewrite matches on the VALUE, so the next `--force` erases the
-    preference they just restored, and so does every force after that.
-
-    A migration that keeps re-applying itself is not a migration, it is a
-    setting the user is not allowed to have."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"schema": 3, "tier": 0,
-                          "docs": {"theme": "neutral"}})
-    crew_upgrade.run(str(root), {})
-
-    path = root / ".crew" / "config.json"
-    written = json.loads(path.read_text("utf-8"))
-    assert written["docs"]["theme"] is None          # migrated once
-    written["docs"]["theme"] = "neutral"             # the user means it
-    path.write_text(json.dumps(written), "utf-8")
-
-    result = crew_upgrade.run(str(root), {}, force=True)
-
-    after = json.loads(path.read_text("utf-8"))
-    assert after["docs"]["theme"] == "neutral"
-    assert result["notes"]["rewrittenKeys"] == []
-
-
-def test_the_theme_rewrite_is_one_shot_at_the_schema_it_landed_in():
-    """The gate stated directly, without the filesystem. Below the migration
-    schema the old default moves; at or above it, the same string is the
-    user's own answer and is left alone."""
-    for schema in (1, 2, 3):
-        _, notes = crew_upgrade.upgrade_config(
-            {"schema": schema, "docs": {"theme": "neutral"}})
-        assert notes["rewrittenKeys"] == ["docs.theme"], schema
-    for schema in (4, 5):
-        got, notes = crew_upgrade.upgrade_config(
-            {"schema": schema, "docs": {"theme": "neutral"}})
-        assert notes["rewrittenKeys"] == [], schema
-        assert got["docs"]["theme"] == "neutral", schema
-
-
-def test_a_partly_failed_migration_does_not_rewrite_the_theme():
-    """The rewrite is atomic with the schema stamp, and this is why.
-
-    A single wrong-typed block anywhere blocks the stamp. With the rewrite
-    applied anyway, the config came out with a null theme and `schema` still
-    at 3 -- so the user repairs the block, sets neutral back because they
-    meant it, re-runs, and the rewrite fires a SECOND time on the still
-    unbumped schema and erases it again. Half a migration that keeps
-    re-applying its own half is worse than one that did nothing."""
-    got, notes = crew_upgrade.upgrade_config(
-        {"schema": 3, "qa": "oops", "docs": {"theme": "neutral"}})
-
-    assert notes["schemaStamped"] is False
-    assert notes["rewrittenKeys"] == []
-    assert got["docs"]["theme"] == "neutral"     # untouched, so repairable
-
-    # And once the block is repaired, the migration runs properly.
-    got, notes = crew_upgrade.upgrade_config(
-        {"schema": 3, "qa": {}, "docs": {"theme": "neutral"}})
-    assert notes["schemaStamped"] is True
-    assert notes["rewrittenKeys"] == ["docs.theme"]
-    assert got["docs"]["theme"] is None
-
-
 # --- 0.20.15: globally-settable leaves stop freezing the global layer -----
 
 
@@ -1199,11 +869,10 @@ def test_the_measured_repro_no_longer_writes_pm_authority():
     repo (see `test_an_upgraded_repo_still_lets_a_later_global_authority_
     through` in test_crew_config.py for the end-to-end proof)."""
     out, notes = crew_upgrade.upgrade_config(
-        {"schema": 2, "pm": {"enabled": True}})
+        {"schema": 2, "pm": {"maxDispatches": 5}})
     assert notes["schemaStamped"] is True
-    assert out["pm"] == {"enabled": True}
+    assert out["pm"] == {"maxDispatches": 5}
     assert "authority" not in out["pm"]
-    assert "maxDispatches" not in out["pm"]
 
 
 def test_pinned_at_default_is_named_not_removed():
@@ -1260,64 +929,6 @@ def test_the_headline_is_silent_when_a_global_config_exists(
     assert "NO MACHINE-GLOBAL CONFIG" not in out["report"]
 
 
-def test_a_global_neutral_is_reported_because_it_defeats_the_migration(
-        tmp_path, monkeypatch):
-    """Repo null means "ask the next authority", and the next authority is the
-    machine-global file. A global still saying "neutral" therefore leaves the
-    EFFECTIVE theme unchanged while the repo config now reads as migrated --
-    the worse of the two states, because it looks fixed.
-
-    Reported and never rewritten: a per-repo upgrade editing a machine-global
-    file would change every other repo on the machine.
-
-    Both halves key on `WARNING: your machine-global config`, the warning's own
-    opening words, rather than on the bare phrase `machine-global`. The bare
-    phrase stopped distinguishing anything at schema 7, whose paragraph
-    describes `change.requireForProduction`'s ratchet and says "machine-global"
-    in passing -- so the negative assertion below started failing on an
-    unrelated, correct line. A negative assertion that a second feature can
-    trip is not testing the first one."""
-    warning = "WARNING: your machine-global config"
-    path = tmp_path / "global.json"
-    path.write_text(json.dumps({"docs": {"theme": "neutral"}}), "utf-8")
-    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(path))
-
-    assert crew_upgrade.global_theme_defeats_migration() is True
-    _, notes = crew_upgrade.upgrade_config({"schema": 3,
-                                            "docs": {"theme": "neutral"}})
-    said = "\n".join(crew_upgrade._config_lines(notes))
-    assert warning in said
-    assert "will not edit it for you" in said
-
-    # A global that does not carry the old default says nothing at all.
-    path.write_text(json.dumps({"docs": {"theme": "solomon"}}), "utf-8")
-    assert crew_upgrade.global_theme_defeats_migration() is False
-    quiet = "\n".join(crew_upgrade._config_lines(notes))
-    assert warning not in quiet
-    assert "will not edit it for you" not in quiet
-
-
-def test_an_unreadable_global_config_is_not_a_crash_or_a_warning(
-        tmp_path, monkeypatch):
-    """Best effort by design. A missing, unreadable or non-JSON global file
-    means "no global answer", which is the same state as no file at all -- and
-    must never take an upgrade down, since the upgrade has already written the
-    repo config by the time the report is built."""
-    missing = tmp_path / "nope" / "global.json"
-    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(missing))
-    assert crew_upgrade.global_theme_defeats_migration() is False
-
-    broken = tmp_path / "broken.json"
-    broken.write_text("{not json", "utf-8")
-    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(broken))
-    assert crew_upgrade.global_theme_defeats_migration() is False
-
-    wrong_type = tmp_path / "list.json"
-    wrong_type.write_text('["not an object"]', "utf-8")
-    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(wrong_type))
-    assert crew_upgrade.global_theme_defeats_migration() is False
-
-
 def test_the_global_config_path_has_exactly_one_definition():
     """`crew_config` re-exports the path rather than redefining it. Two
     definitions of one path is how a migration ends up warning about a
@@ -1363,41 +974,6 @@ def test_the_suite_cannot_reach_the_real_machine_global_config(tmp_path):
         assert seen != real, mod.__name__
         assert not seen.exists(), mod.__name__
         assert seen.parent == tmp_path, (mod.__name__, str(seen))
-
-
-def test_the_global_warning_stays_quiet_when_the_repo_names_its_own_theme(
-        tmp_path, monkeypatch):
-    """The global layer only gets to answer when the repo has none. A repo
-    that names `solomon` resolves to solomon whatever the machine file says.
-
-    Ungated, the warning told such a repo that a global neutral "is the value
-    this repo now resolves to" -- false -- and recommended a machine-wide edit
-    that would have changed nothing there and something in every other repo.
-    A warning wrong about the case it fires on is worse than no warning.
-
-    Keyed on the warning's own opening words for the reason written out in
-    `test_a_global_neutral_is_reported_because_it_defeats_the_migration`: the
-    bare phrase `machine-global` also appears in schema 7's paragraph, so it
-    no longer distinguishes this warning from anything else in the report."""
-    warning = "WARNING: your machine-global config"
-    path = tmp_path / "global.json"
-    path.write_text(json.dumps({"docs": {"theme": "neutral"}}), "utf-8")
-    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(path))
-
-    # The global really does still carry the old default ...
-    assert crew_upgrade.global_theme_defeats_migration() is True
-
-    # ... but this repo answers for itself, so nothing is said.
-    _, explicit = crew_upgrade.upgrade_config(
-        {"schema": 3, "docs": {"theme": "solomon"}})
-    assert explicit["docsThemeAfter"] == "solomon"
-    assert warning not in "\n".join(crew_upgrade._config_lines(explicit))
-
-    # And a repo with no answer of its own still gets warned.
-    _, deferring = crew_upgrade.upgrade_config(
-        {"schema": 3, "docs": {"theme": "neutral"}})
-    assert deferring["docsThemeAfter"] is None
-    assert warning in "\n".join(crew_upgrade._config_lines(deferring))
 
 
 def test_global_whole_blocks_mirror_stays_in_parity_with_crew_config():
@@ -1461,7 +1037,12 @@ def test_upgrade_report_documents_the_current_migration():
     current = crew_state.SCHEMA_CURRENT
     doc = (pathlib.Path(__file__).resolve().parents[1] / "skills" / "crew-setup"
            / "upgrade-report.md").read_text(encoding="utf-8")
-    assert f"**Schema {current - 1} → {current}**" in doc
+    hops = [f"**Schema {schema - 1} → {schema}**" for schema in range(3, current + 1)]
+
+    missing = [hop for hop in hops if hop not in doc]
+
+    assert f"**Schema {current - 1} → {current}**" in hops
+    assert missing == []
 
 
 # --- T-0065 item 8: UPGRADE.md keeps every earlier run below the new one -------
@@ -1624,3 +1205,15 @@ def test_unmigrated_report_points_at_migrate():
     said = "\n".join(crew_upgrade._config_lines(  # pylint: disable=protected-access
         crew_upgrade.upgrade_config({"qa": "oops"})[1]))
     assert ("/crew:migrate" in said, "run `/crew:upgrade` again" in said) == (True, False)
+
+
+@pytest.mark.parametrize("block", [
+    {"profile": None, "overrides": {"cloudGuard": "off"}},
+    {"profile": "off", "overrides": None},
+])
+def test_a_null_profile_or_overrides_is_left_as_written_and_not_stamped(block):
+    got, notes = crew_upgrade.upgrade_config({"schema": 7, "guards": dict(block)})
+
+    assert got["guards"] == block
+    assert notes["schemaStamped"] is False
+    assert any(item.startswith("guards.") for item in notes["unmigrated"])

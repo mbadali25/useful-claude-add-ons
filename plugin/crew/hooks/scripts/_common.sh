@@ -423,48 +423,160 @@ crew_repo_config_dir() {
   done
 }
 
+# Whether the absence of file $1 is PROVED: the nearest ancestor that exists is a
+# searchable directory, so the lookup can only have failed with "no such file".
+# A parent that is a file (`/etc/passwd/config.json`), a dangling link or a
+# directory that cannot be searched says nothing about the file: not proved.
+crew_guard_absent_proved() {
+  local d="$1"
+  while :; do
+    case "$d" in
+      */*) d="${d%/*}"; [ -n "$d" ] || d=/ ;;
+      *) d=. ;;
+    esac
+    if [ -d "$d" ]; then
+      [ -x "$d" ] && return 0
+      return 1
+    fi
+    { [ -e "$d" ] || [ -L "$d" ]; } && return 1
+    case "$d" in / | .) return 1 ;; esac
+  done
+}
+
+# Whether config file $1 may arm a guard, read WITHOUT python (L-0725). Status 0
+# means armed; status 1 means the layer is PROVED off. The keys to look for follow
+# the file: `profile` and the guard's own key, e.g. `crew_guard_layer_armed F
+# profile cloudGuard`. Only the fallbacks in cloud-guard.sh and env-guard.sh call
+# it, when python could not run at all, so every doubt answers "armed".
+#
+# Off is proved only when ALL of these hold, and any doubt is "armed":
+#   - the file does not exist and the nearest existing ancestor is a searchable
+#     directory (one that exists but is not a readable regular file, or whose
+#     parent is a file, is armed), or it is readable, at most 262144 bytes, holds no NUL byte
+#     and no control character other than tab, CR and LF (a NUL is invalid JSON
+#     to python, and bash would silently drop it), and no `\u` escape (an escape
+#     can spell a key without the literal token);
+#   - it is VALID JSON whose top level is an object: a small recursive-descent
+#     check in awk (nesting capped at 100) that rejects a trailing comma, a missing
+#     comma, unbalanced braces or brackets, trailing text, bare tokens, single
+#     quotes and raw control characters in a string. Whitespace of any kind,
+#     newlines included, may sit between tokens, as in JSON;
+#   - every `"guards"` key holds an object (so `{"guards":null}` and
+#     `{"guards":42}` are armed, as the python resolvers treat them);
+#   - every `"profile"` and guard-key value, at any depth, is EXACTLY the JSON
+#     string "off" (so `"off,block"`, `"off "`, `"OFF"`, `'off'`, a number and
+#     `true` are armed). Duplicates are fine only if each one is off. An unrelated
+#     `"profile"` (`unattendedCloud.aws.readOnly.profile`) arms it: a refusal
+#     while python is missing, never a pass;
+#   - for the cloud guard (the keys name `cloudGuard`), every `"cloud"` and
+#     `"environments"` key holds an object: python's `layer_state(cloud=True,
+#     environments=True)` calls any other shape corrupt. Stricter than python
+#     needs (it only blocks on a corrupt block when the guard is armed); the
+#     contents of a well-shaped block are not checked.
+# What this cannot do without a real JSON parser: reject a number or string that
+# the awk grammar accepts but python would not (it follows the JSON grammar, so
+# none is known), or read a file that python decodes differently (invalid UTF-8,
+# a leading BOM: the BOM arms it).
+crew_guard_layer_armed() {
+  local f="$1" keys size plain verdict
+  shift
+  if ! { [ -e "$f" ] || [ -L "$f" ]; }; then
+    crew_guard_absent_proved "$f" && return 1
+    return 0
+  fi
+  { [ -f "$f" ] && [ -r "$f" ]; } || return 0
+  size=$(LC_ALL=C wc -c <"$f" 2>/dev/null | tr -d '[:space:]') || return 0
+  case "$size" in '' | *[!0-9]*) return 0 ;; esac
+  [ "$size" -gt 0 ] && [ "$size" -le 262144 ] || return 0
+  plain=$(LC_ALL=C tr -d '\011\012\015\040-\377' <"$f" 2>/dev/null | wc -c | tr -d '[:space:]')
+  [ "$plain" = "0" ] || return 0
+  LC_ALL=C grep -q '\\u' -- "$f" 2>/dev/null && return 0
+  keys=$(printf '%s|' "$@")
+  verdict=$(LC_ALL=C awk -v keys="|$keys" '
+    function ws(   c) {
+      while ((c = substr(s, p, 1)) == " " || c == "\t" || c == "\n" || c == "\r") p++
+    }
+    function pstr(   c, start, e) {
+      p++; start = p
+      while (1) {
+        c = substr(s, p, 1)
+        if (c == "") return 0
+        if (c == "\"") { raw = substr(s, start, p - start); p++; return 1 }
+        if (c == "\n" || c == "\t" || c == "\r") return 0
+        if (c == "\\") {
+          e = substr(s, p + 1, 1)
+          if (index("\"\\/bfnrt", e) > 0 && e != "") { p += 2; continue }
+          return 0
+        }
+        p++
+      }
+    }
+    function pnum(   t) {
+      t = substr(s, p, 400)
+      if (match(t, /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?/)) { p += RLENGTH; return 1 }
+      return 0
+    }
+    function pval(d,   c) {
+      if (d > 100) return 0
+      ws(); c = substr(s, p, 1)
+      if (c == "{") return pobj(d + 1)
+      if (c == "[") return parr(d + 1)
+      if (c == "\"") return pstr()
+      if (c == "-" || (c >= "0" && c <= "9")) return pnum()
+      if (substr(s, p, 4) == "true" || substr(s, p, 4) == "null") { p += 4; return 1 }
+      if (substr(s, p, 5) == "false") { p += 5; return 1 }
+      return 0
+    }
+    function parr(d,   c) {
+      p++; ws()
+      if (substr(s, p, 1) == "]") { p++; return 1 }
+      while (1) {
+        if (!pval(d)) return 0
+        ws(); c = substr(s, p, 1)
+        if (c == ",") { p++; continue }
+        if (c == "]") { p++; return 1 }
+        return 0
+      }
+    }
+    function pobj(d,   c, k) {
+      p++; ws()
+      if (substr(s, p, 1) == "}") { p++; return 1 }
+      while (1) {
+        ws()
+        if (substr(s, p, 1) != "\"") return 0
+        if (!pstr()) return 0
+        k = raw
+        ws()
+        if (substr(s, p, 1) != ":") return 0
+        p++; ws(); c = substr(s, p, 1)
+        if (k == "guards" && c != "{") return 0
+        if (cloudmode && (k == "cloud" || k == "environments") && c != "{") return 0
+        if (k == "profile" || index(keys, "|" k "|") > 0) {
+          if (substr(s, p, 5) != "\"off\"") return 0
+        }
+        if (!pval(d)) return 0
+        ws(); c = substr(s, p, 1)
+        if (c == ",") { p++; continue }
+        if (c == "}") { p++; return 1 }
+        return 0
+      }
+    }
+    BEGIN { RS = "\001"; cloudmode = index(keys, "|cloudGuard|") > 0 }
+    { s = s $0 }
+    END {
+      p = 1; ws()
+      if (substr(s, p, 1) == "{" && pobj(0)) { ws(); if (p == length(s) + 1) { print "OFF"; exit } }
+      print "ARMED"
+    }' <"$f" 2>/dev/null) || return 0
+  [ "$verdict" = "OFF" ] && return 1
+  return 0
+}
+
 # Print the resolved path of repo config file $1 (default config.json) for the
 # checkout at $2 (default: the cwd).
 crew_repo_config_file() {
   crew_repo_config_dir "${2:-.}"
   printf '%s/%s\n' "$CREW_CFG_DIR" "${1:-config.json}"
-}
-
-# Print where the handoff note lives, relative to the cwd (the checkout root):
-# context.handoffPath from config file $2, read with python $1 through
-# crew_state.handoff_path -- the Python readers' own containment
-# (crew_freshness.contained_path): a value that leaves the checkout (absolute,
-# `..`, a symlink out) is the default .work/HANDOFF.md, with a warning on
-# stderr; so is one naming a directory (`.`, `notes/`, an existing folder),
-# which cannot hold the note. Printed with forward slashes on every OS. Matters most in a linked worktree that inherits the main checkout's
-# config (L-0680): an absolute path there would name the main checkout's file.
-# Any failure prints the default, which is inside the checkout.
-crew_handoff_path() {
-  "$1" - "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")")" "$(crew_native_path "$2")" << 'PY'
-import json, os, sys
-default = ".work/HANDOFF.md"
-try:
-    sys.path.insert(0, sys.argv[1])
-    from crew_state import handoff_path
-    try:
-        with open(sys.argv[2], encoding="utf-8") as fh:
-            cfg = json.load(fh)
-    except Exception:
-        cfg = {}
-    cfg = cfg if isinstance(cfg, dict) else {}
-    root = os.path.realpath(os.getcwd())
-    got = handoff_path(root, cfg)
-    ctx = cfg.get("context")
-    value = ctx.get("handoffPath") if isinstance(ctx, dict) else None
-    if isinstance(value, str) and value and os.path.realpath(os.path.join(root, value)) != got:
-        sys.stderr.write("crew: context.handoffPath leaves this checkout - using %s\n" % default)
-    elif got == root or os.path.isdir(got) or (isinstance(value, str) and value.endswith(("/", os.sep))):
-        sys.stderr.write("crew: context.handoffPath names a directory - using %s\n" % default)
-        got = os.path.join(root, default)
-    print(os.path.relpath(got, root).replace(os.sep, "/"))
-except Exception:
-    print(default)
-PY
 }
 
 # --- Emergency lane -------------------------------------------------------

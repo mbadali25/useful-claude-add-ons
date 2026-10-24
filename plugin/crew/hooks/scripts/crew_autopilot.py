@@ -414,8 +414,8 @@ def _ship_gate(top, ticket):
     """What a merge rests on, read from disk again on every poll: the
     settings, the spec's risk, the completed rounds' review families and the
     hash of the ledger bytes those families came from. CI can run for an
-    hour, and in that time the owner may disarm autopilot, change `ship` or
-    `knownFailures`, or the ledger may move to a successor plan - so nothing
+    hour, and in that time the owner may disarm autopilot, change `ship`,
+    or the ledger may move to a successor plan - so nothing
     read before the wait is trusted after it. `stop` is a reason, or None."""
     config = settings(top)
     spec = read_text(os.path.join(crew_ticket.ticket_dir(top, ticket), "spec.md")) or ""
@@ -538,7 +538,7 @@ def _wait_for_ci(top, ticket, branch, pr, head):
     if gate["stop"]:
         return _ship_result(ticket, "stop", True, gate["stop"], pr, None,
                             gate["families"]), None, None, gate
-    minutes = gate["config"]["ciTimeoutMinutes"]
+    minutes = crew_state.AUTOPILOT_CI_TIMEOUT_MINUTES
     deadline = _clock() + minutes * 60
     while True:
         moved = _head_stop(top, branch, head, "before a poll")
@@ -552,8 +552,7 @@ def _wait_for_ci(top, ticket, branch, pr, head):
         if gate["stop"]:
             return _ship_result(ticket, "stop", True, gate["stop"], pr, checks,
                                 families), None, checks, gate
-        decision = crew_ship.ship_decision(gate["config"]["ship"], gate["risk"], checks, families,
-                                 gate["config"]["knownFailures"])
+        decision = crew_ship.ship_decision(gate["config"]["ship"], gate["risk"], checks, families)
         # Read after the checks, not before: a green that arrives past the
         # deadline is a stop, the same as a pending one.
         late = _clock() >= deadline
@@ -565,7 +564,7 @@ def _wait_for_ci(top, ticket, branch, pr, head):
                                 decision["reason"], pr, checks, families), None, checks, gate
         if late:
             return _ship_result(ticket, "stop", True, f"{decision['reason']} after "
-                                f"{minutes} min (autopilot.ciTimeoutMinutes) - never merged",
+                                f"{minutes} min (the fixed CI timeout) - never merged",
                                 pr, checks, families), None, checks, gate
         _sleep(min(POLL_SECONDS, deadline - _clock()))
 
@@ -613,7 +612,8 @@ def _pre_merge_stop(top, ticket, branch, pr, head, gate, base=None):
 
 def ship(root, ticket):
     """Push the branch, open its PR if none, then under `ship: merge` poll
-    the required checks every POLL_SECONDS up to `ciTimeoutMinutes`, feeding
+    the required checks every POLL_SECONDS up to
+    `crew_state.AUTOPILOT_CI_TIMEOUT_MINUTES`, feeding
     `crew_ship.ship_decision` from a gate read afresh each poll, and on `merge` - once
     the receipt still stands on the same ledger the families came from, the
     PR's head and this checkout's HEAD are still the commit pushed, the tree
@@ -1820,13 +1820,13 @@ def _unreadable_machine_autopilot():
 def settings(root):
     """`{"mode", "armed", "maxPhases", "saw", "deploy", "deploySaw", "approval",
     "questions", "maxAutoReplans", "reviewPolicy" (T-0067: crew_autopilot_fix), "ship",
-    "knownFailures", "ciTimeoutMinutes", "warnings", "policyWarnings"}` (T-0027: the
+    "warnings", "policyWarnings"}` (T-0027: the
     approval/questions value warnings, also in `warnings`, which `status` leaves out). Read through
     `crew_config.resolve_config`, which reads both layers: the autopilot keys
     with a `crew_state.PERSONAL_KEYS` row are personal (T-0050), so where
     `.crew/config.json` and the machine-global file both set one the stricter
     value wins, and a silent layer imposes nothing (`crew_guards.
-    effective_personal`); `maxAutoReplans`, `sleep` and T-0011's three ship keys
+    effective_personal`); `maxAutoReplans`, `sleep` and T-0011's `ship`
     are repo-only (`crew_state.REPO_ONLY_AUTOPILOT`). `scope.allowCliApproval`,
     which `crew_ticket.cli_approval_allowed` reads, is still the repo file's alone.
     `mode` arms only when it is
@@ -1835,8 +1835,7 @@ def settings(root):
     `questions` must be one of POLICIES, else `human`; `maxAutoReplans` (T-0074)
     must be a non-negative int, else 0 (off), and reads at most
     MAX_AUTO_REPLANS; `ship` is exactly one of SHIP_POLICIES, else `pr` (the
-    non-merging direction); `knownFailures` a list of strings, else `[]`;
-    `ciTimeoutMinutes` a positive int, else 60.
+    non-merging direction).
 
     A `.crew/config.json` or machine-global file that is present but
     unreadable, or an `autopilot` value in either that is not an object, is
@@ -1856,8 +1855,7 @@ def settings(root):
                 "day": {"approval": UNKNOWN, "questions": UNKNOWN},
                 "sleep": {"state": crew_sleep.UNKNOWN, "schedule": None, "applied": [],
                           "overrides": {key: None for key in crew_sleep.OVERRIDES}},
-                "ship": "pr", "knownFailures": [],
-                "ciTimeoutMinutes": crew_state.AUTOPILOT_DEFAULTS["ciTimeoutMinutes"],
+                "ship": "pr",
                 **{key: crew_state.AUTOPILOT_DEFAULTS[key] for key in BACKLOG_CAPS},
                 "warnings": [(f"{cause}, so autopilot.approval and autopilot.questions "
                               "could not be told (both read as unknown, which never "
@@ -1914,17 +1912,6 @@ def _settings_at(top):
         warnings.append(f"autopilot.ship is {ship!r}, not 'pr' or 'merge'; reading it as "
                         "'pr' (open the PR, never merge)")
         ship = "pr"
-    known = block.get("knownFailures", [])
-    if not isinstance(known, list) or not all(isinstance(k, str) for k in known):
-        warnings.append(f"autopilot.knownFailures is {known!r}, not a list of check names; "
-                        "using [] (no failing check is excused)")
-        known = []
-    timeout = block.get("ciTimeoutMinutes")
-    default_timeout = crew_state.AUTOPILOT_DEFAULTS["ciTimeoutMinutes"]
-    if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
-        warnings.append(f"autopilot.ciTimeoutMinutes is {timeout!r}, not a positive "
-                        f"integer; using {default_timeout}")
-        timeout = default_timeout
     day, policy_warnings = {}, []  # T-0027: status leaves the policy-value warnings out
     for key in ("approval", "questions"):
         day[key], warning = _policy_setting(block, key)
@@ -1938,7 +1925,7 @@ def _settings_at(top):
             "saw": mode, "deploy": crew_sleep.deploy_overlay(deploy, sleep, day), "deploySaw": deploy_saw,
             "approval": policies["approval"], "questions": policies["questions"],
             "maxAutoReplans": replans, "reviewPolicy": review,
-            "ship": ship, "knownFailures": list(known), "ciTimeoutMinutes": timeout,
+            "ship": ship,
             "day": day, "sleep": sleep, "warnings": warnings, "policyWarnings": policy_warnings}
 
 

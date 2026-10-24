@@ -2591,8 +2591,9 @@ def test_the_not_caught_section_names_the_boundary():
     crew = os.path.join(os.path.dirname(cloud_guard.__file__), os.pardir,
                         os.pardir)
     assert "crew_unattended.py launch" in _readme_not_caught()
-    for rel in ("CONFIG.md", os.path.join("skills", "crew-cloud",
-                                          "SKILL.md")):
+    for rel in (os.path.join(os.pardir, os.pardir, "docs", "crew",
+                             "config-rationale.md"),
+                os.path.join("skills", "crew-cloud", "SKILL.md")):
         with open(os.path.join(crew, rel), encoding="utf-8") as handle:
             text = handle.read()
         assert "What the guard does not catch" in text, rel

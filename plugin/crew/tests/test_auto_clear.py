@@ -110,7 +110,7 @@ _ABSENT = object()
 
 
 def _repo(tmp_path, auto_clear=None, handoff=HANDOFF, requested=True):
-    cfg = {"context": {"warnAt": 0.8, "handoffPath": ".work/HANDOFF.md"}}
+    cfg = {"context": {"warnAt": 0.8}}
     auto = dict(auto_clear or {})
     enabled = auto.pop("enabled", _ABSENT)
     if auto_clear is not None:
@@ -164,7 +164,7 @@ def _sendable(flavor, tmp_path):
 
     Native Windows has no tmux, and the pane check cannot confirm one there
     (no parent-pid walk; it fails closed), so the sender takes the xdotool
-    title fallback instead of skipping (T-0076).
+    window owned by the session's terminal process instead of skipping.
 
     T-0016: the session is bound to its own Claude Code process
     (`crew_fixtures.bind_session`), and the pane pid is that process's
@@ -175,10 +175,9 @@ def _sendable(flavor, tmp_path):
         bindir = str(tmp_path / "fakebin")
         _stub(bindir, "xdotool")
         env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0", **bound}
-        env.update(_window_stub(tmp_path, [{"id": 4242, "pid": 999999,
+        env.update(_window_stub(tmp_path, [{"id": 4242, "pid": crew_fixtures.TERMINAL_PID,
                                             "title": "NoSuchWindowForTests"}]))
-        return ({"enabled": True, "method": "xdotool",
-                 "windowTitle": "NoSuchWindowForTests"}, env)
+        return ({"enabled": True, "method": "xdotool"}, env)
     bindir = str(tmp_path / "fakebin")
     pane = crew_fixtures.TERMINAL_PID
     _stub(bindir, "tmux", f"#!/bin/sh\necho {pane}\n",
@@ -274,10 +273,10 @@ def test_min_handoff_lines_is_configurable(flavor, tmp_path):
 
 
 @by_flavor
-def test_a_method_that_cannot_verify_its_target_refuses_without_a_title(
+def test_a_method_that_cannot_verify_its_target_refuses_without_an_owning_window(
         flavor, tmp_path):
     """`xdotool` activates a window BY NAME, so it cannot prove it is talking
-    to Claude Code and an explicit title is the user accepting that."""
+    to Claude Code; only a window owned by this session's own process counts."""
     bindir = str(tmp_path / "fakebin")
     _stub(bindir, "xdotool")
     cfg = {"enabled": True, "method": "xdotool"}
@@ -285,28 +284,56 @@ def test_a_method_that_cannot_verify_its_target_refuses_without_a_title(
     root = _repo(tmp_path, auto_clear=cfg)
     result = _run(flavor, root, env_extra=env)
     assert result.returncode == 0
-    assert "windowTitle" in result.stderr
+    assert "no window belongs to any ancestor" in result.stderr
+    assert not (root / ".crew" / SENT).exists()
+
+
+@by_flavor
+def test_window_title_is_constant(flavor, tmp_path):
+    bindir = str(tmp_path / "fakebin")
+    _stub(bindir, "xdotool")
+    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "xdotool",
+                                       "windowTitle": "Claude Code - my repo"})
+    env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0",
+           **crew_fixtures.bind_session(tmp_path / "home", SESSION)}
+    env.update(_window_stub(tmp_path, [
+        {"id": 77, "pid": 999999, "title": "Claude Code - my repo"}]))
+    result = _run(flavor, root, "--dry-run", env_extra=env)
+    assert "target: Claude Code - my repo" not in result.stdout
+    assert "would send" not in result.stdout
+    assert not (root / ".crew" / SENT).exists()
 
 
 @by_flavor
 def test_an_unknown_method_refuses_by_name(flavor, tmp_path):
-    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "telepathy",
-                                       "windowTitle": "x"})
+    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "telepathy"})
     result = _run(flavor, root)
     assert result.returncode == 0
     assert "telepathy" in result.stderr
 
 
 @pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")
-def test_wtype_needs_explicit_consent_because_it_cannot_check_focus(tmp_path):
+def test_wtype_is_refused_because_it_cannot_check_focus(tmp_path):
     bindir = str(tmp_path / "fakebin")
     _stub(bindir, "wtype")
-    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "wtype",
-                                       "windowTitle": "Claude"})
+    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "wtype"})
     result = _run("sh", root, env_extra={
         "PATH": crew_fixtures.shell_path("sh", [bindir]),
         "WAYLAND_DISPLAY": "wayland-0"})
-    assert "unsafeFocus" in result.stderr
+    assert "wtype" in result.stderr
+    assert not (root / ".crew" / SENT).exists()
+
+
+@pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")
+def test_unsafe_focus_is_constant(tmp_path):
+    bindir = str(tmp_path / "fakebin")
+    _stub(bindir, "wtype")
+    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "wtype",
+                                       "unsafeFocus": True})
+    result = _run("sh", root, env_extra={
+        "PATH": crew_fixtures.shell_path("sh", [bindir]),
+        "WAYLAND_DISPLAY": "wayland-0"})
+    assert "wtype" in result.stderr
     assert not (root / ".crew" / SENT).exists()
 
 
@@ -327,7 +354,7 @@ def test_a_refusal_does_not_burn_the_one_attempt(flavor, tmp_path):
     """The claim is taken immediately before the send, not with the conditions.
 
     Taken earlier, a misconfiguration burns the session's only attempt: the user
-    fixes windowTitle, nothing happens, and there is no way to tell that from
+    fixes the method, nothing happens, and there is no way to tell that from
     the feature being broken.
     """
     root = _repo(tmp_path, auto_clear={"enabled": True, "method": "telepathy"})
@@ -337,8 +364,7 @@ def test_a_refusal_does_not_burn_the_one_attempt(flavor, tmp_path):
     # Now fix it in the same session and confirm it really does retry.
     cfg, env = _sendable(flavor, tmp_path)
     (root / ".crew" / "config.json").write_text(
-        json.dumps({"context": {"handoffPath": ".work/HANDOFF.md",
-                                "autoClear": cfg}}), encoding="utf-8")
+        json.dumps({"context": {"autoClear": cfg}}), encoding="utf-8")
     result = _run(flavor, root, env_extra=env)
     assert "sent" in result.stderr
     assert (root / ".crew" / SENT).exists()
@@ -369,7 +395,7 @@ def test_the_dry_run_plan_reports_the_configured_command_and_delay(
     # Read `method:` back out of the emitted plan rather than assuming which
     # one was reached.
     cfg, env = _sendable(flavor, tmp_path)
-    cfg = dict(cfg, command="/compact", delaySeconds=9)
+    cfg = dict(cfg, delaySeconds=9)
     root = _repo(tmp_path, auto_clear=cfg)
     result = _run(flavor, root, "--dry-run", env_extra=env)
     out = result.stdout
@@ -380,7 +406,7 @@ def test_the_dry_run_plan_reports_the_configured_command_and_delay(
         f"no dry-run plan was emitted at all (stdout={out!r} "
         f"stderr={result.stderr!r})")
     resolved = method_lines[0]
-    assert "command: /compact" in out, out
+    assert "command: /clear" in out, out
     if resolved in ("tmux", "xdotool"):
         assert "delay: 9s" in out, out
     elif resolved == "notify":
@@ -395,11 +421,10 @@ def test_the_notify_plan_says_the_delay_is_not_applicable(flavor, tmp_path):
     target. The plan used to print the configured number and an empty
     `target:` line. Each reads as a real setting; none is one."""
     root = _repo(tmp_path, auto_clear={
-        "enabled": True, "method": "notify",
-        "command": "/compact", "delaySeconds": 9})
+        "enabled": True, "method": "notify", "delaySeconds": 9})
     out = _run(flavor, root, "--dry-run").stdout
     assert "method: notify" in out, out
-    assert "command: /compact" in out, out
+    assert "command: /clear" in out, out
     # Exact wording, not a substring: "delay: n/a" alone is also a substring
     # of the old bare text, so a loose check here stays green even if the
     # " (notify sends no keystroke)" suffix regresses.
@@ -408,28 +433,13 @@ def test_the_notify_plan_says_the_delay_is_not_applicable(flavor, tmp_path):
     assert "target:" not in out, out
 
 
-@pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")
-def test_a_window_title_containing_spaces_survives_config_parsing(tmp_path):
-    """Regression: the config was read as tab-separated fields with
-    `IFS=$'\\t' read`. Tab is IFS *whitespace*, so bash collapsed consecutive
-    tabs and an empty windowTitle - the default - shifted every later field left
-    by one. The script then exited silently having done nothing.
-
-    The window layer is stubbed with exactly one window of that title, so the
-    title fallback resolves it uniquely; test_auto_cycle.py owns the zero and
-    many cases.
-    """
-    bindir = str(tmp_path / "fakebin")
-    _stub(bindir, "xdotool")
+@by_flavor
+def test_command_is_constant(flavor, tmp_path):
     root = _repo(tmp_path, auto_clear={
-        "enabled": True, "method": "xdotool",
-        "windowTitle": "Claude Code - my repo"})
-    env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0",
-           **crew_fixtures.bind_session(tmp_path / "home", SESSION)}
-    env.update(_window_stub(tmp_path, [
-        {"id": 77, "pid": 999999, "title": "Claude Code - my repo"}]))
-    out = _run("sh", root, "--dry-run", env_extra=env).stdout
-    assert "target: Claude Code - my repo" in out
+        "enabled": True, "method": "notify", "command": "/compact"})
+    out = _run(flavor, root, "--dry-run").stdout
+    assert "command: /clear" in out, out
+    assert "/compact" not in out, out
 
 
 @pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")
@@ -450,11 +460,13 @@ def test_config_values_survive_a_crlf_writing_python(tmp_path):
     root = _repo(tmp_path, auto_clear=config)
     env.update(_crlf_python_env(tmp_path))
     out = _run("sh", root, "--dry-run", env_extra=env).stdout
-    # tmux, or on native Windows the xdotool title fallback (see _sendable).
-    method, target = ((config["method"], "%9") if config["method"] == "tmux"
-                      else (config["method"], config["windowTitle"]))
+    # tmux, or on native Windows the xdotool window (see _sendable).
+    method, target = (config["method"], "%9" if config["method"] == "tmux" else "4242")
     assert f"method: {method}" in out, "a CR in the config values would break this"
-    assert f"target: {target}" in out
+    if method == "tmux":
+        assert f"target: {target}" in out
+    else:
+        assert f"[window {target}" in out
 
 
 @pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")
@@ -475,7 +487,7 @@ def test_tmux_method_refuses_outside_tmux(tmp_path):
 # to describe): `context.autoClear` is a MACHINE-global switch
 # (`crew_config.py`), so it must work in any crew repo without a per-repo
 # config of its own -- "crew repo" is read as `.crew/` the DIRECTORY existing,
-# not `.crew/config.json`. See CONFIG.md sec 14 for the full account,
+# not `.crew/config.json`. See docs/crew/config-rationale.md for the full account,
 # including the file-gate period this reverses. The six states below are the
 # ones that decide silence vs. arming:
 #
@@ -635,8 +647,7 @@ def test_only_repos_excluding_this_repo_stays_silent_sh(tmp_path):
 
 
 def _repo_opted_out(tmp_path):
-    cfg = {"context": {"warnAt": 0.8, "handoffPath": ".work/HANDOFF.md",
-                        "autoClear": {"enabled": False}}}
+    cfg = {"context": {"warnAt": 0.8, "autoClear": {"enabled": False}}}
     root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
     _write_machine(root, True)
     return root

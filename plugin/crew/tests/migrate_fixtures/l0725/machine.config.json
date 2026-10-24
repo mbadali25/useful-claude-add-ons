@@ -1,0 +1,148 @@
+{
+  "guards": {
+    "terraformApply": "allow",
+    "forcePush": "allow",
+    "adminMerge": "allow",
+    "mergeGate": "allow",
+    "prodDatabase": "none",
+    "prodServer": "none"
+  },
+  "context": {
+    "autoClear": {
+      "enabled": true,
+      "method": "auto",
+      "command": "/clear",
+      "delaySeconds": 3,
+      "minHandoffLines": 5,
+      "onlyRepos": [
+        "/repos/example/claude-memories",
+        "/repos/example/useful-claude-add-ons",
+        "/repos/example/uca-t0087",
+        "/repos/example/uca-t0094",
+        "/repos/example/uca-t0100",
+        "/repos/example/TheSelectSource",
+        "/repos/example/SRL"
+      ],
+      "wrapUp": true
+    }
+  },
+  "resume": {
+    "auto": true
+  },
+  "route": {
+    "enabled": true
+  },
+  "notify": {
+    "provider": "telegram",
+    "urlEnv": null,
+    "tokenEnv": "TELEGRAM_BOT_TOKEN",
+    "chatId": "REDACTED",
+    "events": [
+      "gate"
+    ]
+  },
+  "qa": {
+    "provider": "auto",
+    "order": [
+      "codex",
+      "kimi",
+      "copilot"
+    ],
+    "fallback": "gpt-6.1-sol",
+    "codex": {
+      "model": "gpt-6-sol",
+      "reasoningEffort": "medium"
+    },
+    "copilot": {
+      "model": null
+    },
+    "kimi": {
+      "model": null
+    },
+    "roles": {
+      "smoke": {
+        "provider": "kimi",
+        "model": "kimi-code/kimi-for-coding-highspeed"
+      },
+      "phase1": {
+        "provider": "kimi",
+        "model": "kimi-code/kimi-for-coding-highspeed"
+      },
+      "review": {
+        "provider": "kimi",
+        "model": "kimi-code/kimi-for-coding-highspeed"
+      },
+      "gate": {
+        "provider": "kimi",
+        "model": "kimi-code/kimi-for-coding-highspeed"
+      }
+    },
+    "pinsResetNote": "RESET 2026-10-08 on owner instruction (owner: set all model pins to defaults in the crew config): roles cleared, provider/order/model keys set to crew 1.2.1 defaults; fallback kept claude-opus-5-5.",
+    "kimiK3Note": "SET 2026-10-11 on owner instruction (owner: \"please change the remaning claude roles to kimi k3 model for this repo and machine wide\"): every Claude-backed dev role/default/fallback -> kimi kimi-code/k3. qa.fallback -> kimi-code/k3; qa.claude.model (the claude rung in qa.order) left as-is.",
+    "claude": {
+      "model": "claude-opus-5-5"
+    },
+    "tssPinsNote": "SET 2026-10-16 (L-0798) on owner instruction: TSS repo-layer model pins adopted, owner overrides: developer and dev.fallback = sonnet, qa.order without a claude rung. qa.fallback unchanged."
+  },
+  "dev": {
+    "provider": "claude",
+    "fallback": "sonnet",
+    "codex": {
+      "model": "gpt-6-astra",
+      "reasoningEffort": "medium"
+    },
+    "copilot": {
+      "model": null
+    },
+    "kimi": {
+      "model": "kimi-code/k3"
+    },
+    "roles": {
+      "developer": {
+        "provider": "claude",
+        "model": "sonnet"
+      },
+      "security": {
+        "provider": "kimi",
+        "model": "kimi-code/k3"
+      },
+      "coordinator": {
+        "provider": "claude",
+        "model": "opus"
+      }
+    },
+    "pinsResetNote": "RESET 2026-10-08 on owner instruction (owner: set all model pins to defaults in the crew config): roles cleared, provider/order/model keys set to crew 1.2.1 defaults; fallback kept claude-opus-5-5.",
+    "kimiK3Note": "SET 2026-10-11 on owner instruction (owner: \"please change the remaning claude roles to kimi k3 model for this repo and machine wide\"): every Claude-backed dev role/default/fallback -> kimi kimi-code/k3.",
+    "tssPinsNote": "SET 2026-10-16 (L-0798) on owner instruction: TSS repo-layer model pins adopted, owner overrides: developer and dev.fallback = sonnet, qa.order without a claude rung. qa.fallback unchanged."
+  },
+  "memory": {
+    "mode": "obsidian",
+    "vaultPath": "/repos/example/claude-memories"
+  },
+  "pm": {
+    "enabled": true,
+    "mode": "adaptive",
+    "quietLines": 8,
+    "maxLines": 40,
+    "authority": "autonomous",
+    "ticketGranularity": "system",
+    "maxDispatches": 9
+  },
+  "install": {
+    "policy": "ask"
+  },
+  "autopilot": {
+    "approval": "self",
+    "deploy": "all",
+    "questions": "self",
+    "mode": "backlog",
+    "maxPhases": 100,
+    "ship": "merge",
+    "reviewPolicy": "fix-and-rereview",
+    "maxLanes": 3,
+    "maxTicketsPerRun": 50
+  },
+  "environments": {
+    "prodUnattended": true
+  }
+}
