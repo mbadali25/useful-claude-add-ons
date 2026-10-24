@@ -9,6 +9,17 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.74: crew config from 157 keys to 87, guards profile, generated CONFIG.md (L-0725)
+
+- **Summary.** `crew` 1.2.74: the config shrinks from 157 keys to 87 (60 keys became constants at their old defaults), the twelve `guards.<name>` keys are replaced by `guards.profile` (`off | standard | strict`) plus `guards.overrides`, and `/crew:migrate` carries a schema 7 setup to schema 8.
+- **Breaking.** The old `guards.<name>` keys are still read as aliases for `guards.overrides.<name>` until `/crew:migrate` runs; a config carrying a removed key is told so by the inert-setting report, and `/crew:migrate` refuses while a removed key holds a non-default value unless `--accept-dropped <key>`. `CONFIG.md` is generated whole (217 lines, was 3,897) and its rationale moved to `docs/crew/config-rationale.md`; `CONFIG.md §N` citations are gone.
+- The no-python fallbacks in `cloud-guard.sh` and `env-guard.sh` no longer trust the first match; a layer is unarmed only when `off` can be proved.
+- Equivalence against the base on the full host corpus: 181 of 181 readable inputs identical, 0 differences.
+
+### Changed — crew 1.2.69: sabotage entry retargeted to a test id that survives L-0725 (L-0898)
+
+- **Summary.** `crew` 1.2.69: test harness only. The sabotage entry "merged machine file keeps a consent key" now names `[machine-obsidian]` instead of `[machine-unsafeFocus]`, because L-0725 (#665) removes `context.autoClear.unsafeFocus` and the old id would collect nothing (exit 4). Checked with the mutation applied: `[machine-obsidian]` fails (RED, a real assertion). No behaviour change for users.
+
 ### Changed — crew 1.2.68: text-only prompt improvements, functional QA checklist, able-to-fail rule, deploy-evidence wording (L-0872)
 
 - **Summary.** `crew` 1.2.68: prompt text only. `crew-execute` gains a reuse-first ladder and a no-tautological-assertion rule; `crew-debugging` and `/crew:debug` require a red-capable command before Phase 2 and tagged debug logs; `/crew:handoff` says to reference by path and redact secrets; `crew-qa-standards` gains a functional (API, CLI, job, webhook) QA checklist and an able-to-fail rule with benchmark questions; `/crew:promote` reports a deploy with merged sha, deployed sha and health result, else `unverified`. Two stale comments fixed. NOTICE.md credits Pocock, Ponytail, gstack and pstack (all MIT).
