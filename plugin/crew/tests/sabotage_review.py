@@ -1013,12 +1013,14 @@ REVIEW_FIX_MUTATIONS = (
     # by hand against the tracked file, seen red, restored.
     (
         # A row recorded before L-0576 reads as 0 stray lines, so an unread
-        # count passes as "not recovered".
+        # count passes as "not recovered". L-0897: aimed at the row-key-gone case;
+        # the old target (`ignored-lines-missing`) never lacked the key on the row
+        # and review.json's own check said the same words, so it stayed green.
         "auto-accept defaults a missing ignored_lines to 0",
         REVIEW_LEDGER,
         '    ignored = row.get("ignored_lines")\n',
         '    ignored = row.get("ignored_lines", 0)\n',
-        "tests/test_review_auto_accept.py::test_auto_accept_refuses[ignored-lines-missing]",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[ignored-lines-row-key-gone]",
     ),
     (
         # Review round 5 BLOCK: review.json's count is not checked for shape,

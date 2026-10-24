@@ -2063,6 +2063,10 @@ S9_MUST_BLOCK = _normalise([
      f"cat <<'E\\OF'\nE\\OF\n\"terraform\" {_ADESTROY}\nEOF", _gate()),
     ("s9-backquote-empty-prefix", "Bash",
      f'true `<<EOF;"$x"terraform {_ADESTROY}`', _gate()),
+    # L-0897: the row above ends in `destroy`, which a second reading of the line gates
+    # without the expansion at all; `taint` has no such backstop, so only the
+    # emptied-expansion reading of the name denies this one.
+    ("s9-backquote-empty-prefix-taint", "Bash", f'true `"$x"terraform {_TAINT}`', _gate()),
     ("s9-short-glob-destroy", "Bash", f"/usr/bin/t* {_ADESTROY}", _gate()),
 ])
 

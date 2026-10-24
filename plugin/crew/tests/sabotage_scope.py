@@ -68,9 +68,15 @@ SCOPE_MUTATIONS = (
      "        if state and _under(path, state):\n            return True\n",
      "        if False:\n            return True\n",
      _SG + "test_approval_state_is_blocked_even_in_report_mode[module]"),
+    # L-0897: the record is protected twice -- by name (SCOPE_BASE) and as
+    # bookkeeping (`is_crew_write_refused`, `.crew/.scope-base` is on
+    # CREW_BOOKKEEPING_PATHS) -- so dropping either alone stayed green. The
+    # entry drops both: only then does the record lose its protection.
     ("the scope base record loses its protection", GUARD,
-     "        if rel is not None and os.path.normcase(rel) == os.path.normcase(SCOPE_BASE):\n",
-     "        if False:\n",
+     "        if rel is not None and os.path.normcase(rel) == os.path.normcase(SCOPE_BASE):\n"
+     "            return True\n"
+     "        if rel is not None and crew_ticket.is_crew_write_refused(rel):\n",
+     "        if False:\n            return True\n        if False:\n",
      _SG + "test_the_scope_base_record_is_blocked[module]"),
     ("the git directory can be put in scope", GUARD,
      "    if common and (_under(real, common) or _under(named, common)):\n",

@@ -493,8 +493,13 @@ MUTATIONS = (
         PROMOTE_SH,
         'if [ "$ENV_STATUS" -ne 0 ]; then',
         'if [ "$ENV_STATUS" -eq 999 ]; then',
+        # L-0897: the stray-comma test stayed green here, because the dispatch
+        # reader (_promote_dispatch.py) fails on the same file and blocks with a
+        # message that also says "does not parse as JSON". The parametrized test
+        # asserts the gate's OWN message ("NOT a pass" + exit 2 for every shape),
+        # which only the env-status branch writes.
         ("tests/test_promote_gate_unreadable_map.py::"
-         "test_sh_blocks_on_the_stray_comma_that_started_this"),
+         "test_sh_blocks_on_a_map_it_cannot_read"),
     ),
     (
         # D3, PowerShell. `-ErrorAction Stop` goes away and Get-Content's

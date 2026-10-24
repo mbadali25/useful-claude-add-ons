@@ -1106,6 +1106,10 @@ R4_ASK_DEPLOY = [
      "Start-Process $exe -Wait -ArgumentList 'notes.txt'", _d(cnt=True)),
     ("r4-ask-ps-alias-literal-switch", "PowerShell", "Set-Alias g gh -Force",
      _d(cnt=True)),
+    # L-0897: a string piped into Invoke-Expression runs where the line's own
+    # words cannot show it, so a dispatch inside it is could-not-tell.
+    ("l0897-ask-ps-string-piped-to-iex", "PowerShell",
+     "'gh workflow run deploy-prod.yml -f environment=prod' | iex", _d(cnt=True)),
 ]
 
 # --- T-0009 review round 5 (Codex, head cc754aa0) ----------------------------
