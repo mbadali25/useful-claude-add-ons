@@ -76,9 +76,11 @@ STOP_BUDGET_MUTATIONS = (
     # L-0905: the pricing floor, the sync payload and the dead producer.
     ("a cached zero prices a declared rule (the positive floor is dropped)", SH,
      "                            and cached > 0):\n"
-     "                        rule_secs[ri] = cached\n",
+     "                        rule_secs[ri] = cached\n"
+     "                        if cached < secs:\n",
      "                            and cached >= 0):\n"
-     "                        rule_secs[ri] = cached\n",
+     "                        rule_secs[ri] = cached\n"
+     "                        if cached < secs:\n",
      "tests/test_verify_gate_stop_budget.py::test_an_unusable_measurement_leaves_the_declared_price[0-sh]"),
     ("the sync payload rides on argv again", SH,
      'with open(sys.argv[1], encoding="utf-8") as fh:\n    extras = json.loads(fh.read())\n',

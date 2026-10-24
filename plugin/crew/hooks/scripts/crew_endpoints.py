@@ -527,7 +527,7 @@ def _acquire_endpoints_lock(root):
     anywhere else in crew.
     """
     path = _endpoints_lock_path(root)
-    deadline = time.monotonic() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS
+    deadline = time.time() + _ENDPOINTS_LOCK_TIMEOUT_SECONDS
     mutex = _process_mutex(path)
     if not mutex.acquire(timeout=_seconds_left(deadline)):
         return None, _held_elsewhere()

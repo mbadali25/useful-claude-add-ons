@@ -490,9 +490,11 @@ TOOLING_MUTATIONS += (
         "a dearer cached measurement no longer replaces a declared price",
         GATE_SH,
         "                            and cached > 0):\n"
-        "                        rule_secs[ri] = cached\n",
+        "                        rule_secs[ri] = cached\n"
+        "                        if cached < secs:\n",
         "                            and 0 < cached < secs):\n"
-        "                        rule_secs[ri] = cached\n",
+        "                        rule_secs[ri] = cached\n"
+        "                        if cached < secs:\n",
         ("tests/test_verify_gate_reprice.py::"
          "test_a_dearer_measurement_defers_a_declared_rule[sh]"),
     ),
@@ -503,10 +505,12 @@ TOOLING_MUTATIONS += (
         GATE_SH,
         "                    if (isinstance(cached, int) and not isinstance(cached, bool)\n"
         "                            and cached > 0):\n"
-        "                        rule_secs[ri] = cached\n",
+        "                        rule_secs[ri] = cached\n"
+        "                        if cached < secs:\n",
         "                    if (isinstance(cached, int)\n"
         "                            and cached > 0):\n"
-        "                        rule_secs[ri] = cached\n",
+        "                        rule_secs[ri] = cached\n"
+        "                        if cached < secs:\n",
         ("tests/test_verify_gate_stop_budget.py::"
          "test_an_unusable_measurement_leaves_the_declared_price[True-sh]"),
     ),
