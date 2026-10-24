@@ -17,6 +17,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Spike.** The crew arm showed a Codex FINDINGS, fix, re-review cycle (2 review cycles, 0.68 USD Claude list price, Codex unpriced).
 - **Docs.** none - evals/ and scripts/ only, no plugin/crew change.
 
+### Changed — crew 1.2.69: sabotage entry retargeted to a test id that survives L-0725 (L-0898)
+
+- **Summary.** `crew` 1.2.69: test harness only. The sabotage entry "merged machine file keeps a consent key" now names `[machine-obsidian]` instead of `[machine-unsafeFocus]`, because L-0725 (#665) removes `context.autoClear.unsafeFocus` and the old id would collect nothing (exit 4). Checked with the mutation applied: `[machine-obsidian]` fails (RED, a real assertion). No behaviour change for users.
+
 ### Changed — crew 1.2.68: text-only prompt improvements, functional QA checklist, able-to-fail rule, deploy-evidence wording (L-0872)
 
 - **Summary.** `crew` 1.2.68: prompt text only. `crew-execute` gains a reuse-first ladder and a no-tautological-assertion rule; `crew-debugging` and `/crew:debug` require a red-capable command before Phase 2 and tagged debug logs; `/crew:handoff` says to reference by path and redact secrets; `crew-qa-standards` gains a functional (API, CLI, job, webhook) QA checklist and an able-to-fail rule with benchmark questions; `/crew:promote` reports a deploy with merged sha, deployed sha and health result, else `unverified`. Two stale comments fixed. NOTICE.md credits Pocock, Ponytail, gstack and pstack (all MIT).

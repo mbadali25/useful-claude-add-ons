@@ -373,7 +373,7 @@ CONFIG_MENU_MUTATIONS = (
      '    if layer == "machine" and _consent_refusal(dotted):\n',
      '    if False:\n',
      _C + "test_merged_file_refuses_a_pre_existing_leaf_forbidden_at_its_layer"
-     "[machine-unsafeFocus]"),
+     "[machine-obsidian]"),
     ("merged repo file keeps an armed veto key", CONFIG,
      '    if layer == "repo" and dotted in REPO_VETO_ONLY and not is_repo_veto(value):\n'
      '        return _VETO_ONLY\n',
