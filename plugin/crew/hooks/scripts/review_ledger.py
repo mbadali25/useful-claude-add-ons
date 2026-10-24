@@ -1024,7 +1024,7 @@ def reject(root, ticket, by, supersede_accepted=False):
     takes ONLY an ACCEPTED ticket, keeps the receipt in `superseded` and
     clears it; `--by` is a recorded name, never a check of who is calling."""
     by = _one_line_arg(by, "--by", "--reject")
-    if False:
+    if supersede_accepted and _is_auto_name(by):
         raise LedgerError(f"--by {by.strip()!r}: an {AUTO_PREFIX!r} name never supersedes "
                           "an accepted receipt")
 
