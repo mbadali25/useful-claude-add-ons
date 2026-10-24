@@ -111,3 +111,21 @@ def test_a_chronic_by_measurement_rule_runs_under_all_and_is_remeasured(flavour,
     assert "echo RAN-cheap-5" in _ran(result), result.stderr
     timings = json.loads((root / ".crew" / _TIMINGS).read_text(encoding="utf-8"))
     assert 1 <= timings["rules"][key] < 190, timings
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("value", [True, 2.5, "3", 0, -1, None])
+def test_an_unusable_measurement_does_not_price_a_rule_with_no_declared_seconds(flavour, value, tmp_path):
+    """MUST-BLOCK. With no declared `seconds` only a positive integer is a
+    price; a JSON true is an int in python and must not read as 1s."""
+    rule = {"paths": ["a.py"], "run": ["echo RAN-undeclared"], "why": "no seconds on purpose"}
+    verify_map = {"version": 1, "rules": [rule], "default": [], "unmapped": "ignore"}
+    root = _repo(tmp_path, verify_map)
+    _seed_timing(root, verify_map, value)
+
+    result = _run(flavour, root)
+
+    assert result.returncode == 0, result.stderr
+    assert "echo RAN-undeclared" in _ran(result), result.stderr
+    assert "priced from a cached measurement" not in result.stderr, (
+        "a cached " + repr(value) + " priced a rule with no declared seconds. " + result.stderr)

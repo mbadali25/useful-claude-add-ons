@@ -1672,7 +1672,8 @@ for f in changed:
                             measured_above[ri] = secs
                 else:
                     cached = _timings.get(key)
-                    if isinstance(cached, int) and cached > 0:
+                    if (isinstance(cached, int) and not isinstance(cached, bool)
+                            and cached > 0):
                         rule_secs[ri] = cached
                         measured_used[ri] = True
                 if REACH_FILTER:

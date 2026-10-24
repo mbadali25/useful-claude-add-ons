@@ -100,4 +100,15 @@ STOP_BUDGET_MUTATIONS = (
      '>"$RULE_OUT_FILE" 2>&1 </dev/null 4>&- &',
      '>"$RULE_OUT_FILE" 2>&1 4>&- &',
      "tests/test_verify_gate_sync_payload.py::test_the_rule_child_redirects_stdin_from_devnull_in_the_run_line"),
+    ("a cached true prices a rule with no declared seconds", SH,
+     "                    if (isinstance(cached, int) and not isinstance(cached, bool)\n"
+     "                            and cached > 0):\n"
+     "                        rule_secs[ri] = cached\n"
+     "                        measured_used[ri] = True\n",
+     "                    if (isinstance(cached, int)\n"
+     "                            and cached > 0):\n"
+     "                        rule_secs[ri] = cached\n"
+     "                        measured_used[ri] = True\n",
+     "tests/test_verify_gate_reprice.py::"
+     "test_an_unusable_measurement_does_not_price_a_rule_with_no_declared_seconds[True-sh]"),
 )
