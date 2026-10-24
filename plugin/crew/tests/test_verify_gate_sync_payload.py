@@ -77,6 +77,11 @@ def _shim_python(directory):
     return shim
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="bin/bash.exe prepends /mingw64/bin:/usr/bin ahead of the PATH it is handed, so a shim dir placed "
+           "first is never reached, and os.chmod cannot mark the shim executable there (see "
+           "crew_fixtures.resolve_bash_no_prepend). Not attempted on Windows.")
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_a_failed_sync_producer_does_not_advance_the_marker(flavour, tmp_path):
     """MUST-BLOCK. The producer prints a valid payload and then exits 126, as

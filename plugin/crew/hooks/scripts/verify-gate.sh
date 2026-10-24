@@ -2839,8 +2839,8 @@ if [ -n "$PY" ] && [ -n "$EXTRAS" ]; then
     if [ -z "$EXTRAS_FILE" ]; then
       echo "verify-gate: could not create a temp file for the record sync; NOT advancing the marker" >&2
     else
-    printf '%s\n' "$EXTRAS" > "$EXTRAS_FILE"
-    "$PY" -c '
+      printf '%s\n' "$EXTRAS" > "$EXTRAS_FILE"
+      "$PY" -c '
 import json, sys
 try:
     sys.stdout.reconfigure(newline="\n")
@@ -2858,16 +2858,16 @@ for line in sys.stdin.read().split("\n"):
     except ValueError:
         pass
 print(json.dumps({"sha": sys.argv[2], "all": sys.argv[3] == "--all", "matched_rules": extras.get("matched_rules", []), "cmd_log": cmd_log}))
-' "$EXTRAS_FILE" "$SYNC_SHA" "$BUDGET_FLAG" <<< "$CMD_LOG" | tr -d '\r' | gate_record_sync "$PY" "$SYNC_PY"
-    SYNC_PIPE=("${PIPESTATUS[@]}")
-    rm -f "$EXTRAS_FILE"
-    SYNC_STATUS=${SYNC_PIPE[2]}
-    # A producer or filter that failed is a failed sync even when the stage
-    # after it read an empty stdin and exited 0: the marker must not advance.
-    if [ "$SYNC_STATUS" -eq 0 ] && { [ "${SYNC_PIPE[0]}" -ne 0 ] || [ "${SYNC_PIPE[1]}" -ne 0 ]; }; then
-      echo "verify-gate: the record sync payload could not be built (producer exit ${SYNC_PIPE[0]}, filter exit ${SYNC_PIPE[1]}); NOT advancing the marker" >&2
-      SYNC_STATUS=1
-    fi
+  ' "$EXTRAS_FILE" "$SYNC_SHA" "$BUDGET_FLAG" <<< "$CMD_LOG" | tr -d '\r' | gate_record_sync "$PY" "$SYNC_PY"
+      SYNC_PIPE=("${PIPESTATUS[@]}")
+      rm -f "$EXTRAS_FILE"
+      SYNC_STATUS=${SYNC_PIPE[2]}
+      # A producer or filter that failed is a failed sync even when the stage
+      # after it read an empty stdin and exited 0: the marker must not advance.
+      if [ "$SYNC_STATUS" -eq 0 ] && { [ "${SYNC_PIPE[0]}" -ne 0 ] || [ "${SYNC_PIPE[1]}" -ne 0 ]; }; then
+        echo "verify-gate: the record sync payload could not be built (producer exit ${SYNC_PIPE[0]}, filter exit ${SYNC_PIPE[1]}); NOT advancing the marker" >&2
+        SYNC_STATUS=1
+      fi
     fi
   else
     echo "verify-gate: could not sync the record (verify_record.py not found at $SYNC_PY); NOT advancing the marker" >&2
