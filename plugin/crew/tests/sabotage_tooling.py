@@ -484,15 +484,17 @@ if os.path.isfile(CHECKER) and os.path.isfile(VERIFY_JSON):
 # Kept here, not in sabotage.py, which sits at pylint's 3400-line module cap.
 TOOLING_MUTATIONS += (
     (
-        # min(declared, measured) turned into "measured wins": a stale cache
-        # ABOVE the declared price makes a rule that fits chronic, and Stop
-        # stops running it. The whole safety argument is the minimum.
-        "a dearer cached measurement replaces a declared price",
+        # The measured price replaces the declared one in BOTH directions. Put
+        # back to "only a cheaper one wins" and a rule that really costs more
+        # than it declares keeps its stale cheap price and never defers.
+        "a dearer cached measurement no longer replaces a declared price",
         GATE_SH,
-        "                            and 0 < cached < secs):\n",
-        "                            and 0 < cached):\n",
-        ("tests/test_verify_gate_stop_budget.py::"
-         "test_a_dearer_measurement_never_defers_a_declared_rule[sh]"),
+        "                            and cached > 0):\n"
+        "                        rule_secs[ri] = cached\n",
+        "                            and 0 < cached < secs):\n"
+        "                        rule_secs[ri] = cached\n",
+        ("tests/test_verify_gate_reprice.py::"
+         "test_a_dearer_measurement_defers_a_declared_rule[sh]"),
     ),
     (
         # A JSON true is an int in python; without the bool test a cached
@@ -500,9 +502,11 @@ TOOLING_MUTATIONS += (
         "a cached true prices a declared rule",
         GATE_SH,
         "                    if (isinstance(cached, int) and not isinstance(cached, bool)\n"
-        "                            and 0 < cached < secs):\n",
+        "                            and cached > 0):\n"
+        "                        rule_secs[ri] = cached\n",
         "                    if (isinstance(cached, int)\n"
-        "                            and 0 < cached < secs):\n",
+        "                            and cached > 0):\n"
+        "                        rule_secs[ri] = cached\n",
         ("tests/test_verify_gate_stop_budget.py::"
          "test_an_unusable_measurement_leaves_the_declared_price[True-sh]"),
     ),

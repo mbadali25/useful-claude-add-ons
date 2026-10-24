@@ -3037,10 +3037,13 @@ rule, keyed by a content hash of that rule's `paths`/`run` so it survives
   chronic, and still blocks the sha marker exactly as before this feature —
   that case really is unverified for THIS commit, not permanently
   unverifiable, and freezing the baseline is the correct answer for it.
-- **Pricing**. A rule's cost is its declared `seconds`, or the
-  smaller of that and a measurement of it on this machine
-  (`.crew/.verify-gate.timings.json`), never the larger: a stale
-  over-statement stops reading as chronic once one clean run measures it.
+- **Pricing**. A rule's cost is its declared `seconds`, or, when a clean
+  run on this machine has measured it (`.crew/.verify-gate.timings.json`),
+  that measurement, whichever direction it differs in (the latest wins). A
+  stale over-statement stops reading as chronic once one clean run measures
+  it; a rule that slows down is re-priced upward, and one now over the
+  budget alone is chronic and runs only under `/crew:verify --all`, which
+  re-measures it.
 - **The tree-pass cache**. At Stop, a command that passed is credited,
   not re-run, while the tree is byte-for-byte the tree it passed on
   (`.crew/.verify-gate.passes.json`, keyed on HEAD, every ref,
