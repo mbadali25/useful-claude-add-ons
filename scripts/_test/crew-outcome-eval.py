@@ -1648,6 +1648,29 @@ def case_two_task_directories_with_one_name_are_refused(tmp):
     return bool(message and "share a task name" in message), message
 
 
+def case_a_results_row_with_an_unknown_arm_bucket_or_status_is_refused(tmp):
+    got = []
+    for patch in ({"arm": "creww"}, {"bucket": "XL"}, {"runStatus": "maybe"}):
+        path = os.path.join(tmp, f"results-{next(iter(patch))}.jsonl")
+        row = {"task": "a", "bucket": "S", "arm": "crew", "runStatus": "scored", "attempt": 1, **patch}
+        write(path, json.dumps(row) + "\n")
+        got.append(bool(refused(eval_mod.read_results, path)))
+    return all(got), got
+
+
+def case_a_paid_unscorable_row_without_recorded_spend_is_unknown_not_zero(tmp):
+    rows = two_tasks()
+    rows.append({"task": "a", "bucket": "S", "arm": "crew", "attempt": 1, "runStatus": "unscorable", "ownCostUsd": 10.0,
+                 "costUsd": 10.0})
+    result = eval_mod.bucket_verdict(rows, "S")
+    rows2 = two_tasks()
+    rows2.append({"task": "a", "bucket": "S", "arm": "crew", "attempt": 1, "runStatus": "unscorable"})
+    result2 = eval_mod.bucket_verdict(rows2, "S")
+    clean = eval_mod.bucket_verdict(two_tasks(), "S")
+    ok = result.get("costDiff", 0) > clean["costDiff"] and any("UNKNOWN" in line for line in result2["lines"])
+    return ok, (clean.get("costDiff"), result.get("costDiff"), result2["lines"])
+
+
 def case_a_symlink_alias_of_the_results_file_shares_one_lock(tmp):
     path = os.path.join(tmp, "results.jsonl")
     write(path, "")
@@ -1833,7 +1856,7 @@ def case_malformed_optional_codex_counts_make_usage_unknown(tmp):
 
 def case_a_wrong_shape_results_row_is_refused_not_a_crash(tmp):
     path = os.path.join(tmp, "results-bad.jsonl")
-    write(path, json.dumps({"bucket": "S", "runStatus": "scored", "task": []}) + "\n")
+    write(path, json.dumps({"bucket": "S", "runStatus": "scored", "arm": "crew", "attempt": 1, "task": []}) + "\n")
     try:
         eval_mod.read_results(path)
     except eval_mod.EvalError as exc:
@@ -2062,6 +2085,8 @@ CASES = (
     ("must-block: a non-finite wall-clock limit is refused", case_a_non_finite_wall_clock_limit_is_refused),
     ("must-block: run validates every task before any billed work", case_run_validates_every_task_before_any_billed_work),
     ("must-block: two task directories with one name are refused", case_two_task_directories_with_one_name_are_refused),
+    ("must-block: a results row with an unknown arm, bucket or status is refused", case_a_results_row_with_an_unknown_arm_bucket_or_status_is_refused),
+    ("must-block: a paid unscorable row without recorded spend is unknown, not zero", case_a_paid_unscorable_row_without_recorded_spend_is_unknown_not_zero),
     ("must-block: a symlink alias of the results file shares one lock", case_a_symlink_alias_of_the_results_file_shares_one_lock),
     ("must-block: a fabricated third attempt row is refused", case_a_fabricated_third_attempt_row_is_refused),
     ("must-block: a missing pinned protocol limit in an arm is refused", case_a_missing_pinned_protocol_limit_in_an_arm_is_refused),

@@ -64,6 +64,7 @@ CODEX_CONFIG = ("[features]\nplugins = false\nremote_plugin = false\napps = fals
                 "plugin_sharing = false\ndaemon_auto_start = false\n")
 TASK_KEYS = ("name", "ticket", "base", "reference", "bucket", "referenceLines", "statementFile",
              "defects", "regressionInventory", "gradingFiles", "testCommand")
+RUN_STATUSES = ("scored", "unscorable", "contaminated", "infra", "error")
 ARM_KEYS = ("arm", "author", "reviewer", "wallClockMinutes", "cli", "prompts")
 ARM_EXTRA_KEYS = {"crew": ("crewConfig", "assignment"), "baseline": ("reviewParse",)}
 TEST_TIMEOUT_SECONDS = 120
@@ -923,6 +924,10 @@ def read_results(path):
                     fail(f"{path}:{number}: not JSON; results are append-only full lines")
                 if not isinstance(row, dict):
                     fail(f"{path}:{number}: not a JSON object; results are append-only full rows")
+                if (row.get("arm") not in ARMS or row.get("bucket") not in BUCKETS
+                        or row.get("runStatus") not in RUN_STATUSES):
+                    fail(f"{path}:{number}: arm, bucket and runStatus must be known values "
+                         f"(arm {', '.join(ARMS)}; bucket S, M, L; runStatus {', '.join(RUN_STATUSES)})")
                 if not all(isinstance(row.get(k), str) for k in ("task", "bucket", "arm", "runStatus")):
                     fail(f"{path}:{number}: task, bucket, arm and runStatus must be present strings")
                 if row.get("attempt") not in (1, 2) or isinstance(row.get("attempt"), bool):
@@ -1511,6 +1516,12 @@ def known(value):
     return value is not None and value != UNKNOWN
 
 
+def chain_spend(row):
+    """What a chain that never scored cost: its recorded `unscoredSpendUsd`, else the row's own
+    spend; UNKNOWN when neither was recorded (a missing amount is not zero)."""
+    return row.get("unscoredSpendUsd", row.get("ownCostUsd", UNKNOWN))
+
+
 def chain_finals(rows):
     """The last row of each chain: an attempt-2 row replaces the attempt-1 row it reran."""
     finals = []
@@ -1545,7 +1556,7 @@ def bucket_verdict(rows, bucket):
     unknown_cost = [r for r in mine if r.get("runStatus") == "scored" and not known(r.get("costUsd"))]
     finals = chain_finals(mine)
     unknown_chain = [r for r in finals if r.get("runStatus") in ("unscorable", "infra", "error")
-                     and r.get("unscoredSpendUsd") == UNKNOWN]
+                     and not known(chain_spend(r))]
     tasks = sorted({r["task"] for r in mine})
     per_task = {}
     for task in tasks:
@@ -1559,9 +1570,10 @@ def bucket_verdict(rows, bucket):
             continue
         entry = {}
         for arm, runs in arms_ok.items():
-            spend = sum(float(r["unscoredSpendUsd"]) for r in finals
-                        if r["task"] == task and r["arm"] == arm and r.get("runStatus") != "scored"
-                        and known(r.get("unscoredSpendUsd")))
+            spend = sum(float(chain_spend(r)) for r in finals
+                        if r["task"] == task and r["arm"] == arm
+                        and r.get("runStatus") not in ("scored", "contaminated")
+                        and known(chain_spend(r)))
             entry[arm] = {"defects": statistics.median(r["escapedDefects"] for r in runs),
                           "cost": statistics.median(float(r["costUsd"]) for r in runs) + spend}
         per_task[task] = entry
