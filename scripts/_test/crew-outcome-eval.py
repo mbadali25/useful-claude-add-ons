@@ -1416,7 +1416,8 @@ def case_an_ungrouped_hidden_test_is_unscored_in_grading_and_refused_by_validate
     write(os.path.join(run["repo"], "calc.py"), CALC_BASE + "\n\ndef mul(a, b):\n    return a * b\n")
     result = eval_mod.grade(task, run["repo"], fix.src)
     refused_loose = any("no defect group" in p and "test_loose" in p for p in problems)
-    ok = refused_loose and result["escapedDefects"] == 0 and result["defectsTotal"] >= 0
+    within = result["escapedDefects"] <= result["defectsTotal"]
+    ok = refused_loose and result["escapedDefects"] == 0 and within
     return ok, (problems, result)
 
 
