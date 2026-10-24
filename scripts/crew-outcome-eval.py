@@ -313,6 +313,9 @@ def check_arm_shape(path, arm):
     need(isinstance(permissions, dict), "settings.permissions must be an object")
     need(strings(permissions.get("deny", [])), "settings.permissions.deny must be a list of strings")
     need(strings(arm.get("proxyIgnoreHosts", [])), "proxyIgnoreHosts must be a list of strings")
+    need(strings(arm.get("removePaths", [])) and not any(os.path.isabs(p) or ".." in p.split("/")
+                                                        for p in arm.get("removePaths", [])),
+         "removePaths must be a list of repo-relative paths")
     need(count(arm["cli"].get("maxResumes" if arm["arm"] == "crew" else "maxCycles")),
          "cli.maxResumes (crew) or cli.maxCycles (baseline) must be present: the protocol is pinned, not defaulted")
     if arm["arm"] == "crew":
@@ -348,6 +351,24 @@ def export_tree(source_repo, sha, dest):
     out = git("archive", "--format=tar", sha, cwd=source_repo, text=False)
     with tarfile.open(fileobj=__import__("io").BytesIO(out.stdout)) as tar:
         tar.extractall(dest, filter="data")
+
+
+def remove_arm_paths(repo, paths):
+    """Delete the arm's `removePaths` (repo-relative) from the exported base tree,
+    before the one-commit init. The crew arm removes `.crew/codemap`: this repo's
+    map places only some Touch entries (not CHANGELOG.md, README.md or
+    .claude-plugin/marketplace.json), so autopilot's size check reads `subsystems`
+    as unknown and stops at `split-check-unknown` before any code is written
+    (pilot 2026-10-24). With no codemap the measure is `unmeasured`, which does not stop."""
+    root = os.path.realpath(repo)
+    for rel in paths:
+        target = os.path.realpath(os.path.join(root, rel))
+        if target == root or not target.startswith(root + os.sep):
+            fail(f"removePaths entry {rel!r} is outside the repository")
+        if os.path.isdir(target):
+            shutil.rmtree(target)
+        elif os.path.lexists(target):
+            os.remove(target)
 
 
 def init_repo(dest):
@@ -1161,6 +1182,7 @@ def prepare_run(task, arm, source_repo, runs_dir, attempt, crew_plugin, env=None
     for key in ("repo", "home", "proxylog", "proxysock"):
         os.makedirs(run[key])
     export_tree(source_repo, task["base"], run["repo"])
+    remove_arm_paths(run["repo"], arm.get("removePaths", []))
     init_repo(run["repo"])
     if reference_reachable(run["repo"], task["reference"]):
         fail(f"{task['name']}: the reference {task['reference']} is reachable in the run repo")
