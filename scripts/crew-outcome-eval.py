@@ -313,9 +313,10 @@ def check_arm_shape(path, arm):
     need(isinstance(permissions, dict), "settings.permissions must be an object")
     need(strings(permissions.get("deny", [])), "settings.permissions.deny must be a list of strings")
     need(strings(arm.get("proxyIgnoreHosts", [])), "proxyIgnoreHosts must be a list of strings")
-    need(strings(arm.get("removePaths", [])) and not any(os.path.isabs(p) or ".." in p.split("/")
-                                                        for p in arm.get("removePaths", [])),
-         "removePaths must be a list of repo-relative paths")
+    remove_paths = arm.get("removePaths", [])
+    need(strings(remove_paths) and all(
+        p and "\\" not in p and not os.path.isabs(p) and ".." not in p.split("/") and p not in (".", "./")
+        for p in remove_paths), "removePaths must be a list of non-empty repo-relative paths with no backslash or ..")
     need(count(arm["cli"].get("maxResumes" if arm["arm"] == "crew" else "maxCycles")),
          "cli.maxResumes (crew) or cli.maxCycles (baseline) must be present: the protocol is pinned, not defaulted")
     if arm["arm"] == "crew":
@@ -356,16 +357,19 @@ def export_tree(source_repo, sha, dest):
 def remove_arm_paths(repo, paths):
     """Delete the arm's `removePaths` (repo-relative) from the exported base tree,
     before the one-commit init. The crew arm removes `.crew/codemap`: this repo's
-    map places only some Touch entries (not CHANGELOG.md, README.md or
-    .claude-plugin/marketplace.json), so autopilot's size check reads `subsystems`
-    as unknown and stops at `split-check-unknown` before any code is written
-    (pilot 2026-10-24). With no codemap the measure is `unmeasured`, which does not stop."""
+    map places only some Touch entries, so autopilot's size check reads `subsystems`
+    as unknown and stops at `split-check-unknown` before any code is written.
+    With no codemap the measure is `unmeasured`, which does not stop."""
     root = os.path.realpath(repo)
     for rel in paths:
+        if not rel or "\\" in rel or os.path.isabs(rel):
+            fail(f"removePaths entry {rel!r} is not a repo-relative path")
         target = os.path.realpath(os.path.join(root, rel))
-        if target == root or not target.startswith(root + os.sep):
+        if target == root or os.path.commonpath([root, target]) != root:
             fail(f"removePaths entry {rel!r} is outside the repository")
-        if os.path.isdir(target):
+        if os.path.islink(os.path.join(root, rel)):
+            os.remove(os.path.join(root, rel))
+        elif os.path.isdir(target):
             shutil.rmtree(target)
         elif os.path.lexists(target):
             os.remove(target)

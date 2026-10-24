@@ -166,10 +166,10 @@ a wall-clock stop, and the report says how many runs were graded that way; it is
   `autopilot.mode: plan`, `approval: self`, `questions: self`, `reviewPolicy: fix-and-rereview`,
   `scope.allowCliApproval: true`, the Codex model pinned, everything else crew's default.
   **No codemap in the crew arm** (`removePaths: [".crew/codemap"]`, arm file): this repository's map places only some
-  Touch entries (not `CHANGELOG.md`, `README.md` or `.claude-plugin/marketplace.json`), so autopilot's size check read
-  `subsystems` as unknown and stopped at `split-check-unknown` before writing any code (first pilot, 2026-10-24: 72 s,
-  0.49 USD, 10 of 10 defects escaped). With no codemap the measure is `unmeasured` and does not stop. It is a treatment
-  difference (crew runs as on a repo not yet onboarded, without codemap context) and the results doc says so.
+  Touch entries (not `CHANGELOG.md`, `README.md` or `.claude-plugin/marketplace.json`), so autopilot's size check reads
+  `subsystems` as unknown and stops at `split-check-unknown` before writing any code. With no codemap the measure is
+  `unmeasured` and does not stop. It is a treatment difference (crew runs as on a repository not yet onboarded, without
+  codemap context) and the results doc says so.
 - **Baseline arm**: implement, run `/code-review`, fix every reported finding, repeat until a cycle reports no findings
   or 3 cycles complete.
 - **Verdict**: per task, the median over that arm's scored runs (at least 2 known runs per arm per task, else the task
