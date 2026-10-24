@@ -24,6 +24,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_migrate
+import crew_guards
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
@@ -64,8 +65,13 @@ def _repo(tmp_path):
     with open(os.path.join(FIXTURES, "config.json"), "rb") as fh:
         config = fh.read()
     assert config.count(b'"schema": 7') == 1
-    (crew / "config.json").write_bytes(config.replace(
+    current = json.loads(config.replace(
         b'"schema": 7', b'"schema": %d' % crew_migrate.LEGACY_SCHEMA_MAX))
+    for name in crew_guards.ALL_GUARD_NAMES:
+        current.get("guards", {}).pop(name, None)
+    if not current.get("guards"):
+        current.pop("guards", None)
+    (crew / "config.json").write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
     shutil.copy(os.path.join(FIXTURES, "metrics.md"), crew / "metrics.md")
     shutil.copytree(os.path.join(REPO, ".crew", "codemap"), crew / "codemap")
     (crew / "pm-journal.md").write_text("## 2026-09-23T01:00:00Z\nnote\n", encoding="utf-8")
