@@ -728,7 +728,8 @@ def case_a_paid_unscorable_attempt_is_carried_into_its_rerun(tmp):
         final = eval_mod.run_chain(ctx, fix.load(), fix.arm)
     rows = eval_mod.read_results(fix.results)
     ok = (len(rows) == 2 and rows[0]["runStatus"] == "unscorable" and final["runStatus"] == "scored"
-          and rows[0]["unscoredSpendUsd"] == rows[0]["ownCostUsd"] and final["costUsd"] == final["ownCostUsd"])
+          and rows[0]["unscoredSpendUsd"] == rows[0]["ownCostUsd"]
+          and final["costUsd"] == round(rows[0]["ownCostUsd"] + final["ownCostUsd"], 6))
     return ok, rows
 
 
@@ -1587,6 +1588,45 @@ def case_validate_all_fails_on_a_task_directory_without_task_json(tmp):
     return bool(message and "no task.json" in message), message
 
 
+def case_a_scored_retry_chain_costs_the_whole_chain_and_the_task_uses_the_median_of_chains(tmp):
+    def row(task, arm, attempt, status, own, cost, defects=None, spend=None):
+        out = {"task": task, "bucket": "S", "arm": arm, "attempt": attempt, "runStatus": status, "ownCostUsd": own,
+               "costUsd": cost, "escapedDefects": defects, "regressionTestsFailed": 0 if defects is not None else None}
+        if spend is not None:
+            out["unscoredSpendUsd"] = spend
+        return out
+    rows = []
+    for task in ("a", "b"):
+        for arm, defects in (("baseline", 1), ("crew", 0)):
+            if arm == "crew" and task == "a":
+                rows.append(row(task, arm, 1, "unscorable", 3.0, 3.0, spend=3.0))
+                rows.append(row(task, arm, 2, "scored", 2.0, 5.0, defects))
+            else:
+                rows.append(row(task, arm, 1, "scored", 2.0 if arm == "crew" else 1.0, 2.0 if arm == "crew" else 1.0,
+                                defects))
+            rows.append(row(task, arm, 1, "scored", 2.0 if arm == "crew" else 1.0, 2.0 if arm == "crew" else 1.0,
+                            defects))
+    result = eval_mod.bucket_verdict(rows, "S")
+    return result.get("costDiff") == 1.75, result
+
+
+def case_transcripts_reached_through_a_symlink_make_usage_unknown(tmp):
+    home = transcript_home(tmp, [assistant("m1", 1000)])
+    outside = os.path.join(tmp, "host-project")
+    write(os.path.join(outside, "other.jsonl"), json.dumps(assistant("m9", 5000)) + "\n")
+    os.symlink(outside, os.path.join(home, ".claude", "projects", "planted"))
+    tokens, cost, _ = eval_mod.claude_usage(home)
+    return tokens == UNKNOWN and cost == UNKNOWN, (tokens, cost)
+
+
+def case_a_non_finite_wall_clock_limit_is_refused(tmp):
+    arm = json.loads(slurp(os.path.join(REAL_EVAL_DIR, "arms", "baseline.json")))
+    path = os.path.join(tmp, "arm.json")
+    write(path, json.dumps(arm).replace('"S": 30', '"S": 1e999').replace('"S": 60', '"S": 1e999'))
+    message = refused(eval_mod.load_arm, path)
+    return bool(message), message
+
+
 def case_a_scored_row_with_a_wrong_type_cost_is_refused(tmp):
     path = os.path.join(tmp, "results-cost.jsonl")
     write(path, json.dumps({"task": "a", "bucket": "S", "arm": "crew", "runStatus": "scored", "attempt": 1,
@@ -1964,6 +2004,9 @@ CASES = (
     ("must-block: a wrong-shape arm file is refused before any run", case_a_wrong_shape_arm_file_is_refused_before_any_run),
     ("must-block: a clock that expires between invocations ends the arm as wall-clock", case_a_clock_that_expires_between_invocations_ends_the_arm_as_wall_clock),
     ("must-block: validate --all fails on a task directory without task.json", case_validate_all_fails_on_a_task_directory_without_task_json),
+    ("must-block: a scored retry chain costs the whole chain and the task uses the median of chains", case_a_scored_retry_chain_costs_the_whole_chain_and_the_task_uses_the_median_of_chains),
+    ("must-block: transcripts reached through a symlink make usage UNKNOWN", case_transcripts_reached_through_a_symlink_make_usage_unknown),
+    ("must-block: a non-finite wall-clock limit is refused", case_a_non_finite_wall_clock_limit_is_refused),
     ("must-block: a scored row with a wrong-type cost is refused", case_a_scored_row_with_a_wrong_type_cost_is_refused),
     ("must-block: an exception in the arm driver still writes a paid row", case_an_exception_in_the_arm_driver_still_writes_a_paid_row),
     ("must-block: a grading infra failure is retried once", case_a_grading_infra_failure_is_retried_once_before_the_run_is_unscored),

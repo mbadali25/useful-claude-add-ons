@@ -127,10 +127,11 @@ base tree (the repo path in `README.md`, `.claude-plugin/marketplace.json`) neve
 | `wallSeconds` | Monotonic clock over the whole arm. |
 
 A run is `unscorable` (rerun once) only for a harness, auth, container or API failure of the ARM (a CLI that exits
-non-zero or prints no `session_id` included); an agent that stops early or times out is graded as it left the repo. Each
-attempt's own spend sits on its own row: an attempt that produced no score (`unscorable`, `infra`, `error`) carries it as
-`unscoredSpendUsd`, which counts in the arm's task cost, so a refused rerun leaves exactly one row for attempt 1 and
-nothing is counted twice. Arm and task files are shape-checked (types, nulls, missing keys) before any billed call, and
+non-zero or prints no `session_id` included); an agent that stops early or times out is graded as it left the repo. A
+rerun's `costUsd` carries the attempt it replaced, so a scored chain reports what the whole chain cost and the task cost is
+the median of the chains; an attempt that produced no score (`unscorable`, `infra`, `error`) also records its spend as
+`unscoredSpendUsd` when it is written, so a refused rerun leaves exactly one row for attempt 1. Only a chain that never
+scored adds its final row's `unscoredSpendUsd` to the arm's task cost. Arm and task files are shape-checked (types, nulls, missing keys) before any billed call, and
 the run's `settings.json` always carries the `WebFetch` and `WebSearch` denials whatever the arm adds.
 
 Grading has its own two non-verdicts, both written as a row with the arm's cost and neither rerun (the arm already

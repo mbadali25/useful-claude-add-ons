@@ -274,8 +274,8 @@ def load_arm(path):
     if missing:
         fail(f"{path} lacks: {', '.join(missing)}")
     minutes = arm["wallClockMinutes"]
-    if not isinstance(minutes, dict) or any(isinstance(v, bool) or not isinstance(v, (int, float)) or v <= 0
-                                            for v in minutes.values()):
+    if not isinstance(minutes, dict) or any(isinstance(v, bool) or not isinstance(v, (int, float))
+                                            or not math.isfinite(v) or v <= 0 for v in minutes.values()):
         fail(f"{path}: wallClockMinutes must map S, M, L to positive numbers")
     if set(minutes) != set(BUCKETS):
         fail(f"{path}: wallClockMinutes needs exactly S, M, L")
@@ -607,6 +607,10 @@ def claude_usage(home, sessions=()):
         slugs = sorted(os.listdir(projects))
     except OSError:
         return UNKNOWN, UNKNOWN, ["no transcripts"]
+    for here, dirs, names in os.walk(projects):
+        if any(os.path.islink(os.path.join(here, n)) for n in dirs + names):
+            # a link the arm planted could point at the host's own transcripts: not this run's usage
+            return UNKNOWN, UNKNOWN, ["transcripts contain a symbolic link"]
     for slug in slugs:
         # pylint: disable-next=protected-access
         files.extend(crew_metrics._session_files(os.path.join(projects, slug), errors))
@@ -1476,10 +1480,11 @@ def run_once(ctx, task, arm, attempt, carried_cost=0.0):
 
 
 def run_chain(ctx, task, arm):
-    """One scored-or-exhausted chain: an unscorable attempt is rerun once. Every
-    attempt's own spend is recorded on its own row (`unscoredSpendUsd` when the
-    attempt did not produce a score), so a refused rerun leaves exactly one row for
-    attempt 1 and nothing is counted twice."""
+    """One scored-or-exhausted chain: an unscorable attempt is rerun once and its
+    cost is carried into the rerun's `costUsd`, so a scored chain reports what the
+    whole chain cost. An attempt that produced no score also records its spend as
+    `unscoredSpendUsd` before it is written, so a refused rerun leaves exactly one
+    row for attempt 1; the report counts a chain's spend from its final row only."""
     first = run_once(ctx, task, arm, 1)
     if first["runStatus"] in ("unscorable", "infra", "error"):
         first["unscoredSpendUsd"] = first["ownCostUsd"]
@@ -1489,10 +1494,11 @@ def run_chain(ctx, task, arm):
     guard = ctx.get("before_rerun")
     if guard:
         guard()
-    second = run_once(ctx, task, arm, 2)
+    second = run_once(ctx, task, arm, 2, first["ownCostUsd"])
     if second["runStatus"] in ("unscorable", "infra", "error"):
-        second["unscoredSpendUsd"] = second["ownCostUsd"]
-        second["costUsd"] = UNKNOWN if second["ownCostUsd"] == UNKNOWN else 0.0
+        # costUsd carries the first attempt, so this is the whole chain's spend
+        second["unscoredSpendUsd"] = second["costUsd"]
+        second["costUsd"] = UNKNOWN if second["costUsd"] == UNKNOWN else 0.0
     append_result(ctx["results"], second)
     return second
 
@@ -1502,6 +1508,25 @@ def run_chain(ctx, task, arm):
 
 def known(value):
     return value is not None and value != UNKNOWN
+
+
+def chain_finals(rows):
+    """The last row of each chain: an attempt-2 row replaces the attempt-1 row it reran."""
+    finals = []
+    for row in rows:
+        if row.get("attempt") == 2:
+            for index in range(len(finals) - 1, -1, -1):
+                if finals[index]["task"] == row["task"] and finals[index]["arm"] == row["arm"]:
+                    if finals[index].get("attempt") == 1:
+                        finals[index] = row
+                        break
+                    finals.append(row)
+                    break
+            else:
+                finals.append(row)
+        else:
+            finals.append(row)
+    return finals
 
 
 def bucket_verdict(rows, bucket):
@@ -1517,7 +1542,8 @@ def bucket_verdict(rows, bucket):
                   if r["arm"] == arm and known(r.get("regressionTestsFailed"))]
         result["regressions"][arm] = statistics.median(values) if values else None
     unknown_cost = [r for r in mine if r.get("runStatus") == "scored" and not known(r.get("costUsd"))]
-    unknown_chain = [r for r in mine if r.get("runStatus") in ("unscorable", "infra", "error")
+    finals = chain_finals(mine)
+    unknown_chain = [r for r in finals if r.get("runStatus") in ("unscorable", "infra", "error")
                      and r.get("unscoredSpendUsd") == UNKNOWN]
     tasks = sorted({r["task"] for r in mine})
     per_task = {}
@@ -1532,8 +1558,9 @@ def bucket_verdict(rows, bucket):
             continue
         entry = {}
         for arm, runs in arms_ok.items():
-            spend = sum(float(r["unscoredSpendUsd"]) for r in mine
-                        if r["task"] == task and r["arm"] == arm and known(r.get("unscoredSpendUsd")))
+            spend = sum(float(r["unscoredSpendUsd"]) for r in finals
+                        if r["task"] == task and r["arm"] == arm and r.get("runStatus") != "scored"
+                        and known(r.get("unscoredSpendUsd")))
             entry[arm] = {"defects": statistics.median(r["escapedDefects"] for r in runs),
                           "cost": statistics.median(float(r["costUsd"]) for r in runs) + spend}
         per_task[task] = entry
