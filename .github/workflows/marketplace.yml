@@ -40,7 +40,7 @@ jobs:
       # own step so a missing dependency reads as a setup failure rather than
       # as the validation failing.
       - name: Install the validator's dependency
-        run: python -m pip install --upgrade pip pyyaml
+        run: python -m pip install --upgrade pip pyyaml 'pytest~=8.0'
       # L-0511 / REPO-03: a build branch carries no version bump until land, so a
       # DRAFT pull request reports version drift as "pending at land" (exit 0 for
       # that one check; every other check still fails). A ready PR, a push to main
