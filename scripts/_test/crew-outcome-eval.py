@@ -342,8 +342,10 @@ def case_remove_paths_deletes_from_the_run_repo_and_refuses_an_escape(tmp):
     write(os.path.join(base, "keep.txt"), "x")
     eval_mod.remove_arm_paths(base, arm["removePaths"])
     left = sorted(os.listdir(base))
+    outside = os.path.join(tmp, "outside")
+    write(outside, "x")
     message = refused(eval_mod.remove_arm_paths, base, ["../outside"])
-    return left == ["keep.txt"] and bool(message and "outside" in message), (left, message)
+    return left == ["keep.txt"] and os.path.exists(outside) and bool(message and "outside" in message), (left, message)
 
 
 def case_remove_paths_refuses_a_prefix_sibling_a_symlink_escape_and_bad_entries(tmp):

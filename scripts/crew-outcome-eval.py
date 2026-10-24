@@ -367,12 +367,15 @@ def remove_arm_paths(repo, paths):
         target = os.path.realpath(os.path.join(root, rel))
         if target == root or os.path.commonpath([root, target]) != root:
             fail(f"removePaths entry {rel!r} is outside the repository")
-        if os.path.islink(os.path.join(root, rel)):
-            os.remove(os.path.join(root, rel))
-        elif os.path.isdir(target):
-            shutil.rmtree(target)
-        elif os.path.lexists(target):
-            os.remove(target)
+        try:
+            if os.path.islink(os.path.join(root, rel)):
+                os.remove(os.path.join(root, rel))
+            elif os.path.isdir(target):
+                shutil.rmtree(target)
+            elif os.path.lexists(target):
+                os.remove(target)
+        except OSError as err:
+            fail(f"removePaths entry {rel!r} could not be removed: {err}")
 
 
 def init_repo(dest):
