@@ -5,6 +5,7 @@
   "reviewer": {"tool": "/crew:review (Codex)", "model": "gpt-6-sol", "effort": "medium", "family": "OpenAI, not the author's"},
   "wallClockMinutes": {"S": 60, "M": 120, "L": 240},
   "settings": {},
+  "removePaths": [".crew/codemap"],
   "crewConfig": {
     "schema": 7,
     "tracker": "files",
