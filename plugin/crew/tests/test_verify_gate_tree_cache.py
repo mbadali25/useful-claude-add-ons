@@ -64,7 +64,7 @@ def _run(flavour, root, *extra, env=None):
 
 def _forget_timings(root):
     """Drop the measured-timings cache between runs. A rule measured at 1s is
-    priced at 1s (min(declared, measured)), which alone would let both 40s
+    priced at its measurement (1s), which alone would let both 40s
     rules fit on the second run -- these tests must isolate the tree cache."""
     (root / ".crew" / ".verify-gate.timings.json").unlink(missing_ok=True)
 
