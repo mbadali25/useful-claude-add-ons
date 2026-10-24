@@ -9,11 +9,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.72: the cloud guard no longer reads a php option value or `php -v` as code (L-0853)
+### Fixed — crew 1.2.74: the cloud guard no longer reads a php option value or `php -v` as code (L-0853)
 
-- **Summary.** `crew` 1.2.72: `php -dxdebug.mode=coverage vendor/bin/phpunit`, `php -v`, `php -m`, `php --ini` and `xargs php -l` are no longer refused by the terraform-apply guard; php given code (`-r`, a heredoc, a pipe) is still refused.
+- **Summary.** `crew` 1.2.74: `php -dxdebug.mode=coverage vendor/bin/phpunit`, `php -v`, `php -m`, `php --ini` and `xargs php -l` are no longer refused by the terraform-apply guard; php given code (`-r`, a heredoc, a pipe) is still refused.
 - `_interp_codes` in `crew_guards.py` read the `r` in an attached php option value (`-dxdebug.mode=coverage`, `-dmemory_limit=-1`) as the `-r` code option, and read a php command with no script and only `-v`, `-m`, `-i`, `-l`, `-h` or `--version`, `--ini` as code on stdin. Value letters now take their attached value, and those report-only options mark the run as reading nothing. Because one such word made the whole line could-not-tell, the denial also quoted the first glob, quoted pattern, heredoc or sed expression of the line; those lines are allowed again.
 - Tests: `L0853_ALLOW` and `L0853_REFUSE` in `plugin/crew/tests/test_cloud_guard.py`, through both drivers. Sabotage-checked by hand: reverting either half turns the matching allow rows red. No `sabotage*.py` entry (harness path; follow-up).
+
+### Changed — crew 1.2.69: sabotage entry retargeted to a test id that survives L-0725 (L-0898)
+
+- **Summary.** `crew` 1.2.69: test harness only. The sabotage entry "merged machine file keeps a consent key" now names `[machine-obsidian]` instead of `[machine-unsafeFocus]`, because L-0725 (#665) removes `context.autoClear.unsafeFocus` and the old id would collect nothing (exit 4). Checked with the mutation applied: `[machine-obsidian]` fails (RED, a real assertion). No behaviour change for users.
 
 ### Changed — crew 1.2.68: text-only prompt improvements, functional QA checklist, able-to-fail rule, deploy-evidence wording (L-0872)
 
