@@ -155,8 +155,11 @@ _HOOK_RE = re.compile(r"approval[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
 # L-0888: the verify trust store grows only by a person at a terminal. Any
 # command naming verify_trust with a verb that grows or shrinks it is refused;
 # `status` and `check` (read-only, bar the allowlist pin) pass.
-_TRUST_RE = re.compile(r"verify[_-]trust(?:\.py)?\b[^\n;&|]*\b(?:approve|allow-owner|"
-                       r"disallow-owner|revoke)\b", re.IGNORECASE)
+# A verb standing as a path segment or an option value (`--root /tmp/approve`,
+# `--root=approve`) is an argument, not the verb: argparse reads a positional
+# only as its own word, so a verb glued to `/`, `\\`, `.`, `=`, `:` or `~` is not one.
+_TRUST_RE = re.compile(r"verify[_-]trust(?:\.py)?\b[^\n;&|]*(?<![/\\.=:~])\b(?:approve|allow-owner|"
+                       r"disallow-owner|revoke)\b(?![/\\])", re.IGNORECASE)
 # The same verbs reached through the module instead of the script: an import, `-m`
 # or runpy beside any of the verbs (or the writer itself) anywhere in the text.
 _TRUST_IMPORT_RE = re.compile(r"\b(?:import|from)\s+verify[_-]trust\b|-m\s+verify[_-]trust\b|"

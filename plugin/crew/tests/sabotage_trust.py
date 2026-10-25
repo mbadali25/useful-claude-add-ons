@@ -228,4 +228,7 @@ TRUST_MUTATIONS = (
     ("scope guard: a write of a verify-* file under crew's config directory is allowed (L-0888)",
      GUARD, "    if _STORE_DIR_RE.search(text) and _WRITES_RE.search(text):\n", "    if False:\n",
      _S_ + "test_a_runtime_built_trust_change_is_refused[store-dir-write-module]"),
+    ("scope guard: a verb word inside a path argument is read as the verb (L-0888)", GUARD,
+     "(?<![/\\\\.=:~])\\b(?:approve", "\\b(?:approve",
+     _S_ + "test_a_read_only_trust_command_is_allowed"),
 )

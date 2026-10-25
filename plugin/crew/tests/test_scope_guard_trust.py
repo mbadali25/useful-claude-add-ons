@@ -80,6 +80,9 @@ def test_a_spelled_out_trust_change_is_refused(flavour, repo, tool, command):
     'python3 hooks/scripts/verify_trust.py check --root "$PWD"',
     "python3 hooks/scripts/verify_trust.py status --root $(pwd)",
     "grep -n approve plugin/crew/hooks/scripts/verify_trust.py",
+    "python3 hooks/scripts/verify_trust.py check --root /tmp/approve",
+    "python3 hooks/scripts/verify_trust.py status --root=/work/revoke/repo",
+    "python3 hooks/scripts/verify_trust.py check --root ~/allow-owner/x",
 ])
 def test_a_read_only_trust_command_is_allowed(flavour, repo, command):
     code, _, err = _shell(flavour, repo, command)
