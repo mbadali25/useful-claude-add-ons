@@ -66,11 +66,13 @@ def test_a_rule_priced_below_its_stated_windows_figure_is_reported():
 def test_a_nan_or_infinite_seconds_is_reported_not_passed():
     rules = [{"id": "n", "seconds": float("nan"), "why": "Windows 100s (win-repo-2, d, r)."},
              {"id": "i", "seconds": float("inf"), "why": ""},
-             {"id": "h", "seconds": 10 ** 400, "why": "Windows 100s (win-repo-2, d, r)."}]
+             {"id": "h", "seconds": 10 ** 400, "why": "Windows 100s (win-repo-2, d, r)."},
+             {"id": "b", "seconds": True, "why": ""},
+             {"id": "s", "seconds": "5", "why": ""}]
 
     found = _problems(rules)
 
-    assert [f.split(":")[0] for f in found] == ["n", "i"]
+    assert [f.split(":")[0] for f in found] == ["n", "i", "b", "s"]
 
 
 def test_the_note_paragraph_for_l_0904_starts_its_own_line():

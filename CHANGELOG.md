@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.82: the verify-map price test rejects a NaN or infinite `seconds` (L-0910)
+### Fixed — crew 1.2.83: the verify-map price test rejects a NaN or infinite `seconds` (L-0910)
 
-- **Summary.** `crew` 1.2.82: a rule priced `NaN` can no longer pass the verify-map price test, and the L-0904 note sentence in `.crew/verify.json` starts its own line; no behaviour a user runs changes.
+- **Summary.** `crew` 1.2.83: a rule priced `NaN` can no longer pass the verify-map price test, and the L-0904 note sentence in `.crew/verify.json` starts its own line; no behaviour a user runs changes.
 - `plugin/crew/tests/test_verify_map_prices.py`: `seconds` must be finite (NaN failed both `<` comparisons), and an int too large for a float is accepted rather than crashing the check. Tests and a line split only. Docs: none.
 
 ### Fixed — crew 1.2.79: the sabotage suite reports no STILL GREEN and no unproven entry (L-0897, L-0906, L-0903)
