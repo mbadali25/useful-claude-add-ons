@@ -171,10 +171,12 @@ a wall-clock stop, and the report says how many runs were graded that way; it is
   `unmeasured` and does not stop. It is a treatment difference (crew runs as on a repository not yet onboarded, without
   codemap context) and the results doc says so.
   **No code graph in the crew arm** (`removePaths` also lists `graphify-out`): the image has no `graphify`, so autopilot's
-  refresh check reads the tracked graph as `unknown` ("graphify missing on this machine") and, being non-refreshable, stops
-  at the stale-graph gate before review. With no graph file the check answers `not applicable` and does not stop. Same
-  kind of treatment difference as the codemap (crew runs as on a repository without a built graph); the results doc says so.
-  The baseline arm never reads either directory, so it is untouched. Runs scored before this change used the earlier arm file.
+  refresh check reads the tracked graph as `unknown` ("graphify missing on this machine"), which is not refreshable, and
+  autopilot stops at its `refresh` phase before review. With no graph file the check answers `not applicable` and does not
+  stop. A treatment difference, and it may favour the baseline: both arms start from the same base tree, whose `CLAUDE.md`
+  names `.crew/codemap/` and `graphify-out/` as maps, and only the crew arm loses them (crew runs as on a repository without a
+  built graph or map). The results doc says so. The arm file is not digested into a result row, so rows scored before this
+  change (which stopped at `refresh`) are told apart by date and run directory in the results doc, not by the harness.
 - **Baseline arm**: implement, run `/code-review`, fix every reported finding, repeat until a cycle reports no findings
   or 3 cycles complete.
 - **Verdict**: per task, the median over that arm's scored runs (at least 2 known runs per arm per task, else the task

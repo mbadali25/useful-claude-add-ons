@@ -356,7 +356,9 @@ def export_tree(source_repo, sha, dest):
 
 def remove_arm_paths(repo, paths):
     """Delete the arm's `removePaths` (repo-relative) from the exported base tree,
-    before the one-commit init. The crew arm removes `.crew/codemap`: this repo's
+    before the one-commit init. The crew arm also removes `graphify-out`: the image has no
+    graphify, so the refresh check reads the graph as unknown and autopilot stops at its
+    `refresh` phase; with no graph file the check is `not applicable`. It removes `.crew/codemap`: this repo's
     map places only some Touch entries, so autopilot's size check reads `subsystems`
     as unknown and stops at `split-check-unknown` before any code is written.
     With no codemap the measure is `unmeasured`, which does not stop."""
