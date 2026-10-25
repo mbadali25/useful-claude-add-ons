@@ -21,21 +21,28 @@ GUARD = os.path.join(_S, "scope_guard.py")
 _T = "tests/test_verify_trust.py::"
 _G = "tests/test_verify_gate_trust.py::"
 _S_ = "tests/test_scope_guard_trust.py::"
-_FIRST = ('  gate_trust_check "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 0\n')
+_CALL = '  gate_trust_check "$GATE_PLUGIN_ROOT/hooks/scripts" || _trust_rc=$?\n'
 
 TRUST_MUTATIONS = (
     ("trust gate: the first check is dropped, so an unapproved smoke script runs (L-0888)", GATE,
-     _FIRST, "  :\n",
+     _CALL + '  case "$_trust_rc" in\n    0) ;;\n    14) if [ -f',
+     '  :\n  case "$_trust_rc" in\n    0) ;;\n    14) if [ -f',
      _G + "test_gate_a_smoke_script_nobody_approved_runs_nothing"),
     ("trust gate: the second check is dropped, so a verify.json swapped after the first "
      "check runs (L-0888)", GATE,
-     '  gate_trust_check "$FP_DIR" || exit 0\n', "  :\n",
+     _CALL + '  [ "$GATE_TRUST_BROKEN" -eq 0 ]', '  :\n  [ "$GATE_TRUST_BROKEN" -eq 0 ]',
      _G + "test_gate_a_verify_json_rewritten_between_the_two_checks_runs_nothing"),
     ("trust gate: any answer from the check reads as trusted (L-0888)", GATE,
      '  [ "$_trc" -eq 0 ] && return 0\n', "  return 0\n",
      _G + "test_gate_one_byte_changed_after_approval_runs_nothing"),
+    ("trust gate: a trust check that cannot run reads as an unknown, exit 0 (L-0888)", GATE,
+     '      GATE_TRUST_RC="$_trc"\n      return 14 ;;\n', '      GATE_TRUST_RC="$_trc"\n      return 13 ;;\n',
+     _G + "test_gate_a_trust_check_that_cannot_run_blocks_with_exit_2"),
+    ("trust gate: the second check ignores a check that could not run (L-0888)", GATE,
+     "    14) gate_trust_broken; exit 2 ;;\n", "    14) exit 0 ;;\n",
+     _G + "test_gate_a_trust_check_that_cannot_run_blocks_with_exit_2"),
     ("trust gate: --price skips the trust check (L-0888)", GATE,
-     '  gate_trust_check "$PRICE_DIR" || exit 1\n', "",
+     '  gate_trust_check "$GATE_PLUGIN_ROOT/hooks/scripts" || { [ "$?" -eq 14 ] && gate_trust_broken; exit 1; }\n', "",
      _G + "test_gate_price_on_an_untrusted_repo_runs_nothing"),
     ("trust store: any approved hash trusts any bytes (L-0888)", TRUST,
      "    if current in hashes:\n", "    if hashes:\n",

@@ -28,9 +28,19 @@ GATE_PLUGIN_ROOT="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev
 # (allowlist). Anything but "trusted" - untrusted, changed, remote changed,
 # store unreadable, python missing where the smoke script would run - runs
 # NOTHING, writes no pass record, and says why. The caller exits 0 (Stop and
-# --all) or 1 (--price): an unknown is never read as trusted. $1 is the
+# --all) or 1 (--price): an unknown is never read as trusted. A trust check
+# that could not run at all (status 14) is exit 2 on the Stop path, like a
+# matcher that cannot run (the first call defers to the matcher's own message
+# when verify.json exists; the second call, after the matcher parsed, cannot).
+# $1 is the
 # directory holding verify_trust.py. --ci is exempt and says so: a CI job's
 # checkout is its own pipeline's trust and has no home store.
+gate_trust_broken() {
+  echo "VERIFY GATE: could not RUN the trust check (verify_trust.py exited ${GATE_TRUST_RC:-?}). Verification did NOT run. Work is not complete." >&2
+}
+GATE_TRUST_RC=""
+GATE_TRUST_BROKEN=0
+
 gate_trust_check() {
   local _tdir="$1" _tp _tmsg _trc=0
   _tp=$(crew_py_strict 2>/dev/null) || _tp=""
@@ -47,6 +57,16 @@ gate_trust_check() {
   _tmsg=$("$_tp" "$_tdir/verify_trust.py" check --root "$PWD" 2>/dev/null) || _trc=$?
   _tmsg=$(printf '%s' "$_tmsg" | tr -d '\r')
   [ "$_trc" -eq 0 ] && return 0
+  case "$_trc" in
+    10|11|12|13) ;;
+    *)
+      # verify_trust.py is the only thing that answers 0 or 10-13. Any other
+      # status means the interpreter or the script itself failed. The caller
+      # decides what to print (gate_trust_broken), because a python that
+      # cannot run at all is reported by the matcher's own, older message.
+      GATE_TRUST_RC="$_trc"
+      return 14 ;;
+  esac
   [ -n "$_tmsg" ] || _tmsg="VERIFY GATE: UNKNOWN, not run - nothing was verified. The trust check printed nothing (exit $_trc)."
   printf '%s\n' "$_tmsg" >&2
   return "$_trc"
@@ -70,7 +90,7 @@ if [ "${1:-}" = "--price" ]; then
   # L-0888: pricing RUNS every rule's command, so it needs the same trust the
   # Stop gate does. The check judges the repo at the working directory; a
   # custom PRICE_TARGET path below is the operator's own argument, not bound.
-  gate_trust_check "$PRICE_DIR" || exit 1
+  gate_trust_check "$GATE_PLUGIN_ROOT/hooks/scripts" || { [ "$?" -eq 14 ] && gate_trust_broken; exit 1; }
   PRICE_TARGET=".crew/verify.json"
   PRICE_FORCE=""
   for a in "$@"; do
@@ -1310,7 +1330,13 @@ fi
 if [ "$CI_MODE" -eq 1 ]; then
   echo "verify-gate --ci: trust check exempt - a CI job's checkout is its own pipeline's trust (no Stop hook, no home trust store)" >&2
 elif [ -f .crew/verify.json ] || [ -f ./_verify/smoke.sh ] || [ -f ./scripts/smoke.sh ]; then
-  gate_trust_check "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 0
+  _trust_rc=0
+  gate_trust_check "$GATE_PLUGIN_ROOT/hooks/scripts" || _trust_rc=$?
+  case "$_trust_rc" in
+    0) ;;
+    14) if [ -f .crew/verify.json ]; then GATE_TRUST_BROKEN=1; else gate_trust_broken; exit 2; fi ;;
+    *) exit 0 ;;
+  esac
 fi
 
 if [ ! -f .crew/verify.json ]; then
@@ -2174,7 +2200,14 @@ fi
 # time after the first check. If the bytes moved in between, they are no
 # longer the bytes that were approved: run nothing.
 if [ "$CI_MODE" -eq 0 ]; then
-  gate_trust_check "$FP_DIR" || exit 0
+  _trust_rc=0
+  gate_trust_check "$GATE_PLUGIN_ROOT/hooks/scripts" || _trust_rc=$?
+  [ "$GATE_TRUST_BROKEN" -eq 0 ] || _trust_rc=14
+  case "$_trust_rc" in
+    0) ;;
+    14) gate_trust_broken; exit 2 ;;
+    *) exit 0 ;;
+  esac
 fi
 # \035 is the record separator the matcher wrote between the two records, and
 # \036 the field separator inside each. `sed -n 1p` used to take the first

@@ -270,3 +270,26 @@ def test_gate_a_verify_json_rewritten_between_the_two_checks_runs_nothing(tmp_pa
     assert not sentinel.exists(), "the swapped verify.json ran"
     assert "CHANGED, not run" in done.stdout + done.stderr
     assert not (root / _MARKER).exists()
+
+
+def test_gate_a_trust_check_that_cannot_run_blocks_with_exit_2(tmp_path, store):
+    """MUST-BLOCK: the interpreter works (the matcher would run) but
+    verify_trust.py itself dies. That is neither trusted nor a verdict: exit 2,
+    the sentinel never runs. A copy of the plugin's scripts carries a
+    verify_trust.py that exits 7."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    scripts = tmp_path / "plugin" / "hooks" / "scripts"
+    shutil.copytree(os.path.join(_ROOT, "hooks", "scripts"), scripts,
+                    ignore=shutil.ignore_patterns("__pycache__", "_test"))
+    (scripts / "verify_trust.py").write_text("import sys\nsys.exit(7)\n", encoding="utf-8")
+
+    done = crew_fixtures.run_gate(
+        [_BASH, str(scripts / "verify-gate.sh"), "--all"], input="{}", cwd=str(root),
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), capture_output=True, text=True,
+        check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+    assert done.returncode == 2, done.stderr
+    assert not sentinel.exists(), "the repo-authored command RAN"
+    assert "could not RUN the trust check" in done.stdout + done.stderr
+    assert not (root / _MARKER).exists()
