@@ -177,6 +177,16 @@ def case_harness_declared_seam(tmp: str) -> str:
     return root
 
 
+def case_harness_optin_autopilot_undeclared(tmp: str) -> str:
+    """L-0724: the moved command is a seam at its new path too, so it needs the trailer."""
+    return _harness_with(tmp, "plugin/crew-autopilot/commands/autopilot.md")
+
+
+def case_harness_optin_autopilot_declared(tmp: str) -> str:
+    return _harness_with(tmp, "plugin/crew-autopilot/commands/autopilot.md",
+                         "harness\n\nTooling-seam: plugin/crew-autopilot/commands/autopilot.md")
+
+
 def case_harness_review_prompts(tmp: str) -> str:
     root = repo(tmp)
     commit(root, ["plugin/crew/commands/review.md", "plugin/crew/agents/reviewer.md",
@@ -288,6 +298,9 @@ CASES = [
      "  plugin/crew/hooks/scripts/crew_tracker.py"),
     ("must-block worktree-rename", case_worktree_rename, 1, "\n  a/feature.py"),
     ("must-allow harness+declared-seam", case_harness_declared_seam, 0, "OK"),
+    ("must-block harness+optin-autopilot-undeclared", case_harness_optin_autopilot_undeclared, 1,
+     "  plugin/crew-autopilot/commands/autopilot.md"),
+    ("must-allow harness+optin-autopilot-declared-seam", case_harness_optin_autopilot_declared, 0, "OK"),
     ("must-allow harness+review-prompts", case_harness_review_prompts, 0, "OK"),
     ("must-allow harness+root-readme", case_harness_root_readme, 0, "OK"),
     ("must-block harness+readme+feature", case_harness_readme_and_feature, 1,

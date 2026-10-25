@@ -18,7 +18,25 @@ CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 AUTOPILOT = os.path.join(SCRIPTS, "crew_autopilot.py")
 TICKET = os.path.join(SCRIPTS, "crew_ticket.py")
-COMMAND = os.path.join(CREW, "commands", "autopilot.md")
+
+
+def _first_file(*candidates):
+    """The first candidate that is a file; raise when none is.
+
+    L-0724 moves `commands/autopilot.md` into the `crew-autopilot` plugin. A
+    target that resolves to neither layout must fail loudly: a mutation whose
+    file vanished would otherwise run against nothing and report PASS.
+    """
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    raise FileNotFoundError("no sabotage target exists at any of: " + ", ".join(candidates))
+
+
+_PLUGINS = os.path.dirname(CREW)
+COMMAND = _first_file(
+    os.path.join(_PLUGINS, "crew-autopilot", "commands", "autopilot.md"),
+    os.path.join(CREW, "commands", "autopilot.md"))
 STATE = os.path.join(SCRIPTS, "crew_state.py")
 REPLAN = os.path.join(SCRIPTS, "crew_autopilot_replan.py")
 GATES = os.path.join(SCRIPTS, "crew_autopilot_gates.py")

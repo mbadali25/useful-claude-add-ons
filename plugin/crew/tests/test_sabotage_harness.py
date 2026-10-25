@@ -17,11 +17,13 @@ import shutil
 import signal
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import sabotage
+import sabotage_autopilot
 import sabotage_platform
 
 
@@ -864,3 +866,43 @@ def test_the_summary_names_the_platform_only_count():
         "\nSABOTAGE SUITE: PASS (3 platform-only, not exercised on linux)")
     assert sabotage_platform.summary(False, 0, "win").startswith(
         "\nSABOTAGE SUITE: FAIL (0 platform-only")
+
+
+@pytest.mark.parametrize("layout, expected", [
+    ("new", "new"), ("old", "old"), ("both", "new")])
+def test_first_file_resolves_either_layout_and_prefers_the_opt_in(tmp_path, layout, expected):
+    """L-0724 moves four sabotage targets into opt-in plugins: the harness takes either layout."""
+    new = tmp_path / "plugin" / "crew-promote" / "commands" / "gate.md"
+    old = tmp_path / "plugin" / "crew" / "commands" / "gate.md"
+    for name, path in (("new", new), ("old", old)):
+        if layout in (name, "both"):
+            path.parent.mkdir(parents=True)
+            path.write_text(name, encoding="utf-8")
+
+    found = sabotage_autopilot._first_file(str(new), str(old))
+
+    assert Path(found).read_text(encoding="utf-8") == expected
+
+
+def test_first_file_raises_when_no_layout_has_the_target(tmp_path):
+    """A target that vanished must fail loudly, not run a mutation against nothing."""
+    with pytest.raises(FileNotFoundError) as caught:
+        sabotage_autopilot._first_file(str(tmp_path / "a.md"), str(tmp_path / "b.md"))
+
+    assert "a.md" in str(caught.value) and "b.md" in str(caught.value)
+
+
+@pytest.mark.parametrize("constant", ["PROMOTE_DOC", "GATE_DOC", "HOUSE_STYLE", "UPGRADE_DOC"])
+def test_moved_sabotage_targets_are_resolved_through_first_file(constant):
+    """Remove one `_first_file` use and the constant is pinned to one layout: this turns red."""
+    source = Path(sabotage.__file__).read_text(encoding="utf-8")
+
+    assert f"{constant} = _first_file(" in source
+    assert os.path.isfile(getattr(sabotage, constant))
+
+
+def test_the_autopilot_command_target_is_resolved_through_first_file():
+    source = Path(sabotage_autopilot.__file__).read_text(encoding="utf-8")
+
+    assert "COMMAND = _first_file(" in source
+    assert os.path.isfile(sabotage_autopilot.COMMAND)
