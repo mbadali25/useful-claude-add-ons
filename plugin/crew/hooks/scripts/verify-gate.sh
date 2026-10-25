@@ -60,7 +60,13 @@ gate_trust_check() {
   fi
   _tmsg=$("$_tp" "$_tdir/verify_trust.py" check --root "$PWD" "$@" 2>/dev/null) || _trc=$?
   _tmsg=$(printf '%s' "$_tmsg" | tr -d '\r')
-  [ "$_trc" -eq 0 ] && return 0
+  if [ "$_trc" -eq 0 ]; then
+    # verify_trust.py prints one line for every verdict. A status 0 with no
+    # line is a script that did not run its check (an empty file, a stub).
+    [ -n "$_tmsg" ] && return 0
+    GATE_TRUST_RC="0 with no output"
+    return 14
+  fi
   case "$_trc" in
     10|11|12|13) ;;
     *)

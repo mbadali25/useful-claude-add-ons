@@ -117,28 +117,47 @@ def _empty_store():
     return {"version": STORE_VERSION, "repos": {}, "owners": {}}
 
 
-def load_store(path):
-    """The store at `path`. A missing file is an empty store (nothing trusted
-    yet); a file that exists but cannot be read or understood raises
-    TrustError, so a corrupt store never reads as an empty one that trusts
-    nothing silently, nor as one that trusts everything."""
+def read_regular(path):
+    """The bytes of a regular file. O_NONBLOCK so a FIFO with no writer cannot
+    hang the Stop gate (or `--price`); the fstat refuses anything that is not a
+    regular file. FileNotFoundError passes; anything else is a TrustError."""
     try:
-        # O_NONBLOCK so a FIFO with no writer cannot hang the Stop gate; the
-        # fstat below refuses anything that is not a regular file.
         fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
     except FileNotFoundError:
-        return _empty_store()
+        raise
     except OSError as exc:
         raise TrustError(f"cannot read {path}: {exc.__class__.__name__}") from exc
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise TrustError(f"{path} is not a regular file")
         with os.fdopen(fd, "rb", closefd=False) as handle:
-            raw = handle.read()
+            return handle.read()
     except OSError as exc:
         raise TrustError(f"cannot read {path}: {exc.__class__.__name__}") from exc
     finally:
         os.close(fd)
+
+
+def _text_ok(value):
+    """A str that can be written as UTF-8 (a JSON-escaped lone surrogate cannot)."""
+    if not isinstance(value, str):
+        return False
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
+def load_store(path):
+    """The store at `path`. A missing file is an empty store (nothing trusted
+    yet); a file that exists but cannot be read or understood raises
+    TrustError, so a corrupt store never reads as an empty one that trusts
+    nothing silently, nor as one that trusts everything."""
+    try:
+        raw = read_regular(path)
+    except FileNotFoundError:
+        return _empty_store()
     try:
         data = json.loads(raw.decode("utf-8"))
     except (ValueError, UnicodeDecodeError) as exc:
@@ -150,15 +169,15 @@ def load_store(path):
         raise TrustError(f"{path} has a malformed repos/owners table")
     for entry in repos.values():
         if not isinstance(entry, dict) or not isinstance(entry.get("hashes", []), list) \
-                or not all(isinstance(h, str) for h in entry.get("hashes", [])):
+                or not all(_text_ok(h) for h in entry.get("hashes", [])):
             raise TrustError(f"{path} has a malformed repo entry")
         pin = entry.get("pin")
         if pin is not None and (not isinstance(pin, list)
-                                or not all(isinstance(u, str) for u in pin)):
+                                or not all(_text_ok(u) for u in pin)):
             raise TrustError(f"{path} has a malformed repo pin")
     for entry in owners.values():
         under = entry.get("under", []) if isinstance(entry, dict) else None
-        if not isinstance(under, list) or not all(isinstance(d, str) for d in under):
+        if not isinstance(under, list) or not all(_text_ok(d) for d in under):
             raise TrustError(f"{path} has a malformed owner entry")
     return data
 
@@ -200,6 +219,8 @@ class _Lock:
     def __enter__(self):
         deadline = time.monotonic() + LOCK_WAIT
         while True:
+            if time.monotonic() > deadline:
+                raise TrustError(f"the store lock {self.path} is held")
             try:
                 os.mkdir(self.path)
                 try:
@@ -211,10 +232,8 @@ class _Lock:
             except FileExistsError:
                 if self._stale():
                     self._break()
-                    continue
-                if time.monotonic() > deadline:
-                    raise TrustError(f"the store lock {self.path} is held") from None
-                time.sleep(0.05)
+                else:
+                    time.sleep(0.05)
             except OSError as exc:
                 raise TrustError(f"cannot take the store lock: {exc.__class__.__name__}") from exc
 
@@ -358,7 +377,7 @@ def parse_remote(url):
     if not _HOST.fullmatch(host) or ".." in host:
         return None
     for seg in (owner, repo):
-        if not _SEG.fullmatch(seg) or seg in (".", ".."):
+        if not _SEG.fullmatch(seg) or seg in (".", "..") or ".." in seg:
             return None
     return f"{host.lower()}/{owner.lower()}"
 
@@ -453,8 +472,7 @@ def digest(root, verify_file=None):
     sha = hashlib.sha256()
     for label, path in targets:
         try:
-            with open(path, "rb") as handle:
-                data = handle.read()
+            data = read_regular(path)
         except OSError as exc:
             raise TrustError(f"cannot read {path}: {exc.__class__.__name__}") from exc
         name = label.encode("utf-8")
@@ -548,7 +566,7 @@ def _rule_count(root):
 
 
 def _confirm(prompt, yes):
-    if os.environ.get("CLAUDECODE") and not os.environ.get(ENV_STORE):
+    if os.environ.get("CLAUDECODE"):
         print("verify_trust: refused - this is running inside a Claude Code session, and trust is "
               "the owner's, given in their own terminal. Nothing was changed.", file=sys.stderr)
         return False
@@ -571,9 +589,8 @@ def _parsed_bytes_verdict(root, expect):
     bytes at the first check and again at the second is not trust for the
     bytes in between: A, swapped to B for the matcher, swapped back to A."""
     try:
-        with open(os.path.join(root, ".crew", "verify.json"), "rb") as handle:
-            now = hashlib.sha256(handle.read()).hexdigest()
-    except OSError:
+        now = hashlib.sha256(read_regular(os.path.join(root, ".crew", "verify.json"))).hexdigest()
+    except (OSError, TrustError):
         now = None
     if now == expect:
         return None

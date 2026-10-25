@@ -532,3 +532,11 @@ def pytest_collection_modifyitems(config, items):
     if drop:
         config.hook.pytest_deselected(items=drop)
         items[:] = keep
+
+
+@pytest.fixture(autouse=True)
+def _not_inside_a_claude_code_session(monkeypatch):
+    """L-0888: `verify_trust.py` refuses to approve inside a Claude Code session
+    (`CLAUDECODE` set), and the suites that drive `approve --yes` run inside
+    one when a session runs them. The one test of the refusal sets it again."""
+    monkeypatch.delenv("CLAUDECODE", raising=False)

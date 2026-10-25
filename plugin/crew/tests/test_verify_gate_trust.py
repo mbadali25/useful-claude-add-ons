@@ -331,7 +331,8 @@ def test_gate_price_of_a_map_that_is_not_the_repos_own_needs_that_maps_approval(
     assert "not run" in done.stderr
 
 
-def test_gate_a_trust_check_that_cannot_run_blocks_with_exit_2(tmp_path, store):
+@pytest.mark.parametrize("body", ["import sys\nsys.exit(7)\n", ""], ids=["exits-7", "empty-file"])
+def test_gate_a_trust_check_that_cannot_run_blocks_with_exit_2(tmp_path, store, body):
     """MUST-BLOCK: the interpreter works (the matcher would run) but
     verify_trust.py itself dies. That is neither trusted nor a verdict: exit 2,
     the sentinel never runs. A copy of the plugin's scripts carries a
@@ -341,7 +342,7 @@ def test_gate_a_trust_check_that_cannot_run_blocks_with_exit_2(tmp_path, store):
     scripts = tmp_path / "plugin" / "hooks" / "scripts"
     shutil.copytree(os.path.join(_ROOT, "hooks", "scripts"), scripts,
                     ignore=shutil.ignore_patterns("__pycache__", "_test"))
-    (scripts / "verify_trust.py").write_text("import sys\nsys.exit(7)\n", encoding="utf-8")
+    (scripts / "verify_trust.py").write_text(body, encoding="utf-8")
 
     done = crew_fixtures.run_gate(
         [_BASH, str(scripts / "verify-gate.sh"), "--all"], input="{}", cwd=str(root),

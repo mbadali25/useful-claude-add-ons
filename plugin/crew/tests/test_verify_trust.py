@@ -598,3 +598,39 @@ def test_approve_inside_a_claude_code_session_changes_nothing_even_with_yes(tmp_
     code = verify_trust.main(["approve", "--root", str(root), "--yes"])
 
     assert code == 1
+
+
+@pytest.mark.parametrize("url", ["https://github.com/mbadali25/evil..repo",
+                                 "https://github.com/mbadali25..x/repo"])
+def test_parse_remote_a_double_dot_inside_a_segment_is_refused(url):
+    assert verify_trust.parse_remote(url) is None
+
+
+def test_evaluate_a_lone_surrogate_in_an_owner_restriction_is_unknown(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    store.parent.mkdir(parents=True)
+    store.write_text('{"version": %d, "repos": {}, "owners": {"%s": {"under": ["\\ud800"]}}}'
+                     % (verify_trust.STORE_VERSION, _OWNER), encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_lock_one_that_stays_stale_is_given_up_on_at_the_deadline(tmp_path, monkeypatch):
+    path = str(tmp_path / "s.json")
+    monkeypatch.setattr(verify_trust, "LOCK_WAIT", 0.3)
+    lock = verify_trust._Lock(path)
+    monkeypatch.setattr(lock, "_stale", lambda: True)
+    monkeypatch.setattr(lock, "_break", lambda: None)
+    os.mkdir(lock.path)
+
+    with pytest.raises(verify_trust.TrustError):
+        lock.__enter__()
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs a FIFO")
+def test_check_a_named_verify_file_that_is_a_fifo_is_unknown_and_does_not_hang(tmp_path, store):
+    root = _repo(tmp_path)
+    fifo = tmp_path / "map.json"
+    os.mkfifo(fifo)
+
+    assert verify_trust.evaluate(str(root), verify_file=str(fifo)).code == verify_trust.EXIT_UNKNOWN
