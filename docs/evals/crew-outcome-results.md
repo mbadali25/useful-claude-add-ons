@@ -6,7 +6,7 @@ selection yielded one task per bucket (owner decision 2026-10-20), and the harne
 | Item | Value |
 |---|---|
 | Harness (t-0107 rows, after #680) | `scripts/crew-outcome-eval.py` sha256 `700c873b07dc0829...` at main `16ae18675` (crew 1.2.83). The t-0108 rows ran earlier; the preflight of 2026-10-24 recorded harness `dbf8585a...` at `a1a98a21`, crew 1.2.74, and the harness and crew version of the later t-0108 rows were not recorded (unknown) |
-| Crew arm change during the run | PR #680 added `graphify-out` to the crew arm's `removePaths` (merged `16ae18675`). Every t-0108 row, both arms, ran before it, and the crew runs before it were exposed to the `refresh` stop; every t-0107 row ran after it |
+| Crew arm change during the run | PR #680 added `graphify-out` to the crew arm's `removePaths` (merged `16ae18675`). Every t-0108 row, both arms, ran before it, and the crew runs before it were exposed to the `refresh` stop; every t-0107 row in `results.jsonl` ran after it |
 | Image | t-0107 rows: `crew-outcome-eval:1` rebuilt 2026-10-25 as `sha256:7c9a174cb917...` (the earlier image was gone). t-0108 rows: the earlier image `sha256:db6a863c...`. Claude Code 2.1.303 and Codex 0.162.1 in both |
 | Canary | PASS on the rebuilt image, `network=none proxy=unix-socket` (`canary.txt`, 2026-10-25T22:02Z) |
 | Author model | claude-sonnet-5-5, medium effort, both arms |
@@ -28,8 +28,8 @@ Tasks: `t-0108-nuclei-safe-defaults` (bucket M, 10 scored defects) and `t-0107-g
 | t-0107 | baseline | 3 | 1.34, 1.29, 1.43 | 0, 6, 1 | 3, 3, 3 | 351, 354, 381 | stop, stop, stop |
 
 Observations, not verdicts:
-- t-0108: neither arm let a scored defect escape in any scored run. Crew cost 1.8 to 3.9 times baseline per run (mean ratio 2.8) and took longer.
-- t-0107: crew escaped 1, 0, 0 of 9; baseline escaped 0, 6, 1 (median 1). Crew cost 1.6 to 2.9 times baseline per run (mean ratio 2.4). With 3 runs per arm and one baseline run at 6, this is a hint, not a result.
+- t-0108: neither arm let a scored defect escape in any scored run. Across every crew x baseline pair of scored runs, crew cost 1.8 to 3.9 times baseline (mean ratio 2.8) and took longer.
+- t-0107: crew escaped 1, 0, 0 of 9; baseline escaped 0, 6, 1 (median 1). Across every crew x baseline pair, crew cost 1.6 to 2.9 times baseline (mean ratio 2.4). With 3 runs per arm and one baseline run at 6, this is a hint, not a result.
 - Two crew runs ended at the harness resume cap (the arm was still asked for work); they are graded as they stand.
 - Regressions (base-passing tests failed): 0 in every scored run.
 - Break-even: not computed. The harness computes it only per bucket, and no bucket qualifies.
