@@ -59,6 +59,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -122,12 +123,22 @@ def load_store(path):
     TrustError, so a corrupt store never reads as an empty one that trusts
     nothing silently, nor as one that trusts everything."""
     try:
-        with open(path, "rb") as handle:
-            raw = handle.read()
+        # O_NONBLOCK so a FIFO with no writer cannot hang the Stop gate; the
+        # fstat below refuses anything that is not a regular file.
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
     except FileNotFoundError:
         return _empty_store()
     except OSError as exc:
         raise TrustError(f"cannot read {path}: {exc.__class__.__name__}") from exc
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise TrustError(f"{path} is not a regular file")
+        with os.fdopen(fd, "rb", closefd=False) as handle:
+            raw = handle.read()
+    except OSError as exc:
+        raise TrustError(f"cannot read {path}: {exc.__class__.__name__}") from exc
+    finally:
+        os.close(fd)
     try:
         data = json.loads(raw.decode("utf-8"))
     except (ValueError, UnicodeDecodeError) as exc:
@@ -138,13 +149,16 @@ def load_store(path):
     if not isinstance(repos, dict) or not isinstance(owners, dict):
         raise TrustError(f"{path} has a malformed repos/owners table")
     for entry in repos.values():
-        if not isinstance(entry, dict) or not isinstance(entry.get("hashes", []), list):
+        if not isinstance(entry, dict) or not isinstance(entry.get("hashes", []), list) \
+                or not all(isinstance(h, str) for h in entry.get("hashes", [])):
             raise TrustError(f"{path} has a malformed repo entry")
         pin = entry.get("pin")
-        if pin is not None and not isinstance(pin, list):
+        if pin is not None and (not isinstance(pin, list)
+                                or not all(isinstance(u, str) for u in pin)):
             raise TrustError(f"{path} has a malformed repo pin")
     for entry in owners.values():
-        if not isinstance(entry, dict) or not isinstance(entry.get("under", []), list):
+        under = entry.get("under", []) if isinstance(entry, dict) else None
+        if not isinstance(under, list) or not all(isinstance(d, str) for d in under):
             raise TrustError(f"{path} has a malformed owner entry")
     return data
 
@@ -428,11 +442,12 @@ def gate_target(root):
     return []
 
 
-def digest(root):
+def digest(root, verify_file=None):
     """`(hex, targets)` over length-prefixed (label, bytes) records; `(None,
     [])` when the gate would run nothing. Raises TrustError when a file the
-    gate would run cannot be read."""
-    targets = gate_target(root)
+    gate would run cannot be read. `verify_file` stands in for the repo's own
+    verify.json (a map the operator named, as `--price` can)."""
+    targets = [("verify.json", verify_file)] if verify_file else gate_target(root)
     if not targets:
         return None, []
     sha = hashlib.sha256()
@@ -454,21 +469,24 @@ def _approve_hint(root):
     return f"python3 {script} approve --root {root}"
 
 
-def evaluate(root, path=None, write_pin=True, euid=None):
-    """The trust verdict for the repo at `root`. Never raises."""
+def evaluate(root, path=None, write_pin=True, euid=None, verify_file=None):
+    """The trust verdict for the repo at `root`. Never raises. With
+    `verify_file`, the bytes of that file are judged as the verify map and only
+    a hash approval of exactly those bytes trusts them: the remote owner says
+    nothing about a file that is not the repo's own."""
     path = path or store_path()
     try:
-        return _evaluate(root, path, write_pin, euid)
+        return _evaluate(root, path, write_pin, euid, verify_file)
     except TrustError as exc:
         return Verdict(EXIT_UNKNOWN, f"VERIFY GATE: UNKNOWN, not run - nothing was verified. "
                        f"Trust could not be decided: {exc}. Fix or remove it, then re-run.")
 
 
-def _evaluate(root, path, write_pin, euid):
+def _evaluate(root, path, write_pin, euid, verify_file=None):
     store = load_store(path)
     if os.environ.get(ENV_STORE) and store.get("testTrustAll") is True:
         return Verdict(EXIT_TRUSTED, "verify trust: trusted (test store)")
-    current, _targets = digest(root)
+    current, _targets = digest(root, verify_file)
     if current is None:
         return Verdict(EXIT_TRUSTED, "verify trust: nothing to run here")
     identity, toplevel = repo_identity(root)
@@ -478,6 +496,8 @@ def _evaluate(root, path, write_pin, euid):
         return Verdict(EXIT_TRUSTED, f"verify trust: trusted (approved bytes {current[:12]})",
                        digest=current, identity=identity)
     ok, why, remotes = owner_trust(root, identity, toplevel, store, euid)
+    if ok and verify_file:
+        ok, why = False, "a named verify map is trusted by its approved bytes only"
     if ok:
         pin = entry.get("pin")
         if pin is not None and pin != remotes:
@@ -528,6 +548,10 @@ def _rule_count(root):
 
 
 def _confirm(prompt, yes):
+    if os.environ.get("CLAUDECODE") and not os.environ.get(ENV_STORE):
+        print("verify_trust: refused - this is running inside a Claude Code session, and trust is "
+              "the owner's, given in their own terminal. Nothing was changed.", file=sys.stderr)
+        return False
     if yes:
         return True
     if not sys.stdin.isatty():
@@ -541,8 +565,30 @@ def _confirm(prompt, yes):
     return answer.strip().lower() == "yes"
 
 
+def _parsed_bytes_verdict(root, expect):
+    """None when verify.json's bytes now are the bytes the matcher parsed
+    (`expect`, a sha256), else the CHANGED verdict. Trust that held for the
+    bytes at the first check and again at the second is not trust for the
+    bytes in between: A, swapped to B for the matcher, swapped back to A."""
+    try:
+        with open(os.path.join(root, ".crew", "verify.json"), "rb") as handle:
+            now = hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        now = None
+    if now == expect:
+        return None
+    return Verdict(EXIT_CHANGED,
+                   "VERIFY GATE: CHANGED, not run - nothing was verified. verify.json is not "
+                   "the file the gate parsed a moment ago. Review the change, then run: "
+                   f"{_approve_hint(root)}")
+
+
 def cmd_check(args):
-    verdict = evaluate(os.path.abspath(args.root))
+    root = os.path.abspath(args.root)
+    verify_file = os.path.abspath(args.verify_file) if args.verify_file else None
+    verdict = evaluate(root, verify_file=verify_file)
+    if verdict.code == EXIT_TRUSTED and args.expect_verify_sha:
+        verdict = _parsed_bytes_verdict(root, args.expect_verify_sha) or verdict
     print(verdict.message)
     return verdict.code
 
@@ -682,6 +728,9 @@ def build_parser():
         p.add_argument("--root", default=".")
         if name == "approve":
             p.add_argument("--yes", action="store_true")
+        if name == "check":
+            p.add_argument("--verify-file")
+            p.add_argument("--expect-verify-sha")
         p.set_defaults(func=func)
     allow = sub.add_parser("allow-owner")
     allow.add_argument("owner")

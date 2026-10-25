@@ -271,12 +271,8 @@ def protected(top, state, target, base):
     absolute = target if os.path.isabs(target) else os.path.join(base, target)
     real = role_write_guard._resolve_real_target(absolute)  # pylint: disable=protected-access
     named = os.path.normpath(absolute)
-    store = os.path.normcase(os.path.abspath(verify_trust.store_path()))
     for path in (real, named):
         if state and _under(path, state):
-            return True
-        if os.path.basename(path).lower() in (TRUST_STORE_NAME, TRUST_STORE_NAME + ".lock") \
-                or os.path.normcase(path) in (store, store + ".lock"):
             return True
         rel = _rel(path, top)
         if rel is not None and os.path.normcase(rel) == os.path.normcase(SCOPE_BASE):
@@ -314,6 +310,55 @@ def _joined(command):
     return command, bash, _PS_CONTINUATION_RE.sub(" ", command)
 
 
+_QUOTE_RE = re.compile(r"[\"'\\]")
+
+
+def _trust_reading_refusal(command):
+    """Why one reading of a shell command is refused for the verify trust
+    store, or None. Judged on the reading as written AND with every quote and
+    backslash deleted, so `ap''prove`, `"approve"` and `app\\rove` (which a
+    shell joins into the verb) read as the verb."""
+    for text in (command, _QUOTE_RE.sub("", command)):
+        if _TRUST_RE.search(text):
+            return ("it changes the verify trust store (`verify_trust.py approve`, `allow-owner`, "
+                    "`disallow-owner` or `revoke`); only a person at a terminal trusts a repo")
+        if _TRUST_IMPORT_RE.search(text) and _TRUST_VERB_RE.search(text):
+            return ("it drives the verify trust store through the module; only a person at a "
+                    "terminal trusts a repo")
+        if TRUST_STORE_NAME in text.lower() and _WRITES_RE.search(text):
+            return "it writes the verify trust store, which only a person at a terminal may change"
+    return None
+
+
+def trust_refusal(data):
+    """Why a tool payload is refused for the verify trust store ALONE, or None.
+    Judged before the scope mode is read and whether or not the directory is a
+    git repo: a mode of `off` (a config key a session can write) switches the
+    scope guard off, and must not switch off the one rule that keeps a model
+    from trusting a repo for itself."""
+    tool = data.get("tool_name")
+    tool_input = data.get("tool_input")
+    if tool in SHELLS:
+        command = tool_input.get("command") if isinstance(tool_input, dict) else None
+        if not isinstance(command, str):
+            return None
+        for reading in _joined(command):
+            reason = _trust_reading_refusal(reading)
+            if reason:
+                return reason
+        return None
+    store = os.path.normcase(os.path.abspath(verify_trust.store_path()))
+    for target in targets(data):
+        absolute = os.path.abspath(target)
+        real = role_write_guard._resolve_real_target(absolute)  # pylint: disable=protected-access
+        for path in (absolute, real):
+            if os.path.basename(path).lower() in (TRUST_STORE_NAME, TRUST_STORE_NAME + ".lock") \
+                    or os.path.normcase(path) in (store, store + ".lock"):
+                return ("it writes the verify trust store, which only a person at a terminal "
+                        "may change")
+    return None
+
+
 def shell_refusal(command, common, top=None, agent_type=None):
     """Why a Bash/PowerShell `command` is refused, or None (module docstring,
     "Bash and PowerShell"). Textual on purpose, and conservative: a benign
@@ -344,14 +389,9 @@ def _reading_refusal(command, written, common, top, agent_type=None):
         return _autopilot_refusal(written, top)
     if _HOOK_RE.search(command):
         return "it names the approval hook, which only the user's prompt may drive"
-    if _TRUST_RE.search(command):
-        return ("it changes the verify trust store (`verify_trust.py approve`, `allow-owner`, "
-                "`disallow-owner` or `revoke`); only a person at a terminal trusts a repo")
-    if _TRUST_IMPORT_RE.search(command) and _TRUST_VERB_RE.search(command):
-        return ("it drives the verify trust store through the module; only a person at a "
-                "terminal trusts a repo")
-    if TRUST_STORE_NAME in command.lower() and _WRITES_RE.search(command):
-        return "it writes the verify trust store, which only a person at a terminal may change"
+    trust = _trust_reading_refusal(command)
+    if trust:
+        return trust
     state = os.path.join(common, "crew") if common else None
     folded = os.path.normcase(command).replace("\\", "/")
     names_state = bool(_DOTGIT_CREW_RE.search(command)) or bool(
@@ -403,6 +443,11 @@ def decide(data):
     tool = data.get("tool_name")
     if tool not in TOOLS and tool not in SHELLS:
         return 0
+    trust = trust_refusal(data)
+    if trust:
+        return _deny([f"SCOPE GUARD: refused this {tool} call -- {trust}.",
+                      "  Trust is given by the owner in a terminal: "
+                      "`python3 verify_trust.py approve --root <repo>`."])
     root = data.get("cwd") if isinstance(data.get("cwd"), str) else None
     root = root or os.environ.get("CLAUDE_PROJECT_DIR") or "."
     top = crew_ticket.toplevel(root)

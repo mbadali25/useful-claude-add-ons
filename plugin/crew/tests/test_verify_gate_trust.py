@@ -272,6 +272,65 @@ def test_gate_a_verify_json_rewritten_between_the_two_checks_runs_nothing(tmp_pa
     assert not (root / _MARKER).exists()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="the git and rm shims are POSIX scripts")
+def test_gate_a_verify_json_swapped_for_the_matcher_and_restored_runs_nothing(tmp_path, store):
+    """A, then B while the matcher reads, then A again before the second check:
+    both checks see the approved bytes, the commands came from B. The git shim
+    swaps in B after the first check; the rm shim (the gate's first rm after the
+    matcher exits) puts A back."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    hostile = tmp_path / "hostile.json"
+    hostile.write_text(_map(sentinel), encoding="utf-8")
+    approved = tmp_path / "approved.json"
+    approved.write_text(_map(sentinel, "true"), encoding="utf-8")
+    target = root / ".crew" / "verify.json"
+    target.write_text(approved.read_text(encoding="utf-8"), encoding="utf-8")
+    _approve(root)
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    git = shim / "git"
+    git.write_text(
+        '#!/usr/bin/env bash\n'
+        'if [ "$1" = rev-parse ] && [ "$2" = --git-common-dir ] && [ -z "$3" ] '
+        '&& [ ! -e "$SWAP_FLAG" ]; then : > "$SWAP_FLAG"; cp "$HOSTILE" "$TARGET"; fi\n'
+        f'exec "{shutil.which("git")}" "$@"\n', encoding="utf-8")
+    rm = shim / "rm"
+    rm.write_text(
+        '#!/usr/bin/env bash\n'
+        'if [ -e "$SWAP_FLAG" ] && [ ! -e "$RESTORE_FLAG" ]; then : > "$RESTORE_FLAG"; '
+        'cp "$APPROVED" "$TARGET"; fi\n'
+        f'exec "{shutil.which("rm")}" "$@"\n', encoding="utf-8")
+    for script in (git, rm):
+        script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    env = {"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}", "HOSTILE": str(hostile),
+           "APPROVED": str(approved), "TARGET": str(target),
+           "SWAP_FLAG": str(tmp_path / "swapped.flag"),
+           "RESTORE_FLAG": str(tmp_path / "restored.flag")}
+
+    done = _run(root, "--all", env=env)
+
+    assert (tmp_path / "restored.flag").exists(), "fixture: the rm shim never ran after the swap"
+    assert done.returncode == 0, done.stderr
+    assert not sentinel.exists(), "commands parsed from the swapped file ran"
+    assert "CHANGED, not run" in done.stdout + done.stderr
+
+
+def test_gate_price_of_a_map_that_is_not_the_repos_own_needs_that_maps_approval(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    (root / ".crew" / "verify.json").write_text(_map(sentinel, "true"), encoding="utf-8")
+    _approve(root)
+    hostile = tmp_path / "hostile.json"
+    hostile.write_text(_map(sentinel), encoding="utf-8")
+
+    done = _run(root, "--price", str(hostile))
+
+    assert done.returncode == 1, done.stderr
+    assert not sentinel.exists(), "the hostile map was priced, i.e. run"
+    assert "not run" in done.stderr
+
+
 def test_gate_a_trust_check_that_cannot_run_blocks_with_exit_2(tmp_path, store):
     """MUST-BLOCK: the interpreter works (the matcher would run) but
     verify_trust.py itself dies. That is neither trusted nor a verdict: exit 2,

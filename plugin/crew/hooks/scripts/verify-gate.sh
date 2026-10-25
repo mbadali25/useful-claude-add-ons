@@ -46,6 +46,7 @@ GATE_TRUST_BROKEN=0
 
 gate_trust_check() {
   local _tdir="$1" _tp _tmsg _trc=0
+  shift
   _tp=$(crew_py_strict 2>/dev/null) || _tp=""
   if [ -z "$_tp" ] || [ ! -f "$_tdir/verify_trust.py" ]; then
     # No python while a verify.json exists: the PY check further down exits 2
@@ -57,7 +58,7 @@ gate_trust_check() {
     echo "VERIFY GATE: UNKNOWN, not run - nothing was verified. The trust check could not run (no working python, or verify_trust.py is missing at $_tdir)." >&2
     return 13
   fi
-  _tmsg=$("$_tp" "$_tdir/verify_trust.py" check --root "$PWD" 2>/dev/null) || _trc=$?
+  _tmsg=$("$_tp" "$_tdir/verify_trust.py" check --root "$PWD" "$@" 2>/dev/null) || _trc=$?
   _tmsg=$(printf '%s' "$_tmsg" | tr -d '\r')
   [ "$_trc" -eq 0 ] && return 0
   case "$_trc" in
@@ -90,10 +91,6 @@ if [ "${1:-}" = "--price" ]; then
   PRICE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   PRICE_PY=$(crew_py) || { echo "verify-gate --price: no python available" >&2; exit 1; }
   shift
-  # L-0888: pricing RUNS every rule's command, so it needs the same trust the
-  # Stop gate does. The check judges the repo at the working directory; a
-  # custom PRICE_TARGET path below is the operator's own argument, not bound.
-  gate_trust_check "$GATE_SCRIPT_DIR" || { [ "$?" -eq 14 ] && gate_trust_broken; exit 1; }
   PRICE_TARGET=".crew/verify.json"
   PRICE_FORCE=""
   for a in "$@"; do
@@ -107,6 +104,21 @@ if [ "${1:-}" = "--price" ]; then
       *) PRICE_TARGET="$a" ;;
     esac
   done
+  # L-0888: pricing RUNS every rule's command, so it needs the same trust the
+  # Stop gate does, for the map it is about to run. The repo's own map is
+  # judged like a Stop; any other file is judged by its own bytes (a hash
+  # approval of exactly those bytes, never the remote owner). A refusal exits
+  # 1, not 0: nothing was priced, and a 0 would read as a priced map.
+  _price_rc=0
+  if [ "$(cd "$(dirname "$PRICE_TARGET")" 2>/dev/null && pwd -P)/$(basename "$PRICE_TARGET")" = "$(pwd -P)/.crew/verify.json" ]; then
+    gate_trust_check "$GATE_SCRIPT_DIR" || _price_rc=$?
+  else
+    gate_trust_check "$GATE_SCRIPT_DIR" --verify-file "$PRICE_TARGET" || _price_rc=$?
+  fi
+  if [ "$_price_rc" -ne 0 ]; then
+    [ "$_price_rc" -eq 14 ] && gate_trust_broken
+    exit 1
+  fi
   "$PRICE_PY" "$PRICE_DIR/verify_price.py" "$PRICE_TARGET" $PRICE_FORCE
   exit $?
 fi
@@ -1412,7 +1424,7 @@ if [ -n "$PY" ] && [ -f "$FP_DIR/verify_record.py" ]; then
 fi
 
 MATCHED=$(CREW_REPO_CONFIG="$CREW_REPO_CONFIG" "$PY" -I - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" "$TREE_PRE" << 'PY'
-import json,sys,fnmatch,io,os,re
+import json,sys,fnmatch,io,os,re,hashlib
 try:
     sys.stdout.reconfigure(newline="\n")
 except (AttributeError, ValueError):
@@ -1461,7 +1473,10 @@ def _classify_run_reach(run):
 
 changed=[l for l in io.open(sys.argv[1],encoding="utf-8").read().split("\n") if l.strip()]
 try:
-    cfg=json.load(open(".crew/verify.json"))
+    with open(".crew/verify.json", "rb") as _vf:
+        _verify_raw = _vf.read()
+    _verify_sha = hashlib.sha256(_verify_raw).hexdigest()
+    cfg=json.loads(_verify_raw.decode("utf-8"))
 except (OSError, ValueError) as e:
     print(f"PARSE_ERROR: {e}", file=sys.stderr)
     sys.exit(3)
@@ -2104,7 +2119,7 @@ for _ri in rule_order:
         "cmds": rule_cmds.get(_ri, []),
         "unknown": bool(truly_unknown.get(_ri)),
     })
-_extras = {"matched_rules": matched_rules, "budget": budget}
+_extras = {"matched_rules": matched_rules, "budget": budget, "verify_sha": _verify_sha}
 # Quiet Stop (L-0796): reach-excluded `always`/`default` commands are
 # NOT VERIFIED items too, and the repeat check hashes the IDENTITIES of what
 # was not run (rule keys by kind, fallback commands, deferred and reach
@@ -2204,7 +2219,12 @@ fi
 # longer the bytes that were approved: run nothing.
 if [ "$CI_MODE" -eq 0 ]; then
   _trust_rc=0
-  gate_trust_check "$GATE_SCRIPT_DIR" || _trust_rc=$?
+  VERIFY_SHA=$(printf '%s' "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 6p)" | sed -n 's/.*"verify_sha": "\([0-9a-f]*\)".*/\1/p' | head -1)
+  if [ -n "$VERIFY_SHA" ]; then
+    gate_trust_check "$GATE_SCRIPT_DIR" --expect-verify-sha "$VERIFY_SHA" || _trust_rc=$?
+  else
+    GATE_TRUST_RC="no parsed-bytes hash"; _trust_rc=14
+  fi
   [ "$GATE_TRUST_BROKEN" -eq 0 ] || _trust_rc=14
   case "$_trust_rc" in
     0) ;;

@@ -528,3 +528,73 @@ def test_git_output_with_invalid_bytes_stays_distinct(tmp_path):
     second = b"https://github.com/\xfe/x".decode("utf-8", "backslashreplace")
 
     assert first != second and verify_trust.parse_remote(first) is None
+
+
+def test_check_expect_verify_sha_for_other_bytes_is_changed_though_trusted(tmp_path, store, capsys):
+    root = _repo(tmp_path)
+    _approve(root)
+
+    code = verify_trust.main(["check", "--root", str(root), "--expect-verify-sha", "0" * 64])
+
+    assert code == verify_trust.EXIT_CHANGED
+    assert "CHANGED, not run" in capsys.readouterr().out
+
+
+def test_check_expect_verify_sha_for_the_same_bytes_is_trusted(tmp_path, store):
+    import hashlib
+    root = _repo(tmp_path)
+    _approve(root)
+    sha = hashlib.sha256((root / ".crew" / "verify.json").read_bytes()).hexdigest()
+
+    code = verify_trust.main(["check", "--root", str(root), "--expect-verify-sha", sha])
+
+    assert code == verify_trust.EXIT_TRUSTED
+
+
+def test_check_a_named_verify_file_is_not_trusted_by_the_remote_owner(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _allow()
+    other = tmp_path / "other.json"
+    other.write_text(_VERIFY + " ", encoding="utf-8")
+
+    own = verify_trust.evaluate(str(root)).code
+    named = verify_trust.evaluate(str(root), verify_file=str(other)).code
+
+    assert (own, named) == (verify_trust.EXIT_TRUSTED, verify_trust.EXIT_UNTRUSTED)
+
+
+def test_check_a_named_verify_file_with_approved_bytes_is_trusted(tmp_path, store):
+    root = _repo(tmp_path)
+    _approve(root)
+    copy = tmp_path / "copy.json"
+    copy.write_text(_VERIFY, encoding="utf-8")
+
+    assert verify_trust.evaluate(str(root), verify_file=str(copy)).code == verify_trust.EXIT_TRUSTED
+
+
+def test_evaluate_a_malformed_owner_restriction_is_unknown(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    store.parent.mkdir(parents=True)
+    store.write_text(json.dumps({"version": verify_trust.STORE_VERSION, "repos": {},
+                                 "owners": {_OWNER: {"under": [1]}}}), encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs a FIFO")
+def test_evaluate_a_fifo_as_the_store_is_unknown_and_does_not_hang(tmp_path, store):
+    root = _repo(tmp_path)
+    store.parent.mkdir(parents=True)
+    os.mkfifo(store)
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_approve_inside_a_claude_code_session_changes_nothing_even_with_yes(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    monkeypatch.delenv(verify_trust.ENV_STORE, raising=False)
+    monkeypatch.setenv("CLAUDECODE", "1")
+
+    code = verify_trust.main(["approve", "--root", str(root), "--yes"])
+
+    assert code == 1
