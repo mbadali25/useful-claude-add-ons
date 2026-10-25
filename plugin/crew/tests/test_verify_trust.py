@@ -60,7 +60,7 @@ def _approve(root):
     return verify_trust.main(["approve", "--root", str(root), "--yes"])
 
 
-def _allow(owner=_OWNER, *under):
+def _allow(owner=_OWNER, under=()):
     args = ["allow-owner", owner, "--yes"]
     for directory in under:
         args += ["--under", str(directory)]
@@ -388,7 +388,7 @@ def test_evaluate_an_owner_restricted_to_a_directory_trusts_only_below_it(tmp_pa
     inside.mkdir()
     below = _repo(inside, "below", remotes=[_OK_URL])
     outside = _repo(tmp_path, "outside", remotes=[_OK_URL])
-    _allow(_OWNER, inside)
+    _allow(_OWNER, [inside])
 
     assert _code(below) == verify_trust.EXIT_TRUSTED
     assert _code(outside) == verify_trust.EXIT_UNTRUSTED

@@ -44,6 +44,17 @@ trap _crew_test_cleanup EXIT
 PY=$(command -v python3 || command -v python || command -v py) || {
   echo "SKIP: no python available to build test payloads" >&2; exit 0; }
 
+# L-0888: verify-gate.sh runs a repo's verify map only for a repo this machine
+# trusts, and every fixture repo below is new. A store of this run's own, with
+# the test seam verify_trust.py honours ONLY for a store named through
+# CREW_VERIFY_TRUST_FILE, trusts them without touching the real
+# ~/.claude/crew/verify-trust.json. The trust decisions themselves are tested
+# in plugin/crew/tests/test_verify_trust.py and test_verify_gate_trust.py.
+_CREW_TRUST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/crew-trust.XXXXXX") || { echo "FATAL: cannot make the trust store dir" >&2; exit 1; }
+_CREW_TEST_TMP+=("$_CREW_TRUST_DIR")
+printf '{"version": 1, "repos": {}, "owners": {}, "testTrustAll": true}\n' > "$_CREW_TRUST_DIR/verify-trust.json"
+export CREW_VERIFY_TRUST_FILE="$_CREW_TRUST_DIR/verify-trust.json"
+
 # The command travels on STDIN, and that is not a style choice.
 #
 # Git Bash's MSYS runtime rewrites anything that looks like a POSIX path on its

@@ -17,6 +17,7 @@ _S = os.path.join(CREW, "hooks", "scripts")
 TRUST = os.path.join(_S, "verify_trust.py")
 GATE = os.path.join(_S, "verify-gate.sh")
 GUARD = os.path.join(_S, "scope_guard.py")
+CHECKER = os.path.join(os.path.dirname(os.path.dirname(CREW)), "scripts", "check-tooling-pr.py")
 
 _T = "tests/test_verify_trust.py::"
 _G = "tests/test_verify_gate_trust.py::"
@@ -102,6 +103,14 @@ TRUST_MUTATIONS = (
      "    if yes:\n        return True\n    if not sys.stdin.isatty():",
      "    return True\n    if not sys.stdin.isatty():",
      _T + "test_approve_without_a_terminal_and_without_yes_changes_nothing"),
+    ("tooling-pr: the shell suite beside the hooks is feature work (L-0888)", CHECKER,
+     '    "plugin/crew/hooks/scripts/_test/**",\n', "",
+     "tests/test_tooling_pr_shell_suite.py::"
+     "test_judge_a_harness_path_with_the_shell_suite_is_tooling_only"),
+    ("tooling-pr: any _test-like directory is tooling (L-0888)", CHECKER,
+     '    "plugin/crew/hooks/scripts/_test/**",\n', '    "plugin/crew/hooks/scripts/_test*/**",\n',
+     "tests/test_tooling_pr_shell_suite.py::"
+     "test_judge_a_harness_path_with_a_look_alike_directory_is_feature_work"),
     ("scope guard: a model-run verify_trust approve is allowed (L-0888)", GUARD,
      "    if _TRUST_RE.search(command):\n", "    if False:\n",
      _S_ + "test_a_trust_store_change_is_refused[approve-module]"),

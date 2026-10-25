@@ -110,6 +110,9 @@ TRAILER = "Tooling-seam"
 
 ALONGSIDE = (
     "plugin/crew/tests/**",
+    # L-0888: the shell suites beside the hooks are tests like plugin/crew/tests/**; the
+    # trust store's test seam has to reach run-tests.sh, whose fixtures all run the gate.
+    "plugin/crew/hooks/scripts/_test/**",
     "plugin/crew/README.md",
     "plugin/crew/CONFIG.md",
     "plugin/crew/BUDGETS.md",
