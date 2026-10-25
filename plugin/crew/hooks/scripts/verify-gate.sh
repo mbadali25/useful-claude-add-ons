@@ -20,6 +20,10 @@ trap '_crew_gate_exit_line $?' EXIT
 # CDPATH emptied: a match makes `cd` echo the directory into the value.
 GATE_PLUGIN_ROOT="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 &&
   { pwd -W 2>/dev/null || pwd; })"
+# This script's own directory, resolved before the cd for the same reason (a
+# copy of the scripts need not sit at hooks/scripts under a plugin root).
+GATE_SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 &&
+  { pwd -W 2>/dev/null || pwd; })"
 
 # --- verify trust (L-0888) -------------------------------------------------
 # .crew/verify.json `run` strings reach `eval` and the smoke scripts reach
@@ -90,7 +94,7 @@ if [ "${1:-}" = "--price" ]; then
   # L-0888: pricing RUNS every rule's command, so it needs the same trust the
   # Stop gate does. The check judges the repo at the working directory; a
   # custom PRICE_TARGET path below is the operator's own argument, not bound.
-  gate_trust_check "$GATE_PLUGIN_ROOT/hooks/scripts" || { [ "$?" -eq 14 ] && gate_trust_broken; exit 1; }
+  gate_trust_check "$GATE_SCRIPT_DIR" || { [ "$?" -eq 14 ] && gate_trust_broken; exit 1; }
   PRICE_TARGET=".crew/verify.json"
   PRICE_FORCE=""
   for a in "$@"; do
@@ -1331,7 +1335,7 @@ if [ "$CI_MODE" -eq 1 ]; then
   echo "verify-gate --ci: trust check exempt - a CI job's checkout is its own pipeline's trust (no Stop hook, no home trust store)" >&2
 elif [ -f .crew/verify.json ] || [ -f ./_verify/smoke.sh ] || [ -f ./scripts/smoke.sh ]; then
   _trust_rc=0
-  gate_trust_check "$GATE_PLUGIN_ROOT/hooks/scripts" || _trust_rc=$?
+  gate_trust_check "$GATE_SCRIPT_DIR" || _trust_rc=$?
   case "$_trust_rc" in
     0) ;;
     14) if [ -f .crew/verify.json ]; then GATE_TRUST_BROKEN=1; else gate_trust_broken; exit 2; fi ;;
@@ -2201,7 +2205,7 @@ fi
 # longer the bytes that were approved: run nothing.
 if [ "$CI_MODE" -eq 0 ]; then
   _trust_rc=0
-  gate_trust_check "$GATE_PLUGIN_ROOT/hooks/scripts" || _trust_rc=$?
+  gate_trust_check "$GATE_SCRIPT_DIR" || _trust_rc=$?
   [ "$GATE_TRUST_BROKEN" -eq 0 ] || _trust_rc=14
   case "$_trust_rc" in
     0) ;;
