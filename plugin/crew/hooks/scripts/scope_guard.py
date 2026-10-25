@@ -157,6 +157,12 @@ _HOOK_RE = re.compile(r"approval[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
 # `status` and `check` (read-only, bar the allowlist pin) pass.
 _TRUST_RE = re.compile(r"verify[_-]trust(?:\.py)?\b[^\n;&|]*\b(?:approve|allow-owner|"
                        r"disallow-owner|revoke)\b", re.IGNORECASE)
+# The same verbs reached through the module instead of the script: an import, `-m`
+# or runpy beside any of the verbs (or the writer itself) anywhere in the text.
+_TRUST_IMPORT_RE = re.compile(r"\b(?:import|from)\s+verify[_-]trust\b|-m\s+verify[_-]trust\b|"
+                              r"\brunpy\b[^\n]*verify[_-]trust", re.IGNORECASE)
+_TRUST_VERB_RE = re.compile(r"\b(?:approve|allow-owner|disallow-owner|revoke|update_store|"
+                            r"cmd_approve|cmd_allow_owner|cmd_revoke)\b", re.IGNORECASE)
 TRUST_STORE_NAME = "verify-trust.json"
 # A line continuation: bash's backslash-newline, which the shell deletes (so it
 # can split a word), and PowerShell's backtick-newline, which reads as a space.
@@ -341,6 +347,9 @@ def _reading_refusal(command, written, common, top, agent_type=None):
     if _TRUST_RE.search(command):
         return ("it changes the verify trust store (`verify_trust.py approve`, `allow-owner`, "
                 "`disallow-owner` or `revoke`); only a person at a terminal trusts a repo")
+    if _TRUST_IMPORT_RE.search(command) and _TRUST_VERB_RE.search(command):
+        return ("it drives the verify trust store through the module; only a person at a "
+                "terminal trusts a repo")
     if TRUST_STORE_NAME in command.lower() and _WRITES_RE.search(command):
         return "it writes the verify trust store, which only a person at a terminal may change"
     state = os.path.join(common, "crew") if common else None

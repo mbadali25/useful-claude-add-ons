@@ -318,6 +318,10 @@ def owner_trust(root, identity, toplevel, store, euid=None):
         return False, "no remote owner is allowlisted", None
     if toplevel is None:
         return False, "not a git repository", None
+    if os.path.realpath(root) != toplevel:
+        # The gate runs the map of the directory it stands in. A directory
+        # below a trusted repo's top level is not that repo.
+        return False, "the directory is not the repository's top level", None
     cfg = local_remote_config(root)
     if cfg is None:
         return False, "git could not read the local config", None
@@ -345,7 +349,7 @@ def owner_trust(root, identity, toplevel, store, euid=None):
             matched.add(owner)
     for owner in matched:
         under = (owners.get(owner) or {}).get("under") or []
-        if under and not _under(identity, under):
+        if under and not _under(toplevel, under):
             return False, f"{owner} is allowlisted only under {', '.join(under)}", None
     if os.name == "posix":
         uid = os.geteuid() if euid is None else euid

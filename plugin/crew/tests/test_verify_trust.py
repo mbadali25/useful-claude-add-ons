@@ -437,3 +437,29 @@ def test_update_store_two_writers_at_once_both_land(tmp_path, store):
         thread.join()
 
     assert len(json.loads(store.read_text(encoding="utf-8"))["repos"]) == 6
+
+
+def test_evaluate_a_subdirectory_of_an_allowlisted_repo_is_untrusted(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    sub = root / "sub"
+    (sub / ".crew").mkdir(parents=True)
+    (sub / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    _allow()
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+    assert _code(sub) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_evaluate_a_git_file_pointing_at_a_trusted_repo_does_not_borrow_its_place(
+        tmp_path, store):
+    inside = tmp_path / "work"
+    inside.mkdir()
+    trusted = _repo(inside, "good", remotes=[_OK_URL])
+    evil = tmp_path / "elsewhere" / "evil"
+    (evil / ".crew").mkdir(parents=True)
+    (evil / ".git").write_text(f"gitdir: {trusted / '.git'}\n", encoding="utf-8")
+    (evil / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    _allow(_OWNER, [inside])
+
+    assert _code(trusted) == verify_trust.EXIT_TRUSTED
+    assert _code(evil) == verify_trust.EXIT_UNTRUSTED

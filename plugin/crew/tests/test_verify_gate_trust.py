@@ -293,3 +293,20 @@ def test_gate_a_trust_check_that_cannot_run_blocks_with_exit_2(tmp_path, store):
     assert not sentinel.exists(), "the repo-authored command RAN"
     assert "could not RUN the trust check" in done.stdout + done.stderr
     assert not (root / _MARKER).exists()
+
+
+def test_gate_a_module_the_repo_ships_is_not_imported_by_the_gate(tmp_path, store):
+    """MUST-BLOCK: an approved repo that later gains a `json.py` at its root
+    (a `git pull` changes no byte of verify.json) must not get it imported by
+    the gate's own `python -` and `python -c` steps."""
+    sentinel = tmp_path / "ran.txt"
+    shadow = tmp_path / "shadow.txt"
+    root = _repo(tmp_path, sentinel)
+    _approve(root)
+    (root / "json.py").write_text(f"open({str(shadow)!r}, 'w').write('x')\n", encoding="utf-8")
+
+    done = _run(root, "--all")
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.is_file(), done.stderr
+    assert not shadow.exists(), "the repo's own json.py ran inside the gate"

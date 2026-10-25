@@ -1412,7 +1412,7 @@ if [ -n "$PY" ] && [ -f "$FP_DIR/verify_record.py" ]; then
   TREE_PRE=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r\n')
 fi
 
-MATCHED=$(CREW_REPO_CONFIG="$CREW_REPO_CONFIG" "$PY" - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" "$TREE_PRE" << 'PY'
+MATCHED=$(CREW_REPO_CONFIG="$CREW_REPO_CONFIG" "$PY" -I - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" "$TREE_PRE" << 'PY'
 import json,sys,fnmatch,io,os,re
 try:
     sys.stdout.reconfigure(newline="\n")
@@ -2275,7 +2275,7 @@ fi
 CI_EXCLUDED_N=-1
 CI_NOTHING=""
 if [ "$CI_MODE" -eq 1 ]; then
-  CI_FIELDS=$(printf '%s' "$EXTRAS" | "$PY" -c '
+  CI_FIELDS=$(printf '%s' "$EXTRAS" | "$PY" -I -c '
 import json, sys
 try:
     d = json.loads(sys.stdin.read() or "{}")
@@ -2493,7 +2493,7 @@ while IFS= read -r IDENT; do
   # REAL AWS_PROFILE inherited from the caller's shell exported into the
   # check the pin exists to isolate from it.
   if [ -n "$PY" ]; then
-    SPLIT=$("$PY" -c '
+    SPLIT=$("$PY" -I -c '
 import sys
 ident = sys.argv[1]
 text, sep, envjson = ident.partition("\x1c")
@@ -2509,7 +2509,7 @@ print(text + "\x1e" + (envjson if sep else ""), end="")
     STATUS_AT[$POS]="covered"
     TREE_N=$((TREE_N + 1))
     # "tree" LAST, so the withdrawal after the loop can match it at end of line.
-    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0, "tree": True}))' "$IDENT" 2>/dev/null | tr -d '\r')
+    LOG_LINE=$("$PY" -I -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0, "tree": True}))' "$IDENT" 2>/dev/null | tr -d '\r')
     [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
 $LOG_LINE"
     continue
@@ -2519,7 +2519,7 @@ $LOG_LINE"
     gate_detail "verify-gate: COVERED by rules[${GUARD%%;*}] (passed this run): $c"
     STATUS_AT[$POS]="covered"
     COVERED_N=$((COVERED_N + 1))
-    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0}))' "$IDENT" 2>/dev/null | tr -d '\r')
+    LOG_LINE=$("$PY" -I -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0}))' "$IDENT" 2>/dev/null | tr -d '\r')
     [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
 $LOG_LINE"
     continue
@@ -2534,7 +2534,7 @@ $LOG_LINE"
   # live host) from silently riding along into a check nobody pointed there.
   PIN_REPORT=""
   if [ -n "$PY" ] && [ -n "$ENV_JSON" ]; then
-    ENV_LINES=$(printf '%s' "$ENV_JSON" | "$PY" -c '
+    ENV_LINES=$(printf '%s' "$ENV_JSON" | "$PY" -I -c '
 import json, sys
 try:
     spec = json.loads(sys.stdin.read() or "{}")
@@ -2801,7 +2801,7 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # so the record-sync classification (which matches THIS log against
     # those lists) has to key on the same thing, or two rules sharing
     # command text under different env would collide back into one entry.
-    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": sys.argv[2], "elapsed": int(sys.argv[3])}))' "$IDENT" "$CMD_STATUS" "$RULE_ELAPSED" 2>/dev/null | tr -d '\r')
+    LOG_LINE=$("$PY" -I -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": sys.argv[2], "elapsed": int(sys.argv[3])}))' "$IDENT" "$CMD_STATUS" "$RULE_ELAPSED" 2>/dev/null | tr -d '\r')
     [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
 $LOG_LINE"
   fi
@@ -2925,7 +2925,7 @@ if [ -n "$PY" ] && [ -n "$EXTRAS" ]; then
       echo "verify-gate: could not create a temp file for the record sync; NOT advancing the marker" >&2
     else
       printf '%s\n' "$EXTRAS" > "$EXTRAS_FILE"
-      "$PY" -c '
+      "$PY" -I -c '
 import json, sys
 try:
     sys.stdout.reconfigure(newline="\n")
