@@ -549,7 +549,7 @@ crew_guard_layer_armed() {
         ws()
         if (substr(s, p, 1) != ":") return 0
         p++; ws(); c = substr(s, p, 1)
-        if (k == "guards" && c != "{") return 0
+        if ((k == "guards" || k == "overrides") && c != "{") return 0
         if (cloudmode && (k == "cloud" || k == "environments") && c != "{") return 0
         if (k == "profile" || index(keys, "|" k "|") > 0) {
           if (substr(s, p, 5) != "\"off\"") return 0
