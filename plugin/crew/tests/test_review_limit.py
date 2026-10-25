@@ -438,6 +438,11 @@ def test_a_ticket_named_like_a_marker_keeps_its_own_ledger(lane):
 def test_malformed_limit_marker_falls_back_to_a_live_probe(lane, mark):
     repo, scratch, bin_dir = lane
     _script(repo, scratch, _env(bin_dir, "ok"), "--provider", "claude", "--reserve-only", "--authors", "gpt")
+    # L-0897: the marker counts only when its round equals the ledger's rounds_used,
+    # and the reserve-only call above leaves that at 0 -- so every case here fell back
+    # on the round mismatch and the shape check and the bool check were never reached.
+    review_ledger.reserve(str(repo), "T1", "codex", None)
+    assert _rounds_used(repo) == 1
     path = review_limit.marker_path(str(repo), "T1")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:

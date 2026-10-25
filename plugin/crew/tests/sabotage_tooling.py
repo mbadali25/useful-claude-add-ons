@@ -858,10 +858,13 @@ TOOLING_MUTATIONS += (
         _BOUND + "test_an_unreadable_limit_refuses_and_never_means_no_cap[CREW_SABOTAGE_MEM_MB-abc]",
     ),
     (
+        # L-0897: `sabotage_bound.verdict` has had no caller since L-0608 moved
+        # `main` onto `sabotage_platform.verdict`, so mutating the old function was
+        # unfalsifiable. The rule lives on the live verdict now.
         "sabotage bound: a timed-out entry counts as RED",
-        BOUND,
-        "    if code == REAL_TEST_FAILURE:\n",
-        "    if code in (REAL_TEST_FAILURE, TIMED_OUT):\n",
+        os.path.join(CREW, "tests", "sabotage_platform.py"),
+        '        return f"COULD-NOT-TELL -- timed out after {seconds:.0f}s", False\n',
+        '        return "RED (good)", True\n',
         "tests/test_sabotage_harness.py::test_main_reports_a_timed_out_entry_as_unproven_and_fails",
     ),
     (

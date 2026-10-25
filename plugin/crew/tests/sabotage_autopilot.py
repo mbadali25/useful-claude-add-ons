@@ -221,7 +221,7 @@ DEPLOY_MUTATIONS = (
     ("the deploy default is all", STATE,
      'AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", ',
      'AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "all", ',
-     _D + "test_deploy_only_in_machine_layer_reads_none"),
+     _D + "test_deploy_null_in_the_repo_is_silent_and_reads_the_default"),
     ("deploy none still deploys nonProd", AUTOPILOT,
      '    if deploy == "none":\n        return "ask", "autopilot.deploy is none", deploy\n',
      '    if False:\n        return "ask", "autopilot.deploy is none", deploy\n',
@@ -853,10 +853,13 @@ POLICY_MUTATIONS = (
       '        open(os.path.join(args.root, ".work", "deploy-ran"), "a").close()\n'
       '        text, json_text, report = _cli_deploy(args)\n'),
      _P + "test_approve_is_the_only_writing_subcommand"),
+    # L-0906: the write goes AFTER the try/finally. Inserted inside the call's
+    # continuation line, as it was, it broke the module (exit 4, collection).
     ("approve writes beside the receipt", AUTOPILOT,
-     "        top, ticket, by=f\"autopilot:{got['policy']}\", via=crew_ticket.AUTOPILOT)\n",
-     ("        top, ticket, by=f\"autopilot:{got['policy']}\", via=crew_ticket.AUTOPILOT)\n"
-      '    open(os.path.join(crew_ticket.ticket_dir(top, ticket), "approved"), "w").close()\n'),
+     "    finally:\n        _PINNED.decisions = {}\n    text = (f\"self-approved {ticket}",
+     ("    finally:\n        _PINNED.decisions = {}\n"
+      '    open(os.path.join(crew_ticket.ticket_dir(top, ticket), "approved"), "w").close()\n'
+      "    text = (f\"self-approved {ticket}"),
      _P + "test_approve_is_the_only_writing_subcommand"),
     ("a refused approve still writes", AUTOPILOT,
      "        return 2, f\"refused: {got['reason']}; {human}\"\n",
