@@ -115,6 +115,9 @@ if [ "${1:-}" = "--price" ]; then
   # judged like a Stop; any other file is judged by its own bytes (a hash
   # approval of exactly those bytes, never the remote owner). A refusal exits
   # 1, not 0: nothing was priced, and a 0 would read as a priced map.
+  # ACCEPTED RESIDUAL (owner decision 2026-10-25): the map is opened again after
+  # this one check, so a process running as the user that swaps it in between
+  # makes --price run the swapped bytes; the same user can edit the store.
   _price_rc=0
   if [ "$(cd "$(dirname "$PRICE_TARGET")" 2>/dev/null && pwd -P)/$(basename "$PRICE_TARGET")" = "$(pwd -P)/.crew/verify.json" ]; then
     gate_trust_check "$GATE_SCRIPT_DIR" || _price_rc=$?
@@ -1352,6 +1355,9 @@ if [ "$CI_MODE" -eq 1 ]; then
   echo "verify-gate --ci: trust check exempt - a CI job's checkout is its own pipeline's trust (no Stop hook, no home trust store)" >&2
 elif [ -f .crew/verify.json ] || [ -f ./_verify/smoke.sh ] || [ -f ./scripts/smoke.sh ]; then
   _trust_rc=0
+  # ACCEPTED RESIDUAL (owner decision 2026-10-25): bash reopens the smoke script
+  # after its hash check, so a process running as the user that swaps it in
+  # between runs the swapped bytes; the same user can edit the store.
   gate_trust_check "$GATE_SCRIPT_DIR" || _trust_rc=$?
   case "$_trust_rc" in
     0) ;;

@@ -164,6 +164,26 @@ _TRUST_IMPORT_RE = re.compile(r"\b(?:import|from)\s+verify[_-]trust\b|-m\s+verif
 _TRUST_VERB_RE = re.compile(r"\b(?:approve|allow-owner|disallow-owner|revoke|update_store|"
                             r"cmd_approve|cmd_allow_owner|cmd_revoke)\b", re.IGNORECASE)
 TRUST_STORE_NAME = "verify-trust.json"
+# L-0888 (round 4, runtime-built verb): the literal-verb checks above cannot read
+# a verb or a path that the command assembles as it runs. These refuse the
+# assembly itself, beside the name: a variable or substitution where the verb
+# stands, string pieces joined, a dynamic import, a call into the module's
+# writers, the store override or a session-variable unset, and a store-named
+# write. A tripwire, not a sandbox: the boundary is the OS user (README).
+_TRUST_NAME_RE = re.compile(r"verify[_-]trust(?:\.py)?", re.IGNORECASE)
+_TRUST_READ_VERB_RE = re.compile(r"\b(?:status|check)\b")
+_DYNAMIC_RE = re.compile(r"[$`*?]")
+_ASSEMBLY_RE = re.compile(r"[\"']\s*\+\s*[\"']|\.join\(|\bchr\(|__import__|\bimportlib\b|"
+                          r"\bgetattr\(|\bexec\(|\beval\b|base64|fromhex|\\x[0-9a-f]{2}",
+                          re.IGNORECASE)
+_DYNAMIC_IMPORT_RE = re.compile(r"__import__|\bimportlib\b|\bexec\(|\beval\(|\bexecfile\(",
+                                re.IGNORECASE)
+_SCRIPTS_DIR_RE = re.compile(r"hooks[\\/]+scripts|\bsys\.path\b|verify_|trust", re.IGNORECASE)
+_TRUST_WRITER_CALL_RE = re.compile(r"\bmain\s*\(|\bcmd_\w+|\bupdate_store\b|\b_Lock\b|"
+                                   r"\bsys\.argv\b|\bparse_args\b|\bbuild_parser\b")
+_STORE_OVERRIDE_RE = re.compile(r"\bCREW_VERIFY_TRUST_FILE\b")
+_SESSION_VAR_RE = re.compile(r"\bCLAUDECODE\b")
+_STORE_DIR_RE = re.compile(r"[\\/]crew[\\/]+verify-", re.IGNORECASE)
 # A line continuation: bash's backslash-newline, which the shell deletes (so it
 # can split a word), and PowerShell's backtick-newline, which reads as a space.
 _BASH_CONTINUATION_RE = re.compile(r"\\\r?\n")
@@ -313,6 +333,34 @@ def _joined(command):
 _QUOTE_RE = re.compile(r"[\"'\\]")
 
 
+def _assembled_trust_refusal(text):
+    """Why `text` (one reading of a shell command) is refused for building a
+    trust-store change at run time, or None."""
+    names = list(_TRUST_NAME_RE.finditer(text))
+    for hit in names:
+        span = re.split(r"[\n;&|]", text[hit.end():], maxsplit=1)[0]
+        dynamic = _DYNAMIC_RE.search(span)
+        if dynamic:
+            verb = _TRUST_READ_VERB_RE.search(span)
+            if not verb or verb.start() > dynamic.start():
+                return ("a variable, substitution or wildcard stands where the verify_trust verb "
+                        "goes; only a literal `status` or `check` is run from a model")
+    if names and _ASSEMBLY_RE.search(text):
+        return "it builds a verify_trust call at run time; only a person at a terminal trusts a repo"
+    if names and _TRUST_IMPORT_RE.search(text) and _TRUST_WRITER_CALL_RE.search(text):
+        return "it calls the verify trust store's writers; only a person at a terminal trusts a repo"
+    if _DYNAMIC_IMPORT_RE.search(text) and _SCRIPTS_DIR_RE.search(text):
+        return ("it imports from the plugin scripts directory at run time, which can reach the "
+                "verify trust store; only a person at a terminal trusts a repo")
+    if _STORE_OVERRIDE_RE.search(text):
+        return "it names CREW_VERIFY_TRUST_FILE, the verify trust store's test seam"
+    if names and _SESSION_VAR_RE.search(text):
+        return "it names CLAUDECODE beside verify_trust; the session variable is not the model's"
+    if _STORE_DIR_RE.search(text) and _WRITES_RE.search(text):
+        return "it writes a verify-* file under crew's config directory, the verify trust store"
+    return None
+
+
 def _trust_reading_refusal(command):
     """Why one reading of a shell command is refused for the verify trust
     store, or None. Judged on the reading as written AND with every quote and
@@ -327,6 +375,9 @@ def _trust_reading_refusal(command):
                     "terminal trusts a repo")
         if TRUST_STORE_NAME in text.lower() and _WRITES_RE.search(text):
             return "it writes the verify trust store, which only a person at a terminal may change"
+        assembled = _assembled_trust_refusal(text)
+        if assembled:
+            return assembled
     return None
 
 

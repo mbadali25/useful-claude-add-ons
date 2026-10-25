@@ -49,6 +49,11 @@ at a terminal grows trust.
 
 Not covered, by design: scripts a `run` string calls (the hash binds the map,
 not `python3 scripts/foo.py`); `--ci`, which is a CI job's own pipeline.
+Accepted residuals (owner decision 2026-10-25): `--price` opens its map, and
+bash reopens the smoke script, after the only trust check, so a process
+running as the user that swaps the file in that interval runs the swapped
+bytes (the same user can edit the store); and the scope guard is a textual
+tripwire, not a sandbox -- the boundary is the OS user.
 """
 
 from __future__ import annotations
@@ -238,13 +243,29 @@ class _Lock:
                 raise TrustError(f"cannot take the store lock: {exc.__class__.__name__}") from exc
 
     def __exit__(self, *exc):
+        """Release by claiming the directory with an atomic rename to a private
+        name, then reading the token in the claimed copy: a holder that took
+        the path after ours was broken is never deleted between a read and a
+        remove. A foreign directory is put back; if that fails too, the lock
+        is lost, which can lose a concurrent update but never widens trust
+        (every update loads the store fresh under the lock)."""
+        released = f"{self.path}.released.{self.token}"
         try:
-            with open(os.path.join(self.path, "token"), encoding="utf-8") as handle:
+            os.rename(self.path, released)
+        except OSError:
+            return False
+        try:
+            with open(os.path.join(released, "token"), encoding="utf-8") as handle:
                 mine = handle.read() == self.token
         except OSError:
             mine = False
         if mine:
-            shutil.rmtree(self.path, ignore_errors=True)
+            shutil.rmtree(released, ignore_errors=True)
+            return False
+        try:
+            os.rename(released, self.path)
+        except OSError:
+            pass
         return False
 
 

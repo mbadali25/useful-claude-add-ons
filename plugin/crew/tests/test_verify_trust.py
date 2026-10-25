@@ -19,6 +19,7 @@ repo below its owner entry's --under directory; a repo with nothing to run.
 """
 import json
 import os
+import shutil
 import subprocess
 import threading
 
@@ -502,6 +503,41 @@ def test_lock_release_leaves_a_lock_another_holder_took(tmp_path):
             handle.write("someone-else")
 
     assert os.path.isdir(other)
+
+
+def test_lock_release_does_not_remove_a_holder_that_replaced_it_mid_release(tmp_path, monkeypatch):
+    path = str(tmp_path / "s.json")
+    mine = verify_trust._Lock(path)
+    real = shutil.rmtree
+
+    def replaced_first(target, *args, **kwargs):
+        real(target, ignore_errors=True)
+        os.mkdir(mine.path)
+        with open(os.path.join(mine.path, "token"), "w", encoding="utf-8") as handle:
+            handle.write("the-replacement-holder")
+        real(target, *args, **kwargs)
+
+    monkeypatch.setattr(verify_trust.shutil, "rmtree", replaced_first)
+
+    with mine:
+        pass
+
+    assert os.path.isdir(mine.path)
+
+
+def test_lock_release_puts_back_a_foreign_directory_it_claimed(tmp_path):
+    path = str(tmp_path / "s.json")
+    mine = verify_trust._Lock(path)
+
+    with mine:
+        shutil.rmtree(mine.path)
+        os.mkdir(mine.path)
+        with open(os.path.join(mine.path, "token"), "w", encoding="utf-8") as handle:
+            handle.write("someone-else")
+
+    with open(os.path.join(mine.path, "token"), encoding="utf-8") as handle:
+        assert handle.read() == "someone-else"
+    assert sorted(os.listdir(tmp_path)) == ["s.json.lock"]
 
 
 def test_replace_retries_a_permission_error_then_succeeds(tmp_path, monkeypatch):

@@ -7,8 +7,15 @@ script name, `bash -c`, an options-first order, a bash backslash-newline or a
 PowerShell backtick-newline continuation); a shell write naming
 `verify-trust.json`; a Write/Edit of the store file.
 
+A verb or a store path the command builds as it runs (round 4, L-0888): a
+variable or substitution where the verb goes, string pieces joined, a dynamic
+import beside the plugin scripts, a call into the module's writers, the store
+override, a CLAUDECODE unset, and a write of a `verify-*` file under crew's
+config directory.
+
 MUST-ALLOW: `verify_trust.py status` and `check`, `check` chained before an
-unrelated word, and a shell read of the store.
+unrelated word, `check --root "$PWD"` (the variable follows the literal verb),
+and a shell read of the store.
 """
 import os
 
@@ -70,6 +77,9 @@ def test_a_spelled_out_trust_change_is_refused(flavour, repo, tool, command):
     "python3 hooks/scripts/verify_trust.py check; echo approve",
     "python3 -c 'import verify_trust as v; print(v.evaluate(\".\").code)'",
     "cat ~/.claude/crew/verify-trust.json",
+    'python3 hooks/scripts/verify_trust.py check --root "$PWD"',
+    "python3 hooks/scripts/verify_trust.py status --root $(pwd)",
+    "grep -n approve plugin/crew/hooks/scripts/verify_trust.py",
 ])
 def test_a_read_only_trust_command_is_allowed(flavour, repo, command):
     code, _, err = _shell(flavour, repo, command)
@@ -106,5 +116,42 @@ def test_a_trust_change_is_refused_even_with_the_scope_guard_off(flavour, repo):
     (crew / "config.json").write_text('{"scope": {"mode": "off"}}', encoding="utf-8")
 
     code, _, err = _shell(flavour, repo, "python3 hooks/scripts/verify_trust.py approve --yes")
+
+    assert (code, "SCOPE GUARD" in err) == (2, True)
+
+
+_ROUND4_ATTACK = (
+    "part=trust; export CREW_VERIFY_TRUST_FILE=\"$HOME/.claude/crew/verify-$part.json\"; "
+    "python3 -c 'import verify_trust; verify_trust.main([\"a\"+\"pprove\",\"--root\",\".\","
+    "\"--yes\"])'")
+
+
+@pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
+@pytest.mark.parametrize("command", [
+    pytest.param(_ROUND4_ATTACK, id="round-4-repro"),
+    pytest.param("v=approve; python3 hooks/scripts/verify_trust.py $v --yes", id="variable-verb"),
+    pytest.param("python3 hooks/scripts/verify_trust.py $(echo approve) --yes", id="subst-verb"),
+    pytest.param("python3 hooks/scripts/verify_trust.py `echo approve` --yes", id="backtick-verb"),
+    pytest.param("python3 hooks/scripts/verify_trust.py appro* --yes", id="glob-verb"),
+    pytest.param("python3 hooks/scripts/verify_trust.py --root . $V", id="variable-after-options"),
+    pytest.param("python3 -c 'import verify_trust as v; w = \"\".join([\"app\", \"rove\"])'",
+                 id="join-verb"),
+    pytest.param("python3 -c 'import verify_trust as v; v.cmd_approve(a)'", id="writer-call"),
+    pytest.param("python3 -c 'import verify_trust as v,sys; v.main(sys.argv[1:])' x",
+                 id="main-from-argv"),
+    pytest.param("python3 -c 'm=__import__(\"verify_\"+\"trust\"); m.main([])'",
+                 id="dynamic-module-name"),
+    pytest.param("python3 -c 'import importlib; importlib.import_module(\"verify_\"+\"x\")'"
+                 " --path hooks/scripts", id="importlib-beside-scripts"),
+    pytest.param("CREW_VERIFY_TRUST_FILE=/tmp/s.json python3 hooks/scripts/verify_trust.py status",
+                 id="store-override"),
+    pytest.param("unset CLAUDECODE; python3 hooks/scripts/verify_trust.py status",
+                 id="session-var-unset"),
+    pytest.param("env -u CLAUDECODE python3 verify_trust.py check", id="session-var-env-u"),
+    pytest.param("python3 -c 'open(\"/root/.claude/crew/verify-\"+\"x.json\",\"w\").write(\"{}\")'",
+                 id="store-dir-write"),
+])
+def test_a_runtime_built_trust_change_is_refused(flavour, repo, command):
+    code, _, err = _shell(flavour, repo, command)
 
     assert (code, "SCOPE GUARD" in err) == (2, True)

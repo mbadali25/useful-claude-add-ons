@@ -508,7 +508,7 @@ To trust every repo of one owner: `verify_trust.py allow-owner github.com/<owner
 limit is optional and recommended: without it a fresh directory whose `.git/config` merely names that owner is
 trusted on first sight). `status` shows the verdict, `revoke` removes a repo, `disallow-owner` removes an owner.
 A model-run `approve`, `allow-owner`, `disallow-owner` or `revoke` is refused by the scope guard: only a person
-at a terminal trusts a repo. The hash binds the verify map, not the scripts its rules call. `--ci` is exempt.
+at a terminal trusts a repo, and so is a verb or store path a command assembles as it runs (a variable, joined strings, a dynamic import, a call into the module's writers, `CREW_VERIFY_TRUST_FILE`, an unset `CLAUDECODE`). That guard is a textual tripwire, not a sandbox: the boundary is your OS user. The hash binds the verify map, not the scripts its rules call. Two swap windows are accepted residuals: `--price` opens its map, and `bash` reopens the smoke script, after the trust check, so a process running as you that swaps the file in that interval runs the swapped bytes (you can edit the store too). `--ci` is exempt.
 
 ## Verify gate prints one line, or says "unchanged since last Stop"
 
