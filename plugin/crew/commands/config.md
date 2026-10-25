@@ -50,7 +50,7 @@ changed in 0.16.0 and both are silent if unmentioned:
   `shadow:` and `--unset <path> --repo --apply` removes it on a yes.
 
 On native Windows the walkthrough also probes WSL (`crew_shell.py probe --write`)
-and offers `shellRoute.mode`: `auto`, `wsl`, `powershell` or `gitbash`.
+and reports the state. The shell route itself is automatic and has no setting.
 
 This command works with no repo in mind: `--root` is optional, and with no
 `.crew/config.json` the `repo` layer is simply empty and the menu offers the

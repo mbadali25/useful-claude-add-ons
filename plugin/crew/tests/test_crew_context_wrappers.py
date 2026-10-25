@@ -69,29 +69,13 @@ def test_bash_flavour_always_exits_zero_and_never_decides(tmp_path):
 
 @needs_bash
 @pytest.mark.parametrize("config,inject", [
-    ({"memory": {"mode": "repo"}}, False),
-    (None, False),
-])
-def test_bash_flavour_emits_and_logs_nothing_when_inject_is_false(tmp_path, config, inject):
-    root = make_repo(tmp_path, config=config, inject=inject)
-    outputs = []
-
-    for raw in _payloads(root):
-        done = subprocess.run([BASH, str(SCRIPTS / "crew-context.sh")], input=raw, cwd=root,
-                              capture_output=True, env=_env(tmp_path), check=False, timeout=60)
-        outputs.append((done.returncode, done.stdout, done.stderr))
-
-    assert (outputs, (root / ".git" / "crew" / "context-log.jsonl").exists()) == \
-        ([(0, b"", b"")] * len(outputs), False)
-
-
-@needs_bash
-@pytest.mark.parametrize("config,inject", [
     (None, True),
     (None, None),
+    (None, False),
     ({"memory": {"mode": "repo"}}, None),
+    ({"memory": {"mode": "repo"}}, False),
 ])
-def test_bash_flavour_emits_when_inject_is_on_or_unset(tmp_path, config, inject):
+def test_bash_flavour_emits_whatever_memory_inject_says(tmp_path, config, inject):
     root = make_repo(tmp_path, config=config, inject=inject)
     start = json.dumps(payload("SessionStart", root, source="startup")).encode()
 

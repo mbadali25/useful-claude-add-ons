@@ -188,7 +188,7 @@ flowchart TB
 
 ## Data flow crew config no python
 
-What three guards do when they cannot find python: role-write-guard.sh cannot read guards.roleWrites, so it always blocks a restricted role; cloud-guard.sh reads cloudGuard crudely from the resolved repo file and the machine file, and refuses when armed or when git cannot name a lane's main checkout; env-guard.sh does the same for envGuard.
+What three guards do when they cannot find python: role-write-guard.sh cannot evaluate the roleWrites guard (guards.profile and guards.overrides.roleWrites), so it always blocks a restricted role; cloud-guard.sh reads the resolved repo file and the machine file crudely, treats a layer as unarmed only when it can PROVE every profile and cloudGuard value is the literal off, and refuses otherwise or when git cannot name a lane's main checkout; env-guard.sh does the same for envGuard.
 
 ```mermaid
 flowchart LR
@@ -196,7 +196,7 @@ flowchart LR
     subgraph NoPython["role-write-guard.sh's no-python fallback - a NARROWER contract than the old one"]
         direction TB
         NP1["<b>_resolve_role_write_python()</b><br/>finds no usable interpreter"]
-        NP2["<b>_role_write_fallback_decision()</b><br/>cannot evaluate<br/>guards.roleWrites at all"]
+        NP2["<b>_role_write_fallback_decision()</b><br/>cannot evaluate<br/>the roleWrites guard at all"]
         NP3["Unrestricted role: allowed.<br/>Restricted or unreadable role:<br/>ALWAYS BLOCKED (exit 2)"]
         NP1 --> NP2 --> NP3
     end
@@ -204,16 +204,16 @@ flowchart LR
     subgraph CloudNoPython["cloud-guard's fallback - reads the resolved repo file (T-0096)"]
         direction TB
         CG1["no usable python,<br/>or cloud_guard.py failed"]
-        CG2["<b>_cloud_guard_armed</b><br/>resolved repo file +<br/>machine file"]
-        CG3["unknown, or cloudGuard<br/>not off: REFUSED (exit 2)"]
+        CG2["<b>_cloud_guard_armed</b><br/>both files, off only<br/>if PROVED"]
+        CG3["unknown, or not proved off:<br/>REFUSED (exit 2)"]
         CG1 --> CG2 --> CG3
     end
 
     subgraph EnvNoPython["env-guard's fallback - the same shape (L-0772)"]
         direction TB
         EG1["no usable python,<br/>or env_guard.py failed"]
-        EG2["<b>_env_guard_armed</b><br/>resolved repo file +<br/>machine file"]
-        EG3["unknown, or envGuard<br/>not off: REFUSED (exit 2)"]
+        EG2["<b>_env_guard_armed</b><br/>both files, off only<br/>if PROVED"]
+        EG3["unknown, or not proved off:<br/>REFUSED (exit 2)"]
         EG1 --> EG2 --> EG3
     end
 ```
@@ -221,14 +221,14 @@ flowchart LR
 | Box | Details |
 |---|---|
 | `NP1` | _resolve_role_write_python() plugin/crew/hooks/scripts/role-write-guard.sh:44- fails to find a usable interpreter |
-| `NP2` | _role_write_fallback_decision() :326-346. Cannot evaluate guards.roleWrites (off/report/pm's own path allowances) at all - only tells a restricted role from an unrestricted one via the deny-list mirror |
-| `NP3` | Unrestricted role: allowed unjudged. Restricted role (pm or _DENY_ROLES) OR a role this fallback could not even read: ALWAYS BLOCKED (exit 2), regardless of what guards.roleWrites actually says :339-345 |
+| `NP2` | _role_write_fallback_decision() :326-346. Cannot evaluate the roleWrites guard (off/report/pm's own path allowances) at all - only tells a restricted role from an unrestricted one via the deny-list mirror |
+| `NP3` | Unrestricted role: allowed unjudged. Restricted role (pm or _DENY_ROLES) OR a role this fallback could not even read: ALWAYS BLOCKED (exit 2), regardless of what guards.overrides.roleWrites actually says :339-345 |
 | `CG1` | crew_py_strict plugin/crew/hooks/scripts/_common.sh finds no usable interpreter, or cloud_guard.py exits non-zero (cloud-guard.sh:55-78) |
 | `CG2` | _cloud_guard_armed plugin/crew/hooks/scripts/cloud-guard.sh:40; armed when the resolver is missing. The repo file is crew_repo_config_dir's (_common.sh:328): a lane with no config of its own reads the main checkout's. (Its PowerShell twin, Test-CloudGuardArmed in cloud-guard.ps1, was deleted in L-0727 slice 3.) |
-| `CG3` | source unknown, or any cloudGuard value other than off in either file: exit 2 (refuse). Otherwise exit 0, unjudged. |
+| `CG3` | source unknown, or a layer that cannot be PROVED off (any profile or cloudGuard value other than off, or a file it cannot read): exit 2 (refuse). Otherwise exit 0, unjudged. |
 | `EG1` | crew_py_strict finds no usable interpreter, or env_guard.py exits non-zero (env-guard.sh:53-76). |
 | `EG2` | _env_guard_armed plugin/crew/hooks/scripts/env-guard.sh:38, the same shape as _cloud_guard_armed: armed when the resolver is missing; the repo file is crew_repo_config_dir's. Twin: env_guard._crude_armed in python when crew's own config readers raise. |
-| `EG3` | source unknown, or any envGuard value other than off in either file: exit 2 (refuse). Otherwise exit 0, unjudged. |
+| `EG3` | source unknown, or a layer that cannot be PROVED off (any profile or envGuard value other than off, or a file it cannot read): exit 2 (refuse). Otherwise exit 0, unjudged. |
 
 - **Source:** `data-flow-crew-config-no-python.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/role-write-guard.sh`, `plugin/crew/hooks/scripts/cloud-guard.sh`, `plugin/crew/hooks/scripts/env-guard.sh`
@@ -236,11 +236,20 @@ flowchart LR
 
 ## Data flow crew config ratchet
 
-The keys that do not follow repo-beats-global: the two ratchet tables (read side and write side), the fifteen keys that resolve by the lower rank, and how a corrupt config file forces the role-write guard to block.
+The keys that do not follow repo-beats-global: how each layer first expands guards.profile and guards.overrides into a per-guard value, then the two ratchet tables (read side and write side), the fifteen keys that resolve by the lower rank, and how a corrupt config file forces the role-write guard to block.
 
 ```mermaid
 flowchart TB
 
+    subgraph Expand["FIRST, each layer expands its own profile and overrides into one value per guard"]
+        direction TB
+        X1["<b>guards.profile</b><br/>off | standard | strict<br/>PROFILE_MAP, per layer"]
+        X2["<b>guards.overrides.&lt;guard&gt;</b><br/>replaces the profile's value<br/>for that one guard"]
+        X3["legacy <b>guards.&lt;name&gt;</b> still read<br/>until /crew:migrate;<br/>the narrower of the two wins"]
+        X4["malformed profile or override<br/>= the guard's FLOOR,<br/>never off"]
+        X1 --> X2 --> X3 --> X4
+    end
+    Expand ==>|"two per-layer values per guard"| Ratchet
     subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 16 write-side, 15 read-side"]
         direction TB
         RG["<b>READ side:</b><br/>crew_guards.RATCHETED_KEYS<br/>15 keys"]
@@ -261,7 +270,7 @@ flowchart TB
         E2["effective value = the<br/><b>lower-ranked</b> of the two layers<br/>effective_ratcheted :594"]
         E3["Why: crew reads config<br/>out of CLONED repositories"]
         E4["Absent = the narrowest tier<br/>for TWELVE of the fifteen"]
-        E5["<b>guards.roleWrites, cloudGuard, envGuard</b><br/>the three exceptions to E4:<br/>DEFAULT is not their FLOOR"]
+        E5["<b>roleWrites, cloudGuard, envGuard</b><br/>the three exceptions to E4:<br/>DEFAULT is not their FLOOR"]
         E6["install.policy: auto is safe -<br/>no repo string becomes a command<br/>(crew_guards.INSTALLABLE)"]
         E1 --- E2 --- E3 --- E4 --- E5 --- E6
     end
@@ -269,21 +278,25 @@ flowchart TB
 
 | Box | Details |
 |---|---|
-| `RG` | READ side: crew_guards.RATCHETED_KEYS plugin/crew/hooks/scripts/crew_guards.py:552-579 15 keys (executed + len()'d at a792ce66b): install.policy, change.requireForProduction, environments.prodUnattended (T-0005), and all TWELVE guards.* - terraformApply, forcePush, adminMerge, mergeGate, cloudDestructive, sqlDestructive, deployWorkflow, prodDatabase, prodServer, roleWrites, cloudGuard, envGuard (L-0772). Consumed by crew_config.resolve_ratcheted() :1006 via crew_guards.effective_ratcheted() :594, called at crew_config.py:1050 |
+| `X1` | guards.profile (off / standard / strict) is read in EACH layer separately: crew_guards.layer_guard_state :638 looks up the layer's profile in PROFILE_MAP :240. off is today's GUARD_DEFAULTS, so a layer that sets nothing resolves as it always did. The profile itself is never ratcheted. |
+| `X2` | guards.overrides.&lt;guard&gt; in the same layer replaces the profile's value for that one guard, validated against that guard's own tiers. An override can never widen past a malformed profile or past a legacy key still present. |
+| `X3` | The twelve legacy guards.&lt;name&gt; keys are still READ as aliases until /crew:migrate rewrites the layer, and never written. When a legacy key and a profile or override both speak, the NARROWER of the two wins and the conflict is reported. |
+| `X4` | A malformed profile, or an overrides value that is not an object or not one of the guard's tiers, gives that guard's FLOOR (block, or none for prodDatabase and prodServer). The floor is never off: could-not-tell must not read as opted-out. |
+| `RG` | READ side: crew_guards.RATCHETED_KEYS plugin/crew/hooks/scripts/crew_guards.py:582-609 15 keys (executed + len()'d at a792ce66b): install.policy, change.requireForProduction, environments.prodUnattended (T-0005), and all TWELVE guards.* - terraformApply, forcePush, adminMerge, mergeGate, cloudDestructive, sqlDestructive, deployWorkflow, prodDatabase, prodServer, roleWrites, cloudGuard, envGuard (L-0772). Consumed by crew_config.resolve_ratcheted() :1006 via crew_guards.effective_ratcheted() :594, called at crew_config.py:1050 |
 | `RC` | WRITE side: crew_config._RATCHETED plugin/crew/hooks/scripts/crew_config.py:3204 (extended through :3338) 16 keys: the same fifteen PLUS pm.authority. pm.authority is still NOT in RATCHETED_KEYS - it resolves by ordinary precedence and only needs a widening NOTE when /crew:config writes it |
 | `RSHAPE` | Confirmed by import + diff + type(), not asserted: 15-key intersection, pm.authority the only difference (`set(_RATCHETED) - set(RATCHETED_KEYS) == {'pm.authority'}`), and the tuple field order STILL differs -- (function, function, dict) here, (tuple, function, function) there -- so the two still cannot be collapsed into one table as written |
 | `LS` | crew_config.layer_state(path) plugin/crew/hooks/scripts/crew_config.py:1095 classifies ONE config file, either layer (cloud=True / environments=True - the cloud guard's reads only - also call a malformed cloud / environments block corrupt): absent - nothing there (os.path.lexists false, so a DANGLING SYMLINK is corrupt, not absent). corrupt - present but not the shape this key needs: unreadable, invalid JSON, not an object, or an object where "guards" in parsed and guards is not itself a dict (an EXPLICIT null is corrupt, not an unset key). ok - everything else |
 | `FORCE` | plugin/crew/hooks/scripts/role_write_guard.py calls layer_state for BOTH layers at :763-764, ORs them into forced_by_corruption :765, and sets policy = "block" UNCONDITIONALLY at :767-768 -- BEFORE the elif policy == "off": return 0 early exit at :769-770 |
-| `E1` | Every key in crew_guards.RATCHETED_KEYS :552-579 -- install.policy, change.requireForProduction, environments.prodUnattended and all TWELVE guards.* -- resolves by the LOWER rank, not by repo-beats-global. CONFIG.md section 15 covers install.policy, section 16 the guards, section 18 guards.roleWrites; environments.* is a subsection of section 16. |
+| `E1` | Every key in crew_guards.RATCHETED_KEYS :582-609 -- install.policy, change.requireForProduction, environments.prodUnattended and all TWELVE guards.* -- resolves by the LOWER rank, not by repo-beats-global. docs/crew/config-rationale.md covers install.policy, the guards (profile plus overrides) and the roleWrites guard; environments.* is a subsection of the guards section. |
 | `E2` | The effective value at each key is the lower-ranked of the two layers - crew_guards.effective_ratcheted :594, reached through crew_config.resolve_ratcheted :1006. |
-| `E3` | Why: crew reads config out of CLONED repositories. A repo shipping install.policy: auto, or guards.cloudGuard: report, would, under precedence, override a machine owner who chose manual or off. |
+| `E3` | Why: crew reads config out of CLONED repositories. A repo shipping install.policy: auto, or guards.overrides.cloudGuard: report, would, under precedence, override a machine owner who chose manual or off. |
 | `E4` | Absent counts as the narrowest tier on either side for TWELVE of the fifteen, so the WIDEST grant requires BOTH layers to agree. |
-| `E5` | guards.roleWrites, guards.cloudGuard and guards.envGuard (L-0772) are the three exceptions to E4, and the only keys here whose DEFAULT is not their FLOOR. ROLE_WRITE_POLICIES is (block, report, off); ROLE_WRITE_DEFAULT is off, the WIDEST tier, for all three names - cloudGuard and envGuard reuse roleWrites' own normalise/rank functions rather than growing a second copy (normalise_role_writes crew_guards.py:479, role_writes_rank :505, guard_tiers() :519-534). |
+| `E5` | roleWrites, cloudGuard and envGuard (L-0772) are the three exceptions to E4, and the only keys here whose DEFAULT is not their FLOOR. ROLE_WRITE_POLICIES is (block, report, off); ROLE_WRITE_DEFAULT is off, the WIDEST tier, for all three names - cloudGuard and envGuard reuse roleWrites' own normalise/rank functions rather than growing a second copy (normalise_role_writes crew_guards.py:479, role_writes_rank :505, guard_tiers() :519-534). |
 | `E6` | install.policy: auto is safe only because no repo-controlled string can become a command - crew_guards.INSTALLABLE maps a name to a literal argv tuple, consulted BEFORE the policy. Asserted in tests/test_install_policy.py. |
 
 - **Source:** `data-flow-crew-config-ratchet.mmd`
-- **Drawn from:** `plugin/crew/hooks/scripts/crew_guards.py`, `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/role_write_guard.py`, `plugin/crew/CONFIG.md`, `plugin/crew/tests/test_install_policy.py`
-- **Readability:** PASS: 11 nodes, no crossings, nothing drawn through a node
+- **Drawn from:** `plugin/crew/hooks/scripts/crew_guards.py`, `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/role_write_guard.py`, `docs/crew/config-rationale.md`, `plugin/crew/tests/test_install_policy.py`
+- **Readability:** PASS: 15 nodes, no crossings, nothing drawn through a node
 
 ## Data flow crew config read
 
@@ -350,14 +363,14 @@ flowchart TB
 
 ## Data flow crew config shell route
 
-shellRoute: the two config keys read through resolve_config, beside the machine-local probe cache that is not a config layer, both feeding crew_shell.decide().
+shellRoute: the route is chosen automatically from the machine-local probe cache and the repo's location; no config key feeds it any more (L-0725 removed shellRoute.mode and shellRoute.distro).
 
 ```mermaid
 flowchart LR
 
-    subgraph ShellRoute["T-0040: shellRoute is config; the probe's answer is not"]
+    subgraph ShellRoute["T-0040: the route is automatic; the probe's answer is not config"]
         direction TB
-        SR["<b>shellRoute.mode / .distro</b><br/>both layers, read through<br/>resolve_config"]
+        SR["<b>repo location + measurement</b><br/>where the repo lives,<br/>and whether WSL measured faster"]
         SRC[("<b>~/.claude/crew/shell-route.json</b><br/>the probe cache -<br/>NOT a config layer")]
         SRD["<b>crew_shell.decide() / status_line()</b><br/>native Windows only"]
         SR --> SRD
@@ -367,7 +380,7 @@ flowchart LR
 
 | Box | Details |
 |---|---|
-| `SR` | shellRoute.mode / shellRoute.distro both layers, plugin/crew/hooks/scripts/crew_config.py:340 / :579 read by crew_shell.settings through resolve_config; an unrecognised mode reads as auto and is named |
+| `SR` | the repo's location and any measurement (`crew_shell.py measure --write`) plus the probe cache feed crew_shell.decide(); there is no mode to force and no distro to pin, so routing is automatic |
 | `SRC` | ~/.claude/crew/shell-route.json crew_shell.probe_path() - the machine-local probe cache written only by probe --write and measure --write; NOT a config layer, never merged |
 | `SRD` | crew_shell.decide() / status_line() plugin/crew/hooks/scripts/crew_shell.py:560 / :923 native Windows only - off Windows, plain bash -c |
 
@@ -392,10 +405,10 @@ flowchart TB
 
     subgraph Split["What may be set where - measured, not asserted (executed this pass)"]
         direction TB
-        S1["<b>81 global-settable</b> leaves<br/>across twenty blocks"]
-        S2["<b>60 repo-only</b> leaves<br/>(set difference, executed)"]
-        S3["<b>Counts are executed,</b><br/><b>not read by eye.</b><br/>141 / 81 / 60"]
-        S4["<b>Consent is not capability.</b><br/>context.autoClear.unsafeFocus<br/>is excluded from the global template"]
+        S1["<b>50 machine-file</b> leaves<br/>across 16 blocks"]
+        S2["<b>37 repo-only</b> leaves<br/>(set difference, executed)"]
+        S3["<b>Counts are executed,</b><br/><b>not read by eye.</b><br/>83 / 50 / 37"]
+        S4["<b>Guards are two keys:</b><br/>guards.profile and guards.overrides,<br/>in both layers"]
         S1 --- S2 --- S3 --- S4
     end
 ```
@@ -405,9 +418,9 @@ flowchart TB
 | `A2` | The WRITE path additionally rejects VALUES the READ path only reports. |
 | `A3` | resolve_config NEVER raises - a malformed file must not wedge every session on the machine. |
 | `S1` | 81 global-settable leaves, across twenty blocks: autopilot (T-0050: mode, maxPhases, deploy, approval, questions - personal, the stricter layer wins), qa, dev, worktree, secondOpinion, memory, notify, pm, context.autoClear, docs, bitbucket, github, install, guards (all TEN), change, resume (T-0006: machine opt-in, repo may only veto; T-0013: typeDelaySeconds, readyTimeoutSeconds), environments (prodUnattended only, T-0005), route (T-0023: route.enabled, repo beats machine - read by crew_route.settings through resolve_config), shellRoute (T-0040: mode + distro, both layers), git (T-0066: forbiddenTrailers, both layers, combined by UNION in crew_trailers.forbidden, not precedence) |
-| `S2` | 60 repo-only leaves (set difference, executed), environments.nonProd (T-0005), tickets.baseBranch (T-0061), autopilot.maxAutoReplans (T-0074), autopilot.sleep.* (T-0053) and autopilot.ship/knownFailures/ciTimeoutMinutes (T-0011) among them. Whole blocks absent from the global template (autopilot is partly global since T-0050): cloud, emergency, graph, jira, obsidian, platform, production, roles, schema, scope, sdp, tickets, tier, tracker, verifyGate - cloud and scope are NEW repo-only blocks since the previous anchor (cloud identity pins, the T3 scope guard); autopilot is NEW at 07ca3972 (T-0004, mode + maxPhases, CONFIG.md §20; deploy added by T-0072, approval + questions by T-0010, ship + knownFailures + ciTimeoutMinutes by T-0011) |
+| `S2` | 60 repo-only leaves (set difference, executed), environments.nonProd (T-0005), tickets.baseBranch (T-0061), autopilot.maxAutoReplans (T-0074), autopilot.sleep.* (T-0053) and autopilot.ship/knownFailures/ciTimeoutMinutes (T-0011) among them. Whole blocks absent from the global template (autopilot is partly global since T-0050): cloud, emergency, graph, jira, obsidian, platform, production, roles, schema, scope, sdp, tickets, tier, tracker, verifyGate - cloud and scope are NEW repo-only blocks since the previous anchor (cloud identity pins, the T3 scope guard); autopilot is NEW at 07ca3972 (T-0004, mode + maxPhases, docs/crew/config-rationale.md; deploy added by T-0072, approval + questions by T-0010, ship + knownFailures + ciTimeoutMinutes by T-0011) |
 | `S3` | Counts are executed, not read by eye. 141 repo-template / 81 global / 60 repo-only on batch-7-build after merging T-0011 (133 / 75 / 58 on T-0066 after merging main e9364a70, 132 / 74 / 58 on main after T-0013, 131 / 73 / 58 on T-0066 after main c9263465, 130 / 72 / 58 on T-0061 after main 34d9f267, 129 / 72 / 57 on T-0040-land's merge of main 844bfc36, 127 / 70 / 57 on its merge of 6a8c60b1, 125 / 70 / 55 on T-0040's branch, 125 / 68 / 57 at d7c7c75c, T-0010-solo's merge of 6387ab49, 123 / 68 / 55 on T-0072's merge of main, 124 / 68 / 56 at c817782f on T-0010-solo, 122 / 68 / 54 on T-0023's merge of main, 121 / 67 / 54 on the T-0005 landing merge, 120 / 67 / 53 at T-0023's eba11657, 119 / 66 / 53 at 07ca3972, 118 / 66 / 52 at fc54def6, 117 / 66 / 51 at 6d35ef8c, 116 / 65 / 51 at 6c497a14); .crew/codemap/crew.md agrees and gives the re-measure command. |
-| `S4` | Consent is not capability. context.autoClear.unsafeFocus is excluded from the global template on purpose (AUTOCLEAR_CONSENT_KEYS, crew_state.py:746) - a Wayland focus-typing risk accepted once must not arm for every repo. |
+| `S4` | Guards are two keys in both layers. guards.profile (off, standard, strict) and guards.overrides are in both default templates; the twelve per-guard guards.&lt;name&gt; keys are no longer written and are read only as aliases until /crew:migrate rewrites the layer. |
 
 - **Source:** `data-flow-crew-config-split.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew_config.py`, `plugin/crew/hooks/scripts/crew_state.py`
@@ -536,7 +549,7 @@ flowchart LR
     autoclear["<b>autoclear</b><br/>autoClear read and writer"]
     twofiles["<b>two-files</b><br/>config.json is the config;<br/>crew.json only after migrate"]
     split["<b>split</b><br/>what may be set where"]
-    shell["<b>shell-route</b><br/>shellRoute config"]
+    shell["<b>shell-route</b><br/>automatic shell route"]
 
     menu -->|"writes both files"| read
     menu -->|"Save"| write
@@ -545,7 +558,7 @@ flowchart LR
     read -.->|"raw files"| autoclear
     read -.->|"repo file"| twofiles
     read -.->|"resolved config"| split
-    read -->|"resolved config"| shell
+    read -.->|"no config key"| shell
 ```
 
 - **Source:** `data-flow-crew-config.mmd`
@@ -911,9 +924,7 @@ flowchart TB
         CC --> cc1{".crew/ directory?<br/>:1149"}
         cc1 -- no --> ccx([emit nothing])
         cc1 -- yes --> cc2["read crew.json else config.json<br/>:124-135"]
-        cc2 --> cc3{"memory.inject?<br/>:1159"}
-        cc3 -- off --> cc4[incident banner<br/>+ inert-settings line only]
-        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:1019-1034"]
+        cc2 --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:1019-1034"]
         cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch"}
         stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:722, :927"]
         stale -- no --> cc6
@@ -929,7 +940,6 @@ flowchart TB
 
     ptr --> out(["additionalContext JSON<br/>:1253"])
     full --> out
-    cc4 --> out
 ```
 
 | Box | Details |
@@ -940,31 +950,25 @@ flowchart TB
 
 - **Source:** `process-crew-brief-crew-context.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/crew-context.sh`, `plugin/crew/hooks/scripts/crew_context.py`, `plugin/crew/hooks/scripts/crew_resume.py`, `plugin/crew/hooks/scripts/crew_state.py`
-- **Readability:** PASS: 15 nodes, no crossings, nothing drawn through a node
+- **Readability:** PASS: 13 nodes, no crossings, nothing drawn through a node
 
 ## Process crew brief handoff read
 
-The handoff-read SessionStart hook: the three checks that make it exit, and when it prints the handoff note. In crew 1.0 it usually exits, because crew-context delivers the note instead.
+The handoff-read SessionStart hook: it resets this session's once-per-session markers and ages out other sessions' stale ones, then exits. It never prints the handoff note; crew-context delivers it (memory injection is always on).
 
 ```mermaid
 flowchart TB
     HR[handoff-read]
     subgraph handoffRead["handoff-read.sh"]
-        HR --> hr1{"source is<br/>clear/compact/resume/fork?<br/>:34"}
-        hr1 -- no --> hrx([exit 0])
-        hr1 -- yes --> hr2{"memory.inject on?<br/>:41 (1.0 default: on)"}
-        hr2 -- yes --> hrx
-        hr2 -- no --> hr3{"resolved config.json?<br/>(own, else main checkout's)<br/>:48-50"}
-        hr3 -- no --> hrx
-        hr3 -- yes --> hr4[stale check / print note<br/>:69-95]
+        HR --> hr1["reset THIS session's<br/>handoff-requested, autoclear-sent<br/>and wrap-up markers"]
+        hr1 --> hr2["age out other sessions'<br/>markers older than 7 days"]
+        hr2 --> hrx([exit 0])
     end
-
-    hr3 -. "? 1.0-only repo (crew.json, no config.json)<br/>with inject:false gets no handoff" .-> hrx
 ```
 
 - **Source:** `process-crew-brief-handoff-read.mmd`
 - **Drawn from:** `plugin/crew/hooks/scripts/handoff-read.sh`
-- **Readability:** PASS: 6 nodes, no crossings, nothing drawn through a node
+- **Readability:** PASS: 4 nodes, no crossings, nothing drawn through a node
 
 ## Process crew brief platform sync
 

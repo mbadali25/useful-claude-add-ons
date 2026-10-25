@@ -373,7 +373,7 @@ def test_refresh_never_stages_or_commits(tmp_path):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="off Windows crew_shell.run is bash -c; "
-                    "on it the route depends on shellRoute and the host")
+                    "on it the route depends on the host")
 def test_refresh_cli_runs_graphify_from_path_through_bash(tmp_path):
     """The default runner, end to end: a fake `graphify` on PATH is run from
     the repository root with the sanctioned arguments."""

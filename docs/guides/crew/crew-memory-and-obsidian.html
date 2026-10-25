@@ -183,7 +183,7 @@ $VO drain --apply --batches 4     # up to 4 passes of 5, stops early if one ackn
 </tr>
 <tr>
 <td>When another project's notes outrank this repo's</td>
-<td>crew sends the main checkout's folder name as <code>--project</code>; if your notes' <code>project:</code> values differ, list them in the repo's <code>memory.recall.projects</code>.</td>
+<td>crew sends the main checkout's folder name as <code>--project</code>; if your notes' <code>project:</code> values differ, change them to match that folder name (the <code>memory.recall.projects</code> setting was removed).</td>
 </tr>
 <tr>
 <td>When the bridge misbehaves</td>
@@ -300,8 +300,7 @@ you at each lifecycle step. Crew writes the files itself, so nothing here
 needs the bridge or the <code>obsidian-vault</code> plugin; the vault needs <code>.obsidian/</code>
 and the Kanban community plugin.</p>
 <p><strong>Turning it on.</strong> In <code>.crew/config.json</code>, set <code>tracker</code> to <code>"obsidian"</code> and<!-- claim: crew-config-file:config.json -->
-give the <code>obsidian</code> block a <code>vaultPath</code>, a <code>boardDir</code> (relative to the vault) and
-optionally <code>board</code> (default <code>Board.md</code>) and <code>columns</code> (your lane names). A repository
+give the <code>obsidian</code> block a <code>vaultPath</code> and a <code>boardDir</code> (relative to the vault). The board file is always <code>Board.md</code> and its lanes are always Backlog, Ready, In Progress, Review and Done; a board that uses other names is renamed by hand. A repository
 that ran <code>/crew:migrate</code> also has <code>.crew/crew.json</code>, which holds the same settings as
 <code>tracker.kind</code> and <code>tracker.obsidian</code>; the tracker reads both and refuses when they disagree. Give
 every repository its own <code>boardDir</code>: with it unset, every repo shares one
@@ -310,7 +309,7 @@ board at the vault root, and a card another repo owns is refused.</p>
 <thead>
 <tr>
 <th>Ticket status</th>
-<th>Lane (default name)</th>
+<th>Lane</th>
 </tr>
 </thead>
 <tbody>
@@ -665,19 +664,18 @@ paste in a slice:</p>
 <ul>
 <li>The vaults and their roles come from <code>~/.claude/obsidian/config.json</code>. Each vault has a <code>role</code>:
   <code>primary</code>, <code>recall</code> or <code>ignore</code>. A vault with no role is <code>primary</code> if it is the default and
-  <code>recall</code> otherwise. crew <strong>never</strong> asks an <code>ignore</code> vault, even if the repo lists it.</li>
-<li>A repo can set its own order in its crew config: <code>memory.recall.vaults</code> (an ordered list of names)
-  and <code>memory.recall.maxChars</code> (default 800). Snippets come back in that vault order first, then in
-  the order the search ranked them.</li>
+  <code>recall</code> otherwise. crew <strong>never</strong> asks an <code>ignore</code> vault.</li>
+<li>The vault order is the machine's roles, not a crew setting (the <code>memory.recall.vaults</code> list was
+  removed), and the answer is capped at 800 characters (fixed; <code>memory.recall.maxChars</code> was removed).
+  Snippets come back in that vault order first, then in the order the search ranked them.</li>
 <li>Each recall names the repo's project, so that notes of this project rank first inside each vault:
-  <code>memory.recall.projects</code> (a list of names, repo-only) when set, otherwise the main checkout's
-  directory name (a linked worktree reports the main checkout's name). crew sends it as
+  the main checkout's directory name (the <code>memory.recall.projects</code> list was removed; a linked worktree reports the main checkout's name). crew sends it as
   <code>--project=&lt;a,b&gt;</code> and ranks nothing itself. An obsidian-vault CLI too old to know <code>--project</code>
   exits 2; crew then asks once more without it, inside the same 4-second budget, and the log's
   <code>recall</code> record says so: <code>project</code> is the list sent, <code>projectUsed</code> is <code>true</code> when the answer came
   from the call with the project, <code>false</code> when it came from the retry without it, and <code>null</code> when
-  no project was sent or no call answered with JSON. Set <code>memory.recall.projects</code> when the vault's <code>project:</code>
-  values do not match the checkout's folder name.</li>
+  no project was sent or no call answered with JSON. When the vault's <code>project:</code>
+  values do not match the checkout's folder name, change the notes' <code>project:</code> values.</li>
 <li>crew calls obsidian-vault's read-only CLI:
   <code>vault_ops.py recall --query ... --vaults a,b --max-chars N --json [--project=a,b]</code>. If the plugin is missing, or
   the CLI fails, times out or prints something other than JSON, the session goes on without recall

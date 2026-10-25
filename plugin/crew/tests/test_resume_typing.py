@@ -108,7 +108,7 @@ class Fixture:
         self.binding = crew_fixtures.bind_session(self.home, SESSION)
 
     def machine(self, auto=True, auto_clear=None, resume=None):
-        block = {"auto": auto, "typeDelaySeconds": 0, "readyTimeoutSeconds": 2}
+        block = {"auto": auto}
         block.update(resume or {})
         data = {"resume": block}
         if auto_clear is not None:
@@ -186,7 +186,7 @@ def test_resume_plan_send_on_tmux_ancestor_pane(fx, monkeypatch):
 
     assert (got["status"], got["method"], got["target"], got["command"], got["delay"], got["timeout"],
             got["key"], got["marker"].endswith(f"resume-typed-{fx.key}"), json.loads(got["decision"])["action"]) == \
-        ("send", "tmux", PANE, PROMPT, "0", "2", fx.key, True, "run")
+        ("send", "tmux", PANE, PROMPT, "2", "15", fx.key, True, "run")
 
 
 def test_resume_plan_off_when_decide_off(fx, monkeypatch):
@@ -233,7 +233,7 @@ def test_resume_plan_off_outside_only_repos(fx, monkeypatch, narrowing):
 
 
 def test_resume_plan_refuses_wtype(fx, monkeypatch):
-    fx.machine(auto_clear={"method": "wtype", "unsafeFocus": True})
+    fx.machine(auto_clear={"method": "wtype"})
 
     got = fx.plan(monkeypatch)
 
@@ -266,16 +266,24 @@ def test_resume_plan_refuses_xdotool(fx, monkeypatch):
     assert (got["status"], "xdotool cannot see" in got["reason"]) == ("refuse", True)
 
 
-@pytest.mark.parametrize("value,expected", [(5, (5, 2)), (-1, (2, 2)), ("x", (2, 2)), (True, (2, 2))])
-def test_resume_typing_reads_the_machine_file_and_rejects_unusable_values(fx, value, expected):
-    fx.machine(resume={"typeDelaySeconds": value})
+def test_type_delay_seconds_is_constant(fx):
+    fx.machine(resume={"typeDelaySeconds": 7})
 
-    assert crew_autocycle.resume_typing(str(fx.global_path)) == expected
+    assert crew_autocycle.resume_typing()[0] == crew_state.RESUME_TYPE_DELAY_SECONDS == 2
 
 
-def test_resume_typing_defaults_are_crew_states(tmp_path):
-    assert crew_autocycle.resume_typing(str(tmp_path / "absent.json")) == \
-        (crew_state.RESUME_DEFAULTS["typeDelaySeconds"], crew_state.RESUME_DEFAULTS["readyTimeoutSeconds"])
+def test_ready_timeout_seconds_is_constant(fx):
+    fx.machine(resume={"readyTimeoutSeconds": 1})
+
+    assert crew_autocycle.resume_typing()[1] == crew_state.RESUME_READY_TIMEOUT_SECONDS == 15
+
+
+def test_resume_plan_ignores_the_machine_files_timing_keys(fx, monkeypatch):
+    fx.machine(resume={"typeDelaySeconds": 0, "readyTimeoutSeconds": 1})
+
+    got = fx.plan(monkeypatch)
+
+    assert (got["delay"], got["timeout"]) == ("2", "15")
 
 
 @pytest.mark.parametrize("capture,state", [
@@ -309,8 +317,8 @@ def test_types_rendered_prompt_via_tmux_stub(fx):
 
     assert dry.stdout.splitlines()[:5] == ["autoresume: would send", "  method: tmux",
                                            f"  target: {PANE} [pane pid " + dry.stdout.split("[pane pid ")[1]
-                                           .split("]")[0] + "]", f"  command: {PROMPT}", "  delay: 0s"]
-    assert done.stdout.strip() == f"autoresume: typing {PROMPT} in 0s (method tmux)"
+                                           .split("]")[0] + "]", f"  command: {PROMPT}", "  delay: 2s"]
+    assert done.stdout.strip() == f"autoresume: typing {PROMPT} in 2s (method tmux)"
     assert f"would have typed '{PROMPT}' into {PANE}, but CREW_AUTOCLEAR_INHIBIT is set" in log, log
     assert (os.path.isfile(fx.marker), fx.recorded()) == (True, True)
     assert f"capture-pane -p -e -t {PANE}" in fx.tmux_calls()
@@ -329,7 +337,7 @@ def test_types_rendered_prompt_when_git_bash_path_conversion_is_off(fx, pathconv
     done = fx.sh(MSYS_NO_PATHCONV=pathconv)
     log = fx.wait_for_sender()
 
-    assert done.stdout.strip() == f"autoresume: typing {PROMPT} in 0s (method tmux)"
+    assert done.stdout.strip() == f"autoresume: typing {PROMPT} in 2s (method tmux)"
     assert f"would have typed '{PROMPT}' into {PANE}" in log, log
 
 
@@ -374,7 +382,7 @@ def test_both_flavours_type_at_most_once(fx):
 
 @needs_bash
 @pytest.mark.parametrize("auto_clear,expect", [
-    ({"method": "wtype", "unsafeFocus": True}, "wtype types into whatever has focus"),
+    ({"method": "wtype"}, "wtype types into whatever has focus"),
     ({"method": "sendkeys"}, crew_autocycle.SENDKEYS_REMOVED),
 ])
 def test_refusing_flavour_leaves_marker_unclaimed(fx, auto_clear, expect):
@@ -420,12 +428,11 @@ def test_nonempty_input_line_refuses(fx):
 @needs_posix
 def test_probe_timeout_refuses(fx):
     fx.pane.write_text(BUSY, encoding="utf-8")
-    fx.machine(resume={"readyTimeoutSeconds": 1})
 
     fx.sh()
-    log = fx.wait_for_sender()
+    log = fx.wait_for_sender(timeout=40)
 
-    assert f"the input line of {PANE} did not become ready within 1s (last probe: busy)" in log, log
+    assert f"the input line of {PANE} did not become ready within 15s (last probe: busy)" in log, log
     assert ("would have typed" in log, "send-keys" in fx.tmux_calls()) == (False, False)
 
 
@@ -434,7 +441,6 @@ def test_probe_timeout_refuses(fx):
 def test_a_busy_pane_that_turns_ready_is_typed(fx):
     """The probe waits rather than refusing while the /compact frame is busy."""
     fx.pane.write_text(BUSY, encoding="utf-8")
-    fx.machine(resume={"readyTimeoutSeconds": 10})
 
     fx.sh(wait=False)
     time.sleep(1)
@@ -555,7 +561,7 @@ def test_context_hook_names_the_typing_on_compact(fx):
     _done, text = _hook(fx, _start(fx))
     log = fx.wait_for_sender()
 
-    assert f"Auto-resume: typing {PROMPT} into this session in 0s (method tmux); if it does not arrive, " \
+    assert f"Auto-resume: typing {PROMPT} into this session in 2s (method tmux); if it does not arrive, " \
         "type it yourself." in text, text
     assert "Auto-resume did not start" not in text and f"would have typed '{PROMPT}'" in log, (text, log)
 

@@ -25,7 +25,7 @@ _BASH = crew_fixtures.resolve_bash()
 
 
 def _watch_repo(tmp_path, session):
-    cfg = {"context": {"warnAt": 0.8, "handoffPath": ".work/HANDOFF.md"}}
+    cfg = {"context": {"warnAt": 0.8}}
     root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
     crew = root.parent / "home" / ".claude" / "crew"
     crew.mkdir(parents=True, exist_ok=True)

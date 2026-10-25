@@ -2,6 +2,9 @@
 anchor: useful-claude-add-ons@9ba355d7c
 verified: 2026-10-20
 
+**Targeted check at `c0e582fbe` (2026-10-22, L-0725); anchor NOT moved.** Re-read: `docs/diagrams/data-flow-crew-config.mmd` line 1 (now `7944f06d7`, redrawn for L-0725). The `docs/guides/crew/` rebuild and `docs/crew/config-rationale.md` edits L-0725 made were not checked against this note's guide claims. Nothing else in this note was
+re-verified: a claim here is as of this note's own anchor.
+
 ## Re-derive provenance
 
 Re-derived from source at `6c497a14` (crew 1.0.25, PR #225), not re-pointed
@@ -115,8 +118,7 @@ disagrees with this section, this section wins. Statements not listed here were 
   text, still under the `BEGIN skills/UPDATE.md` block (`:11`). Still not checked against git history.
 - `docs/HANDOFF.md`: newest entry still dated 2026-08-23, 58 days before this anchor's date; `docs/runbooks/rollback.md`
   still reads `last verified: 2026-09-05` (45 days).
-- The three crew diagrams (Entry points): `data-flow-crew-config.mmd` is at `18e4afce3` (re-anchored 2026-10-18,
-  L-0789), `process-crew-brief.mmd` and `process-crew-lifecycle.mmd` at `c1d365d7` (2026-10-20). They are NOT "all at
+- The three crew diagrams (Entry points): `data-flow-crew-config.mmd` is at `7944f06d7` (line 1 read at `c0e582fbe`; redrawn for L-0725, previously `18e4afce3`, L-0789), `process-crew-brief.mmd` and `process-crew-lifecycle.mmd` at `c1d365d7` (2026-10-20). They are NOT "all at
   `d276b268`". Their line 1 (`%% Generated from <repo>@<sha> on <date>.`) and line 2 (`%% Anchors:`) forms hold;
   `architecture.mmd`, `data-flow.mmd` and `process.mmd` lines 1-2 still read `%% anchor: useful-claude-add-ons@1f97e51c`
   / `%% Anchors:` (read directly).
@@ -1070,7 +1072,7 @@ sentences, rebuilt with `docs/guides/crew/src/build.py`.
 `git diff --name-only c817782f 926443d8` is T-0010's round-3 fix (`caabb005`), the BUDGETS.md
 count, the version step-back and re-set, and this refresh. Of the paths this note cites, `plugin/crew/README.md`, `plugin/crew/CONFIG.md` and
 `plugin/crew/BUDGETS.md` changed: README two lines rewritten in place (`:792`, `:818`),
-CONFIG.md's §20 one-writer paragraph grew six lines, and `BUDGETS.md:11`'s count moved
+docs/crew/config-rationale.md one-writer paragraph grew six lines, and `BUDGETS.md:11`'s count moved
 18,917 -> 18,923 on the same line. No citation this note makes moved (checked with `difflib`
 over every cited path). Nothing was executed.
 
@@ -1236,7 +1238,7 @@ explicit `path:N`). The three crew diagrams are re-anchored in the same change. 
 
 `7d473f24` merges origin/main `f54af3fa` (T-0072 landed as crew 1.0.51: `crew_autopilot.py`,
 `commands/autopilot.md`, `crew_state.py`'s line-neutral `AUTOPILOT_DEFAULTS` hunk at `:1086-1090`,
-`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `CONFIG.md` §20, `README.md`, its
+`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `docs/crew/config-rationale.md`, `README.md`, its
 tests, `sabotage_autopilot.py`, `.crew/verify.json` rule 27's `seconds` and `why`; its notes
 anchored `9631c707`); `07354a39`, `df419a55`, `7a206c8e`, `4112498e`, `1b31ed2f` and `7ef3c4f1` are
 T-0075's review-round-4 steps 11-16 (`crew_config.py`, `crew_config_files.py`,

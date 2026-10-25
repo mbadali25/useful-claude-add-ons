@@ -635,7 +635,7 @@ def _log_row(root, policy, decision, role, path_text, reason):
     Six columns, not five: `reason` is its OWN column, appended last.
     An earlier draft computed `reason` (`no-agent-type`, `unknown-role:...`,
     "pm: path is in the allowed set", ...) and then never wrote it anywhere
-    -- the module docstring and CONFIG.md Sec18 both promise the two
+    -- the module docstring and docs/crew/config-rationale.md both promise the two
     distinct unknowns are "named differently in `.crew/guard.log` rather
     than merged into one unreadable 'allow' row", and the code did not keep
     that promise. Reported and fixed 2026-09-19. `_flatten` is applied to
@@ -794,8 +794,8 @@ def main(argv=None):  # pylint: disable=unused-argument
                     "own path normalisation (trailing dots/spaces kept, `..` "
                     "not collapsed) and cannot be judged against "
                     "guards.roleWrites' scope patterns -- refused outright "
-                    "for a role this table restricts. See CONFIG.md "
-                    "Section 18.\n"
+                    "for a role this table restricts. See "
+                    "docs/crew/config-rationale.md.\n"
                 )
                 return 2
             return 0
@@ -846,7 +846,7 @@ def main(argv=None):  # pylint: disable=unused-argument
                 f"  Permitted for this role: {_permitted_text(role)}\n"
                 f"{corruption_note}"
                 "  This is guards.roleWrites: block, in .crew/config.json or "
-                "the machine-global config. See CONFIG.md Section 18.\n"
+                "the machine-global config. See docs/crew/config-rationale.md.\n"
             )
             return 2
         return 0
@@ -881,7 +881,7 @@ def main(argv=None):  # pylint: disable=unused-argument
                     "a restricted role rather than allowing an unverifiable "
                     "write.\n"
                     f"  Permitted for this role: {_permitted_text(role)}\n"
-                    "  See CONFIG.md Section 18.\n"
+                    "  See docs/crew/config-rationale.md.\n"
                 )
             except Exception:  # pylint: disable=broad-except
                 pass

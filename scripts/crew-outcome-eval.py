@@ -86,7 +86,7 @@ MIN_HIDDEN_LINE = 60
 HIDDEN_LINES_TO_FLAG = 3
 RUN_UID = "1000"
 # Every container the harness starts (an arm, or grading) gets these and nothing more.
-ISOLATION_OPTIONS = ("--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "1024",
+ISOLATION_OPTIONS = ("--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--pids-limit", "4096",
                      "--memory", "6g")
 MAX_ARM_FILE_BYTES = 64 * 1024 * 1024
 GIT_IDENTITY = ("-c", "user.name=crew-outcome-eval", "-c", "user.email=eval@invalid")

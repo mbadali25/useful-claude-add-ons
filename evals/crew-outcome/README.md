@@ -63,7 +63,7 @@ proxy, a host process listening on a unix socket in that directory (`container/p
 `api.anthropic.com`, `api.openai.com`, `chatgpt.com` and its subdomains, CONNECT on 443 only); `container/eval-run.py`,
 which wraps every command in the container, listens on `127.0.0.1:3128` and forwards each connection to that socket. The
 proxy logs every decision to `<run>/proxylog/proxy.jsonl`, outside the mounts.
-The container runs as uid 1000 (not root), with `--cap-drop ALL`, `no-new-privileges`, `--pids-limit 1024`, `--memory 6g`,
+The container runs as uid 1000 (not root), with `--cap-drop ALL`, `no-new-privileges`, `--pids-limit 4096`, `--memory 6g`,
 no `--privileged`, no `--cap-add` and no `seccomp=unconfined` or `apparmor=unconfined`. Grading uses the same options with
 `--network none` and the copy under test as its only mount, so the arm's code (its modules, any `conftest.py`, `.pth`
 file or `pytest.ini`) never runs on the host, and a symlink the arm planted cannot make the host overwrite a file. Codex's own sandbox cannot start in a container on this host

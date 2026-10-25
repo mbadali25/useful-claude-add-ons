@@ -19,7 +19,8 @@ it. This command is for looking, and for repairing a board that fell behind.
    line and stop, never pick one.
 2. `obsidian.vaultPath` (else `memory.vaultPath`) must be an existing
    directory holding `.obsidian/`, and the board must exist at
-   `<vaultPath>/<obsidian.boardDir>/<obsidian.board>`.
+   `<vaultPath>/<obsidian.boardDir>/Board.md` (the file name is fixed:
+   `crew_state.OBSIDIAN_BOARD`).
 
 The script checks all of this and names what failed. Do not fall back to file
 tickets — a silent fallback splits the source of truth, and here both sides
@@ -60,7 +61,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --tick
 
 Print its lines verbatim. On exit 1 tell me `tracker not updated: <reason>`.
 
-| INDEX status | Lane (`obsidian.columns` key) |
+| INDEX status | Lane (`crew_state.OBSIDIAN_COLUMNS` key) |
 |---|---|
 | `direction`, `ready`, `needs-owner` | `backlog` |
 | `spec`, `planned` | `ready` |
@@ -88,10 +89,11 @@ leaves every other byte — archive included — as it was, and refuses a board
 that is missing its frontmatter key, a configured lane, or has one twice, or
 whose done lane lacks exactly one `**Complete**`.
 
-Lane names come from `obsidian.columns` rather than being hardcoded — a user
-with an existing board renames lanes in config, not in the vault. A lane named
-in config that is absent from the board is a setup error the script reports;
-do not create the lane.
+Lane names are fixed (`crew_state.OBSIDIAN_COLUMNS`): Backlog, Ready, In
+Progress, Review, Done. A board whose lanes are named otherwise is renamed in
+the vault, not in config; an `obsidian.columns` block left in a config file has
+no effect. A lane the board lacks is a setup error the script reports; do not
+create the lane.
 
 ## Writes stay in the vault
 

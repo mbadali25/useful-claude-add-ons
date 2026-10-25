@@ -17,8 +17,7 @@ Must-allow and must-block pairs:
     and gets one headless notice; a walk that passes through another
     session refuses; a window that also hosts another terminal refuses; a
     session that could not be identified is never "headless" and never
-    "safe"; a truncated chain refuses; a pid-less or title-only window
-    refuses while another session is live;
+    "safe"; a truncated chain refuses;
   - order: the binding runs before the sent-marker claim.
 
 No case reads the real process table, the real `~/.claude/sessions`, or a real
@@ -63,7 +62,7 @@ class Box:
 
     def __init__(self, tmp_path, **auto):
         self.tmp = tmp_path
-        self.root = cf.make_repo(tmp_path, config={"context": {"handoffPath": ".work/HANDOFF.md"}}, git=False)
+        self.root = cf.make_repo(tmp_path, config={"context": {}}, git=False)
         self.home = tmp_path / "home"
         self.config = self.home / ".claude"
         self.machine(**auto)
@@ -568,18 +567,6 @@ def test_spawn_inhibit_spawns_the_sender_but_types_nothing(tmp_path):
 
 # --- review round 1 FIX 3: a live session whose record cannot be read --------------
 
-@pytest.mark.parametrize("flavor", FLAVORS)
-def test_unreadable_live_sibling_record_refuses_the_title_fallback(flavor, tmp_path):
-    box = Box(tmp_path)
-    _title_only(box, flavor, 999999)
-    box.record()
-    (box.config / "sessions" / f"{SIBLING}.json").write_text("{not json", encoding="utf-8")
-    box.procs({**cf.session_table(), SIBLING: P(1, TTY_OTHER, 77, "claude")})
-    result = box.run(flavor, "--dry-run")
-    assert "would send" not in result.stdout, result.stdout
-    assert "another session cannot be ruled out" in result.stderr, result.stderr
-
-
 def test_other_sessions_cannot_rule_out_a_live_unreadable_record(tmp_path, monkeypatch):
     box = Box(tmp_path)
     box.record()
@@ -590,25 +577,6 @@ def test_other_sessions_cannot_rule_out_a_live_unreadable_record(tmp_path, monke
     assert crew_autocycle.other_sessions(O) is None  # SIBLING is live; SIBLING + 1 is gone and ignored
     (box.config / "sessions" / f"{SIBLING}.json").unlink()
     assert crew_autocycle.other_sessions(O) == set()
-
-
-# --- review round 1 FIX 2: an exited parent is the top; an unreadable one is not ---
-
-@pytest.mark.parametrize("flavor", FLAVORS)
-@pytest.mark.parametrize("parent", ["gone", "unreadable"])
-def test_exited_parent_ends_the_chain_but_unreadable_does_not(flavor, parent, tmp_path):
-    box = Box(tmp_path)
-    _title_only(box, flavor, 999999)
-    box.record()
-    table = {H: P(O, TTY, 1), O: P(SHELL, TTY, cf.OWNER_START, "claude"), SHELL: P(SHELL + 1, TTY, 1),
-             SHELL + 1: {"gone": True} if parent == "gone" else None}
-    box.procs(table)
-    result = box.run(flavor, "--dry-run")
-    if parent == "gone":
-        assert "would send" in result.stdout, result.stdout + result.stderr
-    else:
-        assert "would send" not in result.stdout
-        assert f"the parent of pid {SHELL + 1} could not be read" in result.stderr, result.stderr
 
 
 # --- 5. must-block: a shared window ------------------------------------------------
@@ -749,51 +717,25 @@ def test_truncated_chain_refuses_from_the_owner(method, case, tmp_path, monkeypa
     _inproc(monkeypatch, box)
     owner = crew_autocycle.session_owner(SESSION)
     got = {"method": method, "target": "%7", "label": "%7", "pane_pid": T}
-    proof = crew_autocycle.prove_target(owner, got, {"windowTitle": ""})
+    proof = crew_autocycle.prove_target(owner, got)
     expect = "deeper than 16" if case == "deep" else f"the parent of pid {SHELL} could not be read"
     assert not proof["ok"] and expect in proof["reason"], proof
 
 
-def _title_only(box, flavor, pid):
-    del flavor
-    box.machine(method="xdotool", windowTitle="Claude")
+def _owned_window(box, pid):
+    box.machine(method="xdotool")
     box.windows([{"id": 4242, "pid": pid, "title": "Claude - mine"}])
 
 
 @pytest.mark.parametrize("flavor", FLAVORS)
-def test_window_without_pid_refuses_with_sibling(flavor, tmp_path):
+def test_window_title_is_constant(flavor, tmp_path):
     box = Box(tmp_path)
-    _title_only(box, flavor, 0)
-    box.record()
-    box.record(pid=SIBLING, session=OTHER_SESSION, proc_start=77)
-    box.procs({**cf.session_table(), SIBLING: P(1, TTY_OTHER, 77, "claude")})
-    result = box.run(flavor, "--dry-run")
-    assert "would send" not in result.stdout
-    assert "has no owning process" in result.stderr, result.stderr
-
-
-@pytest.mark.parametrize("flavor", FLAVORS)
-def test_window_without_pid_unchanged_without_sibling(flavor, tmp_path):
-    """r2 BLOCK :658's failing control: the same window with no other session
-    live still sends, exactly as before T-0016."""
-    box = Box(tmp_path)
-    _title_only(box, flavor, 0)
+    box.machine(method="xdotool", windowTitle="Claude")
+    box.windows([{"id": 4242, "pid": 999999, "title": "Claude - mine"}])
     _own_terminal(box)
     result = box.run(flavor, "--dry-run")
-    assert "has no owning process" not in result.stderr and "title alone" not in result.stderr, result.stderr
-    assert "would send" in result.stdout and "title fallback]" in result.stdout, result.stderr
-
-
-@pytest.mark.parametrize("flavor", FLAVORS)
-def test_title_fallback_refuses_with_sibling(flavor, tmp_path):
-    box = Box(tmp_path)
-    _title_only(box, flavor, 999999)
-    box.record()
-    box.record(pid=SIBLING, session=OTHER_SESSION, proc_start=77)
-    box.procs({**cf.session_table(), SIBLING: P(1, TTY_OTHER, 77, "claude")})
-    result = box.run(flavor, "--dry-run")
-    assert "would send" not in result.stdout
-    assert "found by its title alone" in result.stderr, result.stderr
+    assert "would send" not in result.stdout, result.stdout
+    assert "no window belongs to any ancestor" in result.stderr, result.stderr
 
 
 @pytest.mark.parametrize("flavor", FLAVORS)
@@ -802,7 +744,7 @@ def test_a_stale_sibling_record_is_not_a_live_session(flavor, tmp_path):
     (measured): a record whose process is gone, or whose start time names a
     reused pid, is not another live session."""
     box = Box(tmp_path)
-    _title_only(box, flavor, 999999)
+    _owned_window(box, T)
     box.record()
     box.record(pid=SIBLING, session=OTHER_SESSION, proc_start=77)
     box.record(pid=SIBLING + 1, session=OTHER_SESSION, proc_start=78)

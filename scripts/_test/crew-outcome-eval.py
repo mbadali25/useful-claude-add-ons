@@ -1071,7 +1071,7 @@ def case_grading_runs_in_a_no_network_container_with_only_the_copy_mounted(tmp):
     joined = " ".join(argv)
     mounts = [argv[i + 1] for i, a in enumerate(argv) if a == "-v"]
     ok = ("--network none" in joined and "--cap-drop ALL" in joined and "no-new-privileges" in joined
-          and "--pids-limit" in joined and "--memory" in joined and "--user 1000:1000" in joined
+          and "--pids-limit 4096" in joined and "--memory" in joined and "--user 1000:1000" in joined
           and "--privileged" not in joined and "--cap-add" not in joined and "seccomp" not in joined
           and mounts == ["/r/copy:/run/repo"] and argv[-3:] == ["python3", "-m", "pytest"])
     return ok, joined

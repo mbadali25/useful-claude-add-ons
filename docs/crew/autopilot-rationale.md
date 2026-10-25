@@ -44,8 +44,8 @@ Section 1. `crew_bridge.py pending` was added by L-0636. The `-B` note: status i
 read-only to the point of not writing a bytecode cache.
 
 Section 2. The `coord` check is T-0030. `deploy` was cross-referenced to
-CONFIG.md section 20. The `sleep-summary` warning means unreported sleep
-decisions or held pings (L-0653, L-0656). The handoff `resume:` line (L-0658),
+the autopilot section of docs/crew/config-rationale.md. The `sleep-summary` warning means unreported sleep
+decisions (L-0653, L-0656; pings are no longer held while asleep). The handoff `resume:` line (L-0658),
 the one-running-goal source `goal-file` (L-0659), `goal-run` (L-0541), `claim`
 (T-0049).
 

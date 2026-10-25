@@ -18,7 +18,7 @@ _MODEL = "claude-opus-5"
 
 
 def _config_without_warn_at():
-    cfg = watch._config(budget=None)  # pylint: disable=protected-access
+    cfg = watch._config()  # pylint: disable=protected-access
     del cfg["context"]["warnAt"]
     return cfg
 
@@ -46,19 +46,25 @@ def _low_note(tmp_path, used, cfg_context):
 
 
 def test_low_context_note_fires_at_forty_percent_of_a_1m_window(tmp_path):
-    note = _low_note(tmp_path, 450_000, {"reserveTokens": 700_000, "budgetTokens": 1_000_000})
+    note = _low_note(tmp_path, 450_000, {"reserveTokens": 700_000})
 
     assert note is not None
 
 
 def test_low_context_note_is_silent_below_forty_percent_of_a_1m_window(tmp_path):
-    note = _low_note(tmp_path, 350_000, {"reserveTokens": 700_000, "budgetTokens": 1_000_000})
+    note = _low_note(tmp_path, 350_000, {"reserveTokens": 700_000})
+
+    assert note is None
+
+
+def test_budget_tokens_is_constant(tmp_path):
+    note = _low_note(tmp_path, 50_000, {"reserveTokens": 700_000, "budgetTokens": 100_000})
 
     assert note is None
 
 
 def test_low_context_note_out_of_range_warn_at_falls_back_to_forty_percent(tmp_path):
-    note = _low_note(tmp_path, 450_000, {"reserveTokens": 700_000, "budgetTokens": 1_000_000, "warnAt": 7})
+    note = _low_note(tmp_path, 450_000, {"reserveTokens": 700_000, "warnAt": 7})
 
     assert note is not None
 
@@ -74,7 +80,7 @@ def test_hook_fires_at_forty_percent_when_warn_at_is_unset(flavor, tmp_path):
     result = _flavour_run(flavor, tmp_path, 450_000)
 
     assert result.returncode == 2, result.stderr
-    assert "400,000" in result.stderr
+    assert "roughly 45% of the context budget" in result.stderr
 
 
 @watch.by_flavor_matrix
