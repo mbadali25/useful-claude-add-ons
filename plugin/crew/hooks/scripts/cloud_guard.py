@@ -1358,7 +1358,7 @@ def _unwrap(words, env, fed=None, ctx=None):
         if words[0] in _BASH_RESERVED:
             words = words[1:]
             continue
-        if head == "env":
+        if head == "env-x":
             opts, rest = _getopt(words[1:], _ENV_SHORT, _ENV_LONG,
                                  stop=("S", "split-string"))
             split = None

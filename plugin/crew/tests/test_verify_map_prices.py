@@ -36,7 +36,9 @@ def _problems(rules):
     for rule in rules:
         name = rule.get("id")
         seconds = rule.get("seconds")
-        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or (isinstance(seconds, float) and not math.isfinite(seconds)) or seconds < 0:
+        not_a_price = (isinstance(seconds, bool) or not isinstance(seconds, (int, float))
+                       or (isinstance(seconds, float) and not math.isfinite(seconds)))
+        if not_a_price or seconds < 0:
             found.append(f"{name}: seconds {seconds!r} is not a finite number >= 0")
             continue
         for stated in _WINDOWS.findall(rule.get("why", "")):
