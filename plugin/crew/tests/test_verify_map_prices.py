@@ -36,7 +36,7 @@ def _problems(rules):
     for rule in rules:
         name = rule.get("id")
         seconds = rule.get("seconds")
-        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) or seconds < 0:
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or (isinstance(seconds, float) and not math.isfinite(seconds)) or seconds < 0:
             found.append(f"{name}: seconds {seconds!r} is not a finite number >= 0")
             continue
         for stated in _WINDOWS.findall(rule.get("why", "")):
@@ -63,7 +63,8 @@ def test_a_rule_priced_below_its_stated_windows_figure_is_reported():
 
 def test_a_nan_or_infinite_seconds_is_reported_not_passed():
     rules = [{"id": "n", "seconds": float("nan"), "why": "Windows 100s (win-repo-2, d, r)."},
-             {"id": "i", "seconds": float("inf"), "why": ""}]
+             {"id": "i", "seconds": float("inf"), "why": ""},
+             {"id": "h", "seconds": 10 ** 400, "why": "Windows 100s (win-repo-2, d, r)."}]
 
     found = _problems(rules)
 
@@ -72,8 +73,8 @@ def test_a_nan_or_infinite_seconds_is_reported_not_passed():
 
 def test_the_note_paragraph_for_l_0904_starts_its_own_line():
     with open(_MAP, encoding="utf-8", errors="strict") as fh:
-        lines = fh.read().splitlines()
-    shared = [ln for ln in lines if "L-0904:" in ln and not ln.strip().startswith('"L-0904:')]
+        note = json.load(fh)["_note"]
+    shared = [ln for ln in note if "L-0904:" in ln and not ln.startswith("L-0904:")]
 
     assert shared == []
 
