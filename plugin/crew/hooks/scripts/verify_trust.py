@@ -63,6 +63,8 @@ import sys
 import tempfile
 import time
 
+import crew_common
+
 EXIT_TRUSTED = 0
 EXIT_UNTRUSTED = 10
 EXIT_CHANGED = 11
@@ -220,8 +222,9 @@ def _git(root, *args):
     env = {k: v for k, v in os.environ.items()
            if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR")}
     try:
-        proc = subprocess.run(["git", *args], cwd=root, capture_output=True, env=env,
-                              stdin=subprocess.DEVNULL, timeout=GIT_TIMEOUT, check=False)
+        proc = subprocess.run([crew_common.require_tool("git"), *args], cwd=root,
+                              capture_output=True, env=env, stdin=subprocess.DEVNULL,
+                              timeout=GIT_TIMEOUT, check=False)
     except (OSError, subprocess.SubprocessError):
         return None
     if proc.returncode != 0:
