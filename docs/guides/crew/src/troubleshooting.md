@@ -491,7 +491,7 @@ A rule that runs inside the budget and fails still exits 2, whatever was deferre
 
 ## Verify gate says UNTRUSTED, CHANGED, REMOTE CHANGED or UNKNOWN, not run
 
-`verify-gate.sh` (L-0888, crew 1.2.85). `.crew/verify.json` is text the repo's authors wrote and its
+`verify-gate.sh` (L-0888, crew 1.2.86). `.crew/verify.json` is text the repo's authors wrote and its
 `run` strings reach `eval`; the Stop gate (and `--all` and `--price`) therefore runs it only for a repo this
 machine trusts. Otherwise it prints one line, runs nothing, writes no pass record and exits 0 (`--price` exits 1, since nothing was priced):
 
