@@ -45,15 +45,27 @@ PY=$(command -v python3 || command -v python || command -v py) || {
   echo "SKIP: no python available to build test payloads" >&2; exit 0; }
 
 # L-0888: verify-gate.sh runs a repo's verify map only for a repo this machine
-# trusts, and every fixture repo below is new. A store of this run's own, with
-# the test seam verify_trust.py honours ONLY for a store named through
-# CREW_VERIFY_TRUST_FILE, trusts them without touching the real
-# ~/.claude/crew/verify-trust.json. The trust decisions themselves are tested
-# in plugin/crew/tests/test_verify_trust.py and test_verify_gate_trust.py.
+# trusts, and every fixture repo below is new. A store of this run's own (never
+# the real ~/.claude/crew/verify-trust.json), and a sitecustomize on PYTHONPATH
+# that answers "trusted" for `python3 verify_trust.py check` in a process started
+# with CREW_TEST_TRUST_ALL=1: the seam lives here and in plugin/crew/tests/
+# conftest.py, and nothing in shipped code knows it. The trust decisions
+# themselves are tested in plugin/crew/tests/test_verify_trust.py and
+# test_verify_gate_trust.py.
 _CREW_TRUST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/crew-trust.XXXXXX") || { echo "FATAL: cannot make the trust store dir" >&2; exit 1; }
 _CREW_TEST_TMP+=("$_CREW_TRUST_DIR")
-printf '{"version": 1, "repos": {}, "owners": {}, "testTrustAll": true}\n' > "$_CREW_TRUST_DIR/verify-trust.json"
+cat > "$_CREW_TRUST_DIR/sitecustomize.py" <<'CREW_TRUST_SEAM'
+import os, sys
+if (os.environ.get('CREW_TEST_TRUST_ALL') == '1'
+        and os.path.basename(sys.argv[0] if sys.argv else '') == 'verify_trust.py'
+        and sys.argv[1:2] == ['check']):
+    print('verify trust: trusted (test seam)')
+    sys.stdout.flush()
+    os._exit(0)
+CREW_TRUST_SEAM
 export CREW_VERIFY_TRUST_FILE="$_CREW_TRUST_DIR/verify-trust.json"
+export CREW_TEST_TRUST_ALL=1
+export PYTHONPATH="$_CREW_TRUST_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 # The command travels on STDIN, and that is not a style choice.
 #

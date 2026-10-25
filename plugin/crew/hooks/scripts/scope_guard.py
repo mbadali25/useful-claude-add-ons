@@ -437,13 +437,18 @@ def trust_refusal(data):
             if reason:
                 return reason
         return None
-    store = os.path.normcase(os.path.abspath(verify_trust.store_path()))
+    try:
+        store = os.path.normcase(os.path.abspath(verify_trust.store_path()))
+    except verify_trust.TrustError:
+        # A store location a repo can author (relative, from settings env) is
+        # UNKNOWN to the trust check; the guard still refuses the store's names.
+        store = None
     for target in targets(data):
         absolute = os.path.abspath(target)
         real = role_write_guard._resolve_real_target(absolute)  # pylint: disable=protected-access
         for path in (absolute, real):
             if os.path.basename(path).lower() in (TRUST_STORE_NAME, TRUST_STORE_NAME + ".lock") \
-                    or os.path.normcase(path) in (store, store + ".lock"):
+                    or (store and os.path.normcase(path) in (store, store + ".lock")):
                 return ("it writes the verify trust store, which only a person at a terminal "
                         "may change")
     return None

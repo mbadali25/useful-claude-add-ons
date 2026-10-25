@@ -731,10 +731,12 @@ def test_evaluate_a_fifo_as_the_store_is_unknown_and_does_not_hang(tmp_path, sto
     assert _code(root) == verify_trust.EXIT_UNKNOWN
 
 
-def test_approve_inside_a_claude_code_session_changes_nothing_even_with_yes(tmp_path, monkeypatch):
+@pytest.mark.parametrize("value", ["1", ""])
+def test_approve_inside_a_claude_code_session_changes_nothing_even_with_yes(
+        tmp_path, monkeypatch, value):
     root = _repo(tmp_path)
     monkeypatch.delenv(verify_trust.ENV_STORE, raising=False)
-    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("CLAUDECODE", value)
 
     code = verify_trust.main(["approve", "--root", str(root), "--yes"])
 
@@ -775,3 +777,20 @@ def test_check_a_named_verify_file_that_is_a_fifo_is_unknown_and_does_not_hang(t
     os.mkfifo(fifo)
 
     assert verify_trust.evaluate(str(root), verify_file=str(fifo)).code == verify_trust.EXIT_UNKNOWN
+
+
+def test_lock_an_owner_token_that_cannot_be_written_gives_up_and_leaves_no_lock(
+        tmp_path, monkeypatch):
+    path = str(tmp_path / "s.json")
+    real_open = open
+
+    def refuse_token(name, *args, **kwargs):
+        if str(name).endswith("token") and "w" in (args[0] if args else kwargs.get("mode", "r")):
+            raise OSError("disk full")
+        return real_open(name, *args, **kwargs)
+    monkeypatch.setattr(verify_trust, "open", refuse_token, raising=False)
+
+    with pytest.raises(verify_trust.TrustError):
+        verify_trust._Lock(path).__enter__()
+
+    assert not os.path.exists(path + ".lock")

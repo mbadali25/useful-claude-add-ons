@@ -27,6 +27,7 @@ import os
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import scope_guard
 from scope_fixtures import FLAVOUR_MATRIX, make_repo, run_hook
 
 
@@ -208,3 +209,21 @@ def test_a_runtime_built_trust_change_is_refused(flavour, repo, command):
     code, _, err = _shell(flavour, repo, command)
 
     assert (code, "SCOPE GUARD" in err) == (2, True)
+
+
+@pytest.mark.parametrize("path", ["verify-trust.json", "/home/u/.claude/crew/verify-trust.json"])
+def test_a_write_of_the_store_is_refused_when_the_store_location_env_is_relative(
+        path, monkeypatch):
+    monkeypatch.setenv("CREW_VERIFY_TRUST_FILE", "relative.json")
+
+    reason = scope_guard.trust_refusal({"tool_name": "Write", "tool_input": {"file_path": path}})
+
+    assert reason is not None
+
+
+def test_a_write_of_another_file_is_allowed_when_the_store_location_env_is_relative(monkeypatch):
+    monkeypatch.setenv("CREW_VERIFY_TRUST_FILE", "relative.json")
+
+    reason = scope_guard.trust_refusal({"tool_name": "Write", "tool_input": {"file_path": "/tmp/x.txt"}})
+
+    assert reason is None

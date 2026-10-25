@@ -2244,7 +2244,8 @@ if [ "$CI_MODE" -eq 0 ]; then
     *) exit 0 ;;
   esac
 fi
-# \035 is the record separator the matcher wrote between the two records, and
+# \035 is the record separator the matcher wrote between its records (commands,
+# unmapped, notices, count, cost, extras, cover and tree-cache; read below), and
 # \036 the field separator inside each. `sed -n 1p` used to take the first
 # NEWLINE-delimited line, which is what a command containing a newline moved.
 CMDS=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 1p | tr '\036' '\n')

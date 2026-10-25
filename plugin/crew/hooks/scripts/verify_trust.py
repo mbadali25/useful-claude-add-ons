@@ -285,8 +285,10 @@ class _Lock:
                 try:
                     with open(os.path.join(self.path, "token"), "w", encoding="utf-8") as handle:
                         handle.write(self.token)
-                except OSError:
-                    pass
+                except OSError as exc:
+                    shutil.rmtree(self.path, ignore_errors=True)
+                    raise TrustError("cannot record the store lock's owner: "
+                                     f"{exc.__class__.__name__}") from exc
                 return self
             except FileExistsError:
                 if self._stale():
@@ -639,7 +641,7 @@ def _rule_count(root):
 
 
 def _confirm(prompt, yes):
-    if os.environ.get("CLAUDECODE"):
+    if "CLAUDECODE" in os.environ:
         print("verify_trust: refused - this is running inside a Claude Code session, and trust is "
               "the owner's, given in their own terminal. Nothing was changed.", file=sys.stderr)
         return False
