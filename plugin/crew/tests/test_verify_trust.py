@@ -20,6 +20,7 @@ repo below its owner entry's --under directory; a repo with nothing to run.
 import json
 import os
 import subprocess
+import threading
 
 import pytest
 
@@ -414,3 +415,25 @@ def test_status_does_not_write_a_pin(tmp_path, store, capsys):
 
     assert store.read_text(encoding="utf-8") == before
     assert _OWNER in capsys.readouterr().out
+
+
+def test_approve_prints_a_hostile_remote_escaped(tmp_path, store, capsys):
+    root = _repo(tmp_path, remotes=["https://example.com/a\x1b[2Jb"])
+
+    _approve(root)
+
+    out = capsys.readouterr().out
+    assert "\x1b" not in out
+    assert "\\u001b" in out
+
+
+def test_update_store_two_writers_at_once_both_land(tmp_path, store):
+    roots = [_repo(tmp_path, f"repo{i}") for i in range(6)]
+    threads = [threading.Thread(target=_approve, args=(root,)) for root in roots]
+
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(json.loads(store.read_text(encoding="utf-8"))["repos"]) == 6

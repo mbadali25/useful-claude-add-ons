@@ -103,6 +103,13 @@ TRUST_MUTATIONS = (
      "    if yes:\n        return True\n    if not sys.stdin.isatty():",
      "    return True\n    if not sys.stdin.isatty():",
      _T + "test_approve_without_a_terminal_and_without_yes_changes_nothing"),
+    ("trust store: a hostile remote is printed raw in the approval prompt (L-0888)", TRUST,
+     '", ".join(json.dumps(url) for url in remotes)', '", ".join(remotes)',
+     _T + "test_approve_prints_a_hostile_remote_escaped"),
+    ("trust store: two writers do not exclude each other (L-0888)", TRUST,
+     "    with _Lock(path):\n        store = load_store(path)\n",
+     "    if True:\n        store = load_store(path)\n",
+     _T + "test_update_store_two_writers_at_once_both_land"),
     ("tooling-pr: the shell suite beside the hooks is feature work (L-0888)", CHECKER,
      '    "plugin/crew/hooks/scripts/_test/**",\n', "",
      "tests/test_tooling_pr_shell_suite.py::"

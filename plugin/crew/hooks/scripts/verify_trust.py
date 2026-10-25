@@ -530,7 +530,10 @@ def cmd_approve(args):
     print(f"runs:    {', '.join(label for label, _ in targets)}"
           + (f" ({rules} rules)" if rules is not None else ""))
     print(f"sha256:  {current}")
-    print(f"remotes: {', '.join(remotes) if remotes else '(none readable)'}")
+    # The remotes come from the repo's own config: shown escaped, so a hostile
+    # URL cannot carry terminal control sequences into the confirmation prompt.
+    print("remotes: " + (", ".join(json.dumps(url) for url in remotes)
+                         if remotes else "(none readable)"))
     if not _confirm("The gate will run the commands in this file on every Stop.", args.yes):
         return 1
 
