@@ -374,6 +374,10 @@ by `python3 plugin/crew/hooks/scripts/verify_trust.py` (`approve`, `revoke`,
 no repo file can widen it. An untrusted repo prints `UNTRUSTED, not run`, runs
 nothing and records no pass; `--ci` is exempt.
 
+Accepted residuals: `--price` opens its map, and `bash` reopens the smoke script, after the trust
+check, so a process running as you that swaps the file in that interval runs the swapped bytes (you can
+edit the store too). The scope guard is a textual tripwire, not a sandbox: the boundary is the OS user.
+
 ## Migrating and removed keys
 
 `/crew:migrate` upgrades a repo file; `python3 plugin/crew/hooks/scripts/crew_migrate.py --global`
