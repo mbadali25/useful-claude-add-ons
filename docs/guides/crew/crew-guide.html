@@ -288,18 +288,25 @@ anything itself: a write after review would stale the receipt.</p>
 <p>What is on by default, and what is not:</p>
 <ul>
 <li><strong>Off until you arm it:</strong> the scope guard (<code>scope.mode</code> is <code>off</code> unless
-  <code>/crew:init</code> set it), the cloud guard's hook (<code>guards.cloudGuard: off</code>),
-  the environment guard (<code>guards.envGuard: off</code>) and the role-write guard
-  (<code>guards.roleWrites: off</code>).</li>
-<li><strong><code>block</code> by default:</strong> the six policy guards (<code>guards.terraformApply</code>,
+  <code>/crew:init</code> set it), the cloud guard's hook, the environment guard and the
+  role-write guard. All three are <code>off</code> under the default <code>guards.profile</code>.</li>
+<li><strong><code>block</code> by default:</strong> the six policy guards (<code>terraformApply</code>,
   <code>forcePush</code>, <code>adminMerge</code>, <code>mergeGate</code>, <code>cloudDestructive</code>,
   <code>sqlDestructive</code>) and the two production guards (<code>prodDatabase</code>,
   <code>prodServer</code>, which default to <code>none</code>). The policy guards take effect only
-  once <code>guards.cloudGuard</code> is armed, except <code>mergeGate</code>, which <code>/crew:gate</code>
+  once the cloud guard is armed, except <code>mergeGate</code>, which <code>/crew:gate</code>
   reads.</li>
-<li><strong>On by default:</strong> the Stop verify gate (<code>verifyGate: true</code>) blocks when a
-  verify rule fails.</li>
 </ul>
+<p>You choose a posture with one setting, <code>guards.profile</code>: <code>off</code> (the default),
+<code>standard</code> (cloud guard <code>block</code>, role-write guard <code>report</code>, <code>adminMerge</code>
+<code>ask</code>) or <code>strict</code> (the cloud, environment and role-write guards all <code>block</code>).
+To move one guard away from the profile, set <code>guards.overrides.&lt;guard&gt;</code>, for
+example <code>guards.overrides.roleWrites: report</code>. The twelve per-guard keys
+(<code>guards.cloudGuard</code> and the rest) are no longer written; an old one still
+counts until <code>/crew:migrate</code> rewrites the layer. Each layer expands its own
+profile and overrides, and the narrower layer wins per guard.
+- <strong>On by default:</strong> the Stop verify gate (<code>verifyGate: true</code>) blocks when a
+  verify rule fails.</p>
 <p><strong>The scope guard</strong> (<code>scope.mode</code>) runs before each Write, Edit, MultiEdit and
 NotebookEdit. It refuses an edit when the active ticket has no current
 approval, or when the target is outside Touch. It also refuses a shell command
@@ -310,17 +317,17 @@ judges only the editing tools.</p>
 ticket's start (committed, staged, unstaged and untracked), so shell-made
 writes are caught after the fact. <em>What it cannot see:</em> gitignored files
 (<code>.crew/*</code> among them) and <code>.work/</code>.</p>
-<p><strong>The cloud guard</strong> (<code>guards.cloudGuard</code>, default <code>off</code>) judges Bash and
+<p><strong>The cloud guard</strong> (<code>guards.profile</code> <code>standard</code>, or <code>guards.overrides.cloudGuard</code>; default <code>off</code>) judges Bash and
 PowerShell commands: <code>terraform apply</code>, a force push, an admin merge,
 destructive cloud CLI calls, destructive SQL, and anything aimed at a declared
-production database or host. Each rule has its own <code>guards.*</code> setting. Set
+production database or host. Each rule has its own entry under <code>guards.overrides</code>. Set
 <code>report</code> first to see what <code>block</code> would cost. <em>What it cannot see:</em> a
 command hidden in an interpreter (a Python script that calls the cloud SDK, or
 code that reads the command from an environment variable), a variable or an
 encoded string. For <code>terraform apply</code> an interpreter line is refused only when
 the code or the line names the tool or builds its name. The credentials boundary that would close
 that is T-0044.</p>
-<p><strong>The environment guard</strong> (<code>guards.envGuard</code>, default <code>off</code>; L-0772) refuses a
+<p><strong>The environment guard</strong> (<code>guards.overrides.envGuard</code>, or <code>guards.profile</code> <code>strict</code>; default <code>off</code>; L-0772) refuses a
 Bash or PowerShell command whose own text prints the whole process environment
 (<code>env</code>, <code>printenv</code>, bare <code>set</code>, <code>export -p</code>, <code>cat /proc/self/environ</code>,
 <code>Get-ChildItem env:</code>) or a credential-named variable (<code>echo "$GITHUB_TOKEN"</code>,
@@ -375,8 +382,9 @@ narrow your default and never widen it.</p>
 <p>After done, autopilot ships the ticket (since crew 1.0.349). <code>autopilot.ship</code>
 set to <code>pr</code> pushes the branch and opens a pull request, then stops for a
 person to merge. Set to <code>merge</code>, the default, it also merges once every
-required check passes, or fails under a name listed exactly in
-<code>autopilot.knownFailures</code>, waiting up to <code>autopilot.ciTimeoutMinutes</code>. It
+required check passes, waiting up to 60 minutes for CI (fixed). A failing
+check is never waved through by name: the known-failures list is empty and no
+setting fills it. It
 always merges with a merge commit, never a squash, a rebase or <code>--admin</code>, and
 never through a merge queue. A <code>high</code>-risk ticket, or one whose spec names no
 risk, never merges unattended when every review was same-family (Claude
@@ -435,9 +443,8 @@ worktree:</p>
   <code>shell: "powershell"</code>. Each twin stands down on the wrong platform.</li>
 <li><code>pwsh</code> is not on Git Bash's <code>PATH</code>, and Git Bash has no <code>python3</code>. crew's
   wrappers resolve both explicitly and fail loudly when neither resolves.</li>
-<li>Long jobs follow <code>shellRoute.mode</code> (<code>auto</code>, <code>wsl</code>, <code>powershell</code> or
-  <code>gitbash</code>). <code>/crew:status</code>'s <code>shell</code> line says which route is in force and
-  why.</li>
+<li>Long jobs take an automatically chosen shell route. <code>/crew:status</code>'s
+  <code>shell</code> line says which route is in force and why.</li>
 <li>Auto-clear on native Windows with no tmux pane never types: <code>auto</code> resolves to
   <code>notify</code>, which prints a message (the <code>sendkeys</code> method was removed in crew 1.2.61).</li>
 </ul>
@@ -555,8 +562,9 @@ may arm it.</p>
 <li>The <a href="configuration-reference.md">configuration reference</a> lists every
   setting with its allowed values, default, layer and the version it arrived
   in. It is generated from the code.</li>
-<li><code>plugin/crew/CONFIG.md</code> holds the reasoning behind each setting, and ships
-  with the plugin.</li>
+<li><code>plugin/crew/CONFIG.md</code> is the generated settings table and ships with the
+  plugin. The reasoning behind each setting is in
+  <code>docs/crew/config-rationale.md</code> in the repository.</li>
 </ul>
 <p>Every write a crew script makes to either file first copies the old file to
 <code>~/.claude/crew/backups/</code> and is refused if that copy fails (a hand edit is

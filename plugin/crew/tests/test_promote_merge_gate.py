@@ -7,15 +7,16 @@ Same two directions as `test_docs_routing.py`, and the second is again the one
 that earns its keep:
 
   * The command SAYS the things the design decided -- `merge_gate.sh` is
-    routed, `enabled: false` means do nothing *at all*, `branch: null` means
-    the script resolves the branch, `preset` binds to nothing, and no live
+    routed, no `--merge-gate` flag means do nothing *at all*, an absent
+    `--merge-gate-branch` means the script resolves the branch, the preset
+    binds to nothing, and no live
     write happens without a yes at that moment.
   * The interface it names actually EXISTS. The flags are asserted by RUNNING
     `merge_gate.sh` and reading how its own argument loop answers, never by
     grepping for the strings -- the usage block is a `sed` of the script's own
     header comment, so a grep "confirms" a flag whether or not it is wired.
     The load-bearing case is the negative one: `--preset` must be REJECTED,
-    because the whole reason `bitbucket.mergeGate.preset` stays unwired is that
+    because the whole reason the Bitbucket preset stays unwired is that
     no such flag exists.
 
 Every run here is offline. `BB_CMD` is pointed at `false`, which cannot make a
@@ -36,7 +37,6 @@ import crew_fixtures
 
 _PLUGIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir)
 _PROMOTE = os.path.join(_PLUGIN, "commands", "promote.md")
-_CONFIG_MD = os.path.join(_PLUGIN, "CONFIG.md")
 # "What is enforced, and what is not" moved out of the command (L-0726, BC6);
 # the repo-only rationale file is where that claim is read now.
 _PROMOTE_RATIONALE = os.path.join(_PLUGIN, os.pardir, os.pardir, "docs", "crew", "promote.md")
@@ -153,12 +153,12 @@ def test_promote_routes_merge_gate_sh_and_stops_when_it_is_absent():
     assert "branch-restrictions" in flat
 
 
-def test_enabled_false_means_do_nothing_at_all():
+def test_no_merge_gate_flag_means_do_nothing_at_all():
     """The binding rule with an opposite: `false` may not be read as "apply the
     disabled state". `disable` DELETES branch restrictions, so that reading
     would make a shipped default strip protections from every repo that never
     asked crew for a gate -- the opposite action against a live repo from the
-    one a `false` in a config file expresses.
+    one an absent `--merge-gate` flag expresses.
 
     Its own test function on purpose. Sharing one with the routing assertion
     would let a mutation of this claim trip the earlier line, print RED, and
@@ -166,7 +166,7 @@ def test_enabled_false_means_do_nothing_at_all():
     in `sabotage.py`'s header."""
     flat = _flat(_gate_section())
 
-    assert "`enabled: false`" in flat
+    assert "No `--merge-gate` flag" in flat
     assert "do nothing at all" in flat
 
     # The prohibition itself, not merely the absence of the wrong words. The
@@ -179,15 +179,15 @@ def test_enabled_false_means_do_nothing_at_all():
     assert "not even `export`" in flat
 
 
-def test_branch_null_is_resolved_by_the_script_never_guessed_by_promote():
-    """`null` means "ask the API which branch this repo calls main", and the
+def test_absent_branch_is_resolved_by_the_script_never_guessed_by_promote():
+    """An absent branch means "ask the API which branch this repo calls main", and the
     only thing entitled to answer is `merge_gate.sh`. A promote that
     substituted `main` would be wrong silently on a `master` or Gitflow
     `develop` repo: the gate would look configured and watch a branch nobody
     merges into."""
     flat = _flat(_gate_section())
 
-    assert "`null` (the default)" in flat
+    assert "without `--merge-gate-branch` pass no `--branch`" in flat
     assert ".mainbranch.name" in flat
 
     # The guess is named and forbidden. Without this the table above reads as
@@ -253,7 +253,7 @@ def test_the_two_write_subcommands_preview_differently():
 
 def test_no_live_write_happens_without_a_yes_at_that_moment():
     """The standing rule, and the sentence that stops config from being read as
-    permission. `enabled: true` authorises promote to look; it authorises no
+    permission. `--merge-gate` authorises promote to look; it authorises no
     write."""
     flat = _flat(_gate_section())
 
@@ -297,7 +297,7 @@ def test_the_scripts_three_non_failure_outcomes_are_relayed_separately():
 
 def test_the_merge_gate_is_listed_as_not_enforced():
     """No hook fires on `merge_gate.sh`, and `promote-gate.sh` does not read
-    `bitbucket.mergeGate` at all. A section that reads like a gate while
+    the merge gate at all. A section that reads like a gate while
     nothing enforces it is the gap that part of promote.md exists to state."""
     not_enforced = _read(_PROMOTE_RATIONALE).split("**NOT enforced", 1)
     assert len(not_enforced) == 2
@@ -310,48 +310,31 @@ def test_the_merge_gate_is_listed_as_not_enforced():
 # ------------------------------------------------------ the config half --
 
 
-def test_config_md_says_what_each_default_means():
-    """§9's rule: whoever writes the first consumer decides what the default
-    *means*, and must say so in the same change. That is the step `docs.theme`
-    skipped, and undoing it cost a one-shot migration."""
-    section = _read(_CONFIG_MD).split("## 8. `bitbucket.mergeGate`", 1)[1]
-    flat = _flat(section.split("\n## ", 1)[0])
+def test_the_merge_gate_values_are_fixed_constants():
+    """L-0725: the five `mergeGate` keys left the config shape. The gate is off
+    unless the person asks on the command line, the branch is the script's to
+    resolve, and the preset is the script's hardcoded one."""
+    shape = crew_config.default_config()
 
-    assert "`enabled: false` means promote does nothing at all" in flat
-    assert "`branch: null` means promote passes no `--branch`" in flat
-    assert "`preset: \"standard\"` means nothing today" in flat
-
-    # The reason `preset` waits, which is the part a later reader will want:
-    # adding the flag is a change to another marketplace entry.
-    assert "separate marketplace entry" in flat
-
-    # And the still-true sentence this subsection replaced must survive: the
-    # SCRIPT reads no crew config. The command does the reading.
-    assert "does not read crew config" in flat
+    assert crew_state.MERGE_GATE_ENABLED is False
+    assert crew_state.MERGE_GATE_BRANCH is None
+    assert crew_state.BITBUCKET_MERGE_GATE_PRESET == "standard"
+    assert "mergeGate" not in shape.get("bitbucket", {})
+    assert "mergeGate" not in shape.get("github", {})
 
 
-def test_the_three_keys_still_resolve_independently():
-    """The config half of the same claim. All three are settable in both
-    layers and merge independently -- a collapse would make the rules above
-    undeliverable however clearly promote.md states them."""
-    for dotted in ("bitbucket.mergeGate.enabled",
-                   "bitbucket.mergeGate.branch",
-                   "bitbucket.mergeGate.preset"):
-        assert crew_config.is_global_path(dotted), dotted
+def test_enabled_is_constant():
+    """An old `mergeGate.enabled: true` (or a branch or preset) left in a config
+    file switches nothing on: promote's merge-gate step names no config key, and
+    runs only on `--merge-gate`."""
+    flat = _flat(_read(_PROMOTE))
 
-    defaults = crew_config.default_config()["bitbucket"]["mergeGate"]
-    assert defaults == {"enabled": False, "branch": None, "preset": "standard"}
-
-    merged = crew_state.merge_defaults(
-        crew_config.default_config(),
-        {"bitbucket": {"mergeGate": {"enabled": True, "branch": "release/*"}}})
-    gate = merged["bitbucket"]["mergeGate"]
-
-    assert gate["enabled"] is True
-    assert gate["branch"] == "release/*"
-    # Untouched by the override, which is what makes "a value means
-    # `--branch <value>`" a different case from the default.
-    assert gate["preset"] == "standard"
+    assert "ONLY when I ask for it on the command line" in flat
+    assert "--merge-gate <github|bitbucket>" in flat
+    for key in ("mergeGate.enabled", "mergeGate.branch", "mergeGate.preset"):
+        assert f"bitbucket.{key}`" not in flat
+        assert f"github.{key}`" not in flat
+    assert "inert" in flat
 
 
 # ------------------------------- what the script actually accepts, by running --
@@ -388,8 +371,8 @@ def test_merge_gate_sh_accepts_every_flag_promote_passes(subcommand, flags):
 def test_merge_gate_sh_rejects_preset_which_is_why_the_key_stays_unwired(
         subcommand):
     """The assertion the whole `preset` decision rests on. If a `--preset` flag
-    ever appears, this test goes red and CONFIG.md §8's reason for leaving the
-    key unbound stops being true in the same run -- which is the only way that
+    ever appears, this test goes red and the reason for leaving the
+    preset unbound stops being true in the same run -- which is the only way that
     reason gets re-examined rather than inherited.
 
     Reached before any transport: both argument loops answer an unknown option

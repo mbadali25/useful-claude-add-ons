@@ -35,9 +35,10 @@ ROUTE = ("crew route: the user's prompt asks for review on T-1 (named in the pro
          "checks still decide; if the user plainly meant something else, ask.")
 
 
-def _repo(tmp_path, armed=None, inject=True):
+def _repo(tmp_path, armed=None, inject=None):
     config = None if armed is None else {"route": {"enabled": armed}}
-    root = make_repo(tmp_path, subsystems=SUBSYSTEMS, config=config, inject=inject)
+    extra = {} if inject is None else {"inject": inject}
+    root = make_repo(tmp_path, subsystems=SUBSYSTEMS, config=config, **extra)
     (root / ".work" / "tickets" / "T-1").mkdir(parents=True)
     return root
 
@@ -175,12 +176,12 @@ def test_codex_harness_never_routes(tmp_path, flavour):
 
 @needs_bash
 @pytest.mark.parametrize("flavour", FLAVOURS)
-def test_inject_false_emits_nothing_even_armed(tmp_path, flavour):
+def test_inject_is_constant(tmp_path, flavour):
     root = _repo(tmp_path, armed=True, inject=False)
 
     out = _run(flavour, tmp_path, root, _raw(root, "review T-1"))
 
-    assert out == ""
+    assert ROUTE in out
 
 
 @needs_bash

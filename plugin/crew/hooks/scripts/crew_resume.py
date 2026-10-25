@@ -658,7 +658,7 @@ def stuck_path(root, session):
 
 def _mark_stuck(root, session):
     """Best effort: a marker that cannot be written leaves _compact_was_manual's
-    os.access check as the only refusal (an accepted risk, CONFIG.md §14a)."""
+    os.access check as the only refusal (an accepted risk, docs/crew/config-rationale.md)."""
     path = stuck_path(root, session)
     tmp = f"{path}.{os.getpid()}.tmp"
     text = json.dumps({"at": int(time.time())})

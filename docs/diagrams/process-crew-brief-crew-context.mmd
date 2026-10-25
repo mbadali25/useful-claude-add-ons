@@ -4,13 +4,15 @@
 %% Embed: none
 %% Part of process-crew-brief.mmd (the overview, which keeps the re-anchoring history).
 %% crew_context.py:1149 no .crew/ directory -> emits nothing; :124-135 reads
-%%   crew.json else config.json; :1159-1165 inject:false -> incident banner and inert-settings line only (SessionStart only);
+%%   crew.json else config.json; (L-0725: the memory.inject branch that sat here is gone, injection is always on);
 %%   :1019-1034 branch@HEAD, incident banner, codemap-behind line; :1035 stale
 %%   verdict + archive (_handoff_verdict :682); :1042-1043 auto-resume decision
 %%   (resume_decision :705, crew_resume.decide :726; `off` unless armed and source is
 %%   clear/compact); :1062-1065 startup -> pointer + next action; :1066-1077 other
 %%   sources -> full note, next action first, then the auto-resume line; :1078-1079 no
 %%   note but a resume line -> that line alone; :1253 JSON additionalContext (emit :1247, LF stdout, :1251-1252).
+%% Re-drawn for L-0725: memory.inject was removed (crew_state.MEMORY_INJECT is True and fixed), so the inject decision and the
+%%   banner-only branch are no longer drawn. The remaining :NNNN citations in this diagram predate that edit and were not re-measured.
 %% L-0727 slice 3 changed crew_context.py only above these lines (_resume_typing_cmd / start_resume_typing lost their
 %%   ps1 branch, :737-783): the typing sender is not a box here, so no node changed; the lines below :783 shifted by that edit's -7.
 %% Stale rule: crew_state.py:584 (72h / 3 commits), :791-870 (handoff_staleness, which also compares the noted branch), archived to
@@ -25,9 +27,7 @@ flowchart TB
         CC --> cc1{".crew/ directory?<br/>:1149"}
         cc1 -- no --> ccx([emit nothing])
         cc1 -- yes --> cc2["read crew.json else config.json<br/>:124-135"]
-        cc2 --> cc3{"memory.inject?<br/>:1159"}
-        cc3 -- off --> cc4[incident banner<br/>+ inert-settings line only]
-        cc3 -- on --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:1019-1034"]
+        cc2 --> cc5["branch@HEAD, incident banner,<br/>codemap-behind line<br/>:1019-1034"]
         cc5 --> stale{"handoff stale?<br/>72h / 3 commits / branch"}
         stale -- yes --> arch["archive to .crew/handoffs/<br/>never delete<br/>crew_state.py:722, :927"]
         stale -- no --> cc6
@@ -43,4 +43,3 @@ flowchart TB
 
     ptr --> out(["additionalContext JSON<br/>:1253"])
     full --> out
-    cc4 --> out

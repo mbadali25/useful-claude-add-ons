@@ -89,6 +89,7 @@ import sys
 import urllib.parse
 
 import crew_common
+import crew_state
 
 KINDS = ("files", "obsidian", "jira", "sdp")
 COULD_NOT_TELL = "could not tell"
@@ -107,7 +108,7 @@ UNREADABLE = "could not read"
 TAKEN = "id taken"
 
 # The ticket statuses a lifecycle command moves a ticket to, in order, and the
-# `obsidian.columns` key of the lane each one lands in. Table-driven on
+# `crew_state.OBSIDIAN_COLUMNS` key of the lane each one lands in. Table-driven on
 # purpose: a new status is a row here, not a branch in the code. A status
 # absent from this table maps to no lane and is refused with nothing written.
 # T-0037 added three rows off the linear order: `needs-owner` is open and waits
@@ -153,14 +154,6 @@ def _crew_word_hint(status):
     return f"; the crew word is {word}" if word else ""
 
 
-DEFAULT_COLUMNS = {
-    "backlog": "Backlog",
-    "ready": "Ready",
-    "inProgress": "In Progress",
-    "review": "Review",
-    "done": "Done",
-}
-DEFAULT_BOARD = "Board.md"
 WRITE_TRIES = 3
 INDEX_REL = ".work/INDEX.md"
 
@@ -218,12 +211,10 @@ def _settings(kind, side):
     block = dict(side["blocks"].get(kind) or {})
     if kind != "obsidian":
         return block
-    settings = {"vaultPath": None, "boardDir": None, "board": DEFAULT_BOARD}
+    settings = {"vaultPath": None, "boardDir": None}
     settings.update(block)
-    columns = dict(DEFAULT_COLUMNS)
-    if isinstance(block.get("columns"), dict):
-        columns.update(block["columns"])
-    settings["columns"] = columns
+    settings["board"] = crew_state.OBSIDIAN_BOARD
+    settings["columns"] = dict(crew_state.OBSIDIAN_COLUMNS)
     if not settings.get("vaultPath") and side["memory"].get("vaultPath"):
         settings["vaultPath"] = side["memory"]["vaultPath"]
         settings["vaultPathFrom"] = "memory.vaultPath"
@@ -232,7 +223,8 @@ def _settings(kind, side):
 
 def _effective(side):
     """`{field: (value, where from)}` for the obsidian target a file yields --
-    vault, boardDir, board and lane names, defaults applied.
+    vault and boardDir, defaults applied. The board file name and the lane names
+    are constants, so two files cannot disagree on them.
 
     A value is None when the file yields none. An unset boardDir is the vault
     root, so it is `""` once the file yields a vault.
@@ -246,9 +238,7 @@ def _effective(side):
     elif board_dir is None and vault is not None:
         board_dir = ""
     return {"vaultPath": (vault, settings.get("vaultPathFrom", "obsidian.vaultPath")),
-            "boardDir": (board_dir, "obsidian.boardDir"),
-            "board": (settings.get("board"), "obsidian.board"),
-            "columns": (settings["columns"], "obsidian.columns")}
+            "boardDir": (board_dir, "obsidian.boardDir")}
 
 
 def _effective_disagreements(first, second):
@@ -256,7 +246,7 @@ def _effective_disagreements(first, second):
     defaults included. A value one file yields and the other does not is a
     disagreement too: resolve would otherwise pick whichever file came first."""
     problems, mine, theirs = [], _effective(first), _effective(second)
-    for field in ("vaultPath", "boardDir", "board", "columns"):
+    for field in ("vaultPath", "boardDir"):
         (one, one_from), (two, two_from) = mine[field], theirs[field]
         if one != two:
             problems.append(f"{first['file']} yields obsidian {field} {one!r} ({one_from}), "
@@ -919,11 +909,11 @@ def parse_board(text, columns):
     for position, (name, index) in enumerate(headings):
         stop = headings[position + 1][1] if position + 1 < len(headings) else end
         lanes.append({"name": name, "heading": index, "end": stop})
-    for key in sorted(set(LANE_FOR_STATUS.values()), key=list(DEFAULT_COLUMNS).index):
+    for key in sorted(set(LANE_FOR_STATUS.values()), key=list(crew_state.OBSIDIAN_COLUMNS).index):
         name = columns.get(key)
         count = sum(1 for lane in lanes if lane["name"] == name)
         if count == 0:
-            return None, f"lane {name!r} (obsidian.columns.{key}) is not on the board"
+            return None, f"lane {name!r} (the {key} lane) is not on the board"
         if count > 1:
             return None, f"lane {name!r} appears {count} times on the board"
     board = {"lines": lines, "lanes": lanes, "columns": dict(columns)}
@@ -932,7 +922,7 @@ def parse_board(text, columns):
     markers = len(_complete_markers(board))
     if markers != 1:
         what = "no **Complete** marker" if not markers else f"{markers} **Complete** markers"
-        return None, f"lane {columns['done']!r} (obsidian.columns.done) has {what}"
+        return None, f"lane {columns['done']!r} (the done lane) has {what}"
     return board, None
 
 

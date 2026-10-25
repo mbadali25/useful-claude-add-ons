@@ -44,9 +44,8 @@
 #     types nothing either; `auto` falls back to plain notify.
 #   - the target is uniquely identified FROM THAT PROCESS: a tmux pane whose
 #     pid is the session's process or an ancestor of it, or exactly one X11
-#     window owned by an ancestor and hosting no other terminal (a
-#     windowTitle is a fallback that refuses on zero or several matches, and
-#     whenever another session is live). The walk refuses when it passes
+#     window owned by an ancestor and hosting no other terminal. The walk
+#     refuses when it passes
 #     through another Claude Code session. wtype cannot identify anything and
 #     is refused.
 #
@@ -239,7 +238,7 @@ FORCE_ARG=()
 [ "$FORCE" -eq 1 ] && FORCE_ARG=(--force)
 # One value per line, read with mapfile: an empty field must stay a line (tab
 # is IFS whitespace, and a tab-separated read once shifted every field after
-# an empty windowTitle). CR stripped first -- python on Windows writes \r\n.
+# an empty reason). CR stripped first -- python on Windows writes \r\n.
 PLAN=$("$PY" "$(crew_native_path "$DIR/crew_autocycle.py")" plan --root "$(crew_native_path "$PWD")" --session "$SESSION" "${FORCE_ARG[@]}" 2>/dev/null | tr -d '\r')
 mapfile -t P <<< "$PLAN"
 if [ "${#P[@]}" -lt 8 ]; then

@@ -33,7 +33,7 @@ column. Run it even when nothing needs changing.
   lose a key this walkthrough never asked about.
 - **Repo facts do not go in this file, and as of 0.16.0 they do NOTHING if
   they are there.** `tracker`, `jira.project`, `obsidian.boardDir`, `graph.*`,
-  `platform.*`, `verify`, `codemap`, `tier` and `roles` describe one
+  `platform.*`, `verify` and `codemap` describe one
   repository. The script refuses them on the write path and the resolver
   filters them out on the read path — **a repo-only key in the global file
   takes effect nowhere.** That is a behaviour change: until this release they
@@ -164,7 +164,7 @@ Three things to say before writing any of it:
   rarely elsewhere.** That may be exactly what the user wants. It must not be
   something they discover from a review log.
 - **The planner's `alternate` is an alternate, not a replacement.** The planner
-  works from an abstracted brief and `secondOpinion.sendsCode` stays `false`.
+  works from an abstracted brief, and second opinions never send code.
 - **The `-code` suffix on Kimi 2.7 is load-bearing.** The display name is
   "Kimi 2.7"; the value that goes in the config is `kimi-k2.7-code`. Bare
   `kimi-k2.7` is rejected by the Copilot CLI.
@@ -176,8 +176,8 @@ fallback which fires is always announced: a review that quietly ran on the
 fallback looks identical to one that ran on the pin, and the difference matters
 most exactly when the pin was chosen to get a different family onto the diff.
 
-**`secondOpinion`** — the design partner CLI, its key env var, and
-`sendsCode`, which is a standing decision by the person, not by a project.
+**`secondOpinion`** — the design partner CLI and its model. The key env var is
+fixed at `GEMINI_API_KEY`, and second opinions never send code.
 
 **`notify`** — the person's own chat, not the project's.
 
@@ -203,10 +203,10 @@ before T-0050 says `"mode": "off"`) holds the global value down. Removing it is
 the owner's call, one key at a time: `crew_config.py --root <repo> --unset
 autopilot.mode --repo`, then `--apply` after a yes.
 
-**`shellRoute.mode` and `shellRoute.distro`**, on native Windows only. Which
-shell is fast is a fact about the machine. Run `crew_shell.py probe --write`,
-and `measure --write` when the state is `usable`, then offer `auto` (default),
-`wsl`, `powershell` or `gitbash` with the numbers. On `not-installed`, print the
+**The shell route**, on native Windows only. Which shell is fast is a fact
+about the machine, and the route is automatic (there is no setting). Run
+`crew_shell.py probe --write`, and `measure --write` when the state is
+`usable`, then report the numbers. On `not-installed`, print the
 `wsl --install -d Ubuntu` recommendation and never run it. See "Choosing the
 shell route on Windows" in `platform.md`.
 
@@ -255,8 +255,7 @@ not a bug to route around.
 - The machine layer did not touch any `.crew/config.json`; a repo change is
   the menu's repo layer, through `--set --repo`. The repo layer still wins over
   everything written here, except for the ratcheted keys.
-- It did not change `schema`, `tier` or `roles` anywhere — those are repo
-  facts.
+- It did not change `schema` anywhere — that is a repo fact.
 - If any per-role pin changed, run `--models` once more and read the resulting
   table back. Name which fallbacks are now armed, whether the family guard is
   barring anything, and — always alongside the bars — the `qa.order`

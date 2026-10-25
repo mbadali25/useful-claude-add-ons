@@ -1,6 +1,9 @@
 anchor: useful-claude-add-ons@9ba355d7c
 verified: 2026-10-20
 
+**Targeted check at `c0e582fbe` (2026-10-22, L-0725); anchor NOT moved.** Re-measured: the `DEV_PROVIDERS` / `QA_PROVIDERS` definition and re-export lines (`crew_state.py:1267-1268`, `crew_config.py:132-133`); L-0725 moved both files. Nothing under `plugin/localgpu/` changed. Nothing else in this note was
+re-verified: a claim here is as of this note's own anchor.
+
 # localgpu
 
 Local models on the user's own GPU via Ollama. Two halves that never call
@@ -510,9 +513,9 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:130-131` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:132-133` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1450-1451` on T-0028 at `c43a54c1`, where both
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1267-1268` (re-measured at `c0e582fbe`; `:1450-1451` on T-0028 at `c43a54c1`), where both
   tuples end in `"kimi"`, so the literal tuples localgpu quotes at `:33-34` are stale there
   (`TODO.md`'s T-0028 item (f)); `:1440-1441` before T-0028, since T-0010's four `AUTOPILOT_DEFAULTS`
   lines (T-0010-solo's merge of `67caa4b8`; `:1432-1433` at `65bb3330`; `:1430-1431` on main before
@@ -1213,7 +1216,7 @@ mentions in the re-derivation record are history and were left as written. Nothi
 `git diff --name-only c817782f 926443d8` is T-0010's round-3 fix (`caabb005`), the BUDGETS.md
 count, the version step-back and re-set, and this refresh. Of the paths this note cites, `plugin/crew/README.md`, `plugin/crew/CONFIG.md` and
 `plugin/crew/BUDGETS.md` changed: README two lines rewritten in place (`:792`, `:818`),
-CONFIG.md's §20 one-writer paragraph grew six lines, and `BUDGETS.md:11`'s count moved
+docs/crew/config-rationale.md one-writer paragraph grew six lines, and `BUDGETS.md:11`'s count moved
 18,917 -> 18,923 on the same line. No citation this note makes moved (checked with `difflib`
 over every cited path). Nothing was executed.
 
@@ -1362,7 +1365,7 @@ cites sits above the first changed line (`:2567`). No citation moved. Nothing wa
 
 `7d473f24` merges origin/main `f54af3fa` (T-0072 landed as crew 1.0.51: `crew_autopilot.py`,
 `commands/autopilot.md`, `crew_state.py`'s line-neutral `AUTOPILOT_DEFAULTS` hunk at `:1086-1090`,
-`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `CONFIG.md` §20, `README.md`, its
+`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `docs/crew/config-rationale.md`, `README.md`, its
 tests, `sabotage_autopilot.py`, `.crew/verify.json` rule 27's `seconds` and `why`; its notes
 anchored `9631c707`); `07354a39`, `df419a55`, `7a206c8e`, `4112498e`, `1b31ed2f` and `7ef3c4f1` are
 T-0075's review-round-4 steps 11-16 (`crew_config.py`, `crew_config_files.py`,

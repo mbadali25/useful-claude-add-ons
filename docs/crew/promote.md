@@ -6,98 +6,56 @@ The command keeps a short form of each rule; where the two differ in length, thi
 
 ## The change request
 
-This step runs inside gate 1, and only for `production`. It reads
-`change.requireForProduction` through `/crew:config`, not out of
-`.crew/config.json`, because a machine-global file can set it and the repo file
-would not show that.
-
-**`false` is the shipped default and means this section does not exist.** No
-`sdp_*` call, no Jira call, no read of `.work/changes/`, nothing to report. Say
-nothing and move on. A repo that never asked for change control keeps promoting
-exactly as it did before schema 7.
-
-Everything below is what `true` means.
-
-**A change in an APPROVED state, for THIS sha.** Not "a change exists" - not "a
-change was filed for this work" - a change whose record names the sha you are
-about to deploy and whose state the backend currently reports as approved. The
-sha goes into the change when `/crew:change new` files it; if the change you
-find does not carry it, that is a different change and this is a stop.
-
-**Read the state from the backend, every time** - never from the local cache,
-and never from this session's memory of having looked. `.work/changes/<id>.md`
-records what was FILED and cannot know what a change board did afterwards. A
-cached `approved` is a claim about the past. Route through `/crew:change status
-<id>`, which reads the backend and says so.
-
-**"Could not read the state" is a STOP, not a pass.** The desk is down, the MCP
-tools are not connected, the id resolves to nothing: each of those is an
-unknown, and an unknown here must not collapse into "no requirement found, carry
-on". Report it as **not checked**, name what could not be read, and stop - the
-same shape as an absent `rollback` key and as `guards.mergeGate` at `block`.
-This is the collapse this repo keeps rediscovering and it would be at its most
-expensive here, because the thing it waves through is a production deploy.
-
-**Outside the window is a stop.** `Scheduled Start Time` and `Scheduled End
-Time` on the change are the approved change window, not documentation of an
-intention. Before gate 2, compare the current time against them and refuse
-outside. Say the window, say the current time, and say which side of it you are
-on - "the window closed 40 minutes ago" is actionable and "outside the window"
-is not. A change board approved a change at a time; deploying at another time
-is deploying something they did not approve.
-
-Under promote's own `--dry-run`, print which change would be checked and run
-**nothing**.
-
-## The merge gate
-
 This step runs inside gate 1, before anything deploys. Two providers, one
-shape: Bitbucket reads `bitbucket.mergeGate.enabled`, `.branch` and `.preset`,
-GitHub reads `github.mergeGate.enabled` and `.branch` (there is no `preset` -
-see below). Both are documented in `plugin/crew/CONFIG.md` §8. Read them
-through `/crew:config` rather than out of `.crew/config.json`, because a
-machine-global file can set any of them and the repo file would not show it.
+shape: Bitbucket and GitHub. It runs only when it is asked for on the command
+line: `--merge-gate <github|bitbucket>`, with an optional
+`--merge-gate-branch NAME`. No config key switches it on. The settings that once
+did (`bitbucket.mergeGate.*`, `github.mergeGate.*`) were removed by L-0725, and a
+block left in a config file is inert. The branch is fixed at `null` unless
+`--merge-gate-branch` is given, and the Bitbucket preset is fixed at
+`"standard"` (`crew_state.MERGE_GATE_ENABLED`, `MERGE_GATE_BRANCH`,
+`BITBUCKET_MERGE_GATE_PRESET`). See `docs/crew/config-rationale.md`, "Removed
+keys and migration".
 
 **Route every invocation through `/crew:gate <disable|enable|status>
 <github|bitbucket>`.** Promote does not compose `merge_gate.sh` commands of its
-own. That command owns the workflow - it reads `guards.mergeGate` before
-anything else, it stops when the provider's skill is missing, and it knows the
-two scripts' argument surfaces are not interchangeable. Promote deciding for
-itself would be a second implementation of a sequence whose whole risk is the
-order of its steps.
+own. That command owns the workflow - it reads `guards.overrides.mergeGate`
+before anything else, it stops when the provider's skill is missing, and it
+knows the two scripts' argument surfaces are not interchangeable. Promote
+deciding for itself would be a second implementation of a sequence whose whole
+risk is the order of its steps.
 
-**`guards.mergeGate` decides whether any of this may happen at all, and it
-ships as `block`.** An `enabled: true` in `bitbucket.mergeGate` or
-`github.mergeGate` says this repo HAS a gate; `guards.mergeGate` says whether
-crew may touch it. When it is `block`, report the gate's state as
-**not checked** and say which key refused - never as checked and fine. That
-collapse is the bug this repo keeps rediscovering.
+**`guards.overrides.mergeGate` decides whether any of this may happen at all,
+and it ships as `block`.** The `--merge-gate` flag says this run wants the gate
+handled; the guard says whether crew may touch it. When it is `block`, report the
+gate's state as **not checked** and say which guard refused - never as checked
+and fine. That collapse is the bug this repo keeps rediscovering.
 
-**`enabled: false` - the shipped default - means do nothing at all.** No
-`merge_gate.sh` subcommand, no `/crew:gate` invocation, no Bitbucket or GitHub
-API call, not even `export`. It does **not** mean "apply the disabled preset":
+**No `--merge-gate` flag means do nothing at all.** No `merge_gate.sh`
+subcommand, no `/crew:gate` invocation, no Bitbucket or GitHub API call, not even
+`export`. It does **not** mean "apply the disabled preset":
 `disable` deletes branch restrictions, and that is the opposite action against
-a live repo from the one a `false` in a config file expresses. A repo that
+a live repo from the one an absent flag expresses. A repo that
 never asked crew for a gate keeps whatever restrictions its owner made by hand.
 There is nothing to report in this case - say nothing and move to gate 2.
 
-Everything below is what `enabled: true` means.
+Everything below is what `--merge-gate` means.
 
 **The script belongs to another marketplace entry. Reference it, never
 reimplement it.** The gate is `skills/bitbucket/scripts/merge_gate.sh` from the
 `bitbucket` skill, or `skills/github/scripts/merge_gate.sh` from the `github`
 skill, and crew bundles neither. If the script for the provider this repo uses
 is not on this machine, this is a **stop** - the same shape as an absent
-`rollback` key, not a warning to walk past. Say "`<provider>.mergeGate.enabled`
-is true and the `<provider>` skill is not installed, so the merge gate could
-not be checked", name the two fixes (install the skill, or set
-`enabled: false`), and stop. Do not hand-roll a `branch-restrictions` or a
+`rollback` key, not a warning to walk past. Say "`--merge-gate <provider>` was
+given and the `<provider>` skill is not installed, so the merge gate could
+not be checked", name the two fixes (install the skill, or drop the flag), and
+stop. Do not hand-roll a `branch-restrictions` or a
 `branches/*/protection` API call, and do not let "could not check" become
 "checked, and fine".
 
 **`branch` binds to one flag, and `null` means ask:**
 
-| `bitbucket.mergeGate.branch` | What promote passes |
+| Branch (fixed at `null`) | What promote passes |
 |---|---|
 | `null` (the default) | no `--branch` at all - the script resolves `.mainbranch.name` from the Bitbucket API (`skills/bitbucket/scripts/merge_gate.sh:198-202`) |
 | a string, e.g. `"release/*"` | `--branch release/*`, verbatim |
@@ -123,18 +81,17 @@ all, and there is no GitHub `preset` for a config key to select.
 `merge_gate.sh` has no `--preset` flag. The preset a bare `enable` applies is
 one hardcoded JSON literal, `PRESET` at
 `skills/bitbucket/scripts/merge_gate.sh:65`, and no flag selects it. So
-`bitbucket.mergeGate.preset` changes nothing today whatever it holds. Whenever
+the Bitbucket preset constant changes nothing today whatever it holds. Whenever
 you show an `enable` command, say that in the same breath - otherwise the
-`"standard"` sitting in the config reads as a choice that was honoured.
-`CONFIG.md` §8 records why the key is left unwired rather than bound to that
-literal.
+`"standard"` reads as a choice that was honoured. The preset is a fixed constant
+rather than a key bound to that literal.
 
 ### Nothing changes without a yes at that moment
 
-**Config is intent. It is not consent.** `enabled: true` authorises promote to
-look; it authorises no write. Before any invocation that changes the live repo,
-print the exact command - script path, subcommand, workspace, repository and
-every flag resolved from config - and wait. Do not proceed on silence. This is
+**Asking for the gate is intent. It is not consent.** `--merge-gate` authorises
+promote to look; it authorises no write. Before any invocation that changes the
+live repo, print the exact command - script path, subcommand, workspace,
+repository and every flag resolved from the command line - and wait. Do not proceed on silence. This is
 the standing rule and it does not move for a promotion that is otherwise green.
 
 The two write subcommands do not preview the same way, and the difference is
@@ -223,10 +180,10 @@ and that the soak was really waited out. The same goes for the two gate-1/gate-2
 checks added above: the hook cannot reconcile the source tree against the live
 artifact, and it cannot tell a green run from a green run that skipped its
 deploy job. **The Bitbucket merge gate section is prose too** - no hook fires on
-`merge_gate.sh` or on `/crew:gate`, nothing checks that an `enabled: true` was
+`merge_gate.sh` or on `/crew:gate`, nothing checks that a `--merge-gate` request was
 honoured, and
-`promote-gate.sh` does not read `bitbucket.mergeGate` or `github.mergeGate` at
-all. `guards.mergeGate` is not prose - it is read by `/crew:gate` from
+`promote-gate.sh` does not read the merge-gate request at
+all. `guards.overrides.mergeGate` is not prose - it is read by `/crew:gate` from
 `crew_config.py --guard mergeGate`, and at `block` that command refuses. But
 nothing forces promote to ROUTE through `/crew:gate`; that part is prose too.
 **The change-request section is prose in exactly the same way, and by the same

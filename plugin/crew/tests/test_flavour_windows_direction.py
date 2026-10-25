@@ -76,36 +76,39 @@ class _Counter(http.server.BaseHTTPRequestHandler):
         _Counter.hits.append(self.rfile.read(length))
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"{}")
+        self.wfile.write(b'{"ok": true}')
 
     def log_message(self, *_args):  # pylint: disable=arguments-differ
         pass
 
 
-@pytest.fixture(name="teams")
-def _teams():
+BOT_TOKEN = "123456789:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+
+
+@pytest.fixture(name="bot")
+def _bot():
     _Counter.hits = []
     server = http.server.HTTPServer(("127.0.0.1", 0), _Counter)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    yield f"http://127.0.0.1:{server.server_address[1]}/hook"
+    yield f"http://127.0.0.1:{server.server_address[1]}"
     server.shutdown()
 
 
 def _notify_repo(tmp_path):
-    return _crew_repo(tmp_path, {"notify": {"provider": "teams"}})
+    return _crew_repo(tmp_path, {"notify": {"provider": "telegram", "chatId": "4242"}})
 
 
 def _notify_home(root):
     """HOME / USERPROFILE for the notify hooks: a fixture home whose
-    machine-global `~/.claude/crew/config.json` names `urlEnv` -- the only
+    machine-global `~/.claude/crew/config.json` names `tokenEnv` -- the only
     layer crew_notify honours it from (GLOBAL_ONLY_KEYS) -- so no case reads
     the real `~/.claude`, and none passes only because the machine has one."""
     home = pathlib.Path(root).parent / "notify-home"
     crew = home / ".claude" / "crew"
     crew.mkdir(parents=True, exist_ok=True)
     (crew / "config.json").write_text(
-        json.dumps({"notify": {"urlEnv": "CREW_TEST_TEAMS_URL"}}), encoding="utf-8")
+        json.dumps({"notify": {"tokenEnv": "CREW_TEST_TG_TOKEN"}}), encoding="utf-8")
     return {"HOME": str(home), "USERPROFILE": str(home)}
 
 
@@ -118,42 +121,43 @@ def _notification(root, message="Claude needs your permission", prompt="p-1",
 
 def _both_notify(root, url, payload, words=None):
     for flavour in ("sh",):
-        done = _run(flavour, "notify", root, payload, ("hook",), CREW_TEST_TEAMS_URL=url,
+        done = _run(flavour, "notify", root, payload, ("hook",),
+                    CREW_NOTIFY_TELEGRAM_BASE=url, CREW_TEST_TG_TOKEN=BOT_TOKEN,
                     **_notify_home(root))
         if words is not None:
             words.append(done.stdout.decode("utf-8", "replace").strip())
     return len(_Counter.hits)
 
 
-def test_one_notification_sends_one_ping(tmp_path, teams):
+def test_one_notification_sends_one_ping(tmp_path, bot):
     root = _notify_repo(tmp_path)
     words = []
 
-    assert (_both_notify(root, teams, _notification(root), words), words) == (1, ["sent"])
+    assert (_both_notify(root, bot, _notification(root), words), words) == (1, ["sent"])
 
 
-def test_a_second_different_notification_is_its_own_event(tmp_path, teams):
+def test_a_second_different_notification_is_its_own_event(tmp_path, bot):
     root = _notify_repo(tmp_path)
-    _both_notify(root, teams, _notification(root))
+    _both_notify(root, bot, _notification(root))
 
-    assert _both_notify(root, teams, _notification(root, "Permission needed", prompt="p-2")) == 2
+    assert _both_notify(root, bot, _notification(root, "Permission needed", prompt="p-2")) == 2
 
 
-def test_idle_prompt_sends_nothing(tmp_path, teams):
+def test_idle_prompt_sends_nothing(tmp_path, bot):
     root = _notify_repo(tmp_path)
 
-    assert _both_notify(root, teams, _notification(root, "Claude is waiting for your input",
+    assert _both_notify(root, bot, _notification(root, "Claude is waiting for your input",
                                                     ntype="idle_prompt")) == 0
 
 
-def test_a_notify_call_with_no_payload_always_sends(tmp_path, teams):
+def test_a_notify_call_with_no_payload_always_sends(tmp_path, bot):
     """A command calling notify.sh by hand is not a hook event and has no
     twin to race. Two different results, so crew_notify's dedupe (same
     event, ticket and reason inside the window) is not what is measured."""
     root = _notify_repo(tmp_path)
     for index in range(2):
         _run("sh", "notify", root, b"", ("deploy", f"qa abc{index} - pass", "--outcome", "pass"),
-             CREW_TEST_TEAMS_URL=teams, **_notify_home(root))
+             CREW_NOTIFY_TELEGRAM_BASE=bot, CREW_TEST_TG_TOKEN=BOT_TOKEN, **_notify_home(root))
 
     assert len(_Counter.hits) == 2
 

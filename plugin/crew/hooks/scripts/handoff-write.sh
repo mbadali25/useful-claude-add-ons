@@ -79,7 +79,7 @@ fi
 mkdir -p .crew/transcripts .work
 # Whether either write below actually landed. Codex r1 finding 2: this used
 # to mark the claim "sent" unconditionally, so a write that silently failed
-# (a bad handoffPath, a full disk) suppressed the PowerShell twin's retry --
+# (an unwritable path, a full disk) suppressed the PowerShell twin's retry --
 # the twin sees "sent", stands down, and the handoff is lost for good. A
 # failure here must leave the claim unmarked so the twin (or a later run of
 # this same flavour) can still take over and try again.
@@ -88,19 +88,11 @@ if [ -f "$TRANSCRIPT" ]; then
   DEST=".crew/transcripts/$(date +%Y%m%d-%H%M%S)-${TRIGGER:-auto}.jsonl"
   cp "$TRANSCRIPT" "$DEST" 2>/dev/null
   [ -f "$DEST" ] || FAILED=1
-  KEEP=5
-  if PY=$(crew_py); then
-    # An integer only, as documented (CONFIG.md); a digit string, a bool or a
-    # negative is ignored and 5 are kept; past Int32.MaxValue it is clamped there
-    # -- the same as handoff-write.ps1.
-    K=$("$PY" -c 'import json,sys;k=json.load(open(sys.argv[1])).get("context",{}).get("keepTranscripts",5);print(min(k,2147483647) if type(k) is int and k>=0 else 5)' "$(crew_native_path "$CREW_CFG")" 2>/dev/null)
-    case "$K" in ''|*[!0-9]*) ;; *) KEEP="$K" ;; esac
-  fi
+  KEEP=5    # crew_state.CONTEXT_KEEP_TRANSCRIPTS
   ls -1t .crew/transcripts/*.jsonl 2>/dev/null | tail -n +$((KEEP+1)) | xargs -r rm -f
 fi
 
-PY=$(crew_py) && HANDOFF=$(crew_handoff_path "$PY" "$CREW_CFG")
-HANDOFF="${HANDOFF:-.work/HANDOFF.md}"
+HANDOFF=".work/HANDOFF.md"    # crew_state.CONTEXT_HANDOFF_PATH
 
 # If no handoff exists, write a factual skeleton from the repo, not from memory.
 if [ ! -f "$HANDOFF" ]; then

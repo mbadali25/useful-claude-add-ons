@@ -122,23 +122,14 @@ def _config_lines_for(root, crew, legacy):
     if isinstance(legacy, dict) and legacy_setup is False:
         # L-0713: `/crew:init` writes this file, every gate reads it, and
         # nothing in it needs `/crew:migrate`.
-        roles = [r for r in legacy.get("roles") or [] if isinstance(r, str)]
         return [f"config   .crew/config.json schema {legacy.get('schema')}",
-                f"roster   {', '.join(roles) or 'none'} (1.0 roster: {', '.join(crew_migrate.ROSTER)})",
                 _tracker_line(root)], legacy
     if isinstance(legacy, dict) and legacy_setup is None:
-        roles = [r for r in legacy.get("roles") or [] if isinstance(r, str)] \
-            if isinstance(legacy.get("roles"), list) else []
         return [f"config   .crew/config.json schema {legacy.get('schema', '?')} - could not tell "
                 f"whether /crew:migrate is needed ({why})",
-                f"roster   {', '.join(roles) or 'none'} (1.0 roster: {', '.join(crew_migrate.ROSTER)})",
                 _tracker_line(root)], legacy
     if isinstance(legacy, dict):
-        roles = legacy.get("roles") if isinstance(legacy.get("roles"), list) else []
-        kept = [r for r in crew_migrate.ROSTER
-                if r in roles or any(crew_migrate.RENAMED.get(x) == r for x in roles)]
         return [f"config   .crew/config.json schema {legacy.get('schema', '?')} - run /crew:migrate",
-                f"roster   {len(roles)} roles active; 1.0 keeps {', '.join(kept) or 'none of them'}",
                 _tracker_line(root)], legacy
     if crew == "corrupt" or legacy == "corrupt":
         return ["config   unreadable JSON in .crew/ - status cannot tell the setup"], {}
@@ -477,6 +468,30 @@ def _memory_lines(root, budget):
     return lines
 
 
+def _guards_line(root):
+    """`guards   profile P, overrides {...}[; unmigrated: run /crew:migrate]`
+    when this repo's `guards` block sets a profile or an override, or either
+    layer still holds a per-guard key (L-0725); else None. A failed check says
+    so rather than vanishing."""
+    try:
+        import crew_config  # pylint: disable=import-outside-toplevel
+        block = crew_state.load_config(root).get("guards")
+        block = block if isinstance(block, dict) else {}
+        profile, overrides = block.get("profile"), block.get("overrides")
+        layers = set()
+        for name in crew_state.ALL_GUARD_NAMES:
+            layers.update(crew_config.resolve_guard(root, name)["unmigrated"])
+        shown = []
+        if profile is not None or overrides:
+            shown.append(f"profile {profile if profile is not None else 'off'}, "
+                         f"overrides {json.dumps(overrides or {}, sort_keys=True)}")
+        if layers:
+            shown.append("unmigrated: run /crew:migrate (" + " and ".join(sorted(layers)) + " layer)")
+        return "guards   " + "; ".join(shown) if shown else None
+    except (OSError, ValueError, KeyError, TypeError, ImportError) as exc:
+        return f"guards   could not tell ({exc.__class__.__name__})"
+
+
 def _inert_line(root):
     """`inert    key=value (ticket), ...` for every setting this crew does not
     act on, or None (T-0070). A failed check says so rather than vanishing."""
@@ -688,6 +703,9 @@ def collect(root, memory=False):
     lines = [f"crew status  {os.path.basename(root)}  {branch}@{head}  tree {tree}"]
     config_lines, cfg = _config_lines(root)
     lines += config_lines
+    guards = _guards_line(root)
+    if guards:
+        lines.append(guards)
     inert = _inert_line(root)
     if inert:
         lines.append(inert)
