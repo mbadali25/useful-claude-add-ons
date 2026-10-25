@@ -495,12 +495,11 @@ def test_lock_a_stale_lock_is_broken_once_and_a_fresh_one_is_kept(tmp_path):
 def test_lock_release_leaves_a_lock_another_holder_took(tmp_path):
     path = str(tmp_path / "s.json")
     mine = verify_trust._Lock(path)
-    mine.__enter__()
     other = path + ".lock"
-    with open(os.path.join(other, "token"), "w", encoding="utf-8") as handle:
-        handle.write("someone-else")
 
-    mine.__exit__(None, None, None)
+    with mine:
+        with open(os.path.join(other, "token"), "w", encoding="utf-8") as handle:
+            handle.write("someone-else")
 
     assert os.path.isdir(other)
 
@@ -623,8 +622,8 @@ def test_lock_one_that_stays_stale_is_given_up_on_at_the_deadline(tmp_path, monk
     monkeypatch.setattr(lock, "_break", lambda: None)
     os.mkdir(lock.path)
 
-    with pytest.raises(verify_trust.TrustError):
-        lock.__enter__()
+    with pytest.raises(verify_trust.TrustError), lock:
+        pass
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs a FIFO")
