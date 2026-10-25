@@ -21,6 +21,37 @@ trap '_crew_gate_exit_line $?' EXIT
 GATE_PLUGIN_ROOT="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 &&
   { pwd -W 2>/dev/null || pwd; })"
 
+# --- verify trust (L-0888) -------------------------------------------------
+# .crew/verify.json `run` strings reach `eval` and the smoke scripts reach
+# `bash`; both are repo-authored. verify_trust.py decides whether THIS machine
+# trusts this repo's bytes (hash-bound approval) or its remote owner
+# (allowlist). Anything but "trusted" - untrusted, changed, remote changed,
+# store unreadable, python missing where the smoke script would run - runs
+# NOTHING, writes no pass record, and says why. The caller exits 0 (Stop and
+# --all) or 1 (--price): an unknown is never read as trusted. $1 is the
+# directory holding verify_trust.py. --ci is exempt and says so: a CI job's
+# checkout is its own pipeline's trust and has no home store.
+gate_trust_check() {
+  local _tdir="$1" _tp _tmsg _trc=0
+  _tp=$(crew_py_strict 2>/dev/null) || _tp=""
+  if [ -z "$_tp" ] || [ ! -f "$_tdir/verify_trust.py" ]; then
+    # No python while a verify.json exists: the PY check further down exits 2
+    # and nothing runs, so leave that message to it. Anything else (the smoke
+    # script would run, or verify_trust.py is missing) is UNKNOWN.
+    if [ -z "$_tp" ] && [ -f .crew/verify.json ]; then
+      return 0
+    fi
+    echo "VERIFY GATE: UNKNOWN, not run - nothing was verified. The trust check could not run (no working python, or verify_trust.py is missing at $_tdir)." >&2
+    return 13
+  fi
+  _tmsg=$("$_tp" "$_tdir/verify_trust.py" check --root "$PWD" 2>/dev/null) || _trc=$?
+  _tmsg=$(printf '%s' "$_tmsg" | tr -d '\r')
+  [ "$_trc" -eq 0 ] && return 0
+  [ -n "$_tmsg" ] || _tmsg="VERIFY GATE: UNKNOWN, not run - nothing was verified. The trust check printed nothing (exit $_trc)."
+  printf '%s\n' "$_tmsg" >&2
+  return "$_trc"
+}
+
 # --price is an OPERATOR command only, and is handled here, before ANYTHING
 # else in this file - before the stdin read below, which a terminal
 # invocation of this flag would otherwise block on forever. It is never
@@ -36,6 +67,10 @@ if [ "${1:-}" = "--price" ]; then
   PRICE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   PRICE_PY=$(crew_py) || { echo "verify-gate --price: no python available" >&2; exit 1; }
   shift
+  # L-0888: pricing RUNS every rule's command, so it needs the same trust the
+  # Stop gate does. The check judges the repo at the working directory; a
+  # custom PRICE_TARGET path below is the operator's own argument, not bound.
+  gate_trust_check "$PRICE_DIR" || exit 1
   PRICE_TARGET=".crew/verify.json"
   PRICE_FORCE=""
   for a in "$@"; do
@@ -1272,6 +1307,12 @@ else
 fi
 : # keep the scope report from ever deciding this script's status
 
+if [ "$CI_MODE" -eq 1 ]; then
+  echo "verify-gate --ci: trust check exempt - a CI job's checkout is its own pipeline's trust (no Stop hook, no home trust store)" >&2
+elif [ -f .crew/verify.json ] || [ -f ./_verify/smoke.sh ] || [ -f ./scripts/smoke.sh ]; then
+  gate_trust_check "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 0
+fi
+
 if [ ! -f .crew/verify.json ]; then
   # _verify/ is the canonical home; scripts/smoke.sh is honoured as legacy.
   SMOKE=""
@@ -2128,6 +2169,12 @@ elif [ -z "$MATCHED" ]; then
   # point), so its absence is not the explanation either.
   echo "VERIFY GATE: the matcher produced no output at all, even though it exited 0 and .crew/verify.json exists. This is the signature of a broken interpreter (for example a WindowsApps stub) succeeding without actually running any python code. Work is not complete. Install python (3.10+) on this machine, or set \"verifyGate\": false in .crew/config.json to stand this gate down deliberately (honoured at the top of this file)." >&2
   exit 2
+fi
+# The second trust check (L-0888, TOCTOU): the matcher read verify.json some
+# time after the first check. If the bytes moved in between, they are no
+# longer the bytes that were approved: run nothing.
+if [ "$CI_MODE" -eq 0 ]; then
+  gate_trust_check "$FP_DIR" || exit 0
 fi
 # \035 is the record separator the matcher wrote between the two records, and
 # \036 the field separator inside each. `sed -n 1p` used to take the first

@@ -489,6 +489,27 @@ not errors, and neither blocks the turn:
 
 A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.
 
+## Verify gate says UNTRUSTED, CHANGED, REMOTE CHANGED or UNKNOWN, not run
+
+`verify-gate.sh` (L-0888, crew 1.2.80). `.crew/verify.json` is text the repo's authors wrote and its
+`run` strings reach `eval`; the Stop gate (and `--all` and `--price`) therefore runs it only for a repo this
+machine trusts. Otherwise it prints one line, runs nothing, writes no pass record and exits 0:
+
+- **`UNTRUSTED, not run`**: nothing on this machine approves this repo. Read `.crew/verify.json` (or the smoke
+  script the line names), then in your own terminal: `python3 <plugin>/hooks/scripts/verify_trust.py approve --root <repo>`.
+  It shows the repo, the sha256, the remotes and the rule count, and asks for `yes`.
+- **`CHANGED, not run`**: the bytes differ from every version you approved. Read the diff, then approve again.
+- **`REMOTE CHANGED, not run`**: the repo is trusted by remote owner and its remotes differ from the set pinned
+  on first sight. Check `git remote -v`, then `approve` to re-pin.
+- **`UNKNOWN, not run`**: the trust store could not be read (corrupt, unreadable or locked). Fix or delete
+  `${CLAUDE_CONFIG_DIR:-~/.claude}/crew/verify-trust.json`; an unknown is never read as trusted.
+
+To trust every repo of one owner: `verify_trust.py allow-owner github.com/<owner> --under <dir>` (the `--under`
+limit is optional and recommended: without it a fresh directory whose `.git/config` merely names that owner is
+trusted on first sight). `status` shows the verdict, `revoke` removes a repo, `disallow-owner` removes an owner.
+A model-run `approve`, `allow-owner`, `disallow-owner` or `revoke` is refused by the scope guard: only a person
+at a terminal trusts a repo. The hash binds the verify map, not the scripts its rules call. `--ci` is exempt.
+
 ## Verify gate prints one line, or says "unchanged since last Stop"
 
 Since crew 1.2.39 (L-0796) the Stop gate is quiet. It prints one verdict line, then each failure

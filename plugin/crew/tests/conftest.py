@@ -146,6 +146,22 @@ def _no_real_global_config(tmp_path, tmp_path_factory, _crew_isolation_patch):
 
 
 @pytest.fixture(autouse=True)
+def _verify_trust_store(tmp_path_factory, _crew_isolation_patch):
+    """L-0888: verify-gate.sh runs a repo's verify map only for a repo this
+    machine trusts, and every suite that spawns the gate in a fixture repo
+    would otherwise stop at "UNTRUSTED". Each test gets a store of its own
+    (never the real `~/.claude/crew/verify-trust.json`) that carries the test
+    seam `testTrustAll`, which `verify_trust.py` honours ONLY when the store
+    was named through `CREW_VERIFY_TRUST_FILE`. The trust suites
+    (`test_verify_trust.py`, `test_verify_gate_trust.py`) point the variable
+    at a store of their own without it, so they see the real decision."""
+    store = tmp_path_factory.mktemp("verify-trust") / "verify-trust.json"
+    store.write_text('{"version": 1, "repos": {}, "owners": {}, "testTrustAll": true}\n',
+                     encoding="utf-8", newline="\n")
+    _crew_isolation_patch.setenv("CREW_VERIFY_TRUST_FILE", str(store))
+
+
+@pytest.fixture(autouse=True)
 def _isolated_home(tmp_path_factory, _crew_isolation_patch):
     """Sixth channel (L-0709): the home directory itself. Every test, and every
     subprocess that inherits `os.environ`, gets a home of its own as HOME,

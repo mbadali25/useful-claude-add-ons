@@ -128,6 +128,7 @@ import time
 
 import crew_ticket
 import role_write_guard
+import verify_trust
 
 TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 SHELLS = ("Bash", "PowerShell")
@@ -151,6 +152,12 @@ _ADMIN_MERGE_RE = re.compile(r"\bgh\b[^\n;&|]*\bpr\b[^\n;&|]*\bmerge\b[^\n;&|]*-
 LANE_REFUSAL = ("a lane may not accept, reject or admin-merge; that is the owner's, from the "
                 "main session")
 _HOOK_RE = re.compile(r"approval[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
+# L-0888: the verify trust store grows only by a person at a terminal. Any
+# command naming verify_trust with a verb that grows or shrinks it is refused;
+# `status` and `check` (read-only, bar the allowlist pin) pass.
+_TRUST_RE = re.compile(r"verify[_-]trust(?:\.py)?\b[^\n;&|]*\b(?:approve|allow-owner|"
+                       r"disallow-owner|revoke)\b", re.IGNORECASE)
+TRUST_STORE_NAME = "verify-trust.json"
 # A line continuation: bash's backslash-newline, which the shell deletes (so it
 # can split a word), and PowerShell's backtick-newline, which reads as a space.
 _BASH_CONTINUATION_RE = re.compile(r"\\\r?\n")
@@ -258,8 +265,12 @@ def protected(top, state, target, base):
     absolute = target if os.path.isabs(target) else os.path.join(base, target)
     real = role_write_guard._resolve_real_target(absolute)  # pylint: disable=protected-access
     named = os.path.normpath(absolute)
+    store = os.path.normcase(os.path.abspath(verify_trust.store_path()))
     for path in (real, named):
         if state and _under(path, state):
+            return True
+        if os.path.basename(path).lower() in (TRUST_STORE_NAME, TRUST_STORE_NAME + ".lock") \
+                or os.path.normcase(path) in (store, store + ".lock"):
             return True
         rel = _rel(path, top)
         if rel is not None and os.path.normcase(rel) == os.path.normcase(SCOPE_BASE):
@@ -327,6 +338,11 @@ def _reading_refusal(command, written, common, top, agent_type=None):
         return _autopilot_refusal(written, top)
     if _HOOK_RE.search(command):
         return "it names the approval hook, which only the user's prompt may drive"
+    if _TRUST_RE.search(command):
+        return ("it changes the verify trust store (`verify_trust.py approve`, `allow-owner`, "
+                "`disallow-owner` or `revoke`); only a person at a terminal trusts a repo")
+    if TRUST_STORE_NAME in command.lower() and _WRITES_RE.search(command):
+        return "it writes the verify trust store, which only a person at a terminal may change"
     state = os.path.join(common, "crew") if common else None
     folded = os.path.normcase(command).replace("\\", "/")
     names_state = bool(_DOTGIT_CREW_RE.search(command)) or bool(

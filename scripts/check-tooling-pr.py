@@ -62,6 +62,8 @@ HARNESS = (
     "plugin/crew/hooks/scripts/verify_record.py",
     "plugin/crew/hooks/scripts/verify_fingerprint.py",
     "plugin/crew/hooks/scripts/verify_price.py",
+    # L-0888: decides whether this machine trusts a repo enough to run its verify map.
+    "plugin/crew/hooks/scripts/verify_trust.py",
     "plugin/crew/hooks/scripts/crew_ticket.py",
     "plugin/crew/hooks/scripts/approval_hook.py",
     "plugin/crew/hooks/scripts/approval-hook.sh",

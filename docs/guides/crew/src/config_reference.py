@@ -364,6 +364,16 @@ until `/crew:migrate` rewrites them, and are never written.
 
 {profile_table}
 
+## Verify gate trust (a store, not a config key)
+
+The Stop gate runs `.crew/verify.json` `run` strings (and, with no verify.json,
+`_verify/smoke.sh` or `scripts/smoke.sh`) only for a repo this machine trusts.
+Trust lives in `${{CLAUDE_CONFIG_DIR:-~/.claude}}/crew/verify-trust.json`, written
+by `python3 plugin/crew/hooks/scripts/verify_trust.py` (`approve`, `revoke`,
+`status`, `allow-owner`, `disallow-owner`) at a terminal. It is not a config key:
+no repo file can widen it. An untrusted repo prints `UNTRUSTED, not run`, runs
+nothing and records no pass; `--ci` is exempt.
+
 ## Migrating and removed keys
 
 `/crew:migrate` upgrades a repo file; `python3 plugin/crew/hooks/scripts/crew_migrate.py --global`

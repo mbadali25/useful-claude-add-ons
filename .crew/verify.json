@@ -637,7 +637,7 @@
     { "id": "crew-train", "paths": ["plugin/crew/hooks/scripts/crew_train.py", "plugin/crew/tests/test_crew_train.py", "plugin/crew/hooks/scripts/review_run.py", "plugin/crew/hooks/scripts/review_prompt.py", "plugin/crew/tests/test_review_run_train.py", "plugin/crew/tests/sabotage_train.py"], "seconds": 270, "coveredBy": "crew-suite", "run": ["python3 -m pytest plugin/crew/tests/test_crew_train.py plugin/crew/tests/test_review_run_train.py plugin/crew/tests/test_review_prompt.py -q"], "reach": "local", "why": "Windows 270s (win-repo-2, 2026-10-24): over the 60s Stop budget, deferred on a cold Windows checkout. L-0520 (the merge train). crew_train.py decides which lane may gate and land: the hold rule (no overlapping holder or earlier overlapping... Full rationale: docs/crew/verify-rationale.md#crew-train" },
     { "id": "tooling-pr-harness", "paths": ["plugin/crew/hooks/scripts/review_*.py", "plugin/crew/hooks/scripts/verify-gate.sh",
                 "plugin/crew/hooks/scripts/verify-gate.ps1", "plugin/crew/hooks/scripts/verify_record.py",
-                "plugin/crew/hooks/scripts/verify_fingerprint.py", "plugin/crew/hooks/scripts/verify_price.py",
+                "plugin/crew/hooks/scripts/verify_fingerprint.py", "plugin/crew/hooks/scripts/verify_price.py", "plugin/crew/hooks/scripts/verify_trust.py",
                 "plugin/crew/hooks/scripts/crew_ticket.py", "plugin/crew/hooks/scripts/approval_hook.py",
                 "plugin/crew/hooks/scripts/approval-hook.sh", "plugin/crew/hooks/scripts/approval-hook.ps1",
                 "plugin/crew/hooks/scripts/scope_guard.py", "plugin/crew/hooks/scripts/scope-guard.sh",
