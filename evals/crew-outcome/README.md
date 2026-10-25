@@ -165,7 +165,7 @@ a wall-clock stop, and the report says how many runs were graded that way; it is
   3 resumes are used up (`endedBy: resume-cap`, graded as it stands and reported as such). Config:
   `autopilot.mode: plan`, `approval: self`, `questions: self`, `reviewPolicy: fix-and-rereview`,
   `scope.allowCliApproval: true`, the Codex model pinned, everything else crew's default.
-  **No codemap in the crew arm** (`removePaths: [".crew/codemap"]`, arm file): this repository's map places only some
+  **No codemap in the crew arm** (`removePaths` lists `.crew/codemap`, arm file): this repository's map places only some
   Touch entries (not `CHANGELOG.md`, `README.md` or `.claude-plugin/marketplace.json`), so autopilot's size check reads
   `subsystems` as unknown and stops at `split-check-unknown` before writing any code. With no codemap the measure is
   `unmeasured` and does not stop. It is a treatment difference (crew runs as on a repository not yet onboarded, without
@@ -176,7 +176,7 @@ a wall-clock stop, and the report says how many runs were graded that way; it is
   stop. A treatment difference, and it may favour the baseline: both arms start from the same base tree, whose `CLAUDE.md`
   names `.crew/codemap/` and `graphify-out/` as maps, and only the crew arm loses them (crew runs as on a repository without a
   built graph or map). The results doc says so. The arm file is not digested into a result row, so rows scored before this
-  change (which stopped at `refresh`) are told apart by date and run directory in the results doc, not by the harness.
+  change (which stopped at `refresh`) must be told apart by the UTC timestamp in each row's `runDir` (the results doc does so), not by the harness.
 - **Baseline arm**: implement, run `/code-review`, fix every reported finding, repeat until a cycle reports no findings
   or 3 cycles complete.
 - **Verdict**: per task, the median over that arm's scored runs (at least 2 known runs per arm per task, else the task
