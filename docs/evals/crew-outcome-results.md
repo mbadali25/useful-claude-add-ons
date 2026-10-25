@@ -5,9 +5,9 @@ selection yielded one task per bucket (owner decision 2026-10-20), and the harne
 
 | Item | Value |
 |---|---|
-| Harness | `scripts/crew-outcome-eval.py` sha256 `700c873b07dc0829...` at main `16ae18675` (crew 1.2.83) |
-| Crew arm change during the run | PR #680 added `graphify-out` to the crew arm's `removePaths` (merged `16ae18675`); crew runs before it stopped at autopilot's `refresh` phase |
-| Image | `crew-outcome-eval:1`, rebuilt 2026-10-25 as `sha256:7c9a174cb917...` (the earlier image was gone); Claude Code 2.1.303, Codex 0.162.1 |
+| Harness (t-0107 rows, after #680) | `scripts/crew-outcome-eval.py` sha256 `700c873b07dc0829...` at main `16ae18675` (crew 1.2.83). The t-0108 rows ran earlier; the preflight of 2026-10-24 recorded harness `dbf8585a...` at `a1a98a21`, crew 1.2.74, and the harness and crew version of the later t-0108 rows were not recorded (unknown) |
+| Crew arm change during the run | PR #680 added `graphify-out` to the crew arm's `removePaths` (merged `16ae18675`). Every t-0108 row, both arms, ran before it, and the crew runs before it were exposed to the `refresh` stop; every t-0107 row ran after it |
+| Image | t-0107 rows: `crew-outcome-eval:1` rebuilt 2026-10-25 as `sha256:7c9a174cb917...` (the earlier image was gone). t-0108 rows: the earlier image `sha256:db6a863c...`. Claude Code 2.1.303 and Codex 0.162.1 in both |
 | Canary | PASS on the rebuilt image, `network=none proxy=unix-socket` (`canary.txt`, 2026-10-25T22:02Z) |
 | Author model | claude-sonnet-5-5, medium effort, both arms |
 | Reviewer | crew: Codex `gpt-6-sol`; baseline: `/code-review`, same family as the author |
@@ -24,12 +24,12 @@ Tasks: `t-0108-nuclei-safe-defaults` (bucket M, 10 scored defects) and `t-0107-g
 |---|---|---|---|---|---|---|---|
 | t-0108 | crew | 2 | 3.29, 1.74 | 0, 0 | 1, 0 | 547, 302 | stop, resume-cap |
 | t-0108 | baseline | 2 | 0.98, 0.84 | 0, 0 | 3, 3 | 249, 242 | stop, stop |
-| t-0107 | crew | 3 | 3.59, 3.78, 2.26 | 1, 0, 0 | 2, 2, 0 | 680, 838, 375 | stop, stop, resume-cap |
+| t-0107 | crew | 3 | 3.59, 3.78, 2.26 | 1, 0, 0 | 2, 2, 0 | 680, 839, 375 | stop, stop, resume-cap |
 | t-0107 | baseline | 3 | 1.34, 1.29, 1.43 | 0, 6, 1 | 3, 3, 3 | 351, 354, 381 | stop, stop, stop |
 
 Observations, not verdicts:
-- t-0108: neither arm let a scored defect escape in any scored run. Crew cost about 2 to 3 times baseline per run and took longer.
-- t-0107: crew escaped 1, 0, 0 of 9; baseline escaped 0, 6, 1 (median 1). Crew cost about 2 to 3 times baseline. With 3 runs per arm and one baseline run at 6, this is a hint, not a result.
+- t-0108: neither arm let a scored defect escape in any scored run. Crew cost 1.8 to 3.9 times baseline per run (mean ratio 2.8) and took longer.
+- t-0107: crew escaped 1, 0, 0 of 9; baseline escaped 0, 6, 1 (median 1). Crew cost 1.6 to 2.9 times baseline per run (mean ratio 2.4). With 3 runs per arm and one baseline run at 6, this is a hint, not a result.
 - Two crew runs ended at the harness resume cap (the arm was still asked for work); they are graded as they stand.
 - Regressions (base-passing tests failed): 0 in every scored run.
 - Break-even: not computed. The harness computes it only per bucket, and no bucket qualifies.
@@ -37,18 +37,18 @@ Observations, not verdicts:
 ## Treatment differences (read before comparing arms)
 
 - The crew arm runs without `.crew/codemap` and `graphify-out` (arm file `removePaths`). Both arms start from the same base tree whose `CLAUDE.md` names those maps, so this may favour the baseline.
-- Crew pays for a Codex review the baseline does not have; the reviewers are different model families.
-- The harness does not digest the arm file into a row, so rows from before #680 are told apart only by the UTC stamp in `runDir`. The early t-0108 crew rows ran under older arm settings.
+- Crew has a Codex review available that the baseline does not (two of the five scored crew runs had no completed review cycle); the reviewers are different model families.
+- The harness does not digest the arm file into a row, so rows from before #680 are told apart only by the UTC stamp in `runDir`; all t-0108 rows ran under the older arm file.
 
 ## Excluded and voided runs
 
-- Contaminated (excluded from the numbers, listed by the harness): t-0108 crew attempt 2 and t-0108 baseline (1), both "hidden test content"; t-0107 crew (2, "hidden test content") and t-0107 baseline (1, "reference PR number"). The detector flags 3 distinctive hidden-test lines in one transcript file; whether each flag is a real leak or a correct solution that happens to match was not examined.
+- Contaminated (excluded from the numbers, listed by the harness): t-0108 crew attempt 2 and t-0108 baseline (1), both "hidden test content"; t-0107 crew (3, "hidden test content"; the report lists them once as attempt 1) and t-0107 baseline (1, "reference PR number"). The detector flags 3 distinctive hidden-test lines in one transcript file; whether each flag is a real leak or a correct solution that happens to match was not examined.
 - Unscorable: the first t-0108 crew attempt (no CLI JSON, exit 134, 2.56 USD, kept as unscored spend).
-- Voided and kept in `/repos/personal/eval-runs/T-0510/`: the pilot row stopped at `split-check-unknown`; a t-0107 crew row with UNKNOWN cost (disk full, truncated transcript); 8 t-0107 rows that hit the Claude weekly limit (0 USD).
+- Voided and kept in `/repos/personal/eval-runs/T-0510/`: the pilot row stopped at `split-check-unknown`; a t-0107 crew row with UNKNOWN cost (its transcript did not parse; a full disk was the suspected cause); 8 t-0107 rows that hit the Claude weekly limit (0 USD); `aborted-attempt0-proxy-path-too-long.jsonl` (a zero-spend abort).
 
 ## Spend against the cap
 
-Cap 150 USD, stop at 140. Recorded in `results.jsonl`: 41.11 USD in the report plus 2.56 USD unscorable = 43.67 USD. Not in the file: the spike (about 3 USD), the killed pilot baseline (under 1 USD), the voided pilot row (0.49 USD) and the voided t-0107 row (CLI total 1.12 USD). All-in about 49 USD.
+Cap 150 USD, stop at 140. Recorded in `results.jsonl`: 41.11 USD (the report total; it already includes the 2.56 USD unscorable attempt, whose cost is also carried into the next row's `costUsd`, so summing that column double counts it). Not in the file: the spike (about 3 USD), the killed pilot baseline (under 1 USD), the voided pilot row (0.49 USD) and the voided t-0107 row (1.12 USD, CLI-reported, a different basis from the list price used elsewhere). All-in roughly 46 USD, give or take the mixed bases.
 
 ## Not verified
 
