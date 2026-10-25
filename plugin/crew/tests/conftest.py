@@ -145,20 +145,38 @@ def _no_real_global_config(tmp_path, tmp_path_factory, _crew_isolation_patch):
     monkeypatch.setattr(crew_fixtures, "_PWSH_CACHE_ROOT", str(xdg_cache))
 
 
+_TRUST_SEAM = (
+    "import os, sys\n"
+    "if (os.environ.get('CREW_TEST_TRUST_ALL') == '1'\n"
+    "        and os.path.basename(sys.argv[0] if sys.argv else '') == 'verify_trust.py'\n"
+    "        and sys.argv[1:2] == ['check']):\n"
+    "    print('verify trust: trusted (test seam)')\n"
+    "    sys.stdout.flush()\n"
+    "    os._exit(0)\n"
+)
+
+
 @pytest.fixture(autouse=True)
 def _verify_trust_store(tmp_path_factory, _crew_isolation_patch):
     """L-0888: verify-gate.sh runs a repo's verify map only for a repo this
     machine trusts, and every suite that spawns the gate in a fixture repo
-    would otherwise stop at "UNTRUSTED". Each test gets a store of its own
-    (never the real `~/.claude/crew/verify-trust.json`) that carries the test
-    seam `testTrustAll`, which `verify_trust.py` honours ONLY when the store
-    was named through `CREW_VERIFY_TRUST_FILE`. The trust suites
-    (`test_verify_trust.py`, `test_verify_gate_trust.py`) point the variable
-    at a store of their own without it, so they see the real decision."""
+    would otherwise stop at "UNTRUSTED". Each test gets an empty store of its
+    own (never the real `~/.claude/crew/verify-trust.json`), and the trust
+    comes from this fixture alone: a `sitecustomize` on PYTHONPATH that, for
+    `python3 verify_trust.py check` in a process started with
+    `CREW_TEST_TRUST_ALL=1`, answers "trusted". Nothing in the shipped code
+    knows the seam (a store flag read by production code was removed in the
+    fourth successor plan). The trust suites (`test_verify_trust.py`,
+    `test_verify_gate_trust.py`) unset the variable and so see the real
+    decision."""
     store = tmp_path_factory.mktemp("verify-trust") / "verify-trust.json"
-    store.write_text('{"version": 1, "repos": {}, "owners": {}, "testTrustAll": true}\n',
-                     encoding="utf-8", newline="\n")
+    seam = tmp_path_factory.mktemp("verify-trust-seam")
+    (seam / "sitecustomize.py").write_text(_TRUST_SEAM, encoding="utf-8", newline="\n")
     _crew_isolation_patch.setenv("CREW_VERIFY_TRUST_FILE", str(store))
+    _crew_isolation_patch.setenv("CREW_TEST_TRUST_ALL", "1")
+    existing = os.environ.get("PYTHONPATH")
+    _crew_isolation_patch.setenv("PYTHONPATH",
+                                 str(seam) + (os.pathsep + existing if existing else ""))
 
 
 @pytest.fixture(autouse=True)

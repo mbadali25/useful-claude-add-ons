@@ -3,8 +3,9 @@
 MUST-BLOCK (the verdict is not 0, so the gate runs nothing): no store entry;
 one byte changed in verify.json or in the smoke script after approval; the
 verify.json deleted so a smoke script would run; a corrupt or unreadable
-store (UNKNOWN, never trusted); the `testTrustAll` test seam read from a store
-that was not named through the environment variable; every lookalike host,
+store (UNKNOWN, never trusted); a `testTrustAll` flag in a store (honoured by
+nothing); a store location a repo can author (relative, or inside the repo, set
+through CREW_VERIFY_TRUST_FILE, CLAUDE_CONFIG_DIR or HOME); every lookalike host,
 owner and URL form; an allowlisted remote beside a foreign one; a foreign
 `pushurl`; a local `insteadOf`; a global rewrite that makes the raw and the
 resolved URL disagree; a top level owned by another user; an owner entry
@@ -41,6 +42,7 @@ def _git(root, *args):
 def _store(tmp_path, monkeypatch):
     path = tmp_path / "trust" / "verify-trust.json"
     monkeypatch.setenv(verify_trust.ENV_STORE, str(path))
+    monkeypatch.delenv("CREW_TEST_TRUST_ALL", raising=False)
     return path
 
 
@@ -206,24 +208,128 @@ def test_evaluate_a_malformed_store_is_unknown(tmp_path, store, body):
     assert _code(root) == verify_trust.EXIT_UNKNOWN
 
 
-def test_evaluate_the_test_seam_is_ignored_for_a_store_not_named_by_the_environment(
-        tmp_path, monkeypatch):
+_TRUST_ALL_STORE = '{"version": 1, "repos": {}, "owners": {}, "testTrustAll": true}'
+
+
+def test_evaluate_a_test_trust_all_flag_in_the_store_trusts_nothing(tmp_path, store):
+    root = _repo(tmp_path)
+    store.parent.mkdir(parents=True)
+    store.write_text(_TRUST_ALL_STORE, encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_evaluate_a_test_trust_all_flag_in_a_config_dir_store_trusts_nothing(tmp_path, monkeypatch):
     root = _repo(tmp_path)
     config = tmp_path / "claude"
     (config / "crew").mkdir(parents=True)
-    (config / "crew" / "verify-trust.json").write_text(
-        '{"version": 1, "repos": {}, "owners": {}, "testTrustAll": true}', encoding="utf-8")
+    (config / "crew" / "verify-trust.json").write_text(_TRUST_ALL_STORE, encoding="utf-8")
     monkeypatch.delenv(verify_trust.ENV_STORE, raising=False)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
 
     assert _code(root) == verify_trust.EXIT_UNTRUSTED
 
 
-def test_evaluate_the_test_seam_trusts_a_store_named_by_the_environment(tmp_path, store):
+# ------------------------------------- a repo-authored store location (settings env)
+
+def test_evaluate_a_relative_store_override_is_unknown(tmp_path, monkeypatch):
     root = _repo(tmp_path)
-    store.parent.mkdir(parents=True)
-    store.write_text('{"version": 1, "repos": {}, "owners": {}, "testTrustAll": true}',
-                     encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(verify_trust.ENV_STORE, "store/t.json")
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_evaluate_a_store_override_inside_the_repo_is_unknown(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    inside = root / ".claude" / "t.json"
+    inside.parent.mkdir()
+    inside.write_text(_TRUST_ALL_STORE, encoding="utf-8")
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(inside))
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_evaluate_a_store_override_through_a_symlink_into_the_repo_is_unknown(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    (root / "real").mkdir()
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(root / "real", target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available")
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(link / "t.json"))
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_evaluate_a_store_override_inside_a_linked_worktrees_main_checkout_is_unknown(
+        tmp_path, monkeypatch):
+    main = _repo(tmp_path, name="main")
+    _git(main, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-q", "-m", "x")
+    work = tmp_path / "work"
+    _git(main, "worktree", "add", "-q", str(work))
+    (work / ".crew").mkdir(exist_ok=True)
+    (work / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(main / "t.json"))
+
+    assert _code(work) == verify_trust.EXIT_UNKNOWN
+
+
+def test_evaluate_a_relative_claude_config_dir_is_unknown(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    monkeypatch.delenv(verify_trust.ENV_STORE, raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", "claude")
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_evaluate_a_claude_config_dir_inside_the_repo_is_unknown(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    (root / "cfg" / "crew").mkdir(parents=True)
+    (root / "cfg" / "crew" / "verify-trust.json").write_text(_TRUST_ALL_STORE, encoding="utf-8")
+    monkeypatch.delenv(verify_trust.ENV_STORE, raising=False)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(root / "cfg"))
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_evaluate_a_home_inside_the_repo_is_unknown(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    monkeypatch.delenv(verify_trust.ENV_STORE, raising=False)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(root / "home"))
+    monkeypatch.setenv("USERPROFILE", str(root / "home"))
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_approve_with_a_store_inside_the_repo_writes_nothing(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    inside = root / "t.json"
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(inside))
+
+    code = _approve(root)
+
+    assert code == 1
+    assert not inside.exists()
+
+
+def test_evaluate_an_absolute_store_outside_the_repo_is_honoured(tmp_path, store):
+    root = _repo(tmp_path)
+    _approve(root)
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+
+
+def test_evaluate_the_default_home_store_outside_the_repo_is_honoured(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    monkeypatch.delenv(verify_trust.ENV_STORE, raising=False)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    _approve(root)
 
     assert _code(root) == verify_trust.EXIT_TRUSTED
 

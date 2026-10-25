@@ -69,6 +69,7 @@ def _store(tmp_path, monkeypatch):
     """A real decision: no `testTrustAll`, so the conftest seam is replaced."""
     path = tmp_path / "trust" / "verify-trust.json"
     monkeypatch.setenv(verify_trust.ENV_STORE, str(path))
+    monkeypatch.delenv("CREW_TEST_TRUST_ALL", raising=False)
     return path
 
 

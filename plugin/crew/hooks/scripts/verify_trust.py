@@ -39,7 +39,7 @@ Exit codes of `check` (stdout carries one human line; the gate echoes it):
 or the repo could not be read). Anything but 0 means "run nothing": an unknown
 is never read as trusted.
 
-The store is machine-local: `$CREW_VERIFY_TRUST_FILE` (a test seam) else
+The store is machine-local: `$CREW_VERIFY_TRUST_FILE` else
 `${CLAUDE_CONFIG_DIR:-~/.claude}/crew/verify-trust.json`, written through a
 temp file and `os.replace` under a lock, mode 0600. It is not a crew config
 key: the allowlist is never read from a repo file, so a hostile repo cannot
@@ -110,12 +110,66 @@ class Verdict:
 
 # --------------------------------------------------------------------- store
 
-def store_path():
+def _repo_bounds(root):
+    """The real paths that make up the repo at `root`: the directory itself, its
+    top level and, for a linked worktree, the main checkout its `.git` file
+    points at. A store inside any of them is repo-authored. Reads the `.git`
+    file instead of asking git for the common dir: the gate asks git that
+    exact question once, after the first digest, and a fixture keys on it."""
+    bounds = {os.path.realpath(root)}
+    top = _git(root, "rev-parse", "--show-toplevel")
+    if top:
+        top = os.path.realpath(top.strip())
+        bounds.add(top)
+        try:
+            with open(os.path.join(top, ".git"), encoding="utf-8", errors="replace") as handle:
+                head = handle.readline().strip()
+        except OSError:
+            head = ""
+        if head.startswith("gitdir:"):
+            gitdir = os.path.realpath(os.path.join(top, head[len("gitdir:"):].strip()))
+            main = os.path.dirname(os.path.dirname(gitdir))
+            if os.path.basename(os.path.dirname(gitdir)) == "worktrees" \
+                    and os.path.basename(main) == ".git":
+                bounds.add(os.path.dirname(main))
+    return bounds
+
+
+def _check_store_location(path, source, root):
+    """Refuse a store location a repo can author. A project's
+    `.claude/settings.json` `env` block reaches the hook processes (measured
+    2026-10-25, claude 2.1.304), so `CREW_VERIFY_TRUST_FILE`, `CLAUDE_CONFIG_DIR`
+    and `HOME` are repo-controllable inputs: a relative path, or one that
+    resolves inside the repo being checked, would let the repo ship its own
+    trust. Raises TrustError (an UNKNOWN, never trusted)."""
+    if not os.path.isabs(path):
+        raise TrustError(f"{source} names a relative store path; the trust store must be an "
+                         "absolute path outside the repo")
+    if root is None:
+        return
+    real = os.path.realpath(path)
+    for bound in _repo_bounds(root):
+        try:
+            inside = os.path.commonpath([real, bound]) == bound
+        except ValueError:
+            inside = False
+        if inside:
+            raise TrustError(f"the trust store ({source}) resolves inside the repo being "
+                             "checked; a repo cannot ship its own trust")
+
+
+def store_path(root=None):
+    """The store file. With `root`, a location inside that repo is refused too."""
     explicit = os.environ.get(ENV_STORE)
     if explicit:
-        return explicit
-    base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
-    return os.path.join(base, "crew", "verify-trust.json")
+        path, source = explicit, ENV_STORE
+    else:
+        config = os.environ.get("CLAUDE_CONFIG_DIR")
+        base = config or os.path.join(os.path.expanduser("~"), ".claude")
+        path = os.path.join(base, "crew", "verify-trust.json")
+        source = "CLAUDE_CONFIG_DIR" if config else "HOME"
+    _check_store_location(path, source, root)
+    return path
 
 
 def _empty_store():
@@ -513,8 +567,8 @@ def evaluate(root, path=None, write_pin=True, euid=None, verify_file=None):
     `verify_file`, the bytes of that file are judged as the verify map and only
     a hash approval of exactly those bytes trusts them: the remote owner says
     nothing about a file that is not the repo's own."""
-    path = path or store_path()
     try:
+        path = path or store_path(root)
         return _evaluate(root, path, write_pin, euid, verify_file)
     except TrustError as exc:
         return Verdict(EXIT_UNKNOWN, f"VERIFY GATE: UNKNOWN, not run - nothing was verified. "
@@ -523,8 +577,6 @@ def evaluate(root, path=None, write_pin=True, euid=None, verify_file=None):
 
 def _evaluate(root, path, write_pin, euid, verify_file=None):
     store = load_store(path)
-    if os.environ.get(ENV_STORE) and store.get("testTrustAll") is True:
-        return Verdict(EXIT_TRUSTED, "verify trust: trusted (test store)")
     current, _targets = digest(root, verify_file)
     if current is None:
         return Verdict(EXIT_TRUSTED, "verify trust: nothing to run here")
@@ -633,7 +685,12 @@ def cmd_check(args):
 
 def cmd_status(args):
     root = os.path.abspath(args.root)
-    path = store_path()
+    try:
+        path = store_path(root)
+    except TrustError as exc:
+        print(f"store: unknown ({exc})")
+        print(f"verdict: exit {EXIT_UNKNOWN} - UNKNOWN: trust could not be decided")
+        return 0
     print(f"store: {path}")
     verdict = evaluate(root, path, write_pin=False)
     print(f"repo: {repo_identity(root)[0]}")
@@ -683,7 +740,7 @@ def cmd_approve(args):
         entry["pin"] = remotes
         entry["approved_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     try:
-        update_store(store_path(), add)
+        update_store(store_path(root), add)
     except TrustError as exc:
         print(f"verify_trust: {exc}", file=sys.stderr)
         return 1
@@ -692,14 +749,15 @@ def cmd_approve(args):
 
 
 def cmd_revoke(args):
-    identity, _top = repo_identity(os.path.abspath(args.root))
+    root = os.path.abspath(args.root)
+    identity, _top = repo_identity(root)
     found = []
 
     def drop(st):
         if st["repos"].pop(identity, None) is not None:
             found.append(1)
     try:
-        update_store(store_path(), drop)
+        update_store(store_path(root), drop)
     except TrustError as exc:
         print(f"verify_trust: {exc}", file=sys.stderr)
         return 1

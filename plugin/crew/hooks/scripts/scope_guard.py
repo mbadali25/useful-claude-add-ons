@@ -364,6 +364,39 @@ def _assembled_trust_refusal(text):
     return None
 
 
+_TRUST_VERBS = frozenset({"approve", "allow-owner", "disallow-owner", "revoke"})
+_INTERPRETER_RE = re.compile(r"(?:^|[/\\])(?:python[0-9.]*|py|pypy[0-9.]*)(?:\.exe)?$", re.IGNORECASE)
+_SCRIPT_TOKEN_RE = re.compile(r"\.pyw?$|[*?\[]", re.IGNORECASE)
+_GLOB_SCRIPT_RE = re.compile(r"[*?\[]")
+
+
+def _script_verb_refusal(text):
+    """Why a reading is refused for a trust verb standing as the first word
+    after a script, wherever that script is read from, or None. Independent of
+    the script's name: the verb word is the signal. A verb after `-`
+    (`python3 - approve < verify_trust.py`, `cat verify_trust.py | python3 -
+    approve`), after a script token (a copy under another name, a glob such as
+    `verify_t*st.py`) or after anything else an interpreter was handed, is
+    refused; a verb after an option (`--root approve`, `-k approve`), glued to
+    a path (`/tmp/approve`) or in a command with no interpreter or script
+    token (`grep -n approve`, `echo approve`) is an argument, not the verb."""
+    for segment in re.split(r"[\n;&|]", text):
+        tokens = [t.strip("()\"'`{}") for t in segment.split()]
+        tokens = [t for t in tokens if t]
+        interpreter = any(_INTERPRETER_RE.search(t) for t in tokens)
+        for before, after in zip(tokens, tokens[1:]):
+            verb = after.lower() in _TRUST_VERBS
+            if verb and (before == "-" or (not before.startswith("-")
+                                           and (interpreter or _SCRIPT_TOKEN_RE.search(before)))):
+                return ("it hands a verify trust verb to a script read from stdin, a copy or a "
+                        "wildcard path; only a person at a terminal trusts a repo")
+            if _GLOB_SCRIPT_RE.search(before) and ".p" in before.lower() \
+                    and after.startswith(("$", "`")):
+                return ("a wildcard script path is given a variable where the verify trust verb "
+                        "goes; only a person at a terminal trusts a repo")
+    return None
+
+
 def _trust_reading_refusal(command):
     """Why one reading of a shell command is refused for the verify trust
     store, or None. Judged on the reading as written AND with every quote and
@@ -381,6 +414,9 @@ def _trust_reading_refusal(command):
         assembled = _assembled_trust_refusal(text)
         if assembled:
             return assembled
+        scripted = _script_verb_refusal(text)
+        if scripted:
+            return scripted
     return None
 
 
