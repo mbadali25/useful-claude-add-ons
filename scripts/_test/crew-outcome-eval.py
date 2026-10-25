@@ -332,6 +332,12 @@ def case_run_repo_is_one_commit_without_the_reference(tmp):
     return count == "1" and not reachable and not base_reachable, (count, reachable, base_reachable)
 
 
+def case_real_crew_arm_removes_the_codemap_and_the_graph(tmp):
+    arm = eval_mod.load_arm(os.path.join(REAL_EVAL_DIR, "arms", "crew.json"))
+    paths = arm.get("removePaths", [])
+    return ".crew/codemap" in paths and "graphify-out" in paths, paths
+
+
 def case_remove_paths_deletes_from_the_run_repo_and_refuses_an_escape(tmp):
     fix = Fix(tmp)
     arm = dict(fix.arm, removePaths=["gone-dir", "gone.txt"])
@@ -2245,6 +2251,7 @@ CASES = (
     ("must-block: a bare reference PR number is flagged; a longer number or entity is not", case_a_bare_reference_pr_number_is_flagged_but_a_longer_number_is_not),
     ("must-block: hidden-test lines spread over separate files do not flag a run (three in one file do)", case_hidden_test_lines_spread_over_separate_files_do_not_flag_a_run),
     ("must-block: the Claude auth copy is an allowlist of OAuth fields", case_the_claude_auth_copy_is_an_allowlist_of_oauth_fields),
+    ("must-block: the real crew arm removes the codemap and the graph, or a billed run stops at refresh", case_real_crew_arm_removes_the_codemap_and_the_graph),
     ("must-block: removePaths deletes from the run repo and refuses an escape", case_remove_paths_deletes_from_the_run_repo_and_refuses_an_escape),
     ("must-block: removePaths refuses a prefix sibling, a symlink escape and empty, dot or backslash entries", case_remove_paths_refuses_a_prefix_sibling_a_symlink_escape_and_bad_entries),
     ("must-allow: removePaths removes an in-repo symlink without following it", case_remove_paths_removes_a_symlink_inside_the_repo_without_following_it),
