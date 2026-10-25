@@ -3,6 +3,7 @@ not be priced below it, and the rules measured over the Stop budget on Windows
 (L-0904) must say so, so a cold Windows checkout stops admitting them at Stop.
 """
 import json
+import math
 import os
 import re
 
@@ -35,8 +36,8 @@ def _problems(rules):
     for rule in rules:
         name = rule.get("id")
         seconds = rule.get("seconds")
-        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or seconds < 0:
-            found.append(f"{name}: seconds {seconds!r} is not a number >= 0")
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) or seconds < 0:
+            found.append(f"{name}: seconds {seconds!r} is not a finite number >= 0")
             continue
         for stated in _WINDOWS.findall(rule.get("why", "")):
             if seconds < int(stated):
@@ -58,6 +59,23 @@ def test_a_rule_priced_below_its_stated_windows_figure_is_reported():
     assert len(found) == 2
     assert found[0].startswith("x: seconds 12 is below")
     assert found[1].startswith("z: seconds -1")
+
+
+def test_a_nan_or_infinite_seconds_is_reported_not_passed():
+    rules = [{"id": "n", "seconds": float("nan"), "why": "Windows 100s (win-repo-2, d, r)."},
+             {"id": "i", "seconds": float("inf"), "why": ""}]
+
+    found = _problems(rules)
+
+    assert [f.split(":")[0] for f in found] == ["n", "i"]
+
+
+def test_the_note_paragraph_for_l_0904_starts_its_own_line():
+    with open(_MAP, encoding="utf-8", errors="strict") as fh:
+        lines = fh.read().splitlines()
+    shared = [ln for ln in lines if "L-0904:" in ln and not ln.strip().startswith('"L-0904:')]
+
+    assert shared == []
 
 
 def test_the_rules_that_cross_the_stop_budget_on_windows_state_it_and_are_priced_over_it():
