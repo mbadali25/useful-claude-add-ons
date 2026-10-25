@@ -36,8 +36,7 @@ GATE_SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2
 # that could not run at all (status 14) is exit 2 on the Stop path, like a
 # matcher that cannot run (the first call defers to the matcher's own message
 # when verify.json exists; the second call, after the matcher parsed, cannot).
-# $1 is the
-# directory holding verify_trust.py. --ci is exempt and says so: a CI job's
+# $1 is the directory holding verify_trust.py. --ci is exempt and says so: a CI job's
 # checkout is its own pipeline's trust and has no home store.
 gate_trust_broken() {
   echo "VERIFY GATE: could not RUN the trust check (verify_trust.py exited ${GATE_TRUST_RC:-?}). Verification did NOT run. Work is not complete." >&2

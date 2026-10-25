@@ -463,3 +463,68 @@ def test_evaluate_a_git_file_pointing_at_a_trusted_repo_does_not_borrow_its_plac
 
     assert _code(trusted) == verify_trust.EXIT_TRUSTED
     assert _code(evil) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_disallow_owner_without_a_terminal_or_yes_changes_nothing(tmp_path, store, monkeypatch):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _allow()
+    monkeypatch.setattr(verify_trust.sys.stdin, "isatty", lambda: False)
+
+    code = verify_trust.main(["disallow-owner", _OWNER])
+
+    assert code == 1
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+
+
+def test_lock_a_stale_lock_is_broken_once_and_a_fresh_one_is_kept(tmp_path):
+    path = str(tmp_path / "s.json")
+    lock_dir = path + ".lock"
+    os.mkdir(lock_dir)
+    old = os.stat(lock_dir).st_mtime - verify_trust.LOCK_STALE - 5
+    os.utime(lock_dir, (old, old))
+
+    with verify_trust._Lock(path):
+        assert os.path.isdir(lock_dir)
+    assert not os.path.exists(lock_dir)
+
+    os.mkdir(lock_dir)
+    verify_trust._Lock(path)._break()
+    assert os.path.isdir(lock_dir)
+
+
+def test_lock_release_leaves_a_lock_another_holder_took(tmp_path):
+    path = str(tmp_path / "s.json")
+    mine = verify_trust._Lock(path)
+    mine.__enter__()
+    other = path + ".lock"
+    with open(os.path.join(other, "token"), "w", encoding="utf-8") as handle:
+        handle.write("someone-else")
+
+    mine.__exit__(None, None, None)
+
+    assert os.path.isdir(other)
+
+
+def test_replace_retries_a_permission_error_then_succeeds(tmp_path, monkeypatch):
+    src, dst = tmp_path / "a", tmp_path / "b"
+    src.write_text("x", encoding="utf-8")
+    real, calls = os.replace, []
+
+    def flaky(a, b):
+        calls.append(1)
+        if len(calls) < 3:
+            raise PermissionError
+        real(a, b)
+
+    monkeypatch.setattr(verify_trust.os, "replace", flaky)
+
+    verify_trust._replace(str(src), str(dst))
+
+    assert dst.read_text(encoding="utf-8") == "x" and len(calls) == 3
+
+
+def test_git_output_with_invalid_bytes_stays_distinct(tmp_path):
+    first = b"https://github.com/\xff/x".decode("utf-8", "backslashreplace")
+    second = b"https://github.com/\xfe/x".decode("utf-8", "backslashreplace")
+
+    assert first != second and verify_trust.parse_remote(first) is None

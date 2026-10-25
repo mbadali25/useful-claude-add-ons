@@ -58,10 +58,12 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 import crew_common
 
@@ -77,6 +79,7 @@ SMOKE_CANDIDATES = ("_verify/smoke.sh", "scripts/smoke.sh")
 GIT_TIMEOUT = 15
 LOCK_WAIT = 5.0
 LOCK_STALE = 30.0
+REPLACE_TRIES = 5
 
 _SEG = re.compile(r"[A-Za-z0-9_.-]+")
 _HOST = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?")
@@ -147,24 +150,54 @@ def load_store(path):
 
 
 class _Lock:
-    """A directory lock beside the store: portable, bounded, self-expiring."""
+    """A directory lock beside the store: portable, bounded, self-expiring.
+    The holder writes a random token inside the directory and releases only a
+    directory still carrying it; a stale lock is claimed by an atomic rename to
+    a name of the claimer's own, so two waiters cannot both break it and a
+    waiter never removes a lock that was re-taken after it looked."""
 
     def __init__(self, path):
         self.path = path + ".lock"
+        self.token = uuid.uuid4().hex
+
+    def _stale(self):
+        try:
+            return time.time() - os.stat(self.path).st_mtime > LOCK_STALE
+        except OSError:
+            return False
+
+    def _break(self):
+        claimed = f"{self.path}.stale.{self.token}"
+        try:
+            os.rename(self.path, claimed)
+        except OSError:
+            return
+        try:
+            if time.time() - os.stat(claimed).st_mtime <= LOCK_STALE:
+                try:
+                    os.rename(claimed, self.path)
+                except OSError:
+                    pass
+                return
+            shutil.rmtree(claimed, ignore_errors=True)
+        except OSError:
+            pass
 
     def __enter__(self):
         deadline = time.monotonic() + LOCK_WAIT
         while True:
             try:
                 os.mkdir(self.path)
-                return self
-            except FileExistsError:
                 try:
-                    if time.time() - os.stat(self.path).st_mtime > LOCK_STALE:
-                        os.rmdir(self.path)
-                        continue
+                    with open(os.path.join(self.path, "token"), "w", encoding="utf-8") as handle:
+                        handle.write(self.token)
                 except OSError:
                     pass
+                return self
+            except FileExistsError:
+                if self._stale():
+                    self._break()
+                    continue
                 if time.monotonic() > deadline:
                     raise TrustError(f"the store lock {self.path} is held") from None
                 time.sleep(0.05)
@@ -173,10 +206,26 @@ class _Lock:
 
     def __exit__(self, *exc):
         try:
-            os.rmdir(self.path)
+            with open(os.path.join(self.path, "token"), encoding="utf-8") as handle:
+                mine = handle.read() == self.token
         except OSError:
-            pass
+            mine = False
+        if mine:
+            shutil.rmtree(self.path, ignore_errors=True)
         return False
+
+
+def _replace(src, dst):
+    """os.replace, retried briefly: on Windows a concurrent reader holding the
+    store open makes it raise PermissionError until the reader lets go."""
+    for attempt in range(REPLACE_TRIES):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == REPLACE_TRIES - 1:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def update_store(path, mutate):
@@ -203,7 +252,7 @@ def update_store(path, mutate):
                 os.chmod(tmp, 0o600)
             except OSError:
                 pass
-            os.replace(tmp, path)
+            _replace(tmp, path)
             tmp = None
         except OSError as exc:
             raise TrustError(f"cannot write {path}: {exc.__class__.__name__}") from exc
@@ -229,7 +278,7 @@ def _git(root, *args):
         return None
     if proc.returncode != 0:
         return None
-    return proc.stdout.decode("utf-8", "replace")
+    return proc.stdout.decode("utf-8", "backslashreplace")
 
 
 def repo_identity(root):
@@ -606,6 +655,8 @@ def cmd_allow_owner(args):
 def cmd_disallow_owner(args):
     owner = args.owner.strip().lower()
     found = []
+    if not _confirm(f"Stop trusting every repo whose remotes are {owner}.", args.yes):
+        return 1
 
     def drop(st):
         if st["owners"].pop(owner, None) is not None:
