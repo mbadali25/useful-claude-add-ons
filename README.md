@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.83**: The verify-map price test rejects a NaN or infinite `seconds`. `crew` 1.2.83: a rule priced `NaN` can no longer pass the verify-map price test, and the L-0904 note sentence in `.crew/verify.json` starts its own line; no behaviour a user runs changes.
 - **crew 1.2.79**: The sabotage suite reports no STILL GREEN and no unproven entry. `crew` 1.2.79: the gate's sabotage step now goes red by a real assertion for every entry it keeps, so a vacuous test can no longer pass as coverage; no behaviour a user runs changes.
-- **crew 1.2.78**: The 30 rules that cost more than the Stop budget on Windows are priced as such in `.crew/verify.json`. `crew` 1.2.78: a cold Windows checkout no longer runs 30 slow rules at Stop; they are priced at what win-repo-2 measured and deferred to CI until `/crew:verify --all` times them on that host.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
