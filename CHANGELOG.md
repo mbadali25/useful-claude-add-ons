@@ -9,12 +9,17 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — crew 1.2.81: the verify gate runs a repo's verify map only for a repo this machine trusts (L-0888)
+### Changed — crew 1.2.84: the verify gate runs a repo's verify map only for a repo this machine trusts (L-0888)
 
-- **Summary.** `crew` 1.2.81: `verify-gate.sh` no longer runs `.crew/verify.json` rules or a smoke script from a repo you have not approved on this machine; the first Stop in each such repo prints `UNTRUSTED, not run` until you approve it once.
+- **Summary.** `crew` 1.2.84: `verify-gate.sh` no longer runs `.crew/verify.json` rules or a smoke script from a repo you have not approved on this machine; the first Stop in each such repo prints `UNTRUSTED, not run` until you approve it once.
 - **Breaking.** The Stop gate (and `--all`, `--price`) runs a repo's rules only when the repo is trusted: a hash-bound approval in `${CLAUDE_CONFIG_DIR:-~/.claude}/crew/verify-trust.json` (`python3 plugin/crew/hooks/scripts/verify_trust.py approve --root <repo>`, a terminal and a typed `yes`), or a git remote owner you allowlisted (`allow-owner github.com/<owner> [--under <dir>]`). Anything else (UNTRUSTED, CHANGED, REMOTE CHANGED, UNKNOWN) prints the cause, runs nothing, records no pass and exits 0. `--ci` is exempt and says so. Residual risk, stated: the allowlist trusts a fresh directory whose `.git/config` names an allowlisted owner on first sight unless `--under` is set; a session that can run `git` can set a remote URL and so claim owner trust, so prefer a hash approval for repos you did not clone yourself; the hash binds the verify map, not the scripts a `run` string calls (the gate's own `python` steps now run isolated, `-I`, so a `json.py` in the repo cannot be imported by them); `review_checks.py` linter commands are L-0901. The second check holds verify.json to the bytes the matcher parsed; `--price` is judged for the map it runs (a refusal exits 1, since nothing was priced); `approve` / `allow-owner` / `disallow-owner` refuse inside a Claude Code session even with `--yes`.
 - `scope_guard.py` refuses a model-run `verify_trust.py approve|allow-owner|disallow-owner|revoke` and any write of the store; the store is not a config key. The `/crew:trust` prompt route is L-0902.
 - Tests: `test_verify_trust.py`, `test_verify_gate_trust.py`, `test_scope_guard_trust.py`, `test_tooling_pr_shell_suite.py`; `sabotage_trust.py` (26 entries, each confirmed red). `conftest.py` gives every test a store carrying a test seam honoured only for a store named through `CREW_VERIFY_TRUST_FILE`.
+
+### Fixed — crew 1.2.83: the verify-map price test rejects a NaN or infinite `seconds` (L-0910)
+
+- **Summary.** `crew` 1.2.83: a rule priced `NaN` can no longer pass the verify-map price test, and the L-0904 note sentence in `.crew/verify.json` starts its own line; no behaviour a user runs changes.
+- `plugin/crew/tests/test_verify_map_prices.py`: `seconds` must be finite (NaN failed both `<` comparisons), and an int too large for a float is accepted rather than crashing the check. Tests and a line split only. Docs: none.
 
 ### Fixed — crew 1.2.79: the sabotage suite reports no STILL GREEN and no unproven entry (L-0897, L-0906, L-0903)
 

@@ -46,7 +46,8 @@
     "is why it was superseded rather than reconciled: an unannotated number",
     "cannot be re-derived or compared against a load figure that does not exist).",
     "The two are not a claimed speedup of the same work - see the rule's own `why`.",
-    "non-empty every time and `default` unreachable. L-0904: the 30 rules the Windows evidence (win-repo-2, origin/win-reprice-patch d9f7f02a4bb5) measured over the 60s Stop budget carry that Windows figure in `seconds`, and the figure in their `why` as `Windows <N>s (win-repo-2, ...)`. The Windows price binds every host until a machine has its own measurement: run `/crew:verify --all` once on each host after this lands, and the per-machine cache (L-0905) prices each rule from that host's own clean run. Until then those rules are deferred to CI at Stop, not run. plugin/crew/tests/test_verify_map_prices.py holds the invariant."
+    "non-empty every time and `default` unreachable.",
+    "L-0904: the 30 rules the Windows evidence (win-repo-2, origin/win-reprice-patch d9f7f02a4bb5) measured over the 60s Stop budget carry that Windows figure in `seconds`, and the figure in their `why` as `Windows <N>s (win-repo-2, ...)`. The Windows price binds every host until a machine has its own measurement: run `/crew:verify --all` once on each host after this lands, and the per-machine cache (L-0905) prices each rule from that host's own clean run. Until then those rules are deferred to CI at Stop, not run. plugin/crew/tests/test_verify_map_prices.py holds the invariant."
   ],
 
   "_note_preReview": [
