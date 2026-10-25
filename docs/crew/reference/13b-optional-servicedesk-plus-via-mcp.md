@@ -27,9 +27,9 @@ and the last three notes, and `/crew:implement` reads that file instead of the A
 
 | | Why it matters |
 |---|---|
-| Notes are requester-visible unless private | A requester is often not an engineer. `sdp.noteVisibility` defaults to `private`, and that is not a substitute for scrubbing: hostnames, credentials and internal addresses do not belong in a desk record either way. |
+| Notes are requester-visible unless private | A requester is often not an engineer. Note visibility is fixed at `private` (the `sdp.noteVisibility` setting was removed), and that is not a substitute for scrubbing: hostnames, credentials and internal addresses do not belong in a desk record either way. |
 | A bad field value rejects the *whole* write | SDP does not partially apply an update. Resolve status, category and priority against `sdp_list_metadata` first and send what the desk accepts, not what the local ticket happens to call it. |
-| Closing is somebody's job, not crew's | `sdp.closeOnDone` defaults to `false`: push transitions the request and leaves closure alone. Set it `true` only for a queue that is genuinely yours, and let `sdp_close` do it — it goes through the desk's closure endpoint and satisfies mandatory closure fields, which a faked `sdp_update` does not. |
+| Closing is somebody's job, not crew's | Crew never closes a request: push transitions it and leaves closure alone (the `sdp.closeOnDone` setting was removed and is fixed at `false`). If a queue is genuinely yours, close it by hand with `sdp_close` — it goes through the desk's closure endpoint and satisfies mandatory closure fields, which a faked `sdp_update` does not. |
 | A failed write is gone | There is no local outbox. If a note fails it is not queued anywhere; re-read with `sdp_get` before retrying so a partial success is not duplicated. |
 
 The writes act as the signed-in user, so the desk's audit trail names a person

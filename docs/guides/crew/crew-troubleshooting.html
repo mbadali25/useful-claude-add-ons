@@ -146,7 +146,7 @@ with <code>crew-hook: ... failing closed (armed repo)</code> and the cause, rath
 <tr>
 <td><code>SessionStart</code></td>
 <td><code>handoff-read.sh</code></td>
-<td>resets its once-per-session markers; reads back <code>.work/HANDOFF.md</code> only when <code>memory.inject</code> is false</td>
+<td>resets its once-per-session markers; reads back <code>.work/HANDOFF.md</code> only if the context hook did not inject it</td>
 <td>— (always runs)</td>
 <td>on</td>
 </tr>
@@ -161,8 +161,8 @@ with <code>crew-hook: ... failing closed (armed repo)</code> and the cause, rath
 <td><code>SessionStart</code> / <code>UserPromptSubmit</code> / <code>PostToolUse</code> / <code>SubagentStart</code></td>
 <td><code>crew-context.sh</code></td>
 <td>injects code-map slices and vault recall, tracks the token budget</td>
-<td><code>context.enabled</code> (whole hook), <code>memory.inject</code> (codemap, handoff and vault injection — on by default since 1.0.0)</td>
-<td><code>context.enabled: true</code>, <code>memory.inject: true</code></td>
+<td><code>context.enabled</code> (whole hook; injection itself has no separate switch since 1.0.0)</td>
+<td><code>context.enabled: true</code></td>
 </tr>
 <tr>
 <td><code>UserPromptSubmit</code></td>
@@ -175,28 +175,28 @@ with <code>crew-hook: ... failing closed (armed repo)</code> and the cause, rath
 <td><code>PreToolUse</code> (<code>Bash</code>/<code>PowerShell</code>)</td>
 <td><code>promote-gate.sh</code></td>
 <td>the six command/production guards plus <code>mergeGate</code></td>
-<td><code>guards.terraformApply</code>, <code>guards.forcePush</code>, <code>guards.adminMerge</code>, <code>guards.mergeGate</code>, <code>guards.cloudDestructive</code>, <code>guards.sqlDestructive</code>, <code>guards.prodDatabase</code>, <code>guards.prodServer</code></td>
+<td><code>guards.profile</code>, or <code>guards.overrides.&lt;guard&gt;</code> for <code>terraformApply</code>, <code>forcePush</code>, <code>adminMerge</code>, <code>mergeGate</code>, <code>cloudDestructive</code>, <code>sqlDestructive</code>, <code>prodDatabase</code>, <code>prodServer</code></td>
 <td><code>block</code> / <code>none</code> (the strictest tier)</td>
 </tr>
 <tr>
 <td><code>PreToolUse</code> (<code>Write</code>|<code>Edit</code>)</td>
 <td><code>role-write-guard.sh</code></td>
 <td>refuses a write outside the dispatched role's declared scope</td>
-<td><code>guards.roleWrites</code> (<code>block</code>/<code>report</code>/<code>off</code>)</td>
+<td><code>guards.overrides.roleWrites</code> (<code>block</code>/<code>report</code>/<code>off</code>), or <code>guards.profile</code></td>
 <td><code>off</code></td>
 </tr>
 <tr>
 <td><code>PreToolUse</code> (<code>Bash</code>|<code>PowerShell</code>)</td>
 <td><code>cloud-guard.sh</code></td>
-<td>destructive <code>aws</code>/<code>az</code> commands, wrong-identity commands, and dispatches of workflows listed in <code>environments.workflows</code> (<code>guards.deployWorkflow</code>) — judged only when every word on the line is a plain literal or a single-quoted word; anything else asks, and is refused unattended</td>
-<td><code>guards.cloudGuard</code> (<code>block</code>/<code>report</code>/<code>off</code>)</td>
+<td>destructive <code>aws</code>/<code>az</code> commands, wrong-identity commands, and dispatches of workflows listed in <code>environments.workflows</code> (<code>guards.overrides.deployWorkflow</code>) — judged only when every word on the line is a plain literal or a single-quoted word; anything else asks, and is refused unattended</td>
+<td><code>guards.overrides.cloudGuard</code> (<code>block</code>/<code>report</code>/<code>off</code>), or <code>guards.profile</code></td>
 <td><code>off</code></td>
 </tr>
 <tr>
 <td><code>PreToolUse</code> (<code>Bash</code>|<code>PowerShell</code>)</td>
 <td><code>env-guard.sh</code></td>
 <td>a command that prints the whole environment or a credential-named variable into the agent's context; a command it cannot read is could-not-tell (L-0772)</td>
-<td><code>guards.envGuard</code> (<code>block</code>/<code>report</code>/<code>off</code>)</td>
+<td><code>guards.overrides.envGuard</code> (<code>block</code>/<code>report</code>/<code>off</code>), or <code>guards.profile</code></td>
 <td><code>off</code></td>
 </tr>
 <tr>
@@ -217,14 +217,14 @@ with <code>crew-hook: ... failing closed (armed repo)</code> and the cause, rath
 <td><code>PreCompact</code></td>
 <td><code>handoff-write.sh</code></td>
 <td>writes the handoff note before compaction</td>
-<td><code>context.autoWrapUp</code>, <code>context.handoffPath</code></td>
+<td>— (always on; the handoff path is fixed at <code>.work/HANDOFF.md</code>)</td>
 <td>on</td>
 </tr>
 <tr>
 <td><code>Notification</code></td>
 <td><code>notify.sh</code> (<code>crew_notify.py hook</code>)</td>
 <td>a <code>Question</code> / <code>Needs permission</code> ping when Claude stopped on a permission prompt, an AskUserQuestion or an elicitation; never <code>idle_prompt</code>; once per waiting episode</td>
-<td><code>notify.provider</code> (<code>none</code> or null disables it), <code>notify.events</code>, <code>notify.questionTypes</code></td>
+<td><code>notify.provider</code> (<code>none</code> or null disables it), <code>notify.events</code></td>
 <td>off</td>
 </tr>
 <tr>
@@ -238,7 +238,7 @@ with <code>crew-hook: ... failing closed (armed repo)</code> and the cause, rath
 <td><code>Stop</code></td>
 <td><code>context-watch.sh</code></td>
 <td>nags for a handoff near the context budget, drives auto-clear</td>
-<td><code>context.enabled</code>, <code>context.warnAt</code>, <code>context.budgetTokens</code>, <code>context.reserveTokens</code>, <code>context.autoClear.*</code></td>
+<td><code>context.enabled</code>, <code>context.warnAt</code>, <code>context.reserveTokens</code>, <code>context.autoClear.*</code></td>
 <td>on, <code>warnAt: 0.4</code></td>
 </tr>
 <tr>
@@ -257,12 +257,13 @@ with <code>crew-hook: ... failing closed (armed repo)</code> and the cause, rath
   found another runner's in-flight marker <code>stale</code> (a dead pid, or no heartbeat inside T-0049's
   30-minute TTL) and names the owner's <code>crew_inflight.py clear</code>; <code>Lane state unknown</code> means it could
   not tell. <code>Approval waiting</code> is autopilot stopped at <code>approve</code>.</li>
-<li><strong>Silence one hook without touching the rest:</strong> set its own key. <code>guards.roleWrites: off</code>,
-  <code>guards.cloudGuard: off</code>, <code>guards.envGuard: off</code> and <code>scope.mode: off</code> are already the shipped defaults — a noisy session
+<li><strong>Silence one hook without touching the rest:</strong> set its own key. <code>guards.profile: off</code> (which leaves
+  the role-write, cloud and environment guards off) and <code>scope.mode: off</code> are already the shipped defaults — a noisy session
   usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not
   that the default changed.</li>
-<li><strong>Silence the SessionStart context specifically:</strong> <code>{"memory": {"inject": false}}</code> stops the
-  context hook; <code>handoff-read.sh</code> then prints the handoff on resume instead.</li>
+<li><strong>Silence the SessionStart context specifically:</strong> <code>{"context": {"enabled": false}}</code> stops the
+  context hook and the Stop nag with it. There is no separate switch for injection since 1.0.0
+  (the <code>memory.inject</code> setting was removed).</li>
 <li><strong>See what the context hook is actually doing:</strong></li>
 </ul>
 <pre><code class="language-bash">python3 &quot;&lt;crew plugin root&gt;/hooks/scripts/crew_context.py&quot; --stats
@@ -942,7 +943,7 @@ it never picks among candidates.</p>
 <code>could-not-tell</code> and a <code>not-run</code> row, and decide from there.</p>
 <h2 id="environment-guard-refusals">Environment Guard Refusals</h2>
 <p><code>env-guard.sh</code> / <code>env_guard.py</code>, a <code>PreToolUse</code> hook on <code>Bash</code> and <code>PowerShell</code> (L-0772). <strong>Ships
-off</strong> (<code>guards.envGuard: off</code>); turn it on with <code>{"guards": {"envGuard": "report"}}</code> and read
+off</strong> (<code>guards.profile: off</code>); turn it on with <code>{"guards": {"overrides": {"envGuard": "report"}}}</code> and read
 <code>.crew/guard.log</code> before enforcing with <code>"block"</code>. A refusal names labels only, never a value.</p>
 <ul>
 <li><strong><code>env-dump:&lt;form&gt;</code>:</strong> the command prints the whole environment. Read the one variable you need by
@@ -957,7 +958,7 @@ off</strong> (<code>guards.envGuard: off</code>); turn it on with <code>{"guards
 </ul>
 <h2 id="cloud-guard-false-positives">Cloud Guard False Positives</h2>
 <p><code>cloud-guard.sh</code> / <code>cloud_guard.py</code>, a <code>PreToolUse</code> hook on <code>Bash</code> and <code>PowerShell</code>. <strong>Ships off</strong>
-(<code>guards.cloudGuard: off</code>); turn it on with <code>{"guards": {"cloudGuard": "report"}}</code> first to see what
+(<code>guards.profile: off</code>); turn it on with <code>{"guards": {"overrides": {"cloudGuard": "report"}}}</code> first to see what
 it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
 <ul>
 <li>
@@ -984,7 +985,7 @@ it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
 <li>
 <p><strong>A <code>python3</code>/<code>node</code> line is refused as "a terraform-family line with python code that ...".</strong>
   (L-0871, crew 1.2.63; before it the denial quoted an unrelated word such as <code>'^JIRA_'</code> or <code>'&lt;&lt;'</code>.)
-  With <code>guards.terraformApply</code> armed, interpreter code is refused only when it names terraform,
+  With <code>guards.overrides.terraformApply</code> armed, interpreter code is refused only when it names terraform,
   terragrunt or tofu (in the code or anywhere on the line), or reaches a process and builds the
   name: the denial says which, for example <code>python code that spells 'terraform' out of fragments</code>
   or <code>builds a name at run time ('chr(')</code>. <code>import os</code>, <code>import requests</code>, <code>os.environ.get(...)</code>
@@ -1092,8 +1093,8 @@ refuses).</p>
   find it; <code>cli-exit-N</code>, <code>cli-timeout</code>, <code>cli-bad-json</code> mean the CLI ran and failed; <code>no-vaults</code> means
   no vault is currently <code>primary</code> or <code>recall</code>; <code>no-hits</code> means the search itself found nothing. Only
   <code>no-hits</code> means "the vault genuinely has nothing relevant" — every other reason is a setup problem.
-  Also confirm <code>memory.inject</code> is not <code>false</code> in <code>.crew/config.json</code> — recall and code-map injection
-  are on by default since 1.0.0, so "no recall ever appears" with the key set to <code>false</code> is expected.
+  Also confirm <code>context.enabled</code> is not <code>false</code> — recall and code-map injection are always on since
+  1.0.0 while the context hook runs, so "no recall ever appears" with the hook switched off is expected.
   <strong>Fix:</strong> <code>$VO recall --query "&lt;words you expect&gt;"</code> directly, to separate "the CLI can't find it"
   from "the hook isn't calling the CLI". An empty answer can be the CLI's relevance floor or its
   excluded folders, not a missing note: the obsidian-vault recall CLI drops stop words, needs
@@ -1168,7 +1169,7 @@ command — no keystrokes appear at all.</p>
   config that names it is refused with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or
   tmux", and <code>crew_autoclear_setup.py apply-method sendkeys</code> refuses by name.</li>
 <li><strong>Fix:</strong> treat the <code>notify</code> message as the intended behaviour, or run the session inside tmux
-  (Git Bash or WSL), where <code>auto</code> picks <code>tmux</code>. See <code>plugin/crew/CONFIG.md</code> §14.</li>
+  (Git Bash or WSL), where <code>auto</code> picks <code>tmux</code>. See `plugin/crew/docs/crew/config-rationale.md.</li>
 </ul>
 <h3 id="bare-crewautopilot-stopped-on-a-goal">"Bare /crew:autopilot Stopped on a Goal"</h3>
 <p><strong>Symptom:</strong> <code>/crew:autopilot</code> with no argument stops naming autopilot goals, or a <code>fell through:</code>
@@ -1385,37 +1386,37 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 <td><code>off</code> (the default): <code>/crew:autopilot</code> runs no phase; only the exact string <code>plan</code> arms it</td>
 </tr>
 <tr>
-<td><code>memory.inject</code></td>
-<td>repo only</td>
-<td>bool</td>
-<td><code>false</code>: no code-map, handoff or vault text is injected (default <code>true</code> since 1.0.0)</td>
+<td><code>guards.profile</code></td>
+<td>both layers (expands per layer)</td>
+<td><code>off</code>/<code>standard</code>/<code>strict</code></td>
+<td><code>off</code> (the default): the cloud, environment and role-write guards are off and the others sit at their narrowest tier. Set one guard away from the profile with <code>guards.overrides.&lt;guard&gt;</code>; the narrower layer wins per guard</td>
 </tr>
 <tr>
-<td><code>guards.cloudGuard</code></td>
+<td><code>guards.overrides.cloudGuard</code></td>
 <td>both layers, ratchets</td>
 <td><code>block</code>/<code>report</code>/<code>off</code></td>
 <td><code>off</code>: the hook reads this key and exits</td>
 </tr>
 <tr>
-<td><code>guards.envGuard</code></td>
+<td><code>guards.overrides.envGuard</code></td>
 <td>both layers, ratchets</td>
 <td><code>block</code>/<code>report</code>/<code>off</code></td>
 <td><code>off</code>: the hook reads this key and exits</td>
 </tr>
 <tr>
-<td><code>guards.roleWrites</code></td>
+<td><code>guards.overrides.roleWrites</code></td>
 <td>both layers, ratchets</td>
 <td><code>block</code>/<code>report</code>/<code>off</code></td>
 <td><code>off</code>: every Write/Edit is allowed unconditionally</td>
 </tr>
 <tr>
-<td><code>guards.terraformApply</code>, <code>forcePush</code>, <code>adminMerge</code>, <code>mergeGate</code>, <code>cloudDestructive</code>, <code>sqlDestructive</code></td>
+<td><code>guards.overrides.&lt;guard&gt;</code> for <code>terraformApply</code>, <code>forcePush</code>, <code>adminMerge</code>, <code>mergeGate</code>, <code>cloudDestructive</code>, <code>sqlDestructive</code></td>
 <td>both layers, ratchets</td>
 <td><code>block</code>/<code>ask</code>/<code>allow</code></td>
 <td>there is no "off" — <code>allow</code> is the most permissive tier, still logged</td>
 </tr>
 <tr>
-<td><code>guards.deployWorkflow</code></td>
+<td><code>guards.overrides.deployWorkflow</code></td>
 <td>both layers, ratchets</td>
 <td><code>block</code>/<code>ask</code>/<code>allow</code></td>
 <td><code>block</code> is default and floor; <code>allow</code> covers nonProd only — production without <code>environments.prodUnattended</code> in both layers, and an unknown environment, still ask (denied unattended)</td>
@@ -1433,7 +1434,7 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 <td><code>false</code> in either layer holds it down: production applies and dispatches ask</td>
 </tr>
 <tr>
-<td><code>guards.prodDatabase</code>, <code>guards.prodServer</code></td>
+<td><code>guards.overrides.prodDatabase</code>, <code>guards.overrides.prodServer</code></td>
 <td>both layers, ratchets</td>
 <td><code>none</code>/<code>read</code>/<code>full</code></td>
 <td><code>none</code> is both the default and the floor</td>
@@ -1463,10 +1464,10 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 <td><code>false</code>: <code>context-watch.sh</code> (the Stop nag) does nothing</td>
 </tr>
 <tr>
-<td><code>context.autoClear.enabled</code>, <code>autoWrapUp</code></td>
+<td><code>context.autoClear.enabled</code></td>
 <td>both layers</td>
 <td>bool</td>
-<td>each independently disables one leg of the wrap-up/clear loop</td>
+<td><code>false</code> disables the clear leg of the wrap-up/clear loop (the wrap-up itself is always on)</td>
 </tr>
 <tr>
 <td><code>notify.provider</code></td>
@@ -1483,15 +1484,15 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 <tr>
 <td><code>install.policy</code></td>
 <td>both layers, ratchets</td>
-<td>see <code>plugin/crew/CONFIG.md</code> §"install"</td>
+<td>see <code>docs/crew/config-rationale.md</code>, "install.policy"</td>
 <td>narrowest tier refuses more install actions</td>
 </tr>
 </tbody>
 </table>
 <p><strong>A destroy is never applied unattended</strong>, at any setting: <code>destroy</code>, <code>apply -destroy</code>, <code>-replace</code>,
 <code>workspace delete</code>, a saved plan whose sidecar lists a delete, or an apply with no sidecar at all
-asks when you are there and is denied unattended — <code>terraformApply: allow</code> and
-<code>environments.prodUnattended</code> included. The full decision table is in <code>plugin/crew/CONFIG.md</code>
+asks when you are there and is denied unattended — <code>guards.overrides.terraformApply: allow</code> and
+<code>environments.prodUnattended</code> included. The full decision table is in <code>docs/crew/config-rationale.md</code>
 (<code>environments.*</code>).</p>
 <p><code>~/.claude/crew/config.json</code> is the machine-global layer; <code>.crew/config.json</code> is per-repo and wins
 where both speak. A <strong>ratcheted</strong> key (marked above) can only be <em>narrowed</em> by the repo relative to
@@ -1553,10 +1554,10 @@ runs but the visual rule never passes.</p>
   PowerShell twin stands itself down on the wrong platform (<code>$env:OS -ne 'Windows_NT'</code>) rather than
   the bash twin doing that job.</li>
 <li><strong>Tests and checks are slow on Windows.</strong> Read <code>/crew:status</code>'s <code>shell</code> line first. It names the
-  shell route crew's jobs take (<code>shellRoute.mode</code>: <code>auto</code>, <code>wsl</code>, <code>powershell</code>, <code>gitbash</code>) and why.
+  shell route crew's jobs take (chosen automatically; <code>shellRoute.mode</code> was removed) and why.
   <code>WSL never probed</code> means nobody ran <code>crew_shell.py probe --write</code>; <code>not-installed</code> comes with the
   <code>wsl --install -d Ubuntu</code> recommendation, which crew prints and never runs. A repo on a Windows
-  drive goes to WSL under <code>auto</code> only after <code>crew_shell.py measure --write</code> has shown WSL faster
+  drive goes to WSL only after <code>crew_shell.py measure --write</code> has shown WSL faster
   there. See "Choosing the shell route on Windows" in <code>plugin/crew/skills/crew-setup/platform.md</code>.</li>
 </ul>
 <h2 id="auto-wrap-up-auto-clear-and-auto-resume">Auto Wrap-Up, Auto-Clear and Auto-Resume</h2>
@@ -1624,8 +1625,8 @@ cleanly, clear, and pick up where it stopped.</p>
    Never on a plain <code>startup</code>.</p>
 <p><strong>Crew types it where it can (T-0013).</strong> The context hook runs the <code>auto-clear.sh</code>
    sender in resume mode (under Git Bash on Windows). Consent is <code>resume.auto</code>; <code>context.autoClear</code> only describes the terminal.
-   In tmux it waits <code>resume.typeDelaySeconds</code> (default 2), polls the pane for an idle, empty input
-   line for up to <code>resume.readyTimeoutSeconds</code> (default 15), then sends the command and, half a
+   In tmux it waits 2 seconds, polls the pane for an idle, empty input
+   line for up to 15 seconds (both fixed), then sends the command and, half a
    second later, Enter. On native Windows it types nothing (<code>auto</code> there is <code>notify</code>; the <code>sendkeys</code> method was removed in crew 1.2.61). It types once per
    handoff (a marker under <code>&lt;git-common-dir&gt;/crew/</code>) and records the run first, so a run that could
    not be recorded is never typed. The context then says <code>Auto-resume: typing /crew:done T-0001 into
@@ -1640,7 +1641,7 @@ cleanly, clear, and pick up where it stopped.</p>
    wrote it. After <code>/compact</code> the session must match; after <code>/clear</code> the process must, so a <code>/clear</code>
    in another terminal on the same worktree waits. A note written by Bash or by hand waits.</p>
 <h3 id="turning-it-on-and-off">Turning It on and Off</h3>
-<p>Wrap-up and resume are on by default. Auto-clear is <strong>off</strong> by default. You turn it on per machine,
+<p>Wrap-up and resume are on by default, and fixed that way: <code>context.autoWrapUp</code>, <code>context.autoResume</code> and <code>memory.inject</code> were removed, so the wrap-up instruction and the handoff injection cannot be switched off. Auto-clear is <strong>off</strong> by default. You turn it on per machine,
 in the machine-global config, because it drives this machine's keyboard:</p>
 <table>
 <thead>
@@ -1663,12 +1664,6 @@ in the machine-global config, because it drives this machine's keyboard:</p>
 <td><code>context.autoClear.method</code></td>
 <td><code>"auto"</code> (default), <code>"tmux"</code>, <code>"xdotool"</code>, <code>"notify"</code>, <code>"none"</code> (<code>"sendkeys"</code> was removed in crew 1.2.61 and is refused)</td>
 <td>how the cycle acts — see "Which method, and what it does" below</td>
-</tr>
-<tr>
-<td>same</td>
-<td><code>context.autoClear.windowTitle</code></td>
-<td>a substring of the terminal's title</td>
-<td>fallback when the window cannot be found by process id</td>
 </tr>
 <tr>
 <td>same</td>
@@ -1708,21 +1703,9 @@ in the machine-global config, because it drives this machine's keyboard:</p>
 </tr>
 <tr>
 <td><code>.crew/config.json</code></td>
-<td><code>context.autoWrapUp</code></td>
-<td><code>false</code></td>
-<td>replaces the wrap-up instruction with a plain handoff request. It still blocks once. Armed <code>wrapUp</code> supersedes both wordings.</td>
-</tr>
-<tr>
-<td><code>.crew/config.json</code></td>
 <td><code>context.enabled</code></td>
 <td><code>false</code></td>
 <td>turns off the whole context watcher, wrap-up included</td>
-</tr>
-<tr>
-<td><code>.crew/config.json</code></td>
-<td><code>memory.inject</code></td>
-<td><code>false</code></td>
-<td><code>handoff-read</code> prints the handoff for you to read, without extracting the next action. <code>context.autoResume</code> is no longer read.</td>
 </tr>
 </tbody>
 </table>
@@ -1866,7 +1849,7 @@ fallback), just not a keystroke.</p>
 </tr>
 <tr>
 <td><code>not trustworthy (unknown-window)</code></td>
-<td>the model's context window is unknown and <code>context.budgetTokens</code> is not set</td>
+<td>the model's context window is unknown (there is no budget setting to fall back on)</td>
 </tr>
 <tr>
 <td><code>not trustworthy (stale-reading-before-compaction)</code></td>
@@ -1945,7 +1928,7 @@ id and that process's start time. Only a session whose record says kind <code>in
 entrypoint <code>cli</code>, with a controlling terminal (native Windows has none to read), is typed into.
 Every rule below walks up from that process, not from the hook, and refuses when the walk passes
 through another Claude Code session — a child started from a session's Bash tool inherits <code>$TMUX</code>,
-and without this its parent's pane is the one that got <code>/clear</code>. CONFIG.md §14 has the full rules and
+and without this its parent's pane is the one that got <code>/clear</code>. docs/crew/config-rationale.md has the full rules and
 their limits (Windows' entrypoint is unmeasured; macOS cannot check the start time).</p>
 <ul>
 <li><strong>tmux (Linux, macOS, WSL):</strong> the pane in <code>$TMUX_PANE</code>, and only when that pane's process is this

@@ -7,7 +7,7 @@ handed the real HOME, while a test runs. These cases hold both halves:
 - the isolation: HOME, USERPROFILE and the XDG directories are the test's own,
   in this process and in a child it spawns;
 - the regression: with a populated operator home -- the `autopilot.*` keys that
-  turned `test_bash_flavour_emits_and_logs_nothing_when_inject_is_false` and
+  turned `test_bash_flavour_emits_whatever_memory_inject_says` and
   `test_status_mode_line_reads_off_by_default` red on the owner's machine --
   those tests still pass. Remove the HOME override from conftest and this
   case goes red;
@@ -43,7 +43,7 @@ OPERATOR_CONFIG = {
 
 # The tests that read the user layer on the owner's machine before L-0709.
 USER_LAYER_TESTS = (
-    "test_crew_context_wrappers.py::test_bash_flavour_emits_and_logs_nothing_when_inject_is_false",
+    "test_crew_context_wrappers.py::test_bash_flavour_emits_whatever_memory_inject_says",
     "test_crew_autopilot_status.py::test_status_mode_line_reads_off_by_default",
 )
 
@@ -159,7 +159,7 @@ def test_user_layer_tests_pass_with_a_populated_operator_home(tmp_path):
     done = _pytest(tmp_path, [str(CREW_TESTS / node) for node in USER_LAYER_TESTS],
                    _inner_env(home))
 
-    assert (done.returncode, "3 passed" in done.stdout) == (0, True), done.stdout + done.stderr
+    assert (done.returncode, "6 passed" in done.stdout) == (0, True), done.stdout + done.stderr
 
 
 # --- the audit: pure ----------------------------------------------------------

@@ -279,7 +279,7 @@ def build_fixture(root):
     crew = root / "repo" / ".crew"
     crew.mkdir(parents=True)
     (crew / "config.json").write_text(json.dumps({
-        "context": {"enabled": True, "warnAt": 0.4, "keepTranscripts": 5},
+        "context": {"enabled": True, "warnAt": 0.4},
         "notify": {"provider": "none", "events": "question"},
         "guards": {"roleWrites": "off"},
     }), encoding="utf-8")

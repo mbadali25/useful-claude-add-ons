@@ -121,7 +121,7 @@ _SENDKEYS_NOTE = (
 )
 
 # Global-only under 1.0; a repo copy of either is never read. Every other
-# leaf (`method`, `windowTitle`, `command`, `delaySeconds`, `minHandoffLines`)
+# leaf (`method`, `delaySeconds`, `minHandoffLines`)
 # stays repo-settable and `strip_repo_duplication` leaves it untouched.
 _REPO_ILLEGAL_LEAVES = ("onlyRepos", "onlySessions")
 
@@ -295,8 +295,8 @@ def strip_repo_duplication(context, repo_label="this repo"):
     either is never read.
 
     A repo `enabled: false` is a legitimate opt-out and is kept, along with
-    every other repo-settable leaf (`method`, `windowTitle`, `command`,
-    `delaySeconds`, `minHandoffLines`), untouched.
+    every other repo-settable leaf (`method`, `delaySeconds`, `minHandoffLines`),
+    untouched.
 
     Pure: returns `(new_context, notes)`, `notes` empty when nothing needed
     removing.

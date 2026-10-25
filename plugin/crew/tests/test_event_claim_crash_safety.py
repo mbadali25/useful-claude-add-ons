@@ -390,16 +390,12 @@ def test_mark_sent_is_immune_to_a_prune_and_recreate_race_mid_call(tmp_path):
 # --- handoff-write.sh:64 -- a failed write must not be marked sent ---------------
 
 def _handoff_repo_with_broken_path(tmp_path):
-    """`context.handoffPath` beneath a regular file, so the write can never
+    """The handoff path occupied by a directory, so the write can never
     land -- Codex r1 finding 2's own reproduction."""
     root = _repo(tmp_path)
     (pathlib.Path(root) / ".crew").mkdir()
-    blocker = pathlib.Path(root) / ".work" / "blocker"
-    blocker.parent.mkdir(parents=True, exist_ok=True)
-    blocker.write_text("not a directory", encoding="utf-8")
-    (pathlib.Path(root) / ".crew" / "config.json").write_text(
-        json.dumps({"context": {"handoffPath": ".work/blocker/HANDOFF.md"}}),
-        encoding="utf-8")
+    (pathlib.Path(root) / ".work" / "HANDOFF.md").mkdir(parents=True)
+    (pathlib.Path(root) / ".crew" / "config.json").write_text("{}", encoding="utf-8")
     return root
 
 
@@ -414,7 +410,7 @@ def test_sh_does_not_mark_a_failed_handoff_write_sent(tmp_path):
                           capture_output=True, check=False, timeout=30)
 
     assert done.returncode == 0, done.stderr
-    assert not (pathlib.Path(root) / ".work" / "blocker" / "HANDOFF.md").exists()
+    assert (pathlib.Path(root) / ".work" / "HANDOFF.md").is_dir()
     claims = _generation_files(root)
     assert len(claims) == 1
     assert json.loads(claims[0].read_text())["state"] != "sent", (
@@ -451,8 +447,11 @@ def test_an_unusable_store_lets_exactly_one_designated_flavour_emit(tmp_path, mo
 
 # --- end to end: notify and handoff-write through the sh ------------------------------
 
-@pytest.fixture(name="teams")
-def _teams():
+BOT_TOKEN = "123456789:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+
+
+@pytest.fixture(name="bot")
+def _bot():
     import http.server  # pylint: disable=import-outside-toplevel
     hits = []
 
@@ -462,7 +461,7 @@ def _teams():
             hits.append(self.rfile.read(length))
             self.send_response(200)
             self.end_headers()
-            self.wfile.write(b"{}")
+            self.wfile.write(b'{"ok": true}')
 
         def log_message(self, *_args):  # pylint: disable=arguments-differ
             pass
@@ -470,7 +469,7 @@ def _teams():
     server = http.server.HTTPServer(("127.0.0.1", 0), Counter)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    yield f"http://127.0.0.1:{server.server_address[1]}/hook", hits
+    yield f"http://127.0.0.1:{server.server_address[1]}", hits
     server.shutdown()
 
 
@@ -506,8 +505,8 @@ def _stub(directory, name, body, win_body=None):
 
 def _notify_sh(root, url, path=None):
     """notify.sh on one Notification payload, with `OS` unset."""
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, CREW_TEST_TEAMS_URL=url,
-               **_notify_home(root))
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, CREW_NOTIFY_TELEGRAM_BASE=url,
+               CREW_TEST_TG_TOKEN=BOT_TOKEN, **_notify_home(root))
     env.pop("OS", None)
     if path:
         env["PATH"] = path
@@ -521,14 +520,14 @@ def _notify_sh(root, url, path=None):
 
 def _notify_home(root):
     """HOME / USERPROFILE for the hooks: a fixture home beside the repo whose
-    machine-global `~/.claude/crew/config.json` names `urlEnv` -- the only
+    machine-global `~/.claude/crew/config.json` names `tokenEnv` -- the only
     layer crew_notify honours it from (GLOBAL_ONLY_KEYS) -- so no case reads
     the real `~/.claude`, and none passes only because the machine has one."""
     home = pathlib.Path(root).parent / "notify-home"
     crew = home / ".claude" / "crew"
     crew.mkdir(parents=True, exist_ok=True)
     (crew / "config.json").write_text(
-        json.dumps({"notify": {"urlEnv": "CREW_TEST_TEAMS_URL"}}), encoding="utf-8")
+        json.dumps({"notify": {"tokenEnv": "CREW_TEST_TG_TOKEN"}}), encoding="utf-8")
     return {"HOME": str(home), "USERPROFILE": str(home)}
 
 
@@ -536,7 +535,8 @@ def _notify_repo(tmp_path):
     root = _repo(tmp_path)
     (pathlib.Path(root) / ".crew").mkdir()
     (pathlib.Path(root) / ".crew" / "config.json").write_text(
-        json.dumps({"notify": {"provider": "teams"}}), encoding="utf-8")
+        json.dumps({"notify": {"provider": "telegram", "chatId": "4242"}}),
+        encoding="utf-8")
     return root
 
 
@@ -609,8 +609,8 @@ def test_sh_marks_an_unknown_provider_claim_sent_not_orphaned(tmp_path):
 
 
 @needs_bash
-def test_an_unusable_store_sends_one_ping_through_the_sh(tmp_path, teams):
-    url, hits = teams
+def test_an_unusable_store_sends_one_ping_through_the_sh(tmp_path, bot):
+    url, hits = bot
     root = _notify_repo(tmp_path)
     _break_store(root)
 

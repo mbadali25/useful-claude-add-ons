@@ -122,7 +122,6 @@ CALLERS = {
     "notify-by-hand": ("notify.sh", ["gate", "why"], "", ["crew_notify.py"]),
     "crew-context": ("crew-context.sh", [], _CLEAR, ["crew_context.py"]),
     "platform-sync": ("platform-sync.sh", [], "", ["crew_platform.py"]),
-    "handoff-read": ("handoff-read.sh", [], _CLEAR, ["hook_once.py"]),
     "cloud-guard": ("cloud-guard.sh", [], _PRETOOL, ["cloud_guard.py"]),
     "env-guard": ("env-guard.sh", [], _PRETOOL, ["env_guard.py"]),
     "role-write-guard": ("role-write-guard.sh", [], _WRITE, ["role_write_guard.py"]),
@@ -146,12 +145,12 @@ def test_caller_hands_python_a_native_script_path(tmp_path, case, pathconv):
 
 
 # id -> (script, args, stdin, the path arguments that must reach python converted)
+# L-0725: handoff-read.sh no longer calls python (the handoff is injected by crew-context.sh), and
+# handoff-write.sh no longer reads a handoff path from config, so neither has a data-path case left.
 PATH_ARGS = {
     "auto-clear-plan-root": ("auto-clear.sh", ["--session", "s1"], "", "root"),
     "auto-clear-resume-plan-root": ("auto-clear.sh", ["--resume", "--session", "s1", "--source", "compact"], "",
                                     "root"),
-    "handoff-read-data-paths": ("handoff-read.sh", [], _CLEAR, "scripts"),
-    "handoff-write-handoff-path": ("handoff-write.sh", [], _PRECOMPACT, "scripts"),
 }
 
 

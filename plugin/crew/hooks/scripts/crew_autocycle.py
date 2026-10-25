@@ -19,8 +19,7 @@ Three rules, each one a bug that shipped:
 
 3. **Never type into a window that is not uniquely identified.** The target is
    found by process id first (the window owned by the nearest ancestor of this
-   hook), and a configured `windowTitle` is only a fallback that refuses on
-   zero or several matches. `wtype` identifies nothing and is refused outright.
+   hook), and it refuses on zero or several matches. `wtype` identifies nothing and is refused outright.
 
 4. **Type only into this session's OWN terminal (T-0016).** A `claude -p`
    child inherits `$TMUX`, and its parent's pane and window are ancestors of
@@ -80,6 +79,7 @@ import sys
 from datetime import datetime, timezone
 
 import crew_common
+import crew_state
 
 MARKER_PREFIX = ".handoff-requested-"
 SENT_PREFIX = ".autoclear-sent-"
@@ -88,17 +88,15 @@ SENT_PREFIX = ".autoclear-sent-"
 # is not a handoff anybody wrote, and clearing on it loses the session.
 SKELETON_MARK = "UNKNOWN - this skeleton was written automatically"
 WINDOW_STUB_ENV = "CREW_AUTOCLEAR_WINDOW_STUB"
-_DEFAULTS = {"method": "auto", "windowTitle": "", "command": "/clear",
-             "delaySeconds": 3, "minHandoffLines": 5}
+_DEFAULTS = {"method": "auto", "delaySeconds": 3, "minHandoffLines": 5}
 # Every key `settings()` actually reads from context.autoClear, in either
-# layer -- `unsafeFocus` is CONFIG.md-documented but "no longer read"
-# (deliberately still recognised, so it does not trip the unknown-key
-# warning below). A key not in this set is either a typo (`delay` for
-# `delaySeconds`) or leftover from an older schema; either way it silently
+# layer. A key not in this set is either a typo (`delay` for
+# `delaySeconds`) or leftover from an older schema (`command`, `windowTitle`
+# and `unsafeFocus` are fixed values now); either way it silently
 # does nothing today, which is exactly the "unknown collapsing into the
 # safe-looking default" shape this file's warnings exist to surface.
 _RECOGNIZED_AUTOCLEAR_KEYS = frozenset(_DEFAULTS) | {
-    "enabled", "onlyRepos", "onlySessions", "unsafeFocus", "wrapUp"}
+    "enabled", "onlyRepos", "onlySessions", "wrapUp"}
 _ANCESTOR_LIMIT = 16
 PROC_STUB_ENV = "CREW_AUTOCLEAR_PROC_STUB"
 # Measured 2026-10-04, Claude Code 2.1.289 on Linux
@@ -204,9 +202,9 @@ def settings(root, global_path=None):
             f"context.autoClear.delaySeconds is set to {raw['delaySeconds']!r}, not a "
             f"usable number - using the default {out['delaySeconds']}")
     out["minHandoffLines"] = _num(out["minHandoffLines"], _DEFAULTS["minHandoffLines"])
-    for key in ("method", "command", "windowTitle"):
-        text = str(out[key] or "").splitlines()
-        out[key] = text[0] if text else _DEFAULTS[key]
+    text = str(out["method"] or "").splitlines()
+    out["method"] = text[0] if text else _DEFAULTS["method"]
+    out["command"] = crew_state.AUTOCLEAR_COMMAND
     out["enabled"] = machine.get("enabled") is True and repo.get("enabled") is not False
     # T-0017: the same machine-opt-in rule. It arms nothing on its own: it
     # acts only where `enabled` is armed and in scope (`wrapup_armed`).
@@ -214,8 +212,6 @@ def settings(root, global_path=None):
     # Machine only, and deliberately not in the repo-then-machine loop above.
     out["onlyRepos"] = machine.get("onlyRepos")
     out["onlySessions"] = machine.get("onlySessions")
-    handoff = _block(repo_cfg, "context").get("handoffPath")
-    out["handoffPath"] = handoff if isinstance(handoff, str) and handoff else ".work/HANDOFF.md"
     out["_warnings"] = warnings
     return out
 
@@ -345,12 +341,9 @@ def read_marker(root, key):
     return data, ""
 
 
-def _contained(root, rel):
-    base = os.path.realpath(root)
-    path = os.path.realpath(os.path.join(base, rel))
-    if os.path.commonpath([base, path]) != base:
-        return None
-    return path
+def _handoff_file(root):
+    """The handoff's real path: the fixed `crew_state.CONTEXT_HANDOFF_PATH`."""
+    return os.path.realpath(os.path.join(os.path.realpath(root), crew_state.CONTEXT_HANDOFF_PATH))
 
 
 def verify_handoff(root, session_id, cfg):
@@ -368,23 +361,21 @@ def verify_handoff(root, session_id, cfg):
     requested = marker.get("requested_at")
     if isinstance(requested, bool) or not isinstance(requested, (int, float)):
         return False, "the wrap-up marker has no request time"
-    path = _contained(root, cfg["handoffPath"])
-    if path is None:
-        return False, "handoffPath points outside the repository"
+    path = _handoff_file(root)
     if not os.path.isfile(path):
-        return False, f"{cfg['handoffPath']} has not been written"
+        return False, f"{crew_state.CONTEXT_HANDOFF_PATH} has not been written"
     if os.path.getmtime(path) <= requested:
-        return False, f"{cfg['handoffPath']} predates this session's wrap-up request"
+        return False, f"{crew_state.CONTEXT_HANDOFF_PATH} predates this session's wrap-up request"
     try:
         with open(path, encoding="utf-8", errors="replace") as handle:
             text = handle.read()
     except OSError:
-        return False, f"{cfg['handoffPath']} is unreadable"
+        return False, f"{crew_state.CONTEXT_HANDOFF_PATH} is unreadable"
     if SKELETON_MARK in text:
-        return False, f"{cfg['handoffPath']} is the automatic PreCompact skeleton, not a handoff"
+        return False, f"{crew_state.CONTEXT_HANDOFF_PATH} is the automatic PreCompact skeleton, not a handoff"
     lines = sum(1 for line in text.splitlines() if line.strip())
     if lines < cfg["minHandoffLines"]:
-        return False, (f"{cfg['handoffPath']} has {lines} non-blank lines, "
+        return False, (f"{crew_state.CONTEXT_HANDOFF_PATH} has {lines} non-blank lines, "
                        f"minHandoffLines is {cfg['minHandoffLines']}")
     return True, ""
 
@@ -440,7 +431,7 @@ def _handoff_field(regex, text):
 
 def _top_relative(toplevel, path):
     """The contained handoff `path` (absolute, resolved) as git names it from
-    the repository top -- whether handoffPath was relative or absolute."""
+    the repository top."""
     rel = os.path.relpath(path, os.path.realpath(toplevel.strip()))
     return os.path.normcase(rel.replace("\\", "/"))
 
@@ -465,14 +456,12 @@ def _porcelain_z_paths(text):
     return paths, sources
 
 
-def wrapup_check(root, cfg):
+def wrapup_check(root):
     """(ok, reason): are the wrap-up's results on disk? First failure wins.
     Every "could not tell" -- an unreadable handoff, crew_resume missing, git
     failing -- is a refusal, never a pass."""
-    rel = cfg["handoffPath"]
-    path = _contained(root, rel)
-    if path is None:
-        return False, "handoffPath points outside the repository"
+    rel = crew_state.CONTEXT_HANDOFF_PATH
+    path = _handoff_file(root)
     try:
         with open(path, encoding="utf-8", errors="replace") as handle:
             text = handle.read()
@@ -487,7 +476,6 @@ def wrapup_check(root, cfg):
     parsed = crew_resume.parse_resume(text)
     if not parsed.get("ok") and parsed.get("reason") != "resume: none":
         return False, f"resume line: {parsed.get('reason') or 'could not be read'}"
-    import crew_state  # pylint: disable=import-outside-toplevel
     noted_branch = _handoff_field(crew_state._HANDOFF_BRANCH_RE, text)  # pylint: disable=protected-access
     noted_head = _handoff_field(crew_state._HANDOFF_HEAD_RE, text)  # pylint: disable=protected-access
     try:
@@ -894,7 +882,7 @@ def _shared_window(window_pid, owner, others):
     return ""
 
 
-def prove_target(owner, got, cfg, env=None):
+def prove_target(owner, got, env=None):
     """The method's target, proven from the session's OWN process rather than
     from this hook: {"ok", "target", "label"} or {"ok": False, "reason"}.
 
@@ -954,7 +942,7 @@ def prove_target(owner, got, cfg, env=None):
                 f"session (pid {pid})")}
         if not any(_num(w.get("pid"), 0) == pid for w in windows):
             continue
-        found = resolve_target([pid], windows, cfg["windowTitle"])
+        found = resolve_target([pid], windows)
         if not found["ok"]:
             return {"ok": False, "reason": found["reason"]}
         shared = _shared_window(pid, owner, others)
@@ -963,23 +951,9 @@ def prove_target(owner, got, cfg, env=None):
         return _window_result(found, me)
     if not complete:
         return {"ok": False, "reason": f"no window belongs to a process above this session (pid {me}), and {why}"}
-    if not cfg["windowTitle"]:
-        return {"ok": False, "reason": (
-            f"no window belongs to any ancestor of this session's process (pid {me}), and no "
-            "context.autoClear.windowTitle is set to fall back on")}
-    found = resolve_target([], windows, cfg["windowTitle"])
-    if not found["ok"]:
-        return {"ok": False, "reason": found["reason"]}
-    if others:
-        sibling = min(others)
-        if _num(found["window"].get("pid"), 0) <= 1:
-            return {"ok": False, "reason": (
-                f"window {found['window'].get('id')} has no owning process, and another Claude Code session "
-                f"is live (pid {sibling}), so nothing ties that window to this session")}
-        return {"ok": False, "reason": (
-            f"window {found['window'].get('id')} was found by its title alone, and another Claude Code "
-            f"session is live (pid {sibling}) - a title cannot tell two sessions apart")}
-    return _window_result(found, me)
+    return {"ok": False, "reason": (
+        f"no window belongs to any ancestor of this session's process (pid {me}) and nothing else "
+        "identifies this session's window")}
 
 
 def _window_result(found, me):
@@ -1021,39 +995,18 @@ def list_windows():
     return windows, ""
 
 
-def resolve_target(ancestor_pids, windows, title):
+def resolve_target(ancestor_pids, windows):
     """{"ok", "window", "how", "reason"} -- a window only when exactly one fits."""
-    needle = (title or "").lower()
-
-    def titled(items):
-        return [w for w in items if needle in str(w.get("title") or "").lower()]
-
     for pid in ancestor_pids:
         owned = [w for w in windows if _num(w.get("pid"), 0) == pid]
         if not owned:
             continue
-        if needle:
-            owned = titled(owned)
-            if not owned:
-                return {"ok": False, "reason": (
-                    f"the terminal that owns this session (pid {pid}) has no window whose "
-                    f"title contains '{title}'")}
         if len(owned) == 1:
-            return {"ok": True, "window": owned[0],
-                    "how": "owner pid + title" if needle else "owner pid"}
+            return {"ok": True, "window": owned[0], "how": "owner pid"}
         return {"ok": False, "reason": (
             f"the terminal that owns this session (pid {pid}) has {len(owned)} windows and "
-            "nothing narrows them to one - set context.autoClear.windowTitle")}
-    if not needle:
-        return {"ok": False, "reason": (
-            "no window belongs to any ancestor of this hook, and no "
-            "context.autoClear.windowTitle is set to fall back on")}
-    hits = titled(windows)
-    if len(hits) == 1:
-        return {"ok": True, "window": hits[0], "how": "title fallback"}
-    return {"ok": False, "reason": (
-        f"{len(hits)} windows have a title containing '{title}' - refusing to guess "
-        "which one is this session")}
+            "nothing narrows them to one")}
+    return {"ok": False, "reason": "no window belongs to any ancestor of this hook"}
 
 
 def _tmux_pane_pid(pane):
@@ -1111,7 +1064,7 @@ def resolve_method(cfg, env=None):
     if method == "wtype":
         return {"ok": False, "reason": (
             "method wtype types into whatever has focus and cannot identify a window, so it "
-            "is refused whatever unsafeFocus says. Use tmux")}
+            "is refused. Use tmux")}
     if method == "tmux":
         if not env.get("TMUX"):
             return {"ok": False, "reason": "method tmux but $TMUX is unset, so this session is not in a tmux pane"}
@@ -1133,7 +1086,7 @@ def resolve_method(cfg, env=None):
         windows, why = list_windows()
         if windows is None:
             return {"ok": False, "reason": f"cannot list windows: {why}"}
-        found = resolve_target(ancestors(), windows, cfg["windowTitle"])
+        found = resolve_target(ancestors(), windows)
         if not found["ok"]:
             return {"ok": False, "reason": found["reason"]}
         win = found["window"]
@@ -1172,7 +1125,7 @@ def plan(root, session_id, force=False, global_path=None, env=None):
         # T-0017: after the handoff checks, before the method -- and so before
         # the binding and the sender's claim. Unarmed, nothing here runs.
         if wrapup_armed(cfg, root, session_id):
-            ok, why = wrapup_check(root, cfg)
+            ok, why = wrapup_check(root)
             if not ok:
                 out["reason"] = WRAPUP_PREFIX + why
                 return out
@@ -1200,16 +1153,16 @@ def plan(root, session_id, force=False, global_path=None, env=None):
 _RESUME_LINE = re.compile(r"^resume:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
 
 
-def headless_notice(root, cfg, evidence, force=False):
+def headless_notice(root, evidence, force=False):
     """The one message a headless session gets instead of a keystroke. It
     names the handoff and its `resume:` line (read as text, not parsed) and
     says the process that started this session must restart it -- a fresh
     process is a different author, so nothing here can resume it."""
-    rel = cfg["handoffPath"]
+    rel = crew_state.CONTEXT_HANDOFF_PATH
     line = "(none in the handoff)"
-    path = _contained(root, rel)
+    path = _handoff_file(root)
     try:
-        with open(path or "", encoding="utf-8", errors="replace") as handle:
+        with open(path, encoding="utf-8", errors="replace") as handle:
             found = _RESUME_LINE.search(handle.read())
         if found and found.group(1):
             line = found.group(1)
@@ -1240,7 +1193,7 @@ def bind_to_session(root, session_id, cfg, got, env=None, force=False):
     cls, evidence = classify(owner)
     if cls == "headless":
         return {"ok": True, "method": "notify-headless", "target": "", "label": "",
-                "notice": headless_notice(root, cfg, evidence, force)}
+                "notice": headless_notice(root, evidence, force)}
     if got["method"] == "notify":
         return got
     if cls == "unknown":
@@ -1249,7 +1202,7 @@ def bind_to_session(root, session_id, cfg, got, env=None, force=False):
             log_autoclear(root, f"auto-clear: {reason} - auto falls back to notify, nothing is typed")
             return {"ok": True, "method": "notify", "target": "", "label": ""}
         return {"ok": False, "reason": reason}
-    proof = prove_target(owner, got, cfg, env)
+    proof = prove_target(owner, got, env)
     if not proof["ok"]:
         return proof
     return dict(got, target=proof["target"], label=proof["label"])
@@ -1260,7 +1213,7 @@ def bind_to_session(root, session_id, cfg, got, env=None, force=False):
 #
 # Consent is T-0006's `resume.auto` (machine only, repo veto), so
 # `context.autoClear.enabled` is NOT required here; the rest of the autoClear
-# block -- method, windowTitle, onlyRepos, onlySessions -- is this machine's
+# block -- method, onlyRepos, onlySessions -- is this machine's
 # description of its terminal and is read exactly as `settings` reads it.
 
 # Printed one per line by `resume-plan`, then a lone "." so a run of empty
@@ -1269,18 +1222,10 @@ RESUME_PLAN_FIELDS = ("status", "reason", "method", "target", "label", "command"
                       "timeout", "marker", "decision")
 
 
-def resume_typing(global_path=None):
-    """(typeDelaySeconds, readyTimeoutSeconds) from the MACHINE file only. A
-    value that is absent, not a whole number, or negative is the default:
-    a negative sleep would kill the sender after the marker was claimed."""
-    import crew_state  # pylint: disable=import-outside-toplevel
-    block = _block(_load(global_path or global_config_path()), "resume")
-    out = []
-    for key in ("typeDelaySeconds", "readyTimeoutSeconds"):
-        default = crew_state.RESUME_DEFAULTS[key]
-        value, _ok = _num_checked(block.get(key), default)
-        out.append(value if value >= 0 else default)
-    return out[0], out[1]
+def resume_typing():
+    """(typeDelaySeconds, readyTimeoutSeconds): the fixed
+    `crew_state.RESUME_TYPE_DELAY_SECONDS` and `RESUME_READY_TIMEOUT_SECONDS`."""
+    return crew_state.RESUME_TYPE_DELAY_SECONDS, crew_state.RESUME_READY_TIMEOUT_SECONDS
 
 
 def resume_plan(root, session_id, source, global_path=None, env=None, plugin_root=None):
@@ -1317,7 +1262,7 @@ def resume_plan(root, session_id, source, global_path=None, env=None, plugin_roo
     if decision.get("action") != "run":
         out["reason"] = f"auto-resume is waiting: {decision.get('reason') or 'unknown'}"
         return out
-    delay, timeout = resume_typing(global_path)
+    delay, timeout = resume_typing()
     key = str(decision.get("handoff_sha256") or "")[:16]
     out.update(command=decision["prompt"], delay=str(delay), timeout=str(timeout), key=key,
                marker=os.path.join(crew_resume.state_dir(root), f"resume-typed-{key}"),
@@ -1348,7 +1293,7 @@ def resume_plan(root, session_id, source, global_path=None, env=None, plugin_roo
             out["reason"] = ("auto-resume types only into this session's own terminal: "
                              f"{_unknown_reason(owner, evidence)}")
             return out
-        proof = prove_target(owner, got, cfg, env)
+        proof = prove_target(owner, got, env)
         if not proof["ok"]:
             out["reason"] = f"auto-resume types only into this session's own terminal: {proof['reason']}"
             return out
@@ -1398,7 +1343,7 @@ def _wrapup_cli(args):
     root = os.path.abspath(args.root)
     if args.cmd == "wrapup-check":
         try:
-            ok, why = wrapup_check(root, settings(root))
+            ok, why = wrapup_check(root)
         except Exception as exc:  # pylint: disable=broad-except
             ok, why = False, f"internal error: {exc.__class__.__name__}"
         print("ok" if ok else " ".join(why.splitlines()))

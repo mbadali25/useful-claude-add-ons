@@ -473,16 +473,16 @@ strike nothing or strike everything — both wrong.
 "secondOpinion": {
   "provider": "gemini",
   "mode": "cli",
-  "model": "gemini-2.5-flash",
-  "keyEnv": "GEMINI_API_KEY",
-  "sendsCode": false
+  "model": "gemini-2.5-flash"
 }
 ```
 
 `provider`: `gemini`, `local`, or `none`.
 `mode`: `cli` or `api`.
-`sendsCode`: must stay `false` for any provider on a free tier. If someone sets
-it true, `/crew:plan` still sends only the brief — the brief is the interface.
+The API key is read from `GEMINI_API_KEY` and second opinions never send code,
+both fixed in code (`crew_state.SECOND_OPINION_KEY_ENV` and
+`SECOND_OPINION_SENDS_CODE`, L-0725). `/crew:plan` sends only the brief — the
+brief is the interface.
 
 ---
 

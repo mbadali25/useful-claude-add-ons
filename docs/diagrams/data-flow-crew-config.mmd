@@ -2,6 +2,8 @@
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_state.py, plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/crew_autoclear_setup.py, plugin/crew/hooks/scripts/crew_autocycle.py, plugin/crew/hooks/scripts/crew_migrate.py, plugin/crew/hooks/scripts/crew_context.py, plugin/crew/skills/crew-graph/scripts/crew_upgrade.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py, CLAUDE.md, plugin/crew/hooks/scripts/crew_tracker.py, plugin/crew/hooks/scripts/crew_shell.py
 %% Purpose: How one crew config value reaches a run, and what may set it where, as a map of the part diagrams (each box is one data-flow-crew-config-<part>.mmd); only the main flows between parts are drawn. no-python is a standalone fallback with no link to any other part, see data-flow-crew-config-no-python.mmd.
 %% Embed: none
+%% Re-drawn for L-0725: the shell-route box now reads "automatic shell route" and its edge is dashed (no config key feeds it any more).
+%%    Counts quoted in the older notes below are history; the current ones are in data-flow-crew-config-split.mmd.
 %% Re-anchored a792ce66b -> 7944f06d7 (L-0867 refresh, 2026-10-22): of the Anchors paths four changed (git diff --stat
 %%    18e4afce3..HEAD over this diagram's 17 Anchors paths): CONFIG.md, crew_autoclear_setup.py, crew_autocycle.py and crew_context.py.
 %%    All four are L-0867 (L-0727 slice 3): the ten hook .ps1 twins deleted and the `sendkeys` auto-clear method removed
@@ -121,8 +123,8 @@
 %% Three citations were already stale at 2bb92f32 and are corrected here: load_config :263
 %% (was :261), resolve_guard :996 (was :981), GlobalWriteRefused :2106 (was :2091); E2's
 %% resolve_ratcheted now matches RG's. Leaf counts re-executed: 119 / 66 / 53, fourth 0 -
-%% `autopilot` is a NEW repo-only block (absent from default_global_config, CONFIG.md §20).
-%% CONFIG.md's §15/§16/§18 numbering holds (§20 appended). crew_migrate.py is cited by name only;
+%% `autopilot` is a NEW repo-only block (absent from default_global_config, docs/crew/config-rationale.md).
+%% The CONFIG.md section numbering held then (§20 appended); CONFIG.md is now generated and has none. crew_migrate.py is cited by name only;
 %% its AUTOPILOT_NOTE rewording touches no drawn claim.
 %% Re-anchored fc54def6 -> 2170d72e (T-0005 review round 2): of the 13 paths on the Anchors line
 %% only CONFIG.md changed, three lines inside the section 16 destroy paragraph; the section
@@ -240,7 +242,7 @@
 %% :2368, write_global_config :2536 -> :2547). crew_context.py's :121-132 did not move; CONFIG.md
 %% is cited by section and gained §21. Leaf counts re-executed: 120 / 67 / 53, fourth 0 -
 %% `route` is a NEW block in BOTH layers (a repo value wins, so a template-written `false`
-%% vetoes a machine `true`, CONFIG.md §21). crew_state.py did not change; its cites hold.
+%% vetoes a machine `true`, docs/crew/config-rationale.md). crew_state.py did not change; its cites hold.
 %% Merged 2b18f7ab + 488053fc (T-0023's merge of main 502cb137, 3c968175): of the Anchors paths,
 %% crew_config.py and CONFIG.md changed on both sides. Each line was classified by origin; main's
 %% crew_config.py citations were re-mapped by a line diff 502cb137 -> merged tree (+8 below the
@@ -249,7 +251,7 @@
 %% :773, resolve_ratcheted :815, _RATCHETED :2444 through :2556, write_global_config :2646);
 %% crew_state/crew_guards citations stand (one side only). Counts re-executed: 122 / 68 / 54
 %% leaves, fourth 0, 17 global blocks (route added to TMPL and S1). Anchored at a1acd9b7: the
-%% 1.0.43 re-set (f6abe8c1) grew CONFIG.md section 10 by one line, and this diagram cites
+%% 1.0.43 re-set (f6abe8c1) grew docs/crew/config-rationale.md by one line, and this diagram cites
 %% CONFIG.md by section only; rule 28's re-price (a1acd9b7) is not an Anchors path.
 %% Merged db14619c + ad74ed35 -> e463ca53 (T-0023 lands on T-0021's main, crew 1.0.46): of the
 %% Anchors paths crew_config.py and crew_tracker.py changed on one side only (T-0023 and T-0021),
@@ -605,7 +607,7 @@ flowchart LR
     autoclear["<b>autoclear</b><br/>autoClear read and writer"]
     twofiles["<b>two-files</b><br/>config.json is the config;<br/>crew.json only after migrate"]
     split["<b>split</b><br/>what may be set where"]
-    shell["<b>shell-route</b><br/>shellRoute config"]
+    shell["<b>shell-route</b><br/>automatic shell route"]
 
     menu -->|"writes both files"| read
     menu -->|"Save"| write
@@ -614,4 +616,4 @@ flowchart LR
     read -.->|"raw files"| autoclear
     read -.->|"repo file"| twofiles
     read -.->|"resolved config"| split
-    read -->|"resolved config"| shell
+    read -.->|"no config key"| shell

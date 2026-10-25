@@ -13,6 +13,7 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autoclear_setup as setup
 import crew_config
+import crew_state
 
 
 def _global(tmp_path):
@@ -296,7 +297,7 @@ def _write_config_json(root, context_block):
     crew_dir = os.path.join(root, ".crew")
     os.makedirs(crew_dir, exist_ok=True)
     with open(os.path.join(crew_dir, "config.json"), "w", encoding="utf-8") as handle:
-        json.dump({"schema": 7, "context": context_block}, handle)
+        json.dump({"schema": crew_state.SCHEMA_CURRENT, "context": context_block}, handle)
 
 
 def test_apply_migrate_to_repo_converts_config_json_the_senders_actually_read(tmp_path):
@@ -323,7 +324,7 @@ def test_apply_migrate_to_repo_converts_config_json_the_senders_actually_read(tm
     assert crew_on_disk["context"]["autoClear"]["method"] == "notify"
     assert "enabled" not in config_on_disk["context"]["autoClear"]
     assert "enabled" not in crew_on_disk["context"]["autoClear"]
-    assert config_on_disk["schema"] == 7  # the rest of the file survives untouched
+    assert config_on_disk["schema"] == crew_state.SCHEMA_CURRENT  # the rest of the file survives untouched
     assert crew_on_disk["schema"] == 1
     assert plan["alreadyConfigured"] is False
 
@@ -478,7 +479,7 @@ def test_apply_migrate_to_repo_never_copies_one_files_context_onto_the_other(tmp
     root = str(tmp_path / "repo")
     _write_config_json(root, {"autoClear": {"method": "windows", "enabled": True}})
     _write_crew_json(root, {"autoClear": {"method": "auto",
-                                          "windowTitle": "My Custom Title"}})
+                                          "delaySeconds": 7}})
     crew_json_path = os.path.join(root, ".crew", "crew.json")
     with open(crew_json_path, "rb") as handle:
         crew_before = handle.read()

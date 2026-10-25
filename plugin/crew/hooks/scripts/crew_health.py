@@ -27,7 +27,7 @@ def _int_or_none(text):
 # coverage -- three questions the crew 0.19.93 fix introduced no config key
 # for, because none of this is a setting; it is a fact about what is in
 # `.crew/verify.json` and what the last Stop actually verified. See
-# `hooks/scripts/verify-gate.sh`/`.ps1`, `verify_record.py` and CONFIG.md §18.
+# `hooks/scripts/verify-gate.sh`/`.ps1`, `verify_record.py` and docs/crew/config-rationale.md.
 #
 # UNKNOWN NEVER RESOLVES TO HEALTHY, matching every other reader in this
 # module. A value here is `None` exactly when it could not be determined --

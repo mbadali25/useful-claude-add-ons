@@ -63,9 +63,10 @@ that is PPTX, not a document with a title page bolted on.
 Route to the skill that owns the format. Do not reimplement any of them:
 
 - `doc-builder` — branded findings reports and screenshot SOPs, as HTML,
-  DOCX or PDF. Pass `--brand <docs.theme>`;
-  for a findings report prefer `docs.reportTheme` when it is set.
-  A null theme passes no `--brand` at all and lets doc-builder resolve.
+  DOCX or PDF. Pass no `--brand` and let doc-builder resolve it: crew has no
+  theme setting (`crew_state.DOCS_THEME` and `DOCS_REPORT_THEME` are both
+  `None`). Pass `--brand <name>` only when the person names a brand in the
+  request, for a findings report or any other document.
   `scripts/build_report.py` is the findings report — its HTML is a finished
   deliverable on its own, before any `--to-docx`/`--to-pdf` — and
   `scripts/build_sop.py` is the SOP; both take `--brand`.
@@ -202,8 +203,8 @@ which costs more than saying nothing:
 - **doc-builder is not installed.** Route to `anthropic-office-skills` instead,
   produce the document unbranded, and say so — "branded report unavailable,
   `doc-builder` is not installed; produced with `anthropic-office-skills:docx`,
-  unbranded". The theme in `docs.theme` was not applied and the handoff must
-  say that, or the reader assumes their configured brand is on the document.
+  unbranded". The brand the person asked for was not applied and the handoff must
+  say that, or the reader assumes their brand is on the document.
 - **doc-builder is installed but Microsoft Word is absent.** doc-builder says
   this itself; relay its message rather than composing your own. **This is a
   PARTIAL loss, not a fall back to unbranded.** Word's absence costs
@@ -217,11 +218,11 @@ Never fall back to pandoc or LibreOffice for a doc-builder format —
 `doc-builder/SKILL.md` rules that out explicitly, and neither is assumed to
 exist on any machine here.
 
-### When the configured theme does not resolve
+### When the requested brand does not resolve
 
 The two paths above are about whether doc-builder is **available**. This one is
-about what the **config says**, and it fails differently: `docs.theme` or
-`docs.reportTheme` names a brand pack that doc-builder cannot find.
+about what the **request says**, and it fails differently: the person named a
+brand pack that doc-builder cannot find.
 
 **Relay doc-builder's error and stop.** Do not fall back to unbranded, and do
 not pre-check the name yourself.
@@ -234,16 +235,16 @@ doc-builder already answers this. `--brand <name>` that matches nothing raises
 Repeat it; the installed-names list is the part the user needs and you cannot
 produce it as well as doc-builder can.
 
-**Falling back to unbranded is the worse failure of the two.** A config that
+**Falling back to unbranded is the worse failure of the two.** A request that
 names a brand is an explicit instruction, so producing an unbranded document
 there hands the user a deliverable that is wrong in the one way they took the
 trouble to configure against — and, unlike a missing doc-builder, nothing about
 the result says so. A document that was not produced is recoverable in a minute.
 A wrongly-branded one sent to a client is not.
 
-**Do not validate the theme name before calling.** This is the same rule as *Do
+**Do not validate the brand name before calling.** This is the same rule as *Do
 not detect Word yourself*, and here it also gets the answer wrong: a crew-side
-check comparing `docs.theme` against installed pack names would reject values
+check comparing the requested name against installed pack names would reject values
 doc-builder accepts. `_match_explicit` (`resolve_brand.py:298-317`) takes a pack
 name, a **skill directory name**, a path to a `brand.json`, or a directory
 containing one — matching case-insensitively — and `neutral` always resolves
@@ -251,7 +252,5 @@ containing one — matching case-insensitively — and `neutral` always resolves
 would therefore fail closed on correct configuration, which is the expensive
 direction: it blocks work that would have succeeded, and the config looks fine.
 
-Crew's own job here is to **notice that the theme was configured and did not
-apply**, and to say which key held it — `docs.theme` or `docs.reportTheme` —
-because doc-builder only ever sees a `--brand` value and cannot know which of
-crew's two keys supplied it.
+Crew's own job here is to **notice that the requested brand did not apply**,
+and to say so, because doc-builder only ever sees a `--brand` value.

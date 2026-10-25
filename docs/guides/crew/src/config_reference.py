@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Generate crew's configuration reference from the code (T-0048).
+"""Generate crew's configuration reference from the code (T-0048, L-0725).
 
-Writes two things, both from `crew_config.default_config()` /
-`default_global_config()` (the defaults and the key set), the ratchet tables
-in `crew_guards` / `crew_config` (the layer), and `crew_keys.KEY_META` (the
-values, summaries and arrival versions):
+Writes two files, both whole, from `crew_config.default_config()` /
+`default_global_config()` (the defaults and the key set), the ratchet tables in
+`crew_guards` / `crew_config` (the layer), the guard profile table
+(`crew_guards.PROFILE_MAP`) and `crew_keys.KEY_META` (the values, summaries,
+families and arrival versions):
 
-- `docs/guides/crew/src/configuration-reference.md`, the whole reference;
-- the two generated tables inside `plugin/crew/CONFIG.md` (sections 10 and
-  11), between `<!-- generated:config-keys-<global|repo> begin -->` and its
-  `end` marker. The prose around them stays hand-written.
+- `docs/guides/crew/src/configuration-reference.md`, the guide's reference;
+- `plugin/crew/CONFIG.md`, the settings reference that ships with the plugin.
+  Since L-0725 it is generated whole: nothing in it is hand-written, so a
+  one-byte edit anywhere makes `--check` fail. The reasoning behind the keys
+  lives in `docs/crew/config-rationale.md`.
 
 It never reads a config FILE -- no `read_global_config`, no `load_config` --
 so the output is the same on every machine, whatever `~/.claude/crew/` holds.
@@ -38,14 +40,10 @@ SCRIPTS = os.path.join(ROOT, "plugin", "crew", "hooks", "scripts")
 REFERENCE = os.path.join(SRC, "configuration-reference.md")
 CONFIG_MD = os.path.join(ROOT, "plugin", "crew", "CONFIG.md")
 COMMAND = "python3 docs/guides/crew/src/config_reference.py --write"
-BLOCKS = ("global", "repo")
+RATIONALE = "docs/crew/config-rationale.md"
 
 EXIT_STALE = 1
 EXIT_ERROR = 2
-
-
-def _marker(block, edge):
-    return f"<!-- generated:config-keys-{block} {edge} -->"
 
 
 def _modules():
@@ -53,9 +51,10 @@ def _modules():
     if SCRIPTS not in sys.path:
         sys.path.insert(0, SCRIPTS)
     import crew_config  # pylint: disable=import-outside-toplevel
+    import crew_dropped  # pylint: disable=import-outside-toplevel
     import crew_guards  # pylint: disable=import-outside-toplevel
     import crew_keys  # pylint: disable=import-outside-toplevel
-    return crew_config, crew_guards, crew_keys
+    return crew_config, crew_guards, crew_keys, crew_dropped
 
 
 def _dig(node, dotted):
@@ -94,7 +93,7 @@ class Model:  # pylint: disable=too-few-public-methods
     """Every fact the two renderers print, computed once."""
 
     def __init__(self):
-        self.config, self.guards, self.keys = _modules()
+        self.config, self.guards, self.keys, self.dropped = _modules()
         problems = self.keys.problems()
         if problems:
             raise RuntimeError("crew_keys disagrees with the code: " + "; ".join(problems))
@@ -202,10 +201,10 @@ exceptions, each named in the Layer column below:
 
 - A **repo-only** key in the machine file takes effect nowhere. It is pruned on
   read and refused on write.
-- A **ratcheted** key (`install.policy`, every `guards.*`,
-  `change.requireForProduction`, `environments.prodUnattended`) resolves to
-  the narrower of the two values, so a cloned repo cannot widen what your
-  machine allows.
+- A **ratcheted** key (`install.policy`, each guard `guards.profile` and
+  `guards.overrides` expand to, `change.requireForProduction`,
+  `environments.prodUnattended`) resolves to the narrower of the two values, so
+  a cloned repo cannot widen what your machine allows.
 - A **machine-armed** key (`resume.auto`, `context.autoClear.enabled`) can be
   turned on only in the machine file. A repo can only switch it off.
 - A **personal** key (the five `autopilot.*` keys) resolves per key to the
@@ -253,13 +252,13 @@ corrupt file from the template plus that profile, as a dry run until
   `scope.allowCliApproval: true` in the repo file, which is the only file
   that key is read from. Review acceptance and production deploys still stop
   for you.
-- **Notifications.** In the machine file, set `notify.provider` and the
-  environment variable names in `notify.urlEnv` / `notify.tokenEnv`. The
-  secret stays in your environment, never in the file. Those two are
+- **Notifications.** In the machine file, set `notify.provider` and the name
+  of the environment variable holding the token in `notify.tokenEnv`. The
+  secret stays in your environment, never in the file. `tokenEnv` is
   machine-only: a repo file's value is ignored with a notice.
 
-The reasoning behind each key is in `plugin/crew/CONFIG.md`, which ships with
-the plugin.
+The key list is `plugin/crew/CONFIG.md`, which ships with the plugin; the
+reasoning behind the keys is in `docs/crew/config-rationale.md`.
 """
 
 
@@ -323,55 +322,109 @@ def render_reference(model=None):
     return "\n".join(out).rstrip("\n") + "\n"
 
 
-def render_config_block(block, model=None):
-    """The compact table for one CONFIG.md section, markers excluded."""
+CONFIG_PREAMBLE = """\
+# crew configuration reference
+
+Generated from the code by `{command}`. Do not edit by hand:
+`python3 scripts/check-marketplace.py` fails when this file is stale. The
+reasoning behind the keys is in `{rationale}`.
+
+{total} keys: {machine} settable in the machine-global file, {repo_only} repo-only.
+
+## The two layers
+
+crew reads `~/.claude/crew/config.json` (the machine-global file: your
+defaults for every repo on this machine) and `.crew/config.json` (the repo file:
+facts about one checkout). The repo value wins over the machine value, which wins
+over crew's built-in default, with these exceptions, each named in the Layer
+column:
+
+- A repo-only key in the machine file takes effect nowhere (pruned on read,
+  refused on write).
+- A ratcheted key resolves to the NARROWER of the two layers, so a cloned repo
+  can tighten what your machine allows and never loosen it.
+- A machine-arms key (`resume.auto`, `context.autoClear.enabled`,
+  `context.autoClear.wrapUp`) is turned on only in the machine file; a repo can
+  only veto it with `false`.
+- A personal key (`crew_guards.PERSONAL_KEYS`) resolves per key to the stricter
+  of the layers that set it; a layer that says nothing imposes nothing.
+- A `null` in the repo file over a machine value inherits the machine value.
+- In a linked git worktree with no config of its own, the main checkout's repo
+  config is the one read.
+
+## Guard profiles
+
+`guards.profile` is one word for all twelve guards; `guards.overrides.<guard>`
+replaces the profile's value for one guard. Each layer expands to a value per
+guard, and the per-guard ratchet then takes the narrower layer. A malformed
+profile or override reads as the guard's floor (`block`, or `none` for the
+production guards), never as `off`. The per-guard keys of earlier versions
+(`guards.<guard>`) are still READ as aliases for `guards.overrides.<guard>`
+until `/crew:migrate` rewrites them, and are never written.
+
+{profile_table}
+
+## Migrating and removed keys
+
+`/crew:migrate` upgrades a repo file; `python3 plugin/crew/hooks/scripts/crew_migrate.py --global`
+does the same for the machine file (preview, apply and rollback). It rewrites
+`guards.*` into the profile with the fewest overrides and removes removed keys
+that hold their default. A removed key holding another value stops the migration
+until it is deleted or accepted with `--accept-dropped <key>`. {dropped} keys were
+removed (ticket L-0725) and are now constants in `crew_state`
+(`crew_dropped.DROPPED` lists each with its constant); a config still carrying
+one is reported as having no effect (`crew_config.py --inert`, `/crew:status`, and the
+SessionStart notice).
+
+## Counts by family
+
+{family_table}
+"""
+
+
+def _profile_table(model):
+    profiles = model.guards.GUARD_PROFILES
+    rows = ["| Guard | " + " | ".join(f"`{p}`" for p in profiles) + " |",
+            "|---|" + "---|" * len(profiles)]
+    for name in model.guards.ALL_GUARD_NAMES:
+        rows.append(f"| `{name}` | " + " | ".join(
+            f"`{model.guards.PROFILE_MAP[p][name]}`" for p in profiles) + " |")
+    return "\n".join(rows)
+
+
+def render_config_md(model=None):
+    """The whole of `plugin/crew/CONFIG.md`."""
     model = model or Model()
     keys = model.keys
     total, machine, repo_only = model.counts()
-    if block == "global":
-        members = [k for k in model.leaves if model.config.is_global_path(k)]
-        head = (f"{machine} of {total} keys are settable in the machine-global file "
-                f"(generated; {repo_only} are repo-only, section 11).")
-    else:
-        members = [k for k in model.leaves if not model.config.is_global_path(k)]
-        head = (f"{repo_only} of {total} keys are repo-only (generated; {machine} are "
-                "global-settable, section 10).")
-    out = [head,
-           f"Regenerate with `{COMMAND}` from the marketplace repository, whose",
-           "`docs/guides/crew/src/configuration-reference.md` is the full reference",
-           "(summaries and arrival versions). Do not edit the table by hand.",
-           "",
-           "| Key | Layer | Values | Default |",
-           "|---|---|---|---|"]
-    for key in members:
-        out.append("| " + " | ".join(_cell(c) for c in (
-            f"`{key}`", keys.layer_of(key), model.values(key), model.default(key))) + " |")
-    return "\n".join(out) + "\n"
-
-
-def splice(text, block, body):
-    """`text` with `block`'s generated region replaced by `body`. Raises
-    ValueError when a marker is missing, repeated or out of order: a region
-    that cannot be found is never treated as current."""
-    begin, end = _marker(block, "begin"), _marker(block, "end")
-    if text.count(begin) != 1 or text.count(end) != 1:
-        raise ValueError(f"CONFIG.md must hold exactly one {begin} and one {end}")
-    head, rest = text.split(begin, 1)
-    if end not in rest:
-        raise ValueError(f"CONFIG.md's {end} comes before its {begin}")
-    _old, tail = rest.split(end, 1)
-    return f"{head}{begin}\n{body}{end}{tail}"
+    by_family = {family: [] for family in keys.FAMILIES}
+    for key in model.leaves:
+        by_family[keys.KEY_META[key]["family"]].append(key)
+    family_table = "\n".join(
+        ["| Family | Keys |", "|---|---|"]
+        + [f"| `{family}` | {len(by_family[family])} |" for family in keys.FAMILIES])
+    out = [CONFIG_PREAMBLE.format(
+        command=COMMAND, rationale=RATIONALE, total=total, machine=machine,
+        repo_only=repo_only, profile_table=_profile_table(model),
+        dropped=len(model.dropped.DROPPED), family_table=family_table)]
+    for family in keys.FAMILIES:
+        members = by_family[family]
+        if not members:
+            continue
+        out += [f"## `{family}` keys ({len(members)})", "",
+                "| Key | Layer | Default | Values | Summary |", "|---|---|---|---|---|"]
+        for key in members:
+            out.append("| " + " | ".join(_cell(c) for c in (
+                f"`{key}`", keys.layer_of(key), model.default(key),
+                model.values(key), keys.KEY_META[key]["summary"])) + " |")
+        out.append("")
+    return "\n".join(out).rstrip("\n") + "\n"
 
 
 def expected():
     """`{path: full expected text}` for both files."""
     model = Model()
-    config_md = _read(CONFIG_MD)
-    if config_md is None:
-        raise FileNotFoundError(CONFIG_MD)
-    for block in BLOCKS:
-        config_md = splice(config_md, block, render_config_block(block, model))
-    return {REFERENCE: render_reference(model), CONFIG_MD: config_md}
+    return {REFERENCE: render_reference(model), CONFIG_MD: render_config_md(model)}
 
 
 def _read(path):

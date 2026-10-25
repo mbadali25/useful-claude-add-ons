@@ -20,7 +20,7 @@ import subprocess
 import sys
 
 # The Stop gate's own reach classifier, read (never changed) so G1 and the gate
-# cannot disagree about which undeclared rules are deferred. CONFIG.md §19.
+# cannot disagree about which undeclared rules are deferred. docs/crew/config-rationale.md.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 os.pardir, os.pardir, os.pardir, "hooks", "scripts"))
 try:
@@ -162,7 +162,7 @@ def deferred_on_stop(root, rules):
 def check_rule_reach(root, ci, tests):
     """G1 (standard 19, defect D10): an undeclared rule whose command has shell
     syntax, a remote verb or a wrapper script is deferred on every Stop, so the
-    gate records it as skipped while its marker advances (CONFIG.md §19). An
+    gate records it as skipped while its marker advances (docs/crew/config-rationale.md). An
     undeclared plain local command still runs; it is a GAP only because the
     standard wants every rule declared."""
     title = "Every gate rule declares reach and seconds"
@@ -190,7 +190,7 @@ def check_rule_reach(root, ci, tests):
     if runs:
         parts.append(f"{len(runs)} rule(s) run but declare no `reach` (rules {', '.join(runs[:8])})")
     if no_reach:
-        parts.append("declare each by hand (CONFIG.md §19) until L-0562's --stamp-reach lands")
+        parts.append("declare each by hand (docs/crew/config-rationale.md) until L-0562's --stamp-reach lands")
     if no_seconds:
         parts.append(f"{len(no_seconds)} rule(s) have no numeric `seconds` (rules "
                      f"{', '.join(no_seconds[:8])})")

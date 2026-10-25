@@ -58,10 +58,8 @@ treated the same way, so `wake` never loosens it. Otherwise awake, off or
 reads the result through `crew_autopilot._settings_at`, and its reason
 names the sleep state when that changed the answer.
 
-L-0656: `notifyHold`, a fifth key, `null` or exactly `true`
-(`read_notify_hold`; anything else warns and holds nothing). `resolve`
-passes it through as `notifyHold`; crew_notify_hold.py decides, at send
-time, whether a ping is held.
+L-0725: the L-0656 `notifyHold` key is gone (`crew_state.AUTOPILOT_NOTIFY_HOLD`
+is None): no ping is held while asleep.
 
 L-0653: the sleep log's text. `log_line` builds one entry,
 `- <ISO local time> | <ticket> | <kind> | <text> | <setting>`, every field
@@ -85,7 +83,7 @@ MANUAL_SLEEP_HOURS = 12
 # (review round 2 FIX-2).
 MANUAL_MAX = datetime.timedelta(hours=24)
 MANUAL_MAX_REAL = datetime.timedelta(hours=25)
-KEYS = ("schedule",) + OVERRIDES + ("deploy", "notifyHold")
+KEYS = ("schedule",) + OVERRIDES + ("deploy",)
 DEPLOY_OVERRIDES = ("nonprod", "none")
 # crew_autopilot.DEPLOY_VALUES' order, loosest last (a test holds the two equal).
 DEPLOY_ORDER = ("none", "nonprod", "all")
@@ -275,10 +273,8 @@ def resolve(block, when, policies, manual=None, sleep_allowed=True):
     state. `manual` is `read_manual`'s `found` (L-0652); a valid record adds
     `until` and `by` and wins over the schedule (module docstring)."""
     deploy, refused = read_deploy(block)
-    hold, unheld = read_notify_hold(block)
-    got = dict(_scheduled(block, when, policies), source="schedule", deploy=deploy,
-               notifyHold=hold)
-    got["warnings"] = got["warnings"] + [w for w in (refused, unheld) if w]
+    got = dict(_scheduled(block, when, policies), source="schedule", deploy=deploy)
+    got["warnings"] = got["warnings"] + ([refused] if refused else [])
     record = read_manual(manual, when) if manual is not None else {"kind": "none"}
     if record["kind"] == "none":
         return got
@@ -311,18 +307,6 @@ def read_deploy(block):
     return None, (f"autopilot.sleep.deploy is {render(value)}, not null, nonprod or none; the "
                   "day value of autopilot.deploy stands, and production never runs unattended "
                   "asleep")
-
-
-def read_notify_hold(block):
-    """`(hold, warning)` for `autopilot.sleep.notifyHold` (L-0656): True only
-    for exactly `true`; None for null or a block that is not an object; None
-    with a warning for anything else (`false`, `"true"` and `1` included) --
-    a value crew cannot read never hides a ping."""
-    value = block.get("notifyHold") if isinstance(block, dict) else None
-    if value is None or value is True:
-        return value, ""
-    return None, (f"autopilot.sleep.notifyHold is {render(value)}, not null or true; no ping is "
-                  "held")
 
 
 def deploy_overlay(deploy, sleep, day):

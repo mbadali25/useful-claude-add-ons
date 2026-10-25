@@ -25,7 +25,7 @@
    "exit": 2,
    "flavour": "bash",
    "script": "context-watch.sh",
-   "stderr": "crew context-watch: no usable python (stub or unusable interpreter) - context\nusage could not be measured this turn. This hook cannot tell you how full\nthe context window actually is right now, so treat it as if it might be\nfull: before ending this turn, write the handoff note to the configured handoff path (context.handoffPath in .crew/config.json; .work/HANDOFF.md if unset)\nper the crew-context skill, as a precaution. This is bounded to one forced\ncontinuation for THIS turn, not suppressed for the rest of the session --\nit will ask again on the next turn if the interpreter is still unusable\nthen.\n",
+   "stderr": "crew context-watch: no usable python (stub or unusable interpreter) - context\nusage could not be measured this turn. This hook cannot tell you how full\nthe context window actually is right now, so treat it as if it might be\nfull: before ending this turn, write the handoff note to .work/HANDOFF.md\nper the crew-context skill, as a precaution. This is bounded to one forced\ncontinuation for THIS turn, not suppressed for the rest of the session --\nit will ask again on the next turn if the interpreter is still unusable\nthen.\n",
    "stdout": "",
    "timed_out": false
   },

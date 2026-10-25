@@ -9,7 +9,7 @@ import.
 Two directions are checked here, and the second is the one that matters:
 
   * The table SAYS the things the design decided -- doc-builder is routed,
-    both config keys are named and bound to a genre, and the two degraded
+    no config key supplies a brand, and the two degraded
     paths are stated as two distinct sentences.
   * The interface it names actually EXISTS. `--brand` is asserted by running
     each script's own argparse, not by grepping for the string. A routing
@@ -23,7 +23,6 @@ import subprocess
 import sys
 
 import context  # noqa: F401  pylint: disable=unused-import
-import crew_config
 import crew_state
 import pytest
 
@@ -133,75 +132,39 @@ def _doc_builder_bullet():
     return lines[start:end]
 
 
-def test_the_routing_table_routes_doc_builder_and_names_both_keys():
-    """The call site. Before this, `docs.theme` configured a tool crew's own
-    documented generation path never mentioned -- the table routed DOCX and
-    PDF to `anthropic-office-skills` and named doc-builder nowhere, so there
-    was nothing for a `--brand` to attach to."""
+def test_the_routing_table_routes_doc_builder_without_a_configured_brand():
+    """The call site. The table must route DOCX and PDF branded work to
+    doc-builder, as a top-level list item (the thing an agent reads as "route
+    here"), with `--brand` named and no config key behind it."""
     generating = _read(_HOUSE_STYLE).split("## Generating it", 1)[1]
 
-    # The ROUTE, not a mention. `doc-builder` appears several times in the
-    # prose around the table -- in the additive-and-narrow paragraph and in
-    # both degraded paths -- so `"doc-builder" in generating` passes even
-    # with the routing bullet deleted. Asserted as a top-level list item,
-    # which is the thing an agent reads as "route here".
     routes = [line for line in generating.split("\n")
               if line.startswith("- `")]
     assert any(line.startswith("- `doc-builder` —") for line in routes), routes
 
     assert "--brand" in generating
-    assert "docs.theme" in generating
-    assert "docs.reportTheme" in generating
+    assert "docs.theme" not in generating
+    assert "docs.reportTheme" not in generating
 
 
-def test_the_two_config_keys_are_bound_to_different_genres():
-    """Otherwise `reportTheme` quietly becomes a synonym for `theme`.
+def test_theme_is_constant():
+    """L-0725: an old `docs.theme` / `docs.reportTheme` in a config file passes
+    no `--brand`. Both are `None` and the routing bullet says to pass no brand
+    unless the person names one."""
+    bullet = " ".join(" ".join(_doc_builder_bullet()).split())
 
-    The key only earns its place if a findings report can carry a different
-    brand from the surrounding docs -- a client-facing deliverable out of an
-    internal repo. If the table named only `docs.theme`, or named both without
-    saying which wins for a report, the second key would resolve to the first
-    in every real case and nobody would ever see the difference."""
-    generating = _read(_HOUSE_STYLE).split("## Generating it", 1)[1]
-
-    # The report genre prefers reportTheme, and says so in one sentence with
-    # both names in it -- not two unrelated mentions elsewhere in the file.
-    report_rule = [line for line in _doc_builder_bullet()
-                   if "docs.reportTheme" in line]
-    assert report_rule, "no line in the doc-builder bullet binds docs.reportTheme"
-
-    # `"findings report"`, NOT `"report"`. Testing for "report" here was
-    # tautological and shipped that way: `"docs.reportTheme".lower()` contains
-    # "report", so the second assertion could not fail once the first passed,
-    # and the genre binding -- the whole point of the test -- was unchecked.
-    # The sabotage entry did not reveal it either, because that mutation
-    # deletes the key from the sentence and so trips the FIRST assertion.
-    #
-    # A passing mutation proves the TEST failed, never which assertion did.
-    # This phrasing fails on "for every document prefer `docs.reportTheme`",
-    # which is exactly the rewrite that turns the second key into a synonym
-    # for the first.
-    assert all("findings report" in line for line in report_rule), report_rule
-
-    # And null is defined, because that is what the default now is.
-    assert "null theme passes no `--brand`" in generating
+    assert crew_state.DOCS_THEME is None
+    assert crew_state.DOCS_REPORT_THEME is None
+    assert "Pass no `--brand`" in bullet
+    assert "only when the person names a brand" in bullet
 
 
-def test_the_two_keys_can_actually_hold_different_values():
-    """The config half of the same claim. Both keys are settable in both
-    layers and resolve independently -- a merge that collapsed one into the
-    other would make the routing rule above undeliverable no matter how
-    clearly it is written."""
-    for dotted in ("docs.theme", "docs.reportTheme"):
-        assert crew_config.is_global_path(dotted), dotted
+def test_report_theme_is_constant():
+    """The findings-report genre carries no separate brand either."""
+    bullet = " ".join(" ".join(_doc_builder_bullet()).split())
 
-    merged = crew_state.merge_defaults(
-        crew_config.default_config(),
-        {"docs": {"theme": "acme", "reportTheme": "acme-client"}})
-
-    assert merged["docs"]["theme"] == "acme"
-    assert merged["docs"]["reportTheme"] == "acme-client"
-    assert merged["docs"]["theme"] != merged["docs"]["reportTheme"]
+    assert "reportTheme" not in bullet
+    assert "for a findings report or any other document" in bullet
 
 
 @pytest.mark.parametrize("genre,script,needs",
@@ -336,7 +299,7 @@ def test_an_unresolvable_theme_is_relayed_and_never_falls_back():
     non-zero with a message naming the installed packs.
     """
     house = _read(_HOUSE_STYLE)
-    section = house.split("### When the configured theme does not resolve", 1)
+    section = house.split("### When the requested brand does not resolve", 1)
     assert len(section) == 2, "no section covers an unresolvable theme"
     rule = section[1]
 
@@ -352,7 +315,7 @@ def test_an_unresolvable_theme_is_relayed_and_never_falls_back():
 
     # And it must forbid crew pre-validating the name -- the same rule as
     # "Do not detect Word yourself", which is already asserted separately.
-    assert "Do not validate the theme name before calling" in rule
+    assert "Do not validate the brand name before calling" in rule
 
 
 def test_crew_is_not_told_to_allowlist_theme_names():
@@ -381,7 +344,7 @@ def test_crew_is_not_told_to_allowlist_theme_names():
     # crew's prose has to say WHY, not just "do not" -- a bare prohibition gets
     # optimised away by the next person who thinks they are helping.
     rule = _read(_HOUSE_STYLE).split(
-        "### When the configured theme does not resolve", 1)[1]
+        "### When the requested brand does not resolve", 1)[1]
     assert "skill directory name" in rule
     assert "fail closed on correct configuration" in rule
 

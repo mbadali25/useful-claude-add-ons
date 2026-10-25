@@ -1,7 +1,14 @@
 %% Generated from useful-claude-add-ons@7944f06d7 on 2026-10-22, first drawn 2026-10-02, re-anchored 2026-10-22 (L-0867 refresh) and 2026-10-18 (L-0789 refresh; see the notes below the Purpose line). Verify before trusting.
-%% Anchors: plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/role_write_guard.py, plugin/crew/CONFIG.md, plugin/crew/tests/test_install_policy.py
-%% Purpose: The keys that do not follow repo-beats-global: the two ratchet tables (read side and write side), the fifteen keys that resolve by the lower rank, and how a corrupt config file forces the role-write guard to block.
+%% Anchors: plugin/crew/hooks/scripts/crew_guards.py, plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/role_write_guard.py, docs/crew/config-rationale.md, plugin/crew/tests/test_install_policy.py
+%% Purpose: The keys that do not follow repo-beats-global: how each layer first expands guards.profile and guards.overrides into a per-guard value, then the two ratchet tables (read side and write side), the fifteen keys that resolve by the lower rank, and how a corrupt config file forces the role-write guard to block.
 %% Embed: none
+%% Re-drawn for L-0725 (twelve guards.<name> keys become guards.profile plus guards.overrides): a new top box group draws the per-layer
+%%    expansion that now runs BEFORE the ratchet. Re-measured with grep -n and by import (python3 -I -S): PROFILE_MAP crew_guards.py:240,
+%%    normalise_profile :612, layer_guard_state :638, RATCHETED_KEYS :582-:609, effective_ratcheted :706, resolve_ratcheted crew_config.py:971,
+%%    layer_state :1084, _RATCHETED :3237, role_write_guard.py layer_state calls :763-:765. len(ALL_GUARD_NAMES) is 12, len(RATCHETED_KEYS)
+%%    15, len(_RATCHETED) 16, and set(_RATCHETED) - set(RATCHETED_KEYS) is still {'pm.authority'}. The ratchet itself is unchanged: it still
+%%    runs per guard on the two per-layer values. The profile is not ratcheted; it is shorthand that expands inside each layer. The older
+%%    notes below keep the line numbers they were written with and are history.
 %% Re-anchored a792ce66b -> 7944f06d7 (L-0867 refresh, 2026-10-22): of the Anchors paths only CONFIG.md changed
 %%    (git diff 18e4afce3..HEAD over this diagram's five Anchors paths: CONFIG.md only; crew_guards.py, crew_config.py,
 %%    role_write_guard.py and test_install_policy.py are untouched). The change is L-0867 (L-0727 slice 3): the deleted hook .ps1 twins
@@ -53,7 +60,16 @@
 %%     anchor drew at a smaller size. The tuple SHAPES still disagree
 %%     ((function, function, dict) write-side vs (tuple, function, function)
 %%     read-side), confirmed by `type()` on each element, not asserted.
-%% Note RG: <b>READ side: crew_guards.RATCHETED_KEYS</b> plugin/crew/hooks/scripts/crew_guards.py:552-579
+%% Note X1: <b>guards.profile</b> (off | standard | strict) is read in EACH layer separately: crew_guards.layer_guard_state :638 looks up the
+%%    layer's profile in PROFILE_MAP :240. off is today's GUARD_DEFAULTS, so a layer that sets nothing resolves as it always did.
+%%    The profile itself is never ratcheted.
+%% Note X2: <b>guards.overrides.&lt;guard&gt;</b> in the same layer replaces the profile's value for that one guard, validated against
+%%    that guard's own tiers. An override can never widen past a malformed profile or past a legacy key still present.
+%% Note X3: <b>The twelve legacy guards.&lt;name&gt; keys</b> are still READ as aliases until /crew:migrate rewrites the layer, and never
+%%    written. When a legacy key and a profile or override both speak, the NARROWER of the two wins and the conflict is reported.
+%% Note X4: A malformed profile, or an overrides value that is not an object or not one of the guard's tiers, gives that guard's FLOOR
+%%    (block, or none for prodDatabase and prodServer). The floor is never off: could-not-tell must not read as opted-out.
+%% Note RG: <b>READ side: crew_guards.RATCHETED_KEYS</b> plugin/crew/hooks/scripts/crew_guards.py:582-609
 %%    <b>15 keys</b> (executed + len()'d at a792ce66b): install.policy, change.requireForProduction,
 %%    environments.prodUnattended (T-0005), and all TWELVE guards.* - terraformApply, forcePush, adminMerge,
 %%    mergeGate, cloudDestructive, sqlDestructive, deployWorkflow, prodDatabase, prodServer, roleWrites, cloudGuard,
@@ -76,17 +92,17 @@
 %% Note FORCE: plugin/crew/hooks/scripts/role_write_guard.py calls layer_state for BOTH layers at :763-764,
 %%    ORs them into forced_by_corruption :765, and sets policy = #quot;block#quot; UNCONDITIONALLY at :767-768
 %%    -- BEFORE the <i>elif policy == #quot;off#quot;: return 0</i> early exit at :769-770
-%% Note E1: <b>Every key in crew_guards.RATCHETED_KEYS :552-579 -- install.policy,
+%% Note E1: <b>Every key in crew_guards.RATCHETED_KEYS :582-609 -- install.policy,
 %%    change.requireForProduction, environments.prodUnattended and all TWELVE guards.* -- resolves by the LOWER
-%%    rank, not by repo-beats-global.</b> CONFIG.md section 15 covers install.policy, section 16 the guards,
-%%    section 18 guards.roleWrites; environments.* is a subsection of section 16.
+%%    rank, not by repo-beats-global.</b> docs/crew/config-rationale.md covers install.policy, the guards (profile plus overrides) and
+%%    the roleWrites guard; environments.* is a subsection of the guards section.
 %% Note E2: The effective value at each key is the <b>lower-ranked of the two layers</b> -
 %%    crew_guards.effective_ratcheted :594, reached through crew_config.resolve_ratcheted :1006.
 %% Note E3: Why: crew reads config out of CLONED repositories. A repo shipping install.policy: auto, or
-%%    guards.cloudGuard: report, would, under precedence, override a machine owner who chose manual or off.
+%%    guards.overrides.cloudGuard: report, would, under precedence, override a machine owner who chose manual or off.
 %% Note E4: Absent counts as the narrowest tier on either side for TWELVE of the fifteen, so the WIDEST grant
 %%    requires BOTH layers to agree.
-%% Note E5: <b>guards.roleWrites, guards.cloudGuard and guards.envGuard (L-0772) are the three exceptions to E4, and the only keys here
+%% Note E5: <b>roleWrites, cloudGuard and envGuard (L-0772) are the three exceptions to E4, and the only keys here
 %%    whose DEFAULT is not their FLOOR.</b> ROLE_WRITE_POLICIES is (block, report, off); ROLE_WRITE_DEFAULT is
 %%    <b>off</b>, the WIDEST tier, for all three names - cloudGuard and envGuard reuse roleWrites' own normalise/rank functions
 %%    rather than growing a second copy (normalise_role_writes crew_guards.py:479, role_writes_rank :505, guard_tiers() :519-534).
@@ -95,6 +111,15 @@
 %%    tests/test_install_policy.py.
 flowchart TB
 
+    subgraph Expand["FIRST, each layer expands its own profile and overrides into one value per guard"]
+        direction TB
+        X1["<b>guards.profile</b><br/>off | standard | strict<br/>PROFILE_MAP, per layer"]
+        X2["<b>guards.overrides.&lt;guard&gt;</b><br/>replaces the profile's value<br/>for that one guard"]
+        X3["legacy <b>guards.&lt;name&gt;</b> still read<br/>until /crew:migrate;<br/>the narrower of the two wins"]
+        X4["malformed profile or override<br/>= the guard's FLOOR,<br/>never off"]
+        X1 --> X2 --> X3 --> X4
+    end
+    Expand ==>|"two per-layer values per guard"| Ratchet
     subgraph Ratchet["Two DIFFERENT ratchet tables, not one - 16 write-side, 15 read-side"]
         direction TB
         RG["<b>READ side:</b><br/>crew_guards.RATCHETED_KEYS<br/>15 keys"]
@@ -115,7 +140,7 @@ flowchart TB
         E2["effective value = the<br/><b>lower-ranked</b> of the two layers<br/>effective_ratcheted :594"]
         E3["Why: crew reads config<br/>out of CLONED repositories"]
         E4["Absent = the narrowest tier<br/>for TWELVE of the fifteen"]
-        E5["<b>guards.roleWrites, cloudGuard, envGuard</b><br/>the three exceptions to E4:<br/>DEFAULT is not their FLOOR"]
+        E5["<b>roleWrites, cloudGuard, envGuard</b><br/>the three exceptions to E4:<br/>DEFAULT is not their FLOOR"]
         E6["install.policy: auto is safe -<br/>no repo string becomes a command<br/>(crew_guards.INSTALLABLE)"]
         E1 --- E2 --- E3 --- E4 --- E5 --- E6
     end

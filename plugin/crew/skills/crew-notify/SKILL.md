@@ -13,6 +13,10 @@ and it is worth reading before you decide to go two-way.
 
 ## Microsoft Teams
 
+L-0725: crew itself no longer posts to a Teams webhook (`notify.urlEnv` is gone), so
+`"provider": "teams"` sends nothing. The webhook below still works for your own
+scripts; crew's built-in notifier is Telegram only.
+
 ### The old way no longer works
 
 If you find a tutorial saying "channel ••• → Connectors → Incoming Webhook,"
@@ -107,11 +111,11 @@ global key ("the person's own chat, not the project's"). A repo's
 `.crew/config.json` overrides any key it sets; a repo that leaves `provider`
 null inherits the global one, and a repo that says `"provider": "none"` opts
 out on purpose (`crew_notify.py config` prints that it overrides the global
-provider). `tokenEnv` and `urlEnv` are read from the global file only: a
+provider). `tokenEnv` is read from the global file only: a
 repo's is ignored, with a notice, so a cloned repo cannot pick which variable
 becomes the request URL. That cannot stop a repo setting the variable's
 value: a project's `.claude/settings.json` `env` block can set the variable
-your global `urlEnv` or `tokenEnv` names for sessions in that repo, and crew
+your global `tokenEnv` names for sessions in that repo, and crew
 cannot tell that value from yours. Redirects are refused. `config` masks `chatId`.
 
 ```json
@@ -119,13 +123,12 @@ cannot tell that value from yours. Redirects are refused. `config` masks `chatId
   "provider": "telegram",
   "tokenEnv": "CREW_TELEGRAM_TOKEN",
   "chatId": "-1009876543210",
-  "events": ["blocker", "deploy", "question"],
-  "realertHours": 6
+  "events": ["blocker", "deploy", "question"]
 }
 ```
 
-Teams: `"provider": "teams", "urlEnv": "CREW_TEAMS_WEBHOOK"`. The Teams branch
-is tested against a local server only; no live Teams send has been claimed.
+Teams: since L-0725 the `teams` provider has no webhook to post to (`notify.urlEnv`
+is gone), so it sends nothing. Telegram is the only working provider.
 
 If the notify skill is set up on the same machine, its
 `~/.config/notify/config.json` `telegram.bot_token_env` and `chat_id` fill a
@@ -166,8 +169,7 @@ not deduped as the old one: approval is keyed on the plan's hash, out-of-rounds
 on the round number, and a refusal streak on its first refusal.
 
 **Question types.** `permission_prompt`, `worker_permission_prompt`,
-`elicitation_dialog`, `elicitation_url_dialog` and `agent_needs_input`, or the
-list in `notify.questionTypes`. `idle_prompt` ("finished, idle") never pings,
+`elicitation_dialog`, `elicitation_url_dialog` and `agent_needs_input` (fixed; L-0725 removed `notify.questionTypes`). `idle_prompt` ("finished, idle") never pings,
 and neither does any other type; an unknown or missing type is logged, one line
 each, to `<git-common-dir>/crew/notify/unrecognised.log` (capped at 200 lines).
 The subject is `Question` for an elicitation, `agent_needs_input`, or a
@@ -185,7 +187,7 @@ characters and passed through a redaction filter first.
 `prompt_id`: no repeat until you have typed your next message in that session
 and Claude asked again. Approving a permission prompt does not reset it (the
 `prompt_id` is unchanged), so a second prompt in the same turn is silent. On top of that, the same event + ticket + reason is sent once per
-`realertHours` (default 6). Both records advance only after a confirmed send,
+6 hours (fixed; L-0725 removed `notify.realertHours`). Both records advance only after a confirmed send,
 so a failed send is retried next time rather than lost.
 
 **Retired.** The per-phase, per-review and per-ticket pings are gone. An old

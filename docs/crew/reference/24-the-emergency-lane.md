@@ -35,7 +35,7 @@ outside the session.
 
 ### It expires on its own
 
-`emergency.ttlMinutes` (default 120) sets the window. Past it, the gates gate
+The window is 120 minutes (fixed; `emergency.ttlMinutes` was removed), or the `--ttl` you name, capped by `emergency.maxTtlMinutes`. Past it, the gates gate
 again: they compare an integer epoch, so nothing has to run and no file has to
 be touched for normal service to resume. That matters because the realistic
 failure here is not declaring an incident when you should not have — nobody does

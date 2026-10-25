@@ -75,8 +75,8 @@ The document's highest-priority area.
 
 **crew:** the hooks implement this — `context-watch` warns at the threshold,
 `handoff-write` fires on PreCompact, the context hook injects the note at
-SessionStart. Since 0.19.52 `autoWrapUp` and `autoClear` default
-on, so the loop runs without being asked. The 60k figure does not transfer to a
+SessionStart. Auto wrap-up is always on (fixed since L-0725), so the
+loop runs without being asked. The 60k figure does not transfer to a
 1M window; crew uses a fraction and auto-detects the window.
 
 ## Planning

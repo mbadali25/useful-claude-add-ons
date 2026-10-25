@@ -1,43 +1,47 @@
 %% Generated from useful-claude-add-ons@452b30cc on 2026-10-02. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/role-write-guard.sh, plugin/crew/hooks/scripts/cloud-guard.sh, plugin/crew/hooks/scripts/env-guard.sh
+%% Re-drawn for L-0725: the cloud and env fallbacks no longer trust the first match or read a missing token as off.
+%%    crew_guard_layer_armed (_common.sh) calls a layer unarmed only when the file is absent, or it ends in a closing brace, holds no
+%%    JSON unicode escape, every "guards" token is followed by an opening brace, and every "profile" and guard-key value is the
+%%    literal off with as many values as tokens. Anything else is armed. The :NNN citations below predate that edit and were not re-measured.
 %% Re-drawn for L-0772 on 2026-10-11: the environment guard's fallback (EG1-EG3), read at L-0772-env-guard.
 %% Re-drawn for T-0096 on 2026-10-04: the cloud guard's fallback (CG1-CG3), read at T-0096-build.
-%% Purpose: What three guards do when they cannot find python: role-write-guard.sh cannot read guards.roleWrites, so it always blocks a restricted role; cloud-guard.sh reads cloudGuard crudely from the resolved repo file and the machine file, and refuses when armed or when git cannot name a lane's main checkout; env-guard.sh does the same for envGuard.
+%% Purpose: What three guards do when they cannot find python: role-write-guard.sh cannot evaluate the roleWrites guard (guards.profile and guards.overrides.roleWrites), so it always blocks a restricted role; cloud-guard.sh reads the resolved repo file and the machine file crudely, treats a layer as unarmed only when it can PROVE every profile and cloudGuard value is the literal off, and refuses otherwise or when git cannot name a lane's main checkout; env-guard.sh does the same for envGuard.
 %% Embed: none
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
 %%  6. role-write-guard.sh's no-python fallback (:301-346) is a NEW, narrower
 %%     contract, not the old policy-reading fallback (removed): without a
-%%     working python it cannot evaluate guards.roleWrites at all, so it only
+%%     working python it cannot evaluate the roleWrites guard (guards.overrides.roleWrites, guards.profile) at all, so it only
 %%     tells a restricted role from an unrestricted one and fails CLOSED for
 %%     the restricted side - "off"/"report" and pm's own path allowances
 %%     require python to take effect; a restricted role's write is ALWAYS
 %%     blocked with no python on PATH.
 %% Note NP1: _resolve_role_write_python() plugin/crew/hooks/scripts/role-write-guard.sh:44- fails to find a
 %%    usable interpreter
-%% Note NP2: _role_write_fallback_decision() :326-346. Cannot evaluate guards.roleWrites (off/report/pm's own
+%% Note NP2: _role_write_fallback_decision() :326-346. Cannot evaluate the roleWrites guard (off/report/pm's own
 %%    path allowances) at all - only tells a restricted role from an unrestricted one via the deny-list mirror
 %% Note NP3: Unrestricted role: allowed unjudged. Restricted role (pm or _DENY_ROLES) OR a role this fallback
-%%    could not even read: ALWAYS BLOCKED (exit 2), regardless of what guards.roleWrites actually says
+%%    could not even read: ALWAYS BLOCKED (exit 2), regardless of what guards.overrides.roleWrites actually says
 %%    :339-345
 %% Note CG1: crew_py_strict plugin/crew/hooks/scripts/_common.sh finds no usable interpreter, or
 %%    cloud_guard.py exits non-zero (cloud-guard.sh:55-78)
 %% Note CG2: _cloud_guard_armed plugin/crew/hooks/scripts/cloud-guard.sh:40; armed when the resolver is missing. The repo file is
 %%    crew_repo_config_dir's (_common.sh:328): a lane with no config of its own reads the main checkout's.
 %%    (Its PowerShell twin, Test-CloudGuardArmed in cloud-guard.ps1, was deleted in L-0727 slice 3.)
-%% Note CG3: source unknown, or any cloudGuard value other than off in either file: exit 2 (refuse).
+%% Note CG3: source unknown, or a layer that cannot be PROVED off (any profile or cloudGuard value other than off, or a file it cannot read): exit 2 (refuse).
 %%    Otherwise exit 0, unjudged.
 %% Note EG1: crew_py_strict finds no usable interpreter, or env_guard.py exits non-zero (env-guard.sh:53-76).
 %% Note EG2: _env_guard_armed plugin/crew/hooks/scripts/env-guard.sh:38, the same shape as _cloud_guard_armed: armed when
 %%    the resolver is missing; the repo file is crew_repo_config_dir's. Twin:
 %%    env_guard._crude_armed in python when crew's own config readers raise.
-%% Note EG3: source unknown, or any envGuard value other than off in either file: exit 2 (refuse). Otherwise
+%% Note EG3: source unknown, or a layer that cannot be PROVED off (any profile or envGuard value other than off, or a file it cannot read): exit 2 (refuse). Otherwise
 %%    exit 0, unjudged.
 flowchart LR
 
     subgraph NoPython["role-write-guard.sh's no-python fallback - a NARROWER contract than the old one"]
         direction TB
         NP1["<b>_resolve_role_write_python()</b><br/>finds no usable interpreter"]
-        NP2["<b>_role_write_fallback_decision()</b><br/>cannot evaluate<br/>guards.roleWrites at all"]
+        NP2["<b>_role_write_fallback_decision()</b><br/>cannot evaluate<br/>the roleWrites guard at all"]
         NP3["Unrestricted role: allowed.<br/>Restricted or unreadable role:<br/>ALWAYS BLOCKED (exit 2)"]
         NP1 --> NP2 --> NP3
     end
@@ -45,15 +49,15 @@ flowchart LR
     subgraph CloudNoPython["cloud-guard's fallback - reads the resolved repo file (T-0096)"]
         direction TB
         CG1["no usable python,<br/>or cloud_guard.py failed"]
-        CG2["<b>_cloud_guard_armed</b><br/>resolved repo file +<br/>machine file"]
-        CG3["unknown, or cloudGuard<br/>not off: REFUSED (exit 2)"]
+        CG2["<b>_cloud_guard_armed</b><br/>both files, off only<br/>if PROVED"]
+        CG3["unknown, or not proved off:<br/>REFUSED (exit 2)"]
         CG1 --> CG2 --> CG3
     end
 
     subgraph EnvNoPython["env-guard's fallback - the same shape (L-0772)"]
         direction TB
         EG1["no usable python,<br/>or env_guard.py failed"]
-        EG2["<b>_env_guard_armed</b><br/>resolved repo file +<br/>machine file"]
-        EG3["unknown, or envGuard<br/>not off: REFUSED (exit 2)"]
+        EG2["<b>_env_guard_armed</b><br/>both files, off only<br/>if PROVED"]
+        EG3["unknown, or not proved off:<br/>REFUSED (exit 2)"]
         EG1 --> EG2 --> EG3
     end

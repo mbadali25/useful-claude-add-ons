@@ -87,7 +87,7 @@ INSTALLABLE = {
 # marker for THAT command exists, `allow` runs it and writes a row saying so.
 # Ordered least to most permissive and read only through `guard_policy_rank`,
 # the same contract `crew_state.AUTHORITIES` and `INSTALL_POLICIES` carry.
-# Append only, never reorder. Full reasoning in CONFIG.md §16, including the
+# Append only, never reorder. Full reasoning in docs/crew/config-rationale.md, including the
 # part a default cannot paper over: `adminMerge` and the `tofu` spelling of
 # `terraformApply` are NEW refusals, so `block` does not mean "nothing changed".
 GUARD_POLICIES = ("block", "ask", "allow")
@@ -96,7 +96,7 @@ GUARD_POLICY_DEFAULT = "block"
 # The guards. This tuple is the ORDER the keys are declared in, so
 # `default_config()` and `default_global_config()` cannot drift into different
 # orderings of the same block. What each governs is prose and lives with the
-# prose that uses it -- `crew_config._GUARD_ACTIONS` and CONFIG.md §16.
+# prose that uses it -- `crew_guard_notes.GUARD_ACTIONS` and docs/crew/config-rationale.md.
 #
 # `mergeGate` is the odd one: it is read by `/crew:gate` rather than by the
 # command guard, because "may crew take a live repo's merge gate down" is not a
@@ -129,7 +129,7 @@ PROD_GUARD_NAMES = ("prodDatabase", "prodServer")
 
 # The third vocabulary in this block, and the second key (after
 # `change.requireForProduction`) whose DEFAULT is deliberately not its FLOOR.
-# See `ROLE_WRITE_DEFAULT` below for why, and CONFIG.md Sec18 for the full
+# See `ROLE_WRITE_DEFAULT` below for why, and docs/crew/config-rationale.md for the full
 # reasoning -- the short version is CLAUDE.md's own rule for a new hook:
 # "a plugin registering one defaults to OFF in the menu". `off` here is what
 # makes that true for `guards.roleWrites` without a second mechanism: the
@@ -220,6 +220,36 @@ GUARD_DEFAULTS = dict(
     + [(name, ROLE_WRITE_DEFAULT) for name in ROLE_WRITE_GUARD_NAMES]
     + [(name, ROLE_WRITE_DEFAULT) for name in CLOUD_GUARD_NAMES]
     + [(name, ROLE_WRITE_DEFAULT) for name in ENV_GUARD_NAMES])
+
+# L-0725: the twelve per-guard keys collapse to `guards.profile` plus a
+# `guards.overrides` table. A profile is shorthand that expands, PER LAYER, to
+# one value per guard; the per-guard ratchet then runs on those values
+# unchanged. `off` is exactly `GUARD_DEFAULTS`, so a layer that sets nothing
+# resolves as it always did; `standard` is the owner's repo layer; `strict`
+# turns every switchable guard on. Written as a table, not derived, so a
+# change to one cell is a visible diff (the test holds its own copy).
+GUARD_PROFILES = ("off", "standard", "strict")
+
+# What `default_config()` and `default_global_config()` carry for `guards`:
+# the profile at `off` (= `GUARD_DEFAULTS`) and an empty overrides table. The
+# twelve per-guard names are no longer config keys; a file that still holds
+# them is read as a legacy alias (`layer_guard_state`) until `/crew:migrate`.
+GUARD_BLOCK_DEFAULTS = {"profile": "off", "overrides": {}}
+_ALWAYS_BLOCK = ("terraformApply", "forcePush", "mergeGate", "cloudDestructive",
+                 "sqlDestructive", "deployWorkflow")
+PROFILE_MAP = {
+    "off": dict(GUARD_DEFAULTS),
+    "standard": dict(
+        [(name, "block") for name in _ALWAYS_BLOCK]
+        + [("adminMerge", "ask"), ("prodDatabase", "none"),
+           ("prodServer", "none"), ("roleWrites", "report"),
+           ("cloudGuard", "block"), ("envGuard", "off")]),
+    "strict": dict(
+        [(name, "block") for name in _ALWAYS_BLOCK]
+        + [("adminMerge", "block"), ("prodDatabase", "none"),
+           ("prodServer", "none"), ("roleWrites", "block"),
+           ("cloudGuard", "block"), ("envGuard", "block")]),
+}
 
 # What counts as production, and it is a REPO-ONLY block on purpose.
 #
@@ -547,7 +577,7 @@ def guard_tiers(name):
 #
 # `pm.authority` is deliberately NOT here -- it ratchets for the WIDENING
 # WARNING only (`crew_config._RATCHETED`), while its two layers still combine
-# by ordinary precedence. See CONFIG.md §16 for why, and for why neither table
+# by ordinary precedence. See docs/crew/config-rationale.md for why, and for why neither table
 # is derived from the other.
 RATCHETED_KEYS = {
     "install.policy": (INSTALL_POLICIES,
@@ -577,6 +607,105 @@ RATCHETED_KEYS["environments.prodUnattended"] = (
     normalise_prod_unattended,
     prod_unattended_rank,
 )
+
+
+def normalise_profile(value):
+    """`value` as a known guard profile, else None (malformed).
+
+    None is its own answer and is NEVER read as `off`: the caller turns it into
+    the floor for every guard, because "could not tell what was meant" must not
+    wear the label of "opted out".
+    """
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in GUARD_PROFILES:
+            return cleaned
+    return None
+
+
+def _floor(name):
+    return guard_tiers(name)[0][0]
+
+
+def _tier_or_floor(name, value):
+    """`value` if it names one of `name`'s tiers (any case), else the floor."""
+    tiers = guard_tiers(name)[0]
+    if isinstance(value, str) and value.strip().lower() in tiers:
+        return value.strip().lower()
+    return _floor(name)
+
+
+def layer_guard_state(layer_cfg, name):
+    """One layer's value for guard `name`, and what it was made from.
+
+    Returns `{"value", "legacy", "conflict"}`; `value` is None only when the
+    layer holds none of profile, override or legacy key.
+
+    Two steps. BASE: a profile that is present but malformed gives the floor
+    and ends there, so no override can lift it; otherwise the layer's
+    `guards.overrides.<name>` if present (a malformed one gives the floor),
+    else the valid profile's value, else absent. LEGACY: a `guards.<name>` key
+    still in the layer (unmigrated) is the layer value alone when the base is
+    absent, so an unmigrated layer resolves exactly as it did, `ask`, `allow`
+    and `read` included; when both exist the NARROWER of the two wins by the
+    guard's own rank and the conflict is reported. A `guards` that is present
+    but not an object (42, a string, a list, true) gives the floor for every
+    guard; a `guards` that is JSON null, like a missing one, stays absent (as
+    before this change). INSIDE a `guards` object a key that is present is read
+    as written, so an explicit null `profile`, `overrides` or override value is
+    malformed and gives the floor, never absent. The one exception is the
+    UNMIGRATED legacy `guards.<name>`: null there is absent, as it was before
+    this change (tests/test_env_guard.py pins `envGuard: null` as off), so a
+    layer that never set the new keys resolves exactly as it did. The floor is `block` (or `none` for the
+    production guards), never `off`.
+    """
+    block = layer_cfg.get("guards") if isinstance(layer_cfg, dict) else None
+    if block is not None and not isinstance(block, dict):
+        return {"value": _floor(name), "legacy": False, "conflict": False}
+    if block is None:
+        return {"value": None, "legacy": False, "conflict": False}
+    tiers, normalise, rank = guard_tiers(name)
+
+    base = None
+    if "profile" in block:
+        profile = normalise_profile(block["profile"])
+        if profile is None:
+            base = _floor(name)
+        else:
+            base = PROFILE_MAP[profile][name]
+            base = _apply_overrides(block, name, base)
+    else:
+        base = _apply_overrides(block, name, None)
+
+    legacy_raw = block.get(name)
+    if legacy_raw is None:
+        return {"value": base, "legacy": False, "conflict": False}
+    legacy = normalise(legacy_raw)
+    if base is None:
+        return {"value": legacy, "legacy": True, "conflict": False}
+    value = tiers[min(rank(base), rank(legacy))]
+    return {"value": value, "legacy": True, "conflict": base != legacy}
+
+
+def _apply_overrides(block, name, base):
+    """`base` after the layer's `guards.overrides` has its say about `name`.
+
+    A key that is present is read as written: `overrides` that is not an
+    object, or a value for `name` that names no tier (JSON null included),
+    gives the floor. Only a key that is missing leaves `base` alone."""
+    if "overrides" not in block:
+        return base
+    overrides = block["overrides"]
+    if not isinstance(overrides, dict):
+        return _floor(name)
+    if name in overrides:
+        return _tier_or_floor(name, overrides[name])
+    return base
+
+
+def layer_guard_value(layer_cfg, name):
+    """`layer_guard_state(...)["value"]`: the layer's tier for `name`, or None."""
+    return layer_guard_state(layer_cfg, name)["value"]
 
 
 def ratchet_spec(dotted):
@@ -652,13 +781,11 @@ PERSONAL_KEYS = {
 # (T-0074) and `sleep` (T-0053) reached main after T-0050 was written and were
 # repo-only there; they stay repo-only until a ticket decides how their two
 # layers combine (`sleep` is a block, and `maxAutoReplans` 0 is a valid "off"
-# that the `int-min` rule would read as unrecognised). T-0011's `ship`,
-# `knownFailures` and `ciTimeoutMinutes` (batch 7) are repo-only by their spec:
-# whether a checkout's PRs merge unattended, and which of its checks may fail,
-# are facts about that checkout. T-0029's `maxLanes` and `reviewPolicy` (the wave) are repo-only too: how many lanes
+# that the `int-min` rule would read as unrecognised). T-0011's `ship`
+# (batch 7) is repo-only by its spec: whether a checkout's PRs merge unattended
+# is a fact about that checkout. T-0029's `maxLanes` and `reviewPolicy` (the wave) are repo-only too: how many lanes
 # one checkout runs, and what its lanes do with a verdict, are that checkout's.
 REPO_ONLY_AUTOPILOT = frozenset({"autopilot.maxAutoReplans", "autopilot.sleep", "autopilot.ship",
-                                 "autopilot.knownFailures", "autopilot.ciTimeoutMinutes",
                                  "autopilot.maxLanes", "autopilot.reviewPolicy",
                                  # L-0541's caps: the spec's layer is `repo`.
                                  "autopilot.maxTicketsPerRun", "autopilot.maxTokensPerSession"})
