@@ -57,36 +57,6 @@ _ZERO_WHY = ("the mutation reads /dev/zero unbounded; only Linux bounds the "
 PLATFORM_ONLY = {
     "promote-gate.ps1 reads an unreadable map as one that gates nothing":
         (_WIN, _WIN_WHY),
-    "the PowerShell gate stops rejecting a `run` entry it cannot represent":
-        (_WIN, _WIN_WHY),
-    "the PowerShell Stop budget charges each command the rule's cost":
-        (_WIN, _WIN_WHY),
-    "the PowerShell deadline read overflows Int32 again": (_WIN, _WIN_WHY),
-    "the bash gate stops publishing a deadline at all":
-        (_WIN, "its target is the cross-flavour case, which needs both gates "
-               "on one Windows host; the bash-only twin below runs on Linux"),
-    "the PowerShell gate stops publishing a deadline at all": (_WIN, _WIN_WHY),
-    "the PowerShell budget lets a priced rule defer an `always` command":
-        (_WIN, _WIN_WHY),
-    "the PowerShell gate stops making an unpriced rule unconditional":
-        (_WIN, _WIN_WHY),
-    "the PowerShell gate charges a mandatory command twice": (_WIN, _WIN_WHY),
-    "the PowerShell gate hoists a mandatory command out of its rule":
-        (_WIN, _WIN_WHY),
-    "the PowerShell gate lets a dearer measurement replace a declared price":
-        (_WIN, _WIN_WHY),
-    "the PowerShell gate charges a rule that passed on this exact tree":
-        (_WIN, _WIN_WHY),
-    "the PowerShell gate saves the tree-pass cache after the tree moved":
-        (_WIN, _WIN_WHY),
-    "the PowerShell gate credits from the tree-pass cache under -All":
-        (_WIN, _WIN_WHY),
-    "the PowerShell gate keeps a credit after the tree moved": (_WIN, _WIN_WHY),
-    "the PowerShell gate keeps a withdrawn credit in the record sync":
-        (_WIN, _WIN_WHY),
-    "Get-CrewChildTabRecheck skips the post-delay tab check again":
-        (_WIN, "System.Windows.Forms/UIAutomation exist only on Windows; the "
-               "(Linux structural) twin covers the same mutation elsewhere"),
     "cloud guard r1: a FIFO or device is opened as a plan": (_LINUX, _ZERO_WHY),
     "cloud guard r1: azureProfile.json opened whatever it is":
         (_LINUX, _ZERO_WHY),

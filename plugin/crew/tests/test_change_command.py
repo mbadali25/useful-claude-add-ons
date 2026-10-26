@@ -34,7 +34,6 @@ _PROMOTE = os.path.join(_PLUGIN, "commands", "promote.md")
 # (L-0726, BC6); it is repo-only, so these assertions read it from docs/.
 _PROMOTE_RATIONALE = os.path.join(_PLUGIN, os.pardir, os.pardir, "docs", "crew", "promote.md")
 _SKILL = os.path.join(_PLUGIN, "skills", "crew-change", "SKILL.md")
-_CONFIG_MD = os.path.join(_PLUGIN, "CONFIG.md")
 _SCRIPT = os.path.join(_PLUGIN, "hooks", "scripts", "crew_change.py")
 
 
@@ -71,8 +70,10 @@ def test_the_backend_comes_from_tracker_and_all_three_are_named():
     flat = _flat(_read(_CHANGE))
 
     assert "`tracker`" in flat
-    assert "change.sdpTemplate" in flat
-    assert "change.jiraIssueType" in flat
+    assert "`Change Management Request` template" in flat
+    assert "an issue of type `Change`" in flat
+    assert "change.sdpTemplate" not in flat
+    assert "change.jiraIssueType" not in flat
     assert ".work/changes/<id>.md" in flat
 
 
@@ -367,16 +368,38 @@ def test_the_migration_is_reported_in_both_places_it_is_reported():
     assert notes["changeKeysAdded"]
 
 
-def test_config_md_documents_the_block_and_the_reversed_ratchet():
+def test_the_command_documents_the_reversed_ratchet():
     """A ratchet that runs the opposite way from every other ratcheted key is
     exactly the thing a reader will assume rather than check."""
-    flat = _flat(_read(_CONFIG_MD))
+    flat = _flat(_read(_CHANGE))
 
-    assert "## 17. `change`" in flat
-    assert "a repo may turn the requirement ON, and may never turn it off" \
-        in flat
+    assert "the one key in crew a repo may only turn **ON**" in flat
     for dotted in crew_upgrade.SCHEMA_7_KEYS:
         assert dotted in flat, dotted
+
+
+def test_requester_is_constant():
+    """L-0725: `change.requester`, `.implementor` and `.category` left the
+    config. A value an old config file still holds supplies nothing: the
+    command asks for all three, and the constants are `None`."""
+    flat = _flat(_read(_CHANGE) + _read(_SKILL))
+
+    assert crew_state.CHANGE_REQUESTER is None
+    assert crew_state.CHANGE_IMPLEMENTOR is None
+    assert crew_state.CHANGE_CATEGORY is None
+    assert "Ask for the requester, the implementor and the category every time" in flat
+    for dotted in ("change.requester", "change.implementor", "change.category"):
+        assert dotted not in flat, dotted
+
+
+def test_sdp_template_is_constant():
+    """The template and the Jira issue type are the two fixed names."""
+    flat = _flat(_read(_CHANGE) + _read(_SKILL))
+
+    assert crew_state.CHANGE_SDP_TEMPLATE == "Change Management Request"
+    assert crew_state.CHANGE_JIRA_ISSUE_TYPE == "Change"
+    assert "change.sdpTemplate" not in flat
+    assert "change.jiraIssueType" not in flat
 
 
 def test_the_templates_carry_the_block_at_the_current_schema():

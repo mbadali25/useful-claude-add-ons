@@ -1,7 +1,7 @@
-"""The PowerShell gates' emergency-lane behaviour, compared with the bash pair.
+"""promote-gate.ps1's emergency-lane behaviour, compared with the bash pair.
 
 hooks/scripts/_test/run-tests.sh covers the bash flavour and cannot run the
-.ps1 one. That asymmetry is this plugin's recurring failure: context-watch.ps1
+.ps1 one. That asymmetry is this plugin's recurring failure: a .ps1 twin
 kept a file-size heuristic for a release after the bash flavour dropped it, so
 Windows sessions were cut short while Linux ones were not, and nothing caught
 it because the suite only fed the shared path. An emergency lane that stands
@@ -9,9 +9,15 @@ gates down on one flavour and not the other is the same bug with worse
 consequences - the gates would keep blocking during an outage on Windows, or
 keep standing down after the incident expired.
 
-Windows + pwsh only, by the same reasoning as
-test_verify_gate_bash_resolver.py: these are the native-Windows halves of the
-pair, and there is nothing to compare on a POSIX runner.
+L-0727 removed that asymmetry for every gate but one by deleting the twins:
+on Windows the dispatcher runs the `.sh` through a strictly resolved Git Bash.
+`promote-gate.ps1` is the exception and the only gate still tested here,
+because a `PowerShell` tool call has to be judged by PowerShell to see its
+command text. The verify gate's own stand-down cases moved to
+test_verify_gate_incident_sh.py when L-0869 deleted verify-gate.ps1.
+
+Windows + pwsh only: this is the native-Windows half of a pair, and there is
+nothing to compare on a POSIX runner.
 """
 import json
 import os
@@ -25,7 +31,6 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
-_VERIFY_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 _PROMOTE_PS1 = os.path.join(_ROOT, "hooks", "scripts", "promote-gate.ps1")
 _PWSH = shutil.which("pwsh")
 
@@ -116,10 +121,6 @@ def _run(script, root, payload):
     )
 
 
-def _verify(root):
-    return _run(_VERIFY_PS1, root, {})
-
-
 def _promote(root):
     return _run(_PROMOTE_PS1, root,
                 {"tool_name": "PowerShell",
@@ -180,37 +181,7 @@ def test_promote_gate_fails_closed_on_an_unparseable_incident(tmp_path):
     assert result.returncode == 2, result.stderr
 
 
-# --- verify-gate.ps1 -----------------------------------------------------
-
-
-def test_verify_gate_stands_down_during_an_incident(tmp_path):
-    root = _repo(tmp_path)
-    (root / "unverified.py").write_text("x = 1\n", encoding="utf-8")
-    _incident(root, 3600)
-    result = _verify(root)
-    assert result.returncode == 0, result.stderr
-    joined = "\n".join(_skips(root))
-    assert "verify" in joined
-    assert "1 changed file(s) unverified" in joined
-
-
-def test_verify_gate_logs_one_row_per_debt_not_one_per_turn(tmp_path):
-    root = _repo(tmp_path)
-    (root / "unverified.py").write_text("x = 1\n", encoding="utf-8")
-    _incident(root, 3600)
-    _verify(root)
-    first = len(_skips(root))
-    _verify(root)
-    assert len(_skips(root)) == first, "a repeated identical skip must not stack"
-
-
-def test_verify_gate_is_unaffected_by_an_expired_incident(tmp_path):
-    # verify.json here has no rule for the changed file and unmapped is "warn",
-    # so the gate exits 0 either way -- what this pins is that the expired
-    # incident is not *recorded* as a stand-down.
-    root = _repo(tmp_path)
-    (root / "unverified.py").write_text("x = 1\n", encoding="utf-8")
-    _incident(root, -60)
-    result = _verify(root)
-    assert result.returncode == 0, result.stderr
-    assert _skips(root) == [], "an expired incident must not log a stand-down"
+# The verify gate's three stand-down cases used to live here, driving
+# verify-gate.ps1. L-0869 deleted that file; they are now
+# test_verify_gate_incident_sh.py, driving verify-gate.sh, which is what the
+# dispatcher has run on Windows since L-0727 slice 2.

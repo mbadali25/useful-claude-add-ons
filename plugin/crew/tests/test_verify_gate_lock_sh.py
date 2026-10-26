@@ -363,28 +363,23 @@ def test_a_lock_whose_heartbeat_has_stopped_is_reclaimed(tmp_path):
     )
 
 
-def test_the_tests_ttl_matches_both_scripts():
-    """_TTL is a hand-copied duplicate of the scripts' own constant, in two
+def test_the_tests_ttl_matches_the_script():
+    """_TTL is a hand-copied duplicate of the script's own constant, in two
     test files, and it silently went stale when 0.19.65 cut 700 to 180.
 
     The boundary cases build their fixtures from _TTL, so a stale copy does
     not fail -- it moves the boundary being tested away from the real one and
     keeps passing. That is the shape this repo keeps finding: not a wrong
     answer, an answer about the wrong question, wearing the label of a check
-    that happened. Read both scripts rather than trusting either copy.
+    that happened. Read the script rather than trusting either copy. (The
+    .ps1 flavour carried a third copy until L-0869 deleted it.)
     """
     import re
     scripts = pathlib.Path(__file__).resolve().parents[1] / "hooks" / "scripts"
     sh = (scripts / "verify-gate.sh").read_text(encoding="utf-8")
-    ps = (scripts / "verify-gate.ps1").read_text(encoding="utf-8")
 
     sh_ttl = re.search(r"^LOCK_TTL=(\d+)", sh, re.M)
-    ps_ttl = re.search(r"^\$lockTtl = (\d+)", ps, re.M)
-    assert sh_ttl and ps_ttl, "could not find the TTL in one of the flavours"
-    assert int(sh_ttl.group(1)) == int(ps_ttl.group(1)), (
-        f"the pair disagree: .sh={sh_ttl.group(1)} .ps1={ps_ttl.group(1)}. "
-        "One flavour would reclaim a lock the other still holds."
-    )
+    assert sh_ttl, "could not find the TTL in verify-gate.sh"
     assert _TTL == int(sh_ttl.group(1)), (
         f"this file's _TTL is {_TTL} but the scripts use {sh_ttl.group(1)}, so "
         "every boundary case here is testing a threshold that does not exist"

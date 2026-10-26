@@ -819,29 +819,6 @@ def first_line_within(proc, bound_s, who, consequence=""):
            "later, so a grandchild still holds the pipe"))
 
 
-def gate_bash(pwsh, ps1, env=None):
-    """The bash verify-gate.ps1's own Resolve-CrewBash picks under `env`
-    (default: this process' environment), via its `-PrintBash` probe, or
-    None when it resolves none (the gate then refuses rather than run bash).
-
-    A test that runs the PowerShell gate pins THIS bash, not `resolve_bash`'s:
-    the gate walks up from git.exe, `resolve_bash` starts from PATH order, and
-    with two Git installs they can name different MSYS runtimes - pinning
-    the wrong one leaves the gate children's shared region unpinned (T-0110
-    review round 2). Resolve it under an env WITHOUT the poisoned TMP/TEMP:
-    the probe itself is a launch, and it only reads PATH."""
-    result = run_gate(
-        [pwsh, "-NoProfile", "-NonInteractive", "-File", ps1, "-PrintBash"],
-        env=dict(os.environ) if env is None else env,
-        stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        check=False, timeout=GATE_SUBPROCESS_TIMEOUT_S)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"gate_bash: {ps1} -PrintBash exited {result.returncode}: "
-            f"{result.stderr.strip()}")
-    return result.stdout.strip() or None
-
-
 @contextlib.contextmanager
 def msys_tmp_pinned(bash, poisoned_env):
     """Run a block that starts MSYS processes under `poisoned_env` (TMP/TEMP
@@ -866,8 +843,8 @@ def msys_tmp_pinned(bash, poisoned_env):
     took: a probe of `bash` under `poisoned_env` must see `/tmp` as a
     directory, or this raises instead of running a test that would poison
     the host. The region is per installation, so `bash` must belong to the
-    same MSYS install the block's children use: for verify-gate.ps1, pass
-    `gate_bash(...)`, which asks the gate's own resolver.
+    same MSYS install the block's children use: for the deleted verify-gate.ps1
+    (L-0869), that was `gate_bash(...)`, which asked the gate's own resolver.
 
     `test_msys_tmp_pin.py` checks both halves: the hazard, on a private copy
     of the runtime, and that every crew test overriding TMP/TEMP runs here.

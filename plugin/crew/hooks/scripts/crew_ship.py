@@ -17,9 +17,9 @@ read unreadable. Standard library only, plus `crew_common`.
 The rule, moved here from crew_autopilot.py's docstring (T-0012's port, the same
 3400-line cap): `ship_decision` is the rule, with no I/O: `autopilot.ship` anything but
 exactly `merge` opens the PR and stops. `merge` needs every required check
-`pass`, or `fail` named EXACTLY in `autopilot.knownFailures`; pending or none
-reported yet waits (stopping at `ciTimeoutMinutes`); an unreadable or unknown
-state, `skipping` or an unlisted failure stops. A `high` or unknown risk whose
+`pass` (L-0725: no failing check is excused, and the wait stops at
+`crew_state.AUTOPILOT_CI_TIMEOUT_MINUTES`); pending or none reported yet waits;
+an unreadable or unknown state, `skipping` or any failure stops. A `high` or unknown risk whose
 completed rounds are all `claude` or carry no `model_family` stops before CI
 is read. `ship` refuses a dirty working tree (before the push and again before
 the merge), takes HEAD once right after the push and holds the PR's head and
@@ -55,16 +55,16 @@ def _family(value):
     return None
 
 
-def ship_decision(policy, risk, checks, families, known_failures):
+def ship_decision(policy, risk, checks, families):
     """`{"action": "open-pr"|"merge"|"wait"|"stop", "reason"}` -- the whole
     rule that lets autopilot merge unattended, with no I/O.
 
     `checks` is the required checks, `[{"name", "state"}]` with state one of
     CHECK_STATES, or None when they could not be read. `families` is the
     `model_family` of every completed review round. Any policy but exactly
-    `merge` opens a PR and stops. A merge needs every required check `pass`,
-    or `fail` with its name EXACTLY in `known_failures`; `skipping` is not
-    `pass`. No check reported yet waits, as pending does; the caller's
+    `merge` opens a PR and stops. A merge needs every required check `pass`;
+    a failure stops (L-0725), and `skipping` is not `pass`.
+    No check reported yet waits, as pending does; the caller's
     timeout turns a wait into a stop."""
     if policy != "merge":
         return {"action": "open-pr", "reason": f"autopilot.ship is {policy!r}: the PR is "
@@ -79,18 +79,15 @@ def ship_decision(policy, risk, checks, families, known_failures):
                 "never merged on a state that could not be read"}
     if not checks:
         return {"action": "wait", "reason": "no required check reported yet"}
-    known = [k for k in (known_failures if isinstance(known_failures, (list, tuple)) else ())
-             if isinstance(k, str)]
     rows = [(c.get("name"), c.get("state")) if isinstance(c, dict) else (None, None)
             for c in checks]
     unread = [str(n) for n, s in rows if not isinstance(n, str) or s not in CHECK_STATES]
     if unread:
         return {"action": "stop", "reason": "could not read the state of required check(s) "
                 + ", ".join(unread) + " - never merged on a state that could not be read"}
-    failed = [n for n, s in rows if s == "fail" and n not in known]
+    failed = [n for n, s in rows if s == "fail"]
     if failed:
-        return {"action": "stop", "reason": "required check(s) failed: " + ", ".join(failed)
-                + " (not in autopilot.knownFailures)"}
+        return {"action": "stop", "reason": "required check(s) failed: " + ", ".join(failed)}
     skipped = [n for n, s in rows if s == "skipping"]
     if skipped:
         return {"action": "stop", "reason": "required check(s) skipped: " + ", ".join(skipped)
@@ -98,9 +95,7 @@ def ship_decision(policy, risk, checks, families, known_failures):
     pending = [n for n, s in rows if s == "pending"]
     if pending:
         return {"action": "wait", "reason": "required check(s) pending: " + ", ".join(pending)}
-    allowed = sorted({n for n, s in rows if s == "fail"})
-    return {"action": "merge", "reason": "every required check passed" + (
-        " except known failure(s) " + ", ".join(allowed) if allowed else "")}
+    return {"action": "merge", "reason": "every required check passed"}
 
 
 # `gh pr checks` (gh 2.46 has no --json for it) prints, off a TTY, one row per
@@ -214,8 +209,8 @@ def read_checks(top, number):
     exit code outside 0/1/8, a row that is not exactly _CHECK_FIELDS fields,
     anything on stderr beside the rows, or an exit code that disagrees with
     the rows (0 with a pending one, 1 with no failure, 8 with none pending).
-    Names and buckets are read verbatim: `knownFailures` matches a name
-    exactly, so a padded or re-cased one is a different check, and a bucket
+    Names and buckets are read verbatim: a padded or re-cased name is a
+    different check, and a bucket
     gh did not print exactly reads `unknown`."""
     got = _run_gh(top, ["pr", "checks", str(number), "--required"])
     if got is None or got[0] not in _CHECK_EXITS:

@@ -4,6 +4,10 @@ Every test runs against a copy under `tmp_path`. The config and metrics are
 byte copies of THIS repository's machine-local `.crew/config.json` (schema 7,
 53 roles) and `.crew/metrics.md` as they stood on 2026-09-23, kept in
 `migrate_fixtures/` because both files are gitignored and a clone has neither.
+The `repo` fixture restamps the config to the CURRENT schema (the one line
+`"schema": 7`), so the tests that are not about the upgrade stage see a config
+that needs none; the owner's real files are exercised in
+`test_config_migrate_l0725.py`.
 The codemap is copied from the tracked `.crew/codemap/` at run time.
 """
 import builtins
@@ -20,6 +24,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_migrate
+import crew_guards
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))
@@ -57,7 +62,16 @@ def _repo(tmp_path):
     root = tmp_path / "repo"
     crew = root / ".crew"
     crew.mkdir(parents=True)
-    shutil.copy(os.path.join(FIXTURES, "config.json"), crew / "config.json")
+    with open(os.path.join(FIXTURES, "config.json"), "rb") as fh:
+        config = fh.read()
+    assert config.count(b'"schema": 7') == 1
+    current = json.loads(config.replace(
+        b'"schema": 7', b'"schema": %d' % crew_migrate.LEGACY_SCHEMA_MAX))
+    for name in crew_guards.ALL_GUARD_NAMES:
+        current.get("guards", {}).pop(name, None)
+    if not current.get("guards"):
+        current.pop("guards", None)
+    (crew / "config.json").write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
     shutil.copy(os.path.join(FIXTURES, "metrics.md"), crew / "metrics.md")
     shutil.copytree(os.path.join(REPO, ".crew", "codemap"), crew / "codemap")
     (crew / "pm-journal.md").write_text("## 2026-09-23T01:00:00Z\nnote\n", encoding="utf-8")
@@ -276,7 +290,7 @@ def test_unknown_config_keys_are_preserved_and_reported(repo, capsys):
         {"futureKey": {"nested": [1, 2]}}, "kept", True, True)
 
 
-@pytest.mark.parametrize("schema", [8, "7", None, True])
+@pytest.mark.parametrize("schema", [9, "7", None, True])
 def test_unknown_schema_is_refused_and_nothing_written(repo, schema):
     cfg = json.loads(_load(repo, ".crew/config.json"))
     cfg["schema"] = schema
@@ -511,7 +525,7 @@ def test_autopilot_key_note_names_config_json(repo, capsys):
 
 @pytest.mark.parametrize("value", [{"mode": "plan"}, {}, "plan", None, 12])
 def test_autopilot_key_round_trips_whatever_its_value(value):
-    cfg = {"schema": 7, "tracker": "files", "autopilot": value}
+    cfg = {"schema": 8, "tracker": "files", "autopilot": value}
 
     crew, unmapped = crew_migrate.to_crew(cfg)
 
@@ -520,7 +534,7 @@ def test_autopilot_key_round_trips_whatever_its_value(value):
 
 
 def test_autonomous_pm_and_autopilot_key_give_both_notes_in_order():
-    cfg = {"schema": 7, "pm": {"authority": "autonomous"}, "autopilot": dict(AUTOPILOT)}
+    cfg = {"schema": 8, "pm": {"authority": "autonomous"}, "autopilot": dict(AUTOPILOT)}
 
     crew, _unmapped = crew_migrate.to_crew(cfg)
 
@@ -576,7 +590,8 @@ def test_autopilot_note_names_both_files_and_the_stricter_rule():
     note = crew_migrate.AUTOPILOT_FILE_NOTE
 
     assert ("never read" in note, ".crew/config.json" in note,
-            "~/.claude/crew/config.json" in note, "stricter" in note, "20a" in note) == (
+            "~/.claude/crew/config.json" in note, "stricter" in note,
+            "config-rationale" in note) == (
         True, True, True, True, True)
 
 
@@ -633,7 +648,7 @@ def test_migrate_apply_refuses_a_could_not_tell_target(repo):
 
 # ------------------------------------------------- T-0038: the pre-0.20 upgrade stage
 #
-# A config with no `schema` key, or an integer 1-6, is brought to the current
+# A config with no `schema` key, or an integer 1-7, is brought to the current
 # schema by `crew_upgrade.upgrade_config` in the same apply. `.crew/config.json`
 # is the one file migrate overwrites, so each test below is about getting the
 # user's original bytes back: the in-process undo and `--rollback` restore it,
@@ -681,7 +696,7 @@ def test_pre_0_20_preview_shows_both_stages_and_writes_nothing(repo, capsys, cfg
         0, before, True, True, True)
 
 
-def test_schema_7_config_is_never_rewritten(repo):
+def test_current_schema_config_is_never_rewritten(repo):
     path = os.path.join(repo, ".crew", "config.json")
     before = _snapshot(repo)[".crew/config.json"]
 
@@ -698,7 +713,7 @@ def test_unmigrated_block_is_a_conflict_and_nothing_is_written(repo, capsys):
 
     said = capsys.readouterr()
     assert (code, _snapshot(repo, skip_backups=False),
-            "CONFLICT  .crew/config.json: the pre-0.20 upgrade left these blocks unmigrated"
+            "CONFLICT  .crew/config.json: the upgrade left these blocks unmigrated"
             in said.out + said.err, "qa" in said.out + said.err) == (1, before, True, True)
 
 
@@ -722,11 +737,11 @@ def test_pre_0_20_config_upgrades_then_migrates_in_one_apply(repo, cfg_schema):
 
     upgraded = json.loads(_load(repo, ".crew/config.json"))
     crew = json.loads(_load(repo, ".crew/crew.json"))
-    named = f"upgraded from schema {cfg_schema} to 7"
+    named = f"upgraded from schema {cfg_schema} to 8"
     assert (code, upgraded, upgraded["schema"], crew["migratedFrom"]["schema"],
             crew_migrate.to_legacy(crew) == upgraded,
             any(named in note for note in crew.get("notes", []))) == (
-        0, _crew_upgrade().upgrade_config(copy.deepcopy(original))[0], 7, 7, True, True)
+        0, _crew_upgrade().upgrade_config(copy.deepcopy(original))[0], 8, 8, True, True)
 
 
 def test_pre_0_20_second_apply_is_a_no_op(v1_repo, capsys):

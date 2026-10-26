@@ -100,10 +100,10 @@ exceptions, each named in the Layer column below:</p>
 <ul>
 <li>A <strong>repo-only</strong> key in the machine file takes effect nowhere. It is pruned on
   read and refused on write.</li>
-<li>A <strong>ratcheted</strong> key (<code>install.policy</code>, every <code>guards.*</code>,
-  <code>change.requireForProduction</code>, <code>environments.prodUnattended</code>) resolves to
-  the narrower of the two values, so a cloned repo cannot widen what your
-  machine allows.</li>
+<li>A <strong>ratcheted</strong> key (<code>install.policy</code>, each guard <code>guards.profile</code> and
+  <code>guards.overrides</code> expand to, <code>change.requireForProduction</code>,
+  <code>environments.prodUnattended</code>) resolves to the narrower of the two values, so
+  a cloned repo cannot widen what your machine allows.</li>
 <li>A <strong>machine-armed</strong> key (<code>resume.auto</code>, <code>context.autoClear.enabled</code>) can be
   turned on only in the machine file. A repo can only switch it off.</li>
 <li>A <strong>personal</strong> key (the five <code>autopilot.*</code> keys) resolves per key to the
@@ -148,17 +148,17 @@ corrupt file from the template plus that profile, as a dry run until
   <code>scope.allowCliApproval: true</code> in the repo file, which is the only file
   that key is read from. Review acceptance and production deploys still stop
   for you.</li>
-<li><strong>Notifications.</strong> In the machine file, set <code>notify.provider</code> and the
-  environment variable names in <code>notify.urlEnv</code> / <code>notify.tokenEnv</code>. The
-  secret stays in your environment, never in the file. Those two are
+<li><strong>Notifications.</strong> In the machine file, set <code>notify.provider</code> and the name
+  of the environment variable holding the token in <code>notify.tokenEnv</code>. The
+  secret stays in your environment, never in the file. <code>tokenEnv</code> is
   machine-only: a repo file's value is ignored with a notice.</li>
 </ul>
-<p>The reasoning behind each key is in <code>plugin/crew/CONFIG.md</code>, which ships with
-the plugin.</p>
+<p>The key list is <code>plugin/crew/CONFIG.md</code>, which ships with the plugin; the
+reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>157 keys</strong>: 89 settable in the machine-global file, 68 repo-only.</p>
+<p><strong>87 keys</strong>: 50 settable in the machine-global file, 37 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -192,26 +192,10 @@ the plugin.</p>
 <tr>
 <td><code>schema</code></td>
 <td>repo</td>
-<td><code>7</code></td>
+<td><code>8</code></td>
 <td>not validated - read by <code>plugin/crew/hooks/scripts/crew_state.py</code> (expects integer)</td>
 <td>0.11.0 or earlier</td>
 <td>Config schema version; <code>/crew:migrate</code> upgrades an older one.</td>
-</tr>
-<tr>
-<td><code>tier</code></td>
-<td>repo</td>
-<td><code>0</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_state.py</code> (expects integer)</td>
-<td>0.11.0 or earlier</td>
-<td>Setup tier recorded by <code>/crew:init</code>.</td>
-</tr>
-<tr>
-<td><code>roles</code></td>
-<td>repo</td>
-<td><code>["explorer", "reviewer"]</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_state.py</code> (expects list of role names)</td>
-<td>0.11.0 or earlier</td>
-<td>Optional roles installed in this repo.</td>
 </tr>
 <tr>
 <td><code>tracker</code></td>
@@ -381,29 +365,6 @@ the plugin.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="worktree"><code>Worktree</code></h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th width="9%">Since</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>worktree.root</code></td>
-<td>both</td>
-<td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_state.py</code> (expects path or null)</td>
-<td>0.16.27</td>
-<td>Where crew creates linked worktrees; null uses the default.</td>
-</tr>
-</tbody>
-</table>
 <h3 id="secondopinion"><code>secondOpinion</code></h3>
 <table>
 <thead>
@@ -441,22 +402,6 @@ the plugin.</p>
 <td>0.11.0 or earlier</td>
 <td>Second-opinion model.</td>
 </tr>
-<tr>
-<td><code>secondOpinion.keyEnv</code></td>
-<td>both</td>
-<td><code>"GEMINI_API_KEY"</code></td>
-<td>not validated - read by <code>plugin/crew/skills/crew-providers/SKILL.md</code> (expects string)</td>
-<td>0.11.0 or earlier</td>
-<td>Environment variable holding the provider's API key.</td>
-</tr>
-<tr>
-<td><code>secondOpinion.sendsCode</code></td>
-<td>both</td>
-<td><code>false</code></td>
-<td>not validated - read by <code>plugin/crew/skills/crew-providers/SKILL.md</code> (expects boolean)</td>
-<td>0.11.0 or earlier</td>
-<td>Whether code may be sent to the second-opinion provider.</td>
-</tr>
 </tbody>
 </table>
 <h3 id="jira"><code>Jira</code></h3>
@@ -478,7 +423,7 @@ the plugin.</p>
 <td><code>null</code></td>
 <td>not validated - read by <code>plugin/crew/commands/jira-sync.md</code> (expects string or null)</td>
 <td>0.11.0 or earlier</td>
-<td>Jira project key. No consumer found (CONFIG.md section 9).</td>
+<td>Jira project key. No consumer found (docs/crew/config-rationale.md).</td>
 </tr>
 <tr>
 <td><code>jira.cloudId</code></td>
@@ -487,45 +432,6 @@ the plugin.</p>
 <td>not validated - read by <code>plugin/crew/commands/jira-sync.md</code> (expects string or null)</td>
 <td>0.19.10</td>
 <td>Jira cloud id, cached by <code>/crew:jira-sync</code>; read by nothing.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="sdp"><code>Sdp</code></h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th width="9%">Since</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>sdp.portal</code></td>
-<td>repo</td>
-<td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/commands/sdp-sync.md</code> (expects string or null)</td>
-<td>0.11.0 or earlier</td>
-<td>ServiceDesk Plus portal.</td>
-</tr>
-<tr>
-<td><code>sdp.noteVisibility</code></td>
-<td>repo</td>
-<td><code>"private"</code></td>
-<td>not validated - read by <code>plugin/crew/commands/sdp-sync.md</code> (expects string)</td>
-<td>0.11.0 or earlier</td>
-<td>Visibility of notes crew writes to SDP.</td>
-</tr>
-<tr>
-<td><code>sdp.closeOnDone</code></td>
-<td>repo</td>
-<td><code>false</code></td>
-<td>not validated - read by <code>plugin/crew/commands/sdp-sync.md</code> (expects boolean)</td>
-<td>0.11.0 or earlier</td>
-<td>Close the SDP request when the ticket is done.</td>
 </tr>
 </tbody>
 </table>
@@ -558,54 +464,6 @@ the plugin.</p>
 <td>0.11.0 or earlier</td>
 <td>Board folder inside the vault (relative, no <code>..</code>).</td>
 </tr>
-<tr>
-<td><code>obsidian.board</code></td>
-<td>repo</td>
-<td><code>"Board.md"</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_tracker.py</code> (expects file name)</td>
-<td>0.11.0 or earlier</td>
-<td>Board file name.</td>
-</tr>
-<tr>
-<td><code>obsidian.columns.backlog</code></td>
-<td>repo</td>
-<td><code>"Backlog"</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_tracker.py</code> (expects string)</td>
-<td>0.11.0 or earlier</td>
-<td>Board column for backlog tickets (<code>direction</code>, <code>ready</code>, <code>needs-owner</code>).</td>
-</tr>
-<tr>
-<td><code>obsidian.columns.ready</code></td>
-<td>repo</td>
-<td><code>"Ready"</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_tracker.py</code> (expects string)</td>
-<td>0.11.0 or earlier</td>
-<td>Board column for ready tickets.</td>
-</tr>
-<tr>
-<td><code>obsidian.columns.inProgress</code></td>
-<td>repo</td>
-<td><code>"In Progress"</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_tracker.py</code> (expects string)</td>
-<td>0.11.0 or earlier</td>
-<td>Board column for tickets in progress.</td>
-</tr>
-<tr>
-<td><code>obsidian.columns.review</code></td>
-<td>repo</td>
-<td><code>"Review"</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_tracker.py</code> (expects string)</td>
-<td>0.11.0 or earlier</td>
-<td>Board column for tickets in review.</td>
-</tr>
-<tr>
-<td><code>obsidian.columns.done</code></td>
-<td>repo</td>
-<td><code>"Done"</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_tracker.py</code> (expects string)</td>
-<td>0.11.0 or earlier</td>
-<td>Board column for closed tickets (<code>done</code>, <code>cancelled</code>, <code>superseded</code>; each checked).</td>
-</tr>
 </tbody>
 </table>
 <h3 id="memory"><code>Memory</code></h3>
@@ -636,38 +494,6 @@ the plugin.</p>
 <td>not validated - read by <code>plugin/crew/hooks/scripts/crew_recall.py</code> (expects path or null)</td>
 <td>0.11.0 or earlier</td>
 <td>The Obsidian vault used for memory.</td>
-</tr>
-<tr>
-<td><code>memory.inject</code></td>
-<td>repo</td>
-<td><code>true</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_context.py</code> (expects boolean)</td>
-<td>1.0.25</td>
-<td>Inject the handoff and recall at session start; only an explicit <code>false</code> stops it.</td>
-</tr>
-<tr>
-<td><code>memory.recall.vaults</code></td>
-<td>repo</td>
-<td><code>[]</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_recall.py</code> (expects list of vault names)</td>
-<td>1.0.25</td>
-<td>This repo's vault priority for recall; empty uses the obsidian config's roles.</td>
-</tr>
-<tr>
-<td><code>memory.recall.maxChars</code></td>
-<td>repo</td>
-<td><code>800</code></td>
-<td>positive integer (coerced in <code>plugin/crew/hooks/scripts/crew_recall.py</code>)</td>
-<td>1.0.25</td>
-<td>Recall output budget; a non-positive or non-integer value reads as 800.</td>
-</tr>
-<tr>
-<td><code>memory.recall.projects</code></td>
-<td>repo</td>
-<td><code>[]</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_recall.py</code> (expects list of project names)</td>
-<td>1.1.11</td>
-<td>Project names sent to vault recall as <code>--project</code> so this repo's notes rank first; empty sends the main checkout's directory name.</td>
 </tr>
 </tbody>
 </table>
@@ -701,36 +527,12 @@ the plugin.</p>
 <td>Fraction of the budget at which the watcher warns, wraps up and auto-clears; default 0.4 since 1.2.40 (was 0.5), an explicit value is kept.</td>
 </tr>
 <tr>
-<td><code>context.budgetTokens</code></td>
-<td>repo</td>
-<td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/context-watch.sh</code> (expects integer or null)</td>
-<td>0.11.0 or earlier</td>
-<td>Context budget in tokens; null uses the model's.</td>
-</tr>
-<tr>
 <td><code>context.reserveTokens</code></td>
 <td>repo</td>
 <td><code>0</code></td>
 <td>not validated - read by <code>plugin/crew/hooks/scripts/context-watch.sh</code> (expects integer or null)</td>
 <td>0.11.0 or earlier</td>
 <td>Tokens held back from the budget; <code>null</code> means off.</td>
-</tr>
-<tr>
-<td><code>context.handoffPath</code></td>
-<td>repo</td>
-<td><code>".work/HANDOFF.md"</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_autocycle.py</code> (expects path)</td>
-<td>0.11.0 or earlier</td>
-<td>Where the handoff is written.</td>
-</tr>
-<tr>
-<td><code>context.keepTranscripts</code></td>
-<td>repo</td>
-<td><code>5</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/handoff-write.sh</code> (expects integer)</td>
-<td>0.11.0 or earlier</td>
-<td>Transcripts kept by the handoff writer.</td>
 </tr>
 <tr>
 <td><code>context.autoClear.enabled</code></td>
@@ -744,25 +546,9 @@ the plugin.</p>
 <td><code>context.autoClear.method</code></td>
 <td>both</td>
 <td><code>"auto"</code></td>
-<td><code>auto</code> | <code>none</code> | <code>notify</code> | <code>tmux</code> | <code>xdotool</code> | <code>wtype</code> | <code>sendkeys</code>; per OS: linux: auto, none, notify, tmux, xdotool, wtype; macos: auto, none, notify, tmux; windows: auto, none, notify, sendkeys; windows-bash: auto, none, notify, tmux, sendkeys</td>
+<td><code>auto</code> | <code>none</code> | <code>notify</code> | <code>tmux</code> | <code>xdotool</code> | <code>wtype</code>; per OS: linux: auto, none, notify, tmux, xdotool, wtype; macos: auto, none, notify, tmux; windows: auto, none, notify; windows-bash: auto, none, notify, tmux</td>
 <td>0.19.10</td>
 <td>How <code>/clear</code> is typed. <code>auto</code> picks per platform; a method this OS lacks stands auto-clear down.</td>
-</tr>
-<tr>
-<td><code>context.autoClear.windowTitle</code></td>
-<td>both</td>
-<td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/auto-clear.ps1</code> (expects string or null)</td>
-<td>0.19.10</td>
-<td>Window title to match before typing.</td>
-</tr>
-<tr>
-<td><code>context.autoClear.command</code></td>
-<td>both</td>
-<td><code>"/clear"</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_autocycle.py</code> (expects string)</td>
-<td>0.19.10</td>
-<td>What is typed.</td>
 </tr>
 <tr>
 <td><code>context.autoClear.delaySeconds</code></td>
@@ -779,14 +565,6 @@ the plugin.</p>
 <td>number (coerced in <code>plugin/crew/hooks/scripts/crew_autocycle.py</code>)</td>
 <td>0.19.10</td>
 <td>Shortest handoff that may be cleared after; a non-number reads as 5.</td>
-</tr>
-<tr>
-<td><code>context.autoClear.unsafeFocus</code></td>
-<td>repo</td>
-<td><code>false</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/auto-clear.sh</code> (expects boolean)</td>
-<td>0.19.11</td>
-<td>Consent to <code>wtype</code> typing into whatever has focus. No longer read: <code>auto-clear.sh</code> refuses <code>wtype</code> whatever this says.</td>
 </tr>
 <tr>
 <td><code>context.autoClear.onlyRepos</code></td>
@@ -812,38 +590,6 @@ the plugin.</p>
 <td>1.0.334</td>
 <td>Auto wrap-up before auto-clear (T-0017): the warning becomes the wrap-up procedure and the clear waits for its results. Only the machine file arms it (exactly <code>true</code>), only where <code>enabled</code> is armed; a repo <code>false</code> vetoes it.</td>
 </tr>
-<tr>
-<td><code>context.autoWrapUp</code></td>
-<td>repo</td>
-<td><code>true</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/context-watch.sh</code> (expects boolean)</td>
-<td>0.19.10</td>
-<td>Ask for a wrap-up when the budget runs low.</td>
-</tr>
-<tr>
-<td><code>context.autoResume</code></td>
-<td>repo</td>
-<td><code>true</code></td>
-<td>not validated - read by <code>plugin/crew/commands/migrate.md</code> (expects boolean)</td>
-<td>0.19.10</td>
-<td>Retired: read by nothing since 1.0.0; kept so <code>/crew:migrate</code> carries it.</td>
-</tr>
-<tr>
-<td><code>context.staleHandoff.maxAgeHours</code></td>
-<td>repo</td>
-<td><code>72</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_state.py</code> (expects integer)</td>
-<td>0.16.33</td>
-<td>A handoff older than this is archived.</td>
-</tr>
-<tr>
-<td><code>context.staleHandoff.maxCommitsBehind</code></td>
-<td>repo</td>
-<td><code>3</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_state.py</code> (expects integer)</td>
-<td>0.16.33</td>
-<td>A handoff this many commits behind is archived.</td>
-</tr>
 </tbody>
 </table>
 <h3 id="resume"><code>Resume</code></h3>
@@ -867,22 +613,6 @@ the plugin.</p>
 <td>1.0.40</td>
 <td>Auto-resume after <code>/clear</code> or a manual <code>/compact</code>. Only the machine file can arm it (exactly <code>true</code>); a repo <code>false</code> vetoes it.</td>
 </tr>
-<tr>
-<td><code>resume.typeDelaySeconds</code></td>
-<td>both</td>
-<td><code>2</code></td>
-<td>whole seconds; fraction cut, negative or non-number reads as the default (coerced in <code>plugin/crew/hooks/scripts/crew_autocycle.py</code>)</td>
-<td>1.0.321</td>
-<td>Wait before auto-resume types its command: before the tmux ready probe, and the only wait on Windows. Read from the machine file only.</td>
-</tr>
-<tr>
-<td><code>resume.readyTimeoutSeconds</code></td>
-<td>both</td>
-<td><code>15</code></td>
-<td>whole seconds; fraction cut, negative or non-number reads as the default (coerced in <code>plugin/crew/hooks/scripts/crew_autocycle.py</code>)</td>
-<td>1.0.321</td>
-<td>How long the tmux ready probe waits for an idle, empty input line before it types nothing. Read from the machine file only.</td>
-</tr>
 </tbody>
 </table>
 <h3 id="emergency"><code>Emergency</code></h3>
@@ -905,14 +635,6 @@ the plugin.</p>
 <td>not validated - read by <code>plugin/crew/hooks/scripts/_common.sh</code> (expects boolean)</td>
 <td>0.11.0 or earlier</td>
 <td>Whether a declared incident may stand gates down; <code>false</code> forbids it.</td>
-</tr>
-<tr>
-<td><code>emergency.ttlMinutes</code></td>
-<td>repo</td>
-<td><code>120</code></td>
-<td>integer (coerced in <code>plugin/crew/hooks/scripts/crew_incident.py</code>)</td>
-<td>0.11.0 or earlier</td>
-<td>Default incident lifetime; a non-integer reads as the default.</td>
 </tr>
 <tr>
 <td><code>emergency.maxTtlMinutes</code></td>
@@ -946,14 +668,6 @@ the plugin.</p>
 <td>Where notifications go: <code>telegram</code>, <code>teams</code> or <code>none</code> (off). A repo null inherits the machine provider; a repo <code>none</code> opts this repo out.</td>
 </tr>
 <tr>
-<td><code>notify.urlEnv</code></td>
-<td>machine-only</td>
-<td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_notify.py</code> (expects string or null)</td>
-<td>0.11.0 or earlier</td>
-<td>Name of the environment variable holding the Teams webhook URL. Honoured from the machine file only; a repo's is ignored with a notice.</td>
-</tr>
-<tr>
 <td><code>notify.tokenEnv</code></td>
 <td>machine-only</td>
 <td><code>null</code></td>
@@ -976,22 +690,6 @@ the plugin.</p>
 <td>list of event names; an unknown name is dropped with a notice (coerced in <code>plugin/crew/hooks/scripts/crew_notify.py</code>)</td>
 <td>0.11.0 or earlier</td>
 <td>Events that notify: <code>deploy</code>, <code>question</code>, and <code>blocker</code> (T-0060's four blocker reasons). The pre-1.0 names <code>gate</code>, <code>waiting</code>, <code>phase</code>, <code>review</code> and <code>done</code> are mapped with a notice. A list is one leaf.</td>
-</tr>
-<tr>
-<td><code>notify.realertHours</code></td>
-<td>both</td>
-<td><code>6</code></td>
-<td>number of hours; negative or non-number reads as the default (coerced in <code>plugin/crew/hooks/scripts/crew_notify.py</code>)</td>
-<td>1.0.350</td>
-<td>The same event + ticket + reason is sent once per this many hours; a question pings once per waiting episode.</td>
-</tr>
-<tr>
-<td><code>notify.questionTypes</code></td>
-<td>both</td>
-<td><code>null</code></td>
-<td>list of notification_type strings, or null; a non-list reads as null and a non-string entry is dropped (coerced in <code>plugin/crew/hooks/scripts/crew_notify.py</code>)</td>
-<td>1.0.350</td>
-<td>The Claude Code <code>notification_type</code> values that count as a question; null uses the built-in five (<code>crew_notify.QUESTION_TYPES</code>).</td>
 </tr>
 </tbody>
 </table>
@@ -1042,37 +740,6 @@ the plugin.</p>
 </tr>
 </tbody>
 </table>
-<h3 id="shellroute"><code>shellRoute</code></h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th width="9%">Since</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>shellRoute.mode</code></td>
-<td>both</td>
-<td><code>null</code> (repo), <code>"auto"</code> (machine)</td>
-<td><code>auto</code> | <code>wsl</code> | <code>powershell</code> | <code>gitbash</code></td>
-<td>1.0.54</td>
-<td>The shell long-running jobs use on native Windows; null inherits, and an unknown value reads as <code>auto</code> and is named.</td>
-</tr>
-<tr>
-<td><code>shellRoute.distro</code></td>
-<td>both</td>
-<td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_shell.py</code> (expects string or null)</td>
-<td>1.0.54</td>
-<td>WSL distro to route to; null takes the default distro.</td>
-</tr>
-</tbody>
-</table>
 <h3 id="pm"><code>Pm</code></h3>
 <table>
 <thead>
@@ -1087,52 +754,12 @@ the plugin.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>pm.enabled</code></td>
-<td>both</td>
-<td><code>true</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_state.py</code> (expects boolean)</td>
-<td>0.11.0 or earlier</td>
-<td>Run the PM brief.</td>
-</tr>
-<tr>
-<td><code>pm.mode</code></td>
-<td>both</td>
-<td><code>"adaptive"</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_state.py</code> (expects string)</td>
-<td>0.11.0 or earlier</td>
-<td>How the PM brief adapts its length.</td>
-</tr>
-<tr>
-<td><code>pm.quietLines</code></td>
-<td>both</td>
-<td><code>8</code></td>
-<td>integer (coerced in <code>plugin/crew/hooks/scripts/crew_state.py</code>)</td>
-<td>0.11.0 or earlier</td>
-<td>PM brief length when nothing changed.</td>
-</tr>
-<tr>
-<td><code>pm.maxLines</code></td>
-<td>both</td>
-<td><code>40</code></td>
-<td>integer (coerced in <code>plugin/crew/hooks/scripts/crew_state.py</code>)</td>
-<td>0.11.0 or earlier</td>
-<td>Longest PM brief.</td>
-</tr>
-<tr>
 <td><code>pm.authority</code></td>
 <td>both, widening warned</td>
 <td><code>"report-only"</code></td>
 <td><code>report-only</code> | <code>act</code> | <code>autonomous</code></td>
 <td>0.11.0 or earlier</td>
 <td>How much the PM may do unasked. A widening is warned about; the two layers combine by precedence.</td>
-</tr>
-<tr>
-<td><code>pm.ticketGranularity</code></td>
-<td>both</td>
-<td><code>"system"</code></td>
-<td><code>session</code> | <code>system</code> | <code>change</code></td>
-<td>0.16.34</td>
-<td>How big a ticket the PM cuts.</td>
 </tr>
 <tr>
 <td><code>pm.maxDispatches</code></td>
@@ -1158,145 +785,12 @@ the plugin.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>graph.enabled</code></td>
-<td>repo</td>
-<td><code>true</code></td>
-<td>not validated - read by <code>plugin/crew/skills/crew-graph/SKILL.md</code> (expects boolean)</td>
-<td>0.11.0 or earlier</td>
-<td>No consumer found (CONFIG.md section 9).</td>
-</tr>
-<tr>
-<td><code>graph.tool</code></td>
-<td>repo</td>
-<td><code>"graphify"</code></td>
-<td>not validated - read by <code>plugin/crew/skills/crew-graph/SKILL.md</code> (expects string)</td>
-<td>0.11.0 or earlier</td>
-<td>No consumer found (CONFIG.md section 9).</td>
-</tr>
-<tr>
 <td><code>graph.out</code></td>
 <td>repo</td>
 <td><code>"graphify-out"</code></td>
 <td>not validated - read by <code>plugin/crew/hooks/scripts/crew_state.py</code> (expects path)</td>
 <td>0.11.0 or earlier</td>
 <td>Where the code graph is written.</td>
-</tr>
-<tr>
-<td><code>graph.mode</code></td>
-<td>repo</td>
-<td><code>"code-only"</code></td>
-<td>not validated - read by <code>plugin/crew/skills/crew-graph/SKILL.md</code> (expects string)</td>
-<td>0.11.0 or earlier</td>
-<td>No consumer found (CONFIG.md section 9).</td>
-</tr>
-<tr>
-<td><code>graph.commitHook</code></td>
-<td>repo</td>
-<td><code>false</code></td>
-<td>not validated - read by <code>plugin/crew/skills/crew-graph/SKILL.md</code> (expects boolean)</td>
-<td>0.11.0 or earlier</td>
-<td>No consumer found (CONFIG.md section 9).</td>
-</tr>
-</tbody>
-</table>
-<h3 id="docs"><code>Docs</code></h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th width="9%">Since</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>docs.theme</code></td>
-<td>both</td>
-<td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/skills/crew-house-style/SKILL.md</code> (expects string or null)</td>
-<td>0.16.33</td>
-<td>House-style theme for built documents; null uses the skill's own choice.</td>
-</tr>
-<tr>
-<td><code>docs.reportTheme</code></td>
-<td>both</td>
-<td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/skills/crew-house-style/SKILL.md</code> (expects string or null)</td>
-<td>0.16.33</td>
-<td>Theme for findings reports.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="bitbucket"><code>Bitbucket</code></h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th width="9%">Since</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>bitbucket.mergeGate.enabled</code></td>
-<td>both</td>
-<td><code>false</code></td>
-<td>not validated - read by <code>plugin/crew/commands/promote.md</code> (expects boolean)</td>
-<td>0.16.33</td>
-<td>Let <code>/crew:promote</code> drive the Bitbucket merge gate.</td>
-</tr>
-<tr>
-<td><code>bitbucket.mergeGate.branch</code></td>
-<td>both</td>
-<td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/commands/promote.md</code> (expects string or null)</td>
-<td>0.16.33</td>
-<td>Branch the Bitbucket merge gate protects.</td>
-</tr>
-<tr>
-<td><code>bitbucket.mergeGate.preset</code></td>
-<td>both</td>
-<td><code>"standard"</code></td>
-<td>not validated - read by <code>plugin/crew/commands/promote.md</code> (expects string)</td>
-<td>0.16.33</td>
-<td>Selects nothing today (CONFIG.md section 9).</td>
-</tr>
-</tbody>
-</table>
-<h3 id="github"><code>GitHub</code></h3>
-<table>
-<thead>
-<tr>
-<th width="20%">Setting</th>
-<th width="11%">Layer</th>
-<th>Default</th>
-<th>Values</th>
-<th width="9%">Since</th>
-<th>Summary</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>github.mergeGate.enabled</code></td>
-<td>both</td>
-<td><code>false</code></td>
-<td>not validated - read by <code>plugin/crew/commands/promote.md</code> (expects boolean)</td>
-<td>0.19.30</td>
-<td>Let <code>/crew:promote</code> drive the GitHub merge gate.</td>
-</tr>
-<tr>
-<td><code>github.mergeGate.branch</code></td>
-<td>both</td>
-<td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/commands/promote.md</code> (expects string or null)</td>
-<td>0.19.30</td>
-<td>Branch the GitHub merge gate protects.</td>
 </tr>
 </tbody>
 </table>
@@ -1337,100 +831,20 @@ the plugin.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>guards.terraformApply</code></td>
-<td>both, ratchet</td>
-<td><code>"block"</code></td>
-<td><code>block</code> | <code>ask</code> | <code>allow</code> (ratchet: narrower layer wins; listed narrowest first)</td>
-<td>0.19.30</td>
-<td><code>terraform apply</code> and friends.</td>
-</tr>
-<tr>
-<td><code>guards.forcePush</code></td>
-<td>both, ratchet</td>
-<td><code>"block"</code></td>
-<td><code>block</code> | <code>ask</code> | <code>allow</code> (ratchet: narrower layer wins; listed narrowest first)</td>
-<td>0.19.30</td>
-<td><code>git push --force</code>.</td>
-</tr>
-<tr>
-<td><code>guards.adminMerge</code></td>
-<td>both, ratchet</td>
-<td><code>"block"</code></td>
-<td><code>block</code> | <code>ask</code> | <code>allow</code> (ratchet: narrower layer wins; listed narrowest first)</td>
-<td>0.19.30</td>
-<td><code>gh pr merge --admin</code>.</td>
-</tr>
-<tr>
-<td><code>guards.mergeGate</code></td>
-<td>both, ratchet</td>
-<td><code>"block"</code></td>
-<td><code>block</code> | <code>ask</code> | <code>allow</code> (ratchet: narrower layer wins; listed narrowest first)</td>
-<td>0.19.30</td>
-<td>Taking a live repo's merge gate down (read by <code>/crew:gate</code>).</td>
-</tr>
-<tr>
-<td><code>guards.cloudDestructive</code></td>
-<td>both, ratchet</td>
-<td><code>"block"</code></td>
-<td><code>block</code> | <code>ask</code> | <code>allow</code> (ratchet: narrower layer wins; listed narrowest first)</td>
-<td>1.0.25</td>
-<td>Destructive cloud CLI commands.</td>
-</tr>
-<tr>
-<td><code>guards.sqlDestructive</code></td>
-<td>both, ratchet</td>
-<td><code>"block"</code></td>
-<td><code>block</code> | <code>ask</code> | <code>allow</code> (ratchet: narrower layer wins; listed narrowest first)</td>
-<td>1.0.25</td>
-<td>Destructive SQL.</td>
-</tr>
-<tr>
-<td><code>guards.deployWorkflow</code></td>
-<td>both, ratchet</td>
-<td><code>"block"</code></td>
-<td><code>block</code> | <code>ask</code> | <code>allow</code> (ratchet: narrower layer wins; listed narrowest first)</td>
-<td>1.1.16</td>
-<td>A <code>gh workflow run</code> or <code>gh api .../dispatches</code> of a workflow <code>environments.workflows</code> lists.</td>
-</tr>
-<tr>
-<td><code>guards.prodDatabase</code></td>
-<td>both, ratchet</td>
-<td><code>"none"</code></td>
-<td><code>none</code> | <code>read</code> | <code>full</code> (ratchet: narrower layer wins; listed narrowest first)</td>
-<td>0.19.30</td>
-<td>How much of a declared production database crew may reach.</td>
-</tr>
-<tr>
-<td><code>guards.prodServer</code></td>
-<td>both, ratchet</td>
-<td><code>"none"</code></td>
-<td><code>none</code> | <code>read</code> | <code>full</code> (ratchet: narrower layer wins; listed narrowest first)</td>
-<td>0.19.30</td>
-<td>How much of a declared production host crew may reach.</td>
-</tr>
-<tr>
-<td><code>guards.roleWrites</code></td>
+<td><code>guards.profile</code></td>
 <td>both, ratchet</td>
 <td><code>"off"</code></td>
-<td><code>block</code> | <code>report</code> | <code>off</code> (ratchet: narrower layer wins; listed narrowest first)</td>
-<td>0.19.92</td>
-<td>Enforce each role's write scope. Default <code>off</code>; a malformed value reads as <code>block</code>.</td>
+<td><code>off</code> | <code>standard</code> | <code>strict</code></td>
+<td>1.2.62</td>
+<td>One word for the twelve guards: <code>off</code> (today's defaults), <code>standard</code> or <code>strict</code>. Expands per layer; each guard's ratchet then runs on the expanded values.</td>
 </tr>
 <tr>
-<td><code>guards.cloudGuard</code></td>
+<td><code>guards.overrides</code></td>
 <td>both, ratchet</td>
-<td><code>"off"</code></td>
-<td><code>block</code> | <code>report</code> | <code>off</code> (ratchet: narrower layer wins; listed narrowest first)</td>
-<td>1.0.25</td>
-<td>Whether the cloud guard judges commands at all. Default <code>off</code>; <code>report</code> logs only.</td>
-</tr>
-<tr>
-<td><code>guards.envGuard</code></td>
-<td>both, ratchet</td>
-<td><code>"off"</code></td>
-<td><code>block</code> | <code>report</code> | <code>off</code> (ratchet: narrower layer wins; listed narrowest first)</td>
-<td>1.2.26</td>
-<td>Refuse a command that prints the whole environment or a credential-named variable. Default <code>off</code>; <code>report</code> logs only.</td>
+<td><code>{}</code></td>
+<td>object of guard name to tier (checked in <code>plugin/crew/hooks/scripts/crew_guards.py</code>)</td>
+<td>1.2.62</td>
+<td><code>guards.overrides.&lt;guard&gt;</code>: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor.</td>
 </tr>
 </tbody>
 </table>
@@ -1557,52 +971,12 @@ the plugin.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>change.requester</code></td>
-<td>both</td>
-<td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_change.py</code> (expects string or null)</td>
-<td>0.19.31</td>
-<td>Who requests the change.</td>
-</tr>
-<tr>
-<td><code>change.implementor</code></td>
-<td>both</td>
-<td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_change.py</code> (expects string or null)</td>
-<td>0.19.31</td>
-<td>Who implements the change.</td>
-</tr>
-<tr>
 <td><code>change.requireForProduction</code></td>
 <td>both, ratchet</td>
 <td><code>false</code></td>
 <td><code>true</code> | <code>false</code> (ratchet: narrower layer wins; listed narrowest first)</td>
 <td>0.19.31</td>
 <td>Require an approved change request before <code>/crew:promote production</code>: a repo may turn it on, never off.</td>
-</tr>
-<tr>
-<td><code>change.sdpTemplate</code></td>
-<td>both</td>
-<td><code>"Change Management Request"</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_change.py</code> (expects string)</td>
-<td>0.19.31</td>
-<td>SDP template for a change request.</td>
-</tr>
-<tr>
-<td><code>change.jiraIssueType</code></td>
-<td>both</td>
-<td><code>"Change"</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_change.py</code> (expects string)</td>
-<td>0.19.31</td>
-<td>Jira issue type for a change request.</td>
-</tr>
-<tr>
-<td><code>change.category</code></td>
-<td>both</td>
-<td><code>null</code></td>
-<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_change.py</code> (expects string or null)</td>
-<td>0.19.31</td>
-<td>Change category.</td>
 </tr>
 </tbody>
 </table>
@@ -1625,7 +999,7 @@ the plugin.</p>
 <td><code>[]</code></td>
 <td>list of trailer tokens (letters, digits and <code>-</code>, no <code>:</code>) (checked in <code>plugin/crew/hooks/scripts/crew_trailers.py</code>)</td>
 <td>1.0.328</td>
-<td>Commit trailer tokens the owner forbids, reported by <code>/crew:done</code>. The two layers combine by union, so a repo can add a token and never remove the machine owner's; a value that is not a list of tokens makes the list unknown, never empty (CONFIG.md section 22).</td>
+<td>Commit trailer tokens the owner forbids, reported by <code>/crew:done</code>. The two layers combine by union, so a repo can add a token and never remove the machine owner's; a value that is not a list of tokens makes the list unknown, never empty (docs/crew/config-rationale.md).</td>
 </tr>
 </tbody>
 </table>
@@ -1730,22 +1104,6 @@ the plugin.</p>
 <td>After <code>/crew:done</code>: <code>pr</code> pushes and opens the PR; <code>merge</code> also merges it (a merge commit) once the required checks allow. Anything else reads as <code>pr</code>, with a warning.</td>
 </tr>
 <tr>
-<td><code>autopilot.knownFailures</code></td>
-<td>repo</td>
-<td><code>[]</code></td>
-<td>list of check names (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
-<td>1.0.349</td>
-<td>Required checks whose <code>fail</code> does not block a merge, matched by exact name; anything but a list of strings reads as <code>[]</code>, with a warning.</td>
-</tr>
-<tr>
-<td><code>autopilot.ciTimeoutMinutes</code></td>
-<td>repo</td>
-<td><code>60</code></td>
-<td>positive integer (checked in <code>plugin/crew/hooks/scripts/crew_autopilot.py</code>)</td>
-<td>1.0.349</td>
-<td>Minutes <code>ship</code> waits for the required checks; still pending, or green only after it, stops. Anything but a positive integer reads as 60, with a warning.</td>
-</tr>
-<tr>
 <td><code>autopilot.sleep.schedule</code></td>
 <td>repo</td>
 <td><code>null</code></td>
@@ -1776,14 +1134,6 @@ the plugin.</p>
 <td><code>null</code> | <code>nonprod</code> | <code>none</code> (checked in <code>plugin/crew/hooks/scripts/crew_sleep.py</code>)</td>
 <td>1.1.21</td>
 <td><code>autopilot.deploy</code> inside the sleep window (L-0654): null keeps the day value, <code>nonprod</code> or <code>none</code> replaces it; anything else, <code>all</code> included, is refused with a warning. Asleep, an effective <code>all</code> reads as <code>nonprod</code>: production never runs unattended asleep.</td>
-</tr>
-<tr>
-<td><code>autopilot.sleep.notifyHold</code></td>
-<td>repo</td>
-<td><code>null</code></td>
-<td><code>null</code> | <code>true</code> (checked in <code>plugin/crew/hooks/scripts/crew_notify_hold.py</code>)</td>
-<td>1.1.21</td>
-<td>Inside the sleep window (L-0656): <code>true</code> holds the pings that only ask for attention (questions, Approval waiting, Review out of rounds) and counts them; the morning summary carries the count. A failure (a deploy result, a refused Stop gate, a stalled lane) is never held. Only while armed and asleep by the schedule (a manual sleep outside it holds nothing); anything but null or true holds nothing, with a warning.</td>
 </tr>
 <tr>
 <td><code>autopilot.maxTicketsPerRun</code></td>

@@ -72,7 +72,7 @@ To run everything with no budget:
 
     bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh --all
 
-(or `-All` on the PowerShell flavour). In a PR's CI job pass `--ci`/`-Ci`:
+(on native Windows run it under Git Bash). In a PR's CI job pass `--ci`:
 the same map over tracked files, Stop's reach filter, rc 77 or an empty run
 fails, no marker is written; crew-setup ships the workflow. Give every rule
 a measured `seconds` (step 6 times them); none is UNKNOWN cost and always runs.
@@ -125,11 +125,10 @@ its root, drops it by name without running anything.
 ## `--price` (operator only, never from Stop)
 
     bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.sh --price [path] [--force]
-    pwsh ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/verify-gate.ps1 -Price [-PriceTarget path] [-PriceForce]
 
 Times every rule in a verify.json-shaped map with no budget and writes `seconds` (ceil, min 1) for
 the ones that have none. Defaults to `.crew/verify.json`; pass a path to price a different file.
-Never overwrites an existing `seconds` unless `--force`/`-PriceForce` is given, and never writes 0 —
+Never overwrites an existing `seconds` unless `--force` is given, and never writes 0 —
 a rule that ran in under a second still costs 1.
 
 **`.crew/verify.json` in this repo is TRACKED**, so `--price` against it dirties a committed file.
@@ -204,7 +203,7 @@ exactly like an undeclared rule would be, never silently reintroduced through it
 
 `--price` refuses to time a verb-, syntax-, or wrapper-classified rule outright, in both directions,
 same as the gate. The `verifyReachUndeclared` trigger in `crew_state.py` separately flags any rule
-with no `reach` at all — see `CONFIG.md` §19 for the full classification, and `--stamp-reach` above
+with no `reach` at all — see `docs/crew/config-rationale.md` for the full classification, and `--stamp-reach` above
 to declare them.
 
 ## Environment pinning

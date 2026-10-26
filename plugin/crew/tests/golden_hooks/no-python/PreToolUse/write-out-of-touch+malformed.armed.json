@@ -1,0 +1,67 @@
+{
+ "armed": true,
+ "case": "write-out-of-touch",
+ "dirty": "",
+ "event": "PreToolUse",
+ "harness": "claude",
+ "no_python": true,
+ "payload": "{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"Write\", \"tool_input\": {\"file_path\": \"{ROOT}/other/keep.py\"}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"cwd\": \"{ROOT}\"",
+ "rows": [
+  {
+   "argv": [
+    "promote-gate.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "promote-gate.sh",
+   "stderr": "jq: parse error: Unfinished JSON term at EOF at line 1, column <N>\nPROMOTION BLOCKED: no usable python, and jq could not read the tool payload, so crew cannot tell whether this command deploys. This is not a pass. Install python 3.8+.\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "role-write-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "role-write-guard.sh",
+   "stderr": "role-write-guard: no usable python found; allowing it unjudged (role '' is not restricted).\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "cloud-guard.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "cloud-guard.sh",
+   "stderr": "cloud-guard: no usable python, and guards.cloudGuard is armed - refusing rather than letting this command through unjudged.\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "env-guard.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "env-guard.sh",
+   "stderr": "env-guard: no usable python, and guards.envGuard is armed - refusing rather than letting this command through unjudged.\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "scope-guard.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "scope-guard.sh",
+   "stderr": "SCOPE GUARD: no usable python - cannot judge this call; failing closed because .crew/config.json does not provably set scope.mode off.\n",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": "malformed"
+}

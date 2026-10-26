@@ -28,8 +28,7 @@ subagent's `agent_id`, the epoch advances on every `compact` or `clear`
 SessionStart (the context those slices lived in is gone), and an item is a
 code-map subsystem or one vault note.
 
-On by default since 1.0.0: it emits and logs nothing only when the repo's
-crew config sets `memory.inject: false`. See `inject_enabled`.
+Injection is always on (`crew_state.MEMORY_INJECT`); no config turns it off.
 
 Never blocks. `main` returns 0 on every path, prints only an
 `additionalContext` payload or nothing, and never a `decision`.
@@ -55,6 +54,7 @@ import crew_common
 from crew_common import dict_or_empty, git_out, read_text
 import crew_incident
 import crew_recall
+import crew_state
 
 HARD_CAP = 6000
 STARTUP_CHARS, STARTUP_LINES = 1500, 12
@@ -133,21 +133,6 @@ def load_crew_config(root):
             return {}
         return parsed if isinstance(parsed, dict) else {}
     return {}
-
-
-def _inject_on(cfg):
-    """`memory.inject` defaults to on since 1.0.0: only an explicit `false`
-    turns the hook off. Any other value -- absent, null, a typo'd string --
-    reads as the default rather than silently disabling injection."""
-    return dict_or_empty(cfg.get("memory")).get("inject") is not False
-
-
-def inject_enabled(root):
-    """The one flag both SessionStart emitters read: this hook runs when it
-    is on, and handoff-read stops printing the handoff when it is -- so a
-    session gets its handoff from exactly one of them. handoff-read still
-    runs its once-per-session marker resets either way."""
-    return _inject_on(load_crew_config(root))
 
 
 def _write_json_atomic(path, data):
@@ -516,7 +501,7 @@ def incident_line(root, cfg):
     The same two findings `crew_state` raises (`incidentActive`,
     `incidentUnclosed`), read from the same reader. It is not memory: an open
     incident means the gates are down right now, so the line is emitted
-    whether or not `memory.inject` is on."""
+    always."""
     incident = crew_incident.read_state(root, cfg)
     ident = incident.get("id") or "an incident"
     if incident.get("active"):
@@ -532,7 +517,7 @@ def incident_line(root, cfg):
 def inert_line(root):
     """One SessionStart line naming every setting this crew does not act on,
     else None (T-0070). Like the incident banner it is not memory, so it is
-    emitted with `memory.inject` off too. `crew_config` is imported here, not
+    always emitted. `crew_config` is imported here, not
     at the top: no other event pays for it. Never raises -- a broken config
     reader gives None and one `inert-check-failed` log record, so it can
     neither silence SessionStart nor pass for "nothing is inert" unrecorded."""
@@ -619,9 +604,9 @@ def _log_sources(kept):
     return out
 
 
-def recall_items(query, cfg, budget, root=None):
+def recall_items(query, budget, root=None):
     crew_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    result = crew_recall.recall(query, cfg, crew_root=crew_root, budget=budget, root=root)
+    result = crew_recall.recall(query, crew_root=crew_root, budget=budget, root=root)
     items = []
     for snip in result["snippets"]:
         items.append({"id": f"vault:{snip['vault']}:{snip['note']}", "text": crew_recall.label(snip),
@@ -637,15 +622,8 @@ def codemap_items(root, subs, head):
 
 
 def _handoff_file(root, cfg):
-    """The configured handoff's real path, kept inside the repo."""
-    context_cfg = dict_or_empty(cfg.get("context"))
-    rel = context_cfg.get("handoffPath") if isinstance(context_cfg.get("handoffPath"), str) else ""
-    rel = rel or ".work/HANDOFF.md"
-    base = os.path.realpath(root)
-    path = os.path.realpath(os.path.join(base, rel))
-    if os.path.commonpath([base, path]) != base:
-        path = os.path.join(base, ".work", "HANDOFF.md")
-    return path
+    """The handoff's real path (the fixed `crew_state.CONTEXT_HANDOFF_PATH`)."""
+    return crew_state.handoff_path(root, cfg)
 
 
 def _handoff(root, cfg):
@@ -661,8 +639,7 @@ def record_handoff_author(root, cfg, payload):
     machine, record which session and Claude Code process wrote it, so a
     later /clear or /compact resumes the note only in that session.
     Returns None when there is nothing to record, else crew_resume's
-    (ok, reason). Runs before the `memory.inject` gate, so a repo with
-    injection off still binds its notes. A path that is not the handoff
+    (ok, reason). A path that is not the handoff
     records nothing, and an unarmed machine writes no file at all."""
     if payload.get("hook_event_name") != "PostToolUse" or payload.get("tool_name") not in _AUTHOR_TOOLS:
         return None
@@ -691,7 +668,6 @@ def _handoff_verdict(root, cfg):
     T-0006). A rule that raises could not tell, and that counts as stale --
     never as fresh."""
     try:
-        import crew_state
         result = crew_state.archive_stale_handoff(root, cfg)
     except Exception:  # pylint: disable=broad-except
         return False, True
@@ -734,30 +710,24 @@ _SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 RESUME_TYPING_TIMEOUT = 10
 
 
-def _resume_typing_cmd(root, session, source, flavour):
-    """This flavour's sender in resume mode, or None when it has no
-    interpreter. Each flavour starts its OWN sender: on Windows both run, and
-    the per-handoff marker lets exactly one of them type."""
-    if flavour == "sh":
-        bash = shutil.which("bash")
-        return None if not bash else [bash, os.path.join(_SCRIPTS, "auto-clear.sh"), "--resume",
-                                      "--session", session, "--source", source, "--root", root]
-    shell = shutil.which("pwsh") or shutil.which("powershell")
-    return None if not shell else [shell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                                   "-File", os.path.join(_SCRIPTS, "auto-clear.ps1"), "-Resume",
-                                   "-Session", session, "-Source", source, "-Root", root,
-                                   "-Python", sys.executable]
+def _resume_typing_cmd(root, session, source):
+    """The sender in resume mode, or None when there is no bash. There is one
+    sender, `auto-clear.sh`: on native Windows the dispatcher runs this hook's
+    `.sh` under Git Bash, so it is the sender there too (L-0727 slice 3
+    deleted `auto-clear.ps1`)."""
+    bash = shutil.which("bash")
+    return None if not bash else [bash, os.path.join(_SCRIPTS, "auto-clear.sh"), "--resume",
+                                  "--session", session, "--source", source, "--root", root]
 
 
 def start_resume_typing(root, payload, flavour, harness="claude"):
-    """T-0013: on SessionStart clear|compact, run this flavour's auto-clear
-    sender in resume mode and return {status, text} from its one
-    `autoresume:` line (status typing | refused | notify | failed), or None
-    when nothing was started. Runs BEFORE the per-event context claim, so
-    each flavour's sender runs whichever flavour emits the context. Only an
-    ARMED machine pays for a sender at all. Never raises: a failure is a
-    `failed` result, and the context is emitted as before."""
-    if harness != "claude" or flavour not in ("sh", "ps1"):
+    """T-0013: on SessionStart clear|compact, run the auto-clear sender in
+    resume mode and return {status, text} from its one `autoresume:` line
+    (status typing | refused | notify | failed), or None when nothing was
+    started. Runs BEFORE the per-event context claim. Only an ARMED machine
+    pays for a sender at all, and only the `sh` flavour has one. Never raises:
+    a failure is a `failed` result, and the context is emitted as before."""
+    if harness != "claude" or flavour != "sh":
         return None
     if payload.get("hook_event_name") != "SessionStart":
         return None
@@ -769,9 +739,9 @@ def start_resume_typing(root, payload, flavour, harness="claude"):
         if not crew_resume.settings(root)["armed"]:
             return None
         session = payload.get("session_id")
-        cmd = _resume_typing_cmd(root, session if isinstance(session, str) else "", source, flavour)
+        cmd = _resume_typing_cmd(root, session if isinstance(session, str) else "", source)
         if cmd is None:
-            return {"status": "failed", "text": f"no interpreter for the {flavour} sender"}
+            return {"status": "failed", "text": "no interpreter for the sh sender"}
         done = subprocess.run(cmd, cwd=root, stdin=subprocess.DEVNULL, capture_output=True, text=True,
                               timeout=RESUME_TYPING_TIMEOUT, check=False)
     except Exception as exc:  # pylint: disable=broad-except
@@ -800,10 +770,9 @@ def _resume_typing_logged(root, payload, flavour, harness):
     return typing
 
 
-# A refusal that only means "the other flavour types this method": the sh
-# sender declining sendkeys (crew_autocycle.resolve_method) or the ps1 sender
-# declining tmux (auto-clear.ps1). On Windows both flavours run, so this one
-# saying "not typed" would be false whenever the other one types.
+# A refusal that only means "the other flavour types this method". The ps1
+# flavour (auto-clear.ps1) is gone (L-0727 slice 3), so no live sender emits
+# this shape any more; the matcher stays for a log line written before it.
 _OTHER_FLAVOURS_JOB = re.compile(r"^refused - method (\S+) is auto-clear\.(sh|ps1)'s job\b")
 _FLAVOUR_HOOK = {"sh": "bash", "ps1": "PowerShell"}
 
@@ -855,7 +824,7 @@ def next_action(text):
     return ""
 
 
-def context_usage(transcript, cfg):
+def context_usage(transcript):
     """(used, window) from the transcript's last main-chain usage, or None."""
     try:
         with open(transcript, "rb") as handle:
@@ -878,9 +847,6 @@ def context_usage(transcript, cfg):
             continue
         used = sum(int(usage.get(k) or 0) for k in
                    ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
-        configured = dict_or_empty(cfg.get("context")).get("budgetTokens")
-        if isinstance(configured, int) and configured > 0:
-            return used, configured
         model = str(msg.get("model") or "").lower()
         window = next((w for key, w in _WINDOWS if key in model), 200_000)
         return used, max(window, used)
@@ -891,7 +857,7 @@ def low_context_note(state, payload, cfg):
     context_cfg = dict_or_empty(cfg.get("context"))
     if context_cfg.get("enabled") is False or state["epoch"] in state["lowNoted"]:
         return None
-    usage = context_usage(payload.get("transcript_path"), cfg)
+    usage = context_usage(payload.get("transcript_path"))
     if not usage:
         return None
     used, window = usage
@@ -1157,19 +1123,11 @@ def run(payload, raw, harness="claude", flavour=None):
         return ""
     cfg = load_crew_config(root)
     _record_author_logged(root, cfg, payload, harness)
-    # T-0013: before the memory.inject gate and the per-event claim, so this
-    # flavour's sender runs whichever flavour emits the context.
+    # T-0013: before the per-event claim, so this flavour's sender runs
+    # whichever flavour emits the context. Injection is always on: this hook
+    # is the only SessionStart emitter of the handoff (handoff-read.sh only
+    # resets its once-per-session markers).
     typing = _resume_typing_logged(root, payload, flavour, harness)
-    # ON unless the repo says `memory.inject: false`. handoff-read reads the
-    # same flag (`inject_enabled`) and stops printing the handoff when it is
-    # on, so a session gets the handoff from one emitter, never both.
-    if not _inject_on(cfg):
-        # Nothing but the incident banner and the inert-settings line, neither
-        # of which is memory (incident_line, inert_line).
-        if payload.get("hook_event_name") != "SessionStart":
-            return ""
-        lines = [line for line in (incident_line(root, cfg), inert_line(root)) if line]
-        return "\n".join(lines) if lines and claim(root, raw, harness) else ""
     if not claim(root, raw, harness):
         return ""
     session = payload.get("session_id") or "nosession-" + time.strftime("%Y%m%d")
@@ -1211,7 +1169,7 @@ def _run_locked(root, payload, cfg, session, harness, typing=None):
     recall = None
     if query and budget > 0:
         used = sum(len(i["text"]) + 1 for i in fresh)
-        recall, vault = recall_items(query, cfg, budget - used - 240, root)
+        recall, vault = recall_items(query, budget - used - 240, root)
         vault, vhits = _dedup(state, context, vault)
         hits += vhits
         lines_used = sum(i["text"].count("\n") + 1 for i in fresh)
@@ -1320,12 +1278,7 @@ def stats(root, as_json=False):
 
 
 def slice_for_subagent(root, query, paths):
-    """Plain text a dispatching command pastes into a subagent's prompt.
-    Empty, and nothing logged, when `memory.inject` is false -- the same
-    gate as the hook, so no path emits vault context the repo turned off."""
-    cfg = load_crew_config(root)
-    if not _inject_on(cfg):
-        return ""
+    """Plain text a dispatching command pastes into a subagent's prompt."""
     head = git_out(root, "rev-parse", "--short=8", "HEAD")
     subs = subsystems(root)
     chosen = subsystems_for_text(subs, query)
@@ -1335,7 +1288,7 @@ def slice_for_subagent(root, query, paths):
                 chosen.append(sub)
     items = codemap_items(root, chosen, head)
     used = sum(len(i["text"]) + 1 for i in items)
-    recall, vault = recall_items(query, cfg, SUBAGENT_CHARS - used - 240, root)
+    recall, vault = recall_items(query, SUBAGENT_CHARS - used - 240, root)
     block = recall_block(vault, SUBAGENT_CHARS - used)
     if block:
         items.append(block)

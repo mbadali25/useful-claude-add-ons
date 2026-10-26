@@ -1,7 +1,7 @@
 # install-scripts
-anchor: useful-claude-add-ons@291801622
+anchor: useful-claude-add-ons@9ba355d7c
 paths: plugin/crew/**, scripts/**
-verified: 2026-10-01
+verified: 2026-10-20
 
 ## Re-derive provenance
 
@@ -941,7 +941,7 @@ was executed.
 `git diff --name-only c817782f 926443d8` is T-0010's round-3 fix (`caabb005`), the BUDGETS.md
 count, the version step-back and re-set, and this refresh. Of the paths this note cites, `plugin/crew/README.md`, `plugin/crew/CONFIG.md` and
 `plugin/crew/BUDGETS.md` changed: README two lines rewritten in place (`:792`, `:818`),
-CONFIG.md's §20 one-writer paragraph grew six lines, and `BUDGETS.md:11`'s count moved
+docs/crew/config-rationale.md one-writer paragraph grew six lines, and `BUDGETS.md:11`'s count moved
 18,917 -> 18,923 on the same line. No citation this note makes moved (checked with `difflib`
 over every cited path). Nothing was executed.
 
@@ -1110,7 +1110,7 @@ Checked by a script mapping every explicit `path:N` through `git diff -U0`. Noth
 
 `7d473f24` merges origin/main `f54af3fa` (T-0072 landed as crew 1.0.51: `crew_autopilot.py`,
 `commands/autopilot.md`, `crew_state.py`'s line-neutral `AUTOPILOT_DEFAULTS` hunk at `:1086-1090`,
-`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `CONFIG.md` §20, `README.md`, its
+`templates/config.template.json`, `skills/crew-setup/SKILL.md`, `docs/crew/config-rationale.md`, `README.md`, its
 tests, `sabotage_autopilot.py`, `.crew/verify.json` rule 27's `seconds` and `why`; its notes
 anchored `9631c707`); `07354a39`, `df419a55`, `7a206c8e`, `4112498e`, `1b31ed2f` and `7ef3c4f1` are
 T-0075's review-round-4 steps 11-16 (`crew_config.py`, `crew_config_files.py`,
@@ -1640,3 +1640,8 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `926f1277` -> `09e31dba` on 2026-10-10 (L-0753, after merging main `e77532e01`).** Per-path check `git diff --name-only 926f1277..09e31dba`: main's L-0759 (#595: `plugin/crew/tests/test_promote_gate_review.py`, crew 1.2.19) and L-0760 (#596: `.github/workflows/runner-autostart.yml`, SECURITY.md) plus the version and CHANGELOG/README lines moved. No claim in this map moved.
 
 **Re-anchored `09e31dba` -> `0bf364417` on 2026-10-17 (L-0796, crew 1.2.39, quiet Stop gate).** Scope of this check is the ticket's own change, `git diff --name-only 786687e60..0bf364417`: `verify-gate.sh` (+258) and `verify-gate.ps1` (+343) grew above most of their cited lines, `verify_fingerprint.py` gained 5 lines at `:192`, `crew_fixtures.py` 7 lines, the sabotage tables a few lines in place, and `CONFIG.md` one 44-line insertion at `:3056` (after every `CONFIG.md` line cited here). Every cited `verify-gate.sh` / `.ps1` / `crew_fixtures.py` / `sabotage*.py` / `CONFIG.md` line was shifted by the hunks of that diff (a script walking the `-U0` hunks, no cited line fell inside a hunk); version lines (`plugin.json:3`, `marketplace.json`, `PLUGINS.md`, `BUDGETS.md`) and README lines changed in place and moved nothing. NOT VERIFIED: that each shifted citation still says what its sentence claims. This pass did not re-read them, and drift from the commits between `09e31dba` and `786687e60` is not re-derived here; `/crew:onboard --refresh` is the full pass. Nothing was executed for this note.
+
+**Re-anchored `291801622` -> `c1d365d72` on 2026-10-20 (L-0850 / PR #656 close).** Per-path re-verify: every `path:line` outside the re-anchor history paragraphs was re-mapped by diffing its file at `291801622` against HEAD; none moved or was lost, so no citation changed. The paths this PR changes that this note names (`.claude-plugin/marketplace.json`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `INSTALLATION.md`, `README.md`) changed by version bumps and registration text, line-neutral for what is cited. NOT re-read word for word: prose claims whose cited lines did not move.
+
+
+**Re-anchored `c1d365d72` -> `9ba355d7c` on 2026-10-20 (L-0850 / PR #656 close: the docs and artifact refresh commit, owner waiver 2026-10-20).** `git diff 9ba355d7c~1 9ba355d7c` changes only docs, diagrams, codemap, rules and graph output; the one code-adjacent text is `plugin/crew/README.md` (+2 lines after line 366, inside section 25) and `SECURITY.md` (+4 lines after line 46). Every live `path:line` citation into those two files was checked: this note has none at or after those lines outside its re-anchor history paragraphs (whose lines describe past moments and are not re-mapped), and `plugin/crew/BUDGETS.md` only changed a count in place (line 11, line-neutral). No citation changed. NOT re-read word for word: prose claims whose cited lines did not move.

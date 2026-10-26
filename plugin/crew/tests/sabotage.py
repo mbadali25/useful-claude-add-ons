@@ -162,13 +162,12 @@ MERGE_GATE = os.path.join(
 # flavour, and "one flavour stands down and nothing notices" is this plugin's
 # recurring failure rather than a hypothetical one.
 PROMOTE_PS1 = os.path.join(CREW, "hooks", "scripts", "promote-gate.ps1")
-# The Stop gate and its matched PowerShell pair, plus the two setup scripts
+# The Stop gate, plus the two setup scripts
 # that read the same `.crew/verify.json`. Four files rather than one because
 # "a `run` entry is one command" is a claim about the MAP, and a rule the gate
 # refuses while setup happily resolves it is the disagreement the rejection
 # exists to remove -- so each reader is sabotaged separately.
 VERIFY_SH = os.path.join(CREW, "hooks", "scripts", "verify-gate.sh")
-VERIFY_PS1 = os.path.join(CREW, "hooks", "scripts", "verify-gate.ps1")
 # The digest BOTH gates skip on, in one file so the two flavours cannot
 # disagree about whether a turn changed anything. Sabotaged here rather than
 # through either gate because it is the WRITER of the digest: a test that
@@ -494,8 +493,13 @@ MUTATIONS = (
         PROMOTE_SH,
         'if [ "$ENV_STATUS" -ne 0 ]; then',
         'if [ "$ENV_STATUS" -eq 999 ]; then',
+        # L-0897: the stray-comma test stayed green here, because the dispatch
+        # reader (_promote_dispatch.py) fails on the same file and blocks with a
+        # message that also says "does not parse as JSON". The parametrized test
+        # asserts the gate's OWN message ("NOT a pass" + exit 2 for every shape),
+        # which only the env-status branch writes.
         ("tests/test_promote_gate_unreadable_map.py::"
-         "test_sh_blocks_on_the_stray_comma_that_started_this"),
+         "test_sh_blocks_on_a_map_it_cannot_read"),
     ),
     (
         # D3, PowerShell. `-ErrorAction Stop` goes away and Get-Content's
@@ -549,60 +553,6 @@ MUTATIONS = (
          "test_every_routed_script_exists_and_accepts_brand"),
     ),
     (
-        # The routing entry goes, which is the state this whole ticket was
-        # opened for: `docs.theme` configuring a tool crew's own documented
-        # generation path never mentions, so there is no call site for a
-        # `--brand` to attach to and the setting quietly does nothing.
-        #
-        # Re-anchored 2026-09-22: the routing bullet grew an "as HTML, DOCX
-        # or PDF" clause when the HTML route was added (commit 1741f233),
-        # which split the old one-line anchor across two lines. Same bullet,
-        # same key rename.
-        "doc-builder is dropped from the routing table",
-        HOUSE_STYLE,
-        "- `doc-builder` — branded findings reports and screenshot SOPs, as HTML,\n"
-        "  DOCX or PDF. Pass `--brand <docs.theme>`;",
-        "- `doc-builder-removed` — branded findings reports and screenshot SOPs, as HTML,\n"
-        "  DOCX or PDF. Pass `--brand <docs.theme>`;",
-        "tests/test_docs_routing.py::"
-        "test_the_routing_table_routes_doc_builder_and_names_both_keys",
-    ),
-    (
-        # `docs.reportTheme` stops being bound to the report genre, so it
-        # degrades into a synonym for `docs.theme`: two keys, one meaning, and
-        # the client-deliverable case the second key exists for silently
-        # stops being expressible. Nothing else in the suite notices, because
-        # the key still merges and still resolves.
-        #
-        # Re-anchored 2026-09-22: the routing bullet's genre-binding sentence
-        # moved onto its own line when the bullet was rewritten for the HTML
-        # route (commit 1741f233); the anchor below is that line, verbatim.
-        "reportTheme is no longer bound to the report genre",
-        HOUSE_STYLE,
-        "  for a findings report prefer `docs.reportTheme` when it is set.",
-        "  the brand applies to every generated document when it is set.",
-        "tests/test_docs_routing.py::"
-        "test_the_two_config_keys_are_bound_to_different_genres",
-    ),
-    (
-        # The sharper half of the same defect, and the one the first mutation
-        # could not reach. The key STAYS in the sentence -- only the genre
-        # widens -- so the test's "is reportTheme bound to anything" assertion
-        # still passes and the binding assertion is the only thing that can
-        # catch it. The original assertion here was `"report" in line`, which
-        # `docs.reportTheme` satisfies by its own name; it went red on this
-        # entry's sibling above for the WRONG assert and so read as covered.
-        #
-        # Re-anchored 2026-09-22 alongside its sibling above, same line, same
-        # reason.
-        "reportTheme widens to every document, not just the findings report",
-        HOUSE_STYLE,
-        "  for a findings report prefer `docs.reportTheme` when it is set.",
-        "  for every document prefer `docs.reportTheme` when it is set.",
-        "tests/test_docs_routing.py::"
-        "test_the_two_config_keys_are_bound_to_different_genres",
-    ),
-    (
         # The defect the rule exists to forbid, written as the thing a helpful
         # person would actually write. An unresolvable theme is the one failure
         # here that is the CONFIG's fault rather than the machine's, and falling
@@ -629,8 +579,8 @@ MUTATIONS = (
         # succeeded.
         "crew is allowed to validate the theme name itself",
         HOUSE_STYLE,
-        "**Do not validate the theme name before calling.**",
-        "**Check the theme name against the installed packs before calling.**",
+        "**Do not validate the ",
+        "**Validate the ",
         "tests/test_docs_routing.py::"
         "test_an_unresolvable_theme_is_relayed_and_never_falls_back",
     ),
@@ -890,59 +840,6 @@ MUTATIONS = (
         "test_the_routed_scripts_are_the_ones_the_table_names",
     ),
     (
-        # The global warning stops checking whether the repo has an answer of
-        # its own, and starts firing on repos the global can never reach. It
-        # then states something false -- that a global neutral "is the value
-        # this repo now resolves to" on a repo whose theme is `solomon` -- and
-        # sends the reader to edit a machine-global file that would change
-        # nothing there and something in every other repo on the machine.
-        "the global warning fires even when the repo names its own theme",
-        UPGRADE,
-        '    if notes["docsThemeAfter"] is None and global_theme_defeats_migration():',
-        '    if global_theme_defeats_migration():',
-        ("tests/test_upgrade.py::"
-         "test_the_global_warning_stays_quiet_when_the_repo_names_its_own_theme"),
-    ),
-    (
-        # The rewrite stops being atomic with the schema stamp. A single
-        # wrong-typed block anywhere then produces a config with a null theme
-        # and schema still at 3 -- so repairing the block and setting neutral
-        # back re-runs the rewrite and erases it a second time. Half a
-        # migration that keeps re-applying its own half.
-        "the theme rewrite is no longer atomic with the schema stamp",
-        UPGRADE,
-        '    if (notes["schemaStamped"]\n'
-        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA',
-        '    if (notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA',
-        ("tests/test_upgrade.py::"
-         "test_a_partly_failed_migration_does_not_rewrite_the_theme"),
-    ),
-    (
-        # The global warning goes. The repo config comes out migrated and the
-        # EFFECTIVE theme is unchanged, because repo null defers to the global
-        # file that still says neutral. That is the worse of the two states --
-        # it looks fixed -- and silence is what makes it so.
-        "a global neutral that defeats the migration is not reported",
-        UPGRADE,
-        '    if notes["docsThemeAfter"] is None and global_theme_defeats_migration():',
-        "    if False:",
-        ("tests/test_upgrade.py::"
-         "test_a_global_neutral_is_reported_because_it_defeats_the_migration"),
-    ),
-    (
-        # The global read stops being best-effort. `global_theme_defeats_
-        # migration` runs while BUILDING THE REPORT, which is after the repo
-        # config has already been written -- so an unreadable global file
-        # would take down a run whose real work had succeeded, and the caller
-        # could not tell a failed upgrade from a failed report.
-        "the global config read is no longer best-effort",
-        UPGRADE,
-        "    except (OSError, ValueError):\n        return False",
-        "    except KeyError:\n        return False",
-        ("tests/test_upgrade.py::"
-         "test_an_unreadable_global_config_is_not_a_crash_or_a_warning"),
-    ),
-    (
         # conftest isolates only `crew_config`'s binding again. `crew_upgrade`
         # reads the path through `crew_state`, so the suite goes back to
         # reading the DEVELOPER'S REAL ~/.claude/crew/config.json -- the exact
@@ -974,8 +871,8 @@ MUTATIONS = (
         # exactly the gap that let it reach review.
         "the schema is not bumped, so the migration never runs",
         STATE,
-        "SCHEMA_CURRENT = 7",
-        "SCHEMA_CURRENT = 6",
+        "SCHEMA_CURRENT = ",
+        "SCHEMA_CURRENT = 6 if True else ",
         # Re-pinned AGAIN at schema 7, and the reason has not changed since the
         # first two re-pins: the test this entry names has to migrate a repo at
         # the IMMEDIATELY PREVIOUS schema, or reverting the bump leaves that
@@ -983,85 +880,11 @@ MUTATIONS = (
         # did exactly that, twice, and was caught by this suite rather than by
         # reading it. So the pair of numbers AND the test both move on every
         # bump; neither move is optional and neither is sufficient alone.
+        # L-0875: anchored on the prefix and pinned to the literal 6 the named
+        # test migrates from, so this one entry holds across a schema bump
+        # (7 on main, 8 on L-0725's branch) instead of being re-pinned twice.
         "tests/test_change_command.py::"
         "test_the_schema_7_bump_reaches_a_repo_at_schema_6",
-    ),
-    (
-        # The one-shot gate goes, so the rewrite matches on the VALUE forever.
-        # A user who takes the upgrade report at its word -- "if you did mean
-        # neutral, set it again and it will now be honoured" -- has it erased
-        # by the next `--force`, and by every force after that. The report
-        # then states something the code contradicts, which is worse than
-        # having made no promise.
-        "the theme rewrite is no longer one-shot",
-        UPGRADE,
-        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
-        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
-        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")',
-        ("tests/test_upgrade.py::"
-         "test_a_deliberately_restored_neutral_survives_a_forced_rerun"),
-    ),
-    (
-        # The pre-0.18.0 default, restored. This is the mutation that matters
-        # on this change, because restoring it breaks NOTHING visible: the key
-        # still has no consumer, so no document comes out differently and no
-        # other test notices. It only becomes a de-branding bug later, when the
-        # wiring lands and every upgraded repo starts passing an explicit
-        # `--brand neutral` over an installed pack. A defect whose damage is
-        # deferred to a future commit is exactly the kind a suite forgets to
-        # hold, so it is pinned here rather than left to the templates.
-        "docs.theme default goes back to the string neutral",
-        UPGRADE,
-        '    "theme": None,\n    "reportTheme": None,',
-        '    "theme": "neutral",\n    "reportTheme": None,',
-        ("tests/test_upgrade.py::"
-         "test_upgrade_config_does_not_alias_the_shared_docs_block"),
-    ),
-    (
-        # The migration silently does nothing. The template change alone is
-        # NOT the fix: `_merged` lets a supplied value win, so an existing
-        # config carrying "neutral" keeps it forever and only NEW repos get
-        # null. Deleting the rewrite leaves every already-installed machine in
-        # the broken state while a fresh clone looks correct -- the "exists
-        # only on other people's machines" shape this repo keeps paying for.
-        "the neutral -> null migration is dropped",
-        UPGRADE,
-        '    if (notes["schemaStamped"]\n'
-        '            and notes["schemaFrom"] < _DOCS_THEME_REWRITTEN_UNTIL_SCHEMA\n'
-        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
-        '            == _DOCS_THEME_REWRITTEN_FROM):\n'
-        '        notes["rewrittenKeys"].append("docs.theme")\n'
-        '        out["docs"]["theme"] = None',
-        '    pass',
-        ("tests/test_upgrade.py::"
-         "test_upgrade_rewrites_the_old_neutral_theme_default_to_null"),
-    ),
-    (
-        # The rewrite stops being announced. The value still changes under the
-        # user; only the sentence explaining it disappears. That is the worse
-        # half of the two: a config that differs from what someone wrote, with
-        # the upgrade report silent about which value moved and why it was
-        # allowed to.
-        "a rewritten theme is no longer reported",
-        UPGRADE,
-        '    if "docs.theme" in notes["rewrittenKeys"]:',
-        '    if False:',
-        ("tests/test_upgrade.py::"
-         "test_the_report_explains_a_rewritten_theme_and_stays_quiet_otherwise"),
-    ),
-    (
-        # The rewrite over-reaches and catches every theme, not just the old
-        # default. This is the fix performing the exact bug it exists to
-        # prevent: a user who deliberately set `solomon` gets silently
-        # de-branded BY THE MIGRATION. Cheap to write by accident -- it is one
-        # comparison loosened to a truthiness check.
-        "the migration rewrites any theme, not only the old default",
-        UPGRADE,
-        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")\n'
-        '            == _DOCS_THEME_REWRITTEN_FROM):',
-        '            and crew_state.dict_or_empty(cfg.get("docs")).get("theme")):',
-        ("tests/test_upgrade.py::"
-         "test_upgrade_rewrites_only_the_exact_old_default"),
     ),
     (
         # The pre-0.17.0 form, restored. It is wrong in BOTH directions once a
@@ -2113,11 +1936,13 @@ MUTATIONS = (
         # coupling this file's header warns against.
         "enabled: false is rewritten to mean run the disable subcommand",
         PROMOTE_DOC,
-        "**`enabled: false` - the shipped default - means do nothing at all.**",
-        "**`enabled: false` - the shipped default - means run the `disable` "
-        "subcommand.**",
-        ("tests/test_promote_merge_gate.py::"
-         "test_enabled_false_means_do_nothing_at_all"),
+        # L-0875: anchored on the clause alone and aimed at the whole file,
+        # because the sentence's subject and the covering test's name differ
+        # between main (`enabled: false`) and L-0725's branch (no
+        # `--merge-gate` flag); both files assert "do nothing at all".
+        "means do nothing at all.**",
+        "means run the `disable` subcommand.**",
+        "tests/test_promote_merge_gate.py",
     ),
     (
         # A `--preset` flag appears on `enable`, so `merge_gate.sh` starts
@@ -2463,24 +2288,6 @@ MUTATIONS = (
          "test_a_lock_path_that_is_a_file_does_not_stand_the_gate_down"),
     ),
     (
-        # The matched pair's half. verify-gate.ps1 never had the framing bug
-        # -- it reads objects, not text -- so this is not a duplicate of the
-        # first entry: it is the claim that the PAIR agrees. With the refusal
-        # gone the same map blocks the turn on bash and passes it here.
-        #
-        # The fixture still exits 2 under this mutation, because `bash -c`
-        # runs both halves and the second rule is `exit 1`. The status
-        # assertion therefore still passes and only the message assertion
-        # catches it, which is the shape this file's header asks for.
-        "the PowerShell gate stops rejecting a `run` entry it cannot "
-        "represent",
-        VERIFY_PS1,
-        "if ($null -ne $bad) {\n  Write-CrewErr($bad)",
-        "if ($false) {\n  Write-CrewErr($bad)",
-        ("tests/test_verify_gate_rule_framing.py::"
-         "test_the_powershell_gate_refuses_the_same_map_by_name"),
-    ),
-    (
         # Setup's half. resolve-tools.sh writes the table a user pastes back
         # into verify.json, and a multi-line entry tokenised into junk came
         # out as MISSING TOOLS -- names nobody wrote, beside real ones. The
@@ -2595,59 +2402,6 @@ MUTATIONS = (
          "test_a_rule_that_fits_is_not_split_across_its_commands[sh]"),
     ),
     (
-        # The matched pair's half, and not a duplicate. The arithmetic lives
-        # in a python heredoc on one side and in PowerShell on the other, so a
-        # fix applied to one flavour reads as done while the other still
-        # splits the rule -- this plugin has shipped exactly that shape, and a
-        # round of this branch left the bash half wrapped in `if false` with
-        # every test still green.
-        # RE-ANCHORED in 0.19.95, with its bash twin and for the same
-        # reason. RE-ANCHORED AGAIN in 0.19.93 (the per-rule record): the
-        # `else` branch grew a chronic-vs-acute classification block, so the
-        # closing brace this find string ends on moved further down.
-        # RE-ANCHORED AGAIN in round 3 (identity dedup case-sensitivity,
-        # Codex BLOCK verify-gate.ps1:901): `-notcontains` on $deferred
-        # became `-cnotcontains` everywhere in the identity/dedup path, this
-        # line included, so PowerShell's default CASE-INSENSITIVE string
-        # comparison could no longer collapse two commands whose identities
-        # differ only in case (e.g. ENV=dev vs ENV=DEV) into one.
-        "the PowerShell Stop budget charges each command the rule's cost",
-        VERIFY_PS1,
-        "    } elseif (($spent + $ruleSecs[$ri]) -le $budget) {\n"
-        "      # WHOLE, in the rule's own `run` order. Half a rule is not a "
-        "cheaper\n"
-        "      # rule; it is a rule nobody can say ran.\n"
-        "      foreach ($c in $fresh) { [void]$keep.Add($c) }\n"
-        "      $spent += $ruleSecs[$ri]\n"
-        "    } else {\n"
-        "      foreach ($c in $fresh) { if ($deferred -cnotcontains $c) { "
-        "[void]$deferred.Add($c) } }\n"
-        "      # CHRONIC vs ACUTE -- the twin split in verify-gate.sh. A "
-        "rule whose\n"
-        "      # own cost exceeds the whole budget can never fit regardless "
-        "of\n"
-        "      # ordering (chronic); one that would fit alone but lost to "
-        "this\n"
-        "      # turn's contention is acute and still blocks the baseline, "
-        "same as\n"
-        "      # before this feature existed.\n"
-        "      if (-not $chronicRules.Contains($ri) -and -not "
-        "$acuteRules.Contains($ri)) {\n"
-        "        if ($ruleSecs[$ri] -gt $budget) { "
-        "[void]$chronicRules.Add($ri) }\n"
-        "        else { [void]$acuteRules.Add($ri) }\n"
-        "      }\n"
-        "    }\n",
-        "    } else {\n"
-        "      foreach ($c in $fresh) {\n"
-        "        if (($spent + $cost[$c]) -le $budget) { [void]$keep.Add($c); "
-        "$spent += $cost[$c] }\n"
-        "        elseif ($deferred -cnotcontains $c) { "
-        "[void]$deferred.Add($c) }\n      }\n    }\n",
-        ("tests/test_verify_gate_stop_budget.py::"
-         "test_both_flavours_charge_the_rule_once"),
-    ),
-    (
         # The deadline read goes back to DELETING what it cannot parse instead
         # of refusing it. `tr -dc "0-9"` turns -9999999999 into 9999999999 --
         # a deadline in the year 2286 -- so the gate backed off announcing
@@ -2666,66 +2420,6 @@ MUTATIONS = (
         "tr -dc \"0-9\")\n",
         ("tests/test_verify_gate_lock_window.py::"
          "test_an_unparseable_deadline_is_not_a_held_lock[negative-huge-sh]"),
-    ),
-    (
-        # The PowerShell half, and NOT the same defect: this flavour never
-        # coerced a sign, it silently overflowed. `[int]` on a deadline past
-        # Int32 max throws, the catch produces 0, and the lock reads as
-        # unheld -- measured, on an aged token with a deadline of 9999999999
-        # bash backed off while PowerShell RAN. Every legitimate deadline
-        # crosses that boundary on 2038-01-19, so the pair would have
-        # disagreed about every live lock from that date.
-        "the PowerShell deadline read overflows Int32 again",
-        VERIFY_PS1,
-        "      $holdDeadline = 0\n"
-        "      try {\n"
-        "        $raw = (Get-Content -Raw -ErrorAction Stop (Join-Path $lock "
-        "\'deadline\')).Trim()\n"
-        "        if ($raw -match \'^[0-9]+$\') { $holdDeadline = [long]$raw }"
-        "\n      } catch { $holdDeadline = 0 }\n",
-        "      $holdDeadline = try { [int]((Get-Content -Raw -ErrorAction "
-        "Stop (Join-Path $lock \'deadline\')).Trim()) } catch { 0 }\n",
-        ("tests/test_verify_gate_lock_window.py::"
-         "test_both_flavours_read_the_same_deadline_the_same_way"),
-    ),
-    (
-        # DEADLINE PUBLICATION REMOVED ENTIRELY, bash side. This is the
-        # mutation the cross-flavour case could not be made to fail under
-        # before it was rewritten: it fabricated the lock, the token and the
-        # deadline itself, and the token it planted was fresh enough that the
-        # AGE WINDOW forced the back-off it asserted -- so the test passed
-        # with the whole feature deleted from both gates. It now runs a real
-        # holder of the writer flavour and asserts the token is already past
-        # the TTL, which is what makes the back-off attributable to the
-        # deadline.
-        "the bash gate stops publishing a deadline at all",
-        VERIFY_SH,
-        "lock_extend() {\n"
-        "  [ \"$UNLOCKED\" -eq 0 ] || return 0\n"
-        "  [ \"$(cat \"$LOCK/token\" 2>/dev/null)\" = "
-        "\"${LOCK_TOKEN:-}\" ] || return 0\n"
-        "  printf \'%s\\n\' \"$(( $(date +%s) + $(lock_window) ))\" > "
-        "\"$LOCK/deadline\" 2>/dev/null || true\n"
-        "}\n",
-        "lock_extend() {\n  return 0\n}\n",
-        ("tests/test_verify_gate_lock_window.py::"
-         "test_each_flavour_honours_a_deadline_the_other_published"),
-    ),
-    (
-        # The matched pair's half: deadline publication removed on the
-        # PowerShell side. Separate entry because the cross-flavour case runs
-        # BOTH directions, and one flavour still publishing would leave the
-        # other direction green -- which is exactly how a one-flavour fix
-        # reads as done in this plugin.
-        "the PowerShell gate stops publishing a deadline at all",
-        VERIFY_PS1,
-        "      $deadline = $epoch + (Get-CrewLockWindow -Ttl $Ttl -MaxCost "
-        "$MaxCost)\n      Set-Content -Path (Join-Path $LockPath "
-        "\'deadline\') -Value $deadline -Encoding ascii -ErrorAction Stop\n",
-        "      $deadline = $epoch + (Get-CrewLockWindow -Ttl $Ttl -MaxCost "
-        "$MaxCost)\n      $null = $deadline\n",
-        ("tests/test_verify_gate_lock_window.py::"
-         "test_each_flavour_honours_a_deadline_the_other_published"),
     ),
     (
         # The TTL seam read as octal again. `08` is all digits, so it passes
@@ -2762,20 +2456,6 @@ MUTATIONS = (
          "test_an_always_command_is_not_deferred_by_a_priced_rule[sh]"),
     ),
     (
-        # The matched pair's half. The budget arithmetic is a python heredoc
-        # on one side and PowerShell on the other, and the report confirmed
-        # the defect was present in both -- so one flavour fixed reads as
-        # done while the other still defers the mandatory check.
-        # RE-ANCHORED in 0.19.95 with its bash twin.
-        "the PowerShell budget lets a priced rule defer an `always` command",
-        VERIFY_PS1,
-        "    foreach ($c in $ruleCmds[$ri]) { if ($mandatory.ContainsKey($c))"
-        " { $isMust = $true } }\n",
-        "    foreach ($c in $ruleCmds[$ri]) { }\n",
-        ("tests/test_verify_gate_stop_budget.py::"
-         "test_an_always_command_is_not_deferred_by_a_priced_rule[ps1]"),
-    ),
-    (
         # The FINER half, and a separate entry because `always` still works
         # under it: only the "unconditional-until-priced" level is deleted, so
         # a command named by an unpriced rule AND a priced one goes back to
@@ -2789,18 +2469,6 @@ MUTATIONS = (
         "for ri in rule_order:\n    pass\n",
         ("tests/test_verify_gate_stop_budget.py::"
          "test_an_unpriced_rule_makes_its_commands_unconditional[sh]"),
-    ),
-    (
-        # Its PowerShell twin.
-        "the PowerShell gate stops making an unpriced rule unconditional",
-        VERIFY_PS1,
-        "foreach ($ri in $ruleOrder) {\n"
-        "  if (-not $ruleSecs.ContainsKey($ri)) {\n"
-        "    foreach ($c in $ruleCmds[$ri]) { $mandatory[$c] = $true }\n"
-        "  }\n}\n",
-        "foreach ($ri in $ruleOrder) { }\n",
-        ("tests/test_verify_gate_stop_budget.py::"
-         "test_an_unpriced_rule_makes_its_commands_unconditional[ps1]"),
     ),
     (
         # A gitlink goes back to being read as a file. `open()` on a directory
@@ -2864,31 +2532,6 @@ MUTATIONS = (
         "[c for c in cmds if c in cost and c in mandatory], []\n",
         ("tests/test_verify_gate_stop_budget.py::"
          "test_a_mandatory_command_keeps_its_place_inside_its_rule[sh]"),
-    ),
-    (
-        # The PowerShell half of the charge defect. Separate, because the
-        # arithmetic is a python heredoc on one side and PowerShell on the
-        # other and the report confirmed BOTH flavours carried it.
-        "the PowerShell gate charges a mandatory command twice",
-        VERIFY_PS1,
-        "  $overrun = [System.Collections.ArrayList]@()\n",
-        "  $overrun = [System.Collections.ArrayList]@()\n"
-        "  foreach ($c in @($cmds | Where-Object { $cost.ContainsKey($_) -and "
-        "$mandatory.ContainsKey($_) })) { [void]$keep.Add($c); "
-        "$spent += $cost[$c] }\n",
-        ("tests/test_verify_gate_stop_budget.py::"
-         "test_a_mandatory_rule_is_charged_once_against_the_rest_of_the_budget[ps1]"),
-    ),
-    (
-        # And the PowerShell half of the ORDER defect, hoist without charge.
-        "the PowerShell gate hoists a mandatory command out of its rule",
-        VERIFY_PS1,
-        "  $overrun = [System.Collections.ArrayList]@()\n",
-        "  $overrun = [System.Collections.ArrayList]@()\n"
-        "  foreach ($c in @($cmds | Where-Object { $cost.ContainsKey($_) -and "
-        "$mandatory.ContainsKey($_) })) { [void]$keep.Add($c) }\n",
-        ("tests/test_verify_gate_stop_budget.py::"
-         "test_a_mandatory_command_keeps_its_place_inside_its_rule[ps1]"),
     ),
     (
         # work.md stops recording where the ticket starts. Everything else
@@ -3067,9 +2710,8 @@ MUTATIONS = (
     ),
 )
 # The T1 review-fix, T3 scope, T5 cloud-guard, context, migrate, auto-cycle, T-0008 refresh-check, T-0006 resume,
-# T-0004 autopilot, T-0021 tracker, T-0023 route, T-0024 group-approval, T-0075 config menu, T-0040 shell, merge train
-# mutations live in the sabotage_*.py siblings: this file is at `.pylintrc`'s max-module-lines, and raising that
-# limit again is the move its own comment warns against.
+# T-0004 autopilot, T-0021 tracker, T-0023 route, T-0024 group-approval, T-0075 config menu, T-0040 shell, merge train,
+# L-0727 hook dispatcher mutations live in the sabotage_*.py siblings: this file is at `.pylintrc`'s max-module-lines.
 from sabotage_train import TRAIN_MUTATIONS  # noqa: E402  pylint: disable=wrong-import-position
 from sabotage_stop_budget import STOP_BUDGET_MUTATIONS  # noqa: E402  pylint: disable=wrong-import-position
 MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS + CLOUD_GUARD_MUTATIONS + SCOPE_MUTATIONS
@@ -3080,7 +2722,8 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS + KIMI_MUTATIONS + COORD_MUTATIONS
               + RECURRING_MUTATIONS + TRAIN_MUTATIONS + GITIGNORE_MUTATIONS + WAVE_MUTATIONS + GHDEPLOY_MUTATIONS
               + PROMOTE_TREE_MUTATIONS + CONTRACT_MUTATIONS + BRIDGE_MUTATIONS + sabotage_platform.PLATFORM_MUTATIONS)
-MUTATIONS += __import__("sabotage_reach_notice").REACH_NOTICE_MUTATIONS + __import__("sabotage_quiet").QUIET_MUTATIONS
+MUTATIONS += (__import__("sabotage_reach_notice").REACH_NOTICE_MUTATIONS + __import__("sabotage_quiet").QUIET_MUTATIONS
+              + __import__("sabotage_crew_hook").CREW_HOOK_MUTATIONS)
 
 # pytest's own exit codes: 0 all passed, 1 a test FAILED, 2 interrupted, 3
 # internal error, 4 usage error (what a collection failure produces), 5 nothing

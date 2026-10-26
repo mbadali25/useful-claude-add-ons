@@ -59,7 +59,7 @@ SUBPROCESS_FNS = {"run", "Popen", "check_output", "check_call", "call"}
 ALLOWLIST = (
     {"file": "plugin/crew/hooks/scripts/crew_autocycle.py", "function": "_proc",
      "tool": "ps", "reason": "POSIX only: _proc returns before ps on native Windows",
-     "gate": "plugin/crew/hooks/scripts/crew_autocycle.py:651",
+     "gate": "plugin/crew/hooks/scripts/crew_autocycle.py:637",
      "gate_text": 'if found is not None or os.name == "nt":'},
     {"file": "plugin/crew/hooks/scripts/crew_platform.py", "function": "_wsl_facts",
      "tool": "ip", "reason": "WSL2 only: _wsl_facts is called only when platform.system() is Linux",
@@ -76,7 +76,7 @@ ALLOWLIST = (
      "gate": "skills/notify/scripts/notifyd.py:301", "gate_text": 'if os.name == "nt":'},
     {"file": "plugin/crew/hooks/scripts/crew_shell.py", "function": "run", "tool": "bash",
      "reason": "POSIX only: run() takes `bash -c` only off native Windows",
-     "gate": "plugin/crew/hooks/scripts/crew_shell.py:802", "gate_text": "if not on_windows():"},
+     "gate": "plugin/crew/hooks/scripts/crew_shell.py:687", "gate_text": "if not on_windows():"},
     {"file": "plugin/crew/hooks/scripts/webtest_guard.py", "function": "check_visual", "tool": "npx",
      "reason": "Linux only: check_visual returns before npx off Linux (then off the pinned Playwright container)",
      "gate": "plugin/crew/hooks/scripts/webtest_guard.py:673",
@@ -458,7 +458,7 @@ def test_a_gate_weakened_on_its_own_line_goes_red():
     got = [p for p in problems(list(_repo_sites()), cited) if "no longer reads" in p]
 
     assert got == ["('plugin/crew/hooks/scripts/crew_autocycle.py', '_proc', 'ps'): gate "
-                   "plugin/crew/hooks/scripts/crew_autocycle.py:651 no longer reads 'os.name == \"nt\"'"]
+                   "plugin/crew/hooks/scripts/crew_autocycle.py:637 no longer reads 'os.name == \"nt\"'"]
 
 
 # --- per site: the resolved path runs, and an unresolved tool fails as before --------

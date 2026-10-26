@@ -1,400 +1,41 @@
-<!-- Moved verbatim from plugin/crew/README.md (11. Configuration reference) by L-0726; the README keeps an index entry. -->
+<!-- Moved verbatim from plugin/crew/README.md (11. Configuration reference) by L-0726; shortened to an index by L-0725. The cloud-guard, unattended-run and environment-guard sections below are kept whole: they describe guard behaviour, not settings. -->
 
 ## 11. Configuration reference
 
-Everything reads `.crew/config.json`. If it goes missing or stops parsing,<!-- claim: crew-config-file:config.json -->
-`platform-sync` recreates it from `templates/config.template.json` the next
-time the repo is opened — see "The config heals itself" in §3; this is the
-same shape that produces:
+Every setting, with its type, default and layer, is in the generated [`plugin/crew/CONFIG.md`](../../../plugin/crew/CONFIG.md). Why a key sits where it does, and how each guard decides, is in [`docs/crew/config-rationale.md`](../config-rationale.md). This page is the index to both.
 
-### Global config, and how it layers with the repo file
+### How the two files combine
 
-An optional machine-global file at `~/.claude/crew/config.json` sets defaults
-for every crew repo on this machine, without hand-editing each one. Three
-layers, lowest precedence first:
+- Two optional files: the repo's `.crew/config.json` and the machine's `~/.claude/crew/config.json`. Built-in defaults sit under both.
+- The repo wins over the machine, which wins over the default, merged per key by `crew_config.resolve_config(root)`. Read effective settings through it, never from the file.
+- `install.policy`, the twelve guards and `change.requireForProduction` do not follow that rule: the **narrower** of the two layers wins, so a cloned repo cannot widen what the machine owner allowed.
+- Some keys are machine-only or repo-only: a repo-only key in the machine file is pruned and reported, and `schema` is never merged.
+- A repo `null` on a key the machine file sets is dropped on read, so the machine value applies.
 
-| Layer | Source | Written by |
-|---|---|---|
-| Built-in defaults | `hooks/scripts/crew_config.py`'s `default_config()` | Nothing — this is code, not a file |
-| Global | `~/.claude/crew/config.json` | `/crew:config` — a guided walkthrough that shows the plan first and writes only after a yes. It is also the only thing in crew that writes outside the repository. Hand-editing still works. |
-| Repo | `.crew/config.json` | `/crew:init` (first write); `platform-sync` (the `platform` block, and the whole file when it heals — see §3); the `/crew:config` menu (`crew_config.py --set ... --repo`, `crew_config_menu.py save`) |
+### See what is in force
 
-Repo overrides global overrides built-in defaults, merged recursively with
-`crew_state.merge_defaults` — the same policy `crew_upgrade.upgrade_config` (run by `/crew:migrate` for a pre-0.20 config) uses to bring a
-v1 config's `pm` and `graph` blocks forward: a nested override wins, a scalar
-where a dict belongs is discarded rather than corrupting the block under it.
-`crew_config.resolve_config(root)` is the one place that computes this; every
-reader that wants *effective settings* calls it rather than reading
-`.crew/config.json` directly.
+- `/crew:config` shows where each value comes from and sets the machine or repo file from a menu. It prints the plan first and writes only after a yes.
+- `python3 plugin/crew/hooks/scripts/crew_config.py --explain` prints every key with the layer that supplies it; `--explain --all` includes the defaults, and `--guard <name>` shows one guard with both layers and which one holds it down.
+- Every writer backs up the file it replaces; `--rebuild` and `--restore <stamp>` recover a lost config.
 
-Two things never go through this layering, on purpose:
+### Common setups
 
-- **`schema`** is a fact about the repo file's own layout version, not a
-  setting — it is read straight from `.crew/config.json`, never merged. The
-  built-in-defaults layer always reports the current schema, so merging it
-  would make an unmigrated `v1` repo (no `schema` key at all) look current
-  the moment *any* global file exists on the machine.
-- **The `platform` block and the heal path both write only the repo file.**
-  `platform-sync` never reads or writes the global file, and recreating a
-  missing or broken `.crew/config.json` always writes plain built-in
-  defaults — never a merge that could smuggle a global preference into a
-  file every teammate who clones the repo will also read.
+- Turn the guards on: set `guards.profile` to `standard` (cloud guard blocking, role writes reported) or `strict` in the machine file. Narrow one guard with `guards.overrides.<guard>`. A repo can only narrow further.
+- Try the cloud guard without refusing anything: `guards.overrides.cloudGuard` set to `report`, then read `.crew/guard.log`.
+- Declare what is production: `production.databases` and `production.hosts` in the repo file (the guard matches nothing until you do).
+- Arm autopilot: `autopilot.mode` set to `plan`, plus `scope.allowCliApproval` true in the repo.
+- Pick reviewers: `qa.provider`, `qa.order`, `qa.fallback`, and role pins in `qa.roles` / `dev.roles`.
+- Keep a machine-wide preference out of every repo: set it in the machine file and leave the key out of `.crew/config.json`.
 
-A key the global filter drops (a `scope` or `emergency` block, a `tracker`) takes
-effect nowhere. It is not silent:
-every session start names it in its `Inert settings` line as
-`key=value (global, not read)` (T-0070), and `/crew:config --show` lists it.
+### Removed settings
 
-**In a linked git worktree.** `.crew/*` is gitignored, so a lane made with
-`git worktree add` starts with no `.crew/config.json` or `.crew/crew.json`. Since
-crew 1.0.69 (T-0088) such a worktree reads the **main checkout's** repo config,
-found through `git rev-parse --git-common-dir` (`crew_common.repo_config_dir`).
-A worktree with either file of its own reads only its own files: they win whole,
-even when partial, and are **never merged** with the main checkout's. When `.git`
-is a file but git cannot name the main checkout, the source is `unknown`,
-nothing is inherited, and `/crew:status` and `/crew:config --explain` say so
-rather than showing the config as simply absent. A submodule, or a bare common
-directory, is its own repo. Inheritance is read-only: no writer (`/crew:init`,
-the heal path, `platform-sync`, `/crew:migrate`, the auto-clear setup) ever
-writes the main checkout's file, and the heal path no longer creates a default
-config in an inheriting worktree, because that default would shadow the owner's
-(nor in one where git could not tell; it asks again next session).
-
-**A lane made before 1.0.69 still reads its own file.** Every SessionStart heal
-on crew 1.0.68 or earlier wrote a default `.crew/config.json` into a lane that
-had none, and that file wins whole. `/crew:status` and `/crew:config --explain`
-say so (`... the main checkout's (<path>) is not read ...`); if the lane's file is
-a default nobody edited, delete it (and `.crew/crew.json`) to inherit.
-
-**Behaviour change:** every Python guard in a lane worktree now reads the owner's
-settings where it read the built-in defaults before - `guards.forcePush: allow`
-instead of `block`, `scope.mode`, `scope.allowCliApproval`, `roleWrites` and
-`cloudGuard` the same way. Since L-0681 the verify gate does too: a lane with no
-config of its own whose main checkout says `"verifyGate": false` gets no Stop
-gate, and `/crew:review` reads NO_GATE there (`verify-gate --ci` still exits 2);
-a lane that must be gated writes its own config. And with no usable python the
-scope and completion wrappers prove `scope.mode` off only when the resolved
-file is absent and git could tell: a lane whose main checkout has a config, or
-whose git cannot name the main checkout, blocks writes and the Stop until
-python works - except that the PowerShell wrappers (PowerShell 7) still allow
-a resolved config that strictly parses as `scope.mode: off`. Ratcheted guard keys still take the narrower of repo
-and machine-global. A lane that wants its own guards writes its own
-`.crew/config.json`, and that file then wins whole.
-
-**The shell and PowerShell readers (crew 1.0.330, T-0096, partly).** `_common.sh`'s
-`crew_repo_config_dir` and the PowerShell `Get-CrewRepoConfigDir` (one body,
-copied into each script that uses it) resolve the same directory by the same
-rules, without python. Routed through them: the incident stand-down read
-(`emergency.standDown`, in `_common.sh` for every bash gate and in
-`promote-gate.ps1`), both cloud-guard no-python fallbacks, and `auto-clear.ps1`'s
-repo veto. In the cloud guard's fallback an `unknown` source counts as armed: a
-lane whose git cannot name its main checkout, with no usable python, refuses Bash
-until one works. Inheritance can loosen as well as tighten: an inherited
-`cloudGuard: off` applies in a lane. The session hooks (`notify`,
-`handoff-read`, `handoff-write`, `context-watch`, both flavours) read the
-resolved file too (crew 1.0.343, L-0680): a lane notifies with the main
-checkout's `notify` settings, so several lanes ping the same channel unless one
-writes its own config, and an inherited `context.handoffPath`,
-`keepTranscripts` or threshold applies in the lane while the handoff path
-stays inside the lane: a relative one names a file there, and one that leaves
-it (absolute, `..`, a symlink out) or names a directory is the lane's
-`.work/HANDOFF.md`, with a warning. The PowerShell hooks are stricter on links:
-Windows PowerShell 5.1 cannot resolve one as `realpath` does, so any symlink or
-junction on the way counts as leaving, even one that points back inside. What they write (transcripts, markers, the
-handoff note) stays in the lane, and `context-watch` still needs a `.crew/`
-directory there before it measures. The review/gate harness reads it too (crew
-1.1.4, L-0681): the verify gate in both flavours (`verifyGate`,
-`verify.stopBudgetSeconds` and, in `verify-gate.ps1`, `emergency.standDown`),
-`review_gate.py` (in step with the gate: both read one file), the gate's
-fingerprint (the first gate run in each inheriting lane after the upgrade
-re-runs its commands once) and the scope and completion wrappers' no-python
-proof. No shell, PowerShell or Python reader of the repo config is outside a
-resolver now. `.crew/verify.json` is never inherited.
-
-### `/crew:config` — see where a value comes from, and set the global file
-
-```
-python3 hooks/scripts/crew_config.py --root . --explain        # value + source
-python3 hooks/scripts/crew_config.py --root . --check-global   # what is wrong
-python3 hooks/scripts/crew_config.py --set pm.authority='"act"'          # dry run
-python3 hooks/scripts/crew_config.py --set pm.authority='"act"' --apply  # write
-```
-
-`--explain` prints every globally-settable key with its effective value and
-the layer that decided it. That column is the point. The reason this command
-exists is a machine where the global file carried `tier`, `roles`, `qa` and
-`sdp` but **no `pm` block**, so every repo on it resolved to
-`pm.authority: report-only` while the user believed the 0.20 PM was autonomous.
-Every file was valid; nothing surfaced the discrepancy. `/crew:config` runs
-`--check-global` and reports the same findings.
-
-Four rules the script enforces rather than documents:
-
-- It **merges**. A key in an existing global file that the walkthrough never
-  asked about survives untouched.
-- It **refuses** any key outside `default_global_config()`, by name, exit 2.
-  That keeps repo facts (`tracker`, `jira.project`, `graph.out`, `platform`,
-  `tier`, `roles`) out of a file every repo reads — and it is what makes
-  `graph.obsidian.confirmed` un-grantable from a guided flow: it is consent to
-  write into your own notes outside the repo, not a capability.
-- It is a **dry run by default**. `--apply` is a second, deliberate call.
-- It marks a **widening** with a `!` line, on both the dry run and the write,
-  naming the tier being granted and what that tier buys. `pm.authority`,
-  `install.policy` and all six `guards.*` are the values a user cannot recover
-  from by noticing.
-
-`--explain` also names the **narrowing source** for the seven keys that ratchet.
-Those do not resolve by precedence, so the merged value is the wrong thing to
-print for them: before this was fixed, a repo `install.policy: auto` over a
-machine-global `manual` printed `install.policy  repo  "auto"` while crew
-behaved as `manual` — a report contradicting the run, in the direction that
-reads as "you have it". It now prints the effective value and, underneath, the
-line that says which layer is holding it down and what each layer asked for.
-
-`templates/global.template.json` is the shape, and a committed test asserts it
-equals `global_template_config()` (`default_global_config()` minus the personal
-keys) byte-for-byte — the same drift gate the repo template has. It is deliberately not a copy of the repo template: it carries
-only what is a property of the machine or the person (`pm.authority`, `qa`,
-`dev`, `secondOpinion`, `notify`, `memory.vaultPath`), and no `schema`.
-
-A global file that is missing, empty, or fails to parse is treated exactly
-like an absent one — the same reasoning `_read_config_strict` documents for
-the repo side — so a typo in your global config degrades one repo's settings
-to defaults rather than breaking every session on the machine.
-
-### Personal defaults, backups, and rebuilding a lost config (T-0050)
-
-```
-python3 hooks/scripts/crew_config.py --set autopilot.approval='"self"' --apply  # global default
-python3 hooks/scripts/crew_config.py --root . --explain --all       # every key, layer, shadows
-python3 hooks/scripts/crew_config.py --root . --unset autopilot.mode --repo --apply
-python3 hooks/scripts/crew_config.py --root . --rebuild --repo      # dry run; then --apply
-python3 hooks/scripts/crew_config.py --root . --backups --repo      # stamps, newest first
-python3 hooks/scripts/crew_config.py --root . --restore <stamp> --repo --apply
-```
-
-- **Global defaults for the personal keys.** `autopilot.mode`, `maxPhases`,
-  `deploy`, `approval` and `questions` can be set once in
-  `~/.claude/crew/config.json` for every repo on the machine. They combine per
-  key: the stricter of the layers that set the key wins, and a silent layer
-  imposes nothing — so a global value is a default a repo may narrow, never a
-  grant it cannot refuse (CONFIG.md §20a). New repos no longer spell these
-  keys; a repo set up before this spells `autopilot.mode: "off"`, which holds a
-  global `plan` down — `--explain --all` names each such `shadow:`, and
-  `--unset <key> --repo --apply` removes it on your yes.
-- **Every crew script write is backed up first** to `~/.claude/crew/backups/`
-  (newest 20 per file; a hand edit is not), and a failed backup refuses the write. `--backups` lists them
-  and `--restore <stamp>` puts one back, backing up the current file first.
-- **The profile.** `--set`/`--unset --apply`, the menu's Save and
-  `--save-profile --apply` keep your non-default values in
-  `~/.claude/crew/profile.json` (and `<memory.vaultPath>/crew/profile.json`
-  when you keep a vault, so it syncs). `--rebuild --repo|--global` regenerates
-  a lost or corrupt config from the template plus that profile; a dry run
-  until `--apply`, exit 3 when the profile is there and unreadable.
-  SessionStart's heal still writes crew's defaults, never the profile — it
-  names the rebuild instead.
-
-### The `/crew:config` menu — set either layer, or delete the repo config
-
-`/crew:config` with no argument, and its alias `/crew:config-setup`, open a
-menu (`skills/crew-setup/config-menu.md`, backed by
-`hooks/scripts/crew_config_menu.py`). Pick the **layer** — this machine's
-`~/.claude/crew/config.json` or this repo's `.crew/config.json` — then an
-**area** (models, autopilot, guards, notify, memory and tracker, auto-clear,
-other), then a **setting**, then a **value from a list**. Each value shows the
-current effective value, the layer that decided it, and the recommendation
-first; the owner never has to type one.
-
-- **Data-driven.** The rows are `crew_config.py`'s own key lists
-  (`default_global_config()` for the machine layer, `default_config()` for the
-  repo), so a key added to crew appears with no menu edit, and a committed test
-  runs every offered value through the writer. The machine layer also lists
-  `platform.*` and `schema` read-only, and an absent or unparseable
-  `.crew/config.json` makes every repo row read-only with the writer's own
-  refusal as the reason.
-- **Offered means accepted.** Every candidate value is probed through the
-  layer's own planner on the file Save would produce, the pending set
-  included (`spec --pending`). A row no value can pass — a bad value already
-  in the file, such as an unknown `qa.provider` — is read-only with the
-  planner's reason, which names the key to fix first.
-- **Selection only, Save once per layer.** Picks collect in a pending set that
-  spans areas and both layers. Save validates **both** layers before writing
-  either, shows the dry-run diff with `!` widening lines and "held down by the
-  machine-global layer" lines, then writes each changed layer once. A write
-  that fails or is refused after validation (the file changed underneath)
-  reports which layer landed and which did not. The dry run prints each
-  changed layer's `digest:`, and the machine digest whenever anything
-  changes, since a repo value's widening marks are judged against the
-  machine file (as this Save leaves it); `absent` names a file that does not
-  exist. `--apply --expect-machine/--expect-repo` checks both before either
-  write and binds each writer to them, the repo write to the machine digest
-  too, so a file another session changed or created since the dry run is
-  refused, never merged over. Discard writes nothing.
-- **One validated repo writer.** `crew_config.py --set PATH=JSON --repo
-  [--apply]` (`plan_repo_write` / `write_repo_config`) merges, refuses unknown
-  keys, takes a whole-block value leaf by leaf (as the machine writer does),
-  checks enum values, validates providers, writes
-  atomically and keeps the file's line ending and BOM. It refuses `platform.*`
-  (platform-sync owns it), `schema`, and `context.autoClear.onlyRepos` /
-  `.onlySessions` (read from the machine file only), and takes only a veto
-  (`false`) or `null` for `context.autoClear.enabled` and `resume.auto` —
-  exactly those, by identity, so `0` is refused.
-- **Both writers judge per leaf, write per leaf, and judge the whole file.**
-  Each update is expanded to its leaves, so a whole-block value such as
-  `context={"autoClear": {"unsafeFocus": true}}` cannot carry a refused key
-  past the machine writer, and each leaf is written on its own: the block's
-  untouched siblings (unknown keys included) survive, and a widening is
-  marked on the leaf that widens. A role-table value (`qa.roles`) is written
-  one whole pin per role, the other pins kept. `null` is accepted only where
-  the layer gives it a meaning: at the repo layer it inherits the machine
-  value for a machine-settable key, or clears a veto; an open key is unset;
-  an enum key at the machine layer refuses it. Then the merged file is
-  checked, every known leaf: a bad enum value, a consent key in the machine
-  file, or an armed veto-only key in the repo file already there refuses an
-  unrelated write, naming the key to fix first. Nothing goes under a leaf
-  and no object sits at one; `qa.roles` / `dev.roles` and their entries are
-  objects or `null`, so `qa.roles=1` is refused rather than wiping every pin.
-- **Both writers are compare-and-swap.** Read, merge and replace happen inside
-  an `O_CREAT|O_EXCL` lock file beside the config (`config.json.lock`, 3 s
-  wait, then a refusal naming the lock and its PID), so two sessions never
-  merge against stale snapshots; `--set` prints `digest:` (`absent` for no
-  file) and `--apply --expect <digest|absent>` refuses a file that changed,
-  or appeared, since; `--set --repo` also prints `machine digest:` and takes
-  `--expect-global`. A malformed machine file is refused rather than
-  overwritten from `{}`. An OS error (a lock, the machine directory, the
-  write) is a refusal with exit 2, never a traceback.
-- **`crew_config_files.py` is the one file layer** under both writers, delete
-  and restore: the lock, the strict read, the `restorable` predicate and the
-  regular-file read delete and restore share, the digest, the atomic
-  replace, and the no-clobber move: a rename that never replaces an existing
-  destination, by the rename itself rather than a check before it.
-- **`scope.*` is refused on purpose.** `scope.mode` and
-  `scope.allowCliApproval` are the scope guard's trust root, and
-  `.crew/config.json` is untracked, so the completion audit (which diffs
-  tracked files) would never see a one-command write that disarmed it. They
-  stay a hand edit by the owner or `/crew:init`, shown read-only in the menu.
-- **Delete the repo config.** Two phases. The preview reads and holds the
-  file's bytes and walks its own leaves: a `!` on anything that widens
-  (`scope.mode` returning to `off` included), `-> (removed)` for a key crew
-  does not know, a `stays` line for a ratcheted key the repo narrowed under a
-  wider machine value (deleting does not widen it), and the `platform.*`
-  keys platform-sync writes (`crew_platform.DERIVED_KEYS`) in a "re-detected
-  by platform-sync" group, which promises no value: a key it finds none for on
-  this machine is left unset. Any other `platform.*` key is `-> (removed)`.
-  Then the `repo digest:` and
-  `machine digest:` it was built from. A file a restore could not take back
-  (unparsable, empty, `{}`, not an object, or not a regular file, such as a
-  symlink) is refused: that is platform-sync's to heal, or the owner's to
-  remove by hand. The delete requires the typed repo name (the checkout's
-  `git rev-parse --show-toplevel` basename) and both preview digests
-  (`--expect-repo`, `--expect-machine`), so it is the delete the preview
-  showed; then, under the machine lock and then the repo config lock (crew's
-  one nesting order), it reads the machine digest again (a machine write since
-  the preview refuses, exit 2, nothing deleted),
-  moves the file to `.crew/config.json.bak-<UTC timestamp>` in one rename —
-  the backup is the original, never a copy — and compares the moved bytes
-  with the held ones: a file that changed since the preview is moved straight
-  back, never over a file saved in between, and nothing is deleted. A file
-  another writer puts at `.crew/config.json` during the rename is never
-  unlinked: it keeps a second name, `*.moving`, and the command exits 1
-  naming the backup, the config and that name — nothing is lost. An OS error after the move
-  (a failed fsync or read-back, or a failed move back) exits 1 and names where the file is (both
-  paths when it cannot tell), never "left in place"; it exits 2 when the file is back at its path,
-  or the error came before the move (a lock, the machine file). It prints the restore command three ways,
-  `restore (sh):`, `restore (cmd):` and `restore (PowerShell):`
-  (`crew_config_menu.py restore-repo --from <backup> --apply`); each form is
-  executed by a test, and restore accepts exactly what delete does, exiting 1
-  the same way when another writer interleaves with its move-aside. Until the next
-  SessionStart there is no config, so `isCrew` is false and every hook that
-  gates on it stands down; then platform-sync's heal recreates the built-in
-  defaults. `.crew/crew.json`, `verify.json`, backups and ticket state are
-  untouched.
-- **Headless.** With no way to ask, `crew_config_menu.py spec --layer
-  <layer>` prints the plan and a write needs the explicit
-  `save --changes '<json>' --apply --expect-machine/--expect-repo <digest>` or
-  `delete-repo --confirm <name> --apply --expect-repo <digest>
-  --expect-machine <digest>`.
-
-Both writers now refuse a value outside the key's own tier or provider list
-(`pm.authority`, `pm.ticketGranularity`, `qa.provider`, `dev.provider` and every
-ratcheted key), refuse `null` for one of those at the machine layer, and refuse
-a `--set` value that is not JSON. Before T-0075 a global `--set
-pm.authority=bogus` was written and then read as `report-only`.
-
-### §11b. `guards` — the guardrails you can turn down, per machine
-
-Six keys added by schema 6, in **two vocabularies**: four are
-`block` | `ask` | `allow`, shipping as `block`; the two production-access keys
-are `none` | `read` | `full`, shipping as `none`. Since then `guards.roleWrites`
-(see §18 of CONFIG.md) and, with the cloud guard, `guards.cloudDestructive`,
-`guards.sqlDestructive`, `guards.deployWorkflow` and the `guards.cloudGuard`
-switch. The command keys
-below govern something **only while `guards.cloudGuard` is `report` or
-`block`** — it ships `off`; see [Cloud guard](#cloud-guard).
-
-| Key | Governs | Read by |
-|---|---|---|
-| `guards.terraformApply` | `terraform`/`tofu`/`terragrunt` `apply` and `destroy` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
-| `guards.forcePush` | `git push --force` / `-f` / `--force-with-lease` / a `+ref` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
-| `guards.adminMerge` | `gh pr merge --admin` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
-| `guards.mergeGate` | whether `/crew:gate` may take a live repo's merge gate down | `commands/gate.md`, `commands/promote.md` |
-| `guards.prodDatabase` | a SQL client aimed at a `production.databases` pattern | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
-| `guards.prodServer` | `ssh`/`plink`/`scp` aimed at a `production.hosts` pattern | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
-| `guards.cloudDestructive` | `aws … delete-*/terminate-*/purge-*`, `s3 rm/rb`, `s3 sync --delete`, `az … delete/purge`, `Remove-Az*` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
-| `guards.sqlDestructive` | `DROP`/`TRUNCATE` sent to `psql`, `mysql`, `mariadb`, `sqlcmd`, `sqlite3`, `Invoke-Sqlcmd` | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
-| `guards.deployWorkflow` | `gh workflow run` / `gh api .../dispatches` of a workflow listed in `environments.workflows`; `allow` covers nonProd only | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
-| `guards.cloudGuard` | whether the cloud guard judges commands at all: `off` (default) / `report` / `block` | `hooks/scripts/cloud_guard.py` |
-| `guards.envGuard` | whether the environment guard refuses a command that prints the environment or a credential-named variable: `off` (default) / `report` / `block` (L-0772) | `hooks/scripts/env_guard.py` |
-| `environments.nonProd` | **repo-only** globs naming the terraform workspaces/environments that may run unattended (default `[]`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
-| `environments.prodUnattended` | whether production may too — true only when **both** layers say `true` (default `false`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
-| `environments.workflows` | **repo-only** map of workflow globs to `input:<name>` or a fixed environment, naming the deploy workflows `guards.deployWorkflow` judges (default `{}`) | `hooks/scripts/cloud_guard.py`, when `cloudGuard` is on |
-
-- **`block`** refuses, exactly as the guard did before these keys existed.
-- **`ask`** refuses, prints the **exact** command, and names the one file that
-  approves **that** command:
-  `.crew/.approved-guard-<name>-<sha256(command)[:16]>`. Create it, re-run, and
-  it goes through; the next command asks again. It is a marker rather than a
-  prompt because a `PreToolUse` hook has no interactive stdin — an `ask`
-  implemented as a question would have been `block` under another name.
-- **`allow`** runs it, says so, and appends a row to `.crew/guard.log`. **Under
-  `allow` nothing is silent.** The stderr line goes with the session; the row
-  is the durable half, and it is written for every decision rather than only
-  the permissive ones. Since 1.2.35 a `crew_config.py --record` row holds the
-  time, guard, policy, decision and target, and `-` for the command; the
-  command line is written only with the opt-in `--record-command` (CONFIG.md,
-  "What a `--record` row holds").
-
-**The two production guards are `none` | `read` | `full`.** `none` refuses
-every command aimed at a declared target; `read` permits only what crew can
-**positively classify** as read-only, so an interactive `psql`, an unrecognised
-binary over `ssh` and anything it cannot parse are refused as writes; `full`
-permits everything and logs each one. Since L-0772 an environment dump is not a
-read either: `ssh prod printenv`, `ssh prod env`, `ssh prod cat /proc/1/environ`
-and anything else the [Environment guard](#environment-guard) recognises print
-that host's credentials, so `read` refuses them (**BREAKING**, by narrowing). `ask` is not a value here — these answer
-"how much of production may crew reach", a standing posture rather than a
-per-command question.
-
-**The level is a machine fact; what is production is not.** The two levels
-ratchet across both layers. `production.databases` and `production.hosts` — the
-glob lists they match against — are **repo-only**: `prod-db-*` names one
-cluster in one repo and something else in the next, so a machine-global list
-would describe the wrong estate everywhere else. **With no patterns declared
-the guard matches nothing**, which is how the strictest level can be the
-default and still change nobody's behaviour on upgrade.
-
-**A repo may only narrow.** Every `guards.*` key and `install.policy` resolve to the
-**narrower** of the repo and machine-global layers, not by precedence. crew
-reads config out of cloned repositories: under precedence, a repo shipping
-`guards.forcePush: allow` would grant itself force-push rights on the machine
-of anyone who cloned it. So `allow` needs **both** layers to say `allow`, and
-`--explain` names the layer holding a key down when they disagree.
+Sixty settings were removed and are now fixed values; the table is `plugin/crew/hooks/scripts/crew_dropped.py`. `/crew:migrate` (and `crew_migrate.py --global` for the machine file) moves a config to the current schema and refuses while a removed key holds a non-default value, until you drop it or pass `--accept-dropped <key>`. `crew_config.py --check` names any removed key still in a file.
 
 ### Cloud guard
 
 A `PreToolUse` hook on the **Bash and PowerShell** tools
-(`hooks/scripts/cloud-guard.sh` / `cloud-guard.ps1`, both delegating to
-`cloud_guard.py`). **It ships off** — `guards.cloudGuard: "off"` — because a
+(`hooks/scripts/cloud-guard.sh`, delegating to `cloud_guard.py`; its
+PowerShell twin was deleted in L-0727 slice 3, so a `PowerShell` call is judged by the `.sh`). **It ships off** — `guards.overrides.cloudGuard: "off"` — because a
 hook that can block defaults off. Set it to `report` first: every decision it
 *would* make goes to `.crew/guard.log` and nothing is refused. `block` enforces.
 A repo cannot turn off a machine-global `block`.
@@ -409,21 +50,21 @@ below: it makes the line one crew could not tell.
 
 | It recognises | Decided by |
 |---|---|
-| `terraform`/`tofu` `apply`, `destroy` (`-auto-approve`, `-chdir=` included) | `guards.terraformApply` |
-| `terraform`/`tofu`/`terragrunt` `workspace delete` — a destroy, in every armed state; `workspace new`/`select -or-create` once `environments` is configured | `guards.terraformApply` |
-| `git push --force`, `-f`, `--force-with-lease`, `+ref` | `guards.forcePush` |
-| `gh pr merge --admin` | `guards.adminMerge` |
-| `gh workflow run <wf>` and `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches`, when `<wf>` matches an `environments.workflows` key | `guards.deployWorkflow` |
-| `aws … delete-*/terminate-*/purge-*`, `aws s3 rm/rb`, `az … delete/purge`, `Remove-Az*` | `guards.cloudDestructive` |
-| `DROP`/`TRUNCATE` via `-c`/`-e`/`-Q`, heredoc, pipe or `Invoke-Sqlcmd -Query` | `guards.sqlDestructive` |
-| a SQL client or `ssh` aimed at a declared `production.*` pattern | `guards.prodDatabase` / `guards.prodServer` |
+| `terraform`/`tofu` `apply`, `destroy` (`-auto-approve`, `-chdir=` included) | `guards.overrides.terraformApply` |
+| `terraform`/`tofu`/`terragrunt` `workspace delete` — a destroy, in every armed state; `workspace new`/`select -or-create` once `environments` is configured | `guards.overrides.terraformApply` |
+| `git push --force`, `-f`, `--force-with-lease`, `+ref` | `guards.overrides.forcePush` |
+| `gh pr merge --admin` | `guards.overrides.adminMerge` |
+| `gh workflow run <wf>` and `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches`, when `<wf>` matches an `environments.workflows` key | `guards.overrides.deployWorkflow` |
+| `aws … delete-*/terminate-*/purge-*`, `aws s3 rm/rb`, `az … delete/purge`, `Remove-Az*` | `guards.overrides.cloudDestructive` |
+| `DROP`/`TRUNCATE` via `-c`/`-e`/`-Q`, heredoc, pipe or `Invoke-Sqlcmd -Query` | `guards.overrides.sqlDestructive` |
+| a SQL client or `ssh` aimed at a declared `production.*` pattern | `guards.overrides.prodDatabase` / `guards.overrides.prodServer` |
 | the AWS profile/region or Azure subscription of every `aws`/`az` command | `cloud.awsProfiles`, `cloud.awsRegions`, `cloud.azureSubscriptions` |
 
 `block` answers `permissionDecision: "deny"`, `ask` answers `"ask"`, and `allow`
 prints nothing — the guard never answers `"allow"`, which would skip your own
 permission prompt. `report` mode answers with no decision at all and a
 `systemMessage` saying what `block` would have done. Every refusal names its
-rule, e.g. `[terraformApply] terraform destroy: guards.terraformApply is block`.
+rule, e.g. `[terraformApply] terraform destroy: guards.overrides.terraformApply is block`.
 A command it could not read — nested more than six shells deep, or hook input
 that is not a readable Bash/PowerShell call — is refused as `[cloudGuard]`; a
 destructive-capable tool behind `xargs`/`parallel` is judged as destructive
@@ -431,7 +72,7 @@ under its own rule. `--dry-run`, `-WhatIf` and `-help` are not destructive.
 
 **Environments and destroys (crew 1.0.42).** A terraform command is also
 judged by its target environment and by whether it destroys, both read without
-running terraform. Under `guards.terraformApply: ask`, an `apply` of a saved
+running terraform. Under `guards.overrides.terraformApply: ask`, an `apply` of a saved
 plan that deletes nothing, and `workspace new` / `select -or-create`, aimed at
 a workspace matching a repo-only `environments.nonProd` glob **runs
 unattended** and is logged as `env:nonProd:<name>`. Production does too only
@@ -533,7 +174,7 @@ input) or a fixed environment name.
 }
 ```
 
-A `gh workflow run <wf>` whose `<wf>` matches a key is a `guards.deployWorkflow`
+A `gh workflow run <wf>` whose `<wf>` matches a key is a `guards.overrides.deployWorkflow`
 finding, and so is the REST call it makes, `gh api` with method POST (`-X
 POST`, `--method POST`, `-XPOST`, or fields/`--input` with no method) on
 `repos/<o>/<r>/actions/workflows/<wf>/dispatches` — both go through one
@@ -609,7 +250,7 @@ under `terraformApply: allow` these now ask (and are denied unattended) where
 they used to run; approve one command with the marker the refusal names.
 `prodUnattended` does not stand down `promote-gate.sh`'s `requireHuman`, nor
 its review-evidence check (L-0703).
-Details: [CONFIG.md §16](../../../plugin/crew/CONFIG.md), `environments.*`.
+Details: [config-rationale.md](../config-rationale.md), "guards", `environments.*`.
 
 **Identity.** The repo-only `cloud` block pins which AWS profiles/regions and
 Azure subscriptions this checkout may act as. A command resolving to anything
@@ -689,7 +330,15 @@ started some other way. Each of these runs unjudged:
   `python3 -c "import os; os.system(os.environ['TF'] + ' destroy')"`,
   `python3 deploy.py`. Since crew 1.2.36 (SRL-2308) code on the command line,
   or fed by a heredoc or here-string, that names terraform and does more than
-  print is refused: `python3 -c 'import os; os.system("terraform destroy")'`
+  print is refused: `python3 -c 'import os; os.system("terraform destroy")'`.
+  Since crew 1.2.65 (L-0871) python and node code is refused only when the
+  code or the line names terraform, terragrunt or tofu, or the code reaches a
+  process and builds the name (`'ter'+'raform'`, `chr(`, a join, a format, an
+  f-string, a decode, a `$` expansion or a non-literal operand in a process call's argument). `import os`, `import
+  requests`, `os.environ.get(...)` and `process.env` alone are no longer
+  refused, so a command read from the environment, input or a file that the
+  line never names is not caught: `python3 -c "import os; os.system(os.environ['CMD'])"`.
+  A refusal that remains quotes the construct that caused it
 - awk and sed on a line crew reads cleanly: `awk 'BEGIN{system("terraform
   destroy")}'`, `echo terraform destroy | sed e` (as in 1.2.35; on a line crew
   cannot read, or after a run-time assignment, they are refused since crew
@@ -729,7 +378,7 @@ The owner (or the owner's scheduler) runs it. Crew never starts an unattended
 session by itself, and a hook cannot change the environment of a session that
 is already running, so `/crew:autopilot` touching the cloud unattended is
 started this way. The identity comes from `unattendedCloud` in the machine
-file `~/.claude/crew/config.json` only (CONFIG.md, "`unattendedCloud`"); a
+file `~/.claude/crew/config.json` only (config-rationale.md, "`unattendedCloud`"); a
 repo copy is ignored and reported. Seven checks run in order, and the first that
 is not `ready` refuses with its reason printed verbatim. `unknown` ("could not
 tell") refuses exactly like `refuse` and keeps its own label:
@@ -853,11 +502,11 @@ are a provider seam only: any key other than `aws` refuses as not implemented.
 ### Environment guard
 
 A `PreToolUse` hook on the **Bash and PowerShell** tools
-(`hooks/scripts/env-guard.sh` / `env-guard.ps1`, both delegating to
-`env_guard.py`; L-0772). It exists because a command that prints the process
+(`hooks/scripts/env-guard.sh`, delegating to `env_guard.py`; L-0772; its
+PowerShell twin was deleted in L-0727 slice 3, so a `PowerShell` call is judged by the `.sh`). It exists because a command that prints the process
 environment puts every credential in it into the agent's context, and from
 there into the session transcript on disk and the conversation sent to the
-model provider. **It ships off** — `guards.envGuard: "off"` — because a hook
+model provider. **It ships off** — `guards.overrides.envGuard: "off"` — because a hook
 that can block defaults off. **Start with `report`:** every refusal it *would*
 make goes to `.crew/guard.log` and nothing is refused; read the log, then set
 `block`. A malformed value reads as `block`; the two layers ratchet, so a repo
@@ -898,7 +547,7 @@ mode, decision, label, `-`). Without a usable python both wrappers refuse
 (exit 2) when a config file arms the guard, and stay out of the way when none
 does. `crew_guards`' production read check asks this guard too, so
 `ssh prod printenv`, `ssh prod env` and `ssh prod cat /proc/1/environ` are no
-longer reads at `guards.prodServer: read` (**BREAKING**, by narrowing).
+longer reads at `guards.overrides.prodServer: read` (**BREAKING**, by narrowing).
 
 **Limits.** It is a denylist over the text it is handed, so it cannot be
 complete: a script or program the command runs (`./x.sh`, `python x.py`,
@@ -909,60 +558,3 @@ outside the mention-only positions (a `sed` script, `find -name`). The
 stronger control — keeping credentials out of the agent's environment, or
 redacting tool output — is L-0776.
 
-### §11c. `change` — change requests, added by schema 7
-
-Six keys, all settable in **either** layer. `change.requester` and
-`change.implementor` are facts about a person and belong in the machine-global
-file; `change.sdpTemplate` (`"Change Management Request"`),
-`change.jiraIssueType` (`"Change"`) and `change.category` name what the desk
-expects; `change.requireForProduction` ships `false`. §24b is what they do.
-
-`change.requireForProduction` uses the same ratchet as the six `guards.*` keys
-and **runs the other way round**: the narrower value is `true`, because
-requiring a change request takes a capability away from a promotion. So a repo
-may turn the requirement **on** and never off — a machine-global `true` is not
-defeated by a `false` in a repo somebody cloned. Absent or `null` means
-`false`, so upgrading changed nobody's promotions; a value that is neither
-`true` nor `false` means `true`, so a typo stops a promotion and names the key
-instead of quietly waving it through. CONFIG.md §17.
-
-**Two of these are new refusals, not preserved ones.** `guards.adminMerge`
-refuses `gh pr merge --admin`, which no crew guard refused before — measured
-against the previous release, both flavours exited 0 — and
-`guards.terraformApply` now covers `tofu` as well as `terraform`. Both were
-bypasses rather than features. The migrate report's upgrade lines say so out loud,
-because a user told only "the default is `block`, so nothing changed" will meet
-a command that ran yesterday being refused today and go looking for a bug in
-their tooling.
-
-Both shell flavours resolve the value through `crew_config.py --guard`; neither
-implements the layering itself. `guard.sh` and `guard.ps1` drift independently
-— three of the bypasses fixed in #132 were open in both — and the rule whose
-entire point is that a repo cannot widen it must not have two implementations.
-Any failure of that resolver is `block`, with the reason on stderr: "could not
-check" never becomes "checked, and fine".
-
-The full key reference is **[`CONFIG.md`](../../../plugin/crew/CONFIG.md)** — every key in both
-layers with its type, its default, which layer may set it, and a `path:line`
-for the code that reads it. It is derived by executing `default_config()` and
-`default_global_config()` rather than by reading comments, and it marks the
-keys for which no consumer could be found instead of assuming one exists.
-
-A sample `.crew/config.json` used to sit here, and a table of selected keys
-under it. Both are **deleted rather than corrected**, deliberately. The sample
-had drifted to 59 leaves against the real 85: twelve keys it showed no longer
-existed, and twenty-eight that did were missing, including the whole `dev`
-block. It drifted because it was a second copy of something derived elsewhere,
-which is the same failure as the `UPDATE.md` mirrors and the stale schema
-numbers — and like those, it passed every green check the repo had. A duplicate
-that agrees today is a duplicate that disagrees later, so correcting it would
-only have reset the clock.
-
-`CONFIG.md` is derived by executing `default_config()` and
-`default_global_config()`, and `tests/test_crew_config.py` holds drift gates
-that compare both committed templates and `crew-setup/SKILL.md`'s inline copy
-against those functions byte-for-byte. That is why there is no third copy here.
-
-The promotion sequence lives in `.crew/verify.json`, not here — see §23. Config
-holds preferences; `verify.json` holds the checks, so that one file answers "what
-runs when" for both a working tree and a deployed environment.

@@ -29,25 +29,23 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INPUT=$(cat)
 
 # Whether a config layer arms the guard, read WITHOUT python -- only consulted
-# when python could not run at all. Crude on purpose: any `cloudGuard` value
-# other than "off", in the repo config or the machine-global one, counts as
-# armed, so a value this cannot parse fails closed rather than open. The repo
-# file is the resolved one (crew_repo_config_dir, T-0096): a lane with no config
-# of its own reads the main checkout's, and when git cannot tell which that is
-# (`unknown`) the guard counts as armed -- an absent own file is no proof of off.
-# So does a resolver that is not there at all (`_common.sh` failed to source):
-# that is "could not tell" too, and refused as it was before T-0096.
+# when python could not run at all. A layer counts as unarmed only when
+# `crew_guard_layer_armed` (_common.sh) can PROVE it: the file is absent, or it
+# parses far enough that every `profile` and `cloudGuard` value is the literal `off`
+# (L-0725: the first match is no longer trusted, token absence is no longer
+# "off", and a file it cannot read is armed). The repo file is the resolved one
+# (crew_repo_config_dir, T-0096): a lane with no config of its own reads the main
+# checkout's, and when git cannot tell which that is (`unknown`) the guard counts
+# as armed -- an absent own file is no proof of off. So does a resolver that is
+# not there at all (`_common.sh` failed to source): that is "could not tell" too.
 _cloud_guard_armed() {
   root="${CLAUDE_PROJECT_DIR:-.}"
   command -v crew_repo_config_dir >/dev/null 2>&1 || return 0
+  command -v crew_guard_layer_armed >/dev/null 2>&1 || return 0
   crew_repo_config_dir "$root"
   [ "$CREW_CFG_SOURCE" = unknown ] && return 0
   for cfg in "$CREW_CFG_DIR/config.json" "$HOME/.claude/crew/config.json"; do
-    [ -f "$cfg" ] || continue
-    value=$(grep -o '"cloudGuard"[[:space:]]*:[[:space:]]*[^,}]*' "$cfg" 2>/dev/null \
-            | head -n 1 | sed -E 's/.*:[[:space:]]*//' | tr -d '"[:space:]\r')
-    [ -z "$value" ] && continue
-    [ "$value" = "off" ] || return 0
+    crew_guard_layer_armed "$cfg" profile cloudGuard && return 0
   done
   return 1
 }
@@ -62,7 +60,7 @@ if [ -z "$PY" ]; then
 fi
 
 printf '%s' "$INPUT" | CREW_CLOUD_GUARD_FLAVOUR=bash PYTHONUTF8=1 \
-  PYTHONIOENCODING=utf-8 "$PY" "$DIR/cloud_guard.py"
+  PYTHONIOENCODING=utf-8 "$PY" "$(crew_native_path "$DIR/cloud_guard.py")"
 status=$?
 
 if [ "$status" -ne 0 ]; then

@@ -18,9 +18,7 @@ AUDIT = os.path.join(_S, "completion_audit.py")
 LEDGER = os.path.join(_S, "review_ledger.py")
 HOOK = os.path.join(_S, "approval_hook.py")
 GUARD_SH = os.path.join(_S, "scope-guard.sh")
-GUARD_PS1 = os.path.join(_S, "scope-guard.ps1")
 AUDIT_SH = os.path.join(_S, "completion-audit.sh")
-AUDIT_PS1 = os.path.join(_S, "completion-audit.ps1")
 HOOK_SH = os.path.join(_S, "approval-hook.sh")
 MERGED_MAIN = os.path.join(_S, "merged_main.py")
 # T-0061: the ticket base branch (`tickets.baseBranch`).
@@ -70,9 +68,15 @@ SCOPE_MUTATIONS = (
      "        if state and _under(path, state):\n            return True\n",
      "        if False:\n            return True\n",
      _SG + "test_approval_state_is_blocked_even_in_report_mode[module]"),
+    # L-0897: the record is protected twice -- by name (SCOPE_BASE) and as
+    # bookkeeping (`is_crew_write_refused`, `.crew/.scope-base` is on
+    # CREW_BOOKKEEPING_PATHS) -- so dropping either alone stayed green. The
+    # entry drops both: only then does the record lose its protection.
     ("the scope base record loses its protection", GUARD,
-     "        if rel is not None and os.path.normcase(rel) == os.path.normcase(SCOPE_BASE):\n",
-     "        if False:\n",
+     "        if rel is not None and os.path.normcase(rel) == os.path.normcase(SCOPE_BASE):\n"
+     "            return True\n"
+     "        if rel is not None and crew_ticket.is_crew_write_refused(rel):\n",
+     "        if False:\n            return True\n        if False:\n",
      _SG + "test_the_scope_base_record_is_blocked[module]"),
     ("the git directory can be put in scope", GUARD,
      "    if common and (_under(real, common) or _under(named, common)):\n",
@@ -124,12 +128,6 @@ SCOPE_MUTATIONS = (
      "(exit $status); failing closed because .crew/config.json does not provably set "
      "scope.mode off.\" >&2\n  exit 0\n",
      _CA + "test_a_crashed_python_fails_closed_only_where_scope_is_armed[block-2-2-sh-scope-guard]"),
-    ("the PowerShell guard fails open when python crashes", GUARD_PS1,
-     "(exit $exitCode); failing closed because .crew/config.json does not provably set "
-     "scope.mode off.\")\n  exit 2\n",
-     "(exit $exitCode); failing closed because .crew/config.json does not provably set "
-     "scope.mode off.\")\n  exit 0\n",
-     _CA + "test_a_crashed_python_fails_closed_only_where_scope_is_armed[block-2-2-ps1-scope-guard]"),
     ("the bash audit fails open when python crashes", AUDIT_SH,
      '  _block_once "completion_audit.py did not run to a verdict (exit $status); nothing was '
      'audited."\n',
@@ -181,11 +179,6 @@ SCOPE_MUTATIONS = (
      "    if names_state and _WRITES_RE.search(command):\n",
      "    if False:\n",
      _SG + "test_a_shell_write_to_the_absolute_state_path_is_refused[module]"),
-    ("the PowerShell no-python reader accepts any mode as off", GUARD_PS1,
-     "      return ($mode.GetString() -ceq 'off')\n",
-     "      return $true\n",
-     _CA + "test_a_crashed_python_fails_closed_unless_scope_is_provably_off"
-     "[bogus-ps1-scope-guard]"),
     ("the bash audit misses stop_hook_active across a newline", AUDIT_SH,
      "if printf '%s' \"$INPUT\" | tr -d '\\r\\n' \\\n",
      "if printf '%s' \"$INPUT\" \\\n",
@@ -195,10 +188,6 @@ SCOPE_MUTATIONS = (
      '  if [ -e "$marker" ]; then\n',
      "  if false; then\n",
      _CA + "test_a_crashed_python_never_blocks_two_stops_in_a_row[sh]"),
-    ("the PowerShell audit blocks every stop while python is broken", AUDIT_PS1,
-     "  if (Test-Path -LiteralPath $marker) {\n",
-     "  if ($false) {\n",
-     _CA + "test_a_crashed_python_never_blocks_two_stops_in_a_row[ps1]"),
     ("the successor approval is not rechecked under the lock", LEDGER,
      "        receipt, why = _plan_approval_receipt(root, ticket, plan_hash)\n"
      "        if receipt is None:\n"
@@ -246,23 +235,6 @@ SCOPE_MUTATIONS = (
      '  [ -e "$cfg" ] || [ -L "$cfg" ] || return 0\n  return 0\n',
      _CA + "test_no_python_fails_closed_unless_scope_is_provably_off"
      "[trailing-comma-sh-completion-audit]"),
-    ("the PowerShell guard parses the config leniently", GUARD_PS1,
-     "    $doc = [System.Text.Json.JsonDocument]::Parse($text)\n",
-     "    $doc = [System.Text.Json.JsonDocument]::Parse($text, "
-     "[System.Text.Json.JsonDocumentOptions]@{ AllowTrailingCommas = $true })\n",
-     _CA + "test_no_python_fails_closed_unless_scope_is_provably_off"
-     "[trailing-comma-ps1-scope-guard]"),
-    ("the PowerShell audit parses the config leniently", AUDIT_PS1,
-     "    $doc = [System.Text.Json.JsonDocument]::Parse($text)\n",
-     "    $doc = [System.Text.Json.JsonDocument]::Parse($text, "
-     "[System.Text.Json.JsonDocumentOptions]@{ AllowTrailingCommas = $true })\n",
-     _CA + "test_no_python_fails_closed_unless_scope_is_provably_off"
-     "[trailing-comma-ps1-completion-audit]"),
-    ("the PowerShell reader takes the first of two scope keys", GUARD_PS1,
-     "      if ($scopes.Count -ne 1) { return $false }\n",
-     "      if ($scopes.Count -lt 1) { return $false }\n",
-     _CA + "test_no_python_fails_closed_unless_scope_is_provably_off"
-     "[escaped-duplicate-scope-ps1-scope-guard]"),
     ("a cli receipt continues a NEEDS_REPLAN ledger", LEDGER,
      "    result = crew_ticket.accepted(root, ticket)\n",
      "    result = crew_ticket.status(root, ticket)\n",
@@ -451,32 +423,15 @@ SCOPE_MUTATIONS = (
      "    return sorted(set(since_base) & set(since_merged))\n",
      "    return sorted(set(since_base))\n",
      _CA + "test_paths_identical_to_merged_main_are_not_out_of_scope[sh]"),
-    ("MERGED MAIN: keep drops nothing, through the PowerShell audit", MERGED_MAIN,
-     "    return sorted(set(since_base) & set(since_merged))\n",
-     "    return sorted(set(since_base))\n",
-     _CA + "test_paths_identical_to_merged_main_are_not_out_of_scope[ps1]"),
     ("MERGED MAIN: keep widened, a ticket edit on top, bash audit", MERGED_MAIN,
      "    return sorted(set(since_base) & set(since_merged))\n",
      "    return sorted(set(since_base) - set(since_merged))\n",
      _CA + "test_a_ticket_edit_on_top_of_merged_mains_edit_stays_flagged[sh]"),
-    ("MERGED MAIN: keep widened, a ticket edit on top, PowerShell audit", MERGED_MAIN,
-     "    return sorted(set(since_base) & set(since_merged))\n",
-     "    return sorted(set(since_base) - set(since_merged))\n",
-     _CA + "test_a_ticket_edit_on_top_of_merged_mains_edit_stays_flagged[ps1]"),
     ("MERGED MAIN: keep widened, an edit after the merge, bash audit", MERGED_MAIN,
      "    return sorted(set(since_base) & set(since_merged))\n",
      "    return sorted(set(since_base) - set(since_merged))\n",
      _CA + "test_an_out_of_touch_edit_after_a_merge_of_main_stays_flagged[sh]"),
-    ("MERGED MAIN: keep widened, an edit after the merge, PowerShell audit", MERGED_MAIN,
-     "    return sorted(set(since_base) & set(since_merged))\n",
-     "    return sorted(set(since_base) - set(since_merged))\n",
-     _CA + "test_an_out_of_touch_edit_after_a_merge_of_main_stays_flagged[ps1]"),
     # --- T-0097 ------------------------------------------------------------------
-    ("PROBE: a silent candidate's null answer is piped into ConvertFrom-Json", AUDIT_PS1,
-     "          $probe = if ($line) { $line | ConvertFrom-Json } else { $null }\n",
-     "          $probe = $line | ConvertFrom-Json\n",
-     "tests/test_ps1_python_probe.py::"
-     "test_a_silent_candidate_is_rejected_without_writing_to_stderr"),
     # T-0061: the ticket base branch. Each entry names the one test that
     # sees it; the neighbour cases stay green on purpose.
     (
@@ -726,7 +681,7 @@ SCOPE_MUTATIONS = (
     ("the bash gate blocks on the scope line", VERIFY_SH,
      ": # keep the scope report from ever deciding this script's status\n",
      "exit 2\n",
-     _SR + "test_both_gates_print_the_same_scope_line[sh-outside]"),
+     _SR + "test_both_gates_print_the_same_scope_line[outside]"),
     # L-0711 review round 4: an unreadable INDEX, a could-not-tell merged
     # main and a file name carrying a newline each stay visible on the line.
     ("the scope report reads an unreadable INDEX as no open ticket", SCOPE_REPORT,

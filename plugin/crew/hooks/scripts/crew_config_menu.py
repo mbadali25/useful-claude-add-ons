@@ -62,8 +62,7 @@ AREAS = (
 # Values the READER accepts, for keys that have no code-owned tuple. Each
 # entry names that reader. Keys absent here fall back to generated choices
 # (current, default, recommendation, values either layer holds): memory.mode,
-# pm.mode, qa/dev.codex.reasoningEffort, docs.theme, docs.reportTheme,
-# bitbucket.mergeGate.preset, and every free-text key (paths, env var names,
+# qa/dev.codex.reasoningEffort, and every free-text key (paths, env var names,
 # ids, numbers).
 _KNOWN_VALUES = {
     # plugin/crew/commands/jira-sync.md:11, plugin/crew/commands/sdp-sync.md:11,
@@ -72,8 +71,6 @@ _KNOWN_VALUES = {
     # plugin/crew/hooks/scripts/crew_notify.py `_filter` (`none` exits) and
     # `_deliver` (telegram, teams); a repo null inherits the global provider.
     "notify.provider": ("none", "telegram", "teams"),
-    # plugin/crew/commands/sdp-sync.md:63
-    "sdp.noteVisibility": ("private", "public"),
     # plugin/crew/skills/crew-providers/SKILL.md:425
     "secondOpinion.provider": ("none", "gemini", "local"),
     # plugin/crew/skills/crew-providers/SKILL.md:426
@@ -87,14 +84,10 @@ _KNOWN_VALUES = {
     "autopilot.sleep.questions": ("human", "self", "risk", None),
     # crew_sleep.DEPLOY_OVERRIDES, or null (L-0654); `all` is never a night value.
     "autopilot.sleep.deploy": (None, "nonprod", "none"),
-    # crew_sleep.read_notify_hold: null or exactly true (L-0656).
-    "autopilot.sleep.notifyHold": (None, True),
-    # plugin/crew/skills/crew-graph/SKILL.md:168
-    "graph.mode": ("code-only",),
     # plugin/crew/hooks/scripts/crew_autocycle.py reads true from the machine
-    # file only; a repo false vetoes. CONFIG.md §10.
+    # file only; a repo false vetoes. docs/crew/config-rationale.md.
     "context.autoClear.enabled": (True, False, None),
-    # plugin/crew/hooks/scripts/crew_resume.py, same rule. CONFIG.md §14a.
+    # plugin/crew/hooks/scripts/crew_resume.py, same rule. docs/crew/config-rationale.md.
     "resume.auto": (True, False, None),
 }
 
@@ -317,7 +310,12 @@ def _paths(template):
     known role kind, plus any role the layers already name."""
     out = []
     for dotted in crew_config.leaf_paths(template):
-        if dotted in _role_tables():
+        if dotted == "guards.overrides":
+            # L-0725: the profile row comes first (it is the template's first
+            # `guards` leaf); the open overrides table is one row per guard.
+            out.extend((f"guards.overrides.{name}", None)
+                       for name in crew_state.ALL_GUARD_NAMES)
+        elif dotted in _role_tables():
             out.extend((f"{dotted}.{kind}", dotted)
                        for kind in _role_tables()[dotted][1])
         else:
@@ -381,8 +379,16 @@ def menu_spec(root, layer, global_path=None, pending=None):
         default = _unmissing(_dig(defaults, dotted))
         if table:
             default = NO_PIN
-        if dotted in explain:
-            value, source = explain[dotted]["value"], explain[dotted]["source"]
+        if dotted.startswith("guards.overrides."):
+            # With no override a guard takes its profile's value; the profile
+            # default is `off`, which is the guard's own default.
+            default = crew_state.GUARD_DEFAULTS[dotted[len("guards.overrides."):]]
+        shown = ("guards." + dotted[len("guards.overrides."):]
+                 if dotted.startswith("guards.overrides.") else dotted)
+        if shown in explain:
+            # An override row shows the value IN FORCE for its guard (the
+            # ratcheted one), not only what this layer wrote.
+            value, source = explain[shown]["value"], explain[shown]["source"]
         else:
             value = _unmissing(_dig(resolved, dotted))
             source = _source(repo_pruned, global_kept, dotted, value, defaults)
@@ -681,7 +687,10 @@ def delete_preview(root, parsed, global_path=None):
     `before` is what is in force now, `after` what platform-sync's heal leaves.
     """
     defaults = crew_config.default_config()
-    known = crew_config.leaf_paths(defaults)
+    # L-0725: the twelve guards are no longer leaves, but what is IN FORCE for
+    # each is exactly what a delete changes, so each is a row of its own.
+    known = crew_config.leaf_paths(defaults) + [
+        f"guards.{name}" for name in crew_state.ALL_GUARD_NAMES]
     known_set = set(known)
     now = {row["path"]: row["value"] for row in
            crew_config.explain_config(root, global_path)}
@@ -726,7 +735,17 @@ def _held_by_ratchet(dotted, repo_raw, global_kept, value):
     (`crew_guards.effective_ratcheted`), so a repo `block` under a machine
     `allow` stays `block` -- named, so the preview says why no widening."""
     spec = crew_state.ratchet_spec(dotted)
-    if spec is None or _dig(repo_raw, dotted) is crew_config._MISSING:  # pylint: disable=protected-access
+    if spec is None:
+        return None
+    name = dotted[len("guards."):] if dotted.startswith("guards.") else None
+    if name in crew_state.ALL_GUARD_NAMES:
+        # Per layer, profile and overrides included (L-0725), not the raw key.
+        repo_value = crew_state.layer_guard_value(repo_raw, name)
+        machine = crew_state.layer_guard_value(global_kept, name)
+        if repo_value is None or machine is None or spec[2](machine) <= spec[2](value):
+            return None
+        return crew_state.guard_tiers(name)[1](machine)
+    if _dig(repo_raw, dotted) is crew_config._MISSING:  # pylint: disable=protected-access
         return None
     machine = _dig(global_kept, dotted)
     if machine is crew_config._MISSING or spec[2](machine) <= spec[2](value):  # pylint: disable=protected-access

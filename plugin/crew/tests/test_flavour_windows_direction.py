@@ -1,4 +1,4 @@
-"""The Windows direction of the flavour guard: both flavours run.
+"""The Windows direction of the flavour guard: the blocking hooks, .sh against .py.
 
 test_flavour_guard.py proves each .ps1 stands down OFF Windows. Nothing
 proved what happens ON Windows, where hooks.json's two registrations per
@@ -10,14 +10,14 @@ as the necessary condition for a double fire.
 The rule these cases hold the hooks to:
 
 * A hook that only EMITS (a ping, a transcript copy, a handoff skeleton, an
-  injected note) emits exactly ONCE per event across both flavours. They
-  take a per-event claim -- event_claim.py, crew_context.py's claim, or
-  hook_once.py for once-per-session SessionStart work.
+  injected note) emits exactly ONCE per event. Its .ps1 twin was deleted in
+  L-0727 slice 3, so the cross-flavour cases are gone; the per-event claim
+  (event_claim.py) is still held to its own contract below.
 * A hook that BLOCKS keeps running in both flavours and both reach the same
   verdict. Never loosened to save the second run.
 
-Simulated here with `OS=Windows_NT` for the .ps1 (so its flavour guard
-proceeds) and the .sh run as-is, on the same payload, in the same repo.
+Simulated here with the .sh and the .py run side by side, on the same
+payload, in the same repo (the .ps1 twins went with L-0869).
 """
 import http.server
 import json
@@ -36,11 +36,10 @@ from review_fixtures import init_repo
 from scope_fixtures import edit, make_repo, ready, run_hook, stop
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent.parent / "hooks" / "scripts"
-PWSH = crew_fixtures.resolve_pwsh()
 BASH = crew_fixtures.resolve_bash()
 
-pytestmark = pytest.mark.skipif(PWSH is None or BASH is None,
-                                reason="needs pwsh and bash - the Windows direction was NOT run")
+pytestmark = pytest.mark.skipif(BASH is None,
+                                reason="needs bash - the Windows direction was NOT run")
 
 
 def _env(root, windows, **extra):
@@ -54,12 +53,10 @@ def _env(root, windows, **extra):
 
 def _run(flavour, stem, root, payload, args=(), **extra):
     data = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
-    if flavour == "sh":
-        cmd = [BASH, str(SCRIPTS / (stem + ".sh")), *args]
-    else:
-        cmd = [PWSH, "-NoProfile", "-File", str(SCRIPTS / (stem + ".ps1")), *args]
+    assert flavour == "sh", flavour
+    cmd = [BASH, str(SCRIPTS / (stem + ".sh")), *args]
     return subprocess.run(cmd, input=data, cwd=str(root), capture_output=True,
-                          env=_env(root, flavour == "ps1", **extra), check=False, timeout=120)
+                          env=_env(root, False, **extra), check=False, timeout=120)
 
 
 def _crew_repo(tmp_path, config):
@@ -79,36 +76,39 @@ class _Counter(http.server.BaseHTTPRequestHandler):
         _Counter.hits.append(self.rfile.read(length))
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"{}")
+        self.wfile.write(b'{"ok": true}')
 
     def log_message(self, *_args):  # pylint: disable=arguments-differ
         pass
 
 
-@pytest.fixture(name="teams")
-def _teams():
+BOT_TOKEN = "123456789:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+
+
+@pytest.fixture(name="bot")
+def _bot():
     _Counter.hits = []
     server = http.server.HTTPServer(("127.0.0.1", 0), _Counter)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    yield f"http://127.0.0.1:{server.server_address[1]}/hook"
+    yield f"http://127.0.0.1:{server.server_address[1]}"
     server.shutdown()
 
 
 def _notify_repo(tmp_path):
-    return _crew_repo(tmp_path, {"notify": {"provider": "teams"}})
+    return _crew_repo(tmp_path, {"notify": {"provider": "telegram", "chatId": "4242"}})
 
 
 def _notify_home(root):
     """HOME / USERPROFILE for the notify hooks: a fixture home whose
-    machine-global `~/.claude/crew/config.json` names `urlEnv` -- the only
+    machine-global `~/.claude/crew/config.json` names `tokenEnv` -- the only
     layer crew_notify honours it from (GLOBAL_ONLY_KEYS) -- so no case reads
     the real `~/.claude`, and none passes only because the machine has one."""
     home = pathlib.Path(root).parent / "notify-home"
     crew = home / ".claude" / "crew"
     crew.mkdir(parents=True, exist_ok=True)
     (crew / "config.json").write_text(
-        json.dumps({"notify": {"urlEnv": "CREW_TEST_TEAMS_URL"}}), encoding="utf-8")
+        json.dumps({"notify": {"tokenEnv": "CREW_TEST_TG_TOKEN"}}), encoding="utf-8")
     return {"HOME": str(home), "USERPROFILE": str(home)}
 
 
@@ -120,99 +120,46 @@ def _notification(root, message="Claude needs your permission", prompt="p-1",
 
 
 def _both_notify(root, url, payload, words=None):
-    for flavour in ("sh", "ps1"):
-        done = _run(flavour, "notify", root, payload, ("hook",), CREW_TEST_TEAMS_URL=url,
+    for flavour in ("sh",):
+        done = _run(flavour, "notify", root, payload, ("hook",),
+                    CREW_NOTIFY_TELEGRAM_BASE=url, CREW_TEST_TG_TOKEN=BOT_TOKEN,
                     **_notify_home(root))
         if words is not None:
             words.append(done.stdout.decode("utf-8", "replace").strip())
     return len(_Counter.hits)
 
 
-def test_one_notification_sends_one_ping_across_both_flavours(tmp_path, teams):
-    """One ping, AND the twin stood down at the claim: it never reached
-    crew_notify.py (no result word). crew_notify's own episode rule would
-    also keep a sequential second run quiet, so the ping count alone cannot
-    tell a working claim from a bypassed one; two flavours racing on a real
-    Windows host can both pass that check before either writes."""
+def test_one_notification_sends_one_ping(tmp_path, bot):
     root = _notify_repo(tmp_path)
     words = []
 
-    assert (_both_notify(root, teams, _notification(root), words), words) == (1, ["sent", ""])
+    assert (_both_notify(root, bot, _notification(root), words), words) == (1, ["sent"])
 
 
-def test_a_second_different_notification_is_its_own_event(tmp_path, teams):
+def test_a_second_different_notification_is_its_own_event(tmp_path, bot):
     root = _notify_repo(tmp_path)
-    _both_notify(root, teams, _notification(root))
+    _both_notify(root, bot, _notification(root))
 
-    assert _both_notify(root, teams, _notification(root, "Permission needed", prompt="p-2")) == 2
+    assert _both_notify(root, bot, _notification(root, "Permission needed", prompt="p-2")) == 2
 
 
-def test_idle_prompt_sends_nothing_across_both_flavours(tmp_path, teams):
+def test_idle_prompt_sends_nothing(tmp_path, bot):
     root = _notify_repo(tmp_path)
 
-    assert _both_notify(root, teams, _notification(root, "Claude is waiting for your input",
+    assert _both_notify(root, bot, _notification(root, "Claude is waiting for your input",
                                                     ntype="idle_prompt")) == 0
 
 
-def test_a_notify_call_with_no_payload_always_sends(tmp_path, teams):
+def test_a_notify_call_with_no_payload_always_sends(tmp_path, bot):
     """A command calling notify.sh by hand is not a hook event and has no
     twin to race. Two different results, so crew_notify's dedupe (same
     event, ticket and reason inside the window) is not what is measured."""
     root = _notify_repo(tmp_path)
     for index in range(2):
         _run("sh", "notify", root, b"", ("deploy", f"qa abc{index} - pass", "--outcome", "pass"),
-             CREW_TEST_TEAMS_URL=teams, **_notify_home(root))
+             CREW_NOTIFY_TELEGRAM_BASE=bot, CREW_TEST_TG_TOKEN=BOT_TOKEN, **_notify_home(root))
 
     assert len(_Counter.hits) == 2
-
-
-def test_one_precompact_writes_one_transcript_copy_across_both_flavours(tmp_path):
-    """A second apart on purpose: the copy is named by the second it was
-    taken, so two flavours in the SAME second would collapse to one file
-    whether or not the claim works."""
-    root = _crew_repo(tmp_path, {})
-    transcript = root / "t.jsonl"
-    transcript.write_text("{}\n", encoding="utf-8")
-    payload = {"hook_event_name": "PreCompact", "session_id": "win-1", "cwd": str(root),
-               "transcript_path": str(transcript), "trigger": "auto"}
-
-    _run("sh", "handoff-write", root, payload)
-    time.sleep(1.2)
-    _run("ps1", "handoff-write", root, payload)
-
-    assert len(list((root / ".crew" / "transcripts").glob("*.jsonl"))) == 1
-
-
-def test_one_clear_prints_the_handoff_once_across_both_flavours(tmp_path):
-    root = _crew_repo(tmp_path, {"memory": {"inject": False}})
-    (root / ".work").mkdir()
-    (root / ".work" / "HANDOFF.md").write_text("# Handoff\nnext: ship it\n", encoding="utf-8")
-    payload = {"hook_event_name": "SessionStart", "session_id": "win-1", "cwd": str(root),
-               "source": "clear"}
-
-    outputs = [b"next: ship it" in _run(f, "handoff-read", root, payload).stdout
-               for f in ("sh", "ps1")]
-
-    assert outputs.count(True) == 1
-
-
-def test_one_session_start_injects_context_once_across_both_flavours(tmp_path):
-    root = _crew_repo(tmp_path, {})
-    payload = {"hook_event_name": "SessionStart", "session_id": "win-1", "cwd": str(root),
-               "source": "startup", "transcript_path": str(root / "t.jsonl")}
-
-    outputs = [bool(_run(f, "crew-context", root, payload).stdout.strip()) for f in ("sh", "ps1")]
-
-    assert outputs.count(True) == 1
-
-
-def test_the_two_ps1_emitters_carry_the_one_claim_function_byte_for_byte():
-    def claim_fn(stem):
-        src = (SCRIPTS / (stem + ".ps1")).read_text(encoding="utf-8")
-        start = src.index("function Test-CrewEventClaim(")
-        return src[start:src.index("\n}\n", start) + 3]
-
-    assert claim_fn("notify") == claim_fn("handoff-write")
 
 
 # --- event_claim.py itself ------------------------------------------------------
@@ -304,6 +251,6 @@ def test_a_blocking_hook_reaches_the_same_verdict_in_both_flavours(tmp_path, ste
             (root / "other" / "keep.py").write_text("x = 2\n", encoding="utf-8")
         payload = stop(root)
 
-    codes = [run_hook(flavour, stem, payload, root)[0] for flavour in ("sh", "ps1")]
+    codes = [run_hook(flavour, stem, payload, root)[0] for flavour in ("sh", "module")]
 
     assert codes == [expected, expected]

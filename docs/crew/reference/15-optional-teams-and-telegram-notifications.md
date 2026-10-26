@@ -26,8 +26,8 @@ Three events send, each led by a subject that says what happened (T-0051, T-0060
   unknown` (loud), never a pass.
 - `question` — Claude Code stopped and is waiting on you: `Question` (an
   AskUserQuestion or an elicitation) or `Needs permission` (any other tool),
-  from the `Notification` hook's `notification_type` (`notify.questionTypes`
-  overrides the built-in five). An idle "finished" prompt never pings. The line
+  from the `Notification` hook's `notification_type` (the built-in five
+  types are fixed; `notify.questionTypes` was removed). An idle "finished" prompt never pings. The line
   says what it is waiting on — the pending question, or the tool — read from
   the session transcript, capped and redacted. One ping per waiting episode:
   no repeat until your next typed message in that session. Approving a

@@ -16,13 +16,13 @@ else, and records the result in `.crew/config.json`. It distinguishes native
 Linux, macOS, WSL1, WSL2, Git Bash on Windows, and native Windows, and reports
 which toolchains are actually present.
 
-Every hook is registered **twice** in `hooks.json` — once as bash, once as its
-`.ps1` twin with `shell: powershell` — because `hooks.json` cannot know which
-shell a given machine has, so one flavour failing is expected rather than a
-fault. Only the `PreToolUse` guards branch, and they branch on which **tool** the
-command came from rather than on the OS, so a `Bash` call is judged by bash rules
-even on Windows. See
-[How the Windows half works](25-command-and-agent-reference.md#how-the-windows-half-works).
+`hooks.json` registers **one launcher per event per shell** — `crew-hook.sh`, and
+`crew-hook.ps1` with `shell: powershell` — because it cannot know which shell a
+given machine has. On Windows the PowerShell launcher is the only one that runs
+and the dispatcher it starts needs Git for Windows; elsewhere the bash launcher
+runs. The `PreToolUse` guards branch on which **tool** the command came from
+rather than on the OS, so a `Bash` call is judged by bash rules even on Windows.
+See [How the Windows half works](25-command-and-agent-reference.md#how-the-windows-half-works).
 
 **If WSL is available, run Claude Code inside it.** One shell, one code path, and
 the harness matches CI. Native Windows works but doubles the surface area for no
@@ -30,9 +30,8 @@ benefit unless the application genuinely requires it.
 
 **On native Windows, crew picks a shell route for its long-running jobs.** The
 per-step tests and verify-map checks in `/crew:implement`, and graphify builds,
-run through `crew_shell.py run`. It routes by `shellRoute.mode` (`auto`, `wsl`,
-`powershell` or `gitbash`) and prints one `crew-shell:` line naming the route
-and why. `auto` uses WSL2 when it is usable and either the repo lives inside
+run through `crew_shell.py run`. It routes automatically (the `shellRoute.mode` and `shellRoute.distro` settings were removed) and prints one `crew-shell:` line naming the route
+and why. It uses WSL2 when it is usable and either the repo lives inside
 WSL or a measurement showed WSL faster for this repo. Otherwise it runs plain
 argv directly and bash syntax in Git Bash. A bash string never goes to pwsh.
 `/crew:status` shows the route on a `shell` line. Hooks do not change, and

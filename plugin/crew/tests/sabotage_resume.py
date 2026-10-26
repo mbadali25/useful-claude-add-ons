@@ -25,7 +25,6 @@ SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 RESUME = os.path.join(SCRIPTS, "crew_resume.py")
 CONTEXT = os.path.join(SCRIPTS, "crew_context.py")
 WRITE_SH = os.path.join(SCRIPTS, "handoff-write.sh")
-WRITE_PS1 = os.path.join(SCRIPTS, "handoff-write.ps1")
 _T = "tests/test_crew_resume.py::"
 _H = "tests/test_crew_resume_hook.py::"
 _OFF = "  # pylint: disable=using-constant-test\n"
@@ -95,10 +94,6 @@ RESUME_MUTATIONS = (
      "precompact --root . >/dev/null 2>&1\n",
      "  :\n",
      _H + "test_precompact_manual_compact_may_run"),
-    ("handoff-write.ps1 stops writing the PreCompact record", WRITE_PS1,
-     "$resumePy = Resolve-CrewPython\n",
-     "$resumePy = ''\n",
-     _H + "test_precompact_record_same_in_both_flavours"),
     # --- review round 1 ----------------------------------------------------
     # BLOCK: the reviewer's own mutation. An extra line on every UNARMED
     # /clear must fail the whole-output comparison with base 768a747a.
@@ -119,11 +114,6 @@ RESUME_MUTATIONS = (
      '  rm -f "$PRECOMPACT_DIR/precompact-$PRECOMPACT_KEY.json" 2>/dev/null\n',
      "  :\n",
      _H + "test_a_later_precompact_with_no_python_leaves_no_manual_record[sh]"),
-    ("handoff-write.ps1 no longer removes the old PreCompact record", WRITE_PS1,
-     '  Remove-Item -LiteralPath (Join-Path $precompactDir "precompact-$precompactKey.json") '
-     "-Force -ErrorAction SilentlyContinue\n",
-     "  $null = $precompactDir\n",
-     _H + "test_a_later_precompact_with_no_python_leaves_no_manual_record[ps1]"),
     ("write_precompact_record keeps the old record when its own write fails", RESUME,
      "    try:\n        os.unlink(path)\n    except FileNotFoundError:\n        pass\n"
      "    except OSError:\n        if not _blank(path):\n            _mark_stuck(root, session)\n"
@@ -190,10 +180,6 @@ RESUME_MUTATIONS = (
      "[ -f .crew/config.json ] || [ -f .crew/crew.json ] || exit 0\n",
      "[ -f .crew/config.json ] || exit 0\n",
      _H + "test_a_crew_json_only_repo_still_records_a_manual_compact[sh]"),
-    ("handoff-write.ps1 exits in a crew.json-only repo again", WRITE_PS1,
-     'if (-not (Test-Path ".crew/config.json") -and -not (Test-Path ".crew/crew.json")) { exit 0 }\n',
-     'if (-not (Test-Path ".crew/config.json")) { exit 0 }\n',
-     _H + "test_a_crew_json_only_repo_still_records_a_manual_compact[ps1]"),
     ("the CLI decide skips the staleness rule", RESUME,
      "                         stale=_is_stale(root, cfg, rel, text))\n",
      "                         stale=False)\n",
@@ -301,11 +287,6 @@ RESUME_MUTATIONS = (
      '    { : > "$PRECOMPACT_DIR/precompact-$PRECOMPACT_KEY.stuck"; } 2>/dev/null\n',
      "    :\n",
      _H + "test_a_record_the_shell_could_not_remove_leaves_a_stuck_marker[sh]"),
-    ("handoff-write.ps1 leaves no stuck marker when Remove-Item fails", WRITE_PS1,
-     '    New-Item -ItemType File -Force -Path (Join-Path $precompactDir "precompact-$precompactKey.stuck") '
-     "-ErrorAction SilentlyContinue | Out-Null\n",
-     "    $null = $precompactKey\n",
-     _H + "test_a_record_the_shell_could_not_remove_leaves_a_stuck_marker[ps1]"),
     ("clear resumes a handoff another process wrote", RESUME,
      '    if entry.get("process") != me:\n        return _OTHER_SESSION\n',
      "",
@@ -359,11 +340,6 @@ RESUME_MUTATIONS = (
      '    return crew_resume.record_author(root, payload.get("session_id"), handoff)\n',
      '    return crew_resume.record_author(root, payload.get("session_id"), handoff)\n',
      _H + "test_unarmed_writes_no_author_record"),
-    ("the recorder sits behind the memory.inject gate", CONTEXT,
-     "    cfg = load_crew_config(root)\n    _record_author_logged(root, cfg, payload, harness)\n",
-     "    cfg = load_crew_config(root)\n    if _inject_on(cfg):\n"
-     "        _record_author_logged(root, cfg, payload, harness)\n",
-     _H + "test_injection_off_still_records_the_author"),
     ("the Claude Code recogniser matches nothing", RESUME,
      'CLAUDE_COMM = "claude"\n',
      'CLAUDE_COMM = "node"\n',

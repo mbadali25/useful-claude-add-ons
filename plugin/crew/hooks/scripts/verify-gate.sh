@@ -1600,6 +1600,7 @@ def _rule_key(rule):
 
 measured_used = {}   # rule index -> True when its cost came from the cache
 measured_below = {} # rule index -> declared seconds a cheaper measurement replaced
+measured_above = {} # rule index -> declared seconds a dearer measurement replaced
 truly_unknown = {}   # rule index -> True when it needs a fresh measurement
 
 # COMMAND IDENTITY includes the rule's declared env, not just its text. Two
@@ -1651,23 +1652,28 @@ for f in changed:
                 if (isinstance(secs, (int, float))
                         and not isinstance(secs, bool) and secs >= 0):
                     rule_secs[ri] = secs
-                    # A measurement on THIS machine below the declared price
-                    # wins; one above it never does. Declared `seconds` are
-                    # timed on one host and go stale, and an over-stated rule
-                    # that reads as over the budget alone is chronic: never
-                    # run at Stop at all. min() can only make a rule cheaper,
-                    # so it can turn this rule's chronic deferral into a run,
-                    # never this rule's run into a deferral (the budget it now
-                    # takes can still defer a LATER rule acutely). The cache is rewritten from every
-                    # clean run, so a rule that slows down re-prices upward.
+                    # A valid measurement on THIS machine replaces the declared
+                    # price in BOTH directions (latest wins). Declared `seconds`
+                    # are timed on one host and go stale: an over-stated rule
+                    # that reads as over the budget alone is chronic and never
+                    # runs at Stop, and an under-stated one spends budget it
+                    # does not have and never defers its neighbour. The cache
+                    # is rewritten from every clean run, so a rule that slows
+                    # down re-prices upward. A rule priced over the budget by
+                    # measurement is chronic and its entry is refreshed only by
+                    # `/crew:verify --all`, which the notice names.
                     cached = _timings.get(key)
                     if (isinstance(cached, int) and not isinstance(cached, bool)
-                            and 0 < cached < secs):
+                            and cached > 0):
                         rule_secs[ri] = cached
-                        measured_below[ri] = secs
+                        if cached < secs:
+                            measured_below[ri] = secs
+                        elif cached > secs:
+                            measured_above[ri] = secs
                 else:
                     cached = _timings.get(key)
-                    if isinstance(cached, int) and cached > 0:
+                    if (isinstance(cached, int) and not isinstance(cached, bool)
+                            and cached > 0):
                         rule_secs[ri] = cached
                         measured_used[ri] = True
                 if REACH_FILTER:
@@ -1815,6 +1821,10 @@ for _ri in sorted(measured_used):
 for _ri in sorted(measured_below):
     notices.append("verify-gate: rules[%d] priced at %ss, measured on this machine, below its declared %ss"
                    % (_ri, int(rule_secs[_ri]), measured_below[_ri]))
+for _ri in sorted(measured_above):
+    notices.append("verify-gate: rules[%d] priced at %ss, measured on this machine, above its declared %ss "
+                   "- run /crew:verify --all to re-measure"
+                   % (_ri, int(rule_secs[_ri]), measured_above[_ri]))
 
 # --- the tree-pass cache (verify_record.passes_load) ------------------------
 # A command that passed on this exact tree (tree_snapshot(stable=True): HEAD,
@@ -2823,13 +2833,22 @@ if [ -n "$PY" ] && [ -n "$EXTRAS" ]; then
   SYNC_PY="$FP_DIR/verify_record.py"
   if [ -f "$SYNC_PY" ]; then
     SYNC_SHA=$(git rev-parse HEAD 2>/dev/null)
-    "$PY" -c '
+    # EXTRAS goes through a temp FILE, never argv (see CHANGED_FILE above):
+    # one argv element is capped at 128 KiB on Linux and the whole command line
+    # at 32,767 characters on Windows, and a large map's matched rules pass both.
+    EXTRAS_FILE=$(mktemp 2>/dev/null) || EXTRAS_FILE=""
+    if [ -z "$EXTRAS_FILE" ]; then
+      echo "verify-gate: could not create a temp file for the record sync; NOT advancing the marker" >&2
+    else
+      printf '%s\n' "$EXTRAS" > "$EXTRAS_FILE"
+      "$PY" -c '
 import json, sys
 try:
     sys.stdout.reconfigure(newline="\n")
 except (AttributeError, ValueError):
     pass
-extras = json.loads(sys.argv[1])
+with open(sys.argv[1], encoding="utf-8") as fh:
+    extras = json.loads(fh.read())
 cmd_log = []
 for line in sys.stdin.read().split("\n"):
     line = line.strip()
@@ -2840,8 +2859,17 @@ for line in sys.stdin.read().split("\n"):
     except ValueError:
         pass
 print(json.dumps({"sha": sys.argv[2], "all": sys.argv[3] == "--all", "matched_rules": extras.get("matched_rules", []), "cmd_log": cmd_log}))
-' "$EXTRAS" "$SYNC_SHA" "$BUDGET_FLAG" <<< "$CMD_LOG" | tr -d '\r' | gate_record_sync "$PY" "$SYNC_PY"
-    SYNC_STATUS=${PIPESTATUS[2]}
+  ' "$EXTRAS_FILE" "$SYNC_SHA" "$BUDGET_FLAG" <<< "$CMD_LOG" | tr -d '\r' | gate_record_sync "$PY" "$SYNC_PY"
+      SYNC_PIPE=("${PIPESTATUS[@]}")
+      rm -f "$EXTRAS_FILE"
+      SYNC_STATUS=${SYNC_PIPE[2]}
+      # A producer or filter that failed is a failed sync even when the stage
+      # after it read an empty stdin and exited 0: the marker must not advance.
+      if [ "$SYNC_STATUS" -eq 0 ] && { [ "${SYNC_PIPE[0]}" -ne 0 ] || [ "${SYNC_PIPE[1]}" -ne 0 ]; }; then
+        echo "verify-gate: the record sync payload could not be built (producer exit ${SYNC_PIPE[0]}, filter exit ${SYNC_PIPE[1]}); NOT advancing the marker" >&2
+        SYNC_STATUS=1
+      fi
+    fi
   else
     echo "verify-gate: could not sync the record (verify_record.py not found at $SYNC_PY); NOT advancing the marker" >&2
   fi

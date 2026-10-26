@@ -426,7 +426,7 @@ def test_pwsh_set_applies_to_powershell_files_only():
     def applies(files):
         return "PWSH" in cs.effective_set(_REPO_ROOT, files)["sets"]
 
-    assert (applies(["plugin/crew/hooks/scripts/verify-gate.ps1"]), applies(["Mod/Mod.psm1"]),
+    assert (applies(["plugin/crew/hooks/scripts/promote-gate.ps1"]), applies(["Mod/Mod.psm1"]),
             applies(["Mod/Mod.psd1"]), applies(["plugin/crew/hooks/scripts/crew_guards.py"]),
             applies(["README.md"]), applies(["x.ps1xml"])) == (
         True, True, True, False, False, False)

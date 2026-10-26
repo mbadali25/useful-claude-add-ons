@@ -36,8 +36,8 @@ the next session opens already holding the handoff. The one manual step is the
 
 No hook input reports token count, but the JSONL transcript that hooks receive
 as `transcript_path` does: every assistant turn carries `message.usage`, and
-the last one is the real prompt size. `context-watch.sh` and its PowerShell
-twin read that - see "How the reading is taken" below. `/context` should agree
+the last one is the real prompt size. `context-watch.sh` reads that (under Git
+Bash on Windows) - see "How the reading is taken" below. `/context` should agree
 with the watcher to within a turn; if it does not, the budget is wrong, not
 the reading, and the warning prints both numbers so you can see which.
 
@@ -49,10 +49,10 @@ that gate a `Stop` hook returning exit 2 will fire on every turn and trap the
 session in a loop. It never blocks on a `stop_hook_active` continuation, but
 that continuation is the turn it hands to auto-clear.
 
-The claim is taken atomically - `set -o noclobber` in bash, `FileMode::CreateNew`
-in PowerShell - because on Windows with Git Bash installed **both** flavours
-really do run on the same `Stop`, and a test-then-create lets both through and
-prints the warning twice.
+The claim is taken atomically - `set -o noclobber` in bash - so two `Stop` hooks
+firing together cannot both pass a test-then-create and print the warning twice
+(before L-0727 slice 3, native Windows ran a PowerShell flavour beside the bash
+one).
 
 **The marker is per session.** It used to be one file per repository, so two
 terminals in one repo shared it: the first to cross the threshold silenced the
@@ -139,12 +139,11 @@ want here.
 
 ### Auto-resume
 
-`SessionStart` can return JSON with an `additionalContext` payload. With
-`memory.inject` on (the default since 1.0.0) and a handoff on disk, the context
-hook (`crew_context.py`) injects the handoff text into `additionalContext` on
+`SessionStart` can return JSON with an `additionalContext` payload. With a
+handoff on disk (memory injection is always on), the context hook (`crew_context.py`) injects the handoff text into `additionalContext` on
 `clear`/`compact`/`resume`, and a pointer plus its extracted next action on
 `startup` — the human presses Enter rather than typing. It does not start
-working on its own. `context.autoResume` is no longer read.
+working on its own.
 
 `SessionStart` can also return `initialUserMessage`, meant to start the new
 session working with no human turn. **It does not work interactively.**
@@ -160,9 +159,9 @@ does nothing), the injected handoff on `clear` or a manual `/compact` also
 names the next command from the `resume:` line — `Auto-resume: ready to run
 /crew:done T-0001.`, saying it did not start from the hook, so press Enter or
 type it — or says `Auto-resume did not start: <reason>.` Where the terminal
-can be driven (tmux, or `method: sendkeys` on Windows) crew types it instead
+can be driven (tmux) crew types it instead
 (T-0013): `Auto-resume: typing /crew:done T-0001 into this session in 2s
-(method tmux)`, after `resume.typeDelaySeconds` and, in tmux, a probe for an
+(method tmux)`, after a fixed 2 s delay and, in tmux, a probe (15 s at most) for an
 idle, empty input line; once per handoff, the run recorded first. A refused
 typing keeps the line and adds `Auto-resume was not typed: <reason>.`
 The reasons: compact was not a manual /compact; no handoff note, or it was
@@ -190,11 +189,9 @@ The injected note is framed as project information that the working tree
 overrides, so a subtly wrong handoff is read against `git diff` before anyone
 acts on it.
 
-When `memory.inject` is on, `handoff-read` stops printing on
-`clear`/`compact`/`resume`/`fork` so the context hook is the handoff's only
-emitter — otherwise the same handoff would be injected twice. It still resets
-its once-per-session markers either way. Set `memory.inject: false` and
-`handoff-read` prints the note instead.
+`handoff-read` prints nothing on `clear`/`compact`/`resume`/`fork` so the
+context hook is the handoff's only emitter — otherwise the same handoff would
+be injected twice. It only resets its once-per-session markers.
 
 ### Staleness and archiving
 
@@ -205,12 +202,12 @@ second case is a note describing a state that no longer exists, and injecting
 it as though it were current is how a session ends up "resuming" work that a
 different session already finished.
 
-`handoff-read` and the context hook both judge the
-note before printing or injecting it, on two signals — see
+The context hook judges the
+note before injecting it, on two signals — see
 `crew_state.handoff_staleness` for the full reasoning:
 
-- **Age.** The note's own `written:` line, compared against `staleHandoff.
-  maxAgeHours`. Falls back to the file's mtime when `written:` is missing or
+- **Age.** The note's own `written:` line, compared against a fixed limit of
+  72 hours. Falls back to the file's mtime when `written:` is missing or
   unparseable, which is why the fallback is weaker: an edited file's mtime
   moves even when nobody updated the header to match.
 - **Reality drift.** The note's `branch:` and `head:` lines, compared against
@@ -218,7 +215,7 @@ note before printing or injecting it, on two signals — see
   cannot reach from the current `HEAD`, means the note's account of history
   cannot be verified at all — the same "unknown resolves to stale" rule
   `crew-diagrams` and the codemap already apply to missing provenance. A
-  `head:` that IS verifiable but is `staleHandoff.maxCommitsBehind` or more
+  `head:` that IS verifiable but is 3 or more
   commits behind reports exactly how far the note has fallen behind. A
   `branch:` that no longer matches the checkout is flagged on its own, since
   a merge can leave the noted head a true ancestor of `HEAD` while the
@@ -240,33 +237,24 @@ existed.
 "context": {
   "enabled": true,
   "warnAt": 0.8,
-  "budgetTokens": null,
-  "reserveTokens": 100000,
-  "handoffPath": ".work/HANDOFF.md",
-  "autoWrapUp": true,
-  "keepTranscripts": 5,
-  "staleHandoff": {
-    "maxAgeHours": 72,
-    "maxCommitsBehind": 3
-  }
+  "reserveTokens": 100000
 }
 ```
 
-`staleHandoff` is generous by default on purpose: archiving a note someone is
-still using is worse than leaving an honestly-stale one in place for one more
-day. Tighten `maxCommitsBehind` for a repo where a handoff realistically
-survives no more than a commit or two, or raise `maxAgeHours` for one where a
-session reasonably picks a handoff back up after a quiet weekend.
+The handoff lives at `.work/HANDOFF.md`, and the stale-handoff limits (72 hours,
+3 commits behind) are deliberately generous: archiving a note someone is still
+using is worse than leaving an honestly-stale one in place for one more day.
+These are fixed values, not settings.
 
-`keepTranscripts` is honoured by `PreCompact`: that many `.jsonl` snapshots are
-kept under `.crew/transcripts/` and older ones are deleted. `autoWrapUp` is
-on by default (`true`) and only chooses the warning's wording. `autoClear` is
-off by default, and so is its `wrapUp` (T-0017, machine opt-in): armed, the
+`PreCompact` keeps the last 5 `.jsonl` transcript snapshots under
+`.crew/transcripts/` and deletes older ones. The wrap-up wording is always on:
+the warning tells the session to reach a stopping point and write the handoff.
+`autoClear` is off by default, and so is its `wrapUp` (T-0017, machine opt-in): armed, the
 warning becomes the wrap-up procedure — finish the step, commit only if its
 `Test:` passes, run `/crew:handoff --wrap-up`, end the turn — and the clear
 waits until the handoff's `head:` is HEAD, its `branch:` matches, no tracked
 file is modified and its `resume:` line parses (or is `resume: none`). Crew
-checks the commit, not the test (CONFIG.md §14). `autoClear` is
+checks the commit, not the test (docs/crew/config-rationale.md). `autoClear` is
 experimental and presses a key on the user's behalf; its own block is
 `context.autoClear` and it refuses rather than guessing whenever it cannot
 identify what it would be typing into.
@@ -278,13 +266,14 @@ The `Stop` watch reads the transcript's **last `message.usage` record** and adds
 the actual prompt size - the window occupancy, measured by the thing that filled
 it, not inferred.
 
-Both flavours used to estimate from transcript file size (`bytes / 4 * 0.75`).
+The watcher used to estimate from transcript file size (`bytes / 4 * 0.75`).
 That reads high, because the transcript is cumulative: it keeps every turn ever
 written, including ones a compaction already discarded. Measured on real
 sessions it read 158%, 195% and 664% of a 200k budget - it fired on turn one,
 every session. The PowerShell flavour kept that heuristic for a release after
 the bash one dropped it, so Windows sessions were cut short while Linux ones
-were not; the test suite now feeds real usage records to both.
+were not; that flavour is gone (L-0727 slice 3) and the test suite feeds real
+usage records to the one watcher.
 
 **Subagent turns are not counted.** Claude Code writes Agent-tool transcripts
 to `<session>/subagents/*.jsonl`, which the watcher never opens; the main
@@ -325,7 +314,7 @@ oddly is visible rather than mysterious.
 
 ### The budget works itself out
 
-`budgetTokens` defaults to `null`, meaning "derive it". The transcript records
+The budget is always derived; there is no setting to pin it. The transcript records
 the model on every turn, so the window comes from a lookup: the Claude 5 family
 (`claude-fable-5`, `claude-opus-5`, `claude-sonnet-5`) is 1M, Haiku 4.5 and the
 4.x generation are 200k unless the id carries a `[1m]` suffix. Then the lookup
@@ -337,17 +326,8 @@ never heard of. Only a peak the window could not hold triggers it - an earlier
 95% margin bumped a correct 1M entry to 2M once a session passed 950k, and the
 gate then never fired.
 
-The same correction applies to a pinned `budgetTokens`. An older `/crew:init`
-wrote `200000` into every config, and that figure outlived the move to 1M
-models: a session that has already held 300k tokens overrides the pin and says
-so (`configured+observed`). It cannot help a session that is *under* the stale
-pin, though - a Claude 5 session at 170k is 17% full and a `200000` pin makes
-it 85% - so set the value to `null` if a config predates this.
-
-The warning names its source (`auto:claude-opus-5`, `auto:...+observed`,
-`configured`, `configured+observed`) and prints absolute token counts beside the
-percentage, so a wrong budget is visible rather than just making the gate behave
-oddly.
+The warning prints absolute token counts beside the percentage, so a wrong
+budget is visible rather than just making the gate behave oddly.
 
 `PreCompact` keeps the last few raw transcripts under `.crew/transcripts/`.
 Gitignore that directory — transcripts contain everything the session saw,

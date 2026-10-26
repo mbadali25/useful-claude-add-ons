@@ -13,17 +13,12 @@ the user's behalf, so the properties worth pinning are all refusals:
 Every case runs with `--dry-run` or against a fake `tmux`/`xdotool` on PATH, so
 no test can send a keystroke to the machine running it.
 
-Both flavours are exercised where both interpreters exist; the PowerShell one is
-skipped elsewhere. That asymmetry is the bug this plugin keeps having - a `.ps1`
-that drifted from its `.sh` twin for a whole release - and it is worse here than
-usual, because the failure mode is a keystroke going somewhere unintended.
+The bash sender is the only one: the PowerShell twin and its SendKeys method
+were removed in crew 1.2.61 (L-0727), and `notify` is the Windows path.
 """
 import json
 import os
-import pathlib
-import shutil
 import subprocess
-import sys
 import time
 
 import pytest
@@ -34,22 +29,13 @@ import crew_fixtures
 _ROOT = context._ROOT  # pylint: disable=protected-access
 # Forward slashes: MSYS bash re-parses its own argv and eats bare backslashes.
 _SH = (_ROOT + "/hooks/scripts/auto-clear.sh").replace("\\", "/")
-_PS1 = _ROOT + "/hooks/scripts/auto-clear.ps1"
 
 # Not shutil.which("bash"): under PowerShell that resolves WSL's bash, which
 # cannot open a Windows path and exits 127 for every script handed to it.
 # resolve_bash() proves a candidate by running one, and returns None when there
 # is none - so the `sh` flavour is skipped rather than parametrized in to fail.
 _BASH = crew_fixtures.resolve_bash()
-# The .ps1 flavour is native Windows ONLY: its send path is
-# System.Windows.Forms.SendKeys against a Win32 foreground window, so on a Linux
-# runner with pwsh installed (the CI job has one) the script now stands down
-# immediately - and a test that expected it to refuse for some *other* reason
-# would pass for the wrong reason, while one expecting it to send would fail.
-# Both happened on the first CI run: it claimed the one-per-session attempt and
-# reported "sent" on a platform where it cannot type anything.
-_PWSH = shutil.which("pwsh") if sys.platform.startswith("win") else None
-FLAVORS = [f for f, have in (("sh", _BASH), ("ps1", _PWSH)) if have]
+FLAVORS = [f for f, have in (("sh", _BASH),) if have]
 
 by_flavor = pytest.mark.parametrize("flavor", FLAVORS)
 
@@ -124,7 +110,7 @@ _ABSENT = object()
 
 
 def _repo(tmp_path, auto_clear=None, handoff=HANDOFF, requested=True):
-    cfg = {"context": {"warnAt": 0.8, "handoffPath": ".work/HANDOFF.md"}}
+    cfg = {"context": {"warnAt": 0.8}}
     auto = dict(auto_clear or {})
     enabled = auto.pop("enabled", _ABSENT)
     if auto_clear is not None:
@@ -151,7 +137,7 @@ def _run(flavor, root, *args, env_extra=None, session=SESSION):
     # Never let the suite reach the real send path. Set here rather than
     # per-test so a case added later cannot forget it; the cases that DO
     # exercise sending pass --dry-run, which prints the decision without the
-    # keystroke. See CREW_AUTOCLEAR_INHIBIT in auto-clear.{sh,ps1}.
+    # keystroke. See CREW_AUTOCLEAR_INHIBIT in auto-clear.sh.
     home = str(root.parent / "home")
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root),
                CREW_AUTOCLEAR_INHIBIT="1", HOME=home, USERPROFILE=home)
@@ -159,13 +145,7 @@ def _run(flavor, root, *args, env_extra=None, session=SESSION):
         env.update(env_extra)
     if session is not None:
         args = ("--session", session) + args
-    if flavor == "sh":
-        cmd = [_BASH, _SH, *args]
-    else:
-        ps_args = ["-DryRun" if a == "--dry-run" else
-                   "-Force" if a == "--force" else
-                   "-Session" if a == "--session" else a for a in args]
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1, *ps_args]
+    cmd = [_BASH, _SH, *args]
     return subprocess.run(cmd, cwd=str(root), env=env, stdin=subprocess.DEVNULL,
                           capture_output=True, text=True, check=False)
 
@@ -177,78 +157,38 @@ def _window_stub(tmp_path, windows):
 
 
 def _sendable(flavor, tmp_path):
-    """Config and env for a method each flavour will actually agree to use.
+    """Config and env for a method the sender will actually agree to use.
 
-    tmux must now prove the pane is this session's: the stub reports this
-    test process's pid as the pane pid, and this process IS an ancestor of
-    the script. The Windows flavour gets one stubbed window whose title is
-    the only match -- the title fallback, since no ancestor owns it.
+    tmux must now prove the pane is this session's: the stub reports the
+    bound session's terminal pid as the pane pid.
 
     Native Windows has no tmux, and the pane check cannot confirm one there
-    (no parent-pid walk; it fails closed), so the bash flavour takes the
-    xdotool title fallback instead of skipping (T-0076).
+    (no parent-pid walk; it fails closed), so the sender takes the xdotool
+    window owned by the session's terminal process instead of skipping.
 
     T-0016: the session is bound to its own Claude Code process
     (`crew_fixtures.bind_session`), and the pane pid is that process's
     terminal, `crew_fixtures.TERMINAL_PID`."""
     bound = crew_fixtures.bind_session(tmp_path / "home", SESSION)
-    if flavor == "sh" and os.name == "nt":
+    del flavor
+    if os.name == "nt":
         bindir = str(tmp_path / "fakebin")
         _stub(bindir, "xdotool")
         env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0", **bound}
-        env.update(_window_stub(tmp_path, [{"id": 4242, "pid": 999999,
+        env.update(_window_stub(tmp_path, [{"id": 4242, "pid": crew_fixtures.TERMINAL_PID,
                                             "title": "NoSuchWindowForTests"}]))
-        return ({"enabled": True, "method": "xdotool",
-                 "windowTitle": "NoSuchWindowForTests"}, env)
-    if flavor == "sh":
-        bindir = str(tmp_path / "fakebin")
-        pane = crew_fixtures.TERMINAL_PID
-        _stub(bindir, "tmux", f"#!/bin/sh\necho {pane}\n",
-              f"@echo off\r\necho {pane}\r\n")
-        return ({"enabled": True, "method": "tmux"},
-                {"PATH": crew_fixtures.shell_path("sh", [bindir]),
-                 "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%9", **bound})
-    return ({"enabled": True, "windowTitle": "NoSuchWindowForTests"},
-            dict(bound, **_window_stub(tmp_path, [{"id": 4242, "pid": 999999,
-                                                   "title": "NoSuchWindowForTests"}])))
+        return ({"enabled": True, "method": "xdotool"}, env)
+    bindir = str(tmp_path / "fakebin")
+    pane = crew_fixtures.TERMINAL_PID
+    _stub(bindir, "tmux", f"#!/bin/sh\necho {pane}\n",
+          f"@echo off\r\necho {pane}\r\n")
+    return ({"enabled": True, "method": "tmux"},
+            {"PATH": crew_fixtures.shell_path("sh", [bindir]),
+             "TMUX": "/tmp/fake,1,0", "TMUX_PANE": "%9", **bound})
 
 
 def test_flavors_are_discoverable():
-    assert FLAVORS, "neither bash nor pwsh is on PATH; cannot test auto-clear"
-
-
-# --- The Windows burn-in's real cause: home-dir resolution bypassed the test
-#     isolation entirely ---------------------------------------------------
-#
-# `[Environment]::GetFolderPath('UserProfile')` resolves the profile path via
-# the Shell API from the current user's token/registry on native Windows,
-# and ignores an overridden $env:USERPROFILE there -- unlike its Linux/.NET
-# Core implementation, which reads $env:HOME and so happily obeys every
-# fixture in this suite that redirects HOME/USERPROFILE at a tmp directory.
-# That made the divergence invisible on a Linux-pwsh run (this container
-# included) and live on the one platform the script actually runs on: a
-# burn-in there read the REAL machine ~/.claude/crew/config.json instead of
-# the isolated fixture one, arming on whatever autoClear state that real
-# machine happened to be carrying. No env-var trick can prove the ORIGINAL
-# bug here -- the asymmetry is in the .NET runtime's own per-OS
-# implementation of GetFolderPath, not in anything a Linux pwsh process can
-# be made to disagree with itself about -- so this is a static tripwire
-# instead, the same shape as
-# `test_context_watch_does_not_call_the_unhardened_resolver`.
-def test_auto_clear_ps1_resolves_home_from_the_env_not_the_shell_api():
-    # Comment lines excluded: this test's own docstring/header quotes the old
-    # call form by name, and a bare substring check over the whole file would
-    # match its own explanation rather than the code.
-    code_lines = [line for line in pathlib.Path(_PS1).read_text(encoding="utf-8").splitlines()
-                  if not line.strip().startswith("#")]
-    source = "\n".join(code_lines)
-    assert "GetFolderPath" not in source, (
-        "auto-clear.ps1 is back on [Environment]::GetFolderPath('UserProfile'), "
-        "which ignores $env:USERPROFILE on native Windows and so cannot be "
-        "redirected to an isolated fixture home -- every other case in this "
-        "suite depends on that redirection actually working. Read $env:"
-        "USERPROFILE (falling back to $env:HOME) instead, matching "
-        "cloud-guard.ps1's Test-CloudGuardArmed.")
+    assert FLAVORS, "bash is not on PATH; cannot test auto-clear"
 
 
 # --- Opted out ------------------------------------------------------------
@@ -333,66 +273,67 @@ def test_min_handoff_lines_is_configurable(flavor, tmp_path):
 
 
 @by_flavor
-def test_a_method_that_cannot_verify_its_target_refuses_without_a_title(
+def test_a_method_that_cannot_verify_its_target_refuses_without_an_owning_window(
         flavor, tmp_path):
-    """CHANGED in 0.19.57, and only for the PowerShell flavour.
-
-    `xdotool` activates a window BY NAME, so it still cannot prove it is
-    talking to Claude Code and an explicit title is still the user accepting
-    that -- the sh case is unchanged.
-
-    The Windows flavour no longer needs one. It walks its own ancestors to the
-    first process that OWNS A WINDOW and compares the foreground window's
-    owning process id to it, which is exact where a title was a guess: the
-    detector read three different titles for the same window in one session.
-    So `windowTitle` unset is no longer a refusal there, and asserting one
-    would be asserting the old defect.
-    """
-    if flavor == "sh":
-        bindir = str(tmp_path / "fakebin")
-        _stub(bindir, "xdotool")
-        cfg = {"enabled": True, "method": "xdotool"}
-        env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0"}
-        root = _repo(tmp_path, auto_clear=cfg)
-        result = _run(flavor, root, env_extra=env)
-        assert result.returncode == 0
-        assert "windowTitle" in result.stderr
-        return
-
-    # ps1: must not demand a title merely because one is unset. It either
-    # resolves the owning terminal and proceeds, or says it could NOT resolve
-    # one -- and which of those happens depends on the ancestry of whatever
-    # launched the tests. Measured: it resolves from a plain shell and does
-    # not from under pytest, so asserting either outcome would be asserting a
-    # property of the test runner.
-    #
-    # What IS invariant is that the OLD unconditional refusal is gone, so that
-    # exact sentence is what this checks.
-    root = _repo(tmp_path, auto_clear={"enabled": True})
-    result = _run(flavor, root, "--dry-run")
+    """`xdotool` activates a window BY NAME, so it cannot prove it is talking
+    to Claude Code; only a window owned by this session's own process counts."""
+    bindir = str(tmp_path / "fakebin")
+    _stub(bindir, "xdotool")
+    cfg = {"enabled": True, "method": "xdotool"}
+    env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0"}
+    root = _repo(tmp_path, auto_clear=cfg)
+    result = _run(flavor, root, env_extra=env)
     assert result.returncode == 0
-    assert "windowTitle is required" not in result.stderr, result.stderr
+    assert "no window belongs to any ancestor" in result.stderr
+    assert not (root / ".crew" / SENT).exists()
+
+
+@by_flavor
+def test_window_title_is_constant(flavor, tmp_path):
+    bindir = str(tmp_path / "fakebin")
+    _stub(bindir, "xdotool")
+    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "xdotool",
+                                       "windowTitle": "Claude Code - my repo"})
+    env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0",
+           **crew_fixtures.bind_session(tmp_path / "home", SESSION)}
+    env.update(_window_stub(tmp_path, [
+        {"id": 77, "pid": 999999, "title": "Claude Code - my repo"}]))
+    result = _run(flavor, root, "--dry-run", env_extra=env)
+    assert "target: Claude Code - my repo" not in result.stdout
+    assert "would send" not in result.stdout
+    assert not (root / ".crew" / SENT).exists()
 
 
 @by_flavor
 def test_an_unknown_method_refuses_by_name(flavor, tmp_path):
-    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "telepathy",
-                                       "windowTitle": "x"})
+    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "telepathy"})
     result = _run(flavor, root)
     assert result.returncode == 0
     assert "telepathy" in result.stderr
 
 
 @pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")
-def test_wtype_needs_explicit_consent_because_it_cannot_check_focus(tmp_path):
+def test_wtype_is_refused_because_it_cannot_check_focus(tmp_path):
     bindir = str(tmp_path / "fakebin")
     _stub(bindir, "wtype")
-    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "wtype",
-                                       "windowTitle": "Claude"})
+    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "wtype"})
     result = _run("sh", root, env_extra={
         "PATH": crew_fixtures.shell_path("sh", [bindir]),
         "WAYLAND_DISPLAY": "wayland-0"})
-    assert "unsafeFocus" in result.stderr
+    assert "wtype" in result.stderr
+    assert not (root / ".crew" / SENT).exists()
+
+
+@pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")
+def test_unsafe_focus_is_constant(tmp_path):
+    bindir = str(tmp_path / "fakebin")
+    _stub(bindir, "wtype")
+    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "wtype",
+                                       "unsafeFocus": True})
+    result = _run("sh", root, env_extra={
+        "PATH": crew_fixtures.shell_path("sh", [bindir]),
+        "WAYLAND_DISPLAY": "wayland-0"})
+    assert "wtype" in result.stderr
     assert not (root / ".crew" / SENT).exists()
 
 
@@ -413,7 +354,7 @@ def test_a_refusal_does_not_burn_the_one_attempt(flavor, tmp_path):
     """The claim is taken immediately before the send, not with the conditions.
 
     Taken earlier, a misconfiguration burns the session's only attempt: the user
-    fixes windowTitle, nothing happens, and there is no way to tell that from
+    fixes the method, nothing happens, and there is no way to tell that from
     the feature being broken.
     """
     root = _repo(tmp_path, auto_clear={"enabled": True, "method": "telepathy"})
@@ -423,8 +364,7 @@ def test_a_refusal_does_not_burn_the_one_attempt(flavor, tmp_path):
     # Now fix it in the same session and confirm it really does retry.
     cfg, env = _sendable(flavor, tmp_path)
     (root / ".crew" / "config.json").write_text(
-        json.dumps({"context": {"handoffPath": ".work/HANDOFF.md",
-                                "autoClear": cfg}}), encoding="utf-8")
+        json.dumps({"context": {"autoClear": cfg}}), encoding="utf-8")
     result = _run(flavor, root, env_extra=env)
     assert "sent" in result.stderr
     assert (root / ".crew" / SENT).exists()
@@ -450,15 +390,12 @@ def test_the_second_attempt_in_one_session_is_silent(flavor, tmp_path):
 def test_the_dry_run_plan_reports_the_configured_command_and_delay(
         flavor, tmp_path):
     # Whatever method `_sendable` actually resolves to on this host decides
-    # what "the delay" means: sendkeys/tmux wait the configured seconds out,
-    # xdotool too; notify has none to wait (its own exact wording is asserted below). Read
-    # `method:` back out of the emitted plan rather than assuming which one
-    # was reached -- forcing a method here is what made the old version of
-    # this test vacuous: under the window-stub pid (999999) the .ps1 flavour
-    # declines sendkeys and prints a decline notice with no `method:` line at
-    # all, so a hard-coded "sendkeys" expectation never got asserted against.
+    # what "the delay" means: tmux waits the configured seconds out, xdotool
+    # too; notify has none to wait (its own exact wording is asserted below).
+    # Read `method:` back out of the emitted plan rather than assuming which
+    # one was reached.
     cfg, env = _sendable(flavor, tmp_path)
-    cfg = dict(cfg, command="/compact", delaySeconds=9)
+    cfg = dict(cfg, delaySeconds=9)
     root = _repo(tmp_path, auto_clear=cfg)
     result = _run(flavor, root, "--dry-run", env_extra=env)
     out = result.stdout
@@ -469,8 +406,8 @@ def test_the_dry_run_plan_reports_the_configured_command_and_delay(
         f"no dry-run plan was emitted at all (stdout={out!r} "
         f"stderr={result.stderr!r})")
     resolved = method_lines[0]
-    assert "command: /compact" in out, out
-    if resolved in ("sendkeys", "tmux", "xdotool"):
+    assert "command: /clear" in out, out
+    if resolved in ("tmux", "xdotool"):
         assert "delay: 9s" in out, out
     elif resolved == "notify":
         assert "delay: n/a (notify sends no keystroke)" in out, out
@@ -481,15 +418,13 @@ def test_the_dry_run_plan_reports_the_configured_command_and_delay(
 @by_flavor
 def test_the_notify_plan_says_the_delay_is_not_applicable(flavor, tmp_path):
     """notify types nothing, so it has no delay to wait out and no window to
-    target. The plan used to print `delay: 0s` (.ps1) or the configured number
-    (.sh), and an empty `target:` line (.sh). Each reads as a real setting;
-    none is one."""
+    target. The plan used to print the configured number and an empty
+    `target:` line. Each reads as a real setting; none is one."""
     root = _repo(tmp_path, auto_clear={
-        "enabled": True, "method": "notify",
-        "command": "/compact", "delaySeconds": 9})
+        "enabled": True, "method": "notify", "delaySeconds": 9})
     out = _run(flavor, root, "--dry-run").stdout
     assert "method: notify" in out, out
-    assert "command: /compact" in out, out
+    assert "command: /clear" in out, out
     # Exact wording, not a substring: "delay: n/a" alone is also a substring
     # of the old bare text, so a loose check here stays green even if the
     # " (notify sends no keystroke)" suffix regresses.
@@ -498,28 +433,13 @@ def test_the_notify_plan_says_the_delay_is_not_applicable(flavor, tmp_path):
     assert "target:" not in out, out
 
 
-@pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")
-def test_a_window_title_containing_spaces_survives_config_parsing(tmp_path):
-    """Regression: the config was read as tab-separated fields with
-    `IFS=$'\\t' read`. Tab is IFS *whitespace*, so bash collapsed consecutive
-    tabs and an empty windowTitle - the default - shifted every later field left
-    by one. The script then exited silently having done nothing.
-
-    The window layer is stubbed with exactly one window of that title, so the
-    title fallback resolves it uniquely; test_auto_cycle.py owns the zero and
-    many cases.
-    """
-    bindir = str(tmp_path / "fakebin")
-    _stub(bindir, "xdotool")
+@by_flavor
+def test_command_is_constant(flavor, tmp_path):
     root = _repo(tmp_path, auto_clear={
-        "enabled": True, "method": "xdotool",
-        "windowTitle": "Claude Code - my repo"})
-    env = {"PATH": crew_fixtures.shell_path("sh", [bindir]), "DISPLAY": ":0",
-           **crew_fixtures.bind_session(tmp_path / "home", SESSION)}
-    env.update(_window_stub(tmp_path, [
-        {"id": 77, "pid": 999999, "title": "Claude Code - my repo"}]))
-    out = _run("sh", root, "--dry-run", env_extra=env).stdout
-    assert "target: Claude Code - my repo" in out
+        "enabled": True, "method": "notify", "command": "/compact"})
+    out = _run(flavor, root, "--dry-run").stdout
+    assert "command: /clear" in out, out
+    assert "/compact" not in out, out
 
 
 @pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")
@@ -540,11 +460,13 @@ def test_config_values_survive_a_crlf_writing_python(tmp_path):
     root = _repo(tmp_path, auto_clear=config)
     env.update(_crlf_python_env(tmp_path))
     out = _run("sh", root, "--dry-run", env_extra=env).stdout
-    # tmux, or on native Windows the xdotool title fallback (see _sendable).
-    method, target = ((config["method"], "%9") if config["method"] == "tmux"
-                      else (config["method"], config["windowTitle"]))
+    # tmux, or on native Windows the xdotool window (see _sendable).
+    method, target = (config["method"], "%9" if config["method"] == "tmux" else "4242")
     assert f"method: {method}" in out, "a CR in the config values would break this"
-    assert f"target: {target}" in out
+    if method == "tmux":
+        assert f"target: {target}" in out
+    else:
+        assert f"[window {target}" in out
 
 
 @pytest.mark.skipif("sh" not in FLAVORS, reason="needs bash")
@@ -559,46 +481,13 @@ def test_tmux_method_refuses_outside_tmux(tmp_path):
     assert not (root / ".crew" / SENT).exists()
 
 
-@pytest.mark.skipif("ps1" not in FLAVORS, reason="needs pwsh")
-def test_the_windows_flavour_points_tmux_users_at_the_bash_one(tmp_path):
-    root = _repo(tmp_path, auto_clear={"enabled": True, "method": "tmux",
-                                       "windowTitle": "x"})
-    result = _run("ps1", root)
-    assert "auto-clear.sh" in result.stderr
-
-
-_PWSH_ANY = shutil.which("pwsh")
-
-
-@pytest.mark.skipif(_PWSH_ANY is None or sys.platform.startswith("win"),
-                    reason="the point of this case is a NON-Windows pwsh")
-def test_the_windows_flavour_stands_down_entirely_off_windows(tmp_path):
-    """On Linux/macOS pwsh, auto-clear.ps1 must do nothing at all.
-
-    Its send path is SendKeys against a Win32 foreground window. Without the
-    $IsWindows guard it ran every condition, claimed the one-per-session
-    attempt, and reported "sent" while delivering no keystroke - which is worse
-    than failing, because the log then says it worked. auto-clear.sh is the
-    flavour for those platforms and is registered alongside it.
-    """
-    root = _repo(tmp_path, auto_clear={"enabled": True, "windowTitle": "x"})
-    result = subprocess.run(
-        [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-File", _PS1],
-        cwd=str(root), env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
-        stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False)
-    assert result.returncode == 0
-    assert result.stdout.strip() == ""
-    assert not (root / ".crew" / SENT).exists()
-    assert not (root / ".crew" / ".autoclear.log").exists()
-
-
 # --- The `.crew/` gate --------------------------------------------------------
 #
 # OWNER DECISION (crew 1.0 F4, reversing the file-based gate this section used
 # to describe): `context.autoClear` is a MACHINE-global switch
 # (`crew_config.py`), so it must work in any crew repo without a per-repo
 # config of its own -- "crew repo" is read as `.crew/` the DIRECTORY existing,
-# not `.crew/config.json`. See CONFIG.md sec 14 for the full account,
+# not `.crew/config.json`. See docs/crew/config-rationale.md for the full account,
 # including the file-gate period this reverses. The six states below are the
 # ones that decide silence vs. arming:
 #
@@ -671,24 +560,6 @@ def _write_machine_autoclear(root, auto_clear):
     (crew / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
 
 
-def _run_ps1_forced_windows(root, *extra_args):
-    """The `.ps1` twin, run the way hooks.json's registered scripts are
-    invoked (`pwsh -NoProfile ... -File script.ps1 <args>`), with
-    `OS=Windows_NT` forced -- the same test seam `scope_fixtures.py`/
-    `test_context_watch.py` use to drive this flavour on a non-Windows host.
-    Nothing in these cases reaches the send path, so it is safe off real
-    Windows too.
-    """
-    home = str(root.parent / "home")
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT",
-               CREW_AUTOCLEAR_INHIBIT="1", HOME=home, USERPROFILE=home)
-    return subprocess.run(
-        [_PWSH_ANY, "-NoProfile", "-NonInteractive", "-File", _PS1,
-         "-Root", str(root), *extra_args],
-        cwd=str(root), env=env, stdin=subprocess.DEVNULL,
-        capture_output=True, text=True, check=False)
-
-
 # (4) `.crew/` + config.json present, machine on -- armed, reaches the
 #     session check.
 
@@ -701,18 +572,6 @@ def test_a_present_but_empty_repo_config_is_armed_sh(tmp_path):
     root = _repo_with_empty_config(tmp_path)
     assert (root / ".crew" / "config.json").exists()
     result = _run("sh", root, session=None)
-    assert result.returncode == 0
-    assert "no session id" in result.stderr, result.stderr
-    log = (root / ".crew" / ".autoclear.log").read_text(encoding="utf-8")
-    assert "no session id" in log
-
-
-@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
-def test_a_present_but_empty_repo_config_is_armed_ps1(tmp_path):
-    """The `.ps1` twin of the case above."""
-    root = _repo_with_empty_config(tmp_path)
-    assert (root / ".crew" / "config.json").exists()
-    result = _run_ps1_forced_windows(root)
     assert result.returncode == 0
     assert "no session id" in result.stderr, result.stderr
     log = (root / ".crew" / ".autoclear.log").read_text(encoding="utf-8")
@@ -738,18 +597,6 @@ def test_a_crew_directory_with_no_config_json_arms_and_reaches_the_session_check
     assert "no session id" in log
 
 
-@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
-def test_a_crew_directory_with_no_config_json_arms_and_reaches_the_session_check_ps1(tmp_path):
-    root = _repo_with_no_config(tmp_path, machine_enabled=True)
-    assert (root / ".crew").is_dir()
-    assert not (root / ".crew" / "config.json").exists()
-    result = _run_ps1_forced_windows(root)
-    assert result.returncode == 0
-    assert "no session id" in result.stderr, result.stderr
-    log = (root / ".crew" / ".autoclear.log").read_text(encoding="utf-8")
-    assert "no session id" in log
-
-
 # (3) `.crew/` present, NO config.json, machine DISABLED -- silent, no log
 #     file. Same repo shape as (2); only the machine's opt-in differs.
 
@@ -765,18 +612,6 @@ def test_a_crew_directory_with_no_config_json_and_machine_disabled_stays_silent_
     assert not (root / ".crew" / ".autoclear.log").exists()
 
 
-@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
-def test_a_crew_directory_with_no_config_json_and_machine_disabled_stays_silent_ps1(tmp_path):
-    root = _repo_with_no_config(tmp_path, machine_enabled=False)
-    assert (root / ".crew").is_dir()
-    assert not (root / ".crew" / "config.json").exists()
-    result = _run_ps1_forced_windows(root)
-    assert result.returncode == 0
-    assert result.stdout.strip() == ""
-    assert result.stderr.strip() == ""
-    assert not (root / ".crew" / ".autoclear.log").exists()
-
-
 # (1) NO `.crew/` at all, machine enabled -- silent, and nothing may be
 #     created as a side effect.
 
@@ -788,17 +623,6 @@ def test_no_crew_directory_at_all_stays_silent_and_creates_nothing_sh(tmp_path):
     assert result.returncode == 0
     assert result.stdout == ""
     assert result.stderr == ""
-    assert not (root / ".crew").exists()
-
-
-@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
-def test_no_crew_directory_at_all_stays_silent_and_creates_nothing_ps1(tmp_path):
-    root = _repo_with_no_crew_dir(tmp_path)
-    assert not (root / ".crew").exists()
-    result = _run_ps1_forced_windows(root)
-    assert result.returncode == 0
-    assert result.stdout.strip() == ""
-    assert result.stderr.strip() == ""
     assert not (root / ".crew").exists()
 
 
@@ -817,26 +641,13 @@ def test_only_repos_excluding_this_repo_stays_silent_sh(tmp_path):
     assert not (root / ".crew" / ".autoclear.log").exists()
 
 
-@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
-def test_only_repos_excluding_this_repo_stays_silent_ps1(tmp_path):
-    root = crew_fixtures.make_repo(tmp_path, config={}, git=False)
-    _write_machine_autoclear(root, {"enabled": True,
-                                     "onlyRepos": [str(tmp_path / "elsewhere")]})
-    assert (root / ".crew" / "config.json").exists()
-    result = _run_ps1_forced_windows(root)
-    assert result.returncode == 0
-    assert result.stdout.strip() == ""
-    assert not (root / ".crew" / ".autoclear.log").exists()
-
-
 # (5) repo-local `enabled: false` while the machine is on -- silent (a repo
 #     may only narrow the opt-in, never widen it). This fixture already
 #     writes a real config.json, so the gate change does not touch it.
 
 
 def _repo_opted_out(tmp_path):
-    cfg = {"context": {"warnAt": 0.8, "handoffPath": ".work/HANDOFF.md",
-                        "autoClear": {"enabled": False}}}
+    cfg = {"context": {"warnAt": 0.8, "autoClear": {"enabled": False}}}
     root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
     _write_machine(root, True)
     return root
@@ -845,15 +656,6 @@ def _repo_opted_out(tmp_path):
 def test_repo_local_opt_out_stays_silent_with_global_on_sh(tmp_path):
     root = _repo_opted_out(tmp_path)
     result = _run("sh", root, session=None)
-    assert result.returncode == 0
-    assert result.stdout.strip() == ""
-    assert not (root / ".crew" / ".autoclear.log").exists()
-
-
-@pytest.mark.skipif(_PWSH_ANY is None, reason="needs pwsh")
-def test_repo_local_opt_out_stays_silent_with_global_on_ps1(tmp_path):
-    root = _repo_opted_out(tmp_path)
-    result = _run_ps1_forced_windows(root)
     assert result.returncode == 0
     assert result.stdout.strip() == ""
     assert not (root / ".crew" / ".autoclear.log").exists()

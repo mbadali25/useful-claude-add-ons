@@ -1900,12 +1900,48 @@ def resolve_mode(root):
     return mode, ""
 
 
+def _layer_text_armed(text):
+    """Whether one config file's text may arm the guard. Off is PROVED only
+    when it is valid JSON, an object, whose `guards` is absent or an object,
+    and every one of `profile`, `overrides.envGuard` and `envGuard` is absent
+    or exactly the string "off". Anything else -- a profile that arms the
+    guard (`standard`, `strict`), a value this cannot read, a null where a
+    value belongs, a body that does not parse -- is armed. Conservative on
+    purpose: a strict repo has no `envGuard` key at all, and must not read
+    as unarmed because that key is missing."""
+    if len(text) > 262144 or "\x00" in text:
+        return True
+    try:
+        parsed = json.loads(text)
+    except (ValueError, RecursionError):
+        return True
+    if not isinstance(parsed, dict):
+        return True
+    if "guards" not in parsed:
+        return False
+    block = parsed["guards"]
+    if not isinstance(block, dict):
+        return True
+    for key in ("profile", "envGuard"):
+        if key in block and block[key] != "off":
+            return True
+    if "overrides" in block:
+        overrides = block["overrides"]
+        if not isinstance(overrides, dict):
+            return True
+        if "envGuard" in overrides and overrides["envGuard"] != "off":
+            return True
+    return False
+
+
 def _crude_armed(root):
     """Whether a config file arms the guard, read without crew's readers --
-    for when those readers themselves failed. Any `envGuard` value other
-    than "off" counts as armed, so a value this cannot parse fails closed.
-    The twin of env-guard.sh's `_env_guard_armed`: the repo file is the
-    resolved one (a lane with no config of its own reads the main
+    for when those readers themselves failed. A layer is armed unless its
+    `profile`, `guards.overrides.envGuard` and legacy `envGuard` are each
+    absent or exactly "off" (`_layer_text_armed`), so a value this cannot
+    parse fails closed and a strict repo (no `envGuard` key) is never judged
+    unarmed. The twin of env-guard.sh's `_env_guard_armed`: the repo file is
+    the resolved one (a lane with no config of its own reads the main
     checkout's), and a resolver that fails or cannot tell which file is in
     force counts as armed -- an absent own file is no proof of off."""
     try:
@@ -1918,13 +1954,14 @@ def _crude_armed(root):
     home = os.path.expanduser("~")
     for path in (os.path.join(crew_dir, "config.json"),
                  os.path.join(home, ".claude", "crew", "config.json")):
-        try:
-            with open(path, encoding="utf-8", errors="replace") as handle:
-                text = handle.read()
-        except OSError:
+        if not os.path.lexists(path):
             continue
-        match = re.search(r'"envGuard"\s*:\s*([^,}]*)', text)
-        if match and match.group(1).strip().strip('"').strip() != "off":
+        try:
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+        except (OSError, ValueError):
+            return True
+        if _layer_text_armed(text):
             return True
     return False
 

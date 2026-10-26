@@ -36,7 +36,8 @@ python3 "$S/crew_instructions.py" codex --check
 
 - `.codex/hooks.json` is built from the same hook table as crew's Claude registration
   (`HOOK_TABLE` in `crew_instructions.py`). Each entry has a `command` (bash) and a
-  `commandWindows` (PowerShell, `-Harness codex`). The paths inside are absolute and belong to one
+  `commandWindows` (PowerShell, `-Harness codex`), both running the `crew-hook` launcher for the event, which
+  dispatches to `crew-context` only. The paths inside are absolute and belong to one
   machine, so regenerate the file on each machine rather than committing it.
 - `.codex/config.toml` sets `project_doc_fallback_filenames = ["CLAUDE.md"]` only. **No
   `[profiles.*]` table** -- MEASURED on codex-cli 0.154.0: `profiles` is on Codex's own

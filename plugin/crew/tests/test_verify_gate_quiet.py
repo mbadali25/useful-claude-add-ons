@@ -333,6 +333,27 @@ def test_not_verified_never_counted_as_passed(tmp_path):
     assert "SKIP (rc 77, environment absent): exit 77" in result.stderr
 
 
+def test_a_rule_deferred_by_a_dearer_measurement_is_counted_and_the_notice_is_verbose_only(tmp_path):
+    import verify_record  # pylint: disable=import-outside-toplevel
+    rule = {"paths": ["a.py"], "seconds": 5, "reach": "local", "run": ["echo RAN-slow"], "why": "declared cheap"}
+    root = _repo(tmp_path, _map_with(rule, base=False))
+    (root / ".crew" / ".verify-gate.timings.json").write_text(
+        json.dumps({"rules": {verify_record.rule_key(rule): 190}}), encoding="utf-8")
+    notice = "rules[0] priced at 190s, measured on this machine, above its declared 5s"
+
+    quiet = _run(root)
+    verbose = _run(root, verbose="1")
+
+    assert quiet.returncode == verbose.returncode == 0
+    assert "NOT VERIFIED 1 item(s) " in _lines(quiet)[0]
+    assert "over-budget 1" in _lines(quiet)[0]
+    assert "rules[0]: echo RAN-slow" in verbose.stderr
+    assert "rules[0]: echo RAN-slow" in _log(root)
+    assert notice not in quiet.stderr
+    assert notice in verbose.stderr
+    assert notice in _log(root)
+
+
 @pytest.mark.parametrize("case", ["pass", "fail", "skip77", "unmapped", "backoff"])
 def test_exit_codes_and_l0733_line_unchanged(tmp_path, case):
     rules = {

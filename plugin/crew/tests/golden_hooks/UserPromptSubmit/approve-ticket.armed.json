@@ -1,0 +1,34 @@
+{
+ "armed": true,
+ "case": "approve-ticket",
+ "dirty": "",
+ "event": "UserPromptSubmit",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"UserPromptSubmit\", \"prompt\": \"/crew:approve T-2\", \"session_id\": \"s-1\", \"prompt_id\": \"p-2\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "crew-context.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "approval-hook.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "approval-hook.sh",
+   "stderr": "",
+   "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"UserPromptSubmit\", \"additionalContext\": \"crew: the user approved T-2 from their own prompt (plan 8db56ae54cd3, spec 0fba46fb963e, approved_via user-prompt).\"}}\n",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

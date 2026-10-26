@@ -28,7 +28,7 @@ the audit reads have moved since. It is the only write, and only on request.
 `--all-repos ROOT` prints one line per crew checkout found under ROOT (a
 directory holding `.crew/`, at most two levels down): the setup phase reached,
 the GAP and UNKNOWN counts, and whether D10 is live: an undeclared rule the
-Stop gate's own classifier defers (CONFIG.md §19).
+Stop gate's own classifier defers (docs/crew/config-rationale.md).
 
 Usage: qa_audit.py [--root DIR] [--json] [--strict] [--stamp] [--all-repos ROOT]
 Exit: 0 report printed; 1 with --strict and any GAP or UNKNOWN; 2 usage.

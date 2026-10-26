@@ -18,12 +18,13 @@ reported it under "rules pointing at files that do not exist".
 Two things are fixed and they are not the same size:
 
 * **The rejection is the load-bearing half.** A rule crew cannot represent is
-  not a rule that passed, so all three scripts now refuse the map, name the
-  entry, and exit non-zero. `verify-gate.ps1` refuses it too -- not because it
-  has the framing bug (it never serialises the lists; `ConvertFrom-Json` hands
-  it objects) but because without the refusal the PAIR disagrees: `bash -c`
-  over there would happily run both halves, so the same map would block the
-  turn on one flavour and pass it on the other.
+  not a rule that passed, so all three scripts refuse the map, name the
+  entry, and exit non-zero. `verify-gate.ps1` (deleted in L-0869) refused it
+  too -- not because it had the framing bug (it never serialised the lists;
+  `ConvertFrom-Json` handed it objects) but because without the refusal the
+  PAIR disagreed: `bash -c` over there would happily run both halves, so the
+  same map would block the turn on one flavour and pass it on the other. With
+  one gate left there is no pair to disagree.
 * **The separator is the belt.** The record separator is now `\\x1d` and the
   field separator inside each record `\\x1e`, neither of which can appear in a
   command *because the rejection ran first*. That makes it unreachable by any
@@ -34,9 +35,7 @@ Two things are fixed and they are not the same size:
 """
 import json
 import os
-import shutil
 import subprocess
-import sys
 
 import pytest
 
@@ -46,14 +45,12 @@ import context  # noqa: F401  pylint: disable=unused-import
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _VERIFY_SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
-_VERIFY_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 _RESOLVE_TOOLS = os.path.join(_ROOT, "skills", "crew-setup", "scripts",
                               "resolve-tools.sh")
 _MAP_AUDIT = os.path.join(_ROOT, "skills", "crew-setup", "scripts",
                           "map-audit.sh")
 
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = shutil.which("pwsh")
 
 pytestmark = pytest.mark.skipif(_BASH is None, reason="needs bash")
 
@@ -280,26 +277,3 @@ def test_map_audit_refuses_the_same_map_by_name(tmp_path):
     assert "rules[0].run[0]" in result.stderr, result.stderr
     assert "refusing to audit" in result.stderr, result.stderr
     assert "no rule" not in result.stdout, result.stdout
-
-
-@pytest.mark.skipif(not sys.platform.startswith("win") or _PWSH is None,
-                    reason="the .ps1 gate is the native-Windows flavour")
-def test_the_powershell_gate_refuses_the_same_map_by_name(tmp_path):
-    """The matched pair. `verify-gate.ps1` never had the framing bug -- it
-    reads objects, not text -- but without the refusal the same map blocks
-    the turn on bash and passes it here, and a pair that disagrees about
-    whether the work is done is worse than either answer alone."""
-    root = _repo(tmp_path, {
-        "rules": [{"paths": ["**/*.py"], "run": [_MULTILINE, "exit 1"]}],
-        "unmapped": "warn",
-    })
-
-    result = _run(_VERIFY_PS1, root,
-                  interpreter=[_PWSH, "-NoProfile", "-NonInteractive",
-                               "-File"])
-
-    assert result.returncode == 2, f"stderr: {result.stderr}"
-    assert "PARSE_ERROR" in result.stderr
-    assert "rules[0].run[0]" in result.stderr, result.stderr
-    assert "a newline" in result.stderr, result.stderr
-    assert "Verification did NOT run" in result.stderr

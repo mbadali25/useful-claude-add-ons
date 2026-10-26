@@ -1,6 +1,6 @@
 ---
 description: Promote a build to the next environment, with the full post-deploy proof
-argument-hint: <development | qa | production> [--dry-run | --status]
+argument-hint: <development | qa | production> [--dry-run | --status] [--merge-gate <github | bitbucket> [--merge-gate-branch NAME]]
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
 ---
 
@@ -27,7 +27,7 @@ Run these in order. **Stop at the first failure** and report which gate failed w
 - `rollback` is set: a runbook that exists with a `last verified` date inside 90 days, or the literal `"none"` plus a `rollbackReason`. An absent key is a stop, not a pass. Production without a verified runbook has no override.
 - If `requireHuman` is set, show me the sha, the diff summary, and the last production promotion, then wait for me to say go. Do not proceed on silence.
 - **An approved change request**, if `change.requireForProduction` is true: see `## The change request`. **The shipped default is `false`, and at `false` this step does not exist** - ask for nothing, report nothing.
-- **The merge gate**, if this repo has one: see `## The merge gate`. With `bitbucket.mergeGate.enabled` and `github.mergeGate.enabled` both `false` (the shipped default) that section does not exist.
+- **The merge gate**, if this repo has one: see `## The merge gate`. It runs ONLY when I ask for it on the command line with `--merge-gate <github|bitbucket>`; without that flag that section does not exist.
 - **The source tree is reconciled against what the target is running.** List the deployed artifact, hash it against the same paths in the source tree, and classify **every** difference as exactly one of: *roll-forward* (the source is newer and the change is intended), *on-box edit* (the target has something the source does not, which this deploy would clobber), or *unexplained*. Any on-box edit or unexplained difference is a stop - carry it into the branch, or get explicit agreement that it is being discarded. A difference is not roll-forward merely because the source is the branch you were told to deploy.
 
 **When the gate blocks.** `promote-gate` refusing a deploy is gate 1 failing, not an obstacle. Quote its `PROMOTION BLOCKED` line verbatim, name the precondition, fix that precondition, and run the same command again. **Never hand the owner a deploy so it skips the hook** (T-0505): if the gate is wrong, report it as a crew bug. Hand a deploy to the owner only where one is genuinely needed (`requireHuman`, or an MFA or browser approval a session cannot perform), as a question with your recommendation first - never a list of commands to paste.
@@ -60,23 +60,23 @@ Under `--dry-run`, print which change would be checked and run **nothing**.
 
 ## The merge gate
 
-Runs inside gate 1, before anything deploys. Bitbucket reads `bitbucket.mergeGate.enabled`, `.branch`, `.preset`; GitHub reads `github.mergeGate.enabled` and `.branch` (no `preset`). Read them through `/crew:config` (`plugin/crew/CONFIG.md` §8).
+Runs inside gate 1, before anything deploys, and ONLY when I ask for it on the command line: `--merge-gate <github|bitbucket>`, with an optional `--merge-gate-branch NAME`. No config key switches it on; a `bitbucket.mergeGate` or `github.mergeGate` block left in a config file is inert. The branch is fixed at `null` unless `--merge-gate-branch` is given, and the Bitbucket preset is fixed at `"standard"` (`crew_state.MERGE_GATE_ENABLED`, `MERGE_GATE_BRANCH`, `BITBUCKET_MERGE_GATE_PRESET`).
 
 **Route every invocation through `/crew:gate <disable|enable|status> <github|bitbucket>`.** Promote does not compose `merge_gate.sh` commands of its own.
 
 **`guards.mergeGate` ships as `block`.** At `block`, report the gate's state as **not checked** and say which key refused - never as checked and fine.
 
-**`enabled: false` - the shipped default - means do nothing at all.** No `merge_gate.sh` subcommand, no `/crew:gate` call, no Bitbucket or GitHub API call, not even `export`. It does **not** mean "apply the disabled preset": `disable` deletes branch restrictions. Say nothing and move to gate 2.
+**No `--merge-gate` flag means do nothing at all.** No `merge_gate.sh` subcommand, no `/crew:gate` call, no Bitbucket or GitHub API call, not even `export`. It does **not** mean "apply the disabled preset": `disable` deletes branch restrictions. Say nothing and move to gate 2.
 
-Everything below is what `enabled: true` means.
+Everything below is what `--merge-gate` means.
 
-**The script belongs to another marketplace entry. Reference it, never reimplement it.** It is `skills/bitbucket/scripts/merge_gate.sh` or `skills/github/scripts/merge_gate.sh`. If the script for this repo's provider is not on this machine, this is a **stop**: say "`<provider>.mergeGate.enabled` is true and the `<provider>` skill is not installed, so the merge gate could not be checked", name the two fixes (install the skill, or set `enabled: false`), and stop. Do not hand-roll a `branch-restrictions` or `branches/*/protection` API call.
+**The script belongs to another marketplace entry. Reference it, never reimplement it.** It is `skills/bitbucket/scripts/merge_gate.sh` or `skills/github/scripts/merge_gate.sh`. If the script for this repo's provider is not on this machine, this is a **stop**: say "`--merge-gate <provider>` was given and the `<provider>` skill is not installed, so the merge gate could not be checked", name the two fixes (install the skill, or drop the flag), and stop. Do not hand-roll a `branch-restrictions` or `branches/*/protection` API call.
 
-**`branch`:** `null` (the default) passes no `--branch` - the script resolves `.mainbranch.name`; a string passes `--branch <value>` verbatim. Never substitute `main` yourself. `--branch` is ignored with `--from-export`.
+**`branch`:** without `--merge-gate-branch` pass no `--branch` - the script resolves `.mainbranch.name`; with it, pass `--branch <value>` verbatim. Never substitute `main` yourself. `--branch` is ignored with `--from-export`.
 
-**`preset` is wired to nothing:** `merge_gate.sh` has no `--preset` flag; a bare `enable` applies the hardcoded `PRESET` literal, so `bitbucket.mergeGate.preset` changes nothing - say so whenever you show an `enable` command. GitHub's `enable` requires `--from-export` and rejects `--branch`.
+**`preset` is wired to nothing:** `merge_gate.sh` has no `--preset` flag; a bare `enable` applies the hardcoded `PRESET` literal, so the preset (`"standard"`) is not selectable - say so whenever you show an `enable` command. GitHub's `enable` requires `--from-export` and rejects `--branch`.
 
-**Nothing changes without a yes at that moment.** Config is intent, not consent. Before any invocation that changes the live repo, print the exact command with every flag resolved from config and wait. Do not proceed on silence.
+**Nothing changes without a yes at that moment.** Config is intent, not consent. Before any invocation that changes the live repo, print the exact command with every flag resolved from the command line and wait. Do not proceed on silence.
 - **`disable`** (destructive: it removes protections) takes `--dry-run`: run it, show the plan, then wait for the yes.
 - **`enable`** has no `--dry-run`: the echoed command is the entire preview, so say so when you ask.
 
@@ -90,6 +90,8 @@ Append one row to `.work/PROMOTIONS.md` with the real result of every gate, fail
 
 - **All gates green:** say which environment now runs which sha, and name the next promotion from this environment's `promotesTo` - e.g. `qa is now on a1b2c3d; next is /crew:promote production`. If absent, say this is the last environment in the chain.
 - **Any gate failed:** say which gate, quote the error, and state the two options - roll back using the runbook, or fix forward. Do not pick for me on production. Do not resume mid-sequence; the whole sequence runs again from gate 1.
+
+**Report every deploy with three facts:** the merged sha, the deployed sha (read back from the target, not from the pipeline log), and the health-check result (gate 3). If any of the three is missing, the deploy is reported `unverified`, whatever the pipeline said. Merged is not deployed, and deployed is not verified.
 
 Then, for every result (a pass silent, a failure loud), send `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/notify.sh deploy "<env> <sha> - <pass|FAILED at gate N>" --outcome <pass|fail>`.
 

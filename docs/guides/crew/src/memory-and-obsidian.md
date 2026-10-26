@@ -104,7 +104,7 @@ $VO drain --apply --batches 4     # up to 4 passes of 5, stops early if one ackn
 | After a plugin update | Re-run `$VO schedule --os <yours>` and reinstall the unit it prints. The unit names the plugin's versioned folder, which the update replaces. |
 | When a vault moves or you add one | `$VO adopt` to review roles. |
 | When recall seems blind | `$VO recall --query "<words you expect>"` and check which vaults it names. |
-| When another project's notes outrank this repo's | crew sends the main checkout's folder name as `--project`; if your notes' `project:` values differ, list them in the repo's `memory.recall.projects`. |
+| When another project's notes outrank this repo's | crew sends the main checkout's folder name as `--project`; if your notes' `project:` values differ, change them to match that folder name (the `memory.recall.projects` setting was removed). |
 | When the bridge misbehaves | `/obsidian-vault:doctor`, then `/obsidian-vault:repair`. The bridge is optional; capture, recall, import and gardening all work on the files without it. |
 | When the code changed a lot | `/crew:onboard --refresh <subsystem>` for the repository's own code map. That map lives in the repository, not the vault. |
 
@@ -262,14 +262,13 @@ needs the bridge or the `obsidian-vault` plugin; the vault needs `.obsidian/`
 and the Kanban community plugin.
 
 **Turning it on.** In `.crew/config.json`, set `tracker` to `"obsidian"` and<!-- claim: crew-config-file:config.json -->
-give the `obsidian` block a `vaultPath`, a `boardDir` (relative to the vault) and
-optionally `board` (default `Board.md`) and `columns` (your lane names). A repository
+give the `obsidian` block a `vaultPath` and a `boardDir` (relative to the vault). The board file is always `Board.md` and its lanes are always Backlog, Ready, In Progress, Review and Done; a board that uses other names is renamed by hand. A repository
 that ran `/crew:migrate` also has `.crew/crew.json`, which holds the same settings as
 `tracker.kind` and `tracker.obsidian`; the tracker reads both and refuses when they disagree. Give
 every repository its own `boardDir`: with it unset, every repo shares one
 board at the vault root, and a card another repo owns is refused.
 
-| Ticket status | Lane (default name) |
+| Ticket status | Lane |
 |---|---|
 | `direction`, `ready`, `needs-owner` | Backlog |
 | `spec`, `planned` | Ready |

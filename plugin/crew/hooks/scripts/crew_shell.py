@@ -6,22 +6,19 @@
     python3 crew_shell.py run [--root .] -- "<command>"
 
 Spec: `.work/tickets/T-0040/spec.md`. On native Windows, `run` resolves a route
-from `shellRoute.mode` -- `auto`, `wsl`, `powershell` or `gitbash` -- prints one
+automatically (L-0725: the `shellRoute` config is gone, so the route can no
+longer be forced to one shell or pinned to a distro), prints one
 `crew-shell:` route line on stderr naming the route and why, and runs the job
 there. Off Windows (Linux, macOS, or inside a WSL session) nothing here probes,
 prints or spawns anything extra: `run` is exactly `bash -c <command>`.
-
-`shellRoute` is not `route`. `route` (`crew_route.py`) is plain-text lifecycle
-routing of prompts to `/crew:` commands; `shellRoute` picks the shell a job
-runs in.
 
 No hook calls this module, and none may: a SessionStart hook must answer fast
 on every machine, and `wsl.exe` can take seconds to start a stopped VM. Crew's
 own record-writing jobs (`verify-gate.sh --all`, gate records, review ledgers)
 are never routed through it either.
 
-Standard library only. No crew module is imported at import time; `crew_config`
-and `crew_state` are imported where they are used.
+Standard library only. No crew module is imported at import time; `crew_state`
+is imported where it is used.
 """
 
 import json
@@ -34,8 +31,6 @@ import subprocess
 import sys
 
 import crew_common
-
-MODES = ("auto", "wsl", "powershell", "gitbash")
 
 # Any of these anywhere in a command means it is not provably plain argv. The
 # classifier fails toward Git Bash: a character on this list costs a shell
@@ -363,7 +358,7 @@ def _call(runner, argv, timeout):
     return code, out, err, None
 
 
-def probe(runner=None, which=None, distro=None):
+def probe(runner=None, which=None):
     """Is WSL2 usable from this Windows side? Off native Windows this returns
     `{"state": "n/a"}` and runs nothing. Never installs, updates or changes a
     default: the only calls are `--list --verbose` and one `command -v`."""
@@ -386,15 +381,9 @@ def probe(runner=None, which=None, distro=None):
     if code != 0:
         return _result("broken", f"wsl.exe --list --verbose exit {code}: {text}")
     rows = _parse_listing(listing)
-    if distro:
-        target = next((row for row in rows if row[0].casefold() == distro.casefold()), None)
-        if target is None:
-            installed = ", ".join(row[0] for row in rows) or "none"
-            return _result("no-distro", f"configured distro {distro} is not installed (installed: {installed})")
-    else:
-        target = next((row for row in rows if row[2]), None)
-        if target is None:
-            return _result("no-distro", "wsl.exe --list --verbose shows no default distro")
+    target = next((row for row in rows if row[2]), None)
+    if target is None:
+        return _result("no-distro", "wsl.exe --list --verbose shows no default distro")
     name, version = target[0], target[1]
     if version != "2":
         return _result("wsl1-only", f"distro {name} is WSL{version}, not WSL2", distro=name, version=version)
@@ -468,50 +457,6 @@ def write_cache(result):
             os.remove(tmp)
 
 
-# --- config -------------------------------------------------------------------------
-
-def settings(root):
-    """The resolved config for `root`, both layers."""
-    import crew_config
-    return crew_config.resolve_config(root)
-
-
-def _block(cfg):
-    block = (cfg or {}).get("shellRoute")
-    return block if isinstance(block, dict) else {}
-
-
-def configured_distro(cfg):
-    value = _block(cfg).get("distro")
-    return value if isinstance(value, str) and value else None
-
-
-def raw_mode(cfg):
-    value = _block(cfg).get("mode")
-    return "auto" if value is None else str(value)
-
-
-def mode(cfg):
-    """`(mode, note)`. An unrecognised value is read as `auto`, and the note
-    names it so the route line and the status line can say so."""
-    value = raw_mode(cfg)
-    if value in MODES:
-        return value, None
-    return "auto", f"shellRoute.mode {value!r} is not a mode - read as auto"
-
-
-def effective_probe(cache, cfg):
-    """The cached probe, or `unknown` when `shellRoute.distro` names a distro
-    other than the one the cache probed: that answer is about another distro."""
-    wanted = configured_distro(cfg)
-    probed = cache.get("distro")
-    if wanted and probed and wanted.casefold() != str(probed).casefold():
-        return {"state": "unknown", "distro": None,
-                "detail": f"cache probed {probed} but shellRoute.distro is {wanted} - "
-                          "run crew_shell.py probe --write"}
-    return cache
-
-
 def _repo_key(root):
     return os.path.normcase(root)
 
@@ -519,8 +464,8 @@ def _repo_key(root):
 def measured_verdict(cache, root):
     """`wsl-faster`, `gitbash-faster` or `none` for this repo. A measurement is
     about the distro it timed: one whose `distro` is not the cache's current
-    distro -- a reprobe, or `shellRoute.distro` switched -- is `none`, never
-    another distro's verdict (review round 2)."""
+    distro -- a reprobe -- is `none`, never another distro's verdict (review
+    round 2)."""
     measured = cache.get("measured") if isinstance(cache, dict) else None
     entry = measured.get(_repo_key(root)) if isinstance(measured, dict) else None
     if not isinstance(entry, dict):
@@ -533,7 +478,6 @@ def measured_verdict(cache, root):
 
 # --- decide ---------------------------------------------------------------------------
 
-POWERSHELL_BASH = "powershell requested; job is bash syntax -> gitbash"
 REFUSED = "-> refused (exit 3)"
 
 
@@ -558,7 +502,6 @@ def _auto_why(probe_result, location, measured):
 
 
 PLAIN_TAIL, BASH_TAIL = "; plain argv -> direct", "; bash syntax -> gitbash"
-NOT_A_MODE = " is not a mode - read as auto; "
 
 
 def fallback(job_class, why):
@@ -572,53 +515,29 @@ def fallback(job_class, why):
 
 def _cause(reason):
     """What forced a route, out of a `decide` / `route_for` reason: without the
-    bad-mode note, the mode prefix or the route tail. The status line shows
-    this, so it names the same cause the route line does."""
-    if NOT_A_MODE in reason:
-        reason = reason.split(NOT_A_MODE, 1)[1]
-    for prefix in ("auto: ", "shellRoute.mode wsl but "):
-        if reason.startswith(prefix):
-            reason = reason[len(prefix):]
-            break
-    for tail in (PLAIN_TAIL, BASH_TAIL, f" {REFUSED}, no fallback", f" {REFUSED}"):
+    `auto: ` prefix or the route tail. The status line shows this, so it names
+    the same cause the route line does."""
+    if reason.startswith("auto: "):
+        reason = reason[len("auto: "):]
+    for tail in (PLAIN_TAIL, BASH_TAIL):
         if reason.endswith(tail):
             return reason[:-len(tail)]
     return reason
 
 
-def decide(mode_value, probe_result, location, measured, host, job_class, pwsh):
+def decide(probe_result, location, measured, host, job_class):
     """`(route, reason, exit)`. `route` is `bash` (off Windows: plain `bash -c`,
-    no message), `wsl`, `gitbash`, `direct`, `powershell` or `refuse` (with
-    exit 3). A pure function of its arguments: the same job takes the same
-    route on the same machine."""
+    no message), `wsl`, `gitbash` or `direct`. A pure function of its
+    arguments: the same job takes the same route on the same machine."""
     if not on_windows(host):
         return "bash", "", None
-    note = ""
-    if mode_value not in MODES:
-        note = f"shellRoute.mode {mode_value!r}{NOT_A_MODE}"
-        mode_value = "auto"
     state = (probe_result or {}).get("state") or "unknown"
     distro = (probe_result or {}).get("distro")
-    if mode_value == "gitbash":
-        return "gitbash", "shellRoute.mode gitbash -> gitbash", None
-    if mode_value == "powershell":
-        if job_class != "plain":
-            return "gitbash", POWERSHELL_BASH, None
-        if pwsh:
-            return "powershell", f"shellRoute.mode powershell; plain argv -> powershell ({pwsh})", None
-        return "refuse", f"shellRoute.mode powershell but {resolve_pwsh(exists=lambda _p: False)[1]} {REFUSED}", 3
-    usable = state == "usable"
-    if mode_value == "wsl":
-        if not usable:
-            return "refuse", f"shellRoute.mode wsl but {_wsl_state(probe_result)} {REFUSED}, no fallback", 3
-        if location not in ("windows-drive", "wsl-fs"):
-            return "refuse", f"shellRoute.mode wsl but the repo path has no WSL translation {REFUSED}", 3
-        return "wsl", f"shellRoute.mode wsl; WSL2 usable ({distro}) -> wsl", None
-    if usable and location == "wsl-fs":
-        return "wsl", f"{note}auto: WSL2 usable ({distro}) and the repo is inside WSL -> wsl", None
-    if usable and location == "windows-drive" and measured == "wsl-faster":
-        return "wsl", f"{note}auto: WSL2 usable ({distro}) and measured faster than Git Bash here -> wsl", None
-    return fallback(job_class, f"{note}auto: {_auto_why(probe_result, location, measured)}")
+    if state == "usable" and location == "wsl-fs":
+        return "wsl", f"auto: WSL2 usable ({distro}) and the repo is inside WSL -> wsl", None
+    if state == "usable" and location == "windows-drive" and measured == "wsl-faster":
+        return "wsl", f"auto: WSL2 usable ({distro}) and measured faster than Git Bash here -> wsl", None
+    return fallback(job_class, f"auto: {_auto_why(probe_result, location, measured)}")
 
 
 # --- run ------------------------------------------------------------------------------
@@ -629,30 +548,6 @@ def wsl_argv(cmd, cwd, distro):
 
 def gitbash_argv(cmd, bash):
     return [bash, "-lc", cmd]
-
-
-# PowerShell closes a single-quoted string on any of these, not only `'`.
-PWSH_QUOTES = "'‘’‚‛"
-
-
-def _pwsh_quote(part):
-    for char in PWSH_QUOTES:
-        part = part.replace(char, char + char)
-    return "'" + part + "'"
-
-
-def pwsh_argv(argv, pwsh):
-    """`argv` is the classified list, never a command string: each element is
-    single-quoted with every quote character pwsh knows (`'` and U+2018 to
-    U+201B) doubled, so pwsh sees literal arguments. A program that cannot
-    start is exit 1 with the reason on stderr: bare `exit $LASTEXITCODE` is
-    `exit $null` then, which is 0, and a check that never ran would pass.
-    Measured with pwsh 7 and 5.1 on dadeush-desktop, 2026-09-30."""
-    quoted = " ".join(_pwsh_quote(part) for part in argv)
-    return [pwsh, "-NoProfile", "-NonInteractive", "-Command",
-            f"$ErrorActionPreference = 'Stop'; try {{ & {quoted} }} catch {{ "
-            "[Console]::Error.WriteLine('crew-shell: ' + $_); exit 1 }; "
-            "if ($null -eq $LASTEXITCODE) { exit 1 }; exit $LASTEXITCODE"]
 
 
 def execute_job(argv, cwd):
@@ -764,28 +659,18 @@ def _absolute(root):
     return os.path.abspath(root)
 
 
-def _wsl_unusable(mode_value, job_class, why):
-    """`wsl` refuses and never falls back; `auto` takes the direct-or-Git-Bash
-    split. `why` is the reason WSL cannot take this job."""
-    if mode_value == "wsl":
-        return "refuse", f"shellRoute.mode wsl but {why} {REFUSED}, no fallback", 3
-    return fallback(job_class, f"auto: WSL usable but {why}")
-
-
-def route_for(cfg, cache, root, job_class, pwsh):
+def route_for(cache, root, job_class):
     """`(route, reason, exit, wsl_cwd)`: `decide`, then the translation of
     `root` into the routed distro, which refuses another distro's
     `\\\\wsl$\\` path. The one decision path `run` and `status_line` share, so
     the status line can never name a route `run` would not take. Runs
     nothing; `run` adds the job's WSL preflight on top."""
-    normal, _ = mode(cfg)
-    route, reason, code = decide(raw_mode(cfg), cache, repo_location(root), measured_verdict(cache, root), host_os(),
-                                 job_class, pwsh)
+    route, reason, code = decide(cache, repo_location(root), measured_verdict(cache, root), host_os(), job_class)
     wsl_cwd = None
     if route == "wsl":
         wsl_cwd, why = to_wsl_path(root, cache.get("distro"))
         if wsl_cwd is None:
-            route, reason, code = _wsl_unusable(normal, job_class, why)
+            route, reason, code = fallback(job_class, f"auto: WSL usable but {why}")
     return route, reason, code, wsl_cwd
 
 
@@ -803,29 +688,26 @@ def run(cmd, root=".", runner=None, execute=None):
         return _signal_status(execute(["bash", "-c", cmd], root))
     runner = runner or capture
     root = _absolute(root)
-    cfg = settings(root)
-    normal, _ = mode(cfg)
-    cache = effective_probe(load_cache(), cfg)
+    cache = load_cache()
     kind, argv, creason = classify(cmd)
-    pwsh = resolve_pwsh()[0] if normal == "powershell" else None
-    route, reason, code, wsl_cwd = route_for(cfg, cache, root, kind, pwsh)
+    route, reason, code, wsl_cwd = route_for(cache, root, kind)
     distro = cache.get("distro")
     if route == "wsl":
         missing = _preflight(runner, distro, cmd, wsl_cwd)
         if missing:
-            route, reason, code = _wsl_unusable(normal, kind, missing)
+            route, reason, code = fallback(kind, f"auto: WSL usable but {missing}")
     bash = None
     if route == "gitbash":
         bash, why = resolve_gitbash(runner)
         if bash is None:
             route, reason, code = "refuse", f"{reason}; but {why} {REFUSED}", 3
-    if route in ("direct", "powershell"):
+    if route == "direct":
         reason += f" [{creason}]"
     print(f"crew-shell: {reason}", file=sys.stderr, flush=True)
     if code:
         return code
     job = {"wsl": lambda: wsl_argv(cmd, wsl_cwd, distro), "gitbash": lambda: gitbash_argv(cmd, bash),
-           "direct": lambda: argv, "powershell": lambda: pwsh_argv(argv, pwsh)}[route]()
+           "direct": lambda: argv}[route]()
     return execute(job, root)
 
 
@@ -887,7 +769,7 @@ def _verdict(sides):
     return "wsl-faster" if faster else "gitbash-faster"
 
 
-def measure(root, runner=None, cache=None, cfg=None):
+def measure(root, runner=None, cache=None):
     """50 forks and 200 small writes for Git Bash, pwsh and WSL, at the repo's
     own location, plus WSL's ext4 as the in-WSL clone reference when the repo
     is on a Windows drive. Off native Windows: `n/a`, nothing run."""
@@ -898,8 +780,7 @@ def measure(root, runner=None, cache=None, cfg=None):
     import tempfile
     runner = runner or capture
     root = _absolute(root)
-    cfg = settings(root) if cfg is None else cfg
-    cache = effective_probe(load_cache() if cache is None else cache, cfg)
+    cache = load_cache() if cache is None else cache
     location = repo_location(root)
     work = tempfile.mkdtemp(prefix=".crew-shell-measure-", dir=root)
     sides = {}
@@ -954,44 +835,31 @@ def status_line(root):
     if not on_windows():
         return None
     root = _absolute(root)
-    cfg = settings(root)
-    normal, note = mode(cfg)
-    shown = normal if note is None else f"{normal} (shellRoute.mode {raw_mode(cfg)!r} is not a mode)"
-    cache = effective_probe(load_cache(), cfg)
+    cache = load_cache()
     split = "direct (plain argv) / gitbash (bash syntax)"
-    if normal == "gitbash":
-        route, why = "gitbash", "set by shellRoute.mode"
-    elif normal == "powershell":
-        pwsh, reason = resolve_pwsh()  # os.path.isfile only: runs nothing
-        route = f"{pwsh} (plain argv) / gitbash (bash syntax)" if pwsh else \
-            "refused for plain argv (exit 3) / gitbash (bash syntax)"
-        why = "a bash string is never handed to pwsh" if pwsh else reason
-    else:
-        # `run`'s own decision for a plain-argv job, the distro check included.
-        chosen, reason, _, _ = route_for(cfg, cache, root, "plain", None)
-        if chosen == "wsl":
-            route = f"wsl ({cache.get('distro')})"
-            if normal == "wsl":
-                why = "set by shellRoute.mode; WSL2 usable"
-            elif repo_location(root) == "wsl-fs":
-                why = "WSL2 usable and the repo is inside WSL"
-            else:
-                why = "WSL2 usable and measured faster than Git Bash for this repo"
+    # `run`'s own decision for a plain-argv job, the distro check included.
+    chosen, reason, _, _ = route_for(cache, root, "plain")
+    if chosen == "wsl":
+        route = f"wsl ({cache.get('distro')})"
+        if repo_location(root) == "wsl-fs":
+            why = "WSL2 usable and the repo is inside WSL"
         else:
-            route = "refused (exit 3)" if chosen == "refuse" else split
-            why = _cause(reason)
+            why = "WSL2 usable and measured faster than Git Bash for this repo"
+    else:
+        route = split
+        why = _cause(reason)
     state = cache.get("state")
-    if normal in ("auto", "wsl") and state in ("not-installed", "no-distro"):
+    if state in ("not-installed", "no-distro"):
         why += "; recommend `wsl --install -d Ubuntu` in an elevated shell, then reboot"
-    elif normal in ("auto", "wsl") and state == "unknown":
+    elif state == "unknown":
         why += " - run /crew:config"
-    return f"shell    {shown} -> {route} - {why}"
+    return f"shell    auto -> {route} - {why}"
 
 
 # --- CLI ------------------------------------------------------------------------------
 
 def _cmd_probe(args):
-    result = probe(distro=configured_distro(settings(args.root)))
+    result = probe()
     if args.write:
         if result.get("state") == "n/a":
             print("crew-shell: not native Windows - nothing to probe, cache not written", file=sys.stderr)

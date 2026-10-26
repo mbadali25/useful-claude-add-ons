@@ -1,9 +1,9 @@
 """The wrappers, the hook entry and the callers around crew_notify.py (T-0051).
 
-notify.sh and notify.ps1 are thin: every rule lives in crew_notify.py, once.
-These hold the wrappers to that, hold hooks.json to one unfiltered entry per
-flavour, hold the commands to the retired pings staying retired, and run one
-payload set through each wrapper against a fake Telegram.
+notify.sh is thin: every rule lives in crew_notify.py, once. These hold the
+wrapper to that, hold hooks.json to one unfiltered entry per flavour, hold the
+commands to the retired pings staying retired, and run one payload set through
+the wrapper against a fake Telegram.
 """
 import http.server
 import json
@@ -24,30 +24,12 @@ from review_fixtures import init_repo
 CREW = pathlib.Path(__file__).resolve().parent.parent
 SCRIPTS = CREW / "hooks" / "scripts"
 COMMANDS = CREW / "commands"
-PWSH = crew_fixtures.resolve_pwsh()
 BASH = crew_fixtures.resolve_bash()
 TOKEN = "123456789:" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
 
 
 def _read(path):
     return pathlib.Path(path).read_text(encoding="utf-8")
-
-
-def _ps1_without_python_probe():
-    """notify.ps1 minus Resolve-CrewPython, whose shared probe legitimately
-    parses JSON (tests/test_ps1_python_probe.py holds it byte for byte)."""
-    text = _read(SCRIPTS / "notify.ps1")
-    start = text.index("function Resolve-CrewPython")
-    end = text.index("function Format-CrewProcessArgument")
-    return text[:start] + text[end:]
-
-
-def test_notify_ps1_has_no_send_logic():
-    text = _ps1_without_python_probe()
-
-    assert ("crew_notify.py" in text,
-            [word for word in ("api.telegram.org", "Invoke-RestMethod", "ConvertFrom-Json",
-                               "config.json") if word in text]) == (True, [])
 
 
 def test_notify_sh_has_no_send_logic():
@@ -58,13 +40,17 @@ def test_notify_sh_has_no_send_logic():
                 True, [])
 
 
-def test_hooks_json_notification_passes_hook_and_no_matcher():
+def test_hooks_json_notification_goes_through_the_launcher_and_the_table_passes_hook():
+    """L-0727: hooks.json registers the launcher with the event name; crew_hook.TABLE is
+    where `notify.sh hook` is spelled, once, with no matcher."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
     entries = json.loads(_read(CREW / "hooks" / "hooks.json"))["hooks"]["Notification"]
 
     commands = [hook["command"] for entry in entries for hook in entry["hooks"]]
+    rows = [(r.script, r.extra, r.matcher) for r in crew_hook.TABLE if r.event == "Notification"]
     assert ([("matcher" in entry) for entry in entries], len(commands),
-            all(re.search(r'notify\.(sh|ps1)\\?" hook(;|$)', command) for command in commands)) == (
-                [False, False], 2, True)
+            all(re.search(r'crew-hook\.(sh|ps1)\\?" Notification(;|$)', command) for command in commands),
+            rows) == ([False, False], 2, True, [("notify.sh", ("hook",), "")])
 
 
 # --- the callers ------------------------------------------------------------------------------
@@ -75,7 +61,7 @@ def test_hooks_json_notification_passes_hook_and_no_matcher():
 # retired caller and sends nothing, although `blocker` itself sends (T-0060):
 # test_review_md_legacy_ping_stays_retired below.
 _RETIRED = (COMMANDS / "done.md", COMMANDS / "init.md",
-            SCRIPTS / "context-watch.sh", SCRIPTS / "context-watch.ps1")
+            SCRIPTS / "context-watch.sh")
 
 
 def test_retired_callers_gone():
@@ -99,16 +85,6 @@ def test_promote_sends_deploy_for_every_result():
     assert ("--outcome <pass|fail>" in line, text.index(line) > max(after_pass, after_fail),
             "for every result" in text, re.search(r"\bpython3?\b", line)) == (
                 True, True, True, None)
-
-
-def test_notify_ps1_direct_call_forwards_the_rest():
-    """notify.ps1's direct call forwards what follows <event> <reason> (the
-    `--outcome`), as notify.sh's "$@" does. Static: pwsh runs it below when present."""
-    text = _read(SCRIPTS / "notify.ps1")
-    line = next(line for line in text.splitlines()
-                if "Invoke-CrewNotify" in line and "'send'" in line)
-
-    assert ("+ $rest" in line, "$rest = @($args" in text) == (True, True)
 
 
 # --- the wrappers against a fake Telegram ----------------------------------------------------
@@ -147,7 +123,7 @@ def _repo(tmp_path, name):
     (root / ".crew").mkdir()
     (root / ".crew" / "config.json").write_text(json.dumps({"notify": {
         "provider": "telegram", "chatId": "4242",
-        "events": ["deploy", "question"], "realertHours": 6, "questionTypes": None}}),
+        "events": ["deploy", "question"]}}),
         encoding="utf-8")
     home = _home(root)
     (home / ".claude" / "crew").mkdir(parents=True)
@@ -186,12 +162,9 @@ def _env(root, base, windows):
 def _through(flavour, root, base):
     before = len(_Fake.texts)
     for ntype, prompt in _PARITY:
-        if flavour == "sh":
-            cmd = [BASH, str(SCRIPTS / "notify.sh"), "hook"]
-        else:
-            cmd = [PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1"), "hook"]
+        cmd = [BASH, str(SCRIPTS / "notify.sh"), "hook"]
         done = subprocess.run(cmd, input=_payload(root, ntype, prompt), cwd=str(root),
-                              env=_env(root, base, flavour == "ps1"), capture_output=True,
+                              env=_env(root, base, False), capture_output=True,
                               check=False, timeout=120)
         assert done.returncode == 0, done.stderr
     return len(_Fake.texts) - before
@@ -200,15 +173,6 @@ def _through(flavour, root, base):
 @pytest.mark.skipif(BASH is None, reason="needs bash")
 def test_notify_sh_hook_sends_the_question_types_only(tmp_path, fake):
     assert _through("sh", _repo(tmp_path, "sh"), fake) == 3
-
-
-@pytest.mark.skipif(PWSH is None or BASH is None,
-                    reason="needs pwsh and bash - the parity run was NOT made")
-def test_wrapper_parity_under_pwsh(tmp_path, fake):
-    counts = (_through("sh", _repo(tmp_path, "sh"), fake),
-              _through("ps1", _repo(tmp_path, "ps1"), fake))
-
-    assert counts == (3, 3)
 
 
 @pytest.mark.skipif(BASH is None, reason="needs bash")
@@ -224,20 +188,15 @@ def test_legacy_cli_call_is_mapped_not_dropped(tmp_path, fake, legacy, subject):
     assert (done.returncode, [text.split(" [")[0] for text in _Fake.texts]) == (0, [subject])
 
 
-def _direct(flavour, root, base, *args):
-    if flavour == "sh":
-        cmd = [BASH, str(SCRIPTS / "notify.sh"), *args]
-    else:
-        cmd = [PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1"), *args]
-    return subprocess.run(cmd, cwd=str(root), env=_env(root, base, flavour == "ps1"),
+def _direct(root, base, *args):
+    cmd = [BASH, str(SCRIPTS / "notify.sh"), *args]
+    return subprocess.run(cmd, cwd=str(root), env=_env(root, base, False),
                           capture_output=True, stdin=subprocess.DEVNULL, check=False,
                           timeout=120)
 
 
 @pytest.mark.parametrize("flavour", [
     pytest.param("sh", marks=pytest.mark.skipif(BASH is None, reason="needs bash")),
-    pytest.param("ps1", marks=pytest.mark.skipif(PWSH is None,
-                                                  reason="needs pwsh - NOT run")),
 ])
 def test_direct_call_forwards_outcome(tmp_path, fake, flavour):
     """promote.md's line: `notify.sh deploy "<reason>" --outcome fail`. A reason
@@ -245,7 +204,7 @@ def test_direct_call_forwards_outcome(tmp_path, fake, flavour):
     makes this `Deploy FAILED`."""
     root = _repo(tmp_path, f"direct-{flavour}")
 
-    done = _direct(flavour, root, fake, "deploy", "qa abc - gate 3 broke", "--outcome", "fail")
+    done = _direct(root, fake, "deploy", "qa abc - gate 3 broke", "--outcome", "fail")
 
     assert (done.returncode, [text.split(" [")[0] for text in _Fake.texts]) == (
         0, ["Deploy FAILED"])

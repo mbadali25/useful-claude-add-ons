@@ -1,0 +1,23 @@
+{
+ "armed": false,
+ "case": "multiedit-out-of-touch",
+ "dirty": "",
+ "event": "PreToolUse",
+ "harness": "claude",
+ "no_python": true,
+ "payload": "{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"MultiEdit\", \"tool_input\": {\"file_path\": \"{ROOT}/other/keep.py\"}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "scope-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "scope-guard.sh",
+   "stderr": "scope-guard: no usable python - not judged (scope.mode is off).\n",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

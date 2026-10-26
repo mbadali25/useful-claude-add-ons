@@ -13,7 +13,7 @@ needs the target to answer is a reader's item below, not an audited one.
 
 ### G1 — Every rule declares `reach` and `seconds` [audited]
 
-A rule with no `reach` is classified on Stop (CONFIG.md §19): a command with shell syntax, a
+A rule with no `reach` is classified on Stop (docs/crew/config-rationale.md): a command with shell syntax, a
 remote verb or a wrapper script is deferred, recorded as skipped while the verified-at marker
 advances to HEAD, so the gate runs nothing and reads green (D10, both repositories). A plain local
 command still runs undeclared.
@@ -21,7 +21,7 @@ command still runs undeclared.
 - **Check.** `.crew/verify.json`: every rule has `reach` and a numeric `seconds`. The evidence
   separates the rules the Stop gate skips (by `verify_record.scan_reach`, the gate's own
   classifier) from the ones that run undeclared.
-- **Apply.** Declare `reach` on each rule by hand (CONFIG.md §19); L-0562's
+- **Apply.** Declare `reach` on each rule by hand (docs/crew/config-rationale.md); L-0562's
   `/crew:verify --stamp-reach` will do it once it lands. Then time each rule in the gate's own
   profile-less shell, not a login shell. A rule that mutates state gets `requiresCleanTree` or
   `reach: "host"`.

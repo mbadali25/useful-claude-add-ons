@@ -13,7 +13,8 @@ crew 1.0 Windows burn-in, Codex round 1 (FAIL 3):
   twins, shared it.
 * vault-guard.sh:88 -- the bash every-match probes were unbounded, so a
   hanging PATH candidate stalled the hook forever.
-* crew role-write-guard.ps1:66, which these copy -- the 3s timeout killed only
+* crew's Resolve-CrewPython (role-write-guard.ps1:66 until L-0727 slice 3, now
+  crew-hook.ps1's), which these copy -- the 3s timeout killed only
   the candidate, so a launcher's child holding the redirected handles lived on.
 
 Each wrapper's resolver is lifted out of the tracked file (never edited in
@@ -249,8 +250,8 @@ def check_no_dead_memo():
 # --- FIX (Codex review of crew-1.0, item 3): a python exposed only via a
 #     .cmd/.bat shim (a pyenv-win install is exactly this shape) cannot be
 #     launched with UseShellExecute=false -- CreateProcess only starts a
-#     real PE executable, not a shell shim. crew's role-write-guard.ps1 (and
-#     its ten sibling carriers) were already fixed to route a .cmd/.bat
+#     real PE executable, not a shell shim. crew's Resolve-CrewPython (then in
+#     role-write-guard.ps1 and its ten sibling carriers) was already fixed to route a .cmd/.bat
 #     candidate through `cmd.exe /d /c` in commit a39ac347; these three
 #     obsidian-vault resolvers were not. Ported the same routing here.
 #     STATIC, not behavioural: launching a real .cmd shim through
@@ -280,8 +281,8 @@ def check_cmd_bat_routing_present():
 #     Python (a pyenv-win install) always failed the probe. Fixed by building
 #     the line with `str(...)` and `+` instead of `%`-formatting -- same
 #     output shape (`<major>:<minor>:<impl>:<executable>`), no `%` anywhere
-#     for cmd.exe to expand. crew's own Resolve-CrewPython (role-write-guard.ps1
-#     and its ten identical siblings) was checked for the same shape and
+#     for cmd.exe to expand. crew's own Resolve-CrewPython (crew-hook.ps1, the
+#     launcher; role-write-guard.ps1 and its siblings before slice 3) was checked for the same shape and
 #     never carried one: its probe prints a `json.dumps(...)` line, which has
 #     no `%`-formatting either. STATIC, like the check above: whether a `%`
 #     reaches cmd.exe is a fact about the source, not something this sandbox
@@ -302,7 +303,7 @@ def check_no_percent_reaches_cmd():
                 f"routes through it: {line.strip()!r}")
 
     crew_src = (SCRIPTS.parent.parent.parent / "crew" / "hooks" / "scripts"
-                / "role-write-guard.ps1").read_text(encoding="utf-8")
+                / "crew-hook.ps1").read_text(encoding="utf-8")
     crew_body = _body(crew_src, "function Resolve-CrewPython {")
     crew_start = crew_body.index("$probeArgs = ")
     crew_line = crew_body[crew_start:crew_body.index("\n", crew_start)]

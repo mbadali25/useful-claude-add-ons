@@ -1,8 +1,9 @@
 """AI-Connect MCP server over STDIO — one per Claude Code session.
 
-The session's peer name is "<client.name>:<project>" (see peer_name.py):
-client.name is the machine, whose one token registers every session on it.
-A second session in the same project appends its process id to the name.
+The session's peer name is "<client.name>:<label>" (see peer_name.py):
+client.name is the machine, whose one token registers every session on it,
+and the label is the Claude Code session's name, or its project without one.
+A second session with the same label appends its process id to the name.
 With client.name_mode: per-project and a token for the project, it is
 "<client.name>-<project>" under that token instead (config_loader.py).
 """
@@ -20,14 +21,29 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config_loader import client_settings, load_config
 from log_setup import setup_logging
 from mcp_app import create_app  # pylint: disable=import-error
-from peer_name import record_session_name, remove_dead_sessions, session_identity, session_pid
+from peer_name import (
+    claude_session_title,
+    claude_sessions_dir,
+    record_session_name,
+    remove_dead_sessions,
+    session_identity,
+    session_pid,
+)
 
 SESSION_PID = session_pid()
 # Read once: with client.name_mode per-project the name and token are chosen
 # here, and a fallback says so on stderr once (stdout is the MCP protocol)
 _config = load_config()
 settings = client_settings(_config)
-name, session = session_identity(os.environ, Path.cwd(), settings.name, client_settings(_config, name="").name)
+# The session's name is read once as well, here: renaming the session later
+# changes the peer name only when this client is started again (/mcp, reconnect)
+name, session = session_identity(
+    os.environ,
+    Path.cwd(),
+    settings.name,
+    client_settings(_config, name="").name,
+    claude_session_title(SESSION_PID, claude_sessions_dir(os.environ)),
+)
 # STDIO carries the MCP protocol, so logs go to a file only, one per peer:
 # several sessions run at once, and a rotated file must have a single writer
 setup_logging(f"mcp-{name.replace(':', '_')}.log")

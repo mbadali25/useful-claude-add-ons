@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`ai-connect/`](ai-connect) |
-| **Version** | 0.2.0<!-- claim: plugin-version:ai-connect --> |
+| **Version** | 0.2.2<!-- claim: plugin-version:ai-connect --> |
 | **Install** | `claude plugin install ai-connect@useful-claude-add-ons`, then the plugin directory's own `install.sh --client` / `install.cmd -Client` (or `--server` on the bridge machine). Over Tailscale, one run per machine instead: `deploy/setup.sh` / `deploy\setup.ps1` (`bridge`, `peer`, `session`; `session --project` for the opt-in one-name-per-project mode), which prints its plan and changes nothing until `--apply` |
 | **Menu item** | 19, `repo-plugins` — **off by default**, like every plugin in that group |
 | **Registers** | Hooks on 2 events: a watcher registered once per flavour (`watch.sh` / `watch.ps1`). **No agents, no commands, no skills.** The MCP server is registered by the plugin's installer (`claude mcp add -s user ai-connect`), not by the manifest, and the same installer writes four `mcp_tool` state hooks into your Claude Code settings |
@@ -26,11 +26,11 @@ This is a hardened fork. Against upstream it adds per-peer tokens stored as SHA-
 
 | Hook | Event | What it does |
 |---|---|---|
-| `watch.sh` / `watch.ps1` | `SessionStart`, `Stop` | `asyncRewake`, 7-day timeout. Runs `integrations/claude-code/aiconnect_watch.py` with the plugin's venv, which waits on the bridge for a message to this session's peer name; on one it prints the message framed as untrusted data and exits 2, which wakes the session. One watcher per session (the bridge turns away a second, which exits 0) |
+| `watch.sh` / `watch.ps1` | `SessionStart`, `Stop` | `asyncRewake`, 7-day timeout. Runs `integrations/claude-code/aiconnect_watch.py` with the venv this machine was set up with (see "Where the venv lives" below), which waits on the bridge for a message to this session's peer name; on one it prints the message framed as untrusted data and exits 2, which wakes the session. One watcher per session (the bridge turns away a second, which exits 0) |
 
 The two watcher scripts are a flavour pair: on Windows Claude Code runs both entries, so `watch.sh` stands down when `$OS` is `Windows_NT` and `watch.ps1` stands down when it is not. The PowerShell entry ends with `; exit $LASTEXITCODE`, without which PowerShell's `-Command` turns the wake-up exit 2 into a 1.
 
-**Until the installer has run, the plugin is silent.** With no venv in the plugin directory and no `~/.config/ai-connect/config.yaml`, the watcher exits 0 and prints nothing on either event. Once the installer has run and a plugin update then leaves the new directory without a venv (the config is still there), it exits 1 with a stderr line naming the installer to re-run. Nothing here blocks a tool call or a prompt: the only non-zero exit that changes behaviour is the watcher's 2, and that resumes an idle session rather than stopping one.
+**Until the installer has run, the plugin is silent.** With no venv in any of the places below and no `~/.config/ai-connect/config.yaml`, the watcher exits 0 and prints nothing on either event. Once the installer has run and a plugin update then leaves the new directory without a venv (the config is still there, and deploy made no venv either), it exits 1 with a stderr line naming the places it looked and the installer to re-run. Nothing here blocks a tool call or a prompt: the only non-zero exit that changes behaviour is the watcher's 2, and that resumes an idle session rather than stopping one.
 
 **The installer writes four more hooks into your settings, outside this plugin.** `installer.py claude` (run by `install.sh` / `install.cmd`) registers the MCP server and, next to it, these `mcp_tool` hooks in `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR/settings.json` when that is set); `deploy peer` / `deploy join` write them only with both `--install-hooks` and `--register-mcp`, into the user's settings for `--scope user` and the project's `.claude/settings.local.json` for `--scope project`. They are not in `hooks/hooks.json` because an `mcp_tool` hook has no quiet mode: where its server is not registered it is an error on every event, which is what 0.1.8 did on a machine that had only installed the plugin.
 
@@ -44,9 +44,19 @@ Writing them is idempotent, keeps every other hook and key in the file, refuses 
 
 **Never run a woken session in bypass or auto-approve mode.** A peer message resumes the session's turn; with confirmations off, whatever the message asks would run. The untrusted framing and the bundled behaviour rules (`integrations/claude-code/CLAUDE.md`, which you `@`-import into your own `CLAUDE.md`) tell the model to show peer requests to you and confirm before acting — that is a prompt, not an enforcement mechanism.
 
-### The venv lives in the plugin directory
+### Where the venv lives
 
-The installer creates `venv/` next to `installer.py`, and the hooks look for it there. The plugin cache directory changes with every version, so **after `claude plugin update ai-connect@useful-claude-add-ons`, re-run the installer** from the new directory; the MCP registration it writes points at the venv's interpreter by absolute path.
+The watcher hooks use the first venv that is there, in this order (`watch.sh` and `watch.ps1` alike):
+
+1. `AI_CONNECT_VENV`, when it is set and holds a venv, and is trusted (below).
+2. `venv/` in the plugin directory, next to `installer.py`, where `install.sh` / `install.cmd` create it.
+3. Deploy's venv, outside the plugin directory, where `deploy/deploy.sh` / `deploy/setup.sh` and their `.ps1` twins create it: `~/.local/share/ai-connect/venv` on Linux and macOS, `%USERPROFILE%\AppData\Local\ai-connect\venv` on Windows, or `$AI_CONNECT_HOME/venv` when that variable is set and trusted (below). With this venv the watcher script is run from deploy's copy of the plugin beside it (`.../ai-connect/app`) when there is one, and from the plugin directory otherwise (`deploy peer --install-hooks` without `--register-mcp` makes the venv and no copy).
+
+**The two variables are not trusted blindly.** They choose the interpreter the hook starts at every SessionStart and Stop, and a project's `settings.json` can set environment variables, so a repository could otherwise plant `bin/python` and name it. `AI_CONNECT_VENV` and `AI_CONNECT_HOME` are used only when the value is an absolute path with no `..`, whose real location is under the user's home and not inside the project (the hook's working directory, `CLAUDE_PROJECT_DIR`; a project directory that is the home or above it does not count), and, for `AI_CONNECT_VENV` on Linux and macOS, whose `bin/python` is owned by the user. A value that fails is ignored as if unset. Both also need `~/.config/ai-connect/config.yaml`: on a machine never set up the hook stays silent whatever they say. The exit-1 message names the places looked at, never the variables' values. `watch.ps1` compares paths as text after `Resolve-Path`, which does not follow links, and does not check ownership; neither flavour defends against someone who can already write under the user's home. The hook also drops every `PYTHON*` variable before it starts the interpreter (`PYTHONPATH`, `PYTHONPYCACHEPREFIX` and the like) (a project's settings can set them, and a trusted interpreter would import the repository's code), and a `HOME` (`USERPROFILE` on Windows) that is not the account's home directory and lies inside the project is ignored (`getent passwd`; on Windows `GetFolderPath`). `watch.sh` unsets `CDPATH` and `__PYVENV_LAUNCHER__` and ignores a relative `HOME`; with `CLAUDE_PROJECT_DIR` set to a path that does not exist, neither flavour uses a venv chosen by `AI_CONNECT_VENV` / `AI_CONNECT_HOME` (the project cannot be told, so nothing is trusted); it looks its tools up on a fixed `PATH` and restores the caller's before it starts the watcher; where the account home cannot be read, a `HOME` inside the project is ignored too. On Windows a replaced `USERPROFILE` is also set for the watcher. Not covered: a project's `HOME` that points outside the project, or a Linux or macOS machine where the account database cannot be read. To keep a venv outside the home, use the plugin directory's own (`install.sh`).
+
+Up to 0.2.0 only the second place was looked at, so on a machine set up with deploy the watcher exited 1 on every event and no session was woken by a message.
+
+The plugin cache directory changes with every version, so with `install.sh`'s layout, **after `claude plugin update ai-connect@useful-claude-add-ons`, re-run the installer** from the new directory; the MCP registration it writes points at the venv's interpreter by absolute path. Deploy's venv is outside that directory and survives an update.
 
 ### Testing
 
@@ -141,10 +151,10 @@ measured.
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.2.57<!-- claim: plugin-version:crew --> |
+| **Version** | 1.2.83<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents plus the `session-relay` transport agent, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 36 hook entries<!-- claim: plugin-hooks:crew --> (14 scripts × `.sh`/`.ps1`) across 8 events, and the `wave` workflow (`/crew:wave`, in `workflows/`) |
+| **Registers** | 4 agents plus the `session-relay` transport agent, 38 commands, 33 skills<!-- claim: plugin-skills:crew -->, 16 hook entries<!-- claim: plugin-hooks:crew --> (a launcher per event per shell, running 14 scripts) across 8 events, and the `wave` workflow (`/crew:wave`, in `workflows/`) |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — the entry point; its reference sections moved to `docs/crew/reference/` (see its "Moved sections" index) |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -153,8 +163,8 @@ Its central design claim is worth repeating, because it is the opposite of how m
 
 ### Hooks — the part that runs without being asked
 
-Fourteen scripts across eight events, each shipped as a `.sh`/`.ps1` pair
-registered on its own matcher or event — 36 hook entries<!-- claim: plugin-hooks:crew -->. **These are why
+Fourteen scripts across eight events, run by one dispatcher behind
+16 hook entries<!-- claim: plugin-hooks:crew --> (a launcher per event per shell). **These are why
 menu item 21 is unticked by default.**
 
 | Script | Event | What it does |
@@ -165,12 +175,12 @@ menu item 21 is unticked by default.**
 | `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |
 | `scope-guard.sh` / `.ps1` | `PreToolUse` on Write/Edit/MultiEdit/NotebookEdit/Bash/PowerShell | **Off by default** (`scope.mode`: `off`/`report`/`block`/`auto`; `/crew:init` writes `auto` for a new repo). Refuses an edit with no current approval or outside the spec's Touch, and a shell command that runs `crew_ticket.py approve` or writes crew state — see "Scope and approval" |
 | `completion-audit.sh` / `.ps1` | `Stop` | **Off by default**, same `scope.mode`. Diffs the whole tree against the ticket's start commit and blocks the stop once if any changed path is outside Touch, shell-made writes included |
-| `handoff-read.sh` / `.ps1` | `SessionStart` | Resets its once-per-session markers; prints the prior handoff after a clear, compact, or resume only when `memory.inject` is false |
+| `handoff-read.sh` / `.ps1` | `SessionStart` | Resets its once-per-session markers; the prior handoff is printed by `crew-context`, not here |
 | `platform-sync.sh` / `.ps1` | `SessionStart` | Detects this machine and repairs the `platform` block in `.crew/config.json` - machine-local (`.crew/*` is ignored; the un-ignore list is `codemap/`, `endpoints.json`, `verify.json`), so the block goes wrong in place rather than in transit: one checkout opened from Windows and from WSL, or WSL2's `windowsHostIp` after a reboot. **Writes config**, and is the only hook that does: the seven derived facts (`os`, `wsl`, `wslVersion`, `distro`, `shell`, `repoFilesystem`, `windowsHostIp`) and nothing a human chose. Also recreates `config.json` itself when `.crew/` exists but the file is missing or unreadable - backing up a malformed one to `config.json.broken` and to `~/.claude/crew/backups/` first, and writing the template (never the owner's profile; it names `/crew:config --rebuild --repo`) - and never when `.crew/` does not exist. Every write it makes is refused when that backup fails. Reports, without changing, a preference this OS cannot honour |
-| `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **On by default since 1.0.0; `memory.inject: false` in `.crew/config.json` turns it off, and then it emits and logs nothing.** Injects branch/HEAD, code-map anchor state and the handoff at SessionStart, budgeted code-map slices and vault-labelled recall per turn, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. `handoff-read` stops printing the handoff while this is on, so the two never inject it twice. With `route.enabled: true` (off by default, since 1.0.43) a whole-prompt lifecycle phrase such as `implement it` or `continue` adds one `crew route:` line naming the `/crew:` command and ticket, or asking which ticket; it never routes to `/crew:approve` |
+| `crew-context.sh` / `.ps1` | `SessionStart`, `UserPromptSubmit`, `PostToolUse` on Read/Edit/Write/MultiEdit and vault MCP tools, `SubagentStart` | **Always on since 1.0.0 (not configurable).** Injects branch/HEAD, code-map anchor state and the handoff at SessionStart, budgeted code-map slices and vault-labelled recall per turn, and is the only channel that reaches a dispatched subagent (`SubagentStart`). Never blocks. `handoff-read` never prints the handoff, so the two never inject it twice. With `route.enabled: true` (off by default, since 1.0.43) a whole-prompt lifecycle phrase such as `implement it` or `continue` adds one `crew route:` line naming the `/crew:` command and ticket, or asking which ticket; it never routes to `/crew:approve` |
 | `verify-gate.sh` / `.ps1` | `Stop` | Runs the checks the changed paths map to that fit `verify.stopBudgetSeconds` (a rule over it alone is deferred to CI, never a block; a turn where 0 rules ran writes no verified marker); **fails the turn** on red, on a changed path with no rule, or on a deploy that wrote no promotion row. Honours `stop_hook_active`, so a red check cannot pin the session. Stands down while an emergency lane is open, recording what did not run |
-| `context-watch.sh` / `.ps1` | `Stop` | Reads actual window occupancy from the transcript's last `message.usage` record and asks for a handoff once per session, at the later of `context.warnAt` and `context.reserveTokens` of remaining headroom; instructs a full wrap-up instead if `context.autoWrapUp` is `true`. On the following turn it invokes `auto-clear`, which is inert unless `context.autoClear.enabled` is `true` |
-| `auto-clear.sh` / `.ps1` | called by `context-watch`, not registered | **Experimental, off by default.** Types `/clear` into the *terminal* once the handoff is written — it cannot clear the conversation, it drives the terminal the way a human would. `tmux` targets a pane by id; every other method needs an explicit `windowTitle` and refuses without one. Refusals go to `.crew/.autoclear.log`, because a `Stop` hook's stderr is invisible on exit 0 |
+| `context-watch.sh` / `.ps1` | `Stop` | Reads actual window occupancy from the transcript's last `message.usage` record and asks for a handoff once per session, at the later of `context.warnAt` and `context.reserveTokens` of remaining headroom; always instructs a full wrap-up. On the following turn it invokes `auto-clear`, which is inert unless `context.autoClear.enabled` is `true` |
+| `auto-clear.sh` / `.ps1` | called by `context-watch`, not registered | **Experimental, off by default.** Types `/clear` into the *terminal* once the handoff is written — it cannot clear the conversation, it drives the terminal the way a human would. `tmux` targets a pane by id; every other method must identify the session's own window and refuses otherwise. Refusals go to `.crew/.autoclear.log`, because a `Stop` hook's stderr is invisible on exit 0 |
 | `handoff-write.sh` / `.ps1` | `PreCompact` | Snapshots the transcript and writes a skeleton handoff before compaction discards it |
 | `notify.sh` / `.ps1` | `Notification`, and called directly by commands | One outbound line to Teams or Telegram. Never reads, never accepts instructions |
 
@@ -194,9 +204,9 @@ Committed suites, all sabotage-tested: `hooks/scripts/_test/run-tests.sh` (the g
 
 **`python3` is no longer required.** The scripts resolve `python3`, then `python`, then `py`, and `guard.sh` prefers `jq` when it is present. With none of them available the affected hook says so on stderr and exits 0 rather than failing open in silence.
 
-**`context.autoWrapUp`** (default `false`) changes what happens around the handoff, not whether it happens:
-- `autoWrapUp` changes what `context-watch` tells the session to do at `warnAt` — reach a stopping point and write the handoff, instead of just asking for one. **The `/clear` itself stays manual regardless of this setting, because no hook can trigger one** — a hook runs as a child process and cannot reset its parent's conversation. Without stating that plainly, the feature reads as broken (why doesn't it actually clear?) rather than as what it is: bounded by a real constraint.
-- Resuming needs no setting since 1.0.0: the context hook opens the next `SessionStart` after `/clear`, `/compact` or a resume already holding the last handoff, as `additionalContext`. The session opens **with the handoff in view**; it does not start working unattended. A human still gives the first turn. `context.autoResume` is no longer read.
+**Auto wrap-up** (always on) changes what happens around the handoff, not whether it happens:
+- Auto wrap-up changes what `context-watch` tells the session to do at `warnAt` — reach a stopping point and write the handoff, instead of just asking for one. **The `/clear` itself stays manual regardless of this setting, because no hook can trigger one** — a hook runs as a child process and cannot reset its parent's conversation. Without stating that plainly, the feature reads as broken (why doesn't it actually clear?) rather than as what it is: bounded by a real constraint.
+- Resuming needs no setting since 1.0.0: the context hook opens the next `SessionStart` after `/clear`, `/compact` or a resume already holding the last handoff, as `additionalContext`. The session opens **with the handoff in view**; it does not start working unattended. A human still gives the first turn.
 
 ### The code graph
 
@@ -238,8 +248,8 @@ to ship:
 - **It expires on its own.** The gates compare an integer epoch; no command runs
   and no file is touched to re-gate. Forgetting to close an incident - the
   realistic failure, since nobody forgets to declare one during an outage -
-  cannot leave a repository permanently ungated. `emergency.ttlMinutes`
-  defaults to 120 and `extend` is capped at `emergency.maxTtlMinutes` (480),
+  cannot leave a repository permanently ungated. The stand-down
+  is 120 minutes (fixed, L-0725) and `extend` is capped at `emergency.maxTtlMinutes` (480),
   measured from *now* each time, so repeated extensions cannot drift.
 - **There is no command guard to stand down.** `guard.sh` / `guard.ps1` was
   REMOVED in 0.19.52, so nothing inspects a Bash or PowerShell command at any
@@ -367,7 +377,7 @@ These are ordinary skills, scoped to `crew`'s own workflow. They work on every C
 | `crew-plan` | Turn an approved spec into a step-by-step plan — files, tests and risk per step, no placeholders, self-reviewed against Touch. Backs `/crew:plan`; adapted from `superpowers` (MIT, `NOTICE.md`) |
 | `crew-execute` | Execute an approved plan task by task — TDD per step, a ruling instead of a silent deviation. Backs `/crew:implement`; adapted from `superpowers` (MIT, `NOTICE.md`) |
 | `crew-standards` | Build-time development standards mined from crew's own QA reviews, generic and per-language (Python and PowerShell so far; other stacks list candidates in their `stack-*` skill); the required pre-review self-check, the reviewer's checklist appendix and the findings-to-standards loop. The one source for code-level rules; the recurring-findings probes are derived from it. Backs `/crew:plan`, `/crew:implement`, `/crew:review` |
-| `crew-qa-standards` | Harness (H1-H11), review-process (R1-R12), gate and environment (G1-G5, E1-E7) standards with a report-only audit and a generated QA-process doc; also the recurring-findings probe index, derived from `crew-standards` (each class names the standards it echoes; the standard wins on a conflict). Backs `/crew:init`, `/crew:migrate`, `/crew:implement` step 2 |
+| `crew-qa-standards` | Harness (H1-H11), review-process (R1-R12), gate and environment (G1-G5, E1-E7) standards with a report-only audit and a generated QA-process doc; a functional (API, CLI, job, webhook) QA checklist; the able-to-fail rule and the benchmark questions; also the recurring-findings probe index, derived from `crew-standards` (each class names the standards it echoes; the standard wins on a conflict). Backs `/crew:init`, `/crew:migrate`, `/crew:implement` step 2 |
 | `stack-angular` | Angular and AngularJS pitfalls, checks and `verify.json` wiring — change detection, RxJS, subscription leaks, injector hierarchy; no gated Angular set yet (set `NG` when earned), its Angular 2+ candidate standards |
 | `stack-bash` | Bash pitfalls, checks and `verify.json` wiring — quoting, pipeline exit codes, Git Bash surprises |
 | `stack-dotnet` | .NET pitfalls, checks and `verify.json` wiring — DI lifetimes, async, EF Core change tracking, a short .NET Framework 4.8 section; no gated .NET set yet, its candidate standards, conventions and test-framework defaults |
@@ -791,7 +801,7 @@ Nothing keeps running afterwards — there were no hooks. Ollama, the models it 
 | | |
 |---|---|
 | **Source** | [`obsidian-vault/`](obsidian-vault) |
-| **Version** | 0.5.1<!-- claim: plugin-version:obsidian-vault --> |
+| **Version** | 0.5.2<!-- claim: plugin-version:obsidian-vault --> |
 | **Install** | `claude plugin install obsidian-vault@useful-claude-add-ons` |
 | **Registers** | 2 agents, 11 commands, 3 skills, 8 hook entries (3 scripts × `.sh`/`.ps1`) across 4 events |
 | **Upstream guide** | [`obsidian-vault/README.md`](obsidian-vault/README.md) |

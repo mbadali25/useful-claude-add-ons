@@ -12,9 +12,8 @@ an unknown environment read as nonProd or as prod, a missing sidecar read as
 denies is vacuous: its sabotage mutation cannot go red. The mutations live in
 `sabotage_cloud.py`, each naming the case it must turn red.
 
-Three drivers, as in `test_cloud_guard.py`: the python driver runs every case,
-bash and pwsh a parity sample by default and the rest as `slow`. pwsh skips
-where absent; native Windows is win-repo-2's.
+Two drivers, as in `test_cloud_guard.py`: the python driver runs every case,
+bash a parity sample by default and the rest as `slow`.
 
 Nothing here runs terraform. The plan files are a few bytes of fixture text;
 the guard only hashes them and reads the sidecar JSON beside them.
@@ -381,10 +380,8 @@ def _sample(cases, keep, marks):
 
 
 def _deny(driver, tmp_path, case):
-    _id, tool, _command, opts = case
+    _id, _tool, _command, opts = case
     _repo, result = _run(driver, tmp_path, case)
-    if tcg._stood_down(driver, tool, result):  # pylint: disable=protected-access
-        return
     decision, reason, code, err = result
     assert code == 0, err
     assert decision == "deny", (case[0], decision, reason, err)
@@ -394,10 +391,8 @@ def _deny(driver, tmp_path, case):
 
 
 def _allow(driver, tmp_path, case):
-    _id, tool, _command, opts = case
+    _id, _tool, _command, opts = case
     repo, result = _run(driver, tmp_path, case)
-    if tcg._stood_down(driver, tool, result):  # pylint: disable=protected-access
-        return
     decision, said, code, err = result
     assert code == 0, err
     assert decision == "allow", (case[0], said, err)
@@ -412,10 +407,8 @@ def _allow(driver, tmp_path, case):
 
 
 def _ask(driver, tmp_path, case):
-    _id, tool, _command, _opts = case
+    _id, _tool, _command, _opts = case
     _repo, result = _run(driver, tmp_path, case, env={})
-    if tcg._stood_down(driver, tool, result):  # pylint: disable=protected-access
-        return
     decision, reason, code, err = result
     assert code == 0, err
     assert decision == "ask", (case[0], decision, reason, err)
@@ -431,12 +424,6 @@ def test_must_block_env_python(tmp_path, case):
                                          (tcg.needs_bash,)))
 def test_must_block_env_bash(tmp_path, case):
     _deny("bash", tmp_path, case)
-
-
-@pytest.mark.parametrize("case", _sample(MUST_BLOCK_ENV, _B_SAMPLE,
-                                         (tcg.needs_pwsh,)))
-def test_must_block_env_pwsh(tmp_path, case):
-    _deny("pwsh", tmp_path, case)
 
 
 @pytest.mark.parametrize("case", MUST_BLOCK_ALLOW_POLICY,
@@ -460,12 +447,6 @@ def test_must_allow_env_python(tmp_path, case):
                                          (tcg.needs_bash,)))
 def test_must_allow_env_bash(tmp_path, case):
     _allow("bash", tmp_path, case)
-
-
-@pytest.mark.parametrize("case", _sample(MUST_ALLOW_ENV, _A_SAMPLE,
-                                         (tcg.needs_pwsh,)))
-def test_must_allow_env_pwsh(tmp_path, case):
-    _allow("pwsh", tmp_path, case)
 
 
 @pytest.mark.parametrize("case", ASK_ENV, ids=_ids(ASK_ENV))
@@ -974,13 +955,6 @@ def test_round1_must_block_bash(tmp_path, case):
     _deny("bash", tmp_path, case)
 
 
-@pytest.mark.parametrize("case", _sample(
-    _ROUND1, ("rewrite-ps-copy", "ps-set-item-env", "delete-ps-allow"),
-    (tcg.needs_pwsh,)))
-def test_round1_must_block_pwsh(tmp_path, case):
-    _deny("pwsh", tmp_path, case)
-
-
 @pytest.mark.parametrize("command", [
     "terraform workspace new production",
     "terraform workspace select -or-create production"])
@@ -1415,12 +1389,6 @@ def test_round2_must_block_bash(tmp_path, case):
 @pytest.mark.parametrize("case", ROUND2_ALLOW, ids=_ids(ROUND2_ALLOW))
 def test_round2_must_allow_python(tmp_path, case):
     _allow("python", tmp_path, case)
-
-
-@pytest.mark.parametrize("case", _sample(
-    ROUND2_ALLOW, ("r2-ps-2-to-1", "r2-ps-star-to-1"), (tcg.needs_pwsh,)))
-def test_round2_must_allow_pwsh(tmp_path, case):
-    _allow("pwsh", tmp_path, case)
 
 
 @pytest.mark.parametrize("command", [
@@ -1921,10 +1889,8 @@ ASK_LITERAL = _normalise([
 
 
 def _allow_literal(driver, tmp_path, case):
-    _id, tool, _command, opts = case
+    _id, _tool, _command, opts = case
     repo, result = _run(driver, tmp_path, case)
-    if tcg._stood_down(driver, tool, result):  # pylint: disable=protected-access
-        return
     decision, _said, code, err = result
     assert code == 0, err
     assert decision == "allow", (case[0], result)
@@ -1949,13 +1915,6 @@ def test_literal_must_block_bash(tmp_path, case):
     _deny("bash", tmp_path, case)
 
 
-@pytest.mark.parametrize("case", _sample(
-    MUST_BLOCK_LITERAL, ("s8-quoted-name", "s8-ps-quoted-name"),
-    (tcg.needs_pwsh,)))
-def test_literal_must_block_pwsh(tmp_path, case):
-    _deny("pwsh", tmp_path, case)
-
-
 @pytest.mark.parametrize("case", MUST_ALLOW_LITERAL,
                          ids=_ids(MUST_ALLOW_LITERAL))
 def test_literal_must_allow_python(tmp_path, case):
@@ -1967,12 +1926,6 @@ def test_literal_must_allow_python(tmp_path, case):
     (tcg.needs_bash,)))
 def test_literal_must_allow_bash(tmp_path, case):
     _allow_literal("bash", tmp_path, case)
-
-
-@pytest.mark.parametrize("case", _sample(
-    MUST_ALLOW_LITERAL, ("s8a-plan-out", "s8a-ps-plan"), (tcg.needs_pwsh,)))
-def test_literal_must_allow_pwsh(tmp_path, case):
-    _allow_literal("pwsh", tmp_path, case)
 
 
 @pytest.mark.parametrize("case", NOW_NOT_LITERAL, ids=_ids(NOW_NOT_LITERAL))
@@ -2110,6 +2063,10 @@ S9_MUST_BLOCK = _normalise([
      f"cat <<'E\\OF'\nE\\OF\n\"terraform\" {_ADESTROY}\nEOF", _gate()),
     ("s9-backquote-empty-prefix", "Bash",
      f'true `<<EOF;"$x"terraform {_ADESTROY}`', _gate()),
+    # L-0897: the row above ends in `destroy`, which a second reading of the line gates
+    # without the expansion at all; `taint` has no such backstop, so only the
+    # emptied-expansion reading of the name denies this one.
+    ("s9-backquote-empty-prefix-taint", "Bash", f'true `"$x"terraform {_TAINT}`', _gate()),
     ("s9-short-glob-destroy", "Bash", f"/usr/bin/t* {_ADESTROY}", _gate()),
 ])
 
@@ -2315,13 +2272,6 @@ def test_round5_must_block_python(tmp_path, case):
     R5_MUST_BLOCK, ("r5-alias", "r5-flock"), (tcg.needs_bash,)))
 def test_round5_must_block_bash(tmp_path, case):
     _deny("bash", tmp_path, case)
-
-
-@pytest.mark.parametrize("case", _sample(
-    R5_MUST_BLOCK, ("r5-ps-set-alias", "r5-ps-start-process"),
-    (tcg.needs_pwsh,)))
-def test_round5_must_block_pwsh(tmp_path, case):
-    _deny("pwsh", tmp_path, case)
 
 
 @pytest.mark.parametrize("case", R5_MUST_ALLOW, ids=_ids(R5_MUST_ALLOW))
@@ -2607,13 +2557,6 @@ def test_direct_spelling_is_denied_unattended_bash(tmp_path, case):
     _deny("bash", tmp_path, case)
 
 
-@pytest.mark.parametrize("case", _sample(
-    S10_DIRECT_BLOCK, ("s10-ps-dot", "s10-ps-start-process"),
-    (tcg.needs_pwsh,)))
-def test_direct_spelling_is_denied_unattended_pwsh(tmp_path, case):
-    _deny("pwsh", tmp_path, case)
-
-
 @pytest.mark.parametrize("case", [
     c for c in S10_DIRECT_BLOCK if c[0] in (
         "s10-tg-working-dir-destroy", "s10-ps-start-process",
@@ -2638,13 +2581,6 @@ def test_ordinary_command_is_allowed_under_block(tmp_path, case):
         [(case_id, tool, command, _o(**{**opts, **BLOCK_POLICY}))])[0])
 
 
-@pytest.mark.parametrize("case", _sample(
-    S10_ORDINARY_ALLOW, ("s10a-rg-var", "s10a-ps-commit-message"),
-    (tcg.needs_pwsh,)))
-def test_ordinary_command_is_allowed_pwsh(tmp_path, case):
-    _allow_literal("pwsh", tmp_path, case)
-
-
 @pytest.mark.parametrize("disguise, command", DOCUMENTED_NOT_CAUGHT,
                          ids=[c for _d, c in DOCUMENTED_NOT_CAUGHT])
 def test_documented_not_caught_is_in_readme(disguise, command):
@@ -2659,8 +2595,9 @@ def test_the_not_caught_section_names_the_boundary():
     crew = os.path.join(os.path.dirname(cloud_guard.__file__), os.pardir,
                         os.pardir)
     assert "crew_unattended.py launch" in _readme_not_caught()
-    for rel in ("CONFIG.md", os.path.join("skills", "crew-cloud",
-                                          "SKILL.md")):
+    for rel in (os.path.join(os.pardir, os.pardir, "docs", "crew",
+                             "config-rationale.md"),
+                os.path.join("skills", "crew-cloud", "SKILL.md")):
         with open(os.path.join(crew, rel), encoding="utf-8") as handle:
             text = handle.read()
         assert "What the guard does not catch" in text, rel
@@ -2794,12 +2731,6 @@ def test_round7_must_block_bash(tmp_path, case):
     _deny("bash", tmp_path, case)
 
 
-@pytest.mark.parametrize("case", _sample(
-    R7_MUST_BLOCK, ("r7-ps-start-process-colon",), (tcg.needs_pwsh,)))
-def test_round7_must_block_pwsh(tmp_path, case):
-    _deny("pwsh", tmp_path, case)
-
-
 @pytest.mark.parametrize("case", R7_MUST_ALLOW, ids=_ids(R7_MUST_ALLOW))
 def test_round7_must_allow_python(tmp_path, case):
     _allow_literal("python", tmp_path, case)
@@ -2813,12 +2744,6 @@ def test_round7_must_allow_under_block(tmp_path, case):
     case_id, tool, command, opts = case
     _allow_literal("python", tmp_path, _normalise(
         [(case_id, tool, command, _o(**{**opts, **BLOCK_POLICY}))])[0])
-
-
-@pytest.mark.parametrize("case", _sample(
-    R7_MUST_ALLOW, ("r7a-ps-assign-string",), (tcg.needs_pwsh,)))
-def test_round7_must_allow_pwsh(tmp_path, case):
-    _allow_literal("pwsh", tmp_path, case)
 
 
 def test_round7_tables_are_distinct():
@@ -3223,13 +3148,6 @@ def test_round8_must_block_bash(tmp_path, case):
     _deny("bash", tmp_path, case)
 
 
-@pytest.mark.parametrize("case", _sample(
-    R8_MUST_BLOCK, ("r8-ps-iex-colon", "r8-ps-env-wrapper"),
-    (tcg.needs_pwsh,)))
-def test_round8_must_block_pwsh(tmp_path, case):
-    _deny("pwsh", tmp_path, case)
-
-
 @pytest.mark.parametrize("case", R8_MUST_ALLOW, ids=_ids(R8_MUST_ALLOW))
 def test_round8_must_allow_python(tmp_path, case):
     _allow_literal("python", tmp_path, case)
@@ -3244,13 +3162,6 @@ def test_round8_must_allow_under_block(tmp_path, case):
     case_id, tool, command, opts = case
     _allow_literal("python", tmp_path, _normalise(
         [(case_id, tool, command, _o(**{**opts, **BLOCK_POLICY}))])[0])
-
-
-@pytest.mark.parametrize("case", _sample(
-    R8_MUST_ALLOW, ("r8a-ps-write-output-concat", "r8a-ps-iex-colon-plan"),
-    (tcg.needs_pwsh,)))
-def test_round8_must_allow_pwsh(tmp_path, case):
-    _allow_literal("pwsh", tmp_path, case)
 
 
 def test_round8_tables_are_distinct():

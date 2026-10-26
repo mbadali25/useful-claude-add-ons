@@ -87,7 +87,7 @@ INSTALLABLE = {
 # marker for THAT command exists, `allow` runs it and writes a row saying so.
 # Ordered least to most permissive and read only through `guard_policy_rank`,
 # the same contract `crew_state.AUTHORITIES` and `INSTALL_POLICIES` carry.
-# Append only, never reorder. Full reasoning in CONFIG.md §16, including the
+# Append only, never reorder. Full reasoning in docs/crew/config-rationale.md, including the
 # part a default cannot paper over: `adminMerge` and the `tofu` spelling of
 # `terraformApply` are NEW refusals, so `block` does not mean "nothing changed".
 GUARD_POLICIES = ("block", "ask", "allow")
@@ -96,7 +96,7 @@ GUARD_POLICY_DEFAULT = "block"
 # The guards. This tuple is the ORDER the keys are declared in, so
 # `default_config()` and `default_global_config()` cannot drift into different
 # orderings of the same block. What each governs is prose and lives with the
-# prose that uses it -- `crew_config._GUARD_ACTIONS` and CONFIG.md §16.
+# prose that uses it -- `crew_guard_notes.GUARD_ACTIONS` and docs/crew/config-rationale.md.
 #
 # `mergeGate` is the odd one: it is read by `/crew:gate` rather than by the
 # command guard, because "may crew take a live repo's merge gate down" is not a
@@ -129,7 +129,7 @@ PROD_GUARD_NAMES = ("prodDatabase", "prodServer")
 
 # The third vocabulary in this block, and the second key (after
 # `change.requireForProduction`) whose DEFAULT is deliberately not its FLOOR.
-# See `ROLE_WRITE_DEFAULT` below for why, and CONFIG.md Sec18 for the full
+# See `ROLE_WRITE_DEFAULT` below for why, and docs/crew/config-rationale.md for the full
 # reasoning -- the short version is CLAUDE.md's own rule for a new hook:
 # "a plugin registering one defaults to OFF in the menu". `off` here is what
 # makes that true for `guards.roleWrites` without a second mechanism: the
@@ -220,6 +220,36 @@ GUARD_DEFAULTS = dict(
     + [(name, ROLE_WRITE_DEFAULT) for name in ROLE_WRITE_GUARD_NAMES]
     + [(name, ROLE_WRITE_DEFAULT) for name in CLOUD_GUARD_NAMES]
     + [(name, ROLE_WRITE_DEFAULT) for name in ENV_GUARD_NAMES])
+
+# L-0725: the twelve per-guard keys collapse to `guards.profile` plus a
+# `guards.overrides` table. A profile is shorthand that expands, PER LAYER, to
+# one value per guard; the per-guard ratchet then runs on those values
+# unchanged. `off` is exactly `GUARD_DEFAULTS`, so a layer that sets nothing
+# resolves as it always did; `standard` is the owner's repo layer; `strict`
+# turns every switchable guard on. Written as a table, not derived, so a
+# change to one cell is a visible diff (the test holds its own copy).
+GUARD_PROFILES = ("off", "standard", "strict")
+
+# What `default_config()` and `default_global_config()` carry for `guards`:
+# the profile at `off` (= `GUARD_DEFAULTS`) and an empty overrides table. The
+# twelve per-guard names are no longer config keys; a file that still holds
+# them is read as a legacy alias (`layer_guard_state`) until `/crew:migrate`.
+GUARD_BLOCK_DEFAULTS = {"profile": "off", "overrides": {}}
+_ALWAYS_BLOCK = ("terraformApply", "forcePush", "mergeGate", "cloudDestructive",
+                 "sqlDestructive", "deployWorkflow")
+PROFILE_MAP = {
+    "off": dict(GUARD_DEFAULTS),
+    "standard": dict(
+        [(name, "block") for name in _ALWAYS_BLOCK]
+        + [("adminMerge", "ask"), ("prodDatabase", "none"),
+           ("prodServer", "none"), ("roleWrites", "report"),
+           ("cloudGuard", "block"), ("envGuard", "off")]),
+    "strict": dict(
+        [(name, "block") for name in _ALWAYS_BLOCK]
+        + [("adminMerge", "block"), ("prodDatabase", "none"),
+           ("prodServer", "none"), ("roleWrites", "block"),
+           ("cloudGuard", "block"), ("envGuard", "block")]),
+}
 
 # What counts as production, and it is a REPO-ONLY block on purpose.
 #
@@ -547,7 +577,7 @@ def guard_tiers(name):
 #
 # `pm.authority` is deliberately NOT here -- it ratchets for the WIDENING
 # WARNING only (`crew_config._RATCHETED`), while its two layers still combine
-# by ordinary precedence. See CONFIG.md §16 for why, and for why neither table
+# by ordinary precedence. See docs/crew/config-rationale.md for why, and for why neither table
 # is derived from the other.
 RATCHETED_KEYS = {
     "install.policy": (INSTALL_POLICIES,
@@ -577,6 +607,105 @@ RATCHETED_KEYS["environments.prodUnattended"] = (
     normalise_prod_unattended,
     prod_unattended_rank,
 )
+
+
+def normalise_profile(value):
+    """`value` as a known guard profile, else None (malformed).
+
+    None is its own answer and is NEVER read as `off`: the caller turns it into
+    the floor for every guard, because "could not tell what was meant" must not
+    wear the label of "opted out".
+    """
+    if isinstance(value, str):
+        cleaned = value.strip().lower()
+        if cleaned in GUARD_PROFILES:
+            return cleaned
+    return None
+
+
+def _floor(name):
+    return guard_tiers(name)[0][0]
+
+
+def _tier_or_floor(name, value):
+    """`value` if it names one of `name`'s tiers (any case), else the floor."""
+    tiers = guard_tiers(name)[0]
+    if isinstance(value, str) and value.strip().lower() in tiers:
+        return value.strip().lower()
+    return _floor(name)
+
+
+def layer_guard_state(layer_cfg, name):
+    """One layer's value for guard `name`, and what it was made from.
+
+    Returns `{"value", "legacy", "conflict"}`; `value` is None only when the
+    layer holds none of profile, override or legacy key.
+
+    Two steps. BASE: a profile that is present but malformed gives the floor
+    and ends there, so no override can lift it; otherwise the layer's
+    `guards.overrides.<name>` if present (a malformed one gives the floor),
+    else the valid profile's value, else absent. LEGACY: a `guards.<name>` key
+    still in the layer (unmigrated) is the layer value alone when the base is
+    absent, so an unmigrated layer resolves exactly as it did, `ask`, `allow`
+    and `read` included; when both exist the NARROWER of the two wins by the
+    guard's own rank and the conflict is reported. A `guards` that is present
+    but not an object (42, a string, a list, true) gives the floor for every
+    guard; a `guards` that is JSON null, like a missing one, stays absent (as
+    before this change). INSIDE a `guards` object a key that is present is read
+    as written, so an explicit null `profile`, `overrides` or override value is
+    malformed and gives the floor, never absent. The one exception is the
+    UNMIGRATED legacy `guards.<name>`: null there is absent, as it was before
+    this change (tests/test_env_guard.py pins `envGuard: null` as off), so a
+    layer that never set the new keys resolves exactly as it did. The floor is `block` (or `none` for the
+    production guards), never `off`.
+    """
+    block = layer_cfg.get("guards") if isinstance(layer_cfg, dict) else None
+    if block is not None and not isinstance(block, dict):
+        return {"value": _floor(name), "legacy": False, "conflict": False}
+    if block is None:
+        return {"value": None, "legacy": False, "conflict": False}
+    tiers, normalise, rank = guard_tiers(name)
+
+    base = None
+    if "profile" in block:
+        profile = normalise_profile(block["profile"])
+        if profile is None:
+            base = _floor(name)
+        else:
+            base = PROFILE_MAP[profile][name]
+            base = _apply_overrides(block, name, base)
+    else:
+        base = _apply_overrides(block, name, None)
+
+    legacy_raw = block.get(name)
+    if legacy_raw is None:
+        return {"value": base, "legacy": False, "conflict": False}
+    legacy = normalise(legacy_raw)
+    if base is None:
+        return {"value": legacy, "legacy": True, "conflict": False}
+    value = tiers[min(rank(base), rank(legacy))]
+    return {"value": value, "legacy": True, "conflict": base != legacy}
+
+
+def _apply_overrides(block, name, base):
+    """`base` after the layer's `guards.overrides` has its say about `name`.
+
+    A key that is present is read as written: `overrides` that is not an
+    object, or a value for `name` that names no tier (JSON null included),
+    gives the floor. Only a key that is missing leaves `base` alone."""
+    if "overrides" not in block:
+        return base
+    overrides = block["overrides"]
+    if not isinstance(overrides, dict):
+        return _floor(name)
+    if name in overrides:
+        return _tier_or_floor(name, overrides[name])
+    return base
+
+
+def layer_guard_value(layer_cfg, name):
+    """`layer_guard_state(...)["value"]`: the layer's tier for `name`, or None."""
+    return layer_guard_state(layer_cfg, name)["value"]
 
 
 def ratchet_spec(dotted):
@@ -652,13 +781,11 @@ PERSONAL_KEYS = {
 # (T-0074) and `sleep` (T-0053) reached main after T-0050 was written and were
 # repo-only there; they stay repo-only until a ticket decides how their two
 # layers combine (`sleep` is a block, and `maxAutoReplans` 0 is a valid "off"
-# that the `int-min` rule would read as unrecognised). T-0011's `ship`,
-# `knownFailures` and `ciTimeoutMinutes` (batch 7) are repo-only by their spec:
-# whether a checkout's PRs merge unattended, and which of its checks may fail,
-# are facts about that checkout. T-0029's `maxLanes` and `reviewPolicy` (the wave) are repo-only too: how many lanes
+# that the `int-min` rule would read as unrecognised). T-0011's `ship`
+# (batch 7) is repo-only by its spec: whether a checkout's PRs merge unattended
+# is a fact about that checkout. T-0029's `maxLanes` and `reviewPolicy` (the wave) are repo-only too: how many lanes
 # one checkout runs, and what its lanes do with a verdict, are that checkout's.
 REPO_ONLY_AUTOPILOT = frozenset({"autopilot.maxAutoReplans", "autopilot.sleep", "autopilot.ship",
-                                 "autopilot.knownFailures", "autopilot.ciTimeoutMinutes",
                                  "autopilot.maxLanes", "autopilot.reviewPolicy",
                                  # L-0541's caps: the spec's layer is `repo`.
                                  "autopilot.maxTicketsPerRun", "autopilot.maxTokensPerSession"})
@@ -2380,6 +2507,11 @@ _INTERPRETERS = (
      ("rBRE", "dczt", "", "f", (), (), None, "php")),
     (re.compile(r"^deno$"), ("", "", "", "", (), (), "eval", "node")),
 )
+# Options that only report or check and never run code, so an interpreter
+# given one and no script is not reading code from stdin (L-0853: `php -v`,
+# `xargs php -l`). Per family: `(letters, long options)`.
+_INFO_ONLY = {"php": ("vmilh", ("--version", "--ini", "--modules", "--info",
+                                "--syntax-check", "--help"))}
 # The tool named in interpreter code: a word or a path's last part, never a
 # directory (`terraform/x`) or a dotted file (`terraform.tfstate`).
 _CODE_MENTION_RE = re.compile(
@@ -2407,7 +2539,8 @@ def _interp_codes(spec, words):  # pylint: disable=too-many-branches
     word it is in; `stdin` true when it is given no code, script or module,
     so it runs what it reads from stdin."""
     code, value, rest, script_letters, long_code, long_value, sub = spec[:7]
-    codes, script, index = [], False, 0
+    info_letters, info_long = _INFO_ONLY.get(spec[7], ("", ()))
+    codes, script, info, index = [], False, False, 0
     while index < len(words) and not script:
         word = words[index]
         if word in ("-", "--"):
@@ -2421,13 +2554,20 @@ def _interp_codes(spec, words):  # pylint: disable=too-many-branches
                 codes.append((index, words[index]))
             elif name in long_value and not equals:
                 index += 1
+            elif name in info_long:
+                info = True
         elif word.startswith("-") and len(word) > 1:
             for pos in range(1, len(word)):
                 letter, tail = word[pos], word[pos + 1:]
-                if letter not in code and any(c in code for c in tail):
+                if letter in info_letters:
+                    info = True
+                if letter not in code + value and any(c in code
+                                                      for c in tail):
                     # A code letter later in the bundle may be one: `-lne`,
-                    # `-pe`, `-i.bak -e` (SRL-2308 r3, fail closed: reading
-                    # a value as code can only refuse more).
+                    # `-pe`, `-i.bak -e` (SRL-2308 r3, fail closed for the
+                    # flag letters that take no value). A value letter
+                    # (php `-d`, python `-W`) owns its tail, so `-dx=coverage`
+                    # is not skipped to find the `r` (L-0853).
                     continue
                 if letter in code + value + script_letters:
                     if not tail and index + 1 < len(words):
@@ -2451,7 +2591,7 @@ def _interp_codes(spec, words):  # pylint: disable=too-many-branches
         else:
             script = True
         index += 1
-    return codes, not codes and not script
+    return codes, not codes and not script and not info
 
 
 def _code_is_inert(code, hash_comments=False):
@@ -2491,32 +2631,37 @@ def _code_is_inert(code, hash_comments=False):
     return True
 
 
-# --- interpreter code (SRL-2308 r3) -------------------------------------------
+# --- interpreter code (SRL-2308 r3, L-0871) ----------------------------------
 #
-# Code is REFUSED when it can start a process AND (the line names the tool
-# anywhere OR the command it could start is built at run time). Code that can
-# only print, or cannot start a process, passes whatever it mentions. "Can
-# start a process" is read wide: a process API, and every way the language
-# reaches one by a name it computes. "Built at run time" is read wide too:
-# for Python, anything but literal calls on plain strings (`_py_static`);
-# for perl, ruby, node and deno, always (strings name functions there in too
-# many ways to follow), so a process API alone refuses; for PHP, whose
-# callables are strings everywhere, any code that is not inert. Code holding
-# a shell expansion the line does not resolve is made at run time: 1.2.35's
-# rule (`_verb_on_line`) decides first.
+# Python and node code is REFUSED when it can start a process AND the line
+# or the code names the tool, or when it reaches a process AND builds the
+# tool's name (`'ter'+'raform'`, `chr(`, a join, a format, an f-string, a
+# decode). A process-reaching code that names nothing and builds nothing, and
+# code that only reads its environment or imports a library (`import os`,
+# `import requests`, `process.env`), passes: "could not tell what python does"
+# is no longer a refusal on its own (L-0871). A command read from input, a
+# file or an environment variable that the line never names is therefore not
+# caught (README "What the guard does not catch"). perl, ruby, PHP and deno
+# keep the older, wider reading: a process API or any way to reach one by a
+# name the code computes. For Python, "reaches a process" is `_PY_REACH_RE`;
+# for node, `_NODE_REACH_RE`. A shell expansion the line does not resolve
+# makes the code run-time: 1.2.35's rule (`_verb_on_line`) decides first.
 
 # Python names that reach a process, or reach one by a computed name: the
 # process APIs, `os`/`posix`/`nt` themselves, attribute and frame access,
 # evaluation, and PyYAML's unsafe loaders (`!!python/object/apply:`). Read
 # over the code outside its plain string literals (`_py_without_text`): a
 # placeholder such as `"__COUNTS__"` is text; an f-string is code.
-_PY_SPAWN_RE = re.compile(
-    r"system|popen|spawn|fork|exec|subprocess|\bpty\b|\bos\b|\bposix\b|\bnt\b"
+_PY_REACH_RE = re.compile(
+    r"system|popen|spawn|fork|exec|subprocess|\bpty\b|\bposix\b|\bnt\b"
     r"|getattr|setattr|delattr|__\w+__|\bvars\b|\bglobals\b|\blocals\b"
     r"|\beval\b|\bcompile\b|breakpoint|\bhelp\b|\bmodules\b|_getframe"
     r"|\bf_(?:globals|builtins|locals|back)\b|\b(?:tb|gi|cr|ag)_frame\b"
     r"|\byaml\s*\.\s*(?!(?:safe_load|safe_load_all|safe_dump|safe_dump_all"
-    r"|dump|dump_all|YAMLError)\b)\w|\bfrom\s+yaml\s+import\b|Loader\b")
+    r"|dump|dump_all|YAMLError)\b)\w|\bfrom\s+yaml\s+import\b|Loader\b"
+    r"|ctypes|cffi|importlib|runpy|startfile")
+# The reach words and bare `os`: what the mention rule reads.
+_PY_SPAWN_RE = re.compile(_PY_REACH_RE.pattern + r"|\bos\b")
 # Modules Python code may import and still not start a process: pure data
 # and text, none with a process API (every route from one of them to `os`
 # goes through a name `_PY_SPAWN_RE` reads). Any other import may run code
@@ -2561,6 +2706,284 @@ _FAMILY_SPAWN_RE = {
         r"|Proxy|setTimeout|setInterval|setImmediate|WebAssembly|\bwith\b"
         r"|arguments"),
 }
+
+# Node code that reaches a process, or a name it computes: the mention
+# rule's list without the words that only read the environment or load a
+# library (`process`, `require`, `import`, `global`; L-0871).
+_NODE_REACH_RE = re.compile(
+    r"child|exec|spawn|fork|eval|Function|constructor|prototype|__proto__"
+    r"|Reflect|\bvm\b|[Ww]orker|Deno|Bun|binding|dlopen|module|\[|`"
+    r"|\bthis\b|\bself\b|\bwindow\b|Proxy|setTimeout|setInterval"
+    r"|setImmediate|WebAssembly|\bwith\b|arguments")
+# Ways code assembles a name at run time (L-0871), read next to a reach word.
+_PY_ASSEMBLY_RE = re.compile(
+    r"chr\s*\(|\bbytes\b|\bbytearray\b|fromhex|unhexlify|base64|b64"
+    r"|\bdecode\b|\[\s*:\s*:\s*-1\s*\]|\breversed\b|\.\s*join\b"
+    r"|\.\s*format\b|\bord\b|\bmap\b|\bcodecs\b"
+    # `%` formatting: after a string literal, or with a literal operand
+    # (`'...' % x`, `fmt % ('a',)`), never plain arithmetic (`5 % 2`).
+    r"|['\"]\s*%|%\s*['\"(\[{]"
+    # An f-string or t-string, the prefix letters in either order and case.
+    r"|\b(?:[rR][fFtT]|[fFtT][rR]?)(?=['\"])")
+_NODE_ASSEMBLY_RE = re.compile(
+    r"fromCharCode|fromCodePoint|Buffer|atob|\.\s*join\b|\.\s*concat\b"
+    r"|\.\s*replace|\.\s*reverse|\.\s*split|\.\s*slice|\.\s*substr"
+    r"|\.\s*repeat|\$\{|\bunescape\b|decodeURI")
+# A string literal, its prefix letters (any order and case) included.
+_LIT_RE = re.compile(
+    r"""(?:[A-Za-z]{1,2}(?=['"`]))?"""
+    r"""(\'\'\'(?:\\.|[^\\])*?\'\'\'|\"\"\"(?:\\.|[^\\])*?\"\"\""""
+    r"""|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)""",
+    re.S)
+# What may sit between two literals that are one name: blanks, `+`, commas,
+# brackets, `*`, `.join`, a line continuation.
+_RUN_GAP_RE = re.compile(
+    r"(?:[\s+,\[\]()*.%]|join|\\\n|\#[^\n]*|//[^\n]*|/\*[\s\S]*?\*/)*\Z")
+# A call that starts a process, and the shell expansion in its argument.
+_PROC_CALL_RE = re.compile(
+    r"\b(?:system|popen|spawn\w*|exec\w*|fork\w*|call|run|check_output"
+    r"|check_call|Popen|getoutput|getstatusoutput|startfile)\s*\(")
+_CODE_EXPANSION_RE = re.compile(r"[$`]")
+_TOOL_SPELLINGS = ("terragrunt", "terraform", "tofu")
+
+
+class InterpreterReason(str):
+    """Why a line that runs interpreter code is refused: the second element
+    `_argv_trigger` returns instead of `True` (L-0871), so the finding quotes
+    the construct that caused it."""
+
+
+class InterpreterHit(str):
+    """The word naming why interpreter code may run the tool, with `why`: the
+    construct, in words, for `InterpreterReason`. A `str` to every reader."""
+    why = ""
+
+    def __new__(cls, word, why):
+        hit = super().__new__(cls, word)
+        hit.why = why
+        return hit
+
+
+def _decode_escapes(text):
+    """`text` with its hex, unicode and octal escapes decoded."""
+    def one(match):
+        digits = match.group(1) or match.group(2) or match.group(3)
+        return chr(int(digits, 8 if match.group(3) else 16))
+    return re.sub(r"\\x([0-9a-fA-F]{2})|\\u([0-9a-fA-F]{4})|\\([0-7]{1,3})",
+                  one, text)
+
+
+def _literal_text(match):
+    """The text of a string literal: escapes decoded unless it is a raw
+    string (`r'\\x74'` is the four characters it shows)."""
+    quote = 3 if match.group(1)[:3] in ("\'\'\'", '"""') else 1
+    text = match.group(1)[quote:-quote]
+    prefix = match.group(0)[:match.start(1) - match.start(0)]
+    return text if "r" in prefix.lower() else _decode_escapes(text)
+
+
+def _literal_runs(code):
+    """The text of each run of string literals that are one name when joined
+    (`'ter' 'raform'`, `'ter'+'raform'`, `"".join(["ter","raform"])`), with
+    escapes decoded and every character but letters and digits dropped. A
+    run ends at anything else: separate imports or statements never join."""
+    runs, run, last = [], [], None
+    for match in _LIT_RE.finditer(code):
+        gap = None if last is None else code[last:match.start()]
+        if run and not (gap is not None and _RUN_GAP_RE.match(gap)):
+            runs.append("".join(run))
+            run = []
+        run.append(re.sub(r"[^a-z0-9]", "", _literal_text(match).lower()))
+        last = match.end()
+    if run:
+        runs.append("".join(run))
+    return runs
+
+
+# Unclosed triple quotes and backticks make each literal scan run to the end
+# of the code: more than this many and the code is refused unread.
+_TRIPLE_OR_TICK_RE = re.compile(r"\'\'\'|\"\"\"|`")
+_QUOTE_LIMIT = 300
+_PROC_WORD_RE = re.compile(
+    r"\b(?:system|popen|spawn\w*|exec\w*|fork\w*|call|run|check_output"
+    r"|check_call|Popen|getoutput|getstatusoutput|startfile)\b")
+_IMPORT_AS_RE = re.compile(r"\bimport\s+([^;\n]+)")
+
+
+def _proc_aliases(code, assigned):
+    """Names bound to a process-starting function (`s = os.system`,
+    `from os import system as s`, `const e = require('child_process')
+    .execSync`), so `s(...)` is read as the call it is."""
+    found = set()
+    for name, rows in assigned.items():
+        if any(_PROC_WORD_RE.search(_LIT_RE.sub('""', rhs)) for _, rhs in rows):
+            found.add(name)
+    for clause in _IMPORT_AS_RE.finditer(code):
+        for item in clause.group(1).split(","):
+            parts = item.split()
+            if len(parts) == 3 and parts[1] == "as" and \
+                    _PROC_WORD_RE.search(parts[0]):
+                found.add(parts[2])
+    return found
+
+
+def _call_args(code, aliases=()):
+    """The argument text of each call to a process-starting function, or to
+    a name bound to one (`aliases`)."""
+    calls = list(_PROC_CALL_RE.finditer(code))
+    calls += re.finditer(r"\b(?:getattr|__import__)\s*\([^()]*\)\s*\(", code)
+    if aliases:
+        calls += re.finditer(r"\b(?:" + "|".join(map(re.escape, aliases))
+                             + r")\s*\(", code)
+    for call in sorted(calls, key=lambda found: found.start()):
+        depth, pos = 1, call.end()
+        while pos < len(code) and depth:
+            lit = _LIT_RE.match(code, pos)
+            if lit:
+                pos = lit.end()
+                continue
+            depth += (code[pos] == "(") - (code[pos] == ")")
+            pos += 1
+        yield code[call.end():pos]
+
+
+# `a + b`, `t % b`, `x +'s'`: an operand joined to another by an operator that
+# builds a string. Read over code with its literals blanked, so `5 % 2` beside
+# no name is the only arithmetic it can mistake (L-0871 round 4).
+_JOIN_OP_RE = re.compile(r"[\w)\]]\s*[+%]|[+%]\s*[\w(\[]")
+_SPELL_DEPTH = 40
+_ASSIGN_RE = re.compile(
+    r"\s*(?:(?:const|let|var)\s+)?([A-Za-z_]\w*)\s*(?::[^=]*?)?(\+|:)?=(?!=)(.*)\Z",
+    re.S)
+_NAME_RE = re.compile(r"[A-Za-z_]\w*")
+
+
+def _statements(code):
+    """`code` split at `;` and newlines outside string literals."""
+    out, start, pos = [], 0, 0
+    while pos < len(code):
+        lit = _LIT_RE.match(code, pos)
+        if lit:
+            pos = lit.end()
+            continue
+        if code[pos] in ";\n":
+            out.append(code[start:pos])
+            start = pos + 1
+        pos += 1
+    out.append(code[start:])
+    return out
+
+
+def _assignments(code):
+    """name -> [(operator, right-hand side)] for each `name = ...`,
+    `name += ...`, `name: T = ...` and `name := ...` statement, in order."""
+    found = {}
+    for statement in _statements(code):
+        match = _ASSIGN_RE.match(statement)
+        if match:
+            found.setdefault(match.group(1), []).append(
+                (match.group(2) or "", match.group(3)))
+    return found
+
+
+_SPELL_LIMIT = 4096
+
+
+def _spelling(name, assigned, memo, seen=()):
+    """(letters, why): the letters and digits of every string literal that
+    went into `name` through assignments, however many names deep (`a = 'ter'`,
+    `b = a + 'ra'`, `c = b + 'form'`), in order; `why` is a `$` or backtick
+    in one of them, or `+` where a name is joined to another operand (also
+    when the chain is too long to follow: it is refused, never read slowly).
+    `memo` holds each finished name, so a chain that fans out is read once."""
+    if name in memo:
+        return memo[name]
+    if len(seen) > _SPELL_DEPTH:
+        return "", "+"
+    memo[name] = result = _spell(name, assigned, memo, seen)
+    return result
+
+
+def _spell(name, assigned, memo, seen):
+    """`_spelling`, uncached."""
+    spelled = ""
+    for operator, rhs in assigned.get(name, ()):
+        if len(spelled) > _SPELL_LIMIT:
+            return spelled, "+"
+        bare = _LIT_RE.sub('""', rhs)
+        if operator == "+" and re.search(r"[\w)\]]|[(\[]", bare):
+            return spelled, "+"
+        if _JOIN_OP_RE.search(bare):
+            return spelled, "+"
+        for token in re.finditer(_LIT_RE.pattern + r"|[A-Za-z_]\w*", rhs, re.S):
+            if token.group(1) is not None:
+                found = _CODE_EXPANSION_RE.search(token.group(1))
+                if found:
+                    return spelled, found.group(0)
+                spelled += re.sub(r"[^a-z0-9]", "",
+                                  _literal_text(token).lower())
+            elif token.group(0) in assigned and token.group(0) not in seen \
+                    and token.group(0) != name:
+                inner, why = _spelling(token.group(0), assigned, memo,
+                                       seen + (name,))
+                if why:
+                    return spelled, why
+                spelled += inner
+                if len(spelled) > _SPELL_LIMIT:
+                    return spelled[:_SPELL_LIMIT], "+"
+    return spelled, None
+
+
+def _expansion_in_call(code):
+    """A `$` or backtick in a string literal that is (or names, through any
+    chain of assignments) the argument of a process-starting call, a name
+    that spells the tool out of the literals assigned along that chain, or a
+    non-literal joined to another operand (`a + b`, also in an assignment of
+    a name the call uses): the name is made at run time. Printed text with a
+    `$` in it is not."""
+    assigned = _assignments(code)
+    memo = {}
+    for args in _call_args(code, _proc_aliases(code, assigned)):
+        for lit in _LIT_RE.finditer(args):
+            found = _CODE_EXPANSION_RE.search(lit.group(1))
+            if found:
+                return found.group(0)
+        bare = _LIT_RE.sub('""', args)
+        if _JOIN_OP_RE.search(bare):
+            return "+"
+        for name in sorted(set(_NAME_RE.findall(bare))):
+            spelled, why = _spelling(name, assigned, memo)
+            if why:
+                return why
+            for tool in _TOOL_SPELLINGS:
+                if tool in spelled:
+                    return tool
+    return None
+
+
+def _built_name(code, scan, reach, assembly, label):
+    """An `InterpreterHit` when `code` reaches a process (`reach`, its
+    regex, read over `scan`: the code, or python's without its string text)
+    and builds the tool's name: adjacent string literals join to the name, or
+    it uses an `assembly` construct (also read over `scan`), or a shell
+    expansion or a non-literal operand feeds a process call. None otherwise
+    (L-0871)."""
+    reached = reach.search(scan)
+    if reached is None:
+        return None
+    for run in _literal_runs(code):
+        for tool in _TOOL_SPELLINGS:
+            if tool in run:
+                return InterpreterHit(tool, (
+                    f"{label} code that spells {tool!r} out of fragments "
+                    f"next to {reached.group(0)!r}"))
+    built = assembly.search(scan)
+    built = built.group(0) if built else _expansion_in_call(code)
+    if built is None:
+        return None
+    return InterpreterHit(built, (
+        f"{label} code that builds a name at run time ({built!r}) "
+        f"next to {reached.group(0)!r}, so it could spell the tool"))
 
 
 def _code_mention(code, top):
@@ -2681,10 +3104,23 @@ def _py_static(code):  # pylint: disable=too-many-return-statements,too-many-bra
 
 def _code_verdict(code, spec, top, dynamic=False, whole=False):
     """The word naming why interpreter `code` (of `spec`'s family) may run
-    the tool, or None: the rule in the section comment. `dynamic`: the code
-    holds a value made at run time; `whole`: it is a shell line
-    (`_py_spawns`)."""
+    the tool, or None: the rule in the section comment. An
+    `InterpreterHit` for python and node, carrying the construct. `dynamic`
+    is unused since L-0871 (1.2.35's rule has already run); `whole`: the code
+    is a shell line (`_py_spawns`)."""
+    del dynamic
     family = spec[7]
+    if family in ("python", "node") and \
+            len(_TRIPLE_OR_TICK_RE.findall(code)) > _QUOTE_LIMIT:
+        # Read before anything that scans literals, whose cost grows with
+        # each unclosed one: code that can reach a process and holds this
+        # many is refused unread, never read slowly (L-0871 CI).
+        reach = (_PY_SPAWN_RE if family == "python"
+                 else _FAMILY_SPAWN_RE[family]).search(code)
+        if reach is not None:
+            return InterpreterHit("quotes", (
+                f"{family} code with more than {_QUOTE_LIMIT} triple quotes "
+                f"or backticks next to {reach.group(0)!r}: too many to read"))
     if _code_is_inert(code, family != "node"):
         return None
     if family == "python":
@@ -2692,14 +3128,26 @@ def _code_verdict(code, spec, top, dynamic=False, whole=False):
         if spawn is None:
             return None
         named = _code_mention(code, top)
-        if named is None and (dynamic or not _py_static(code)):
-            named = spawn
-        return named
+        if named is not None:
+            return InterpreterHit(named, (
+                f"python code that names {named!r} and may start a process "
+                f"({spawn!r})"))
+        bare = code if whole else _py_without_text(code)
+        return _built_name(code, bare, _PY_REACH_RE, _PY_ASSEMBLY_RE, "python")
     if family == "php":
         return _code_mention(code, top) or "php"
     found = _FAMILY_SPAWN_RE[family].search(code)
-    return None if found is None else _code_mention(code, top) or \
-        found.group(0)
+    if found is None:
+        return None
+    named = _code_mention(code, top)
+    if family == "node":
+        if named is not None:
+            return InterpreterHit(named, (
+                f"node code that names {named!r} and may start a process "
+                f"({found.group(0)!r})"))
+        return _built_name(code, code, _NODE_REACH_RE, _NODE_ASSEMBLY_RE,
+                           "node")
+    return named or found.group(0)
 
 
 def _judge_code(code, spec, top, runtime, whole=False):
@@ -4261,8 +4709,10 @@ def _argv_trigger(argv, top, helpers, depth, line, tool=_TF_TOOL):
     named = None if interpreted is None else interpreted(head, args, top)
     if named is not None:
         # `python3 -c "import os; os.system('terraform apply')"`: code
-        # that names the tool and does more than print (SRL-2308 r2).
-        return named, True
+        # that names the tool and does more than print (SRL-2308 r2). A
+        # python or node hit carries the construct that caused it (L-0871).
+        why = getattr(named, "why", "")
+        return named, InterpreterReason(why) if why else True
     if head in _GATE_SHELLS:
         has_c, positional = shell_args(args)
         if has_c and positional and _HOLE not in positional[0]:
@@ -4351,6 +4801,9 @@ def _bash_trigger(text, top, helpers, depth, line=None, tool=_TF_TOOL):
         if hit is not None:
             found = found or hit[0]
             unseen = unseen or hit[1]
+            if isinstance(hit[1], InterpreterReason) and \
+                    not isinstance(unseen, InterpreterReason):
+                unseen = hit[1]  # the first interpreter's construct (L-0871)
         # An alias or `hash -p` names gh for the REST of the line only.
         line["copies"] |= tool.bash_aliases([argv], helpers)
     return None if found is None else (found, unseen)

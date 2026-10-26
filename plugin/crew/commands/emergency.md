@@ -19,7 +19,7 @@ gate that does not run is recorded, the lane expires on its own, and
 |---|---|
 | empty or `status` | **Status**, below. Never declare an incident from an empty argument — an incident nobody meant to declare is worse than none. |
 | `end` / `close` / `resolve` | **Closing**, below. |
-| `extend` / `extend 45` | Run `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_incident.py" extend --ttl <minutes>` (omit `--ttl` for the configured default) and print the line it returns. |
+| `extend` / `extend 45` | Run `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_incident.py" extend --ttl <minutes>` (omit `--ttl` for the fixed 120-minute default) and print the line it returns. |
 | anything else | **Declaring**, below, with the argument as the summary. |
 
 Every python call below is written as `python3`, matching every other command
@@ -44,7 +44,7 @@ library only.
 2. Declare it:
    `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_incident.py" declare --summary "<one line on what is actually broken>"`
    Add `--ttl <minutes>` only if the human named a window. The default is
-   `emergency.ttlMinutes` (120), capped by `emergency.maxTtlMinutes` (480).
+   fixed at 120 minutes, capped by `emergency.maxTtlMinutes` (480).
 3. **Open the lanes.** Dispatch these in ONE message so they run at once. Each
    gets the symptom, the time it started, and what has already been ruled out —
    nothing else. A lane that has to ask what is broken is a lane that was
@@ -64,7 +64,7 @@ library only.
    another one in the same tree.
 
    `isolation: worktree` places its own worktree and crew cannot redirect it —
-   that is the harness's choice, not this plugin's. `worktree.root` governs a
+   that is the harness's choice, not this plugin's. The command below governs a
    worktree **you** place with `git worktree add`. Ask for the path rather than
    composing one, so two lanes started seconds apart agree:
 
@@ -72,8 +72,8 @@ library only.
    python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py"      --root . --worktree-path <branch>
    ```
 
-   Unset, that answers the checkout's parent, which is what crew did before the
-   setting existed.
+   It answers the checkout's parent, fixed in code (the `worktree.root` setting
+   was removed in L-0725).
 4. While the lanes run, **do the cheapest observation yourself** — the log line,
    the health endpoint, the last deploy's sha. Do not wait idle on agents.
 5. When the lanes report: one paragraph on the most probable cause, the

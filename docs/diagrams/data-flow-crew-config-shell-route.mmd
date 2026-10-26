@@ -1,19 +1,21 @@
 %% Generated from useful-claude-add-ons@18e4afce3 on 2026-10-02, re-anchored 2026-10-19 (L-0727: resolve_gitbash gained a strict mode, which this diagram does not draw). Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config.py, plugin/crew/hooks/scripts/crew_shell.py
-%% Purpose: shellRoute: the two config keys read through resolve_config, beside the machine-local probe cache that is not a config layer, both feeding crew_shell.decide().
+%% Purpose: shellRoute: the route is chosen automatically from the machine-local probe cache and the repo's location; no config key feeds it any more (L-0725 removed shellRoute.mode and shellRoute.distro).
 %% Embed: none
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
-%% Note SR: shellRoute.mode / shellRoute.distro both layers, plugin/crew/hooks/scripts/crew_config.py:340 /
-%%    :579 read by crew_shell.settings through resolve_config; an unrecognised mode reads as auto and is named
+%% Re-drawn for L-0725: the shellRoute config block is gone, so the config box is replaced by the repo location and measurement
+%%    inputs decide() already took. The :NNN citations on SRD predate this edit and were not re-measured.
+%% Note SR: the repo's location and any measurement (`crew_shell.py measure --write`) plus the probe cache feed
+%%    crew_shell.decide(); there is no mode to force and no distro to pin, so routing is automatic
 %% Note SRC: ~/.claude/crew/shell-route.json crew_shell.probe_path() - the machine-local probe cache written
 %%    only by probe --write and measure --write; NOT a config layer, never merged
 %% Note SRD: crew_shell.decide() / status_line() plugin/crew/hooks/scripts/crew_shell.py:560 / :923 native
 %%    Windows only - off Windows, plain bash -c
 flowchart LR
 
-    subgraph ShellRoute["T-0040: shellRoute is config; the probe's answer is not"]
+    subgraph ShellRoute["T-0040: the route is automatic; the probe's answer is not config"]
         direction TB
-        SR["<b>shellRoute.mode / .distro</b><br/>both layers, read through<br/>resolve_config"]
+        SR["<b>repo location + measurement</b><br/>where the repo lives,<br/>and whether WSL measured faster"]
         SRC[("<b>~/.claude/crew/shell-route.json</b><br/>the probe cache -<br/>NOT a config layer")]
         SRD["<b>crew_shell.decide() / status_line()</b><br/>native Windows only"]
         SR --> SRD

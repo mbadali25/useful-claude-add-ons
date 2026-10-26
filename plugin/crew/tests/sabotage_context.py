@@ -12,38 +12,13 @@ SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 CONTEXT = os.path.join(SCRIPTS, "crew_context.py")
 RECALL = os.path.join(SCRIPTS, "crew_recall.py")
 INSTRUCTIONS = os.path.join(SCRIPTS, "crew_instructions.py")
-CONTEXT_PS1 = os.path.join(SCRIPTS, "crew-context.ps1")
-HANDOFF_SH = os.path.join(SCRIPTS, "handoff-read.sh")
-HANDOFF_PS1 = os.path.join(SCRIPTS, "handoff-read.ps1")
 _FIXES = "tests/test_crew_context_fixes.py::"
 _WRAP = "tests/test_crew_context_wrappers.py::"
 _INSTR = "tests/test_crew_instructions.py::"
 _OFF = "  # pylint: disable=using-constant-test\n"
 
-# The T6 review round: one per finding that changed code. The .ps1 ones need
-# pwsh; on a host without it their tests SKIP (exit 0) and these read as
-# STILL GREEN, which is the honest answer there -- nothing was tested.
+# The T6 review round: one per finding that changed code.
 REVIEW_FIX_CONTEXT_MUTATIONS = (
-    ("handoff-read.sh prints the handoff although memory.inject is on",
-     HANDOFF_SH,
-     "\"$DIR\" \"$PWD\" 2>/dev/null && exit 0\n",
-     "\"$DIR\" \"$PWD\" 2>/dev/null && :\n",
-     _FIXES + "test_handoff_read_sh_stands_down_exactly_when_memory_inject_is_on"),
-    ("handoff-read.ps1 prints the handoff although memory.inject is on",
-     HANDOFF_PS1,
-     "if ($LASTEXITCODE -eq 0) { exit 0 }\n",
-     "if ($false) { exit 0 }\n",
-     _WRAP + "test_handoff_read_ps1_stands_down_exactly_when_memory_inject_is_on"),
-    ("the .ps1 flavour hands python its stdin plus a newline, so both flavours emit",
-     CONTEXT_PS1,
-     "  $proc.StandardInput.BaseStream.Write($stdinBytes, 0, $stdinBytes.Length)\n",
-     "  $proc.StandardInput.BaseStream.Write($stdinBytes + [byte[]](10), 0, $stdinBytes.Length + 1)\n",
-     _WRAP + "test_both_flavours_claim_the_same_event_so_only_one_emits"),
-    ("the .ps1 python probe waits on a hung candidate",
-     CONTEXT_PS1,
-     "      $crewPythonWaitMs = [Math]::Min(3000, $crewPythonRemainingMs)\n",
-     "      $crewPythonWaitMs = 600000\n",
-     _WRAP + "test_a_hung_python_candidate_is_abandoned_not_waited_on"),
     ("a failed session-state write is reported as saved",
      CONTEXT,
      "    except (OSError, TypeError, ValueError):\n        return False\n    return True\n",
@@ -74,15 +49,6 @@ REVIEW_FIX_CONTEXT_MUTATIONS = (
      "        lines += [_RECALL_DELIM_RE.sub(r\"&lt;\\1\", i[\"text\"]) for i in kept]\n",
      "        lines += [i[\"text\"] for i in kept]\n",
      _FIXES + "test_recalled_text_sits_inside_one_data_block_it_cannot_close"),
-    ("slice-for-subagent emits vault context although memory.inject is false",
-     CONTEXT,
-     ("    gate as the hook, so no path emits vault context the repo turned off.\"\"\"\n"
-      "    cfg = load_crew_config(root)\n"
-      "    if not _inject_on(cfg):\n"),
-     ("    gate as the hook, so no path emits vault context the repo turned off.\"\"\"\n"
-      "    cfg = load_crew_config(root)\n"
-      "    if False:" + _OFF),
-     _FIXES + "test_slice_for_subagent_emits_and_logs_nothing_when_inject_is_false"),
     ("a vault or note name carrying a line break is injected",
      RECALL,
      "        if _CONTROL_RE.search(vault) or _CONTROL_RE.search(note) or vault not in priority:\n",
@@ -171,26 +137,6 @@ CONTEXT_MUTATIONS = (
          "test_a_compaction_starts_a_new_epoch_and_the_slice_returns"),
     ),
     (
-        # The repo's vault priority is ignored in favour of the CLI's order.
-        "recall ignores the repo's vault priority order",
-        RECALL,
-        "    snippets.sort(key=lambda s: (priority.get(s[\"vault\"], len(priority)), s[\"rank\"]))\n",
-        "    snippets.sort(key=lambda s: s[\"rank\"])\n",
-        ("tests/test_crew_context.py::"
-         "test_snippets_follow_the_repo_vault_priority_not_the_cli_order"),
-    ),
-    (
-        # Back to default-off: the 0.20.x behaviour. crew 1.0 turned the
-        # context hook on by default when it unregistered pm-brief, so an
-        # unset key has to inject -- this puts the old reading back.
-        "the context hook stays silent with memory.inject unset",
-        CONTEXT,
-        '    return dict_or_empty(cfg.get("memory")).get("inject") is not False\n',
-        '    return dict_or_empty(cfg.get("memory")).get("inject") is True\n',
-        ("tests/test_crew_context_wrappers.py::"
-         "test_bash_flavour_emits_when_inject_is_on_or_unset"),
-    ),
-    (
         # T-0076: without the pin, Windows' text-mode stdout writes CRLF and
         # the route hook's byte-identical tests fail on sh and ps1.
         "the context hook inherits the platform's line ending",
@@ -215,21 +161,6 @@ RECALL_PROJECT_MUTATIONS = (
      "    name = _main_checkout_name(root)\n",
      "    name = os.path.basename(os.path.abspath(root))\n",
      _PROJECT + "test_a_linked_worktree_sends_the_main_checkout_name"),
-    ("recall: memory.recall.projects is ignored", RECALL,
-     '    listed = _recall_cfg(crew_cfg).get("projects")\n    if isinstance(listed, list) and listed:\n',
-     '    listed = _recall_cfg(crew_cfg).get("projects")\n    if False:\n',
-     _PROJECT + "test_the_config_list_wins_over_the_directory_name"),
-    ("recall: a project name with a comma is sent", RECALL,
-     '    return bool(name) and "," not in name and not _CONTROL_RE.search(name)\n',
-     "    return bool(name) and not _CONTROL_RE.search(name)\n",
-     _PROJECT + "test_unusable_project_names_are_dropped"),
-    # A listed name is checked for control characters BEFORE it is trimmed
-    # (`"acme\n"` must not be sent as `acme`); `_usable_project`'s own control
-    # check is reached only by a directory name, which no test names.
-    ("recall: a listed name with a control character is trimmed and sent", RECALL,
-     "                 if isinstance(n, str) and not _CONTROL_RE.search(n)]\n",
-     "                 if isinstance(n, str)]\n",
-     _PROJECT + "test_unusable_project_names_are_dropped"),
     ("recall: an exit 2 is not retried without the project", RECALL,
      "        if done.returncode != 2 or deadline - _clock() < RETRY_MIN_SECONDS:\n",
      "        if True:\n",

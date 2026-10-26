@@ -846,7 +846,7 @@ def _exception_statements():
             "crew_autopilot.approve docstring": crew_autopilot.approve.__doc__,
             "commands/autopilot.md": _command_text(),
             "README.md": read(_ROOT, "README.md"),
-            "CONFIG.md": read(_ROOT, "CONFIG.md"),
+            "config-rationale.md": read(_REPO, "docs", "crew", "config-rationale.md"),
             "daily-workflow-scope.md": read(_REPO, "docs", "guides", "crew", "src",
                                             "daily-workflow-scope.md")}
 

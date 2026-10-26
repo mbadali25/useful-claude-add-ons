@@ -7,7 +7,7 @@ sessions/<pid>.json`) with this session's id and that process's start time
 -- and classified terminal / headless / unknown. Only `terminal` is typed
 into; the target is then proven by walking up FROM that process.
 
-Must-allow and must-block pairs, both flavours where the method exists:
+Must-allow and must-block pairs:
 
   - must-allow: a bound terminal session in its own tmux pane, or under an
     X11 / console window owned by a strict ancestor, sends; notify's text is
@@ -17,15 +17,13 @@ Must-allow and must-block pairs, both flavours where the method exists:
     and gets one headless notice; a walk that passes through another
     session refuses; a window that also hosts another terminal refuses; a
     session that could not be identified is never "headless" and never
-    "safe"; a truncated chain refuses; a pid-less or title-only window
-    refuses while another session is live;
+    "safe"; a truncated chain refuses;
   - order: the binding runs before the sent-marker claim.
 
 No case reads the real process table, the real `~/.claude/sessions`, or a real
 window, and none sends a keystroke: every run sets CREW_AUTOCLEAR_INHIBIT, a
 fixture HOME and CLAUDE_CONFIG_DIR, CREW_AUTOCLEAR_PROC_STUB (the whole process
-table) and CREW_AUTOCLEAR_WINDOW_STUB. The .ps1 cases are told they are on
-Windows and skip without pwsh -- a skip there means that flavour did NOT run.
+table) and CREW_AUTOCLEAR_WINDOW_STUB.
 """
 import json
 import os
@@ -39,10 +37,8 @@ import crew_fixtures as cf
 
 _SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
 _BASH = cf.resolve_bash()
-_PWSH = cf.resolve_pwsh()
 needs_bash = pytest.mark.skipif(_BASH is None, reason="bash not installed - the sh flavour was NOT run")
-needs_pwsh = pytest.mark.skipif(_PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")
-FLAVORS = [pytest.param("sh", marks=needs_bash), pytest.param("ps1", marks=needs_pwsh)]
+FLAVORS = [pytest.param("sh", marks=needs_bash)]
 
 SESSION = "33333333-cccc-4ccc-8ccc-000000000003"
 OTHER_SESSION = "44444444-dddd-4ddd-8ddd-000000000004"
@@ -66,7 +62,7 @@ class Box:
 
     def __init__(self, tmp_path, **auto):
         self.tmp = tmp_path
-        self.root = cf.make_repo(tmp_path, config={"context": {"handoffPath": ".work/HANDOFF.md"}}, git=False)
+        self.root = cf.make_repo(tmp_path, config={"context": {}}, git=False)
         self.home = tmp_path / "home"
         self.config = self.home / ".claude"
         self.machine(**auto)
@@ -113,14 +109,9 @@ class Box:
             env.pop(name, None)
         env.update(self.env)
         env.update(extra or {})
-        if flavor == "ps1":
-            env["OS"] = "Windows_NT"
-            names = {"--dry-run": "-DryRun", "--force": "-Force"}
-            cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", os.path.join(_SCRIPTS, "auto-clear.ps1"),
-                   "-Session", SESSION, "-Root", str(self.root), *[names.get(a, a) for a in args]]
-        else:
-            cmd = [_BASH, os.path.join(_SCRIPTS, "auto-clear.sh").replace("\\", "/"),
-                   "--session", SESSION, "--root", str(self.root), *args]
+        del flavor
+        cmd = [_BASH, os.path.join(_SCRIPTS, "auto-clear.sh").replace("\\", "/"),
+               "--session", SESSION, "--root", str(self.root), *args]
         return cf.subprocess.run(cmd, cwd=str(self.root), env=env, capture_output=True, text=True,
                                  stdin=cf.subprocess.DEVNULL, check=False, timeout=120)
 
@@ -133,13 +124,9 @@ class Box:
 
 
 def _target(box, flavor, method=None):
-    """The configured method and a target each flavour could type into: a
-    tmux pane on the terminal for sh (or the X11 window when method is
-    xdotool), the console window on the terminal for ps1."""
-    if flavor == "ps1":
-        box.machine(method=method or "sendkeys")
-        box.windows([{"id": 4242, "pid": T, "title": "Claude Code"}], xdotool=False)
-        return
+    """The configured method and a target it could type into: a tmux pane on
+    the terminal (or the X11 window when method is xdotool)."""
+    del flavor
     box.machine(method=method or "tmux")
     if method == "xdotool":
         box.windows([{"id": 4242, "pid": T, "title": "Claude Code"}])
@@ -307,7 +294,7 @@ def test_unarmed_reads_no_record(tmp_path, monkeypatch):
 def test_unarmed_is_silent(flavor, tmp_path):
     box = Box(tmp_path)
     _target(box, flavor)
-    box.machine(enabled=False, method="tmux" if flavor == "sh" else "sendkeys")
+    box.machine(enabled=False, method="tmux")
     _own_terminal(box)
     result = box.run(flavor, "--dry-run")
     assert (result.stdout, box.log()) == ("", "")
@@ -359,7 +346,7 @@ def test_xdotool_window_on_strict_ancestor_sends(flavor, tmp_path):
     """The window belongs to the terminal ABOVE the session, never to the
     session's own process (r1 FIX test_autoclear_binding.py:357)."""
     box = Box(tmp_path)
-    _target(box, flavor, "xdotool" if flavor == "sh" else None)
+    _target(box, flavor, "xdotool")
     _own_terminal(box)
     result = box.run(flavor, "--dry-run")
     assert "would send" in result.stdout, result.stdout + result.stderr
@@ -369,8 +356,8 @@ def test_xdotool_window_on_strict_ancestor_sends(flavor, tmp_path):
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_window_owned_by_the_session_process_itself_is_not_its_terminal(flavor, tmp_path):
     box = Box(tmp_path)
-    _target(box, flavor, "xdotool" if flavor == "sh" else None)
-    box.windows([{"id": 4242, "pid": O, "title": "Claude Code"}], xdotool=flavor == "sh")
+    _target(box, flavor, "xdotool")
+    box.windows([{"id": 4242, "pid": O, "title": "Claude Code"}])
     _own_terminal(box)
     result = box.run(flavor, "--dry-run")
     assert "would send" not in result.stdout
@@ -392,19 +379,17 @@ def test_notify_text_is_unchanged_for_terminal_and_unknown(flavor, bound, tmp_pa
 
 # --- 3. must-block: a headless child ---------------------------------------------
 
-_HEADLESS_METHODS = [("sh", "auto"), ("sh", "tmux"), ("sh", "xdotool"), ("sh", "notify"),
-                     ("ps1", "auto"), ("ps1", "sendkeys"), ("ps1", "notify")]
+_HEADLESS_METHODS = [("sh", "auto"), ("sh", "tmux"), ("sh", "xdotool"), ("sh", "notify")]
 
 
 @pytest.mark.parametrize("flavor,method", [
-    pytest.param(f, m, marks=needs_bash if f == "sh" else needs_pwsh) for f, m in _HEADLESS_METHODS])
+    pytest.param(f, m, marks=needs_bash) for f, m in _HEADLESS_METHODS])
 def test_headless_child_in_parent_pane_types_nothing(flavor, method, tmp_path):
     box = Box(tmp_path)
-    _target(box, flavor, method if method in ("xdotool", "sendkeys") else None)
+    _target(box, flavor, method if method == "xdotool" else None)
     box.machine(method=method)
-    box.windows([{"id": 4242, "pid": T, "title": "Claude Code"}], xdotool=flavor == "sh")
-    if flavor == "sh":
-        box.tmux()
+    box.windows([{"id": 4242, "pid": T, "title": "Claude Code"}])
+    box.tmux()
     _child_of_parent(box)
     result = box.run(flavor, "--dry-run")
     assert "method: notify-headless" in result.stdout, result.stdout + result.stderr
@@ -450,25 +435,13 @@ def test_headless_notify_fires_once(flavor, tmp_path):
     assert box.log().count("notify-headless") == 1
 
 
-@needs_bash
-@needs_pwsh
-def test_headless_notify_parity(tmp_path):
-    texts = []
-    for flavor in ("sh", "ps1"):
-        box = Box(tmp_path / flavor)
-        _target(box, flavor)
-        _child_of_parent(box)
-        texts.append(json.loads(box.run(flavor).stdout)["systemMessage"])
-    assert texts[0] == texts[1]
-
-
 # --- 4. must-block: the walk crosses another session -------------------------------
 
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_walk_through_another_session_refuses(flavor, tmp_path):
     """An INTERACTIVE child under its own pty (`script -qc claude`) is a
     terminal, but its parent's pane and window are not its own (r1 BLOCK
-    crew_autocycle.py:786, r1 FIX auto-clear.ps1:733)."""
+    crew_autocycle.py:786)."""
     box = Box(tmp_path)
     _target(box, flavor)
     box.record()
@@ -594,18 +567,6 @@ def test_spawn_inhibit_spawns_the_sender_but_types_nothing(tmp_path):
 
 # --- review round 1 FIX 3: a live session whose record cannot be read --------------
 
-@pytest.mark.parametrize("flavor", FLAVORS)
-def test_unreadable_live_sibling_record_refuses_the_title_fallback(flavor, tmp_path):
-    box = Box(tmp_path)
-    _title_only(box, flavor, 999999 if flavor == "sh" else T)
-    box.record()
-    (box.config / "sessions" / f"{SIBLING}.json").write_text("{not json", encoding="utf-8")
-    box.procs({**cf.session_table(), SIBLING: P(1, TTY_OTHER, 77, "claude")})
-    result = box.run(flavor, "--dry-run")
-    assert "would send" not in result.stdout, result.stdout
-    assert "another session cannot be ruled out" in result.stderr, result.stderr
-
-
 def test_other_sessions_cannot_rule_out_a_live_unreadable_record(tmp_path, monkeypatch):
     box = Box(tmp_path)
     box.record()
@@ -616,58 +577,6 @@ def test_other_sessions_cannot_rule_out_a_live_unreadable_record(tmp_path, monke
     assert crew_autocycle.other_sessions(O) is None  # SIBLING is live; SIBLING + 1 is gone and ignored
     (box.config / "sessions" / f"{SIBLING}.json").unlink()
     assert crew_autocycle.other_sessions(O) == set()
-
-
-# --- review round 1 FIX 2: an exited parent is the top; an unreadable one is not ---
-
-@pytest.mark.parametrize("flavor", FLAVORS)
-@pytest.mark.parametrize("parent", ["gone", "unreadable"])
-def test_exited_parent_ends_the_chain_but_unreadable_does_not(flavor, parent, tmp_path):
-    box = Box(tmp_path)
-    _title_only(box, flavor, 999999 if flavor == "sh" else T)
-    box.record()
-    table = {H: P(O, TTY, 1), O: P(SHELL, TTY, cf.OWNER_START, "claude"), SHELL: P(SHELL + 1, TTY, 1),
-             SHELL + 1: {"gone": True} if parent == "gone" else None}
-    if flavor == "ps1":
-        table[T] = P(1, 0, 1, "terminal")  # the console window's owner, read for its name
-    box.procs(table)
-    result = box.run(flavor, "--dry-run")
-    if parent == "gone":
-        assert "would send" in result.stdout, result.stdout + result.stderr
-    else:
-        assert "would send" not in result.stdout
-        assert f"the parent of pid {SHELL + 1} could not be read" in result.stderr, result.stderr
-
-
-@needs_pwsh
-def test_ps1_live_lookup_tells_an_exited_parent_from_an_unreadable_one():
-    """Review round 1 FIX 2, the real (unstubbed) Windows path, run from the
-    live functions: no such process is an exit; a parent id that could not be
-    read (Get-CrewParentId's 0) is unreadable, never the top of the chain."""
-    with open(os.path.join(_SCRIPTS, "auto-clear.ps1"), encoding="utf-8") as handle:
-        source = handle.read()
-
-    def _extract_ps1_function(text, name):
-        start = text.index(f"function {name}")
-        depth, i = 0, text.index("{", start)
-        while True:
-            depth += {"{": 1, "}": -1}.get(text[i], 0)
-            if depth == 0:
-                return text[start:i + 1]
-            i += 1
-
-    funcs = "\n".join(_extract_ps1_function(source, name) for name in (
-        "Test-CrewTrue", "Get-CrewChild", "Get-CrewProcStub", "Get-CrewProcLookup"))
-    script = (funcs + "\n$script:crewProcStubRead = $false\n"
-              "function Get-CrewParentId([int]$Id) { return 0 }\n"
-              "$a = Get-CrewProcLookup 999999; $b = Get-CrewProcLookup $PID\n"
-              "function Get-Process { throw [System.UnauthorizedAccessException]::new('denied') }\n"
-              "$c = Get-CrewProcLookup 4242\n"
-              "Write-Output \"$($null -eq $a.Info)|$($a.Gone)|$($null -eq $b.Info)|$($b.Gone)|$($c.Gone)\"\n")
-    env = {k: v for k, v in os.environ.items() if k not in ("CREW_AUTOCLEAR_PROC_STUB", "CREW_AUTOCLEAR_INHIBIT")}
-    done = cf.subprocess.run([_PWSH, "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True,
-                             text=True, check=False, timeout=60, env=env, stdin=cf.subprocess.DEVNULL)
-    assert done.stdout.strip() == "True|True|True|False|False", done.stdout + done.stderr
 
 
 # --- 5. must-block: a shared window ------------------------------------------------
@@ -706,18 +615,6 @@ def test_shared_window_control_same_tty_sends(tmp_path):
     box.record()
     box.procs({**cf.session_table(), SIBLING: P(T, TTY, 1, "bash")})
     assert "would send" in box.run("sh", "--dry-run").stdout
-
-
-@needs_pwsh
-def test_ps1_window_owner_above_another_session_refuses(tmp_path):
-    box = Box(tmp_path)
-    _target(box, "ps1")
-    box.record()
-    box.record(pid=SIBLING, session=OTHER_SESSION, proc_start=77)
-    box.procs({**cf.session_table(), SIBLING: P(T, 0, 77, "claude")})
-    result = box.run("ps1", "--dry-run")
-    assert "would send" not in result.stdout
-    assert f"also hosts another Claude Code session (pid {SIBLING})" in result.stderr, result.stderr
 
 
 # --- 6. could-not-tell is never "headless" or "safe" -------------------------------
@@ -803,9 +700,6 @@ def test_truncated_chain_refuses(flavor, case, tmp_path):
     box.procs(table)
     result = box.run(flavor, "--dry-run")
     assert "would send" not in result.stdout
-    if flavor == "ps1":  # sh: the hook's own walk is cut at the same place and refuses first
-        expect = "deeper than 16" if case == "deep" else f"the parent of pid {SHELL} could not be read"
-        assert expect in result.stderr, result.stderr
 
 
 @pytest.mark.parametrize("method", ["tmux", "xdotool"])
@@ -823,54 +717,25 @@ def test_truncated_chain_refuses_from_the_owner(method, case, tmp_path, monkeypa
     _inproc(monkeypatch, box)
     owner = crew_autocycle.session_owner(SESSION)
     got = {"method": method, "target": "%7", "label": "%7", "pane_pid": T}
-    proof = crew_autocycle.prove_target(owner, got, {"windowTitle": ""})
+    proof = crew_autocycle.prove_target(owner, got)
     expect = "deeper than 16" if case == "deep" else f"the parent of pid {SHELL} could not be read"
     assert not proof["ok"] and expect in proof["reason"], proof
 
 
-def _title_only(box, flavor, pid):
-    if flavor == "sh":
-        box.machine(method="xdotool", windowTitle="Claude")
-    else:
-        box.machine(method="sendkeys", windowTitle="Claude")
-    box.windows([{"id": 4242, "pid": pid, "title": "Claude - mine"}], xdotool=flavor == "sh")
+def _owned_window(box, pid):
+    box.machine(method="xdotool")
+    box.windows([{"id": 4242, "pid": pid, "title": "Claude - mine"}])
 
 
 @pytest.mark.parametrize("flavor", FLAVORS)
-def test_window_without_pid_refuses_with_sibling(flavor, tmp_path):
+def test_window_title_is_constant(flavor, tmp_path):
     box = Box(tmp_path)
-    _title_only(box, flavor, 0)
-    box.record()
-    box.record(pid=SIBLING, session=OTHER_SESSION, proc_start=77)
-    box.procs({**cf.session_table(), SIBLING: P(1, TTY_OTHER, 77, "claude")})
-    result = box.run(flavor, "--dry-run")
-    assert "would send" not in result.stdout
-    assert "has no owning process" in result.stderr, result.stderr
-
-
-@pytest.mark.parametrize("flavor", FLAVORS)
-def test_window_without_pid_unchanged_without_sibling(flavor, tmp_path):
-    """r2 BLOCK :658's failing control: the same window with no other session
-    live still sends, exactly as before T-0016."""
-    box = Box(tmp_path)
-    _title_only(box, flavor, 0)
+    box.machine(method="xdotool", windowTitle="Claude")
+    box.windows([{"id": 4242, "pid": 999999, "title": "Claude - mine"}])
     _own_terminal(box)
     result = box.run(flavor, "--dry-run")
-    assert "has no owning process" not in result.stderr and "title alone" not in result.stderr, result.stderr
-    if flavor == "sh":  # ps1's own owner-name check then decides pid 0 by the host's Get-Process
-        assert "would send" in result.stdout and "title fallback]" in result.stdout, result.stderr
-
-
-@pytest.mark.parametrize("flavor", FLAVORS)
-def test_title_fallback_refuses_with_sibling(flavor, tmp_path):
-    box = Box(tmp_path)
-    _title_only(box, flavor, 999999)
-    box.record()
-    box.record(pid=SIBLING, session=OTHER_SESSION, proc_start=77)
-    box.procs({**cf.session_table(), SIBLING: P(1, TTY_OTHER, 77, "claude")})
-    result = box.run(flavor, "--dry-run")
-    assert "would send" not in result.stdout
-    assert "found by its title alone" in result.stderr, result.stderr
+    assert "would send" not in result.stdout, result.stdout
+    assert "no window belongs to any ancestor" in result.stderr, result.stderr
 
 
 @pytest.mark.parametrize("flavor", FLAVORS)
@@ -879,7 +744,7 @@ def test_a_stale_sibling_record_is_not_a_live_session(flavor, tmp_path):
     (measured): a record whose process is gone, or whose start time names a
     reused pid, is not another live session."""
     box = Box(tmp_path)
-    _title_only(box, flavor, 999999 if flavor == "sh" else T)
+    _owned_window(box, T)
     box.record()
     box.record(pid=SIBLING, session=OTHER_SESSION, proc_start=77)
     box.record(pid=SIBLING + 1, session=OTHER_SESSION, proc_start=78)
@@ -911,19 +776,16 @@ def test_resume_headless_child_types_nothing(who, tmp_path):
         assert "autoresume: would send\n  method: tmux" in done.stdout, done.stdout + done.stderr
 
 
-@needs_pwsh
-@pytest.mark.parametrize("who", ["headless-child", "unknown"])
-def test_ps1_resume_refuses_without_a_terminal(who, tmp_path):
-    from test_resume_typing import SESSION as RSESSION, Fixture  # pylint: disable=import-outside-toplevel
+@needs_bash
+@pytest.mark.skipif(os.name == "nt", reason="the tmux resume path is POSIX-only - NOT run here")
+def test_resume_unknown_session_types_nothing(tmp_path):
+    from test_resume_typing import Fixture  # pylint: disable=import-outside-toplevel
     fx = Fixture(tmp_path)
     (fx.home / ".claude" / "sessions" / f"{O}.json").unlink()
-    if who == "headless-child":
-        cf.write_session_record(fx.home / ".claude", RSESSION, O, entrypoint="sdk-cli")
-    done = fx.ps1("-DryRun")
-    expect = "this session has no terminal of its own" if who == "headless-child" else \
-        "could not identify this session's process"
+    done = fx.sh("--dry-run")
     assert "autoresume: refused - auto-resume types only into this session's own terminal: " in done.stdout
-    assert expect in done.stdout, done.stdout + done.stderr
+    assert "could not identify this session's process" in done.stdout, done.stdout + done.stderr
+    assert not fx.tmux_calls().count("send-keys")
 
 
 # --- 8. order: the binding runs before the claim -----------------------------------
