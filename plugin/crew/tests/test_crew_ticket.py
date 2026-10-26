@@ -555,7 +555,7 @@ def test_a_prompt_approval_continues_needs_replan_without_allow_cli(repo):
 def test_reapproving_the_same_plan_is_not_a_successor(repo):
     ready(repo)
     _allow_cli(repo)
-    _exhaust(repo)
+    _replan(repo)
 
     done = _cli(repo, "approve", "--ticket", "T-1", "--by", "owner")
 
@@ -686,7 +686,7 @@ def test_findings_from_before_the_successor_cannot_be_accepted(repo):
 
 def test_the_successor_approval_is_rechecked_under_the_ledger_lock(repo, monkeypatch):
     ready(repo)
-    _exhaust(repo)
+    _replan(repo)
     _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
     seam = rl.continue_with_successor_plan
     monkeypatch.setattr(rl, "continue_with_successor_plan", lambda *_: (False, "later"))
@@ -708,12 +708,12 @@ def test_the_successor_approval_is_rechecked_under_the_ledger_lock(repo, monkeyp
 
 def test_a_round_from_before_the_successor_cannot_be_recorded(repo):
     ready(repo)
-    _exhaust(repo)
+    _replan(repo)
     _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
     _approve_from_prompt(repo)
 
     with pytest.raises(rl.LedgerError):
-        rl.record(str(repo), "T-1", 2, {"verdict": "CLEAN", "provider": "codex",
+        rl.record(str(repo), "T-1", 1, {"verdict": "CLEAN", "provider": "codex",
                                         "bundle_sha256": "x", "base": "y"})
 
 

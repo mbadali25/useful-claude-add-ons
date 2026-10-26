@@ -577,8 +577,8 @@ def test_autopilot_refresh_beyond_anchor_stops_for_a_human(tmp_path, monkeypatch
 def test_autopilot_refresh_beyond_anchor_with_zero_rounds_left_names_the_refresh(tmp_path,
                                                                                  monkeypatch):
     root = _approved(tmp_path)
-    _ledger(root, [_round(1, "CLEAN"), _round(2, "CLEAN")], state="ACCEPTED",
-            receipt=_receipt(2))
+    _ledger(root, [_round(1, "CLEAN"), _round(2, "CLEAN"), _round(3, "CLEAN")], state="ACCEPTED",
+            receipt=_receipt(3))
     _receipt_says(monkeypatch, False, _BEYOND)
     _refresh(monkeypatch, "fresh")
 
