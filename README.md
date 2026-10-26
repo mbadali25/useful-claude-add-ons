@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.86**: `crew_standards.py export` publishes the standards to PR-side reviewers. `crew` 1.2.86: a repo that opts in (`export:` in `.crew/standards.md`) gets `docs/review-rules/<SET>.md`, `REVIEW.md`, `.cursor/BUGBOT.md` and a `## Code Review Rules` block in `AGENTS.md`, generated from the same standards `/crew:review` hands its own reviewer and checked for staleness by `export --check`.
 - **crew 1.2.83**: The verify-map price test rejects a NaN or infinite `seconds`. `crew` 1.2.83: a rule priced `NaN` can no longer pass the verify-map price test, and the L-0904 note sentence in `.crew/verify.json` starts its own line; no behaviour a user runs changes.
-- **crew 1.2.79**: The sabotage suite reports no STILL GREEN and no unproven entry. `crew` 1.2.79: the gate's sabotage step now goes red by a real assertion for every entry it keeps, so a vacuous test can no longer pass as coverage; no behaviour a user runs changes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

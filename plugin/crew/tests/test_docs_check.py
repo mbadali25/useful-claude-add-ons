@@ -18,6 +18,7 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_docs_check
 import crew_refresh_check
+import crew_standards
 import scope_base
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
@@ -592,3 +593,101 @@ def test_done_docs_check_never_edits():
     assert "crew_docs_check.py --root . --ticket \"$1\"" in section
     assert "do not edit a document here" in section.lower()
     assert "stales check 1's receipt" in section
+
+
+# --- standards export (L-0718) -------------------------------------------------
+
+_OVERLAY = ("---\nset: REPO\napplies-to: [\"**\"]\n{export}---\n\n## REPO-01 Local\n\n"
+            "**Rule.** Do the local thing.\n\n**Self-check.**\n1. Did you? Pass: yes.\n")
+
+
+def _overlay(root, opted_in, rule="Do the local thing."):
+    export = 'export: ["review"]\n' if opted_in else ""
+    _write(root, ".crew/standards.md", _OVERLAY.format(export=export).replace(
+        "Do the local thing.", rule))
+
+
+def test_a_standards_change_with_a_stale_export_is_missing(tmp_path):
+    root = _repo(tmp_path)
+    _overlay(root, True)
+    assert crew_standards.export_write(str(root))[0] == 0
+    _overlay(root, True, rule="Do another thing.")
+
+    got = _check(root)
+
+    verdict, reason = _verdict(got, "standards export")
+    assert (got["status"], verdict) == ("missing", "MISSING") and "stale" in reason
+
+
+def test_a_standards_change_with_a_fresh_export_is_updated(tmp_path):
+    root = _repo(tmp_path)
+    _overlay(root, True)
+    assert crew_standards.export_write(str(root))[0] == 0
+
+    got = _check(root)
+
+    assert _verdict(got, "standards export")[0] == "updated"
+
+
+def test_a_repo_not_opted_in_is_not_applicable(tmp_path):
+    root = _repo(tmp_path)
+    _overlay(root, False)
+
+    got = _check(root)
+
+    assert _verdict(got, "standards export")[0] == "not applicable"
+
+
+def test_no_standards_change_adds_no_export_row(tmp_path):
+    root = _repo(tmp_path)
+    _write(root, "src/lib.py", "y = 2\n")
+
+    got = _check(root)
+
+    assert [d for d in got["documents"] if d["doc"] == "standards export"] == []
+
+
+def test_an_export_check_that_exits_77_is_unknown(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    _overlay(root, True)
+    monkeypatch.setattr(crew_docs_check, "_export_check", lambda top: (77, "skipped"))
+
+    got = _check(root)
+
+    assert (got["status"], _verdict(got, "standards export")[0]) == ("unknown", "unknown")
+
+
+def test_an_unstartable_export_check_is_unknown_and_the_docs_check_exits_non_zero(
+        tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    _overlay(root, True)
+    real_run = subprocess.run
+
+    def refuse_python(argv, *args, **kwargs):
+        if argv and argv[0] == sys.executable:
+            raise FileNotFoundError("no interpreter")
+        kwargs.setdefault("check", False)
+        return real_run(argv, *args, **kwargs)  # pylint: disable=subprocess-run-check
+
+    monkeypatch.setattr(crew_docs_check.subprocess, "run", refuse_python)
+
+    got = _check(root)
+
+    assert _verdict(got, "standards export")[0] == "unknown"
+    assert crew_docs_check.exit_code(got) != 0
+
+
+def test_the_export_check_child_gets_a_constructed_environment(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen.update(kwargs.get("env") or {"unset": "1"})
+        return subprocess.CompletedProcess(argv, 0, stdout=b"standards export current\n", stderr=b"")
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "secret")
+    monkeypatch.setattr(crew_docs_check.subprocess, "run", fake_run)
+
+    code, first = crew_docs_check._export_check(str(tmp_path))  # pylint: disable=protected-access
+
+    assert (code, first) == (0, "standards export current")
+    assert "ANTHROPIC_API_KEY" not in seen and "PATH" in seen

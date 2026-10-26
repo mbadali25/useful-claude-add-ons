@@ -104,6 +104,9 @@ Before every Write, Edit, MultiEdit or NotebookEdit, the guard checks the target
   `verify.json`, `standards.md`, and files crew writes but also trusts, such as `.crew/tfplan/`,
   `incident.json` and `.deploy-in-flight`), `TODO.md`, the rest of `.claude/` and crew's own
   policy files. If the ticket changes one of them, list it in Touch.
+- The generated review files (`docs/review-rules/`, `REVIEW.md`, `.cursor/BUGBOT.md` and the
+  `## Code Review Rules` block in `AGENTS.md`) are ordinary repository files: a ticket that edits a
+  standard lists them in Touch, then regenerates them with `crew_standards.py export --write`.
 - Approval receipts, the review ledger and the scope base are always refused.
 
 The guard checks the real file a symlink points to and the path as written, so a link cannot

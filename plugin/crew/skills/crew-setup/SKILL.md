@@ -609,3 +609,8 @@ If they would rather go manually, the order is:
 4. Browser specs if this repo has a UI
 5. `/crew:survey` once the above exist — a survey before the safety net just
    produces a list of things nobody can safely act on
+
+After an approved standards proposal edits `.crew/standards.md` in a repo that
+opted in (`export:` in its front matter), run
+`crew_standards.py export --root . --write` so `docs/review-rules/`, `REVIEW.md`,
+`.cursor/BUGBOT.md` and the `AGENTS.md` block follow it (crew-standards skill).

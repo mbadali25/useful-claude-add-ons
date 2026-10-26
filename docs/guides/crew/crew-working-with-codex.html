@@ -180,6 +180,11 @@ approval receipt is told the gate does not apply, and during a declared incident
 (<code>/crew:emergency</code>) the gate stands down and logs the skip. The self-check is asked for last: a
 CLEAN receipt that already covers the bundle answers CLEAN without it, and a tree the verify gate
 has not passed is refused (exit 9) before it.</p>
+<p>Codex reviewing a pull request outside crew reads <code>AGENTS.md</code>, not this prompt. A repository that opts in
+(<code>export:</code> in <code>.crew/standards.md</code>) gets a marked <code>## Code Review Rules</code> block there, listing every standard
+with a link to <code>docs/review-rules/&lt;SET&gt;.md</code>, plus the full always-on text in <code>REVIEW.md</code>; the list is a
+superset of what <code>/crew:review</code> hands for one change, each standard carrying its <code>applies-to</code>. Whether a
+given reviewer follows those links is not something crew can promise.</p>
 <p>After the standards checklist comes the <strong>recurring-findings checklist</strong>: the defect classes earlier
 reviews kept finding (processes and races, claims not true at the commit, tests that cannot fail,
 fail-open handling, PowerShell/Bash drift, guard bypass, version and registration), only those whose

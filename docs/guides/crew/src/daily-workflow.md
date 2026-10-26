@@ -88,6 +88,14 @@ per-language set a changed file matches, and this repository's
 refuses an incomplete answer sheet and binds a complete one to the exact
 review bundle, so any later edit needs a new stamp.
 
+**6c. Publishing the standards (optional).** A repository that wants its pull-request reviewers (Claude
+Code Review, Cursor Bugbot, Codex, Copilot) to check the same standards opts in with
+`export: ["review", "agents", "bugbot"]` in the `.crew/standards.md` front matter. After an approved
+proposal edits that file, run `crew_standards.py export --root . --write`: it regenerates
+`docs/review-rules/<SET>.md`, `REVIEW.md`, `.cursor/BUGBOT.md` and the `## Code Review Rules` block in a
+hand-written `AGENTS.md`. `export --check` fails when any of them is stale, missing, hand-edited or
+orphaned; freshness is as of the last check, and a skipped check (exit 77) is not coverage.
+
 **7. Review.** `/crew:implement` calls `/crew:review T-0091` last, after tests,
 docs and the self-check; without a current stamp the review refuses before it
 spends a round. Codex reviews the bundle (or Copilot, or the Claude fallback,

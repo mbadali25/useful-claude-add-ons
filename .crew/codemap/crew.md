@@ -2424,6 +2424,17 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   the one way a ticket reaches review without the gate; it exists because the pre-existing
   review_run tests run tickets with no receipt, and a ticket without one cannot pass
   `/crew:done`.
+- **Export to PR-side reviewers (L-0718, DERIVED at the commit adding this bullet).** An opt-in
+  `export:` key in the overlay front matter (`OVERLAY_KEYS`, plugin sets refuse it) makes
+  `_export_build` (`plugin/crew/hooks/scripts/crew_standards.py:1194`) render every standard of every
+  set from `effective_set(..., applies=lambda g: True)` into `docs/review-rules/<SET>.md`, `REVIEW.md`,
+  `.cursor/BUGBOT.md` and a marked block in a hand-written `AGENTS.md`; `export_write` (`:1401`) writes each
+  complete-or-not-at-all, `export_check` (`:1317`) compares a fresh render by byte and reports orphans
+  (`_orphans` `:1276`), `export_report` (`:1387`) is `--dry-run`. `crew_docs_check._export_rows`
+  (`plugin/crew/hooks/scripts/crew_docs_check.py:488`) adds the `standards export` row; `.crew/verify.json`
+  rule `standards-export` runs `export --check` on every change. Tests: `test_standards_export.py`.
+  JUDGEMENT: the crew version is in every output's marker, so each crew release PR in an opted-in repo must
+  rerun `export --write`.
 
 ## The Kimi Code provider (T-0028 feature half; the review launch, L-0527)
 
