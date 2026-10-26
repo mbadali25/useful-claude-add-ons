@@ -50,7 +50,7 @@ import qa_doc
 
 REPO = pathlib.Path(context._ROOT).parent.parent  # pylint: disable=protected-access
 SCAN_ROOTS = ("plugin", "skills")
-SKIP_PARTS = {"tests", "_test", "node_modules", "__pycache__"}
+SKIP_PARTS = {"tests", "_test", "fixtures", "node_modules", "__pycache__"}
 SUBPROCESS_FNS = {"run", "Popen", "check_output", "check_call", "call"}
 
 # (file, enclosing function, tool) -> why a bare name is right, or not fixed
