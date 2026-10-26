@@ -709,10 +709,11 @@ def _needs_replan(tmp_path, name, new_plan):
     root = make_repo(tmp_path, mode="block", name=name)
     make_ticket(root)
     approve_as_user(root)
-    for _ in range(3):
+    for _ in range(rl.BUDGET + 1):
         rl.reserve(str(root), "T-1", "codex")
     assert rl.status(str(root), "T-1")["state"] == rl.NEEDS_REPLAN
     if new_plan:
+        rl.grant_round(str(root), "T-1", "owner", "a successor plan needs a round")
         (root / ".work" / "tickets" / "T-1" / "plan.md").write_text(
             "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n", encoding="utf-8")
     return root

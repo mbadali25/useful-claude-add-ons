@@ -89,7 +89,7 @@ def test_subagent_review_ledger_accept_is_refused(flavour, lane):
 
     code, _, err = _guard(flavour, wt, _shell(wt, f"python3 {LEDGER} --ticket T-1 --accept --by me"))
 
-    assert (code, "a lane may not accept, reject or admin-merge" in err) == (2, True)
+    assert (code, "a lane may not accept, reject, grant a review round or admin-merge" in err) == (2, True)
 
 
 @pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)
@@ -108,6 +108,48 @@ def test_subagent_accept_reject_abbreviation_is_refused(lane, flag):
     code, _, err = _guard("module", wt, _shell(wt, f"python3 {LEDGER} --ticket T-1 {flag} --by me"))
 
     assert (code, "a lane may not" in err) == (2, True)
+
+
+GRANT_SPELLINGS = ("--grant-round", "--grant", "--g", "--gr", "--grant-", "--grant-r",
+                   "--GRANT-ROUND", "--Grant-Round", "--grant-round=1")
+
+
+@pytest.mark.parametrize("flag", GRANT_SPELLINGS)
+def test_subagent_grant_round_and_abbreviations_are_refused(lane, flag):
+    _root, wt = lane
+
+    code, _, err = _guard("module", wt, _shell(
+        wt, f"python3 {LEDGER} --ticket T-1 {flag} --by me --reason x"))
+
+    assert (code, "a lane may not" in err) == (2, True)
+
+
+@pytest.mark.parametrize("command", [
+    "python -m review_ledger --ticket T-1 --grant-round --by me --reason x",
+    "cd x; py -3 review_ledger.py --ticket T-1 --grant --by me --reason x",
+    "echo ok && review_ledger.py --ticket T-1 --g --by me --reason x"])
+def test_subagent_grant_round_spellings_are_refused(lane, command):
+    _root, wt = lane
+
+    code, _, _ = _guard("module", wt, _shell(wt, command))
+
+    assert code == 2
+
+
+def test_main_session_grant_round_is_allowed(lane):
+    root, _wt = lane
+
+    code, _, _ = _guard("module", root, _shell(
+        root, f"python3 {LEDGER} --ticket T-1 --grant-round --by me --reason x", agent_type=None))
+
+    assert code == 0
+
+
+@pytest.mark.parametrize("flag", ["--grants-file", "--generate", "--gone"])
+def test_subagent_other_g_flags_are_not_the_grant_verb(lane, flag):
+    _root, wt = lane
+
+    assert _guard("module", wt, _shell(wt, f"python3 {LEDGER} --ticket T-1 {flag}"))[0] == 0
 
 
 @pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)

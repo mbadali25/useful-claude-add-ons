@@ -1248,6 +1248,13 @@ def auto_accept_line(root, ticket):
             "--auto-accept --follow-up <id>)")
 
 
+def _ledger_budget(ledger):
+    """The budget as the ledger states it (the constant plus any owner grant),
+    never the constant itself; `?` when the ledger could not say."""
+    budget = ledger.get("budget")
+    return budget if isinstance(budget, int) and not isinstance(budget, bool) else "?"
+
+
 def finish(args, number, output, exit_code, timed_out, extra_reasons=(), tree_reasons=()):  # pylint: disable=too-many-arguments,too-many-positional-arguments
     """Verdict -> ledger -> review.json. Returns the process exit code.
     `extra_reasons` are the stream's (the answer never arrived intact: a tool
@@ -1283,7 +1290,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=(), tree_re
                                            result["delivered"] and not stream_reasons,
                                            len(extra_reasons) > len(stream_reasons))
     review = {
-        "ticket": args.ticket, "round": number, "budget": review_ledger.BUDGET,
+        "ticket": args.ticket, "round": number, "budget": None,
         "verdict": result["verdict"], "counts": result["counts"],
         "reasons": result["reasons"],
         # L-0510's contract: an int on every round, 0 when none were ignored;
@@ -1309,6 +1316,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=(), tree_re
     # has a result, and a refused record must not leave a review.json behind.
     state = review_ledger.record(args.root, args.ticket, number, review)
     ledger = review_ledger.status(args.root, args.ticket)
+    review["budget"] = ledger.get("budget")
     row = next((r for r in ledger.get("rounds") or [] if r.get("round") == number), {})
     review["refunded"] = row.get("refunded") is True
     # L-0712: the label is the reservation's, read back from the ledger row.
@@ -1328,7 +1336,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=(), tree_re
     # The budget as the ledger charges it: a refunded round is a round number,
     # never a unit of budget, so "round 3/2" would read as over budget.
     spent, refunded = ledger.get("rounds_spent"), ledger.get("rounds_refunded")
-    budget = (f"{spent if isinstance(spent, int) else '?'} of {review_ledger.BUDGET} "
+    budget = (f"{spent if isinstance(spent, int) else '?'} of {_ledger_budget(ledger)} "
               f"budget rounds used" + (f", {refunded} refunded" if refunded else ""))
     # Kept as print(): main's sabotage suites pin this line. Every value in
     # it is internal (the verdict constant, counts) or escaped here.
@@ -1352,7 +1360,7 @@ def finish(args, number, output, exit_code, timed_out, extra_reasons=(), tree_re
               "out.txt and report them with the findings")
     if failure == review_verdict.TOOL and review["refunded"]:
         _out(f"review: round {number} was a tool failure ({result['reasons'][0]}); refunded - "
-              f"{ledger.get('rounds_spent')} of {review_ledger.BUDGET} budget rounds used")
+              f"{ledger.get('rounds_spent')} of {_ledger_budget(ledger)} budget rounds used")
     elif failure == review_verdict.TOOL:
         _out(f"review: round {number} was a tool failure; NOT refunded - "
               f"{review['refund_refused']}")
@@ -2702,13 +2710,14 @@ NEXT_CODES = {
     EXIT_CLEAN: "step 2d (re-run any control the diff added), then step 3: report CLEAN, post "
                 "gh pr review --approve, notify",
     EXIT_FINDINGS: "step 3: report every BLOCK and FIX verbatim; fix BLOCKs, run the gate, review "
-                   "once more; at the last round with `auto-accept: eligible` follow step 3.3",
+                   "once more; with no round left and `auto-accept: eligible` follow step 3.3",
     EXIT_USAGE: "nothing launched, no round spent: read the review-run line above and fix what "
                 "it names",
     EXIT_INCOMPLETE: "step 3: report INCOMPLETE (never as clean); a refunded tool failure is "
                      "rerun once, anything else stops",
     EXIT_REFUSED: "no round left: stop, replan the ticket (review_ledger.py --reject --by <who>); "
-                  "there is no third round",
+                  "a successor plan does not reopen the budget, only the owner's "
+                  "`review_ledger.py --grant-round` does",
     EXIT_PROBE_CHANGED: "stop and report the paths named above: the Kimi probe changed the "
                         "working tree; do not walk to the next provider",
     EXIT_UNVERIFIED: "run the verify gate on this tree (or pass --allow-unverified and say so), "

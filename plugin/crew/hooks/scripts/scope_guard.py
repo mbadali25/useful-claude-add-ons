@@ -144,12 +144,16 @@ _AUTOPILOT_BARE_RE = re.compile(
     r"[ \t]*python3?(?:[ \t]+-B)?[ \t]+[\w./\\:~${}-]*crew_autopilot\.py[ \t]+approve"
     r"(?:[ \t]+--root[ \t]+\.)?[ \t]+--ticket[ \t]+([A-Z][A-Z0-9]*-[0-9]+)[ \t]*")
 # T-0029: the never-list, refused only when the payload shows a subagent.
+# L-0717: `--grant-round` is the owner's one extra review round, so it joins
+# `--accept` and `--reject` here with every abbreviation back to `--g`.
 _ACCEPT_RE = re.compile(r"review_ledger(?:\.py)?\b[^\n;&|]*--(?:a(?:c(?:c(?:e(?:pt?)?)?)?)?"
-                        r"|rej(?:e(?:ct?)?)?)(?![\w-])", re.IGNORECASE)
+                        r"|rej(?:e(?:ct?)?)?"
+                        r"|g(?:r(?:a(?:n(?:t(?:-(?:r(?:o(?:u(?:nd?)?)?)?)?)?)?)?)?)?)(?![\w-])",
+                        re.IGNORECASE)
 _ADMIN_MERGE_RE = re.compile(r"\bgh\b[^\n;&|]*\bpr\b[^\n;&|]*\bmerge\b[^\n;&|]*--admin\b",
                              re.IGNORECASE)
-LANE_REFUSAL = ("a lane may not accept, reject or admin-merge; that is the owner's, from the "
-                "main session")
+LANE_REFUSAL = ("a lane may not accept, reject, grant a review round or admin-merge; that is "
+                "the owner's, from the main session")
 _HOOK_RE = re.compile(r"approval[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
 # A line continuation: bash's backslash-newline, which the shell deletes (so it
 # can split a word), and PowerShell's backtick-newline, which reads as a space.

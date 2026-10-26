@@ -497,9 +497,18 @@ def test_a_plan_glob_cannot_widen_touch_through_a_slash(plan, touch, expected):
 # --- successor plans through the review ledger -------------------------------------
 
 def _exhaust(repo):
-    for _ in range(3):
+    """The whole budget spent, then one refused reservation: NEEDS_REPLAN with
+    no round left."""
+    for _ in range(rl.BUDGET + 1):
         rl.reserve(str(repo), "T-1", "codex")
     assert rl.status(str(repo), "T-1")["state"] == rl.NEEDS_REPLAN
+
+
+def _replan(repo):
+    """One round spent, then the owner's reject: NEEDS_REPLAN with rounds left."""
+    rl.reserve(str(repo), "T-1", "codex")
+    rl.reject(str(repo), "T-1", "owner")
+    assert rl.status(str(repo), "T-1")["rounds_left"] == rl.BUDGET - 1
 
 
 def _allow_cli(repo):
@@ -514,18 +523,18 @@ def _approve_from_prompt(repo):
 def test_an_approved_new_plan_continues_review_after_needs_replan(repo):
     ready(repo)
     _allow_cli(repo)
-    _exhaust(repo)
+    _replan(repo)
     _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
 
     done = _cli(repo, "approve", "--ticket", "T-1", "--by", "owner")
     again = rl.reserve(str(repo), "T-1", "codex")
 
-    assert (done.returncode, "may continue" in done.stdout, again[:2]) == (0, True, (True, 3))
+    assert (done.returncode, "may continue" in done.stdout, again[:2]) == (0, True, (True, 2))
 
 
 def test_a_cli_approval_does_not_continue_needs_replan_without_allow_cli(repo):
     ready(repo)
-    _exhaust(repo)
+    _replan(repo)
     _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
 
     done = _cli(repo, "approve", "--ticket", "T-1", "--by", "owner")
@@ -535,7 +544,7 @@ def test_a_cli_approval_does_not_continue_needs_replan_without_allow_cli(repo):
 
 def test_a_prompt_approval_continues_needs_replan_without_allow_cli(repo):
     ready(repo)
-    _exhaust(repo)
+    _replan(repo)
     _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
 
     _, successor = _approve_from_prompt(repo)
@@ -553,15 +562,100 @@ def test_reapproving_the_same_plan_is_not_a_successor(repo):
     assert (done.returncode, rl.status(str(repo), "T-1")["state"]) == (3, rl.NEEDS_REPLAN)
 
 
-def test_a_successor_gets_two_rounds_and_no_more(repo):
+def test_a_successor_gets_the_rounds_the_ticket_has_left_and_no_more(repo):
     ready(repo)
-    _exhaust(repo)
+    _replan(repo)
     _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
     _approve_from_prompt(repo)
 
-    grants = [rl.reserve(str(repo), "T-1", "codex")[0] for _ in range(3)]
+    got = [rl.reserve(str(repo), "T-1", "codex")[0] for _ in range(rl.BUDGET)]
 
-    assert grants == [True, True, False]
+    assert got == [True] * (rl.BUDGET - 1) + [False]
+
+
+_NEW_PLAN = "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n"
+
+
+def test_a_successor_plan_does_not_reopen_the_budget(repo):
+    ready(repo)
+    _exhaust(repo)
+    _plan(repo, _NEW_PLAN)
+
+    receipt, successor = _approve_from_prompt(repo)
+
+    status = rl.status(str(repo), "T-1")
+    assert (receipt is not None, successor[0], status["state"], status["rounds_left"],
+            status["successors"]) == (True, False, rl.NEEDS_REPLAN, 0, [])
+    assert "--grant-round" in successor[1]
+
+
+def test_grant_then_approve_records_the_successor_once(repo):
+    ready(repo)
+    _exhaust(repo)
+    rl.grant_round(str(repo), "T-1", "owner", "one more round")
+    _plan(repo, _NEW_PLAN)
+
+    _, successor = _approve_from_prompt(repo)
+
+    status = rl.status(str(repo), "T-1")
+    assert (successor[0], status["state"], len(status["successors"]), status["rounds_left"],
+            status["successors"][0]["carry_over"]) == (True, rl.IN_REVIEW, 1, 1, True)
+    assert [rl.reserve(str(repo), "T-1", "codex")[0] for _ in range(2)] == [True, False]
+
+
+def test_approve_then_grant_then_a_changed_plan_records_the_successor_once(repo):
+    ready(repo)
+    _exhaust(repo)
+    _plan(repo, _NEW_PLAN)
+    _approve_from_prompt(repo)
+    rl.grant_round(str(repo), "T-1", "owner", "one more round")
+    _plan(repo, _NEW_PLAN + "Standards: GEN-01\n")
+
+    _, successor = _approve_from_prompt(repo)
+
+    status = rl.status(str(repo), "T-1")
+    assert (successor[0], status["state"], len(status["successors"])) == (True, rl.IN_REVIEW, 1)
+
+
+def test_approve_then_grant_then_reapprove_the_same_plan_is_refused(repo):
+    """The earlier-plan rule reads a second approval of one plan as a repeat, so
+    an unchanged plan cannot be continued by approving it again after the grant."""
+    ready(repo)
+    _exhaust(repo)
+    _plan(repo, _NEW_PLAN)
+    _approve_from_prompt(repo)
+    rl.grant_round(str(repo), "T-1", "owner", "one more round")
+
+    _, successor = _approve_from_prompt(repo)
+
+    status = rl.status(str(repo), "T-1")
+    assert (successor[0], "approved before" in successor[1], status["state"],
+            status["successors"]) == (False, True, rl.NEEDS_REPLAN, [])
+
+
+def test_approve_then_grant_then_successor_plan_records_the_successor_once(repo):
+    ready(repo)
+    _exhaust(repo)
+    _plan(repo, _NEW_PLAN)
+    receipt, _ = _approve_from_prompt(repo)
+    rl.grant_round(str(repo), "T-1", "owner", "one more round")
+
+    first = rl.continue_with_successor_plan(str(repo), "T-1", receipt["plan_sha256"])
+    again = rl.continue_with_successor_plan(str(repo), "T-1", receipt["plan_sha256"])
+
+    status = rl.status(str(repo), "T-1")
+    assert (first[0], again[0], status["state"], len(status["successors"])) == (
+        True, False, rl.IN_REVIEW, 1)
+
+
+def test_grant_is_refused_while_rounds_remain(repo):
+    ready(repo)
+    _replan(repo)
+
+    with pytest.raises(rl.LedgerError, match="remain"):
+        rl.grant_round(str(repo), "T-1", "owner", "one more round")
+
+    assert rl.status(str(repo), "T-1")["grants"] == []
 
 
 def test_the_seam_refuses_a_hash_that_is_not_the_approved_plan(repo):
@@ -582,17 +676,12 @@ def test_findings_from_before_the_successor_cannot_be_accepted(repo):
         rl.reserve(str(repo), "T-1", "codex")
         rl.record(str(repo), "T-1", number, {"verdict": "FINDINGS", "provider": "codex",
                                              "bundle_sha256": bundle, "base": head})
-    _exhaust_after_two(repo)
+    rl.reject(str(repo), "T-1", "owner")
     _plan(repo, "## Step 1\nFiles: src/app.py\nTest: new\nRisk: new\n")
     _approve_from_prompt(repo)
 
     with pytest.raises(rl.LedgerError, match="successor replaced"):
         rl.accept(str(repo), "T-1", "owner")
-
-
-def _exhaust_after_two(repo):
-    rl.reserve(str(repo), "T-1", "codex")
-    assert rl.status(str(repo), "T-1")["state"] == rl.NEEDS_REPLAN
 
 
 def test_the_successor_approval_is_rechecked_under_the_ledger_lock(repo, monkeypatch):

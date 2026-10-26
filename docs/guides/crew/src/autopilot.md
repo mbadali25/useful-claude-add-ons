@@ -94,7 +94,7 @@ mode: plan, maxPhases 12
 ticket: ABC-510 (from .work/INDEX.md)
 phase: spec - next: /crew:spec ABC-510
 waiting on: autopilot - run /crew:autopilot to continue
-review: EMPTY, 2 of 2 rounds left
+review: EMPTY, 3 of 3 rounds left
 resume: no .work/HANDOFF.md
 fell through: no .work/HANDOFF.md
 fell through: no active-ticket entry for this worktree
@@ -239,11 +239,14 @@ and goes back to `next`. Fixing, accepting and replying on the PR are yours, wit
 After the ledger says `review: auto-accept: eligible` on a final round with no BLOCK, autopilot runs
 `review_ledger.py --auto-accept`, the guarded accept that refuses anything it cannot read cleanly.
 And with `autopilot.maxAutoReplans` at 1 or more (default 0, off), a final round with a BLOCK that
-has no review round left can be rejected by autopilot itself (`crew_autopilot.py auto-reject`,
-which prints an `auto-rejected` line and every BLOCK and FIX line): `/crew:plan` then writes a
-successor plan that quotes each of them, and the approve phase decides it under
-`autopilot.approval`. The BLOCK is never accepted; once `maxAutoReplans` successor plans are on the
-ledger, autopilot stops at `auto-replan-cap`.
+has no review round left is the case autopilot could reject itself (`crew_autopilot.py auto-reject`,
+which prints an `auto-rejected` line and every BLOCK and FIX line), then `/crew:plan` writes a
+successor plan that quotes each of them, and the approve phase decides it under `autopilot.approval`.
+Since L-0717 a successor plan does not reopen the ticket's <!-- review-budget-doc -->three-round budget, so autopilot
+refuses that reject while no round would remain and never grants one: the owner's
+`review_ledger.py --grant-round` is the only way to give the successor a round. The BLOCK is never
+accepted; once `maxAutoReplans` successor plans are on the ledger, autopilot stops at
+`auto-replan-cap`.
 
 **Ship.** After `/crew:done`, `crew_autopilot.py ship` pushes the branch (never force), opens the PR,
 and under `autopilot.ship: merge` (the default; `pr` stops at the open PR) merges it with a merge

@@ -2675,15 +2675,6 @@ MUTATIONS = (
          "test_parse_clean_text_with_a_failed_exit_is_incomplete"),
     ),
     (
-        # One character buys a third round, the loop the ledger exists to end.
-        "the review budget is raised to three rounds",
-        REVIEW_LEDGER,
-        "BUDGET = 2\n",
-        "BUDGET = 3\n",
-        ("tests/test_review_ledger.py::"
-         "test_reserve_third_round_is_refused_and_state_is_needs_replan"),
-    ),
-    (
         # The receipt check still runs and still finds a receipt, and passes
         # a tree edited after the review.
         "the receipt check ignores the bundle hash",
@@ -2714,6 +2705,7 @@ MUTATIONS = (
 # L-0727 hook dispatcher mutations live in the sabotage_*.py siblings: this file is at `.pylintrc`'s max-module-lines.
 from sabotage_train import TRAIN_MUTATIONS  # noqa: E402  pylint: disable=wrong-import-position
 from sabotage_stop_budget import STOP_BUDGET_MUTATIONS  # noqa: E402  pylint: disable=wrong-import-position
+from sabotage_budget import BUDGET_MUTATIONS  # noqa: E402  pylint: disable=wrong-import-position
 MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS + CLOUD_GUARD_MUTATIONS + SCOPE_MUTATIONS
               + AUTOCYCLE_MUTATIONS + WEBTEST_MUTATIONS + EVENT_CLAIM_MUTATIONS + REFRESH_MUTATIONS
               + RESUME_MUTATIONS + AUTOPILOT_MUTATIONS + TRACKER_MUTATIONS + ROUTE_MUTATIONS
@@ -2721,7 +2713,8 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + LIMIT_WORKTREE_MUTATIONS + QA_AUDIT_MUTATIONS + TOOLING_MUTATIONS + TICKET_STATE_MUTATIONS
               + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS + KIMI_MUTATIONS + COORD_MUTATIONS
               + RECURRING_MUTATIONS + TRAIN_MUTATIONS + GITIGNORE_MUTATIONS + WAVE_MUTATIONS + GHDEPLOY_MUTATIONS
-              + PROMOTE_TREE_MUTATIONS + CONTRACT_MUTATIONS + BRIDGE_MUTATIONS + sabotage_platform.PLATFORM_MUTATIONS)
+              + PROMOTE_TREE_MUTATIONS + CONTRACT_MUTATIONS + BRIDGE_MUTATIONS + sabotage_platform.PLATFORM_MUTATIONS
+              + BUDGET_MUTATIONS)
 MUTATIONS += (__import__("sabotage_reach_notice").REACH_NOTICE_MUTATIONS + __import__("sabotage_quiet").QUIET_MUTATIONS
               + __import__("sabotage_crew_hook").CREW_HOOK_MUTATIONS)
 

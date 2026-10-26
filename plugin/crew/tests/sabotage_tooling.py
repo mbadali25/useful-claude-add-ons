@@ -49,22 +49,22 @@ TOOLING_MUTATIONS = (
         REVIEW_LEDGER,
         '            row["refunded"] = _refunded(data) < REFUND_LIMIT\n',
         '            row["refunded"] = True\n',
-        "tests/test_review_refund.py::test_refund_limit_is_two_per_plan",
+        "tests/test_review_refund.py::test_launched_rounds_are_bounded_by_budget_plus_refund_limit",
     ),
     (
         # (d) The refund is recorded but the budget still counts the round.
         "reserve charges refunded rounds against the budget",
         REVIEW_LEDGER,
-        "        if _charged(data) >= BUDGET:\n",
-        "        if _spent(data) >= BUDGET:\n",
+        "        if _charged(data) >= _allowance(data):\n",
+        "        if _spent(data) >= _allowance(data):\n",
         "tests/test_review_refund.py::test_refunded_rounds_do_not_exhaust_the_budget",
     ),
     (
         # (e) What status and autopilot are told disagrees with the budget.
         "rounds_left ignores refunds",
         REVIEW_LEDGER,
-        '            "rounds_left": max(0, BUDGET - _charged(data)), "rounds": rounds,\n',
-        '            "rounds_left": max(0, BUDGET - _spent(data)), "rounds": rounds,\n',
+        '            "rounds_left": max(0, _allowance(data) - _charged(data)), "rounds": rounds,\n',
+        '            "rounds_left": max(0, _allowance(data) - _spent(data)), "rounds": rounds,\n',
         "tests/test_review_refund.py::test_turn_failed_round_is_refunded",
     ),
     (

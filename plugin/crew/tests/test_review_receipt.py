@@ -172,12 +172,12 @@ def test_truncated_bundle_parts_are_incomplete_and_mint_no_receipt(repo, tmp_pat
 
 
 def test_accept_an_older_round_after_needs_replan_is_refused(repo):
-    """Codex BLOCK: complete round 1 with FINDINGS, reserve round 2, attempt a
-    third reservation to enter NEEDS_REPLAN, then run --accept. Round 1 was
+    """Codex BLOCK: complete round 1 with FINDINGS, reserve the rest, attempt
+    one more reservation to enter NEEDS_REPLAN, then run --accept. Round 1 was
     accepted and the state moved back from NEEDS_REPLAN to ACCEPTED."""
     _review(repo, "FINDINGS")
-    rl.reserve(str(repo), "T1", "codex")
-    rl.reserve(str(repo), "T1", "codex")
+    for _ in range(rl.BUDGET):
+        rl.reserve(str(repo), "T1", "codex")
 
     result = subprocess.run([sys.executable, _LEDGER, "--root", str(repo), "--ticket", "T1",
                              "--accept", "--by", "the owner"], capture_output=True,
@@ -188,10 +188,10 @@ def test_accept_an_older_round_after_needs_replan_is_refused(repo):
 
 
 def test_accept_the_latest_findings_round_once_it_is_needs_replan_is_refused(repo):
-    """Round 2 FINDINGS left unaccepted, then a third reservation: refused,
-    NEEDS_REPLAN, and --accept of round 2 is refused from then on."""
-    _review(repo, "FINDINGS")
-    _review(repo, "FINDINGS")
+    """The final round's FINDINGS left unaccepted, then one more reservation:
+    refused, NEEDS_REPLAN, and --accept is refused from then on."""
+    for _ in range(rl.BUDGET):
+        _review(repo, "FINDINGS")
     ok, _, _ = rl.reserve(str(repo), "T1", "codex")
     assert (ok, rl.status(str(repo), "T1")["state"]) == (False, rl.NEEDS_REPLAN)
 
@@ -205,16 +205,16 @@ def _accept_cli(repo):
                           stdin=subprocess.DEVNULL, check=False)
 
 
-def test_accept_round_two_findings_writes_a_receipt(repo):
-    _review(repo, "FINDINGS")
-    _review(repo, "FINDINGS")
+def test_accept_the_final_rounds_findings_writes_a_receipt(repo):
+    for _ in range(rl.BUDGET):
+        _review(repo, "FINDINGS")
 
     result = _accept_cli(repo)
 
     receipt = rl.status(str(repo), "T1")["receipt"]
     assert (result.returncode, rl.status(str(repo), "T1")["state"], receipt["round"],
             receipt["kind"], receipt["accepted_by"], _check(repo).returncode) == (
-                0, rl.ACCEPTED, 2, "owner-accepted", "the owner", 0), result.stderr
+                0, rl.ACCEPTED, rl.BUDGET, "owner-accepted", "the owner", 0), result.stderr
 
 
 def test_accept_the_same_round_twice_is_refused(repo):
@@ -248,7 +248,8 @@ def test_reject_sets_needs_replan_and_accept_is_then_refused(repo):
 def test_reject_is_refused_and_changes_nothing(repo, setup):
     _review(repo, "CLEAN" if setup == "accepted" else "FINDINGS")
     if setup == "needs_replan":
-        _review(repo, "FINDINGS")
+        for _ in range(rl.BUDGET - 1):
+            _review(repo, "FINDINGS")
         rl.reserve(str(repo), "T1", "codex")
     before = rl.status(str(repo), "T1")
 
@@ -340,7 +341,8 @@ def test_check_receipt_fails_when_a_later_round_exists(repo, later):
 
 def test_check_receipt_fails_once_needs_replan_even_on_the_latest_clean_round(repo):
     rl.reserve(str(repo), "T1", "codex")
-    _review(repo, "CLEAN")
+    for _ in range(rl.BUDGET - 1):
+        _review(repo, "CLEAN")
     rl.reserve(str(repo), "T1", "codex")
 
     result = _check(repo)
