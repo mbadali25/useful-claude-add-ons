@@ -156,27 +156,43 @@ _TRUST_SEAM = (
 )
 
 
+@pytest.fixture(scope="session")
+def _trust_seam_python(tmp_path_factory):
+    """A virtualenv whose site-packages carries the seam. The gate runs
+    `verify_trust.py` as `python -E -s` with a scrubbed environment, which
+    ignores PYTHONPATH and the user site; a venv's own site-packages is read by
+    every interpreter started from it, flags or not, so it is the one carrier
+    the gate cannot switch off without also switching off its interpreter. A
+    `.pth` import line, not a `sitecustomize`: a distribution's own
+    sitecustomize (Debian ships one) is found first on sys.path and shadows it."""
+    import venv
+    root = tmp_path_factory.mktemp("trust-seam-venv")
+    venv.create(str(root), with_pip=False, symlinks=(os.name != "nt"))
+    found = list(root.glob("lib/python*/site-packages")) + list(root.glob("Lib/site-packages"))
+    if not found:
+        pytest.skip("venv has no site-packages directory")
+    (found[0] / "_crew_trust_seam.py").write_text(_TRUST_SEAM, encoding="utf-8", newline="\n")
+    (found[0] / "_crew_trust_seam.pth").write_text("import _crew_trust_seam\n", encoding="utf-8", newline="\n")
+    return root / ("Scripts" if os.name == "nt" else "bin")
+
+
 @pytest.fixture(autouse=True)
-def _verify_trust_store(tmp_path_factory, _crew_isolation_patch):
+def _verify_trust_store(tmp_path_factory, _crew_isolation_patch, _trust_seam_python):
     """L-0888: verify-gate.sh runs a repo's verify map only for a repo this
     machine trusts, and every suite that spawns the gate in a fixture repo
     would otherwise stop at "UNTRUSTED". Each test gets an empty store of its
     own (never the real `~/.claude/crew/verify-trust.json`), and the trust
-    comes from this fixture alone: a `sitecustomize` on PYTHONPATH that, for
-    `python3 verify_trust.py check` in a process started with
-    `CREW_TEST_TRUST_ALL=1`, answers "trusted". Nothing in the shipped code
-    knows the seam (a store flag read by production code was removed in the
-    fourth successor plan). The trust suites (`test_verify_trust.py`,
-    `test_verify_gate_trust.py`) unset the variable and so see the real
-    decision."""
+    comes from this fixture alone: the venv's `.pth` seam (its bin first on PATH, so
+    the gate resolves it as its python) answers "trusted" for
+    `python verify_trust.py check` in a process started with
+    `CREW_TEST_TRUST_ALL=1`. Nothing in the shipped code knows the seam, and
+    the gate's `-E -s` isolation does not switch it off. The trust suites
+    (`test_verify_trust.py`, `test_verify_gate_trust.py`) unset the variable and
+    so see the real decision."""
     store = tmp_path_factory.mktemp("verify-trust") / "verify-trust.json"
-    seam = tmp_path_factory.mktemp("verify-trust-seam")
-    (seam / "sitecustomize.py").write_text(_TRUST_SEAM, encoding="utf-8", newline="\n")
     _crew_isolation_patch.setenv("CREW_VERIFY_TRUST_FILE", str(store))
     _crew_isolation_patch.setenv("CREW_TEST_TRUST_ALL", "1")
-    existing = os.environ.get("PYTHONPATH")
-    _crew_isolation_patch.setenv("PYTHONPATH",
-                                 str(seam) + (os.pathsep + existing if existing else ""))
+    _crew_isolation_patch.setenv("PATH", str(_trust_seam_python) + os.pathsep + os.environ.get("PATH", ""))
 
 
 @pytest.fixture(autouse=True)

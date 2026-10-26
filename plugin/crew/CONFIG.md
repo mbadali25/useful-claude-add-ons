@@ -64,6 +64,7 @@ nothing and records no pass; `--ci` is exempt. A store location a repo can autho
 refused as UNKNOWN: a project's `.claude/settings.json` `env` block reaches hook processes
 (measured 2026-10-25, claude 2.1.304), so `CREW_VERIFY_TRUST_FILE`, `CLAUDE_CONFIG_DIR` and
 `HOME` must name an absolute path outside the repo being checked.
+The trust check itself runs as `python -E -s` under a scrubbed environment and a fixed PATH, so `PYTHONPATH` and the like set there cannot reach it.
 
 Accepted residuals: `--price` opens its map, and `bash` reopens the smoke script, after the trust
 check, so a process running as you that swaps the file in that interval runs the swapped bytes (you can

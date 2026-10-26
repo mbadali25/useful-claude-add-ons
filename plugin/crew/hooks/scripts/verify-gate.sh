@@ -45,9 +45,20 @@ GATE_TRUST_RC=""
 GATE_TRUST_BROKEN=0
 
 gate_trust_check() {
-  local _tdir="$1" _tp _tmsg _trc=0
+  local _tdir="$1" _tp _tpd _tpr _tsafe _tentry _tpath _tenv _tmsg _trc=0
   shift
-  _tp=$(crew_py_strict 2>/dev/null) || _tp=""
+  # The interpreter is found on a PATH stripped of every relative entry and every
+  # directory inside this repo: the repo's settings `env` block can set PATH, and
+  # even the probe that proves an interpreter runs it.
+  _tpr=$(pwd -P)
+  _tsafe="" _tentry=""
+  while IFS= read -r -d ':' _tentry || [ -n "$_tentry" ]; do
+    case "$_tentry" in /*|[A-Za-z]:*) ;; *) continue ;; esac
+    _tpd=$(CDPATH='' cd -- "$_tentry" 2>/dev/null && pwd -P) || continue
+    case "$_tpd/" in "$_tpr"/*) continue ;; esac
+    _tsafe="${_tsafe:+$_tsafe:}$_tentry"
+  done <<< "${PATH:-}:"
+  _tp=$(PATH="$_tsafe" crew_py_strict 2>/dev/null) || _tp=""
   if [ -z "$_tp" ] || [ ! -f "$_tdir/verify_trust.py" ]; then
     # No python while a verify.json exists: the PY check further down exits 2
     # and nothing runs, so leave that message to it. Anything else (the smoke
@@ -58,7 +69,26 @@ gate_trust_check() {
     echo "VERIFY GATE: UNKNOWN, not run - nothing was verified. The trust check could not run (no working python, or verify_trust.py is missing at $_tdir)." >&2
     return 13
   fi
-  _tmsg=$("$_tp" "$_tdir/verify_trust.py" check --root "$PWD" "$@" 2>/dev/null) || _trc=$?
+  # The interpreter runs isolated (-E: every PYTHON* variable ignored, -s: no
+  # user site) with a scrubbed environment and a fixed PATH. A repo's own
+  # settings `env` block reaches hook processes, so without this a hostile repo
+  # could point PYTHONPATH at a sitecustomize that answers "trusted" before
+  # verify_trust.py runs.
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*) _tpath="/mingw64/bin:/usr/bin:/bin" ;;
+    *) _tpath="/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin" ;;
+  esac
+  _tenv=/usr/bin/env
+  [ -x "$_tenv" ] || _tenv=env
+  _tmsg=$("$_tenv" -u PYTHONPATH -u PYTHONSTARTUP -u PYTHONHOME -u PYTHONUSERBASE \
+    -u PYTHONINSPECT -u PYTHONSAFEPATH -u PYTHONBREAKPOINT -u PYTHONPLATLIBDIR \
+    -u BASH_ENV -u ENV -u CDPATH -u LD_PRELOAD -u LD_LIBRARY_PATH -u LD_AUDIT \
+    -u DYLD_INSERT_LIBRARIES -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH \
+    -u GIT_EXEC_PATH -u GIT_CONFIG_COUNT -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_SYSTEM \
+    -u GIT_SSH -u GIT_SSH_COMMAND -u GIT_ASKPASS -u GIT_EXTERNAL_DIFF -u GIT_PAGER \
+    -u GIT_TEMPLATE_DIR -u GIT_NAMESPACE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    PATH="$_tpath" \
+    "$_tp" -E -s "$_tdir/verify_trust.py" check --root "$PWD" "$@" 2>/dev/null) || _trc=$?
   _tmsg=$(printf '%s' "$_tmsg" | tr -d '\r')
   if [ "$_trc" -eq 0 ]; then
     # verify_trust.py prints one line for every verdict. A status 0 with no

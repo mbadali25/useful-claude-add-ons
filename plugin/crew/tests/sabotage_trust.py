@@ -25,6 +25,20 @@ _S_ = "tests/test_scope_guard_trust.py::"
 _CALL = '  gate_trust_check "$GATE_SCRIPT_DIR" || _trust_rc=$?\n'
 
 TRUST_MUTATIONS = (
+    ("trust guard: any word after an interpreter's script is read as the verb (L-0888)", GUARD,
+     "        return index + 1 < len(rest) and rest[index + 1].lower() in _TRUST_VERBS\n    return False",
+     "        return any(t.lower() in _TRUST_VERBS for t in rest[index + 1:])\n    return False",
+     _S_ + "test_a_command_with_a_verb_word_that_is_not_the_verb_is_allowed"),
+    ("trust guard: an interpreter in a wrapper or after an assignment is not recognised (L-0888)", GUARD,
+     "        if _ASSIGNMENT_RE.match(token):\n            index += 1\n",
+     "        if False:\n            index += 1\n",
+     _S_ + "test_a_verb_handed_to_a_script_by_any_name_is_refused"),
+    ("trust gate: the trust check runs without -E -s isolation, so PYTHONPATH reaches it (L-0888)", GATE,
+     '"$_tp" -E -s "$_tdir/verify_trust.py"', '"$_tp" "$_tdir/verify_trust.py"',
+     _G + "test_gate_a_pythonpath_sitecustomize_cannot_answer_trusted"),
+    ("trust gate: a python inside the repo is found for the trust check (L-0888)", GATE,
+     '    case "$_tpd/" in "$_tpr"/*) continue ;; esac\n', "",
+     _G + "test_gate_a_python_on_a_repo_path_entry_is_never_run_for_the_trust_check"),
     ("trust gate: the first check is dropped, so an unapproved smoke script runs (L-0888)", GATE,
      _CALL + '  case "$_trust_rc" in\n    0) ;;\n    14) if [ -f',
      '  :\n  case "$_trust_rc" in\n    0) ;;\n    14) if [ -f',

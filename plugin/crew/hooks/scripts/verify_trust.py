@@ -150,7 +150,12 @@ def _check_store_location(path, source, root):
     real = os.path.realpath(path)
     for bound in _repo_bounds(root):
         try:
-            inside = os.path.commonpath([real, bound]) == bound
+            # Folded: on a case-insensitive file system the same directory is
+            # spelled two ways and realpath does not unify them. Refusing more
+            # is the safe direction for a location check.
+            inside = (os.path.commonpath([os.path.normcase(real).casefold(),
+                                          os.path.normcase(bound).casefold()])
+                      == os.path.normcase(bound).casefold())
         except ValueError:
             inside = False
         if inside:

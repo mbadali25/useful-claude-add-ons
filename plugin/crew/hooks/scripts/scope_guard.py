@@ -370,6 +370,64 @@ _SCRIPT_TOKEN_RE = re.compile(r"\.pyw?$|[*?\[]", re.IGNORECASE)
 _GLOB_SCRIPT_RE = re.compile(r"[*?\[]")
 
 
+_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+_WRAPPERS = frozenset({"env", "sudo", "command", "exec", "nohup", "time", "nice", "builtin"})
+# Scripts with a guard and an `approve` verb of their own (judged above, by
+# `_autopilot_refusal` and the `crew_ticket` approve rule): not a trust verb.
+_OWN_APPROVER_RE = re.compile(r"crew_(?:autopilot|ticket)(?:\.py)?$")
+_PROGRAM_OPTIONS = frozenset({"-m", "-c"})
+_VALUE_OPTIONS = frozenset({"-W", "-X", "-Q"})
+
+
+def _basename(token):
+    return re.split(r"[\\/]", token)[-1].lower()
+
+
+def _first_word_index(tokens):
+    """Index of the command word of one segment: past leading `NAME=value`
+    assignments, a wrapper such as `env` or `sudo` and the options it was given,
+    or None. Only this word is the interpreter; a later token that merely looks
+    like one (`git commit -m "python3 fix, now approve"`) is prose."""
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if _ASSIGNMENT_RE.match(token):
+            index += 1
+        elif token in _WRAPPERS:
+            index += 1
+            while index < len(tokens) and (tokens[index].startswith("-")
+                                           or _ASSIGNMENT_RE.match(tokens[index])):
+                index += 1
+        else:
+            return index
+    return None
+
+
+def _interpreter_script_verb(rest):
+    """True when the word after an interpreter's script operand is a trust verb.
+    The operand is `-` (the script on stdin) or the first word that is not an
+    option; `-m` and `-c` take a module or program, not a script, and end the
+    scan (a module or program that names the trust script is judged by the other
+    checks). So `python3 -m pytest -k "approve and not revoke"` reads no verb."""
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token == "-":
+            return index + 1 < len(rest) and rest[index + 1].lower() in _TRUST_VERBS
+        if token in _PROGRAM_OPTIONS:
+            return False
+        if token in _VALUE_OPTIONS:
+            index += 2
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        if _OWN_APPROVER_RE.search(_basename(token)):
+            return False
+        return index + 1 < len(rest) and rest[index + 1].lower() in _TRUST_VERBS
+    return False
+
+
 def _script_verb_refusal(text):
     """Why a reading is refused for a trust verb standing as the first word
     after a script, wherever that script is read from, or None. Independent of
@@ -383,11 +441,16 @@ def _script_verb_refusal(text):
     for segment in re.split(r"[\n;&|]", text):
         tokens = [t.strip("()\"'`{}") for t in segment.split()]
         tokens = [t for t in tokens if t]
-        interpreter = any(_INTERPRETER_RE.search(t) for t in tokens)
+        first = _first_word_index(tokens)
+        interpreter = first is not None and _INTERPRETER_RE.search(tokens[first]) is not None
+        if interpreter and _interpreter_script_verb(tokens[first + 1:]):
+            return ("it hands a verify trust verb to a script read from stdin, a copy or a "
+                    "wildcard path; only a person at a terminal trusts a repo")
         for before, after in zip(tokens, tokens[1:]):
             verb = after.lower() in _TRUST_VERBS
             if verb and (before == "-" or (not before.startswith("-")
-                                           and (interpreter or _SCRIPT_TOKEN_RE.search(before)))):
+                                           and _SCRIPT_TOKEN_RE.search(before)
+                                           and not _OWN_APPROVER_RE.search(_basename(before)))):
                 return ("it hands a verify trust verb to a script read from stdin, a copy or a "
                         "wildcard path; only a person at a terminal trusts a repo")
             if _GLOB_SCRIPT_RE.search(before) and ".p" in before.lower() \

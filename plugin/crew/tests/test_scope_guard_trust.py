@@ -118,6 +118,11 @@ def test_a_read_only_trust_command_is_allowed(flavour, repo, command):
                  id="copy-under-another-name"),
     pytest.param("./hooks/scripts/verify_t*st.py approve --yes", id="executable-glob"),
     pytest.param("cd /tmp && ./x.py allow-owner github.com/x --yes", id="executable-copy"),
+    pytest.param("FOO=1 python3 - approve --yes < verify_trust.py", id="env-prefix-stdin"),
+    pytest.param("FOO=1 python3 /tmp/xcopy approve --yes", id="env-prefix-extensionless-copy"),
+    pytest.param("sudo -E python3 /tmp/xcopy approve --yes", id="sudo-wrapper"),
+    pytest.param("env A=1 python3 -W ignore /tmp/xcopy revoke", id="env-wrapper-warning-option"),
+    pytest.param("python3 -u - approve --yes < verify_trust.py", id="unbuffered-stdin"),
 ])
 def test_a_verb_handed_to_a_script_by_any_name_is_refused(flavour, repo, command):
     code, _, err = _shell(flavour, repo, command)
@@ -130,6 +135,9 @@ def test_a_verb_handed_to_a_script_by_any_name_is_refused(flavour, repo, command
     "python3 - check --root . < plugin/crew/hooks/scripts/verify_trust.py",
     "python3 hooks/scripts/verify_t*st.py status",
     "python3 -m pytest -k approve plugin/crew/tests",
+    'python3 -m pytest -k "approve and not revoke" plugin/crew/tests',
+    'git commit -m "python3 fix, now approve"',
+    "FOO=1 python3 -m pytest -k 'allow-owner or revoke'",
     "python3 -m pytest plugin/crew/tests/test_*.py -q",
     "python3 tests/run.py --root approve",
     "grep -n approve plugin/crew/hooks/scripts/*.py",

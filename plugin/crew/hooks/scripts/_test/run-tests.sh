@@ -46,15 +46,20 @@ PY=$(command -v python3 || command -v python || command -v py) || {
 
 # L-0888: verify-gate.sh runs a repo's verify map only for a repo this machine
 # trusts, and every fixture repo below is new. A store of this run's own (never
-# the real ~/.claude/crew/verify-trust.json), and a sitecustomize on PYTHONPATH
-# that answers "trusted" for `python3 verify_trust.py check` in a process started
-# with CREW_TEST_TRUST_ALL=1: the seam lives here and in plugin/crew/tests/
-# conftest.py, and nothing in shipped code knows it. The trust decisions
-# themselves are tested in plugin/crew/tests/test_verify_trust.py and
-# test_verify_gate_trust.py.
+# the real ~/.claude/crew/verify-trust.json), and a virtualenv first on PATH whose
+# site-packages carries a .pth-loaded module that answers "trusted" for `python
+# verify_trust.py check` in a process started with CREW_TEST_TRUST_ALL=1. The gate
+# runs verify_trust.py as `python -E -s` with a scrubbed environment, which ignores
+# PYTHONPATH and the user site but not a venv's own site-packages. The seam lives
+# here and in plugin/crew/tests/conftest.py, and nothing in shipped code knows it.
+# The trust decisions themselves are tested in plugin/crew/tests/test_verify_trust.py
+# and test_verify_gate_trust.py.
 _CREW_TRUST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/crew-trust.XXXXXX") || { echo "FATAL: cannot make the trust store dir" >&2; exit 1; }
 _CREW_TEST_TMP+=("$_CREW_TRUST_DIR")
-cat > "$_CREW_TRUST_DIR/sitecustomize.py" <<'CREW_TRUST_SEAM'
+"$PY" -m venv --without-pip "$_CREW_TRUST_DIR/venv" >/dev/null 2>&1 || { echo "FATAL: cannot make the trust seam venv" >&2; exit 1; }
+_CREW_SEAM_SITE=$(compgen -G "$_CREW_TRUST_DIR/venv/lib/python*/site-packages" || compgen -G "$_CREW_TRUST_DIR/venv/Lib/site-packages") || { echo "FATAL: the trust seam venv has no site-packages" >&2; exit 1; }
+printf 'import _crew_trust_seam\n' > "$_CREW_SEAM_SITE/_crew_trust_seam.pth"
+cat > "$_CREW_SEAM_SITE/_crew_trust_seam.py" <<'CREW_TRUST_SEAM'
 import os, sys
 if (os.environ.get('CREW_TEST_TRUST_ALL') == '1'
         and os.path.basename(sys.argv[0] if sys.argv else '') == 'verify_trust.py'
@@ -65,7 +70,11 @@ if (os.environ.get('CREW_TEST_TRUST_ALL') == '1'
 CREW_TRUST_SEAM
 export CREW_VERIFY_TRUST_FILE="$_CREW_TRUST_DIR/verify-trust.json"
 export CREW_TEST_TRUST_ALL=1
-export PYTHONPATH="$_CREW_TRUST_DIR${PYTHONPATH:+:$PYTHONPATH}"
+if [ -d "$_CREW_TRUST_DIR/venv/bin" ]; then
+  export PATH="$_CREW_TRUST_DIR/venv/bin:$PATH"
+else
+  export PATH="$_CREW_TRUST_DIR/venv/Scripts:$PATH"
+fi
 
 # The command travels on STDIN, and that is not a style choice.
 #
