@@ -1,5 +1,5 @@
 # repo-docs
-anchor: useful-claude-add-ons@bdde58724
+anchor: useful-claude-add-ons@c43ccae58
 verified: 2026-10-26
 
 Sections `## Does` to `## Unverified` were rewritten at `bdde58724` (2026-10-26, L-0928) from fresh measurements; `## Re-derive provenance`, `## Superseded at 9ba355d7c` and the `## Re-anchor provenance` sections are history and keep their old figures.
@@ -1529,3 +1529,12 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 - Demoted to JUDGEMENT: whether `skills/README.md:35` is a still-open batch; `docs/review` ADR-material remark; "prose is never auto-refreshed".
 - Not verified: the body of `read_diagrams` (the behind/stale rule), `build.py` past its docstring, `diagram_doc.py`, the guide rebuild, `INSTALLATION.md`'s other
   sections, and any `docs/` file body. `python3 scripts/check-marketplace.py` was run (all checks passed); no pytest or gate suites.
+
+## Re-anchor provenance - `bdde58724` -> `c43ccae58`, 2026-10-26 (L-0928 rebased onto main)
+
+Main moved four commits (`bb942e03d`, `9ea896157`, `237809449`, `c43ccae58`) while this pass was in review. Per-path check
+`git diff --name-only bdde58724 c43ccae58 -- . ':!.crew/codemap' ':!.claude/rules'` lists four files: `.crew/verify.json`
+(appended `environments` at `:1051`), `.github/workflows/pytest-ai-connect.yml`, `.github/workflows/verify-gate.yml`,
+`_verify/README.md`. `cite_check.py` against `c43ccae58` reports every full `path:line` cite in this note SAME (none moved).
+`237809449` (a mechanical competing refresh of five notes to `bdde587`, no ticket) was superseded for the notes this pass
+touched; its claims are not carried. Claims touched by the four files, if any, are listed in `verification-harness.md`'s body.

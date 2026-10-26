@@ -1,5 +1,5 @@
 # obsidian-vault
-anchor: useful-claude-add-ons@bdde58724
+anchor: useful-claude-add-ons@c43ccae58
 verified: 2026-10-26
 
 ## Does
@@ -1386,3 +1386,12 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 - NOT verified: nothing run (plugin suites skipped per brief); `agents/*.md`, commands, skills bodies and profile files not read;
   the gardener, import, setup internals beyond docstrings; `test_python_probe_proof.py` "three Codex-round-1 FAILs" claim; the
   `vault-capture.ps1`/`bridge-status.ps1` resolver bodies beyond the probe line; the `.ps1` Legacy-args behaviour (MODELLED, as stated).
+
+## Re-anchor provenance - `bdde58724` -> `c43ccae58`, 2026-10-26 (L-0928 rebased onto main)
+
+Main moved four commits (`bb942e03d`, `9ea896157`, `237809449`, `c43ccae58`) while this pass was in review. Per-path check
+`git diff --name-only bdde58724 c43ccae58 -- . ':!.crew/codemap' ':!.claude/rules'` lists four files: `.crew/verify.json`
+(appended `environments` at `:1051`), `.github/workflows/pytest-ai-connect.yml`, `.github/workflows/verify-gate.yml`,
+`_verify/README.md`. `cite_check.py` against `c43ccae58` reports every full `path:line` cite in this note SAME (none moved).
+`237809449` (a mechanical competing refresh of five notes to `bdde587`, no ticket) was superseded for the notes this pass
+touched; its claims are not carried. Claims touched by the four files, if any, are listed in `verification-harness.md`'s body.

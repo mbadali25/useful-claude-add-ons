@@ -1,14 +1,28 @@
-anchor: useful-claude-add-ons@bdde58724
+anchor: useful-claude-add-ons@c43ccae58
 verified: 2026-10-26
 paths: scripts/**, plugin/PLUGINS.md
 
-**Rewritten 2026-10-26 against HEAD `bdde587`.** The body below replaces the one anchored `9ba355d7c`,
-which still described a 39-entry / 34-skill / 5-plugin marketplace with crew at 1.0.97: those figures were
-last measured at `6c497a14` and were never refreshed, because `paths:` did not list
-`.claude-plugin/marketplace.json`, so a per-path diff could not see it move. That path is now listed
-(JUDGEMENT: the note's counts are derived from it). The old body, including its long BUDGETS.md measurement
-log and crew-version history, is in git at `9ba355d7c`; the dated sections at the foot are kept unchanged and
-cite their own commits' lines, not this anchor's.
+**Targeted check at `c0e582fbe` (2026-10-22, L-0725); anchor NOT moved.** Re-read: `scripts/check-marketplace.py`'s `main()` call list and line numbers, and the smoke-gap count ("Two version-check paths"); L-0725 changed that file's `check_config_reference` docstring only. Nothing else in this note was
+re-verified: a claim here is as of this note's own anchor.
+
+**Re-derive provenance.** Full re-derivation, not a re-verify. The previous
+anchor (`5d1fc5fd`) predates crew 1.0's four-role rewrite
+(`c3bd8dfd` "remove the PM agent, pulse, journal and retired roles" through
+`6c497a14` "crew 1.0.25: lifecycle redesign, 4-role roster …"), which changed
+every one of this note's headline counts: crew went from 54 agents / 28
+commands / 20 skills / 34 hook entries to **4 agents / 34 commands / 29
+skills / 34 hook entries**. Per the assigning task's own per-path check, 13 of
+this note's 16 tracked paths moved. Every claim below was re-read directly
+against the file it cites at `6c497a14` — every function line number was
+re-taken by grepping the definition, every count re-measured from disk or by
+running the gate, not carried forward or offset. `python3
+scripts/check-marketplace.py` was executed this pass: `marketplace: 34
+skills, 5 plugins`, `all checks passed`, rc 0, on the Linux host. No cited
+path in this note was found deleted at this anchor (checked by existence for
+every citation below); the count divergences the previous version of this
+note tracked across five anchors are, for the first time this note has
+recorded, **all resolved** — every stated count matches the disk count it
+claims to state, everywhere this pass checked.
 
 # Marketplace and registration
 
@@ -73,7 +87,7 @@ The `crew-markdown-lines` site is `plugin/crew/BUDGETS.md:10`; its figure on `:1
 across 142 files, and `git ls-files 'plugin/crew/*.md' | xargs cat | wc -l` returns 19241 over 142 files
 (re-measured this pass, matching). `python3 scripts/_test/self-claims.py` exits 0 at this anchor.
 
-## The registration web - skill vs plugin
+## `check_description_claims` and `check_catalog_claims` — unchanged in shape
 
 **DERIVED.** `DESCRIPTION_CLAIMS` (`scripts/check-marketplace.py:1140-1142`) still checks exactly
 `{"crew": ("commands", "skills")}` against `marketplace.json`'s own `description` string
@@ -1439,3 +1453,12 @@ Dropped: the inline crew 1.0.25-1.0.97 version trail and the per-merge `BUDGETS.
 Found, not fixed (out of scope): `INSTALLATION.md:259` still says "34 slash commands" against 38 on disk and lists only four of 13 plugins; the count is unmarked, so no check catches it. `README.md:168`, `README.md:405` and `plugin/README.md:417` say "4 agents" while disk has 5 (the fifth is the relay).
 
 Not verified: `MARKETPLACE.md` contents; the bodies of the six checks named in "Unverified"; `drift-detection.sh` and any heavy suite (not run). Ran: `python3 scripts/check-marketplace.py` (pass) and `python3 scripts/_test/self-claims.py` (rc 0) on the worktree at `bdde58724` plus the uncommitted note edits.
+
+## Re-anchor provenance - `bdde58724` -> `c43ccae58`, 2026-10-26 (L-0928 rebased onto main)
+
+Main moved four commits (`bb942e03d`, `9ea896157`, `237809449`, `c43ccae58`) while this pass was in review. Per-path check
+`git diff --name-only bdde58724 c43ccae58 -- . ':!.crew/codemap' ':!.claude/rules'` lists four files: `.crew/verify.json`
+(appended `environments` at `:1051`), `.github/workflows/pytest-ai-connect.yml`, `.github/workflows/verify-gate.yml`,
+`_verify/README.md`. `cite_check.py` against `c43ccae58` reports every full `path:line` cite in this note SAME (none moved).
+`237809449` (a mechanical competing refresh of five notes to `bdde587`, no ticket) was superseded for the notes this pass
+touched; its claims are not carried. Claims touched by the four files, if any, are listed in `verification-harness.md`'s body.

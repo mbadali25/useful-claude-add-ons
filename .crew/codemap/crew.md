@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@bdde58724
+anchor: useful-claude-add-ons@c43ccae58
 verified: 2026-10-26
 
 ## Re-derive provenance
@@ -180,7 +180,7 @@ list equal. Decision record: `docs/adr/0009-hook-single-dispatch.md`.
 
 `plugin/crew/hooks/scripts/crew_hook.py` (620 lines) is the dispatcher the launchers run. Its
 `TABLE` (`:65`) is 18 rows (`Row`: event, matcher, script, extra, timeout, guard, twin, codex) over
-**14** distinct `.sh` scripts. Only `promote-gate.ps1` is still a `.ps1` twin in the directory; the other twins were deleted in L-0867 and L-0869, so `select` (`plugin/crew/hooks/scripts/crew_hook.py:124`) takes a twin only when `exists()` finds it and a `PowerShell` call otherwise runs the `.sh`, which Windows runs under Git Bash. The `twin=` names still in `TABLE` for `cloud-guard` and `env-guard` (`:73-74`) point at deleted files and are inert.
+**14** distinct `.sh` scripts. Only `promote-gate.ps1` is still a `.ps1` twin in the directory; the other twins were deleted in L-0867 and L-0869, so `select` (`plugin/crew/hooks/scripts/crew_hook.py:140`) takes a twin only when `exists()` finds it and a `PowerShell` call otherwise runs the `.sh`, which Windows runs under Git Bash. The `twin=` names still in `TABLE` for `cloud-guard` and `env-guard` (`:73-74`) point at deleted files and are inert.
 Row counts per event, with the registration timeout `event_timeout` gives (largest row + `EVENT_SLACK`
 10, `:44`):
 
@@ -1079,7 +1079,7 @@ the first range of check E (`_excluded_problem` `review_delta.py:236`) passes th
 today's; `reviewed_bundle` (`:202`) and `delta` (`:372`) carry the same section (`reviewed_bundle` takes a `merged` pin since L-0770). JUDGEMENT: an
 empty section leaves the bundle bytes unchanged, so pre-L-0739 receipts stay valid. On a hash
 mismatch `review_delta.judge`
-(`:721`, called at `review_ledger.py:1215`) decides: the reviewed head rebuilds the reviewed
+(`:721`, called at `review_ledger.py:910`) decides: the reviewed head rebuilds the reviewed
 bundle through T-0100's rule (`reviewed_bundle` `:202`, `review_patch._ticket_base_tree` with
 `head=` at `plugin/crew/hooks/scripts/review_patch.py:403`, `merged_main.resolve(..., head)` at `:415` unless a `merged` pin is passed), is
 an ancestor of HEAD, the integration base is the pinned `base_sha` or the train entry's ref
@@ -1517,32 +1517,32 @@ signal-killed child's -N to 128+N (`_signal_status`, `:677`) as `bash -c` does.
 **There is no route config any more.** `shellRoute.mode` and `shellRoute.distro` are in
 `crew_dropped.DROPPED` (`plugin/crew/hooks/scripts/crew_dropped.py`; `crew_state.SHELL_ROUTE_MODE`
 `auto`, `SHELL_ROUTE_DISTRO` None), the module docstring (`:9-11`) says the route can no longer be forced
-or pinned, and the old `settings` / `mode` readers are gone: `decide` (`:553`) always answers the
-`auto` table. The probe (`probe`, `:386`) runs only `wsl.exe --list
+or pinned, and the old `settings` / `mode` readers are gone: `decide` (`:528`) always answers the
+`auto` table. The probe (`probe`, `:361`) runs only `wsl.exe --list
 --verbose` and one `command -v python3; command -v git` under `bash -lc` (`_in_job_shell`,
-`:321`, the job's own shell, `TOOLS_CHECK` `:317`) in the default distro. It decodes
-UTF-16LE with `decode` (`:146`), joins every detail onto one line (`one_line`, `:344`) and
+`:296`, the job's own shell, `TOOLS_CHECK` `:292`) in the default distro. It decodes
+UTF-16LE with `decode` (`:121`), joins every detail onto one line (`one_line`, `:319`) and
 returns `usable`, `not-installed`, `no-distro`, `wsl1-only`, `no-python3`, `no-git`, `broken`
-or `unknown`. A runner that raises is `unknown` through `_call` (`:372`), never
-`not-installed`. The answer is cached machine-locally at `probe_path` (`:441`), beside
-`crew_state.GLOBAL_CONFIG_PATH` and resolved at call time. `load_cache` (`:449`) reads an
+or `unknown`. A runner that raises is `unknown` through `_call` (`:347`), never
+`not-installed`. The answer is cached machine-locally at `probe_path` (`:416`), beside
+`crew_state.GLOBAL_CONFIG_PATH` and resolved at call time. `load_cache` (`:424`) reads an
 absent, unreadable or stateless cache, and a `usable` one that names no distro, as `unknown`.
-`write_cache` (`:468`) computes the
-text first, then temp file and `os.replace`, LF. `measured_verdict` (`:489`) takes a
+`write_cache` (`:443`) computes the
+text first, then temp file and `os.replace`, LF. `measured_verdict` (`:464`) takes a
 measurement only when its `distro` is the cache's current distro, so a reprobe
-never reuses another distro's verdict. `classify` (`:194`) proves plain argv or
-returns bash; `METACHARACTERS` (`:50`) and `SHELL_WORDS` (`:52`) are its lists and
-`_embeds_posix_path` (`:171`) refuses a token carrying a POSIX path after `=`, `,`, an option's
-letters, or a `:` that is not a drive letter or URL scheme. `decide` (`:553`) is the pure route
+never reuses another distro's verdict. `classify` (`:169`) proves plain argv or
+returns bash; `METACHARACTERS` (`:38`) and `SHELL_WORDS` (`:40`) are its lists and
+`_embeds_posix_path` (`:146`) refuses a token carrying a POSIX path after `=`, `,`, an option's
+letters, or a `:` that is not a drive letter or URL scheme. `decide` (`:528`) is the pure route
 table (`wsl` when WSL is usable and the repo is inside WSL, or on a Windows drive and measured
-`wsl-faster`; otherwise `fallback` `:532`: plain argv direct, anything else Git Bash); `route_for` (`:687`) is
-`decide` plus the `to_wsl_path` (`:114`) distro check, the one decision
-path `run` and `status_line` share. `run` then adds the WSL preflight (`_preflight`, `:652`),
+`wsl-faster`; otherwise `fallback` `:507`: plain argv direct, anything else Git Bash); `route_for` (`:662`) is
+`decide` plus the `to_wsl_path` (`:89`) distro check, the one decision
+path `run` and `status_line` share. `run` then adds the WSL preflight (`_preflight`, `:627`),
 run under the job's own `--cd`, which checks the first word and, for `python3 -m <mod>`
-(`job_head`, `:632`; `_python_module`, `:603`, skips `-X`/`-W` and their values), that the module
-imports inside the distro. `resolve_pwsh` (`:240`) and `resolve_gitbash` (`:272`) resolve
-absolutely and refuse WSL's System32 launcher (`_is_launcher`, `:251`). `measure` (`:797`)
-times 50 forks and 200 writes per side (`FORKS, WRITES`, `:741`), each shell reading its own clock (`$EPOCHREALTIME`, a
+(`job_head`, `:607`; `_python_module`, `:578`, skips `-X`/`-W` and their values), that the module
+imports inside the distro. `resolve_pwsh` (`:215`) and `resolve_gitbash` (`:247`) resolve
+absolutely and refuse WSL's System32 launcher (`_is_launcher`, `:226`). `measure` (`:772`)
+times 50 forks and 200 writes per side (`FORKS, WRITES`, `:716`), each shell reading its own clock (`$EPOCHREALTIME`, a
 pwsh Stopwatch) so no launcher start-up is in the number; an unreadable timing is an error,
 never zero. `status_line` (`:833`) reads the cache only, and
 `plugin/crew/hooks/scripts/crew_status.py:719` calls it. Tests:
@@ -2348,11 +2348,11 @@ field to that line. `crew_graph.py`: `status` (`:209`) reads freshness from
 `crew_freshness._read_graph` (`graph_state`, `:109`, plus the refresh check's T-0063 manifest rule, `_manifest_current`, `:124`), the pair from `pair_state` (`:187`) and the
 denylist from `crew_graph_ignore.coverage`; `_report_tracked` (`:88`) re-asks git whether
 `GRAPH_REPORT.md` is tracked, because `_read_graph` reads a failed `ls-files` as untracked and
-that would skip the pair check. `refresh` (`:274`) refuses in order (graphify missing, coverage
-uncovered/unknown, a report git cannot say is tracked), runs the line through `crew_shell.run` (`_run_graphify`, `:235`), then
-`_verify` (`:320`): no `built_at_commit` exit 2, `_graph_counts` (`:165`, `nodes` and `links`;
-no `links` list is unknown, never zero), `_summary_counts` (`:144`, the first `- N nodes · M
-edges` line under `## Summary`), and `_changed` (`:257`, `git status --porcelain -z` under the
+that would skip the pair check. `refresh` (`:275`) refuses in order (graphify missing, coverage
+uncovered/unknown, a report git cannot say is tracked), runs the line through `crew_shell.run` (`_run_graphify`, `:236`), then
+`_verify` (`:321`): no `built_at_commit` exit 2, `_graph_counts` (`:166`, `nodes` and `links`;
+no `links` list is unknown, never zero), `_summary_counts` (`:145`, the first `- N nodes · M
+edges` line under `## Summary`), and `_changed` (`:258`, `git status --porcelain -z` under the
 graph dir). It never stages or commits. Tests: `plugin/crew/tests/test_crew_graph.py`, and the
 `runs` cases in `test_refresh_check.py`; the last `.crew/verify.json` rule maps them.
 
@@ -2655,7 +2655,7 @@ repository's attribution adds `Co-Authored-By`; it now says the owner's instruct
 decide (`plugin/crew/skills/crew-best-practices/references/practices.md:58-62`), and
 `/crew:implement` step 2 says a dispatched prompt carries no attribution or trailer
 instruction (`plugin/crew/commands/implement.md:48-51`). docs/crew/config-rationale.md
-(`docs/crew/config-rationale.md`:3060`, `git.forbiddenTrailers`) is the user-facing account.
+(`docs/crew/config-rationale.md`:3052`, `git.forbiddenTrailers`) is the user-facing account.
 
 ## Native-memory vault pointers (T-0084)
 
@@ -5607,3 +5607,12 @@ Re-check, not re-derivation. Per-path: `git diff --name-only c0e582fbe..bdde5872
 - Claims changed (old -> new): version 1.2.62 -> 1.2.84 (`marketplace.json:248`, `plugin.json:3`); `/crew:done` four -> five checks, check cites `done.md:18-35`, `:49-62`, `:63-71`, `:73-81`; no-python guard fallback proof rewritten (valid-JSON awk check, `_common.sh:430`, `:480`; `env_guard.py:1903`); `crew_guard_notes.py` (new, 201 lines) added to the ratchet paragraph and `NARROWED` (`crew_dropped.py:102`) added; `_RATCHETED` build steps `:3058`..`:3187`; `ALL_GUARD_NAMES` "10 across 4" -> 12 across 5; `default_config` / `default_global_config` entry cites `:246`/`:432` -> `:248`/`:423`; "14-key ratchet table" -> 16; `AUTOPILOT_DEFAULTS` keys (now 12, `crew_state.py:886-891`); `crew_autopilot.py` 1999 -> 3380 lines, 10 -> 27 subcommands, docstring `:1-240`, `next` table `:104-176`; `autopilot.md` 110 -> 117 lines and its section cites; `crew_migrate.py` 1329 -> 1381, `crew_help.py` 414 -> 439, `crew_route.py` 627 -> 650, `verify-gate.sh` 1863 -> 2965 lines; mutation counts (`CONFIG_MENU` 126 -> 130, `SHELL` 14 -> 11, `TRACKER` 106 -> 103, `RESUME` 72 -> 68) and `sabotage.py` registration lines; `crew_py_strict` callers 11 -> 12, plain `crew_py` callers two -> three (`promote-gate.sh:115`, `notify.sh:13`, `handoff-write.sh:103`); `verify-gate.sh` capture cites (`:2516`, `:2635`, `:2656`, `:2579`); T-0096/L-0680 sections: `PS_COPIES` now `("promote-gate",)`, handoff path is the fixed `.work/HANDOFF.md` (`crew_handoff_path` gone), no `keepTranscripts` read in `handoff-write.sh`; held-ping bullet marked SUPERSEDED (`notifyHold` dropped by L-0725; `autopilot.reviewPolicy` now shipped); `TODO.md:4005` -> `:4262`; `GlobalWriteRefused` `:3899` -> `:2961`; `PM_DEFAULTS` `:898-911` -> `:898-906`; the `qa-reviewer` grep result list; many `crew_tracker.py`, `crew_split.py`, `crew_autopilot.py` and `crew_refresh_check.py` cites moved by +20 to +1400 lines.
 - Demoted to JUDGEMENT (carried, not re-verified): 34 sections, each with a marker line under its heading (listed in "Unverified at this anchor"); the long dated `Re-anchored ...` paragraphs keep the numbers of their own commits.
 - NOT verified: behaviour of any hook or command (nothing executed except importing `crew_config`, `crew_state`, `crew_dropped` and `sabotage*` to count); `crew_freshness.py` (still never opened); the prose of the carried sections; any bare `:N` with no name beside it beyond a range check; tests and docs named in the text beyond file existence (checked: only names of deleted files remain absent).
+
+## Re-anchor provenance - `bdde58724` -> `c43ccae58`, 2026-10-26 (L-0928 rebased onto main)
+
+Main moved four commits (`bb942e03d`, `9ea896157`, `237809449`, `c43ccae58`) while this pass was in review. Per-path check
+`git diff --name-only bdde58724 c43ccae58 -- . ':!.crew/codemap' ':!.claude/rules'` lists four files: `.crew/verify.json`
+(appended `environments` at `:1051`), `.github/workflows/pytest-ai-connect.yml`, `.github/workflows/verify-gate.yml`,
+`_verify/README.md`. `cite_check.py` against `c43ccae58` reports every full `path:line` cite in this note SAME (none moved).
+`237809449` (a mechanical competing refresh of five notes to `bdde587`, no ticket) was superseded for the notes this pass
+touched; its claims are not carried. Claims touched by the four files, if any, are listed in `verification-harness.md`'s body.

@@ -1,19 +1,71 @@
 # install-scripts
-anchor: useful-claude-add-ons@bdde58724
+anchor: useful-claude-add-ons@c43ccae58
 paths: plugin/crew/**, scripts/**
 verified: 2026-10-26
 
-## Refresh provenance, 2026-10-26 (HEAD `bdde587`)
+## Re-derive provenance
 
-The body below replaces the one anchored `9ba355d7c`, whose citations were last re-read at `6c497a14`
-(crew 1.0.25) and had drifted by up to 20 lines in the first 1200 lines of each script even before the
-anchor moved; a line-offset remap could not repair that, so each construct was re-found by `grep -n` at HEAD.
-The old text, with its long per-commit provenance trail, is in git at `9ba355d7c`; the dated "Re-anchor
-provenance" sections at the foot are kept unchanged and cite their own commits' lines, not this anchor's.
-`paths:` gained `.claude-plugin/marketplace.json` and `README.md` (JUDGEMENT: the crew catalog row and the
-install-URL pin are claims this note makes about them). Neither install script was executed; every claim is a
-reading of source. `python3 scripts/check-marketplace.py` was run on the worktree: `marketplace: 36 skills, 13
-plugins` / `all checks passed`.
+Re-derived from source at `6c497a14` (crew 1.0.25, PR #225 — "lifecycle
+redesign, 4-role roster, Windows burn-in and native PowerShell fixes"), not
+re-pointed from the previous `5d1fc5fd` anchor. Every citation below was found
+by reading the committed file directly at HEAD — `grep -n` for the construct's
+name, then the surrounding body read — rather than by adding an offset to the
+old line number, because the per-path check (below) showed both scripts grew
+enough (+480 / +463 lines respectively) that no uniform offset exists.
+
+Per-path check against this note's previous (`5d1fc5fd`) tracked pathspec —
+the 11 paths that note's own last provenance section named:
+
+```
+git diff --name-only 5d1fc5fd..6c497a14 -- .claude-plugin/marketplace.json \
+  INSTALLATION.md plugin/PLUGINS.md plugin/README.md README.md \
+  scripts/check-marketplace.py scripts/install-prerequisites.ps1 \
+  scripts/install-prerequisites.sh scripts/_test/drift-detection.sh \
+  scripts/_test/self-claims.py TODO.md
+```
+```
+.claude-plugin/marketplace.json
+INSTALLATION.md
+README.md
+TODO.md
+plugin/PLUGINS.md
+plugin/README.md
+scripts/_test/self-claims.py
+scripts/check-marketplace.py
+scripts/install-prerequisites.ps1
+scripts/install-prerequisites.sh
+```
+
+**All 11 files this note tracks still exist at `6c497a14`** (confirmed with
+`git cat-file -e 6c497a14:<path>` for each, individually) — **10 of the 11
+changed, 1 did not**: `scripts/_test/drift-detection.sh` is the sole holdout,
+byte-identical across the range. This note was told, before this pass, to
+expect "10 of 11 cited paths moved, 4 cited paths gone." The "moved" half
+matches exactly what the command above shows. The "4 gone" half does **not**
+match anything this note's own 11-path pathspec, or the individual
+`path:line` tokens inside the file (all resolve to files that still exist,
+checked the same way), can produce — no file this note cites, and no function
+or array it names by line, is absent at `6c497a14`. That number is not
+reproduced here and is not asserted; see "Unverified" for what this means in
+practice. What *is* newly true, and explains most of the +480/+463: two menu
+rows (`playwright-mcp`, `playwright-cli`) merged into one (`web-testing`,
+now a project-local Playwright + axe-core + MCP + Test-Agents installer, ON
+by default) and two brand-new rows (`lsp-plugins`, `stack-tools`) were added
+— net `MENU_KEYS` 25 -> 26, confirmed by parsing both arrays directly, not
+carried. `SKILL_KEYS` dropped 36 -> 34: `claude-memories-canvas` and
+`claude-memories-vault` were removed from both catalogs (the vault-specific
+skills the crew roster cut retired in favour of `obsidian-vault`'s portable
+conventions profiles — see `README.md:749`, outside this note's scope).
+`PLUGIN_KEYS` (5), `TEAM_KEYS` (4) and `COMMUNITY_KEYS` (8) are unchanged in
+count and membership.
+
+Everything below is a fresh read against `6c497a14`. No claim from the
+`5d1fc5fd` version of this note was carried forward without being re-read at
+its new location; the file's own extensive prior "Re-anchor provenance"
+history (five prior passes back to `1f97e51c`) is not reproduced here —
+consult the file's git history if that trail is needed. `python3
+scripts/check-marketplace.py` was run at this anchor and reports `marketplace:
+34 skills, 5 plugins / all checks passed`.
 
 ## Does
 `scripts/install-prerequisites.sh` (bash) and `scripts/install-prerequisites.ps1`
@@ -1591,3 +1643,12 @@ Not verified: no script executed; `check_menu_parity` / `check_group_parity`
 bodies, `lsp-plugins` / `stack-tools` internals and `ensure_plugin_enabled` not
 read. `python3 scripts/check-marketplace.py`: `marketplace: 36 skills, 13
 plugins`, `all checks passed`.
+
+## Re-anchor provenance - `bdde58724` -> `c43ccae58`, 2026-10-26 (L-0928 rebased onto main)
+
+Main moved four commits (`bb942e03d`, `9ea896157`, `237809449`, `c43ccae58`) while this pass was in review. Per-path check
+`git diff --name-only bdde58724 c43ccae58 -- . ':!.crew/codemap' ':!.claude/rules'` lists four files: `.crew/verify.json`
+(appended `environments` at `:1051`), `.github/workflows/pytest-ai-connect.yml`, `.github/workflows/verify-gate.yml`,
+`_verify/README.md`. `cite_check.py` against `c43ccae58` reports every full `path:line` cite in this note SAME (none moved).
+`237809449` (a mechanical competing refresh of five notes to `bdde587`, no ticket) was superseded for the notes this pass
+touched; its claims are not carried. Claims touched by the four files, if any, are listed in `verification-harness.md`'s body.

@@ -1,4 +1,4 @@
-anchor: useful-claude-add-ons@bdde58724
+anchor: useful-claude-add-ons@c43ccae58
 verified: 2026-10-26
 paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
 
@@ -43,14 +43,14 @@ imports `scripts/check-marketplace.py`'s check functions and skips `check_versio
 `python3 scripts/check-marketplace.py` (every check, including the slow version-drift walk), and `_verify/run-all.sh`
 (minutes). `_verify/ci-status.sh` asserts the Marketplace workflow succeeded for a sha (`_verify/ci-status.sh:2`). Beside
 them sit `scripts/check_instructions.py` (CI-only, below) and `scripts/gate-runner.py`, the lane-side runner of the whole
-PR-path suite. None of the `_verify/` scripts changed between `c0e582fbe` and `bdde58724` (`git diff --stat` is empty).
+PR-path suite. None of the `_verify/` scripts changed between `c0e582fbe` and `c43ccae58` (`git diff --stat` over the scripts is empty; only `_verify/README.md` changed, in `bb942e03d`, and nothing here cites it).
 
 ## `.crew/verify.json` - 99 rules
 
 **DERIVED by `json.load` at `bdde58724`.** `len(rules)` is **99** (98 at `c0e582fbe`; the "48" this heading carried was
-stale for many anchors). The file is 1051 lines: `anchor` `:3` (still `"repo@5238be3d"`, so it is not this note's anchor),
+stale for many anchors). The file is 1059 lines (`wc -l`): `anchor` `:3` (still `"repo@5238be3d"`, so it is not this note's anchor),
 `_note` `:4`, `_note_preReview` `:53`, `preReview` `:66` (linters `ruff`, `shellcheck`, `psscriptanalyzer`, `actionlint`),
-`rules` `:80`, `default` `:1048` (`["bash _verify/smoke.sh"]`), `unmapped` `:1049` (`"fail"`). Every rule carries
+`rules` `:80`, `default` `:1048` (`["bash _verify/smoke.sh"]`), `unmapped` `:1049` (`"fail"`), and since `9ea896157` a top-level `environments` object at `:1051` (`production`: `smoke`, `regression`, `rollback`, `requireHuman`; added after `bdde58724`, not a rule, so the 99 is unchanged). Every rule carries
 `"reach": "local"`; 50 carry `coveredBy` (all naming `crew-suite`, the whole-suite rule at `:303`); 38 are priced above
 60 s, the default `verify.stopBudgetSeconds` (`plugin/crew/hooks/scripts/verify-gate.sh:1409`); exactly one has an empty
 `run` (`generated-graph-unchecked`, 0 s); none lacks `seconds`. Since L-0904 the 30 rules the Windows evidence measured
@@ -306,7 +306,7 @@ run.
 **DERIVED at `bdde58724`** (`ls .github/workflows`; older text said seven, then eight): `instruction-budgets.yml`,
 `marketplace.yml`, `mcp-servers.yml`, `plugin-evals.yml`, `publish-mcp-servers.yml`, `pylint.yml`, `pytest-ai-connect.yml`,
 `pytest-crew.yml` (541 lines), `runner-autostart.yml`, `shell-suites.yml`, `verify-gate.yml`. Only `marketplace.yml` changed
-since `c0e582fbe` (`pytest~=8.0` added to the validator install, and an L-0728 step `python3
+between `c0e582fbe` and `bdde58724` (after that, `c43ccae58` and its parents touched `pytest-ai-connect.yml`: `pytest-xdist` and `-n auto`, and `verify-gate.yml:77`: `ruff==0.14.5`) (`pytest~=8.0` added to the validator install, and an L-0728 step `python3
 scripts/_test/crew-outcome-eval.py` after the plugin-eval runner suite).
 
 - `shell-suites.yml` (job `shell`) runs the bash-driven suites `pytest-crew.yml` cannot collect: bitbucket `merge_gate.sh`
@@ -2114,3 +2114,12 @@ retitled as provenance (live content folded into the body), text unchanged.
 NOT verified: no pytest or heavy suite; `instruction-budgets.py`, `drift-detection.sh`, `_verify/run-all.sh` not run; `seconds`
 and `why` timings read, not re-timed; `check_instructions.py` reported only `generated rules: drift` (notes mid-edit, the lead
 regenerates `.claude/rules/`); standalone sabotage runners' use of `sabotage_bound` and per-entry ticket provenance not re-read.
+
+## Re-anchor provenance - `bdde58724` -> `c43ccae58`, 2026-10-26 (L-0928 rebased onto main)
+
+Main moved four commits (`bb942e03d`, `9ea896157`, `237809449`, `c43ccae58`) while this pass was in review. Per-path check
+`git diff --name-only bdde58724 c43ccae58 -- . ':!.crew/codemap' ':!.claude/rules'` lists four files: `.crew/verify.json`
+(appended `environments` at `:1051`), `.github/workflows/pytest-ai-connect.yml`, `.github/workflows/verify-gate.yml`,
+`_verify/README.md`. `cite_check.py` against `c43ccae58` reports every full `path:line` cite in this note SAME (none moved).
+`237809449` (a mechanical competing refresh of five notes to `bdde587`, no ticket) was superseded for the notes this pass
+touched; its claims are not carried. Claims touched by the four files, if any, are listed in `verification-harness.md`'s body.

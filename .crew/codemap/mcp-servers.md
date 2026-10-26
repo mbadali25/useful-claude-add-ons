@@ -1,5 +1,5 @@
 # mcp-servers
-anchor: useful-claude-add-ons@bdde58724
+anchor: useful-claude-add-ons@c43ccae58
 verified: 2026-10-26
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
@@ -760,3 +760,12 @@ Demoted/dropped: none. Not verified: no build, test or `npm` run; `index.ts`, `t
 `doctor.ts` bodies still unread (the `## Unverified` section stands). Its "dist/ is stale" measurement
 is a 2026-09-06 fact; this worktree has no `dist/` at all now (`ls` fails), which makes `pretest` fail
 for a different reason (missing, not stale).
+
+## Re-anchor provenance - `bdde58724` -> `c43ccae58`, 2026-10-26 (L-0928 rebased onto main)
+
+Main moved four commits (`bb942e03d`, `9ea896157`, `237809449`, `c43ccae58`) while this pass was in review. Per-path check
+`git diff --name-only bdde58724 c43ccae58 -- . ':!.crew/codemap' ':!.claude/rules'` lists four files: `.crew/verify.json`
+(appended `environments` at `:1051`), `.github/workflows/pytest-ai-connect.yml`, `.github/workflows/verify-gate.yml`,
+`_verify/README.md`. `cite_check.py` against `c43ccae58` reports every full `path:line` cite in this note SAME (none moved).
+`237809449` (a mechanical competing refresh of five notes to `bdde587`, no ticket) was superseded for the notes this pass
+touched; its claims are not carried. Claims touched by the four files, if any, are listed in `verification-harness.md`'s body.
