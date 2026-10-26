@@ -31,6 +31,7 @@ BLOCK_LINE = "BLOCK|src/app.py:3|the guard reads the wrong field"
 FIX_LINE = "FIX|src/app.py:9|name the refusal"
 NIT_LINE = "NIT|src/app.py:1|typo"
 MISSING = object()
+B = review_ledger.BUDGET
 
 
 # --- fixtures ----------------------------------------------------------------
@@ -81,22 +82,42 @@ def _row(number, **over):
     return row
 
 
+_PRIOR = [_row(n) for n in range(1, B)]
+
+
 def _successor(letter, after, by="Owner"):
     return {"plan_sha256": letter * 64, "approved_at": "2026-10-01T00:00:00Z",
-            "approved_by": by, "at": "2026-10-01T00:00:00Z", "after_round": after}
+            "approved_by": by, "at": "2026-10-01T00:00:00Z", "after_round": after,
+            "carry_over": True}
 
 
-def _ledger(root, rounds=None, state="REVIEWED", successors=None, rejected=None, raw=None):
+GRANT = {"at": "2026-10-26T00:00:00Z", "by": "Owner", "reason": "one more round", "round": B + 1}
+
+
+@pytest.fixture(name="grant_free")
+def _grant_free(monkeypatch):
+    """The downstream machinery (the writer, `next`, the replan phase) behind a
+    policy that has passed the missing-grant check. That check refuses every
+    ledger `_block_round` accepts (a successor never reopens the budget), so
+    the real policy never reaches it; `test_auto_replan_refuses_when_no_round_would_remain`
+    holds the real refusal."""
+    monkeypatch.setattr(crew_autopilot, "_no_round_after_successor", lambda *_a: None)
+
+
+def _ledger(root, rounds=None, state="REVIEWED", successors=None, rejected=None, raw=None,
+            grants=None):
     """The ledger, written directly. Default: two completed rounds, the last a
     codex FINDINGS round with one BLOCK, so no round is left."""
     path = review_ledger.ledger_path(str(root), T)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    data = {"ticket": T, "budget": 2, "refused": [], "state": state, "receipt": None,
-            "rounds": rounds if rounds is not None else [_row(1), _row(2)]}
+    data = {"ticket": T, "budget": B, "refused": [], "state": state, "receipt": None,
+            "rounds": rounds if rounds is not None else [*_PRIOR, _row(B)]}
     if successors is not None:
         data["successors"] = successors
     if rejected is not None:
         data["rejected"] = rejected
+    if grants is not None:
+        data["grants"] = grants
     _write(path, raw if raw is not None else json.dumps(data))
     return path
 
@@ -176,19 +197,33 @@ def test_settings_cli_json_carries_the_key(tmp_path, capsys):
 
 # --- step 2: the policy ----------------------------------------------------------
 
-def test_policy_allows_an_out_of_rounds_block_round(tmp_path):
+def test_auto_replan_refuses_when_no_round_would_remain(tmp_path):
+    root = _repo(tmp_path)
+    path = _ledger(root)
+    before = _bytes(path)
+
+    got = crew_autopilot.auto_replan_policy(str(root), T)
+    done = _cli(root, "auto-reject", "--ticket", T)
+
+    assert (got["allow"], "--grant-round" in got["reason"], "maxAutoReplans" in got["reason"],
+            got["cap"]) == (False, True, False, 2)
+    assert (done.returncode, done.stdout.startswith("refused: no review round would remain"),
+            _bytes(path) == before) == (2, True, True), done.stdout
+
+
+def test_policy_allows_an_out_of_rounds_block_round(tmp_path, grant_free):
     root = _repo(tmp_path)
     _ledger(root)
 
     got = crew_autopilot.auto_replan_policy(str(root), T)
 
     assert (got["allow"], got["used"], got["cap"], got["round"], got["blocks"],
-            got["fixes"]) == (True, 0, 2, 2, [BLOCK_LINE], [FIX_LINE])
+            got["fixes"]) == (True, 0, 2, B, [BLOCK_LINE], [FIX_LINE])
 
 
-def test_policy_allows_a_kimi_round_under_risk_low(tmp_path):
+def test_policy_allows_a_kimi_round_under_risk_low(tmp_path, grant_free):
     root = _repo(tmp_path, approval="risk", risk="low")
-    _ledger(root, rounds=[_row(1), _row(2, provider="kimi", model_family="kimi")])
+    _ledger(root, rounds=[*_PRIOR, _row(B, provider="kimi", model_family="kimi")])
 
     assert crew_autopilot.auto_replan_policy(str(root), T)["allow"] is True
 
@@ -201,7 +236,7 @@ def _set_state(state):
 
 def _set_rows(**over):
     def change(root):
-        _ledger(root, rounds=[_row(1), _row(2, **over)])
+        _ledger(root, rounds=[*_PRIOR, _row(B, **over)])
     return change
 
 
@@ -219,7 +254,7 @@ def _cap_reached(root):
 
 
 def _reserved(root):
-    _ledger(root, rounds=[_row(1), {"round": 2, "status": "reserved", "provider": "codex",
+    _ledger(root, rounds=[*_PRIOR, {"round": B, "status": "reserved", "provider": "codex",
                                     "model": None}], state="IN_REVIEW")
 
 
@@ -292,7 +327,7 @@ def test_family_rule_matches_review_ledger(tmp_path, provider, family):
     """The policy's family verdict equals the ledger's auto-accept family
     verdict on a 0-BLOCK copy of the same row: the two cannot drift."""
     root = _repo(tmp_path)
-    row = _row(2, provider=provider, model_family=family)
+    row = _row(B, provider=provider, model_family=family)
     _ledger(root, rounds=[_row(1), row])
     clean = dict(row, counts={"BLOCK": 0, "FIX": 1, "NIT": 1}, findings=[FIX_LINE, NIT_LINE],
                  webtest_open=0)
@@ -306,18 +341,19 @@ def test_family_rule_matches_review_ledger(tmp_path, provider, family):
 
 # --- step 3: the writer -----------------------------------------------------------
 
-def test_auto_reject_moves_ledger_and_names_the_policy(tmp_path):
+def test_auto_reject_moves_ledger_and_names_the_policy(tmp_path, grant_free, capsys):
     root = _repo(tmp_path)
     path = _ledger(root)
+    capsys.readouterr()
 
-    done = _cli(root, "auto-reject", "--ticket", T)
+    code = crew_autopilot.main(["auto-reject", "--root", str(root), "--ticket", T])
     with open(path, encoding="utf-8") as handle:
         data = json.load(handle)
 
-    assert (done.returncode, done.stdout.splitlines(), data["state"], data["rejected"]["by"],
+    assert (code, capsys.readouterr().out.splitlines(), data["state"], data["rejected"]["by"],
             data["rejected"]["round"]) == (
-        0, [f"auto-rejected {T}: round 2, 1 BLOCK / 1 FIX, replan 1 of 2", BLOCK_LINE,
-            FIX_LINE], "NEEDS_REPLAN", crew_autopilot.AUTO_REJECT_BY, 2)
+        0, [f"auto-rejected {T}: round {B}, 1 BLOCK / 1 FIX, replan 1 of 2", BLOCK_LINE,
+            FIX_LINE], "NEEDS_REPLAN", crew_autopilot.AUTO_REJECT_BY, B)
 
 
 def test_auto_reject_name_is_a_constant_no_flag_sets():
@@ -326,7 +362,7 @@ def test_auto_reject_name_is_a_constant_no_flag_sets():
         "autopilot (policy: autopilot.maxAutoReplans)", False)
 
 
-def test_auto_reject_ledger_error_is_a_refusal(tmp_path, monkeypatch, capsys):
+def test_auto_reject_ledger_error_is_a_refusal(tmp_path, monkeypatch, capsys, grant_free):
     root = _repo(tmp_path)
     _ledger(root)
 
@@ -371,7 +407,7 @@ AUTO_COMMAND = (f"python3 -B ${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/crew_autopilo
 
 # `_review_phase`'s reason on main before T-0074, verbatim.
 TODAYS_ACCEPT_REVIEW = (
-    "round 2 is FINDINGS; review_ledger.py --auto-accept refuses it (round 2 has 1 BLOCK "
+    f"round {B} is FINDINGS; review_ledger.py --auto-accept refuses it (round {B} has 1 BLOCK "
     "finding(s); a BLOCK is never auto-accepted); the owner accepts it with review_ledger.py "
     "--accept --by <owner>, or rejects it; autopilot.reviewPolicy fix-and-rereview makes "
     "autopilot fix and re-review a round with one left itself; fixed them instead? run the "
@@ -390,7 +426,7 @@ def test_default_zero_changes_nothing(tmp_path):
     assert got["reason"] == refused["reason"] == TODAYS_ACCEPT_REVIEW
 
 
-def test_next_names_auto_reject_when_policy_allows(tmp_path):
+def test_next_names_auto_reject_when_policy_allows(tmp_path, grant_free):
     root = _repo(tmp_path)
     _ledger(root)
 
@@ -433,7 +469,7 @@ def test_cap_reached_stops_and_lists_successors(tmp_path):
         "auto-replan-cap", True, True, True, True, True, True)
 
 
-def _rejected(root, by=None, number=2, **ledger):
+def _rejected(root, by=None, number=B, **ledger):
     return _ledger(root, state="NEEDS_REPLAN",
                    rejected={"by": by or crew_autopilot.AUTO_REJECT_BY, "at": "2026-10-04T00:00:00Z", "round": number},
                    **ledger)
@@ -497,23 +533,30 @@ def test_replan_after_auto_reject_stops_at_the_cap(tmp_path):
     assert _next(root)["stop"] is True
 
 
-def test_full_cycle_reject_plan_approve_opens_fresh_rounds(tmp_path):
+def test_full_cycle_reject_plan_approve_needs_the_owners_grant(tmp_path, grant_free):
+    """A successor plan does not reopen the budget: the cycle reaches
+    NEEDS_REPLAN and an approved plan, and stays there until the owner grants."""
     root = _repo(tmp_path)
     _ledger(root)
 
-    rejected = _cli(root, "auto-reject", "--ticket", T)
+    rejected = crew_autopilot.main(["auto-reject", "--root", str(root), "--ticket", T])
     replan = _next(root)
     _write(root / ".work" / "tickets" / T / "plan.md",
-           PLAN.format(files="src/app.py") + "\nSuccessor, quoting round 2 (L-0670):\n"
+           PLAN.format(files="src/app.py") + f"\nSuccessor, quoting round {B} (L-0670):\n"
            + BLOCK_LINE + "\n" + FIX_LINE + "\n")
     approve = _next(root)
     approved = _cli(root, "approve", "--ticket", T)
+    stuck = review_ledger.status(str(root), T)
+    review_ledger.grant_round(str(root), T, "Owner", "one more round")
+    plan_hash = crew_ticket.status(str(root), T)["receipt"]["plan_sha256"]
+    continued = review_ledger.continue_with_successor_plan(str(root), T, plan_hash)
     after = _next(root)
 
-    assert (rejected.returncode, replan["phase"], replan["stop"], approve["phase"],
-            approved.returncode, review_ledger.status(str(root), T)["state"],
+    assert (rejected, replan["phase"], replan["stop"], approve["phase"], approved.returncode,
+            stuck["state"], continued[0], review_ledger.status(str(root), T)["state"],
             after["phase"], after["stop"]) == (
-        0, "replan", False, "approve", 0, review_ledger.IN_REVIEW, "implement", False)
+        0, "replan", False, "approve", 3, "NEEDS_REPLAN", True, review_ledger.IN_REVIEW,
+        "implement", False)
 
 
 # --- stops and status --------------------------------------------------------------
@@ -545,15 +588,15 @@ def test_the_cap_stop_is_its_fixed_stop_id():
 
 FORGED = [
     ("a-round-left", {"rounds": [_row(1)]}, 1),
-    ("same-family", {"rounds": [_row(1), _row(2, provider="claude")]}, 2),
-    ("same-family-name", {"rounds": [_row(1), _row(2, model_family="claude")]}, 2),
-    ("clean-latest", {"rounds": [_row(1), _row(2, verdict="CLEAN",
+    ("same-family", {"rounds": [*_PRIOR, _row(B, provider="claude")]}, B),
+    ("same-family-name", {"rounds": [*_PRIOR, _row(B, model_family="claude")]}, B),
+    ("clean-latest", {"rounds": [*_PRIOR, _row(B, verdict="CLEAN",
                                                 counts={"BLOCK": 0, "FIX": 0, "NIT": 0},
-                                                findings=[])]}, 2),
-    ("no-block", {"rounds": [_row(1), _row(2, counts={"BLOCK": 0, "FIX": 1, "NIT": 1},
-                                             findings=[FIX_LINE, NIT_LINE])]}, 2),
-    ("incomplete", {"rounds": [_row(1), _row(2, verdict="INCOMPLETE")]}, 2),
-    ("older-plan", {"rounds": [_row(1), _row(2)], "successors": [_successor("b", 2)]}, 2),
+                                                findings=[])]}, B),
+    ("no-block", {"rounds": [*_PRIOR, _row(B, counts={"BLOCK": 0, "FIX": 1, "NIT": 1},
+                                             findings=[FIX_LINE, NIT_LINE])]}, B),
+    ("incomplete", {"rounds": [*_PRIOR, _row(B, verdict="INCOMPLETE")]}, B),
+    ("older-plan", {"rounds": [*_PRIOR, _row(B)], "successors": [_successor("b", B)]}, B),
 ]
 
 
@@ -593,14 +636,15 @@ def test_command_names_the_auto_replan_procedure():
 
 import crew_autopilot_replan  # noqa: E402  pylint: disable=wrong-import-position
 
-AUTO = {"by": crew_autopilot.AUTO_REJECT_BY, "at": "2026-10-07T00:00:00Z", "round": 2}
+AUTO = {"by": crew_autopilot.AUTO_REJECT_BY, "at": "2026-10-07T00:00:00Z", "round": B}
 
 
 def _auto_rejected_plan(tmp_path, quoted=(BLOCK_LINE, FIX_LINE), rejected=None, rounds=None, state="NEEDS_REPLAN",
-              plan_tail=None):
-    """A ticket auto-rejected at round 2, its successor plan.md quoting `quoted`."""
+              plan_tail=None, grants=None):
+    """A ticket auto-rejected at its last round, its successor plan.md quoting `quoted`."""
     root = _repo(tmp_path)
-    _ledger(root, rounds=rounds, state=state, rejected=AUTO if rejected is None else rejected)
+    _ledger(root, rounds=rounds, state=state, rejected=AUTO if rejected is None else rejected,
+            grants=grants)
     plan = PLAN.format(files="src/app.py").rstrip("\n") + "\n\nSuccessor plan, quoting round 2:\n" \
         + "".join(f"{line}\n" for line in quoted) + (plan_tail or "")
     _write(root / ".work" / "tickets" / T / "plan.md", plan)
@@ -630,7 +674,7 @@ def test_replan_check_fails_on_a_missing_line(tmp_path):
 
 
 def test_replan_check_counts_duplicates(tmp_path):
-    rows = [_row(1), _row(2, findings=[BLOCK_LINE, BLOCK_LINE, FIX_LINE],
+    rows = [*_PRIOR, _row(B, findings=[BLOCK_LINE, BLOCK_LINE, FIX_LINE],
                       counts={"BLOCK": 2, "FIX": 1, "NIT": 0})]
 
     once = _check(_auto_rejected_plan(tmp_path / "once", rounds=rows))
@@ -662,7 +706,7 @@ def _no_row(root):
 
 
 def _findings(value):
-    return lambda root: _ledger(root, rounds=[_row(1), _row(2, findings=value)], state="NEEDS_REPLAN",
+    return lambda root: _ledger(root, rounds=[*_PRIOR, _row(B, findings=value)], state="NEEDS_REPLAN",
                                 rejected=AUTO)
 
 
@@ -717,7 +761,7 @@ def test_approve_refuses_successor_that_drops_a_block(tmp_path):
 
 
 def test_approve_allows_successor_that_quotes_all(tmp_path):
-    root = _auto_rejected_plan(tmp_path)
+    root = _auto_rejected_plan(tmp_path, grants=[GRANT])
 
     code, text = crew_autopilot.approve(str(root), T)
 
@@ -725,7 +769,7 @@ def test_approve_allows_successor_that_quotes_all(tmp_path):
 
 
 def test_owner_cli_approve_is_not_checked(tmp_path):
-    root = _auto_rejected_plan(tmp_path, quoted=(FIX_LINE,))
+    root = _auto_rejected_plan(tmp_path, quoted=(FIX_LINE,), grants=[GRANT])
 
     crew_ticket.approve(str(root), T, by="Owner")
 
@@ -747,7 +791,7 @@ def test_replan_check_writes_nothing(tmp_path):
 def test_replan_check_owes_an_indented_finding_line(tmp_path):
     """L-0670 review r1 BLOCK: a ` FIX|` line the automatic reject counted is owed
     too, verbatim (its leading space kept)."""
-    rows = [_row(1), _row(2, findings=[BLOCK_LINE, f" {FIX_LINE}"],
+    rows = [*_PRIOR, _row(B, findings=[BLOCK_LINE, f" {FIX_LINE}"],
                       counts={"BLOCK": 1, "FIX": 1, "NIT": 0})]
 
     dropped = _check(_auto_rejected_plan(tmp_path / "dropped", rounds=rows, quoted=(BLOCK_LINE,)))
@@ -781,7 +825,7 @@ def test_replan_check_a_spent_budget_without_a_reject_is_not_checked(tmp_path):
 def test_replan_check_a_blank_rejector_or_disagreeing_counts_is_could_not_tell(tmp_path, rejected, counts):
     """L-0670 review r3 BLOCKs: a blank `rejected.by`, or counts that disagree with
     the finding lines, cannot tell what is owed: refused."""
-    rows = None if counts is None else [_row(1), _row(2, counts=counts)]
+    rows = None if counts is None else [*_PRIOR, _row(B, counts=counts)]
     got = _check(_auto_rejected_plan(tmp_path, rejected=rejected, rounds=rows))
 
     assert (got["applies"], got["ok"], got["reason"].startswith("could not tell")) == (True, False, True), got
@@ -801,9 +845,9 @@ def test_replan_check_the_rejected_round_must_be_the_latest_rounds_int(tmp_path,
 def test_replan_check_a_malformed_last_row_is_could_not_tell(tmp_path, last):
     """L-0670 review r5 BLOCK: a ledger ending in a non-object, or in a row numbered
     2.0, cannot say which round was rejected."""
-    rows = [_row(1), _row(2)] + ([None] if last is None else [])
+    rows = [*_PRIOR, _row(B)] + ([None] if last is None else [])
     if last == "float":
-        rows = [_row(1), _row(2.0)]
+        rows = [*_PRIOR, _row(float(B))]
     got = _check(_auto_rejected_plan(tmp_path, rounds=rows))
 
     assert (got["applies"], got["ok"], got["reason"].startswith("could not tell")) == (True, False, True), got
@@ -812,7 +856,7 @@ def test_replan_check_a_malformed_last_row_is_could_not_tell(tmp_path, last):
 def test_replan_check_cli_prints_the_owed_line_verbatim(tmp_path):
     """L-0670 review r6 FIX: the CLI keeps the owed line's spacing, so it pastes."""
     owed = "  FIX|src/app.py:9|two  spaces\tand a tab"
-    rows = [_row(1), _row(2, findings=[BLOCK_LINE, owed], counts={"BLOCK": 1, "FIX": 1, "NIT": 0})]
+    rows = [*_PRIOR, _row(B, findings=[BLOCK_LINE, owed], counts={"BLOCK": 1, "FIX": 1, "NIT": 0})]
     root = _auto_rejected_plan(tmp_path, rounds=rows, quoted=(BLOCK_LINE,))
 
     done = _cli(root, "replan-check", "--ticket", T)
