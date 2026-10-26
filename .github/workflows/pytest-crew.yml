@@ -66,6 +66,11 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+    - name: Set up uv (plugin/crew/tests/test_crew_lint_rules.py runs the pinned semgrep through uvx)
+      if: env.RUN_LEG == 'true'
+      uses: astral-sh/setup-uv@v10.2.0
+      with:
+        version: "0.13.0"
     - name: Select the suites this PR changes (C-0001)
       id: select
       if: env.RUN_LEG == 'true'
@@ -380,6 +385,11 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: "3.13"
+    - name: Set up uv (test_crew_lint_rules.py runs the pinned semgrep through uvx)
+      if: runner.os == 'Windows'
+      uses: astral-sh/setup-uv@v10.2.0
+      with:
+        version: "0.13.0"
     - name: Install pytest
       if: runner.os == 'Windows'
       # pytest-split is pinned: every shard must split the same way.
