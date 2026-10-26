@@ -10,6 +10,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 
 import pytest
@@ -21,6 +22,11 @@ FIXTURES = LINT / "fixtures"
 
 SEMGREP_PIN = "semgrep==1.95.0"
 SKIP_VARIABLE = "CREW_SKIP_SEMGREP"
+WINDOWS_SKIP_REASON = (
+    "semgrep 1.95.0 ships no semgrep-core.exe on native Windows (CI: 'Failed to find semgrep-core.exe'); "
+    "L-0715 PR B owns a stdlib checker for every host. Skipped on the OS, not on uvx being missing: "
+    "on any other host a missing uvx still fails."
+)
 TIMEOUT_SECONDS = 180
 
 CLASSES = (
@@ -67,6 +73,8 @@ def _command(*args):
 
 @pytest.fixture
 def semgrep_required():
+    if sys.platform == "win32":
+        pytest.skip(WINDOWS_SKIP_REASON)
     if os.environ.get(SKIP_VARIABLE) == "1":
         pytest.skip("semgrep tests skipped because " + SKIP_VARIABLE + "=1 is set")
 

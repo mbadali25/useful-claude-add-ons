@@ -15,6 +15,10 @@
 # not-shipped:
 #   symlink-fifo-open: open flags are built in variables and getattr(os, "O_NOFOLLOW", 0) in 58 of 58 os.open sites at bdde58724, so a pattern cannot tell a safe open from an unsafe one; the probe stays in recurring-findings.md (RF-01) and review.md step 2d
 #
+# Windows: semgrep 1.95.0 ships no semgrep-core.exe on native Windows (CI run 40410430154, crew-windows-default:
+# "Failed to find semgrep-core.exe in PATH or in the semgrep package"), so the semgrep-running tests skip there,
+# by OS. A stdlib checker for every host belongs to L-0715 PR B.
+#
 # Suppress one reviewed-safe site with an inline "# nosemgrep: <rule id>" that names the reason.
 # Rule ids are matched by suffix, so the config path does not change them.
 rules:
