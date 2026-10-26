@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.2.85: semgrep rules for the review-finding classes a pattern can express (L-0715 PR A)
+### Added — crew 1.2.86: semgrep rules for the review-finding classes a pattern can express (L-0715 PR A)
 
-- **Summary.** `crew` 1.2.85: ships pinned semgrep rules for five recurring review-finding classes (`splitlines()` on untrusted text, duplicate-key JSON, bare interpreters, unquoted `CLAUDE_PLUGIN_ROOT`, tests with no assertion); they are opt-in and do nothing until the `semgrep` linter kind lands in a second change.
+- **Summary.** `crew` 1.2.86: ships pinned semgrep rules for five recurring review-finding classes (`splitlines()` on untrusted text, duplicate-key JSON, bare interpreters, unquoted `CLAUDE_PLUGIN_ROOT`, tests with no assertion); they are opt-in and do nothing until the `semgrep` linter kind lands in a second change.
 - `plugin/crew/lint/semgrep/crew-classes.yml` and one positive and one negative fixture per rule. Symlink and FIFO opens are listed `not-shipped` with the reason (open flags are built in variables, so no pattern can tell a safe open from an unsafe one). Measured at bdde58724 over `plugin scripts docs .crew`: `crew-json-duplicate-keys` 172, `crew-unquoted-plugin-root` 149, `crew-splitlines-untrusted-text` 56, `crew-test-no-assertion` 4, `crew-bare-interpreter` 0.
 - `plugin/crew/tests/test_crew_lint_rules.py` runs the pinned `semgrep==1.95.0` over a throwaway copy of the fixtures, fails when semgrep cannot start, and skips only under `CREW_SKIP_SEMGREP=1`. It also fails if a class is neither shipped nor listed `not-shipped`, if fewer than four classes are shipped, or if a protected class is not shipped.
 - `recurring-findings.md` and `.crew/standards.md` say which probe each rule now covers. No harness path changes; the runner (`review_checks.py`) and `.crew/verify.json` wiring are PR B.
