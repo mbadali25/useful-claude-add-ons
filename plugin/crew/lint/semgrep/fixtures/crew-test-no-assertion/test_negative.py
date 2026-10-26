@@ -1,6 +1,11 @@
 import pytest
 
 
+def check(name, condition):
+    if not condition:
+        raise SystemExit(name)
+
+
 def test_asserts():
     assert 1 + 1 == 2
 
