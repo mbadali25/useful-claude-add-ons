@@ -94,15 +94,15 @@ cheaper than catching it from a refused write.
 4. **Touch coverage.** Confirmed above - restate it here rather than skip it
    because it was "already checked": this is the review that catches the
    check being forgotten under time pressure, not the check itself.
-5. **Size.** Does every step with production Files carry `Lines:` and a kind
-   tag on each production entry, and does the sum stay at or under 300?
-6. **Standards.** Does every step name the standards its Files and Risk
+5. **Standards.** Does every step name the standards its Files and Risk
    trigger (the `crew-standards` skill; `crew_standards.py sets --touch` lists them
    from the spec's Touch list, with no scope base yet)?
-7. **Recorded decisions.** A step that changes behaviour someone decided (a
+6. **Recorded decisions.** A step that changes behaviour someone decided (a
    default, a model tier, a guard) cites where that decision is recorded
    (`CHANGELOG.md`, `docs/adr/`, a ticket's `direction.md`), or says it searched
    and found none. It never reverses a recorded decision silently.
+7. **Size.** Does every step with production Files carry `Lines:` and a kind
+   tag on each production entry, and does the sum stay at or under 300?
 
 Fix inline. No need to re-review once fixed - just fix and move on. This is a
 checklist you run yourself, not a subagent dispatch.
