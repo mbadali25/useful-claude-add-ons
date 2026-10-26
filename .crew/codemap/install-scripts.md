@@ -1,7 +1,7 @@
 # install-scripts
-anchor: useful-claude-add-ons@9ba355d7c
+anchor: useful-claude-add-ons@bdde58724
 paths: plugin/crew/**, scripts/**
-verified: 2026-10-20
+verified: 2026-10-26
 
 ## Re-derive provenance
 
@@ -71,55 +71,61 @@ scripts/check-marketplace.py` was run at this anchor and reports `marketplace:
 `scripts/install-prerequisites.sh` (bash) and `scripts/install-prerequisites.ps1`
 (PowerShell) are the same interactive installer for two operating systems: a
 checkbox picker over prerequisites, the Claude CLI, MCP servers, and this
-repo's own skills and plugins. DERIVED, re-confirmed at this anchor. Delivery
+repo's own skills and plugins. DERIVED, re-read at `bdde58724`. Delivery
 is not uniform `claude plugin install`: plugins and skills go through
-`claude plugin install` (`scripts/install-prerequisites.sh:1192`, was `:1121`),
-MCP servers through `claude mcp add` inside `add_mcp_server`
-(`scripts/install-prerequisites.sh:942`) or the new
-`add_or_refresh_mcp_server` (`:1033`, see Landmines), and standalone tools
-(Playwright, skillui, strix, graphify, Obsidian, the LSP/stack-tools rows)
-through their own package managers.
+`claude plugin install` (`scripts/install-prerequisites.sh:1211`; the same
+call again in `force_refresh_plugin`, `:776`), MCP servers through `claude mcp
+add` inside `add_mcp_server` (`scripts/install-prerequisites.sh:961`, the call
+sites at `:985`/`:987`) or the stricter `add_or_refresh_mcp_server` (`:1052`,
+see Landmines), and standalone tools (Playwright, skillui, strix, graphify,
+Obsidian, the LSP/stack-tools rows) through their own package managers.
 
 ## Entry points
 
-- `scripts/install-prerequisites.sh:1208-1216` — `MENU_KEYS`, the top-level
-  picker's ordered key list, **26** keys (was 25); `MENU_DEFAULT` at `:1217`,
-  also 26 values. DERIVED by parsing both arrays directly. Run by a user on
-  Linux, macOS or Git Bash.
+- `scripts/install-prerequisites.sh:1227-1235` — `MENU_KEYS`, the top-level
+  picker's ordered key list, **26** keys; `MENU_DEFAULT` at `:1236`, also 26
+  values; `MENU_NAME` at `:1237`, also 26. DERIVED by parsing the arrays
+  directly. Run by a user on Linux, macOS or Git Bash.
 - `scripts/install-prerequisites.ps1:1067-1094` — `$script:Catalog`, the
   Windows equivalent: same 26 keys in the same order (`Key`/`Default`/`Name`
-  one per row), same defaults. DERIVED.
-- `scripts/install-prerequisites.sh:2745` — `install_web_testing`, the new
-  merged row (see Landmines). PowerShell equivalent is inline under
-  `Test-Selected 'web-testing'` (not a named function on that side — verified
-  by `grep -n "'web-testing'" scripts/install-prerequisites.ps1`, one hit,
-  a top-level `if` block rather than a function call).
-- `scripts/install-prerequisites.sh:923` — `mcp_launcher_resolves`, unchanged
-  in behaviour from the previous anchor (checks the launch command resolves on
-  PATH before `claude mcp add` is allowed to write a registration it cannot
-  start). PowerShell equivalent inline in `Add-McpServer`.
-- `scripts/install-prerequisites.sh:1033` — `add_or_refresh_mcp_server`, new
-  at this anchor (see Landmines) — a stricter registration path used by the
-  web-testing row that compares an existing registration's actual
-  command/args against the required form, not just whether a name is taken.
-- `scripts/install-prerequisites.sh:2469` — `run_skill_preflights`, unchanged
-  in behaviour (report-only, `</dev/null` stdin, UNCHECKED-not-absent
-  wording all re-read and confirmed byte-identical in substance).  PowerShell
-  twin `Invoke-SkillPreflights` at `scripts/install-prerequisites.ps1:2104`.
-- `scripts/_test/drift-detection.sh:21` / `:82` — unchanged (byte-identical
-  since `5d1fc5fd`, closed by the per-path check, not re-read).
-- `scripts/_test/self-claims.py:1299` — `main()` (was `:1166`; file grew
-  1382 -> 1458 lines, +76, adding `run_markdown_lines` and
-  `CASES_MARKDOWN_LINES`, a fixture for `check_self_claims`'s new
-  `crew-markdown-lines` claim kind — that claim kind and its
-  `count_crew_markdown_lines` counter live in `scripts/check-marketplace.py`
-  and are consumed by `plugin/crew/BUDGETS.md:10`, outside this note's scope;
+  one per row), same defaults. DERIVED by parsing both key and default lists.
+- Sub-picker catalogs, counts parsed directly (the same count in both
+  scripts, which `check_group_parity` asserts): `SKILL_KEYS` 36
+  (`scripts/install-prerequisites.sh:1317`; `$script:SkillCatalog`,
+  `scripts/install-prerequisites.ps1:1127`), `PLUGIN_KEYS` 13 (`:1406`;
+  `$script:PluginCatalog`, `:1175`), `TEAM_KEYS` 4 (`:1469`;
+  `$script:TeamCatalog`, `:1198`), `COMMUNITY_KEYS` 10 (`:1505`;
+  `$script:CommunityCatalog`, `:1216`). DERIVED.
+- `scripts/install-prerequisites.sh:2889` — `install_web_testing`, the merged
+  row (see Landmines), dispatched by `is_selected "web-testing"` at `:2993`.
+  PowerShell equivalent is inline under `Test-Selected 'web-testing'`
+  (`scripts/install-prerequisites.ps1:2470`; not a named function on that side
+  — `grep -n "Test-Selected 'web-testing'"` gives that one hit, a top-level
+  `if` block).
+- `scripts/install-prerequisites.sh:942` — `mcp_launcher_resolves` (checks the
+  launch command resolves on PATH before `claude mcp add` is allowed to write
+  a registration it cannot start). PowerShell equivalent inline in
+  `Add-McpServer` (`scripts/install-prerequisites.ps1:489`).
+- `scripts/install-prerequisites.sh:1052` — `add_or_refresh_mcp_server`, a
+  stricter registration path used by the web-testing row that compares an
+  existing registration's actual command/args against the required form, not
+  just whether a name is taken.
+- `scripts/install-prerequisites.sh:2608` — `run_skill_preflights`
+  (report-only, `</dev/null` stdin, UNCHECKED-not-absent wording re-read at
+  `:2622`). PowerShell twin `Invoke-SkillPreflights` at
+  `scripts/install-prerequisites.ps1:2183`.
+- `scripts/_test/drift-detection.sh:21` / `:82` — `SCRIPT=` and the `awk`
+  extraction of `install_plugin`; file byte-identical to the previous anchor
+  (`git diff 9ba355d7c bdde58724` lists no change), lines re-read.
+- `scripts/_test/self-claims.py:1392` — `main()`; the file is now 1652 lines.
+  It carries `run_markdown_lines` (`:143`) and `CASES_MARKDOWN_LINES`
+  (`:1196`), a fixture for `check_self_claims`'s `crew-markdown-lines` claim
+  kind, consumed by `plugin/crew/BUDGETS.md:10` (outside this note's scope;
   `marketplace-registration.md` owns `check-marketplace.py`'s function map).
-- `scripts/install-prerequisites.sh:3357` / `:3506` — the `lsp-plugins` and
+- `scripts/install-prerequisites.sh:3811` / `:3975` — the `lsp-plugins` and
   `stack-tools` rows are dispatched as top-level `if is_selected "..."` blocks
-  near the end of the script's execution flow, not named functions the way
-  every other row is. PowerShell equivalents at
-  `scripts/install-prerequisites.ps1:2979` / `:3166`, same shape
+  near the end of the script, not named functions the way every other row is.
+  PowerShell equivalents at `scripts/install-prerequisites.ps1:3343` / `:3550`
   (`if (Test-Selected '...')`). DERIVED; not read for internal behaviour
   beyond confirming both platforms dispatch on the same two keys.
 
@@ -127,69 +133,60 @@ through their own package managers.
 
 - Nothing of its own. It shells out to `claude plugin marketplace add` /
   `install` / `update`.
-- `PLUGINS_CACHE` via `load_plugins` (`scripts/install-prerequisites.sh:567`,
-  `claude plugin list --json` at `:571` — both unchanged from the previous
-  anchor, re-confirmed by direct read). `plugin_version`
-  (`scripts/install-prerequisites.sh:598`) reads only that cache.
-- `MCP_CACHE` via `load_mcp_servers` (`scripts/install-prerequisites.sh:900`),
+- `PLUGINS_CACHE` via `load_plugins` (`scripts/install-prerequisites.sh:586`,
+  `claude plugin list --json` at `:590`). `plugin_version`
+  (`scripts/install-prerequisites.sh:617`) reads only that cache.
+- `MCP_CACHE` via `load_mcp_servers` (`scripts/install-prerequisites.sh:919`),
   taking the name off the front of each `claude mcp list` line — still no
-  `--json` for that subcommand (`:901-902`). **New at this anchor**:
-  `mcp_registration_command` (`scripts/install-prerequisites.sh:1012`) reads
-  `claude mcp get <name>` to pull back the actual registered `Command:` /
-  `Args:` text, specifically so `add_or_refresh_mcp_server` can compare it
-  against the form a row requires — see Landmines. It returns exit code `2`,
-  not a false match, when the read fails or cannot be parsed, so a `could not
-  tell` never collapses into either "matches" or "does not match."
-- `install_plugin` (`scripts/install-prerequisites.sh:1095`) still avoids the
-  CLI on the fast path: compares the marketplace HEAD sha against the sha
-  recorded for the installed copy. Three `SKIP | already current` branches
-  (`:1131`, `:1142`, `:1187`) plus the separate `--no-update` branch's
-  `SKIP | already installed` (`:1114`) and the stale-but-same-version warning
-  naming `--force-refresh` (`:1184`) — same four-branch shape as the previous
-  anchor, all four re-read directly, only the line numbers moved.
+  `--json` for that subcommand (comment `:920-921`, call `:924`).
+  `mcp_registration_command` (`scripts/install-prerequisites.sh:1031`) reads
+  `claude mcp get <name>` (`:1034`) to pull back the actual registered
+  `Command:` / `Args:` text, specifically so `add_or_refresh_mcp_server` can
+  compare it against the form a row requires — see Landmines. It returns exit
+  code `2`, not a false match, when the read fails or cannot be parsed, so a
+  `could not tell` never collapses into either "matches" or "does not match."
+- `install_plugin` (`scripts/install-prerequisites.sh:1114`) avoids the CLI on
+  the fast path: compares the marketplace HEAD sha against the sha recorded
+  for the installed copy. Three `already current` skip branches (`:1150`,
+  `:1161`, `:1206`) plus the separate `--no-update` branch's `already
+  installed` skip (`:1133`) and the stale-but-same-version warning naming
+  `--force-refresh` (`:1203`), with the `--force-refresh` reinstall itself at
+  `:1192-1201` via `force_refresh_plugin` (`:764`). All re-read directly.
 - The `claude-code-plugins` marketplace is still not registered by either
   script (re-confirmed: no occurrence of that literal string in
   `scripts/install-prerequisites.sh`); `claude-plugins-official` is the one
   actually used for `frontend-design`, `superpowers`, `github` and
-  `claude-code-setup`.
+  `claude-code-setup` (`scripts/install-prerequisites.sh:1477-1478`, `:1480`, `:1244`).
 
 ## Calls out to
 
-- The `claude` CLI: `claude plugin list --json` (`:571`), `claude plugin
-  install` (`:1192`, and `:757` inside `ensure_plugin_enabled`'s reinstall
-  path), `claude plugin update` (`:1154`, inside `install_plugin`), `claude
-  mcp add` (`:966`/`:968` inside `add_mcp_server`), `claude mcp get`
-  (`:1015`, new), `claude mcp list` (`:905`). DERIVED.
+- The `claude` CLI: `claude plugin list --json` (`:590`), `claude plugin
+  install` (`:1211`, and `:776` inside `force_refresh_plugin`'s reinstall),
+  `claude plugin update` (`:1173`, inside `install_plugin`), `claude mcp add`
+  (`:985`/`:987` inside `add_mcp_server`), `claude mcp get` (`:1034`),
+  `claude mcp list` (`:924`). DERIVED, all `scripts/install-prerequisites.sh`.
 - Playwright, for the merged `web-testing` row
-  (`scripts/install-prerequisites.sh:2745-2841`,
-  `install_web_testing`): refuses if `node` is absent or older than
-  20.19/22.12 (`:2744-2755`, an exact SemVer-ish parse of `node -v`, no
-  install-or-upgrade attempt — told, not fixed); requires a `package.json` in
-  the current directory because `@playwright/test`/`@axe-core/playwright` are
-  installed as project devDependencies, never globally (`:2764-2767`); skips
-  the `npm install` entirely when both pinned versions
-  (`1.63.0`/`4.13.0`) already match (`:2771-2783`); detects an
-  already-downloaded Chromium via `npx playwright install --dry-run`'s
-  install-location output rather than its wording, since that wording never
-  says "already installed" even at the pinned version (`:2789-2792`); probes
-  `sudo -n true` (never prompts) to decide whether `--with-deps` can run, and
-  falls back to a browser-only install with a named manual fix
-  (`sudo npx playwright install-deps chromium`) when neither root nor
-  passwordless sudo is available (`:2794-2810` — **this is the "no-sudo
-  path"**, new at this anchor); scaffolds Playwright Test Agents for both the
-  `claude` and `codex` loops, and — corrected from a previous defect —
-  reports success only if *both* loops actually succeeded, not
-  unconditionally after a single failed one (`:2814-2829`, `failed_loops`
-  array); registers the `playwright` and `chrome-devtools` MCP servers at
-  **project** scope regardless of the global `--scope` default, through
-  `add_or_refresh_mcp_server` rather than `add_mcp_server`, specifically so a
-  stale prior registration (missing `--isolated --headless --caps testing`,
-  or an old package) gets migrated rather than silently kept
-  (`:2837-2838`).
-- graphify: `uv tool install graphifyy`, gated on `ensure_uv`. Re-grepped;
-  still present, position not re-derived to the line (not needed — nothing in
-  this note's other claims depends on its exact line, and the previous
-  anchor's citation was not falsified).
+  (`scripts/install-prerequisites.sh:2889-2992`, `install_web_testing`):
+  refuses if `node` is absent or older than 20.19 (`:2890-2900`, a parse of
+  `node -v`, no install-or-upgrade attempt — told, not fixed; the warning also
+  names 22.12); requires a `package.json` in the current directory because
+  `@playwright/test`/`@axe-core/playwright` are installed as project
+  devDependencies, never globally (`:2910-2913`); skips the `npm install`
+  entirely when both pinned versions (`1.63.0`/`4.13.0`) already match
+  (`:2917-2929`); detects an already-downloaded Chromium via `npx playwright
+  install --dry-run`'s install-location output rather than its wording
+  (`:2935-2938`); probes root or `sudo -n true` (never prompts) to decide
+  whether `--with-deps` can run, and falls back to a browser-only install with
+  a named manual fix when neither is available (`:2945-2956` — the "no-sudo
+  path"); scaffolds Playwright Test Agents for both the `claude` and `codex`
+  loops and reports success only if *both* succeeded (`:2967-2974`,
+  `failed_loops` array); registers the `playwright` and `chrome-devtools` MCP
+  servers at **project** scope regardless of the global `--scope` default,
+  through `add_or_refresh_mcp_server` rather than `add_mcp_server`, so a stale
+  prior registration (missing `--isolated --headless --caps testing`, or an
+  old package) gets migrated rather than silently kept (`:2983-2984`).
+- graphify: `install_graphify` (`scripts/install-prerequisites.sh:3278`),
+  `ensure_uv` gate at `:3282`, `uv tool install graphifyy` at `:3291`.
 - `https://knowledge-mcp.global.api.aws/mcp` and
   `https://learn.microsoft.com/api/mcp` — registered, not called by the
   installer. Not re-probed live at this pass (see Unverified).
@@ -197,208 +194,178 @@ through their own package managers.
 ## Landmines
 
 - **`README.md`'s install-URL pin is current at this anchor.** `README.md:12`
-  and `:18` read `04dde5a228f0c29e5009691a655bcc38b3d9d48d` (re-pinned by `b78d3041` after W-0120
-  merged as `04dde5a2`; re-read at `d6e51bb8`), and `git log --oneline 04dde5a2..d6e51bb8 --
-  scripts/install-prerequisites.sh scripts/install-prerequisites.ps1` is empty. DERIVED. (Before
-  that the pin read `f7caa37d2cfc694330c3cf2b305592ff473e3194`, re-pinned by
-  `767fa3ef` after L-0561 merged as `f7caa37d`; re-read at `fe524012`), and
-  `git log --oneline f7caa37d..fe524012 -- scripts/install-prerequisites.sh
-  scripts/install-prerequisites.ps1` was empty.) (At `ea764992` the pin
-  read `e878cc31e00a7acb480fc17dd8afdcaf40c91f2d`, re-pinned by `17d057db`.) The history below is
-  what the bullet said at earlier anchors: the pin was STALE there, by one
-  line per script. `README.md:12` and `:18` still read
-  `6c497a14fc06612732241d2b13eee4fea41996f5` (re-read at `07ca3972`), but
-  `git log --oneline 6c497a14..e95e5964 -- scripts/install-prerequisites.sh
-  scripts/install-prerequisites.ps1` now returns `ecf69e43` (crew 1.0.41,
-  T-0004) and `a77a42d6` (T-0075), and `git diff --stat` over the same range
-  is still 1 line in each script: the crew `PLUGIN_NAME` / `PluginCatalog`
-  label, `34 commands` -> `36 commands` (35 at T-0004, 36 at T-0075). So a
-  `curl | bash` taken from the README runs scripts that differ from the ones
-  this note describes only in that menu label. DERIVED (re-read at
-  `e95e5964`). T-0004 merged without the re-pin, and T-0075 is not merged at
-  this anchor (branch `T-0075-build`), so the re-pin is due after that merge,
-  per CLAUDE.md's promotion step. It was
-  current at `f2bb919b` (re-pinned by #226, `86931b29`, "README: re-pin
-  install URLs to crew 1.0 merge (6c497a14)"). At `6c497a14` this bullet recorded the pin as STALE at
-  `5d1fc5fd`, missing the merged `web-testing` row, `lsp-plugins`,
-  `stack-tools`, the 4-agent/34-command crew catalog line and
-  `add_or_refresh_mcp_server`; #226 was the named fix and it landed. The
-  pin's whole history (this note's pre-1.0 revisions) is that it goes stale
-  again on the very next merge touching either script, so re-run
-  `git log --oneline <pinned-sha>..HEAD -- scripts/install-prerequisites.sh
-  scripts/install-prerequisites.ps1` against whatever HEAD is current rather
-  than trusting this bullet.
+  and `:18` read `c369bf985e818f6c2841a90cd30747cc48db98c8` (the merge of
+  #671, "L-0887-community-design-skills"), and `git log --oneline
+  c369bf985..bdde58724 -- scripts/install-prerequisites.sh
+  scripts/install-prerequisites.ps1` is empty. DERIVED. The pin's whole
+  history (this note's earlier revisions, kept in the provenance sections
+  below) is that it goes stale again on the very next merge touching either
+  script, so re-run `git log --oneline <pinned-sha>..HEAD --
+  scripts/install-prerequisites.sh scripts/install-prerequisites.ps1` against
+  whatever HEAD is current rather than trusting this bullet.
 
-- **The five-way crew count disagreement this note tracked for several
-  anchors is fully resolved and re-confirmed independently correct, not
-  merely re-synced.** All of the following read **4 agents, 36 commands** (34
-  until `ecf69e43` added `/crew:autopilot`, 35 until T-0075 added
-  `/crew:config-setup`; re-read at `e95e5964`) (or
-  the plugin-level 33 skills (33 since L-0537 added `stack-node`, 32 since L-0533 added `stack-php`; 31 from T-0085's landing merge with #267's `crew-qa-standards`; 29 until T-0085 added `crew-standards`; at
-  `22399a9c` `plugin/README.md:414` and `INSTALLATION.md:252` still say 29, outside
-  T-0085's Touch, and `scripts/check-marketplace.py` fails on both; both read 30
-  from `b82035e6`, the Touch amendment, and the check passes) / 34 hook
-  entries across 8 events figures that go with them), checked directly rather than cross-quoted from one another:
-  `.claude-plugin/marketplace.json`'s `crew` description (parsed with
-  `json.load`); `plugin/PLUGINS.md:17`; `plugin/README.md:414`'s crew row;
-  `plugin/crew/README.md`; `PLUGIN_NAME`'s crew row in both install scripts
-  (`scripts/install-prerequisites.sh:1393`,
-  `scripts/install-prerequisites.ps1:1175`). Independently re-derived from the
-  filesystem rather than trusted: `ls plugin/crew/agents/*.md` = 4 (explorer,
-  researcher, reviewer, security — no PM, no scribe: the roster cut this
-  repo's own memory already names), `ls plugin/crew/commands/*.md` = 36,
-  `ls -d plugin/crew/skills/*/` = 30, and `hooks.json` parsed with `json.load`
-  = 34 entries across 8 events (`{PostToolUse, PreToolUse, UserPromptSubmit,
-  PreCompact, Notification, Stop, SessionStart, SubagentStart}`), 26 unique
-  `command` strings (13 scripts × two shells). `python3
-  scripts/check-marketplace.py` passes with these numbers live, which is
-  necessary but not sufficient — the checker only verifies the *marked*
-  sites; this note additionally verified the filesystem count itself.
+- **The crew count sites do not all agree at this anchor.** Re-derived from
+  the filesystem: `ls plugin/crew/agents/*.md` = 5 (explorer, researcher,
+  reviewer, security, session-relay), `ls plugin/crew/commands/*.md` = 38
+  (includes the removed-command stubs `ticket`, `upgrade`, `work`),
+  `ls -d plugin/crew/skills/*/` = 33, and `hooks.json` parsed with
+  `json.load` = 16 entries across 8 events (one `crew-hook.sh`/`.ps1`
+  dispatcher registered once per shell per event, so 16 unique `command`
+  strings). Sites: `PLUGIN_NAME`'s crew row (`scripts/install-prerequisites.sh:1425`)
+  and `PluginCatalog`'s (`scripts/install-prerequisites.ps1:1179`) both read
+  "5 agents, 38 commands"; `plugin/PLUGINS.md:157` reads "4 agents plus the
+  `session-relay` transport agent, 38 commands, 33 skills, 16 hook entries";
+  `README.md:405` and `plugin/README.md:417` read "4 agents, 38 commands, 33
+  skills, 16 hook entries"; `.claude-plugin/marketplace.json`'s crew
+  description (`json.load`) says 4 context-isolated agents plus the session-relay
+  agent, 38 slash commands, 33 skills. **`INSTALLATION.md:259` still reads "4
+  subagents, 34 slash commands"** against 38 everywhere else — a stale figure
+  the checker misses because only the `33 bundled skills` and `16 hook
+  entries` numbers on that line carry claim markers. `python3
+  scripts/check-marketplace.py` passes (`marketplace: 36 skills, 13 plugins`,
+  `all checks passed`), which is necessary but not sufficient: it verifies
+  only the marked sites. The "4" versus "5" agent figure is a counting
+  convention (session-relay is a transport agent), not an error.
 
-- **`mcp_launcher_resolves` is unchanged; `add_or_refresh_mcp_server` is a new
-  and stricter sibling, not a replacement.** `add_mcp_server`
-  (`scripts/install-prerequisites.sh:942`) still treats "a server with this
-  name is registered" as fully idempotent — it never re-checks *what* is
-  registered. `add_or_refresh_mcp_server` (`:1033`) is used only by the
-  web-testing row's two MCP registrations: it reads the current
+- **`mcp_launcher_resolves` is unchanged; `add_or_refresh_mcp_server` is a
+  stricter sibling, not a replacement.** `add_mcp_server`
+  (`scripts/install-prerequisites.sh:961`) still treats "a server with this
+  name is registered" as fully idempotent (`:975-978`) — it never re-checks
+  *what* is registered. `add_or_refresh_mcp_server` (`:1052`) is used only by
+  the web-testing row's two MCP registrations: it reads the current
   command/args back with `claude mcp get` via `mcp_registration_command`
-  (`:1012`), and if they don't match the row's required form it either warns
-  and leaves it (non-interactive / `--select` / `--all` runs, `:1052-1054`)
+  (`:1031`), and if they don't match the row's required form it either warns
+  and leaves it (non-interactive / `--select` / `--all` runs, `:1071-1074`)
   or, interactively, shows the diff and asks to remove-and-re-register
-  (`:1056-1065`). A `could not read it back` result (exit 2 from
+  (`:1075-1088`). A `could not read it back` result (exit 2 from
   `mcp_registration_command`) is treated as its own outcome — `skip`, with a
-  message saying so — never silently as a match. DERIVED, read end to end.
-  JUDGEMENT: this closes a real gap the plain `add_mcp_server` still has
-  everywhere else it is used (any row whose required flags change later would
-  report "already registered" over a now-wrong registration) — but the fix
-  was made narrowly, for the one row that needed it, not generally.
+  message saying so (`:1062-1065`) — never silently as a match. DERIVED, read
+  end to end. JUDGEMENT: this closes a real gap the plain `add_mcp_server`
+  still has everywhere else it is used (any row whose required flags change
+  later would report "already registered" over a now-wrong registration) —
+  but the fix was made narrowly, for the one row that needed it.
 
 - **Nothing may bypass `pick_fit` / `Format-PickerLine`.**
-  `scripts/install-prerequisites.sh:1786-1795` and
-  `scripts/install-prerequisites.ps1:1411-1418`, re-read line by line, same
-  shape as the previous anchor: bash appends a one-character ellipsis and
-  reserves 1; PowerShell appends `...` (three characters) and reserves 3,
-  padding the result to `Width` — the comment at `:1412-1413` still records
-  that reserving 1 there used to return `Width + 2`. The scroll indicator
-  (`showing N-M of T`) still does not route through either clipper
-  (`scripts/install-prerequisites.sh:1834`,
-  `scripts/install-prerequisites.ps1:1489`) and is still bounded to a string
-  short enough not to wrap at the still-40-column floor
-  (`term_cols`, `scripts/install-prerequisites.sh:1708-1715`, the floor at
-  `:1711`; `[Console]::WindowWidth -lt 40` inside `Test-PickerSupported` at
-  `scripts/install-prerequisites.ps1:1378`). JUDGEMENT, unchanged: route it
-  through the clipper anyway if that string ever grows.
+  `scripts/install-prerequisites.sh:1917-1926` and
+  `scripts/install-prerequisites.ps1:1490-1496`, re-read line by line: bash
+  appends a one-character ellipsis (`…`) and clips to `width-1`; PowerShell
+  appends `...` (three characters), reserves 3, and pads the result to
+  `Width` — the comment at `:1491-1493` still records that reserving 1 there
+  used to return `Width + 2`. The scroll indicator (`showing N-M of T`) still
+  does not route through either clipper (`scripts/install-prerequisites.sh:1965`,
+  `scripts/install-prerequisites.ps1:1568`) and is bounded to a string short
+  enough not to wrap at the 40-column floor (`term_cols`,
+  `scripts/install-prerequisites.sh:1839-1846`, the floor at `:1844`;
+  `[Console]::WindowWidth -lt 40` inside `Test-PickerSupported` at
+  `scripts/install-prerequisites.ps1:1457`). JUDGEMENT: route it through the
+  clipper anyway if that string ever grows.
 
 - **`Test-PickerSupported` still refuses strictly more cases than bash's
-  `picker_supported`,** re-read at this anchor
-  (`scripts/install-prerequisites.ps1:1372-1385` vs
-  `scripts/install-prerequisites.sh:1717-1726`): redirected input/output, no
-  `RawUI`, the PowerShell ISE (`ReadKey` throws there), and
-  `WindowHeight < 10 || WindowWidth < 40` all refuse on the PowerShell side;
-  bash refuses no-tty, no `stty`, `TERM=dumb`, and fewer than 10 lines, but
-  only *floors* (does not refuse on) narrow terminals via `term_cols`. Same
-  asymmetry as the previous anchor, re-confirmed rather than assumed
-  unchanged.
+  `picker_supported`** (`scripts/install-prerequisites.ps1:1451-1464` vs
+  `scripts/install-prerequisites.sh:1848-1857`): redirected input/output, no
+  `RawUI`, the PowerShell ISE (`ReadKey` throws there), and `WindowHeight < 10
+  || WindowWidth < 40` all refuse on the PowerShell side; bash refuses no-tty,
+  no `stty`, `TERM=dumb` or unset, and fewer than 10 lines, but only *floors*
+  (does not refuse on) narrow terminals via `term_cols`. Re-read, DERIVED.
 
-- **The skill preflights are still REPORT-ONLY, unchanged in every particular
-  this note checks.** `run_skill_preflights`
-  (`scripts/install-prerequisites.sh:2469`; PowerShell
-  `Invoke-SkillPreflights` at `scripts/install-prerequisites.ps1:2104`) still
-  runs each selected skill's own `preflight.py` with no `--install`, `</dev/null`
+- **The skill preflights are still REPORT-ONLY.** `run_skill_preflights`
+  (`scripts/install-prerequisites.sh:2608`; PowerShell
+  `Invoke-SkillPreflights` at `scripts/install-prerequisites.ps1:2183`) runs
+  each selected skill's own `preflight.py` with no `--install`, `</dev/null`
   on the bash side (load-bearing — an inherited console would turn a report
-  into a prompt), and a missing interpreter is still reported as UNCHECKED,
-  not absent, verbatim (`scripts/install-prerequisites.sh:2483`,
-  `scripts/install-prerequisites.ps1:2115`).
+  into a prompt; comment at `:2627-2629`), and a missing interpreter is
+  reported as UNCHECKED, not absent, verbatim
+  (`scripts/install-prerequisites.sh:2622`,
+  `scripts/install-prerequisites.ps1:2194`).
 
-- **`ensure_uv`'s chain and memoisation are unchanged.** `UV_ENSURED`
-  memoises across the three callers that need `uv`/`uvx`
-  (`scripts/install-prerequisites.sh:359-368`); bash's middle rung (Astral's
-  own installer) is still deliberately unreachable because
-  `UV_INSTALLER_VERSION`/`UV_INSTALLER_SHA256` are still empty strings, so the
-  chain is pipx -> pip today, same as the previous anchor, re-read not
-  assumed; PowerShell's middle rung is `winget`, still a genuine platform
-  difference and not a parity defect. `uv_home_is_safe` still refuses running
-  as root with an unprivileged `HOME`.
+- **`ensure_uv`'s chain and memoisation are unchanged in shape.** `UV_ENSURED`
+  (`scripts/install-prerequisites.sh:378`, `ensure_uv` at `:380-388`)
+  memoises across every caller that needs `uv`/`uvx`; there are now **five**
+  (was three): `install_aws_mcp` (`:2809`), `install_aws_pricing_mcp`
+  (`:2861`), `install_graphify` (`:3282`), `install_ruff` (`:3868`) and
+  `install_sqlfluff` (`:3891`). Bash's middle rung (Astral's own installer) is
+  still deliberately unreachable because `UV_INSTALLER_VERSION` /
+  `UV_INSTALLER_SHA256` are empty strings (`:307-308`; the skip branch at
+  `:436-438`), so the chain is pipx -> pip today; PowerShell's middle rung is
+  `winget` (`scripts/install-prerequisites.ps1:283-297`), a genuine platform
+  difference, not a parity defect. `uv_home_is_safe` (`:229`) still refuses
+  running as root with an unprivileged `HOME`.
 
 - **`json_query` is still the one silent-collapse path.** Resolves `jq` then
   `python3`, `return 1` with no warning and no `python`/`py` fallback if
   neither is present, both invocations still carry `2>/dev/null`
-  (`scripts/install-prerequisites.sh:493-506`, re-read, unchanged in
-  substance). Every other unknown-interpreter path added at or since the
-  previous anchor (`run_skill_preflights`, `pep668_enforced`,
-  `mcp_launcher_resolves`, `setup_notify`) reports "could not tell" as its own
-  value; this one still does not. JUDGEMENT, unchanged.
+  (`scripts/install-prerequisites.sh:512-523`). Other unknown-interpreter
+  paths (`run_skill_preflights`, `pep668_enforced`, `mcp_launcher_resolves`,
+  `setup_notify`) report "could not tell" as their own value; this one does
+  not. JUDGEMENT, unchanged.
 
-- **The `repo-plugins` menu row still defaults to OFF; its five plugins are
-  still pre-ticked.** Re-derived by finding `repo-plugins` in the freshly
-  re-parsed `MENU_KEYS` list rather than assuming its old index still holds —
-  it does not: index **17** in the new 26-key list (was 18 of 25).
-  `MENU_DEFAULT[17]` is `0`
-  (`scripts/install-prerequisites.sh:1217`); `Default = $false` on the
-  matching PowerShell row (`scripts/install-prerequisites.ps1:1092` area —
-  confirmed by reading the `$script:Catalog` block, `:1067-1094`). Every
-  `PLUGIN_STATE` entry is still filled to `1` by a loop
-  (`scripts/install-prerequisites.sh:1406-1408`); every PowerShell
-  `PluginCatalog` row's `Selected` is still `$true`
-  (`scripts/install-prerequisites.ps1:1175-1179`).
+- **The `repo-plugins` menu row still defaults to OFF; its thirteen plugins
+  are pre-ticked.** `repo-plugins` is index **17** in the 26-key list (parsed,
+  not assumed); `MENU_DEFAULT[17]` is `0` (`scripts/install-prerequisites.sh:1236`);
+  `Default = $false` on the matching PowerShell row (`$script:Catalog`,
+  `scripts/install-prerequisites.ps1:1067-1094`). Every `PLUGIN_STATE` entry
+  is filled to `1` by a loop (`scripts/install-prerequisites.sh:1451-1452`);
+  every PowerShell `PluginCatalog` row's `Selected` is `$true`
+  (`scripts/install-prerequisites.ps1:1175-1188`, 13 rows, no `$false`). This
+  is the repo's hook-plugins-default-off rule: the row is opted into, and
+  its contents are then all-on.
 
-- **`claude-memories-vault` / `claude-memories-canvas` are gone from both
-  catalogs, replacing a landmine this note no longer needs to track.** Their
-  `SKILL_KEYS`/`SKILL_NAME` rows and PowerShell equivalents are absent,
-  confirmed by `git diff` (they are pure deletions in this range, not moved
-  elsewhere) and by grepping the current file for either string (zero hits in
-  `scripts/install-prerequisites.sh`/`.ps1`). `README.md:749` (outside this
-  note's scope) explains the replacement: `obsidian-vault`'s portable
-  `obsidian-memory-contract` profiles.
+- **Two community rows are opt-in, pinned to reviewed tags (L-0887).**
+  `COMMUNITY_KEYS` (`scripts/install-prerequisites.sh:1505`) is 10 keys; the
+  last two, `taste-skill` and `ui-ux-pro-max`, are in `COMMUNITY_OPT_IN`
+  (`:1537`) so `COMMUNITY_STATE` starts them at `0` and
+  `pick_group_interactive` (`:2010`) gives them `PICK_DEFAULT` 0, so `[D]`
+  leaves them unticked. Their specs carry `#v2.1.4` / `#v2.15.0` refs
+  (`:1530-1531`; the comment at `:1495-1504` says a full SHA is not
+  accepted as a ref). PowerShell mirror: `$script:CommunityOptIn`
+  (`scripts/install-prerequisites.ps1:1215`), the two rows at `:1239-1240`
+  with `Selected = $false`, and `Select-GroupInteractive` computing
+  `$defaults` from it. DERIVED by diffing `9ba355d7c..bdde58724`; the
+  `--community taste-skill,ui-ux-pro-max` flag path was not run.
+
+- **`claude-memories-vault` / `claude-memories-canvas` stay gone from both
+  catalogs.** Zero hits for either string in
+  `scripts/install-prerequisites.sh` / `.ps1` (`grep -c`). `README.md:299`
+  (outside this note's scope) explains the replacement: `obsidian-vault`'s
+  portable `obsidian-memory-contract` profiles.
 
 ## Unverified
 
-- **The task that produced this pass stated "4 cited paths gone" for this
-  note; this pass could not reproduce that finding and does not repeat it as
-  fact.** Every path this note cites, checked individually with `git cat-file
-  -e 6c497a14:<path>`, exists. If "gone" refers to something narrower than
-  file existence — a specific cited construct that moved so far its old line
-  number now names something unrelated, for instance — that check was not
-  performed exhaustively over every historical citation in the pre-1.0
-  version of this file, only over the citations this rewrite makes. Re-run
-  against the pre-1.0 file's full citation list if that gap matters.
 - Neither install script was executed, in whole or in part. Every claim above
   is a reading of source, not a run: the `ensure_uv` chain, the web-testing
   row's Node-version parse and sudo probe, `add_or_refresh_mcp_server`'s
-  interactive remove-and-re-register prompt, and the picker's pre-flight
-  refusals were all read and never exercised.
-- `scripts/_test/drift-detection.sh` was confirmed byte-unchanged by the
-  per-path check and was not re-read or re-run at this pass (it drives the
-  real `claude` CLI, which CI cannot run).
-- The 14 files under `scripts/_test/` were listed
-  (`argument-hint-frontmatter.py`, `check-powershell.sh`,
-  `crew-ignore-policy.py`, `drift-detection.sh`, `instruction-budgets.py`,
-  `license-consistency.py`, `lsp-stack-tools.sh`, `mcp-preflight-catalog.sh`,
-  `menu-groups.sh`, `ps-install-keys.sh`, `self-claims.py`, `uv-install.sh`,
-  `version-drift.py`, `web-testing.sh` — three new since `5d1fc5fd`:
-  `instruction-budgets.py`, `lsp-stack-tools.sh`, `web-testing.sh`) but only
-  `self-claims.py` was opened; the other 13 are a directory listing, not a
-  read.
-- `scripts/check-marketplace.py`'s `check_menu_parity` (`:329`) and
-  `check_group_parity` (`:383`) were confirmed to still exist at the same
-  line numbers as the previous anchor (the file's growth landed after them),
-  but their bodies were not re-read line by line at this pass — the previous
-  anchor's reading of them is assumed still accurate because the diff
-  (`git diff 5d1fc5fd..6c497a14 -- scripts/check-marketplace.py`) touches only
-  a region well after both functions (`count_crew_markdown_lines` onward).
-  `marketplace-registration.md` owns this file's full function map.
-- The `lsp-plugins` and `stack-tools` rows' actual installers (whatever
-  `install_lsp_plugins`/`install_stack_tools`-equivalent code exists inside
-  the `if is_selected` blocks at `:3355`/`:3506`) were located but not read
+  interactive remove-and-re-register prompt, the opt-in community defaults,
+  and the picker's pre-flight refusals were read and never exercised.
+- `scripts/_test/drift-detection.sh` was confirmed byte-unchanged and its two
+  cited lines re-read, but it was not run (it drives the real `claude` CLI,
+  which CI cannot run).
+- `scripts/_test/` now holds 29 entries (`ls scripts/_test | wc -l`), up from
+  the 14 this note once listed; only `self-claims.py` (its `main` and two
+  markdown-lines symbols) was opened. The rest are a directory listing, not a
+  read. The install-script-specific ones by name: `ps-install-keys.sh`,
+  `menu-groups.sh`, `mcp-preflight-catalog.sh`, `uv-install.sh`,
+  `web-testing.sh`, `lsp-stack-tools.sh`.
+- `scripts/check-marketplace.py`'s `check_menu_parity` (`:338`) and
+  `check_group_parity` (`:392`) were located and their docstrings and group
+  tables read (`check_group_parity` covers `own-skills`, `team`, ..., and
+  `community` -> `COMMUNITY_KEYS`/`CommunityCatalog` at `:400`), but their
+  bodies were not read line by line. `marketplace-registration.md` owns this
+  file's full function map.
+- The `lsp-plugins` and `stack-tools` rows' actual installers (the code inside
+  the `if is_selected` blocks at `:3811`/`:3975`) were located but not read
   for behaviour — only their dispatch sites were confirmed to exist and to
   match between the two scripts.
 - `https://knowledge-mcp.global.api.aws/mcp` and
-  `https://learn.microsoft.com/api/mcp` were not re-probed live at this pass;
-  the previous anchor's "answered a real MCP `initialize`" finding is not
-  repeated as current.
-- `skill_preflight_path` / `Get-SkillPreflightPath`'s recursive search for an
-  installed skill's `preflight.py` was not re-read at this pass; no installed
-  skill directory was inspected.
+  `https://learn.microsoft.com/api/mcp` were not re-probed live; no earlier
+  "answered a real MCP `initialize`" finding is repeated as current.
+- `skill_preflight_path` (`scripts/install-prerequisites.sh:2592`) /
+  `Get-SkillPreflightPath` (`scripts/install-prerequisites.ps1:2166`)'s search
+  for an installed skill's `preflight.py` was not read; no installed skill
+  directory was inspected.
+- Not re-derived: the `ensure_plugin_enabled` body (`:882`), the PowerShell
+  bodies behind `Add-OrRefreshMcpServer` and the web-testing `Test-Selected`
+  block beyond locating them, and the `INSTALLATION.md` / `TODO.md` text this
+  subsystem's neighbours quote.
 
 ## Re-anchor provenance - `6c497a14` -> `f2bb919b`, 2026-09-25 (T-0015)
 
@@ -1645,3 +1612,34 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 
 **Re-anchored `c1d365d72` -> `9ba355d7c` on 2026-10-20 (L-0850 / PR #656 close: the docs and artifact refresh commit, owner waiver 2026-10-20).** `git diff 9ba355d7c~1 9ba355d7c` changes only docs, diagrams, codemap, rules and graph output; the one code-adjacent text is `plugin/crew/README.md` (+2 lines after line 366, inside section 25) and `SECURITY.md` (+4 lines after line 46). Every live `path:line` citation into those two files was checked: this note has none at or after those lines outside its re-anchor history paragraphs (whose lines describe past moments and are not re-mapped), and `plugin/crew/BUDGETS.md` only changed a count in place (line 11, line-neutral). No citation changed. NOT re-read word for word: prose claims whose cited lines did not move.
+
+## Re-anchor provenance - `9ba355d7c` -> `bdde58724`, 2026-10-26 (L-0928)
+
+Per-path check: `git diff --name-status 9ba355d7c bdde58724 -- scripts` shows
+both install scripts changed (L-0887 community opt-in only), `check-marketplace.py`
+docstring-only, `drift-detection.sh` unchanged.
+
+Citations: `cite_check.py` at the old anchor gave SAME 26 / SHIFT 19 / CHANGED 2
+/ GONE 1 (`--apply` moved the 19). It matches line TEXT only, and most live
+citations were already stale at `9ba355d7c` (`MENU_KEYS` cited `:1208`, sits at
+`:1227`; `:1192` matched on an unrelated `elif`). So every `path:line` and bare
+`:NNN` in the live sections was re-located by grep and re-read, and those
+sections were rewritten. Now SAME 58, SHIFT 0, CHANGED 0, GONE 0. `README.md:749`
+(GONE) -> `README.md:299`; `README.md:12` (CHANGED) is the pin, re-read.
+
+Changed (old -> new): README pin `04dde5a2` -> `c369bf985` (`README.md:12`, `:18`),
+still current; crew counts 4 agents / 36 commands / 30 skills / 34 hooks -> 5
+agents on disk, 38, 33, 16 hook entries, and "all five sites agree" withdrawn
+(`INSTALLATION.md:259` says 34 commands); `uv` callers 3 -> 5; `repo-plugins`
+"five plugins" -> 13; `SKILL_KEYS` 36 / `PLUGIN_KEYS` 13 / `TEAM_KEYS` 4 /
+`COMMUNITY_KEYS` 10 added; `scripts/_test/` 14 -> 29; `check_menu_parity`
+`:329` -> `:338`, `check_group_parity` `:383` -> `:392`; the `:757` reinstall
+site is `force_refresh_plugin` (`:776`), not `ensure_plugin_enabled`. `MENU_KEYS`
+still 26. New Landmine: community opt-in rows.
+
+Dropped: the "task said 4 cited paths gone" Unverified bullet (history).
+
+Not verified: no script executed; `check_menu_parity` / `check_group_parity`
+bodies, `lsp-plugins` / `stack-tools` internals and `ensure_plugin_enabled` not
+read. `python3 scripts/check-marketplace.py`: `marketplace: 36 skills, 13
+plugins`, `all checks passed`.
