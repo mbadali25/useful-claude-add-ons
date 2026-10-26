@@ -79,7 +79,7 @@ gate_trust_check() {
     *) _tpath="/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin" ;;
   esac
   _tenv=/usr/bin/env
-  [ -x "$_tenv" ] || _tenv=env
+  [ -x "$_tenv" ] || _tenv="env"
   # Every PYTHON* variable (PYTHONPATH, PYTHONSTARTUP, PYTHONHOME, ...) is ignored
   # by -E itself, so none is listed here: -E is the single guard for them.
   _tmsg=$("$_tenv" \
