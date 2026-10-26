@@ -52,10 +52,10 @@ def _refs(tmp_path):
     refs.mkdir()
     (refs / "generic.md").write_text(_set_file("GEN", ["**"], _plugin_standard("GEN-01", "One")
                                                + "\n" + _plugin_standard("GEN-02", "Two")),
-                                     encoding="utf-8")
+                                     encoding="utf-8", newline="\n")
     (refs / "php.md").write_text(_set_file("PHP", ["**/*.php"],
                                            _plugin_standard("PHP-01", "Prepared")),
-                                 encoding="utf-8")
+                                 encoding="utf-8", newline="\n")
     return refs
 
 
@@ -64,9 +64,9 @@ def _make_root(tmp_path, export=None, hand_agents=None):
     root.mkdir(exist_ok=True)
     (root / ".crew").mkdir(exist_ok=True)
     (root / ".crew" / "standards.md").write_text(
-        _set_file("REPO", ["**"], OVERLAY_BODY, export), encoding="utf-8")
+        _set_file("REPO", ["**"], OVERLAY_BODY, export), encoding="utf-8", newline="\n")
     if hand_agents is not None:
-        (root / "AGENTS.md").write_text(hand_agents, encoding="utf-8")
+        (root / "AGENTS.md").write_text(hand_agents, encoding="utf-8", newline="\n")
     return root
 
 
@@ -457,7 +457,7 @@ def test_an_over_budget_agents_block_is_refused(refs, root, monkeypatch):
 
 
 def test_a_hand_written_file_at_a_target_path_is_never_overwritten(refs, root):
-    (root / "REVIEW.md").write_text("# Mine\n", encoding="utf-8")
+    (root / "REVIEW.md").write_text("# Mine\n", encoding="utf-8", newline="\n")
 
     code, lines = _write(root, refs)
 
@@ -475,7 +475,7 @@ def test_orphan_removal_never_follows_a_symlinked_directory(tmp_path, refs):
     root = _make_root(tmp_path, None)
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "VICTIM.md").write_text(_forged_mark(), encoding="utf-8")
+    (outside / "VICTIM.md").write_text(_forged_mark(), encoding="utf-8", newline="\n")
     (root / "docs").mkdir()
     (root / "docs" / "review-rules").symlink_to(outside, target_is_directory=True)
 
@@ -491,7 +491,7 @@ def test_an_opted_in_export_refuses_to_write_through_a_symlinked_directory(tmp_p
     root = _make_root(tmp_path, ALL, "# Agents\n")
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "VICTIM.md").write_text(_forged_mark(), encoding="utf-8")
+    (outside / "VICTIM.md").write_text(_forged_mark(), encoding="utf-8", newline="\n")
     if link == "docs":
         (root / "docs").symlink_to(outside, target_is_directory=True)
     else:
@@ -511,7 +511,7 @@ def test_an_opted_in_export_refuses_to_write_through_a_symlinked_directory(tmp_p
 def test_a_symlinked_output_is_refused_and_left_alone(tmp_path, refs, rel):
     root = _make_root(tmp_path, ALL)
     target = tmp_path / "elsewhere.md"
-    target.write_text("# elsewhere\n", encoding="utf-8")
+    target.write_text("# elsewhere\n", encoding="utf-8", newline="\n")
     (root / rel).symlink_to(target)
 
     code, lines = _write(root, refs)
@@ -536,7 +536,7 @@ def test_a_fifo_at_an_output_path_does_not_hang_the_check(tmp_path, refs):
 @pytest.mark.parametrize("opted_in", [False, True])
 def test_a_symlinked_file_the_export_does_not_own_is_left_alone(tmp_path, refs, opted_in):
     root = _make_root(tmp_path, ["review"] if opted_in else None)
-    (root / "CLAUDE.md").write_text("# Claude\n", encoding="utf-8")
+    (root / "CLAUDE.md").write_text("# Claude\n", encoding="utf-8", newline="\n")
     (root / "AGENTS.md").symlink_to("CLAUDE.md")
 
     checked = _check(root, refs)
@@ -552,7 +552,7 @@ def test_a_symlinked_file_the_export_does_not_own_is_left_alone(tmp_path, refs, 
 def test_an_unmarked_symlink_in_the_rules_directory_does_not_block_the_export(tmp_path, refs):
     root = _make_root(tmp_path, ["review"])
     (root / "docs" / "review-rules").mkdir(parents=True)
-    (root / "notes.txt").write_text("n\n", encoding="utf-8")
+    (root / "notes.txt").write_text("n\n", encoding="utf-8", newline="\n")
     (root / "docs" / "review-rules" / "NOTES.md").symlink_to("../../notes.txt")
     (root / "docs" / "review-rules" / "x.md").mkdir()
 
@@ -566,7 +566,7 @@ def test_an_unmarked_symlink_in_the_rules_directory_does_not_block_the_export(tm
 def test_a_file_where_an_output_directory_belongs_is_refused_before_anything_is_written(
         tmp_path, refs):
     root = _make_root(tmp_path, ALL, "# Agents\n")
-    (root / ".cursor").write_text("not a directory\n", encoding="utf-8")
+    (root / ".cursor").write_text("not a directory\n", encoding="utf-8", newline="\n")
 
     code, lines = _write(root, refs)
 
@@ -668,7 +668,7 @@ def test_check_fails_when_every_target_is_deleted(refs, root):
     for name in list(_outputs(root)):
         if name != "AGENTS.md":
             os.remove(root / name)
-    (root / "AGENTS.md").write_text("# Agents\n\nHand written.\n", encoding="utf-8")
+    (root / "AGENTS.md").write_text("# Agents\n\nHand written.\n", encoding="utf-8", newline="\n")
 
     code, lines = _check(root, refs)
 
@@ -736,7 +736,7 @@ def test_check_fails_when_the_export_key_is_deleted_but_marked_files_remain(refs
 
 def test_write_removes_orphans_but_never_an_unmarked_file(refs, root):
     _write(root, refs)
-    (root / "docs" / "review-rules" / "NOTES.md").write_text("# mine\n", encoding="utf-8")
+    (root / "docs" / "review-rules" / "NOTES.md").write_text("# mine\n", encoding="utf-8", newline="\n")
     os.remove(refs / "php.md")
     _edit(root / ".crew" / "standards.md", '["review", "agents", "bugbot"]', '["review", "agents"]')
 
