@@ -397,17 +397,19 @@ def test_verdict_names_its_units(tmp_path):
 
 
 # wallclock: an elapsed-time bound, so it runs serially, never under -n. The plain gate took
-# 9.6-18.7s under -n auto on Windows CI (run 39036765612); the 6s bound is only meaningful unloaded.
+# 9.6-18.7s under -n auto on Windows CI (run 39036765612); the bound is only meaningful unloaded.
+# L-0913: the rule's sleep is 20s and the bound 12s. A real regression holds the pipe for the whole
+# 20s; unloaded passing runs take 3.7-5.4s and windows-latest once took 6.02s against the old 6s bound.
 @pytest.mark.wallclock
 def test_rule_that_backgrounds_a_process_does_not_hold_the_hook_open(tmp_path):
-    root = _repo(tmp_path, _map_with(_fail_rule("(sleep 8 &); true"), base=False))
+    root = _repo(tmp_path, _map_with(_fail_rule("(sleep 20 &); true"), base=False))
     started = time.monotonic()
 
     result = _run(root)
 
     elapsed = time.monotonic() - started
     assert result.returncode == 0
-    assert elapsed < 6, f"the rule's background sleep held the hook's stderr pipe open for {elapsed:.1f}s"
+    assert elapsed < 12, f"the rule's background sleep held the hook's stderr pipe open for {elapsed:.1f}s"
 
 
 def _commit_all(root):
