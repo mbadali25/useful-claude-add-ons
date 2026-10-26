@@ -30,6 +30,11 @@ not tell", which refuses). An id is `LETTERS-digits` with any prefix (`T-`, `L-`
 
 - `plan.md` is a list of steps. Each step has a `Files:` line, a `Test:` line and a `Risk:` line.
   Every `Files:` entry must fall inside Touch. A plan cannot add a path the spec does not list.
+  A step also carries a `Lines:` line (projected production lines, `0` if none) and each production
+  `Files:` entry a kind tag (`[parser]`, `[guard]`, `[state-machine]` or `[other]`). The planner is told
+  to keep a plan to 300 production lines and not to mix a parser, guard or state machine with other
+  production work; `/crew:approve` does not check this yet, and an oversized plan is meant to go to
+  `/crew:split`.
 - `next.md` is optional, and nothing in crew writes it: you do, by hand. One `key: value` per line
   says who the ticket waits on and what happens next: `waiting-on:` (`owner`, `agent`, `external`
   or a ticket id), `next:`, `reason:`, `revisit:` (a `YYYY-MM-DD` date) and `superseded-by:` (a

@@ -52,7 +52,7 @@ changing it needs `/crew:approve` again. `needs-replan` is derived the same way,
 from the review ledger.
 
 **3. Plan.** You type `/crew:plan T-0091`. The session reads `spec.md`, writes
-one step per unit of work in `plan.md` (Files/Test/Risk/Standards each), checks every
+one step per unit of work in `plan.md` (Files/Lines/Test/Risk/Standards each; `Lines:` is the step's projected production lines, 300 in total, and not yet checked at approval), checks every
 Files: entry against the spec's Touch globs, and enters **plan mode** to show
 you the whole thing. You review it. On your yes, it asks you to type
 `/crew:approve T-0091`. crew's prompt hook sees that you typed it and writes

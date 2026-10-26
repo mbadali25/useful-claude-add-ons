@@ -127,8 +127,10 @@ A ticket is a directory under `.work/tickets/` holding three files:
 - `spec.md`, written by `/crew:spec`: the contract, with six sections (Intent,
   Exclusions, Evidence, Unknowns, Touch, Acceptance checks). `## Touch` lists
   the paths the ticket may change.
-- `plan.md`, written by `/crew:plan`: the steps, each with its files, test,
-  risk and standards.
+- `plan.md`, written by `/crew:plan`: the steps, each with its files, a
+  projected line count (`Lines:`), test, risk and standards. A plan is meant to
+  stay at 300 production lines; this is stated to the planner and not yet checked
+  at approval.
 
 Then:
 

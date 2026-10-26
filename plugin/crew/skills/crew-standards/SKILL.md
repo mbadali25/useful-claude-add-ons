@@ -52,6 +52,19 @@ Each step carries a line after `Risk:`:
 
     Standards: GEN-01, GEN-07     (or: none - <why>)
 
+A full step also carries `Lines:` (projected production lines, or 0) and a kind
+tag on each production Files entry, which a standard's **Applies when.** can
+read the risk from:
+
+```
+### Step 3: Refuse a malformed id
+Files: `src/ids.py` [parser], `tests/test_ids.py`
+Lines: 20
+Test: `pytest tests/test_ids.py -q`
+Risk: med
+Standards: GEN-01, GEN-07
+```
+
 naming the standards the step's Files and Risk trigger (read each standard's
 **Applies when.**). The plan's self-review asks whether every step names them.
 Naming them at plan time is what puts the self-check's questions in front of
