@@ -168,7 +168,7 @@ spec yet:</p>
 ticket: ABC-510 (from .work/INDEX.md)
 phase: spec - next: /crew:spec ABC-510
 waiting on: autopilot - run /crew:autopilot to continue
-review: EMPTY, 2 of 2 rounds left
+review: EMPTY, 3 of 3 rounds left
 resume: no .work/HANDOFF.md
 fell through: no .work/HANDOFF.md
 fell through: no active-ticket entry for this worktree
@@ -326,11 +326,14 @@ and goes back to <code>next</code>. Fixing, accepting and replying on the PR are
 After the ledger says <code>review: auto-accept: eligible</code> on a final round with no BLOCK, autopilot runs
 <code>review_ledger.py --auto-accept</code>, the guarded accept that refuses anything it cannot read cleanly.
 And with <code>autopilot.maxAutoReplans</code> at 1 or more (default 0, off), a final round with a BLOCK that
-has no review round left can be rejected by autopilot itself (<code>crew_autopilot.py auto-reject</code>,
-which prints an <code>auto-rejected</code> line and every BLOCK and FIX line): <code>/crew:plan</code> then writes a
-successor plan that quotes each of them, and the approve phase decides it under
-<code>autopilot.approval</code>. The BLOCK is never accepted; once <code>maxAutoReplans</code> successor plans are on the
-ledger, autopilot stops at <code>auto-replan-cap</code>.</p>
+has no review round left is the case autopilot could reject itself (<code>crew_autopilot.py auto-reject</code>,
+which prints an <code>auto-rejected</code> line and every BLOCK and FIX line), then <code>/crew:plan</code> writes a
+successor plan that quotes each of them, and the approve phase decides it under <code>autopilot.approval</code>.
+Since L-0717 a successor plan does not reopen the ticket's <!-- review-budget-doc -->three-round budget, so autopilot
+refuses that reject while no round would remain and never grants one: the owner's
+<code>review_ledger.py --grant-round</code> is the only way to give the successor a round. The BLOCK is never
+accepted; once <code>maxAutoReplans</code> successor plans are on the ledger, autopilot stops at
+<code>auto-replan-cap</code>.</p>
 <p><strong>Ship.</strong> After <code>/crew:done</code>, <code>crew_autopilot.py ship</code> pushes the branch (never force), opens the PR,
 and under <code>autopilot.ship: merge</code> (the default; <code>pr</code> stops at the open PR) merges it with a merge
 commit only when every required check passes and the review receipt still stands. A <code>high</code>-risk

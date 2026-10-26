@@ -301,8 +301,11 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   recovered from stray lines - <code>ignored_lines</code> above 0, or missing or unreadable, which is
   could-not-tell, as on a round recorded before L-0576 wrote the count). Otherwise own the FINDINGS with <code>--accept --by &lt;who&gt;</code> (only the most recent completed round,
   only once, never once <code>NEEDS_REPLAN</code>; a name starting <code>auto:</code> is refused), or write a new plan and get it approved — <code>crew_ticket.py
-  approve</code> on a <code>NEEDS_REPLAN</code> ticket opens a fresh budget of two rounds counted from the successor
-  plan; the rounds already spent stay in the ledger and are not erased. With notify on, a spent
+  approve</code> on a <code>NEEDS_REPLAN</code> ticket continues review only while a round of the ticket's three
+  is left (<!-- review-budget-doc -->a successor plan does not reopen the budget; the rounds already spent stay in
+  the ledger and keep counting). With none left it says <code>0 review rounds available</code> and the owner's
+  <code>review_ledger.py --ticket &lt;id&gt; --grant-round --by &lt;you&gt; --reason &lt;why&gt;</code> adds one; after a grant,
+  approve a changed plan, or record the unchanged one with <code>review_ledger.py --successor-plan &lt;sha256&gt;</code>. With notify on, a spent
   budget whose last round carries a BLOCK sends the <code>Review out of rounds</code> ping when
   <code>/crew:autopilot</code> stops on it.</p>
 <ul>
@@ -320,14 +323,14 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   still INCOMPLETE <code>reviewer</code>. That list cannot catch every admission: one it misses ("I only
   inspected one of the nine files") is ignored as prose and the round stays FINDINGS, so read the
   ignored lines.
-  <strong>Fix:</strong> a <code>tool</code> round is refunded automatically, up to two per plan. The line reads
+  <strong>Fix:</strong> a <code>tool</code> round is refunded automatically, up to three per ticket. The line reads
   <code>review: round N was a tool failure (...); refunded</code>. <code>review_run.py</code> retries it once by itself
   (L-0514), except a usage limit or a timeout; <code>review: retry: not retried - &lt;why&gt;</code> says when it
   did not. Only the failed round is given back: the
   rerun <code>/crew:review</code> reserves a new round, charged like any other unless it is a tool failure
-  too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
-  Codex is out of quota, use the next eligible provider. A third tool failure under
-  one plan reads <code>NOT refunded - refund limit 2 per plan reached</code> and counts. A <code>reviewer</code> or <code>tree</code>
+  too, so a ticket with two charged rounds that reruns and gets FINDINGS has spent the budget. If
+  Codex is out of quota, use the next eligible provider. A fourth tool failure on
+  one ticket reads <code>NOT refunded - refund limit 3 per ticket reached</code> and counts. A <code>reviewer</code> or <code>tree</code>
   round always counts. Rebuild the bundle (tree), or rerun and read what the reviewer wrote
   (reviewer).</p>
 </li>
@@ -420,7 +423,7 @@ python3 &quot;&lt;crew&gt;/hooks/scripts/ci_receipt.py&quot; check --root .
   --provider codex --probe
 </code></pre>
 <ul>
-<li><strong>Symptom: you want to send a ticket back without spending the third round.</strong></li>
+<li><strong>Symptom: you want to send a ticket back without spending another round.</strong></li>
 </ul>
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --reject --by &lt;who&gt;
 </code></pre>
