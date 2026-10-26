@@ -6,7 +6,7 @@ def run_ps(script: str) -> None:
 
 
 def run_py(script: str) -> None:
-    subprocess.Popen(("python3", script))
+    subprocess.Popen(("python3", script))  # pylint: disable=consider-using-with
 
 
 def run_imported(script: str) -> None:

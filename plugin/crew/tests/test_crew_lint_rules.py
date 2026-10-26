@@ -136,7 +136,7 @@ def test_at_most_two_classes_are_not_shipped_and_never_a_protected_one():
     not_shipped = set(_not_shipped())
 
     assert len(not_shipped) <= 2
-    assert not (not_shipped & set(PROTECTED))
+    assert not not_shipped.intersection(PROTECTED)
 
 
 def test_every_rule_has_one_positive_and_one_negative_fixture():
@@ -163,7 +163,8 @@ def test_each_rule_matches_its_positive_fixture_and_not_its_negative_one(semgrep
         got = hits.get(rule_id, set())
 
         assert positives <= got, rule_id + " missed its positive fixture; hit only " + str(sorted(got))
-        assert not (negatives & got), rule_id + " fired on its negative fixture: " + str(sorted(negatives & got))
+        stray = sorted(negatives.intersection(got))
+        assert not stray, rule_id + " fired on its negative fixture: " + str(stray)
 
 
 def test_rules_in_one_fixture_directory_do_not_fire_on_another_rules_fixtures(semgrep_required, tmp_path):

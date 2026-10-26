@@ -1,9 +1,9 @@
 # Command
 
-1. `python3 -B "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/tool.py" --root .`
+1. `python3 -B "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py" --root .`
 
-Read `${CLAUDE_PLUGIN_ROOT}/skills/setup/phases.md` exactly.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/phases.md` exactly.
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/skills/setup/run.sh"
+bash "${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/detect.sh"
 ```
