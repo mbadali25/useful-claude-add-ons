@@ -1,4 +1,4 @@
-<!-- crew-standards-export digest=df6052ac0825389b086b6ca038d9f2c0e191ea1a5407dee8f55424f8dff3a8e6 crew=1.2.86 -->
+<!-- crew-standards-export digest=df6052ac0825389b086b6ca038d9f2c0e191ea1a5407dee8f55424f8dff3a8e6 crew=1.2.88 -->
 # Review rules
 
 Generated from crew's standards by `crew_standards.py export --write`; do not edit by hand. Check every change against the standards below. The always-on standards are written out in full. For each stack set, read the linked file when the change touches files matching its scope; the lists show ids and names only.
