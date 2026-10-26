@@ -365,7 +365,8 @@ def _assembled_trust_refusal(text):
 
 
 _TRUST_VERBS = frozenset({"approve", "allow-owner", "disallow-owner", "revoke"})
-_INTERPRETER_RE = re.compile(r"(?:^|[/\\])(?:python[0-9.]*|py|pypy[0-9.]*)(?:\.exe)?$", re.IGNORECASE)
+_INTERPRETER_RE = re.compile(r"(?:^|[/\\])(?:python[0-9.]*|py|pypy[0-9.]*|(?:ba|z|da|k|a)?sh)(?:\.exe)?$",
+                             re.IGNORECASE)
 _SCRIPT_TOKEN_RE = re.compile(r"\.pyw?$|[*?\[]", re.IGNORECASE)
 _GLOB_SCRIPT_RE = re.compile(r"[*?\[]")
 
@@ -375,7 +376,7 @@ _WRAPPERS = frozenset({"env", "sudo", "command", "exec", "nohup", "time", "nice"
 # Scripts with a guard and an `approve` verb of their own (judged above, by
 # `_autopilot_refusal` and the `crew_ticket` approve rule): not a trust verb.
 _OWN_APPROVER_RE = re.compile(r"crew_(?:autopilot|ticket)(?:\.py)?$")
-_PROGRAM_OPTIONS = frozenset({"-m", "-c"})
+_PROGRAM_OPTIONS = frozenset({"-m"})
 _VALUE_OPTIONS = frozenset({"-W", "-X", "-Q"})
 
 
@@ -403,17 +404,30 @@ def _first_word_index(tokens):
     return None
 
 
-def _interpreter_script_verb(rest):
-    """True when the word after an interpreter's script operand is a trust verb.
-    The operand is `-` (the script on stdin) or the first word that is not an
-    option; `-m` and `-c` take a module or program, not a script, and end the
-    scan (a module or program that names the trust script is judged by the other
-    checks). So `python3 -m pytest -k "approve and not revoke"` reads no verb."""
+def _segment_verb(tokens):
+    """True when one command segment hands a trust verb to a script. The command
+    word (past assignments and a wrapper) is either an interpreter or shell,
+    whose script operand is `-` (the script on stdin) or the first word that is
+    not an option, with `-c` reading its program as a fresh command and `-m`
+    ending the scan (a module named like the trust script is judged by the other
+    checks); or it is itself a path, an executable copy run directly
+    (`/tmp/x approve`). So `python3 -m pytest -k "approve and not revoke"` reads
+    no verb."""
+    first = _first_word_index(tokens)
+    if first is None:
+        return False
+    command, rest = tokens[first], tokens[first + 1:]
+    if _OWN_APPROVER_RE.search(_basename(command)):
+        return False
+    if not _INTERPRETER_RE.search(command):
+        return bool(re.search(r"[/\\]", command)) and bool(rest) and rest[0].lower() in _TRUST_VERBS
     index = 0
     while index < len(rest):
         token = rest[index]
         if token == "-":
             return index + 1 < len(rest) and rest[index + 1].lower() in _TRUST_VERBS
+        if token == "-c":
+            return _segment_verb(rest[index + 1:])
         if token in _PROGRAM_OPTIONS:
             return False
         if token in _VALUE_OPTIONS:
@@ -441,9 +455,7 @@ def _script_verb_refusal(text):
     for segment in re.split(r"[\n;&|]", text):
         tokens = [t.strip("()\"'`{}") for t in segment.split()]
         tokens = [t for t in tokens if t]
-        first = _first_word_index(tokens)
-        interpreter = first is not None and _INTERPRETER_RE.search(tokens[first]) is not None
-        if interpreter and _interpreter_script_verb(tokens[first + 1:]):
+        if _segment_verb(tokens):
             return ("it hands a verify trust verb to a script read from stdin, a copy or a "
                     "wildcard path; only a person at a terminal trusts a repo")
         for before, after in zip(tokens, tokens[1:]):

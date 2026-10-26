@@ -45,17 +45,25 @@ GATE_TRUST_RC=""
 GATE_TRUST_BROKEN=0
 
 gate_trust_check() {
-  local _tdir="$1" _tp _tpd _tpr _tsafe _tentry _tpath _tenv _tmsg _trc=0
+  local _tdir="$1" _tp _tpd _tpr _tmain _tsafe _tentry _tpath _tenv _tmsg _trc=0
   shift
   # The interpreter is found on a PATH stripped of every relative entry and every
   # directory inside this repo: the repo's settings `env` block can set PATH, and
   # even the probe that proves an interpreter runs it.
+  # A linked worktree's main checkout is repo-authored too: its root (the parent
+  # of the git common dir) is stripped as well as this directory.
   _tpr=$(pwd -P)
+  _tmain=$(PATH="/usr/local/bin:/usr/bin:/bin:/mingw64/bin:/opt/homebrew/bin" git rev-parse --git-common-dir 2>/dev/null) || _tmain=""
+  case "$_tmain" in
+    /*/.git) _tmain=$(CDPATH='' cd -- "${_tmain%/.git}" 2>/dev/null && pwd -P) || _tmain="" ;;
+    *) _tmain="" ;;
+  esac
   _tsafe="" _tentry=""
   while IFS= read -r -d ':' _tentry || [ -n "$_tentry" ]; do
     case "$_tentry" in /*|[A-Za-z]:*) ;; *) continue ;; esac
     _tpd=$(CDPATH='' cd -- "$_tentry" 2>/dev/null && pwd -P) || continue
     case "$_tpd/" in "$_tpr"/*) continue ;; esac
+    [ -n "$_tmain" ] && case "$_tpd/" in "$_tmain"/*) continue ;; esac
     _tsafe="${_tsafe:+$_tsafe:}$_tentry"
   done <<< "${PATH:-}:"
   _tp=$(PATH="$_tsafe" crew_py_strict 2>/dev/null) || _tp=""

@@ -25,6 +25,17 @@ _S_ = "tests/test_scope_guard_trust.py::"
 _CALL = '  gate_trust_check "$GATE_SCRIPT_DIR" || _trust_rc=$?\n'
 
 TRUST_MUTATIONS = (
+    ("trust gate: the main checkout of a linked worktree stays on the interpreter search PATH (L-0888)", GATE,
+     '    [ -n "$_tmain" ] && case "$_tpd/" in "$_tmain"/*) continue ;; esac\n', "",
+     _G + "test_gate_a_python_in_the_main_checkout_of_a_linked_worktree_is_never_run_for_the_trust_check"),
+    ("trust guard: an executable copy run by path, with a trust verb, is allowed (L-0888)", GUARD,
+     "        return bool(re.search(r\"[/\\\\]\", command)) and bool(rest) and rest[0].lower() in _TRUST_VERBS\n",
+     "        return False\n",
+     _S_ + "test_a_verb_handed_to_a_script_by_any_name_is_refused[extensionless-executable-copy-module]"),
+    ("trust guard: a shell's -c program is not read as a command (L-0888)", GUARD,
+     '        if token == "-c":\n            return _segment_verb(rest[index + 1:])\n',
+     '        if token == "-c":\n            return False\n',
+     _S_ + "test_a_verb_handed_to_a_script_by_any_name_is_refused[shell-c-program-module]"),
     ("trust guard: any word after an interpreter's script is read as the verb (L-0888)", GUARD,
      "        return index + 1 < len(rest) and rest[index + 1].lower() in _TRUST_VERBS\n    return False",
      "        return any(t.lower() in _TRUST_VERBS for t in rest[index + 1:])\n    return False",
@@ -112,7 +123,7 @@ TRUST_MUTATIONS = (
      _S_ + "test_a_verb_handed_to_a_script_by_any_name_is_refused[verb-before-script-stdin-pipe-module]"),
     ("scope guard: a verb after a script token or wildcard path is read as an argument (L-0888)", GUARD,
      "and _SCRIPT_TOKEN_RE.search(before) \\\n", "and False \\\n",
-     _S_ + "test_a_verb_handed_to_a_script_by_any_name_is_refused[executable-glob-module]"),
+     _S_ + "test_a_verb_handed_to_a_script_by_any_name_is_refused[unlisted-wrapper-script-token-module]"),
     ("scope guard: a wildcard script given a variable verb is allowed (L-0888)", GUARD,
      '                    and after.startswith(("$", "`")):\n', "                    and False:\n",
      _S_ + "test_a_verb_handed_to_a_script_by_any_name_is_refused[glob-script-variable-verb-module]"),

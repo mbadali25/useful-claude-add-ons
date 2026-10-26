@@ -279,6 +279,27 @@ def test_gate_a_python_on_a_repo_path_entry_is_never_run_for_the_trust_check(tmp
     assert not (root / _MARKER).exists()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_a_python_in_the_main_checkout_of_a_linked_worktree_is_never_run_for_the_trust_check(
+        tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    main = _repo(tmp_path, sentinel)
+    lane = tmp_path / "lane"
+    _git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    (main / ".venv" / "bin").mkdir(parents=True)
+    marker = tmp_path / "hostile-ran.txt"
+    fake = main / ".venv" / "bin" / "python3"
+    fake.write_text(f'#!/bin/sh\ncase "$*" in *verify_trust.py*) : >> "{marker}"; echo trusted; exit 0 ;; esac\n'
+                    'echo "$0"\nexit 0\n', encoding="utf-8")
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+
+    done = _run(lane, "--all", env={"PATH": str(main / ".venv" / "bin") + os.pathsep + os.environ["PATH"]})
+
+    assert not marker.exists(), "the main checkout's python was handed verify_trust.py"
+    assert not sentinel.exists()
+    assert "nothing was verified" in done.stdout + done.stderr
+
+
 @pytest.mark.skipif(os.name != "posix", reason="the git shim is a POSIX script")
 def test_gate_a_verify_json_rewritten_between_the_two_checks_runs_nothing(tmp_path, store):
     """The first check runs under a fixed PATH, so the git shim never sees it.
