@@ -51,13 +51,21 @@ x
 def _blocks(relative):
     with open(os.path.join(_PLUGIN, *relative.split("/")), encoding="utf-8") as handle:
         text = handle.read()
-    return [b for b in _FENCE_RE.findall(text) if re.search(r"^### Step ", b, re.MULTILINE)]
+    return [b for b in _FENCE_RE.findall(text) if _FILES_RE.search(b)]
+
+
+def _complete(block):
+    """A fragment (crew-standards shows only Files, Lines and Standards) gets
+    the Test and Risk labels it omits, so it can be validated as a step."""
+    extra = "".join(f"{label}: x\n" for label in ("Test", "Risk")
+                    if not re.search(rf"^{label}:", block, re.MULTILINE))
+    return block.rstrip("\n") + "\n" + extra
 
 
 @pytest.mark.parametrize("relative", _FILES)
 def test_every_plan_template_in_the_docs_validates(relative, tmp_path):
     blocks = _blocks(relative)
-    assert blocks, f"{relative}: no fenced plan step example found"
+    assert blocks, f"{relative}: no fenced plan step example (a block with a Files: line) found"
     for number, block in enumerate(blocks):
         assert _LINES_RE.search(block), f"{relative} block {number}: no Lines: label"
         files_line = _FILES_RE.search(block)
@@ -65,13 +73,13 @@ def test_every_plan_template_in_the_docs_validates(relative, tmp_path):
         assert _TAG_RE.search(files_line.group(1)), (
             f"{relative} block {number}: no production Files entry carries a "
             f"kind tag in `path` [kind] form: {files_line.group(1)!r}")
-        entries, _, problems = crew_ticket.parse_plan(block)
+        entries, _, problems = crew_ticket.parse_plan(_complete(block))
         assert not problems, f"{relative} block {number}: {problems}"
         touch = "\n".join(f"- `{entry}`" for entry in sorted(set(entries)))
         folder = tmp_path / f"b{number}" / ".work" / "tickets" / "T-0"
         folder.mkdir(parents=True)
         (folder / "spec.md").write_text(_SPEC.format(touch=touch), encoding="utf-8")
-        (folder / "plan.md").write_text("# T-0 plan\n\n" + block, encoding="utf-8")
+        (folder / "plan.md").write_text("# T-0 plan\n\n" + _complete(block), encoding="utf-8")
 
         found = crew_ticket.validate(str(tmp_path / f"b{number}"), "T-0")
 
