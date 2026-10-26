@@ -119,7 +119,7 @@ cannot be read blocks, and <code>done</code> or <code>merged</code> unblocks
 changing it needs <code>/crew:approve</code> again. <code>needs-replan</code> is derived the same way,
 from the review ledger.</p>
 <p><strong>3. Plan.</strong> You type <code>/crew:plan T-0091</code>. The session reads <code>spec.md</code>, writes
-one step per unit of work in <code>plan.md</code> (Files/Test/Risk/Standards each), checks every
+one step per unit of work in <code>plan.md</code> (Files/Lines/Test/Risk/Standards each; <code>Lines:</code> is the step's projected production lines, 300 in total, and not yet checked at approval), checks every
 Files: entry against the spec's Touch globs, and enters <strong>plan mode</strong> to show
 you the whole thing. You review it. On your yes, it asks you to type
 <code>/crew:approve T-0091</code>. crew's prompt hook sees that you typed it and writes
@@ -375,7 +375,12 @@ not tell", which refuses). An id is <code>LETTERS-digits</code> with any prefix 
 </code></pre>
 <ul>
 <li><code>plan.md</code> is a list of steps. Each step has a <code>Files:</code> line, a <code>Test:</code> line and a <code>Risk:</code> line.
-  Every <code>Files:</code> entry must fall inside Touch. A plan cannot add a path the spec does not list.</li>
+  Every <code>Files:</code> entry must fall inside Touch. A plan cannot add a path the spec does not list.
+  A step also carries a <code>Lines:</code> line (projected production lines, <code>0</code> if none) and each production
+  <code>Files:</code> entry a kind tag (<code>[parser]</code>, <code>[guard]</code>, <code>[state-machine]</code> or <code>[other]</code>). The planner is told
+  to keep a plan to 300 production lines and not to mix a parser, guard or state machine with other
+  production work; <code>/crew:approve</code> does not check this yet, and an oversized plan is meant to go to
+  <code>/crew:split</code>.</li>
 <li><code>next.md</code> is optional, and nothing in crew writes it: you do, by hand. One <code>key: value</code> per line
   says who the ticket waits on and what happens next: <code>waiting-on:</code> (<code>owner</code>, <code>agent</code>, <code>external</code>
   or a ticket id), <code>next:</code>, <code>reason:</code>, <code>revisit:</code> (a <code>YYYY-MM-DD</code> date) and <code>superseded-by:</code> (a

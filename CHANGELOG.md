@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.2.84: the planner learns the `Lines:` label, kind tags and the 300-line cap (L-0714 slice 1)
+
+- **Summary.** `crew` 1.2.84: `/crew:plan` now asks each step for a projected `Lines:` count and a kind tag on each production Files entry and states a 300-production-line cap per plan, which nothing enforces yet.
+- `plugin/crew/commands/plan.md`, `skills/crew-plan/SKILL.md`, `skills/crew-execute/SKILL.md` and `skills/crew-standards/SKILL.md` carry the `Lines:` label, the `` `path` [parser|guard|state-machine|other] `` form, the cap and the mixing rule, and name `/crew:split` and the owner's typed size waiver at approval as the ways on. Not enforced: `crew_ticket.approve` still accepts any plan; enforcement is a separate harness PR (L-0714 slice 2), after this one is in the plugin cache.
+- `plugin/crew/tests/test_plan_templates.py` reads the four templates and fails if one has no `Lines:`, no kind tag, or no longer validates under `crew_ticket.validate`.
+- Docs: `plugin/crew/README.md`, `docs/crew/reference/10-the-daily-loop.md`, the guide sources (`guide.md`, `daily-workflow.md`, `daily-workflow-scope.md`, `troubleshooting.md`) and the rebuilt HTML, DOCX and PDF (LibreOffice, not Word).
+
 ### Fixed — crew 1.2.83: the verify-map price test rejects a NaN or infinite `seconds` (L-0910)
 
 - **Summary.** `crew` 1.2.83: a rule priced `NaN` can no longer pass the verify-map price test, and the L-0904 note sentence in `.crew/verify.json` starts its own line; no behaviour a user runs changes.

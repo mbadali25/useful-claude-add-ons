@@ -30,7 +30,8 @@ summarises.
 # $1 plan            spec: .work/tickets/$1/spec.md
 
 ### Step 1: <name>
-Files: create/modify/test, exact paths, `path:line` where modifying
+Files: create/modify/test, exact paths, `path:line` where modifying; a production path is followed by its kind tag, as in `src/x.py` [other]
+Lines: projected production lines added or changed by this step, or 0
 Test: the check that proves this step, by name or by the command that runs it
 Risk: what breaks if this step is wrong, or "low"
 Standards: the crew-standards ids this step triggers, or "none - <why>"
@@ -41,6 +42,21 @@ Standards: the crew-standards ids this step triggers, or "none - <why>"
 
    No placeholders — "TBD", "handle edge cases", "similar to Step 1" are plan
    failures, not shorthand. Every step ends with something testable.
+
+   **Size and kind (L-0714).** `Lines:` is the step's projected production
+   lines, added or changed; tests, docs, generated files and version files do
+   not count, and a step with none writes `Lines: 0`. Write each production
+   `Files:` path in backticks and put one kind tag after it, outside the
+   backticks: `[parser]`, `[guard]`, `[state-machine]` or `[other]`. Test, doc
+   and generated entries take no tag. The cap is 300 production lines per plan
+   (the sum of every step's `Lines:`). A parser, guard or state machine does
+   not share a plan with differently tagged production work: entries of one
+   risky kind may sit together, and with test, doc and generated entries, but a
+   risky kind with any differently tagged production entry, or two risky kinds,
+   is over the line. A plan over the cap or over that line goes to
+   `/crew:split <id>`; the one exception is the owner's typed size waiver at
+   approval. **Not enforced yet:** `/crew:approve` checks none of this today and
+   a later change will refuse such a plan, so write the labels now.
 
    **PR slices** (T-0059), when `split.md` said `slices` or the ticket holds
    together but is too large for one review: end the plan with `## PR slices`,
@@ -55,7 +71,7 @@ Standards: the crew-standards ids this step triggers, or "none - <why>"
    every line have a step? Walk the steps: does every Files: entry sit inside
    the spec's Touch? A step that doesn't is not silently kept — either the
    step is wrong or the spec is missing a glob; fix whichever is true before
-   step 6. Does every step name the standards its Files and Risk trigger?
+   step 6. Does every step name the standards its Files and Risk trigger? Does every step carry `Lines:` and a kind tag on each production Files entry, summing to 300 or less?
 6. **Plan mode.** Show me the plan. Do not start implementing. A plan I have
    not agreed to is not a plan — same rule this file always had.
 
