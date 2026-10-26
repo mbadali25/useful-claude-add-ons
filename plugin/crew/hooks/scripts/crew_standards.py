@@ -1162,8 +1162,8 @@ def _symlink_problem(root, rel):
     """Why `rel` may not be read or written as an export output, or None: a symlink
     anywhere under `root` on its path (a write would replace it or leave the repository)
     or a leaf that exists and is not a regular file."""
-    path = root
-    for part in rel.split("/"):
+    path, parts = root, rel.split("/")
+    for index, part in enumerate(parts):
         path = os.path.join(path, part)
         try:
             mode = os.lstat(path).st_mode
@@ -1173,6 +1173,8 @@ def _symlink_problem(root, rel):
             return f"{rel} cannot be inspected: {exc.__class__.__name__}"
         if stat.S_ISLNK(mode):
             return f"{rel} is, or sits under, a symlink ({part}); the export does not follow it"
+        if index < len(parts) - 1 and not stat.S_ISDIR(mode):
+            return f"{rel} sits under {part}, which is not a directory"
     return None if stat.S_ISREG(mode) or stat.S_ISDIR(mode) else f"{rel} is not a regular file"
 
 

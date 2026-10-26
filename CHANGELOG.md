@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.2.89: `crew_standards.py export` publishes the standards to PR-side reviewers (L-0718)
+### Added — crew 1.2.90: `crew_standards.py export` publishes the standards to PR-side reviewers (L-0718)
 
-- **Summary.** `crew` 1.2.89: a repo that opts in (`export:` in `.crew/standards.md`) gets `docs/review-rules/<SET>.md`, `REVIEW.md`, `.cursor/BUGBOT.md` and a `## Code Review Rules` block in `AGENTS.md`, generated from the same standards `/crew:review` hands its own reviewer and checked for staleness by `export --check`.
+- **Summary.** `crew` 1.2.90: a repo that opts in (`export:` in `.crew/standards.md`) gets `docs/review-rules/<SET>.md`, `REVIEW.md`, `.cursor/BUGBOT.md` and a `## Code Review Rules` block in `AGENTS.md`, generated from the same standards `/crew:review` hands its own reviewer and checked for staleness by `export --check`.
 - `plugin/crew/hooks/scripts/crew_standards.py`: new `export --write | --check | --dry-run`; Rule, Self-check and Supplements only (never Why or Earned by), one file per set under a 28,000-character budget (Bugbot truncates a rule at 30,000), refused rather than truncated; `--check` compares by the standards' content digest and the crew version, and reports orphans; a crew-generated `AGENTS.md` is refused. `crew_docs_check.py` gains a `standards export` row; `.crew/verify.json` gains rule `standards-export`. This repository opts in. Because every output records the crew version, each crew release PR in an opted-in repo reruns `export --write`. Docs: README, the standards skills, `/crew:init`, the daily-loop and review notes and the guides.
 
 ### Fixed — crew 1.2.83: the verify-map price test rejects a NaN or infinite `seconds` (L-0910)
