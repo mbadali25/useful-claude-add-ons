@@ -49,7 +49,7 @@ TOOLING_MUTATIONS = (
         REVIEW_LEDGER,
         '            row["refunded"] = _refunded(data) < REFUND_LIMIT\n',
         '            row["refunded"] = True\n',
-        "tests/test_review_refund.py::test_launched_rounds_are_bounded_by_budget_plus_refund_limit",
+        "tests/test_review_refund.py::test_refund_limit_is_per_ticket",
     ),
     (
         # (d) The refund is recorded but the budget still counts the round.

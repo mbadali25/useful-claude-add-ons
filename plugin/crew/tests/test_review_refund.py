@@ -99,12 +99,13 @@ def test_ledger_does_not_refund_a_reviewer_or_tree_round(repo, failure):
 
 
 def test_refunded_rounds_do_not_exhaust_the_budget(repo):
-    _round(repo, "T1", "INCOMPLETE", "tool")
-    _round(repo, "T1", "INCOMPLETE", "tool")
+    for _ in range(rl.REFUND_LIMIT):
+        _round(repo, "T1", "INCOMPLETE", "tool")
 
     ok, number, message = rl.reserve(str(repo), "T1", "codex")
 
-    assert (ok, number, rl.status(str(repo), "T1")["state"]) == (True, 3, rl.IN_REVIEW), message
+    assert (ok, number, rl.status(str(repo), "T1")["state"]) == (
+        True, rl.REFUND_LIMIT + 1, rl.IN_REVIEW), message
 
 
 def test_refund_limit_is_per_ticket(repo):

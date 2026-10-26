@@ -353,7 +353,7 @@ def test_prepare_reserves_nothing(tmp_path, env):
 
     assert done.returncode == 0
     assert _digest(ledger) == before
-    assert _keys(done.stdout)["ROUNDS_LEFT"] == ["1"]
+    assert _keys(done.stdout)["ROUNDS_LEFT"] == [str(review_ledger.BUDGET - 1)]
 
 
 def test_prepare_claims_a_branch_scoped_scratch_when_none_is_given(tmp_path, env):

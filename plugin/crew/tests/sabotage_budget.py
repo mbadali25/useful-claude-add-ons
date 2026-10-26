@@ -31,7 +31,7 @@ BUDGET_MUTATIONS = (
     ("the charged count restarts at the latest successor plan again", LEDGER,
      '    return len(data.get("rounds", [])) - _count_start(data) - _refunded(data)\n',
      '    return _spent(data) - _refunded(data)\n',
-     _T + "test_a_successor_plan_does_not_reopen_the_budget"),
+     _T + "test_a_successor_gets_the_rounds_the_ticket_has_left_and_no_more"),
     ("the refund count restarts at the latest successor plan again", LEDGER,
      '    return sum(1 for r in data.get("rounds", [])[_count_start(data):]\n',
      '    return sum(1 for r in data.get("rounds", [])[_boundary(data):]\n',
