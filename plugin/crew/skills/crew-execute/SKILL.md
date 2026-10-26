@@ -29,8 +29,21 @@ does not keep a separate ledger file the way upstream's does.
 
 ## Per step
 
-1. Read the step's Files, Test and Risk. Then pick the smallest complete change,
-   in this order: what the codebase already has (a helper, component, service or
+A step reads like this:
+
+```
+### Step 2: Reject an empty name
+Files: `src/names.py` [parser], `tests/test_names.py`
+Lines: 12
+Test: `pytest tests/test_names.py -q`
+Risk: low
+```
+
+1. Read the step's Files, Test and Risk, and its `Lines:` projection and the
+   kind tag on each production Files entry (the example above). `Lines:` is the
+   plan's own estimate against a 300-production-line cap, not yet enforced; a
+   step growing past its projection is a reason to stop and say so. Then pick
+   the smallest complete change, in this order: what the codebase already has (a helper, component, service or
    pattern); the standard library or a platform feature; a dependency already
    installed. Add no dependency for a few lines, and no option, flag or config
    nobody asked for.

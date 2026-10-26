@@ -324,7 +324,8 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
 ## Scope: approval and the completion audit
 
 A ticket's contract lives in `.work/tickets/<id>/`: `spec.md`'s `## Touch` section names every path
-the ticket may change; `plan.md`'s `Files:` lines must each fall inside Touch. Two hooks hold a
+the ticket may change; `plan.md`'s `Files:` lines must each fall inside Touch (steps also carry
+`Lines:` and a kind tag, stated to the planner with a 300-line cap that approval does not check yet). Two hooks hold a
 session to that contract — see [Daily workflow: scope and approval](daily-workflow-scope.md) for the
 contract itself. This section is what goes wrong with the approval and the audit.
 

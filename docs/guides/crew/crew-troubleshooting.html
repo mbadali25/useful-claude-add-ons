@@ -491,7 +491,8 @@ python3 &quot;&lt;crew&gt;/hooks/scripts/ci_receipt.py&quot; check --root .
 </ul>
 <h2 id="scope-approval-and-the-completion-audit">Scope: Approval and the Completion Audit</h2>
 <p>A ticket's contract lives in <code>.work/tickets/&lt;id&gt;/</code>: <code>spec.md</code>'s <code>## Touch</code> section names every path
-the ticket may change; <code>plan.md</code>'s <code>Files:</code> lines must each fall inside Touch. Two hooks hold a
+the ticket may change; <code>plan.md</code>'s <code>Files:</code> lines must each fall inside Touch (steps also carry
+<code>Lines:</code> and a kind tag, stated to the planner with a 300-line cap that approval does not check yet). Two hooks hold a
 session to that contract — see <a href="daily-workflow-scope.md">Daily workflow: scope and approval</a> for the
 contract itself. This section is what goes wrong with the approval and the audit.</p>
 <ul>
