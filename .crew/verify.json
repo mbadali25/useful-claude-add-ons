@@ -1046,5 +1046,14 @@
   ],
 
   "default": ["bash _verify/smoke.sh"],
-  "unmapped": "fail"
+  "unmapped": "fail",
+
+  "environments": {
+    "production": {
+      "smoke":        ["python3 scripts/check-marketplace.py"],
+      "regression":   ["python3 scripts/gate-runner.py"],
+      "rollback":     "docs/runbooks/rollback.md",
+      "requireHuman": true
+    }
+  }
 }
