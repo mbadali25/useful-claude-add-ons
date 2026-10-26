@@ -29,3 +29,24 @@ def test_must_not_raise():  # nosemgrep: crew-test-no-assertion
 
 def helper_not_a_test():
     return 1
+
+
+async def test_async_asserts():
+    value = 1
+    assert value == 1
+
+
+def test_bare_raises_import():
+    from pytest import raises
+
+    with raises(ValueError):
+        int("x")
+
+
+def assert_blocked(name):
+    if not name:
+        raise SystemExit(name)
+
+
+def test_helper_named_assert():
+    assert_blocked("x")

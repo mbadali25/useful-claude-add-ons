@@ -62,10 +62,12 @@ re-run the previous note's wider count-disagreement sweep across `README.md`/`pl
 
 
 **Lint rules (L-0715 PR A).** DERIVED at the PR A head, not at this file's anchor, which is not moved:
-`plugin/crew/lint/semgrep/crew-classes.yml` holds five semgrep rules (ids at `:21`, `:46`, `:75`, `:96`, `:111`) and a
-`not-shipped` list (`:15`); `plugin/crew/lint/semgrep/fixtures/<rule id>/` holds a positive and a negative fixture each;
-`plugin/crew/tests/test_crew_lint_rules.py` runs the pinned `semgrep==1.95.0` over a copy of them. Nothing in
-`hooks/scripts/` reads the file yet (the `semgrep` linter kind is PR B). JUDGEMENT: the rest of this map is unchanged by it.
+`plugin/crew/lint/semgrep/crew-classes.yml` holds five semgrep rules (`crew-splitlines-untrusted-text`,
+`crew-json-duplicate-keys`, `crew-bare-interpreter`, `crew-unquoted-plugin-root`, `crew-test-no-assertion`, each with a
+`metadata.class`) and a `# not-shipped:` list in its header comment; `plugin/crew/lint/semgrep/fixtures/<rule id>/` holds a
+positive and a negative fixture each; `plugin/crew/tests/test_crew_lint_rules.py` runs the pinned `semgrep==1.95.0` over
+a copy of them. Nothing in `hooks/scripts/` reads the file yet (the `semgrep` linter kind is PR B). JUDGEMENT: the rest
+of this map is unchanged by it.
 
 ## The roster, replaced wholesale
 

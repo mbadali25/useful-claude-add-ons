@@ -38,6 +38,7 @@ rules:
       - pattern: $R.stdout
       - pattern: $R.stderr
       - pattern: subprocess.check_output(...)
+      - pattern: sys.stdin
     pattern-sinks:
       - patterns:
           - pattern: $X.splitlines(...)
@@ -89,9 +90,16 @@ rules:
       - pattern-either:
           - pattern: subprocess.$F([$E, ...], ...)
           - pattern: subprocess.$F(($E, ...), ...)
+          - patterns:
+              - pattern-either:
+                  - pattern: $G([$E, ...], ...)
+                  - pattern: $G(($E, ...), ...)
+              - metavariable-regex:
+                  metavariable: $G
+                  regex: '^(run|Popen|call|check_call|check_output)$'
       - metavariable-regex:
           metavariable: $E
-          regex: '^["''](pwsh|powershell|python3?|py)["'']$'
+          regex: '^[rRbBuU]?["''](pwsh|powershell|python3?|py)["'']$'
 
   - id: crew-unquoted-plugin-root
     languages: [generic]
@@ -123,10 +131,14 @@ rules:
       include: ["**/tests/**", "**/_test/**", "**/test_*.py"]
       exclude: ["**/lint/semgrep/fixtures/**"]
     patterns:
-      - pattern: |
-          def $T(...):
-              ...
+      - pattern-either:
+          - pattern: |
+              def $T(...):
+                  ...
+          - pattern: |
+              async def $T(...):
+                  ...
       - metavariable-regex:
           metavariable: $T
           regex: '^test_'
-      - pattern-not-regex: '(?i)assert|raises|\bfail\b|\bcheck\(|\bexpect\(|\bok\('
+      - pattern-not-regex: '(?<!\w)assert\b|(?<!def )(?<!def\s)\b\w*assert\w*\(|(?<!\w)(raises|fail|check|expect|ok)\('

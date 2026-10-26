@@ -35,13 +35,18 @@ PROTECTED = ("u2028-line-protocol", "duplicate-key-json", "bare-executable")
 
 
 def _environment():
-    """The suite's isolated HOME holds no `.config`, which semgrep needs, and no uv cache, so the
-    pinned semgrep and Python would download on every run. Both caches live in one temp tree that
-    survives between runs; nothing here touches the real home."""
+    """semgrep needs a HOME with a `.config`, and a fresh uv cache would download the pinned semgrep
+    and Python on every run. HOME, USERPROFILE, the XDG directories and both caches live in one temp tree that survives
+    between runs, so nothing here touches the real home whatever the caller's HOME is."""
     env = dict(os.environ)
-    home = pathlib.Path(env.get("HOME") or env.get("USERPROFILE") or tempfile.gettempdir())
-    (home / ".config").mkdir(parents=True, exist_ok=True)
     cache = pathlib.Path(tempfile.gettempdir()) / "crew-semgrep-uv"
+    home = cache / "home"
+    env["HOME"] = str(home)
+    env["USERPROFILE"] = str(home)
+    for name, leaf in (("XDG_CONFIG_HOME", ".config"), ("XDG_DATA_HOME", ".local/share"),
+                       ("XDG_STATE_HOME", ".local/state"), ("XDG_CACHE_HOME", ".cache")):
+        (home / leaf).mkdir(parents=True, exist_ok=True)
+        env[name] = str(home / leaf)
     env["UV_CACHE_DIR"] = str(cache / "cache")
     env["UV_PYTHON_INSTALL_DIR"] = str(cache / "python")
     return env

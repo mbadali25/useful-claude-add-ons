@@ -10,3 +10,9 @@ def read_ledger(path: Path) -> list[str]:
 def git_lines() -> list[str]:
     done = subprocess.run(["git", "status"], capture_output=True, text=True, check=False)
     return done.stdout.splitlines()
+
+
+def stdin_lines() -> list[str]:
+    import sys
+
+    return sys.stdin.read().splitlines()
