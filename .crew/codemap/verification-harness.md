@@ -1,6 +1,6 @@
-anchor: useful-claude-add-ons@c0e582fbe
-verified: 2026-10-22
-paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py
+anchor: useful-claude-add-ons@bdde587
+verified: 2026-10-26
+paths: plugin/crew/**, _verify/smoke.sh, scripts/check-marketplace.py, scripts/check_instructions.py, .crew/verify.json
 
 **Re-derive provenance.** Full re-derivation, not a re-verify. The previous
 anchor (`5d1fc5fd`) predates crew 1.0's role/PM-removal rewrite
@@ -37,7 +37,37 @@ including the slow version-drift walk `_verify/smoke.sh` skips), and
 them and is wired into CI but not into the local Stop gate: see
 "`scripts/check_instructions.py`" below.
 
-## `.crew/verify.json` — 48 rules
+## `.crew/verify.json` — 99 rules at `bdde587` (the dated paragraphs below count older trees)
+
+**Refreshed 2026-10-26 at `bdde587`.** DERIVED by `json.load` and `grep -n` on `.crew/verify.json` (1051
+lines): **99 rules** (98 at `c0e582fbe`; the one new id is `native-script-path`, `.crew/verify.json:903-913`,
+L-0868, paths the non-harness `.sh` hooks plus `test_native_script_path.py`, 10s, running that one file through
+`pytest_rule.py`). Top-level keys are `version` (1), `anchor` (still `repo@5238be3d`), `_note`,
+`_note_preReview`, `preReview` (`:66`), `rules`, `default` (`["bash _verify/smoke.sh"]`, `:1048`) and
+`unmapped` (`"fail"`, `:1049`). The headings and counts in the dated paragraphs below ("48 rules", "98 rules",
+"45 rules", ...) each describe the tree named in that paragraph, not this one. Positions by id at HEAD
+(`ruleloc` by scanning `"id":` lines): `root-docs-registration` `:97-107`, `scripts-checks` `:109-128`,
+`verify-gate-suite` `:130-144`, `command-guards` `:190-196`, `crew-config` `:242-261`, `crew-upgrade` `:315-326`,
+`crew-migrate` `:328-336`, `claude-rules-generated` `:454`, `tooling-pr-harness` `:639-669`,
+`crew-hook-dispatcher` `:670-683`, `crew-keys` `:796-827`, `native-script-path` `:903-913`.
+
+What changed in the file since `c0e582fbe` (DERIVED from the diff, not re-run):
+- **L-0904: Windows prices.** The 30 rules the Windows evidence (`win-repo-2`, 2026-10-24) measured over the 60s
+  Stop budget now carry that Windows figure in `seconds`, and `Windows <N>s (win-repo-2, ...)` at the start of
+  their `why` (e.g. `root-docs-registration` 100, `crew-config` 66, `crew-state` 72, `crew-ticket-approval` 103, the
+  promote-gate rows 482 / 324 / 259). The note's older per-rule `seconds` figures are therefore the Linux
+  prices and are stale as Windows prices. `plugin/crew/tests/test_verify_map_prices.py` holds the invariant
+  (named in `_note`, read not run); until a host re-prices with `/crew:verify --all`, those rules are deferred
+  to CI at Stop, not run.
+- `scripts-checks` gained `evals/crew-outcome/**` in `paths` and `scripts/_test/crew-outcome-eval.py` in `run`
+  (L-0728, 20s, stub docker and claude).
+- `verify-gate-suite` dropped `verify-gate.ps1` from `paths` and its `run` swapped
+  `test_verify_gate_lock.py` / `test_verify_gate_bash_resolver.py` for `test_verify_gate_incident_sh.py`
+  (the `.ps1` twin was deleted in L-0869; Windows runs the `.sh` under Git Bash).
+- `command-guards` now runs `test_guards.py`, `test_guard_profiles.py` and `test_guard_writers.py`;
+  `crew-upgrade` and `crew-migrate` both run `test_config_migrate_l0725.py` (the two L-0725 lines in the next
+  paragraph, here re-taken by id).
+
 
 **Re-measured at `8f2267e60` (2026-10-20, L-0850).** `.crew/verify.json` holds 98 rules there
 (`len(json.load(...)["rules"])`, run), each with an `id`; the "48" in this heading and the rule
@@ -58,22 +88,22 @@ re-read this pass: whether `check-marketplace.py` implements that marker as desc
 
 **L-0725 (2026-10-22, `c0e582fbe`).** DERIVED by `json.load` on `.crew/verify.json` (98 rules, unchanged by
 L-0725) and by reading the files named. By id, since positions moved: `command-guards`
-(`.crew/verify.json:189-195`) runs `test_guards.py`, `test_guard_profiles.py` and
-`test_guard_writers.py` (`:193`); `crew-upgrade` (`:314`, run `:323`) and `crew-migrate` (`:327`, run
-`:333`) both run `plugin/crew/tests/test_config_migrate_l0725.py`; `crew-config` (`:241-260`) maps
-`crew_config.py`, the templates and `plugin/crew/CONFIG.md`; `crew-keys` (`:794`) maps
+(`.crew/verify.json:190-196`) runs `test_guards.py`, `test_guard_profiles.py` and
+`test_guard_writers.py` (`:193`); `crew-upgrade` (`:315`, run `:324`) and `crew-migrate` (`:328`, run
+`:334`) both run `plugin/crew/tests/test_config_migrate_l0725.py`; `crew-config` (`:242-261`) maps
+`crew_config.py`, the templates and `plugin/crew/CONFIG.md`; `crew-keys` (`:796`) maps
 `crew_dropped.py`, `CONFIG.md`, `test_crew_keys.py` and `scripts/_test/config-reference.py`, and runs
 `test_crew_keys.py`, `config_reference.py --check`, `scripts/_test/config-reference.py`,
-`build.py --check` and `scripts/_test/crew-guide.py` (`:816-820`). `plugin/crew/tests/l0725_keyset.py`
+`build.py --check` and `scripts/_test/crew-guide.py` (`:818-824`). `plugin/crew/tests/l0725_keyset.py`
 is the committed key set (87 keys, 83 repo and 50 machine leaves) and `test_crew_keys.py:414` asserts
 `(87, 83, 50)` against `crew_config`'s two default functions. `plugin/crew/CONFIG.md` is generated whole
 by `docs/guides/crew/src/config_reference.py` (`render_config_md` `:395`), so nothing in it is
 hand-written and the descoped-kill limitation entry that older notes cite as `CONFIG.md:2509-2516` is
-now `docs/crew/config-rationale.md`:2532-2536`. `claude-rules-generated` (`:453`) runs
+now `docs/crew/config-rationale.md`:2540-2544`. `claude-rules-generated` (`:454`) runs
 `crew_instructions.py rules --root . --check` over `.claude/rules/**` and `.crew/codemap/**`.
 
 **DERIVED, T-0502 on `rush/g5-platform` (2026-10-05), read with `json.load`: 774 lines, 73 rules
-(the release line's map plus this branch's).** T-0502 adds rule 19 (`.crew/verify.json:305-310`):
+(the release line's map plus this branch's).** T-0502 adds rule 19 (`.crew/verify.json:306-311`):
 paths `plugin/crew/skills/crew-setup/templates/**` and
 `plugin/crew/tests/test_setup_verify_templates.py`, running that one test file (fake `mmdc`,
 throwaway repos; priced 10s, measured under 1s). It covers crew-setup's `_verify` runner templates
@@ -82,9 +112,9 @@ removed on any exit) and the ready case `templates/cases/diagrams-render.sh`. No
 a test of these templates: `plugin/crew/skills/**` maps only to `validate-prompts.py`. The
 paragraphs below read older trees and do not count this rule.
 
-**T-0068 (DERIVED, `json.load` and `grep -n` on `T-0068-build` after merging origin/main, 2026-10-04): 565 lines, 52 rules.** The last rule (`.crew/verify.json:569-576`) is T-0068's: `review_patch.py`, `review_ledger.py` and their two test files, running `test_review_patch.py` and `test_review_ledger.py`; before it only the catch-all named either file. Rule 4 (the gate) runs `test_verify_gate_bookkeeping.py` too, rule 12 (`crew_ticket.py`) runs and lists `test_crew_bookkeeping.py`; `default` is `:563` and `unmapped` `:564`. The headings and counts below read older trees.
+**T-0068 (DERIVED, `json.load` and `grep -n` on `T-0068-build` after merging origin/main, 2026-10-04): 565 lines, 52 rules.** The last rule (`.crew/verify.json:571-578`) is T-0068's: `review_patch.py`, `review_ledger.py` and their two test files, running `test_review_patch.py` and `test_review_ledger.py`; before it only the catch-all named either file. Rule 4 (the gate) runs `test_verify_gate_bookkeeping.py` too, rule 12 (`crew_ticket.py`) runs and lists `test_crew_bookkeeping.py`; `default` is `:565` and `unmapped` `:566`. The headings and counts below read older trees.
 
-**The gate never reports crew's bookkeeping or a refresh artifact as unmapped (T-0068, DERIVED).** `verify-gate.sh` imports `completion_audit.classify_paths` (`plugin/crew/hooks/scripts/verify-gate.sh:1486`), drops `bookkeeping` from `changed` (`:1218`) and never appends an `artifact` to `unmatched` (`:1297`), so a rule naming `.crew/codemap/**` still runs. `verify-gate.ps1`, which did the same through `completion_audit.py --classify`, was deleted in L-0869; Windows runs the `.sh` under Git Bash. Any failure leaves every path `other`: unmapped, never mapped, and stderr says `could not tell`. The kinds come from `crew_ticket.CREW_BOOKKEEPING_PATHS` and `crew_refresh_check.REFRESH_ARTIFACT_PATHS`; `plugin/crew/tests/test_verify_gate_bookkeeping.py` holds the must-allow and must-block pair through `verify-gate.sh` (the `.ps1` flavour is gone).
+**The gate never reports crew's bookkeeping or a refresh artifact as unmapped (T-0068, DERIVED).** `verify-gate.sh` imports `completion_audit.classify_paths` (`plugin/crew/hooks/scripts/verify-gate.sh:1634`), drops `bookkeeping` from `changed` (`:1642`) and never appends an `artifact` to `unmatched` (`:1724`), so a rule naming `.crew/codemap/**` still runs. `verify-gate.ps1`, which did the same through `completion_audit.py --classify`, was deleted in L-0869; Windows runs the `.sh` under Git Bash. Any failure leaves every path `other`: unmapped, never mapped, and stderr says `could not tell`. The kinds come from `crew_ticket.CREW_BOOKKEEPING_PATHS` and `crew_refresh_check.REFRESH_ARTIFACT_PATHS`; `plugin/crew/tests/test_verify_gate_bookkeeping.py` holds the must-allow and must-block pair through `verify-gate.sh` (the `.ps1` flavour is gone).
 
 **DERIVED, read with `json.load` on L-0574 after merging main `e0c70fc9` (2026-10-02): 533 lines, 48 rules.** Main's `e0c70fc9` map is 506 lines and 48 rules (rule 46 L-0555's `ci_receipt.py`, 47 L-0572's subset cover, 48 L-0575's recurring findings, last); L-0574 adds no rule, only the top-level `preReview` block and its `_note_preReview`. The "45 rules" heading above this note was already behind main's map before L-0574 merged it.
 
@@ -447,16 +477,16 @@ for what they claim and reports those claims as claims, not as independent
 measurements, except where a command was actually re-run above.
 
 - **The sabotage runner bounds each entry (T-0080, H2a).** DERIVED at the H2a
-  branch head. `plugin/crew/tests/sabotage.py:3098-3099` - `run_test` keeps its
+  branch head. `plugin/crew/tests/sabotage.py:2737-2738` - `run_test` keeps its
   signature and hands pytest to `plugin/crew/tests/sabotage_bound.py:164`
   (`run`): own session/process group, `RLIMIT_DATA` set before exec on Linux
   (not `RLIMIT_AS`: pwsh 7.4.6 dies under any address-space cap tried up to
   30 GiB, which failed 1121 unmutated crew tests under a 4 GiB one)
   (default 4096 MiB, `CREW_SABOTAGE_MEM_MB`, 0 = none), wall-clock limit
   (default 600 s, `CREW_SABOTAGE_TIMEOUT_S`), a timeout stopping the whole
-  group and returning `TIMED_OUT` (`:66`). `sabotage.py:3345-3349` reads the
+  group and returning `TIMED_OUT` (`:66`). `sabotage.py:2988-2992` reads the
   limits once (an unreadable value refuses the run, exit 2) and prints the
-  `bound:` line; `:3372` classifies through `sabotage_bound.verdict` (`:125`),
+  `bound:` line; `:3015` classifies through `sabotage_bound.verdict` (`:125`),
   which now holds the pytest exit-code reasoning (finding 13) that used to sit
   in `sabotage.py` - 3400 -> 3381 lines. Measured: the azureProfile entry
   (`sabotage_cloud.py`) peaked at 3.7 GiB under the cap where it reached the
@@ -467,7 +497,7 @@ measurements, except where a command was actually re-run above.
   never covers `MAP_SHARED` or tmpfs. The standalone runners in
   `sabotage_event_claim.py`, `sabotage_autocycle.py` and `sabotage_resume.py`
   use the same bound. Rule 11 runs `test_sabotage_bound.py`;
-  seven sabotage entries for the bound at `sabotage_tooling.py:1057` onward.
+  seven sabotage entries for the bound at `sabotage_tooling.py:830` onward.
 
 ## `verify-gate.sh` — the rule runner (its `verify-gate.ps1` twin was deleted in L-0869)
 
@@ -619,27 +649,27 @@ check that did not run is a failure, never a pass. Its suite is
 `scripts/_test/config-reference.py`.
 
 The one change in this range is internal to `check_self_claims`
-(`:673-903`, moved +24 from `5d1fc5fd`'s `:649`): a new claim type,
+(`:700-975` at `bdde587`; it was `:673-903` at `c0e582fbe`): a new claim type,
 `crew-markdown-lines`, backed by `count_crew_markdown_lines`
-(`:564-586`) — total `splitlines()`-counted lines across every tracked
+(`:574-594`) — total `splitlines()`-counted lines across every tracked
 `plugin/crew/*.md` file. The function returns `None`, not `0`, when
-`_tracked_files` cannot answer, and the caller (`:826-840`) reports that as an
+`_tracked_files` cannot answer, and the caller (`:900-910`) reports that as an
 explicit UNVERIFIED finding rather than comparing `None` against a real count
 — named in its own docstring as the same "unknown collapsing into the
 safe-looking value" bug CLAUDE.md's Lessons section calls out
-(`CLAUDE.md:146`). See
+(`CLAUDE.md:166`). See
 `marketplace-registration.md` for what this marker checks and where it is
 used; this note owns the mechanism, not the claim.
 
-`check_versions` (`:518-551`, unmoved from `5d1fc5fd`) still asks the same
+`check_versions` (`:527-561`) still asks the same
 question in the same words: *"has `{source}/` changed since version {version}
 was set … but the version was not bumped"* — a history-based check
-(`version_set_at`, `:472-480`; `bump_candidates`, `:483-515`, walking both
+(`version_set_at`, `:481`; `bump_candidates`, `:492`, walking both
 first-parent and full history) that cannot answer for an uncommitted change,
 only for one already in git.
 
-Re-run this pass: `python3 scripts/check-marketplace.py` → `marketplace: 34
-skills, 5 plugins`, `all checks passed`, rc 0.
+Re-run at `bdde587` (2026-10-26): `python3 scripts/check-marketplace.py` → `marketplace: 36
+skills, 13 plugins`, `all checks passed`.
 
 ## `scripts/check_instructions.py` — new since the previous anchor, CI-only
 
@@ -650,16 +680,16 @@ docstring (`:1-59`): a 120-line command-file budget
 only sanctioned exception; no file outside that allowance may grow past its
 recorded line count, and no listed ceiling may be *raised* in the same change
 that grows the file unless its `reason` is rewritten to an explicit
-`"raised: <why>"` string (`RAISED_REASON_RE`, `:97`) — checked against the
+`"raised: <why>"` string (`RAISED_REASON_RE`, `:121`) — checked against the
 allowance file as committed at the merge-base with the default branch, or
-`--base <ref>` (`check_allowance_no_silent_raise`, `:334`); frontmatter
+`--base <ref>` (`check_allowance_no_silent_raise`, `:401`); frontmatter
 presence; generated-file drift (a no-op today — none is committed in this
 repo, per its own docstring, but tested against fixtures); a maintained
 **stale-name scan**, inverted from the pattern the marketplace checker uses —
-`STALE_NAMES` (`:98-106`, eight pre-1.0 names: `qa-reviewer`, `/crew:work`,
+`STALE_NAMES` (`:132-141`, eight pre-1.0 names: `qa-reviewer`, `/crew:work`,
 `/crew:ticket`, `/crew:pm`, `/crew:roster`, `/crew:scale`, `pm-journal`,
 `pm-pulse`) is scanned across **every** `plugin/crew/*.md` file (and
-`AGENTS.md`) by default, and `LEGACY_STALE_NAME_FILES` (`:118-...`, a
+`AGENTS.md`) by default, and `LEGACY_STALE_NAME_FILES` (`:153`, a
 maintained allowlist of pre-1.0 or held files permitted to mention one) is
 what is *exempt* — a new 1.0 file nobody remembers to list is checked, not
 silently skipped, which the comment at `:109-117` states was the opposite of
@@ -669,7 +699,7 @@ reference is checked against `crew_guards.ALL_GUARD_NAMES` (`_guard_names`, `scr
 the one place those names are declared) plus, since L-0725, the two names the twelve collapsed into,
 `profile` and `overrides` (`:737`), so `guards.profile` and `guards.overrides.<guard>` read as typed.
 
-`rel()` (`:195-202`) is POSIX-relative by construction: `os.path.relpath`
+`rel()` (`:229`) is POSIX-relative by construction: `os.path.relpath`
 joined with the OS separator and then `.replace(os.sep, "/")`, because every
 path-keyed lookup this script does (`.budget-allowance.json`'s keys,
 `LEGACY_STALE_NAME_FILES`) is committed with `/` — a bare `os.path.relpath` on
@@ -686,9 +716,16 @@ sabotage suite, which builds throwaway fixtures under a temp dir and never
 touches this repo's own files, per its own docstring) → `61 passed, 0
 failed`.
 
+**Re-run at `bdde587` (2026-10-26), read-only: NOT clean.** `python3 scripts/check_instructions.py` reported 5
+problems, 4 of them command files over their recorded byte allowance (`plugin/crew/commands/autopilot.md`,
+`model.md`, `onboard.md`, `verify.md`; present at HEAD before this refresh) and 1 generated-rules drift
+(`.claude/rules/` stale for the codemap files this refresh rewrites). `python3 scripts/_test/instruction-budgets.py`
+→ `102 passed, 0 failed` (was 61). The "all checks passed" and `61 passed` figures above are the `c0e582fbe`
+readings.
+
 ## `.github/workflows/instruction-budgets.yml` — the base-sha fix
 
-**DERIVED, read in full.** `fetch-depth: 0` on checkout (`:29`), not the
+**DERIVED, read in full.** `fetch-depth: 0` on checkout (`:58`, rationale in the comment `:50-57`), not the
 default shallow clone — `check_allowance_no_silent_raise` needs a
 `origin/main` ref to diff `.budget-allowance.json` against, and a 1-commit
 shallow checkout gives it neither `origin/main` nor `main`, so it fails
@@ -696,7 +733,7 @@ closed with "could not resolve a default branch." On a `push` to `main`
 specifically, `--base` is passed explicitly as `github.event.before` (falling
 back to `HEAD~1` for a new branch's first push, where `before` is reported as
 all zeros) rather than left to the checker's own merge-base default — the
-comment at `:40-53` explains why the default would otherwise never fail: by
+comment at `:78-91` explains why the default would otherwise never fail: by
 the time this job's checkout has fetched refs, the push has already advanced
 the remote's `main`, so `origin/main` *is* this same commit, its own
 merge-base is HEAD itself, and a raised ceiling compares against a copy of
@@ -704,7 +741,13 @@ the allowance file that already carries the same raise. `pull_request` runs
 are untouched — there `origin/main` genuinely has not merged the PR's commits
 yet.
 
-## `.github/workflows/` — seven other workflows, one of them new
+## `.github/workflows/` — eleven files at `bdde587` (the text below counts eight)
+
+**Refreshed 2026-10-26.** `ls .github/workflows` at `bdde587` lists eleven files: `instruction-budgets.yml`,
+`marketplace.yml`, `mcp-servers.yml`, `plugin-evals.yml`, `publish-mcp-servers.yml`, `pylint.yml`,
+`pytest-ai-connect.yml`, `pytest-crew.yml`, `runner-autostart.yml`, `shell-suites.yml`, `verify-gate.yml`. The
+three not in the paragraph below (`pytest-ai-connect.yml`, `runner-autostart.yml`, `verify-gate.yml`) were not
+read. `crew-shell-matrix` is now `pytest-crew.yml:201`.
 
 **DERIVED.** Eight workflow files total now (`instruction-budgets.yml`,
 `marketplace.yml`, `mcp-servers.yml`, `plugin-evals.yml`,
@@ -816,64 +859,47 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
 
 ## Entry points
 
-- `.crew/verify.json:217-223` (rule 9) — the whole-suite pytest rule and its
-  377s pricing.
-- `.crew/verify.json:147-158` (rule 6) — the T-0005 cloud-guard suites.
-- `.crew/verify.json:241-247` (rule 11) — the T-0026 approval-digest suite.
-- `.crew/verify.json:256-260` (rule 13) — the crew-diagrams `render.sh`
-  exit-77 port.
-- `plugin/crew/hooks/scripts/verify-gate.sh:64-67` — the bounded single-read
-  stdin gate.
-- `plugin/crew/hooks/scripts/verify-gate.sh:2064-2190` (its `verify-gate.ps1` twin was deleted in L-0869) — temp-file rule-output capture, 1 MiB tail cap,
-  no-pipe fallback refusal.
-- `.crew/verify.json:326` (rule 24) — the `.claude/rules/` sync check.
-- `.crew/verify.json:327-346` (rule 25) — the T-0008 refresh-check suite;
-  `plugin/crew/tests/sabotage.py:74`, `:3058` — `sabotage_refresh.py`'s
-  registration.
-- `.crew/verify.json:348-359` (rule 26) — the T-0006 auto-resume suite;
-  `plugin/crew/tests/sabotage.py:75`, `:3059` — `sabotage_resume.py`'s registration.
-- `.crew/verify.json:360-369` (rule 27) — the T-0004/T-0018/T-0072 autopilot suite;
-  `plugin/crew/tests/sabotage.py:76`, `:3059` — `sabotage_autopilot.py`'s registration.
-- `.crew/verify.json:370-377` (rule 28) — the T-0010 policy suite; `plugin/crew/tests/sabotage.py:76`,
-  `:3059` register its `POLICY_MUTATIONS`.
-- `.crew/verify.json:378-386` (rule 29) — the T-0021 tracker suite;
-  `plugin/crew/tests/sabotage.py:77`, `:3059` — `sabotage_tracker.py`'s registration.
-- `.crew/verify.json:387-396` (rule 30) — the T-0023 plain-text routing suite;
-  `plugin/crew/tests/sabotage.py:78`, `:3059` — `sabotage_route.py`'s registration.
-- `.crew/verify.json:398-406` (rule 31) — the T-0024 group-approval suite;
-  `plugin/crew/tests/sabotage.py:80`, `:3060` — `sabotage_approval.py`'s registration.
-- `.crew/verify.json:407-415` (rule 32) — T-0094's refresh-admission suite, split out of rule 25.
-- `.crew/verify.json:440-453` (rule 36) — the T-0085 standards suite;
-  `plugin/crew/tests/sabotage.py:84`, `:3063` — `sabotage_standards.py`'s registration.
-- `.crew/verify.json:454` (rule 37) — L-0520's merge train suite (`crew_train.py`,
-  `test_crew_train.py`); its sabotage entries are L-0526.
-- `.crew/verify.json:455-480` (rule 38) — the T-0087 harness rule; `scripts/check-tooling-pr.py`
-  and its suite `scripts/_test/tooling-pr.py`; `plugin/crew/tests/sabotage.py:81`, `:3062` —
-  `sabotage_tooling.py`'s registration.
-- `.crew/verify.json:483-496` (rule 39) — T-0028's Kimi Code provider suite (`kimi_probe.py`,
-  its tests, `kimi_fixtures.py`, the fixture run and the provider docs), widened by L-0527 to
-  `review_run.py`, `commands/review.md`, `test_review_run_kimi.py` and `sabotage_kimi.py`, whose
-  `KIMI_MUTATIONS` (probe, parser, fingerprint, launch gate) `sabotage.py` registers.
-- `.crew/verify.json:491-495` (rule 40) — L-0513's gate runner
-  (`scripts/gate-runner.py`) and its suite `scripts/_test/gate-runner.py`, priced 60s; the
-  same suite is rule 22's command. Not review harness: `scripts/check-tooling-pr.py` reports
-  no harness path for it. Since L-0517 its `status.json` carries `heavy_run.slot`, the slot
-  heavy-run exported as `HEAVY_RUN_SLOT` (`null` when unset or malformed; recorded, never trusted).
-- `.crew/verify.json:535-546` (the L-0575 rule, after L-0572's subset-cover rule at `:483-490`) — the recurring-findings checklist suite
-  (`test_recurring_findings.py`, and since L-0601 `test_review_prompt.py`) for `recurring_findings.py`, its data, `review_prompt.py` and `sabotage_recurring.py`, priced 3s.
-- `.crew/verify.json:517-524` (rule 41) — T-0040's shell-route suites
-  (`test_crew_shell.py`, `test_status.py`) for `crew_shell.py` and `crew_status.py`, priced 17s;
-  its sabotage entries split out to W-0115.
-- `plugin/crew/hooks/scripts/verify-gate.sh:1874-1883` /
-  `docs/crew/config-rationale.md`:2532-2536` — the descoped per-rule process-group kill,
-  documented as a standing limitation.
-- `scripts/check-marketplace.py:2057` — `main()`, nineteen checks.
-- `scripts/check-marketplace.py:527` — `check_versions`.
-- `scripts/check-marketplace.py:574`, `:700` — `count_crew_markdown_lines`,
-  `check_self_claims`.
-- `scripts/check_instructions.py:911` — `main()`: `load_allowance` and twelve `check_*` calls.
-- `.github/workflows/instruction-budgets.yml:71-93` — the `github.event.before`
-  base-sha fix for a `push` to `main`.
+Re-taken at `bdde587` (2026-10-26) **by rule id** with `.crew/verify.json` scanned for `"id":` lines, because
+rule numbers and lines both moved; the older numbered ("rule 9", "rule 38") entries this section carried were
+the 2026-09 tree's and are dropped, not carried. Each range is the rule's own start-to-end span.
+
+- `.crew/verify.json:303-306` (`crew-suite`) - the whole-suite pytest rule; its pricing was not re-read.
+- `.crew/verify.json:218-229` (`cloud-guard`) - the cloud-guard suites; `:231-240` (`env-guard`).
+- `.crew/verify.json:338-346` (`crew-ticket-approval`) - the approval-digest suite.
+- `.crew/verify.json:355-359` (`crew-diagrams-render`) - the crew-diagrams `render.sh` exit-77 port.
+- `.crew/verify.json:454` (`claude-rules-generated`) - the `.claude/rules/` sync check.
+- `.crew/verify.json:455-476` (`refresh-check`) - the T-0008 refresh-check suite; `:585-593`
+  (`refresh-admission`) is T-0094's admission suite, split out of it.
+- `.crew/verify.json:478-489` (`crew-resume`), `:490-518` (`crew-autopilot`), `:520-531` (`autopilot-policy`),
+  `:532-539` (`autopilot-ship`), `:540-548` (`crew-tracker`), `:565-574` (`crew-route`), `:576-584`
+  (`approval-hook`) - the auto-resume, autopilot, policy, ship, tracker, routing and group-approval suites.
+- `.crew/verify.json:621-636` (`crew-standards`) - the T-0085 standards suite; `:637` (`crew-inflight`, `crew_inflight.py`),
+  `:638` (`crew-train`) - L-0520's merge train.
+- `.crew/verify.json:639-669` (`tooling-pr-harness`) - the T-0087 harness rule: `scripts/check-tooling-pr.py`,
+  its suite `scripts/_test/tooling-pr.py`; `:670-683` (`crew-hook-dispatcher`) - L-0727's.
+- `.crew/verify.json:684-701` (`kimi-provider`) - T-0028's Kimi Code provider suite.
+- `.crew/verify.json:702-706` (`gate-runner`) - L-0513's gate runner (`scripts/gate-runner.py`) and its suite
+  `scripts/_test/gate-runner.py`; `:707-711` (`windows-shards`), `:712-716` (`ci-select`).
+- `.crew/verify.json:733-740` (`crew-shell`), `:741` (`ci-receipt`), `:743-750` (`verify-gate-completion`),
+  `:752-759` (`verify-gate-subset-cover`), `:760-771` (`recurring-findings`), `:772-779` (`pytest-rule`).
+- `.crew/verify.json:796-827` (`crew-keys`), `:903-913` (`native-script-path`), `:914-919` (`ticket-state`),
+  `:920-930` (`crew-split`), `:1041-1050` (`done-check2-gate`, the last rule).
+- `plugin/crew/hooks/scripts/verify-gate.sh:462` - the bounded single-read stdin gate
+  (`IFS= read -r -t 5 -d ''`).
+- `plugin/crew/hooks/scripts/verify-gate.sh:2516-2518` and `:2635-2667` - temp-file rule-output capture
+  (`RULE_OUT_FILE`, declared `:2320`), the 1 MiB tail cap (`RULE_OUT_CAP`, `tail -c`); the `verify-gate.ps1`
+  twin was deleted in L-0869.
+- `plugin/crew/hooks/scripts/verify-gate.sh:1158-1191` and `:2561-2564` - the comments recording the descoped
+  per-rule process-group kill (documented as a standing limitation).
+- `plugin/crew/tests/sabotage.py:66-98` - the imports of every `*_MUTATIONS` list; `:214` - `MUTATIONS = (`;
+  `:2715-2725` - the concatenations that register them (`sabotage.py` is 3043 lines at HEAD). The older
+  per-list registration lines (`:74`, `:2701` ...) this section carried are gone: the imports now sit at
+  `:66-98` and the concatenation at `:2717-2725`.
+- `scripts/check-marketplace.py:2057` - `main()`, nineteen checks; `:527` - `check_versions`; `:574` -
+  `count_crew_markdown_lines`; `:700` - `check_self_claims`.
+- `scripts/check_instructions.py:911` - `main()` (950 lines at HEAD).
+- `.github/workflows/instruction-budgets.yml:78-91` - the `github.event.before` base-sha fix for a `push` to
+  `main` (`BEFORE=` at `:87`, the `HEAD~1` fallback `:91`).
 
 ## Owns data
 
@@ -884,7 +910,7 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
 - `plugin/crew/.budget-allowance.json` — read by `scripts/check_instructions.py`
   only; the sanctioned exception list to `COMMAND_MAX_LINES`.
 - `.crew/.verify-verified-at` — written by `verify-gate.sh`'s `record_verified`
-  (`:235-239`) on every all-pass turn in which at least one rule command was
+  (`:548`) on every all-pass turn in which at least one rule command was
   selected; absent in a fresh checkout, as expected of a machine-local marker.
   DERIVED (L-0710): a turn where zero rules ran prints `verify-gate: 0 rules
   ran` and writes neither it nor the fingerprint.
@@ -910,11 +936,26 @@ DERIVED (rush/h2b-sabotage), held to one anchor match the same way:
 
 ## Unverified at this anchor
 
+**Partial refresh at `bdde587` (2026-10-26).** The file's `anchor:` is moved to that commit, but only this was
+re-verified against it: the headline rule count and the by-id positions in the `verify.json` section; the L-0725
+paragraph's rule positions; the `check-marketplace.py`, `check_instructions.py` and `instruction-budgets.yml`
+citations (re-taken by `grep -n`); the whole Entry points section; the T-0068 paragraph's `verify-gate.sh`
+lines; and the `record_verified` line. Citations in paragraphs that do **not** name another commit were also
+shifted mechanically by the `git diff -U0 c0e582fbe..bdde587` hunks of the file they cite (a line whose text
+is unchanged at the new position). **Not re-verified:** every paragraph that names an older commit (they keep
+that commit's line numbers by this file's convention), the numbered per-rule account, the `verify-gate.sh`
+section (`:502-628`) beyond the lines named above, the H2a / H2b sabotage lists, the other nine workflow files'
+contents, every `seconds` figure (Windows prices changed under L-0904), and about forty bare `:N` references
+with no file in their paragraph. Nothing in `plugin/crew/tests/` was run; the gate commands run were
+`python3 scripts/check-marketplace.py` (passed), `python3 scripts/check_instructions.py` (5 problems, see its
+section) and `python3 scripts/_test/instruction-budgets.py` (102 passed). Re-derive with
+`/crew:onboard --refresh verification-harness`.
+
 **Partial re-verification at `c0e582fbe` (2026-10-22, L-0725).** The file's `anchor:` is moved to that
 commit, but only these were re-verified against it: the `L-0725` paragraph under the rule list, the
 `check-marketplace.py` section (check count, line numbers, `check_config_reference`), the
 `check_instructions.py` section (line count, typed policy IDs), and the `CONFIG.md` /
-`sabotage.py:3077` citations. `.crew/verify.json` is unchanged by L-0725. Every other claim, the numbered
+`sabotage.py:2720` citations. `.crew/verify.json` is unchanged by L-0725. Every other claim, the numbered
 rule account and the older `sabotage.py` registration lines included, stays as of the earlier
 anchors named in place and is **unverified at `c0e582fbe`**. Re-derive with `/crew:onboard --refresh
 verification-harness`.
