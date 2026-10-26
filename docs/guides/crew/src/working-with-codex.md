@@ -96,6 +96,12 @@ approval receipt is told the gate does not apply, and during a declared incident
 CLEAN receipt that already covers the bundle answers CLEAN without it, and a tree the verify gate
 has not passed is refused (exit 9) before it.
 
+Codex reviewing a pull request outside crew reads `AGENTS.md`, not this prompt. A repository that opts in
+(`export:` in `.crew/standards.md`) gets a marked `## Code Review Rules` block there, listing every standard
+with a link to `docs/review-rules/<SET>.md`, plus the full always-on text in `REVIEW.md`; the list is a
+superset of what `/crew:review` hands for one change, each standard carrying its `applies-to`. Whether a
+given reviewer follows those links is not something crew can promise.
+
 After the standards checklist comes the **recurring-findings checklist**: the defect classes earlier
 reviews kept finding (processes and races, claims not true at the commit, tests that cannot fail,
 fail-open handling, PowerShell/Bash drift, guard bypass, version and registration), only those whose

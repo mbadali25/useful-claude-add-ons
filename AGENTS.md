@@ -108,3 +108,36 @@ Prefer "couldn't determine X" over a guess reported as clean.
 
 Claude Code sessions read `CLAUDE.md` at the repo root — the full house
 rules and incident history. This file is the short form for other tools.
+
+<!-- crew-standards-export start digest=df6052ac0825389b086b6ca038d9f2c0e191ea1a5407dee8f55424f8dff3a8e6 crew=1.2.90 -->
+## Code Review Rules
+
+Every standard crew applies in review is written out in `docs/review-rules/`, one file per set, each stating the files it applies to.
+Check a change against the standards whose scope matches the files it touches. The always-on standards are also written out in full in `REVIEW.md`.
+
+- GEN-01 Unknown stays unknown: [docs/review-rules/GEN.md](docs/review-rules/GEN.md)
+- GEN-02 Shared files change atomically: [docs/review-rules/GEN.md](docs/review-rules/GEN.md)
+- GEN-03 The irreversible action carries what was checked: [docs/review-rules/GEN.md](docs/review-rules/GEN.md)
+- GEN-04 Every behaviour has a control that fails, in both directions: [docs/review-rules/GEN.md](docs/review-rules/GEN.md)
+- GEN-05 Recognise a narrow allowlist; everything else is could-not-tell: [docs/review-rules/GEN.md](docs/review-rules/GEN.md)
+- GEN-06 Hostile text and paths are neutralised at the sink: [docs/review-rules/GEN.md](docs/review-rules/GEN.md)
+- GEN-07 One validated contract between producer and consumer: [docs/review-rules/GEN.md](docs/review-rules/GEN.md)
+- GEN-08 Portable across Windows and POSIX: [docs/review-rules/GEN.md](docs/review-rules/GEN.md)
+- GEN-09 What the change says is true at this commit: [docs/review-rules/GEN.md](docs/review-rules/GEN.md)
+- GEN-10 External behaviour is measured, not assumed: [docs/review-rules/GEN.md](docs/review-rules/GEN.md)
+- GEN-11 Named requirements hold on every path: [docs/review-rules/GEN.md](docs/review-rules/GEN.md)
+- GEN-12 Verification evidence matches the final HEAD: [docs/review-rules/GEN.md](docs/review-rules/GEN.md)
+- PWSH-16 An external program is resolved to an Application that is proven to run, never to whatever name lookup returns first: [docs/review-rules/PWSH.md](docs/review-rules/PWSH.md)
+- PYTHON-01 Every text open and decode states its encoding, error handler and newline: [docs/review-rules/PYTHON.md](docs/review-rules/PYTHON.md)
+- PYTHON-03 Records split on the separator the protocol defines, and one-line output is one line: [docs/review-rules/PYTHON.md](docs/review-rules/PYTHON.md)
+- PYTHON-04 A file someone else reads is replaced, never rewritten in place: [docs/review-rules/PYTHON.md](docs/review-rules/PYTHON.md)
+- PYTHON-06 Launch a child as an argv list, by a resolved path, through an interpreter Windows can run: [docs/review-rules/PYTHON.md](docs/review-rules/PYTHON.md)
+- PYTHON-07 Every wait has a bound, and the bound uses a clock that cannot go backwards: [docs/review-rules/PYTHON.md](docs/review-rules/PYTHON.md)
+- PYTHON-08 A child process gets a constructed environment and an explicit home: [docs/review-rules/PYTHON.md](docs/review-rules/PYTHON.md)
+- PYTHON-10 Parsed JSON and TOML are checked for shape before they are indexed, hashed, joined or sorted: [docs/review-rules/PYTHON.md](docs/review-rules/PYTHON.md)
+- PYTHON-11 The `try` body is the one call whose failure is being classified: [docs/review-rules/PYTHON.md](docs/review-rules/PYTHON.md)
+- PYTHON-13 Paths are compared and contained only after canonicalisation, and junctions count: [docs/review-rules/PYTHON.md](docs/review-rules/PYTHON.md)
+- REPO-01 Identity is complete, canonical and proven: [docs/review-rules/REPO.md](docs/review-rules/REPO.md)
+- REPO-02 A change detector sees every write channel: [docs/review-rules/REPO.md](docs/review-rules/REPO.md)
+- REPO-03 Release bookkeeping for this marketplace: [docs/review-rules/REPO.md](docs/review-rules/REPO.md)
+<!-- crew-standards-export end -->

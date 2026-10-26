@@ -52,12 +52,25 @@ self-check questions for the shared review prompt. It never reads
 `selfcheck.md`: the author's answers are withheld so the reviewer judges
 applicability independently.
 
+EXPORT (L-0718). A repo opts in with `export: ["review", "agents", "bugbot"]` (any
+non-empty subset) in the overlay's front matter. `export --write` then renders every
+standard of every set with its `applies-to` as `docs/review-rules/<SET>.md` (one file per
+set: Bugbot truncates a rule at 30,000 characters), `REVIEW.md` and `.cursor/BUGBOT.md`
+(the always-on sets in full, the stack sets as ids, names and a link) and a marked
+`## Code Review Rules` block in a hand-written `AGENTS.md` (never one carrying
+`crew:generated`). Rule, Self-check and Supplements only, never Why or Earned by. Every
+output carries the `effective_set` digest and the crew version; `--check` compares a fresh
+render byte for byte (not a commit sha), reports orphans, and writes nothing. A file over
+`EXPORT_MAX_CHARS` is refused, never truncated; `--dry-run` reports sizes.
+
 CLI: sets | init | stamp  --root R --ticket T
      proposals --root R --ticket T --scratch S --round N
      metric --root R [--record]
+     export --root R (--write | --check | --dry-run)
 Exit codes: 0 ok; 1 refused (each problem named); 2 usage.
 """
 import argparse
+import contextlib
 import datetime
 import hashlib
 import json
@@ -66,6 +79,8 @@ import re
 import stat
 import statistics
 import sys
+import tempfile
+import time
 
 import crew_common
 import crew_ticket
@@ -77,6 +92,7 @@ FIELDS = ("Rule", "Why", "Applies when", "Self-check", "Earned by", "Change sets
 PLUGIN_FIELDS = ("Rule", "Why", "Applies when", "Self-check", "Earned by", "Change sets")
 OVERLAY_FIELDS = ("Rule", "Self-check")
 FRONT_KEYS = ("set", "applies-to")
+OVERLAY_KEYS = FRONT_KEYS + ("export",)
 STATUSES = ("addressed", "n/a")
 PLACEHOLDERS = ("", "-", "--", "?", "tbd", "todo", "n/a", "na", "none", "...")
 
@@ -111,8 +127,9 @@ def _read_bytes(path):
         return None, f"cannot be read: {exc.__class__.__name__}: {exc.strerror or exc}"
 
 
-def _front_matter(lines, label):
-    """(meta, body_start, problems)."""
+def _front_matter(lines, label, keys=FRONT_KEYS):
+    """(meta, body_start, problems). `keys` is the allowlist: the overlay alone
+    may carry `export` (L-0718); an unknown key is refused everywhere else."""
     if not lines or lines[0].strip() != "---":
         return {}, 0, [f"{label}: no front matter (the first line must be ---)"]
     end = next((i for i in range(1, len(lines)) if lines[i].strip() == "---"), None)
@@ -122,9 +139,9 @@ def _front_matter(lines, label):
     for number, line in enumerate(lines[1:end], 2):
         key, sep, value = line.partition(":")
         key = key.strip()
-        if not sep or key not in FRONT_KEYS:
+        if not sep or key not in keys:
             problems.append(f"{label}: front matter line {number} is not one of "
-                            f"{', '.join(FRONT_KEYS)}: {line.strip()[:60]!r}")
+                            f"{', '.join(keys)}: {line.strip()[:60]!r}")
             continue
         if key in meta:
             problems.append(f"{label}: front matter repeats {key!r}")
@@ -144,11 +161,12 @@ def _front_matter(lines, label):
     return meta, end + 1, problems
 
 
-def parse_set(path, label=None, required=PLUGIN_FIELDS):
+def parse_set(path, label=None, required=PLUGIN_FIELDS, keys=None):
     """(set_dict, problems, raw_bytes). A set_dict is {"set", "applies_to",
     "standards": [...], "supplements": {id: [text]}, "path"}; None when the
     file could not be read (problems then says why, or is ["absent"])."""
     label = label or os.path.basename(path)
+    keys = keys or (OVERLAY_KEYS if required == OVERLAY_FIELDS else FRONT_KEYS)
     raw, why = _read_bytes(path)
     if raw is None:
         return None, [why if why == "absent" else f"{label}: {why}"], None
@@ -158,7 +176,7 @@ def parse_set(path, label=None, required=PLUGIN_FIELDS):
         return None, [f"{label}: not UTF-8 ({exc.reason} at byte {exc.start})"], raw
     text = text.lstrip("﻿")
     lines = text.replace("\r\n", "\n").split("\n")
-    meta, start, problems = _front_matter(lines, label)
+    meta, start, problems = _front_matter(lines, label, keys)
     if not meta:
         return None, problems, raw
     set_name = meta.get("set", "")
@@ -222,7 +240,8 @@ def parse_set(path, label=None, required=PLUGIN_FIELDS):
     if not standards and not supplements:
         problems.append(f"{label}: defines no standard")
     return ({"set": set_name, "applies_to": meta["applies-to"], "standards": standards,
-             "supplements": supplements, "path": path}, problems, raw)
+             "supplements": supplements, "path": path, "export": meta.get("export")},
+            problems, raw)
 
 
 # ---- the effective set ----------------------------------------------------------
@@ -289,7 +308,7 @@ def effective_set(root, changed_files, refs_dir=None, applies=None):
         digest.update(parsed["set"].encode() + b"\0" + raw + b"\0")
 
     overlay_path = os.path.join(root, *OVERLAY_REL.split("/"))
-    parsed, found, raw = parse_set(overlay_path, OVERLAY_REL, required=OVERLAY_FIELDS)
+    parsed, found, raw = parse_set(overlay_path, OVERLAY_REL, OVERLAY_FIELDS, OVERLAY_KEYS)
     overlay_problems = [] if found == ["absent"] else list(found)
     if found == ["absent"]:
         overlay = "absent"
@@ -999,9 +1018,429 @@ def _sets(root, ticket, refs_dir=None, touch=False):
     return (1 if found["problems"] else 0), lines
 
 
+# ---- exporting the standards to PR-side reviewers (L-0718) --------------------------
+
+EXPORT_TARGETS = ("review", "agents", "bugbot")
+EXPORT_MAX_CHARS = 28000   # Bugbot truncates a rule at 30,000 characters
+AGENTS_BLOCK_MAX_LINES = 40
+EXPORT_MARK = "crew-standards-export"
+EXPORT_DIR = "docs/review-rules"
+EXPORT_FILES = {"review": "REVIEW.md", "bugbot": ".cursor/BUGBOT.md"}
+AGENTS_REL = "AGENTS.md"
+NOT_OPTED_IN = "standards export: not opted in (no export key in .crew/standards.md)"
+# crew_instructions.MARKER: a substring test makes crew own the whole AGENTS.md
+# (test_standards_export holds the two equal).
+GENERATED_MARKER = "crew:generated"
+_FILE_MARK_RE = re.compile(r"^<!-- " + EXPORT_MARK + r" digest=([0-9a-f]{64}) crew=(\S+) -->$")
+_START_RE = re.compile(r"^<!-- " + EXPORT_MARK + r" start digest=([0-9a-f]{64}) crew=(\S+) -->$")
+_END_LINE = f"<!-- {EXPORT_MARK} end -->"
+
+
+def _crew_version():
+    """(version, None) or (None, problem): the plugin.json beside hooks/."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir,
+                        ".claude-plugin", "plugin.json")
+    raw, why = _read_bytes(path)
+    try:
+        version = json.loads(raw)["version"] if raw is not None else None
+    except (ValueError, KeyError, TypeError):
+        version = None
+    if not isinstance(version, str) or not re.fullmatch(r"[0-9A-Za-z.+-]+", version):
+        return None, f"the crew version cannot be read from plugin.json ({why or 'malformed'})"
+    return version, None
+
+
+def _export_targets(raw):
+    """(targets, None) for a valid `export` value, else (None, problem)."""
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        value = None
+    if (not isinstance(value, list) or not value or len(set(map(str, value))) != len(value)
+            or not all(isinstance(v, str) and v in EXPORT_TARGETS for v in value)):
+        return None, (f"{OVERLAY_REL}: export must be a non-empty JSON list of distinct "
+                      f"values from {list(EXPORT_TARGETS)}, got {str(raw)[:60]!r}")
+    return [t for t in EXPORT_TARGETS if t in value], None
+
+
+def _scope_text(globs):
+    return "always (`**`)" if "**" in globs else "files matching " + ", ".join(
+        f"`{g}`" for g in globs)
+
+
+def _render_standards(group):
+    """The one rendering of a set's standards, shared by the set file and the
+    entry points. Rule, Self-check and Supplements only: never Why or Earned by."""
+    out = []
+    for std in group["standards"]:
+        out += [f"## {std['id']} {std['name']}", "",
+                "**Rule.** " + std["fields"].get("Rule", ""), "",
+                "**Self-check.**", std["fields"].get("Self-check", ""), ""]
+        for text in std.get("supplements") or []:
+            out += [f"**Supplement ({OVERLAY_REL}).**", text, ""]
+    return out
+
+
+def _link(frm, to):
+    return os.path.relpath(to, os.path.dirname(frm) or ".").replace(os.sep, "/")
+
+
+def _render_set_file(group, mark):
+    return "\n".join([mark, f"# Review rules: set {group['set']}", "",
+                      f"Applies to: {_scope_text(group['applies_to'])}.",
+                      "Generated from crew's standards by `crew_standards.py export --write`; "
+                      "do not edit by hand. Check a change against every standard here whose "
+                      "scope matches the files it touches.", ""]
+                     + _render_standards(group)) + "\n"
+
+
+def _render_entry(rel, groups, mark):
+    out = [mark, "# Review rules", "",
+           "Generated from crew's standards by `crew_standards.py export --write`; do not edit "
+           "by hand. Check every change against the standards below. The always-on standards "
+           "are written out in full. For each stack set, read the linked file when the change "
+           "touches files matching its scope; the lists show ids and names only.", "",
+           "# Always-on standards", ""]
+    for group in (g for g in groups if "**" in g["applies_to"]):
+        out += [f"Set {group['set']}, applies to {_scope_text(group['applies_to'])}:", ""]
+        out += _render_standards(group)
+    out += ["# Stack sets", ""]
+    for group in (g for g in groups if "**" not in g["applies_to"]):
+        link = _link(rel, f"{EXPORT_DIR}/{group['set']}.md")
+        out.append(f"- Set {group['set']}, applies to {_scope_text(group['applies_to'])}: "
+                   f"[{group['set']}.md]({link})")
+        out += [f"  - {s['id']} {s['name']}" for s in group["standards"]]
+    return "\n".join(out) + "\n"
+
+
+def _render_block(groups, targets, mark):
+    start = mark.replace(f"<!-- {EXPORT_MARK} ", f"<!-- {EXPORT_MARK} start ")
+    out = [start, "## Code Review Rules", "",
+           f"Every standard crew applies in review is written out in `{EXPORT_DIR}/`, one file "
+           "per set, each stating the files it applies to.",
+           "Check a change against the standards whose scope matches the files it touches."
+           + (f" The always-on standards are also written out in full in `{EXPORT_FILES['review']}`."
+              if "review" in targets else ""), ""]
+    for group in groups:
+        link = f"{EXPORT_DIR}/{group['set']}.md"
+        out += [f"- {s['id']} {s['name']}: [{link}]({link})" for s in group["standards"]]
+    return "\n".join(out + [_END_LINE]) + "\n"
+
+
+def _find_block(text):
+    """(start, end, None) character offsets of the one marked block, (None, None, None)
+    for none, (None, None, problem) for a start without an end, two blocks or an
+    end first."""
+    starts = list(re.finditer(_START_RE.pattern, text, re.M))
+    ends = list(re.finditer("^" + re.escape(_END_LINE) + r"[ \t]*$\n?", text, re.M))
+    if not starts and not ends:
+        return None, None, None
+    if len(starts) != 1 or len(ends) != 1 or ends[0].start() < starts[0].start():
+        return None, None, (f"{AGENTS_REL}: the {EXPORT_MARK} markers are malformed (need exactly "
+                            "one start followed by one end)")
+    return starts[0].start(), ends[0].end(), None
+
+
+def _splice(existing, block):
+    """AGENTS.md text with `block` in place of the marked one, appended when none, removed
+    when `block` is None. (text, problem)."""
+    start, end, problem = _find_block(existing)
+    if problem:
+        return None, problem
+    if start is None:
+        if block is None:
+            return existing, None
+        return (existing.rstrip("\n") + "\n\n" if existing.strip() else "") + block, None
+    head = existing[:start]
+    if block is None:
+        head = head.rstrip("\n") + "\n" if head.strip() else ""
+        return head + existing[end:].lstrip("\n"), None
+    return head + block + existing[end:], None
+
+
+def _symlink_problem(root, rel):
+    """Why `rel` may not be read or written as an export output, or None: a symlink
+    anywhere under `root` on its path (a write would replace it or leave the repository)
+    or a leaf that exists and is not a regular file."""
+    path, parts = root, rel.split("/")
+    for index, part in enumerate(parts):
+        path = os.path.join(path, part)
+        try:
+            mode = os.lstat(path).st_mode
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            return f"{rel} cannot be inspected: {exc.__class__.__name__}"
+        if stat.S_ISLNK(mode):
+            return f"{rel} is, or sits under, a symlink ({part}); the export does not follow it"
+        if index < len(parts) - 1 and not stat.S_ISDIR(mode):
+            return f"{rel} sits under {part}, which is not a directory"
+    return None if stat.S_ISREG(mode) or stat.S_ISDIR(mode) else f"{rel} is not a regular file"
+
+
+def _read_text_file(root, rel):
+    """(text, None) / (None, None) when absent / (None, problem)."""
+    problem = _symlink_problem(root, rel)
+    if problem:
+        return None, problem
+    raw, why = _read_bytes(os.path.join(root, *rel.split("/")))
+    if raw is None:
+        return None, (None if why == "absent" else f"{rel} {why}")
+    try:
+        return raw.decode("utf-8"), None
+    except UnicodeDecodeError:
+        return None, f"{rel} is not UTF-8"
+
+
+def _export_build(root, refs_dir=None, crew=None):
+    """{"opted", "targets", "digest", "crew", "files": {rel: text}, "block", "agents",
+    "problems"}. `opted` False: not opted in. `block` and `agents` are "" when not wanted.
+    Reads, writes nothing. A non-empty `problems` means refuse: nothing may be written
+    from it (GEN-01)."""
+    out = {"opted": False, "targets": [], "digest": "", "crew": "", "files": {}, "block": "",
+           "agents": "", "problems": []}
+    found = effective_set(root, [], refs_dir, applies=lambda globs: True)
+    if found["overlay"] == "unknown":
+        out["problems"] = list(found["overlay_problems"])
+        return out
+    if found["overlay"] == "absent":
+        return out
+    refs_dir = refs_dir or references_dir()
+    overlay, _, _ = parse_set(os.path.join(root, *OVERLAY_REL.split("/")), OVERLAY_REL,
+                              OVERLAY_FIELDS, OVERLAY_KEYS)
+    if overlay is None or overlay["export"] is None:
+        return out
+    out["opted"] = True
+    targets, problem = _export_targets(overlay["export"])
+    out["targets"] = targets or []
+    if problem or found["problems"]:
+        out["problems"] = ([problem] if problem else []) + found["problems"]
+        return out
+    version, problem = (crew, None) if crew else _crew_version()
+    if problem:
+        out["problems"] = [problem]
+        return out
+    scopes = {parsed["set"]: parsed["applies_to"] for parsed, _ in _plugin_sets(refs_dir)[0]}
+    scopes[OVERLAY_SET] = overlay["applies_to"]
+    groups = [{"set": name, "applies_to": scopes[name],
+               "standards": [s for s in found["standards"] if s["set"] == name]}
+              for name in found["sets"]]
+    digest = found["digest"]
+    mark = f"<!-- {EXPORT_MARK} digest={digest} crew={version} -->"
+    out.update(digest=digest, crew=version)
+    out["files"] = {f"{EXPORT_DIR}/{g['set']}.md": _render_set_file(g, mark) for g in groups}
+    for target, rel in EXPORT_FILES.items():
+        if target in targets:
+            out["files"][rel] = _render_entry(rel, groups, mark)
+    for rel, text in out["files"].items():
+        if len(text) > EXPORT_MAX_CHARS:
+            out["problems"].append(f"{rel} is {len(text)} characters, over the {EXPORT_MAX_CHARS} "
+                                   "budget: it is refused, never truncated")
+        existing, why = _read_text_file(root, rel)
+        if why or (existing is not None and not _FILE_MARK_RE.match(existing.split("\n", 1)[0])):
+            out["problems"].append(why or f"{rel} exists and is not crew's generated file (no "
+                                   f"{EXPORT_MARK} marker); move or delete it first")
+    if "agents" in targets:
+        out["block"] = _render_block(groups, targets, mark)
+        lines = len(out["block"].splitlines())
+        existing, why = _read_text_file(root, AGENTS_REL)
+        agents_text, problem = (None, why) if why else _splice(existing or "", out["block"])
+        out["agents"] = agents_text or ""
+        if existing and GENERATED_MARKER in existing:
+            problem = (f"{AGENTS_REL} is crew-generated ({GENERATED_MARKER}), which the export "
+                       "does not cover")
+        elif existing and "\r" in existing:
+            problem = f"{AGENTS_REL} has CRLF line endings; convert it to LF first"
+        elif lines > AGENTS_BLOCK_MAX_LINES:
+            problem = (f"the {AGENTS_REL} block is {lines} lines, over the "
+                       f"{AGENTS_BLOCK_MAX_LINES}-line budget")
+        elif GENERATED_MARKER in out["block"]:
+            problem = f"the {AGENTS_REL} block would contain {GENERATED_MARKER}"
+        if problem:
+            out["problems"].append(problem)
+    return out
+
+
+def _owned_text(root, rel):
+    """`_read_text_file`, except that a symlink or a non-regular entry is `(None, None)`:
+    the export never wrote it, so it is neither read nor listed, and never touched. A path
+    the export would write is refused earlier, by `_export_build`."""
+    if _symlink_problem(root, rel):
+        return None, None
+    try:
+        regular = stat.S_ISREG(os.lstat(os.path.join(root, *rel.split("/"))).st_mode)
+    except OSError:
+        regular = True   # absent or unreadable: `_read_text_file` says which
+    return _read_text_file(root, rel) if regular else (None, None)
+
+
+def _orphans(root, built):
+    """[(kind, rel, problem)] for marked files and a marked block the current targets
+    do not name. Unmarked files, symlinks and non-regular entries are never listed."""
+    keep, found = set(built["files"]), []
+    listing = [] if _symlink_problem(root, EXPORT_DIR) else _listdir(
+        os.path.join(root, *EXPORT_DIR.split("/")))
+    for rel in [f"{EXPORT_DIR}/{n}" for n in listing if n.endswith(".md")] + list(
+            EXPORT_FILES.values()):
+        text, why = _owned_text(root, rel)
+        if why:
+            found.append(("unreadable", rel, why))
+        elif text is not None and _FILE_MARK_RE.match(text.split("\n", 1)[0]) and rel not in keep:
+            found.append(("file", rel, f"{rel} is orphaned"))
+    text, why = _owned_text(root, AGENTS_REL)
+    block = _find_block(text) if text else (None, None, None)
+    if text and "\r" in text and EXPORT_MARK in text and not built["block"]:
+        why = f"{AGENTS_REL} has CRLF line endings and mentions {EXPORT_MARK}; convert it to LF"
+    if why or block[2]:
+        found.append(("unreadable", AGENTS_REL, why or block[2]))
+    elif block[0] is not None and not built["block"]:
+        found.append(("block", AGENTS_REL, f"{AGENTS_REL} carries an orphaned {EXPORT_MARK} block"))
+    return found
+
+
+def _listdir(path):
+    try:
+        return sorted(os.listdir(path))
+    except OSError:
+        return []
+
+
+def _why_stale(text, fresh, built):
+    first = (text or "").split("\n", 1)[0]
+    mark = _FILE_MARK_RE.match(first) or _START_RE.match(first)
+    if mark and mark.group(1) != built["digest"]:
+        return f"stale: recorded digest {mark.group(1)[:8]}, standards digest {built['digest'][:8]}"
+    if mark and mark.group(2) != built["crew"]:
+        return f"stale: written by crew {mark.group(2)}, this is crew {built['crew']}"
+    return "differs from the standards (edited by hand?)" if mark else "carries no marker"
+
+
+def export_check(root, refs_dir=None, crew=None):
+    """(code, lines). 0 current or not opted in; 1 stale, missing, hand-edited,
+    orphaned or refused. Writes nothing."""
+    built = _export_build(root, refs_dir, crew)
+    if built["problems"]:
+        return 1, [f"standards export REFUSED: {p}" for p in built["problems"]]
+    orphans = _orphans(root, built)
+    bad = [f"{kind.upper()}: {why}" for kind, _, why in orphans]
+    for rel, fresh in built["files"].items():
+        text, why = _read_text_file(root, rel)
+        if why or text is None or text != fresh:
+            bad.append(f"{rel}: " + (why or "missing" if text is None
+                                     else _why_stale(text, fresh, built)))
+    if built["block"]:
+        text, why = _read_text_file(root, AGENTS_REL)
+        start, end, problem = _find_block(text or "")
+        if why or problem or start is None or text[start:end] != built["block"]:
+            bad.append(f"{AGENTS_REL}: " + (why or problem or ("missing the Code Review Rules block"
+                       if start is None else _why_stale(text[start:], built["block"], built))))
+    if not built["opted"] and not bad:
+        return 0, [NOT_OPTED_IN]
+    if bad:
+        return 1, [f"standards export STALE: {line}" for line in bad] + [
+            "regenerate: python3 \"$CLAUDE_PLUGIN_ROOT/hooks/scripts/crew_standards.py\" export "
+            "--write --root ."]
+    return 0, [f"standards export current (digest {built['digest'][:8]}, crew {built['crew']}, "
+               f"{len(built['files']) + bool(built['block'])} outputs)"]
+
+
+REPLACE_ATTEMPTS = 5   # Windows refuses a rename while another process holds the target open
+
+
+def _write_atomic(path, text):
+    """Complete or not at all: a temp file beside the target, flushed to disk, then
+    os.replace, which keeps the target's mode and retries a sharing violation."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+    except OSError:
+        mode = 0o644
+    handle, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".crew-export-")
+    try:
+        with os.fdopen(handle, "wb") as fh:
+            fh.write(text.encode("utf-8"))
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, mode)
+        for attempt in range(REPLACE_ATTEMPTS):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if attempt == REPLACE_ATTEMPTS - 1:
+                    raise
+                time.sleep(0.1)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
+        raise
+
+
+def _contained(root, rel):
+    real = os.path.realpath(os.path.dirname(os.path.join(root, *rel.split("/"))))
+    top = os.path.realpath(root)
+    try:
+        return os.path.commonpath([real, top]) == top
+    except ValueError:
+        return False
+
+
+def export_report(root, refs_dir=None, crew=None):
+    """(code, lines) for --dry-run: per output its path, size, budget and digest."""
+    built = _export_build(root, refs_dir, crew)
+    if not built["opted"] and not built["problems"]:
+        return 0, [NOT_OPTED_IN]
+    lines = [f"{rel}: {len(text)} characters, budget {EXPORT_MAX_CHARS}, digest {built['digest']}"
+             for rel, text in built["files"].items()]
+    if built["block"]:
+        lines.append(f"{AGENTS_REL} (block): {len(built['block'].splitlines())} lines, budget "
+                     f"{AGENTS_BLOCK_MAX_LINES}, digest {built['digest']}")
+    lines += [f"REFUSED: {p}" for p in built["problems"]]
+    return (1 if built["problems"] else 0), lines
+
+
+def export_write(root, refs_dir=None, crew=None):
+    """(code, lines). Refuses with nothing written when anything is unknown, over budget or
+    unsafe; otherwise writes each output complete-or-not-at-all and removes orphans."""
+    built = _export_build(root, refs_dir, crew)
+    if built["problems"]:
+        return 1, [f"standards export REFUSED, nothing written: {p}" for p in built["problems"]]
+    orphans = _orphans(root, built)
+    if any(kind == "unreadable" for kind, _, _ in orphans):
+        return 1, [f"standards export REFUSED, nothing written: {why}" for _, _, why in orphans]
+    outputs = dict(built["files"])
+    if built["agents"]:
+        outputs[AGENTS_REL] = built["agents"]
+    for rel in outputs:
+        if not _contained(root, rel):
+            return 1, [f"standards export REFUSED, nothing written: {rel} resolves outside "
+                       "the repository"]
+    lines = []
+    try:
+        for rel, text in outputs.items():
+            _write_atomic(os.path.join(root, *rel.split("/")), text)
+            lines.append(f"wrote {rel}")
+        for kind, rel, _ in orphans:
+            path = os.path.join(root, *rel.split("/"))
+            if kind == "file":
+                os.remove(path)
+            else:
+                text, _ = _read_text_file(root, rel)
+                stripped, _ = _splice(text, None)
+                if stripped.strip():
+                    _write_atomic(path, stripped)
+                else:
+                    os.remove(path)
+            lines.append(f"removed orphan {rel}")
+    except OSError as exc:
+        return 1, lines + [f"standards export FAILED part-way: {exc.__class__.__name__}: "
+                           f"{exc.strerror or exc}; the lines above landed, rerun --write"]
+    return 0, lines or [NOT_OPTED_IN]
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=("sets", "init", "stamp", "proposals", "metric"))
+    parser.add_argument("command", choices=("sets", "init", "stamp", "proposals", "metric", "export"))
     parser.add_argument("--root", default=".")
     parser.add_argument("--ticket")
     parser.add_argument("--scratch")
@@ -1009,9 +1448,14 @@ def main(argv):
     parser.add_argument("--record", action="store_true")
     parser.add_argument("--touch", action="store_true",
                         help="sets only: from the spec's Touch list, with no scope base")
+    parser.add_argument("--write", action="store_true", help="export only: write the files")
+    parser.add_argument("--check", action="store_true", help="export only: fail when stale")
+    parser.add_argument("--dry-run", action="store_true", help="export only: report sizes")
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
-    if args.command != "metric":
+    if args.command == "export" and [args.write, args.check, args.dry_run].count(True) != 1:
+        parser.error("export needs exactly one of --write, --check, --dry-run")
+    if args.command not in ("metric", "export"):
         if not args.ticket:
             parser.error(f"{args.command} needs --ticket")
         try:
@@ -1029,6 +1473,9 @@ def main(argv):
         code, lines = stamp(root, args.ticket)
     elif args.command == "proposals":
         code, lines = proposals(root, args.ticket, os.path.abspath(args.scratch), args.round)
+    elif args.command == "export":
+        code, lines = (export_write if args.write else export_check if args.check
+                       else export_report)(root)
     else:
         code, lines = metric(root, record=args.record)
     stream = sys.stdout if code == 0 else sys.stderr

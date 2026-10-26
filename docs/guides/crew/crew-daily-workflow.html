@@ -151,6 +151,13 @@ per-language set a changed file matches, and this repository's
 <code>addressed</code> with evidence, or <code>n/a</code> with a reason. <code>crew_standards.py stamp</code>
 refuses an incomplete answer sheet and binds a complete one to the exact
 review bundle, so any later edit needs a new stamp.</p>
+<p><strong>6c. Publishing the standards (optional).</strong> A repository that wants its pull-request reviewers (Claude
+Code Review, Cursor Bugbot, Codex, Copilot) to check the same standards opts in with
+<code>export: ["review", "agents", "bugbot"]</code> in the <code>.crew/standards.md</code> front matter. After an approved
+proposal edits that file, run <code>crew_standards.py export --root . --write</code>: it regenerates
+<code>docs/review-rules/&lt;SET&gt;.md</code>, <code>REVIEW.md</code>, <code>.cursor/BUGBOT.md</code> and the <code>## Code Review Rules</code> block in a
+hand-written <code>AGENTS.md</code>. <code>export --check</code> fails when any of them is stale, missing, hand-edited or
+orphaned; freshness is as of the last check, and a skipped check (exit 77) is not coverage.</p>
 <p><strong>7. Review.</strong> <code>/crew:implement</code> calls <code>/crew:review T-0091</code> last, after tests,
 docs and the self-check; without a current stamp the review refuses before it
 spends a round. Codex reviews the bundle (or Copilot, or the Claude fallback,
@@ -440,6 +447,9 @@ approval is a step you take, not a lock.</p>
   <code>verify.json</code>, <code>standards.md</code>, and files crew writes but also trusts, such as <code>.crew/tfplan/</code>,
   <code>incident.json</code> and <code>.deploy-in-flight</code>), <code>TODO.md</code>, the rest of <code>.claude/</code> and crew's own
   policy files. If the ticket changes one of them, list it in Touch.</li>
+<li>The generated review files (<code>docs/review-rules/</code>, <code>REVIEW.md</code>, <code>.cursor/BUGBOT.md</code> and the
+  <code>## Code Review Rules</code> block in <code>AGENTS.md</code>) are ordinary repository files: a ticket that edits a
+  standard lists them in Touch, then regenerates them with <code>crew_standards.py export --write</code>.</li>
 <li>Approval receipts, the review ledger and the scope base are always refused.</li>
 </ul>
 <p>The guard checks the real file a symlink points to and the path as written, so a link cannot

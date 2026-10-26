@@ -61,6 +61,15 @@ or a recorded reason, or MISSING. No CHANGELOG.md: `not applicable`.
 
 Both glob lists are judgement (spec Unknowns) and `--explain` prints them.
 
+## standards export (L-0718)
+
+When the ticket's own changes touch a standards set or `.crew/standards.md`,
+one more row runs `crew_standards.py export --check`: exit 0 is `updated`
+(or `not applicable` when the repo never opted in), exit 1 is `MISSING` (the
+generated review files are stale), and anything else -- 77 SKIP, 2, a timeout,
+an interpreter that will not start -- is `unknown`, never `updated`. No
+standards file changed: no row.
+
 ## docs.json
 
 `{"reasons": {"<document>": "<why not>"}, "deferred": [{"key", "why",
@@ -82,6 +91,7 @@ if __name__ == "__main__":
 
 import crew_common
 import crew_refresh_check
+import crew_standards
 import crew_ticket
 import scope_base
 
@@ -110,6 +120,16 @@ README_TRIGGERS = ("commands/**", "agents/**", "skills/*/SKILL.md", "hooks/hooks
 SECURITY_PATHS = ("**/hooks/scripts/*guard*", "**/approval_hook.py", "**/promote-gate.*",
                   "**/hooks.json", "scripts/install-prerequisites.*", ".github/workflows/**",
                   SECURITY)
+
+# Under any repo: a change here makes the generated review files (L-0718) a
+# question for `crew_standards.py export --check`.
+STANDARDS_PATHS = (".crew/standards.md", "**/crew-standards/references/*.md")
+EXPORT_DOC = "standards export"
+EXPORT_TIMEOUT = 60
+# What the export check's child gets from this process: nothing else, so a secret in the
+# caller's environment never reaches it (PYTHON-08).
+EXPORT_ENV = ("PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "TEMP", "TMP", "TMPDIR", "LANG",
+              "LC_ALL", "CLAUDE_PLUGIN_ROOT")
 
 GIT_TIMEOUT = 30
 
@@ -450,6 +470,36 @@ def _todo_rows(top, base, deferred):
     return [_row(TODO, UPDATED, f"{len(deferred)} deferred item(s) added")]
 
 
+def _export_check(top):
+    """`(exit code, first output line)` of `crew_standards.py export --check`; the code is
+    None when it could not run or finish."""
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crew_standards.py")
+    try:
+        done = subprocess.run([sys.executable, "-B", script, "export", "--check", "--root", top],
+                              capture_output=True, timeout=EXPORT_TIMEOUT,
+                              check=False, stdin=subprocess.DEVNULL,
+                              env={k: os.environ[k] for k in EXPORT_ENV if k in os.environ})
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"{exc.__class__.__name__}: {exc}"
+    text = (done.stdout + done.stderr).decode("utf-8", errors="replace").strip()
+    return done.returncode, text.split("\n", 1)[0].strip()
+
+
+def _export_rows(top, changed_raw):
+    hits = sorted(p for p in changed_raw if _matches(p, STANDARDS_PATHS))
+    if not hits:
+        return []
+    code, first = _export_check(top)
+    if code == 0 and first == crew_standards.NOT_OPTED_IN:
+        return [_row(EXPORT_DOC, NOT_APPLICABLE, "this repo has not opted in")]
+    if code == 0:
+        return [_row(EXPORT_DOC, UPDATED, f"{hits[0]} changed and export --check is current")]
+    if code == 1:
+        return [_row(EXPORT_DOC, MISSING, f"{hits[0]} changed and export --check is stale: "
+                     f"{first}")]
+    return [_row(EXPORT_DOC, UNKNOWN, f"export --check could not tell (exit {code}): {first}")]
+
+
 def _base_doubt(top, base, source, ticket):
     """Why `base` cannot be trusted to show this ticket's change, or None --
     T-0008's rules, called rather than restated: a fallback equal to HEAD
@@ -503,7 +553,8 @@ def ticket_docs(root, ticket):
     documents = (_changelog_rows(top, own, changed, changed_raw, entries, reasons)
                  + _readme_rows(top, base, changed, changed_raw, entries, reasons)
                  + _security_rows(top, changed, changed_raw, reasons)
-                 + _todo_rows(top, base, record["deferred"]))
+                 + _todo_rows(top, base, record["deferred"])
+                 + _export_rows(top, changed_raw))
     verdicts = {d["verdict"] for d in documents}
     status = (UNKNOWN if UNKNOWN in verdicts else MISSING_STATUS if MISSING in verdicts else OK)
     return _result(status, f"scope base {base[:12]} ({why}); changed set: {own['note']}",
