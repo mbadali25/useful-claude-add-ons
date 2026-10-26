@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.87**: One review budget of three per ticket, counted across successor plans; the owner's `--grant-round`. `crew` 1.2.87: a ticket now gets three review rounds in total, a successor plan no longer reopens them, and only the owner's `review_ledger.py --grant-round` adds a round.
+- **crew 1.2.88**: One review budget of three per ticket, counted across successor plans; the owner's `--grant-round`. `crew` 1.2.88: a ticket now gets three review rounds in total, a successor plan no longer reopens them, and only the owner's `review_ledger.py --grant-round` adds a round.
 - **crew 1.2.83**: The verify-map price test rejects a NaN or infinite `seconds`. `crew` 1.2.83: a rule priced `NaN` can no longer pass the verify-map price test, and the L-0904 note sentence in `.crew/verify.json` starts its own line; no behaviour a user runs changes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
