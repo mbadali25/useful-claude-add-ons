@@ -25,11 +25,8 @@ pasting files into the prompt.
 
 ## R3 — Rounds are bounded and reserved before launch
 
-<!-- review-budget-doc -->
-A fixed budget per ticket (crew: three rounds, counted across every plan the ticket ran
-under), reserved before the reviewer starts, so a crash still counts. A refused round
-means replan, not retry: a successor plan does not reopen the budget, and only the owner's
-`review_ledger.py --grant-round` adds a round.
+A fixed budget per ticket (crew: 2), reserved before the reviewer starts, so a crash still
+counts. A refused third round means replan, not retry.
 
 ## R4 — Never review an unchanged bundle twice
 

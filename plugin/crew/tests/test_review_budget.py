@@ -343,7 +343,6 @@ _GUIDES = "docs/guides/crew/src/"
 _DOCS = (
     "plugin/crew/commands/review.md", "plugin/crew/README.md", "docs/crew/review.md",
     "docs/crew/reference/10-the-daily-loop.md",
-    "plugin/crew/skills/crew-qa-standards/references/review.md",
     _GUIDES + "guide.md", _GUIDES + "quickstart.md", _GUIDES + "troubleshooting.md",
     _GUIDES + "daily-workflow.md", _GUIDES + "daily-workflow-scope.md", _GUIDES + "autopilot.md")
 _MARKER = "<!-- review-budget-doc -->"
