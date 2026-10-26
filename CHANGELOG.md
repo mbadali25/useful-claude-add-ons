@@ -9,6 +9,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.84: the backgrounded-process quiet test no longer flakes on a slow runner (L-0913)
+
+- **Summary.** `crew` 1.2.84: a wall-clock test that failed once at 6.02s against a 6s bound on windows-latest now sleeps 20s against a 12s bound; no behaviour a user runs changes.
+- `plugin/crew/tests/test_verify_gate_quiet.py`: the backgrounded sleep is 20s and the bound 12s, so a real regression (the pipe held for the whole sleep) still fails and passing runs of 3.7-6.0s no longer sit on the edge. Test constants only. Docs: none.
+
 ### Fixed — crew 1.2.83: the verify-map price test rejects a NaN or infinite `seconds` (L-0910)
 
 - **Summary.** `crew` 1.2.83: a rule priced `NaN` can no longer pass the verify-map price test, and the L-0904 note sentence in `.crew/verify.json` starts its own line; no behaviour a user runs changes.
