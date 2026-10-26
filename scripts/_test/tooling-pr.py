@@ -256,6 +256,20 @@ def case_instructions_undeclared(tmp: str) -> str:
     return root
 
 
+def case_harness_shell_suite(tmp: str) -> str:
+    root = repo(tmp)
+    commit(root, [HARNESS_FILE, "plugin/crew/hooks/scripts/_test/run-tests.sh"],
+           "harness with its shell suite")
+    return root
+
+
+def case_harness_near_miss_test_dir(tmp: str) -> str:
+    root = repo(tmp)
+    commit(root, [HARNESS_FILE, "plugin/crew/hooks/scripts/_tests/run-tests.sh"],
+           "harness plus a directory that only looks like the shell suite's")
+    return root
+
+
 def case_no_origin(tmp: str) -> str:
     root = repo(tmp, origin=False)
     commit(root, [HARNESS_FILE], "harness")
@@ -271,6 +285,9 @@ CASES = [
      "skills/x/SKILL.md"),
     ("must-allow harness+tests+docs", case_harness_tests_docs, 0, "OK"),
     ("must-allow harness+budgets", case_harness_budgets, 0, "OK"),
+    ("must-allow harness+shell-suite", case_harness_shell_suite, 0, "OK"),
+    ("must-block harness+near-miss-test-dir", case_harness_near_miss_test_dir, 1,
+     "  plugin/crew/hooks/scripts/_tests/run-tests.sh"),
     ("must-allow feature-only", case_feature_only, 0, "no harness path changed"),
     ("must-allow merged-main", case_merged_main, 0, "OK"),
     ("must-report no-origin", case_no_origin, 77, "TOOL MISSING"),

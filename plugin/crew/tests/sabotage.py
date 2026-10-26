@@ -2723,7 +2723,8 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + RECURRING_MUTATIONS + TRAIN_MUTATIONS + GITIGNORE_MUTATIONS + WAVE_MUTATIONS + GHDEPLOY_MUTATIONS
               + PROMOTE_TREE_MUTATIONS + CONTRACT_MUTATIONS + BRIDGE_MUTATIONS + sabotage_platform.PLATFORM_MUTATIONS)
 MUTATIONS += (__import__("sabotage_reach_notice").REACH_NOTICE_MUTATIONS + __import__("sabotage_quiet").QUIET_MUTATIONS
-              + __import__("sabotage_crew_hook").CREW_HOOK_MUTATIONS)
+              + __import__("sabotage_crew_hook").CREW_HOOK_MUTATIONS
+              + __import__("sabotage_trust").TRUST_MUTATIONS)
 
 # pytest's own exit codes: 0 all passed, 1 a test FAILED, 2 interrupted, 3
 # internal error, 4 usage error (what a collection failure produces), 5 nothing

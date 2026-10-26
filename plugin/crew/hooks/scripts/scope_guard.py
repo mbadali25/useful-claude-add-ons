@@ -128,6 +128,7 @@ import time
 
 import crew_ticket
 import role_write_guard
+import verify_trust
 
 TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 SHELLS = ("Bash", "PowerShell")
@@ -151,6 +152,41 @@ _ADMIN_MERGE_RE = re.compile(r"\bgh\b[^\n;&|]*\bpr\b[^\n;&|]*\bmerge\b[^\n;&|]*-
 LANE_REFUSAL = ("a lane may not accept, reject or admin-merge; that is the owner's, from the "
                 "main session")
 _HOOK_RE = re.compile(r"approval[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
+# L-0888: the verify trust store grows only by a person at a terminal. Any
+# command naming verify_trust with a verb that grows or shrinks it is refused;
+# `status` and `check` (read-only, bar the allowlist pin) pass.
+# A verb standing as a path segment or an option value (`--root /tmp/approve`,
+# `--root=approve`) is an argument, not the verb: argparse reads a positional
+# only as its own word, so a verb glued to `/`, `\\`, `.`, `=`, `:` or `~` is not one.
+_TRUST_RE = re.compile(r"verify[_-]trust(?:\.py)?\b[^\n;&|]*(?<![/\\.=:~])\b(?:approve|allow-owner|"
+                       r"disallow-owner|revoke)\b(?![/\\])", re.IGNORECASE)
+# The same verbs reached through the module instead of the script: an import, `-m`
+# or runpy beside any of the verbs (or the writer itself) anywhere in the text.
+_TRUST_IMPORT_RE = re.compile(r"\b(?:import|from)\s+verify[_-]trust\b|-m\s+verify[_-]trust\b|"
+                              r"\brunpy\b[^\n]*verify[_-]trust", re.IGNORECASE)
+_TRUST_VERB_RE = re.compile(r"\b(?:approve|allow-owner|disallow-owner|revoke|update_store|"
+                            r"cmd_approve|cmd_allow_owner|cmd_revoke)\b", re.IGNORECASE)
+TRUST_STORE_NAME = "verify-trust.json"
+# L-0888 (round 4, runtime-built verb): the literal-verb checks above cannot read
+# a verb or a path that the command assembles as it runs. These refuse the
+# assembly itself, beside the name: a variable or substitution where the verb
+# stands, string pieces joined, a dynamic import, a call into the module's
+# writers, the store override or a session-variable unset, and a store-named
+# write. A tripwire, not a sandbox: the boundary is the OS user (README).
+_TRUST_NAME_RE = re.compile(r"verify[_-]trust(?:\.py)?", re.IGNORECASE)
+_TRUST_READ_VERB_RE = re.compile(r"\b(?:status|check)\b")
+_DYNAMIC_RE = re.compile(r"[$`*?]")
+_ASSEMBLY_RE = re.compile(r"[\"']\s*\+\s*[\"']|\.join\(|\bchr\(|__import__|\bimportlib\b|"
+                          r"\bgetattr\(|\bexec\(|\beval\b|base64|fromhex|\\x[0-9a-f]{2}",
+                          re.IGNORECASE)
+_DYNAMIC_IMPORT_RE = re.compile(r"__import__|\bimportlib\b|\bexec\(|\beval\(|\bexecfile\(",
+                                re.IGNORECASE)
+_SCRIPTS_DIR_RE = re.compile(r"hooks[\\/]+scripts|\bsys\.path\b|verify_|trust", re.IGNORECASE)
+_TRUST_WRITER_CALL_RE = re.compile(r"\bmain\s*\(|\bcmd_\w+|\bupdate_store\b|\b_Lock\b|"
+                                   r"\bsys\.argv\b|\bparse_args\b|\bbuild_parser\b")
+_STORE_OVERRIDE_RE = re.compile(r"\bCREW_VERIFY_TRUST_FILE\b")
+_SESSION_VAR_RE = re.compile(r"\bCLAUDECODE\b")
+_STORE_DIR_RE = re.compile(r"[\\/]crew[\\/]+verify-", re.IGNORECASE)
 # A line continuation: bash's backslash-newline, which the shell deletes (so it
 # can split a word), and PowerShell's backtick-newline, which reads as a space.
 _BASH_CONTINUATION_RE = re.compile(r"\\\r?\n")
@@ -297,6 +333,201 @@ def _joined(command):
     return command, bash, _PS_CONTINUATION_RE.sub(" ", command)
 
 
+_QUOTE_RE = re.compile(r"[\"'\\]")
+
+
+def _assembled_trust_refusal(text):
+    """Why `text` (one reading of a shell command) is refused for building a
+    trust-store change at run time, or None."""
+    names = list(_TRUST_NAME_RE.finditer(text))
+    for hit in names:
+        span = re.split(r"[\n;&|]", text[hit.end():], maxsplit=1)[0]
+        dynamic = _DYNAMIC_RE.search(span)
+        if dynamic:
+            verb = _TRUST_READ_VERB_RE.search(span)
+            if not verb or verb.start() > dynamic.start():
+                return ("a variable, substitution or wildcard stands where the verify_trust verb "
+                        "goes; only a literal `status` or `check` is run from a model")
+    if names and _ASSEMBLY_RE.search(text):
+        return "it builds a verify_trust call at run time; only a person at a terminal trusts a repo"
+    if names and _TRUST_IMPORT_RE.search(text) and _TRUST_WRITER_CALL_RE.search(text):
+        return "it calls the verify trust store's writers; only a person at a terminal trusts a repo"
+    if _DYNAMIC_IMPORT_RE.search(text) and _SCRIPTS_DIR_RE.search(text):
+        return ("it imports from the plugin scripts directory at run time, which can reach the "
+                "verify trust store; only a person at a terminal trusts a repo")
+    if _STORE_OVERRIDE_RE.search(text):
+        return "it names CREW_VERIFY_TRUST_FILE, the verify trust store's test seam"
+    if names and _SESSION_VAR_RE.search(text):
+        return "it names CLAUDECODE beside verify_trust; the session variable is not the model's"
+    if _STORE_DIR_RE.search(text) and _WRITES_RE.search(text):
+        return "it writes a verify-* file under crew's config directory, the verify trust store"
+    return None
+
+
+_TRUST_VERBS = frozenset({"approve", "allow-owner", "disallow-owner", "revoke"})
+_INTERPRETER_RE = re.compile(r"(?:^|[/\\])(?:python[0-9.]*|py|pypy[0-9.]*|(?:ba|z|da|k|a)?sh)(?:\.exe)?$",
+                             re.IGNORECASE)
+_SCRIPT_TOKEN_RE = re.compile(r"\.pyw?$|[*?\[]", re.IGNORECASE)
+_GLOB_SCRIPT_RE = re.compile(r"[*?\[]")
+
+
+_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+_WRAPPERS = frozenset({"env", "sudo", "command", "exec", "nohup", "time", "nice", "builtin"})
+# Scripts with a guard and an `approve` verb of their own (judged above, by
+# `_autopilot_refusal` and the `crew_ticket` approve rule): not a trust verb.
+_OWN_APPROVER_RE = re.compile(r"crew_(?:autopilot|ticket)(?:\.py)?$")
+_PROGRAM_OPTIONS = frozenset({"-m"})
+_VALUE_OPTIONS = frozenset({"-W", "-X", "-Q"})
+
+
+def _basename(token):
+    return re.split(r"[\\/]", token)[-1].lower()
+
+
+def _first_word_index(tokens):
+    """Index of the command word of one segment: past leading `NAME=value`
+    assignments, a wrapper such as `env` or `sudo` and the options it was given,
+    or None. Only this word is the interpreter; a later token that merely looks
+    like one (`git commit -m "python3 fix, now approve"`) is prose."""
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if _ASSIGNMENT_RE.match(token):
+            index += 1
+        elif token in _WRAPPERS:
+            index += 1
+            while index < len(tokens) and (tokens[index].startswith("-")
+                                           or _ASSIGNMENT_RE.match(tokens[index])):
+                index += 1
+        else:
+            return index
+    return None
+
+
+def _segment_verb(tokens):
+    """True when one command segment hands a trust verb to a script. The command
+    word (past assignments and a wrapper) is either an interpreter or shell,
+    whose script operand is `-` (the script on stdin) or the first word that is
+    not an option, with `-c` reading its program as a fresh command and `-m`
+    ending the scan (a module named like the trust script is judged by the other
+    checks); or it is itself a path, an executable copy run directly
+    (`/tmp/x approve`). So `python3 -m pytest -k "approve and not revoke"` reads
+    no verb."""
+    first = _first_word_index(tokens)
+    if first is None:
+        return False
+    command, rest = tokens[first], tokens[first + 1:]
+    if _OWN_APPROVER_RE.search(_basename(command)):
+        return False
+    if not _INTERPRETER_RE.search(command):
+        return bool(re.search(r"[/\\]", command)) and bool(rest) and rest[0].lower() in _TRUST_VERBS
+    index = 0
+    while index < len(rest):
+        token = rest[index]
+        if token == "-":
+            return index + 1 < len(rest) and rest[index + 1].lower() in _TRUST_VERBS
+        if token == "-c":
+            return _segment_verb(rest[index + 1:])
+        if token in _PROGRAM_OPTIONS:
+            return False
+        if token in _VALUE_OPTIONS:
+            index += 2
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        if _OWN_APPROVER_RE.search(_basename(token)):
+            return False
+        return index + 1 < len(rest) and rest[index + 1].lower() in _TRUST_VERBS
+    return False
+
+
+def _script_verb_refusal(text):
+    """Why a reading is refused for a trust verb standing as the first word
+    after a script, wherever that script is read from, or None. Independent of
+    the script's name: the verb word is the signal. A verb after `-`
+    (`python3 - approve < verify_trust.py`, `cat verify_trust.py | python3 -
+    approve`), after a script token (a copy under another name, a glob such as
+    `verify_t*st.py`) or after anything else an interpreter was handed, is
+    refused; a verb after an option (`--root approve`, `-k approve`), glued to
+    a path (`/tmp/approve`) or in a command with no interpreter or script
+    token (`grep -n approve`, `echo approve`) is an argument, not the verb."""
+    for segment in re.split(r"[\n;&|]", text):
+        tokens = [t.strip("()\"'`{}") for t in segment.split()]
+        tokens = [t for t in tokens if t]
+        if _segment_verb(tokens):
+            return ("it hands a verify trust verb to a script read from stdin, a copy or a "
+                    "wildcard path; only a person at a terminal trusts a repo")
+        for before, after in zip(tokens, tokens[1:]):
+            verb = after.lower() in _TRUST_VERBS
+            if verb and not before.startswith("-") and _SCRIPT_TOKEN_RE.search(before) \
+                    and not _OWN_APPROVER_RE.search(_basename(before)):
+                return ("it hands a verify trust verb to a script read from stdin, a copy or a "
+                        "wildcard path; only a person at a terminal trusts a repo")
+            if _GLOB_SCRIPT_RE.search(before) and ".p" in before.lower() \
+                    and after.startswith(("$", "`")):
+                return ("a wildcard script path is given a variable where the verify trust verb "
+                        "goes; only a person at a terminal trusts a repo")
+    return None
+
+
+def _trust_reading_refusal(command):
+    """Why one reading of a shell command is refused for the verify trust
+    store, or None. Judged on the reading as written AND with every quote and
+    backslash deleted, so `ap''prove`, `"approve"` and `app\\rove` (which a
+    shell joins into the verb) read as the verb."""
+    for text in (command, _QUOTE_RE.sub("", command)):
+        if _TRUST_RE.search(text):
+            return ("it changes the verify trust store (`verify_trust.py approve`, `allow-owner`, "
+                    "`disallow-owner` or `revoke`); only a person at a terminal trusts a repo")
+        if _TRUST_IMPORT_RE.search(text) and _TRUST_VERB_RE.search(text):
+            return ("it drives the verify trust store through the module; only a person at a "
+                    "terminal trusts a repo")
+        if TRUST_STORE_NAME in text.lower() and _WRITES_RE.search(text):
+            return "it writes the verify trust store, which only a person at a terminal may change"
+        assembled = _assembled_trust_refusal(text)
+        if assembled:
+            return assembled
+        scripted = _script_verb_refusal(text)
+        if scripted:
+            return scripted
+    return None
+
+
+def trust_refusal(data):
+    """Why a tool payload is refused for the verify trust store ALONE, or None.
+    Judged before the scope mode is read and whether or not the directory is a
+    git repo: a mode of `off` (a config key a session can write) switches the
+    scope guard off, and must not switch off the one rule that keeps a model
+    from trusting a repo for itself."""
+    tool = data.get("tool_name")
+    tool_input = data.get("tool_input")
+    if tool in SHELLS:
+        command = tool_input.get("command") if isinstance(tool_input, dict) else None
+        if not isinstance(command, str):
+            return None
+        for reading in _joined(command):
+            reason = _trust_reading_refusal(reading)
+            if reason:
+                return reason
+        return None
+    try:
+        store = os.path.normcase(os.path.abspath(verify_trust.store_path()))
+    except verify_trust.TrustError:
+        # A store location a repo can author (relative, from settings env) is
+        # UNKNOWN to the trust check; the guard still refuses the store's names.
+        store = None
+    for target in targets(data):
+        absolute = os.path.abspath(target)
+        real = role_write_guard._resolve_real_target(absolute)  # pylint: disable=protected-access
+        for path in (absolute, real):
+            if os.path.basename(path).lower() in (TRUST_STORE_NAME, TRUST_STORE_NAME + ".lock") \
+                    or (store and os.path.normcase(path) in (store, store + ".lock")):
+                return ("it writes the verify trust store, which only a person at a terminal "
+                        "may change")
+    return None
+
+
 def shell_refusal(command, common, top=None, agent_type=None):
     """Why a Bash/PowerShell `command` is refused, or None (module docstring,
     "Bash and PowerShell"). Textual on purpose, and conservative: a benign
@@ -327,6 +558,9 @@ def _reading_refusal(command, written, common, top, agent_type=None):
         return _autopilot_refusal(written, top)
     if _HOOK_RE.search(command):
         return "it names the approval hook, which only the user's prompt may drive"
+    trust = _trust_reading_refusal(command)
+    if trust:
+        return trust
     state = os.path.join(common, "crew") if common else None
     folded = os.path.normcase(command).replace("\\", "/")
     names_state = bool(_DOTGIT_CREW_RE.search(command)) or bool(
@@ -378,6 +612,11 @@ def decide(data):
     tool = data.get("tool_name")
     if tool not in TOOLS and tool not in SHELLS:
         return 0
+    trust = trust_refusal(data)
+    if trust:
+        return _deny([f"SCOPE GUARD: refused this {tool} call -- {trust}.",
+                      "  Trust is given by the owner in a terminal: "
+                      "`python3 verify_trust.py approve --root <repo>`."])
     root = data.get("cwd") if isinstance(data.get("cwd"), str) else None
     root = root or os.environ.get("CLAUDE_PROJECT_DIR") or "."
     top = crew_ticket.toplevel(root)

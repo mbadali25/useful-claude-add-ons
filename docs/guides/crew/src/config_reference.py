@@ -364,6 +364,23 @@ until `/crew:migrate` rewrites them, and are never written.
 
 {profile_table}
 
+## Verify gate trust (a store, not a config key)
+
+The Stop gate runs `.crew/verify.json` `run` strings (and, with no verify.json,
+`_verify/smoke.sh` or `scripts/smoke.sh`) only for a repo this machine trusts.
+Trust lives in `${{CLAUDE_CONFIG_DIR:-~/.claude}}/crew/verify-trust.json`, written
+by `python3 plugin/crew/hooks/scripts/verify_trust.py` (`approve`, `revoke`,
+`status`, `allow-owner`, `disallow-owner`) at a terminal. It is not a config key:
+no repo file can widen it. An untrusted repo prints `UNTRUSTED, not run`, runs
+nothing and records no pass; `--ci` is exempt. A store location a repo can author is
+refused as UNKNOWN: a project's `.claude/settings.json` `env` block reaches hook processes
+(measured 2026-10-25, claude 2.1.304), so `CREW_VERIFY_TRUST_FILE`, `CLAUDE_CONFIG_DIR` and
+`HOME` must name an absolute path outside the repo being checked.
+
+Accepted residuals: `--price` opens its map, and `bash` reopens the smoke script, after the trust
+check, so a process running as you that swaps the file in that interval runs the swapped bytes (you can
+edit the store too). The scope guard is a textual tripwire, not a sandbox: the boundary is the OS user.
+
 ## Migrating and removed keys
 
 `/crew:migrate` upgrades a repo file; `python3 plugin/crew/hooks/scripts/crew_migrate.py --global`

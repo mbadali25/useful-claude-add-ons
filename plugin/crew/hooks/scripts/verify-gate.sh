@@ -20,6 +20,106 @@ trap '_crew_gate_exit_line $?' EXIT
 # CDPATH emptied: a match makes `cd` echo the directory into the value.
 GATE_PLUGIN_ROOT="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 &&
   { pwd -W 2>/dev/null || pwd; })"
+# This script's own directory, resolved before the cd for the same reason (a
+# copy of the scripts need not sit at hooks/scripts under a plugin root).
+GATE_SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 &&
+  { pwd -W 2>/dev/null || pwd; })"
+
+# --- verify trust (L-0888) -------------------------------------------------
+# .crew/verify.json `run` strings reach `eval` and the smoke scripts reach
+# `bash`; both are repo-authored. verify_trust.py decides whether THIS machine
+# trusts this repo's bytes (hash-bound approval) or its remote owner
+# (allowlist). Anything but "trusted" - untrusted, changed, remote changed,
+# store unreadable, python missing where the smoke script would run - runs
+# NOTHING, writes no pass record, and says why. The caller exits 0 (Stop and
+# --all) or 1 (--price): an unknown is never read as trusted. A trust check
+# that could not run at all (status 14) is exit 2 on the Stop path, like a
+# matcher that cannot run (the first call defers to the matcher's own message
+# when verify.json exists; the second call, after the matcher parsed, cannot).
+# $1 is the directory holding verify_trust.py. --ci is exempt and says so: a CI job's
+# checkout is its own pipeline's trust and has no home store.
+gate_trust_broken() {
+  echo "VERIFY GATE: could not RUN the trust check (verify_trust.py exited ${GATE_TRUST_RC:-?}). Verification did NOT run. Work is not complete." >&2
+}
+GATE_TRUST_RC=""
+GATE_TRUST_BROKEN=0
+
+gate_trust_check() {
+  local _tdir="$1" _tp _tpd _tpr _tmain _tsafe _tentry _tpath _tenv _tmsg _trc=0
+  shift
+  # The interpreter is found on a PATH stripped of every relative entry and every
+  # directory inside this repo: the repo's settings `env` block can set PATH, and
+  # even the probe that proves an interpreter runs it.
+  # A linked worktree's main checkout is repo-authored too: its root (the parent
+  # of the git common dir) is stripped as well as this directory.
+  _tpr=$(pwd -P)
+  _tmain=$(PATH="/usr/local/bin:/usr/bin:/bin:/mingw64/bin:/opt/homebrew/bin" git rev-parse --git-common-dir 2>/dev/null) || _tmain=""
+  case "$_tmain" in
+    /*/.git) _tmain=$(CDPATH='' cd -- "${_tmain%/.git}" 2>/dev/null && pwd -P) || _tmain="" ;;
+    *) _tmain="" ;;
+  esac
+  _tsafe="" _tentry=""
+  while IFS= read -r -d ':' _tentry || [ -n "$_tentry" ]; do
+    case "$_tentry" in /*|[A-Za-z]:*) ;; *) continue ;; esac
+    _tpd=$(CDPATH='' cd -- "$_tentry" 2>/dev/null && pwd -P) || continue
+    case "$_tpd/" in "$_tpr"/*) continue ;; esac
+    [ -n "$_tmain" ] && case "$_tpd/" in "$_tmain"/*) continue ;; esac
+    _tsafe="${_tsafe:+$_tsafe:}$_tentry"
+  done <<< "${PATH:-}:"
+  _tp=$(PATH="$_tsafe" crew_py_strict 2>/dev/null) || _tp=""
+  if [ -z "$_tp" ] || [ ! -f "$_tdir/verify_trust.py" ]; then
+    # No python while a verify.json exists: the PY check further down exits 2
+    # and nothing runs, so leave that message to it. Anything else (the smoke
+    # script would run, or verify_trust.py is missing) is UNKNOWN.
+    if [ -z "$_tp" ] && [ -f .crew/verify.json ]; then
+      return 0
+    fi
+    echo "VERIFY GATE: UNKNOWN, not run - nothing was verified. The trust check could not run (no working python, or verify_trust.py is missing at $_tdir)." >&2
+    return 13
+  fi
+  # The interpreter runs isolated (-E: every PYTHON* variable ignored, -s: no
+  # user site) with a scrubbed environment and a fixed PATH. A repo's own
+  # settings `env` block reaches hook processes, so without this a hostile repo
+  # could point PYTHONPATH at a sitecustomize that answers "trusted" before
+  # verify_trust.py runs.
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*) _tpath="/mingw64/bin:/usr/bin:/bin" ;;
+    *) _tpath="/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin" ;;
+  esac
+  _tenv=/usr/bin/env
+  [ -x "$_tenv" ] || _tenv="env"
+  # Every PYTHON* variable (PYTHONPATH, PYTHONSTARTUP, PYTHONHOME, ...) is ignored
+  # by -E itself, so none is listed here: -E is the single guard for them.
+  _tmsg=$("$_tenv" \
+    -u BASH_ENV -u ENV -u CDPATH -u LD_PRELOAD -u LD_LIBRARY_PATH -u LD_AUDIT \
+    -u DYLD_INSERT_LIBRARIES -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH \
+    -u GIT_EXEC_PATH -u GIT_CONFIG_COUNT -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_SYSTEM \
+    -u GIT_SSH -u GIT_SSH_COMMAND -u GIT_ASKPASS -u GIT_EXTERNAL_DIFF -u GIT_PAGER \
+    -u GIT_TEMPLATE_DIR -u GIT_NAMESPACE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    PATH="$_tpath" \
+    "$_tp" -E -s "$_tdir/verify_trust.py" check --root "$PWD" "$@" 2>/dev/null) || _trc=$?
+  _tmsg=$(printf '%s' "$_tmsg" | tr -d '\r')
+  if [ "$_trc" -eq 0 ]; then
+    # verify_trust.py prints one line for every verdict. A status 0 with no
+    # line is a script that did not run its check (an empty file, a stub).
+    [ -n "$_tmsg" ] && return 0
+    GATE_TRUST_RC="0 with no output"
+    return 14
+  fi
+  case "$_trc" in
+    10|11|12|13) ;;
+    *)
+      # verify_trust.py is the only thing that answers 0 or 10-13. Any other
+      # status means the interpreter or the script itself failed. The caller
+      # decides what to print (gate_trust_broken), because a python that
+      # cannot run at all is reported by the matcher's own, older message.
+      GATE_TRUST_RC="$_trc"
+      return 14 ;;
+  esac
+  [ -n "$_tmsg" ] || _tmsg="VERIFY GATE: UNKNOWN, not run - nothing was verified. The trust check printed nothing (exit $_trc)."
+  printf '%s\n' "$_tmsg" >&2
+  return "$_trc"
+}
 
 # --price is an OPERATOR command only, and is handled here, before ANYTHING
 # else in this file - before the stdin read below, which a terminal
@@ -49,6 +149,24 @@ if [ "${1:-}" = "--price" ]; then
       *) PRICE_TARGET="$a" ;;
     esac
   done
+  # L-0888: pricing RUNS every rule's command, so it needs the same trust the
+  # Stop gate does, for the map it is about to run. The repo's own map is
+  # judged like a Stop; any other file is judged by its own bytes (a hash
+  # approval of exactly those bytes, never the remote owner). A refusal exits
+  # 1, not 0: nothing was priced, and a 0 would read as a priced map.
+  # ACCEPTED RESIDUAL (owner decision 2026-10-25): the map is opened again after
+  # this one check, so a process running as the user that swaps it in between
+  # makes --price run the swapped bytes; the same user can edit the store.
+  _price_rc=0
+  if [ "$(cd "$(dirname "$PRICE_TARGET")" 2>/dev/null && pwd -P)/$(basename "$PRICE_TARGET")" = "$(pwd -P)/.crew/verify.json" ]; then
+    gate_trust_check "$GATE_SCRIPT_DIR" || _price_rc=$?
+  else
+    gate_trust_check "$GATE_SCRIPT_DIR" --verify-file "$PRICE_TARGET" || _price_rc=$?
+  fi
+  if [ "$_price_rc" -ne 0 ]; then
+    [ "$_price_rc" -eq 14 ] && gate_trust_broken
+    exit 1
+  fi
   "$PRICE_PY" "$PRICE_DIR/verify_price.py" "$PRICE_TARGET" $PRICE_FORCE
   exit $?
 fi
@@ -1272,6 +1390,21 @@ else
 fi
 : # keep the scope report from ever deciding this script's status
 
+if [ "$CI_MODE" -eq 1 ]; then
+  echo "verify-gate --ci: trust check exempt - a CI job's checkout is its own pipeline's trust (no Stop hook, no home trust store)" >&2
+elif [ -f .crew/verify.json ] || [ -f ./_verify/smoke.sh ] || [ -f ./scripts/smoke.sh ]; then
+  _trust_rc=0
+  # ACCEPTED RESIDUAL (owner decision 2026-10-25): bash reopens the smoke script
+  # after its hash check, so a process running as the user that swaps it in
+  # between runs the swapped bytes; the same user can edit the store.
+  gate_trust_check "$GATE_SCRIPT_DIR" || _trust_rc=$?
+  case "$_trust_rc" in
+    0) ;;
+    14) if [ -f .crew/verify.json ]; then GATE_TRUST_BROKEN=1; else gate_trust_broken; exit 2; fi ;;
+    *) exit 0 ;;
+  esac
+fi
+
 if [ ! -f .crew/verify.json ]; then
   # _verify/ is the canonical home; scripts/smoke.sh is honoured as legacy.
   SMOKE=""
@@ -1341,8 +1474,8 @@ if [ -n "$PY" ] && [ -f "$FP_DIR/verify_record.py" ]; then
   TREE_PRE=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r\n')
 fi
 
-MATCHED=$(CREW_REPO_CONFIG="$CREW_REPO_CONFIG" "$PY" - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" "$TREE_PRE" << 'PY'
-import json,sys,fnmatch,io,os,re
+MATCHED=$(CREW_REPO_CONFIG="$CREW_REPO_CONFIG" "$PY" -I - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" "$TREE_PRE" << 'PY'
+import json,sys,fnmatch,io,os,re,hashlib
 try:
     sys.stdout.reconfigure(newline="\n")
 except (AttributeError, ValueError):
@@ -1391,7 +1524,10 @@ def _classify_run_reach(run):
 
 changed=[l for l in io.open(sys.argv[1],encoding="utf-8").read().split("\n") if l.strip()]
 try:
-    cfg=json.load(open(".crew/verify.json"))
+    with open(".crew/verify.json", "rb") as _vf:
+        _verify_raw = _vf.read()
+    _verify_sha = hashlib.sha256(_verify_raw).hexdigest()
+    cfg=json.loads(_verify_raw.decode("utf-8"))
 except (OSError, ValueError) as e:
     print(f"PARSE_ERROR: {e}", file=sys.stderr)
     sys.exit(3)
@@ -2034,7 +2170,7 @@ for _ri in rule_order:
         "cmds": rule_cmds.get(_ri, []),
         "unknown": bool(truly_unknown.get(_ri)),
     })
-_extras = {"matched_rules": matched_rules, "budget": budget}
+_extras = {"matched_rules": matched_rules, "budget": budget, "verify_sha": _verify_sha}
 # Quiet Stop (L-0796): reach-excluded `always`/`default` commands are
 # NOT VERIFIED items too, and the repeat check hashes the IDENTITIES of what
 # was not run (rule keys by kind, fallback commands, deferred and reach
@@ -2129,7 +2265,26 @@ elif [ -z "$MATCHED" ]; then
   echo "VERIFY GATE: the matcher produced no output at all, even though it exited 0 and .crew/verify.json exists. This is the signature of a broken interpreter (for example a WindowsApps stub) succeeding without actually running any python code. Work is not complete. Install python (3.10+) on this machine, or set \"verifyGate\": false in .crew/config.json to stand this gate down deliberately (honoured at the top of this file)." >&2
   exit 2
 fi
-# \035 is the record separator the matcher wrote between the two records, and
+# The second trust check (L-0888, TOCTOU): the matcher read verify.json some
+# time after the first check. If the bytes moved in between, they are no
+# longer the bytes that were approved: run nothing.
+if [ "$CI_MODE" -eq 0 ]; then
+  _trust_rc=0
+  VERIFY_SHA=$(printf '%s' "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 6p)" | sed -n 's/.*"verify_sha": "\([0-9a-f]*\)".*/\1/p' | head -1)
+  if [ -n "$VERIFY_SHA" ]; then
+    gate_trust_check "$GATE_SCRIPT_DIR" --expect-verify-sha "$VERIFY_SHA" || _trust_rc=$?
+  else
+    GATE_TRUST_RC="no parsed-bytes hash"; _trust_rc=14
+  fi
+  [ "$GATE_TRUST_BROKEN" -eq 0 ] || _trust_rc=14
+  case "$_trust_rc" in
+    0) ;;
+    14) gate_trust_broken; exit 2 ;;
+    *) exit 0 ;;
+  esac
+fi
+# \035 is the record separator the matcher wrote between its records (commands,
+# unmapped, notices, count, cost, extras, cover and tree-cache; read below), and
 # \036 the field separator inside each. `sed -n 1p` used to take the first
 # NEWLINE-delimited line, which is what a command containing a newline moved.
 CMDS=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 1p | tr '\036' '\n')
@@ -2191,7 +2346,7 @@ fi
 CI_EXCLUDED_N=-1
 CI_NOTHING=""
 if [ "$CI_MODE" -eq 1 ]; then
-  CI_FIELDS=$(printf '%s' "$EXTRAS" | "$PY" -c '
+  CI_FIELDS=$(printf '%s' "$EXTRAS" | "$PY" -I -c '
 import json, sys
 try:
     d = json.loads(sys.stdin.read() or "{}")
@@ -2409,7 +2564,7 @@ while IFS= read -r IDENT; do
   # REAL AWS_PROFILE inherited from the caller's shell exported into the
   # check the pin exists to isolate from it.
   if [ -n "$PY" ]; then
-    SPLIT=$("$PY" -c '
+    SPLIT=$("$PY" -I -c '
 import sys
 ident = sys.argv[1]
 text, sep, envjson = ident.partition("\x1c")
@@ -2425,7 +2580,7 @@ print(text + "\x1e" + (envjson if sep else ""), end="")
     STATUS_AT[$POS]="covered"
     TREE_N=$((TREE_N + 1))
     # "tree" LAST, so the withdrawal after the loop can match it at end of line.
-    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0, "tree": True}))' "$IDENT" 2>/dev/null | tr -d '\r')
+    LOG_LINE=$("$PY" -I -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0, "tree": True}))' "$IDENT" 2>/dev/null | tr -d '\r')
     [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
 $LOG_LINE"
     continue
@@ -2435,7 +2590,7 @@ $LOG_LINE"
     gate_detail "verify-gate: COVERED by rules[${GUARD%%;*}] (passed this run): $c"
     STATUS_AT[$POS]="covered"
     COVERED_N=$((COVERED_N + 1))
-    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0}))' "$IDENT" 2>/dev/null | tr -d '\r')
+    LOG_LINE=$("$PY" -I -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0}))' "$IDENT" 2>/dev/null | tr -d '\r')
     [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
 $LOG_LINE"
     continue
@@ -2450,7 +2605,7 @@ $LOG_LINE"
   # live host) from silently riding along into a check nobody pointed there.
   PIN_REPORT=""
   if [ -n "$PY" ] && [ -n "$ENV_JSON" ]; then
-    ENV_LINES=$(printf '%s' "$ENV_JSON" | "$PY" -c '
+    ENV_LINES=$(printf '%s' "$ENV_JSON" | "$PY" -I -c '
 import json, sys
 try:
     spec = json.loads(sys.stdin.read() or "{}")
@@ -2717,7 +2872,7 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # so the record-sync classification (which matches THIS log against
     # those lists) has to key on the same thing, or two rules sharing
     # command text under different env would collide back into one entry.
-    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": sys.argv[2], "elapsed": int(sys.argv[3])}))' "$IDENT" "$CMD_STATUS" "$RULE_ELAPSED" 2>/dev/null | tr -d '\r')
+    LOG_LINE=$("$PY" -I -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": sys.argv[2], "elapsed": int(sys.argv[3])}))' "$IDENT" "$CMD_STATUS" "$RULE_ELAPSED" 2>/dev/null | tr -d '\r')
     [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
 $LOG_LINE"
   fi
@@ -2841,7 +2996,7 @@ if [ -n "$PY" ] && [ -n "$EXTRAS" ]; then
       echo "verify-gate: could not create a temp file for the record sync; NOT advancing the marker" >&2
     else
       printf '%s\n' "$EXTRAS" > "$EXTRAS_FILE"
-      "$PY" -c '
+      "$PY" -I -c '
 import json, sys
 try:
     sys.stdout.reconfigure(newline="\n")

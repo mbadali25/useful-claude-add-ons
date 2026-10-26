@@ -489,6 +489,27 @@ not errors, and neither blocks the turn:
 
 A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.
 
+## Verify gate says UNTRUSTED, CHANGED, REMOTE CHANGED or UNKNOWN, not run
+
+`verify-gate.sh` (L-0888, crew 1.2.85). `.crew/verify.json` is text the repo's authors wrote and its
+`run` strings reach `eval`; the Stop gate (and `--all` and `--price`) therefore runs it only for a repo this
+machine trusts. Otherwise it prints one line, runs nothing, writes no pass record and exits 0 (`--price` exits 1, since nothing was priced):
+
+- **`UNTRUSTED, not run`**: nothing on this machine approves this repo. Read `.crew/verify.json` (or the smoke
+  script the line names), then in your own terminal: `python3 <plugin>/hooks/scripts/verify_trust.py approve --root <repo>`.
+  It shows the repo, the sha256, the remotes and the rule count, and asks for `yes`.
+- **`CHANGED, not run`**: the bytes differ from every version you approved. Read the diff, then approve again.
+- **`REMOTE CHANGED, not run`**: the repo is trusted by remote owner and its remotes differ from the set pinned
+  on first sight. Check `git remote -v`, then `approve` to re-pin.
+- **`UNKNOWN, not run`**: the trust store could not be read (corrupt, unreadable or locked). Fix or delete
+  `${CLAUDE_CONFIG_DIR:-~/.claude}/crew/verify-trust.json`; an unknown is never read as trusted.
+
+To trust every repo of one owner: `verify_trust.py allow-owner github.com/<owner> --under <dir>` (the `--under`
+limit is optional and recommended: without it a fresh directory whose `.git/config` merely names that owner is
+trusted on first sight). `status` shows the verdict, `revoke` removes a repo, `disallow-owner` removes an owner.
+A model-run `approve`, `allow-owner`, `disallow-owner` or `revoke` is refused by the scope guard: only a person
+at a terminal trusts a repo, and so is a verb or store path a command assembles as it runs (a variable, joined strings, a dynamic import, a call into the module's writers, `CREW_VERIFY_TRUST_FILE`, an unset `CLAUDECODE`), and a trust verb handed to a script by any name (read from stdin, a copy under another name, a wildcard path). That guard is a textual tripwire, not a sandbox: the boundary is your OS user. The hash binds the verify map, not the scripts its rules call. Two swap windows are accepted residuals: `--price` opens its map, and `bash` reopens the smoke script, after the trust check, so a process running as you that swaps the file in that interval runs the swapped bytes (you can edit the store too). `--ci` is exempt. A project's `.claude/settings.json` `env` block reaches hook processes (measured 2026-10-25, claude 2.1.304), so a store location that is relative, or resolves inside the repo being checked (`CREW_VERIFY_TRUST_FILE`, `CLAUDE_CONFIG_DIR`, `HOME`), is refused as UNKNOWN and trusts nothing; the old `testTrustAll` store flag is gone and no store content trusts a repo without an approval or an allowlisted owner. The trust check runs as `python -E -s` under a scrubbed environment and a fixed PATH, so a `PYTHONPATH` set there cannot answer for it.
+
 ## Verify gate prints one line, or says "unchanged since last Stop"
 
 Since crew 1.2.39 (L-0796) the Stop gate is quiet. It prints one verdict line, then each failure
