@@ -173,7 +173,7 @@ def test_grant_round_is_refused_on_a_fresh_ticket(repo):
 
 
 @pytest.mark.parametrize("by", [
-    "auto: policy", "AUTO:x", "ａｕｔｏ:x", "​auto:x", "  auto: x",
+    "auto: policy", "AUTO:x", "ａｕｔｏ:x", "\u200bauto:x", "  auto: x",
     crew_autopilot.AUTO_REJECT_BY, "Autopilot", "autopilot:self"])
 def test_grant_round_refuses_an_automatic_name(repo, by):
     _spend(repo)
@@ -367,7 +367,8 @@ def test_docs_state_the_ledger_budget(rel):
               if any(re.search(rf"\b{word}\b", text, re.IGNORECASE) for text in lines[i:i + 13])]
 
     assert marked, f"{rel} states no review-budget number (no {_MARKER} marker)"
-    assert stated == marked, f"{rel}: a marker at line(s) {[i + 1 for i in marked if i not in stated]} has no '{word}' within 12 lines"
+    orphans = [i + 1 for i in marked if i not in stated]
+    assert stated == marked, f"{rel}: a marker at line(s) {orphans} has no '{word}' within 12 lines"
 
 
 @pytest.mark.parametrize("rel", _DOCS + (_GUIDES + "working-with-codex.md",))
