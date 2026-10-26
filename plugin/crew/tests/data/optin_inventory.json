@@ -1,0 +1,1114 @@
+{
+ "names": {
+  "commands/handoff.md": [
+   "/crew:autopilot"
+  ],
+  "commands/help.md": [
+   "/crew:autopilot"
+  ],
+  "commands/implement.md": [
+   "/crew:reference",
+   "stack-sql"
+  ],
+  "commands/migrate.md": [
+   "/crew:autopilot"
+  ],
+  "commands/model.md": [
+   "/crew:diagram"
+  ],
+  "commands/onboard.md": [
+   "/crew:reference"
+  ],
+  "commands/split.md": [
+   "/crew:autopilot",
+   "/crew:jira-sync",
+   "/crew:obsidian-sync"
+  ],
+  "commands/status.md": [
+   "/crew:autopilot"
+  ],
+  "skills/crew-context/SKILL.md": [
+   "/crew:autopilot",
+   "/crew:change",
+   "/crew:emergency",
+   "/crew:gate",
+   "/crew:promote",
+   "crew-diagrams"
+  ],
+  "skills/crew-docs/SKILL.md": [
+   "/crew:diagram",
+   "/crew:reference",
+   "crew-diagrams",
+   "crew-terraform"
+  ],
+  "skills/crew-docs/integrations.md": [
+   "/crew:reference"
+  ],
+  "skills/crew-graph/SKILL.md": [
+   "/crew:graph"
+  ],
+  "skills/crew-lint/SKILL.md": [
+   "crew-terraform"
+  ],
+  "skills/crew-setup/SKILL.md": [
+   "/crew:change",
+   "/crew:gate",
+   "/crew:promote",
+   "/crew:survey",
+   "crew-house-style"
+  ],
+  "skills/crew-setup/claude-md-authoring.md": [
+   "/crew:promote"
+  ],
+  "skills/crew-setup/examples/terraform-CLAUDE.md": [
+   "/crew:promote"
+  ],
+  "skills/crew-setup/global-config.md": [
+   "/crew:autopilot"
+  ],
+  "skills/crew-setup/phases.md": [
+   "/crew:emergency",
+   "/crew:promote",
+   "/crew:runbook",
+   "/crew:survey",
+   "crew-cloud",
+   "crew-notify",
+   "crew-terraform"
+  ],
+  "skills/crew-setup/repo-claude-template.md": [
+   "/crew:promote"
+  ],
+  "skills/crew-setup/templates/_verify/README.md": [
+   "/crew:promote"
+  ],
+  "skills/crew-setup/trackers.md": [
+   "/crew:obsidian-sync"
+  ],
+  "skills/crew-setup/upgrade-report.md": [
+   "/crew:change",
+   "/crew:gate",
+   "/crew:promote"
+  ],
+  "skills/crew-standards/SKILL.md": [
+   "/crew:emergency"
+  ],
+  "skills/crew-standards/references/powershell.md": [
+   "stack-powershell"
+  ],
+  "skills/crew-standards/references/python.md": [
+   "stack-python"
+  ],
+  "skills/crew-verification/SKILL.md": [
+   "/crew:emergency",
+   "/crew:promote"
+  ],
+  "skills/crew-verification/github-deploy.md": [
+   "/crew:autopilot",
+   "/crew:promote"
+  ]
+ },
+ "refs": [
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 19,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 24,
+   "target": "hooks/scripts"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "alias",
+   "line": 24,
+   "target": "hooks/scripts/x.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 30,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "alias",
+   "line": 33,
+   "target": "hooks/scripts/crew_bridge.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "alias",
+   "line": 37,
+   "target": "hooks/scripts/crew_coord.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 40,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 41,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 42,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 43,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 44,
+   "target": "hooks/scripts/crew_inflight.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 49,
+   "target": "hooks/scripts/crew_ticket.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 55,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "alias",
+   "line": 62,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "alias",
+   "line": 64,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "alias",
+   "line": 65,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "alias",
+   "line": 68,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 72,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "alias",
+   "line": 75,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "alias",
+   "line": 82,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "alias",
+   "line": 97,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 98,
+   "target": "hooks/scripts/crew_notify.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "alias",
+   "line": 102,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 104,
+   "target": "hooks/scripts/crew_wave.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "alias",
+   "line": 111,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "alias",
+   "line": 113,
+   "target": "hooks/scripts/crew_autopilot.py"
+  },
+  {
+   "file": "commands/autopilot.md",
+   "home": "crew-autopilot",
+   "in": "core",
+   "kind": "exec",
+   "line": 116,
+   "target": "hooks/scripts/crew_bridge.py"
+  },
+  {
+   "file": "commands/change.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 15,
+   "target": "hooks/scripts/crew_tracker.py"
+  },
+  {
+   "file": "commands/change.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 58,
+   "target": "hooks/scripts/crew_change.py"
+  },
+  {
+   "file": "commands/change.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 117,
+   "target": "hooks/scripts/crew_change.py"
+  },
+  {
+   "file": "commands/diagram.md",
+   "home": "crew-docs",
+   "in": "own",
+   "kind": "local",
+   "line": 18,
+   "target": "skills/crew-diagrams/scripts/render.sh"
+  },
+  {
+   "file": "commands/diagram.md",
+   "home": "crew-docs",
+   "in": "own",
+   "kind": "local",
+   "line": 20,
+   "target": "skills/crew-diagrams/scripts/diagram_check.py"
+  },
+  {
+   "file": "commands/diagram.md",
+   "home": "crew-docs",
+   "in": "own",
+   "kind": "local",
+   "line": 24,
+   "target": "skills/crew-diagrams/scripts/diagram_doc.py"
+  },
+  {
+   "file": "commands/diagram.md",
+   "home": "crew-docs",
+   "in": "core",
+   "kind": "exec",
+   "line": 27,
+   "target": "hooks/scripts/crew_diagrams.py"
+  },
+  {
+   "file": "commands/emergency.md",
+   "home": "crew-promote",
+   "in": "core",
+   "kind": "exec",
+   "line": 22,
+   "target": "hooks/scripts/crew_incident.py"
+  },
+  {
+   "file": "commands/emergency.md",
+   "home": "crew-promote",
+   "in": "core",
+   "kind": "exec",
+   "line": 45,
+   "target": "hooks/scripts/crew_incident.py"
+  },
+  {
+   "file": "commands/emergency.md",
+   "home": "crew-promote",
+   "in": "core",
+   "kind": "exec",
+   "line": 72,
+   "target": "hooks/scripts/crew_state.py"
+  },
+  {
+   "file": "commands/emergency.md",
+   "home": "crew-promote",
+   "in": "core",
+   "kind": "exec",
+   "line": 85,
+   "target": "hooks/scripts/crew_incident.py"
+  },
+  {
+   "file": "commands/emergency.md",
+   "home": "crew-promote",
+   "in": "core",
+   "kind": "exec",
+   "line": 97,
+   "target": "hooks/scripts/crew_incident.py"
+  },
+  {
+   "file": "commands/gate.md",
+   "home": "crew-promote",
+   "in": "core",
+   "kind": "exec",
+   "line": 17,
+   "target": "hooks/scripts/crew_config.py"
+  },
+  {
+   "file": "commands/graph.md",
+   "home": "crew-docs",
+   "in": "core",
+   "kind": "exec",
+   "line": 16,
+   "target": "hooks/scripts/crew_graph.py"
+  },
+  {
+   "file": "commands/graph.md",
+   "home": "crew-docs",
+   "in": "core",
+   "kind": "exec",
+   "line": 32,
+   "target": "hooks/scripts/crew_graph.py"
+  },
+  {
+   "file": "commands/jira-sync.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 11,
+   "target": "hooks/scripts/crew_tracker.py"
+  },
+  {
+   "file": "commands/obsidian-sync.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 15,
+   "target": "hooks/scripts/crew_tracker.py"
+  },
+  {
+   "file": "commands/obsidian-sync.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 46,
+   "target": "hooks/scripts/crew_tracker.py"
+  },
+  {
+   "file": "commands/obsidian-sync.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 59,
+   "target": "hooks/scripts/crew_tracker.py"
+  },
+  {
+   "file": "commands/promote.md",
+   "home": "crew-promote",
+   "in": "core",
+   "kind": "exec",
+   "line": 96,
+   "target": "hooks/scripts/notify.sh"
+  },
+  {
+   "file": "commands/reference.md",
+   "home": "crew-docs",
+   "in": "core",
+   "kind": "read",
+   "line": 84,
+   "target": "skills/crew-docs/integrations.md"
+  },
+  {
+   "file": "commands/sdp-sync.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 11,
+   "target": "hooks/scripts/crew_tracker.py"
+  },
+  {
+   "file": "skills/crew-change/SKILL.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 79,
+   "target": "hooks/scripts/crew_change.py"
+  },
+  {
+   "file": "skills/crew-change/SKILL.md",
+   "home": "crew-trackers",
+   "in": "core",
+   "kind": "exec",
+   "line": 80,
+   "target": "hooks/scripts/crew_change.py"
+  },
+  {
+   "file": "skills/crew-diagrams/SKILL.md",
+   "home": "crew-docs",
+   "in": "own",
+   "kind": "local",
+   "line": 111,
+   "target": "skills/crew-diagrams/scripts/render.sh"
+  },
+  {
+   "file": "skills/crew-diagrams/SKILL.md",
+   "home": "crew-docs",
+   "in": "own",
+   "kind": "local",
+   "line": 112,
+   "target": "skills/crew-diagrams/scripts/diagram_check.py"
+  },
+  {
+   "file": "skills/crew-diagrams/SKILL.md",
+   "home": "crew-docs",
+   "in": "own",
+   "kind": "local",
+   "line": 113,
+   "target": "skills/crew-diagrams/scripts/diagram_doc.py"
+  },
+  {
+   "file": "skills/crew-diagrams/SKILL.md",
+   "home": "crew-docs",
+   "in": "own",
+   "kind": "local",
+   "line": 164,
+   "target": "skills/crew-diagrams/scripts/render.sh"
+  },
+  {
+   "file": "skills/crew-diagrams/SKILL.md",
+   "home": "crew-docs",
+   "in": "core",
+   "kind": "exec",
+   "line": 194,
+   "target": "hooks/scripts/crew_diagrams.py"
+  },
+  {
+   "file": "skills/crew-diagrams/SKILL.md",
+   "home": "crew-docs",
+   "in": "core",
+   "kind": "exec",
+   "line": 195,
+   "target": "hooks/scripts/crew_diagrams.py"
+  },
+  {
+   "file": "skills/crew-diagrams/SKILL.md",
+   "home": "crew-docs",
+   "in": "own",
+   "kind": "local",
+   "line": 223,
+   "target": "skills/crew-diagrams/scripts/visio.ps1"
+  },
+  {
+   "file": "skills/crew-terraform/SKILL.md",
+   "home": "crew-cloud",
+   "in": "own",
+   "kind": "local",
+   "line": 40,
+   "target": "skills/crew-terraform/templates/terraform-docs.yml"
+  },
+  {
+   "file": "skills/crew-terraform/SKILL.md",
+   "home": "crew-cloud",
+   "in": "own",
+   "kind": "local",
+   "line": 41,
+   "target": "skills/crew-terraform/templates/tflint.hcl"
+  },
+  {
+   "file": "skills/crew-terraform/SKILL.md",
+   "home": "crew-cloud",
+   "in": "own",
+   "kind": "local",
+   "line": 42,
+   "target": "skills/crew-terraform/templates/footer.md"
+  }
+ ],
+ "sabotage": {
+  "anchors": [
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "on a ticket's first approval, and a distinct successor plan's NEEDS_REPLAN -> IN_REVIEW ledger move.\n",
+    "label": "BLOCK: the command drops the ledger's successor continuation",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "never fix and rerun inside the phase",
+    "label": "BLOCK: the command lets a review phase fix and rerun",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "- `stop=1` with `phase=approve` or `phase=open-questions` - not yet a stop",
+    "label": "FIX: the command stops at approve before the policy runs",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "write the failing test first, then the fix, inside the spec's Touch;",
+    "label": "L-0668 (l): the fix phase drops the test-first rule and the outside-Touch refusal",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "route --root . --args '$ARGUMENTS'\n",
+    "label": "the command double-quotes the arguments",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "arguments; from `resume` on, `<ticket>` is the `ticket=` resume printed.\n",
+    "label": "the command drives route's empty ticket after resume picked one",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "`human` always stops",
+    "label": "the command drops `human` always stops",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "- `git-destruction` - ",
+    "label": "the command drops an AUTONOMOUS_STOPS id",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "route --root . --args '$ARGUMENTS'\n",
+    "label": "the command hands route a positional argument",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "If the arguments hold a quote, `$`, a backtick or a backslash, stop without\n",
+    "label": "the command hands the shell expandable arguments",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "Anything but a `sub=` line - no output,\n",
+    "label": "the command lets a crashed router fall into run",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "are the human's. Go back",
+    "label": "the command lets autopilot accept or post a review",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "`activate=1` (no pointer is set)",
+    "label": "the command never activates the ticket",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "No output, a traceback or a non-zero exit is a stop.",
+    "label": "the command reads a crash or no output as permission",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "Nothing here accepts a review or skips a phase, and nothing approves except\nsection 3's `approve`, under the approval policy; it writes `approval.json`, `scope-tickets.json`\n",
+    "label": "the command says nothing approves",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py next ",
+    "label": "the command's next invocation writes bytecode",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py route",
+    "label": "the command's route invocation writes bytecode",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "python3 -B ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_autopilot.py status ",
+    "label": "the command's status invocation writes bytecode",
+    "layouts": [
+     "plugin/crew-autopilot/commands/autopilot.md",
+     "plugin/crew/commands/autopilot.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "**Relay doc-builder's error and stop.**",
+    "label": "an unresolvable theme falls back to unbranded instead of stopping",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "`skills/doc-builder/scripts/house_style.py:391`, \"Every table: real",
+    "label": "both table-comment citations collapse onto one line",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "**Do not validate the ",
+    "label": "crew is allowed to validate the theme name itself",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "**Do not detect Word yourself.**",
+    "label": "crew is told to detect Word itself",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "- `anthropic-office-skills:docx` — DOCX\n- `anthropic-office-skills:pdf` — PDF",
+    "label": "doc-builder is given DOCX and PDF outright",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "1. **Every table gets a real `<thead>`** around its header row, and a",
+    "label": "the HTML route stops requiring a real thead element",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "at\n`skills/doc-builder/scripts/house_style.py:391`,",
+    "label": "the citation drops its repo-relative path",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "     thead { display:table-header-group; }",
+    "label": "the print block loses the repeated-table-header declaration",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "     h2, h3 { page-break-after:avoid; }",
+    "label": "the print block narrows back to h2, dropping h3",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "`skills/doc-builder/scripts/house_style.py:276-278` — the body of",
+    "label": "the print-block citation points at the wrong lines",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "would therefore fail closed on correct configuration, which is the expensive",
+    "label": "the reason a crew-side allowlist is wrong is removed",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "`skills/doc-builder/scripts/house_style.py:381`, \"Every table: real",
+    "label": "the report profile's table-comment citation points at the wrong line",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "`scripts/build_report.py` is the findings report —",
+    "label": "the routing table names a script that does not exist",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "  branded HTML report and, through `python-docx`, the branded SOP `.docx`. So",
+    "label": "the two degraded paths are conflated into one",
+    "layouts": [
+     "plugin/crew-docs/skills/crew-house-style/SKILL.md",
+     "plugin/crew/skills/crew-house-style/SKILL.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "## 0. Read `guards.mergeGate` first, before anything else",
+    "label": "/crew:gate reads guards.mergeGate after resolving the provider",
+    "layouts": [
+     "plugin/crew-promote/commands/gate.md",
+     "plugin/crew/commands/gate.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "means do nothing at all.**",
+    "label": "enabled: false is rewritten to mean run the disable subcommand",
+    "layouts": [
+     "plugin/crew-promote/commands/promote.md",
+     "plugin/crew/commands/promote.md"
+    ]
+   },
+   {
+    "carries_moved_name": false,
+    "count": 1,
+    "find": "**Read the state from the backend, every time** - never from the local cache,",
+    "label": "promote reads the change state from memory instead of the backend",
+    "layouts": [
+     "plugin/crew-promote/commands/promote.md",
+     "plugin/crew/commands/promote.md"
+    ]
+   },
+   {
+    "carries_moved_name": true,
+    "count": 1,
+    "find": "    except Exception as exc:  # pylint: disable=broad-except\n        why = f\"whether /crew:autopilot {sub} is available",
+    "label": "T-0057: the gate's except is narrowed, so a raising router escapes",
+    "layouts": [
+     "plugin/crew/hooks/scripts/crew_route.py"
+    ]
+   }
+  ],
+  "mutations_total": 2980,
+  "stays_in_core": [
+   ".crew/codemap/install-scripts.md",
+   ".crew/verify.json",
+   "docs/guides/crew/archive/crew-progress-report-2026-09-20.html",
+   "plugin/crew/README.md",
+   "plugin/crew/commands/brainstorm.md",
+   "plugin/crew/commands/fix.md",
+   "plugin/crew/commands/implement.md",
+   "plugin/crew/commands/review.md",
+   "plugin/crew/hooks/scripts/_common.sh",
+   "plugin/crew/hooks/scripts/_promote_dispatch.py",
+   "plugin/crew/hooks/scripts/_promote_github.py",
+   "plugin/crew/hooks/scripts/_promote_review.py",
+   "plugin/crew/hooks/scripts/_promote_tree.py",
+   "plugin/crew/hooks/scripts/approval-hook.sh",
+   "plugin/crew/hooks/scripts/approval_hook.py",
+   "plugin/crew/hooks/scripts/auto-clear.sh",
+   "plugin/crew/hooks/scripts/cloud-guard.sh",
+   "plugin/crew/hooks/scripts/cloud_guard.py",
+   "plugin/crew/hooks/scripts/completion-audit.sh",
+   "plugin/crew/hooks/scripts/completion_audit.py",
+   "plugin/crew/hooks/scripts/context-watch.sh",
+   "plugin/crew/hooks/scripts/crew-hook.ps1",
+   "plugin/crew/hooks/scripts/crew-hook.sh",
+   "plugin/crew/hooks/scripts/crew_autoclear_setup.py",
+   "plugin/crew/hooks/scripts/crew_autocycle.py",
+   "plugin/crew/hooks/scripts/crew_autopilot.py",
+   "plugin/crew/hooks/scripts/crew_autopilot_backlog.py",
+   "plugin/crew/hooks/scripts/crew_autopilot_deploy.py",
+   "plugin/crew/hooks/scripts/crew_autopilot_fences.py",
+   "plugin/crew/hooks/scripts/crew_autopilot_fix.py",
+   "plugin/crew/hooks/scripts/crew_autopilot_gates.py",
+   "plugin/crew/hooks/scripts/crew_autopilot_handoff.py",
+   "plugin/crew/hooks/scripts/crew_autopilot_paste.py",
+   "plugin/crew/hooks/scripts/crew_autopilot_replan.py",
+   "plugin/crew/hooks/scripts/crew_autopilot_sleep.py",
+   "plugin/crew/hooks/scripts/crew_autopilot_stops.py",
+   "plugin/crew/hooks/scripts/crew_bridge.py",
+   "plugin/crew/hooks/scripts/crew_change.py",
+   "plugin/crew/hooks/scripts/crew_common.py",
+   "plugin/crew/hooks/scripts/crew_config.py",
+   "plugin/crew/hooks/scripts/crew_config_files.py",
+   "plugin/crew/hooks/scripts/crew_config_menu.py",
+   "plugin/crew/hooks/scripts/crew_context.py",
+   "plugin/crew/hooks/scripts/crew_contract.py",
+   "plugin/crew/hooks/scripts/crew_coord.py",
+   "plugin/crew/hooks/scripts/crew_dispatch.py",
+   "plugin/crew/hooks/scripts/crew_endpoints.py",
+   "plugin/crew/hooks/scripts/crew_freshness.py",
+   "plugin/crew/hooks/scripts/crew_ghdeploy.py",
+   "plugin/crew/hooks/scripts/crew_gitignore.py",
+   "plugin/crew/hooks/scripts/crew_goal_state.py",
+   "plugin/crew/hooks/scripts/crew_graph_ignore.py",
+   "plugin/crew/hooks/scripts/crew_guards.py",
+   "plugin/crew/hooks/scripts/crew_hook.py",
+   "plugin/crew/hooks/scripts/crew_instructions.py",
+   "plugin/crew/hooks/scripts/crew_memory.py",
+   "plugin/crew/hooks/scripts/crew_migrate.py",
+   "plugin/crew/hooks/scripts/crew_platform.py",
+   "plugin/crew/hooks/scripts/crew_recall.py",
+   "plugin/crew/hooks/scripts/crew_refresh_check.py",
+   "plugin/crew/hooks/scripts/crew_resume.py",
+   "plugin/crew/hooks/scripts/crew_route.py",
+   "plugin/crew/hooks/scripts/crew_shell.py",
+   "plugin/crew/hooks/scripts/crew_sleep.py",
+   "plugin/crew/hooks/scripts/crew_standards.py",
+   "plugin/crew/hooks/scripts/crew_state.py",
+   "plugin/crew/hooks/scripts/crew_status.py",
+   "plugin/crew/hooks/scripts/crew_tfplan.py",
+   "plugin/crew/hooks/scripts/crew_ticket.py",
+   "plugin/crew/hooks/scripts/crew_ticket_state.py",
+   "plugin/crew/hooks/scripts/crew_tracker.py",
+   "plugin/crew/hooks/scripts/crew_train.py",
+   "plugin/crew/hooks/scripts/crew_wave.py",
+   "plugin/crew/hooks/scripts/event_claim.py",
+   "plugin/crew/hooks/scripts/handoff-read.sh",
+   "plugin/crew/hooks/scripts/handoff-write.sh",
+   "plugin/crew/hooks/scripts/kimi_probe.py",
+   "plugin/crew/hooks/scripts/merged_main.py",
+   "plugin/crew/hooks/scripts/promote-gate.ps1",
+   "plugin/crew/hooks/scripts/promote-gate.sh",
+   "plugin/crew/hooks/scripts/recurring_findings.py",
+   "plugin/crew/hooks/scripts/review_checks.py",
+   "plugin/crew/hooks/scripts/review_delta.py",
+   "plugin/crew/hooks/scripts/review_gate.py",
+   "plugin/crew/hooks/scripts/review_ledger.py",
+   "plugin/crew/hooks/scripts/review_limit.py",
+   "plugin/crew/hooks/scripts/review_metrics.py",
+   "plugin/crew/hooks/scripts/review_patch.py",
+   "plugin/crew/hooks/scripts/review_prompt.py",
+   "plugin/crew/hooks/scripts/review_run.py",
+   "plugin/crew/hooks/scripts/review_status.py",
+   "plugin/crew/hooks/scripts/review_verdict.py",
+   "plugin/crew/hooks/scripts/scope-guard.sh",
+   "plugin/crew/hooks/scripts/scope_base.py",
+   "plugin/crew/hooks/scripts/scope_guard.py",
+   "plugin/crew/hooks/scripts/scope_report.py",
+   "plugin/crew/hooks/scripts/verify-gate.sh",
+   "plugin/crew/hooks/scripts/verify_fingerprint.py",
+   "plugin/crew/hooks/scripts/verify_record.py",
+   "plugin/crew/hooks/scripts/webtest_guard.py",
+   "plugin/crew/hooks/scripts/webtest_rules.py",
+   "plugin/crew/hooks/scripts/webtest_scaffold.py",
+   "plugin/crew/skills/crew-qa-standards/references/recurring-findings.md",
+   "plugin/crew/skills/crew-qa-standards/scripts/qa_audit.py",
+   "plugin/crew/skills/crew-setup/scripts/map-audit.sh",
+   "plugin/crew/skills/crew-setup/scripts/providers.sh",
+   "plugin/crew/skills/crew-setup/scripts/resolve-tools.sh",
+   "plugin/crew/skills/crew-setup/upgrade-report.md",
+   "plugin/crew/skills/crew-standards/references/generic.md",
+   "plugin/crew/skills/crew-standards/references/powershell.md",
+   "plugin/crew/skills/crew-standards/references/python.md",
+   "plugin/crew/tests/conftest.py",
+   "plugin/crew/tests/crew_fixtures.py",
+   "plugin/crew/tests/golden/.gitattributes",
+   "plugin/crew/tests/golden_build.py",
+   "plugin/crew/tests/poll_fixtures.py",
+   "plugin/crew/tests/sabotage_bound.py",
+   "plugin/crew/tests/sabotage_platform.py",
+   "plugin/crew/tests/test_crew_coord.py",
+   "plugin/crew/tests/test_crew_route.py",
+   "plugin/crew/tests/test_crew_route_hook.py",
+   "plugin/crew/tests/test_external_tool_formats.py",
+   "plugin/crew/tests/test_migrate.py",
+   "plugin/crew/tests/test_poll_fixtures.py",
+   "plugin/crew/tests/test_refresh_check.py",
+   "plugin/crew/tests/test_review_golden.py",
+   "scripts/check-tooling-pr.py",
+   "skills/bitbucket/scripts/merge_gate.sh",
+   "skills/doc-builder/scripts/build_report.py",
+   "skills/doc-builder/scripts/house_style.py"
+  ]
+ },
+ "shim_targets": [
+  "hooks/scripts/crew_autopilot.py",
+  "hooks/scripts/crew_bridge.py",
+  "hooks/scripts/crew_change.py",
+  "hooks/scripts/crew_config.py",
+  "hooks/scripts/crew_coord.py",
+  "hooks/scripts/crew_diagrams.py",
+  "hooks/scripts/crew_graph.py",
+  "hooks/scripts/crew_incident.py",
+  "hooks/scripts/crew_inflight.py",
+  "hooks/scripts/crew_notify.py",
+  "hooks/scripts/crew_state.py",
+  "hooks/scripts/crew_ticket.py",
+  "hooks/scripts/crew_tracker.py",
+  "hooks/scripts/crew_wave.py",
+  "hooks/scripts/notify.sh"
+ ],
+ "version": 1
+}
