@@ -119,8 +119,6 @@ def references_dir():
 def _read_bytes(path):
     """(bytes, None) or (None, "absent") or (None, <problem>)."""
     try:
-        if not stat.S_ISREG(os.stat(path).st_mode):
-            return None, "cannot be read: not a regular file"
         with open(path, "rb") as fh:
             return fh.read(), None
     except FileNotFoundError:
