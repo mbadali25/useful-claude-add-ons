@@ -13,15 +13,45 @@ copies drift.
 
 | Script | Covers | Budget | Run it when |
 |---|---|---|---|
-| `smoke.sh` | 12 checks: registration, skill manifests, plugin-version agreement, catalog rows, install-script menu parity, hook command quoting, every `.ps1` parsing (**tracked and untracked**), the audit's `label()`/`canon()` contract and its placeholder count, the localgpu console script on the persistent PATH, every copy of a plugin's version agreeing, `claude plugin validate --strict` | **14s** (cap 90s) | every change; this is the Stop-gate default |
-| `run-all.sh` | everything in smoke **plus** the version-drift walk, the full install-script menu contract, and localgpu's 87 engine tests | ~6 min | before pushing; before a promotion |
+| `smoke.sh` | 12 checks: registration, skill manifests, plugin-version agreement, catalog rows, install-script menu parity, hook command quoting, every `.ps1` parsing (**tracked and untracked**), the audit's `label()`/`canon()` contract and its placeholder count, the localgpu console script on the persistent PATH, every copy of a plugin's version agreeing, `claude plugin validate --strict` | target 90s; **not met**, see Timing | every change; this is the Stop-gate default |
+| `run-all.sh` | everything in smoke **plus** the version-drift walk, the full install-script menu contract, and localgpu's 87 engine tests | not measured | before pushing; before a promotion |
 | `run-all.sh --with-hooks` | additionally forces crew's blocking-guard suite, which **hangs** here | +240s to hang | only when debugging that hang |
-| `cases/` | fixtures. Empty — every check builds its own throwaway state | — | — |
+| `ci-status.sh [sha]` | asserts the `marketplace.yml` workflow run for a sha (default HEAD) concluded `success`; no run, a non-success run, or a missing `gh` all fail. Not part of smoke or run-all | network call, not measured | before promoting, to prove CI is green for the exact sha |
 
-`smoke.sh` deliberately omits the version-drift check. It walks 58 revisions of
-`marketplace.json` and runs a `git diff` per entry — ~163s on its own, against a
-90s budget. It is not optional, it is just too slow to gate every edit, so it
-lives in `run-all.sh`. A budget that gets blown is a suite that gets skipped.
+There is no `_verify/cases/` directory. Every check builds its own throwaway state.
+
+`smoke.sh` deliberately omits the version-drift check (`check_versions`), which walks the
+history of `marketplace.json` and runs a `git diff` per entry. The earlier figures here
+(58 revisions, ~163s) are **not measured**: at commit bdde58724,
+`git log -- .claude-plugin/marketplace.json` lists 918 commits (357 with `--first-parent`),
+and the drift check was not timed in the 2026-10-26 pass. It lives in `run-all.sh`.
+
+## Timing (measured 2026-10-26)
+
+Commit bdde58724, Git Bash on Windows Server 2019, in a git worktree. Each check was run once
+on its own with `time`; single runs, not averages.
+
+| Check | Wall time |
+|---|---|
+| checks 1-6 (the six marketplace groups, one python process) | 1.6s |
+| 7 powershell (`check-powershell.ps1`, CI mode only; the untracked pass was not run) | 17.9s |
+| 8 crew-setup round-trip | 6.1s |
+| 8b crew-setup placeholders | **209s** (3m29s) |
+| 11 `claude plugin validate --strict`, marketplace root alone | 2.2s |
+| 11 same, `plugin/crew` alone | 3.2s |
+| 9 localgpu CLI, 10 versions, 11 over all 14 targets, `smoke.sh` end to end, `run-all.sh` | not measured |
+
+An earlier full `smoke.sh` run at the same commit passed 12/12 and took over 300s (no per-check
+timing was kept). The measured parts sum to about 237s with checks 9, 10 and most of 11
+unmeasured, so check 8b alone is most of the runtime.
+
+### Known gaps against the targets
+
+- **Check count: 12, target 5-9.** Exceeds the target. No fix attempted.
+- **Runtime: over 300s, target 90s.** Exceeds the target, driven mainly by check 8b. No fix attempted.
+- `smoke.sh`'s own header comment still says "under 90 seconds", "58 revisions" and "~160s",
+  and `run-all.sh`'s header cites ~163s and ~171s. Those are unverified; the scripts were left
+  alone because this pass edited documentation only.
 
 ## pwsh runs on a private cache
 
@@ -40,7 +70,11 @@ under Git Bash.
 A check nobody has broken on purpose is a check nobody knows works. Each row: the
 defect reintroduced, and whether the suite went red.
 
-| Check | Sabotage | Went red | Last verified |
+The date column is when the row was last sabotage-tested. No row was re-run in the 2026-10-26
+pass: the 2026-09-05 rows are about seven weeks old and the 2026-10-12 row (check 8b) is two
+weeks old, and none was re-confirmed against bdde58724.
+
+| Check | Sabotage | Went red | Last sabotage-tested (not re-run in this pass) |
 |---|---|---|---|
 | registration | removed `localgpu` from `marketplace.json` while the directory remained | yes | 2026-09-05 |
 | skill manifests | set `skills/cloudflare/SKILL.md` frontmatter `name:` to `wrong-name-here` | yes | 2026-09-05 |
@@ -57,6 +91,7 @@ defect reintroduced, and whether the suite went red.
 | mcp-servers (`npm test`) | changed one assertion in `packages/core/test/jwt.test.ts` from `DeviceManagementManagedDevices.Read.All` to `SABOTAGE.Wrong.Role` | yes | 2026-09-05 |
 | versions (check 10) | set `pyproject.toml` back to `0.1.0` against `0.1.2` in both manifests | yes | 2026-09-05 |
 | localgpu CLI (check 9) | planted a second install root with a venv; then removed the persisted PATH entry | yes | 2026-09-05 |
+| `claude plugin validate --strict` (check 11) | none | not sabotage-tested | never |
 
 ### One sabotage that was wrong, not a hole
 
