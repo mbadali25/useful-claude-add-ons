@@ -239,10 +239,11 @@ def test_gate_price_on_an_untrusted_repo_runs_nothing(tmp_path, store):
 
 
 _HOSTILE_SEAM = (
-    "import sys\n"
+    "import os, sys\n"
     "if sys.argv[1:2] == ['check']:\n"
     "    print('verify trust: trusted (hostile)')\n"
-    "    raise SystemExit(0)\n"
+    "    sys.stdout.flush()\n"
+    "    os._exit(0)\n"
 )
 
 
@@ -252,6 +253,7 @@ def test_gate_a_pythonpath_sitecustomize_cannot_answer_trusted(tmp_path, store):
     hostile = tmp_path / "hostile"
     hostile.mkdir()
     (hostile / "sitecustomize.py").write_text(_HOSTILE_SEAM, encoding="utf-8")
+    (hostile / "json.py").write_text(_HOSTILE_SEAM, encoding="utf-8")
 
     done = _run(root, "--all", env={"PYTHONPATH": str(hostile)})
 
@@ -280,11 +282,10 @@ def test_gate_a_python_on_a_repo_path_entry_is_never_run_for_the_trust_check(tmp
 
 @pytest.mark.skipif(os.name != "posix", reason="the git shim is a POSIX script")
 def test_gate_a_verify_json_rewritten_between_the_two_checks_runs_nothing(tmp_path, store):
-    """The first check reads verify.json and runs under a fixed PATH, so
-    the shim never sees it. The first call the shim does see in the gate's own
-    environment is `git -C <root> rev-parse --git-common-dir`, which comes after
-    that check. The git shim swaps verify.json for one that runs the sentinel on that call, once:
-    the first check has already passed on the approved bytes, the matcher then
+    """The first check runs under a fixed PATH, so the git shim never sees it.
+    The first call the shim sees AFTER that check is the tree snapshot's
+    `git ls-files -z` (the gate takes it just before the matcher). The shim swaps
+    verify.json for one that runs the sentinel on that call, once: the first check has already passed on the approved bytes, the matcher then
     reads the swapped file, and only the second check can see it."""
     sentinel = tmp_path / "ran.txt"
     root = _repo(tmp_path, sentinel)
@@ -298,7 +299,7 @@ def test_gate_a_verify_json_rewritten_between_the_two_checks_runs_nothing(tmp_pa
     script = shim / "git"
     script.write_text(
         '#!/usr/bin/env bash\n'
-        'if [ "$1" = -C ] && [ "$3" = rev-parse ] && [ "$4" = --git-common-dir ] '
+        'if [ "$3" = ls-files ] && [ "$4" = -z ] '
         '&& [ ! -e "$SWAP_FLAG" ]; then : > "$SWAP_FLAG"; cp "$SWAP_FROM" "$SWAP_TO"; fi\n'
         f'exec "{shutil.which("git")}" "$@"\n', encoding="utf-8")
     script.chmod(script.stat().st_mode | stat.S_IXUSR)
@@ -335,7 +336,7 @@ def test_gate_a_verify_json_swapped_for_the_matcher_and_restored_runs_nothing(tm
     git = shim / "git"
     git.write_text(
         '#!/usr/bin/env bash\n'
-        'if [ "$1" = -C ] && [ "$3" = rev-parse ] && [ "$4" = --git-common-dir ] '
+        'if [ "$3" = ls-files ] && [ "$4" = -z ] '
         '&& [ ! -e "$SWAP_FLAG" ]; then : > "$SWAP_FLAG"; cp "$HOSTILE" "$TARGET"; fi\n'
         f'exec "{shutil.which("git")}" "$@"\n', encoding="utf-8")
     rm = shim / "rm"

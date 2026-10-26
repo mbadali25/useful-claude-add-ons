@@ -80,8 +80,9 @@ gate_trust_check() {
   esac
   _tenv=/usr/bin/env
   [ -x "$_tenv" ] || _tenv=env
-  _tmsg=$("$_tenv" -u PYTHONPATH -u PYTHONSTARTUP -u PYTHONHOME -u PYTHONUSERBASE \
-    -u PYTHONINSPECT -u PYTHONSAFEPATH -u PYTHONBREAKPOINT -u PYTHONPLATLIBDIR \
+  # Every PYTHON* variable (PYTHONPATH, PYTHONSTARTUP, PYTHONHOME, ...) is ignored
+  # by -E itself, so none is listed here: -E is the single guard for them.
+  _tmsg=$("$_tenv" \
     -u BASH_ENV -u ENV -u CDPATH -u LD_PRELOAD -u LD_LIBRARY_PATH -u LD_AUDIT \
     -u DYLD_INSERT_LIBRARIES -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH \
     -u GIT_EXEC_PATH -u GIT_CONFIG_COUNT -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_SYSTEM \

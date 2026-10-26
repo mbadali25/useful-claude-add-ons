@@ -448,9 +448,8 @@ def _script_verb_refusal(text):
                     "wildcard path; only a person at a terminal trusts a repo")
         for before, after in zip(tokens, tokens[1:]):
             verb = after.lower() in _TRUST_VERBS
-            if verb and (before == "-" or (not before.startswith("-")
-                                           and _SCRIPT_TOKEN_RE.search(before)
-                                           and not _OWN_APPROVER_RE.search(_basename(before)))):
+            if verb and not before.startswith("-") and _SCRIPT_TOKEN_RE.search(before) \
+                    and not _OWN_APPROVER_RE.search(_basename(before)):
                 return ("it hands a verify trust verb to a script read from stdin, a copy or a "
                         "wildcard path; only a person at a terminal trusts a repo")
             if _GLOB_SCRIPT_RE.search(before) and ".p" in before.lower() \
