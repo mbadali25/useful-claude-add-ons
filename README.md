@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.86**: The verify gate runs a repo's verify map only for a repo this machine trusts. `crew` 1.2.86: `verify-gate.sh` no longer runs `.crew/verify.json` rules or a smoke script from a repo you have not approved on this machine; the first Stop in each such repo prints `UNTRUSTED, not run` until you approve it once.
+- **crew 1.2.85**: The verify gate runs a repo's verify map only for a repo this machine trusts. `crew` 1.2.85: `verify-gate.sh` no longer runs `.crew/verify.json` rules or a smoke script from a repo you have not approved on this machine; the first Stop in each such repo prints `UNTRUSTED, not run` until you approve it once.
 - **crew 1.2.83**: The verify-map price test rejects a NaN or infinite `seconds`. `crew` 1.2.83: a rule priced `NaN` can no longer pass the verify-map price test, and the L-0904 note sentence in `.crew/verify.json` starts its own line; no behaviour a user runs changes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
