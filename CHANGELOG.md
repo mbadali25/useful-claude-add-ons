@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.2.89: a reader for the review-finding rule file (L-0931, L-0715 PR B1)
+
+- **Summary.** `crew` 1.2.89: adds `review_lint_rules.py`, which reads the review-finding rule file and refuses every shape it does not know; nothing calls it yet, so no behaviour a user runs changes.
+- `plugin/crew/hooks/scripts/review_lint_rules.py` reads `plugin/crew/lint/semgrep/crew-classes.yml` without a YAML package: rule ids, messages, classes, standards, path scopes, the five regexes the checker will execute, and the `# not-shipped:` header. An extra or missing key, a tab in the indentation, an anchor, alias, merge key or tag, a duplicate rule id or key, a symlink or non-regular file, an empty file, an unterminated flow list, an unknown escape or any quoting form it does not read raises `RuleFileError` with the rule id and line; it never returns part of a file.
+- It fingerprints each rule's pattern blocks (sha256 over the dedented, right-stripped lines, so relative indentation counts; the five regex values are replaced first because they are data), matches a rule's `paths` globs on relative POSIX paths, and holds one canary snippet per rule for the checker's self-test. The set of accepted fingerprints belongs to the checker (L-0715 PR B2), so a rule edit can land as harness PR, feature PR, cleanup PR.
+- `plugin/crew/tests/test_review_lint_rules.py`: 105 cases; each guard was sabotaged by hand (25 mutations, all red). Docs: none beyond this entry and the code map, because the module is inert.
+
 ### Added — crew 1.2.86: semgrep rules for the review-finding classes a pattern can express (L-0715 PR A)
 
 - **Summary.** `crew` 1.2.86: ships pinned semgrep rules for five recurring review-finding classes (`splitlines()` on untrusted text, duplicate-key JSON, bare interpreters, unquoted `CLAUDE_PLUGIN_ROOT`, tests with no assertion); they are opt-in and do nothing until the `semgrep` linter kind lands in a second change.
