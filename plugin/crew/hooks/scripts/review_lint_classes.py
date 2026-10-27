@@ -38,6 +38,7 @@ import io
 import json
 import os
 import re
+import stat
 import sys
 import tokenize
 import warnings
@@ -64,7 +65,7 @@ READER = _load_reader()
 _ABORTS = (SyntaxError, ValueError, RecursionError, MemoryError, UnicodeDecodeError, tokenize.TokenError, OSError)
 _DEFS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 _COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
-_NOSEMGREP = re.compile(r"nosemgrep(?::[ ]*([^\s,]+(?:[ ]*,[ ]*[^\s,]+)*))?")
+_NOSEMGREP = re.compile(r"(?:#|<!--)[ ]*nosemgrep(?::[ ]*([^\s,]+(?:[ ]*,[ ]*[^\s,]+)*))?")
 
 
 class Usage(Exception):
@@ -360,6 +361,11 @@ def load_rules(path, skip=()):
     except READER.RuleFileError as exc:
         raise Usage("rule file: " + str(exc)) from exc
     for rule in rules.rules:
+        for key, pattern in rule.regexes.items():
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise Usage("rule " + rule.id + ": regex " + key + " does not compile: " + str(exc)) from exc
         if rule.id not in RULES:
             raise Usage("rule " + rule.id + " has no implementation in the checker")
         if rule.fingerprint not in RULES[rule.id][1]:
@@ -403,6 +409,28 @@ def check_text(rel, data, active):
     return found
 
 
+def _read_regular(path):
+    """The bytes of one regular file: no symlink, no Windows reparse point (junction), and no wait on a
+    FIFO or device, decided on the opened descriptor so a swap after the check cannot be followed."""
+    info = os.lstat(path)
+    if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+        raise ValueError("a symlink or reparse point")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0)
+    descriptor = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ValueError("not a regular file")
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            return handle.read()
+    finally:
+        os.close(descriptor)
+
+
+def _reason(exc):
+    detail = exc.args[0] if exc.args and isinstance(exc.args[0], str) else ""
+    return type(exc).__name__ + (": " + detail if detail else "")
+
+
 def _relative(arg, strip):
     path = arg.replace("\\", "/")
     if path.startswith("/") or re.match(r"^[A-Za-z]:", path):
@@ -432,12 +460,9 @@ def run(rules_path, paths, skip=(), strip=False):
             files["skipped_by_scope"].append(rel)
             continue
         try:
-            if os.path.islink(arg):
-                raise ValueError("a symlink")
-            with open(arg, "rb") as handle:
-                found = check_text(rel, handle.read(), active)
+            found = check_text(rel, _read_regular(arg), active)
         except _ABORTS as exc:
-            files["aborted"].append({"path": rel, "reason": type(exc).__name__ + ": " + str(exc)})
+            files["aborted"].append({"path": rel, "reason": _reason(exc)})
             continue
         files["scanned"].append(rel)
         results.extend(

@@ -589,3 +589,52 @@ def test_checker_does_not_import_from_the_checked_tree(tmp_path):
 
     assert done.returncode == 0, done.stderr
     assert json.loads(done.stdout)["files"]["scanned"] == ["m.py"]
+
+
+def test_a_fifo_is_an_aborted_file_not_a_hang(tmp_path):
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("no FIFOs on this host")
+    os.mkfifo(tmp_path / "x.py")
+
+    done = _cli(tmp_path, "--rules", str(REAL), "x.py")
+
+    assert done.returncode == 0
+    assert [row["path"] for row in json.loads(done.stdout)["files"]["aborted"]] == ["x.py"]
+
+
+def test_an_exception_with_a_broken_str_is_still_an_aborted_row(tmp_path, monkeypatch):
+    class Broken(MemoryError):
+        def __str__(self):
+            raise RuntimeError("no str")
+
+    def explode(*_args):
+        raise Broken("boom")
+
+    monkeypatch.chdir(tmp_path)
+    _write(tmp_path, {"m.py": "x = 1\n"})
+    monkeypatch.setattr(rlc, "check_text", explode)
+
+    doc = rlc.run(str(REAL), ["m.py"])
+
+    assert doc["files"]["aborted"] == [{"path": "m.py", "reason": "Broken: boom"}]
+
+
+def test_a_regex_that_does_not_compile_exits_2(tmp_path):
+    path = _mutated(tmp_path, "pattern-regex: '(?:python3?|", "pattern-regex: '[(?:python3?|")
+
+    done = _cli(tmp_path, "--rules", str(path))
+
+    assert done.returncode == 2
+    assert b"does not compile" in done.stderr and b"Traceback" not in done.stderr
+
+
+def test_a_nosemgrep_that_is_not_a_marker_does_not_suppress(tmp_path, monkeypatch):
+    body = "import pathlib\n\ndef f(p):\n    text = pathlib.Path(p).read_text()\n"
+    files = {
+        "not_marker.py": body + "    return text.splitlines()  # not nosemgrep: " + SPLIT + "\n",
+        "word_in_comment.py": body + "    return text.splitlines()  # see the nosemgrep docs\n",
+    }
+
+    doc = _check(tmp_path, monkeypatch, files)
+
+    assert sorted({r["path"] for r in doc["results"]}) == ["not_marker.py", "word_in_comment.py"]
