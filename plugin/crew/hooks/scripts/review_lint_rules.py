@@ -127,6 +127,8 @@ def _load_lines(path):
             raise RuleFileError("the rule file is not a regular file")
         with os.fdopen(descriptor, "rb", closefd=False) as handle:
             data = handle.read()
+    except OSError as exc:
+        raise RuleFileError("cannot read the rule file: " + str(exc)) from exc
     finally:
         os.close(descriptor)
     try:
@@ -380,7 +382,7 @@ def _opaque(name, entry, regexes, fail):
     else:
         if value or not any(text.strip(" ") for _, text in body):
             fail(name + " takes an indented block, not a value", number)
-        pending = ()
+        pending, previous = (), ""
         for line_number, text in body:
             if not text.strip(" "):
                 continue
@@ -389,6 +391,16 @@ def _opaque(name, entry, regexes, fail):
                 continue
             match = _REGEX_LINE.match(text)
             kind = match.group(2) if match else None
+            if kind in ("metavariable", "regex") and "-" in match.group(1):
+                fail("`" + kind + ":` must not be a list item", line_number)
+            if kind == "pattern-regex":
+                fail("`pattern-regex:` is read only as a rule-level key", line_number)
+            if kind == "metavariable" and not (
+                previous.strip(" ") == "- metavariable-regex:"
+                and len(match.group(1)) > len(previous) - len(previous.lstrip(" ")) + 2
+            ):
+                fail("`metavariable:` must sit directly under `- metavariable-regex:`", line_number)
+            previous = text
             if pending and (kind != "regex" or len(match.group(1)) != pending[1]):
                 fail("metavariable " + pending[0] + " is not followed by its regex", pending[2])
             if kind == "metavariable":
@@ -426,12 +438,7 @@ def matches_scope(rel, include, exclude):
     """Is `rel` (a POSIX path relative to the tree root) inside a rule's `paths`? An empty `include`
     admits every path; any `exclude` match removes it. Raises ValueError for a path that is not
     relative POSIX form: absolute, drive-lettered, backslashed, empty or climbing out of the tree."""
-    if (
-        not rel
-        or "\\" in rel
-        or re.match(r"^[A-Za-z]:", rel)
-        or any(part in ("", "..") for part in rel.split("/"))
-    ):
+    if not rel or "\\" in rel or re.match(r"^[A-Za-z]:", rel) or any(part in ("", "..") for part in rel.split("/")):
         raise ValueError("not a relative POSIX path: " + repr(rel))
     parts = rel.split("/")
 

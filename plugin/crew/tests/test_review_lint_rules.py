@@ -155,6 +155,41 @@ REFUSALS = [
         id="unterminated-bare-flow-list",
     ),
     pytest.param(
+        "          metavariable: $T\n          regex: '^test_'\n",
+        "          - metavariable: $T\n          regex: '^test_'\n",
+        "list item",
+        "crew-test-no-assertion",
+        id="metavariable-as-list-item",
+    ),
+    pytest.param(
+        "          metavariable: $T\n          regex: '^test_'\n",
+        "          metavariable: $T\n          - regex: '^test_'\n",
+        "list item",
+        "crew-test-no-assertion",
+        id="regex-as-list-item",
+    ),
+    pytest.param(
+        "      - pattern-not-regex: '(?<!",
+        "      - pattern-regex: '(?<!",
+        "rule-level key",
+        "crew-test-no-assertion",
+        id="pattern-regex-inside-patterns",
+    ),
+    pytest.param(
+        "      - metavariable-regex:\n          metavariable: $T\n",
+        "      - something-else:\n          metavariable: $T\n",
+        "directly under",
+        "crew-test-no-assertion",
+        id="metavariable-outside-metavariable-regex",
+    ),
+    pytest.param(
+        '      include: ["*.md"]\n',
+        "      include: []\n",
+        "flow list",
+        "crew-unquoted-plugin-root",
+        id="empty-scope-list",
+    ),
+    pytest.param(
         "    severity: WARNING\n", "    severity: *level\n", "*level", "crew-splitlines-untrusted-text", id="alias"
     ),
     pytest.param(
@@ -605,3 +640,14 @@ def test_canary_regexes_hit_the_regex_canaries():
     assert re.search(root_rule.regexes["pattern-regex"], root)
     assert re.search(test_rule.regexes["metavariable-regex:$T"], "test_canary_0a1b2c3d4e5f")
     assert not re.search(test_rule.regexes["pattern-not-regex"], test_source)
+
+
+def test_io_error_after_open_is_a_rule_file_error(tmp_path, monkeypatch):
+    def broken(_descriptor):
+        raise OSError("injected fstat failure")
+
+    path = _mutated(tmp_path, "rules:\n", "rules:\n")
+    monkeypatch.setattr(rlr.os, "fstat", broken)
+
+    with pytest.raises(rlr.RuleFileError, match="injected fstat failure"):
+        rlr.read_rules(path)
