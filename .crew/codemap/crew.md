@@ -69,6 +69,13 @@ positive and a negative fixture each; `plugin/crew/tests/test_crew_lint_rules.py
 a copy of them. Nothing in `hooks/scripts/` reads the file yet (the `semgrep` linter kind is PR B). JUDGEMENT: the rest
 of this map is unchanged by it.
 
+**Rule-file reader (L-0931, L-0715 PR B1).** DERIVED at the PR B1 head, not at this file's anchor, which is not moved:
+`plugin/crew/hooks/scripts/review_lint_rules.py` (`read_rules`, `matches_scope`, `CANARIES`) reads
+`plugin/crew/lint/semgrep/crew-classes.yml` with no YAML package and raises `RuleFileError(message, line)` on any shape it
+does not know; it exposes a per-rule pattern fingerprint, the five regex values, the `# not-shipped:` header and the path
+scopes. Nothing imports it yet (the checker is PR B2, the `crewlint` linter kind PR B3). JUDGEMENT: the rest of this map
+is unchanged by it.
+
 ## The roster, replaced wholesale
 
 Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
