@@ -124,6 +124,34 @@ Lint rule `crew-splitlines-untrusted-text` flags `str.splitlines()` on text read
 child process (it also splits on U+2028, U+2029, U+0085 and `\x1c`-`\x1e`). A reviewed-safe site carries
 `# nosemgrep: crew-splitlines-untrusted-text` and the reason.
 
+## REPO-04 A resource held across an error path is released before its reference is dropped
+
+**Rule.** A socket, file handle, connection or lock acquired earlier in a `try` body is explicitly
+released (`close()`, `await x.close()`, lock release) before the code that handles that `try`'s
+exception drops or reassigns the variable holding it - including inside a broad `except Exception`
+handler added specifically to keep a loop alive (the PYTHON-11 sanctioned boundary-catch pattern).
+The handler's job is "log and move on, not crash the loop"; it is not a license to skip the cleanup
+the normal path would have done.
+
+**Why.** 1 finding, 1 change set (A-0001 review round 4); added on the owner's explicit approval
+2026-10-27. Too new to say how often this recurs; promote past overlay status once a second,
+independent change set earns it.
+
+**Self-check.**
+1. For every `except Exception` (or other broad handler) added to keep a loop or retry alive: does
+   the `try` body acquire a resource (socket, file, connection, lock)? If so, does the handler close
+   or release it before setting the holding reference to `None` or reassigning it? Pass: yes, or the
+   resource was never actually open at the point of failure.
+2. Reproduce the failure the handler exists for (send malformed input, force the exception) and
+   confirm the resource is actually released - not just that the handler ran. Pass: a leak-detection
+   check (open-file/socket count, or the peer side observing a close) shows the resource gone.
+
+**Earned by.** A-0001 r4 @321fabdf3, FIX `plugin/ai-connect/client/bridge_client.py:359`: "An unexpected
+handler exception abandons an open WebSocket without closing it, leaving the old registration live and
+leaking the connection - the receive loop drops `self._ws` and reconnects without closing the original
+socket, so registration encounters `name_taken` until the original peer times out." Fix tracked as a
+follow-up, ticket A-0007.
+
 ## Supplements GEN-08
 
 `CLAUDE_PLUGIN_ROOT` in shell text is quoted (GEN-06), and `pwsh` is named absolutely (CLAUDE.md
@@ -146,6 +174,18 @@ without double quotes.
 
 Lint rule `crew-json-duplicate-keys` flags `json.load`/`json.loads` on a file, stdin or child-process
 output with no `object_pairs_hook` (the last of two equal keys wins silently).
+
+## Supplements GEN-10
+
+"The recovery behaviour" in GEN-10's self-check means the automatic trigger
+firing on its own, not a test that manually drives the recovery and treats
+that as proof the trigger exists. Owner-approved amendment from A-0001
+review round 4's proposal 1 (2026-10-27): A-0001's self-check marked GEN-10
+`addressed` for a reconnect fix whose test reset the blocking flag and then
+called `start_reconnect` itself - round 4's FIX finding showed the flag
+reset alone never schedules a reconnect, so the client stayed offline in
+production exactly as before, while the self-check's own test passed. One
+change set so far.
 
 ## Supplements GEN-11
 
