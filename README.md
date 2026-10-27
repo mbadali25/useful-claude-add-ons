@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.91**: Semgrep rules for the review-finding classes a pattern can express. `crew` 1.2.91: ships pinned semgrep rules for five recurring review-finding classes (`splitlines()` on untrusted text, duplicate-key JSON, bare interpreters, unquoted `CLAUDE_PLUGIN_ROOT`, tests with no assertion); they are opt-in and do nothing until the `semgrep` linter kind lands in a second change.
+- **crew 1.2.86**: Semgrep rules for the review-finding classes a pattern can express. `crew` 1.2.86: ships pinned semgrep rules for five recurring review-finding classes (`splitlines()` on untrusted text, duplicate-key JSON, bare interpreters, unquoted `CLAUDE_PLUGIN_ROOT`, tests with no assertion); they are opt-in and do nothing until the `semgrep` linter kind lands in a second change.
 - **crew 1.2.84**: The planner learns the `Lines:` label, kind tags and the 300-line cap. `crew` 1.2.84: `/crew:plan` now asks each step for a projected `Lines:` count and a kind tag on each production Files entry and states a 300-production-line cap per plan, which nothing enforces yet.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
