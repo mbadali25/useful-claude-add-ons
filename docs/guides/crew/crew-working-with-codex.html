@@ -193,7 +193,11 @@ probe and its standard disagree the standard wins.</p>
 <p>Between the verify gate and the self-check, <code>review_run.py</code> lints the bundle's changed files with
 the linters <code>.crew/verify.json</code> lists under <code>preReview</code> (L-0574). Each file is linted at its base
 and at the bundle, and a finding the bundle adds refuses the round (exit 9, nothing spent) before
-Codex is launched. <code>--allow-unverified</code> does not override a new finding. A linter that could not run,
+Codex is launched. <code>--allow-unverified</code> does not override a new finding. Rules for finding classes a pattern can express
+(U+2028 in line protocols, duplicate-key JSON, bare interpreters, unquoted <code>CLAUDE_PLUGIN_ROOT</code>, tests with no
+assertion) ship as <code>plugin/crew/lint/semgrep/crew-classes.yml</code> (L-0715). They are opt-in: a repo lists the linter in
+its own <code>.crew/verify.json</code>, nothing runs by default elsewhere, and they do nothing until the <code>semgrep</code> linter kind
+lands in a second change. Symlink and FIFO opens are not lintable and stay a reviewer probe. A linter that could not run,
 or could not parse a changed file, reads <code>COULD NOT CHECK</code>, never a pass. It refuses too, unless
 <code>--allow-unverified</code> is given, and <code>review.json</code> records that override as <code>prereview.overridden</code>.
 When the verify gate has not passed the tree, the prompt's test receipts keep their <code>MISSING</code> and

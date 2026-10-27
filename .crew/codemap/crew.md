@@ -61,6 +61,14 @@ re-run the previous note's wider count-disagreement sweep across `README.md`/`pl
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
 
 
+**Lint rules (L-0715 PR A).** DERIVED at the PR A head, not at this file's anchor, which is not moved:
+`plugin/crew/lint/semgrep/crew-classes.yml` holds five semgrep rules (`crew-splitlines-untrusted-text`,
+`crew-json-duplicate-keys`, `crew-bare-interpreter`, `crew-unquoted-plugin-root`, `crew-test-no-assertion`, each with a
+`metadata.class`) and a `# not-shipped:` list in its header comment; `plugin/crew/lint/semgrep/fixtures/<rule id>/` holds a
+positive and a negative fixture each; `plugin/crew/tests/test_crew_lint_rules.py` runs the pinned `semgrep==1.95.0` over
+a copy of them. Nothing in `hooks/scripts/` reads the file yet (the `semgrep` linter kind is PR B). JUDGEMENT: the rest
+of this map is unchanged by it.
+
 ## The roster, replaced wholesale
 
 Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing

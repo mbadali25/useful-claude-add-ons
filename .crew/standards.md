@@ -112,10 +112,24 @@ marketplace.json:218, PLUGINS.md:14 and a versioned CHANGELOG heading. It went t
 then 1.0.55. This contradicts the spec Exclusion ("Version bump is not set at implement") [...]"; the
 provisional build-branch bump the rule used to ask for is withdrawn.
 
+## Supplements GEN-04
+
+Lint rule `crew-test-no-assertion` (`plugin/crew/lint/semgrep/crew-classes.yml`, opt-in) flags a `test_*`
+function whose body has no assert, raises, fail or `check(...)`. It does not prove a test goes red when its
+guard is removed; that stays a mutation run (review step 2d, the sabotage suites).
+
+## Supplements GEN-06
+
+Lint rule `crew-splitlines-untrusted-text` flags `str.splitlines()` on text read from a file, stdin or a
+child process (it also splits on U+2028, U+2029, U+0085 and `\x1c`-`\x1e`). A reviewed-safe site carries
+`# nosemgrep: crew-splitlines-untrusted-text` and the reason.
+
 ## Supplements GEN-08
 
 `CLAUDE_PLUGIN_ROOT` in shell text is quoted (GEN-06), and `pwsh` is named absolutely (CLAUDE.md
-"Landmines"). `pathlib.write_text` on a `.sh` passes `newline="\n"` (CLAUDE.md "Landmines").
+"Landmines"). `pathlib.write_text` on a `.sh` passes `newline="\n"` (CLAUDE.md "Landmines"). Lint rule
+`crew-bare-interpreter` flags a bare `pwsh`, `powershell`, `python`, `python3` or `py` in a `subprocess`
+argument list; ruff S607 covers the other bare names.
 
 ## Supplements GEN-09
 
@@ -124,7 +138,14 @@ CLAUDE.md .crew/codemap`; a `plugin/crew/` change updates every document CLAUDE.
 lists, or says `Docs: none - <why>` in its PR body or a `Docs:` commit trailer. Parsed files: spec
 templates through `crew_ticket.validate` (not `sections()` alone); `.crew/codemap/*.md` through `graphify update .` with
 node and link counts compared; a number this repository states about itself carries a
-`<!-- claim: ... -->` marker so `scripts/check-marketplace.py` checks it.
+`<!-- claim: ... -->` marker so `scripts/check-marketplace.py` checks it. Lint rule
+`crew-unquoted-plugin-root` flags an interpreter command in a Markdown file that takes `CLAUDE_PLUGIN_ROOT`
+without double quotes.
+
+## Supplements PYTHON-10
+
+Lint rule `crew-json-duplicate-keys` flags `json.load`/`json.loads` on a file, stdin or child-process
+output with no `object_pairs_hook` (the last of two equal keys wins silently).
 
 ## Supplements GEN-11
 
