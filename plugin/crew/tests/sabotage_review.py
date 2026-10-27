@@ -335,15 +335,15 @@ REVIEW_FIX_MUTATIONS = (
          "test_dropped_part_with_a_rewritten_bundle_hash_is_incomplete"),
     ),
     (
-        # 0.20.18: the 1a16af5f rule back -- round 2's FINDINGS set
+        # 0.20.18: the 1a16af5f rule back -- the final round's FINDINGS set
         # NEEDS_REPLAN on record, so the owner can never accept them.
-        "round-2 FINDINGS set NEEDS_REPLAN again",
+        "final-round FINDINGS set NEEDS_REPLAN again",
         REVIEW_LEDGER,
         "        else:\n            data[\"state\"] = REVIEWED\n",
         "        elif number >= BUDGET:\n            data[\"state\"] = NEEDS_REPLAN\n"
         "        else:\n            data[\"state\"] = REVIEWED\n",
         ("tests/test_review_receipt.py::"
-         "test_accept_round_two_findings_writes_a_receipt"),
+         "test_accept_the_final_rounds_findings_writes_a_receipt"),
     ),
     (
         # --accept a second time on the same round rewrites who and when.
@@ -854,9 +854,9 @@ REVIEW_FIX_MUTATIONS = (
         # Round 1 of 2 is auto-accepted: the lane never fixes and reruns.
         "auto-accept stops requiring the final round",
         REVIEW_LEDGER,
-        "    if _charged(data) < BUDGET:\n",
+        "    if _charged(data) < _allowance(data):\n",
         "    if False:\n",
-        "tests/test_review_auto_accept.py::test_auto_accept_refuses[round-1-of-2]",
+        "tests/test_review_auto_accept.py::test_auto_accept_refuses[first-round-of-three]",
     ),
     (
         # An open healer skip is auto-accepted.

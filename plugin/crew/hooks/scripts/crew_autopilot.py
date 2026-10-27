@@ -1272,11 +1272,30 @@ def _auto_replan_decision(root, ticket):  # pylint: disable=too-many-return-stat
                 "successors": successors, "reason": (
                     f"autopilot.maxAutoReplans ({cap}) reached: {used} successor plan(s) "
                     "on the ledger")}
+    no_round = _no_round_after_successor(data, state, ticket, path)
+    if no_round:
+        return {"cap": cap, "round": number, "used": used, "successors": successors,
+                "reason": no_round}
     return {"allow": True, "cap": cap, "round": number, "used": used, "blocks": blocks,
             "fixes": fixes, "successors": successors, "reason": (
                 f"round {number} is FINDINGS with {len(blocks)} BLOCK and no round "
                 f"left; autopilot.maxAutoReplans is {cap} ({used} used) and "
                 f"{approval.get('reason')}")}
+
+
+def _no_round_after_successor(data, state, ticket, path):
+    """L-0717: why a successor plan would have no review round, or None. A
+    successor plan does not reopen the ticket's one budget, so a reject here
+    would approve a plan that cannot get a round. Only an owner grant
+    (review_ledger.py --grant-round) gives it one, and autopilot never grants."""
+    summary = review_ledger.summary(data, state, ticket, path)
+    left = summary.get("rounds_left")
+    if _count(left) and left >= 1:
+        return None
+    return (f"no review round would remain after the successor plan: "
+            f"{summary.get('rounds_spent')} of {summary.get('budget')} used, and a successor "
+            "plan does not reopen the budget; the owner's grant (review_ledger.py "
+            "--grant-round) is missing and autopilot never grants one")
 
 
 def _block_round(data, state, ticket, path):  # pylint: disable=too-many-return-statements
@@ -1455,7 +1474,7 @@ def _review_phase(top, ticket, evidence, answer, deep=True):
     left = ledger.get("rounds_left", 0)
     if not ok and (not isinstance(left, int) or left < 1):
         return answer("review", True, f"no review round left and no receipt stands "
-                      f"({message}): /crew:review would reserve a third round and put "
+                      f"({message}): /crew:review would find no round left and put "
                       f"{ticket} in NEEDS_REPLAN, which only a new approved plan leaves. A "
                       "human reverts the edit that staled the receipt, or replans", decision="revert-or-replan")
     if latest.get("refunded") is True and not ok:
@@ -1547,7 +1566,7 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
     `max_phases` and `last_command` are the session's count and the command it
     last ran: reaching the count, or being handed the same command again, stops
     -- except `/crew:review` after a refunded tool-failure round: each run that
-    records a round moves the ledger, `review_ledger.REFUND_LIMIT` per plan
+    records a round moves the ledger, `review_ledger.REFUND_LIMIT` per ticket
     bounds how many are refunded, and `max_phases` bounds one that records none.
     So does a phase that would run while `crew_ticket.resolve_active` -- what
     the scope guard reads -- names another ticket, none, or a broken pointer.

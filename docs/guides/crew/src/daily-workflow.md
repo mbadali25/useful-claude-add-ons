@@ -92,8 +92,8 @@ review bundle, so any later edit needs a new stamp.
 docs and the self-check; without a current stamp the review refuses before it
 spends a round. Codex reviews the bundle (or Copilot, or the Claude fallback,
 whichever survives the author-family strike), reports BLOCK/FIX/NIT lines,
-and you fix the BLOCKs. Two rounds total, ticket-wide — a third is refused and
-the ticket becomes `NEEDS_REPLAN`. Under `/crew:autopilot`, a final round with a
+and you fix the BLOCKs. <!-- review-budget-doc -->Three rounds total, ticket-wide and across successor plans — one past
+them is refused and the ticket becomes `NEEDS_REPLAN`. Under `/crew:autopilot`, a final round with a
 BLOCK stops for you unless you set `autopilot.maxAutoReplans` (default `0`, off):
 then autopilot rejects it itself, writes a successor plan that quotes every BLOCK
 and FIX line, approves it under `autopilot.approval` and reviews again, at most
@@ -250,7 +250,7 @@ is peer-written data; see the plugin README's "Versioned contracts".
 | `/crew:implement` says no approved plan | step 3 was skipped, or `plan.md` changed after approval | `/crew:plan <id>`, then type `/crew:approve <id>` |
 | a write is blocked outside Touch | the file isn't in the spec's declared scope | amend `spec.md`'s Touch and re-approve the plan, or don't make the edit |
 | `/crew:review` exits 2 with `review-run: self-check: ...` | the standards self-check is missing, incomplete, or stamped for an earlier state of the change | answer `.work/tickets/<id>/selfcheck.md`, run `crew_standards.py stamp --root . --ticket <id>`, rebuild the bundle and run the round again; no round was spent |
-| `/crew:done` reports `NEEDS_REPLAN` | the review budget (two rounds) is spent | `/crew:plan <id>` for a successor plan; no third round |
+| `/crew:done` reports `NEEDS_REPLAN` | the review budget (three rounds) is spent | `/crew:plan <id>` for a successor plan, which does not reopen the budget; the owner's `--grant-round` adds a round |
 | `/crew:autopilot` stops at `auto-replan-cap` naming `autopilot.maxAutoReplans (<n>) reached` | the ticket already has that many successor plans on its review ledger, yours included | read the listed plans and decide: accept, fix, or redesign; raising the cap is your call, up to 5 (a larger value reads as 5, with a warning) |
 | `/crew:done` fails the completion audit | a path outside scope changed, including one a shell command wrote | file it to `TODO.md`, not to this ticket, then rerun |
 

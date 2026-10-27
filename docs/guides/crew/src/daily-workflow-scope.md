@@ -171,17 +171,20 @@ are outside it.
 Between steps 1 and 3 the approval is stale. The guard refuses edits outside the ticket directory
 until you approve again.
 
-## After two review rounds: a successor plan
+## After the review budget: a successor plan
 
-If a ticket uses both review rounds without an accepted receipt (refunded tool-failure rounds do
-not count), it moves to `NEEDS_REPLAN`. With `autopilot.maxAutoReplans` at 1 or more, autopilot
+<!-- review-budget-doc -->
+If a ticket uses its three review rounds, across every plan it ran under, without an accepted receipt
+(refunded tool-failure rounds do not count), it moves to `NEEDS_REPLAN`. With `autopilot.maxAutoReplans` at 1 or more, autopilot
 does this itself for a final round with a BLOCK (`auto-reject`), then writes and approves the
 successor plan under `autopilot.approval`; the cap counts every successor plan on the ledger.
 With notify on, the last round carrying a BLOCK sends the `Review out of rounds` ping
 (`-> /crew:plan <id>`) when `/crew:autopilot` stops on it.
-Write a different plan and approve it. `approve` reports `review may continue`, and the ledger
-gives the new plan two fresh rounds. Approving the same plan again is refused and exits with
-status 3.
+Write a different plan and approve it. A successor plan does not reopen the budget: `approve`
+reports `review may continue` only while a round of the three is left. With none left it exits
+with status 3 and says `0 review rounds available`; the owner's
+`review_ledger.py --ticket <id> --grant-round --by <you> --reason <why>` adds one round, then
+approve the changed plan again. Approving the same plan again is refused and exits with status 3.
 
 ## Modes
 

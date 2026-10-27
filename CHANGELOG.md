@@ -9,6 +9,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.88: one review budget of three per ticket, counted across successor plans; the owner's `--grant-round` (L-0717, absorbs L-0781)
+
+- **Summary.** `crew` 1.2.88: a ticket now gets three review rounds in total, a successor plan no longer reopens them, and only the owner's `review_ledger.py --grant-round` adds a round.
+- `review_ledger.py`: `BUDGET` 3, `REFUND_LIMIT` 3 counted per ticket, a recorded `grants` list (malformed is could-not-tell), `--grant-round --by --reason` (refused while rounds remain, for `auto:`/autopilot names, multi-line text), successor rows carry `carry_over: true` (a row written before keeps resetting). `scope_guard.py` refuses the verb to subagents with every abbreviation; `review_run.py` and `crew_status.py` print the ledger's budget; `crew_autopilot.py` refuses an auto-reject whose successor would have no round (seam; bug fix under the L-0727 freeze, manifest updated). Docs: updated, with a drift test (`test_review_budget.py`).
+
 ### Added — crew 1.2.84: the planner learns the `Lines:` label, kind tags and the 300-line cap (L-0714 slice 1)
 
 - **Summary.** `crew` 1.2.84: `/crew:plan` now asks each step for a projected `Lines:` count and a kind tag on each production Files entry and states a 300-production-line cap per plan, which nothing enforces yet.

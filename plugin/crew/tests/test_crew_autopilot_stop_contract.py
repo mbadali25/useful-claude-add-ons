@@ -323,7 +323,8 @@ def b_findings(tmp, _mp):
 
 def b_no_round_left(tmp, mp):
     root = _approved(tmp)
-    _ledger(root, [_round(1, "FINDINGS"), _round(2, "CLEAN")], state="REVIEWED")
+    _ledger(root, [_round(1, "FINDINGS"), _round(2, "FINDINGS"), _round(3, "CLEAN")],
+            state="REVIEWED")
     _receipt_says(mp, False, "no accepted review receipt")
     return _next(root)
 

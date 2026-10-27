@@ -1,12 +1,15 @@
-"""The per-ticket review ledger: two rounds in total, reserved before launch.
+"""The per-ticket review ledger: three rounds in total, reserved before launch.
 
 WHERE. `<git-common-dir>/crew/review/<ticket>.json`. The common git directory
 is shared by every worktree of a repository, so a second worktree of the same
 repo reads and spends the same budget; a ledger under the worktree would give
-each checkout its own two rounds.
+each checkout its own three rounds.
 
-THE BUDGET is `BUDGET`, a constant. No environment variable, CLI flag or
-config key reads into it, and nothing here resets a ledger. (Deleting the file
+THE BUDGET is `BUDGET`, a constant, counted across every plan the ticket ever
+ran under: a successor plan does not reopen it (L-0717). No environment
+variable, CLI flag or config key reads into it, and nothing here resets a
+ledger. The one way past it is an owner's recorded grant (`--grant-round`,
+below), one extra round per grant. (Deleting the file
 by hand is outside that promise -- it is the operator's filesystem -- and the
 README says so.) Five review rounds on one ticket is the measured failure this
 exists for (`docs/review/03-codex-review.md`).
@@ -14,13 +17,13 @@ exists for (`docs/review/03-codex-review.md`).
 RESERVATION BEFORE LAUNCH. `reserve` appends a round with status `reserved`
 and writes the ledger before any reviewer process exists. A reviewer that
 crashes, hangs or is killed leaves that round `reserved` forever, and it
-counts. A third reservation is refused and the state becomes `NEEDS_REPLAN`;
+counts. A reservation past the allowance is refused and the state becomes `NEEDS_REPLAN`;
 that refusal is written once, and every reservation attempt after it is
 refused without writing anything.
 That refusal, an explicit `--reject --by <who>`, and (T-0109) `--reject --by
 <who> --supersede-accepted` are the only ways into NEEDS_REPLAN: a completed
-round 2 -- FINDINGS or INCOMPLETE -- leaves the ticket REVIEWED, so the owner
-can still accept round 2's FINDINGS. Plain `--reject` refuses an ACCEPTED
+final round -- FINDINGS or INCOMPLETE -- leaves the ticket REVIEWED, so the owner
+can still accept that round's FINDINGS. Plain `--reject` refuses an ACCEPTED
 ticket. With the flag it takes ONLY an ACCEPTED one: the receipt (kind
 `clean`, `owner-accepted` or `auto-accepted`, for the latest completed round)
 is kept whole in the append-only `superseded` list with who and when,
@@ -34,15 +37,31 @@ calling: `--reserve` already voids an acceptance with no name.
 REFUNDS (T-0087). A round the TOOL lost -- recorded INCOMPLETE with
 `failure_class: "tool"` (`review_verdict.failure_class`: the answer never
 arrived intact) -- is refunded automatically: its row says `refunded: true`
-and it does not count against `BUDGET`. At most `REFUND_LIMIT` rounds per plan
-are refunded; the next one is recorded `refunded: false` with
+and it does not count against `BUDGET`. At most `REFUND_LIMIT` rounds per ticket
+are refunded (a successor plan does not reset that either); the next one is recorded `refunded: false` with
 `refund_refused` saying why, and counts. Never refunded: a `reviewer` or
 `tree` INCOMPLETE, a FINDINGS or CLEAN round, a round with no recorded result
 (still `reserved`, above), and rows written before this rule (no
 `failure_class`). `_spent` keeps meaning "rows reserved since the successor
 boundary" -- the boundary checks in `record` and `accept` read it -- and
-`_charged` (spent minus refunded) is what the budget uses. Nothing else resets
-the count.
+`_charged` (rows since `_count_start`, minus refunded) is what the budget uses.
+`_count_start` is 0 for every ledger but one that holds a LEGACY successor row
+(written before L-0717, no `carry_over` field): that row keeps resetting the
+count at its `after_round`, because the ledger is history and re-counting it
+would strand a ticket mid-flight. A row written now carries `carry_over: true`.
+Nothing else resets the count.
+
+OWNER GRANTS (L-0717). `--grant-round --by <who> --reason <text>` appends `{at,
+by, reason, round}` to the top-level `grants` list and changes nothing else (not
+the state, a grant never reopens a NEEDS_REPLAN ledger). The allowance is
+`BUDGET + len(grants)` (`_allowance`) and `summary()['budget']` says it. It
+refuses, writing nothing, unless the rounds are exhausted (`rounds_left` 0), and
+refuses an `auto:` name, `crew_autopilot.AUTO_REJECT_BY`, an empty or multi-line
+`--by` or `--reason` and an unreadable ledger. A `grants` value that is not a
+list of objects each with a non-empty string `by` and `reason` and an int
+`round` makes the ledger UNREADABLE (could not tell, never `BUDGET`). `--by` is
+a recorded name, never proof of who is calling; `scope_guard.py` keeps a
+subagent off the verb.
 
 ATOMICITY. Every mutation holds `<ticket>.lock`, created with
 O_CREAT|O_EXCL, for the read-modify-write, and replaces the ledger with
@@ -67,9 +86,9 @@ receipt only through `--accept --by <who>`, which records who and when.
 `--accept` takes only the most recent round, only once it completed with
 FINDINGS, only once per round, and never once the state is NEEDS_REPLAN:
 accepting an older completed round used to move NEEDS_REPLAN back to
-ACCEPTED. Round 2's FINDINGS are acceptable -- the budget is exhausted only
-when it is spent with nothing accepted, which is the refused third
-reservation.
+ACCEPTED. The final round's FINDINGS are acceptable -- the budget is exhausted
+only when it is spent with nothing accepted, which is the refused reservation
+past the allowance.
 AUTO-ACCEPT (L-0510, owner policy 2026-09-30). `--auto-accept --follow-up <id>`
 takes no `--by`: it writes a receipt of kind `auto-accepted` whose
 `accepted_by` is fixed to `AUTO_BY`, carrying the round's finding lines
@@ -89,7 +108,7 @@ round's `.work/tickets/<id>/review.json` counts 0 (owner decision
 2026-10-01 #6: a recovered round is the owner's; a missing, mistyped or
 unreadable count is could-not-tell, never 0, and this branch does not
 write the field); `webtest_open` is 0 or `WEBTEST_NA`; and the round is final -- `_charged`
-has reached `BUDGET`, so the next reservation would be refused. Every case
+has reached `_allowance`, so the next reservation would be refused. Every case
 the ledger cannot tell is a refusal, never a 0: an INCOMPLETE or CLEAN
 verdict, a missing or mistyped count, a missing `findings` or `webtest_open`
 (which is every row recorded before this rule), an unreadable ledger. A
@@ -138,9 +157,13 @@ calls `continue_with_successor_plan`, which allows it only when the ticket's
 approval receipt (`<git-common-dir>/crew/tickets/<id>/approval.json`, written
 by `crew_ticket.py`, refused to Write/Edit by `scope_guard.py`) is current for
 exactly that plan hash AND no earlier approval of the ticket carried the same
-plan. It appends a `successors` row and opens a fresh budget of `BUDGET`
-rounds counted from there; the rounds already spent stay in the ledger, the
-old receipt is cleared, and nothing else resets the count.
+plan. It appends a `successors` row (`carry_over: true`) and reopens review
+only when a round of the ticket's one allowance is left; with none it records
+nothing and says an owner grant is needed. The rounds already spent stay in the
+ledger and keep counting, and the old receipt is cleared. After a grant, an
+approval of a changed plan records the successor; an unchanged plan already
+approved once is recorded with `--successor-plan <sha256>` (a re-approval of the
+same plan is refused by the earlier-plan rule).
 
 NO REVIEWER (L-0712). When no reviewer outside the author's family can run,
 `--no-reviewer --reason <text>` (`no_reviewer`) appends `{at, verdict:
@@ -171,10 +194,11 @@ import merged_main
 import review_delta
 import review_patch
 
-BUDGET = 2
-# A constant like BUDGET: bounds a refund loop at four launched rounds per
-# two-round budget. No flag, env var or config key reads into it.
-REFUND_LIMIT = 2
+BUDGET = 3
+# A constant like BUDGET: bounds a refund loop at six launched rounds per
+# three-round budget (twice the budget), counted per ticket. No flag, env var
+# or config key reads into it.
+REFUND_LIMIT = 3
 
 # L-0510: the auto-accept receipt. Constants, like BUDGET: no flag, env var or
 # config key turns the policy on or off or changes the string.
@@ -264,6 +288,8 @@ def _load(path):
     successors = data.get("successors", [])
     if not isinstance(successors, list) or not all(isinstance(s, dict) for s in successors):
         return {}, "corrupt"
+    if not _grants_well_formed(data.get("grants", [])):
+        return {}, "corrupt"
     if successors:
         after = successors[-1].get("after_round")
         if (not isinstance(after, int) or isinstance(after, bool)
@@ -323,6 +349,28 @@ def _mutate(root, ticket, change):
     return result
 
 
+def _grants_well_formed(grants):
+    """L-0717: `grants` is a list of objects, each with a non-empty string `by`
+    and `reason` and an int (never a bool) `round`. Anything else is
+    could-not-tell: the ledger reads as unreadable, never as `BUDGET`."""
+    if not isinstance(grants, list):
+        return False
+    for row in grants:
+        if not isinstance(row, dict):
+            return False
+        for key in ("by", "reason"):
+            if not isinstance(row.get(key), str) or not row[key].strip():
+                return False
+        if not isinstance(row.get("round"), int) or isinstance(row.get("round"), bool):
+            return False
+    return True
+
+
+def _allowance(data):
+    """Rounds this ticket may charge: `BUDGET` plus one per owner grant."""
+    return BUDGET + len(data.get("grants") or [])
+
+
 def _spent(data):
     """Rounds reserved since the latest successor plan (or ever, without one)."""
     successors = data.get("successors") or []
@@ -338,15 +386,28 @@ def _boundary(data):
     return after if isinstance(after, int) else 0
 
 
+def _count_start(data):
+    """Index of the first round that counts against the budget: 0, so a
+    successor plan does not reopen it (L-0717), except after a LEGACY successor
+    row (written before that rule, no `carry_over`), which keeps resetting the
+    count at its `after_round`."""
+    start = 0
+    for row in data.get("successors") or []:
+        if row.get("carry_over") is not True:
+            start = row.get("after_round", 0)
+    return start if isinstance(start, int) else 0
+
+
 def _refunded(data):
-    """Rounds under the current plan that were refunded as tool failures."""
-    return sum(1 for r in data.get("rounds", [])[_boundary(data):]
+    """Rounds on the ticket (since `_count_start`) refunded as tool failures."""
+    return sum(1 for r in data.get("rounds", [])[_count_start(data):]
                if isinstance(r, dict) and r.get("refunded") is True)
 
 
 def _charged(data):
-    """Rounds under the current plan that count against BUDGET."""
-    return _spent(data) - _refunded(data)
+    """Rounds on the ticket (since `_count_start`) that count against the
+    allowance."""
+    return len(data.get("rounds", [])) - _count_start(data) - _refunded(data)
 
 
 def _fresh(ticket):
@@ -380,11 +441,12 @@ def reserve(root, ticket, provider, model=None, gated=True, same_family=None):  
             data = _fresh(ticket)
         rounds = data.setdefault("rounds", [])
         exhausted = (False, None,
-                     f"review budget exhausted: {_charged(data)} of {BUDGET} rounds used. "
-                     f"State is {NEEDS_REPLAN}; only an approved successor plan continues")
+                     f"review budget exhausted: {_charged(data)} of {_allowance(data)} rounds "
+                     f"used. State is {NEEDS_REPLAN}; a successor plan does not reopen the "
+                     "budget, only an owner grant does (review_ledger.py --grant-round)")
         if data.get("state") == NEEDS_REPLAN:
             return None, exhausted
-        if _charged(data) >= BUDGET:
+        if _charged(data) >= _allowance(data):
             data["state"] = NEEDS_REPLAN
             data.setdefault("refused", []).append({"at": _now(), "provider": provider})
             return data, exhausted
@@ -398,7 +460,7 @@ def reserve(root, ticket, provider, model=None, gated=True, same_family=None):  
         rounds.append(row)
         data["state"] = IN_REVIEW
         return data, (True, number,
-                      f"round {number} reserved ({_charged(data)} of {BUDGET} budget rounds "
+                      f"round {number} reserved ({_charged(data)} of {_allowance(data)} budget rounds "
                       f"used, {_refunded(data)} refunded)")
 
     if same_family is not None:
@@ -490,7 +552,7 @@ def record(root, ticket, number, review):
         if review["verdict"] == "INCOMPLETE" and review.get("failure_class") == "tool":
             row["refunded"] = _refunded(data) < REFUND_LIMIT
             if not row["refunded"]:
-                row["refund_refused"] = f"refund limit {REFUND_LIMIT} per plan reached"
+                row["refund_refused"] = f"refund limit {REFUND_LIMIT} per ticket reached"
         else:
             row["refunded"] = False
         if review["verdict"] == "CLEAN":
@@ -531,13 +593,16 @@ def _one_line_arg(value, flag, verb="--correct-acceptance"):
     return value.strip()
 
 
-def _is_auto_name(name):
-    """Whether `name` claims the reserved `auto:` prefix, lookalikes included:
-    NFKC (fullwidth letters), casefold, and format characters (zero-width
-    joiners, a BOM) stripped before the test."""
+def _fold_name(name):
+    """`name` folded for a prefix test: NFKC (fullwidth letters), casefold, and
+    format characters (zero-width joiners, a BOM) stripped."""
     folded = unicodedata.normalize("NFKC", name).casefold()
-    folded = "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
-    return folded.strip().startswith(AUTO_PREFIX)
+    return "".join(ch for ch in folded if unicodedata.category(ch) != "Cf").strip()
+
+
+def _is_auto_name(name):
+    """Whether `name` claims the reserved `auto:` prefix, lookalikes included."""
+    return _fold_name(name).startswith(AUTO_PREFIX)
 
 
 def accept(root, ticket, by):
@@ -707,8 +772,8 @@ def auto_accept_refusal(data, ticket):
     problem = _auto_row_problem(row)
     if problem:
         return problem
-    if _charged(data) < BUDGET:
-        return (f"not the final round: {_charged(data)} of {BUDGET} budget rounds used; fix "
+    if _charged(data) < _allowance(data):
+        return (f"not the final round: {_charged(data)} of {_allowance(data)} budget rounds used; fix "
                 "and run the next round")
     receipt = data.get("receipt") or {}
     if receipt.get("round") == row.get("round"):
@@ -1018,7 +1083,7 @@ def _supersede(data, ticket, by):
 
 
 def reject(root, ticket, by, supersede_accepted=False):
-    """The owner sends the ticket to NEEDS_REPLAN without spending a third
+    """The owner sends the ticket to NEEDS_REPLAN without spending another
     reservation. Refuses on a ticket already ACCEPTED or NEEDS_REPLAN, and
     changes nothing when it refuses. With `supersede_accepted` (T-0109) it
     takes ONLY an ACCEPTED ticket, keeps the receipt in `superseded` and
@@ -1271,14 +1336,20 @@ def continue_with_successor_plan(root, ticket, plan_hash):
         if plan_hash in {s.get("plan_sha256") for s in data.get("successors") or []}:
             return None, (False, f"refused: plan {plan_hash[:12]} already continued "
                                  f"{ticket} once")
+        left = _allowance(data) - _charged(data)
+        if left < 1:
+            return None, (False, f"refused: 0 review rounds available ({_charged(data)} of "
+                                 f"{_allowance(data)} used); an owner grant is needed "
+                                 f"(review_ledger.py --grant-round); {NEEDS_REPLAN} stands")
         data.setdefault("successors", []).append({
             "plan_sha256": plan_hash, "approved_at": receipt.get("approved_at"),
             "approved_by": receipt.get("approved_by"), "at": _now(),
-            "after_round": len(data.get("rounds", []))})
+            "after_round": len(data.get("rounds", [])), "carry_over": True})
         data["receipt"] = None
         data["state"] = IN_REVIEW
         return data, (True, f"successor plan {plan_hash[:12]} approved by "
-                            f"{receipt.get('approved_by')}; {BUDGET} review rounds available")
+                            f"{receipt.get('approved_by')}; {left} review rounds available "
+                            f"({_charged(data)} of {_allowance(data)} used)")
 
     return _mutate(root, ticket, change)
 
@@ -1293,10 +1364,10 @@ def summary(data, state, ticket, path):
         return {"ticket": ticket, "path": path, "state": UNKNOWN}
     rounds = data.get("rounds", [])
     return {"ticket": ticket, "path": path, "state": data.get("state") or "EMPTY",
-            "rounds_used": len(rounds), "budget": BUDGET,
+            "rounds_used": len(rounds), "budget": _allowance(data),
             "rounds_spent": _charged(data), "rounds_refunded": _refunded(data),
-            "refund_limit": REFUND_LIMIT,
-            "rounds_left": max(0, BUDGET - _charged(data)), "rounds": rounds,
+            "refund_limit": REFUND_LIMIT, "grants": data.get("grants") or [],
+            "rounds_left": max(0, _allowance(data) - _charged(data)), "rounds": rounds,
             "unreviewed": data.get("unreviewed", []),
             "successors": data.get("successors") or [],
             "receipt": data.get("receipt"),
@@ -1305,6 +1376,38 @@ def summary(data, state, ticket, path):
             # never as an empty list.
             "superseded": data.get("superseded", []),
             "acceptance_corrections": data.get("acceptance_corrections", [])}
+
+
+AUTOPILOT_NAME = "autopilot"
+
+
+def grant_round(root, ticket, by, reason):
+    """L-0717: the owner's one extra round, recorded as `{at, by, reason,
+    round}` in the top-level `grants` list. Changes nothing else (not the
+    state). Refuses, writing nothing, unless the rounds are exhausted, and
+    refuses an `auto:` or autopilot name, an empty or multi-line `--by` or
+    `--reason`, and an unreadable ledger (a malformed `grants` included).
+    `--by` is a recorded name, never a check of who is calling."""
+    by = _one_line_arg(by, "--by", "--grant-round")
+    reason = _one_line_arg(reason, "--reason", "--grant-round")
+    folded = _fold_name(by)
+    if folded.startswith(AUTO_PREFIX) or folded.startswith(AUTOPILOT_NAME):
+        raise LedgerError(f"--by {by!r}: a grant is the owner's decision, never an automatic "
+                          "or autopilot one")
+
+    def change(data, state):
+        if state != "ok":
+            raise LedgerError(f"ledger is {state}; there is no budget to grant a round on")
+        left = _allowance(data) - _charged(data)
+        if left > 0:
+            raise LedgerError(f"{left} review round(s) remain ({_charged(data)} of "
+                              f"{_allowance(data)} used); a grant is for an exhausted budget")
+        row = {"at": _now(), "by": by, "reason": reason,
+               "round": len(data.get("rounds", [])) + 1}
+        data.setdefault("grants", []).append(row)
+        return data, dict(row, count=len(data["grants"]), budget=_allowance(data))
+
+    return _mutate(root, ticket, change)
 
 
 def status(root, ticket):
@@ -1349,6 +1452,9 @@ def main(argv):
     action.add_argument("--no-reviewer", action="store_true",
                         help="no reviewer outside the author's family could run: record an "
                              "INCOMPLETE, refunded outcome (needs --reason; spends nothing)")
+    action.add_argument("--grant-round", action="store_true",
+                        help="the owner's one extra round on an exhausted budget (needs --by "
+                             "and --reason; records a grant, changes no state)")
     action.add_argument("--correct-acceptance", action="store_true",
                         help="rewrite an owner-accepted receipt's accepted_by and record the "
                              "old name (needs --by and --reason)")
@@ -1373,8 +1479,10 @@ def main(argv):
     args = parser.parse_args(argv)
     if args.auto_accept and args.by is not None:
         parser.error("--auto-accept takes no --by: its accepted_by is fixed")
-    if args.reason is not None and not (args.correct_acceptance or args.no_reviewer):
-        parser.error("--reason is used only with --correct-acceptance or --no-reviewer")
+    if args.reason is not None and not (args.correct_acceptance or args.no_reviewer
+                                        or args.grant_round):
+        parser.error("--reason is used only with --correct-acceptance, --no-reviewer or "
+                     "--grant-round")
     if args.correct_acceptance and args.follow_up is not None:
         parser.error("--correct-acceptance takes no --follow-up")
     if args.supersede_accepted and not args.reject:
@@ -1427,6 +1535,11 @@ def main(argv):
             entry = no_reviewer(root, args.ticket, args.reason)
             print(f"review-ledger: {args.ticket}: no reviewer - INCOMPLETE, refunded, no "
                   f"round or budget spent ({entry['count']} unreviewed outcome(s) recorded)")
+            return 0
+        if args.grant_round:
+            row = grant_round(root, args.ticket, args.by, args.reason)
+            print(f"review-ledger: {args.ticket}: one extra round granted by {row['by']} at "
+                  f"{row['at']} ({row['count']} grant(s), budget now {row['budget']})")
             return 0
         if args.correct_acceptance:
             row = correct_acceptance(root, args.ticket, args.by, args.reason)

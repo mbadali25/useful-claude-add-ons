@@ -134,7 +134,7 @@ For a small first change use the light path:
 
 The light path runs every phase in short form: a one-line direction, a short
 spec, a one-step plan, and your approval before any edit. Review runs after
-tests and docs, and has a budget of two rounds.
+tests and docs, and has a budget of three rounds (<!-- review-budget-doc -->counted across every plan the ticket runs under).
 
 Check: `.work/tickets/<id>/` exists and `/crew:status` lists it under `open`.
 

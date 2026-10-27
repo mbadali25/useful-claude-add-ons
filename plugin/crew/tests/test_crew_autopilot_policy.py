@@ -732,7 +732,7 @@ def _out_of_rounds_block(root):
     rows = [{"round": n, "status": "completed", "provider": "codex", "model": None,
              "model_family": "gpt", "verdict": "FINDINGS", "bundle_sha256": "a" * 64,
              "base": "HEAD", "counts": {"BLOCK": 1, "FIX": 0, "NIT": 0},
-             "findings": ["BLOCK|src/app.py:1|wrong"], "refunded": False} for n in (1, 2)]
+             "findings": ["BLOCK|src/app.py:1|wrong"], "refunded": False} for n in (1, 2, 3)]
     _ledger(root, rows, review_ledger.REVIEWED)
 
 
@@ -753,6 +753,7 @@ def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
     config["autopilot"]["sleep"] = {"approval": "human"}
     _write(root / ".crew" / "config.json", json.dumps(config))
     _questions(root, GOOD_QUESTIONS)
+    monkeypatch.setattr(crew_autopilot, "_no_round_after_successor", lambda *_a: None)
     before = _files(root)
 
     for run in READ_ONLY_RUNS:

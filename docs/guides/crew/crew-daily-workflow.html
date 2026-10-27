@@ -155,8 +155,8 @@ review bundle, so any later edit needs a new stamp.</p>
 docs and the self-check; without a current stamp the review refuses before it
 spends a round. Codex reviews the bundle (or Copilot, or the Claude fallback,
 whichever survives the author-family strike), reports BLOCK/FIX/NIT lines,
-and you fix the BLOCKs. Two rounds total, ticket-wide — a third is refused and
-the ticket becomes <code>NEEDS_REPLAN</code>. Under <code>/crew:autopilot</code>, a final round with a
+and you fix the BLOCKs. <!-- review-budget-doc -->Three rounds total, ticket-wide and across successor plans — one past
+them is refused and the ticket becomes <code>NEEDS_REPLAN</code>. Under <code>/crew:autopilot</code>, a final round with a
 BLOCK stops for you unless you set <code>autopilot.maxAutoReplans</code> (default <code>0</code>, off):
 then autopilot rejects it itself, writes a successor plan that quotes every BLOCK
 and FIX line, approves it under <code>autopilot.approval</code> and reviews again, at most
@@ -338,8 +338,8 @@ is peer-written data; see the plugin README's "Versioned contracts".</p>
 </tr>
 <tr>
 <td><code>/crew:done</code> reports <code>NEEDS_REPLAN</code></td>
-<td>the review budget (two rounds) is spent</td>
-<td><code>/crew:plan &lt;id&gt;</code> for a successor plan; no third round</td>
+<td>the review budget (three rounds) is spent</td>
+<td><code>/crew:plan &lt;id&gt;</code> for a successor plan, which does not reopen the budget; the owner's <code>--grant-round</code> adds a round</td>
 </tr>
 <tr>
 <td><code>/crew:autopilot</code> stops at <code>auto-replan-cap</code> naming <code>autopilot.maxAutoReplans (&lt;n&gt;) reached</code></td>
@@ -496,16 +496,19 @@ are outside it.</p>
 </ol>
 <p>Between steps 1 and 3 the approval is stale. The guard refuses edits outside the ticket directory
 until you approve again.</p>
-<h3 id="after-two-review-rounds-a-successor-plan">After Two Review Rounds: A Successor Plan</h3>
-<p>If a ticket uses both review rounds without an accepted receipt (refunded tool-failure rounds do
-not count), it moves to <code>NEEDS_REPLAN</code>. With <code>autopilot.maxAutoReplans</code> at 1 or more, autopilot
+<h3 id="after-the-review-budget-a-successor-plan">After the Review Budget: A Successor Plan</h3>
+<!-- review-budget-doc -->
+<p>If a ticket uses its three review rounds, across every plan it ran under, without an accepted receipt
+(refunded tool-failure rounds do not count), it moves to <code>NEEDS_REPLAN</code>. With <code>autopilot.maxAutoReplans</code> at 1 or more, autopilot
 does this itself for a final round with a BLOCK (<code>auto-reject</code>), then writes and approves the
 successor plan under <code>autopilot.approval</code>; the cap counts every successor plan on the ledger.
 With notify on, the last round carrying a BLOCK sends the <code>Review out of rounds</code> ping
 (<code>-&gt; /crew:plan &lt;id&gt;</code>) when <code>/crew:autopilot</code> stops on it.
-Write a different plan and approve it. <code>approve</code> reports <code>review may continue</code>, and the ledger
-gives the new plan two fresh rounds. Approving the same plan again is refused and exits with
-status 3.</p>
+Write a different plan and approve it. A successor plan does not reopen the budget: <code>approve</code>
+reports <code>review may continue</code> only while a round of the three is left. With none left it exits
+with status 3 and says <code>0 review rounds available</code>; the owner's
+<code>review_ledger.py --ticket &lt;id&gt; --grant-round --by &lt;you&gt; --reason &lt;why&gt;</code> adds one round, then
+approve the changed plan again. Approving the same plan again is refused and exits with status 3.</p>
 <h3 id="modes">Modes</h3>
 <p>Set <code>scope.mode</code> in <code>.crew/config.json</code>:</p>
 <table>

@@ -161,8 +161,10 @@ def test_corrections_survive_a_successor_plan(repo, monkeypatch):
     _review(repo)
     _accepted(repo)
     rl.correct_acceptance(str(repo), T, "the owner", REASON)
-    assert rl.reserve(str(repo), T, "codex")[0] is False
+    while rl.reserve(str(repo), T, "codex")[0]:
+        pass
     assert rl.status(str(repo), T)["state"] == rl.NEEDS_REPLAN
+    rl.grant_round(str(repo), T, "the owner", "a successor plan needs a round")
     monkeypatch.setattr(rl, "_plan_approval_receipt", lambda root, ticket, plan_hash: (
         {"approved_by": "owner", "approved_at": "now"}, None))
 

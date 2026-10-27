@@ -249,14 +249,18 @@ the reviewer, computes the verdict:</p>
 <li><code>INCOMPLETE</code>: anything else, such as a crash, a timeout or a part not read.
   It is never <code>CLEAN</code>.</li>
 </ul>
-<p><strong>Two rounds per ticket, in total.</strong> The ledger lives under the repository's
-git common directory, so every worktree shares it. A round is reserved before
-the reviewer starts, so a crash still spends it. A round the tool lost (a
-timeout, or no answer) is refunded, at most twice per plan. A third
-reservation is refused and the ticket becomes <code>NEEDS_REPLAN</code>.</p>
-<p><strong>Successor plans.</strong> The way past <code>NEEDS_REPLAN</code> is a different plan:
-approving a changed <code>plan.md</code> opens a fresh budget of two rounds. Approving
-the same plan again does not.</p>
+<!-- review-budget-doc -->
+<p><strong>Three rounds per ticket, in total, across every plan the ticket ran under.</strong>
+The ledger lives under the repository's git common directory, so every worktree
+shares it. A round is reserved before the reviewer starts, so a crash still
+spends it. A round the tool lost (a timeout, or no answer) is refunded, at most
+three times per ticket. A reservation past the budget is refused and the ticket
+becomes <code>NEEDS_REPLAN</code>.</p>
+<p><strong>Successor plans.</strong> The way out of <code>NEEDS_REPLAN</code> is a different plan:
+approving a changed <code>plan.md</code>. A successor plan does not reopen the budget; it
+continues review only while a round of the three is left. Past that, only the
+owner's <code>review_ledger.py --ticket &lt;id&gt; --grant-round --by &lt;you&gt; --reason &lt;why&gt;</code>
+adds one round, and approving the same plan again is still refused.</p>
 <p><strong>Acceptance is yours.</strong> <code>FINDINGS</code> become a receipt only when you run
 <code>review_ledger.py --ticket &lt;id&gt; --accept --by &lt;you&gt;</code>. It refuses when the tree
 changed since that round. One exception: when the final round allowed is

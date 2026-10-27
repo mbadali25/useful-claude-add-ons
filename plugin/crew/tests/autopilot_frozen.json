@@ -2,8 +2,8 @@
   "note": "crew_autopilot*.py is frozen (L-0727): new lane or wave behaviour goes in plugin/crew/workflows/. Only a bug fix or a removal may change one of these files, and then the same PR updates tests/autopilot_frozen.json (python3 tests/test_autopilot_frozen.py --write) and its body says why and names L-0727.",
   "files": {
     "crew_autopilot.py": {
-      "sha256": "74259c6705beb9d9e56205ad7029ff315f6d0e8935d14cbd7f309decd545b97c",
-      "lines": 3380
+      "sha256": "1ac25ae3565d261403f942dcb83458a58103cd2927bab8fe5f848f7c04a1df4e",
+      "lines": 3399
     },
     "crew_autopilot_backlog.py": {
       "sha256": "d0f7cc3c41063c746c8607375905852f45c5c4d24eaeae0bc91fbb3a6587473d",
@@ -70,5 +70,5 @@
       "lines": 105
     }
   },
-  "totalLines": 7997
+  "totalLines": 8016
 }
