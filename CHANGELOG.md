@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.90: Codex can read its review bundle on Windows again
+### Fixed — crew 1.2.91: Codex can read its review bundle on Windows again
 
-- **Summary.** `crew` 1.2.90: on Windows with Python 3.13 or later, Codex reviews came back INCOMPLETE because Codex could not read its own review bundle; the bundle directory now inherits the repo's permissions there, and Linux and macOS are unchanged.
+- **Summary.** `crew` 1.2.91: on Windows with Python 3.13 or later, Codex reviews came back INCOMPLETE because Codex could not read its own review bundle; the bundle directory now inherits the repo's permissions there, and Linux and macOS are unchanged.
 - Root cause: `review_run.py`'s `claim_scratch` has used `tempfile.mkdtemp` since the `/crew:review` mechanics moved into Python (5c600df71). Python 3.13+ (CVE-2024-4030) turns mkdtemp's mode 0o700 into a protected owner-only ACL on Windows (SYSTEM, Administrators, OWNER RIGHTS), which blocks the `CodexSandboxUsers` and per-workspace capability-SID entries the repo root grants. Codex answered "Access to the path ... is denied" and crew reported `no READ line for 1 of 1 bundle part(s)`.
 - Fix: on Windows the scratch directory is a plain `os.mkdir` with an mkdtemp-style random name, so it inherits the repo ACL, the same boundary as the tree the diff comes from. POSIX keeps `tempfile.mkdtemp` and mode 0o700.
 - `plugin/crew/tests/test_review_prepare.py`: a Windows test that every ACE on the claimed directory and on a file inside it is inherited (fails with mkdtemp restored), and a POSIX test that the mode stays 0o700. Docs: none, because no crew document describes the scratch directory's permissions.
