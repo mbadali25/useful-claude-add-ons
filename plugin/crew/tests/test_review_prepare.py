@@ -11,6 +11,8 @@ import hashlib
 import re
 import json
 import os
+import pathlib
+import stat
 import subprocess
 import sys
 import time
@@ -363,6 +365,46 @@ def test_prepare_claims_a_branch_scoped_scratch_when_none_is_given(tmp_path, env
 
     shown = keys["SCRATCH"][0]
     assert shown.startswith(".work/review/t1--") and (root / shown).is_dir()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows ACLs; the POSIX mode is the test below")
+def test_claimed_scratch_inherits_the_repo_acl_on_windows(tmp_path):
+    """The claimed scratch must keep the ACL it inherits from the repo, so the
+    Codex sandbox (CodexSandboxUsers plus its per-workspace capability SID,
+    granted on the repo root) can read prompt.txt. `tempfile.mkdtemp` on
+    Python 3.13+ (CVE-2024-4030) gave it a protected owner-only ACL instead:
+    Codex answered "Access to the path ... is denied" and the round came back
+    INCOMPLETE with no READ line (2026-10-28, AWSPRDITUTIL02).
+
+    The fake repo gets its own ACL, as a repo the sandbox can read has: an
+    inheritable read grant for BUILTIN\\Users (S-1-5-32-545) standing in for
+    the sandbox principals. pytest's own tmp_path is made with mode 0o700, so
+    on Python 3.13+ it is owner-only and has nothing to tell the two apart."""
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    def icacls(*argv):
+        return subprocess.run(["icacls", *argv], capture_output=True, text=True,
+                              check=True).stdout
+
+    icacls(str(root), "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F",
+           "*S-1-5-32-544:(OI)(CI)F", "*S-1-3-4:(OI)(CI)F", "*S-1-5-32-545:(OI)(CI)RX")
+    shown = review_run.claim_scratch(str(root), str(root))
+    (pathlib.Path(shown) / "prompt.txt").write_text("x", encoding="utf-8")
+
+    for target in (shown, os.path.join(shown, "prompt.txt")):
+        listed = icacls(target)
+        reader = [line for line in listed.splitlines() if "BUILTIN\\Users:" in line]
+        assert reader and all("(I)" in line for line in reader), \
+            f"{listed}\nrepo root:\n{icacls(str(root))}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX file modes")
+def test_claimed_scratch_stays_owner_only_on_posix(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    shown = review_run.claim_scratch(str(root), str(root))
+    assert stat.S_IMODE(os.stat(shown).st_mode) == 0o700
 
 
 def test_prepare_launches_no_reviewer(tmp_path, env):

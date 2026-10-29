@@ -235,6 +235,7 @@ import functools
 import hashlib
 import json
 import os
+import random
 import re
 import shlex
 import signal
@@ -2219,6 +2220,34 @@ def active_ticket(root):
     return (found[0], None) if len(found) == 1 else (None, "none" if not found else "many")
 
 
+_SCRATCH_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789_"
+
+
+def _scratch_dir(prefix, parent):
+    """A new, uniquely named directory under `parent`, as `mkdtemp` names it.
+
+    POSIX: `tempfile.mkdtemp`, mode 0o700. Windows: a plain `os.mkdir`, so the
+    directory inherits the repo's ACL. Python 3.13+ (CVE-2024-4030) turns
+    mkdtemp's 0o700 into a protected owner-only ACL on Windows (SYSTEM,
+    Administrators, OWNER RIGHTS), which locks out the Codex sandbox: it runs
+    as CodexSandboxUsers plus a per-workspace capability SID that is granted on
+    the repo root, so it can read the tree but not the bundle, and the round
+    comes back INCOMPLETE with no READ line. The bundle holds the diff of a
+    tree whoever can read the repo can already read, so the repo ACL is the
+    right boundary there."""
+    if os.name != "nt":
+        return tempfile.mkdtemp(prefix=prefix, dir=parent)
+    pick = random.SystemRandom()
+    for _ in range(tempfile.TMP_MAX):
+        path = os.path.join(parent, prefix + "".join(pick.choices(_SCRATCH_CHARS, k=8)))
+        try:
+            os.mkdir(path)
+        except FileExistsError:
+            continue
+        return os.path.abspath(path)
+    raise FileExistsError(f"no unused scratch name under {parent}")
+
+
 def claim_scratch(root_arg, root):
     """A fresh `.work/review/<branch>-XXXXXX` directory, as the snippet's
     `mktemp -d` made it (the branch with every character outside
@@ -2229,7 +2258,7 @@ def claim_scratch(root_arg, root):
     prefix = re.sub(r"[^A-Za-z0-9._-]", "-", branch if code == 0 else "") + "-"
     parent = os.path.join(root, ".work", "review")
     os.makedirs(parent, exist_ok=True)
-    name = os.path.basename(tempfile.mkdtemp(prefix=prefix, dir=parent))
+    name = os.path.basename(_scratch_dir(prefix, parent))
     shown = os.path.join(root_arg, ".work", "review", name) if root_arg != "." else \
         f".work/review/{name}"
     return shown.replace("\\", "/")
