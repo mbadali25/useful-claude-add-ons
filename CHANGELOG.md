@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.95: a lane asks git for its main checkout once per process (A-0013)
+
+- **Summary.** `crew` 1.2.95: in a lane worktree with no `.crew/` config of its own, reading the repo config no longer starts a git process every time, so hooks and the scope guard's autopilot approval judgement spend less of their time limit on git.
+- Root cause: `crew_common.repo_config_dir` asks `_main_checkout` where the main checkout is on every read in such a lane, and `_main_checkout` ran `git rev-parse --git-dir --git-common-dir` each time; one approval judgement read the config eight times.
+- Fix: `_main_checkout` keeps its answers for the life of the process, keyed on the lane's real path, the bytes of its `.git` file and `GIT_DIR` / `GIT_COMMON_DIR` / `GIT_WORK_TREE`, so a lane re-pointed at another repository is asked again. Could-not-tell is never kept. Second half of A-0013; the scope guard's own fix is crew 1.2.94.
+- `plugin/crew/tests/test_worktree_config.py`: repeated reads in a lane ask git once (8 before the fix), a changed `.git` pointer is asked again, and a git failure is not remembered.
+
 ### Fixed — crew 1.2.92: an INCOMPLETE review round no longer stops autopilot's size check forever (A-0011)
 
 - **Summary.** `crew` 1.2.92: a review round with no verdict, which `.crew/metrics.md` records as `INCOMPLETE | INCOMPLETE`, no longer makes the findings rate unknown, so `/crew:autopilot` stops halting every later ticket at `split-check-unknown`.

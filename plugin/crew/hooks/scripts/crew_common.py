@@ -179,6 +179,16 @@ def repo_config_dir(root):
     return own, SOURCE_OWN, ""
 
 
+# `_main_checkout`'s answers in this process (A-0013), keyed on the worktree's
+# real path, the bytes of its `.git` file and git's location variables -- the
+# inputs git's answer depends on, short of the git dir's own `commondir` file.
+# One autopilot approval judgement read the repo config eight times in a lane,
+# each read one more git process. Only an answer is kept: could-not-tell is
+# asked again on the next read.
+_MAIN_CHECKOUTS = {}
+_GIT_LOCATION_ENV = ("GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE")
+
+
 def _main_checkout(root):
     """(main_root, problem): the main checkout of the linked worktree at `root`,
     or None when `root` is not one; `problem` is non-empty only when git could
@@ -188,10 +198,28 @@ def _main_checkout(root):
     subprocess. No `--path-format`: git before 2.31 does not know it and
     rev-parse echoes an unknown argument back as a line of its own, which read
     as "git could not tell" on every such git. Both paths are joined to `root`
-    instead, git's cwd here, which leaves an absolute one unchanged.
+    instead, git's cwd here, which leaves an absolute one unchanged. A `.git`
+    file seen before with the same bytes is answered from `_MAIN_CHECKOUTS`.
     """
-    if not os.path.isfile(os.path.join(root, ".git")):
+    pointer = os.path.join(root, ".git")
+    if not os.path.isfile(pointer):
         return None, ""
+    try:
+        with open(pointer, "rb") as handle:
+            key = (os.path.realpath(root), handle.read(),
+                   tuple(os.environ.get(name) for name in _GIT_LOCATION_ENV))
+    except OSError:
+        key = None
+    if key is not None and key in _MAIN_CHECKOUTS:
+        return _MAIN_CHECKOUTS[key]
+    answer = _ask_main_checkout(root)
+    if key is not None and not answer[1]:
+        _MAIN_CHECKOUTS[key] = answer
+    return answer
+
+
+def _ask_main_checkout(root):
+    """`_main_checkout`'s git question, asked (never answered from memory)."""
     out = git_out(root, "rev-parse", "--git-dir", "--git-common-dir")
     lines = (out or "").splitlines()
     if len(lines) != 2:

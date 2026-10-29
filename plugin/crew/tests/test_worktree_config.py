@@ -123,6 +123,71 @@ def test_git_failure_in_a_linked_worktree_is_unknown_not_own(tmp_path, monkeypat
 
 
 
+def _counting_git_out(monkeypatch):
+    """Patch `crew_common.git_out` to record each call's args (A-0013)."""
+    calls = []
+    real = crew_common.git_out
+
+    def counted(root, *args):
+        calls.append(args)
+        return real(root, *args)
+
+    monkeypatch.setattr(crew_common, "git_out", counted)
+    return calls
+
+
+def test_repeated_config_reads_in_a_lane_ask_git_once(tmp_path, monkeypatch):
+    """A-0013: every config read in a lane with no `.crew/` config of its own
+    asked git for the main checkout again (`_main_checkout`), and one
+    autopilot approval judgement reads the config eight times: eight of its
+    git calls were this one question."""
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    calls = _counting_git_out(monkeypatch)
+
+    answers = {crew_common.repo_config_dir(str(wt)) for _ in range(5)}
+    allowed = [crew_ticket.cli_approval_allowed(str(wt)) for _ in range(3)]
+
+    assert len(answers) == 1, answers
+    _dir, source, detail = answers.pop()
+    assert (source, os.path.realpath(detail)) == (crew_common.SOURCE_MAIN,
+                                                  os.path.realpath(str(main)))
+    assert allowed == [True, True, True]
+    assert calls.count(("rev-parse", "--git-dir", "--git-common-dir")) == 1, calls
+
+
+def test_a_lane_whose_git_pointer_changes_is_asked_again(tmp_path, monkeypatch):
+    """The memo is keyed on the `.git` file's bytes: a lane re-pointed at
+    another repository is never answered from the old one."""
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    other, other_wt = _lane(tmp_path / "second", {"scope": {"allowCliApproval": False}})
+    assert crew_common.repo_config_dir(str(wt))[2] == crew_common.repo_config_dir(str(wt))[2]
+    first = crew_common.repo_config_dir(str(wt))[2]
+    # Rewritten in place: Git for Windows marks the file hidden, and opening a
+    # hidden file with "w" is refused there.
+    with open(wt / ".git", "r+b") as handle:
+        handle.write((other_wt / ".git").read_bytes())
+        handle.truncate()
+    calls = _counting_git_out(monkeypatch)
+
+    second = crew_common.repo_config_dir(str(wt))[2]
+
+    assert os.path.realpath(first) == os.path.realpath(str(main))
+    assert os.path.realpath(second) == os.path.realpath(str(other))
+    assert calls.count(("rev-parse", "--git-dir", "--git-common-dir")) == 1, calls
+
+
+def test_could_not_tell_is_not_remembered(tmp_path, monkeypatch):
+    """Only an answer is kept: git failing once must not make every later
+    read in the process `unknown`."""
+    _main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    real = crew_common.git_out
+    monkeypatch.setattr(crew_common, "git_out", lambda *a: None)
+    assert crew_common.repo_config_dir(str(wt))[1] == crew_common.SOURCE_UNKNOWN
+    monkeypatch.setattr(crew_common, "git_out", real)
+
+    assert crew_common.repo_config_dir(str(wt))[1] == crew_common.SOURCE_MAIN
+
+
 def test_resolver_works_on_a_git_without_path_format(tmp_path, monkeypatch):
     """git before 2.31 has no `--path-format`, and rev-parse echoes an
     argument it does not know as a line of its own."""
