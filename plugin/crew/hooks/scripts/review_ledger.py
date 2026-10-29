@@ -1221,6 +1221,7 @@ def check_receipt(root, ticket, base_sha=None):
                       f"{receipt.get('kind')}, reviewed head {detail['head'][:12]}, base "
                       f"{detail['base'][:12]} via {detail['ref']}; "
                       f"{len(detail['identical'])} paths identical, "
+                      f"{len(detail.get('merged') or [])} identical to merged main, "
                       f"{len(detail['anchor_only'])} anchor-only, "
                       f"{len(detail['exempt'])} exempt: {names}")
     return True, (f"receipt current: round {receipt.get('round')} {receipt.get('kind')}, "

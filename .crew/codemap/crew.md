@@ -1098,7 +1098,7 @@ mismatch `review_delta.judge`
 bundle through T-0100's rule (`reviewed_bundle` `:202`, `review_patch._ticket_base_tree` with
 `head=` at `plugin/crew/hooks/scripts/review_patch.py:403`, `merged_main.resolve(..., head)` at `:415` unless a `merged` pin is passed), is
 an ancestor of HEAD, the integration base is the pinned `base_sha` or the train entry's ref
-(`integration_ref` `:317`; never `_default_ref`), one merge base, a clean checkout
+(`integration_ref` `:317`; never `_default_ref`) -- A-0012, DERIVED: when the reviewed head is inside `scope_base.base_branch`, `review_delta.landing` finds its landing merge (`crew_refresh_check._landing`) and pins the rebuild at `merge-base <head> <merge^1>`; a HEAD inside that ref too takes `merge^1` as the integration base in place of the train entry; `_lands_as_reviewed` keeps a reviewed path absent from the current delta whose HEAD entry is the reviewed new side (`merged` in the detail) -- one merge base, a clean checkout
 (`_clean_head_tree` `:343`, `checkout_problem` `:354`), then the per-path interdiff of the
 reviewed bundle's base tree -> reviewed head against base -> `HEAD^{tree}`: byte identity outside
 the allowlist (`_match` `:394`, `fnmatchcase`); code maps, rules and diagrams compared with only

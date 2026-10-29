@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.93**: A review receipt survives main absorbing the reviewed branch. `crew` 1.2.93: `/crew:done` check 1 no longer calls a receipt stale with "the reviewed head's tree does not rebuild the reviewed bundle" once the reviewed head is inside main (it landed, or a stacked PR cut from it did), and a reviewed path main landed byte-identical counts as main's.
 - **crew 1.2.92**: An INCOMPLETE review round no longer stops autopilot's size check forever. `crew` 1.2.92: a review round with no verdict, which `.crew/metrics.md` records as `INCOMPLETE | INCOMPLETE`, no longer makes the findings rate unknown, so `/crew:autopilot` stops halting every later ticket at `split-check-unknown`.
-- **crew 1.2.91**: Codex can read its review bundle on Windows again. `crew` 1.2.91: on Windows with Python 3.13 or later, Codex reviews came back INCOMPLETE because Codex could not read its own review bundle; the bundle directory now inherits the repo's permissions there, and Linux and macOS are unchanged.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
