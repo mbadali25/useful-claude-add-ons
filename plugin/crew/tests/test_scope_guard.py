@@ -467,6 +467,80 @@ def test_a_policy_answer_that_is_not_a_plain_yes_is_refused(repo, monkeypatch, a
     assert scope_guard.shell_refusal(_AUTOPILOT, common_dir(repo), str(repo)) is not None
 
 
+class _GitSpawns:  # pylint: disable=too-few-public-methods
+    """Counts every git process started through `subprocess` (A-0013)."""
+
+    def __init__(self, monkeypatch):
+        import subprocess  # pylint: disable=import-outside-toplevel
+        self.calls = []
+        real = subprocess.Popen
+        spawns = self.calls
+
+        class Counting(real):  # pylint: disable=too-few-public-methods
+            def __init__(self, args, *rest, **kwargs):
+                first = args[0] if isinstance(args, (list, tuple)) else str(args).split()[0]
+                if os.path.basename(str(first)).lower().split(".")[0] == "git":
+                    spawns.append(list(args))
+                super().__init__(args, *rest, **kwargs)
+
+        monkeypatch.setattr(subprocess, "Popen", Counting)
+
+
+def _linked_lane(repo, tmp_path):
+    """A linked worktree with no `.crew/` config of its own, so every config
+    read goes to the main checkout's (T-0088) -- the shape a lane runs in."""
+    from review_fixtures import git  # pylint: disable=import-outside-toplevel
+    _policy_repo(repo, "self")
+    lane = tmp_path / "lane"
+    git(repo, "worktree", "add", "-q", "-b", "lane", str(lane))
+    make_ticket(lane)
+    spec = lane / ".work" / "tickets" / "T-1" / "spec.md"
+    first, rest = spec.read_text(encoding="utf-8").split("\n", 1)
+    spec.write_text(f"{first} title   status: spec   risk: low\n{rest}", encoding="utf-8")
+    return lane
+
+
+def test_the_autopilot_approval_judgement_asks_the_policy_once(repo, tmp_path, monkeypatch):
+    """A-0013: `_joined` gives three readings of one command (as written, as
+    bash joins it, as PowerShell does). With no continuation they are the same
+    string, and each was judged, so `approval_policy` ran three times: about
+    48 git calls in a lane, over crew_hook's 15 s limit, and the guard failed
+    closed on a command it allows."""
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    lane = _linked_lane(repo, tmp_path)
+    asked = []
+    real = crew_autopilot.approval_policy
+
+    def counted(root, ticket):
+        asked.append(ticket)
+        return real(root, ticket)
+    monkeypatch.setattr(crew_autopilot, "approval_policy", counted)
+
+    reason = scope_guard.shell_refusal(_AUTOPILOT, common_dir(lane), str(lane))
+
+    assert (reason, asked) == (None, ["T-1"])
+
+
+def test_the_autopilot_approval_judgement_spawns_one_policy_worth_of_git(repo, tmp_path,
+                                                                         monkeypatch):
+    """A-0013: the git processes one judgement starts in a lane are those of
+    a single `approval_policy` call (plus the guard's own), not three of them."""
+    import crew_autopilot  # pylint: disable=import-outside-toplevel
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    lane = _linked_lane(repo, tmp_path)
+    top = crew_ticket.toplevel(str(lane))
+    spawns = _GitSpawns(monkeypatch)
+    assert crew_autopilot.approval_policy(top, "T-1")["allow"] is True
+    one_policy = len(spawns.calls)
+    spawns.calls.clear()
+
+    assert scope_guard.shell_refusal(_AUTOPILOT, common_dir(lane), top) is None
+
+    # One policy call plus the guard's own lookups; three readings were 3x.
+    assert one_policy <= len(spawns.calls) < 2 * one_policy, spawns.calls
+
+
 # --- must-allow -------------------------------------------------------------------
 
 @pytest.mark.parametrize("flavour", FLAVOUR_MATRIX)

@@ -304,10 +304,14 @@ def shell_refusal(command, common, top=None, agent_type=None):
     `top` is the worktree whose autopilot policy judges `crew_autopilot.py
     approve`; without it that command is refused. `agent_type`, when a
     non-empty string, is a subagent: the never-list is refused too. Every
-    reading `_joined` gives is judged; the first refusal wins."""
+    distinct reading `_joined` gives is judged, in its order; the first
+    refusal wins. A command with no continuation reads the same three ways,
+    and judging it once matters (A-0013): an autopilot approve runs
+    `approval_policy`, about fourteen git calls in a lane, and three of those
+    ran past crew_hook's 15 s limit, so the guard failed closed."""
     if not isinstance(command, str):
         return None
-    for reading in _joined(command):
+    for reading in dict.fromkeys(_joined(command)):
         reason = _reading_refusal(reading, command, common, top, agent_type)
         if reason:
             return reason
