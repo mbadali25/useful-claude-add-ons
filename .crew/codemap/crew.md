@@ -1321,9 +1321,11 @@ a group confirm's `expect` outright (`:743-745`, before `expect` is validated or
 the group confirm is owner-only, carried from T-0024's hand-off at T-0010's merge of `f96e9ec9`). `scope_guard.py`'s
 `_AUTOPILOT_APPROVE_RE` / `_AUTOPILOT_BARE_RE` (`plugin/crew/hooks/scripts/scope_guard.py:143-147`) and
 `_autopilot_refusal` (`:272`) allow only the bare command while the policy says yes;
-`shell_refusal` (`:300`) runs `_reading_refusal` (`:317`) on each reading `_joined` (`:292`)
+`shell_refusal` (`:300`) runs `_reading_refusal` (`:317`) on each distinct reading `_joined` (`:292`)
 gives - the command as written and with line continuations joined (`_BASH_CONTINUATION_RE` /
-`_PS_CONTINUATION_RE`, `:157-158`) - while the bare-command rule judges the command as written.
+`_PS_CONTINUATION_RE`, `:157-158`) - while the bare-command rule judges the command as written. A-0013, DERIVED: the readings are deduplicated in order
+(`dict.fromkeys`), so a command with no continuation runs `approval_policy` once, not three times
+(about 14 git calls in a lane, against `crew_hook.py`'s 15 s limit).
 Tests `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_crew_ticket.py`,
 `test_scope_guard.py`, `test_crew_autopilot_status.py` and `test_crew_route.py`; mutations
 `POLICY_MUTATIONS` in `sabotage_autopilot.py` (55 by `len()` on T-0010-solo's merge of `e878cc31`, `plugin/crew/tests/sabotage_autopilot.py:687`),
