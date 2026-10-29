@@ -9,7 +9,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.95: a lane asks git for its main checkout once per process (A-0013)
+### Fixed — crew 1.2.95: a lane asks git for its main checkout once per process (A-0014, A-0013 part 2)
 
 - **Summary.** `crew` 1.2.95: in a lane worktree with no `.crew/` config of its own, reading the repo config no longer starts a git process every time, so hooks and the scope guard's autopilot approval judgement spend less of their time limit on git.
 - Root cause: `crew_common.repo_config_dir` asks `_main_checkout` where the main checkout is on every read in such a lane, and `_main_checkout` ran `git rev-parse --git-dir --git-common-dir` each time; one approval judgement read the config eight times.
