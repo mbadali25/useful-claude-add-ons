@@ -9,12 +9,19 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.95: a lane asks git for its main checkout once per process (A-0014, A-0013 part 2)
+### Fixed — crew 1.2.96: a lane asks git for its main checkout once per process (A-0014, A-0013 part 2)
 
-- **Summary.** `crew` 1.2.95: in a lane worktree with no `.crew/` config of its own, reading the repo config no longer starts a git process every time, so hooks and the scope guard's autopilot approval judgement spend less of their time limit on git.
+- **Summary.** `crew` 1.2.96: in a lane worktree with no `.crew/` config of its own, reading the repo config no longer starts a git process every time, so hooks and the scope guard's autopilot approval judgement spend less of their time limit on git.
 - Root cause: `crew_common.repo_config_dir` asks `_main_checkout` where the main checkout is on every read in such a lane, and `_main_checkout` ran `git rev-parse --git-dir --git-common-dir` each time; one approval judgement read the config eight times.
 - Fix: `_main_checkout` keeps its answers for the life of the process, keyed on the lane's real path, the bytes of its `.git` file and `GIT_DIR` / `GIT_COMMON_DIR` / `GIT_WORK_TREE`, so a lane re-pointed at another repository is asked again. Could-not-tell is never kept. Second half of A-0013; the scope guard's own fix is crew 1.2.94.
 - `plugin/crew/tests/test_worktree_config.py`: repeated reads in a lane ask git once (8 before the fix), a changed `.git` pointer is asked again, and a git failure is not remembered.
+
+### Fixed — crew 1.2.94: the scope guard judges an autopilot approve once, not three times (A-0013)
+
+- **Summary.** `crew` 1.2.94: in a lane worktree the scope guard no longer times out (and fails closed) on the bare autopilot approval command, because it now asks the approval policy once instead of three times.
+- Root cause: `scope_guard.shell_refusal` judges every reading `_joined` gives (the command as written, as bash joins continuations, as PowerShell does). With no continuation the three are the same string, and each ran `crew_autopilot.approval_policy`: 14 git calls in a linked worktree with no `.crew/config.json` of its own, so about 42 per judgement, past `crew_hook.py`'s 15 s limit at about 0.4 s a call.
+- Fix: the readings are deduplicated in order (`dict.fromkeys`), so the first refusal still wins and a command whose readings differ is still judged every way.
+- `plugin/crew/tests/test_scope_guard.py`: in a lane inheriting the main checkout's config, the policy is asked once per judgement, and the git processes it starts are one policy call's worth (43 before the fix, against 14 for one call). Docs: the code map.
 
 ### Fixed — crew 1.2.92: an INCOMPLETE review round no longer stops autopilot's size check forever (A-0011)
 

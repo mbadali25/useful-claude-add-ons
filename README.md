@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.95**: A lane asks git for its main checkout once per process. `crew` 1.2.95: in a lane worktree with no `.crew/` config of its own, reading the repo config no longer starts a git process every time, so hooks and the scope guard's autopilot approval judgement spend less of their time limit on git.
-- **crew 1.2.92**: An INCOMPLETE review round no longer stops autopilot's size check forever. `crew` 1.2.92: a review round with no verdict, which `.crew/metrics.md` records as `INCOMPLETE | INCOMPLETE`, no longer makes the findings rate unknown, so `/crew:autopilot` stops halting every later ticket at `split-check-unknown`.
+- **crew 1.2.96**: A lane asks git for its main checkout once per process. `crew` 1.2.96: in a lane worktree with no `.crew/` config of its own, reading the repo config no longer starts a git process every time, so hooks and the scope guard's autopilot approval judgement spend less of their time limit on git.
+- **crew 1.2.94**: The scope guard judges an autopilot approve once, not three times. `crew` 1.2.94: in a lane worktree the scope guard no longer times out (and fails closed) on the bare autopilot approval command, because it now asks the approval policy once instead of three times.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
