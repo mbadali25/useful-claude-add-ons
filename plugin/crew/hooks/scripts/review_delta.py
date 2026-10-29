@@ -797,7 +797,9 @@ def _judge(root, ticket, receipt, row, base_sha):  # pylint: disable=too-many-lo
     base = _commit(root, receipt.get("base"), "receipt base")
     head_tree = _tree(root, head)
     rebuilt, reviewed_from = reviewed_bundle(root, base, head)
-    landed, landed_why = (None, None) if base_sha else landing(root, base, head)
+    # The rebuild is the round's own bytes whoever pins the integration base,
+    # so the landing is looked for with or without a `base_sha` (A-0012 r1).
+    landed, landed_why = landing(root, base, head)
     if rebuilt != receipt.get("bundle_sha256") and landed:
         rebuilt, reviewed_from = reviewed_bundle(root, base, head, merged=landed["pin"])
     if rebuilt != receipt.get("bundle_sha256"):
@@ -807,17 +809,24 @@ def _judge(root, ticket, receipt, row, base_sha):  # pylint: disable=too-many-lo
     if not _is_ancestor(root, head, "HEAD"):
         raise Stale(f"reviewed head {head[:12]} is not an ancestor of HEAD (rebase, reset or "
                     "amend since the review)")
-    if landed and _is_ancestor(root, "HEAD", landed["ref"]):
+    tip = "HEAD"
+    if base_sha is None and landed and _is_ancestor(root, "HEAD", landed["ref"]):
         # HEAD landed too: main just before the landing is the integration
-        # base, so the ticket's delta is not read as empty against main after it.
+        # base, so the ticket's delta is not read as empty against main after
+        # it. A HEAD past the landing merge (a branch at main, where
+        # /crew:done check 4 says to close a landed ticket) holds main's later
+        # merges too; what this ticket brought is the landing merge's tree.
         ref = f"{landed['ref']} before its landing {landed['merge'][:12]}"
         R = landed["before"]  # pylint: disable=invalid-name
+        if _is_ancestor(root, landed["merge"], "HEAD"):
+            tip = landed["merge"]
     else:
         ref = integration_ref(root, ticket)
         R = base_sha or _resolve(root, ref)  # pylint: disable=invalid-name
-    merge_bases = _ok(root, ["merge-base", "--all", "HEAD", R]).split()
+    merge_bases = _ok(root, ["merge-base", "--all", tip, R]).split()
     if len(merge_bases) != 1:
-        raise Stale(f"HEAD and {R[:12]} have {len(merge_bases)} merge bases, not one")
+        raise Stale(f"{tip if tip == 'HEAD' else tip[:12]} and {R[:12]} have "
+                    f"{len(merge_bases)} merge bases, not one")
     mb = merge_bases[0]
     if _is_ancestor(root, base, mb):
         new_base = mb
@@ -828,6 +837,8 @@ def _judge(root, ticket, receipt, row, base_sha):  # pylint: disable=too-many-lo
     tree, problem = _clean_head_tree(root)
     if problem:
         raise Stale(problem)
+    if tip != "HEAD":
+        tree = _tree(root, tip)
     problem = checkout_problem(root, [head_tree, _tree(root, R), tree])
     if problem:
         raise Stale(problem)

@@ -1279,6 +1279,30 @@ def test_a_stacked_branch_landed_through_another_pr_keeps_the_receipt(world):
     _kept(world)
 
 
+def test_a_landed_receipt_rebuilds_when_the_caller_pins_the_base(world):
+    """A-0012 review r1: a pinned `base_sha` chooses the integration base only;
+    the round's bytes are rebuilt from the landing whoever passes it."""
+    _review(world)
+    before = git(world.repo, "rev-parse", "HEAD")
+    _land(world)
+
+    kept, why = rl.check_receipt(str(world.lane), TICKET, base_sha=before)
+
+    assert kept and "does not rebuild" not in why, why
+
+
+def test_a_branch_at_main_after_later_merges_keeps_a_landed_receipt(world):
+    """A-0012 review r1: closing a landed ticket from a branch at main (done
+    check 4's advice) puts main's later commits in HEAD; they are not this
+    ticket's, and the landing merge's tree is what it brought."""
+    _review(world)
+    _land(world)
+    _main(world, {"lib.py": "def lib():\n    return 5  # later on main\n"}, "later")
+    git(world.lane, "merge", "--ff-only", "-q", "main")
+
+    _kept(world)
+
+
 def test_a_landed_head_edited_after_the_landing_is_stale(world):
     _review(world)
     _land(world)
