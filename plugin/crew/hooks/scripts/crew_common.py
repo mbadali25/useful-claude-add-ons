@@ -181,12 +181,15 @@ def repo_config_dir(root):
 
 # `_main_checkout`'s answers in this process (A-0013), keyed on the worktree's
 # real path, the bytes of its `.git` file, the bytes of the `commondir` file in
-# the git dir that file names, and git's location variables -- the inputs git's
-# answer is read from. One autopilot approval judgement read the repo config
-# eight times in a lane, each read one more git process. Only an answer is
-# kept: could-not-tell is asked again on the next read.
+# the git dir that file names (both read only as regular files), and
+# GIT_WORK_TREE -- the inputs git's answer is read from. One autopilot approval
+# judgement read the repo config eight times in a lane, each read one more git
+# process. Only an answer is kept: could-not-tell is asked again on the next
+# read. With GIT_DIR or GIT_COMMON_DIR set, git reads neither file, so nothing
+# is kept at all (A-0014 review r2).
 _MAIN_CHECKOUTS = {}
-_GIT_LOCATION_ENV = ("GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE")
+_GIT_DIR_OVERRIDES = ("GIT_DIR", "GIT_COMMON_DIR")
+_GIT_LOCATION_ENV = ("GIT_WORK_TREE",)
 
 
 def _main_checkout(root):
@@ -218,23 +221,52 @@ def _checkout_key(root, pointer):
     file is `pointer`, or None (nothing kept) when either file cannot be read
     or the pointer is not one `gitdir:` line. A git dir with no `commondir`
     keys as empty bytes, so one appearing later is a different key (A-0014
-    review r1: the git dir's `commondir` decides the common dir too)."""
+    review r1: the git dir's `commondir` decides the common dir too).
+
+    With GIT_DIR or GIT_COMMON_DIR set git reads neither file, so no key built
+    from them is sound and nothing is kept (A-0014 review r2)."""
+    if any(os.environ.get(name) for name in _GIT_DIR_OVERRIDES):
+        return None
     try:
-        with open(pointer, "rb") as handle:
-            text = handle.read()
+        text = _read_regular(pointer)
+        if text is None:
+            return None
         line = text.decode("utf-8").strip()
         if not line.startswith("gitdir:") or "\n" in line:
             return None
         git_dir = os.path.join(root, line[len("gitdir:"):].strip())
         try:
-            with open(os.path.join(git_dir, "commondir"), "rb") as handle:
-                common = handle.read()
+            common = _read_regular(os.path.join(git_dir, "commondir"))
         except FileNotFoundError:
             common = b""
-    except (OSError, UnicodeDecodeError):
+        if common is None:
+            return None
+    except (OSError, UnicodeDecodeError, ValueError):
+        # ValueError: a NUL in the pointer's path, which `open` refuses before
+        # touching the disk (A-0014 review r2). None means "ask git".
         return None
     return (os.path.realpath(root), text, common,
             tuple(os.environ.get(name) for name in _GIT_LOCATION_ENV))
+
+
+def _read_regular(path):
+    """The bytes of `path` when it is a regular file, else None; a missing
+    file raises FileNotFoundError. A FIFO, device or directory is never read:
+    a plain `open` of a FIFO with no writer blocks forever, outside
+    `git_out`'s timeout (A-0014 review r2). `os.stat` keeps the ordinary case
+    from opening one at all; the non-blocking open and `os.fstat` of the
+    descriptor catch a file swapped in between the two."""
+    if not stat.S_ISREG(os.stat(path).st_mode):
+        return None
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None
+        with os.fdopen(fd, "rb", closefd=False) as handle:
+            return handle.read()
+    finally:
+        os.close(fd)
 
 
 def _ask_main_checkout(root):
