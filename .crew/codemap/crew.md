@@ -2108,7 +2108,13 @@ JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose
   `apply` asks the policy for it and skips only `confirm`, keeping
   T-0052's existing-children verification; `check` records
   `policy_at_check` for the report only. `absent_sources`
-  (`:303`) is what the gate names `unmeasured`.
+  (`:303`) is what the gate names `unmeasured`. Its metrics rows are
+  classified by `_row_kind` (`plugin/crew/hooks/scripts/crew_split.py`,
+  A-0011): header, separator and an uncounted round (both count cells
+  `UNCOUNTED`, the `INCOMPLETE` that `review_metrics.row` writes) are skipped;
+  any other row whose counts do not parse is malformed, so findings-rate is
+  unknown. `test_every_row_review_metrics_writes_parses_in_split` holds the
+  writer and this reader to one contract.
 - Tests: `plugin/crew/tests/test_crew_autopilot_split.py` and the T-0058
   block at the end of `plugin/crew/tests/test_crew_split.py`, on the
   `crew_split` rule in `.crew/verify.json`.

@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.92: an INCOMPLETE review round no longer stops autopilot's size check forever (A-0011)
+
+- **Summary.** `crew` 1.2.92: a review round with no verdict, which `.crew/metrics.md` records as `INCOMPLETE | INCOMPLETE`, no longer makes the findings rate unknown, so `/crew:autopilot` stops halting every later ticket at `split-check-unknown`.
+- Root cause: `review_metrics.row` writes the literal `INCOMPLETE` in both count cells for an INCOMPLETE round, and `crew_split._malformed_rows` read any non-numeric count cell as a malformed row. `measure` then left `findings_rate` unknown, `absent_sources` did not call the source absent, and `crew_autopilot.py next` stopped at `phase=split-check-unknown ... could not read findings-rate, tickets-too-large (its source is there)` for as long as the row stayed; later clean rows did not help. It blocked four tickets in two repos on 2026-10-28, worked round by commenting the row out.
+- Fix: `crew_split._row_kind` classifies each metrics row. A row whose two count cells are both exactly `INCOMPLETE` is skipped as a round with no counts; the rate comes from the numeric rows, as `crew_state.read_metrics` already computed it. A file holding only such rows reads as "no review recorded yet" (`unmeasured`, no stop). Too few cells, a non-numeric count, or one `INCOMPLETE` beside a number is still malformed and still unknown.
+- `plugin/crew/tests/test_crew_split.py`: the reported row beside numeric rows, an INCOMPLETE-only file, four still-malformed shapes, and a writer/reader contract test that every row `review_metrics.row` can emit (each verdict, with and without a model, refunded or not, `|` in a cell) parses in `crew_split`. Docs: `plugin/crew/README.md`'s size-check paragraph and the code map.
+
 ### Fixed — crew 1.2.91: Codex can read its review bundle on Windows again
 
 - **Summary.** `crew` 1.2.91: on Windows with Python 3.13 or later, Codex reviews came back INCOMPLETE because Codex could not read its own review bundle; the bundle directory now inherits the repo's permissions there, and Linux and macOS are unchanged.
