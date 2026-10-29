@@ -180,11 +180,11 @@ def repo_config_dir(root):
 
 
 # `_main_checkout`'s answers in this process (A-0013), keyed on the worktree's
-# real path, the bytes of its `.git` file and git's location variables -- the
-# inputs git's answer depends on, short of the git dir's own `commondir` file.
-# One autopilot approval judgement read the repo config eight times in a lane,
-# each read one more git process. Only an answer is kept: could-not-tell is
-# asked again on the next read.
+# real path, the bytes of its `.git` file, the bytes of the `commondir` file in
+# the git dir that file names, and git's location variables -- the inputs git's
+# answer is read from. One autopilot approval judgement read the repo config
+# eight times in a lane, each read one more git process. Only an answer is
+# kept: could-not-tell is asked again on the next read.
 _MAIN_CHECKOUTS = {}
 _GIT_LOCATION_ENV = ("GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE")
 
@@ -204,18 +204,37 @@ def _main_checkout(root):
     pointer = os.path.join(root, ".git")
     if not os.path.isfile(pointer):
         return None, ""
-    try:
-        with open(pointer, "rb") as handle:
-            key = (os.path.realpath(root), handle.read(),
-                   tuple(os.environ.get(name) for name in _GIT_LOCATION_ENV))
-    except OSError:
-        key = None
+    key = _checkout_key(root, pointer)
     if key is not None and key in _MAIN_CHECKOUTS:
         return _MAIN_CHECKOUTS[key]
     answer = _ask_main_checkout(root)
     if key is not None and not answer[1]:
         _MAIN_CHECKOUTS[key] = answer
     return answer
+
+
+def _checkout_key(root, pointer):
+    """`_MAIN_CHECKOUTS`' key for the linked worktree at `root` whose `.git`
+    file is `pointer`, or None (nothing kept) when either file cannot be read
+    or the pointer is not one `gitdir:` line. A git dir with no `commondir`
+    keys as empty bytes, so one appearing later is a different key (A-0014
+    review r1: the git dir's `commondir` decides the common dir too)."""
+    try:
+        with open(pointer, "rb") as handle:
+            text = handle.read()
+        line = text.decode("utf-8").strip()
+        if not line.startswith("gitdir:") or "\n" in line:
+            return None
+        git_dir = os.path.join(root, line[len("gitdir:"):].strip())
+        try:
+            with open(os.path.join(git_dir, "commondir"), "rb") as handle:
+                common = handle.read()
+        except FileNotFoundError:
+            common = b""
+    except (OSError, UnicodeDecodeError):
+        return None
+    return (os.path.realpath(root), text, common,
+            tuple(os.environ.get(name) for name in _GIT_LOCATION_ENV))
 
 
 def _ask_main_checkout(root):

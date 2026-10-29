@@ -176,6 +176,25 @@ def test_a_lane_whose_git_pointer_changes_is_asked_again(tmp_path, monkeypatch):
     assert calls.count(("rev-parse", "--git-dir", "--git-common-dir")) == 1, calls
 
 
+def test_a_lane_whose_commondir_changes_is_asked_again(tmp_path, monkeypatch):
+    """A-0014 review r1: git reads the common dir from the git dir's
+    `commondir` file, so a change there (the `.git` file unchanged) is asked
+    again rather than answered with the first repository."""
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    other, _other_wt = _lane(tmp_path / "second", {"scope": {"allowCliApproval": False}})
+    assert crew_ticket.cli_approval_allowed(str(wt)) is True
+    pointer = (wt / ".git").read_text(encoding="utf-8").strip()
+    git_dir = (wt / pointer[len("gitdir:"):].strip()).resolve()
+    (git_dir / "commondir").write_text(str(other / ".git") + "\n", encoding="utf-8")
+    calls = _counting_git_out(monkeypatch)
+
+    detail = crew_common.repo_config_dir(str(wt))[2]
+
+    assert os.path.realpath(detail) == os.path.realpath(str(other)), (detail, main)
+    assert crew_ticket.cli_approval_allowed(str(wt)) is False
+    assert calls.count(("rev-parse", "--git-dir", "--git-common-dir")) == 1, calls
+
+
 def test_could_not_tell_is_not_remembered(tmp_path, monkeypatch):
     """Only an answer is kept: git failing once must not make every later
     read in the process `unknown`."""
