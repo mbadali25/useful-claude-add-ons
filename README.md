@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.96**: A lane asks git for its main checkout once per process. `crew` 1.2.96: in a lane worktree with no `.crew/` config of its own, reading the repo config no longer starts a git process every time, so hooks and the scope guard's autopilot approval judgement spend less of their time limit on git.
+- **crew 1.2.97**: A lane asks git for its main checkout once per process. `crew` 1.2.97: in a lane worktree with no `.crew/` config of its own, reading the repo config no longer starts a git process every time, so hooks and the scope guard's autopilot approval judgement spend less of their time limit on git.
 - **crew 1.2.95**: A review receipt survives main absorbing the reviewed branch. `crew` 1.2.95: `/crew:done` check 1 no longer calls a receipt stale with "the reviewed head's tree does not rebuild the reviewed bundle" once the reviewed head is inside main (it landed, or a stacked PR cut from it did), and a reviewed path main landed byte-identical counts as main's.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
