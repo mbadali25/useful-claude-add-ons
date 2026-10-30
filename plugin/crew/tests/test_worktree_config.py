@@ -352,13 +352,16 @@ def test_an_answer_git_read_from_another_commondir_is_not_kept(tmp_path, monkeyp
 
 
 def _finishes_within(seconds, call):
-    """(finished, result) of `call()` run in a daemon thread for `seconds`."""
+    """(finished, result) of `call()` run in a daemon thread for `seconds`.
+    An unfinished call's result is `()`, not None, so the callers' `answer[1]`
+    is a lint-clean subscript (pylint does not narrow away None after an
+    assert) and still fails loudly if it is ever reached."""
     import threading  # pylint: disable=import-outside-toplevel
     box = []
     worker = threading.Thread(target=lambda: box.append(call()), daemon=True)
     worker.start()
     worker.join(seconds)
-    return (not worker.is_alive()), (box[0] if box else None)
+    return (not worker.is_alive()), (box[0] if box else ())
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs os.mkfifo (POSIX)")
