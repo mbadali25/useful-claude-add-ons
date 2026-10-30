@@ -179,6 +179,21 @@ def repo_config_dir(root):
     return own, SOURCE_OWN, ""
 
 
+# `_main_checkout`'s answers in this process (A-0013), keyed on the worktree's
+# real path, the bytes of its `.git` file, the bytes of the `commondir` file in
+# the git dir that file names (both read only as regular files), the resolved
+# git dir and common dir those name, and GIT_WORK_TREE -- the inputs git's
+# answer is read from. One autopilot approval judgement read the repo config
+# eight times in a lane, each read one more git process. Only an answer is
+# kept, and only when the git dir and common dir git reports are the key's own
+# (A-0014 review r3: a pointer changed while git ran): could-not-tell is asked
+# again on the next read. With GIT_DIR or GIT_COMMON_DIR set, git reads neither
+# file, so nothing is kept at all (A-0014 review r2).
+_MAIN_CHECKOUTS = {}
+_GIT_DIR_OVERRIDES = ("GIT_DIR", "GIT_COMMON_DIR")
+_GIT_LOCATION_ENV = ("GIT_WORK_TREE",)
+
+
 def _main_checkout(root):
     """(main_root, problem): the main checkout of the linked worktree at `root`,
     or None when `root` is not one; `problem` is non-empty only when git could
@@ -188,19 +203,110 @@ def _main_checkout(root):
     subprocess. No `--path-format`: git before 2.31 does not know it and
     rev-parse echoes an unknown argument back as a line of its own, which read
     as "git could not tell" on every such git. Both paths are joined to `root`
-    instead, git's cwd here, which leaves an absolute one unchanged.
+    instead, git's cwd here, which leaves an absolute one unchanged. A `.git`
+    file seen before with the same bytes is answered from `_MAIN_CHECKOUTS`.
     """
-    if not os.path.isfile(os.path.join(root, ".git")):
+    pointer = os.path.join(root, ".git")
+    if not os.path.isfile(pointer):
         return None, ""
+    key = _checkout_key(root, pointer)
+    if key is not None and key in _MAIN_CHECKOUTS:
+        return _MAIN_CHECKOUTS[key]
+    answer, seen = _ask_main_checkout(root)
+    if key is not None and not answer[1] and seen == key[_KEY_DIRS]:
+        _MAIN_CHECKOUTS[key] = answer
+    return answer
+
+
+def _checkout_key(root, pointer):
+    """`_MAIN_CHECKOUTS`' key for the linked worktree at `root` whose `.git`
+    file is `pointer`, or None (nothing kept) when either file cannot be read
+    or the pointer is not one `gitdir:` line. A git dir with no `commondir`
+    keys as empty bytes, so one appearing later is a different key (A-0014
+    review r1: the git dir's `commondir` decides the common dir too).
+
+    The key also carries the git dir and the common dir those bytes resolve
+    to, as `_git_dirs` gives them, so a symlinked git dir retargeted with the
+    bytes unchanged is a new key (A-0014 review r3); a `commondir` whose path
+    cannot be formed (NUL, undecodable) keys as None.
+
+    With GIT_DIR or GIT_COMMON_DIR set git reads neither file, so no key built
+    from them is sound and nothing is kept (A-0014 review r2)."""
+    if any(os.environ.get(name) for name in _GIT_DIR_OVERRIDES):
+        return None
+    try:
+        text = _read_regular(pointer)
+        if text is None:
+            return None
+        line = text.decode("utf-8").strip()
+        if not line.startswith("gitdir:") or "\n" in line:
+            return None
+        git_dir = os.path.join(root, line[len("gitdir:"):].strip())
+        try:
+            common = _read_regular(os.path.join(git_dir, "commondir"))
+        except FileNotFoundError:
+            common = b""
+        if common is None:
+            return None
+        # git strips the trailing line ending and reads the rest relative to
+        # the git dir (the join leaves an absolute path as it is).
+        named = common.decode("utf-8").rstrip("\r\n")
+        if "\0" in named:
+            return None
+        dirs = _git_dirs(git_dir, os.path.join(git_dir, named) if named else git_dir)
+    except (OSError, UnicodeDecodeError, ValueError):
+        # ValueError: a NUL in the pointer's path, which `open` refuses before
+        # touching the disk (A-0014 review r2). None means "ask git".
+        return None
+    return (os.path.realpath(root), text, common,
+            tuple(os.environ.get(name) for name in _GIT_LOCATION_ENV), dirs)
+
+
+# Where `_checkout_key` puts the resolved (git dir, common dir) pair.
+_KEY_DIRS = 4
+
+
+def _git_dirs(git_dir, common_dir):
+    """(git dir, common dir) resolved and case-folded: the one form the memo
+    key and git's own answer are compared in."""
+    return tuple(os.path.normcase(os.path.realpath(p)) for p in (git_dir, common_dir))
+
+
+def _read_regular(path):
+    """The bytes of `path` when it is a regular file, else None; a missing
+    file raises FileNotFoundError. A FIFO, device or directory is never read:
+    a plain `open` of a FIFO with no writer blocks forever, outside
+    `git_out`'s timeout (A-0014 review r2). `os.stat` keeps the ordinary case
+    from opening one at all; the non-blocking open and `os.fstat` of the
+    descriptor catch a file swapped in between the two."""
+    if not stat.S_ISREG(os.stat(path).st_mode):
+        return None
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, flags)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None
+        with os.fdopen(fd, "rb", closefd=False) as handle:
+            return handle.read()
+    finally:
+        os.close(fd)
+
+
+def _ask_main_checkout(root):
+    """(answer, seen): `_main_checkout`'s git question, asked (never answered
+    from memory), and the (git dir, common dir) git answered it from, as
+    `_git_dirs` gives them; seen is None when git could not tell."""
     out = git_out(root, "rev-parse", "--git-dir", "--git-common-dir")
     lines = (out or "").splitlines()
     if len(lines) != 2:
-        return None, "this looks like a linked worktree, but git could not name its main checkout"
+        problem = "this looks like a linked worktree, but git could not name its main checkout"
+        return (None, problem), None
     real_git, real_common = (os.path.realpath(os.path.join(root, p)) for p in lines)
+    seen = _git_dirs(real_git, real_common)
     if os.path.normcase(real_git) == os.path.normcase(real_common) \
             or os.path.basename(real_common) != ".git":
-        return None, ""
-    return os.path.dirname(real_common), ""
+        return (None, ""), seen
+    return (os.path.dirname(real_common), ""), seen
 
 
 # --- the review metrics' directory (L-0582) ---------------------------------------------
