@@ -181,12 +181,14 @@ def repo_config_dir(root):
 
 # `_main_checkout`'s answers in this process (A-0013), keyed on the worktree's
 # real path, the bytes of its `.git` file, the bytes of the `commondir` file in
-# the git dir that file names (both read only as regular files), and
-# GIT_WORK_TREE -- the inputs git's answer is read from. One autopilot approval
-# judgement read the repo config eight times in a lane, each read one more git
-# process. Only an answer is kept: could-not-tell is asked again on the next
-# read. With GIT_DIR or GIT_COMMON_DIR set, git reads neither file, so nothing
-# is kept at all (A-0014 review r2).
+# the git dir that file names (both read only as regular files), the resolved
+# git dir and common dir those name, and GIT_WORK_TREE -- the inputs git's
+# answer is read from. One autopilot approval judgement read the repo config
+# eight times in a lane, each read one more git process. Only an answer is
+# kept, and only when the git dir and common dir git reports are the key's own
+# (A-0014 review r3: a pointer changed while git ran): could-not-tell is asked
+# again on the next read. With GIT_DIR or GIT_COMMON_DIR set, git reads neither
+# file, so nothing is kept at all (A-0014 review r2).
 _MAIN_CHECKOUTS = {}
 _GIT_DIR_OVERRIDES = ("GIT_DIR", "GIT_COMMON_DIR")
 _GIT_LOCATION_ENV = ("GIT_WORK_TREE",)
@@ -210,8 +212,8 @@ def _main_checkout(root):
     key = _checkout_key(root, pointer)
     if key is not None and key in _MAIN_CHECKOUTS:
         return _MAIN_CHECKOUTS[key]
-    answer = _ask_main_checkout(root)
-    if key is not None and not answer[1]:
+    answer, seen = _ask_main_checkout(root)
+    if key is not None and not answer[1] and seen == key[_KEY_DIRS]:
         _MAIN_CHECKOUTS[key] = answer
     return answer
 
@@ -222,6 +224,11 @@ def _checkout_key(root, pointer):
     or the pointer is not one `gitdir:` line. A git dir with no `commondir`
     keys as empty bytes, so one appearing later is a different key (A-0014
     review r1: the git dir's `commondir` decides the common dir too).
+
+    The key also carries the git dir and the common dir those bytes resolve
+    to, as `_git_dirs` gives them, so a symlinked git dir retargeted with the
+    bytes unchanged is a new key (A-0014 review r3); a `commondir` whose path
+    cannot be formed (NUL, undecodable) keys as None.
 
     With GIT_DIR or GIT_COMMON_DIR set git reads neither file, so no key built
     from them is sound and nothing is kept (A-0014 review r2)."""
@@ -241,12 +248,28 @@ def _checkout_key(root, pointer):
             common = b""
         if common is None:
             return None
+        # git strips the trailing line ending and reads the rest relative to
+        # the git dir (the join leaves an absolute path as it is).
+        named = common.decode("utf-8").rstrip("\r\n")
+        if "\0" in named:
+            return None
+        dirs = _git_dirs(git_dir, os.path.join(git_dir, named) if named else git_dir)
     except (OSError, UnicodeDecodeError, ValueError):
         # ValueError: a NUL in the pointer's path, which `open` refuses before
         # touching the disk (A-0014 review r2). None means "ask git".
         return None
     return (os.path.realpath(root), text, common,
-            tuple(os.environ.get(name) for name in _GIT_LOCATION_ENV))
+            tuple(os.environ.get(name) for name in _GIT_LOCATION_ENV), dirs)
+
+
+# Where `_checkout_key` puts the resolved (git dir, common dir) pair.
+_KEY_DIRS = 4
+
+
+def _git_dirs(git_dir, common_dir):
+    """(git dir, common dir) resolved and case-folded: the one form the memo
+    key and git's own answer are compared in."""
+    return tuple(os.path.normcase(os.path.realpath(p)) for p in (git_dir, common_dir))
 
 
 def _read_regular(path):
@@ -270,16 +293,20 @@ def _read_regular(path):
 
 
 def _ask_main_checkout(root):
-    """`_main_checkout`'s git question, asked (never answered from memory)."""
+    """(answer, seen): `_main_checkout`'s git question, asked (never answered
+    from memory), and the (git dir, common dir) git answered it from, as
+    `_git_dirs` gives them; seen is None when git could not tell."""
     out = git_out(root, "rev-parse", "--git-dir", "--git-common-dir")
     lines = (out or "").splitlines()
     if len(lines) != 2:
-        return None, "this looks like a linked worktree, but git could not name its main checkout"
+        problem = "this looks like a linked worktree, but git could not name its main checkout"
+        return (None, problem), None
     real_git, real_common = (os.path.realpath(os.path.join(root, p)) for p in lines)
+    seen = _git_dirs(real_git, real_common)
     if os.path.normcase(real_git) == os.path.normcase(real_common) \
             or os.path.basename(real_common) != ".git":
-        return None, ""
-    return os.path.dirname(real_common), ""
+        return (None, ""), seen
+    return (os.path.dirname(real_common), ""), seen
 
 
 # --- the review metrics' directory (L-0582) ---------------------------------------------

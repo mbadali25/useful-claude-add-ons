@@ -240,10 +240,10 @@ def test_a_nul_byte_in_the_git_pointer_raises_nothing_for_metrics(tmp_path, monk
     assert isinstance(problem, str) and (crew_dir is None) == bool(problem), (crew_dir, problem)
 
 
-def test_a_nul_byte_in_commondir_is_read_as_bytes_and_remembered(tmp_path, monkeypatch):
-    """`commondir` is only ever read as bytes for the key, never joined into a
-    path by crew, so a NUL there neither raises nor stops the memo: an answer
-    from git is kept, could-not-tell is asked again."""
+def test_a_nul_byte_in_commondir_raises_nothing_and_is_not_remembered(tmp_path, monkeypatch):
+    """The neighbour file: the key resolves the path `commondir` names (A-0014
+    review r3), so a NUL there is a path crew cannot form. It raises nothing
+    and keeps nothing: git is asked on every read."""
     _main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
     commondir = _lane_git_dir(wt) / "commondir"
     _rewrite(commondir, commondir.read_bytes().rstrip(b"\r\n") + b"\x00junk\n")
@@ -252,8 +252,103 @@ def test_a_nul_byte_in_commondir_is_read_as_bytes_and_remembered(tmp_path, monke
     answers = [crew_common.repo_config_dir(str(wt)) for _ in range(2)]
 
     assert answers[0] == answers[1], answers
-    expected = 2 if answers[0][1] == crew_common.SOURCE_UNKNOWN else 1
-    assert calls.count(MAIN_CHECKOUT_QUESTION) == expected, (answers, calls)
+    assert calls.count(MAIN_CHECKOUT_QUESTION) == 2, (answers, calls)
+
+
+def _symlink_dir_or_skip(target, link):
+    """A directory link at `link` to `target`: a junction on Windows (Git for
+    Windows does not follow a symlinked gitdir, and a junction needs no
+    privilege), a symlink elsewhere."""
+    try:
+        if os.name == "nt":
+            import _winapi  # pylint: disable=import-outside-toplevel
+            _winapi.CreateJunction(str(target), str(link))
+        else:
+            os.symlink(target, link, target_is_directory=True)
+    except (OSError, NotImplementedError, ImportError, AttributeError) as exc:
+        pytest.skip(f"cannot create a directory link here: {exc}")
+
+
+def test_a_lane_whose_git_dir_symlink_is_retargeted_is_asked_again(tmp_path, monkeypatch):
+    """A-0014 review r3: a `.git` pointer naming a symlink to a git dir keeps
+    its bytes when the symlink is retargeted, and both git dirs' `commondir`
+    hold the same relative bytes, so a key of bytes alone answered with the
+    first repository. The key carries the resolved git dir and common dir."""
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    other, other_wt = _lane(tmp_path / "second", {"scope": {"allowCliApproval": False}})
+    git_dir, other_git_dir = _lane_git_dir(wt), _lane_git_dir(other_wt)
+    assert (git_dir / "commondir").read_bytes() == (other_git_dir / "commondir").read_bytes()
+    link = tmp_path / "gitdir-link"
+    _symlink_dir_or_skip(git_dir, link)
+    _rewrite(wt / ".git", b"gitdir: " + str(link).encode("utf-8") + b"\n")
+    _crew_dir, source, first = crew_common.repo_config_dir(str(wt))
+    if source == crew_common.SOURCE_UNKNOWN:
+        # Git for Windows resolves `commondir`'s `../..` lexically from the
+        # link, so it finds no repository there; POSIX git resolves it through
+        # the link. Measured 2026-10-29: "fatal: gitfile does not point to a
+        # valid repository".
+        pytest.skip(f"git here cannot use a linked gitdir: {first}")
+    # A directory symlink is removed with rmdir on Windows, unlink on POSIX.
+    (os.rmdir if os.name == "nt" else os.remove)(link)
+    _symlink_dir_or_skip(other_git_dir, link)
+    calls = _counting_git_out(monkeypatch)
+
+    again = crew_common.repo_config_dir(str(wt))[2]
+
+    assert os.path.realpath(first) == os.path.realpath(str(main)), first
+    assert os.path.realpath(again) == os.path.realpath(str(other)), again
+    assert calls.count(MAIN_CHECKOUT_QUESTION) == 1, calls
+
+
+def test_an_answer_git_read_from_another_pointer_is_not_kept(tmp_path, monkeypatch):
+    """A-0014 review r3: the key is read before git runs, so a pointer swapped
+    to repository B for the length of the git call (and swapped back) stored
+    B's answer under A's key. An answer is kept only when the git dir and
+    common dir git reports are the ones the key was built from."""
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    _other, other_wt = _lane(tmp_path / "second", {"scope": {"allowCliApproval": False}})
+    pointer_a, pointer_b = (wt / ".git").read_bytes(), (other_wt / ".git").read_bytes()
+    real = crew_common.git_out
+
+    def swapped(root, *args):
+        _rewrite(wt / ".git", pointer_b)
+        try:
+            return real(root, *args)
+        finally:
+            _rewrite(wt / ".git", pointer_a)
+
+    monkeypatch.setattr(crew_common, "git_out", swapped)
+    crew_common.repo_config_dir(str(wt))
+    monkeypatch.setattr(crew_common, "git_out", real)
+
+    again = crew_common.repo_config_dir(str(wt))[2]
+
+    assert os.path.realpath(again) == os.path.realpath(str(main)), again
+
+
+def test_an_answer_git_read_from_another_commondir_is_not_kept(tmp_path, monkeypatch):
+    """Neighbour: the same swap on the git dir's `commondir` (the pointer
+    untouched) keeps nothing either."""
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    other, _other_wt = _lane(tmp_path / "second", {"scope": {"allowCliApproval": False}})
+    commondir = _lane_git_dir(wt) / "commondir"
+    original = commondir.read_bytes()
+    real = crew_common.git_out
+
+    def swapped(root, *args):
+        _rewrite(commondir, str(other / ".git").encode("utf-8") + b"\n")
+        try:
+            return real(root, *args)
+        finally:
+            _rewrite(commondir, original)
+
+    monkeypatch.setattr(crew_common, "git_out", swapped)
+    crew_common.repo_config_dir(str(wt))
+    monkeypatch.setattr(crew_common, "git_out", real)
+
+    again = crew_common.repo_config_dir(str(wt))[2]
+
+    assert os.path.realpath(again) == os.path.realpath(str(main)), again
 
 
 def _finishes_within(seconds, call):
