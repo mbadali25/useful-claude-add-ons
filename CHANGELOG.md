@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.98: the scope guard no longer refuses the session handoff note
+
+- **Summary.** `crew` 1.2.98: with an active ticket, `/crew:handoff --wrap-up` can write `.work/HANDOFF.md` again, so auto-resume and auto-clear work for a session that has a ticket open.
+- Root cause: `scope_guard.classify` judged `.work/HANDOFF.md` against the ticket's `spec.md ## Touch` like any repo file ("`.work/HANDOFF.md` is outside T's spec ## Touch"). The handoff skill must write the note with the Write tool (a Bash or hand-made note has no author record in `handoff-author.json`), so the real note was never written, the PreCompact skeleton stayed, and the Stop hook said `crew wrap-up incomplete: resume line: the handoff is the automatic PreCompact skeleton; it names no next action`.
+- Fix: `crew_ticket.HANDOFF_PATHS` / `is_handoff_path` (`.work/HANDOFF.md`, `.work/HANDOFF-*.md`, whole names, real and named path both) and a rule 5b in `scope_guard.classify`, allowed with or without an approval. Every other out-of-Touch path is still refused. The completion audit already leaves `.work/` out of its listing (`_ONLY`), so it needed no change; a test pins that. The "Write tool, not Bash" author-record requirement is unchanged.
+- `plugin/crew/tests/test_scope_guard_handoff.py`: handoff writes allowed for approved and unapproved tickets (Write/Edit/MultiEdit, module and sh); `.work/HANDOFF.md.bak`, `.work/HANDOFFX.md`, `.work/notes/HANDOFF.md`, `docs/HANDOFF.md`, `HANDOFF.md`, `.work/INDEX.md` and `other/keep.py` still refused; a handoff symlink to an out-of-Touch file and a `..` path still refused; the audit still lists other changes. Docs: none - an allowlist entry documented in `scope_guard.py`'s docstring; no narrative doc lists the guard's allowed paths.
+
 ### Fixed — crew 1.2.97: a lane asks git for its main checkout once per process (A-0014, A-0013 part 2)
 
 - **Summary.** `crew` 1.2.97: in a lane worktree with no `.crew/` config of its own, reading the repo config no longer starts a git process every time, so hooks and the scope guard's autopilot approval judgement spend less of their time limit on git.
