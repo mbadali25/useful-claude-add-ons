@@ -601,3 +601,246 @@ def test_with_no_python_the_approval_hook_crashing_is_a_fault_on_user_prompt_sub
 
     assert code == (2 if armed else 0), err
     assert "approval-hook.sh exited 1 without a decision" in err
+
+# --- PR A: a guard timeout is one bounded retry, then UNKNOWN (never a policy deny, never an allow) ----
+# Driven in process against fake guards (crew_hook_harness.fake_guards), so each case is a few seconds.
+
+def _counting(tmp_path, body):
+    """Fake-guard source that appends a line to a run log, then runs `body`. Returns (source, log path)."""
+    log = tmp_path / "runs.log"
+    head = (f"import os, sys, time\nsys.stdin.buffer.read()\n"
+            f"open({str(log)!r}, 'a').write('run\\n')\n")
+    return head + body, log
+
+
+def _runs(log):
+    return len(log.read_text(encoding="utf-8").splitlines()) if log.exists() else 0
+
+
+def _hang_once(tmp_path):
+    marker = tmp_path / "seen"
+    return _counting(tmp_path, f"m = {str(marker)!r}\nif not os.path.exists(m):\n"
+                               "    open(m, 'w').close()\n    time.sleep(60)\n")
+
+
+def test_a_guard_that_times_out_once_is_retried_and_its_second_answer_is_used(tmp_path, monkeypatch):
+    source, log = _hang_once(tmp_path)
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, out, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 0, err
+    assert _runs(log) == 2 and "UNKNOWN" not in err and out == ""
+
+
+def test_a_retried_guard_that_then_denies_still_blocks_as_a_deny(tmp_path, monkeypatch):
+    marker = tmp_path / "seen"
+    source, log = _counting(tmp_path, f"m = {str(marker)!r}\nif not os.path.exists(m):\n"
+                                      "    open(m, 'w').close()\n    time.sleep(60)\n"
+                                      "sys.stderr.write('env-guard: blocked a real policy deny\\n')\nsys.exit(2)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 2 and _runs(log) == 2
+    assert "env-guard: blocked a real policy deny" in err and "UNKNOWN" not in err
+
+
+def test_a_guard_that_times_out_twice_fails_closed_labelled_unknown_with_the_armed_suffix(tmp_path, monkeypatch):
+    source, log = _counting(tmp_path, "time.sleep(60)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, out, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 2 and out == ""
+    assert _runs(log) == 2, "exactly one retry, never a third run"
+    unknown = "crew-hook: UNKNOWN (guard timeout, not a policy deny)"
+    assert unknown in err
+    assert err.index(unknown) < err.index("env-guard.sh timed out")
+    assert "failing closed (armed repo)" in err
+
+
+def test_a_timeout_in_an_unarmed_repo_is_a_labelled_note_and_exit_0(tmp_path, monkeypatch):
+    source, _ = _counting(tmp_path, "time.sleep(60)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts, armed=False)
+
+    assert code == 0
+    assert "UNKNOWN (guard timeout" in err and "the repo is not armed, so this is not a block" in err
+
+
+def test_no_retry_when_the_dispatch_deadline_has_no_room_for_one(tmp_path, monkeypatch):
+    source, log = _counting(tmp_path, "time.sleep(60)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts, window_s=6.5, row_timeout=5)
+
+    assert code == 2, err
+    assert _runs(log) == 1 and "UNKNOWN (guard timeout" in err
+
+
+def test_a_timeout_is_never_exit_0_when_armed_whichever_guard_it_is(tmp_path, monkeypatch):
+    for name in h.BASH_GUARDS:
+        sub = tmp_path / name.replace(".", "_")
+        sub.mkdir()
+        source, _ = _counting(sub, "time.sleep(60)\n")
+        scripts = h.fake_guards(sub, {name: source})
+
+        code, _, err = h.dispatch_fake(monkeypatch, scripts, window_s=5.0, row_timeout=2)
+
+        assert code == 2, f"{name}: {err}"
+        assert "UNKNOWN (guard timeout" in err, name
+
+
+def test_a_real_policy_deny_is_never_labelled_unknown_even_if_its_words_look_like_a_fault(tmp_path, monkeypatch):
+    text = "env-guard: blocked - the command mentions MemoryError, and Resource temporarily unavailable\\n"
+    source, _ = _counting(tmp_path, f"sys.stderr.write('{text}')\nsys.exit(2)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, out, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 2 and out == ""
+    assert "env-guard: blocked - the command mentions MemoryError" in err
+    assert "UNKNOWN" not in err
+
+
+def test_a_json_deny_from_a_guard_is_a_deny_not_unknown(tmp_path, monkeypatch):
+    deny = ('{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", '
+            '"permissionDecisionReason": "no"}}')
+    source, _ = _counting(tmp_path, f"sys.stdout.write({deny!r})\n")
+    scripts = h.fake_guards(tmp_path, {"cloud-guard.sh": source})
+
+    code, out, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 0 and json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "UNKNOWN" not in err
+
+
+RESOURCE_TEXTS = ["bash: fork: retry: Resource temporarily unavailable", "OSError: [Errno 11] x",
+                  "BlockingIOError: EAGAIN", "MemoryError", "env-guard: fork failed", "can't fork"]
+
+
+@pytest.mark.parametrize("said", RESOURCE_TEXTS, ids=["unavailable", "errno11", "eagain", "memoryerror", "forkfailed", "cantfork"])
+def test_a_guard_that_exits_undecided_on_a_resource_failure_is_unknown_resource_and_fails_closed(said, tmp_path,
+                                                                                                monkeypatch):
+    source, _ = _counting(tmp_path, f"sys.stderr.write({said!r} + '\\n')\nsys.exit(1)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 2, err
+    assert "crew-hook: UNKNOWN (resource exhaustion, not a policy deny)" in err
+    assert "UNKNOWN (guard timeout" not in err and "failing closed (armed repo)" in err
+
+
+def test_a_guard_that_hangs_after_a_resource_failure_is_labelled_resource_not_timeout(tmp_path, monkeypatch):
+    source, _ = _counting(tmp_path, "sys.stderr.write('fork: Resource temporarily unavailable\\n')\n"
+                                    "sys.stderr.flush()\ntime.sleep(60)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts, window_s=6.0, row_timeout=2)
+
+    assert code == 2 and "UNKNOWN (resource exhaustion" in err and "UNKNOWN (guard timeout" not in err
+
+
+def test_a_start_failure_naming_eagain_is_resource_exhaustion(monkeypatch):
+    row = next(r for r in crew_hook.TABLE if r.script == "scope-guard.sh")
+    result = {"exit": None, "stdout": b"", "stderr": b"", "timed_out": False, "pid": 0,
+              "error": "could not start bash: [Errno 11] Resource temporarily unavailable"}
+
+    code, _, err = crew_hook._settle(row.event, [(row, [row.script])], [result], "/r", lambda _r: True)  # pylint: disable=protected-access
+
+    assert code == 2 and b"UNKNOWN (resource exhaustion, not a policy deny)" in err
+
+
+def test_an_undecided_exit_with_an_unrelated_message_fails_closed_without_a_resource_label(tmp_path, monkeypatch):
+    source, _ = _counting(tmp_path, "sys.stderr.write('traceback: boom\\n')\nsys.exit(1)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 2 and "env-guard.sh exited 1 without a decision" in err
+    assert "UNKNOWN" not in err
+
+
+@pytest.mark.parametrize("code_exit", [1, 2])
+def test_a_guard_that_has_no_usable_python_is_unknown_and_still_blocks(code_exit, tmp_path, monkeypatch):
+    source, _ = _counting(tmp_path, "sys.stderr.write('env-guard: no usable python, and guards.envGuard is armed\\n')\n"
+                                    f"sys.exit({code_exit})\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 2
+    assert "crew-hook: UNKNOWN (no usable python, not a policy deny)" in err
+    assert "env-guard: no usable python" in err
+
+
+# --- PR A: opt-in per-child timing --------------------------------------------------------------
+
+def test_the_timing_file_records_start_end_and_duration_per_child(tmp_path, monkeypatch):
+    scripts = h.fake_guards(tmp_path, {})
+    timing = tmp_path / "t.crew-trace"
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts, env=dict(os.environ, CREW_HOOK_TIMING_FILE=str(timing)))
+
+    lines = timing.read_text(encoding="utf-8").splitlines()
+    assert code == 0, err
+    assert len(lines) == 4
+    for line in lines:
+        fields = dict(part.split("=", 1) for part in line.split() if "=" in part)
+        assert int(fields["end_ms"]) >= int(fields["start_ms"])
+        assert int(fields["ms"]) == int(fields["end_ms"]) - int(fields["start_ms"])
+        assert fields["attempts"] == "1" and "exit=0" in line
+
+
+def test_the_timing_file_records_the_retry_and_the_timeout(tmp_path, monkeypatch):
+    source, _ = _counting(tmp_path, "time.sleep(60)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+    timing = tmp_path / "t.crew-trace"
+
+    h.dispatch_fake(monkeypatch, scripts, env=dict(os.environ, CREW_HOOK_TIMING_FILE=str(timing)))
+
+    line = next(l for l in timing.read_text(encoding="utf-8").splitlines() if "env-guard.sh" in l)
+    assert "attempts=2" in line and line.endswith("timeout")
+
+
+@pytest.mark.parametrize("name", ["timing.txt", "ran.log"])
+def test_a_timing_path_without_the_suffix_is_never_written(name, tmp_path, monkeypatch):
+    scripts = h.fake_guards(tmp_path, {})
+    target = tmp_path / name
+
+    h.dispatch_fake(monkeypatch, scripts, env=dict(os.environ, CREW_HOOK_TIMING_FILE=str(target)))
+
+    assert not target.exists()
+
+
+@pytest.mark.skipif(h.WINDOWS, reason="symlinks need privileges on Windows")
+def test_a_timing_path_that_is_a_symlink_is_not_followed(tmp_path, monkeypatch):
+    victim = tmp_path / "bashrc"
+    victim.write_text("original\n", encoding="utf-8")
+    link = tmp_path / "t.crew-trace"
+    link.symlink_to(victim)
+    scripts = h.fake_guards(tmp_path, {})
+
+    h.dispatch_fake(monkeypatch, scripts, env=dict(os.environ, CREW_HOOK_TIMING_FILE=str(link)))
+
+    assert victim.read_text(encoding="utf-8") == "original\n"
+
+@needs_runner
+@pytest.mark.parametrize("flavour", h.POSIX_FLAVOURS)
+def test_the_launcher_hands_the_python_it_resolved_to_the_guards_as_crew_python(flavour, tmp_path):
+    scripts = _copy_scripts(tmp_path)
+    seen = tmp_path / "python.txt"
+    with open(os.path.join(scripts, "scope-guard.sh"), "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(f"#!/usr/bin/env bash\ncat >/dev/null\nprintf '%s' \"$CREW_PYTHON\" >'{seen.as_posix()}'\nexit 0\n")
+    root, home = _repo(tmp_path, "own")
+
+    code, _, err = _run(flavour, scripts, "PreToolUse", BASH_PAYLOAD, root, home,
+                        env_extra={"CREW_PYTHON": "/inherited/not-this-one"})
+
+    value = seen.read_text(encoding="utf-8")
+    assert code == 0, err
+    assert value and value != "/inherited/not-this-one", "the launcher's own python must replace an inherited value"
+    assert os.path.isfile(value) or os.path.isfile(value + ".exe") or os.path.basename(value).startswith("python")

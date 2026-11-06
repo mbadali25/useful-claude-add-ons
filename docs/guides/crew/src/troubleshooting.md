@@ -65,7 +65,13 @@ registers one launcher per event per shell (`crew-hook.sh`, and `crew-hook.ps1` 
 the launcher starts one dispatcher, `crew_hook.py <Event>`, which runs that event's scripts below at once and
 combines what they print. On Windows only the PowerShell launcher runs, so no event fires twice. When the
 launcher or dispatcher itself fails in a repo crew governs, `PreToolUse`, `UserPromptSubmit` and `Stop` refuse
-with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged.
+with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged. A guard that times out is run once more when the dispatch deadline
+leaves room; if it still cannot answer, the refusal is led by `crew-hook: UNKNOWN (guard timeout, not a policy
+deny)`. A guard that could not fork or allocate (`Resource temporarily unavailable`, `EAGAIN`, `MemoryError`)
+is led by `UNKNOWN (resource exhaustion, not a policy deny)`, and one with no python by `UNKNOWN (no usable
+python, not a policy deny)`. An `UNKNOWN` line is a refusal because crew could not tell, not because a rule said
+no: retry the call, and free memory or processes if it repeats. A real deny never carries the label. Setting
+`CREW_HOOK_TIMING_FILE` to a path ending `.crew-trace` records each guard's start, end and milliseconds.
 
 | Event | Script | What it does | Switch | Default |
 |---|---|---|---|---|

@@ -428,6 +428,8 @@ try {
   $psi.EnvironmentVariables['PYTHONUTF8'] = '1'
   $psi.EnvironmentVariables['PYTHONIOENCODING'] = 'utf-8'
   $psi.EnvironmentVariables['CREW_HOOK_DEADLINE'] = [string]$crewDeadlineMs
+  # the python this launcher resolved, so the shell guards the dispatcher starts use it and do not re-probe
+  $psi.EnvironmentVariables['CREW_PYTHON'] = [string]$py
   $crewProc = [System.Diagnostics.Process]::Start($psi)
   $outTask = $crewProc.StandardOutput.BaseStream.CopyToAsync($crewOut)
   $errTask = $crewProc.StandardError.BaseStream.CopyToAsync($crewErr)

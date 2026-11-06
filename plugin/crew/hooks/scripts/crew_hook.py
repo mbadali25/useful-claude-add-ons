@@ -44,6 +44,7 @@ DEADLINE_MARGIN = 5       # seconds the launcher keeps back from the registratio
 EVENT_SLACK = 10          # registration timeout = the largest row's timeout + this
 DRAIN = 2.0               # seconds to wait for pipes after a child's own exit
 POST_KILL = 3.0
+RETRY_FLOOR = 2.0         # seconds a timed-out guard's one retry must be able to have
 BLOCKING_EVENTS = ("PreToolUse", "UserPromptSubmit", "Stop")
 VAULT_MATCHER = "mcp__.*(obsidian|vault|basic[-_]memory).*"
 RESTRICTED_ROLES = ("explorer", "researcher", "reviewer", "security", "pm")
@@ -444,21 +445,40 @@ def _argv_for(argv, scripts, bash, pwsh):
 
 
 TRACE_SUFFIX = ".crew-trace"
+_TRACE_LOCK = threading.Lock()  # children finish on their own threads; one line must not tear another
 
 
-def _trace(path, event, argv, pid):
-    """Append `event argv pid` to the file CREW_HOOK_TRACE_FILE names, for the suites. Only
-    a path ending in `.crew-trace` is honoured and a symlink is never followed, so the
-    variable cannot point the dispatcher at a file something else reads (security pass)."""
+def _append_trace(path, line):
+    """Append one line to a trace file. Only a path ending in `.crew-trace` is honoured and
+    a symlink is never followed, so the variable cannot point the dispatcher at a file
+    something else reads (security pass)."""
     if not path or not path.endswith(TRACE_SUFFIX):
         return
     flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
     try:
-        fd = os.open(path, flags, 0o600)
-        with os.fdopen(fd, "a", encoding="utf-8") as handle:
-            handle.write(f"{event} {' '.join(argv)} {pid}\n")
+        with _TRACE_LOCK:
+            fd = os.open(path, flags, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as handle:
+                handle.write(line)
     except OSError:
         pass
+
+
+def _trace(path, event, argv, pid):
+    """Append `event argv pid` to the file CREW_HOOK_TRACE_FILE names, for the suites."""
+    _append_trace(path, f"{event} {' '.join(argv)} {pid}\n")
+
+
+def _timing(path, event, argv, res):
+    """Append `event argv pid attempts=N start_ms=S end_ms=E ms=D outcome` to the file
+    CREW_HOOK_TIMING_FILE names (opt-in, the same `.crew-trace` and no-symlink rules as
+    _trace): the per-child timing that tells a slow guard from a wedged one."""
+    if "start_ms" not in res:
+        return
+    outcome = "timeout" if res.get("timed_out") else f"exit={res.get('exit')}"
+    _append_trace(path, f"{event} {' '.join(argv)} {res.get('pid', 0)} attempts={res.get('attempts', 1)} "
+                        f"start_ms={res['start_ms']} end_ms={res['end_ms']} "
+                        f"ms={res['end_ms'] - res['start_ms']} {outcome}\n")
 
 
 def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_bash=None,
@@ -493,6 +513,7 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
     if bash is None:
         return _no_bash(event, bash_problem, root, armed_fn)
     trace = env.get("CREW_HOOK_TRACE_FILE", "")
+    timing = env.get("CREW_HOOK_TIMING_FILE", "")
     results = [None] * len(chosen)
     threads = []
 
@@ -514,8 +535,22 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
                               "error": f"no PowerShell was found to run {argv[0]}"}
             return
         child_env = dict(env, CREW_HOOK_FLAVOUR=flavour)
-        results[index] = run_child(command, raw, own, child_env, cwd=None)
-        _trace(trace, event, argv, results[index]["pid"])
+        started = now_ms()
+        res = run_child(command, raw, own, child_env, cwd=None)
+        res["attempts"] = 1
+        if res["timed_out"] and row.guard:
+            # One bounded retry: a guard that timed out under load often answers in a second go.
+            # Guards only decide (their one write, role_write_guard's log row, appends, so a repeat
+            # is a duplicate row, never a changed decision), and the retry only runs when the
+            # dispatch deadline still has room for it plus the kill grace.
+            retry_for = min(float(row.timeout), mono_end - time.monotonic() - POST_KILL - 0.5)
+            if retry_for >= RETRY_FLOOR:
+                res = run_child(command, raw, retry_for, child_env, cwd=None)
+                res["attempts"] = 2
+        res["start_ms"], res["end_ms"] = started, now_ms()
+        results[index] = res
+        _trace(trace, event, argv, res["pid"])
+        _timing(timing, event, argv, res)
 
     for index, (row, argv) in enumerate(chosen):
         thread = threading.Thread(target=work, args=(index, row, argv), daemon=True)
@@ -536,6 +571,32 @@ def _no_bash(event, problem, root, armed_fn):
     return 0, b"", (message + "\n").encode("utf-8")
 
 
+UNKNOWN_TIMEOUT = "crew-hook: UNKNOWN (guard timeout, not a policy deny)"
+UNKNOWN_RESOURCE = "crew-hook: UNKNOWN (resource exhaustion, not a policy deny)"
+UNKNOWN_PYTHON = "crew-hook: UNKNOWN (no usable python, not a policy deny)"
+_RESOURCE_RE = re.compile(
+    r"Resource temporarily unavailable|\bEAGAIN\b|errno[ =:]*11\b|MemoryError|"
+    r"\b(?:can(?:'|no)t|unable to|could not|failed to)\s+fork\b|\bfork:\s+(?:retry|failed|cannot|Cannot)|"
+    r"fork failed|Cannot allocate memory", re.IGNORECASE)
+_NO_PYTHON_RE = re.compile(r"no usable python", re.IGNORECASE)
+
+
+def _unknown_label(res):
+    """The label naming WHY a guard did not decide, or "" when it is none of the known causes.
+    It reads stderr in every branch that has no decision (error, timeout, undecided exit), because
+    an undecided child never reaches the timeout branch. A label never changes the verdict: the
+    caller still fails closed. Resource exhaustion is looked for first, since a guard that could
+    not fork also tends to time out."""
+    said = _text(res["stderr"])
+    if _RESOURCE_RE.search(said) or _RESOURCE_RE.search(res["error"] or ""):
+        return UNKNOWN_RESOURCE
+    if res["timed_out"]:
+        return UNKNOWN_TIMEOUT
+    if _NO_PYTHON_RE.search(said):
+        return UNKNOWN_PYTHON
+    return ""
+
+
 def _settle(event, chosen, results, root, armed_fn):
     """Turn the children's raw results into merge input, applying B8."""
     merge_in, notes, faults, heard = [], [], [], []
@@ -547,20 +608,27 @@ def _settle(event, chosen, results, root, armed_fn):
                                       "deadline) and was killed")
             if undecided:
                 reason = f"{name} exited {res['exit']} without a decision"
+            label = _unknown_label(res)
             said = _text(res["stderr"])
             if said:
                 heard.append(said if said.endswith("\n") else said + "\n")
             if row.guard and event in BLOCKING_EVENTS:
-                faults.append(f"crew-hook: {reason}")
+                faults.append((label, f"crew-hook: {reason}"))
             else:
-                notes.append(f"crew-hook: {reason}\n")
+                notes.append((f"{label}\n" if label else "") + f"crew-hook: {reason}\n")
             continue
-        merge_in.append({"exit": res["exit"], "stdout": _text(res["stdout"]), "stderr": _text(res["stderr"])})
+        stderr = _text(res["stderr"])
+        if res["exit"] == 2 and _NO_PYTHON_RE.search(stderr):
+            # a guard's own "no usable python" refusal still blocks, but it is not a policy deny
+            stderr = UNKNOWN_PYTHON + "\n" + stderr
+        merge_in.append({"exit": res["exit"], "stdout": _text(res["stdout"]), "stderr": stderr})
     if faults and armed_fn(root):
-        text = "".join(f"{line}; failing closed (armed repo).\n" for line in faults)
+        text = "".join((f"{label}\n" if label else "") + f"{line}; failing closed (armed repo).\n"
+                       for label, line in faults)
         # a child that did block still gets to say why
         return 2, b"", (merge(event, merge_in)["stderr"] + "".join(heard) + text).encode("utf-8")
-    notes.extend(f"{line}; the repo is not armed, so this is not a block.\n" for line in faults)
+    notes.extend((f"{label}\n" if label else "") + f"{line}; the repo is not armed, so this is not a block.\n"
+                 for label, line in faults)
     merged = merge(event, merge_in)
     stderr = merged["stderr"] + "".join(heard) + "".join(notes)
     return merged["exit"], merged["stdout"].encode("utf-8"), stderr.encode("utf-8")

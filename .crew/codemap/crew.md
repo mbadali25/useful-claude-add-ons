@@ -219,7 +219,7 @@ deny > ask > allow, `decision: "block"` and `continue: false` win, `additionalCo
 `systemMessage` concatenate in table order. Fail closed: `armed` (`:276`) is True when crew governs the
 repo or that cannot be told; in an armed repo a guard row that times out, a missing script, or an
 exception in the dispatcher is exit 2 with a named reason on `BLOCKING_EVENTS` (`PreToolUse`,
-`UserPromptSubmit`, `Stop`, `:47`); an unarmed repo gets exit 0 (`_settle` `:539`, `_fault` `:613`).
+`UserPromptSubmit`, `Stop`, `:47`); an unarmed repo gets exit 0 (`_settle`, `_fault`). DERIVED (crew 1.2.99, `plugin/crew/hooks/scripts/crew_hook.py`, `work` and `_unknown_label`): a guard row that times out is retried once when the deadline leaves `RETRY_FLOOR` plus the kill grace, and a failure the guard could not decide is labelled `UNKNOWN (guard timeout | resource exhaustion | no usable python, not a policy deny)` ahead of the same fail-closed text; `CREW_HOOK_TIMING_FILE` records per-child timing and both launchers export `CREW_PYTHON`. Line numbers before this paragraph in this note shifted and were not re-derived.
 The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 339 lines; `crew-hook.ps1`, 482) supervise
 rather than exec it: exit 0 and 2 pass through, anything else becomes the armed/unarmed fault above,
 under one deadline (`CREW_HOOK_DEADLINE`, the registration timeout minus 5 s). `crew-hook.sh` exits 0 on

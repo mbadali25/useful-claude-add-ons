@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.99**: A hook timeout is retried once and reads as UNKNOWN, not as a policy deny. `crew` 1.2.99: when a crew guard times out or cannot fork under load, the dispatcher retries it once, and a refusal that still follows says `UNKNOWN (guard timeout, not a policy deny)` or `UNKNOWN (resource exhaustion, not a policy deny)` instead of reading like a real deny.
 - **crew 1.2.98**: The scope guard no longer refuses the session handoff note. `crew` 1.2.98: with an active ticket, `/crew:handoff --wrap-up` can write `.work/HANDOFF.md` again, so auto-resume and auto-clear work for a session that has a ticket open.
-- **crew 1.2.97**: A lane asks git for its main checkout once per process. `crew` 1.2.97: in a lane worktree with no `.crew/` config of its own, reading the repo config no longer starts a git process every time, so hooks and the scope guard's autopilot approval judgement spend less of their time limit on git.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

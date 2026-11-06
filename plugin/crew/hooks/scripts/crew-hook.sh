@@ -298,7 +298,8 @@ _dispatch() {
   [ -f "$DIR/crew_hook.py" ] || _fail "crew_hook.py is missing at $DIR"
   local args=("$EVENT")
   [ "$HARNESS" = codex ] && args+=(--harness codex)
-  PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$1" "$DIR/crew_hook.py" "${args[@]}" <&3 &
+  # CREW_PYTHON hands the interpreter this launcher resolved to the guards the dispatcher starts
+  CREW_PYTHON="$1" PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$1" "$DIR/crew_hook.py" "${args[@]}" <&3 &
   local pypid=$!
   _watchdog "$((remaining + 2))" "$pypid"
   wait "$pypid"

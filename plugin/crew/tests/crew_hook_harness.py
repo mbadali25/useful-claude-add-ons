@@ -167,3 +167,38 @@ def assert_same(want, got, root, home, strict=True):
 def read_text(path):
     with open(path, encoding="utf-8") as handle:
         return handle.read()
+
+
+# --- in-process dispatch against fake guards (PR A: timeout classification) ---------------------
+# The four guards a Bash PreToolUse selects are replaced by tiny Python programs saved under their
+# `.sh` names; `_argv_for` is pointed at the running interpreter so the same fakes run on every OS.
+
+BASH_GUARDS = ("promote-gate.sh", "cloud-guard.sh", "env-guard.sh", "scope-guard.sh")
+PASS_GUARD = "import sys\nsys.stdin.buffer.read()\n"
+BASH_PAYLOAD = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                           "tool_input": {"command": "ls"}, "session_id": "s-1"}).encode()
+
+
+def fake_guards(tmp_path, overrides):
+    """A scripts directory of passing fake guards, `overrides` (name -> python source) replacing some."""
+    scripts = tmp_path / "fakescripts"
+    scripts.mkdir()
+    for name in BASH_GUARDS:
+        with open(scripts / name, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(overrides.get(name, PASS_GUARD))
+    return str(scripts)
+
+
+def dispatch_fake(monkeypatch, scripts, armed=True, window_s=16.0, row_timeout=5, env=None, event="PreToolUse",
+                  payload=BASH_PAYLOAD):
+    """(exit, stdout, stderr) text of crew_hook.dispatch over `scripts`' fakes. Every guard row gets
+    `row_timeout` seconds and the dispatch deadline is `window_s` from now."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    import sys  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(crew_hook, "TABLE", tuple(r._replace(timeout=row_timeout) for r in crew_hook.TABLE))
+    monkeypatch.setattr(crew_hook, "_argv_for",
+                        lambda argv, scripts_dir, bash, pwsh: ([sys.executable, "-S", os.path.join(scripts_dir, argv[0])], "bash"))
+    code, out, err = crew_hook.dispatch(event, "claude", payload, crew_hook.now_ms() + int(window_s * 1000),
+                                        dict(os.environ if env is None else env), "/nowhere", windows=False,
+                                        scripts=scripts, armed_fn=lambda _root: armed)
+    return code, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
