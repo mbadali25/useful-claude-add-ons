@@ -275,7 +275,7 @@ Das sind zwei Rechner in einem Tailnet, keine Kompatibilitätsmatrix. Alles ande
 
 | Tool | Beschreibung |
 |------|--------------|
-| `peer_list` | Zeigt alle Peers, die online sind, in einem Block für nicht vertrauenswürdige Daten (Namen, Zustände und Statuszeilen setzen die Peers selbst) |
+| `peer_list` | Zeigt alle Peers, die online sind, in einem Block für nicht vertrauenswürdige Daten (Namen, Zustände und Statuszeilen setzen die Peers selbst): jede Zeile nennt Maschine und Projekt- oder Sitzungsnamen sowie den gemeldeten Zustand (`busy`, `idle`, `waiting`, oder `state unknown`, wenn die Sitzung keinen meldet; nie als idle gelesen) mit Statuszeile, jeweils auf 200 Zeichen gekürzt. `peer_send`, `peer_history` und `peer_notify_when_idle` nehmen einen Sitzungsnamen (`review`), `Maschine:Sitzung` oder den Anfang davon, wenn genau ein anderer Online-Peer passt; ein mehrdeutiger wird mit den Kandidaten abgelehnt (0.2.3) |
 | `peer_send` | Schickt eine Nachricht an einen Peer (oder `*` an alle) |
 | `peer_read` | Liest empfangene Nachrichten |
 | `peer_history` | Zeigt den Verlauf mit einem Peer |

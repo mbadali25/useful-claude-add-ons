@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.3] - 2026-11-06
+
+Easier to tell peers apart and to address them. Client only: the Bridge is unchanged and needs no redeploy.
+
+### Changed
+- `peer_list` gives each peer's machine and project or session name (`dadeush-ai:s-crew-win-ai` is `machine dadeush-ai, session crew-win-ai`) and its state. A peer that reported no state reads `state unknown`, not idle; a state the client does not know is shown marked `unrecognised state`. State detail and status line are cut to 200 characters (control characters were already escaped, and every line stays inside the untrusted block)
+- `peer_send`, `peer_history` and `peer_notify_when_idle` accept a session name (`tss-ai`), `Machine:session`, a label (`SRL`) or the start of one, compared without case, when exactly one other online peer matches. More than one is refused with the candidates named and nothing is sent; none leaves the name as given, as before (an offline peer still gets the message). A full name, `*` and a machine's name are used as they are. The client only picks among names the Bridge listed: registration and watch checks on the Bridge are untouched, so a session name cannot claim another peer's
+
+### Notes
+- A peer that shows `state unknown` has no state hooks (`state_hooks.py`, written by the installer into that machine's settings) or runs a client older than the hooks; nothing in this change reports state for it. Bare names like `laptop:SRL` come from sessions with no name in Claude Code, or from clients older than 0.2.2 on that machine
+- A project named like a session (`s-x`) on a client older than 0.2.2 is listed as a session
 ## [0.2.2] - 2026-10-20
 
 A session is named after its Claude Code session name: `laptop:s-cross-session` instead of `laptop:my-repo`.

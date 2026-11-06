@@ -275,7 +275,7 @@ That is two machines on one tailnet, not a compatibility matrix. The test suites
 
 | Tool | Description |
 |------|-------------|
-| `peer_list` | Shows all online peers, inside one untrusted-data block (names, states and status lines are set by the peers) |
+| `peer_list` | Shows all online peers, inside one untrusted-data block (names, states and status lines are set by the peers): each line gives the machine and the project or session name, and the state (`busy`, `idle`, `waiting`, or `state unknown` when the session reports none, never read as idle) with its status line, each cut to 200 characters. `peer_send`, `peer_history` and `peer_notify_when_idle` take a session name (`review`), `Machine:session` or the start of either when exactly one other online peer matches; an ambiguous one is refused with the candidates listed (0.2.3) |
 | `peer_send` | Sends a message to a peer (or `*` for everyone) |
 | `peer_read` | Reads received messages |
 | `peer_history` | Shows the conversation with a peer |
