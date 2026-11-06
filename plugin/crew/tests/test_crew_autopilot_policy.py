@@ -1105,3 +1105,89 @@ def test_autopilot_approve_names_a_config_it_could_not_read(tmp_path, text, caus
     assert (done.returncode, done.stdout.startswith("refused:"), cause in done.stdout,
             "autopilot.mode is not plan" in done.stdout, f"/crew:approve {T}" in done.stdout,
             _receipt(root)) == (2, True, True, False, True, None), done.stdout
+
+
+# --- #624: a refusal lists every unmet prerequisite, never only the first ---------------------
+
+def _unmet_lines(text):
+    return [line.strip() for line in text.splitlines() if line.startswith("  - ")]
+
+
+def _refused(root):
+    code, text = crew_autopilot.approve(str(root), T)
+    return code, text, _receipt(root)
+
+
+def test_refusal_names_only_allow_cli_approval_when_it_alone_is_missing(tmp_path):
+    root = _repo(tmp_path, approval="self", risk="low", allow=False)
+
+    code, text, receipt = _refused(root)
+
+    unmet = _unmet_lines(text)
+    assert (code, receipt, len(unmet), "scope.allowCliApproval is false" in unmet[0],
+            "needs true" in unmet[0], ".crew/config.json" in unmet[0],
+            f"/crew:approve {T}" in text) == (2, None, 1, True, True, True, True), text
+
+
+def test_refusal_names_only_mode_when_it_alone_is_missing(tmp_path):
+    root = _repo(tmp_path, approval="self", risk="low", armed=False)
+
+    code, text, receipt = _refused(root)
+
+    unmet = _unmet_lines(text)
+    assert (code, receipt, len(unmet), 'autopilot.mode is "off", needs "plan"' in unmet[0],
+            f"/crew:approve {T}" in text) == (2, None, 1, True, True), text
+
+
+def test_refusal_names_both_when_mode_and_allow_cli_approval_are_missing(tmp_path):
+    root = _repo(tmp_path, approval="self", risk="low", allow=MISSING, armed=False)
+
+    code, text, receipt = _refused(root)
+
+    joined = "\n".join(_unmet_lines(text))
+    assert (code, receipt, "autopilot.mode" in joined, "scope.allowCliApproval is absent" in joined,
+            len(_unmet_lines(text))) == (2, None, True, True, 2), text
+
+
+def test_refusal_names_the_human_policy_and_still_refuses_it(tmp_path):
+    root = _repo(tmp_path, approval="human", risk="low")
+
+    code, text, receipt = _refused(root)
+
+    assert (code, receipt, 'autopilot.approval is "human"' in text) == (2, None, True), text
+
+
+def test_refusal_with_every_prerequisite_met_but_med_risk_lists_none(tmp_path):
+    root = _repo(tmp_path, approval="risk", risk="med")
+
+    code, text, receipt = _refused(root)
+
+    assert (code, receipt, _unmet_lines(text), "risk: med" in text) == (2, None, [], True), text
+
+
+def test_refusal_on_an_unreadable_config_still_refuses(tmp_path):
+    root = _repo(tmp_path, approval="self", risk="low")
+    _raw_config(root, "{bad")
+
+    code, text, receipt = _refused(root)
+
+    assert (code, receipt, "could not be read" in text) == (2, None, True), text
+
+
+def test_self_with_every_prerequisite_met_approves(tmp_path):
+    root = _repo(tmp_path, approval="self", risk="high")
+
+    code, text, receipt = _refused(root)
+
+    assert (code, _unmet_lines(text), receipt is not None) == (0, [], True), text
+
+
+def test_setting_self_or_risk_is_told_its_prerequisites_at_set_time():
+    import crew_config  # pylint: disable=import-outside-toplevel
+    notes = [crew_config.personal_widening_note("autopilot.approval", value)
+             for value in ("self", "risk")]
+    refused = crew_config.REPO_REFUSED["scope.allowCliApproval"]
+
+    assert (all("autopilot.mode" in n and "scope.allowCliApproval" in n for n in notes),
+            '"allowCliApproval": true' in refused, ".crew/config.json" in refused) == (
+                True, True, True)

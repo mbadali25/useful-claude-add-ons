@@ -2357,17 +2357,20 @@ def approve(root, ticket):
     `via=autopilot`, which asks `approval_policy` again and then writes
     `approval.json`, `scope-tickets.json` on a ticket's first approval, and,
     for a distinct successor plan under a NEEDS_REPLAN ledger, the ledger
-    moved NEEDS_REPLAN -> IN_REVIEW. Exit 3 when that continuation refused."""
+    moved NEEDS_REPLAN -> IN_REVIEW. Exit 3 when that continuation refused.
+    A refusal lists every unmet prerequisite, not only the first (#624)."""
     crew_ticket.check_ticket(ticket)
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     human = f"the human types /crew:approve {ticket}"
     if not settings(top)["armed"]:
         cause = _unreadable_autopilot(top)  # T-0027: name the cause, never "mode is not plan"
+        human += importlib.import_module("crew_approval_unmet").unmet_text(top, ticket)  # #624
         return 2, (f"refused: {cause}, so autopilot could not tell whether it is armed and "
                    f"approves nothing; {human}" if cause else f"refused: autopilot.mode is not "
                    f"plan, so autopilot approves nothing; {human}")
     got = approval_policy(top, ticket)
     if not got["allow"]:
+        human += importlib.import_module("crew_approval_unmet").unmet_text(top, ticket)  # #624
         return 2, f"refused: {got['reason']}; {human}"
     replan = importlib.import_module("crew_autopilot_replan").replan_check(top, ticket)  # L-0670
     if replan["applies"] and not replan["ok"]:

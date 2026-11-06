@@ -170,11 +170,15 @@ policies:
 | `risk` (default) | autopilot approves only a spec whose header says `risk: low` | the same rule, by the ticket's risk |
 
 A missing or unreadable risk counts as `high`. Every `autopilot.approval` setting also needs
-`scope.allowCliApproval: true` in `.crew/config.json`, which defaults to `false`, so out of the box
-nothing self-approves (`autopilot.questions` does not need it). Refused:
+`autopilot.mode: "plan"` and `scope.allowCliApproval: true` in `.crew/config.json` (the latter defaults
+to `false` and is a hand edit by the owner), so out of the box nothing self-approves
+(`autopilot.questions` does not need either). A refusal lists every unmet one at once, not only the
+first. Refused:
 
 ```text
 refused: scope.allowCliApproval is not exactly true in .crew/config.json, so no approval but the human's counts; the human types /crew:approve ABC-510
+For autopilot to approve plans itself ALL of these must hold; unmet now:
+  - scope.allowCliApproval is false, needs true (a hand edit of .crew/config.json by the owner: "scope": {"allowCliApproval": true}; crew_config.py --set refuses it)
 ```
 
 Allowed (`"approval": "self"` and `"scope": {"allowCliApproval": true}`):

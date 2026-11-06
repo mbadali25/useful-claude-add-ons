@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.104: approval refusals list every unmet prerequisite (#624)
+
+- **Summary.** `crew` 1.2.104: when autopilot refuses to approve a plan, the message now lists every setting still missing (`autopilot.mode`, `scope.allowCliApproval`, `autopilot.approval`) with its value now and the value needed, instead of only the first, and setting `autopilot.approval` to `self` or `risk` says up front what else it needs.
+- `crew_autopilot.py approve`: `unmet_prerequisites` collects them in one pass; the decision (`approval_policy`) is unchanged and never reads the list.
+- `crew_config.py`: the `scope.allowCliApproval` refusal names the file and key to hand-edit; the `autopilot.approval` self/risk note names the two prerequisites.
+- Docs: `CONFIG.md`, `commands/autopilot.md`, the autopilot guide source and HTML.
+
 ### Fixed — crew 1.2.103: the retry-deadline test bites on POSIX too
 
 - **Summary.** `crew` 1.2.103: test only, no behaviour change. A Linux sabotage run of #700 found one of 52 mutations ("the retry ignores the dispatch deadline") staying green, because the old test's window left a negative retry budget that never started a script off Windows. `test_the_retry_gate_sits_exactly_at_the_floor_whichever_reserve_applies` derives its window from `_retry_reserve()` for each platform (POSIX and Windows reserves on either OS), asserting no retry just under reserve + `RETRY_FLOOR` and a retry with room beyond it; the sabotage entry now points at it. Docs: none - test-only change.
