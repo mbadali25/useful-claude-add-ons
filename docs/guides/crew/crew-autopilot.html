@@ -276,13 +276,16 @@ policies:</p>
 </tbody>
 </table>
 <p>A missing or unreadable risk counts as <code>high</code>. Every <code>autopilot.approval</code> setting also needs
-<code>autopilot.mode: "plan"</code> and <code>scope.allowCliApproval: true</code> in <code>.crew/config.json</code> (the latter defaults
-to <code>false</code> and is a hand edit by the owner), so out of the box nothing self-approves
-(<code>autopilot.questions</code> does not need either). A refusal lists every unmet one at once, not only the
-first. Refused:</p>
+<code>autopilot.mode: "plan"</code> (or <code>"backlog"</code>) and <code>scope.allowCliApproval: true</code> in <code>.crew/config.json</code>
+(the latter defaults to <code>false</code> and is a hand edit by the owner), so out of the box nothing
+self-approves (<code>autopilot.questions</code> does not need either). A refusal lists every unmet one at once,
+not only the first, each with its value as written (a typo such as <code>"plna"</code> is shown, with a note that
+it is not a valid value) and capped at 40 characters; a config file that cannot be read is reported as
+"could not be told", never as a value. It names the file to hand-edit, which in a lane worktree is the
+main checkout's. Refused:</p>
 <pre><code class="language-text">refused: scope.allowCliApproval is not exactly true in .crew/config.json, so no approval but the human's counts; the human types /crew:approve ABC-510
 For autopilot to approve plans itself ALL of these must hold; unmet now:
-  - scope.allowCliApproval is false, needs true (a hand edit of .crew/config.json by the owner: &quot;scope&quot;: {&quot;allowCliApproval&quot;: true}; crew_config.py --set refuses it)
+  - scope.allowCliApproval is false, needs true (a hand edit of /path/to/repo/.crew/config.json, the file this checkout reads, by the owner: &quot;scope&quot;: {&quot;allowCliApproval&quot;: true}; crew_config.py --set refuses it)
 </code></pre>
 <p>Allowed (<code>"approval": "self"</code> and <code>"scope": {"allowCliApproval": true}</code>):</p>
 <pre><code class="language-text">self-approved ABC-510 under approval=self, risk=low

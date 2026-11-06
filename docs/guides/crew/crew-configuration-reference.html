@@ -1030,7 +1030,7 @@ reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
 <td><code>false</code></td>
 <td><code>false</code> | <code>true</code> (checked in <code>plugin/crew/hooks/scripts/crew_ticket.py</code>)</td>
 <td>1.0.25</td>
-<td>Whether a CLI-written approval receipt counts; only exactly <code>true</code> allows it. <code>autopilot.approval: self</code> needs it, and <code>autopilot.mode: plan</code>, to approve anything. A hand edit by the owner in the repo's <code>.crew/config.json</code> (<code>"scope": {"allowCliApproval": true}</code>); <code>crew_config.py --set</code> refuses it.</td>
+<td>Whether a CLI-written approval receipt counts; only exactly <code>true</code> allows it. <code>autopilot.approval: self</code> or <code>risk</code> needs it, and <code>autopilot.mode: plan</code> or <code>backlog</code>, to approve anything. A hand edit by the owner in the repo's <code>.crew/config.json</code> (<code>"scope": {"allowCliApproval": true}</code>); <code>crew_config.py --set</code> refuses it.</td>
 </tr>
 </tbody>
 </table>
@@ -1077,7 +1077,7 @@ reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
 <td><code>"risk"</code></td>
 <td><code>human</code> | <code>risk</code> | <code>self</code>; personal: listed strictest first, the stricter wins</td>
 <td>1.0.42</td>
-<td>Who approves a ticket under autopilot; anything else reads as <code>human</code>. <code>risk</code> and <code>self</code> also need <code>autopilot.mode: plan</code> and <code>scope.allowCliApproval: true</code> (a hand edit of the repo's <code>.crew/config.json</code>); a refused <code>approve</code> lists each unmet one.</td>
+<td>Who approves a ticket under autopilot; anything else reads as <code>human</code>. <code>risk</code> and <code>self</code> also need <code>autopilot.mode: plan</code> (or <code>backlog</code>) and <code>scope.allowCliApproval: true</code> (a hand edit of the repo's <code>.crew/config.json</code>); a refused <code>approve</code> lists each unmet one, with its value as written.</td>
 </tr>
 <tr>
 <td><code>autopilot.questions</code></td>

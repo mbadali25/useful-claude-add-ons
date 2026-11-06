@@ -9,9 +9,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.105: the approval refusal listing never reports unknown as known, and bounds what it echoes (review of #701)
+
+- **Summary.** `crew` 1.2.105: the unmet-prerequisite lines autopilot adds to a refused `approve` no longer print a concrete value for something it could not read: with a corrupt `.crew/config.json` the `autopilot.mode` and `autopilot.approval` lines say "could not be told" instead of `"off"`. Values are shown as written (a typo like `"plna"` appears as `"plna"` with a note that it is not a valid value), and nothing echoed from config is free text: a bool or short plain word is shown, anything else only as its type (`<string>`), exception text and long values are cut at 40 characters with a marker. The hand-edit hint names the file this checkout actually reads (the main checkout's in a lane worktree).
+- `crew_approval_unmet.py`: `_word`/`_bound` bound every echoed value; `scope.allowCliApproval` is shown only as `true`/`false` or its type; the machine-global layer is named when it sets `autopilot.mode` too.
+- `crew_autopilot.py`: a missing or broken `crew_approval_unmet` module no longer makes `approve` raise; the old refusal text and exit 2 stand (`_unmet_block`).
+- Docs: `CONFIG.md` and the configuration reference (`autopilot.mode: plan` or `backlog` arms; `self` or `risk` need `allowCliApproval`), the autopilot guide.
+
 ### Fixed — crew 1.2.104: approval refusals list every unmet prerequisite (#624)
 
-- **Summary.** `crew` 1.2.104: when autopilot refuses to approve a plan, the message now lists every setting still missing (`autopilot.mode`, `scope.allowCliApproval`, `autopilot.approval`) with its value now and the value needed, instead of only the first, and setting `autopilot.approval` to `self` or `risk` says up front what else it needs.
+- **Summary.** `crew` 1.2.104: when autopilot refuses to approve a plan, the message now lists every setting still missing (`autopilot.mode`, `scope.allowCliApproval`, `autopilot.approval`) with its value as written (1.2.105) and the value needed, instead of only the first, and setting `autopilot.approval` to `self` or `risk` says up front what else it needs.
 - `crew_autopilot.py approve`: `unmet_prerequisites` collects them in one pass; the decision (`approval_policy`) is unchanged and never reads the list.
 - `crew_config.py`: the `scope.allowCliApproval` refusal names the file and key to hand-edit; the `autopilot.approval` self/risk note names the two prerequisites.
 - Docs: `CONFIG.md`, `commands/autopilot.md`, the autopilot guide source and HTML.

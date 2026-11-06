@@ -2351,6 +2351,15 @@ def _question_hint(top, ticket):
             f"write questions.md, then crew_autopilot.py questions-check --ticket {ticket}")
 
 
+def _unmet_block(top, ticket):
+    """#624's unmet-prerequisite lines for a refusal, or "" when the module is missing or broken:
+    advice only, so the old refusal text and exit 2 stand either way."""
+    try:
+        return importlib.import_module("crew_approval_unmet").unmet_text(top, ticket)
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return ""
+
+
 def approve(root, ticket):
     """(exit code, text). This module's one writing path, only when autopilot
     is armed and `approval_policy` allows: `crew_ticket.approve` with
@@ -2364,13 +2373,13 @@ def approve(root, ticket):
     human = f"the human types /crew:approve {ticket}"
     if not settings(top)["armed"]:
         cause = _unreadable_autopilot(top)  # T-0027: name the cause, never "mode is not plan"
-        human += importlib.import_module("crew_approval_unmet").unmet_text(top, ticket)  # #624
+        human += _unmet_block(top, ticket)  # #624
         return 2, (f"refused: {cause}, so autopilot could not tell whether it is armed and "
                    f"approves nothing; {human}" if cause else f"refused: autopilot.mode is not "
                    f"plan, so autopilot approves nothing; {human}")
     got = approval_policy(top, ticket)
     if not got["allow"]:
-        human += importlib.import_module("crew_approval_unmet").unmet_text(top, ticket)  # #624
+        human += _unmet_block(top, ticket)  # #624
         return 2, f"refused: {got['reason']}; {human}"
     replan = importlib.import_module("crew_autopilot_replan").replan_check(top, ticket)  # L-0670
     if replan["applies"] and not replan["ok"]:

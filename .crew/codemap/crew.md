@@ -1297,11 +1297,11 @@ a distinct successor plan is its only way out, and `review_ledger.continue_with_
 refuses a plan approved before, so `approve` exits 3), and then `self` (any risk) or
 `risk` on a known `risk: low`; `human` never; a settings read that raises is `policy: unknown`,
 refused. `question_policy` (`:2294`) is `take|stop` by the same rule without the
-`allowCliApproval` term, and stops on `unknown`. `approve` (`plugin/crew/hooks/scripts/crew_autopilot.py:2403`)
+`allowCliApproval` term, and stops on `unknown`. `approve` (`plugin/crew/hooks/scripts/crew_autopilot.py:2363`)
 also needs `mode: plan`; a refusal of either kind appends every unmet prerequisite
-(`plugin/crew/hooks/scripts/crew_approval_unmet.py:30` `unmet_prerequisites`, `:53` `unmet_text`: mode,
+(`plugin/crew/hooks/scripts/crew_approval_unmet.py:92` `unmet_prerequisites`, `:121` `unmet_text`: mode,
 `allowCliApproval`, `approval`, ledger; advice only, the decision is `approval_policy`'s; #624, called at
-`crew_autopilot.py:2367` and `:2373`; a new module because `crew_autopilot*.py` is frozen) after the
+`_unmet_block` at `crew_autopilot.py:2354`, called at `:2376` and `:2382`, which falls back to the old text when the module is missing; a value it echoes is a bool or short plain word, else its type, cut at 40 characters, and an unreadable config reads "could not be told", never a value; a new module because `crew_autopilot*.py` is frozen) after the
 `/crew:approve <ticket>` sentence. Then it calls
 `crew_ticket.approve(..., via=crew_ticket.AUTOPILOT)` - the module's one writing path, which lands
 `approval.json`; on a ticket's first approval, the scope ramp's `scope-tickets.json`

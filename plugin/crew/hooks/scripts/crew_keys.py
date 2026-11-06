@@ -328,8 +328,9 @@ KEY_META = {
                        "outside these fails closed to `block`.", "tuple",
                        crew_ticket.MODES, "1.0.25"),
     "scope.allowCliApproval": _row("Whether a CLI-written approval receipt counts; only "
-                                   "exactly `true` allows it. `autopilot.approval: self` needs "
-                                   "it, and `autopilot.mode: plan`, to approve anything. A "
+                                   "exactly `true` allows it. `autopilot.approval: self` or `risk` "
+                                   "needs it, and `autopilot.mode: plan` or `backlog`, to "
+                                   "approve anything. A "
                                    "hand edit by the owner in the repo's `.crew/config.json` "
                                    "(`\"scope\": {\"allowCliApproval\": true}`); "
                                    "`crew_config.py --set` refuses it.", "branch",
@@ -348,9 +349,10 @@ KEY_META = {
                              "as `none`.", "tuple", crew_autopilot.DEPLOY_VALUES, "1.0.42"),
     "autopilot.approval": _row("Who approves a ticket under autopilot; anything else reads "
                                "as `human`. `risk` and `self` also need `autopilot.mode: "
-                               "plan` and `scope.allowCliApproval: true` (a hand edit of the "
-                               "repo's `.crew/config.json`); a refused `approve` lists each "
-                               "unmet one.", "tuple", crew_autopilot.POLICIES, "1.0.42"),
+                               "plan` (or `backlog`) and `scope.allowCliApproval: true` (a hand "
+                               "edit of the repo's `.crew/config.json`); a refused `approve` "
+                               "lists each unmet one, with its value as written.", "tuple",
+                               crew_autopilot.POLICIES, "1.0.42"),
     "autopilot.questions": _row("Who answers a ticket's open questions under autopilot; "
                                 "anything else reads as `human`.", "tuple",
                                 crew_autopilot.POLICIES, "1.0.42"),
