@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.99**: One review budget of three per ticket, counted across successor plans; the owner's `--grant-round`. `crew` 1.2.99: a ticket now gets three review rounds in total, a successor plan no longer reopens them, and only the owner's `review_ledger.py --grant-round` adds a round.
 - **crew 1.2.98**: The scope guard no longer refuses the session handoff note. `crew` 1.2.98: with an active ticket, `/crew:handoff --wrap-up` can write `.work/HANDOFF.md` again, so auto-resume and auto-clear work for a session that has a ticket open.
-- **crew 1.2.97**: A lane asks git for its main checkout once per process. `crew` 1.2.97: in a lane worktree with no `.crew/` config of its own, reading the repo config no longer starts a git process every time, so hooks and the scope guard's autopilot approval judgement spend less of their time limit on git.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
