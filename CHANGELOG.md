@@ -9,6 +9,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.101: the resource-exhaustion label reads only diagnostic lines, not quoted text
+
+- **Summary.** `crew` 1.2.101: a guard's refusal is labelled `UNKNOWN (resource exhaustion, ...)` only when stderr has a real fork or allocation diagnostic line, so a path such as `MemoryError-tests` or a quoted command naming `EAGAIN` no longer gets that label (the refusal itself is unchanged: exit 2).
+- Fix (`crew_hook.py`, Codex review of #700): `_RESOURCE_RE` is anchored to the start of a stderr line (after optional `word: ` labels) instead of matching anywhere. `_append_trace`'s docstring and ADR 0009 now say the timing and trace files refuse a symlink only where `O_NOFOLLOW` exists (POSIX), not on Windows, matching the 1.2.100 entry below.
+- Tests: `test_crew_hook_faults.py` gains negative cases (a `MemoryError-tests` path, a quoted `EAGAIN`, `errno 11` and `fork failed` mid-sentence) and a Cygwin `dofork` positive; two new sabotage entries un-anchor the regex and go red.
+
 ### Fixed — crew 1.2.100: a hook timeout is retried once and reads as UNKNOWN, not as a policy deny
 
 - **Summary.** `crew` 1.2.100: when a crew guard times out or cannot fork under load, the dispatcher retries the stateless PreToolUse judges once, and a refusal that still follows says `UNKNOWN (guard timeout, not a policy deny)` or `UNKNOWN (resource exhaustion, not a policy deny)` instead of reading like a real deny.
