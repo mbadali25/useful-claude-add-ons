@@ -744,6 +744,36 @@ def test_a_guard_that_hangs_after_a_resource_failure_is_labelled_resource_not_ti
     assert code == 2 and "UNKNOWN (resource exhaustion" in err and "UNKNOWN (guard timeout" not in err
 
 
+QUOTED_TEXTS = [
+    'Traceback (most recent call last):\n  File "C:\\work\\MemoryError-tests\\guard.py", line 3, in <module>\nValueError: bad',
+    "+ grep EAGAIN /var/log/app.log\nboom",
+    "env-guard: refused - the command quotes errno 11 mid-sentence and says fork failed",
+    "C:\\work\\MemoryError-tests\\guard.py",
+]
+
+
+@pytest.mark.parametrize("said", QUOTED_TEXTS, ids=["path", "quoted-eagain", "quoted-errno", "bare-path"])
+def test_stderr_that_only_quotes_resource_words_is_not_labelled_resource_exhaustion(said, tmp_path, monkeypatch):
+    source, _ = _counting(tmp_path, f"sys.stderr.write({said!r} + '\\n')\nsys.exit(1)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 2 and "exited 1 without a decision" in err, err
+    assert "resource exhaustion" not in err
+
+
+def test_the_cygwin_dofork_line_is_resource_exhaustion(tmp_path, monkeypatch):
+    said = ("      0 [main] bash 1234 dofork: child -1 - forked process 5678 died unexpectedly, "
+            "retry 0, exit code 0xC0000142, errno 11")
+    source, _ = _counting(tmp_path, f"sys.stderr.write({said!r} + '\\n')\nsys.exit(1)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 2 and "UNKNOWN (resource exhaustion, not a policy deny)" in err, err
+
+
 def test_a_start_failure_naming_eagain_is_resource_exhaustion(monkeypatch):
     row = next(r for r in crew_hook.TABLE if r.script == "scope-guard.sh")
     result = {"exit": None, "stdout": b"", "stderr": b"", "timed_out": False, "pid": 0,

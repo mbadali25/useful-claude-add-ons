@@ -71,7 +71,7 @@ defaults that is `role-write-guard` on every platform and the 15-second `cloud-g
 rows off Windows. `promote-gate`, `approval-hook`, `verify-gate` and `completion-audit` are never retried (they record
 state), and a retried guard can leave a duplicate `guard.log` row. The line says `attempts=N`, so you can tell whether
 a retry ran. If the guard still cannot answer, the refusal is led by `crew-hook: UNKNOWN (guard timeout, not a policy
-deny)`. A guard that could not fork or allocate (`Resource temporarily unavailable`, `EAGAIN`, `MemoryError`)
+deny)`. A guard that could not fork or allocate (a stderr line that is itself `fork: ... Resource temporarily unavailable`, `OSError: [Errno 11]`, `BlockingIOError: EAGAIN`, a bare `MemoryError`; text that merely quotes those words, such as a path, is not matched)
 is led by `UNKNOWN (resource exhaustion, not a policy deny)`, and a guard's own "no usable python" refusal
 by `UNKNOWN (no usable python, not a policy deny)` (only that fixed one-line refusal; a deny that quotes the words in
 a path is still a deny). An `UNKNOWN` line is a refusal because crew could not tell, not because a rule said

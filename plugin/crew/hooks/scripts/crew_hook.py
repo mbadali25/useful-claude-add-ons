@@ -471,8 +471,9 @@ _TRACE_LOCK = threading.Lock()  # children finish on their own threads; one line
 
 def _append_trace(path, line):
     """Append one line to a trace file. Only a path ending in `.crew-trace` is honoured and
-    a symlink is never followed, so the variable cannot point the dispatcher at a file
-    something else reads (security pass)."""
+    a symlink is refused only where the platform has `O_NOFOLLOW` (POSIX; on Windows the flag is
+    absent, 0 is substituted, and only the suffix rule applies), so the variable cannot point the
+    dispatcher at a file something else reads (security pass)."""
     if not path or not path.endswith(TRACE_SUFFIX):
         return
     flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
@@ -612,10 +613,23 @@ def _no_bash(event, problem, root, armed_fn):
 UNKNOWN_TIMEOUT = "crew-hook: UNKNOWN (guard timeout, not a policy deny)"
 UNKNOWN_RESOURCE = "crew-hook: UNKNOWN (resource exhaustion, not a policy deny)"
 UNKNOWN_PYTHON = "crew-hook: UNKNOWN (no usable python, not a policy deny)"
+# Anchored to the diagnostic forms a failed fork or allocation really prints, one per line: a
+# prefix of `word: ` labels (`bash: `, `env-guard: `), then the message, or an exception line. Text
+# that merely QUOTES these words (a path such as C:\work\MemoryError-tests\guard.py in a traceback,
+# a quoted command naming EAGAIN, a sentence mentioning errno 11) starts with none of them.
+_LBL = r"(?:[\w.\-]+:[ \t]+)*"
 _RESOURCE_RE = re.compile(
-    r"Resource temporarily unavailable|\bEAGAIN\b|errno[ =:]*11\b|MemoryError|"
-    r"\b(?:can(?:'|no)t|unable to|could not|failed to)\s+fork\b|\bfork:\s+(?:retry|failed|cannot|Cannot)|"
-    r"fork failed|Cannot allocate memory", re.IGNORECASE)
+    r"^[ \t]*(?:\d+[ \t]+\[main\][ \t]+\S+[ \t]+\d+[ \t]+)?" + _LBL + r"(?:fork:[ \t]+(?:retry:[ \t]+)?(?:Resource temporarily unavailable|failed|cannot)\b"
+    r"|dofork:[ \t]+child\b[^\n]*\berrno 11\b"
+    r"|fork failed\b"
+    r"|(?:can(?:'|no)t|unable to|could not|failed to)[ \t]+fork\b"
+    r"|(?:\[Errno 12\][ \t]+)?Cannot allocate memory\b)"
+    r"|^[ \t]*(?:\w*Error:[ \t]+)?\[Errno 11\][ \t]+Resource temporarily unavailable\b"
+    r"|^could not start\b[^\n]*\[Errno 11\]"
+    r"|^[ \t]*OSError:[ \t]+\[Errno 11\]"
+    r"|^[ \t]*MemoryError\b"
+    r"|^[ \t]*\w*Error:[ \t]+EAGAIN\b",
+    re.IGNORECASE | re.MULTILINE)
 # The guards' own fixed no-python refusals (each is the literal first words of the `echo ... >&2;
 # exit 2` in the .sh named beside it; a test pins every one to its script). A refusal is the whole
 # of that guard's stderr, so only a stderr that is exactly ONE line starting with one of these is

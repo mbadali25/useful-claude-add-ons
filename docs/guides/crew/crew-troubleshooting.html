@@ -137,7 +137,7 @@ defaults that is <code>role-write-guard</code> on every platform and the 15-seco
 rows off Windows. <code>promote-gate</code>, <code>approval-hook</code>, <code>verify-gate</code> and <code>completion-audit</code> are never retried (they record
 state), and a retried guard can leave a duplicate <code>guard.log</code> row. The line says <code>attempts=N</code>, so you can tell whether
 a retry ran. If the guard still cannot answer, the refusal is led by <code>crew-hook: UNKNOWN (guard timeout, not a policy
-deny)</code>. A guard that could not fork or allocate (<code>Resource temporarily unavailable</code>, <code>EAGAIN</code>, <code>MemoryError</code>)
+deny)</code>. A guard that could not fork or allocate (a stderr line that is itself <code>fork: ... Resource temporarily unavailable</code>, <code>OSError: [Errno 11]</code>, <code>BlockingIOError: EAGAIN</code>, a bare <code>MemoryError</code>; text that merely quotes those words, such as a path, is not matched)
 is led by <code>UNKNOWN (resource exhaustion, not a policy deny)</code>, and a guard's own "no usable python" refusal
 by <code>UNKNOWN (no usable python, not a policy deny)</code> (only that fixed one-line refusal; a deny that quotes the words in
 a path is still a deny). An <code>UNKNOWN</code> line is a refusal because crew could not tell, not because a rule said
