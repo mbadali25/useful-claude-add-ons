@@ -1,4 +1,4 @@
-<!-- crew-standards-export digest=df6052ac0825389b086b6ca038d9f2c0e191ea1a5407dee8f55424f8dff3a8e6 crew=1.2.90 -->
+<!-- crew-standards-export digest=144f6cb513f1d6fdf9e4aeecf61983a84e4370e9e55c9dc05e01c01c6aa4e385 crew=1.2.99 -->
 # Review rules
 
 Generated from crew's standards by `crew_standards.py export --write`; do not edit by hand. Check every change against the standards below. The always-on standards are written out in full. For each stack set, read the linked file when the change touches files matching its scope; the lists show ids and names only.
@@ -111,6 +111,11 @@ for every mutation.
    with `pass` and name the test that goes red. Pass: every named mutation has a labelled entry, and
    every refusal branch a red test.
 
+**Supplement (.crew/standards.md).**
+Lint rule `crew-test-no-assertion` (`plugin/crew/lint/semgrep/crew-classes.yml`, opt-in) flags a `test_*`
+function whose body has no assert, raises, fail or `check(...)`. It does not prove a test goes red when its
+guard is removed; that stays a mutation run (review step 2d, the sabotage suites).
+
 ## GEN-05 Recognise a narrow allowlist; everything else is could-not-tell
 
 **Rule.** Code that classifies text another program interprets (shell, PowerShell, Markdown, a CLI's
@@ -152,6 +157,11 @@ the platform cannot do this, refuse, or record it as a stated limitation.
 3. For each open/append under a repo path: is containment enforced by the open or verified after it,
    with a test that swaps a component for a symlink or junction after any earlier check? Pass: yes, or
    a stated platform limitation.
+
+**Supplement (.crew/standards.md).**
+Lint rule `crew-splitlines-untrusted-text` flags `str.splitlines()` on text read from a file, stdin or a
+child process (it also splits on U+2028, U+2029, U+0085 and `\x1c`-`\x1e`). A reviewed-safe site carries
+`# nosemgrep: crew-splitlines-untrusted-text` and the reason.
 
 ## GEN-07 One validated contract between producer and consumer
 
@@ -196,7 +206,9 @@ entry is resolved before changing directory. (Shell quoting is GEN-06.)
 
 **Supplement (.crew/standards.md).**
 `CLAUDE_PLUGIN_ROOT` in shell text is quoted (GEN-06), and `pwsh` is named absolutely (CLAUDE.md
-"Landmines"). `pathlib.write_text` on a `.sh` passes `newline="\n"` (CLAUDE.md "Landmines").
+"Landmines"). `pathlib.write_text` on a `.sh` passes `newline="\n"` (CLAUDE.md "Landmines"). Lint rule
+`crew-bare-interpreter` flags a bare `pwsh`, `powershell`, `python`, `python3` or `py` in a `subprocess`
+argument list; ruff S607 covers the other bare names.
 
 ## GEN-09 What the change says is true at this commit
 
@@ -221,7 +233,9 @@ CLAUDE.md .crew/codemap`; a `plugin/crew/` change updates every document CLAUDE.
 lists, or says `Docs: none - <why>` in its PR body or a `Docs:` commit trailer. Parsed files: spec
 templates through `crew_ticket.validate` (not `sections()` alone); `.crew/codemap/*.md` through `graphify update .` with
 node and link counts compared; a number this repository states about itself carries a
-`<!-- claim: ... -->` marker so `scripts/check-marketplace.py` checks it.
+`<!-- claim: ... -->` marker so `scripts/check-marketplace.py` checks it. Lint rule
+`crew-unquoted-plugin-root` flags an interpreter command in a Markdown file that takes `CLAUDE_PLUGIN_ROOT`
+without double quotes.
 
 ## GEN-10 External behaviour is measured, not assumed
 

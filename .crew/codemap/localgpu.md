@@ -1,18 +1,16 @@
-anchor: useful-claude-add-ons@9ba355d7c
-verified: 2026-10-20
-
-**Targeted check at `c0e582fbe` (2026-10-22, L-0725); anchor NOT moved.** Re-measured: the `DEV_PROVIDERS` / `QA_PROVIDERS` definition and re-export lines (`crew_state.py:1267-1268`, `crew_config.py:132-133`); L-0725 moved both files. Nothing under `plugin/localgpu/` changed. Nothing else in this note was
-re-verified: a claim here is as of this note's own anchor.
+anchor: useful-claude-add-ons@c43ccae58
+verified: 2026-10-26
 
 # localgpu
 
 Local models on the user's own GPU via Ollama. Two halves that never call
 each other directly, both reaching the same Ollama server on loopback.
 
-Plugin version at this anchor: **0.1.20** — **DERIVED**,
+Plugin version at this anchor: **0.1.21** — **DERIVED**,
 `plugin/localgpu/.claude-plugin/plugin.json:3` and
-`plugin/localgpu/pyproject.toml:7`, which agree. (Was `0.1.18`; both places
-moved together and both were re-read at the 2026-09-22 pass below.)
+`plugin/localgpu/pyproject.toml:7`, which agree. (Was `0.1.20` in this note until the 2026-10-26 re-anchor, which
+was already wrong at the previous anchor: `907a6a1fe` set `0.1.21` in both places
+and is an ancestor of `9ba355d7c`.)
 
 **DERIVED, added at this pass, corrected after QA.** The two files agreeing is
 not enforced by any code path in this plugin — nothing here reads `plugin.json`
@@ -30,10 +28,10 @@ was confirmed on their own machine (`plugin/localgpu/mcp/_version.py:10-13`).
 convention checked by `scripts/check-marketplace.py`" — that is false, caught
 by QA, and worth recording exactly how.** `grep -rn pyproject scripts/` is
 empty: nothing under `scripts/` reads `pyproject.toml` at all.
-`check_plugin_manifests` (`scripts/check-marketplace.py:161-171`) does check a
+`check_plugin_manifests` (`scripts/check-marketplace.py:169-181`) does check a
 `plugin.json` version, but against `marketplace.json`'s declared version for
 that entry (`declared != entry["version"]` at
-`scripts/check-marketplace.py:170`), not against `pyproject.toml`. So
+`scripts/check-marketplace.py:178`), not against `pyproject.toml`. So
 `plugin/localgpu/.claude-plugin/plugin.json:3` agreeing with
 `plugin/localgpu/pyproject.toml:7` specifically is checked by **nothing** —
 not by `localgpu`'s own code (see above) and not by this repo's marketplace
@@ -169,13 +167,13 @@ level removed via `_check_embed_model`.
 `plugin/localgpu/mcp/config.py` last changed at commit `c7d7f8aa` (localgpu
 0.1.10) — confirmed at this pass: `git log -- plugin/localgpu/mcp/config.py`
 still lists `c7d7f8aa` as the most recent commit touching this file. The
-plugin is now at 0.1.20; **measured, not the version-number subtraction**, via
+plugin is now at 0.1.21; **measured, not the version-number subtraction**, via
 `git log --follow -p -- plugin/localgpu/.claude-plugin/plugin.json`, which
-version-bump commit changed the `"version"` field after `c7d7f8aa`: six did —
+version-bump commit changed the `"version"` field after `c7d7f8aa`: seven did —
 `84e36829` (`0.1.11`), `b7b7101d` (`0.1.14`), `9338e89d` (`0.1.16`), `ac93221d`
-(`0.1.18`), `76d10447` (`0.1.19`), `dade775e` (`0.1.20`) — several of them
+(`0.1.18`), `76d10447` (`0.1.19`), `dade775e` (`0.1.20`), `907a6a1fe` (`0.1.21`) — several of them
 skipping intermediate patch numbers, so `20 - 10 = 10` is not the right count
-and was not used. The file has been stable across those six bump commits.
+and was not used. The file has been stable across those seven bump commits.
 
 **DERIVED.** `DEFAULT_IGNORE` (`plugin/localgpu/mcp/config.py:30-87`) carries a
 block of credential patterns appended after the original binary/vendor list:
@@ -342,7 +340,7 @@ serialisation raise and checking the file survives.
 `plugin/localgpu/skills/localgpu/templates/mcp.json`) — and the repo's
 `.gitignore` still carries the `.mcp.json` line `mcp-init` writes
 (`_IGNORE_NOTE`, `plugin/localgpu/cli/localgpu_cli.py:435-443`), but it moved to
-`.gitignore:428` (was cited as `:421` before T-0085 and `:369` before that; the file grew — it is 489 lines now).
+`.gitignore:447` (was `:428` at `9ba355d7c`, `:421` before T-0085 and `:369` before that; the file grew — it is 508 lines now).
 
 **Correction, not just a re-point.** The pass that set the previous anchor
 (`84976536`) reported an untracked `.mcp.json` actually present in the working
@@ -513,9 +511,9 @@ file's frontmatter, not previously listed in this note.** `plugin.json`'s
   `DEV_PROVIDERS = ("claude", "codex", "copilot")` /
   `QA_PROVIDERS = ("claude", "codex", "copilot")` quoted at `:33-34`.
   **Checked against the code, corrected after QA:**
-  `plugin/crew/hooks/scripts/crew_config.py:132-133` only re-exports
+  `plugin/crew/hooks/scripts/crew_config.py:133-134` only re-exports
   (`DEV_PROVIDERS = crew_state.DEV_PROVIDERS`); the tuples are actually
-  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1267-1268` (re-measured at `c0e582fbe`; `:1450-1451` on T-0028 at `c43a54c1`), where both
+  *defined* at `plugin/crew/hooks/scripts/crew_state.py:1267-1268` (re-measured at `bdde58724`, same two lines as at `c0e582fbe`; `:1450-1451` on T-0028 at `c43a54c1`), where both
   tuples end in `"kimi"`, so the literal tuples localgpu quotes at `:33-34` are stale there
   (`TODO.md`'s T-0028 item (f)); `:1440-1441` before T-0028, since T-0010's four `AUTOPILOT_DEFAULTS`
   lines (T-0010-solo's merge of `67caa4b8`; `:1432-1433` at `65bb3330`; `:1430-1431` on main before
@@ -1900,3 +1898,51 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 
 
 **Re-anchored `c1d365d72` -> `9ba355d7c` on 2026-10-20 (L-0850 / PR #656 close: the docs and artifact refresh commit, owner waiver 2026-10-20).** `git diff 9ba355d7c~1 9ba355d7c` changes only docs, diagrams, codemap, rules and graph output; the one code-adjacent text is `plugin/crew/README.md` (+2 lines after line 366, inside section 25) and `SECURITY.md` (+4 lines after line 46). Every live `path:line` citation into those two files was checked: this note has none at or after those lines outside its re-anchor history paragraphs (whose lines describe past moments and are not re-mapped), and `plugin/crew/BUDGETS.md` only changed a count in place (line 11, line-neutral). No citation changed. NOT re-read word for word: prose claims whose cited lines did not move.
+
+## Re-anchor provenance - `9ba355d7c` -> `bdde58724`, 2026-10-26 (L-0928)
+
+Per-path check: `git diff --name-status 9ba355d7c bdde58724 -- plugin/localgpu` and
+`git log 9ba355d7c..bdde58724 -- plugin/localgpu` are both empty - no plugin file moved. Of the
+cited files outside the plugin, `scripts/check-marketplace.py`, `crew_state.py`, `crew_config.py`
+and `.claude-plugin/marketplace.json` changed; `.gitignore` also grew.
+
+Citations (live sections, `cite_check.py`): 102 SAME, 2 SHIFT applied, 0 CHANGED, 0 GONE. Both
+applied SHIFTs were mis-shifts (the tool matched common text) and were re-taken by hand. A second
+pass extracted each cited line's text and compared it with the symbol the note names: five were
+wrong, all fixed below. The note's other cites (`localgpu_cli.py`, `ollama.py`, `indexer.py`,
+`config.py`, `store.py`, `server.py`, both bootstraps, the six command files) land on the named
+symbol; `_check_embed_model()` call at `indexer.py:403`, `:189`/`:206` in `test_ollama.py` and the
+`cmd_mcp_init` sub-ranges (`:373`, `:391-403`) were checked by line text too.
+
+Claims changed:
+- Plugin version `0.1.20` -> `0.1.21` (`plugin.json:3`, `pyproject.toml:7`). Wrong at the old anchor:
+  `907a6a1fe` already set it. The "six bump commits since `c7d7f8aa`" count became seven (measured
+  with `git log` per commit on `plugin.json`).
+- `scripts/check-marketplace.py:161-171` -> `:169-181` and `:170` -> `:178` (the old cites pointed at
+  `fail(` and a docstring; `check_plugin_manifests` and `declared != entry["version"]`).
+- `crew_config.py:134-135` -> `:133-134` (re-exports); `crew_state.py:1149-1150` (a tool mis-shift)
+  -> `:1267-1268` (`DEV_PROVIDERS` / `QA_PROVIDERS`, both four names ending `"kimi"`).
+- `.gitignore:428` -> `:447` (`.mcp.json` line); file is 508 lines, was 489.
+- Removed the 2026-10-22 "targeted check at `c0e582fbe`, anchor NOT moved" header paragraph; it is
+  superseded by this re-anchor.
+
+Re-read and still true: `wc -l` 943 / 890 for `bootstrap.sh` / `.ps1`; 6 command files and their line
+counts (176, 129, 83, 81, 184, 229); `commands/crew.md:33-34` still quotes three-name tuples (stale
+against crew's four); `marketplace.json` crew entry still says "4 context-isolated agents" while
+`plugin/crew/agents/` holds five files (`session-relay.md` is transport); no `hooks/` or `agents/`
+under `plugin/localgpu/`; `git ls-files` shows only the two `mcp.json` templates; `mcp/config.py`
+last touched by `c7d7f8aa`.
+
+Not verified: bootstrap Step 6 vs `setup.md` Step 6 (still open from 2026-09-06); the `.ps1` /
+`.sh` equivalence verdict rests on the older full read (files unchanged); no code run; the
+`## Re-anchor provenance*` and `## Full re-derivation*` history sections were left as written and
+their cites were not re-checked.
+
+## Re-anchor provenance - `bdde58724` -> `c43ccae58`, 2026-10-26 (L-0928 rebased onto main)
+
+Main moved four commits (`bb942e03d`, `9ea896157`, `237809449`, `c43ccae58`) while this pass was in review. Per-path check
+`git diff --name-only bdde58724 c43ccae58 -- . ':!.crew/codemap' ':!.claude/rules'` lists four files: `.crew/verify.json`
+(appended `environments` at `:1051`), `.github/workflows/pytest-ai-connect.yml`, `.github/workflows/verify-gate.yml`,
+`_verify/README.md`. `cite_check.py` against `c43ccae58` reports every full `path:line` cite in this note SAME (none moved).
+`237809449` (a mechanical competing refresh of five notes to `bdde587`, no ticket) was superseded for the notes this pass
+touched; its claims are not carried. Claims touched by the four files, if any, are listed in `verification-harness.md`'s body.

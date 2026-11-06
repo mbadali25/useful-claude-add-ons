@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.90**: `crew_standards.py export` publishes the standards to PR-side reviewers. `crew` 1.2.90: a repo that opts in (`export:` in `.crew/standards.md`) gets `docs/review-rules/<SET>.md`, `REVIEW.md`, `.cursor/BUGBOT.md` and a `## Code Review Rules` block in `AGENTS.md`, generated from the same standards `/crew:review` hands its own reviewer and checked for staleness by `export --check`.
-- **crew 1.2.83**: The verify-map price test rejects a NaN or infinite `seconds`. `crew` 1.2.83: a rule priced `NaN` can no longer pass the verify-map price test, and the L-0904 note sentence in `.crew/verify.json` starts its own line; no behaviour a user runs changes.
+- **crew 1.2.99**: `crew_standards.py export` publishes the standards to PR-side reviewers. `crew` 1.2.99: a repo that opts in (`export:` in `.crew/standards.md`) gets `docs/review-rules/<SET>.md`, `REVIEW.md`, `.cursor/BUGBOT.md` and a `## Code Review Rules` block in `AGENTS.md`, generated from the same standards `/crew:review` hands its own reviewer and checked for staleness by `export --check`.
+- **crew 1.2.98**: The scope guard no longer refuses the session handoff note. `crew` 1.2.98: with an active ticket, `/crew:handoff --wrap-up` can write `.work/HANDOFF.md` again, so auto-resume and auto-clear work for a session that has a ticket open.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

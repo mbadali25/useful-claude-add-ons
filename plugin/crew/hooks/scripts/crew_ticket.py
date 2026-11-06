@@ -592,6 +592,23 @@ def is_crew_write_refused(rel):
     return is_crew_bookkeeping(rel) and not is_crew_write_allowed(rel)
 
 
+# The repo handoff note (`/crew:handoff`, handoff-write.sh's skeleton) and the
+# archives crew moves aside. Session metadata, not ticket scope: a ticket's
+# Touch never names it, yet `/crew:handoff --wrap-up` must write it with the
+# Write tool (the only route that records an author for auto-resume). So the
+# scope guard allows it outside Touch, with or without an approval. Exact
+# names only: `.work/HANDOFF.md` and `.work/HANDOFF-<suffix>.md`.
+HANDOFF_PATHS = (
+    ".work/HANDOFF.md",
+    ".work/HANDOFF-*.md",
+)
+
+
+def is_handoff_path(rel):
+    """True when repo-relative `rel` is on `HANDOFF_PATHS`."""
+    return _crew_listed(rel, HANDOFF_PATHS)
+
+
 def is_crew_state(rel):
     """True when repo-relative `rel` is on `CREW_STATE_PATHS`."""
     return _crew_listed(rel, CREW_STATE_PATHS)

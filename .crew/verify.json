@@ -446,7 +446,7 @@
 
     { "id": "generated-graph-unchecked", "paths": ["graphify-out/**", ".crew/codemap/**", ".crew/**", ".serena/**",
                 "work-log/**", "vault-automation/**", "claude-obsidian-setup/**",
-                ".gitignore", ".gitattributes", "LICENSE"],
+                ".gitignore", ".gitattributes", "LICENSE", "CLOUD-SESSION-TICKETS.md"],
       "seconds": 0,
       "run": [],
       "reach": "local",
@@ -1048,5 +1048,14 @@
   ],
 
   "default": ["bash _verify/smoke.sh"],
-  "unmapped": "fail"
+  "unmapped": "fail",
+
+  "environments": {
+    "production": {
+      "smoke":        ["python3 scripts/check-marketplace.py"],
+      "regression":   ["python3 scripts/gate-runner.py"],
+      "rollback":     "docs/runbooks/rollback.md",
+      "requireHuman": true
+    }
+  }
 }

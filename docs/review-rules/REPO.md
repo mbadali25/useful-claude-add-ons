@@ -1,4 +1,4 @@
-<!-- crew-standards-export digest=df6052ac0825389b086b6ca038d9f2c0e191ea1a5407dee8f55424f8dff3a8e6 crew=1.2.90 -->
+<!-- crew-standards-export digest=144f6cb513f1d6fdf9e4aeecf61983a84e4370e9e55c9dc05e01c01c6aa4e385 crew=1.2.99 -->
 # Review rules: set REPO
 
 Applies to: always (`**`).

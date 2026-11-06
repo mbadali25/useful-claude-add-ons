@@ -42,7 +42,7 @@ jobs:
       - name: Install the plugin's pinned dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          pip install -r requirements.txt -r requirements-dev.txt pytest-xdist
       # Two pytest runs, not one: each directory has its own conftest.py imported
       # as `conftest`, and one run collects them order-dependently
       # (.crew/verify.json states the same for the local gate).
@@ -50,6 +50,6 @@ jobs:
         # test_ops_firewall.py is left out until L-0790 lands: it puts the real
         # PATH behind its fakes, so on a machine with sudo and ufw it reaches
         # them. It is deselected by name so that its absence here is visible.
-        run: python -m pytest tests -q -p no:cacheprovider --ignore=tests/test_ops_firewall.py
+        run: python -m pytest tests -q -n auto -p no:cacheprovider --ignore=tests/test_ops_firewall.py
       - name: Run the vpn tooling suite
-        run: python -m pytest vpn/tests -q -p no:cacheprovider
+        run: python -m pytest vpn/tests -q -n auto -p no:cacheprovider

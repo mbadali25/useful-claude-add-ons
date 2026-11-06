@@ -1,4 +1,4 @@
-<!-- crew-standards-export digest=df6052ac0825389b086b6ca038d9f2c0e191ea1a5407dee8f55424f8dff3a8e6 crew=1.2.90 -->
+<!-- crew-standards-export digest=144f6cb513f1d6fdf9e4aeecf61983a84e4370e9e55c9dc05e01c01c6aa4e385 crew=1.2.99 -->
 # Review rules: set PYTHON
 
 Applies to: files matching `**/*.py`.
@@ -152,6 +152,10 @@ decide explicitly about what the `json` module accepts by default: `NaN`/`Infini
    `int`)? Pass: no.
 3. For external input: fed `NaN`, a duplicated key, and `"\ud800"`? Pass: each is refused or handled by
    a documented choice.
+
+**Supplement (.crew/standards.md).**
+Lint rule `crew-json-duplicate-keys` flags `json.load`/`json.loads` on a file, stdin or child-process
+output with no `object_pairs_hook` (the last of two equal keys wins silently).
 
 ## PYTHON-11 The `try` body is the one call whose failure is being classified
 
