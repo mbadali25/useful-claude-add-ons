@@ -131,11 +131,16 @@ registers one launcher per event per shell (<code>crew-hook.sh</code>, and <code
 the launcher starts one dispatcher, <code>crew_hook.py &lt;Event&gt;</code>, which runs that event's scripts below at once and
 combines what they print. On Windows only the PowerShell launcher runs, so no event fires twice. When the
 launcher or dispatcher itself fails in a repo crew governs, <code>PreToolUse</code>, <code>UserPromptSubmit</code> and <code>Stop</code> refuse
-with <code>crew-hook: ... failing closed (armed repo)</code> and the cause, rather than let the call through unjudged. A guard that times out is run once more when the dispatch deadline
-leaves room; if it still cannot answer, the refusal is led by <code>crew-hook: UNKNOWN (guard timeout, not a policy
+with <code>crew-hook: ... failing closed (armed repo)</code> and the cause, rather than let the call through unjudged. Only the four stateless PreToolUse judges (<code>role-write-guard</code>, <code>cloud-guard</code>, <code>env-guard</code>, <code>scope-guard</code>) are run
+once more after a timeout, and only when the dispatch deadline leaves room for a second timeout's cleanup; at the
+defaults that is <code>role-write-guard</code> on every platform and the 15-second <code>cloud-guard</code>, <code>env-guard</code> and <code>scope-guard</code>
+rows off Windows. <code>promote-gate</code>, <code>approval-hook</code>, <code>verify-gate</code> and <code>completion-audit</code> are never retried (they record
+state), and a retried guard can leave a duplicate <code>guard.log</code> row. The line says <code>attempts=N</code>, so you can tell whether
+a retry ran. If the guard still cannot answer, the refusal is led by <code>crew-hook: UNKNOWN (guard timeout, not a policy
 deny)</code>. A guard that could not fork or allocate (<code>Resource temporarily unavailable</code>, <code>EAGAIN</code>, <code>MemoryError</code>)
-is led by <code>UNKNOWN (resource exhaustion, not a policy deny)</code>, and one with no python by <code>UNKNOWN (no usable
-python, not a policy deny)</code>. An <code>UNKNOWN</code> line is a refusal because crew could not tell, not because a rule said
+is led by <code>UNKNOWN (resource exhaustion, not a policy deny)</code>, and a guard's own "no usable python" refusal
+by <code>UNKNOWN (no usable python, not a policy deny)</code> (only that fixed one-line refusal; a deny that quotes the words in
+a path is still a deny). An <code>UNKNOWN</code> line is a refusal because crew could not tell, not because a rule said
 no: retry the call, and free memory or processes if it repeats. A real deny never carries the label. Setting
 <code>CREW_HOOK_TIMING_FILE</code> to a path ending <code>.crew-trace</code> records each guard's start, end and milliseconds.</p>
 <table>

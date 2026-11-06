@@ -764,10 +764,9 @@ def test_an_undecided_exit_with_an_unrelated_message_fails_closed_without_a_reso
     assert "UNKNOWN" not in err
 
 
-@pytest.mark.parametrize("code_exit", [1, 2])
-def test_a_guard_that_has_no_usable_python_is_unknown_and_still_blocks(code_exit, tmp_path, monkeypatch):
+def test_a_guard_that_has_no_usable_python_is_unknown_and_still_blocks(tmp_path, monkeypatch):
     source, _ = _counting(tmp_path, "sys.stderr.write('env-guard: no usable python, and guards.envGuard is armed\\n')\n"
-                                    f"sys.exit({code_exit})\n")
+                                    "sys.exit(2)\n")
     scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
 
     code, _, err = h.dispatch_fake(monkeypatch, scripts)
@@ -775,6 +774,125 @@ def test_a_guard_that_has_no_usable_python_is_unknown_and_still_blocks(code_exit
     assert code == 2
     assert "crew-hook: UNKNOWN (no usable python, not a policy deny)" in err
     assert "env-guard: no usable python" in err
+
+
+def test_a_real_scope_deny_that_quotes_the_words_in_a_path_stays_a_deny(tmp_path, monkeypatch):
+    """scope_guard.py prints `SCOPE GUARD: refused {tool} on {path}.`; a path may say anything."""
+    source, _ = _counting(tmp_path, "sys.stderr.write('SCOPE GUARD: refused Write on notes/no usable python.md.\\n')\n"
+                                    "sys.exit(2)\n")
+    scripts = h.fake_guards(tmp_path, {"scope-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 2
+    assert "refused Write on notes/no usable python.md" in err
+    assert "UNKNOWN" not in err
+
+
+def test_a_deny_whose_later_line_starts_with_a_refusal_text_is_still_a_deny(tmp_path, monkeypatch):
+    """A path with a newline in it can start a line with the guard's words; a refusal is ONE line."""
+    source, _ = _counting(tmp_path, "sys.stderr.write('SCOPE GUARD: refused Write on a\\n"
+                                    "SCOPE GUARD: no usable python - cannot judge this call.md.\\n')\nsys.exit(2)\n")
+    scripts = h.fake_guards(tmp_path, {"scope-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 2 and "UNKNOWN" not in err
+
+
+def test_every_no_python_refusal_text_is_the_literal_start_of_a_line_a_guard_prints():
+    scripts = {name: open(os.path.join(h.SCRIPTS, name), encoding="utf-8").read()  # pylint: disable=consider-using-with
+               for name in os.listdir(h.SCRIPTS) if name.endswith(".sh")}
+    for text in crew_hook.NO_PYTHON_REFUSALS:
+        rest = text.split(": ", 1)[-1]  # role-write-guard and completion-audit print "<prefix>: $why/$1"
+        assert any(f'echo "{text}' in body or f'"{rest}' in body for body in scripts.values()), \
+            f"no guard prints {text!r}"
+
+
+def test_a_guard_that_exits_1_with_the_words_is_not_relabelled_no_python(tmp_path, monkeypatch):
+    source, _ = _counting(tmp_path, "sys.stderr.write('env-guard: no usable python, and guards.envGuard is armed\\n')\n"
+                                    "sys.exit(1)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 2 and "UNKNOWN (no usable python" not in err
+
+
+# --- review of #700: what is retried, and how much room a retry needs --------------------------
+
+def test_a_stateful_row_is_never_retried(tmp_path, monkeypatch):
+    source, log = _counting(tmp_path, "time.sleep(60)\n")
+    scripts = h.fake_guards(tmp_path, {"promote-gate.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts)
+
+    assert code == 2 and _runs(log) == 1, "promote-gate.sh must get exactly one attempt"
+    assert "attempts=1" in err and "no retry: this row is not retry-safe" in err
+
+
+def test_the_retry_allow_list_is_exactly_the_stateless_pretooluse_judges():
+    assert crew_hook.RETRY_SAFE == {"role-write-guard.sh", "cloud-guard.sh", "env-guard.sh", "scope-guard.sh"}
+    for row in crew_hook.TABLE:
+        if row.script in ("approval-hook.sh", "completion-audit.sh", "verify-gate.sh", "promote-gate.sh"):
+            assert row.script not in crew_hook.RETRY_SAFE
+
+
+def test_the_reserve_covers_the_worst_cleanup_of_a_second_timeout():
+    for windows in (False, True):
+        worst = 2 * crew_hook.POST_KILL + (crew_hook.TASKKILL_BOUND if windows else 0)
+        assert crew_hook._retry_reserve(windows) > worst  # pylint: disable=protected-access
+    assert crew_hook._retry_reserve(True) > crew_hook._retry_reserve(False)  # pylint: disable=protected-access
+
+
+def test_a_retry_is_refused_when_the_cleanup_reserve_would_not_fit(tmp_path, monkeypatch):
+    """~7.4 s are left after the first 2 s attempt: more than the old 3.5 s reserve plus the floor,
+    less than the real worst-case cleanup plus the floor."""
+    source, log = _counting(tmp_path, "time.sleep(60)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts, window_s=9.5, row_timeout=2)
+
+    assert code == 2, err
+    assert _runs(log) == 1 and "attempts=1" in err and "no retry: no room before the dispatch deadline" in err
+
+
+def _default_retry_set(windows):
+    """Guard rows of the DEFAULT table that can be retried when every row of the event runs to its
+    limit, from the window the launcher hands over (the event's registration timeout less its margin)."""
+    found = set()
+    for row in crew_hook.TABLE:
+        if not row.guard or row.script not in crew_hook.RETRY_SAFE:
+            continue
+        window = crew_hook.event_timeout(row.event) - crew_hook.DEADLINE_MARGIN
+        room = window - row.timeout - crew_hook._retry_reserve(windows)  # pylint: disable=protected-access
+        if min(float(row.timeout), room) >= crew_hook.RETRY_FLOOR:
+            found.add(row.script)
+    return found
+
+
+def test_at_the_default_table_only_these_rows_can_ever_be_retried():
+    """Pins what the troubleshooting docs say. promote-gate, approval-hook, verify-gate and
+    completion-audit never retry; on Windows only the 10 s role-write-guard has the room."""
+    assert _default_retry_set(False) == {"role-write-guard.sh", "cloud-guard.sh", "env-guard.sh", "scope-guard.sh"}
+    assert _default_retry_set(True) == {"role-write-guard.sh"}
+
+
+def test_a_retry_that_replaces_the_first_attempt_keeps_what_the_first_one_said(tmp_path, monkeypatch):
+    marker = tmp_path / "seen"
+    source, _ = _counting(tmp_path, f"m = {str(marker)!r}\nif not os.path.exists(m):\n"
+                                    "    open(m, 'w').close()\n    sys.stderr.write('first attempt: slow disk\\n')\n"
+                                    "    sys.stderr.flush()\n    time.sleep(60)\n"
+                                    "time.sleep(60)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+    timing = tmp_path / "t.crew-trace"
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts, env=dict(os.environ, CREW_HOOK_TIMING_FILE=str(timing)))
+
+    line = next(l for l in timing.read_text(encoding="utf-8").splitlines() if "env-guard.sh" in l)
+    assert code == 2 and "attempts=2" in err
+    assert "attempt 1 said: 'first attempt: slow disk'" in err
+    assert 'first_said="first attempt: slow disk"' in line and line.endswith("timeout")
 
 
 # --- PR A: opt-in per-child timing --------------------------------------------------------------

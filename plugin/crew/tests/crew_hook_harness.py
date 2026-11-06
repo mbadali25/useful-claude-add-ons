@@ -189,7 +189,7 @@ def fake_guards(tmp_path, overrides):
     return str(scripts)
 
 
-def dispatch_fake(monkeypatch, scripts, armed=True, window_s=16.0, row_timeout=5, env=None, event="PreToolUse",
+def dispatch_fake(monkeypatch, scripts, armed=True, window_s=20.0, row_timeout=5, env=None, event="PreToolUse",
                   payload=BASH_PAYLOAD):
     """(exit, stdout, stderr) text of crew_hook.dispatch over `scripts`' fakes. Every guard row gets
     `row_timeout` seconds and the dispatch deadline is `window_s` from now."""

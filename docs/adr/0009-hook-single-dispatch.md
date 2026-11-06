@@ -109,8 +109,8 @@ of the FIXes are fixed in this PR; the fifth is accepted below:
 - The no-python path had no deadline, stdin bound or size cap, and ignored a child that did not decide: it now
   reads stdin from a bounded file, runs the scripts under the watchdog, and treats an undecided guard as above.
 - `CREW_HOOK_TRACE_FILE` is honoured only for a path ending `.crew-trace` and never through a symlink.
-- `CREW_HOOK_TIMING_FILE` (crew 1.2.99) follows the same two rules and records `start_ms`, `end_ms`, `ms`, attempts and outcome per child.
-- A guard row that times out is retried once when the dispatch deadline leaves room (crew 1.2.99); a final timeout, a resource failure and a "no usable python" refusal still fail closed in an armed repo, now led by an `UNKNOWN (..., not a policy deny)` line so they do not read as a rule's deny.
+- `CREW_HOOK_TIMING_FILE` (crew 1.2.100) follows the same two rules and records `start_ms`, `end_ms`, `ms`, attempts and outcome per child.
+- A guard row that times out is retried once (crew 1.2.100) only if it is one of the four stateless PreToolUse judges in `RETRY_SAFE` and the dispatch deadline leaves room for a second timeout's cleanup (`_retry_reserve`); approval-hook, promote-gate, verify-gate and completion-audit are never retried, and a retry can duplicate a `guard.log` row. A final timeout, a resource failure and a guard's own fixed "no usable python" refusal still fail closed in an armed repo, now led by an `UNKNOWN (..., not a policy deny)` line so they do not read as a rule's deny.
 - The launchers export the interpreter they resolved as `CREW_PYTHON` beside `CREW_HOOK_DEADLINE`.
 - On Windows the dispatcher no longer uses a bare `taskkill` or `powershell` name (CreateProcess searches the
   repo directory first); an unresolved PowerShell is a row error.

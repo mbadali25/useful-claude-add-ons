@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.99**: A hook timeout is retried once and reads as UNKNOWN, not as a policy deny. `crew` 1.2.99: when a crew guard times out or cannot fork under load, the dispatcher retries it once, and a refusal that still follows says `UNKNOWN (guard timeout, not a policy deny)` or `UNKNOWN (resource exhaustion, not a policy deny)` instead of reading like a real deny.
+- **crew 1.2.100**: A hook timeout is retried once and reads as UNKNOWN, not as a policy deny. `crew` 1.2.100: when a crew guard times out or cannot fork under load, the dispatcher retries the stateless PreToolUse judges once, and a refusal that still follows says `UNKNOWN (guard timeout, not a policy deny)` or `UNKNOWN (resource exhaustion, not a policy deny)` instead of reading like a real deny.
 - **crew 1.2.98**: The scope guard no longer refuses the session handoff note. `crew` 1.2.98: with an active ticket, `/crew:handoff --wrap-up` can write `.work/HANDOFF.md` again, so auto-resume and auto-clear work for a session that has a ticket open.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
