@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.91**: A stdlib checker for the review-finding rules. `crew` 1.2.91: adds `review_lint_classes.py`, which applies the five review-finding rules on any host with only Python; nothing calls it yet, so no behaviour a user runs changes.
-- **crew 1.2.89**: A reader for the review-finding rule file. `crew` 1.2.89: adds `review_lint_rules.py`, which reads the review-finding rule file and refuses every shape it does not know; nothing calls it yet, so no behaviour a user runs changes.
+- **crew 1.2.99**: A stdlib checker for the review-finding rules. `crew` 1.2.99: adds `review_lint_classes.py`, which applies the five review-finding rules on any host with only Python; nothing calls it yet, so no behaviour a user runs changes.
+- **crew 1.2.98**: The scope guard no longer refuses the session handoff note. `crew` 1.2.98: with an active ticket, `/crew:handoff --wrap-up` can write `.work/HANDOFF.md` again, so auto-resume and auto-clear work for a session that has a ticket open.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
