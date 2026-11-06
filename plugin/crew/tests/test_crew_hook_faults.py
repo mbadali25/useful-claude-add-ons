@@ -721,7 +721,8 @@ RESOURCE_TEXTS = ["bash: fork: retry: Resource temporarily unavailable", "OSErro
                   "BlockingIOError: EAGAIN", "MemoryError", "env-guard: fork failed", "can't fork"]
 
 
-@pytest.mark.parametrize("said", RESOURCE_TEXTS, ids=["unavailable", "errno11", "eagain", "memoryerror", "forkfailed", "cantfork"])
+@pytest.mark.parametrize("said", RESOURCE_TEXTS,
+                         ids=["unavailable", "errno11", "eagain", "memoryerror", "forkfailed", "cantfork"])
 def test_a_guard_that_exits_undecided_on_a_resource_failure_is_unknown_resource_and_fails_closed(said, tmp_path,
                                                                                                 monkeypatch):
     source, _ = _counting(tmp_path, f"sys.stderr.write({said!r} + '\\n')\nsys.exit(1)\n")
@@ -745,7 +746,8 @@ def test_a_guard_that_hangs_after_a_resource_failure_is_labelled_resource_not_ti
 
 
 QUOTED_TEXTS = [
-    'Traceback (most recent call last):\n  File "C:\\work\\MemoryError-tests\\guard.py", line 3, in <module>\nValueError: bad',
+    'Traceback (most recent call last):\n'
+    '  File "C:\\work\\MemoryError-tests\\guard.py", line 3, in <module>\nValueError: bad',
     "+ grep EAGAIN /var/log/app.log\nboom",
     "env-guard: refused - the command quotes errno 11 mid-sentence and says fork failed",
     "C:\\work\\MemoryError-tests\\guard.py",
@@ -982,7 +984,8 @@ def test_the_launcher_hands_the_python_it_resolved_to_the_guards_as_crew_python(
     scripts = _copy_scripts(tmp_path)
     seen = tmp_path / "python.txt"
     with open(os.path.join(scripts, "scope-guard.sh"), "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(f"#!/usr/bin/env bash\ncat >/dev/null\nprintf '%s' \"$CREW_PYTHON\" >'{seen.as_posix()}'\nexit 0\n")
+        handle.write(f"#!/usr/bin/env bash\ncat >/dev/null\n"
+                     f"printf '%s' \"$CREW_PYTHON\" >'{seen.as_posix()}'\nexit 0\n")
     root, home = _repo(tmp_path, "own")
 
     code, _, err = _run(flavour, scripts, "PreToolUse", BASH_PAYLOAD, root, home,

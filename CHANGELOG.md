@@ -9,6 +9,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.102: wrap the long lines pylint rejects, regenerate the crew rules file
+
+- **Summary.** `crew` 1.2.102: no behaviour change. Five lines over pylint's 120-column limit in the hook dispatcher and its tests are wrapped, and `.claude/rules/crew.md` is regenerated, which clears the two CI failures on #700 (Pylint C0301, Instruction budgets "generated rules: drift").
+- Lint (`crew_hook.py`, `crew_hook_harness.py`, `test_crew_hook_faults.py`): lines wrapped with implicit string concatenation or parenthesised continuation; `_RESOURCE_RE.pattern` is byte-identical before and after (520 characters, flags 42).
+- Rules: `.claude/rules/crew.md` regenerated with `crew_instructions.py rules --root .`, not by hand; only its `sha256` header line changes.
+
 ### Fixed — crew 1.2.101: the resource-exhaustion label reads only diagnostic lines, not quoted text
 
 - **Summary.** `crew` 1.2.101: a guard's refusal is labelled `UNKNOWN (resource exhaustion, ...)` only when stderr has a real fork or allocation diagnostic line, so a path such as `MemoryError-tests` or a quoted command naming `EAGAIN` no longer gets that label (the refusal itself is unchanged: exit 2).

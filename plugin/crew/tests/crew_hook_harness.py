@@ -197,7 +197,8 @@ def dispatch_fake(monkeypatch, scripts, armed=True, window_s=20.0, row_timeout=5
     import sys  # pylint: disable=import-outside-toplevel
     monkeypatch.setattr(crew_hook, "TABLE", tuple(r._replace(timeout=row_timeout) for r in crew_hook.TABLE))
     monkeypatch.setattr(crew_hook, "_argv_for",
-                        lambda argv, scripts_dir, bash, pwsh: ([sys.executable, "-S", os.path.join(scripts_dir, argv[0])], "bash"))
+                        lambda argv, scripts_dir, bash, pwsh: (
+                            [sys.executable, "-S", os.path.join(scripts_dir, argv[0])], "bash"))
     code, out, err = crew_hook.dispatch(event, "claude", payload, crew_hook.now_ms() + int(window_s * 1000),
                                         dict(os.environ if env is None else env), "/nowhere", windows=False,
                                         scripts=scripts, armed_fn=lambda _root: armed)

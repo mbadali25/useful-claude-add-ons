@@ -619,7 +619,8 @@ UNKNOWN_PYTHON = "crew-hook: UNKNOWN (no usable python, not a policy deny)"
 # a quoted command naming EAGAIN, a sentence mentioning errno 11) starts with none of them.
 _LBL = r"(?:[\w.\-]+:[ \t]+)*"
 _RESOURCE_RE = re.compile(
-    r"^[ \t]*(?:\d+[ \t]+\[main\][ \t]+\S+[ \t]+\d+[ \t]+)?" + _LBL + r"(?:fork:[ \t]+(?:retry:[ \t]+)?(?:Resource temporarily unavailable|failed|cannot)\b"
+    r"^[ \t]*(?:\d+[ \t]+\[main\][ \t]+\S+[ \t]+\d+[ \t]+)?" + _LBL
+    + r"(?:fork:[ \t]+(?:retry:[ \t]+)?(?:Resource temporarily unavailable|failed|cannot)\b"
     r"|dofork:[ \t]+child\b[^\n]*\berrno 11\b"
     r"|fork failed\b"
     r"|(?:can(?:'|no)t|unable to|could not|failed to)[ \t]+fork\b"
