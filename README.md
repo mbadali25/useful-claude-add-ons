@@ -237,9 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.88**: One review budget of three per ticket, counted across successor plans; the owner's `--grant-round`. `crew` 1.2.88: a ticket now gets three review rounds in total, a successor plan no longer reopens them, and only the owner's `review_ledger.py --grant-round` adds a round.
-- **crew 1.2.84**: The planner learns the `Lines:` label, kind tags and the 300-line cap. `crew` 1.2.84: `/crew:plan` now asks each step for a projected `Lines:` count and a kind tag on each production Files entry and states a 300-production-line cap per plan, which nothing enforces yet.
-- **crew 1.2.83**: The verify-map price test rejects a NaN or infinite `seconds`. `crew` 1.2.83: a rule priced `NaN` can no longer pass the verify-map price test, and the L-0904 note sentence in `.crew/verify.json` starts its own line; no behaviour a user runs changes.
+- **crew 1.2.98**: The scope guard no longer refuses the session handoff note. `crew` 1.2.98: with an active ticket, `/crew:handoff --wrap-up` can write `.work/HANDOFF.md` again, so auto-resume and auto-clear work for a session that has a ticket open.
+- **crew 1.2.97**: A lane asks git for its main checkout once per process. `crew` 1.2.97: in a lane worktree with no `.crew/` config of its own, reading the repo config no longer starts a git process every time, so hooks and the scope guard's autopilot approval judgement spend less of their time limit on git.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -61,6 +61,21 @@ re-run the previous note's wider count-disagreement sweep across `README.md`/`pl
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
 
 
+**Lint rules (L-0715 PR A).** DERIVED at the PR A head, not at this file's anchor, which is not moved:
+`plugin/crew/lint/semgrep/crew-classes.yml` holds five semgrep rules (`crew-splitlines-untrusted-text`,
+`crew-json-duplicate-keys`, `crew-bare-interpreter`, `crew-unquoted-plugin-root`, `crew-test-no-assertion`, each with a
+`metadata.class`) and a `# not-shipped:` list in its header comment; `plugin/crew/lint/semgrep/fixtures/<rule id>/` holds a
+positive and a negative fixture each; `plugin/crew/tests/test_crew_lint_rules.py` runs the pinned `semgrep==1.95.0` over
+a copy of them. Nothing in `hooks/scripts/` reads the file yet (the `semgrep` linter kind is PR B). JUDGEMENT: the rest
+of this map is unchanged by it.
+
+**Rule-file reader (L-0931, L-0715 PR B1).** DERIVED at the PR B1 head, not at this file's anchor, which is not moved:
+`plugin/crew/hooks/scripts/review_lint_rules.py` (`read_rules`, `matches_scope`, `CANARIES`) reads
+`plugin/crew/lint/semgrep/crew-classes.yml` with no YAML package and raises `RuleFileError(message, line)` on any shape it
+does not know; it exposes a per-rule pattern fingerprint, the five regex values, the `# not-shipped:` header and the path
+scopes. Nothing imports it yet (the checker is PR B2, the `crewlint` linter kind PR B3). JUDGEMENT: the rest of this map
+is unchanged by it.
+
 ## The roster, replaced wholesale
 
 Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
@@ -1083,7 +1098,7 @@ mismatch `review_delta.judge`
 bundle through T-0100's rule (`reviewed_bundle` `:202`, `review_patch._ticket_base_tree` with
 `head=` at `plugin/crew/hooks/scripts/review_patch.py:403`, `merged_main.resolve(..., head)` at `:415` unless a `merged` pin is passed), is
 an ancestor of HEAD, the integration base is the pinned `base_sha` or the train entry's ref
-(`integration_ref` `:317`; never `_default_ref`), one merge base, a clean checkout
+(`integration_ref` `:317`; never `_default_ref`) -- A-0012, DERIVED: when the reviewed head is inside `scope_base.base_branch`, `review_delta.landing` finds its landing merge (`crew_refresh_check._landing`) and pins the rebuild at `merge-base <head> <merge^1>`; a HEAD inside that ref too takes `merge^1` as the integration base in place of the train entry; `_lands_as_reviewed` keeps a reviewed path absent from the current delta whose HEAD entry is the reviewed new side (`merged` in the detail) -- one merge base, a clean checkout
 (`_clean_head_tree` `:343`, `checkout_problem` `:354`), then the per-path interdiff of the
 reviewed bundle's base tree -> reviewed head against base -> `HEAD^{tree}`: byte identity outside
 the allowlist (`_match` `:394`, `fnmatchcase`); code maps, rules and diagrams compared with only
@@ -1306,9 +1321,11 @@ a group confirm's `expect` outright (`:743-745`, before `expect` is validated or
 the group confirm is owner-only, carried from T-0024's hand-off at T-0010's merge of `f96e9ec9`). `scope_guard.py`'s
 `_AUTOPILOT_APPROVE_RE` / `_AUTOPILOT_BARE_RE` (`plugin/crew/hooks/scripts/scope_guard.py:143-147`) and
 `_autopilot_refusal` (`:272`) allow only the bare command while the policy says yes;
-`shell_refusal` (`:300`) runs `_reading_refusal` (`:317`) on each reading `_joined` (`:292`)
+`shell_refusal` (`:300`) runs `_reading_refusal` (`:317`) on each distinct reading `_joined` (`:292`)
 gives - the command as written and with line continuations joined (`_BASH_CONTINUATION_RE` /
-`_PS_CONTINUATION_RE`, `:157-158`) - while the bare-command rule judges the command as written.
+`_PS_CONTINUATION_RE`, `:157-158`) - while the bare-command rule judges the command as written. A-0013, DERIVED: the readings are deduplicated in order
+(`dict.fromkeys`), so a command with no continuation runs `approval_policy` once, not three times
+(about 14 git calls in a lane, against `crew_hook.py`'s 15 s limit).
 Tests `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_crew_ticket.py`,
 `test_scope_guard.py`, `test_crew_autopilot_status.py` and `test_crew_route.py`; mutations
 `POLICY_MUTATIONS` in `sabotage_autopilot.py` (55 by `len()` on T-0010-solo's merge of `e878cc31`, `plugin/crew/tests/sabotage_autopilot.py:687`),
@@ -2093,7 +2110,13 @@ JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose
   `apply` asks the policy for it and skips only `confirm`, keeping
   T-0052's existing-children verification; `check` records
   `policy_at_check` for the report only. `absent_sources`
-  (`:303`) is what the gate names `unmeasured`.
+  (`:303`) is what the gate names `unmeasured`. Its metrics rows are
+  classified by `_row_kind` (`plugin/crew/hooks/scripts/crew_split.py`,
+  A-0011): header, separator and an uncounted round (both count cells
+  `UNCOUNTED`, the `INCOMPLETE` that `review_metrics.row` writes) are skipped;
+  any other row whose counts do not parse is malformed, so findings-rate is
+  unknown. `test_every_row_review_metrics_writes_parses_in_split` holds the
+  writer and this reader to one contract.
 - Tests: `plugin/crew/tests/test_crew_autopilot_split.py` and the T-0058
   block at the end of `plugin/crew/tests/test_crew_split.py`, on the
   `crew_split` rule in `.crew/verify.json`.
