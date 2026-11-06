@@ -9,6 +9,14 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.109: shell guards honour CREW_PYTHON and fail closed on a missing helper script
+
+- **Summary.** `crew` 1.2.109: the bash guards reuse the interpreter the hook launcher already ran instead of probing PATH again, which was the slow step that timed Windows guards out, and a guard whose helper script cannot be found now refuses by name instead of making python run the repository directory.
+- `_common.sh` `crew_py` and `crew_py_strict`, and role-write-guard.sh's `_resolve_role_write_python` (byte-identical to `crew_py_strict`, pinned by `test_context_watch_python_resolver.py`): a validated `CREW_PYTHON` is returned first. Valid means an absolute path (Windows `C:\..` is converted with `cygpath -u`), a regular executable file, named `py`/`python`/`python3.x` with or without `.exe`; anything else is ignored and the PATH walk runs as before.
+- New `crew_py_script`: a script path native python can open, or status 1 with nothing printed. promote-gate.sh (four helpers), cloud-guard.sh, env-guard.sh and role-write-guard.sh use it and fail CLOSED with a message naming the missing script, instead of handing python an empty operand (`python3.exe: can't find '__main__' module in '<repo>'`).
+- Not changed: scope-guard.sh, approval-hook.sh and completion-audit.sh get the same wrap in a separate harness-only PR (they are in `HARNESS`); the 3 s / 8 s probe budget is kept (pinned by tests and by the shortest hook timeout, and the launcher's CREW_PYTHON now skips the walk on the hot path); role-write-guard keeps running python every time (a skip could drop audit rows).
+- Tests: `test_crew_python_env.py` (valid POSIX, CRLF and Windows-shaped values returned without a probe; missing, directory, wrong name, relative, empty and non-executable values never returned; fallback to the walk; the three resolver blocks identical; `crew_py_script` allow and block; cloud-guard, env-guard, role-write-guard and promote-gate with the helper removed fail closed and name it, each with a control).
+
 ### Fixed — crew 1.2.108: the allowCliApproval refusal append is guarded (round 3 review of #701)
 
 - **Summary.** `crew` 1.2.108: the hand-edit hint appended to the `scope.allowCliApproval` refusal is skipped when that entry is absent, so the sabotage harness can delete the entry without an import-time KeyError.

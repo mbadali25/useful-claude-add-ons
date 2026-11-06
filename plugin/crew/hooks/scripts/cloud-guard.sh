@@ -59,9 +59,14 @@ if [ -z "$PY" ]; then
   exit 0
 fi
 
-printf '%s' "$INPUT" | CREW_CLOUD_GUARD_FLAVOUR=bash PYTHONUTF8=1 \
-  PYTHONIOENCODING=utf-8 "$PY" "$(crew_native_path "$DIR/cloud_guard.py")"
-status=$?
+if GUARD_PY=$(crew_py_script "$DIR/cloud_guard.py"); then
+  printf '%s' "$INPUT" | CREW_CLOUD_GUARD_FLAVOUR=bash PYTHONUTF8=1 \
+    PYTHONIOENCODING=utf-8 "$PY" "$GUARD_PY"
+  status=$?
+else
+  echo "cloud-guard: cloud_guard.py is missing or its path could not be resolved (looked in $DIR)." >&2
+  status=127
+fi
 
 if [ "$status" -ne 0 ]; then
   # cloud_guard.py only ever exits 0 -- its decisions are JSON -- so any other
