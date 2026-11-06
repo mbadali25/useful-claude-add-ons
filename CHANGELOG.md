@@ -9,6 +9,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.110: test anchors follow the crew_py_script change (CI of #703)
+
+- **Summary.** `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.
+- `test_native_script_path.py` accepts `crew_py_script` as a helper that wraps a script path (new must-allow and must-flag cases for a bare path); `promote_tree_mutations.py`'s two promote-gate anchors follow the new lines; `.claude/rules/crew.md` is regenerated from the codemap.
+
 ### Fixed — crew 1.2.109: shell guards honour CREW_PYTHON and fail closed on a missing helper script
 
 - **Summary.** `crew` 1.2.109: the bash guards reuse the interpreter the hook launcher already ran instead of probing PATH again, which was the slow step that timed Windows guards out, and a guard whose helper script cannot be found now refuses by name instead of making python run the repository directory.

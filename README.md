@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.110**: Test anchors follow the crew_py_script change (CI of #703). `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.
 - **crew 1.2.109**: Shell guards honour CREW_PYTHON and fail closed on a missing helper script. `crew` 1.2.109: the bash guards reuse the interpreter the hook launcher already ran instead of probing PATH again, which was the slow step that timed Windows guards out, and a guard whose helper script cannot be found now refuses by name instead of making python run the repository directory.
-- **crew 1.2.108**: The allowCliApproval refusal append is guarded (round 3 review of #701). `crew` 1.2.108: the hand-edit hint appended to the `scope.allowCliApproval` refusal is skipped when that entry is absent, so the sabotage harness can delete the entry without an import-time KeyError.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
