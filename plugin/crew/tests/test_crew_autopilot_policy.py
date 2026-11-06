@@ -1318,7 +1318,6 @@ def test_self_with_every_prerequisite_met_approves(tmp_path):
 
 
 def test_setting_self_or_risk_is_told_its_prerequisites_at_set_time():
-    import crew_config  # pylint: disable=import-outside-toplevel
     notes = [crew_config.personal_widening_note("autopilot.approval", value)
              for value in ("self", "risk")]
     refused = crew_config.REPO_REFUSED["scope.allowCliApproval"]
