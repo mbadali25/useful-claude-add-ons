@@ -3223,6 +3223,12 @@ for _key in ("approval", "questions"):
         "self": f"autopilot may {_act} itself on EVERY ticket, whatever its "
                 "risk",
     }
+_APPROVAL_NEEDS = (" -- plan approval also needs autopilot.mode \"plan\" and, as a "
+                   "hand edit of the repo's .crew/config.json by the owner, "
+                   "scope.allowCliApproval true; until both hold autopilot "
+                   "approves nothing (crew_autopilot.py approve names what is unmet)")
+for _value in ("risk", "self"):
+    _PERSONAL_NOTES["autopilot.approval"][_value] += _APPROVAL_NEEDS
 
 
 def personal_widening_note(dotted, after):
@@ -3758,6 +3764,14 @@ REPO_REFUSED = {
     "scope.allowCliApproval": "decides which approvals the scope guard "
                               "accepts; a hand edit by the owner only",
 }
+# The hand-edit hint (#624) is appended, never written into the entry above: that
+# entry's text is a sabotage anchor (sabotage_config.py). The append is guarded: that
+# mutation deletes the entry, and an unguarded `+=` would raise a KeyError at import,
+# so the suite would fail at collection instead of on its own assertion.
+if "scope.allowCliApproval" in REPO_REFUSED:
+    REPO_REFUSED["scope.allowCliApproval"] += (
+        ": in this repo's .crew/config.json set "
+        '"scope": {"allowCliApproval": true}')
 # From the tuple, never written out: their readers consult the machine file
 # only, so a repo value would be a narrowing the run never applies.
 REPO_REFUSED.update({

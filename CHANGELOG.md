@@ -9,6 +9,32 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.108: the allowCliApproval refusal append is guarded (round 3 review of #701)
+
+- **Summary.** `crew` 1.2.108: the hand-edit hint appended to the `scope.allowCliApproval` refusal is skipped when that entry is absent, so the sabotage harness can delete the entry without an import-time KeyError.
+
+### Fixed — crew 1.2.107: the approval listing covers the risk policy and says which file to edit (round 2 review of #701)
+
+- **Summary.** `crew` 1.2.107: a refused `approve` under `autopilot.approval: risk` now also lists the spec's own risk (`risk: med`, or no risk header) as an unmet line with what the policy needs (`risk: low`, or `approval: self`), so the owner sees every blocker at once. Lines for `autopilot.approval` and `autopilot.mode` name which file holds which value (the repo `.crew/config.json` or the machine-global file, with its path) and which one to edit, and an unreadable file is named by its own path, not always the repo's.
+- `crew_approval_unmet.py`: `_risk_line` (reads the decision `approval_policy` already made; nothing is decided here), `_layer_note` for `approval` and `mode`, `_broken_files` per layer; the fallback line quotes exception text.
+- `crew_autopilot.py` (frozen, L-0727; bug fix, `autopilot_frozen.json` regenerated, 3392 -> 3393 lines, total 8009 -> 8010): a 5 KB `autopilot` value in either config layer is cut at 40 characters in the refusal (`{block!r:.40}`, no new line); a missing or broken listing module appends one fixed "list unavailable" line instead of nothing.
+- Tests: the linked-worktree test now builds a real `git worktree add` layout; new cases for the risk line, both layer notes, the sleep-schedule note, per-layer broken-file attribution, quoted exception text and the unavailable line.
+- Docs: `CONFIG.md`, the autopilot guide.
+
+### Fixed — crew 1.2.106: the approval refusal listing never reports unknown as known, and bounds what it echoes (review of #701)
+
+- **Summary.** `crew` 1.2.106: the unmet-prerequisite lines autopilot adds to a refused `approve` no longer print a concrete value for something it could not read: with a corrupt `.crew/config.json` the `autopilot.mode` and `autopilot.approval` lines say "could not be told" instead of `"off"`. Values are shown as written (a typo like `"plna"` appears as `"plna"` with a note that it is not a valid value), and nothing echoed from config is free text: a bool or short plain word is shown, anything else only as its type (`<string>`), exception text and long values are cut at 40 characters with a marker. The hand-edit hint names the file this checkout actually reads (the main checkout's in a lane worktree).
+- `crew_approval_unmet.py`: `_word`/`_bound` bound every echoed value; `scope.allowCliApproval` is shown only as `true`/`false` or its type; the machine-global layer is named when it sets `autopilot.mode` too.
+- `crew_autopilot.py`: a missing or broken `crew_approval_unmet` module no longer makes `approve` raise; the old refusal text and exit 2 stand (`_unmet_block`).
+- Docs: `CONFIG.md` and the configuration reference (`autopilot.mode: plan` or `backlog` arms; `self` or `risk` need `allowCliApproval`), the autopilot guide.
+
+### Fixed — crew 1.2.104: approval refusals list every unmet prerequisite (#624)
+
+- **Summary.** `crew` 1.2.104: when autopilot refuses to approve a plan, the message now lists every setting still missing (`autopilot.mode`, `scope.allowCliApproval`, `autopilot.approval`) with its value as written (1.2.106) and the value needed, instead of only the first, and setting `autopilot.approval` to `self` or `risk` says up front what else it needs.
+- `crew_autopilot.py approve`: `unmet_prerequisites` collects them in one pass; the decision (`approval_policy`) is unchanged and never reads the list.
+- `crew_config.py`: the `scope.allowCliApproval` refusal names the file and key to hand-edit; the `autopilot.approval` self/risk note names the two prerequisites.
+- Docs: `CONFIG.md`, `commands/autopilot.md`, the autopilot guide source and HTML.
+
 ### Fixed — crew 1.2.103: the retry-deadline test bites on POSIX too
 
 - **Summary.** `crew` 1.2.103: test only, no behaviour change. A Linux sabotage run of #700 found one of 52 mutations ("the retry ignores the dispatch deadline") staying green, because the old test's window left a negative retry budget that never started a script off Windows. `test_the_retry_gate_sits_exactly_at_the_floor_whichever_reserve_applies` derives its window from `_retry_reserve()` for each platform (POSIX and Windows reserves on either OS), asserting no retry just under reserve + `RETRY_FLOOR` and a retry with room beyond it; the sabotage entry now points at it. Docs: none - test-only change.
