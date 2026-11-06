@@ -65,7 +65,18 @@ registers one launcher per event per shell (`crew-hook.sh`, and `crew-hook.ps1` 
 the launcher starts one dispatcher, `crew_hook.py <Event>`, which runs that event's scripts below at once and
 combines what they print. On Windows only the PowerShell launcher runs, so no event fires twice. When the
 launcher or dispatcher itself fails in a repo crew governs, `PreToolUse`, `UserPromptSubmit` and `Stop` refuse
-with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged.
+with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged. Only the four stateless PreToolUse judges (`role-write-guard`, `cloud-guard`, `env-guard`, `scope-guard`) are run
+once more after a timeout, and only when the dispatch deadline leaves room for a second timeout's cleanup; at the
+defaults that is `role-write-guard` on every platform and the 15-second `cloud-guard`, `env-guard` and `scope-guard`
+rows off Windows. `promote-gate`, `approval-hook`, `verify-gate` and `completion-audit` are never retried (they record
+state), and a retried guard can leave a duplicate `guard.log` row. The line says `attempts=N`, so you can tell whether
+a retry ran. If the guard still cannot answer, the refusal is led by `crew-hook: UNKNOWN (guard timeout, not a policy
+deny)`. A guard that could not fork or allocate (a stderr line that is itself `fork: ... Resource temporarily unavailable`, `OSError: [Errno 11]`, `BlockingIOError: EAGAIN`, a bare `MemoryError`; text that merely quotes those words, such as a path, is not matched)
+is led by `UNKNOWN (resource exhaustion, not a policy deny)`, and a guard's own "no usable python" refusal
+by `UNKNOWN (no usable python, not a policy deny)` (only that fixed one-line refusal; a deny that quotes the words in
+a path is still a deny). An `UNKNOWN` line is a refusal because crew could not tell, not because a rule said
+no: retry the call, and free memory or processes if it repeats. A real deny never carries the label. Setting
+`CREW_HOOK_TIMING_FILE` to a path ending `.crew-trace` records each guard's start, end and milliseconds.
 
 | Event | Script | What it does | Switch | Default |
 |---|---|---|---|---|
