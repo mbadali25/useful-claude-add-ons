@@ -351,7 +351,9 @@ KEY_META = {
                                "as `human`. `risk` and `self` also need `autopilot.mode: "
                                "plan` (or `backlog`) and `scope.allowCliApproval: true` (a hand "
                                "edit of the repo's `.crew/config.json`); a refused `approve` "
-                               "lists each unmet one, with its value as written.", "tuple",
+                               "lists each unmet one, with its value as written, the file "
+                               "that holds it and, under `risk`, the spec risk that blocks.",
+                               "tuple",
                                crew_autopilot.POLICIES, "1.0.42"),
     "autopilot.questions": _row("Who answers a ticket's open questions under autopilot; "
                                 "anything else reads as `human`.", "tuple",

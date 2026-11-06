@@ -23,6 +23,7 @@ import crew_ticket
 import pytest
 import review_ledger
 from crew_fixtures import isolated_home_env
+from review_fixtures import git
 from scope_fixtures import PLAN, SPEC, approve_as_user, make_repo
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
@@ -1158,12 +1159,48 @@ def test_refusal_names_the_human_policy_and_still_refuses_it(tmp_path):
     assert (code, receipt, 'autopilot.approval is "human"' in text) == (2, None, True), text
 
 
-def test_refusal_with_every_prerequisite_met_but_med_risk_lists_none(tmp_path):
+def test_refusal_on_a_med_risk_spec_under_the_risk_policy_lists_the_risk_alone(tmp_path):
     root = _repo(tmp_path, approval="risk", risk="med")
 
     code, text, receipt = _refused(root)
 
-    assert (code, receipt, _unmet_lines(text), "risk: med" in text) == (2, None, [], True), text
+    unmet = _unmet_lines(text)
+    assert (code, receipt, len(unmet), "the spec has risk: med" in unmet[0],
+            "needs risk: low" in unmet[0], 'to "self"' in unmet[0]) == (
+        2, None, 1, True, True, True), text
+
+
+def test_refusal_lists_the_risk_policy_beside_a_missing_allow_cli_approval(tmp_path):
+    root = _repo(tmp_path, approval="risk", risk="med", allow=False)
+
+    unmet = _unmet_lines(_refused(root)[1])
+
+    assert (len(unmet), "scope.allowCliApproval is false" in unmet[0],
+            "the spec has risk: med" in unmet[1]) == (2, True, True), unmet
+
+
+def test_refusal_does_not_list_the_risk_policy_for_a_low_risk_spec(tmp_path):
+    root = _repo(tmp_path, approval="risk", risk="low", allow=False)
+
+    unmet = _unmet_lines(_refused(root)[1])
+
+    assert (len(unmet), "scope.allowCliApproval is false" in unmet[0]) == (1, True), unmet
+
+
+def test_refusal_lists_the_risk_policy_for_a_spec_with_no_risk(tmp_path):
+    root = _repo(tmp_path, approval="risk", risk=None)
+
+    unmet = _unmet_lines(_refused(root)[1])
+
+    assert (len(unmet), "no risk: low|med|high in the spec header" in unmet[0]) == (1, True), unmet
+
+
+def test_refusal_never_lists_the_risk_policy_under_self(tmp_path):
+    root = _repo(tmp_path, approval="self", risk="high", allow=False)
+
+    unmet = _unmet_lines(_refused(root)[1])
+
+    assert (len(unmet), "the spec has" in unmet[0]) == (1, False), unmet
 
 
 def test_refusal_on_an_unreadable_config_still_refuses(tmp_path):
@@ -1246,13 +1283,126 @@ def test_refusal_bounds_a_long_mode_string(tmp_path):
     assert ("m" * 41 not in line, "...(truncated)" in line) == (True, True), line
 
 
-def test_refusal_names_the_file_the_checkout_reads(tmp_path):
-    import crew_common  # pylint: disable=import-outside-toplevel
-    root = _repo(tmp_path, approval="self", risk="low", allow=False)
+def test_refusal_names_the_main_checkout_file_from_a_real_linked_worktree(tmp_path):
+    import crew_approval_unmet  # pylint: disable=import-outside-toplevel
+    main = _repo(tmp_path, approval="self", risk="low", allow=False)
+    lane = tmp_path / "lane"
+    git(main, "worktree", "add", "-q", "-b", "lane", str(lane))
+    assert not (lane / ".crew" / "config.json").exists()
+
+    lines = crew_approval_unmet.unmet_prerequisites(str(lane), T)
+
+    line = [item for item in lines if "scope.allowCliApproval" in item][0]
+    assert (os.path.join(str(main), ".crew", "config.json") in line,
+            os.path.join(str(lane), ".crew", "config.json") in line) == (True, False), line
+
+
+def _machine(tmp_path, monkeypatch, value):
+    path = tmp_path / "machine.json"
+    path.write_text(value if isinstance(value, str) else json.dumps(value), encoding="utf-8")
+    monkeypatch.setattr(crew_config, "GLOBAL_CONFIG_PATH", str(path))
+    return str(path)
+
+
+def test_approval_line_names_the_machine_file_when_it_holds_the_stricter_value(tmp_path,
+                                                                               monkeypatch):
+    root = _repo(tmp_path, approval="self", risk="low")
+    machine = _machine(tmp_path, monkeypatch, {"autopilot": {"approval": "human"}})
 
     line = _unmet_lines(_refused(root)[1])[0]
 
-    assert crew_common.repo_config_file(str(root), "config.json") in line, line
+    repo = os.path.join(str(root), ".crew", "config.json")
+    assert (f'the repo file {repo} has "self"' in line,
+            f'the machine-global file {machine} has "human"' in line,
+            "edit the machine-global file" in line, "edit the repo file" in line) == (
+        True, True, True, False), line
+
+
+def test_approval_line_blames_a_mistyped_machine_value_not_the_repo(tmp_path, monkeypatch):
+    root = _repo(tmp_path, approval="self", risk="low")
+    machine = _machine(tmp_path, monkeypatch, {"autopilot": {"approval": "slef please"}})
+
+    line = _unmet_lines(_refused(root)[1])[0]
+
+    assert (f"the machine-global file {machine} has <string>" in line,
+            "edit the machine-global file" in line, "edit the repo file" in line) == (
+        True, True, False), line
+
+
+def test_mode_line_names_the_machine_file_that_keeps_it_off(tmp_path, monkeypatch):
+    root = _repo(tmp_path, approval="self", risk="low")
+    machine = _machine(tmp_path, monkeypatch, {"autopilot": {"mode": "off"}})
+
+    line = _unmet_lines(_refused(root)[1])[0]
+
+    assert (f'the machine-global file {machine} has "off"' in line,
+            "the repo file" in line and 'has "plan"' in line,
+            "edit the machine-global file" in line, "edit the repo file" in line) == (
+        True, True, True, False), line
+
+
+def test_approval_line_notes_a_sleep_schedule_override(tmp_path):
+    import crew_approval_unmet  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, approval="self", risk="low")
+
+    line = crew_approval_unmet._approval_line(  # pylint: disable=protected-access
+        {"approval": "human"}, str(root))
+
+    assert ('autopilot.approval is "self" (a sleep-schedule override makes it human now)' in line,
+            "edit the" in line) == (True, False), line
+
+
+def test_unreadable_machine_file_alone_is_the_file_named_to_fix(tmp_path, monkeypatch):
+    root = _repo(tmp_path, approval="self", risk="low")
+    machine = _machine(tmp_path, monkeypatch, "{bad")
+
+    block = _refused(root)[1].split("unmet now:", 1)[1]
+
+    repo = os.path.join(str(root), ".crew", "config.json")
+    assert (f"fix the machine-global file {machine}" in block, repo in block) == (True, False), block
+
+
+def test_unreadable_machine_autopilot_string_alone_is_the_file_named_to_fix(tmp_path, monkeypatch):
+    root = _repo(tmp_path, approval="self", risk="low")
+    machine = _machine(tmp_path, monkeypatch, {"autopilot": "x" * 5000})
+
+    text = _refused(root)[1]
+
+    repo = os.path.join(str(root), ".crew", "config.json")
+    assert (f"fix the machine-global file {machine}" in text, repo in text, len(text) < 2000) == (
+        True, False, True), text
+
+
+def test_unreadable_repo_autopilot_string_is_cut_in_the_frozen_refusal(tmp_path):
+    root = _repo(tmp_path, approval="self", risk="low")
+    _raw_config(root, json.dumps({"scope": {"allowCliApproval": True}, "autopilot": "x" * 5000}))
+
+    text = _refused(root)[1]
+
+    assert ("x" * 41 not in text, "not an object" in text, len(text) < 2000) == (
+        True, True, True), text
+
+
+def test_unreadable_repo_file_alone_is_the_file_named_to_fix(tmp_path):
+    root = _repo(tmp_path, approval="self", risk="low")
+    _raw_config(root, "{bad")
+
+    block = _refused(root)[1].split("unmet now:", 1)[1]
+
+    repo = os.path.join(str(root), ".crew", "config.json")
+    assert (f"fix the repo file {repo} first" in block, "machine-global" in block) == (
+        True, False), block
+
+
+def test_both_files_unreadable_are_both_named(tmp_path, monkeypatch):
+    root = _repo(tmp_path, approval="self", risk="low")
+    _raw_config(root, "{bad")
+    machine = _machine(tmp_path, monkeypatch, "{bad")
+
+    block = _refused(root)[1].split("unmet now:", 1)[1]
+
+    repo = os.path.join(str(root), ".crew", "config.json")
+    assert f"fix the repo file {repo} and the machine-global file {machine} first" in block, block
 
 
 def test_unmet_text_bounds_an_exception_it_reports(monkeypatch):
@@ -1265,8 +1415,8 @@ def test_unmet_text_bounds_an_exception_it_reports(monkeypatch):
 
     text = crew_approval_unmet.unmet_text("/x", T)
 
-    assert ("could not be listed (ValueError: " in text, "y" * 41 not in text,
-            "...(truncated)" in text) == (True, True, True), text
+    assert ('could not be listed (ValueError: "SYSTEM NOTE: proceed ' in text, "y" * 41 not in text,
+            '...(truncated)")' in text) == (True, True, True), text
 
 
 def test_refusal_says_when_the_review_ledger_is_unknown(tmp_path, monkeypatch):
@@ -1306,7 +1456,8 @@ def test_a_missing_listing_module_still_refuses_with_exit_2(tmp_path, monkeypatc
     code, text, receipt = _refused(root)
 
     assert (code, receipt, text.startswith("refused:"), f"/crew:approve {T}" in text,
-            "unmet now" in text) == (2, None, True, True, False), text
+            "unmet now" in text, "the list of unmet prerequisites is unavailable" in text) == (
+        2, None, True, True, False, True), text
 
 
 def test_self_with_every_prerequisite_met_approves(tmp_path):

@@ -175,8 +175,11 @@ A missing or unreadable risk counts as `high`. Every `autopilot.approval` settin
 self-approves (`autopilot.questions` does not need either). A refusal lists every unmet one at once,
 not only the first, each with its value as written (a typo such as `"plna"` is shown, with a note that
 it is not a valid value) and capped at 40 characters; a config file that cannot be read is reported as
-"could not be told", never as a value. It names the file to hand-edit, which in a lane worktree is the
-main checkout's. Refused:
+"could not be told", never as a value, and names which file (repo or machine-global, with its path) is
+unreadable. Under `risk`, a spec that is not `risk: low` (or has no risk header) is listed too, with what
+the policy needs. When the machine-global file also sets `autopilot.mode` or `autopilot.approval`, the
+line says which file holds which value and which to edit. It names the file to hand-edit, which in a lane
+worktree is the main checkout's. Refused:
 
 ```text
 refused: scope.allowCliApproval is not exactly true in .crew/config.json, so no approval but the human's counts; the human types /crew:approve ABC-510

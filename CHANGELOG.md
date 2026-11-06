@@ -9,6 +9,14 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.107: the approval listing covers the risk policy and says which file to edit (round 2 review of #701)
+
+- **Summary.** `crew` 1.2.107: a refused `approve` under `autopilot.approval: risk` now also lists the spec's own risk (`risk: med`, or no risk header) as an unmet line with what the policy needs (`risk: low`, or `approval: self`), so the owner sees every blocker at once. Lines for `autopilot.approval` and `autopilot.mode` name which file holds which value (the repo `.crew/config.json` or the machine-global file, with its path) and which one to edit, and an unreadable file is named by its own path, not always the repo's.
+- `crew_approval_unmet.py`: `_risk_line` (reads the decision `approval_policy` already made; nothing is decided here), `_layer_note` for `approval` and `mode`, `_broken_files` per layer; the fallback line quotes exception text.
+- `crew_autopilot.py` (frozen, L-0727; bug fix, `autopilot_frozen.json` regenerated, 3392 -> 3393 lines, total 8009 -> 8010): a 5 KB `autopilot` value in either config layer is cut at 40 characters in the refusal (`{block!r:.40}`, no new line); a missing or broken listing module appends one fixed "list unavailable" line instead of nothing.
+- Tests: the linked-worktree test now builds a real `git worktree add` layout; new cases for the risk line, both layer notes, the sleep-schedule note, per-layer broken-file attribution, quoted exception text and the unavailable line.
+- Docs: `CONFIG.md`, the autopilot guide.
+
 ### Fixed — crew 1.2.106: the approval refusal listing never reports unknown as known, and bounds what it echoes (review of #701)
 
 - **Summary.** `crew` 1.2.106: the unmet-prerequisite lines autopilot adds to a refused `approve` no longer print a concrete value for something it could not read: with a corrupt `.crew/config.json` the `autopilot.mode` and `autopilot.approval` lines say "could not be told" instead of `"off"`. Values are shown as written (a typo like `"plna"` appears as `"plna"` with a note that it is not a valid value), and nothing echoed from config is free text: a bool or short plain word is shown, anything else only as its type (`<string>`), exception text and long values are cut at 40 characters with a marker. The hand-edit hint names the file this checkout actually reads (the main checkout's in a lane worktree).

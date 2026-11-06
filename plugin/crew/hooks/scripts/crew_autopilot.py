@@ -1791,7 +1791,7 @@ def _unreadable_autopilot(top):
                 "could not be read")
     block = data.get("autopilot") if state == "ok" else None
     if block is not None and not isinstance(block, dict):
-        return f"autopilot in .crew/config.json is {block!r}, not an object"
+        return f"autopilot in .crew/config.json is {block!r:.40}, not an object"
     return _unreadable_machine_autopilot()
 
 
@@ -1813,7 +1813,7 @@ def _unreadable_machine_autopilot():
                 "object, so it could not be read")
     block = data.get("autopilot") if state == "ok" else None
     if not isinstance(block, (dict, type(None))):
-        return f"autopilot in the machine-global config {path} is {block!r}, not an object"
+        return f"autopilot in the machine-global config {path} is {block!r:.40}, not an object"
     return ""
 
 
@@ -2352,12 +2352,13 @@ def _question_hint(top, ticket):
 
 
 def _unmet_block(top, ticket):
-    """#624's unmet-prerequisite lines for a refusal, or "" when the module is missing or broken:
-    advice only, so the old refusal text and exit 2 stand either way."""
+    """#624's unmet-prerequisite lines for a refusal, or one fixed line when the module is missing
+    or broken: advice only, so the old refusal text and exit 2 stand either way."""
     try:
         return importlib.import_module("crew_approval_unmet").unmet_text(top, ticket)
     except Exception:  # noqa: BLE001  # pylint: disable=broad-except
-        return ""
+        return ("\n(the list of unmet prerequisites is unavailable; fix the first reason above "
+                "and run approve again)")
 
 
 def approve(root, ticket):

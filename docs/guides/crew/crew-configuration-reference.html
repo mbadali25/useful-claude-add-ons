@@ -1077,7 +1077,7 @@ reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
 <td><code>"risk"</code></td>
 <td><code>human</code> | <code>risk</code> | <code>self</code>; personal: listed strictest first, the stricter wins</td>
 <td>1.0.42</td>
-<td>Who approves a ticket under autopilot; anything else reads as <code>human</code>. <code>risk</code> and <code>self</code> also need <code>autopilot.mode: plan</code> (or <code>backlog</code>) and <code>scope.allowCliApproval: true</code> (a hand edit of the repo's <code>.crew/config.json</code>); a refused <code>approve</code> lists each unmet one, with its value as written.</td>
+<td>Who approves a ticket under autopilot; anything else reads as <code>human</code>. <code>risk</code> and <code>self</code> also need <code>autopilot.mode: plan</code> (or <code>backlog</code>) and <code>scope.allowCliApproval: true</code> (a hand edit of the repo's <code>.crew/config.json</code>); a refused <code>approve</code> lists each unmet one, with its value as written, the file that holds it and, under <code>risk</code>, the spec risk that blocks.</td>
 </tr>
 <tr>
 <td><code>autopilot.questions</code></td>

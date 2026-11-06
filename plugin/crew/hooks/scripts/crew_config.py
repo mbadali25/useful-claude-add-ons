@@ -3762,10 +3762,12 @@ REPO_REFUSED = {
                   "to disarm its own guard, so it stays a hand edit by the "
                   "owner or /crew:init",
     "scope.allowCliApproval": "decides which approvals the scope guard "
-                              "accepts; a hand edit by the owner only: in this "
-                              "repo's .crew/config.json set "
-                              '"scope": {"allowCliApproval": true}',
+                              "accepts; a hand edit by the owner only",
 }
+# The hand-edit hint (#624) is appended, never written into the entry above: that
+# entry's text is a sabotage anchor (sabotage_config.py). `+=` raises on a missing key.
+REPO_REFUSED["scope.allowCliApproval"] += (": in this repo's .crew/config.json set "
+                                           '"scope": {"allowCliApproval": true}')
 # From the tuple, never written out: their readers consult the machine file
 # only, so a repo value would be a narrowing the run never applies.
 REPO_REFUSED.update({

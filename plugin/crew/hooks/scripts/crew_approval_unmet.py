@@ -41,14 +41,54 @@ def _config_path(top):
     return crew_common.repo_config_file(top, "config.json")
 
 
-def _layer_note():
-    """Names the machine-global layer when it sets `autopilot.mode` too: the stricter wins."""
+def _layers(top, key):
+    """`(repo, machine)`: `autopilot.<key>` as each layer's own file holds it, None where that
+    layer sets none (or cannot be read: the could-not-tell lines say so)."""
+    data, state = crew_ticket._read_json(_config_path(top))  # pylint: disable=protected-access
+    block = data.get("autopilot") if state == "ok" and isinstance(data, dict) else None
+    repo = block.get(key) if isinstance(block, dict) else None
     try:
-        mode = (crew_config.read_global_config().get("autopilot") or {}).get("mode")
+        machine = (crew_config.read_global_config().get("autopilot") or {}).get(key)
     except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        machine = None
+    return repo, machine
+
+
+def _layer_note(top, key, fine):
+    """When the machine-global file sets `autopilot.<key>` too, which file holds which value and
+    which holds one outside `fine` (the stricter layer wins, so that file is the one to edit)."""
+    repo, machine = _layers(top, key)
+    if machine is None:
         return ""
-    return "" if mode is None else (f"; the machine-global file sets it to {_word(mode)} too "
-                                    "and the stricter layer wins")
+    held = [(name, path, value) for name, path, value in (
+        ("the repo file", _config_path(top), repo),
+        ("the machine-global file", crew_config.GLOBAL_CONFIG_PATH, machine)) if value is not None]
+    text = "; " + " and ".join(f"{name} {path} has {_word(value)}" for name, path, value in held)
+    wrong = [name for name, _path, value in held if value not in fine]
+    return text + (f"; the stricter layer wins, so edit {' and '.join(wrong)}" if wrong else "")
+
+
+def _broken_files(top):
+    """The unreadable config file(s), each with its resolved path: "the repo file P", "the
+    machine-global file G", both, or "" when both read. Derived from the cause the autopilot
+    module reports for the repo file first, then for the machine file."""
+    import crew_autopilot  # pylint: disable=import-outside-toplevel  # it imports this lazily
+    machine = crew_autopilot._unreadable_machine_autopilot()  # pylint: disable=protected-access
+    cause = crew_autopilot._unreadable_autopilot(top)  # pylint: disable=protected-access
+    files = ([f"the repo file {_config_path(top)}"] if cause and cause != machine else [])
+    return " and ".join(files + ([f"the machine-global file {crew_config.GLOBAL_CONFIG_PATH}"]
+                                 if machine else []))
+
+
+def _risk_line(got):
+    """The `risk` policy's own prerequisite, or "": it approves only a spec whose risk is known
+    to be low. Reads the decision `approval_policy` already made; decides nothing."""
+    import crew_autopilot  # pylint: disable=import-outside-toplevel  # it imports this lazily
+    if got.get("policy") != crew_autopilot.RISK or (got.get("known") and got.get("risk") == "low"):
+        return ""
+    words = crew_autopilot._risk_words(got)  # pylint: disable=protected-access
+    return (f'autopilot.approval is "risk" and the spec has {words}, needs risk: low in the '
+            'spec header (or set autopilot.approval to "self")')
 
 
 def raw_allow_cli(top):
@@ -74,7 +114,8 @@ def _mode_line(conf, top):
     saw = conf["saw"]
     valid = saw is None or saw in ("off", "plan", "backlog")
     note = "" if valid else " (not a valid value; allowed: off, plan, backlog)"
-    return f'autopilot.mode is {_word(saw)}{note}, needs "plan" (or "backlog")' + _layer_note()
+    return (f'autopilot.mode is {_word(saw)}{note}, needs "plan" (or "backlog")'
+            + _layer_note(top, "mode", ("plan", "backlog")))
 
 
 def _approval_line(conf, top):
@@ -86,7 +127,8 @@ def _approval_line(conf, top):
     note = "" if valid else " (not a valid value; allowed: human, risk, self)"
     if valid and raw != conf["approval"]:
         note = " (a sleep-schedule override makes it human now)"
-    return f'autopilot.approval is {_word(raw)}{note}, needs "self" (or "risk" for a risk: low spec)'
+    return (f'autopilot.approval is {_word(raw)}{note}, needs "self" (or "risk" for a risk: low '
+            'spec)' + _layer_note(top, "approval", ("self", "risk")))
 
 
 def unmet_prerequisites(top, ticket):
@@ -96,10 +138,11 @@ def unmet_prerequisites(top, ticket):
     out = []
     path = _config_path(top)
     conf = crew_autopilot.settings(top)
-    unreadable = bool(crew_autopilot._unreadable_autopilot(top))  # pylint: disable=protected-access
+    broken = _broken_files(top)
+    unreadable = bool(broken)
     if unreadable:
         out.append("autopilot.mode could not be told, because a config file it reads could not be "
-                   f"read; fix {path} (and the machine-global file) first")
+                   f"read; fix {broken} first")
     elif not conf["armed"]:
         out.append(_mode_line(conf, top))
     if not crew_ticket.cli_approval_allowed(top):
@@ -107,9 +150,12 @@ def unmet_prerequisites(top, ticket):
                    f'of {path}, the file this checkout reads, by the owner: "scope": '
                    '{"allowCliApproval": true}; crew_config.py --set refuses it)')
     if unreadable or conf["approval"] == crew_autopilot.UNKNOWN:
-        out.append(f"autopilot.approval could not be told; fix the config file ({path})")
+        out.append(f"autopilot.approval could not be told; fix {broken or path}")
     elif conf["approval"] == crew_autopilot.HUMAN:
         out.append(_approval_line(conf, top))
+    else:
+        risk = _risk_line(crew_autopilot.approval_policy(top, ticket))
+        out.extend([risk] if risk else [])
     try:
         if review_ledger.status(top, ticket).get("state") == review_ledger.UNKNOWN:
             out.append("the review ledger is unreadable; repair it")
@@ -123,7 +169,8 @@ def unmet_text(top, ticket):
     try:
         unmet = unmet_prerequisites(top, ticket)
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
-        unmet = [f"the prerequisites could not be listed ({type(exc).__name__}: {_bound(exc)})"]
+        what = json.dumps(_bound(exc))
+        unmet = [f"the prerequisites could not be listed ({type(exc).__name__}: {what})"]
     if not unmet:
         return ""
     return ("\nFor autopilot to approve plans itself ALL of these must hold; unmet now:\n"
