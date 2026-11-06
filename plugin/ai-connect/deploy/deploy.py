@@ -4,7 +4,7 @@
   deploy bridge [--name N] [--peer P ...] [--port N] [--vpn-subnet CIDR] [--dry-run]
   deploy peer --name N --bridge HOST [--port N] [--auth-key-file F] [--token-file F] [--dry-run]
               [--register-mcp [--scope project|user] [--no-state-hooks]] [--install-hooks]
-                                                            both off by default; --register-mcp also writes the state hooks
+                                                            both off by default; --register-mcp also writes state hooks
   deploy peer --name N --bridge HOST --print-enrolment      make this peer's own token, print only its hash
   deploy add-peer --name N --token-sha256 HEX [--dry-run]   on the Bridge: let that peer in by the hash
   deploy invite --name N [--bridge HOST] [--expiry 1h] [--ephemeral] [--out F] [--dry-run]
@@ -1492,7 +1492,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="where --register-mcp registers it: this directory's .mcp.json (project, the default) or "
                          "every project of this user (user)")
     pe.add_argument("--no-state-hooks", action="store_true",
-                    help="with --register-mcp, do not write the peer-state hooks (busy / idle / waiting; on by default)")
+                    help="with --register-mcp, do not write the peer-state hooks (on by default)")
     pe.add_argument("--install-hooks", action="store_true",
                     help="also install the plugin with its hooks for every Claude Code session here (off by default)")
     pe.set_defaults(func=cmd_peer)
