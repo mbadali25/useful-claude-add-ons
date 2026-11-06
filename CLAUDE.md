@@ -60,6 +60,22 @@ may not, and neither may production code or a prompt outside the harness. The fe
 harness format (`SEAM` in the same script) ride along only when a lane commit declares each with a
 `Tooling-seam: <path>` trailer, a claim the reviewer holds the diff to.
 
+## Standing authorization - installing software
+
+**You may install any software the task requires, without asking first.** Owner rule, 2026-11-06.
+This covers tools, runtimes and packages needed to run, test or verify the work (e.g. `python3`,
+`pwsh`, test dependencies). Limits: install only what the task needs, report each install in the
+reply, and never install into or modify the repo's own install scripts as a side effect. The
+suites' own rule still holds: they never install anything and never touch real config.
+
+## Standing rule - one new agent per task
+
+**Run each task in a new agent (a fresh subagent), not in the main session.** Owner rule, 2026-11-06.
+The main session briefs the agent (goal, paths, what is ruled out), waits for its report and relays
+the result. Independent tasks go out as parallel agents in one message; do not reuse an agent across
+unrelated tasks. A lookup you could answer in a few tool calls is still a task, so delegate it too.
+Check `ListAgents` first so you never mistake another session's diff or branch for your own.
+
 ## Stop and ask - the conditions that should halt work
 
 - **Content change with no `version` bump.** `claude plugin update` compares the *declared version*,
