@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.4] - 2026-11-06
+
+Session state reporting is on by default. Client and deploy only: the Bridge is unchanged.
+
+### Changed
+- `deploy peer|join --register-mcp` now also writes the peer-state hooks (busy on prompt submit and after each tool, waiting on a permission prompt, idle when a turn ends) beside the MCP server, so `peer_list` shows the state instead of `state unknown`. `--no-state-hooks` registers the server alone. `--install-hooks` (the watcher plugin) stays opt-in and no longer has anything to do with state. `installer.py claude` already wrote them
+- This is the owner's explicit decision of 2026-11-06 and an exception to the repository's rule that a hook defaults to off: the hooks send a literal state, never a prompt, tool text or a peer's message
+- Each state hook has `timeout: 5` (Claude Code's default is 600 seconds, 30 on `UserPromptSubmit`). An older hook entry is replaced by the next `deploy peer --register-mcp` or `installer.py claude`
+- `peer_set_state` answers with text for every failure (Bridge down, connection lost, a client that raises) and cuts `detail` to 200 characters, so a hook never ends as an error in the transcript
+
+### Notes
+- Existing machines get the hooks (and the timeout) when `deploy peer --register-mcp` or `installer.py claude` is run again there; nothing writes into a settings file by itself. A hook is not shipped in the plugin's `hooks/hooks.json` because an `mcp_tool` hook with no registered server is an error on every event, and the state belongs to the session's own Bridge connection, which only its MCP server holds
+- There is no clear-on-exit hook: `peer_set_state` accepts only busy, idle and waiting, and a session that ends drops its Bridge connection, so the peer leaves `peer_list`
+
 ## [0.2.3] - 2026-11-06
 
 Easier to tell peers apart and to address them. Client only: the Bridge is unchanged and needs no redeploy.

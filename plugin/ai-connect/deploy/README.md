@@ -176,8 +176,12 @@ MCP server, `--install-hooks` the plugin's hooks for every session on the machin
 prints a warning: in a bypass-permissions session, what another peer sends is acted on
 with no prompt in between.
 
-The peer-state hooks (busy / idle / waiting) call the MCP server, so they are written only
-with both options, into the settings of the scope the server is in: the user's
+The peer-state hooks (busy / idle / waiting) call the MCP server, so they are written
+with `--register-mcp` (since 0.2.4; before, `--install-hooks` was needed as well, and a
+peer registered without it reports `state unknown` until `deploy peer --register-mcp`
+is run again). `--no-state-hooks` keeps the server alone. This is the one hook that is on by
+default: it sends a literal state, never a prompt or a peer's message. They go into the
+settings of the scope the server is in: the user's
 `~/.claude/settings.json` with `--scope user`, this project's `.claude/settings.local.json`
 with `--scope project` (in the user's settings they would fail in every other project,
 which has no such server). Other hooks and keys in that file are kept, a file that is not
