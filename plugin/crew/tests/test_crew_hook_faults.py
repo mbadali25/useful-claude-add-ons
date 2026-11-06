@@ -680,6 +680,41 @@ def test_no_retry_when_the_dispatch_deadline_has_no_room_for_one(tmp_path, monke
     assert _runs(log) == 1 and "UNKNOWN (guard timeout" in err
 
 
+def _with_reserve_of(monkeypatch, windows):
+    """Make dispatch compute the retry reserve of the given platform, whatever OS runs the test."""
+    real = crew_hook._retry_reserve  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_hook, "_retry_reserve", lambda _windows: real(windows))
+    return real(windows)
+
+
+@pytest.mark.parametrize("windows", [False, True], ids=["reserve-posix", "reserve-windows"])
+def test_the_retry_gate_sits_exactly_at_the_floor_whichever_reserve_applies(tmp_path, monkeypatch, windows):
+    """The window is derived from the platform's own reserve, so the guard bites on every OS: just
+    under reserve + RETRY_FLOOR left after the first attempt there is no retry (a gate that ignores
+    the deadline would start one with ~1 s), with ample room beyond the floor there is one."""
+    reserve = _with_reserve_of(monkeypatch, windows)
+    first = 3
+    source, log = _counting(tmp_path, "time.sleep(60)\n")
+    scripts = h.fake_guards(tmp_path, {"env-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts, window_s=first + reserve + crew_hook.RETRY_FLOOR - 1.0,
+                                   row_timeout=first)
+
+    assert code == 2, err
+    assert _runs(log) == 1 and "no retry: no room before the dispatch deadline" in err, err
+
+    roomy_dir = tmp_path / "roomy"
+    roomy_dir.mkdir()
+    source, log = _counting(roomy_dir, "time.sleep(60)\n")
+    scripts = h.fake_guards(roomy_dir, {"env-guard.sh": source})
+
+    code, _, err = h.dispatch_fake(monkeypatch, scripts, window_s=first + reserve + crew_hook.RETRY_FLOOR + 2.0,
+                                   row_timeout=first)
+
+    assert code == 2, err
+    assert _runs(log) == 2 and "attempts=2" in err, err
+
+
 def test_a_timeout_is_never_exit_0_when_armed_whichever_guard_it_is(tmp_path, monkeypatch):
     for name in h.BASH_GUARDS:
         sub = tmp_path / name.replace(".", "_")

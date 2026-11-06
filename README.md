@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.103**: The retry-deadline test bites on POSIX too. `crew` 1.2.103: test only, no behaviour change. A Linux sabotage run of #700 found one of 52 mutations ("the retry ignores the dispatch deadline") staying green, because the old test's window left a negative retry budget that never started a script off Windows. `test_the_retry_gate_sits_exactly_at_the_floor_whichever_reserve_applies` derives its window from `_retry_reserve()` for each platform (POSIX and Windows reserves on either OS), asserting no retry just under reserve + `RETRY_FLOOR` and a retry with room beyond it; the sabotage entry now points at it. Docs: none - test-only change.
 - **crew 1.2.102**: Wrap the long lines pylint rejects, regenerate the crew rules file. `crew` 1.2.102: no behaviour change. Five lines over pylint's 120-column limit in the hook dispatcher and its tests are wrapped, and `.claude/rules/crew.md` is regenerated, which clears the two CI failures on #700 (Pylint C0301, Instruction budgets "generated rules: drift").
-- **crew 1.2.101**: The resource-exhaustion label reads only diagnostic lines, not quoted text. `crew` 1.2.101: a guard's refusal is labelled `UNKNOWN (resource exhaustion, ...)` only when stderr has a real fork or allocation diagnostic line, so a path such as `MemoryError-tests` or a quoted command naming `EAGAIN` no longer gets that label (the refusal itself is unchanged: exit 2).
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

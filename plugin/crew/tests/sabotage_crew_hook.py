@@ -164,7 +164,7 @@ CREW_HOOK_MUTATIONS = (
     ("the retry ignores the dispatch deadline", HOOK,
      "            if retry_for >= RETRY_FLOOR:\n",
      "            if True:\n",
-     _F + "test_no_retry_when_the_dispatch_deadline_has_no_room_for_one"),
+     _F + "test_the_retry_gate_sits_exactly_at_the_floor_whichever_reserve_applies"),
     ("a real policy deny (exit 2) is labelled UNKNOWN", HOOK,
      "        if res[\"exit\"] == 2 and _is_no_python_refusal(stderr):\n",
      "        if res[\"exit\"] == 2:\n",
