@@ -473,9 +473,9 @@ def test_a_hard_killed_gate_leaves_nothing_that_blocks_or_misprices_the_next(tmp
     slow = _rule(["a.py"], ["sleep 60"], seconds=1)
     root = _repo(tmp_path, [slow])
     out = _out(tmp_path)
-    # 30s: start-up (bash, python, the matcher) must not use the window up
-    # before the rule starts, even on a loaded Windows host.
-    deadline = time.time() + 30
+    # 200s: start-up (bash, python, the matcher) must not use the window up
+    # before the rule starts - measured over 60s on a loaded Windows host.
+    deadline = time.time() + 200
     env = _env(root, out, deadline_s=deadline, margin=0)
     holder = crew_fixtures.popen_gate([_BASH, _SH], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
                                       stderr=subprocess.DEVNULL, cwd=str(root), env=env, text=True)
@@ -484,7 +484,7 @@ def test_a_hard_killed_gate_leaves_nothing_that_blocks_or_misprices_the_next(tmp
         holder.stdin.close()
         inflight = root / ".crew" / ".verify-gate.inflight.json"
         owner = root / ".crew" / ".verify-gate.lock" / "owner"
-        bound = time.monotonic() + 60
+        bound = time.monotonic() + 180
         while not (inflight.exists() and owner.exists()):
             assert holder.poll() is None, "the holder ended before its rule started"
             assert time.monotonic() < bound, "the holder never started its rule"
@@ -500,5 +500,6 @@ def test_a_hard_killed_gate_leaves_nothing_that_blocks_or_misprices_the_next(tmp
     assert "backed off" not in result.stderr, result.stderr
     assert "whose process no longer exists" in result.stderr, result.stderr
     assert "killed at the hook deadline while running sleep 60" in result.stderr, result.stderr
-    assert _timings(root).get(verify_record.rule_key(slow), 0) >= 8, _timings(root)
+    # The rule started within the 180s bound and ran to the 200s deadline.
+    assert _timings(root).get(verify_record.rule_key(slow), 0) >= 20, _timings(root)
     assert "deferred: would pass the hook deadline" in result.stderr, result.stderr
