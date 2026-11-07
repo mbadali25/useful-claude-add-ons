@@ -90,7 +90,9 @@ def test_must_fall_through_on_a_declared_deploy(repo, command):
 
 def test_must_fall_through_on_a_dispatch_of_a_declared_workflow(repo):
     _commit_map(repo, _DISPATCH_MAP)
-    assert not _promote_fast.allowed(_payload("gh workflow run deploy.yml -f environment=prod -f x=1"))
+    # Inputs reordered, so the containment match does not see the declared
+    # text: only the dispatch read names prod here.
+    assert not _promote_fast.allowed(_payload("gh workflow run deploy.yml -f x=1 -f environment=prod"))
 
 
 def test_must_fall_through_on_a_dispatch_it_cannot_read(repo):

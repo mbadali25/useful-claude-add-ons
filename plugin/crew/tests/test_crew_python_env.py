@@ -162,7 +162,11 @@ def test_must_allow_a_windows_path_converted_by_hand_without_cygpath(tmp_path, f
     prelude = "cygpath() { echo CYGPATH-ASKED >&2; return 3; }\n"
     code, out, err = _call(tmp_path, func, str(stub), [_python_free(tmp_path)], prelude=prelude,
                            extra_env={"MSYS2_ENV_CONV_EXCL": "CREW_PYTHON"})
-    assert (code, out.lower()) == (0, _posix(stub).lower()), err
+    # Not _posix(): cygpath -u answers /tmp/.. for the temp dir, a mount of the
+    # same folder; the hand conversion names it by its drive.
+    text = str(stub)
+    want = "/" + text[0].lower() + text[2:].replace("\\", "/")
+    assert (code, out.lower()) == (0, want.lower()), err
     assert "CYGPATH-ASKED" not in err, err
 
 
