@@ -89,7 +89,10 @@ def config_value(config_path: Path) -> bool | None:
     try:
         config = yaml.safe_load(text) or {}
     except yaml.YAMLError as err:
-        raise RootPolicyError(f"cannot read {CONFIG_KEY}: {config_path} is not valid YAML ({err})") from None
+        # Only where, never PyYAML's text: it quotes the offending value, which can be a token
+        mark = getattr(err, "problem_mark", None)
+        where = f" (line {mark.line + 1}, column {mark.column + 1})" if mark is not None else ""
+        raise RootPolicyError(f"cannot read {CONFIG_KEY}: {config_path} is not valid YAML{where}") from None
     section = config.get("install") if isinstance(config, dict) else None
     if section is None:
         return None

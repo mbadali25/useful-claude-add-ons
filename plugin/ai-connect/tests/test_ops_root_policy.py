@@ -100,6 +100,16 @@ def test_unreadable_config_is_an_error_not_a_guess(tmp_path, text):
         root_policy.resolve(False, {}, config(tmp_path, text))
 
 
+def test_a_malformed_config_never_shows_the_token_in_the_refusal(tmp_path):
+    """PyYAML's own message quotes the offending text: here an undefined alias named after the token."""
+    secret = "c0ffee" * 10 + "feed"
+    path = config(tmp_path, f'client:\n  token: *{secret}\n')
+    with pytest.raises(root_policy.RootPolicyError) as exc:
+        root_policy.resolve(False, {}, path)
+    assert "is not valid YAML (line 2" in str(exc.value)
+    assert secret[:12] not in str(exc.value)
+
+
 def test_a_config_without_the_key_is_the_default(tmp_path):
     assert root_policy.resolve(False, {}, config(tmp_path, "server:\n  port: 9999\n")) == (None, "default")
 
