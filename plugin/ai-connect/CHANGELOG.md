@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.8] - 2026-11-07
+
+### Fixed
+- The root switch's refusal for a config that is not valid YAML names only the line and column, never PyYAML's own text, which quotes the offending value (a token can be that value). Found by running the suite as root before 0.2.7 was released
+
 ## [0.2.7] - 2026-11-07
 
 Installing and running as root is a configurable option. The default is unchanged: nothing before 0.2.7 refused root, and with no switch set nothing does now. Client, installer and deploy only: the Bridge is unchanged.
