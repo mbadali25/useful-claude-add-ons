@@ -1423,7 +1423,9 @@ PY=$(crew_py_strict) || { echo "VERIFY GATE: no python (python3, python or py) r
 # the timings cache, and only by a run that holds the lock - so the run that
 # wrote it is over. A kill at the hook deadline becomes a price for the rule
 # that was running; anything else re-prices nothing. See verify_record.py.
-if [ "$UNLOCKED" -eq 0 ] && [ -f "$FP_DIR/verify_record.py" ]; then
+# Only when the file exists: the common path must not pay a python spawn
+# between taking the lock and publishing its deadline.
+if [ "$UNLOCKED" -eq 0 ] && [ -e .crew/.verify-gate.inflight.json ] && [ -f "$FP_DIR/verify_record.py" ]; then
   "$PY" "$FP_DIR/verify_record.py" inflight-settle 2>&1 | tr -d '\r' >&2 || true
 fi
 

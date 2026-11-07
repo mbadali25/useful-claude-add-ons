@@ -1286,9 +1286,12 @@ def _sync(sha, matched, cmd_log, all_run=False):
         # rule at its cached measurement when one is valid (latest wins), so a
         # stale declared price, over- or under-stated, is replaced once one
         # clean run here measures it.
-        measured = _clean_timing(statuses, cmds, elapsed_by_cmd)
-        if measured is not None:
-            timings["rules"][key] = measured
+        # Inline rather than through _clean_timing (which `progress` uses with
+        # the same rule): sabotage_tooling.py's two timing mutations anchor here.
+        if all(s == "pass" for s in statuses):
+            # STORE EVEN 0s, as max(1, ceil(...)) - see _clean_timing.
+            total = sum(elapsed_by_cmd.get(c, 0) for c in cmds)
+            timings["rules"][key] = max(1, math.ceil(total))
 
     # STALE OBLIGATIONS. A key here that verify.json no longer declares - the
     # rule was edited (rule_key is a content hash, so a changed `run` or
