@@ -686,6 +686,25 @@ not errors, and neither blocks the turn:</p>
   Push the branch, or run <code>/crew:verify --all</code> to check it here.</li>
 </ul>
 <p>A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.</p>
+<p>Since crew 1.2.116 the gate also keeps the <strong>hook deadline</strong> (<code>CREW_HOOK_DEADLINE</code>, the Stop hook's
+600s limit), because the budget works from estimates and an estimate can be wrong (measured: 862s
+on Windows, killed by the hook, nothing recorded):</p>
+<ul>
+<li>**`verify-gate: deferred: would pass the hook deadline - rules[N] is priced Ms and Ks are left ...</li>
+<li>NOT VERIFIED this turn: <command><code>**: before each rule, its price is held against the time left
+  less a 60s margin. The rule did not run; the verified marker does not advance. Run</code>/crew:verify --all` (no deadline) to check it here.</li>
+<li><strong><code>a previous run was killed at the hook deadline while running &lt;command&gt; ... priced at Ns or
+  more from now on</code></strong>: the last run was killed mid-rule. The gate saved what it had measured as it
+  went (<code>.crew/.verify-gate.timings.json</code>, <code>.crew/.verify-gate.log</code> headed <code>RUN NOT FINISHED</code>), and
+  the command in flight is now priced at no less than the time it ran, so Stop defers it by name
+  instead of starting it into the same kill. <code>/crew:verify --all</code> measures it again.</li>
+<li><strong><code>the lock at .crew/.verify-gate.lock names a holder ... whose process no longer exists</code></strong>: a
+  killed gate's lock is reclaimed at once instead of backing off until its deadline. A holder that is
+  alive, or that cannot be asked, still makes the next run back off (<code>NOTHING WAS VERIFIED</code>).</li>
+<li><strong>Scope larger than the branch</strong>: the diff base is the merge-base with <code>origin/&lt;default&gt;</code> when that
+  ref exists, else the local branch; the detail log (<code>--verbose</code>) names which. A local <code>main</code> behind
+  the remote no longer drags merged work into scope.</li>
+</ul>
 <h2 id="verify-gate-prints-one-line-or-says-unchanged-since-last-stop">Verify Gate Prints One Line, or Says "Unchanged Since Last Stop"</h2>
 <p>Since crew 1.2.39 (L-0796) the Stop gate is quiet. It prints one verdict line, then each failure
 exactly as before, and keeps the rest in <code>.crew/.verify-gate.log</code>:</p>
