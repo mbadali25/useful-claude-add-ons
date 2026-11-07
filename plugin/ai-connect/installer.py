@@ -37,6 +37,7 @@ from pathlib import Path
 
 import yaml
 
+import root_policy
 import state_hooks
 from config_loader import CONFIG_PATH, OBSERVER_TOKEN_PATH, USER_TOKEN_PATH
 
@@ -368,35 +369,51 @@ def unregister_claude() -> None:
     print(f"  Watcher hooks: claude plugin uninstall {PLUGIN}")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    # Every step takes it: root_policy.py says what it allows, and in what order the switches count
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(root_policy.FLAG, action="store_true", dest="allow_root",
+                        help="allow running as root (Linux/macOS); also AI_CONNECT_ALLOW_ROOT or install.allow_root")
     steps = parser.add_subparsers(dest="step", required=True)
-    config = steps.add_parser("config", help="write or check ~/.config/ai-connect/config.yaml")
+    config = steps.add_parser("config", parents=[common], help="write or check ~/.config/ai-connect/config.yaml")
     mode = config.add_mutually_exclusive_group(required=True)
     mode.add_argument("--server", action="store_true", help="Bridge machine: generate its tokens")
     mode.add_argument("--client", action="store_true", help="other machines: ask for the peer token")
-    steps.add_parser("observer-token", help="Bridge machine: generate the token for reading all traffic")
-    steps.add_parser("user-token", help="Bridge machine: generate the token for writing to agents as a user")
-    add_peer_parser = steps.add_parser("add-peer", help="Bridge machine: add a peer, print its new token once")
+    steps.add_parser("observer-token", parents=[common],
+                     help="Bridge machine: generate the token for reading all traffic")
+    steps.add_parser("user-token", parents=[common],
+                     help="Bridge machine: generate the token for writing to agents as a user")
+    add_peer_parser = steps.add_parser("add-peer", parents=[common],
+                                       help="Bridge machine: add a peer, print its new token once")
     add_peer_parser.add_argument("name", help="peer name, as used in auth.peers and that machine's client.name")
-    revoke_peer_parser = steps.add_parser("revoke-peer", help="Bridge machine: remove a peer's token")
+    revoke_peer_parser = steps.add_parser("revoke-peer", parents=[common], help="Bridge machine: remove a peer's token")
     revoke_peer_parser.add_argument("name", help="peer name to remove from auth.peers")
-    steps.add_parser("claude", help="register the MCP server and the state hooks with Claude Code")
-    steps.add_parser("unregister", help="remove the MCP server and the state hooks from Claude Code")
-    args = parser.parse_args()
+    steps.add_parser("claude", parents=[common], help="register the MCP server and the state hooks with Claude Code")
+    steps.add_parser("unregister", parents=[common], help="remove the MCP server and the state hooks from Claude Code")
+    args = parser.parse_args(argv)
+
+    # install.sh has already said it once (AI_CONNECT_ROOT_WARNED): each step need not say it again
+    try:
+        root = root_policy.check(args.allow_root, config_path=CONFIG_PATH,
+                                 warn=not os.environ.get("AI_CONNECT_ROOT_WARNED"))
+    except root_policy.RootPolicyError as err:
+        sys.exit(f"ai-connect: {err}")
 
     if args.step == "config":
-        write_config(server=args.server)
+        write_config(server=args.server, config_path=CONFIG_PATH)
     elif args.step in ("observer-token", "user-token"):
-        create_token(args.step.removesuffix("-token"))
+        create_token(args.step.removesuffix("-token"), CONFIG_PATH)
     elif args.step == "add-peer":
-        add_peer(args.name)
+        add_peer(args.name, CONFIG_PATH)
     elif args.step == "revoke-peer":
-        revoke_peer(args.name)
+        revoke_peer(args.name, CONFIG_PATH)
     elif args.step == "claude":
         register_claude()
     else:
         unregister_claude()
+    if root == root_policy.ALLOWED:
+        root_policy.secure(CONFIG_PATH.parent)
 
 
 if __name__ == "__main__":

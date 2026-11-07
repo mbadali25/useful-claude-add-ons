@@ -521,6 +521,7 @@ def build_parser() -> argparse.ArgumentParser:
     for cmd in (b, pe, s):
         cmd.add_argument("--apply", action="store_true",
                          help="make the changes; without it setup prints the plan and changes nothing")
+    deploy.add_allow_root(sub)
     return p
 
 
@@ -535,7 +536,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args.apply:
         no_tools()
     try:
-        return args.func(args)
+        root = deploy.root_gate(args)
+        return deploy.root_close(root, args.func(args), not args.apply)
     except (Failure, tsadmin.Failure) as err:
         print(tsadmin.redact(f"setup {args.cmd}: {err}"), file=sys.stderr, flush=True)
         return err.code
