@@ -170,16 +170,20 @@ def allowed(raw):
     command = _command(raw)
     if command is None or not os.path.isfile(_MAP):
         return False
-    blob = _head_map()
-    if blob is None or not _committed_as_is(blob):
-        return False
-    # What the full gate exports to both of its python steps for a clean map.
-    os.environ["CREW_HEAD_MAP"] = blob
+    # What the full gate exports to both of its python steps for a clean map:
+    # with CREW_MAP_DIRTY empty neither reads CREW_HEAD_MAP.
+    os.environ["CREW_HEAD_MAP"] = ""
     os.environ["CREW_MAP_DIRTY"] = ""
+    # The matches first, the git probe last: a deploy falls through before
+    # this starts any process, so the full gate's own first `git rev-parse`
+    # is still the first probe its deadline counts.
     source = _match_source()
     if source is None or not _matches_nothing(command, source):
         return False
-    return _dispatches_nothing(command)
+    if not _dispatches_nothing(command):
+        return False
+    blob = _head_map()
+    return blob is not None and _committed_as_is(blob)
 
 
 def main():
