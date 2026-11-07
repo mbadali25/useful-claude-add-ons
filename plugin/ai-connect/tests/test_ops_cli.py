@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-import test_server_harness as h  # noqa: F401  # puts the repo root on sys.path first
+import test_server_harness  # noqa: F401  # pylint: disable=unused-import  # puts the repo root on sys.path first
 
 import ai_connect_cli as cli  # noqa: E402
 import installer  # noqa: E402
@@ -183,7 +183,8 @@ def test_token_join_with_token_file_and_revoke_disconnects(bridge_config, laptop
         issued = bridge_config.parent / cli.ISSUED_DIR / "desk.token"
         token = issued.read_text(encoding="utf-8").strip()
         assert token not in out + err and f"****{token[-4:]}" in out
-        assert jc.sha256_hex(token) == yaml.safe_load(bridge_config.read_text(encoding="utf-8"))["auth"]["peers"]["desk"]
+        enrolled = yaml.safe_load(bridge_config.read_text(encoding="utf-8"))["auth"]["peers"]
+        assert jc.sha256_hex(token) == enrolled["desk"]
 
         code, out, err = ai(capsys, laptop_config, "join", "--token-file", str(issued),
                             "--bridge", f"127.0.0.1:{bridge.port}", "--name", "desk")

@@ -181,7 +181,7 @@ def decode(text: str) -> JoinCode:
             raise IndexError
     except (IndexError, struct.error, UnicodeDecodeError):
         raise CodeError("the join code is malformed") from None
-    host, name = fields
+    host, name = fields[0], fields[1]
     if not HOST_RE.match(host) or not PEER_NAME_RE.match(name) or port == 0:
         raise CodeError("the join code carries an invalid host, name or port")
     return JoinCode(host=host, port=port, fingerprint=fingerprint, secret=secret, name=name, expires=expires)
