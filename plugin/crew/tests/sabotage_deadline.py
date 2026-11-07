@@ -1,4 +1,4 @@
-"""The crew 1.2.116 mutations: the Stop gate's hook deadline, its persistence
+"""The crew 1.2.117 mutations: the Stop gate's hook deadline, its persistence
 during a run, its diff base and its stale-lock reclaim. Same tuple shape as
 `sabotage.py`'s MUTATIONS -- (label, target, find, replace, test) -- and
 appended to it there. Run `sabotage.py`, not this file.

@@ -188,7 +188,7 @@ not re-paid on every delegation. The test is: *could a command decide this?*
 Worked examples ship in `skills/crew-setup/examples/` — a Terraform
 `CLAUDE.md` and the matching `verify.json`.
 
-**The Stop gate keeps the hook's clock (since 1.2.116).** It picks rules from their prices
+**The Stop gate keeps the hook's clock (since 1.2.117).** It picks rules from their prices
 inside `verify.stopBudgetSeconds`, and before each rule it also checks the time left before the
 Stop hook kills it: a rule that would not fit is deferred by name (`deferred: would pass the hook
 deadline`) and the turn is not recorded as verified. Timings and the log are saved as the run goes,

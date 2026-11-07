@@ -610,7 +610,7 @@ zero_rules_line() {
 # verify_record.py persists it by content hash and reports it every run
 # until it is actually checked, via /crew:verify --all.
 # TREE_MOVED: tree-pass credits withdrawn after the loop, same effect.
-# DEADLINE_DEFER_N (crew 1.2.116): rules the run loop deferred because they
+# DEADLINE_DEFER_N (crew 1.2.117): rules the run loop deferred because they
 # would pass the hook deadline. Never run, so never verified.
 fully_verified() { [ "${DEFERRED_COUNT:-1}" -eq 0 ] && [ "${TREE_MOVED:-0}" -eq 0 ] && [ "${DEADLINE_DEFER_N:-0}" -eq 0 ]; }
 
@@ -640,7 +640,7 @@ record_verified_fingerprint() {
 #      tracked: the MAP travels, the record of what was checked against it does
 #      not, and conflating the two is how a clone inherits a pass it never ran.
 #   2. The merge-base with the default branch (origin/<default> when that ref
-#      exists, else the local branch - crew 1.2.116, see below), when there is
+#      exists, else the local branch - crew 1.2.117, see below), when there is
 #      no marker or it names a commit this repo no longer contains (a squash
 #      merge, a rebase).
 #      Nothing on this branch has been shown to be verified, so all of it is in
@@ -721,7 +721,7 @@ if [ -z "$BASE" ]; then
   DEF=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || DEF=""
   DEF=${DEF#origin/}
   [ -z "$DEF" ] && DEF=main
-  # crew 1.2.116: the REMOTE-TRACKING branch first. The local default branch
+  # crew 1.2.117: the REMOTE-TRACKING branch first. The local default branch
   # is only as fresh as the last `git pull` on it, and a worktree's is often
   # far behind: measured 2026-11-07, a local main 31 commits behind
   # origin/main, so every Stop diffed 31 commits of other people's merged
@@ -891,7 +891,7 @@ fi
 # it would be on evidence that does not hold. The age window stays the only
 # answer for a lock directory that can be dated.
 #
-# crew 1.2.116 closes it without that check: the holder records its WINDOWS
+# crew 1.2.117 closes it without that check: the holder records its WINDOWS
 # pid (/proc/$$/winpid) and the epoch it took the lock, and the challenger
 # asks Windows (OpenProcess / GetExitCodeProcess / GetProcessTimes, in
 # verify_record.py owner-state), not the MSYS pid table. Re-measured
@@ -1109,7 +1109,7 @@ lock_touch() {
   printf '%s
 ' "$LOCK_TOKEN" > "$LOCK/token" 2>/dev/null || true
 }
-# WHO HOLDS IT (crew 1.2.116). A holder killed with taskkill /F or SIGKILL
+# WHO HOLDS IT (crew 1.2.117). A holder killed with taskkill /F or SIGKILL
 # never runs its trap, so its lock outlived it and every later Stop backed off
 # ("NOTHING WAS VERIFIED") until the published deadline - up to 2 x the
 # largest rule price, minutes. `owner` names the holder in a form its
@@ -1217,7 +1217,7 @@ if ! mkdir "$LOCK" 2>/dev/null; then
       case "$HOLD_DEADLINE" in
         ''|*[!0-9]*) HOLD_DEADLINE="" ;;
       esac
-      # crew 1.2.116: a holder whose process is GONE holds nothing, whatever
+      # crew 1.2.117: a holder whose process is GONE holds nothing, whatever
       # its deadline or age says - see lock_owner_write. Asked only here, on
       # the rare path where a lock is found, so the common path pays nothing.
       OWNER_STATE=$(lock_owner_state)
@@ -1418,7 +1418,7 @@ fi
 # interpreter ever slips past crew_py_strict the same way.
 PY=$(crew_py_strict) || { echo "VERIFY GATE: no python (python3, python or py) resolves to a PROVED working interpreter anywhere on PATH - .crew/verify.json cannot be read and nothing can be verified. Work is not complete. Install python (3.10+) on this machine, or set \"verifyGate\": false in .crew/config.json to stand this gate down deliberately (honoured at the top of this file)." >&2; exit 2; }
 
-# crew 1.2.116: a run killed mid-command (taskkill /F, SIGKILL - no trap runs)
+# crew 1.2.117: a run killed mid-command (taskkill /F, SIGKILL - no trap runs)
 # leaves its in-flight record behind. Settled HERE, before the matcher reads
 # the timings cache, and only by a run that holds the lock - so the run that
 # wrote it is over. A kill at the hook deadline becomes a price for the rule
@@ -1961,7 +1961,7 @@ if tree_cached:
         notices.append("verify-gate: %d command(s) passed on this exact tree in an earlier run "
                        "and are credited, not re-run (CREW_VERIFY_FRESH=1 runs them anyway)" % _n)
 
-# Which rule SCHEDULES each command (crew 1.2.116, record 9): the run loop's
+# Which rule SCHEDULES each command (crew 1.2.117, record 9): the run loop's
 # deadline guard decides rule by rule, so a command must know the rule it
 # runs as part of. Filled by the budget below; a command it did not place
 # falls back to the first matched rule naming it, after the budget.
@@ -2185,7 +2185,7 @@ if CI_MODE:
     if not cmds and fallback_notices:
         _extras["ci_nothing"] += " (%d `always`/`default` command(s) excluded for reach)" % len(fallback_notices)
 extras = json.dumps(_extras)
-# Record 9 (crew 1.2.116), aligned with record 1: `<rule index>:<price>` for
+# Record 9 (crew 1.2.117), aligned with record 1: `<rule index>:<price>` for
 # each command - the rule it runs as part of, and that rule's price in whole
 # seconds as the budget charged it. Either half is empty when unknown (an
 # `always`/`default` command has no rule; a rule with no `seconds` and no
@@ -2310,7 +2310,7 @@ TREE_AT=()
 while IFS= read -r TREE_LINE; do
   TREE_AT+=("$TREE_LINE")
 done <<< "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 8p | tr '\036' '\n')"
-# Record 9 (crew 1.2.116): `<rule index>:<price>` per position, for the
+# Record 9 (crew 1.2.117): `<rule index>:<price>` per position, for the
 # deadline guard in the run loop. Missing or short means "rule and price
 # unknown" - the guard then runs the command only while time is left.
 OWN_AT=()
@@ -2537,7 +2537,7 @@ cover_credit() {
   fi
   [ "$COVER_STATE" = ok ]
 }
-# --- the hook deadline (crew 1.2.116) ---------------------------------------
+# --- the hook deadline (crew 1.2.117) ---------------------------------------
 # The Stop budget picks rules by ESTIMATED cost, then each one ran to the end
 # with no clock at all. When the estimates were wrong the hook killed the
 # gate (taskkill /F: no trap, nothing recorded) - measured 2026-11-07, 862s
@@ -2571,7 +2571,7 @@ DEADLINE_MARGIN=60
 # drive a real kill at a real deadline in seconds instead of waiting out the
 # margin. Stated plainly: unlike the TTL seam, a SMALLER value here is the
 # riskier direction - the gate then cuts closer to the kill, and the worst
-# case is the pre-1.2.116 behaviour (a killed run), which the in-flight record
+# case is the pre-1.2.117 behaviour (a killed run), which the in-flight record
 # still prices for the next Stop. Nothing operator-facing names it; it exists
 # for tests/test_verify_gate_deadline.py and must not be set elsewhere.
 case "${CREW_VERIFY_DEADLINE_MARGIN:-}" in
@@ -2624,7 +2624,7 @@ deadline_defers() {
   echo "verify-gate: deferred: would pass the hook deadline - $_dd_why - NOT VERIFIED this turn: $3" >&2
   return 0
 }
-# --- persistence after EACH rule (crew 1.2.116) -----------------------------
+# --- persistence after EACH rule (crew 1.2.117) -----------------------------
 # The timings cache, the quiet log and the in-flight record used to be written
 # only when the run ENDED, and a hook kill ends nothing: the next turn priced
 # the same rules from the same stale numbers and was killed the same way.
@@ -2708,7 +2708,7 @@ $LOG_LINE"
 $LOG_LINE"
     continue
   fi
-  # --- the hook deadline (crew 1.2.116; see deadline_defers above) -----
+  # --- the hook deadline (crew 1.2.117; see deadline_defers above) -----
   # A deferred command is left out of CMD_LOG, so the record sync reads its
   # rule as not run and leaves that rule's entry as it was.
   OWN_SPEC="${OWN_AT[$POS]:-}"
@@ -2769,7 +2769,7 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
   gate_detail "verify-gate: env pinned -$PIN_REPORT"
   # </dev/null: a check that reads stdin (some test runners do) would otherwise
   # consume the rest of $CMDS from the here-string and silently skip those checks.
-  # crew 1.2.116: what has run so far is on disk, and so is what starts now.
+  # crew 1.2.117: what has run so far is on disk, and so is what starts now.
   # BEFORE RULE_START, so the python spawn is not billed to the rule's own
   # measured time (measured: up to 10s a spawn on a loaded Windows host).
   gate_progress "$IDENT" "$(date +%s)" "$GATE_DEADLINE_S"

@@ -1,4 +1,4 @@
-"""crew 1.2.116: the Stop gate keeps the hook deadline, persists as it goes,
+"""crew 1.2.117: the Stop gate keeps the hook deadline, persists as it goes,
 diffs from origin/<default>, and reclaims a lock whose holder is dead.
 
 Measured 2026-11-07 on a Windows desktop: the Stop gate took 862s on a clean
@@ -437,7 +437,7 @@ def test_a_lock_whose_holder_is_alive_still_holds(tmp_path):
 
 
 @pytest.mark.parametrize("owner", [
-    None,                                   # a pre-1.2.116 lock: no owner file
+    None,                                   # a pre-1.2.117 lock: no owner file
     ("win", "abc", "1", None),              # unparseable
     ("bogus", "1", "1", None),              # unknown scheme
     "mismatched-token",                     # an owner beside another run's token

@@ -1426,7 +1426,7 @@ def cmd_timings_get():
             print(f"{key}\t{secs}")
 
 
-# --- persistence DURING a run (crew 1.2.116) ---------------------------------
+# --- persistence DURING a run (crew 1.2.117) ---------------------------------
 #
 # The timings cache used to be written only by `sync`, after the run loop. The
 # Stop hook kills a gate that outlives its deadline with `taskkill /F` (or
@@ -1602,7 +1602,7 @@ def inflight_settle(now):
             "defers it by name until /crew:verify --all measures it" % (cmd, lower, lower)]
 
 
-# --- whether a lock's holder is still alive (crew 1.2.116) -------------------
+# --- whether a lock's holder is still alive (crew 1.2.117) -------------------
 #
 # The lock records its holder as `win <windows pid> <epoch the lock was taken>`
 # (Git Bash: /proc/$$/winpid) or `proc <pid> <starttime ticks>` (Linux:

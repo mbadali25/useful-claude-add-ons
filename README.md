@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.116**: The Stop gate keeps the hook deadline and survives being killed. `crew` 1.2.116: the verify gate no longer runs past the Stop hook's deadline (measured 862s against 600s on Windows); a rule that would not fit is deferred by name, what a run measured is saved as it goes so a killed run still corrects the next one, the diff base is `origin/<default>`, and a lock left by a killed gate no longer blocks the next turn.
+- **crew 1.2.117**: The Stop gate keeps the hook deadline and survives being killed. `crew` 1.2.117: the verify gate no longer runs past the Stop hook's deadline (measured 862s against 600s on Windows); a rule that would not fit is deferred by name, what a run measured is saved as it goes so a killed run still corrects the next one, the diff base is `origin/<default>`, and a lock left by a killed gate no longer blocks the next turn.
 - **crew 1.2.110**: Test anchors follow the crew_py_script change (CI of #703). `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
