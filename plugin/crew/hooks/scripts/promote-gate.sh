@@ -116,7 +116,7 @@ fi
 #     exists. Doubly degraded, a deploy cannot be told from anything else.
 PY=$(crew_py) || PY=""
 
-# The allow fast path (crew 1.2.114). Nearly every command is no deploy, and
+# The allow fast path (crew 1.2.115). Nearly every command is no deploy, and
 # proving that took this gate some forty process starts on Git Bash, each an
 # MSYS fork, which is what timed the guards out once several lanes ran at once.
 # _promote_fast.py asks the same questions in ONE python: the map is committed

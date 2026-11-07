@@ -381,7 +381,7 @@ PROMOTE_TREE_MUTATIONS = (
      'timeout=max((until - time.monotonic()) / 2, 0.1))',
      'timeout=5)',
      _V + "test_windows_cleanup_stays_inside_the_reap_allowance"),
-    # --- crew 1.2.114: the allow fast path (_promote_fast.py) ------------------
+    # --- crew 1.2.115: the allow fast path (_promote_fast.py) ------------------
     ("promote-gate.sh allows on any fast-path exit, not only 99", SH,
      '  [ "$?" -eq 99 ] && exit 0\n',
      '  exit 0\n',

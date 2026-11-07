@@ -10,7 +10,7 @@ against the current drive: `can't open file 'D:\\tmp\\...'`. The fix is the
 on argument conversion), wrapped around every non-harness `"$DIR/x.py"` caller.
 
 This runs on Linux with a Windows-like fixture: an exported `OSTYPE=msys`
-(crew 1.2.114 reads bash's `$OSTYPE` instead of forking `uname -s`, and bash
+(crew 1.2.115 reads bash's `$OSTYPE` instead of forking `uname -s`, and bash
 keeps an inherited value), a `cygpath` that maps `/p` to `D:/winfx/p`, and a `python3` that
 refuses any `.py` argument still shaped like a POSIX path (what python.exe does
 with an unconverted one) and maps `D:/winfx/p` back so the real script runs.

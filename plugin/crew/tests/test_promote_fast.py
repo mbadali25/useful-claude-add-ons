@@ -1,4 +1,4 @@
-"""crew 1.2.114: promote-gate.sh's allow fast path, _promote_fast.py.
+"""crew 1.2.115: promote-gate.sh's allow fast path, _promote_fast.py.
 
 It may only ever say "allow" (exit 99) where the full gate would have allowed;
 anything else falls through to the full gate, unchanged. So every case here is

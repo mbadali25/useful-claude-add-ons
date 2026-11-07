@@ -155,7 +155,7 @@ def test_must_allow_a_windows_path_converted_with_cygpath(tmp_path, func):
 @pytest.mark.skipif(os.name != "nt", reason="needs a real Windows path to convert")
 @pytest.mark.parametrize("func", _FUNCS, ids=_IDS)
 def test_must_allow_a_windows_path_converted_by_hand_without_cygpath(tmp_path, func):
-    """crew 1.2.114: the drive path is converted without a fork, `C:\\x` ->
+    """crew 1.2.115: the drive path is converted without a fork, `C:\\x` ->
     `/c/x`, and cygpath is asked only when that names no executable file. A
     cygpath that fails loudly proves it is never asked here."""
     stub = _stub(tmp_path / "elsewhere", "python.exe")

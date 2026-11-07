@@ -1,4 +1,4 @@
-"""crew 1.2.114: the guards' allow path starts no helper processes in bash.
+"""crew 1.2.115: the guards' allow path starts no helper processes in bash.
 
 On Git Bash every process start is an MSYS fork (~0.15s measured on the
 Windows host, against 9-21ms for a native process), and the PreToolUse guards

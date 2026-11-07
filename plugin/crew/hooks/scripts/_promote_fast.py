@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""promote-gate.sh's allow fast path (crew 1.2.114): prove, in ONE python,
+"""promote-gate.sh's allow fast path (crew 1.2.115): prove, in ONE python,
 that a command deploys nothing, so the gate can stop there.
 
     python3 _promote_fast.py < <hook payload>      (cwd: the project dir)
