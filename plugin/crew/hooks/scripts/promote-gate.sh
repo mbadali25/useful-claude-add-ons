@@ -564,8 +564,10 @@ block() {
 # "nothing": that is the unknown-as-safe bug class.
 ENVNAME=${ENVNAMES:-workflow dispatch}
 ENVNAME=${ENVNAME//$'\n'/,}
+DISPATCH_PY=$(crew_py_script "$(dirname "${BASH_SOURCE[0]}")/_promote_dispatch.py") \
+  || block "_promote_dispatch.py is missing or its path could not be resolved, so the command cannot be read as a workflow dispatch. This is not a pass."
 DISPATCH=$(CREW_HEAD_MAP="$HEAD_MAP" CREW_MAP_DIRTY="$MAP_DIRTY" PYTHONIOENCODING=utf-8 \
-  "$PY" "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/_promote_dispatch.py")" "$CMD") \
+  "$PY" "$DISPATCH_PY" "$CMD") \
   || block "the command could not be read as a workflow dispatch (_promote_dispatch.py failed). This is not a pass."
 DISPATCH=$(crew_strip_cr "$DISPATCH")
 while IFS=$'\t' read -r kind tok; do
@@ -621,7 +623,9 @@ if [ -n "$RUN_CWD" ]; then
   BASE=$(resolve_dir "$BASE" "$RUN_CWD")
   [ -z "$BASE" ] && block "the command runs from '$RUN_CWD', which does not exist, so it is not inside a git worktree - cannot establish what is being deployed."
 fi
-RECORDS=$(PYTHONIOENCODING=utf-8 "$PY" "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py")" "$CMD") \
+TREE_PY=$(crew_py_script "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py") \
+  || block "_promote_tree.py is missing or its path could not be resolved, so the directory the deploy runs from cannot be read. This is not a pass."
+RECORDS=$(PYTHONIOENCODING=utf-8 "$PY" "$TREE_PY" "$CMD") \
   || block "the deploy command could not be parsed for the directory it runs from (_promote_tree.py failed). This is not a pass."
 # Windows Python ends every record with CRLF and `$(...)` drops only the last
 # line's: a `cd` record followed by another kept its CR, so `cd "<dir>\r"`
@@ -710,8 +714,10 @@ FULL=$(git -C "$TREE" rev-parse HEAD 2>/dev/null)
 # command must give that input exactly once, as 40 lowercase hex, equal to
 # the full HEAD of the tree judged here. `_promote_github.py` decides it for
 # both flavours (promote-gate.ps1 runs it too); a helper that fails blocks.
+GITHUB_PY=$(crew_py_script "$(dirname "${BASH_SOURCE[0]}")/_promote_github.py") \
+  || block "_promote_github.py is missing or its path could not be resolved, so the github entry's sha rule cannot be checked. This is not a pass."
 GH_RULE=$(printf '%s' "$CMD" | PYTHONIOENCODING=utf-8 \
-  "$PY" "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/_promote_github.py")" --shell bash --full "$FULL" \
+  "$PY" "$GITHUB_PY" --shell bash --full "$FULL" \
   --envs "$ENVNAME" -) \
   || block "the github entry's sha rule could not be checked (_promote_github.py failed). This is not a pass."
 GH_RULE=$(crew_strip_cr "$GH_RULE")
@@ -924,9 +930,16 @@ fi
 # kills its search when that passes. Its reasons join VERDICT, so the emergency lane and the
 # message below treat them like every other unmet precondition; a non-zero
 # exit is could-not-tell and blocks like the check above.
-REVIEW=$("$PY" "$(crew_native_path "$(dirname "${BASH_SOURCE[0]}")/_promote_review.py")" "$TREE" "$FULL" \
-  "$GATE_DEADLINE" "${ENVLIST[@]}")
-REVIEW_STATUS=$?
+if REVIEW_PY=$(crew_py_script "$(dirname "${BASH_SOURCE[0]}")/_promote_review.py"); then
+  REVIEW=$("$PY" "$REVIEW_PY" "$TREE" "$FULL" \
+    "$GATE_DEADLINE" "${ENVLIST[@]}")
+  REVIEW_STATUS=$?
+else
+  # No script operand would make python run the current directory; report the
+  # check as failed (status 127) so the branches below name it, never a pass.
+  REVIEW=""
+  REVIEW_STATUS=127
+fi
 if [ "$REVIEW_STATUS" -ne 0 ] && crew_incident_active; then
   # An open incident records a review check that could not run as a skip, like
   # every other unmet precondition: exiting 2 here, before the emergency lane

@@ -57,9 +57,14 @@ if [ -z "$PY" ]; then
   exit 0
 fi
 
-printf '%s' "$INPUT" | CREW_ENV_GUARD_FLAVOUR=bash PYTHONUTF8=1 \
-  PYTHONIOENCODING=utf-8 "$PY" "$(crew_native_path "$DIR/env_guard.py")"
-status=$?
+if GUARD_PY=$(crew_py_script "$DIR/env_guard.py"); then
+  printf '%s' "$INPUT" | CREW_ENV_GUARD_FLAVOUR=bash PYTHONUTF8=1 \
+    PYTHONIOENCODING=utf-8 "$PY" "$GUARD_PY"
+  status=$?
+else
+  echo "env-guard: env_guard.py is missing or its path could not be resolved (looked in $DIR)." >&2
+  status=127
+fi
 
 if [ "$status" -ne 0 ]; then
   # env_guard.py only ever exits 0 -- its decisions are JSON -- so any other

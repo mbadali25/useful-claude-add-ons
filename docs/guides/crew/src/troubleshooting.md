@@ -481,6 +481,14 @@ contract itself. This section is what goes wrong with the approval and the audit
   its time and what happened (`killed-at-bound`, `exit-nonzero`, `not-python-proof`,
   `not-tried-budget-spent`, ...). A timeout under heavy load is the machine, not a missing python:
   re-run when it is idle. The other PowerShell hooks and the bash twins do not report this yet.
+- **`CREW_PYTHON` and the bash guards (crew 1.2.109).** The launcher exports the interpreter it
+  already ran as `CREW_PYTHON`; `crew_py`, `crew_py_strict` and `role-write-guard.sh` take it before
+  walking `PATH`, so a guard started by the dispatcher no longer probes every candidate again (the
+  walk was the slow part on Windows under load). It is used only when it is an absolute path
+  (`C:\...` is converted with `cygpath -u`), a regular executable file, named `py`, `python` or
+  `python3.x`; anything else is ignored and the old walk runs. A guard whose helper script is
+  missing (or whose path cannot be resolved) now refuses with `<name>.py is missing or its path could
+  not be resolved` instead of python's `can't find '__main__' module in '<repo>'`.
 
 ## Verify gate says 0 rules ran, or deferred to CI
 

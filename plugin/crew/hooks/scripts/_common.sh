@@ -67,6 +67,43 @@ crew_py() {
   # `$(crew_py...)` call site across this directory to avoid a subshell --
   # a change to the whole hook layer to speed up a function nothing here
   # calls more than once or twice per process anyway.
+  # BEGIN CREW_PYTHON (identical in crew_py, crew_py_strict and role-write-guard.sh)
+  # The dispatcher's launcher already resolved and ran an interpreter, and
+  # exports it as CREW_PYTHON for the guards it starts, so a guard need not
+  # walk PATH and probe again (on Windows each probe is a process tree, and
+  # under load the walk is what timed the guards out). Trusted only after it
+  # is checked: an absolute path (Windows `C:\..` or POSIX, converted with
+  # cygpath -u as crew-hook.ps1 exports a Windows path), a regular executable
+  # file, named like an interpreter (py / python / python3.x, with or without
+  # .exe). Anything else is ignored and the walk below runs as before. The
+  # variable is only ever consulted here, never executed unchecked.
+  if [ -n "${CREW_PYTHON:-}" ]; then
+    local _crew_env_py _crew_env_lc
+    _crew_env_py=$(printf '%s' "$CREW_PYTHON" | tr -d '\r')
+    case "$_crew_env_py" in
+      [A-Za-z]:\\*|[A-Za-z]:/*)
+        if command -v cygpath >/dev/null 2>&1; then
+          _crew_env_py=$(cygpath -u -- "$_crew_env_py" 2>/dev/null) || _crew_env_py=""
+        else
+          _crew_env_py="/$(printf '%s' "$_crew_env_py" | cut -c1 | tr '[:upper:]' '[:lower:]')$(printf '%s' "$_crew_env_py" | cut -c3- | tr '\\' '/')"
+        fi
+        ;;
+    esac
+    _crew_env_lc=$(printf '%s' "${_crew_env_py##*/}" | tr '[:upper:]' '[:lower:]')
+    case "$_crew_env_py" in
+      /*)
+        case "$_crew_env_lc" in
+          py|py.exe|python|python.exe|python[0-9]*)
+            if [ -f "$_crew_env_py" ] && [ -x "$_crew_env_py" ]; then
+              printf '%s\n' "$_crew_env_py"
+              return 0
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  fi
+  # END CREW_PYTHON
   local candidate first=""
   # An OVERALL deadline on top of each candidate's own 3s probe bound: a
   # PATH with several hung candidates would otherwise cost 3s EACH, adding
@@ -167,6 +204,43 @@ crew_py_strict() {
   # twin, 10s) even though every individual probe is bounded. Kept well
   # inside that: the walk gives up and reports "no python" rather than keep
   # trying once this much of the budget is spent.
+  # BEGIN CREW_PYTHON (identical in crew_py, crew_py_strict and role-write-guard.sh)
+  # The dispatcher's launcher already resolved and ran an interpreter, and
+  # exports it as CREW_PYTHON for the guards it starts, so a guard need not
+  # walk PATH and probe again (on Windows each probe is a process tree, and
+  # under load the walk is what timed the guards out). Trusted only after it
+  # is checked: an absolute path (Windows `C:\..` or POSIX, converted with
+  # cygpath -u as crew-hook.ps1 exports a Windows path), a regular executable
+  # file, named like an interpreter (py / python / python3.x, with or without
+  # .exe). Anything else is ignored and the walk below runs as before. The
+  # variable is only ever consulted here, never executed unchecked.
+  if [ -n "${CREW_PYTHON:-}" ]; then
+    local _crew_env_py _crew_env_lc
+    _crew_env_py=$(printf '%s' "$CREW_PYTHON" | tr -d '\r')
+    case "$_crew_env_py" in
+      [A-Za-z]:\\*|[A-Za-z]:/*)
+        if command -v cygpath >/dev/null 2>&1; then
+          _crew_env_py=$(cygpath -u -- "$_crew_env_py" 2>/dev/null) || _crew_env_py=""
+        else
+          _crew_env_py="/$(printf '%s' "$_crew_env_py" | cut -c1 | tr '[:upper:]' '[:lower:]')$(printf '%s' "$_crew_env_py" | cut -c3- | tr '\\' '/')"
+        fi
+        ;;
+    esac
+    _crew_env_lc=$(printf '%s' "${_crew_env_py##*/}" | tr '[:upper:]' '[:lower:]')
+    case "$_crew_env_py" in
+      /*)
+        case "$_crew_env_lc" in
+          py|py.exe|python|python.exe|python[0-9]*)
+            if [ -f "$_crew_env_py" ] && [ -x "$_crew_env_py" ]; then
+              printf '%s\n' "$_crew_env_py"
+              return 0
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  fi
+  # END CREW_PYTHON
   local _crew_py_strict_deadline=$((SECONDS + 8))
   while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
@@ -384,6 +458,20 @@ crew_native_path() {
   else
     printf '%s' "$given"
   fi
+}
+
+# A script path native python can open, or a failure. `crew_native_path` fails
+# OPEN (it echoes its input), and a call site written `"$PY" "$(crew_native_path
+# "$DIR/x.py")"` hands python an EMPTY operand when the substitution yields
+# nothing, which makes python run the current directory as a package
+# (`can't find '__main__' module in '<repo>'`). This helper refuses instead:
+# nothing printed and status 1 when the converted path is empty or not a file.
+# The caller names the failure and fails CLOSED.
+crew_py_script() {
+  local s
+  s=$(crew_native_path "$1")
+  [ -n "$s" ] && [ -f "$1" ] || return 1
+  printf '%s' "$s"
 }
 
 # --- The repo config's directory (T-0096) ---------------------------------

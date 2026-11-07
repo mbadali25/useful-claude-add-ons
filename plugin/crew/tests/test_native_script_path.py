@@ -233,19 +233,47 @@ _DEFERRED = {("handoff-write.sh", "crew_resume.py")}
 
 
 
+# `crew_py_script` wraps `crew_native_path` and refuses an empty or missing
+# script (crew 1.2.109), so it is as good as the bare helper at a call site.
+_ALLOWED_HELPERS = ('crew_native_path "', 'crew_py_script "')
+
+
+def _unwrapped_script_paths(name, line):
+    """The `$DIR`-derived script paths on `line` that no allowed helper wraps."""
+    if line.lstrip().startswith("#"):
+        return []
+    return [found.group(0) for found in _SCRIPT_PATH.finditer(line)
+            if not any(found.group(0).endswith("/" + script) and name == hook for hook, script in _DEFERRED)
+            and not line[:found.start()].endswith(_ALLOWED_HELPERS)]
+
+
 @pytest.mark.parametrize("name", _NON_HARNESS)
 def test_every_script_path_in_a_non_harness_hook_goes_through_the_helper(name):
     offenders = []
     for number, line in enumerate((SCRIPTS / name).read_text(encoding="utf-8").splitlines(), 1):
-        if line.lstrip().startswith("#"):
-            continue
-        for found in _SCRIPT_PATH.finditer(line):
-            if any(found.group(0).endswith("/" + script) and name == hook for hook, script in _DEFERRED):
-                continue
-            if not line[:found.start()].endswith('crew_native_path "'):
-                offenders.append(f"{name}:{number}: {line.strip()}")
+        if _unwrapped_script_paths(name, line):
+            offenders.append(f"{name}:{number}: {line.strip()}")
 
     assert offenders == []
+
+
+@pytest.mark.parametrize("line", [
+    'GUARD_PY=$(crew_py_script "$DIR/cloud_guard.py") || exit 2',
+    'X=$(crew_py_script "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py")',
+    '"$PY" "$(crew_native_path "$DIR/x.py")"',
+], ids=["py-script-dir", "py-script-dirname", "native-path"])
+def test_an_allowed_helper_wrapping_a_script_path_is_not_flagged(line):
+    assert _unwrapped_script_paths("cloud-guard.sh", line) == []
+
+
+@pytest.mark.parametrize("line", [
+    '"$PY" "$DIR/cloud_guard.py"',
+    'GUARD_PY="$DIR/cloud_guard.py"',
+    '"$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py"',
+    'GUARD_PY=$(crew_py_script_not "$DIR/cloud_guard.py")',
+], ids=["bare-dir", "assigned-bare", "bare-dirname", "lookalike-helper"])
+def test_a_bare_script_path_is_still_flagged(line):
+    assert _unwrapped_script_paths("cloud-guard.sh", line) != []
 
 
 @pytest.mark.parametrize("name", _NON_HARNESS)
