@@ -103,7 +103,7 @@ cd AI-Connect
 
 The script creates a venv, installs `requirements.txt`, writes `~/.config/ai-connect/config.yaml`, registers AI-Connect with Claude Code (see step 3) and installs `ai-connect.service` (the Bridge, port 9999; needs sudo). Clients on other machines must be able to reach port 9999.
 
-It asks for the listen address: give the machine's VPN address (Tailscale, WireGuard), not `0.0.0.0`. It registers the Bridge machine as a peer of its own Bridge and fills in that peer's token (`client.token`). Every other machine gets its own token: run `venv/bin/python installer.py add-peer <name>` on the Bridge machine, which prints the token once, and restart the Bridge. The Bridge stores only the token's SHA-256 (`auth.peers`) and refuses every connection without a known token; a token can register only its own name.
+It asks for the listen address: give the machine's VPN address (Tailscale, WireGuard), not `0.0.0.0`. It registers the Bridge machine as a peer of its own Bridge and fills in that peer's token (`client.token`). Every other machine gets its own token: the easiest way is a one-time join code (`ai-connect bridge invite --name <name>`, see [step 5](#5-adding-machines-join-codes-and-the-ai-connect-cli)); `venv/bin/python installer.py add-peer <name>` on the Bridge machine still prints a token once. A running Bridge picks up a new or revoked token within seconds, with no restart. The Bridge stores only the token's SHA-256 (`auth.peers`) and refuses every connection without a known token; a token can register only its own name.
 
 > **Security:** AI-Connect encrypts nothing itself. Reach the Bridge only over a VPN, never over the LAN at large or the internet; see the [Security model](#security-model).
 
@@ -192,9 +192,32 @@ To skip tool confirmation dialogs, add to `~/.claude/settings.json`:
 
 Then restart the assistant so it loads the MCP server.
 
+### 5. Adding machines: join codes and the ai-connect CLI
+
+`bin/ai-connect` (Linux, macOS, Git Bash) and `bin\ai-connect.cmd` (Windows) are the `ai-connect` command; link the first onto your `PATH` or put `bin` on it. They use the plugin's venv, else `python3`, `python` or `py -3`, and stop with a message on stderr (exit 127) when no Python 3.10+ is there.
+
+```bash
+# On the Bridge machine: a single-use code for the new machine, good for 1 hour (at most 7d)
+ai-connect bridge invite --name laptop --expiry 1h --host 100.x.y.z
+# On the new machine (VPN up): paste the code; it writes client.name, client.token and client.bridge_url
+ai-connect join
+# On the Bridge machine
+ai-connect bridge list                 # enrolled peers, and each code: pending, used or expired
+ai-connect bridge revoke --name laptop # the running Bridge drops it within seconds
+ai-connect bridge token --name ci-box  # a long-lived token, into an owner-only file, for a machine that cannot paste
+ai-connect status                      # on any machine: config, token (last 4 only), whether the Bridge answers
+```
+
+- **The code** carries a version, its expiry, the Bridge's address and port, a slot for the Bridge certificate's fingerprint (used from the TLS release on), a 128-bit secret, the peer name and a checksum, as base32 in groups of five. It is shown once (or written owner-only with `--out`) and works once. The Bridge keeps only the secret's SHA-256, in `invites.json` beside `config.yaml`. `join` asks for the code hidden when none is given (also `--code-file F`, or `AI_CONNECT_JOIN_CODE`).
+- **Redemption** goes to the Bridge's own port (`GET /join`). It is exactly once, also under concurrent attempts: one locked read-check-mark-write, and the code is marked used before the token is written, so a crash in between spends the code rather than leaving it usable twice. An unknown, used, expired or wrong-name code gets the same answer; after 5 failures in a minute from one address (30 in total) the Bridge answers 429.
+- **Tokens** are 256 random bits; the Bridge stores only their SHA-256 in `auth.peers`. Output never shows one, only `****` and its last four characters. `bridge token` writes it to `~/.config/ai-connect/issued-tokens/<name>.token` (or `--out`), owner-only; on the peer, `ai-connect join --token-file F --bridge HOST:PORT --name N` puts it into the config. **Bridge-issued tokens do not expire**; `bridge revoke` ends them.
+- **No restart.** The Bridge re-reads `config.yaml` every 2 seconds and swaps its token table whole. A new peer connects at once; a revoked or replaced token's live connections are closed (`1008 token revoked`). A config that does not parse, or whose `auth:` is invalid, is logged and the old table stays. `server.*` settings still need a restart.
+- **`--dry-run`** on `invite`, `token`, `revoke` and `join` prints `would: ...` and changes nothing.
+- **Transport:** still plain `ws://` inside the VPN in this release, the redemption included. A code that carries a certificate fingerprint is refused by this client, never redeemed over `ws://`. The TLS release follows.
+
 ## Deploy
 
-`deploy/deploy.sh` (Linux, and macOS for a peer) and `deploy/deploy.ps1` (Windows) do the whole Setup above over Tailscale, one command per machine. Both hand straight to `deploy/deploy.py`, so they run the same steps in the same order and print the same text. [`deploy/README.md`](deploy/README.md) is the runbook for two machines, start to finish. **Adding a machine** after that is three commands (`invite` on the Bridge, `join` on the new machine, `approve` on the Bridge), and `list` / `remove` show and take machines off: [`deploy/ONBOARDING.md`](deploy/ONBOARDING.md).
+`deploy/deploy.sh` (Linux, and macOS for a peer) and `deploy/deploy.ps1` (Windows) do the whole Setup above over Tailscale, one command per machine. Both hand straight to `deploy/deploy.py`, so they run the same steps in the same order and print the same text. [`deploy/README.md`](deploy/README.md) is the runbook for two machines, start to finish. **Adding a machine** after that is `ai-connect bridge invite` and `ai-connect join` ([step 5](#5-adding-machines-join-codes-and-the-ai-connect-cli)); deploy's own `invite` / `join` (Tailscale auth keys) are deprecated since 0.2.6, still work through this release, and go in the next minor one. `list` / `remove` show and take machines off: [`deploy/ONBOARDING.md`](deploy/ONBOARDING.md).
 
 ```bash
 # Machine 1, once per tailnet (admin): preview, then apply
@@ -407,7 +430,7 @@ On Windows: `install.cmd -Status`; the logs are in `%USERPROFILE%\.config\ai-con
 | "Not connected" | Wrong `client.bridge_url` | It must be the Bridge machine's VPN address, e.g. `ws://100.64.0.1:9999` |
 | Connection refused | Bridge not running | `sudo systemctl start ai-connect` on the Bridge machine |
 | Timeout | Firewall | Open port 9999 on the Bridge machine for your VPN subnet only |
-| `peer_status`: the Bridge refused the token | `client.token` unknown to the Bridge, or revoked | On the Bridge machine `installer.py add-peer <name>`, put the token in `client.token`, restart the Bridge and the client |
+| `peer_status`: the Bridge refused the token | `client.token` unknown to the Bridge, or revoked | On the Bridge machine `ai-connect bridge invite --name <name>` and `ai-connect join` here (or `installer.py add-peer <name>` and put the token in `client.token`), then restart the client |
 | `may not be registered with this token` | `client.name` is not the name the token was issued for | Set `client.name` to the name given to `add-peer` |
 | `peer_status` shows standby | Another session holds the same name (`name_taken`): the Bridge or this client is still 0.1.8, or two sessions were given the same `AI_CONNECT_PEER_NAME` | Update both to 0.2.0, where every session has its own name; until then close one. The standby session takes the name once the other one leaves |
 | `peer_read` says the Bridge refused the session's name (`name_not_bound_to_token`) and the session is offline | `client.name` is not the name the token was enrolled with, or the session's name belongs to another enrolled machine (`client.name: Host` in a project `Alice`, with `Host:Alice` enrolled too) | Fix `client.name`, or start that session with `AI_CONNECT_PEER_SUFFIX` set so it gets a different name |
@@ -425,8 +448,8 @@ Pull requests are welcome if you find a better approach.
 
 ## Security model
 
-- **VPN-only, no TLS.** AI-Connect does not encrypt its own traffic. `server.host` must be a VPN address (Tailscale, WireGuard, ...) that only your own machines can reach -- never `0.0.0.0`, never a public interface. The VPN is the only thing between this traffic and the network; opening the Bridge's port to the internet hands everything on it to whoever finds the port.
-- **Per-peer tokens.** Every peer gets its own 256-bit token: `installer.py add-peer <name>`, run on the Bridge machine, generates one and prints it once. The Bridge stores only its SHA-256 (`auth.peers`); the raw value exists only in that one printout and in the peer's own `config.yaml`. Losing one peer's token does not expose the others -- revoke it (`installer.py revoke-peer <name>`) and restart the Bridge. The pre-2.3 single shared secret (`auth.token` with `auth.allow_shared_token: true`) still works, for migrating old peers one at a time, but every machine holding that value can act as any peer name without an entry of its own; turn it back off once every peer has its own entry.
+- **VPN-only, no TLS.** AI-Connect does not encrypt its own traffic. `server.host` must be a VPN address (Tailscale, WireGuard, ...) that only your own machines can reach -- never `0.0.0.0`, never a public interface. The VPN is the only thing between this traffic and the network; opening the Bridge's port to the internet hands everything on it to whoever finds the port. TLS with a pinned self-signed certificate is the next release: it serves `wss://` beside `ws://` for one release, with a warning, then `wss://` only.
+- **Per-peer tokens.** Every peer gets its own 256-bit token: `installer.py add-peer <name>`, run on the Bridge machine, generates one and prints it once. The Bridge stores only its SHA-256 (`auth.peers`); the raw value exists only in that one printout and in the peer's own `config.yaml`. Losing one peer's token does not expose the others -- revoke it (`ai-connect bridge revoke --name <name>` or `installer.py revoke-peer <name>`); the running Bridge closes its connections within seconds. The pre-2.3 single shared secret (`auth.token` with `auth.allow_shared_token: true`) still works, for migrating old peers one at a time, but every machine holding that value can act as any peer name without an entry of its own; turn it back off once every peer has its own entry.
 - **Peers are untrusted.** A valid token proves the connection knows a secret, not who is at the keyboard on the other end, and the traffic itself is not authenticated beyond that per-message. Treat a message from another peer -- including an instruction that arrives while your own session is idle -- the way you would treat a message from a stranger who knows a colleague's password.
 - **Never run a woken session in bypass/auto-approve mode.** A message can resume an idle Claude Code session's turn; if that session has tool confirmations disabled, whatever the message says to do runs without anyone looking at it first. Keep normal permission prompts on for any session that has the AI-Connect plugin installed.
 - **Uninstalling does not remove everything by itself.** `installer.py unregister` (run by `--uninstall`) removes the MCP server and the state hooks it wrote into `~/.claude/settings.json` (those calling `peer_set_state` on the `ai-connect` server, and no other hook), but it deliberately leaves two things for you to remove by hand: the deny rules it added to `~/.claude/settings.json` (`permissions.deny`, naming `observer.token`, `user.token` and `observer_client`) and the `@.../integrations/claude-code/CLAUDE.md` import line you added to your own `~/.claude/CLAUDE.md` during setup. Delete both yourself if you are removing AI-Connect for good.

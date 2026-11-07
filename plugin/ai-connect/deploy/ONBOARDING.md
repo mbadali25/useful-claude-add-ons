@@ -7,6 +7,22 @@ from the plugin's directory (`plugin/ai-connect`). Each one can be run again: a 
 that is already done says `already done` and changes nothing. Add `--dry-run` to see
 every step first; it runs no tool and changes nothing.
 
+> **Since 0.2.6: one join code.** With the new machine already on the VPN, adding it is
+> two commands, and nothing is restarted:
+>
+> ```bash
+> ai-connect bridge invite --name laptop --host 100.x.y.z   # on the Bridge: a single-use code, 1h
+> ai-connect join                                           # on the new machine: paste the code
+> ai-connect bridge revoke --name laptop                    # later, to take it off again
+> ```
+>
+> The code carries the Bridge's address, a 128-bit secret that works once, the peer name
+> and an expiry; redeeming it enrols the machine's token and writes its client config. See
+> [the README](../README.md#5-adding-machines-join-codes-and-the-ai-connect-cli).
+> `deploy invite`, `deploy join` and the Tailscale-key flow below are **deprecated**: they
+> print a notice, keep working through 0.2.x, and are removed in the next minor release.
+> The tailnet itself is still joined with `deploy tailnet-setup` and `vpn/vpn-up`.
+
 This assumes the Bridge exists: `deploy tailnet-setup --apply` and `deploy bridge` have
 run on it once ([the runbook](README.md)). The Bridge is also the admin machine: it holds
 the OAuth client that mints join keys.

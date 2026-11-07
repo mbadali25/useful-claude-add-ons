@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.6] - 2026-11-07
+
+Enrol a machine with one copy-paste code, and revoke one without restarting the Bridge. Installer phase 1 of 2: TLS with a pinned certificate follows in its own release.
+
+### Added
+- `ai-connect`, a CLI (`bin/ai-connect`, `bin\ai-connect.cmd`; `ai_connect_cli.py`): `bridge invite --name N [--expiry 1h]`, `join [<code>]`, `bridge token --name N`, `bridge revoke --name N`, `bridge list`, `status`. Every changing verb takes `--dry-run`. The launchers use the plugin's venv, else `python3`/`python`/`py -3`, and exit 127 with a message on stderr when no Python 3.10+ is found
+- One-time join codes (`join_codes.py`): version, expiry, Bridge host:port, a slot for the Bridge certificate's SHA-256 fingerprint (all zero until the TLS release), a 128-bit single-use secret, the peer name and a checksum, in base32. The Bridge stores only the secret's SHA-256 (`invites.json` beside `config.yaml`). Redemption (`GET /join` on the Bridge's port) is one locked read-check-mark-write: the code is marked used (temp file + `os.replace`) before the peer's token is written, so a crash burns the code. Expired, used, unknown and wrong-name codes all get the same refusal; past 5 failures a minute from one address (30 in total) the Bridge answers 429
+- Bridge-issued long-lived tokens: `bridge token --name N` writes the token to an owner-only file and shows only its last 4 characters. They do not expire; `bridge revoke` ends them
+- The Bridge reloads its auth table from `config.yaml` by polling (every 2 seconds, Windows and Linux alike, `server/auth_reload.py`): a new peer connects with no restart, and a revoked or replaced token's live connections are closed with 1008 `token revoked`. A config that does not parse or whose `auth:` is invalid is logged and the old table stays
+
+### Changed
+- `installer.py add-peer`, `revoke-peer`, `observer-token` and `user-token` no longer ask for a Bridge restart: the running Bridge picks the change up within seconds
+- `deploy invite` and `deploy join` (Tailscale auth keys) are deprecated: they print a line pointing at `ai-connect bridge invite` / `ai-connect join` and keep working through this release only, because the deploy suites still drive them; they go in the next minor release. The tailnet itself stays `deploy tailnet-setup` and `vpn/vpn-up`
+
+### Notes
+- Transport is still plain `ws://` inside the VPN in this release, redemption included; a join code that carries a certificate fingerprint is refused by this client, never redeemed over `ws://`. The next release serves `wss://` beside `ws://` for one release, with a warning, then `wss://` only
+- Settings under `server:` (address, port, limits) are still read once at start; changing one logs that a restart is needed
+
 ## [0.2.5] - 2026-11-06
 
 Lint only (line length, final newline); no behaviour change from 0.2.4.
