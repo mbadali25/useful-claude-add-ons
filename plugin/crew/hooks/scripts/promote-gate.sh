@@ -49,10 +49,21 @@ set -uo pipefail
 # so the review search below is given this deadline, never a fixed slice of
 # its own: python's start-up and every check before it count against it.
 # Taken FIRST, before the payload read and every git probe (L-0703 review r1),
-# and backdated by SECONDS, the time this shell has already run.
-GATE_DEADLINE=$(( $(date +%s) - SECONDS + 16 ))
+# and backdated by SECONDS, the time this shell has already run. The clock is
+# printf's builtin `%(%s)T` (bash 4.2+), not `$(date +%s)`: on Git Bash every
+# fork is an MSYS process start. An older bash, which has no `%(...)T`, or a
+# strftime without `%s`, gives no number and still asks date(1).
+printf -v GATE_NOW '%(%s)T' -1 2>/dev/null || GATE_NOW=""
+case "$GATE_NOW" in '' | *[!0-9]*) GATE_NOW=$(date +%s) ;; esac
+GATE_DEADLINE=$(( GATE_NOW - SECONDS + 16 ))
 
-. "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+# The script's directory without a subshell when the path is absolute, as the
+# dispatcher starts every guard; a relative one falls back to dirname.
+case "${BASH_SOURCE[0]}" in
+  /*|[A-Za-z]:/*) DIR=${BASH_SOURCE[0]%/*} ;;
+  *) DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" ;;
+esac
+. "$DIR/_common.sh"
 
 INPUT=$(cat)
 crew_tool_dispatch promote-gate.ps1 "$INPUT"
@@ -82,22 +93,13 @@ if [ -e .crew/verify.json ] && [ ! -f .crew/verify.json ] && [ ! -d .crew/verify
   echo "PROMOTION BLOCKED: .crew/verify.json is not a regular file (a FIFO, socket or device), so crew cannot read the deployment map without hanging. This is not a pass. Replace it with the map file." >&2
   exit 2
 fi
-HEAD_MAP=$(git rev-parse -q --verify "HEAD:./.crew/verify.json" 2>/dev/null)
+HEAD_MAP=""
 MAP_DIRTY=""
 if [ ! -e .crew/verify.json ]; then
+  HEAD_MAP=$(git rev-parse -q --verify "HEAD:./.crew/verify.json" 2>/dev/null)
   [ -z "$HEAD_MAP" ] && exit 0
   MAP_DIRTY="deleted, and committed at HEAD"
-elif [ -n "$HEAD_MAP" ]; then
-  WORK_MAP=$(git hash-object -- .crew/verify.json 2>/dev/null)
-  if [ -z "$WORK_MAP" ]; then
-    MAP_DIRTY="could not be hashed to compare with HEAD"
-  elif [ "$WORK_MAP" != "$HEAD_MAP" ]; then
-    MAP_DIRTY="differs from HEAD"
-  fi
-elif [ -n "$(git ls-files --others --exclude-standard -- .crew/verify.json 2>/dev/null)" ]; then
-  MAP_DIRTY="untracked - in no commit"
 fi
-
 
 # No python is NOT an opt-out (L-0703). It used to `exit 0` here, so a host
 # without python ran every declared deploy ungated. Without python the map
@@ -113,6 +115,38 @@ fi
 #     is evadable (`"depl\u006fy"`), so every command blocks while a map
 #     exists. Doubly degraded, a deploy cannot be told from anything else.
 PY=$(crew_py) || PY=""
+
+# The allow fast path (crew 1.2.114). Nearly every command is no deploy, and
+# proving that took this gate some forty process starts on Git Bash, each an
+# MSYS fork, which is what timed the guards out once several lanes ran at once.
+# _promote_fast.py asks the same questions in ONE python: the map is committed
+# as it is (its bytes, or its bytes with CRLF made LF, hash to HEAD's blob), the
+# command is plain ASCII that MSYS argument conversion leaves alone, the
+# containment match below (its own source, read out of this file) names no
+# environment and refuses nothing, and _promote_dispatch.decide() returns
+# nothing. Only then does it exit 99, and only 99 allows here. Anything else -
+# a match, a refusal, a crash, a doubt, a missing helper - falls through to the
+# full gate below, unchanged, which decides exactly as it always did.
+if [ -n "$PY" ] && [ -f .crew/verify.json ] && crew_py_script "$DIR/_promote_fast.py" FAST_PY; then
+  CREW_GATE_DEADLINE="$GATE_DEADLINE" PYTHONIOENCODING=utf-8 \
+    "$PY" "$FAST_PY" <<<"$INPUT" >/dev/null 2>&1
+  [ "$?" -eq 99 ] && exit 0
+fi
+
+if [ -e .crew/verify.json ]; then
+  HEAD_MAP=$(git rev-parse -q --verify "HEAD:./.crew/verify.json" 2>/dev/null)
+  if [ -n "$HEAD_MAP" ]; then
+    WORK_MAP=$(git hash-object -- .crew/verify.json 2>/dev/null)
+    if [ -z "$WORK_MAP" ]; then
+      MAP_DIRTY="could not be hashed to compare with HEAD"
+    elif [ "$WORK_MAP" != "$HEAD_MAP" ]; then
+      MAP_DIRTY="differs from HEAD"
+    fi
+  elif [ -n "$(git ls-files --others --exclude-standard -- .crew/verify.json 2>/dev/null)" ]; then
+    MAP_DIRTY="untracked - in no commit"
+  fi
+fi
+
 if [ -z "$PY" ]; then
   if ! command -v jq >/dev/null 2>&1; then
     echo "PROMOTION BLOCKED: no usable python and no jq, and this repository has a deployment map (.crew/verify.json). Crew cannot read the command or the map, so it cannot tell whether this command deploys. This is not a pass. Install python 3.8+ (every crew hook needs it)." >&2

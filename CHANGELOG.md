@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.114: the guards' allow path starts no helper processes in bash
+
+- **Summary.** `crew` 1.2.114: cloud-guard, env-guard and promote-gate clear a command that deploys nothing with one python and no `tr`, `cut`, `dirname`, `uname`, `cygpath`, `date`, `jq` or `git` process from bash, so several lanes running at once no longer time the guards out on Git Bash, where each process start is an MSYS fork; every decision is unchanged.
+- `_common.sh`: `crew_strip_cr` is a parameter expansion; the CREW_PYTHON check (identical in `crew_py`, `crew_py_strict` and role-write-guard.sh) converts `C:\..` to `/c/..` by hand and asks `cygpath -u` only when that names no executable file (Cygwin); `crew_native_path` reads `$OSTYPE` instead of `uname -s`, passes a mixed `D:/..` path through, converts `/d/..` by hand when both spellings name the same file (`-ef`), and bounds the remaining `cygpath -m` with `timeout 5` (orphaned `cygpath -m` processes were measured spinning on a core for 30 minutes); `crew_py_script` can assign into a variable instead of printing.
+- cloud-guard.sh and env-guard.sh: `$DIR` from `${BASH_SOURCE[0]%/*}` when absolute, and python reads the payload from stdin itself (no `INPUT=$(cat)` / `printf |`). promote-gate.sh: the same `$DIR`, the clock from printf's `%(%s)T` (date(1) on an older bash), and a new allow fast path, `_promote_fast.py`, which exits 99 only when the map is committed as it is (raw or CRLF-to-LF bytes hash to HEAD's blob), the command is plain ASCII that MSYS argument conversion leaves alone, the containment match (its heredoc read out of promote-gate.sh, not copied) names nothing and refuses nothing, and `_promote_dispatch.decide()` returns nothing; anything else falls through to the full gate unchanged.
+- Tests: `test_guard_spawns.py` (the allow path of each guard starts no helper program and exactly one python, read from `bash -x`; a declared deploy still takes the full gate), `test_promote_fast.py` (must-allow and must-fall-through cases), `test_crew_python_env.py` (a Windows path converted by hand with no cygpath asked), `test_native_script_path.py` (fakes Windows with `OSTYPE` instead of a `uname` stub; mixed paths skip cygpath; bash keeps an inherited `OSTYPE`); seven new fast-path mutations in `promote_tree_mutations.py`, and its deadline anchor follows the new line.
+
 ### Fixed — crew 1.2.110: test anchors follow the crew_py_script change (CI of #703)
 
 - **Summary.** `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.

@@ -151,6 +151,21 @@ def test_must_allow_a_windows_path_converted_with_cygpath(tmp_path, func):
     assert (code, out) == (0, _posix(stub)), err
 
 
+@needs_bash
+@pytest.mark.skipif(os.name != "nt", reason="needs a real Windows path to convert")
+@pytest.mark.parametrize("func", _FUNCS, ids=_IDS)
+def test_must_allow_a_windows_path_converted_by_hand_without_cygpath(tmp_path, func):
+    """crew 1.2.114: the drive path is converted without a fork, `C:\\x` ->
+    `/c/x`, and cygpath is asked only when that names no executable file. A
+    cygpath that fails loudly proves it is never asked here."""
+    stub = _stub(tmp_path / "elsewhere", "python.exe")
+    prelude = "cygpath() { echo CYGPATH-ASKED >&2; return 3; }\n"
+    code, out, err = _call(tmp_path, func, str(stub), [_python_free(tmp_path)], prelude=prelude,
+                           extra_env={"MSYS2_ENV_CONV_EXCL": "CREW_PYTHON"})
+    assert (code, out.lower()) == (0, _posix(stub).lower()), err
+    assert "CYGPATH-ASKED" not in err, err
+
+
 # --- MUST BLOCK (ignored, fall back to the walk, which finds nothing) -----------
 
 
