@@ -1382,6 +1382,20 @@ def summary(data, state, ticket, path):
 AUTOPILOT_NAME = "autopilot"
 
 
+def no_round_after_successor(data, state, ticket, path):
+    """L-0717: why a successor plan would have no review round, or None. A successor
+    plan does not reopen the ticket's one budget; only an owner grant
+    (--grant-round) gives it a round, and autopilot never grants."""
+    summary_ = summary(data, state, ticket, path)
+    left = summary_.get("rounds_left")
+    if isinstance(left, int) and not isinstance(left, bool) and left >= 1:
+        return None
+    return (f"no review round would remain after the successor plan: "
+            f"{summary_.get('rounds_spent')} of {summary_.get('budget')} used, and a successor "
+            "plan does not reopen the budget; the owner's grant (review_ledger.py "
+            "--grant-round) is missing and autopilot never grants one")
+
+
 def grant_round(root, ticket, by, reason):
     """L-0717: the owner's one extra round, recorded as `{at, by, reason,
     round}` in the top-level `grants` list. Changes nothing else (not the

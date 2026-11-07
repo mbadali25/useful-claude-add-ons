@@ -1212,6 +1212,7 @@ AUTO_REJECT_BY = "autopilot (policy: autopilot.maxAutoReplans)"
 MAX_AUTO_REPLANS = 5
 AUTO_REJECT = ("python3 -B ${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/crew_autopilot.py "
                "auto-reject --root . --ticket {ticket}")
+_no_round_after_successor = review_ledger.no_round_after_successor  # L-0717
 
 
 def _count(value):
@@ -1281,21 +1282,6 @@ def _auto_replan_decision(root, ticket):  # pylint: disable=too-many-return-stat
                 f"round {number} is FINDINGS with {len(blocks)} BLOCK and no round "
                 f"left; autopilot.maxAutoReplans is {cap} ({used} used) and "
                 f"{approval.get('reason')}")}
-
-
-def _no_round_after_successor(data, state, ticket, path):
-    """L-0717: why a successor plan would have no review round, or None. A
-    successor plan does not reopen the ticket's one budget, so a reject here
-    would approve a plan that cannot get a round. Only an owner grant
-    (review_ledger.py --grant-round) gives it one, and autopilot never grants."""
-    summary = review_ledger.summary(data, state, ticket, path)
-    left = summary.get("rounds_left")
-    if _count(left) and left >= 1:
-        return None
-    return (f"no review round would remain after the successor plan: "
-            f"{summary.get('rounds_spent')} of {summary.get('budget')} used, and a successor "
-            "plan does not reopen the budget; the owner's grant (review_ledger.py "
-            "--grant-round) is missing and autopilot never grants one")
 
 
 def _block_round(data, state, ticket, path):  # pylint: disable=too-many-return-statements
