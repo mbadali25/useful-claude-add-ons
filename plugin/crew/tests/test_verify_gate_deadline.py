@@ -120,7 +120,7 @@ def _timings(root):
 # --- 1. the deadline ------------------------------------------------------
 
 _FAST = _rule(["a.py"], ['touch "$OUT_DIR/fast"'], seconds=1)
-_SLOW = _rule(["a.py"], ['touch "$OUT_DIR/slow"'], seconds=50)
+_SLOW = _rule(["a.py"], ['touch "$OUT_DIR/slow"'], seconds=900)
 
 
 def test_a_rule_that_would_pass_the_hook_deadline_is_deferred_by_name(tmp_path):
@@ -135,7 +135,7 @@ def test_a_rule_that_would_pass_the_hook_deadline_is_deferred_by_name(tmp_path):
     assert "deferred: would pass the hook deadline" in result.stderr, result.stderr
     assert 'touch "$OUT_DIR/slow"' in result.stderr, (
         "the deferred rule must be NAMED. " + result.stderr)
-    assert "priced 50s" in result.stderr, result.stderr
+    assert "priced 900s" in result.stderr, result.stderr
     assert (out / "fast").exists(), "the rule that fits must still run. " + result.stderr
     assert not (out / "slow").exists(), (
         "the rule that would pass the deadline RAN - the gate kept no clock. " + result.stderr)
