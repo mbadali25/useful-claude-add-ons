@@ -333,7 +333,15 @@ async def peer_set_state(state: str, detail: str) -> str:
     client = get_client()
     if not client or not client.connected:
         return NOT_CONNECTED
-    if not await client.set_state(state, detail):
+    detail = str(detail)[:FIELD_MAX]  # bounded here too; the hooks send none
+    try:
+        sent = await client.set_state(state, detail)
+    except Exception:  # pylint: disable=broad-exception-caught
+        # The state hooks call this on every prompt and turn end: whatever goes wrong with the Bridge
+        # is an answer, never an error (an isError result is a hook error in the user's transcript)
+        log.warning("peer_set_state failed", exc_info=True)
+        return "❌ Connection to the Bridge lost."
+    if not sent:
         return "❌ Connection to the Bridge lost."
     return f"State: {state}" + (f" ({detail})" if detail else "")
 

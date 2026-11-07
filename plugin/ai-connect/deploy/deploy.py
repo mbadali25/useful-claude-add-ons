@@ -3,7 +3,8 @@
 
   deploy bridge [--name N] [--peer P ...] [--port N] [--vpn-subnet CIDR] [--dry-run]
   deploy peer --name N --bridge HOST [--port N] [--auth-key-file F] [--token-file F] [--dry-run]
-              [--register-mcp [--scope project|user]] [--install-hooks]      both off by default
+              [--register-mcp [--scope project|user] [--no-state-hooks]] [--install-hooks]
+                                                            both off by default; --register-mcp also writes state hooks
   deploy peer --name N --bridge HOST --print-enrolment      make this peer's own token, print only its hash
   deploy add-peer --name N --token-sha256 HEX [--dry-run]   on the Bridge: let that peer in by the hash
   deploy invite --name N [--bridge HOST] [--expiry 1h] [--ephemeral] [--out F] [--dry-run]
@@ -596,11 +597,10 @@ def mcp_registered(claude: str, scope: str, python: Path) -> bool:
 
 
 HOOKS_WARNING = ("  WARNING: --install-hooks turns the plugin's hooks on for EVERY Claude Code session of this user "
-                 "here (the watcher at SessionStart and Stop; with --register-mcp also the peer-state hooks, where "
-                 "the MCP server is registered). A session in bypass-permissions mode then acts on "
+                 "here (the watcher at SessionStart and Stop). A session in bypass-permissions mode then acts on "
                  "what another peer sends with no prompt in between. Leave it off on a shared machine.")
 STATE_HOOKS_NOTE = ("  note: the peer-state hooks (busy / idle / waiting) call the MCP server, so they are written "
-                    "only with --register-mcp as well. Without it this machine reports no state.")
+                    "with --register-mcp, not with --install-hooks. Without it this machine reports no state.")
 
 
 def state_settings(scope: str) -> Path:
@@ -650,8 +650,10 @@ def step_claude(r: Run, args) -> None:
     step_app(r, restart_on_change=False)
     python = venv_python() or VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     argv = [claude, "mcp", "add", "-s", args.scope, MCP_SERVER, "--", str(python), str(mcp_server_file())]
-    # Hooks only when hooks were asked for; --register-mcp alone stays the MCP server and nothing else
-    settings = state_settings(args.scope) if args.install_hooks else None
+    # The peer-state hooks go with the server by default (owner decision 2026-11-06, an explicit exception
+    # to "hooks default to off"): they send a literal state and nothing else, never what a peer says.
+    # --no-state-hooks keeps the server alone
+    settings = None if getattr(args, "no_state_hooks", False) else state_settings(args.scope)
     if r.dry_run:
         r.change(f"register MCP server '{MCP_SERVER}' ({where}), unless it is registered", lambda: None)
         if settings:
@@ -1327,7 +1329,7 @@ def cmd_join(args) -> int:
         r.change(f"make this machine's own token, owner-only in {OWN_TOKEN}", lambda: write_own_token(token))
     step_client_config(r, name, bridge, port, token)
     step_claude(r, argparse.Namespace(install_hooks=args.with_hooks, register_mcp=args.register_mcp,
-                                      scope=args.scope))
+                                      scope=args.scope, no_state_hooks=args.no_state_hooks))
     digest = hashlib.sha256(token.encode()).hexdigest()
     if r.dry_run:
         out("  would: print this machine's enrolment {name, token_sha256} and check VPN, port and token")
@@ -1489,6 +1491,8 @@ def build_parser() -> argparse.ArgumentParser:
     pe.add_argument("--scope", choices=("project", "user"), default="project",
                     help="where --register-mcp registers it: this directory's .mcp.json (project, the default) or "
                          "every project of this user (user)")
+    pe.add_argument("--no-state-hooks", action="store_true",
+                    help="with --register-mcp, do not write the peer-state hooks (on by default)")
     pe.add_argument("--install-hooks", action="store_true",
                     help="also install the plugin with its hooks for every Claude Code session here (off by default)")
     pe.set_defaults(func=cmd_peer)
@@ -1519,6 +1523,8 @@ def build_parser() -> argparse.ArgumentParser:
     jn.add_argument("--with-hooks", action="store_true",
                     help="also install the plugin with its hooks for every Claude Code session here (off by default)")
     jn.add_argument("--register-mcp", action="store_true", help="also register the MCP server (off by default)")
+    jn.add_argument("--no-state-hooks", action="store_true",
+                    help="with --register-mcp, do not write the peer-state hooks (on by default)")
     jn.add_argument("--scope", choices=("project", "user"), default="project", help="where --register-mcp goes")
     jn.add_argument("--accept-dns", action="store_true", help="let Tailscale manage DNS (off: another VPN keeps it)")
     jn.add_argument("--no-install-tailscale", action="store_true", help="fail (exit 3) instead of installing it")
