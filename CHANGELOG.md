@@ -9,6 +9,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.116: the Stop gate keeps the hook deadline and survives being killed
+
+- **Summary.** `crew` 1.2.116: the verify gate no longer runs past the Stop hook's deadline (measured 862s against 600s on Windows); a rule that would not fit is deferred by name, what a run measured is saved as it goes so a killed run still corrects the next one, the diff base is `origin/<default>`, and a lock left by a killed gate no longer blocks the next turn.
+- **Deadline.** Before each rule, its price is held against `CREW_HOOK_DEADLINE` less a 60s margin; a rule that would not fit prints `deferred: would pass the hook deadline - <why> - NOT VERIFIED this turn: <command>` and holds the verified marker and fingerprint back. A rule with no price runs only while time is left. Stop only; `--all` and `--ci` are unchanged. An unreadable deadline is said and defers nothing.
+- **Persistence.** Before each command the gate caches the timing of every rule that has passed so far, records the command now starting (`.crew/.verify-gate.inflight.json`), and rewrites `.crew/.verify-gate.log` headed `RUN NOT FINISHED`; all through a temp file and rename. A run killed at its deadline leaves the in-flight record, and the next run prices that rule at no less than the time it ran, so it is deferred by name instead of killed again.
+- **Base.** The diff base is the merge-base with `origin/<default>` when that ref exists (a local `main` behind the remote had widened scope by 31 commits), else the local branch; the choice is in the detail log.
+- **Lock.** The lock records its holder's Windows pid (Git Bash) or pid and start time (Linux) beside its token; a lock whose holder process no longer exists is reclaimed at once. A live holder, or one that cannot be asked, backs off as before.
+- Tests: `test_verify_gate_deadline.py` (must-block and must-allow for each), nine mutations in `sabotage_deadline.py`.
+
 ### Fixed — crew 1.2.110: test anchors follow the crew_py_script change (CI of #703)
 
 - **Summary.** `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.

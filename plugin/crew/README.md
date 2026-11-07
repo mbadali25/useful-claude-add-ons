@@ -188,6 +188,13 @@ not re-paid on every delegation. The test is: *could a command decide this?*
 Worked examples ship in `skills/crew-setup/examples/` — a Terraform
 `CLAUDE.md` and the matching `verify.json`.
 
+**The Stop gate keeps the hook's clock (since 1.2.116).** It picks rules from their prices
+inside `verify.stopBudgetSeconds`, and before each rule it also checks the time left before the
+Stop hook kills it: a rule that would not fit is deferred by name (`deferred: would pass the hook
+deadline`) and the turn is not recorded as verified. Timings and the log are saved as the run goes,
+so a run that is killed anyway prices the rule it was running for the next turn, and a killed run's
+lock no longer blocks the next one. The diff base is `origin/<default>` when that ref exists.
+
 **Fill in the `CLAUDE.md`.** The template leaves blanks on purpose: build and test commands, where the entry point lives, which directories are off limits, and the landmine that breaks every time someone touches it. Thirty lines beats three hundred, because every line is re-read on every delegation.
 
 ---

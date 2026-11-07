@@ -28,7 +28,7 @@ DEADLINE_MUTATIONS = (
      "      elif [ -z \"$_dd_price\" ]; then\n",
      _T + "test_an_unpriced_rule_with_no_time_left_is_deferred_not_treated_as_free"),
     ("persistence: timings and the in-flight command written only at the end (defect 2)", SH,
-     "  gate_progress \"$IDENT\" \"$RULE_START\" \"$GATE_DEADLINE_S\"\n",
+     "  gate_progress \"$IDENT\" \"$(date +%s)\" \"$GATE_DEADLINE_S\"\n",
      "  :\n",
      _T + "test_timings_and_the_in_flight_command_are_on_disk_before_the_run_ends"),
     ("persistence: the quiet log written only at the end (defect 2)", SH,

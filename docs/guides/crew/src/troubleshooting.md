@@ -509,6 +509,26 @@ not errors, and neither blocks the turn:
 
 A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.
 
+Since crew 1.2.116 the gate also keeps the **hook deadline** (`CREW_HOOK_DEADLINE`, the Stop hook's
+600s limit), because the budget works from estimates and an estimate can be wrong (measured: 862s
+on Windows, killed by the hook, nothing recorded):
+
+- **`verify-gate: deferred: would pass the hook deadline - rules[N] is priced Ms and Ks are left ...
+  - NOT VERIFIED this turn: <command>`**: before each rule, its price is held against the time left
+  less a 60s margin. The rule did not run; the verified marker does not advance. Run
+  `/crew:verify --all` (no deadline) to check it here.
+- **`a previous run was killed at the hook deadline while running <command> ... priced at Ns or
+  more from now on`**: the last run was killed mid-rule. The gate saved what it had measured as it
+  went (`.crew/.verify-gate.timings.json`, `.crew/.verify-gate.log` headed `RUN NOT FINISHED`), and
+  the command in flight is now priced at no less than the time it ran, so Stop defers it by name
+  instead of starting it into the same kill. `/crew:verify --all` measures it again.
+- **`the lock at .crew/.verify-gate.lock names a holder ... whose process no longer exists`**: a
+  killed gate's lock is reclaimed at once instead of backing off until its deadline. A holder that is
+  alive, or that cannot be asked, still makes the next run back off (`NOTHING WAS VERIFIED`).
+- **Scope larger than the branch**: the diff base is the merge-base with `origin/<default>` when that
+  ref exists, else the local branch; the detail log (`--verbose`) names which. A local `main` behind
+  the remote no longer drags merged work into scope.
+
 ## Verify gate prints one line, or says "unchanged since last Stop"
 
 Since crew 1.2.39 (L-0796) the Stop gate is quiet. It prints one verdict line, then each failure

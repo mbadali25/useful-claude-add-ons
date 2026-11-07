@@ -2767,9 +2767,11 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
   gate_detail "verify-gate: env pinned -$PIN_REPORT"
   # </dev/null: a check that reads stdin (some test runners do) would otherwise
   # consume the rest of $CMDS from the here-string and silently skip those checks.
-  RULE_START=$(date +%s)
   # crew 1.2.116: what has run so far is on disk, and so is what starts now.
-  gate_progress "$IDENT" "$RULE_START" "$GATE_DEADLINE_S"
+  # BEFORE RULE_START, so the python spawn is not billed to the rule's own
+  # measured time (measured: up to 10s a spawn on a loaded Windows host).
+  gate_progress "$IDENT" "$(date +%s)" "$GATE_DEADLINE_S"
+  RULE_START=$(date +%s)
   # Captured through a REGULAR FILE, not the `$(...)` pipe this used before
   # (kept as the fallback below for the one case a temp file cannot be
   # made). `$(...)` only reports EOF once EVERY process holding its

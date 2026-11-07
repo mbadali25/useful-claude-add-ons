@@ -46,6 +46,10 @@ _BASH = crew_fixtures.resolve_bash()
 pytestmark = pytest.mark.skipif(_BASH is None, reason="needs bash")
 
 _T = crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S
+# One gate run here can spawn python several times per rule (the per-rule
+# progress write); on a loaded Windows host the 120s suite bound was measured
+# too short for a run that then finished correctly. Bounded, never unbounded.
+_GATE_T = 300
 
 
 def _git(root, *args):
@@ -92,15 +96,15 @@ def _env(root, out, deadline_s=None, margin=None, verbose=True, **extra):
         env["CREW_HOOK_DEADLINE"] = str(int(deadline_s * 1000))
     if margin is not None:
         env["CREW_VERIFY_DEADLINE_MARGIN"] = str(margin)
-    if verbose:
-        env["CREW_VERIFY_VERBOSE"] = "1"
+    # Explicit either way: crew_fixtures' gate spawners default it to 1.
+    env["CREW_VERIFY_VERBOSE"] = "1" if verbose else "0"
     env.update(extra)
     return env
 
 
 def _run(root, env, *args):
     return crew_fixtures.run_gate([_BASH, _SH] + list(args), input="{}", cwd=str(root), env=env,
-                                  capture_output=True, text=True, check=False, timeout=_T)
+                                  capture_output=True, text=True, check=False, timeout=_GATE_T)
 
 
 def _rule(paths, run, seconds=None):
@@ -124,13 +128,13 @@ _SLOW = _rule(["a.py"], ['touch "$OUT_DIR/slow"'], seconds=900)
 
 
 def test_a_rule_that_would_pass_the_hook_deadline_is_deferred_by_name(tmp_path):
-    """MUST-BLOCK. Both rules fit the 60s Stop budget (51s), but only ~20s are
-    left before the hook deadline once the 60s margin is kept: the 50s rule
-    must not start, must be named, and the run must not be recorded as
+    """MUST-BLOCK. Both rules fit the fixture's Stop budget, but at most 300s
+    are left before the hook deadline once the 60s margin is kept: the 900s
+    rule must not start, must be named, and the run must not be recorded as
     verified."""
     root = _repo(tmp_path, [_FAST, _SLOW])
     out = _out(tmp_path)
-    result = _run(root, _env(root, out, deadline_s=time.time() + 60 + 20))
+    result = _run(root, _env(root, out, deadline_s=time.time() + 60 + 300))
     assert result.returncode == 0, result.stderr
     assert "deferred: would pass the hook deadline" in result.stderr, result.stderr
     assert 'touch "$OUT_DIR/slow"' in result.stderr, (
@@ -150,7 +154,7 @@ def test_rules_that_fit_the_deadline_all_run_and_verify(tmp_path):
     nothing, and the clean run is recorded as verified."""
     root = _repo(tmp_path, [_FAST, _SLOW])
     out = _out(tmp_path)
-    result = _run(root, _env(root, out, deadline_s=time.time() + 600))
+    result = _run(root, _env(root, out, deadline_s=time.time() + 60 + 1500))
     assert result.returncode == 0, result.stderr
     assert "would pass the hook deadline" not in result.stderr, result.stderr
     assert (out / "fast").exists() and (out / "slow").exists(), result.stderr
