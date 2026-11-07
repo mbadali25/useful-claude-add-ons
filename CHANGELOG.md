@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.113: crew's tests clear an inherited CREW_PYTHON
+
+- **Summary.** `crew` 1.2.113: test-only; crew's suite no longer goes red when it runs from a crew-hooked session.
+- `plugin/crew/tests/conftest.py` removes `CREW_PYTHON` for every test (and for the session, before module fixtures spawn). crew-hook.ps1 / crew-hook.sh export it into the dispatcher, so a suite started from a hooked session inherited it, and since 1.2.109 `crew_py` / `crew_py_strict` return a valid one before walking PATH: the python stubs `test_native_script_path.py` and `test_python_probe_signals.py` plant were never reached, 44 cases failed on Linux with it set and passed without.
+- `test_crew_python_env.py` pins the isolation (no ambient `CREW_PYTHON` inside a test) and proves through the shipped `_common.sh`, sourced whole, that an explicitly set valid `CREW_PYTHON` is still returned without running the PATH stub, while an unset, missing or relative one falls back to it.
+- No hook, command or doc changes.
+
 ### Fixed — crew 1.2.110: test anchors follow the crew_py_script change (CI of #703)
 
 - **Summary.** `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.
