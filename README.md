@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.113**: One review budget of three per ticket, counted across successor plans; the owner's `--grant-round`. `crew` 1.2.88: a ticket now gets three review rounds in total, a successor plan no longer reopens them, and only the owner's `review_ledger.py --grant-round` adds a round.
+- **crew 1.2.114**: One review budget of three per ticket, counted across successor plans; the owner's `--grant-round`. `crew` 1.2.88: a ticket now gets three review rounds in total, a successor plan no longer reopens them, and only the owner's `review_ledger.py --grant-round` adds a round.
 - **crew 1.2.110**: Test anchors follow the crew_py_script change (CI of #703). `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
