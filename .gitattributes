@@ -17,3 +17,5 @@
 # with newline="" and matches LF-only anchors, so an autocrlf checkout must not add CR.
 .crew/verify.json text eol=lf
 graphify-out/graph.json merge=graphify
+# ai-connect's POSIX launcher has no extension for the *.sh rule to match
+plugin/ai-connect/bin/ai-connect text eol=lf

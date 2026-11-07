@@ -213,7 +213,8 @@ def create_token(role: str, config_path: Path = CONFIG_PATH) -> None:
 
     The Bridge only learns the hash; the token stays in its own file for the
     person's tools (reading all traffic, writing as a user). A new token
-    locks out the old one once the Bridge restarts.
+    locks out the old one within seconds: a running Bridge polls config.yaml
+    (server/auth_reload.py) and closes connections made with the old one.
     """
     path = TOKEN_PATHS[role]
     token = secrets.token_hex(32)
@@ -222,7 +223,7 @@ def create_token(role: str, config_path: Path = CONFIG_PATH) -> None:
         config = yaml.safe_load(f)
     config.setdefault("auth", {})[f"{role}_token_sha256"] = _token_sha256(token)
     _save_config(config, config_path)
-    print(f"  {role.capitalize()} token written: {path} (restart the Bridge to use it)")
+    print(f"  {role.capitalize()} token written: {path} (a running Bridge picks it up within seconds)")
     _deny_tokens_to_claude()
 
 
@@ -244,7 +245,7 @@ def add_peer(name: str, config_path: Path = CONFIG_PATH) -> None:
     token = _add_peer(name, config_path)
     print(f"  Peer '{name}' added. On that machine set client.name: '{name}' and client.token to this (shown once):")
     print(f"    {token}")
-    print("  Restart the Bridge to use it.")
+    print("  A running Bridge accepts it within seconds; no restart needed.")
 
 
 def revoke_peer(name: str, config_path: Path = CONFIG_PATH) -> None:
@@ -256,7 +257,7 @@ def revoke_peer(name: str, config_path: Path = CONFIG_PATH) -> None:
         sys.exit(f"No such peer: '{name}'")
     del peers[name]
     _save_config(config, config_path)
-    print(f"  Peer '{name}' revoked (restart the Bridge to use it)")
+    print(f"  Peer '{name}' revoked (a running Bridge picks it up within seconds)")
 
 
 def _deny_tokens_to_claude() -> None:
