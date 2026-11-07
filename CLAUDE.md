@@ -83,6 +83,20 @@ This applies to the top-level session only: a subagent does its task directly an
 agents. crew's own reviewer and lane agents are dispatched by crew, not by this rule. For the
 `ListAgents` check before trusting a diff or branch, see the Lessons line on it.
 
+**The top-level session stays free to answer the owner and other sessions.** Owner rule, 2026-11-07.
+It only briefs agents, relays their results and answers; it does no task work itself. Independent
+tasks run as parallel agents, about 3 heavy ones at once. ALL communication with other sessions,
+outbound sends and condensing inbound messages, goes through one `crew:session-relay` agent kept
+available for the session; the main session never sends to a peer directly.
+
+## Standing rule - verify before you state a problem
+
+**Before stating anything as a problem (bug, cause, failure, risk), verify it** by running the state
+or reading the artifact. Owner rule, 2026-11-07; the owner saw crew's Claude make many assumptions
+before verifying. Label each claim *verified* (with the command or path) or *inferred*; say "could
+not tell" rather than guess. This binds agent briefs and reports too: ask every agent to separate
+verified from inferred, and relay that split unchanged.
+
 ## Stop and ask - the conditions that should halt work
 
 - **Content change with no `version` bump.** `claude plugin update` compares the *declared version*,
