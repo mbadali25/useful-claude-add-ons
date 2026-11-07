@@ -352,7 +352,10 @@ not a fifth role (see Agents).
 The coordinator is a model pin on an existing role (L-0799), not a fifth role:
 `dev.roles.coordinator` (default unset) is printed by `crew_wave.py start` as
 `coordinator: model <id>`, a report of the pin (wave launches no coordinator);
-`docs/crew/config-rationale.md` has the details.
+`docs/crew/config-rationale.md` has the details. A claude pin here or on
+`dev.roles.developer` takes a full Claude id or the aliases `opus`, `sonnet`,
+`haiku` and `fable` (Fable 5.1, `claude-fable-5-1`). `fable` is honoured only
+when pinned explicitly; nothing in crew selects it on its own.
 
 Parallelism scales on independent work units, not job titles.
 

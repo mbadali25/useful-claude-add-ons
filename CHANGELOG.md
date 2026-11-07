@@ -9,6 +9,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.2.111: the `fable` alias is accepted as an explicit claude model pin
+
+- **Summary.** `crew` 1.2.111: a `dev.roles.developer` or `dev.roles.coordinator` pin of `{"provider": "claude", "model": "fable"}` (Fable 5.1, `claude-fable-5-1`) is now put on the wave launch line instead of being refused as "not a claude model"; Fable is opt-in only and nothing in crew selects it.
+- `crew_wave.py` `CLAUDE_MODEL_HEADS` gains `fable`; the full id `claude-fable-5-1` already passed as family `claude`. `validate-prompts.py` accepts `fable` as an agent `model:` value (the per-agent tier check still applies). Opus stays the default escalation target; no router or escalation logic is added here.
+- Tests: `test_crew_wave.py` must-allow `fable`, `Fable` and `claude-fable-5-1` on the launch line; must-block `fables-9` (and `gpt-6` still refused); a provider-less `fable` pin under a codex block still warns. Sabotage-checked: removing `fable` turns the alias cases red.
+- Docs: `commands/model.md`, crew `README.md`, the crew guide (rebuilt), `.crew/codemap/crew.md`.
+
 ### Fixed — crew 1.2.110: test anchors follow the crew_py_script change (CI of #703)
 
 - **Summary.** `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.
