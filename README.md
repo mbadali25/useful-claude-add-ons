@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.111**: Session-relay keeps sending when ListAgents is unavailable. `crew` 1.2.111: `crew:session-relay` no longer stalls when `ListAgents` is missing at runtime; it sends to the name as given and marks that report line `could not verify recipient`.
+- **crew 1.2.112**: Session-relay keeps sending when ListAgents is unavailable. `crew` 1.2.112: `crew:session-relay` no longer stalls when `ListAgents` is missing at runtime; it sends to the name as given and marks that report line `could not verify recipient`.
 - **crew 1.2.110**: Test anchors follow the crew_py_script change (CI of #703). `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
