@@ -9,6 +9,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.116: four flaky or environment-dependent gate tests made deterministic
+
+- **Summary.** `crew` 1.2.116: test-only; no hook behaviour changes. Four tests that failed on a loaded runner, a path containing a digit, or a newer pytest now prove the same thing without depending on any of those.
+- `test_refuses_non_default_dropped_key[emergency.ttlMinutes-30]` failed whenever pytest's temp path contained `30` (`--basetemp .../pytest-30207`): the leak check now removes the `tmp_path` prefix from the output before looking for the value, so a value printed anywhere else is still caught.
+- `test_io_error_after_open_is_a_rule_file_error` patched the shared `os.fstat`, which pytest 9.2's own output capture calls before monkeypatch undoes it; it now replaces `review_lint_rules.os` alone (CI pins pytest 8, so only a local pytest 9.2 run failed).
+- `test_heartbeat_process_exits_after_pid_gone` timed the loop's exit against one interval plus 5s, which one slow push on a loaded Windows runner exceeded (CI runs 41099703404, 41661892436, 42322693048); it now counts heartbeats on the channel: at most the one in flight when the pid dies.
+- `test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout` slowed all seven python starts before the search by 1.8s, leaving a loaded runner too little of the gate's 16s to reach the hung check (CI runs 41099703404, 42319792723, 42411612824); the slow python now costs a fixed 9s however many starts the gate makes.
+- `scripts/check_instructions.py` measures a command file's bytes with CRLF counted as LF, the form git commits, so a Windows `core.autocrlf` checkout no longer fails autopilot, model, onboard and verify against their byte allowances.
+
 ### Fixed — crew 1.2.110: test anchors follow the crew_py_script change (CI of #703)
 
 - **Summary.** `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.
