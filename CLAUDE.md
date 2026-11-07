@@ -97,6 +97,13 @@ before verifying. Label each claim *verified* (with the command or path) or *inf
 not tell" rather than guess. This binds agent briefs and reports too: ask every agent to separate
 verified from inferred, and relay that split unchanged.
 
+## Standing rule - keep the Configuration Guide current
+
+**A change that adds, removes or renames a crew config key, value or default updates the
+Configuration Guide in the same PR.** Owner rule, 2026-11-07. That means the guide built from
+`docs/guides/crew/src/` (`build.py`, `config_reference.py`) and the published Claude Docs doc titled
+"Configuration Guide", so the template and every supported value stay documented.
+
 ## Stop and ask - the conditions that should halt work
 
 - **Content change with no `version` bump.** `claude plugin update` compares the *declared version*,
