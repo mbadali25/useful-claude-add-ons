@@ -106,6 +106,17 @@ def test_second_redemption_is_refused(bridge_config):
         jc.redeem(bridge_config, code.secret, "laptop")
 
 
+def test_used_code_stays_spent_after_its_peer_is_revoked(bridge_config):
+    """The used mark alone refuses it: with the name free again, a held code must not re-enrol it."""
+    code = jc.decode(jc.create_invite(bridge_config, "laptop", 3600, HOST, PORT))
+    jc.redeem(bridge_config, code.secret, "laptop")
+    with jc.auth_lock(bridge_config.parent):
+        assert jc.revoke_peer_locked(bridge_config, "laptop")
+    with pytest.raises(jc.Refused):
+        jc.redeem(bridge_config, code.secret, "laptop")
+    assert "laptop" not in peers(bridge_config)
+
+
 def test_concurrent_double_redemption_exactly_one_wins(bridge_config):
     code = jc.decode(jc.create_invite(bridge_config, "laptop", 3600, HOST, PORT))
     racers = 8
