@@ -334,49 +334,65 @@ def absent_sources(top):
     return absent
 
 
+# What `review_metrics.row` writes in BOTH count cells for a round with no
+# verdict (INCOMPLETE): a round nobody scored, not a malformed row. Read as
+# malformed, it made findings-rate unknown for as long as the row stayed, and
+# autopilot stopped at `split-check-unknown` on every later ticket (A-0011).
+# `test_every_row_review_metrics_writes_parses_in_split` holds this to the writer.
+UNCOUNTED = "INCOMPLETE"
+_SKIP, _COUNTED, _MALFORMED = "skip", "counted", "malformed"
+
+
+def _row_kind(cells):
+    """`_SKIP` for the header, a `---` separator, or an uncounted round (both
+    count cells exactly `UNCOUNTED`, as review_metrics.row writes them);
+    `_COUNTED` for a row read_metrics scores; `_MALFORMED` for anything else:
+    too few cells, or counts that do not parse - half `UNCOUNTED` included."""
+    if cells[0].lower() == "date" or set("".join(cells)) <= set("-: "):
+        return _SKIP
+    if len(cells) < 5:
+        return _MALFORMED
+    if cells[3] == UNCOUNTED and cells[4] == UNCOUNTED:
+        return _SKIP
+    if crew_state._leading_int(cells[3]) is None \
+            or crew_state._leading_int(cells[4]) is None:  # pylint: disable=protected-access
+        return _MALFORMED
+    return _COUNTED
+
+
+def _table_cells(path):
+    """The cells of each table line in metrics.md. Raises OSError."""
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        lines = handle.read().splitlines()
+    return [[c.strip() for c in line.strip().strip("|").split("|")]
+            for line in lines if "|" in line]
+
+
 def _row_like(path):
-    """True when metrics.md holds a table line that is not the header or a
-    `---` separator: read_metrics skips a row with too few cells or counts
-    that do not parse, so `tickets: 0` beside one is a malformed source --
-    unknown -- never "no review recorded"."""
+    """True when metrics.md holds a table line that is not the header, a
+    `---` separator or an uncounted (INCOMPLETE) round: read_metrics skips a
+    row with too few cells or counts that do not parse, so `tickets: 0` beside
+    one is a malformed source -- unknown -- never "no review recorded". Only
+    uncounted rounds is "no review recorded" yet: nothing there to measure."""
     try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            lines = handle.read().splitlines()
+        rows = _table_cells(path)
     except OSError:
         return True
-    for line in lines:
-        if "|" not in line:
-            continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        # Any table line but the header and a `---` separator: a row with too
-        # few cells is as malformed as one whose counts do not parse.
-        if cells[0].lower() == "date" or set("".join(cells)) <= set("-: "):
-            continue
-        return True
-    return False
+    return any(_row_kind(cells) != _SKIP for cells in rows)
 
 
 def _malformed_rows(path):
     """True when metrics.md holds a table row read_metrics skips: not the
-    header or a `---` separator, and with too few cells or BLOCK/FIX counts
-    that do not parse. Unreadable is True (could not tell)."""
+    header, a `---` separator or an uncounted (INCOMPLETE) round, and with too
+    few cells or BLOCK/FIX counts that do not parse. Unreadable is True (could
+    not tell)."""
     try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
-            lines = handle.read().splitlines()
+        rows = _table_cells(path)
     except FileNotFoundError:
         return False
     except OSError:
         return True
-    for line in lines:
-        if "|" not in line:
-            continue
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if cells[0].lower() == "date" or set("".join(cells)) <= set("-: "):
-            continue
-        if len(cells) < 5 or crew_state._leading_int(cells[3]) is None \
-                or crew_state._leading_int(cells[4]) is None:  # pylint: disable=protected-access
-            return True
-    return False
+    return any(_row_kind(cells) == _MALFORMED for cells in rows)
 
 
 def triggers(measures, stage):

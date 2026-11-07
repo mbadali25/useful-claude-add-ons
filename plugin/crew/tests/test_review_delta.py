@@ -811,15 +811,29 @@ def test_reviewed_work_change_is_kept_across_a_catch_up(tracks):
     assert "2 paths identical" in out, out
 
 
-def test_reviewed_work_change_main_also_landed_reads_gone_from_the_current_delta(tracks):
+def test_reviewed_work_change_main_also_landed_is_identical_to_merged_main(tracks):
     """The interdiff sees `.work/`: main landing the same bytes takes the path
-    out of the current delta, as it would for any reviewed file."""
+    out of the current delta, as it would for any reviewed file. Since A-0012
+    that is a keep, not a stale: HEAD holds exactly the reviewed bytes."""
     _commit(tracks.lane, {FINDINGS: "- a finding\n"}, "findings")
     _review(tracks)
     _main(tracks, {FINDINGS: "- a finding\n", "lib.py": "def lib():\n    return 2\n"})
     _catch_up(tracks)
 
-    _stale(tracks, f"{FINDINGS} is reviewed but gone from the current delta")
+    out = _kept(tracks)
+
+    assert "1 identical to merged main" in out, out
+
+
+def test_reviewed_work_change_main_landed_differently_is_gone_from_the_current_delta(tracks):
+    """Main holding different bytes at a reviewed path is still stale."""
+    _commit(tracks.lane, {FINDINGS: "- a finding\n"}, "findings")
+    _review(tracks)
+    _main(tracks, {FINDINGS: "- main's finding\n"})
+    subprocess.run(["git", "merge", "--no-edit", "-q", "-X", "theirs", "main"], cwd=tracks.lane,
+                   capture_output=True, check=False)
+
+    _stale(tracks, FINDINGS)
 
 
 def test_graph_change_in_range_passes_and_stays_out_of_the_bundle(tracks):
@@ -1226,3 +1240,118 @@ def test_preflight_fast_path_clean_unchanged(world, monkeypatch, capsys):
     assert out.startswith(f"review: CLEAN from the existing receipt (receipt current: round 1 "
                           f"clean, bundle {str(manifest['bundle_sha256'])[:12]}) - nothing in the "
                           "bundle changed since that clean round, so no round was spent"), out
+
+
+# ------------------------------------------- A-0012: paths main already holds
+
+def _land(world):
+    """Merge the lane into main with a merge commit, as a PR merge does."""
+    git(world.repo, "merge", "--no-ff", "--no-edit", "-q", "lane")
+    return git(world.repo, "rev-parse", "HEAD")
+
+
+@pytest.mark.parametrize("catch_up", [False, True], ids=["landed", "caught-up-then-landed"])
+def test_a_reviewed_head_that_landed_in_main_rebuilds_and_keeps_the_receipt(world, catch_up):
+    """A-0012 (ITI-371, 2026-10-29): once the reviewed head is inside main,
+    `merge-base <head> main` is the head, so the unpinned rebuild dropped every
+    path and read "does not rebuild the reviewed bundle". The landing merge's
+    first parent is main as the round read it."""
+    _main(world, {"lib.py": "def lib():\n    return 2\n"})
+    if catch_up:
+        git(world.lane, "merge", "--no-edit", "-q", "main")
+    _review(world)
+    _land(world)
+
+    out = _kept(world)
+
+    assert "does not rebuild" not in out, out
+
+
+def test_a_stacked_branch_landed_through_another_pr_keeps_the_receipt(world):
+    """The lane's head reaches main through a later branch cut from it (a
+    stacked PR), not through its own merge."""
+    _review(world)
+    stacked = world.repo.parent / "stacked"
+    git(world.repo, "worktree", "add", "-q", "-b", "stacked", str(stacked), "lane")
+    _commit(stacked, {"lib.py": "def lib():\n    return 3  # the stacked ticket\n"}, "stacked")
+    git(world.repo, "merge", "--no-ff", "--no-edit", "-q", "stacked")
+
+    _kept(world)
+
+
+def test_a_landed_receipt_rebuilds_when_the_caller_pins_the_base(world):
+    """A-0012 review r1: a pinned `base_sha` chooses the integration base only;
+    the round's bytes are rebuilt from the landing whoever passes it."""
+    _review(world)
+    before = git(world.repo, "rev-parse", "HEAD")
+    _land(world)
+
+    kept, why = rl.check_receipt(str(world.lane), TICKET, base_sha=before)
+
+    assert kept and "does not rebuild" not in why, why
+
+
+def test_a_branch_at_main_after_later_merges_keeps_a_landed_receipt(world):
+    """A-0012 review r1: closing a landed ticket from a branch at main (done
+    check 4's advice) puts main's later commits in HEAD; they are not this
+    ticket's, and the landing merge's tree is what it brought."""
+    _review(world)
+    _land(world)
+    _main(world, {"lib.py": "def lib():\n    return 5  # later on main\n"}, "later")
+    git(world.lane, "merge", "--ff-only", "-q", "main")
+
+    _kept(world)
+
+
+def test_a_landed_head_edited_after_the_landing_is_stale(world):
+    _review(world)
+    _land(world)
+    _commit(world.lane, {"app.py": "def app():\n    return 3  # after landing\n"}, "late edit")
+
+    _stale(world, "app.py")
+
+
+def test_a_landed_head_that_reached_main_by_fast_forward_is_stale(world):
+    """No merge commit: which main the round read cannot be told."""
+    _review(world)
+    git(world.repo, "merge", "--ff-only", "-q", "lane")
+
+    _stale(world, "is not a merge")
+
+
+def test_a_reviewed_path_main_landed_byte_identical_keeps_the_receipt(world):
+    """The same fix landed on main and on the lane: HEAD holds exactly the
+    reviewed bytes, so the path is main's now and is left out, as check 3 does."""
+    same = "def lib():\n    return 7  # the same fix\n"
+    _commit(world.lane, {"lib.py": same}, "the lane's copy of the fix")
+    _review(world)
+    _main(world, {"lib.py": same, "TODO.md": "# TODO\n\n- main\n"})
+    _catch_up(world)
+
+    out = _kept(world)
+
+    assert "1 identical to merged main" in out, out
+
+
+def test_a_reviewed_path_main_landed_then_lane_edited_is_stale(world):
+    same = "def lib():\n    return 7  # the same fix\n"
+    _commit(world.lane, {"lib.py": same}, "the lane's copy of the fix")
+    _review(world)
+    _main(world, {"lib.py": same})
+    _catch_up(world)
+    _commit(world.lane, {"lib.py": same + "# more\n"}, "edit after review")
+
+    _stale(world, "lib.py")
+
+
+def test_a_reviewed_deletion_main_also_made_keeps_the_receipt(world):
+    os.remove(world.lane / "lib.py")
+    _commit(world.lane, message="the lane deletes lib.py")
+    _review(world)
+    os.remove(world.repo / "lib.py")
+    _commit(world.repo, {"TODO.md": "# TODO\n\n- main\n"}, "main deletes lib.py too")
+    _catch_up(world)
+
+    out = _kept(world)
+
+    assert "1 identical to merged main" in out, out

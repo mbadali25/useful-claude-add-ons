@@ -328,7 +328,13 @@ KEY_META = {
                        "outside these fails closed to `block`.", "tuple",
                        crew_ticket.MODES, "1.0.25"),
     "scope.allowCliApproval": _row("Whether a CLI-written approval receipt counts; only "
-                                   "exactly `true` allows it.", "branch", (False, True),
+                                   "exactly `true` allows it. `autopilot.approval: self` or `risk` "
+                                   "needs it, and `autopilot.mode: plan` or `backlog`, to "
+                                   "approve anything. A "
+                                   "hand edit by the owner in the repo's `.crew/config.json` "
+                                   "(`\"scope\": {\"allowCliApproval\": true}`); "
+                                   "`crew_config.py --set` refuses it.", "branch",
+                                   (False, True),
                                    "1.0.25", _S + "crew_ticket.py"),
     # --- autopilot
     "autopilot.mode": _row("Only the exact strings `plan` (one ticket per run) and `backlog` "
@@ -342,7 +348,13 @@ KEY_META = {
     "autopilot.deploy": _row("Where a deploy may run without asking; anything else reads "
                              "as `none`.", "tuple", crew_autopilot.DEPLOY_VALUES, "1.0.42"),
     "autopilot.approval": _row("Who approves a ticket under autopilot; anything else reads "
-                               "as `human`.", "tuple", crew_autopilot.POLICIES, "1.0.42"),
+                               "as `human`. `risk` and `self` also need `autopilot.mode: "
+                               "plan` (or `backlog`) and `scope.allowCliApproval: true` (a hand "
+                               "edit of the repo's `.crew/config.json`); a refused `approve` "
+                               "lists each unmet one, with its value as written, the file "
+                               "that holds it and, under `risk`, the spec risk that blocks.",
+                               "tuple",
+                               crew_autopilot.POLICIES, "1.0.42"),
     "autopilot.questions": _row("Who answers a ticket's open questions under autopilot; "
                                 "anything else reads as `human`.", "tuple",
                                 crew_autopilot.POLICIES, "1.0.42"),

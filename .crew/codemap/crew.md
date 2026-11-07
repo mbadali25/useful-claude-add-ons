@@ -61,6 +61,21 @@ re-run the previous note's wider count-disagreement sweep across `README.md`/`pl
 `INSTALLATION.md`/the install scripts; see "Unverified at this anchor".
 
 
+**Lint rules (L-0715 PR A).** DERIVED at the PR A head, not at this file's anchor, which is not moved:
+`plugin/crew/lint/semgrep/crew-classes.yml` holds five semgrep rules (`crew-splitlines-untrusted-text`,
+`crew-json-duplicate-keys`, `crew-bare-interpreter`, `crew-unquoted-plugin-root`, `crew-test-no-assertion`, each with a
+`metadata.class`) and a `# not-shipped:` list in its header comment; `plugin/crew/lint/semgrep/fixtures/<rule id>/` holds a
+positive and a negative fixture each; `plugin/crew/tests/test_crew_lint_rules.py` runs the pinned `semgrep==1.95.0` over
+a copy of them. Nothing in `hooks/scripts/` reads the file yet (the `semgrep` linter kind is PR B). JUDGEMENT: the rest
+of this map is unchanged by it.
+
+**Rule-file reader (L-0931, L-0715 PR B1).** DERIVED at the PR B1 head, not at this file's anchor, which is not moved:
+`plugin/crew/hooks/scripts/review_lint_rules.py` (`read_rules`, `matches_scope`, `CANARIES`) reads
+`plugin/crew/lint/semgrep/crew-classes.yml` with no YAML package and raises `RuleFileError(message, line)` on any shape it
+does not know; it exposes a per-rule pattern fingerprint, the five regex values, the `# not-shipped:` header and the path
+scopes. Nothing imports it yet (the checker is PR B2, the `crewlint` linter kind PR B3). JUDGEMENT: the rest of this map
+is unchanged by it.
+
 ## The roster, replaced wholesale
 
 Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
@@ -204,7 +219,8 @@ deny > ask > allow, `decision: "block"` and `continue: false` win, `additionalCo
 `systemMessage` concatenate in table order. Fail closed: `armed` (`:276`) is True when crew governs the
 repo or that cannot be told; in an armed repo a guard row that times out, a missing script, or an
 exception in the dispatcher is exit 2 with a named reason on `BLOCKING_EVENTS` (`PreToolUse`,
-`UserPromptSubmit`, `Stop`, `:47`); an unarmed repo gets exit 0 (`_settle` `:539`, `_fault` `:613`).
+`UserPromptSubmit`, `Stop`, `:47`); an unarmed repo gets exit 0 (`_settle`, `_fault`). DERIVED (crew 1.2.100, review of #700): a guard row that times out is retried once only if it is in `RETRY_SAFE` (`plugin/crew/hooks/scripts/crew_hook.py:53`: role-write, cloud, env and scope guard; approval-hook, promote-gate, verify-gate and completion-audit never) and the dispatch deadline still leaves `RETRY_FLOOR` plus `_retry_reserve` (`:56`, the worst-case cleanup of a second timeout), decided in `work` (`:544`, the retry at `:566-587`); a failure the guard could not decide is labelled `UNKNOWN (guard timeout | resource exhaustion, not a policy deny)` by `_unknown_label` (`:640`), and a guard's own fixed "no usable python" refusal (`NO_PYTHON_REFUSALS` `:624`, matched by `_is_no_python_refusal` `:635` only when it is the whole of stderr) is labelled `UNKNOWN (no usable python, ...)` in `_settle` (`:654`), all ahead of the same fail-closed text; `CREW_HOOK_TIMING_FILE` records per-child timing and both launchers export `CREW_PYTHON` (nothing reads it until PR B). Line numbers before this paragraph in this note shifted and were not re-derived.
+DERIVED (crew 1.2.109): the shell guards consume the launchers' `CREW_PYTHON` first. `crew_py` (`plugin/crew/hooks/scripts/_common.sh:70`), `crew_py_strict` (`:207`) and role-write-guard.sh's `_resolve_role_write_python` (`:64`) carry one identical `BEGIN CREW_PYTHON` block: an absolute path (a Windows one goes through `cygpath -u`), a regular executable file, named `py`/`python`/`python3.x`, else the PATH walk. `crew_py_script` (`:470`) returns a script path or status 1, and promote-gate, cloud-guard, env-guard and role-write-guard fail closed naming the missing script.
 The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 339 lines; `crew-hook.ps1`, 482) supervise
 rather than exec it: exit 0 and 2 pass through, anything else becomes the armed/unarmed fault above,
 under one deadline (`CREW_HOOK_DEADLINE`, the registration timeout minus 5 s). `crew-hook.sh` exits 0 on
@@ -1083,7 +1099,7 @@ mismatch `review_delta.judge`
 bundle through T-0100's rule (`reviewed_bundle` `:202`, `review_patch._ticket_base_tree` with
 `head=` at `plugin/crew/hooks/scripts/review_patch.py:403`, `merged_main.resolve(..., head)` at `:415` unless a `merged` pin is passed), is
 an ancestor of HEAD, the integration base is the pinned `base_sha` or the train entry's ref
-(`integration_ref` `:317`; never `_default_ref`), one merge base, a clean checkout
+(`integration_ref` `:317`; never `_default_ref`) -- A-0012, DERIVED: when the reviewed head is inside `scope_base.base_branch`, `review_delta.landing` finds its landing merge (`crew_refresh_check._landing`) and pins the rebuild at `merge-base <head> <merge^1>`; a HEAD inside that ref too takes `merge^1` as the integration base in place of the train entry; `_lands_as_reviewed` keeps a reviewed path absent from the current delta whose HEAD entry is the reviewed new side (`merged` in the detail) -- one merge base, a clean checkout
 (`_clean_head_tree` `:343`, `checkout_problem` `:354`), then the per-path interdiff of the
 reviewed bundle's base tree -> reviewed head against base -> `HEAD^{tree}`: byte identity outside
 the allowlist (`_match` `:394`, `fnmatchcase`); code maps, rules and diagrams compared with only
@@ -1282,7 +1298,12 @@ a distinct successor plan is its only way out, and `review_ledger.continue_with_
 refuses a plan approved before, so `approve` exits 3), and then `self` (any risk) or
 `risk` on a known `risk: low`; `human` never; a settings read that raises is `policy: unknown`,
 refused. `question_policy` (`:2294`) is `take|stop` by the same rule without the
-`allowCliApproval` term, and stops on `unknown`. `approve` (`:924`) also needs `mode: plan`, then calls
+`allowCliApproval` term, and stops on `unknown`. `approve` (`plugin/crew/hooks/scripts/crew_autopilot.py:2363`)
+also needs `mode: plan`; a refusal of either kind appends every unmet prerequisite
+(`plugin/crew/hooks/scripts/crew_approval_unmet.py:92` `unmet_prerequisites`, `:121` `unmet_text`: mode,
+`allowCliApproval`, `approval`, ledger; advice only, the decision is `approval_policy`'s; #624, called at
+`_unmet_block` at `crew_autopilot.py:2354`, called at `:2376` and `:2382`, which falls back to the old text when the module is missing; a value it echoes is a bool or short plain word, else its type, cut at 40 characters, and an unreadable config reads "could not be told", never a value; a new module because `crew_autopilot*.py` is frozen) after the
+`/crew:approve <ticket>` sentence. Then it calls
 `crew_ticket.approve(..., via=crew_ticket.AUTOPILOT)` - the module's one writing path, which lands
 `approval.json`; on a ticket's first approval, the scope ramp's `scope-tickets.json`
 (`crew_ticket._register_ramp`, `plugin/crew/hooks/scripts/crew_ticket.py:905`, as for every
@@ -1306,9 +1327,11 @@ a group confirm's `expect` outright (`:743-745`, before `expect` is validated or
 the group confirm is owner-only, carried from T-0024's hand-off at T-0010's merge of `f96e9ec9`). `scope_guard.py`'s
 `_AUTOPILOT_APPROVE_RE` / `_AUTOPILOT_BARE_RE` (`plugin/crew/hooks/scripts/scope_guard.py:143-147`) and
 `_autopilot_refusal` (`:272`) allow only the bare command while the policy says yes;
-`shell_refusal` (`:300`) runs `_reading_refusal` (`:317`) on each reading `_joined` (`:292`)
+`shell_refusal` (`:300`) runs `_reading_refusal` (`:317`) on each distinct reading `_joined` (`:292`)
 gives - the command as written and with line continuations joined (`_BASH_CONTINUATION_RE` /
-`_PS_CONTINUATION_RE`, `:157-158`) - while the bare-command rule judges the command as written.
+`_PS_CONTINUATION_RE`, `:157-158`) - while the bare-command rule judges the command as written. A-0013, DERIVED: the readings are deduplicated in order
+(`dict.fromkeys`), so a command with no continuation runs `approval_policy` once, not three times
+(about 14 git calls in a lane, against `crew_hook.py`'s 15 s limit).
 Tests `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_crew_ticket.py`,
 `test_scope_guard.py`, `test_crew_autopilot_status.py` and `test_crew_route.py`; mutations
 `POLICY_MUTATIONS` in `sabotage_autopilot.py` (55 by `len()` on T-0010-solo's merge of `e878cc31`, `plugin/crew/tests/sabotage_autopilot.py:687`),
@@ -2093,7 +2116,13 @@ JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose
   `apply` asks the policy for it and skips only `confirm`, keeping
   T-0052's existing-children verification; `check` records
   `policy_at_check` for the report only. `absent_sources`
-  (`:303`) is what the gate names `unmeasured`.
+  (`:303`) is what the gate names `unmeasured`. Its metrics rows are
+  classified by `_row_kind` (`plugin/crew/hooks/scripts/crew_split.py`,
+  A-0011): header, separator and an uncounted round (both count cells
+  `UNCOUNTED`, the `INCOMPLETE` that `review_metrics.row` writes) are skipped;
+  any other row whose counts do not parse is malformed, so findings-rate is
+  unknown. `test_every_row_review_metrics_writes_parses_in_split` holds the
+  writer and this reader to one contract.
 - Tests: `plugin/crew/tests/test_crew_autopilot_split.py` and the T-0058
   block at the end of `plugin/crew/tests/test_crew_split.py`, on the
   `crew_split` rule in `.crew/verify.json`.
