@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.6] - 2026-11-07
+
+Deploy test seam only; no behaviour change for a normal run.
+
+### Changed
+- `AI_CONNECT_DEPLOY_ROOT=0` now means "not root" even when the real euid is 0 (`1` still means root; unset keeps the euid check). The deploy test box sets it to `0`, so `tests/` passes when run as root (#609)
+
 ## [0.2.5] - 2026-11-06
 
 Lint only (line length, final newline); no behaviour change from 0.2.4.

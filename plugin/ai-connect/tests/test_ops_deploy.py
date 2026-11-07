@@ -1078,3 +1078,24 @@ def test_deploy_ps1_passes_the_repo_powershell_static_check(box, tmp_path):
                           str(DEPLOY_DIR / "deploy.ps1")], capture_output=True, text=True, check=False,
                          stdin=subprocess.DEVNULL, env=dict(box.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
     assert res.returncode == 0, res.stdout + res.stderr
+
+
+# ---------------------------------------------------------------- root seam (#609)
+
+
+@pytest.mark.parametrize("forced,euid,expect", [("0", 0, False), ("1", 1000, True), ("", 0, True), ("", 1000, False)])
+def test_deploy_root_seam_wins_over_the_real_euid(forced, euid, expect):
+    """AI_CONNECT_DEPLOY_ROOT=0 means not root even when the real euid is 0; unset keeps the euid."""
+    env = {k: v for k, v in os.environ.items() if k != "AI_CONNECT_DEPLOY_ROOT"}
+    if forced:
+        env["AI_CONNECT_DEPLOY_ROOT"] = forced
+    code = (f"import os, sys; os.geteuid = lambda: {euid}; sys.path.insert(0, {str(DEPLOY_DIR)!r}); "
+            "import deploy_core; print(deploy_core.IS_ROOT)")
+    res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=60, check=False)
+    assert res.stdout.strip() == str(expect), res.stderr
+
+
+def test_the_box_defaults_to_not_root(tmp_path, venv):
+    """A suite run as root still exercises the sudo branch unless a test asks for root."""
+    box = Box(tmp_path, venv, NATIVE)
+    assert box.env["AI_CONNECT_DEPLOY_ROOT"] == "0"
