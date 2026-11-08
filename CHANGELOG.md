@@ -16,6 +16,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - The double confirmation (`hooks/scripts/crew_confirm_config.py`, `/crew:confirm-config`): `propose` records a pending change and prints `cc-<8 hex>`; the change applies only after two confirmations from two different user prompts within 15 minutes, compare-and-swap against the file as proposed (a changed file goes `stale`), with the repo file re-checked as untracked at the second one. `confirm` accepts only `via: "user-prompt"`; the CLI has no confirm subcommand, and the command file is `disable-model-invocation: true`. No hook calls `confirm` yet, so in 1.3.6 a proposal can only be listed, cancelled or left to expire.
 - `crew_config.py --set` and the `/crew:config` menu refuse a `humanOnly` `false` at either layer and a repo `null` / `--unset` (it drops a veto); `true` is a plain write, and a machine `null` / `--unset` too. A crew write that sets a key back records a revocation, so an old receipt no longer backs a `false` that reappears by hand.
 - Docs: `CONFIG.md` and the configuration reference gain the `human-only opt-out` layer and a section saying what is NOT enforced yet; the guide, `/crew:config`, `/crew:approve`, the crew README and `plugin/PLUGINS.md` (39 commands) say the same. Tests: `test_crew_humanonly.py` (must-block and must-allow cases) and `humanonly_mutations.py` (16 mutations, each turning a named case red; run alone until the harness change wires them into `sabotage.py`). The L-0725 key set gains the two keys (89 / 85 / 52).
+### Fixed — crew 1.2.122: three pylint findings in crew test files
+
+- **Summary.** `crew` 1.2.122: test-only; the two open() pass-through wrappers in `test_crew_autopilot_goal_resume.py` and `test_crew_resume.py` carry an `unspecified-encoding` disable (they forward the caller's mode and arguments), and the shadowed first `_write_config` helper in `test_migrate.py` is removed (the later definition always won, so no behaviour changes).
+
+### Fixed — crew 1.2.121: a migrate test no longer fails when the pytest tmp path holds the value's digits
+
+- **Summary.** `crew` 1.2.121: test-only; `test_refuses_non_default_dropped_key` strips the pytest tmp root from the output before checking that the refused value is not printed, so a run whose process number contains 30 (`/pytest-30306/`) no longer fails `emergency.ttlMinutes-30`; a real leak of the value still fails it (sabotage-checked).
 
 ### Fixed — crew 1.2.119: the guards' allow path starts no helper processes in bash
 
