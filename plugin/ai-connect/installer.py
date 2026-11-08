@@ -24,6 +24,7 @@ out again (state_hooks.py).
 """
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -37,6 +38,7 @@ from pathlib import Path
 
 import yaml
 
+import join_codes
 import state_hooks
 from config_loader import CONFIG_PATH, OBSERVER_TOKEN_PATH, USER_TOKEN_PATH
 
@@ -90,8 +92,7 @@ def _reject_placeholder(token: str, what: str) -> None:
 
 def check_config(config_path: Path = CONFIG_PATH) -> None:
     """Stop if config.yaml lacks keys the template has, or still trusts the example token."""
-    with open(config_path, encoding="utf-8") as f:
-        config = yaml.safe_load(f)
+    config = _read_config(config_path)
     missing = _dotted_keys(_example()) - _dotted_keys(config)
     if missing:
         sys.exit(
@@ -143,7 +144,8 @@ def write_config(server: bool, config_path: Path = CONFIG_PATH) -> None:
         _reject_placeholder(token, "Peer token")
         config["client"]["token"] = token
 
-    _save_config(config, config_path)
+    with _config_lock(config_path):
+        _save_config(config, config_path)
     print(f"  Config written: {config_path}")
 
     if server:
@@ -151,11 +153,11 @@ def write_config(server: bool, config_path: Path = CONFIG_PATH) -> None:
             create_token(role, config_path)
         # The Bridge machine runs a peer of its own Bridge too
         peer_name = config["client"]["name"]
-        own_token = _add_peer(peer_name, config_path)
-        with open(config_path, encoding="utf-8") as f:
-            config = yaml.safe_load(f)
-        config["client"]["token"] = own_token
-        _save_config(config, config_path)
+        with _config_lock(config_path):
+            own_token = _add_peer(peer_name, config_path)
+            config = _read_config(config_path)
+            config["client"]["token"] = own_token
+            _save_config(config, config_path)
         print(f"  This machine's own peer token ('{peer_name}') generated and filled in")
 
 
@@ -204,6 +206,33 @@ def _save_config(config: dict, config_path: Path = CONFIG_PATH) -> None:
     _write_private(config_path, yaml.safe_dump(config, sort_keys=False))
 
 
+@contextlib.contextmanager
+def _config_lock(config_path: Path):
+    """join_codes.auth_lock around one read-modify-write of config.yaml.
+
+    The running Bridge redeems join codes into the same file, and the
+    ai-connect CLI writes it too: a read-modify-write outside this lock can
+    write a revoked peer back, or drop a peer redeemed in between.
+    """
+    try:
+        with join_codes.auth_lock(config_path.parent):
+            yield
+    except TimeoutError as err:
+        sys.exit(f"{err}: another ai-connect command or the Bridge is writing it; run this again")
+
+
+def _read_config(config_path: Path) -> dict:
+    """config.yaml as a mapping. A YAML error names its place only: PyYAML's message quotes the line, a token."""
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+    except yaml.YAMLError as err:
+        sys.exit(f"{config_path} is not valid YAML ({join_codes.yaml_error_place(err)}); fix it and run this again")
+    if not isinstance(config, dict):
+        sys.exit(f"{config_path} is not a YAML mapping")
+    return config
+
+
 # Role -> token file; the config key of its hash is auth.<role>_token_sha256
 TOKEN_PATHS = {"observer": OBSERVER_TOKEN_PATH, "user": USER_TOKEN_PATH}
 
@@ -213,29 +242,33 @@ def create_token(role: str, config_path: Path = CONFIG_PATH) -> None:
 
     The Bridge only learns the hash; the token stays in its own file for the
     person's tools (reading all traffic, writing as a user). A new token
-    locks out the old one once the Bridge restarts.
+    locks out the old one within seconds: a running Bridge polls config.yaml
+    (server/auth_reload.py) and closes connections made with the old one.
     """
     path = TOKEN_PATHS[role]
     token = secrets.token_hex(32)
-    _write_private(path, token + "\n")
-    with open(config_path, encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    config.setdefault("auth", {})[f"{role}_token_sha256"] = _token_sha256(token)
-    _save_config(config, config_path)
-    print(f"  {role.capitalize()} token written: {path} (restart the Bridge to use it)")
+    with _config_lock(config_path):
+        config = _read_config(config_path)
+        _write_private(path, token + "\n")
+        config.setdefault("auth", {})[f"{role}_token_sha256"] = _token_sha256(token)
+        _save_config(config, config_path)
+    print(f"  {role.capitalize()} token written: {path} (a running Bridge picks it up within seconds)")
     _deny_tokens_to_claude()
 
 
 def _add_peer(name: str, config_path: Path) -> str:
-    """Create a peer, store its token's SHA-256, return the raw token (caller shows/uses it once)."""
-    with open(config_path, encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    peers = config.setdefault("auth", {}).setdefault("peers", {})
-    if name in peers:
-        sys.exit(f"Peer '{name}' already exists. Run `revoke-peer {name}` first to replace its token.")
-    token = secrets.token_hex(32)  # 256 bits
-    peers[name] = _token_sha256(token)
-    _save_config(config, config_path)
+    """Create a peer, store its token's SHA-256, return the raw token (caller shows/uses it once).
+
+    Under the auth lock (reentrant: the CLI's `bridge token` already holds it).
+    """
+    with _config_lock(config_path):
+        config = _read_config(config_path)
+        peers = config.setdefault("auth", {}).setdefault("peers", {})
+        if name in peers:
+            sys.exit(f"Peer '{name}' already exists. Run `revoke-peer {name}` first to replace its token.")
+        token = secrets.token_hex(32)  # 256 bits
+        peers[name] = _token_sha256(token)
+        _save_config(config, config_path)
     return token
 
 
@@ -244,19 +277,19 @@ def add_peer(name: str, config_path: Path = CONFIG_PATH) -> None:
     token = _add_peer(name, config_path)
     print(f"  Peer '{name}' added. On that machine set client.name: '{name}' and client.token to this (shown once):")
     print(f"    {token}")
-    print("  Restart the Bridge to use it.")
+    print("  A running Bridge accepts it within seconds; no restart needed.")
 
 
 def revoke_peer(name: str, config_path: Path = CONFIG_PATH) -> None:
     """Bridge machine: remove a peer so its token no longer authenticates."""
-    with open(config_path, encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    peers = config.get("auth", {}).get("peers", {})
-    if name not in peers:
-        sys.exit(f"No such peer: '{name}'")
-    del peers[name]
-    _save_config(config, config_path)
-    print(f"  Peer '{name}' revoked (restart the Bridge to use it)")
+    with _config_lock(config_path):
+        config = _read_config(config_path)
+        peers = (config.get("auth") or {}).get("peers") or {}
+        if name not in peers:
+            sys.exit(f"No such peer: '{name}'")
+        del peers[name]
+        _save_config(config, config_path)
+    print(f"  Peer '{name}' revoked (a running Bridge picks it up within seconds)")
 
 
 def _deny_tokens_to_claude() -> None:
