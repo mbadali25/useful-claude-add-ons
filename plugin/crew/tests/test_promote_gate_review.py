@@ -525,10 +525,11 @@ def test_a_hung_receipt_check_blocks_within_the_hook_timeout(flavour, tmp_path):
 @pytest.mark.slow
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout(flavour, tmp_path):
-    """Default budget: a python that costs 1.8s per start (crew_py's probe and
+    """Default budget: a python that costs 1.5s per start (crew_py's probe and
     every interpreter the gate runs - seven since crew 1.2.0 added the dispatch
-    and github readers, about 11.5s before the search starts; 2.5s per start
-    spent the whole deadline before the search) plus
+    and github readers, eight since 1.2.115's allow fast path, which a deploy
+    passes through before the full gate; 8 x 1.5s is the 12s that 7 x 1.8s
+    was, and 8 x 1.8s left CI no time to reach the search) plus
     a receipt check that never ends. The gate's own 16s deadline must still
     land it inside the 20s hook; a search that took a fixed 12s from its own
     start would not."""
@@ -538,7 +539,7 @@ def test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout(flav
     real = os.path.realpath(sys.executable)
     for name in ("python3", "python"):
         slow = shim_dir / name
-        slow.write_text(f'#!/bin/sh\nsleep 1.8\nexec "{real}" "$@"\n', encoding="utf-8")
+        slow.write_text(f'#!/bin/sh\nsleep 1.5\nexec "{real}" "$@"\n', encoding="utf-8")
         slow.chmod(0o755)
     code, err, took = run_gate(flavour, repo, "deploy-dev",
                                path=f"{shim_dir}{os.pathsep}{os.environ['PATH']}")
