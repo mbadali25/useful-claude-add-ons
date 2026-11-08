@@ -13,6 +13,22 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 - **Summary.** `crew` 1.2.124: test-only; `test_a_fault_in_an_armed_repo_is_exit_2_naming_the_cause` for `guard-past-its-timeout` and `dispatcher-hangs-before-main` also accepts `the python probe used the whole deadline`, which a loaded runner can print when the probe exhausts the deadline in startup; the hook still fails closed with exit 2 and the test still requires a named cause.
 
+### Fixed - crew 1.3.6: the diff-base note is in the detail log, not on stderr; a failed buffer split leaves no half-written log
+
+- **Summary.** `crew` 1.3.6: the Stop gate's `diff base: the merge-base of HEAD with ...` note (new in 1.3.0) was written to stderr on every Stop, a clean tree's included; it now goes to `.crew/.verify-gate.log` as 1.3.0 said it would. It carries a commit sha, so the recorded Stop goldens could never match it (CI of #715: `crew-shell-matrix`).
+
+### Fixed - crew 1.3.1: pylint findings in the deadline work
+
+- **Summary.** `crew` 1.3.1: lint-only follow-up to 1.3.0 (CI of #715); `verify_record.py` and `test_verify_gate_deadline.py` use f-strings and `with` for the process handles; no behaviour or message text changes.
+
+### Fixed — crew 1.3.0: the Stop gate keeps the hook deadline and survives being killed
+
+- **Summary.** `crew` 1.3.0: the verify gate no longer runs past the Stop hook's deadline (measured 862s against 600s on Windows); a rule that would not fit is deferred by name, what a run measured is saved as it goes so a killed run still corrects the next one, the diff base is `origin/<default>`, and a lock left by a killed gate no longer blocks the next turn.
+- **Deadline.** Before each rule, its price is held against `CREW_HOOK_DEADLINE` less a 60s margin; a rule that would not fit prints `deferred: would pass the hook deadline - <why> - NOT VERIFIED this turn: <command>` and holds the verified marker and fingerprint back. A rule with no price runs only while time is left. Stop only; `--all` and `--ci` are unchanged. An unreadable deadline is said and defers nothing.
+- **Persistence.** Before each command the gate caches the timing of every rule that has passed so far, records the command now starting (`.crew/.verify-gate.inflight.json`), and rewrites `.crew/.verify-gate.log` headed `RUN NOT FINISHED`; all through a temp file and rename. A run killed at its deadline leaves the in-flight record, and the next run prices that rule at no less than the time it ran, so it is deferred by name instead of killed again.
+- **Base.** The diff base is the merge-base with `origin/<default>` when that ref exists (a local `main` behind the remote had widened scope by 31 commits), else the local branch; the choice is in the detail log.
+- **Lock.** The lock records its holder's Windows pid (Git Bash) or pid and start time (Linux) beside its token; a lock whose holder process no longer exists is reclaimed at once. A live holder, or one that cannot be asked, backs off as before.
+- Tests: `test_verify_gate_deadline.py` (must-block and must-allow for each), nine mutations in `sabotage_deadline.py`.
 ### Fixed — crew 1.2.122: three pylint findings in crew test files
 
 - **Summary.** `crew` 1.2.122: test-only; the two open() pass-through wrappers in `test_crew_autopilot_goal_resume.py` and `test_crew_resume.py` carry an `unspecified-encoding` disable (they forward the caller's mode and arguments), and the shadowed first `_write_config` helper in `test_migrate.py` is removed (the later definition always won, so no behaviour changes).
