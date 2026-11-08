@@ -16,7 +16,15 @@ non-zero status too, so a crash never reads as a pass.
 
 WHICH ENVIRONMENTS. Every gated environment requires review evidence unless
 its map entry says `"requireReview": false` AND gives a non-empty
-`reviewReason` string - the `rollback: "none"` + `rollbackReason` pattern. A
+`reviewReason` string - the `rollback: "none"` + `rollbackReason` pattern - AND
+a `reviewWaiverSha` equal to the train base of the promotion (SRL-3312, owner
+decision 2026-11-08). The train base is `train_base_sha()`: the merge-base of
+the promoted sha with the base branch, or, when the promoted sha is itself on
+the base branch, its first parent (a commit cannot name its own sha, and the
+waiver is committed with the change). A missing, non-string or different
+`reviewWaiverSha`, or a train base that could not be told, leaves review
+required. KNOWN WEAKNESS: the waiver covers the train built on that base, so a
+later commit on the same base inherits it. A
 `requireReview` that is anything but true or false is refused, never read as
 either. `requireHuman` does not waive it: the human's yes is a deploy
 go/no-go, not a code review, and the approval marker is a file the session
@@ -94,8 +102,40 @@ def no_case_twins(pairs):
     return {fold(k): v for k, v in pairs}
 
 
-def requirement(env, cfg):
-    """(needs review, problem or None) for one environment's map entry."""
+def train_base_sha(tree, sha, deadline):
+    """The full sha of the train base for the promoted `sha`, or None.
+
+    merge-base of `sha` with the base branch (scope_base.base_branch); when
+    that is `sha` itself (the promotion is on the base branch) its first
+    parent. None - never a guess - when git cannot answer, there is no base
+    branch, or there is no parent; the caller then keeps review required."""
+    import scope_base  # noqa: E402  pylint: disable=import-outside-toplevel
+    try:
+        ref, problem = scope_base.base_branch(tree)
+        if problem or not ref:
+            return None
+        git = crew_common.require_tool("git")
+
+        def ask(*args):
+            done = subprocess.run([git, "-C", tree, *args], capture_output=True, text=True,
+                                  check=False, timeout=_left(deadline),
+                                  stdin=subprocess.DEVNULL)
+            out = done.stdout.strip().lower()
+            return out if done.returncode == 0 and _FULL_SHA.fullmatch(out) else None
+        base = ask("merge-base", sha, ref)
+        if base == sha:
+            base = ask("rev-parse", "--verify", "--end-of-options", f"{sha}^1^{{commit}}")
+        return base
+    except (OSError, subprocess.SubprocessError, CouldNotTell):
+        return None
+
+
+def requirement(env, cfg, train_base=None):
+    """(needs review, problem or None) for one environment's map entry.
+
+    `requireReview: false` waives review only when the entry's
+    `reviewWaiverSha` equals `train_base` (SRL-3312); a missing, non-string or
+    different value, or an unknown `train_base`, leaves review required."""
     if "REQUIREREVIEW" not in cfg:
         return True, None
     value = cfg["REQUIREREVIEW"]
@@ -104,7 +144,11 @@ def requirement(env, cfg):
     if value is False:
         reason = cfg.get("REVIEWREASON")
         if isinstance(reason, str) and reason.strip():
-            return False, None
+            waiver = cfg.get("REVIEWWAIVERSHA")
+            if (train_base is not None and isinstance(waiver, str)
+                    and waiver.strip().lower() == train_base):
+                return False, None
+            return True, None
         return False, (f"'{env}' sets requireReview: false but has no reviewReason string. "
                        f"State why {env} may take a deploy nobody reviewed. Fix: add a "
                        "non-empty reviewReason string next to requireReview in "
@@ -380,9 +424,14 @@ def main(argv):
         return 3
     environments = doc.get("ENVIRONMENTS", {}) if isinstance(doc, dict) else {}
     problems, needing = [], []
+    base = None
+    if any(isinstance(c, dict) and c.get("REQUIREREVIEW") is False
+           for c in (environments.get(fold(e)) for e in envs)
+           if isinstance(environments, dict)):
+        base = train_base_sha(tree, sha, deadline)
     for env in envs:
         cfg = environments.get(fold(env), {}) if isinstance(environments, dict) else {}
-        need, problem = requirement(env, cfg if isinstance(cfg, dict) else {})
+        need, problem = requirement(env, cfg if isinstance(cfg, dict) else {}, base)
         if problem:
             problems.append((env, problem))
         elif need:
@@ -400,7 +449,8 @@ def main(argv):
                 problems.append((env, (
                     f"'{env}' requires an accepted review of the sha being deployed ({sha}), "
                     f"and there is none: {detail}. Run /crew:review on this exact tree and get "
-                    f"it accepted, or set requireReview: false plus a reviewReason on '{env}' "
+                    f"it accepted, or set requireReview: false plus a reviewReason and a reviewWaiverSha "
+                    f"(the train base: {base or 'could not be told'}) on '{env}' "
                     "in .crew/verify.json.")))
     sys.stdout.write(SEP.join(f"[{env}] {msg}" if len(envs) > 1 else msg
                               for env, msg in problems))

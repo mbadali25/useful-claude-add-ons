@@ -16,6 +16,7 @@ import json
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+from _train_base import TRAIN_BASE, seed_train_base
 import crew_ghdeploy
 from test_promote_gate_literal_match import FLAVOURS, Repo, _blocked_as, _git, run_gate
 
@@ -112,7 +113,8 @@ import test_promote_gate_effective_tree as tree  # noqa: E402  pylint: disable=w
 
 # L-0703: review evidence is opted out here; test_promote_gate_review.py owns
 # the review rule.
-_NO_REVIEW = {"requireReview": False, "reviewReason": "fixture"}
+_NO_REVIEW = {"requireReview": False, "reviewReason": "fixture",
+              "reviewWaiverSha": TRAIN_BASE}
 
 
 def _prefix(target):

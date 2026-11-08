@@ -1361,7 +1361,7 @@ check), which still applies independently: fully unattended production also
 needs that off. Nor does it stand down promote-gate's review evidence
 (L-0703): every gated environment needs an accepted review receipt whose
 reviewed head has the deployed commit's tree, unless that environment in
-`.crew/verify.json` sets `requireReview: false` plus a `reviewReason` - a map
+`.crew/verify.json` sets `requireReview: false` plus a `reviewReason` and a `reviewWaiverSha` naming the train base (SRL-3312) - a map
 key, not a config key, and committed like the rest of the map. Unattended
 production therefore deploys only reviewed trees. `.crew/verify.json` stays promote-gate's list of environments
 (and of deploy workflows: promote-gate reads a dispatch with T-0009's reader whether

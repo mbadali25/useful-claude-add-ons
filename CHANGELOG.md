@@ -9,6 +9,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed — crew 1.2.120: a review waiver binds to the train base (SRL-3312)
+
+- **Summary.** `crew` 1.2.120: `requireReview: false` with a `reviewReason` no longer waives promote-gate's review evidence on its own; the environment must also name the promotion's train base in `reviewWaiverSha`.
+- `_promote_review.py`: `train_base_sha()` is the merge-base of the promoted sha with the base branch (`scope_base.base_branch`), or its first parent when the promoted sha is itself on the base branch (a commit cannot name its own sha). The waiver holds only when `reviewWaiverSha` equals it (case-insensitive, full sha); missing, non-string, different, or an unknowable base leaves review required, and the refusal names the base.
+- Weakness, stated: the waiver covers the train built on that base, so a later commit on the same base inherits it.
+- Owner decisions 2026-11-08 (picker): bind to the train base; update each promote-gate fixture. Fixtures seed one fixed empty-tree base commit (`tests/_train_base.py`; `_test/run-tests.sh` makes its own base commit); `record_golden_hooks.py` names its first parent and the armed goldens were re-recorded (sha strings only).
+- Tests: waiver matches / missing / mismatched / a non-string value / the promoted sha or an ancestor that is not the base / no base branch (first parent) / a later commit inherits it; two sabotage rows in `promote_tree_mutations.py`.
+- Docs: crew-verification SKILL.md, commands/promote.md, crew-setup phases.md, docs/crew/promote.md, config-rationale.md, reference 23.
+
 ### Fixed — crew 1.2.119: the guards' allow path starts no helper processes in bash
 
 - **Summary.** `crew` 1.2.119: cloud-guard, env-guard and promote-gate clear a command that deploys nothing with one python and no `tr`, `cut`, `dirname`, `uname`, `cygpath`, `date`, `jq` or `git` process from bash, so several lanes running at once no longer time the guards out on Git Bash, where each process start is an MSYS fork; every decision is unchanged.
