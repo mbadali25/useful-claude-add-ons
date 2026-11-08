@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.7] - 2026-11-08
+
+Lint only (line length) on the 0.2.6 test change; no behaviour change.
+
 ## [0.2.6] - 2026-11-08
 
 Test isolation only: the setup and deploy suites ran their child processes in the checkout, so a project-scope
