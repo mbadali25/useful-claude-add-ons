@@ -18,7 +18,6 @@ helper program comes back on that path. It reads bash's own trace, so it sees
 what bash starts, not what python starts.
 """
 import json
-import os
 import pathlib
 import re
 import shlex

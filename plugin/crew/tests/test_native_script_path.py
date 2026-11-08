@@ -225,7 +225,8 @@ def test_helper_skips_cygpath_only_for_a_mixed_path(tmp_path, ostype, given, wan
     is already mixed; asking cygpath for it was an MSYS process start per call."""
     bindir = _stubs(tmp_path)
     env = dict(os.environ, PATH=str(bindir) + os.pathsep + os.environ["PATH"], OSTYPE=ostype)
-    script = f'. "{SCRIPTS}/_common.sh"; crew_native_path "$1"; crew_py_script "{SCRIPTS}/_common.sh" V; printf "|%s" "${{V:+set}}"'
+    script = (f'. "{SCRIPTS}/_common.sh"; crew_native_path "$1"; '
+              f'crew_py_script "{SCRIPTS}/_common.sh" V; printf "|%s" "${{V:+set}}"')
 
     done = subprocess.run([BASH, "-c", script, "_", given], capture_output=True, text=True,
                           encoding="utf-8", env=env, check=False)
