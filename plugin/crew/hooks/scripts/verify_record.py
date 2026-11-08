@@ -1471,7 +1471,7 @@ def _write_json_atomic(path, data):
     try:
         text = json.dumps(data, indent=2, sort_keys=True)
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        tmp = "%s.%d.tmp" % (path, os.getpid())
+        tmp = f"{path}.{os.getpid()}.tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
             fh.write(text)
         os.replace(tmp, path)
@@ -1506,13 +1506,13 @@ def progress(matched, cmd_log, inflight=None):
     if changed:
         err = _write_json_atomic(TIMINGS_PATH, timings)
         if err is not None:
-            problems.append("the timings cache could not be written (%s)" % err)
+            problems.append(f"the timings cache could not be written ({err})")
     if inflight is None:
         try:
             if os.path.lexists(INFLIGHT_PATH):
                 os.remove(INFLIGHT_PATH)
         except OSError as exc:
-            problems.append("the in-flight record could not be removed (%s)" % exc)
+            problems.append(f"the in-flight record could not be removed ({exc})")
         return problems
     ident = inflight["cmd"]
     keys = sorted({r.get("key") for r in matched
@@ -1522,7 +1522,7 @@ def progress(matched, cmd_log, inflight=None):
               "started": inflight["started"], "deadline": inflight.get("deadline")}
     err = _write_json_atomic(INFLIGHT_PATH, record)
     if err is not None:
-        problems.append("the in-flight record could not be written (%s)" % err)
+        problems.append(f"the in-flight record could not be written ({err})")
     return problems
 
 
@@ -1537,8 +1537,8 @@ def cmd_progress(argv):
         return 2
     matched = _matched_from_file(argv[2])
     if matched is None:
-        print("verify-gate: progress could not read the matched rules (%s) - nothing was "
-              "persisted for this rule" % argv[2], file=sys.stderr)
+        print(f"verify-gate: progress could not read the matched rules ({argv[2]}) - nothing was "
+              "persisted for this rule", file=sys.stderr)
         return 1
     cmd_log = _read_cmd_log(sys.stdin.read())
     inflight = None
@@ -1571,8 +1571,8 @@ def inflight_settle(now):
     try:
         os.remove(INFLIGHT_PATH)
     except OSError as exc:
-        return ["verify-gate: a previous run's in-flight record could not be removed (%s) - "
-                "it was not used" % exc]
+        return [f"verify-gate: a previous run's in-flight record could not be removed ({exc}) - "
+                "it was not used"]
     if state != "ok":
         return ["verify-gate: a previous run left an unreadable in-flight record - removed; "
                 "nothing was re-priced"]
@@ -1581,9 +1581,9 @@ def inflight_settle(now):
     started, deadline = data.get("started"), data.get("deadline")
     ints = all(isinstance(v, int) and not isinstance(v, bool) for v in (started, deadline))
     if not ints or deadline <= started or now < deadline or not keys:
-        return ["verify-gate: a previous run ended while running %s without recording a result, "
+        return [f"verify-gate: a previous run ended while running {cmd} without recording a result, "
                 "and not at a known hook deadline - how long it ran is unknown, so nothing was "
-                "re-priced" % cmd]
+                "re-priced"]
     lower = deadline - started
     timings = _load(TIMINGS_PATH)
     rules = timings.get("rules")
@@ -1595,11 +1595,11 @@ def inflight_settle(now):
             rules[key] = lower
     err = _write_json_atomic(TIMINGS_PATH, timings)
     if err is not None:
-        return ["verify-gate: a previous run was killed at the hook deadline while running %s, "
-                "but its price could not be recorded (%s)" % (cmd, err)]
-    return ["verify-gate: a previous run was killed at the hook deadline while running %s "
-            "(%ss after it started) - its rule is priced at %ss or more from now on, so Stop "
-            "defers it by name until /crew:verify --all measures it" % (cmd, lower, lower)]
+        return [f"verify-gate: a previous run was killed at the hook deadline while running {cmd}, "
+                f"but its price could not be recorded ({err})"]
+    return [f"verify-gate: a previous run was killed at the hook deadline while running {cmd} "
+            f"({lower}s after it started) - its rule is priced at {lower}s or more from now on, so Stop "
+            "defers it by name until /crew:verify --all measures it"]
 
 
 # --- whether a lock's holder is still alive (crew 1.2.117) -------------------
@@ -1671,7 +1671,7 @@ def owner_state(scheme, pid, stamp):
     if scheme != "proc" or not os.path.isdir("/proc"):
         return "unknown"
     try:
-        with open("/proc/%d/stat" % pid, encoding="ascii", errors="replace") as fh:
+        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as fh:
             text = fh.read()
     except FileNotFoundError:
         return "dead"

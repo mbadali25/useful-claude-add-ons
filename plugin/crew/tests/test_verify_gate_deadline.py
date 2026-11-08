@@ -377,15 +377,21 @@ def test_with_no_origin_the_local_branch_is_the_base_and_says_so(tmp_path):
 _RUN = _rule(["a.py"], ["echo RAN"], seconds=8)
 
 
+def _proc_start(pid):
+    """The process start time field of /proc/<pid>/stat."""
+    with open(f"/proc/{pid}/stat", encoding="ascii") as fh:
+        return int(fh.read().rsplit(")", 1)[1].split()[19])
+
+
 def _dead_process():
     """(scheme, pid, stamp) for a process that existed and is gone."""
-    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-    pid = proc.pid
-    stamp = int(time.time())
-    if os.name != "nt":
-        stamp = int(open("/proc/%d/stat" % pid, encoding="ascii").read().rsplit(")", 1)[1].split()[19])
-    proc.kill()
-    proc.wait(timeout=30)
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as proc:
+        pid = proc.pid
+        stamp = int(time.time())
+        if os.name != "nt":
+            stamp = _proc_start(pid)
+        proc.kill()
+        proc.wait(timeout=30)
     return ("win" if os.name == "nt" else "proc"), pid, stamp
 
 
@@ -393,7 +399,7 @@ def _live_process():
     pid = os.getpid()
     if os.name == "nt":
         return "win", pid, int(time.time())
-    return "proc", pid, int(open("/proc/%d/stat" % pid, encoding="ascii").read().rsplit(")", 1)[1].split()[19])
+    return "proc", pid, _proc_start(pid)
 
 
 def _held_lock(root, owner):
@@ -401,12 +407,12 @@ def _held_lock(root, owner):
     300s ahead and a fresh token. Only the owner can let it go."""
     lock = root / ".crew" / ".verify-gate.lock"
     lock.mkdir(parents=True)
-    token = "sh-424242-%d-1" % int(time.time())
+    token = f"sh-424242-{int(time.time())}-1"
     (lock / "token").write_text(token + "\n", encoding="utf-8")
     (lock / "deadline").write_text(str(int(time.time()) + 300), encoding="utf-8")
     if owner is not None:
         scheme, pid, stamp, tok = owner
-        (lock / "owner").write_text("%s %s %s %s\n" % (scheme, pid, stamp, tok or token), encoding="utf-8")
+        (lock / "owner").write_text(f"{scheme} {pid} {stamp} {tok or token}\n", encoding="utf-8")
     return lock
 
 
