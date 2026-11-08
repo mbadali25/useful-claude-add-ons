@@ -352,7 +352,9 @@ def test_the_base_is_origin_main_not_a_stale_local_main(tmp_path):
     assert not (out / "x-ran").exists(), (
         "a file merged into origin/main was in scope - the base was the stale local main. "
         + result.stderr)
-    assert "merge-base of HEAD with origin/main (remote-tracking)" in result.stderr, result.stderr
+    log = (root / ".crew" / ".verify-gate.log").read_text(encoding="utf-8")
+    assert "merge-base of HEAD with origin/main (remote-tracking)" in log, log
+    assert "diff base" not in result.stderr, result.stderr
 
 
 def test_with_no_origin_the_local_branch_is_the_base_and_says_so(tmp_path):
@@ -369,7 +371,8 @@ def test_with_no_origin_the_local_branch_is_the_base_and_says_so(tmp_path):
     result = _run(root, _env(root, out))
     assert result.returncode == 0, result.stderr
     assert (out / "a-ran").exists(), result.stderr
-    assert "merge-base of HEAD with main (local; no usable origin/main)" in result.stderr, result.stderr
+    log = (root / ".crew" / ".verify-gate.log").read_text(encoding="utf-8")
+    assert "merge-base of HEAD with main (local; no usable origin/main)" in log, log
 
 
 # --- 4. a lock whose holder is dead ------------------------------------------

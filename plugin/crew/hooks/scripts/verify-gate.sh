@@ -741,7 +741,10 @@ if [ -z "$BASE" ]; then
     BASE=$(git merge-base HEAD "$DEF" 2>/dev/null) || BASE=""
     [ -n "$BASE" ] && BASE_REF="$DEF (local; no usable origin/$DEF)"
   fi
-  [ -n "$BASE_REF" ] && gate_detail "verify-gate: diff base: the merge-base of HEAD with $BASE_REF, $BASE"
+  # Said later (after CREW_GATE_READY=1), into the detail log: written here it
+  # reached stderr on every Stop, a clean tree's included, where a run that
+  # ends before a verdict prints its whole buffer.
+  [ -n "$BASE_REF" ] && BASE_NOTE="verify-gate: diff base: the merge-base of HEAD with $BASE_REF, $BASE"
 fi
 [ -z "$BASE" ] && BASE=HEAD
 # `-c core.quotePath=false` on every path-listing git call. With the default
@@ -3021,6 +3024,7 @@ done <<< "$CMDS"
 # The last command's timing, and no command in flight any more.
 gate_progress
 CREW_GATE_READY=1
+[ -z "${BASE_NOTE:-}" ] || gate_detail "$BASE_NOTE"
 if [ "$DEADLINE_DEFER_N" -gt 0 ]; then
   echo "verify-gate: $DEADLINE_DEFER_N rule(s) deferred: would pass the hook deadline - NOT VERIFIED this turn; /crew:verify --all runs them with no deadline" >&2
 fi
