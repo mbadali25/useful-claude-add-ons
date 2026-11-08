@@ -31,7 +31,12 @@ def clean_env(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
-    return home
+    # A dry-run deploy in this process sets tsadmin.NO_EXEC; undo it when the test ends, or every later
+    # test in the worker that runs a tool (icacls on Windows) fails with "a dry run runs no tool"
+    yield home
+    ts = sys.modules.get("tsadmin")
+    if ts is not None:
+        ts.NO_EXEC[0] = False
 
 
 def as_root(monkeypatch, home: Path) -> None:

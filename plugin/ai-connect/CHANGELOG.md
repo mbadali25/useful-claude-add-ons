@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.14] - 2026-11-08
+
+Test only: `tests/test_ops_root_policy.py` resets `tsadmin.NO_EXEC` after each test. A dry-run deploy in that module left it set, and later CLI tests in the same worker failed with "a dry run runs no tool, and icacls.EXE was about to run" on Windows. No behaviour change.
+
 ## [0.2.13] - 2026-11-08
 
 Installing and running as root is a configurable option. The default is unchanged: nothing before 0.2.13 refused root, and with no switch set nothing does now. Client, installer and deploy only: the Bridge is unchanged.
