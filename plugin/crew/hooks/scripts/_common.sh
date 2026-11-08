@@ -37,8 +37,11 @@ crew_tool_dispatch() {
 }
 
 # Strip carriage returns. jq and some Windows tools emit CRLF, and a trailing
-# CR breaks every regex anchored with $.
-crew_strip_cr() { printf '%s' "$1" | tr -d '\r'; }
+# CR breaks every regex anchored with $. A parameter expansion, not `tr`: on
+# Git Bash every process start is an MSYS fork, and the pipe into `tr` cost two
+# of them per call. The CR is held in a variable because `$'\r'` inside a
+# double-quoted expansion is not portable to bash 3.2.
+crew_strip_cr() { local cr=$'\r'; printf '%s' "${1//$cr/}"; }
 
 # Resolve a usable Python. Echoes nothing when there is none.
 #
@@ -72,28 +75,44 @@ crew_py() {
   # exports it as CREW_PYTHON for the guards it starts, so a guard need not
   # walk PATH and probe again (on Windows each probe is a process tree, and
   # under load the walk is what timed the guards out). Trusted only after it
-  # is checked: an absolute path (Windows `C:\..` or POSIX, converted with
-  # cygpath -u as crew-hook.ps1 exports a Windows path), a regular executable
-  # file, named like an interpreter (py / python / python3.x, with or without
-  # .exe). Anything else is ignored and the walk below runs as before. The
-  # variable is only ever consulted here, never executed unchecked.
+  # is checked: an absolute path (Windows `C:\..` or POSIX), a regular
+  # executable file, named like an interpreter (py / python / python3.x, with
+  # or without .exe, any case). Anything else is ignored and the walk below
+  # runs as before. The variable is only ever consulted here, never executed
+  # unchecked. crew-hook.ps1 exports a Windows path, converted first by hand,
+  # `C:\x\py.exe` -> `/c/x/py.exe` (what cygpath -u answers under Git Bash's
+  # default `/` drive prefix), and with `cygpath -u` only when that names no
+  # executable file (Cygwin, whose drives live under /cygdrive, or a custom
+  # prefix). On Git Bash each fork is an MSYS process start, and this block
+  # used to cost five per guard; `$OSTYPE` cannot tell the two apart (Git
+  # Bash's bash 5.3 reports `cygwin`), so the file itself decides.
   if [ -n "${CREW_PYTHON:-}" ]; then
-    local _crew_env_py _crew_env_lc
-    _crew_env_py=$(printf '%s' "$CREW_PYTHON" | tr -d '\r')
+    local _crew_env_py _crew_env_cr=$'\r' _crew_env_d _crew_env_h
+    _crew_env_py=${CREW_PYTHON//$_crew_env_cr/}
     case "$_crew_env_py" in
       [A-Za-z]:\\*|[A-Za-z]:/*)
-        if command -v cygpath >/dev/null 2>&1; then
+        _crew_env_d=${_crew_env_py:0:1}
+        _crew_env_h=ABCDEFGHIJKLMNOPQRSTUVWXYZ
+        _crew_env_h=${_crew_env_h%%"$_crew_env_d"*}
+        if [ "${#_crew_env_h}" -lt 26 ]; then
+          _crew_env_d=abcdefghijklmnopqrstuvwxyz
+          _crew_env_d=${_crew_env_d:${#_crew_env_h}:1}
+        fi
+        _crew_env_h=${_crew_env_py:2}
+        _crew_env_h=${_crew_env_h//\\//}
+        _crew_env_h="/$_crew_env_d$_crew_env_h"
+        if { [ ! -f "$_crew_env_h" ] || [ ! -x "$_crew_env_h" ]; } \
+           && command -v cygpath >/dev/null 2>&1; then
           _crew_env_py=$(cygpath -u -- "$_crew_env_py" 2>/dev/null) || _crew_env_py=""
         else
-          _crew_env_py="/$(printf '%s' "$_crew_env_py" | cut -c1 | tr '[:upper:]' '[:lower:]')$(printf '%s' "$_crew_env_py" | cut -c3- | tr '\\' '/')"
+          _crew_env_py=$_crew_env_h
         fi
         ;;
     esac
-    _crew_env_lc=$(printf '%s' "${_crew_env_py##*/}" | tr '[:upper:]' '[:lower:]')
     case "$_crew_env_py" in
       /*)
-        case "$_crew_env_lc" in
-          py|py.exe|python|python.exe|python[0-9]*)
+        case "${_crew_env_py##*/}" in
+          [Pp][Yy]|[Pp][Yy].[Ee][Xx][Ee]|[Pp][Yy][Tt][Hh][Oo][Nn]|[Pp][Yy][Tt][Hh][Oo][Nn].[Ee][Xx][Ee]|[Pp][Yy][Tt][Hh][Oo][Nn][0-9]*)
             if [ -f "$_crew_env_py" ] && [ -x "$_crew_env_py" ]; then
               printf '%s\n' "$_crew_env_py"
               return 0
@@ -209,28 +228,44 @@ crew_py_strict() {
   # exports it as CREW_PYTHON for the guards it starts, so a guard need not
   # walk PATH and probe again (on Windows each probe is a process tree, and
   # under load the walk is what timed the guards out). Trusted only after it
-  # is checked: an absolute path (Windows `C:\..` or POSIX, converted with
-  # cygpath -u as crew-hook.ps1 exports a Windows path), a regular executable
-  # file, named like an interpreter (py / python / python3.x, with or without
-  # .exe). Anything else is ignored and the walk below runs as before. The
-  # variable is only ever consulted here, never executed unchecked.
+  # is checked: an absolute path (Windows `C:\..` or POSIX), a regular
+  # executable file, named like an interpreter (py / python / python3.x, with
+  # or without .exe, any case). Anything else is ignored and the walk below
+  # runs as before. The variable is only ever consulted here, never executed
+  # unchecked. crew-hook.ps1 exports a Windows path, converted first by hand,
+  # `C:\x\py.exe` -> `/c/x/py.exe` (what cygpath -u answers under Git Bash's
+  # default `/` drive prefix), and with `cygpath -u` only when that names no
+  # executable file (Cygwin, whose drives live under /cygdrive, or a custom
+  # prefix). On Git Bash each fork is an MSYS process start, and this block
+  # used to cost five per guard; `$OSTYPE` cannot tell the two apart (Git
+  # Bash's bash 5.3 reports `cygwin`), so the file itself decides.
   if [ -n "${CREW_PYTHON:-}" ]; then
-    local _crew_env_py _crew_env_lc
-    _crew_env_py=$(printf '%s' "$CREW_PYTHON" | tr -d '\r')
+    local _crew_env_py _crew_env_cr=$'\r' _crew_env_d _crew_env_h
+    _crew_env_py=${CREW_PYTHON//$_crew_env_cr/}
     case "$_crew_env_py" in
       [A-Za-z]:\\*|[A-Za-z]:/*)
-        if command -v cygpath >/dev/null 2>&1; then
+        _crew_env_d=${_crew_env_py:0:1}
+        _crew_env_h=ABCDEFGHIJKLMNOPQRSTUVWXYZ
+        _crew_env_h=${_crew_env_h%%"$_crew_env_d"*}
+        if [ "${#_crew_env_h}" -lt 26 ]; then
+          _crew_env_d=abcdefghijklmnopqrstuvwxyz
+          _crew_env_d=${_crew_env_d:${#_crew_env_h}:1}
+        fi
+        _crew_env_h=${_crew_env_py:2}
+        _crew_env_h=${_crew_env_h//\\//}
+        _crew_env_h="/$_crew_env_d$_crew_env_h"
+        if { [ ! -f "$_crew_env_h" ] || [ ! -x "$_crew_env_h" ]; } \
+           && command -v cygpath >/dev/null 2>&1; then
           _crew_env_py=$(cygpath -u -- "$_crew_env_py" 2>/dev/null) || _crew_env_py=""
         else
-          _crew_env_py="/$(printf '%s' "$_crew_env_py" | cut -c1 | tr '[:upper:]' '[:lower:]')$(printf '%s' "$_crew_env_py" | cut -c3- | tr '\\' '/')"
+          _crew_env_py=$_crew_env_h
         fi
         ;;
     esac
-    _crew_env_lc=$(printf '%s' "${_crew_env_py##*/}" | tr '[:upper:]' '[:lower:]')
     case "$_crew_env_py" in
       /*)
-        case "$_crew_env_lc" in
-          py|py.exe|python|python.exe|python[0-9]*)
+        case "${_crew_env_py##*/}" in
+          [Pp][Yy]|[Pp][Yy].[Ee][Xx][Ee]|[Pp][Yy][Tt][Hh][Oo][Nn]|[Pp][Yy][Tt][Hh][Oo][Nn].[Ee][Xx][Ee]|[Pp][Yy][Tt][Hh][Oo][Nn][0-9]*)
             if [ -f "$_crew_env_py" ] && [ -x "$_crew_env_py" ]; then
               printf '%s\n' "$_crew_env_py"
               return 0
@@ -446,17 +481,60 @@ crew_py_strict() {
 # norm. Fail open: no MSYS kernel, no `cygpath`, or a `cygpath` that fails or
 # prints nothing all print the input, never an empty string. It only changes
 # the path text, never an exit code, so a blocking hook decides as before.
+#
+# Which shell this is comes from bash's own `$OSTYPE` (`msys` under MSYS2,
+# `cygwin` under Cygwin and under Git Bash's bash 5.3), not `$(uname -s)`: that
+# was a fork and an exec on every call, on Git Bash an MSYS process start each.
+# A mixed `D:/x/y.py` - the form crew_hook.py starts every .sh with, so the one
+# a guard's own `$DIR` has - is already what `cygpath -m` would print, and is
+# printed as it is; every other shape (`/d/..`, `/tmp/..`, a backslash path)
+# still goes through `cygpath -m`.
 crew_native_path() {
-  local given="$1" native
-  case "$(uname -s 2>/dev/null)" in
-    MINGW*|MSYS*|CYGWIN*) ;;
-    *) printf '%s' "$given"; return 0 ;;
+  local _crew_native_path_out
+  _crew_native_path_into _crew_native_path_out "$1"
+  printf '%s' "$_crew_native_path_out"
+}
+
+# `crew_native_path` into the variable named $1, without the `$(...)` fork a
+# caller capturing its output pays. Same contract: fail open to the input.
+_crew_native_path_into() {
+  local _cnp_given="$2" _cnp_native _cnp_h _cnp_d
+  case "${OSTYPE:-}" in
+    msys* | cygwin*)
+      case "$_cnp_given" in
+        [A-Za-z]:/*) printf -v "$1" '%s' "$_cnp_given"; return 0 ;;
+        /[A-Za-z]/*)
+          # `/c/x` -> `C:/x` by hand, kept only when both spellings name the
+          # same existing file (`-ef`, a builtin): true under Git Bash's `/`
+          # drive prefix, false under Cygwin's /cygdrive, which then asks
+          # cygpath below as before.
+          _cnp_d=${_cnp_given:1:1}
+          _cnp_h=abcdefghijklmnopqrstuvwxyz
+          _cnp_h=${_cnp_h%%"$_cnp_d"*}
+          if [ "${#_cnp_h}" -lt 26 ]; then
+            _cnp_d=ABCDEFGHIJKLMNOPQRSTUVWXYZ
+            _cnp_d=${_cnp_d:${#_cnp_h}:1}
+          fi
+          _cnp_native="$_cnp_d:${_cnp_given:2}"
+          if [ -e "$_cnp_given" ] && [ "$_cnp_given" -ef "$_cnp_native" ]; then
+            printf -v "$1" '%s' "$_cnp_native"
+            return 0
+          fi
+          ;;
+      esac
+      ;;
+    *) printf -v "$1" '%s' "$_cnp_given"; return 0 ;;
   esac
+  # The last resort, and bounded: an orphaned `cygpath -m` was measured
+  # spinning on a core for over 30 minutes (2026-11-07), starving every guard.
   if command -v cygpath >/dev/null 2>&1 \
-     && native=$(cygpath -m -- "$given" 2>/dev/null) && [ -n "$native" ]; then
-    printf '%s' "${native%$'\r'}"
+     && _cnp_native=$(if command -v timeout >/dev/null 2>&1; then
+                        timeout 5 cygpath -m -- "$_cnp_given"
+                      else cygpath -m -- "$_cnp_given"; fi 2>/dev/null) \
+     && [ -n "$_cnp_native" ]; then
+    printf -v "$1" '%s' "${_cnp_native%$'\r'}"
   else
-    printf '%s' "$given"
+    printf -v "$1" '%s' "$_cnp_given"
   fi
 }
 
@@ -467,11 +545,23 @@ crew_native_path() {
 # (`can't find '__main__' module in '<repo>'`). This helper refuses instead:
 # nothing printed and status 1 when the converted path is empty or not a file.
 # The caller names the failure and fails CLOSED.
+#
+# With a second argument, the path goes into the variable it names instead of
+# stdout (`if crew_py_script "$DIR/x.py" X_PY; then`), which spares the caller
+# the `$(...)` fork; on a refusal that variable is left empty.
 crew_py_script() {
-  local s
-  s=$(crew_native_path "$1")
-  [ -n "$s" ] && [ -f "$1" ] || return 1
-  printf '%s' "$s"
+  local _cps_s
+  _crew_native_path_into _cps_s "$1"
+  if [ -n "$_cps_s" ] && [ -f "$1" ]; then
+    if [ -n "${2:-}" ]; then
+      printf -v "$2" '%s' "$_cps_s"
+    else
+      printf '%s' "$_cps_s"
+    fi
+    return 0
+  fi
+  [ -z "${2:-}" ] || printf -v "$2" '%s' ""
+  return 1
 }
 
 # --- The repo config's directory (T-0096) ---------------------------------

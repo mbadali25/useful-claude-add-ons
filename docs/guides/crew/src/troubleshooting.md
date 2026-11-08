@@ -509,7 +509,7 @@ not errors, and neither blocks the turn:
 
 A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.
 
-Since crew 1.2.117 the gate also keeps the **hook deadline** (`CREW_HOOK_DEADLINE`, the Stop hook's
+Since crew 1.3.0 the gate also keeps the **hook deadline** (`CREW_HOOK_DEADLINE`, the Stop hook's
 600s limit), because the budget works from estimates and an estimate can be wrong (measured: 862s
 on Windows, killed by the hook, nothing recorded):
 

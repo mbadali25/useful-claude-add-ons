@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.117**: The Stop gate keeps the hook deadline and survives being killed. `crew` 1.2.117: the verify gate no longer runs past the Stop hook's deadline (measured 862s against 600s on Windows); a rule that would not fit is deferred by name, what a run measured is saved as it goes so a killed run still corrects the next one, the diff base is `origin/<default>`, and a lock left by a killed gate no longer blocks the next turn.
-- **crew 1.2.110**: Test anchors follow the crew_py_script change (CI of #703). `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.
+- **crew 1.3.0**: The Stop gate keeps the hook deadline and survives being killed. `crew` 1.3.0: the verify gate no longer runs past the Stop hook's deadline (measured 862s against 600s on Windows); a rule that would not fit is deferred by name, what a run measured is saved as it goes so a killed run still corrects the next one, the diff base is `origin/<default>`, and a lock left by a killed gate no longer blocks the next turn.
+- **crew 1.2.122**: Three pylint findings in crew test files. `crew` 1.2.122: test-only; the two open() pass-through wrappers in `test_crew_autopilot_goal_resume.py` and `test_crew_resume.py` carry an `unspecified-encoding` disable (they forward the caller's mode and arguments), and the shadowed first `_write_config` helper in `test_migrate.py` is removed (the later definition always won, so no behaviour changes).
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

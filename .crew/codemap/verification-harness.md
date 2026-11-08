@@ -208,7 +208,7 @@ only `bash "..."` and `& "..."` launcher commands (8 of each).
   cheapest-first (`:1886-1901`); a rule that does not fit whole is deferred, and one costing more than the whole budget is
   CHRONIC (comment `:1925-1935`), which must not block the baseline and must never read as verified (`verify_record.py`
   persists it until a clean `--all`). 38 rules are over 60 s on the declared seconds.
-- **Hook deadline, persistence, base and dead holders (crew 1.2.117).** DERIVED: `DEADLINE_MARGIN=60`
+- **Hook deadline, persistence, base and dead holders (crew 1.3.0).** DERIVED: `DEADLINE_MARGIN=60`
   (`verify-gate.sh:2566`); `deadline_defers` (`:2593`) holds each rule's price (matcher record 9, `owner_record`
   `:2201`) against `CREW_HOOK_DEADLINE` less the margin, Stop only, and a deferral counts in `fully_verified` (`:615`).
   `gate_progress` (`:2644`) calls `verify_record.py progress` (`verify_record.py:1480`) before each command and rewrites
