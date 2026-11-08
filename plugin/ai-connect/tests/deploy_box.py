@@ -274,7 +274,8 @@ class Phase:
     def __init__(self, box: Box, *args: str, extra_env: dict | None = None, non_root: bool = False):
         before, state = box.snapshot(), box.state()
         box.clear_log()
-        self.res = box.deploy(*args, extra_env=extra_env, non_root=non_root)
+        opts = {"non_root": True} if non_root else {}  # a box that overrides deploy (SetupBox) has no such option
+        self.res = box.deploy(*args, extra_env=extra_env, **opts)
         self.calls = box.calls()
         self.mutations = box.mutations()
         self.files_changed = box.snapshot() != before
