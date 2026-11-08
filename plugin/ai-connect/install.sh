@@ -193,7 +193,7 @@ configure_firewall() {
     # to -VpnSubnet, ports 9999 and 10000, Private profile); here we do the
     # same with whatever firewall manager is present, or fall back to printing
     # the command so the operator can run it themselves. 9999 is plain ws://
-    # (deprecated, served in 0.2.9 only), 10000 is wss:// (server.tls.port).
+    # (deprecated, served in 0.2.15 only), 10000 is wss:// (server.tls.port).
     local PORT
     local FAMILY="ipv4"
     [[ "$VPN_SUBNET" == *:* ]] && FAMILY="ipv6"

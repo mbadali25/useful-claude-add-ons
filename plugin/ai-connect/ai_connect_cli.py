@@ -225,7 +225,7 @@ def cmd_bridge_invite(args) -> int:
         fingerprint = bridge_tls.fingerprint_bytes(info.fingerprint)
     else:
         out("  WARNING: a code without a fingerprint: the new machine redeems it and joins over plain ws:// "
-            "(deprecated since 0.2.9, gone in 0.3.1)")
+            "(deprecated since 0.2.15, gone in 0.3.1)")
     try:
         code = join_codes.create_invite(config_path, args.name, expiry, host, port, fingerprint)
     except (ValueError, TimeoutError, OSError, yaml.YAMLError) as err:
@@ -365,7 +365,7 @@ def redeem_remote(code: join_codes.JoinCode, timeout: float = JOIN_TIMEOUT_SECON
                                                  context=bridge_tls.client_context(code.fingerprint_hex))
     else:
         out("  WARNING: this join code carries no certificate fingerprint, so it is redeemed over plain HTTP and "
-            "this machine joins over plain ws:// (deprecated since 0.2.9; ask for a new code to get wss://)")
+            "this machine joins over plain ws:// (deprecated since 0.2.15; ask for a new code to get wss://)")
         connection = http.client.HTTPConnection(code.host, code.port, timeout=timeout)
     try:
         connection.request("GET", join_codes.JOIN_PATH, headers={
@@ -484,7 +484,7 @@ def _join_with_token(args, config_path: Path) -> int:
     out(f"=== ai-connect join '{args.name}' to {host}:{port} with a token file"
         f"{' (dry run)' if args.dry_run else ''} ===")
     if not fingerprint:
-        out("  WARNING: no --fingerprint: this machine joins over plain ws:// (deprecated since 0.2.9). On the "
+        out("  WARNING: no --fingerprint: this machine joins over plain ws:// (deprecated since 0.2.15). On the "
             "Bridge machine `ai-connect bridge cert show` prints the fingerprint and the wss:// port")
     config = _client_config(config_path, args.force)
     if args.dry_run:
@@ -541,7 +541,7 @@ def cmd_status(args) -> int:
             out(f"  transport: NOT USABLE - {err}")
         else:
             if not fingerprint:
-                out("  transport: plain ws:// (deprecated since 0.2.9; pin the Bridge: ai-connect pin <fingerprint>)")
+                out("  transport: plain ws:// (deprecated since 0.2.15; pin the Bridge: ai-connect pin <fingerprint>)")
             else:
                 check = "not checked (--offline)" if args.offline else _pin_check(url.hostname, port, fingerprint)
                 out(f"  transport: wss:// pinned to SHA-256 {fingerprint} - {check}")

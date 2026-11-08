@@ -334,7 +334,7 @@ def test_ufw_adds_rule_and_is_idempotent(tmp_path):
     assert state.exists()
     logged = state.read_text(encoding="utf-8")
     assert "100.64.0.0/10" in logged
-    assert "9999" in logged and "10000" in logged  # ws:// (0.2.9 only) and wss://
+    assert "9999" in logged and "10000" in logged  # ws:// (0.2.15 only) and wss://
     assert "tcp" in logged
 
     second = run_configure_firewall(bin_dir)

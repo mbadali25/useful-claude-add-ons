@@ -14,7 +14,7 @@ server:
   # machine has, including any public one. TLS protects wss://, but the plain
   # ws:// port below encrypts nothing.
   host: "127.0.0.1"
-  # Plain ws://: deprecated, served beside wss:// in 0.2.9 only (0.3.1 serves
+  # Plain ws://: deprecated, served beside wss:// in 0.2.15 only (0.3.1 serves
   # wss:// alone)
   port: 9999
   # Optional, read at start (commented keys show the defaults):
@@ -92,7 +92,7 @@ client:
   token: "replace-with-a-long-random-string"
   # The Bridge's VPN address and port, never a public one: wss://<address>:10000
   # with bridge_fingerprint below (`ai-connect join` writes both). Plain ws://
-  # (as here, port 9999) is deprecated and works through 0.2.9 only
+  # (as here, port 9999) is deprecated and works through 0.2.15 only
   bridge_url: "ws://127.0.0.1:9999"
   # The SHA-256 of the Bridge's TLS certificate (`ai-connect bridge cert show`
   # on the Bridge machine), the only trust anchor: required with wss://,

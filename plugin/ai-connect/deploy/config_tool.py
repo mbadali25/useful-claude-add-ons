@@ -109,7 +109,7 @@ def cmd_bridge(args) -> dict:
     installer.check_config()
     config = load()
     config["server"]["host"], config["server"]["port"] = args.host, args.port
-    # deploy keeps the Bridge's own peer on plain ws:// in the 0.2.9 transition release (its firewall step opens
+    # deploy keeps the Bridge's own peer on plain ws:// in the 0.2.15 transition release (its firewall step opens
     # server.port only); the Bridge itself serves wss:// beside it, and `ai-connect pin` moves this peer over
     config["client"]["bridge_url"] = url
     config["client"].pop("bridge_fingerprint", None)

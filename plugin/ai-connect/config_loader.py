@@ -255,7 +255,7 @@ def connect_options(fingerprint: str) -> dict:
 
 PLAIN_WS_WARNING = (
     "client.bridge_url is plain ws://: the token and every message cross the VPN unencrypted by AI-Connect. "
-    "Deprecated since 0.2.9, removed in 0.3.1 (wss:// only): pin the Bridge with `ai-connect pin <fingerprint>` "
+    "Deprecated since 0.2.15, removed in 0.3.1 (wss:// only): pin the Bridge with `ai-connect pin <fingerprint>` "
     "(the fingerprint is what `ai-connect bridge cert show` prints on the Bridge machine) or join with a new code"
 )
 _warned_plain = False

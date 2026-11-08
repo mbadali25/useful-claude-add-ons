@@ -7,7 +7,7 @@ from the plugin's directory (`plugin/ai-connect`). Each one can be run again: a 
 that is already done says `already done` and changes nothing. Add `--dry-run` to see
 every step first; it runs no tool and changes nothing.
 
-> **Since 0.2.6: one join code.** With the new machine already on the VPN, adding it is
+> **Since 0.2.12: one join code.** With the new machine already on the VPN, adding it is
 > two commands, and nothing is restarted:
 >
 > ```bash
@@ -23,15 +23,15 @@ every step first; it runs no tool and changes nothing.
 > print a notice, keep working through 0.2.x, and are removed in the next minor release.
 > The tailnet itself is still joined with `deploy tailnet-setup` and `vpn/vpn-up`.
 >
-> **Since 0.2.9: TLS with a pinned certificate.** The code also carries the SHA-256 of the
+> **Since 0.2.15: TLS with a pinned certificate.** The code also carries the SHA-256 of the
 > Bridge's self-signed certificate and its `wss://` port (10000 by default); `join` checks
 > that certificate before it sends anything and fails closed on a mismatch, never falling
-> back to `ws://`. The Bridge serves plain `ws://` on 9999 beside it in 0.2.9 only;
+> back to `ws://`. The Bridge serves plain `ws://` on 9999 beside it in 0.2.15 only;
 > **0.3.1 serves `wss://` alone**. Before then:
 >
 > - add `tcp:10000` to the tailnet policy by hand (the [ACL template](../vpn/acl-template.hujson)
 >   has it; a policy already applied does not), and open 10000 in the Bridge's firewall:
->   `deploy bridge` still opens only `server.port` in 0.2.9;
+>   `deploy bridge` still opens only `server.port` in 0.2.15;
 > - pin every machine that joined earlier, or through `deploy peer` / `deploy join`, which
 >   still write `ws://`: `ai-connect pin <fingerprint>` on it, with the fingerprint that
 >   `ai-connect bridge cert show` prints on the Bridge;

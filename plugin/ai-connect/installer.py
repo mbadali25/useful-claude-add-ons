@@ -162,7 +162,7 @@ def write_config(server: bool, config_path: Path = CONFIG_PATH) -> None:
         print(f"  This machine's own peer token ('{peer_name}') generated and filled in")
         pin_own_bridge(config_path)
     else:
-        print("  bridge_url is plain ws:// (deprecated since 0.2.9): pin the Bridge with `ai-connect pin "
+        print("  bridge_url is plain ws:// (deprecated since 0.2.15): pin the Bridge with `ai-connect pin "
               "<fingerprint>`, the fingerprint `ai-connect bridge cert show` prints on the Bridge machine")
 
 

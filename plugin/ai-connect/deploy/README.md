@@ -35,7 +35,7 @@ install it when it is missing. On Debian and Ubuntu that is Tailscale's apt repo
 with its key in a `signed-by` keyring; elsewhere on Linux, and for a release the
 repository does not carry, Tailscale's install script; any other apt failure (a held
 dpkg lock, no network) stops instead of falling back. Every command is printed before
-it runs, as root nothing goes through `sudo`, and deploy says what is about to ask for
+it runs, as root nothing goes through `sudo` (tests force either branch with `AI_CONNECT_DEPLOY_ROOT=1` or `0`), and deploy says what is about to ask for
 you (sudo's password, a UAC prompt, a browser login).
 
 Tailscale takes no routes, no exit node and no DNS on either machine, so a VPN client
@@ -135,7 +135,7 @@ up from inside a worktree is moved the same way: its scheduled task is registere
 
 ## Adding the peer: no long-lived secret crosses machines
 
-Since 0.2.6 the short way is two commands and no restart: `ai-connect bridge invite --name
+Since 0.2.12 the short way is two commands and no restart: `ai-connect bridge invite --name
 laptop --host <Bridge VPN IP>` on machine 1 prints a one-time join code, and `ai-connect
 join` on machine 2 redeems it ([ONBOARDING.md](ONBOARDING.md), and the
 [README](../README.md#5-adding-machines-join-codes-and-the-ai-connect-cli)). deploy's own
@@ -229,11 +229,11 @@ The exit code is 1 when any line says `FAIL`. What each failure means:
 | Message round trip | `name_taken`: a 0.1.8 session (or the HTTP/SSE server) is online under the machine's bare name, close it; 0.2.0 sessions register as `<name>:<project>` and leave it free. `name_not_bound_to_token`: `--name` is not the name the token was made for |
 | Wrong token refused | the Bridge takes any token: do not use it until `auth` in its `config.yaml` is fixed |
 
-### TLS (0.2.9) and the cut-over to `wss://` only (0.3.1)
+### TLS (0.2.15) and the cut-over to `wss://` only (0.3.1)
 
-From 0.2.9 the Bridge also serves `wss://` on `server.tls.port` (default `server.port + 1`,
+From 0.2.15 the Bridge also serves `wss://` on `server.tls.port` (default `server.port + 1`,
 10000) with a self-signed certificate it makes on first start, beside plain `ws://` on 9999.
-`deploy` itself still writes `ws://` in 0.2.9 and its firewall step opens `server.port` only,
+`deploy` itself still writes `ws://` in 0.2.15 and its firewall step opens `server.port` only,
 so this test checks the plain port. To move a deployed pair over before 0.3.1, which serves
 `wss://` alone:
 

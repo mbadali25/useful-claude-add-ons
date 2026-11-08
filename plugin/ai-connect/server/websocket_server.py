@@ -127,7 +127,7 @@ class BridgeServer:
         tls_port: int = 0,
         plain: bool = True,
     ):
-        # Two listeners for the transition release (0.2.9): plain ws:// on port
+        # Two listeners for the transition release (0.2.15): plain ws:// on port
         # (deprecated, a warning per client address) and wss:// on tls_port
         # with ssl_context. TLS cannot share one socket with plain WebSocket
         # without sniffing the first byte, so it gets its own port. plain=False
@@ -202,7 +202,7 @@ class BridgeServer:
             logger.info(f"Bridge Server listening on ws://{self.host}:{self.bound_port}")
             logger.warning(json.dumps({
                 "event": "plaintext_listener", "url": f"ws://{self.host}:{self.bound_port}",
-                "detail": "plain ws:// is deprecated: served beside wss:// in 0.2.9 only; 0.3.1 serves wss:// "
+                "detail": "plain ws:// is deprecated: served beside wss:// in 0.2.15 only; 0.3.1 serves wss:// "
                           "alone. Re-pin peers (ai-connect pin) and set server.tls.required: true to close it now"}))
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         self._history_cleanup_task = asyncio.create_task(self._history_cleanup_loop())

@@ -4,7 +4,7 @@
 // "tests" block on save and refuses a policy that fails it.
 //
 // Shape: agents' machines (tag:ai-peer) may reach the Bridge (tag:bridge) on
-// TCP 10000 (wss://, TLS with a pinned certificate) and, during the 0.2.9
+// TCP 10000 (wss://, TLS with a pinned certificate) and, during the 0.2.15
 // transition release only, TCP 9999 (plain ws://, deprecated), and nothing
 // else. Drop tcp:9999 once every peer is pinned (ai-connect 0.3.1 serves
 // wss:// alone). Peers cannot reach each other, and nothing is allowed to

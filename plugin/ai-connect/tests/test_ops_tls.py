@@ -1,4 +1,4 @@
-"""TLS with a pinned certificate fingerprint (bridge_tls.py, 0.2.9): every test uses tmp directories only.
+"""TLS with a pinned certificate fingerprint (bridge_tls.py, 0.2.15): every test uses tmp directories only.
 
 Must-block: a certificate whose SHA-256 is not the pinned one (the token is
 never sent, nothing retries, over wss:// or ws://); a config that pairs a pin
@@ -279,7 +279,7 @@ def test_plain_ws_still_works_with_one_warning(caplog, monkeypatch):
     for _ in range(2):
         settings = client_settings(client_config("ws://100.64.0.1:9999"))
     assert not settings.tls and settings.connect_options() == {}
-    assert caplog.text.count("Deprecated since 0.2.9") == 1
+    assert caplog.text.count("Deprecated since 0.2.15") == 1
 
 
 def test_server_tls_defaults_and_errors():

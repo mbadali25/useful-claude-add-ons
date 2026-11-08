@@ -49,7 +49,7 @@ $BridgeTask = 'AI-Connect Bridge'
 $HttpTask = 'AI-Connect MCP HTTP'
 $FirewallRule = 'AI-Connect Bridge'
 $BridgePort = 9999
-# wss:// (server.tls.port, the Bridge's default server.port + 1); 9999 stays plain ws:// for the 0.2.9
+# wss:// (server.tls.port, the Bridge's default server.port + 1); 9999 stays plain ws:// for the 0.2.15
 # transition release only
 $BridgeTlsPort = 10000
 $BridgePorts = @($BridgePort, $BridgeTlsPort)
@@ -276,7 +276,7 @@ if ($Mode -eq 'server') {
             -LocalPort $BridgePorts -RemoteAddress $VpnSubnet -Action Allow -Profile Private | Out-Null
         Write-Host "  Firewall: ports $($BridgePorts -join ', ') open for $VpnSubnet (private networks)" -ForegroundColor Green
     } else {
-        # A rule from before 0.2.9 opens 9999 only: add the wss:// port, keep its scope
+        # A rule from before 0.2.15 opens 9999 only: add the wss:// port, keep its scope
         $Open = @((Get-NetFirewallPortFilter -AssociatedNetFirewallRule $ExistingRule).LocalPort)
         if ($Open -notcontains "$BridgeTlsPort") {
             Set-NetFirewallRule -DisplayName $FirewallRule -LocalPort $BridgePorts
