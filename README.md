@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.2.120**: A migrate test no longer fails when the pytest tmp path holds the value's digits. `crew` 1.2.120: test-only; `test_refuses_non_default_dropped_key` strips the pytest tmp root from the output before checking that the refused value is not printed, so a run whose process number contains 30 (`/pytest-30306/`) no longer fails `emergency.ttlMinutes-30`; a real leak of the value still fails it (sabotage-checked).
 - **crew 1.2.119**: The guards' allow path starts no helper processes in bash. `crew` 1.2.119: cloud-guard, env-guard and promote-gate clear a command that deploys nothing with one python and no `tr`, `cut`, `dirname`, `uname`, `cygpath`, `date`, `jq` or `git` process from bash, so several lanes running at once no longer time the guards out on Git Bash, where each process start is an MSYS fork; every decision is unchanged.
-- **crew 1.2.113**: Crew's tests clear an inherited CREW_PYTHON. `crew` 1.2.113: test-only; crew's suite no longer goes red when it runs from a crew-hooked session.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
