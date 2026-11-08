@@ -84,14 +84,14 @@ How it writes, whatever the arguments say:
   `context.autoClear.onlyRepos` / `.onlySessions` (read from the machine file
   only); `context.autoClear.enabled` and `resume.auto` take only a veto
   (`false`) or `null` at the repo layer.
-- **`humanOnly.approve` / `humanOnly.promoteMarker` (crew 1.3.7).** Either
+- **`humanOnly.approve` / `humanOnly.promoteMarker` (crew 1.3.8).** Either
   writer, either layer, takes `true`; the machine layer also takes `null` and
   `--unset`. A `false` (the owner's opt-out of a human-only rule) is refused:
   it is proposed with `crew_confirm_config.py propose --layer machine|repo
   --key <path>` and applies only after the owner types
   `/crew:confirm-config <change_id>` twice. A repo `null` or `--unset` drops a
   veto and is a hand edit by the owner. Never propose one on your own
-  initiative, never confirm one, and say plainly that in 1.3.7 no hook acts on
+  initiative, never confirm one, and say plainly that in 1.3.8 no hook acts on
   these keys yet (`CONFIG.md`, "The human-only opt-out").
 - **Deleting the repo config** is the menu's delete step only: preview, typed
   repo name, then one rename of the file to `.crew/config.json.bak-<UTC>`

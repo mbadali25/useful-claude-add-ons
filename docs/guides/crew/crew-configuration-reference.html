@@ -172,7 +172,7 @@ takes effect only when all of these hold (<code>crew_humanonly.resolve</code>):<
   <code>null</code> or removal, which drops a veto); a <code>false</code> written by hand reads as
   human-only.</li>
 </ul>
-<p><strong>What this does NOT do yet (crew 1.3.7).</strong> No hook reads these keys. The
+<p><strong>What this does NOT do yet (crew 1.3.8).</strong> No hook reads these keys. The
 hooks that would honour an opt-out, and the prompt hook that records a
 <code>/crew:confirm-config</code> confirmation, are review harness and land in a
 separate change. Until then no confirmation can be recorded, so no opt-out
@@ -659,16 +659,16 @@ marker is human-only by instruction alone - no hook checks who created it.
 <td>human-only opt-out</td>
 <td><code>null</code></td>
 <td><code>null</code> | <code>true</code> | <code>false</code> (checked in <code>plugin/crew/hooks/scripts/crew_humanonly.py</code>)</td>
-<td>1.3.7</td>
-<td>The owner's opt-out of <code>/crew:approve</code> being human-only. null or <code>true</code> keeps it human-only; <code>false</code> opts out only from the machine file or an untracked repo file, only after <code>/crew:confirm-config</code> twice, and a <code>true</code> in either layer vetoes. crew 1.3.7: no hook acts on it yet, so it changes nothing today.</td>
+<td>1.3.8</td>
+<td>The owner's opt-out of <code>/crew:approve</code> being human-only. null or <code>true</code> keeps it human-only; <code>false</code> opts out only from the machine file or an untracked repo file, only after <code>/crew:confirm-config</code> twice, and a <code>true</code> in either layer vetoes. crew 1.3.8: no hook acts on it yet, so it changes nothing today.</td>
 </tr>
 <tr>
 <td><code>humanOnly.promoteMarker</code></td>
 <td>human-only opt-out</td>
 <td><code>null</code></td>
 <td><code>null</code> | <code>true</code> | <code>false</code> (checked in <code>plugin/crew/hooks/scripts/crew_humanonly.py</code>)</td>
-<td>1.3.7</td>
-<td>The same opt-out for the production promote marker <code>.crew/.approved-&lt;env&gt;-&lt;sha&gt;</code>, under the same rules. crew 1.3.7: no hook acts on it yet, and no hook today checks who created the marker.</td>
+<td>1.3.8</td>
+<td>The same opt-out for the production promote marker <code>.crew/.approved-&lt;env&gt;-&lt;sha&gt;</code>, under the same rules. crew 1.3.8: no hook acts on it yet, and no hook today checks who created the marker.</td>
 </tr>
 </tbody>
 </table>

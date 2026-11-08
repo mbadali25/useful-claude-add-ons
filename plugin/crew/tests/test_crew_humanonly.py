@@ -1,4 +1,4 @@
-"""crew 1.3.7: the human-only opt-out (`humanOnly.approve`,
+"""crew 1.3.8: the human-only opt-out (`humanOnly.approve`,
 `humanOnly.promoteMarker`) and the double confirmation behind it.
 
 Must-block cases: every way a `false` must NOT take effect, and every write
