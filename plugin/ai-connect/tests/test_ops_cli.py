@@ -1,12 +1,15 @@
 """The ai-connect CLI (ai_connect_cli.py) and its launcher, against tmp configs and a real loopback Bridge.
 
 Must-block: a token on stdout or stderr (only its last 4 show), a join code
-that pins a certificate redeemed over plain ws:// (fail closed), a used code,
-an identity overwritten without --force, any change in a --dry-run. Must-allow:
-invite -> join -> connect; token -> join --token-file; revoke; list; status.
+whose pinned certificate is not the Bridge's (fail closed, secret not sent,
+never retried over plain HTTP), a used code, an identity overwritten without
+--force, any change in a --dry-run. Must-allow: invite -> join -> connect over
+wss://; a --plain code over ws:// (transition release); token -> join
+--token-file; revoke; list; status.
 """
 
 import asyncio
+import http.client
 import os
 import re
 import shutil
@@ -16,11 +19,13 @@ import threading
 from pathlib import Path
 
 import pytest
+import websockets
 import yaml
 
 import test_server_harness  # noqa: F401  # pylint: disable=unused-import  # puts the repo root on sys.path first
 
 import ai_connect_cli as cli  # noqa: E402
+import bridge_tls  # noqa: E402
 import installer  # noqa: E402
 import join_codes as jc  # noqa: E402
 from config_loader import client_settings, server_settings  # noqa: E402
@@ -59,12 +64,13 @@ def snapshot(directory: Path) -> dict:
 
 
 class LiveBridge:
-    """The Bridge on a loopback port in a thread, so the CLI's blocking calls can reach it."""
+    """The Bridge on loopback ports (ws:// and wss://) in a thread, so the CLI's blocking calls can reach it."""
 
     def __init__(self, config_path, tmp_path):
         settings = server_settings(yaml.safe_load(config_path.read_text(encoding="utf-8")))
         self.server = build_server(settings, db_path=str(tmp_path / "m.db"), config_path=config_path)
         self.server.reload_seconds = 0.05
+        self.config_path = config_path
         self.loop = asyncio.new_event_loop()
         self.ready = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
@@ -92,10 +98,28 @@ class LiveBridge:
     def port(self):
         return self.server.bound_port
 
+    @property
+    def tls_port(self):
+        return self.server.tls_bound_port
+
+    @property
+    def fingerprint(self):
+        return bridge_tls.load(self.config_path.parent).fingerprint
+
 
 async def try_register(port, token, name):
     async with connect(type("S", (), {"bound_port": port})(), token) as ws:
         return await register(ws, name)
+
+
+async def try_register_tls(port, token, name, fingerprint):
+    async with websockets.connect(f"wss://127.0.0.1:{port}", additional_headers={"Authorization": f"Bearer {token}"},
+                                  ssl=bridge_tls.client_context(fingerprint)) as ws:
+        return await register(ws, name)
+
+
+def code_in(out: str) -> str:
+    return re.search(r"^  ([A-Z2-7]{5}(?:-[A-Z2-7]{1,5})+)$", out, re.M).group(1)
 
 
 # --- invite and join ----------------------------------------------------------------
@@ -103,25 +127,56 @@ async def try_register(port, token, name):
 def test_invite_then_join_then_connect(bridge_config, laptop_config, capsys, tmp_path):
     with LiveBridge(bridge_config, tmp_path) as bridge:
         code, out, err = ai(capsys, bridge_config, "bridge", "invite", "--name", "laptop",
-                            "--host", "127.0.0.1", "--port", str(bridge.port))
+                            "--host", "127.0.0.1", "--port", str(bridge.tls_port))
         assert code == 0, err
-        join_code = re.search(r"^  ([A-Z2-7]{5}(?:-[A-Z2-7]{1,5})+)$", out, re.M).group(1)
+        join_code = code_in(out)
+        assert jc.decode(join_code).fingerprint_hex == bridge.fingerprint
 
         code, out, err = ai(capsys, laptop_config, "join", join_code)
         assert code == 0, err
-        assert not TOKEN_RE.search(out + err)
+        assert not TOKEN_RE.search(out.replace(bridge.fingerprint, "") + err)
         laptop = yaml.safe_load(laptop_config.read_text(encoding="utf-8"))
         token = laptop["client"]["token"]
         assert f"****{token[-4:]}" in out
         assert laptop["client"]["name"] == "laptop"
-        assert laptop["client"]["bridge_url"] == f"ws://127.0.0.1:{bridge.port}"
-        client_settings(laptop)  # the client reads what join wrote
-        assert bridge.call(try_register(bridge.port, token, "laptop"))["type"] == "registered"
+        assert laptop["client"]["bridge_url"] == f"wss://127.0.0.1:{bridge.tls_port}"
+        assert laptop["client"]["bridge_fingerprint"] == bridge.fingerprint
+        settings = client_settings(laptop)  # the client reads what join wrote
+        assert settings.tls and settings.uri == f"wss://127.0.0.1:{bridge.tls_port}"
+        assert bridge.call(try_register_tls(bridge.tls_port, token, "laptop", bridge.fingerprint))["type"] \
+            == "registered"
 
         # The same code a second time: refused, and the laptop's identity is untouched
         code, _out, err = ai(capsys, laptop_config, "join", join_code, "--force")
         assert code == 1 and jc.GENERIC_REFUSAL in err
         assert yaml.safe_load(laptop_config.read_text(encoding="utf-8"))["client"]["token"] == token
+
+
+def test_invite_defaults_to_the_tls_port(bridge_config, capsys):
+    """Without --port the code carries server.tls.port (server.port + 1), not the plain port."""
+    config = yaml.safe_load(bridge_config.read_text(encoding="utf-8"))
+    config["server"]["port"] = 9999
+    jc.write_config(bridge_config, config)
+    code, out, err = ai(capsys, bridge_config, "bridge", "invite", "--name", "laptop", "--host", "100.64.0.1")
+    assert code == 0, err
+    decoded = jc.decode(code_in(out))
+    assert decoded.port == 10000 and decoded.tls
+
+
+def test_plain_code_joins_over_ws_with_a_warning(bridge_config, laptop_config, capsys, tmp_path):
+    """Transition release: a code without a fingerprint (--plain, or from a 0.2.6 Bridge) still works over ws://."""
+    with LiveBridge(bridge_config, tmp_path) as bridge:
+        code, out, err = ai(capsys, bridge_config, "bridge", "invite", "--name", "laptop", "--plain",
+                            "--host", "127.0.0.1", "--port", str(bridge.port))
+        assert code == 0, err
+        assert "WARNING" in out and not jc.decode(code_in(out)).tls
+        code, out, err = ai(capsys, laptop_config, "join", code_in(out))
+        assert code == 0, err
+        assert "WARNING" in out and "plain ws://" in out
+        laptop = yaml.safe_load(laptop_config.read_text(encoding="utf-8"))
+        assert laptop["client"]["bridge_url"] == f"ws://127.0.0.1:{bridge.port}"
+        assert "bridge_fingerprint" not in laptop["client"]
+        assert bridge.call(try_register(bridge.port, laptop["client"]["token"], "laptop"))["type"] == "registered"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
@@ -132,11 +187,24 @@ def test_join_writes_the_config_owner_only(bridge_config, laptop_config, capsys,
     assert laptop_config.stat().st_mode & 0o077 == 0
 
 
-def test_code_that_pins_a_certificate_fails_closed(laptop_config, capsys):
-    text = jc.encode(jc.JoinCode("127.0.0.1", 9, b"\x01" * 32, b"s" * 16, "laptop", 4_000_000_000))
-    code, _out, err = ai(capsys, laptop_config, "join", text)
-    assert code == 1 and "TLS" in err
-    assert not laptop_config.exists()
+def test_code_pinning_another_certificate_fails_closed(bridge_config, laptop_config, capsys, tmp_path, monkeypatch):
+    """Must-block: a wrong pin ends the join in the handshake. The secret is never sent (the code still works
+    afterwards), no config is written, and nothing retries over plain HTTP."""
+    with LiveBridge(bridge_config, tmp_path) as bridge:
+        real = jc.decode(jc.create_invite(bridge_config, "laptop", 3600, "127.0.0.1", bridge.tls_port,
+                                          bridge_tls.fingerprint_bytes(bridge.fingerprint)))
+        forged = jc.encode(jc.JoinCode(real.host, real.port, b"\x01" * 32, real.secret, real.name, real.expires))
+
+        def no_plain_http(*_args, **_kwargs):
+            raise AssertionError("a pinned join code was retried over plain HTTP")
+        monkeypatch.setattr(http.client, "HTTPConnection", no_plain_http)
+        code, _out, err = ai(capsys, laptop_config, "join", forged)
+        assert code == 1 and "not joined" in err and "never falling back to ws://" in err
+        assert not laptop_config.exists()
+        monkeypatch.undo()
+        # The secret never reached the Bridge: the genuine code is still pending and redeems
+        assert [e["state"] for e in jc.pending_names(bridge_config)] == ["pending"]
+        assert ai(capsys, laptop_config, "join", jc.encode(real))[0] == 0
 
 
 def test_expired_code_is_refused_before_the_network(laptop_config, capsys):
@@ -187,9 +255,12 @@ def test_token_join_with_token_file_and_revoke_disconnects(bridge_config, laptop
         assert jc.sha256_hex(token) == enrolled["desk"]
 
         code, out, err = ai(capsys, laptop_config, "join", "--token-file", str(issued),
-                            "--bridge", f"127.0.0.1:{bridge.port}", "--name", "desk")
+                            "--bridge", f"127.0.0.1:{bridge.tls_port}", "--name", "desk",
+                            "--fingerprint", bridge.fingerprint)
         assert code == 0, err
         assert token not in out + err
+        laptop = yaml.safe_load(laptop_config.read_text(encoding="utf-8"))["client"]
+        assert laptop["bridge_url"] == f"wss://127.0.0.1:{bridge.tls_port}"
 
         async def connected_then_revoked():
             await asyncio.sleep(0.4)  # a few auth polls: the Bridge takes the new token in by itself
@@ -206,6 +277,17 @@ def test_token_join_with_token_file_and_revoke_disconnects(bridge_config, laptop
         assert bridge.call(connected_then_revoked()) == 1008
         assert not issued.exists()
         assert "desk" not in yaml.safe_load(bridge_config.read_text(encoding="utf-8"))["auth"]["peers"]
+
+
+def test_token_join_without_fingerprint_warns_and_uses_ws(bridge_config, laptop_config, capsys, tmp_path):
+    token_file = tmp_path / "t.token"
+    token_file.write_text("a" * 64 + "\n", encoding="utf-8")
+    code, out, err = ai(capsys, laptop_config, "join", "--token-file", str(token_file), "--bridge",
+                        "100.64.0.1:9999", "--name", "desk")
+    assert code == 0, err
+    assert "WARNING" in out
+    assert yaml.safe_load(laptop_config.read_text(encoding="utf-8"))["client"]["bridge_url"] == \
+        "ws://100.64.0.1:9999"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
@@ -255,6 +337,8 @@ def test_status_without_config_fails(tmp_path, capsys):
     ["bridge", "invite", "--name", "laptop", "--host", "100.64.0.1", "--port", "9999", "--dry-run"],
     ["bridge", "token", "--name", "desk", "--dry-run"],
     ["bridge", "revoke", "--name", "desk", "--dry-run"],
+    ["bridge", "cert", "rotate", "--dry-run"],
+    ["pin", "a" * 64, "--dry-run"],
     ["join", "--dry-run"],
 ])
 def test_dry_run_changes_nothing(bridge_config, capsys, argv):

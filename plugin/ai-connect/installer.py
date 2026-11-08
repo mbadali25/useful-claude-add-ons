@@ -129,8 +129,9 @@ def write_config(server: bool, config_path: Path = CONFIG_PATH) -> None:
     port = config["server"]["port"]
     if server:
         # Never 0.0.0.0: that listens on every interface this machine has,
-        # including any public one, and AI-Connect has no TLS of its own --
-        # only a VPN interface should ever be able to reach this port
+        # including any public one. TLS (a pinned certificate) protects the
+        # traffic, but the plain ws:// port of the transition release does
+        # not -- only a VPN interface should ever be able to reach either
         config["server"]["host"] = _ask(
             "Bridge listen address (this machine's Tailscale/WireGuard IP)", "127.0.0.1"
         )
@@ -157,11 +158,44 @@ def write_config(server: bool, config_path: Path = CONFIG_PATH) -> None:
         config["client"]["token"] = own_token
         _save_config(config, config_path)
         print(f"  This machine's own peer token ('{peer_name}') generated and filled in")
+        pin_own_bridge(config_path)
+    else:
+        print("  bridge_url is plain ws:// (deprecated since 0.2.9): pin the Bridge with `ai-connect pin "
+              "<fingerprint>`, the fingerprint `ai-connect bridge cert show` prints on the Bridge machine")
 
 
-def _bridge_url(host: str, port: int) -> str:
+def pin_own_bridge(config_path: Path = CONFIG_PATH) -> str:
+    """Bridge machine: make its TLS certificate (if none) and point its own peer at wss:// with that pin.
+
+    Returns the fingerprint. The certificate goes into <config dir>/tls/
+    (bridge_tls.py: 0700 directory, owner-only key); the Bridge serves it from
+    its next start.
+    """
+    import bridge_tls  # pylint: disable=import-outside-toplevel  # needs cryptography, the Bridge's dependency
+    from config_loader import server_settings  # pylint: disable=import-outside-toplevel
+    import join_codes  # pylint: disable=import-outside-toplevel
+    with open(config_path, encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    settings = server_settings(config)
+    if not settings.tls_enabled:
+        print("  server.tls.enabled is false: no certificate made; this Bridge serves plain ws:// only")
+        return ""
+    try:
+        with join_codes.auth_lock(config_path.parent):
+            info, created = bridge_tls.ensure(config_path.parent, settings.tls_validity_days)
+    except bridge_tls.TlsError as err:
+        sys.exit(str(err))
+    config["client"]["bridge_url"] = _bridge_url(config["server"]["host"], settings.tls_port, tls=True)
+    config["client"]["bridge_fingerprint"] = info.fingerprint
+    _save_config(config, config_path)
+    print(f"  TLS certificate {'made' if created else 'kept'}: {info.cert_path} (SHA-256 {info.fingerprint}, "
+          f"valid until {info.not_after:%Y-%m-%d}); this machine's peer uses {config['client']['bridge_url']}")
+    return info.fingerprint
+
+
+def _bridge_url(host: str, port: int, tls: bool = False) -> str:
     host = f"[{host}]" if ":" in host else host
-    return f"ws://{host}:{port}"
+    return f"{'wss' if tls else 'ws'}://{host}:{port}"
 
 
 def _private_dir(path: Path) -> None:

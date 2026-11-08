@@ -251,7 +251,10 @@ def test_write_config_server_shape(monkeypatch, config_path):
     saved = read_yaml(config_path)
     assert saved["client"]["name"] == "bridge-host"
     assert saved["server"]["host"] == "100.64.0.1"
-    assert saved["client"]["bridge_url"] == "ws://100.64.0.1:9999"
+    # The Bridge machine's own peer is pinned to its own new certificate, over wss:// on server.port + 1
+    assert saved["client"]["bridge_url"] == "wss://100.64.0.1:10000"
+    assert HEX64.match(saved["client"]["bridge_fingerprint"])
+    assert (config_path.parent / "tls" / "bridge-cert.pem").is_file()
     assert saved["auth"]["allow_shared_token"] is False
     assert "token" not in saved["auth"]  # the peer's token is client.token, not the Bridge's auth
     assert saved["auth"]["peers"].keys() == {"bridge-host"}
