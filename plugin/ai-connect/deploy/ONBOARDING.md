@@ -22,6 +22,20 @@ every step first; it runs no tool and changes nothing.
 > `deploy invite`, `deploy join` and the Tailscale-key flow below are **deprecated**: they
 > print a notice, keep working through 0.2.x, and are removed in the next minor release.
 > The tailnet itself is still joined with `deploy tailnet-setup` and `vpn/vpn-up`.
+>
+> **Since 0.2.9: TLS with a pinned certificate.** The code also carries the SHA-256 of the
+> Bridge's self-signed certificate and its `wss://` port (10000 by default); `join` checks
+> that certificate before it sends anything and fails closed on a mismatch, never falling
+> back to `ws://`. The Bridge serves plain `ws://` on 9999 beside it in 0.2.9 only;
+> **0.3.1 serves `wss://` alone**. Before then:
+>
+> - add `tcp:10000` to the tailnet policy by hand (the [ACL template](../vpn/acl-template.hujson)
+>   has it; a policy already applied does not), and open 10000 in the Bridge's firewall:
+>   `deploy bridge` still opens only `server.port` in 0.2.9;
+> - pin every machine that joined earlier, or through `deploy peer` / `deploy join`, which
+>   still write `ws://`: `ai-connect pin <fingerprint>` on it, with the fingerprint that
+>   `ai-connect bridge cert show` prints on the Bridge;
+> - after `ai-connect bridge cert rotate`, restart the Bridge and re-pin every machine.
 
 This assumes the Bridge exists: `deploy tailnet-setup --apply` and `deploy bridge` have
 run on it once ([the runbook](README.md)). The Bridge is also the admin machine: it holds

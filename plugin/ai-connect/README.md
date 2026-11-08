@@ -101,15 +101,15 @@ cd AI-Connect
 ./install.sh --server
 ```
 
-The script creates a venv, installs `requirements.txt`, writes `~/.config/ai-connect/config.yaml`, registers AI-Connect with Claude Code (see step 3) and installs `ai-connect.service` (the Bridge, port 9999; needs sudo). Clients on other machines must be able to reach port 9999.
+The script creates a venv, installs `requirements.txt`, writes `~/.config/ai-connect/config.yaml`, registers AI-Connect with Claude Code (see step 3) and installs `ai-connect.service` (the Bridge: `wss://` on port 10000, and plain `ws://` on 9999 during the 0.2.9 transition release; needs sudo). It makes the Bridge's self-signed TLS certificate and opens both ports in the firewall for the VPN subnet only. Clients on other machines must be able to reach port 10000 (and 9999 until they are pinned).
 
 It asks for the listen address: give the machine's VPN address (Tailscale, WireGuard), not `0.0.0.0`. It registers the Bridge machine as a peer of its own Bridge and fills in that peer's token (`client.token`). Every other machine gets its own token: the easiest way is a one-time join code (`ai-connect bridge invite --name <name>`, see [step 5](#5-adding-machines-join-codes-and-the-ai-connect-cli)); `venv/bin/python installer.py add-peer <name>` on the Bridge machine still prints a token once. A running Bridge picks up a new or revoked token within seconds, with no restart. The Bridge stores only the token's SHA-256 (`auth.peers`) and refuses every connection without a known token; a token can register only its own name.
 
-> **Security:** AI-Connect encrypts nothing itself. Reach the Bridge only over a VPN, never over the LAN at large or the internet; see the [Security model](#security-model).
+> **Security:** the Bridge serves TLS with a self-signed certificate that every peer pins by its SHA-256 fingerprint. Still reach it only over a VPN, never over the LAN at large or the internet: the deprecated plain `ws://` port of the transition release encrypts nothing; see the [Security model](#security-model).
 
 #### VPN (Tailscale)
 
-[`vpn/`](vpn/README.md) puts a machine on the tailnet without the Tailscale admin console: the admin runs `mint-key` to create one single-use, tagged auth key per peer (not ephemeral: the machine stays; `--ephemeral` for throwaway nodes) (`--peer-token` also runs `installer.py add-peer <name>` under the venv beside it), the peer runs `vpn-up` with that key, and `revoke` / `vpn-down` take it off again. The shipped ACL template lets `tag:ai-peer` nodes reach the Bridge's port 9999 and nothing else. Setup, credentials and the ACL are in [vpn/README.md](vpn/README.md).
+[`vpn/`](vpn/README.md) puts a machine on the tailnet without the Tailscale admin console: the admin runs `mint-key` to create one single-use, tagged auth key per peer (not ephemeral: the machine stays; `--ephemeral` for throwaway nodes) (`--peer-token` also runs `installer.py add-peer <name>` under the venv beside it), the peer runs `vpn-up` with that key, and `revoke` / `vpn-down` take it off again. The shipped ACL template lets `tag:ai-peer` nodes reach the Bridge's ports 10000 (`wss://`) and 9999 (`ws://`, transition release only) and nothing else. **An existing tailnet policy needs `tcp:10000` added by hand** (the template is pasted, not pushed); drop `tcp:9999` once every peer is pinned. Setup, credentials and the ACL are in [vpn/README.md](vpn/README.md).
 
 ### 2. Client (every other machine)
 
@@ -135,7 +135,7 @@ git clone https://github.com/Peuqui/AI-Connect.git %USERPROFILE%\AI-Connect
 `-Server`, `-Http`, `-Update`, `-Status` and `-Uninstall` work as on Linux. Differences:
 
 - Needs Python 3.10+ (from python.org with the `py` launcher, or from the Microsoft Store) and Claude Code installed natively on Windows.
-- Services are scheduled tasks that start at logon, without a console window, as your user. Creating them (`-Server`, `-Http`) and the firewall rule for port 9999 (only from `-VpnSubnet`, default Tailscale's `100.64.0.0/10`) needs administrator rights: the script asks once through UAC. A client needs none.
+- Services are scheduled tasks that start at logon, without a console window, as your user. Creating them (`-Server`, `-Http`) and the firewall rule for ports 9999 and 10000 (an existing rule gets 10000 added; only from `-VpnSubnet`, default Tailscale's `100.64.0.0/10`) needs administrator rights: the script asks once through UAC. A client needs none.
 - A downloaded ZIP carries Windows' "mark of the web", and a double-click on `install.cmd` then shows a security warning. Before unpacking: ZIP → Properties → tick "Unblock", or `Unblock-File AI-Connect-<version>-windows.zip` in PowerShell.
 - Updating from a ZIP unpacks into a new folder: run `install.cmd` there again, so the Claude Code registration and the tasks point to the new path. With `git clone`, `git pull` and `install.cmd -Update` are enough.
 - Claude Code's native installer does not add `%USERPROFILE%\.local\bin` to `PATH`; the AI-Connect installer finds `claude.exe` there anyway, but add it to `PATH` for your terminal.
@@ -208,12 +208,14 @@ ai-connect bridge token --name ci-box  # a long-lived token, into an owner-only 
 ai-connect status                      # on any machine: config, token (last 4 only), whether the Bridge answers
 ```
 
-- **The code** carries a version, its expiry, the Bridge's address and port, a slot for the Bridge certificate's fingerprint (used from the TLS release on), a 128-bit secret, the peer name and a checksum, as base32 in groups of five. It is shown once (or written owner-only with `--out`) and works once. The Bridge keeps only the secret's SHA-256, in `invites.json` beside `config.yaml`. `join` asks for the code hidden when none is given (also `--code-file F`, or `AI_CONNECT_JOIN_CODE`).
+- **The code** carries a version, its expiry, the Bridge's address and port, the SHA-256 fingerprint of the Bridge's TLS certificate (all zero in a `--plain` code), a 128-bit secret, the peer name and a checksum, as base32 in groups of five. It is shown once (or written owner-only with `--out`) and works once. The Bridge keeps only the secret's SHA-256, in `invites.json` beside `config.yaml`. `join` asks for the code hidden when none is given (also `--code-file F`, or `AI_CONNECT_JOIN_CODE`).
 - **Redemption** goes to the Bridge's own port (`GET /join`). It is exactly once, also under concurrent attempts: one locked read-check-mark-write, and the code is marked used before the token is written, so a crash in between spends the code rather than leaving it usable twice. An unknown, used, expired or wrong-name code gets the same answer; after 5 failures in a minute from one address (30 in total) the Bridge answers 429.
 - **Tokens** are 256 random bits; the Bridge stores only their SHA-256 in `auth.peers`. Output never shows one, only `****` and its last four characters. `bridge token` writes it to `~/.config/ai-connect/issued-tokens/<name>.token` (or `--out`), owner-only; on the peer, `ai-connect join --token-file F --bridge HOST:PORT --name N` puts it into the config. **Bridge-issued tokens do not expire**; `bridge revoke` ends them.
 - **No restart.** The Bridge re-reads `config.yaml` every 2 seconds and swaps its token table whole. A new peer connects at once; a revoked or replaced token's live connections are closed (`1008 token revoked`). A config that does not parse, or whose `auth:` is invalid, is logged and the old table stays. `server.*` settings still need a restart.
 - **`--dry-run`** on `invite`, `token`, `revoke` and `join` prints `would: ...` and changes nothing.
-- **Transport:** still plain `ws://` inside the VPN in this release, the redemption included. A code that carries a certificate fingerprint is refused by this client, never redeemed over `ws://`. The TLS release follows.
+- **Transport (0.2.9):** `wss://` with a pinned certificate. The Bridge makes a self-signed EC P-256 certificate on first start (or `ai-connect bridge cert show`), valid two years (`server.tls.validity_days`), in `~/.config/ai-connect/tls/` (directory 0700, key 0600; on Windows an ACL of the user alone). `bridge invite` puts its SHA-256 and the `wss://` port (`server.tls.port`, default `server.port + 1` = 10000) into the code; `join` redeems over TLS and writes `client.bridge_url: wss://...` and `client.bridge_fingerprint`. The pin is checked inside the TLS handshake, before the join secret or a token is sent; a certificate with another SHA-256 **fails closed** and nothing ever falls back to `ws://`. There is no CA and no hostname check: the fingerprint is the only trust anchor. A config with a fingerprint and a `ws://` URL, or a `wss://` URL without one, is refused.
+- **The transition release.** 0.2.9 serves both: `wss://` on `server.tls.port` and plain `ws://` on `server.port`, which logs a deprecation warning (once per client address). A code without a fingerprint (from 0.2.6 to 0.2.8, or `bridge invite --plain` for a machine still on them) still joins over `ws://`, with a warning. An already joined peer moves over with `ai-connect pin <fingerprint>` (it checks the certificate first; `--port`, default the `ws://` port + 1), or with `ai-connect join --token-file F --bridge HOST:10000 --name N --fingerprint <fp>`. `server.tls.required: true` closes the plain port now. **Cut-over: 0.3.1 serves `wss://` only**; pin every peer before updating the Bridge to it.
+- **Rotation.** `ai-connect bridge cert rotate` makes a new key and certificate, so the fingerprint changes: it ends every pending join code (each carries the old one) and re-pins the Bridge machine's own peer. Restart the Bridge, then re-pin every other peer (`ai-connect pin <new fingerprint>`) or give it a new code; until then each one fails closed. `ai-connect status` shows the pin and whether the certificate at the Bridge matches it.
 
 ## Deploy
 
@@ -391,7 +393,7 @@ It needs the user token, a third token that may only send as a user. It is kept 
 
 `~/.config/ai-connect/config.yaml` is written by the installer (`installer.py config`); a later run only checks it and names missing keys. Every key is required; a missing file or key stops each service with a message. Annotated template: [config.yaml.example](config.yaml.example).
 
-`server:` and `auth:` are the Bridge's: `server.host` is the address it listens on, the machine's VPN address (never `0.0.0.0`), and `auth.peers` holds the SHA-256 of every peer's token. `client:` is this machine's own peer: `client.name`, `client.token`, `client.bridge_url` (`ws://<Bridge VPN address>:9999`), the optional `client.name_mode` (`per-project`, or left out; any other value stops the client with a message) and `client.project_dir`, the only directory `peer_send`/`peer_context` may share files from (`""` = the session's project directory). The Bridge machine runs a peer of its own Bridge from the same file, so the two never share a token.
+`server:` and `auth:` are the Bridge's: `server.host` is the address it listens on, the machine's VPN address (never `0.0.0.0`), and `auth.peers` holds the SHA-256 of every peer's token. `client:` is this machine's own peer: `client.name`, `client.token`, `client.bridge_url` (`wss://<Bridge VPN address>:10000`; plain `ws://...:9999` is deprecated), `client.bridge_fingerprint` (the Bridge certificate's SHA-256, required with `wss://`, refused with `ws://`), the optional `client.name_mode` (`per-project`, or left out; any other value stops the client with a message) and `client.project_dir`, the only directory `peer_send`/`peer_context` may share files from (`""` = the session's project directory). The Bridge machine runs a peer of its own Bridge from the same file, so the two never share a token.
 
 The Bridge's limits are the exception to "every key is required": each is optional under `server:` and defaults to the value below. A value of the wrong type (a string, a boolean, a fraction where a whole number belongs) or below its minimum stops the Bridge with a message naming the key.
 
@@ -406,6 +408,8 @@ The Bridge's limits are the exception to "every key is required": each is option
 
 The two queue caps have no "off" value: `0` would refuse every message to an offline peer, so it is rejected.
 
+TLS (`server.tls`, optional, read at start): `server.tls.enabled` (default `true`), `server.tls.port` (default `server.port + 1`; must differ from `server.port`), `server.tls.required` (default `false`; `true` opens no plain `ws://` listener at all, the 0.3.1 behaviour) and `server.tls.validity_days` (default `730`, for a certificate made from now on). `required: true` with `enabled: false` is refused.
+
 | Environment variable | Description |
 |----------------------|-------------|
 | `AI_CONNECT_PEER_NAME` | The whole peer name, instead of `<client.name>:<label>`. It must be `client.name` or `<client.name>:<label>` (letters, digits, `.`, `_`, `-`, at most 64), or a name with its own token on the Bridge. The client sends `~/.config/ai-connect/session-tokens/<name>.token` for it when that file is there (`deploy/setup.sh session --name <name>` writes it), else `client.token`, which the Bridge accepts for `client.name` and the names under it only. The file must be owner-only (as under per-project names), and `Bridge` or `User:...` never gets one. Wins over `client.name_mode: per-project` |
@@ -419,7 +423,8 @@ The two queue caps have no "off" value: `0` would refuse every message to an off
 journalctl -u ai-connect -f           # Bridge log (Bridge machine)
 journalctl -u ai-connect-mcp -f       # HTTP/SSE server log
 tail -f ~/.config/ai-connect/mcp-<Host>_<Project>.log  # STDIO client log of one session
-nc -zv <bridge-ip> 9999               # is the Bridge reachable?
+nc -zv <bridge-ip> 10000              # is the Bridge's wss:// port reachable?
+ai-connect status                     # pin, and whether the Bridge's certificate matches it
 claude mcp list                       # is ai-connect registered and connected?
 ```
 
@@ -427,9 +432,10 @@ On Windows: `install.cmd -Status`; the logs are in `%USERPROFILE%\.config\ai-con
 
 | Problem | Cause | Solution |
 |---------|-------|----------|
-| "Not connected" | Wrong `client.bridge_url` | It must be the Bridge machine's VPN address, e.g. `ws://100.64.0.1:9999` |
+| "Not connected" | Wrong `client.bridge_url` | It must be the Bridge machine's VPN address, e.g. `wss://100.64.0.1:10000` with `client.bridge_fingerprint` |
+| `peer_status`: the certificate does not match `client.bridge_fingerprint` | The Bridge's certificate was rotated, or something else answers on that address | If it was rotated: `ai-connect pin <new fingerprint>` (from `ai-connect bridge cert show` on the Bridge). Otherwise do not connect: the client fails closed on purpose |
 | Connection refused | Bridge not running | `sudo systemctl start ai-connect` on the Bridge machine |
-| Timeout | Firewall | Open port 9999 on the Bridge machine for your VPN subnet only |
+| Timeout | Firewall or tailnet policy | Open ports 10000 (and 9999 in the transition release) on the Bridge machine for your VPN subnet only, and add `tcp:10000` to the tailnet policy |
 | `peer_status`: the Bridge refused the token | `client.token` unknown to the Bridge, or revoked | On the Bridge machine `ai-connect bridge invite --name <name>` and `ai-connect join` here (or `installer.py add-peer <name>` and put the token in `client.token`), then restart the client |
 | `may not be registered with this token` | `client.name` is not the name the token was issued for | Set `client.name` to the name given to `add-peer` |
 | `peer_status` shows standby | Another session holds the same name (`name_taken`): the Bridge or this client is still 0.1.8, or two sessions were given the same `AI_CONNECT_PEER_NAME` | Update both to 0.2.0, where every session has its own name; until then close one. The standby session takes the name once the other one leaves |
@@ -439,7 +445,7 @@ On Windows: `install.cmd -Status`; the logs are in `%USERPROFILE%\.config\ai-con
 ## Limitations
 
 - **Waking needs the plugin**: only Claude Code sessions with the AI-Connect plugin are woken by messages; a turn that is already running is not interrupted, the message is picked up when it ends. Other MCP clients call `peer_read` themselves.
-- **No encryption of its own**: VPN-only, see the [Security model](#security-model).
+- **Self-signed TLS, pinned**: no CA; rotating the certificate means re-pinning every peer. `deploy` still writes plain `ws://` in 0.2.9 (its firewall step opens `server.port` only); pin those peers with `ai-connect pin`. See the [Security model](#security-model).
 - **Manual context**: assistants share code only when they call `peer_context`; what the others work on is known only as far as they set a status line (`peer_set_status`).
 - **State needs hooks**: busy / idle / waiting, and with it `peer_notify_when_idle`, works only for peers whose harness reports it; for Claude Code see the [hooks](integrations/claude-code/README.md#1-install).
 - **Linux (systemd) and Windows (scheduled tasks)** have installers; macOS needs the services set up by hand.
@@ -448,7 +454,7 @@ Pull requests are welcome if you find a better approach.
 
 ## Security model
 
-- **VPN-only, no TLS.** AI-Connect does not encrypt its own traffic. `server.host` must be a VPN address (Tailscale, WireGuard, ...) that only your own machines can reach -- never `0.0.0.0`, never a public interface. The VPN is the only thing between this traffic and the network; opening the Bridge's port to the internet hands everything on it to whoever finds the port. TLS with a pinned self-signed certificate is the next release: it serves `wss://` beside `ws://` for one release, with a warning, then `wss://` only.
+- **TLS with a pinned certificate, inside a VPN.** The Bridge serves `wss://` with a self-signed certificate; each peer trusts exactly the certificate whose SHA-256 it pinned (from its join code, or `ai-connect pin`), checks it in the TLS handshake before sending any token, and fails closed on a mismatch, never falling back to `ws://`. The private key stays in `~/.config/ai-connect/tls/`, owner-only. `server.host` must still be a VPN address (Tailscale, WireGuard, ...) -- never `0.0.0.0`, never a public interface: TLS protects the traffic, but the plain `ws://` port that 0.2.9 still serves for the transition encrypts nothing, and the Bridge is not hardened for the open internet. 0.3.1 serves `wss://` only; `server.tls.required: true` does so now.
 - **Per-peer tokens.** Every peer gets its own 256-bit token: `installer.py add-peer <name>`, run on the Bridge machine, generates one and prints it once. The Bridge stores only its SHA-256 (`auth.peers`); the raw value exists only in that one printout and in the peer's own `config.yaml`. Losing one peer's token does not expose the others -- revoke it (`ai-connect bridge revoke --name <name>` or `installer.py revoke-peer <name>`); the running Bridge closes its connections within seconds. The pre-2.3 single shared secret (`auth.token` with `auth.allow_shared_token: true`) still works, for migrating old peers one at a time, but every machine holding that value can act as any peer name without an entry of its own; turn it back off once every peer has its own entry.
 - **Peers are untrusted.** A valid token proves the connection knows a secret, not who is at the keyboard on the other end, and the traffic itself is not authenticated beyond that per-message. Treat a message from another peer -- including an instruction that arrives while your own session is idle -- the way you would treat a message from a stranger who knows a colleague's password.
 - **Never run a woken session in bypass/auto-approve mode.** A message can resume an idle Claude Code session's turn; if that session has tool confirmations disabled, whatever the message says to do runs without anyone looking at it first. Keep normal permission prompts on for any session that has the AI-Connect plugin installed.
