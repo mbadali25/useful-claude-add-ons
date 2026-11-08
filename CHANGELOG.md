@@ -9,6 +9,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed - crew 1.3.1: pylint findings in the deadline work
+
+- **Summary.** `crew` 1.3.1: lint-only follow-up to 1.3.0 (CI of #715); `verify_record.py` and `test_verify_gate_deadline.py` use f-strings and `with` for the process handles; no behaviour or message text changes.
+
 ### Fixed — crew 1.3.0: the Stop gate keeps the hook deadline and survives being killed
 
 - **Summary.** `crew` 1.3.0: the verify gate no longer runs past the Stop hook's deadline (measured 862s against 600s on Windows); a rule that would not fit is deferred by name, what a run measured is saved as it goes so a killed run still corrects the next one, the diff base is `origin/<default>`, and a lock left by a killed gate no longer blocks the next turn.
