@@ -9,10 +9,26 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Changed — crew 1.2.114: one review budget of three per ticket, counted across successor plans; the owner's `--grant-round` (L-0717, absorbs L-0781)
+### Changed — crew 1.2.120: one review budget of three per ticket, counted across successor plans; the owner's `--grant-round` (L-0717, absorbs L-0781)
 
 - **Summary.** `crew` 1.2.88: a ticket now gets three review rounds in total, a successor plan no longer reopens them, and only the owner's `review_ledger.py --grant-round` adds a round.
 - `review_ledger.py`: `BUDGET` 3, `REFUND_LIMIT` 3 counted per ticket, a recorded `grants` list (malformed is could-not-tell), `--grant-round --by --reason` (refused while rounds remain, for `auto:`/autopilot names, multi-line text), successor rows carry `carry_over: true` (a row written before keeps resetting). `scope_guard.py` refuses the verb to subagents with every abbreviation; `review_run.py` and `crew_status.py` print the ledger's budget; `crew_autopilot.py` refuses an auto-reject whose successor would have no round (seam; bug fix under the L-0727 freeze, manifest updated). Docs: updated, with a drift test (`test_review_budget.py`).
+
+### Fixed — crew 1.2.119: the guards' allow path starts no helper processes in bash
+
+- **Summary.** `crew` 1.2.119: cloud-guard, env-guard and promote-gate clear a command that deploys nothing with one python and no `tr`, `cut`, `dirname`, `uname`, `cygpath`, `date`, `jq` or `git` process from bash, so several lanes running at once no longer time the guards out on Git Bash, where each process start is an MSYS fork; every decision is unchanged.
+- Developed as 1.2.115, the version the new code comments and tests name. Re-bumped to 1.2.118 after merging main's 1.2.113: the version-drift check measures from the commit that set the version, main's test changes arrived after it, and 1.2.116 / 1.2.117 are claimed by open PRs.
+- 1.2.119 (CI of #713): `test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout` slows each python start by 1.5s instead of 1.8s. The fast path is one more interpreter start before a deploy reaches the full gate, so eight starts of 1.8s left a CI runner no time to reach the hung receipt check (the case's own precondition); 8 x 1.5s is the 12s that 7 x 1.8s was. What it proves is unchanged. Two lint findings in the new tests are fixed.
+- `_common.sh`: `crew_strip_cr` is a parameter expansion; the CREW_PYTHON check (identical in `crew_py`, `crew_py_strict` and role-write-guard.sh) converts `C:\..` to `/c/..` by hand and asks `cygpath -u` only when that names no executable file (Cygwin); `crew_native_path` reads `$OSTYPE` instead of `uname -s`, passes a mixed `D:/..` path through, converts `/d/..` by hand when both spellings name the same file (`-ef`), and bounds the remaining `cygpath -m` with `timeout 5` (orphaned `cygpath -m` processes were measured spinning on a core for 30 minutes); `crew_py_script` can assign into a variable instead of printing.
+- cloud-guard.sh and env-guard.sh: `$DIR` from `${BASH_SOURCE[0]%/*}` when absolute, and python reads the payload from stdin itself (no `INPUT=$(cat)` / `printf |`). promote-gate.sh: the same `$DIR`, the clock from printf's `%(%s)T` (date(1) on an older bash), and a new allow fast path, `_promote_fast.py`, which exits 99 only when the map is committed as it is (raw or CRLF-to-LF bytes hash to HEAD's blob), the command is plain ASCII that MSYS argument conversion leaves alone, the containment match (its heredoc read out of promote-gate.sh, not copied) names nothing and refuses nothing, and `_promote_dispatch.decide()` returns nothing; anything else falls through to the full gate unchanged.
+- Tests: `test_guard_spawns.py` (the allow path of each guard starts no helper program and exactly one python, read from `bash -x`; a declared deploy still takes the full gate), `test_promote_fast.py` (must-allow and must-fall-through cases), `test_crew_python_env.py` (a Windows path converted by hand with no cygpath asked), `test_native_script_path.py` (fakes Windows with `OSTYPE` instead of a `uname` stub; mixed paths skip cygpath; bash keeps an inherited `OSTYPE`); seven new fast-path mutations in `promote_tree_mutations.py`, and its deadline anchor follows the new line.
+
+### Fixed — crew 1.2.113: crew's tests clear an inherited CREW_PYTHON
+
+- **Summary.** `crew` 1.2.113: test-only; crew's suite no longer goes red when it runs from a crew-hooked session.
+- `plugin/crew/tests/conftest.py` removes `CREW_PYTHON` for every test (and for the session, before module fixtures spawn). crew-hook.ps1 / crew-hook.sh export it into the dispatcher, so a suite started from a hooked session inherited it, and since 1.2.109 `crew_py` / `crew_py_strict` return a valid one before walking PATH: the python stubs `test_native_script_path.py` and `test_python_probe_signals.py` plant were never reached, 44 cases failed on Linux with it set and passed without.
+- `test_crew_python_env.py` pins the isolation (no ambient `CREW_PYTHON` inside a test) and proves through the shipped `_common.sh`, sourced whole, that an explicitly set valid `CREW_PYTHON` is still returned without running the PATH stub, while an unset, missing or relative one falls back to it.
+- No hook, command or doc changes.
 
 ### Fixed — crew 1.2.110: test anchors follow the crew_py_script change (CI of #703)
 
