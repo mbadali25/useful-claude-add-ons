@@ -294,7 +294,7 @@ def default_config():
         # treats a repo value as a veto (`false`) or nothing. Declared here so
         # a repo can say `false` and `leaf_paths` can see the key.
         "resume": copy.deepcopy(crew_state.RESUME_DEFAULTS),
-        # crew 1.3.8: the owner's opt-out of the two human-only rules. Both
+        # crew 1.3.9: the owner's opt-out of the two human-only rules. Both
         # layers; `crew_humanonly.resolve` is its reader (a tracked repo file
         # never opts out, a `true` anywhere vetoes, a `false` needs a double
         # confirmation). Nothing in the hooks acts on it yet.
@@ -548,7 +548,7 @@ def default_global_config():
         # (`crew_resume.settings`): it starts work in this machine's session,
         # so, like `autoClear.enabled`, it is the machine owner's answer.
         "resume": copy.deepcopy(crew_state.RESUME_DEFAULTS),
-        # crew 1.3.8: the owner's human-only opt-out is the owner's answer
+        # crew 1.3.9: the owner's human-only opt-out is the owner's answer
         # first of all, so the machine file is where it normally lives.
         "humanOnly": copy.deepcopy(crew_state.HUMAN_ONLY_DEFAULTS),
         # How much crew may do about a skill it needs and cannot find. This is
@@ -3994,7 +3994,7 @@ def write_repo_config(root, updates, global_path=None, expect=None,
     return out["plan"]
 
 
-# --- crew 1.3.8: the human-only opt-out -------------------------------------
+# --- crew 1.3.9: the human-only opt-out -------------------------------------
 
 
 def _revoke_human_only(layer, path, changes, global_path):

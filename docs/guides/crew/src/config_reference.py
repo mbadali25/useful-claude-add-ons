@@ -203,7 +203,7 @@ takes effect only when all of these hold (`crew_humanonly.resolve`):
   `null` or removal, which drops a veto); a `false` written by hand reads as
   human-only.
 
-**What this does NOT do yet (crew 1.3.8).** No hook reads these keys. The
+**What this does NOT do yet (crew 1.3.9).** No hook reads these keys. The
 hooks that would honour an opt-out, and the prompt hook that records a
 `/crew:confirm-config` confirmation, are review harness and land in a
 separate change. Until then no confirmation can be recorded, so no opt-out

@@ -218,19 +218,19 @@ KEY_META = {
                         "machine file can arm it (exactly `true`); a repo `false` vetoes "
                         "it.", "branch", (None, True, False), "1.0.40",
                         _S + "crew_resume.py"),
-    # --- humanOnly (crew 1.3.8; read by crew_humanonly.resolve, acted on by no hook yet)
+    # --- humanOnly (crew 1.3.9; read by crew_humanonly.resolve, acted on by no hook yet)
     "humanOnly.approve": _row("The owner's opt-out of `/crew:approve` being human-only. "
                               "null or `true` keeps it human-only; `false` opts out only "
                               "from the machine file or an untracked repo file, only after "
                               "`/crew:confirm-config` twice, and a `true` in either layer "
-                              "vetoes. crew 1.3.8: no hook acts on it yet, so it changes "
-                              "nothing today.", "branch", crew_humanonly.VALUES, "1.3.8",
+                              "vetoes. crew 1.3.9: no hook acts on it yet, so it changes "
+                              "nothing today.", "branch", crew_humanonly.VALUES, "1.3.9",
                               _S + "crew_humanonly.py"),
     "humanOnly.promoteMarker": _row("The same opt-out for the production promote marker "
                                     "`.crew/.approved-<env>-<sha>`, under the same rules. "
-                                    "crew 1.3.8: no hook acts on it yet, and no hook today "
+                                    "crew 1.3.9: no hook acts on it yet, and no hook today "
                                     "checks who created the marker.", "branch",
-                                    crew_humanonly.VALUES, "1.3.8",
+                                    crew_humanonly.VALUES, "1.3.9",
                                     _S + "crew_humanonly.py"),
     # --- emergency
     "emergency.standDown": _unv("Whether a declared incident may stand gates down; "

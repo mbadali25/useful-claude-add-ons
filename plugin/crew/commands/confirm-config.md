@@ -14,7 +14,7 @@ separate prompts**, within 15 minutes. The second confirmation writes the key
 and leaves the receipt `crew_humanonly.resolve` requires; a `false` written any
 other way reads as human-only.
 
-**crew 1.3.8: no hook records this confirmation yet.** Recording it from the
+**crew 1.3.9: no hook records this confirmation yet.** Recording it from the
 user's own prompt is the UserPromptSubmit hook's job, and that wiring is a
 review-harness change that lands separately. Until it does, typing this
 command records nothing, so tell the user exactly that: the change

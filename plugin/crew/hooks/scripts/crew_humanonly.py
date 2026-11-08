@@ -1,4 +1,4 @@
-"""The owner's opt-out of crew's two human-only rules (crew 1.3.8).
+"""The owner's opt-out of crew's two human-only rules (crew 1.3.9).
 
 `humanOnly.approve` covers `/crew:approve` (a plan approval the user types);
 `humanOnly.promoteMarker` covers the production promote marker
@@ -11,7 +11,7 @@ in force (`resolve`) and the receipts store the double confirmation writes
 that would accept an agent-written approval or promote marker once a key is
 `false` are review harness (`scripts/check-tooling-pr.py` `HARNESS`), so they
 land alone in a later change. Until then every key's value changes nothing,
-and the human-only rules hold exactly as they did before 1.3.8.
+and the human-only rules hold exactly as they did before 1.3.9.
 
 The owner's decisions (2026-11-06), each enforced here:
 
@@ -66,7 +66,7 @@ FINAL_STATES = ("applied", "expired", "cancelled", "stale", "refused", "revoked"
 SENSITIVE_REFUSAL = (
     "removes a human step, so it needs the owner's double confirmation: "
     "`crew_confirm_config.py propose` records it and prints a change id, and "
-    "the owner types /crew:confirm-config <change_id> twice. (In crew 1.3.8 "
+    "the owner types /crew:confirm-config <change_id> twice. (In crew 1.3.9 "
     "nothing records that confirmation yet, so the change cannot complete.)")
 REPO_UNVETO_REFUSAL = (
     "removing a repo's human-only veto lifts a human step; the owner edits "
