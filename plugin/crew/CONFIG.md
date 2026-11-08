@@ -4,7 +4,7 @@ Generated from the code by `python3 docs/guides/crew/src/config_reference.py --w
 `python3 scripts/check-marketplace.py` fails when this file is stale. The
 reasoning behind the keys is in `docs/crew/config-rationale.md`.
 
-87 keys: 50 settable in the machine-global file, 37 repo-only.
+89 keys: 52 settable in the machine-global file, 37 repo-only.
 
 ## The two layers
 
@@ -23,9 +23,37 @@ column:
   only veto it with `false`.
 - A personal key (`crew_guards.PERSONAL_KEYS`) resolves per key to the stricter
   of the layers that set it; a layer that says nothing imposes nothing.
+- A human-only opt-out key (`humanOnly.*`) has its own rules, below.
 - A `null` in the repo file over a machine value inherits the machine value.
 - In a linked git worktree with no config of its own, the main checkout's repo
   config is the one read.
+
+## The human-only opt-out (`humanOnly`)
+
+`humanOnly.approve` and `humanOnly.promoteMarker` are the owner's opt-out of
+two human-only rules: `/crew:approve`, and the production promote marker
+`.crew/.approved-<env>-<sha>`. `null` and `true` mean human-only. A `false`
+takes effect only when all of these hold (`crew_humanonly.resolve`):
+
+- it is in the machine file, or in a repo `.crew/config.json` that git does
+  not track (a tracked or committed repo file can never opt out; "could not
+  tell" counts as tracked);
+- neither layer says `true` (a `true` anywhere vetoes, the stricter wins);
+- it was written by a double confirmation: `crew_confirm_config.py propose`
+  records the change and prints an id, and the owner types
+  `/crew:confirm-config <change_id>` twice, in two prompts, within 15 minutes.
+  `crew_config.py --set` and `/crew:config` refuse a `false` (and a repo
+  `null` or removal, which drops a veto); a `false` written by hand reads as
+  human-only.
+
+**What this does NOT do yet (crew 1.3.9).** No hook reads these keys. The
+hooks that would honour an opt-out, and the prompt hook that records a
+`/crew:confirm-config` confirmation, are review harness and land in a
+separate change. Until then no confirmation can be recorded, so no opt-out
+can take effect, and the rules are exactly what they were: `/crew:approve` is
+recorded only from your own prompt (`approval_hook.py`), and the promote
+marker is human-only by instruction alone - no hook checks who created it.
+`crew_confirm_config.py resolve` shows what each key would resolve to.
 
 ## Guard profiles
 
@@ -68,7 +96,7 @@ SessionStart notice).
 
 | Family | Keys |
 |---|---|
-| `core` | 14 |
+| `core` | 16 |
 | `providers` | 18 |
 | `guards` | 2 |
 | `cloud` | 12 |
@@ -79,12 +107,14 @@ SessionStart notice).
 | `memory` | 2 |
 | `platform` | 4 |
 
-## `core` keys (14)
+## `core` keys (16)
 
 | Key | Layer | Default | Values | Summary |
 |---|---|---|---|---|
 | `schema` | repo | `8` | not validated - read by `hooks/scripts/crew_state.py` (expects integer) | Config schema version; `/crew:migrate` upgrades an older one. |
 | `verifyGate` | repo | `true` | not validated - read by `hooks/scripts/verify-gate.sh` (expects boolean) | Run the Stop verify gate. |
+| `humanOnly.approve` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_humanonly.py`) | The owner's opt-out of `/crew:approve` being human-only. null or `true` keeps it human-only; `false` opts out only from the machine file or an untracked repo file, only after `/crew:confirm-config` twice, and a `true` in either layer vetoes. crew 1.3.9: no hook acts on it yet, so it changes nothing today. |
+| `humanOnly.promoteMarker` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_humanonly.py`) | The same opt-out for the production promote marker `.crew/.approved-<env>-<sha>`, under the same rules. crew 1.3.9: no hook acts on it yet, and no hook today checks who created the marker. |
 | `emergency.standDown` | repo | `true` | not validated - read by `hooks/scripts/_common.sh` (expects boolean) | Whether a declared incident may stand gates down; `false` forbids it. |
 | `emergency.maxTtlMinutes` | repo | `480` | integer (coerced in `hooks/scripts/crew_incident.py`) | Longest incident lifetime; never below `ttlMinutes`. |
 | `pm.authority` | both, widening warned | `"report-only"` | `report-only` \| `act` \| `autonomous` | How much the PM may do unasked. A widening is warned about; the two layers combine by precedence. |

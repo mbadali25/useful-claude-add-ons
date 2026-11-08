@@ -9,6 +9,18 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed - crew 1.3.10: version follows the merge of main's crew 1.3.6 into the opt-out branch
+
+- **Summary.** `crew` 1.3.10: no behaviour change beyond 1.3.9; the version moves past main's 1.3.6 so the drift check counts the merged-in crew changes. The human-only opt-out settings and `/crew:confirm-config` are as described under 1.3.9.
+
+### Added — crew 1.3.9: the human-only opt-out settings and their double confirmation (inert until the hook wiring lands)
+
+- **Summary.** `crew` 1.3.9: two new settings, `humanOnly.approve` and `humanOnly.promoteMarker`, record the owner's opt-out of `/crew:approve` and the production promote marker being human-only, behind a double confirmation; no hook reads them yet, so nothing changes until a later harness release wires them in.
+- The rules (`hooks/scripts/crew_humanonly.py`, the owner's 2026-11-06 decisions): `null` and `true` are human-only. A `false` counts only from the machine file or an untracked repo `.crew/config.json` (git tracking it, or git unable to tell, never counts), only when no layer says `true` (a `true` anywhere vetoes), and only when an applied receipt in `~/.claude/crew/confirm-config/` backs it; a malformed value, an unreadable receipt, or a newer revocation reads as human-only.
+- The double confirmation (`hooks/scripts/crew_confirm_config.py`, `/crew:confirm-config`): `propose` records a pending change and prints `cc-<8 hex>`; the change applies only after two confirmations from two different user prompts within 15 minutes, compare-and-swap against the file as proposed (a changed file goes `stale`), with the repo file re-checked as untracked at the second one. `confirm` accepts only `via: "user-prompt"`; the CLI has no confirm subcommand, and the command file is `disable-model-invocation: true`. No hook calls `confirm` yet, so in 1.3.9 a proposal can only be listed, cancelled or left to expire.
+- `crew_config.py --set` and the `/crew:config` menu refuse a `humanOnly` `false` at either layer and a repo `null` / `--unset` (it drops a veto); `true` is a plain write, and a machine `null` / `--unset` too. A crew write that sets a key back records a revocation, so an old receipt no longer backs a `false` that reappears by hand.
+- Docs: `CONFIG.md` and the configuration reference gain the `human-only opt-out` layer and a section saying what is NOT enforced yet; the guide, `/crew:config`, `/crew:approve`, the crew README and `plugin/PLUGINS.md` (39 commands) say the same. Tests: `test_crew_humanonly.py` (must-block and must-allow cases) and `humanonly_mutations.py` (16 mutations, each turning a named case red; run alone until the harness change wires them into `sabotage.py`). The L-0725 key set gains the two keys (89 / 85 / 52).
+
 ### Fixed — crew 1.2.124: the hook-faults test accepts the deadline-exhausted reason
 
 - **Summary.** `crew` 1.2.124: test-only; `test_a_fault_in_an_armed_repo_is_exit_2_naming_the_cause` for `guard-past-its-timeout` and `dispatcher-hangs-before-main` also accepts `the python probe used the whole deadline`, which a loaded runner can print when the probe exhausts the deadline in startup; the hook still fails closed with exit 2 and the test still requires a named cause.

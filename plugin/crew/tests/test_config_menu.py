@@ -367,7 +367,9 @@ def test_menu_offers_null_only_where_the_writer_takes_it(tmp_path):
                and None in [c["value"] for c in r["choices"]]]
     tags = {p: [c["tags"] for c in repo[p]["choices"] if c["value"] is None]
             for p in ("guards.overrides.forcePush", "context.autoClear.enabled")}
-    assert offered == []
+    # A machine `null` is silent for the humanOnly keys (human-only unless the
+    # other layer opts out), so the writer takes it and the menu offers it.
+    assert offered == ["humanOnly.approve", "humanOnly.promoteMarker"]
     assert ["inherit machine" in t for t in tags["guards.overrides.forcePush"]] == [True]
     assert ["clear veto" in t for t in tags["context.autoClear.enabled"]] == [True]
 
