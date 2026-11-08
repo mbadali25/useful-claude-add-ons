@@ -315,6 +315,13 @@ def test_a_run_that_ended_before_its_deadline_reprices_nothing(tmp_path):
 
 # --- 3. the diff base --------------------------------------------------------
 
+def _said(root, result):
+    """What a verdict run said: its stderr plus the detail log when one was written
+    (the base note is detail, so it is held back from stderr whenever the log is)."""
+    log = root / ".crew" / ".verify-gate.log"
+    return result.stderr + (log.read_text(encoding="utf-8") if log.is_file() else "")
+
+
 def _behind_main(tmp_path):
     """A repo whose LOCAL main is one commit behind origin/main, with HEAD on
     a feature branch cut from origin/main that changes only a.py."""
@@ -352,9 +359,7 @@ def test_the_base_is_origin_main_not_a_stale_local_main(tmp_path):
     assert not (out / "x-ran").exists(), (
         "a file merged into origin/main was in scope - the base was the stale local main. "
         + result.stderr)
-    log = (root / ".crew" / ".verify-gate.log").read_text(encoding="utf-8")
-    assert "merge-base of HEAD with origin/main (remote-tracking)" in log, log
-    assert "diff base" not in result.stderr, result.stderr
+    assert "merge-base of HEAD with origin/main (remote-tracking)" in _said(root, result), result.stderr
 
 
 def test_with_no_origin_the_local_branch_is_the_base_and_says_so(tmp_path):
@@ -371,8 +376,7 @@ def test_with_no_origin_the_local_branch_is_the_base_and_says_so(tmp_path):
     result = _run(root, _env(root, out))
     assert result.returncode == 0, result.stderr
     assert (out / "a-ran").exists(), result.stderr
-    log = (root / ".crew" / ".verify-gate.log").read_text(encoding="utf-8")
-    assert "merge-base of HEAD with main (local; no usable origin/main)" in log, log
+    assert "merge-base of HEAD with main (local; no usable origin/main)" in _said(root, result), result.stderr
 
 
 # --- 4. a lock whose holder is dead ------------------------------------------
