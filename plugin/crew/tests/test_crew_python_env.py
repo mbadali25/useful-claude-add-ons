@@ -222,6 +222,64 @@ def test_an_invalid_crew_python_falls_back_to_the_walk(tmp_path, func):
     assert code == 0 and out and "nope" not in out, (code, out, err)
 
 
+# --- the suite clears an ambient CREW_PYTHON, and that does not hide the feature ---
+#
+# conftest.py removes CREW_PYTHON for every test: crew-hook.ps1 / .sh export it
+# into the dispatcher, so a suite run from a crew-hooked session inherited it and
+# every PATH-stubbed python fixture (test_native_script_path.py,
+# test_python_probe_signals.py) was silently bypassed. The cases below pin that
+# isolation, then prove through the SHIPPED `_common.sh` (sourced whole, not one
+# function cut out) that an explicitly set value is still honoured.
+
+
+def test_the_suite_clears_an_ambient_crew_python():
+    assert "CREW_PYTHON" not in os.environ
+
+
+def _logging_python_stub(directory, log):
+    """A `python3` on PATH that records each run and then behaves like python,
+    so the PATH walk accepts it and the log alone says whether it was used."""
+    directory.mkdir(parents=True, exist_ok=True)
+    real = _posix(os.path.realpath(shutil.which("python3") or shutil.which("python")))
+    path = directory / "python3"
+    path.write_text(f"#!/bin/sh\necho ran >>'{_posix(log)}'\nexec '{real}' \"$@\"\n",
+                    encoding="ascii", newline="\n")
+    os.chmod(path, 0o755)
+    return path
+
+
+def _sourced(tmp_path, func, creg):
+    log = tmp_path / "stub.log"
+    stub_dir = tmp_path / "stub-bin"
+    _logging_python_stub(stub_dir, log)
+    script = tmp_path / "sourced.sh"
+    script.write_text(f'. "{_posix(_COMMON)}"\n{func}\n', encoding="utf-8", newline="\n")
+    env = dict(os.environ, PATH=os.pathsep.join([_posix(stub_dir), _python_free(tmp_path)]))
+    if creg is not None:
+        env["CREW_PYTHON"] = creg
+    proc = subprocess.run([_BASH, _posix(script)], capture_output=True, text=True,
+                          env=env, check=False, timeout=120)
+    return proc.returncode, proc.stdout.strip().replace("\r", ""), log.exists(), proc.stderr
+
+
+@needs_bash
+@pytest.mark.parametrize("func", ["crew_py", "crew_py_strict"])
+def test_must_allow_an_explicit_crew_python_skips_the_path_stub(tmp_path, func):
+    real = _posix(os.path.realpath(shutil.which("python3") or shutil.which("python")))
+    code, out, stub_ran, err = _sourced(tmp_path, func, real)
+    assert (code, out, stub_ran) == (0, real, False), err
+
+
+@needs_bash
+@pytest.mark.parametrize("func", ["crew_py", "crew_py_strict"])
+@pytest.mark.parametrize("creg", [None, "/nowhere/python3", "relative/python3"],
+                         ids=["unset", "missing", "relative"])
+def test_must_block_without_a_valid_crew_python_the_path_stub_is_used(tmp_path, func, creg):
+    code, out, stub_ran, err = _sourced(tmp_path, func, creg)
+    assert code == 0 and stub_ran, (code, out, err)
+    assert "nowhere" not in out and out != "relative/python3", out
+
+
 # --- crew_py_script ---------------------------------------------------------------
 
 

@@ -16,6 +16,13 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - cloud-guard.sh and env-guard.sh: `$DIR` from `${BASH_SOURCE[0]%/*}` when absolute, and python reads the payload from stdin itself (no `INPUT=$(cat)` / `printf |`). promote-gate.sh: the same `$DIR`, the clock from printf's `%(%s)T` (date(1) on an older bash), and a new allow fast path, `_promote_fast.py`, which exits 99 only when the map is committed as it is (raw or CRLF-to-LF bytes hash to HEAD's blob), the command is plain ASCII that MSYS argument conversion leaves alone, the containment match (its heredoc read out of promote-gate.sh, not copied) names nothing and refuses nothing, and `_promote_dispatch.decide()` returns nothing; anything else falls through to the full gate unchanged.
 - Tests: `test_guard_spawns.py` (the allow path of each guard starts no helper program and exactly one python, read from `bash -x`; a declared deploy still takes the full gate), `test_promote_fast.py` (must-allow and must-fall-through cases), `test_crew_python_env.py` (a Windows path converted by hand with no cygpath asked), `test_native_script_path.py` (fakes Windows with `OSTYPE` instead of a `uname` stub; mixed paths skip cygpath; bash keeps an inherited `OSTYPE`); seven new fast-path mutations in `promote_tree_mutations.py`, and its deadline anchor follows the new line.
 
+### Fixed — crew 1.2.113: crew's tests clear an inherited CREW_PYTHON
+
+- **Summary.** `crew` 1.2.113: test-only; crew's suite no longer goes red when it runs from a crew-hooked session.
+- `plugin/crew/tests/conftest.py` removes `CREW_PYTHON` for every test (and for the session, before module fixtures spawn). crew-hook.ps1 / crew-hook.sh export it into the dispatcher, so a suite started from a hooked session inherited it, and since 1.2.109 `crew_py` / `crew_py_strict` return a valid one before walking PATH: the python stubs `test_native_script_path.py` and `test_python_probe_signals.py` plant were never reached, 44 cases failed on Linux with it set and passed without.
+- `test_crew_python_env.py` pins the isolation (no ambient `CREW_PYTHON` inside a test) and proves through the shipped `_common.sh`, sourced whole, that an explicitly set valid `CREW_PYTHON` is still returned without running the PATH stub, while an unset, missing or relative one falls back to it.
+- No hook, command or doc changes.
+
 ### Fixed — crew 1.2.110: test anchors follow the crew_py_script change (CI of #703)
 
 - **Summary.** `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.
