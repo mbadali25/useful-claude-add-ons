@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.2.120: a migrate test no longer fails when the pytest tmp path holds the value's digits
+### Fixed — crew 1.2.121: a migrate test no longer fails when the pytest tmp path holds the value's digits
 
-- **Summary.** `crew` 1.2.120: test-only; `test_refuses_non_default_dropped_key` strips the pytest tmp root from the output before checking that the refused value is not printed, so a run whose process number contains 30 (`/pytest-30306/`) no longer fails `emergency.ttlMinutes-30`; a real leak of the value still fails it (sabotage-checked).
+- **Summary.** `crew` 1.2.121: test-only; `test_refuses_non_default_dropped_key` strips the pytest tmp root from the output before checking that the refused value is not printed, so a run whose process number contains 30 (`/pytest-30306/`) no longer fails `emergency.ttlMinutes-30`; a real leak of the value still fails it (sabotage-checked).
 
 ### Fixed — crew 1.2.119: the guards' allow path starts no helper processes in bash
 
