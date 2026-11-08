@@ -177,7 +177,41 @@ LAYER_TERMS = (
      "repo may only veto it with `false` (`crew_config.REPO_VETO_ONLY`)."),
     ("machine-only", "read from the global file alone; a repo's own value is "
      "never consulted."),
+    ("human-only opt-out", "a `humanOnly` key (`crew_humanonly`): `false` opts "
+     "out only from the machine file or an untracked repo file, only after the "
+     "owner types `/crew:confirm-config <change_id>` twice, and a `true` in "
+     "either layer vetoes it. Not acted on by any hook yet (see the section "
+     "below)."),
 )
+
+HUMAN_ONLY_SECTION = """\
+## The human-only opt-out (`humanOnly`)
+
+`humanOnly.approve` and `humanOnly.promoteMarker` are the owner's opt-out of
+two human-only rules: `/crew:approve`, and the production promote marker
+`.crew/.approved-<env>-<sha>`. `null` and `true` mean human-only. A `false`
+takes effect only when all of these hold (`crew_humanonly.resolve`):
+
+- it is in the machine file, or in a repo `.crew/config.json` that git does
+  not track (a tracked or committed repo file can never opt out; "could not
+  tell" counts as tracked);
+- neither layer says `true` (a `true` anywhere vetoes, the stricter wins);
+- it was written by a double confirmation: `crew_confirm_config.py propose`
+  records the change and prints an id, and the owner types
+  `/crew:confirm-config <change_id>` twice, in two prompts, within 15 minutes.
+  `crew_config.py --set` and `/crew:config` refuse a `false` (and a repo
+  `null` or removal, which drops a veto); a `false` written by hand reads as
+  human-only.
+
+**What this does NOT do yet (crew 1.3.6).** No hook reads these keys. The
+hooks that would honour an opt-out, and the prompt hook that records a
+`/crew:confirm-config` confirmation, are review harness and land in a
+separate change. Until then no confirmation can be recorded, so no opt-out
+can take effect, and the rules are exactly what they were: `/crew:approve` is
+recorded only from your own prompt (`approval_hook.py`), and the promote
+marker is human-only by instruction alone - no hook checks who created it.
+`crew_confirm_config.py resolve` shows what each key would resolve to.
+"""
 
 INTRO = """\
 # crew 1.0 - configuration reference
@@ -266,7 +300,7 @@ def render_reference(model=None):
     model = model or Model()
     keys = model.keys
     total, machine, repo_only = model.counts()
-    out = [INTRO, "## Reference (generated)", "",
+    out = [INTRO, HUMAN_ONLY_SECTION, "## Reference (generated)", "",
            f"Generated from the code by `{COMMAND}`. Do not edit by hand:",
            "`python3 scripts/check-marketplace.py` fails when this file is stale.",
            "",
@@ -348,10 +382,12 @@ column:
   only veto it with `false`.
 - A personal key (`crew_guards.PERSONAL_KEYS`) resolves per key to the stricter
   of the layers that set it; a layer that says nothing imposes nothing.
+- A human-only opt-out key (`humanOnly.*`) has its own rules, below.
 - A `null` in the repo file over a machine value inherits the machine value.
 - In a linked git worktree with no config of its own, the main checkout's repo
   config is the one read.
 
+{human_only}
 ## Guard profiles
 
 `guards.profile` is one word for all twelve guards; `guards.overrides.<guard>`
@@ -406,6 +442,7 @@ def render_config_md(model=None):
     out = [CONFIG_PREAMBLE.format(
         command=COMMAND, rationale=RATIONALE, total=total, machine=machine,
         repo_only=repo_only, profile_table=_profile_table(model),
+        human_only=HUMAN_ONLY_SECTION,
         dropped=len(model.dropped.DROPPED), family_table=family_table)]
     for family in keys.FAMILIES:
         members = by_family[family]

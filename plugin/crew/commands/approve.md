@@ -47,4 +47,5 @@ result in at most one line per ticket:
 this command; the scope guard refuses the shell form, and a receipt made that
 way is marked `approved_via: "cli"`, which the guard and the completion audit
 reject unless `scope.allowCliApproval` is on. If `scope.mode` is `off`, the
-receipt is still recorded but nothing enforces it.
+receipt is still recorded but nothing enforces it. The owner's opt-out key
+`humanOnly.approve` (crew 1.3.6) changes none of this yet: no hook reads it.

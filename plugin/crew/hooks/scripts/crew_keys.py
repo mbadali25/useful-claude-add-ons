@@ -37,6 +37,7 @@ from __future__ import annotations
 import crew_autopilot
 import crew_config
 import crew_guards
+import crew_humanonly
 import crew_notify
 import crew_platform
 import crew_sleep
@@ -217,6 +218,20 @@ KEY_META = {
                         "machine file can arm it (exactly `true`); a repo `false` vetoes "
                         "it.", "branch", (None, True, False), "1.0.40",
                         _S + "crew_resume.py"),
+    # --- humanOnly (crew 1.3.6; read by crew_humanonly.resolve, acted on by no hook yet)
+    "humanOnly.approve": _row("The owner's opt-out of `/crew:approve` being human-only. "
+                              "null or `true` keeps it human-only; `false` opts out only "
+                              "from the machine file or an untracked repo file, only after "
+                              "`/crew:confirm-config` twice, and a `true` in either layer "
+                              "vetoes. crew 1.3.6: no hook acts on it yet, so it changes "
+                              "nothing today.", "branch", crew_humanonly.VALUES, "1.3.6",
+                              _S + "crew_humanonly.py"),
+    "humanOnly.promoteMarker": _row("The same opt-out for the production promote marker "
+                                    "`.crew/.approved-<env>-<sha>`, under the same rules. "
+                                    "crew 1.3.6: no hook acts on it yet, and no hook today "
+                                    "checks who created the marker.", "branch",
+                                    crew_humanonly.VALUES, "1.3.6",
+                                    _S + "crew_humanonly.py"),
     # --- emergency
     "emergency.standDown": _unv("Whether a declared incident may stand gates down; "
                                 "`false` forbids it.", FIRST, _S + "_common.sh", "boolean"),
@@ -521,11 +536,14 @@ _MACHINE_ONLY = (tuple("context.autoClear." + k for k in crew_state.AUTOCLEAR_MA
 def layer_of(key):
     """Which layer may set `key`, derived from the code that enforces it:
     `machine-arms` (`crew_config.REPO_VETO_ONLY`: only the machine file arms
-    it, a repo may only veto), `machine-only` (read from the machine file
-    alone), `repo`, `both, stricter wins` (`crew_guards.PERSONAL_KEYS`, T-0050),
+    it, a repo may only veto), `human-only opt-out` (`crew_humanonly`: the
+    machine file or an untracked repo file may opt out, a `true` anywhere
+    vetoes), `machine-only` (read from the machine file alone), `repo`, `both, stricter wins` (`crew_guards.PERSONAL_KEYS`, T-0050),
     `both, ratchet`, `both, widening warned` or `both`."""
     if key in crew_config.REPO_VETO_ONLY:
         return "machine-arms"
+    if crew_humanonly.is_path(key):
+        return "human-only opt-out"
     if key in _MACHINE_ONLY or key.split(".", 1)[0] in crew_state.UNATTENDED_CLOUD_MACHINE_ONLY:
         return "machine-only"
     if not crew_config.is_global_path(key):

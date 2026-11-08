@@ -94,6 +94,7 @@ import crew_common
 import crew_config_files
 import crew_dropped
 import crew_guard_notes
+import crew_humanonly
 import crew_state
 
 sys.path.insert(0, os.path.join(
@@ -293,6 +294,11 @@ def default_config():
         # treats a repo value as a veto (`false`) or nothing. Declared here so
         # a repo can say `false` and `leaf_paths` can see the key.
         "resume": copy.deepcopy(crew_state.RESUME_DEFAULTS),
+        # crew 1.3.6: the owner's opt-out of the two human-only rules. Both
+        # layers; `crew_humanonly.resolve` is its reader (a tracked repo file
+        # never opts out, a `true` anywhere vetoes, a `false` needs a double
+        # confirmation). Nothing in the hooks acts on it yet.
+        "humanOnly": copy.deepcopy(crew_state.HUMAN_ONLY_DEFAULTS),
         "emergency": {
             "standDown": True,
             "maxTtlMinutes": 480,
@@ -542,6 +548,9 @@ def default_global_config():
         # (`crew_resume.settings`): it starts work in this machine's session,
         # so, like `autoClear.enabled`, it is the machine owner's answer.
         "resume": copy.deepcopy(crew_state.RESUME_DEFAULTS),
+        # crew 1.3.6: the owner's human-only opt-out is the owner's answer
+        # first of all, so the machine file is where it normally lives.
+        "humanOnly": copy.deepcopy(crew_state.HUMAN_ONLY_DEFAULTS),
         # How much crew may do about a skill it needs and cannot find. This is
         # a machine fact in the strongest sense on this list: it is the machine
         # owner saying how much they trust crew to run commands HERE. It was
@@ -3269,6 +3278,8 @@ def enum_values(dotted):
         return tuple(personal[1])
     if dotted == "pm.authority":
         return tuple(crew_state.AUTHORITIES)
+    if crew_humanonly.is_path(dotted):
+        return crew_humanonly.VALUES
     if dotted == "qa.provider":
         return ("auto",) + tuple(QA_PROVIDERS)
     if dotted == "dev.provider":
@@ -3349,7 +3360,10 @@ def null_means(dotted, layer):
     """What a `null` at `dotted` in `layer` means, or None (refused). Repo:
     a veto-only key's null clears the veto; a machine-settable key inherits
     the machine value (`without_null_shadows`). An open key is unset. An enum
-    key at the machine layer has no null meaning."""
+    key at the machine layer has no null meaning, except a `humanOnly` key,
+    whose null is silent: human-only unless the other layer opts out."""
+    if crew_humanonly.is_path(dotted):
+        return "silent (human-only unless the other layer opts out)"
     if layer == "repo":
         if dotted in REPO_VETO_ONLY:
             return "clears the veto"
@@ -3390,7 +3404,7 @@ def _guard_path_refusal(dotted):
 
 
 def _layer_path_refusal(dotted, layer, value):
-    reason = _guard_path_refusal(dotted)
+    reason = _guard_path_refusal(dotted) or crew_humanonly.write_refusal(dotted, layer, value)
     if reason is not None:
         return reason
     if layer == "machine":
@@ -3726,6 +3740,7 @@ def write_global_config(updates, path=None, expect=None):
         raise GlobalWriteRefused(f"{real_path}: {crew_config_files.os_error_text(exc)}; nothing written (its "
                                  "directory, its lock or the write itself failed at the OS; check the "
                                  "directory)") from exc
+    _revoke_human_only("machine", real_path, out["plan"][1], path)
     return out["plan"]
 
 
@@ -3975,7 +3990,50 @@ def write_repo_config(root, updates, global_path=None, expect=None,
     except OSError as exc:
         raise RepoWriteRefused(f"{crew_config_files.os_error_text(exc)}; nothing written (the machine-global "
                                "directory, a lock or the write failed at the OS)") from exc
+    _revoke_human_only("repo", real_path, out["plan"][1], global_path)
     return out["plan"]
+
+
+# --- crew 1.3.6: the human-only opt-out -------------------------------------
+
+
+def _revoke_human_only(layer, path, changes, global_path):
+    """After a crew write sets a `humanOnly` key back (the only values a
+    writer may set there: `true`, or a machine `null` / removal), record a
+    revocation so an earlier double-confirmed `false` at this file no longer
+    counts if a `false` reappears there by any other route."""
+    for change in changes or ():
+        if crew_humanonly.is_path(change.get("path")):
+            crew_humanonly.revoke(layer, path, change["path"], global_path=global_path)
+
+
+def apply_confirmed_optout(layer, dotted, path, expect, global_path=None):
+    """Write `dotted: false` into the config file at `path` (`layer` is
+    `machine` or `repo`). The one writer that bypasses
+    `crew_humanonly.write_refusal`, and only `crew_confirm_config` calls it,
+    once a proposal has its two user-prompt confirmations. `expect` is the
+    file's state digest when the change was proposed: a file that changed
+    since is refused (`crew_config_files.Conflict`), never merged over.
+    Returns `(merged, changes)`."""
+    if not crew_humanonly.is_path(dotted):
+        raise ValueError(f"{dotted} is not a humanOnly key")
+    if layer not in ("machine", "repo"):
+        raise ValueError(f"unknown layer {layer!r}")
+    out = {}
+
+    def _mutate(parsed):
+        global_cfg = None if layer == "machine" else machine_view(global_path)[0]
+        out["plan"] = _plan_on(parsed, {dotted: False}, layer, path, global_cfg)
+        if not out["plan"][1]:
+            return None
+        crew_backup.backup(path)
+        return out["plan"][0]
+    if layer == "machine":
+        crew_config_files.update_json(path, _mutate, expect=expect, create=True)
+    else:
+        with crew_config_files.machine_lock(_global_label(global_path)):
+            crew_config_files.update_json(path, _mutate, expect=expect)
+    return out.get("plan", ({}, []))
 
 
 def widening_note(dotted, after):

@@ -546,6 +546,16 @@ AUTOCLEAR_DEFAULTS = {
 # RESUME_READY_TIMEOUT_SECONDS caps the probe.
 RESUME_DEFAULTS = {"auto": None}
 
+# The `humanOnly` block (crew 1.3.6): the owner's opt-out of two human-only
+# rules, `/crew:approve` (`approve`) and the production promote marker
+# `.crew/.approved-<env>-<sha>` (`promoteMarker`). Null rather than true for
+# the `resume` reason above: the /crew:init template writes every key, and a
+# written `true` in a repo file is a veto of the machine owner's opt-out.
+# Null and `true` both mean human-only; only a double-confirmed `false` opts
+# out (`crew_humanonly.resolve`). Nothing outside `crew_humanonly` reads it
+# yet: the hooks that act on it are a separate harness change.
+HUMAN_ONLY_DEFAULTS = {"approve": None, "promoteMarker": None}
+
 # T-0044 `unattendedCloud`: MACHINE file only (crew_unattended.py); a repo copy is ignored and reported.
 UNATTENDED_CLOUD_DEFAULTS = {"aws": {"readOnly": {
     "profile": None, "identity": None, "region": None}, "nonProd": {}}}

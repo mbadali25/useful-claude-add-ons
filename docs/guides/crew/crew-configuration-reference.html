@@ -155,10 +155,35 @@ corrupt file from the template plus that profile, as a dry run until
 </ul>
 <p>The key list is <code>plugin/crew/CONFIG.md</code>, which ships with the plugin; the
 reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
+<h2 id="the-human-only-opt-out-humanonly">The Human-Only Opt-Out (<code>humanOnly</code>)</h2>
+<p><code>humanOnly.approve</code> and <code>humanOnly.promoteMarker</code> are the owner's opt-out of
+two human-only rules: <code>/crew:approve</code>, and the production promote marker
+<code>.crew/.approved-&lt;env&gt;-&lt;sha&gt;</code>. <code>null</code> and <code>true</code> mean human-only. A <code>false</code>
+takes effect only when all of these hold (<code>crew_humanonly.resolve</code>):</p>
+<ul>
+<li>it is in the machine file, or in a repo <code>.crew/config.json</code> that git does
+  not track (a tracked or committed repo file can never opt out; "could not
+  tell" counts as tracked);</li>
+<li>neither layer says <code>true</code> (a <code>true</code> anywhere vetoes, the stricter wins);</li>
+<li>it was written by a double confirmation: <code>crew_confirm_config.py propose</code>
+  records the change and prints an id, and the owner types
+  <code>/crew:confirm-config &lt;change_id&gt;</code> twice, in two prompts, within 15 minutes.
+  <code>crew_config.py --set</code> and <code>/crew:config</code> refuse a <code>false</code> (and a repo
+  <code>null</code> or removal, which drops a veto); a <code>false</code> written by hand reads as
+  human-only.</li>
+</ul>
+<p><strong>What this does NOT do yet (crew 1.3.6).</strong> No hook reads these keys. The
+hooks that would honour an opt-out, and the prompt hook that records a
+<code>/crew:confirm-config</code> confirmation, are review harness and land in a
+separate change. Until then no confirmation can be recorded, so no opt-out
+can take effect, and the rules are exactly what they were: <code>/crew:approve</code> is
+recorded only from your own prompt (<code>approval_hook.py</code>), and the promote
+marker is human-only by instruction alone - no hook checks who created it.
+<code>crew_confirm_config.py resolve</code> shows what each key would resolve to.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>87 keys</strong>: 50 settable in the machine-global file, 37 repo-only.</p>
+<p><strong>89 keys</strong>: 52 settable in the machine-global file, 37 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -175,6 +200,7 @@ reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
 <li><strong>both, stricter wins</strong>: a personal key (<code>crew_guards.PERSONAL_KEYS</code>): either file may set it, and where both do the STRICTER value wins; a layer that is silent (absent or <code>null</code>) imposes nothing, so a machine value is your default for every repo and a repo may only narrow it.</li>
 <li><strong>machine-arms</strong>: only the global file can turn it on (exactly <code>true</code>); a repo may only veto it with <code>false</code> (<code>crew_config.REPO_VETO_ONLY</code>).</li>
 <li><strong>machine-only</strong>: read from the global file alone; a repo's own value is never consulted.</li>
+<li><strong>human-only opt-out</strong>: a <code>humanOnly</code> key (<code>crew_humanonly</code>): <code>false</code> opts out only from the machine file or an untracked repo file, only after the owner types <code>/crew:confirm-config &lt;change_id&gt;</code> twice, and a <code>true</code> in either layer vetoes it. Not acted on by any hook yet (see the section below).</li>
 </ul>
 <h3 id="top-level-keys">Top-Level Keys</h3>
 <table>
@@ -612,6 +638,37 @@ reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
 <td><code>null</code> | <code>true</code> | <code>false</code> (checked in <code>plugin/crew/hooks/scripts/crew_resume.py</code>)</td>
 <td>1.0.40</td>
 <td>Auto-resume after <code>/clear</code> or a manual <code>/compact</code>. Only the machine file can arm it (exactly <code>true</code>); a repo <code>false</code> vetoes it.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="humanonly"><code>humanOnly</code></h3>
+<table>
+<thead>
+<tr>
+<th width="20%">Setting</th>
+<th width="11%">Layer</th>
+<th>Default</th>
+<th>Values</th>
+<th width="9%">Since</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>humanOnly.approve</code></td>
+<td>human-only opt-out</td>
+<td><code>null</code></td>
+<td><code>null</code> | <code>true</code> | <code>false</code> (checked in <code>plugin/crew/hooks/scripts/crew_humanonly.py</code>)</td>
+<td>1.3.6</td>
+<td>The owner's opt-out of <code>/crew:approve</code> being human-only. null or <code>true</code> keeps it human-only; <code>false</code> opts out only from the machine file or an untracked repo file, only after <code>/crew:confirm-config</code> twice, and a <code>true</code> in either layer vetoes. crew 1.3.6: no hook acts on it yet, so it changes nothing today.</td>
+</tr>
+<tr>
+<td><code>humanOnly.promoteMarker</code></td>
+<td>human-only opt-out</td>
+<td><code>null</code></td>
+<td><code>null</code> | <code>true</code> | <code>false</code> (checked in <code>plugin/crew/hooks/scripts/crew_humanonly.py</code>)</td>
+<td>1.3.6</td>
+<td>The same opt-out for the production promote marker <code>.crew/.approved-&lt;env&gt;-&lt;sha&gt;</code>, under the same rules. crew 1.3.6: no hook acts on it yet, and no hook today checks who created the marker.</td>
 </tr>
 </tbody>
 </table>
