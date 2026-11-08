@@ -62,6 +62,9 @@ HOST_RE = re.compile(r"^[A-Za-z0-9.:_-]{1,253}$")
 DEFAULT_EXPIRY_SECONDS = 3600
 MIN_EXPIRY_SECONDS = 60
 MAX_EXPIRY_SECONDS = 7 * 86400
+# The longest code `bridge invite` makes without --allow-long-expiry: the join is plain HTTP in this
+# release, so a code that lives longer is longer to intercept and redeem
+SAFE_MAX_EXPIRY_SECONDS = 86400
 # Used and expired invites stay this long, so `bridge list` can show them, then go
 KEEP_SECONDS = 7 * 86400
 LOCK_TIMEOUT_SECONDS = 10.0
@@ -212,17 +215,30 @@ def atomic_write(path: Path, text: str) -> None:
 
 
 _THREAD_LOCK = threading.Lock()
+# The config directories this thread holds auth_lock for (realpath), for reentry
+_HELD = threading.local()
 
 
 @contextlib.contextmanager
 def auth_lock(config_dir: Path, timeout: float = LOCK_TIMEOUT_SECONDS) -> Iterator[None]:
     """One writer at a time for config.yaml's auth: and invites.json, across processes and threads.
 
-    The Bridge (redeeming a code) and the CLI (invite, token, revoke) both take
-    it. An exclusive lock on a lock file: fcntl.flock on POSIX, msvcrt.locking
-    on Windows; TimeoutError after timeout seconds.
+    The Bridge (redeeming a code), the CLI (invite, token, revoke) and every
+    config.yaml writer in installer.py (add-peer, revoke-peer, the role
+    tokens, config --server) take it: a read-modify-write outside it can
+    write a revoked peer back or drop one just redeemed.
+
+    An exclusive lock on a lock file: fcntl.flock on POSIX, msvcrt.locking on
+    Windows; TimeoutError after timeout seconds. Reentrant within one thread,
+    so a locked caller (the CLI's `bridge token`) can call a writer that
+    locks for itself (installer._add_peer): the inner one holds nothing more.
     """
     config_dir.mkdir(parents=True, exist_ok=True)
+    key = os.path.realpath(config_dir)
+    held = _HELD.__dict__.setdefault("dirs", set())
+    if key in held:
+        yield
+        return
     deadline = time.monotonic() + timeout
     if not _THREAD_LOCK.acquire(timeout=timeout):
         raise TimeoutError(f"{config_dir / LOCK_FILE} is held by another writer")
@@ -230,9 +246,11 @@ def auth_lock(config_dir: Path, timeout: float = LOCK_TIMEOUT_SECONDS) -> Iterat
         fd = os.open(config_dir / LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
         try:
             _lock_fd(fd, deadline, config_dir / LOCK_FILE)
+            held.add(key)
             try:
                 yield
             finally:
+                held.discard(key)
                 _unlock_fd(fd)
         finally:
             os.close(fd)
@@ -274,6 +292,12 @@ def _unlock_fd(fd: int) -> None:
 
 
 # ---------------------------------------------------------------- the Bridge's state
+
+
+def yaml_error_place(err: Exception) -> str:
+    """Where a YAML error is, never what: PyYAML's message quotes the offending text, and config.yaml holds tokens."""
+    mark = getattr(err, "problem_mark", None)
+    return f"line {mark.line + 1}, column {mark.column + 1}" if mark else "not valid YAML"
 
 
 def read_config(config_path: Path) -> dict:

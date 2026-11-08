@@ -10,6 +10,7 @@ wss://; a --plain code over ws:// (transition release); token -> join
 
 import asyncio
 import http.client
+import json
 import os
 import re
 import shutil
@@ -242,6 +243,127 @@ def test_invite_out_writes_the_code_to_a_file_not_stdout(bridge_config, capsys, 
     assert jc.decode(text).name == "laptop" and text not in out
 
 
+# --- the plain-HTTP join: exposure warning and expiry cap ---------------------------------
+
+EXPOSURE = "the join is plain HTTP"
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "100.64.0.1", "100.127.255.254", "fd7a:115c:a1e0::5",
+                                  "bridge.tail1234.ts.net"])
+def test_invite_to_loopback_or_tailscale_does_not_warn(bridge_config, capsys, host):
+    code, out, err = ai(capsys, bridge_config, "bridge", "invite", "--name", "laptop", "--host", host,
+                        "--port", "9999", "--dry-run")
+    assert code == 0, err
+    assert EXPOSURE not in out + err
+
+
+@pytest.mark.parametrize("host,why", [
+    ("192.168.1.20", "private address"),  # RFC 1918: WireGuard or the LAN at large, cannot tell
+    ("10.0.0.5", "private address"),
+    ("203.0.113.9", "neither loopback nor a Tailscale address"),  # documentation range: is_private, not LAN
+    ("100.128.0.1", "neither loopback nor a Tailscale address"),  # just past 100.64.0.0/10
+    ("bridge.example.com", "host name"),  # unknown is not safe
+])
+def test_invite_to_any_other_address_warns(bridge_config, capsys, host, why):
+    code, out, _err = ai(capsys, bridge_config, "bridge", "invite", "--name", "laptop", "--host", host,
+                         "--port", "9999", "--dry-run")
+    assert code == 0
+    assert "WARNING" in out and EXPOSURE in out and why in out
+
+
+def test_invite_default_expiry_is_one_hour(bridge_config, capsys):
+    code, out, _err = ai(capsys, bridge_config, "bridge", "invite", "--name", "laptop", "--host", "100.64.0.1",
+                         "--port", "9999")
+    assert code == 0 and "expires in 1h" in out
+    text = re.search(r"^  ([A-Z2-7]{5}(?:-[A-Z2-7]{1,5})+)$", out, re.M).group(1)
+    stored = json_invites(bridge_config)[-1]
+    assert stored["expires"] - stored["created"] == 3600 and jc.decode(text).expires == stored["expires"]
+
+
+@pytest.mark.parametrize("expiry", ["25h", "2d", "7d"])
+def test_invite_past_24h_is_refused_without_the_flag(bridge_config, capsys, expiry):
+    before = snapshot(bridge_config.parent)
+    code, _out, err = ai(capsys, bridge_config, "bridge", "invite", "--name", "laptop", "--host", "100.64.0.1",
+                         "--port", "9999", "--expiry", expiry)
+    assert code == 2 and "--allow-long-expiry" in err
+    assert snapshot(bridge_config.parent) == before
+
+
+def test_invite_past_24h_with_the_flag_warns(bridge_config, capsys):
+    code, out, _err = ai(capsys, bridge_config, "bridge", "invite", "--name", "laptop", "--host", "100.64.0.1",
+                         "--port", "9999", "--expiry", "2d", "--allow-long-expiry")
+    assert code == 0 and "WARNING: --allow-long-expiry" in out
+    stored = json_invites(bridge_config)[-1]
+    assert stored["expires"] - stored["created"] == 2 * 86400
+
+
+def test_invite_24h_needs_no_flag(bridge_config, capsys):
+    code, out, _err = ai(capsys, bridge_config, "bridge", "invite", "--name", "laptop", "--host", "100.64.0.1",
+                         "--port", "9999", "--expiry", "24h")
+    assert code == 0 and "--allow-long-expiry" not in out
+
+
+def test_invite_help_documents_the_exposure(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["bridge", "invite", "--help"])
+    text = " ".join(capsys.readouterr().out.split())
+    assert "plain HTTP" in text and "X-AI-Connect-Join" in text and "permanent peer token" in text
+    assert "--allow-long-expiry" in text and "at most 24h" in text
+
+
+def test_join_help_ranks_the_command_line_code_weakest(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["join", "--help"])
+    text = " ".join(capsys.readouterr().out.split())
+    assert "weakest" in text and "--code-file" in text and "AI_CONNECT_JOIN_CODE" in text
+
+
+def json_invites(config_path):
+    return json.loads(jc.invites_path(config_path).read_text(encoding="utf-8"))["invites"]
+
+
+# --- a broken config.yaml: its text never reaches the terminal --------------------------
+
+SECRET_ON_THE_BROKEN_LINE = "9f" * 32
+# A snippet can cut a long line short: any 16 characters of the token are a leak
+LEAK = SECRET_ON_THE_BROKEN_LINE[:16]
+
+
+# Read from a file (as the CLI does) PyYAML shows no snippet of the line, but these messages quote the text
+@pytest.mark.parametrize("broken", [
+    f"auth: {{peers: *{SECRET_ON_THE_BROKEN_LINE}}}\n",  # "found undefined alias '<token>'"
+    f"client:\n  token: !{SECRET_ON_THE_BROKEN_LINE} x\n",  # "could not determine a constructor for the tag"
+])
+@pytest.mark.parametrize("argv", [
+    ["status", "--offline"],
+    ["bridge", "list"],
+    ["bridge", "revoke", "--name", "laptop"],
+    ["bridge", "token", "--name", "desk"],
+    ["bridge", "invite", "--name", "laptop", "--host", "100.64.0.1", "--port", "9999"],
+])
+def test_a_yaml_error_shows_its_place_never_the_text(tmp_path, capsys, broken, argv):
+    config = tmp_path / "bridge" / "config.yaml"
+    config.parent.mkdir()
+    config.write_text(broken, encoding="utf-8")
+    with pytest.raises(yaml.YAMLError) as raw, open(config, encoding="utf-8") as handle:
+        yaml.safe_load(handle)
+    assert LEAK in str(raw.value)  # the leak this guards against is real
+    code, out, err = ai(capsys, config, *argv)
+    assert code == 1
+    assert LEAK not in out + err
+    assert "not valid YAML (line " in err
+
+
+def test_the_cli_process_does_not_leak_a_yaml_error_either(tmp_path):
+    """The whole process, stdout and stderr: no traceback carries the text past the CLI's own handling."""
+    config = tmp_path / "config.yaml"
+    config.write_text(f"auth: {{peers: *{SECRET_ON_THE_BROKEN_LINE}}}\n", encoding="utf-8")
+    result = subprocess.run([sys.executable, str(PLUGIN / "ai_connect_cli.py"), "--config", str(config),
+                             "bridge", "revoke", "--name", "x"], capture_output=True, text=True, check=False)
+    assert result.returncode == 1, result
+    assert LEAK not in result.stdout + result.stderr
+
+
 # --- token, revoke, list, status -----------------------------------------------------
 
 def test_token_join_with_token_file_and_revoke_disconnects(bridge_config, laptop_config, capsys, tmp_path):
@@ -379,3 +501,71 @@ def test_launcher_runs_the_cli_with_a_python(tmp_path):
                              str(tmp_path / "none.yaml"), "status"],
                             capture_output=True, text=True, check=False, cwd=str(tmp_path), env=env)
     assert result.returncode == 1 and "config: missing" in result.stdout, result
+
+
+# --- the Windows launcher ---------------------------------------------------------------
+# bin\ai-connect.cmd once ran the CLI inside ( ) blocks, where cmd expands %ERRORLEVEL% when it reads the
+# block, before the CLI runs: every exit was 0. These run the launcher against a stand-in CLI that exits
+# with the code it is given, from each of its three Python branches, with LF and CRLF line endings (cmd's
+# label search depends on them; the repository stores LF).
+
+FAKE_CLI = "import sys\nprint('fake cli', sys.argv[1:])\nsys.exit(int(sys.argv[1]))\n"
+SYSTEM32 = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32")
+windows_only = pytest.mark.skipif(os.name != "nt", reason="bin\\ai-connect.cmd is cmd.exe's")
+
+
+def fake_plugin(root: Path, eol: str) -> Path:
+    """A plugin tree with the real launcher and a stand-in ai_connect_cli.py; returns the launcher."""
+    launcher = root / "bin" / "ai-connect.cmd"
+    launcher.parent.mkdir(parents=True, exist_ok=True)
+    text = (PLUGIN / "bin" / "ai-connect.cmd").read_text(encoding="utf-8").replace("\r\n", "\n")
+    launcher.write_bytes(text.replace("\n", eol).encode("utf-8"))
+    (root / "ai_connect_cli.py").write_text(FAKE_CLI, encoding="utf-8")
+    return launcher
+
+
+def run_cmd(launcher: Path, path: list[str], *args: str) -> subprocess.CompletedProcess:
+    env = {**os.environ, "PATH": os.pathsep.join(path)}
+    return subprocess.run([str(launcher), *args], capture_output=True, text=True, check=False, env=env,
+                          cwd=str(launcher.parent))
+
+
+@pytest.fixture(scope="module")
+def venv_python(tmp_path_factory):
+    """A real venv (no pip: fast) to stand in for the plugin's own."""
+    root = tmp_path_factory.mktemp("venv-plugin")
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(root / "venv")], check=True,
+                   capture_output=True)
+    return root
+
+
+@windows_only
+@pytest.mark.parametrize("eol", ["\n", "\r\n"], ids=["lf", "crlf"])
+@pytest.mark.parametrize("exit_code", [0, 1, 3])
+@pytest.mark.parametrize("branch", ["venv", "py", "python"])
+def test_cmd_launcher_passes_the_cli_exit_code_through(tmp_path, venv_python, branch, exit_code, eol):
+    if branch == "venv":
+        launcher = fake_plugin(venv_python, eol)
+        path = [SYSTEM32]  # nothing else: only the venv can answer
+    elif branch == "py":
+        py = shutil.which("py")
+        if py is None:
+            pytest.skip("no py launcher on this machine")
+        launcher = fake_plugin(tmp_path, eol)
+        path = [str(Path(py).parent), SYSTEM32]
+    else:
+        launcher = fake_plugin(tmp_path, eol)
+        # Not C:\Windows, where py.exe lives: python is the only candidate
+        path = [str(Path(sys.executable).parent), SYSTEM32]
+    result = run_cmd(launcher, path, str(exit_code), "two words")
+    assert "fake cli" in result.stdout, result
+    assert result.returncode == exit_code, result
+
+
+@windows_only
+@pytest.mark.parametrize("eol", ["\n", "\r\n"], ids=["lf", "crlf"])
+def test_cmd_launcher_without_python_exits_127(tmp_path, eol):
+    launcher = fake_plugin(tmp_path, eol)
+    result = run_cmd(launcher, [SYSTEM32], "0")
+    assert result.returncode == 127, result
+    assert "no Python 3.10 or newer found" in result.stderr

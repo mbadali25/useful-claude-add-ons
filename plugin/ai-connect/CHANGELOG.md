@@ -36,10 +36,13 @@ Enrol a machine with one copy-paste code, and revoke one without restarting the 
 
 ### Changed
 - `installer.py add-peer`, `revoke-peer`, `observer-token` and `user-token` no longer ask for a Bridge restart: the running Bridge picks the change up within seconds
+- Every `installer.py` writer of `config.yaml` (`add-peer`, `revoke-peer`, `observer-token`, `user-token`, `config --server`) takes the same lock as join-code redemption and the `ai-connect` CLI, so a revoke racing a redemption can neither write the revoked peer back nor drop the redeemed one
+- `bridge invite` warns when the Bridge address in the code is not loopback or Tailscale (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`, `*.ts.net`; a private LAN address or a host name is warned about too), and refuses an `--expiry` past 24 hours unless `--allow-long-expiry` (up to 7 days, with a warning): the join is plain HTTP in this release. `join --help` names the code on the command line as the weakest form
+- A `config.yaml` that does not parse is reported by line and column only, by the Bridge's reload log (once per broken file, not every poll), the `ai-connect` CLI and `installer.py`: PyYAML's own message quotes the offending line, which can hold a token
 - `deploy invite` and `deploy join` (Tailscale auth keys) are deprecated: they print a line pointing at `ai-connect bridge invite` / `ai-connect join` and keep working through this release only, because the deploy suites still drive them; they go in the next minor release. The tailnet itself stays `deploy tailnet-setup` and `vpn/vpn-up`
 
 ### Notes
-- Transport is still plain `ws://` inside the VPN in this release, redemption included; a join code that carries a certificate fingerprint is refused by this client, never redeemed over `ws://`. The next release serves `wss://` beside `ws://` for one release, with a warning, then `wss://` only
+- Transport is still plain `ws://` inside the VPN in this release, redemption included. The join sends the code's secret and receives the new peer's permanent token unencrypted: redeem a code over a VPN only; a join code that carries a certificate fingerprint is refused by this client, never redeemed over `ws://`. The next release serves `wss://` beside `ws://` for one release, with a warning, then `wss://` only
 - Settings under `server:` (address, port, limits) are still read once at start; changing one logs that a restart is needed
 
 ## [0.2.5] - 2026-11-06

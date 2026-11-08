@@ -251,6 +251,24 @@ def test_failed_redemptions_are_rate_limited(config_path, tmp_path):
     assert right == 429
 
 
+def test_config_broken_mid_redemption_is_a_503_not_a_crash(config_path, tmp_path, monkeypatch, caplog):
+    """config.yaml can break between redeem's check and the peer's write: a 503, and its text is not logged."""
+    secret = "e" * 40
+
+    def broken(_path, _secret, _name):
+        yaml.safe_load(f"auth: {{peers: *{secret}}}\n")  # raises, quoting the alias
+
+    async def go():
+        async with Bridge(config_path, tmp_path) as server:
+            monkeypatch.setattr(jc, "redeem", broken)
+            return await asyncio.to_thread(get_join, server.bound_port, "00" * 16, CAROL)
+
+    with caplog.at_level(logging.INFO):
+        status, body = run(go())
+    assert status == 503 and body == "The Bridge could not record the join\n"
+    assert "join_failed" in caplog.text and secret not in caplog.text
+
+
 def test_join_endpoint_is_off_without_a_config(tmp_path):
     async def go():
         async with h.running_bridge(tmp_path) as server:
