@@ -24,6 +24,11 @@ import crew_humanonly
 KEY = "humanOnly.approve"
 
 
+
+def _slurp(path):
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
 def _machine(tmp_path, value=None, present=True):
     path = tmp_path / "home" / "crew" / "config.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -163,7 +168,7 @@ def test_write_global_config_refuses_false(tmp_path):
     gpath = _machine(tmp_path)
     with pytest.raises(crew_config.GlobalWriteRefused):
         crew_config.write_global_config({KEY: False}, path=gpath)
-    assert json.loads(open(gpath, encoding="utf-8").read()) == {}
+    assert json.loads(_slurp(gpath)) == {}
 
 
 def test_confirm_refuses_anything_but_a_user_prompt(tmp_path):
@@ -182,7 +187,7 @@ def test_one_prompt_confirms_once(tmp_path):
     crew_confirm_config.confirm(cid, "user-prompt", "p1", global_path=gpath, now=1)
     with pytest.raises(crew_confirm_config.Refused):
         crew_confirm_config.confirm(cid, "user-prompt", "p1", global_path=gpath, now=2)
-    assert json.loads(open(gpath, encoding="utf-8").read()) == {}
+    assert json.loads(_slurp(gpath)) == {}
 
 
 def test_a_single_confirmation_writes_nothing(tmp_path):
@@ -190,7 +195,7 @@ def test_a_single_confirmation_writes_nothing(tmp_path):
     cid = crew_confirm_config.propose("machine", KEY, global_path=gpath, now=0)["change_id"]
     record = crew_confirm_config.confirm(cid, "user-prompt", "p1", global_path=gpath, now=1)
     assert record["state"] == "pending"
-    assert json.loads(open(gpath, encoding="utf-8").read()) == {}
+    assert json.loads(_slurp(gpath)) == {}
 
 
 def test_an_expired_proposal_cannot_be_confirmed(tmp_path):
@@ -202,7 +207,7 @@ def test_an_expired_proposal_cannot_be_confirmed(tmp_path):
         crew_confirm_config.confirm(cid, "user-prompt", "p2", global_path=gpath, now=late)
     stored = crew_humanonly.read_record(crew_humanonly.store_dir(gpath), cid)
     assert stored["state"] == "expired"
-    assert json.loads(open(gpath, encoding="utf-8").read()) == {}
+    assert json.loads(_slurp(gpath)) == {}
 
 
 def test_a_cancelled_proposal_cannot_be_confirmed(tmp_path):
@@ -233,7 +238,7 @@ def test_a_repo_file_tracked_before_the_second_confirmation_is_refused(tmp_path)
     record = crew_confirm_config.confirm(cid, "user-prompt", "p2", global_path=gpath, now=2,
                                          tracker=_tracker(crew_humanonly.TRACKED))
     assert record["state"] == "refused"
-    assert "humanOnly" not in json.loads(open(_repo_cfg(root), encoding="utf-8").read())
+    assert "humanOnly" not in json.loads(_slurp(_repo_cfg(root)))
 
 
 def test_a_file_changed_since_the_proposal_is_stale(tmp_path):
@@ -244,7 +249,7 @@ def test_a_file_changed_since_the_proposal_is_stale(tmp_path):
     crew_confirm_config.confirm(cid, "user-prompt", "p1", global_path=gpath, now=1)
     record = crew_confirm_config.confirm(cid, "user-prompt", "p2", global_path=gpath, now=2)
     assert record["state"] == "stale"
-    assert json.loads(open(gpath, encoding="utf-8").read()) == {"qa": {"provider": "claude"}}
+    assert json.loads(_slurp(gpath)) == {"qa": {"provider": "claude"}}
 
 
 def test_the_cli_has_no_confirm_subcommand(capsys):
@@ -255,7 +260,7 @@ def test_the_cli_has_no_confirm_subcommand(capsys):
 
 def test_the_command_file_is_user_only():
     path = os.path.join(context._ROOT, "commands", "confirm-config.md")  # pylint: disable=protected-access
-    head = open(path, encoding="utf-8").read().split("---")[1]
+    head = _slurp(path).split("---")[1]
     assert "disable-model-invocation: true" in head
 
 
@@ -300,7 +305,7 @@ def test_two_confirmations_apply_a_machine_opt_out(tmp_path):
     crew_confirm_config.confirm(cid, "user-prompt", "p1", global_path=gpath, now=1)
     record = crew_confirm_config.confirm(cid, "user-prompt", "p2", global_path=gpath, now=2)
     assert record["state"] == "applied"
-    assert json.loads(open(gpath, encoding="utf-8").read()) == {"humanOnly": {"approve": False}}
+    assert json.loads(_slurp(gpath)) == {"humanOnly": {"approve": False}}
     assert _resolve(_repo(tmp_path), gpath)["humanOnly"] is False
 
 

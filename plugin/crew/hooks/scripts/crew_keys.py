@@ -538,7 +538,8 @@ def layer_of(key):
     `machine-arms` (`crew_config.REPO_VETO_ONLY`: only the machine file arms
     it, a repo may only veto), `human-only opt-out` (`crew_humanonly`: the
     machine file or an untracked repo file may opt out, a `true` anywhere
-    vetoes), `machine-only` (read from the machine file alone), `repo`, `both, stricter wins` (`crew_guards.PERSONAL_KEYS`, T-0050),
+    vetoes), `machine-only` (read from the machine file alone), `repo`,
+    `both, stricter wins` (`crew_guards.PERSONAL_KEYS`, T-0050),
     `both, ratchet`, `both, widening warned` or `both`."""
     if key in crew_config.REPO_VETO_ONLY:
         return "machine-arms"

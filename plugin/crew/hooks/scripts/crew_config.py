@@ -4031,7 +4031,8 @@ def apply_confirmed_optout(layer, dotted, path, expect, global_path=None):
     if layer == "machine":
         crew_config_files.update_json(path, _mutate, expect=expect, create=True)
     else:
-        with crew_config_files.machine_lock(_global_label(global_path)):
+        lock = crew_config_files.machine_lock(_global_label(global_path))
+        with lock:
             crew_config_files.update_json(path, _mutate, expect=expect)
     return out.get("plan", ({}, []))
 
