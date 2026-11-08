@@ -546,7 +546,7 @@ AUTOCLEAR_DEFAULTS = {
 # RESUME_READY_TIMEOUT_SECONDS caps the probe.
 RESUME_DEFAULTS = {"auto": None}
 
-# The `humanOnly` block (crew 1.3.6): the owner's opt-out of two human-only
+# The `humanOnly` block (crew 1.3.7): the owner's opt-out of two human-only
 # rules, `/crew:approve` (`approve`) and the production promote marker
 # `.crew/.approved-<env>-<sha>` (`promoteMarker`). Null rather than true for
 # the `resume` reason above: the /crew:init template writes every key, and a

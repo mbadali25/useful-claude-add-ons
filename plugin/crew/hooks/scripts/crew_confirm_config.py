@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The double confirmation behind a sensitive config change (crew 1.3.6).
+"""The double confirmation behind a sensitive config change (crew 1.3.7).
 
 A change that lifts a human step -- today, a `humanOnly.*` key set to `false`
 (`crew_humanonly`) -- is never written by `crew_config.py --set` or the
@@ -22,7 +22,7 @@ The state machine, one record per change id:
 
 **User-only.** `confirm` accepts only `via="user-prompt"` with a prompt id,
 the shape crew's UserPromptSubmit hook passes for a prompt the user typed.
-This CLI has no `confirm` subcommand, and in crew 1.3.6 no hook calls
+This CLI has no `confirm` subcommand, and in crew 1.3.7 no hook calls
 `confirm` yet: wiring it into the prompt hook is review harness
 (`approval_hook.py` / `crew_hook.py`), which lands alone. Until then a
 proposal can be made, listed and cancelled, and never applied, so an opt-out
@@ -196,7 +196,7 @@ def _instructions(record):
         f"to apply it, the owner types /crew:confirm-config {record['change_id']} twice, "
         "in two separate prompts, within "
         f"{crew_humanonly.PROPOSAL_TTL_SECONDS // 60} minutes.",
-        "crew 1.3.6: no hook records that confirmation yet (the prompt-hook wiring lands "
+        "crew 1.3.7: no hook records that confirmation yet (the prompt-hook wiring lands "
         "separately), so this change stays pending and then expires; nothing acts on "
         "humanOnly until that wiring lands either.",
     ]
@@ -251,7 +251,7 @@ def main(argv=None):
                 for key, got in out.items():
                     state = "human-only" if got["humanOnly"] else "opted out"
                     print(f"humanOnly.{key}: {state} - {got['reason']}")
-                print("crew 1.3.6: no hook acts on these yet; the human-only rules hold "
+                print("crew 1.3.7: no hook acts on these yet; the human-only rules hold "
                       "whatever this says.")
     except Refused as exc:
         print(f"refused: {exc}", file=sys.stderr)

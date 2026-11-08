@@ -1,4 +1,4 @@
-"""crew 1.3.6 human-only opt-out mutations, in `sabotage.py`'s tuple shape.
+"""crew 1.3.7 human-only opt-out mutations, in `sabotage.py`'s tuple shape.
 
 Each puts back one way the opt-out could take effect when it must not (or a
 write could slip past the double confirmation), and names the must-block or

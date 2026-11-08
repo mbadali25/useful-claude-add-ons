@@ -51,10 +51,10 @@ Counted by walking the directories at this anchor:
 | | Count | How counted |
 |---|---|---|
 | Agents | 4 roles (5 files) | `.md` files in `plugin/crew/agents/` — `explorer.md`, `researcher.md`, `reviewer.md`, `security.md`, and `session-relay.md`, the transport agent (`crew_state.TRANSPORT_AGENTS`, `:1097`), which is not a role |
-| Commands | 39 | `.md` files in `plugin/crew/commands/` (39 since crew 1.3.6 added `confirm-config.md`; 38 since L-0667 added `graph.md`; 37 since T-0025 added `help.md`; 36 since T-0075 added `config-setup.md`; 35 since T-0004 added `autopilot.md`) |
+| Commands | 39 | `.md` files in `plugin/crew/commands/` (39 since crew 1.3.7 added `confirm-config.md`; 38 since L-0667 added `graph.md`; 37 since T-0025 added `help.md`; 36 since T-0075 added `config-setup.md`; 35 since T-0004 added `autopilot.md`) |
 | Skills | 33 | subdirectories of `plugin/crew/skills/` (includes 10 `stack-*` skills; `crew-standards` since T-0085, `crew-qa-standards` since #267, `stack-php` since L-0533, `stack-node` since L-0537) |
 
-`.claude-plugin/marketplace.json:247` states 4 agents, 39 commands (38 before crew 1.3.6) and 33 skills in its `crew` entry's
+`.claude-plugin/marketplace.json:247` states 4 agents, 39 commands (38 before crew 1.3.7) and 33 skills in its `crew` entry's
 description (it also names the `session-relay` transport agent, a fifth `.md` file that is not a role),
 and `:248` the version, 1.2.84 (at bdde58724; it read 1.2.62 at the previous anchor), matching `plugin/crew/.claude-plugin/plugin.json:3`. This pass did not
 re-run the previous note's wider count-disagreement sweep across `README.md`/`plugin/README.md`/
@@ -909,7 +909,7 @@ only the first gets `ok`. Tests: `plugin/crew/tests/test_crew_resume.py`,
 `plugin/crew/tests/sabotage_resume.py` (72 by `len(RESUME_MUTATIONS)` at `53f5482c`, 68 at bdde58724); `.crew/verify.json`
 rule 27 (`:333-344` since L-0516 inserted rule 10; rule 26 at `:289-299` on T-0094's merge of `8ab733d7`, `:291-301` after T-0094 grew rule 25, `:287-297` before).
 
-## The human-only opt-out and `/crew:confirm-config` (crew 1.3.6, PR 1 of 3)
+## The human-only opt-out and `/crew:confirm-config` (crew 1.3.7, PR 1 of 3)
 
 DERIVED on `feat/crew-human-only-optout` (cut from main `38baf66e0`); this
 section does not move the anchor. Two leaves, `humanOnly.approve` and

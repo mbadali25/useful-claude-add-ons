@@ -499,12 +499,12 @@ repo's `.crew/config.json`. The repo file wins, except where a setting
 ratchets, is personal (the stricter of the two wins), or only the machine file
 may arm it.
 
-**The human-only opt-out (crew 1.3.6).** `humanOnly.approve` and
+**The human-only opt-out (crew 1.3.7).** `humanOnly.approve` and
 `humanOnly.promoteMarker` let the owner opt out of `/crew:approve` and the
 production promote marker being human-only. A `false` counts only from the
 machine file or an untracked repo file, never a committed one; a `true` in
 either file vetoes it; and it is written only after the owner types
-`/crew:confirm-config <change_id>` twice. In 1.3.6 no hook reads these keys
+`/crew:confirm-config <change_id>` twice. In 1.3.7 no hook reads these keys
 and nothing records that confirmation, so the human-only rules hold exactly as
 before; the configuration reference's "The human-only opt-out" section says
 what lands next.
