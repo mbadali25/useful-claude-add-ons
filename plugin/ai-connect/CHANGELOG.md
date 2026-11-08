@@ -1,11 +1,21 @@
 # Changelog
 
-## [0.2.6] - 2026-11-07
+## [0.2.8] - 2026-11-08
 
 Deploy test seam only; no behaviour change for a normal run.
 
 ### Changed
 - `AI_CONNECT_DEPLOY_ROOT=0` now means "not root" even when the real euid is 0 (`1` still means root; unset keeps the euid check). The deploy test box sets it to `0`, so `tests/` passes when run as root (#609)
+
+## [0.2.7] - 2026-11-08
+
+Lint only (line length) on the 0.2.6 test change; no behaviour change.
+
+## [0.2.6] - 2026-11-08
+
+Test isolation only: the setup and deploy suites ran their child processes in the checkout, so a project-scope
+setup test wrote plugin/ai-connect/.claude/settings.local.json. They now run in the throwaway project, and a
+suite guard fails any test that writes that path. No behaviour change from 0.2.5.
 
 ## [0.2.5] - 2026-11-06
 
