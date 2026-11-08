@@ -1042,13 +1042,14 @@ def _sh(box, args):
     if os.name == "nt":  # Git Bash needs its own coreutils (dirname) on PATH
         env["PATH"] = os.pathsep.join([r"C:\Program Files\Git\usr\bin", env["PATH"]])
     return subprocess.run([BASH, str(DEPLOY_DIR / "deploy.sh"), *args], capture_output=True, text=True,
-                          check=False, stdin=subprocess.DEVNULL, env=env, timeout=180, cwd=box.project)
+                          check=False, stdin=subprocess.DEVNULL, env=env, timeout=180,
+                          cwd=box.project)
 
 
 def _ps1(box, args, tmp_path):
     return subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(DEPLOY_DIR / "deploy.ps1"), *args],
-                          capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL, timeout=180, cwd=box.project,
-                          env=dict(box.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
+                          capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL, timeout=180,
+                          cwd=box.project, env=dict(box.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
 
 
 @pytest.mark.skipif(not BASH or not PWSH, reason="needs both bash and pwsh at known paths")
