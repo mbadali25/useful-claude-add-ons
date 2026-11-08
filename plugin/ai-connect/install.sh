@@ -34,7 +34,7 @@ HTTP=false
 UPDATE=false
 STATUS=false
 UNINSTALL=false
-# Only this range should reach the Bridge port; AI-Connect has no TLS of its own
+# Only this range should reach the Bridge ports (wss:// with a pinned certificate, and plain ws:// until 0.3.1)
 VPN_SUBNET="100.64.0.0/10"
 
 usage() {
@@ -190,39 +190,43 @@ EOF
 
 configure_firewall() {
     # install.ps1 creates an equivalent Windows Firewall rule itself (scoped
-    # to -VpnSubnet, port 9999, Private profile); here we do the same with
-    # whatever firewall manager is present, or fall back to printing the
-    # command so the operator can run it themselves.
-    local PORT=9999
+    # to -VpnSubnet, ports 9999 and 10000, Private profile); here we do the
+    # same with whatever firewall manager is present, or fall back to printing
+    # the command so the operator can run it themselves. 9999 is plain ws://
+    # (deprecated, served in 0.2.9 only), 10000 is wss:// (server.tls.port).
+    local PORT
     local FAMILY="ipv4"
     [[ "$VPN_SUBNET" == *:* ]] && FAMILY="ipv6"
 
     if [[ $EUID -ne 0 ]] && ! sudo -n true 2>/dev/null; then
-        echo -e "  ${YELLOW}Firewall:${NC} not root and no passwordless sudo; skipping. Allow port $PORT only from your VPN ($VPN_SUBNET) yourself, e.g."
-        echo "    sudo ufw allow from $VPN_SUBNET to any port $PORT proto tcp"
+        echo -e "  ${YELLOW}Firewall:${NC} not root and no passwordless sudo; skipping. Allow ports 9999 and 10000 only from your VPN ($VPN_SUBNET) yourself, e.g."
+        echo "    sudo ufw allow from $VPN_SUBNET to any port 9999 proto tcp"
+        echo "    sudo ufw allow from $VPN_SUBNET to any port 10000 proto tcp"
         return
     fi
 
-    if command -v ufw >/dev/null 2>&1; then
-        if sudo ufw status | grep -q "$PORT.*$VPN_SUBNET"; then
-            echo -e "  ${GREEN}Firewall: ufw rule for $VPN_SUBNET on port $PORT already present${NC}"
+    for PORT in 9999 10000; do
+        if command -v ufw >/dev/null 2>&1; then
+            if sudo ufw status | grep -q "^$PORT.*$VPN_SUBNET"; then
+                echo -e "  ${GREEN}Firewall: ufw rule for $VPN_SUBNET on port $PORT already present${NC}"
+            else
+                sudo ufw allow from "$VPN_SUBNET" to any port "$PORT" proto tcp comment 'AI-Connect Bridge' >/dev/null
+                echo -e "  ${GREEN}Firewall: ufw allow from $VPN_SUBNET to port $PORT added${NC}"
+            fi
+        elif command -v firewall-cmd >/dev/null 2>&1; then
+            local RULE="rule family=\"$FAMILY\" source address=\"$VPN_SUBNET\" port port=\"$PORT\" protocol=\"tcp\" accept"
+            if sudo firewall-cmd --permanent --query-rich-rule="$RULE" >/dev/null 2>&1; then
+                echo -e "  ${GREEN}Firewall: firewalld rule for $VPN_SUBNET on port $PORT already present${NC}"
+            else
+                sudo firewall-cmd --permanent --add-rich-rule="$RULE" >/dev/null
+                sudo firewall-cmd --reload >/dev/null
+                echo -e "  ${GREEN}Firewall: firewalld rule for $VPN_SUBNET on port $PORT added${NC}"
+            fi
         else
-            sudo ufw allow from "$VPN_SUBNET" to any port "$PORT" proto tcp comment 'AI-Connect Bridge' >/dev/null
-            echo -e "  ${GREEN}Firewall: ufw allow from $VPN_SUBNET to port $PORT added${NC}"
+            echo -e "  ${YELLOW}Firewall:${NC} neither ufw nor firewalld found; allow port $PORT only from your VPN ($VPN_SUBNET) yourself, e.g."
+            echo "    sudo ufw allow from $VPN_SUBNET to any port $PORT proto tcp"
         fi
-    elif command -v firewall-cmd >/dev/null 2>&1; then
-        local RULE="rule family=\"$FAMILY\" source address=\"$VPN_SUBNET\" port port=\"$PORT\" protocol=\"tcp\" accept"
-        if sudo firewall-cmd --permanent --query-rich-rule="$RULE" >/dev/null 2>&1; then
-            echo -e "  ${GREEN}Firewall: firewalld rule for $VPN_SUBNET on port $PORT already present${NC}"
-        else
-            sudo firewall-cmd --permanent --add-rich-rule="$RULE" >/dev/null
-            sudo firewall-cmd --reload >/dev/null
-            echo -e "  ${GREEN}Firewall: firewalld rule for $VPN_SUBNET on port $PORT added${NC}"
-        fi
-    else
-        echo -e "  ${YELLOW}Firewall:${NC} neither ufw nor firewalld found; allow port $PORT only from your VPN ($VPN_SUBNET) yourself, e.g."
-        echo "    sudo ufw allow from $VPN_SUBNET to any port $PORT proto tcp"
-    fi
+    done
 }
 
 UNITS=()
