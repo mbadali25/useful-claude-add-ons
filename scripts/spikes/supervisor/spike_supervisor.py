@@ -116,7 +116,7 @@ def win(out):
         d = os.path.join(out, "win-break-" + mode)
         p = launch(mode, d)
         t = time.time()
-        os.kill(p.pid, signal.CTRL_BREAK_EVENT)
+        os.kill(p.pid, signal.CTRL_BREAK_EVENT)  # pylint: disable=no-member  # Windows-only
         res.append(report("CTRL_BREAK_EVENT to new process group: " + mode, p, d, t))
         finish(p)
     for mode in ("handled", "default"):
