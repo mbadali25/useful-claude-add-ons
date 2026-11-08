@@ -102,6 +102,14 @@ def _no_real_global_config(tmp_path, tmp_path_factory, _crew_isolation_patch):
     # back, to the fixture, wherever a case wants a record.
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     monkeypatch.delenv("CREW_AUTOCLEAR_PROC_STUB", raising=False)
+    # Same rule for the interpreter the hook launcher exports (crew 1.2.109):
+    # `crew_py` / `crew_py_strict` return a valid CREW_PYTHON before walking
+    # PATH, so a suite run from a crew-hooked session (crew-hook.ps1 / .sh
+    # export it into the dispatcher, and every child inherits it) skipped the
+    # python stubs its fixtures plant on PATH: test_native_script_path.py and
+    # test_python_probe_signals.py went 44 red on Linux with it set, green
+    # without. A test of the shortcut itself sets it explicitly and still wins.
+    monkeypatch.delenv("CREW_PYTHON", raising=False)
 
     # Third channel: the developer's GLOBAL git config reaches every fixture
     # `git commit`, and with `commit.gpgsign=true` each one runs their signing
@@ -320,7 +328,9 @@ def _isolate_home():
     # Unset for the session too, not only per test: a module or session
     # fixture spawning before the per-test fixture runs must not inherit an
     # ambient CLAUDE_CONFIG_DIR naming the operator's real `.claude`.
-    for name in ("CLAUDE_CONFIG_DIR", "CLAUDE_PROJECT_DIR"):
+    # CREW_PYTHON for the same reason: the per-test fixture clears it, a module
+    # fixture spawning a hook before that must not inherit the launcher's.
+    for name in ("CLAUDE_CONFIG_DIR", "CLAUDE_PROJECT_DIR", "CREW_PYTHON"):
         _HOME_PREVIOUS.setdefault(name, os.environ.get(name))
         os.environ.pop(name, None)
     # The in-process half: `GLOBAL_CONFIG_PATH` was computed from the real

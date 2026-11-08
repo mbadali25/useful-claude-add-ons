@@ -51,10 +51,10 @@ Counted by walking the directories at this anchor:
 | | Count | How counted |
 |---|---|---|
 | Agents | 4 roles (5 files) | `.md` files in `plugin/crew/agents/` — `explorer.md`, `researcher.md`, `reviewer.md`, `security.md`, and `session-relay.md`, the transport agent (`crew_state.TRANSPORT_AGENTS`, `:1097`), which is not a role |
-| Commands | 38 | `.md` files in `plugin/crew/commands/` (38 since L-0667 added `graph.md`; 37 since T-0025 added `help.md`; 36 since T-0075 added `config-setup.md`; 35 since T-0004 added `autopilot.md`) |
+| Commands | 39 | `.md` files in `plugin/crew/commands/` (39 since crew 1.3.9 added `confirm-config.md`; 38 since L-0667 added `graph.md`; 37 since T-0025 added `help.md`; 36 since T-0075 added `config-setup.md`; 35 since T-0004 added `autopilot.md`) |
 | Skills | 33 | subdirectories of `plugin/crew/skills/` (includes 10 `stack-*` skills; `crew-standards` since T-0085, `crew-qa-standards` since #267, `stack-php` since L-0533, `stack-node` since L-0537) |
 
-`.claude-plugin/marketplace.json:247` states 4 agents, 38 commands and 33 skills in its `crew` entry's
+`.claude-plugin/marketplace.json:247` states 4 agents, 39 commands (38 before crew 1.3.9) and 33 skills in its `crew` entry's
 description (it also names the `session-relay` transport agent, a fifth `.md` file that is not a role),
 and `:248` the version, 1.2.84 (at bdde58724; it read 1.2.62 at the previous anchor), matching `plugin/crew/.claude-plugin/plugin.json:3`. This pass did not
 re-run the previous note's wider count-disagreement sweep across `README.md`/`plugin/README.md`/
@@ -908,6 +908,32 @@ only the first gets `ok`. Tests: `plugin/crew/tests/test_crew_resume.py`,
 `plugin/crew/tests/test_crew_resume_hook.py`; mutations
 `plugin/crew/tests/sabotage_resume.py` (72 by `len(RESUME_MUTATIONS)` at `53f5482c`, 68 at bdde58724); `.crew/verify.json`
 rule 27 (`:333-344` since L-0516 inserted rule 10; rule 26 at `:289-299` on T-0094's merge of `8ab733d7`, `:291-301` after T-0094 grew rule 25, `:287-297` before).
+
+## The human-only opt-out and `/crew:confirm-config` (crew 1.3.9, PR 1 of 3)
+
+DERIVED on `feat/crew-human-only-optout` (cut from main `38baf66e0`); this
+section does not move the anchor. Two leaves, `humanOnly.approve` and
+`humanOnly.promoteMarker`, default `null` in both templates
+(`plugin/crew/hooks/scripts/crew_config.py:301`, `:553`;
+`crew_state.HUMAN_ONLY_DEFAULTS`). The reader is
+`plugin/crew/hooks/scripts/crew_humanonly.py:259` (`resolve`): a `false`
+counts only from the machine file or a repo file `tracking` (`:104`) reports
+`untracked` (`could not tell` never counts), only with no `true` in either
+layer, and only when `receipt_backs` (`:213`) finds the newest settled record
+for that (layer, file, key) an applied `false`. The writers refuse through
+`write_refusal` (`:82`, called from `crew_config.py:3407`); `enum_values`
+returns `VALUES` (`crew_config.py:3282`). The double confirmation is
+`plugin/crew/hooks/scripts/crew_confirm_config.py` (`propose` `:76`, `confirm`
+`:131`, `cancel` `:176`, CLI `main` `:205`, no confirm subcommand); its one
+write goes through `crew_config.apply_confirmed_optout` (`:4010`), and a crew
+write back to human-only revokes via `_revoke_human_only` (`:4000`).
+JUDGEMENT: inert by design. No hook imports `crew_humanonly`, and no hook
+calls `confirm`; both are harness (`scripts/check-tooling-pr.py` `HARNESS`:
+`approval_hook.py`, `crew_hook.py`, `crew_ticket.py`, `scope_guard.py`,
+`hooks.json`, `sabotage*.py`) and land in PR 2. Tests:
+`plugin/crew/tests/test_crew_humanonly.py`; mutations
+`plugin/crew/tests/humanonly_mutations.py` (16, run alone until PR 2 wires
+them into `sabotage.py`).
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 

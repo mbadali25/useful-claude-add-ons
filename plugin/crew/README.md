@@ -188,6 +188,13 @@ not re-paid on every delegation. The test is: *could a command decide this?*
 Worked examples ship in `skills/crew-setup/examples/` — a Terraform
 `CLAUDE.md` and the matching `verify.json`.
 
+**The Stop gate keeps the hook's clock (since 1.3.0).** It picks rules from their prices
+inside `verify.stopBudgetSeconds`, and before each rule it also checks the time left before the
+Stop hook kills it: a rule that would not fit is deferred by name (`deferred: would pass the hook
+deadline`) and the turn is not recorded as verified. Timings and the log are saved as the run goes,
+so a run that is killed anyway prices the rule it was running for the next turn, and a killed run's
+lock no longer blocks the next one. The diff base is `origin/<default>` when that ref exists.
+
 **Fill in the `CLAUDE.md`.** The template leaves blanks on purpose: build and test commands, where the entry point lives, which directories are off limits, and the landmine that breaks every time someone touches it. Thirty lines beats three hundred, because every line is re-read on every delegation.
 
 ---
@@ -414,10 +421,11 @@ Parallelism scales on independent work units, not job titles.
 | `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | Only for a repository crew 0.20 set up: one-time move of tickets and tracker caches to `.work/tickets/<id>/` and `metrics.md` to `metrics.jsonl`, plus `.crew/crew.json`, a schema-1 record of the old config; `.crew/config.json` stays and every gate, guard and `/crew:config` keeps reading it (the context hook, resume and the diagram commands read `.crew/crew.json` first when it exists, so after a migrate a `memory`, `context` or `docs` setting is changed in both files); previews first, backs up, applies atomically, rolls back; a pre-0.20 config (no schema, or 1-6) is upgraded to the current schema first, in the same backup and rollback |
 | `/crew:config [--show\|--models]` | Show where every setting comes from; with no argument, the menu that sets the machine or repo config from a list and deletes the repo config with a backup — see §11 |
 | `/crew:config-setup` | The `/crew:config` menu under its own name — see §11 |
+| `/crew:confirm-config <change_id>` | Confirm a sensitive config change — a `humanOnly.approve` or `humanOnly.promoteMarker` opt-out proposed with `crew_confirm_config.py propose` — by typing it twice, in two prompts, within 15 minutes; user-only. **crew 1.3.9: no hook records the confirmation yet and no hook reads `humanOnly`, so nothing changes** — the rules and what is still to land are in `CONFIG.md` |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
-38 commands.<!-- claim: plugin-commands:crew -->
+39 commands.<!-- claim: plugin-commands:crew -->
 
 ### Agents
 
