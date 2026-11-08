@@ -20,7 +20,7 @@ import json
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
-from _train_base import TRAIN_BASE, seed_train_base
+from _train_base import TRAIN_BASE
 import test_promote_gate_effective_tree as tree
 from test_promote_gate_effective_tree import _git
 

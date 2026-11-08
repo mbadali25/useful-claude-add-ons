@@ -110,8 +110,19 @@ def train_base_sha(tree, sha, deadline):
     parent. None - never a guess - when git cannot answer, there is no base
     branch, or there is no parent; the caller then keeps review required."""
     import scope_base  # noqa: E402  pylint: disable=import-outside-toplevel
+    real_git_out = scope_base.crew_common.git_out
+
+    def bounded_git_out(root, *args):
+        _left(deadline)  # past the deadline: CouldNotTell, so no further probe runs
+        return real_git_out(root, *args)
+
     try:
-        ref, problem = scope_base.base_branch(tree)
+        _left(deadline)
+        scope_base.crew_common.git_out = bounded_git_out
+        try:
+            ref, problem = scope_base.base_branch(tree)
+        finally:
+            scope_base.crew_common.git_out = real_git_out
         if problem or not ref:
             return None
         git = crew_common.require_tool("git")

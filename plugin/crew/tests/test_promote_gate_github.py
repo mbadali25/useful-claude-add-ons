@@ -16,7 +16,7 @@ import json
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
-from _train_base import TRAIN_BASE, seed_train_base
+from _train_base import TRAIN_BASE
 import crew_ghdeploy
 from test_promote_gate_literal_match import FLAVOURS, Repo, _blocked_as, _git, run_gate
 
