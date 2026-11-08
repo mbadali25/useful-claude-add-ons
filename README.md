@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.2.108**: The allowCliApproval refusal append is guarded (round 3 review of #701). `crew` 1.2.108: the hand-edit hint appended to the `scope.allowCliApproval` refusal is skipped when that entry is absent, so the sabotage harness can delete the entry without an import-time KeyError.
-- **crew 1.2.107**: The approval listing covers the risk policy and says which file to edit (round 2 review of #701). `crew` 1.2.107: a refused `approve` under `autopilot.approval: risk` now also lists the spec's own risk (`risk: med`, or no risk header) as an unmet line with what the policy needs (`risk: low`, or `approval: self`), so the owner sees every blocker at once. Lines for `autopilot.approval` and `autopilot.mode` name which file holds which value (the repo `.crew/config.json` or the machine-global file, with its path) and which one to edit, and an unreadable file is named by its own path, not always the repo's.
+- **crew 1.2.119**: The guards' allow path starts no helper processes in bash. `crew` 1.2.119: cloud-guard, env-guard and promote-gate clear a command that deploys nothing with one python and no `tr`, `cut`, `dirname`, `uname`, `cygpath`, `date`, `jq` or `git` process from bash, so several lanes running at once no longer time the guards out on Git Bash, where each process start is an MSYS fork; every decision is unchanged.
+- **crew 1.2.113**: Crew's tests clear an inherited CREW_PYTHON. `crew` 1.2.113: test-only; crew's suite no longer goes red when it runs from a crew-hooked session.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -9,6 +9,35 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.2.119: the guards' allow path starts no helper processes in bash
+
+- **Summary.** `crew` 1.2.119: cloud-guard, env-guard and promote-gate clear a command that deploys nothing with one python and no `tr`, `cut`, `dirname`, `uname`, `cygpath`, `date`, `jq` or `git` process from bash, so several lanes running at once no longer time the guards out on Git Bash, where each process start is an MSYS fork; every decision is unchanged.
+- Developed as 1.2.115, the version the new code comments and tests name. Re-bumped to 1.2.118 after merging main's 1.2.113: the version-drift check measures from the commit that set the version, main's test changes arrived after it, and 1.2.116 / 1.2.117 are claimed by open PRs.
+- 1.2.119 (CI of #713): `test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout` slows each python start by 1.5s instead of 1.8s. The fast path is one more interpreter start before a deploy reaches the full gate, so eight starts of 1.8s left a CI runner no time to reach the hung receipt check (the case's own precondition); 8 x 1.5s is the 12s that 7 x 1.8s was. What it proves is unchanged. Two lint findings in the new tests are fixed.
+- `_common.sh`: `crew_strip_cr` is a parameter expansion; the CREW_PYTHON check (identical in `crew_py`, `crew_py_strict` and role-write-guard.sh) converts `C:\..` to `/c/..` by hand and asks `cygpath -u` only when that names no executable file (Cygwin); `crew_native_path` reads `$OSTYPE` instead of `uname -s`, passes a mixed `D:/..` path through, converts `/d/..` by hand when both spellings name the same file (`-ef`), and bounds the remaining `cygpath -m` with `timeout 5` (orphaned `cygpath -m` processes were measured spinning on a core for 30 minutes); `crew_py_script` can assign into a variable instead of printing.
+- cloud-guard.sh and env-guard.sh: `$DIR` from `${BASH_SOURCE[0]%/*}` when absolute, and python reads the payload from stdin itself (no `INPUT=$(cat)` / `printf |`). promote-gate.sh: the same `$DIR`, the clock from printf's `%(%s)T` (date(1) on an older bash), and a new allow fast path, `_promote_fast.py`, which exits 99 only when the map is committed as it is (raw or CRLF-to-LF bytes hash to HEAD's blob), the command is plain ASCII that MSYS argument conversion leaves alone, the containment match (its heredoc read out of promote-gate.sh, not copied) names nothing and refuses nothing, and `_promote_dispatch.decide()` returns nothing; anything else falls through to the full gate unchanged.
+- Tests: `test_guard_spawns.py` (the allow path of each guard starts no helper program and exactly one python, read from `bash -x`; a declared deploy still takes the full gate), `test_promote_fast.py` (must-allow and must-fall-through cases), `test_crew_python_env.py` (a Windows path converted by hand with no cygpath asked), `test_native_script_path.py` (fakes Windows with `OSTYPE` instead of a `uname` stub; mixed paths skip cygpath; bash keeps an inherited `OSTYPE`); seven new fast-path mutations in `promote_tree_mutations.py`, and its deadline anchor follows the new line.
+
+### Fixed — crew 1.2.113: crew's tests clear an inherited CREW_PYTHON
+
+- **Summary.** `crew` 1.2.113: test-only; crew's suite no longer goes red when it runs from a crew-hooked session.
+- `plugin/crew/tests/conftest.py` removes `CREW_PYTHON` for every test (and for the session, before module fixtures spawn). crew-hook.ps1 / crew-hook.sh export it into the dispatcher, so a suite started from a hooked session inherited it, and since 1.2.109 `crew_py` / `crew_py_strict` return a valid one before walking PATH: the python stubs `test_native_script_path.py` and `test_python_probe_signals.py` plant were never reached, 44 cases failed on Linux with it set and passed without.
+- `test_crew_python_env.py` pins the isolation (no ambient `CREW_PYTHON` inside a test) and proves through the shipped `_common.sh`, sourced whole, that an explicitly set valid `CREW_PYTHON` is still returned without running the PATH stub, while an unset, missing or relative one falls back to it.
+- No hook, command or doc changes.
+
+### Fixed — crew 1.2.110: test anchors follow the crew_py_script change (CI of #703)
+
+- **Summary.** `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.
+- `test_native_script_path.py` accepts `crew_py_script` as a helper that wraps a script path (new must-allow and must-flag cases for a bare path); `promote_tree_mutations.py`'s two promote-gate anchors follow the new lines; `.claude/rules/crew.md` is regenerated from the codemap.
+
+### Fixed — crew 1.2.109: shell guards honour CREW_PYTHON and fail closed on a missing helper script
+
+- **Summary.** `crew` 1.2.109: the bash guards reuse the interpreter the hook launcher already ran instead of probing PATH again, which was the slow step that timed Windows guards out, and a guard whose helper script cannot be found now refuses by name instead of making python run the repository directory.
+- `_common.sh` `crew_py` and `crew_py_strict`, and role-write-guard.sh's `_resolve_role_write_python` (byte-identical to `crew_py_strict`, pinned by `test_context_watch_python_resolver.py`): a validated `CREW_PYTHON` is returned first. Valid means an absolute path (Windows `C:\..` is converted with `cygpath -u`), a regular executable file, named `py`/`python`/`python3.x` with or without `.exe`; anything else is ignored and the PATH walk runs as before.
+- New `crew_py_script`: a script path native python can open, or status 1 with nothing printed. promote-gate.sh (four helpers), cloud-guard.sh, env-guard.sh and role-write-guard.sh use it and fail CLOSED with a message naming the missing script, instead of handing python an empty operand (`python3.exe: can't find '__main__' module in '<repo>'`).
+- Not changed: scope-guard.sh, approval-hook.sh and completion-audit.sh get the same wrap in a separate harness-only PR (they are in `HARNESS`); the 3 s / 8 s probe budget is kept (pinned by tests and by the shortest hook timeout, and the launcher's CREW_PYTHON now skips the walk on the hot path); role-write-guard keeps running python every time (a skip could drop audit rows).
+- Tests: `test_crew_python_env.py` (valid POSIX, CRLF and Windows-shaped values returned without a probe; missing, directory, wrong name, relative, empty and non-executable values never returned; fallback to the walk; the three resolver blocks identical; `crew_py_script` allow and block; cloud-guard, env-guard, role-write-guard and promote-gate with the helper removed fail closed and name it, each with a control).
+
 ### Fixed — crew 1.2.108: the allowCliApproval refusal append is guarded (round 3 review of #701)
 
 - **Summary.** `crew` 1.2.108: the hand-edit hint appended to the `scope.allowCliApproval` refusal is skipped when that entry is absent, so the sabotage harness can delete the entry without an import-time KeyError.

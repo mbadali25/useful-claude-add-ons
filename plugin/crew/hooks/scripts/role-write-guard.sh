@@ -61,6 +61,59 @@ _resolve_role_write_python() {
   # twin, 10s) even though every individual probe is bounded. Kept well
   # inside that: the walk gives up and reports "no python" rather than keep
   # trying once this much of the budget is spent.
+  # BEGIN CREW_PYTHON (identical in crew_py, crew_py_strict and role-write-guard.sh)
+  # The dispatcher's launcher already resolved and ran an interpreter, and
+  # exports it as CREW_PYTHON for the guards it starts, so a guard need not
+  # walk PATH and probe again (on Windows each probe is a process tree, and
+  # under load the walk is what timed the guards out). Trusted only after it
+  # is checked: an absolute path (Windows `C:\..` or POSIX), a regular
+  # executable file, named like an interpreter (py / python / python3.x, with
+  # or without .exe, any case). Anything else is ignored and the walk below
+  # runs as before. The variable is only ever consulted here, never executed
+  # unchecked. crew-hook.ps1 exports a Windows path, converted first by hand,
+  # `C:\x\py.exe` -> `/c/x/py.exe` (what cygpath -u answers under Git Bash's
+  # default `/` drive prefix), and with `cygpath -u` only when that names no
+  # executable file (Cygwin, whose drives live under /cygdrive, or a custom
+  # prefix). On Git Bash each fork is an MSYS process start, and this block
+  # used to cost five per guard; `$OSTYPE` cannot tell the two apart (Git
+  # Bash's bash 5.3 reports `cygwin`), so the file itself decides.
+  if [ -n "${CREW_PYTHON:-}" ]; then
+    local _crew_env_py _crew_env_cr=$'\r' _crew_env_d _crew_env_h
+    _crew_env_py=${CREW_PYTHON//$_crew_env_cr/}
+    case "$_crew_env_py" in
+      [A-Za-z]:\\*|[A-Za-z]:/*)
+        _crew_env_d=${_crew_env_py:0:1}
+        _crew_env_h=ABCDEFGHIJKLMNOPQRSTUVWXYZ
+        _crew_env_h=${_crew_env_h%%"$_crew_env_d"*}
+        if [ "${#_crew_env_h}" -lt 26 ]; then
+          _crew_env_d=abcdefghijklmnopqrstuvwxyz
+          _crew_env_d=${_crew_env_d:${#_crew_env_h}:1}
+        fi
+        _crew_env_h=${_crew_env_py:2}
+        _crew_env_h=${_crew_env_h//\\//}
+        _crew_env_h="/$_crew_env_d$_crew_env_h"
+        if { [ ! -f "$_crew_env_h" ] || [ ! -x "$_crew_env_h" ]; } \
+           && command -v cygpath >/dev/null 2>&1; then
+          _crew_env_py=$(cygpath -u -- "$_crew_env_py" 2>/dev/null) || _crew_env_py=""
+        else
+          _crew_env_py=$_crew_env_h
+        fi
+        ;;
+    esac
+    case "$_crew_env_py" in
+      /*)
+        case "${_crew_env_py##*/}" in
+          [Pp][Yy]|[Pp][Yy].[Ee][Xx][Ee]|[Pp][Yy][Tt][Hh][Oo][Nn]|[Pp][Yy][Tt][Hh][Oo][Nn].[Ee][Xx][Ee]|[Pp][Yy][Tt][Hh][Oo][Nn][0-9]*)
+            if [ -f "$_crew_env_py" ] && [ -x "$_crew_env_py" ]; then
+              printf '%s\n' "$_crew_env_py"
+              return 0
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  fi
+  # END CREW_PYTHON
   local _crew_py_strict_deadline=$((SECONDS + 8))
   while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
@@ -393,7 +446,11 @@ PY=$(_resolve_role_write_python) || {
 # twin, where a caller's environment explicitly unsetting these could still
 # reach python; set here too so neither flavour depends on the CALLER never
 # having touched them.
-printf '%s' "$INPUT" | PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$(crew_native_path "$DIR/role_write_guard.py")"
+GUARD_PY=$(crew_py_script "$DIR/role_write_guard.py") || {
+  # An empty script operand would make python run the current directory.
+  _role_write_fallback_decision "$INPUT" "role_write_guard.py is missing or its path could not be resolved (looked in $DIR)"
+}
+printf '%s' "$INPUT" | PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$GUARD_PY"
 status=$?
 
 if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then

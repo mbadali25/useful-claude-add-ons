@@ -775,8 +775,9 @@ def test_peer_opt_ins_in_a_dry_run_run_no_claude_command(box, tmp_path):
 
 
 # The peer-state hooks (busy / idle / waiting) are mcp_tool hooks: an error on every event wherever the MCP
-# server they call is not registered. So the plugin ships none, and deploy writes them only when the hooks
-# AND the server were asked for, into the settings of the scope the server is in (state_hooks.py).
+# server they call is not registered. So the plugin ships none, and deploy writes them with the server
+# (--register-mcp, on by default since 0.2.4; --no-state-hooks opts out), into the settings of the scope
+# the server is in (state_hooks.py).
 
 
 def state_hooks_module():
@@ -814,14 +815,31 @@ def test_peer_writes_the_state_hooks_for_the_user_with_scope_user(box, tmp_path)
     assert hooks.without_state_hooks(json.loads(box.user_settings.read_text(encoding="utf-8"))) == foreign
 
 
-@pytest.mark.parametrize("opt_in", [["--install-hooks"], ["--register-mcp"], ["--register-mcp", "--scope", "user"]])
-def test_peer_writes_no_state_hooks_without_both_opt_ins(box, tmp_path, opt_in):
-    """Hooks alone have no server to call; the server alone was not a request for hooks."""
+def test_peer_writes_the_state_hooks_with_the_server_alone(box, tmp_path):
+    """--register-mcp is enough: the owner's 2026-11-06 default is state reporting ON where the server is."""
+    run = peer_on_tailnet(box, tmp_path, "--register-mcp")
+    assert run.res.returncode == 0, run.text
+    assert state_hooks_module().present(box.project_settings), run.out
+    assert [c for c in run.calls if c[:3] == ["claude", "plugin", "install"]] == []  # the watcher stays opt-in
+
+
+@pytest.mark.parametrize("opt_in", [["--install-hooks"], []])
+def test_peer_writes_no_state_hooks_without_the_server(box, tmp_path, opt_in):
+    """Hooks alone have no server to call: they would be an error on every event."""
     run = peer_on_tailnet(box, tmp_path, *opt_in)
     assert run.res.returncode == 0, run.text
     assert not box.user_settings.exists() and not box.project_settings.exists()
     assert "peer-state hooks to" not in run.out
     assert ("note: the peer-state hooks" in run.out) == (opt_in == ["--install-hooks"])
+
+
+@pytest.mark.parametrize("scope", [[], ["--scope", "user"]])
+def test_peer_no_state_hooks_keeps_the_server_alone(box, tmp_path, scope):
+    run = peer_on_tailnet(box, tmp_path, "--register-mcp", "--no-state-hooks", *scope)
+    assert run.res.returncode == 0, run.text
+    assert [c for c in run.calls if c[:3] == ["claude", "mcp", "add"]]
+    assert not box.user_settings.exists() and not box.project_settings.exists()
+    assert "peer-state hooks to" not in run.out
 
 
 def test_peer_dry_run_names_the_state_hooks_and_writes_none(box, tmp_path):
