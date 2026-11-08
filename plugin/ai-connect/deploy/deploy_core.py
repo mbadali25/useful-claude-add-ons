@@ -30,8 +30,11 @@ APP_HOME = Path(os.environ.get("AI_CONNECT_HOME") or Path.home().joinpath(
     *(("AppData", "Local") if os.name == "nt" else (".local", "share")), "ai-connect"))
 APP = APP_HOME / "app"
 VENV = Path(os.environ.get("AI_CONNECT_VENV") or APP_HOME / "venv")
-# Root needs no sudo, and a machine that runs as root may not have it. The variable is a test seam
-IS_ROOT = os.environ.get("AI_CONNECT_DEPLOY_ROOT") == "1" or getattr(os, "geteuid", lambda: 1000)() == 0
+# Root needs no sudo, and a machine that runs as root may not have it. AI_CONNECT_DEPLOY_ROOT is a test
+# seam: "1" means root, "0" means not root even when the real euid is 0 (so a suite run as root still
+# exercises the sudo branch), anything else or unset keeps the real euid
+_FORCED_ROOT = {"1": True, "0": False}.get(os.environ.get("AI_CONNECT_DEPLOY_ROOT", ""))
+IS_ROOT = _FORCED_ROOT if _FORCED_ROOT is not None else getattr(os, "geteuid", lambda: 1000)() == 0
 
 
 class Failure(Exception):
