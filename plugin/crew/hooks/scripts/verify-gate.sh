@@ -351,6 +351,13 @@ _crew_gate_quiet_flush() {
       [ -z "$_logtmp" ] || rm -f "$_logtmp" 2>/dev/null
     fi
   fi
+  # A split that failed leaves no trustworthy log. gate_progress may already
+  # have written a "RUN NOT FINISHED" copy this run (its own sed worked), and
+  # the line below says "detail: unavailable": remove it so the two agree.
+  if [ "$_split_ok" -eq 0 ] && [ ! -d "$_log" ] && [ -f "$_log" ] \
+     && [ "$(head -n 1 "$_log" 2>/dev/null | cut -c1-34)" = "verify-gate: RUN NOT FINISHED when" ]; then
+    rm -f "$_log" 2>/dev/null
+  fi
   local _detail="unavailable" _body="$_full"
   [ "$_log_ok" -eq 1 ] && { _detail="$_log"; _body="$_plain"; }
   if [ "$CREW_GATE_READY" -eq 0 ]; then

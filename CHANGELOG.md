@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed - crew 1.3.3: the diff-base note is in the detail log, not on stderr
+### Fixed - crew 1.3.4: the diff-base note is in the detail log, not on stderr; a failed buffer split leaves no half-written log
 
-- **Summary.** `crew` 1.3.3: the Stop gate's `diff base: the merge-base of HEAD with ...` note (new in 1.3.0) was written to stderr on every Stop, a clean tree's included; it now goes to `.crew/.verify-gate.log` as 1.3.0 said it would. It carries a commit sha, so the recorded Stop goldens could never match it (CI of #715: `crew-shell-matrix`).
+- **Summary.** `crew` 1.3.4: the Stop gate's `diff base: the merge-base of HEAD with ...` note (new in 1.3.0) was written to stderr on every Stop, a clean tree's included; it now goes to `.crew/.verify-gate.log` as 1.3.0 said it would. It carries a commit sha, so the recorded Stop goldens could never match it (CI of #715: `crew-shell-matrix`).
 
 ### Fixed - crew 1.3.1: pylint findings in the deadline work
 
