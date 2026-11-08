@@ -88,8 +88,9 @@ this rule. For the
 
 **The top-level session stays free to answer the owner and other sessions.** Owner rule, 2026-11-07.
 It only briefs agents, relays their results and answers; it does no task work itself. Independent
-tasks run as parallel agents; cap heavy concurrency at about 2-3 agents on the Windows desktop,
-because crew guards starve under load. ALL communication with other sessions,
+tasks run as parallel agents, up to 20 concurrent subagents per session (owner rule 2026-11-08,
+replacing the earlier 2-3 cap). Each runs its long jobs detached. If guards time out (fork errno 11,
+or the 15-20 s guard caps), reduce lanes rather than disable guards. ALL communication with other sessions,
 outbound sends and condensing inbound messages, goes through one `crew:session-relay` agent kept
 available for the session; the main session never sends to a peer directly.
 
