@@ -559,7 +559,8 @@ def cmd_status(args) -> int:
         except bridge_tls.TlsError as err:
             out(f"  Bridge certificate: UNUSABLE - {err}")
         else:
-            out(f"  Bridge certificate: {'none yet (made at the next Bridge start)' if info is None else _describe(info)}")
+            described = "none yet (made at the next Bridge start)" if info is None else _describe(info)
+            out(f"  Bridge certificate: {described}")
     return EXIT_OK
 
 

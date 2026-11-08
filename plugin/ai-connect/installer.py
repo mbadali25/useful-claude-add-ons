@@ -175,7 +175,6 @@ def pin_own_bridge(config_path: Path = CONFIG_PATH) -> str:
     """
     import bridge_tls  # pylint: disable=import-outside-toplevel  # needs cryptography, the Bridge's dependency
     from config_loader import server_settings  # pylint: disable=import-outside-toplevel
-    import join_codes  # pylint: disable=import-outside-toplevel
     with open(config_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
     settings = server_settings(config)

@@ -231,6 +231,7 @@ def client_context(fingerprint: str) -> ssl.SSLContext:
             super().do_handshake()
             check_pin(self.getpeercert(binary_form=True), pin)
 
+    # pylint: disable-next=abstract-method  # SSLSocket's dup/recvmsg/sendmsg are abstract by design; never called here
     class PinnedSocket(ssl.SSLSocket):  # http.client (join code redemption) wraps through SSLSocket
         def do_handshake(self, block: bool = False) -> None:
             super().do_handshake(block)

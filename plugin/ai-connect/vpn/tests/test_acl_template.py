@@ -1,4 +1,4 @@
-"""acl-template.hujson: parses, and grants peers the Bridge's TCP 9999 (ws://, transition) and 10000 (wss://), nothing else."""
+"""acl-template.hujson: parses, and grants peers the Bridge's TCP 9999 (ws://, transition) and 10000 (wss://) only."""
 import json
 import re
 from pathlib import Path

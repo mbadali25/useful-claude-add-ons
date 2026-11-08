@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.16] - 2026-11-08
+
+Lint only (CI pylint on 0.2.15): two lines over 120 characters, a reimport of `join_codes` in `installer.py`, and `PinnedSocket`'s abstract `SSLSocket` methods. No behaviour change.
+
 ## [0.2.15] - 2026-11-08
 
 TLS with a pinned certificate fingerprint (installer phase 1, part 2). The transition release: the Bridge serves `wss://` and plain `ws://` side by side; **0.3.1 serves `wss://` only**.
