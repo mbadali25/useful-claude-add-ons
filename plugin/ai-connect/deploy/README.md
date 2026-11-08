@@ -135,7 +135,7 @@ up from inside a worktree is moved the same way: its scheduled task is registere
 
 ## Adding the peer: no long-lived secret crosses machines
 
-Since 0.2.6 the short way is two commands and no restart: `ai-connect bridge invite --name
+Since 0.2.11 the short way is two commands and no restart: `ai-connect bridge invite --name
 laptop --host <Bridge VPN IP>` on machine 1 prints a one-time join code, and `ai-connect
 join` on machine 2 redeems it ([ONBOARDING.md](ONBOARDING.md), and the
 [README](../README.md#5-adding-machines-join-codes-and-the-ai-connect-cli)). deploy's own

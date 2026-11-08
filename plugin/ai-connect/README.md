@@ -218,7 +218,7 @@ ai-connect status                      # on any machine: config, token (last 4 o
 
 ## Deploy
 
-`deploy/deploy.sh` (Linux, and macOS for a peer) and `deploy/deploy.ps1` (Windows) do the whole Setup above over Tailscale, one command per machine. Both hand straight to `deploy/deploy.py`, so they run the same steps in the same order and print the same text. [`deploy/README.md`](deploy/README.md) is the runbook for two machines, start to finish. **Adding a machine** after that is `ai-connect bridge invite` and `ai-connect join` ([step 5](#5-adding-machines-join-codes-and-the-ai-connect-cli)); deploy's own `invite` / `join` (Tailscale auth keys) are deprecated since 0.2.6, still work through this release, and go in the next minor one. `list` / `remove` show and take machines off: [`deploy/ONBOARDING.md`](deploy/ONBOARDING.md).
+`deploy/deploy.sh` (Linux, and macOS for a peer) and `deploy/deploy.ps1` (Windows) do the whole Setup above over Tailscale, one command per machine. Both hand straight to `deploy/deploy.py`, so they run the same steps in the same order and print the same text. [`deploy/README.md`](deploy/README.md) is the runbook for two machines, start to finish. **Adding a machine** after that is `ai-connect bridge invite` and `ai-connect join` ([step 5](#5-adding-machines-join-codes-and-the-ai-connect-cli)); deploy's own `invite` / `join` (Tailscale auth keys) are deprecated since 0.2.11, still work through this release, and go in the next minor one. `list` / `remove` show and take machines off: [`deploy/ONBOARDING.md`](deploy/ONBOARDING.md).
 
 ```bash
 # Machine 1, once per tailnet (admin): preview, then apply

@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.2.6] - 2026-11-07
+## [0.2.11] - 2026-11-08
 
 Enrol a machine with one copy-paste code, and revoke one without restarting the Bridge. Installer phase 1 of 2: TLS with a pinned certificate follows in its own release.
 
@@ -20,6 +20,22 @@ Enrol a machine with one copy-paste code, and revoke one without restarting the 
 ### Notes
 - Transport is still plain `ws://` inside the VPN in this release, redemption included. The join sends the code's secret and receives the new peer's permanent token unencrypted: redeem a code over a VPN only; a join code that carries a certificate fingerprint is refused by this client, never redeemed over `ws://`. The next release serves `wss://` beside `ws://` for one release, with a warning, then `wss://` only
 - Settings under `server:` (address, port, limits) are still read once at start; changing one logs that a restart is needed
+
+## [0.2.10] - 2026-11-08
+
+Test only (0.2.8 and 0.2.9 were never released; this folds them in): test_bridge_status[linux] and test_join_with_an_invite_on_linux_runs_tailscale_up_as_root[user] assumed a
+non-root host and failed under uid 0. Their deploy child now runs with os.geteuid() reporting a user (the new
+non_root option on Box.deploy and Phase), so they pass whatever uid the suite runs under. No behaviour change.
+
+## [0.2.7] - 2026-11-08
+
+Lint only (line length) on the 0.2.6 test change; no behaviour change.
+
+## [0.2.6] - 2026-11-08
+
+Test isolation only: the setup and deploy suites ran their child processes in the checkout, so a project-scope
+setup test wrote plugin/ai-connect/.claude/settings.local.json. They now run in the throwaway project, and a
+suite guard fails any test that writes that path. No behaviour change from 0.2.5.
 
 ## [0.2.5] - 2026-11-06
 

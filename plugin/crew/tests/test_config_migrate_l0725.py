@@ -402,7 +402,12 @@ def test_refuses_non_default_dropped_key(tmp_path, capsys, key, value):
     assert f"{key} holds a non-default value" in said.out + said.err
     assert constant in said.out + said.err
     assert f"--accept-dropped {key}" in said.out + said.err
-    assert str(value) not in said.out.replace(constant, "") + said.err
+    # The pytest tmp path is in the output and can hold the value's digits (/pytest-30306/), so
+    # strip the tmp root, both spellings, before looking for the value.
+    shown = said.out.replace(constant, "") + said.err
+    for root_text in (str(tmp_path), os.path.realpath(str(tmp_path)), root):
+        shown = shown.replace(root_text, "")
+    assert str(value) not in shown
 
 
 def test_refuses_every_non_default_dropped_key_at_once_and_names_each(tmp_path, capsys):

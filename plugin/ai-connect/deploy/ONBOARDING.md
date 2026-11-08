@@ -7,7 +7,7 @@ from the plugin's directory (`plugin/ai-connect`). Each one can be run again: a 
 that is already done says `already done` and changes nothing. Add `--dry-run` to see
 every step first; it runs no tool and changes nothing.
 
-> **Since 0.2.6: one join code.** With the new machine already on the VPN, adding it is
+> **Since 0.2.11: one join code.** With the new machine already on the VPN, adding it is
 > two commands, and nothing is restarted:
 >
 > ```bash

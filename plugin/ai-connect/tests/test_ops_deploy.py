@@ -56,7 +56,7 @@ def bridge(request, tmp_path_factory, venv):
                        (config_dir / "observer.token").read_text(encoding="utf-8").strip(),
                        (config_dir / "user.token").read_text(encoding="utf-8").strip()]
         run.second = Phase(box, *args)
-        run.status = Phase(box, "status")
+        run.status = Phase(box, "status", non_root=True)  # ufw is read only as root: a user, whatever the uid
         run.add_peer = Phase(box, *args, "--peer", "desk")
         run.peers_after_add = set(box.config()["auth"]["peers"])
         run.uninstall_dry = Phase(box, "uninstall", "--purge", "--dry-run", *port)
@@ -141,7 +141,7 @@ def test_bridge_status(bridge):
     status = bridge.status
     assert status.res.returncode == 0, status.text
     assert "service: running" in status.out
-    if bridge.target == "linux":  # not root here, and status runs nothing through sudo
+    if bridge.target == "linux":  # run as a user, and status runs nothing through sudo
         assert "firewall: not checked (ufw needs root" in status.out
     else:
         assert f"firewall: rule present for {SUBNET} on port {bridge.port}" in status.out
@@ -673,7 +673,7 @@ def peer(tmp_path_factory, venv):
         run.state = box.state()
         run.client = box.config()["client"]
         run.second = Phase(box, *args, extra_env=key)
-        run.status = Phase(box, "status")
+        run.status = Phase(box, "status", non_root=True)  # ufw is read only as root: a user, whatever the uid
     finally:
         server.close()
     return run
@@ -1042,13 +1042,14 @@ def _sh(box, args):
     if os.name == "nt":  # Git Bash needs its own coreutils (dirname) on PATH
         env["PATH"] = os.pathsep.join([r"C:\Program Files\Git\usr\bin", env["PATH"]])
     return subprocess.run([BASH, str(DEPLOY_DIR / "deploy.sh"), *args], capture_output=True, text=True,
-                          check=False, stdin=subprocess.DEVNULL, env=env, timeout=180)
+                          check=False, stdin=subprocess.DEVNULL, env=env, timeout=180,
+                          cwd=box.project)
 
 
 def _ps1(box, args, tmp_path):
     return subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(DEPLOY_DIR / "deploy.ps1"), *args],
                           capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL, timeout=180,
-                          env=dict(box.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
+                          cwd=box.project, env=dict(box.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
 
 
 @pytest.mark.skipif(not BASH or not PWSH, reason="needs both bash and pwsh at known paths")

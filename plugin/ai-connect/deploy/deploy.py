@@ -1182,7 +1182,7 @@ def decode_invite(code: str) -> dict:
 
 def deprecated(verb: str, instead: str) -> None:
     """One stderr line: deploy invite/join (Tailscale auth keys) give way to ai-connect's join codes."""
-    print(f"deploy {verb}: DEPRECATED since ai-connect 0.2.6 and removed in the next minor release: use "
+    print(f"deploy {verb}: DEPRECATED since ai-connect 0.2.11 and removed in the next minor release: use "
           f"`{instead}` (bin/ai-connect), a one-time join code that also enrols the peer's token. "
           "The tailnet itself stays `deploy tailnet-setup` / vpn/vpn-up.", file=sys.stderr, flush=True)
 
