@@ -30,6 +30,15 @@ logger = logging.getLogger(__name__)
 AUTH_RELOAD_SECONDS = 2.0
 
 
+def _safe_detail(err: Exception) -> str:
+    """What a reload failure may log. A YAML error's message quotes the offending text, and config.yaml holds
+    tokens and hashes: only its line and column. Other errors are this code's own messages."""
+    if isinstance(err, yaml.YAMLError):
+        mark = getattr(err, "problem_mark", None)
+        return f"line {mark.line + 1}, column {mark.column + 1}" if mark else "not valid YAML"
+    return str(err)[:200]
+
+
 def roles_from(settings) -> Roles:
     """The auth table of a ServerSettings; the one place both start and reload build it."""
     return Roles(
@@ -48,6 +57,8 @@ class AuthReloader:
         self.path = Path(path)
         self._readable = True
         self._digest: str | None = None
+        # The digest of a file that failed to build, so a broken config is logged once, not every poll
+        self._failed_digest: str | None = None
         self._static: tuple | None = None
         self._on_static_change = on_static_change
         self.prime()
@@ -90,7 +101,8 @@ class AuthReloader:
         # size within one timestamp tick (coarse file systems) must not be missed,
         # and config.yaml is a few kilobytes
         digest = hashlib.sha256(data).hexdigest()
-        if digest == self._digest:
+        if digest in (self._digest, self._failed_digest):
+            # Unchanged, or the same broken file again: logged once, at its first poll
             return None
         try:
             config = yaml.safe_load(data)
@@ -100,9 +112,11 @@ class AuthReloader:
             roles = roles_from(settings)
         except (ValueError, yaml.YAMLError, AttributeError, TypeError) as err:
             # The digest is not taken: the next edit that fixes the file is tried again
+            self._failed_digest = digest
             logger.error(json.dumps({"event": "auth_reload_failed", "reason": type(err).__name__,
-                                     "detail": str(err)[:200], "kept": "previous auth table"}))
+                                     "detail": _safe_detail(err), "kept": "previous auth table"}))
             return None
+        self._failed_digest = None
         self._digest = digest
         static = self._static_part(settings)
         if self._static is not None and static != self._static and self._on_static_change:

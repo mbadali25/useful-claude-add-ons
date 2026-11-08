@@ -1,8 +1,11 @@
 """ai-connect: enrol machines with one-time join codes and bridge-issued tokens.
 
-    ai-connect bridge invite --name N [--expiry 1h] [--host H] [--out F]
+    ai-connect bridge invite --name N [--expiry 1h] [--allow-long-expiry] [--host H] [--out F]
                                         Bridge machine: a single-use join code for machine N
+                                        (at most 24h; 7d with --allow-long-expiry)
     ai-connect join [<code>]            the new machine: redeem the code, write its client config
+                                        (omit <code> to be asked, hidden: the command line is kept
+                                        in shell history)
     ai-connect join --token-file F --bridge HOST:PORT --name N
                                         the new machine, with a token from `bridge token`
     ai-connect bridge token --name N [--out F]
@@ -20,6 +23,11 @@ not replace them. A token is never printed: output shows its last 4
 characters, and the token itself goes into an owner-only file. A join code is
 printed once, on purpose, by `bridge invite` (or written owner-only with
 --out); it is single use and expires.
+
+The join is plain HTTP in this release: the code's secret goes to the
+Bridge, and the new peer's permanent token comes back, unencrypted. So
+`bridge invite` warns when the address it puts in the code is not loopback
+or Tailscale, and caps a code's life at 24h unless --allow-long-expiry.
 
 Bridge-issued tokens do not expire. `bridge revoke` ends one, and a running
 Bridge closes the peer's live connections within a few seconds (it polls
@@ -82,13 +90,21 @@ def _config_path(args) -> Path:
     return Path(args.config) if args.config else CONFIG_PATH
 
 
+def _reason(err: Exception) -> str:
+    """An error as output may show it. A YAML error names its place only: PyYAML's message quotes the
+    offending line, and config.yaml holds tokens."""
+    if isinstance(err, yaml.YAMLError):
+        return f"not valid YAML ({join_codes.yaml_error_place(err)})"
+    return str(err)
+
+
 def _load(config_path: Path) -> dict:
     if not config_path.exists():
         raise Failure(f"{config_path} not found: run the installer first (install.sh --server / install.cmd)")
     try:
         return join_codes.read_config(config_path)
     except (OSError, ValueError, yaml.YAMLError) as err:
-        raise Failure(f"{config_path} could not be read: {err}") from None
+        raise Failure(f"{config_path} could not be read: {_reason(err)}") from None
 
 
 def _check_name(name: str) -> None:
@@ -101,6 +117,36 @@ def _is_loopback(host: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return host == "localhost"
+
+
+# Tailscale's address ranges: its CGNAT IPv4 block and its IPv6 ULA prefix
+TAILSCALE_NETS = (ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48"))
+# RFC 1918 and IPv6 unique-local: a WireGuard tunnel's or the LAN's, which this cannot tell apart
+PRIVATE_NETS = tuple(ipaddress.ip_network(net) for net in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+                                                           "fc00::/7"))
+
+
+def join_exposure(host: str) -> str | None:
+    """Why a plain-HTTP join to host may cross more than a VPN; None for loopback and Tailscale addresses.
+
+    A private LAN address (RFC 1918, IPv6 ULA) is not exempt: it may be a
+    WireGuard tunnel, or the LAN at large, and this cannot tell which. A host
+    name is not exempt either (except Tailscale's *.ts.net): where it resolves
+    is unknown here, and unknown is not safe.
+    """
+    if host.lower().rstrip(".").endswith(".ts.net"):
+        return None
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        if host == "localhost":
+            return None
+        return f"'{host}' is a host name, and whether it resolves to a VPN address cannot be told here"
+    if address.is_loopback or any(address in net for net in TAILSCALE_NETS):
+        return None
+    if any(address in net for net in PRIVATE_NETS):
+        return f"{host} is a private address: fine for a WireGuard tunnel, not for the LAN at large"
+    return f"{host} is neither loopback nor a Tailscale address (100.64.0.0/10, fd7a:115c:a1e0::/48)"
 
 
 def _bridge_address(config: dict, host: str | None, port: int | None) -> tuple[str, int]:
@@ -137,6 +183,10 @@ def cmd_bridge_invite(args) -> int:
         expiry = join_codes.parse_expiry(args.expiry)
     except ValueError as err:
         raise Failure(str(err), EXIT_USAGE) from None
+    if expiry > join_codes.SAFE_MAX_EXPIRY_SECONDS and not args.allow_long_expiry:
+        raise Failure(f"--expiry {args.expiry} is longer than 24h; the join is plain HTTP in this release, so a "
+                      "code that lives longer is longer to intercept. Pass --allow-long-expiry to allow up to 7d",
+                      EXIT_USAGE)
     config_path = _config_path(args)
     config = _load(config_path)
     host, port = _bridge_address(config, args.host, args.port)
@@ -144,6 +194,14 @@ def cmd_bridge_invite(args) -> int:
         raise Failure(f"peer '{args.name}' already exists; revoke it first (ai-connect bridge revoke --name "
                       f"{args.name})")
     out(f"=== ai-connect bridge invite '{args.name}'{' (dry run)' if args.dry_run else ''} ===")
+    exposure = join_exposure(host)
+    if exposure:
+        out(f"  WARNING: the join is plain HTTP in this release: the code's secret goes to {host}:{port}, and "
+            f"the permanent token for '{args.name}' comes back, unencrypted. {exposure}. Hand out this code only "
+            "where the path to the Bridge is a VPN.")
+    if expiry > join_codes.SAFE_MAX_EXPIRY_SECONDS:
+        out(f"  WARNING: --allow-long-expiry: this code works for {args.expiry}, longer than the 24h cap. Revoke "
+            f"it with `ai-connect bridge revoke --name {args.name}` if it is not used soon.")
     where = f"write it owner-only to {args.out}" if args.out else "show it once"
     what = f"a single-use join code for '{args.name}' (Bridge {host}:{port}, expires in {args.expiry})"
     if args.dry_run:
@@ -152,8 +210,8 @@ def cmd_bridge_invite(args) -> int:
         return EXIT_OK
     try:
         code = join_codes.create_invite(config_path, args.name, expiry, host, port)
-    except (ValueError, TimeoutError, OSError) as err:
-        raise Failure(str(err)) from None
+    except (ValueError, TimeoutError, OSError, yaml.YAMLError) as err:
+        raise Failure(_reason(err)) from None
     out(f"  done: {what}")
     out("  WARNING: until it is used or expires, whoever holds this code can join as "
         f"'{args.name}'. Hand it over a private channel.")
@@ -164,7 +222,8 @@ def cmd_bridge_invite(args) -> int:
     else:
         out("  The code, shown once:")
         print(f"  {code}", flush=True)  # the one deliberate secret on stdout: the admin asked for it
-        out(f"  On '{args.name}': ai-connect join, and paste it at the prompt (or pass it as the argument)")
+        out(f"  On '{args.name}': ai-connect join, and paste it at the hidden prompt (or --code-file F, or "
+            "AI_CONNECT_JOIN_CODE). Not on the command line: shell history and the process list keep it")
     return EXIT_OK
 
 
@@ -224,7 +283,7 @@ def cmd_bridge_revoke(args) -> int:
             removed = join_codes.revoke_peer_locked(config_path, args.name)
             ended = join_codes.cancel_invites(config_path, args.name)
         except (ValueError, OSError, yaml.YAMLError) as err:
-            raise Failure(str(err)) from None
+            raise Failure(_reason(err)) from None
     if issued.exists():
         issued.unlink()
         out(f"  done: deleted {issued}")
@@ -449,9 +508,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     bridge = verbs.add_parser("bridge", help="on the Bridge machine: invite, token, revoke, list")
     bridge_verbs = bridge.add_subparsers(dest="bridge_verb", required=True)
-    invite = bridge_verbs.add_parser("invite", help="a single-use join code for one new machine")
+    invite = bridge_verbs.add_parser(
+        "invite", help="a single-use join code for one new machine",
+        description="A single-use join code for one new machine. Exposure in this release: the join is plain "
+                    "HTTP. The new machine sends the code's secret to the Bridge (header X-AI-Connect-Join) and "
+                    "the Bridge answers with that machine's permanent peer token, both unencrypted, so whoever "
+                    "can watch the path between them can take the token. Put a VPN address in the code: this "
+                    "warns when the address is not loopback or Tailscale (100.64.0.0/10, fd7a:115c:a1e0::/48, "
+                    "*.ts.net), a private LAN address included. TLS with a pinned certificate follows.")
     invite.add_argument("--name", required=True, help="the new machine's peer name")
-    invite.add_argument("--expiry", default="1h", help="how long the code works: 1h (default), 30m, 2d; at most 7d")
+    invite.add_argument("--expiry", default="1h",
+                        help="how long the code works: 1h (default), 30m, 2h; at most 24h, or 7d with "
+                             "--allow-long-expiry")
+    invite.add_argument("--allow-long-expiry", action="store_true",
+                        help="allow an --expiry past 24h (up to 7d), with a warning")
     invite.add_argument("--host", help="the Bridge address the code carries (default: from config.yaml)")
     invite.add_argument("--port", type=int, help="the Bridge port the code carries (default: server.port)")
     invite.add_argument("--out", help="write the code owner-only to this file instead of showing it")
@@ -467,7 +537,9 @@ def build_parser() -> argparse.ArgumentParser:
     listing.set_defaults(func=cmd_bridge_list, dry_run=False)
 
     join = verbs.add_parser("join", help="this machine: redeem a join code (or a token file) and write its config")
-    join.add_argument("code", nargs="?", help="the join code (omit to be asked for it, hidden)")
+    join.add_argument("code", nargs="?",
+                      help="the join code. The weakest form: shell history and the process list keep it. Prefer "
+                           "omitting it (asked for, hidden), --code-file or AI_CONNECT_JOIN_CODE")
     join.add_argument("--code-file", help="read the code from this file (deleted once used)")
     join.add_argument("--token-file", help="use a token from `bridge token` instead of a code")
     join.add_argument("--bridge", help="with --token-file: the Bridge's HOST:PORT")

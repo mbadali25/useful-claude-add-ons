@@ -7,7 +7,12 @@ file lives under tmp_path; nothing touches ~/.config.
 """
 
 import json
+import os
+import subprocess
+import sys
 import threading
+import time
+from pathlib import Path
 
 import pytest
 import yaml
@@ -16,6 +21,7 @@ import installer
 import join_codes as jc
 
 HOST, PORT = "100.64.0.7", 9999
+PLUGIN = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
@@ -140,6 +146,76 @@ def test_concurrent_double_redemption_exactly_one_wins(bridge_config):
     assert not errors
     assert len(won) == 1 and len(refused) == racers - 1
     assert peers(bridge_config)["laptop"] == jc.sha256_hex(won[0])
+
+
+# Each racer is its own process, as the Bridge and an admin's command are: it waits for the go file, then
+# runs its steps back to back. argv: role, config path, go file, then the steps
+RACER = r"""
+import os, sys, time
+from pathlib import Path
+import installer, join_codes
+role, config, go, steps = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4:]
+while not go.exists():
+    time.sleep(0.001)
+for step in steps:
+    if role == "redeem":
+        secret, name = step.split(":")
+        join_codes.redeem(config, bytes.fromhex(secret), name)
+    else:
+        verb, name = step.split(":")
+        (installer.revoke_peer if verb == "revoke" else installer.add_peer)(name, config)
+"""
+
+
+def test_legacy_writers_and_redemption_in_parallel_lose_nothing(bridge_config, tmp_path):
+    """installer.py revoke-peer / add-peer racing the Bridge's redemptions: every change of both survives.
+
+    Without join_codes.auth_lock in installer.py's writers, one side's read-modify-write lands on a stale
+    read and writes a revoked peer back, or drops a peer just redeemed or added.
+    """
+    rounds = 30
+    config = yaml.safe_load(bridge_config.read_text(encoding="utf-8"))
+    config["auth"]["peers"].update({f"old-{i}": jc.sha256_hex(f"{i:064d}") for i in range(rounds)})
+    jc.write_config(bridge_config, config)
+    redeems = []
+    for i in range(rounds):
+        code = jc.decode(jc.create_invite(bridge_config, f"joined-{i}", 3600, HOST, PORT))
+        redeems.append(f"{code.secret.hex()}:joined-{i}")
+    legacy = [step for i in range(rounds) for step in (f"revoke:old-{i}", f"add:added-{i}")]
+    go = tmp_path / "go"
+    env = {**os.environ, "PYTHONPATH": str(PLUGIN) + os.pathsep + os.environ.get("PYTHONPATH", "")}
+    # Not `with`: both must be running before the go file appears; communicate() below reaps each
+    racers = [subprocess.Popen([sys.executable, "-c", RACER, role, str(bridge_config), str(go), *steps],  # pylint: disable=consider-using-with
+                               cwd=str(PLUGIN), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                               text=True)
+              for role, steps in (("redeem", redeems), ("legacy", legacy))]
+    time.sleep(1.0)  # both imported and waiting
+    go.write_text("", encoding="utf-8")
+    for racer in racers:
+        _out, err = racer.communicate(timeout=120)
+        assert racer.returncode == 0, err
+    final = set(peers(bridge_config))
+    assert not {f"old-{i}" for i in range(rounds)} & final, "a revoked peer was written back"
+    assert {f"joined-{i}" for i in range(rounds)} <= final, "a redeemed peer was dropped"
+    assert {f"added-{i}" for i in range(rounds)} <= final, "an added peer was dropped"
+    assert "existing" in final
+
+
+def test_auth_lock_is_reentrant_in_one_thread_and_exclusive_across_threads(bridge_config):
+    entered = threading.Event()
+    with jc.auth_lock(bridge_config.parent):
+        with jc.auth_lock(bridge_config.parent):  # a locked caller calling a locking writer
+            pass
+
+        def other():
+            with jc.auth_lock(bridge_config.parent, timeout=5):
+                entered.set()
+
+        thread = threading.Thread(target=other)
+        thread.start()
+        assert not entered.wait(0.3), "another thread got in while this one held the lock"
+    thread.join(10)
+    assert entered.is_set()
 
 
 def test_expired_code_is_refused_with_the_same_answer(bridge_config):

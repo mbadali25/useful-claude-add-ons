@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import websockets
+import yaml
 from websockets.asyncio.server import Server, ServerConnection
 from websockets.http11 import Request, Response
 from websockets.protocol import State
@@ -260,7 +261,9 @@ class BridgeServer:
             self._join_failures.failed(ip)
             log_refusal("join_refused", ip=ip, name=name[:64])
             return connection.respond(HTTPStatus.FORBIDDEN, join_codes.GENERIC_REFUSAL + "\n")
-        except (OSError, TimeoutError, ValueError) as err:
+        except (OSError, TimeoutError, ValueError, yaml.YAMLError) as err:
+            # yaml.YAMLError: config.yaml broken between redeem's check and the peer's write. Logged by
+            # type only (its message quotes the file, which holds tokens)
             logger.error(json.dumps({"event": "join_failed", "ip": ip, "error": type(err).__name__}))
             return connection.respond(HTTPStatus.SERVICE_UNAVAILABLE, "The Bridge could not record the join\n")
         # Into the table now rather than at the next poll, so the new peer can connect at once
