@@ -37,6 +37,16 @@ def no_network(network_guard):  # pylint: disable=redefined-outer-name,unused-ar
     assert not opened, f"this test opened a non-loopback socket: {opened!r}"
 
 
+@pytest.fixture(autouse=True)
+def checkout_gets_no_project_settings():
+    """No test may write project-scope settings into this checkout: a child started without cwd= inherits
+    pytest's cwd (plugin/ai-connect) and `--scope project` then lands .claude/ in the real tree."""
+    stray = PLUGIN / ".claude"
+    existed = stray.exists()
+    yield
+    assert existed or not stray.exists(), f"a test wrote {stray}; give its subprocess cwd=<throwaway project>"
+
+
 @pytest.fixture(scope="session")
 def venv(tmp_path_factory):
     """A venv without pip whose site-packages point at this interpreter's: deps import, nothing installs."""
