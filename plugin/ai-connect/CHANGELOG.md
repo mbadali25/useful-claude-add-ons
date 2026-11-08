@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.10] - 2026-11-08
+
+Test only (0.2.8 and 0.2.9 were never released; this folds them in): test_bridge_status[linux] and test_join_with_an_invite_on_linux_runs_tailscale_up_as_root[user] assumed a
+non-root host and failed under uid 0. Their deploy child now runs with os.geteuid() reporting a user (the new
+non_root option on Box.deploy and Phase), so they pass whatever uid the suite runs under. No behaviour change.
+
 ## [0.2.7] - 2026-11-08
 
 Lint only (line length) on the 0.2.6 test change; no behaviour change.

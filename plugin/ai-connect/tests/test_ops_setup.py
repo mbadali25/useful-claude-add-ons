@@ -28,7 +28,7 @@ import firewall_state  # noqa: E402  pylint: disable=wrong-import-position,impor
 class SetupBox(Box):
     """A fake machine whose `deploy` is setup: Phase(box, ...) then runs peer_setup.py."""
 
-    def deploy(self, *args, extra_env=None):
+    def deploy(self, *args, extra_env=None, non_root=False):  # pylint: disable=unused-argument
         return subprocess.run([sys.executable, str(SETUP), *args], capture_output=True, text=True, check=False,
                               stdin=subprocess.DEVNULL, env=dict(self.env, **(extra_env or {})), timeout=180,
                               cwd=self.project)
