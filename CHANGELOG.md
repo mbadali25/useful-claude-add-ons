@@ -9,6 +9,10 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Changed - crew 1.3.10: version follows the merge of main's crew 1.3.6 into the opt-out branch
+
+- **Summary.** `crew` 1.3.10: no behaviour change beyond 1.3.9; the version moves past main's 1.3.6 so the drift check counts the merged-in crew changes. The human-only opt-out settings and `/crew:confirm-config` are as described under 1.3.9.
+
 ### Added — crew 1.3.9: the human-only opt-out settings and their double confirmation (inert until the hook wiring lands)
 
 - **Summary.** `crew` 1.3.9: two new settings, `humanOnly.approve` and `humanOnly.promoteMarker`, record the owner's opt-out of `/crew:approve` and the production promote marker being human-only, behind a double confirmation; no hook reads them yet, so nothing changes until a later harness release wires them in.
