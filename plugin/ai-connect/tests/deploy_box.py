@@ -145,10 +145,12 @@ class Box:
                         FAKE_KEYRING_FILE=str(tmp_path / "keyring.json"),
                         AI_CONNECT_OAUTH_FILE=str(self.home / ".config" / "ai-connect" / "tailscale-oauth.json"))
         for name in ("TS_API_TOKEN", "TS_OAUTH_CLIENT_ID", "TS_OAUTH_CLIENT_SECRET",
-                     "AI_CONNECT_DEPLOY_PLATFORM", "AI_CONNECT_DEPLOY_ROOT", "AI_CONNECT_HOME",
+                     "AI_CONNECT_DEPLOY_PLATFORM", "AI_CONNECT_HOME",
                      # Claude Code's settings are then the fake HOME's, never the real ones of whoever runs this
                      "CLAUDE_CONFIG_DIR"):
             self.env.pop(name, None)
+        # Not root unless a test passes AI_CONNECT_DEPLOY_ROOT=1: the suite must not depend on who runs it (#609)
+        self.env["AI_CONNECT_DEPLOY_ROOT"] = "0"
         # Never the real Tailscale API: a closed loopback port unless a test passes its fake's address
         self.env["TS_API_BASE"] = "http://127.0.0.1:9/api/v2"
         self.target = target

@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.2.11] - 2026-11-08
+## [0.2.12] - 2026-11-08
 
 Enrol a machine with one copy-paste code, and revoke one without restarting the Bridge. Installer phase 1 of 2: TLS with a pinned certificate follows in its own release.
 
@@ -20,6 +20,12 @@ Enrol a machine with one copy-paste code, and revoke one without restarting the 
 ### Notes
 - Transport is still plain `ws://` inside the VPN in this release, redemption included. The join sends the code's secret and receives the new peer's permanent token unencrypted: redeem a code over a VPN only; a join code that carries a certificate fingerprint is refused by this client, never redeemed over `ws://`. The next release serves `wss://` beside `ws://` for one release, with a warning, then `wss://` only
 - Settings under `server:` (address, port, limits) are still read once at start; changing one logs that a restart is needed
+## [0.2.11] - 2026-11-08
+
+Deploy test seam only; no behaviour change for a normal run.
+
+### Changed
+- `AI_CONNECT_DEPLOY_ROOT=0` now means "not root" even when the real euid is 0 (`1` still means root; unset keeps the euid check). The deploy test box sets it to `0`, so `tests/` passes when run as root (#609). Complements 0.2.10's per-test `non_root` option rather than replacing it
 
 ## [0.2.10] - 2026-11-08
 

@@ -35,7 +35,7 @@ install it when it is missing. On Debian and Ubuntu that is Tailscale's apt repo
 with its key in a `signed-by` keyring; elsewhere on Linux, and for a release the
 repository does not carry, Tailscale's install script; any other apt failure (a held
 dpkg lock, no network) stops instead of falling back. Every command is printed before
-it runs, as root nothing goes through `sudo`, and deploy says what is about to ask for
+it runs, as root nothing goes through `sudo` (tests force either branch with `AI_CONNECT_DEPLOY_ROOT=1` or `0`), and deploy says what is about to ask for
 you (sudo's password, a UAC prompt, a browser login).
 
 Tailscale takes no routes, no exit node and no DNS on either machine, so a VPN client
@@ -135,7 +135,7 @@ up from inside a worktree is moved the same way: its scheduled task is registere
 
 ## Adding the peer: no long-lived secret crosses machines
 
-Since 0.2.11 the short way is two commands and no restart: `ai-connect bridge invite --name
+Since 0.2.12 the short way is two commands and no restart: `ai-connect bridge invite --name
 laptop --host <Bridge VPN IP>` on machine 1 prints a one-time join code, and `ai-connect
 join` on machine 2 redeems it ([ONBOARDING.md](ONBOARDING.md), and the
 [README](../README.md#5-adding-machines-join-codes-and-the-ai-connect-cli)). deploy's own
