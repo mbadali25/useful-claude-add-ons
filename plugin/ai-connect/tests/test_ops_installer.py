@@ -15,6 +15,7 @@ import pytest
 import yaml
 
 import installer
+import join_codes as jc
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -366,8 +367,22 @@ def test_secret_files_are_written_whole_then_moved_into_place(config_path, tmp_p
     names = [name for name, _, _ in replaced]
     assert "observer.token" in names and "config.yaml" in names
     assert (dict((n, t) for n, _, t in replaced))["observer.token"] == token
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["config.yaml", "observer.token", "user.token"] or \
-        not [p for p in tmp_path.iterdir() if p.name.startswith(".")]  # no temp file left
+    # No temp file left. .auth.lock is join_codes.auth_lock's lock file, which every config writer takes
+    assert not [p for p in tmp_path.iterdir() if p.name.startswith(".") and p.name != jc.LOCK_FILE]
+
+
+def test_a_yaml_error_names_its_place_never_the_text(tmp_path, capsys):
+    """PyYAML's message can quote a token ("found undefined alias '<token>'"): only line and column go out."""
+    secret = "7e" * 32
+    path = tmp_path / "config.yaml"
+    path.write_text(f"auth: {{peers: *{secret}}}\n", encoding="utf-8")
+    for step in (lambda: installer.revoke_peer("x", path), lambda: installer.add_peer("x", path),
+                 lambda: installer.check_config(path)):
+        with pytest.raises(SystemExit) as stopped:
+            step()
+        assert secret[:16] not in str(stopped.value.code) and "line 1, column" in str(stopped.value.code)
+    captured = capsys.readouterr()
+    assert secret[:16] not in captured.out + captured.err
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
