@@ -35,7 +35,7 @@ install it when it is missing. On Debian and Ubuntu that is Tailscale's apt repo
 with its key in a `signed-by` keyring; elsewhere on Linux, and for a release the
 repository does not carry, Tailscale's install script; any other apt failure (a held
 dpkg lock, no network) stops instead of falling back. Every command is printed before
-it runs, as root nothing goes through `sudo`, and deploy says what is about to ask for
+it runs, as root nothing goes through `sudo` (tests force either branch with `AI_CONNECT_DEPLOY_ROOT=1` or `0`), and deploy says what is about to ask for
 you (sudo's password, a UAC prompt, a browser login).
 
 Tailscale takes no routes, no exit node and no DNS on either machine, so a VPN client

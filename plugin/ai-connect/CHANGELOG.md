@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.11] - 2026-11-08
+
+Deploy test seam only; no behaviour change for a normal run.
+
+### Changed
+- `AI_CONNECT_DEPLOY_ROOT=0` now means "not root" even when the real euid is 0 (`1` still means root; unset keeps the euid check). The deploy test box sets it to `0`, so `tests/` passes when run as root (#609). Complements 0.2.10's per-test `non_root` option rather than replacing it
+
 ## [0.2.10] - 2026-11-08
 
 Test only (0.2.8 and 0.2.9 were never released; this folds them in): test_bridge_status[linux] and test_join_with_an_invite_on_linux_runs_tailscale_up_as_root[user] assumed a
