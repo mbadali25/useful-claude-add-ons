@@ -115,13 +115,19 @@ def _plant_slow_guard(scripts):
         handle.write("#!/usr/bin/env bash\nsleep 30\n")
 
 
+# On a loaded runner the python probe can exhaust the whole deadline during startup,
+# before the planted fault is reached; the hook still fails closed (exit 2) with this reason.
+_WHOLE_DEADLINE = "the python probe used the whole deadline"
+
 FAULTS = {
     "exception-in-main": (_plant_exception, "dispatcher error RuntimeError: boom", lambda flavour: {}),
     "syntax-error-before-main": (_plant_syntax_error, "crew_hook.py failed (exit 1)", lambda flavour: {}),
     "table-script-missing": (_plant_missing_script, "scope-guard.sh is missing", lambda flavour: {}),
-    "guard-past-its-timeout": (_plant_slow_guard, ("scope-guard.sh timed out", "ran past the deadline", "failed (exit"),
+    "guard-past-its-timeout": (_plant_slow_guard, ("scope-guard.sh timed out", "ran past the deadline", "failed (exit",
+                                _WHOLE_DEADLINE),
                                lambda flavour: _deadline(2.5, flavour)),
-    "dispatcher-hangs-before-main": (_plant_hang_before_main, ("failed (exit 137)", "ran past the deadline"),
+    "dispatcher-hangs-before-main": (_plant_hang_before_main, ("failed (exit 137)", "ran past the deadline",
+                                      _WHOLE_DEADLINE),
                                      lambda flavour: _deadline(2.0, flavour)),
 }
 

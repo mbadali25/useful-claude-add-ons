@@ -36,8 +36,11 @@ server:
 auth:
   # Bridge machine only: SHA-256 of every known peer's token, keyed by peer
   # name. A token registers (and reads the messages of) its own name only.
-  # installer.py add-peer/revoke-peer maintain this; the raw token is never
-  # written here, only its hash. "{}" = no peer can connect.
+  # `ai-connect bridge invite`/`join` (one-time join codes), `ai-connect
+  # bridge token`/`revoke` and installer.py add-peer/revoke-peer maintain
+  # this; the raw token is never written here, only its hash. A running
+  # Bridge re-reads this section every 2 seconds: a change needs no restart,
+  # and a revoked peer's connections are closed. "{}" = no peer can connect.
   peers: {}
   # Bridge machine only: also accept the pre-2.3 single shared secret, set
   # as auth.token: "<secret>", from any connection claiming any name that
@@ -100,7 +103,7 @@ logging:
 
 # Optional, and so left out (the installer requires every key above):
 # whether install.sh, installer.py, deploy and setup may run as root on Linux
-# or macOS. Left out = as before 0.2.7: root goes ahead, silently. true =
+# or macOS. Left out = as before 0.2.13: root goes ahead, silently. true =
 # allowed, with a one-line warning, and the config directory is closed to
 # 0700 with every file in it 0600 afterwards; a root whose HOME or user name
 # is another user's (sudo -E) is refused. false = root is refused. The

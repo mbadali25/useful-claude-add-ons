@@ -59,7 +59,7 @@ for arg in "$@"; do
     esac
 done
 
-# Root: nothing before 0.2.7 refused it, and with no switch set nothing does now (as before, every
+# Root: nothing before 0.2.13 refused it, and with no switch set nothing does now (as before, every
 # root-only step still goes through sudo). AI_CONNECT_ALLOW_ROOT=0 or install.allow_root: false
 # refuse it; --allow-root, =1 or true allow it with a warning, without sudo or a polkit rule
 SUDO=sudo

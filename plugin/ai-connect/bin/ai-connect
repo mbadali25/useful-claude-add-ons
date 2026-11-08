@@ -1,0 +1,45 @@
+#!/bin/sh
+# ai-connect: the console entry point (Linux, macOS, Git Bash). See ai_connect_cli.py.
+# Link it onto PATH, e.g.: ln -s "<plugin>/bin/ai-connect" ~/.local/bin/ai-connect
+#
+# The Python: the plugin's own venv first (install.sh / install.cmd make it), else
+# python3, python or py -3 from PATH. Git Bash ships without python3, so every
+# candidate is tried, and when none works this says so on stderr and exits 127:
+# never a silent success. Shell built-ins only up to that point.
+
+self=$0
+# Follow the ~/.local/bin symlink back to the plugin
+while [ -L "$self" ] && command -v readlink >/dev/null 2>&1; do
+    target=$(readlink "$self")
+    case $target in
+        /*) self=$target ;;
+        *) self=${self%/*}/$target ;;
+    esac
+done
+case $self in
+    */*) here=${self%/*} ;;
+    *) here=. ;;
+esac
+plugin=$(cd "$here/.." && pwd -P)
+cli="$plugin/ai_connect_cli.py"
+
+works() {
+    "$@" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' >/dev/null 2>&1
+}
+
+for candidate in "$plugin/venv/bin/python" "$plugin/venv/Scripts/python.exe"; do
+    if [ -x "$candidate" ] && works "$candidate"; then
+        exec "$candidate" "$cli" "$@"
+    fi
+done
+for candidate in python3 python; do
+    if command -v "$candidate" >/dev/null 2>&1 && works "$candidate"; then
+        exec "$candidate" "$cli" "$@"
+    fi
+done
+if command -v py >/dev/null 2>&1 && works py -3; then
+    exec py -3 "$cli" "$@"
+fi
+echo "ai-connect: no Python 3.10 or newer found (tried $plugin/venv, python3, python, py -3)." >&2
+echo "ai-connect: install Python 3.10+, or run the plugin's install.sh / install.cmd to make its venv." >&2
+exit 127

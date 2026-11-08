@@ -6,9 +6,9 @@ they change anything. The switch, highest first:
     --allow-root                        the command line: allows root for this run
     AI_CONNECT_ALLOW_ROOT=1 | 0         the environment: allows, or refuses, root
     install.allow_root: true | false    ~/.config/ai-connect/config.yaml
-    (none of them)                      the default: what every version before 0.2.7 did
+    (none of them)                      the default: what every version before 0.2.13 did
 
-The default is unchanged behaviour: nothing before 0.2.7 refused root, so with no switch set a
+The default is unchanged behaviour: nothing before 0.2.13 refused root, so with no switch set a
 run as root goes ahead silently, exactly as before. `false` refuses root outright. `true` is the
 supported root install: it prints a one-line warning, refuses a root whose HOME or user name is
 another user's (`sudo -E`: root-owned secrets would land in that user's home), and afterwards
@@ -152,7 +152,7 @@ def warning(source: str, config_dir: Path) -> str:
 
 def check(flag: bool = False, environ: Mapping[str, str] | None = None, config_path: Path | None = None,
           *, warn: bool = True, stream=None) -> str:
-    """NOT_ROOT, DEFAULT (root, no switch set: as before 0.2.7) or ALLOWED; RootPolicyError refuses."""
+    """NOT_ROOT, DEFAULT (root, no switch set: as before 0.2.13) or ALLOWED; RootPolicyError refuses."""
     environ = os.environ if environ is None else environ
     if not is_root(environ):
         return NOT_ROOT
