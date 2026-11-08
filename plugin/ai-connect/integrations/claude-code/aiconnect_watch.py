@@ -37,11 +37,12 @@ from bridge_time import parse_bridge_timestamp
 from bridge_tls import PinMismatch
 from config_loader import client_settings, load_config
 
+from peer_name import process_alive, record_seen, seen_since, session_name
+from untrusted import frame_message  # pylint: disable=import-error
+
 # The plain-ws:// deprecation warning is the MCP client's to give, once per session;
 # this hook runs at every turn end, and its stderr would repeat it each time
 logging.getLogger("ai_connect.transport").setLevel(logging.ERROR)
-from peer_name import process_alive, record_seen, seen_since, session_name
-from untrusted import frame_message  # pylint: disable=import-error
 
 # Claude Code reads the output as UTF-8; on Windows Python writes a pipe in the
 # ANSI code page and fails on characters outside it (an arrow, an emoji)
