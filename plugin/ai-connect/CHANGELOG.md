@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.2.12] - 2026-11-08
+
+Enrol a machine with one copy-paste code, and revoke one without restarting the Bridge. Installer phase 1 of 2: TLS with a pinned certificate follows in its own release.
+
+### Added
+- `ai-connect`, a CLI (`bin/ai-connect`, `bin\ai-connect.cmd`; `ai_connect_cli.py`): `bridge invite --name N [--expiry 1h]`, `join [<code>]`, `bridge token --name N`, `bridge revoke --name N`, `bridge list`, `status`. Every changing verb takes `--dry-run`. The launchers use the plugin's venv, else `python3`/`python`/`py -3`, and exit 127 with a message on stderr when no Python 3.10+ is found
+- One-time join codes (`join_codes.py`): version, expiry, Bridge host:port, a slot for the Bridge certificate's SHA-256 fingerprint (all zero until the TLS release), a 128-bit single-use secret, the peer name and a checksum, in base32. The Bridge stores only the secret's SHA-256 (`invites.json` beside `config.yaml`). Redemption (`GET /join` on the Bridge's port) is one locked read-check-mark-write: the code is marked used (temp file + `os.replace`) before the peer's token is written, so a crash burns the code. Expired, used, unknown and wrong-name codes all get the same refusal; past 5 failures a minute from one address (30 in total) the Bridge answers 429
+- Bridge-issued long-lived tokens: `bridge token --name N` writes the token to an owner-only file and shows only its last 4 characters. They do not expire; `bridge revoke` ends them
+- The Bridge reloads its auth table from `config.yaml` by polling (every 2 seconds, Windows and Linux alike, `server/auth_reload.py`): a new peer connects with no restart, and a revoked or replaced token's live connections are closed with 1008 `token revoked`. A config that does not parse or whose `auth:` is invalid is logged and the old table stays
+
+### Changed
+- `installer.py add-peer`, `revoke-peer`, `observer-token` and `user-token` no longer ask for a Bridge restart: the running Bridge picks the change up within seconds
+- Every `installer.py` writer of `config.yaml` (`add-peer`, `revoke-peer`, `observer-token`, `user-token`, `config --server`) takes the same lock as join-code redemption and the `ai-connect` CLI, so a revoke racing a redemption can neither write the revoked peer back nor drop the redeemed one
+- `bridge invite` warns when the Bridge address in the code is not loopback or Tailscale (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`, `*.ts.net`; a private LAN address or a host name is warned about too), and refuses an `--expiry` past 24 hours unless `--allow-long-expiry` (up to 7 days, with a warning): the join is plain HTTP in this release. `join --help` names the code on the command line as the weakest form
+- A `config.yaml` that does not parse is reported by line and column only, by the Bridge's reload log (once per broken file, not every poll), the `ai-connect` CLI and `installer.py`: PyYAML's own message quotes the offending line, which can hold a token
+- `deploy invite` and `deploy join` (Tailscale auth keys) are deprecated: they print a line pointing at `ai-connect bridge invite` / `ai-connect join` and keep working through this release only, because the deploy suites still drive them; they go in the next minor release. The tailnet itself stays `deploy tailnet-setup` and `vpn/vpn-up`
+
+### Notes
+- Transport is still plain `ws://` inside the VPN in this release, redemption included. The join sends the code's secret and receives the new peer's permanent token unencrypted: redeem a code over a VPN only; a join code that carries a certificate fingerprint is refused by this client, never redeemed over `ws://`. The next release serves `wss://` beside `ws://` for one release, with a warning, then `wss://` only
+- Settings under `server:` (address, port, limits) are still read once at start; changing one logs that a restart is needed
+## [0.2.11] - 2026-11-08
+
+Deploy test seam only; no behaviour change for a normal run.
+
+### Changed
+- `AI_CONNECT_DEPLOY_ROOT=0` now means "not root" even when the real euid is 0 (`1` still means root; unset keeps the euid check). The deploy test box sets it to `0`, so `tests/` passes when run as root (#609). Complements 0.2.10's per-test `non_root` option rather than replacing it
+
+## [0.2.10] - 2026-11-08
+
+Test only (0.2.8 and 0.2.9 were never released; this folds them in): test_bridge_status[linux] and test_join_with_an_invite_on_linux_runs_tailscale_up_as_root[user] assumed a
+non-root host and failed under uid 0. Their deploy child now runs with os.geteuid() reporting a user (the new
+non_root option on Box.deploy and Phase), so they pass whatever uid the suite runs under. No behaviour change.
+
 ## [0.2.7] - 2026-11-08
 
 Lint only (line length) on the 0.2.6 test change; no behaviour change.
