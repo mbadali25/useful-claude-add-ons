@@ -257,3 +257,18 @@ def test_join_endpoint_is_off_without_a_config(tmp_path):
             return await asyncio.to_thread(get_join, server.bound_port, "00" * 16, CAROL)
 
     assert run(go())[0] == 404
+
+
+def test_a_yaml_error_logs_its_place_not_the_text_and_only_once(config_path, caplog):
+    """The offending YAML can be a token: only the error type and line/column are logged, once per file."""
+    from server.auth_reload import AuthReloader  # pylint: disable=import-outside-toplevel
+    secret = "f" * 40
+    reloader = AuthReloader(config_path)
+    assert reloader.check() is not None  # the good file first
+    # An undefined alias: PyYAML's own message quotes its name ("found undefined alias '<secret>'")
+    config_path.write_text(f"auth: {{peers: *{secret}}}\n", encoding="utf-8")
+    with caplog.at_level(logging.ERROR):
+        assert reloader.check() is None
+        assert reloader.check() is None
+    failures = [r.getMessage() for r in caplog.records if "auth_reload_failed" in r.getMessage()]
+    assert len(failures) == 1 and secret not in failures[0] and "line " in failures[0]
