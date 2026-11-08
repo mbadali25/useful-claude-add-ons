@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.6] - 2026-11-08
+
+Test isolation only: the setup and deploy suites ran their child processes in the checkout, so a project-scope
+setup test wrote plugin/ai-connect/.claude/settings.local.json. They now run in the throwaway project, and a
+suite guard fails any test that writes that path. No behaviour change from 0.2.5.
+
 ## [0.2.5] - 2026-11-06
 
 Lint only (line length, final newline); no behaviour change from 0.2.4.
