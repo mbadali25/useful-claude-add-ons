@@ -232,6 +232,17 @@ KEY_META = {
                                     "checks who created the marker.", "branch",
                                     crew_humanonly.VALUES, "1.3.9",
                                     _S + "crew_humanonly.py"),
+    # --- worktrees (crew 1.3.18)
+    "worktrees.root": _row("The base directory for this repo's git worktrees, OUTSIDE the "
+                           "repo: they go in `<root>/<repo>-<digest>/<name>`. null is "
+                           "`~/.claude/crew/worktrees`; `~` is expanded, a relative path or one "
+                           "inside the repo is refused (never replaced by the default). It "
+                           "places the worktrees crew places (`/crew:emergency`, "
+                           "`crew_worktrees.py path`) and, once the owner registers the opt-in "
+                           "`WorktreeCreate` hook, the ones Claude Code creates; without the "
+                           "hook Claude Code keeps using `.claude/worktrees/`.", "type",
+                           since="1.3.18", source=_S + "crew_worktrees.py",
+                           type_="absolute path or null"),
     # --- emergency
     "emergency.standDown": _unv("Whether a declared incident may stand gates down; "
                                 "`false` forbids it.", FIRST, _S + "_common.sh", "boolean"),

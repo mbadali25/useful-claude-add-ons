@@ -674,7 +674,9 @@ def check_stale_names(fail) -> None:
                 continue
             for offset, line in enumerate(block):
                 for stale in STALE_NAMES:
-                    if stale in line:
+                    # Not a prefix of a longer name: `/crew:work` is retired,
+                    # `/crew:worktrees` is not.
+                    if re.search(re.escape(stale) + r"(?![A-Za-z0-9_])", line):
                         fail(f"{path_rel}:{start_line + start + offset}: stale name "
                              f"'{stale}' in a crew 1.0 file")
 
