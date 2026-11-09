@@ -9,6 +9,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.3.13: session-relay keeps sending when ListAgents is unavailable
+
+- **Summary.** `crew` 1.3.13: `crew:session-relay` no longer stalls when `ListAgents` is missing at runtime; it sends to the name as given and marks that report line `could not verify recipient`.
+- `agents/session-relay.md`: a session reported that `ListAgents` was unavailable to the relay at runtime although its `tools:` line grants it, and the prompt said to check every name in `ListAgents` with no fallback. The prompt now says that is not fatal: send with `SendMessage` to the name exactly as the main session gave it, never invent or alter a name, do not retry in a loop, report a `SendMessage` failure verbatim, and append ` | could not verify recipient` to that final-report line. The `tools:` line and the `claude-haiku-5-5` pin are unchanged (pinned by `tests/test_session_relay.py`, `tests/agent_frontmatter_snapshot.json` and `validate-prompts.py`).
+- `tests/test_session_relay.py` asserts the two new phrases; `plugin/crew/README.md`, `docs/crew/config-rationale.md` and the crew guide (rebuilt HTML, DOCX, PDF) describe the fallback. `plugin/crew/BUDGETS.md`'s line count follows the new prompt line; 1.2.111 was set on this branch before that edit and never released, so the drift check required this second bump.
+
 ### Fixed — crew 1.3.11: four flaky or environment-dependent gate tests made deterministic
 
 - **Summary.** `crew` 1.3.11: test-only; no hook behaviour changes. Four tests that failed on a loaded runner, a path containing a digit, or a newer pytest now prove the same thing without depending on any of those.

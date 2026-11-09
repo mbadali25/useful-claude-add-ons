@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.13**: Session-relay keeps sending when ListAgents is unavailable. `crew` 1.3.13: `crew:session-relay` no longer stalls when `ListAgents` is missing at runtime; it sends to the name as given and marks that report line `could not verify recipient`.
 - **crew 1.3.11**: Four flaky or environment-dependent gate tests made deterministic. `crew` 1.3.11: test-only; no hook behaviour changes. Four tests that failed on a loaded runner, a path containing a digit, or a newer pytest now prove the same thing without depending on any of those.
-- **crew 1.3.10**: Version follows the merge of main's crew 1.3.6 into the opt-out branch. `crew` 1.3.10: no behaviour change beyond 1.3.9; the version moves past main's 1.3.6 so the drift check counts the merged-in crew changes. The human-only opt-out settings and `/crew:confirm-config` are as described under 1.3.9.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -31,7 +31,7 @@ independent eyes.
 | `security` | Read-only review of risky changes | No Write or Edit |
 | `researcher` | Reads external sources only | Does not edit the repo |
 
-A fifth file, `session-relay`, is not a role: it is a transport agent on Haiku 5.5 that carries messages between sessions (SendMessage and ListAgents only; no Read, Write, Edit or Bash).
+A fifth file, `session-relay`, is not a role: it is a transport agent on Haiku 5.5 that carries messages between sessions (SendMessage and ListAgents only; no Read, Write, Edit or Bash). If ListAgents is unavailable at runtime, it still sends to the name exactly as given and marks that line `could not verify recipient` in its report.
 
 **The coordinator is a model pin, not a role.** Set `dev.roles.coordinator` (for example
 `{"provider": "claude", "model": "claude-opus-5-5"}`) and `dev.roles.developer` (for example
