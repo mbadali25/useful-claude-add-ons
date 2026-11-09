@@ -100,3 +100,14 @@ logging:
   # files are kept per log
   max_megabytes: 5
   backup_count: 3
+
+# Optional, and so left out (the installer requires every key above):
+# whether install.sh, installer.py, deploy and setup may run as root on Linux
+# or macOS. Left out = as before 0.2.13: root goes ahead, silently. true =
+# allowed, with a one-line warning, and the config directory is closed to
+# 0700 with every file in it 0600 afterwards; a root whose HOME or user name
+# is another user's (sudo -E) is refused. false = root is refused. The
+# --allow-root flag and AI_CONNECT_ALLOW_ROOT=1/0 outrank this key. No effect
+# on Windows (elevation there is UAC's, by design). See root_policy.py.
+# install:
+#   allow_root: true
