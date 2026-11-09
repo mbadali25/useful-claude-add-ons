@@ -121,3 +121,50 @@ def test_a_declared_deploy_still_takes_the_full_gate(tmp_path):
     assert proc.returncode == 2, proc.stderr[-4000:]
     assert "git" in programs, programs
     assert len(_python_runs(programs)) > 1, programs
+
+
+def _traced_write(root, tmp_path, agent_type, file_path):
+    """role-write-guard.sh under `bash -x` for a Write call, payload sent with no
+    trailing newline (what `read -d ''` must cope with, as `$(cat)` did)."""
+    env = crew_fixtures.isolated_home_env(tmp_path / "home")
+    env["CLAUDE_PROJECT_DIR"] = str(root)
+    env["PS4"] = "+ "
+    env["CREW_PYTHON"] = sys.executable
+    path = str(_SCRIPTS / "role-write-guard.sh").replace("\\", "/")
+    payload = {"hook_event_name": "PreToolUse", "tool_name": "Write",
+               "tool_input": {"file_path": file_path, "content": "x"}, "cwd": str(root),
+               "session_id": "s", "agent_type": agent_type}
+    return subprocess.run([_BASH, "-x", path], input=json.dumps(payload), capture_output=True,
+                          text=True, encoding="utf-8", errors="replace", env=env, cwd=str(root),
+                          check=False, timeout=170)
+
+
+def _write_repo(tmp_path):
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    (root / ".crew" / "config.json").write_text(
+        json.dumps({"guards": {"roleWrites": "block"}}), encoding="utf-8")
+    return root
+
+
+@needs_bash
+def test_role_write_guard_allow_path_starts_no_helper_programs(tmp_path):
+    """Must-allow: a non-restricted role writes; bash starts no dirname/cat/tr/..., one python."""
+    root = _write_repo(tmp_path)
+    proc = _traced_write(root, tmp_path, "crew:builder", str(root / "a.txt"))
+    programs = _programs(proc.stderr)
+
+    assert proc.returncode == 0, proc.stderr[-4000:]
+    helpers = sorted(set(programs) & (_HELPERS | {"cat"}))
+    assert helpers == [], f"role-write-guard.sh started {helpers} on the allow path:\n{proc.stderr[-4000:]}"
+    assert len(_python_runs(programs)) == 1, programs
+
+
+@needs_bash
+def test_role_write_guard_still_blocks_a_restricted_role(tmp_path):
+    """Must-block: the same trimmed path still refuses an explorer's write."""
+    root = _write_repo(tmp_path)
+    proc = _traced_write(root, tmp_path, "crew:explorer", str(root / "a.txt"))
+
+    assert proc.returncode == 2, proc.stderr[-4000:]
+    assert len(_python_runs(_programs(proc.stderr))) == 1
