@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.2.17] - 2026-11-09
+
+Release bump only: merges main's 0.2.13 (configurable root install) and 0.2.14 (test fix) into the TLS pinned-fingerprint line. `install.sh` opens both ports (9999, 10000) through `$SUDO`. No other behaviour change.
+
 ## [0.2.16] - 2026-11-08
 
 Lint only (CI pylint on 0.2.15): two lines over 120 characters, a reimport of `join_codes` in `installer.py`, and `PinnedSocket`'s abstract `SSLSocket` methods. No behaviour change.
