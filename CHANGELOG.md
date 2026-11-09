@@ -9,6 +9,16 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.3.18: the scope guard's allow path starts a handful of processes, not a dozen
+
+- **Summary.** `crew` 1.3.18: scope-guard.sh clears an in-scope write or a plain command with one python and one `git` process (it was a dozen starts, about 1.3s per write), so several lanes at once no longer time the guard out on Git Bash; every decision is unchanged.
+- Measured before changing anything, on a clean main worktree (ref `b0bf059f1`, crew 1.3.15, Windows 11, Git Bash, CREW_PYTHON set, a repo with `scope.mode` block and one approved ticket; 9 runs each, median): a Write inside Touch ran `dirname`, `cat`, one python and EIGHT `git rev-parse` processes, 1.27s median (0.95-1.57s); a plain Bash command ran the same helpers, one python and two `git rev-parse`, 0.72s. After: no helper in bash, one python, one `git rev-parse --show-toplevel --git-common-dir`; 0.53s and 0.49s.
+- `scope-guard.sh`: `$DIR` from `${BASH_SOURCE[0]%/*}` when the path is absolute (relative falls back to the old `cd`/`dirname`), and python reads the payload from the wrapper's stdin itself instead of `INPUT=$(cat)` and `printf |`. The fail-closed branches are untouched.
+- `crew_ticket.py`: `memoize_git()` turns on a per-process memo of `toplevel` and `common_dir`, primed by one `git rev-parse --show-toplevel --git-common-dir`; off unless asked, so no long-lived caller sees a stale answer. A failed answer is never remembered, the memo is keyed by the directory asked, and a combined ask that fails whole (a bare repo answers only the common dir) falls back to the two single asks as before. `scope_guard.main()` is the only caller that turns it on.
+- Tests: `test_scope_guard_spawns.py` (allow path: exactly one git and one python, no helper under `bash -x`; the payload still reaches python; the memo's contract incl. "could not tell" asked again and the bare-repo half answer). Six new mutations in `sabotage_scope.py`, each run by hand and seen red.
+- Developed as 1.3.17; re-bumped to 1.3.18 after merging main's 1.3.16 (role-write-guard), because the version-drift check measures from the commit that set the version and 1.3.16's `plugin/crew/` changes arrived after it.
+- Harness-only PR: scope_guard.py, scope-guard.sh and crew_ticket.py are `HARNESS` paths, so it carries no feature work; `_common.sh` is unchanged (#713 already trimmed it).
+
 ### Fixed — crew 1.3.16: role-write-guard's allow path starts fewer helper processes in bash
 
 - **Summary.** `crew` 1.3.16: the Write/Edit guard (`role-write-guard.sh`) no longer starts `dirname`, `cat` or two command-substitution subshells before python judges the write, so it stays well inside its 10 s limit on Git Bash, where each process start is an MSYS fork; every decision is unchanged.
