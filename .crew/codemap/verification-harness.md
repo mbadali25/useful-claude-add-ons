@@ -208,6 +208,16 @@ only `bash "..."` and `& "..."` launcher commands (8 of each).
   cheapest-first (`:1886-1901`); a rule that does not fit whole is deferred, and one costing more than the whole budget is
   CHRONIC (comment `:1925-1935`), which must not block the baseline and must never read as verified (`verify_record.py`
   persists it until a clean `--all`). 38 rules are over 60 s on the declared seconds.
+- **Hook deadline, persistence, base and dead holders (crew 1.3.0).** DERIVED: `DEADLINE_MARGIN=60`
+  (`verify-gate.sh:2566`); `deadline_defers` (`:2593`) holds each rule's price (matcher record 9, `owner_record`
+  `:2201`) against `CREW_HOOK_DEADLINE` less the margin, Stop only, and a deferral counts in `fully_verified` (`:615`).
+  `gate_progress` (`:2644`) calls `verify_record.py progress` (`verify_record.py:1480`) before each command and rewrites
+  `.crew/.verify-gate.log` as unfinished; the in-flight record (`INFLIGHT_PATH`, `:60`) is settled by `inflight_settle`
+  (`:1552`, called `verify-gate.sh:1427`). The base prefers `origin/<default>` (`:738`). `lock_owner_write` (`:1124`)
+  records `win <winpid> <epoch> <token>` or `proc <pid> <starttime> <token>`; `lock_owner_state` (`:1147`, read `:1223`)
+  asks `owner_state` (`verify_record.py:1652`) and only `dead` reclaims early. This supersedes "a hung rule is waited for"
+  above for Stop: a rule that will not fit the deadline is not started, though one that starts and overruns still is.
+  Tests: `plugin/crew/tests/test_verify_gate_deadline.py`; mutations: `plugin/crew/tests/sabotage_deadline.py`.
 - **Bookkeeping and refresh artifacts are never unmapped** (T-0068): the matcher imports
   `completion_audit.classify_paths` (`:1633-1634`), drops `bookkeeping` from `changed` (`:1640`) and does not add an
   `artifact` to `unmatched` (`:1724`), so a rule naming `.crew/codemap/**` still runs. If the import fails every path stays

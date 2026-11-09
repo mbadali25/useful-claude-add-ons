@@ -107,7 +107,14 @@ class Roles:
         token = _bearer_token(authorization)
         if token is None:
             return None
-        sent = token_sha256(token)
+        return self.identity_for_digest(token_sha256(token))
+
+    def identity_for_digest(self, sent: str) -> Identity | None:
+        """The identity of a token known by its SHA-256, None if unknown.
+
+        What the auth reload asks of each live connection: a connection whose
+        token's digest no longer maps to the same identity is closed.
+        """
         found = None
         # Compare against every entry, so the time taken does not tell which matched
         for known, identity in self._entries:

@@ -643,11 +643,24 @@ def test_canary_regexes_hit_the_regex_canaries():
 
 
 def test_io_error_after_open_is_a_rule_file_error(tmp_path, monkeypatch):
-    def broken(_descriptor):
-        raise OSError("injected fstat failure")
+    real_os = rlr.os
+
+    class _BrokenFstat:
+        """The real `os` with `fstat` failing, bound as `rlr.os` only.
+        Patching `rlr.os.fstat` patched the one shared `os` module, so
+        pytest's own fd capture (`os.fstat(tmpfile.fileno())` in
+        `capture.py`'s `snap`, before monkeypatch undoes anything) hit the
+        injected failure and failed the test outside `read_rules`."""
+
+        def __getattr__(self, name):
+            return getattr(real_os, name)
+
+        @staticmethod
+        def fstat(_descriptor):
+            raise OSError("injected fstat failure")
 
     path = _mutated(tmp_path, "rules:\n", "rules:\n")
-    monkeypatch.setattr(rlr.os, "fstat", broken)
+    monkeypatch.setattr(rlr, "os", _BrokenFstat())
 
     with pytest.raises(rlr.RuleFileError, match="injected fstat failure"):
         rlr.read_rules(path)
