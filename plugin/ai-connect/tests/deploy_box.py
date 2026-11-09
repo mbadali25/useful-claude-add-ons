@@ -157,6 +157,9 @@ class Box:
         # Where deploy installs the copy of the plugin the service and the MCP server run from
         self.app = self.home.joinpath(*(("AppData", "Local") if os.name == "nt" else (".local", "share")),
                                       "ai-connect", "app")
+        # The root switch (root_policy.py) is a test's to set, never inherited from whoever runs the suite
+        for name in ("AI_CONNECT_ALLOW_ROOT", "AI_CONNECT_ROOT_HOME", "AI_CONNECT_ROOT_WARNED"):
+            self.env.pop(name, None)
 
     @staticmethod
     def shim(name: str) -> str:

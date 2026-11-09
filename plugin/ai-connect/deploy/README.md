@@ -42,6 +42,17 @@ Tailscale takes no routes, no exit node and no DNS on either machine, so a VPN c
 that is already there keeps working: see [Running alongside other VPNs](#running-alongside-other-vpns).
 Use the Bridge's `100.x.y.z` address, not its name.
 
+**As root** (Linux, macOS): every verb takes `--allow-root`; `AI_CONNECT_ALLOW_ROOT=1`
+or `install.allow_root: true` in `config.yaml` say the same, in that order below the
+flag, and `0` / `false` refuse root. With none set a root run goes ahead silently, as
+before 0.2.13. Allowed, deploy prints one warning line that the Bridge runs as root,
+keeps the config and tokens in root's own `~/.config/ai-connect` and closes it to
+0700 (every file 0600) after the run, and refuses a root whose `HOME` or user name is
+another user's (`sudo -E`; use `sudo -i`). A dedicated service user is safer and is
+not created for you. `status` and `list` ignore the switch; on Windows it has no
+effect (UAC elevation is by design there). The same switch governs `setup.sh` and
+`install.sh`: see the plugin README, "Installing as root".
+
 **See everything first.** `bridge`, `peer`, `add-peer` and `uninstall` take `--dry-run`:
 it runs no tool at all (no `tailscale`, `claude`, `sudo`, `ufw`), needs no token or key
 file, prints every step it may change, and changes nothing. `tailnet-setup` without

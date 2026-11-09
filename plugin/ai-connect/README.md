@@ -141,6 +141,15 @@ git clone https://github.com/Peuqui/AI-Connect.git %USERPROFILE%\AI-Connect
 - Claude Code's native installer does not add `%USERPROFILE%\.local\bin` to `PATH`; the AI-Connect installer finds `claude.exe` there anyway, but add it to `PATH` for your terminal.
 - Tested on Windows 11 with Claude Code 2.1.289 (client and server); `-Http`, the Microsoft Store Python, reading along and writing as a user not yet.
 
+### Installing as root
+
+Since 0.2.13 one switch says whether `install.sh`, `installer.py`, `deploy` and `setup` may run as root (Linux and macOS: euid 0). Highest first: the `--allow-root` flag, `AI_CONNECT_ALLOW_ROOT=1` (or `0`), the config key `install.allow_root: true` (or `false`) in `~/.config/ai-connect/config.yaml`. With none of them set nothing changes: root goes ahead silently, as every earlier version let it. `false` refuses root. `true` is the supported root install: one warning line that the services run as root, the config and tokens in root's own `~/.config/ai-connect` (`/root/.config/ai-connect`), closed to 0700 with every file 0600 after each run, no `sudo` needed and no polkit rule. A root whose `HOME` or user name is another user's (`sudo -E`) is refused, because root-owned secrets would land in that user's home: use `sudo -i` or `sudo -H`. A dedicated service user is safer than root (`useradd --system --create-home ai-connect`, then install as that user); it is mentioned, never created for you. `deploy status` and `list` run as root whatever the switch says. On Windows the switch has no effect: `install.cmd` and `deploy.ps1` ask for elevation through UAC by design and run the tasks as your user without it.
+
+```bash
+# in a root shell (sudo -i), from the checkout
+./install.sh --server --allow-root             # or: AI_CONNECT_ALLOW_ROOT=1 deploy/deploy.sh bridge
+```
+
 ### Updating to per-peer tokens (2.3)
 
 2.3 replaces the one shared `bridge.token` with a token per peer and splits the config into `server:` and `auth:` (the Bridge's) and `client:` (this machine's peer). The update stops with "lacks ..." until the new keys are there; compare your `~/.config/ai-connect/config.yaml` with `config.yaml.example`:
