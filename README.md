@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.15**: The `fable` alias is accepted as an explicit claude model pin. `crew` 1.3.15: a `dev.roles.developer` or `dev.roles.coordinator` pin of `{"provider": "claude", "model": "fable"}` (Fable 5.1, `claude-fable-5-1`) is now put on the wave launch line instead of being refused as "not a claude model"; Fable is opt-in only and nothing in crew selects it.
 - **crew 1.3.13**: Session-relay keeps sending when ListAgents is unavailable. `crew` 1.3.13: `crew:session-relay` no longer stalls when `ListAgents` is missing at runtime; it sends to the name as given and marks that report line `could not verify recipient`.
-- **crew 1.3.11**: Four flaky or environment-dependent gate tests made deterministic. `crew` 1.3.11: test-only; no hook behaviour changes. Four tests that failed on a loaded runner, a path containing a digit, or a newer pytest now prove the same thing without depending on any of those.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
