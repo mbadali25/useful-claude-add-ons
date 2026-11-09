@@ -74,7 +74,11 @@ deploy\deploy.ps1 join --invite-file laptop.invite
 
 Run it as the user whose Claude Code sessions will use AI-Connect, not under `sudo`: the
 config and the token go to that user's home, and `sudo` (or UAC on Windows) is asked for
-only where Tailscale needs it. It checks for other VPNs, installs Tailscale if it is missing, joins the tailnet with the
+only where Tailscale needs it. On a machine where that user is root (a container, a
+headless box), say so with `--allow-root` (or `AI_CONNECT_ALLOW_ROOT=1`, or
+`install.allow_root: true`): one warning line, the config and token owner-only in root's
+own home, no `sudo`; `AI_CONNECT_ALLOW_ROOT=0` or `false` refuses root (README, "Installing
+as root"). It checks for other VPNs, installs Tailscale if it is missing, joins the tailnet with the
 invite's key, deletes the used invite file, makes this machine's own token (owner-only, in
 `~/.config/ai-connect/own-peer.token`), writes the client config, and prints:
 
@@ -187,7 +191,8 @@ refuses the Bridge's own peer. On the removed machine itself, `deploy uninstall 
 | `Bridge port reachable FAIL` | The Bridge is down (`deploy status` there), or the tailnet policy does not let `tag:ai-peer` reach `tag:bridge:9999`. |
 | `peer_status` says `Standby: another session holds the name` | The Bridge or this machine still runs 0.1.8, which gives a machine one session. Update both to 0.2.0; see [Several sessions on one machine](#several-sessions-on-one-machine). |
 | `node key: EXPIRES` in `status`, or a name in `list`'s last line | Run `deploy approve --name <it>` on the Bridge (`deploy bridge` for the Bridge itself). |
-| `not root and no sudo` | Run `join` as root, or install `sudo`. |
+| `not root and no sudo` | Run `join` as root (with `--allow-root` for the warning and owner-only files), or install `sudo`. |
+| `refusing to run as root` | `AI_CONNECT_ALLOW_ROOT=0` or `install.allow_root: false` says no root here: run as the user, or pass `--allow-root`. With `HOME=` in the line, root kept another user's home (`sudo -E`): use `sudo -i`. |
 | A route inside `100.64.0.0/10` stops `join` | Another VPN claims Tailscale's addresses; see below. |
 
 ## Running alongside other VPNs

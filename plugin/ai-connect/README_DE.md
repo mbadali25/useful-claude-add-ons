@@ -141,6 +141,15 @@ git clone https://github.com/Peuqui/AI-Connect.git %USERPROFILE%\AI-Connect
 - Der native Claude-Installer trägt `%USERPROFILE%\.local\bin` nicht in den `PATH` ein; der AI-Connect-Installer findet `claude.exe` dort trotzdem, für das Terminal sollte man es aber eintragen.
 - Getestet unter Windows 11 mit Claude Code 2.1.289 (Client und Server); `-Http`, das Python aus dem Microsoft Store, Mitlesen und Schreiben als User noch nicht.
 
+### Installation als root
+
+Seit 0.2.13 entscheidet ein Schalter, ob `install.sh`, `installer.py`, `deploy` und `setup` als root laufen dürfen (Linux und macOS: euid 0). In absteigendem Rang: das Flag `--allow-root`, `AI_CONNECT_ALLOW_ROOT=1` (oder `0`), der Config-Schlüssel `install.allow_root: true` (oder `false`) in `~/.config/ai-connect/config.yaml`. Ist nichts davon gesetzt, ändert sich nichts: root läuft still durch, wie es jede frühere Version zuließ. `false` verweigert root. `true` ist die unterstützte root-Installation: eine Warnzeile, dass die Dienste als root laufen, Config und Tokens im eigenen `~/.config/ai-connect` von root (`/root/.config/ai-connect`), nach jedem Lauf auf 0700 geschlossen und jede Datei 0600, kein `sudo` nötig und keine Polkit-Regel. Ein root, dessen `HOME` oder Benutzername einem anderen Benutzer gehört (`sudo -E`), wird verweigert, weil root-eigene Geheimnisse sonst im Home dieses Benutzers landen: `sudo -i` oder `sudo -H` verwenden. Ein eigener Dienstbenutzer ist sicherer als root (`useradd --system --create-home ai-connect`, dann als dieser Benutzer installieren); er wird erwähnt, aber nie angelegt. `deploy status` und `list` laufen als root, egal was der Schalter sagt. Unter Windows wirkt der Schalter nicht: `install.cmd` und `deploy.ps1` fragen absichtlich per UAC nach Adminrechten und führen die Aufgaben als dein Benutzer ohne sie aus.
+
+```bash
+# in einer root-Shell (sudo -i), im Checkout
+./install.sh --server --allow-root             # oder: AI_CONNECT_ALLOW_ROOT=1 deploy/deploy.sh bridge
+```
+
 ### Update auf Tokens pro Peer (2.3)
 
 2.3 ersetzt das eine gemeinsame `bridge.token` durch ein Token pro Peer und teilt die Config in `server:` und `auth:` (die der Bridge) und `client:` (der Peer dieses Rechners). Das Update bricht mit „lacks ...“ ab, bis die neuen Schlüssel da sind; die eigene `~/.config/ai-connect/config.yaml` mit `config.yaml.example` vergleichen:
