@@ -9,6 +9,68 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Added — crew 1.3.15: the `fable` alias is accepted as an explicit claude model pin
+
+- **Summary.** `crew` 1.3.15: a `dev.roles.developer` or `dev.roles.coordinator` pin of `{"provider": "claude", "model": "fable"}` (Fable 5.1, `claude-fable-5-1`) is now put on the wave launch line instead of being refused as "not a claude model"; Fable is opt-in only and nothing in crew selects it.
+- `crew_wave.py` `CLAUDE_MODEL_HEADS` gains `fable`; the full id `claude-fable-5-1` already passed as family `claude`. `validate-prompts.py` accepts `fable` as an agent `model:` value (the per-agent tier check still applies). Opus stays the default escalation target; no router or escalation logic is added here.
+- Tests: `test_crew_wave.py` must-allow `fable`, `Fable` and `claude-fable-5-1` on the launch line; must-block `fables-9` (and `gpt-6` still refused); a provider-less `fable` pin under a codex block still warns. Sabotage-checked: removing `fable` turns the alias cases red.
+- Docs: `commands/model.md`, crew `README.md`, the crew guide (rebuilt), `.crew/codemap/crew.md`.
+
+### Fixed — crew 1.3.13: session-relay keeps sending when ListAgents is unavailable
+
+- **Summary.** `crew` 1.3.13: `crew:session-relay` no longer stalls when `ListAgents` is missing at runtime; it sends to the name as given and marks that report line `could not verify recipient`.
+- `agents/session-relay.md`: a session reported that `ListAgents` was unavailable to the relay at runtime although its `tools:` line grants it, and the prompt said to check every name in `ListAgents` with no fallback. The prompt now says that is not fatal: send with `SendMessage` to the name exactly as the main session gave it, never invent or alter a name, do not retry in a loop, report a `SendMessage` failure verbatim, and append ` | could not verify recipient` to that final-report line. The `tools:` line and the `claude-haiku-5-5` pin are unchanged (pinned by `tests/test_session_relay.py`, `tests/agent_frontmatter_snapshot.json` and `validate-prompts.py`).
+- `tests/test_session_relay.py` asserts the two new phrases; `plugin/crew/README.md`, `docs/crew/config-rationale.md` and the crew guide (rebuilt HTML, DOCX, PDF) describe the fallback. `plugin/crew/BUDGETS.md`'s line count follows the new prompt line; 1.2.111 was set on this branch before that edit and never released, so the drift check required this second bump.
+
+### Fixed — crew 1.3.11: four flaky or environment-dependent gate tests made deterministic
+
+- **Summary.** `crew` 1.3.11: test-only; no hook behaviour changes. Four tests that failed on a loaded runner, a path containing a digit, or a newer pytest now prove the same thing without depending on any of those.
+- `test_refuses_non_default_dropped_key[emergency.ttlMinutes-30]` failed whenever pytest's temp path contained `30` (`--basetemp .../pytest-30207`): the leak check now removes the `tmp_path` prefix from the output before looking for the value, so a value printed anywhere else is still caught.
+- `test_io_error_after_open_is_a_rule_file_error` patched the shared `os.fstat`, which pytest 9.2's own output capture calls before monkeypatch undoes it; it now replaces `review_lint_rules.os` alone (CI pins pytest 8, so only a local pytest 9.2 run failed).
+- `test_heartbeat_process_exits_after_pid_gone` timed the loop's exit against one interval plus 5s, which one slow push on a loaded Windows runner exceeded (CI runs 41099703404, 41661892436, 42322693048); it now counts heartbeats on the channel: at most the one in flight when the pid dies.
+- `test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout` slowed all seven python starts before the search by 1.8s, leaving a loaded runner too little of the gate's 16s to reach the hung check (CI runs 41099703404, 42319792723, 42411612824); the slow python now costs a fixed 9s however many starts the gate makes.
+- `scripts/check_instructions.py` measures a command file's bytes with CRLF counted as LF, the form git commits, so a Windows `core.autocrlf` checkout no longer fails autopilot, model, onboard and verify against their byte allowances.
+
+### Changed - crew 1.3.10: version follows the merge of main's crew 1.3.6 into the opt-out branch
+
+- **Summary.** `crew` 1.3.10: no behaviour change beyond 1.3.9; the version moves past main's 1.3.6 so the drift check counts the merged-in crew changes. The human-only opt-out settings and `/crew:confirm-config` are as described under 1.3.9.
+
+### Added — crew 1.3.9: the human-only opt-out settings and their double confirmation (inert until the hook wiring lands)
+
+- **Summary.** `crew` 1.3.9: two new settings, `humanOnly.approve` and `humanOnly.promoteMarker`, record the owner's opt-out of `/crew:approve` and the production promote marker being human-only, behind a double confirmation; no hook reads them yet, so nothing changes until a later harness release wires them in.
+- The rules (`hooks/scripts/crew_humanonly.py`, the owner's 2026-11-06 decisions): `null` and `true` are human-only. A `false` counts only from the machine file or an untracked repo `.crew/config.json` (git tracking it, or git unable to tell, never counts), only when no layer says `true` (a `true` anywhere vetoes), and only when an applied receipt in `~/.claude/crew/confirm-config/` backs it; a malformed value, an unreadable receipt, or a newer revocation reads as human-only.
+- The double confirmation (`hooks/scripts/crew_confirm_config.py`, `/crew:confirm-config`): `propose` records a pending change and prints `cc-<8 hex>`; the change applies only after two confirmations from two different user prompts within 15 minutes, compare-and-swap against the file as proposed (a changed file goes `stale`), with the repo file re-checked as untracked at the second one. `confirm` accepts only `via: "user-prompt"`; the CLI has no confirm subcommand, and the command file is `disable-model-invocation: true`. No hook calls `confirm` yet, so in 1.3.9 a proposal can only be listed, cancelled or left to expire.
+- `crew_config.py --set` and the `/crew:config` menu refuse a `humanOnly` `false` at either layer and a repo `null` / `--unset` (it drops a veto); `true` is a plain write, and a machine `null` / `--unset` too. A crew write that sets a key back records a revocation, so an old receipt no longer backs a `false` that reappears by hand.
+- Docs: `CONFIG.md` and the configuration reference gain the `human-only opt-out` layer and a section saying what is NOT enforced yet; the guide, `/crew:config`, `/crew:approve`, the crew README and `plugin/PLUGINS.md` (39 commands) say the same. Tests: `test_crew_humanonly.py` (must-block and must-allow cases) and `humanonly_mutations.py` (16 mutations, each turning a named case red; run alone until the harness change wires them into `sabotage.py`). The L-0725 key set gains the two keys (89 / 85 / 52).
+
+### Fixed — crew 1.2.124: the hook-faults test accepts the deadline-exhausted reason
+
+- **Summary.** `crew` 1.2.124: test-only; `test_a_fault_in_an_armed_repo_is_exit_2_naming_the_cause` for `guard-past-its-timeout` and `dispatcher-hangs-before-main` also accepts `the python probe used the whole deadline`, which a loaded runner can print when the probe exhausts the deadline in startup; the hook still fails closed with exit 2 and the test still requires a named cause.
+
+### Fixed - crew 1.3.6: the diff-base note is in the detail log, not on stderr; a failed buffer split leaves no half-written log
+
+- **Summary.** `crew` 1.3.6: the Stop gate's `diff base: the merge-base of HEAD with ...` note (new in 1.3.0) was written to stderr on every Stop, a clean tree's included; it now goes to `.crew/.verify-gate.log` as 1.3.0 said it would. It carries a commit sha, so the recorded Stop goldens could never match it (CI of #715: `crew-shell-matrix`).
+
+### Fixed - crew 1.3.1: pylint findings in the deadline work
+
+- **Summary.** `crew` 1.3.1: lint-only follow-up to 1.3.0 (CI of #715); `verify_record.py` and `test_verify_gate_deadline.py` use f-strings and `with` for the process handles; no behaviour or message text changes.
+
+### Fixed — crew 1.3.0: the Stop gate keeps the hook deadline and survives being killed
+
+- **Summary.** `crew` 1.3.0: the verify gate no longer runs past the Stop hook's deadline (measured 862s against 600s on Windows); a rule that would not fit is deferred by name, what a run measured is saved as it goes so a killed run still corrects the next one, the diff base is `origin/<default>`, and a lock left by a killed gate no longer blocks the next turn.
+- **Deadline.** Before each rule, its price is held against `CREW_HOOK_DEADLINE` less a 60s margin; a rule that would not fit prints `deferred: would pass the hook deadline - <why> - NOT VERIFIED this turn: <command>` and holds the verified marker and fingerprint back. A rule with no price runs only while time is left. Stop only; `--all` and `--ci` are unchanged. An unreadable deadline is said and defers nothing.
+- **Persistence.** Before each command the gate caches the timing of every rule that has passed so far, records the command now starting (`.crew/.verify-gate.inflight.json`), and rewrites `.crew/.verify-gate.log` headed `RUN NOT FINISHED`; all through a temp file and rename. A run killed at its deadline leaves the in-flight record, and the next run prices that rule at no less than the time it ran, so it is deferred by name instead of killed again.
+- **Base.** The diff base is the merge-base with `origin/<default>` when that ref exists (a local `main` behind the remote had widened scope by 31 commits), else the local branch; the choice is in the detail log.
+- **Lock.** The lock records its holder's Windows pid (Git Bash) or pid and start time (Linux) beside its token; a lock whose holder process no longer exists is reclaimed at once. A live holder, or one that cannot be asked, backs off as before.
+- Tests: `test_verify_gate_deadline.py` (must-block and must-allow for each), nine mutations in `sabotage_deadline.py`.
+### Fixed — crew 1.2.122: three pylint findings in crew test files
+
+- **Summary.** `crew` 1.2.122: test-only; the two open() pass-through wrappers in `test_crew_autopilot_goal_resume.py` and `test_crew_resume.py` carry an `unspecified-encoding` disable (they forward the caller's mode and arguments), and the shadowed first `_write_config` helper in `test_migrate.py` is removed (the later definition always won, so no behaviour changes).
+
+### Fixed — crew 1.2.121: a migrate test no longer fails when the pytest tmp path holds the value's digits
+
+- **Summary.** `crew` 1.2.121: test-only; `test_refuses_non_default_dropped_key` strips the pytest tmp root from the output before checking that the refused value is not printed, so a run whose process number contains 30 (`/pytest-30306/`) no longer fails `emergency.ttlMinutes-30`; a real leak of the value still fails it (sabotage-checked).
+
 ### Fixed — crew 1.2.119: the guards' allow path starts no helper processes in bash
 
 - **Summary.** `crew` 1.2.119: cloud-guard, env-guard and promote-gate clear a command that deploys nothing with one python and no `tr`, `cut`, `dirname`, `uname`, `cygpath`, `date`, `jq` or `git` process from bash, so several lanes running at once no longer time the guards out on Git Bash, where each process start is an MSYS fork; every decision is unchanged.

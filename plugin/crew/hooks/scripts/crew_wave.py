@@ -786,7 +786,9 @@ def _receipt_mark(top, ticket):
 MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-]*(?:\[[A-Za-z0-9]+\])?\Z")
 
 
-CLAUDE_MODEL_HEADS = ("claude", "opus", "sonnet", "haiku")
+# `fable` (Fable 5.1, `claude-fable-5-1`) is accepted as an explicit pin only: crew
+# never selects it, and Opus stays the escalation target (owner decision D1).
+CLAUDE_MODEL_HEADS = ("claude", "opus", "sonnet", "haiku", "fable")
 
 
 def role_model(top, role, cfg=None):

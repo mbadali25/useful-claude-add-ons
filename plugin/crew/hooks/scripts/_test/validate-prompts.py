@@ -286,7 +286,7 @@ def check_agents():
             ok(f"{name}: tools")
 
         model = fields.get("model", "inherit")
-        if model not in ("inherit", "opus", "sonnet", "haiku") and model != MODEL_TIER.get(name[:-3]):
+        if model not in ("inherit", "opus", "sonnet", "haiku", "fable") and model != MODEL_TIER.get(name[:-3]):
             bad(f"{name}: unrecognised model '{model}'")
         elif model != MODEL_TIER.get(name[:-3], "sonnet"):
             # The tiering is a design decision, not a default: reviewer is the
