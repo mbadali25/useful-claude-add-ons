@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.11**: Four flaky or environment-dependent gate tests made deterministic. `crew` 1.3.11: test-only; no hook behaviour changes. Four tests that failed on a loaded runner, a path containing a digit, or a newer pytest now prove the same thing without depending on any of those.
 - **crew 1.3.10**: Version follows the merge of main's crew 1.3.6 into the opt-out branch. `crew` 1.3.10: no behaviour change beyond 1.3.9; the version moves past main's 1.3.6 so the drift check counts the merged-in crew changes. The human-only opt-out settings and `/crew:confirm-config` are as described under 1.3.9.
-- **crew 1.3.9**: The human-only opt-out settings and their double confirmation (inert until the hook wiring lands). `crew` 1.3.9: two new settings, `humanOnly.approve` and `humanOnly.promoteMarker`, record the owner's opt-out of `/crew:approve` and the production promote marker being human-only, behind a double confirmation; no hook reads them yet, so nothing changes until a later harness release wires them in.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
