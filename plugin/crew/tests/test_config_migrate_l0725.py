@@ -402,7 +402,19 @@ def test_refuses_non_default_dropped_key(tmp_path, capsys, key, value):
     assert f"{key} holds a non-default value" in said.out + said.err
     assert constant in said.out + said.err
     assert f"--accept-dropped {key}" in said.out + said.err
-    assert str(value) not in said.out.replace(constant, "") + said.err
+    assert str(value) not in _without_tmp_path(said.out.replace(constant, "") + said.err, tmp_path)
+
+
+def _without_tmp_path(text, tmp_path):
+    """`text` with every spelling of `tmp_path` replaced by a placeholder.
+    The output names the repo and machine-file paths, all under `tmp_path`,
+    and pytest's basetemp is arbitrary: under `pytest-30207` the value `30`
+    is "found" in a path the refusal is right to print. Only the tmp prefix
+    goes; the value printed anywhere else in the line is still caught."""
+    for spelling in sorted({str(tmp_path), os.path.realpath(str(tmp_path)), tmp_path.as_posix()},
+                           key=len, reverse=True):
+        text = text.replace(spelling, "<tmp>")
+    return text
 
 
 def test_refuses_every_non_default_dropped_key_at_once_and_names_each(tmp_path, capsys):

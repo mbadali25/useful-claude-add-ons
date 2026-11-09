@@ -77,11 +77,37 @@ config.
 
 **Run each task in a new agent (a fresh subagent), not in the main session.** Owner rule, 2026-11-06.
 The main session briefs the agent (goal, paths, what is ruled out), waits for its report and relays
-the result. Independent tasks go out as parallel agents in one message; do not reuse an agent across
-unrelated tasks. A lookup you could answer in a few tool calls is still a task, so delegate it too.
-This applies to the top-level session only: a subagent does its task directly and spawns no further
-agents. crew's own reviewer and lane agents are dispatched by crew, not by this rule. For the
+the result. Independent tasks go out as parallel agents in one message; never reuse an agent across
+tasks, every task gets a NEW one. A lookup you could answer in a few tool calls is still a task, so
+delegate it too. A manager agent may coordinate worker subagents where the platform allows it,
+spawned unnamed (a named spawn becomes an agent-teams teammate when
+`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, and teammates cannot spawn); if a manager cannot spawn, the
+top-level session dispatches. crew's own reviewer and lane agents are dispatched by crew, not by
+this rule. For the
 `ListAgents` check before trusting a diff or branch, see the Lessons line on it.
+
+**The top-level session stays free to answer the owner and other sessions.** Owner rule, 2026-11-07.
+It only briefs agents, relays their results and answers; it does no task work itself. Independent
+tasks run as parallel agents, up to 20 concurrent subagents per session (owner rule 2026-11-08,
+replacing the earlier 2-3 cap). Each runs its long jobs detached. If guards time out (fork errno 11,
+or the 15-20 s guard caps), reduce lanes rather than disable guards. ALL communication with other sessions,
+outbound sends and condensing inbound messages, goes through one `crew:session-relay` agent kept
+available for the session; the main session never sends to a peer directly.
+
+## Standing rule - verify before you state a problem
+
+**Before stating anything as a problem (bug, cause, failure, risk), verify it** by running the state
+or reading the artifact. Owner rule, 2026-11-07; the owner saw crew's Claude make many assumptions
+before verifying. Label each claim *verified* (with the command or path) or *inferred*; say "could
+not tell" rather than guess. This binds agent briefs and reports too: ask every agent to separate
+verified from inferred, and relay that split unchanged.
+
+## Standing rule - keep the Configuration Guide current
+
+**A change that adds, removes or renames a crew config key, value or default updates the
+Configuration Guide in the same PR.** Owner rule, 2026-11-07. That means the guide built from
+`docs/guides/crew/src/` (`build.py`, `config_reference.py`) and the published Claude Docs doc titled
+"Configuration Guide", so the template and every supported value stay documented.
 
 ## Stop and ask - the conditions that should halt work
 
