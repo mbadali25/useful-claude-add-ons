@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **changelog**: Every version a branch sets gets a CHANGELOG.md line, checked in CI. A plugin or skill version bump, including a re-bump after main moved, now needs a CHANGELOG.md entry for that exact version or a `re-bump only` line, and CI fails without one.
 - **crew 1.3.16**: Role-write-guard's allow path starts fewer helper processes in bash. `crew` 1.3.16: the Write/Edit guard (`role-write-guard.sh`) no longer starts `dirname`, `cat` or two command-substitution subshells before python judges the write, so it stays well inside its 10 s limit on Git Bash, where each process start is an MSYS fork; every decision is unchanged.
-- **crew 1.3.15**: The `fable` alias is accepted as an explicit claude model pin. `crew` 1.3.15: a `dev.roles.developer` or `dev.roles.coordinator` pin of `{"provider": "claude", "model": "fable"}` (Fable 5.1, `claude-fable-5-1`) is now put on the wave launch line instead of being refused as "not a claude model"; Fable is opt-in only and nothing in crew selects it.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -7,7 +7,42 @@ The root [`README.md`](README.md)'s "What's new" shows the newest two entries he
 what the change means for a user), or the first sentence of its first bullet when it has none. After
 adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails until the README matches.
 
+**Every version gets a line.** A branch that sets a plugin's or skill's `version` in
+`.claude-plugin/marketplace.json` (a bump, a re-bump after main moved, a new entry) leaves this file
+naming that exact version, in one of two forms, and `scripts/check-changelog.py` fails CI otherwise:
+
+- an entry heading (`###`) containing `<name> <version>`, as below; or
+- for a version that carries no change of its own, one line in the **re-number block** (the lines
+  directly under `## [Unreleased]`, before its first `###`; the README generator ignores them):
+  `- <name> <version>: re-bump only - <why: what it follows, or which entry carries the change>`.
+
+A version a branch set and then replaced still gets its line, because merge commits carry it into
+main's history. Only versions a branch newly sets are checked, so older history is not backfilled
+(the gaps below were added once, by hand).
+
+**Release sections.** Entries stay under `## [Unreleased]`; they are not moved into dated version
+headings. The file is append-only history of about 19,000 lines, each entry is already stamped with
+its exact version in its heading, and a release here is a merge to `main`, so moving entries would
+rewrite thousands of lines for no reader. A repo that tags a release (see `Skill-Pipeline.md`) may
+still cut a dated `## [x.y.z]` heading above the entries it covers; `sync-updates.py` and the checker
+read entries under any `## [` heading.
+
 ## [Unreleased]
+
+- crew 1.3.2: re-bump only - drift-check bump for the diff-base note fix (commits a514c5405, 48ce2f0ae); its change is recorded under crew 1.3.6's entry
+- crew 1.3.3: re-bump only - drift-check bump for a test change (commits 05f18d246, 1cfde9907)
+- crew 1.3.4: re-bump only - the failed-buffer-split fix (commit b0845f0c6); recorded under crew 1.3.6
+- crew 1.3.5: re-bump only - drift-check bump after merging main's crew test change (commit 42251fce6)
+- crew 1.3.7: re-bump only - re-bump above main's crew 1.2.122 (commit 2f019af34); the change is recorded under crew 1.3.9
+- crew 1.3.8: re-bump only - the human-only opt-out re-versioned so installs update (commit 438b1869c); recorded under crew 1.3.9
+- crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
+- crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
+
+### Added — changelog: every version a branch sets gets a CHANGELOG.md line, checked in CI
+
+- **Summary.** A plugin or skill version bump, including a re-bump after main moved, now needs a CHANGELOG.md entry for that exact version or a `re-bump only` line, and CI fails without one.
+- `scripts/check-changelog.py` reads `.claude-plugin/marketplace.json` at every commit in `origin/main..HEAD` (merges included) and fails each version the branch set that no `###` heading or re-number line names; history is not backfilled. Wired into `marketplace.yml`, `scripts/gate-runner.py` and `.crew/verify.json`; `scripts/_test/check-changelog.py` holds the must-pass and must-fail cases and two sabotage runs.
+- The re-number block under `## [Unreleased]` and the release-section convention (entries stay under `[Unreleased]`) are written at the top of this file. The eight missing crew 1.3.x versions (1.3.2-1.3.5, 1.3.7, 1.3.8, 1.3.12, 1.3.14) were added once as `re-bump only` lines from `git log`.
 
 ### Fixed — crew 1.3.16: role-write-guard's allow path starts fewer helper processes in bash
 
