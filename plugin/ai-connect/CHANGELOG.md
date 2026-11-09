@@ -28,6 +28,24 @@ TLS with a pinned certificate fingerprint (installer phase 1, part 2). The trans
 - `deploy` still writes `ws://` and its firewall step opens `server.port` only in this release; pin deployed peers with `ai-connect pin`. Moving deploy to `wss://` is a follow-up before 0.3.1
 - An expired certificate is still the pinned one and still connects; the Bridge logs `tls_certificate_expired` until it is rotated
 
+## [0.2.14] - 2026-11-08
+
+Test only: `tests/test_ops_root_policy.py` resets `tsadmin.NO_EXEC` after each test. A dry-run deploy in that module left it set, and later CLI tests in the same worker failed with "a dry run runs no tool, and icacls.EXE was about to run" on Windows. No behaviour change.
+
+## [0.2.13] - 2026-11-08
+
+Installing and running as root is a configurable option. The default is unchanged: nothing before 0.2.13 refused root, and with no switch set nothing does now. Client, installer and deploy only: the Bridge is unchanged.
+
+### Added
+- `root_policy.py`: one switch for whether `install.sh`, `installer.py`, `deploy` and `setup` may run as root (euid 0, Linux and macOS). Highest first: the `--allow-root` flag (every `installer.py` step, every `deploy` and `setup` verb, `install.sh`), `AI_CONNECT_ALLOW_ROOT=1` or `0`, the config key `install.allow_root: true` or `false`. A value that is not true or false (in the environment or the config) stops the run instead of being guessed
+- Unset (the default): a root run goes ahead silently, exactly as before. `false`: root is refused before anything changes. `true`: one warning line that the services run as root and that a dedicated service user is safer (never created for you); a root whose `HOME` or user name belongs to another user (`sudo -E`) is refused; after the run the config directory is closed to 0700 and every file in it to 0600 (symbolic links are not followed). `install.sh` then needs no `sudo` and writes no polkit rule, and the units name the process's own user
+- `deploy status` and `deploy list` run as root whatever the switch says. On Windows the switch has no effect: `install.cmd` and `deploy.ps1` ask for elevation through UAC by design and run the tasks as the user without it
+- `config.yaml.example` documents `install.allow_root` as a comment, since `installer.py` requires every active key in the template to be in an existing config
+- `tests/test_ops_root_policy.py`: precedence, must-block (env `0`, config `false`, for `installer.py`, `deploy`, `setup` and the `install.sh` check), must-allow (flag, env, config), file modes 0700/0600, the `sudo -E` refusal, `status` exempt, and that no root-only step in `install.sh` bypasses `$SUDO`. Root is simulated through `AI_CONNECT_DEPLOY_ROOT` and the new `AI_CONNECT_ROOT_HOME` test seam
+
+### Fixed
+- The root switch's refusal for a config that is not valid YAML names only the line and column, never PyYAML's own text, which quotes the offending value (a token can be that value)
+
 ## [0.2.12] - 2026-11-08
 
 Enrol a machine with one copy-paste code, and revoke one without restarting the Bridge. Installer phase 1 of 2: TLS with a pinned certificate follows in its own release.

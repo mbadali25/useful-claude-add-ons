@@ -87,6 +87,8 @@ def test_the_write_guard_blocks_a_relay_write(tmp_path, agent_type):
     "FROM>TO | TYPE | IDS | NEED:",
     "RELAY OUT to <name>",
     "PEER IN from <name>",
+    "could not verify recipient",
+    "do not invent or alter a name",
 ])
 def test_the_prompt_keeps_the_transport_only_rules(phrase):
     assert phrase in _read(AGENT)
