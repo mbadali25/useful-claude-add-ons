@@ -1,4 +1,4 @@
-"""crew 1.3.17: the scope guard's allow path starts as few processes as it can.
+"""crew 1.3.18: the scope guard's allow path starts as few processes as it can.
 
 scope-guard.sh runs before every Write, Edit and Bash call of every lane at
 once. On Git Bash each process start is an MSYS fork (~0.15s measured on the
