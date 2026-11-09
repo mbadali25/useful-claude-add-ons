@@ -9,6 +9,12 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.3.16: role-write-guard's allow path starts fewer helper processes in bash
+
+- **Summary.** `crew` 1.3.16: the Write/Edit guard (`role-write-guard.sh`) no longer starts `dirname`, `cat` or two command-substitution subshells before python judges the write, so it stays well inside its 10 s limit on Git Bash, where each process start is an MSYS fork; every decision is unchanged.
+- `role-write-guard.sh`: `$DIR` from `${BASH_SOURCE[0]%/*}` when the path is absolute (as cloud-guard.sh does), the payload read with the `read -r -d ''` builtin instead of `$(cat)`, and `crew_py_script`'s variable form instead of `$(...)`. Measured on this Windows host at origin/main b0bf059f1 with `CREW_PYTHON` exported: 8 to 4 bash processes in a `bash -x` trace, and about 730 ms to 480 ms mean wall time over 15 runs each (noisy; no config layer involved). The resolver subshell stays because its CREW_PYTHON block must remain identical across `crew_py`, `crew_py_strict` and this script.
+- Tests: `test_guard_spawns.py` gains a must-allow case (no helper program, no `cat`, one python) and a must-block case (an explorer's write is still refused). Sabotage-tested: restoring `INPUT=$(cat)` or the `dirname` form turns the allow case red.
+
 ### Added — crew 1.3.15: the `fable` alias is accepted as an explicit claude model pin
 
 - **Summary.** `crew` 1.3.15: a `dev.roles.developer` or `dev.roles.coordinator` pin of `{"provider": "claude", "model": "fable"}` (Fable 5.1, `claude-fable-5-1`) is now put on the wave launch line instead of being refused as "not a claude model"; Fable is opt-in only and nothing in crew selects it.
