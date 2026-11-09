@@ -1,4 +1,4 @@
-"""One standard place for git worktrees, outside the repo (crew 1.3.18).
+"""One standard place for git worktrees, outside the repo (crew 1.3.19).
 
     python3 crew_worktrees.py root          [--root .]            print the repo's worktree directory
     python3 crew_worktrees.py path <branch> [--root .]            print where a worktree for <branch> goes

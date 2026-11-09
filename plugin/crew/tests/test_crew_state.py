@@ -1289,7 +1289,7 @@ def test_root_is_constant(tmp_path, capsys):
     assert crew_state.main(["--root", str(repo), "--worktree-path", "fix"]) == 0
 
     printed = capsys.readouterr().out.splitlines()
-    # crew 1.3.18: the standard root outside the repo (`crew_worktrees`), under
+    # crew 1.3.19: the standard root outside the repo (`crew_worktrees`), under
     # the isolated HOME, never the checkout's parent and never `worktree.root`.
     assert os.path.dirname(printed[0]) == os.path.join(os.path.expanduser("~"), ".claude", "crew", "worktrees")
     assert os.path.dirname(printed[1]) == printed[0]

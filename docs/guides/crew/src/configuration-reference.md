@@ -224,7 +224,7 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `worktrees.root` | both | `null` | absolute path or null (coerced in `plugin/crew/hooks/scripts/crew_worktrees.py`) | 1.3.18 | The base directory for this repo's git worktrees, OUTSIDE the repo: they go in `<root>/<repo>-<digest>/<name>`. null is `~/.claude/crew/worktrees`; `~` is expanded, a relative path or one inside the repo is refused (never replaced by the default). It places the worktrees crew places (`/crew:emergency`, `crew_worktrees.py path`) and, once the owner registers the opt-in `WorktreeCreate` hook, the ones Claude Code creates; without the hook Claude Code keeps using `.claude/worktrees/`. |
+| `worktrees.root` | both | `null` | absolute path or null (coerced in `plugin/crew/hooks/scripts/crew_worktrees.py`) | 1.3.19 | The base directory for this repo's git worktrees, OUTSIDE the repo: they go in `<root>/<repo>-<digest>/<name>`. null is `~/.claude/crew/worktrees`; `~` is expanded, a relative path or one inside the repo is refused (never replaced by the default). It places the worktrees crew places (`/crew:emergency`, `crew_worktrees.py path`) and, once the owner registers the opt-in `WorktreeCreate` hook, the ones Claude Code creates; without the hook Claude Code keeps using `.claude/worktrees/`. |
 
 ### `emergency`
 

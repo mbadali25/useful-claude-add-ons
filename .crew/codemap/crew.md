@@ -935,7 +935,7 @@ calls `confirm`; both are harness (`scripts/check-tooling-pr.py` `HARNESS`:
 `plugin/crew/tests/humanonly_mutations.py` (16, run alone until PR 2 wires
 them into `sabotage.py`).
 
-## Worktree root and `/crew:worktrees` (crew 1.3.18)
+## Worktree root and `/crew:worktrees` (crew 1.3.19)
 
 DERIVED on `feat/worktrees-root` (cut from main `e65a067a4`); this section does
 not move the anchor. One leaf, `worktrees.root`, default `null` in both templates

@@ -556,7 +556,7 @@ RESUME_DEFAULTS = {"auto": None}
 # yet: the hooks that act on it are a separate harness change.
 HUMAN_ONLY_DEFAULTS = {"approve": None, "promoteMarker": None}
 
-# crew 1.3.18 `worktrees.root`: the BASE directory for this repo's worktrees (null:
+# crew 1.3.19 `worktrees.root`: the BASE directory for this repo's worktrees (null:
 # ~/.claude/crew/worktrees). Both layers; the resolver and its refusals are
 # `crew_worktrees.resolve`.
 WORKTREES_DEFAULTS = {"root": None}
@@ -3115,7 +3115,7 @@ def main(argv=None):
         # A command that has to place a worktree shells out to THIS, rather
         # than composing a path itself, so two lanes placing worktrees seconds
         # apart agree on one answer.
-        # crew 1.3.18: the answer is `crew_worktrees`'s -- the standard root
+        # crew 1.3.19: the answer is `crew_worktrees`'s -- the standard root
         # outside the repo (`worktrees.root`, default under ~/.claude/crew) --
         # not `worktree_root`/`worktree_path` above, which are the checkout's
         # parent that this flag answered before. An unusable setting is a

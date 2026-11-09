@@ -1,4 +1,4 @@
-"""crew 1.3.18 worktree-root mutations, in `sabotage.py`'s tuple shape.
+"""crew 1.3.19 worktree-root mutations, in `sabotage.py`'s tuple shape.
 
 Each puts back one way `crew_worktrees.py` could place a worktree somewhere it
 must not, delete work it must not, or replace a refusal with a guess, and names

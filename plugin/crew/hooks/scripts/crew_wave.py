@@ -980,7 +980,7 @@ def _init_refusal(top, main_top, slug, ticket):
         return "this is the main checkout; a lane runs only in its own isolated worktree"
     agents = os.path.join(main_top, AGENT_DIR)
     if not os.path.normcase(top).startswith(os.path.normcase(agents) + os.sep):
-        # crew 1.3.18: an Agent whose WorktreeCreate hook is crew's places the
+        # crew 1.3.19: an Agent whose WorktreeCreate hook is crew's places the
         # lane under the standard root instead; that directory is admitted too.
         standard = _standard_worktrees(main_top)
         if not (standard and os.path.normcase(os.path.realpath(top)).startswith(

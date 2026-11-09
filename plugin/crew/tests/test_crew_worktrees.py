@@ -1,4 +1,4 @@
-"""crew 1.3.18: one standard worktree root outside the repo (`worktrees.root`).
+"""crew 1.3.19: one standard worktree root outside the repo (`worktrees.root`).
 
     python3 -m pytest plugin/crew/tests/test_crew_worktrees.py -q
 

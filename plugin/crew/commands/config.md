@@ -84,7 +84,7 @@ How it writes, whatever the arguments say:
   `context.autoClear.onlyRepos` / `.onlySessions` (read from the machine file
   only); `context.autoClear.enabled` and `resume.auto` take only a veto
   (`false`) or `null` at the repo layer.
-- **`worktrees.root` (crew 1.3.18).** A plain string write in either layer
+- **`worktrees.root` (crew 1.3.19).** A plain string write in either layer
   (the repo wins): an absolute directory, `~` allowed, outside the repo. A
   relative path or one inside the repo is not rejected at write time but is
   refused wherever it is read (`/crew:worktrees` prints `refused: ...`), and the
