@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.19**: `environments.preProduction` treats a named production-labelled environment as not live yet. `crew` 1.3.19: a new repo-only setting, `environments.preProduction`, lists by exact name (each with a written reason) an environment that is labelled production but not live yet, so the cloud guard judges it as non-production without turning any guard off; every use prints and logs an audit line, and everything not listed is judged as before.
 - **crew 1.3.16**: Role-write-guard's allow path starts fewer helper processes in bash. `crew` 1.3.16: the Write/Edit guard (`role-write-guard.sh`) no longer starts `dirname`, `cat` or two command-substitution subshells before python judges the write, so it stays well inside its 10 s limit on Git Bash, where each process start is an MSYS fork; every decision is unchanged.
-- **crew 1.3.15**: The `fable` alias is accepted as an explicit claude model pin. `crew` 1.3.15: a `dev.roles.developer` or `dev.roles.coordinator` pin of `{"provider": "claude", "model": "fable"}` (Fable 5.1, `claude-fable-5-1`) is now put on the wave launch line instead of being refused as "not a claude model"; Fable is opt-in only and nothing in crew selects it.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -421,6 +421,17 @@ the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The
 `environments.nonProd` is repo-only, `environments.prodUnattended` ratchets (below). DERIVED from
 the docstrings and definitions cited; the verdict table itself is not re-derived here.
 
+`environments.preProduction` (crew 1.3.19) is a second repo-only exemption for an environment
+that is labelled production but not live: exact name -> `{reason, targets}`, validated by
+`crew_preprod.problem` (called from `crew_config.environments_block_problem`, so a malformed entry
+makes every environment unknown). `crew_preprod.arm` (called first in `cloud_guard.evaluate`)
+appends the names to the `nonProd` globs the terraform and dispatch classifiers read;
+`crew_config._preproduction_cover` lets `guards.prodDatabase` / `prodServer` stand down only when
+every declared production target on the command is a listed name or `target`. Both paths write
+`env:preProduction:<name>` to `.crew/guard.log` and a `PRE-PRODUCTION EXEMPTION` line to stderr
+(`cloud_guard.main`). DERIVED from `plugin/crew/hooks/scripts/crew_preprod.py`; tests
+`plugin/crew/tests/test_preproduction.py`.
+
 **GitHub Actions deploys, slice 1 (T-0045).** `plugin/crew/hooks/scripts/crew_ghdeploy.py` reads an
 environment's `github` entry out of `.crew/verify.json` (`_environment`, `:504`; `entries`, `:232`),
 validates each against a closed key set (`KEYS`, `:107`) and value grammar (`VALUE`, `:104`;

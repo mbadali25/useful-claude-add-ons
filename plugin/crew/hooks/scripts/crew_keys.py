@@ -329,6 +329,11 @@ KEY_META = {
     "environments.nonProd": _unv("Terraform targets that are not production and may run "
                                  "unattended.", "1.0.37", _S + "crew_config.py",
                                  "list of globs"),
+    "environments.preProduction": _unv("Environments labelled production that are not live yet: exact "
+                                       "name -> `reason` (+ optional exact `targets`); judged "
+                                       "non-production by the cloud guard, with an audit line.",
+                                       "1.3.19", _S + "crew_preprod.py",
+                                       "object of exact name to {reason, targets}"),
     "environments.prodUnattended": _rat("Whether production terraform may run unattended; "
                                         "`true` only when both layers say so.", "1.0.37"),
     "environments.workflows": _unv("Deploy workflow globs, each mapped to its environment "
@@ -454,6 +459,7 @@ _FAMILY_OF_KEY = {
     "environments.prodUnattended": "cloud",
     "environments.nonProd": "cloud",
     "environments.workflows": "cloud",
+    "environments.preProduction": "cloud",
 }
 _FAMILY_OF_SEGMENT = {
     "qa": "providers", "dev": "providers", "secondOpinion": "providers",
