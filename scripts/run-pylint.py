@@ -18,11 +18,43 @@ pass and not a failure); 2 = git could not list files.
 
 from __future__ import annotations
 
+import configparser
 import os
 import subprocess
 import sys
 
 EXIT_MISSING = 77
+
+# POSIX-only stdlib names. CI runs pylint on Linux, where they exist; on win32
+# pylint's inference lacks them and reports E1101 no-member. Listed by exact
+# name (end-anchored; a leading ^ makes pylint 4.1 hide every no-member), so a
+# real typo such as os.not_a_real_member still fails. Only passed on win32, so
+# Linux and macOS runs are unchanged.
+WIN32_POSIX_ONLY = (
+    "SIGKILL", "geteuid", "getegid", "getuid", "getpgid", "AF_UNIX", "killpg",
+    "waitid", "P_PID", "WEXITED", "WNOHANG", "WNOWAIT", "O_DIRECTORY",
+    "O_NONBLOCK", "chown", "fchown", "fork", "mkfifo", "posix_spawn", "tzset",
+)
+# POSIX-only stdlib modules whose import pylint reports as E0401 on win32.
+WIN32_POSIX_MODULES = ("resource",)
+
+
+def rc_ignored_modules() -> list[str]:
+    """`ignored-modules` from .pylintrc; a command-line value would replace it."""
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.read(".pylintrc", encoding="utf-8")
+    raw = parser.get("MAIN", "ignored-modules", fallback="")
+    return [name.strip() for name in ",".join(raw.splitlines()).split(",")
+            if name.strip()]
+
+
+def platform_args() -> list[str]:
+    """Extra pylint args for this platform (empty except on win32)."""
+    if sys.platform != "win32":
+        return []
+    names = "|".join(WIN32_POSIX_ONLY)
+    return [f"--generated-members=({names})$",
+            "--ignored-modules=" + ",".join([*rc_ignored_modules(), *WIN32_POSIX_MODULES])]
 
 
 def tracked_python_files() -> list[str]:
@@ -56,7 +88,7 @@ def main(argv: list[str]) -> int:
     # Keep the script's own directory off sys.path, as `pylint` itself would.
     if sys.path and os.path.abspath(sys.path[0]) == os.path.dirname(os.path.abspath(__file__)):
         sys.path.pop(0)
-    result = Run([*jobs, *argv, *files], exit=False)
+    result = Run([*jobs, *platform_args(), *argv, *files], exit=False)
     return int(result.linter.msg_status)
 
 
