@@ -36,7 +36,8 @@ def create_app(peer_name: str, settings: ClientSettings | None = None, **session
         settings = settings or client_settings(load_config())
         tools.set_project_dir(settings.project_dir)
         await init_client(
-            host=settings.host, port=settings.port, peer_name=peer_name, token=settings.token, **session
+            host=settings.host, port=settings.port, peer_name=peer_name, token=settings.token,
+            fingerprint=settings.fingerprint, **session
         )
         yield
         client = get_client()

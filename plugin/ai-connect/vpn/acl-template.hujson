@@ -4,9 +4,12 @@
 // "tests" block on save and refuses a policy that fails it.
 //
 // Shape: agents' machines (tag:ai-peer) may reach the Bridge (tag:bridge) on
-// TCP 9999 and nothing else. Peers cannot reach each other, and nothing is
-// allowed to reach a peer. Tailscale denies by default, so the absence of any
-// other rule is what enforces "no peer-to-peer".
+// TCP 10000 (wss://, TLS with a pinned certificate) and, during the 0.2.15
+// transition release only, TCP 9999 (plain ws://, deprecated), and nothing
+// else. Drop tcp:9999 once every peer is pinned (ai-connect 0.3.1 serves
+// wss:// alone). Peers cannot reach each other, and nothing is allowed to
+// reach a peer. Tailscale denies by default, so the absence of any other rule
+// is what enforces "no peer-to-peer".
 {
 	"tagOwners": {
 		// Who may apply the tags. The OAuth client that mints keys must be
@@ -19,7 +22,7 @@
 		{
 			"src": ["tag:ai-peer"],
 			"dst": ["tag:bridge"],
-			"ip":  ["tcp:9999"],
+			"ip":  ["tcp:9999", "tcp:10000"],
 		},
 		// Keep the admin's own access to the Bridge host (SSH, the observer).
 		// Delete or narrow this if the admin reaches it some other way.
@@ -32,30 +35,30 @@
 
 	"tests": [
 		{
-			// A peer reaches the Bridge port...
+			// A peer reaches the Bridge ports...
 			"src":    "tag:ai-peer",
 			"proto":  "tcp",
-			"accept": ["tag:bridge:9999"],
+			"accept": ["tag:bridge:9999", "tag:bridge:10000"],
 			// ...and nothing else on it.
-			"deny":   ["tag:bridge:22", "tag:bridge:80", "tag:bridge:443", "tag:bridge:10000"],
+			"deny":   ["tag:bridge:22", "tag:bridge:80", "tag:bridge:443", "tag:bridge:10001"],
 		},
 		{
-			// No peer-to-peer: a peer cannot reach another peer on the Bridge port or SSH.
+			// No peer-to-peer: a peer cannot reach another peer on the Bridge ports or SSH.
 			"src":   "tag:ai-peer",
 			"proto": "tcp",
-			"deny":  ["tag:ai-peer:9999", "tag:ai-peer:22"],
+			"deny":  ["tag:ai-peer:9999", "tag:ai-peer:10000", "tag:ai-peer:22"],
 		},
 		{
-			// UDP to the Bridge port is not allowed either.
+			// UDP to the Bridge ports is not allowed either.
 			"src":   "tag:ai-peer",
 			"proto": "udp",
-			"deny":  ["tag:bridge:9999"],
+			"deny":  ["tag:bridge:9999", "tag:bridge:10000"],
 		},
 		{
 			// The Bridge cannot open connections to peers.
 			"src":   "tag:bridge",
 			"proto": "tcp",
-			"deny":  ["tag:ai-peer:9999", "tag:ai-peer:22"],
+			"deny":  ["tag:ai-peer:9999", "tag:ai-peer:10000", "tag:ai-peer:22"],
 		},
 	],
 }

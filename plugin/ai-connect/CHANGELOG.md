@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.2.17] - 2026-11-09
+
+Release bump only: merges main's 0.2.13 (configurable root install) and 0.2.14 (test fix) into the TLS pinned-fingerprint line. `install.sh` opens both ports (9999, 10000) through `$SUDO`. No other behaviour change.
+
+## [0.2.16] - 2026-11-08
+
+Lint only (CI pylint on 0.2.15): two lines over 120 characters, a reimport of `join_codes` in `installer.py`, and `PinnedSocket`'s abstract `SSLSocket` methods. No behaviour change.
+
+## [0.2.15] - 2026-11-08
+
+TLS with a pinned certificate fingerprint (installer phase 1, part 2). The transition release: the Bridge serves `wss://` and plain `ws://` side by side; **0.3.1 serves `wss://` only**.
+
+### Added
+- `bridge_tls.py`: the Bridge makes a self-signed EC P-256 certificate on first start (or `ai-connect bridge cert show`), valid 730 days (`server.tls.validity_days`), in `~/.config/ai-connect/tls/` (directory 0700, key 0600; on Windows an ACL of the current user alone). A key that group or others can read stops the Bridge. Generation uses `cryptography` (now pinned, `cryptography==50.0.2`; it was already in the venv through fastmcp); the TLS contexts and the pin check use the stdlib `ssl` only
+- `wss://` on its own port, `server.tls.port` (default `server.port + 1`, 10000): TLS and plain WebSocket cannot share one socket without sniffing the first byte, which would hide client addresses from the logs and the join rate limit. `server.tls.enabled` (default true), `server.tls.required` (default false; true opens no `ws://` listener at all)
+- Clients pin the certificate by its SHA-256 (`client.bridge_fingerprint`): the digest is checked inside the TLS handshake, before the WebSocket upgrade carries a token or a join secret. No CA, no hostname check. A mismatch fails closed (`PinMismatch`), the MCP client stops reconnecting (like a refused token, `peer_status` says why) and nothing ever falls back to `ws://`. MCP client, watcher, observer/user client and `deploy/config_tool.py` (`verify`, `smoke --fingerprint`, `client --fingerprint`) all build `wss://` with the pin
+- Join codes carry the fingerprint and the `wss://` port; `ai-connect join` redeems over TLS with that pin and writes `client.bridge_url: wss://...` and `client.bridge_fingerprint`
+- `ai-connect bridge cert show|rotate`, `ai-connect pin <fingerprint> [--port N]` (checks the certificate at the Bridge first, refuses a mismatch), `ai-connect join --token-file ... --fingerprint`, `ai-connect bridge invite --plain` (a code without a fingerprint, for a machine still on 0.2.6 to 0.2.8); `status` shows the pin and whether the Bridge's certificate matches it
+- `installer.py config --server` pins the Bridge machine's own peer to its own certificate over `wss://`
+
+### Changed
+- A config that pairs a fingerprint with `ws://`, or `wss://` with no fingerprint, is refused (a downgrade, or a connection with no trust anchor)
+- Plain `ws://` is deprecated: the Bridge logs a warning at start and once per client address; a client on `ws://` logs one warning per process (to its log, never to bare stderr). Codes without a fingerprint still join over `ws://`, with a warning
+- `install.sh --server` and `install.ps1 -Server` open ports 9999 and 10000 for the VPN subnet (an existing Windows rule gets 10000 added); `vpn/acl-template.hujson` grants `tcp:9999` and `tcp:10000`
+- The auth reload logs a YAML error's line and column only, never its text (it can quote a token), and a file that keeps failing once, not every poll
+
+### Notes
+- **Rotation** (`bridge cert rotate`) changes the fingerprint: it ends every pending join code and re-pins the Bridge machine's own peer; restart the Bridge, then re-pin every other peer (`ai-connect pin <new fingerprint>`) or give it a new code. Until then each one fails closed
+- **Manual steps before 0.3.1:** add `tcp:10000` to an existing tailnet policy by hand (the template is pasted, not pushed), pin every peer, then `server.tls.required: true`
+- `deploy` still writes `ws://` and its firewall step opens `server.port` only in this release; pin deployed peers with `ai-connect pin`. Moving deploy to `wss://` is a follow-up before 0.3.1
+- An expired certificate is still the pinned one and still connects; the Bridge logs `tls_certificate_expired` until it is rotated
+
 ## [0.2.14] - 2026-11-08
 
 Test only: `tests/test_ops_root_policy.py` resets `tsadmin.NO_EXEC` after each test. A dry-run deploy in that module left it set, and later CLI tests in the same worker failed with "a dry run runs no tool, and icacls.EXE was about to run" on Windows. No behaviour change.

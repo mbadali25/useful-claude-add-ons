@@ -38,6 +38,7 @@ from config_loader import (
     OBSERVER_TOKEN_PATH,
     USER_TOKEN_PATH,
     client_settings,
+    connect_options,
     load_config,
 )
 
@@ -55,15 +56,22 @@ def bridge_uri() -> str:
     return client_settings(load_config()).uri
 
 
+def _bridge_args(path: Path, step: str) -> tuple[str, str, str]:
+    """(URI, token, pinned fingerprint or ""): wss:// only with its pin, never a fallback to ws://."""
+    settings = client_settings(load_config())
+    return settings.uri, _read_token(path, step), settings.fingerprint
+
+
 def _read_token(path: Path, step: str) -> str:
     if not path.exists():
         raise FileNotFoundError(f"Token not found: {path}\nRun installer.py {step} on the Bridge machine.")
     return path.read_text(encoding="utf-8").strip()
 
 
-async def _connect(uri: str, token: str) -> ClientConnection:
+async def _connect(uri: str, token: str, fingerprint: str = "") -> ClientConnection:
     try:
-        return await websockets.connect(uri, additional_headers={"Authorization": f"Bearer {token}"})
+        return await websockets.connect(uri, additional_headers={"Authorization": f"Bearer {token}"},
+                                        **connect_options(fingerprint))
     except websockets.exceptions.InvalidStatus as e:
         if e.response.status_code == HTTPStatus.UNAUTHORIZED:
             raise TokenRefused("The Bridge refused the token") from e
@@ -98,9 +106,10 @@ def _live_event(data: dict) -> dict | None:
 class ObserverConnection:
     """One connection with the observer token; requests and live messages share it."""
 
-    def __init__(self, uri: str, token: str):
+    def __init__(self, uri: str, token: str, fingerprint: str = ""):
         self._uri = uri
         self._token = token
+        self._fingerprint = fingerprint
         self._ws: ClientConnection | None = None
         # Live events that arrived while a request waited for its answer
         self._pending: list[dict] = []
@@ -108,10 +117,10 @@ class ObserverConnection:
     @classmethod
     def from_config(cls) -> "ObserverConnection":
         """Bridge address from config.yaml, token from the observer token file."""
-        return cls(bridge_uri(), _read_token(OBSERVER_TOKEN_PATH, "observer-token"))
+        return cls(*_bridge_args(OBSERVER_TOKEN_PATH, "observer-token"))
 
     async def __aenter__(self) -> "ObserverConnection":
-        self._ws = await _connect(self._uri, self._token)
+        self._ws = await _connect(self._uri, self._token, self._fingerprint)
         return self
 
     async def __aexit__(
@@ -167,14 +176,15 @@ class ObserverConnection:
 class UserConnection:
     """Sends as a user with the user token; one connection per send, sending is rare."""
 
-    def __init__(self, uri: str, token: str):
+    def __init__(self, uri: str, token: str, fingerprint: str = ""):
         self._uri = uri
         self._token = token
+        self._fingerprint = fingerprint
 
     @classmethod
     def from_config(cls) -> "UserConnection":
         """Bridge address from config.yaml, token from the user token file."""
-        return cls(bridge_uri(), _read_token(USER_TOKEN_PATH, "user-token"))
+        return cls(*_bridge_args(USER_TOKEN_PATH, "user-token"))
 
     async def send(self, as_name: str, recipients: list[str], content: str) -> list[dict]:
         """Send content to each recipient (a peer name or "*") as User:<as_name>.
@@ -183,7 +193,7 @@ class UserConnection:
         gets the message when it comes back, a broadcast reaches only the
         peers online now.
         """
-        connection = await _connect(self._uri, self._token)
+        connection = await _connect(self._uri, self._token, self._fingerprint)
         try:
             await connection.send(json.dumps({"type": "user_send", "as": as_name, "to": recipients, "content": content}))
             answer = await _answer(connection, "user_sent", [])

@@ -4,6 +4,7 @@
 import asyncio
 import json
 import logging
+import ssl
 import time
 from collections.abc import Callable
 from http import HTTPStatus
@@ -122,7 +123,22 @@ class BridgeServer:
         clock: Callable[[], float] = time.monotonic,
         config_path: Path | None = None,
         reload_seconds: float = AUTH_RELOAD_SECONDS,
+        ssl_context: ssl.SSLContext | None = None,
+        tls_port: int = 0,
+        plain: bool = True,
     ):
+        # Two listeners for the transition release (0.2.15): plain ws:// on port
+        # (deprecated, a warning per client address) and wss:// on tls_port
+        # with ssl_context. TLS cannot share one socket with plain WebSocket
+        # without sniffing the first byte, so it gets its own port. plain=False
+        # (server.tls.required) opens no ws:// listener at all.
+        if not plain and ssl_context is None:
+            raise ValueError("a Bridge without its plain listener needs TLS (ssl_context)")
+        self.ssl_context = ssl_context
+        self.tls_port = tls_port
+        self.plain = plain
+        self._plain_warned: set[str] = set()
+        self._tls_server: Server | None = None
         # config.yaml, when the Bridge runs from one: its auth: is polled and
         # hot-reloaded (server/auth_reload.py), and join codes are redeemed
         # into it (join_codes.py). None: a fixed table, no join endpoint
@@ -171,34 +187,53 @@ class BridgeServer:
 
     async def start(self) -> None:
         await self.store.connect()
-        self._server = await websockets.serve(
-            self._handle_connection,
-            self.host,
-            self.port,
-            process_request=self._check_token,
-            max_size=max(2 * self.limits.max_message_bytes, WEBSOCKET_MAX_SIZE_FLOOR),
-        )
+        max_size = max(2 * self.limits.max_message_bytes, WEBSOCKET_MAX_SIZE_FLOOR)
+        if self.ssl_context is not None:
+            self._tls_server = await websockets.serve(
+                self._handle_connection, self.host, self.tls_port, ssl=self.ssl_context,
+                process_request=self._check_token, max_size=max_size,
+            )
+            logger.info(f"Bridge Server listening on wss://{self.host}:{self.tls_bound_port}")
+        if self.plain:
+            self._server = await websockets.serve(
+                self._handle_connection, self.host, self.port,
+                process_request=self._check_plain_token, max_size=max_size,
+            )
+            logger.info(f"Bridge Server listening on ws://{self.host}:{self.bound_port}")
+            logger.warning(json.dumps({
+                "event": "plaintext_listener", "url": f"ws://{self.host}:{self.bound_port}",
+                "detail": "plain ws:// is deprecated: served beside wss:// in 0.2.15 only; 0.3.1 serves wss:// "
+                          "alone. Re-pin peers (ai-connect pin) and set server.tls.required: true to close it now"}))
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         self._history_cleanup_task = asyncio.create_task(self._history_cleanup_loop())
         if self.config_path is not None:
             self._reloader = AuthReloader(self.config_path, logger.warning)
             self._reload_task = asyncio.create_task(self._auth_reload_loop())
-        logger.info(f"Bridge Server listening on ws://{self.host}:{self.bound_port}")
 
     @property
     def bound_port(self) -> int:
-        """The port listened on; differs from port when port is 0."""
+        """The plain ws:// port listened on (differs from port when port is 0); the wss:// one without ws://."""
+        if not self.plain:
+            return self.tls_bound_port
         if self._server is None:
             return self.port
         return self._server.sockets[0].getsockname()[1]
+
+    @property
+    def tls_bound_port(self) -> int:
+        """The wss:// port listened on; differs from tls_port when that is 0."""
+        if self._tls_server is None:
+            return self.tls_port
+        return self._tls_server.sockets[0].getsockname()[1]
 
     async def stop(self) -> None:
         for task in (self._heartbeat_task, self._history_cleanup_task, self._reload_task):
             if task:
                 task.cancel()
-        if self._server:
-            self._server.close()
-            await self._server.wait_closed()
+        for server in (self._server, self._tls_server):
+            if server:
+                server.close()
+                await server.wait_closed()
         await self.store.close()
 
     def _identity(self, request: Request) -> Identity | None:
@@ -270,6 +305,15 @@ class BridgeServer:
         await self.reload_auth()
         logger.info(json.dumps({"event": "peer_joined_by_code", "name": name, "ip": ip}))
         return connection.respond(HTTPStatus.OK, json.dumps({"name": name, "token": token}) + "\n")
+
+    async def _check_plain_token(self, connection: ServerConnection, request: Request) -> Response | None:
+        """_check_token for the plain ws:// listener, with one deprecation warning per client address."""
+        ip = connection.remote_address[0] if connection.remote_address else "unknown"
+        if ip not in self._plain_warned:
+            self._plain_warned.add(ip)
+            logger.warning(json.dumps({"event": "plaintext_client", "ip": ip,
+                                       "detail": "this client still uses ws:// (token in clear); pin it to wss://"}))
+        return await self._check_token(connection, request)
 
     async def _check_token(self, connection: ServerConnection, request: Request) -> Response | None:
         """Refuse the handshake unless it carries a known token; GET /join redeems a join code instead.
