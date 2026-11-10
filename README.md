@@ -238,7 +238,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.3.37**: The `fable` model alias now names Claude Fable 5.2 (`claude-fable-5-2`). `crew` 1.3.37: the `fable` pin in `dev.roles.<role>.model` is documented as Claude Fable 5.2 (`claude-fable-5-2`, listed on the vendor models overview page); `fable` is still honoured only as an explicit pin and nothing in crew selects it.
-- **crew 1.3.35**: A stdlib checker for the review-finding rules. `crew` 1.3.35: adds `review_lint_classes.py`, which applies the five review-finding rules on any host with only Python; nothing calls it yet, so no behaviour a user runs changes.
+- **install script**: A piped `curl | bash` run no longer stops at find-skills, and find-skills installs user-level. The documented `curl … | bash` install now runs every selected step and prints its summary instead of stopping silently at `find-skills`, and `find-skills` lands in the user skills directory whatever directory the script was run from (bash side run against stubs on Linux; the PowerShell change was not executed).
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
