@@ -123,7 +123,7 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
 meaningful only with `scope.mode` `block`.
 
-**`/crew:approve-mass <id>` (crew 1.3.35).** Your yes to ONE blocked mass
+**`/crew:approve-mass <id>` (crew 1.3.36).** Your yes to ONE blocked mass
 operation, typed by you and recorded by the same prompt hook in
 `<git-common-dir>/crew/mass-approvals/<id>.json`, good for 15 minutes. The
 directory is under `<git-common-dir>/crew/`, which the scope guard refuses to
@@ -131,7 +131,7 @@ every Write/Edit and every shell command naming it, so the session cannot
 write the file. The cloud guard (`cloud_guard.py`) prints the `<id>` with its
 stop and reads the file; see "Mass operations".
 
-## Mass operations (`guards.mass`, crew 1.3.35)
+## Mass operations (`guards.mass`, crew 1.3.36)
 
 The rule for an autopilot that runs without a human: full automation, except a
 mass delete, a mass create or a mass change, which wait for your yes. The stop
@@ -351,12 +351,12 @@ Columns:
 |---|---|---|---|---|---|
 | `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | 1.2.62 | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `plugin/crew/hooks/scripts/crew_guards.py`) | 1.2.62 | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
-| `guards.mass.enabled` | both | `false` | boolean (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.35 | Turns the mass delete / create / change stop on (it is also armed by a double-confirmed `humanOnly` opt-out). On if EITHER layer says exactly `true`; off by default. |
-| `guards.mass.deleteCount` | both | `10` | integer (1 or more) (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.35 | Files a command may delete before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
-| `guards.mass.createCount` | both | `20` | integer (1 or more) (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.35 | Files a command may create before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
-| `guards.mass.changeCount` | both | `30` | integer (1 or more) (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.35 | Files a command may rewrite before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
-| `guards.mass.overrides` | both | `{}` | object of category to {deleteCount, createCount, changeCount} (checked in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.35 | `guards.mass.overrides.<files\|git\|terraform>.<deleteCount\|createCount\|changeCount>`: one limit for one kind of command. Unset, `terraform` is delete 3, create 10, change 10 (inferred, not measured); the others use the limits above. |
-| `guards.mass.exempt` | both | `[]` | list of globs (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.35 | Repo-relative globs of generated files that never count toward a limit, read from the machine file only (a glob can only loosen the stop), on top of the built-in  regenerable directories (node_modules, __pycache__, .venv, caches, build, dist, .work, worktrees). |
+| `guards.mass.enabled` | both | `false` | boolean (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Turns the mass delete / create / change stop on (it is also armed by a double-confirmed `humanOnly` opt-out). On if EITHER layer says exactly `true`; off by default. |
+| `guards.mass.deleteCount` | both | `10` | integer (1 or more) (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Files a command may delete before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
+| `guards.mass.createCount` | both | `20` | integer (1 or more) (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Files a command may create before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
+| `guards.mass.changeCount` | both | `30` | integer (1 or more) (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Files a command may rewrite before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
+| `guards.mass.overrides` | both | `{}` | object of category to {deleteCount, createCount, changeCount} (checked in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | `guards.mass.overrides.<files\|git\|terraform>.<deleteCount\|createCount\|changeCount>`: one limit for one kind of command. Unset, `terraform` is delete 3, create 10, change 10 (inferred, not measured); the others use the limits above. |
+| `guards.mass.exempt` | both | `[]` | list of globs (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Repo-relative globs of generated files that never count toward a limit, read from the machine file only (a glob can only loosen the stop), on top of the built-in  regenerable directories (node_modules, __pycache__, .venv, caches, build, dist, .work, worktrees). |
 
 ### `production`
 

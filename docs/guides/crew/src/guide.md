@@ -520,7 +520,7 @@ read by no hook. The owner's `/crew:approve-mass <id>` is recorded the same
 way, for one blocked mass operation. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.
 
-**Mass operations (crew 1.3.35).** The rule for an autopilot that runs without a
+**Mass operations (crew 1.3.36).** The rule for an autopilot that runs without a
 human: full automation, except a mass delete, a mass create or a mass change,
 which wait for your yes. `guards.mass.enabled: true`, or a double-confirmed
 `humanOnly` opt-out, arms a stop on the cloud guard's hook for any shell command

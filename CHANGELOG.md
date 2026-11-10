@@ -14,25 +14,15 @@ naming that exact version, in one of two forms, and `scripts/check-changelog.py`
 - an entry heading (`###`) containing `<name> <version>`, as below; or
 - for a version that carries no change of its own, one line in the **re-number block** (the lines
   directly under `## [Unreleased]`, before its first `###`; the README generator ignores them):
-  `- <name> <version>: re-bump only - <why: what it follows, or which entry carries the change>`.
-
-A version a branch set and then replaced still gets its line, because merge commits carry it into
-main's history. Only versions a branch newly sets are checked, so older history is not backfilled
-(the gaps below were added once, by hand).
-
-**Release sections.** Entries stay under `## [Unreleased]`; they are not moved into dated version
-headings. The file is append-only history of about 19,000 lines, each entry is already stamped with
-its exact version in its heading, and a release here is a merge to `main`, so moving entries would
-rewrite thousands of lines for no reader. A repo that tags a release (see `Skill-Pipeline.md`) may
-still cut a dated `## [x.y.z]` heading above the entries it covers; `sync-updates.py` and the checker
 read entries under any `## [` heading.
 
 ## [Unreleased]
 
-- crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.34; the change is recorded under crew 1.3.35
+- crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.34; the change is recorded under crew 1.3.36
+- crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.33; the change is recorded under crew 1.3.34
+- crew 1.3.34: re-bump only - interim number on the mass-guard branch before main reached 1.3.35; the change is recorded under crew 1.3.36
 - crew 1.3.21: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.32; the change is recorded under crew 1.3.33
 - crew 1.3.24: re-bump only - interim number on the context-watch branch before main reached 1.3.25; the change is recorded under crew 1.3.26
-- crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.33; the change is recorded under crew 1.3.34
 - crew 1.3.27: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.32; the change is recorded under crew 1.3.33
 - crew 1.3.32: re-bump only - the two tests that patch `no_round_after_successor` now patch it in `crew_autopilot_replan` (tests only); the change is recorded under crew 1.3.19
 - crew 1.3.31: re-bump only - merge of main's crew 1.3.30 into the L-0717 budget branch; the budget change is recorded under crew 1.3.19 and 1.3.20, and `no_round_after_successor` moved from `crew_autopilot.py` to `crew_autopilot_replan.py` to stay under the 3400-line module limit
@@ -55,9 +45,9 @@ read entries under any `## [` heading.
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 
-### Added — crew 1.3.35: the mass delete, create and change stop (`guards.mass`)
+### Added — crew 1.3.36: the mass delete, create and change stop (`guards.mass`)
 
-- **Summary.** `crew` 1.3.35: with `guards.mass.enabled: true` (or a double-confirmed `humanOnly` opt-out) the cloud guard's hook stops a shell command that would delete 10 or more files, create 20 or more, or change 30 or more, until you type `/crew:approve-mass <id>`; everything else stays automatic. Off by default.
+- **Summary.** `crew` 1.3.36: with `guards.mass.enabled: true` (or a double-confirmed `humanOnly` opt-out) the cloud guard's hook stops a shell command that would delete 10 or more files, create 20 or more, or change 30 or more, until you type `/crew:approve-mass <id>`; everything else stays automatic. Off by default.
 - Limits (`guards.mass.deleteCount` 10, `createCount` 20, `changeCount` 30) were measured on this repo's own history: 104 days, 623 merged PRs (a PR adds a median 0 and p95 16 files, changes a median 5 and p95 30, deletes none in all but 15; 10 trips 5 PRs, 20 trips 29, 30 trips 35). `guards.mass.overrides.<files|git|terraform>.<limit>` replaces one; terraform defaults to delete 3, create 10, change 10 (inferred - the history held no terraform). The machine file sets limits and `guards.mass.exempt`; the repo file can only lower a limit or turn the stop on.
 - What it counts: `rm`, `Remove-Item`, `git clean -f`, `git rm` (delete); `cp`, `mv`, `rsync`, `Copy-Item`, `touch` (create and change); `sed -i`, `git reset --hard`, `git checkout -- <paths>`, `git restore` (change); `git commit`, `git push` and `gh pr create` count the branch's added, deleted and changed files against its base, so Write and Edit work is caught where it is about to be shared; `terraform apply <plan>` (from `terraform show -json`), `destroy`, `apply -auto-approve`; an unfiltered SQL `DELETE` or `UPDATE`. A count that cannot be taken (a variable in a path, a path after `cd`, `find -delete`, `xargs rm`, a failed `git`, any row count) stops: could not tell is mass. node_modules, `__pycache__`, `.venv`, caches, `build`, `dist`, `.work`, egg-info and worktrees (including `~/.claude/crew/worktrees/<repo>/<name>`) never count.
 - Attended, the stop is an `ask`; unattended a `deny`. It prints a 12-digit id binding the exact command and worktree; `/crew:approve-mass <id>` (new `commands/approve-mass.md`; recorded by the harness half's prompt hook) approves that command for 15 minutes, and one id covers every limit it trips. A command that writes `mass-approvals` is refused.
@@ -66,6 +56,24 @@ read entries under any `## [` heading.
 - Tests: `test_mass_guard.py` (102 cases, must-block beside must-allow: the limit and one below, glob, regenerable directories, a repo living under `build/worktrees`, git index and branch counts, terraform plan, SQL filtered and not, the approval's forged, expired, future and cross-command forms, the switch and every malformed limit). `mass_mutations.py`: 40 mutations, all seen red; unwired until a harness-only PR registers it in `sabotage.py` (`sabotage*.py` is review harness).
 - Depends on #737 (crew 1.3.27, the harness half): `/crew:approve-mass`'s recorder, the scope guard's store protection and `crew_humanonly` opt-out. Not harness: nothing here touches a `HARNESS` path.
 
+### Added — crew 1.3.35: a stdlib checker for the review-finding rules (L-0715 PR B2)
+
+- **Summary.** `crew` 1.3.35: adds `review_lint_classes.py`, which applies the five review-finding rules on any host with only Python; nothing calls it yet, so no behaviour a user runs changes.
+- `plugin/crew/hooks/scripts/review_lint_classes.py` reads the rule file through `review_lint_rules.py` and matches the five rules itself (taint for `splitlines()` and duplicate-key JSON, `ast` shape for bare interpreters and test functions, the rule's regex for Markdown). One run judges one tree with that tree's own `--rules` copy. It prints ASCII JSON naming the rules run, the classes not covered, and every requested file as scanned, skipped by scope or aborted; a rule with no implementation, an implementation with no rule, a rule whose pattern fingerprint is not in the accepted set, an unparsable file, a FIFO or a symlink is exit 2 or an aborted row, never a pass.
+- Matches semgrep 1.95.0 exactly on the fixtures, a corner-case corpus and the whole tracked tree (`test_review_lint_classes_differential.py`, Linux CI), including two quirks it copies: comprehensions are not entered and a directly sliced `splitlines()` is not a sink. One deliberate difference is pinned: a `# nosemgrep` on the sink line of a parenthesised multi-line sink suppresses here and not in semgrep.
+- `plugin/crew/tests/test_review_lint_classes.py`: 221 cases; each guard was sabotaged by hand (28 mutations, all red except the symlink pre-check, which `O_NOFOLLOW` makes redundant on POSIX). Docs: none beyond this entry and the code map, because the module is inert.
+
+  `- <name> <version>: re-bump only - <why: what it follows, or which entry carries the change>`.
+
+A version a branch set and then replaced still gets its line, because merge commits carry it into
+main's history. Only versions a branch newly sets are checked, so older history is not backfilled
+(the gaps below were added once, by hand).
+
+**Release sections.** Entries stay under `## [Unreleased]`; they are not moved into dated version
+headings. The file is append-only history of about 19,000 lines, each entry is already stamped with
+its exact version in its heading, and a release here is a merge to `main`, so moving entries would
+rewrite thousands of lines for no reader. A repo that tags a release (see `Skill-Pipeline.md`) may
+still cut a dated `## [x.y.z]` heading above the entries it covers; `sync-updates.py` and the checker
 ### Changed — crew 1.3.34: the sabotage and tooling-PR harness accepts the opt-in plugin layout (L-0724 slice 1)
 
 - **Summary.** `crew` 1.3.34: the sabotage suites and the tooling-PR checker now find their targets in either the core plugin or the opt-in plugin they are about to move to, so L-0724's later slices move files without touching the harness; no behaviour a user runs changes.

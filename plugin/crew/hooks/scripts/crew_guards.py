@@ -241,7 +241,7 @@ GUARD_PROFILES = ("off", "standard", "strict")
 # the profile at `off` (= `GUARD_DEFAULTS`) and an empty overrides table. The
 # twelve per-guard names are no longer config keys; a file that still holds
 # them is read as a legacy alias (`layer_guard_state`) until `/crew:migrate`.
-# `mass` (crew 1.3.35) is not a guard name and has no tiers: it is the mass
+# `mass` (crew 1.3.36) is not a guard name and has no tiers: it is the mass
 # delete / create / change stop's own settings, read by `crew_mass.settings`
 # (lower limit wins across layers, `enabled` on if either layer says so). The
 # terraform limits (delete 3, create 10, change 10) are `crew_mass.

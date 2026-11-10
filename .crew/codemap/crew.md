@@ -76,6 +76,12 @@ does not know; it exposes a per-rule pattern fingerprint, the five regex values,
 scopes. Nothing imports it yet (the checker is PR B2, the `crewlint` linter kind PR B3). JUDGEMENT: the rest of this map
 is unchanged by it.
 
+**Rule checker (L-0715 PR B2).** DERIVED at the PR B2 head, anchor not moved: `plugin/crew/hooks/scripts/review_lint_classes.py`
+(`RULES`, `load_rules`, `applicable_rules`, `run`, `main`) applies the five rules to files with `ast`, `tokenize` and the rule
+file's regexes. `RULES` maps each rule id to its matcher and a frozenset of accepted pattern fingerprints; a rule id with no
+matcher, a matcher with no rule or a fingerprint outside the set is exit 2. It loads the reader by path (`-I` safe). Output is
+one ASCII JSON document per tree. Nothing calls it yet (PR B3 is the runner). JUDGEMENT: the rest of this map is unchanged by it.
+
 ## The roster, replaced wholesale
 
 Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
@@ -991,7 +997,7 @@ passes a prompt naming `crew:confirm-config`. `scope_guard.py` refuses writes to
 `len(HUMANONLY_MUTATIONS)`). JUDGEMENT: `humanOnly.promoteMarker` is still read
 by no hook, and a session that runs arbitrary python can still forge a receipt.
 
-## Mass delete, create and change: `guards.mass` (crew 1.3.35)
+## Mass delete, create and change: `guards.mass` (crew 1.3.36)
 
 DERIVED from `plugin/crew/hooks/scripts/crew_mass.py` (stdlib only) and
 `plugin/crew/hooks/scripts/cloud_guard.py`; tests `plugin/crew/tests/test_mass_guard.py`,

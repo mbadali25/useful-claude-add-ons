@@ -1,4 +1,4 @@
-"""`guards.mass` mutations, in `sabotage.py`'s tuple shape (crew 1.3.35).
+"""`guards.mass` mutations, in `sabotage.py`'s tuple shape (crew 1.3.36).
 
 CLAUDE.md: a change that adds a hook that can block needs a committed
 must-block / must-allow suite (`test_mass_guard.py`), sabotage-tested --

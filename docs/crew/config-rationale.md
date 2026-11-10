@@ -3184,7 +3184,7 @@ python3 plugin/crew/hooks/scripts/crew_config.py --set 'git.forbiddenTrailers=["
 
 ---
 
-## `guards.mass` - the mass delete, create and change stop (crew 1.3.35)
+## `guards.mass` - the mass delete, create and change stop (crew 1.3.36)
 
 **The question.** An owner who lets autopilot run without a human (a
 `humanOnly` opt-out, or just `autopilot.approval`) still wants one stop: a

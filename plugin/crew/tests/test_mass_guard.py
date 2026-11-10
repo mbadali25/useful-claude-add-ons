@@ -1,4 +1,4 @@
-"""crew 1.3.35: the mass delete / create / change stop (`crew_mass.py`).
+"""crew 1.3.36: the mass delete / create / change stop (`crew_mass.py`).
 
 CLAUDE.md: a hook that can block carries a committed must-block / must-allow
 suite, sabotage-tested. Every must-block here has a must-allow beside it (the
