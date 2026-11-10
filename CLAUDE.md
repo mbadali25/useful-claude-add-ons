@@ -42,6 +42,13 @@ nor carries the line; the line also works as a commit trailer, the only form a l
 CI also fails a stale built guide's HTML or configuration reference (`build.py --check`,
 `config_reference.py --check`).
 
+**Every version a branch sets gets a CHANGELOG.md line.** Owner rule, 2026-11-09. A plugin or skill
+`version` bump, a re-bump after main moved included, needs a `###` entry naming `<name> <version>`, or
+under `## [Unreleased]` before its first `###`: `- <name> <version>: re-bump only - <why>`. Entries stay
+under `[Unreleased]`; none is moved into a dated heading. `scripts/check-changelog.py` (CI, gate-runner)
+checks only versions the branch newly sets, so history is never backfilled. It does not check that the
+entry is true, or that the version was bumped at all (`check-marketplace.py` owns that).
+
 **A number this repo states about itself gets a marker, or it is not checked.** Write
 `<!-- claim: skills-count -->` or `<!-- claim: plugin-version:<name> -->` beside it and
 `check_self_claims` in `scripts/check-marketplace.py` verifies it against `marketplace.json` or that

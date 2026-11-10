@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **changelog**: Every version a branch sets gets a CHANGELOG.md line, checked in CI. A plugin or skill version bump, including a re-bump after main moved, now needs a CHANGELOG.md entry for that exact version or a `re-bump only` line, and CI fails without one.
 - **crew 1.3.23**: `environments.preProduction` treats a named production-labelled environment as not live yet. `crew` 1.3.23: a new repo-only setting, `environments.preProduction`, lists by exact name (each with a written reason) an environment that is labelled production but not live yet, so the cloud guard judges it as non-production without turning any guard off; every use prints and logs an audit line, and everything not listed is judged as before.
-- **crew 1.3.22**: A review waiver binds to the train base. `crew` 1.3.22: `requireReview: false` with a `reviewReason` no longer waives promote-gate's review evidence on its own; the environment must also name the promotion's train base in `reviewWaiverSha`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
