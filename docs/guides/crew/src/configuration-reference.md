@@ -110,7 +110,7 @@ marker is human-only by instruction alone - no hook checks who created it.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**89 keys**: 52 settable in the machine-global file, 37 repo-only.
+**90 keys**: 53 settable in the machine-global file, 37 repo-only.
 
 Columns:
 
@@ -219,6 +219,12 @@ Columns:
 |---|---|---|---|---|---|
 | `humanOnly.approve` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_humanonly.py`) | 1.3.9 | The owner's opt-out of `/crew:approve` being human-only. null or `true` keeps it human-only; `false` opts out only from the machine file or an untracked repo file, only after `/crew:confirm-config` twice, and a `true` in either layer vetoes. crew 1.3.9: no hook acts on it yet, so it changes nothing today. |
 | `humanOnly.promoteMarker` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_humanonly.py`) | 1.3.9 | The same opt-out for the production promote marker `.crew/.approved-<env>-<sha>`, under the same rules. crew 1.3.9: no hook acts on it yet, and no hook today checks who created the marker. |
+
+### `worktrees`
+
+| Setting | Layer | Default | Values | Since | Summary |
+|---|---|---|---|---|---|
+| `worktrees.root` | both | `null` | absolute path or null (coerced in `plugin/crew/hooks/scripts/crew_worktrees.py`) | 1.3.19 | The base directory for this repo's git worktrees, OUTSIDE the repo: they go in `<root>/<repo>-<digest>/<name>`. null is `~/.claude/crew/worktrees`; `~` is expanded, a relative path or one inside the repo is refused (never replaced by the default). It places the worktrees crew places (`/crew:emergency`, `crew_worktrees.py path`) and, once the owner registers the opt-in `WorktreeCreate` hook, the ones Claude Code creates; without the hook Claude Code keeps using `.claude/worktrees/`. |
 
 ### `emergency`
 
