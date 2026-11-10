@@ -18,7 +18,6 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
-- crew 1.3.37: re-bump only - interim number on the verify-gate stale-marker branch (commit b18fcd4e5), reverted under REPO-03; the number is set on the land branch
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.34; the change is recorded under crew 1.3.36
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.33; the change is recorded under crew 1.3.34
 - crew 1.3.34: re-bump only - interim number on the mass-guard branch before main reached 1.3.35; the change is recorded under crew 1.3.36
@@ -47,12 +46,12 @@ read entries under any `## [` heading.
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 
-### Fixed — crew: a verified marker left by another branch no longer puts that branch's paths in the Stop gate's scope
+### Fixed — crew 1.3.37: a verified marker left by another branch no longer puts that branch's paths in the Stop gate's scope
 
-- **Summary.** `crew`: the Stop gate now uses `.crew/.verify-verified-at` as its diff base only when that commit is an ancestor of HEAD; a marker left by another branch is replaced by its merge-base with HEAD (or refused when they share no history), so a clean tree no longer fails with phantom changed paths.
+- **Summary.** `crew` 1.3.37: the Stop gate now uses `.crew/.verify-verified-at` as its diff base only when that commit is an ancestor of HEAD; a marker left by another branch is replaced by its merge-base with HEAD (or refused when they share no history), so a clean tree no longer fails with phantom changed paths.
 - **Cause.** `verify-gate.sh` trusted the marker whenever `git cat-file -e` found the commit. A marker written by a pass on a sibling branch exists in the repo but is not on HEAD's history, so the diff included every path that branch touched. Measured in a real checkout: about 1368 phantom paths and `UNMAPPED CHANGES ... FAILED 1` on a clean tree; the marker is only rewritten on a clean pass, so it never healed.
 - **Fix.** The marker now gets the same `git merge-base --is-ancestor` check `.crew/.verify-gate.base-at` already had. Not an ancestor: its merge-base with HEAD is the base (an ancestor of the verified commit and of HEAD), and the detail log says so in one line. No shared history (an orphan branch): the gate refuses with exit 2 and names the file, as it already did for an unshared `base-at`, because falling through could reach merge-base = HEAD on the default branch and pass an unchecked commit.
-- **Tests.** `test_verify_gate_baseline.py`: a marker on a sibling branch must not put that branch's file in scope (red before the fix, green after, and the clean pass rewrites the marker at HEAD); must not hide a committed change on this branch (must-block); and an orphan-branch marker on the default branch with a committed change must exit 2 (must-block). The version number is set on the land branch (REPO-03).
+- **Tests.** `test_verify_gate_baseline.py`: a marker on a sibling branch must not put that branch's file in scope (red before the fix, green after, and the clean pass rewrites the marker at HEAD); must not hide a committed change on this branch (must-block); and an orphan-branch marker on the default branch with a committed change must exit 2 (must-block).
 
 ### Added — crew 1.3.36: the mass delete, create and change stop (`guards.mass`)
 
