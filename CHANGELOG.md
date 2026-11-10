@@ -14,17 +14,6 @@ naming that exact version, in one of two forms, and `scripts/check-changelog.py`
 - an entry heading (`###`) containing `<name> <version>`, as below; or
 - for a version that carries no change of its own, one line in the **re-number block** (the lines
   directly under `## [Unreleased]`, before its first `###`; the README generator ignores them):
-  `- <name> <version>: re-bump only - <why: what it follows, or which entry carries the change>`.
-
-A version a branch set and then replaced still gets its line, because merge commits carry it into
-main's history. Only versions a branch newly sets are checked, so older history is not backfilled
-(the gaps below were added once, by hand).
-
-**Release sections.** Entries stay under `## [Unreleased]`; they are not moved into dated version
-headings. The file is append-only history of about 19,000 lines, each entry is already stamped with
-its exact version in its heading, and a release here is a merge to `main`, so moving entries would
-rewrite thousands of lines for no reader. A repo that tags a release (see `Skill-Pipeline.md`) may
-still cut a dated `## [x.y.z]` heading above the entries it covers; `sync-updates.py` and the checker
 read entries under any `## [` heading.
 
 ## [Unreleased]
@@ -53,6 +42,24 @@ read entries under any `## [` heading.
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 
+### Added — crew 1.3.35: a stdlib checker for the review-finding rules (L-0715 PR B2)
+
+- **Summary.** `crew` 1.3.35: adds `review_lint_classes.py`, which applies the five review-finding rules on any host with only Python; nothing calls it yet, so no behaviour a user runs changes.
+- `plugin/crew/hooks/scripts/review_lint_classes.py` reads the rule file through `review_lint_rules.py` and matches the five rules itself (taint for `splitlines()` and duplicate-key JSON, `ast` shape for bare interpreters and test functions, the rule's regex for Markdown). One run judges one tree with that tree's own `--rules` copy. It prints ASCII JSON naming the rules run, the classes not covered, and every requested file as scanned, skipped by scope or aborted; a rule with no implementation, an implementation with no rule, a rule whose pattern fingerprint is not in the accepted set, an unparsable file, a FIFO or a symlink is exit 2 or an aborted row, never a pass.
+- Matches semgrep 1.95.0 exactly on the fixtures, a corner-case corpus and the whole tracked tree (`test_review_lint_classes_differential.py`, Linux CI), including two quirks it copies: comprehensions are not entered and a directly sliced `splitlines()` is not a sink. One deliberate difference is pinned: a `# nosemgrep` on the sink line of a parenthesised multi-line sink suppresses here and not in semgrep.
+- `plugin/crew/tests/test_review_lint_classes.py`: 221 cases; each guard was sabotaged by hand (28 mutations, all red except the symlink pre-check, which `O_NOFOLLOW` makes redundant on POSIX). Docs: none beyond this entry and the code map, because the module is inert.
+
+  `- <name> <version>: re-bump only - <why: what it follows, or which entry carries the change>`.
+
+A version a branch set and then replaced still gets its line, because merge commits carry it into
+main's history. Only versions a branch newly sets are checked, so older history is not backfilled
+(the gaps below were added once, by hand).
+
+**Release sections.** Entries stay under `## [Unreleased]`; they are not moved into dated version
+headings. The file is append-only history of about 19,000 lines, each entry is already stamped with
+its exact version in its heading, and a release here is a merge to `main`, so moving entries would
+rewrite thousands of lines for no reader. A repo that tags a release (see `Skill-Pipeline.md`) may
+still cut a dated `## [x.y.z]` heading above the entries it covers; `sync-updates.py` and the checker
 ### Changed — crew 1.3.34: the sabotage and tooling-PR harness accepts the opt-in plugin layout (L-0724 slice 1)
 
 - **Summary.** `crew` 1.3.34: the sabotage suites and the tooling-PR checker now find their targets in either the core plugin or the opt-in plugin they are about to move to, so L-0724's later slices move files without touching the harness; no behaviour a user runs changes.
