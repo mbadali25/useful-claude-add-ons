@@ -436,6 +436,7 @@ worktree:</p>
   gate-and-land stage for tickets whose Touch lists overlap. Catch-up is
   always a merge, never a rebase. The train never merges, pushes or opens the
   PR; only autopilot's ship step does, under <code>autopilot.ship</code>.</li>
+<li><strong>Where worktrees live (crew 1.3.19).</strong> <code>worktrees.root</code> (either layer, the repo wins; null is <code>~/.claude/crew/worktrees</code>) is the one place outside the repo for crew's worktrees, laid out as <code>&lt;root&gt;/&lt;repo&gt;-&lt;digest&gt;/&lt;name&gt;</code>; a value that is relative or inside the repo is refused, never swapped for the default. Claude Code's own agent worktrees (<code>claude --worktree</code>, an Agent with <code>isolation: worktree</code>) stay under <code>.claude/worktrees/</code>: it has no setting for another place, and the one redirect it supports is a <code>WorktreeCreate</code> hook, which replaces git's creation, so crew prints the block (<code>/crew:worktrees hook</code>) and registers nothing. <code>/crew:worktrees list</code> is a read-only survey of every worktree; <code>remove &lt;path&gt;</code> needs your <code>--yes</code>, takes one path and never forces. Nothing existing is moved.</li>
 <li><strong>Check before assuming a diff is yours.</strong> Another session may have
   changed the tree, a branch or the stash (root <code>CLAUDE.md</code>, "Lessons").</li>
 </ul>

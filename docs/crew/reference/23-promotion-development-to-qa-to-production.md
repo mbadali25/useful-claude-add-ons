@@ -99,7 +99,10 @@ literal sha in the command must be its HEAD):
   the commit being deployed, and which `review_ledger.check_receipt`, run in
   the deploying tree, confirms. `requireHuman` does not waive it: a human's
   yes is a deploy go/no-go, not a code review. The only opt-out is
-  `"requireReview": false` plus a non-empty `reviewReason` string on the
+  `"requireReview": false` plus a non-empty `reviewReason` string and a
+  `reviewWaiverSha` equal to the promotion's train base (the merge-base of the
+  promoted sha with the base branch, or its first parent when it is on the base
+  branch; SRL-3312; later commits on the same base inherit the waiver) on the
   environment; any other `requireReview` value blocks. Breaking change: a map
   that deploys unreviewed builds (a development environment fed from feature
   branches, say) must opt out explicitly.

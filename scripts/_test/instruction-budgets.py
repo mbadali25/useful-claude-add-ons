@@ -809,6 +809,23 @@ def main() -> int:
         "stale name",
     )
     check(
+        "a command whose name merely starts with a retired one (/crew:worktrees) is not stale",
+        run_stale_names(
+            FRONTMATTER + "Run /crew:worktrees list.\n",
+            "plugin/crew/commands/newthing.md",
+        ),
+        False,
+    )
+    check(
+        "the retired /crew:work itself is still red next to a longer name",
+        run_stale_names(
+            FRONTMATTER + "Run /crew:worktrees list or /crew:work.\n",
+            "plugin/crew/commands/newthing.md",
+        ),
+        True,
+        "stale name",
+    )
+    check(
         "the same stale name marked <!-- deliberate --> in the same paragraph is allowed",
         run_stale_names(
             FRONTMATTER + "Dispatch qa-reviewer for the fallback pass. <!-- deliberate -->\n",

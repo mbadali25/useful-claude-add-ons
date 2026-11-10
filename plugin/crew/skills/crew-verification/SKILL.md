@@ -417,8 +417,9 @@ the checks are declared, not remembered.
 | `rollback` | Path to the runbook, or the literal `"none"` plus a `rollbackReason`. Required - an absent key blocks the deploy |
 | `rollbackReason` | Required alongside `rollback: "none"`. Why this environment does not need a rollback plan |
 | `requireHuman` | Stop and get explicit approval before deploying |
-| `requireReview` | Default `true`, and absent means `true`: the deploy needs an accepted review receipt whose reviewed head has the deployed commit's tree (L-0703). `false` opts out only with a `reviewReason`; any other value blocks. `requireHuman` does not waive it. Read, like every requirement, from the map committed in the sha being deployed (L-0768) |
+| `requireReview` | Default `true`, and absent means `true`: the deploy needs an accepted review receipt whose reviewed head has the deployed commit's tree (L-0703). `false` opts out only with a `reviewReason` AND a `reviewWaiverSha` equal to the train base of the promotion (SRL-3312: the merge-base of the promoted sha with the base branch, or its first parent when it is on the base branch; a missing, different or unknowable value leaves review required, and later commits on the same base inherit the waiver); any other value blocks. `requireHuman` does not waive it. Read, like every requirement, from the map committed in the sha being deployed (L-0768) |
 | `reviewReason` | Required alongside `requireReview: false`. A non-empty string: why this environment may take a build nobody reviewed |
+| `reviewWaiverSha` | Required for the waiver to take effect (SRL-3312). The full sha of the train base the waiver covers: the merge-base of the promoted sha with the base branch (its first parent when the promoted sha is itself on the base branch). Missing or different, review stays required |
 
 **Limitation: this file is data, not enforcement by itself.** `promote-gate.sh`
 reads `.crew/verify.json` and blocks a command that contains the declared
