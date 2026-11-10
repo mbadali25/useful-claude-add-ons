@@ -171,7 +171,8 @@ _HIDE_MARKDOWN = (
 
 
 # Loads build.py, swaps render_engine for a recorder, and checks which platforms
-# reach soffice. Word is reported absent so win32 takes the skip branch.
+# reach soffice. Word is first reported absent so win32 takes the skip branch
+# (SKIPPED_RC, not 0), then present with a fake build_report.to_word.
 _OS_GATE = (
     "import importlib.util, sys\n"
     "spec = importlib.util.spec_from_file_location('build_under_test', sys.argv[1])\n"
@@ -189,8 +190,23 @@ _OS_GATE = (
     "g['render_engine'] = Fake\n"
     "rc = {p: g['convert_for_os']('x.html', platform=p) for p in\n"
     "      ('linux', 'win32', 'darwin')}\n"
-    "assert rc == {'linux': 0, 'win32': 0, 'darwin': 0}, rc\n"
+    "S = g['SKIPPED_RC']\n"
+    "assert S not in (0, 1, 2), S\n"
+    "assert rc == {'linux': 0, 'win32': S, 'darwin': S}, rc\n"
     "assert len(calls) == 1, calls\n"
+    # win32 WITH Word: a fake build_report.to_word must be reached, once, with
+    # (html, True, True), its return code passed through, and soffice untouched.
+    "import types\n"
+    "word_calls = []\n"
+    "fake_report = types.ModuleType('build_report')\n"
+    "fake_report.to_word = lambda *a: (word_calls.append(a), 0)[1]\n"
+    "sys.modules['build_report'] = fake_report\n"
+    "Fake._word_com_available = staticmethod(lambda: True)\n"
+    "assert g['convert_for_os']('x.html', platform='win32') == 0\n"
+    "assert word_calls == [('x.html', True, True)], word_calls\n"
+    "assert len(calls) == 1, calls\n"
+    "fake_report.to_word = lambda *a: 7\n"
+    "assert g['convert_for_os']('x.html', platform='win32') == 7\n"
     "print('OS-GATE-OK')\n"
 )
 

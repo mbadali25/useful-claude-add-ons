@@ -33,7 +33,8 @@ five guides here were ever built from those four.
 ## Built artifacts
 
 T10 built the five guides with `doc-builder` (theme `midnight`, brand
-`neutral`, rendered by LibreOffice on Linux, or by Word on Windows; never LibreOffice off Linux), each as HTML, DOCX and PDF in
+`neutral`, rendered by LibreOffice on Linux, or by Word on Windows; never
+LibreOffice off Linux), each as HTML, DOCX and PDF in
 `docs/guides/crew/`, named `crew-<guide>.{html,docx,pdf}`. The names carry no
 crew version (C-0006; they were `crew-1.0-*` before), so a release never
 renames them. The three

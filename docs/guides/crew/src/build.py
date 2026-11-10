@@ -11,7 +11,10 @@ then restyled by `house_style.apply_to_html` (`--profile guide`) exactly the
 way a hand-authored page picks up the house stylesheet, and converted to
 .docx/.pdf by `convert_for_os`: LibreOffice (`render_engine.to_soffice`) on
 Linux only, Microsoft Word over COM (`build_report.to_word`) on Windows, never
-the other way round (owner rule 2026-11-10, root CLAUDE.md).
+the other way round (owner rule 2026-11-10, root CLAUDE.md). When that pass is
+skipped (no Word, or macOS) the build still writes every HTML, prints a final
+SKIPPED summary and exits 3, because the committed DOCX/PDF are then stale;
+`--html-only` is the deliberate HTML-only build and exits 0.
 
 Two things this script adds that plain python-markdown does not do for you:
 
@@ -62,6 +65,10 @@ import sys
 
 SRC = pathlib.Path(__file__).resolve().parent
 GUIDES_DIR = SRC.parent
+# Exit code of a build whose DOCX/PDF pass was skipped (no Word / not Linux):
+# the HTML is fresh but the committed DOCX/PDF are stale. 3 keeps it apart from
+# --check's 1 (stale) and 2 (check did not run).
+SKIPPED_RC = 3
 REPO_ROOT = SRC.parents[3]
 DOC_BUILDER_SCRIPTS = REPO_ROOT / "skills" / "doc-builder" / "scripts"
 
@@ -259,8 +266,9 @@ def convert_for_os(html_path: str, platform: str | None = None) -> int:
     Windows the DOCX/PDF come from Microsoft Word over COM. They are two
     separate processes, so this branches on the platform and never falls back
     from one to the other. Any other platform (macOS) writes no DOCX/PDF and
-    says so. A skip returns 0 so an HTML-only machine still builds, but the
-    message on stderr names exactly what was NOT built.
+    says so. A skip returns SKIPPED_RC (not 0), so a build that left the
+    committed DOCX/PDF stale does not look like a clean one; the message on
+    stderr names exactly what was NOT built.
     """
     plat = sys.platform if platform is None else platform
     if plat.startswith("linux"):
@@ -271,17 +279,18 @@ def convert_for_os(html_path: str, platform: str | None = None) -> int:
                   "not available on this Windows machine, so only the HTML was built. "
                   "LibreOffice is not used off Linux (owner rule 2026-11-10).",
                   file=sys.stderr)
-            return 0
+            return SKIPPED_RC
         import build_report  # pylint: disable=import-outside-toplevel
         print("renderer : word -- Windows; LibreOffice runs on Linux only", file=sys.stderr)
         return build_report.to_word(html_path, True, True)
     print(f"SKIPPED DOCX/PDF for {html_path}: {plat} has neither the Linux LibreOffice "
           "path nor the Windows Word path, so only the HTML was built.", file=sys.stderr)
-    return 0
+    return SKIPPED_RC
 
 
 def build_one(name: str, names: list[str], pal: "house_style.Palette",
-              html_only: bool) -> None:
+              html_only: bool) -> int:
+    """Build one guide; return SKIPPED_RC if its DOCX/PDF was skipped, else 0."""
     # The whole text exists before the file is opened (root CLAUDE.md,
     # Landmines: `open(p, "w")` truncates at open time).
     md_text, html_text = render_html(names, pal)
@@ -297,10 +306,11 @@ def build_one(name: str, names: list[str], pal: "house_style.Palette",
 
     print(f"wrote {out_html}")
     if html_only:
-        return
+        return 0
     rc = convert_for_os(str(out_html))
-    if rc != 0:
+    if rc not in (0, SKIPPED_RC):
         raise SystemExit(rc)
+    return rc
 
 
 def check(pal: "house_style.Palette") -> list[str]:
@@ -364,8 +374,14 @@ def main(argv=None) -> int:
     pal = house_style.Palette(brand)
 
     names = [args.guide] if args.guide else sorted(GUIDES)
-    for name in names:
-        build_one(name, GUIDES[name], pal, args.html_only)
+    skipped = [name for name in names
+               if build_one(name, GUIDES[name], pal, args.html_only) == SKIPPED_RC]
+    if skipped:
+        print(f"SKIPPED: DOCX/PDF NOT rebuilt for {', '.join(skipped)} - the committed "
+              "DOCX/PDF are stale until rebuilt on Linux (LibreOffice) or Windows "
+              f"(Word); exiting {SKIPPED_RC}. Use --html-only for an HTML-only build.",
+              file=sys.stderr)
+        return SKIPPED_RC
     return 0
 
 
