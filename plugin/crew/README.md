@@ -172,6 +172,15 @@ they describe one checkout on one machine. (This line used to say `.work/`
 belongs in version control. It does not; the marker files under it dirty the tree
 and block the next promotion.)
 
+**Publish the standards to PR-side reviewers.** A repo that tracks `.crew/standards.md` can opt in with
+`export: ["review", "agents", "bugbot"]` (any non-empty subset) in its front matter. `crew_standards.py
+export --root . --write` then renders `docs/review-rules/<SET>.md` (one file per set, each under the
+28,000-character budget), `REVIEW.md`, `.cursor/BUGBOT.md` and a marked `## Code Review Rules` block in a
+hand-written `AGENTS.md`, from the data `/crew:review` hands its own reviewer; Rule, Self-check and
+Supplements only. `--check` fails when an output is stale, missing, hand-edited or orphaned, and
+`--dry-run` reports sizes. Freshness is as of the last check; where `$CLAUDE_PLUGIN_ROOT` is unset a rule
+that uses it exits 77 (SKIP), which is not coverage. Regenerate after an approved standards proposal.
+
 **Triage your rules before writing them.** Most rules people want in CLAUDE.md
 belong in `.crew/verify.json` instead — where a hook enforces them and they are
 not re-paid on every delegation. The test is: *could a command decide this?*

@@ -29,6 +29,8 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.2.88: re-bump only - interim number on the L-0718 branch (commit e2f8ab0); the change is recorded under crew 1.3.30
+- crew 1.2.90: re-bump only - interim number on the L-0718 branch (commit ee4309a); the change is recorded under crew 1.3.30
 - crew 1.3.24: re-bump only - interim number on the context-watch branch before main reached 1.3.25; the change is recorded under crew 1.3.26
 - crew 1.2.22: re-bump only - interim re-bump on the L-0768 branch (commit f7e38e3); the change is recorded under crew 1.3.25
 - crew 1.2.29: re-bump only - interim re-bump on this branch after merging main (commit a7f25e1); the change is recorded under crew 1.3.26
@@ -43,6 +45,11 @@ read entries under any `## [` heading.
 - crew 1.3.8: re-bump only - the human-only opt-out re-versioned so installs update (commit 438b1869c); recorded under crew 1.3.9
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
+
+### Added — crew 1.3.30: `crew_standards.py export` publishes the standards to PR-side reviewers (L-0718)
+
+- **Summary.** `crew` 1.3.30: a repo that opts in (`export:` in `.crew/standards.md`) gets `docs/review-rules/<SET>.md`, `REVIEW.md`, `.cursor/BUGBOT.md` and a `## Code Review Rules` block in `AGENTS.md`, generated from the same standards `/crew:review` hands its own reviewer and checked for staleness by `export --check`.
+- `plugin/crew/hooks/scripts/crew_standards.py`: new `export --write | --check | --dry-run`; Rule, Self-check and Supplements only (never Why or Earned by), one file per set under a 28,000-character budget (Bugbot truncates a rule at 30,000), refused rather than truncated; `--check` compares by the standards' content digest and the crew version, and reports orphans; a crew-generated `AGENTS.md` is refused. `crew_docs_check.py` gains a `standards export` row; `.crew/verify.json` gains rule `standards-export`. This repository opts in. Because every output records the crew version, each crew release PR in an opted-in repo reruns `export --write`. Docs: README, the standards skills, `/crew:init`, the daily-loop and review notes and the guides.
 
 ### Fixed — crew 1.3.29: the backgrounded-process wallclock test compares against a baseline gate run
 

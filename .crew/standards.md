@@ -1,6 +1,7 @@
 ---
 set: REPO
 applies-to: ["**"]
+export: ["review", "agents", "bugbot"]
 ---
 
 # useful-claude-add-ons standards overlay (REPO)
