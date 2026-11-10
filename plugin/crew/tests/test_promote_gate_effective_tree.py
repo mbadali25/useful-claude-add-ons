@@ -36,6 +36,7 @@ import pytest
 import crew_fixtures
 
 import context  # noqa: F401  pylint: disable=unused-import
+from _train_base import TRAIN_BASE, seed_train_base
 
 _SCRIPTS = pathlib.Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 _SH = _SCRIPTS / "promote-gate.sh"
@@ -61,7 +62,8 @@ _WT_NAME = "deploy-worktree-t0505"
 
 # L-0703: review evidence is opted out here - this suite is about WHICH tree is
 # judged, and test_promote_gate_review.py owns the review rule.
-_NO_REVIEW = {"requireReview": False, "reviewReason": "fixture"}
+_NO_REVIEW = {"requireReview": False, "reviewReason": "fixture",
+              "reviewWaiverSha": TRAIN_BASE}
 
 _VERIFY = {
     "environments": {
@@ -87,6 +89,7 @@ def _init(root):
     _git(root, "config", "user.email", "t@example.invalid")
     _git(root, "config", "user.name", "T")
     _git(root, "config", "commit.gpgsign", "false")
+    seed_train_base(root)
 
 
 class Repo:  # pylint: disable=too-few-public-methods

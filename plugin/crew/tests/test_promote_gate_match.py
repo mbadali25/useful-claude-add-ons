@@ -20,12 +20,14 @@ import json
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+from _train_base import TRAIN_BASE
 import test_promote_gate_effective_tree as tree
 from test_promote_gate_effective_tree import _git
 
 # L-0703: review evidence is opted out here; test_promote_gate_review.py owns
 # the review rule.
-_NO_REVIEW = {"requireReview": False, "reviewReason": "fixture"}
+_NO_REVIEW = {"requireReview": False, "reviewReason": "fixture",
+              "reviewWaiverSha": TRAIN_BASE}
 
 DEV = "gh workflow run deploy.yml -f environment=development -f ref=$(git rev-parse HEAD)"
 PROD = "gh workflow run deploy.yml -f environment=production -f ref=$(git rev-parse HEAD)"

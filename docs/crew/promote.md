@@ -145,7 +145,7 @@ could-not-tell and blocks; a `github` entry's `shaInput` must be given once, as 
 HEAD **of the tree the deploy runs from**: every `requires` environment has an all-pass row in `.work/PROMOTIONS.md`;
 the `rollback` runbook is verified inside 90 days; `requireHuman` has `.crew/.approved-<env>-<sha>`;
 an accepted review receipt covers that tree (or `requireReview: false` with a
-`reviewReason`); and that tree is clean. A row counts only with the full sha.
+`reviewReason` and a `reviewWaiverSha` equal to the train base, SRL-3312); and that tree is clean. A row counts only with the full sha.
 The review evidence proves the tracked tree deployed is one a reviewer was
 shown under a standing receipt - not that paths the bundle left out or ignored
 build output were reviewed, nor who wrote the ledger (local, unauthenticated).
