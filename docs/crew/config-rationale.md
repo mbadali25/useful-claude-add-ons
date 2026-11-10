@@ -2802,7 +2802,7 @@ never a receipt). `approve` writes exactly what
 `<git-common-dir>/crew/`: `approval.json`; the scope ramp's
 `scope-tickets.json` on a ticket's first approval; and, when the review ledger
 is NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
-NEEDS_REPLAN -> IN_REVIEW (the successor continuation, a fresh review budget).
+NEEDS_REPLAN -> IN_REVIEW (the successor continuation, which keeps the budget the ticket has left).
 `auto-reject` writes only the review ledger, REVIEWED -> NEEDS_REPLAN.
 `next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check`,
 T-0072's `deploy-allowed` and T-0011's `ship` write nothing (`ship` acts outside
