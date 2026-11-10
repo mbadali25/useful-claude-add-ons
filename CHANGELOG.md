@@ -41,7 +41,7 @@ read entries under any `## [` heading.
 - **Summary.** `crew` 1.3.33: the sabotage suites and the tooling-PR checker now find their targets in either the core plugin or the opt-in plugin they are about to move to, so L-0724's later slices move files without touching the harness; no behaviour a user runs changes.
 - `plugin/crew/tests/sabotage.py`, `sabotage_autopilot.py`: `_first_file` resolves the promote, gate, house-style and autopilot targets (opt-in path first, core path second) and raises when neither exists; `UPGRADE_DOC` no longer falls back to the deleted-to-be `commands/upgrade.md`.
 - `scripts/check-tooling-pr.py`, `.crew/verify.json`: `plugin/crew-autopilot/commands/autopilot.md` is a seam beside the core path; two cases in `scripts/_test/tooling-pr.py` hold it.
-- `plugin/crew/tests/optin_inventory.py`, `tests/data/optin_inventory.json`, `tests/test_optin_inventory.py`: a generated inventory of anchored mutations, `${CLAUDE_PLUGIN_ROOT}` references in the Markdown that moves, and the core scripts that need a shim; the anchor guard fails a slice that edits an anchored line. Docs: none - harness test and inventory only.
+- `plugin/crew/tests/optin_inventory.py`, `tests/data/optin_inventory.json`, `tests/test_optin_inventory.py`: a generated inventory of anchored mutations, `${CLAUDE_PLUGIN_ROOT}` references in the Markdown that moves, and the core scripts that need a shim; the anchor guard fails a slice that edits an anchored line; the staleness test compares with CRLF folded to LF so a Windows autocrlf checkout does not read as stale. Docs: none - harness test and inventory only.
 
 ### Fixed — crew 1.3.20: the docs no longer say a successor plan opens a fresh review budget (L-0717)
 

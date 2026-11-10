@@ -36,7 +36,8 @@ def test_inventory_has_no_blank_kind_and_no_empty_section():
 
 def test_inventory_matches_what_the_tree_generates():
     """Stale when a mutation, anchor or moved-Markdown reference changed without a regenerate."""
-    on_disk = Path(optin_inventory.DATA).read_bytes().decode("utf-8")
+    # A Windows checkout with core.autocrlf turns the committed LF file into CRLF; the content is what is held.
+    on_disk = Path(optin_inventory.DATA).read_bytes().decode("utf-8").replace("\r\n", "\n")
 
     assert optin_inventory.render(optin_inventory.build()) == on_disk, (
         "run: python3 plugin/crew/tests/optin_inventory.py --write")
