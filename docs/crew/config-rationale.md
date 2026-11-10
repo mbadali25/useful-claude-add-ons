@@ -1374,6 +1374,71 @@ from the map committed in the deployed sha (L-0768);
 `crew_config.py --check` warns when a `nonProd` glob covers one it marks
 `requireHuman: true`.
 
+### Pre-production environments (`environments.preProduction`, crew 1.3.20)
+
+**The need.** An environment gets a production name (`production`, `acme-prod-*`)
+while it is still being built, and the production rules fire on work that touches
+nothing live. What existed before this key, verified against 1.3.16 with the
+`cloud_guard.py` python driver in a throwaway repo:
+
+- `guards.profile: off` (or `guards.overrides.cloudGuard: off`) turns the whole
+  cloud guard off - the destructive, force-push and production rules together. It
+  is a global switch, and it ratchets: a layer that says `block` or `standard`
+  beats a layer that says `off`, so it cannot be used to loosen one repo that the
+  machine file arms.
+- `environments.nonProd` is a per-environment exemption for terraform and deploy
+  dispatches, but a non-destroying apply still needs a saved plan with a
+  `crew_tfplan.py summarize` sidecar (an apply with no saved plan is "destroy
+  unknown" and asks), and it says nothing about `production.databases` /
+  `production.hosts`: those are globs over host and database names, with no way to
+  carve one name out of `prod-*`, and `prodDatabase` / `prodServer` are a level
+  (`none`, `read`, `full`) for ALL declared targets.
+- promote-gate already has per-environment, reasoned opt-outs in
+  `.crew/verify.json` (`rollback: "none"` + `rollbackReason`, `requireReview:
+  false` + `reviewReason`); `change.requireForProduction` is a ratchet a repo can
+  only turn on.
+
+**The setting.** `environments.preProduction`, repo layer only:
+
+```json
+{ "environments": { "preProduction": {
+    "acme-new": { "reason": "stood up in November, no customer traffic yet",
+                  "targets": ["acme-new-web1", "acme-new-db1"] } } } }
+```
+
+Names and `targets` are EXACT (no wildcard, no whitespace) and the `reason` is at
+least ten characters; any other entry, any unknown field, or a non-object value
+makes the whole `environments` block unreadable, which is the existing "every
+environment is unknown" state - narrower, never wider. The machine-global file
+cannot supply it (`filter_global` prunes it, as it does `nonProd`).
+
+**What it does.** (1) `cloud_guard.evaluate` adds each listed name to the
+`nonProd` globs it hands the terraform and dispatch classifiers, so a
+non-destroying apply or a `deployWorkflow` dispatch to that name is `nonProd`: it
+runs unattended under `ask` and is logged as `env:preProduction:<name>` rather than
+`env:nonProd:<name>` (and a name an `environments.nonProd` glob already covers is
+not claimed). (2) `crew_config.guard_decision` lets `guards.prodDatabase` and
+`guards.prodServer` stand down for one command when EVERY declared production
+target the command names is the listed name or one of its `targets` - not the
+first match, every one, so `ssh acme-new-web1 && ssh acme-prod-web9` still refuses
+(as findings: the listed one is allowed and logged, the other refuses, and the line
+is denied).
+
+**What it never does.** It does not relax a destroy (`destroy yes` and `unknown`
+still ask, even for a listed name), a `block` policy, `cloudDestructive`,
+`sqlDestructive`, `forcePush`, the identity pins, promote-gate (use
+`rollback: "none"` and `requireReview: false` with their reasons for those),
+autopilot's deploy ladder or `crew_unattended`'s `--environment`. An environment
+not listed is judged exactly as before.
+
+**Audit.** Every use prints `crew PRE-PRODUCTION EXEMPTION: ... treated <name> as
+NOT production because environments.preProduction lists it -- <reason>` on screen
+and on stderr, and writes the policy `env:preProduction:<name>` to
+`.crew/guard.log`; `grep preProduction .crew/guard.log` lists every use. There is
+no expiry: the line is the reminder, and the entry is removed when the environment
+goes live. Tests: `tests/test_preproduction.py`; mutations (unwired, because
+`sabotage*.py` is review harness and lands alone): `tests/preproduction_mutations.py`.
+
 A `.crew/verify.json` environment's `github` entry is not config, and no key
 here reads it (crew-verification skill, section 4). `crew_ghdeploy.py check`
 applies promote-gate's own rule (L-1503): it refuses a map either gate

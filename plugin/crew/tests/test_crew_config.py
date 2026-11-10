@@ -1668,11 +1668,13 @@ def _environments_layer(value):
 
 def test_environments_defaults_grant_nothing(tmp_path):
     assert crew_config.default_config()["environments"] == {
-        "nonProd": [], "prodUnattended": False, "workflows": {}}
+        "nonProd": [], "prodUnattended": False, "workflows": {},
+        "preProduction": {}}
     assert crew_config.default_global_config()["environments"] == {
         "prodUnattended": False}
     assert crew_state.ENVIRONMENTS_DEFAULTS == {
-        "nonProd": [], "prodUnattended": False, "workflows": {}}
+        "nonProd": [], "prodUnattended": False, "workflows": {},
+        "preProduction": {}}
     root = tmp_path / "repo"
     crew_fixtures.make_repo(tmp_path, config={
         "schema": crew_state.SCHEMA_CURRENT,
