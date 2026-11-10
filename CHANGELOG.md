@@ -49,7 +49,7 @@ read entries under any `## [` heading.
 - `plugin/crew/hooks/scripts/crew_metrics.py`: `claude-fable-5-2` priced at $8 / $40 per MTok with cache reads at $0.20 (2.5%), from the models overview page; without the entry the longest-prefix lookup would have priced it as `claude-fable-5` ($10 / $50).
 - `plugin/crew/hooks/scripts/crew_wave.py`, `plugin/crew/commands/model.md`, `plugin/crew/README.md`, `docs/guides/crew/src/guide.md`, `.crew/codemap/crew.md`: the alias text names Fable 5.2. The full id `claude-fable-5-1` is still accepted as an explicit pin (test row kept). No config key, value or default changed, so the Configuration Guide reference is unchanged.
 - `plugin/crew/tests/test_crew_wave.py`: the `fable` launch-line test also pins `claude-fable-5-2`.
-- `plugin/crew/tests/test_crew_metrics.py`: two tests pin the `claude-fable-5-2` row ($8 / $40, cache read $0.20) and that the longest-prefix lookup does not fall back to `claude-fable-5`; sabotaged by deleting the row (both red).
+- `plugin/crew/tests/test_crew_metrics.py`: two tests pin the `claude-fable-5-2` row ($8 / $40, cache read $0.20) and that the longest-prefix lookup does not fall back to `claude-fable-5`; sabotaged by deleting the row (both red). `PRICES_SOURCE` now names the `claude-fable-5-2` row's source (the models overview page), and the root README's generated What's new block is regenerated (`scripts/sync-updates.py`).
 
 ### Added — crew 1.3.35: a stdlib checker for the review-finding rules (L-0715 PR B2)
 

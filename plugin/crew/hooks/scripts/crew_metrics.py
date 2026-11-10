@@ -466,7 +466,9 @@ PRICES_SOURCE = ("claude-api skill model table (cached 2026-10-06; "
                  "https://platform.claude.com/docs/en/about-claude/pricing); "
                  "cache write 1.25x (5m) / 2x (1h) of input; cache read as stated "
                  "there, else assumed 0.1x of input; Haiku 5.5 above a 100K prompt at "
-                 "$0.50 in / $2.50 out, its cache read assumed 0.1x")
+                 "$0.50 in / $2.50 out, its cache read assumed 0.1x; claude-fable-5-2 "
+                 "($8 in / $40 out, cache read $0.20) is from the models overview "
+                 "page (2026-11-10), not that table")
 
 
 def _price(inp, out, cache_read=None):

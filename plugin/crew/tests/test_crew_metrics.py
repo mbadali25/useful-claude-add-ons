@@ -370,6 +370,8 @@ def test_fable_5_2_has_its_own_price_row_not_fable_5s():
     assert cm.price_for("claude-fable-5-2-20261110") is row
     assert cm.price_for("claude-fable-5-1")["input"] == 10.0
     assert cm.price_for("claude-fable-5")["cacheRead"] == 1.0
+    # the recorded provenance names the page this row came from (not the cached table)
+    assert "claude-fable-5-2" in cm.PRICES_SOURCE
 
 
 def test_fable_5_2_cost_is_computed_at_the_5_2_rates(tmp_path):
