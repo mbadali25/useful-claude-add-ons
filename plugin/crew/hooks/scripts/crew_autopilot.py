@@ -264,6 +264,7 @@ import crew_autopilot_fix
 import crew_autopilot_gates
 import crew_autopilot_paste
 import crew_autopilot_questions
+import crew_autopilot_replan
 import crew_autopilot_sleep
 import crew_autopilot_slices
 import crew_autopilot_split
@@ -1272,7 +1273,7 @@ def _auto_replan_decision(root, ticket):  # pylint: disable=too-many-return-stat
                 "successors": successors, "reason": (
                     f"autopilot.maxAutoReplans ({cap}) reached: {used} successor plan(s) "
                     "on the ledger")}
-    no_round = _no_round_after_successor(data, state, ticket, path)
+    no_round = crew_autopilot_replan.no_round_after_successor(data, state, ticket, path)
     if no_round:
         return {"cap": cap, "round": number, "used": used, "successors": successors,
                 "reason": no_round}
@@ -1281,21 +1282,6 @@ def _auto_replan_decision(root, ticket):  # pylint: disable=too-many-return-stat
                 f"round {number} is FINDINGS with {len(blocks)} BLOCK and no round "
                 f"left; autopilot.maxAutoReplans is {cap} ({used} used) and "
                 f"{approval.get('reason')}")}
-
-
-def _no_round_after_successor(data, state, ticket, path):
-    """L-0717: why a successor plan would have no review round, or None. A
-    successor plan does not reopen the ticket's one budget, so a reject here
-    would approve a plan that cannot get a round. Only an owner grant
-    (review_ledger.py --grant-round) gives it one, and autopilot never grants."""
-    summary = review_ledger.summary(data, state, ticket, path)
-    left = summary.get("rounds_left")
-    if _count(left) and left >= 1:
-        return None
-    return (f"no review round would remain after the successor plan: "
-            f"{summary.get('rounds_spent')} of {summary.get('budget')} used, and a successor "
-            "plan does not reopen the budget; the owner's grant (review_ledger.py "
-            "--grant-round) is missing and autopilot never grants one")
 
 
 def _block_round(data, state, ticket, path):  # pylint: disable=too-many-return-statements

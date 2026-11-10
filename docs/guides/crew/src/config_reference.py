@@ -396,7 +396,9 @@ guard, and the per-guard ratchet then takes the narrower layer. A malformed
 profile or override reads as the guard's floor (`block`, or `none` for the
 production guards), never as `off`. The per-guard keys of earlier versions
 (`guards.<guard>`) are still READ as aliases for `guards.overrides.<guard>`
-until `/crew:migrate` rewrites them, and are never written.
+until `/crew:migrate` rewrites them, and are never written. For `envGuard` an
+explicit `null` (`"guards": {{"envGuard": null}}`) is malformed and reads as `block`; only an
+absent key is `off`. The other guards still read a legacy `null` as absent.
 
 {profile_table}
 

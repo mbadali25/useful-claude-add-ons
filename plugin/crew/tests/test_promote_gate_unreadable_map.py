@@ -30,6 +30,7 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+from _train_base import TRAIN_BASE, seed_train_base
 import crew_fixtures
 
 _HOOKS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -52,7 +53,8 @@ _GOOD = {"environments": {"prod": {
     "deploy": [_DEPLOY], "rollback": "none",
     "rollbackReason": "the fixture deploys nothing",
     # L-0703: review evidence opted out; test_promote_gate_review.py owns it.
-    "requireReview": False, "reviewReason": "the fixture deploys nothing"}}}
+    "requireReview": False, "reviewReason": "the fixture deploys nothing",
+    "reviewWaiverSha": TRAIN_BASE}}}
 
 # Every shape that must BLOCK in both flavours. Keyed by what is wrong with it,
 # because the label is what a failure report will show.
@@ -85,6 +87,7 @@ def _fixture(tmp_path, body, name="repo"):
         subprocess.run(["git"] + args, cwd=root, check=False,
                        capture_output=True, text=True,
                        stdin=subprocess.DEVNULL)
+    seed_train_base(root)
     (root / ".gitignore").write_text(".crew/\n.work/\n", encoding="utf-8")
     (root / "README.md").write_text("x\n", encoding="utf-8")
     if body is not None:
@@ -251,7 +254,8 @@ def test_sh_a_string_deploy_matches_the_whole_string_not_its_letters(tmp_path):
     """
     body = json.dumps({"environments": {"prod": {
         "deploy": _DEPLOY, "rollback": "none", "rollbackReason": "x",
-        "requireReview": False, "reviewReason": "x"}}})
+        "requireReview": False, "reviewReason": "x",
+        "reviewWaiverSha": TRAIN_BASE}}})
     root = _fixture(tmp_path, body)
 
     assert _sh(root, "echo done").returncode == 0
@@ -290,7 +294,8 @@ def test_ps1_an_unrelated_command_passes_straight_through(tmp_path):
 def test_ps1_a_string_deploy_is_one_command(tmp_path):
     body = json.dumps({"environments": {"prod": {
         "deploy": _DEPLOY, "rollback": "none", "rollbackReason": "x",
-        "requireReview": False, "reviewReason": "x"}}})
+        "requireReview": False, "reviewReason": "x",
+        "reviewWaiverSha": TRAIN_BASE}}})
     root = _fixture(tmp_path, body)
 
     assert _ps1(root, "echo done").returncode == 0

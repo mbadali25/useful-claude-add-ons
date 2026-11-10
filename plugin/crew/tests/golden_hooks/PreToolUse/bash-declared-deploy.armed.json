@@ -14,7 +14,7 @@
    "exit": 2,
    "flavour": "bash",
    "script": "promote-gate.sh",
-   "stderr": "PROMOTION BLOCKED (prod, sha 5e12f97, tree <ROOT>):\n  - the rollback runbook 'runbook.md' does not exist. No verified rollback, no deploy.\nThese are the pre-deploy gates from .crew/verify.json. Fix them, or set\nverifyGate:false in .crew/config.json if this repo should not be gated.\n",
+   "stderr": "PROMOTION BLOCKED (prod, sha 851a379, tree <ROOT>):\n  - the rollback runbook 'runbook.md' does not exist. No verified rollback, no deploy.\nThese are the pre-deploy gates from .crew/verify.json. Fix them, or set\nverifyGate:false in .crew/config.json if this repo should not be gated.\n",
    "stdout": "",
    "timed_out": false
   },
