@@ -14,6 +14,8 @@ import pathlib
 import re
 import shutil
 import site
+import subprocess
+import sys
 import tempfile
 
 import pytest
@@ -175,13 +177,38 @@ def _trust_seam_python(tmp_path_factory):
     sitecustomize (Debian ships one) is found first on sys.path and shadows it."""
     import venv
     root = tmp_path_factory.mktemp("trust-seam-venv")
-    venv.create(str(root), with_pip=False, symlinks=os.name != "nt")
+    # system_site_packages: a verify rule such as `python3 -m pytest ...` run
+    # through this interpreter must still see the parent interpreter's packages.
+    venv.create(str(root), with_pip=False, symlinks=os.name != "nt", system_site_packages=True)
     found = list(root.glob("lib/python*/site-packages")) + list(root.glob("Lib/site-packages"))
     if not found:
         pytest.skip("venv has no site-packages directory")
     (found[0] / "_crew_trust_seam.py").write_text(_TRUST_SEAM, encoding="utf-8", newline="\n")
-    (found[0] / "_crew_trust_seam.pth").write_text("import _crew_trust_seam\n", encoding="utf-8", newline="\n")
-    return root / ("Scripts" if os.name == "nt" else "bin")
+    # The parent may itself be a venv, whose packages `system_site_packages`
+    # (the BASE interpreter's) does not reach: chain its site dirs explicitly.
+    parent_sites = [p for p in sys.path
+                    if p and os.path.isdir(p) and "site-packages" in p.replace("\\", "/")]
+    pth = "import _crew_trust_seam\n" + "".join(
+        f"import site; site.addsitedir({p!r})\n" for p in parent_sites)
+    (found[0] / "_crew_trust_seam.pth").write_text(pth, encoding="utf-8", newline="\n")
+    bindir = root / ("Scripts" if os.name == "nt" else "bin")
+    if os.name == "nt" and not (bindir / "python3.exe").exists():
+        # A Windows venv ships python.exe only, and the gate's resolver
+        # (`crew_py_strict`: `type -ap python3 python py`) takes any `python3`
+        # on PATH before any `python`, so without this copy the seam venv is
+        # never the interpreter the gate runs. A copy, not a wrapper script:
+        # the resolver runs each candidate and returns the `sys.executable` it
+        # prints, so only a real venv interpreter keeps the gate on the seam.
+        shutil.copyfile(bindir / "python.exe", bindir / "python3.exe")
+        # Run the new executable once, here, with a generous bound. A file
+        # nobody has run yet is scanned on its first launch (measured: 113 s
+        # for a fresh copy of python.exe on a Windows 11 host with Defender on,
+        # 0.08 s on the second launch), and the resolver gives each candidate
+        # 3 s: a cold python3.exe would time out, be skipped, and the gate
+        # would fall through to the next python3 on PATH -- UNTRUSTED again.
+        subprocess.run([str(bindir / "python3.exe"), "-c", "pass"], check=False,
+                       stdin=subprocess.DEVNULL, capture_output=True, timeout=600)
+    return bindir
 
 
 @pytest.fixture(autouse=True)

@@ -9,6 +9,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.3.22: the Windows trust-store seam interpreter is the one the gate runs (L-0888)
+
+- **Summary.** `crew` 1.3.22: no behaviour change; the test-only trust seam now works on Windows, where the verify gate was picking a different `python3` and reporting UNTRUSTED.
+- Tests only (`plugin/crew/tests/conftest.py`), no guard path touched. Root cause, verified: a Windows venv has `python.exe` but no `python3.exe`, and `crew_py_strict` walks `type -ap python3 python py`, so it returned the base `python3.exe` ahead of the seam venv. The seam venv now gets a `python3.exe` copy, run once at creation so the resolver's 3 s probe is not spent on a first-launch scan (a fresh copy took 113 s the first time, 0.08 s after, on a Windows 11 host). The 1.3.21 revert blamed the copy for `No module named pytest`; the cause was the venv, not the copy: a venv without `system_site_packages` has no pytest whether its interpreter is `python.exe` or a copy of it (checked both), and `sys.prefix` resolves to the venv for a copy because `pyvenv.cfg` is found one directory above the executable. The seam venv is now created with `system_site_packages=True` and chains the parent interpreter's own site directories for a parent that is itself a venv.
+
 ### Fixed — crew 1.3.21: revert of the Windows python3.exe seam copy (L-0888)
 
 - **Summary.** `crew` 1.3.21: no behaviour change; reverts the Windows `python3.exe` seam copy added in 01ebec33e, and the Windows UNTRUSTED CI failure is open.

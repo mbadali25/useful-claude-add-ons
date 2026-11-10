@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.22**: The Windows trust-store seam interpreter is the one the gate runs. `crew` 1.3.22: no behaviour change; the test-only trust seam now works on Windows, where the verify gate was picking a different `python3` and reporting UNTRUSTED.
 - **crew 1.3.21**: Revert of the Windows python3.exe seam copy. `crew` 1.3.21: no behaviour change; reverts the Windows `python3.exe` seam copy added in 01ebec33e, and the Windows UNTRUSTED CI failure is open.
-- **crew 1.3.20**: Pylint convention messages in the trust-store tests. `crew` 1.3.20: no behaviour change; the trust-store tests now pass the repo's pylint gate.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
