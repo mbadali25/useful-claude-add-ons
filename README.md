@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.23**: Promote-gate reads deploy policy from the sha being deployed, not the session's checkout. `crew` 1.3.23 reads every promote-gate requirement (`requires`, `rollback`, `requireHuman`, a `github` entry's `shaInput` and `requireReview`) from the `.crew/verify.json` committed in the sha being deployed, so a deploy from a git worktree honours a waiver committed on its own branch and is no longer blocked by the main checkout's uncommitted map.
+- **crew 1.3.24**: Promote-gate reads deploy policy from the sha being deployed, not the session's checkout. `crew` 1.3.24 reads every promote-gate requirement (`requires`, `rollback`, `requireHuman`, a `github` entry's `shaInput` and `requireReview`) from the `.crew/verify.json` committed in the sha being deployed, so a deploy from a git worktree honours a waiver committed on its own branch and is no longer blocked by the main checkout's uncommitted map.
 - **crew 1.3.22**: A review waiver binds to the train base. `crew` 1.3.22: `requireReview: false` with a `reviewReason` no longer waives promote-gate's review evidence on its own; the environment must also name the promotion's train base in `reviewWaiverSha`.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

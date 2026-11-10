@@ -9,9 +9,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Fixed — crew 1.3.23: promote-gate reads deploy policy from the sha being deployed, not the session's checkout (L-0768)
+### Fixed — crew 1.3.24: promote-gate reads deploy policy from the sha being deployed, not the session's checkout (L-0768)
 
-- **Summary.** `crew` 1.3.23 reads every promote-gate requirement (`requires`, `rollback`,
+- **Summary.** `crew` 1.3.24 reads every promote-gate requirement (`requires`, `rollback`,
   `requireHuman`, a `github` entry's `shaInput` and `requireReview`) from the `.crew/verify.json`
   committed in the sha being deployed, so a deploy from a git worktree honours a waiver committed on
   its own branch and is no longer blocked by the main checkout's uncommitted map.
@@ -33,6 +33,9 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 - **Tests.** `test_promote_gate_tree_policy.py` (must-block and must-allow, sh and ps1, ps1 cases
   `wallclock`), new sabotage entries in `promote_tree_mutations.py` for each new branch; cases that asserted the old
   project-dir guard from a worktree are retargeted to the requirement that now applies.
+- **Merged with SRL-3312.** The tree-policy fixtures seed the shared train base (`tests/_train_base.py`)
+  and name it in `reviewWaiverSha`, so a branch's own waiver still admits under the train-base rule.
+  Re-bumped to 1.3.24 after the merge (1.3.22 is on main).
 
 ### Changed — crew 1.3.22: a review waiver binds to the train base (SRL-3312)
 

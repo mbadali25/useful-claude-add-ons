@@ -33,6 +33,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
+from _train_base import TRAIN_BASE, seed_train_base
 
 _SCRIPTS = pathlib.Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 _BASH = crew_fixtures.resolve_bash()
@@ -48,7 +49,8 @@ FLAVOURS = [
 ]
 
 _ROLLBACK = {"rollback": "none", "rollbackReason": "fixture"}
-_WAIVER = {"requireReview": False, "reviewReason": "fixture: the branch's own waiver"}
+_WAIVER = {"requireReview": False, "reviewReason": "fixture: the branch's own waiver",
+           "reviewWaiverSha": TRAIN_BASE}
 
 
 def _map(dev=None, qa=None, requires=True):
@@ -76,6 +78,7 @@ class Repo:
         _git(self.main, "config", "user.email", "t@example.invalid")
         _git(self.main, "config", "user.name", "T")
         _git(self.main, "config", "commit.gpgsign", "false")
+        seed_train_base(self.main)
         (self.main / ".gitignore").write_text(".crew/*\n!.crew/verify.json\n.work/\n",
                                               encoding="utf-8")
         (self.main / ".crew").mkdir()
