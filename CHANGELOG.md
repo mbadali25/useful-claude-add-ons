@@ -9,6 +9,17 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.3.19: the environment guard's review fixes, re-applied on the L-0725 guard (L-0772)
+
+- **Summary.** `crew` 1.3.19: the environment guard no longer misses attached code (`bash -c'env'`, `node -pe`) or a globbed program name, and an explicit `guards.envGuard: null` now blocks instead of switching it off.
+- Re-applied from PR #603 (L-0772-fix, which could not merge after L-0725 rewrote the config handling and L-0867 removed `env-guard.ps1`) onto current main. The no-python fallbacks (BLOCKs 3 and 4) are already covered by main's `crew_guard_layer_armed` and `env_guard._layer_text_armed`, so only the python judge and the null rule were ported; the `.ps1` fix is not ported.
+- **Attached code.** `-cCODE`, `-eCODE` and `-neCODE` are scanned, and a run of code letters (`node -pe 'process.env'`) is read every way it could split. A globbed or brace-expanded program name (`/usr/bin/en?`, `e{n,}v`) and a non-literal name in inline code (`os.environ[name]`) are could-not-tell. `env --help`, `env --version` and `printenv --help` are allowed.
+- **`guards.envGuard: null`** is `block`, the floor, in either layer: only an absent key is `off` (`crew_guards.NULL_IS_MALFORMED`, read by `layer_guard_state`). `roleWrites` and `cloudGuard` are unchanged.
+- **Security passes from #603.** `$'\u0065nv'` and `$'\x{65}nv'` decode to `env`; an option that takes an argument (`node -r dotenv/config`, `python3 -W x`) no longer hides the `-c`/`-e` code after it; `powershell 'gci env:'` and `pwsh` options are read in any order; `/proc/self//environ`, `/./` and `/../` spellings are folded; a name assigned from a credential is a credential for the rest of the command (`env T="$TOKEN" printenv T`); a program from `${X:-env}`, a shell or interpreter left to read its code from stdin, a command substitution inside `(( ))` and a non-literal `.../environ` path are could-not-tell; `trap CODE` and `su -c CODE` are read; `cmd //c set` is `cmd /c set`.
+- **Hook input** without a string `tool_name` is `could-not-tell:malformed-input`.
+- **`plugin-hooks:<name>`** reports a `hooks.json` that is a directory or cannot be decoded as could-not-verify, never a zero or a crash.
+- Docs: `plugin/crew/CONFIG.md` (envGuard null) and the troubleshooting guide's could-not-tell forms, rebuilt as HTML/DOCX/PDF.
+
 ### Fixed — crew 1.3.18: the scope guard's allow path starts a handful of processes, not a dozen
 
 - **Summary.** `crew` 1.3.18: scope-guard.sh clears an in-scope write or a plain command with one python and one `git` process (it was a dozen starts, about 1.3s per write), so several lanes at once no longer time the guard out on Git Bash; every decision is unchanged.

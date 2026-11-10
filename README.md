@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.19**: The environment guard's review fixes, re-applied on the L-0725 guard. `crew` 1.3.19: the environment guard no longer misses attached code (`bash -c'env'`, `node -pe`) or a globbed program name, and an explicit `guards.envGuard: null` now blocks instead of switching it off.
 - **crew 1.3.18**: The scope guard's allow path starts a handful of processes, not a dozen. `crew` 1.3.18: scope-guard.sh clears an in-scope write or a plain command with one python and one `git` process (it was a dozen starts, about 1.3s per write), so several lanes at once no longer time the guard out on Git Bash; every decision is unchanged.
-- **crew 1.3.16**: Role-write-guard's allow path starts fewer helper processes in bash. `crew` 1.3.16: the Write/Edit guard (`role-write-guard.sh`) no longer starts `dirname`, `cat` or two command-substitution subshells before python judges the write, so it stays well inside its 10 s limit on Git Bash, where each process start is an MSYS fork; every decision is unchanged.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
