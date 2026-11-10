@@ -1084,6 +1084,7 @@ _REGEX_ANCHORED = {
 _NOT_A_TICKET_ID = {
     "crew_coord.py": "_PART_RE is one part of a coordination repo key, not a ticket id",
     "crew_bridge.py": "LABEL_RE is a peer session's label for `ring --to`, not a ticket id",
+    "crew_worktrees.py": "NAME_RE is a worktree directory name (128 chars), not a ticket id",
 }
 
 

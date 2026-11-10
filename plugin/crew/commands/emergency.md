@@ -63,17 +63,17 @@ library only.
    `isolation: worktree` per fix, so a half-applied fix cannot land on top of
    another one in the same tree.
 
-   `isolation: worktree` places its own worktree and crew cannot redirect it —
-   that is the harness's choice, not this plugin's. The command below governs a
-   worktree **you** place with `git worktree add`. Ask for the path rather than
-   composing one, so two lanes started seconds apart agree:
+   `isolation: worktree` places its own worktree and only an opt-in
+   `WorktreeCreate` hook (`/crew:worktrees hook`) redirects it. The command below
+   governs a worktree **you** place with `git worktree add`. Ask for the path
+   rather than composing one, so two lanes started seconds apart agree:
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_state.py"      --root . --worktree-path <branch>
    ```
 
-   It answers the checkout's parent, fixed in code (the `worktree.root` setting
-   was removed in L-0725).
+   It answers under `worktrees.root` (null: `~/.claude/crew/worktrees`), outside the repo;
+   exit 2 is a refused setting: stop and tell the owner, never place it beside the checkout.
 4. While the lanes run, **do the cheapest observation yourself** — the log line,
    the health endpoint, the last deploy's sha. Do not wait idle on agents.
 5. When the lanes report: one paragraph on the most probable cause, the
