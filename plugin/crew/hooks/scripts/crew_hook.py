@@ -44,6 +44,28 @@ DEADLINE_MARGIN = 5       # seconds the launcher keeps back from the registratio
 EVENT_SLACK = 10          # registration timeout = the largest row's timeout + this
 DRAIN = 2.0               # seconds to wait for pipes after a child's own exit
 POST_KILL = 3.0
+RETRY_FLOOR = 2.0         # seconds a timed-out guard's one retry must be able to have
+TASKKILL_BOUND = 2        # seconds _kill_tree gives taskkill on Windows (its subprocess timeout)
+RETRY_MARGIN = 0.5
+# The rows whose one timed-out attempt may be repeated: stateless judges whose only side effect
+# is an appended guard.log row (cloud-guard also a said-once marker that only silences a notice).
+# Anything else (approval-hook, promote-gate, verify-gate, completion-audit) is never retried.
+RETRY_SAFE = frozenset({"role-write-guard.sh", "cloud-guard.sh", "env-guard.sh", "scope-guard.sh"})
+
+
+def _retry_reserve(windows):
+    """Seconds the dispatch deadline must still have, beyond the retry's own run, for a second
+    timeout to clean up: run_child after a timeout spends up to taskkill (Windows) + the
+    waiter join (POST_KILL) + the reader join (POST_KILL), plus a margin."""
+    return (TASKKILL_BOUND if windows else 0) + 2 * POST_KILL + RETRY_MARGIN
+
+
+def _excerpt(data, limit=160):
+    """First non-empty line of a child's stderr, trimmed, for a line that must stay one line."""
+    for line in (data.decode("utf-8", errors="replace") if isinstance(data, bytes) else data or "").splitlines():
+        if line.strip():
+            return line.strip()[:limit]
+    return ""
 BLOCKING_EVENTS = ("PreToolUse", "UserPromptSubmit", "Stop")
 VAULT_MATCHER = "mcp__.*(obsidian|vault|basic[-_]memory).*"
 RESTRICTED_ROLES = ("explorer", "researcher", "reviewer", "security", "pm")
@@ -444,21 +466,44 @@ def _argv_for(argv, scripts, bash, pwsh):
 
 
 TRACE_SUFFIX = ".crew-trace"
+_TRACE_LOCK = threading.Lock()  # children finish on their own threads; one line must not tear another
 
 
-def _trace(path, event, argv, pid):
-    """Append `event argv pid` to the file CREW_HOOK_TRACE_FILE names, for the suites. Only
-    a path ending in `.crew-trace` is honoured and a symlink is never followed, so the
-    variable cannot point the dispatcher at a file something else reads (security pass)."""
+def _append_trace(path, line):
+    """Append one line to a trace file. Only a path ending in `.crew-trace` is honoured and
+    a symlink is refused only where the platform has `O_NOFOLLOW` (POSIX; on Windows the flag is
+    absent, 0 is substituted, and only the suffix rule applies), so the variable cannot point the
+    dispatcher at a file something else reads (security pass)."""
     if not path or not path.endswith(TRACE_SUFFIX):
         return
     flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
     try:
-        fd = os.open(path, flags, 0o600)
-        with os.fdopen(fd, "a", encoding="utf-8") as handle:
-            handle.write(f"{event} {' '.join(argv)} {pid}\n")
+        with _TRACE_LOCK:
+            fd = os.open(path, flags, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as handle:
+                handle.write(line)
     except OSError:
         pass
+
+
+def _trace(path, event, argv, pid):
+    """Append `event argv pid` to the file CREW_HOOK_TRACE_FILE names, for the suites."""
+    _append_trace(path, f"{event} {' '.join(argv)} {pid}\n")
+
+
+def _timing(path, event, argv, res):
+    """Append `event argv pid attempts=N start_ms=S end_ms=E ms=D outcome` to the file
+    CREW_HOOK_TIMING_FILE names (opt-in, the same `.crew-trace` and no-symlink rules as
+    _trace): the per-child timing that tells a slow guard from a wedged one. When a retry
+    replaced the first attempt, `first_said=` keeps that attempt's first stderr line and the
+    outcome stays the LAST word of the line."""
+    if "start_ms" not in res:
+        return
+    outcome = "timeout" if res.get("timed_out") else f"exit={res.get('exit')}"
+    first = f" first_said={json.dumps(res['first_said'])}" if res.get("first_said") else ""
+    _append_trace(path, f"{event} {' '.join(argv)} {res.get('pid', 0)} attempts={res.get('attempts', 1)} "
+                        f"start_ms={res['start_ms']} end_ms={res['end_ms']} "
+                        f"ms={res['end_ms'] - res['start_ms']}{first} {outcome}\n")
 
 
 def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_bash=None,
@@ -493,6 +538,7 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
     if bash is None:
         return _no_bash(event, bash_problem, root, armed_fn)
     trace = env.get("CREW_HOOK_TRACE_FILE", "")
+    timing = env.get("CREW_HOOK_TIMING_FILE", "")
     results = [None] * len(chosen)
     threads = []
 
@@ -506,7 +552,7 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
             return
         if own <= 0:
             results[index] = {"exit": None, "stdout": b"", "stderr": b"", "timed_out": True, "pid": 0,
-                              "error": ""}
+                              "error": "", "attempts": 0, "no_retry": "the dispatch deadline had passed"}
             return
         command, flavour = _argv_for(argv, scripts, bash, pwsh)
         if command is None:
@@ -514,8 +560,36 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
                               "error": f"no PowerShell was found to run {argv[0]}"}
             return
         child_env = dict(env, CREW_HOOK_FLAVOUR=flavour)
-        results[index] = run_child(command, raw, own, child_env, cwd=None)
-        _trace(trace, event, argv, results[index]["pid"])
+        started = now_ms()
+        res = run_child(command, raw, own, child_env, cwd=None)
+        res["attempts"] = 1
+        if res["timed_out"] and row.guard:
+            # One bounded retry, only for the rows in RETRY_SAFE (the PreToolUse judges). What
+            # a repeat can do there: cloud/env/scope-guard and role_write_guard append a
+            # guard.log row per run, so a retried call can leave a duplicate row, and cloud-guard
+            # may have written its said-once marker, so the repeat stays silent about it. The
+            # decision is never changed by either. Every other guard row keeps its single
+            # attempt: approval-hook records an approval, completion-audit's `_block_once`
+            # writes a marker and then exits 2 (a kill between the two makes a repeat delete the
+            # marker and exit 0), and promote-gate / verify-gate run longer than a retry could.
+            # The retry also needs the dispatch deadline to leave room for the cleanup of a
+            # second timeout (see _retry_reserve), so a retried guard cannot outlive the deadline.
+            if row.script not in RETRY_SAFE:
+                res["no_retry"] = "this row is not retry-safe"
+            else:
+                retry_for = min(float(row.timeout),
+                                mono_end - time.monotonic() - _retry_reserve(windows))
+                if retry_for >= RETRY_FLOOR:
+                    first = res
+                    res = run_child(command, raw, retry_for, child_env, cwd=None)
+                    res["attempts"] = 2
+                    res["first_said"] = _excerpt(first["stderr"])
+                else:
+                    res["no_retry"] = "no room before the dispatch deadline"
+        res["start_ms"], res["end_ms"] = started, now_ms()
+        results[index] = res
+        _trace(trace, event, argv, res["pid"])
+        _timing(timing, event, argv, res)
 
     for index, (row, argv) in enumerate(chosen):
         thread = threading.Thread(target=work, args=(index, row, argv), daemon=True)
@@ -536,6 +610,62 @@ def _no_bash(event, problem, root, armed_fn):
     return 0, b"", (message + "\n").encode("utf-8")
 
 
+UNKNOWN_TIMEOUT = "crew-hook: UNKNOWN (guard timeout, not a policy deny)"
+UNKNOWN_RESOURCE = "crew-hook: UNKNOWN (resource exhaustion, not a policy deny)"
+UNKNOWN_PYTHON = "crew-hook: UNKNOWN (no usable python, not a policy deny)"
+# Anchored to the diagnostic forms a failed fork or allocation really prints, one per line: a
+# prefix of `word: ` labels (`bash: `, `env-guard: `), then the message, or an exception line. Text
+# that merely QUOTES these words (a path such as C:\work\MemoryError-tests\guard.py in a traceback,
+# a quoted command naming EAGAIN, a sentence mentioning errno 11) starts with none of them.
+_LBL = r"(?:[\w.\-]+:[ \t]+)*"
+_RESOURCE_RE = re.compile(
+    r"^[ \t]*(?:\d+[ \t]+\[main\][ \t]+\S+[ \t]+\d+[ \t]+)?" + _LBL
+    + r"(?:fork:[ \t]+(?:retry:[ \t]+)?(?:Resource temporarily unavailable|failed|cannot)\b"
+    r"|dofork:[ \t]+child\b[^\n]*\berrno 11\b"
+    r"|fork failed\b"
+    r"|(?:can(?:'|no)t|unable to|could not|failed to)[ \t]+fork\b"
+    r"|(?:\[Errno 12\][ \t]+)?Cannot allocate memory\b)"
+    r"|^[ \t]*(?:\w*Error:[ \t]+)?\[Errno 11\][ \t]+Resource temporarily unavailable\b"
+    r"|^could not start\b[^\n]*\[Errno 11\]"
+    r"|^[ \t]*OSError:[ \t]+\[Errno 11\]"
+    r"|^[ \t]*MemoryError\b"
+    r"|^[ \t]*\w*Error:[ \t]+EAGAIN\b",
+    re.IGNORECASE | re.MULTILINE)
+# The guards' own fixed no-python refusals (each is the literal first words of the `echo ... >&2;
+# exit 2` in the .sh named beside it; a test pins every one to its script). A refusal is the whole
+# of that guard's stderr, so only a stderr that is exactly ONE line starting with one of these is
+# relabelled: a real deny that merely quotes the words (a path such as notes/no usable python.md in
+# scope-guard's `refused {tool} on {path}`) neither starts with them nor is a single such line.
+NO_PYTHON_REFUSALS = (
+    "SCOPE GUARD: no usable python - cannot judge",                        # scope-guard.sh
+    "cloud-guard: no usable python, and",                                  # cloud-guard.sh
+    "env-guard: no usable python, and",                                    # env-guard.sh
+    "COMPLETION AUDIT: no usable python - the tree was not audited",       # completion-audit.sh
+    "crew: /crew:approve was NOT recorded -- no usable python",            # approval-hook.sh
+    "PROMOTION BLOCKED: no usable python",                                 # promote-gate.sh
+    "role-write-guard: no usable python found",                            # role-write-guard.sh
+)
+
+
+def _is_no_python_refusal(stderr):
+    lines = stderr.strip().splitlines()
+    return len(lines) == 1 and lines[0].startswith(NO_PYTHON_REFUSALS)
+
+
+def _unknown_label(res):
+    """The label naming WHY a guard did not decide, or "" when it is none of the known causes.
+    It reads stderr in every branch that has no decision (error, timeout, undecided exit), because
+    an undecided child never reaches the timeout branch. A label never changes the verdict: the
+    caller still fails closed. Resource exhaustion is looked for first, since a guard that could
+    not fork also tends to time out."""
+    said = _text(res["stderr"])
+    if _RESOURCE_RE.search(said) or _RESOURCE_RE.search(res["error"] or ""):
+        return UNKNOWN_RESOURCE
+    if res["timed_out"]:
+        return UNKNOWN_TIMEOUT
+    return ""
+
+
 def _settle(event, chosen, results, root, armed_fn):
     """Turn the children's raw results into merge input, applying B8."""
     merge_in, notes, faults, heard = [], [], [], []
@@ -543,24 +673,34 @@ def _settle(event, chosen, results, root, armed_fn):
         name = " ".join(argv)
         undecided = not res["error"] and not res["timed_out"] and res["exit"] not in (0, 2)
         if res["error"] or res["timed_out"] or undecided:
-            reason = res["error"] or (f"{name} timed out (its limit is {row.timeout}s, or the dispatch "
-                                      "deadline) and was killed")
+            attempts = res.get("attempts", 1)
+            why = f"; no retry: {res['no_retry']}" if res.get("no_retry") else ""
+            first = f"; attempt 1 said: {res['first_said']!r}" if res.get("first_said") else ""
+            reason = res["error"] or (f"{name} timed out (attempts={attempts}{why}{first}; its limit is "
+                                      f"{row.timeout}s, or the dispatch deadline) and was killed")
             if undecided:
                 reason = f"{name} exited {res['exit']} without a decision"
+            label = _unknown_label(res)
             said = _text(res["stderr"])
             if said:
                 heard.append(said if said.endswith("\n") else said + "\n")
             if row.guard and event in BLOCKING_EVENTS:
-                faults.append(f"crew-hook: {reason}")
+                faults.append((label, f"crew-hook: {reason}"))
             else:
-                notes.append(f"crew-hook: {reason}\n")
+                notes.append((f"{label}\n" if label else "") + f"crew-hook: {reason}\n")
             continue
-        merge_in.append({"exit": res["exit"], "stdout": _text(res["stdout"]), "stderr": _text(res["stderr"])})
+        stderr = _text(res["stderr"])
+        if res["exit"] == 2 and _is_no_python_refusal(stderr):
+            # a guard's own "no usable python" refusal still blocks, but it is not a policy deny
+            stderr = UNKNOWN_PYTHON + "\n" + stderr
+        merge_in.append({"exit": res["exit"], "stdout": _text(res["stdout"]), "stderr": stderr})
     if faults and armed_fn(root):
-        text = "".join(f"{line}; failing closed (armed repo).\n" for line in faults)
+        text = "".join((f"{label}\n" if label else "") + f"{line}; failing closed (armed repo).\n"
+                       for label, line in faults)
         # a child that did block still gets to say why
         return 2, b"", (merge(event, merge_in)["stderr"] + "".join(heard) + text).encode("utf-8")
-    notes.extend(f"{line}; the repo is not armed, so this is not a block.\n" for line in faults)
+    notes.extend((f"{label}\n" if label else "") + f"{line}; the repo is not armed, so this is not a block.\n"
+                 for label, line in faults)
     merged = merge(event, merge_in)
     stderr = merged["stderr"] + "".join(heard) + "".join(notes)
     return merged["exit"], merged["stdout"].encode("utf-8"), stderr.encode("utf-8")

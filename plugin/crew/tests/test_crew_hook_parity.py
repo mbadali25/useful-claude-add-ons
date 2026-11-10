@@ -134,3 +134,12 @@ def test_a_temp_directory_name_in_a_recording_is_normalised_away():
         text = rgh.normalise(f"in {root}/src and {home}/.claude", root, home)
 
     assert text == "in <ROOT>/src and <HOME>/.claude" and re.search(r"<ROOT>", text)
+
+def test_both_launchers_export_the_python_they_resolved_next_to_the_deadline():
+    """PR A: CREW_PYTHON is set where CREW_HOOK_DEADLINE is, in the .sh and the .ps1 alike, so a
+    guard script the dispatcher starts can use the interpreter the launcher proved instead of probing."""
+    sh, ps1 = h.read_text(h.SH), h.read_text(h.PS1)
+
+    assert re.search(r'CREW_PYTHON="\$1"\s+PYTHONUTF8=1', sh)
+    assert "EnvironmentVariables['CREW_PYTHON'] = [string]$py" in ps1
+    assert "EnvironmentVariables['CREW_HOOK_DEADLINE']" in ps1 and 'export CREW_HOOK_DEADLINE=' in sh

@@ -1163,7 +1163,7 @@ def _refuse_replacing(monkeypatch, path):
         mode = args[0] if args else kwargs.get("mode", "r")
         if os.fspath(target) == path and "w" in mode:
             raise PermissionError(13, "Permission denied", target)
-        return open(target, *args, **kwargs)
+        return open(target, *args, **kwargs)  # pylint: disable=unspecified-encoding
     monkeypatch.setattr(crew_resume.os, "unlink", unlink)
     monkeypatch.setattr(crew_resume, "open", opener, raising=False)
     monkeypatch.setattr(crew_resume.os, "access", lambda target, mode, *a, **k: True

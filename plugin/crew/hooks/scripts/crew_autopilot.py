@@ -1791,7 +1791,7 @@ def _unreadable_autopilot(top):
                 "could not be read")
     block = data.get("autopilot") if state == "ok" else None
     if block is not None and not isinstance(block, dict):
-        return f"autopilot in .crew/config.json is {block!r}, not an object"
+        return f"autopilot in .crew/config.json is {block!r:.40}, not an object"
     return _unreadable_machine_autopilot()
 
 
@@ -1813,7 +1813,7 @@ def _unreadable_machine_autopilot():
                 "object, so it could not be read")
     block = data.get("autopilot") if state == "ok" else None
     if not isinstance(block, (dict, type(None))):
-        return f"autopilot in the machine-global config {path} is {block!r}, not an object"
+        return f"autopilot in the machine-global config {path} is {block!r:.40}, not an object"
     return ""
 
 
@@ -2351,23 +2351,36 @@ def _question_hint(top, ticket):
             f"write questions.md, then crew_autopilot.py questions-check --ticket {ticket}")
 
 
+def _unmet_block(top, ticket):
+    """#624's unmet-prerequisite lines for a refusal, or one fixed line when the module is missing
+    or broken: advice only, so the old refusal text and exit 2 stand either way."""
+    try:
+        return importlib.import_module("crew_approval_unmet").unmet_text(top, ticket)
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return ("\n(the list of unmet prerequisites is unavailable; fix the first reason above "
+                "and run approve again)")
+
+
 def approve(root, ticket):
     """(exit code, text). This module's one writing path, only when autopilot
     is armed and `approval_policy` allows: `crew_ticket.approve` with
     `via=autopilot`, which asks `approval_policy` again and then writes
     `approval.json`, `scope-tickets.json` on a ticket's first approval, and,
     for a distinct successor plan under a NEEDS_REPLAN ledger, the ledger
-    moved NEEDS_REPLAN -> IN_REVIEW. Exit 3 when that continuation refused."""
+    moved NEEDS_REPLAN -> IN_REVIEW. Exit 3 when that continuation refused.
+    A refusal lists every unmet prerequisite, not only the first (#624)."""
     crew_ticket.check_ticket(ticket)
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     human = f"the human types /crew:approve {ticket}"
     if not settings(top)["armed"]:
         cause = _unreadable_autopilot(top)  # T-0027: name the cause, never "mode is not plan"
+        human += _unmet_block(top, ticket)  # #624
         return 2, (f"refused: {cause}, so autopilot could not tell whether it is armed and "
                    f"approves nothing; {human}" if cause else f"refused: autopilot.mode is not "
                    f"plan, so autopilot approves nothing; {human}")
     got = approval_policy(top, ticket)
     if not got["allow"]:
+        human += _unmet_block(top, ticket)  # #624
         return 2, f"refused: {got['reason']}; {human}"
     replan = importlib.import_module("crew_autopilot_replan").replan_check(top, ticket)  # L-0670
     if replan["applies"] and not replan["ok"]:

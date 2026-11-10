@@ -72,6 +72,10 @@
   "resume": {
     "auto": null
   },
+  "humanOnly": {
+    "approve": null,
+    "promoteMarker": null
+  },
   "install": {
     "policy": "manual"
   },

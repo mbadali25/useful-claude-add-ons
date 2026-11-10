@@ -49,6 +49,10 @@ $BridgeTask = 'AI-Connect Bridge'
 $HttpTask = 'AI-Connect MCP HTTP'
 $FirewallRule = 'AI-Connect Bridge'
 $BridgePort = 9999
+# wss:// (server.tls.port, the Bridge's default server.port + 1); 9999 stays plain ws:// for the 0.2.15
+# transition release only
+$BridgeTlsPort = 10000
+$BridgePorts = @($BridgePort, $BridgeTlsPort)
 $HttpPort = 9998
 # Fully qualified (MACHINE\user): a bare name such as "mp" is read by the
 # task scheduler as an SDDL abbreviation (MP = an integrity level), not an
@@ -94,7 +98,8 @@ function Show-Status {
     $Rule = Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue
     if ($Rule) {
         $Scope = (Get-NetFirewallAddressFilter -AssociatedNetFirewallRule $Rule).RemoteAddress -join ', '
-        Write-Host "  Firewall: port $BridgePort open for $Scope"
+        $Ports = (Get-NetFirewallPortFilter -AssociatedNetFirewallRule $Rule).LocalPort -join ', '
+        Write-Host "  Firewall: port(s) $Ports open for $Scope"
     }
     if (Test-Path $ConfigFile) {
         Write-Host "  Config: $ConfigFile" -ForegroundColor Green
@@ -263,12 +268,20 @@ Invoke-Native $Python @((Join-Path $Repo 'installer.py'), 'claude')
 Write-Host '[4/4] Services...' -ForegroundColor Yellow
 if ($Mode -eq 'server') {
     Install-Task $BridgeTask 'server.main'
-    if (-not (Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue)) {
+    $ExistingRule = Get-NetFirewallRule -DisplayName $FirewallRule -ErrorAction SilentlyContinue
+    if (-not $ExistingRule) {
         # Scoped to the VPN subnet, not the whole Private profile: anything
-        # else on the same LAN/profile must not be able to reach this port
+        # else on the same LAN/profile must not be able to reach these ports
         New-NetFirewallRule -DisplayName $FirewallRule -Direction Inbound -Protocol TCP `
-            -LocalPort $BridgePort -RemoteAddress $VpnSubnet -Action Allow -Profile Private | Out-Null
-        Write-Host "  Firewall: port $BridgePort open for $VpnSubnet (private networks)" -ForegroundColor Green
+            -LocalPort $BridgePorts -RemoteAddress $VpnSubnet -Action Allow -Profile Private | Out-Null
+        Write-Host "  Firewall: ports $($BridgePorts -join ', ') open for $VpnSubnet (private networks)" -ForegroundColor Green
+    } else {
+        # A rule from before 0.2.15 opens 9999 only: add the wss:// port, keep its scope
+        $Open = @((Get-NetFirewallPortFilter -AssociatedNetFirewallRule $ExistingRule).LocalPort)
+        if ($Open -notcontains "$BridgeTlsPort") {
+            Set-NetFirewallRule -DisplayName $FirewallRule -LocalPort $BridgePorts
+            Write-Host "  Firewall: port $BridgeTlsPort (wss://) added to '$FirewallRule'" -ForegroundColor Green
+        }
     }
 }
 if ($Http) {
