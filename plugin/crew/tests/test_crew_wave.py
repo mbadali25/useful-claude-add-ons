@@ -1769,7 +1769,8 @@ def test_models_lists_coordinator_pin(tmp_path, capsys):
 
 
 @pytest.mark.parametrize("model,expected", [
-    ("fable", "fable"), ("Fable", "fable"), ("claude-fable-5-1", "claude-fable-5-1")])
+    ("fable", "fable"), ("Fable", "fable"), ("claude-fable-5-2", "claude-fable-5-2"),
+    ("claude-fable-5-1", "claude-fable-5-1")])
 def test_fable_pin_is_put_on_the_launch_line(tmp_path, model, expected):
     lines = _start_with_roles(tmp_path, {"developer": {"provider": "claude", "model": model}})
 

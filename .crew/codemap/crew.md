@@ -997,6 +997,42 @@ passes a prompt naming `crew:confirm-config`. `scope_guard.py` refuses writes to
 `len(HUMANONLY_MUTATIONS)`). JUDGEMENT: `humanOnly.promoteMarker` is still read
 by no hook, and a session that runs arbitrary python can still forge a receipt.
 
+## Mass delete, create and change: `guards.mass` (crew 1.3.36)
+
+DERIVED from `plugin/crew/hooks/scripts/crew_mass.py` (stdlib only) and
+`plugin/crew/hooks/scripts/cloud_guard.py`; tests `plugin/crew/tests/test_mass_guard.py`,
+mutations `plugin/crew/tests/mass_mutations.py` (40, run alone: `sabotage*.py` is harness).
+`cloud_guard._classify` (`cloud_guard.py:2161`) asks `crew_mass.classify`
+(`crew_mass.py:438`) for `Spec`s on every simple command and wraps each as a
+`Finding` whose rule is `massDelete`, `massCreate` or `massChange`
+(`crew_mass.RULES`). `cloud_guard.evaluate` (`cloud_guard.py:3178`) ignores those
+findings unless `mass["armed"]`, then `crew_mass.judge` (`crew_mass.py:873`)
+counts, compares with the limit and answers `ask` (attended) or `deny`
+(`unattended`), or `allow` when `live_approval` (`crew_mass.py:826`) finds the
+owner's file. `cloud_guard.main` (`cloud_guard.py:3416`) calls
+`crew_mass.settings` (`crew_mass.py:163`) before the `guards.cloudGuard`
+`off` early return, so the stop works with the cloud guard off (`only_mass`).
+The switch is `guards.mass.enabled` true in either layer, else
+`crew_mass.opted_out` (`crew_mass.py:223`: a double-confirmed `humanOnly` `false`);
+anything unreadable is off. `_limits` (`crew_mass.py:199`): machine value, else
+`DEFAULT_OVERRIDES` (terraform 3 / 10 / 10, `crew_mass.py:91`), else 10 / 20 / 30;
+the repo layer can only lower. `exempt` (`crew_mass.py:260`) is the regenerable
+directory list; `worktrees` exempts by path only within two components below it,
+and `_exempt_at` judges a path by its part below `cwd`, so a repo that lives in
+a worktree is still counted. The approval id (`approval_id`, `crew_mass.py:815`)
+is a digest of the exact command text and worktree, not of the rule; the file
+is written by `approval_hook._approve_mass` (harness PR, #737). `count_git`
+(`crew_mass.py:735`) counts `git diff --name-status -M` lines, the branch
+against `_base` (`crew_mass.py:713`: `origin/HEAD`, `origin/main`, `origin/master`);
+`count_terraform` (`crew_mass.py:774`) reads `terraform show -json <plan>`.
+The six keys are rows in `crew_keys.KEY_META` (`crew_keys.py:330`) with defaults
+in `crew_guards.GUARD_BLOCK_DEFAULTS` (`crew_guards.py:242`).
+JUDGEMENT: the limits come from this repo's own 104-day history (10 trips 5 of
+623 PRs, 20 trips 29, 30 trips 35); the terraform limits are inferred, not
+measured. `cloud_guard.py` already exceeds 3,400 lines, so the module is a new
+file rather than more glue there. A script, an MCP server, Write and Edit before
+commit, `tar -x`, `unzip` and `git merge` / `pull` are not seen.
+
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 
 JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose in this section is as of the commit it names, not re-read at `bdde58724`; only its `name` plus line citations were re-resolved by symbol against the `bdde58724` tree, and a line cited with no name beside it was not.
@@ -3050,7 +3086,7 @@ Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each n
   `warning:` lines (`:881`) come before the `coordinator: model <id>` line (`:883`), which reports the
   pin only: wave launches no coordinator. No agent file or `ROLE_TIERS` entry exists for the coordinator.
 - DERIVED: `plugin/crew/hooks/scripts/crew_wave.py` `CLAUDE_MODEL_HEADS` is the set of claude
-  families `role_model` accepts: `claude`, `opus`, `sonnet`, `haiku` and `fable` (Fable 5.1, added on
+  families `role_model` accepts: `claude`, `opus`, `sonnet`, `haiku` and `fable` (Fable 5.2, first added as Fable 5.1 on
   `feat/crew-model-accept-fable`). `fable` is an explicit-pin alias only; no code in crew selects it.
 - JUDGEMENT: the coordinator pin is advisory text for the dispatcher; a plugin cannot set the session model.
   Tests: `plugin/crew/tests/test_crew_wave.py` (`test_launch_line_*`, `test_start_*coordinator*`,

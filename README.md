@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/fc264d887229a3b77ade51ab4a70299353ce1ca5/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f860947a1e3dd45e7e38a5156d7d1793c6eb9651/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/fc264d887229a3b77ade51ab4a70299353ce1ca5/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f860947a1e3dd45e7e38a5156d7d1793c6eb9651/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **install script**: A piped `curl | bash` run no longer stops at find-skills, and find-skills installs user-level. The documented `curl … | bash` install now runs every selected step and prints its summary instead of stopping silently at `find-skills`, and `find-skills` lands in the user skills directory whatever directory the script was run from (bash side run against stubs on Linux; the PowerShell change was not executed).
-- **crew 1.3.35**: A stdlib checker for the review-finding rules. `crew` 1.3.35: adds `review_lint_classes.py`, which applies the five review-finding rules on any host with only Python; nothing calls it yet, so no behaviour a user runs changes.
+- **crew 1.3.38**: The `fable` model alias now names Claude Fable 5.2 (`claude-fable-5-2`). `crew` 1.3.38: the `fable` pin in `dev.roles.<role>.model` is documented as Claude Fable 5.2 (`claude-fable-5-2`, listed on the vendor models overview page); `fable` is still honoured only as an explicit pin and nothing in crew selects it.
+- **crew 1.3.36**: The mass delete, create and change stop (`guards.mass`). `crew` 1.3.36: with `guards.mass.enabled: true` (or a double-confirmed `humanOnly` opt-out) the cloud guard's hook stops a shell command that would delete 10 or more files, create 20 or more, or change 30 or more, until you type `/crew:approve-mass <id>`; everything else stays automatic. Off by default.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

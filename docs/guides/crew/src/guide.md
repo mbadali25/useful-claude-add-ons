@@ -38,7 +38,7 @@ A fifth file, `session-relay`, is not a role: it is a transport agent on Haiku 5
 `{"provider": "claude", "model": "claude-sonnet-5-5"}`) in `/crew:model`. A wave prints the
 coordinator pin and puts the developer model on every lane launch. Both default to unset, which
 changes nothing. A Claude pin takes a full Claude id or `opus`, `sonnet`, `haiku` or `fable`
-(Fable 5.1). Fable runs only when you pin it like this; crew never picks it for you.
+(Fable 5.2). Fable runs only when you pin it like this; crew never picks it for you.
 
 **Running agents on Kimi.** Claude Code runs subagents on Claude models only,
 so `explorer`, `researcher` and `security` can hand their task to the Kimi Code
@@ -519,6 +519,19 @@ only through the double confirmation); `humanOnly.promoteMarker` is still
 read by no hook. The owner's `/crew:approve-mass <id>` is recorded the same
 way, for one blocked mass operation. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.
+
+**Mass operations (crew 1.3.36).** The rule for an autopilot that runs without a
+human: full automation, except a mass delete, a mass create or a mass change,
+which wait for your yes. `guards.mass.enabled: true`, or a double-confirmed
+`humanOnly` opt-out, arms a stop on the cloud guard's hook for any shell command
+that would delete 10 or more files, create 20 or more, or change 30 or more
+(`guards.mass.deleteCount`, `createCount`, `changeCount`; terraform's are 3, 10
+and 10). It counts files, a commit's or branch's added, deleted and changed
+files against its base, a terraform plan's resource changes, and treats an
+unfiltered SQL `DELETE` or `UPDATE` and any count it cannot take as mass. It
+prints an id; `/crew:approve-mass <id>` approves that one command for 15
+minutes. The configuration reference's "Mass operations" section lists what it
+sees, what it does not, and the keys.
 
 - `/crew:config` shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.
