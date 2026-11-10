@@ -27,6 +27,8 @@ read entries under any `## [` heading.
 - crew 1.3.27: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.32; the change is recorded under crew 1.3.33
 - crew 1.3.32: re-bump only - the two tests that patch `no_round_after_successor` now patch it in `crew_autopilot_replan` (tests only); the change is recorded under crew 1.3.19
 - crew 1.3.31: re-bump only - merge of main's crew 1.3.30 into the L-0717 budget branch; the budget change is recorded under crew 1.3.19 and 1.3.20, and `no_round_after_successor` moved from `crew_autopilot.py` to `crew_autopilot_replan.py` to stay under the 3400-line module limit
+- crew 1.3.33: re-bump only - interim number on the fable-alias branch (commits 1bedca3 as 1.3.31, 4d63977 as 1.3.33) before main reached 1.3.35; the change is recorded under crew 1.3.38
+- crew 1.3.37: re-bump only - interim number on the fable-alias branch (commit d8887e9a6) before main reached 1.3.36; the change is recorded under crew 1.3.38
 - crew 1.2.85: re-bump only - interim number on the L-0717 branch (commit 4a4ae04); the change is recorded under crew 1.3.19
 - crew 1.2.87: re-bump only - interim number on the L-0717 branch (commit e8a027c); the change is recorded under crew 1.3.19
 - crew 1.2.88: re-bump only - interim number on the L-0717 branch (commit 188cded); the change is recorded under crew 1.3.19
@@ -45,6 +47,14 @@ read entries under any `## [` heading.
 - crew 1.3.8: re-bump only - the human-only opt-out re-versioned so installs update (commit 438b1869c); recorded under crew 1.3.9
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
+
+### Changed — crew 1.3.38: the `fable` model alias now names Claude Fable 5.2 (`claude-fable-5-2`)
+
+- **Summary.** `crew` 1.3.38: the `fable` pin in `dev.roles.<role>.model` is documented as Claude Fable 5.2 (`claude-fable-5-2`, listed on the vendor models overview page); `fable` is still honoured only as an explicit pin and nothing in crew selects it.
+- `plugin/crew/hooks/scripts/crew_metrics.py`: `claude-fable-5-2` priced at $8 / $40 per MTok with cache reads at $0.20 (2.5%), from the models overview page; without the entry the longest-prefix lookup would have priced it as `claude-fable-5` ($10 / $50).
+- `plugin/crew/hooks/scripts/crew_wave.py`, `plugin/crew/commands/model.md`, `plugin/crew/README.md`, `docs/guides/crew/src/guide.md`, `.crew/codemap/crew.md`: the alias text names Fable 5.2. The full id `claude-fable-5-1` is still accepted as an explicit pin (test row kept). No config key, value or default changed, so the Configuration Guide reference is unchanged.
+- `plugin/crew/tests/test_crew_wave.py`: the `fable` launch-line test also pins `claude-fable-5-2`.
+- `plugin/crew/tests/test_crew_metrics.py`: two tests pin the `claude-fable-5-2` row ($8 / $40, cache read $0.20) and that the longest-prefix lookup does not fall back to `claude-fable-5`; sabotaged by deleting the row (both red). `PRICES_SOURCE` now names the `claude-fable-5-2` row's source (the models overview page), and the root README's generated What's new block is regenerated (`scripts/sync-updates.py`).
 
 ### Added — crew 1.3.36: the mass delete, create and change stop (`guards.mass`)
 
