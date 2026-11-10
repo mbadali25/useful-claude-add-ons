@@ -76,6 +76,9 @@
     "approve": null,
     "promoteMarker": null
   },
+  "worktrees": {
+    "root": null
+  },
   "install": {
     "policy": "manual"
   },

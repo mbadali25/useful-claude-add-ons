@@ -84,7 +84,8 @@ class AuthReloader:
     def _static_part(settings) -> tuple:
         return (settings.host, settings.port, settings.history_days, settings.max_message_bytes,
                 settings.rate_per_second, settings.rate_burst, settings.max_stored_per_peer,
-                settings.max_unread_per_peer, settings.max_unread_bytes_per_peer)
+                settings.max_unread_per_peer, settings.max_unread_bytes_per_peer,
+                settings.tls_enabled, settings.tls_port, settings.tls_required, settings.tls_validity_days)
 
     def check(self) -> Roles | None:
         """A new table when the file's auth changed and is valid; None when unchanged or broken (logged)."""

@@ -962,6 +962,16 @@ def _copy_in(source, target):
     return None if _same_bytes(source, target) else f"{target} does not match {source}"
 
 
+def _standard_worktrees(main_top):
+    """crew's standard worktree directory for this repo, or None when the
+    setting is refused or unreadable (then only `.claude/worktrees` admits)."""
+    try:
+        import crew_worktrees  # pylint: disable=import-outside-toplevel
+        return crew_worktrees.resolve(main_top)["dir"]
+    except Exception:  # pylint: disable=broad-except
+        return None
+
+
 def _init_refusal(top, main_top, slug, ticket):
     """Why `lane-init` must not run here (checks that write nothing), or None."""
     if crew_ticket.common_dir(top) != crew_ticket.common_dir(main_top):
@@ -970,8 +980,13 @@ def _init_refusal(top, main_top, slug, ticket):
         return "this is the main checkout; a lane runs only in its own isolated worktree"
     agents = os.path.join(main_top, AGENT_DIR)
     if not os.path.normcase(top).startswith(os.path.normcase(agents) + os.sep):
-        return (f"{top} is not under {agents.replace(os.sep, '/')} (.claude/worktrees): a lane "
-                "is launched only as an Agent with isolation: worktree")
+        # crew 1.3.19: an Agent whose WorktreeCreate hook is crew's places the
+        # lane under the standard root instead; that directory is admitted too.
+        standard = _standard_worktrees(main_top)
+        if not (standard and os.path.normcase(os.path.realpath(top)).startswith(
+                os.path.normcase(os.path.realpath(standard)) + os.sep)):
+            return (f"{top} is not under {agents.replace(os.sep, '/')} (.claude/worktrees): a lane "
+                    "is launched only as an Agent with isolation: worktree")
     lane, state = read_lane(main_top, slug, ticket)
     if state != "ok":
         return f"{ticket}'s lane file is {state}: `crew_wave.py start --set {slug}` names the lanes"

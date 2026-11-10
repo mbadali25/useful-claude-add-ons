@@ -240,6 +240,24 @@ The exit code is 1 when any line says `FAIL`. What each failure means:
 | Message round trip | `name_taken`: a 0.1.8 session (or the HTTP/SSE server) is online under the machine's bare name, close it; 0.2.0 sessions register as `<name>:<project>` and leave it free. `name_not_bound_to_token`: `--name` is not the name the token was made for |
 | Wrong token refused | the Bridge takes any token: do not use it until `auth` in its `config.yaml` is fixed |
 
+### TLS (0.2.15) and the cut-over to `wss://` only (0.3.1)
+
+From 0.2.15 the Bridge also serves `wss://` on `server.tls.port` (default `server.port + 1`,
+10000) with a self-signed certificate it makes on first start, beside plain `ws://` on 9999.
+`deploy` itself still writes `ws://` in 0.2.15 and its firewall step opens `server.port` only,
+so this test checks the plain port. To move a deployed pair over before 0.3.1, which serves
+`wss://` alone:
+
+1. Add `tcp:10000` to the tailnet policy ([the template](../vpn/acl-template.hujson) has it;
+   an applied policy does not) and open 10000 for the VPN subnet in the Bridge's firewall.
+2. On machine 1: `ai-connect bridge cert show` prints the fingerprint.
+3. On each machine, the Bridge included: `ai-connect pin <fingerprint>`. It checks the
+   certificate at `wss://<bridge>:10000` first and refuses a mismatch; the client then
+   fails closed on any other certificate and never falls back to `ws://`.
+4. The full check over TLS: `config_tool.py smoke --bridge 100.x.y.z --port 10000 --name laptop
+   --fingerprint <fingerprint>` (with the venv's Python). `ai-connect status` shows the pin.
+5. Once every peer is pinned: `server.tls.required: true` closes the plain port.
+
 The test leaves one message in the peer's own history on the Bridge and one refused
 token in the Bridge's log.
 

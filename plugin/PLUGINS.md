@@ -11,7 +11,7 @@ Read the **Hooks** section of any plugin before installing it. Commands and agen
 | | |
 |---|---|
 | **Source** | [`ai-connect/`](ai-connect) |
-| **Version** | 0.2.14<!-- claim: plugin-version:ai-connect --> |
+| **Version** | 0.2.17<!-- claim: plugin-version:ai-connect --> |
 | **Install** | `claude plugin install ai-connect@useful-claude-add-ons`, then the plugin directory's own `install.sh --client` / `install.cmd -Client` (or `--server` on the bridge machine). Over Tailscale, one run per machine instead: `deploy/setup.sh` / `deploy\setup.ps1` (`bridge`, `peer`, `session`; `session --project` for the opt-in one-name-per-project mode), which prints its plan and changes nothing until `--apply` |
 | **Menu item** | 19, `repo-plugins` — **off by default**, like every plugin in that group |
 | **Registers** | Hooks on 2 events: a watcher registered once per flavour (`watch.sh` / `watch.ps1`). **No agents, no commands, no skills.** The MCP server is registered by the plugin's installer (`claude mcp add -s user ai-connect`), not by the manifest, and the same installer writes four `mcp_tool` state hooks into your Claude Code settings |
@@ -151,10 +151,10 @@ measured.
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.3.16<!-- claim: plugin-version:crew --> |
+| **Version** | 1.3.23<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents plus the `session-relay` transport agent, 39 commands, 33 skills<!-- claim: plugin-skills:crew -->, 16 hook entries<!-- claim: plugin-hooks:crew --> (a launcher per event per shell, running 14 scripts) across 8 events, and the `wave` workflow (`/crew:wave`, in `workflows/`) |
+| **Registers** | 4 agents plus the `session-relay` transport agent, 40 commands, 33 skills<!-- claim: plugin-skills:crew -->, 16 hook entries<!-- claim: plugin-hooks:crew --> (a launcher per event per shell, running 14 scripts) across 8 events, and the `wave` workflow (`/crew:wave`, in `workflows/`) |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — the entry point; its reference sections moved to `docs/crew/reference/` (see its "Moved sections" index) |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -272,7 +272,7 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — all 39 commands, explicit<!-- claim: plugin-commands:crew -->
+### Commands — all 40 commands, explicit<!-- claim: plugin-commands:crew -->
 
 <!-- claim: plugin-command-table:crew -->
 | Command | Purpose |
@@ -315,6 +315,7 @@ to CI or to branch protection.
 | `/crew:upgrade` | Removed - use /crew:migrate, which upgrades a pre-0.20 config itself |
 | `/crew:verify [--refresh] [--price]` | Build or refresh the verification map from evidence |
 | `/crew:webtest <ticket id> [--stage spec\|implement\|heal\|evidence]` | Drive Playwright's Test Agents inside the ticket lifecycle - a healer skip is a finding, never accepted |
+| `/crew:worktrees [list \| root \| path <branch> \| remove <path> \| hook]` | Where worktrees go (`worktrees.root`, default `~/.claude/crew/worktrees`, outside the repo), a read-only survey of every worktree, and removal of one on your `--yes`; never forces, never moves; the opt-in `WorktreeCreate` hook that also redirects Claude Code's own is yours to register |
 | `/crew:work <ticket id>` | Removed in crew 1.0 - use /crew:implement |
 
 First run in a new repository: `/crew:init`, then `/crew:onboard`, then `/crew:verify`. A 0.20 repository runs `/crew:migrate --preview` first.
