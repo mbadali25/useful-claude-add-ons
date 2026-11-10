@@ -29,6 +29,8 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.24: re-bump only - interim number on the context-watch branch before main reached 1.3.25; the change is recorded under crew 1.3.26
+
 ### Fixed — crew 1.3.26: context-watch's no-op Stop turn starts one process, not a dozen
 
 - **Summary.** `crew` 1.3.26: the Stop hook `context-watch.sh` clears an ordinary turn with one python start instead of five plus a handful of helper programs, so it no longer runs into its 20 s limit on a loaded Git Bash host; what it warns about and when is unchanged.
