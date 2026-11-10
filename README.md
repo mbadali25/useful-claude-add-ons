@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/bce8d5880a194ac414b9db3bfd018661196e91b7/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/fc264d887229a3b77ade51ab4a70299353ce1ca5/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/bce8d5880a194ac414b9db3bfd018661196e91b7/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/fc264d887229a3b77ade51ab4a70299353ce1ca5/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.30**: `crew_standards.py export` publishes the standards to PR-side reviewers. `crew` 1.3.30: a repo that opts in (`export:` in `.crew/standards.md`) gets `docs/review-rules/<SET>.md`, `REVIEW.md`, `.cursor/BUGBOT.md` and a `## Code Review Rules` block in `AGENTS.md`, generated from the same standards `/crew:review` hands its own reviewer and checked for staleness by `export --check`.
-- **crew 1.3.29**: The backgrounded-process wallclock test compares against a baseline gate run. A flaky Windows CI test now measures the gate against its own no-op run instead of a fixed 6-second limit.
+- **install script**: A piped `curl | bash` run no longer stops at find-skills, and find-skills installs user-level. The documented `curl … | bash` install now runs every selected step and prints its summary instead of stopping silently at `find-skills`, and `find-skills` lands in the user skills directory whatever directory the script was run from (bash side run against stubs on Linux; the PowerShell change was not executed).
+- **crew 1.3.35**: A stdlib checker for the review-finding rules. `crew` 1.3.35: adds `review_lint_classes.py`, which applies the five review-finding rules on any host with only Python; nothing calls it yet, so no behaviour a user runs changes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -175,15 +175,19 @@ the reviewer, computes the verdict:
 - `INCOMPLETE`: anything else, such as a crash, a timeout or a part not read.
   It is never `CLEAN`.
 
-**Two rounds per ticket, in total.** The ledger lives under the repository's
-git common directory, so every worktree shares it. A round is reserved before
-the reviewer starts, so a crash still spends it. A round the tool lost (a
-timeout, or no answer) is refunded, at most twice per plan. A third
-reservation is refused and the ticket becomes `NEEDS_REPLAN`.
+<!-- review-budget-doc -->
+**Three rounds per ticket, in total, across every plan the ticket ran under.**
+The ledger lives under the repository's git common directory, so every worktree
+shares it. A round is reserved before the reviewer starts, so a crash still
+spends it. A round the tool lost (a timeout, or no answer) is refunded, at most
+three times per ticket. A reservation past the budget is refused and the ticket
+becomes `NEEDS_REPLAN`.
 
-**Successor plans.** The way past `NEEDS_REPLAN` is a different plan:
-approving a changed `plan.md` opens a fresh budget of two rounds. Approving
-the same plan again does not.
+**Successor plans.** The way out of `NEEDS_REPLAN` is a different plan:
+approving a changed `plan.md`. A successor plan does not reopen the budget; it
+continues review only while a round of the three is left. Past that, only the
+owner's `review_ledger.py --ticket <id> --grant-round --by <you> --reason <why>`
+adds one round, and approving the same plan again is still refused.
 
 **Acceptance is yours.** `FINDINGS` become a receipt only when you run
 `review_ledger.py --ticket <id> --accept --by <you>`. It refuses when the tree
@@ -508,10 +512,13 @@ may arm it.
 production promote marker being human-only. A `false` counts only from the
 machine file or an untracked repo file, never a committed one; a `true` in
 either file vetoes it; and it is written only after the owner types
-`/crew:confirm-config <change_id>` twice. In 1.3.9 no hook reads these keys
-and nothing records that confirmation, so the human-only rules hold exactly as
-before; the configuration reference's "The human-only opt-out" section says
-what lands next.
+`/crew:confirm-config <change_id>` twice. Since crew 1.3.33 the prompt hook
+records that confirmation and `humanOnly.approve: false` makes a CLI-recorded
+approval count (the same effect as `scope.allowCliApproval: true`, but set
+only through the double confirmation); `humanOnly.promoteMarker` is still
+read by no hook. The owner's `/crew:approve-mass <id>` is recorded the same
+way, for one blocked mass operation. The configuration reference's "The
+human-only opt-out" section has the rules and their limits.
 
 - `/crew:config` shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.

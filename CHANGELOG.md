@@ -14,24 +14,21 @@ naming that exact version, in one of two forms, and `scripts/check-changelog.py`
 - an entry heading (`###`) containing `<name> <version>`, as below; or
 - for a version that carries no change of its own, one line in the **re-number block** (the lines
   directly under `## [Unreleased]`, before its first `###`; the README generator ignores them):
-  `- <name> <version>: re-bump only - <why: what it follows, or which entry carries the change>`.
-
-A version a branch set and then replaced still gets its line, because merge commits carry it into
-main's history. Only versions a branch newly sets are checked, so older history is not backfilled
-(the gaps below were added once, by hand).
-
-**Release sections.** Entries stay under `## [Unreleased]`; they are not moved into dated version
-headings. The file is append-only history of about 19,000 lines, each entry is already stamped with
-its exact version in its heading, and a release here is a merge to `main`, so moving entries would
-rewrite thousands of lines for no reader. A repo that tags a release (see `Skill-Pipeline.md`) may
-still cut a dated `## [x.y.z]` heading above the entries it covers; `sync-updates.py` and the checker
 read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- obsidian-vault 0.5.1: re-bump only - main's version carried in by this branch's earlier merge of main (commit bd1a467e8); main's own entry records the change and it has since moved to 0.5.2
+- crew 1.3.21: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.32; the change is recorded under crew 1.3.33
+- crew 1.3.24: re-bump only - interim number on the context-watch branch before main reached 1.3.25; the change is recorded under crew 1.3.26
+- crew 1.3.27: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.32; the change is recorded under crew 1.3.33
+- crew 1.3.32: re-bump only - the two tests that patch `no_round_after_successor` now patch it in `crew_autopilot_replan` (tests only); the change is recorded under crew 1.3.19
+- crew 1.3.31: re-bump only - merge of main's crew 1.3.30 into the L-0717 budget branch; the budget change is recorded under crew 1.3.19 and 1.3.20, and `no_round_after_successor` moved from `crew_autopilot.py` to `crew_autopilot_replan.py` to stay under the 3400-line module limit
+- crew 1.2.85: re-bump only - interim number on the L-0717 branch (commit 4a4ae04); the change is recorded under crew 1.3.19
+- crew 1.2.87: re-bump only - interim number on the L-0717 branch (commit e8a027c); the change is recorded under crew 1.3.19
+- crew 1.2.88: re-bump only - interim number on the L-0717 branch (commit 188cded); the change is recorded under crew 1.3.19
 - crew 1.2.88: re-bump only - interim number on the L-0718 branch (commit e2f8ab0); the change is recorded under crew 1.3.30
 - crew 1.2.90: re-bump only - interim number on the L-0718 branch (commit ee4309a); the change is recorded under crew 1.3.30
-- crew 1.3.24: re-bump only - interim number on the context-watch branch before main reached 1.3.25; the change is recorded under crew 1.3.26
 - crew 1.2.22: re-bump only - interim re-bump on the L-0768 branch (commit f7e38e3); the change is recorded under crew 1.3.25
 - crew 1.2.29: re-bump only - interim re-bump on this branch after merging main (commit a7f25e1); the change is recorded under crew 1.3.26
 - crew 1.2.27: re-bump only - interim re-bump on the L-0768 branch after merging main (commit 0f5c3e91c); the change is recorded under crew 1.3.25
@@ -46,6 +43,72 @@ read entries under any `## [` heading.
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 
+### Fixed — install script: a piped `curl | bash` run no longer stops at find-skills, and find-skills installs user-level
+
+- **Summary.** The documented `curl … | bash` install now runs every selected step and prints its summary instead of stopping silently at `find-skills`, and `find-skills` lands in the user skills directory whatever directory the script was run from (bash side run against stubs on Linux; the PowerShell change was not executed).
+- **Cause, piped run.** Under `curl | bash` the script is bash's stdin and bash reads it a command
+  at a time. The `find-skills` step's `npx skills add` child inherited that pipe and read the rest
+  of the script, so community plugins and `claude-code-setup` never ran and no summary or
+  failed-step list was printed.
+- **Cause, wrong directory.** `npx skills add` was called without `--global`, so the `skills` CLI
+  wrote `./.claude/skills/find-skills` in the current directory and exited 0; the script's own
+  on-disk check then failed everywhere but `$HOME`.
+- **Fix.** `scripts/install-prerequisites.sh` is now one `{ … }` group, which bash parses to its
+  closing brace before running any of it, and the `find-skills` call is
+  `npx -y skills add … --global --yes </dev/null`. `scripts/install-prerequisites.ps1` passes the
+  same `--global --yes`; it has no stdin defect (`irm | iex` hands PowerShell the whole script as
+  one string), so it gets no wrapper.
+- **Rule for the next edit.** No code outside the brace group, and a child that could read stdin on
+  the piped path gets `</dev/null`. `scripts/_test/menu-groups.sh` case 9 pipes the script into
+  `bash -s` with stub `claude` and `npx` that drain stdin, in a temp `HOME`.
+- `INSTALLATION.md` and `MARKETPLACE.md` show the command as the scripts now run it. The README
+  install URLs are pinned to a commit and still serve the old scripts until they are re-pinned
+  after this merges.
+- No plugin or skill content changes, so no version moves.
+
+### Added — crew 1.3.35: a stdlib checker for the review-finding rules (L-0715 PR B2)
+
+- **Summary.** `crew` 1.3.35: adds `review_lint_classes.py`, which applies the five review-finding rules on any host with only Python; nothing calls it yet, so no behaviour a user runs changes.
+- `plugin/crew/hooks/scripts/review_lint_classes.py` reads the rule file through `review_lint_rules.py` and matches the five rules itself (taint for `splitlines()` and duplicate-key JSON, `ast` shape for bare interpreters and test functions, the rule's regex for Markdown). One run judges one tree with that tree's own `--rules` copy. It prints ASCII JSON naming the rules run, the classes not covered, and every requested file as scanned, skipped by scope or aborted; a rule with no implementation, an implementation with no rule, a rule whose pattern fingerprint is not in the accepted set, an unparsable file, a FIFO or a symlink is exit 2 or an aborted row, never a pass.
+- Matches semgrep 1.95.0 exactly on the fixtures, a corner-case corpus and the whole tracked tree (`test_review_lint_classes_differential.py`, Linux CI), including two quirks it copies: comprehensions are not entered and a directly sliced `splitlines()` is not a sink. One deliberate difference is pinned: a `# nosemgrep` on the sink line of a parenthesised multi-line sink suppresses here and not in semgrep.
+- `plugin/crew/tests/test_review_lint_classes.py`: 221 cases; each guard was sabotaged by hand (28 mutations, all red except the symlink pre-check, which `O_NOFOLLOW` makes redundant on POSIX). Docs: none beyond this entry and the code map, because the module is inert.
+
+  `- <name> <version>: re-bump only - <why: what it follows, or which entry carries the change>`.
+
+A version a branch set and then replaced still gets its line, because merge commits carry it into
+main's history. Only versions a branch newly sets are checked, so older history is not backfilled
+(the gaps below were added once, by hand).
+
+**Release sections.** Entries stay under `## [Unreleased]`; they are not moved into dated version
+headings. The file is append-only history of about 19,000 lines, each entry is already stamped with
+its exact version in its heading, and a release here is a merge to `main`, so moving entries would
+rewrite thousands of lines for no reader. A repo that tags a release (see `Skill-Pipeline.md`) may
+still cut a dated `## [x.y.z]` heading above the entries it covers; `sync-updates.py` and the checker
+### Changed — crew 1.3.34: the sabotage and tooling-PR harness accepts the opt-in plugin layout (L-0724 slice 1)
+
+- **Summary.** `crew` 1.3.34: the sabotage suites and the tooling-PR checker now find their targets in either the core plugin or the opt-in plugin they are about to move to, so L-0724's later slices move files without touching the harness; no behaviour a user runs changes.
+- `plugin/crew/tests/sabotage.py`, `sabotage_autopilot.py`: `_first_file` resolves the promote, gate, house-style and autopilot targets (opt-in path first, core path second) and raises when neither exists; `UPGRADE_DOC` no longer falls back to the deleted-to-be `commands/upgrade.md`.
+- `scripts/check-tooling-pr.py`, `.crew/verify.json`: `plugin/crew-autopilot/commands/autopilot.md` is a seam beside the core path; two cases in `scripts/_test/tooling-pr.py` hold it.
+- `plugin/crew/tests/optin_inventory.py`, `tests/data/optin_inventory.json`, `tests/test_optin_inventory.py`: a generated inventory of anchored mutations, `${CLAUDE_PLUGIN_ROOT}` references in the Markdown that moves, and the core scripts that need a shim; the anchor guard fails a slice that edits an anchored line; the staleness test compares with CRLF folded to LF so a Windows autocrlf checkout does not read as stale. Docs: none - harness test and inventory only.
+
+### Added — crew 1.3.33: the human-only opt-out goes live for plan approval (harness half)
+
+- **Summary.** `crew` 1.3.33: once you have typed `/crew:confirm-config <id>` twice, `humanOnly.approve: false` now takes effect (an autopilot-recorded approval counts without hand-editing `scope.allowCliApproval`), and `/crew:approve-mass <id>` exists as a user-typed yes that the session cannot write; `humanOnly.promoteMarker` is still read by no hook.
+- `crew_ticket.cli_approval_allowed` is the one decision point: `scope.allowCliApproval` exactly true, OR `crew_humanonly.resolve(top, "approve")` answering exactly `humanOnly: False` (module missing, resolver raising, any other answer: human-only). `accepted`, the scope guard, the Stop audit and every autopilot reader already call it, so they agree by construction. `scope_guard.py` still refuses the session running `crew_ticket.py approve`; the session's route is `crew_autopilot.py approve`, which still needs `autopilot.approval` `self`/`risk`.
+- `approval_hook.py` (UserPromptSubmit) records `/crew:confirm-config <change_id>` (via `crew_confirm_config.confirm`, `via=user-prompt`, the payload's `prompt_id`; two distinct prompts apply it) and `/crew:approve-mass <id>` (`<git-common-dir>/crew/mass-approvals/<id>.json`, 15 minutes, id must be 12 lowercase hex digits). One line, command alone, raw or expanded form, as `/crew:approve`; a command quoted mid-sentence is nothing. `approval-hook.sh` passes a prompt naming `crew:confirm-config` (it has no `approve` in it) and, with no python, blocks it with its own message (added to `crew_hook.NO_PYTHON_REFUSALS`).
+- `scope_guard.py` refuses Write/Edit under `~/.claude/crew/confirm-config/` and a shell command naming that store beside a writing word. A tripwire, not a sandbox: arbitrary python can still forge a receipt, and `scope.mode: off` has none. Stated in CONFIG.md.
+- Tests: `test_humanonly_live.py` (51 cases: must-allow with a real propose/confirm/confirm, must-block for no receipt, tracked file, repo `true` veto, other key, resolver raising/odd answers, quoted or malformed commands, no prompt id, the store). `humanonly_mutations.py` is wired into `sabotage.py`: 27 entries, 11 new, all seen red (the first run caught one vacuous mutation - a mid-sentence command with trailing words was refused for its bad id, not for being quoted - fixed by a case whose id is exact).
+- Harness-only PR (`approval_hook.py`, `approval-hook.sh`, `crew_hook.py`, `crew_ticket.py`, `scope_guard.py`, `sabotage.py`). Stale text that cannot ride with it - `commands/confirm-config.md`, `commands/approve.md`, `commands/config.md`, `crew_keys.py`'s two rows and `crew_humanonly.SENSITIVE_REFUSAL` still say "no hook acts" - is fixed in the follow-up PR, which also adds `commands/approve-mass.md`.
+
+### Fixed — crew 1.3.20: the docs no longer say a successor plan opens a fresh review budget (L-0717)
+
+- **Summary.** `crew` 1.3.20: `plugin/crew/README.md` and `docs/crew/config-rationale.md` said the NEEDS_REPLAN -> IN_REVIEW successor continuation opens a fresh review budget; since 1.3.19 it keeps the budget the ticket has left. Wording only, no code change.
+- Docs: the two files above; the crew guide does not carry the phrase (`build.py --check` clean).
+
+### Changed — crew 1.3.19: one review budget of three per ticket, counted across successor plans; the owner's `--grant-round` (L-0717, absorbs L-0781)
+
+- **Summary.** `crew` 1.3.19: a ticket now gets three review rounds in total, a successor plan no longer reopens them, and only the owner's `review_ledger.py --grant-round` adds a round.
+- `review_ledger.py`: `BUDGET` 3, `REFUND_LIMIT` 3 counted per ticket, a recorded `grants` list (malformed is could-not-tell), `--grant-round --by --reason` (refused while rounds remain, for `auto:`/autopilot names, multi-line text), successor rows carry `carry_over: true` (a row written before keeps resetting). `scope_guard.py` refuses the verb to subagents with every abbreviation; `review_run.py` and `crew_status.py` print the ledger's budget; `crew_autopilot.py` refuses an auto-reject whose successor would have no round (seam; bug fix under the L-0727 freeze, manifest updated). Docs: updated, with a drift test (`test_review_budget.py`).
 ### Added — crew 1.3.30: `crew_standards.py export` publishes the standards to PR-side reviewers (L-0718)
 
 - **Summary.** `crew` 1.3.30: a repo that opts in (`export:` in `.crew/standards.md`) gets `docs/review-rules/<SET>.md`, `REVIEW.md`, `.cursor/BUGBOT.md` and a `## Code Review Rules` block in `AGENTS.md`, generated from the same standards `/crew:review` hands its own reviewer and checked for staleness by `export --check`.

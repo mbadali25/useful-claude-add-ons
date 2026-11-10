@@ -73,7 +73,7 @@ from sabotage_webtest import WEBTEST_MUTATIONS
 from sabotage_event_claim import EVENT_CLAIM_MUTATIONS
 from sabotage_refresh import REFRESH_MUTATIONS
 from sabotage_resume import RESUME_MUTATIONS
-from sabotage_autopilot import AUTOPILOT_MUTATIONS, POLICY_MUTATIONS
+from sabotage_autopilot import AUTOPILOT_MUTATIONS, POLICY_MUTATIONS, _first_file
 from sabotage_tracker import TRACKER_MUTATIONS
 from sabotage_route import ROUTE_MUTATIONS
 from sabotage_config import CONFIG_MENU_MUTATIONS
@@ -94,6 +94,7 @@ from ghdeploy_mutations import GHDEPLOY_MUTATIONS
 from promote_tree_mutations import PROMOTE_TREE_MUTATIONS
 from sabotage_contract import CONTRACT_MUTATIONS
 from sabotage_bridge import BRIDGE_MUTATIONS
+from humanonly_mutations import HUMANONLY_MUTATIONS
 import sabotage_bound
 import sabotage_platform
 
@@ -113,8 +114,9 @@ CONFIG = os.path.join(CREW, "hooks", "scripts", "crew_config.py")
 UPGRADE = os.path.join(
     CREW, "skills", "crew-graph", "scripts", "crew_upgrade.py")
 CONFTEST = os.path.join(CREW, "tests", "conftest.py")
-HOUSE_STYLE = os.path.join(
-    CREW, "skills", "crew-house-style", "SKILL.md")
+HOUSE_STYLE = _first_file(
+    os.path.join(ROOT, "plugin", "crew-docs", "skills", "crew-house-style", "SKILL.md"),
+    os.path.join(CREW, "skills", "crew-house-style", "SKILL.md"))
 
 # Outside the crew plugin on purpose. The routing table makes a claim about
 # ANOTHER marketplace entry's interface, and the only way to sabotage that
@@ -144,9 +146,10 @@ GUIDE_HTML = os.path.join(
     "crew-progress-report-2026-09-20.html")
 # What each schema migration does. test_upgrade.py checks the entry for the
 # CURRENT hop exists, so the mutation below deletes it, in whichever doc ships it.
-UPGRADE_DOC = next((p for p in (os.path.join(CREW, "skills", "crew-setup", "upgrade-report.md"),)
-                    if os.path.isfile(p)), os.path.join(CREW, "commands", "upgrade.md"))  # T-0038 moves it
-PROMOTE_DOC = os.path.join(CREW, "commands", "promote.md")
+UPGRADE_DOC = _first_file(os.path.join(CREW, "skills", "crew-setup", "upgrade-report.md"))
+PROMOTE_DOC = _first_file(
+    os.path.join(ROOT, "plugin", "crew-promote", "commands", "promote.md"),
+    os.path.join(CREW, "commands", "promote.md"))
 REVIEW_DOC = os.path.join(CREW, "commands", "review.md")
 REVIEW_VERDICT = os.path.join(CREW, "hooks", "scripts", "review_verdict.py")
 REVIEW_LEDGER = os.path.join(CREW, "hooks", "scripts", "review_ledger.py")
@@ -190,7 +193,9 @@ GUARDS = os.path.join(CREW, "hooks", "scripts", "crew_guards.py")
 # count is a fact about that block, not a target -- re-derive it if the seam
 # moves again.
 FRESHNESS = os.path.join(CREW, "hooks", "scripts", "crew_freshness.py")
-GATE_DOC = os.path.join(CREW, "commands", "gate.md")
+GATE_DOC = _first_file(
+    os.path.join(ROOT, "plugin", "crew-promote", "commands", "gate.md"),
+    os.path.join(CREW, "commands", "gate.md"))
 # The ten-question gate, and the command that routes through it. The gate is
 # the only MECHANICAL part of `/crew:change`; everything else about the feature
 # is prose, which is why two of its three mutations below patch a `.md`.
@@ -780,8 +785,7 @@ MUTATIONS = (
         UPGRADE_DOC,
         "- **Schema 6 \u2192 7**",
         "- **The change-request migration**",
-        "tests/test_upgrade.py::" + ("test_upgrade_report_documents_the_current_migration"
-            if UPGRADE_DOC.endswith("upgrade-report.md") else "test_upgrade_md_documents_the_current_migration"),
+        "tests/test_upgrade.py::test_upgrade_report_documents_the_current_migration",
     ),
     (
         # doc-builder takes DOCX and PDF over generally -- the "simplification"
@@ -2676,15 +2680,6 @@ MUTATIONS = (
          "test_parse_clean_text_with_a_failed_exit_is_incomplete"),
     ),
     (
-        # One character buys a third round, the loop the ledger exists to end.
-        "the review budget is raised to three rounds",
-        REVIEW_LEDGER,
-        "BUDGET = 2\n",
-        "BUDGET = 3\n",
-        ("tests/test_review_ledger.py::"
-         "test_reserve_third_round_is_refused_and_state_is_needs_replan"),
-    ),
-    (
         # The receipt check still runs and still finds a receipt, and passes
         # a tree edited after the review.
         "the receipt check ignores the bundle hash",
@@ -2715,6 +2710,7 @@ MUTATIONS = (
 # L-0727 hook dispatcher mutations live in the sabotage_*.py siblings: this file is at `.pylintrc`'s max-module-lines.
 from sabotage_train import TRAIN_MUTATIONS  # noqa: E402  pylint: disable=wrong-import-position
 from sabotage_stop_budget import STOP_BUDGET_MUTATIONS  # noqa: E402  pylint: disable=wrong-import-position
+from sabotage_budget import BUDGET_MUTATIONS  # noqa: E402  pylint: disable=wrong-import-position
 MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS + CLOUD_GUARD_MUTATIONS + SCOPE_MUTATIONS
               + AUTOCYCLE_MUTATIONS + WEBTEST_MUTATIONS + EVENT_CLAIM_MUTATIONS + REFRESH_MUTATIONS
               + RESUME_MUTATIONS + AUTOPILOT_MUTATIONS + TRACKER_MUTATIONS + ROUTE_MUTATIONS
@@ -2722,7 +2718,8 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + LIMIT_WORKTREE_MUTATIONS + QA_AUDIT_MUTATIONS + TOOLING_MUTATIONS + TICKET_STATE_MUTATIONS
               + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS + KIMI_MUTATIONS + COORD_MUTATIONS
               + RECURRING_MUTATIONS + TRAIN_MUTATIONS + GITIGNORE_MUTATIONS + WAVE_MUTATIONS + GHDEPLOY_MUTATIONS
-              + PROMOTE_TREE_MUTATIONS + CONTRACT_MUTATIONS + BRIDGE_MUTATIONS + sabotage_platform.PLATFORM_MUTATIONS)
+              + PROMOTE_TREE_MUTATIONS + CONTRACT_MUTATIONS + BRIDGE_MUTATIONS + HUMANONLY_MUTATIONS
+              + sabotage_platform.PLATFORM_MUTATIONS + BUDGET_MUTATIONS)
 MUTATIONS += (__import__("sabotage_reach_notice").REACH_NOTICE_MUTATIONS + __import__("sabotage_quiet").QUIET_MUTATIONS
               + __import__("sabotage_crew_hook").CREW_HOOK_MUTATIONS
               + __import__("sabotage_deadline").DEADLINE_MUTATIONS)
