@@ -5,12 +5,12 @@ Windows host, against 9-21ms for a native process), and the PreToolUse guards
 run on every Bash call of every lane at once. Peers measured guard timeouts
 coming back with three or more lanes in parallel, each guard 0.4-1.0s alone:
 contention. So the allow path of cloud-guard.sh, env-guard.sh and
-promote-gate.sh was cut to the python that judges (and, for promote-gate.sh,
-the one `cat` that reads the payload for its PowerShell hand-off):
+promote-gate.sh was cut to the python that judges:
 `crew_strip_cr` and the CREW_PYTHON check became parameter expansions,
 `crew_native_path` reads `$OSTYPE` and passes a mixed `D:/...` path through,
 `$DIR` comes from `${BASH_SOURCE[0]%/*}`, the clock from printf's `%(%s)T`,
-and promote-gate.sh proves "no deploy" in one python (_promote_fast.py).
+and promote-gate.sh decides in one python, deploy or not (_promote_gate.py, crew
+1.3.33; its payload is read with the `read` builtin).
 
 This runs each guard with `bash -x` on a command that deploys nothing, in a
 repo whose guards are armed and whose deploy map is committed, and fails if a
@@ -105,22 +105,25 @@ def test_the_allow_path_starts_no_helper_programs(tmp_path, script):
     helpers = sorted(set(programs) & _HELPERS)
     assert helpers == [], f"{script} started {helpers} on the allow path:\n{proc.stderr[-4000:]}"
     assert len(_python_runs(programs)) == 1, programs
-    # promote-gate.sh keeps the one `cat` that reads the payload for its
-    # PowerShell hand-off; the thin wrappers let python read stdin itself.
-    assert programs.count("cat") == (1 if script == "promote-gate.sh" else 0), programs
+    # promote-gate.sh reads the payload for its PowerShell hand-off with the
+    # `read` builtin; the thin wrappers let python read stdin itself.
+    assert programs.count("cat") == 0, programs
 
 
 @needs_bash
 def test_a_declared_deploy_still_takes_the_full_gate(tmp_path):
-    """The control: the fast path refuses a deploy, and the full gate (git,
-    the second python) runs and blocks it, here for the missing PASS row."""
+    """The control: a declared deploy is not an allow, and it is judged (here
+    blocked, for the missing PASS row) by the same single python, with no helper
+    program started by bash. Before crew 1.3.33 this path started git and seven
+    more pythons from bash."""
     root = _repo(tmp_path)
     proc = _traced("promote-gate.sh", root, tmp_path, command="deploy-prod --now")
     programs = _programs(proc.stderr)
 
     assert proc.returncode == 2, proc.stderr[-4000:]
-    assert "git" in programs, programs
-    assert len(_python_runs(programs)) > 1, programs
+    assert "PROMOTION BLOCKED (prod" in proc.stderr, proc.stderr[-4000:]
+    assert sorted(set(programs) & _HELPERS) == [], programs
+    assert len(_python_runs(programs)) == 1, programs
 
 
 def _traced_write(root, tmp_path, agent_type, file_path):

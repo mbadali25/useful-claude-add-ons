@@ -196,6 +196,7 @@ list equal. Decision record: `docs/adr/0009-hook-single-dispatch.md`.
 `plugin/crew/hooks/scripts/crew_hook.py` (620 lines) is the dispatcher the launchers run. Its
 `TABLE` (`:65`) is 18 rows (`Row`: event, matcher, script, extra, timeout, guard, twin, codex) over
 **14** distinct `.sh` scripts. Only `promote-gate.ps1` is still a `.ps1` twin in the directory; the other twins were deleted in L-0867 and L-0869, so `select` (`plugin/crew/hooks/scripts/crew_hook.py:140`) takes a twin only when `exists()` finds it and a `PowerShell` call otherwise runs the `.sh`, which Windows runs under Git Bash. The `twin=` names still in `TABLE` for `cloud-guard` and `env-guard` (`:73-74`) point at deleted files and are inert.
+DERIVED (crew 1.3.33): `promote-gate.sh` (`plugin/crew/hooks/scripts/promote-gate.sh`, 346 lines) decides nothing itself any more. After the PowerShell hand-off, the no-map opt-out and `crew_py`, it runs `_promote_gate.py` once (`:153`) and maps its exit status: `0` allow, `2` block (message already written), `10+N` the containment match could not read the map and `20+N` the pre-deploy check could not be evaluated (the shell writes the framing around the reason, `:166-188`, so `sabotage.py`'s two `ENV_STATUS` / `VERDICT_STATUS` mutations still bite), anything else a block. `_promote_gate.py` imports `_promote_match.py` (the containment heredoc), `_promote_verdict.py` (the PASS-row, rollback and marker heredoc), `_promote_dispatch.py`, `_promote_tree.py`, `_promote_github.py` and `_promote_review.py`; its deadline is `Clock.deadline` = the shell's start (`CREW_GATE_START`) + `deadline_seconds(None, configured_seconds())`, i.e. `promote.deadlineSeconds` clamped to the row's `TABLE` timeout less `REAP` 2, else that timeout less `DEFAULT_MARGIN` 4. JUDGEMENT: the fixed 16 s `GATE_DEADLINE` left in the shell belongs to the jq fallback alone. `_promote_fast.py` is gone; its allow fast path is `Gate.provably_no_deploy`.
 Row counts per event, with the registration timeout `event_timeout` gives (largest row + `EVENT_SLACK`
 10, `:44`):
 
@@ -1718,7 +1719,7 @@ was discarded before the next call regardless.
   `platform-sync.sh`, `scope-guard.sh`, `auto-clear.sh`, `verify-gate.sh`
   (two call sites, `PY` at `:1322` and `SHIM_PY` at `:2262`), and
   `completion-audit.sh:71`; `role-write-guard.sh` keeps its own private copy. **Three scripts still call plain
-  `crew_py()`**: `promote-gate.sh:115`, `notify.sh:13` and `handoff-write.sh:103` (`handoff-read.sh` calls neither now), plus
+  `crew_py()`**: `promote-gate.sh:143`, `notify.sh:13` and `handoff-write.sh:103` (`handoff-read.sh` calls neither now), plus
   four more plain call sites *within* `verify-gate.sh` itself
   (`PRICE_PY` at `:37`, `REPORT_PY` at `:793`, `FP_PY` at `:919`,
   `SCOPE_PY` at `:1260`) that degrade to a no-op or a narrower error rather

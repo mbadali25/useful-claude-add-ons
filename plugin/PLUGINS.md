@@ -151,7 +151,7 @@ measured.
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.3.32<!-- claim: plugin-version:crew --> |
+| **Version** | 1.3.33<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
 | **Registers** | 4 agents plus the `session-relay` transport agent, 40 commands, 33 skills<!-- claim: plugin-skills:crew -->, 16 hook entries<!-- claim: plugin-hooks:crew --> (a launcher per event per shell, running 14 scripts) across 8 events, and the `wave` workflow (`/crew:wave`, in `workflows/`) |
@@ -171,7 +171,7 @@ menu item 21 is unticked by default.**
 |---|---|---|
 | `cloud-guard.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | **Off by default** (`guards.cloudGuard`: `off`/`report`/`block`). Judges `terraform`/`tofu` apply/destroy, `aws` delete/terminate/`rm --recursive`, `az` delete/purge, SQL `DROP`/`TRUNCATE` and force push, and checks the effective AWS profile/region and Azure subscription against the pinned `cloud.*` values; an unknown identity is never allowed unattended, and it never emits an allow |
 | `env-guard.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | **Off by default** (`guards.envGuard`: `off`/`report`/`block`, L-0772). Refuses a command whose own text prints the whole process environment (`env`, `printenv`, bare `set`, `export -p`, `/proc/*/environ`, `ps eww`, `os.environ`, `Get-ChildItem env:`, `[Environment]::GetEnvironmentVariables()`, `cmd /c set`) or a credential-named variable (`echo "$GITHUB_TOKEN"`, `$env:API_KEY`) into the agent's context, through `bash -c`, `eval`, pipes and wrappers; a command it cannot read is refused as could-not-tell. Names a fixed label, never a value |
-| `promote-gate.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | Refuses a declared `deploy` command unless the `requires` environment has an all-pass row for this sha, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean |
+| `promote-gate.sh` / `.ps1` | `PreToolUse` on the Bash / PowerShell tool | Refuses a declared `deploy` command unless the `requires` environment has an all-pass row for this sha, the rollback runbook is verified inside 90 days, `requireHuman` is approved, and the tree is clean (decided in one python process, with its own deadline, `promote.deadlineSeconds`) |
 | `approval-hook.sh` / `.ps1` | `UserPromptSubmit` | Records a ticket's plan approval only when the prompt *you* typed is `/crew:approve <id>`: validates `spec.md` and `plan.md` and writes the receipt bound to both hashes, or blocks the prompt and says why. Any other prompt: no output, exit 0 |
 | `scope-guard.sh` / `.ps1` | `PreToolUse` on Write/Edit/MultiEdit/NotebookEdit/Bash/PowerShell | **Off by default** (`scope.mode`: `off`/`report`/`block`/`auto`; `/crew:init` writes `auto` for a new repo). Refuses an edit with no current approval or outside the spec's Touch, and a shell command that runs `crew_ticket.py approve` or writes crew state — see "Scope and approval" |
 | `completion-audit.sh` / `.ps1` | `Stop` | **Off by default**, same `scope.mode`. Diffs the whole tree against the ticket's start commit and blocks the stop once if any changed path is outside Touch, shell-made writes included |

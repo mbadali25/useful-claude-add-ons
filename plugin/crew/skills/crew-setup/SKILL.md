@@ -269,6 +269,9 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "worktrees": {
     "root": null
   },
+  "promote": {
+    "deadlineSeconds": null
+  },
   "emergency": {
     "standDown": true,
     "maxTtlMinutes": 480

@@ -110,7 +110,7 @@ marker is human-only by instruction alone - no hook checks who created it.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**91 keys**: 53 settable in the machine-global file, 38 repo-only.
+**92 keys**: 54 settable in the machine-global file, 38 repo-only.
 
 Columns:
 
@@ -225,6 +225,12 @@ Columns:
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `worktrees.root` | both | `null` | absolute path or null (coerced in `plugin/crew/hooks/scripts/crew_worktrees.py`) | 1.3.19 | The base directory for this repo's git worktrees, OUTSIDE the repo: they go in `<root>/<repo>-<digest>/<name>`. null is `~/.claude/crew/worktrees`; `~` is expanded, a relative path or one inside the repo is refused (never replaced by the default). It places the worktrees crew places (`/crew:emergency`, `crew_worktrees.py path`) and, once the owner registers the opt-in `WorktreeCreate` hook, the ones Claude Code creates; without the hook Claude Code keeps using `.claude/worktrees/`. |
+
+### `promote`
+
+| Setting | Layer | Default | Values | Since | Summary |
+|---|---|---|---|---|---|
+| `promote.deadlineSeconds` | both | `null` | number of seconds, or null (coerced in `plugin/crew/hooks/scripts/_promote_gate.py`) | 1.3.33 | How many seconds the promote gate (`promote-gate.sh`) may run, counted from the moment its shell began, before it gives up and blocks (a hook that times out is not a block, so the gate stops itself first). null derives it from the guard's hook timeout less a 4 s margin: 16 s of the 20 s row. A number above the timeout less 2 s (18 s of 20) is clamped to that, so the setting can never let the gate outlive its hook; zero, a negative, a string or a boolean reads as null. The hook timeout is the guard's row in the dispatcher's table, not a setting. |
 
 ### `emergency`
 

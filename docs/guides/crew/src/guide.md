@@ -297,6 +297,10 @@ paths the review bundle left out (identical to merged main, or under
 `.work/`, `graphify-out/`, `.crew/metrics.md`) or ignored build output a
 deploy script ships were reviewed, nor who wrote the local ledger.
 
+The gate is one python process (crew 1.3.33), so a deploy-shaped command costs a handful of process starts, not
+forty-five. It stops itself before its hook times out, because a timeout is not a block: `promote.deadlineSeconds`
+(either layer) sets how many seconds it may run, and null derives it from the hook timeout less four seconds.
+
 The guards stop drift and accidents, not a session set on forging local
 state: the receipts are files on your machine. The completion audit and the
 reviewer are the backstop.
@@ -398,6 +402,7 @@ worktree:
   always a merge, never a rebase. The train never merges, pushes or opens the
   PR; only autopilot's ship step does, under `autopilot.ship`.
 - **Where worktrees live (crew 1.3.19).** `worktrees.root` (either layer, the repo wins; null is `~/.claude/crew/worktrees`) is the one place outside the repo for crew's worktrees, laid out as `<root>/<repo>-<digest>/<name>`; a value that is relative or inside the repo is refused, never swapped for the default. Claude Code's own agent worktrees (`claude --worktree`, an Agent with `isolation: worktree`) stay under `.claude/worktrees/`: it has no setting for another place, and the one redirect it supports is a `WorktreeCreate` hook, which replaces git's creation, so crew prints the block (`/crew:worktrees hook`) and registers nothing. `/crew:worktrees list` is a read-only survey of every worktree; `remove <path>` needs your `--yes`, takes one path and never forces. Nothing existing is moved.
+- **How long the promote gate may run (crew 1.3.33).** `promote.deadlineSeconds` (either layer, the repo wins; null derives it from the guard's hook timeout less 4 s, so 16 s of the 20 s row) is the one deadline `promote-gate.sh` keeps for its whole decision, counted from the moment its shell began. A value above the hook timeout less 2 s is clamped to that, and a value that is not a positive number reads as null.
 - **Check before assuming a diff is yours.** Another session may have
   changed the tree, a branch or the stash (root `CLAUDE.md`, "Lessons").
 
