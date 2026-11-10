@@ -130,6 +130,7 @@ import time
 
 import crew_common
 import crew_config
+import crew_mass
 import crew_preprod
 import crew_state
 from crew_guards import _head_name as _guards_head_name
@@ -2157,6 +2158,12 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
     text = " ".join(argv)
     out = []
 
+    # crew_mass: a mass delete, create or change. Always recognised here, judged
+    # in `evaluate` only when `guards.mass` or a humanOnly opt-out arms it.
+    sql = _sql_payloads(head, args, stdin) if head in _SQL_FLAGS else ()
+    for mass in crew_mass.classify(head, args, shell, bool(fed), sql):
+        out.append(Finding(mass.rule, text, mass.what, None, False, None, {"mass": mass}))
+
     if head in _SHELLS:
         # `-c`, and every cluster carrying it: `bash -lc`, `sh -ec`. With no
         # `-c` at all, a heredoc or pipe on stdin is the script.
@@ -3129,7 +3136,8 @@ def _judge_one(root, finding, pins, problem, envs=None):
     return (ask if _RANK[ask[0]] > _RANK[verdict[0]] else verdict) + (True,)
 
 
-def evaluate(root, tool_name, command, data=None, mode="block"):
+def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
+             only_mass=False):
     """The whole judgement for one tool call, as a dict. Pure apart from
     reading config and approval markers; `main` does the printing and logging.
 
@@ -3141,7 +3149,13 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     Code's own permission flow runs exactly as it would without this hook --
     and `note` says what `block` would have done. Never `allow`: that would
     skip the user's own prompt, and report mode judged nothing.
+
+    `mass` (`crew_mass.settings`) with `armed` true turns on the mass delete /
+    create / change findings, which are otherwise ignored; `only_mass` is the
+    cloud guard being `off` while `guards.mass` or the owner's opt-out arms
+    those alone: every other finding is skipped, as `off` means.
     """
+    mass_armed = bool(mass and mass.get("armed"))
     shell = "powershell" if tool_name == "PowerShell" else "bash"
     envs = crew_preprod.arm(dict(environments_config(root), command=command))
     ctx = {"cd": False, "switch": False, "engaged": envs["engaged"], "dispatch": dict(envs)}
@@ -3153,7 +3167,31 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     worst, reasons, rows, unpinned = "allow", [], [], []
     said, audits = [], []
     alone = unattended(data or {})
+    if mass_armed and crew_mass.tampers(command):
+        reason_t = ("[massApprovals] this command writes under the mass-approvals "
+                    "directory, where only the owner's own /crew:approve-mass prompt "
+                    "may write")
+        rows.append(("massApprovals", "-", "deny", command))
+        reasons.append(reason_t)
+        worst = "deny"
     for finding in findings:
+        if finding.rule in crew_mass.RULES:
+            if not mass_armed:
+                continue
+            verdict = crew_mass.judge(finding.scope["mass"], finding.text,
+                                      envs["cwd"] or root, bool((ctx or {}).get("cd")), alone,
+                                      mass)
+            if verdict is None:
+                continue
+            decision, reason, policy = verdict
+            rows.append((finding.rule, policy, decision, finding.what))
+            if decision != "allow":
+                reasons.append(reason)
+            if _RANK[decision] > _RANK[worst]:
+                worst = decision
+            continue
+        if only_mass:
+            continue
         decision, reason, policy, marker, applies = _judge_one(
             root, finding, pins, problem, envs)
         if not applies:
@@ -3372,8 +3410,15 @@ def main():
         sys.stderr.write(f"cloud-guard: could not read guards.cloudGuard "
                          f"({type(exc).__name__}); not judged.\n")
         return 0
-    if mode == "off":
+    # `guards.mass.enabled`, or the owner's opt-out of a human-only rule, arms
+    # the mass delete / create / change stop even where the cloud guard is
+    # `off` (`crew_mass.settings` never raises).
+    mass = crew_mass.settings(root)
+    only_mass = mode == "off" and mass["armed"]
+    if mode == "off" and not mass["armed"]:
         return 0
+    if only_mass:
+        mode = "block"
     if problem:
         # Armed, and handed something it cannot read as a command. Refuse in
         # every armed mode: report mode's promise is "nothing refused that
@@ -3384,7 +3429,7 @@ def main():
                       "letting a command through unjudged.")
         return 0
     try:
-        result = evaluate(root, data["tool_name"], command, data, mode)
+        result = evaluate(root, data["tool_name"], command, data, mode, mass, only_mass)
     except Exception as exc:  # pylint: disable=broad-except
         # The guard IS on and could not finish. Refuse: a check that could not
         # run is not a check that passed.

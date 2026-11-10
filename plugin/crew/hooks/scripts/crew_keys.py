@@ -218,13 +218,15 @@ KEY_META = {
                         "machine file can arm it (exactly `true`); a repo `false` vetoes "
                         "it.", "branch", (None, True, False), "1.0.40",
                         _S + "crew_resume.py"),
-    # --- humanOnly (crew 1.3.9; read by crew_humanonly.resolve, acted on by no hook yet)
+    # --- humanOnly (crew 1.3.9; read by crew_humanonly.resolve; acted on since 1.3.27 for
+    # `approve`, by no hook for `promoteMarker`)
     "humanOnly.approve": _row("The owner's opt-out of `/crew:approve` being human-only. "
                               "null or `true` keeps it human-only; `false` opts out only "
                               "from the machine file or an untracked repo file, only after "
                               "`/crew:confirm-config` twice, and a `true` in either layer "
-                              "vetoes. crew 1.3.9: no hook acts on it yet, so it changes "
-                              "nothing today.", "branch", crew_humanonly.VALUES, "1.3.9",
+                              "vetoes. crew 1.3.27: with an opt-out in force a cli-recorded "
+                              "approval counts (`crew_ticket.cli_approval_allowed`).", "branch",
+                              crew_humanonly.VALUES, "1.3.9",
                               _S + "crew_humanonly.py"),
     "humanOnly.promoteMarker": _row("The same opt-out for the production promote marker "
                                     "`.crew/.approved-<env>-<sha>`, under the same rules. "
@@ -327,6 +329,37 @@ KEY_META = {
                              "that guard's own tiers; a bad one reads as the floor.",
                              "open-table", since="1.2.62", source=_S + "crew_guards.py",
                              type_="object of guard name to tier"),
+    "guards.mass.enabled": _row(
+        "Turns the mass delete / create / change stop on (it is also armed by a "
+        "double-confirmed `humanOnly` opt-out). On if EITHER layer says exactly `true`; off by "
+        "default.", "type", since="1.3.28", source=_S + "crew_mass.py", type_="boolean"),
+    "guards.mass.deleteCount": _row(
+        "Files a command may delete before it waits for `/crew:approve-mass`; a count at "
+        "the limit stops. The machine file sets it; the repo file can only lower it; a value "
+        "that is not a positive integer reads as the default.", "type", since="1.3.28",
+        source=_S + "crew_mass.py", type_="integer (1 or more)"),
+    "guards.mass.createCount": _row(
+        "Files a command may create before it waits for `/crew:approve-mass`; a count at "
+        "the limit stops. The machine file sets it; the repo file can only lower it; a value "
+        "that is not a positive integer reads as the default.", "type", since="1.3.28",
+        source=_S + "crew_mass.py", type_="integer (1 or more)"),
+    "guards.mass.changeCount": _row(
+        "Files a command may rewrite before it waits for `/crew:approve-mass`; a count at "
+        "the limit stops. The machine file sets it; the repo file can only lower it; a value "
+        "that is not a positive integer reads as the default.", "type", since="1.3.28",
+        source=_S + "crew_mass.py", type_="integer (1 or more)"),
+    "guards.mass.overrides": _row(
+        "`guards.mass.overrides.<files|git|terraform>.<deleteCount|createCount|"
+        "changeCount>`: one limit for one kind of command. Unset, `terraform` is delete 3, "
+        "create 10, change 10 (inferred, not measured); the others use the limits above.",
+        "open-table", since="1.3.28", source=_S + "crew_mass.py",
+        type_="object of category to {deleteCount, createCount, changeCount}"),
+    "guards.mass.exempt": _row(
+        "Repo-relative globs of generated files that never count toward a limit, read from "
+        "the machine file only (a glob can only loosen the stop), on top of the built-in "
+        " regenerable directories (node_modules, __pycache__, .venv, caches, "
+        "build, dist, .work, worktrees).", "type", since="1.3.28",
+        source=_S + "crew_mass.py", type_="list of globs"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),
     "production.hosts": _unv("Globs naming production hosts.", "0.19.30",

@@ -230,4 +230,8 @@ def test_the_menu_offers_the_profile_first_and_an_override_per_guard(tmp_path):
     rows = [r["path"] for a in spec["areas"] if a["id"] == "guards" for r in a["rows"]
             if r["path"].startswith("guards.")]
     assert rows[0] == "guards.profile"
-    assert rows[1:] == [f"guards.overrides.{n}" for n in NAMES]
+    assert rows[1:1 + len(NAMES)] == [f"guards.overrides.{n}" for n in NAMES]
+    # crew 1.3.28: the mass stop's own six keys follow, none of them a guard tier
+    assert sorted(rows[1 + len(NAMES):]) == sorted(
+        f"guards.mass.{k}" for k in ("enabled", "deleteCount", "createCount", "changeCount",
+                                     "overrides", "exempt"))

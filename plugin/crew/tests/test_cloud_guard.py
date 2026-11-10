@@ -720,8 +720,11 @@ def test_disabled_guard_allows_everything(tmp_path, driver, repo_cfg):
 
 def test_default_config_ships_the_guard_off():
     import crew_config  # pylint: disable=import-outside-toplevel
-    assert crew_config.default_config()["guards"] == {"profile": "off", "overrides": {}}
-    assert crew_config.default_global_config()["guards"] == {"profile": "off", "overrides": {}}
+    # `guards.mass` (crew 1.3.28) is the mass stop's own block, not a guard tier
+    for cfg in (crew_config.default_config(), crew_config.default_global_config()):
+        assert {k: v for k, v in cfg["guards"].items() if k != "mass"} == {
+            "profile": "off", "overrides": {}}
+        assert cfg["guards"]["mass"]["enabled"] is False
     assert crew_config.default_config()["cloud"] == {
         "awsProfiles": [], "awsRegions": [], "azureSubscriptions": []}
     assert "cloud" not in crew_config.default_global_config()
