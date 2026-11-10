@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.26**: Context-watch's no-op Stop turn starts one process, not a dozen. `crew` 1.3.26: the Stop hook `context-watch.sh` clears an ordinary turn with one python start instead of five plus a handful of helper programs, so it no longer runs into its 20 s limit on a loaded Git Bash host; what it warns about and when is unchanged.
 - **crew 1.3.25**: Promote-gate reads deploy policy from the sha being deployed, not the session's checkout. `crew` 1.3.25 reads every promote-gate requirement (`requires`, `rollback`, `requireHuman`, a `github` entry's `shaInput` and `requireReview`) from the `.crew/verify.json` committed in the sha being deployed, so a deploy from a git worktree honours a waiver committed on its own branch and is no longer blocked by the main checkout's uncommitted map.
-- **changelog**: Every version a branch sets gets a CHANGELOG.md line, checked in CI. A plugin or skill version bump, including a re-bump after main moved, now needs a CHANGELOG.md entry for that exact version or a `re-bump only` line, and CI fails without one.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
