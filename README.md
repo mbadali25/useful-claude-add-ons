@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.29**: The backgrounded-process wallclock test compares against a baseline gate run. A flaky Windows CI test now measures the gate against its own no-op run instead of a fixed 6-second limit.
 - **crew 1.3.28**: The environment guard's review fixes, re-applied on the L-0725 guard. `crew` 1.3.28: the environment guard no longer misses attached code (`bash -c'env'`, `node -pe`) or a globbed program name, and an explicit `guards.envGuard: null` now blocks instead of switching it off.
-- **crew 1.3.27**: The lock test no longer fails when it lists the lock mid-rename of `owner`. `crew` 1.3.27: test-only. `test_the_lock_never_records_a_pid` listed the lock directory as soon as `token` appeared and allowed only the name `owner`, but `verify-gate.sh` writes `owner.tmp.<pid>` and renames it to `owner`, so a listing in that window failed with `AssertionError: ['owner.tmp.515831', 'token']` (it failed required CI `test (3.12)` on PRs #679 and #597). The test now also ignores `owner.tmp.*`; a `pid` file or any other name still fails. No gate code changed.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

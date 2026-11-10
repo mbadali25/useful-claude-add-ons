@@ -44,6 +44,11 @@ read entries under any `## [` heading.
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 
+### Fixed — crew 1.3.29: the backgrounded-process wallclock test compares against a baseline gate run
+
+- **Summary.** A flaky Windows CI test now measures the gate against its own no-op run instead of a fixed 6-second limit.
+- `test_rule_that_backgrounds_a_process_does_not_hold_the_hook_open` asserted `elapsed < 6` against `(sleep 8 &); true`, but the plain gate takes 9.6-18.7s on loaded Windows runners (main run 42734866921 failed at 6.09s; PR #679 at 8.8s and 6.5s), so the bound could not tell a fixed gate from a broken one. It now times the same gate with a no-op rule, then with `(sleep 25 &); true`, and asserts the exit code is 0, elapsed is under 25s and elapsed is under the baseline plus 12s. With the `4>&-` removed from the rule launch the test fails (25.4s against a 0.8s baseline). Test-only; no gate behaviour changed.
+
 ### Fixed — crew 1.3.28: the environment guard's review fixes, re-applied on the L-0725 guard (L-0772)
 
 - **Summary.** `crew` 1.3.28: the environment guard no longer misses attached code (`bash -c'env'`, `node -pe`) or a globbed program name, and an explicit `guards.envGuard: null` now blocks instead of switching it off.
