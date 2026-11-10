@@ -299,6 +299,10 @@ def default_config():
         # never opts out, a `true` anywhere vetoes, a `false` needs a double
         # confirmation). Nothing in the hooks acts on it yet.
         "humanOnly": copy.deepcopy(crew_state.HUMAN_ONLY_DEFAULTS),
+        # crew 1.3.19. Where this repo's git worktrees go: a directory OUTSIDE the
+        # repo. In both layers (a person's habit first, a repo may differ); null is
+        # ~/.claude/crew/worktrees. Read by `crew_worktrees.resolve`.
+        "worktrees": copy.deepcopy(crew_state.WORKTREES_DEFAULTS),
         "emergency": {
             "standDown": True,
             "maxTtlMinutes": 480,
@@ -551,6 +555,9 @@ def default_global_config():
         # crew 1.3.9: the owner's human-only opt-out is the owner's answer
         # first of all, so the machine file is where it normally lives.
         "humanOnly": copy.deepcopy(crew_state.HUMAN_ONLY_DEFAULTS),
+        # crew 1.3.19: where worktrees go is a habit of the person and the machine
+        # first; a repo file may still name its own.
+        "worktrees": copy.deepcopy(crew_state.WORKTREES_DEFAULTS),
         # How much crew may do about a skill it needs and cannot find. This is
         # a machine fact in the strongest sense on this list: it is the machine
         # owner saying how much they trust crew to run commands HERE. It was
