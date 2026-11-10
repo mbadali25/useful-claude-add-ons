@@ -1,4 +1,5 @@
-"""L-0725: the committed key set (87 keys; 83 repo and 50 machine leaves) and the
+"""L-0725: the committed key set (87 keys; 83 repo and 50 machine leaves,
+plus the two `humanOnly` keys crew 1.3.9 added: 89, 85 and 52) and the
 60 keys it drops. Generated once from the reviewed Disposition in
 `.work/tickets/L-0725/spec.md`; changing a key here is a spec amendment, not a
 test fix. `guards.profile` and `guards.overrides` replace the twelve
@@ -78,6 +79,8 @@ L0725_KEYS = frozenset((
     "qa.order",
     "qa.provider",
     "qa.roles",
+    "humanOnly.approve",       # crew 1.3.9, the owner's 2026-11-06 decision
+    "humanOnly.promoteMarker",  # crew 1.3.9, the same decision
     "resume.auto",
     "route.enabled",
     "schema",
@@ -168,6 +171,8 @@ L0725_REPO_KEYS = frozenset((
     "qa.order",
     "qa.provider",
     "qa.roles",
+    "humanOnly.approve",       # crew 1.3.9, the owner's 2026-11-06 decision
+    "humanOnly.promoteMarker",  # crew 1.3.9, the same decision
     "resume.auto",
     "route.enabled",
     "schema",
@@ -223,6 +228,8 @@ L0725_MACHINE_KEYS = frozenset((
     "qa.order",
     "qa.provider",
     "qa.roles",
+    "humanOnly.approve",       # crew 1.3.9, the owner's 2026-11-06 decision
+    "humanOnly.promoteMarker",  # crew 1.3.9, the same decision
     "resume.auto",
     "route.enabled",
     "secondOpinion.mode",

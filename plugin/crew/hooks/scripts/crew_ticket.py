@@ -209,15 +209,60 @@ def _git(root, *args):
     return done.stdout.strip() if done.returncode == 0 else None
 
 
+# A hook judges one call in one process, and the scope guard asked git for the
+# same two answers, the worktree top and the git-common-dir, up to eight times
+# on the way to an allow: each ask is a process start (an MSYS fork on Git
+# Bash, ~0.1-0.2s), and the guards' budget is shared by every lane running at
+# once. `memoize_git()` turns on a per-process memo for those two answers, and
+# `_prime_git` fetches both with ONE `git rev-parse`. Off unless asked: only
+# scope_guard.main() asks, so no long-lived caller or test ever sees a stale
+# answer after a `git init` or a checkout.
+_GIT_MEMO = None
+
+
+def memoize_git():
+    """Start remembering `toplevel` / `common_dir` answers for this process."""
+    global _GIT_MEMO  # pylint: disable=global-statement
+    _GIT_MEMO = {}
+
+
+def _rev_parse(root, flag):
+    """`git rev-parse <flag>` for `root`: from the memo when it is on, else
+    asked of git. A failed answer (None) is never remembered by the memo, so
+    "git could not tell" is asked again rather than frozen."""
+    if _GIT_MEMO is None:
+        return _git(root, "rev-parse", flag)
+    key = (root, flag)
+    if key not in _GIT_MEMO:
+        _prime_git(root)
+    if key not in _GIT_MEMO:
+        value = _git(root, "rev-parse", flag)
+        if value is None:
+            return None
+        _GIT_MEMO[key] = value
+    return _GIT_MEMO[key]
+
+
+def _prime_git(root):
+    """Both answers from one `git rev-parse`; stores nothing unless git
+    answered both (a bare repo answers one and fails the other, so each is
+    then asked on its own, exactly as before)."""
+    both = _git(root, "rev-parse", "--show-toplevel", "--git-common-dir")
+    lines = both.split("\n") if both else []
+    if len(lines) == 2 and all(line.strip() for line in lines):
+        _GIT_MEMO[(root, "--show-toplevel")] = lines[0].strip()
+        _GIT_MEMO[(root, "--git-common-dir")] = lines[1].strip()
+
+
 def toplevel(root):
     """The worktree's real top-level directory, or None outside git."""
-    top = _git(root, "rev-parse", "--show-toplevel")
+    top = _rev_parse(root, "--show-toplevel")
     return os.path.realpath(top) if top else None
 
 
 def common_dir(root):
     """`git rev-parse --git-common-dir`, absolute and real, or None."""
-    path = _git(root, "rev-parse", "--git-common-dir")
+    path = _rev_parse(root, "--git-common-dir")
     if not path:
         return None
     if not os.path.isabs(path):
@@ -590,6 +635,23 @@ def is_crew_write_refused(rel):
     """True when `rel` is bookkeeping a Write/Edit may never touch: left out
     of review and the audit, so a write to it would be invisible."""
     return is_crew_bookkeeping(rel) and not is_crew_write_allowed(rel)
+
+
+# The repo handoff note (`/crew:handoff`, handoff-write.sh's skeleton) and the
+# archives crew moves aside. Session metadata, not ticket scope: a ticket's
+# Touch never names it, yet `/crew:handoff --wrap-up` must write it with the
+# Write tool (the only route that records an author for auto-resume). So the
+# scope guard allows it outside Touch, with or without an approval. Exact
+# names only: `.work/HANDOFF.md` and `.work/HANDOFF-<suffix>.md`.
+HANDOFF_PATHS = (
+    ".work/HANDOFF.md",
+    ".work/HANDOFF-*.md",
+)
+
+
+def is_handoff_path(rel):
+    """True when repo-relative `rel` is on `HANDOFF_PATHS`."""
+    return _crew_listed(rel, HANDOFF_PATHS)
 
 
 def is_crew_state(rel):

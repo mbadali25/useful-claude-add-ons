@@ -367,7 +367,8 @@ frontmatter line `model: claude-haiku-5-5` (the full id, probed accepted in a sc
 time, so there is **no** `relay.model` key and nothing in `qa.roles` or `dev.roles` for it: it is not
 a role, and `/crew:model` reports roles only. To run a relay on another model, pass `model` when
 dispatching it. `tests/test_session_relay.py` pins the model, the two tools (no `Read`) and the transport-only
-rules.
+rules. The tools line keeps `ListAgents` even though it can be missing at runtime: the prompt, not
+the grant, handles that case (send to the name as given, report `could not verify recipient`).
 
 ### The coordinator and lane model pins (L-0799)
 

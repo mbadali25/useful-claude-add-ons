@@ -132,12 +132,13 @@ independent eyes.</p>
 </tr>
 </tbody>
 </table>
-<p>A fifth file, <code>session-relay</code>, is not a role: it is a transport agent on Haiku 5.5 that carries messages between sessions (SendMessage and ListAgents only; no Read, Write, Edit or Bash).</p>
+<p>A fifth file, <code>session-relay</code>, is not a role: it is a transport agent on Haiku 5.5 that carries messages between sessions (SendMessage and ListAgents only; no Read, Write, Edit or Bash). If ListAgents is unavailable at runtime, it still sends to the name exactly as given and marks that line <code>could not verify recipient</code> in its report.</p>
 <p><strong>The coordinator is a model pin, not a role.</strong> Set <code>dev.roles.coordinator</code> (for example
 <code>{"provider": "claude", "model": "claude-opus-5-5"}</code>) and <code>dev.roles.developer</code> (for example
 <code>{"provider": "claude", "model": "claude-sonnet-5-5"}</code>) in <code>/crew:model</code>. A wave prints the
 coordinator pin and puts the developer model on every lane launch. Both default to unset, which
-changes nothing.</p>
+changes nothing. A Claude pin takes a full Claude id or <code>opus</code>, <code>sonnet</code>, <code>haiku</code> or <code>fable</code>
+(Fable 5.1). Fable runs only when you pin it like this; crew never picks it for you.</p>
 <p><strong>Running agents on Kimi.</strong> Claude Code runs subagents on Claude models only,
 so <code>explorer</code>, <code>researcher</code> and <code>security</code> can hand their task to the Kimi Code
 CLI instead. Pin one with
@@ -562,6 +563,15 @@ guide describes them as present.</p>
 repo's <code>.crew/config.json</code>. The repo file wins, except where a setting
 ratchets, is personal (the stricter of the two wins), or only the machine file
 may arm it.</p>
+<p><strong>The human-only opt-out (crew 1.3.9).</strong> <code>humanOnly.approve</code> and
+<code>humanOnly.promoteMarker</code> let the owner opt out of <code>/crew:approve</code> and the
+production promote marker being human-only. A <code>false</code> counts only from the
+machine file or an untracked repo file, never a committed one; a <code>true</code> in
+either file vetoes it; and it is written only after the owner types
+<code>/crew:confirm-config &lt;change_id&gt;</code> twice. In 1.3.9 no hook reads these keys
+and nothing records that confirmation, so the human-only rules hold exactly as
+before; the configuration reference's "The human-only opt-out" section says
+what lands next.</p>
 <ul>
 <li><code>/crew:config</code> shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.</li>

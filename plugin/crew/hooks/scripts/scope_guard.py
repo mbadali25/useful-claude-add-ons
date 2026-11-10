@@ -31,6 +31,9 @@ the payload in, so the two shells cannot disagree.
    `scope.allowCliApproval: true`) -- inside `spec.Touch`. The approval and
    the Touch it is judged against come from ONE read of spec.md
    (`crew_ticket.status`).
+5b. The repo handoff note (`.work/HANDOFF.md`, `.work/HANDOFF-*.md`) is
+   always writable, approval or not: session metadata, not ticket scope
+   (`crew_ticket.is_handoff_path`). Real and named path must both match.
 6. With that SAME approval -- current, from the user's prompt, a `cli`
    receipt only under `scope.allowCliApproval` -- the refresh-artifact paths
    are writable too: `crew_refresh_check.REFRESH_ARTIFACT_PATHS`, the code
@@ -228,6 +231,8 @@ def classify(top, common, ticket, touch, approval, target, base):
         return True, "the ticket's own files"
     if real_rel is not None and all(crew_ticket.is_crew_write_allowed(r) for r in checks):
         return True, "crew bookkeeping"
+    if real_rel is not None and all(crew_ticket.is_handoff_path(r) for r in checks):
+        return True, "the session handoff note"
     if _refresh_artifact(top, real_rel, checks, approval):
         return True, "a refresh artifact of an approved ticket"
     if approval["status"] != "approved":
@@ -308,10 +313,14 @@ def shell_refusal(command, common, top=None, agent_type=None):
     `top` is the worktree whose autopilot policy judges `crew_autopilot.py
     approve`; without it that command is refused. `agent_type`, when a
     non-empty string, is a subagent: the never-list is refused too. Every
-    reading `_joined` gives is judged; the first refusal wins."""
+    distinct reading `_joined` gives is judged, in its order; the first
+    refusal wins. A command with no continuation reads the same three ways,
+    and judging it once matters (A-0013): an autopilot approve runs
+    `approval_policy`, about fourteen git calls in a lane, and three of those
+    ran past crew_hook's 15 s limit, so the guard failed closed."""
     if not isinstance(command, str):
         return None
-    for reading in _joined(command):
+    for reading in dict.fromkeys(_joined(command)):
         reason = _reading_refusal(reading, command, common, top, agent_type)
         if reason:
             return reason
@@ -444,6 +453,9 @@ def decide(data):
 
 
 def main():
+    # One process judges one call: remember git's answers for it (see
+    # crew_ticket.memoize_git) instead of asking again at every step.
+    crew_ticket.memoize_git()
     data = _read_payload()
     try:
         code = decide(data)

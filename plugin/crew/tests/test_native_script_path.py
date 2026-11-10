@@ -9,8 +9,9 @@ against the current drive: `can't open file 'D:\\tmp\\...'`. The fix is the
 `crew_native_path` helper in `_common.sh` (`cygpath -m`, which does not depend
 on argument conversion), wrapped around every non-harness `"$DIR/x.py"` caller.
 
-This runs on Linux with a Windows-like PATH fixture: a `uname` that says
-MINGW64, a `cygpath` that maps `/p` to `D:/winfx/p`, and a `python3` that
+This runs on Linux with a Windows-like fixture: an exported `OSTYPE=msys`
+(crew 1.2.115 reads bash's `$OSTYPE` instead of forking `uname -s`, and bash
+keeps an inherited value), a `cygpath` that maps `/p` to `D:/winfx/p`, and a `python3` that
 refuses any `.py` argument still shaped like a POSIX path (what python.exe does
 with an unconverted one) and maps `D:/winfx/p` back so the real script runs.
 The stubs are found through PATH, never named in a case. The native-Windows
@@ -19,7 +20,6 @@ variant is requested of win-repo-2 separately and is NOT run here.
 import os
 import pathlib
 import re
-import shutil
 import subprocess
 import sys
 
@@ -61,17 +61,10 @@ case "$mode" in
   *) printf '%%s\\n' "%(drive)s$1" ;;
 esac
 """
-_UNAME_STUB = """#!/bin/bash
-[ "$1" = "-s" ] && { echo %(kernel)s; exit 0; }
-exec %(real)r "$@"
-"""
-
-
-def _stubs(tmp_path, *, cygpath=True, kernel="MINGW64_NT-10.0"):
+def _stubs(tmp_path, *, cygpath=True):
     bindir = tmp_path / "bin"
     bindir.mkdir()
-    files = {"python3": _PY_STUB % {"real": os.path.realpath(sys.executable), "drive": DRIVE},
-             "uname": _UNAME_STUB % {"real": shutil.which("uname"), "kernel": kernel}}
+    files = {"python3": _PY_STUB % {"real": os.path.realpath(sys.executable), "drive": DRIVE}}
     if cygpath:
         files["cygpath"] = _CYGPATH_STUB % {"drive": DRIVE}
     for name, body in files.items():
@@ -81,13 +74,14 @@ def _stubs(tmp_path, *, cygpath=True, kernel="MINGW64_NT-10.0"):
 
 
 class Run:
-    def __init__(self, tmp_path, pathconv, **stub_kw):
+    def __init__(self, tmp_path, pathconv, ostype="msys", **stub_kw):
         self.root = pathlib.Path(init_repo(tmp_path / "repo"))
         (self.root / ".crew").mkdir(exist_ok=True)
         (self.root / ".crew" / "config.json").write_text('{"memory": {"inject": false}}', encoding="utf-8")
         self.log = tmp_path / "py.log"
         env = crew_fixtures.isolated_home_env(tmp_path / "home")
         env["PATH"] = str(_stubs(tmp_path, **stub_kw)) + os.pathsep + env["PATH"]
+        env["OSTYPE"] = ostype
         env["CREW_TEST_PY_LOG"] = str(self.log)
         env["CLAUDE_PROJECT_DIR"] = str(self.root)
         env.pop("MSYS_NO_PATHCONV", None)
@@ -184,7 +178,7 @@ def test_helper_without_cygpath_hands_the_input_path_unchanged(tmp_path):
 @needs_bash
 @needs_linux_fixture
 def test_helper_on_a_posix_host_hands_the_input_path_unchanged(tmp_path):
-    run = Run(tmp_path, "", kernel="Linux")
+    run = Run(tmp_path, "", ostype="linux-gnu")
 
     _, scripts, rejected = run.run("crew-context.sh", [], _CLEAR)
 
@@ -210,13 +204,44 @@ def test_helper_falls_back_to_the_input_when_cygpath_fails(tmp_path):
     bindir = _stubs(tmp_path, cygpath=False)
     (bindir / "cygpath").write_text("#!/bin/bash\nexit 1\n", encoding="utf-8", newline="\n")
     (bindir / "cygpath").chmod(0o755)
-    env = dict(os.environ, PATH=str(bindir) + os.pathsep + os.environ["PATH"])
+    env = dict(os.environ, PATH=str(bindir) + os.pathsep + os.environ["PATH"], OSTYPE="msys")
     script = f'. "{SCRIPTS}/_common.sh"; crew_native_path "$1"'
 
     done = subprocess.run([BASH, "-c", script, "_", "/d/x/y.py"], capture_output=True, text=True,
                           encoding="utf-8", env=env, check=False)
 
     assert (done.returncode, done.stdout) == (0, "/d/x/y.py")
+
+
+@needs_bash
+@needs_linux_fixture
+@pytest.mark.parametrize("ostype", ["msys", "cygwin"])
+@pytest.mark.parametrize("given,want", [
+    ("D:/x/y.py", "D:/x/y.py"),          # mixed: printed as it is, cygpath never asked
+    ("/d/x/y.py", f"{DRIVE}/d/x/y.py"),   # every other shape still goes through cygpath
+], ids=["mixed", "posix"])
+def test_helper_skips_cygpath_only_for_a_mixed_path(tmp_path, ostype, given, want):
+    """crew_hook.py starts every .sh by its `D:/...` path, so a guard's `$DIR`
+    is already mixed; asking cygpath for it was an MSYS process start per call."""
+    bindir = _stubs(tmp_path)
+    env = dict(os.environ, PATH=str(bindir) + os.pathsep + os.environ["PATH"], OSTYPE=ostype)
+    script = (f'. "{SCRIPTS}/_common.sh"; crew_native_path "$1"; '
+              f'crew_py_script "{SCRIPTS}/_common.sh" V; printf "|%s" "${{V:+set}}"')
+
+    done = subprocess.run([BASH, "-c", script, "_", given], capture_output=True, text=True,
+                          encoding="utf-8", env=env, check=False)
+
+    assert (done.returncode, done.stdout) == (0, want + "|set")
+
+
+@needs_bash
+def test_bash_keeps_an_inherited_ostype():
+    """The fixture above fakes Windows by exporting OSTYPE; that only works
+    because bash sets OSTYPE only when it is not already set."""
+    env = dict(os.environ, OSTYPE="crew-fixture-os")
+    done = subprocess.run([BASH, "-c", 'printf %s "$OSTYPE"'], capture_output=True, text=True,
+                          env=env, check=False)
+    assert done.stdout == "crew-fixture-os"
 
 
 # Callers a fixture cannot drive cheaply (context-watch needs a live transcript,
@@ -233,19 +258,47 @@ _DEFERRED = {("handoff-write.sh", "crew_resume.py")}
 
 
 
+# `crew_py_script` wraps `crew_native_path` and refuses an empty or missing
+# script (crew 1.2.109), so it is as good as the bare helper at a call site.
+_ALLOWED_HELPERS = ('crew_native_path "', 'crew_py_script "')
+
+
+def _unwrapped_script_paths(name, line):
+    """The `$DIR`-derived script paths on `line` that no allowed helper wraps."""
+    if line.lstrip().startswith("#"):
+        return []
+    return [found.group(0) for found in _SCRIPT_PATH.finditer(line)
+            if not any(found.group(0).endswith("/" + script) and name == hook for hook, script in _DEFERRED)
+            and not line[:found.start()].endswith(_ALLOWED_HELPERS)]
+
+
 @pytest.mark.parametrize("name", _NON_HARNESS)
 def test_every_script_path_in_a_non_harness_hook_goes_through_the_helper(name):
     offenders = []
     for number, line in enumerate((SCRIPTS / name).read_text(encoding="utf-8").splitlines(), 1):
-        if line.lstrip().startswith("#"):
-            continue
-        for found in _SCRIPT_PATH.finditer(line):
-            if any(found.group(0).endswith("/" + script) and name == hook for hook, script in _DEFERRED):
-                continue
-            if not line[:found.start()].endswith('crew_native_path "'):
-                offenders.append(f"{name}:{number}: {line.strip()}")
+        if _unwrapped_script_paths(name, line):
+            offenders.append(f"{name}:{number}: {line.strip()}")
 
     assert offenders == []
+
+
+@pytest.mark.parametrize("line", [
+    'GUARD_PY=$(crew_py_script "$DIR/cloud_guard.py") || exit 2',
+    'X=$(crew_py_script "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py")',
+    '"$PY" "$(crew_native_path "$DIR/x.py")"',
+], ids=["py-script-dir", "py-script-dirname", "native-path"])
+def test_an_allowed_helper_wrapping_a_script_path_is_not_flagged(line):
+    assert _unwrapped_script_paths("cloud-guard.sh", line) == []
+
+
+@pytest.mark.parametrize("line", [
+    '"$PY" "$DIR/cloud_guard.py"',
+    'GUARD_PY="$DIR/cloud_guard.py"',
+    '"$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_tree.py"',
+    'GUARD_PY=$(crew_py_script_not "$DIR/cloud_guard.py")',
+], ids=["bare-dir", "assigned-bare", "bare-dirname", "lookalike-helper"])
+def test_a_bare_script_path_is_still_flagged(line):
+    assert _unwrapped_script_paths("cloud-guard.sh", line) != []
 
 
 @pytest.mark.parametrize("name", _NON_HARNESS)

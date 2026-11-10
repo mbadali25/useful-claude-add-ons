@@ -2259,11 +2259,12 @@ MUTATIONS = (
         '              + "\\x1d" + str(int(max_cost))\n   '
         '              + "\\x1d" + extras\n   '
         '              + "\\x1d" + cover_record\n   '
-        '              + "\\x1d" + "\\x1e".join("1" if c in tree_cached else "" for c in cmds) + "\\n")',
+        '              + "\\x1d" + "\\x1e".join("1" if c in tree_cached else "" for c in cmds)\n   '
+        '              + "\\x1d" + owner_record + "\\n")',
         'print("\\x1e".join(cmds))\nprint("\\x1e".join(unmatched'
         '))\nprint("\\x1e".join(notices))\nprint(str(acute_count'
         '))\nprint(str(int(max_cost)))\nprint(extras)\nprint(cover_record)'
-        '\nprint("\\x1e".join("1" if c in tree_cached else "" for c in cmds))',
+        '\nprint("\\x1e".join("1" if c in tree_cached else "" for c in cmds))\nprint(owner_record)',
         ("tests/test_verify_gate_rule_framing.py::"
          "test_the_two_halves_of_the_framing_contract_agree"),
     ),
@@ -2716,7 +2717,8 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + PROMOTE_TREE_MUTATIONS + CONTRACT_MUTATIONS + BRIDGE_MUTATIONS + sabotage_platform.PLATFORM_MUTATIONS
               + BUDGET_MUTATIONS)
 MUTATIONS += (__import__("sabotage_reach_notice").REACH_NOTICE_MUTATIONS + __import__("sabotage_quiet").QUIET_MUTATIONS
-              + __import__("sabotage_crew_hook").CREW_HOOK_MUTATIONS)
+              + __import__("sabotage_crew_hook").CREW_HOOK_MUTATIONS
+              + __import__("sabotage_deadline").DEADLINE_MUTATIONS)
 
 # pytest's own exit codes: 0 all passed, 1 a test FAILED, 2 interrupted, 3
 # internal error, 4 usage error (what a collection failure produces), 5 nothing
