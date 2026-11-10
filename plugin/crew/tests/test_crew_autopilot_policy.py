@@ -755,7 +755,8 @@ def test_approve_is_the_only_writing_subcommand(tmp_path, monkeypatch, capsys):
     config["autopilot"]["sleep"] = {"approval": "human"}
     _write(root / ".crew" / "config.json", json.dumps(config))
     _questions(root, GOOD_QUESTIONS)
-    monkeypatch.setattr(crew_autopilot, "_no_round_after_successor", lambda *_a: None)
+    monkeypatch.setattr(crew_autopilot.crew_autopilot_replan, "no_round_after_successor",
+                        lambda *_a: None)
     before = _files(root)
 
     for run in READ_ONLY_RUNS:

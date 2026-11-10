@@ -101,7 +101,8 @@ def _grant_free(monkeypatch):
     ledger `_block_round` accepts (a successor never reopens the budget), so
     the real policy never reaches it; `test_auto_replan_refuses_when_no_round_would_remain`
     holds the real refusal."""
-    monkeypatch.setattr(crew_autopilot, "_no_round_after_successor", lambda *_a: None)
+    monkeypatch.setattr(crew_autopilot.crew_autopilot_replan, "no_round_after_successor",
+                        lambda *_a: None)
 
 
 def _ledger(root, rounds=None, state="REVIEWED", successors=None, rejected=None, raw=None,
