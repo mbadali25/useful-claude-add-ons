@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.24**: Promote-gate reads deploy policy from the sha being deployed, not the session's checkout. `crew` 1.3.24 reads every promote-gate requirement (`requires`, `rollback`, `requireHuman`, a `github` entry's `shaInput` and `requireReview`) from the `.crew/verify.json` committed in the sha being deployed, so a deploy from a git worktree honours a waiver committed on its own branch and is no longer blocked by the main checkout's uncommitted map.
+- **crew 1.3.25**: Promote-gate reads deploy policy from the sha being deployed, not the session's checkout. `crew` 1.3.25 reads every promote-gate requirement (`requires`, `rollback`, `requireHuman`, a `github` entry's `shaInput` and `requireReview`) from the `.crew/verify.json` committed in the sha being deployed, so a deploy from a git worktree honours a waiver committed on its own branch and is no longer blocked by the main checkout's uncommitted map.
 - **crew 1.3.23**: `environments.preProduction` treats a named production-labelled environment as not live yet. `crew` 1.3.23: a new repo-only setting, `environments.preProduction`, lists by exact name (each with a written reason) an environment that is labelled production but not live yet, so the cloud guard judges it as non-production without turning any guard off; every use prints and logs an audit line, and everything not listed is judged as before.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
