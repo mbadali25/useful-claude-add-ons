@@ -88,6 +88,12 @@ def _review_json(repo, text):
     (folder / "review.json").write_text(text, encoding="utf-8")
 
 
+def _prior(repo, **kw):
+    """Every round before the final one: the budget's first rounds."""
+    for _ in range(rl.BUDGET - 1):
+        _good(repo, **kw)
+
+
 def _good(repo, **kw):
     merged = dict(GOOD, **kw)
     return _round(repo, **merged)
@@ -123,28 +129,28 @@ def _ledger_bytes(repo):
 
 def _final_with(**kw):
     def build(repo):
-        _good(repo)
+        _prior(repo)
         _round(repo, **dict(GOOD, **kw))
     return build
 
 
 def _incomplete(failure):
     def build(repo):
-        _good(repo)
+        _prior(repo)
         _round(repo, verdict="INCOMPLETE", failure_class=failure, **GOOD)
     return build
 
 
 def _incomplete_unrefunded(repo):
-    _round(repo, verdict="INCOMPLETE", failure_class="tool", **GOOD)
-    _round(repo, verdict="INCOMPLETE", failure_class="tool", **GOOD)
-    _good(repo)
+    for _ in range(rl.REFUND_LIMIT):
+        _round(repo, verdict="INCOMPLETE", failure_class="tool", **GOOD)
+    _prior(repo)
     _round(repo, verdict="INCOMPLETE", failure_class="tool", **GOOD)
     assert rl.status(str(repo), T)["rounds"][-1]["refunded"] is False
 
 
 def _clean(repo):
-    _good(repo)
+    _prior(repo)
     _round(repo, verdict="CLEAN", counts={"BLOCK": 0, "FIX": 0, "NIT": 0}, findings=[],
            webtest_open="not-applicable")
 
@@ -162,25 +168,25 @@ def _round_one_only(repo):
 
 
 def _stale(repo):
-    _good(repo)
+    _prior(repo)
     _good(repo)
     (repo / "feature.txt").write_text("feature v2, edited after review\n", encoding="utf-8")
 
 
 def _needs_replan(repo):
-    _good(repo)
+    _prior(repo)
     _good(repo)
     assert rl.reserve(str(repo), T, "codex")[0] is False
 
 
 def _already(repo):
-    _good(repo)
+    _prior(repo)
     _good(repo)
     assert _auto(repo).returncode == 0
 
 
 def _pre_change(repo):
-    _good(repo)
+    _prior(repo)
     _good(repo)
 
     def strip(data):
@@ -190,24 +196,24 @@ def _pre_change(repo):
 
 
 def _superseded(repo):
-    _good(repo)
+    _prior(repo)
     _good(repo)
 
     def successor(data):
-        data["successors"] = [{"plan_sha256": "a" * 64, "after_round": 2}]
+        data["successors"] = [{"plan_sha256": "a" * 64, "after_round": rl.BUDGET}]
         data["state"] = rl.IN_REVIEW
         data["receipt"] = None
     _edit(repo, successor)
 
 
 def _plain_final(repo):
-    _good(repo)
+    _prior(repo)
     _good(repo)
 
 
 def _final_by(provider, family):
     def build(repo):
-        _good(repo)
+        _prior(repo)
         _good(repo, provider=provider, family=family)
     return build
 
@@ -229,7 +235,7 @@ def _review_json_with(**fields):
 
 def _final_then(change):
     def build(repo):
-        _good(repo)
+        _prior(repo)
         _good(repo)
         change(repo)
     return build
@@ -237,7 +243,7 @@ def _final_then(change):
 
 def _final_row_edit(change):
     def build(repo):
-        _good(repo)
+        _prior(repo)
         _good(repo)
         _edit(repo, lambda data: change(data["rounds"][-1]))
     return build
@@ -317,7 +323,7 @@ REFUSALS = [
     ("review-json-ignored-negative", _final_then(_review_json_with(ignored_lines=-1)), FOLLOW,
      "no readable ignored_lines count"),
     ("review-json-other-round", _final_then(_review_json_with(round=1)), FOLLOW,
-     "is not round 2's"),
+     f"is not round {rl.BUDGET}'s"),
     ("review-json-other-bundle", _final_then(_review_json_with(bundle_sha256="0" * 64)),
      FOLLOW, "is for bundle"),
     ("review-json-no-bundle", _final_then(_review_json_with(bundle_sha256=_ABSENT)), FOLLOW,
@@ -326,7 +332,7 @@ REFUSALS = [
     ("webtest-open-none", _final_with(webtest_open=None), FOLLOW, "webtest"),
     ("webtest-open-false", _final_with(webtest_open=False), FOLLOW, "webtest"),
     ("webtest-open-1", _final_with(webtest_open=1), FOLLOW, "webtest"),
-    ("round-1-of-2", _round_one_only, FOLLOW, "not the final round"),
+    ("first-round-of-three", _round_one_only, FOLLOW, "not the final round"),
     ("stale-tree", _stale, FOLLOW, "tree has changed"),
     ("needs-replan", _needs_replan, FOLLOW, rl.NEEDS_REPLAN),
     ("already-accepted", _already, FOLLOW, "already accepted"),
@@ -369,7 +375,7 @@ def _receipt(repo):
 
 
 def test_auto_accept_writes_the_auto_receipt(repo):
-    _good(repo, counts={"BLOCK": 1, "FIX": 0, "NIT": 0}, findings=[BLOCK_LINE])
+    _prior(repo, counts={"BLOCK": 1, "FIX": 0, "NIT": 0}, findings=[BLOCK_LINE])
     lines = [FIX_LINE, "FIX|src/d.py:1|second fix|read it", NIT_LINE]
     _good(repo, counts={"BLOCK": 0, "FIX": 2, "NIT": 1}, findings=lines)
 
@@ -381,43 +387,45 @@ def test_auto_accept_writes_the_auto_receipt(repo):
                                      "follow_up", "model_family")},
             rl.status(str(repo), T)["state"]) == (
         {"kind": "auto-accepted", "accepted_by": "auto: 0 BLOCK, owner policy 2026-09-30",
-         "round": 2, "verdict": "FINDINGS", "findings": lines, "follow_up": FOLLOW,
+         "round": rl.BUDGET, "verdict": "FINDINGS", "findings": lines, "follow_up": FOLLOW,
          "model_family": "gpt"}, rl.ACCEPTED)
     assert result.stdout.splitlines()[1:] == lines
 
 
 def test_auto_accept_after_a_refunded_round(repo):
-    _good(repo)
+    _prior(repo)
     assert "not the final round" in _auto(repo).stderr
     _round(repo, verdict="INCOMPLETE", failure_class="tool", **GOOD)
     _good(repo)
 
     result = _auto(repo)
 
-    assert (result.returncode, _receipt(repo)["round"]) == (0, 3), result.stderr
+    assert (result.returncode, _receipt(repo)["round"]) == (0, rl.BUDGET + 1), result.stderr
 
 
-def test_auto_accept_on_the_successor_plans_final_round(repo, monkeypatch):
-    _good(repo, counts={"BLOCK": 1, "FIX": 0, "NIT": 0}, findings=[BLOCK_LINE])
+def test_auto_accept_on_the_granted_rounds_final_round(repo, monkeypatch):
+    """A successor plan does not reopen the budget: after the budget is spent
+    only an owner grant gives the successor a round, and that round is the final
+    one (the allowance is the budget plus the grant)."""
+    _prior(repo, counts={"BLOCK": 1, "FIX": 0, "NIT": 0}, findings=[BLOCK_LINE])
     _good(repo, counts={"BLOCK": 1, "FIX": 0, "NIT": 0}, findings=[BLOCK_LINE])
     assert rl.reserve(str(repo), T, "codex")[0] is False
     monkeypatch.setattr(rl, "_plan_approval_receipt", lambda root, ticket, plan_hash: (
         {"approved_by": "owner", "approved_at": "now"}, None))
+    assert rl.continue_with_successor_plan(str(repo), T, "b" * 64)[0] is False
+    rl.grant_round(str(repo), T, "owner", "one more round")
     assert rl.continue_with_successor_plan(str(repo), T, "b" * 64)[0] is True
-    _good(repo)
-    with pytest.raises(rl.LedgerError, match="not the final round"):
-        rl.auto_accept(str(repo), T, FOLLOW)
     _good(repo)
 
     receipt = rl.auto_accept(str(repo), T, FOLLOW)
 
-    assert (receipt["kind"], receipt["round"]) == ("auto-accepted", 4)
+    assert (receipt["kind"], receipt["round"]) == ("auto-accepted", rl.BUDGET + 1)
 
 
 @pytest.mark.parametrize("provider, family", [("codex", "gpt"), ("kimi", "kimi")],
                          ids=["codex", "kimi"])
 def test_auto_accept_cross_family_round(repo, provider, family):
-    _good(repo)
+    _prior(repo)
     _good(repo, provider=provider, family=family)
 
     result = _auto(repo)
@@ -428,7 +436,7 @@ def test_auto_accept_cross_family_round(repo, provider, family):
 @pytest.mark.parametrize("provider, family", [("codex", "gpt"), ("kimi", "kimi")],
                          ids=["codex", "kimi"])
 def test_auto_receipt_names_the_rows_provider_and_family_and_stands(repo, provider, family):
-    _good(repo)
+    _prior(repo)
     _good(repo, provider=provider, family=family)
     assert _auto(repo).returncode == 0
 
@@ -461,7 +469,7 @@ def test_owner_accept_refuses_the_auto_prefix(repo, by):
 
 
 def test_owner_accept_still_takes_a_block_round(repo):
-    _good(repo)
+    _prior(repo)
     _good(repo, counts={"BLOCK": 1, "FIX": 0, "NIT": 0}, findings=[BLOCK_LINE])
 
     result = _cli(repo, "--accept", "--by", "Matthew Badali")
@@ -540,7 +548,7 @@ def _review_json_path(repo):
 
 
 def _accepted(repo):
-    _good(repo)
+    _prior(repo)
     _good(repo)
     assert _auto(repo).returncode == 0
 
@@ -622,7 +630,7 @@ def test_auto_receipt_does_not_stand_once_review_json_moves(repo, tamper):
     '{"round": 1, "round": 2, "ignored_lines": 0}',
 ], ids=["top-level", "nested", "in-a-list", "round-key"])
 def test_auto_accept_refuses_duplicate_keys_in_review_json(repo, text):
-    _good(repo)
+    _prior(repo)
     _good(repo)
     data = json.loads(_review_json_path(repo).read_text(encoding="utf-8"))
     body = json.dumps({k: v for k, v in data.items() if k not in ("round", "ignored_lines")})
@@ -636,7 +644,7 @@ def test_auto_accept_refuses_duplicate_keys_in_review_json(repo, text):
 
 
 def test_auto_accept_refuses_a_symlinked_review_json(repo):
-    _good(repo)
+    _prior(repo)
     _good(repo)
     _rj_symlink(repo)
 
@@ -660,7 +668,7 @@ def test_auto_accept_refuses_a_bool_round_in_review_json(repo):
 
 
 def test_auto_accept_refuses_a_review_json_for_another_bundle(repo):
-    _good(repo)
+    _prior(repo)
     _good(repo)
     data = json.loads(_review_json_path(repo).read_text(encoding="utf-8"))
     data["bundle_sha256"] = "0" * 64
@@ -692,7 +700,7 @@ def test_step3_closure_commands_quote_the_plugin_root():
 # --- review round 6 FIX 4: only "\n" separates direction.md lines -------------
 
 def _follow_two(repo, sep, end="\n"):
-    _good(repo)
+    _prior(repo)
     _good(repo)
     assert _auto(repo).returncode == 0
     folder = repo / ".work" / "tickets" / FOLLOW
@@ -820,7 +828,7 @@ def test_check_follow_up_refuses_by_name(repo, write, named):
 
 @pytest.mark.parametrize("copies, code", [(1, 1), (2, 0)], ids=["one-copy", "two-copies"])
 def test_check_follow_up_counts_duplicate_lines(repo, copies, code):
-    _good(repo)
+    _prior(repo)
     _good(repo, counts={"BLOCK": 0, "FIX": 2, "NIT": 0}, findings=[FIX_LINE, FIX_LINE])
     assert _auto(repo).returncode == 0
     _direction(repo, f"# {FOLLOW}\n\n```\n" + f"{FIX_LINE}\n" * copies + "```\n")
@@ -834,7 +842,7 @@ def test_check_follow_up_keeps_a_u2028_finding_on_one_line(repo):
     """Review round 4 FIX 2: only a newline separates the protocol's lines, so a
     finding carrying U+2028, quoted verbatim on one line, is quoted."""
     line = "FIX|src/a.py:12|left\u2028right|run it"
-    _good(repo)
+    _prior(repo)
     _good(repo, counts={"BLOCK": 0, "FIX": 1, "NIT": 0}, findings=[line])
     assert _auto(repo).returncode == 0
     _direction(repo, f"# {FOLLOW}\n\n```\n{line}\n```\n")
@@ -861,7 +869,7 @@ def _cp1252_cli(repo, *args):
 
 
 def test_auto_accept_prints_a_non_cp1252_finding_on_a_cp1252_console(repo):
-    _good(repo)
+    _prior(repo)
     _good(repo, counts={"BLOCK": 0, "FIX": 1, "NIT": 0}, findings=[_NOT_CP1252])
 
     code, out, err = _cp1252_cli(repo, "--auto-accept", "--follow-up", FOLLOW)
@@ -871,7 +879,7 @@ def test_auto_accept_prints_a_non_cp1252_finding_on_a_cp1252_console(repo):
 
 
 def test_check_follow_up_names_a_non_cp1252_line_on_a_cp1252_console(repo):
-    _good(repo)
+    _prior(repo)
     _good(repo, counts={"BLOCK": 0, "FIX": 1, "NIT": 0}, findings=[_NOT_CP1252])
     assert _auto(repo).returncode == 0
     _direction(repo, f"# {FOLLOW}\n")
@@ -882,7 +890,7 @@ def test_check_follow_up_names_a_non_cp1252_line_on_a_cp1252_console(repo):
 
 
 def test_a_refusal_quoting_a_non_cp1252_finding_reaches_a_cp1252_stderr(repo):
-    _good(repo)
+    _prior(repo)
     _good(repo, counts={"BLOCK": 0, "FIX": 1, "NIT": 0}, findings=["READ|\u4e2d.py"])
 
     code, _, err = _cp1252_cli(repo, "--auto-accept", "--follow-up", FOLLOW)
@@ -995,9 +1003,10 @@ def test_finish_without_ignored_lines_cannot_tell(repo, tmp_path, monkeypatch, c
 
 def test_finish_prints_the_auto_accept_eligibility(repo, tmp_path, monkeypatch, capsys):
     _record_with_ignored_lines(monkeypatch, repo)
-    _finish(repo, tmp_path, monkeypatch, (None, None, []), "one")
+    for name in range(rl.BUDGET - 1):
+        _finish(repo, tmp_path, monkeypatch, (None, None, []), f"early{name}")
     first = capsys.readouterr().out
-    _finish(repo, tmp_path, monkeypatch, (None, None, []), "two")
+    _finish(repo, tmp_path, monkeypatch, (None, None, []), "last")
     second = capsys.readouterr().out
 
     assert ("review: auto-accept: refused - not the final round" in first,

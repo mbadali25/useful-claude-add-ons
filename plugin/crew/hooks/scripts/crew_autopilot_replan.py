@@ -127,6 +127,21 @@ def replan_check(root, ticket):
     return _result(True, True, f"successor plan quotes all {len(lines)} BLOCK and FIX line(s)")
 
 
+def no_round_after_successor(data, state, ticket, path):
+    """L-0717: why a successor plan would have no review round, or None. A
+    successor plan does not reopen the ticket's one budget, so a reject here
+    would approve a plan that cannot get a round. Only an owner grant
+    (review_ledger.py --grant-round) gives it one, and autopilot never grants."""
+    summary = review_ledger.summary(data, state, ticket, path)
+    left = summary.get("rounds_left")
+    if isinstance(left, int) and not isinstance(left, bool) and left >= 1:
+        return None
+    return (f"no review round would remain after the successor plan: "
+            f"{summary.get('rounds_spent')} of {summary.get('budget')} used, and a successor "
+            "plan does not reopen the budget; the owner's grant (review_ledger.py "
+            "--grant-round) is missing and autopilot never grants one")
+
+
 def add_parsers(sub):
     """`replan-check` on crew_autopilot.py's subparsers."""
     parser = sub.add_parser("replan-check")

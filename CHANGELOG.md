@@ -29,6 +29,21 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.32: re-bump only - the two tests that patch `no_round_after_successor` now patch it in `crew_autopilot_replan` (tests only); the change is recorded under crew 1.3.19
+- crew 1.3.33: re-bump only - merge of main's crew 1.3.30 into the L-0717 budget branch; the budget change is recorded under crew 1.3.19 and 1.3.20, and `no_round_after_successor` moved from `crew_autopilot.py` to `crew_autopilot_replan.py` to stay under the 3400-line module limit
+- crew 1.2.85: re-bump only - interim number on the L-0717 branch (commit 4a4ae04); the change is recorded under crew 1.3.19
+- crew 1.2.87: re-bump only - interim number on the L-0717 branch (commit e8a027c); the change is recorded under crew 1.3.19
+- crew 1.2.88: re-bump only - interim number on the L-0717 branch (commit 188cded); the change is recorded under crew 1.3.19
+
+### Fixed — crew 1.3.20: the docs no longer say a successor plan opens a fresh review budget (L-0717)
+
+- **Summary.** `crew` 1.3.20: `plugin/crew/README.md` and `docs/crew/config-rationale.md` said the NEEDS_REPLAN -> IN_REVIEW successor continuation opens a fresh review budget; since 1.3.19 it keeps the budget the ticket has left. Wording only, no code change.
+- Docs: the two files above; the crew guide does not carry the phrase (`build.py --check` clean).
+
+### Changed — crew 1.3.19: one review budget of three per ticket, counted across successor plans; the owner's `--grant-round` (L-0717, absorbs L-0781)
+
+- **Summary.** `crew` 1.3.19: a ticket now gets three review rounds in total, a successor plan no longer reopens them, and only the owner's `review_ledger.py --grant-round` adds a round.
+- `review_ledger.py`: `BUDGET` 3, `REFUND_LIMIT` 3 counted per ticket, a recorded `grants` list (malformed is could-not-tell), `--grant-round --by --reason` (refused while rounds remain, for `auto:`/autopilot names, multi-line text), successor rows carry `carry_over: true` (a row written before keeps resetting). `scope_guard.py` refuses the verb to subagents with every abbreviation; `review_run.py` and `crew_status.py` print the ledger's budget; `crew_autopilot.py` refuses an auto-reject whose successor would have no round (seam; bug fix under the L-0727 freeze, manifest updated). Docs: updated, with a drift test (`test_review_budget.py`).
 - crew 1.2.88: re-bump only - interim number on the L-0718 branch (commit e2f8ab0); the change is recorded under crew 1.3.30
 - crew 1.2.90: re-bump only - interim number on the L-0718 branch (commit ee4309a); the change is recorded under crew 1.3.30
 - crew 1.3.24: re-bump only - interim number on the context-watch branch before main reached 1.3.25; the change is recorded under crew 1.3.26
@@ -46,9 +61,9 @@ read entries under any `## [` heading.
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 
-### Changed — crew 1.3.31: the `fable` model alias now names Claude Fable 5.2 (`claude-fable-5-2`)
+### Changed — crew 1.3.33: the `fable` model alias now names Claude Fable 5.2 (`claude-fable-5-2`)
 
-- **Summary.** `crew` 1.3.31: the `fable` pin in `dev.roles.<role>.model` is documented as Claude Fable 5.2 (`claude-fable-5-2`, listed on the vendor models overview page); `fable` is still honoured only as an explicit pin and nothing in crew selects it.
+- **Summary.** `crew` 1.3.33: the `fable` pin in `dev.roles.<role>.model` is documented as Claude Fable 5.2 (`claude-fable-5-2`, listed on the vendor models overview page); `fable` is still honoured only as an explicit pin and nothing in crew selects it.
 - `plugin/crew/hooks/scripts/crew_metrics.py`: `claude-fable-5-2` priced at $8 / $40 per MTok with cache reads at $0.20 (2.5%), from the models overview page; without the entry the longest-prefix lookup would have priced it as `claude-fable-5` ($10 / $50).
 - `plugin/crew/hooks/scripts/crew_wave.py`, `plugin/crew/commands/model.md`, `plugin/crew/README.md`, `docs/guides/crew/src/guide.md`, `.crew/codemap/crew.md`: the alias text names Fable 5.2. The full id `claude-fable-5-1` is still accepted as an explicit pin (test row kept). No config key, value or default changed, so the Configuration Guide reference is unchanged.
 - `plugin/crew/tests/test_crew_wave.py`: the `fable` launch-line test also pins `claude-fable-5-2`.

@@ -1548,15 +1548,16 @@ def test_graph_out_with_no_config_file_is_the_default(repo):
 def test_run_kimi_with_no_round_left_still_answers_a_clean_receipt(repo, tmp_path):
     """A CLEAN receipt on the last round answers CLEAN, nothing spent, as for
     every other provider; the no-round-left refusal comes only without one."""
-    first, _ = _run(repo, tmp_path, mode="findings")
+    for _ in range(rl.BUDGET - 1):
+        first, _ = _run(repo, tmp_path, mode="findings")
+        assert first.returncode == 1
     second, _ = _run(repo, tmp_path, mode="clean")
-    assert (first.returncode, second.returncode,
-            rl.status(str(repo), "T1")["rounds_left"]) == (1, 0, 0), second.stderr
+    assert (second.returncode, rl.status(str(repo), "T1")["rounds_left"]) == (0, 0), second.stderr
 
     third, _ = _run(repo, tmp_path, mode="clean")
 
     assert (third.returncode, "CLEAN from the existing receipt" in third.stdout,
-            len(rl.status(str(repo), "T1")["rounds"])) == (0, True, 2), (
+            len(rl.status(str(repo), "T1")["rounds"])) == (0, True, rl.BUDGET), (
         third.stdout + third.stderr)
 
 
