@@ -53,6 +53,13 @@ read entries under any `## [` heading.
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 
+### Changed — crew 1.3.34: the sabotage and tooling-PR harness accepts the opt-in plugin layout (L-0724 slice 1)
+
+- **Summary.** `crew` 1.3.34: the sabotage suites and the tooling-PR checker now find their targets in either the core plugin or the opt-in plugin they are about to move to, so L-0724's later slices move files without touching the harness; no behaviour a user runs changes.
+- `plugin/crew/tests/sabotage.py`, `sabotage_autopilot.py`: `_first_file` resolves the promote, gate, house-style and autopilot targets (opt-in path first, core path second) and raises when neither exists; `UPGRADE_DOC` no longer falls back to the deleted-to-be `commands/upgrade.md`.
+- `scripts/check-tooling-pr.py`, `.crew/verify.json`: `plugin/crew-autopilot/commands/autopilot.md` is a seam beside the core path; two cases in `scripts/_test/tooling-pr.py` hold it.
+- `plugin/crew/tests/optin_inventory.py`, `tests/data/optin_inventory.json`, `tests/test_optin_inventory.py`: a generated inventory of anchored mutations, `${CLAUDE_PLUGIN_ROOT}` references in the Markdown that moves, and the core scripts that need a shim; the anchor guard fails a slice that edits an anchored line; the staleness test compares with CRLF folded to LF so a Windows autocrlf checkout does not read as stale. Docs: none - harness test and inventory only.
+
 ### Added — crew 1.3.33: the human-only opt-out goes live for plan approval (harness half)
 
 - **Summary.** `crew` 1.3.33: once you have typed `/crew:confirm-config <id>` twice, `humanOnly.approve: false` now takes effect (an autopilot-recorded approval counts without hand-editing `scope.allowCliApproval`), and `/crew:approve-mass <id>` exists as a user-typed yes that the session cannot write; `humanOnly.promoteMarker` is still read by no hook.
