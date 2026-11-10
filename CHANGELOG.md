@@ -21,6 +21,7 @@ read entries under any `## [` heading.
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.34; the change is recorded under crew 1.3.36
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.33; the change is recorded under crew 1.3.34
 - crew 1.3.34: re-bump only - interim number on the mass-guard branch before main reached 1.3.35; the change is recorded under crew 1.3.36
+- obsidian-vault 0.5.1: re-bump only - main's version carried in by this branch's earlier merge of main (commit bd1a467e8); main's own entry records the change and it has since moved to 0.5.2
 - crew 1.3.21: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.32; the change is recorded under crew 1.3.33
 - crew 1.3.24: re-bump only - interim number on the context-watch branch before main reached 1.3.25; the change is recorded under crew 1.3.26
 - crew 1.3.27: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.32; the change is recorded under crew 1.3.33
@@ -55,6 +56,28 @@ read entries under any `## [` heading.
 - Code: new `crew_mass.py`; `cloud_guard.py` classifies and judges it (the `_classify` hook, `evaluate(mass=...)`, and `main` arming it even where `guards.cloudGuard` is `off`); six `guards.mass.*` keys in `crew_keys.py`, defaults in `crew_guards.GUARD_BLOCK_DEFAULTS`, the config templates and the crew-setup inline copy. Stale 1.3.9 text the harness PR could not carry is fixed here: `commands/confirm-config.md`, `approve.md`, `config.md`, two `crew_keys.py` rows, `crew_humanonly.SENSITIVE_REFUSAL` and `crew_confirm_config.py resolve`'s closing line.
 - Tests: `test_mass_guard.py` (102 cases, must-block beside must-allow: the limit and one below, glob, regenerable directories, a repo living under `build/worktrees`, git index and branch counts, terraform plan, SQL filtered and not, the approval's forged, expired, future and cross-command forms, the switch and every malformed limit). `mass_mutations.py`: 40 mutations, all seen red; unwired until a harness-only PR registers it in `sabotage.py` (`sabotage*.py` is review harness).
 - Depends on #737 (crew 1.3.27, the harness half): `/crew:approve-mass`'s recorder, the scope guard's store protection and `crew_humanonly` opt-out. Not harness: nothing here touches a `HARNESS` path.
+### Fixed — install script: a piped `curl | bash` run no longer stops at find-skills, and find-skills installs user-level
+
+- **Summary.** The documented `curl … | bash` install now runs every selected step and prints its summary instead of stopping silently at `find-skills`, and `find-skills` lands in the user skills directory whatever directory the script was run from (bash side run against stubs on Linux; the PowerShell change was not executed).
+- **Cause, piped run.** Under `curl | bash` the script is bash's stdin and bash reads it a command
+  at a time. The `find-skills` step's `npx skills add` child inherited that pipe and read the rest
+  of the script, so community plugins and `claude-code-setup` never ran and no summary or
+  failed-step list was printed.
+- **Cause, wrong directory.** `npx skills add` was called without `--global`, so the `skills` CLI
+  wrote `./.claude/skills/find-skills` in the current directory and exited 0; the script's own
+  on-disk check then failed everywhere but `$HOME`.
+- **Fix.** `scripts/install-prerequisites.sh` is now one `{ … }` group, which bash parses to its
+  closing brace before running any of it, and the `find-skills` call is
+  `npx -y skills add … --global --yes </dev/null`. `scripts/install-prerequisites.ps1` passes the
+  same `--global --yes`; it has no stdin defect (`irm | iex` hands PowerShell the whole script as
+  one string), so it gets no wrapper.
+- **Rule for the next edit.** No code outside the brace group, and a child that could read stdin on
+  the piped path gets `</dev/null`. `scripts/_test/menu-groups.sh` case 9 pipes the script into
+  `bash -s` with stub `claude` and `npx` that drain stdin, in a temp `HOME`.
+- `INSTALLATION.md` and `MARKETPLACE.md` show the command as the scripts now run it. The README
+  install URLs are pinned to a commit and still serve the old scripts until they are re-pinned
+  after this merges.
+- No plugin or skill content changes, so no version moves.
 
 ### Added — crew 1.3.35: a stdlib checker for the review-finding rules (L-0715 PR B2)
 
