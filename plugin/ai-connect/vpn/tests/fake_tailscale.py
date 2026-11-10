@@ -6,6 +6,8 @@
   up_rc_userspace / up_stderr_userspace   the same, when --socket= is passed
   status_rc    exit code of `status` (default 0)
 
+`up` records the key it read from `--auth-key=file:<path>` as up_key.
+
 Every invocation's argv is appended to $FAKE_TS_LOG, one JSON list per line.
 """
 import json
@@ -33,6 +35,11 @@ def main() -> int:
         print(json.dumps({"BackendState": state.get("backend", "Stopped")}))
         return int(state.get("status_rc", 0))
     if cmd == "up":
+        for arg in args:
+            if arg.startswith("--auth-key=file:"):  # as tailscale does: the key is the file's trimmed text
+                with open(arg.removeprefix("--auth-key=file:"), encoding="utf-8") as fh:
+                    state["up_key"] = fh.read().strip()
+                save(state_path, state)
         suffix = "_userspace" if userspace else ""
         rc = int(state.get("up_rc" + suffix, state.get("up_rc", 0) if not userspace else 0))
         err = state.get("up_stderr" + suffix, "" if userspace else state.get("up_stderr", ""))

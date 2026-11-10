@@ -18,4 +18,4 @@
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DIR/_common.sh"
 PY=$(crew_py_strict) || { echo "crew platform-sync: no usable python (stub or unusable interpreter) - the platform config will not be repaired" >&2; exit 0; }
-exec "$PY" "$DIR/crew_platform.py"
+exec "$PY" "$(crew_native_path "$DIR/crew_platform.py")"

@@ -19,6 +19,7 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_config
 import crew_notify
+import crew_state
 from review_fixtures import init_repo
 
 TOKEN = "123456789:" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
@@ -233,6 +234,28 @@ def test_question_types_send(tmp_path, telegram, ntype):
     assert (_hook(root, _payload(ntype, root)), len(telegram.requests)) == ("sent", 1)
 
 
+def test_question_types_is_constant(tmp_path, telegram):
+    root = _repo(tmp_path, notify={"provider": "telegram", "tokenEnv": TOKEN_ENV, "chatId": CHAT,
+                                   "events": ["question"],
+                                   "questionTypes": ["agent_needs_input"]})
+
+    got = _hook(root, _payload("permission_prompt", root))
+
+    assert (crew_state.NOTIFY_QUESTION_TYPES, got, len(telegram.requests)) == (None, "sent", 1)
+
+
+def test_url_env_is_constant(tmp_path, monkeypatch, telegram):
+    base = os.environ["CREW_NOTIFY_TELEGRAM_BASE"]
+    monkeypatch.setenv("CREW_TEST_TEAMS_URL", base + "/teams")
+    _global(tmp_path, monkeypatch, {"tokenEnv": TOKEN_ENV, "urlEnv": "CREW_TEST_TEAMS_URL"})
+    root = _repo(tmp_path, notify={"provider": "teams", "urlEnv": "CREW_TEST_TEAMS_URL",
+                                   "events": ["deploy"]})
+
+    result = crew_notify.send(str(root), "deploy", "prod abc - pass", outcome="pass")
+
+    assert (crew_state.NOTIFY_URL_ENV, result, telegram.requests) == (None, "off", [])
+
+
 def test_askuserquestion_permission_prompt_is_a_question(tmp_path, telegram):
     root = _repo(tmp_path)
 
@@ -301,11 +324,11 @@ def test_global_provider_used_when_repo_null(tmp_path, monkeypatch, telegram):
 
 def test_repo_value_overrides_global(tmp_path, monkeypatch):
     _global(tmp_path, monkeypatch, {"provider": "telegram", "chatId": "111"})
-    root = _repo(tmp_path, notify={"provider": "teams", "chatId": "222"})
+    root = _repo(tmp_path, notify={"provider": "none", "chatId": "222"})
 
     cfg, _ = crew_notify.effective_config(str(root))
 
-    assert (cfg["provider"], cfg["chatId"]) == ("teams", "222")
+    assert (cfg["provider"], cfg["chatId"]) == ("none", "222")
 
 
 def test_skill_fallback_fills_null_chat_and_token_env(tmp_path, monkeypatch):
@@ -336,36 +359,6 @@ def test_repo_token_env_is_ignored(tmp_path, monkeypatch, telegram, capsys):
     paths = [request["path"] for request in telegram.requests]
     assert (first, second, paths, "repo's notify.tokenEnv is ignored" in capsys.readouterr().err
             ) == ("sent", "missing-credentials", [f"/bot{TOKEN}/sendMessage"], True)
-
-
-def test_repo_url_env_is_ignored(tmp_path, monkeypatch, telegram, capsys):
-    """urlEnv is tokenEnv's twin: its variable's value IS the request URL, and a
-    cloned repo's settings `env` can set any variable. A repo urlEnv is ignored
-    (the global one is used), and with no global one nothing is sent."""
-    base = os.environ["CREW_NOTIFY_TELEGRAM_BASE"]
-    monkeypatch.setenv("CREW_TEST_REPO_URL", base + "/diverted")
-    monkeypatch.setenv("CREW_TEST_TEAMS_URL", base + "/teams")
-    root = _repo(tmp_path, notify={"provider": "teams", "urlEnv": "CREW_TEST_REPO_URL",
-                                   "events": ["deploy"]})
-
-    _global(tmp_path, monkeypatch, {"urlEnv": "CREW_TEST_TEAMS_URL"})
-    first = crew_notify.send(str(root), "deploy", "prod abc - pass", outcome="pass")
-    _global(tmp_path, monkeypatch, {})
-    second = crew_notify.send(str(root), "deploy", "prod def - pass", outcome="pass")
-
-    paths = [request["path"] for request in telegram.requests]
-    assert (first, second, paths, "repo's notify.urlEnv is ignored" in capsys.readouterr().err
-            ) == ("sent", "missing-credentials", ["/teams"], True)
-
-
-def test_show_config_names_ignored_url_env(tmp_path, capsys):
-    root = _repo(tmp_path, notify={"provider": "teams", "urlEnv": "REPO_PICKED"})
-
-    crew_notify.show_config(str(root))
-
-    out = capsys.readouterr().out
-    shown = json.loads(out.splitlines()[-1])
-    assert (shown["urlEnv"], "repo's notify.urlEnv is ignored" in out) == (None, True)
 
 
 def test_show_config_masks_chat_id_and_names_ignored_token_env(tmp_path, capsys):
@@ -582,6 +575,17 @@ def test_dedupe_inside_window_sends_once(tmp_path, telegram):
                for _ in range(2)]
 
     assert (results, len(telegram.requests)) == (["sent", "deduped"], 1)
+
+
+def test_realert_hours_is_constant(tmp_path, telegram):
+    root = _repo(tmp_path, notify={"provider": "telegram", "tokenEnv": TOKEN_ENV, "chatId": CHAT,
+                                   "events": ["deploy"], "realertHours": 0})
+
+    results = [crew_notify.send(str(root), "deploy", "prod abc - pass", outcome="pass")
+               for _ in range(2)]
+
+    assert (crew_state.NOTIFY_REALERT_HOURS, results, len(telegram.requests)) == (
+        6, ["sent", "deduped"], 1)
 
 
 def test_realert_after_window(tmp_path, telegram):
@@ -931,23 +935,6 @@ def test_token_never_in_output_or_state(tmp_path, telegram, capsys, monkeypatch)
         False, False, False, False)
 
 
-# --- teams, and never failing ------------------------------------------------------------------
-
-def test_teams_branch_posts_card(tmp_path, telegram, monkeypatch):
-    base = os.environ["CREW_NOTIFY_TELEGRAM_BASE"]
-    monkeypatch.setenv("CREW_TEST_TEAMS_URL", base + "/teams")
-    _global(tmp_path, monkeypatch, {"tokenEnv": TOKEN_ENV, "urlEnv": "CREW_TEST_TEAMS_URL"})
-    root = _repo(tmp_path, notify={"provider": "teams", "urlEnv": "CREW_TEST_TEAMS_URL",
-                                   "events": ["deploy"]})
-
-    result = crew_notify.send(str(root), "deploy", "prod abc - pass", outcome="pass")
-
-    card = json.loads(telegram.requests[0]["raw"])
-    text = card["attachments"][0]["content"]["body"][0]["text"]
-    assert (result, telegram.requests[0]["path"], text.startswith("Promotion passed [")) == (
-        "sent", "/teams", True)
-
-
 class _Redirector(http.server.BaseHTTPRequestHandler):
     """Answers every POST with a 302 to `location` (the fake Telegram's port)."""
     location = ""
@@ -988,16 +975,6 @@ def test_telegram_redirect_is_not_followed(tmp_path, monkeypatch, telegram, redi
 
     assert (result, _Redirector.hits, telegram.requests, "HTTP 302" in capsys.readouterr().err
             ) == ("failed:HTTP 302", [f"/bot{TOKEN}/sendMessage"], [], True)
-
-
-def test_teams_redirect_is_not_followed(tmp_path, monkeypatch, telegram, redirector):
-    monkeypatch.setenv("CREW_TEST_TEAMS_URL", redirector + "/teams")
-    _global(tmp_path, monkeypatch, {"urlEnv": "CREW_TEST_TEAMS_URL"})
-    root = _repo(tmp_path, notify={"provider": "teams", "events": ["deploy"]})
-
-    result = crew_notify.send(str(root), "deploy", "prod abc - pass", outcome="pass")
-
-    assert (result, _Redirector.hits, telegram.requests) == ("failed:HTTP 302", ["/teams"], [])
 
 
 def test_redirected_send_still_exits_0(tmp_path, telegram, redirector):

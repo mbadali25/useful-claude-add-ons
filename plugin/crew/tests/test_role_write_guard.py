@@ -8,8 +8,8 @@ full design.
 
 Two halves are tested here: the pure-python decision logic (`classify`,
 `_normalise_role`, the policy-table-matches-agent-files invariant) against
-the module directly, and the two hook SCRIPTS (`role-write-guard.sh` /
-`.ps1`) end to end as subprocesses, because a correct `classify()` behind a
+the module directly, and the hook SCRIPT (`role-write-guard.sh`) end to end
+as a subprocess, because a correct `classify()` behind a
 shim that reads the wrong stdin field or swallows the exit code is not a
 working hook -- see `promote-gate.sh`'s own test suite for the same
 reasoning.
@@ -24,7 +24,6 @@ about one commit.
 """
 import json
 import os
-import pathlib
 import re
 import shlex
 import shutil
@@ -42,19 +41,13 @@ import role_write_guard  # noqa: E402  pylint: disable=wrong-import-position
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _AGENTS_DIR = os.path.join(_ROOT, "agents")
 _SH = os.path.join(_ROOT, "hooks", "scripts", "role-write-guard.sh")
-_PS1 = os.path.join(_ROOT, "hooks", "scripts", "role-write-guard.ps1")
 
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = crew_fixtures.resolve_pwsh()
 needs_bash = pytest.mark.skipif(_BASH is None, reason="no MSYS/POSIX bash")
 needs_windows = pytest.mark.skipif(
     os.name != "nt",
     reason="asserts Windows path semantics (lexical .. collapse, backslash output); "
            "CI ran these on Ubuntu from 621d50dc and the workflow stayed red")
-needs_pwsh_windows = pytest.mark.skipif(
-    not sys.platform.startswith("win") or _PWSH is None,
-    reason="the .ps1 hook is the native-Windows flavour; needs Windows + pwsh",
-)
 
 
 # --- The policy table, measured from the agent files -----------------------
@@ -286,23 +279,6 @@ def _run_sh(root, tool_name, file_path, agent_type):
     )
 
 
-def _run_ps1(root, tool_name, file_path, agent_type):
-    return _run_ps1_at(_PS1, root, tool_name, file_path, agent_type)
-
-
-def _run_ps1_at(script_path, root, tool_name, file_path, agent_type):
-    """`_run_ps1`, against an explicit script path -- for a patched or
-    relocated copy of role-write-guard.ps1 (BLOCK-1 and FIX-4's tests, both
-    of which need to run a DELIBERATELY altered copy without touching the
-    real, committed file)."""
-    return subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", script_path],
-        input=_write_payload(tool_name, file_path, agent_type, str(root)),
-        capture_output=True, text=True, check=False,
-        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), cwd=str(root),
-    )
-
-
 @needs_bash
 def test_off_by_default_never_blocks_bash(tmp_path):
     """The must-allow case CLAUDE.md requires for a hook that defaults OFF."""
@@ -481,11 +457,10 @@ def test_no_crew_directory_never_crashes_and_never_creates_one_bash(tmp_path):
 #
 # Reported 2026-09-19: `role-write-guard.sh` originally called `_common.sh`'s
 # shared `crew_py()`, a bare `command -v python3 || python || py` with no
-# WindowsApps filtering at all -- unlike `role-write-guard.ps1`'s hardened
-# `Resolve-CrewPython`. With a WindowsApps python3 alias ahead of a real
-# interpreter on PATH, the two shell flavours of the SAME hook enforced
-# DIFFERENT decisions on the same machine. `_resolve_role_write_python` in
-# the .sh is the fix; this drives it through the actual script, not just the
+# WindowsApps filtering at all. With a WindowsApps python3 alias ahead of a
+# real interpreter on PATH, the hook enforced a different decision than a
+# hardened resolver would. `_resolve_role_write_python` in the .sh is the
+# fix; this drives it through the actual script, not just the
 # function in isolation, per `promote-gate.sh`'s own test suite reasoning
 # that a correct resolver behind an unwired call site is not a fix.
 
@@ -573,7 +548,7 @@ def test_valid_config_with_no_guards_key_is_not_corrupt_stays_off_bash(tmp_path)
     """Must-allow: a well-formed config that simply never set `guards` at
     all is not corrupt either -- `off` is the honest answer, not a forced
     `block`."""
-    root = crew_fixtures.make_repo(tmp_path, config={"change": {"requester": "x"}})
+    root = crew_fixtures.make_repo(tmp_path, config={"change": {"requireForProduction": False}})
     proc = _run_sh(root, "Write", str(root / "src" / "app.py"), "pm")
     assert proc.returncode == 0, proc.stderr
 
@@ -830,18 +805,6 @@ def test_extended_length_prefix_path_blocks_for_pm_bash(tmp_path):
 
 
 @crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_extended_length_prefix_path_blocks_for_pm_powershell(tmp_path):
-    """PowerShell twin of the bash must-block case above."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    _make_dotted_dir(root / ".crew.")
-    extended = "\\\\?\\" + str(root) + "\\.crew.\\app.py"
-    proc = _run_ps1(root, "Write", extended, "pm")
-    assert proc.returncode == 2, proc.stderr
-
-
-@crew_fixtures.SLOW
 @needs_bash
 @pytest.mark.skipif(not sys.platform.startswith("win"),
                      reason="\\\\?\\ extended-length paths are a Windows concept")
@@ -855,18 +818,6 @@ def test_extended_length_prefix_path_allows_for_unrestricted_role_bash(tmp_path)
     _make_dotted_dir(root / ".crew.")
     extended = "\\\\?\\" + str(root) + "\\.crew.\\app.py"
     proc = _run_sh(root, "Write", extended, "developer")
-    assert proc.returncode == 0, proc.stderr
-
-
-@crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_extended_length_prefix_path_allows_for_unrestricted_role_powershell(tmp_path):
-    """PowerShell twin of the bash must-allow case above."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    _make_dotted_dir(root / ".crew.")
-    extended = "\\\\?\\" + str(root) + "\\.crew.\\app.py"
-    proc = _run_ps1(root, "Write", extended, "developer")
     assert proc.returncode == 0, proc.stderr
 
 
@@ -896,8 +847,7 @@ def test_utf8_bom_on_stdin_does_not_bypass_bash_enforcement(tmp_path):
     unparseable JSON and allow unjudged. `role-write-guard.sh`'s
     `INPUT=$(cat)` was already byte-transparent -- the gap was entirely on
     the PYTHON side, which used to trust `sys.stdin.read()` without
-    stripping a BOM first, so only role-write-guard.ps1 (which had its
-    OWN BOM strip from round 2) was protected."""
+    stripping a BOM first."""
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
     payload = json.dumps({"tool_name": "Write",
@@ -945,70 +895,6 @@ def test_pythonutf8_forced_even_when_caller_env_disables_it_bash(tmp_path):
 
 
 # --- BLOCK 3: PYTHONUTF8/PYTHONIOENCODING forced regardless of caller env -
-
-@crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_pythonutf8_forced_even_when_caller_env_disables_it_powershell(tmp_path):
-    """Must-block: the CALLER's environment sets `PYTHONUTF8=0` and unsets
-    `PYTHONIOENCODING` -- role-write-guard.ps1 must still force both in the
-    CHILD's environment (and role_write_guard.py reads stdin as raw bytes
-    regardless either way), so a junction with an ACCENTED name escaping
-    to an in-repo-but-out-of-scope directory is still correctly resolved
-    and refused, not silently misclassified through mojibake."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    out_of_scope_dir = root / "src"
-    out_of_scope_dir.mkdir()
-    link = root / ".crew" / "caf\u00e9"
-    if not _make_junction(out_of_scope_dir, link):
-        pytest.skip("could not create a junction on this platform/user")
-
-    target = str(link / "app.py")
-    payload = json.dumps({"tool_name": "Write",
-                           "tool_input": {"file_path": target},
-                           "agent_type": "pm", "cwd": str(root)})
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
-    env["PYTHONUTF8"] = "0"
-    env.pop("PYTHONIOENCODING", None)
-    proc = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
-        input=payload.encode("utf-8"), capture_output=True, check=False,
-        env=env, cwd=str(root))
-    assert proc.returncode == 2, (
-        "stdout: " + proc.stdout.decode("utf-8", "replace")
-        + " stderr: " + proc.stderr.decode("utf-8", "replace"))
-
-
-@crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_pythonutf8_forced_writes_correct_utf8_stderr_powershell(tmp_path):
-    """The bash twin's exact assertion, on role-write-guard.ps1: the
-    junction-based test above proves the DECISION survives (primarily
-    via role_write_guard.py's own `sys.stdin.buffer` read, which is
-    environment-independent), but that alone does not prove
-    PYTHONUTF8/PYTHONIOENCODING are actually forced -- only the STDERR
-    BYTES prove that, since `.crew/guard.log` is written with an explicit
-    `encoding="utf-8"` regardless of either variable."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    target = str(root / "café" / "app.py")
-    payload = json.dumps({"tool_name": "Write",
-                           "tool_input": {"file_path": target},
-                           "agent_type": "pm", "cwd": str(root)})
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
-    env["PYTHONUTF8"] = "0"
-    env.pop("PYTHONIOENCODING", None)
-    proc = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
-        input=payload.encode("utf-8"), capture_output=True, check=False,
-        env=env, cwd=str(root))
-    stderr = proc.stderr.decode("utf-8", errors="replace")
-    assert proc.returncode == 2, stderr
-    assert "café" in stderr, (
-        "the accented character in the refusal message was not written as "
-        "UTF-8 -- PYTHONUTF8/PYTHONIOENCODING were not forced in the child "
-        "environment. got: " + repr(stderr))
-
 
 # --- FIX 1: Resolve-CrewPython must check the candidate's exit status -----
 
@@ -1089,24 +975,6 @@ def _coreutils_only_path(tmp_path):
     return str(toolbin)
 
 
-@needs_pwsh_windows
-def test_candidate_nonzero_exit_status_is_rejected_powershell(tmp_path):
-    """Must resolve to NOTHING (matching bash's `|| continue`): a python3
-    wrapper that prints a real-looking interpreter path but exits 1 must
-    be rejected, not accepted just because it produced output."""
-    apps = tmp_path / "wrappers"
-    apps.mkdir()
-    wrapper = apps / "python3.cmd"
-    wrapper.write_text(
-        "@echo off\r\necho C:\\Fake\\python.exe\r\nexit /b 1\r\n",
-        encoding="ascii")
-
-    resolved = _print_python([str(apps)])
-    assert resolved == "", (
-        "a candidate that exits nonzero must be rejected even though it "
-        "printed a plausible interpreter path. got: " + resolved)
-
-
 @needs_bash
 def test_bash_already_rejects_nonzero_exit_candidate(tmp_path):
     """The bash HALF of FIX 1's parity claim -- bash already gets this
@@ -1174,7 +1042,7 @@ def test_bash_already_rejects_nonzero_exit_candidate(tmp_path):
 # `guards.roleWrites` or pm's path allowances at all. Without python, a
 # restricted role's write is unconditionally blocked; `off`/`report`/pm's
 # allowances only take effect once python is available and the real
-# classifier can run. See `plugin/crew/CONFIG.md` sec 18, "Without Python,
+# classifier can run. See `docs/crew/config-rationale.md`, "Without Python,
 # a restricted role's write is always blocked".
 #
 # `_MINIMAL_COREUTILS`/`_coreutils_only_path` above give the "coreutils are
@@ -1311,7 +1179,7 @@ def test_no_python_blocks_restricted_role_even_when_role_writes_is_off_bash(tmp_
 @needs_bash
 def test_no_python_refusal_message_names_off_report_and_allowances_bash(tmp_path):
     """The refusal message text is part of the PM decision's contract
-    (`plugin/crew/CONFIG.md` sec 18, "Without Python, a restricted role's
+    (`docs/crew/config-rationale.md`, "Without Python, a restricted role's
     write is always blocked"), not just its exit code -- a caller reading
     only stderr must be told THAT `off`/`report`/pm's allowances are the
     things python's absence stops the fallback from honouring, not just
@@ -1334,7 +1202,7 @@ def test_no_python_refusal_message_names_off_report_and_allowances_bash(tmp_path
         "python is unavailable, so guards.roleWrites (off/report/allowances) "
         "cannot be evaluated for restricted role 'pm' - install python, or "
         "the write is blocked." in proc.stderr
-    ), "message text drifted from CONFIG.md sec 18's contract: " + proc.stderr
+    ), "message text drifted from docs/crew/config-rationale.md's contract: " + proc.stderr
 
 
 @needs_bash
@@ -1529,15 +1397,6 @@ def _make_symlink(target, link):
         return False
 
 
-def _make_junction(target, link):
-    if not sys.platform.startswith("win"):
-        return False
-    result = subprocess.run(
-        ["cmd", "/c", "mklink", "/J", str(link), str(target)],
-        capture_output=True, text=True, check=False)
-    return result.returncode == 0
-
-
 def _make_dotted_dir(path):
     """Create a directory whose name ends in a literal dot (e.g.
     `.crew.`) -- for real, on disk. An ORDINARY (non-extended-length)
@@ -1568,23 +1427,6 @@ def test_symlink_escaping_the_repo_entirely_is_allowed_bash(tmp_path):
     assert proc.returncode == 0, proc.stderr
     log = (root / ".crew" / "guard.log").read_text(encoding="utf-8")
     assert "outside-repo" in log, log
-
-
-@crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_junction_escaping_the_repo_entirely_is_allowed_powershell(tmp_path):
-    """PowerShell twin of the symlink case above, with a real Windows
-    junction (`mklink /J`, no elevation needed)."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    link = root / ".crew" / "link"
-    if not _make_junction(outside, link):
-        pytest.skip("could not create a junction on this platform/user")
-
-    proc = _run_ps1(root, "Write", str(link / "app.py"), "pm")
-    assert proc.returncode == 0, proc.stderr
 
 
 @crew_fixtures.SLOW
@@ -1628,27 +1470,6 @@ def test_repo_internal_symlink_to_an_out_of_scope_prefix_is_still_refused_bash(t
         "IN-REPO directory outside that scope, must still be refused -- "
         "it never leaves the repo root, so the outside-repo exception must "
         "not apply. stdout: " + proc.stdout)
-
-
-@crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_repo_internal_junction_to_an_out_of_scope_prefix_is_still_refused_powershell(tmp_path):
-    """PowerShell/junction twin of the symlink case above -- junction
-    coverage for the still-refused, in-repo-but-out-of-scope escape, kept
-    separate from the now-allowed outside-the-repo junction case above."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    out_of_scope_dir = root / "src"
-    out_of_scope_dir.mkdir()
-    link = root / ".crew" / "escape"
-    if not _make_junction(out_of_scope_dir, link):
-        pytest.skip("could not create a junction on this platform/user")
-
-    proc = _run_ps1(root, "Write", str(link / "app.py"), "pm")
-    assert proc.returncode == 2, (
-        "a junction staged INSIDE pm's own scope, pointing at another "
-        "IN-REPO directory outside that scope, must still be refused. "
-        "stdout: " + proc.stdout)
 
 
 def test_resolve_real_target_walks_up_to_the_deepest_existing_ancestor(tmp_path):
@@ -1825,23 +1646,6 @@ def test_windows_link_pointing_out_of_scope_with_dotdot_still_allows_bash(tmp_pa
 
 
 @crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_windows_link_pointing_out_of_scope_with_dotdot_still_allows_powershell(tmp_path):
-    """PowerShell/junction twin of the bash case above."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    out_of_scope_dir = root / "src" / "subdir"
-    out_of_scope_dir.mkdir(parents=True)
-    link = root / ".crew" / "link"
-    if not _make_junction(out_of_scope_dir, link):
-        pytest.skip("could not create a junction on this platform/user")
-
-    target = str(link / ".." / "app.py")
-    proc = _run_ps1(root, "Write", target, "pm")
-    assert proc.returncode == 0, proc.stderr
-
-
-@crew_fixtures.SLOW
 @needs_windows
 @needs_bash
 def test_windows_link_staged_out_of_scope_escapes_via_dotdot_blocks_bash(tmp_path):
@@ -1866,24 +1670,6 @@ def test_windows_link_staged_out_of_scope_escapes_via_dotdot_blocks_bash(tmp_pat
         "because .. collapses lexically before the link is followed -- "
         "resolving into the link's target (.crew) first is wrong and "
         "must not allow this write. stdout: " + proc.stdout)
-
-
-@crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_windows_link_staged_out_of_scope_escapes_via_dotdot_blocks_powershell(tmp_path):
-    """PowerShell/junction twin of the bash case above."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    in_scope_dir = root / ".crew" / "subdir"
-    in_scope_dir.mkdir(parents=True)
-    link = root / "src" / "link"
-    link.parent.mkdir(parents=True)
-    if not _make_junction(in_scope_dir, link):
-        pytest.skip("could not create a junction on this platform/user")
-
-    target = str(link / ".." / "new.py")
-    proc = _run_ps1(root, "Write", target, "pm")
-    assert proc.returncode == 2, proc.stderr
 
 
 @crew_fixtures.SLOW
@@ -2122,7 +1908,7 @@ def test_non_string_file_path_for_unrestricted_role_still_allows_bash(tmp_path):
 
 # --- guard.log must carry the promised reason column (round-1 FIX) ---------
 #
-# Reported 2026-09-19: the module docstring and CONFIG.md Sec18 both promise
+# Reported 2026-09-19: the module docstring and docs/crew/config-rationale.md both promise
 # `no-agent-type` and `unknown-role:<value>` are "named differently in
 # .crew/guard.log rather than merged into one unreadable 'allow' row" --
 # but the row-building code computed `reason` and never wrote it anywhere.
@@ -2149,183 +1935,14 @@ def test_guard_log_carries_unknown_role_reason_bash(tmp_path):
     assert "unknown-role:explore" in log, log
 
 
-# --- PowerShell twin, Windows + pwsh only -----------------------------------
-
-@needs_pwsh_windows
-def test_block_mode_pm_outside_scope_is_refused_powershell(tmp_path):
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    target = str(root / "plugin/crew/agents/pm.md")
-    proc = _run_ps1(root, "Write", target, "pm")
-    assert proc.returncode == 2, proc.stdout
-    assert "pm" in proc.stderr and "may not write" in proc.stderr
-
-
-@needs_pwsh_windows
-def test_block_mode_pm_inside_scope_is_allowed_powershell(tmp_path):
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    proc = _run_ps1(root, "Write", str(root / "TODO.md"), "pm")
-    assert proc.returncode == 0, proc.stderr
-
-
-@needs_pwsh_windows
-def test_off_by_default_never_blocks_powershell(tmp_path):
-    root = crew_fixtures.make_repo(tmp_path, config={})
-    proc = _run_ps1(root, "Write", str(root / "plugin/crew/agents/pm.md"), "pm")
-    assert proc.returncode == 0, proc.stderr
-    assert not (root / ".crew" / "guard.log").exists()
-
-
-@needs_pwsh_windows
-def test_block_mode_deny_role_is_refused_powershell(tmp_path):
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    proc = _run_ps1(root, "Edit", str(root / "TODO.md"), "explorer")
-    assert proc.returncode == 2, proc.stdout
-
-
-# --- role-write-guard.ps1's own python resolver ------------------------------
-#
-# The first draft of this file resolved its interpreter with the un-hardened
-# `(Get-Command python3, python | Select-Object -First 1).Source` -- the exact
-# one-liner pm-pulse.ps1's and verify-gate.ps1's own headers name as the bug
-# that silently dropped their checks. Fixed to the same hardened
-# `Resolve-CrewPython` those two files carry, duplicated inline for the same
-# reason (a dot-sourced function is invisible to
-# scripts/check-powershell.ps1's static check).
-#
-# A PowerShell-focused review of THIS file specifically (2026-09-19, on top
-# of the WindowsApps/profile-shadow fix above) found the copy had drifted
-# from role-write-guard.sh's OWN resolver in two ways the three-way byte
-# parity this section used to assert could never catch, because
-# verify-gate.ps1/pm-pulse.ps1 do not share role-write-guard.sh's shape
-# either: (1) it trusted `Get-Command` metadata instead of EXECUTING the
-# candidate the way the .sh does, and (2) `Get-Command $name -All` walked
-# every match for ONE name before moving to the next, while bash's
-# `command -v` takes only the first match per name -- so role-write-
-# guard.ps1 now deliberately DIVERGES from verify-gate.ps1's/pm-pulse.ps1's
-# copies (see `Resolve-CrewPython`'s own comment) and the three-way parity
-# test below became a two-way one, plus new cases specific to this file.
-
-_VERIFY_GATE_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
-_CLOUD_GUARD_PS1 = os.path.join(_ROOT, "hooks", "scripts", "cloud-guard.ps1")
-
-
-def _stub(path, reports=None):
-    """A REAL, launchable stub (a `.cmd` batch file) -- never a plain-text
-    file merely wearing a `.exe` extension. This resolver now EXECUTES
-    every candidate it considers before trusting it, so a file that cannot
-    actually be launched no longer proves what an un-executing resolver's
-    tests once could.
-
-    `reports`, if given, is the `sys.executable` the stub claims when it is
-    invoked. It is echoed as the one JSON line the probe parses
-    (`{"v": [3, 12], "exe": <reports>, "impl": "cpython"}`), simulating a
-    real 3.12 interpreter. A bare path is no longer an answer: the probe
-    accepts a candidate only when its last stdout line is that JSON, so a
-    stub echoing just the path is rejected like a stub that says nothing,
-    and every must-allow case below would fail for a fixture reason
-    (T-0089). Omitted, the stub produces NO output at all when run,
-    simulating a WindowsApps alias that does nothing in this
-    non-interactive context -- as opposed to merely LOOKING like a real
-    interpreter to `Get-Command`, which is the bug this section's header
-    already names as fixed once before.
-    """
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    lines = ["@echo off"]
-    if reports:
-        answer = {"v": [3, 12], "exe": reports, "impl": "cpython"}
-        lines.append("echo " + json.dumps(answer, separators=(",", ":")))
-    with open(path, "w", encoding="ascii", newline="\r\n") as handle:
-        handle.write("\n".join(lines) + "\n")
-    return path
-
-
-def _print_python(path_entries):
-    env = os.environ.copy()
-    env["PATH"] = os.pathsep.join(path_entries)
-    result = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1, "-PrintPython"],
-        env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        check=False,
-    )
-    assert result.returncode == 0, "the probe must exit 0. stderr: " + result.stderr
-    return result.stdout.strip()
-
-
-@crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_the_windowsapps_stub_is_never_returned(tmp_path):
-    """Must-block. The un-hardened one-liner returned the Store alias and
-    invoked it; a stub that LOOKS real to Get-Command but produces no
-    output when actually launched must also be rejected."""
-    apps = tmp_path / "WindowsApps"
-    _stub(str(apps / "python3.cmd"))  # no `reports` -- produces no output
-    _stub(str(apps / "python.cmd"))
-
-    resolved = _print_python([str(apps)])
-    assert "WindowsApps" not in resolved, (
-        "the WindowsApps alias was returned as the interpreter: " + resolved)
-    assert resolved == "", (
-        "with only stubs on PATH there is no usable python and the resolver "
-        "must answer empty rather than hand back a stub. got: " + resolved)
-
-
-@crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_a_real_python_under_a_different_name_still_resolves(tmp_path):
-    """Must-allow: the fix must not become "never finds python". Under the
-    name-order semantics FIX 3 introduced, rejecting `python3` moves to
-    the NEXT NAME -- so the real interpreter here is named `python`, a
-    DIFFERENT name, not a second `python3` further down PATH (that
-    scenario is the one the divergence test below proves must resolve to
-    NOTHING, matching bash)."""
-    apps = tmp_path / "WindowsApps"
-    real = tmp_path / "tools"
-    real_exe = str(real / "python.cmd")
-    _stub(str(apps / "python3.cmd"))
-    _stub(real_exe, reports=real_exe)
-
-    resolved = _print_python([str(apps), str(real)])
-    assert resolved.lower().startswith(str(real).lower()), (
-        "the real python.cmd, under a DIFFERENT name than the rejected "
-        "stub, must still resolve. got: " + resolved)
-
-
-@crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_windowsapps_stub_with_only_one_name_present_walks_on_to_the_real_one(tmp_path):
-    """PATH = WindowsApps(python3 stub only); RealDir(python3, real) -- no
-    `python`/`py` anywhere. Until crew 1.0 this asserted NOTHING resolved,
-    mirroring bash's first-match-per-name `command -v`. The Windows burn-in
-    (docs/review/06-windows-burn-in.md, 2c) showed where that leads: a host
-    whose every name hits WindowsApps first never reaches the real python
-    further down PATH. The one shared probe now walks every match of every
-    name and executes each, so the real python3 resolves here. bash now
-    walks every match too (`type -ap`); the parity case in
-    tests/test_ps1_python_probe.py was a strict xfail and is a passing test."""
-    apps = tmp_path / "WindowsApps"
-    real = tmp_path / "tools"
-    real_exe = str(real / "python3.cmd")
-    _stub(str(apps / "python3.cmd"))       # the only WindowsApps stub
-    _stub(real_exe, reports=real_exe)      # a REAL python3 further down PATH
-
-    resolved = _print_python([str(apps), str(real)])
-    assert resolved.lower().startswith(str(real).lower()), (
-        "the probe must walk past a stub that fails to a SECOND python3 "
-        "further down PATH. got: " + resolved)
-
-
 @crew_fixtures.SLOW
 @needs_bash
 def test_bash_agrees_it_finds_nothing_in_the_same_layout(tmp_path):
     """bash's side of the same layout, driven through the actual .sh end to
     end. The name is historical: since the burn-in fix3 round 2 bash walks
-    every match and resolves the second python3 here, as the .ps1 does. The
-    stub it resolves only echoes, so the guard still exits 0 -- this pins
-    that the .sh does not block or crash in this layout; the resolver
-    parity itself is asserted in tests/test_ps1_python_probe.py."""
+    every match and resolves the second python3 here. The stub it resolves
+    only echoes, so the guard still exits 0 -- this pins that the .sh does
+    not block or crash in this layout."""
     apps = tmp_path / "WindowsApps"
     real = tmp_path / "tools"
     apps.mkdir(parents=True)
@@ -2350,10 +1967,8 @@ def test_bash_agrees_it_finds_nothing_in_the_same_layout(tmp_path):
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
     env = os.environ.copy()
-    # Exclude the rest of the ORIGINAL PATH deliberately, matching the
-    # .ps1 comparison test's `_print_python`, which replaces PATH the same
-    # way. Appending the real PATH here -- an earlier draft of this test
-    # did -- reintroduces this machine's own real `python` binary under a
+    # Exclude the rest of the ORIGINAL PATH deliberately. Appending the real
+    # PATH here -- an earlier draft of this test did -- reintroduces this machine's own real `python` binary under a
     # DIFFERENT name than the stubbed one, which the resolver legitimately
     # finds once `python3` is rejected; that is not a bug, but it also
     # proves nothing about the "only one name present" layout this test
@@ -2380,259 +1995,14 @@ def test_bash_agrees_it_finds_nothing_in_the_same_layout(tmp_path):
     # from main is never reached in this layout.
     assert proc.returncode == 0, (
         "the .sh must not block or crash in this layout, where it now "
-        "resolves the second python3 as the .ps1 does. stdout: "
+        "resolves the second python3. stdout: "
         + proc.stdout + " stderr: "
         + proc.stderr)
 
 
-def _resolver_source(path):
-    src = pathlib.Path(path).read_text(encoding="utf-8")
-    start = src.find("function Resolve-CrewPython {")
-    assert start != -1, (
-        "Resolve-CrewPython is gone from " + path + ". If it was renamed, "
-        "re-point this test rather than deleting it.")
-    end = src.find("\n}\n", start)
-    assert end != -1, "could not find the end of Resolve-CrewPython in " + path
-    return src[start:end + 3]
-
-
-def _resolver_code_lines(path):
-    def code_lines(src):
-        out = []
-        for line in src.splitlines():
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            out.append(re.sub(r"\s+", " ", stripped))
-        return out
-    return code_lines(_resolver_source(path))
-
-
-def test_role_write_guard_resolver_is_the_one_shared_probe():
-    """This used to assert the OPPOSITE -- that role-write-guard.ps1's copy
-    differed from verify-gate.ps1's. crew 1.0 replaced every copy with one
-    probe (execute every PATH match, bounded, WindowsApps tried rather than
-    skipped); tests/test_ps1_python_probe.py asserts all of them agree and
-    drives the behaviour. L-0690 split it into two groups until its follow-up
-    rejoins them: verify-gate.ps1 is one of the four harness carriers (the
-    probe that reports a timeout and a trail), so role-write-guard.ps1 is held
-    to the other group's cloud-guard.ps1 here."""
-    assert _resolver_code_lines(_PS1) == _resolver_code_lines(_CLOUD_GUARD_PS1)
-
-
-# --- BLOCK 1: a launch failure must not silently allow --------------------
+# --- Round 3: role-write-guard.sh's launch-failure fallback ---
 #
-# `$raw | & $py (Join-Path $dir 'role_write_guard.py')` had no try/catch and
-# no check on `$LASTEXITCODE`. A native command that fails to LAUNCH (as
-# opposed to one that launches and exits nonzero) never sets
-# `$LASTEXITCODE` at all; a fresh `pwsh`/`powershell` process starts with it
-# `$null`; `exit $LASTEXITCODE` on `$null` silently evaluates to 0 -- allow.
-# Reproduced by the specialist under the exact hooks.json shape with `$py`
-# pointed at a nonexistent path: outer exit 0, only a generic native-command
-# error on stderr. Reported and fixed 2026-09-19.
-
-def _patch_py_to_nonexistent(src):
-    """Force `$py` to an unlaunchable path immediately after
-    `Resolve-CrewPython` would normally set it -- the same technique the
-    specialist's own repro used, reproducing a launch failure without
-    depending on any particular machine's real interpreter breaking
-    mid-session."""
-    anchor = "$py = Resolve-CrewPython"
-    assert anchor in src, "Resolve-CrewPython call site moved; re-point this patch"
-    return src.replace(
-        anchor,
-        anchor + "\n$py = 'C:\\definitely-does-not-exist\\python.exe'",
-        1)
-
-
-def _patched_ps1_copy(tmp_path, patcher, filename="role-write-guard.ps1"):
-    """A full copy of hooks/scripts/ under `tmp_path`, with
-    role-write-guard.ps1 replaced by `patcher(original_source)` (or, for
-    FIX 4's test, with a file removed instead). A patched copy dropped
-    ANYWHERE else would fail FIX 4's own missing-role_write_guard.py check
-    before ever reaching whatever the patch is testing, because `$dir` in
-    the script is derived from its own path."""
-    scripts_dir = os.path.join(_ROOT, "hooks", "scripts")
-    dest = tmp_path / "scripts_copy"
-    shutil.copytree(scripts_dir, dest, ignore=shutil.ignore_patterns("_test"))
-    target = dest / filename
-    if patcher is not None:
-        target.write_text(patcher(target.read_text(encoding="utf-8")),
-                           encoding="utf-8")
-    return str(target)
-
-
-@needs_pwsh_windows
-def test_launch_failure_fails_closed_for_pm_powershell(tmp_path):
-    """Must-block: a restricted role (pm) must fail closed when the
-    resolved interpreter cannot actually be launched, rather than
-    silently allow via a null $LASTEXITCODE."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    patched = _patched_ps1_copy(tmp_path, _patch_py_to_nonexistent)
-
-    proc = _run_ps1_at(patched, root, "Write", str(root / "src" / "app.py"), "pm")
-    assert proc.returncode == 2, (
-        "a restricted role must fail closed when the interpreter cannot "
-        "be launched. stdout: " + proc.stdout + " stderr: " + proc.stderr)
-    assert "pm" in proc.stderr, proc.stderr
-
-
-@crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_launch_failure_still_allows_unrestricted_role_powershell(tmp_path):
-    """Must-allow twin: an unrestricted role was always going to be
-    allowed, so a launch failure must not become a NEW refusal for it."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    patched = _patched_ps1_copy(tmp_path, _patch_py_to_nonexistent)
-
-    proc = _run_ps1_at(patched, root, "Write", str(root / "src" / "app.py"),
-                        "developer")
-    assert proc.returncode == 0, proc.stderr
-
-
-@needs_pwsh_windows
-def test_launch_failure_blocks_restricted_role_regardless_of_config_powershell(tmp_path):
-    """The ps1 twin of
-    `test_no_python_launch_failure_also_blocks_restricted_role_regardless_
-    of_config_bash`: `guards.roleWrites: off` must NOT rescue a restricted
-    role's write when the resolved interpreter fails to launch either --
-    pinning that `Resolve-RoleWriteFallback`'s no-config contract applies
-    at BOTH call sites, not only the no-candidate one."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "off"}})
-    patched = _patched_ps1_copy(tmp_path, _patch_py_to_nonexistent)
-
-    proc = _run_ps1_at(patched, root, "Write", str(root / "src" / "app.py"), "pm")
-    assert proc.returncode == 2, (
-        "a restricted role's write must be blocked at the launch-failure "
-        "call site too, even when guards.roleWrites is off. stdout: "
-        + proc.stdout + " stderr: " + proc.stderr)
-
-
-def _no_python_env(root, home):
-    """An environment with NOTHING named python3/python/py on PATH, for a
-    ps1 subprocess -- the twin of the bash suite's minimal/coreutils-only
-    PATH fixtures. `Resolve-CrewPython` walks `Get-Command -All
-    -CommandType Application`, which only ever finds real files on PATH, so
-    an empty scratch directory is sufficient (no stub/wrapper needed the
-    way bash's `command -v` vs `type -ap` distinction requires one)."""
-    empty_bin = root.parent / "empty-path-bin"
-    empty_bin.mkdir(exist_ok=True)
-    env = os.environ.copy()
-    env["PATH"] = str(empty_bin)
-    env["CLAUDE_PROJECT_DIR"] = str(root)
-    env["HOME"] = home
-    env["USERPROFILE"] = home
-    return env
-
-
-@needs_pwsh_windows
-def test_no_python_still_determines_restricted_role_powershell(tmp_path):
-    """Must-block: the ps1 twin of `test_minimal_path_still_determines_
-    restricted_role_bash`. No python resolves at all, `agent_type: pm`,
-    writing out of scope, under `guards.roleWrites: block` -- must fail
-    closed."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    home = _global_home(tmp_path)
-    proc = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
-        input=_write_payload("Write", str(root / "src" / "app.py"), "pm", str(root)),
-        capture_output=True, text=True, check=False,
-        env=_no_python_env(root, home), cwd=str(root))
-    assert proc.returncode == 2, (
-        "role 'pm' must still be determined and refused with no python "
-        "resolved at all. stdout: " + proc.stdout + " stderr: " + proc.stderr)
-    assert "pm" in proc.stderr, proc.stderr
-
-
-@needs_pwsh_windows
-def test_no_python_fails_closed_when_agent_type_unparseable_powershell(tmp_path):
-    """Must-block: the ps1 twin of `test_minimal_path_fails_closed_when_
-    agent_type_unparseable_bash`. `agent_type` present but not a string --
-    must NOT collapse into "no agent_type field"."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    home = _global_home(tmp_path)
-    payload = json.dumps({"tool_name": "Write",
-                           "tool_input": {"file_path": str(root / "src" / "app.py")},
-                           "agent_type": 123, "cwd": str(root)})
-    proc = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
-        input=payload, capture_output=True, text=True, check=False,
-        env=_no_python_env(root, home), cwd=str(root))
-    assert proc.returncode == 2, (
-        "an agent_type this parse cannot read as a string must fail "
-        "closed. stdout: " + proc.stdout + " stderr: " + proc.stderr)
-    assert "could not be read" in proc.stderr, proc.stderr
-
-
-@needs_pwsh_windows
-def test_no_python_blocks_restricted_role_even_when_role_writes_is_off_powershell(tmp_path):
-    """Must-block: the ps1 twin of
-    `test_no_python_blocks_restricted_role_even_when_role_writes_is_off_
-    bash`. `guards.roleWrites: off`, no python at all, `pm` writing out of
-    scope -- must be refused: this fallback never reads the key."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "off"}})
-    home = _global_home(tmp_path)
-    proc = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
-        input=_write_payload("Write", str(root / "src" / "app.py"), "pm", str(root)),
-        capture_output=True, text=True, check=False,
-        env=_no_python_env(root, home), cwd=str(root))
-    assert proc.returncode == 2, (
-        "a restricted role must be blocked with no python even when "
-        "guards.roleWrites is off. stdout: " + proc.stdout
-        + " stderr: " + proc.stderr)
-
-
-@needs_pwsh_windows
-def test_no_python_blocks_pm_even_inside_its_own_permitted_patterns_powershell(tmp_path):
-    """Must-block: the ps1 twin of
-    `test_no_python_blocks_pm_even_inside_its_own_permitted_patterns_
-    bash`. `guards.roleWrites: block`, no python at all, `pm` writing to
-    `.crew/TASK.md` (in scope under the real classifier) -- must be
-    refused: pm's path allowances are not evaluated without python."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    home = _global_home(tmp_path)
-    proc = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
-        input=_write_payload("Write", str(root / ".crew" / "TASK.md"), "pm", str(root)),
-        capture_output=True, text=True, check=False,
-        env=_no_python_env(root, home), cwd=str(root))
-    assert proc.returncode == 2, (
-        "pm's own path allowances must not be evaluated without python -- "
-        "the write must be blocked even inside pm's permitted patterns. "
-        "stdout: " + proc.stdout + " stderr: " + proc.stderr)
-
-
-@needs_pwsh_windows
-def test_no_python_allows_unrestricted_role_regardless_of_role_writes_config_powershell(tmp_path):
-    """Must-allow: the ps1 twin of
-    `test_no_python_allows_unrestricted_role_regardless_of_role_writes_
-    config_bash`. An unrestricted role (`developer`) must still be allowed
-    unjudged with no python, even under `guards.roleWrites: block`."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    home = _global_home(tmp_path)
-    proc = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
-        input=_write_payload("Write", str(root / "src" / "app.py"), "developer", str(root)),
-        capture_output=True, text=True, check=False,
-        env=_no_python_env(root, home), cwd=str(root))
-    assert proc.returncode == 0, (
-        "an unrestricted role must still be allowed unjudged with no "
-        "python. stdout: " + proc.stdout + " stderr: " + proc.stderr)
-
-
-# --- Round 3: role-write-guard.sh gets the SAME launch-failure fallback ---
-#
-# The .ps1 fix above only ever protected PowerShell. Reported 2026-09-19:
-# deleting the resolved interpreter between `_resolve_role_write_python`'s
+# Reported 2026-09-19: deleting the resolved interpreter between `_resolve_role_write_python`'s
 # successful probe and the actual invocation made bash's own `"$PY" ...`
 # fail to exec (`No such file or directory`, exit 127) -- a status neither
 # 0 nor 2, which `PreToolUse` treats as NON-BLOCKING, so `pm` writing an
@@ -2641,8 +2011,7 @@ def test_no_python_allows_unrestricted_role_regardless_of_role_writes_config_pow
 
 def _patch_py_to_nonexistent_sh(src):
     """Force `$PY` to an unlaunchable path immediately after
-    `_resolve_role_write_python` would normally set it -- same technique
-    as the .ps1 twin's `_patch_py_to_nonexistent`.
+    `_resolve_role_write_python` would normally set it.
 
     The anchor must be textually AFTER the `PY=$(_resolve_role_write_python)
     || { ... }` block, not before it -- since 2026-09-24 the deny-list
@@ -2660,8 +2029,7 @@ def _patch_py_to_nonexistent_sh(src):
 
 
 def _patched_sh_copy(tmp_path, patcher, filename="role-write-guard.sh"):
-    """The bash twin of `_patched_ps1_copy` -- a full copy of
-    hooks/scripts/ under `tmp_path`, with role-write-guard.sh replaced by
+    """A full copy of hooks/scripts/ under `tmp_path`, with role-write-guard.sh replaced by
     `patcher(original_source)`. `newline="\\n"` on the write is
     load-bearing: `pathlib.write_text` is TEXT mode on Windows and would
     otherwise corrupt the shebang into `#!/usr/bin/env bash\\r\\n`
@@ -2678,7 +2046,8 @@ def _patched_sh_copy(tmp_path, patcher, filename="role-write-guard.sh"):
 
 @needs_bash
 def test_launch_failure_fails_closed_for_pm_bash(tmp_path):
-    """Must-block: the bash twin of the .ps1 case above."""
+    """Must-block: a restricted role's write is refused when the resolved
+    interpreter cannot be launched."""
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
     patched = _patched_sh_copy(tmp_path, _patch_py_to_nonexistent_sh)
@@ -2708,94 +2077,22 @@ def test_launch_failure_still_allows_unrestricted_role_bash(tmp_path):
     assert proc.returncode == 0, proc.stderr
 
 
-# --- BLOCK 2: stdin must round-trip as UTF-8, byte for byte ----------------
-#
-# `[Console]::In.ReadToEnd()` decodes using the OEM codepage (Windows
-# PowerShell 5.1) or a version-dependent default (pwsh 7.x), silently
-# mangling any character outside plain ASCII, and turns a leading UTF-8 BOM
-# into garbage bytes that make the JSON unparseable at position 0 --
-# role_write_guard.py's own `except ValueError` then allows the call
-# UNJUDGED. role-write-guard.sh (`INPUT=$(cat)`) is byte-transparent, so the
-# two shell flavours diverged on byte-identical input. Reported and fixed
-# 2026-09-19.
-
-@crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_accented_character_in_path_round_trips_intact_powershell(tmp_path):
-    """Must-block, verified via `.crew/guard.log` -- `_log` writes it with
-    an EXPLICIT `encoding="utf-8"`, unlike a piped python subprocess's own
-    stdout/stderr, whose default encoding when NOT attached to a real
-    console is a separate, pre-existing concern this test deliberately
-    does not exercise (found while writing this test: role_write_guard.py
-    itself already mis-encodes a non-ASCII character in its OWN stderr
-    write on this machine, regardless of which shell invoked it -- outside
-    this finding's scope, which is what role-write-guard.ps1 does to
-    stdin on the way IN, not what the python child does to its own output
-    on the way out). Proof the character decoded correctly BEFORE
-    reaching role_write_guard.py at all: mangling into `?` (5.1's OEM
-    codepage) or multi-byte garbage (pwsh 7.x's default) would show up
-    here just as it would in the refusal message."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    target = str(root / "caf\u00e9" / "app.py")
-    payload = json.dumps({"tool_name": "Write",
-                           "tool_input": {"file_path": target},
-                           "agent_type": "pm", "cwd": str(root)})
-    proc = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
-        input=payload.encode("utf-8"), capture_output=True, check=False,
-        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), cwd=str(root))
-    assert proc.returncode == 2, (
-        "stdout: " + proc.stdout.decode("utf-8", "replace")
-        + " stderr: " + proc.stderr.decode("utf-8", "replace"))
-    log = (root / ".crew" / "guard.log").read_text(encoding="utf-8")
-    assert "caf\u00e9" in log, (
-        "the accented character did not round-trip intact: " + repr(log))
+# --- FIX 4: a missing role_write_guard.py must fail closed ----------------
 
 
-@crew_fixtures.SLOW
-@needs_pwsh_windows
-def test_utf8_bom_on_stdin_does_not_break_the_payload_powershell(tmp_path):
-    """Must-block (proving the BOM was stripped and the payload parsed): a
-    leading UTF-8 BOM must not survive into the decoded JSON, where it
-    would sit at position 0 and make an otherwise well-formed payload
-    unparseable -- which fails OPEN (allow, unjudged) rather than reaching
-    a real decision. An OUT-OF-SCOPE target is used deliberately: "BOM
-    broke parsing" (allow) and "BOM stripped correctly" (block) then give
-    DIFFERENT, distinguishable exit codes -- an in-scope target would exit
-    0 either way and prove nothing."""
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"guards": {"roleWrites": "block"}})
-    payload = json.dumps({"tool_name": "Write",
-                           "tool_input": {"file_path": str(root / "src" / "app.py")},
-                           "agent_type": "pm", "cwd": str(root)})
-    bom = b"\xef\xbb\xbf"
-    proc = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1],
-        input=bom + payload.encode("utf-8"), capture_output=True, check=False,
-        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), cwd=str(root))
-    assert proc.returncode == 2, (
-        "a leading UTF-8 BOM must be stripped before JSON parsing. "
-        "stdout: " + proc.stdout.decode("utf-8", "replace")
-        + " stderr: " + proc.stderr.decode("utf-8", "replace"))
-
-
-# --- FIX 4: a missing role_write_guard.py must say so, and fail closed ----
-
-@needs_pwsh_windows
-def test_missing_role_write_guard_py_fails_closed_with_diagnostic_powershell(tmp_path):
-    """Must-block, with a crew-specific message: a broken install
-    (role_write_guard.py absent) must not read as a bare CPython
-    "can't open file" -- identical, by exit code alone, to a real
-    guards.roleWrites: block refusal."""
+@needs_bash
+def test_missing_role_write_guard_py_fails_closed_bash(tmp_path):
+    """Must-block: a broken install (role_write_guard.py absent) must not
+    let a restricted role's write through unjudged."""
     scripts_dir = os.path.join(_ROOT, "hooks", "scripts")
-    dest = tmp_path / "scripts_copy"
+    dest = tmp_path / "scripts_copy_missing"
     shutil.copytree(scripts_dir, dest, ignore=shutil.ignore_patterns("_test"))
     os.remove(str(dest / "role_write_guard.py"))
-
     root = crew_fixtures.make_repo(
         tmp_path, config={"guards": {"roleWrites": "block"}})
-    proc = _run_ps1_at(str(dest / "role-write-guard.ps1"), root, "Write",
-                        str(root / "src" / "app.py"), "pm")
-    assert proc.returncode == 2, proc.stdout
-    assert "role_write_guard.py is missing" in proc.stderr, proc.stderr
+    proc = subprocess.run(
+        [_BASH, str(dest / "role-write-guard.sh")],
+        input=_write_payload("Write", str(root / "src" / "app.py"), "pm", str(root)),
+        capture_output=True, text=True, check=False,
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), cwd=str(root))
+    assert proc.returncode == 2, (proc.stdout, proc.stderr)

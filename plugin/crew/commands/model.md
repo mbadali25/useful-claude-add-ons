@@ -19,7 +19,7 @@ can be different models from different families, and a block-level row hides
 that completely — the same argument that already forced one row per QA
 candidate rather than a single line reading `auto / (cli default)`, applied one
 level down. The command reads the layered config (`~/.claude/crew/config.json`
-under `.crew/config.json`), so the values it prints are the effective ones.
+under `.crew/config.json`), so the values it prints are the effective ones. A `dev.roles.coordinator` pin (L-0799; a model pin, not a role, shown only when set) and a claude `dev.roles.developer` model, which `crew_wave.py start` puts on lane launches, appear as ordinary rows. A claude pin takes a full Claude id or the bare aliases `opus`, `sonnet`, `haiku` and `fable` (Fable 5.1, `claude-fable-5-1`); `fable` is honoured only as an explicit pin, and nothing in crew selects it on its own.
 
 Read out all five things it reports, and do not summarise any of them away:
 
@@ -212,7 +212,7 @@ Say this consequence out loud whenever the QA pins are named:
 > comparatively rarely elsewhere. That may be exactly what you want. It should
 > not be something you discover from a review log.
 
-**Kimi pins crew OFFERS, never applies** (not shipped: the `roles` tables stay empty; write one only when the user says so): `qa.roles.review` -> kimi `k3`; `qa.roles.phase1` and `qa.roles.gate` -> kimi `kimi-for-coding`; `qa.roles.smoke` -> kimi `kimi-for-coding-highspeed`; `dev.roles.planner` -> kimi `k3` (valid and family-guarded now, but no command reads it yet - a follow-up ticket).
+**Kimi pins crew OFFERS, never applies** (not shipped: the `roles` tables stay empty; write one only when the user says so): `qa.roles.review` -> kimi `k3`; `qa.roles.phase1` and `qa.roles.gate` -> kimi `kimi-for-coding`; `qa.roles.smoke` -> kimi `kimi-for-coding-highspeed`; `dev.roles.planner` -> kimi `k3` (valid and family-guarded now, but no command reads it yet - a follow-up ticket). Agent pins, offered the same way (L-0777): `dev.roles.explorer`, `dev.roles.researcher` and `dev.roles.security` -> kimi `k3` make those agents dispatch to `crew_kimi_agent.py` (Claude when Kimi cannot run); `security` is family-guarded (`REVIEWING_DEV_ROLES`), so it is BARRED on Kimi-authored work.
 
 Do not silently rewrite `qa.order` or a `roles` pin to enforce this. Tell the
 user what the consequence is and let them decide — a config that quietly
@@ -238,6 +238,7 @@ a claim, not a change.
 /crew:model qa.copilot.model kimi-k2.7-code      # Kimi 2.7 - the suffix is required
 /crew:model dev.provider codex                   # then read step 3 out loud
 /crew:model dev.roles.developer '{"provider": "codex", "model": "gpt-6-astra"}'
+/crew:model dev.roles.developer '{"provider": "claude", "model": "fable"}'   # explicit opt-in only
 /crew:model qa.roles.review '{"provider": "codex", "model": "gpt-5.6-luna"}'
 /crew:model dev.fallback claude-sonnet-5
 ```

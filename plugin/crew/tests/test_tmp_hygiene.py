@@ -79,8 +79,7 @@ def _auto_clear(tmp_path, delay):
     t = tmp_path / "t"
     t.mkdir()
     auto = {"method": "tmux", "delaySeconds": delay}
-    context_cfg = {"warnAt": 0.8, "budgetTokens": None, "reserveTokens": 0, "autoWrapUp": True,
-                   "handoffPath": ".work/HANDOFF.md", "autoClear": auto}
+    context_cfg = {"warnAt": 0.8, "reserveTokens": 0, "autoClear": auto}
     root = crew_fixtures.make_repo(tmp_path, config={"context": context_cfg}, git=False)
     crew_dir = tmp_path / "home" / ".claude" / "crew"
     crew_dir.mkdir(parents=True)

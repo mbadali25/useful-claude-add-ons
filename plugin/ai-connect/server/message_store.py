@@ -196,17 +196,20 @@ class MessageStore:
         await self._conn.commit()
         return cursor.rowcount
 
-    async def latest_to_since(self, peer: str, since: str) -> dict | None:
-        """The newest message to peer (or to everyone, from someone else) after since."""
+    async def latest_to_since(self, peer: str, since: str, machine: str | None = None) -> dict | None:
+        """The newest message to peer (or to everyone, from someone else) after since.
+
+        machine: the enrolled name peer is a session of; what was sent to it counts too.
+        """
         cursor = await self._conn.execute(
             f"""
             SELECT {_COLUMNS}
             FROM messages
-            WHERE (to_peer = ? OR (to_peer = '*' AND from_peer != ?)) AND timestamp > ?
+            WHERE (to_peer IN (?, ?) OR (to_peer = '*' AND from_peer != ?)) AND timestamp > ?
             ORDER BY timestamp DESC
             LIMIT 1
             """,
-            (peer, peer, since)
+            (peer, machine or peer, peer, since)
         )
         row = await cursor.fetchone()
         return _row_to_message(row) if row else None
@@ -215,22 +218,33 @@ class MessageStore:
         self,
         peer1: str,
         peer2: str,
-        limit: int = 50
+        limit: int = 50,
+        machine: str | None = None,
+        with_sessions: bool = False,
     ) -> list[dict]:
-        """The latest messages between two peers, oldest first."""
+        """The latest messages between two peers, oldest first.
+
+        machine: the enrolled name peer1 is a session of; what peer2 sent to
+        it counts as sent to peer1. with_sessions: peer2 is an enrolled name,
+        and stands for each of its sessions ("<peer2>:<label>") as well.
+        """
+        # Compared with substr, not LIKE: a name may hold % or _
+        prefix = peer2 + ":" if with_sessions else None
+        is_peer2 = "({0} = ? OR (? IS NOT NULL AND substr({0}, 1, length(?)) = ?))"
+        peer2_args = (peer2, prefix, prefix, prefix)
         cursor = await self._conn.execute(
             f"""
             SELECT * FROM (
                 SELECT {_COLUMNS}
                 FROM messages
-                WHERE (from_peer = ? AND to_peer = ?)
-                   OR (from_peer = ? AND to_peer = ?)
+                WHERE (from_peer = ? AND {is_peer2.format("to_peer")})
+                   OR ({is_peer2.format("from_peer")} AND to_peer IN (?, ?))
                 ORDER BY timestamp DESC
                 LIMIT ?
             )
             ORDER BY timestamp
             """,
-            (peer1, peer2, peer2, peer1, limit)
+            (peer1, *peer2_args, *peer2_args, peer1, machine or peer1, limit)
         )
         return [_row_to_message(row) for row in await cursor.fetchall()]
 

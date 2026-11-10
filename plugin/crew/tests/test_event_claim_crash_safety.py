@@ -10,10 +10,9 @@ gave for it (.work/burnin-fix3-r1.txt).
   the only emission: the twin waits out the grace, then emits.
 * :129 -- an unusable claim store lets exactly ONE flavour emit.
 * notify.sh:37 -- the burn-in PATH (failing WindowsApps python3 first, real
-  python3 second, no python/py) sends one ping across both flavours.
-* role-write-guard.ps1:58 / :66 -- the shared probe proves Python 3 and kills
-  the whole process tree on its timeout; `_common.sh`'s bash resolver kills
-  the tree too.
+  python3 second, no python/py) still writes one transcript copy.
+* the shared probe proves Python 3 and kills the whole process tree on its
+  timeout; `_common.sh`'s bash resolver kills the tree too.
 """
 import itertools
 import json
@@ -391,16 +390,12 @@ def test_mark_sent_is_immune_to_a_prune_and_recreate_race_mid_call(tmp_path):
 # --- handoff-write.sh:64 -- a failed write must not be marked sent ---------------
 
 def _handoff_repo_with_broken_path(tmp_path):
-    """`context.handoffPath` beneath a regular file, so the write can never
+    """The handoff path occupied by a directory, so the write can never
     land -- Codex r1 finding 2's own reproduction."""
     root = _repo(tmp_path)
     (pathlib.Path(root) / ".crew").mkdir()
-    blocker = pathlib.Path(root) / ".work" / "blocker"
-    blocker.parent.mkdir(parents=True, exist_ok=True)
-    blocker.write_text("not a directory", encoding="utf-8")
-    (pathlib.Path(root) / ".crew" / "config.json").write_text(
-        json.dumps({"context": {"handoffPath": ".work/blocker/HANDOFF.md"}}),
-        encoding="utf-8")
+    (pathlib.Path(root) / ".work" / "HANDOFF.md").mkdir(parents=True)
+    (pathlib.Path(root) / ".crew" / "config.json").write_text("{}", encoding="utf-8")
     return root
 
 
@@ -415,30 +410,12 @@ def test_sh_does_not_mark_a_failed_handoff_write_sent(tmp_path):
                           capture_output=True, check=False, timeout=30)
 
     assert done.returncode == 0, done.stderr
-    assert not (pathlib.Path(root) / ".work" / "blocker" / "HANDOFF.md").exists()
+    assert (pathlib.Path(root) / ".work" / "HANDOFF.md").is_dir()
     claims = _generation_files(root)
     assert len(claims) == 1
     assert json.loads(claims[0].read_text())["state"] != "sent", (
         "a failed handoff write must not be marked sent -- a real twin "
         "would find 'sent' and stand down, losing the handoff for good")
-
-
-@needs_pwsh
-def test_ps1_does_not_mark_a_failed_handoff_write_sent(tmp_path):
-    root = _handoff_repo_with_broken_path(tmp_path)
-    payload = json.dumps({"hook_event_name": "PreCompact", "session_id": "s",
-                          "cwd": root, "trigger": "auto"}).encode()
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT")
-
-    done = subprocess.run([PWSH, "-NoProfile", "-File", str(SCRIPTS / "handoff-write.ps1")],
-                          input=payload, cwd=root, env=env, capture_output=True,
-                          check=False, timeout=60)
-
-    assert done.returncode == 0, done.stderr
-    assert not (pathlib.Path(root) / ".work" / "blocker" / "HANDOFF.md").exists()
-    claims = _generation_files(root)
-    assert len(claims) == 1
-    assert json.loads(claims[0].read_text())["state"] != "sent"
 
 
 # --- :129 an unusable store --------------------------------------------------------
@@ -450,7 +427,7 @@ def _break_store(root):
 
 
 @pytest.mark.parametrize("os_env,expected", [
-    ("Windows_NT", {"sh": False, "ps1": True, None: True}),
+    ("Windows_NT", {"sh": True, "ps1": False, None: True}),
     (None, {"sh": True, "ps1": False, None: True}),
 ])
 def test_an_unusable_store_lets_exactly_one_designated_flavour_emit(tmp_path, monkeypatch,
@@ -468,10 +445,13 @@ def test_an_unusable_store_lets_exactly_one_designated_flavour_emit(tmp_path, mo
     assert got == expected
 
 
-# --- end to end: both flavours of notify ---------------------------------------------
+# --- end to end: notify and handoff-write through the sh ------------------------------
 
-@pytest.fixture(name="teams")
-def _teams():
+BOT_TOKEN = "123456789:AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
+
+
+@pytest.fixture(name="bot")
+def _bot():
     import http.server  # pylint: disable=import-outside-toplevel
     hits = []
 
@@ -481,7 +461,7 @@ def _teams():
             hits.append(self.rfile.read(length))
             self.send_response(200)
             self.end_headers()
-            self.wfile.write(b"{}")
+            self.wfile.write(b'{"ok": true}')
 
         def log_message(self, *_args):  # pylint: disable=arguments-differ
             pass
@@ -489,7 +469,7 @@ def _teams():
     server = http.server.HTTPServer(("127.0.0.1", 0), Counter)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    yield f"http://127.0.0.1:{server.server_address[1]}/hook", hits
+    yield f"http://127.0.0.1:{server.server_address[1]}", hits
     server.shutdown()
 
 
@@ -506,18 +486,16 @@ def _stub(directory, name, body, win_body=None):
     `Get-Command -CommandType Application` and to `Resolve-CrewPython`'s own
     native-extension gate (see `test_ps1_python_probe.py::_stub`, the same
     fixture duplicated here) -- so a "real python3" stub written this way is
-    never found on a genuine Windows host, and a `.ps1` hook resolving no
-    python at all still falls open and emits (documented in
-    handoff-write.ps1's own `Test-CrewEventClaim`: "every failure to decide
-    ... emits, because a duplicate is the safe side"), turning the ONE
-    transcript copy this module's burn-in test asserts into two. On real
-    Windows this writes a `.cmd` instead, which both `Get-Command` and Git
-    Bash's own PATH resolution can find."""
+    never found on a genuine Windows host, so a "real python3" stub written
+    this way would leave a hook resolving no python at all. On real Windows
+    this writes a `.cmd` instead, which both `Get-Command` and Git Bash's own
+    PATH resolution can find."""
     directory.mkdir(parents=True, exist_ok=True)
     if os.name == "nt":
         path = directory / (name + ".cmd")
         path.write_text("@echo off\r\n" + (win_body if win_body is not None else body) + "\r\n",
                         encoding="ascii", newline="\r\n")
+        (directory / name).write_text("#!/bin/sh\n" + body + "\n", encoding="ascii", newline="\n")
         return path
     path = directory / name
     path.write_text("#!/bin/sh\n" + body + "\n", encoding="ascii", newline="\n")
@@ -525,35 +503,31 @@ def _stub(directory, name, body, win_body=None):
     return path
 
 
-def _notify_both(root, url, path=None):
-    """sh then ps1, the same payload, OS=Windows_NT for BOTH -- on a real
-    Windows host Git Bash inherits it too."""
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT", CREW_TEST_TEAMS_URL=url,
-               **_notify_home(root))
+def _notify_sh(root, url, path=None):
+    """notify.sh on one Notification payload, with `OS` unset."""
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, CREW_NOTIFY_TELEGRAM_BASE=url,
+               CREW_TEST_TG_TOKEN=BOT_TOKEN, **_notify_home(root))
+    env.pop("OS", None)
     if path:
         env["PATH"] = path
     payload = json.dumps({"hook_event_name": "Notification", "session_id": "burn-in",
                           "cwd": root, "message": "Claude needs your permission",
                           "notification_type": "permission_prompt", "prompt_id": "p-1"}).encode()
-    codes = []
-    for cmd in ([BASH, str(SCRIPTS / "notify.sh")],
-                [PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1")]):
-        done = subprocess.run(cmd + ["hook"], input=payload,
-                              cwd=root, env=env, capture_output=True, check=False, timeout=120)
-        codes.append(done.returncode)
-    return codes
+    done = subprocess.run([BASH, str(SCRIPTS / "notify.sh"), "hook"], input=payload,
+                          cwd=root, env=env, capture_output=True, check=False, timeout=120)
+    return done.returncode
 
 
 def _notify_home(root):
     """HOME / USERPROFILE for the hooks: a fixture home beside the repo whose
-    machine-global `~/.claude/crew/config.json` names `urlEnv` -- the only
+    machine-global `~/.claude/crew/config.json` names `tokenEnv` -- the only
     layer crew_notify honours it from (GLOBAL_ONLY_KEYS) -- so no case reads
     the real `~/.claude`, and none passes only because the machine has one."""
     home = pathlib.Path(root).parent / "notify-home"
     crew = home / ".claude" / "crew"
     crew.mkdir(parents=True, exist_ok=True)
     (crew / "config.json").write_text(
-        json.dumps({"notify": {"urlEnv": "CREW_TEST_TEAMS_URL"}}), encoding="utf-8")
+        json.dumps({"notify": {"tokenEnv": "CREW_TEST_TG_TOKEN"}}), encoding="utf-8")
     return {"HOME": str(home), "USERPROFILE": str(home)}
 
 
@@ -561,20 +535,31 @@ def _notify_repo(tmp_path):
     root = _repo(tmp_path)
     (pathlib.Path(root) / ".crew").mkdir()
     (pathlib.Path(root) / ".crew" / "config.json").write_text(
-        json.dumps({"notify": {"provider": "teams"}}), encoding="utf-8")
+        json.dumps({"notify": {"provider": "telegram", "chatId": "4242"}}),
+        encoding="utf-8")
     return root
 
 
 @needs_bash
-@needs_pwsh
-def test_the_burn_in_path_writes_one_transcript_copy_across_both_flavours(tmp_path):
+def test_a_python3_stub_is_found_by_name_through_bash(tmp_path):
+    """Git Bash resolves `python3` to an extensionless file or a .exe, never
+    to a bare python3.cmd, so a stub that only existed as .cmd was visible to
+    PowerShell and invisible to every .sh hook."""
+    stub_dir = tmp_path / "stubs"
+    _stub(stub_dir, "python3", "exit 0", win_body="exit /b 0")
+
+    found = subprocess.run([BASH, "-c", "type -ap python3"], env=dict(os.environ, PATH=str(stub_dir)),
+                           capture_output=True, text=True, check=False, timeout=60).stdout
+
+    assert "python3" in found
+
+
+@needs_bash
+def test_the_burn_in_path_writes_one_transcript_copy_through_the_sh(tmp_path):
     """notify.sh:37's reproduction, on the bash claimant that can act with
     no python at all: a failing WindowsApps python3 first, a real python3
     second, no python or py. crew_py_strict used to stop at the first match,
-    so handoff-write.sh failed open and wrote; PowerShell then found the real
-    one, won an empty claim store and wrote again. A second apart on purpose:
-    copies are named by the second, so two in one second collapse to one
-    file whether or not the claim works."""
+    so handoff-write.sh failed open and wrote without a claim."""
     root = _repo(tmp_path)
     (pathlib.Path(root) / ".crew").mkdir()
     (pathlib.Path(root) / ".crew" / "config.json").write_text("{}", encoding="utf-8")
@@ -589,22 +574,17 @@ def test_the_burn_in_path_writes_one_transcript_copy_across_both_flavours(tmp_pa
     payload = json.dumps({"hook_event_name": "PreCompact", "session_id": "burn-in", "cwd": root,
                           "transcript_path": str(transcript), "trigger": "auto"}).encode()
 
-    codes = []
-    for cmd in ([BASH, str(SCRIPTS / "handoff-write.sh")],
-                [PWSH, "-NoProfile", "-File", str(SCRIPTS / "handoff-write.ps1")]):
-        codes.append(subprocess.run(cmd, input=payload, cwd=root, env=env, capture_output=True,
-                                    check=False, timeout=120).returncode)
-        time.sleep(1.2)
+    code = subprocess.run([BASH, str(SCRIPTS / "handoff-write.sh")], input=payload, cwd=root, env=env,
+                          capture_output=True, check=False, timeout=120).returncode
     copies = list((pathlib.Path(root) / ".crew" / "transcripts").glob("*.jsonl"))
 
-    assert (codes, len(copies)) == ([0, 0], 1)
+    assert (code, len(copies)) == (0, 1)
 
 
 def _notify_repo_bad_provider(tmp_path):
     """`notify.provider` set to a typo -- Codex r1 finding 4's own
-    reproduction: neither the bash `case` nor the PowerShell `switch` had a
-    default arm, so nothing ever called claim_sent/Complete-CrewEventClaim
-    for it."""
+    reproduction: the bash `case` had no default arm, so nothing ever called
+    claim_sent for it."""
     root = _repo(tmp_path)
     (pathlib.Path(root) / ".crew").mkdir()
     (pathlib.Path(root) / ".crew" / "config.json").write_text(
@@ -628,86 +608,23 @@ def test_sh_marks_an_unknown_provider_claim_sent_not_orphaned(tmp_path):
         "it 'claimed' forever")
 
 
-@needs_pwsh
-def test_ps1_marks_an_unknown_provider_claim_sent_not_orphaned(tmp_path):
-    root = _notify_repo_bad_provider(tmp_path)
-    payload = json.dumps({"hook_event_name": "Notification", "session_id": "burn-in",
-                          "cwd": root, "message": "hi", "notification_type": "permission_prompt",
-                          "prompt_id": "p-1"}).encode()
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT")
-
-    done = subprocess.run([PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1"),
-                           "hook"], input=payload, cwd=root, env=env,
-                          capture_output=True, check=False, timeout=60)
-
-    assert done.returncode == 0, done.stderr
-    claims = _claim_files(root)
-    assert len(claims) == 1
-    assert event_claim._read(str(claims[0]))[0] == "sent", (
-        "an unknown provider must release the claim immediately, not leave "
-        "it 'claimed' forever")
-
-
-# wallclock (T-0110): an elapsed-time bound, so it runs serially, never under -n.
-# Native -n auto (20 workers): took=[3.09, 4.78] and [4.35, 5.85] against the grace; serially it passes.
-@pytest.mark.wallclock
 @needs_bash
-@needs_pwsh
-def test_an_unknown_provider_does_not_orphan_the_twin(tmp_path):
-    """Both flavours, sequentially, the same nonempty payload: before the
-    fix the second flavour waited out the whole grace (4s for notify) and
-    then created a SECOND orphaned generation -- itself unsendable for the
-    same reason. Fixed, the first flavour releases the claim immediately and
-    the second stands down at once. PowerShell runs FIRST here -- with bash
-    first the claim is already "sent" before ps1 ever reaches its own
-    switch, which would prove only the bash half."""
-    root = _notify_repo_bad_provider(tmp_path)
-    payload = json.dumps({"hook_event_name": "Notification", "session_id": "burn-in",
-                          "cwd": root, "message": "hi", "notification_type": "permission_prompt",
-                          "prompt_id": "p-1"}).encode()
-    env = dict(os.environ, CLAUDE_PROJECT_DIR=root, OS="Windows_NT")
-
-    codes, took = [], []
-    for cmd in ([PWSH, "-NoProfile", "-File", str(SCRIPTS / "notify.ps1")],
-                [BASH, str(SCRIPTS / "notify.sh")]):
-        began = time.monotonic()
-        done = subprocess.run(cmd + ["hook"], input=payload, cwd=root, env=env,
-                              capture_output=True, check=False, timeout=30)
-        took.append(time.monotonic() - began)
-        codes.append(done.returncode)
-    # Each run against the grace it would wait out if broken. A 3s total over
-    # both runs also counted two process start-ups, which alone passed 3s on
-    # Windows; timing only the twin let a slow first run through (T-0076).
-    grace = event_claim._HOOK_GRACE["notify"]
-
-    claims = _claim_files(root)
-    assert (codes, [seconds < grace for seconds in took]) == ([0, 0], [True, True]), (
-        "neither flavour may wait out the grace, and the twin must stand down at once: "
-        f"codes={codes} took={took}")
-    assert len(claims) == 1, (
-        "an unknown provider must not orphan a second generation: " +
-        repr([c.name for c in claims]))
-    assert event_claim._read(str(claims[0]))[0] == "sent"
-
-
-@needs_bash
-@needs_pwsh
-def test_an_unusable_store_sends_one_ping_across_both_flavours(tmp_path, teams):
-    url, hits = teams
+def test_an_unusable_store_sends_one_ping_through_the_sh(tmp_path, bot):
+    url, hits = bot
     root = _notify_repo(tmp_path)
     _break_store(root)
 
-    codes = _notify_both(root, url)
+    code = _notify_sh(root, url)
 
-    assert (codes, len(hits)) == ([0, 0], 1)
+    assert (code, len(hits)) == (0, 1)
 
 
-# --- role-write-guard.ps1:58 -- the probe proves Python 3 ------------------------------
+# --- the probe proves Python 3 --------------------------------------------------------- ------------------------------
 
 def _print_python(path_entries):
     env = dict(os.environ, OS="Windows_NT", PATH=os.pathsep.join(map(str, path_entries)))
     done = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File",
-                           str(SCRIPTS / "completion-audit.ps1"), "-PrintPython"],
+                           str(SCRIPTS / "crew-hook.ps1"), "-PrintPython"],
                           env=env, stdin=subprocess.DEVNULL, capture_output=True,
                           text=True, check=False, timeout=120)
     assert done.returncode == 0, done.stderr
@@ -751,7 +668,7 @@ def test_the_probe_accepts_a_real_python_3(tmp_path):
     assert _print_python([real, _tools(tmp_path)]) == REAL
 
 
-# --- role-write-guard.ps1:66 and the bash resolver -- the timeout kills the tree ----------
+# --- the probe timeout kills the tree, in both resolvers ---------------------------------
 
 def _launcher(tmp_path, token):
     """A py.exe-shaped launcher: starts a child interpreter that inherits

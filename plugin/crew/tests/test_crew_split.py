@@ -366,6 +366,111 @@ def test_high_findings_rate_fires_both_repo_triggers(tmp_path):
     assert {"findings-rate", "tickets-too-large"} <= set(crew_split.triggers(got, "spec"))
 
 
+# A-0011: review_metrics.row writes `INCOMPLETE` in both count cells for a
+# round that produced no verdict. That row is a round with no counts, not a
+# malformed one: before the fix it made findings-rate unknown forever and
+# autopilot stopped at `split-check-unknown` on every later ticket.
+
+# The row the bug report quoted, byte for byte (ITI-354, 2026-10-28).
+_REPORTED_INCOMPLETE = ("2026-10-28 | ITI-354 | codex/default (r1, std:0274d24c, different "
+                        "family unproven, author from config) | INCOMPLETE | INCOMPLETE")
+
+
+def _metrics(root, *rows):
+    (root / ".crew" / "metrics.md").write_text(
+        "date | ticket | reviewer | BLOCK | FIX\n--- | --- | --- | --- | ---\n"
+        + "".join(f"{r}\n" for r in rows), encoding="utf-8", newline="\n")
+
+
+def _spec_only(root):
+    _ticket(root, "T-0001", "# T-0001 x\n## Touch\n- `a`\n## Acceptance checks\n- [ ] a\n")
+
+
+def test_incomplete_round_is_skipped_not_malformed(tmp_path):
+    root = make_repo(tmp_path)
+    _spec_only(root)
+    _metrics(root, "2026-10-27 | T-1 | codex | 1 | 2", _REPORTED_INCOMPLETE,
+             "2026-10-29 | T-2 | codex | 0 | 1")
+
+    got = crew_split.measure(str(root), "T-0001")
+
+    assert (got["findings_rate"], got["tickets_too_large"]) == (2.0, False)
+    assert "findings-rate" not in crew_split.absent_sources(str(root))
+    assert not any(t.startswith("unknown:findings") for t in crew_split.triggers(got, "spec"))
+
+
+def test_only_incomplete_rounds_is_no_counted_review_yet(tmp_path):
+    # No round has counts: the source is there but holds nothing to measure,
+    # which is "no review recorded" (unmeasured), never a malformed source.
+    root = make_repo(tmp_path)
+    _spec_only(root)
+    _metrics(root, _REPORTED_INCOMPLETE)
+
+    assert crew_split.measure(str(root), "T-0001")["findings_rate"] is None
+    assert "findings-rate" in crew_split.absent_sources(str(root))
+
+
+@pytest.mark.parametrize("bad", [
+    "2026-10-29 | T-3 | codex | INCOMPLETE | 2",   # half a verdict
+    "2026-10-29 | T-3 | codex | 1 | INCOMPLETE",
+    "2026-10-29 | T-3 | codex | incomplete-ish | x",
+    "2026-10-29 | T-3 | codex | 1",                # too few cells
+])
+def test_genuinely_malformed_row_still_unknown(tmp_path, bad):
+    root = make_repo(tmp_path)
+    _spec_only(root)
+    _metrics(root, "2026-10-27 | T-1 | codex | 1 | 2", _REPORTED_INCOMPLETE, bad)
+
+    got = crew_split.measure(str(root), "T-0001")
+
+    assert got["findings_rate"] is None
+    assert "unknown:findings-rate" in crew_split.triggers(got, "spec")
+    assert "findings-rate" not in crew_split.absent_sources(str(root))
+
+
+def _every_row_shape():
+    """Every shape review_metrics.row can emit: each verdict review_verdict
+    defines (and one it does not, which row also writes as INCOMPLETE), with
+    and without a model, refunded or not, and cells holding a `|`."""
+    import review_metrics  # pylint: disable=import-outside-toplevel
+    import review_verdict  # pylint: disable=import-outside-toplevel
+    shapes = []
+    for verdict in tuple(review_verdict.VERDICTS) + (None, "garbage"):
+        for model in (None, "", "gpt-5.6-sol", "a|b"):
+            for refunded in (False, True):
+                for family in ("different family unproven, author from config",
+                               review_metrics.CODEX_LIMIT, review_metrics.SAME_FAMILY_CHOSEN,
+                               "x|y"):
+                    line = review_metrics.row("2026-10-29", "T-7", "codex", model, 2,
+                                              "std:0274d24c", family, verdict,
+                                              {"BLOCK": 1, "FIX": 2}, refunded)
+                    shapes.append((verdict, line))
+    return shapes
+
+
+def test_every_row_review_metrics_writes_parses_in_split(tmp_path):
+    """The writer/reader contract: nothing review_metrics.row emits may read
+    as a malformed row to crew_split. A counted round measures its counts; an
+    uncounted one is skipped, and beside a counted row changes nothing. One
+    repo, every shape in turn: a git init per shape costs minutes here."""
+    import review_verdict  # pylint: disable=import-outside-toplevel
+    root = make_repo(tmp_path)
+    _spec_only(root)
+    path = str(root / ".crew" / "metrics.md")
+    shapes = _every_row_shape()
+    assert {v for v, _ in shapes} >= {"CLEAN", "FINDINGS", "INCOMPLETE"}
+    for verdict, line in shapes:
+        _metrics(root, "2026-10-27 | T-1 | codex | 0 | 1", line)
+
+        got = crew_split.measure(str(root), "T-0001")
+
+        assert not crew_split._malformed_rows(path), line  # pylint: disable=protected-access
+        counted = verdict in (review_verdict.CLEAN, review_verdict.FINDINGS)
+        # T-1 has 1 finding; T-7's counted round adds 3 over two tickets.
+        assert got["findings_rate"] == (2.0 if counted else 1.0), line
+        assert "findings-rate" not in crew_split.absent_sources(str(root)), line
+
+
 def test_none_measure_reports_unknown_not_quiet():
     measures = dict.fromkeys(crew_split.MEASURES)
 

@@ -1495,8 +1495,8 @@ def test_autopilot_defaults_are_the_config_block():
         "mode": "off", "maxPhases": 12, "deploy": "none", "approval": "risk",
         "questions": "risk", "maxAutoReplans": 0,
         "sleep": {"schedule": None, "approval": None, "questions": None,
-                  "deploy": None, "notifyHold": None},  # L-0654, L-0656
-        "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,
+                  "deploy": None},  # L-0654
+        "ship": "merge",
         "maxTicketsPerRun": 3, "maxTokensPerSession": 2000000,  # L-0541's caps
         "maxLanes": None, "reviewPolicy": "stop"}
 

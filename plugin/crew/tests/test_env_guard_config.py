@@ -13,9 +13,10 @@ import crew_state
 
 
 def test_default_is_off_in_both_layers():
-    assert crew_config.default_config()["guards"]["envGuard"] == "off"
-    assert crew_config.default_global_config()["guards"]["envGuard"] == "off"
+    assert crew_config.default_config()["guards"]["profile"] == "off"
+    assert crew_config.default_global_config()["guards"]["profile"] == "off"
     assert crew_state.GUARD_DEFAULTS["envGuard"] == "off"
+    assert crew_state.PROFILE_MAP["off"]["envGuard"] == "off"
 
 
 def test_it_is_a_guard_with_the_role_writes_vocabulary():
@@ -49,4 +50,5 @@ def test_widening_notes_are_total_and_name_the_key():
 
 
 def test_config_key_table_declares_it():
-    assert "guards.envGuard" in crew_keys.KEY_META
+    assert "guards.overrides" in crew_keys.KEY_META
+    assert "envGuard" in crew_state.ALL_GUARD_NAMES

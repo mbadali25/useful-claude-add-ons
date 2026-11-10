@@ -228,20 +228,20 @@ choice the user makes, not a side effect of building a graph.
 
 ## Config keys
 
-`.crew/config.json`'s `graph` block, as written by `crew_upgrade.py` and
-`crew-setup`:
+`.crew/config.json`'s `graph` block holds one key:
 
 | Key | Meaning |
 |---|---|
-| `graph.enabled` | Whether crew treats this repo as graph-capable. |
-| `graph.tool` | Always `"graphify"` today. |
 | `graph.out` | Output directory; defaults to `graphify-out`. |
-| `graph.mode` | Always `"code-only"` today. |
-| `graph.commitHook` | Whether `graphify hook install` has been run. |
 
-That is the whole block. `graph.obsidian.*` was removed in 0.16.13 — a config
-still carrying it is not misconfigured, just old, and `crew_upgrade.py` drops
-the key and says so.
+The rest is fixed in code (`crew_state.GRAPH_*`, L-0725): crew always treats the
+repo as graph-capable, the tool is always `"graphify"`, the mode is always
+`"code-only"`, and crew does not track whether the commit hook is installed
+(`graph.commitHook` is `false`). A config still carrying `graph.enabled`,
+`graph.tool`, `graph.mode` or `graph.commitHook` is not misconfigured, just
+old: the value has no effect, and `/crew:migrate` removes it.
+`graph.obsidian.*` was removed in 0.16.13 the same way, and `crew_upgrade.py`
+drops that key and says so.
 
 ## Refreshing an existing codemap
 

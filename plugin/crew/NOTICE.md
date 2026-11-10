@@ -150,6 +150,33 @@ SOFTWARE.
 
 ---
 
+## Prompt-text additions from Matt Pocock's skills, Ponytail, gstack and pstack
+
+Sentences and checklists below were reworded in crew's own words, not copied. Each source is MIT
+licensed; the copyright holder is named so the notice travels with crew's copy.
+
+- **Matt Pocock's skills** - <https://github.com/mattpocock/skills> at `5beb35b0`, copyright 2026
+  Matt Pocock, MIT. From `diagnosing-bugs` (the red-capable done criterion and the `[DEBUG-xxxx]`
+  log tag), `tdd` (the tautological-assertion rule) and `productivity/handoff` (reference by path,
+  redact secrets). Used in `skills/crew-debugging/SKILL.md`, `commands/debug.md`,
+  `skills/crew-execute/SKILL.md` and `commands/handoff.md`.
+- **Ponytail** - <https://github.com/DietrichGebert/ponytail> at `09c434ab`, copyright 2026
+  DietrichGebert, MIT. The reuse-first ladder, from `skills/ponytail/SKILL.md:28-30`. Used in
+  `skills/crew-execute/SKILL.md`.
+- **gstack** - <https://github.com/garrytan/gstack> at `b04cc358`, copyright 2026 Garry Tan, MIT.
+  The functional QA contract map and evidence rules, from `qa/sections/system-functional.md`,
+  `qa/sections/scope.md` and `qa/sections/exploratory.md`. Used in
+  `skills/crew-qa-standards/references/functional-qa.md`. The deploy-evidence wording in
+  `commands/promote.md` is the owner's rule; gstack's `land-and-deploy` skill (`SKILL.md`) is cited
+  there only as prior art for the vocabulary, and no text is taken from it.
+- **pstack** (the `pstack/` directory of <https://github.com/cursor/plugins>) at `8b3326d9`,
+  copyright 2026 Lauren Tan, MIT, per `pstack/LICENSE`. The seven benchmark questions, from
+  `skills/benchmark-checklist/SKILL.md`, and the "able to fail" rule, from
+  `skills/create-formal-verification-skill/SKILL.md`. Used in
+  `skills/crew-qa-standards/references/measurements.md`.
+
+---
+
 ## A note on this repository's two licences
 
 The repository root `LICENSE` is GPL-2.0; `plugin/crew/.claude-plugin/plugin.json`

@@ -3,6 +3,7 @@ tests. Everything is built under pytest's tmp_path: no test here touches the
 real repository, its ledger directory, or ~/.claude."""
 import json
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -269,3 +270,129 @@ def run_review(repo, scratch, fakes, mode, *extra, **env_extra):
         + list(extra),
         capture_output=True, text=True, stdin=subprocess.DEVNULL, check=False,
         env=env_with_path(fakes, FAKE_REVIEWER_MODE=mode, **env_extra), timeout=120)
+
+
+# --- review_run.py --prepare fixtures (L-0726) ------------------------------
+# Seven repositories whose review inputs are byte-reproducible: every commit
+# carries a fixed author, committer and date, so the shas, the diff's index
+# lines and the bundle hash are the same on every machine. The goldens under
+# golden/prepare/<scenario>/ were captured from the pre-cut review.md snippets
+# at SNIPPET_REV (capture_prepare_goldens.py), then `--prepare` was made to
+# reproduce them.
+PREPARE_SCENARIOS = ("committed-only", "mixed-worktree", "split-bundle", "codemap-landmines",
+                     "codemap-over-cap", "recorded-start", "empty-diff")
+PREPARE_SCRATCH = ".work/review/golden"
+PREPARE_TICKET = "T1"
+_COMMIT_DAY = "2026-01-01T00:00:{:02d}Z"
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(review_run.__file__))
+PLUGIN_ROOT = os.path.dirname(os.path.dirname(_SCRIPTS_DIR))
+
+
+def _dated(root, number, *args):
+    stamp = _COMMIT_DAY.format(number)
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.com",
+               GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@example.com",
+               GIT_AUTHOR_DATE=stamp, GIT_COMMITTER_DATE=stamp)
+    subprocess.run(("git",) + args, cwd=root, check=True, env=env, capture_output=True,
+                   stdin=subprocess.DEVNULL)
+
+
+def _commit(root, message, number):
+    git(root, "add", "-A")
+    _dated(root, number, "commit", "-q", "-m", message)
+
+
+def _write(root, rel, text):
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+
+def _codemap_note(title, cited, landmines, readers):
+    lines = [f"# {title}", "", "## Landmines"] + [f"- {item}" for item in landmines]
+    lines += ["", "## Written by / Read by"] + [f"- {item}" for item in readers]
+    lines += ["", "## Other", "not collected", ""]
+    return "\n".join(lines).replace("{cited}", cited)
+
+
+def build_prepare_repo(root, scenario):
+    """A deterministic repository for `scenario` (one of PREPARE_SCENARIOS) on
+    branch t1, ticket T1 the one active INDEX row. Returns `root`."""
+    root.mkdir(parents=True, exist_ok=True)
+    git(root, "init", "-q", "-b", "main")
+    git(root, "config", "core.autocrlf", "false")
+    _write(root, "seed.txt", "seed line one\nseed line two\n")
+    _write(root, ".gitignore", ".work/\n.crew/*\n!.crew/codemap/\n")
+    _write(root, ".work/INDEX.md", "T1 | open | med | repo | the demo ticket\n")
+    if scenario in ("codemap-landmines", "codemap-over-cap", "mixed-worktree"):
+        _write(root, ".crew/codemap/INDEX.md", "# index\n- src/a.py\n")
+        _write(root, ".crew/codemap/alpha.md", _codemap_note(
+            "alpha", "src/a.py", ["src/a.py truncates on CRLF", "src/a.py is read twice"],
+            ["src/a.py is written by build, read by deploy"]))
+        _write(root, ".crew/codemap/beta.md", _codemap_note(
+            "beta", "src/zzz.py", ["src/zzz.py is not in this diff"], ["src/zzz.py"]))
+    if scenario == "codemap-over-cap":
+        for number in range(4):
+            _write(root, f".crew/codemap/big{number}.md", _codemap_note(
+                f"big{number}", "src/a.py",
+                [f"src/a.py landmine {number}.{row}" for row in range(40)],
+                [f"src/a.py reader {number}.{row}" for row in range(20)]))
+    _commit(root, "seed", 0)
+    git(root, "checkout", "-q", "-b", "t1")
+    if scenario == "empty-diff":
+        return root
+    if scenario == "recorded-start":
+        # The ticket starts here (an exact record), main moves on and is merged
+        # in: the merge-base is then main's tip, not the recorded start.
+        subprocess.run([sys.executable, os.path.join(_SCRIPTS_DIR, "scope_base.py"),
+                        "--root", str(root), "--record", PREPARE_TICKET],
+                       check=True, capture_output=True, stdin=subprocess.DEVNULL)
+        git(root, "checkout", "-q", "main")
+        _write(root, "main_only.txt", "landed on main meanwhile\n")
+        _commit(root, "main moves", 1)
+        git(root, "checkout", "-q", "t1")
+        _write(root, "src/a.py", "def a():\n    return 1\n")
+        _commit(root, "one", 2)
+        _dated(root, 3, "merge", "-q", "--no-ff", "-m", "merge main", "main")
+        _write(root, "src/b.py", "def b():\n    return 2\n")
+        _commit(root, "two", 4)
+        return root
+    _write(root, "src/a.py", "def a():\n    return 1\n")
+    _commit(root, "one", 1)
+    if scenario == "split-bundle":
+        body = "".join(f"line {row:06d} of the large generated module for the split\n"
+                       for row in range(4200))
+        _write(root, "src/large.py", body)
+        _commit(root, "large", 2)
+    elif scenario == "mixed-worktree":
+        _write(root, "src/b.py", "def b():\n    return 2\n")
+        git(root, "add", "src/b.py")
+        _write(root, "seed.txt", "seed line one\nseed line two changed\n")
+        _write(root, "src/c.py", "def c():\n    return 3\n")
+    return root
+
+
+def prepare_env(directory, home):
+    """The environment both the snippets and `--prepare` run under: fake
+    codex, copilot and kimi on PATH (so which providers are eligible does not
+    depend on the host), an empty HOME (no machine config layer) and no
+    CLAUDE_* / CREW_* variable."""
+    for name in ("codex", "copilot", "kimi"):
+        fake_reviewer_bin(directory, name)
+    home.mkdir(parents=True, exist_ok=True)
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(("CLAUDE_", "CREW_", "FAKE_REVIEWER"))}
+    env["PATH"] = str(directory) + os.pathsep + env.get("PATH", "")
+    env["HOME"] = env["USERPROFILE"] = str(home)
+    env["CLAUDE_PLUGIN_ROOT"] = PLUGIN_ROOT
+    return env
+
+
+def normalise_root(text, root):
+    """`root` -> `<ROOT>`, with a Windows path's separators made `/` inside
+    each token that starts with it."""
+    escaped = str(root).replace("\\", "\\\\")  # the same path inside a JSON string
+    for form in sorted({str(root), root.as_posix(), escaped}, key=len, reverse=True):
+        text = text.replace(form, "<ROOT>")
+    return re.sub(r'<ROOT>[^\s"]*', lambda m: m.group(0).replace("\\\\", "/").replace("\\", "/"),
+                  text)

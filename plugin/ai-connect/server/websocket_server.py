@@ -4,20 +4,27 @@
 import asyncio
 import json
 import logging
+import ssl
 import time
 from collections.abc import Callable
 from http import HTTPStatus
+from pathlib import Path
+from urllib.parse import urlsplit
 
 import websockets
+import yaml
 from websockets.asyncio.server import Server, ServerConnection
 from websockets.http11 import Request, Response
 from websockets.protocol import State
 
+import join_codes
+
+from .auth_reload import AUTH_RELOAD_SECONDS, AuthReloader
 from .limits import Limits, TokenBucket
 from .message_store import DEFAULT_DB_PATH, MessageStore
 from .observers import Observers
 from .peer_registry import NameTakenError, Peer, PeerRegistry, utc_now
-from .roles import Identity, Roles
+from .roles import Identity, Roles, token_sha256
 from .user_send import (
     BRIDGE_SENDER,
     is_reserved_name,
@@ -33,6 +40,9 @@ HEARTBEAT_SECONDS = 60
 HISTORY_CLEANUP_SECONDS = 24 * 60 * 60
 # Messages in one history_all page; the contents often carry code and files
 HISTORY_ALL_MAX_LIMIT = 1000
+# Messages in one peer's history answer, and how many without a 'limit'
+HISTORY_MAX_LIMIT = 1000
+HISTORY_DEFAULT_LIMIT = 50
 # Frames above this are closed by websockets itself (1009); between the
 # app limit and this, the Bridge answers with an error frame instead
 WEBSOCKET_MAX_SIZE_FLOOR = 1 << 20
@@ -47,11 +57,18 @@ PEER_STATES = ("busy", "idle", "waiting")
 MAX_IDLE_SUBSCRIPTIONS_PER_PEER = 32
 IDLE_NOTICE = "{name} is done and idle."
 WAITING_NOTICE = "{name} is waiting for approval: {detail}"
+# On every register refusal. A Bridge from before 0.2.0 refuses each session name
+# ("<machine>:<label>") with name_not_bound_to_token, the code this one keeps for a
+# name another machine owns: the mark tells a client which of the two it met
+SESSION_NAMES = {"session_names": True}
 NAME_TAKEN_ERROR = (
-    "'{name}' is online in another session. Sessions with the same client.name share it: "
-    "close one, give the second its own name and token (AI_CONNECT_PEER_NAME), or register "
-    "with standby to take the name once it is free."
+    "'{name}' is online in another session. Register under another name of this token "
+    "('<client.name>:<label>', as AI-Connect 0.2.0 and later do by themselves), close one, "
+    "or register with standby to take the name once it is free."
 )
+# Close code and reason for a connection whose token the auth reload no longer knows
+REVOKED_CLOSE_CODE = 1008
+REVOKED_REASON = "token revoked"
 
 
 def log_refusal(reason: str, **fields: object) -> None:
@@ -63,6 +80,12 @@ def _request_id(message: dict) -> dict:
     """The request's request_id, echoed in its answer so a client can tell a late answer apart."""
     request_id = message.get("request_id")
     return {"request_id": request_id} if isinstance(request_id, str) and len(request_id) <= 64 else {}
+
+
+def _valid_limit(limit: object, maximum: int) -> bool:
+    """A whole number from 1 to maximum. Not a bool (an int subclass: True would be 1), and
+    never negative: SQLite reads LIMIT -1 as no limit at all."""
+    return isinstance(limit, int) and not isinstance(limit, bool) and 0 < limit <= maximum
 
 
 def _unread_chunks(messages: list[dict]) -> list[list[dict]]:
@@ -98,7 +121,34 @@ class BridgeServer:
         db_path: str = DEFAULT_DB_PATH,
         limits: Limits | None = None,
         clock: Callable[[], float] = time.monotonic,
+        config_path: Path | None = None,
+        reload_seconds: float = AUTH_RELOAD_SECONDS,
+        ssl_context: ssl.SSLContext | None = None,
+        tls_port: int = 0,
+        plain: bool = True,
     ):
+        # Two listeners for the transition release (0.2.15): plain ws:// on port
+        # (deprecated, a warning per client address) and wss:// on tls_port
+        # with ssl_context. TLS cannot share one socket with plain WebSocket
+        # without sniffing the first byte, so it gets its own port. plain=False
+        # (server.tls.required) opens no ws:// listener at all.
+        if not plain and ssl_context is None:
+            raise ValueError("a Bridge without its plain listener needs TLS (ssl_context)")
+        self.ssl_context = ssl_context
+        self.tls_port = tls_port
+        self.plain = plain
+        self._plain_warned: set[str] = set()
+        self._tls_server: Server | None = None
+        # config.yaml, when the Bridge runs from one: its auth: is polled and
+        # hot-reloaded (server/auth_reload.py), and join codes are redeemed
+        # into it (join_codes.py). None: a fixed table, no join endpoint
+        self.config_path = Path(config_path) if config_path else None
+        self.reload_seconds = reload_seconds
+        self._reloader: AuthReloader | None = None
+        self._reload_task: asyncio.Task | None = None
+        # Every live connection's token digest and the identity it was let in as
+        self._connections: dict[ServerConnection, tuple[str, Identity]] = {}
+        self._join_failures = join_codes.FailureLimiter(clock=clock)
         self.host = host
         self.port = port
         self.history_days = history_days
@@ -115,8 +165,10 @@ class BridgeServer:
         # messages for that peer without registering as it
         self._watchers: dict[str, set[ServerConnection]] = {}
         # The Claude Code session each watcher belongs to: one watcher per
-        # session, because its hooks start one at every turn end
-        self._watcher_sessions: dict[ServerConnection, str] = {}
+        # session, because its hooks start one at every turn end. A session is
+        # known by its process id, which is unique per machine only: hence the
+        # credential beside it
+        self._watcher_sessions: dict[ServerConnection, tuple[str, str]] = {}
         # Standby connections per peer name: replaced sessions that wait for
         # the name to become free again
         self._standby: dict[str, set[ServerConnection]] = {}
@@ -125,6 +177,9 @@ class BridgeServer:
         self._idle_subscribers: dict[str, set[str]] = {}
         # Ids of direct messages being sent live right now (stored unread until sent)
         self._in_flight: set[str] = set()
+        # One replay of waiting messages per machine at a time: its sessions
+        # share what waited for the machine's name
+        self._replay_locks: dict[str, asyncio.Lock] = {}
 
         self.registry.on_join(self._announce_joined)
         self.registry.on_leave(self._handle_left)
@@ -132,43 +187,143 @@ class BridgeServer:
 
     async def start(self) -> None:
         await self.store.connect()
-        self._server = await websockets.serve(
-            self._handle_connection,
-            self.host,
-            self.port,
-            process_request=self._check_token,
-            max_size=max(2 * self.limits.max_message_bytes, WEBSOCKET_MAX_SIZE_FLOOR),
-        )
+        max_size = max(2 * self.limits.max_message_bytes, WEBSOCKET_MAX_SIZE_FLOOR)
+        if self.ssl_context is not None:
+            self._tls_server = await websockets.serve(
+                self._handle_connection, self.host, self.tls_port, ssl=self.ssl_context,
+                process_request=self._check_token, max_size=max_size,
+            )
+            logger.info(f"Bridge Server listening on wss://{self.host}:{self.tls_bound_port}")
+        if self.plain:
+            self._server = await websockets.serve(
+                self._handle_connection, self.host, self.port,
+                process_request=self._check_plain_token, max_size=max_size,
+            )
+            logger.info(f"Bridge Server listening on ws://{self.host}:{self.bound_port}")
+            logger.warning(json.dumps({
+                "event": "plaintext_listener", "url": f"ws://{self.host}:{self.bound_port}",
+                "detail": "plain ws:// is deprecated: served beside wss:// in 0.2.15 only; 0.3.1 serves wss:// "
+                          "alone. Re-pin peers (ai-connect pin) and set server.tls.required: true to close it now"}))
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         self._history_cleanup_task = asyncio.create_task(self._history_cleanup_loop())
-        logger.info(f"Bridge Server listening on ws://{self.host}:{self.bound_port}")
+        if self.config_path is not None:
+            self._reloader = AuthReloader(self.config_path, logger.warning)
+            self._reload_task = asyncio.create_task(self._auth_reload_loop())
 
     @property
     def bound_port(self) -> int:
-        """The port listened on; differs from port when port is 0."""
+        """The plain ws:// port listened on (differs from port when port is 0); the wss:// one without ws://."""
+        if not self.plain:
+            return self.tls_bound_port
         if self._server is None:
             return self.port
         return self._server.sockets[0].getsockname()[1]
 
+    @property
+    def tls_bound_port(self) -> int:
+        """The wss:// port listened on; differs from tls_port when that is 0."""
+        if self._tls_server is None:
+            return self.tls_port
+        return self._tls_server.sockets[0].getsockname()[1]
+
     async def stop(self) -> None:
-        for task in (self._heartbeat_task, self._history_cleanup_task):
+        for task in (self._heartbeat_task, self._history_cleanup_task, self._reload_task):
             if task:
                 task.cancel()
-        if self._server:
-            self._server.close()
-            await self._server.wait_closed()
+        for server in (self._server, self._tls_server):
+            if server:
+                server.close()
+                await server.wait_closed()
         await self.store.close()
 
     def _identity(self, request: Request) -> Identity | None:
         return self.roles.identity_for(request.headers.get("Authorization", ""))
 
-    def _check_token(self, connection: ServerConnection, request: Request) -> Response | None:
-        """Refuse the handshake unless it carries a known token.
+    async def _auth_reload_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self.reload_seconds)
+            await self.reload_auth()
+
+    async def reload_auth(self) -> bool:
+        """Re-read config.yaml's auth now; True when a new table was swapped in."""
+        if self._reloader is None:
+            return False
+        roles = self._reloader.check()
+        if roles is None:
+            return False
+        await self.apply_roles(roles)
+        return True
+
+    async def apply_roles(self, roles: Roles) -> None:
+        """Swap the auth table, then close every connection the new one no longer lets in as before.
+
+        A connection stays only if its token's digest still maps to the very
+        identity it was let in as: a revoked peer, a replaced token, or a
+        regenerated observer or user token closes it with 1008 "token revoked".
+        """
+        self.roles = roles
+        revoked = [ws for ws, (digest, identity) in list(self._connections.items())
+                   if roles.identity_for_digest(digest) != identity]
+        for ws in revoked:
+            _digest, identity = self._connections.pop(ws)
+            log_refusal("token_revoked", ip=ws.remote_address[0] if ws.remote_address else "unknown",
+                        role=identity.role, peer=identity.peer_name)
+        await asyncio.gather(*(ws.close(REVOKED_CLOSE_CODE, REVOKED_REASON) for ws in revoked),
+                             return_exceptions=True)
+        logger.info(json.dumps({"event": "auth_reloaded", "closed": len(revoked)}))
+
+    async def _redeem_join_code(self, connection: ServerConnection, request: Request) -> Response:
+        """GET /join: a one-time join code's secret for that peer's new token (join_codes.redeem).
+
+        Every refusal is the same 403; past FailureLimiter's limit a client
+        gets 429 without a look at the store. The token goes back in the body
+        once and is never logged.
+        """
+        ip = connection.remote_address[0] if connection.remote_address else "unknown"
+        if self.config_path is None:
+            return connection.respond(HTTPStatus.NOT_FOUND, "Not found\n")
+        if self._join_failures.blocked(ip):
+            log_refusal("join_rate_limited", ip=ip)
+            return connection.respond(HTTPStatus.TOO_MANY_REQUESTS, "Too many failed join attempts; wait a minute\n")
+        name = request.headers.get(join_codes.NAME_HEADER, "")
+        try:
+            secret = bytes.fromhex(request.headers.get(join_codes.SECRET_HEADER, ""))
+        except ValueError:
+            secret = b""
+        try:
+            token = await asyncio.to_thread(join_codes.redeem, self.config_path, secret, name)
+        except join_codes.Refused:
+            self._join_failures.failed(ip)
+            log_refusal("join_refused", ip=ip, name=name[:64])
+            return connection.respond(HTTPStatus.FORBIDDEN, join_codes.GENERIC_REFUSAL + "\n")
+        except (OSError, TimeoutError, ValueError, yaml.YAMLError) as err:
+            # yaml.YAMLError: config.yaml broken between redeem's check and the peer's write. Logged by
+            # type only (its message quotes the file, which holds tokens)
+            logger.error(json.dumps({"event": "join_failed", "ip": ip, "error": type(err).__name__}))
+            return connection.respond(HTTPStatus.SERVICE_UNAVAILABLE, "The Bridge could not record the join\n")
+        # Into the table now rather than at the next poll, so the new peer can connect at once
+        await self.reload_auth()
+        logger.info(json.dumps({"event": "peer_joined_by_code", "name": name, "ip": ip}))
+        return connection.respond(HTTPStatus.OK, json.dumps({"name": name, "token": token}) + "\n")
+
+    async def _check_plain_token(self, connection: ServerConnection, request: Request) -> Response | None:
+        """_check_token for the plain ws:// listener, with one deprecation warning per client address."""
+        ip = connection.remote_address[0] if connection.remote_address else "unknown"
+        if ip not in self._plain_warned:
+            self._plain_warned.add(ip)
+            logger.warning(json.dumps({"event": "plaintext_client", "ip": ip,
+                                       "detail": "this client still uses ws:// (token in clear); pin it to wss://"}))
+        return await self._check_token(connection, request)
+
+    async def _check_token(self, connection: ServerConnection, request: Request) -> Response | None:
+        """Refuse the handshake unless it carries a known token; GET /join redeems a join code instead.
 
         Checked once per connection, so every message type, the watchers
         and list_peers are covered alike; the token's role decides which
         message types the connection may send.
         """
+        if urlsplit(request.path).path == join_codes.JOIN_PATH:
+            return await self._redeem_join_code(connection, request)
         if self._identity(request) is not None:
             return None
         client_ip = connection.remote_address[0] if connection.remote_address else "unknown"
@@ -181,8 +336,13 @@ class BridgeServer:
         client_ip = websocket.remote_address[0] if websocket.remote_address else "unknown"
         # The handshake passed _check_token: the request is there and its token known
         assert websocket.request is not None
+        authorization = websocket.request.headers.get("Authorization", "")
         identity = self._identity(websocket.request)
-        assert identity is not None
+        if identity is None:
+            # Revoked by an auth reload between the handshake and here
+            await websocket.close(REVOKED_CLOSE_CODE, REVOKED_REASON)
+            return
+        self._connections[websocket] = (token_sha256(authorization.partition(" ")[2]), identity)
         role = identity.role
         if identity.shared:
             logger.warning(json.dumps({"event": "shared_token_used", "ip": client_ip}))
@@ -190,8 +350,11 @@ class BridgeServer:
         # Only the first refusal of a run is logged, so a flood does not flood the log
         rate_limited = False
 
-        async def refuse(reason: str, error: str, msg_type: object = None, log: bool = True, **fields: object) -> None:
-            await websocket.send(json.dumps({"type": "error", "error": error, "code": reason}))
+        async def refuse(  # pylint: disable=too-many-arguments
+            reason: str, error: str, msg_type: object = None, log: bool = True,
+            frame: dict | None = None, **fields: object,
+        ) -> None:
+            await websocket.send(json.dumps({"type": "error", "error": error, "code": reason, **(frame or {})}))
             if log:
                 log_refusal(reason, ip=client_ip, peer=peer_name, role=role, msg_type=msg_type, **fields)
 
@@ -231,7 +394,10 @@ class BridgeServer:
                         continue
                     reason = self.roles.register_refusal(identity, name)
                     if reason:
-                        await refuse(reason, f"'{name}' may not be registered with this token", msg_type, name=name)
+                        await refuse(
+                            reason, f"'{name}' may not be registered with this token", msg_type,
+                            frame=SESSION_NAMES, name=name,
+                        )
                         continue
                     holder = self.registry.get(name)
                     if holder is not None and holder.websocket is websocket:
@@ -256,7 +422,7 @@ class BridgeServer:
                     await websocket.send(json.dumps({"type": "registered", "name": name}))
                     logger.info(f"Peer registered: {name} ({client_ip})")
 
-                    await self._deliver_unread(websocket, name)
+                    await self._deliver_unread(websocket, name, identity.peer_name)
 
                 elif msg_type == "ping":
                     if peer_name:
@@ -275,17 +441,18 @@ class BridgeServer:
                         await refuse(reason, f"'{watched}' may not be watched with this token", msg_type, name=watched)
                         continue
                     session = message.get("session")
-                    if session and session in self._watcher_sessions.values():
+                    if session and (identity.credential, session) in self._watcher_sessions.values():
                         await websocket.send(json.dumps({"type": "already_watching", "peer": watched}))
                         continue
                     self._watchers.setdefault(watched, set()).add(websocket)
                     if session:
-                        self._watcher_sessions[websocket] = session
+                        self._watcher_sessions[websocket] = (identity.credential, session)
                     await websocket.send(json.dumps({"type": "watching", "peer": watched}))
                     # A message that came after the session last read, while
                     # no watcher ran, wakes the session at once
                     since = message.get("since")
-                    missed = await self.store.latest_to_since(watched, since) if since else None
+                    missed = await self.store.latest_to_since(watched, since, self.roles.owner(watched)) \
+                        if since else None
                     if missed:
                         await websocket.send(json.dumps({**missed, "type": "message"}))
 
@@ -301,7 +468,7 @@ class BridgeServer:
 
                 elif msg_type == "history_all":
                     since, limit = message.get("since"), message.get("limit")
-                    if not since or not isinstance(limit, int) or not 0 < limit <= HISTORY_ALL_MAX_LIMIT:
+                    if not since or not _valid_limit(limit, HISTORY_ALL_MAX_LIMIT):
                         await self._send_error(
                             websocket, f"'history_all' needs 'since' and a 'limit' of 1 to {HISTORY_ALL_MAX_LIMIT}"
                         )
@@ -376,12 +543,23 @@ class BridgeServer:
                         )
 
                 elif msg_type == "history":
+                    limit = message.get("limit", HISTORY_DEFAULT_LIMIT)
+                    if not _valid_limit(limit, HISTORY_MAX_LIMIT):
+                        await refuse(
+                            "invalid_limit",
+                            f"'history' needs a 'limit' of 1 to {HISTORY_MAX_LIMIT} (a whole number)",
+                            msg_type, limit=repr(limit)[:40],
+                        )
+                        continue
+                    other = message.get("peer", "")
                     history = await self.store.get_history(
-                        peer_name, message.get("peer", ""), message.get("limit", 50)
+                        peer_name, other, limit,
+                        machine=self.roles.owner(peer_name),
+                        with_sessions=isinstance(other, str) and self.roles.is_machine(other),
                     )
                     await websocket.send(json.dumps({
                         "type": "history",
-                        "peer": message.get("peer", ""),
+                        "peer": other,
                         "messages": history,
                         **_request_id(message),
                     }))
@@ -389,6 +567,7 @@ class BridgeServer:
         except websockets.exceptions.ConnectionClosed:
             pass
         finally:
+            self._connections.pop(websocket, None)
             for connections in (*self._watchers.values(), *self._standby.values()):
                 connections.discard(websocket)
             self._watcher_sessions.pop(websocket, None)
@@ -422,7 +601,10 @@ class BridgeServer:
         if state == "busy":
             return
         notice = IDLE_NOTICE.format(name=name) if state == "idle" else WAITING_NOTICE.format(name=name, detail=detail)
-        for subscriber in self._idle_subscribers.pop(name, set()):
+        # Asked by the machine's name: its first session to be done answers
+        subscribers = self._idle_subscribers.pop(name, set()) \
+            | self._idle_subscribers.pop(self.roles.owner(name) or name, set())
+        for subscriber in subscribers:
             await self._route_message({"to": subscriber, "content": notice}, BRIDGE_SENDER)
 
     async def _subscribe_idle(self, subscriber: str, watched: str) -> bool:
@@ -432,9 +614,9 @@ class BridgeServer:
         MAX_IDLE_SUBSCRIPTIONS_PER_PEER: each would otherwise stay until a
         name that may never exist goes idle.
         """
-        peer = self.registry.get(watched)
-        if peer and peer.state == "idle":
-            await self._route_message({"to": subscriber, "content": IDLE_NOTICE.format(name=watched)}, BRIDGE_SENDER)
+        idle = next((peer for peer in self._addressed(watched) if peer.state == "idle"), None)
+        if idle:
+            await self._route_message({"to": subscriber, "content": IDLE_NOTICE.format(name=idle.name)}, BRIDGE_SENDER)
             return True
         subscribers = self._idle_subscribers.get(watched, set())
         if subscriber not in subscribers:
@@ -443,6 +625,21 @@ class BridgeServer:
                 return False
         self._idle_subscribers.setdefault(watched, set()).add(subscriber)
         return True
+
+    def _addressed(self, name: str) -> list[Peer]:
+        """The registered peers a name stands for.
+
+        A session's name, or any name of the shared token, is that one peer.
+        A name enrolled in auth.peers is the machine: every session registered
+        under it, "<name>:<label>", and a 0.1.8 client holding the bare name.
+        Before 0.2.0 a machine had one session, so its name reached "the"
+        session; no session holds it now, and a message to it must not wait
+        for one that never comes.
+        """
+        if self.roles.is_machine(name):
+            return [peer for peer in self.registry.all() if self.roles.owner(peer.name) == name]
+        target = self.registry.get(name)
+        return [target] if target else []
 
     async def _route_message(self, message: dict, from_peer: str) -> tuple[dict, bool] | None:
         """Deliver a message; direct messages to offline peers wait in the store.
@@ -453,6 +650,11 @@ class BridgeServer:
         to a user counts as delivered at once: users read along as
         observers and never register, so it must not pile up as unread.
 
+        A message to a machine's name reaches every session of it that is
+        online, except the session that sent it; with none online it waits
+        for the first one to register. A peer writing to its own name gets
+        the message back and nobody else does (deploy's round-trip check).
+
         Returns the stored message and whether a recipient was online, or
         None (logged) when the offline recipient's queue is full.
         """
@@ -461,15 +663,15 @@ class BridgeServer:
         if to_peer == "*":
             recipients = [p for p in self.registry.all() if p.name != from_peer]
         else:
-            target = self.registry.get(to_peer)
-            recipients = [target] if target else []
-
-        # A direct message to a registered peer is stored unread and marked
-        # delivered only once its send returns: a holder whose socket closed
-        # before the heartbeat noticed gets it as unread on its next register.
-        # A holder whose socket is already closed counts as offline (queue caps apply)
-        if to_peer != "*" and recipients and getattr(recipients[0].websocket, "state", None) is not State.OPEN:
-            recipients = []
+            # A direct message to a registered peer is stored unread and marked
+            # delivered only once its send returns: a holder whose socket closed
+            # before the heartbeat noticed gets it as unread on its next register.
+            # A holder whose socket is already closed counts as offline (queue caps apply)
+            recipients = [
+                p for p in self._addressed(to_peer)
+                if (p.name == to_peer if to_peer == from_peer else p.name != from_peer)
+                and getattr(p.websocket, "state", None) is State.OPEN
+            ]
         direct = to_peer != "*" and bool(recipients)
         delivered = to_peer == "*" or is_user_name(to_peer)
         if not delivered and not direct and await self._queue_full(to_peer, from_peer, message):
@@ -486,17 +688,20 @@ class BridgeServer:
             # In flight: a registration replay running meanwhile must not send it as unread too
             self._in_flight.add(outgoing["id"])
         try:
+            marked = False
             for peer in recipients:
                 sent = await self._send_to(peer, payload)
                 if not sent and direct:
                     # The holder may have been replaced while the send was pending; the new
                     # one's replay skipped this in-flight row, so it gets it now, once
-                    current = self.registry.get(to_peer)
+                    current = self.registry.get(peer.name)
                     if current is not None and current is not peer \
                             and getattr(current.websocket, "state", None) is State.OPEN:
                         sent = await self._send_to(current, payload)
-                if sent and direct:
+                if sent and direct and not marked:
+                    # To a machine: delivered once any of its sessions has it
                     await self.store.mark_delivered([outgoing["id"]])
+                    marked = True
         finally:
             self._in_flight.discard(outgoing["id"])
         await self._notify_watchers(to_peer, from_peer, payload)
@@ -515,20 +720,63 @@ class BridgeServer:
         )
         return True
 
-    async def _deliver_unread(self, websocket: ServerConnection, name: str) -> None:
+    async def _deliver_unread(self, websocket: ServerConnection, name: str, machine: str | None = None) -> None:
         """Send what waited for name in frames the client accepts, each marked once it is sent.
 
-        A send that fails leaves the rest unread for the next registration.
+        What waited for the machine (the token's enrolled name) goes to its
+        first session to register. A send that fails leaves the rest unread:
+        what was for the session's own name waits for its next registration,
+        what was for the machine goes to a sibling session that is online.
         """
-        waiting = [m for m in await self.store.get_unread(name) if m["id"] not in self._in_flight]
-        for chunk in _unread_chunks(waiting):
+        try:
+            await self._replay(websocket, name, machine)
+        except websockets.exceptions.ConnectionClosed:
+            if machine:
+                await self._replay_to_sibling(machine, websocket)
+            raise
+
+    async def _replay(self, websocket: ServerConnection, name: str, machine: str | None) -> None:
+        """Send and mark what waits for name and its machine; ConnectionClosed if the send fails."""
+        if not machine:
+            await self._send_unread(websocket, await self.store.get_unread(name))
+            return
+        # Read, send and mark under the machine's lock: a sibling that read the
+        # same rows before this one marked them would send them a second time
+        async with self._replay_locks.setdefault(machine, asyncio.Lock()):
+            waiting = await self.store.get_unread(name)
+            if machine != name:
+                waiting = sorted(waiting + await self.store.get_unread(machine), key=lambda m: m["timestamp"])
+            await self._send_unread(websocket, waiting)
+
+    async def _send_unread(self, websocket: ServerConnection, waiting: list[dict]) -> None:
+        # A row being sent live right now (see _route_message) is not sent as unread too
+        for chunk in _unread_chunks([m for m in waiting if m["id"] not in self._in_flight]):
             await websocket.send(json.dumps({"type": "unread", "messages": chunk}))
             await self.store.mark_delivered([m["id"] for m in chunk])
+
+    async def _replay_to_sibling(self, machine: str, failed: ServerConnection) -> None:
+        """What still waits for the machine goes to one of its other online sessions.
+
+        Without this it would wait for the next registration, with a sibling
+        online the whole time. With none online it stays unread.
+        """
+        for peer in self._addressed(machine):
+            if peer.websocket is failed or getattr(peer.websocket, "state", None) is not State.OPEN:
+                continue
+            try:
+                await self._replay(peer.websocket, peer.name, machine)
+            except websockets.exceptions.ConnectionClosed:
+                continue
+            logger.info(f"Waiting messages for {machine} went to {peer.name}: the session they were sent to broke")
+            return
 
     async def _notify_watchers(self, to_peer: str, from_peer: str, payload: str) -> None:
         """Tell the watchers of every recipient that a message arrived."""
         if to_peer == "*":
             watched = [name for name in self._watchers if name != from_peer]
+        elif self.roles.is_machine(to_peer) and to_peer != from_peer:
+            # Like the message itself: every session of the machine but the sender
+            watched = [name for name in self._watchers if self.roles.owner(name) == to_peer and name != from_peer]
         else:
             watched = [to_peer]
         for name in watched:

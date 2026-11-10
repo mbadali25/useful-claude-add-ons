@@ -728,7 +728,7 @@ def test_auto_clear_on_windows_without_a_window_title_still_acts():
     """CHANGED in 0.19.57, and the direction is the point.
 
     This case used to assert `inert is True`: auto-clear was enabled on
-    Windows with no `windowTitle`, and the script refused outright because
+    Windows with no window title, and the script refused outright because
     SendKeys types into whatever has focus.
 
     It no longer refuses. `auto-clear.ps1` walks its own ancestors to the
@@ -747,12 +747,13 @@ def test_auto_clear_on_windows_without_a_window_title_still_acts():
         _state(autoClear=state))
     # The FACTS are still reported even though the judgement is gone.
     assert state["enabled"] is True
-    assert state["windowTitle"] is None
 
 
-def test_a_window_title_clears_the_inert_finding():
+def test_window_title_is_constant():
     state = crew_state.read_auto_clear(
         _auto_clear_cfg("windows", enabled=True, windowTitle="claude"))
+    assert "windowTitle" not in state
+    assert crew_state.AUTOCLEAR_WINDOW_TITLE is None
     assert state["inert"] is False
     assert "autoClearInert" not in crew_state.evaluate_triggers(
         _state(autoClear=state))
@@ -775,70 +776,6 @@ def test_posix_without_a_window_title_is_not_claimed_inert():
     is not."""
     state = crew_state.read_auto_clear(_auto_clear_cfg("linux", enabled=True))
     assert state["inert"] is False
-
-
-def test_window_title_detection_stands_down_off_windows(monkeypatch):
-    """Nothing to detect on posix, and an empty list is the honest answer.
-
-    The bash flavour targets a tmux pane by id -- no title is involved -- so
-    fabricating a candidate here would invent a setting that changes nothing.
-    """
-    monkeypatch.setattr(crew_state.sys, "platform", "linux")
-    assert crew_state.detect_window_titles() == []
-
-
-def test_a_terminal_that_retitles_is_reported_unstable():
-    """The judgement that makes the feature honest rather than convenient.
-
-    A Windows Terminal window title follows its ACTIVE TAB. Detecting one and
-    offering it without saying so hands the user a value that is correct when
-    written and wrong on the next tab switch -- which is worse than refusing,
-    because it looks like it worked.
-    """
-    assert crew_state.TERMINAL_PROCESSES["WindowsTerminal"] is not None
-    assert crew_state.TERMINAL_PROCESSES["Code"] is not None
-    # A fixed-title terminal has nothing to warn about.
-    assert crew_state.TERMINAL_PROCESSES["conhost"] is None
-
-
-def test_detection_returns_the_documented_shape(monkeypatch):
-    """Every candidate carries process, title, stable and why.
-
-    `pm.md` tells the PM to show the reason whenever `stable` is false, so a
-    row without `why` would leave it with nothing to print.
-    """
-    rows = [{"ProcessName": "WindowsTerminal", "MainWindowTitle": "pinned"},
-            {"ProcessName": "explorer", "MainWindowTitle": "not a terminal"},
-            {"ProcessName": "conhost", "MainWindowTitle": "cmd"},
-            {"ProcessName": "WezTerm", "MainWindowTitle": "   "}]
-
-    class _Done:  # pylint: disable=too-few-public-methods
-        stdout = json.dumps(rows)
-
-    monkeypatch.setattr(crew_state.sys, "platform", "win32")
-    monkeypatch.setattr(crew_state.shutil, "which", lambda _exe: "pwsh")
-    monkeypatch.setattr(crew_state.subprocess, "run",
-                        lambda *a, **k: _Done())
-    got = crew_state.detect_window_titles()
-
-    # explorer is not a terminal; WezTerm's title is blank. Both are dropped.
-    assert [row["process"] for row in got] == ["WindowsTerminal", "conhost"]
-    for row in got:
-        assert set(row) == {"process", "title", "stable", "why"}
-        assert row["why"], "every row must carry a reason, stable or not"
-    assert got[0]["stable"] is False
-    assert got[1]["stable"] is True
-
-
-def test_detection_never_raises_when_powershell_is_missing(monkeypatch):
-    """A missing interpreter is not an error the PM should see as a crash.
-
-    This runs from a SessionStart path; raising here would take the brief with
-    it, which is a worse outcome than saying "no candidates".
-    """
-    monkeypatch.setattr(crew_state.sys, "platform", "win32")
-    monkeypatch.setattr(crew_state.shutil, "which", lambda _exe: None)
-    assert crew_state.detect_window_titles() == []
 
 
 def test_a_config_with_no_auto_clear_block_is_not_inert():
@@ -1155,25 +1092,38 @@ def test_a_numeric_string_schema_is_read_as_a_number(tmp_path):
     assert "upgradeNeeded" not in crew_state.collect(str(root))["triggers"]
 
 
-def test_hand_edited_pm_line_counts_do_not_crash(tmp_path):
-    # Task 6 does int(pm["quietLines"]); an unvalidated "eight" would raise
-    # there instead, and silently swallow the whole brief.
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"schema": 2, "pm": {"quietLines": "eight",
-                                              "maxLines": None}}
-    )
+def test_hand_edited_max_dispatches_does_not_crash(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2, "pm": {"maxDispatches": "three"}})
     pm = crew_state.collect(str(root))["pm"]
-    assert pm["quietLines"] == 8
-    assert pm["maxLines"] == 40
+    assert pm["maxDispatches"] == 3
 
 
-def test_hand_edited_tier_and_roles_are_normalised(tmp_path):
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"schema": 2, "tier": {}, "roles": "explorer"}
-    )
+def test_quiet_lines_is_constant(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2, "pm": {"quietLines": 3}})
+    assert crew_state.collect(str(root))["pm"]["quietLines"] == crew_state.PM_QUIET_LINES
+
+
+def test_max_lines_is_constant(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2, "pm": {"maxLines": 99}})
+    assert crew_state.collect(str(root))["pm"]["maxLines"] == crew_state.PM_MAX_LINES
+
+
+def test_pm_enabled_and_mode_are_constant(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2, "pm": {"enabled": False, "mode": "off"}})
+    pm = crew_state.collect(str(root))["pm"]
+    assert (pm["enabled"], pm["mode"]) == (crew_state.PM_ENABLED, crew_state.PM_MODE)
+
+
+def test_ticket_granularity_is_constant(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2, "pm": {"ticketGranularity": "change"}})
+    assert crew_state.collect(str(root))["pm"]["ticketGranularity"] == crew_state.GRANULARITY_DEFAULT
+
+
+def test_tier_and_roles_are_not_read(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path, config={"schema": 2, "tier": 2, "roles": ["explorer"]})
     got = crew_state.collect(str(root))
-    assert got["tier"] is None
-    assert got["roles"] == []
+    assert "tier" not in got
+    assert "roles" not in got
 
 
 def test_a_non_crew_directory_reports_no_triggers(tmp_path):
@@ -1264,8 +1214,8 @@ def test_collect_with_no_override_behaves_as_before(tmp_path):
 # --- config-supplied paths must not escape the repository ------------------
 #
 # Found by a hostile QA sweep, 2026-09-05. `graph.out`, `docs.diagramsDir` and
-# `context.handoffPath` were joined to the repo root with no containment
-# check. The handoff one is the sharp end: under `context.autoResume` the file
+# the handoff path were joined to the repo root with no containment
+# check. The handoff one is the sharp end: the file
 # is injected wholesale into the model's context at session start, so a repo
 # could name any file on the machine and have it read into a session.
 
@@ -1325,62 +1275,33 @@ def test_a_graph_out_pointing_outside_the_repo_is_ignored(tmp_path):
     assert got["present"] is False, "must not read the escaped graph"
 
 
-def test_worktree_root_defaults_to_the_checkout_parent(tmp_path):
-    """The behaviour crew had before `worktree.root` existed, kept exactly.
-
-    An existing config never gains this key by itself -- `/crew:upgrade` adds
-    it, but a repo that never upgrades still has to put worktrees somewhere,
-    and moving them silently would strand every worktree already on disk.
-    """
+def test_worktree_root_is_the_checkout_parent(tmp_path):
+    """The behaviour crew had before `worktree.root` existed, kept exactly."""
     repo = tmp_path / "repo"
     repo.mkdir()
-    expected = os.path.abspath(str(tmp_path))
-    for cfg in ({}, {"worktree": {}}, {"worktree": {"root": None}},
-                {"worktree": {"root": ""}}, {"worktree": {"root": "   "}},
-                {"worktree": {"root": 42}}, {"worktree": {"root": ["a"]}},
-                {"worktree": "nonsense"}):
-        assert crew_state.worktree_root(cfg, str(repo)) == expected, cfg
+    assert crew_state.worktree_root(str(repo)) == os.path.abspath(str(tmp_path))
 
 
-def test_worktree_root_expands_a_hand_written_path(tmp_path, monkeypatch):
-    """`~/worktrees` is what a person types into a config file. Without the
-    expansion `os.path.join` makes a literal `~` directory next to the repo,
-    which looks like it worked until someone goes looking for the worktree."""
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))
-    monkeypatch.setenv("CREW_TEST_WT", str(tmp_path / "fromenv"))
-    repo = str(tmp_path / "repo")
+def test_root_is_constant(tmp_path, capsys):
+    repo = crew_fixtures.make_repo(tmp_path, config={"schema": 7, "worktree": {"root": "../elsewhere"}})
 
-    assert crew_state.worktree_root({"worktree": {"root": "~/wt"}}, repo) == \
-        os.path.abspath(str(home / "wt"))
-    assert crew_state.worktree_root(
-        {"worktree": {"root": "$CREW_TEST_WT"}}, repo) == \
-        os.path.abspath(str(tmp_path / "fromenv"))
+    assert crew_state.main(["--root", str(repo), "--worktree-path", "-"]) == 0
+    assert crew_state.main(["--root", str(repo), "--worktree-path", "fix"]) == 0
 
-
-def test_a_relative_worktree_root_resolves_against_the_repo(tmp_path):
-    """Not against the process's cwd. A hook runs from wherever the session
-    happens to be, so a cwd-relative answer puts worktrees in a different
-    place depending on which directory the user was standing in."""
-    repo = tmp_path / "a" / "repo"
-    repo.mkdir(parents=True)
-    got = crew_state.worktree_root({"worktree": {"root": "../wt"}}, str(repo))
-    assert got == os.path.abspath(str(tmp_path / "a" / "wt"))
+    printed = capsys.readouterr().out.splitlines()
+    assert printed[0] == os.path.abspath(str(tmp_path))
+    assert os.path.dirname(printed[1]) == os.path.abspath(str(tmp_path))
 
 
 def test_worktree_path_names_the_repo_so_two_repos_can_share_a_root(tmp_path):
     """The failure a shared root introduces: two repos each with a `fix`
     branch, one worktree directory. The repo name in the leaf is what keeps
     the setting a directory rather than a per-repo worktree path."""
-    root = str(tmp_path / "wt")
     one = str(tmp_path / "alpha")
     two = str(tmp_path / "beta")
-    cfg = {"worktree": {"root": root}}
 
-    first = crew_state.worktree_path(cfg, one, "fix")
-    second = crew_state.worktree_path(cfg, two, "fix")
+    first = crew_state.worktree_path(one, "fix")
+    second = crew_state.worktree_path(two, "fix")
 
     assert first != second
     assert re.fullmatch(r"alpha-[0-9a-f]{6}-fix", os.path.basename(first)), first
@@ -1391,10 +1312,9 @@ def test_a_slash_in_a_branch_name_does_not_become_a_directory_level(tmp_path):
     """git allows `feat/x`; a single directory level does not. Left alone the
     worktree lands one level deeper than every other one, which nothing that
     lists the root will find."""
-    cfg = {"worktree": {"root": str(tmp_path / "wt")}}
-    got = crew_state.worktree_path(cfg, str(tmp_path / "repo"), "feat/x")
+    got = crew_state.worktree_path(str(tmp_path / "repo"), "feat/x")
     assert re.fullmatch(r"repo-[0-9a-f]{6}-feat-x", os.path.basename(got)), got
-    assert os.path.dirname(got) == os.path.abspath(str(tmp_path / "wt"))
+    assert os.path.dirname(got) == os.path.abspath(str(tmp_path))
 
 
 def test_a_backslash_in_a_branch_name_is_flattened_too(tmp_path):
@@ -1411,10 +1331,9 @@ def test_a_backslash_in_a_branch_name_is_flattened_too(tmp_path):
     function takes a string and its contract is to neutralise separators, and
     a contract nothing tests is a comment.
     """
-    cfg = {"worktree": {"root": str(tmp_path / "wt")}}
-    got = crew_state.worktree_path(cfg, str(tmp_path / "repo"), "feat" + chr(92) + "x")
+    got = crew_state.worktree_path(str(tmp_path / "repo"), "feat" + chr(92) + "x")
     assert re.fullmatch(r"repo-[0-9a-f]{6}-feat-x", os.path.basename(got)), got
-    assert os.path.dirname(got) == os.path.abspath(str(tmp_path / "wt"))
+    assert os.path.dirname(got) == os.path.abspath(str(tmp_path))
 
 
 def test_a_branch_that_flattens_to_nothing_gets_a_readable_name(tmp_path):
@@ -1424,11 +1343,10 @@ def test_a_branch_that_flattens_to_nothing_gets_a_readable_name(tmp_path):
     but `repo-..` and a bare trailing `repo-` are directories a person cannot
     read, and `repo-.` is hidden on POSIX. They degrade to a name instead.
     """
-    cfg = {"worktree": {"root": str(tmp_path / "wt")}}
     for branch in (".", "..", "///", "   ", "-", chr(92)):
-        got = crew_state.worktree_path(cfg, str(tmp_path / "repo"), branch)
+        got = crew_state.worktree_path(str(tmp_path / "repo"), branch)
         assert re.fullmatch(r"repo-[0-9a-f]{6}-detached", os.path.basename(got)), (branch, got)
-        assert os.path.dirname(got) == os.path.abspath(str(tmp_path / "wt"))
+        assert os.path.dirname(got) == os.path.abspath(str(tmp_path))
 
 
 def test_two_repos_with_the_same_basename_do_not_share_a_leaf(tmp_path):
@@ -1436,19 +1354,18 @@ def test_two_repos_with_the_same_basename_do_not_share_a_leaf(tmp_path):
     version of the docstring wrongly claimed it did.
 
     Two checkouts called `myrepo` under different parents -- two clients, one
-    project name -- sharing one global `worktree.root` produced the identical
+    project name -- sharing one worktree directory produced the identical
     leaf for the identical branch, so one repo's /crew:emergency worktree lands
     in or is mistaken for the other's. Both directories look right, which is
     what makes it expensive. Raised by the security review of this change.
     """
-    cfg = {"worktree": {"root": str(tmp_path / "wt")}}
     one = tmp_path / "clientA" / "myrepo"
     two = tmp_path / "clientB" / "myrepo"
     one.mkdir(parents=True)
     two.mkdir(parents=True)
 
-    first = crew_state.worktree_path(cfg, str(one), "fix")
-    second = crew_state.worktree_path(cfg, str(two), "fix")
+    first = crew_state.worktree_path(str(one), "fix")
+    second = crew_state.worktree_path(str(two), "fix")
 
     assert os.path.basename(first).startswith("myrepo-")
     assert os.path.basename(second).startswith("myrepo-")
@@ -1475,8 +1392,7 @@ def test_a_colon_in_a_branch_name_cannot_become_an_ntfs_stream(tmp_path):
     STREAM on `myrepo-release`, not a directory. git's ref-format forbids `:`
     so no real branch reaches it, but this function takes a string. Raised by
     the security review of this change."""
-    cfg = {"worktree": {"root": str(tmp_path / "wt")}}
-    got = crew_state.worktree_path(cfg, str(tmp_path / "repo"), "release:v1")
+    got = crew_state.worktree_path(str(tmp_path / "repo"), "release:v1")
     assert ":" not in os.path.basename(got), got
     assert os.path.basename(got).endswith("-release-v1"), got
 
@@ -1488,9 +1404,8 @@ def test_traversal_in_a_branch_name_cannot_leave_the_worktree_root(tmp_path):
     `..` is text inside one directory name and not a level to walk up. Asserted
     on the REALPATH so a normalising join could not quietly rescue it.
     """
-    root = tmp_path / "wt"
-    cfg = {"worktree": {"root": str(root)}}
-    got = crew_state.worktree_path(cfg, str(tmp_path / "repo"), "a/../../b")
+    root = tmp_path
+    got = crew_state.worktree_path(str(tmp_path / "repo"), "a/../../b")
     assert os.path.dirname(got) == os.path.abspath(str(root))
     assert os.path.abspath(got).startswith(os.path.abspath(str(root)) + os.sep)
 

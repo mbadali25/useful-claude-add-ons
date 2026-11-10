@@ -92,6 +92,16 @@ def test_check_receipt_fails_with_no_review(repo):
     assert result.returncode == 1 and "no accepted review receipt" in result.stdout
 
 
+def test_check_receipt_without_a_ledger_says_could_not_tell_and_names_head(repo):
+    head = git(repo, "rev-parse", "HEAD")
+
+    result = _check(repo)
+
+    assert result.returncode == 1
+    assert "could not tell whether head " + head + " was reviewed" in result.stdout
+    assert "review_status.py check" in result.stdout
+
+
 @pytest.mark.parametrize("verdict", ["FINDINGS", "INCOMPLETE"])
 def test_check_receipt_fails_for_an_unaccepted_verdict(repo, verdict):
     _review(repo, verdict)

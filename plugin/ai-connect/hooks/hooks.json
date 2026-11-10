@@ -1,17 +1,6 @@
 {
   "hooks": {
-    "UserPromptSubmit": [
-      { "hooks": [{ "type": "mcp_tool", "server": "ai-connect", "tool": "peer_set_state", "input": { "state": "busy" } }] }
-    ],
-    "PostToolUse": [
-      { "hooks": [{ "type": "mcp_tool", "server": "ai-connect", "tool": "peer_set_state", "input": { "state": "busy" } }] }
-    ],
-    "Notification": [
-      { "matcher": "permission_prompt",
-        "hooks": [{ "type": "mcp_tool", "server": "ai-connect", "tool": "peer_set_state", "input": { "state": "waiting" } }] }
-    ],
     "Stop": [
-      { "hooks": [{ "type": "mcp_tool", "server": "ai-connect", "tool": "peer_set_state", "input": { "state": "idle" } }] },
       { "hooks": [{ "type": "command", "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/watch.sh\"", "asyncRewake": true, "timeout": 604800 }] },
       { "hooks": [{ "type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/watch.ps1\"; exit $LASTEXITCODE", "asyncRewake": true, "timeout": 604800 }] }
     ],

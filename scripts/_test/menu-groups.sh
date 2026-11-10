@@ -69,8 +69,11 @@ done
 echo "2. every group starts fully ticked"
 for i in "${!GROUP_PREFIXES[@]}"; do
   prefix="${GROUP_PREFIXES[$i]}"
-  check "${GROUP_MENU_KEYS[$i]} all on by default" \
-    "$(group_count "$prefix")" "$(group_selected_count "$prefix")"
+  want="$(group_count "$prefix")"
+  # COMMUNITY_OPT_IN rows (L-0887) start unticked: movable tags, unaudited third party.
+  [ "$prefix" = "COMMUNITY" ] && want=$(( want - ${#COMMUNITY_OPT_IN[@]} ))
+  check "${GROUP_MENU_KEYS[$i]} all on by default (bar opt-in rows)" \
+    "$want" "$(group_selected_count "$prefix")"
 done
 
 echo "3. --<group> specs: names, numbers, ranges, all, none"

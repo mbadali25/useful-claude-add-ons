@@ -1046,23 +1046,38 @@ def test_heartbeat_process_pushes_while_pid_alive(capsys, monkeypatch, wt, remot
         loop.communicate()
 
 
-def test_heartbeat_process_exits_after_pid_gone(capsys, monkeypatch, wt):
+def test_heartbeat_process_exits_after_pid_gone(capsys, monkeypatch, wt, remote):
+    """The loop exits on the first tick after the pid goes: at most the one
+    heartbeat already in flight lands after the kill, never a second.
+    Counted on the channel, not timed: a wall-clock bound of one interval
+    plus 5s for that push failed on loaded Windows runners, where one push
+    took 6-10s (CI runs 41099703404, 41661892436, 42322693048). The
+    communicate timeout still fails a loop that never exits."""
     watched = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"],  # pylint: disable=consider-using-with
                                stdin=subprocess.DEVNULL)
     _session(monkeypatch, "sess-a", pid=watched.pid)
     _run(capsys, wt, "claim")
     loop = _loop(wt, watched.pid, interval="0.5")
-    time.sleep(1.0)
-    assert loop.poll() is None
+    try:
+        assert _wait_for(lambda: _beats(remote) >= 1), "the loop never beat: the case proves nothing"
+        assert loop.poll() is None
 
-    watched.kill()
-    watched.wait()
-    started = time.monotonic()
-    out, _ = loop.communicate(timeout=20)
+        watched.kill()
+        watched.wait()
+        at_kill = _beats(remote)
+        out, _ = loop.communicate(timeout=20)
+    finally:
+        if loop.poll() is None:
+            loop.kill()
+            loop.communicate()
 
-    assert time.monotonic() - started < 0.5 + 5.0
     assert loop.returncode == 0
     assert "gone" in out
+    assert _beats(remote) - at_kill <= 1, out
+
+
+def _beats(remote):
+    return sum(e["event"] == "heartbeat" for e in _log(remote))
 
 
 def test_heartbeat_process_exits_when_claim_not_working(capsys, monkeypatch, wt, live_pid):
@@ -1618,11 +1633,12 @@ def test_status_lists_presented_claims_first_with_one_recommended_action(capsys,
 # --- Step 6: docs ---------------------------------------------------------------
 
 def test_readme_documents_channels_ttl_recovery_and_no_force():
-    readme = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "README.md")
+    readme = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))))), "docs", "crew", "reference", "16-context-handoff.md")
     with open(readme, encoding="utf-8") as handle:
         text = handle.read()
     section = text[text.index("### Cross-session claims"):]
-    section = section[:section.index("\n## ")]
+    section = section[:section.index("\n### Cross-session messages")]
 
     for needle in ("crew-coord/<channel>", "30 minutes", "owner unknown", "never force", "recover",
                    "crew_coord.py status", "release --break", "peer-written", "pre-push",

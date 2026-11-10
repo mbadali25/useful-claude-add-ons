@@ -180,7 +180,7 @@ def test_run_reserves_with_current_selfcheck(repo, tmp_path):
     result = _run(repo, scratch, fakes, "claude", "--reserve-only", "--authors", "gpt")
 
     seal = cs.read_selfcheck(str(repo), TICKET)[1] or {}
-    assert (result.returncode, result.stdout.strip(),
+    assert (result.returncode, result.stdout.splitlines()[0],
             f"std:{seal.get('standards', 'no-stamp')[:8]}" in result.stderr) == (0, "ROUND=1", True), (
         result.stderr)
 
@@ -206,7 +206,7 @@ def test_run_stands_down_in_an_incident_and_logs_the_skip(repo, tmp_path):
 
     skips = [row for row in crew_incident.read_skips(str(repo))
              if "standards-selfcheck" in row]
-    assert (result.returncode, result.stdout.strip(), len(skips)) == (0, "ROUND=1", 1), (
+    assert (result.returncode, result.stdout.splitlines()[0], len(skips)) == (0, "ROUND=1", 1), (
         result.stderr)
 
 
@@ -218,7 +218,7 @@ def test_run_without_an_approval_receipt_says_the_gate_does_not_apply(repo, tmp_
 
     result = _run(repo, scratch, fakes, "claude", "--reserve-only", "--authors", "gpt")
 
-    assert (result.returncode, result.stdout.strip(),
+    assert (result.returncode, result.stdout.splitlines()[0],
             "standards self-check not required" in result.stderr) == (0, "ROUND=1", True)
 
 
@@ -279,7 +279,7 @@ def test_run_reserves_after_an_edit_that_keeps_the_record_complete(repo, tmp_pat
 
     result = _run(repo, scratch, fakes, "claude", "--reserve-only", "--authors", "gpt")
 
-    assert (result.returncode, result.stdout.strip()) == (0, "ROUND=1"), result.stderr
+    assert (result.returncode, result.stdout.splitlines()[0]) == (0, "ROUND=1"), result.stderr
 
 
 _SOUND_OVERLAY = ('---\nset: REPO\napplies-to: ["**"]\n---\n\n## REPO-01 Local\n\n**Rule.** r\n\n'

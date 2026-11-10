@@ -189,6 +189,11 @@ _GATE_OWNED_FILES = frozenset({
     # BASE_AT), same reason: the gate writes it, so hashing it would make
     # the gate's own bookkeeping read as a change to the tree.
     ".crew/.verify-gate.base-at",
+    # The quiet Stop gate's detail log and its per-session dedupe state
+    # (L-0796), rewritten on every Stop. Untracked and unignored, they would
+    # otherwise be hashed and every Stop would re-run every rule.
+    ".crew/.verify-gate.log",
+    ".crew/.verify-gate.last-stop",
 })
 _GATE_OWNED_DIRS = (".crew/.verify-gate.lock/",)
 

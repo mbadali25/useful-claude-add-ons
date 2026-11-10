@@ -75,8 +75,8 @@ The document's highest-priority area.
 
 **crew:** the hooks implement this — `context-watch` warns at the threshold,
 `handoff-write` fires on PreCompact, the context hook injects the note at
-SessionStart. Since 0.19.52 `autoWrapUp` and `autoClear` default
-on, so the loop runs without being asked. The 60k figure does not transfer to a
+SessionStart. Auto wrap-up is always on (fixed since L-0725), so the
+loop runs without being asked. The 60k figure does not transfer to a
 1M window; crew uses a fraction and auto-detects the window.
 
 ## Planning
@@ -146,7 +146,7 @@ reason: a clone inherits the context whose blind spots a review exists to find.
 Its recommended set is about eight: `/dev-docs`, `/catchup`, `/code-review`,
 `/build-and-fix`, `/test-route`, `/pr`.
 
-**crew:** departs — 38 commands.<!-- claim: plugin-commands:crew --> See the ADR. The short reason: crew's commands
+**crew:** departs — 39 commands.<!-- claim: plugin-commands:crew --> See the ADR. The short reason: crew's commands
 are gated workflows whose steps must not vary, not shortcuts.
 
 ## MCP

@@ -50,7 +50,6 @@ import context  # noqa: F401  pylint: disable=unused-import
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
-_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 
 _BASH = crew_fixtures.resolve_bash()
 _PWSH = shutil.which("pwsh")
@@ -58,9 +57,6 @@ _PWSH = shutil.which("pwsh")
 _FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None,
                                                 reason="needs bash")),
-    pytest.param("ps1", marks=pytest.mark.skipif(
-        not sys.platform.startswith("win") or _PWSH is None,
-        reason="the .ps1 gate is the native-Windows flavour")),
 ]
 
 # Three stated costs and one deliberately unstated. 5 + 40 fits in 60; 90 does
@@ -105,11 +101,7 @@ def _repo(tmp_path, verify_map=None, config=None):
 
 
 def _run(flavour, root, *extra):
-    if flavour == "sh":
-        cmd = [_BASH, _SH, *extra]
-    else:
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1,
-               *[a.replace("--all", "-All") for a in extra]]
+    cmd = [_BASH, _SH, *extra]
     return crew_fixtures.run_gate(
         cmd, input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
@@ -748,9 +740,10 @@ def test_the_neighbouring_shapes_do_not_reorder_a_rule(flavour, case,
 #
 # Declared `seconds` are timed once on one host and go stale. A rule stated
 # over the budget ALONE is chronic and never runs at Stop, however fast it
-# really is here. The gate prices a declared rule at min(declared, cached):
-# a cheaper measurement can turn a chronic deferral into a run; a dearer one
-# can never turn a run into a deferral.
+# really is here. A valid cached measurement replaces the declared price in
+# BOTH directions (the dearer direction is test_verify_gate_reprice.py): a
+# cheaper one can turn a chronic deferral into a run, a dearer one a run into
+# a deferral.
 
 _BIG_ALONE = {
     "version": 1,
@@ -789,23 +782,6 @@ def test_a_cheaper_measurement_runs_a_rule_its_declared_price_defers(flavour, tm
         "deferred. " + result.stderr)
     assert "priced at 3s, measured on this machine, below its declared 90" in result.stderr, (
         result.stderr)
-
-
-@pytest.mark.parametrize("flavour", _FLAVOURS)
-def test_a_dearer_measurement_never_defers_a_declared_rule(flavour, tmp_path):
-    """MUST-BLOCK the wrong direction. Declared 5s, a stale cache says 999s:
-    replacing instead of taking the minimum would make it chronic and stop
-    it running at Stop at all."""
-    root = _repo(tmp_path, _CHEAP_ALONE)
-    _seed_timing(root, _CHEAP_ALONE, 999)
-
-    result = _run(flavour, root)
-
-    assert result.returncode == 0, result.stderr
-    assert "echo RAN-cheap-5" in _ran(result), (
-        "a cached measurement ABOVE the declared price deferred the rule. "
-        + result.stderr)
-    assert "below its declared" not in result.stderr, result.stderr
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)

@@ -21,6 +21,7 @@ Exit codes: 2 = message (wakes the session), 0 = another watcher runs,
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -33,9 +34,15 @@ sys.path.append(str(Path(__file__).resolve().parents[2] / "client"))
 import websockets
 
 from bridge_time import parse_bridge_timestamp
+from bridge_tls import PinMismatch
 from config_loader import client_settings, load_config
+
 from peer_name import process_alive, record_seen, seen_since, session_name
 from untrusted import frame_message  # pylint: disable=import-error
+
+# The plain-ws:// deprecation warning is the MCP client's to give, once per session;
+# this hook runs at every turn end, and its stderr would repeat it each time
+logging.getLogger("ai_connect.transport").setLevel(logging.ERROR)
 
 # Claude Code reads the output as UTF-8; on Windows Python writes a pipe in the
 # ANSI code page and fails on characters outside it (an arrow, an emoji)
@@ -77,16 +84,27 @@ async def session_peer(session: str) -> str | None:
     return None
 
 
+def peer_settings(peer: str):
+    """The Bridge address and the token of the name the session's client chose and recorded.
+
+    Not a name chosen again here: with client.name_mode per-project the
+    hook's working directory need not be the project's.
+    """
+    return client_settings(load_config(), name=peer)
+
+
 async def watch(session: str) -> None:
     peer = await session_peer(session)
     if peer is None:
         sys.exit("aiconnect_watch.py: this session has no AI-Connect MCP client (no name recorded)")
-    settings = client_settings(load_config())
+    settings = peer_settings(peer)
+    # wss:// with the pinned certificate when client.bridge_fingerprint is set; the same URI on every
+    # reconnect, never ws:// instead
     uri = settings.uri
     headers = {"Authorization": f"Bearer {settings.token}"}
     while True:
         try:
-            async with websockets.connect(uri, additional_headers=headers) as ws:
+            async with websockets.connect(uri, additional_headers=headers, **settings.connect_options()) as ws:
                 await ws.send(json.dumps({"type": "watch", "peer": peer, "session": session, "since": seen_since(session)}))
                 async for raw in ws:
                     data = json.loads(raw)
@@ -99,6 +117,9 @@ async def watch(session: str) -> None:
                         local = parse_bridge_timestamp(data["timestamp"]).astimezone().strftime("%H:%M:%S")
                         print(wake_notice(peer, local, data["from"], data["content"]))
                         sys.exit(2)
+        except PinMismatch as e:
+            # Fail closed and stay closed: the token was not sent, and retrying meets the same certificate
+            sys.exit(f"aiconnect_watch.py: {e}")
         except websockets.exceptions.InvalidStatus as e:
             sys.exit(f"aiconnect_watch.py: Bridge refused the connection ({e}) - check client.token in config.yaml")
         except (OSError, websockets.exceptions.ConnectionClosed):

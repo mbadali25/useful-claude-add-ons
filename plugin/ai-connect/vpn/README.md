@@ -11,7 +11,7 @@ sequenceDiagram
     participant P as Peer agent
     participant B as Bridge (tag:bridge)
     A->>T: mint-key --name alice (OAuth client, scope auth_keys)
-    T-->>A: tskey-auth-... (single use, ephemeral, tag:ai-peer, 1 day)
+    T-->>A: tskey-auth-... (single use, not ephemeral, tag:ai-peer, 1 day)
     A->>P: key, out of band (file or env var)
     P->>T: vpn-up (tailscale up --auth-key ...)
     P->>B: TCP 9999 (the only port the ACL allows)
@@ -22,6 +22,9 @@ Every script comes as `.sh` (bash, macOS/Linux/Git Bash) and `.ps1` (PowerShell 
 Python 3.8+ and uses only the standard library. `keyring` is optional.
 
 ## One-time setup (a human, once per tailnet)
+
+`../deploy/deploy.sh tailnet-setup --apply` (`deploy.ps1` on Windows) does all five steps through the
+Tailscale API, with a preview first: see [`../deploy/README.md`](../deploy/README.md). The steps by hand:
 
 1. **Install Tailscale** on the Bridge host and log it in.
 2. **Tag the Bridge host**: in the admin console, open Machines, pick the Bridge host,
@@ -40,6 +43,8 @@ Python 3.8+ and uses only the standard library. `keyring` is optional.
    - the OS credential store through Python `keyring`:
      `keyring set ai-connect-tailscale oauth_client_id` and
      `keyring set ai-connect-tailscale oauth_client_secret`. The environment wins if both are set.
+   - the owner-only file `~/.config/ai-connect/tailscale-oauth.json`, which `deploy tailnet-setup` writes
+     when Python `keyring` is not installed. It is read last.
 
 ## Per peer (automated)
 
@@ -51,8 +56,10 @@ Python 3.8+ and uses only the standard library. `keyring` is optional.
 ./mint-key.sh --name alice-laptop --expiry 2h --peer-token
 ```
 
-The key is single use (`reusable: false`), ephemeral (the node is removed soon after it
-goes offline), pre-authorised, tagged `tag:ai-peer`, and expires after one day unless
+The key is single use (`reusable: false`), not ephemeral (the machine stays in the
+tailnet through a sleep, a reboot or a long time offline; `--ephemeral` makes a node that
+is removed soon after it goes offline, for throwaway or CI machines only), pre-authorised,
+tagged `tag:ai-peer`, and expires after one day unless
 you pass `--expiry` (`30m`, `12h`, `3d`, or seconds; the range is 60 s to 90 days).
 `--peer-token` also runs ai-connect's `installer.py add-peer <name>`, which prints the
 peer's Bridge token once. The script looks for the installer in `--installer`, then
@@ -89,8 +96,8 @@ $env:TS_AUTHKEY = 'tskey-auth-...'; ./vpn-up.ps1 --bridge bridge-host --hostname
   (`ALL_PROXY=socks5h://localhost:1055`). Treat this mode as a fallback. It is well
   trodden on Linux and macOS and much less so on Windows.
 
-**Agent**: leave with `./vpn-down.sh`. `--logout` also logs out, which removes the
-ephemeral node right away. If `vpn-up` started a userspace tailscaled, `vpn-down` stops it.
+**Agent**: leave with `./vpn-down.sh`. `--logout` also logs out (an ephemeral node is
+then removed right away; any other stays listed until `revoke`). If `vpn-up` started a userspace tailscaled, `vpn-down` stops it.
 
 **Admin**: remove a peer with `./revoke.sh --name alice-laptop`. By default it matches
 only nodes tagged `tag:ai-peer`. `--any-tag` widens the match. When several nodes share

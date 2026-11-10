@@ -23,7 +23,6 @@ _S = os.path.join(CREW, "hooks", "scripts")
 HOOK = os.path.join(_S, "approval_hook.py")
 TICKET = os.path.join(_S, "crew_ticket.py")
 HOOK_SH = os.path.join(_S, "approval-hook.sh")
-HOOK_PS1 = os.path.join(_S, "approval-hook.ps1")
 
 _G = "tests/test_approval_group.py::"
 _AH = "tests/test_approval_hook.py::"
@@ -307,16 +306,8 @@ APPROVAL_MUTATIONS = (
      "PY=$(crew_py_strict) || {\n  case \"$INPUT\" in *crew:approve*) ;; *) exit 0 ;; esac\n",
      "PY=$(crew_py_strict) || {\n",
      _AH + "test_without_python_only_an_approve_prompt_is_blocked[approve T-1-0-sh]"),
-    ("GROUP APPROVAL: the PowerShell no-python branch blocks every 'approve'", HOOK_PS1,
-     "  if ($raw -cnotmatch 'crew:approve') { exit 0 }\n",
-     "",
-     _AH + "test_without_python_only_an_approve_prompt_is_blocked[approve T-1-0-ps1]"),
     ("GROUP APPROVAL: the bash fast path skips plain-text approvals", HOOK_SH,
      'case "$INPUT" in *[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*) ;; *) exit 0 ;; esac\n',
      'case "$INPUT" in *crew:approve*) ;; *) exit 0 ;; esac\n',
      _AH + "test_a_plain_text_approval_goes_pending_then_confirm_records[sh]"),
-    ("GROUP APPROVAL: the PowerShell fast path skips plain-text approvals", HOOK_PS1,
-     "if ($raw -notmatch '(?i)approve') { exit 0 }\n",
-     "if ($raw -notmatch 'crew:approve') { exit 0 }\n",
-     _AH + "test_a_plain_text_approval_goes_pending_then_confirm_records[ps1]"),
 )

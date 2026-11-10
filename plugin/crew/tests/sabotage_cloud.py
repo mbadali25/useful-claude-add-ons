@@ -23,8 +23,6 @@ CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 GUARD = os.path.join(SCRIPTS, "cloud_guard.py")
 GUARD_SH = os.path.join(SCRIPTS, "cloud-guard.sh")
-GUARD_PS1 = os.path.join(SCRIPTS, "cloud-guard.ps1")
-GATE_PS1 = os.path.join(SCRIPTS, "verify-gate.ps1")
 CONFIG = os.path.join(SCRIPTS, "crew_config.py")
 # The allowlist's word-level helpers (T-0005 Step 8) live beside the guards.
 GUARDS = os.path.join(SCRIPTS, "crew_guards.py")
@@ -263,9 +261,6 @@ CLOUD_GUARD_MUTATIONS = (
     ("cloud-guard.sh: no longer names its own flavour", GUARD_SH,
      'CREW_CLOUD_GUARD_FLAVOUR=bash PYTHONUTF8=1',
      'PYTHONUTF8=1', _T + "test_bash_wrapper_flavour_guard"),
-    ("cloud-guard.ps1: no longer names its own flavour", GUARD_PS1,
-     "  $env:CREW_CLOUD_GUARD_FLAVOUR = 'powershell'\n", "",
-     _T + "test_pwsh_wrapper_judges_by_tool"),
     ("cloud guard: the unpinned note is dropped with no .crew/", GUARD,
      '    if not whats or os.path.exists(marker):\n',
      '    if not whats or os.path.exists(marker) \\\n'
@@ -274,13 +269,6 @@ CLOUD_GUARD_MUTATIONS = (
     ("cloud-guard.sh: no python + armed no longer fails closed", GUARD_SH,
      '    exit 2\n  fi\n  exit 0\nfi\n', '    exit 0\n  fi\n  exit 0\nfi\n',
      _T + "test_bash_wrapper_without_python"),
-    ("cloud-guard.ps1: no python + armed no longer fails closed", GUARD_PS1,
-     '    exit 2\n  }\n  exit 0\n}\n', '    exit 0\n  }\n  exit 0\n}\n',
-     _T + "test_pwsh_wrapper_without_python"),
-    ("verify-gate.ps1: pinned list drifts from PINNED_VARS", GATE_PS1,
-     '"AZURE_SUBSCRIPTION_ID",\n                   "ARM_SUBSCRIPTION_ID", ',
-     '"AZURE_SUBSCRIPTION_ID",\n                   ',
-     _T + "test_pinned_vars_are_one_list_in_all_three_places"),
 )
 
 # T-0005 (crew 1.0.42): the environment layer and the destroy rule. Each entry
@@ -829,7 +817,7 @@ CLOUD_GUARD_MUTATIONS += (
      _E + "test_round5_must_block_python[r5-brace-name-taint]"),
     ("cloud guard step 9: an expansion read only as a wildcard", GUARDS,
      '" ".join((wild, opened, emptied))', '" ".join((wild, opened))',
-     _S9 + "[s9-backquote-empty-prefix]"),
+     _S9 + "[s9-backquote-empty-prefix-taint]"),
 )
 
 # T-0005 review round 5 (kF0AM1): the gate's answer kept where the lexer
@@ -852,10 +840,11 @@ CLOUD_GUARD_MUTATIONS += (
      _E + "test_round5_unseen_reason_says_how_to_have_it_judged"),
     ("cloud guard r5: PowerShell never unseen", GUARDS,
      "    return hits[0][0], any(h[1] for h in hits)\n",
-     "    return hits[0][0], False\n", _R5 + "[r5-ps-set-alias]"),
+     "    return hits[0][0], False\n", _R5 + "[r5-ps-copied-binary]"),
     ("cloud guard r5: PowerShell launchers not read", GUARDS,
      "    if opaque or head in _PS_LAUNCHERS or any(\n",
-     "    if opaque or any(\n", _R5 + "[r5-ps-start-process]"),
+     "    if opaque or any(\n",
+     _ED + "test_ask_deploy_python[r3-ask-ps-start-process-hole]"),
     ("cloud guard r5: a PowerShell alias: drive write not read", GUARDS,
      '            w.lower().startswith(("alias:", "function:")) for w in '
      "args):\n", "            False for w in args):\n",
@@ -1440,17 +1429,21 @@ CLOUD_GUARD_MUTATIONS += (
     ("cloud guard r7: the gate reads eval's `--` as the command", GUARDS,
      '        args = args[1:] if args[:1] == ["--"] else args  # `eval -- ...`\n',
      "", _R7 + "[r7-eval-dashdash-quoted-plan-ask]"),
-    ("cloud guard r7: a lone quoted PowerShell string read as a program",
-     GUARDS, '            words[0]).__name__ != "_Bare"):\n',
-     '            words[0]).__name__ == "never"):\n',
-     _R7A + "[r7a-ps-assign-string]"),
-    ("cloud guard r7: PowerShell's colon-bound values not read", GUARDS,
-     '    values = [w.split(":", 1)[1] if w.startswith("-") and ":" in w else w\n'
-     "              for w in args]\n", "    values = list(args)\n",
-     _R7 + "[r7-ps-start-process-colon-ask]"),
+    # L-0897, recorded as UNFALSIFIABLE, not covered: the two entries that stood
+    # here ("a lone quoted PowerShell string read as a program": the
+    # `__name__ != "_Bare"` test in `_ps_argv_trigger`; "PowerShell's colon-bound
+    # values not read": the `values` split in the same function) came back STILL
+    # GREEN on every test in test_cloud_guard_environments.py (2049) and
+    # test_cloud_guard_deploy.py (709), and on 429 PowerShell lines read through
+    # `cloud_guard.scan` and 109 through `crew_dispatch.dispatch_trigger` (the
+    # original and the mutated module answered alike on all of them). Each branch
+    # is read a second time by a later one: a quoted first word is expression
+    # mode through the `opens` test just below, and a colon-bound value is named by
+    # `_arg_names_tool` / `names_terraform` on the whole line and by `_ps_backstop`.
+    # Re-add an entry here only with a row that turns one of them red.
     ("cloud guard r7: a string piped into Invoke-Expression not read", GUARDS,
      "        if not script:\n", "        if False:\n",
-     _R7 + "[r7-ps-string-piped-to-iex-ask]"),
+     _ED + "test_ask_deploy_python[l0897-ask-ps-string-piped-to-iex]"),
     ("cloud guard r7: terragrunt read-only only as its first word", GUARDS,
      "        rest = rest[tf_skip_options(rest, 0):]\n", "        pass\n",
      _R7A + "[r7a-tg-working-dir-plan]"),
@@ -1748,4 +1741,19 @@ CLOUD_GUARD_MUTATIONS += (
      '        and not any(ch != "" and unicodedata.category(ch) in '
      '_WORKFLOW_UNSEEN\n',
      _ED + "test_r6_a_printable_workflow_name_still_reads"),
+)
+
+# L-0903 (L-0853's two guard halves): php's value letters own their tail, and an
+# info-only option with no script is not code on stdin. Each aims at the allow
+# row the mutation turns into a refusal.
+_L0853 = _T + "test_l0853_a_php_option_or_report_only_run_is_allowed"
+CLOUD_GUARD_MUTATIONS += (
+    ("cloud guard L-0853: a php value letter no longer owns its tail", GUARDS,
+     "                if letter not in code + value and any(c in code\n",
+     "                if letter not in code and any(c in code\n",
+     _L0853 + "[l0853-php-d-attached-coverage-python]"),
+    ("cloud guard L-0853: an info-only php run read as code on stdin", GUARDS,
+     "    return codes, not codes and not script and not info\n",
+     "    return codes, not codes and not script\n",
+     _L0853 + "[l0853-php-v-python]"),
 )

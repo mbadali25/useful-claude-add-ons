@@ -16,9 +16,8 @@ PYTEST_ADDOPTS is set; Stop mode; the subset's command is also named by
 `always` or by an undeclared rule; the declaration is invalid; the planner is
 unavailable.
 
-The .ps1 flavour is exercised wherever pwsh exists: on a non-Windows host it
-is run with OS=Windows_NT, which is the only thing its first line checks
-(`verify-gate.ps1:45`); Resolve-CrewBash then finds the host's bash.
+The .ps1 flavour was once exercised here under pwsh (verify-gate.ps1, deleted
+in L-0869); only `sh` remains.
 """
 import glob
 import json
@@ -37,15 +36,12 @@ import verify_record
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SCRIPTS = os.path.join(_ROOT, "hooks", "scripts")
 _SH = os.path.join(_SCRIPTS, "verify-gate.sh")
-_PS1 = os.path.join(_SCRIPTS, "verify-gate.ps1")
 _REPO = os.path.dirname(os.path.dirname(_ROOT))
 
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = shutil.which("pwsh")
 
 _FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="needs bash")),
-    pytest.param("ps1", marks=pytest.mark.skipif(_PWSH is None, reason="needs pwsh")),
 ]
 
 SUB = "echo sub >> {log}"
@@ -93,17 +89,11 @@ def _sub(cmd=SUB, **extra):
 
 
 def _run(flavour, root, *extra, env=None, scripts=None):
+    assert flavour == "sh"
     sh = os.path.join(scripts, "verify-gate.sh") if scripts else _SH
-    ps1 = os.path.join(scripts, "verify-gate.ps1") if scripts else _PS1
-    if flavour == "sh":
-        cmd = [_BASH, sh, *extra]
-    else:
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", ps1,
-               *[a.replace("--all", "-All") for a in extra]]
+    cmd = [_BASH, sh, *extra]
     full = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
     full.pop("PYTEST_ADDOPTS", None)
-    if flavour == "ps1" and not sys.platform.startswith("win"):
-        full["OS"] = "Windows_NT"
     full.update(env or {})
     return crew_fixtures.run_gate(cmd, input="{}", cwd=str(root), env=full, capture_output=True,
                                   text=True, check=False,

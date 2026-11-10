@@ -1,5 +1,6 @@
 """tsadmin.py: mint-key, revoke, vpn-up, vpn-down against a fake API and a fake tailscale CLI."""
 import hashlib
+import json
 import os
 import re
 import socket
@@ -22,7 +23,8 @@ def assert_no_secret(text, allow=()):
 # ------------------------------------------------------------------ mint-key
 
 
-def test_mint_key_request_body_is_single_use_ephemeral_preauthorized_tagged(ts, api, capsys):
+def test_mint_key_request_body_is_single_use_not_ephemeral_preauthorized_tagged(ts, api, capsys):
+    """A joined machine is trusted and stays: an ephemeral node would vanish after a sleep or a reboot."""
     assert ts.main(["mint-key", "--name", "alice-laptop"]) == 0
     token_call = api.find("POST", "/oauth/token")[0]
     assert token_call["form"] == {"client_id": "kOAUTHCLIENTID", "client_secret": CLIENT_SECRET,
@@ -30,10 +32,18 @@ def test_mint_key_request_body_is_single_use_ephemeral_preauthorized_tagged(ts, 
     key_call = api.find("POST", "/tailnet/-/keys")[0]
     assert key_call["token"] == ACCESS_TOKEN
     assert key_call["body"]["capabilities"] == {"devices": {"create": {
-        "reusable": False, "ephemeral": True, "preauthorized": True, "tags": ["tag:ai-peer"]}}}
+        "reusable": False, "ephemeral": False, "preauthorized": True, "tags": ["tag:ai-peer"]}}}
+    assert "single use, not ephemeral" in capsys.readouterr().out
     assert key_call["body"]["expirySeconds"] == 86400
     assert key_call["body"]["description"] == "ai-connect peer alice-laptop"
     assert len(api.find("POST", "/tailnet/-/keys")) == 1
+
+
+def test_mint_key_ephemeral_is_opt_in_for_throwaway_nodes(ts, api, capsys):
+    assert ts.main(["mint-key", "--name", "ci-node", "--ephemeral"]) == 0
+    create = api.find("POST", "/tailnet/-/keys")[0]["body"]["capabilities"]["devices"]["create"]
+    assert create == {"reusable": False, "ephemeral": True, "preauthorized": True, "tags": ["tag:ai-peer"]}
+    assert "single use, ephemeral" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize("flag,seconds", [("12h", 43200), ("30m", 1800), ("3600", 3600), ("2d", 172800)])
@@ -112,6 +122,33 @@ def test_mint_key_refuses_to_write_when_acl_cannot_be_restricted(ts, api, tmp_pa
     assert "could not restrict" in err and why in err
     assert_no_secret(out + err)
     assert list(out_dir.iterdir()) == []  # neither the key nor its temp file
+
+
+def test_private_dir_closes_a_directory_that_was_open_to_others(ts, tmp_path):
+    import subprocess
+    loose = tmp_path / "config"
+    loose.mkdir()
+    loose.chmod(0o755)
+    for path in (loose, tmp_path / "new" / "config"):
+        ts.private_dir(path)
+        if os.name == "nt":
+            acl = subprocess.run(["icacls", str(path)], capture_output=True, text=True, check=False).stdout
+            entries = [line.replace(str(path), "").strip() for line in acl.splitlines() if ":(" in line]
+            assert len(entries) == 1 and "(I)" not in acl, acl  # mkdir(mode=0o700) alone leaves SYSTEM in
+            assert entries[0].lower().split(":(")[0].endswith("\\" + os.environ["USERNAME"].lower())
+        else:
+            assert path.stat().st_mode & 0o777 == 0o700
+
+
+def test_private_dir_fails_closed_when_the_acl_cannot_be_set(ts, tmp_path, monkeypatch):
+    import subprocess
+    monkeypatch.setattr(ts, "IS_WINDOWS", True)
+    monkeypatch.setenv("USERNAME", "alice")
+    monkeypatch.setattr(ts.shutil, "which", lambda name: r"C:\Windows\System32\icacls.exe")
+    monkeypatch.setattr(ts.subprocess, "run",
+                        lambda *a, **k: subprocess.CompletedProcess(a, 5, "", "Access is denied."))
+    with pytest.raises(ts.Failure, match=r"could not restrict .*\(icacls exited 5\)"):
+        ts.private_dir(tmp_path / "config")
 
 
 def test_mint_key_api_error_names_status_and_leaks_nothing(ts, api, capsys):
@@ -313,13 +350,18 @@ def test_vpn_up_bridge_host_from_env(ts, fake_ts, probe, monkeypatch):
     assert probe.seen[0][0] == "env-bridge"
 
 
-def test_vpn_up_joins_with_env_key_and_tags(ts, fake_ts, probe, monkeypatch, capsys):
+def test_vpn_up_joins_with_env_key_and_tags(ts, fake_ts, probe, monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(ts, "IS_WINDOWS", False)
     monkeypatch.setenv("TS_AUTHKEY", AUTH_KEY)
     assert ts.main(["vpn-up", "--bridge", "b", "--hostname", "alice"]) == 0
     (call,) = fake_ts.up_calls()
-    assert f"--auth-key={AUTH_KEY}" in call
+    # tailscale reads the key from an owner-only file: it is on no command line, and the file is gone after
+    assert not any(AUTH_KEY in a for a in call) and fake_ts.up_key() == AUTH_KEY
+    assert any(a.startswith("--auth-key=file:") for a in call) and list((tmp_path / "state").glob("auth-key-*")) == []
     assert "--advertise-tags=tag:ai-peer" in call
+    # Another VPN here keeps its routes, exit and DNS: Tailscale takes none of them, and offers none
+    assert {"--accept-routes=false", "--exit-node=", "--accept-dns=false"} <= set(call)
+    assert not any(a.startswith(("--advertise-routes", "--advertise-exit-node")) for a in call)
     assert "--hostname=alice" in call
     assert "--unattended" not in call
     out, err = capsys.readouterr()
@@ -329,6 +371,9 @@ def test_vpn_up_joins_with_env_key_and_tags(ts, fake_ts, probe, monkeypatch, cap
 
 def test_vpn_up_adds_unattended_on_windows(ts, fake_ts, probe, monkeypatch):
     monkeypatch.setattr(ts, "IS_WINDOWS", True)
+    # Only the flag is under test: off Windows, the key file cannot get a Windows ACL
+    monkeypatch.setattr(ts, "write_owner_only", lambda path, text: (path.parent.mkdir(parents=True, exist_ok=True),
+                                                                    path.write_text(text, encoding="utf-8")))
     monkeypatch.setenv("TS_AUTHKEY", AUTH_KEY)
     assert ts.main(["vpn-up", "--bridge", "b"]) == 0
     assert "--unattended" in fake_ts.up_calls()[0]
@@ -339,7 +384,7 @@ def test_vpn_up_deletes_key_file_after_success(ts, fake_ts, probe, tmp_path):
     key_file.write_text("\n" + AUTH_KEY + "\n", encoding="utf-8")
     assert ts.main(["vpn-up", "--auth-key-file", str(key_file), "--bridge", "b"]) == 0
     assert not key_file.exists()
-    assert f"--auth-key={AUTH_KEY}" in fake_ts.up_calls()[0]
+    assert fake_ts.up_key() == AUTH_KEY and not any(AUTH_KEY in a for a in fake_ts.up_calls()[0])
 
 
 def test_vpn_up_key_file_from_env(ts, fake_ts, probe, tmp_path, monkeypatch):
@@ -415,6 +460,58 @@ def test_vpn_up_missing_tailscale_exit_3_with_install_hint(ts, tmp_path, monkeyp
     assert "not installed" in err and ("winget" in err or "brew" in err or "install.sh" in err)
 
 
+# ------------------------------------------------------------------ other VPNs on the machine
+
+
+def test_linux_vpn_interfaces_and_their_routes_are_read_from_ip_json(ts):
+    links = json.dumps([{"ifname": "lo"}, {"ifname": "eth0"}, {"ifname": "tailscale0"}, {"ifname": "tun0"},
+                        {"ifname": "wg0"}])
+    routes4 = json.dumps([{"dst": "default", "dev": "eth0"}, {"dst": "100.64.0.0/10", "dev": "tailscale0"},
+                          {"dst": "10.5.0.0/16", "dev": "tun0"}, {"dst": "default", "dev": "wg0"}])
+    routes6 = json.dumps([{"dst": "fd00::/8", "dev": "wg0"}, {"dst": "default", "dev": "tun0"}])
+    assert ts.parse_linux_vpns(links, routes4, routes6) == [
+        {"name": "tun0", "routes": ["10.5.0.0/16", "::/0"]}, {"name": "wg0", "routes": ["0.0.0.0/0", "fd00::/8"]}]
+
+
+@pytest.mark.parametrize("route, conflict", [
+    ("100.64.0.0/10", True), ("100.100.1.0/24", True), ("100.101.102.103", True),
+    ("fd7a:115c:a1e0::/48", True), ("fd7a:115c:a1e0:1::/64", True),
+    ("0.0.0.0/0", False), ("0.0.0.0/1", False), ("100.0.0.0/8", False), ("10.5.0.0/16", False),
+    ("100.128.0.0/10", False), ("::/0", False), ("fd7a::/16", False), ("not a route", False),
+])
+def test_only_a_route_inside_a_tailnet_range_conflicts(ts, route, conflict):
+    hits = ts.route_conflicts([{"name": "AWS VPN", "routes": [route]}])
+    assert bool(hits) == conflict, hits
+
+
+def test_vpn_up_refuses_before_joining_when_another_vpn_routes_tailnet_addresses(ts, fake_ts, probe, monkeypatch,
+                                                                              capsys):
+    monkeypatch.setattr(ts, "other_vpns", lambda platform: [{"name": "OpenVPN TAP", "routes": ["100.96.0.0/11"]}])
+    monkeypatch.setenv("TS_AUTHKEY", AUTH_KEY)
+    assert ts.main(["vpn-up", "--bridge", "b"]) == 1
+    err = capsys.readouterr().err
+    assert "another VPN routes Tailscale's addresses" in err and "'OpenVPN TAP' routes 100.96.0.0/11" in err
+    assert fake_ts.up_calls() == []
+
+
+def test_vpn_up_names_the_other_vpns_in_one_line(ts, fake_ts, probe, monkeypatch, capsys):
+    monkeypatch.setattr(ts, "other_vpns", lambda platform: [{"name": "wg0", "routes": ["10.5.0.0/16"]}])
+    monkeypatch.setenv("TS_AUTHKEY", AUTH_KEY)
+    assert ts.main(["vpn-up", "--bridge", "b"]) == 0
+    (line,) = [ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("vpn-coexistence: ")]
+    assert json.loads(line.removeprefix("vpn-coexistence: ")) == {
+        "other_vpns": [{"name": "wg0", "routes": ["10.5.0.0/16"]}],
+        "tailscale_takes": {"routes": False, "exit_node": False, "dns": False}}
+
+
+def test_a_vpn_list_that_cannot_be_read_is_unknown_not_none(ts, monkeypatch):
+    def unreadable(platform):
+        raise ts.Failure("`ip` (iproute2) not found")
+    monkeypatch.setattr(ts, "other_vpns", unreadable)
+    record = json.loads(ts.vpn_coexistence("linux").removeprefix("vpn-coexistence: "))
+    assert record["other_vpns"] is None and record["other_vpns_unknown"] == "`ip` (iproute2) not found"
+
+
 # ------------------------------------------------------------------ vpn-down
 
 
@@ -457,5 +554,24 @@ def test_probe_tcp_ok_and_refused_on_loopback(ts):
     assert ts.probe_tcp("127.0.0.1", port, timeout=5) == "refused"
 
 
-def test_probe_tcp_unresolvable_is_unknown(ts):
+def test_probe_tcp_unresolvable_is_unknown(ts, monkeypatch):
+    def unresolvable(*_args, **_kwargs):  # the resolver's answer, without a DNS query leaving this machine
+        raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+    monkeypatch.setattr(ts.socket, "getaddrinfo", unresolvable)
     assert ts.probe_tcp("no-such-host.invalid", 9999, timeout=2) == "unknown"
+
+
+# ------------------------------------------------------------------ the suite's own guard
+
+
+def test_the_suite_cannot_resolve_a_real_tailscale(ts):
+    found = Path(ts.tailscale_bin())
+    assert found.parent.parent.name == "tailscale-guard", f"a real tailscale would answer: {found}"
+    assert not any(Path(d).exists() for d in ts.tailscale_dirs())
+
+
+def test_running_the_command_on_path_trips_the_guard(ts, tmp_path_factory):
+    res = ts.run_ts(ts.tailscale_bin(), ["status"])
+    mark = tmp_path_factory.getbasetemp() / "tailscale-guard" / "called"
+    assert res.returncode == 97 and "status" in mark.read_text(encoding="utf-8")
+    mark.unlink()  # this test meant to trip it

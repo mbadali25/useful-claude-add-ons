@@ -60,27 +60,40 @@ or behaves like an older release.
 
 ## Hook noise
 
-Every hook crew registers, from `plugin/crew/hooks/hooks.json`, and the config key that turns its
-behaviour up or down. All events are registered once for bash and once for PowerShell (`shell:
-"powershell"`), so a Windows machine with both `bash` and `pwsh` on `PATH` fires both halves of
-every pair — that is what "even counts" in the file means, not a bug.
+Every hook crew runs, and the config key that turns its behaviour up or down. `plugin/crew/hooks/hooks.json`
+registers one launcher per event per shell (`crew-hook.sh`, and `crew-hook.ps1` with `shell: "powershell"`);
+the launcher starts one dispatcher, `crew_hook.py <Event>`, which runs that event's scripts below at once and
+combines what they print. On Windows only the PowerShell launcher runs, so no event fires twice. When the
+launcher or dispatcher itself fails in a repo crew governs, `PreToolUse`, `UserPromptSubmit` and `Stop` refuse
+with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged. Only the four stateless PreToolUse judges (`role-write-guard`, `cloud-guard`, `env-guard`, `scope-guard`) are run
+once more after a timeout, and only when the dispatch deadline leaves room for a second timeout's cleanup; at the
+defaults that is `role-write-guard` on every platform and the 15-second `cloud-guard`, `env-guard` and `scope-guard`
+rows off Windows. `promote-gate`, `approval-hook`, `verify-gate` and `completion-audit` are never retried (they record
+state), and a retried guard can leave a duplicate `guard.log` row. The line says `attempts=N`, so you can tell whether
+a retry ran. If the guard still cannot answer, the refusal is led by `crew-hook: UNKNOWN (guard timeout, not a policy
+deny)`. A guard that could not fork or allocate (a stderr line that is itself `fork: ... Resource temporarily unavailable`, `OSError: [Errno 11]`, `BlockingIOError: EAGAIN`, a bare `MemoryError`; text that merely quotes those words, such as a path, is not matched)
+is led by `UNKNOWN (resource exhaustion, not a policy deny)`, and a guard's own "no usable python" refusal
+by `UNKNOWN (no usable python, not a policy deny)` (only that fixed one-line refusal; a deny that quotes the words in
+a path is still a deny). An `UNKNOWN` line is a refusal because crew could not tell, not because a rule said
+no: retry the call, and free memory or processes if it repeats. A real deny never carries the label. Setting
+`CREW_HOOK_TIMING_FILE` to a path ending `.crew-trace` records each guard's start, end and milliseconds.
 
 | Event | Script | What it does | Switch | Default |
 |---|---|---|---|---|
-| `SessionStart` | `handoff-read.sh` | resets its once-per-session markers; reads back `.work/HANDOFF.md` only when `memory.inject` is false | — (always runs) | on |
+| `SessionStart` | `handoff-read.sh` | resets its once-per-session markers; reads back `.work/HANDOFF.md` only if the context hook did not inject it | — (always runs) | on |
 | `SessionStart` | `platform-sync.sh` | detects/repairs `platform.{os,wsl,shell,windowsHostIp}` | — (always runs) | on |
-| `SessionStart` / `UserPromptSubmit` / `PostToolUse` / `SubagentStart` | `crew-context.sh` | injects code-map slices and vault recall, tracks the token budget | `context.enabled` (whole hook), `memory.inject` (codemap, handoff and vault injection — on by default since 1.0.0) | `context.enabled: true`, `memory.inject: true` |
+| `SessionStart` / `UserPromptSubmit` / `PostToolUse` / `SubagentStart` | `crew-context.sh` | injects code-map slices and vault recall, tracks the token budget | `context.enabled` (whole hook; injection itself has no separate switch since 1.0.0) | `context.enabled: true` |
 | `UserPromptSubmit` | `approval-hook.sh` | records or refuses a `/crew:approve <id>` receipt | always records; enforcement depends on `scope.mode` | n/a |
-| `PreToolUse` (`Bash`/`PowerShell`) | `promote-gate.sh` | the six command/production guards plus `mergeGate` | `guards.terraformApply`, `guards.forcePush`, `guards.adminMerge`, `guards.mergeGate`, `guards.cloudDestructive`, `guards.sqlDestructive`, `guards.prodDatabase`, `guards.prodServer` | `block` / `none` (the strictest tier) |
-| `PreToolUse` (`Write`\|`Edit`) | `role-write-guard.sh` | refuses a write outside the dispatched role's declared scope | `guards.roleWrites` (`block`/`report`/`off`) | `off` |
-| `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh` | destructive `aws`/`az` commands, wrong-identity commands, and dispatches of workflows listed in `environments.workflows` (`guards.deployWorkflow`) — judged only when every word on the line is a plain literal or a single-quoted word; anything else asks, and is refused unattended | `guards.cloudGuard` (`block`/`report`/`off`) | `off` |
-| `PreToolUse` (`Bash`\|`PowerShell`) | `env-guard.sh` | a command that prints the whole environment or a credential-named variable into the agent's context; a command it cannot read is could-not-tell (L-0772) | `guards.envGuard` (`block`/`report`/`off`) | `off` |
+| `PreToolUse` (`Bash`/`PowerShell`) | `promote-gate.sh` | the six command/production guards plus `mergeGate` | `guards.profile`, or `guards.overrides.<guard>` for `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive`, `prodDatabase`, `prodServer` | `block` / `none` (the strictest tier) |
+| `PreToolUse` (`Write`\|`Edit`) | `role-write-guard.sh` | refuses a write outside the dispatched role's declared scope | `guards.overrides.roleWrites` (`block`/`report`/`off`), or `guards.profile` | `off` |
+| `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh` | destructive `aws`/`az` commands, wrong-identity commands, and dispatches of workflows listed in `environments.workflows` (`guards.overrides.deployWorkflow`) — judged only when every word on the line is a plain literal or a single-quoted word; anything else asks, and is refused unattended | `guards.overrides.cloudGuard` (`block`/`report`/`off`), or `guards.profile` | `off` |
+| `PreToolUse` (`Bash`\|`PowerShell`) | `env-guard.sh` | a command that prints the whole environment or a credential-named variable into the agent's context; a command it cannot read is could-not-tell (L-0772) | `guards.overrides.envGuard` (`block`/`report`/`off`), or `guards.profile` | `off` |
 | `PreToolUse` (`Bash`\|`PowerShell`) | `cloud-guard.sh`, environment layer (T-0005) | a terraform apply judged by its target environment, and a destroy never applied unattended | `environments.nonProd` (repo only; globs naming non-production workspaces), `environments.prodUnattended` (both layers; true only when **both** say `true`) | `[]`, `false` |
 | `PreToolUse` (`Write`\|`Edit`\|`MultiEdit`\|`NotebookEdit`\|`Bash`\|`PowerShell`) | `scope-guard.sh` | plan-approval + ticket scope guard | `scope.mode` (`off`/`report`/`block`/`auto`), `scope.allowCliApproval` | `off`, `false` |
-| `PreCompact` | `handoff-write.sh` | writes the handoff note before compaction | `context.autoWrapUp`, `context.handoffPath` | on |
-| `Notification` | `notify.sh` (`crew_notify.py hook`) | a `Question` / `Needs permission` ping when Claude stopped on a permission prompt, an AskUserQuestion or an elicitation; never `idle_prompt`; once per waiting episode | `notify.provider` (`none` or null disables it), `notify.events`, `notify.questionTypes` | off |
+| `PreCompact` | `handoff-write.sh` | writes the handoff note before compaction | — (always on; the handoff path is fixed at `.work/HANDOFF.md`) | on |
+| `Notification` | `notify.sh` (`crew_notify.py hook`) | a `Question` / `Needs permission` ping when Claude stopped on a permission prompt, an AskUserQuestion or an elicitation; never `idle_prompt`; once per waiting episode | `notify.provider` (`none` or null disables it), `notify.events` | off |
 | `Stop` | `verify-gate.sh` | runs `.crew/verify.json`'s checks | `verifyGate` (boolean) | `true` |
-| `Stop` | `context-watch.sh` | nags for a handoff near the context budget, drives auto-clear | `context.enabled`, `context.warnAt`, `context.budgetTokens`, `context.reserveTokens`, `context.autoClear.*` | on, `warnAt: 0.5` |
+| `Stop` | `context-watch.sh` | nags for a handoff near the context budget, drives auto-clear | `context.enabled`, `context.warnAt`, `context.reserveTokens`, `context.autoClear.*` | on, `warnAt: 0.4` |
 | `Stop` | `completion-audit.sh` | diffs the whole tree against the ticket's scope base | `scope.mode` | `off` |
 
 - **Blocker pings (`notify.events` has `blocker`).** `Stop gate refused` means the verify gate or the
@@ -89,12 +102,13 @@ every pair — that is what "even counts" in the file means, not a bug.
   found another runner's in-flight marker `stale` (a dead pid, or no heartbeat inside T-0049's
   30-minute TTL) and names the owner's `crew_inflight.py clear`; `Lane state unknown` means it could
   not tell. `Approval waiting` is autopilot stopped at `approve`.
-- **Silence one hook without touching the rest:** set its own key. `guards.roleWrites: off`,
-  `guards.cloudGuard: off`, `guards.envGuard: off` and `scope.mode: off` are already the shipped defaults — a noisy session
+- **Silence one hook without touching the rest:** set its own key. `guards.profile: off` (which leaves
+  the role-write, cloud and environment guards off) and `scope.mode: off` are already the shipped defaults — a noisy session
   usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not
   that the default changed.
-- **Silence the SessionStart context specifically:** `{"memory": {"inject": false}}` stops the
-  context hook; `handoff-read.sh` then prints the handoff on resume instead.
+- **Silence the SessionStart context specifically:** `{"context": {"enabled": false}}` stops the
+  context hook and the Stop nag with it. There is no separate switch for injection since 1.0.0
+  (the `memory.inject` setting was removed).
 - **See what the context hook is actually doing:**
 
   ```bash
@@ -164,6 +178,20 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   one plan reads `NOT refunded - refund limit 2 per plan reached` and counts. A `reviewer` or `tree`
   round always counts. Rebuild the bundle (tree), or rerun and read what the reviewer wrote
   (reviewer).
+
+- **Symptom: `--check-receipt` says `no accepted review receipt ... (ledger absent); could not tell whether head
+  <sha> was reviewed`, or another host merged a PR whose review you cannot see.**
+  **Cause:** the review ledger and receipt are host-local (`<git-common-dir>/crew/review/`, `.work/`), so a
+  session on a host that did not run the review has none. That is could-not-tell, not "nothing to gate"
+  (L-0780; PR #599 merged with 4 open BLOCKs on that misreading).
+  **Check:**
+  ```bash
+  python3 "<crew>/hooks/scripts/review_status.py" check --pr <PR>
+  ```
+  `REVIEW_GATE ALLOW` (exit 0) means GitHub holds exactly one `crew/review` success with `blocks=0` for that
+  exact head; `BLOCK` (1) and `COULD_NOT_TELL` (2) both refuse. The command reads only GitHub: no local
+  ledger, no working tree. Nothing publishes the status yet (L-0821), so today it reads `COULD_NOT_TELL`,
+  which is safe. A status attests, it does not prove, and `gh pr merge --admin` bypasses a required check.
 
 - **Symptom: `/crew:done` refuses with a receipt error.**
   **Check:**
@@ -304,7 +332,8 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
 ## Scope: approval and the completion audit
 
 A ticket's contract lives in `.work/tickets/<id>/`: `spec.md`'s `## Touch` section names every path
-the ticket may change; `plan.md`'s `Files:` lines must each fall inside Touch. Two hooks hold a
+the ticket may change; `plan.md`'s `Files:` lines must each fall inside Touch (steps also carry
+`Lines:` and a kind tag, stated to the planner with a 300-line cap that approval does not check yet). Two hooks hold a
 session to that contract — see [Daily workflow: scope and approval](daily-workflow-scope.md) for the
 contract itself. This section is what goes wrong with the approval and the audit.
 
@@ -332,7 +361,7 @@ contract itself. This section is what goes wrong with the approval and the audit
   always has one, a default that crew's SessionStart heal wrote there. `(unknown)` means git
   could not name the main checkout; then no default is written either. Of the shell and
   PowerShell readers (T-0096), the incident stand-down read (`_common.sh`,
-  `promote-gate.ps1`), both cloud-guard no-python fallbacks and `auto-clear.ps1` inherit too; in
+  `promote-gate.ps1`), the cloud-guard no-python fallback and `auto-clear.sh` inherit too; in
   the cloud guard's fallback `unknown` counts as armed. So do the session hooks (`notify`, the
   handoff scripts, `context-watch`; crew 1.0.343, L-0680): a lane notifies with the main
   checkout's settings, and a relative handoff path still names a file in the lane. Since
@@ -452,10 +481,18 @@ contract itself. This section is what goes wrong with the approval and the audit
   its time and what happened (`killed-at-bound`, `exit-nonzero`, `not-python-proof`,
   `not-tried-budget-spent`, ...). A timeout under heavy load is the machine, not a missing python:
   re-run when it is idle. The other PowerShell hooks and the bash twins do not report this yet.
+- **`CREW_PYTHON` and the bash guards (crew 1.2.109).** The launcher exports the interpreter it
+  already ran as `CREW_PYTHON`; `crew_py`, `crew_py_strict` and `role-write-guard.sh` take it before
+  walking `PATH`, so a guard started by the dispatcher no longer probes every candidate again (the
+  walk was the slow part on Windows under load). It is used only when it is an absolute path
+  (`C:\...` is converted with `cygpath -u`), a regular executable file, named `py`, `python` or
+  `python3.x`; anything else is ignored and the old walk runs. A guard whose helper script is
+  missing (or whose path cannot be resolved) now refuses with `<name>.py is missing or its path could
+  not be resolved` instead of python's `can't find '__main__' module in '<repo>'`.
 
 ## Verify gate says 0 rules ran, or deferred to CI
 
-`verify-gate.sh` / `.ps1` (L-0710). The Stop gate runs only the rules mapped to what changed since
+`verify-gate.sh` (L-0710). The Stop gate runs only the rules mapped to what changed since
 its marker, cheapest first, inside `verify.stopBudgetSeconds` (default 60). Two lines are expected,
 not errors, and neither blocks the turn:
 
@@ -464,15 +501,65 @@ not errors, and neither blocks the turn:
   diff baseline `.crew/.verify-gate.base-at` moves (when nothing committed differs from the base),
   so a later commit is still in scope. If that file cannot be written the turn exits 2 and says so.
 - **`rules[N] is permanently over budget ... deferred to CI`** and **`NOT VERIFIED ON THIS TREE -
-  ... deferred to CI`**: that rule costs more than the whole budget, so Stop never runs it. The
+  ... deferred to CI`** (since crew 1.2.39 the quiet Stop path counts these in the verdict line's
+  `over-budget` and `deferred` figures and writes the per-rule text to `.crew/.verify-gate.log`;
+  `--verbose` prints it): that rule costs more than the whole budget, so Stop never runs it. The
   `verify-gate` workflow does, and `/crew:done` refuses until its receipt for HEAD is VERIFIED or a local run passes it.
   Push the branch, or run `/crew:verify --all` to check it here.
 
 A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.
 
+Since crew 1.3.0 the gate also keeps the **hook deadline** (`CREW_HOOK_DEADLINE`, the Stop hook's
+600s limit), because the budget works from estimates and an estimate can be wrong (measured: 862s
+on Windows, killed by the hook, nothing recorded):
+
+- **`verify-gate: deferred: would pass the hook deadline - rules[N] is priced Ms and Ks are left ...
+  - NOT VERIFIED this turn: <command>`**: before each rule, its price is held against the time left
+  less a 60s margin. The rule did not run; the verified marker does not advance. Run
+  `/crew:verify --all` (no deadline) to check it here.
+- **`a previous run was killed at the hook deadline while running <command> ... priced at Ns or
+  more from now on`**: the last run was killed mid-rule. The gate saved what it had measured as it
+  went (`.crew/.verify-gate.timings.json`, `.crew/.verify-gate.log` headed `RUN NOT FINISHED`), and
+  the command in flight is now priced at no less than the time it ran, so Stop defers it by name
+  instead of starting it into the same kill. `/crew:verify --all` measures it again.
+- **`the lock at .crew/.verify-gate.lock names a holder ... whose process no longer exists`**: a
+  killed gate's lock is reclaimed at once instead of backing off until its deadline. A holder that is
+  alive, or that cannot be asked, still makes the next run back off (`NOTHING WAS VERIFIED`).
+- **Scope larger than the branch**: the diff base is the merge-base with `origin/<default>` when that
+  ref exists, else the local branch; the detail log (`--verbose`) names which. A local `main` behind
+  the remote no longer drags merged work into scope.
+
+## Verify gate prints one line, or says "unchanged since last Stop"
+
+Since crew 1.2.39 (L-0796) the Stop gate is quiet. It prints one verdict line, then each failure
+exactly as before, and keeps the rest in `.crew/.verify-gate.log`:
+
+```text
+verify-gate: FAILED 1 cmd | PASSED 14 cmd | NOT VERIFIED 5 item(s) (reach 2, over-budget 1, dirty tree 0, deferred 1, skipped 1, other 0) | credited 3 | budget 41s/60s | detail: .crew/.verify-gate.log
+```
+
+- **Where did the pricing, `env pinned`, `PASSED on this exact tree` and per-rule seconds lines go?**
+  Into the log, which holds the complete text of the last run. Run the gate with `--verbose`
+  (`-Verbose` in the PowerShell flavour) or set `CREW_VERIFY_VERBOSE=1` to get them on screen. `--ci`,
+  `--all` and `--price` always print everything, so CI logs and `/crew:verify` look as they did.
+- **Units.** FAILED, PASSED and credited count commands; NOT VERIFIED counts items: a rule for
+  reach, over-budget, dirty tree and deferred, but a command for skipped (exit 77) and for credits
+  withdrawn because the tree moved (under other). Do not add the two units together.
+- **`NOT VERIFIED` is not `PASSED`.** A deferred, skipped, reach-excluded, over-budget or dirty-tree
+  rule is counted under NOT VERIFIED; `other` is a rule the gate could not classify. Run
+  `/crew:verify --all` to run them.
+- **`verify-gate: unchanged since last Stop (N failing, M NOT VERIFIED): <command> | detail: <log> | ...`**: the same
+  session is failing the same way it reported on the last Stop, so the full block is not repeated.
+  The line names `.crew/.verify-gate.log`, which holds this run's full output. If that log
+  cannot be written the gate never prints this line: it prints the full block instead.
+  The turn is still blocked (exit 2). A new session, a changed failure, or deleting
+  `.crew/.verify-gate.last-stop` prints the full block again.
+- **`detail: unavailable`**: `.crew/.verify-gate.log` could not be written (a directory in its
+  place, a read-only `.crew`). The full text is printed instead of a pointer to it.
+
 ## Verify gate says COULD NOT TELL
 
-`verify-gate.sh` / `.ps1` (T-0082). A rule counts as passed only when its wrapper ended with status 0
+`verify-gate.sh` (T-0082). A rule counts as passed only when its wrapper ended with status 0
 **and** left a completion record saying the rule exited 0. Anything else that is not a plain exit
 status is FAILED as "could not tell": the gate prints `VERIFY FAILED: <cmd>`, then
 `verify-gate: COULD NOT TELL (<reason>): <cmd>`, exits 2, and neither marker advances. The summary
@@ -489,13 +576,12 @@ adds `verify-gate: N rule command(s) COULD NOT BE JUDGED - counted as FAILED`. T
 - **"no completion record"**: the wrapper ended 0 but the record is missing, empty, not 1-3 digits or
   above 255 - the shape a native Windows kill that reports exit 0 leaves. Nothing about the rule can
   be told from that run.
-- **"the rule's shell could not be started"** (`.ps1` only): the resolved bash vanished or would not
+- **"the rule's shell could not be started"** (the PowerShell gate, deleted in L-0869, only; no current message): the resolved bash vanished or would not
   launch for this rule. Before T-0082 this rule silently inherited the previous rule's pass.
 - **"cannot create an output-capture file or a completion-record file"** or **"no usable bash
   resolved"**: the existing refusals, now named as could-not-tell.
-- **"the gate received TERM while this command was running"** (`.sh` only): the gate itself was
-  signalled mid-rule; it still exits 128+N. A killed `.ps1` gate prints nothing (PowerShell has no
-  signal trap); the marker not advancing covers it.
+- **"the gate received TERM while this command was running"** the gate itself was
+  signalled mid-rule; it still exits 128+N.
 
 The command log carries status `unknown` for such a rule; the record sync leaves that rule's entry as
 it was and the tree-pass cache never stores it. The gate still waits as long as a rule runs - a hung
@@ -684,7 +770,7 @@ Do not pick the run from the Actions tab and carry on: run `crew_ghdeploy.py rec
 ## Environment guard refusals
 
 `env-guard.sh` / `env_guard.py`, a `PreToolUse` hook on `Bash` and `PowerShell` (L-0772). **Ships
-off** (`guards.envGuard: off`); turn it on with `{"guards": {"envGuard": "report"}}` and read
+off** (`guards.profile: off`); turn it on with `{"guards": {"overrides": {"envGuard": "report"}}}` and read
 `.crew/guard.log` before enforcing with `"block"`. A refusal names labels only, never a value.
 
 - **`env-dump:<form>`:** the command prints the whole environment. Read the one variable you need by
@@ -700,7 +786,7 @@ off** (`guards.envGuard: off`); turn it on with `{"guards": {"envGuard": "report
 ## Cloud guard false positives
 
 `cloud-guard.sh` / `cloud_guard.py`, a `PreToolUse` hook on `Bash` and `PowerShell`. **Ships off**
-(`guards.cloudGuard: off`); turn it on with `{"guards": {"cloudGuard": "report"}}` first to see what
+(`guards.profile: off`); turn it on with `{"guards": {"overrides": {"cloudGuard": "report"}}}` first to see what
 it *would* refuse before enforcing with `"block"`.
 
 - **SQL text that merely looks destructive is not blocked.** `DROP`/`TRUNCATE` inside a string
@@ -721,6 +807,17 @@ it *would* refuse before enforcing with `"block"`.
   testing, or approve the one-shot marker the deny message names. A literal `gh workflow run ...
   --help` (or `-h`) is the exception: gh prints help and dispatches nothing, so the line is not
   judged at all; terraform's `--help` still is.
+
+- **A `python3`/`node` line is refused as "a terraform-family line with python code that ...".**
+  (L-0871, crew 1.2.63; before it the denial quoted an unrelated word such as `'^JIRA_'` or `'<<'`.)
+  With `guards.overrides.terraformApply` armed, interpreter code is refused only when it names terraform,
+  terragrunt or tofu (in the code or anywhere on the line), or reaches a process and builds the
+  name: the denial says which, for example `python code that spells 'terraform' out of fragments`
+  or `builds a name at run time ('chr(')`. `import os`, `import requests`, `os.environ.get(...)`
+  and `node -e "console.log(process.env.X)"` alone are allowed. **Fix:** write the command plainly
+  (`terraform apply` as its own command, where it is judged), or keep the name out of code that
+  starts a process. Code that reads its command from the environment or a file and never names the
+  tool is not caught (the credentials boundary is the control).
 
 - **A workflow dispatch is refused as "could not tell" although it looks fine.** With
   `environments.workflows` set, a `gh workflow run` or `gh api .../dispatches` line is judged only
@@ -818,8 +915,8 @@ See [Memory and Obsidian](memory-and-obsidian.md) for setup. What goes wrong day
   find it; `cli-exit-N`, `cli-timeout`, `cli-bad-json` mean the CLI ran and failed; `no-vaults` means
   no vault is currently `primary` or `recall`; `no-hits` means the search itself found nothing. Only
   `no-hits` means "the vault genuinely has nothing relevant" — every other reason is a setup problem.
-  Also confirm `memory.inject` is not `false` in `.crew/config.json` — recall and code-map injection
-  are on by default since 1.0.0, so "no recall ever appears" with the key set to `false` is expected.
+  Also confirm `context.enabled` is not `false` — recall and code-map injection are always on since
+  1.0.0 while the context hook runs, so "no recall ever appears" with the hook switched off is expected.
   **Fix:** `$VO recall --query "<words you expect>"` directly, to separate "the CLI can't find it"
   from "the hook isn't calling the CLI". An empty answer can be the CLI's relevance floor or its
   excluded folders, not a missing note: the obsidian-vault recall CLI drops stop words, needs
@@ -884,19 +981,15 @@ command — no keystrokes appear at all.
 
 - **Check `context.autoClear.method`** with `/crew:config --explain` or `crew_config.py --explain`.
   On native Windows with no tmux pane, `"auto"` (the default) resolves to `"notify"`, not to any
-  keystroke method — **this is not a bug**, it is the 1.0 owner decision: `auto` never arms
-  SendKeys on your behalf. `"notify"` types nothing at all; instead the `Stop` hook prints a
+  keystroke method — **this is not a bug**, it is the owner decision: crew does not type into a
+  window it found itself on Windows. `"notify"` types nothing at all; instead the `Stop` hook prints a
   `systemMessage` telling you the handoff is written and verified and it is safe to run the
   configured command yourself.
-- **If you want keystrokes typed for you**, ask for `sendkeys` by name — it is opt-in only, and
-  `/crew:init`, `/crew:migrate` and `/crew:onboard` all refuse to write it without an explicit yes.
-  It declines and falls back to `notify` (logged to `.crew/.autoclear.log`) inside Windows
-  Terminal specifically, because that host puts every tab in one window and nothing outside it can
-  confirm which tab is active — this is also not a bug, and switching terminal hosts is the only
-  fix.
-- **Fix:** either treat the `notify` message as the intended behaviour, or run
-  `crew_autoclear_setup.py apply-method sendkeys --yes` (`${CLAUDE_PLUGIN_ROOT}/hooks/scripts/`)
-  to opt in, after reading what SendKeys does. See `plugin/crew/CONFIG.md` §14.
+- **`sendkeys` is gone.** The Windows keystroke method was removed in crew 1.2.61 (L-0727): a
+  config that names it is refused with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or
+  tmux", and `crew_autoclear_setup.py apply-method sendkeys` refuses by name.
+- **Fix:** treat the `notify` message as the intended behaviour, or run the session inside tmux
+  (Git Bash or WSL), where `auto` picks `tmux`. See `plugin/crew/docs/crew/config-rationale.md.
 
 ### "bare /crew:autopilot stopped on a goal"
 
@@ -1115,28 +1208,28 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 | Key | Lives in | Values | What "off"/floor means |
 |---|---|---|---|
 | `autopilot.mode` | repo only | `off`/`plan` | `off` (the default): `/crew:autopilot` runs no phase; only the exact string `plan` arms it |
-| `memory.inject` | repo only | bool | `false`: no code-map, handoff or vault text is injected (default `true` since 1.0.0) |
-| `guards.cloudGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
-| `guards.envGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
-| `guards.roleWrites` | both layers, ratchets | `block`/`report`/`off` | `off`: every Write/Edit is allowed unconditionally |
-| `guards.terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` | both layers, ratchets | `block`/`ask`/`allow` | there is no "off" — `allow` is the most permissive tier, still logged |
-| `guards.deployWorkflow` | both layers, ratchets | `block`/`ask`/`allow` | `block` is default and floor; `allow` covers nonProd only — production without `environments.prodUnattended` in both layers, and an unknown environment, still ask (denied unattended) |
+| `guards.profile` | both layers (expands per layer) | `off`/`standard`/`strict` | `off` (the default): the cloud, environment and role-write guards are off and the others sit at their narrowest tier. Set one guard away from the profile with `guards.overrides.<guard>`; the narrower layer wins per guard |
+| `guards.overrides.cloudGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
+| `guards.overrides.envGuard` | both layers, ratchets | `block`/`report`/`off` | `off`: the hook reads this key and exits |
+| `guards.overrides.roleWrites` | both layers, ratchets | `block`/`report`/`off` | `off`: every Write/Edit is allowed unconditionally |
+| `guards.overrides.<guard>` for `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` | both layers, ratchets | `block`/`ask`/`allow` | there is no "off" — `allow` is the most permissive tier, still logged |
+| `guards.overrides.deployWorkflow` | both layers, ratchets | `block`/`ask`/`allow` | `block` is default and floor; `allow` covers nonProd only — production without `environments.prodUnattended` in both layers, and an unknown environment, still ask (denied unattended) |
 | `environments.nonProd` | repo only | list of globs | `[]`: nothing is nonProd, so every terraform apply asks (denied unattended) |
 | `environments.prodUnattended` | both layers, ratchets (true only when both say `true`) | bool | `false` in either layer holds it down: production applies and dispatches ask |
-| `guards.prodDatabase`, `guards.prodServer` | both layers, ratchets | `none`/`read`/`full` | `none` is both the default and the floor |
+| `guards.overrides.prodDatabase`, `guards.overrides.prodServer` | both layers, ratchets | `none`/`read`/`full` | `none` is both the default and the floor |
 | `scope.mode` | repo only | `off`/`report`/`block`/`auto` | `off`: neither the edit guard nor the completion audit runs |
 | `scope.allowCliApproval` | repo only | bool | `false`: only a `/crew:approve` typed by the user counts (no `cli` or `autopilot` receipt) |
 | `verifyGate` | repo only | bool | `false`: the Stop verify gate does not run at all |
 | `context.enabled` | both layers | bool | `false`: `context-watch.sh` (the Stop nag) does nothing |
-| `context.autoClear.enabled`, `autoWrapUp` | both layers | bool | each independently disables one leg of the wrap-up/clear loop |
+| `context.autoClear.enabled` | both layers | bool | `false` disables the clear leg of the wrap-up/clear loop (the wrap-up itself is always on) |
 | `notify.provider` | both layers (a repo null inherits the global one) | `telegram`/`teams`/`none` | a repo `none` opts out even when the global file names a provider: no `question` ping, no `deploy` result (`crew_notify.py config --root .` says so) |
 | `change.requireForProduction` | both layers, ratchets (may only turn ON) | bool | `false`: promoting needs no approved change request |
-| `install.policy` | both layers, ratchets | see `plugin/crew/CONFIG.md` §"install" | narrowest tier refuses more install actions |
+| `install.policy` | both layers, ratchets | see `docs/crew/config-rationale.md`, "install.policy" | narrowest tier refuses more install actions |
 
 **A destroy is never applied unattended**, at any setting: `destroy`, `apply -destroy`, `-replace`,
 `workspace delete`, a saved plan whose sidecar lists a delete, or an apply with no sidecar at all
-asks when you are there and is denied unattended — `terraformApply: allow` and
-`environments.prodUnattended` included. The full decision table is in `plugin/crew/CONFIG.md`
+asks when you are there and is denied unattended — `guards.overrides.terraformApply: allow` and
+`environments.prodUnattended` included. The full decision table is in `docs/crew/config-rationale.md`
 (`environments.*`).
 
 `~/.claude/crew/config.json` is the machine-global layer; `.crew/config.json` is per-repo and wins
@@ -1182,14 +1275,25 @@ runs but the visual rule never passes.
   then `py`, and fails loudly on stderr rather than silently standing down when none resolves (see
   "no-python fail-closed", above). If a hook you expect to run says nothing at all, check for a
   usable Python on `PATH` first.
+- **`can't open file 'D:\tmp\...\crew_autocycle.py'` (or any `.py` under `hooks/scripts`).** Git Bash
+  rewrites a POSIX-looking script argument (`/tmp/...`, `/d/...`) into a Windows path when it starts a
+  native `python.exe`, but only while `MSYS_NO_PATHCONV` is unset. Set, even to an empty string by a
+  shell profile, a CI runner or a parent process, the argument reaches Python as written and Windows
+  resolves it against the current drive. Since L-0868 every `.sh` hook except the review-harness ones (and that one record)
+  passes its script path and its path arguments (`--root` and config data paths) through `crew_native_path`
+  (`cygpath -m`, which needs no argument conversion), so the variable no longer matters for them.
+  The harness hooks (`verify-gate.sh`, `approval-hook.sh`, `scope-guard.sh`, `completion-audit.sh`,
+  `crew-hook.sh`) the PreCompact `crew_resume.py` record in `handoff-write.sh` still depend on
+  conversion until a follow-up lands: if one fails this way, unset `MSYS_NO_PATHCONV` for the session (`env -u
+  MSYS_NO_PATHCONV claude`).
 - **Both flavours are always registered.** `hooks.json` pairs every bash command with a `shell:
   "powershell"` sibling on the same event, so a machine with both `bash` and `pwsh` present runs
   both. This is not double-firing to fix — it is how the same hook reaches both shells; each
   PowerShell twin stands itself down on the wrong platform (`$env:OS -ne 'Windows_NT'`) rather than
   the bash twin doing that job.
 - **Tests and checks are slow on Windows.** Read `/crew:status`'s `shell` line first. It names the
-  shell route crew's jobs take (`shellRoute.mode`: `auto`, `wsl`, `powershell`, `gitbash`) and why.
+  shell route crew's jobs take (chosen automatically; `shellRoute.mode` was removed) and why.
   `WSL never probed` means nobody ran `crew_shell.py probe --write`; `not-installed` comes with the
   `wsl --install -d Ubuntu` recommendation, which crew prints and never runs. A repo on a Windows
-  drive goes to WSL under `auto` only after `crew_shell.py measure --write` has shown WSL faster
+  drive goes to WSL only after `crew_shell.py measure --write` has shown WSL faster
   there. See "Choosing the shell route on Windows" in `plugin/crew/skills/crew-setup/platform.md`.

@@ -46,17 +46,18 @@ reproduced verbatim below; decisions after it are the builder's contract.
 - **One process, three backends**, selected by crew's existing `tracker`
   (`jira` / `sdp` / `local`). SDP files against the "Change Management Request"
   template through the existing SDP tooling (`infra-work-ticketing` /
-  `sdp-sync`); Jira files an issue of the configured change type; `local`
+  `sdp-sync`); Jira files an issue of the fixed "Change" type; `local`
   writes `.work/changes/<id>.md`. The *content* is identical in all three.
 - **The ten questions are a gate, not a template.** `/crew:change new` refuses
   to file while any of questions 1–9 is unanswered or answered with a
   placeholder, and says which — mirroring the template's own "will be denied".
   Question 10 (post-change validation) is answered by `/crew:change close`,
   which attaches the validation results and will not close without them.
-- **Requester and implementor default from global config** (`change.requester`,
-  `change.implementor` — facts about the person and machine); everything else
-  is per-request. Both keys also carry answers 2 and 3 into Requestor Details
-  as the template requires.
+- **Requester, implementor and category are asked every time.** No config key
+  supplies them any more (`change.requester`, `change.implementor` and
+  `change.category` were removed by L-0725 and are fixed at none); everything
+  else is per-request. The implementor answer also carries answers 2 and 3
+  into Requestor Details as the template requires.
 - **Production promotion may require an approved change** —
   `change.requireForProduction` (global, default `false` so the upgrade changes
   nobody's behaviour). When `true`, `/crew:promote production` gate 1 needs a

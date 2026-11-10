@@ -42,8 +42,8 @@ from the transcript: the last assistant line's pending `tool_use`. A message
 that does name AskUserQuestion is still honoured.
 
 Anti-spam: a fingerprint of event + ticket + reason is sent once per
-`notify.realertHours` (default 6), and a question pings once per waiting
-episode (`session_id` + `prompt_id`; approving a permission prompt does not
+`crew_state.NOTIFY_REALERT_HOURS` (6; L-0725: no longer a setting), and a
+question pings once per waiting episode (`session_id` + `prompt_id`; approving a permission prompt does not
 change `prompt_id`, only the owner's next typed message does). Both advance
 ONLY on a confirmed send, under `<git-common-dir>/crew/notify/`.
 
@@ -51,9 +51,10 @@ Config: `crew_config.resolve_config` -- the machine-global `notify` block with
 the repo layer over it; an explicit repo `"none"` opts out. The notify skill's
 `~/.config/notify/config.json` `telegram` block fills a null `tokenEnv` /
 `chatId`, read-only. The token is read from an environment variable only, and
-`tokenEnv` and `urlEnv` (each a variable's NAME) are honoured from the
-machine-global layer only: a repo's `.crew/config.json` could otherwise point
-either at any variable (its settings `env` can set one) and pick the request URL.
+`tokenEnv` (a variable's NAME) is honoured from the machine-global layer only: a
+repo's `.crew/config.json` could otherwise point it at any variable (its settings
+`env` can set one) and pick the request URL. L-0725: `urlEnv` is gone, so the
+`teams` provider has no webhook to post to and sends nothing.
 Redirects are refused: a 3xx is a failed send, never a second request.
 
 Every entry point exits 0. A reason goes to stderr when nothing was sent.
@@ -93,6 +94,7 @@ KINDS = ("approval", "rounds", "lane", "lane-unknown", "gate")
 GATES = ("verify", "audit")
 LEGACY = {"phase": "blocker", "review": "blocker", "done": "blocker",
           "gate": "deploy", "waiting": "question"}
+# Every one of these pings (L-0725: `notify.questionTypes` is gone; NOTIFY_QUESTION_TYPES is None, all types).
 QUESTION_TYPES = ("permission_prompt", "worker_permission_prompt", "elicitation_dialog",
                   "elicitation_url_dialog", "agent_needs_input")
 # The types that are the owner being ASKED something rather than asked to allow a tool.
@@ -118,18 +120,16 @@ SUBJECTS = {
     ("deploy", "unknown"): "Promotion outcome unknown",
 }
 # The `notify` leaves honoured from the machine-global file ONLY, each with what it
-# names: a repo's value is ignored with a notice (`effective_config`). Each names
+# names: a repo's value is ignored with a notice (`effective_config`). It names
 # the variable whose value becomes the request URL. `crew_keys.layer_of` reads
 # this table, so the configuration reference shows these keys as machine-only.
-GLOBAL_ONLY_KEYS = {"tokenEnv": "(or the notify skill's config) names the token",
-                    "urlEnv": "names the webhook URL"}
+GLOBAL_ONLY_KEYS = {"tokenEnv": "(or the notify skill's config) names the token"}
 EXAMPLE_CHAT_ID = "-1001234567890"
 # <digits>:<letters, digits, _ and ->. Anything else -- an inner space, a quote,
 # two tokens pasted together -- cannot be a bot token.
 _BOT_TOKEN = re.compile(r"\d+:[A-Za-z0-9_-]+")
 MAX_REASON = 280
 MAX_EXCERPT = 200
-REALERT_HOURS = 6
 PRUNE_SECONDS = 7 * 86400
 SEND_BUDGET = 10.0
 HTTP_TIMEOUT = 5.0
@@ -355,9 +355,9 @@ def effective_config(root):
         global_cfg = {}
     global_notify = global_cfg.get("notify") if isinstance(global_cfg.get("notify"), dict) else {}
     global_provider = global_notify.get("provider")
-    # tokenEnv / urlEnv name the variable whose value becomes the request URL (the
-    # bot token in its path, the Teams webhook itself): only the owner's own
-    # machine-global file may name either, never a cloned repo's config.
+    # tokenEnv names the variable whose value becomes the request URL (the bot
+    # token in its path): only the owner's own machine-global file may name it,
+    # never a cloned repo's config.
     for key, names in GLOBAL_ONLY_KEYS.items():
         global_env = global_notify.get(key)
         cfg[key] = global_env if isinstance(global_env, str) and global_env else None
@@ -381,18 +381,12 @@ def effective_config(root):
         notices.append(f"notify.chatId {EXAMPLE_CHAT_ID} is the notify skill's example value; "
                        "treated as unset")
     cfg["events"] = _events(cfg.get("events"), notices)
-    hours = cfg.get("realertHours")
-    if isinstance(hours, bool) or not isinstance(hours, (int, float)) or hours < 0:
-        cfg["realertHours"] = REALERT_HOURS
-    types = cfg.get("questionTypes")
-    cfg["questionTypes"] = (tuple(t for t in types if isinstance(t, str))
-                            if isinstance(types, list) else None)
     return cfg, notices
 
 
 # --- classification and context -----------------------------------------------------------
 
-def classify(payload, question_types=None, pending_tool=None):
+def classify(payload, pending_tool=None):
     """`("question", type, subject)`, `("quiet", type, None)` or `("unknown", None, None)`.
 
     `pending_tool` is the tool the transcript's last assistant line is waiting
@@ -401,7 +395,7 @@ def classify(payload, question_types=None, pending_tool=None):
     ntype = payload.get("notification_type") if isinstance(payload, dict) else None
     if not isinstance(ntype, str) or not ntype:
         return ("unknown", None, None)
-    if ntype not in (question_types or QUESTION_TYPES):
+    if ntype not in QUESTION_TYPES:
         return ("quiet", ntype, None)
     message = payload.get("message")
     asked = (ntype in ASK_TYPES
@@ -611,23 +605,6 @@ def _because(reply):
     return f": {redact(_one_line(why))[:120]}" if isinstance(why, str) and why.strip() else ""
 
 
-def _teams(url, text):
-    body = json.dumps({"type": "message", "attachments": [{
-        "contentType": "application/vnd.microsoft.card.adaptive",
-        "content": {"type": "AdaptiveCard", "version": "1.4",
-                    "body": [{"type": "TextBlock", "text": text, "wrap": True}]}}]}).encode()
-    request = urllib.request.Request(url, data=body,
-                                     headers={"Content-Type": "application/json"})
-    try:
-        with _open(request) as response:
-            status = response.status
-    except urllib.error.HTTPError as exc:
-        return False, f"HTTP {exc.code}"
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        return False, f"network error ({exc.__class__.__name__})"
-    return (200 <= status < 300), f"HTTP {status}"
-
-
 def _pace(state, chat_key):
     """Sleep until PACE_SECONDS have passed since this chat's last confirmed send."""
     last = _read_json(os.path.join(state, "last-send")).get(chat_key)
@@ -688,13 +665,9 @@ def _credentials(cfg):
                  "machine-global one; nothing sent")
             return provider, None, None, "missing-credentials"
     elif provider == "teams":
-        url_env = cfg.get("urlEnv")
-        url_env = url_env.strip() if isinstance(url_env, str) else ""
-        target = (os.environ.get(url_env) or "").strip() if url_env else ""
-        token = None
-        if not target:
-            _say(f"teams url env ${url_env} not set; nothing sent")
-            return provider, None, None, "missing-credentials"
+        _say("notify.provider teams has no webhook to post to since L-0725 (notify.urlEnv is "
+             "gone); nothing sent")
+        return provider, None, None, "off"
     else:
         _say(f"unknown notify.provider {provider!r}; nothing sent")
         return provider, None, None, "off"
@@ -702,27 +675,9 @@ def _credentials(cfg):
     return provider, token, target, None
 
 
-# pylint: disable-next=too-many-arguments,too-many-positional-arguments
-def _already_sent(root, cfg, event, reason, ticket, episode, dedupe):
-    """Whether `_deliver` would send nothing for this ping as one already sent
-    (the same waiting episode, or the same message inside realertHours), read
-    without a lock: a held ping is then not counted (L-0656 review r3)."""
-    state = state_dir(root)
-    if episode:
-        seen = _read_json(os.path.join(state, "episodes.json")).get(episode[0])
-        if isinstance(seen, dict) and seen.get("key") == episode[1]:
-            return True
-    material = "|".join([event, ticket or where(root)["ticket"] or "", reason]
-                        + (list(episode) if episode else []) + ([str(dedupe)] if dedupe else []))
-    at = _read_json(os.path.join(state, "sent.json")).get(
-        hashlib.sha256(material.encode("utf-8")).hexdigest())
-    window = float(cfg.get("realertHours", REALERT_HOURS)) * 3600
-    return isinstance(at, (int, float)) and time.time() - at < window
-
-
 def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe=None):
     """Everything after the filters: credentials, line, episode, dedupe, transport."""
-    provider, token, target, stop = _credentials(cfg)
+    _, token, target, stop = _credentials(cfg)
     if stop:
         return stop
     place = where(root)
@@ -747,7 +702,7 @@ def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe=No
     material = "|".join([event, ticket or "", reason] + (list(episode) if episode else [])
                         + ([str(dedupe)] if dedupe else []))
     fingerprint = hashlib.sha256(material.encode("utf-8")).hexdigest()
-    window = float(cfg.get("realertHours", REALERT_HOURS)) * 3600
+    window = crew_state.NOTIFY_REALERT_HOURS * 3600
 
     with _Lock(os.path.join(state, "sent.lock")) as lock:
         sent = _read_json(os.path.join(state, "sent.json")) if lock.held else {}
@@ -755,15 +710,12 @@ def _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe=No
             _say("state lock busy; sending without dedupe")
         at = sent.get(fingerprint)
         if isinstance(at, (int, float)) and now - at < window:
-            _say(f"same message sent inside notify.realertHours ({cfg.get('realertHours')}h); "
+            _say(f"same message sent inside the last {crew_state.NOTIFY_REALERT_HOURS}h; "
                  "nothing sent")
             return "deduped"
         chat_key = hashlib.sha256(str(target).encode()).hexdigest()[:16]
         _pace(state, chat_key)
-        if provider == "telegram":
-            ok, why = _telegram(token, target, line, loud)
-        else:
-            ok, why = _teams(target, line)
+        ok, why = _telegram(token, target, line, loud)
         if not ok:
             _say(f"send failed: {why}")
             return f"failed:{why}"
@@ -816,8 +768,7 @@ def _filter(cfg, event):
 def send(root, event, reason, ticket=None, unblock=None, outcome=None, kind=None,
          episode=None, cfg=None, dedupe=None):
     """Send one message. Returns `sent`, `deduped`, `episode`, `off`, `filtered`,
-    `held` (asleep, L-0656: crew_notify_hold.py), `missing-credentials` or
-    `failed:<why>`; never raises."""
+    `missing-credentials` or `failed:<why>`; never raises."""
     try:
         if cfg is None:
             cfg, notices = effective_config(root)
@@ -833,16 +784,6 @@ def send(root, event, reason, ticket=None, unblock=None, outcome=None, kind=None
             kind = kind if kind in KINDS else None
         elif kind not in ("ask", "permission"):
             kind = "ask"
-        import crew_notify_hold  # pylint: disable=import-outside-toplevel  # L-0656, imports this
-        if (event, kind) in crew_notify_hold.HOLDABLE:  # L-0656 review r4: config failures surface
-            stop = _credentials(cfg)[3]
-            if stop:
-                return stop
-            if not _already_sent(root, cfg, event, reason, ticket, episode, dedupe) and \
-                    crew_notify_hold.holds(root, event, kind, "|".join(
-                        [ticket or where(root)["ticket"] or "", reason, repr(episode),
-                         str(dedupe or "")])):
-                return "held"
         return _deliver(root, cfg, event, reason, ticket, unblock, kind, episode, dedupe)
     except Exception as exc:  # pylint: disable=broad-except
         _say(f"failed ({exc.__class__.__name__})")
@@ -864,14 +805,14 @@ def hook(root, payload_bytes):
         cfg, notices = effective_config(root)
         for notice in notices:
             _say(notice)
-        found, ntype, _ = classify(payload, cfg.get("questionTypes"))
+        found, ntype, _ = classify(payload)
         if found != "question":
             if found == "unknown" or ntype not in QUESTION_TYPES + QUIET_TYPES:
                 _log_unrecognised(root, ntype)
             _say(f"notification_type {ntype or 'MISSING'} is not a question; nothing sent")
             return "quiet"
         ctx = context(payload.get("transcript_path"))
-        _, _, subject = classify(payload, cfg.get("questionTypes"), ctx["tool"])
+        _, _, subject = classify(payload, ctx["tool"])
         kind = "ask" if subject == SUBJECTS[("question", "ask")] else "permission"
         message = _one_line(redact(payload.get("message") or ""))
         reason = message + (f" - {ctx['excerpt']}" if ctx["excerpt"] and message
@@ -1083,7 +1024,7 @@ def stop_outcome(root, gate, refused, payload_bytes):
         if count < 2:
             return "counted"
         # The streak's first refusal names the episode: after a pass, a new
-        # streak of two pings again inside realertHours.
+        # streak of two pings again inside the realert window.
         return send(root, "blocker", f"{gate} gate refused twice", ticket=ticket,
                     unblock="/crew:status", kind="gate", dedupe=first)
     except Exception as exc:  # pylint: disable=broad-except
@@ -1108,8 +1049,6 @@ def show_config(root):
         print("notice: " + redact(notice))
     printable = dict(cfg)
     printable["chatId"] = mask(printable.get("chatId"))
-    if isinstance(printable.get("questionTypes"), tuple):
-        printable["questionTypes"] = list(printable["questionTypes"])
     print(redact(json.dumps(printable, sort_keys=True)))
     return "config"
 

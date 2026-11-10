@@ -18,10 +18,10 @@ Three properties carry the safety of this, and each has a case:
    byte-identical to a pass; a silent skip would reintroduce exactly that, so
    the gate says what it skipped and why.
 
-3. **Both flavours agree.** The digest comes from the shared
-   `verify_fingerprint.py` rather than from a hash reimplemented in bash and
-   again in PowerShell, so a marker written by one flavour is honoured by the
-   other. The cross-flavour case asserts that directly.
+3. **One digest.** The digest comes from the shared `verify_fingerprint.py`
+   rather than from a hash reimplemented in bash and again in PowerShell. The
+   cross-flavour case that asserted a marker was honoured by the other flavour
+   went with verify-gate.ps1 (deleted in L-0869).
 
 `.crew/` is excluded from the digest and that is load-bearing rather than
 tidy: the gate writes its own markers there, so including it made every run
@@ -50,7 +50,6 @@ import json
 import os
 import pathlib
 import re
-import shutil
 import subprocess
 import sys
 
@@ -64,17 +63,12 @@ import verify_fingerprint
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
-_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = shutil.which("pwsh")
 
 _FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None,
                                                 reason="needs bash")),
-    pytest.param("ps1", marks=pytest.mark.skipif(
-        not sys.platform.startswith("win") or _PWSH is None,
-        reason="the .ps1 gate is the native-Windows flavour")),
 ]
 
 _GREEN = {
@@ -108,11 +102,7 @@ def _repo(tmp_path, verify_map=None, config=None):
 
 
 def _run(flavour, root, *extra):
-    if flavour == "sh":
-        cmd = [_BASH, _SH, *extra]
-    else:
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1,
-               *[a.replace("--all", "-All") for a in extra]]
+    cmd = [_BASH, _SH, *extra]
     return crew_fixtures.run_gate(
         cmd, input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)),
@@ -317,26 +307,6 @@ def test_changing_the_map_or_the_budget_invalidates_the_skip(flavour, tmp_path):
     assert not _skipped(_run(flavour, root)), "a changed config.json must re-run"
 
 
-@pytest.mark.skipif(
-    _BASH is None or not sys.platform.startswith("win") or _PWSH is None,
-    reason="cross-flavour agreement needs both on the same machine",
-)
-def test_a_marker_written_by_one_flavour_is_honoured_by_the_other(tmp_path):
-    """The point of putting the digest in a shared .py instead of hashing in
-    bash and again in PowerShell. If the two ever compute it differently, each
-    flavour re-runs everything the other just proved."""
-    root = _repo(tmp_path)
-    seeded = _run("ps1", root)
-    assert seeded.returncode == 0, seeded.stderr
-
-    crossed = _run("sh", root)
-    assert _skipped(crossed), (
-        "the bash flavour did not recognise the fingerprint the PowerShell "
-        "flavour recorded, so the two are computing different digests. "
-        + crossed.stderr
-    )
-
-
 # ------------------------------------------------- the digest's own rules
 
 def test_crew_bookkeeping_is_excluded_from_the_digest(tmp_path):
@@ -517,7 +487,7 @@ def test_both_gates_list_paths_with_quotepath_disabled():
     """
     invocation = re.compile(
         r"git\s+((?:-c\s+\S+\s+)*)(diff --name-only|ls-files --others)")
-    for name in ("verify-gate.sh", "verify-gate.ps1"):
+    for name in ("verify-gate.sh",):
         path = os.path.join(_ROOT, "hooks", "scripts", name)
         text = pathlib.Path(path).read_text(encoding="utf-8")
         found = 0

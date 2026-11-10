@@ -49,14 +49,21 @@ def note(name, cited, landmines, anchor=None, paths_line=None):
     return "\n".join(lines) + "\n"
 
 
-def make_repo(tmp_path, subsystems=None, config=None, handoff=None, inject=True):
+_NO_INJECT_KEY = object()
+
+
+def make_repo(tmp_path, subsystems=None, config=None, handoff=None, inject=_NO_INJECT_KEY):
     """A git repo with `.crew/codemap/` notes whose citations exist.
 
     `subsystems` maps name -> (list of files to create and cite, landmines).
-    `inject` is written as `memory.inject` into the config; `None` leaves it
-    out (the hook is on by default since 1.0.0), and with `config` also None
-    no config file is written at all.
+    `inject` is written as the dropped `memory.inject` key into the config, for
+    the tests that prove it has no effect. Left out, the key is not written and
+    an empty config file is (when `config` is None); an explicit `None` writes
+    no config file at all when `config` is also None.
     """
+    if inject is _NO_INJECT_KEY:
+        inject = None
+        config = {} if config is None else config
     if inject is not None:
         config = dict(config or {})
         config["memory"] = dict(config.get("memory") or {}, inject=inject)

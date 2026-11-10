@@ -24,8 +24,6 @@ each, not just whichever runs first.
 """
 import os
 
-import crew_fixtures
-
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _S = os.path.join(CREW, "hooks", "scripts")
 CHECK = os.path.join(_S, "crew_refresh_check.py")
@@ -52,15 +50,10 @@ REFRESH_TEST = os.path.join(CREW, "tests", "test_refresh_check.py")
 VERIFY = os.path.join(os.path.dirname(os.path.dirname(CREW)), ".crew", "verify.json")
 TICKET = os.path.join(_S, "crew_ticket.py")
 GATE_SH = os.path.join(_S, "verify-gate.sh")
-GATE_PS1 = os.path.join(_S, "verify-gate.ps1")
 _BK = "tests/test_crew_bookkeeping.py::"
 _GB = "tests/test_verify_gate_bookkeeping.py::"
 _SH_DROP = 'changed = [f for f in changed if _kinds.get(f) != "bookkeeping"]\n'
 _SH_UNMAPPED = '    if not hit and _kinds.get(f) != "artifact": unmatched.append(f)\n'
-_PS1_DROP = ("$changed = @($changed | Where-Object { -not $crewBookkeeping.Contains("
-             "[string]$_) })\n")
-_PS1_UNMAPPED = ("  if (-not $hit -and -not $crewArtifacts.Contains([string]$f)) "
-                 "{ [void]$unmapped.Add($f) }\n")
 
 
 def _scope_guard_rule_span():
@@ -347,28 +340,6 @@ REFRESH_MUTATIONS = (
      '            and any("pytest" in c for c in rule["run"]))\n',
      _T + "test_the_tool_resolution_catch_all_does_not_cover_the_guard_modules"),
 )
-
-# The .ps1 twins need pwsh to run their test; without it the [ps1] cases skip
-# and a mutation could only read as vacuous, so they join where pwsh exists
-# (sabotage_tooling.py's convention) and the report says when they did not.
-# Review of a73a1ed6: the shared resolver, as the target tests use, so a pwsh
-# installed off PATH (the documented Git Bash setup) still registers them.
-if crew_fixtures.resolve_pwsh():
-    REFRESH_MUTATIONS += (
-        ("the ps1 gate reports bookkeeping as unmapped", GATE_PS1,
-         _PS1_DROP, "",
-         _GB + "test_untracked_bookkeeping_is_not_unmapped[ps1]"),
-        ("the ps1 gate reports refresh artifacts as unmapped", GATE_PS1,
-         _PS1_UNMAPPED, "  if (-not $hit) { [void]$unmapped.Add($f) }\n",
-         _GB + "test_a_refresh_artifact_with_no_rule_is_not_unmapped[ps1]"),
-        ("the ps1 gate drops refresh artifacts instead of mapping them", GATE_PS1,
-         "          elseif ($kinds[$i] -ceq 'artifact') { [void]$crewArtifacts.Add([string]$changed[$i]) }\n",
-         "          elseif ($kinds[$i] -ceq 'artifact') { [void]$crewBookkeeping.Add([string]$changed[$i]) }\n",
-         _GB + "test_a_refresh_artifact_a_rule_names_still_runs_it[ps1]"),
-        ("the ps1 gate maps every unmatched path", GATE_PS1,
-         _PS1_UNMAPPED, "  if ($false) { [void]$unmapped.Add($f) }\n",
-         _GB + "test_an_ordinary_unmapped_file_still_fails[ps1]"),
-    )
 
 # C-0025: T-0064's denylist coverage, run by hand at T-0064 (fifteen, each red
 # on its named test) and registered here because sabotage*.py is harness.

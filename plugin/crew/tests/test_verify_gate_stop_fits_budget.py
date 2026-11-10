@@ -8,8 +8,8 @@ had checked. And a rule priced over `verify.stopBudgetSeconds` on its own
 its real home is the CI gate (`.github/workflows/verify-gate.yml`), and
 `/crew:done` reads that gate's receipt.
 
-The contract, each half in BOTH flavours (the .ps1 under pwsh through the
-`OS=Windows_NT` seam the other gate suites use):
+The contract (it was checked in both flavours; verify-gate.ps1 was deleted in
+L-0869, so only `sh` remains):
 
 1. A clean tree exits 0, fast, and says "0 rules ran".
 2. Zero rules ran never writes or advances the verified marker.
@@ -25,12 +25,9 @@ The contract, each half in BOTH flavours (the .ps1 under pwsh through the
 """
 import json
 import os
-import re
-import shutil
 import subprocess
 import sys
 import time
-import types
 
 import pytest
 
@@ -40,14 +37,11 @@ import context  # noqa: F401  pylint: disable=unused-import
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
-_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 _RECORD = os.path.join(_ROOT, "hooks", "scripts", "verify_record.py")
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = shutil.which("pwsh")
 
 _FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="needs bash")),
-    pytest.param("ps1", marks=pytest.mark.skipif(_PWSH is None, reason="needs pwsh")),
 ]
 
 _MARKER = os.path.join(".crew", ".verify-verified-at")
@@ -94,12 +88,8 @@ def _repo(tmp_path, rules, with_a=True, unmapped="ignore"):
 
 
 def _run(flavour, root, *args):
-    if flavour == "sh":
-        cmd = [_BASH, _SH, *args]
-    else:
-        flags = {"--ci": "-Ci", "--all": "-All"}
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1,
-               *[flags.get(a, a) for a in args]]
+    assert flavour == "sh"
+    cmd = [_BASH, _SH, *args]
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT")
     return crew_fixtures.run_gate(cmd, input="{}", cwd=str(root), env=env,
                                   capture_output=True, text=True, check=False,
@@ -363,8 +353,8 @@ def test_a_baseline_that_is_a_fifo_refuses_the_turn_without_hanging(flavour, tmp
     one - promptly, never a hung Stop."""
     root = _repo(tmp_path, [_FAILING], with_a=False)
     os.mkfifo(str(root / _BASE_AT))
-    cmd = ([_BASH, _SH] if flavour == "sh"
-           else [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1])
+    assert flavour == "sh"
+    cmd = [_BASH, _SH]
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT")
 
     try:
@@ -406,58 +396,3 @@ def test_an_old_chronic_record_is_reported_as_deferred_to_ci(tmp_path):
 
     assert "permanently over budget (90s > 60s) - deferred to CI" in result.stdout, (
         result.stdout + result.stderr)
-
-
-def _lines(result, flavour):
-    """Every stderr line (review round 2: not just the budget phrases), with
-    measured durations normalised and the one line only the .ps1 prints -
-    `bash: <path>`, which interpreter ran the rule - left out. Only from the
-    .ps1, and only when it names a file that exists (review round 3): any
-    other `bash: ...` line, an error included, is compared. The repo prefix
-    of a `[record: ...]` path is masked (each flavour runs its own repo)."""
-    out = []
-    for line in result.stderr.splitlines():
-        if flavour == "ps1" and line.startswith("bash: ") and os.path.isfile(line[6:]):
-            continue
-        line = re.sub(r"(verify-gate: )\d+(\.\d+)?s ", r"\1Ns ", line)
-        # L-0733's `[record: <abs path>]` names each flavour's own fixture repo;
-        # mask that repo prefix only, so a different record FILE still differs.
-        line = re.sub(r"\[record: [^\]]*?([\\/]\.crew[\\/][^\]]+)\]",
-                      lambda m: "[record: <repo>" + m.group(1).replace("\\", "/") + "]", line)
-        out.append(line)
-    return out
-
-
-def test_parity_keeps_a_bash_line_that_is_not_the_interpreter():
-    """MUST-BLOCK (review round 3). A `bash: ` line one flavour prints that is
-    not the .ps1's interpreter line - an error - makes the outputs differ."""
-    quiet = types.SimpleNamespace(stderr="VERIFY FAILED: x\n")
-    noisy = types.SimpleNamespace(stderr="VERIFY FAILED: x\nbash: unexpected failure\n")
-    interpreter = types.SimpleNamespace(stderr=f"VERIFY FAILED: x\nbash: {sys.executable}\n")
-
-    assert (_lines(quiet, "sh") != _lines(noisy, "ps1"),
-            _lines(noisy, "sh") != _lines(quiet, "ps1"),
-            _lines(quiet, "sh") == _lines(interpreter, "ps1")) == (True, True, True)
-
-
-@pytest.mark.skipif(_BASH is None or _PWSH is None, reason="parity needs both flavours")
-@pytest.mark.parametrize("case", ["clean", "unmapped", "chronic", "failing"])
-def test_both_flavours_agree_on_exit_and_lines(case, tmp_path):
-    """Acceptance 7: same exit, same lines, for checks 1-4."""
-    def build(where):
-        rules = {"clean": [_SLOW], "unmapped": [_FAILING], "chronic": [_CHRONIC],
-                 "failing": [_FAILING, _CHRONIC]}[case]
-        root = _repo(where, rules)
-        if case == "unmapped":
-            (root / "notes.txt").write_text("unmapped", encoding="utf-8")
-        elif case in ("chronic", "failing"):
-            (root / "a.py").write_text("x = 2", encoding="utf-8")
-        return root
-
-    sh_result = _run("sh", build(tmp_path / "sh"))
-    ps_result = _run("ps1", build(tmp_path / "ps"))
-
-    assert (sh_result.returncode, _lines(sh_result, "sh")) == (
-        ps_result.returncode, _lines(ps_result, "ps1")), (
-        "sh : " + repr((sh_result.returncode, _lines(sh_result, "sh"))) + "\n"
-        + "ps1: " + repr((ps_result.returncode, _lines(ps_result, "ps1"))))

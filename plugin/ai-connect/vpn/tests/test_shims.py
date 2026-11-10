@@ -55,6 +55,8 @@ def _env_without_tailscale(tmp_path):
     sysdirs = [r"C:\Windows\System32", r"C:\Windows"] if os.name == "nt" else ["/usr/bin", "/bin"]
     env["PATH"] = os.pathsep.join([pydir] + sysdirs)
     env["AI_CONNECT_TS_STATE_DIR"] = str(tmp_path / "state")
+    # Nor in the directory a real install uses: these tests run vpn-down, which must never reach a real tailscale
+    env["AI_CONNECT_TAILSCALE_DIRS"] = str(tmp_path / "no-tailscale")
     env["XDG_CACHE_HOME"] = str(tmp_path / "xdg-cache")  # pwsh's profile cache, per test (L-0557)
     return env
 

@@ -1,9 +1,14 @@
 # pylint: disable=attribute-defined-outside-init  # upstream AI-Connect style, kept to minimise the fork's diff
 """The peer name of a STDIO client: one rule for the client and the watcher."""
 
+import hashlib
+import json
 import os
+import re
 import socket
+import stat
 import sys
+import unicodedata
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -12,29 +17,183 @@ from pathlib import Path
 # operating system
 SESSIONS_DIR = Path.home() / ".config" / "ai-connect" / "sessions"
 
+# client.name_mode: "per-project" names each session <client.name>-<project>
+PER_PROJECT = "per-project"
+# vpn/tsadmin.py PEER_NAME_RE: the names deploy and setup enrol, and the only
+# ones config_loader looks a session token up for
+PEER_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,62}")
+_NOT_IN_A_NAME = re.compile(r"[^A-Za-z0-9-]+")
+# server/user_send.py is_reserved_name: the Bridge refuses these as peer names
+_RESERVED_NAME = "bridge"
+_RESERVED_PREFIX = "user:"
 
-def peer_name(environ: Mapping[str, str], cwd: Path, configured: str = "") -> str:
-    """AI_CONNECT_PEER_NAME if set, else client.name (configured), else
+
+def is_reserved_name(name: str) -> bool:
+    """Names only the Bridge and users have (server/user_send.py); compared without case."""
+    folded = name.casefold()
+    return folded == _RESERVED_NAME or folded.startswith(_RESERVED_PREFIX)
+
+
+def project_dir(environ: Mapping[str, str], cwd: Path) -> Path:
+    """The session's project: CLAUDE_PROJECT_DIR when set, else the working directory; absolute and resolved."""
+    return Path(environ["CLAUDE_PROJECT_DIR"] if environ.get("CLAUDE_PROJECT_DIR") else cwd).resolve()
+
+
+def project_peer_name(base: str, project: Path) -> str | None:
+    """<base>-<project basename> for client.name_mode: per-project, or None if that is no usable peer name.
+
+    The basename is cut down to what a peer name may hold (PEER_NAME_RE): every
+    run of other characters becomes one hyphen and hyphens at either end go, so
+    "My App.v2" gives "My-App-v2". The whole name is cut to 63 characters, again
+    without a trailing hyphen. Two projects can so end up with one name; the
+    <name>.dir file beside the token tells them apart (config_loader).
+    """
+    tail = _NOT_IN_A_NAME.sub("-", project.name).strip("-")
+    if not base or not tail:
+        return None
+    name = f"{base}-{tail}"[:63].rstrip("-")
+    if not PEER_NAME_RE.fullmatch(name) or is_reserved_name(name):
+        return None
+    return name
+
+
+# A session's label is what the Bridge accepts after "<client.name>:" (SESSION_LABEL in
+# server/roles.py: letters, digits, . _ -, at most 64). The label stays shorter, so the
+# collision suffix ("-<process id>") still fits
+LABEL_MAX = 40
+SUFFIX_MAX = 16
+_LABEL_UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _plain(text: str, limit: int) -> str:
+    """text with accents dropped and every run of other characters as one hyphen."""
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return _LABEL_UNSAFE.sub("-", ascii_text).strip("-.")[:limit].strip("-.")
+
+
+def _project(environ: Mapping[str, str], cwd: Path) -> str:
+    """The project's directory name: CLAUDE_PROJECT_DIR when Claude Code sets it for its
+    MCP servers, whatever directory it starts them in. Other harnesses start the STDIO
+    client in the project itself, so there the working directory names it."""
+    return (Path(environ["CLAUDE_PROJECT_DIR"]) if "CLAUDE_PROJECT_DIR" in environ else cwd).name
+
+
+# Claude Code keeps one <process id>.json per running session in its sessions directory,
+# with the name the session was given ("name"). The file is an internal of Claude Code,
+# not a documented interface: whatever goes wrong reading it, the label is the project's.
+# A real one is a few hundred bytes; nothing larger is parsed
+_SESSION_FILE_MAX = 64 * 1024
+
+
+def claude_sessions_dir(environ: Mapping[str, str]) -> Path:
+    """Where Claude Code keeps its session files: under CLAUDE_CONFIG_DIR when set, else ~/.claude."""
+    config_dir = Path(environ["CLAUDE_CONFIG_DIR"]) if environ.get("CLAUDE_CONFIG_DIR") else Path.home() / ".claude"
+    return config_dir / "sessions"
+
+
+def claude_session_title(pid: int, sessions_dir: Path) -> str:
+    """The name Claude Code holds for the session with this process id, or "" for any reason
+    there is none to read: no such file (another harness), unreadable, no JSON object, no
+    text under "name". Never raises.
+
+    Exactly one file is opened, <sessions_dir>/<pid>.json, and the directory is not
+    listed: the <pid>.<hash>.key files beside it hold a secret. Only a regular file is
+    read: the open does not wait (O_NONBLOCK), so a FIFO there cannot hang start-up.
+    """
+    try:
+        path = sessions_dir / f"{int(pid)}.json"
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0))
+        with os.fdopen(fd, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                return ""
+            raw = handle.read(_SESSION_FILE_MAX + 1)
+        if len(raw) > _SESSION_FILE_MAX:
+            return ""
+        data = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, TypeError, RecursionError):
+        # ValueError: not UTF-8, not JSON (json.JSONDecodeError), or a pid that is no number
+        return ""
+    title = data.get("name") if isinstance(data, dict) else None
+    return title if isinstance(title, str) else ""
+
+
+# A label from a session's name starts with SESSION_PREFIX and a project's label never
+# does (compared without case): a session renamed after another project cannot take
+# that project's address. A project whose plain name starts with it gets PROJECT_ESCAPE
+SESSION_PREFIX = "s-"
+PROJECT_ESCAPE = "p-"
+
+
+def session_label(environ: Mapping[str, str], cwd: Path, title: str = "") -> str:
+    """What tells this session from the others on its machine: "s-" and the session's
+    own name (title, see claude_session_title) when it has one, else its project's
+    name; made plain, with AI_CONNECT_PEER_SUFFIX appended if set.
+
+    A session name with nothing plain in it counts as none. A project name with
+    nothing plain in it (another script, an emoji) gets a short hash of itself
+    instead, so two such projects still differ. A project name that is "s" or starts
+    with "s-" (any case) gets "p-" before it, so it cannot pass for a session's.
+    """
+    suffix = _plain(environ.get("AI_CONNECT_PEER_SUFFIX", ""), SUFFIX_MAX)
+    room = LABEL_MAX - (len(suffix) + 1 if suffix else 0)
+    label = _plain(title, room - len(SESSION_PREFIX))
+    if label:
+        label = SESSION_PREFIX + label
+    else:
+        project = _project(environ, cwd)
+        digest = hashlib.sha256(project.encode(errors="backslashreplace")).hexdigest()[:8]
+        label = _plain(project, room) or PROJECT_ESCAPE + digest
+        # A bare "s" too: with AI_CONNECT_PEER_SUFFIX, or the collision suffix "-<process
+        # id>" the Bridge client appends, it would read "s-<x>"
+        if f"{label}-".casefold().startswith(SESSION_PREFIX):
+            label = _plain(PROJECT_ESCAPE + label, room)
+    return f"{label}-{suffix}" if suffix else label
+
+
+def peer_name(environ: Mapping[str, str], cwd: Path, configured: str = "", title: str = "") -> str:
+    """AI_CONNECT_PEER_NAME if set, else "<client.name>:<label>" (configured is
+    client.name, title the session's own name, see session_label), else the legacy
     "Host:Project", or "Host:Project-Suffix" with AI_CONNECT_PEER_SUFFIX.
 
-    A per-peer token is bound to one name, client.name; Host:Project is
-    accepted only through the legacy shared token.
+    client.name is the machine: its token registers that name and every
+    "<client.name>:<label>", so each session on the machine has a name of
+    its own. Host:Project is accepted only through the legacy shared token,
+    and is never the session's name.
 
-    The project is CLAUDE_PROJECT_DIR when Claude Code sets it for its MCP
-    servers, whatever directory it starts them in. Other harnesses start the
-    STDIO client in the project itself, so there the working directory
-    names it. The suffix lets a second session in the same project be
-    reachable under its own name; a harness passes it without building the
-    name itself.
+    The suffix lets a harness give a second session in the same project a
+    name it knows beforehand, without building the name itself.
     """
     if "AI_CONNECT_PEER_NAME" in environ:
         return environ["AI_CONNECT_PEER_NAME"]
     if configured:
-        return configured
-    project = Path(environ["CLAUDE_PROJECT_DIR"]) if "CLAUDE_PROJECT_DIR" in environ else cwd
-    name = f"{socket.gethostname()}:{project.name}"
+        return f"{configured}:{session_label(environ, cwd, title)}"
+    name = f"{socket.gethostname()}:{_project(environ, cwd)}"
     suffix = environ.get("AI_CONNECT_PEER_SUFFIX")
     return f"{name}-{suffix}" if suffix else name
+
+
+def session_identity(
+    environ: Mapping[str, str], cwd: Path, chosen: str, configured: str, title: str = "",
+) -> tuple[str, dict[str, str]]:
+    """(name, BridgeClient's machine_name argument) of a STDIO session.
+
+    chosen is the name config_loader settled on, configured is client.name,
+    title the session's own name (claude_session_title), "" when it has none.
+    chosen and configured differ when client.name_mode: per-project found the
+    project's own token: "<client.name>-<project>" is bound to that token and
+    registered as it is, with no fallback, no suffix and no session name.
+    Otherwise, also when that mode fell back to client.token, the session is
+    "<client.name>:<label>" on the machine's token (peer_name).
+    """
+    if "AI_CONNECT_PEER_NAME" not in environ and chosen != configured:
+        return chosen, {}
+    return peer_name(environ, cwd, configured, title), {"machine_name": machine_name(environ, configured)}
+
+
+def machine_name(environ: Mapping[str, str], configured: str = "") -> str:
+    """The name a session falls back to on a Bridge from before session names (0.1.8):
+    client.name, or "" when the session's name was not derived from it."""
+    return "" if "AI_CONNECT_PEER_NAME" in environ else configured
 
 
 def record_session_name(session_pid: int, name: str) -> Path:

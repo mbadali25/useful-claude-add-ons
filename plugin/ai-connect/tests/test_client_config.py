@@ -74,7 +74,8 @@ def test_peer_name_prefers_env_then_client_name(tmp_path):
     from peer_name import peer_name
 
     assert peer_name({"AI_CONNECT_PEER_NAME": "env"}, tmp_path, "laptop") == "env"
-    assert peer_name({}, tmp_path, "laptop") == "laptop"
+    # client.name is the machine; each session adds its project (tests/test_client_sessions.py)
+    assert peer_name({}, tmp_path / "proj", "laptop") == "laptop:proj"
     assert peer_name({}, tmp_path / "proj", "").endswith(":proj")
 
 

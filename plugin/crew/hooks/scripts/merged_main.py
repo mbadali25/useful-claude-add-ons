@@ -106,6 +106,47 @@ def resolve(root, base_sha, head="HEAD"):
             "reason": f"merged {ref} at {commit[:12]}; paths identical to it are left out"}
 
 
+def pinned(root, base_sha, commit, ref=None):
+    """`resolve`'s answer with the merged commit NAMED by the caller (L-0770),
+    for rebuilding a round's bundle after its reviewed head has itself merged
+    into `<ref>`: `merge-base <head> <ref>` is then the head, so `resolve`
+    would drop everything the round showed. The caller passes the commit that
+    was the merged commit when the round ran (promote-gate's release mode
+    uses `merge-base <reviewed head> <merge commit's first parent>`). The
+    branch rule is not applied: the caller is not asking about HEAD. A commit
+    that names nothing here, or an ancestry question git cannot answer, is
+    could-not-tell (`commit None`, nothing dropped), as in `resolve`."""
+    # A name git would read as an option, or one subprocess refuses (a NUL),
+    # is no commit: could-not-tell, never a traceback (Codex L-0770 r1).
+    usable = isinstance(commit, str) and commit and not commit.startswith("-")
+    try:
+        full = crew_common.git_out(root, "rev-parse", "--verify", "-q",
+                                   f"{commit}^{{commit}}") if usable else None
+    except ValueError:
+        full = None
+    if not full:
+        return {"ref": ref, "commit": None, "applies": False,
+                "reason": f"{UNKNOWN}: the pinned merged commit {commit!r} names no commit "
+                          "here; nothing dropped"}
+    if not crew_common.git_out(root, "merge-base", full, str(base_sha)):
+        # A commit from unrelated history is no merge of the ticket's base
+        # branch; its paths must not be dropped (Codex L-0770 r3).
+        return {"ref": ref, "commit": None, "applies": False,
+                "reason": f"{UNKNOWN}: the pinned merged commit {full[:12]} shares no history "
+                          f"with the ticket start {str(base_sha)[:12]}; nothing dropped"}
+    older = _is_ancestor(root, full, base_sha)
+    if older is None:
+        return {"ref": ref, "commit": None, "applies": False,
+                "reason": f"{UNKNOWN}: git merge-base --is-ancestor {full[:12]} "
+                          f"{str(base_sha)[:12]} gave no answer; nothing dropped"}
+    if older:
+        return {"ref": ref, "commit": full, "applies": False,
+                "reason": f"pinned merged commit {full[:12]} is no merge past the ticket start "
+                          f"{base_sha[:12]}; nothing dropped"}
+    return {"ref": ref, "commit": full, "applies": True,
+            "reason": f"pinned merged commit {full[:12]}; paths identical to it are left out"}
+
+
 def keep(since_base, since_merged):
     """The paths of `since_base` that also differ from the merged commit:
     a path drops only when it is in the base diff AND identical to the merged

@@ -453,9 +453,7 @@ def test_fix_mints_through_mcp_under_jira_and_sdp():
 _STANDARDS_STEPS = {
     "implement.md": ("crew_standards.py stamp --root . --ticket $1", "crew-standards"),
     "plan.md": ("Standards:",),
-    "review.md": ('crew_standards.py proposals --root . --ticket "$TICKET"', "std:",
-                  "`review-run: self-check: ...`",
-                  "run the `crew_standards.py stamp` it names"),
+    "review.md": ('crew_standards.py proposals --root . --ticket "$TICKET"',),
     "fix.md": ("self-check",),
 }
 
@@ -564,15 +562,27 @@ def test_status_names_the_archive():
     assert ".work/tickets/Complete/" in _read(os.path.join(COMMANDS, "status.md"))
 
 
-def test_review_names_the_train_exit():
-    """L-0526: `review_run.py` exit 10 (the merge train) is named where the
-    command reads `$REVIEW_STATUS`, explained with its order among the other
-    refusals, and counted among the reasons the Claude fallback gets no ROUND."""
-    text = " ".join(_read(os.path.join(COMMANDS, "review.md")).split())
+def test_review_run_self_check_refusal_names_the_stamp():
+    """L-0726: the two refusal strings review.md used to carry are `next:` now."""
+    import review_run
+    review_run.SAID[:] = ["review-run: self-check: standards self-check missing"]
+    try:
+        action = review_run.next_action("run", 2, None)
+    finally:
+        review_run.SAID[:] = []
 
-    assert "10 train wait" in text
-    assert "Exit 10 (`$REVIEW_STATUS`" in text and "crew_train.py status" in text
-    assert "then the merge train with exit 10" in text
-    assert "exit 10 above - the merge train" in text
-    assert "A spent budget skips the train" in text
-    assert 'keeps holding it' in text and 'crew_train.py release --ticket "$TICKET"' in text
+    assert "crew_standards.py stamp" in action and "selfcheck.md" in action
+
+
+def test_review_names_the_train_exit():
+    """L-0526: exit 10 (the merge train) is named by `next:` and its order among
+    the other refusals is kept in the rationale doc."""
+    import review_run
+    doc = " ".join(_read(os.path.join(COMMANDS, os.pardir, os.pardir, os.pardir, "docs", "crew",
+                                      "review.md")).split())
+
+    assert review_run.EXIT_TRAIN == 10
+    assert "crew_train.py status" in review_run.next_action("run", 10, None)
+    assert "then the merge train with exit 10" in doc
+    assert "A spent budget skips the train" in doc
+    assert 'keeps holding it' in doc and 'crew_train.py release --ticket "$TICKET"' in doc

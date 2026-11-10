@@ -10,14 +10,21 @@ with the venv's Python, so it is written once for both:
     installer.py user-token         # Bridge machine: (re)generate the user token
     installer.py add-peer <name>    # Bridge machine: add a peer, print its new token once
     installer.py revoke-peer <name> # Bridge machine: remove a peer's token
-    installer.py claude             # register the MCP server with Claude Code
-    installer.py unregister         # remove it from Claude Code again
+    installer.py claude             # register the MCP server and the state hooks with Claude Code
+    installer.py unregister         # remove both from Claude Code again
 
-The plugin itself (the hooks) comes from the useful-claude-add-ons marketplace:
+The plugin itself (the watcher hooks) comes from the useful-claude-add-ons marketplace:
 claude plugin install ai-connect@useful-claude-add-ons
+
+The state hooks (busy / idle / waiting) are not in the plugin's hooks.json:
+they call the MCP server, which exists only once it is registered here, and
+an mcp_tool hook has no quiet mode. So `claude` writes them into the user's
+Claude Code settings next to the registration, and `unregister` takes them
+out again (state_hooks.py).
 """
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -31,15 +38,19 @@ from pathlib import Path
 
 import yaml
 
+import join_codes
+import root_policy
+import state_hooks
 from config_loader import CONFIG_PATH, OBSERVER_TOKEN_PATH, USER_TOKEN_PATH
 
 REPO = Path(__file__).resolve().parent
 CONFIG_EXAMPLE = REPO / "config.yaml.example"
-MCP_SERVER = "ai-connect"
+MCP_SERVER = state_hooks.MCP_SERVER
 PLUGIN = "ai-connect@useful-claude-add-ons"
 # What `claude mcp remove` says when there is nothing to remove
 NOT_REGISTERED = "No MCP server named"
-CLAUDE_SETTINGS = Path.home() / ".claude" / "settings.json"
+# In CLAUDE_CONFIG_DIR when that is set, where Claude Code then keeps its settings
+CLAUDE_SETTINGS = state_hooks.user_settings_path()
 # Reading all traffic and writing as a user are the user's tools: agents run
 # as the same user and could read the token files or run the observer
 # program; these keep Claude Code from doing it by accident (not against an
@@ -82,8 +93,7 @@ def _reject_placeholder(token: str, what: str) -> None:
 
 def check_config(config_path: Path = CONFIG_PATH) -> None:
     """Stop if config.yaml lacks keys the template has, or still trusts the example token."""
-    with open(config_path, encoding="utf-8") as f:
-        config = yaml.safe_load(f)
+    config = _read_config(config_path)
     missing = _dotted_keys(_example()) - _dotted_keys(config)
     if missing:
         sys.exit(
@@ -121,8 +131,9 @@ def write_config(server: bool, config_path: Path = CONFIG_PATH) -> None:
     port = config["server"]["port"]
     if server:
         # Never 0.0.0.0: that listens on every interface this machine has,
-        # including any public one, and AI-Connect has no TLS of its own --
-        # only a VPN interface should ever be able to reach this port
+        # including any public one. TLS (a pinned certificate) protects the
+        # traffic, but the plain ws:// port of the transition release does
+        # not -- only a VPN interface should ever be able to reach either
         config["server"]["host"] = _ask(
             "Bridge listen address (this machine's Tailscale/WireGuard IP)", "127.0.0.1"
         )
@@ -135,7 +146,8 @@ def write_config(server: bool, config_path: Path = CONFIG_PATH) -> None:
         _reject_placeholder(token, "Peer token")
         config["client"]["token"] = token
 
-    _save_config(config, config_path)
+    with _config_lock(config_path):
+        _save_config(config, config_path)
     print(f"  Config written: {config_path}")
 
     if server:
@@ -143,17 +155,64 @@ def write_config(server: bool, config_path: Path = CONFIG_PATH) -> None:
             create_token(role, config_path)
         # The Bridge machine runs a peer of its own Bridge too
         peer_name = config["client"]["name"]
-        own_token = _add_peer(peer_name, config_path)
-        with open(config_path, encoding="utf-8") as f:
-            config = yaml.safe_load(f)
-        config["client"]["token"] = own_token
-        _save_config(config, config_path)
+        with _config_lock(config_path):
+            own_token = _add_peer(peer_name, config_path)
+            config = _read_config(config_path)
+            config["client"]["token"] = own_token
+            _save_config(config, config_path)
         print(f"  This machine's own peer token ('{peer_name}') generated and filled in")
+        pin_own_bridge(config_path)
+    else:
+        print("  bridge_url is plain ws:// (deprecated since 0.2.15): pin the Bridge with `ai-connect pin "
+              "<fingerprint>`, the fingerprint `ai-connect bridge cert show` prints on the Bridge machine")
 
 
-def _bridge_url(host: str, port: int) -> str:
+def pin_own_bridge(config_path: Path = CONFIG_PATH) -> str:
+    """Bridge machine: make its TLS certificate (if none) and point its own peer at wss:// with that pin.
+
+    Returns the fingerprint. The certificate goes into <config dir>/tls/
+    (bridge_tls.py: 0700 directory, owner-only key); the Bridge serves it from
+    its next start.
+    """
+    import bridge_tls  # pylint: disable=import-outside-toplevel  # needs cryptography, the Bridge's dependency
+    from config_loader import server_settings  # pylint: disable=import-outside-toplevel
+    with open(config_path, encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    settings = server_settings(config)
+    if not settings.tls_enabled:
+        print("  server.tls.enabled is false: no certificate made; this Bridge serves plain ws:// only")
+        return ""
+    try:
+        with join_codes.auth_lock(config_path.parent):
+            info, created = bridge_tls.ensure(config_path.parent, settings.tls_validity_days)
+    except bridge_tls.TlsError as err:
+        sys.exit(str(err))
+    config["client"]["bridge_url"] = _bridge_url(config["server"]["host"], settings.tls_port, tls=True)
+    config["client"]["bridge_fingerprint"] = info.fingerprint
+    _save_config(config, config_path)
+    print(f"  TLS certificate {'made' if created else 'kept'}: {info.cert_path} (SHA-256 {info.fingerprint}, "
+          f"valid until {info.not_after:%Y-%m-%d}); this machine's peer uses {config['client']['bridge_url']}")
+    return info.fingerprint
+
+
+def _bridge_url(host: str, port: int, tls: bool = False) -> str:
     host = f"[{host}]" if ":" in host else host
-    return f"ws://{host}:{port}"
+    return f"{'wss' if tls else 'ws'}://{host}:{port}"
+
+
+def _private_dir(path: Path) -> None:
+    """The directory a secret file goes in. AI-Connect's own config directory is closed to everyone but its
+    owner, new or already there (vpn/tsadmin.py private_dir: 0700, on Windows an ACL of this user alone);
+    any other directory is the caller's, and is only made when missing."""
+    if path != CONFIG_PATH.parent:
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        return
+    sys.path.append(str(REPO / "vpn"))
+    import tsadmin  # pylint: disable=import-error,import-outside-toplevel
+    try:
+        tsadmin.private_dir(path)
+    except tsadmin.Failure as err:
+        sys.exit(str(err))
 
 
 def _write_private(path: Path, text: str) -> None:
@@ -162,10 +221,10 @@ def _write_private(path: Path, text: str) -> None:
     mkstemp creates the temp file 0600 on POSIX whatever the umask, and
     os.replace moves it into place atomically, so the secret never sits in a
     file others may open (a reader that opens it early keeps its descriptor
-    after a later chmod). On Windows the file inherits the directory's ACL:
-    the config directory lives in the user's profile.
+    after a later chmod). On Windows the file inherits the directory's ACL,
+    and the config directory's is the user's alone.
     """
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _private_dir(path.parent)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}-")
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
@@ -181,6 +240,33 @@ def _save_config(config: dict, config_path: Path = CONFIG_PATH) -> None:
     _write_private(config_path, yaml.safe_dump(config, sort_keys=False))
 
 
+@contextlib.contextmanager
+def _config_lock(config_path: Path):
+    """join_codes.auth_lock around one read-modify-write of config.yaml.
+
+    The running Bridge redeems join codes into the same file, and the
+    ai-connect CLI writes it too: a read-modify-write outside this lock can
+    write a revoked peer back, or drop a peer redeemed in between.
+    """
+    try:
+        with join_codes.auth_lock(config_path.parent):
+            yield
+    except TimeoutError as err:
+        sys.exit(f"{err}: another ai-connect command or the Bridge is writing it; run this again")
+
+
+def _read_config(config_path: Path) -> dict:
+    """config.yaml as a mapping. A YAML error names its place only: PyYAML's message quotes the line, a token."""
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            config = yaml.safe_load(f)
+    except yaml.YAMLError as err:
+        sys.exit(f"{config_path} is not valid YAML ({join_codes.yaml_error_place(err)}); fix it and run this again")
+    if not isinstance(config, dict):
+        sys.exit(f"{config_path} is not a YAML mapping")
+    return config
+
+
 # Role -> token file; the config key of its hash is auth.<role>_token_sha256
 TOKEN_PATHS = {"observer": OBSERVER_TOKEN_PATH, "user": USER_TOKEN_PATH}
 
@@ -190,29 +276,33 @@ def create_token(role: str, config_path: Path = CONFIG_PATH) -> None:
 
     The Bridge only learns the hash; the token stays in its own file for the
     person's tools (reading all traffic, writing as a user). A new token
-    locks out the old one once the Bridge restarts.
+    locks out the old one within seconds: a running Bridge polls config.yaml
+    (server/auth_reload.py) and closes connections made with the old one.
     """
     path = TOKEN_PATHS[role]
     token = secrets.token_hex(32)
-    _write_private(path, token + "\n")
-    with open(config_path, encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    config.setdefault("auth", {})[f"{role}_token_sha256"] = _token_sha256(token)
-    _save_config(config, config_path)
-    print(f"  {role.capitalize()} token written: {path} (restart the Bridge to use it)")
+    with _config_lock(config_path):
+        config = _read_config(config_path)
+        _write_private(path, token + "\n")
+        config.setdefault("auth", {})[f"{role}_token_sha256"] = _token_sha256(token)
+        _save_config(config, config_path)
+    print(f"  {role.capitalize()} token written: {path} (a running Bridge picks it up within seconds)")
     _deny_tokens_to_claude()
 
 
 def _add_peer(name: str, config_path: Path) -> str:
-    """Create a peer, store its token's SHA-256, return the raw token (caller shows/uses it once)."""
-    with open(config_path, encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    peers = config.setdefault("auth", {}).setdefault("peers", {})
-    if name in peers:
-        sys.exit(f"Peer '{name}' already exists. Run `revoke-peer {name}` first to replace its token.")
-    token = secrets.token_hex(32)  # 256 bits
-    peers[name] = _token_sha256(token)
-    _save_config(config, config_path)
+    """Create a peer, store its token's SHA-256, return the raw token (caller shows/uses it once).
+
+    Under the auth lock (reentrant: the CLI's `bridge token` already holds it).
+    """
+    with _config_lock(config_path):
+        config = _read_config(config_path)
+        peers = config.setdefault("auth", {}).setdefault("peers", {})
+        if name in peers:
+            sys.exit(f"Peer '{name}' already exists. Run `revoke-peer {name}` first to replace its token.")
+        token = secrets.token_hex(32)  # 256 bits
+        peers[name] = _token_sha256(token)
+        _save_config(config, config_path)
     return token
 
 
@@ -221,19 +311,19 @@ def add_peer(name: str, config_path: Path = CONFIG_PATH) -> None:
     token = _add_peer(name, config_path)
     print(f"  Peer '{name}' added. On that machine set client.name: '{name}' and client.token to this (shown once):")
     print(f"    {token}")
-    print("  Restart the Bridge to use it.")
+    print("  A running Bridge accepts it within seconds; no restart needed.")
 
 
 def revoke_peer(name: str, config_path: Path = CONFIG_PATH) -> None:
     """Bridge machine: remove a peer so its token no longer authenticates."""
-    with open(config_path, encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    peers = config.get("auth", {}).get("peers", {})
-    if name not in peers:
-        sys.exit(f"No such peer: '{name}'")
-    del peers[name]
-    _save_config(config, config_path)
-    print(f"  Peer '{name}' revoked (restart the Bridge to use it)")
+    with _config_lock(config_path):
+        config = _read_config(config_path)
+        peers = (config.get("auth") or {}).get("peers") or {}
+        if name not in peers:
+            sys.exit(f"No such peer: '{name}'")
+        del peers[name]
+        _save_config(config, config_path)
+    print(f"  Peer '{name}' revoked (a running Bridge picks it up within seconds)")
 
 
 def _deny_tokens_to_claude() -> None:
@@ -279,11 +369,22 @@ def _check(result: subprocess.CompletedProcess, what: str) -> None:
         sys.exit(f"{what} failed:\n{result.stdout}{result.stderr}")
 
 
+def _state_hooks(step):
+    """Run a state_hooks step on the user's settings; a file it will not touch ends the installer."""
+    try:
+        return step(CLAUDE_SETTINGS)
+    except state_hooks.SettingsError as error:
+        sys.exit(str(error))
+
+
 def register_claude() -> None:
-    """Register the MCP server (with this venv's Python) with Claude Code.
+    """Register the MCP server (with this venv's Python) and the state hooks with Claude Code.
 
     The hooks plugin is not installed here: it ships in the
     useful-claude-add-ons marketplace, and this directory is that plugin.
+    The state hooks go into the user's settings only here, once the server
+    they call is registered: without it each of them is an error on every
+    prompt, tool call and turn end.
     """
     claude = _find_claude()
     if claude is None:
@@ -292,6 +393,10 @@ def register_claude() -> None:
             f'    "{os.path.abspath(sys.executable)}" "{REPO / "installer.py"}" claude'
         )
         return
+
+    # Read first: settings this cannot read end the step before anything is
+    # registered, not halfway
+    _state_hooks(state_hooks.read)
 
     # Replace an existing registration, so a moved repository or a new venv
     # takes effect
@@ -305,51 +410,76 @@ def register_claude() -> None:
         "claude mcp add",
     )
     print(f"  MCP server '{MCP_SERVER}' registered: {python}")
-    print(f"  Hooks: claude plugin install {PLUGIN} (if not already installed)")
+    if _state_hooks(state_hooks.add):
+        print(f"  State hooks ({', '.join(state_hooks.STATE_HOOKS)}) written to {CLAUDE_SETTINGS}")
+    else:
+        print(f"  State hooks already in {CLAUDE_SETTINGS}")
+    print(f"  Watcher hooks: claude plugin install {PLUGIN} (if not already installed)")
 
 
 def unregister_claude() -> None:
-    """Remove the MCP server from Claude Code; the plugin is uninstalled separately."""
+    """Remove the MCP server and the state hooks from Claude Code; the plugin is uninstalled separately."""
+    # Read first, as in register_claude. The hooks go whether or not the CLI
+    # is found: they are in a file, and without the server they only fail.
+    _state_hooks(state_hooks.read)
     claude = _find_claude()
     if claude is None:
-        print("  Claude Code not found in PATH, nothing to remove there")
-        return
-    removed = _claude(claude, "mcp", "remove", "-s", "user", MCP_SERVER)
-    if removed.returncode != 0 and NOT_REGISTERED not in removed.stdout + removed.stderr:
-        _check(removed, "claude mcp remove")
-    print("  AI-Connect MCP server removed from Claude Code")
-    print(f"  Hooks: claude plugin uninstall {PLUGIN}")
+        print("  Claude Code not found in PATH, no MCP server to remove there")
+    else:
+        removed = _claude(claude, "mcp", "remove", "-s", "user", MCP_SERVER)
+        if removed.returncode != 0 and NOT_REGISTERED not in removed.stdout + removed.stderr:
+            _check(removed, "claude mcp remove")
+        print("  AI-Connect MCP server removed from Claude Code")
+    if _state_hooks(state_hooks.remove):
+        print(f"  State hooks removed from {CLAUDE_SETTINGS}")
+    print(f"  Watcher hooks: claude plugin uninstall {PLUGIN}")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    # Every step takes it: root_policy.py says what it allows, and in what order the switches count
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(root_policy.FLAG, action="store_true", dest="allow_root",
+                        help="allow running as root (Linux/macOS); also AI_CONNECT_ALLOW_ROOT or install.allow_root")
     steps = parser.add_subparsers(dest="step", required=True)
-    config = steps.add_parser("config", help="write or check ~/.config/ai-connect/config.yaml")
+    config = steps.add_parser("config", parents=[common], help="write or check ~/.config/ai-connect/config.yaml")
     mode = config.add_mutually_exclusive_group(required=True)
     mode.add_argument("--server", action="store_true", help="Bridge machine: generate its tokens")
     mode.add_argument("--client", action="store_true", help="other machines: ask for the peer token")
-    steps.add_parser("observer-token", help="Bridge machine: generate the token for reading all traffic")
-    steps.add_parser("user-token", help="Bridge machine: generate the token for writing to agents as a user")
-    add_peer_parser = steps.add_parser("add-peer", help="Bridge machine: add a peer, print its new token once")
+    steps.add_parser("observer-token", parents=[common],
+                     help="Bridge machine: generate the token for reading all traffic")
+    steps.add_parser("user-token", parents=[common],
+                     help="Bridge machine: generate the token for writing to agents as a user")
+    add_peer_parser = steps.add_parser("add-peer", parents=[common],
+                                       help="Bridge machine: add a peer, print its new token once")
     add_peer_parser.add_argument("name", help="peer name, as used in auth.peers and that machine's client.name")
-    revoke_peer_parser = steps.add_parser("revoke-peer", help="Bridge machine: remove a peer's token")
+    revoke_peer_parser = steps.add_parser("revoke-peer", parents=[common], help="Bridge machine: remove a peer's token")
     revoke_peer_parser.add_argument("name", help="peer name to remove from auth.peers")
-    steps.add_parser("claude", help="register the MCP server with Claude Code")
-    steps.add_parser("unregister", help="remove the MCP server from Claude Code")
-    args = parser.parse_args()
+    steps.add_parser("claude", parents=[common], help="register the MCP server and the state hooks with Claude Code")
+    steps.add_parser("unregister", parents=[common], help="remove the MCP server and the state hooks from Claude Code")
+    args = parser.parse_args(argv)
+
+    # install.sh has already said it once (AI_CONNECT_ROOT_WARNED): each step need not say it again
+    try:
+        root = root_policy.check(args.allow_root, config_path=CONFIG_PATH,
+                                 warn=not os.environ.get("AI_CONNECT_ROOT_WARNED"))
+    except root_policy.RootPolicyError as err:
+        sys.exit(f"ai-connect: {err}")
 
     if args.step == "config":
-        write_config(server=args.server)
+        write_config(server=args.server, config_path=CONFIG_PATH)
     elif args.step in ("observer-token", "user-token"):
-        create_token(args.step.removesuffix("-token"))
+        create_token(args.step.removesuffix("-token"), CONFIG_PATH)
     elif args.step == "add-peer":
-        add_peer(args.name)
+        add_peer(args.name, CONFIG_PATH)
     elif args.step == "revoke-peer":
-        revoke_peer(args.name)
+        revoke_peer(args.name, CONFIG_PATH)
     elif args.step == "claude":
         register_claude()
     else:
         unregister_claude()
+    if root == root_policy.ALLOWED:
+        root_policy.secure(CONFIG_PATH.parent)
 
 
 if __name__ == "__main__":

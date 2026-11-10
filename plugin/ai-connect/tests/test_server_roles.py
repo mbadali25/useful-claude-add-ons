@@ -61,6 +61,21 @@ def test_register_refusals():
     # A shared token must not take a name that has its own token
     assert roles.register_refusal(shared, h.BOB) == "name_bound_to_other_token"
     assert roles.register_refusal(shared, "Other:Project") is None
+    # A machine's token registers its sessions, "<name>:<label>", and nothing of another machine's
+    assert roles.register_refusal(alice, f"{h.ALICE}:proj") is None
+    assert roles.register_refusal(alice, f"{h.BOB}:proj") == "name_not_bound_to_token"
+    assert roles.register_refusal(alice, f"{h.ALICE}x:proj") == "name_not_bound_to_token"
+    assert roles.register_refusal(alice, f"{h.ALICE}:a:b") == "invalid_session_label"
+    assert roles.register_refusal(shared, f"{h.BOB}:proj") == "name_bound_to_other_token"
+
+
+def test_owner_is_the_longest_enrolled_name_a_name_is_or_sits_under():
+    roles = h.make_roles()
+    assert roles.owner(h.ALICE) == h.ALICE
+    assert roles.owner(f"{h.ALICE}:proj") == h.ALICE
+    assert roles.owner(f"{h.ALICE}x") is None
+    assert roles.owner("Host") is None
+    assert roles.owner("") is None
 
 
 @pytest.mark.parametrize("name", ["Bridge", "bridge", "BRIDGE", "User:max", "user:max", "USER:"])
@@ -76,6 +91,9 @@ def test_watch_only_own_name_with_per_peer_token():
     assert roles.watch_refusal(alice, h.ALICE) is None
     assert roles.watch_refusal(alice, h.BOB) == "watch_not_own_name"
     assert roles.watch_refusal(alice, "User:max") == "reserved_name"
+    assert roles.watch_refusal(alice, f"{h.ALICE}:proj") is None
+    assert roles.watch_refusal(alice, f"{h.BOB}:proj") == "watch_not_own_name"
+    assert roles.watch_refusal(alice, f"{h.ALICE}x:proj") == "watch_not_own_name"
 
 
 @pytest.mark.parametrize("name", ["Bridge", "User:x"])

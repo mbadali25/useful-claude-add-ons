@@ -13,13 +13,11 @@ _T = "tests/test_qa_audit.py::"
 # the smallest sibling it already sums.
 FIXTURES = os.path.join(CREW, "tests", "crew_fixtures.py")
 _F = "tests/test_path_link_farm.py::"
-# L-0516: the deadline polls that replaced fixed sleeps, and the ps1 tree kill
-# the survivor poll proves. Here for the same max-module-lines reason.
+# L-0516: the deadline polls that replaced fixed sleeps. Here for the same
+# max-module-lines reason.
 POLL = os.path.join(CREW, "tests", "poll_fixtures.py")
 _P = "tests/test_poll_fixtures.py::"
 POLL_TESTS = os.path.join(CREW, "tests", "test_poll_fixtures.py")
-PS1_AUDIT = os.path.join(CREW, "hooks", "scripts", "completion-audit.ps1")
-_E = "tests/test_event_claim_crash_safety.py::"
 
 QA_AUDIT_MUTATIONS = (
     (
@@ -106,22 +104,6 @@ QA_AUDIT_MUTATIONS = (
         "        return int(text) if text.isdigit() else None\n",
         "        return int(text) if text.isdigit() else 0\n",
         _P + "test_wait_for_pidfile_waits_past_an_empty_file_for_the_pid",
-    ),
-    (
-        # L-0690: a probe that ran out of time is reported as "no usable python".
-        "completion-audit.ps1 reports a timed-out probe as no python",
-        PS1_AUDIT,
-        "  $crewTimedOut = $script:CrewPythonOutcome -eq 'timed-out'\n",
-        "  $crewTimedOut = $false\n",
-        "tests/test_ps1_python_probe.py::test_a_timed_out_probe_says_so_and_never_no_python",
-    ),
-    (
-        # Only the launcher dies; its python child outlives the probe.
-        "the ps1 probe kills only the launcher",
-        PS1_AUDIT,
-        "            $proc.Kill($true)\n",
-        "            $proc.Kill($false)\n",
-        _E + "test_the_ps1_probe_timeout_kills_the_launchers_child_too",
     ),
     (
         # One more probe after the deadline, returned as is: a condition first

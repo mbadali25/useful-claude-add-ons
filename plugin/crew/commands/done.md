@@ -87,8 +87,7 @@ never rewrites the commits — a rewrite is the owner's decision, and it stales 
    tracker: `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py move --root . --ticket "$1" --to done`.
    Print its lines verbatim; on exit 3 run the command it printed (Jira, SDP);
    on exit 1 tell me `tracker not updated: <reason>` — done still stands.
-2. Append this ticket's row to `.crew/metrics.jsonl` with the metrics
-   harness. Anything it cannot measure is written `UNKNOWN`, never `0`:
+2. Append this ticket's row to `.crew/metrics.jsonl` with the metrics harness: a schema 1.1 row with split tokens (each assistant message once), a list-price cost, `tokensBasis: attributed lower bound` and attribution counts; a `Ticket ID: <id>` line in a dispatch prompt ties a subagent to the ticket. Anything it cannot measure is written `UNKNOWN`, never `0`:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_metrics.py record --ticket "$1"

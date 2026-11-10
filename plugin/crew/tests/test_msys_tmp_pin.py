@@ -6,7 +6,8 @@ the TMP/TEMP of whichever process CREATES the MSYS runtime's per-user,
 per-installation shared mount table; every MSYS process started while that
 region lives shares the answer. Under pytest-xdist on an otherwise idle
 runner, `test_34d_ps1_a_temp_dir_failure_falls_back_to_crew_not_a_pipe`
-(test_verify_gate_stop_gate_record.py) could be that creator, and other
+(test_verify_gate_stop_gate_record.py, deleted with verify-gate.ps1 in
+L-0869) could be that creator, and other
 workers' `sh`-flavour gates then failed with `bash.exe: warning: /tmp must
 be a valid directory name` / `VERIFY GATE: cannot create temp file` - CI
 jobs 109709668000 and 109307433677, each within ~2 s of that test passing
@@ -554,7 +555,7 @@ _MUST_FLAG = {
 }
 
 _MUST_PASS = {
-    # The real test_34d_ps1 shape: env built BEFORE the pin, used only in
+    # The shape test_34d_ps1 had (deleted in L-0869): env built BEFORE the pin, used only in
     # the pin's own items and inside its body; the result read afterwards.
     "built_before_launched_inside": (
         "def f(tmp_path):\n"
@@ -602,81 +603,6 @@ def test_the_override_detector_flags_a_launch_outside_the_pin(case):
 @pytest.mark.parametrize("case", sorted(_MUST_PASS))
 def test_the_override_detector_passes_a_launch_inside_the_pin(case):
     assert _unpinned_overrides(_MUST_PASS[case]) == [], case
-
-
-def test_the_real_test_34d_ps1_overrides_tmp_and_launches_inside_the_pin():
-    """Not vacuous: the detector must SEE test_34d_ps1's override (else its
-    clean result in the whole-tree check below proves nothing)."""
-    source = (_TESTS / "test_verify_gate_stop_gate_record.py").read_text(
-        encoding="utf-8")
-    sites = _tmp_sites(source)
-    name = "test_34d_ps1_a_temp_dir_failure_falls_back_to_crew_not_a_pipe"
-    assert name in sites, "the detector no longer sees test_34d_ps1's override"
-    assert sites[name] == [], sites[name]
-
-
-# --- the pin must hold the MSYS install the gate's own bash belongs to -------
-
-_PWSH = shutil.which("pwsh")
-_GATE_PS1 = str(_TESTS.parent / "hooks" / "scripts" / "verify-gate.ps1")
-
-
-def _stub(path):
-    """A file Get-Command resolves; `-PrintBash` never executes it."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("rem stub, never executed\n", encoding="ascii")
-    return path
-
-
-@pytest.mark.skipif(not sys.platform.startswith("win") or _PWSH is None,
-                    reason="Resolve-CrewBash is verify-gate.ps1's, native Windows")
-def test_gate_bash_follows_resolve_crewbash_not_path_order(tmp_path):
-    """T-0110 review round 2, FIX 1: with Git A's bash first on PATH and Git
-    B's git first, PATH order (what `resolve_bash` starts from) says A while
-    the gate's Resolve-CrewBash walks up from git.exe to B. Pinning A would
-    leave B's shared region - the one the gate's children join - unpinned."""
-    git_a, git_b = tmp_path / "GitA", tmp_path / "GitB"
-    _stub(git_a / "bin" / "bash.exe")
-    _stub(git_b / "cmd" / "git.exe")
-    b_bash = _stub(git_b / "bin" / "bash.exe")
-    path = os.pathsep.join([str(git_a / "bin"), str(git_b / "cmd")])
-
-    by_path_order = shutil.which("bash", path=path)
-    assert by_path_order and pathlib.Path(by_path_order).parent == git_a / "bin", (
-        "premise: PATH order alone picks Git A's bash")
-    env = dict(os.environ, PATH=path)
-    assert crew_fixtures.gate_bash(_PWSH, _GATE_PS1, env) == str(b_bash)
-
-
-def _assigned_from(func, name):
-    """The callee names of every `name = <call>(...)` in `func`."""
-    return {getattr(node.value.func, "attr", None)
-            or getattr(node.value.func, "id", None)
-            for node in ast.walk(func)
-            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
-            and any(isinstance(t, ast.Name) and t.id == name
-                    for t in node.targets)}
-
-
-def test_test_34d_ps1_pins_the_bash_the_gate_resolves():
-    """test_34d_ps1 runs verify-gate.ps1, whose rules run under the bash
-    Resolve-CrewBash picks, so its pin must take that bash from
-    `crew_fixtures.gate_bash` rather than `resolve_bash`."""
-    tree = ast.parse((_TESTS / "test_verify_gate_stop_gate_record.py")
-                     .read_text(encoding="utf-8"))
-    func = next(node for node in ast.walk(tree)
-                if isinstance(node, ast.FunctionDef) and node.name ==
-                "test_34d_ps1_a_temp_dir_failure_falls_back_to_crew_not_a_pipe")
-    pins = [node for node in ast.walk(func) if isinstance(node, ast.Call)
-            and _callee(node) == "msys_tmp_pinned"]
-    assert len(pins) == 1, pins
-    bash = pins[0].args[0]
-    callees = ({_callee(bash)} if isinstance(bash, ast.Call)
-               else _assigned_from(func, bash.id) if isinstance(bash, ast.Name)
-               else set())
-    assert callees == {"gate_bash"}, (
-        f"test_34d_ps1 pins a bash from {callees or ast.dump(bash)}, not "
-        "crew_fixtures.gate_bash")
 
 
 # Exempt by exact name, with the reason: this module's own helper poisons

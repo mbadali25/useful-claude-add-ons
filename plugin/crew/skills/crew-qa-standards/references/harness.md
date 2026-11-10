@@ -51,6 +51,9 @@ limit the test protects.
   and return the last value so a real survivor still fails. Evidence (L-0516): a 0.5 s sleep
   before a survivor check failed in CI with one survivor; a pidfile read as soon as it existed
   saw it empty in 389 of 500 tight reads.
+- **Quarantine, never a bare skip.** A flake you cannot fix today gets a marker naming an owner
+  and a ticket, and is deselected only through it; a skip whose reason says "flaky" fails
+  collection. Evidence (L-0709): one linter test was the only failure in 4 of 7 red main runs.
 
 ## H4 — Fixtures never inherit the developer's or runner's global state [audited]
 
@@ -63,6 +66,7 @@ A fixture repository or process must not read the real global config. Pin, per t
 | Machine-global tool config | point the path at a file that does not exist | crew's `~/.claude/crew/config.json` |
 | Ambient env (`CLAUDE_PROJECT_DIR`, `HOME`) | `monkeypatch.delenv` / explicit `env=` | green in CI, red on the maintainer's machine |
 | Shared tool cache raced by concurrent children (pwsh's startup profile) | a per-test `XDG_CACHE_HOME` | concurrent pwsh crashed at start-up (-6 "Stack overflow.", -11 SIGSEGV), about 1 `-m slow -n 12` run in 20-50; with the profile unwritable, 150/150 clean |
+| The home directory itself, read by a spawned script | a per-test `HOME`/`USERPROFILE`/`XDG_*` home, plus an audit hook that fails a test opening the real one | patching a config path in-process left every spawned script on the real home: an owner's `autopilot.mode=plan` failed 3 crew tests locally, never in CI |
 
 - **Apply.** Pin through `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n`,
   **appended after** whatever count the runner already carries. Cloud containers export their

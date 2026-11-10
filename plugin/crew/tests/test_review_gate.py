@@ -184,18 +184,16 @@ def test_any_change_after_the_pass_is_unverified(tmp_path, edit):
     assert _state(root) == review_gate.UNVERIFIED
 
 
-_PS1 = os.path.join(_SCRIPTS, "verify-gate.ps1")
-_PWSH = crew_fixtures.resolve_pwsh()
+# verify-gate.ps1 was deleted in L-0869; the `flavour` argument and the `[sh]`
+# ids stay so the sabotage entries that name them keep resolving.
 _GATE_FLAVOURS = [
     pytest.param("sh", marks=needs_bash),
-    pytest.param("ps1", marks=pytest.mark.skipif(
-        _PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")),
 ]
 
 
 def _gate_flavour(root, flavour, ci=False):
-    cmd = ([_BASH, _SH] + (["--ci"] if ci else []) if flavour == "sh" else
-           [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1] + (["-Ci"] if ci else []))
+    assert flavour == "sh", flavour
+    cmd = [_BASH, _SH] + (["--ci"] if ci else [])
     return crew_fixtures.run_gate(
         cmd, input="{}", cwd=str(root),
         env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root), OS="Windows_NT"),
@@ -256,8 +254,8 @@ def test_gate_is_not_stood_down_when_git_cannot_tell(tmp_path, flavour):
     os.chmod(shim / "git", 0o755)
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(lane), OS="Windows_NT",
                PATH=str(shim) + os.pathsep + os.environ.get("PATH", ""))
-    cmd = ([_BASH, _SH] if flavour == "sh" else
-           [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1])
+    assert flavour == "sh", flavour
+    cmd = [_BASH, _SH]
     proc = crew_fixtures.run_gate(cmd, input="{}", cwd=str(lane), env=env,
                                   capture_output=True, text=True, check=False,
                                   timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)

@@ -1,0 +1,297 @@
+{
+ "ref": "origin/main",
+ "entries": [
+  {
+   "event": "SessionStart",
+   "matcher": "",
+   "flavour": "bash",
+   "script": "handoff-read.sh",
+   "extra": [],
+   "timeout": 15
+  },
+  {
+   "event": "SessionStart",
+   "matcher": "",
+   "flavour": "powershell",
+   "script": "handoff-read.ps1",
+   "extra": [],
+   "timeout": 15
+  },
+  {
+   "event": "SessionStart",
+   "matcher": "",
+   "flavour": "bash",
+   "script": "platform-sync.sh",
+   "extra": [],
+   "timeout": 20
+  },
+  {
+   "event": "SessionStart",
+   "matcher": "",
+   "flavour": "powershell",
+   "script": "platform-sync.ps1",
+   "extra": [],
+   "timeout": 20
+  },
+  {
+   "event": "SessionStart",
+   "matcher": "",
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "extra": [],
+   "timeout": 20
+  },
+  {
+   "event": "SessionStart",
+   "matcher": "",
+   "flavour": "powershell",
+   "script": "crew-context.ps1",
+   "extra": [],
+   "timeout": 20
+  },
+  {
+   "event": "UserPromptSubmit",
+   "matcher": "",
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "extra": [],
+   "timeout": 15
+  },
+  {
+   "event": "UserPromptSubmit",
+   "matcher": "",
+   "flavour": "powershell",
+   "script": "crew-context.ps1",
+   "extra": [],
+   "timeout": 15
+  },
+  {
+   "event": "UserPromptSubmit",
+   "matcher": "",
+   "flavour": "bash",
+   "script": "approval-hook.sh",
+   "extra": [],
+   "timeout": 20
+  },
+  {
+   "event": "UserPromptSubmit",
+   "matcher": "",
+   "flavour": "powershell",
+   "script": "approval-hook.ps1",
+   "extra": [],
+   "timeout": 20
+  },
+  {
+   "event": "PreToolUse",
+   "matcher": "Bash",
+   "flavour": "bash",
+   "script": "promote-gate.sh",
+   "extra": [],
+   "timeout": 20
+  },
+  {
+   "event": "PreToolUse",
+   "matcher": "PowerShell",
+   "flavour": "powershell",
+   "script": "promote-gate.ps1",
+   "extra": [],
+   "timeout": 20
+  },
+  {
+   "event": "PreToolUse",
+   "matcher": "Write|Edit",
+   "flavour": "bash",
+   "script": "role-write-guard.sh",
+   "extra": [],
+   "timeout": 10
+  },
+  {
+   "event": "PreToolUse",
+   "matcher": "Write|Edit",
+   "flavour": "powershell",
+   "script": "role-write-guard.ps1",
+   "extra": [],
+   "timeout": 10
+  },
+  {
+   "event": "PreToolUse",
+   "matcher": "Bash|PowerShell",
+   "flavour": "bash",
+   "script": "cloud-guard.sh",
+   "extra": [],
+   "timeout": 15
+  },
+  {
+   "event": "PreToolUse",
+   "matcher": "Bash|PowerShell",
+   "flavour": "powershell",
+   "script": "cloud-guard.ps1",
+   "extra": [],
+   "timeout": 15
+  },
+  {
+   "event": "PreToolUse",
+   "matcher": "Bash|PowerShell",
+   "flavour": "bash",
+   "script": "env-guard.sh",
+   "extra": [],
+   "timeout": 15
+  },
+  {
+   "event": "PreToolUse",
+   "matcher": "Bash|PowerShell",
+   "flavour": "powershell",
+   "script": "env-guard.ps1",
+   "extra": [],
+   "timeout": 15
+  },
+  {
+   "event": "PreToolUse",
+   "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell",
+   "flavour": "bash",
+   "script": "scope-guard.sh",
+   "extra": [],
+   "timeout": 15
+  },
+  {
+   "event": "PreToolUse",
+   "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell",
+   "flavour": "powershell",
+   "script": "scope-guard.ps1",
+   "extra": [],
+   "timeout": 15
+  },
+  {
+   "event": "PostToolUse",
+   "matcher": "Read|Edit|Write|MultiEdit",
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "extra": [],
+   "timeout": 10
+  },
+  {
+   "event": "PostToolUse",
+   "matcher": "Read|Edit|Write|MultiEdit",
+   "flavour": "powershell",
+   "script": "crew-context.ps1",
+   "extra": [],
+   "timeout": 10
+  },
+  {
+   "event": "PostToolUse",
+   "matcher": "mcp__.*(obsidian|vault|basic[-_]memory).*",
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "extra": [],
+   "timeout": 10
+  },
+  {
+   "event": "PostToolUse",
+   "matcher": "mcp__.*(obsidian|vault|basic[-_]memory).*",
+   "flavour": "powershell",
+   "script": "crew-context.ps1",
+   "extra": [],
+   "timeout": 10
+  },
+  {
+   "event": "SubagentStart",
+   "matcher": "",
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "extra": [],
+   "timeout": 15
+  },
+  {
+   "event": "SubagentStart",
+   "matcher": "",
+   "flavour": "powershell",
+   "script": "crew-context.ps1",
+   "extra": [],
+   "timeout": 15
+  },
+  {
+   "event": "PreCompact",
+   "matcher": "",
+   "flavour": "bash",
+   "script": "handoff-write.sh",
+   "extra": [],
+   "timeout": 30
+  },
+  {
+   "event": "PreCompact",
+   "matcher": "",
+   "flavour": "powershell",
+   "script": "handoff-write.ps1",
+   "extra": [],
+   "timeout": 30
+  },
+  {
+   "event": "Notification",
+   "matcher": "",
+   "flavour": "bash",
+   "script": "notify.sh",
+   "extra": [
+    "hook"
+   ],
+   "timeout": 15
+  },
+  {
+   "event": "Notification",
+   "matcher": "",
+   "flavour": "powershell",
+   "script": "notify.ps1",
+   "extra": [
+    "hook"
+   ],
+   "timeout": 15
+  },
+  {
+   "event": "Stop",
+   "matcher": "",
+   "flavour": "bash",
+   "script": "verify-gate.sh",
+   "extra": [],
+   "timeout": 600
+  },
+  {
+   "event": "Stop",
+   "matcher": "",
+   "flavour": "powershell",
+   "script": "verify-gate.ps1",
+   "extra": [],
+   "timeout": 600
+  },
+  {
+   "event": "Stop",
+   "matcher": "",
+   "flavour": "bash",
+   "script": "context-watch.sh",
+   "extra": [],
+   "timeout": 20
+  },
+  {
+   "event": "Stop",
+   "matcher": "",
+   "flavour": "powershell",
+   "script": "context-watch.ps1",
+   "extra": [],
+   "timeout": 20
+  },
+  {
+   "event": "Stop",
+   "matcher": "",
+   "flavour": "bash",
+   "script": "completion-audit.sh",
+   "extra": [],
+   "timeout": 60
+  },
+  {
+   "event": "Stop",
+   "matcher": "",
+   "flavour": "powershell",
+   "script": "completion-audit.ps1",
+   "extra": [],
+   "timeout": 60
+  }
+ ]
+}

@@ -13,6 +13,7 @@ environment variable or flag that moves it. Every repository is built under
 tmp_path; nothing touches the real one or ~/.claude.
 """
 import datetime
+import hashlib
 import http.server
 import json
 import os
@@ -153,7 +154,7 @@ def test_resolve_reads_a_bad_override_as_strictest_and_keeps_the_other():
         {"approval": crew_sleep.STRICTEST, "questions": "self"}, True)
 
 
-@pytest.mark.parametrize("key", ["reviewPolicy"])  # L-0654 landed `deploy`, L-0656 `notifyHold`
+@pytest.mark.parametrize("key", ["reviewPolicy"])  # L-0654 landed `deploy`
 def test_resolve_names_a_key_this_version_does_not_have(key):
     got = crew_sleep.resolve(_night(**{key: "x"}), NIGHT, crew_autopilot.POLICIES)
 
@@ -1904,7 +1905,7 @@ def test_two_processes_append_whole_lines(tmp_path, clock):
 # --- L-0656: held pings while asleep, and the morning summary sent once -------------------------
 
 TOKEN = "123456789:" + "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
-HOLDING = {"schedule": "22:00-07:00", "notifyHold": True}
+HOLDING = {"schedule": "22:00-07:00"}
 
 
 @pytest.fixture(name="wire")
@@ -1912,7 +1913,7 @@ def _wire(monkeypatch):
     """A Telegram notify config and a transport that records instead of sending."""
     sent = []
     cfg = {"provider": "telegram", "tokenEnv": "CREW_TEST_TG_TOKEN", "chatId": "4242",
-           "events": list(crew_notify.EVENTS), "realertHours": 6}
+           "events": list(crew_notify.EVENTS)}
     monkeypatch.setenv("CREW_TEST_TG_TOKEN", TOKEN)
     monkeypatch.setattr(crew_notify, "effective_config", lambda root: (dict(cfg), []))
     monkeypatch.setattr(crew_notify, "_telegram",
@@ -1924,47 +1925,28 @@ def _held(root):
     return crew_notify_hold.count(str(root))[0]
 
 
-def test_asleep_resolve_reads_notify_hold_and_names_no_missing_key():
-    got = crew_sleep.resolve(dict(HOLDING), NIGHT, crew_autopilot.POLICIES)
-
-    assert (got["notifyHold"], [w for w in got["warnings"] if "notifyHold" in w]) == (True, [])
-
-
-@pytest.mark.parametrize("value", [False, "true", 1, [True], {"on": True}])
-def test_a_notify_hold_that_is_not_true_holds_nothing(value):
-    got = crew_sleep.resolve(dict(HOLDING, notifyHold=value), NIGHT, crew_autopilot.POLICIES)
-
-    assert (got["notifyHold"], [w for w in got["warnings"] if "notifyHold" in w
-                                and "no ping is held" in w] != []) == (None, True)
+def _hold(root, *messages):
+    """A held-ping record as an earlier version wrote it (nothing holds a ping now)."""
+    folder = os.path.join(str(root), ".work", "autopilot")
+    os.makedirs(folder, exist_ok=True)
+    keys = {hashlib.sha256(m.encode("utf-8")).hexdigest(): "2026-10-04T23:00:00+00:00"
+            for m in messages}
+    _write(os.path.join(folder, crew_notify_hold.HELD_FILE),
+           json.dumps({"keys": keys, "first": "2026-10-04T23:00:00+00:00",
+                       "last": "2026-10-04T23:00:00+00:00"}))
 
 
 @pytest.mark.parametrize("event,kind", [("question", "ask"), ("question", "permission"),
                                         ("blocker", "approval"), ("blocker", "rounds")])
-def test_held_ping_is_not_sent_asleep(tmp_path, clock, wire, event, kind):
-    """Must-block: asleep with notifyHold, a waiting-on-you ping sends nothing
-    and the held count rises by one; the same ping again counts once."""
+def test_notify_hold_is_constant(tmp_path, clock, wire, event, kind):
     clock(NIGHT)
-    root = _repo(tmp_path, sleep=dict(HOLDING))
+    root = _repo(tmp_path, sleep=dict(HOLDING, notifyHold=True))
 
-    first = crew_notify.send(str(root), event, "Claude needs your permission", kind=kind)
-    again = crew_notify.send(str(root), event, "Claude needs your permission", kind=kind)
-    other = crew_notify.send(str(root), event, "another question", kind=kind)
+    got = crew_notify.send(str(root), event, "Claude needs your permission", kind=kind)
+    resolved = crew_sleep.resolve(dict(HOLDING, notifyHold=True), NIGHT, crew_autopilot.POLICIES)
 
-    assert (first, again, other, wire, _held(root)) == ("held", "held", "held", [], 2)
-
-
-@pytest.mark.parametrize("event,kind,outcome", [
-    ("deploy", None, "fail"), ("deploy", None, None), ("deploy", None, "pass"),
-    ("blocker", "gate", None), ("blocker", "lane", None), ("blocker", "lane-unknown", None),
-    ("blocker", None, None), ("blocker", "made-up", None)])
-def test_failure_ping_is_sent_asleep(tmp_path, clock, wire, event, kind, outcome):
-    """Must-allow: a failure (and anything not on the holdable list) is sent at once."""
-    clock(NIGHT)
-    root = _repo(tmp_path, sleep=dict(HOLDING))
-
-    got = crew_notify.send(str(root), event, "qa abc - gate 3", kind=kind, outcome=outcome)
-
-    assert (got, len(wire), _held(root)) == ("sent", 1, 0)
+    assert (crew_state.AUTOPILOT_NOTIFY_HOLD, got, len(wire), _held(root),
+            "notifyHold" in resolved) == (None, "sent", 1, 0, False)
 
 
 def _manual(root, state, at=DAY, hours=4):
@@ -1973,32 +1955,6 @@ def _manual(root, state, at=DAY, hours=4):
               "until": (when + datetime.timedelta(hours=hours)).isoformat()}
     _write(os.path.join(crew_ticket.state_dir(str(root)), crew_sleep.MANUAL_FILE),
            json.dumps(record))
-
-
-@pytest.mark.parametrize("case", ["awake", "unknown-schedule", "hold-null", "hold-string",
-                                  "not-armed", "manual-outside-window", "settings-raises",
-                                  "manual-wake"])
-def test_hold_is_off_awake_and_when_unknown(tmp_path, clock, wire, monkeypatch, case):
-    """Must-allow: awake, could-not-tell, no hold, not armed, a manual sleep outside the
-    window (tighten-only until L-1504) or a crash while deciding - every ping sends."""
-    clock(DAY if case in ("awake", "manual-outside-window") else NIGHT)
-    sleep = {"awake": HOLDING, "unknown-schedule": dict(HOLDING, schedule="25:00-07:00"),
-             "hold-null": dict(HOLDING, notifyHold=None),
-             "hold-string": dict(HOLDING, notifyHold="true"), "not-armed": HOLDING,
-             "manual-outside-window": dict(HOLDING, approval="human"),
-             "settings-raises": HOLDING, "manual-wake": HOLDING}[case]
-    root = _repo(tmp_path, sleep=dict(sleep), armed=case != "not-armed", approval="risk")
-    if case == "manual-outside-window":
-        _manual(root, "asleep")
-    if case == "manual-wake":
-        _manual(root, "awake", at=NIGHT)
-    if case == "settings-raises":
-        monkeypatch.setattr(crew_autopilot, "settings",
-                            lambda root: (_ for _ in ()).throw(OSError("boom")))
-
-    got = crew_notify.send(str(root), "question", "Claude needs your permission")
-
-    assert (got, len(wire), _held(root)) == ("sent", 1, 0)
 
 
 @pytest.mark.parametrize("how", ["directory", "not-json"])
@@ -2027,7 +1983,7 @@ def test_morning_summary_is_sent_once(tmp_path, clock, wire, capsys):
     clock(NIGHT)
     root = _repo(tmp_path, approval="human", sleep=dict(HOLDING, approval="self"), risk="low")
     crew_autopilot.approve(str(root), T)
-    crew_notify.send(str(root), "question", "Claude needs your permission")
+    _hold(root, "Claude needs your permission")
     clock(DAY)
     warnings = crew_autopilot.settings(str(root))["warnings"]
 
@@ -2046,7 +2002,7 @@ def test_morning_summary_is_sent_once(tmp_path, clock, wire, capsys):
 def test_held_pings_alone_make_a_summary_and_wake_sends_it(tmp_path, clock, wire, capsys):
     clock(NIGHT)
     root = _repo(tmp_path, sleep=dict(HOLDING))
-    crew_notify.send(str(root), "blocker", "plan waiting", kind="approval")
+    _hold(root, "plan waiting")
     asleep = _cmd(root, capsys, "sleep-summary")
 
     code, out = _cmd(root, capsys, "wake")
@@ -2058,7 +2014,7 @@ def test_held_pings_alone_make_a_summary_and_wake_sends_it(tmp_path, clock, wire
 def test_summary_asleep_sends_nothing(tmp_path, clock, wire, capsys):
     clock(NIGHT)
     root = _repo(tmp_path, sleep=dict(HOLDING))
-    crew_notify.send(str(root), "question", "Claude needs your permission")
+    _hold(root, "Claude needs your permission")
 
     code, out = _cmd(root, capsys, "sleep-summary")
 
@@ -2068,7 +2024,7 @@ def test_summary_asleep_sends_nothing(tmp_path, clock, wire, capsys):
 def test_summary_lock_held_sends_nothing(tmp_path, clock, wire, capsys, monkeypatch):
     clock(NIGHT)
     root = _repo(tmp_path, sleep=dict(HOLDING))
-    crew_notify.send(str(root), "question", "Claude needs your permission")
+    _hold(root, "Claude needs your permission")
     clock(DAY)
     monkeypatch.setattr(crew_notify, "LOCK_WAIT", 0.1)
 
@@ -2123,11 +2079,11 @@ def _around_now():
 
 
 def _wrapper_repo(tmp_path):
-    root = _repo(tmp_path, sleep={"schedule": _around_now(), "notifyHold": True})
+    root = _repo(tmp_path, sleep={"schedule": _around_now()})
     with open(str(root / ".crew" / "config.json"), encoding="utf-8") as handle:
         config = json.load(handle)
     config["notify"] = {"provider": "telegram", "chatId": "4242",
-                        "events": ["deploy", "question"], "realertHours": 6}
+                        "events": ["deploy", "question"]}
     _write(root / ".crew" / "config.json", json.dumps(config))
     home = tmp_path / "home"
     _write(home / ".claude" / "crew" / "config.json",
@@ -2135,18 +2091,12 @@ def _wrapper_repo(tmp_path):
     return root, home
 
 
-def _wrapper(flavour, root, home, base, *args):
+def _wrapper(_flavour, root, home, base, *args):
     scripts = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
-    if flavour == "sh":
-        cmd = [crew_fixtures.resolve_bash(), os.path.join(scripts, "notify.sh"), *args]
-    else:
-        cmd = [crew_fixtures.resolve_pwsh(), "-NoProfile", "-File",
-               os.path.join(scripts, "notify.ps1"), *args]
+    cmd = [crew_fixtures.resolve_bash(), os.path.join(scripts, "notify.sh"), *args]
     env = dict(os.environ, CLAUDE_PROJECT_DIR=str(root), CREW_NOTIFY_TELEGRAM_BASE=base,
                CREW_TEST_TG_TOKEN=TOKEN, HOME=str(home), USERPROFILE=str(home))
     env.pop("OS", None)
-    if flavour == "ps1":
-        env["OS"] = "Windows_NT"
     return subprocess.run(cmd, cwd=str(root), env=env, capture_output=True,
                           stdin=subprocess.DEVNULL, check=False, timeout=120)
 
@@ -2154,19 +2104,16 @@ def _wrapper(flavour, root, home, base, *args):
 @pytest.mark.parametrize("flavour", [
     pytest.param("sh", marks=pytest.mark.skipif(crew_fixtures.resolve_bash() is None,
                                                  reason="needs bash - NOT run")),
-    pytest.param("ps1", marks=pytest.mark.skipif(crew_fixtures.resolve_pwsh() is None,
-                                                  reason="needs pwsh - NOT run")),
 ])
-def test_held_ping_is_not_sent_asleep_through_the_wrappers(tmp_path, fake, flavour):
+def test_a_question_ping_is_sent_asleep_through_the_wrappers(tmp_path, fake, flavour):
     root, home = _wrapper_repo(tmp_path)
 
     asked = _wrapper(flavour, root, home, fake, "question", "Claude needs your permission")
-    held = (list(_FakeTelegram.texts), _held(root))
     failed = _wrapper(flavour, root, home, fake, "deploy", "qa abc - gate 3", "--outcome", "fail")
 
-    assert (asked.returncode, held, failed.returncode,
+    assert (asked.returncode, failed.returncode,
             [text.split(" [")[0] for text in _FakeTelegram.texts], _held(root)) == (
-        0, ([], 1), 0, ["Deploy FAILED"], 1)
+        0, 0, ["Question", "Deploy FAILED"], 0)
 
 
 # --- review round 2 (L-0653) / round 1 (L-0656) ---------------------------------------------
@@ -2176,7 +2123,7 @@ def test_a_failed_summary_send_keeps_everything_pending(tmp_path, clock, wire, c
     clock(NIGHT)
     root = _repo(tmp_path, approval="human", sleep=dict(HOLDING, approval="self"), risk="low")
     crew_autopilot.approve(str(root), T)
-    crew_notify.send(str(root), "question", "Claude needs your permission")
+    _hold(root, "Claude needs your permission")
     clock(DAY)
     monkeypatch.setattr(crew_notify, "_telegram", lambda *a: (False, "HTTP 500"))
 
@@ -2203,9 +2150,9 @@ def test_a_long_summary_still_carries_the_held_count(tmp_path, wire):
 def test_take_removes_only_the_reported_pings(tmp_path, clock, wire):
     clock(NIGHT)
     root = _repo(tmp_path, sleep=dict(HOLDING))
-    crew_notify.send(str(root), "question", "first")
+    _hold(root, "first")
     reported = sorted(crew_notify_hold.read(str(root))[0]["keys"])
-    crew_notify.send(str(root), "question", "second, held while the summary was sent")
+    _hold(root, "first", "second, held while the summary was sent")
 
     assert (crew_notify_hold.take(str(root), reported), _held(root)) == (1, 1)
 
@@ -2259,7 +2206,7 @@ def test_an_unknown_sleep_state_sends_and_marks_nothing(tmp_path, clock, wire, c
     clock(NIGHT)
     root = _repo(tmp_path, approval="human", sleep=dict(HOLDING, approval="self"), risk="low")
     crew_autopilot.approve(str(root), T)
-    crew_notify.send(str(root), "question", "Claude needs your permission")
+    _hold(root, "Claude needs your permission")
     with open(str(root / ".crew" / "config.json"), encoding="utf-8") as handle:
         config = json.load(handle)
     config["autopilot"]["sleep"]["schedule"] = "25:00-07:00"
@@ -2279,7 +2226,7 @@ def test_a_failed_cleanup_after_a_send_is_finished_never_resent(tmp_path, clock,
     """Must-block (L-0653 r3, L-0656 r2): the delivered record stops a second send."""
     clock(NIGHT)
     root = _repo(tmp_path, sleep=dict(HOLDING))
-    crew_notify.send(str(root), "question", "Claude needs your permission")
+    _hold(root, "Claude needs your permission")
     clock(DAY)
     real = crew_notify_hold.take
     monkeypatch.setattr(crew_notify_hold, "take", lambda *a: None)
@@ -2308,7 +2255,7 @@ def test_an_unknown_provider_keeps_the_summary_pending(tmp_path, clock, wire, ca
     """L-0656 review r3 (must-block): a provider crew does not know is not "off"."""
     clock(NIGHT)
     root = _repo(tmp_path, sleep=dict(HOLDING))
-    crew_notify.send(str(root), "question", "Claude needs your permission")
+    _hold(root, "Claude needs your permission")
     clock(DAY)
     monkeypatch.setattr(crew_notify, "effective_config", lambda root: (
         {"provider": "pigeon", "events": list(crew_notify.EVENTS)}, []))
@@ -2316,20 +2263,6 @@ def test_an_unknown_provider_keeps_the_summary_pending(tmp_path, clock, wire, ca
     code, out = _cmd(root, capsys, "sleep-summary")
 
     assert (code, "unknown notify.provider" in out, _held(root)) == (1, True, 1)
-
-
-def test_a_ping_already_sent_before_the_window_is_not_counted(tmp_path, clock, wire):
-    """L-0656 review r3: the same waiting episode, sent awake, repeated asleep."""
-    clock(DAY)
-    root = _repo(tmp_path, sleep=dict(HOLDING))
-    episode = ("s1", "p1")
-    awake = crew_notify.send(str(root), "question", "Claude needs your permission",
-                             episode=episode)
-    clock(NIGHT)
-    again = crew_notify.send(str(root), "question", "Claude needs your permission",
-                             episode=episode)
-
-    assert (awake, again, len(wire), _held(root)) == ("sent", "episode", 1, 0)
 
 
 def test_a_long_summary_marks_only_the_decisions_it_carries(tmp_path, clock, wire, capsys):
@@ -2370,26 +2303,13 @@ def test_a_manual_sleep_note_names_manual_not_the_schedule(tmp_path, clock, caps
     assert (code, crew_sleep.unreported(_log_text(root))[0]["setting"]) == (0, "sleep=manual")
 
 
-def test_holding_never_hides_a_notifier_that_cannot_send(tmp_path, clock, monkeypatch):
-    """L-0656 review r4: missing credentials surface, asleep or not."""
-    clock(NIGHT)
-    root = _repo(tmp_path, sleep=dict(HOLDING))
-    monkeypatch.delenv("CREW_TEST_TG_TOKEN", raising=False)
-    monkeypatch.setattr(crew_notify, "effective_config", lambda root: (
-        {"provider": "telegram", "tokenEnv": "CREW_TEST_TG_TOKEN", "chatId": "1",
-         "events": list(crew_notify.EVENTS)}, []))
-
-    assert (crew_notify.send(str(root), "question", "q"), _held(root)) == (
-        "missing-credentials", 0)
-
-
 def test_held_pings_belong_to_their_worktree(tmp_path, clock, wire):
     """L-0656 review r5 (must-block): another worktree's summary never clears them."""
     clock(NIGHT)
     root = _repo(tmp_path, sleep=dict(HOLDING))
     other = tmp_path / "other-worktree"
     os.system(f'git -C "{root}" worktree add -q --detach "{other}"')
-    crew_notify.send(str(root), "question", "Claude needs your permission")
+    _hold(root, "Claude needs your permission")
 
     assert (_held(root), crew_notify_hold.count(str(other))[0],
             os.path.isfile(os.path.join(str(root), ".work", "autopilot", "held.json"))) == (
@@ -2445,7 +2365,7 @@ def test_a_summary_is_recorded_before_it_is_sent(tmp_path, clock, wire, capsys, 
     that died after the send is taken as delivered, never sent twice."""
     clock(NIGHT)
     root = _repo(tmp_path, sleep=dict(HOLDING))
-    crew_notify.send(str(root), "question", "Claude needs your permission")
+    _hold(root, "Claude needs your permission")
     clock(DAY)
     real = crew_notify_hold.write_delivered
     monkeypatch.setattr(crew_notify_hold, "write_delivered",
@@ -2574,7 +2494,7 @@ def test_a_run_that_died_mid_send_is_said_and_printed_never_resent(tmp_path, clo
     clock(NIGHT)
     root = _repo(tmp_path, approval="human", sleep=dict(HOLDING, approval="self"), risk="low")
     crew_autopilot.approve(str(root), T)
-    crew_notify.send(str(root), "question", "Claude needs your permission")
+    _hold(root, "Claude needs your permission")
     clock(DAY)
     monkeypatch.setattr(crew_notify, "_telegram",
                         lambda *a: (_ for _ in ()).throw(KeyboardInterrupt()))

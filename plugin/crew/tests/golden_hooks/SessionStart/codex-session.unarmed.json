@@ -1,0 +1,25 @@
+{
+ "armed": false,
+ "case": "codex-session",
+ "dirty": "",
+ "event": "SessionStart",
+ "harness": "codex",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"SessionStart\", \"source\": \"startup\", \"session_id\": \"s-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "crew-context.sh",
+    "--harness",
+    "codex"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

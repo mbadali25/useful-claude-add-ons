@@ -122,7 +122,7 @@ def test_commits_landed_past_the_noted_head_is_stale(tmp_path):
 def test_two_commits_behind_stays_under_the_default_limit(tmp_path):
     # The default limit is 3 -- two real commits landing on top of a note
     # (the exact case that motivated this feature) must not itself trip the
-    # default; a repo that wants it tighter sets maxCommitsBehind.
+    # default.
     root = crew_fixtures.make_repo(tmp_path)
     now = time.time()
     head = crew_fixtures.head_sha(root, length=40)
@@ -138,7 +138,7 @@ def test_two_commits_behind_stays_under_the_default_limit(tmp_path):
     assert got["stale"] is False
 
 
-def test_config_can_tighten_the_commits_behind_limit(tmp_path):
+def test_max_commits_behind_is_constant(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
     now = time.time()
     head = crew_fixtures.head_sha(root, length=40)
@@ -151,7 +151,20 @@ def test_config_can_tighten_the_commits_behind_limit(tmp_path):
         crew_fixtures.commit_with_date(str(root), f"file{i}.txt", _iso(now))
     cfg = {"context": {"staleHandoff": {"maxCommitsBehind": 2}}}
     got = crew_state.handoff_staleness(str(root), _read(path), cfg, now=now)
-    assert got["stale"] is True
+    assert got["stale"] is False
+
+
+def test_max_age_hours_is_constant(tmp_path):
+    root = crew_fixtures.make_repo(tmp_path)
+    now = time.time()
+    head = crew_fixtures.head_sha(root, length=40)
+    path = _write_handoff(
+        root, written=_iso(now - 3 * 3600), branch=_current_branch(root),
+        head=head,
+    )
+    cfg = {"context": {"staleHandoff": {"maxAgeHours": 1}}}
+    got = crew_state.handoff_staleness(str(root), _read(path), cfg, now=now)
+    assert got["stale"] is False
 
 
 def test_branch_mismatch_is_stale(tmp_path):
@@ -210,12 +223,12 @@ def test_mtime_is_the_fallback_age_signal_when_written_is_absent(tmp_path):
     assert any("file mtime" in r for r in got["reasons"])
 
 
-def test_handoff_path_honours_the_configured_override(tmp_path):
+def test_handoff_path_is_constant(tmp_path):
     root = crew_fixtures.make_repo(tmp_path)
     cfg = {"context": {"handoffPath": ".work/CUSTOM.md"}}
     got = crew_state.handoff_path(str(root), cfg)
     assert got == os.path.realpath(
-        os.path.join(str(root), ".work", "CUSTOM.md")
+        os.path.join(str(root), ".work", "HANDOFF.md")
     )
 
 

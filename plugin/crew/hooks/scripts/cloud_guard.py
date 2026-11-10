@@ -131,8 +131,8 @@ import crew_common
 import crew_config
 import crew_state
 from crew_guards import _head_name as _guards_head_name
-from crew_guards import command_trigger, first_non_literal, ps_trigger, \
-    tf_skip_options as _tf_skip_options, WRAPPER_TABLES, option_words, \
+from crew_guards import InterpreterReason, command_trigger, first_non_literal, \
+    ps_trigger, tf_skip_options as _tf_skip_options, WRAPPER_TABLES, option_words, \
     wrapper_rest, tg_other_op, ps_head_slot, tg_exec_rest
 from crew_dispatch import DEPLOY_RULE, ENV_NONPROD, ENV_PROD, ENV_UNKNOWN, ENV_UNLISTED, dispatch_answer, \
     dispatch_gate, dispatch_text, fed_dispatch, judge_dispatch
@@ -2807,7 +2807,7 @@ def _literal_gate(shell, text):
     if found is None:
         return None
     named, unseen = found
-    word = first_non_literal(text, shell)
+    word = None if isinstance(unseen, InterpreterReason) else first_non_literal(text, shell)
     if word is not None:
         shown = word if len(word) <= 40 else word[:37] + "..."
         what = ("a terraform-family line with a word that is not a plain "

@@ -25,22 +25,22 @@ summary above or below it, and do not pad it with advice.
 | Line | Source | When it says "unknown" |
 |---|---|---|
 | header | `git rev-parse`, `git status --porcelain` (no index refresh) | not a git repo |
-| `inert` | `crew_config.inert_settings`: each setting this crew does not act on, `key=value (ticket)`; absent when none (CONFIG.md §20) | `could not tell (...)` when the check failed |
+| `inert` | `crew_config.inert_settings`: each setting this crew does not act on, `key=value (ticket)`; absent when none (docs/crew/config-rationale.md) | `could not tell (...)` when the check failed |
 | `config` | `.crew/crew.json` (where `/crew:migrate` ran) or else `.crew/config.json` (what `/crew:init` writes; `- run /crew:migrate` only for a 0.20 setup) - in a linked worktree with neither, the main checkout's, shown on a second `config` line (`inherited from the main checkout (<path>) ...`, or `could not tell (...)` when git cannot name it); a linked worktree whose own file is in force while the main checkout also has one gets `... the main checkout's (<path>) is not read ...` there, naming the delete that inherits (a crew <= 1.0.59 heal wrote such defaults) | JSON unreadable |
-| `roster` | `agents` in crew.json, or `roles` in config.json, against the 1.0 four | - |
+| `roster` | `agents` in crew.json against the 1.0 four (crew.json only) | - |
 | `tickets` / `open` / `owner` | `.work/tickets/` (live) and `.work/tickets/Complete/` (archived, counted apart), `.work/INDEX.md`; `owner` lists `needs-owner` rows, and `cancelled` / `superseded` rows are on no line | `archived: could not tell` when `Complete/` cannot be listed |
 | `waiting` | `crew_autopilot_owner.owner_items` (L-0551): how many open tickets are stopped on you, from autopilot's own phase read; `, H held` (a hold whose revisit date is ahead), `, B blocked` (a dependency open), `, C in review not read` and `, U could not tell` only when non-zero | no `.work/INDEX.md`, or autopilot's module cannot be read |
 | `review` | review ledgers under the git common dir, newest three: state, rounds used of the budget, refunded tool-failure rounds (`review_ledger.summary`), and `same-family round` when one was. Then `same-family: N of M completed rounds (P%)` over every ledger (L-0712; target under 5%): a round is same-family when its provider or model family is the author's (`claude`) | a ledger that will not parse; a round with no provider (`could not tell`, never counted independent) |
 | `in-flight` | T-0049's markers under `<git-common-dir>/crew/inflight/` (`crew_inflight.survey`): ticket, state, runner, since, and for stale or unknown the owner's `clear` command; at most 5, then `+N more`; `none` when there are none | the directory unreadable, or `crew_inflight` not importable |
 | `verify` | `.crew/.verify-gate.record.json`, counted by status | record unreadable |
-| `shell` | Windows only: `shellRoute` config and the `crew_shell.py probe` cache; runs no `wsl.exe` or `pwsh` | never probed - run /crew:config |
+| `shell` | Windows only: the route `crew_shell.py` takes, from its `probe` cache; runs no `wsl.exe` or `pwsh` | never probed - run /crew:config |
 | `agents` | `verify_agents.py`: agents a `.crew/verify.json` rule names that are not installed here (`MISSING <name> (verify.json rule: <paths>)`, at most three names); managed-policy and `--agents` agents are not checked | a plugin registry, settings scope or verify.json that will not parse |
 | `codemap` | anchors checked by path diff, as `crew_freshness.read_knowledge` does | no git |
 | `gitignore` | `crew_gitignore.py summary`: `current` (`current except N conflict(s)` when a human `!` line kept a row out), `N missing (<langs>)`, or `owner: ...` (a tracked secret-shaped file); measured with `git check-ignore`, read-only | git failed or timed out, `.gitignore` not UTF-8, a malformed managed block |
 | `graph-ignore` | `crew_graph_ignore.py`: a secrets-denylisted path on disk that `.graphifyignore` does not exclude reads `UNCOVERED` with the paths and the `--write` fix (which never overrides a `!` line of yours: it names the line instead) | git missing, a settings file that will not parse, a nested `.graphifyignore`, an unexcluded nested repository, a symlink leaving the repo, a deny-all `Read` rule |
 | `metrics` | `.crew/metrics.jsonl`, else `.crew/metrics.md` - in a linked worktree, the main checkout's `.crew/`, named by its path; this worktree's own copies, if any, are named on the same line as `not counted` | `could not tell (...)` when git cannot name the main checkout; nothing is read, and the worktree's own copy is never the fallback |
 | `handoff` | `.work/HANDOFF.md` present | - |
-| `migrate` | a backup under `.crew/backups/` whose apply never finished | - |
+| `migrate` | a backup under `.crew/backups/` whose apply never finished. A stray file there, or a folder with no manifest, is not a backup and is skipped | `could not tell - <path>: <why>` for an entry it cannot read (a symlinked or unreadable manifest, `.crew/backups` itself unlistable); the rest of the report still prints |
 | `memory` | `crew_context.py --stats`, only with `--memory` | hook not installed |
 
 ## `--memory`
@@ -78,6 +78,7 @@ The report is facts, not instructions. When a line points somewhere:
 - `run /crew:migrate` - `.crew/config.json` still holds a 0.20 setup (a role 1.0 removed, a schema below 7, `.work/tickets/<ID>.md` files, a PM journal). A config `/crew:init` wrote shows `config   .crew/config.json schema 7`, no prompt.
 - `run /crew:init` - no crew config at all.
 - `INTERRUPTED apply` - run `/crew:migrate --rollback <dir>` before anything else.
+- `migrate  could not tell` - fix or remove the named entry; `/crew:migrate` lists it as a conflict until you do.
 - `gitignore N missing` - `crew_gitignore.py apply --root .` outside a ticket, or the next `/crew:onboard`.
   `owner:` - a secret is committed: rotation and history are the owner's call, never an ignore line.
 - `behind: <subsystem>` - `/crew:onboard --refresh <subsystem>` when the

@@ -138,11 +138,11 @@ def event_key(hook, raw):
 
 
 def designated(flavour):
-    """The one flavour that emits when the claim store is unusable. Both
-    flavours compute this from the environment alone."""
-    if flavour not in ("sh", "ps1"):
-        return True
-    return flavour == ("ps1" if os.environ.get("OS") == "Windows_NT" else "sh")
+    """Whether this flavour emits when the claim store is unusable. The sh
+    flavour is the only hook flavour left on every OS (L-0727 slice 3 deleted
+    the ps1 twins, and on Windows the dispatcher runs the .sh under Git Bash),
+    so it always emits; a stray ps1 caller stands down."""
+    return flavour != "ps1"
 
 
 def _prune(directory, now):

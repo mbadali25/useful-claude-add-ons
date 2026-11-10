@@ -1,0 +1,23 @@
+{
+  "name": "css-lsp",
+  "version": "0.1.0",
+  "description": "CSS language server (vscode-css-language-server, from the npm package vscode-langservers-extracted) for code intelligence in .css, .scss and .less files - diagnostics, hover, definitions, references, symbols and formatting. Registers an LSP server only: no hooks, commands, agents or skills. Needs Node.js and a global 'vscode-langservers-extracted' install; the plugin does not install either.",
+  "author": {
+    "name": "Matthew Badali",
+    "url": "https://github.com/mbadali25/useful-claude-add-ons"
+  },
+  "license": "GPL-2.0-only",
+  "lspServers": {
+    "css": {
+      "command": "vscode-css-language-server",
+      "args": [
+        "--stdio"
+      ],
+      "extensionToLanguage": {
+        ".css": "css",
+        ".scss": "scss",
+        ".less": "less"
+      }
+    }
+  }
+}

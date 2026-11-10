@@ -1,0 +1,2 @@
+scope-base: 47a280738dd3 (the commit T1 started from, recorded by /crew:work)
+review-patch: 424 bytes in 1 part(s), bundle=346ffe07a5f3 base=47a280738dd3 head=997585253f69 branch=t1 dirty=False merged-main=07c3fb3e32da dropped=1 diffed-from-merged=0

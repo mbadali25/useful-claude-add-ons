@@ -48,14 +48,14 @@ unreadable spec or Touch list prints every set under `UNKNOWN:` and exits 1.
 
 ## At /crew:plan
 
-Each step carries a line after `Risk:`:
-
-    Standards: GEN-01, GEN-07     (or: none - <why>)
-
-naming the standards the step's Files and Risk trigger (read each standard's
-**Applies when.**). The plan's self-review asks whether every step names them.
-Naming them at plan time is what puts the self-check's questions in front of
-the person writing the code, before review asks them.
+Each step carries `Lines:`, a kind tag on each production Files entry, and its standards:
+```
+Files: `src/ids.py` [parser], `tests/test_ids.py`
+Lines: 20
+Standards: GEN-01, GEN-07     (or: none - <why>)
+```
+Name the standards the step's Files and Risk trigger (read each one's **Applies when.**);
+the plan's self-review asks whether every step does, before review asks.
 
 ## At /crew:implement: the required self-check
 

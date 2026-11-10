@@ -1,0 +1,7 @@
+# Hosts the eval proxy lets an arm reach (CONNECT, port 443 only). One per line;
+# a leading dot also matches subdomains. Everything else is refused and logged,
+# and a logged refusal is contamination evidence for the grader.
+api.anthropic.com
+chatgpt.com
+.chatgpt.com
+api.openai.com

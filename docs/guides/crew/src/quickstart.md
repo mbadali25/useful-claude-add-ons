@@ -168,8 +168,7 @@ turned on per machine, in `~/.claude/crew/config.json` (Windows:
 
 To turn it off again, set `context.autoClear.enabled` to `false` in the same file. To turn it off in
 one repository, set it to `false` in that repository's `.crew/config.json`; setting it to `true`
-there does not turn it on. On Windows Terminal, also set `context.autoClear.windowTitle` to a
-substring of this session's tab title. See `auto-cycle.md` for the full key list and for what each
+there does not turn it on. See `auto-cycle.md` for the full key list and for what each
 line in `.crew/.autoclear.log` means.
 
 Check: after a wrap-up, `.crew/.autoclear.log` has a `sent` line or a `refusing - <reason>` line.
@@ -181,6 +180,7 @@ Check: after a wrap-up, `.crew/.autoclear.log` has a `sent` line or a `refusing 
 | `/crew:status` is not a known command | `claude plugin update crew@useful-claude-add-ons`, then restart `claude` |
 | `migrate` reports a `CONFLICT` | read the path it names; apply refuses until it is resolved |
 | `migrate` reports an interrupted apply | `/crew:migrate --rollback <dir>` first |
+| `migrate  could not tell - <path>: <why>` | fix or remove the named entry under `.crew/backups/`; the rest of the report is unaffected |
 | a crew command cannot find Python | install Python 3; on Windows make `python` or `py -3` work |
 
 See [Troubleshooting](troubleshooting.md) for the rest.

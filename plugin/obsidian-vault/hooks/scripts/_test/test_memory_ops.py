@@ -409,8 +409,13 @@ def _t_recall_relevance():  # pylint: disable=too-many-locals,too-many-statement
                 archived: "zebra crossing\n", "keep.md": "zebra crossing\n"}),
             "huge": sb.vault("huge", {".obsidian/app.json": "[" * 100000,
                                       "keep.md": "zebra crossing\n"}),
+            # One spelling of the sessions folder, and it is not the lowercase one the
+            # prefixes are written in. `wiki/sessions/Archive/` beside `wiki/Sessions/`
+            # is two folders on Linux and ONE on a case-insensitive filesystem (Windows,
+            # macOS), where the first spelling created wins and the note comes back as
+            # `wiki/sessions/s.md`: the fixture, not recall, was wrong there.
             "case": sb.vault("case", {
-                "wiki/sessions/Archive/2026-07/Session - y.md": "# quokka\nquokka\nquokka\n",
+                "wiki/Sessions/Archive/2026-07/Session - y.md": "# quokka\nquokka\nquokka\n",
                 "wiki/Sessions/s.md": "# quokka\nquokka\n",
                 "wiki/Concepts/c.md": "a quokka\n"}),
             "links": sb.vault("links", {archived: "a narwhal\n", "wiki/real.md": "a narwhal\n"}),

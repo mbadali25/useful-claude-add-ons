@@ -602,6 +602,67 @@ def test_requests_echo_their_request_id(tmp_path, request_type, answer_type, ext
     assert "request_id" not in without_id
 
 
+def _history_answers(tmp_path, *limits, stored=3):
+    """Alice's answers to one history request per limit, after she sent Bob `stored` messages.
+
+    A limit of ... sends the request without a 'limit' key.
+    """
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(**FAST)) as server:
+            async with connect(server, h.ALICE_TOKEN) as alice:
+                await register(alice, h.ALICE)
+                for i in range(stored):
+                    await send(alice, type="message", to=h.BOB, content=f"m{i}")
+                answers = []
+                for limit in limits:
+                    extra = {} if limit is ... else {"limit": limit}
+                    await send(alice, type="history", peer=h.BOB, **extra)
+                    frame = await recv(alice)
+                    while frame.get("type") not in ("history", "error"):
+                        frame = await recv(alice)
+                    answers.append(frame)
+                return answers
+
+    return run(go())
+
+
+def test_history_limit_returns_the_latest_messages(tmp_path):
+    two, everything, default = _history_answers(tmp_path, 2, ws_server.HISTORY_MAX_LIMIT, ...)
+    assert [m["content"] for m in two["messages"]] == ["m1", "m2"]
+    assert [m["content"] for m in everything["messages"]] == ["m0", "m1", "m2"]
+    assert [m["content"] for m in default["messages"]] == ["m0", "m1", "m2"]
+
+
+@pytest.mark.parametrize("limit", [
+    -1,  # SQLite reads LIMIT -1 as no limit: every stored message
+    0,
+    True,  # bool is an int subclass: True would read as LIMIT 1
+    1.5,
+    "10",
+    None,
+    10**6,  # over HISTORY_MAX_LIMIT
+])
+def test_history_rejects_an_invalid_limit(tmp_path, limit, caplog):
+    caplog.set_level(logging.WARNING, logger="server.websocket_server")
+    refused, after = _history_answers(tmp_path, limit, 1)
+    assert (refused["type"], refused["code"]) == ("error", "invalid_limit")
+    assert f"1 to {ws_server.HISTORY_MAX_LIMIT}" in refused["error"]
+    assert '"reason": "invalid_limit"' in caplog.text
+    # The connection survives the refusal
+    assert after["type"] == "history" and len(after["messages"]) == 1
+
+
+def test_history_all_rejects_a_bool_limit(tmp_path):
+    async def go():
+        async with running_bridge(tmp_path, limits=Limits(**FAST)) as server:
+            async with connect(server, h.OBSERVER_TOKEN) as obs:
+                await send(obs, type="history_all", since="2000-01-01", limit=True)
+                return await recv(obs)
+
+    frame = run(go())
+    assert frame["type"] == "error" and "limit" in frame["error"]
+
+
 def test_message_in_flight_to_a_holder_replaced_mid_send_reaches_the_new_holder_once(tmp_path):
     """The old holder's send fails after Bob reconnected (his replay skipped the in-flight row)."""
     from websockets.protocol import State  # pylint: disable=import-outside-toplevel

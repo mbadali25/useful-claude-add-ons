@@ -27,6 +27,8 @@ import re
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_config
+import crew_dropped
+import crew_guards
 
 _GUIDE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), os.pardir,
@@ -104,7 +106,17 @@ def test_every_config_key_the_guide_names_exists():
                 for leaf in leaves
                 for i in range(1, len(leaf.split(".")))}
 
-    missing = [c for c in candidates if c not in leaves and c not in prefixes]
+    overrides = {f"guards.overrides.{name}" for name in crew_guards.ALL_GUARD_NAMES}
+    lines = text.splitlines()
+
+    def _named_as_removed(key):
+        # A dropped key may be NAMED, but only on a line that says it is gone.
+        return key in crew_dropped.DROPPED and any(
+            f"`{key}`" in line and "removed" in line for line in lines)
+
+    missing = [c for c in candidates
+               if c not in leaves and c not in prefixes and c not in overrides
+               and not _named_as_removed(c)]
     assert not missing, (
         "troubleshooting.md names config key(s) that do not exist in "
         f"crew_config.default_config()/default_global_config(): {missing}")

@@ -4,10 +4,13 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from config_loader import DEFAULT_MAX_MESSAGE_BYTES, DEFAULT_MAX_STORED_PER_PEER, DEFAULT_RATE_PER_SECOND
-
-DEFAULT_MAX_UNREAD_PER_PEER = 500
-DEFAULT_MAX_UNREAD_BYTES_PER_PEER = 8 * 1024 * 1024
+from config_loader import (
+    DEFAULT_MAX_MESSAGE_BYTES,
+    DEFAULT_MAX_STORED_PER_PEER,
+    DEFAULT_MAX_UNREAD_BYTES_PER_PEER,
+    DEFAULT_MAX_UNREAD_PER_PEER,
+    DEFAULT_RATE_PER_SECOND,
+)
 
 
 @dataclass(frozen=True)

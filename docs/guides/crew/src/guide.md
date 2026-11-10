@@ -20,16 +20,34 @@ interactive session implements it, an independent reviewer reads the finished
 change, and deterministic gates block on failure instead of giving an
 opinion.
 
-crew 1.1 ships four agents. Each one exists because it buys something a
+crew 1.1 ships four agents (plus one transport agent, below). Each one exists because it buys something a
 prompt cannot: an isolated context window, a restricted tool set, or
 independent eyes.
 
 | Role | What it does | What it cannot do |
 |---|---|---|
-| `explorer` | Maps the code a ticket touches | No Write, Edit or Bash |
+| `explorer` | Maps the code a ticket touches | No Write or Edit; Bash only to hand its task to Kimi |
 | `reviewer` | The Claude rung of the review order, used when Codex or Kimi is not available | Writes nothing to the tree |
 | `security` | Read-only review of risky changes | No Write or Edit |
 | `researcher` | Reads external sources only | Does not edit the repo |
+
+A fifth file, `session-relay`, is not a role: it is a transport agent on Haiku 5.5 that carries messages between sessions (SendMessage and ListAgents only; no Read, Write, Edit or Bash). If ListAgents is unavailable at runtime, it still sends to the name exactly as given and marks that line `could not verify recipient` in its report.
+
+**The coordinator is a model pin, not a role.** Set `dev.roles.coordinator` (for example
+`{"provider": "claude", "model": "claude-opus-5-5"}`) and `dev.roles.developer` (for example
+`{"provider": "claude", "model": "claude-sonnet-5-5"}`) in `/crew:model`. A wave prints the
+coordinator pin and puts the developer model on every lane launch. Both default to unset, which
+changes nothing. A Claude pin takes a full Claude id or `opus`, `sonnet`, `haiku` or `fable`
+(Fable 5.1). Fable runs only when you pin it like this; crew never picks it for you.
+
+**Running agents on Kimi.** Claude Code runs subagents on Claude models only,
+so `explorer`, `researcher` and `security` can hand their task to the Kimi Code
+CLI instead. Pin one with
+`/crew:model dev.roles.explorer '{"provider": "kimi", "model": "k3"}'`. Kimi then
+answers read-only, and the agent falls back to Claude when Kimi cannot run. Its
+first line says which one ran. A Kimi `security` review is refused on code Kimi
+wrote, because the family that wrote a change may not judge it. Nothing is
+pinned until you pin it.
 
 The session you type into does the implementing. Nothing else is dispatched to
 write. Stack knowledge (Python, Bash, PowerShell, Terraform and others) loads
@@ -110,8 +128,10 @@ A ticket is a directory under `.work/tickets/` holding three files:
 - `spec.md`, written by `/crew:spec`: the contract, with six sections (Intent,
   Exclusions, Evidence, Unknowns, Touch, Acceptance checks). `## Touch` lists
   the paths the ticket may change.
-- `plan.md`, written by `/crew:plan`: the steps, each with its files, test,
-  risk and standards.
+- `plan.md`, written by `/crew:plan`: the steps, each with its files, a
+  projected line count (`Lines:`), test, risk and standards. A plan is meant to
+  stay at 300 production lines; this is stated to the planner and not yet checked
+  at approval.
 
 Then:
 
@@ -206,15 +226,23 @@ Source: `plugin/crew/hooks/scripts/scope_guard.py`,
 What is on by default, and what is not:
 
 - **Off until you arm it:** the scope guard (`scope.mode` is `off` unless
-  `/crew:init` set it), the cloud guard's hook (`guards.cloudGuard: off`),
-  the environment guard (`guards.envGuard: off`) and the role-write guard
-  (`guards.roleWrites: off`).
-- **`block` by default:** the six policy guards (`guards.terraformApply`,
+  `/crew:init` set it), the cloud guard's hook, the environment guard and the
+  role-write guard. All three are `off` under the default `guards.profile`.
+- **`block` by default:** the six policy guards (`terraformApply`,
   `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`,
   `sqlDestructive`) and the two production guards (`prodDatabase`,
   `prodServer`, which default to `none`). The policy guards take effect only
-  once `guards.cloudGuard` is armed, except `mergeGate`, which `/crew:gate`
+  once the cloud guard is armed, except `mergeGate`, which `/crew:gate`
   reads.
+
+You choose a posture with one setting, `guards.profile`: `off` (the default),
+`standard` (cloud guard `block`, role-write guard `report`, `adminMerge`
+`ask`) or `strict` (the cloud, environment and role-write guards all `block`).
+To move one guard away from the profile, set `guards.overrides.<guard>`, for
+example `guards.overrides.roleWrites: report`. The twelve per-guard keys
+(`guards.cloudGuard` and the rest) are no longer written; an old one still
+counts until `/crew:migrate` rewrites the layer. Each layer expands its own
+profile and overrides, and the narrower layer wins per guard.
 - **On by default:** the Stop verify gate (`verifyGate: true`) blocks when a
   verify rule fails.
 
@@ -230,16 +258,18 @@ ticket's start (committed, staged, unstaged and untracked), so shell-made
 writes are caught after the fact. *What it cannot see:* gitignored files
 (`.crew/*` among them) and `.work/`.
 
-**The cloud guard** (`guards.cloudGuard`, default `off`) judges Bash and
+**The cloud guard** (`guards.profile` `standard`, or `guards.overrides.cloudGuard`; default `off`) judges Bash and
 PowerShell commands: `terraform apply`, a force push, an admin merge,
 destructive cloud CLI calls, destructive SQL, and anything aimed at a declared
-production database or host. Each rule has its own `guards.*` setting. Set
+production database or host. Each rule has its own entry under `guards.overrides`. Set
 `report` first to see what `block` would cost. *What it cannot see:* a
-command hidden in an interpreter (a Python script that calls the cloud SDK),
-a variable or an encoded string. The credentials boundary that would close
+command hidden in an interpreter (a Python script that calls the cloud SDK, or
+code that reads the command from an environment variable), a variable or an
+encoded string. For `terraform apply` an interpreter line is refused only when
+the code or the line names the tool or builds its name. The credentials boundary that would close
 that is T-0044.
 
-**The environment guard** (`guards.envGuard`, default `off`; L-0772) refuses a
+**The environment guard** (`guards.overrides.envGuard`, or `guards.profile` `strict`; default `off`; L-0772) refuses a
 Bash or PowerShell command whose own text prints the whole process environment
 (`env`, `printenv`, bare `set`, `export -p`, `cat /proc/self/environ`,
 `Get-ChildItem env:`) or a credential-named variable (`echo "$GITHUB_TOKEN"`,
@@ -282,7 +312,8 @@ skipped phase is visible. It is off until `autopilot.mode` is exactly `plan`
 (one ticket per run) or `backlog`. `/crew:autopilot --goal <slug>` works a goal's
 minted tickets one at a time in dependency order, each through its own
 approval; `backlog` goes on to the next ticket while `autopilot.maxTicketsPerRun`
-(3) and `autopilot.maxTokensPerSession` (2,000,000) allow, and every stop prints
+(3) and `autopilot.maxTokensPerSession` (2,000,000 input plus output tokens, each assistant
+message counted once) allow, and every stop prints
 `resume: /crew:autopilot --goal <slug>` (L-0541).
 
 The five `autopilot.*` settings are personal: set them in the repo's
@@ -304,8 +335,9 @@ Plan approval and open questions stop too, unless `autopilot.approval` and
 After done, autopilot ships the ticket (since crew 1.0.349). `autopilot.ship`
 set to `pr` pushes the branch and opens a pull request, then stops for a
 person to merge. Set to `merge`, the default, it also merges once every
-required check passes, or fails under a name listed exactly in
-`autopilot.knownFailures`, waiting up to `autopilot.ciTimeoutMinutes`. It
+required check passes, waiting up to 60 minutes for CI (fixed). A failing
+check is never waved through by name: the known-failures list is empty and no
+setting fills it. It
 always merges with a merge commit, never a squash, a rebase or `--admin`, and
 never through a merge queue. A `high`-risk ticket, or one whose spec names no
 risk, never merges unattended when every review was same-family (Claude
@@ -346,7 +378,7 @@ Deeper: [Memory and Obsidian](memory-and-obsidian.md).
 ## Multi-session work
 
 Source: `plugin/crew/hooks/scripts/crew_train.py` and
-`plugin/crew/README.md`, section 10.
+`docs/crew/reference/10-the-daily-loop.md` (moved out of the crew README's section 10).
 
 Several sessions can work one repository at once, each in its own git
 worktree:
@@ -375,11 +407,10 @@ Source: `plugin/crew/skills/crew-setup/platform.md` and `CLAUDE.md`,
   `shell: "powershell"`. Each twin stands down on the wrong platform.
 - `pwsh` is not on Git Bash's `PATH`, and Git Bash has no `python3`. crew's
   wrappers resolve both explicitly and fail loudly when neither resolves.
-- Long jobs follow `shellRoute.mode` (`auto`, `wsl`, `powershell` or
-  `gitbash`). `/crew:status`'s `shell` line says which route is in force and
-  why.
-- Auto-clear on Windows types only with `context.autoClear.method:
-  "sendkeys"`, and only after checking the window has focus.
+- Long jobs take an automatically chosen shell route. `/crew:status`'s
+  `shell` line says which route is in force and why.
+- Auto-clear on native Windows with no tmux pane never types: `auto` resolves to
+  `notify`, which prints a message (the `sendkeys` method was removed in crew 1.2.61).
 
 Deeper: "Windows notes" in [Troubleshooting](troubleshooting.md) and
 [Auto wrap-up, clear and resume](auto-cycle.md).
@@ -429,7 +460,7 @@ Cause: a corrupt `StartupProfileData-NonInteractive` file in
 write: several pwsh processes (a snap install, here) rewriting that one file
 at once. Fix: move that file aside; pwsh rebuilds it on the next start. crew's
 own test suites now give every pwsh they spawn a throwaway `XDG_CACHE_HOME`,
-so they cannot corrupt it (`plugin/crew/README.md`, section 25). Ticket
+so they cannot corrupt it (`docs/crew/reference/25-command-and-agent-reference.md`, moved out of the crew README's section 25). Ticket
 T-0506 tracks the cause.
 
 **`--accept` refuses: "the tree has changed since that review".**
@@ -471,13 +502,24 @@ repo's `.crew/config.json`. The repo file wins, except where a setting
 ratchets, is personal (the stricter of the two wins), or only the machine file
 may arm it.
 
+**The human-only opt-out (crew 1.3.9).** `humanOnly.approve` and
+`humanOnly.promoteMarker` let the owner opt out of `/crew:approve` and the
+production promote marker being human-only. A `false` counts only from the
+machine file or an untracked repo file, never a committed one; a `true` in
+either file vetoes it; and it is written only after the owner types
+`/crew:confirm-config <change_id>` twice. In 1.3.9 no hook reads these keys
+and nothing records that confirmation, so the human-only rules hold exactly as
+before; the configuration reference's "The human-only opt-out" section says
+what lands next.
+
 - `/crew:config` shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.
 - The [configuration reference](configuration-reference.md) lists every
   setting with its allowed values, default, layer and the version it arrived
   in. It is generated from the code.
-- `plugin/crew/CONFIG.md` holds the reasoning behind each setting, and ships
-  with the plugin.
+- `plugin/crew/CONFIG.md` is the generated settings table and ships with the
+  plugin. The reasoning behind each setting is in
+  `docs/crew/config-rationale.md` in the repository.
 
 Every write a crew script makes to either file first copies the old file to
 `~/.claude/crew/backups/` and is refused if that copy fails (a hand edit is

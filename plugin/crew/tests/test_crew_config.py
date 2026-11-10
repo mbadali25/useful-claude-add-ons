@@ -31,9 +31,9 @@ import crew_config
 import crew_config_files
 import crew_fixtures
 import crew_platform
-import crew_shell
 import crew_state
 import crew_upgrade
+import l0725_keyset
 
 _TEMPLATE_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), os.pardir,
@@ -80,14 +80,13 @@ def test_default_global_config_matches_the_committed_template():
 
 
 def test_notify_new_keys_survive_filter_global():
-    """crew_notify.py reads `notify.realertHours` and `notify.questionTypes` from
-    the global layer too (T-0051); a key `filter_global` prunes takes effect
-    nowhere."""
+    """The notify keys that stay are read from the global layer too; a key
+    `filter_global` prunes takes effect nowhere."""
     kept, ignored = crew_config.filter_global(
-        {"notify": {"realertHours": 2, "questionTypes": ["permission_prompt"]}})
+        {"notify": {"chatId": "42", "events": ["blocker"]}})
 
     assert (kept["notify"], ignored) == (
-        {"realertHours": 2, "questionTypes": ["permission_prompt"]}, [])
+        {"chatId": "42", "events": ["blocker"]}, [])
 
 
 def test_repo_template_notify_provider_is_null():
@@ -144,19 +143,6 @@ def test_every_global_key_is_a_real_repo_config_key():
             node = node[part]
 
 
-def test_shell_route_is_on_both_layers():
-    """T-0040. Which shell is fast is a fact about the machine, and a repo may
-    still override it, so `shellRoute` sits in both layers. It is a new block
-    rather than a `platform.*` key because platform-sync rewrites `platform.*`
-    every SessionStart, and it is not the old draft name `wslRouting`. The repo
-    layer's `mode` is null so an untouched repo inherits the machine's (review
-    round 2 FIX 1); the machine layer spells out `auto`."""
-    assert crew_config.default_config()["shellRoute"] == {"mode": None, "distro": None}
-    assert crew_config.default_global_config()["shellRoute"] == {"mode": "auto", "distro": None}
-    for layer in (crew_config.default_config(), crew_config.default_global_config()):
-        assert "wslRouting" not in layer
-
-
 def test_default_global_config_returns_a_fresh_object_each_call():
     first = crew_config.default_global_config()
     first["pm"]["authority"] = "act"
@@ -197,41 +183,6 @@ def test_default_config_graph_block_matches_crew_upgrade():
     assert crew_config.default_config()["graph"] == crew_upgrade.GRAPH_BLOCK
 
 
-def test_default_config_docs_and_bitbucket_blocks_match_crew_upgrade():
-    """Same rule as the `graph` block above, and for the same reason: these
-    two live in `crew_upgrade` because `CONFIG_BLOCKS` has to reference them,
-    so a fresh repo and an upgraded one must be handed the identical shape."""
-    got = crew_config.default_config()
-    assert got["docs"] == crew_upgrade.DOCS_BLOCK
-    assert got["bitbucket"] == crew_upgrade.BITBUCKET_BLOCK
-
-
-def test_docs_and_bitbucket_are_carried_by_an_upgrade():
-    """A top-level block absent from `CONFIG_BLOCKS` is never written into an
-    already-initialised repo -- the whole of the 0.16.0 qa/dev bug. Asserted
-    from `default_config()` rather than a literal list so a THIRD block added
-    to the fresh-repo shape and forgotten in `crew_upgrade` fails here too.
-    """
-    carried = {key for key, _block in crew_upgrade.CONFIG_BLOCKS}
-    for key in ("docs", "bitbucket"):
-        assert key in carried, (
-            f"{key} is in default_config() but not crew_upgrade.CONFIG_BLOCKS, "
-            "so /crew:upgrade will never add it to an existing repo's config"
-        )
-
-
-def test_default_config_returns_a_fresh_docs_and_bitbucket_block():
-    """`default_config`'s promise, on the two blocks it deepcopies out of
-    another module -- a caller stamping a theme in must not edit the shared
-    `crew_upgrade.DOCS_BLOCK` for every later caller in the process."""
-    first = crew_config.default_config()
-    first["docs"]["theme"] = "mutated"
-    first["bitbucket"]["mergeGate"]["enabled"] = "mutated"
-    assert crew_upgrade.DOCS_BLOCK["theme"] is None
-    assert crew_upgrade.BITBUCKET_BLOCK["mergeGate"]["enabled"] is False
-    assert crew_config.default_config()["docs"]["theme"] is None
-
-
 def test_shape_readers_share_one_template_and_writers_still_get_fresh_copies():
     """`_shape` reads a cached `_default_template()` instead of deep-copying
     the whole default per lookup (that copy was 93% of a `/crew:config` menu
@@ -269,168 +220,34 @@ def test_shape_lookups_build_no_default_config(monkeypatch):
     crew_config.value_allowed("pm.authority", "machine", None)
 
 
-def test_docs_and_bitbucket_are_settable_globally():
-    """The criterion this feature dies silently on. A block absent from
-    `default_global_config()` is pruned out of the global layer by
-    `filter_global`, takes effect nowhere, and `inspect_global` reports it as
-    a stray key -- so a theme set once per machine would do nothing at all."""
-    global_cfg = {"docs": {"theme": "acme"},
-                  "bitbucket": {"mergeGate": {"enabled": True}}}
-    kept, ignored = crew_config.filter_global(global_cfg)
-    assert ignored == []
-    assert kept == global_cfg
-    for path in ("docs.theme", "docs.reportTheme",
-                 "bitbucket.mergeGate.enabled", "bitbucket.mergeGate.branch",
-                 "bitbucket.mergeGate.preset"):
-        assert crew_config.is_global_path(path), path
-
-
-def test_a_globally_set_theme_and_merge_gate_reach_a_repo(
-        tmp_path, monkeypatch):
-    """The other half of `/crew:config --show`: the resolved table, not the
-    findings. `filter_global` accepting the keys is necessary and not
-    sufficient -- `explain_config` is a separate walk, and a key it credited
-    to no layer would be a global setting that resolves nowhere while the
-    findings list looks clean."""
-    path = _global(tmp_path, monkeypatch, contents={
-        "docs": {"theme": "acme", "reportTheme": "acme-client"},
-        "bitbucket": {"mergeGate": {"enabled": True, "preset": "strict"}},
-    })
-    root = crew_fixtures.make_repo(
-        tmp_path, config={"schema": crew_state.SCHEMA_CURRENT}, git=False)
-
-    rows = {r["path"]: r for r in crew_config.explain_config(str(root),
-                                                             str(path))}
-
-    for dotted, value in (("docs.theme", "acme"),
-                          ("docs.reportTheme", "acme-client"),
-                          ("bitbucket.mergeGate.enabled", True),
-                          ("bitbucket.mergeGate.preset", "strict")):
-        assert rows[dotted]["value"] == value, dotted
-        assert rows[dotted]["source"] == "global", dotted
-    # Unset globally, so the built-in default still decides it -- the null
-    # that means "resolve the repo's main branch from the API".
-    assert rows["bitbucket.mergeGate.branch"]["value"] is None
-
-
 def test_the_ten_keys_crew_read_but_never_declared_are_declared():
-    """Until 0.19.10 these ten were in use and in no default.
-
-    Nine were read by a hook script and `jira.cloudId` was written by
-    `/crew:jira-sync` and read back by nothing. An undeclared key still works,
+    """Every key crew reads must be declared: an undeclared key still works,
     because `merge_defaults` carries a repo-layer key it has never heard of
-    straight through -- which is exactly why this went unnoticed. What it cost
-    was visibility: `leaf_paths` could not see them, so they appeared in no key
-    listing, and `is_global_path` refuses any path absent from the global
-    template, so they were silently un-settable in the global layer.
+    straight through, but `leaf_paths` cannot see it, it appears in no key
+    listing, and `is_global_path` refuses it in the global layer.
 
-    Asserting the COUNT as well as the membership on purpose. A tenth key
-    arriving undeclared is the same bug again, and a membership-only test would
-    pass while it happened."""
+    Asserting the COUNT as well as the membership on purpose. A key arriving
+    undeclared is the same bug again, and a membership-only test would pass
+    while it happened. The count is the committed key set (`l0725_keyset`)."""
     declared = set(crew_config.leaf_paths(crew_config.default_config()))
     for dotted in ("context.autoClear.enabled", "context.autoClear.method",
-                   "context.autoClear.windowTitle", "context.autoClear.command",
                    "context.autoClear.delaySeconds",
                    "context.autoClear.minHandoffLines",
-                   "context.autoClear.unsafeFocus",
-                   "context.autoWrapUp", "context.autoResume",
-                   "jira.cloudId"):
+                   "context.autoClear.wrapUp",
+                   "jira.cloudId", "resume.auto", "route.enabled",
+                   "qa.kimi.model", "dev.kimi.model", "tickets.baseBranch",
+                   "git.forbiddenTrailers", "guards.profile",
+                   "guards.overrides", "environments.workflows",
+                   "autopilot.deploy", "autopilot.approval",
+                   "autopilot.questions", "autopilot.maxAutoReplans",
+                   "autopilot.ship",
+                   "autopilot.maxTicketsPerRun",
+                   "autopilot.maxTokensPerSession", "autopilot.maxLanes",
+                   "autopilot.reviewPolicy", "autopilot.sleep.schedule",
+                   "autopilot.sleep.approval", "autopilot.sleep.questions",
+                   "autopilot.sleep.deploy"):
         assert dotted in declared, dotted
-    # 96 at schema 6, which added six `guards` keys, the two `github.mergeGate`
-    # ones and the repo-only `production.databases`/`production.hosts`, on top
-    # of schema 5's `install.policy`. An empty list is a LEAF here -- see
-    # `leaf_paths` -- so the two `production` keys count as two, not zero.
-    # 102 at schema 7: the six `change` keys.
-    # 103 since crew 0.19.92: `guards.roleWrites`, the role-write PreToolUse
-    # guard's config key.
-    # 106 since crew 0.20.19: the context hook's `memory.inject`,
-    # `memory.recall.vaults` and `memory.recall.maxChars`.
-    # 112 with the cloud guard: `guards.cloudDestructive`,
-    # `guards.sqlDestructive`, the `guards.cloudGuard` switch, and the three
-    # repo-only `cloud.*` identity-pin lists.
-    # 114 with crew 1.0 T3: `scope.mode`, the scope guard's key, and
-    # `scope.allowCliApproval` from the T3 fix round.
-    # 116 with the Windows burn-in's autoClear narrowing:
-    # `context.autoClear.onlyRepos` and `context.autoClear.onlySessions`.
-    # 117 with T-0006's `resume.auto`, the auto-resume machine switch.
-    assert "resume.auto" in declared
-    # 119 with /crew:autopilot (T-0004): `autopilot.mode` and
-    # `autopilot.maxPhases`, re-measured after rebasing onto T-0006.
-    # 121 with T-0005: the repo-only `environments.nonProd` glob list and the
-    # ratcheted `environments.prodUnattended`; 122 with plain-text routing
-    # (T-0023): `route.enabled`. Re-measured after merging main.
-    # 123 with T-0072: the repo-only `autopilot.deploy`, re-measured after
-    # merging main's T-0023. 125 with T-0010's `autopilot.approval` and
-    # `autopilot.questions`, re-measured after merging main's T-0072.
-    # 127 with T-0040: `shellRoute.mode` and `shellRoute.distro`,
-    # measured by running this test after merging main 6a8c60b1.
-    assert "route.enabled" in declared
-    assert "autopilot.deploy" in declared
-    assert {"autopilot.approval", "autopilot.questions"} <= declared
-    assert "shellRoute.mode" in declared and "shellRoute.distro" in declared
-    # 127 with T-0028: `qa.kimi.model` and `dev.kimi.model`, measured after
-    # merging main's 125. 129 with T-0040's two and T-0028's two, measured
-    # by running this test on T-0040-land after merging main 844bfc36.
-    assert "qa.kimi.model" in declared
-    assert "dev.kimi.model" in declared
-    # 131 with T-0013: `resume.typeDelaySeconds` and
-    # `resume.readyTimeoutSeconds`, measured by running this test after
-    # merging main 4f6ef540 for crew 1.0.186.
-    assert {"resume.typeDelaySeconds", "resume.readyTimeoutSeconds"} <= declared
-    # 130 with T-0061: the repo-only `tickets.baseBranch`, measured after
-    # merging main 34d9f267.
-    assert "tickets.baseBranch" in declared
-    # 132 with T-0013's two machine keys (`resume.typeDelaySeconds`,
-    # `resume.readyTimeoutSeconds`), measured after merging main into T-0013.
-    # 133 with T-0066: `git.forbiddenTrailers` on top of those 132, measured
-    # by running this test after merging main edb2b8ff.
-    # 136 with T-0053's repo-only `autopilot.sleep.schedule`,
-    # `autopilot.sleep.approval` and `autopilot.sleep.questions` on top of
-    # those 133, measured by running this test after merging main 86d96fa1.
-    assert "git.forbiddenTrailers" in declared
-    assert {"autopilot.sleep.schedule", "autopilot.sleep.approval",
-            "autopilot.sleep.questions"} <= declared
-    # 137 with T-0017's `context.autoClear.wrapUp` on top of those 136,
-    # measured by running this test on T-0017-build after merging main
-    # a27c5e38 through T-0016-build.
-    assert "context.autoClear.wrapUp" in declared
-    # 138 with T-0074's repo-only `autopilot.maxAutoReplans` on top of those
-    # 137, measured by running this test on T-0074-build after merging main
-    # 8c0843ca.
-    assert "autopilot.maxAutoReplans" in declared
-    # Still 138 with T-0050 (batch 6): the personal `autopilot` keys stay
-    # declared here (this is the defaults layer); only `template_config()`
-    # omits them.
-    # 141 with T-0011's repo-only ship phase (batch 7): `autopilot.ship`,
-    # `autopilot.knownFailures` (an empty list, so one leaf) and
-    # `autopilot.ciTimeoutMinutes` on top of those 138.
-    assert {"autopilot.ship", "autopilot.knownFailures",
-            "autopilot.ciTimeoutMinutes"} <= declared
-    # 143 with T-0051's `notify.realertHours` and `notify.questionTypes` on
-    # top of those 141, both layers, measured by running this test on
-    # T-0051-build after merging main abddc302.
-    assert {"notify.realertHours", "notify.questionTypes"} <= declared
-    # 145 with L-0541's repo-only goal caps, `autopilot.maxTicketsPerRun` and
-    # `autopilot.maxTokensPerSession`, on top of those 143, measured by running
-    # this test on rush/g6b-goals-sleep.
-    assert {"autopilot.maxTicketsPerRun", "autopilot.maxTokensPerSession"} <= declared
-    # 146 with L-0654's `autopilot.sleep.deploy`, measured the same way.
-    assert "autopilot.sleep.deploy" in declared
-    # 147 with L-0656's `autopilot.sleep.notifyHold`, measured the same way.
-    assert "autopilot.sleep.notifyHold" in declared
-    # T-0009's ratcheted `guards.deployWorkflow` and the repo-only
-    # `environments.workflows` map (an empty dict, so one leaf, like
-    # `dev.roles`) on top of those, ported onto release/1.2.0.
-    assert "guards.deployWorkflow" in declared
-    assert "environments.workflows" in declared
-    # T-0029's repo-only `autopilot.maxLanes` and `autopilot.reviewPolicy`
-    # (/crew:autopilot wave), merging release/1.2.0 into G4.
-    assert {"autopilot.maxLanes", "autopilot.reviewPolicy"} <= declared
-    # `memory.recall.projects` (L-0675, G3b) on top: 152, counted by running this test
-    # on rush/g6b-goals-sleep after merging release/1.2.0 (crew 1.1.20).
-    assert "memory.recall.projects" in declared
-    assert "guards.envGuard" in declared
-    assert len(declared) == 153
+    assert len(declared) == len(l0725_keyset.L0725_REPO_KEYS)
 
 
 def test_forbidden_trailers_is_global_settable_and_defaults_empty():
@@ -464,12 +281,11 @@ def test_autoclear_is_global_and_its_siblings_are_not():
     descend structurally. This test is that claim measured rather than reasoned
     about, which is the distinction the block's own comment rests on."""
     supplied = {"context": {"autoClear": {"method": "tmux",
-                                          "windowTitle": "Claude"}}}
+                                          "delaySeconds": 5}}}
     kept, ignored = crew_config.filter_global(supplied)
     assert ignored == []
     assert kept == supplied
     for dotted in ("context.autoClear.enabled", "context.autoClear.method",
-                   "context.autoClear.windowTitle", "context.autoClear.command",
                    "context.autoClear.delaySeconds",
                    "context.autoClear.minHandoffLines",
                    "context.autoClear.onlyRepos",
@@ -480,26 +296,12 @@ def test_autoclear_is_global_and_its_siblings_are_not():
     # `_prune` reports the first absent segment with its full path prefix, so
     # a reader is told which key did nothing rather than that `context` is
     # unsupported, which would point at a bigger problem than exists.
-    for dotted in ("context.enabled", "context.warnAt", "context.budgetTokens",
-                   "context.reserveTokens", "context.handoffPath",
-                   "context.keepTranscripts", "context.autoWrapUp",
-                   "context.autoResume",
-                   "context.staleHandoff.maxAgeHours",
-                   "context.staleHandoff.maxCommitsBehind"):
+    for dotted in ("context.enabled", "context.warnAt",
+                   "context.reserveTokens"):
         assert not crew_config.is_global_path(dotted), dotted
     _, stray = crew_config.filter_global(
-        {"context": {"warnAt": 0.5, "autoWrapUp": True}})
-    assert stray == ["context.warnAt", "context.autoWrapUp"]
-
-    # `unsafeFocus` is declared but NOT granted -- consent, not capability.
-    # It sits inside an otherwise-global block, so this is the one key whose
-    # refusal is a deliberate hole in that block rather than a consequence of
-    # the block's shape, and it is the one most likely to be "fixed" by
-    # someone tidying the comprehension in `default_global_config()`.
-    assert not crew_config.is_global_path("context.autoClear.unsafeFocus")
-    _, refused = crew_config.filter_global(
-        {"context": {"autoClear": {"unsafeFocus": True}}})
-    assert refused == ["context.autoClear.unsafeFocus"]
+        {"context": {"warnAt": 0.5, "reserveTokens": 7}})
+    assert stray == ["context.warnAt", "context.reserveTokens"]
 
 
 def test_resume_auto_is_global_settable_and_defaults_to_null():
@@ -508,19 +310,14 @@ def test_resume_auto_is_global_settable_and_defaults_to_null():
     otherwise `filter_global` prunes it and `/crew:config` refuses to write
     the one place it can be switched on. Null, not false, in both defaults so
     the /crew:init template (which writes every key) never vetoes a machine
-    opt-in. T-0013's two typing keys sit beside it, settable globally too
-    (the machine file is the only one their reader opens)."""
-    kept, ignored = crew_config.filter_global({"resume": {"auto": True, "typeDelaySeconds": 4,
-                                                          "readyTimeoutSeconds": 30}})
-    block = {"auto": None, "typeDelaySeconds": 2, "readyTimeoutSeconds": 15}
+    opt-in."""
+    kept, ignored = crew_config.filter_global({"resume": {"auto": True}})
+    block = {"auto": None}
 
     assert (kept, ignored, crew_config.is_global_path("resume.auto"),
-            crew_config.is_global_path("resume.typeDelaySeconds"),
-            crew_config.is_global_path("resume.readyTimeoutSeconds"),
             crew_config.default_config()["resume"], crew_config.default_global_config()["resume"],
             crew_state.RESUME_DEFAULTS) == \
-        ({"resume": {"auto": True, "typeDelaySeconds": 4, "readyTimeoutSeconds": 30}}, [], True, True, True,
-         block, block, block)
+        ({"resume": {"auto": True}}, [], True, block, block, block)
 
 
 def test_a_globally_set_autoclear_reaches_a_repo(tmp_path, monkeypatch):
@@ -547,11 +344,11 @@ def test_a_globally_set_autoclear_reaches_a_repo(tmp_path, monkeypatch):
         assert rows[dotted]["value"] == value, dotted
         assert rows[dotted]["source"] == "global", dotted
     # Unset globally, so the built-in default still decides it.
-    assert rows["context.autoClear.command"]["value"] == "/clear"
+    assert rows["context.autoClear.minHandoffLines"]["value"] == 5
     # And the resolved config the run actually uses agrees with the report.
     resolved = crew_config.resolve_config(str(root))
     assert resolved["context"]["autoClear"]["method"] == "tmux"
-    assert resolved["context"]["autoClear"]["command"] == "/clear"
+    assert resolved["context"]["autoClear"]["minHandoffLines"] == 5
 
 
 def test_declaring_those_keys_costs_no_migration(tmp_path):
@@ -571,9 +368,7 @@ def test_declaring_those_keys_costs_no_migration(tmp_path):
     assert "upgradeNeeded" not in state["triggers"]
     # A repo that has never heard of the new keys still resolves them.
     resolved = crew_config.resolve_config(str(root))
-    assert resolved["context"]["autoClear"]["command"] == "/clear"
-    assert resolved["context"]["autoWrapUp"] is True
-    assert resolved["context"]["autoResume"] is True
+    assert resolved["context"]["autoClear"]["method"] == "auto"
     assert resolved["jira"]["cloudId"] is None
 
 
@@ -596,11 +391,11 @@ def test_default_config_returns_a_fresh_object_each_call():
     """Mutating one call's result must not affect the next call's."""
     first = crew_config.default_config()
     first["pm"]["authority"] = "act"
-    first["graph"]["mode"] = "mutated"
+    first["graph"]["out"] = "mutated"
     first["qa"]["codex"]["model"] = "mutated"
     second = crew_config.default_config()
     assert second["pm"]["authority"] == "report-only"
-    assert second["graph"]["mode"] == "code-only"
+    assert second["graph"]["out"] == "graphify-out"
     # A nested dict too: a shallow copy would pass the two above and still
     # let one caller mutate every later caller's `qa.codex`.
     assert second["qa"]["codex"]["model"] is None
@@ -660,7 +455,7 @@ def test_resolve_config_global_only(tmp_path, monkeypatch):
     assert resolved["pm"]["maxDispatches"] == 9
     assert resolved["qa"]["provider"] == "codex"
     # Everything else in pm still comes from the built-in default.
-    assert resolved["pm"]["quietLines"] == crew_state.PM_DEFAULTS["quietLines"]
+    assert resolved["pm"]["authority"] == crew_state.PM_DEFAULTS["authority"]
 
 
 def test_resolve_config_repo_only(tmp_path, monkeypatch):
@@ -798,8 +593,6 @@ def test_a_repo_only_key_in_the_global_file_takes_effect_nowhere(
     _global(tmp_path, monkeypatch, contents={
         "tracker": "jira",
         "jira": {"project": "NOPE"},
-        "tier": 3,
-        "roles": ["explorer", "dba"],
         "verifyGate": False,
         "graph": {"out": "somewhere-else",
                   "obsidian": {"enabled": True, "dir": "/someone/vault"}},
@@ -812,7 +605,7 @@ def test_a_repo_only_key_in_the_global_file_takes_effect_nowhere(
     resolved = crew_config.resolve_config(str(root))
     built_in = crew_config.default_config()
 
-    for key in ("tracker", "jira", "tier", "roles", "verifyGate", "graph",
+    for key in ("tracker", "jira", "verifyGate", "graph",
                 "platform", "obsidian"):
         assert resolved[key] == built_in[key], key
 
@@ -873,12 +666,8 @@ def test_the_model_table_still_layers_globally(tmp_path, monkeypatch):
     assert resolved["dev"]["roles"]["developer"]["model"] == "gpt-6-astra"
     # BOTH memory keys are global as of 0.16.0 -- one vault per person, and a
     # person who keeps their memory in a vault keeps it there everywhere.
-    # The context hook's keys beside them come from the repo defaults.
     assert resolved["memory"] == {"mode": "vault",
-                                  "vaultPath": "/home/me/vault",
-                                  "inject": True,
-                                  "recall": {"vaults": [], "maxChars": 800,
-                                             "projects": []}}
+                                  "vaultPath": "/home/me/vault"}
 
 
 @pytest.mark.parametrize("dotted", ["memory.inject", "memory.recall.vaults",
@@ -914,7 +703,7 @@ def test_graph_obsidian_never_reaches_a_resolved_config(tmp_path, monkeypatch):
     resolved = crew_config.resolve_config(str(root))
     assert "obsidian" not in resolved["graph"]
     # The rest of the graph block is unharmed by the drop.
-    assert resolved["graph"]["mode"] == "code-only"
+    assert resolved["graph"]["out"] == "graphify-out"
 
     # Write path: still refused by name, and the file is left exactly as it
     # was. `graph.*` is repo scope entirely, so this holds for a key that no
@@ -1377,21 +1166,6 @@ def test_every_authority_has_a_widening_note():
     assert set(crew_config._WIDENING_NOTES) == set(crew_state.AUTHORITIES)
 
 
-def test_ticket_granularity_is_settable_in_both_layers(tmp_path, monkeypatch):
-    """It rides in on `pm`, the block already admitted whole -- so this is the
-    check that the invariant actually held, rather than that it was intended."""
-    assert crew_config.is_global_path("pm.ticketGranularity") is True
-    path = _global(tmp_path, monkeypatch, contents={})
-    merged, changes = crew_config.plan_global_write(
-        {"pm.ticketGranularity": "session"}, str(path))
-    assert merged["pm"]["ticketGranularity"] == "session"
-    assert changes[0]["widens"] is False
-    kept, ignored = crew_config.filter_global(
-        {"pm": {"ticketGranularity": "change"}})
-    assert kept == {"pm": {"ticketGranularity": "change"}}
-    assert ignored == []
-
-
 def test_a_plan_writes_nothing(tmp_path, monkeypatch):
     """Dry run is the default, and it is what the user says yes to."""
     path = _global(tmp_path, monkeypatch, contents=None)
@@ -1650,12 +1424,10 @@ def test_a_global_pin_reaches_a_role_the_repo_never_mentions(
 
 _NULLABLE_GLOBAL_KEYS = (
     ("memory", "vaultPath"),
-    ("worktree", "root"),
     ("qa", "codex", "model"),
+    ("qa", "kimi", "model"),
     ("notify", "chatId"),
     ("secondOpinion", "model"),
-    # T-0040 review round 2 FIX 1: the template pinned `auto` here.
-    ("shellRoute", "mode"),
 )
 
 
@@ -1699,31 +1471,6 @@ def test_a_repo_null_does_not_shadow_a_global_value():
         assert _dig_plain(merged, parts) == wanted, ".".join(parts)
 
 
-def test_a_template_repo_inherits_the_machine_shell_route(tmp_path, monkeypatch):
-    """T-0040 review round 2 FIX 1, its repro: set the machine-global
-    `shellRoute.mode` to `wsl`, initialise a repo from the template, and read
-    `resolve_config`. It returned `auto`: the template pinned it, so a repo
-    owner who chose nothing overrode the machine owner who did."""
-    _global(tmp_path, monkeypatch, contents={"shellRoute": {"mode": "wsl", "distro": "Debian"}})
-    root = crew_fixtures.make_repo(tmp_path, config=_committed_template(), git=False)
-    assert crew_config.resolve_config(str(root))["shellRoute"] == {"mode": "wsl", "distro": "Debian"}
-
-    # A choice the repo owner did make still wins.
-    chosen = copy.deepcopy(_committed_template())
-    chosen["shellRoute"]["mode"] = "gitbash"
-    other = crew_fixtures.make_repo(tmp_path / "other", config=chosen, git=False)
-    assert crew_config.resolve_config(str(other))["shellRoute"]["mode"] == "gitbash"
-
-
-def test_with_no_layer_setting_it_the_shell_route_reads_as_auto(tmp_path, monkeypatch):
-    """Null in the repo layer and no machine file: `crew_shell.mode` reads the
-    unset mode as `auto`, the behaviour the template used to spell out."""
-    _global(tmp_path, monkeypatch, contents=None)
-    root = crew_fixtures.make_repo(tmp_path, config=_committed_template(), git=False)
-    resolved = crew_config.resolve_config(str(root))
-    assert crew_shell.mode(resolved) == ("auto", None)
-
-
 def test_a_real_repo_value_still_beats_the_global():
     """The prune must not turn the layering upside down. `null` is the only
     thing that stops deciding; a value the repo actually set still wins."""
@@ -1755,10 +1502,10 @@ def test_a_repo_null_survives_when_no_global_supplies_that_key():
 def test_without_null_shadows_does_not_mutate_its_input():
     """It is handed `crew_state.load_config`'s dict, which callers reuse."""
     defaults = crew_config.default_config()
-    repo_cfg = {"worktree": {"root": None}, "tracker": "files"}
+    repo_cfg = {"memory": {"vaultPath": None}, "tracker": "files"}
     before = copy.deepcopy(repo_cfg)
     crew_config.without_null_shadows(
-        repo_cfg, {"worktree": {"root": "G:"}}, defaults)
+        repo_cfg, {"memory": {"vaultPath": "G:"}}, defaults)
     assert repo_cfg == before
 
 
@@ -1774,37 +1521,34 @@ def test_only_autoclear_is_in_scope_for_null_shadowing_under_context():
     which means "off" and must survive; it is repo-only, so it is untouched,
     and that is now asserted directly rather than implied by the blanket.
 
-    `context.autoClear.windowTitle: null` in a repo IS now shadowable, and
-    that is the intent: `/crew:init` writes every key including the null ones,
-    so without this a machine-wide window title would be silently overridden
+    `context.autoClear.wrapUp: null` in a repo IS shadowable, and that is the
+    intent: `/crew:init` writes every key including the null ones, so without
+    this a machine-wide wrap-up value would be silently overridden
     by a template value in every initialised repo -- which is the exact bug
     `null_shadows` was written for, arriving at a new key."""
     leaves = crew_config.leaf_paths(crew_config.default_global_config())
     context_leaves = [p for p in leaves if p.startswith("context.")]
     assert context_leaves == ["context.autoClear.enabled",
                               "context.autoClear.method",
-                              "context.autoClear.windowTitle",
-                              "context.autoClear.command",
                               "context.autoClear.delaySeconds",
                               "context.autoClear.minHandoffLines",
                               "context.autoClear.onlyRepos",
                               "context.autoClear.onlySessions",
                               "context.autoClear.wrapUp"]
-    assert "context.autoClear.unsafeFocus" not in leaves
     assert not [p for p in leaves if p.startswith("emergency.")]
 
     # The protected case, directly: a repo null over a repo-only path is left
     # alone even with a global file present, so `reserveTokens: null` still
     # means "off" rather than silently becoming the 100000 default.
     repo_cfg = {"context": {"reserveTokens": None, "autoClear":
-                            {"windowTitle": None}}}
-    global_cfg = {"context": {"autoClear": {"windowTitle": "Claude"}}}
+                            {"wrapUp": None}}}
+    global_cfg = {"context": {"autoClear": {"wrapUp": True}}}
     shadows = crew_config.null_shadows(repo_cfg, global_cfg)
-    assert shadows == ["context.autoClear.windowTitle"]
+    assert shadows == ["context.autoClear.wrapUp"]
     pruned = crew_config.without_null_shadows(repo_cfg, global_cfg)
     assert "reserveTokens" in pruned["context"]
     assert pruned["context"]["reserveTokens"] is None
-    assert "windowTitle" not in pruned["context"]["autoClear"]
+    assert "wrapUp" not in pruned["context"]["autoClear"]
 
 
 def test_resolve_config_inherits_a_global_through_the_init_template(
@@ -1819,15 +1563,15 @@ def test_resolve_config_inherits_a_global_through_the_init_template(
     `resolve_config`, re-run) came back green.
     """
     _global(tmp_path, monkeypatch, contents={
-        "worktree": {"root": "G:" + os.sep + "shared"},
         "memory": {"vaultPath": "V:" + os.sep + "vault"},
+        "notify": {"chatId": "99"},
     })
     root = crew_fixtures.make_repo(
         tmp_path, config=_committed_template(), git=False)
 
     resolved = crew_config.resolve_config(str(root))
 
-    assert resolved["worktree"]["root"] == "G:" + os.sep + "shared"
+    assert resolved["notify"]["chatId"] == "99"
     assert resolved["memory"]["vaultPath"] == "V:" + os.sep + "vault"
 
 
@@ -1836,14 +1580,14 @@ def test_resolve_config_lets_the_repo_override_the_global_it_now_inherits(
     """The other side of the same wiring: the prune must not make the repo
     layer unable to win. A repo that names a real value still decides."""
     _global(tmp_path, monkeypatch, contents={
-        "worktree": {"root": "G:" + os.sep + "shared"}})
+        "memory": {"vaultPath": "G:" + os.sep + "shared"}})
     cfg = _committed_template()
-    cfg["worktree"]["root"] = "R:" + os.sep + "mine"
+    cfg["memory"]["vaultPath"] = "R:" + os.sep + "mine"
     root = crew_fixtures.make_repo(tmp_path, config=cfg, git=False)
 
     resolved = crew_config.resolve_config(str(root))
 
-    assert resolved["worktree"]["root"] == "R:" + os.sep + "mine"
+    assert resolved["memory"]["vaultPath"] == "R:" + os.sep + "mine"
 
 
 def test_explain_config_credits_global_not_repo_for_an_inherited_null(
@@ -1857,12 +1601,12 @@ def test_explain_config_credits_global_not_repo_for_an_inherited_null(
     value").
     """
     path = _global(tmp_path, monkeypatch, contents={
-        "worktree": {"root": "G:" + os.sep + "shared"}})
+        "memory": {"vaultPath": "G:" + os.sep + "shared"}})
     root = crew_fixtures.make_repo(
         tmp_path, config=_committed_template(), git=False)
 
     rows = crew_config.explain_config(str(root), path=str(path))
-    row = next(r for r in rows if r["path"] == "worktree.root")
+    row = next(r for r in rows if r["path"] == "memory.vaultPath")
 
     assert row["value"] == "G:" + os.sep + "shared"
     assert row["source"] == "global", row
@@ -1978,9 +1722,8 @@ def test_global_non_prod_is_pruned_and_reported():
 
 
 def test_deploy_workflow_defaults_to_block_and_ratchets(tmp_path):
-    assert crew_config.default_config()["guards"]["deployWorkflow"] == "block"
-    assert crew_config.default_global_config()["guards"]["deployWorkflow"] \
-        == "block"
+    assert crew_state.PROFILE_MAP["off"]["deployWorkflow"] == "block"
+    assert crew_config.default_config()["guards"]["profile"] == "off"
     assert "guards.deployWorkflow" in crew_state.RATCHETED_KEYS
     root = tmp_path / "repo"
     crew_fixtures.make_repo(tmp_path, config={
@@ -2033,7 +1776,7 @@ def test_global_workflows_is_pruned_and_reported():
     assert kept == {"environments": {"prodUnattended": True}}
     assert ignored == ["environments.workflows"]
     assert not crew_config.is_global_path("environments.workflows")
-    assert crew_config.is_global_path("guards.deployWorkflow")
+    assert crew_config.is_global_path("guards.overrides.deployWorkflow")
 
 
 @pytest.mark.parametrize("block", [
@@ -2096,10 +1839,10 @@ def test_check_is_quiet_without_a_contradiction(tmp_path, capsys):
 
 _BAD_ENUM_VALUES = [
     ("pm.authority", "bogus"),
-    ("guards.forcePush", "yes"),
+    ("guards.overrides.forcePush", "yes"),
+    ("guards.profile", "loud"),
     ("install.policy", "always"),
-    ("guards.prodDatabase", "write"),
-    ("pm.ticketGranularity", "ticket"),
+    ("guards.overrides.prodDatabase", "write"),
     ("qa.provider", "gpt"),
 ]
 
@@ -2118,8 +1861,8 @@ def test_enum_key_outside_its_values_is_refused(tmp_path, dotted, value):
 
 
 def _every_enum_value():
-    keys = ["pm.authority", "pm.ticketGranularity", "qa.provider",
-            "dev.provider"]
+    keys = ["pm.authority", "qa.provider", "dev.provider", "guards.profile"]
+    keys += [f"guards.overrides.{name}" for name in crew_state.ALL_GUARD_NAMES]
     keys += [k for k in crew_config.leaf_paths(crew_config.default_global_config())
              if crew_state.ratchet_spec(k) is not None]
     return [(key, value) for key in keys
@@ -2131,7 +1874,8 @@ def test_enum_key_inside_its_values_is_accepted(tmp_path, dotted, value):
     _, changes = crew_config.plan_global_write(
         {dotted: value}, str(tmp_path / "global.json"))
 
-    assert [c["after"] for c in changes] in ([value], [])
+    written = [c["after"] for c in changes if not c.get("derived")]
+    assert written in ([value], [])
 
 
 def test_non_enum_key_keeps_accepting_any_json(tmp_path):
@@ -2303,17 +2047,28 @@ def _repo_with_global(tmp_path, repo_cfg_updates, global_cfg):
 
 def test_repo_ratchet_widening_is_marked(tmp_path, capsys):
     root, gpath = _repo_with_global(
-        tmp_path, {"guards.forcePush": "block"}, {"guards": {"forcePush": "allow"}})
+        tmp_path, {"guards.overrides.forcePush": "block"},
+        {"guards": {"forcePush": "allow"}})
 
     _, changes = crew_config.plan_repo_write(
-        str(root), {"guards.forcePush": "allow"}, gpath)
+        str(root), {"guards.overrides.forcePush": "allow"}, gpath)
     code = crew_config.main(["--root", str(root), "--repo", "--global-path",
-                             gpath, "--set", 'guards.forcePush="allow"'])
+                             gpath, "--set", 'guards.overrides.forcePush="allow"'])
 
     out = capsys.readouterr().out
     assert (code, [c["widens"] for c in changes]) == (0, [True])
-    assert "! guards.forcePush widens to" in out
+    assert "! guards.overrides.forcePush widens to" in out
     assert crew_config._RATCHETED["guards.forcePush"][2]["allow"] in out  # pylint: disable=protected-access
+
+    spec_dir = tmp_path / "spec"
+    spec_dir.mkdir()
+    spec_root, spec_gpath = _repo_with_global(
+        spec_dir, {"install.policy": "manual"}, {"install": {"policy": "auto"}})
+
+    _, spec_changes = crew_config.plan_repo_write(
+        str(spec_root), {"install.policy": "auto"}, spec_gpath)
+
+    assert [c["widens"] for c in spec_changes] == [True]
 
 
 def test_a_repo_null_that_widens_is_described_by_the_value_in_force(tmp_path, capsys):
@@ -2362,21 +2117,21 @@ def test_a_repo_null_under_a_narrower_machine_value_does_not_widen(tmp_path, cap
 
 def test_repo_value_held_down_by_machine_is_named(tmp_path, capsys):
     root, gpath = _repo_with_global(
-        tmp_path, {"guards.forcePush": "ask"}, {"guards": {"forcePush": "block"}})
+        tmp_path, {"guards.overrides.forcePush": "ask"},
+        {"guards": {"forcePush": "block"}})
 
     _, changes = crew_config.plan_repo_write(
-        str(root), {"guards.forcePush": "allow"}, gpath)
+        str(root), {"guards.overrides.forcePush": "allow"}, gpath)
     crew_config.main(["--root", str(root), "--repo", "--global-path", gpath,
-                      "--set", 'guards.forcePush="allow"'])
+                      "--set", 'guards.overrides.forcePush="allow"'])
 
     out = capsys.readouterr().out
     assert [(c["widens"], c["heldDownBy"]) for c in changes] == [(False, "global")]
     assert "held down by the machine-global layer at block" in out
-    assert "! guards.forcePush widens" not in out
+    assert "! guards.overrides.forcePush widens" not in out
 
 
 _CONSENT_WIDENINGS = [
-    ("context.autoClear.unsafeFocus", False, True),
     ("autopilot.mode", "off", "plan"),
     ("verifyGate", True, False),
 ]
@@ -2395,7 +2150,7 @@ def test_repo_consent_widening_is_marked(tmp_path, capsys, dotted, narrow, wide)
 
 
 @pytest.mark.parametrize("dotted,narrow,wide", _CONSENT_WIDENINGS + [
-    ("guards.forcePush", "block", "allow")])
+    ("guards.overrides.forcePush", "block", "allow")])
 def test_narrowing_is_never_marked(tmp_path, capsys, dotted, narrow, wide):
     root, gpath = _repo_with_global(
         tmp_path, {dotted: wide}, {"guards": {"forcePush": "allow"}})
@@ -2526,8 +2281,8 @@ def _set_at(root, gpath, layer, assignment, apply=True):
 
 
 _OBJECTS_AT_LEAVES = [
-    ("pm.authority", {"a": 1}), ("guards.forcePush", {"x": "allow"}),
-    ("install.policy", {"a": 1}), ("pm.ticketGranularity", {"a": 1}),
+    ("pm.authority", {"a": 1}), ("guards.profile", {"x": "allow"}),
+    ("install.policy", {"a": 1}), ("pm.maxDispatches", {"a": 1}),
     ("dev.provider", {"a": 1}), ("notify.chatId", {"a": 1}),
     ("notify.chatId", {}), ("qa.order", {"a": 1})]
 
@@ -2579,7 +2334,8 @@ def test_a_block_holding_an_object_at_a_leaf_is_refused(tmp_path, capsys, layer,
 
 
 @pytest.mark.parametrize("value", ["[1]", "[]", '["act"]'])
-@pytest.mark.parametrize("dotted", ["pm.authority", "guards.forcePush"])
+@pytest.mark.parametrize("dotted", ["pm.authority", "guards.profile",
+                                    "guards.overrides.forcePush"])
 @pytest.mark.parametrize("layer", ["machine", "repo"])
 def test_an_array_at_an_enum_key_is_refused_at_both_layers(tmp_path, capsys, layer,
                                                            dotted, value):
@@ -2617,7 +2373,7 @@ def test_fixing_the_object_at_a_leaf_in_the_same_write_is_accepted(tmp_path, cap
         0, True)
 
 
-@pytest.mark.parametrize("dotted", ["pm.authority", "guards.forcePush",
+@pytest.mark.parametrize("dotted", ["pm.authority", "guards.profile",
                                     "install.policy", "qa.provider"])
 def test_null_is_refused_for_an_enum_key_at_the_machine_layer(tmp_path, dotted):
     with pytest.raises(crew_config.GlobalWriteRefused) as caught:
@@ -2634,14 +2390,14 @@ def test_null_at_the_repo_layer_means_inherit_or_clear(tmp_path):
     gpath = str(tmp_path / "g.json")
 
     _, changes = crew_config.plan_repo_write(
-        str(root), {"guards.forcePush": None, "pm.authority": None,
+        str(root), {"guards.profile": None, "pm.authority": None,
                     "context.autoClear.enabled": None, "autopilot.mode": None},
         gpath)
     with pytest.raises(crew_config.RepoWriteRefused) as caught:
         crew_config.plan_repo_write(str(root), {"scope.mode": None}, gpath)
 
     assert {c["path"]: c.get("null") for c in changes} == {
-        "guards.forcePush": "inherits the machine-global value",
+        "guards.profile": "inherits the machine-global value",
         "pm.authority": "inherits the machine-global value",
         "context.autoClear.enabled": "clears the veto",
         # T-0050: personal, so global-settable; a repo null is silent.
@@ -2664,10 +2420,10 @@ def test_a_legacy_null_already_in_the_file_does_not_block_an_unrelated_write(
 def test_write_refuses_when_the_merged_file_holds_a_bad_enum_elsewhere(
         tmp_path, layer):
     if layer == "machine":
-        path = _global_file(tmp_path, {"guards": {"forcePush": "yes"}})
+        path = _global_file(tmp_path, {"guards": {"profile": "yes"}})
         with pytest.raises(crew_config.GlobalWriteRefused) as caught:
             crew_config.plan_global_write({"notify.chatId": "1"}, str(path))
-        bad = "guards.forcePush"
+        bad = "guards.profile"
     else:
         cfg = crew_config.default_config()
         cfg["pm"]["authority"] = "bogus"
@@ -3072,13 +2828,13 @@ def test_a_machine_block_write_marks_its_leaf_widening(tmp_path):
 
 def test_a_repo_block_write_marks_its_leaf_widening(tmp_path):
     root, gpath = _machine_and_repo(tmp_path, {"guards": {"forcePush": "allow"}},
-                                    {"guards.forcePush": "block"})
+                                    {"guards.overrides.forcePush": "block"})
 
     _, changes = crew_config.plan_repo_write(
-        str(root), {"guards": {"forcePush": "allow"}}, str(gpath))
+        str(root), {"guards": {"overrides": {"forcePush": "allow"}}}, str(gpath))
 
     assert [(c["path"], c["widens"]) for c in changes] == [
-        ("guards.forcePush", True)]
+        ("guards.overrides.forcePush", True)]
 
 
 @pytest.mark.parametrize("layer", ["machine", "repo"])
@@ -3104,23 +2860,23 @@ def test_repo_writer_takes_a_block_leaf_by_leaf(tmp_path):
     root = _repo(tmp_path)
 
     _, changes = crew_config.write_repo_config(
-        str(root), {"guards": {"forcePush": "ask"}}, str(tmp_path / "g.json"))
+        str(root), {"guards": {"overrides": {"forcePush": "ask"}}},
+        str(tmp_path / "g.json"))
 
     written = json.loads(_repo_bytes(root))
-    assert ([c["path"] for c in changes], written["guards"]["forcePush"]) == (
-        ["guards.forcePush"], "ask")
-    assert written["guards"]["mergeGate"] == crew_config.default_config()[
-        "guards"]["mergeGate"]
+    assert ([c["path"] for c in changes],
+            written["guards"]["overrides"]["forcePush"]) == (
+        ["guards.overrides.forcePush"], "ask")
+    assert written["guards"]["profile"] == crew_config.default_config()[
+        "guards"]["profile"]
 
 
 @pytest.mark.parametrize("layer,held,leaf", [
-    ("machine", {"context": {"autoClear": {"unsafeFocus": True}}},
-     "context.autoClear.unsafeFocus"),
     ("machine", {"graph": {"obsidian": {"confirmed": True}}},
      "graph.obsidian.confirmed"),
     ("repo", {"context.autoClear.enabled": True}, "context.autoClear.enabled"),
     ("repo", {"resume.auto": 0}, "resume.auto"),
-], ids=["machine-unsafeFocus", "machine-obsidian", "repo-armed-autoclear",
+], ids=["machine-obsidian", "repo-armed-autoclear",
         "repo-zero-veto"])
 def test_merged_file_refuses_a_pre_existing_leaf_forbidden_at_its_layer(
         tmp_path, layer, held, leaf):
@@ -3159,13 +2915,14 @@ def test_a_repo_only_key_in_the_machine_file_does_not_block_a_write(tmp_path):
 
 def test_repo_write_refuses_when_the_machine_file_changed(tmp_path):
     root, gpath = _machine_and_repo(tmp_path, {"guards": {"forcePush": "block"}},
-                                    {"guards.forcePush": "block"})
+                                    {"guards.overrides.forcePush": "block"})
     machine = crew_config.global_snapshot(str(gpath))[2]
     before = _repo_bytes(root)
     _rewrite_with(gpath, "guards", {"forcePush": "allow"})
 
     with pytest.raises(crew_config.RepoWriteConflict) as caught:
-        crew_config.write_repo_config(str(root), {"guards.forcePush": "allow"},
+        crew_config.write_repo_config(str(root),
+                                      {"guards.overrides.forcePush": "allow"},
                                       str(gpath), expect_global=machine)
 
     assert "machine-global" in str(caught.value)
@@ -3350,6 +3107,11 @@ def _config_md_row(text, key):
     return rows[0]
 
 
+def _config_md_default(text, key):
+    """The Default column of the generated row: key | scope | default | ..."""
+    return _config_md_row(text, key).split("|")[3].strip()
+
+
 def test_config_md_and_setup_template_state_the_kimi_defaults():
     """T-0028: CONFIG.md's global-key table carries `qa.kimi.model` and
     `dev.kimi.model`, the new `qa.order` default, and `kimi` in both provider
@@ -3361,30 +3123,27 @@ def test_config_md_and_setup_template_state_the_kimi_defaults():
     order = json.dumps(defaults["qa"]["order"]).replace('","', '", "')
 
     assert order in _config_md_row(text, "qa.order")
-    assert _config_md_row(text, "qa.kimi.model").endswith("| `null` |")
-    assert _config_md_row(text, "dev.kimi.model").endswith("| `null` |")
+    assert _config_md_default(text, "qa.kimi.model") == "`null`"
+    assert _config_md_default(text, "dev.kimi.model") == "`null`"
     assert "`kimi`" in _config_md_row(text, "qa.provider")
     assert "`kimi`" in _config_md_row(text, "dev.provider")
-    assert json.dumps(list(crew_config.QA_PROVIDERS)).replace('","', '", "') in text
+    assert all(f"`{provider}`" in _config_md_row(text, "qa.provider")
+               for provider in crew_config.QA_PROVIDERS)
 
 
-def test_config_md_global_key_count_is_measured():
-    """CONFIG.md §10 states the global-settable key count, the total, and
-    lists the global keys in a table. Since T-0048 that table and its count
-    line are generated (`config_reference.py`); all three are re-measured here
-    against the code: N is `len(leaf_paths(default_global_config()))`, M every
-    declared leaf, and the table holds exactly the N global keys."""
+def test_config_md_states_the_measured_key_counts():
+    """CONFIG.md is generated whole (L-0725). Its first line of counts is
+    re-measured here against the code: the total, the machine-global leaves and
+    the repo-only remainder, and every declared key has a row."""
     with open(_CONFIG_MD_PATH, encoding="utf-8") as handle:
         text = handle.read()
-    section = text[text.index("## 10. Global-settable keys"):text.index("## 11. ")]
-    match = re.search(r"(\d+) of (\d+) keys are settable in the machine-global file",
-                      section)
-    stated_global, stated_total = int(match.group(1)), int(match.group(2))
-    tabled = [key for line in section.splitlines() if line.startswith("| `")
-              for key in re.findall(r"`([^`]+)`", line.split("|")[1])]
+    match = re.search(r"(\d+) keys: (\d+) settable in the machine-global file, (\d+) repo-only",
+                      text)
+    stated_total, stated_global, stated_repo = (int(g) for g in match.groups())
     global_leaves = crew_config.leaf_paths(crew_config.default_global_config())
     total = set(crew_config.leaf_paths(crew_config.default_config())) | set(global_leaves)
 
-    assert stated_global == len(global_leaves) == len(tabled)
-    assert stated_total == len(total)
-    assert set(tabled) == set(global_leaves)
+    assert (stated_total, stated_global, stated_repo) == (
+        len(total), len(global_leaves), len(total) - len(global_leaves))
+    assert all(f"| `{key}` |" in text for key in total)
+    assert len(text.splitlines()) < 600

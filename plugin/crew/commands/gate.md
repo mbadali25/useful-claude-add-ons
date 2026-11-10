@@ -29,8 +29,8 @@ layers and the repo file cannot show you the other one.
   Do not run `status`. Do not run `export`. `export` is a real API call
   needing admin scope, and "I only looked" is not a thing a refusal gets to do.
 - **`ask`** — print the exact command you are about to run (script path,
-  subcommand, owner/workspace, repository, and every flag resolved from
-  config), then wait. Do not proceed on silence. Ask again for each invocation:
+  subcommand, owner/workspace, repository, and every flag taken from the
+  command line), then wait. Do not proceed on silence. Ask again for each invocation:
   one yes is one command, not a session.
 - **`allow`** — run it without asking, and say what you ran and what it
   returned. Under `allow` nothing is silent: `allow` removes the question, not
@@ -73,14 +73,13 @@ substitute for asking the script.
 | `enable` | `enable <ws> <repo> [--branch NAME] [--from-export FILE]` | `enable <owner> <repo> --from-export FILE` — **`--from-export` is REQUIRED and `--branch` is a usage error (exit 2)** |
 | a bare `enable` | applies a hardcoded four-kind preset | refused: "This script has no preset and will not invent a merge gate" |
 
-Neither script has a `--preset` flag. `bitbucket.mergeGate.preset` is therefore
-wired to nothing — say so whenever you show a Bitbucket `enable`, or the
-`"standard"` in the config reads as a choice that was honoured (CONFIG.md §8).
-`github.mergeGate` has no `preset` key at all, which is that decision made once
-rather than inherited.
+Neither script has a `--preset` flag. The Bitbucket preset is fixed at
+`"standard"` (`crew_state.BITBUCKET_MERGE_GATE_PRESET`) and selects nothing —
+say so whenever you show a Bitbucket `enable`, or `"standard"` reads as a choice
+that was honoured. GitHub has no preset at all.
 
-`branch` binds the same way in both: `null` — the shipped default — means pass
-no `--branch` and let the script ask the API which branch this repo calls main.
+`branch` binds the same way in both: absent — `crew_state.MERGE_GATE_BRANCH` is
+`None` — means pass no `--branch` and let the script ask the API which branch this repo calls main.
 Never substitute `main` yourself. On a repo still on `master`, or a Gitflow
 `develop`, a gate on `main` looks configured and watches a branch nobody merges
 into.

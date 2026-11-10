@@ -1,0 +1,25 @@
+{
+ "armed": true,
+ "case": "codex-apply-patch",
+ "dirty": "",
+ "event": "PostToolUse",
+ "harness": "codex",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"PostToolUse\", \"tool_name\": \"apply_patch\", \"tool_input\": {\"input\": \"*** Begin Patch\"}, \"tool_response\": {\"ok\": true}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "crew-context.sh",
+    "--harness",
+    "codex"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

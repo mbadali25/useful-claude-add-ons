@@ -955,8 +955,8 @@ cexpect allow Bash "mysql -e 'SELECT 1 -- DROP TABLE t'"
 cexpect allow Bash 'aws ec2 terminate-instances --no-dry-run --dry-run'
 cexpect allow Bash 'terraform apply -var-file x.tfvars -help'
 cexpect allow PowerShell 'Remove-AzResourceGroup -Name rg -Force -WhatIf'
-# By the TOOL, not the OS: under OS=Windows_NT this flavour still judges a
-# Bash call, and stands down only for a PowerShell one, which the .ps1 judges.
+# By the TOOL, not the OS: under OS=Windows_NT this flavour judges a Bash call
+# and a PowerShell one alike, because cloud-guard.ps1 no longer exists to judge it.
 cg_windows() {  # $1 = tool, $2 = command -> the wrapper's stdout
   json_cmd "$1" "$2" | env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE \
       -u AWS_ACCESS_KEY_ID -u CI -u CREW_UNATTENDED OS=Windows_NT \
@@ -967,9 +967,10 @@ case "$(cg_windows Bash 'terraform destroy')" in
   *'"permissionDecision": "deny"'*) pass ;;
   *) fail "cloud-guard: OS=Windows_NT stood the bash flavour down for a Bash call" ;;
 esac
-if [ -z "$(cg_windows PowerShell 'terraform destroy')" ]; then pass; else
-  fail "cloud-guard: OS=Windows_NT, the bash flavour judged a PowerShell call its twin judges"
-fi
+case "$(cg_windows PowerShell 'terraform destroy')" in
+  *'"permissionDecision": "deny"'*) pass ;;
+  *) fail "cloud-guard: OS=Windows_NT stood the bash flavour down for a PowerShell call with no twin to judge it" ;;
+esac
 # Malformed input is refused while armed.
 case "$(cguard_raw '{not json')" in
   *'"permissionDecision": "deny"'*) pass ;;

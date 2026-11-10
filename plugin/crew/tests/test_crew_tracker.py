@@ -16,6 +16,7 @@ import sys
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+import crew_state
 import crew_status
 import crew_tracker
 import tool_fixtures
@@ -97,14 +98,37 @@ def test_resolve_both_disagree_is_could_not_tell(tmp_path):
 
 
 def test_resolve_both_disagree_on_the_kinds_settings_is_could_not_tell(tmp_path):
-    """Same vault and boardDir, so only the whole-block comparison can see it."""
+    """Same vault, different boardDir, so only the whole-block comparison can see it."""
+    root = make_repo(tmp_path)
+    _crew_json(root, {"kind": "obsidian", "obsidian": {"vaultPath": "/a", "boardDir": "One"}})
+    _config_json(root, "obsidian", obsidian={"vaultPath": "/a", "boardDir": "Two"})
+
+    got = crew_tracker.resolve(str(root))
+
+    assert got["kind"] == "could not tell"
+
+
+def test_board_is_constant(tmp_path):
+    """An old `obsidian.board` in either file names nothing: the board is
+    `crew_state.OBSIDIAN_BOARD`, and two files that name different boards agree."""
     root = make_repo(tmp_path)
     _crew_json(root, {"kind": "obsidian", "obsidian": {"vaultPath": "/a", "board": "One.md"}})
     _config_json(root, "obsidian", obsidian={"vaultPath": "/a", "board": "Two.md"})
 
     got = crew_tracker.resolve(str(root))
 
-    assert got["kind"] == "could not tell"
+    assert (got["kind"], got["settings"]["board"]) == ("obsidian", crew_state.OBSIDIAN_BOARD)
+
+
+def test_columns_is_constant(tmp_path):
+    """Old `obsidian.columns` lane names change no lane: the lanes are
+    `crew_state.OBSIDIAN_COLUMNS`."""
+    root = make_repo(tmp_path)
+    _crew_json(root, {"kind": "obsidian", "obsidian": {"vaultPath": "/a", "columns": RENAMED}})
+
+    got = crew_tracker.resolve(str(root))
+
+    assert (got["kind"], got["settings"]["columns"]) == ("obsidian", crew_state.OBSIDIAN_COLUMNS)
 
 
 def test_resolve_unknown_kind(tmp_path):
@@ -270,7 +294,7 @@ def test_cli_rejects_a_malformed_ticket_id(tmp_path):
 # --- the Kanban board: parse and edit without disturbing it --------------------
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tracker_fixtures")
-COLUMNS = dict(crew_tracker.DEFAULT_COLUMNS)
+COLUMNS = dict(crew_state.OBSIDIAN_COLUMNS)
 RENAMED = {"backlog": "Icebox", "ready": "Todo", "inProgress": "Doing",
            "review": "QA", "done": "Shipped"}
 
@@ -389,7 +413,7 @@ def test_renamed_lanes_from_columns():
 def test_default_columns_on_a_renamed_board_refused():
     _, problem = crew_tracker.parse_board(_fixture("board_renamed_lanes.md"), COLUMNS)
 
-    assert problem == "lane 'Backlog' (obsidian.columns.backlog) is not on the board"
+    assert problem == "lane 'Backlog' (the backlog lane) is not on the board"
 
 
 def test_missing_frontmatter_refused():
@@ -560,15 +584,6 @@ def test_board_dir_absolute(tmp_path):
     done, untouched = _refused(tmp_path, root)
 
     assert (done.returncode, untouched, "must be relative to the vault" in done.stdout) == (1, True, True)
-
-
-def test_board_name_with_separator(tmp_path):
-    vault = _make_vault(tmp_path / "vault")
-    root = _obsidian_repo(tmp_path, vault, boardDir="Boards", board="repo/Board.md")
-
-    done, untouched = _refused(tmp_path, root)
-
-    assert (done.returncode, untouched, "must be a bare file name" in done.stdout) == (1, True, True)
 
 
 def test_board_symlink_outside_vault(tmp_path):
@@ -1201,16 +1216,6 @@ def test_create_with_work_a_file_is_could_not_update(tmp_path):
     done = _cli(root, "create", "--ticket", "T-0001", "--title", "x")
 
     assert (done.returncode, done.stdout.startswith("files: could not update: .work: "), done.stderr) == (1, True, "")
-
-
-@pytest.mark.parametrize("board", [5, ["Board.md"], None])
-def test_non_string_board_name_is_refused(tmp_path, board):
-    vault = _make_vault(tmp_path / "vault")
-    root = _obsidian_repo(tmp_path, vault, board=board)
-
-    done, untouched = _refused(tmp_path, root)
-
-    assert (done.returncode, untouched, "must be a bare file name" in done.stdout, done.stderr) == (1, True, True, "")
 
 
 def test_read_says_when_no_note_names_the_cards_repo(tmp_path):
@@ -2170,9 +2175,8 @@ def test_create_on_an_id_the_board_holds_says_id_taken(tmp_path, owner):
 
 
 @pytest.mark.parametrize("crew_side,config_side,field", [
-    ({}, {"vaultPath": "{v}", "board": "Other.md"}, "board"),
-    ({}, {"vaultPath": "{v}", "columns": {"done": "Shipped"}}, "columns"),
-    ({"vaultPath": "{v}", "board": "Other.md"}, {}, "board"),
+    ({}, {"vaultPath": "{v}", "boardDir": "Other"}, "boardDir"),
+    ({"vaultPath": "{v}", "boardDir": "Other"}, {}, "boardDir"),
 ])
 def test_resolve_compares_every_effective_obsidian_setting(tmp_path, crew_side, config_side, field):
     """Round 3 FIX (:222): the reviewer's repro -- only config.json carries the
@@ -2290,9 +2294,9 @@ def test_backend_repairs_an_unchecked_card_already_in_done(tmp_path):
 
 
 @pytest.mark.parametrize("change,reason", [
-    (("**Complete**\n\n", ""), "lane 'Done' (obsidian.columns.done) has no **Complete** marker"),
+    (("**Complete**\n\n", ""), "lane 'Done' (the done lane) has no **Complete** marker"),
     (("**Complete**\n\n", "**Complete**\n\n**Complete**\n\n"),
-     "lane 'Done' (obsidian.columns.done) has 2 **Complete** markers"),
+     "lane 'Done' (the done lane) has 2 **Complete** markers"),
 ])
 def test_done_lane_needs_exactly_one_complete_marker(change, reason):
     """Round 3 FIX (:765): the reviewer's repro, and two markers beside it."""

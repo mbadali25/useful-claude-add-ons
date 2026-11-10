@@ -52,7 +52,7 @@ changing it needs `/crew:approve` again. `needs-replan` is derived the same way,
 from the review ledger.
 
 **3. Plan.** You type `/crew:plan T-0091`. The session reads `spec.md`, writes
-one step per unit of work in `plan.md` (Files/Test/Risk/Standards each), checks every
+one step per unit of work in `plan.md` (Files/Lines/Test/Risk/Standards each; `Lines:` is the step's projected production lines, 300 in total, and not yet checked at approval), checks every
 Files: entry against the spec's Touch globs, and enters **plan mode** to show
 you the whole thing. You review it. On your yes, it asks you to type
 `/crew:approve T-0091`. crew's prompt hook sees that you typed it and writes
@@ -119,7 +119,11 @@ back conflicted, named as forgotten, for you to resolve by hand.
 review receipt rebuilds clean, the verify gate is clean, and the completion
 audit (the whole tree diffed against the scope base, not counting a file that
 is byte-identical to main as last merged) finds nothing outside scope. Any one failing refuses the close and names what to fix. On success it
-appends a metrics row, marks the ticket done, and clears a stale handoff.
+appends a metrics row, marks the ticket done, and clears a stale handoff. The metrics row (schema 1.1)
+carries tokens split by kind, each assistant message counted once, and a list-price cost. They are an
+attributed lower bound: only the Claude Code transcripts tied to the ticket by a `Ticket ID: <id>` line, a
+`/crew:<command> <id>` or its own worktree count (a dispatch prompt's `Ticket ID:` line ties a subagent), and
+when none can be tied both read `UNKNOWN`, never `0`.
 
 With the train armed, landing is part of done: `crew_train.py check-land --ticket T-0091 --pr
 <n>` refuses unless T-0091 holds the train, `git merge-tree` against the base is clean, the base
@@ -131,7 +135,9 @@ phase then names `/crew:promote <env>` for the first GitHub environment, or stop
 refuses, land in this order: `crew_train.py catch-up` (resolve any conflict), bump the version one
 past the base's, refresh the artifacts, commit, gate the merged head, review it again if
 `review_ledger.py --check-receipt` reads stale, then `check-land` again, so the tree the gate
-passed is the tree that lands. After the review, a re-anchor changes only the
+passed is the tree that lands. From a host that did not run the review, `review_status.py check --pr <PR>`
+reads the published `crew/review` status of that head; no status is could-not-tell and refuses, and
+nothing publishes one until L-0821 (L-0780). After the review, a re-anchor changes only the
 `anchor:` sha and regenerates the rules; its provenance goes in the ticket's `notes.md`. After the
 merge, `crew_train.py release --ticket T-0091 --merged <merge sha>` frees the train and tells every
 overlapping lane to merge the base now.
@@ -141,7 +147,7 @@ overlapping lane to merge the base now.
 | When | Hook | Does |
 |---|---|---|
 | Every write | plan-approval + scope guard (`PreToolUse`) | refuses an edit with no approval receipt, or outside the spec's Touch |
-| End of turn | verify gate (`Stop`) | runs the rules for what changed that fit `verify.stopBudgetSeconds`; refuses to end the turn on a red check, never on a deferral (a rule too big for the budget goes to CI) |
+| End of turn | verify gate (`Stop`) | runs the rules for what changed that fit `verify.stopBudgetSeconds`; refuses to end the turn on a red check, never on a deferral (a rule too big for the budget goes to CI); prints one verdict line and the failures, the rest is in `.crew/.verify-gate.log` (`--verbose` shows it) |
 | End of turn | completion scope audit (`Stop`) | diffs the whole tree against the scope base, catches shell-made writes too |
 | Session start | context | brief on branch, open ticket, gate state, codemap freshness |
 

@@ -1,28 +1,11 @@
-"""L-0656: pings held while autopilot is asleep, and the morning summary sent once.
+"""L-0656: the held-ping record, and the morning summary sent once.
 
-`autopilot.sleep.notifyHold: true` (crew_sleep.read_notify_hold) holds the
-pings that only ask for attention while autopilot sleeps. `holds(root, event,
-kind)` is asked by `crew_notify.send` after its filters and before anything is
-sent; it answers True only when ALL of these hold:
-
-- the event and kind are on HOLDABLE: every `question` and the `blocker` kinds
-  `approval` and `rounds`. A positive list: every `deploy` result (a failure,
-  an unknown outcome, a silent pass), a refused Stop gate (`gate`), a stalled
-  or unknown lane, and a blocker of no or an unknown kind are never held;
-- `crew_autopilot.settings` (the one reader of the sleep state) says armed,
-  asleep and `notifyHold: true`, and the state is not `tightenOnly` -- a manual
-  sleep outside the scheduled window may only tighten until L-1504, and hiding
-  the owner's pings is not a tightening;
-- the held ping was recorded in `.work/autopilot/held.json` (per worktree).
-
-Anything that cannot be told -- a settings read that raises, a record that
-cannot be read or written, a lock that cannot be had -- sends the ping as
-before: what crew cannot tell never hides one.
-
-A held ping is dropped and counted (the hand-off's recommended answer). The
-record keeps one key per distinct message (event, kind, ticket, reason and the
-episode/dedupe material `crew_notify._deliver` fingerprints), so a ping
-repeated in one waiting episode counts once.
+L-0725: nothing holds a ping any more. `autopilot.sleep.notifyHold` is gone
+(`crew_state.AUTOPILOT_NOTIFY_HOLD` is None: no ping is ever held), so every
+ping sends as it is raised. What stays is the reading side: a record an earlier
+version left in `.work/autopilot/held.json` (per worktree, one key per distinct
+held message) is still counted, reported by the morning summary and then
+removed, and one that cannot be read is said, never read as none.
 
 The morning summary: crew_autopilot_sleep.sleep_summary, not asleep, appends
 `held_line` to L-0653's summary and passes the text to `send_summary` once,
@@ -31,8 +14,6 @@ no notifier at all) removes the reported keys from the record (`take`).
 `send_summary` uses the configured provider and credentials, silently, and only
 when `question` or `blocker` is in `notify.events`: no new event exists.
 """
-import datetime
-import hashlib
 import json
 import os
 
@@ -43,12 +24,9 @@ import crew_ticket
 # pylint: disable-next=protected-access
 _say, _Lock, _write_json = crew_notify._say, crew_notify._Lock, crew_notify._write_json
 
-HOLDABLE = (("question", "ask"), ("question", "permission"),
-            ("blocker", "approval"), ("blocker", "rounds"))
 HELD_FILE = "held.json"
 HELD_LOCK = "held.lock"
 SUMMARY_LOCK = "summary.lock"
-MAX_KEYS = 1000
 MAX_SUMMARY = 3500
 
 
@@ -108,56 +86,6 @@ def count(root):
     """`(n, why)`: how many distinct pings are held, or None with why."""
     record, why = read(root)
     return (None, why) if record is None else (len(record["keys"]), "")
-
-
-def _asleep_and_holding(root):
-    """Whether settings say armed, asleep (not tightenOnly) and notifyHold true."""
-    import crew_autopilot  # pylint: disable=import-outside-toplevel
-    conf = crew_autopilot.settings(root)
-    sleep = conf.get("sleep") or {}
-    return (conf.get("armed") is True and sleep.get("state") == "asleep"
-            and not sleep.get("tightenOnly") and sleep.get("notifyHold") is True)
-
-
-def holds(root, event, kind, material=""):
-    """True when this ping is held and was recorded (module docstring); never raises."""
-    try:
-        if (event, kind) not in HOLDABLE or not _asleep_and_holding(root):
-            return False
-        return _record(root, "|".join([event, str(kind), str(material)]))
-    except Exception as exc:  # pylint: disable=broad-except
-        _say(f"could not tell whether to hold this ping "
-                         f"({type(exc).__name__}); sending it")
-        return False
-
-
-def _record(root, material):
-    """Add one key to the held record. False (send instead) when it cannot."""
-    key = hashlib.sha256(material.encode("utf-8")).hexdigest()
-    with _Lock(_path(root, HELD_LOCK)) as lock:
-        if not lock.held:
-            _say("held-ping lock busy; sending this ping")
-            return False
-        record, why = read(root)
-        if record is None:
-            _say(f"held-ping record could not be read ({why}); sending this ping")
-            return False
-        keys = record["keys"]
-        if key not in keys and len(keys) >= MAX_KEYS:
-            _say("held-ping record is full; sending this ping")
-            return False
-        stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-        keys.setdefault(key, stamp)
-        record.update(keys=keys, last=stamp)
-        record.setdefault("first", stamp)
-        try:
-            _write_guarded(root, HELD_FILE, record)
-        except OSError as exc:
-            _say(f"held-ping record not written ({type(exc).__name__}); "
-                             "sending this ping")
-            return False
-    _say("asleep with autopilot.sleep.notifyHold: ping held for the morning summary")
-    return True
 
 
 def held_line(n, why=""):
@@ -261,7 +189,7 @@ def send_summary(root, text, keep=""):
             _say("neither question nor blocker is in notify.events; "
                              "the morning summary is not sent")
             return "filtered"
-        if provider not in ("telegram", "teams"):  # review r3: unknown is not "off"
+        if provider != "telegram":  # review r3: unknown is not "off"
             return "failed:unknown notify.provider"
         provider, token, target, stop = crew_notify._credentials(cfg)  # pylint: disable=protected-access
         if stop:
@@ -271,10 +199,7 @@ def send_summary(root, text, keep=""):
         if len(body) > MAX_SUMMARY:
             tail = "\n...\n" + crew_notify.redact(keep) if keep else "\n..."
             body = body[:MAX_SUMMARY - len(tail)] + tail
-        if provider == "telegram":
-            ok, why = crew_notify._telegram(token, target, body, False)  # pylint: disable=protected-access
-        else:
-            ok, why = crew_notify._teams(target, body)  # pylint: disable=protected-access
+        ok, why = crew_notify._telegram(token, target, body, False)  # pylint: disable=protected-access
         return "sent" if ok else f"failed:{why}"
     except Exception as exc:  # pylint: disable=broad-except
         return f"failed:{type(exc).__name__}"
