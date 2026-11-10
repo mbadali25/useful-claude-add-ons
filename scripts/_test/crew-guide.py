@@ -183,7 +183,7 @@ _OS_GATE = (
     "class Fake:\n"
     "    @staticmethod\n"
     "    def to_soffice(*a, **k):\n"
-    "        calls.append(a); return 0\n"
+    "        calls.append((a, k)); return 0\n"
     "    @staticmethod\n"
     "    def _word_com_available():\n"
     "        return False\n"
@@ -193,7 +193,7 @@ _OS_GATE = (
     "S = g['SKIPPED_RC']\n"
     "assert S not in (0, 1, 2), S\n"
     "assert rc == {'linux': 0, 'win32': S, 'darwin': S}, rc\n"
-    "assert len(calls) == 1, calls\n"
+    "assert calls == [(('x.html',), {'want_docx': True, 'want_pdf': True})], calls\n"
     # win32 WITH Word: a fake build_report.to_word must be reached, once, with
     # (html, True, True), its return code passed through, and soffice untouched.
     "import types\n"
