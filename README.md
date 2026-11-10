@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.27**: The lock test no longer fails when it lists the lock mid-rename of `owner`. `crew` 1.3.27: test-only. `test_the_lock_never_records_a_pid` listed the lock directory as soon as `token` appeared and allowed only the name `owner`, but `verify-gate.sh` writes `owner.tmp.<pid>` and renames it to `owner`, so a listing in that window failed with `AssertionError: ['owner.tmp.515831', 'token']` (it failed required CI `test (3.12)` on PRs #679 and #597). The test now also ignores `owner.tmp.*`; a `pid` file or any other name still fails. No gate code changed.
 - **crew 1.3.26**: Context-watch's no-op Stop turn starts one process, not a dozen. `crew` 1.3.26: the Stop hook `context-watch.sh` clears an ordinary turn with one python start instead of five plus a handful of helper programs, so it no longer runs into its 20 s limit on a loaded Git Bash host; what it warns about and when is unchanged.
-- **crew 1.3.25**: Promote-gate reads deploy policy from the sha being deployed, not the session's checkout. `crew` 1.3.25 reads every promote-gate requirement (`requires`, `rollback`, `requireHuman`, a `github` entry's `shaInput` and `requireReview`) from the `.crew/verify.json` committed in the sha being deployed, so a deploy from a git worktree honours a waiver committed on its own branch and is no longer blocked by the main checkout's uncommitted map.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
