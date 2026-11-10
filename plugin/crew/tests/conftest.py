@@ -175,7 +175,7 @@ def _trust_seam_python(tmp_path_factory):
     sitecustomize (Debian ships one) is found first on sys.path and shadows it."""
     import venv
     root = tmp_path_factory.mktemp("trust-seam-venv")
-    venv.create(str(root), with_pip=False, symlinks=(os.name != "nt"))
+    venv.create(str(root), with_pip=False, symlinks=os.name != "nt")
     found = list(root.glob("lib/python*/site-packages")) + list(root.glob("Lib/site-packages"))
     if not found:
         pytest.skip("venv has no site-packages directory")

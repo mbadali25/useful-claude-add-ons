@@ -791,6 +791,7 @@ def test_lock_an_owner_token_that_cannot_be_written_gives_up_and_leaves_no_lock(
     monkeypatch.setattr(verify_trust, "open", refuse_token, raising=False)
 
     with pytest.raises(verify_trust.TrustError):
-        verify_trust._Lock(path).__enter__()
+        with verify_trust._Lock(path):
+            pass
 
     assert not os.path.exists(path + ".lock")

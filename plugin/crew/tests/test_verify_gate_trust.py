@@ -267,7 +267,11 @@ def test_gate_a_python_on_a_repo_path_entry_is_never_run_for_the_trust_check(tmp
     (root / "bin").mkdir()
     marker = tmp_path / "hostile-ran.txt"
     fake = root / "bin" / "python3"
-    fake.write_text(f'#!/bin/sh\ncase "$*" in *verify_trust.py*) : >> "{marker}"; echo trusted; exit 0 ;; esac\necho "$0"\nexit 0\n', encoding="utf-8")
+    fake.write_text(
+        f'#!/bin/sh\ncase "$*" in *verify_trust.py*) : >> "{marker}"; echo trusted; exit 0 ;; esac\n'
+        'echo "$0"\nexit 0\n',
+        encoding="utf-8",
+    )
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
     first = str(root / "bin") if entry == "inside" else "bin"
 
@@ -305,8 +309,9 @@ def test_gate_a_verify_json_rewritten_between_the_two_checks_runs_nothing(tmp_pa
     """The first check runs under a fixed PATH, so the git shim never sees it.
     The first call the shim sees AFTER that check is the tree snapshot's
     `git ls-files -z` (the gate takes it just before the matcher). The shim swaps
-    verify.json for one that runs the sentinel on that call, once: the first check has already passed on the approved bytes, the matcher then
-    reads the swapped file, and only the second check can see it."""
+    verify.json for one that runs the sentinel on that call, once: the first check
+    has already passed on the approved bytes, the matcher then reads the swapped
+    file, and only the second check can see it."""
     sentinel = tmp_path / "ran.txt"
     root = _repo(tmp_path, sentinel)
     swapped = tmp_path / "swapped.json"
