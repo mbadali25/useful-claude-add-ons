@@ -52,7 +52,7 @@ def _rounds(root, *results):
 
 def test_out_of_rounds_with_block_sends_blocker(tmp_path, telegram):
     root = _blocker_repo(tmp_path)
-    _rounds(root, ("FINDINGS", 0), ("FINDINGS", 2))
+    _rounds(root, ("FINDINGS", 0), ("FINDINGS", 0), ("FINDINGS", 2))
 
     word = crew_notify.rounds_check(str(root), TICKET)
 
@@ -73,7 +73,7 @@ def test_non_final_round_with_block_sends_nothing(tmp_path, telegram):
 @pytest.mark.parametrize("last", [("CLEAN", 0), ("FINDINGS", 0)], ids=["clean", "fix-only"])
 def test_final_round_clean_or_fix_only_sends_nothing(tmp_path, telegram, last):
     root = _blocker_repo(tmp_path)
-    _rounds(root, ("FINDINGS", 1), last)
+    _rounds(root, ("FINDINGS", 1), ("FINDINGS", 1), last)
 
     assert (crew_notify.rounds_check(str(root), TICKET), telegram.requests) == ("filtered", [])
 
@@ -103,7 +103,7 @@ def test_rounds_check_never_raises_on_an_unreadable_ledger(tmp_path, telegram):
 @pytest.mark.parametrize("phase", ["accept-review", "replan", "auto-replan-cap"])
 def test_run_stop_out_of_rounds_phases_send_rounds(tmp_path, telegram, phase):
     root = _blocker_repo(tmp_path)
-    _rounds(root, ("FINDINGS", 1), ("FINDINGS", 1))
+    _rounds(root, ("FINDINGS", 1), ("FINDINGS", 1), ("FINDINGS", 1))
 
     word = crew_notify.run_stop(str(root), TICKET, phase, "round 2 is FINDINGS")
 

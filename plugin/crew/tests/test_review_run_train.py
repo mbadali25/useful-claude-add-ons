@@ -200,8 +200,8 @@ def _entries(repo):
 
 
 def _spend_budget(lanes, tmp_path):
-    """T-1 reserves both rounds while holding the train, then releases it."""
-    for number in (1, 2):
+    """T-1 reserves the whole budget while holding the train, then releases it."""
+    for number in range(1, review_ledger.BUDGET + 1):
         done = _run(lanes["T-1"], "T-1", tmp_path)
         assert done.returncode == 0 and f"ROUND={number}" in done.stdout, done.stderr
     assert review_ledger.status(str(lanes["T-1"]), "T-1").get("rounds_left") == 0
