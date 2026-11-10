@@ -90,7 +90,7 @@ How it writes, whatever the arguments say:
   refused wherever it is read (`/crew:worktrees` prints `refused: ...`), and the
   default is never substituted for it. Setting it moves nothing: existing
   worktrees stay where they are (`/crew:worktrees list` shows them).
-- **`promote.deadlineSeconds` (crew 1.3.33).** A plain number of seconds in either layer (the repo
+- **`promote.deadlineSeconds` (crew 1.3.36).** A plain number of seconds in either layer (the repo
   wins) or `null`: how long `promote-gate.sh` may run, counted from the moment its
   shell began. null derives it from the guard's hook timeout less 4 s (16 of 20). A value above
   the timeout less 2 s is clamped to that; zero, a negative, a string or a boolean reads as null.

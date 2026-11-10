@@ -76,6 +76,12 @@ does not know; it exposes a per-rule pattern fingerprint, the five regex values,
 scopes. Nothing imports it yet (the checker is PR B2, the `crewlint` linter kind PR B3). JUDGEMENT: the rest of this map
 is unchanged by it.
 
+**Rule checker (L-0715 PR B2).** DERIVED at the PR B2 head, anchor not moved: `plugin/crew/hooks/scripts/review_lint_classes.py`
+(`RULES`, `load_rules`, `applicable_rules`, `run`, `main`) applies the five rules to files with `ast`, `tokenize` and the rule
+file's regexes. `RULES` maps each rule id to its matcher and a frozenset of accepted pattern fingerprints; a rule id with no
+matcher, a matcher with no rule or a fingerprint outside the set is exit 2. It loads the reader by path (`-I` safe). Output is
+one ASCII JSON document per tree. Nothing calls it yet (PR B3 is the runner). JUDGEMENT: the rest of this map is unchanged by it.
+
 ## The roster, replaced wholesale
 
 Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
@@ -196,7 +202,7 @@ list equal. Decision record: `docs/adr/0009-hook-single-dispatch.md`.
 `plugin/crew/hooks/scripts/crew_hook.py` (620 lines) is the dispatcher the launchers run. Its
 `TABLE` (`:65`) is 18 rows (`Row`: event, matcher, script, extra, timeout, guard, twin, codex) over
 **14** distinct `.sh` scripts. Only `promote-gate.ps1` is still a `.ps1` twin in the directory; the other twins were deleted in L-0867 and L-0869, so `select` (`plugin/crew/hooks/scripts/crew_hook.py:140`) takes a twin only when `exists()` finds it and a `PowerShell` call otherwise runs the `.sh`, which Windows runs under Git Bash. The `twin=` names still in `TABLE` for `cloud-guard` and `env-guard` (`:73-74`) point at deleted files and are inert.
-DERIVED (crew 1.3.33): `promote-gate.sh` (`plugin/crew/hooks/scripts/promote-gate.sh`, 346 lines) decides nothing itself any more. After the PowerShell hand-off, the no-map opt-out and `crew_py`, it runs `_promote_gate.py` once (`:153`) and maps its exit status: `0` allow, `2` block (message already written), `10+N` the containment match could not read the map and `20+N` the pre-deploy check could not be evaluated (the shell writes the framing around the reason, `:166-188`, so `sabotage.py`'s two `ENV_STATUS` / `VERDICT_STATUS` mutations still bite), anything else a block. `_promote_gate.py` imports `_promote_match.py` (the containment heredoc), `_promote_verdict.py` (the PASS-row, rollback and marker heredoc), `_promote_dispatch.py`, `_promote_tree.py`, `_promote_github.py` and `_promote_review.py`; its deadline is `Clock.deadline` = the shell's start (`CREW_GATE_START`) + `deadline_seconds(None, configured_seconds())`, i.e. `promote.deadlineSeconds` clamped to the row's `TABLE` timeout less `REAP` 2, else that timeout less `DEFAULT_MARGIN` 4. JUDGEMENT: the fixed 16 s `GATE_DEADLINE` left in the shell belongs to the jq fallback alone. `_promote_fast.py` is gone; its allow fast path is `Gate.provably_no_deploy`.
+DERIVED (crew 1.3.36): `promote-gate.sh` (`plugin/crew/hooks/scripts/promote-gate.sh`, 346 lines) decides nothing itself any more. After the PowerShell hand-off, the no-map opt-out and `crew_py`, it runs `_promote_gate.py` once (`:153`) and maps its exit status: `0` allow, `2` block (message already written), `10+N` the containment match could not read the map and `20+N` the pre-deploy check could not be evaluated (the shell writes the framing around the reason, `:166-188`, so `sabotage.py`'s two `ENV_STATUS` / `VERDICT_STATUS` mutations still bite), anything else a block. `_promote_gate.py` imports `_promote_match.py` (the containment heredoc), `_promote_verdict.py` (the PASS-row, rollback and marker heredoc), `_promote_dispatch.py`, `_promote_tree.py`, `_promote_github.py` and `_promote_review.py`; its deadline is `Clock.deadline` = the shell's start (`CREW_GATE_START`) + `deadline_seconds(None, configured_seconds())`, i.e. `promote.deadlineSeconds` clamped to the row's `TABLE` timeout less `REAP` 2, else that timeout less `DEFAULT_MARGIN` 4. JUDGEMENT: the fixed 16 s `GATE_DEADLINE` left in the shell belongs to the jq fallback alone. `_promote_fast.py` is gone; its allow fast path is `Gate.provably_no_deploy`.
 Row counts per event, with the registration timeout `event_timeout` gives (largest row + `EVENT_SLACK`
 10, `:44`):
 
@@ -941,7 +947,8 @@ returns `VALUES` (`crew_config.py:3282`). The double confirmation is
 `:131`, `cancel` `:176`, CLI `main` `:205`, no confirm subcommand); its one
 write goes through `crew_config.apply_confirmed_optout` (`:4010`), and a crew
 write back to human-only revokes via `_revoke_human_only` (`:4000`).
-JUDGEMENT: inert by design. No hook imports `crew_humanonly`, and no hook
+JUDGEMENT: inert by design in 1.3.9; live for `approve` since 1.3.33 (the
+paragraph after this section's tests line). In 1.3.9 no hook imported `crew_humanonly`, and no hook
 calls `confirm`; both are harness (`scripts/check-tooling-pr.py` `HARNESS`:
 `approval_hook.py`, `crew_hook.py`, `crew_ticket.py`, `scope_guard.py`,
 `hooks.json`, `sabotage*.py`) and land in PR 2. Tests:
@@ -974,6 +981,22 @@ replaces creation for every user is the owner's to opt into, so
 `plugin/crew/tests/test_crew_worktrees.py`; mutations
 `plugin/crew/tests/worktrees_mutations.py` (17, run alone: `sabotage*.py` is
 harness).
+
+**1.3.33 (PR 2 of 3, harness only).** DERIVED: `crew_ticket.cli_approval_allowed`
+(`plugin/crew/hooks/scripts/crew_ticket.py`) returns True when
+`scope.allowCliApproval` is true OR `human_only_approve_opted_out` finds
+`crew_humanonly.resolve(top, "approve")["humanOnly"] is False` (anything else,
+an exception included, is False); every reader of the CLI acceptance
+(`accepted`, `scope_guard`, `completion_audit`, `crew_autopilot`) goes through
+that one function. `plugin/crew/hooks/scripts/approval_hook.py` handles
+`/crew:confirm-config <id>` (`_confirm_config`, calls `crew_confirm_config.confirm`
+with `via="user-prompt"`) and `/crew:approve-mass <id>` (`_approve_mass`, writes
+`<git-common-dir>/crew/mass-approvals/<id>.json`); `approval-hook.sh` also
+passes a prompt naming `crew:confirm-config`. `scope_guard.py` refuses writes to
+`~/.claude/crew/confirm-config/` (`confirm_store`, `_CONFIRM_STORE_RE`).
+`humanonly_mutations.py` is wired into `sabotage.py` (27 entries by
+`len(HUMANONLY_MUTATIONS)`). JUDGEMENT: `humanOnly.promoteMarker` is still read
+by no hook, and a session that runs arbitrary python can still forge a receipt.
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 

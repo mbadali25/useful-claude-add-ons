@@ -911,7 +911,7 @@ judges <strong>the tree the deploy runs from</strong>: the Bash call's <code>cwd
 and named by any <code>git -C &lt;dir&gt;</code>. That tree must be a worktree of the same repository, clean, and at
 every literal sha the command names. <code>.crew/verify.json</code>, <code>.work/PROMOTIONS.md</code> and the
 <code>.crew/.approved-&lt;env&gt;-&lt;sha&gt;</code> markers are still read from the session's project directory.</p>
-<p><strong>It is one process (crew 1.3.33).</strong> The gate used to start about forty-five (eight pythons, a dozen <code>git</code> probes), which on
+<p><strong>It is one process (crew 1.3.36).</strong> The gate used to start about forty-five (eight pythons, a dozen <code>git</code> probes), which on
 Git Bash took 19-20 s best case and timed out at 20 s; now the shell starts one python and that python decides. It keeps one deadline
 counted from its shell's start, <code>promote.deadlineSeconds</code> (null: the hook timeout less 4 s, 16 s of 20). If a deploy still ends in
 "inside the gate's deadline" on a very loaded host, the deadline expired before the gate finished: that is a block, not a timeout.

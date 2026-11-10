@@ -356,7 +356,7 @@ is one a reviewer was shown under a standing receipt: it does not prove that
 paths the review bundle left out (identical to merged main, or under
 <code>.work/</code>, <code>graphify-out/</code>, <code>.crew/metrics.md</code>) or ignored build output a
 deploy script ships were reviewed, nor who wrote the local ledger.</p>
-<p>The gate is one python process (crew 1.3.33), so a deploy-shaped command costs a handful of process starts, not
+<p>The gate is one python process (crew 1.3.36), so a deploy-shaped command costs a handful of process starts, not
 forty-five. It stops itself before its hook times out, because a timeout is not a block: <code>promote.deadlineSeconds</code>
 (either layer) sets how many seconds it may run, and null derives it from the hook timeout less four seconds.</p>
 <p>The guards stop drift and accidents, not a session set on forging local
@@ -444,7 +444,7 @@ worktree:</p>
   always a merge, never a rebase. The train never merges, pushes or opens the
   PR; only autopilot's ship step does, under <code>autopilot.ship</code>.</li>
 <li><strong>Where worktrees live (crew 1.3.19).</strong> <code>worktrees.root</code> (either layer, the repo wins; null is <code>~/.claude/crew/worktrees</code>) is the one place outside the repo for crew's worktrees, laid out as <code>&lt;root&gt;/&lt;repo&gt;-&lt;digest&gt;/&lt;name&gt;</code>; a value that is relative or inside the repo is refused, never swapped for the default. Claude Code's own agent worktrees (<code>claude --worktree</code>, an Agent with <code>isolation: worktree</code>) stay under <code>.claude/worktrees/</code>: it has no setting for another place, and the one redirect it supports is a <code>WorktreeCreate</code> hook, which replaces git's creation, so crew prints the block (<code>/crew:worktrees hook</code>) and registers nothing. <code>/crew:worktrees list</code> is a read-only survey of every worktree; <code>remove &lt;path&gt;</code> needs your <code>--yes</code>, takes one path and never forces. Nothing existing is moved.</li>
-<li><strong>How long the promote gate may run (crew 1.3.33).</strong> <code>promote.deadlineSeconds</code> (either layer, the repo wins; null derives it from the guard's hook timeout less 4 s, so 16 s of the 20 s row) is the one deadline <code>promote-gate.sh</code> keeps for its whole decision, counted from the moment its shell began. A value above the hook timeout less 2 s is clamped to that, and a value that is not a positive number reads as null.</li>
+<li><strong>How long the promote gate may run (crew 1.3.36).</strong> <code>promote.deadlineSeconds</code> (either layer, the repo wins; null derives it from the guard's hook timeout less 4 s, so 16 s of the 20 s row) is the one deadline <code>promote-gate.sh</code> keeps for its whole decision, counted from the moment its shell began. A value above the hook timeout less 2 s is clamped to that, and a value that is not a positive number reads as null.</li>
 <li><strong>Check before assuming a diff is yours.</strong> Another session may have
   changed the tree, a branch or the stash (root <code>CLAUDE.md</code>, "Lessons").</li>
 </ul>
@@ -575,10 +575,13 @@ may arm it.</p>
 production promote marker being human-only. A <code>false</code> counts only from the
 machine file or an untracked repo file, never a committed one; a <code>true</code> in
 either file vetoes it; and it is written only after the owner types
-<code>/crew:confirm-config &lt;change_id&gt;</code> twice. In 1.3.9 no hook reads these keys
-and nothing records that confirmation, so the human-only rules hold exactly as
-before; the configuration reference's "The human-only opt-out" section says
-what lands next.</p>
+<code>/crew:confirm-config &lt;change_id&gt;</code> twice. Since crew 1.3.33 the prompt hook
+records that confirmation and <code>humanOnly.approve: false</code> makes a CLI-recorded
+approval count (the same effect as <code>scope.allowCliApproval: true</code>, but set
+only through the double confirmation); <code>humanOnly.promoteMarker</code> is still
+read by no hook. The owner's <code>/crew:approve-mass &lt;id&gt;</code> is recorded the same
+way, for one blocked mass operation. The configuration reference's "The
+human-only opt-out" section has the rules and their limits.</p>
 <ul>
 <li><code>/crew:config</code> shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.</li>

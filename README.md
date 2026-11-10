@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.33**: The promote gate decides in one process and keeps its own, configurable deadline. `crew` 1.3.33: a deploy-shaped command no longer times the promote gate out on Git Bash; the gate now runs as one python process instead of about forty-five, and a new `promote.deadlineSeconds` setting controls how long it may run.
+- **crew 1.3.36**: The promote gate decides in one process and keeps its own, configurable deadline. `crew` 1.3.36: a deploy-shaped command no longer times the promote gate out on Git Bash; the gate now runs as one python process instead of about forty-five, and a new `promote.deadlineSeconds` setting controls how long it may run.
 - **crew 1.3.20**: The docs no longer say a successor plan opens a fresh review budget. `crew` 1.3.20: `plugin/crew/README.md` and `docs/crew/config-rationale.md` said the NEEDS_REPLAN -> IN_REVIEW successor continuation opens a fresh review budget; since 1.3.19 it keeps the budget the ticket has left. Wording only, no code change.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

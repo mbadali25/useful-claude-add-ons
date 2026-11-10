@@ -562,7 +562,7 @@ HUMAN_ONLY_DEFAULTS = {"approve": None, "promoteMarker": None}
 # `crew_worktrees.resolve`.
 WORKTREES_DEFAULTS = {"root": None}
 
-# crew 1.3.33 `promote.deadlineSeconds`: how long promote-gate.sh may run, counted from the
+# crew 1.3.36 `promote.deadlineSeconds`: how long promote-gate.sh may run, counted from the
 # moment its shell began. null derives it from the guard's hook timeout (crew_hook.TABLE)
 # less a 4 s margin (20 -> 16). Both layers; the reader and its clamp are
 # `_promote_gate.deadline_seconds` / `_promote_gate.configured_seconds`.
