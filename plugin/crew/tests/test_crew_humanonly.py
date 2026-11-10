@@ -382,7 +382,7 @@ def test_resolve_cli_says_nothing_acts_on_it_yet(tmp_path, capsys):
                                      "--global-path", gpath]) == 0
     out = capsys.readouterr().out
     assert "humanOnly.approve: human-only" in out
-    assert "no hook acts on these yet" in out
+    assert "no hook reads humanOnly.promoteMarker" in out
 
 
 def test_store_writes_leave_no_temp_files(tmp_path):

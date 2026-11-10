@@ -520,6 +520,19 @@ read by no hook. The owner's `/crew:approve-mass <id>` is recorded the same
 way, for one blocked mass operation. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.
 
+**Mass operations (crew 1.3.36).** The rule for an autopilot that runs without a
+human: full automation, except a mass delete, a mass create or a mass change,
+which wait for your yes. `guards.mass.enabled: true`, or a double-confirmed
+`humanOnly` opt-out, arms a stop on the cloud guard's hook for any shell command
+that would delete 10 or more files, create 20 or more, or change 30 or more
+(`guards.mass.deleteCount`, `createCount`, `changeCount`; terraform's are 3, 10
+and 10). It counts files, a commit's or branch's added, deleted and changed
+files against its base, a terraform plan's resource changes, and treats an
+unfiltered SQL `DELETE` or `UPDATE` and any count it cannot take as mass. It
+prints an id; `/crew:approve-mass <id>` approves that one command for 15
+minutes. The configuration reference's "Mass operations" section lists what it
+sees, what it does not, and the keys.
+
 - `/crew:config` shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.
 - The [configuration reference](configuration-reference.md) lists every
