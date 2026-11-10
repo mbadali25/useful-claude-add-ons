@@ -181,14 +181,7 @@ def _trust_seam_python(tmp_path_factory):
         pytest.skip("venv has no site-packages directory")
     (found[0] / "_crew_trust_seam.py").write_text(_TRUST_SEAM, encoding="utf-8", newline="\n")
     (found[0] / "_crew_trust_seam.pth").write_text("import _crew_trust_seam\n", encoding="utf-8", newline="\n")
-    bindir = root / ("Scripts" if os.name == "nt" else "bin")
-    if os.name == "nt" and not (bindir / "python3.exe").exists():
-        # A Windows venv ships python.exe only, and the gate's resolver
-        # (`crew_py_strict`: `type -ap python3 python py`) takes any `python3`
-        # on PATH before any `python`, so without this copy the seam venv is
-        # never the interpreter the gate runs.
-        shutil.copyfile(bindir / "python.exe", bindir / "python3.exe")
-    return bindir
+    return root / ("Scripts" if os.name == "nt" else "bin")
 
 
 @pytest.fixture(autouse=True)
