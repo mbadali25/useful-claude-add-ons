@@ -36,12 +36,28 @@ failing test, run it, implement the minimal code, run it again, commit.
 
 ```
 ### Step N: <name>
-Files: create/modify/test, exact paths, `path:line` where modifying existing code
+Files: create/modify/test, exact paths, `path:line` where modifying existing code; a production path is followed by its kind tag, as in `src/x.py` [other]
+Lines: projected production lines added or changed by this step, or 0
 Test: the check that proves this step, by name or by the command that runs it
 Risk: what breaks if this step is wrong, or "low"
 Standards: the crew-standards ids this step triggers, or "none - <why>"
 - [ ] concrete actions - what to actually do, not what the result should be
 ```
+
+**Size and kind (L-0714).** `Lines:` is the step's projected production lines,
+added or changed; tests, docs, generated files and version files do not count,
+and a step with none writes `Lines: 0`. Write each production `Files:` path in
+backticks with one kind tag after it, outside the backticks: `[parser]`,
+`[guard]`, `[state-machine]` or `[other]`; test, doc and generated entries take
+no tag. The cap is 300 production lines per plan, the sum of every step's
+`Lines:`. A parser, guard or state machine does not share a plan with
+differently tagged production work: entries of one risky kind may sit together,
+and with test, doc and generated entries, but a risky kind with any differently
+tagged production entry, or two risky kinds, is over the line. A plan over the
+cap or over that line goes to `/crew:split <id>`; the one exception is the
+owner's typed size waiver at approval. Not enforced yet: `/crew:approve` checks
+none of this today and a later change will refuse such a plan, so write the
+labels now.
 
 **PR slices (T-0059).** A ticket that holds together but is too large for one
 review (the split rulebook said `slices`, or you judge it so) stays one ticket:
@@ -85,6 +101,8 @@ cheaper than catching it from a refused write.
    default, a model tier, a guard) cites where that decision is recorded
    (`CHANGELOG.md`, `docs/adr/`, a ticket's `direction.md`), or says it searched
    and found none. It never reverses a recorded decision silently.
+7. **Size.** Does every step with production Files carry `Lines:` and a kind
+   tag on each production entry, and does the sum stay at or under 300?
 
 Fix inline. No need to re-review once fixed - just fix and move on. This is a
 checklist you run yourself, not a subagent dispatch.

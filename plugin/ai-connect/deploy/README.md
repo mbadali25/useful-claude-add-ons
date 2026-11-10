@@ -35,12 +35,23 @@ install it when it is missing. On Debian and Ubuntu that is Tailscale's apt repo
 with its key in a `signed-by` keyring; elsewhere on Linux, and for a release the
 repository does not carry, Tailscale's install script; any other apt failure (a held
 dpkg lock, no network) stops instead of falling back. Every command is printed before
-it runs, as root nothing goes through `sudo`, and deploy says what is about to ask for
+it runs, as root nothing goes through `sudo` (tests force either branch with `AI_CONNECT_DEPLOY_ROOT=1` or `0`), and deploy says what is about to ask for
 you (sudo's password, a UAC prompt, a browser login).
 
 Tailscale takes no routes, no exit node and no DNS on either machine, so a VPN client
 that is already there keeps working: see [Running alongside other VPNs](#running-alongside-other-vpns).
 Use the Bridge's `100.x.y.z` address, not its name.
+
+**As root** (Linux, macOS): every verb takes `--allow-root`; `AI_CONNECT_ALLOW_ROOT=1`
+or `install.allow_root: true` in `config.yaml` say the same, in that order below the
+flag, and `0` / `false` refuse root. With none set a root run goes ahead silently, as
+before 0.2.13. Allowed, deploy prints one warning line that the Bridge runs as root,
+keeps the config and tokens in root's own `~/.config/ai-connect` and closes it to
+0700 (every file 0600) after the run, and refuses a root whose `HOME` or user name is
+another user's (`sudo -E`; use `sudo -i`). A dedicated service user is safer and is
+not created for you. `status` and `list` ignore the switch; on Windows it has no
+effect (UAC elevation is by design there). The same switch governs `setup.sh` and
+`install.sh`: see the plugin README, "Installing as root".
 
 **See everything first.** `bridge`, `peer`, `add-peer` and `uninstall` take `--dry-run`:
 it runs no tool at all (no `tailscale`, `claude`, `sudo`, `ufw`), needs no token or key
@@ -135,8 +146,14 @@ up from inside a worktree is moved the same way: its scheduled task is registere
 
 ## Adding the peer: no long-lived secret crosses machines
 
-The short way is three commands, `invite`, `join` and `approve`:
-[ONBOARDING.md](ONBOARDING.md). The steps below are the same flow by hand.
+Since 0.2.12 the short way is two commands and no restart: `ai-connect bridge invite --name
+laptop --host <Bridge VPN IP>` on machine 1 prints a one-time join code, and `ai-connect
+join` on machine 2 redeems it ([ONBOARDING.md](ONBOARDING.md), and the
+[README](../README.md#5-adding-machines-join-codes-and-the-ai-connect-cli)). deploy's own
+`invite`, `join` and `approve` (Tailscale auth keys) are deprecated: they print a notice,
+keep working through 0.2.x, and are removed in the next minor release. The steps below are
+the by-hand flow. A running Bridge now re-reads `auth.peers` every 2 seconds, so the
+restarts deploy still does are no longer needed for a token change.
 
 **Machine 2** makes its own token and prints only its hash:
 
@@ -176,8 +193,12 @@ MCP server, `--install-hooks` the plugin's hooks for every session on the machin
 prints a warning: in a bypass-permissions session, what another peer sends is acted on
 with no prompt in between.
 
-The peer-state hooks (busy / idle / waiting) call the MCP server, so they are written only
-with both options, into the settings of the scope the server is in: the user's
+The peer-state hooks (busy / idle / waiting) call the MCP server, so they are written
+with `--register-mcp` (since 0.2.4; before, `--install-hooks` was needed as well, and a
+peer registered without it reports `state unknown` until `deploy peer --register-mcp`
+is run again). `--no-state-hooks` keeps the server alone. This is the one hook that is on by
+default: it sends a literal state, never a prompt or a peer's message. They go into the
+settings of the scope the server is in: the user's
 `~/.claude/settings.json` with `--scope user`, this project's `.claude/settings.local.json`
 with `--scope project` (in the user's settings they would fail in every other project,
 which has no such server). Other hooks and keys in that file are kept, a file that is not
@@ -218,6 +239,24 @@ The exit code is 1 when any line says `FAIL`. What each failure means:
 | Bridge accepts this token | the hash given to `add-peer` is not this machine's (run `--print-enrolment` again and compare), or the Bridge was not restarted |
 | Message round trip | `name_taken`: a 0.1.8 session (or the HTTP/SSE server) is online under the machine's bare name, close it; 0.2.0 sessions register as `<name>:<project>` and leave it free. `name_not_bound_to_token`: `--name` is not the name the token was made for |
 | Wrong token refused | the Bridge takes any token: do not use it until `auth` in its `config.yaml` is fixed |
+
+### TLS (0.2.15) and the cut-over to `wss://` only (0.3.1)
+
+From 0.2.15 the Bridge also serves `wss://` on `server.tls.port` (default `server.port + 1`,
+10000) with a self-signed certificate it makes on first start, beside plain `ws://` on 9999.
+`deploy` itself still writes `ws://` in 0.2.15 and its firewall step opens `server.port` only,
+so this test checks the plain port. To move a deployed pair over before 0.3.1, which serves
+`wss://` alone:
+
+1. Add `tcp:10000` to the tailnet policy ([the template](../vpn/acl-template.hujson) has it;
+   an applied policy does not) and open 10000 for the VPN subnet in the Bridge's firewall.
+2. On machine 1: `ai-connect bridge cert show` prints the fingerprint.
+3. On each machine, the Bridge included: `ai-connect pin <fingerprint>`. It checks the
+   certificate at `wss://<bridge>:10000` first and refuses a mismatch; the client then
+   fails closed on any other certificate and never falls back to `ws://`.
+4. The full check over TLS: `config_tool.py smoke --bridge 100.x.y.z --port 10000 --name laptop
+   --fingerprint <fingerprint>` (with the venv's Python). `ai-connect status` shows the pin.
+5. Once every peer is pinned: `server.tls.required: true` closes the plain port.
 
 The test leaves one message in the peer's own history on the Bridge and one refused
 token in the Bridge's log.

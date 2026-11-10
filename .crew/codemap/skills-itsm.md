@@ -1,6 +1,6 @@
 # skills-itsm
-anchor: useful-claude-add-ons@5be137d8
-verified: 2026-10-02
+anchor: useful-claude-add-ons@bdde587
+verified: 2026-10-26
 
 ## Does
 `infra-work-ticketing` gets infrastructure work logged to ServiceDesk Plus or Jira through an MCP
@@ -20,7 +20,7 @@ the paper trail, the other pages the person.
   (`skills/notify/SKILL.md:161`); it owns the single Telegram poller so concurrent jobs do not
   fight over replies.
 - `plugin/gizmoduck/scripts/_test/labtarget/labtarget_server.py:264` — module entry point (`main()`), from the graph
-- `plugin/gizmoduck/scripts/gizmoduck.py:1530` — module entry point (`main()`), from the graph
+- `plugin/gizmoduck/scripts/gizmoduck.py:1582` — module entry point (`main()`), from the graph
 - `skills/notify/scripts/telegram_get_chat_id.py:19` — module entry point (`main()`), from the graph
 
 ## Owns data
@@ -36,7 +36,7 @@ the paper trail, the other pages the person.
   `sdp_transition`, `sdp_close`, `sdp_list_metadata`, `sdp_add_worklog`) is tabulated at
   `skills/infra-work-ticketing/SKILL.md:86-101`, with `sdp_link_account` named separately at
   `:135`. Jira Cloud and email are reachable only through the fallback (`:100-101`).
-- DERIVED The Telegram Bot API at `skills/notify/scripts/tg.py:38`.
+- DERIVED The Telegram Bot API at `skills/notify/scripts/tg.py:53` (the `https://api.telegram.org/bot{token}/{method}` URL in `api()`).
 
 ## Landmines
 - **Ticket creation is ungated by default, and gated for exactly one class of caller.** Both halves
@@ -74,9 +74,13 @@ the paper trail, the other pages the person.
   `skills/infra-work-ticketing/scripts/ticketctl.py:2054` covers only the fallback transport,
   which is the path the skill tells you *not* to use by default.
 - **The Telegram token is env-only, and the code enforces it** - DERIVED
-  `skills/notify/scripts/notify.py:88` and `:193` read
-  `os.environ.get(tgc.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))` and nothing reads a literal token
-  out of config JSON. Confirmed in code, not inferred from the documentation.
+  `skills/notify/scripts/notify.py:88` and `:193` (and `skills/notify/scripts/notifyd.py:86`) read it
+  through `tg.token_from_env(tgc.get("bot_token_env", "TELEGRAM_BOT_TOKEN"))`
+  (`skills/notify/scripts/tg.py:32`), which reads `os.environ`, strips whitespace and returns None
+  for unset or blank; nothing reads a literal token out of config JSON. Since the 2026-10-05
+  change the helper strips a pasted trailing space/newline, because `urllib`'s InvalidURL message
+  quotes the URL and so the token. `tg.api()` also now turns a non-JSON 200 and an InvalidURL/
+  ValueError into a `TgError` that does not carry the URL. Confirmed in code at HEAD.
 - A `question` event **blocks**. DERIVED Timeout defaults to `cfg["reply"]["timeout_seconds"]` or
   3600s (`skills/notify/scripts/notify.py:314`, `:325`); on timeout it exits **5** with
   `{"reply": null, "timed_out": true}` (`:182`, `:187`, `:255`). A caller that does not handle exit 5
@@ -86,12 +90,25 @@ the paper trail, the other pages the person.
   JUDGEMENT the same two-layer shape that has already caused two agents here to disagree about a
   value without naming which file they read.
 
+## Dispatcher restart behaviour (new since the previous anchor)
+- DERIVED `skills/notify/scripts/notifyd.py` now unlinks a queued request **before** `_send`, and a
+  failing send writes `{"req_id", "reply": null, "error": <ExceptionName>}` to the answers dir
+  instead of leaving the file to be replayed by a supervisor restart (`process_requests`, diff
+  `5be137d8..HEAD`).
+- DERIVED a sent question is persisted with a `_sent` record (`pending`), and `resume_active()`
+  (called from `run()`) re-tracks it with `_track` instead of re-posting it; an older record without
+  `_sent` is deleted first and sent once. The main loop body is wrapped so one bad request costs one
+  turn (`eprint(... in the main loop; continuing)`, 2s sleep) rather than the daemon.
+- Tests added: `skills/notify/tests/test_notifyd_requeue.py`, `skills/notify/tests/test_tg_token.py`.
+  Read, not run.
+
 ## Unverified
 - `ticketctl.py`'s scrubber implementation and its `zoho-token` / `jira-token` OAuth subcommands
   were not read; scrubbing behaviour is taken from SKILL.md beyond confirming a `redact-check`
   subparser exists.
-- `skills/notify/scripts/notifyd.py` and `inbox.py` were not read in depth - dispatcher and
-  topic-routing behaviour comes from SKILL.md prose, not from tracing the code.
+- `skills/notify/scripts/notifyd.py` (beyond the `5be137d8..HEAD` diff, summarised above) and
+  `inbox.py` were not read in depth - topic-routing behaviour comes from SKILL.md prose, not from
+  tracing the code.
 - No `references/*.md` under either skill was opened.
 - Whether an agent actually *honours* the `:213-231` carve-out is not verified and cannot be from
   this repo: it is prose instruction to a model, not an enforced gate. The enforced half lives
@@ -224,3 +241,6 @@ and `git diff --name-only 6c497a14 f2bb919b -- skills/ plugin/gizmoduck` is empt
 **Re-anchored `91b793fa` -> `7773abb2` on 2026-10-02 (T-0107 review round-2 fixes). One cited path moved.** `git diff -U0 91b793fa 7773abb2 -- plugin/gizmoduck/scripts/gizmoduck.py` adds `import re` and `import time` at the top, so `_records_digest` `:208-227` -> `:210-229`; the round-2 fixes (`html_to_pdf`'s timeout, the routine constants, `_replace`, the name and gate-option rules, the run lock, `_render_pdf`) grow the file ahead of `main()`, `:1281` -> `:1418`, and the digest refusal `:1452-1458` -> `:1589-1595`. Re-read by `grep -n` / `sed -n`; each still says what this map claims. gizmoduck is re-bumped to 0.5.5 in the commit carrying this note, after the last content change. Nothing was executed for this note.
 
 **Re-anchored `7773abb2` -> `5be137d8` on 2026-10-02 (L-0599, gizmoduck 0.5.6). No cited line moved.** `git diff -U0 7773abb2 5be137d8 -- plugin/gizmoduck/scripts/gizmoduck.py` is one hunk, `:924-925` in `_is_link`, two lines changed in place (a comment, and a `# pylint: disable=not-callable` on the guarded `isjunction` call), no line added or removed. Re-read by `grep -n`: `_records_digest` `:210`, `main()` `:1418`, the digest refusal at `:1590` inside `:1589-1595`. `git diff --name-only 7773abb2 5be137d8 -- skills/infra-work-ticketing/ skills/notify/` is empty. Nothing was executed for this note.
+
+**Re-anchored `5be137d8` -> `bdde587` on 2026-10-26 (code-map refresh). Four cited lines moved or changed.**
+`git diff --name-only 5be137d8..HEAD -- skills/infra-work-ticketing skills/notify` returns six files, all under `skills/notify/` (`scripts/notify.py`, `notifyd.py`, `telegram_get_chat_id.py`, `tg.py`, and two new tests); `skills/infra-work-ticketing/` is unchanged. Every other citation in this note's body was re-read at HEAD by line and still matches: `SKILL.md:17`, `:86`, `:90`, `:101`, `:135`, `:139-141`, `:209-211`, `:213-231`, `:233`, `:236-243`, `:387-390`, `:410`; `ticketctl.py:1927`, `:2054`, `:2093`; `notify.py:63`, `:182`, `:187`, `:255`, `:314`, `:325`; `skills/notify/SKILL.md:38-41`, `:113`, `:161`. Corrected: `tg.py:38` -> `:53`; `gizmoduck.py:1530` (`main`) -> `:1582`; `notify.py:88`/`:193` now call `tg.token_from_env` (claim rewritten). Current gizmoduck locations, re-read: `_records_digest` `plugin/gizmoduck/scripts/gizmoduck.py:296`, `GIZMODUCK_APPROVAL_MISMATCH` refusal `:1764`; the dated provenance entries above keep their own commits' line numbers. Not re-verified: gizmoduck behaviour beyond those three lines; nothing was executed.

@@ -41,6 +41,9 @@ class FakeClient:
     def drop_messages(self, count):
         del self._messages[:count]
 
+    async def list_peers(self):
+        return []
+
     async def get_history(self, peer, limit):
         return self._messages
 

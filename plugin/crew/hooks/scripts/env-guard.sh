@@ -11,7 +11,14 @@
 # Decisions travel as PreToolUse JSON on stdout with exit 0. The one exit 2
 # here is the fallback below: python could not judge, and a config file says
 # the guard is armed. Nothing here prints the command or the environment.
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The script's directory without a subshell when the path is absolute (the
+# dispatcher starts every guard by its full `D:/...` path): on Git Bash each
+# fork is an MSYS process start, and the guards' budget is shared by every
+# lane that runs at once. A relative path falls back to the old `cd`.
+case "${BASH_SOURCE[0]}" in
+  /*|[A-Za-z]:/*) DIR=${BASH_SOURCE[0]%/*} ;;
+  *) DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" ;;
+esac
 
 # Flavour stand-down: by the TOOL, never by the OS. Both flavours are
 # registered and on Windows both run, so each call must be judged by exactly
@@ -24,7 +31,9 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 . "$DIR/_common.sh"
 
-INPUT=$(cat)
+# The payload is not read here: env_guard.py reads it from this script's own
+# stdin, which it inherits. `INPUT=$(cat)` and `printf | python` cost two MSYS
+# process starts on Git Bash, and nothing else in this wrapper reads it.
 
 # Whether a config layer arms the guard, read WITHOUT python -- only consulted
 # when python could not run at all. A layer counts as unarmed only when
@@ -57,9 +66,14 @@ if [ -z "$PY" ]; then
   exit 0
 fi
 
-printf '%s' "$INPUT" | CREW_ENV_GUARD_FLAVOUR=bash PYTHONUTF8=1 \
-  PYTHONIOENCODING=utf-8 "$PY" "$(crew_native_path "$DIR/env_guard.py")"
-status=$?
+if crew_py_script "$DIR/env_guard.py" GUARD_PY; then
+  CREW_ENV_GUARD_FLAVOUR=bash PYTHONUTF8=1 \
+    PYTHONIOENCODING=utf-8 "$PY" "$GUARD_PY"
+  status=$?
+else
+  echo "env-guard: env_guard.py is missing or its path could not be resolved (looked in $DIR)." >&2
+  status=127
+fi
 
 if [ "$status" -ne 0 ]; then
   # env_guard.py only ever exits 0 -- its decisions are JSON -- so any other
