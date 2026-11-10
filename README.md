@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.21**: The trust-store test seam is chosen on Windows. `crew` 1.3.21: no behaviour change; the trust-store tests' seam interpreter is now the one the verify gate runs on Windows.
 - **crew 1.3.20**: Pylint convention messages in the trust-store tests. `crew` 1.3.20: no behaviour change; the trust-store tests now pass the repo's pylint gate.
-- **crew 1.3.19**: The verify gate runs a repo's verify map only for a repo this machine trusts. `crew` 1.3.19: `verify-gate.sh` no longer runs `.crew/verify.json` rules or a smoke script from a repo you have not approved on this machine; the first Stop in each such repo prints `UNTRUSTED, not run` until you approve it once.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

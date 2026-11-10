@@ -9,6 +9,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.3.21: the trust-store test seam is chosen on Windows (L-0888)
+
+- **Summary.** `crew` 1.3.21: no behaviour change; the trust-store tests' seam interpreter is now the one the verify gate runs on Windows.
+- A Windows venv holds `python.exe` but no `python3.exe`, and the gate's resolver (`crew_py_strict`, `type -ap python3 python py`) takes any `python3` on PATH before `python`, so the conftest trust seam's venv was never chosen and the gate printed `UNTRUSTED, not run`. `_trust_seam_python` in `plugin/crew/tests/conftest.py` now copies `python.exe` to `python3.exe` in the seam venv on Windows when it is absent. Tests only; Linux unchanged.
+
 ### Fixed — crew 1.3.20: pylint convention messages in the trust-store tests (L-0888)
 
 - **Summary.** `crew` 1.3.20: no behaviour change; the trust-store tests now pass the repo's pylint gate.
