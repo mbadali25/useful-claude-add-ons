@@ -68,6 +68,25 @@ prompt that STARTS with one is refused: an approval is one line.
   to the user, which is the point: the user asked for an approval and must
   see that none was recorded.
 
+## Two more user-typed commands (crew 1.3.33)
+
+The same rule -- the one input the session does not author is the user's own
+prompt -- carries two more commands, each ONE line, raw or expanded exactly as
+`/crew:approve` is:
+
+- `/crew:confirm-config <change_id>` records one confirmation of a proposed
+  `humanOnly.*` change (`crew_confirm_config.confirm`, `via="user-prompt"`, the
+  payload's `prompt_id`). The second one, from another prompt, applies it. This
+  is the recorder `crew_humanonly.USER_PROMPT` was waiting for; without it no
+  opt-out could ever take effect.
+- `/crew:approve-mass <id>` records the owner's yes to ONE blocked mass delete
+  or mass overwrite: `<git-common-dir>/crew/mass-approvals/<id>.json`, good for
+  `MASS_APPROVAL_TTL` seconds. `<id>` is the digest the guard printed with its
+  refusal (it binds the exact command and worktree), so the yes cannot be
+  spent on another command. The directory is under `<git-common-dir>/crew/`,
+  which the scope guard refuses to every Write/Edit and every shell command
+  that names it, so the session cannot write the file; only this hook does.
+
 The session can still pipe a forged payload into this script through its
 shell; `scope_guard.py` refuses a Bash/PowerShell command naming it, which
 stops drift, not a deliberate forgery (README "Scope and approval").
@@ -84,6 +103,15 @@ import uuid
 import crew_ticket
 
 COMMAND = "crew:approve"
+CONFIRM_COMMAND = "crew:confirm-config"
+MASS_COMMAND = "crew:approve-mass"
+# How long a typed `/crew:approve-mass` stays good. Equal to
+# `crew_state.GUARD_APPROVAL_TTL` (the `ask` marker's), repeated here so this
+# hook imports nothing heavy; `cloud_guard` reads the file's own `expires`.
+MASS_APPROVAL_TTL = 900
+MASS_APPROVAL_DIR = "mass-approvals"
+_MASS_ID_RE = re.compile(r"^[0-9a-f]{12}$")
+_CHANGE_ID_RE = re.compile(r"^cc-[0-9a-f]{8}$")
 CONFIRM_TOKEN = "--confirm"
 MAX_GROUP = 20
 PENDING_TTL = 600
@@ -545,12 +573,116 @@ def _partly(root, items, index, recorded, attempt, exc):
     return 2
 
 
+def _command_args(prompt, name):
+    """`(found, args_or_error)` for a user-typed `/<name> <args>` prompt: the
+    command ALONE on one line, raw (`/crew:x args`) or expanded (a top-level
+    `<command-name>` and `<command-args>` and no other text). `found` is False
+    when the prompt is not this command at all (it passes untouched); True with
+    an error string (starting `error:`) when it is, malformed; True with the
+    args string otherwise. A command quoted mid-sentence is not a command."""
+    if not isinstance(prompt, str) or name not in prompt:
+        return False, None
+    raw = re.match(r"^\s*/" + re.escape(name) + r"(?:\s+(.*?))?\s*$", prompt, re.DOTALL)
+    if raw:
+        if _BREAK_RE.search(prompt.strip()):
+            return True, "error: a command must be one line"
+        return True, (raw.group(1) or "").strip()
+    if prompt.lstrip().startswith("<command-"):
+        tags, outside = _top_level(prompt)
+        names = [content for tag, content in tags if tag == "name"]
+        args = [content for tag, content in tags if tag == "args"]
+        if (len(names) == 1 and re.fullmatch(r"\s*/?" + re.escape(name) + r"\s*", names[0])
+                and len(args) == 1):
+            if any(_ANY_TAG_RE.search(content) for _, content in tags) \
+                    or _ANY_TAG_RE.search(outside) or outside.strip():
+                return True, "error: a command tag is nested, or other text surrounds the command"
+            if _BREAK_RE.search(args[0].strip()):
+                return True, "error: a command must be one line"
+            return True, args[0].strip()
+    return False, None
+
+
+def _refuse_command(name, text):
+    sys.stderr.write(f"crew: /{name} was NOT recorded -- {text}\n")
+    return 2
+
+
+def _confirm_config(data, args):
+    """One `/crew:confirm-config <change_id>` from the user's own prompt."""
+    if not _CHANGE_ID_RE.match(args):
+        return _refuse_command(CONFIRM_COMMAND, "usage: /crew:confirm-config <change_id> "
+                               "(an id like cc-1a2b3c4d, from crew_confirm_config.py propose)")
+    import crew_confirm_config  # pylint: disable=import-outside-toplevel
+    try:
+        record = crew_confirm_config.confirm(
+            args, via=crew_confirm_config.crew_humanonly.USER_PROMPT,
+            prompt_id=data.get("prompt_id"), session_id=_session(data))
+    except crew_confirm_config.Refused as exc:
+        return _refuse_command(CONFIRM_COMMAND, _one_line(exc))
+    state = record.get("state")
+    if state == "pending":
+        return _emit(f"crew: the user confirmed {args} once ({len(record.get('confirmations', []))}"
+                     " of 2). It takes effect only after a second /crew:confirm-config "
+                     f"{args} in a new prompt.")
+    if state == "applied":
+        return _emit(f"crew: the user confirmed {args} twice; {record.get('key')} is now "
+                     f"{record.get('value')} in the {record.get('layer')} config.")
+    sys.stderr.write(f"crew: /{CONFIRM_COMMAND} {args} did NOT take effect -- it is "
+                     f"{state}: {_one_line(record.get('reason'))}\n")
+    return 2
+
+
+def _approve_mass(root, data, args):
+    """One `/crew:approve-mass <id>`: the owner's yes to the mass operation the
+    guard refused under that id. Written by this hook alone."""
+    if not _MASS_ID_RE.match(args):
+        return _refuse_command(MASS_COMMAND, "usage: /crew:approve-mass <id> (12 hex digits, "
+                               "printed by the guard that blocked the command)")
+    state = crew_ticket.state_dir(root)
+    if not state:
+        return _refuse_command(MASS_COMMAND, f"{root} is not a git repository")
+    directory = os.path.join(state, MASS_APPROVAL_DIR)
+    now = time.time()
+    record = {"id": args, "approved_at": now, "expires": now + MASS_APPROVAL_TTL,
+              "approved_via": crew_ticket.USER_PROMPT, "session_id": _session(data),
+              "prompt_id": data.get("prompt_id")}
+    text = json.dumps(record, indent=2, sort_keys=True) + "\n"
+    try:
+        os.makedirs(directory, exist_ok=True)
+        final = os.path.join(directory, args + ".json")
+        tmp = f"{final}.{uuid.uuid4().hex}.tmp"
+        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
+        os.replace(tmp, final)
+    except OSError as exc:
+        return _refuse_command(MASS_COMMAND, f"the approval could not be written ({exc})")
+    return _emit(f"crew: the user approved mass operation {args} from their own prompt, good "
+                 f"for {MASS_APPROVAL_TTL // 60} minutes. Re-run that exact command.")
+
+
+def _user_command(root, data):
+    """Exit code when the prompt is one of the two commands above, else None."""
+    prompt = data.get("prompt")
+    for name, run in ((CONFIRM_COMMAND, lambda args: _confirm_config(data, args)),
+                      (MASS_COMMAND, lambda args: _approve_mass(root, data, args))):
+        found, args = _command_args(prompt, name)
+        if not found:
+            continue
+        if args.startswith("error:"):
+            return _refuse_command(name, args[len("error:"):].strip())
+        return run(args)
+    return None
+
+
 def handle(data):
     """Exit code for one UserPromptSubmit payload. Writes its own output."""
     if not isinstance(data, dict) or data.get("hook_event_name") != "UserPromptSubmit":
         return 0
     root = data.get("cwd") if isinstance(data.get("cwd"), str) else None
     root = os.path.abspath(root or os.environ.get("CLAUDE_PROJECT_DIR") or ".")
+    done = _user_command(root, data)
+    if done is not None:
+        return done
     request = parse(data.get("prompt"), root)
     if request.kind == NONE:
         return 0

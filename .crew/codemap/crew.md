@@ -940,7 +940,8 @@ returns `VALUES` (`crew_config.py:3282`). The double confirmation is
 `:131`, `cancel` `:176`, CLI `main` `:205`, no confirm subcommand); its one
 write goes through `crew_config.apply_confirmed_optout` (`:4010`), and a crew
 write back to human-only revokes via `_revoke_human_only` (`:4000`).
-JUDGEMENT: inert by design. No hook imports `crew_humanonly`, and no hook
+JUDGEMENT: inert by design in 1.3.9; live for `approve` since 1.3.33 (the
+paragraph after this section's tests line). In 1.3.9 no hook imported `crew_humanonly`, and no hook
 calls `confirm`; both are harness (`scripts/check-tooling-pr.py` `HARNESS`:
 `approval_hook.py`, `crew_hook.py`, `crew_ticket.py`, `scope_guard.py`,
 `hooks.json`, `sabotage*.py`) and land in PR 2. Tests:
@@ -973,6 +974,22 @@ replaces creation for every user is the owner's to opt into, so
 `plugin/crew/tests/test_crew_worktrees.py`; mutations
 `plugin/crew/tests/worktrees_mutations.py` (17, run alone: `sabotage*.py` is
 harness).
+
+**1.3.33 (PR 2 of 3, harness only).** DERIVED: `crew_ticket.cli_approval_allowed`
+(`plugin/crew/hooks/scripts/crew_ticket.py`) returns True when
+`scope.allowCliApproval` is true OR `human_only_approve_opted_out` finds
+`crew_humanonly.resolve(top, "approve")["humanOnly"] is False` (anything else,
+an exception included, is False); every reader of the CLI acceptance
+(`accepted`, `scope_guard`, `completion_audit`, `crew_autopilot`) goes through
+that one function. `plugin/crew/hooks/scripts/approval_hook.py` handles
+`/crew:confirm-config <id>` (`_confirm_config`, calls `crew_confirm_config.confirm`
+with `via="user-prompt"`) and `/crew:approve-mass <id>` (`_approve_mass`, writes
+`<git-common-dir>/crew/mass-approvals/<id>.json`); `approval-hook.sh` also
+passes a prompt naming `crew:confirm-config`. `scope_guard.py` refuses writes to
+`~/.claude/crew/confirm-config/` (`confirm_store`, `_CONFIRM_STORE_RE`).
+`humanonly_mutations.py` is wired into `sabotage.py` (27 entries by
+`len(HUMANONLY_MUTATIONS)`). JUDGEMENT: `humanOnly.promoteMarker` is still read
+by no hook, and a session that runs arbitrary python can still forge a receipt.
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 

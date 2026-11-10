@@ -94,6 +94,7 @@ from ghdeploy_mutations import GHDEPLOY_MUTATIONS
 from promote_tree_mutations import PROMOTE_TREE_MUTATIONS
 from sabotage_contract import CONTRACT_MUTATIONS
 from sabotage_bridge import BRIDGE_MUTATIONS
+from humanonly_mutations import HUMANONLY_MUTATIONS
 import sabotage_bound
 import sabotage_platform
 
@@ -2714,8 +2715,8 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + LIMIT_WORKTREE_MUTATIONS + QA_AUDIT_MUTATIONS + TOOLING_MUTATIONS + TICKET_STATE_MUTATIONS
               + STANDARDS_MUTATIONS + SHELL_MUTATIONS + PREREVIEW_MUTATIONS + KIMI_MUTATIONS + COORD_MUTATIONS
               + RECURRING_MUTATIONS + TRAIN_MUTATIONS + GITIGNORE_MUTATIONS + WAVE_MUTATIONS + GHDEPLOY_MUTATIONS
-              + PROMOTE_TREE_MUTATIONS + CONTRACT_MUTATIONS + BRIDGE_MUTATIONS + sabotage_platform.PLATFORM_MUTATIONS
-              + BUDGET_MUTATIONS)
+              + PROMOTE_TREE_MUTATIONS + CONTRACT_MUTATIONS + BRIDGE_MUTATIONS + HUMANONLY_MUTATIONS
+              + sabotage_platform.PLATFORM_MUTATIONS + BUDGET_MUTATIONS)
 MUTATIONS += (__import__("sabotage_reach_notice").REACH_NOTICE_MUTATIONS + __import__("sabotage_quiet").QUIET_MUTATIONS
               + __import__("sabotage_crew_hook").CREW_HOOK_MUTATIONS
               + __import__("sabotage_deadline").DEADLINE_MUTATIONS)

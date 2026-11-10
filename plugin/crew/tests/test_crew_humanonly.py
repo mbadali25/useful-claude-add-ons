@@ -408,4 +408,5 @@ def test_every_mutation_anchor_is_present_exactly_once():
         with open(target, encoding="utf-8", newline="") as fh:
             text = fh.read().replace("\r\n", "\n")
         assert text.count(find) == 1, label
-        assert test.startswith("tests/test_crew_humanonly.py::"), label
+        assert test.startswith(
+            ("tests/test_crew_humanonly.py::", "tests/test_humanonly_live.py::")), label
