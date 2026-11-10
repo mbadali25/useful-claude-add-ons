@@ -1362,15 +1362,82 @@ check), which still applies independently: fully unattended production also
 needs that off. Nor does it stand down promote-gate's review evidence
 (L-0703): every gated environment needs an accepted review receipt whose
 reviewed head has the deployed commit's tree, unless that environment in
-`.crew/verify.json` sets `requireReview: false` plus a `reviewReason` - a map
+`.crew/verify.json` sets `requireReview: false` plus a `reviewReason` and a `reviewWaiverSha` naming the train base (SRL-3312) - a map
 key, not a config key, and committed like the rest of the map. Unattended
 production therefore deploys only reviewed trees. `.crew/verify.json` stays promote-gate's list of environments
 (and of deploy workflows: promote-gate reads a dispatch with T-0009's reader whether
 or not `environments.workflows` is set, T-0062),
-read from the session's project directory even when the deploy runs from a
-linked worktree (whose HEAD and cleanliness are what the gate then checks);
+matched from the session's project directory even when the deploy runs from a
+linked worktree (whose HEAD and cleanliness are what the gate then checks),
+while each matched environment's requirements, `requireReview` included, come
+from the map committed in the deployed sha (L-0768);
 `crew_config.py --check` warns when a `nonProd` glob covers one it marks
 `requireHuman: true`.
+
+### Pre-production environments (`environments.preProduction`, crew 1.3.20)
+
+**The need.** An environment gets a production name (`production`, `acme-prod-*`)
+while it is still being built, and the production rules fire on work that touches
+nothing live. What existed before this key, verified against 1.3.16 with the
+`cloud_guard.py` python driver in a throwaway repo:
+
+- `guards.profile: off` (or `guards.overrides.cloudGuard: off`) turns the whole
+  cloud guard off - the destructive, force-push and production rules together. It
+  is a global switch, and it ratchets: a layer that says `block` or `standard`
+  beats a layer that says `off`, so it cannot be used to loosen one repo that the
+  machine file arms.
+- `environments.nonProd` is a per-environment exemption for terraform and deploy
+  dispatches, but a non-destroying apply still needs a saved plan with a
+  `crew_tfplan.py summarize` sidecar (an apply with no saved plan is "destroy
+  unknown" and asks), and it says nothing about `production.databases` /
+  `production.hosts`: those are globs over host and database names, with no way to
+  carve one name out of `prod-*`, and `prodDatabase` / `prodServer` are a level
+  (`none`, `read`, `full`) for ALL declared targets.
+- promote-gate already has per-environment, reasoned opt-outs in
+  `.crew/verify.json` (`rollback: "none"` + `rollbackReason`, `requireReview:
+  false` + `reviewReason`); `change.requireForProduction` is a ratchet a repo can
+  only turn on.
+
+**The setting.** `environments.preProduction`, repo layer only:
+
+```json
+{ "environments": { "preProduction": {
+    "acme-new": { "reason": "stood up in November, no customer traffic yet",
+                  "targets": ["acme-new-web1", "acme-new-db1"] } } } }
+```
+
+Names and `targets` are EXACT (no wildcard, no whitespace) and the `reason` is at
+least ten characters; any other entry, any unknown field, or a non-object value
+makes the whole `environments` block unreadable, which is the existing "every
+environment is unknown" state - narrower, never wider. The machine-global file
+cannot supply it (`filter_global` prunes it, as it does `nonProd`).
+
+**What it does.** (1) `cloud_guard.evaluate` adds each listed name to the
+`nonProd` globs it hands the terraform and dispatch classifiers, so a
+non-destroying apply or a `deployWorkflow` dispatch to that name is `nonProd`: it
+runs unattended under `ask` and is logged as `env:preProduction:<name>` rather than
+`env:nonProd:<name>` (and a name an `environments.nonProd` glob already covers is
+not claimed). (2) `crew_config.guard_decision` lets `guards.prodDatabase` and
+`guards.prodServer` stand down for one command when EVERY declared production
+target the command names is the listed name or one of its `targets` - not the
+first match, every one, so `ssh acme-new-web1 && ssh acme-prod-web9` still refuses
+(as findings: the listed one is allowed and logged, the other refuses, and the line
+is denied).
+
+**What it never does.** It does not relax a destroy (`destroy yes` and `unknown`
+still ask, even for a listed name), a `block` policy, `cloudDestructive`,
+`sqlDestructive`, `forcePush`, the identity pins, promote-gate (use
+`rollback: "none"` and `requireReview: false` with their reasons for those),
+autopilot's deploy ladder or `crew_unattended`'s `--environment`. An environment
+not listed is judged exactly as before.
+
+**Audit.** Every use prints `crew PRE-PRODUCTION EXEMPTION: ... treated <name> as
+NOT production because environments.preProduction lists it -- <reason>` on screen
+and on stderr, and writes the policy `env:preProduction:<name>` to
+`.crew/guard.log`; `grep preProduction .crew/guard.log` lists every use. There is
+no expiry: the line is the reminder, and the entry is removed when the environment
+goes live. Tests: `tests/test_preproduction.py`; mutations (unwired, because
+`sabotage*.py` is review harness and lands alone): `tests/preproduction_mutations.py`.
 
 A `.crew/verify.json` environment's `github` entry is not config, and no key
 here reads it (crew-verification skill, section 4). `crew_ghdeploy.py check`
@@ -2597,7 +2664,7 @@ value by the rule in "Personal keys and the per-key ratchet" (the stricter of th
 | `autopilot.maxTicketsPerRun` | `3` | `crew_autopilot.settings`; `crew_autopilot_backlog.goal_run` (L-0541) | Tickets one goal run (one session, recorded in the goal file's `runs`) may start; the next stops the run with its `resume: /crew:autopilot --goal <slug>` line. Anything but a positive integer reads as `3`, with a warning. Repo only. |
 | `autopilot.maxTokensPerSession` | `2000000` | `crew_autopilot.settings`; `crew_autopilot_backlog.goal_run` (L-0541) | Input + output tokens this session's transcript may hold before a goal run stops, each assistant message counted once (L-0728; Claude Code repeats a message's usage on every line it writes, which the count used to add up; cache tokens are not counted). A transcript that is not found, or a line that does not parse, stops as could-not-tell. Anything but a positive integer reads as `2000000`, with a warning. Repo only. |
 | `autopilot.maxLanes` | `null` | `crew_wave.settings` (T-0029): how many `/crew:autopilot wave` lanes run at once | `null` is the resolved `pm.maxDispatches`; a larger value is capped to it and anything but a positive integer reads as it, each with a warning. It can only lower the dispatch limit. Repo only. |
-| `autopilot.reviewPolicy` | `"stop"` | `crew_wave.settings` (T-0029): what a wave lane does with its review verdict; `crew_autopilot.settings` (T-0067, `crew_autopilot_fix.py`): what a single-ticket run does with a FINDINGS round no receipt stands on | Wave: `stop`: FINDINGS ends the lane as `findings`. `clean-only`: CLEAN goes on to the done checks. `fix-and-rereview`: fix and re-review within the ledger's two rounds. Single ticket: `stop` and `clean-only` stop at `accept-review` as before; `fix-and-rereview` makes `next` name the `fix` phase (`fix-findings <id> round <n>`) for a round with a round left and a BLOCK or FIX line, then the refresh and `/crew:review` once `.work/tickets/<id>/fixes.md`'s `## Round <n>` quotes every BLOCK and FIX line and the bundle changed. A config that cannot be read reads `unknown`, which never fixes. Anything else reads as `stop`, with a warning. No setting lets autopilot accept or reject a review. Repo only. |
+| `autopilot.reviewPolicy` | `"stop"` | `crew_wave.settings` (T-0029): what a wave lane does with its review verdict; `crew_autopilot.settings` (T-0067, `crew_autopilot_fix.py`): what a single-ticket run does with a FINDINGS round no receipt stands on | Wave: `stop`: FINDINGS ends the lane as `findings`. `clean-only`: CLEAN goes on to the done checks. `fix-and-rereview`: fix and re-review within the ledger's three-round budget. Single ticket: `stop` and `clean-only` stop at `accept-review` as before; `fix-and-rereview` makes `next` name the `fix` phase (`fix-findings <id> round <n>`) for a round with a round left and a BLOCK or FIX line, then the refresh and `/crew:review` once `.work/tickets/<id>/fixes.md`'s `## Round <n>` quotes every BLOCK and FIX line and the bundle changed. A config that cannot be read reads `unknown`, which never fixes. Anything else reads as `stop`, with a warning. No setting lets autopilot accept or reject a review. Repo only. |
 
 **Which file.** `.crew/config.json`, through `resolve_config` — the file
 `crew_ticket.cli_approval_allowed` already reads, so the approval policy T-0010
@@ -2802,7 +2869,7 @@ never a receipt). `approve` writes exactly what
 `<git-common-dir>/crew/`: `approval.json`; the scope ramp's
 `scope-tickets.json` on a ticket's first approval; and, when the review ledger
 is NEEDS_REPLAN and the plan is a distinct successor, the ledger itself, moved
-NEEDS_REPLAN -> IN_REVIEW (the successor continuation, a fresh review budget).
+NEEDS_REPLAN -> IN_REVIEW (the successor continuation, which keeps the budget the ticket has left).
 `auto-reject` writes only the review ledger, REVIEWED -> NEEDS_REPLAN.
 `next`, `resume`, `settings`, `stops`, `route`, `status`, `questions-check`,
 T-0072's `deploy-allowed` and T-0011's `ship` write nothing (`ship` acts outside

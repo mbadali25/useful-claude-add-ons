@@ -175,15 +175,19 @@ the reviewer, computes the verdict:
 - `INCOMPLETE`: anything else, such as a crash, a timeout or a part not read.
   It is never `CLEAN`.
 
-**Two rounds per ticket, in total.** The ledger lives under the repository's
-git common directory, so every worktree shares it. A round is reserved before
-the reviewer starts, so a crash still spends it. A round the tool lost (a
-timeout, or no answer) is refunded, at most twice per plan. A third
-reservation is refused and the ticket becomes `NEEDS_REPLAN`.
+<!-- review-budget-doc -->
+**Three rounds per ticket, in total, across every plan the ticket ran under.**
+The ledger lives under the repository's git common directory, so every worktree
+shares it. A round is reserved before the reviewer starts, so a crash still
+spends it. A round the tool lost (a timeout, or no answer) is refunded, at most
+three times per ticket. A reservation past the budget is refused and the ticket
+becomes `NEEDS_REPLAN`.
 
-**Successor plans.** The way past `NEEDS_REPLAN` is a different plan:
-approving a changed `plan.md` opens a fresh budget of two rounds. Approving
-the same plan again does not.
+**Successor plans.** The way out of `NEEDS_REPLAN` is a different plan:
+approving a changed `plan.md`. A successor plan does not reopen the budget; it
+continues review only while a round of the three is left. Past that, only the
+owner's `review_ledger.py --ticket <id> --grant-round --by <you> --reason <why>`
+adds one round, and approving the same plan again is still refused.
 
 **Acceptance is yours.** `FINDINGS` become a receipt only when you run
 `review_ledger.py --ticket <id> --accept --by <you>`. It refuses when the tree
@@ -285,7 +289,9 @@ passed for this exact sha (a promotion row carries the full sha), that a
 rollback is declared, that a person approved it when `requireHuman` is set, that
 an accepted review covers the exact tree being deployed (unless the
 environment opts out with `requireReview: false` and a reason), and that the
-tree is clean. The review evidence proves only that the tracked tree deployed
+tree is clean. Those requirements are read from the `.crew/verify.json`
+committed in the sha being deployed, so a deploy from a worktree follows its
+own branch's committed map, not the main checkout's. The review evidence proves only that the tracked tree deployed
 is one a reviewer was shown under a standing receipt: it does not prove that
 paths the review bundle left out (identical to merged main, or under
 `.work/`, `graphify-out/`, `.crew/metrics.md`) or ignored build output a
@@ -391,6 +397,7 @@ worktree:
   gate-and-land stage for tickets whose Touch lists overlap. Catch-up is
   always a merge, never a rebase. The train never merges, pushes or opens the
   PR; only autopilot's ship step does, under `autopilot.ship`.
+- **Where worktrees live (crew 1.3.19).** `worktrees.root` (either layer, the repo wins; null is `~/.claude/crew/worktrees`) is the one place outside the repo for crew's worktrees, laid out as `<root>/<repo>-<digest>/<name>`; a value that is relative or inside the repo is refused, never swapped for the default. Claude Code's own agent worktrees (`claude --worktree`, an Agent with `isolation: worktree`) stay under `.claude/worktrees/`: it has no setting for another place, and the one redirect it supports is a `WorktreeCreate` hook, which replaces git's creation, so crew prints the block (`/crew:worktrees hook`) and registers nothing. `/crew:worktrees list` is a read-only survey of every worktree; `remove <path>` needs your `--yes`, takes one path and never forces. Nothing existing is moved.
 - **Check before assuming a diff is yours.** Another session may have
   changed the tree, a branch or the stash (root `CLAUDE.md`, "Lessons").
 

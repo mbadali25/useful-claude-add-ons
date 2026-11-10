@@ -162,6 +162,12 @@ jobs:
       # entries fails --check. Must-allow: a fresh render passes (L-1518).
       - name: sync-updates suite
         run: python3 scripts/_test/sync-updates.py
+      # Every version a branch sets owes a CHANGELOG.md entry or a `re-bump only`
+      # line. Must-fail and must-pass cases, sabotage-tested, in the suite below.
+      - name: Changelog entry per version
+        run: python3 scripts/check-changelog.py
+      - name: check-changelog suite
+        run: python3 scripts/_test/check-changelog.py
       - name: Shell syntax
         run: bash -n scripts/install-prerequisites.sh
       # An own-line `# shellcheck` comment ShellCheck cannot parse is SC1073, and

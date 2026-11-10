@@ -1,4 +1,4 @@
-"""The two-round review budget: reserved before launch, shared across
+"""The three-round review budget: reserved before launch, shared across
 worktrees, not resettable from the environment or the command line.
 
 Five review rounds on one ticket is the measured failure this exists for
@@ -33,22 +33,34 @@ def _repo(tmp_path):
     return init_repo(tmp_path / "r")
 
 
+def _spend(repo, count=None, ticket="T1"):
+    """Reserve `count` rounds (default: the whole budget)."""
+    for _ in range(rl.BUDGET if count is None else count):
+        rl.reserve(str(repo), ticket, "codex")
+
+
 def _cli(repo, *args, env=None):
     return subprocess.run([sys.executable, _LEDGER, "--root", str(repo)] + list(args),
                           capture_output=True, text=True, stdin=subprocess.DEVNULL,
                           env=env, check=False)
 
 
-def test_reserve_grants_rounds_one_and_two(repo):
-    first = rl.reserve(str(repo), "T1", "codex")
-    second = rl.reserve(str(repo), "T1", "codex")
+def test_reserve_grants_rounds_one_to_three(repo):
+    got = [rl.reserve(str(repo), "T1", "codex")[:2] for _ in range(3)]
 
-    assert (first[:2], second[:2]) == ((True, 1), (True, 2))
+    assert got == [(True, 1), (True, 2), (True, 3)]
 
 
-def test_reserve_third_round_is_refused_and_state_is_needs_replan(repo):
-    rl.reserve(str(repo), "T1", "codex")
-    rl.reserve(str(repo), "T1", "codex")
+def test_reserve_third_round_is_allowed(repo):
+    _spend(repo, 2)
+
+    ok, number, message = rl.reserve(str(repo), "T1", "codex")
+
+    assert (ok, number, rl.status(str(repo), "T1")["rounds_left"]) == (True, 3, 0), message
+
+
+def test_reserve_fourth_round_is_refused_and_state_is_needs_replan(repo):
+    _spend(repo, 3)
 
     ok, number, _ = rl.reserve(str(repo), "T1", "codex")
 
@@ -56,22 +68,20 @@ def test_reserve_third_round_is_refused_and_state_is_needs_replan(repo):
 
 
 def test_reserve_counts_a_crashed_round_with_no_result(repo):
-    rl.reserve(str(repo), "T1", "codex")
-    rl.reserve(str(repo), "T1", "codex")
+    _spend(repo)
 
     ok, _, _ = rl.reserve(str(repo), "T1", "codex")
 
     assert ok is False
-    assert [r["status"] for r in rl.status(str(repo), "T1")["rounds"]] == ["reserved"] * 2
+    assert [r["status"] for r in rl.status(str(repo), "T1")["rounds"]] == ["reserved"] * 3
 
 
 def test_reserve_budget_cannot_be_reset_or_raised_by_env_or_flag(repo):
-    rl.reserve(str(repo), "T1", "codex")
-    rl.reserve(str(repo), "T1", "codex")
+    _spend(repo)
     env = dict(os.environ, CREW_REVIEW_BUDGET="9", CREW_REVIEW_RESET="1",
                CREW_REVIEW_ROUNDS="9")
 
-    flag_budget = _cli(repo, "--ticket", "T1", "--reserve", "--budget", "3", env=env)
+    flag_budget = _cli(repo, "--ticket", "T1", "--reserve", "--budget", "4", env=env)
     flag_reset = _cli(repo, "--ticket", "T1", "--reserve", "--reset", env=env)
     plain = _cli(repo, "--ticket", "T1", "--reserve", "--authors", "gpt", env=env)
 
@@ -93,8 +103,9 @@ def test_ledger_is_shared_by_a_second_worktree(repo, tmp_path):
     git(repo, "worktree", "add", "-q", "-b", "side", str(other))
     rl.reserve(str(repo), "T1", "codex")
     rl.reserve(str(other), "T1", "codex")
+    rl.reserve(str(repo), "T1", "codex")
 
-    ok, _, _ = rl.reserve(str(repo), "T1", "codex")
+    ok, _, _ = rl.reserve(str(other), "T1", "codex")
 
     assert rl.ledger_path(str(other), "T1") == rl.ledger_path(str(repo), "T1")
     assert ok is False
@@ -124,7 +135,7 @@ def _race(root, start, results):
 
 
 def test_reserve_two_concurrent_claims_on_the_last_round_exactly_one_wins(repo):
-    rl.reserve(str(repo), "T1", "codex")
+    _spend(repo, rl.BUDGET - 1)
     ctx = multiprocessing.get_context("spawn")
     start, results = ctx.Event(), ctx.Queue()
     procs = [ctx.Process(target=_race, args=(str(repo), start, results)) for _ in range(6)]
@@ -137,13 +148,11 @@ def test_reserve_two_concurrent_claims_on_the_last_round_exactly_one_wins(repo):
     wins = [results.get(timeout=10) for _ in procs]
 
     assert wins.count(True) == 1
-    assert rl.status(str(repo), "T1")["rounds_used"] == 2
+    assert rl.status(str(repo), "T1")["rounds_used"] == rl.BUDGET
 
 
 def test_successor_plan_without_an_approval_receipt_is_refused_and_says_why(repo):
-    rl.reserve(str(repo), "T1", "codex")
-    rl.reserve(str(repo), "T1", "codex")
-    rl.reserve(str(repo), "T1", "codex")
+    _spend(repo, rl.BUDGET + 1)
 
     ok, reason = rl.continue_with_successor_plan(str(repo), "T1", "a" * 64)
 
@@ -357,17 +366,17 @@ def test_run_missing_provider_spends_no_round(repo, tmp_path):
     assert rl.status(str(repo), "T1")["rounds_used"] == 0
 
 
-def test_run_third_round_is_refused_without_launching(repo, tmp_path):
+def test_run_fourth_round_is_refused_without_launching(repo, tmp_path):
     (repo / "change.txt").write_text("change\n", encoding="utf-8")
     scratch, work = tmp_path / "scratch", tmp_path / "work"
     _bundle(repo, scratch)
     fakes = fake_reviewer_bin(tmp_path / "bin")
-    _run(repo, scratch, fakes, "findings", "--work-dir", str(work))
-    _run(repo, scratch, fakes, "findings", "--work-dir", str(work))
+    for _ in range(rl.BUDGET):
+        _run(repo, scratch, fakes, "findings", "--work-dir", str(work))
 
-    third = _run(repo, scratch, fakes, "clean", "--work-dir", str(work))
+    fourth = _run(repo, scratch, fakes, "clean", "--work-dir", str(work))
 
-    assert third.returncode == 4
+    assert fourth.returncode == 4
     assert rl.status(str(repo), "T1")["state"] == rl.NEEDS_REPLAN
 
 
@@ -397,9 +406,9 @@ def _result(verdict, provider="codex", model=None):
 def test_record_an_older_round_after_the_budget_is_spent_is_refused(repo):
     """Codex BLOCK: round 1's late CLEAN turned NEEDS_REPLAN back into
     ACCEPTED and minted a receipt."""
-    rl.reserve(str(repo), "T1", "codex")
-    rl.reserve(str(repo), "T1", "codex")
+    _spend(repo, 2)
     rl.record(str(repo), "T1", 2, _result("FINDINGS"))
+    rl.reserve(str(repo), "T1", "codex")
     rl.reserve(str(repo), "T1", "codex")
 
     with pytest.raises(rl.LedgerError):
@@ -437,9 +446,7 @@ def test_record_a_round_twice_is_refused(repo):
 
 
 def test_record_after_needs_replan_is_refused_even_for_the_latest_round(repo):
-    rl.reserve(str(repo), "T1", "codex")
-    rl.reserve(str(repo), "T1", "codex")
-    rl.reserve(str(repo), "T1", "codex")
+    _spend(repo, rl.BUDGET + 1)
 
     with pytest.raises(rl.LedgerError, match=rl.NEEDS_REPLAN):
         rl.record(str(repo), "T1", 2, _result("CLEAN"))
@@ -479,9 +486,7 @@ def test_claude_result_cannot_complete_a_codex_reservation(repo, tmp_path):
 def test_reserve_after_needs_replan_is_refused_without_writing(repo):
     """Codex BLOCK: every reservation attempt after NEEDS_REPLAN appended
     another `refused` entry, so a terminal state kept changing."""
-    rl.reserve(str(repo), "T1", "codex")
-    rl.reserve(str(repo), "T1", "codex")
-    rl.reserve(str(repo), "T1", "codex")
+    _spend(repo, rl.BUDGET + 1)
     with open(rl.ledger_path(str(repo), "T1"), "rb") as fh:
         before = fh.read()
 
@@ -525,8 +530,9 @@ def test_a_wrong_typed_successors_path_reads_unknown(repo, successors):
 
 
 @pytest.mark.parametrize("extra, left", [
-    ({}, 0), ({"successors": []}, 0),
-    ({"successors": [{"after_round": 2, "plan_sha256": "a" * 64}]}, 2)])
+    ({}, 1), ({"successors": []}, 1),
+    ({"successors": [{"after_round": 2, "plan_sha256": "a" * 64}]}, 3),
+    ({"successors": [{"after_round": 2, "plan_sha256": "a" * 64, "carry_over": True}]}, 1)])
 def test_a_well_formed_successors_path_still_reads(repo, extra, left):
     _write_ledger(repo, dict({"state": "REVIEWED", "rounds": _TWO_ROUNDS}, **extra))
 

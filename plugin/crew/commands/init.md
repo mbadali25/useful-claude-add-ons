@@ -23,6 +23,15 @@ Arguments: $ARGUMENTS
 Phase 1 also runs `crew_gitignore.py apply --root .` (phases.md): language ignore patterns, added
 without asking, only inside its managed block of `.gitignore`.
 
+## Standards export (offer once, default no)
+
+When the repo has `.crew/standards.md`, offer to publish crew's standards to PR-side
+reviewers (Claude Code Review, Bugbot, Codex, Copilot). Run
+`python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_standards.py" export --root . --dry-run`
+and show it verbatim. Only on yes add `export: ["review", "agents", "bugbot"]` (or the
+subset asked for) to the overlay's front matter and run the same command with `--write`.
+A repo with no overlay cannot opt in until it has one (`crew-standards` skill).
+
 ## Web phase (inside Phase 6, Browser tests)
 
 When the repo has a `playwright.config.*`, an `angular.json`, or a

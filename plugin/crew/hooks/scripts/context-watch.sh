@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-. "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+# The script's directory without a subshell or `dirname` when the path is absolute
+# (the dispatcher starts every hook by its full path): on Git Bash each fork is an
+# MSYS process start (0.3-0.5s measured on the Windows host), and this hook's 20s
+# budget is shared with every other Stop hook. A relative path falls back to `cd`.
+case "${BASH_SOURCE[0]}" in
+  /*|[A-Za-z]:/*) DIR=${BASH_SOURCE[0]%/*} ;;
+  *) DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" ;;
+esac
+. "$DIR/_common.sh"
 # Stop hook. Reads how full the context window actually is and, once past the
 # threshold, asks Claude to write a handoff note before ending the turn.
 # Exit 2 sends control back to the model with the reason on stderr.
@@ -17,7 +25,8 @@
 # work in any crew repo (docs/crew/config-rationale.md). This hook's OWN context-window
 # measurement and nagging, further down, is a separate question and keeps
 # requiring a real `.crew/config.json` underneath, unchanged.
-INPUT=$(cat)
+# Builtin read, not `$(cat)`: no subshell and no cat on a Git Bash fork budget.
+IFS= read -r -d '' INPUT || true
 
 # Loop safety, layer 1, checked FIRST -- before the config check, before
 # python, before anything. Merged-branch review, 2026-09-22: the old
@@ -151,7 +160,9 @@ cw_run_auto_clear() {
 # (`case "$INPUT" in *'"stop_hook_active": true'*...`): accurate enough for
 # what Claude Code actually sends, and python is not guaranteed available to
 # do better at this point in the script.
-CWD_RAW=$(printf '%s' "$INPUT" | grep -o '"cwd"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -E 's/.*:[[:space:]]*"([^"]*)"/\1/')
+CWD_RAW=""
+CWD_RE='"cwd"[[:space:]]*:[[:space:]]*"([^"]*)"'
+[[ "$INPUT" =~ $CWD_RE ]] && CWD_RAW="${BASH_REMATCH[1]}"
 cd "${CWD_RAW:-${CLAUDE_PROJECT_DIR:-.}}" 2>/dev/null || exit 0
 # crew 1.0 F4 reachability fix: this gate is `.crew/` the DIRECTORY, not
 # `.crew/config.json` -- so the forced-continuation handover to auto-clear.sh
@@ -278,17 +289,182 @@ MSG
   exit 2
 fi
 
-read_json() { "$PY" -c 'import sys,json;d=json.load(sys.stdin);print(d.get(sys.argv[1],""))' "$1" <<< "$INPUT" 2>/dev/null; }
-TRANSCRIPT=$(read_json transcript_path)
+# ONE python start for everything this turn needs from the payload, the config
+# and the transcript. It used to be five (three read_json calls, a config read
+# and the transcript scan), and on Git Bash each python start is a process tree
+# costing 0.3-0.7s on the Windows host; with the cygpath and tr forks around them
+# a no-op turn took ~9s, against a 20s budget shared with the other Stop hooks.
+# A non-ASCII character in the session id is sent as `?`: the key replaces it with
+# `_` either way, one for one, and bash counts bytes where python counts characters.
+# Output, one line each: CW1 (python ran), transcript_path, session_id,
+# stop_hook_active, the config line (or MALFORMED_CONFIG_CONTEXT_BLOCK), and the
+# reading. Python stops writing at the first line bash would exit on, in the same
+# order bash used to check them. Config path: a relative one is native as it is;
+# an inherited main-checkout one is converted.
+# scan() below is the former standalone transcript read, unchanged in logic: the
+# last assistant turn's message.usage is the real window occupancy (input +
+# cache_read + cache_creation); sidechain lines are skipped; a size estimate is
+# the fallback; the budget comes from a model table, corrected upward by the
+# observed peak; the threshold is the LATER of warnAt*budget and budget-reserve
+# (warnAt <= 0 stays "fire now"); `trusted` is true only for a measured reading
+# of this window (never an estimate, an unknown model, a pre-compaction reading
+# or an implausible one). The long comments were dropped to keep the -c argument
+# small; `git log -p` on this file has them.
+read -r -d '' CW_PY << 'PYSCRIPT' || true
+import json, os, re, sys
+
+
+def scan(path, warn_at, reserve):
+    WINDOWS = (
+        ("[1m]", 1_000_000),
+        ("fable", 1_000_000),
+        ("opus-5", 1_000_000),
+        ("sonnet-5", 1_000_000),
+        ("haiku", 200_000),
+        ("opus", 200_000),
+        ("sonnet", 200_000),
+    )
+    TIERS = (200_000, 500_000, 1_000_000, 2_000_000)
+    SIDECHAIN = re.compile(r'"isSidechain"\s*:\s*true')
+    BOUNDARY = re.compile(r'"compact_boundary"|"isCompactSummary"\s*:\s*true')
+    last, model, peak, main_bytes = None, "", 0, 0
+    last_at, boundary_at, lineno = -1, -1, 0
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                if SIDECHAIN.search(line):
+                    continue
+                lineno += 1
+                main_bytes += len(line.encode("utf-8")) + 1
+                if BOUNDARY.search(line):
+                    boundary_at = lineno
+                if '"usage"' not in line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                msg = rec.get("message") or {}
+                usage = msg.get("usage")
+                if not isinstance(usage, dict) or "cache_read_input_tokens" not in usage:
+                    continue
+                last, last_at = usage, lineno
+                if msg.get("model") and not msg["model"].startswith("<"):
+                    model = msg["model"]
+                peak = max(peak, usage.get("input_tokens", 0)
+                           + usage.get("cache_read_input_tokens", 0)
+                           + usage.get("cache_creation_input_tokens", 0))
+    except OSError:
+        pass
+    if last:
+        used = (last.get("input_tokens", 0)
+                + last.get("cache_read_input_tokens", 0)
+                + last.get("cache_creation_input_tokens", 0))
+        source = "exact"
+    else:
+        used, source = int(main_bytes / 4 * 0.75), "estimated"
+    low = model.lower()
+    known = any(key in low for key, _ in WINDOWS)
+    budget = next((w for key, w in WINDOWS if key in low), 200_000)
+    if peak > budget:
+        budget = next((t for t in TIERS if t > peak * 1.05), peak * 2)
+    if warn_at <= 0:
+        threshold = 0
+    else:
+        threshold = budget * warn_at
+        if reserve > 0:
+            threshold = max(threshold, budget - reserve)
+    threshold = int(threshold)
+    over = 1 if budget > 0 and used >= threshold else 0
+    pct = int(used / budget * 100) if budget > 0 else 0
+    if source != "exact":
+        why = "estimated-from-transcript-size"
+    elif not known:
+        why = "unknown-window"
+    elif boundary_at > last_at:
+        why = "stale-reading-before-compaction"
+    elif used <= 0 or used > budget:
+        why = "implausible-reading"
+    else:
+        why = "measured"
+    trusted = 1 if why == "measured" else 0
+    return " ".join(str(x) for x in (used, source, budget, over, pct, trusted, why))
+
+
+out = sys.stdout
+try:
+    out.reconfigure(encoding="utf-8", newline="\n")
+except Exception:
+    pass
+out.write("CW1\n")
+try:
+    d = json.load(sys.stdin)
+    if not isinstance(d, dict):
+        raise ValueError
+except Exception:
+    sys.exit(0)
+
+
+def field(k):
+    return str(d.get(k, "")).replace("\r", " ").replace("\n", " ")
+
+
+tp, sid, sha = field("transcript_path"), field("session_id"), field("stop_hook_active")
+sid = "".join(ch if ord(ch) < 128 else "?" for ch in sid)
+out.write(tp + "\n" + sid + "\n" + sha + "\n")
+if sha in ("True", "true") or not os.path.isfile(tp):
+    sys.exit(0)
+MALFORMED = "MALFORMED_CONFIG_CONTEXT_BLOCK"
+try:
+    raw = json.load(open(sys.argv[1]))
+except Exception:
+    raw = {}
+c = raw.get("context", {}) if isinstance(raw, dict) else {}
+if not isinstance(c, dict):
+    out.write(MALFORMED + "\n")
+    sys.exit(0)
+try:
+    reserve = max(0, int(c.get("reserveTokens", 0) or 0))
+except (TypeError, ValueError):
+    reserve = 100_000
+warn = str(c.get("warnAt", 0.4))
+enabled = str(c.get("enabled", True)).lower()
+out.write(warn + " " + enabled + " " + str(reserve) + "\n")
+if enabled == "false":
+    sys.exit(0)
+try:
+    out.write(scan(tp, float(warn), reserve) + "\n")
+except Exception:
+    pass
+PYSCRIPT
+case "$CREW_CFG" in
+  ./*) CFG_ARG="$CREW_CFG" ;;
+  *) CFG_ARG=$(crew_native_path "$CREW_CFG") ;;
+esac
+CW_OUT=$("$PY" -c "$CW_PY" "$CFG_ARG" <<< "$INPUT" 2>/dev/null)
+CW_OUT=${CW_OUT//$'\r'/}
+case "$CW_OUT" in
+  CW1*) ;;
+  *)
+    echo "crew context-watch: python resolved but produced no result (an unexpected interpreter failure, not a malformed config) - context warnings are OFF this turn" >&2
+    exit 0
+    ;;
+esac
+TRANSCRIPT="" PARSED_SESSION="" STOP_HOOK_ACTIVE="" CFG="" READ=""
+{
+  IFS= read -r _cw_skip; IFS= read -r TRANSCRIPT; IFS= read -r PARSED_SESSION
+  IFS= read -r STOP_HOOK_ACTIVE; IFS= read -r CFG; IFS= read -r READ
+} <<< "$CW_OUT" || true
 # The properly-parsed id wins over the grep above for what is RECORDED in the
 # marker; the key is recomputed from it so the two can never name different
 # files.
-PARSED_SESSION=$(read_json session_id | tr -d '\r')
 if [ -n "$PARSED_SESSION" ]; then
   SESSION_ID="$PARSED_SESSION"
   session_markers "$SESSION_ID"
 fi
-STOP_HOOK_ACTIVE=$(read_json stop_hook_active)
 [ -f "$TRANSCRIPT" ] || exit 0
 
 # Loop safety, layer 1, re-checked here with python's own parsed value: the
@@ -306,51 +482,15 @@ STOP_HOOK_ACTIVE=$(read_json stop_hook_active)
 # once-per-session gate for this hook, reset by handoff-read.sh at the next
 # SessionStart -- that stays.
 
-CFG=$("$PY" - "$(crew_native_path "$CREW_CFG")" << 'PY' 2>/dev/null
-import json
-import sys
-# An unparseable file (json.load raises) is treated as "no context settings",
-# same as always -- the file's presence is already proven by bash above, and
-# a fully broken file is caught by the outer try/except exactly as before.
-# What that outer except did NOT cover, and what MALFORMED reports
-# separately: a "context" VALUE that parses fine but is not an object at all
-# (e.g. `"context": null` or `"context": "off"`) -- a config problem, not an
-# interpreter one, so it must not be reported as "python is broken".
-MALFORMED = "MALFORMED_CONFIG_CONTEXT_BLOCK"
-try:
-    raw = json.load(open(sys.argv[1]))
-except Exception:
-    raw = {}
-c = raw.get("context", {}) if isinstance(raw, dict) else {}
-if not isinstance(c, dict):
-    # The actual reported bug: `"context": null` (or any non-object value)
-    # makes `c` something other than a dict, and every `c.get(...)` call
-    # below would raise AttributeError -- which the OLD single-line
-    # `try: ... except Exception: c={}` did not cover, because that try only
-    # wrapped the line that PRODUCES `c`, not the lines that USE it. Caught
-    # here, explicitly, before any `.get()` call runs against it.
-    print(MALFORMED)
-else:
-    # reserveTokens: absolute headroom floor, in tokens. Absent -> 100k. null
-    # or <=0 -> off, i.e. the old pure-percentage behaviour. See the
-    # threshold below.
-    try: reserve = max(0, int(c.get("reserveTokens", 0) or 0))
-    except (TypeError, ValueError): reserve = 100_000
-    print(c.get("warnAt",0.4), str(c.get("enabled",True)).lower(), reserve)
-PY
-)
+# A "context" VALUE that parses but is not an object (`null`, `"off"`) is a
+# config problem, not an interpreter one, so it is not reported as "python is
+# broken".
 if [ "$CFG" = "MALFORMED_CONFIG_CONTEXT_BLOCK" ]; then
   echo "crew context-watch: ${CFG_SHOWN}'s \"context\" value is malformed (not an object, e.g. null) - context warnings are OFF until it is fixed" >&2
   exit 0
 fi
-# By this point `.crew/config.json` is KNOWN to exist and parse as an object
-# (checked in bash and in the heredoc above), and PY is a python
-# `crew_py_strict` proved runs. The heredoc always prints either a config
-# line or the MALFORMED sentinel on success, so an empty CFG here is neither
-# of those -- it means the python PROCESS itself died or could not be
-# reached after having already proved runnable (e.g. killed mid-write); name
-# that distinctly from a malformed config rather than folding the two
-# together.
+# python ran (CW1) and the transcript exists, so an empty CFG is not a malformed
+# config; name it distinctly rather than folding the two together.
 if [ -z "$CFG" ]; then
   echo "crew context-watch: python resolved but produced no config read (an unexpected interpreter failure, not a malformed config) - context warnings are OFF this turn" >&2
   exit 0
@@ -360,153 +500,10 @@ HANDOFF=".work/HANDOFF.md"
 read -r WARN_AT ENABLED RESERVE <<< "$CFG"
 [ "$ENABLED" = "false" ] && exit 0
 
-# Read the ACTUAL window occupancy, not a guess at it.
-#
-# Every assistant turn in the transcript carries message.usage, and the last one
-# holds the real prompt size: input + cache_read + cache_creation. That IS the
-# context window, measured by the thing that filled it.
-#
-# This replaced a file-size heuristic (bytes/4*0.75). The transcript is
-# cumulative - it keeps every turn ever written, including ones a compaction
-# already discarded - so file size measures how much a session has produced,
-# not how full the window is. Measured on a real session the heuristic read 45%
-# high (950k estimated against 654k actual), which on a 200k budget is the
-# difference between "fire at 80%" and "fire on turn one, every turn".
-READ=$("$PY" - "$TRANSCRIPT" "$WARN_AT" "$RESERVE" << 'PY' 2>/dev/null
-import json, re, sys
-
-path = sys.argv[1]
-warn_at = float(sys.argv[2])
-reserve = int(sys.argv[3])
-
-# Known context windows, first match wins, so the specific keys sit above the
-# generic ones. The Claude 5 family (fable, opus-5, sonnet-5) ships with 1M
-# natively; the 4.x generation is 200k unless the id carries a "[1m]" suffix -
-# and the transcript often records the base id without it, so this table is a
-# starting point, not the last word. The observed high-water mark below
-# corrects it. The mismatch that matters is the other way round: a 1M model
-# read as 200k fires the gate at 160k, which is 16% of the real window.
-WINDOWS = (
-    ("[1m]", 1_000_000),
-    ("fable", 1_000_000),
-    ("opus-5", 1_000_000),
-    ("sonnet-5", 1_000_000),
-    ("haiku", 200_000),
-    ("opus", 200_000),
-    ("sonnet", 200_000),
-)
-TIERS = (200_000, 500_000, 1_000_000, 2_000_000)
-
-SIDECHAIN = re.compile(r'"isSidechain"\s*:\s*true')
-# A compaction writes a boundary record; a usage record from before it
-# describes a window that no longer exists. See `trusted` below.
-BOUNDARY = re.compile(r'"compact_boundary"|"isCompactSummary"\s*:\s*true')
-last, model, peak, main_bytes = None, "", 0, 0
-last_at, boundary_at, lineno = -1, -1, 0
-try:
-    with open(path, encoding="utf-8", errors="replace") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            # Subagent turns are not main-window occupancy: the main window
-            # only ever sees the agent's returned summary. Current builds keep
-            # them in <session>/subagents/*.jsonl, which this never opens;
-            # older builds wrote them inline flagged isSidechain. Skip those -
-            # from the byte count too, so the size fallback below does not
-            # count them either.
-            if SIDECHAIN.search(line):
-                continue
-            lineno += 1
-            main_bytes += len(line.encode("utf-8")) + 1
-            if BOUNDARY.search(line):
-                boundary_at = lineno
-            if '"usage"' not in line:
-                continue
-            try:
-                rec = json.loads(line)
-            except ValueError:
-                continue
-            msg = rec.get("message") or {}
-            usage = msg.get("usage")
-            if not isinstance(usage, dict) or "cache_read_input_tokens" not in usage:
-                continue
-            last, last_at = usage, lineno
-            if msg.get("model") and not msg["model"].startswith("<"):
-                model = msg["model"]
-            peak = max(peak, usage.get("input_tokens", 0)
-                       + usage.get("cache_read_input_tokens", 0)
-                       + usage.get("cache_creation_input_tokens", 0))
-except OSError:
-    pass
-
-if last:
-    used = (last.get("input_tokens", 0)
-            + last.get("cache_read_input_tokens", 0)
-            + last.get("cache_creation_input_tokens", 0))
-    source = "exact"
-else:
-    used, source = int(main_bytes / 4 * 0.75), "estimated"
-
-low = model.lower()
-known = any(key in low for key, _ in WINDOWS)
-budget = next((w for key, w in WINDOWS if key in low), 200_000)
-
-# Self-correct. If this session has already held more tokens than the budget
-# claims the window is, the budget is wrong: a "[1m]" variant records its base
-# id, and an older /crew:init pinned a 200000 budget into every config
-# before the 1M models arrived. Observed usage cannot exceed the real window,
-# so it is the better source - but ONLY a peak the window could not hold proves
-# that. An earlier 95% margin bumped a correct 1M entry to the 2M tier once a
-# session passed 950k, and the gate then never fired at all.
-if peak > budget:
-    budget = next((t for t in TIERS if t > peak * 1.05), peak * 2)
-
-# The threshold is the LATER of two rules, and the second one is why a 1M
-# session is no longer cut short.
-#
-#   percentage: warnAt * budget      - what this always did
-#   headroom:   budget - reserve     - never nag while this much is still free
-#
-# warnAt was tuned when every window was 200k, where 0.8 leaves 40k - about
-# enough to finish a thought and write a handoff. The same 0.8 on a 1M window
-# leaves 200k, a whole 200k session's worth of room, and asking for a handoff
-# there throws away a fifth of the window. Taking the later of the two rules
-# means the reserve can only ever push the warning LATER, never earlier: on a
-# 200k window the percentage still wins (40k < 100k) and nothing changes, while
-# on 1M the floor wins and the gate moves from 80% to 90%.
-#
-# warnAt <= 0 stays an unconditional "fire now" - it is the documented override
-# and a floor that quietly outranked it would make it a lie.
-if warn_at <= 0:
-    threshold = 0
-else:
-    threshold = budget * warn_at
-    if reserve > 0:
-        threshold = max(threshold, budget - reserve)
-threshold = int(threshold)
-
-over = 1 if budget > 0 and used >= threshold else 0
-pct = int(used / budget * 100) if budget > 0 else 0
-
-# Whether this reading may license a /clear. It still drives the nag either
-# way -- asking for a handoff on a doubtful reading costs a paragraph -- but
-# auto-clear acts only on a reading that is a measurement of THIS window.
-# Unknown is its own value here, never folded into "fine".
-if source != "exact":
-    why = "estimated-from-transcript-size"
-elif not known:
-    why = "unknown-window"
-elif boundary_at > last_at:
-    why = "stale-reading-before-compaction"
-elif used <= 0 or used > budget:
-    why = "implausible-reading"
-else:
-    why = "measured"
-trusted = 1 if why == "measured" else 0
-print(used, source, budget, over, pct, trusted, why)
-PY
-)
+# The reading is the ACTUAL window occupancy (see scan() above): every assistant
+# turn carries message.usage and the last one holds the real prompt size, which
+# replaced a file-size heuristic that read 45% high. An empty reading (the scan
+# failed) stands this hook down, as it always has.
 [ -z "$READ" ] && exit 0
 read -r USED SOURCE BUDGET OVER PCT_H TRUSTED WHY <<< "$READ"
 [ -z "$USED" ] || [ -z "$BUDGET" ] && exit 0
@@ -525,8 +522,8 @@ if [ -f "$MARKER" ]; then
   # noclobber claim makes exactly one flavour escalate when both run, and a
   # session whose clear was already sent is not nagged about it.
   if [ ! -f "$SENT_MARKER" ] &&
-     [ "$("$PY" "$(crew_native_path "$(dirname "$0")/crew_autocycle.py")" wrapup-armed --root "$(crew_native_path "$PWD")" --session "$SESSION_ID" 2>/dev/null | tr -d '\r')" = "on" ]; then
-    WRAP_WHY=$("$PY" "$(crew_native_path "$(dirname "$0")/crew_autocycle.py")" wrapup-check --root "$(crew_native_path "$PWD")" 2>/dev/null | tr -d '\r')
+     [ "$("$PY" "$(crew_native_path "$DIR/crew_autocycle.py")" wrapup-armed --root "$(crew_native_path "$PWD")" --session "$SESSION_ID" 2>/dev/null | tr -d '\r')" = "on" ]; then
+    WRAP_WHY=$("$PY" "$(crew_native_path "$DIR/crew_autocycle.py")" wrapup-check --root "$(crew_native_path "$PWD")" 2>/dev/null | tr -d '\r')
     if [ "$WRAP_WHY" != "ok" ] && ( set -o noclobber; : > "$ESCALATED" ) 2>/dev/null; then
       printf 'crew wrap-up incomplete: %s. Fix exactly that, run /crew:handoff --wrap-up again, end the turn.\n' \
         "${WRAP_WHY:-the wrap-up check gave no answer}" >&2
@@ -554,7 +551,7 @@ MARKER_JSON=$("$PY" -c 'import json,sys,time; print(json.dumps({"session_id": sy
 # T-0017: armed, the warning IS the wrap-up procedure, and supersedes the
 # message below. Unarmed (or any error), crew_autocycle prints nothing and
 # today's message goes out unchanged.
-WRAP_MSG=$("$PY" "$(crew_native_path "$(dirname "$0")/crew_autocycle.py")" wrapup-message --root "$(crew_native_path "$PWD")" --session "$SESSION_ID" --pct "$PCT_H" 2>/dev/null | tr -d '\r')
+WRAP_MSG=$("$PY" "$(crew_native_path "$DIR/crew_autocycle.py")" wrapup-message --root "$(crew_native_path "$PWD")" --session "$SESSION_ID" --pct "$PCT_H" 2>/dev/null | tr -d '\r')
 if [ -n "$WRAP_MSG" ]; then
   printf '%s\n' "$WRAP_MSG" >&2
   exit 2
