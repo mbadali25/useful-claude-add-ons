@@ -421,7 +421,7 @@ the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The
 `environments.nonProd` is repo-only, `environments.prodUnattended` ratchets (below). DERIVED from
 the docstrings and definitions cited; the verdict table itself is not re-derived here.
 
-`environments.preProduction` (crew 1.3.19) is a second repo-only exemption for an environment
+`environments.preProduction` (crew 1.3.20) is a second repo-only exemption for an environment
 that is labelled production but not live: exact name -> `{reason, targets}`, validated by
 `crew_preprod.problem` (called from `crew_config.environments_block_problem`, so a malformed entry
 makes every environment unknown). `crew_preprod.arm` (called first in `cloud_guard.evaluate`)

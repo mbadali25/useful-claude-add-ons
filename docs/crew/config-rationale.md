@@ -1372,7 +1372,7 @@ linked worktree (whose HEAD and cleanliness are what the gate then checks);
 `crew_config.py --check` warns when a `nonProd` glob covers one it marks
 `requireHuman: true`.
 
-### Pre-production environments (`environments.preProduction`, crew 1.3.19)
+### Pre-production environments (`environments.preProduction`, crew 1.3.20)
 
 **The need.** An environment gets a production name (`production`, `acme-prod-*`)
 while it is still being built, and the production rules fire on work that touches

@@ -332,7 +332,7 @@ KEY_META = {
     "environments.preProduction": _unv("Environments labelled production that are not live yet: exact "
                                        "name -> `reason` (+ optional exact `targets`); judged "
                                        "non-production by the cloud guard, with an audit line.",
-                                       "1.3.19", _S + "crew_preprod.py",
+                                       "1.3.20", _S + "crew_preprod.py",
                                        "object of exact name to {reason, targets}"),
     "environments.prodUnattended": _rat("Whether production terraform may run unattended; "
                                         "`true` only when both layers say so.", "1.0.37"),

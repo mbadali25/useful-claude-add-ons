@@ -293,7 +293,7 @@ Columns:
 | `environments.nonProd` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_config.py` (expects list of globs) | 1.0.37 | Terraform targets that are not production and may run unattended. |
 | `environments.prodUnattended` | both, ratchet | `false` | `false` \| `true` (ratchet: narrower layer wins; listed narrowest first) | 1.0.37 | Whether production terraform may run unattended; `true` only when both layers say so. |
 | `environments.workflows` | repo | `{}` | not validated - read by `plugin/crew/hooks/scripts/crew_config.py` (expects object of glob to string) | 1.1.16 | Deploy workflow globs, each mapped to its environment or `input:<name>`. |
-| `environments.preProduction` | repo | `{}` | not validated - read by `plugin/crew/hooks/scripts/crew_preprod.py` (expects object of exact name to {reason, targets}) | 1.3.19 | Environments labelled production that are not live yet: exact name -> `reason` (+ optional exact `targets`); judged non-production by the cloud guard, with an audit line. |
+| `environments.preProduction` | repo | `{}` | not validated - read by `plugin/crew/hooks/scripts/crew_preprod.py` (expects object of exact name to {reason, targets}) | 1.3.20 | Environments labelled production that are not live yet: exact name -> `reason` (+ optional exact `targets`); judged non-production by the cloud guard, with an audit line. |
 
 ### `change`
 

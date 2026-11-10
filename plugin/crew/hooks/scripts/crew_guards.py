@@ -303,7 +303,7 @@ CLOUD_DEFAULTS = {"awsProfiles": [], "awsRegions": [], "azureSubscriptions": []}
 #                   not judged. It does NOT count toward the terraform layer's
 #                   `engaged` (`cloud_guard.environments_config`).
 #
-# `preProduction` (crew 1.3.19) is REPO ONLY like `nonProd`: an object of exact
+# `preProduction` (crew 1.3.20) is REPO ONLY like `nonProd`: an object of exact
 # environment name -> {"reason", "targets"} for an environment LABELLED
 # production that is not live yet. See `crew_preprod.py`.
 #
