@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.37: re-bump only - interim number on the verify-gate stale-marker branch (commit b18fcd4e5), reverted under REPO-03; the number is set on the land branch
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.34; the change is recorded under crew 1.3.36
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.33; the change is recorded under crew 1.3.34
 - crew 1.3.34: re-bump only - interim number on the mass-guard branch before main reached 1.3.35; the change is recorded under crew 1.3.36
