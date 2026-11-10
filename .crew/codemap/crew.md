@@ -320,13 +320,13 @@ harness-only follow-ups (`review_*.py`, `verify-gate.*` and `completion_audit.py
 rounds reason fires only through autopilot.
 
 **Context-watch's forced-continuation marker is now session-scoped, not
-repo-scoped.** `plugin/crew/hooks/scripts/context-watch.sh:59-60` defines
+repo-scoped.** `plugin/crew/hooks/scripts/context-watch.sh:68-69` defines
 `MARKER=".crew/.handoff-requested-${SESSION_KEY}"` and
 `SENT_MARKER=".crew/.autoclear-sent-${SESSION_KEY}"` — both keyed on
 `SESSION_KEY`, so two concurrent sessions on the same repo no longer share
 one marker (a correction to the previous anchor's description, which had a
 single per-repository marker). `stop_hook_active`
-(`plugin/crew/hooks/scripts/context-watch.sh:45`) is still checked first,
+(`plugin/crew/hooks/scripts/context-watch.sh:53`) is still checked first,
 and the fail-closed-once branch that asks Claude for a precautionary
 handoff and `exit 2`s still exists in the file at this anchor (confirmed
 present; the exact line range was **not re-verified word-for-word against
@@ -843,10 +843,10 @@ citations taken with `grep -n` there.
   binding or the sender's claim; `plugin/crew/hooks/scripts/auto-clear.sh:260` also prints it as a
   `systemMessage` (the `auto-clear.ps1` flavour that read `wrapUp` natively was deleted in L-0867).
 - DERIVED: context-watch sends `wrapup_message` (`crew_autocycle.py:510`) instead of the one
-  stock warning when armed (`plugin/crew/hooks/scripts/context-watch.sh:557-560`; the `autoWrapUp` switch
+  stock warning when armed (`plugin/crew/hooks/scripts/context-watch.sh:552-555`; the `autoWrapUp` switch
   is the constant `crew_state.CONTEXT_AUTO_WRAP_UP`, so the shell has a single text left; the
   `context-watch.ps1` flavour was deleted in L-0867), and in the marker branch escalates a failed
-  check once through `.crew/.wrapup-escalated-<key>` (`context-watch.sh:61`, check at `:529-530`);
+  check once through `.crew/.wrapup-escalated-<key>` (`context-watch.sh:70`, check at `:523-524`);
   the CLI verbs are `_wrapup_cli` (`crew_autocycle.py:1339`).
   SessionStart removes the claim (`plugin/crew/hooks/scripts/handoff-read.sh:20`; `handoff-read.ps1` deleted in L-0867).
 - DERIVED: `/crew:handoff --wrap-up` (`plugin/crew/commands/handoff.md:39`) is the one wrap-up
@@ -5700,7 +5700,7 @@ past commits, not claims about the present file. No behaviour documented here ch
 ## Re-anchor provenance - `c0e582fbe` -> `bdde58724`, 2026-10-26 (L-0928)
 
 Re-check, not re-derivation. Per-path: `git diff --name-only c0e582fbe..bdde58724` over the cited paths lists 78 changed files (crew 1.2.x -> 1.2.84); the largest are `crew_guards.py` (+443), `crew_config.py` (+222), `_common.sh` (+210), `crew_migrate.py` (+122), `verify-gate.sh` (+60) and the deleted `.ps1` twins (the approval hook, `completion-audit`, `scope-guard`, `verify-gate`); new: `crew_guard_notes.py`, `crew-qa-standards/references/{functional-qa,measurements}.md`. The note itself had also been edited on main after the anchor (so some cites were not at `c0e582fbe` numbering to begin with).
-- Full `path:line` cites, first pass (`cite_check`, vs `c0e582fbe`): 355 SAME, 39 SHIFT (applied), 8 CHANGED and 2 GONE (re-derived by hand: `plan.md:33-34`, `plugin.json:3`, `context-watch.sh:557-560`, `_common.sh:402`, the `_RATCHETED` range, `test_worktree_config_shell.py:45` -> `:52`; two `plugin/crew/README.md:4716-4717` cites in dated paragraphs dropped). Now all 354 resolve at `bdde58724`.
+- Full `path:line` cites, first pass (`cite_check`, vs `c0e582fbe`): 355 SAME, 39 SHIFT (applied), 8 CHANGED and 2 GONE (re-derived by hand: `plan.md:33-34`, `plugin.json:3`, `context-watch.sh:552-555`, `_common.sh:402`, the `_RATCHETED` range, `test_worktree_config_shell.py:45` -> `:52`; two `plugin/crew/README.md:4716-4717` cites in dated paragraphs dropped). Now all 354 resolve at `bdde58724`.
 - The symbol check (a backticked name within 2-4 lines of each cite, plus a def-line check for `name` then `:N`) showed the tool's SAME proves little: about 790 line numbers (full and bare `:N`) had been wrong at the anchor or moved since, and were re-pointed to the `bdde58724` def line; about 105 that named nothing resolvable had the number dropped (name kept). 48 flagged full cites and 146 with no symbol beside them were read and kept (the cited line is the construct named).
 - Claims changed (old -> new): version 1.2.62 -> 1.2.84 (`marketplace.json:248`, `plugin.json:3`); `/crew:done` four -> five checks, check cites `done.md:18-35`, `:49-62`, `:63-71`, `:73-81`; no-python guard fallback proof rewritten (valid-JSON awk check, `_common.sh:430`, `:480`; `env_guard.py:1903`); `crew_guard_notes.py` (new, 201 lines) added to the ratchet paragraph and `NARROWED` (`crew_dropped.py:102`) added; `_RATCHETED` build steps `:3058`..`:3187`; `ALL_GUARD_NAMES` "10 across 4" -> 12 across 5; `default_config` / `default_global_config` entry cites `:246`/`:432` -> `:248`/`:423`; "14-key ratchet table" -> 16; `AUTOPILOT_DEFAULTS` keys (now 12, `crew_state.py:886-891`); `crew_autopilot.py` 1999 -> 3380 lines, 10 -> 27 subcommands, docstring `:1-240`, `next` table `:104-176`; `autopilot.md` 110 -> 117 lines and its section cites; `crew_migrate.py` 1329 -> 1381, `crew_help.py` 414 -> 439, `crew_route.py` 627 -> 650, `verify-gate.sh` 1863 -> 2965 lines; mutation counts (`CONFIG_MENU` 126 -> 130, `SHELL` 14 -> 11, `TRACKER` 106 -> 103, `RESUME` 72 -> 68) and `sabotage.py` registration lines; `crew_py_strict` callers 11 -> 12, plain `crew_py` callers two -> three (`promote-gate.sh:115`, `notify.sh:13`, `handoff-write.sh:103`); `verify-gate.sh` capture cites (`:2516`, `:2635`, `:2656`, `:2579`); T-0096/L-0680 sections: `PS_COPIES` now `("promote-gate",)`, handoff path is the fixed `.work/HANDOFF.md` (`crew_handoff_path` gone), no `keepTranscripts` read in `handoff-write.sh`; held-ping bullet marked SUPERSEDED (`notifyHold` dropped by L-0725; `autopilot.reviewPolicy` now shipped); `TODO.md:4005` -> `:4262`; `GlobalWriteRefused` `:3899` -> `:2961`; `PM_DEFAULTS` `:898-911` -> `:898-906`; the `qa-reviewer` grep result list; many `crew_tracker.py`, `crew_split.py`, `crew_autopilot.py` and `crew_refresh_check.py` cites moved by +20 to +1400 lines.
 - Demoted to JUDGEMENT (carried, not re-verified): 34 sections, each with a marker line under its heading (listed in "Unverified at this anchor"); the long dated `Re-anchored ...` paragraphs keep the numbers of their own commits.

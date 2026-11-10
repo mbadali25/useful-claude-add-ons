@@ -29,6 +29,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.24: re-bump only - interim number on the context-watch branch before main reached 1.3.25; the change is recorded under crew 1.3.26
 - crew 1.2.22: re-bump only - interim re-bump on the L-0768 branch (commit f7e38e3); the change is recorded under crew 1.3.25
 - crew 1.2.29: re-bump only - interim re-bump on this branch after merging main (commit a7f25e1); the change is recorded under crew 1.3.26
 - crew 1.2.27: re-bump only - interim re-bump on the L-0768 branch after merging main (commit 0f5c3e91c); the change is recorded under crew 1.3.25
@@ -43,9 +44,9 @@ read entries under any `## [` heading.
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 
-### Fixed — crew 1.3.26: the environment guard's review fixes, re-applied on the L-0725 guard (L-0772)
+### Fixed — crew 1.3.28: the environment guard's review fixes, re-applied on the L-0725 guard (L-0772)
 
-- **Summary.** `crew` 1.3.26: the environment guard no longer misses attached code (`bash -c'env'`, `node -pe`) or a globbed program name, and an explicit `guards.envGuard: null` now blocks instead of switching it off.
+- **Summary.** `crew` 1.3.28: the environment guard no longer misses attached code (`bash -c'env'`, `node -pe`) or a globbed program name, and an explicit `guards.envGuard: null` now blocks instead of switching it off.
 - Re-applied from PR #603 (L-0772-fix, which could not merge after L-0725 rewrote the config handling and L-0867 removed `env-guard.ps1`) onto current main. The no-python fallbacks (BLOCKs 3 and 4) are already covered by main's `crew_guard_layer_armed` and `env_guard._layer_text_armed`, so only the python judge and the null rule were ported; the `.ps1` fix is not ported.
 - **Attached code.** `-cCODE`, `-eCODE` and `-neCODE` are scanned, and a run of code letters (`node -pe 'process.env'`) is read every way it could split. A globbed or brace-expanded program name (`/usr/bin/en?`, `e{n,}v`) and a non-literal name in inline code (`os.environ[name]`) are could-not-tell. `env --help`, `env --version` and `printenv --help` are allowed.
 - **`guards.envGuard: null`** is `block`, the floor, in either layer: only an absent key is `off` (`crew_guards.NULL_IS_MALFORMED`, read by `layer_guard_state`). `roleWrites` and `cloudGuard` are unchanged.
@@ -53,6 +54,20 @@ read entries under any `## [` heading.
 - **Hook input** without a string `tool_name` is `could-not-tell:malformed-input`.
 - **`plugin-hooks:<name>`** reports a `hooks.json` that is a directory or cannot be decoded as could-not-verify, never a zero or a crash.
 - Docs: `plugin/crew/CONFIG.md` (envGuard null) and the troubleshooting guide's could-not-tell forms, rebuilt as HTML/DOCX/PDF.
+
+### Fixed — crew 1.3.27: the lock test no longer fails when it lists the lock mid-rename of `owner`
+
+- **Summary.** `crew` 1.3.27: test-only. `test_the_lock_never_records_a_pid` listed the lock directory as soon as `token` appeared and allowed only the name `owner`, but `verify-gate.sh` writes `owner.tmp.<pid>` and renames it to `owner`, so a listing in that window failed with `AssertionError: ['owner.tmp.515831', 'token']` (it failed required CI `test (3.12)` on PRs #679 and #597). The test now also ignores `owner.tmp.*`; a `pid` file or any other name still fails. No gate code changed.
+- Tests: 20 consecutive passes on Linux; sabotaged by hand: the gate writing `$LOCK/pid` turns it red (`the lock records a PID again: ['owner', 'pid', 'token']`).
+
+### Fixed — crew 1.3.26: context-watch's no-op Stop turn starts one process, not a dozen
+
+- **Summary.** `crew` 1.3.26: the Stop hook `context-watch.sh` clears an ordinary turn with one python start instead of five plus a handful of helper programs, so it no longer runs into its 20 s limit on a loaded Git Bash host; what it warns about and when is unchanged.
+- Cause (measured, not assumed): process starts, not a lock or a slow git. Traced on a clean `origin/main` worktree (crew 1.3.23, Windows 11, Git Bash, `CREW_PYTHON` set, a crew repo with a 27 MB transcript under the threshold, three runs): 9.0-9.8 s wall per no-op turn with `bash -x`, five python starts (three one-field `read_json`, the config read, the transcript scan), plus `dirname`, `cat`, `grep`, `sed`, `tr`, `cygpath` and `timeout`. The transcript scan itself is 0.7 s warm.
+- After: one python start (payload, config and transcript in one), no helper in bash (`$DIR` by expansion, a builtin `read` for the payload, a bash regex for `cwd`, the relative config path used as it is). Same trace: 3.4 s, 3.4 s and 5.3 s.
+- Decisions unchanged. One edge differs: a payload carrying two `"cwd"` keys used to make the hook exit 0 without checking anything; the first key now wins. A non-ASCII character in a session id is passed on as `?`, which the session key turns into `_` exactly as before.
+- Tests: `tests/test_context_watch_spawns.py` (the no-op path starts one python and none of `dirname cat grep sed tr cygpath timeout`; over the threshold it still blocks; a disabled or malformed `context` block still stands down; `stop_hook_active` is left alone), sabotaged by hand: `INPUT=$(cat)`, an extra python, a `grep` for `cwd` and `dirname` for `$DIR` each turn it red.
+- Docs: none - an internal process-count change; the hook's decisions, config and documented behaviour are unchanged. The code map's `context-watch.sh` line references were refreshed.
 
 ### Fixed — crew 1.3.25: promote-gate reads deploy policy from the sha being deployed, not the session's checkout (L-0768)
 
@@ -1383,7 +1398,6 @@ read entries under any `## [` heading.
   could-not-tell dropped from the line, and a file name printed raw (a newline forges a line).
 
 ### Fixed — crew 1.2.13: the Stop's `outside-scope:` line reads the crew 1.0 Touch (L-0711)
-
 
 - **Summary.** The verify gate's scope line now names a file a shell command (`sed -i`, a
   redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's
