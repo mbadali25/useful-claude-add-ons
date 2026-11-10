@@ -1,5 +1,98 @@
 # Changelog
 
+## [0.2.17] - 2026-11-09
+
+Release bump only: merges main's 0.2.13 (configurable root install) and 0.2.14 (test fix) into the TLS pinned-fingerprint line. `install.sh` opens both ports (9999, 10000) through `$SUDO`. No other behaviour change.
+
+## [0.2.16] - 2026-11-08
+
+Lint only (CI pylint on 0.2.15): two lines over 120 characters, a reimport of `join_codes` in `installer.py`, and `PinnedSocket`'s abstract `SSLSocket` methods. No behaviour change.
+
+## [0.2.15] - 2026-11-08
+
+TLS with a pinned certificate fingerprint (installer phase 1, part 2). The transition release: the Bridge serves `wss://` and plain `ws://` side by side; **0.3.1 serves `wss://` only**.
+
+### Added
+- `bridge_tls.py`: the Bridge makes a self-signed EC P-256 certificate on first start (or `ai-connect bridge cert show`), valid 730 days (`server.tls.validity_days`), in `~/.config/ai-connect/tls/` (directory 0700, key 0600; on Windows an ACL of the current user alone). A key that group or others can read stops the Bridge. Generation uses `cryptography` (now pinned, `cryptography==50.0.2`; it was already in the venv through fastmcp); the TLS contexts and the pin check use the stdlib `ssl` only
+- `wss://` on its own port, `server.tls.port` (default `server.port + 1`, 10000): TLS and plain WebSocket cannot share one socket without sniffing the first byte, which would hide client addresses from the logs and the join rate limit. `server.tls.enabled` (default true), `server.tls.required` (default false; true opens no `ws://` listener at all)
+- Clients pin the certificate by its SHA-256 (`client.bridge_fingerprint`): the digest is checked inside the TLS handshake, before the WebSocket upgrade carries a token or a join secret. No CA, no hostname check. A mismatch fails closed (`PinMismatch`), the MCP client stops reconnecting (like a refused token, `peer_status` says why) and nothing ever falls back to `ws://`. MCP client, watcher, observer/user client and `deploy/config_tool.py` (`verify`, `smoke --fingerprint`, `client --fingerprint`) all build `wss://` with the pin
+- Join codes carry the fingerprint and the `wss://` port; `ai-connect join` redeems over TLS with that pin and writes `client.bridge_url: wss://...` and `client.bridge_fingerprint`
+- `ai-connect bridge cert show|rotate`, `ai-connect pin <fingerprint> [--port N]` (checks the certificate at the Bridge first, refuses a mismatch), `ai-connect join --token-file ... --fingerprint`, `ai-connect bridge invite --plain` (a code without a fingerprint, for a machine still on 0.2.6 to 0.2.8); `status` shows the pin and whether the Bridge's certificate matches it
+- `installer.py config --server` pins the Bridge machine's own peer to its own certificate over `wss://`
+
+### Changed
+- A config that pairs a fingerprint with `ws://`, or `wss://` with no fingerprint, is refused (a downgrade, or a connection with no trust anchor)
+- Plain `ws://` is deprecated: the Bridge logs a warning at start and once per client address; a client on `ws://` logs one warning per process (to its log, never to bare stderr). Codes without a fingerprint still join over `ws://`, with a warning
+- `install.sh --server` and `install.ps1 -Server` open ports 9999 and 10000 for the VPN subnet (an existing Windows rule gets 10000 added); `vpn/acl-template.hujson` grants `tcp:9999` and `tcp:10000`
+- The auth reload logs a YAML error's line and column only, never its text (it can quote a token), and a file that keeps failing once, not every poll
+
+### Notes
+- **Rotation** (`bridge cert rotate`) changes the fingerprint: it ends every pending join code and re-pins the Bridge machine's own peer; restart the Bridge, then re-pin every other peer (`ai-connect pin <new fingerprint>`) or give it a new code. Until then each one fails closed
+- **Manual steps before 0.3.1:** add `tcp:10000` to an existing tailnet policy by hand (the template is pasted, not pushed), pin every peer, then `server.tls.required: true`
+- `deploy` still writes `ws://` and its firewall step opens `server.port` only in this release; pin deployed peers with `ai-connect pin`. Moving deploy to `wss://` is a follow-up before 0.3.1
+- An expired certificate is still the pinned one and still connects; the Bridge logs `tls_certificate_expired` until it is rotated
+
+## [0.2.14] - 2026-11-08
+
+Test only: `tests/test_ops_root_policy.py` resets `tsadmin.NO_EXEC` after each test. A dry-run deploy in that module left it set, and later CLI tests in the same worker failed with "a dry run runs no tool, and icacls.EXE was about to run" on Windows. No behaviour change.
+
+## [0.2.13] - 2026-11-08
+
+Installing and running as root is a configurable option. The default is unchanged: nothing before 0.2.13 refused root, and with no switch set nothing does now. Client, installer and deploy only: the Bridge is unchanged.
+
+### Added
+- `root_policy.py`: one switch for whether `install.sh`, `installer.py`, `deploy` and `setup` may run as root (euid 0, Linux and macOS). Highest first: the `--allow-root` flag (every `installer.py` step, every `deploy` and `setup` verb, `install.sh`), `AI_CONNECT_ALLOW_ROOT=1` or `0`, the config key `install.allow_root: true` or `false`. A value that is not true or false (in the environment or the config) stops the run instead of being guessed
+- Unset (the default): a root run goes ahead silently, exactly as before. `false`: root is refused before anything changes. `true`: one warning line that the services run as root and that a dedicated service user is safer (never created for you); a root whose `HOME` or user name belongs to another user (`sudo -E`) is refused; after the run the config directory is closed to 0700 and every file in it to 0600 (symbolic links are not followed). `install.sh` then needs no `sudo` and writes no polkit rule, and the units name the process's own user
+- `deploy status` and `deploy list` run as root whatever the switch says. On Windows the switch has no effect: `install.cmd` and `deploy.ps1` ask for elevation through UAC by design and run the tasks as the user without it
+- `config.yaml.example` documents `install.allow_root` as a comment, since `installer.py` requires every active key in the template to be in an existing config
+- `tests/test_ops_root_policy.py`: precedence, must-block (env `0`, config `false`, for `installer.py`, `deploy`, `setup` and the `install.sh` check), must-allow (flag, env, config), file modes 0700/0600, the `sudo -E` refusal, `status` exempt, and that no root-only step in `install.sh` bypasses `$SUDO`. Root is simulated through `AI_CONNECT_DEPLOY_ROOT` and the new `AI_CONNECT_ROOT_HOME` test seam
+
+### Fixed
+- The root switch's refusal for a config that is not valid YAML names only the line and column, never PyYAML's own text, which quotes the offending value (a token can be that value)
+
+## [0.2.12] - 2026-11-08
+
+Enrol a machine with one copy-paste code, and revoke one without restarting the Bridge. Installer phase 1 of 2: TLS with a pinned certificate follows in its own release.
+
+### Added
+- `ai-connect`, a CLI (`bin/ai-connect`, `bin\ai-connect.cmd`; `ai_connect_cli.py`): `bridge invite --name N [--expiry 1h]`, `join [<code>]`, `bridge token --name N`, `bridge revoke --name N`, `bridge list`, `status`. Every changing verb takes `--dry-run`. The launchers use the plugin's venv, else `python3`/`python`/`py -3`, and exit 127 with a message on stderr when no Python 3.10+ is found
+- One-time join codes (`join_codes.py`): version, expiry, Bridge host:port, a slot for the Bridge certificate's SHA-256 fingerprint (all zero until the TLS release), a 128-bit single-use secret, the peer name and a checksum, in base32. The Bridge stores only the secret's SHA-256 (`invites.json` beside `config.yaml`). Redemption (`GET /join` on the Bridge's port) is one locked read-check-mark-write: the code is marked used (temp file + `os.replace`) before the peer's token is written, so a crash burns the code. Expired, used, unknown and wrong-name codes all get the same refusal; past 5 failures a minute from one address (30 in total) the Bridge answers 429
+- Bridge-issued long-lived tokens: `bridge token --name N` writes the token to an owner-only file and shows only its last 4 characters. They do not expire; `bridge revoke` ends them
+- The Bridge reloads its auth table from `config.yaml` by polling (every 2 seconds, Windows and Linux alike, `server/auth_reload.py`): a new peer connects with no restart, and a revoked or replaced token's live connections are closed with 1008 `token revoked`. A config that does not parse or whose `auth:` is invalid is logged and the old table stays
+
+### Changed
+- `installer.py add-peer`, `revoke-peer`, `observer-token` and `user-token` no longer ask for a Bridge restart: the running Bridge picks the change up within seconds
+- Every `installer.py` writer of `config.yaml` (`add-peer`, `revoke-peer`, `observer-token`, `user-token`, `config --server`) takes the same lock as join-code redemption and the `ai-connect` CLI, so a revoke racing a redemption can neither write the revoked peer back nor drop the redeemed one
+- `bridge invite` warns when the Bridge address in the code is not loopback or Tailscale (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`, `*.ts.net`; a private LAN address or a host name is warned about too), and refuses an `--expiry` past 24 hours unless `--allow-long-expiry` (up to 7 days, with a warning): the join is plain HTTP in this release. `join --help` names the code on the command line as the weakest form
+- A `config.yaml` that does not parse is reported by line and column only, by the Bridge's reload log (once per broken file, not every poll), the `ai-connect` CLI and `installer.py`: PyYAML's own message quotes the offending line, which can hold a token
+- `deploy invite` and `deploy join` (Tailscale auth keys) are deprecated: they print a line pointing at `ai-connect bridge invite` / `ai-connect join` and keep working through this release only, because the deploy suites still drive them; they go in the next minor release. The tailnet itself stays `deploy tailnet-setup` and `vpn/vpn-up`
+
+### Notes
+- Transport is still plain `ws://` inside the VPN in this release, redemption included. The join sends the code's secret and receives the new peer's permanent token unencrypted: redeem a code over a VPN only; a join code that carries a certificate fingerprint is refused by this client, never redeemed over `ws://`. The next release serves `wss://` beside `ws://` for one release, with a warning, then `wss://` only
+- Settings under `server:` (address, port, limits) are still read once at start; changing one logs that a restart is needed
+## [0.2.11] - 2026-11-08
+
+Deploy test seam only; no behaviour change for a normal run.
+
+### Changed
+- `AI_CONNECT_DEPLOY_ROOT=0` now means "not root" even when the real euid is 0 (`1` still means root; unset keeps the euid check). The deploy test box sets it to `0`, so `tests/` passes when run as root (#609). Complements 0.2.10's per-test `non_root` option rather than replacing it
+
+## [0.2.10] - 2026-11-08
+
+Test only (0.2.8 and 0.2.9 were never released; this folds them in): test_bridge_status[linux] and test_join_with_an_invite_on_linux_runs_tailscale_up_as_root[user] assumed a
+non-root host and failed under uid 0. Their deploy child now runs with os.geteuid() reporting a user (the new
+non_root option on Box.deploy and Phase), so they pass whatever uid the suite runs under. No behaviour change.
+
+## [0.2.7] - 2026-11-08
+
+Lint only (line length) on the 0.2.6 test change; no behaviour change.
+
+## [0.2.6] - 2026-11-08
+
+Test isolation only: the setup and deploy suites ran their child processes in the checkout, so a project-scope
+setup test wrote plugin/ai-connect/.claude/settings.local.json. They now run in the throwaway project, and a
+suite guard fails any test that writes that path. No behaviour change from 0.2.5.
+
 ## [0.2.5] - 2026-11-06
 
 Lint only (line length, final newline); no behaviour change from 0.2.4.

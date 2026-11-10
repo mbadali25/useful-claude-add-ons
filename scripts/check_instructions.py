@@ -279,9 +279,14 @@ def load_allowance(fail) -> dict:
 
 
 def _byte_size(path: str) -> int:
-    """File size in bytes, read as bytes: never a decoded character count."""
+    """File size in bytes as committed: read as bytes (never a decoded
+    character count), with each CRLF counted as the LF git stores. The
+    allowance records committed bytes, and a Windows checkout with
+    core.autocrlf=true writes CRLF, one extra byte per line: autopilot.md
+    read 19995 bytes on disk against 19878 in the blob and its 19900
+    allowance, a failure no commit could fix. A lone CR still counts."""
     with open(path, "rb") as handle:
-        return len(handle.read())
+        return len(handle.read().replace(b"\r\n", b"\n"))
 
 
 def check_command_budget(allowance: dict, fail) -> None:

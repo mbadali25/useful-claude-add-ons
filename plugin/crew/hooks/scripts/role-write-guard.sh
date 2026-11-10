@@ -9,7 +9,13 @@
 # tool regardless of which shell is installed, so both flavours here are
 # simply wired to the event, like verify-gate.sh/.ps1, and one is expected to
 # be the flavour that actually runs on a given machine.
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# An absolute script path (the dispatcher always passes one) needs no
+# `cd`/`dirname`/`pwd`: parameter expansion alone gives the directory, with no
+# process started. Anything else (a relative path) keeps the old form.
+case "${BASH_SOURCE[0]}" in
+  /*|[A-Za-z]:/*) DIR=${BASH_SOURCE[0]%/*} ;;
+  *) DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" ;;
+esac
 . "$DIR/_common.sh"
 
 # Case-insensitive `case`/`[[ ]]` pattern matching for the rest of this
@@ -23,7 +29,11 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # quietly stays case-sensitive rather than erroring out.
 shopt -s nocasematch 2>/dev/null
 
-INPUT=$(cat)
+# `read` is a builtin: no `$(...)` fork and no `cat`. -d '' reads to EOF (the
+# payload has no NUL), IFS= and -r keep every byte; the only difference from
+# `$(cat)` is that trailing newlines are kept, which neither the JSON parse in
+# python nor the `agent_type` regex below cares about. Status is 1 at EOF.
+IFS= read -r -d '' INPUT || :
 
 # NOT plain `crew_py()`. That resolver is `command -v python3 || python ||
 # py` with no filtering at all, shared by seven other hooks that all fail
@@ -446,7 +456,8 @@ PY=$(_resolve_role_write_python) || {
 # twin, where a caller's environment explicitly unsetting these could still
 # reach python; set here too so neither flavour depends on the CALLER never
 # having touched them.
-GUARD_PY=$(crew_py_script "$DIR/role_write_guard.py") || {
+# The two-argument form sets GUARD_PY in this shell, so no `$(...)` fork.
+crew_py_script "$DIR/role_write_guard.py" GUARD_PY || {
   # An empty script operand would make python run the current directory.
   _role_write_fallback_decision "$INPUT" "role_write_guard.py is missing or its path could not be resolved (looked in $DIR)"
 }

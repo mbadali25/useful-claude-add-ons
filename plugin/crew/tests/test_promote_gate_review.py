@@ -609,30 +609,45 @@ def test_a_hung_receipt_check_blocks_within_the_hook_timeout(flavour, tmp_path):
     assert _all_dead(pids), "a hung git outlived the gate"
 
 
+SLOW_STARTS = 5
+
+
 @_POSIX_ONLY
 @pytest.mark.slow
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout(flavour, tmp_path):
-    """Default budget: a python that costs 1.5s per start (crew_py's probe and
-    every interpreter the gate runs - seven since crew 1.2.0 added the dispatch
-    and github readers, eight since 1.2.115's allow fast path, which a deploy
-    passes through before the full gate; 8 x 1.5s is the 12s that 7 x 1.8s
-    was, and 8 x 1.8s left CI no time to reach the search) plus
-    a receipt check that never ends. The gate's own 16s deadline must still
-    land it inside the 20s hook; a search that took a fixed 12s from its own
-    start would not."""
+    """Default budget: a python that costs 1.8s per start, for the first
+    SLOW_STARTS starts (9s), plus a receipt check that never ends. The gate's
+    own 16s deadline must still land it inside the 20s hook; a search that
+    took a fixed 12s from its own start would not (9s + 12s > 20s).
+
+    The cost is capped, not paid by every start: the sh gate starts python
+    seven times before the hung git runs (measured with a timestamping
+    shim), so 1.8s on each was 12.6s of the 16s, and a loaded runner spent
+    the other 3.4s before the
+    search began - the hung git was never reached and the case proved
+    nothing (CI runs 41099703404, 42319792723, 42411612824; reproduced under
+    CPU pressure). A fixed total keeps the same headroom however many
+    interpreters a later gate adds."""
     repo = Repo(tmp_path, REVIEW_MAP)
     repo.clean_receipt()
     shim_dir, pids = _git_shim(tmp_path)
     real = os.path.realpath(sys.executable)
+    starts = tmp_path / "python.starts"
     for name in ("python3", "python"):
         slow = shim_dir / name
-        slow.write_text(f'#!/bin/sh\nsleep 1.5\nexec "{real}" "$@"\n', encoding="utf-8")
+        slow.write_text(
+            "#!/bin/sh\n"
+            f'n=$(cat "{starts}" 2>/dev/null || echo 0)\n'
+            f'echo $((n + 1)) > "{starts}"\n'
+            f'if [ "$n" -lt {SLOW_STARTS} ]; then sleep 1.8; fi\n'
+            f'exec "{real}" "$@"\n', encoding="utf-8")
         slow.chmod(0o755)
     code, err, took = run_gate(flavour, repo, "deploy-dev",
                                path=f"{shim_dir}{os.pathsep}{os.environ['PATH']}")
     assert code == 2, err
     assert took < 20, took
+    assert starts.exists(), "the slow python never ran: the case proves nothing"
     assert pids.exists(), "the hung git was never reached: the case proves nothing"
     assert _all_dead(pids)
 

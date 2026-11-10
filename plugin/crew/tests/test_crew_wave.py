@@ -1768,8 +1768,28 @@ def test_models_lists_coordinator_pin(tmp_path, capsys):
         0, 1, True, True)
 
 
+@pytest.mark.parametrize("model,expected", [
+    ("fable", "fable"), ("Fable", "fable"), ("claude-fable-5-1", "claude-fable-5-1")])
+def test_fable_pin_is_put_on_the_launch_line(tmp_path, model, expected):
+    lines = _start_with_roles(tmp_path, {"developer": {"provider": "claude", "model": model}})
+
+    launches = [line for line in lines if line.startswith("launch ")]
+
+    assert (len(launches), all(f"model: {expected})" in line for line in launches),
+            [line for line in lines if line.startswith("warning:")]) == (2, True, [])
+
+
+def test_fable_pin_without_provider_warns_when_block_provider_is_not_claude(tmp_path):
+    lines = _start_with_config(tmp_path, {"dev": {"provider": "codex", "roles": {
+        "coordinator": {"model": "fable"}}}})
+
+    assert (any(line.startswith("warning: dev.roles.coordinator.model") for line in lines),
+            [line for line in lines if line.startswith("coordinator:")]) == (True, [])
+
+
 @pytest.mark.parametrize("pin,fragment", [
     ({"provider": "claude", "model": "gpt-6"}, "is not a claude model"),
+    ({"provider": "claude", "model": "fables-9"}, "is not a claude model"),
     ({"provider": "Claude", "model": "claude-sonnet-5-5"}, "is not 'claude'")])
 def test_unusable_claude_pin_is_named(tmp_path, pin, fragment):
     lines = _start_with_roles(tmp_path, {"developer": pin})

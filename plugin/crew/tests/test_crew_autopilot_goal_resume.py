@@ -928,7 +928,7 @@ def _fold_case(monkeypatch, module):
         return os.path.join(parent, hits[0]) if hits else path
 
     monkeypatch.setattr(os, "lstat", lambda path, *a, **k: real_lstat(folded(path), *a, **k))
-    monkeypatch.setattr(module, "open", lambda path, *a, **k: open(  # pylint: disable=consider-using-with
+    monkeypatch.setattr(module, "open", lambda path, *a, **k: open(  # pylint: disable=consider-using-with,unspecified-encoding
         folded(path), *a, **k), raising=False)
 
 
