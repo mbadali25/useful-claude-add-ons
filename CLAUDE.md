@@ -94,6 +94,24 @@ or the 15-20 s guard caps), reduce lanes rather than disable guards. ALL communi
 outbound sends and condensing inbound messages, goes through one `crew:session-relay` agent kept
 available for the session; the main session never sends to a peer directly.
 
+## Delegation - the main session stays free to answer
+
+**Every task runs in a subagent, and one manager subagent runs them.** Owner rule, 2026-10-12. The
+main session does not do the work itself: it spawns a single manager in the background, and the
+manager splits the request into tasks, spawns one worker subagent per task, checks what each
+returns against the artifact rather than the summary, and sends back one report. That leaves the
+main session idle on purpose, so the owner can reply, redirect or add work while tasks are running.
+
+- **The main session's job is the conversation.** It briefs the manager, relays progress and
+  results, and passes a mid-run message from the owner on with `SendMessage` instead of starting
+  over. It never waits in the foreground on work a subagent is doing.
+- **A new message while work is running is answered first.** If it changes the work, forward it to
+  the manager; if it is a separate request, it gets its own manager. Then resume, do not restart.
+- **The manager owns the workers.** It gives each a narrow brief with what is already ruled out,
+  keeps two workers off the same files, and reports which tasks finished, which failed and what
+  nobody verified. Check `ListAgents` before spawning a second manager for the same work.
+- **The only exception is an answer that needs no tool calls.** That is conversation, not a task.
+
 ## Standing rule - verify before you state a problem
 
 **Before stating anything as a problem (bug, cause, failure, risk), verify it** by running the state
