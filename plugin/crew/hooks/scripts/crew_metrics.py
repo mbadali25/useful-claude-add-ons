@@ -455,7 +455,8 @@ TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens",
 # prefix wins). Read from the `claude-api` skill's model table, itself cached
 # 2026-10-06 from the vendor pricing page; the cache-write multipliers are the
 # published 1.25x (5-minute TTL) and 2x (1-hour TTL) of the input rate. A
-# cache-read rate the table states is used as stated (Fable 5.1 0.25, Fable 5
+# cache-read rate the table states is used as stated (Fable 5.2 0.20 - $8/$40 and 2.5% per the
+# models overview page, added 2026-11-10, not in the cached table; Fable 5.1 0.25, Fable 5
 # 1.00, Opus 5.5 0.20, Sonnet 0.20); where it states none the standard 0.1x of
 # input is ASSUMED (opus-5, opus-4.x, sonnet-4-6, haiku). Haiku 5.5 messages
 # with a prompt above 100K tokens use PRICES_LONG ($0.50 in / $2.50 out, cache
@@ -475,6 +476,7 @@ def _price(inp, out, cache_read=None):
 
 
 PRICES = {
+    "claude-fable-5-2": _price(8.0, 40.0, 0.20),
     "claude-fable-5-1": _price(10.0, 50.0, 0.25),
     "claude-mythos-5-1": _price(10.0, 50.0, 0.25),
     "claude-fable-5": _price(10.0, 50.0, 1.0),

@@ -370,7 +370,7 @@ The coordinator is a model pin on an existing role (L-0799), not a fifth role:
 `coordinator: model <id>`, a report of the pin (wave launches no coordinator);
 `docs/crew/config-rationale.md` has the details. A claude pin here or on
 `dev.roles.developer` takes a full Claude id or the aliases `opus`, `sonnet`,
-`haiku` and `fable` (Fable 5.1, `claude-fable-5-1`). `fable` is honoured only
+`haiku` and `fable` (Fable 5.2, `claude-fable-5-2`). `fable` is honoured only
 when pinned explicitly; nothing in crew selects it on its own.
 
 Parallelism scales on independent work units, not job titles.

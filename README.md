@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.31**: The `fable` model alias now names Claude Fable 5.2 (`claude-fable-5-2`). `crew` 1.3.31: the `fable` pin in `dev.roles.<role>.model` is documented as Claude Fable 5.2 (`claude-fable-5-2`, listed on the vendor models overview page); `fable` is still honoured only as an explicit pin and nothing in crew selects it.
 - **crew 1.3.30**: `crew_standards.py export` publishes the standards to PR-side reviewers. `crew` 1.3.30: a repo that opts in (`export:` in `.crew/standards.md`) gets `docs/review-rules/<SET>.md`, `REVIEW.md`, `.cursor/BUGBOT.md` and a `## Code Review Rules` block in `AGENTS.md`, generated from the same standards `/crew:review` hands its own reviewer and checked for staleness by `export --check`.
-- **crew 1.3.29**: The backgrounded-process wallclock test compares against a baseline gate run. A flaky Windows CI test now measures the gate against its own no-op run instead of a fixed 6-second limit.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

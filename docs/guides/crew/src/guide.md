@@ -38,7 +38,7 @@ A fifth file, `session-relay`, is not a role: it is a transport agent on Haiku 5
 `{"provider": "claude", "model": "claude-sonnet-5-5"}`) in `/crew:model`. A wave prints the
 coordinator pin and puts the developer model on every lane launch. Both default to unset, which
 changes nothing. A Claude pin takes a full Claude id or `opus`, `sonnet`, `haiku` or `fable`
-(Fable 5.1). Fable runs only when you pin it like this; crew never picks it for you.
+(Fable 5.2). Fable runs only when you pin it like this; crew never picks it for you.
 
 **Running agents on Kimi.** Claude Code runs subagents on Claude models only,
 so `explorer`, `researcher` and `security` can hand their task to the Kimi Code

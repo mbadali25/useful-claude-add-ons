@@ -3027,7 +3027,7 @@ Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each n
   `warning:` lines (`:881`) come before the `coordinator: model <id>` line (`:883`), which reports the
   pin only: wave launches no coordinator. No agent file or `ROLE_TIERS` entry exists for the coordinator.
 - DERIVED: `plugin/crew/hooks/scripts/crew_wave.py` `CLAUDE_MODEL_HEADS` is the set of claude
-  families `role_model` accepts: `claude`, `opus`, `sonnet`, `haiku` and `fable` (Fable 5.1, added on
+  families `role_model` accepts: `claude`, `opus`, `sonnet`, `haiku` and `fable` (Fable 5.2, first added as Fable 5.1 on
   `feat/crew-model-accept-fable`). `fable` is an explicit-pin alias only; no code in crew selects it.
 - JUDGEMENT: the coordinator pin is advisory text for the dispatcher; a plugin cannot set the session model.
   Tests: `plugin/crew/tests/test_crew_wave.py` (`test_launch_line_*`, `test_start_*coordinator*`,
