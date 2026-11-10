@@ -28,6 +28,7 @@ import subprocess
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
+from _train_base import TRAIN_BASE, seed_train_base
 import crew_fixtures
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
@@ -400,8 +401,11 @@ def test_promote_gate_with_a_helper_missing_blocks_and_names_it(scripts_copy, tm
     (root / "runbook.md").write_text("# Rollback\nlast verified: 2026-11-01\n", encoding="utf-8")
     (root / ".crew" / "verify.json").write_text(json.dumps({"environments": {
         "prod": {"deploy": "deploy-prod", "rollback": "runbook.md",
-                 "requireReview": False, "reviewReason": "fixture"}}}), encoding="utf-8")
-    for args in (["init", "-q"], ["config", "user.email", "t@example.invalid"],
+                 "requireReview": False, "reviewReason": "fixture",
+                 "reviewWaiverSha": TRAIN_BASE}}}), encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=False, capture_output=True)
+    seed_train_base(root)
+    for args in (["config", "user.email", "t@example.invalid"],
                  ["config", "user.name", "T"], ["add", "-A", "-f"],
                  ["commit", "-q", "-m", "fixture"]):
         subprocess.run(["git"] + args, cwd=root, check=False, capture_output=True)

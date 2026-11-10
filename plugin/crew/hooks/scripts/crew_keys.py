@@ -232,6 +232,17 @@ KEY_META = {
                                     "checks who created the marker.", "branch",
                                     crew_humanonly.VALUES, "1.3.9",
                                     _S + "crew_humanonly.py"),
+    # --- worktrees (crew 1.3.19)
+    "worktrees.root": _row("The base directory for this repo's git worktrees, OUTSIDE the "
+                           "repo: they go in `<root>/<repo>-<digest>/<name>`. null is "
+                           "`~/.claude/crew/worktrees`; `~` is expanded, a relative path or one "
+                           "inside the repo is refused (never replaced by the default). It "
+                           "places the worktrees crew places (`/crew:emergency`, "
+                           "`crew_worktrees.py path`) and, once the owner registers the opt-in "
+                           "`WorktreeCreate` hook, the ones Claude Code creates; without the "
+                           "hook Claude Code keeps using `.claude/worktrees/`.", "type",
+                           since="1.3.19", source=_S + "crew_worktrees.py",
+                           type_="absolute path or null"),
     # --- emergency
     "emergency.standDown": _unv("Whether a declared incident may stand gates down; "
                                 "`false` forbids it.", FIRST, _S + "_common.sh", "boolean"),
@@ -329,6 +340,11 @@ KEY_META = {
     "environments.nonProd": _unv("Terraform targets that are not production and may run "
                                  "unattended.", "1.0.37", _S + "crew_config.py",
                                  "list of globs"),
+    "environments.preProduction": _unv("Environments labelled production that are not live yet: exact "
+                                       "name -> `reason` (+ optional exact `targets`); judged "
+                                       "non-production by the cloud guard, with an audit line.",
+                                       "1.3.20", _S + "crew_preprod.py",
+                                       "object of exact name to {reason, targets}"),
     "environments.prodUnattended": _rat("Whether production terraform may run unattended; "
                                         "`true` only when both layers say so.", "1.0.37"),
     "environments.workflows": _unv("Deploy workflow globs, each mapped to its environment "
@@ -454,6 +470,7 @@ _FAMILY_OF_KEY = {
     "environments.prodUnattended": "cloud",
     "environments.nonProd": "cloud",
     "environments.workflows": "cloud",
+    "environments.preProduction": "cloud",
 }
 _FAMILY_OF_SEGMENT = {
     "qa": "providers", "dev": "providers", "secondOpinion": "providers",

@@ -37,7 +37,7 @@
    "flavour": "bash",
    "script": "crew-context.sh",
    "stderr": "",
-   "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"crew context (clear): branch main @ 5e12f97e.\"}}\n",
+   "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"SessionStart\", \"additionalContext\": \"crew context (clear): branch main @ 851a379e.\"}}\n",
    "timed_out": false
   }
  ],

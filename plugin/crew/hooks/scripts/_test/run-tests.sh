@@ -507,6 +507,12 @@ _CREW_TEST_TMP+=("$PD")
   git init -q .
   git config user.email t@example.com
   git config user.name t
+  # SRL-3312: requireReview:false waives only for the promotion's train base
+  # (the merge-base with the base branch), so the map is committed AFTER a base
+  # commit that origin/main points at, and names it in reviewWaiverSha.
+  git commit -q --allow-empty -m base
+  git update-ref refs/remotes/origin/main HEAD
+  BASE_SHA=$(git rev-parse HEAD)
   mkdir -p .crew .work docs/runbooks scripts
   # .crew/ and .work/ are gitignored in a real repo. They must be, or the gate's
   # own marker file dirties the tree and blocks the next deploy.
@@ -516,13 +522,14 @@ _CREW_TEST_TMP+=("$PD")
  "environments":{
    "qa":{"deploy":["./scripts/deploy.sh qa"],"smoke":["true"],
          "rollback":"none","rollbackReason":"qa is rebuilt on every push","promotesTo":"production",
-         "requireReview":false,"reviewReason":"fixture: test_promote_gate_review.py owns review"},
+         "requireReview":false,"reviewReason":"fixture: test_promote_gate_review.py owns review","reviewWaiverSha":"@BASE@"},
    "staging":{"deploy":["./scripts/deploy.sh staging"],"smoke":["true"],
-              "requireReview":false,"reviewReason":"fixture"},
+              "requireReview":false,"reviewReason":"fixture","reviewWaiverSha":"@BASE@"},
    "production":{"requires":["qa"],"deploy":["./scripts/deploy.sh prod"],
                  "rollback":"docs/runbooks/rollback.md","requireHuman":true,
-                 "requireReview":false,"reviewReason":"fixture"}}}
+                 "requireReview":false,"reviewReason":"fixture","reviewWaiverSha":"@BASE@"}}}
 EOF
+  sed -i "s/@BASE@/$BASE_SHA/g" .crew/verify.json
   echo '{}' > .crew/config.json
   printf '#!/bin/sh\necho deployed\n' > scripts/deploy.sh
   git add -A && git commit -qm init

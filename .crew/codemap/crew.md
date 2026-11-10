@@ -423,6 +423,17 @@ the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The
 `environments.nonProd` is repo-only, `environments.prodUnattended` ratchets (below). DERIVED from
 the docstrings and definitions cited; the verdict table itself is not re-derived here.
 
+`environments.preProduction` (crew 1.3.20) is a second repo-only exemption for an environment
+that is labelled production but not live: exact name -> `{reason, targets}`, validated by
+`crew_preprod.problem` (called from `crew_config.environments_block_problem`, so a malformed entry
+makes every environment unknown). `crew_preprod.arm` (called first in `cloud_guard.evaluate`)
+appends the names to the `nonProd` globs the terraform and dispatch classifiers read;
+`crew_config._preproduction_cover` lets `guards.prodDatabase` / `prodServer` stand down only when
+every declared production target on the command is a listed name or `target`. Both paths write
+`env:preProduction:<name>` to `.crew/guard.log` and a `PRE-PRODUCTION EXEMPTION` line to stderr
+(`cloud_guard.main`). DERIVED from `plugin/crew/hooks/scripts/crew_preprod.py`; tests
+`plugin/crew/tests/test_preproduction.py`.
+
 **GitHub Actions deploys, slice 1 (T-0045).** `plugin/crew/hooks/scripts/crew_ghdeploy.py` reads an
 environment's `github` entry out of `.crew/verify.json` (`_environment`, `:504`; `entries`, `:232`),
 validates each against a closed key set (`KEYS`, `:107`) and value grammar (`VALUE`, `:104`;
@@ -936,6 +947,32 @@ calls `confirm`; both are harness (`scripts/check-tooling-pr.py` `HARNESS`:
 `plugin/crew/tests/test_crew_humanonly.py`; mutations
 `plugin/crew/tests/humanonly_mutations.py` (16, run alone until PR 2 wires
 them into `sabotage.py`).
+
+## Worktree root and `/crew:worktrees` (crew 1.3.19)
+
+DERIVED on `feat/worktrees-root` (cut from main `e65a067a4`); this section does
+not move the anchor. One leaf, `worktrees.root`, default `null` in both templates
+(`plugin/crew/hooks/scripts/crew_config.py` `default_config` and
+`default_global_config`; `crew_state.WORKTREES_DEFAULTS`). The reader is
+`plugin/crew/hooks/scripts/crew_worktrees.py:129` (`resolve`): a value that is
+not a non-empty string, not absolute after `~` expansion, or inside the main
+checkout is a `problem` and `dir` stays `None` (never the default); the
+directory is `<base>/<repo>-<digest>` from `crew_state._repo_digest` of the main
+checkout (first `git worktree list` record). `crew_state.py --worktree-path`
+answers through it and exits 2 on a problem. `classify` (`:202`) marks a
+worktree removable only when status, unpushed (`rev-list HEAD --not --remotes`),
+merge into the default ref, lock and age all prove it, every failed probe being
+`could not tell`; `remove` (`:280`) needs `--yes` and runs `git worktree remove`
+without `--force`. `hook_create` (`:348`) and `hook_remove` are the entry points
+of Claude Code's `WorktreeCreate` / `WorktreeRemove` hooks (replacing git's
+creation; documented behaviour, not run against the live CLI);
+`crew_wave._init_refusal` admits a lane under the same directory. JUDGEMENT:
+nothing registers the hook. `hooks.json` is harness (`HARNESS`) and a hook that
+replaces creation for every user is the owner's to opt into, so
+`hook-snippet` prints the settings block. Tests:
+`plugin/crew/tests/test_crew_worktrees.py`; mutations
+`plugin/crew/tests/worktrees_mutations.py` (17, run alone: `sabotage*.py` is
+harness).
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 

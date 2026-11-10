@@ -95,6 +95,7 @@ import crew_config_files
 import crew_dropped
 import crew_guard_notes
 import crew_humanonly
+import crew_preprod
 import crew_state
 
 sys.path.insert(0, os.path.join(
@@ -299,6 +300,10 @@ def default_config():
         # never opts out, a `true` anywhere vetoes, a `false` needs a double
         # confirmation). Nothing in the hooks acts on it yet.
         "humanOnly": copy.deepcopy(crew_state.HUMAN_ONLY_DEFAULTS),
+        # crew 1.3.19. Where this repo's git worktrees go: a directory OUTSIDE the
+        # repo. In both layers (a person's habit first, a repo may differ); null is
+        # ~/.claude/crew/worktrees. Read by `crew_worktrees.resolve`.
+        "worktrees": copy.deepcopy(crew_state.WORKTREES_DEFAULTS),
         "emergency": {
             "standDown": True,
             "maxTtlMinutes": 480,
@@ -551,6 +556,9 @@ def default_global_config():
         # crew 1.3.9: the owner's human-only opt-out is the owner's answer
         # first of all, so the machine file is where it normally lives.
         "humanOnly": copy.deepcopy(crew_state.HUMAN_ONLY_DEFAULTS),
+        # crew 1.3.19: where worktrees go is a habit of the person and the machine
+        # first; a repo file may still name its own.
+        "worktrees": copy.deepcopy(crew_state.WORKTREES_DEFAULTS),
         # How much crew may do about a skill it needs and cannot find. This is
         # a machine fact in the strongest sense on this list: it is the machine
         # owner saying how much they trust crew to run commands HERE. It was
@@ -1298,6 +1306,10 @@ def environments_block_problem(block):
     if "prodUnattended" in block \
             and not isinstance(block["prodUnattended"], bool):
         return "`environments.prodUnattended` is not true or false"
+    if "preProduction" in block:
+        pre_problem = crew_preprod.problem(block["preProduction"])
+        if pre_problem:
+            return pre_problem
     workflows = block.get("workflows", {})
     if not isinstance(workflows, dict):
         return "`environments.workflows` is not an object"
@@ -1744,6 +1756,24 @@ def _maybe_log(root, record, decision, name, policy, target, command,
                       target or "-", flat))
 
 
+def _preproduction_cover(root, command, patterns):
+    """`(names, reasons, first covered target)` when `environments.preProduction`
+    (repo layer, readable) covers EVERY declared production target `command`
+    names, else None. An unreadable or malformed block covers nothing."""
+    path = crew_common.repo_config_file(root, "config.json")
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as handle:
+            block = json.loads(handle.read()).get("environments", {})
+        block = block.get("preProduction", {}) if isinstance(block, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return None
+    table = crew_preprod.entries(block)
+    matched = crew_preprod.matched_targets(
+        crew_state.production_targets(command), patterns)
+    covered = crew_preprod.covers(matched, table)
+    return None if covered is None else (covered[0], covered[1], matched[0])
+
+
 def guard_decision(root, name, command, path=None, record=False,
                    record_command=False):
     """What crew's command guard must do about `command` under `guards.<name>`.
@@ -1803,18 +1833,34 @@ def guard_decision(root, name, command, path=None, record=False,
         # `prod_decision` a fourth argument, is what let this land without
         # changing `crew_guards.py`.
         declared = production_declaration(root, name)
+        pre = None
         if declared.state in (PROD_DECL_MALFORMED, PROD_DECL_UNREADABLE):
             decision, reason, target, access = _prod_undeclarable(
                 name, policy, command, declared)
         else:
             decision, reason, target, access = crew_state.prod_decision(
                 policy, command, declared.patterns)
+            pre = None
+            if decision == "block":
+                pre = _preproduction_cover(root, command, declared.patterns)
+            if pre is not None:
+                # `environments.preProduction` (crew_preprod): every declared
+                # production target on this line belongs to a listed,
+                # reasoned, not-yet-live environment. The only way a block
+                # becomes an allow here, and it says so in the reason.
+                names, reasons, covered = pre
+                decision, target = "allow", covered
+                reason = crew_preprod.audit_line(
+                    f"guards.{name}", names, reasons)
+                access = access or ""
         # `ask` is not in this vocabulary, so there is nothing to approve and
         # naming a marker file would invite a user to create one that nothing
         # reads.
         out = _guard_row(name, policy, decision, reason, "", target, resolved)
         out["access"] = access
         out["declaration"] = declared.state
+        if pre is not None:
+            out["preProduction"] = {"names": names, "reasons": reasons}
         _maybe_log(root, record, decision, name, policy, target, command,
                    record_command)
         return out

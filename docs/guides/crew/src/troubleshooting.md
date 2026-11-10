@@ -724,7 +724,14 @@ every literal sha the command names. `.crew/verify.json`, `.work/PROMOTIONS.md` 
 - **"has uncommitted changes: it ..."** also fires when the map is deleted or untracked, or edited
   under skip-worktree: the gate compares the file with HEAD's copy, not with `git status`.
 - **".crew/verify.json in the project dir ... has uncommitted changes"**: commit or revert the map;
-  an uncommitted map is not policy.
+  an uncommitted map is not policy. Since crew L-0768 this fires only when the project dir's map is
+  the policy: the deploy runs from the project dir, or the deployed sha carries no map ("carries no
+  committed .crew/verify.json"). A worktree deploy reads the map committed in its own sha.
+- **"the map committed in the deployed sha ... does not declare it"** (L-0768): the project dir's
+  map matched the command to an environment the deployed sha's own map lacks. Deploy a sha whose
+  committed map declares it.
+- **A waiver on the release branch is ignored** (crew before L-0768): older gates read the main
+  checkout's map for a worktree deploy. Update crew; the waiver must be committed in the sha deployed.
 - **"records the short sha X"** (L-0703): a `requires` row counts only with the full 40-character
   sha. Re-run the upstream promotion, or rewrite the row with `git rev-parse HEAD` of the tree that
   passed, after checking it is that commit.
@@ -791,6 +798,19 @@ off** (`guards.profile: off`); turn it on with `{"guards": {"overrides": {"envGu
 `cloud-guard.sh` / `cloud_guard.py`, a `PreToolUse` hook on `Bash` and `PowerShell`. **Ships off**
 (`guards.profile: off`); turn it on with `{"guards": {"overrides": {"cloudGuard": "report"}}}` first to see what
 it *would* refuse before enforcing with `"block"`.
+
+- **A production-labelled environment that is not live yet keeps being refused.** Do not turn the guard
+  off for it: list it. In `.crew/config.json` (the repo file; the machine file cannot supply it)
+  set `{"environments": {"preProduction": {"acme-new": {"reason": "stood up in November, no
+  customer traffic yet", "targets": ["acme-new-web1", "acme-new-db1"]}}}}`. Names and `targets` are
+  exact, the `reason` is 10+ characters, and a malformed entry makes every environment unknown (so
+  the refusals get stricter, not looser: the deny message says which entry is wrong). A listed name
+  is judged non-production for a non-destroying `terraform apply` or deploy dispatch, and
+  `prodDatabase` / `prodServer` let a command through when every production target on it is the
+  name or one of its `targets`. A destroy, an unlisted host on the same line and every other guard
+  are unchanged. Each use prints `crew PRE-PRODUCTION EXEMPTION` on screen and stderr and logs
+  `env:preProduction:<name>` to `.crew/guard.log`. Remove the entry when the environment goes live
+  (`docs/crew/config-rationale.md`, "Pre-production environments").
 
 - **SQL text that merely looks destructive is not blocked.** `DROP`/`TRUNCATE` inside a string
   literal or a comment does not count: the guard strips literals and comments before matching, read
@@ -1218,6 +1238,7 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 | `guards.overrides.<guard>` for `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` | both layers, ratchets | `block`/`ask`/`allow` | there is no "off" — `allow` is the most permissive tier, still logged |
 | `guards.overrides.deployWorkflow` | both layers, ratchets | `block`/`ask`/`allow` | `block` is default and floor; `allow` covers nonProd only — production without `environments.prodUnattended` in both layers, and an unknown environment, still ask (denied unattended) |
 | `environments.nonProd` | repo only | list of globs | `[]`: nothing is nonProd, so every terraform apply asks (denied unattended) |
+| `environments.preProduction` | repo only | object: exact name to `reason` (10+ characters) and optional exact `targets` | `{}`: nothing is exempt. A listed environment is judged non-production by the cloud guard (non-destroying apply and dispatch; `prodDatabase`/`prodServer` for its exact targets), with an audit line on screen, stderr and `.crew/guard.log`; a destroy, `block` policies and every unlisted target are unchanged |
 | `environments.prodUnattended` | both layers, ratchets (true only when both say `true`) | bool | `false` in either layer holds it down: production applies and dispatches ask |
 | `guards.overrides.prodDatabase`, `guards.overrides.prodServer` | both layers, ratchets | `none`/`read`/`full` | `none` is both the default and the floor |
 | `scope.mode` | repo only | `off`/`report`/`block`/`auto` | `off`: neither the edit guard nor the completion audit runs |
