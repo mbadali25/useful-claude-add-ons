@@ -9,6 +9,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.3.21: revert of the Windows python3.exe seam copy (L-0888)
+
+- **Summary.** `crew` 1.3.21: no behaviour change; reverts the Windows `python3.exe` seam copy added in 01ebec33e, and the Windows UNTRUSTED CI failure is open.
+- Revert of the Windows python3.exe seam copy (01ebec33e); the Windows UNTRUSTED CI failure is open. The copy fixed the original `VERIFY GATE: UNTRUSTED` failures but CI then showed `trust-seam-venv0 python3: No module named pytest` in `test_27_python_dash_m_is_local_again` and `test_stdin_guard`. Version bump only because `plugin/crew/` changed and the branch must stay above main's 1.3.20.
+
 ### Fixed — crew 1.3.20: pylint convention messages in the trust-store tests (L-0888)
 
 - **Summary.** `crew` 1.3.20: no behaviour change; the trust-store tests now pass the repo's pylint gate.
