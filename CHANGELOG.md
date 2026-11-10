@@ -9,14 +9,23 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
-### Added — crew 1.3.21: `environments.preProduction` treats a named production-labelled environment as not live yet
+### Added — crew 1.3.23: `environments.preProduction` treats a named production-labelled environment as not live yet
 
-- **Summary.** `crew` 1.3.21: a new repo-only setting, `environments.preProduction`, lists by exact name (each with a written reason) an environment that is labelled production but not live yet, so the cloud guard judges it as non-production without turning any guard off; every use prints and logs an audit line, and everything not listed is judged as before.
+- **Summary.** `crew` 1.3.23: a new repo-only setting, `environments.preProduction`, lists by exact name (each with a written reason) an environment that is labelled production but not live yet, so the cloud guard judges it as non-production without turning any guard off; every use prints and logs an audit line, and everything not listed is judged as before.
 - `crew_preprod.py` (new): validates the block (exact names and `targets`, no wildcard or whitespace, `reason` of at least 10 characters, no unknown field; a malformed entry makes the whole `environments` block unreadable, which is the existing "every environment is unknown" state), arms the listed names as `nonProd` for `cloud_guard.evaluate` (non-destroying terraform apply and `deployWorkflow` dispatch), and relabels the allow as `env:preProduction:<name>`. `crew_config.guard_decision` lets `guards.prodDatabase` and `guards.prodServer` stand down for a command only when EVERY declared production target on it is a listed name or one of its exact `targets`. Each use writes a `crew PRE-PRODUCTION EXEMPTION` line to stderr and on screen and the policy `env:preProduction:<name>` to `.crew/guard.log`.
-- Developed as 1.3.20 (the `since` labels, code comments and README section still say 1.3.20); shipped as 1.3.21 because 1.3.20 went to `worktrees.root` first.
+- Developed as 1.3.20 (the `since` labels, code comments and README section still say 1.3.20); shipped as 1.3.23 because 1.3.20 went to `worktrees.root` and 1.3.22 to the review-waiver binding first.
 - Not changed: a destroy still asks, `block` policies, `cloudDestructive`, `sqlDestructive`, `forcePush`, the identity pins, promote-gate, autopilot's deploy ladder and `crew_unattended` ignore the setting; the machine-global file cannot supply it; default `{}` leaves every decision as before.
 - Tests: `tests/test_preproduction.py` (46 cases: must-allow for listed targets, must-block for unlisted, prefix, mixed-line, jump-host, destroy, malformed-entry, machine-layer and default-config cases, plus a bash-wrapper parity sample). Sabotage-tested with `tests/preproduction_mutations.py`, 17 of 17 red; unwired until a harness-only PR registers it in `sabotage.py`, because `sabotage*.py` is review harness.
 - Docs: crew `README.md`, generated `CONFIG.md` and the guide's configuration reference, `docs/crew/config-rationale.md` ("Pre-production environments"), the guide's troubleshooting source (rebuilt), `.crew/codemap/crew.md`, `crew-setup`'s template listing. `docs/diagrams/` hold dated snapshots with their own anchors and are not regenerated.
+
+### Changed — crew 1.3.22: a review waiver binds to the train base (SRL-3312)
+
+- **Summary.** `crew` 1.3.22: `requireReview: false` with a `reviewReason` no longer waives promote-gate's review evidence on its own; the environment must also name the promotion's train base in `reviewWaiverSha`.
+- `_promote_review.py`: `train_base_sha()` is the merge-base of the promoted sha with the base branch (`scope_base.base_branch`), or its first parent when the promoted sha is itself on the base branch (a commit cannot name its own sha). The waiver holds only when `reviewWaiverSha` equals it (case-insensitive, full sha); missing, non-string, different, or an unknowable base leaves review required, and the refusal names the base.
+- Weakness, stated: the waiver covers the train built on that base, so a later commit on the same base inherits it.
+- Owner decisions 2026-11-08 (picker): bind to the train base; update each promote-gate fixture. Fixtures seed one fixed empty-tree base commit (`tests/_train_base.py`; `_test/run-tests.sh` makes its own base commit); `record_golden_hooks.py` names its first parent and the armed goldens were re-recorded (sha strings only).
+- Tests: waiver matches / missing / mismatched / a non-string value / the promoted sha or an ancestor that is not the base / no base branch (first parent) / a later commit inherits it; two sabotage rows in `promote_tree_mutations.py`.
+- Docs: crew-verification SKILL.md, commands/promote.md, crew-setup phases.md, docs/crew/promote.md, config-rationale.md, reference 23.
 
 ### Added — crew 1.3.20: one standard worktree root outside the repo (`worktrees.root`) and `/crew:worktrees`
 
