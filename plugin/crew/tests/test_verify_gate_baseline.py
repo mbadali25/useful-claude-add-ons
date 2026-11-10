@@ -310,3 +310,23 @@ def test_a_marker_on_a_sibling_branch_does_not_hide_this_branch_s_work(tmp_path)
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "committed on work")
     assert _run(root) == 2
+
+
+def test_a_marker_sharing_no_history_with_head_is_refused(tmp_path):
+    """A marker from an orphan branch has no merge-base with HEAD. Ignoring
+    it would fall through, on the default branch, to merge-base = HEAD, and a
+    committed change no rule ever checked would pass (review round 1). The
+    gate refuses instead, as it does for an unshared `.verify-gate.base-at`."""
+    root = _repo(tmp_path)          # on main, no origin
+    _git(root, "checkout", "-q", "--orphan", "orphan")
+    (root / "o.txt").write_text("unrelated\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "orphan root")
+    orphan = _head(root)
+    _git(root, "checkout", "-q", "main")
+    (root / ".crew" / ".verify-verified-at").write_text(
+        orphan + "\n", encoding="utf-8")
+    (root / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "committed on main")
+    assert _run(root) == 2
