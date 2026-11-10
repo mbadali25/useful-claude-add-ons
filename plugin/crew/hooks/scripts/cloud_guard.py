@@ -116,6 +116,7 @@ precisely because it matched words anywhere -- inside commit messages and
 comment bodies. So this reads each shell into simple commands first and judges
 only the command a segment actually runs, never a word inside an argument.
 """
+# pylint: disable=too-many-lines  # past 3400 by the environments.preProduction glue; the split is owed (TODO.md)
 import base64
 import collections
 import fnmatch
@@ -129,6 +130,7 @@ import time
 
 import crew_common
 import crew_config
+import crew_preprod
 import crew_state
 from crew_guards import _head_name as _guards_head_name
 from crew_guards import InterpreterReason, command_trigger, first_non_literal, \
@@ -2547,7 +2549,7 @@ def environments_config(root):
     environment layer is configured at all: while it is not, `workspace`
     commands are not judged, exactly as before T-0005.
     """
-    out = {"nonProd": [], "problem": "", "workflows": {}}
+    out = {"nonProd": [], "problem": "", "workflows": {}, "preProduction": {}}
     path = crew_common.repo_config_file(root, "config.json")
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as handle:
@@ -2567,13 +2569,14 @@ def environments_config(root):
     elif "environments" in cfg:
         problem = crew_config.environments_block_problem(cfg["environments"])
         if problem:
-            out = {"nonProd": [], "problem": problem, "workflows": {}}
+            out = {"nonProd": [], "problem": problem, "workflows": {}, "preProduction": {}}
         else:
+            out["preProduction"] = crew_preprod.entries(cfg["environments"].get("preProduction", {}))
             out["nonProd"] = [v.strip() for v in cfg["environments"].get("nonProd", [])]
             out["workflows"] = dict(cfg["environments"].get("workflows", {}))
     out["dispatchProblem"] = out["problem"] or crew_config.global_environments_problem()
     out["prodUnattended"] = crew_config.resolve_ratcheted(root, "environments.prodUnattended")["effective"] is True
-    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"])
+    out["engaged"] = bool(out["nonProd"] or out["preProduction"] or out["prodUnattended"] or out["problem"])
     return out
 
 
@@ -3100,6 +3103,9 @@ def _judge_one(root, finding, pins, problem, envs=None):
         verdict = (decision, reason, out["policy"], out["marker"])
         if finding.rule in crew_state.PROD_GUARD_NAMES:
             applies = bool(out["target"])
+            if out.get("preProduction"):  # crew_preprod: reason is the audit line
+                verdict = (decision, f"[{finding.rule}] {finding.what}: {out['reason']}",
+                           crew_preprod.POLICY_PREFIX + ",".join(out["preProduction"]["names"]), "")
     else:
         verdict = ("allow", "", "", "")
         applies = False
@@ -3137,7 +3143,7 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     skip the user's own prompt, and report mode judged nothing.
     """
     shell = "powershell" if tool_name == "PowerShell" else "bash"
-    envs = dict(environments_config(root), command=command)
+    envs = crew_preprod.arm(dict(environments_config(root), command=command))
     ctx = {"cd": False, "switch": False, "engaged": envs["engaged"], "dispatch": dict(envs)}
     findings = scan(shell, command, ctx=ctx)
     cwd = (data or {}).get("cwd")
@@ -3145,13 +3151,16 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     envs["ctx"] = ctx
     pins, problem = cloud_pins(root)
     worst, reasons, rows, unpinned = "allow", [], [], []
-    said = []
+    said, audits = [], []
     alone = unattended(data or {})
     for finding in findings:
         decision, reason, policy, marker, applies = _judge_one(
             root, finding, pins, problem, envs)
         if not applies:
             continue
+        policy, reason = crew_preprod.retag(policy, reason, decision, envs, finding.what)
+        if policy.startswith(crew_preprod.POLICY_PREFIX) and decision == "allow":
+            audits.append(reason)
         if policy == UNPINNED:
             unpinned.append(finding.what)
             continue
@@ -3174,7 +3183,8 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
         if _RANK[decision] > _RANK[worst]:
             worst = decision
     reason = "crew cloud guard: " + " | ".join(reasons) if reasons else ""
-    note = " | ".join(said)
+    audits = audits if worst == "allow" else []  # nothing was exempted if the line is refused
+    note = " | ".join(said + audits)
     if mode == "report":
         rows = [(r, p, "report:" + d, t) for r, p, d, t in rows]
         if worst != "allow":
@@ -3182,7 +3192,7 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
                     f"mode would {worst} this -- " + " | ".join(reasons))
         worst, reason = None, ""
     return {"decision": worst, "reason": reason, "rows": rows,
-            "unpinned": unpinned, "note": note}
+            "unpinned": unpinned, "note": note, "audit": audits}
 
 
 def resolve_mode(root):
@@ -3387,6 +3397,8 @@ def main():
     now = str(int(time.time()))
     for rule, policy, decision, target in result["rows"]:
         _log(root, (now, rule, policy, decision, target, command))
+    for line in result["audit"]:
+        sys.stderr.write(f"{line}\n")  # beside the on-screen note and the guard.log row
     reason = result["reason"]
     if note and reason:
         reason += f" ({note})"

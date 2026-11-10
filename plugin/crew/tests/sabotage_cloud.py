@@ -381,8 +381,8 @@ CLOUD_GUARD_MUTATIONS += (
     # RE-ANCHORED in T-0009, not re-aimed: the line gained the `workflows`
     # key; the mutation still drops the problem and nothing else.
     ("cloud guard env: a malformed environments block reads as empty", GUARD,
-     '            out = {"nonProd": [], "problem": problem, "workflows": {}}\n',
-     '            out = {"nonProd": [], "problem": "", "workflows": {}}\n',
+     '            out = {"nonProd": [], "problem": problem, "workflows": {}, "preProduction": {}}\n',
+     '            out = {"nonProd": [], "problem": "", "workflows": {}, "preProduction": {}}\n',
      _EB + "[unknown-malformed-block]"),
     ("cloud guard env: no payload cwd falls back to the project root", GUARD,
      '    envs["cwd"] = cwd if isinstance(cwd, str) and cwd else None\n',
@@ -1165,8 +1165,8 @@ CLOUD_GUARD_MUTATIONS += (
      '        return _not_literal("the environments block cannot be read: "\n',
      _DB + "[malformed-environments]"),
     ('deploy guard: `environments.workflows` counts toward engaged', GUARD,
-     '    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"])\n',
-     '    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"]\n'
+     '    out["engaged"] = bool(out["nonProd"] or out["preProduction"] or out["prodUnattended"] or out["problem"])\n',
+     '    out["engaged"] = bool(out["nonProd"] or out["preProduction"] or out["prodUnattended"] or out["problem"]\n'
      '                          or out["workflows"])\n',
      _ED + "test_workflows_alone_do_not_engage_the_environment_layer"),
     # Red on the reason: unrouted, a dispatch finding reaches T-0005's

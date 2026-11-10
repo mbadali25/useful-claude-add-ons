@@ -315,7 +315,8 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "environments": {
     "nonProd": [],
     "prodUnattended": false,
-    "workflows": {}
+    "workflows": {},
+    "preProduction": {}
   },
   "change": {
     "requireForProduction": false

@@ -125,7 +125,8 @@
   "environments": {
     "nonProd": [],
     "prodUnattended": false,
-    "workflows": {}
+    "workflows": {},
+    "preProduction": {}
   },
   "change": {
     "requireForProduction": false
