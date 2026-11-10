@@ -116,6 +116,8 @@ $externallyProvided = @{
     'Get-NetFirewallAddressFilter'  = @{ Module = 'NetSecurity (Windows-only)'; Paths = @('*/plugin/ai-connect/install.ps1') }
     'New-NetFirewallRule'           = @{ Module = 'NetSecurity (Windows-only)'; Paths = @('*/plugin/ai-connect/install.ps1') }
     'Remove-NetFirewallRule'        = @{ Module = 'NetSecurity (Windows-only)'; Paths = @('*/plugin/ai-connect/install.ps1') }
+    'Get-NetFirewallPortFilter'     = @{ Module = 'NetSecurity (Windows-only)'; Paths = @('*/plugin/ai-connect/install.ps1') }
+    'Set-NetFirewallRule'           = @{ Module = 'NetSecurity (Windows-only)'; Paths = @('*/plugin/ai-connect/install.ps1') }
     'Get-NetTCPConnection'          = @{ Module = 'NetTCPIP (Windows-only)';    Paths = @('*/plugin/ai-connect/install.ps1') }
     # The Defender module ships with Windows and does not exist on Linux, so these
     # resolve for a developer running this check and not for the CI runner - the
