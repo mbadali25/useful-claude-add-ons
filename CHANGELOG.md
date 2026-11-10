@@ -29,6 +29,10 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.2.22: re-bump only - interim re-bump on the L-0768 branch (commit f7e38e3); the change is recorded under crew 1.3.25
+- crew 1.2.27: re-bump only - interim re-bump on the L-0768 branch after merging main (commit 0f5c3e91c); the change is recorded under crew 1.3.25
+- crew 1.3.19: re-bump only - re-bump after merging main's crew 1.3.18 (commit c124014f4); the change is recorded under crew 1.3.25
+- crew 1.3.24: re-bump only - tree-policy fixtures name the train base in reviewWaiverSha (commit 363364791); recorded under crew 1.3.25
 - crew 1.3.2: re-bump only - drift-check bump for the diff-base note fix (commits a514c5405, 48ce2f0ae); its change is recorded under crew 1.3.6's entry
 - crew 1.3.3: re-bump only - drift-check bump for a test change (commits 05f18d246, 1cfde9907)
 - crew 1.3.4: re-bump only - the failed-buffer-split fix (commit b0845f0c6); recorded under crew 1.3.6
@@ -37,6 +41,34 @@ read entries under any `## [` heading.
 - crew 1.3.8: re-bump only - the human-only opt-out re-versioned so installs update (commit 438b1869c); recorded under crew 1.3.9
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
+
+### Fixed — crew 1.3.25: promote-gate reads deploy policy from the sha being deployed, not the session's checkout (L-0768)
+
+- **Summary.** `crew` 1.3.25 reads every promote-gate requirement (`requires`, `rollback`,
+  `requireHuman`, a `github` entry's `shaInput` and `requireReview`) from the `.crew/verify.json`
+  committed in the sha being deployed, so a deploy from a git worktree honours a waiver committed on
+  its own branch and is no longer blocked by the main checkout's uncommitted map.
+- **Why.** Reported by the TSS-win session (crew 1.2.17, deploying from a worktree on Windows): both
+  flavours `cd` to the project dir and read its map, the review helper ran there and ignored its tree
+  argument, and the uncommitted-map guard judged the project dir. A waiver committed on the release
+  branch was never seen; `_promote_review.py` run by hand in the worktree exited 0 while the hook's
+  call blocked.
+- **The rule.** `git -C <tree> ls-tree <sha> -- .crew/verify.json`'s blob is the policy: what a
+  checkout of that sha reads, so a worktree can do nothing a checkout of the same sha could not. A
+  matched environment that map does not declare, a map there that cannot be listed or parsed, block.
+  A sha carrying no map falls back to the project dir's map, which must then be clean. Which command
+  is a deploy is still matched against the project dir's map; PROMOTIONS.md, approval markers and
+  the in-flight marker stay in the project dir. The uncommitted-map guard now judges the map that is
+  policy: the deploying tree's own copy (its clean-tree check), or the project dir's when the deploy
+  runs there or falls back to it. Every read of the sha's map passes `--no-replace-objects`, so a
+  `refs/replace/` entry cannot swap in a weaker map with nothing committed.
+- **Freeze.** Landed under an explicit owner exception to the 2026-10 crew feature freeze.
+- **Tests.** `test_promote_gate_tree_policy.py` (must-block and must-allow, sh and ps1, ps1 cases
+  `wallclock`), new sabotage entries in `promote_tree_mutations.py` for each new branch; cases that asserted the old
+  project-dir guard from a worktree are retargeted to the requirement that now applies.
+- **Merged with SRL-3312.** The tree-policy fixtures seed the shared train base (`tests/_train_base.py`)
+  and name it in `reviewWaiverSha`, so a branch's own waiver still admits under the train-base rule.
+  Re-bumped to 1.3.25 after the merge (1.3.23 is on main).
 
 ### Added — changelog: every version a branch sets gets a CHANGELOG.md line, checked in CI
 
