@@ -1,4 +1,4 @@
-<!-- crew-standards-export digest=144f6cb513f1d6fdf9e4aeecf61983a84e4370e9e55c9dc05e01c01c6aa4e385 crew=1.3.33 -->
+<!-- crew-standards-export digest=144f6cb513f1d6fdf9e4aeecf61983a84e4370e9e55c9dc05e01c01c6aa4e385 crew=1.3.34 -->
 # Review rules: set PYTHON
 
 Applies to: files matching `**/*.py`.

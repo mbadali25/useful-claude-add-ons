@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.33**: The sabotage and tooling-PR harness accepts the opt-in plugin layout. `crew` 1.3.33: the sabotage suites and the tooling-PR checker now find their targets in either the core plugin or the opt-in plugin they are about to move to, so L-0724's later slices move files without touching the harness; no behaviour a user runs changes.
-- **crew 1.3.20**: The docs no longer say a successor plan opens a fresh review budget. `crew` 1.3.20: `plugin/crew/README.md` and `docs/crew/config-rationale.md` said the NEEDS_REPLAN -> IN_REVIEW successor continuation opens a fresh review budget; since 1.3.19 it keeps the budget the ticket has left. Wording only, no code change.
+- **crew 1.3.34**: The sabotage and tooling-PR harness accepts the opt-in plugin layout. `crew` 1.3.34: the sabotage suites and the tooling-PR checker now find their targets in either the core plugin or the opt-in plugin they are about to move to, so L-0724's later slices move files without touching the harness; no behaviour a user runs changes.
+- **crew 1.3.33**: The human-only opt-out goes live for plan approval (harness half). `crew` 1.3.33: once you have typed `/crew:confirm-config <id>` twice, `humanOnly.approve: false` now takes effect (an autopilot-recorded approval counts without hand-editing `scope.allowCliApproval`), and `/crew:approve-mass <id>` exists as a user-typed yes that the session cannot write; `humanOnly.promoteMarker` is still read by no hook.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

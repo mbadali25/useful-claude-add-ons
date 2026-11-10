@@ -962,7 +962,7 @@
     ]
    }
   ],
-  "mutations_total": 3062,
+  "mutations_total": 3089,
   "stays_in_core": [
    ".crew/codemap/install-scripts.md",
    ".crew/verify.json",
@@ -1007,6 +1007,7 @@
    "plugin/crew/hooks/scripts/crew_config.py",
    "plugin/crew/hooks/scripts/crew_config_files.py",
    "plugin/crew/hooks/scripts/crew_config_menu.py",
+   "plugin/crew/hooks/scripts/crew_confirm_config.py",
    "plugin/crew/hooks/scripts/crew_context.py",
    "plugin/crew/hooks/scripts/crew_contract.py",
    "plugin/crew/hooks/scripts/crew_coord.py",
@@ -1019,6 +1020,7 @@
    "plugin/crew/hooks/scripts/crew_graph_ignore.py",
    "plugin/crew/hooks/scripts/crew_guards.py",
    "plugin/crew/hooks/scripts/crew_hook.py",
+   "plugin/crew/hooks/scripts/crew_humanonly.py",
    "plugin/crew/hooks/scripts/crew_instructions.py",
    "plugin/crew/hooks/scripts/crew_memory.py",
    "plugin/crew/hooks/scripts/crew_migrate.py",

@@ -172,14 +172,37 @@ takes effect only when all of these hold (<code>crew_humanonly.resolve</code>):<
   <code>null</code> or removal, which drops a veto); a <code>false</code> written by hand reads as
   human-only.</li>
 </ul>
-<p><strong>What this does NOT do yet (crew 1.3.9).</strong> No hook reads these keys. The
-hooks that would honour an opt-out, and the prompt hook that records a
-<code>/crew:confirm-config</code> confirmation, are review harness and land in a
-separate change. Until then no confirmation can be recorded, so no opt-out
-can take effect, and the rules are exactly what they were: <code>/crew:approve</code> is
-recorded only from your own prompt (<code>approval_hook.py</code>), and the promote
-marker is human-only by instruction alone - no hook checks who created it.
-<code>crew_confirm_config.py resolve</code> shows what each key would resolve to.</p>
+<p><strong>What is live (crew 1.3.33).</strong> The prompt hook (<code>approval_hook.py</code>) now
+records <code>/crew:confirm-config &lt;change_id&gt;</code> from a prompt you typed, so a
+double confirmation can complete, and <code>humanOnly.approve: false</code> takes effect
+through ONE decision point, <code>crew_ticket.cli_approval_allowed</code>: with an opt-out
+in force a <code>cli</code>-recorded approval receipt counts as if <code>scope.allowCliApproval</code>
+were <code>true</code>, for the scope guard, the Stop audit and every autopilot reader at
+once. It does NOT let the session run <code>crew_ticket.py approve</code> (the scope guard
+still refuses that text); the session's route is <code>crew_autopilot.py approve</code>,
+which still needs <code>autopilot.approval</code> <code>self</code> or <code>risk</code> and <code>autopilot.mode</code>
+<code>plan</code> or <code>backlog</code>. Anything unclear - the module missing, the resolver
+raising or answering anything but exactly <code>humanOnly: false</code> - reads as
+human-only.</p>
+<p><strong>Still human-only (crew 1.3.33).</strong> No hook reads <code>humanOnly.promoteMarker</code>:
+the promote marker is human-only by instruction alone, and no hook checks who
+created it. <code>crew_confirm_config.py resolve</code> shows what each key would
+resolve to.</p>
+<p><strong>Who can write the receipts.</strong> The double confirmation is recorded only by
+the prompt hook, from your own prompt. The scope guard (when <code>scope.mode</code> is
+not <code>off</code>) refuses every Write/Edit under <code>~/.claude/crew/confirm-config/</code> and
+every shell command that names that store beside a writing word. That is a
+textual tripwire, not a sandbox: a session that sets out to forge a receipt
+(<code>python -c</code>, an encoded command, a variable holding the path) still can, and
+<code>scope.mode: off</code> has no tripwire at all. Treat <code>humanOnly</code> opt-outs as
+meaningful only with <code>scope.mode</code> <code>block</code>.</p>
+<p><strong><code>/crew:approve-mass &lt;id&gt;</code> (crew 1.3.33).</strong> Your yes to ONE blocked mass
+delete or mass overwrite, typed by you and recorded by the same prompt hook in
+<code>&lt;git-common-dir&gt;/crew/mass-approvals/&lt;id&gt;.json</code>, good for 15 minutes. The
+directory is under <code>&lt;git-common-dir&gt;/crew/</code>, which the scope guard refuses to
+every Write/Edit and every shell command naming it, so the session cannot
+write the file. Nothing in this release reads it: the guard that prints an
+<code>&lt;id&gt;</code> is separate.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
