@@ -496,6 +496,24 @@ fi
 
 _crew_gate_quiet_install
 
+# The first line of a marker or base file the gate reads, with surrounding
+# whitespace removed - a trailing CR included ([:space:] holds it). A marker
+# written with CRLF (an editor, a PowerShell `Set-Content`, Python on Windows)
+# used to keep its CR through `read -r`, so `git cat-file -e "<sha>\r^{commit}"`
+# failed and the marker was silently ignored: an orphan branch's marker then
+# skipped the no-shared-history refusal and fell through to merge-base = HEAD
+# on the default branch, passing an unchecked commit. Interior whitespace is
+# kept, so a line with two words stays one value that names no commit. A file
+# with no newline at all still yields its line. Only ever called on a regular
+# file ([ -f ]), never a FIFO, which would hang `read` waiting for a writer.
+gate_marker_line() {
+  local _ml=""
+  IFS= read -r _ml < "$1" 2>/dev/null || [ -n "$_ml" ] || _ml=""
+  _ml="${_ml#"${_ml%%[![:space:]]*}"}"
+  _ml="${_ml%"${_ml##*[![:space:]]}"}"
+  printf '%s' "$_ml"
+}
+
 # Emergency lane. An incident is open, so this turn is not blocked and the
 # checks do not run - that is the entire point of declaring one, since these
 # are the checks that take minutes. What would have run is written down
@@ -516,7 +534,7 @@ elif crew_incident_active; then
   CHANGED_N=$( { git -c core.quotePath=false diff --name-only HEAD 2>/dev/null; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; } | grep -c . )
   crew_incident_log verify "stop gate stood down with $CHANGED_N changed file(s) unverified"
   if [ -f .crew/.deploy-in-flight ]; then
-    read -r DENV DSHA < .crew/.deploy-in-flight
+    read -r DENV DSHA <<< "$(gate_marker_line .crew/.deploy-in-flight)"
     crew_incident_log verify "deploy of $DENV at $DSHA has no row in .work/PROMOTIONS.md"
   fi
   exit 0
@@ -531,7 +549,7 @@ fi
 # that deployed, a CI job neither deploys nor owns the promotions log, and the
 # check removes the marker on success - a job must not consume it.
 if [ "$CI_MODE" -eq 0 ] && [ -f .crew/.deploy-in-flight ]; then
-  read -r DENV DSHA < .crew/.deploy-in-flight
+  read -r DENV DSHA <<< "$(gate_marker_line .crew/.deploy-in-flight)"
   if grep -qE "\|[[:space:]]*${DENV}[[:space:]]*\|[[:space:]]*$DSHA" .work/PROMOTIONS.md 2>/dev/null; then
     rm -f .crew/.deploy-in-flight
   else
@@ -686,7 +704,7 @@ SCAN_HEAD=$(git rev-parse --verify -q HEAD 2>/dev/null) || SCAN_HEAD=""
 BASE=""
 BASE_FROM_MARKER=0
 if [ -f .crew/.verify-verified-at ]; then
-  read -r CAND < .crew/.verify-verified-at
+  CAND=$(gate_marker_line .crew/.verify-verified-at)
   # Trust it only if it still names a commit. A marker surviving a squash merge
   # would otherwise diff against nothing and report the whole branch as clean.
   if [ -n "$CAND" ] && git cat-file -e "${CAND}^{commit}" 2>/dev/null; then
@@ -731,7 +749,7 @@ if [ -z "$BASE" ] && [ -e "$BASE_AT" ] \
   # device or directory is refused below like an unreadable file.
   CAND=""
   if [ -f "$BASE_AT" ]; then
-    CAND=$(head -n 1 "$BASE_AT" 2>/dev/null | tr -d '[:space:]') || CAND=""
+    CAND=$(gate_marker_line "$BASE_AT")
   fi
   if [ -n "$CAND" ] && git cat-file -e "${CAND}^{commit}" 2>/dev/null; then
     if git merge-base --is-ancestor "$CAND" HEAD 2>/dev/null; then
@@ -991,7 +1009,8 @@ FP_FILE=".crew/.verify-gate.fingerprint"
 FINGERPRINT=""
 if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ -z "$BUDGET_FLAG" ]; then
   FINGERPRINT=$(printf '%s\n' "$CHANGED" | "$FP_PY" "$FP_DIR/verify_fingerprint.py" "$PWD" 2>/dev/null)
-  if [ -n "$FINGERPRINT" ] && [ "$FINGERPRINT" = "$(cat "$FP_FILE" 2>/dev/null)" ]; then
+  if [ -n "$FINGERPRINT" ] && [ -f "$FP_FILE" ] \
+     && [ "$FINGERPRINT" = "$(tr -d '\r' < "$FP_FILE" 2>/dev/null)" ]; then
     echo "verify-gate: nothing the gate depends on has changed since the last CLEAN run (fingerprint $FINGERPRINT) - checks were SKIPPED, not re-run. Edit a file, or run the gate with --all, to force them." >&2
     # The fingerprint only proves nothing changed; it says nothing about a
     # rule that was chronic/skipped/reach-excluded on a PRIOR run and has

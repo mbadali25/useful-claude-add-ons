@@ -133,6 +133,27 @@ def test_an_unchanged_turn_skips_the_second_time(flavour, tmp_path):
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
+def test_a_crlf_fingerprint_file_still_matches(flavour, tmp_path):
+    """MUST-ALLOW: a fingerprint file rewritten with CRLF (an editor, a
+    Windows tool) names the same digest. `$(cat ...)` kept the CR, so the
+    compare never matched and every turn re-ran; the gate drops CRs before
+    comparing. Anything else in the file still fails the compare."""
+    root = _repo(tmp_path)
+    first = _run(flavour, root)
+    assert _ran(first), first.stderr
+    fp = root / ".crew" / ".verify-gate.fingerprint"
+    digest = fp.read_text(encoding="utf-8").strip()
+    fp.write_bytes(digest.encode("ascii") + b"\r\n")
+    second = _run(flavour, root)
+    assert second.returncode == 0, second.stderr
+    assert _skipped(second), second.stderr
+    fp.write_bytes(digest.encode("ascii") + b"\r\nextra\r\n")
+    third = _run(flavour, root)
+    assert third.returncode == 0, third.stderr
+    assert _ran(third), third.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_the_skip_says_so_rather_than_exiting_silently(flavour, tmp_path):
     """Must-allow, and the lesson 0.19.65 paid for: an exit 0 with nothing on
     stderr is byte-identical to a pass."""

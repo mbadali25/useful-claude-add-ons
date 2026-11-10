@@ -70,9 +70,22 @@ STOP_BUDGET_MUTATIONS = (
      _T + "test_a_baseline_that_names_no_commit_refuses_the_turn[sh-not-a-sha\\n]"),
     # Review round 3 (Codex): a baseline that is a FIFO hung Stop in `head`.
     ("a FIFO baseline is read and Stop hangs waiting for a writer", SH,
-     '  if [ -f "$BASE_AT" ]; then\n    CAND=$(head',
-     '  if [ -e "$BASE_AT" ]; then\n    CAND=$(head',
+     '  if [ -f "$BASE_AT" ]; then\n    CAND=$(gate_marker_line',
+     '  if [ -e "$BASE_AT" ]; then\n    CAND=$(gate_marker_line',
      _T + "test_a_baseline_that_is_a_fifo_refuses_the_turn_without_hanging[sh]"),
+    # The CRLF marker fix and the stale-marker fallback's flag (PR #746 follow-up).
+    ("a non-ancestor marker's merge-base fallback lets a quiet turn write the diff baseline", SH,
+     "        BASE_FROM_MARKER=1\n        BASE_NOTE=",
+     "        BASE_FROM_MARKER=0\n        BASE_NOTE=",
+     "tests/test_verify_gate_baseline.py::test_a_quiet_turn_under_a_stale_marker_writes_no_diff_baseline"),
+    ("a marker line keeps its trailing CR, so an orphan CRLF marker is ignored", SH,
+     '  _ml="${_ml%"${_ml##*[![:space:]]}"}"\n',
+     "",
+     "tests/test_verify_gate_baseline.py::test_an_orphan_branch_marker_written_with_crlf_is_still_refused[crlf]"),
+    ("the verified marker is read with read -r again, CR and all", SH,
+     "  CAND=$(gate_marker_line .crew/.verify-verified-at)\n",
+     "  read -r CAND < .crew/.verify-verified-at\n",
+     "tests/test_verify_gate_baseline.py::test_an_orphan_branch_marker_written_with_crlf_is_still_refused[crlf]"),
     # L-0905: the pricing floor, the sync payload and the dead producer.
     ("a cached zero prices a declared rule (the positive floor is dropped)", SH,
      "                            and cached > 0):\n"

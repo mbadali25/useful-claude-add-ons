@@ -260,7 +260,7 @@ def test_on_the_default_branch_with_no_marker_a_commit_still_ends_the_turn(tmp_p
 
 # --- a marker left on another branch ---------------------------------------
 
-def _marker_on_a_sibling_branch(tmp_path):
+def _marker_on_a_sibling_branch(tmp_path, eol="\n"):
     """A repo where the verified marker names a commit on a SIBLING branch.
 
     `sibling` adds a .py file (which the always-failing rule matches) and
@@ -277,10 +277,10 @@ def _marker_on_a_sibling_branch(tmp_path):
     sibling = _head(root)
     _git(root, "checkout", "-q", "main")
     _git(root, "checkout", "-q", "-b", "work")
-    # newline="\n": the gate writes the marker with printf (LF); a CRLF
-    # marker written by Python on Windows would not be read as a commit.
+    # newline="\n" writes the bytes exactly: the gate writes the marker with
+    # printf (LF), and `eol` is how a test asks for a CRLF one instead.
     (root / ".crew" / ".verify-verified-at").write_text(
-        sibling + "\n", encoding="utf-8", newline="\n")
+        sibling + eol, encoding="utf-8", newline="\n")
     return root, sibling
 
 
@@ -332,3 +332,111 @@ def test_a_marker_sharing_no_history_with_head_is_refused(tmp_path):
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "committed on main")
     assert _run(root) == 2
+
+
+# --- a CRLF marker, and the quiet turn under a stale marker ------------------
+
+def _said(root):
+    """Run the gate; return (exit code, stderr plus the detail log). The
+    diff-base note is detail: it reaches stderr, or the log when the quiet
+    output holds it back."""
+    done = crew_fixtures.run_gate(
+        [_BASH, _SH], cwd=root, capture_output=True, text=True,
+        stdin=subprocess.DEVNULL, check=False,
+        env={**os.environ, "CLAUDE_PROJECT_DIR": str(root)}, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S,
+    )
+    p = root / ".crew" / ".verify-gate.log"
+    return done.returncode, done.stderr + (p.read_text(encoding="utf-8") if p.is_file() else "")
+
+
+@pytest.mark.parametrize("eol", ["\r\n", " \r\n", "\t", ""],
+                         ids=["crlf", "space-crlf", "tab", "no-newline"])
+def test_an_orphan_branch_marker_written_with_crlf_is_still_refused(tmp_path, eol):
+    """A marker written with CRLF (an editor, PowerShell, Python on Windows)
+    kept its CR through `read -r`, so `git cat-file -e "<sha>\\r^{commit}"`
+    failed and the gate ignored the marker. An orphan branch's marker then
+    skipped the no-shared-history refusal and fell through, on the default
+    branch, to merge-base = HEAD: the committed .py below passed unchecked
+    (exit 0 before the fix). The line is trimmed, so it is refused as the LF
+    marker is."""
+    root = _repo(tmp_path)          # on main, no origin
+    _git(root, "checkout", "-q", "--orphan", "orphan")
+    (root / "o.txt").write_text("unrelated\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "orphan root")
+    orphan = _head(root)
+    _git(root, "checkout", "-q", "main")
+    (root / ".crew" / ".verify-verified-at").write_text(
+        orphan + eol, encoding="utf-8", newline="\n")
+    (root / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "committed on main")
+    assert _run(root) == 2
+
+
+def test_a_crlf_marker_on_a_sibling_branch_behaves_like_the_lf_one(tmp_path):
+    """MUST-ALLOW, and the same boundary as the LF case: the CRLF marker is
+    read as the sibling commit, so the gate takes its merge-base with HEAD
+    (and says so in the detail log, which an ignored marker never did), keeps
+    `sib.py` out of scope, and the clean pass heals the marker."""
+    root, sibling = _marker_on_a_sibling_branch(tmp_path, eol="\r\n")
+    (root / "ok.md").write_text("fine\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "clean turn on work")
+    code, said = _said(root)
+    assert code == 0, said
+    assert "the verified marker (" + sibling + ") is not an ancestor of HEAD" in said
+    assert _marker(root) == _head(root)
+
+
+def test_a_crlf_marker_on_a_sibling_branch_does_not_hide_this_branch_s_work(tmp_path):
+    """MUST-BLOCK twin of the LF case: a committed .py on `work` is in scope."""
+    root, _ = _marker_on_a_sibling_branch(tmp_path, eol="\r\n")
+    (root / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "committed on work")
+    assert _run(root) == 2
+
+
+def test_a_quiet_turn_under_a_stale_marker_writes_no_diff_baseline(tmp_path):
+    """On the merge-base fallback for a marker that is not an ancestor of
+    HEAD, the base still came FROM the marker (BASE_FROM_MARKER stays 1). A
+    quiet turn must then leave `.crew/.verify-gate.base-at` unwritten: the
+    marker is read first while it remains, so a base-at written here is a
+    second baseline nothing checked against, waiting to take over the moment
+    the stale marker is removed. Red on a mutant that sets the flag to 0."""
+    root, _ = _marker_on_a_sibling_branch(tmp_path)
+    # Nothing committed on `work`: HEAD is the merge-base, so the turn is quiet.
+    code, said = _said(root)
+    assert code == 0, said
+    assert "is not an ancestor of HEAD" in said      # the fallback was taken
+    assert "0 rules ran" in said                     # and the turn was quiet
+    assert _base_at(root) is None
+
+
+# --- a CRLF deploy-in-flight marker -----------------------------------------
+
+def _deploy_marker(root, body, row):
+    (root / ".crew" / ".deploy-in-flight").write_bytes(body)
+    if row is not None:
+        (root / ".work").mkdir(exist_ok=True)
+        (root / ".work" / "PROMOTIONS.md").write_text(
+            "| env | sha | result |\n" + row, encoding="utf-8", newline="\n")
+
+
+def test_a_crlf_deploy_marker_with_its_row_is_recorded(tmp_path):
+    """MUST-ALLOW: `qa abc123` + CRLF names the deploy the row records.
+    `read -r` kept the CR on the sha, the row grep never matched, and the
+    turn was blocked as DEPLOY NOT RECORDED (exit 2 before the fix)."""
+    root = _repo(tmp_path)
+    _deploy_marker(root, b"qa abc123\r\n", "| qa | abc123 | ok |\n")
+    assert _run(root) == 0
+    assert not (root / ".crew" / ".deploy-in-flight").exists()
+
+
+def test_a_crlf_deploy_marker_with_no_row_still_blocks(tmp_path):
+    """MUST-BLOCK twin: trimming the line must not make a missing row pass."""
+    root = _repo(tmp_path)
+    _deploy_marker(root, b"qa abc123\r\n", None)
+    assert _run(root) == 2
+    assert (root / ".crew" / ".deploy-in-flight").exists()

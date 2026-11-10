@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew**: A verified marker written with CRLF is no longer ignored by the Stop gate. `crew`: the Stop gate now trims the line it reads from `.crew/.verify-verified-at`, `.crew/.verify-gate.base-at` and `.crew/.deploy-in-flight` (a trailing CR included), so a marker written with CRLF line endings is read as the commit it names; an orphan branch's CRLF marker is now refused like an LF one instead of letting an unchecked commit on the default branch pass.
 - **crew 1.3.39**: A verified marker left by another branch no longer puts that branch's paths in the Stop gate's scope. `crew` 1.3.39: the Stop gate now uses `.crew/.verify-verified-at` as its diff base only when that commit is an ancestor of HEAD; a marker left by another branch is replaced by its merge-base with HEAD (or refused when they share no history), so a clean tree no longer fails with phantom changed paths.
-- **crew 1.3.38**: The `fable` model alias now names Claude Fable 5.2 (`claude-fable-5-2`). `crew` 1.3.38: the `fable` pin in `dev.roles.<role>.model` is documented as Claude Fable 5.2 (`claude-fable-5-2`, listed on the vendor models overview page); `fable` is still honoured only as an explicit pin and nothing in crew selects it.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
