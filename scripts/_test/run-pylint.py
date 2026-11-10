@@ -5,13 +5,16 @@ Each case builds a throwaway git repo; nothing touches this repository.
 Must-pass: clean file exits 0; a huge tracked set (past the Windows
 command-line limit) runs; the file list equals `git ls-files '*.py'`.
 Must-fail: a file with a real error exits non-zero; pylint not importable
-exits 77 (not 0).
+exits 77 (not 0); a real no-member (os.not_a_real_member) fails on every
+platform, so the win32 POSIX-name allowance is never a wholesale E1101 disable.
+Must-pass on win32: POSIX-only names (os.geteuid, signal.SIGKILL) are clean.
 
 Run: python3 scripts/_test/run-pylint.py
 """
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -20,6 +23,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPT = os.path.join(os.path.dirname(HERE), "run-pylint.py")
 FAILURES: list[str] = []
+NL = chr(10)
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
@@ -87,6 +91,42 @@ def main() -> int:
     proc = run(root, "--disable=all", "--enable=E")
     check("1500 files (past the argv limit) lint and exit 0", proc.returncode == 0,
           (proc.stdout + proc.stderr)[-500:])
+
+    posix = NL.join(['"""Doc."""', "import os", "import signal", "", "",
+                       "def f():", '    """Doc."""',
+                       "    return os.geteuid(), signal.SIGKILL", ""])
+    typo = NL.join(['"""Doc."""', "import os", "", "", "def f():", '    """Doc."""',
+                      "    return os.not_a_real_member", ""])
+    if sys.platform == "win32":
+        proc = run(make_repo({"posix.py": posix}), "--disable=all", "--enable=E")
+        check("win32: POSIX-only os.geteuid/signal.SIGKILL are clean", proc.returncode == 0,
+              proc.stdout + proc.stderr)
+    # No extra args: a later --enable=E would mask a platform-arg disable.
+    proc = run(make_repo({"typo.py": typo}))
+    check("real no-member os.not_a_real_member fails on every platform",
+          proc.returncode != 0 and "no-member" in proc.stdout, proc.stdout + proc.stderr)
+
+    spec = importlib.util.spec_from_file_location("run_pylint_under_test", SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    real = sys.platform
+    try:
+        sys.platform = "linux"
+        linux_args = mod.platform_args()
+        sys.platform = "darwin"
+        mac_args = mod.platform_args()
+        sys.platform = "win32"
+        win_args = mod.platform_args()
+    finally:
+        sys.platform = real
+    check("linux/darwin add no pylint args", linux_args == [] and mac_args == [],
+          f"{linux_args} {mac_args}")
+    joined = " ".join(win_args)
+    check("win32 adds a narrow --generated-members and keeps the rc ignored-modules",
+          len(win_args) == 2 and win_args[0].startswith("--generated-members=")
+          and win_args[1].startswith("--ignored-modules=") and "fcntl" in win_args[1]
+          and win_args[1].endswith(",resource")
+          and "disable" not in joined and "E1101" not in joined, str(win_args))
 
     for line in FAILURES:
         print("  " + line)
