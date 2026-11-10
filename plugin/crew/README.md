@@ -172,6 +172,15 @@ they describe one checkout on one machine. (This line used to say `.work/`
 belongs in version control. It does not; the marker files under it dirty the tree
 and block the next promotion.)
 
+**Publish the standards to PR-side reviewers.** A repo that tracks `.crew/standards.md` can opt in with
+`export: ["review", "agents", "bugbot"]` (any non-empty subset) in its front matter. `crew_standards.py
+export --root . --write` then renders `docs/review-rules/<SET>.md` (one file per set, each under the
+28,000-character budget), `REVIEW.md`, `.cursor/BUGBOT.md` and a marked `## Code Review Rules` block in a
+hand-written `AGENTS.md`, from the data `/crew:review` hands its own reviewer; Rule, Self-check and
+Supplements only. `--check` fails when an output is stale, missing, hand-edited or orphaned, and
+`--dry-run` reports sizes. Freshness is as of the last check; where `$CLAUDE_PLUGIN_ROOT` is unset a rule
+that uses it exits 77 (SKIP), which is not coverage. Regenerate after an approved standards proposal.
+
 **Triage your rules before writing them.** Most rules people want in CLAUDE.md
 belong in `.crew/verify.json` instead — where a hook enforces them and they are
 not re-paid on every delegation. The test is: *could a command decide this?*
@@ -427,7 +436,7 @@ Parallelism scales on independent work units, not job titles.
 | `/crew:migrate [--preview\|--apply\|--rollback <dir>]` | Only for a repository crew 0.20 set up: one-time move of tickets and tracker caches to `.work/tickets/<id>/` and `metrics.md` to `metrics.jsonl`, plus `.crew/crew.json`, a schema-1 record of the old config; `.crew/config.json` stays and every gate, guard and `/crew:config` keeps reading it (the context hook, resume and the diagram commands read `.crew/crew.json` first when it exists, so after a migrate a `memory`, `context` or `docs` setting is changed in both files); previews first, backs up, applies atomically, rolls back; a pre-0.20 config (no schema, or 1-6) is upgraded to the current schema first, in the same backup and rollback |
 | `/crew:config [--show\|--models]` | Show where every setting comes from; with no argument, the menu that sets the machine or repo config from a list and deletes the repo config with a backup — see §11 |
 | `/crew:config-setup` | The `/crew:config` menu under its own name — see §11 |
-| `/crew:confirm-config <change_id>` | Confirm a sensitive config change — a `humanOnly.approve` or `humanOnly.promoteMarker` opt-out proposed with `crew_confirm_config.py propose` — by typing it twice, in two prompts, within 15 minutes; user-only. **crew 1.3.27: the prompt hook records the confirmation and `humanOnly.approve: false` is live (a CLI-recorded approval then counts, as under `scope.allowCliApproval: true`); no hook reads `humanOnly.promoteMarker` yet** — the rules and what is still to land are in `CONFIG.md` |
+| `/crew:confirm-config <change_id>` | Confirm a sensitive config change — a `humanOnly.approve` or `humanOnly.promoteMarker` opt-out proposed with `crew_confirm_config.py propose` — by typing it twice, in two prompts, within 15 minutes; user-only. **crew 1.3.31: the prompt hook records the confirmation and `humanOnly.approve: false` is live (a CLI-recorded approval then counts, as under `scope.allowCliApproval: true`); no hook reads `humanOnly.promoteMarker` yet** — the rules and what is still to land are in `CONFIG.md` |
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 

@@ -382,10 +382,12 @@ e.g. `CONTEXT_HANDOFF_PATH` (`:995`, `.work/HANDOFF.md`), `MEMORY_INJECT` (`:100
 | `PROD_GUARD_NAMES` | `prodDatabase`, `prodServer` (2) | `none`/`read`/`full`, `prod_level_rank` (`:499`) | `:128` |
 | `ROLE_WRITE_GUARD_NAMES` | `roleWrites` (1) | `block`/`report`/`off`, default `off` not floor, `role_writes_rank` (`:535`) | `:151` |
 | `CLOUD_GUARD_NAMES` | `cloudGuard` (1) | same vocabulary and functions as `roleWrites`, its own words | `:190` |
-| `ENV_GUARD_NAMES` | `envGuard` (1) | same vocabulary and functions as `roleWrites` (`guard_tiers` `:549`); switches `env_guard.py` | `:207` |
+| `ENV_GUARD_NAMES` | `envGuard` (1) | same vocabulary and functions as `roleWrites` (`guard_tiers` `:556`); switches `env_guard.py` | `:207` |
 
-`ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:214`) is the concatenation of all
+`ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:221`) is the concatenation of all
 five — **twelve** guard names in total (executed: `len(crew_guards.ALL_GUARD_NAMES)`).
+An explicit `null` at `guards.envGuard` is the floor, not the default
+(`NULL_IS_MALFORMED`, `plugin/crew/hooks/scripts/crew_guards.py:214`, read by `layer_guard_state`).
 `cloud_guard.py`'s own docstring (`:1-6`) states what `cloudGuard` actually
 is: a switch, not a policy — turning it on is what makes the seven
 `GUARD_NAMES` policies (which existed and ratcheted but governed nothing
@@ -938,7 +940,7 @@ returns `VALUES` (`crew_config.py:3282`). The double confirmation is
 `:131`, `cancel` `:176`, CLI `main` `:205`, no confirm subcommand); its one
 write goes through `crew_config.apply_confirmed_optout` (`:4010`), and a crew
 write back to human-only revokes via `_revoke_human_only` (`:4000`).
-JUDGEMENT: inert by design in 1.3.9; live for `approve` since 1.3.27 (the
+JUDGEMENT: inert by design in 1.3.9; live for `approve` since 1.3.31 (the
 paragraph after this section's tests line). In 1.3.9 no hook imported `crew_humanonly`, and no hook
 calls `confirm`; both are harness (`scripts/check-tooling-pr.py` `HARNESS`:
 `approval_hook.py`, `crew_hook.py`, `crew_ticket.py`, `scope_guard.py`,
@@ -973,7 +975,7 @@ replaces creation for every user is the owner's to opt into, so
 `plugin/crew/tests/worktrees_mutations.py` (17, run alone: `sabotage*.py` is
 harness).
 
-**1.3.27 (PR 2 of 3, harness only).** DERIVED: `crew_ticket.cli_approval_allowed`
+**1.3.31 (PR 2 of 3, harness only).** DERIVED: `crew_ticket.cli_approval_allowed`
 (`plugin/crew/hooks/scripts/crew_ticket.py`) returns True when
 `scope.allowCliApproval` is true OR `human_only_approve_opted_out` finds
 `crew_humanonly.resolve(top, "approve")["humanOnly"] is False` (anything else,
@@ -2577,6 +2579,17 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   the one way a ticket reaches review without the gate; it exists because the pre-existing
   review_run tests run tickets with no receipt, and a ticket without one cannot pass
   `/crew:done`.
+- **Export to PR-side reviewers (L-0718, DERIVED at the commit adding this bullet).** An opt-in
+  `export:` key in the overlay front matter (`OVERLAY_KEYS`, plugin sets refuse it) makes
+  `_export_build` (`plugin/crew/hooks/scripts/crew_standards.py:1195`) render every standard of every
+  set from `effective_set(..., applies=lambda g: True)` into `docs/review-rules/<SET>.md`, `REVIEW.md`,
+  `.cursor/BUGBOT.md` and a marked block in a hand-written `AGENTS.md`; `export_write` (`:1402`) writes each
+  complete-or-not-at-all, `export_check` (`:1318`) compares a fresh render by byte and reports orphans
+  (`_orphans` `:1277`), `export_report` (`:1388`) is `--dry-run`. `crew_docs_check._export_rows`
+  (`plugin/crew/hooks/scripts/crew_docs_check.py:488`) adds the `standards export` row; `.crew/verify.json`
+  rule `standards-export` runs `export --check` on every change. Tests: `test_standards_export.py`.
+  JUDGEMENT: the crew version is in every output's marker, so each crew release PR in an opted-in repo must
+  rerun `export --write`.
 
 ## The Kimi Code provider (T-0028 feature half; the review launch, L-0527)
 

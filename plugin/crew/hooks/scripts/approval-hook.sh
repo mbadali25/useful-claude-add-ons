@@ -8,7 +8,7 @@
 # Every prompt the user submits passes through here, so the common case must
 # be cheap: a prompt that does not contain the word `approve` (any case)
 # exits 0 before any python is looked for. With no usable python, only a
-# prompt containing `crew:approve` or `crew:confirm-config` (crew 1.3.27: the
+# prompt containing `crew:approve` or `crew:confirm-config` (crew 1.3.31: the
 # word `approve` is not in the latter, so it is matched by name) is BLOCKED with the reason -- the user
 # asked for an approval, and saying nothing would let them believe one was
 # recorded. A plain-text "approve T-1" passes through unrecorded instead:

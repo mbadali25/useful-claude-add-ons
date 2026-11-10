@@ -4,7 +4,7 @@ Each puts back one way the opt-out could take effect when it must not (or a
 write could slip past the double confirmation), and names the must-block or
 must-allow case in `test_crew_humanonly.py` that has to go red.
 
-Wired into `sabotage.py`'s MUTATIONS since crew 1.3.27, the harness change that
+Wired into `sabotage.py`'s MUTATIONS since crew 1.3.31, the harness change that
 made the hooks read `humanOnly` (`sabotage*.py` is review harness,
 `scripts/check-tooling-pr.py` `HARNESS`). To run it alone, with sabotage.py's
 own machinery:
@@ -91,7 +91,7 @@ HUMANONLY_MUTATIONS = (
      '    _revoke_human_only("machine", real_path, out["plan"][1], path)\n',
      "    pass\n",
      _T + "test_a_crew_write_back_to_true_revokes_the_receipt"),
-    # --- crew 1.3.27: the hooks read the opt-out -----------------------------------
+    # --- crew 1.3.31: the hooks read the opt-out -----------------------------------
     ("humanOnly live: the opt-out never relaxes a cli approval", TICKET,
      "    return human_only_approve_opted_out(top)\n",
      "    return False\n",

@@ -508,7 +508,7 @@ may arm it.
 production promote marker being human-only. A `false` counts only from the
 machine file or an untracked repo file, never a committed one; a `true` in
 either file vetoes it; and it is written only after the owner types
-`/crew:confirm-config <change_id>` twice. Since crew 1.3.27 the prompt hook
+`/crew:confirm-config <change_id>` twice. Since crew 1.3.31 the prompt hook
 records that confirmation and `humanOnly.approve: false` makes a CLI-recorded
 approval count (the same effect as `scope.allowCliApproval: true`, but set
 only through the double confirmation); `humanOnly.promoteMarker` is still

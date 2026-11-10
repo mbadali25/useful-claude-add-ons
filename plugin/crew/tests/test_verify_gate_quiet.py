@@ -397,17 +397,28 @@ def test_verdict_names_its_units(tmp_path):
 
 
 # wallclock: an elapsed-time bound, so it runs serially, never under -n. The plain gate took
-# 9.6-18.7s under -n auto on Windows CI (run 39036765612); the 6s bound is only meaningful unloaded.
+# 9.6-18.7s under -n auto on Windows CI (run 39036765612), so an absolute bound cannot tell a fixed
+# gate from a broken one under load. Time the same gate with a no-op rule as the baseline, then with a
+# rule that backgrounds a long sleep: a gate that waits for the child takes the baseline plus the whole
+# sleep, a fixed one takes about the baseline.
 @pytest.mark.wallclock
 def test_rule_that_backgrounds_a_process_does_not_hold_the_hook_open(tmp_path):
-    root = _repo(tmp_path, _map_with(_fail_rule("(sleep 8 &); true"), base=False))
+    child_s = 25
+    plain = _repo(tmp_path / "plain", _map_with(_fail_rule("true"), base=False))
+    started = time.monotonic()
+    _run(plain)
+    base = time.monotonic() - started
+
+    root = _repo(tmp_path / "bg", _map_with(_fail_rule(f"(sleep {child_s} &); true"), base=False))
     started = time.monotonic()
 
     result = _run(root)
 
     elapsed = time.monotonic() - started
     assert result.returncode == 0
-    assert elapsed < 6, f"the rule's background sleep held the hook's stderr pipe open for {elapsed:.1f}s"
+    assert elapsed < child_s and elapsed < base + 12, (
+        f"the rule's background sleep held the hook's stderr pipe open: {elapsed:.1f}s against a "
+        f"{base:.1f}s plain gate (child sleeps {child_s}s)")
 
 
 def _commit_all(root):

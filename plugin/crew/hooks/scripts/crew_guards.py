@@ -206,6 +206,13 @@ CLOUD_GUARD_NAMES = ("cloudGuard",)
 # Absent means `off`; a malformed value means `block`, the floor.
 ENV_GUARD_NAMES = ("envGuard",)
 
+# The guards at which an explicit JSON `null` in a layer is a malformed value,
+# the floor, rather than an absent key (L-0772 review): only a key that is not
+# there at all defaults to `off`. `layer_guard_state` reads the layer's raw
+# `guards.<name>`, so it can tell `null` from absent. `roleWrites` and
+# `cloudGuard` predate this rule and still read a legacy `null` as absent.
+NULL_IS_MALFORMED = frozenset(ENV_GUARD_NAMES)
+
 # Every guard, in declaration order: the seven policy guards, the two
 # production ones, the role-write guard, the cloud guard's switch, then the
 # environment-dump guard's.
@@ -659,8 +666,9 @@ def layer_guard_state(layer_cfg, name):
     as written, so an explicit null `profile`, `overrides` or override value is
     malformed and gives the floor, never absent. The one exception is the
     UNMIGRATED legacy `guards.<name>`: null there is absent, as it was before
-    this change (tests/test_env_guard.py pins `envGuard: null` as off), so a
-    layer that never set the new keys resolves exactly as it did. The floor is `block` (or `none` for the
+    this change, so a layer that never set the new keys resolves exactly as it
+    did -- except at `NULL_IS_MALFORMED` names (`envGuard`), where an explicit
+    null is the floor. The floor is `block` (or `none` for the
     production guards), never `off`.
     """
     block = layer_cfg.get("guards") if isinstance(layer_cfg, dict) else None
@@ -682,6 +690,10 @@ def layer_guard_state(layer_cfg, name):
         base = _apply_overrides(block, name, None)
 
     legacy_raw = block.get(name)
+    if legacy_raw is None and name in NULL_IS_MALFORMED and name in block:
+        # An explicit null is malformed, not absent: the floor, and nothing
+        # a profile or override said can lift it.
+        return {"value": _floor(name), "legacy": True, "conflict": False}
     if legacy_raw is None:
         return {"value": base, "legacy": False, "conflict": False}
     legacy = normalise(legacy_raw)
