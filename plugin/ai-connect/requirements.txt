@@ -5,3 +5,8 @@ fastmcp==2.14.7
 websockets==17.2
 aiosqlite==0.22.1
 PyYAML==6.0.3
+# The Bridge's self-signed TLS certificate (bridge_tls.generate); clients use
+# the standard ssl module only. Already in the venv before 0.2.15 as a
+# dependency of fastmcp (via Authlib); pinned here because ai-connect now
+# imports it itself. Wheels for Windows and manylinux (x86_64, aarch64).
+cryptography==50.0.2

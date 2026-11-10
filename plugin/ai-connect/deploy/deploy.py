@@ -3,7 +3,8 @@
 
   deploy bridge [--name N] [--peer P ...] [--port N] [--vpn-subnet CIDR] [--dry-run]
   deploy peer --name N --bridge HOST [--port N] [--auth-key-file F] [--token-file F] [--dry-run]
-              [--register-mcp [--scope project|user]] [--install-hooks]      both off by default
+              [--register-mcp [--scope project|user] [--no-state-hooks]] [--install-hooks]
+                                                            both off by default; --register-mcp also writes state hooks
   deploy peer --name N --bridge HOST --print-enrolment      make this peer's own token, print only its hash
   deploy add-peer --name N --token-sha256 HEX [--dry-run]   on the Bridge: let that peer in by the hash
   deploy invite --name N [--bridge HOST] [--expiry 1h] [--ephemeral] [--out F] [--dry-run]
@@ -69,6 +70,10 @@ def _plugin_module(name: str):
 
 # The peer-state hooks in a Claude Code settings file; installer.py writes the same ones
 state_hooks = _plugin_module("state_hooks")
+# Whether this may run as root: --allow-root, AI_CONNECT_ALLOW_ROOT, install.allow_root (installer.py's too)
+root_policy = _plugin_module("root_policy")
+# What changes nothing here, and so runs as root whatever the switch says
+READ_ONLY_VERBS = ("status", "list")
 
 # Same names install.sh / install.ps1 use, so their --status and --uninstall see these
 UNIT = "ai-connect"
@@ -596,11 +601,10 @@ def mcp_registered(claude: str, scope: str, python: Path) -> bool:
 
 
 HOOKS_WARNING = ("  WARNING: --install-hooks turns the plugin's hooks on for EVERY Claude Code session of this user "
-                 "here (the watcher at SessionStart and Stop; with --register-mcp also the peer-state hooks, where "
-                 "the MCP server is registered). A session in bypass-permissions mode then acts on "
+                 "here (the watcher at SessionStart and Stop). A session in bypass-permissions mode then acts on "
                  "what another peer sends with no prompt in between. Leave it off on a shared machine.")
 STATE_HOOKS_NOTE = ("  note: the peer-state hooks (busy / idle / waiting) call the MCP server, so they are written "
-                    "only with --register-mcp as well. Without it this machine reports no state.")
+                    "with --register-mcp, not with --install-hooks. Without it this machine reports no state.")
 
 
 def state_settings(scope: str) -> Path:
@@ -650,8 +654,10 @@ def step_claude(r: Run, args) -> None:
     step_app(r, restart_on_change=False)
     python = venv_python() or VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     argv = [claude, "mcp", "add", "-s", args.scope, MCP_SERVER, "--", str(python), str(mcp_server_file())]
-    # Hooks only when hooks were asked for; --register-mcp alone stays the MCP server and nothing else
-    settings = state_settings(args.scope) if args.install_hooks else None
+    # The peer-state hooks go with the server by default (owner decision 2026-11-06, an explicit exception
+    # to "hooks default to off"): they send a literal state and nothing else, never what a peer says.
+    # --no-state-hooks keeps the server alone
+    settings = None if getattr(args, "no_state_hooks", False) else state_settings(args.scope)
     if r.dry_run:
         r.change(f"register MCP server '{MCP_SERVER}' ({where}), unless it is registered", lambda: None)
         if settings:
@@ -1178,8 +1184,16 @@ def decode_invite(code: str) -> dict:
     return invite
 
 
+def deprecated(verb: str, instead: str) -> None:
+    """One stderr line: deploy invite/join (Tailscale auth keys) give way to ai-connect's join codes."""
+    print(f"deploy {verb}: DEPRECATED since ai-connect 0.2.12and removed in the next minor release: use "
+          f"`{instead}` (bin/ai-connect), a one-time join code that also enrols the peer's token. "
+          "The tailnet itself stays `deploy tailnet-setup` / vpn/vpn-up.", file=sys.stderr, flush=True)
+
+
 def cmd_invite(args) -> int:
     """A single-use, non-ephemeral, pre-approved tag:ai-peer key for one new machine, as an invite code."""
+    deprecated("invite", f"ai-connect bridge invite --name {args.name}")
     check_name(args.name, "--name")
     if args.bridge:
         check_host(args.bridge)
@@ -1270,6 +1284,7 @@ def join_summary(bridge: str, port: int, name: str, digest: str) -> int:
 def cmd_join(args) -> int:
     """A new machine in one command: Tailscale, the tailnet (invite or login), its own token, the client
     config, and a summary. Only the token's hash is printed, for `deploy approve` on the Bridge."""
+    deprecated("join", "ai-connect join")
     # A dry run asks for no secret and needs no file: the invite's fields are then shown as unknown
     unread = args.dry_run and not os.environ.get("AI_CONNECT_INVITE", "").strip() and (
         (args.invite and not args.invite_file) or (args.invite_file and not Path(args.invite_file).is_file()))
@@ -1327,7 +1342,7 @@ def cmd_join(args) -> int:
         r.change(f"make this machine's own token, owner-only in {OWN_TOKEN}", lambda: write_own_token(token))
     step_client_config(r, name, bridge, port, token)
     step_claude(r, argparse.Namespace(install_hooks=args.with_hooks, register_mcp=args.register_mcp,
-                                      scope=args.scope))
+                                      scope=args.scope, no_state_hooks=args.no_state_hooks))
     digest = hashlib.sha256(token.encode()).hexdigest()
     if r.dry_run:
         out("  would: print this machine's enrolment {name, token_sha256} and check VPN, port and token")
@@ -1489,6 +1504,8 @@ def build_parser() -> argparse.ArgumentParser:
     pe.add_argument("--scope", choices=("project", "user"), default="project",
                     help="where --register-mcp registers it: this directory's .mcp.json (project, the default) or "
                          "every project of this user (user)")
+    pe.add_argument("--no-state-hooks", action="store_true",
+                    help="with --register-mcp, do not write the peer-state hooks (on by default)")
     pe.add_argument("--install-hooks", action="store_true",
                     help="also install the plugin with its hooks for every Claude Code session here (off by default)")
     pe.set_defaults(func=cmd_peer)
@@ -1499,7 +1516,7 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--dry-run", action="store_true", help="print what would change, change nothing")
     a.set_defaults(func=cmd_add_peer)
 
-    iv = sub.add_parser("invite", help="on the Bridge: a single-use, non-ephemeral join key for one new machine")
+    iv = sub.add_parser("invite", help="DEPRECATED (use ai-connect bridge invite): a single-use Tailscale join key")
     iv.add_argument("--name", required=True, help="the new machine's peer name")
     iv.add_argument("--bridge", help="the Bridge address the invite carries (default: this machine's Tailscale IPv4)")
     iv.add_argument("--port", type=port_arg, default=None, help="Bridge port (default: this Bridge's, else 9999)")
@@ -1510,7 +1527,7 @@ def build_parser() -> argparse.ArgumentParser:
     iv.add_argument("--dry-run", action="store_true", help="print what would change, change nothing")
     iv.set_defaults(func=cmd_invite)
 
-    jn = sub.add_parser("join", help="a new machine: Tailscale, the tailnet, its own token and the client config")
+    jn = sub.add_parser("join", help="DEPRECATED (use ai-connect join): Tailscale, the tailnet, a token, the config")
     jn.add_argument("--invite-file", help="the invite `deploy invite --out` wrote (deleted once used)")
     jn.add_argument("--invite", action="store_true", help="ask for the invite code (hidden); or AI_CONNECT_INVITE")
     jn.add_argument("--name", help="this machine's peer name (default: the invite's)")
@@ -1519,6 +1536,8 @@ def build_parser() -> argparse.ArgumentParser:
     jn.add_argument("--with-hooks", action="store_true",
                     help="also install the plugin with its hooks for every Claude Code session here (off by default)")
     jn.add_argument("--register-mcp", action="store_true", help="also register the MCP server (off by default)")
+    jn.add_argument("--no-state-hooks", action="store_true",
+                    help="with --register-mcp, do not write the peer-state hooks (on by default)")
     jn.add_argument("--scope", choices=("project", "user"), default="project", help="where --register-mcp goes")
     jn.add_argument("--accept-dns", action="store_true", help="let Tailscale manage DNS (off: another VPN keeps it)")
     jn.add_argument("--no-install-tailscale", action="store_true", help="fail (exit 3) instead of installing it")
@@ -1562,7 +1581,34 @@ def build_parser() -> argparse.ArgumentParser:
                          help="only this range may reach the port (default Tailscale's 100.64.0.0/10)")
     tailnet_setup.add_parser(sub)
     smoke_test.add_parser(sub, port_arg, check_name, check_host)
+    add_allow_root(sub)
     return p
+
+
+def add_allow_root(sub) -> None:
+    """--allow-root on every verb; setup's parser takes it the same way."""
+    for cmd in sub.choices.values():
+        cmd.add_argument(root_policy.FLAG, action="store_true", dest="allow_root",
+                         help="allow running as root (Linux/macOS): a warning, owner-only files; "
+                              "also AI_CONNECT_ALLOW_ROOT=1 or install.allow_root: true (see root_policy.py)")
+
+
+def root_gate(args) -> str:
+    """root_policy.check for this verb, before it changes anything; a refusal is a Failure."""
+    if args.cmd in READ_ONLY_VERBS:
+        return root_policy.NOT_ROOT
+    try:
+        return root_policy.check(getattr(args, "allow_root", False), config_path=CONFIG_FILE)
+    except root_policy.RootPolicyError as err:
+        raise Failure(str(err)) from None
+
+
+def root_close(mode: str, code: int, dry: bool) -> int:
+    """After an allowed root run that changed something: the config directory owner-only."""
+    if mode == root_policy.ALLOWED and code == EXIT_OK and not dry:
+        for path in root_policy.secure(CONFIG_DIR):
+            out(f"  owner-only now: {path}")
+    return code
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1576,7 +1622,8 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "dry_run", False):
         no_tools()
     try:
-        return args.func(args)
+        root = root_gate(args)
+        return root_close(root, args.func(args), getattr(args, "dry_run", False))
     except (Failure, tsadmin.Failure) as err:
         print(tsadmin.redact(f"deploy {args.cmd}: {err}"), file=sys.stderr, flush=True)
         return err.code

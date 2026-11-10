@@ -262,6 +262,10 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "resume": {
     "auto": null
   },
+  "humanOnly": {
+    "approve": null,
+    "promoteMarker": null
+  },
   "emergency": {
     "standDown": true,
     "maxTtlMinutes": 480

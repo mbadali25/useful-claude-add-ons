@@ -34,6 +34,7 @@ _AH = "tests/test_approval_hook.py::"
 _AD = "tests/test_approval_digest.py::"
 _MM = "tests/test_merged_main.py::"
 _SR = "tests/test_scope_report.py::"
+_SS = "tests/test_scope_guard_spawns.py::"
 
 SCOPE_MUTATIONS = (
     ("the scope guard allows an edit with no approved plan", GUARD,
@@ -696,4 +697,29 @@ SCOPE_MUTATIONS = (
      '    sys.stderr.write(completion_audit.shown(text) + "\\n")\n',
      '    sys.stderr.write(text + "\\n")\n',
      _SR + "test_a_file_name_cannot_forge_a_scope_line"),
-)
+    # crew 1.3.17: the allow path's process count (scope-guard.sh, scope_guard.py).
+    ("the scope guard stops memoizing git, back to eight rev-parse", GUARD,
+     "    crew_ticket.memoize_git()\n",
+     "    pass\n",
+     _SS + "test_the_allow_path_asks_git_once[write-in-touch]"),
+    ("the memo freezes a git that could not tell", TICKET,
+     "        if value is None:\n            return None\n        _GIT_MEMO[key] = value\n",
+     "        _GIT_MEMO[key] = value\n",
+     _SS + "test_a_git_that_could_not_tell_is_asked_again"),
+    ("the memo ignores which directory was asked", TICKET,
+     "    key = (root, flag)\n    if key not in _GIT_MEMO:\n        _prime_git(root)\n",
+     "    key = flag\n    if key not in _GIT_MEMO:\n        _prime_git(root)\n",
+     _SS + "test_the_memo_is_keyed_by_the_directory_asked"),
+    ("the memo has no fallback when the combined ask fails", TICKET,
+     "    if key not in _GIT_MEMO:\n        value = _git(root, \"rev-parse\", flag)\n"
+     "        if value is None:\n            return None\n        _GIT_MEMO[key] = value\n",
+     "    if key not in _GIT_MEMO:\n        return None\n",
+     _SS + "test_a_bare_repo_keeps_its_half_answer"),
+    ("the bash wrapper goes back to dirname for its own directory", GUARD_SH,
+     "  /*|[A-Za-z]:/*) DIR=${BASH_SOURCE[0]%/*} ;;\n",
+     "  /*|[A-Za-z]:/*) DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\" ;;\n",
+     _SS + "test_the_bash_wrapper_starts_no_helper_programs[write-in-touch]"),
+    ("the bash wrapper reads the payload itself again", GUARD_SH,
+     'PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$DIR/scope_guard.py"\n',
+     'INPUT=$(cat)\nprintf \'%s\' "$INPUT" | PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$DIR/scope_guard.py"\n',
+     _SS + "test_the_bash_wrapper_starts_no_helper_programs[bash-echo]"),)

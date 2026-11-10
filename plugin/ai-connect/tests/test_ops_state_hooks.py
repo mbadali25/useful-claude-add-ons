@@ -69,7 +69,8 @@ def test_the_four_state_hooks_report_only_a_state():
     for event, group in state_hooks.STATE_HOOKS.items():
         (hook,) = group["hooks"]
         assert state_hooks.is_state_hook(hook)
-        assert set(hook) == {"type", "server", "tool", "input"} and set(hook["input"]) == {"state"}
+        assert set(hook) == {"type", "server", "tool", "input", "timeout"} and set(hook["input"]) == {"state"}
+        assert 0 < hook["timeout"] <= 10  # Claude Code's default would be 600 s
         assert "${" not in json.dumps(group)
         states[event] = hook["input"]["state"]
     assert states == {"UserPromptSubmit": "busy", "PostToolUse": "busy", "Notification": "waiting", "Stop": "idle"}

@@ -4,20 +4,27 @@
 import asyncio
 import json
 import logging
+import ssl
 import time
 from collections.abc import Callable
 from http import HTTPStatus
+from pathlib import Path
+from urllib.parse import urlsplit
 
 import websockets
+import yaml
 from websockets.asyncio.server import Server, ServerConnection
 from websockets.http11 import Request, Response
 from websockets.protocol import State
 
+import join_codes
+
+from .auth_reload import AUTH_RELOAD_SECONDS, AuthReloader
 from .limits import Limits, TokenBucket
 from .message_store import DEFAULT_DB_PATH, MessageStore
 from .observers import Observers
 from .peer_registry import NameTakenError, Peer, PeerRegistry, utc_now
-from .roles import Identity, Roles
+from .roles import Identity, Roles, token_sha256
 from .user_send import (
     BRIDGE_SENDER,
     is_reserved_name,
@@ -59,6 +66,9 @@ NAME_TAKEN_ERROR = (
     "('<client.name>:<label>', as AI-Connect 0.2.0 and later do by themselves), close one, "
     "or register with standby to take the name once it is free."
 )
+# Close code and reason for a connection whose token the auth reload no longer knows
+REVOKED_CLOSE_CODE = 1008
+REVOKED_REASON = "token revoked"
 
 
 def log_refusal(reason: str, **fields: object) -> None:
@@ -111,7 +121,34 @@ class BridgeServer:
         db_path: str = DEFAULT_DB_PATH,
         limits: Limits | None = None,
         clock: Callable[[], float] = time.monotonic,
+        config_path: Path | None = None,
+        reload_seconds: float = AUTH_RELOAD_SECONDS,
+        ssl_context: ssl.SSLContext | None = None,
+        tls_port: int = 0,
+        plain: bool = True,
     ):
+        # Two listeners for the transition release (0.2.15): plain ws:// on port
+        # (deprecated, a warning per client address) and wss:// on tls_port
+        # with ssl_context. TLS cannot share one socket with plain WebSocket
+        # without sniffing the first byte, so it gets its own port. plain=False
+        # (server.tls.required) opens no ws:// listener at all.
+        if not plain and ssl_context is None:
+            raise ValueError("a Bridge without its plain listener needs TLS (ssl_context)")
+        self.ssl_context = ssl_context
+        self.tls_port = tls_port
+        self.plain = plain
+        self._plain_warned: set[str] = set()
+        self._tls_server: Server | None = None
+        # config.yaml, when the Bridge runs from one: its auth: is polled and
+        # hot-reloaded (server/auth_reload.py), and join codes are redeemed
+        # into it (join_codes.py). None: a fixed table, no join endpoint
+        self.config_path = Path(config_path) if config_path else None
+        self.reload_seconds = reload_seconds
+        self._reloader: AuthReloader | None = None
+        self._reload_task: asyncio.Task | None = None
+        # Every live connection's token digest and the identity it was let in as
+        self._connections: dict[ServerConnection, tuple[str, Identity]] = {}
+        self._join_failures = join_codes.FailureLimiter(clock=clock)
         self.host = host
         self.port = port
         self.history_days = history_days
@@ -150,43 +187,143 @@ class BridgeServer:
 
     async def start(self) -> None:
         await self.store.connect()
-        self._server = await websockets.serve(
-            self._handle_connection,
-            self.host,
-            self.port,
-            process_request=self._check_token,
-            max_size=max(2 * self.limits.max_message_bytes, WEBSOCKET_MAX_SIZE_FLOOR),
-        )
+        max_size = max(2 * self.limits.max_message_bytes, WEBSOCKET_MAX_SIZE_FLOOR)
+        if self.ssl_context is not None:
+            self._tls_server = await websockets.serve(
+                self._handle_connection, self.host, self.tls_port, ssl=self.ssl_context,
+                process_request=self._check_token, max_size=max_size,
+            )
+            logger.info(f"Bridge Server listening on wss://{self.host}:{self.tls_bound_port}")
+        if self.plain:
+            self._server = await websockets.serve(
+                self._handle_connection, self.host, self.port,
+                process_request=self._check_plain_token, max_size=max_size,
+            )
+            logger.info(f"Bridge Server listening on ws://{self.host}:{self.bound_port}")
+            logger.warning(json.dumps({
+                "event": "plaintext_listener", "url": f"ws://{self.host}:{self.bound_port}",
+                "detail": "plain ws:// is deprecated: served beside wss:// in 0.2.15 only; 0.3.1 serves wss:// "
+                          "alone. Re-pin peers (ai-connect pin) and set server.tls.required: true to close it now"}))
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         self._history_cleanup_task = asyncio.create_task(self._history_cleanup_loop())
-        logger.info(f"Bridge Server listening on ws://{self.host}:{self.bound_port}")
+        if self.config_path is not None:
+            self._reloader = AuthReloader(self.config_path, logger.warning)
+            self._reload_task = asyncio.create_task(self._auth_reload_loop())
 
     @property
     def bound_port(self) -> int:
-        """The port listened on; differs from port when port is 0."""
+        """The plain ws:// port listened on (differs from port when port is 0); the wss:// one without ws://."""
+        if not self.plain:
+            return self.tls_bound_port
         if self._server is None:
             return self.port
         return self._server.sockets[0].getsockname()[1]
 
+    @property
+    def tls_bound_port(self) -> int:
+        """The wss:// port listened on; differs from tls_port when that is 0."""
+        if self._tls_server is None:
+            return self.tls_port
+        return self._tls_server.sockets[0].getsockname()[1]
+
     async def stop(self) -> None:
-        for task in (self._heartbeat_task, self._history_cleanup_task):
+        for task in (self._heartbeat_task, self._history_cleanup_task, self._reload_task):
             if task:
                 task.cancel()
-        if self._server:
-            self._server.close()
-            await self._server.wait_closed()
+        for server in (self._server, self._tls_server):
+            if server:
+                server.close()
+                await server.wait_closed()
         await self.store.close()
 
     def _identity(self, request: Request) -> Identity | None:
         return self.roles.identity_for(request.headers.get("Authorization", ""))
 
-    def _check_token(self, connection: ServerConnection, request: Request) -> Response | None:
-        """Refuse the handshake unless it carries a known token.
+    async def _auth_reload_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self.reload_seconds)
+            await self.reload_auth()
+
+    async def reload_auth(self) -> bool:
+        """Re-read config.yaml's auth now; True when a new table was swapped in."""
+        if self._reloader is None:
+            return False
+        roles = self._reloader.check()
+        if roles is None:
+            return False
+        await self.apply_roles(roles)
+        return True
+
+    async def apply_roles(self, roles: Roles) -> None:
+        """Swap the auth table, then close every connection the new one no longer lets in as before.
+
+        A connection stays only if its token's digest still maps to the very
+        identity it was let in as: a revoked peer, a replaced token, or a
+        regenerated observer or user token closes it with 1008 "token revoked".
+        """
+        self.roles = roles
+        revoked = [ws for ws, (digest, identity) in list(self._connections.items())
+                   if roles.identity_for_digest(digest) != identity]
+        for ws in revoked:
+            _digest, identity = self._connections.pop(ws)
+            log_refusal("token_revoked", ip=ws.remote_address[0] if ws.remote_address else "unknown",
+                        role=identity.role, peer=identity.peer_name)
+        await asyncio.gather(*(ws.close(REVOKED_CLOSE_CODE, REVOKED_REASON) for ws in revoked),
+                             return_exceptions=True)
+        logger.info(json.dumps({"event": "auth_reloaded", "closed": len(revoked)}))
+
+    async def _redeem_join_code(self, connection: ServerConnection, request: Request) -> Response:
+        """GET /join: a one-time join code's secret for that peer's new token (join_codes.redeem).
+
+        Every refusal is the same 403; past FailureLimiter's limit a client
+        gets 429 without a look at the store. The token goes back in the body
+        once and is never logged.
+        """
+        ip = connection.remote_address[0] if connection.remote_address else "unknown"
+        if self.config_path is None:
+            return connection.respond(HTTPStatus.NOT_FOUND, "Not found\n")
+        if self._join_failures.blocked(ip):
+            log_refusal("join_rate_limited", ip=ip)
+            return connection.respond(HTTPStatus.TOO_MANY_REQUESTS, "Too many failed join attempts; wait a minute\n")
+        name = request.headers.get(join_codes.NAME_HEADER, "")
+        try:
+            secret = bytes.fromhex(request.headers.get(join_codes.SECRET_HEADER, ""))
+        except ValueError:
+            secret = b""
+        try:
+            token = await asyncio.to_thread(join_codes.redeem, self.config_path, secret, name)
+        except join_codes.Refused:
+            self._join_failures.failed(ip)
+            log_refusal("join_refused", ip=ip, name=name[:64])
+            return connection.respond(HTTPStatus.FORBIDDEN, join_codes.GENERIC_REFUSAL + "\n")
+        except (OSError, TimeoutError, ValueError, yaml.YAMLError) as err:
+            # yaml.YAMLError: config.yaml broken between redeem's check and the peer's write. Logged by
+            # type only (its message quotes the file, which holds tokens)
+            logger.error(json.dumps({"event": "join_failed", "ip": ip, "error": type(err).__name__}))
+            return connection.respond(HTTPStatus.SERVICE_UNAVAILABLE, "The Bridge could not record the join\n")
+        # Into the table now rather than at the next poll, so the new peer can connect at once
+        await self.reload_auth()
+        logger.info(json.dumps({"event": "peer_joined_by_code", "name": name, "ip": ip}))
+        return connection.respond(HTTPStatus.OK, json.dumps({"name": name, "token": token}) + "\n")
+
+    async def _check_plain_token(self, connection: ServerConnection, request: Request) -> Response | None:
+        """_check_token for the plain ws:// listener, with one deprecation warning per client address."""
+        ip = connection.remote_address[0] if connection.remote_address else "unknown"
+        if ip not in self._plain_warned:
+            self._plain_warned.add(ip)
+            logger.warning(json.dumps({"event": "plaintext_client", "ip": ip,
+                                       "detail": "this client still uses ws:// (token in clear); pin it to wss://"}))
+        return await self._check_token(connection, request)
+
+    async def _check_token(self, connection: ServerConnection, request: Request) -> Response | None:
+        """Refuse the handshake unless it carries a known token; GET /join redeems a join code instead.
 
         Checked once per connection, so every message type, the watchers
         and list_peers are covered alike; the token's role decides which
         message types the connection may send.
         """
+        if urlsplit(request.path).path == join_codes.JOIN_PATH:
+            return await self._redeem_join_code(connection, request)
         if self._identity(request) is not None:
             return None
         client_ip = connection.remote_address[0] if connection.remote_address else "unknown"
@@ -199,8 +336,13 @@ class BridgeServer:
         client_ip = websocket.remote_address[0] if websocket.remote_address else "unknown"
         # The handshake passed _check_token: the request is there and its token known
         assert websocket.request is not None
+        authorization = websocket.request.headers.get("Authorization", "")
         identity = self._identity(websocket.request)
-        assert identity is not None
+        if identity is None:
+            # Revoked by an auth reload between the handshake and here
+            await websocket.close(REVOKED_CLOSE_CODE, REVOKED_REASON)
+            return
+        self._connections[websocket] = (token_sha256(authorization.partition(" ")[2]), identity)
         role = identity.role
         if identity.shared:
             logger.warning(json.dumps({"event": "shared_token_used", "ip": client_ip}))
@@ -425,6 +567,7 @@ class BridgeServer:
         except websockets.exceptions.ConnectionClosed:
             pass
         finally:
+            self._connections.pop(websocket, None)
             for connections in (*self._watchers.values(), *self._standby.values()):
                 connections.discard(websocket)
             self._watcher_sessions.pop(websocket, None)

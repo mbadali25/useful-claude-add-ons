@@ -78,12 +78,39 @@ corrupt file from the template plus that profile, as a dry run until
 The key list is `plugin/crew/CONFIG.md`, which ships with the plugin; the
 reasoning behind the keys is in `docs/crew/config-rationale.md`.
 
+## The human-only opt-out (`humanOnly`)
+
+`humanOnly.approve` and `humanOnly.promoteMarker` are the owner's opt-out of
+two human-only rules: `/crew:approve`, and the production promote marker
+`.crew/.approved-<env>-<sha>`. `null` and `true` mean human-only. A `false`
+takes effect only when all of these hold (`crew_humanonly.resolve`):
+
+- it is in the machine file, or in a repo `.crew/config.json` that git does
+  not track (a tracked or committed repo file can never opt out; "could not
+  tell" counts as tracked);
+- neither layer says `true` (a `true` anywhere vetoes, the stricter wins);
+- it was written by a double confirmation: `crew_confirm_config.py propose`
+  records the change and prints an id, and the owner types
+  `/crew:confirm-config <change_id>` twice, in two prompts, within 15 minutes.
+  `crew_config.py --set` and `/crew:config` refuse a `false` (and a repo
+  `null` or removal, which drops a veto); a `false` written by hand reads as
+  human-only.
+
+**What this does NOT do yet (crew 1.3.9).** No hook reads these keys. The
+hooks that would honour an opt-out, and the prompt hook that records a
+`/crew:confirm-config` confirmation, are review harness and land in a
+separate change. Until then no confirmation can be recorded, so no opt-out
+can take effect, and the rules are exactly what they were: `/crew:approve` is
+recorded only from your own prompt (`approval_hook.py`), and the promote
+marker is human-only by instruction alone - no hook checks who created it.
+`crew_confirm_config.py resolve` shows what each key would resolve to.
+
 ## Reference (generated)
 
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**87 keys**: 50 settable in the machine-global file, 37 repo-only.
+**89 keys**: 52 settable in the machine-global file, 37 repo-only.
 
 Columns:
 
@@ -101,6 +128,7 @@ Columns:
 - **both, stricter wins**: a personal key (`crew_guards.PERSONAL_KEYS`): either file may set it, and where both do the STRICTER value wins; a layer that is silent (absent or `null`) imposes nothing, so a machine value is your default for every repo and a repo may only narrow it.
 - **machine-arms**: only the global file can turn it on (exactly `true`); a repo may only veto it with `false` (`crew_config.REPO_VETO_ONLY`).
 - **machine-only**: read from the global file alone; a repo's own value is never consulted.
+- **human-only opt-out**: a `humanOnly` key (`crew_humanonly`): `false` opts out only from the machine file or an untracked repo file, only after the owner types `/crew:confirm-config <change_id>` twice, and a `true` in either layer vetoes it. Not acted on by any hook yet (see the section below).
 
 ### Top-level keys
 
@@ -184,6 +212,13 @@ Columns:
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `resume.auto` | machine-arms | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_resume.py`) | 1.0.40 | Auto-resume after `/clear` or a manual `/compact`. Only the machine file can arm it (exactly `true`); a repo `false` vetoes it. |
+
+### `humanOnly`
+
+| Setting | Layer | Default | Values | Since | Summary |
+|---|---|---|---|---|---|
+| `humanOnly.approve` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_humanonly.py`) | 1.3.9 | The owner's opt-out of `/crew:approve` being human-only. null or `true` keeps it human-only; `false` opts out only from the machine file or an untracked repo file, only after `/crew:confirm-config` twice, and a `true` in either layer vetoes. crew 1.3.9: no hook acts on it yet, so it changes nothing today. |
+| `humanOnly.promoteMarker` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_humanonly.py`) | 1.3.9 | The same opt-out for the production promote marker `.crew/.approved-<env>-<sha>`, under the same rules. crew 1.3.9: no hook acts on it yet, and no hook today checks who created the marker. |
 
 ### `emergency`
 
@@ -276,7 +311,7 @@ Columns:
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `scope.mode` | repo | `"off"` | `off` \| `report` \| `block` \| `auto` | 1.0.25 | Whether the scope guard enforces a ticket's Touch list; a value outside these fails closed to `block`. |
-| `scope.allowCliApproval` | repo | `false` | `false` \| `true` (checked in `plugin/crew/hooks/scripts/crew_ticket.py`) | 1.0.25 | Whether a CLI-written approval receipt counts; only exactly `true` allows it. |
+| `scope.allowCliApproval` | repo | `false` | `false` \| `true` (checked in `plugin/crew/hooks/scripts/crew_ticket.py`) | 1.0.25 | Whether a CLI-written approval receipt counts; only exactly `true` allows it. `autopilot.approval: self` or `risk` needs it, and `autopilot.mode: plan` or `backlog`, to approve anything. A hand edit by the owner in the repo's `.crew/config.json` (`"scope": {"allowCliApproval": true}`); `crew_config.py --set` refuses it. |
 
 ### `autopilot`
 
@@ -285,7 +320,7 @@ Columns:
 | `autopilot.mode` | both, stricter wins | `"off"` | `off` \| `plan` \| `backlog` (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`); personal: listed strictest first, the stricter wins | 1.0.41 | Only the exact strings `plan` (one ticket per run) and `backlog` (L-0541: a goal's tickets in dependency order, inside the caps) arm `/crew:autopilot`; anything else reads as off, with a warning. |
 | `autopilot.maxPhases` | both, stricter wins | `12` | positive integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`); personal: the smaller wins | 1.0.41 | Phases one run may take; anything but a positive integer reads as 12, with a warning. |
 | `autopilot.deploy` | both, stricter wins | `"none"` | `none` \| `nonprod` \| `all`; personal: listed strictest first, the stricter wins | 1.0.42 | Where a deploy may run without asking; anything else reads as `none`. |
-| `autopilot.approval` | both, stricter wins | `"risk"` | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | 1.0.42 | Who approves a ticket under autopilot; anything else reads as `human`. |
+| `autopilot.approval` | both, stricter wins | `"risk"` | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | 1.0.42 | Who approves a ticket under autopilot; anything else reads as `human`. `risk` and `self` also need `autopilot.mode: plan` (or `backlog`) and `scope.allowCliApproval: true` (a hand edit of the repo's `.crew/config.json`); a refused `approve` lists each unmet one, with its value as written, the file that holds it and, under `risk`, the spec risk that blocks. |
 | `autopilot.questions` | both, stricter wins | `"risk"` | `human` \| `risk` \| `self`; personal: listed strictest first, the stricter wins | 1.0.42 | Who answers a ticket's open questions under autopilot; anything else reads as `human`. |
 | `autopilot.maxAutoReplans` | repo | `0` | non-negative integer (checked in `plugin/crew/hooks/scripts/crew_autopilot.py`) | 1.0.339 | Successor plans autopilot may start by rejecting an out-of-rounds BLOCK review itself; 0 is off, and anything but a non-negative integer reads as 0, and above 5 as 5, with a warning. |
 | `autopilot.ship` | repo | `"merge"` | `pr` \| `merge` | 1.0.349 | After `/crew:done`: `pr` pushes and opens the PR; `merge` also merges it (a merge commit) once the required checks allow. Anything else reads as `pr`, with a warning. |

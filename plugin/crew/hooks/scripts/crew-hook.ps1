@@ -428,6 +428,11 @@ try {
   $psi.EnvironmentVariables['PYTHONUTF8'] = '1'
   $psi.EnvironmentVariables['PYTHONIOENCODING'] = 'utf-8'
   $psi.EnvironmentVariables['CREW_HOOK_DEADLINE'] = [string]$crewDeadlineMs
+  # The python this launcher resolved, exported for the shell guards the dispatcher starts. Nothing
+  # reads CREW_PYTHON yet: _common.sh's crew_py_strict will consume it in PR B (so a guard need not
+  # re-probe). Note for PR B: this is a Windows path, so a Git Bash guard must convert it with
+  # cygpath before running it.
+  $psi.EnvironmentVariables['CREW_PYTHON'] = [string]$py
   $crewProc = [System.Diagnostics.Process]::Start($psi)
   $outTask = $crewProc.StandardOutput.BaseStream.CopyToAsync($crewOut)
   $errTask = $crewProc.StandardError.BaseStream.CopyToAsync($crewErr)

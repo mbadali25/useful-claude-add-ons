@@ -36,7 +36,8 @@ def create_app(peer_name: str, settings: ClientSettings | None = None, **session
         settings = settings or client_settings(load_config())
         tools.set_project_dir(settings.project_dir)
         await init_client(
-            host=settings.host, port=settings.port, peer_name=peer_name, token=settings.token, **session
+            host=settings.host, port=settings.port, peer_name=peer_name, token=settings.token,
+            fingerprint=settings.fingerprint, **session
         )
         yield
         client = get_client()
@@ -49,8 +50,11 @@ def create_app(peer_name: str, settings: ClientSettings | None = None, **session
     async def peer_list() -> str:
         """Show all peers that are currently online.
 
-        Peer names have the form "Machine:Project", e.g. "Mini:AIfred-Intelligence":
-        one per session, so a machine with several sessions is listed several times.
+        Peer names have the form "Machine:Label", e.g. "Mini:AIfred-Intelligence" (a project)
+        or "Mini:s-review" (a session that has a name in Claude Code: "s-" and that name).
+        One per session, so a machine with several sessions is listed several times.
+        Each line also gives machine, project or session, and the state the peer reported
+        (busy, idle, waiting; "state unknown" when it reports none) with its status line.
         """
         return await tools.peer_list()
 
@@ -62,7 +66,9 @@ def create_app(peer_name: str, settings: ClientSettings | None = None, **session
         (see peer_read).
 
         Args:
-            to: Full name of the target peer ("Machine:Project") for that one session, the
+            to: Full name of the target peer ("Machine:Label") for that one session, or its session
+                name or the start of one ("review") when only one other online peer matches
+                (an ambiguous name is refused with the candidates listed), the
                 machine's name alone ("Machine") for every session on it, or "*" for every online peer
             message: The message
             file: Optional file to attach; its content (or the given lines) travels with the message
@@ -84,7 +90,7 @@ def create_app(peer_name: str, settings: ClientSettings | None = None, **session
         """Show the conversation with a peer, as stored on the Bridge.
 
         Args:
-            peer: Full name of the peer ("Machine:Project"), or the machine's name
+            peer: Full name of the peer ("Machine:Label"), a unique session name, or the machine's name
                 alone for the conversation with all of its sessions
             limit: Maximum number of messages, 1 to 1000 (default 20)
         """
@@ -138,7 +144,7 @@ def create_app(peer_name: str, settings: ClientSettings | None = None, **session
         wakes you through the watcher like any other (see peer_read).
 
         Args:
-            peer: Full name of the peer ("Machine:Project"), or the machine's name
+            peer: Full name of the peer ("Machine:Label"), a unique session name, or the machine's name
                 alone for whichever of its sessions is done first
         """
         return await tools.peer_notify_when_idle(peer)
