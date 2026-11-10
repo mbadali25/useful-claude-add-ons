@@ -29,12 +29,16 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
-- crew 1.3.21: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.30; the change is recorded under crew 1.3.31
+- crew 1.3.21: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.32; the change is recorded under crew 1.3.33
 - crew 1.3.24: re-bump only - interim number on the context-watch branch before main reached 1.3.25; the change is recorded under crew 1.3.26
-- crew 1.3.27: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.30; the change is recorded under crew 1.3.31
+- crew 1.3.27: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.32; the change is recorded under crew 1.3.33
+- crew 1.3.32: re-bump only - the two tests that patch `no_round_after_successor` now patch it in `crew_autopilot_replan` (tests only); the change is recorded under crew 1.3.19
+- crew 1.3.31: re-bump only - merge of main's crew 1.3.30 into the L-0717 budget branch; the budget change is recorded under crew 1.3.19 and 1.3.20, and `no_round_after_successor` moved from `crew_autopilot.py` to `crew_autopilot_replan.py` to stay under the 3400-line module limit
+- crew 1.2.85: re-bump only - interim number on the L-0717 branch (commit 4a4ae04); the change is recorded under crew 1.3.19
+- crew 1.2.87: re-bump only - interim number on the L-0717 branch (commit e8a027c); the change is recorded under crew 1.3.19
+- crew 1.2.88: re-bump only - interim number on the L-0717 branch (commit 188cded); the change is recorded under crew 1.3.19
 - crew 1.2.88: re-bump only - interim number on the L-0718 branch (commit e2f8ab0); the change is recorded under crew 1.3.30
 - crew 1.2.90: re-bump only - interim number on the L-0718 branch (commit ee4309a); the change is recorded under crew 1.3.30
-
 - crew 1.2.22: re-bump only - interim re-bump on the L-0768 branch (commit f7e38e3); the change is recorded under crew 1.3.25
 - crew 1.2.29: re-bump only - interim re-bump on this branch after merging main (commit a7f25e1); the change is recorded under crew 1.3.26
 - crew 1.2.27: re-bump only - interim re-bump on the L-0768 branch after merging main (commit 0f5c3e91c); the change is recorded under crew 1.3.25
@@ -49,15 +53,24 @@ read entries under any `## [` heading.
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 
-### Added — crew 1.3.31: the human-only opt-out goes live for plan approval (harness half)
+### Added — crew 1.3.33: the human-only opt-out goes live for plan approval (harness half)
 
-- **Summary.** `crew` 1.3.31: once you have typed `/crew:confirm-config <id>` twice, `humanOnly.approve: false` now takes effect (an autopilot-recorded approval counts without hand-editing `scope.allowCliApproval`), and `/crew:approve-mass <id>` exists as a user-typed yes that the session cannot write; `humanOnly.promoteMarker` is still read by no hook.
+- **Summary.** `crew` 1.3.33: once you have typed `/crew:confirm-config <id>` twice, `humanOnly.approve: false` now takes effect (an autopilot-recorded approval counts without hand-editing `scope.allowCliApproval`), and `/crew:approve-mass <id>` exists as a user-typed yes that the session cannot write; `humanOnly.promoteMarker` is still read by no hook.
 - `crew_ticket.cli_approval_allowed` is the one decision point: `scope.allowCliApproval` exactly true, OR `crew_humanonly.resolve(top, "approve")` answering exactly `humanOnly: False` (module missing, resolver raising, any other answer: human-only). `accepted`, the scope guard, the Stop audit and every autopilot reader already call it, so they agree by construction. `scope_guard.py` still refuses the session running `crew_ticket.py approve`; the session's route is `crew_autopilot.py approve`, which still needs `autopilot.approval` `self`/`risk`.
 - `approval_hook.py` (UserPromptSubmit) records `/crew:confirm-config <change_id>` (via `crew_confirm_config.confirm`, `via=user-prompt`, the payload's `prompt_id`; two distinct prompts apply it) and `/crew:approve-mass <id>` (`<git-common-dir>/crew/mass-approvals/<id>.json`, 15 minutes, id must be 12 lowercase hex digits). One line, command alone, raw or expanded form, as `/crew:approve`; a command quoted mid-sentence is nothing. `approval-hook.sh` passes a prompt naming `crew:confirm-config` (it has no `approve` in it) and, with no python, blocks it with its own message (added to `crew_hook.NO_PYTHON_REFUSALS`).
 - `scope_guard.py` refuses Write/Edit under `~/.claude/crew/confirm-config/` and a shell command naming that store beside a writing word. A tripwire, not a sandbox: arbitrary python can still forge a receipt, and `scope.mode: off` has none. Stated in CONFIG.md.
 - Tests: `test_humanonly_live.py` (51 cases: must-allow with a real propose/confirm/confirm, must-block for no receipt, tracked file, repo `true` veto, other key, resolver raising/odd answers, quoted or malformed commands, no prompt id, the store). `humanonly_mutations.py` is wired into `sabotage.py`: 27 entries, 11 new, all seen red (the first run caught one vacuous mutation - a mid-sentence command with trailing words was refused for its bad id, not for being quoted - fixed by a case whose id is exact).
 - Harness-only PR (`approval_hook.py`, `approval-hook.sh`, `crew_hook.py`, `crew_ticket.py`, `scope_guard.py`, `sabotage.py`). Stale text that cannot ride with it - `commands/confirm-config.md`, `commands/approve.md`, `commands/config.md`, `crew_keys.py`'s two rows and `crew_humanonly.SENSITIVE_REFUSAL` still say "no hook acts" - is fixed in the follow-up PR, which also adds `commands/approve-mass.md`.
 
+### Fixed — crew 1.3.20: the docs no longer say a successor plan opens a fresh review budget (L-0717)
+
+- **Summary.** `crew` 1.3.20: `plugin/crew/README.md` and `docs/crew/config-rationale.md` said the NEEDS_REPLAN -> IN_REVIEW successor continuation opens a fresh review budget; since 1.3.19 it keeps the budget the ticket has left. Wording only, no code change.
+- Docs: the two files above; the crew guide does not carry the phrase (`build.py --check` clean).
+
+### Changed — crew 1.3.19: one review budget of three per ticket, counted across successor plans; the owner's `--grant-round` (L-0717, absorbs L-0781)
+
+- **Summary.** `crew` 1.3.19: a ticket now gets three review rounds in total, a successor plan no longer reopens them, and only the owner's `review_ledger.py --grant-round` adds a round.
+- `review_ledger.py`: `BUDGET` 3, `REFUND_LIMIT` 3 counted per ticket, a recorded `grants` list (malformed is could-not-tell), `--grant-round --by --reason` (refused while rounds remain, for `auto:`/autopilot names, multi-line text), successor rows carry `carry_over: true` (a row written before keeps resetting). `scope_guard.py` refuses the verb to subagents with every abbreviation; `review_run.py` and `crew_status.py` print the ledger's budget; `crew_autopilot.py` refuses an auto-reject whose successor would have no round (seam; bug fix under the L-0727 freeze, manifest updated). Docs: updated, with a drift test (`test_review_budget.py`).
 ### Added — crew 1.3.30: `crew_standards.py export` publishes the standards to PR-side reviewers (L-0718)
 
 - **Summary.** `crew` 1.3.30: a repo that opts in (`export:` in `.crew/standards.md`) gets `docs/review-rules/<SET>.md`, `REVIEW.md`, `.cursor/BUGBOT.md` and a `## Code Review Rules` block in `AGENTS.md`, generated from the same standards `/crew:review` hands its own reviewer and checked for staleness by `export --check`.

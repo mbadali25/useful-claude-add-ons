@@ -46,7 +46,7 @@ takes effect only when all of these hold (`crew_humanonly.resolve`):
   `null` or removal, which drops a veto); a `false` written by hand reads as
   human-only.
 
-**What is live (crew 1.3.31).** The prompt hook (`approval_hook.py`) now
+**What is live (crew 1.3.33).** The prompt hook (`approval_hook.py`) now
 records `/crew:confirm-config <change_id>` from a prompt you typed, so a
 double confirmation can complete, and `humanOnly.approve: false` takes effect
 through ONE decision point, `crew_ticket.cli_approval_allowed`: with an opt-out
@@ -59,7 +59,7 @@ which still needs `autopilot.approval` `self` or `risk` and `autopilot.mode`
 raising or answering anything but exactly `humanOnly: false` - reads as
 human-only.
 
-**Still human-only (crew 1.3.31).** No hook reads `humanOnly.promoteMarker`:
+**Still human-only (crew 1.3.33).** No hook reads `humanOnly.promoteMarker`:
 the promote marker is human-only by instruction alone, and no hook checks who
 created it. `crew_confirm_config.py resolve` shows what each key would
 resolve to.
@@ -73,7 +73,7 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
 meaningful only with `scope.mode` `block`.
 
-**`/crew:approve-mass <id>` (crew 1.3.31).** Your yes to ONE blocked mass
+**`/crew:approve-mass <id>` (crew 1.3.33).** Your yes to ONE blocked mass
 delete or mass overwrite, typed by you and recorded by the same prompt hook in
 `<git-common-dir>/crew/mass-approvals/<id>.json`, good for 15 minutes. The
 directory is under `<git-common-dir>/crew/`, which the scope guard refuses to

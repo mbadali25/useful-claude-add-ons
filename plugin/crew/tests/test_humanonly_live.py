@@ -1,4 +1,4 @@
-"""crew 1.3.31: the human-only opt-out goes live (harness half).
+"""crew 1.3.33: the human-only opt-out goes live (harness half).
 
 `crew_ticket.cli_approval_allowed` now reads `crew_humanonly.resolve(..,
 "approve")`; `approval_hook.py` records `/crew:confirm-config <id>` (the double

@@ -306,7 +306,7 @@ def test_run_refuses_a_broken_effective_set(repo, tmp_path):
 @pytest.mark.parametrize("provider", sorted(_PROVIDERS))
 @pytest.mark.parametrize("spent", ["budget-spent", "needs-replan"])
 def test_run_reports_a_spent_budget_before_the_selfcheck(repo, tmp_path, provider, spent):
-    for _ in range(2):
+    for _ in range(rl.BUDGET):
         assert rl.reserve(str(repo), TICKET, "claude")[0]
     if spent == "needs-replan":
         assert not rl.reserve(str(repo), TICKET, "claude")[0]
@@ -383,7 +383,7 @@ def test_reserve_refuses_an_ungated_round_when_the_locked_ledger_is_not_spent(re
 
 
 def test_reserve_ungated_still_answers_a_spent_budget_as_spent(repo):
-    for _ in range(2):
+    for _ in range(rl.BUDGET):
         assert rl.reserve(str(repo), TICKET, "claude")[0]
 
     ok, _, message = rl.reserve(str(repo), TICKET, "claude", gated=False)

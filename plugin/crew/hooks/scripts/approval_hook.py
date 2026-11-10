@@ -68,7 +68,7 @@ prompt that STARTS with one is refused: an approval is one line.
   to the user, which is the point: the user asked for an approval and must
   see that none was recorded.
 
-## Two more user-typed commands (crew 1.3.31)
+## Two more user-typed commands (crew 1.3.33)
 
 The same rule -- the one input the session does not author is the user's own
 prompt -- carries two more commands, each ONE line, raw or expanded exactly as
