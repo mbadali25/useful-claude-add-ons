@@ -505,10 +505,13 @@ may arm it.
 production promote marker being human-only. A `false` counts only from the
 machine file or an untracked repo file, never a committed one; a `true` in
 either file vetoes it; and it is written only after the owner types
-`/crew:confirm-config <change_id>` twice. In 1.3.9 no hook reads these keys
-and nothing records that confirmation, so the human-only rules hold exactly as
-before; the configuration reference's "The human-only opt-out" section says
-what lands next.
+`/crew:confirm-config <change_id>` twice. Since crew 1.3.21 the prompt hook
+records that confirmation and `humanOnly.approve: false` makes a CLI-recorded
+approval count (the same effect as `scope.allowCliApproval: true`, but set
+only through the double confirmation); `humanOnly.promoteMarker` is still
+read by no hook. The owner's `/crew:approve-mass <id>` is recorded the same
+way, for one blocked mass operation. The configuration reference's "The
+human-only opt-out" section has the rules and their limits.
 
 - `/crew:config` shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.

@@ -4,10 +4,10 @@ Each puts back one way the opt-out could take effect when it must not (or a
 write could slip past the double confirmation), and names the must-block or
 must-allow case in `test_crew_humanonly.py` that has to go red.
 
-NOT wired into `sabotage.py`'s MUTATIONS: `sabotage*.py` is review harness
-(`scripts/check-tooling-pr.py` `HARNESS`), so wiring this family in lands with
-the harness change that makes the hooks read `humanOnly`. Until then run it
-alone, with sabotage.py's own machinery:
+Wired into `sabotage.py`'s MUTATIONS since crew 1.3.21, the harness change that
+made the hooks read `humanOnly` (`sabotage*.py` is review harness,
+`scripts/check-tooling-pr.py` `HARNESS`). To run it alone, with sabotage.py's
+own machinery:
 
     cd plugin/crew/tests && python3 -c "import sabotage, humanonly_mutations as m; \
         sabotage.MUTATIONS = m.HUMANONLY_MUTATIONS; raise SystemExit(sabotage.main())"
@@ -19,7 +19,12 @@ _SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 HO = os.path.join(_SCRIPTS, "crew_humanonly.py")
 CC = os.path.join(_SCRIPTS, "crew_confirm_config.py")
 CFG = os.path.join(_SCRIPTS, "crew_config.py")
+TICKET = os.path.join(_SCRIPTS, "crew_ticket.py")
+HOOK = os.path.join(_SCRIPTS, "approval_hook.py")
+WRAP = os.path.join(_SCRIPTS, "approval-hook.sh")
+SCOPE = os.path.join(_SCRIPTS, "scope_guard.py")
 _T = "tests/test_crew_humanonly.py::"
+_L = "tests/test_humanonly_live.py::"
 
 HUMANONLY_MUTATIONS = (
     ("humanOnly: could-not-tell reads as untracked", HO,
@@ -86,4 +91,53 @@ HUMANONLY_MUTATIONS = (
      '    _revoke_human_only("machine", real_path, out["plan"][1], path)\n',
      "    pass\n",
      _T + "test_a_crew_write_back_to_true_revokes_the_receipt"),
+    # --- crew 1.3.21: the hooks read the opt-out -----------------------------------
+    ("humanOnly live: the opt-out never relaxes a cli approval", TICKET,
+     "    return human_only_approve_opted_out(top)\n",
+     "    return False\n",
+     _L + "test_a_double_confirmed_machine_false_lets_a_cli_approval_count"),
+    ("humanOnly live: a resolver that raises reads as an opt-out", TICKET,
+     "    except Exception:  # noqa: BLE001  # pylint: disable=broad-except\n"
+     "        return False\n    return isinstance(answer, dict)",
+     "    except Exception:  # noqa: BLE001  # pylint: disable=broad-except\n"
+     "        return True\n    return isinstance(answer, dict)",
+     _L + "test_an_unreadable_or_odd_resolver_answer_is_human_only[answer0]"),
+    ("humanOnly live: anything but True reads as an opt-out", TICKET,
+     '    return isinstance(answer, dict) and answer.get("humanOnly") is False\n',
+     '    return isinstance(answer, dict) and answer.get("humanOnly") is not True\n',
+     _L + "test_an_unreadable_or_odd_resolver_answer_is_human_only[answer3]"),
+    ("humanOnly live: approve reads the promoteMarker key", TICKET,
+     'answer = crew_humanonly.resolve(top, "approve")',
+     'answer = crew_humanonly.resolve(top, "promoteMarker")',
+     _L + "test_a_confirmed_promote_marker_opt_out_does_not_relax_approve"),
+    ("humanOnly live: a hook confirmation is recorded as not from a prompt", HOOK,
+     "            args, via=crew_confirm_config.crew_humanonly.USER_PROMPT,\n",
+     '            args, via="cli",\n',
+     _L + "test_a_double_confirmed_machine_false_lets_a_cli_approval_count"),
+    ("humanOnly live: a command quoted mid-sentence is a command", HOOK,
+     '    raw = re.match(r"^\\s*/" + re.escape(name)',
+     '    raw = re.search(r"\\s*/" + re.escape(name)',
+     _L + "test_a_quoted_or_pasted_mass_approval_records_nothing"
+          "[so run /crew:approve-mass 0123456789ab]"),
+    ("humanOnly live: a mass approval id may be any text", HOOK,
+     '_MASS_ID_RE = re.compile(r"^[0-9a-f]{12}$")',
+     '_MASS_ID_RE = re.compile(r"^.+$")',
+     _L + "test_a_malformed_mass_id_is_refused_and_writes_nothing[../../evil]"),
+    ("humanOnly live: a mass approval needs no git repository", HOOK,
+     "    if not state:\n        return _refuse_command(MASS_COMMAND,",
+     "    if False:\n        return _refuse_command(MASS_COMMAND,",
+     _L + "test_a_mass_approval_outside_git_is_refused"),
+    ("humanOnly live: the wrapper drops a confirm-config prompt", WRAP,
+     "[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*|*crew:confirm-config*) ;;",
+     "[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*) ;;",
+     _L + "test_the_wrapper_passes_a_confirm_config_prompt_to_python"),
+    ("humanOnly live: Write/Edit may write the confirmation store", SCOPE,
+     "        if _under(path, confirm_store()):\n            return True\n",
+     "",
+     _L + "test_the_session_cannot_write_the_confirmation_store"),
+    ("humanOnly live: a shell command may write the confirmation store", SCOPE,
+     "    if (_CONFIRM_STORE_RE.search(command) or store in folded)"
+     " and _WRITES_RE.search(command):\n",
+     "    if False:\n",
+     _L + "test_the_session_cannot_write_the_confirmation_store"),
 )

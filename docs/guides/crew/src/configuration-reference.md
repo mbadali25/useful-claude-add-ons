@@ -96,14 +96,40 @@ takes effect only when all of these hold (`crew_humanonly.resolve`):
   `null` or removal, which drops a veto); a `false` written by hand reads as
   human-only.
 
-**What this does NOT do yet (crew 1.3.9).** No hook reads these keys. The
-hooks that would honour an opt-out, and the prompt hook that records a
-`/crew:confirm-config` confirmation, are review harness and land in a
-separate change. Until then no confirmation can be recorded, so no opt-out
-can take effect, and the rules are exactly what they were: `/crew:approve` is
-recorded only from your own prompt (`approval_hook.py`), and the promote
-marker is human-only by instruction alone - no hook checks who created it.
-`crew_confirm_config.py resolve` shows what each key would resolve to.
+**What is live (crew 1.3.21).** The prompt hook (`approval_hook.py`) now
+records `/crew:confirm-config <change_id>` from a prompt you typed, so a
+double confirmation can complete, and `humanOnly.approve: false` takes effect
+through ONE decision point, `crew_ticket.cli_approval_allowed`: with an opt-out
+in force a `cli`-recorded approval receipt counts as if `scope.allowCliApproval`
+were `true`, for the scope guard, the Stop audit and every autopilot reader at
+once. It does NOT let the session run `crew_ticket.py approve` (the scope guard
+still refuses that text); the session's route is `crew_autopilot.py approve`,
+which still needs `autopilot.approval` `self` or `risk` and `autopilot.mode`
+`plan` or `backlog`. Anything unclear - the module missing, the resolver
+raising or answering anything but exactly `humanOnly: false` - reads as
+human-only.
+
+**Still human-only (crew 1.3.21).** No hook reads `humanOnly.promoteMarker`:
+the promote marker is human-only by instruction alone, and no hook checks who
+created it. `crew_confirm_config.py resolve` shows what each key would
+resolve to.
+
+**Who can write the receipts.** The double confirmation is recorded only by
+the prompt hook, from your own prompt. The scope guard (when `scope.mode` is
+not `off`) refuses every Write/Edit under `~/.claude/crew/confirm-config/` and
+every shell command that names that store beside a writing word. That is a
+textual tripwire, not a sandbox: a session that sets out to forge a receipt
+(`python -c`, an encoded command, a variable holding the path) still can, and
+`scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
+meaningful only with `scope.mode` `block`.
+
+**`/crew:approve-mass <id>` (crew 1.3.21).** Your yes to ONE blocked mass
+delete or mass overwrite, typed by you and recorded by the same prompt hook in
+`<git-common-dir>/crew/mass-approvals/<id>.json`, good for 15 minutes. The
+directory is under `<git-common-dir>/crew/`, which the scope guard refuses to
+every Write/Edit and every shell command naming it, so the session cannot
+write the file. Nothing in this release reads it: the guard that prints an
+`<id>` is separate.
 
 ## Reference (generated)
 

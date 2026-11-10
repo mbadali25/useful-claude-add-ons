@@ -160,6 +160,10 @@ _BASH_CONTINUATION_RE = re.compile(r"\\\r?\n")
 _PS_CONTINUATION_RE = re.compile(r"`\r?\n")
 _DOTGIT_CREW_RE = re.compile(r"\.git[\\/]+crew\b|git-common-dir\b.*\bcrew\b",
                              re.IGNORECASE | re.DOTALL)
+# The double-confirmation store (`crew_humanonly.store_dir`): the receipts that
+# make a `humanOnly.*: false` count. A shell command naming `confirm-config/`
+# beside a writing word is refused like one naming <git-common-dir>/crew/.
+_CONFIRM_STORE_RE = re.compile(r"confirm-config[\\/]", re.IGNORECASE)
 # A redirect (not into /dev/null, $null or another descriptor), or a word
 # that writes files. Reading crew's state -- `cat`, `Get-Content` -- passes.
 _WRITES_RE = re.compile(
@@ -257,6 +261,13 @@ def _refresh_artifact(top, real_rel, checks, approval):
     return all(crew_refresh_check.is_refresh_artifact(r, dirs) for r in checks)
 
 
+def confirm_store():
+    """The double-confirmation receipts store, beside the machine config
+    (`crew_humanonly.store_dir()` for the default config path). Spelled here
+    so this guard imports neither `crew_state` nor `crew_humanonly`."""
+    return os.path.join(os.path.expanduser("~"), ".claude", "crew", "confirm-config")
+
+
 def protected(top, state, target, base):
     """True when `target` names crew's approval/ledger state, or bookkeeping
     a Write/Edit may never touch (module docstring, rule 2)."""
@@ -265,6 +276,8 @@ def protected(top, state, target, base):
     named = os.path.normpath(absolute)
     for path in (real, named):
         if state and _under(path, state):
+            return True
+        if _under(path, confirm_store()):
             return True
         rel = _rel(path, top)
         if rel is not None and os.path.normcase(rel) == os.path.normcase(SCOPE_BASE):
@@ -342,6 +355,10 @@ def _reading_refusal(command, written, common, top, agent_type=None):
         state and os.path.normcase(state).replace("\\", "/") in folded)
     if names_state and _WRITES_RE.search(command):
         return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
+    store = os.path.normcase(confirm_store()).replace("\\", "/")
+    if (_CONFIRM_STORE_RE.search(command) or store in folded) and _WRITES_RE.search(command):
+        return ("it writes under the confirm-config store, the receipts of the owner's "
+                "double confirmation")
     return None
 
 
