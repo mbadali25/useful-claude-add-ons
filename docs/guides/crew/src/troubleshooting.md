@@ -65,7 +65,18 @@ registers one launcher per event per shell (`crew-hook.sh`, and `crew-hook.ps1` 
 the launcher starts one dispatcher, `crew_hook.py <Event>`, which runs that event's scripts below at once and
 combines what they print. On Windows only the PowerShell launcher runs, so no event fires twice. When the
 launcher or dispatcher itself fails in a repo crew governs, `PreToolUse`, `UserPromptSubmit` and `Stop` refuse
-with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged.
+with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged. Only the four stateless PreToolUse judges (`role-write-guard`, `cloud-guard`, `env-guard`, `scope-guard`) are run
+once more after a timeout, and only when the dispatch deadline leaves room for a second timeout's cleanup; at the
+defaults that is `role-write-guard` on every platform and the 15-second `cloud-guard`, `env-guard` and `scope-guard`
+rows off Windows. `promote-gate`, `approval-hook`, `verify-gate` and `completion-audit` are never retried (they record
+state), and a retried guard can leave a duplicate `guard.log` row. The line says `attempts=N`, so you can tell whether
+a retry ran. If the guard still cannot answer, the refusal is led by `crew-hook: UNKNOWN (guard timeout, not a policy
+deny)`. A guard that could not fork or allocate (a stderr line that is itself `fork: ... Resource temporarily unavailable`, `OSError: [Errno 11]`, `BlockingIOError: EAGAIN`, a bare `MemoryError`; text that merely quotes those words, such as a path, is not matched)
+is led by `UNKNOWN (resource exhaustion, not a policy deny)`, and a guard's own "no usable python" refusal
+by `UNKNOWN (no usable python, not a policy deny)` (only that fixed one-line refusal; a deny that quotes the words in
+a path is still a deny). An `UNKNOWN` line is a refusal because crew could not tell, not because a rule said
+no: retry the call, and free memory or processes if it repeats. A real deny never carries the label. Setting
+`CREW_HOOK_TIMING_FILE` to a path ending `.crew-trace` records each guard's start, end and milliseconds.
 
 | Event | Script | What it does | Switch | Default |
 |---|---|---|---|---|
@@ -321,7 +332,8 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
 ## Scope: approval and the completion audit
 
 A ticket's contract lives in `.work/tickets/<id>/`: `spec.md`'s `## Touch` section names every path
-the ticket may change; `plan.md`'s `Files:` lines must each fall inside Touch. Two hooks hold a
+the ticket may change; `plan.md`'s `Files:` lines must each fall inside Touch (steps also carry
+`Lines:` and a kind tag, stated to the planner with a 300-line cap that approval does not check yet). Two hooks hold a
 session to that contract — see [Daily workflow: scope and approval](daily-workflow-scope.md) for the
 contract itself. This section is what goes wrong with the approval and the audit.
 
@@ -469,6 +481,14 @@ contract itself. This section is what goes wrong with the approval and the audit
   its time and what happened (`killed-at-bound`, `exit-nonzero`, `not-python-proof`,
   `not-tried-budget-spent`, ...). A timeout under heavy load is the machine, not a missing python:
   re-run when it is idle. The other PowerShell hooks and the bash twins do not report this yet.
+- **`CREW_PYTHON` and the bash guards (crew 1.2.109).** The launcher exports the interpreter it
+  already ran as `CREW_PYTHON`; `crew_py`, `crew_py_strict` and `role-write-guard.sh` take it before
+  walking `PATH`, so a guard started by the dispatcher no longer probes every candidate again (the
+  walk was the slow part on Windows under load). It is used only when it is an absolute path
+  (`C:\...` is converted with `cygpath -u`), a regular executable file, named `py`, `python` or
+  `python3.x`; anything else is ignored and the old walk runs. A guard whose helper script is
+  missing (or whose path cannot be resolved) now refuses with `<name>.py is missing or its path could
+  not be resolved` instead of python's `can't find '__main__' module in '<repo>'`.
 
 ## Verify gate says 0 rules ran, or deferred to CI
 
@@ -488,6 +508,26 @@ not errors, and neither blocks the turn:
   Push the branch, or run `/crew:verify --all` to check it here.
 
 A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.
+
+Since crew 1.3.0 the gate also keeps the **hook deadline** (`CREW_HOOK_DEADLINE`, the Stop hook's
+600s limit), because the budget works from estimates and an estimate can be wrong (measured: 862s
+on Windows, killed by the hook, nothing recorded):
+
+- **`verify-gate: deferred: would pass the hook deadline - rules[N] is priced Ms and Ks are left ...
+  - NOT VERIFIED this turn: <command>`**: before each rule, its price is held against the time left
+  less a 60s margin. The rule did not run; the verified marker does not advance. Run
+  `/crew:verify --all` (no deadline) to check it here.
+- **`a previous run was killed at the hook deadline while running <command> ... priced at Ns or
+  more from now on`**: the last run was killed mid-rule. The gate saved what it had measured as it
+  went (`.crew/.verify-gate.timings.json`, `.crew/.verify-gate.log` headed `RUN NOT FINISHED`), and
+  the command in flight is now priced at no less than the time it ran, so Stop defers it by name
+  instead of starting it into the same kill. `/crew:verify --all` measures it again.
+- **`the lock at .crew/.verify-gate.lock names a holder ... whose process no longer exists`**: a
+  killed gate's lock is reclaimed at once instead of backing off until its deadline. A holder that is
+  alive, or that cannot be asked, still makes the next run back off (`NOTHING WAS VERIFIED`).
+- **Scope larger than the branch**: the diff base is the merge-base with `origin/<default>` when that
+  ref exists, else the local branch; the detail log (`--verbose`) names which. A local `main` behind
+  the remote no longer drags merged work into scope.
 
 ## Verify gate prints one line, or says "unchanged since last Stop"
 

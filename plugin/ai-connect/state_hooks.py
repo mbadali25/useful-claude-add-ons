@@ -37,8 +37,15 @@ class SettingsError(Exception):
     """A settings file that is not what this module can safely change; it was left as it is."""
 
 
+# Claude Code's own default is 600 s (30 s on UserPromptSubmit). The tool answers from the session's open
+# connection without waiting for the Bridge, so a few seconds is plenty and a stuck call cannot hold a turn.
+HOOK_TIMEOUT_S = 5
+
+
 def _state_hook(state: str) -> dict:
-    return {"type": "mcp_tool", "server": MCP_SERVER, "tool": STATE_TOOL, "input": {"state": state}}
+    """One non-blocking hook (an mcp_tool hook that fails never blocks): a literal state, a short timeout."""
+    return {"type": "mcp_tool", "server": MCP_SERVER, "tool": STATE_TOOL, "input": {"state": state},
+            "timeout": HOOK_TIMEOUT_S}
 
 
 # Event -> the one matcher group kept there. Only the state goes to the

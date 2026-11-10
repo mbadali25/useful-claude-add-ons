@@ -11,10 +11,19 @@
 # `scope.mode` to off (from bash: only an absent file is) -- python resolves a
 # corrupt config or an unknown mode to block, so a wrapper that recognised only
 # literal block/auto would be the one place those shapes failed open.
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The script's directory without a subshell or `dirname` when the path is
+# absolute (the dispatcher starts every guard by its full `D:/...` path): on Git
+# Bash each fork is an MSYS process start, and the guards' budget is shared by
+# every lane that runs at once. A relative path falls back to the old `cd`.
+case "${BASH_SOURCE[0]}" in
+  /*|[A-Za-z]:/*) DIR=${BASH_SOURCE[0]%/*} ;;
+  *) DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" ;;
+esac
 . "$DIR/_common.sh"
 
-INPUT=$(cat)
+# The payload is not read here: scope_guard.py reads it from this script's own
+# stdin, which it inherits. `INPUT=$(cat)` and `printf | python` cost two MSYS
+# process starts on Git Bash, and nothing else in this wrapper reads it.
 
 # BYTE-FOR-BYTE the copy in completion-audit.sh (asserted by the tests).
 # True only when `.crew/config.json` PROVABLY leaves the scope hooks off, and
@@ -42,7 +51,7 @@ PY=$(crew_py_strict) || {
   exit 2
 }
 
-printf '%s' "$INPUT" | PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$DIR/scope_guard.py"
+PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$DIR/scope_guard.py"
 status=$?
 
 if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then

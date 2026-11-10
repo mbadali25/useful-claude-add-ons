@@ -7,6 +7,36 @@ from the plugin's directory (`plugin/ai-connect`). Each one can be run again: a 
 that is already done says `already done` and changes nothing. Add `--dry-run` to see
 every step first; it runs no tool and changes nothing.
 
+> **Since 0.2.12: one join code.** With the new machine already on the VPN, adding it is
+> two commands, and nothing is restarted:
+>
+> ```bash
+> ai-connect bridge invite --name laptop --host 100.x.y.z   # on the Bridge: a single-use code, 1h
+> ai-connect join                                           # on the new machine: paste the code
+> ai-connect bridge revoke --name laptop                    # later, to take it off again
+> ```
+>
+> The code carries the Bridge's address, a 128-bit secret that works once, the peer name
+> and an expiry; redeeming it enrols the machine's token and writes its client config. See
+> [the README](../README.md#5-adding-machines-join-codes-and-the-ai-connect-cli).
+> `deploy invite`, `deploy join` and the Tailscale-key flow below are **deprecated**: they
+> print a notice, keep working through 0.2.x, and are removed in the next minor release.
+> The tailnet itself is still joined with `deploy tailnet-setup` and `vpn/vpn-up`.
+>
+> **Since 0.2.15: TLS with a pinned certificate.** The code also carries the SHA-256 of the
+> Bridge's self-signed certificate and its `wss://` port (10000 by default); `join` checks
+> that certificate before it sends anything and fails closed on a mismatch, never falling
+> back to `ws://`. The Bridge serves plain `ws://` on 9999 beside it in 0.2.15 only;
+> **0.3.1 serves `wss://` alone**. Before then:
+>
+> - add `tcp:10000` to the tailnet policy by hand (the [ACL template](../vpn/acl-template.hujson)
+>   has it; a policy already applied does not), and open 10000 in the Bridge's firewall:
+>   `deploy bridge` still opens only `server.port` in 0.2.15;
+> - pin every machine that joined earlier, or through `deploy peer` / `deploy join`, which
+>   still write `ws://`: `ai-connect pin <fingerprint>` on it, with the fingerprint that
+>   `ai-connect bridge cert show` prints on the Bridge;
+> - after `ai-connect bridge cert rotate`, restart the Bridge and re-pin every machine.
+
 This assumes the Bridge exists: `deploy tailnet-setup --apply` and `deploy bridge` have
 run on it once ([the runbook](README.md)). The Bridge is also the admin machine: it holds
 the OAuth client that mints join keys.
@@ -58,7 +88,11 @@ deploy\deploy.ps1 join --invite-file laptop.invite
 
 Run it as the user whose Claude Code sessions will use AI-Connect, not under `sudo`: the
 config and the token go to that user's home, and `sudo` (or UAC on Windows) is asked for
-only where Tailscale needs it. It checks for other VPNs, installs Tailscale if it is missing, joins the tailnet with the
+only where Tailscale needs it. On a machine where that user is root (a container, a
+headless box), say so with `--allow-root` (or `AI_CONNECT_ALLOW_ROOT=1`, or
+`install.allow_root: true`): one warning line, the config and token owner-only in root's
+own home, no `sudo`; `AI_CONNECT_ALLOW_ROOT=0` or `false` refuses root (README, "Installing
+as root"). It checks for other VPNs, installs Tailscale if it is missing, joins the tailnet with the
 invite's key, deletes the used invite file, makes this machine's own token (owner-only, in
 `~/.config/ai-connect/own-peer.token`), writes the client config, and prints:
 
@@ -171,7 +205,8 @@ refuses the Bridge's own peer. On the removed machine itself, `deploy uninstall 
 | `Bridge port reachable FAIL` | The Bridge is down (`deploy status` there), or the tailnet policy does not let `tag:ai-peer` reach `tag:bridge:9999`. |
 | `peer_status` says `Standby: another session holds the name` | The Bridge or this machine still runs 0.1.8, which gives a machine one session. Update both to 0.2.0; see [Several sessions on one machine](#several-sessions-on-one-machine). |
 | `node key: EXPIRES` in `status`, or a name in `list`'s last line | Run `deploy approve --name <it>` on the Bridge (`deploy bridge` for the Bridge itself). |
-| `not root and no sudo` | Run `join` as root, or install `sudo`. |
+| `not root and no sudo` | Run `join` as root (with `--allow-root` for the warning and owner-only files), or install `sudo`. |
+| `refusing to run as root` | `AI_CONNECT_ALLOW_ROOT=0` or `install.allow_root: false` says no root here: run as the user, or pass `--allow-root`. With `HOME=` in the line, root kept another user's home (`sudo -E`): use `sudo -i`. |
 | A route inside `100.64.0.0/10` stops `join` | Another VPN claims Tailscale's addresses; see below. |
 
 ## Running alongside other VPNs

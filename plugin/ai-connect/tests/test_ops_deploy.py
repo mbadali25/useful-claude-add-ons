@@ -56,7 +56,7 @@ def bridge(request, tmp_path_factory, venv):
                        (config_dir / "observer.token").read_text(encoding="utf-8").strip(),
                        (config_dir / "user.token").read_text(encoding="utf-8").strip()]
         run.second = Phase(box, *args)
-        run.status = Phase(box, "status")
+        run.status = Phase(box, "status", non_root=True)  # ufw is read only as root: a user, whatever the uid
         run.add_peer = Phase(box, *args, "--peer", "desk")
         run.peers_after_add = set(box.config()["auth"]["peers"])
         run.uninstall_dry = Phase(box, "uninstall", "--purge", "--dry-run", *port)
@@ -141,7 +141,7 @@ def test_bridge_status(bridge):
     status = bridge.status
     assert status.res.returncode == 0, status.text
     assert "service: running" in status.out
-    if bridge.target == "linux":  # not root here, and status runs nothing through sudo
+    if bridge.target == "linux":  # run as a user, and status runs nothing through sudo
         assert "firewall: not checked (ufw needs root" in status.out
     else:
         assert f"firewall: rule present for {SUBNET} on port {bridge.port}" in status.out
@@ -673,7 +673,7 @@ def peer(tmp_path_factory, venv):
         run.state = box.state()
         run.client = box.config()["client"]
         run.second = Phase(box, *args, extra_env=key)
-        run.status = Phase(box, "status")
+        run.status = Phase(box, "status", non_root=True)  # ufw is read only as root: a user, whatever the uid
     finally:
         server.close()
     return run
@@ -775,8 +775,9 @@ def test_peer_opt_ins_in_a_dry_run_run_no_claude_command(box, tmp_path):
 
 
 # The peer-state hooks (busy / idle / waiting) are mcp_tool hooks: an error on every event wherever the MCP
-# server they call is not registered. So the plugin ships none, and deploy writes them only when the hooks
-# AND the server were asked for, into the settings of the scope the server is in (state_hooks.py).
+# server they call is not registered. So the plugin ships none, and deploy writes them with the server
+# (--register-mcp, on by default since 0.2.4; --no-state-hooks opts out), into the settings of the scope
+# the server is in (state_hooks.py).
 
 
 def state_hooks_module():
@@ -814,14 +815,31 @@ def test_peer_writes_the_state_hooks_for_the_user_with_scope_user(box, tmp_path)
     assert hooks.without_state_hooks(json.loads(box.user_settings.read_text(encoding="utf-8"))) == foreign
 
 
-@pytest.mark.parametrize("opt_in", [["--install-hooks"], ["--register-mcp"], ["--register-mcp", "--scope", "user"]])
-def test_peer_writes_no_state_hooks_without_both_opt_ins(box, tmp_path, opt_in):
-    """Hooks alone have no server to call; the server alone was not a request for hooks."""
+def test_peer_writes_the_state_hooks_with_the_server_alone(box, tmp_path):
+    """--register-mcp is enough: the owner's 2026-11-06 default is state reporting ON where the server is."""
+    run = peer_on_tailnet(box, tmp_path, "--register-mcp")
+    assert run.res.returncode == 0, run.text
+    assert state_hooks_module().present(box.project_settings), run.out
+    assert [c for c in run.calls if c[:3] == ["claude", "plugin", "install"]] == []  # the watcher stays opt-in
+
+
+@pytest.mark.parametrize("opt_in", [["--install-hooks"], []])
+def test_peer_writes_no_state_hooks_without_the_server(box, tmp_path, opt_in):
+    """Hooks alone have no server to call: they would be an error on every event."""
     run = peer_on_tailnet(box, tmp_path, *opt_in)
     assert run.res.returncode == 0, run.text
     assert not box.user_settings.exists() and not box.project_settings.exists()
     assert "peer-state hooks to" not in run.out
     assert ("note: the peer-state hooks" in run.out) == (opt_in == ["--install-hooks"])
+
+
+@pytest.mark.parametrize("scope", [[], ["--scope", "user"]])
+def test_peer_no_state_hooks_keeps_the_server_alone(box, tmp_path, scope):
+    run = peer_on_tailnet(box, tmp_path, "--register-mcp", "--no-state-hooks", *scope)
+    assert run.res.returncode == 0, run.text
+    assert [c for c in run.calls if c[:3] == ["claude", "mcp", "add"]]
+    assert not box.user_settings.exists() and not box.project_settings.exists()
+    assert "peer-state hooks to" not in run.out
 
 
 def test_peer_dry_run_names_the_state_hooks_and_writes_none(box, tmp_path):
@@ -1024,13 +1042,14 @@ def _sh(box, args):
     if os.name == "nt":  # Git Bash needs its own coreutils (dirname) on PATH
         env["PATH"] = os.pathsep.join([r"C:\Program Files\Git\usr\bin", env["PATH"]])
     return subprocess.run([BASH, str(DEPLOY_DIR / "deploy.sh"), *args], capture_output=True, text=True,
-                          check=False, stdin=subprocess.DEVNULL, env=env, timeout=180)
+                          check=False, stdin=subprocess.DEVNULL, env=env, timeout=180,
+                          cwd=box.project)
 
 
 def _ps1(box, args, tmp_path):
     return subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(DEPLOY_DIR / "deploy.ps1"), *args],
                           capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL, timeout=180,
-                          env=dict(box.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
+                          cwd=box.project, env=dict(box.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
 
 
 @pytest.mark.skipif(not BASH or not PWSH, reason="needs both bash and pwsh at known paths")
@@ -1060,3 +1079,24 @@ def test_deploy_ps1_passes_the_repo_powershell_static_check(box, tmp_path):
                           str(DEPLOY_DIR / "deploy.ps1")], capture_output=True, text=True, check=False,
                          stdin=subprocess.DEVNULL, env=dict(box.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
     assert res.returncode == 0, res.stdout + res.stderr
+
+
+# ---------------------------------------------------------------- root seam (#609)
+
+
+@pytest.mark.parametrize("forced,euid,expect", [("0", 0, False), ("1", 1000, True), ("", 0, True), ("", 1000, False)])
+def test_deploy_root_seam_wins_over_the_real_euid(forced, euid, expect):
+    """AI_CONNECT_DEPLOY_ROOT=0 means not root even when the real euid is 0; unset keeps the euid."""
+    env = {k: v for k, v in os.environ.items() if k != "AI_CONNECT_DEPLOY_ROOT"}
+    if forced:
+        env["AI_CONNECT_DEPLOY_ROOT"] = forced
+    code = (f"import os, sys; os.geteuid = lambda: {euid}; sys.path.insert(0, {str(DEPLOY_DIR)!r}); "
+            "import deploy_core; print(deploy_core.IS_ROOT)")
+    res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=60, check=False)
+    assert res.stdout.strip() == str(expect), res.stderr
+
+
+def test_the_box_defaults_to_not_root(tmp_path, venv):
+    """A suite run as root still exercises the sudo branch unless a test asks for root."""
+    box = Box(tmp_path, venv, NATIVE)
+    assert box.env["AI_CONNECT_DEPLOY_ROOT"] == "0"

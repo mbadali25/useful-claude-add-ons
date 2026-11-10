@@ -109,6 +109,11 @@ def known_values():
 # `skills/crew-setup/global-config.md`'s role-pin table and its `pm.authority`
 # advice. A key without an entry recommends its built-in default.
 RECOMMENDATIONS = {
+    # Keep the human step: `true` is writable at both layers, while a repo
+    # `null` (dropping a veto) is refused, so the default is not offered there.
+    "humanOnly.approve": (True, "keeps /crew:approve a step the user types"),
+    "humanOnly.promoteMarker": (True, "keeps the production promote marker "
+                                "a step the operator creates"),
     "pm.authority": ("report-only", "the default on any hesitation: it "
                      "recommends and waits for you"),
     "dev.roles.developer": ({"provider": "codex", "model": "gpt-6-astra"},

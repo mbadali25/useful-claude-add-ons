@@ -116,7 +116,7 @@ nothing else running.
 | README install URLs are pinned to a commit | after merging a change to `scripts/install-prerequisites.sh` or `scripts/install-prerequisites.ps1`, re-pin both to the new SHA |
 | `.ps1` test cases skip where `pwsh` is not installed, and some run only on native Windows | say which were skipped; CI's Windows jobs run them |
 | A live review round, a real `/crew:promote` | not reproducible in CI; say they did not run |
-| The crew outcome eval (L-0728): `evals/crew-outcome/container/canary.sh` in the real container behind the real proxy, then billed runs through `scripts/crew-outcome-eval.py` | local only, never in CI (no secret, and the crew arm needs Codex); CI runs only `scripts/_test/crew-outcome-eval.py` against stubs. Method, commands and the budget are in `evals/crew-outcome/README.md`; say the canary and the runs did not run |
+| The crew outcome eval (L-0728): `evals/crew-outcome/container/canary.sh` in the real container behind the real proxy, then billed runs through `scripts/crew-outcome-eval.py` | local only, never in CI (no secret, and the crew arm needs Codex); CI runs only `scripts/_test/crew-outcome-eval.py` against stubs. Method, commands and the budget are in `evals/crew-outcome/README.md`; say the canary and the runs did not run. First results: `docs/evals/crew-outcome-results.md` |
 
 ## Reporting a result
 

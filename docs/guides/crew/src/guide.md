@@ -31,13 +31,14 @@ independent eyes.
 | `security` | Read-only review of risky changes | No Write or Edit |
 | `researcher` | Reads external sources only | Does not edit the repo |
 
-A fifth file, `session-relay`, is not a role: it is a transport agent on Haiku 5.5 that carries messages between sessions (SendMessage and ListAgents only; no Read, Write, Edit or Bash).
+A fifth file, `session-relay`, is not a role: it is a transport agent on Haiku 5.5 that carries messages between sessions (SendMessage and ListAgents only; no Read, Write, Edit or Bash). If ListAgents is unavailable at runtime, it still sends to the name exactly as given and marks that line `could not verify recipient` in its report.
 
 **The coordinator is a model pin, not a role.** Set `dev.roles.coordinator` (for example
 `{"provider": "claude", "model": "claude-opus-5-5"}`) and `dev.roles.developer` (for example
 `{"provider": "claude", "model": "claude-sonnet-5-5"}`) in `/crew:model`. A wave prints the
 coordinator pin and puts the developer model on every lane launch. Both default to unset, which
-changes nothing.
+changes nothing. A Claude pin takes a full Claude id or `opus`, `sonnet`, `haiku` or `fable`
+(Fable 5.1). Fable runs only when you pin it like this; crew never picks it for you.
 
 **Running agents on Kimi.** Claude Code runs subagents on Claude models only,
 so `explorer`, `researcher` and `security` can hand their task to the Kimi Code
@@ -127,8 +128,10 @@ A ticket is a directory under `.work/tickets/` holding three files:
 - `spec.md`, written by `/crew:spec`: the contract, with six sections (Intent,
   Exclusions, Evidence, Unknowns, Touch, Acceptance checks). `## Touch` lists
   the paths the ticket may change.
-- `plan.md`, written by `/crew:plan`: the steps, each with its files, test,
-  risk and standards.
+- `plan.md`, written by `/crew:plan`: the steps, each with its files, a
+  projected line count (`Lines:`), test, risk and standards. A plan is meant to
+  stay at 300 production lines; this is stated to the planner and not yet checked
+  at approval.
 
 Then:
 
@@ -496,6 +499,16 @@ crew reads two files: the machine-global `~/.claude/crew/config.json` and the
 repo's `.crew/config.json`. The repo file wins, except where a setting
 ratchets, is personal (the stricter of the two wins), or only the machine file
 may arm it.
+
+**The human-only opt-out (crew 1.3.9).** `humanOnly.approve` and
+`humanOnly.promoteMarker` let the owner opt out of `/crew:approve` and the
+production promote marker being human-only. A `false` counts only from the
+machine file or an untracked repo file, never a committed one; a `true` in
+either file vetoes it; and it is written only after the owner types
+`/crew:confirm-config <change_id>` twice. In 1.3.9 no hook reads these keys
+and nothing records that confirmation, so the human-only rules hold exactly as
+before; the configuration reference's "The human-only opt-out" section says
+what lands next.
 
 - `/crew:config` shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.
