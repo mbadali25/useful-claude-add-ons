@@ -9,6 +9,11 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.3.20: pylint convention messages in the trust-store tests (L-0888)
+
+- **Summary.** `crew` 1.3.20: no behaviour change; the trust-store tests now pass the repo's pylint gate.
+- Re-bump only. The PR's CI pylint step failed on four convention messages in `plugin/crew/tests/` (superfluous parens, two lines over 120 columns, an explicit `__enter__` call replaced by a `with` block); the version bump is because `plugin/crew/` changed after 1.3.19 was set.
+
 ### Changed — crew 1.3.19: the verify gate runs a repo's verify map only for a repo this machine trusts (L-0888)
 
 - **Summary.** `crew` 1.3.19: `verify-gate.sh` no longer runs `.crew/verify.json` rules or a smoke script from a repo you have not approved on this machine; the first Stop in each such repo prints `UNTRUSTED, not run` until you approve it once.
