@@ -47,6 +47,7 @@ The command is read from the payload here, so it is matched as written.
 """
 import contextlib
 import io
+import importlib
 import json
 import math
 import os
@@ -355,6 +356,14 @@ class Gate:  # pylint: disable=too-many-instance-attributes
 
     # -- blocking ---------------------------------------------------------
 
+    def require(self, module, why):
+        """Import a helper; one that is not in the scripts directory blocks by
+        name (the shell checked each with crew_py_script before it ran it)."""
+        if not os.path.isfile(os.path.join(HERE, module + ".py")):
+            self.block(f"{module}.py is missing or its path could not be resolved, so {why}. "
+                       "This is not a pass.")
+        return importlib.import_module(module)
+
     def block(self, why):
         """The old `block()`: an open incident records a skip, otherwise exit 2."""
         if incident_active():
@@ -417,11 +426,11 @@ class Gate:  # pylint: disable=too-many-instance-attributes
         and dispatches nothing, and the map is committed as it is."""
         if not os.path.isfile(MAP) or not self.cmd.strip():
             return False
-        import _promote_dispatch  # pylint: disable=import-outside-toplevel
-        import _promote_match  # pylint: disable=import-outside-toplevel
         os.environ["CREW_HEAD_MAP"] = ""
         os.environ["CREW_MAP_DIRTY"] = ""
         try:
+            import _promote_dispatch  # pylint: disable=import-outside-toplevel
+            import _promote_match  # pylint: disable=import-outside-toplevel
             if _promote_match.names(self.cmd, "", ""):
                 return False
             if _promote_dispatch.decide(self.cmd.replace("\r", "").rstrip("\n"), "bash") != []:
@@ -512,7 +521,8 @@ class Gate:  # pylint: disable=too-many-instance-attributes
         """T-0062: the command read as a workflow dispatch too; its environments
         are added to containment's. A reader that FAILS is never "nothing"."""
         self.envname = ",".join(names) if names else "workflow dispatch"
-        import _promote_dispatch  # pylint: disable=import-outside-toplevel
+        _promote_dispatch = self.require(
+            "_promote_dispatch", "the command cannot be read as a workflow dispatch")
         text = self.cmd.replace("\r", "").rstrip("\n")
         try:
             records = _promote_dispatch.decide(text, "bash") if text.strip() else []
@@ -545,7 +555,8 @@ class Gate:  # pylint: disable=too-many-instance-attributes
                 self.block(f"the command runs from '{self.run_cwd}', which does not exist, so it "
                            "is not inside a git worktree - cannot establish what is being "
                            "deployed.")
-        import _promote_tree  # pylint: disable=import-outside-toplevel
+        _promote_tree = self.require(
+            "_promote_tree", "the directory the deploy runs from cannot be read")
         try:
             records = []
             for kind, tok in _promote_tree.records(self.cmd):
@@ -652,7 +663,8 @@ class Gate:  # pylint: disable=too-many-instance-attributes
 
     def github_rule(self, full, tree, blob):
         """L-0648: the matched environment's `github` sha rule."""
-        import _promote_github  # pylint: disable=import-outside-toplevel
+        _promote_github = self.require(
+            "_promote_github", "the github entry's sha rule cannot be checked")
         command = self.cmd.replace("\r", "").rstrip("\n")
         names = [n for n in self.envname.split(",") if n]
         try:

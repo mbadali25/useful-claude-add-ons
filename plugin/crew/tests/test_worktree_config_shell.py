@@ -905,7 +905,8 @@ def test_scope_wrapper_without_python_allows_when_no_checkout_has_a_config(
 # Every hook script outside the session hooks above: a line that names the own
 # config path outside a comment is a user-facing message (echo / WriteLine), and
 # these are the counts; anything else must be in OWN_PATH_ALLOWED.
-OWN_PATH_MESSAGES = {"promote-gate.sh": 1, "promote-gate.ps1": 1, "scope-guard.sh": 2,
+# promote-gate.sh: 0 since crew 1.3.33 - its one message moved into _promote_gate.py.
+OWN_PATH_MESSAGES = {"promote-gate.ps1": 1, "scope-guard.sh": 2,
                      "verify-gate.sh": 3}
 
 
