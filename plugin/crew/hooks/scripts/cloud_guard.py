@@ -3414,10 +3414,11 @@ def main():
     # the mass delete / create / change stop even where the cloud guard is
     # `off` (`crew_mass.settings` never raises).
     mass = crew_mass.settings(root)
-    only_mass = mode == "off" and mass["armed"]
-    if mode == "off" and not mass["armed"]:
-        return 0
-    if only_mass:
+    only_mass = False
+    if mode == "off":
+        if not mass["armed"]:
+            return 0
+        only_mass = True
         mode = "block"
     if problem:
         # Armed, and handed something it cannot read as a command. Refuse in

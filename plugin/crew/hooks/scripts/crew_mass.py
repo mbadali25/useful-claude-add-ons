@@ -613,8 +613,11 @@ def _walk_files(path, globs=(), cwd=None):
         dirs[:] = [d for d in dirs if not exempt(d, relative=True)]
         for name in files:
             full = os.path.join(folder, name)
-            if not exempt(os.path.relpath(full, path), relative=True)                     and not (globs and _exempt_at(full, cwd, globs)):
-                total.append(full)
+            if exempt(os.path.relpath(full, path), relative=True):
+                continue
+            if globs and _exempt_at(full, cwd, globs):
+                continue
+            total.append(full)
         if len(total) >= MAX_WALK:
             break
     return total
@@ -747,9 +750,10 @@ def count_git(spec, cwd, cd, runner=None, globs=()):
         status, names = fields[0][:1], fields[1:]
         if not names or exempt(names[-1], relative=True, globs=globs):
             continue
-        if (status == "D" and spec.rule == MASS_DELETE) \
-                or (status == "A" and spec.rule == MASS_CREATE) \
-                or (status in "MRCT" and spec.rule == MASS_CHANGE):
+        counted = ((status == "D" and spec.rule == MASS_DELETE)
+                   or (status == "A" and spec.rule == MASS_CREATE)
+                   or (status in "MRCT" and spec.rule == MASS_CHANGE))
+        if counted:
             total += 1
     return total
 
