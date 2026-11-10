@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.21**: A review waiver binds to the train base. `crew` 1.3.21: `requireReview: false` with a `reviewReason` no longer waives promote-gate's review evidence on its own; the environment must also name the promotion's train base in `reviewWaiverSha`.
+- **crew 1.3.22**: A review waiver binds to the train base. `crew` 1.3.22: `requireReview: false` with a `reviewReason` no longer waives promote-gate's review evidence on its own; the environment must also name the promotion's train base in `reviewWaiverSha`.
 - **crew 1.3.20**: One standard worktree root outside the repo (`worktrees.root`) and `/crew:worktrees`. `crew` 1.3.20: a new `worktrees.root` setting (repo or machine layer; default `~/.claude/crew/worktrees`) names one place outside the repo for crew's worktrees, and `/crew:worktrees` lists every worktree read-only and removes one on your `--yes`; Claude Code's own agent worktrees still go to `.claude/worktrees/` unless you register the opt-in `WorktreeCreate` hook it prints.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
