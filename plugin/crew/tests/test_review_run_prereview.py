@@ -217,7 +217,7 @@ def test_order_checks_before_selfcheck(tmp_path, fake):
 
 def test_spent_budget_skips_checks(tmp_path, fake):
     repo, scratch = _setup(tmp_path, [_ruff(fake)])
-    for _ in range(2):
+    for _ in range(rl.BUDGET):
         assert rl.reserve(str(repo), TICKET, "claude")[0]
 
     result = _run(repo, scratch, tmp_path, "codex")

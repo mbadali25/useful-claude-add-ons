@@ -4,7 +4,7 @@ Generated from the code by `python3 docs/guides/crew/src/config_reference.py --w
 `python3 scripts/check-marketplace.py` fails when this file is stale. The
 reasoning behind the keys is in `docs/crew/config-rationale.md`.
 
-89 keys: 52 settable in the machine-global file, 37 repo-only.
+91 keys: 53 settable in the machine-global file, 38 repo-only.
 
 ## The two layers
 
@@ -46,14 +46,40 @@ takes effect only when all of these hold (`crew_humanonly.resolve`):
   `null` or removal, which drops a veto); a `false` written by hand reads as
   human-only.
 
-**What this does NOT do yet (crew 1.3.9).** No hook reads these keys. The
-hooks that would honour an opt-out, and the prompt hook that records a
-`/crew:confirm-config` confirmation, are review harness and land in a
-separate change. Until then no confirmation can be recorded, so no opt-out
-can take effect, and the rules are exactly what they were: `/crew:approve` is
-recorded only from your own prompt (`approval_hook.py`), and the promote
-marker is human-only by instruction alone - no hook checks who created it.
-`crew_confirm_config.py resolve` shows what each key would resolve to.
+**What is live (crew 1.3.33).** The prompt hook (`approval_hook.py`) now
+records `/crew:confirm-config <change_id>` from a prompt you typed, so a
+double confirmation can complete, and `humanOnly.approve: false` takes effect
+through ONE decision point, `crew_ticket.cli_approval_allowed`: with an opt-out
+in force a `cli`-recorded approval receipt counts as if `scope.allowCliApproval`
+were `true`, for the scope guard, the Stop audit and every autopilot reader at
+once. It does NOT let the session run `crew_ticket.py approve` (the scope guard
+still refuses that text); the session's route is `crew_autopilot.py approve`,
+which still needs `autopilot.approval` `self` or `risk` and `autopilot.mode`
+`plan` or `backlog`. Anything unclear - the module missing, the resolver
+raising or answering anything but exactly `humanOnly: false` - reads as
+human-only.
+
+**Still human-only (crew 1.3.33).** No hook reads `humanOnly.promoteMarker`:
+the promote marker is human-only by instruction alone, and no hook checks who
+created it. `crew_confirm_config.py resolve` shows what each key would
+resolve to.
+
+**Who can write the receipts.** The double confirmation is recorded only by
+the prompt hook, from your own prompt. The scope guard (when `scope.mode` is
+not `off`) refuses every Write/Edit under `~/.claude/crew/confirm-config/` and
+every shell command that names that store beside a writing word. That is a
+textual tripwire, not a sandbox: a session that sets out to forge a receipt
+(`python -c`, an encoded command, a variable holding the path) still can, and
+`scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
+meaningful only with `scope.mode` `block`.
+
+**`/crew:approve-mass <id>` (crew 1.3.33).** Your yes to ONE blocked mass
+delete or mass overwrite, typed by you and recorded by the same prompt hook in
+`<git-common-dir>/crew/mass-approvals/<id>.json`, good for 15 minutes. The
+directory is under `<git-common-dir>/crew/`, which the scope guard refuses to
+every Write/Edit and every shell command naming it, so the session cannot
+write the file. Nothing in this release reads it: the guard that prints an
+`<id>` is separate.
 
 ## Guard profiles
 
@@ -63,7 +89,9 @@ guard, and the per-guard ratchet then takes the narrower layer. A malformed
 profile or override reads as the guard's floor (`block`, or `none` for the
 production guards), never as `off`. The per-guard keys of earlier versions
 (`guards.<guard>`) are still READ as aliases for `guards.overrides.<guard>`
-until `/crew:migrate` rewrites them, and are never written.
+until `/crew:migrate` rewrites them, and are never written. For `envGuard` an
+explicit `null` (`"guards": {"envGuard": null}`) is malformed and reads as `block`; only an
+absent key is `off`. The other guards still read a legacy `null` as absent.
 
 | Guard | `off` | `standard` | `strict` |
 |---|---|---|---|
@@ -96,10 +124,10 @@ SessionStart notice).
 
 | Family | Keys |
 |---|---|
-| `core` | 16 |
+| `core` | 17 |
 | `providers` | 18 |
 | `guards` | 2 |
-| `cloud` | 12 |
+| `cloud` | 13 |
 | `trackers` | 5 |
 | `autopilot` | 15 |
 | `context` | 11 |
@@ -107,7 +135,7 @@ SessionStart notice).
 | `memory` | 2 |
 | `platform` | 4 |
 
-## `core` keys (16)
+## `core` keys (17)
 
 | Key | Layer | Default | Values | Summary |
 |---|---|---|---|---|
@@ -115,6 +143,7 @@ SessionStart notice).
 | `verifyGate` | repo | `true` | not validated - read by `hooks/scripts/verify-gate.sh` (expects boolean) | Run the Stop verify gate. |
 | `humanOnly.approve` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_humanonly.py`) | The owner's opt-out of `/crew:approve` being human-only. null or `true` keeps it human-only; `false` opts out only from the machine file or an untracked repo file, only after `/crew:confirm-config` twice, and a `true` in either layer vetoes. crew 1.3.9: no hook acts on it yet, so it changes nothing today. |
 | `humanOnly.promoteMarker` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_humanonly.py`) | The same opt-out for the production promote marker `.crew/.approved-<env>-<sha>`, under the same rules. crew 1.3.9: no hook acts on it yet, and no hook today checks who created the marker. |
+| `worktrees.root` | both | `null` | absolute path or null (coerced in `hooks/scripts/crew_worktrees.py`) | The base directory for this repo's git worktrees, OUTSIDE the repo: they go in `<root>/<repo>-<digest>/<name>`. null is `~/.claude/crew/worktrees`; `~` is expanded, a relative path or one inside the repo is refused (never replaced by the default). It places the worktrees crew places (`/crew:emergency`, `crew_worktrees.py path`) and, once the owner registers the opt-in `WorktreeCreate` hook, the ones Claude Code creates; without the hook Claude Code keeps using `.claude/worktrees/`. |
 | `emergency.standDown` | repo | `true` | not validated - read by `hooks/scripts/_common.sh` (expects boolean) | Whether a declared incident may stand gates down; `false` forbids it. |
 | `emergency.maxTtlMinutes` | repo | `480` | integer (coerced in `hooks/scripts/crew_incident.py`) | Longest incident lifetime; never below `ttlMinutes`. |
 | `pm.authority` | both, widening warned | `"report-only"` | `report-only` \| `act` \| `autonomous` | How much the PM may do unasked. A widening is warned about; the two layers combine by precedence. |
@@ -158,7 +187,7 @@ SessionStart notice).
 | `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `hooks/scripts/crew_guards.py`) | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
 
-## `cloud` keys (12)
+## `cloud` keys (13)
 
 | Key | Layer | Default | Values | Summary |
 |---|---|---|---|---|
@@ -170,6 +199,7 @@ SessionStart notice).
 | `environments.nonProd` | repo | `[]` | not validated - read by `hooks/scripts/crew_config.py` (expects list of globs) | Terraform targets that are not production and may run unattended. |
 | `environments.prodUnattended` | both, ratchet | `false` | `false` \| `true` (ratchet: narrower layer wins; listed narrowest first) | Whether production terraform may run unattended; `true` only when both layers say so. |
 | `environments.workflows` | repo | `{}` | not validated - read by `hooks/scripts/crew_config.py` (expects object of glob to string) | Deploy workflow globs, each mapped to its environment or `input:<name>`. |
+| `environments.preProduction` | repo | `{}` | not validated - read by `hooks/scripts/crew_preprod.py` (expects object of exact name to {reason, targets}) | Environments labelled production that are not live yet: exact name -> `reason` (+ optional exact `targets`); judged non-production by the cloud guard, with an audit line. |
 | `unattendedCloud.aws.readOnly.profile` | machine-only | `null` | profile name, or null (coerced in `hooks/scripts/crew_unattended.py`) | The AWS profile an unattended run exports credentials from (`aws configure export-credentials`); it must yield temporary credentials. Machine file only. |
 | `unattendedCloud.aws.readOnly.identity` | machine-only | `null` | ARN prefix ending in `/`, or null (coerced in `hooks/scripts/crew_unattended.py`) | The assumed-role ARN prefix STS must report for that profile, ending in `/`; null refuses every launch. Machine file only. |
 | `unattendedCloud.aws.readOnly.region` | machine-only | `null` | region, or null (coerced in `hooks/scripts/crew_unattended.py`) | The AWS region the unattended run gets; null is `us-east-1`. Machine file only. |

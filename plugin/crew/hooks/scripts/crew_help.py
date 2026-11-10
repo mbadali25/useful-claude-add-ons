@@ -170,7 +170,7 @@ GROUPS = (
                       "init", "config", "config-setup", "model", "migrate", "debug", "survey")),
     ("merge-candidates", ("jira-sync", "sdp-sync", "obsidian-sync")),
     ("specialist", ("change", "confirm-config", "emergency", "gate", "promote", "split",
-                    "webtest")),
+                    "webtest", "worktrees")),
     ("removed", ("ticket", "work", "upgrade")),
 )
 

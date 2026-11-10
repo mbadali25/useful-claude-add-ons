@@ -76,6 +76,9 @@
     "approve": null,
     "promoteMarker": null
   },
+  "worktrees": {
+    "root": null
+  },
   "emergency": {
     "standDown": true,
     "maxTtlMinutes": 480
@@ -122,7 +125,8 @@
   "environments": {
     "nonProd": [],
     "prodUnattended": false,
-    "workflows": {}
+    "workflows": {},
+    "preProduction": {}
   },
   "change": {
     "requireForProduction": false

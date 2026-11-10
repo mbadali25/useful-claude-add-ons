@@ -171,7 +171,14 @@ def build_repo(base, armed, dirty=None):
             import pathlib  # pylint: disable=import-outside-toplevel
             root = scope_fixtures.make_repo(pathlib.Path(base), mode="block")
             (root / ".crew" / "config.json").write_text(json.dumps(ARMED_CONFIG), encoding="utf-8")
-            (root / ".crew" / "verify.json").write_text(json.dumps(VERIFY), encoding="utf-8")
+            # SRL-3312: requireReview:false waives only for the map's train base.
+            # Here the map commit sits on `main` itself, so the train base is
+            # its first parent: the commit HEAD is at before the map is added.
+            first = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(root), check=True,
+                                   capture_output=True, text=True).stdout.strip()
+            verify = {"environments": {name: dict(cfg, reviewWaiverSha=first)
+                                       for name, cfg in VERIFY["environments"].items()}}
+            (root / ".crew" / "verify.json").write_text(json.dumps(verify), encoding="utf-8")
             for args in (("add", "-f", ".crew/verify.json"), ("commit", "-qm", "verify map")):
                 subprocess.run(["git", *args], cwd=str(root), check=True, capture_output=True)
             with contextlib.redirect_stdout(io.StringIO()):
