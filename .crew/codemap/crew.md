@@ -51,10 +51,10 @@ Counted by walking the directories at this anchor:
 | | Count | How counted |
 |---|---|---|
 | Agents | 4 roles (5 files) | `.md` files in `plugin/crew/agents/` — `explorer.md`, `researcher.md`, `reviewer.md`, `security.md`, and `session-relay.md`, the transport agent (`crew_state.TRANSPORT_AGENTS`, `:1097`), which is not a role |
-| Commands | 38 | `.md` files in `plugin/crew/commands/` (38 since L-0667 added `graph.md`; 37 since T-0025 added `help.md`; 36 since T-0075 added `config-setup.md`; 35 since T-0004 added `autopilot.md`) |
+| Commands | 39 | `.md` files in `plugin/crew/commands/` (39 since crew 1.3.9 added `confirm-config.md`; 38 since L-0667 added `graph.md`; 37 since T-0025 added `help.md`; 36 since T-0075 added `config-setup.md`; 35 since T-0004 added `autopilot.md`) |
 | Skills | 33 | subdirectories of `plugin/crew/skills/` (includes 10 `stack-*` skills; `crew-standards` since T-0085, `crew-qa-standards` since #267, `stack-php` since L-0533, `stack-node` since L-0537) |
 
-`.claude-plugin/marketplace.json:247` states 4 agents, 38 commands and 33 skills in its `crew` entry's
+`.claude-plugin/marketplace.json:247` states 4 agents, 39 commands (38 before crew 1.3.9) and 33 skills in its `crew` entry's
 description (it also names the `session-relay` transport agent, a fifth `.md` file that is not a role),
 and `:248` the version, 1.2.84 (at bdde58724; it read 1.2.62 at the previous anchor), matching `plugin/crew/.claude-plugin/plugin.json:3`. This pass did not
 re-run the previous note's wider count-disagreement sweep across `README.md`/`plugin/README.md`/
@@ -225,7 +225,8 @@ deny > ask > allow, `decision: "block"` and `continue: false` win, `additionalCo
 `systemMessage` concatenate in table order. Fail closed: `armed` (`:276`) is True when crew governs the
 repo or that cannot be told; in an armed repo a guard row that times out, a missing script, or an
 exception in the dispatcher is exit 2 with a named reason on `BLOCKING_EVENTS` (`PreToolUse`,
-`UserPromptSubmit`, `Stop`, `:47`); an unarmed repo gets exit 0 (`_settle` `:539`, `_fault` `:613`).
+`UserPromptSubmit`, `Stop`, `:47`); an unarmed repo gets exit 0 (`_settle`, `_fault`). DERIVED (crew 1.2.100, review of #700): a guard row that times out is retried once only if it is in `RETRY_SAFE` (`plugin/crew/hooks/scripts/crew_hook.py:53`: role-write, cloud, env and scope guard; approval-hook, promote-gate, verify-gate and completion-audit never) and the dispatch deadline still leaves `RETRY_FLOOR` plus `_retry_reserve` (`:56`, the worst-case cleanup of a second timeout), decided in `work` (`:544`, the retry at `:566-587`); a failure the guard could not decide is labelled `UNKNOWN (guard timeout | resource exhaustion, not a policy deny)` by `_unknown_label` (`:640`), and a guard's own fixed "no usable python" refusal (`NO_PYTHON_REFUSALS` `:624`, matched by `_is_no_python_refusal` `:635` only when it is the whole of stderr) is labelled `UNKNOWN (no usable python, ...)` in `_settle` (`:654`), all ahead of the same fail-closed text; `CREW_HOOK_TIMING_FILE` records per-child timing and both launchers export `CREW_PYTHON` (nothing reads it until PR B). Line numbers before this paragraph in this note shifted and were not re-derived.
+DERIVED (crew 1.2.109): the shell guards consume the launchers' `CREW_PYTHON` first. `crew_py` (`plugin/crew/hooks/scripts/_common.sh:70`), `crew_py_strict` (`:207`) and role-write-guard.sh's `_resolve_role_write_python` (`:64`) carry one identical `BEGIN CREW_PYTHON` block: an absolute path (a Windows one goes through `cygpath -u`), a regular executable file, named `py`/`python`/`python3.x`, else the PATH walk. `crew_py_script` (`:470`) returns a script path or status 1, and promote-gate, cloud-guard, env-guard and role-write-guard fail closed naming the missing script.
 The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 339 lines; `crew-hook.ps1`, 482) supervise
 rather than exec it: exit 0 and 2 pass through, anything else becomes the armed/unarmed fault above,
 under one deadline (`CREW_HOOK_DEADLINE`, the registration timeout minus 5 s). `crew-hook.sh` exits 0 on
@@ -914,6 +915,32 @@ only the first gets `ok`. Tests: `plugin/crew/tests/test_crew_resume.py`,
 `plugin/crew/tests/sabotage_resume.py` (72 by `len(RESUME_MUTATIONS)` at `53f5482c`, 68 at bdde58724); `.crew/verify.json`
 rule 27 (`:333-344` since L-0516 inserted rule 10; rule 26 at `:289-299` on T-0094's merge of `8ab733d7`, `:291-301` after T-0094 grew rule 25, `:287-297` before).
 
+## The human-only opt-out and `/crew:confirm-config` (crew 1.3.9, PR 1 of 3)
+
+DERIVED on `feat/crew-human-only-optout` (cut from main `38baf66e0`); this
+section does not move the anchor. Two leaves, `humanOnly.approve` and
+`humanOnly.promoteMarker`, default `null` in both templates
+(`plugin/crew/hooks/scripts/crew_config.py:301`, `:553`;
+`crew_state.HUMAN_ONLY_DEFAULTS`). The reader is
+`plugin/crew/hooks/scripts/crew_humanonly.py:259` (`resolve`): a `false`
+counts only from the machine file or a repo file `tracking` (`:104`) reports
+`untracked` (`could not tell` never counts), only with no `true` in either
+layer, and only when `receipt_backs` (`:213`) finds the newest settled record
+for that (layer, file, key) an applied `false`. The writers refuse through
+`write_refusal` (`:82`, called from `crew_config.py:3407`); `enum_values`
+returns `VALUES` (`crew_config.py:3282`). The double confirmation is
+`plugin/crew/hooks/scripts/crew_confirm_config.py` (`propose` `:76`, `confirm`
+`:131`, `cancel` `:176`, CLI `main` `:205`, no confirm subcommand); its one
+write goes through `crew_config.apply_confirmed_optout` (`:4010`), and a crew
+write back to human-only revokes via `_revoke_human_only` (`:4000`).
+JUDGEMENT: inert by design. No hook imports `crew_humanonly`, and no hook
+calls `confirm`; both are harness (`scripts/check-tooling-pr.py` `HARNESS`:
+`approval_hook.py`, `crew_hook.py`, `crew_ticket.py`, `scope_guard.py`,
+`hooks.json`, `sabotage*.py`) and land in PR 2. Tests:
+`plugin/crew/tests/test_crew_humanonly.py`; mutations
+`plugin/crew/tests/humanonly_mutations.py` (16, run alone until PR 2 wires
+them into `sabotage.py`).
+
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 
 JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose in this section is as of the commit it names, not re-read at `bdde58724`; only its `name` plus line citations were re-resolved by symbol against the `bdde58724` tree, and a line cited with no name beside it was not.
@@ -1104,7 +1131,7 @@ mismatch `review_delta.judge`
 bundle through T-0100's rule (`reviewed_bundle` `:202`, `review_patch._ticket_base_tree` with
 `head=` at `plugin/crew/hooks/scripts/review_patch.py:403`, `merged_main.resolve(..., head)` at `:415` unless a `merged` pin is passed), is
 an ancestor of HEAD, the integration base is the pinned `base_sha` or the train entry's ref
-(`integration_ref` `:317`; never `_default_ref`), one merge base, a clean checkout
+(`integration_ref` `:317`; never `_default_ref`) -- A-0012, DERIVED: when the reviewed head is inside `scope_base.base_branch`, `review_delta.landing` finds its landing merge (`crew_refresh_check._landing`) and pins the rebuild at `merge-base <head> <merge^1>`; a HEAD inside that ref too takes `merge^1` as the integration base in place of the train entry; `_lands_as_reviewed` keeps a reviewed path absent from the current delta whose HEAD entry is the reviewed new side (`merged` in the detail) -- one merge base, a clean checkout
 (`_clean_head_tree` `:343`, `checkout_problem` `:354`), then the per-path interdiff of the
 reviewed bundle's base tree -> reviewed head against base -> `HEAD^{tree}`: byte identity outside
 the allowlist (`_match` `:394`, `fnmatchcase`); code maps, rules and diagrams compared with only
@@ -1303,7 +1330,12 @@ a distinct successor plan is its only way out, and `review_ledger.continue_with_
 refuses a plan approved before, so `approve` exits 3), and then `self` (any risk) or
 `risk` on a known `risk: low`; `human` never; a settings read that raises is `policy: unknown`,
 refused. `question_policy` (`:2294`) is `take|stop` by the same rule without the
-`allowCliApproval` term, and stops on `unknown`. `approve` (`:924`) also needs `mode: plan`, then calls
+`allowCliApproval` term, and stops on `unknown`. `approve` (`plugin/crew/hooks/scripts/crew_autopilot.py:2363`)
+also needs `mode: plan`; a refusal of either kind appends every unmet prerequisite
+(`plugin/crew/hooks/scripts/crew_approval_unmet.py:92` `unmet_prerequisites`, `:121` `unmet_text`: mode,
+`allowCliApproval`, `approval`, ledger; advice only, the decision is `approval_policy`'s; #624, called at
+`_unmet_block` at `crew_autopilot.py:2354`, called at `:2376` and `:2382`, which falls back to the old text when the module is missing; a value it echoes is a bool or short plain word, else its type, cut at 40 characters, and an unreadable config reads "could not be told", never a value; a new module because `crew_autopilot*.py` is frozen) after the
+`/crew:approve <ticket>` sentence. Then it calls
 `crew_ticket.approve(..., via=crew_ticket.AUTOPILOT)` - the module's one writing path, which lands
 `approval.json`; on a ticket's first approval, the scope ramp's `scope-tickets.json`
 (`crew_ticket._register_ramp`, `plugin/crew/hooks/scripts/crew_ticket.py:905`, as for every
@@ -1327,9 +1359,11 @@ a group confirm's `expect` outright (`:743-745`, before `expect` is validated or
 the group confirm is owner-only, carried from T-0024's hand-off at T-0010's merge of `f96e9ec9`). `scope_guard.py`'s
 `_AUTOPILOT_APPROVE_RE` / `_AUTOPILOT_BARE_RE` (`plugin/crew/hooks/scripts/scope_guard.py:143-147`) and
 `_autopilot_refusal` (`:272`) allow only the bare command while the policy says yes;
-`shell_refusal` (`:300`) runs `_reading_refusal` (`:317`) on each reading `_joined` (`:292`)
+`shell_refusal` (`:300`) runs `_reading_refusal` (`:317`) on each distinct reading `_joined` (`:292`)
 gives - the command as written and with line continuations joined (`_BASH_CONTINUATION_RE` /
-`_PS_CONTINUATION_RE`, `:157-158`) - while the bare-command rule judges the command as written.
+`_PS_CONTINUATION_RE`, `:157-158`) - while the bare-command rule judges the command as written. A-0013, DERIVED: the readings are deduplicated in order
+(`dict.fromkeys`), so a command with no continuation runs `approval_policy` once, not three times
+(about 14 git calls in a lane, against `crew_hook.py`'s 15 s limit).
 Tests `plugin/crew/tests/test_crew_autopilot_policy.py` plus new cases in `test_crew_ticket.py`,
 `test_scope_guard.py`, `test_crew_autopilot_status.py` and `test_crew_route.py`; mutations
 `POLICY_MUTATIONS` in `sabotage_autopilot.py` (55 by `len()` on T-0010-solo's merge of `e878cc31`, `plugin/crew/tests/sabotage_autopilot.py:687`),
@@ -2114,7 +2148,13 @@ JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose
   `apply` asks the policy for it and skips only `confirm`, keeping
   T-0052's existing-children verification; `check` records
   `policy_at_check` for the report only. `absent_sources`
-  (`:303`) is what the gate names `unmeasured`.
+  (`:303`) is what the gate names `unmeasured`. Its metrics rows are
+  classified by `_row_kind` (`plugin/crew/hooks/scripts/crew_split.py`,
+  A-0011): header, separator and an uncounted round (both count cells
+  `UNCOUNTED`, the `INCOMPLETE` that `review_metrics.row` writes) are skipped;
+  any other row whose counts do not parse is malformed, so findings-rate is
+  unknown. `test_every_row_review_metrics_writes_parses_in_split` holds the
+  writer and this reader to one contract.
 - Tests: `plugin/crew/tests/test_crew_autopilot_split.py` and the T-0058
   block at the end of `plugin/crew/tests/test_crew_split.py`, on the
   `crew_split` rule in `.crew/verify.json`.
@@ -2942,8 +2982,12 @@ Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each n
   asks `role_model` for `developer` itself) appends `, model: <id>` to the `Agent(...)` line, and the
   `warning:` lines (`:881`) come before the `coordinator: model <id>` line (`:883`), which reports the
   pin only: wave launches no coordinator. No agent file or `ROLE_TIERS` entry exists for the coordinator.
+- DERIVED: `plugin/crew/hooks/scripts/crew_wave.py` `CLAUDE_MODEL_HEADS` is the set of claude
+  families `role_model` accepts: `claude`, `opus`, `sonnet`, `haiku` and `fable` (Fable 5.1, added on
+  `feat/crew-model-accept-fable`). `fable` is an explicit-pin alias only; no code in crew selects it.
 - JUDGEMENT: the coordinator pin is advisory text for the dispatcher; a plugin cannot set the session model.
-  Tests: `plugin/crew/tests/test_crew_wave.py` (`test_launch_line_*`, `test_start_*coordinator*`).
+  Tests: `plugin/crew/tests/test_crew_wave.py` (`test_launch_line_*`, `test_start_*coordinator*`,
+  `test_fable_pin_*`).
 
 ## TSS hygiene: verify.json agents, the provider probe, UPGRADE.md history, temp files (T-0065)
 

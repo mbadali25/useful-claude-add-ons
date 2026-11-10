@@ -123,6 +123,367 @@ def test_git_failure_in_a_linked_worktree_is_unknown_not_own(tmp_path, monkeypat
 
 
 
+def _counting_git_out(monkeypatch):
+    """Patch `crew_common.git_out` to record each call's args (A-0013)."""
+    calls = []
+    real = crew_common.git_out
+
+    def counted(root, *args):
+        calls.append(args)
+        return real(root, *args)
+
+    monkeypatch.setattr(crew_common, "git_out", counted)
+    return calls
+
+
+def test_repeated_config_reads_in_a_lane_ask_git_once(tmp_path, monkeypatch):
+    """A-0013: every config read in a lane with no `.crew/` config of its own
+    asked git for the main checkout again (`_main_checkout`), and one
+    autopilot approval judgement reads the config eight times: eight of its
+    git calls were this one question."""
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    calls = _counting_git_out(monkeypatch)
+
+    answers = {crew_common.repo_config_dir(str(wt)) for _ in range(5)}
+    allowed = [crew_ticket.cli_approval_allowed(str(wt)) for _ in range(3)]
+
+    assert len(answers) == 1, answers
+    _dir, source, detail = answers.pop()
+    assert (source, os.path.realpath(detail)) == (crew_common.SOURCE_MAIN,
+                                                  os.path.realpath(str(main)))
+    assert allowed == [True, True, True]
+    assert calls.count(("rev-parse", "--git-dir", "--git-common-dir")) == 1, calls
+
+
+def test_a_lane_whose_git_pointer_changes_is_asked_again(tmp_path, monkeypatch):
+    """The memo is keyed on the `.git` file's bytes: a lane re-pointed at
+    another repository is never answered from the old one."""
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    other, other_wt = _lane(tmp_path / "second", {"scope": {"allowCliApproval": False}})
+    assert crew_common.repo_config_dir(str(wt))[2] == crew_common.repo_config_dir(str(wt))[2]
+    first = crew_common.repo_config_dir(str(wt))[2]
+    # Rewritten in place: Git for Windows marks the file hidden, and opening a
+    # hidden file with "w" is refused there.
+    with open(wt / ".git", "r+b") as handle:
+        handle.write((other_wt / ".git").read_bytes())
+        handle.truncate()
+    calls = _counting_git_out(monkeypatch)
+
+    second = crew_common.repo_config_dir(str(wt))[2]
+
+    assert os.path.realpath(first) == os.path.realpath(str(main))
+    assert os.path.realpath(second) == os.path.realpath(str(other))
+    assert calls.count(("rev-parse", "--git-dir", "--git-common-dir")) == 1, calls
+
+
+def test_a_lane_whose_commondir_changes_is_asked_again(tmp_path, monkeypatch):
+    """A-0014 review r1: git reads the common dir from the git dir's
+    `commondir` file, so a change there (the `.git` file unchanged) is asked
+    again rather than answered with the first repository."""
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    other, _other_wt = _lane(tmp_path / "second", {"scope": {"allowCliApproval": False}})
+    assert crew_ticket.cli_approval_allowed(str(wt)) is True
+    pointer = (wt / ".git").read_text(encoding="utf-8").strip()
+    git_dir = (wt / pointer[len("gitdir:"):].strip()).resolve()
+    (git_dir / "commondir").write_text(str(other / ".git") + "\n", encoding="utf-8")
+    calls = _counting_git_out(monkeypatch)
+
+    detail = crew_common.repo_config_dir(str(wt))[2]
+
+    assert os.path.realpath(detail) == os.path.realpath(str(other)), (detail, main)
+    assert crew_ticket.cli_approval_allowed(str(wt)) is False
+    assert calls.count(("rev-parse", "--git-dir", "--git-common-dir")) == 1, calls
+
+
+def _lane_git_dir(wt):
+    """The git dir a lane's `.git` pointer names, resolved."""
+    pointer = (wt / ".git").read_text(encoding="utf-8").strip()
+    return (wt / pointer[len("gitdir:"):].strip()).resolve()
+
+
+def _rewrite(path, data):
+    """Replace `path`'s bytes in place: Git for Windows marks `.git` hidden,
+    and opening a hidden file with "w" is refused there."""
+    with open(path, "r+b") as handle:
+        handle.write(data)
+        handle.truncate()
+
+
+MAIN_CHECKOUT_QUESTION = ("rev-parse", "--git-dir", "--git-common-dir")
+
+
+def test_a_nul_byte_in_the_git_pointer_raises_nothing(tmp_path, monkeypatch):
+    """A-0014 review r2: a NUL inside the `.git` pointer's gitdir path made
+    `os.path.join`/`open` raise ValueError out of the memo key. It keys as
+    None instead: git is asked on every read and its answer decides."""
+    _main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    git_dir = _lane_git_dir(wt)
+    _rewrite(wt / ".git", b"gitdir: " + str(git_dir).encode("utf-8") + b"\x00junk\n")
+    calls = _counting_git_out(monkeypatch)
+
+    answers = [crew_common.repo_config_dir(str(wt)) for _ in range(2)]
+
+    assert answers[0] == answers[1], answers
+    assert calls.count(MAIN_CHECKOUT_QUESTION) == 2, calls
+
+
+def test_a_nul_byte_in_the_git_pointer_raises_nothing_for_metrics(tmp_path, monkeypatch):
+    """The neighbour reader of the same memo: `metrics_crew_dir` must not
+    raise on that pointer either."""
+    _main, wt = _lane(tmp_path, None)
+    git_dir = _lane_git_dir(wt)
+    _rewrite(wt / ".git", b"gitdir: " + str(git_dir).encode("utf-8") + b"\x00junk\n")
+    _counting_git_out(monkeypatch)
+
+    crew_dir, problem = crew_common.metrics_crew_dir(str(wt))
+
+    assert isinstance(problem, str) and (crew_dir is None) == bool(problem), (crew_dir, problem)
+
+
+def test_a_nul_byte_in_commondir_raises_nothing_and_is_not_remembered(tmp_path, monkeypatch):
+    """The neighbour file: the key resolves the path `commondir` names (A-0014
+    review r3), so a NUL there is a path crew cannot form. It raises nothing
+    and keeps nothing: git is asked on every read."""
+    _main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    commondir = _lane_git_dir(wt) / "commondir"
+    _rewrite(commondir, commondir.read_bytes().rstrip(b"\r\n") + b"\x00junk\n")
+    calls = _counting_git_out(monkeypatch)
+
+    answers = [crew_common.repo_config_dir(str(wt)) for _ in range(2)]
+
+    assert answers[0] == answers[1], answers
+    assert calls.count(MAIN_CHECKOUT_QUESTION) == 2, (answers, calls)
+
+
+def _symlink_dir_or_skip(target, link):
+    """A directory link at `link` to `target`: a junction on Windows (Git for
+    Windows does not follow a symlinked gitdir, and a junction needs no
+    privilege), a symlink elsewhere."""
+    try:
+        if os.name == "nt":
+            import _winapi  # pylint: disable=import-outside-toplevel
+            _winapi.CreateJunction(str(target), str(link))
+        else:
+            os.symlink(target, link, target_is_directory=True)
+    except (OSError, NotImplementedError, ImportError, AttributeError) as exc:
+        pytest.skip(f"cannot create a directory link here: {exc}")
+
+
+def test_a_lane_whose_git_dir_symlink_is_retargeted_is_asked_again(tmp_path, monkeypatch):
+    """A-0014 review r3: a `.git` pointer naming a symlink to a git dir keeps
+    its bytes when the symlink is retargeted, and both git dirs' `commondir`
+    hold the same relative bytes, so a key of bytes alone answered with the
+    first repository. The key carries the resolved git dir and common dir."""
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    other, other_wt = _lane(tmp_path / "second", {"scope": {"allowCliApproval": False}})
+    git_dir, other_git_dir = _lane_git_dir(wt), _lane_git_dir(other_wt)
+    assert (git_dir / "commondir").read_bytes() == (other_git_dir / "commondir").read_bytes()
+    link = tmp_path / "gitdir-link"
+    _symlink_dir_or_skip(git_dir, link)
+    _rewrite(wt / ".git", b"gitdir: " + str(link).encode("utf-8") + b"\n")
+    _crew_dir, source, first = crew_common.repo_config_dir(str(wt))
+    if source == crew_common.SOURCE_UNKNOWN:
+        # Git for Windows resolves `commondir`'s `../..` lexically from the
+        # link, so it finds no repository there; POSIX git resolves it through
+        # the link. Measured 2026-10-29: "fatal: gitfile does not point to a
+        # valid repository".
+        pytest.skip(f"git here cannot use a linked gitdir: {first}")
+    # A directory symlink is removed with rmdir on Windows, unlink on POSIX.
+    (os.rmdir if os.name == "nt" else os.remove)(link)
+    _symlink_dir_or_skip(other_git_dir, link)
+    calls = _counting_git_out(monkeypatch)
+
+    again = crew_common.repo_config_dir(str(wt))[2]
+
+    assert os.path.realpath(first) == os.path.realpath(str(main)), first
+    assert os.path.realpath(again) == os.path.realpath(str(other)), again
+    assert calls.count(MAIN_CHECKOUT_QUESTION) == 1, calls
+
+
+def test_an_answer_git_read_from_another_pointer_is_not_kept(tmp_path, monkeypatch):
+    """A-0014 review r3: the key is read before git runs, so a pointer swapped
+    to repository B for the length of the git call (and swapped back) stored
+    B's answer under A's key. An answer is kept only when the git dir and
+    common dir git reports are the ones the key was built from."""
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    _other, other_wt = _lane(tmp_path / "second", {"scope": {"allowCliApproval": False}})
+    pointer_a, pointer_b = (wt / ".git").read_bytes(), (other_wt / ".git").read_bytes()
+    real = crew_common.git_out
+
+    def swapped(root, *args):
+        _rewrite(wt / ".git", pointer_b)
+        try:
+            return real(root, *args)
+        finally:
+            _rewrite(wt / ".git", pointer_a)
+
+    monkeypatch.setattr(crew_common, "git_out", swapped)
+    crew_common.repo_config_dir(str(wt))
+    monkeypatch.setattr(crew_common, "git_out", real)
+
+    again = crew_common.repo_config_dir(str(wt))[2]
+
+    assert os.path.realpath(again) == os.path.realpath(str(main)), again
+
+
+def test_an_answer_git_read_from_another_commondir_is_not_kept(tmp_path, monkeypatch):
+    """Neighbour: the same swap on the git dir's `commondir` (the pointer
+    untouched) keeps nothing either."""
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    other, _other_wt = _lane(tmp_path / "second", {"scope": {"allowCliApproval": False}})
+    commondir = _lane_git_dir(wt) / "commondir"
+    original = commondir.read_bytes()
+    real = crew_common.git_out
+
+    def swapped(root, *args):
+        _rewrite(commondir, str(other / ".git").encode("utf-8") + b"\n")
+        try:
+            return real(root, *args)
+        finally:
+            _rewrite(commondir, original)
+
+    monkeypatch.setattr(crew_common, "git_out", swapped)
+    crew_common.repo_config_dir(str(wt))
+    monkeypatch.setattr(crew_common, "git_out", real)
+
+    again = crew_common.repo_config_dir(str(wt))[2]
+
+    assert os.path.realpath(again) == os.path.realpath(str(main)), again
+
+
+def _finishes_within(seconds, call):
+    """(finished, result) of `call()` run in a daemon thread for `seconds`.
+    An unfinished call's result is `()`, not None, so the callers' `answer[1]`
+    is a lint-clean subscript (pylint does not narrow away None after an
+    assert) and still fails loudly if it is ever reached."""
+    import threading  # pylint: disable=import-outside-toplevel
+    box = []
+    worker = threading.Thread(target=lambda: box.append(call()), daemon=True)
+    worker.start()
+    worker.join(seconds)
+    return (not worker.is_alive()), (box[0] if box else ())
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs os.mkfifo (POSIX)")
+def test_a_fifo_commondir_does_not_block(tmp_path, monkeypatch):
+    """A-0014 review r2: the memo key opened `<git dir>/commondir` with a plain
+    `open`, which blocks forever on a FIFO with no writer, outside git_out's
+    timeout. A file that is not regular is never read and keys as None. git is
+    stubbed out so that only crew's own read is what is timed."""
+    _main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    commondir = _lane_git_dir(wt) / "commondir"
+    commondir.unlink()
+    os.mkfifo(commondir)  # pylint: disable=no-member
+    monkeypatch.setattr(crew_common, "git_out", lambda *a: None)
+
+    finished, answer = _finishes_within(5, lambda: crew_common.repo_config_dir(str(wt)))
+
+    assert finished, "repo_config_dir blocked on a FIFO commondir"
+    assert answer[1] == crew_common.SOURCE_UNKNOWN, answer
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs os.mkfifo (POSIX)")
+def test_a_fifo_git_pointer_does_not_block(tmp_path):
+    """The neighbour file: a `.git` that is a FIFO is not a linked worktree's
+    pointer, and is never opened."""
+    _main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    (wt / ".git").unlink()
+    os.mkfifo(wt / ".git")  # pylint: disable=no-member
+
+    finished, answer = _finishes_within(5, lambda: crew_common.repo_config_dir(str(wt)))
+
+    assert finished, "repo_config_dir blocked on a FIFO .git"
+    assert answer[1] == crew_common.SOURCE_OWN, answer
+
+
+def test_a_commondir_that_is_a_directory_is_not_remembered(tmp_path, monkeypatch):
+    """Neighbour of the FIFO case: a `commondir` that is a directory raises
+    nothing and keeps nothing, so git is asked on every read."""
+    _main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    commondir = _lane_git_dir(wt) / "commondir"
+    commondir.unlink()
+    commondir.mkdir()
+    calls = _counting_git_out(monkeypatch)
+
+    answers = [crew_common.repo_config_dir(str(wt)) for _ in range(2)]
+
+    assert answers[0] == answers[1], answers
+    assert calls.count(MAIN_CHECKOUT_QUESTION) == 2, calls
+
+
+def test_read_regular_reads_only_a_regular_file(tmp_path):
+    """`_read_regular`, the one reader of both key files: a regular file's
+    bytes, None for anything else, and a missing file raises
+    FileNotFoundError (a git dir with no `commondir` keys as b"")."""
+    (tmp_path / "f").write_bytes(b"x\x00y")
+    (tmp_path / "d").mkdir()
+
+    assert crew_common._read_regular(str(tmp_path / "f")) == b"x\x00y"  # pylint: disable=protected-access
+    assert crew_common._read_regular(str(tmp_path / "d")) is None  # pylint: disable=protected-access
+    with pytest.raises(FileNotFoundError):
+        crew_common._read_regular(str(tmp_path / "missing"))  # pylint: disable=protected-access
+
+
+def test_git_dir_in_the_environment_is_asked_every_time(tmp_path, monkeypatch):
+    """A-0014 review r2: with GIT_DIR set git reads neither the lane's `.git`
+    file nor its git dir's `commondir`, so a key built from them watched the
+    wrong files and kept answering with a repository git had moved off.
+    Nothing is remembered while GIT_DIR is set."""
+    _main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    second, second_wt = _lane(tmp_path / "second", {"scope": {"allowCliApproval": False}})
+    third, _third_wt = _lane(tmp_path / "third", {"scope": {"allowCliApproval": True}})
+    second_git_dir = _lane_git_dir(second_wt)
+    monkeypatch.setenv("GIT_DIR", str(second_git_dir))
+    calls = _counting_git_out(monkeypatch)
+
+    first = crew_common.repo_config_dir(str(wt))[2]
+    _rewrite(second_git_dir / "commondir", str(third / ".git").encode("utf-8") + b"\n")
+    again = crew_common.repo_config_dir(str(wt))[2]
+
+    assert os.path.realpath(first) == os.path.realpath(str(second)), first
+    assert os.path.realpath(again) == os.path.realpath(str(third)), again
+    assert calls.count(MAIN_CHECKOUT_QUESTION) == 2, calls
+
+
+def test_git_common_dir_in_the_environment_is_asked_every_time(tmp_path, monkeypatch):
+    """Neighbour: GIT_COMMON_DIR overrides `commondir` the same way, so it
+    keeps nothing either."""
+    main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    monkeypatch.setenv("GIT_COMMON_DIR", str((main / ".git").resolve()))
+    calls = _counting_git_out(monkeypatch)
+
+    answers = [crew_common.repo_config_dir(str(wt)) for _ in range(2)]
+
+    assert answers[0] == answers[1], answers
+    assert answers[0][1] == crew_common.SOURCE_MAIN, answers
+    assert calls.count(MAIN_CHECKOUT_QUESTION) == 2, calls
+
+
+def test_git_work_tree_alone_keeps_the_memo(tmp_path, monkeypatch):
+    """Neighbour: GIT_WORK_TREE alone leaves git discovering the git dir from
+    the lane's `.git` file, so the memo still applies (it is in the key)."""
+    _main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    monkeypatch.setenv("GIT_WORK_TREE", str(wt))
+    calls = _counting_git_out(monkeypatch)
+
+    answers = {crew_common.repo_config_dir(str(wt)) for _ in range(5)}
+
+    assert len(answers) == 1 and next(iter(answers))[1] == crew_common.SOURCE_MAIN, answers
+    assert calls.count(MAIN_CHECKOUT_QUESTION) == 1, calls
+
+
+def test_could_not_tell_is_not_remembered(tmp_path, monkeypatch):
+    """Only an answer is kept: git failing once must not make every later
+    read in the process `unknown`."""
+    _main, wt = _lane(tmp_path, {"scope": {"allowCliApproval": True}})
+    real = crew_common.git_out
+    monkeypatch.setattr(crew_common, "git_out", lambda *a: None)
+    assert crew_common.repo_config_dir(str(wt))[1] == crew_common.SOURCE_UNKNOWN
+    monkeypatch.setattr(crew_common, "git_out", real)
+
+    assert crew_common.repo_config_dir(str(wt))[1] == crew_common.SOURCE_MAIN
+
+
 def test_resolver_works_on_a_git_without_path_format(tmp_path, monkeypatch):
     """git before 2.31 has no `--path-format`, and rev-parse echoes an
     argument it does not know as a line of its own."""

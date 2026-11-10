@@ -68,7 +68,9 @@ import tempfile
 
 import crew_common
 import crew_freshness
+import merged_main
 import review_patch
+import scope_base
 
 # Reason prefix for a code map, rules file or diagram whose bytes moved beyond
 # its anchor sha. crew_autopilot routes on it (a refresh that did more than
@@ -730,22 +732,101 @@ def judge(root, ticket, receipt, row, base_sha=None):
         return False, f"{COULD_NOT_TELL}: {exc}", None
 
 
-def _judge(root, ticket, receipt, row, base_sha):  # pylint: disable=too-many-locals
+def landing(root, base, head):
+    """`({"ref", "merge", "before", "pin"}, None)` when the reviewed `head` is
+    itself inside the ticket base branch (`scope_base.base_branch`, the ref
+    `merged_main` measures against), `(None, None)` when it is not, and
+    `(None, why)` when it is but its landing cannot be told (A-0012).
+
+    Inside that ref, `merge-base <head> <ref>` IS the head, so
+    `merged_main.resolve` reads every committed path as identical to merged
+    main (its documented corner) and the unpinned rebuild drops them all. The
+    landing is the first commit on the ref's first-parent line that contains
+    `head`, which must be a merge whose first parent `before` does not
+    (`crew_refresh_check._landing`, the search `/crew:done` check 4 makes);
+    `before` is main as the round read it, and `pin` is the
+    `merged_main.pinned` answer for `merge-base <head> <before>` -- the merged
+    commit that round's bundle diffed against (L-0770). A fast-forward or
+    rebase landing has no such merge: could not tell."""
+    ref, problem = scope_base.base_branch(root)
+    if problem or not ref:
+        return None, None
+    code, _out, err = _git(root, ["merge-base", "--is-ancestor", head, ref])
+    if code == 1:
+        return None, None
+    if code != 0:
+        return None, f"{COULD_NOT_TELL} whether {ref} holds {head[:12]} ({err or code})"
+    import crew_refresh_check  # pylint: disable=import-outside-toplevel  # heavy; only once landed
+    merge, before, why = crew_refresh_check._landing(root, ref, base, head)  # pylint: disable=protected-access
+    if merge is None:
+        return None, f"{COULD_NOT_TELL} which main {head[:12]} was reviewed on: {why}"
+    bases = _ok(root, ["merge-base", "--all", head, before]).split()
+    if len(bases) != 1:
+        return None, (f"{COULD_NOT_TELL} which main {head[:12]} was reviewed on: it and "
+                      f"{before[:12]} have {len(bases)} merge bases, not one")
+    pin = merged_main.pinned(root, base, bases[0], ref=ref)
+    if pin["commit"] is None:
+        return None, f"{COULD_NOT_TELL} which main {head[:12]} was reviewed on: {pin['reason']}"
+    return {"ref": ref, "merge": merge, "before": before, "pin": pin}, None
+
+
+def _head_entry(root, tree, path):
+    """(mode, blob id) of `path` in `tree`; the null pair when it is absent."""
+    rec = _ok(root, ["ls-tree", "-z", "--full-tree", tree, "--", path]).split("\0")[0]
+    if not rec:
+        return "000000", _NULL_ID
+    meta = rec.split("\t", 1)[0]
+    mode, _kind, blob_id = meta.split()
+    return mode, blob_id
+
+
+def _lands_as_reviewed(root, tree, path, er, ec):
+    """True when `path` is reviewed, out of the current delta because HEAD
+    holds what the new base holds, and HEAD's bytes are the reviewed bytes:
+    main landed the same change, so the path is main's now and what lands
+    there is exactly what the round read (A-0012; check 3 leaves a path
+    identical to merged main out the same way). Renames and copies never
+    qualify."""
+    if er is None or ec is not None or er["status"] not in ("A", "M", "D"):
+        return False
+    return _head_entry(root, tree, path) == (er["new_mode"], er["new_id"])
+
+
+def _judge(root, ticket, receipt, row, base_sha):  # pylint: disable=too-many-locals,too-many-branches
     head = _commit(root, (row or {}).get("head"), "reviewed head")
     base = _commit(root, receipt.get("base"), "receipt base")
     head_tree = _tree(root, head)
     rebuilt, reviewed_from = reviewed_bundle(root, base, head)
+    # The rebuild is the round's own bytes whoever pins the integration base,
+    # so the landing is looked for with or without a `base_sha` (A-0012 r1).
+    landed, landed_why = landing(root, base, head)
+    if rebuilt != receipt.get("bundle_sha256") and landed:
+        rebuilt, reviewed_from = reviewed_bundle(root, base, head, merged=landed["pin"])
     if rebuilt != receipt.get("bundle_sha256"):
         raise Stale("the reviewed head's tree does not rebuild the reviewed bundle (a review "
-                    "of uncommitted bytes cannot be reconstructed)")
+                    "of uncommitted bytes cannot be reconstructed)"
+                    + (f"; {landed_why}" if landed_why else ""))
     if not _is_ancestor(root, head, "HEAD"):
         raise Stale(f"reviewed head {head[:12]} is not an ancestor of HEAD (rebase, reset or "
                     "amend since the review)")
-    ref = integration_ref(root, ticket)
-    R = base_sha or _resolve(root, ref)  # pylint: disable=invalid-name
-    merge_bases = _ok(root, ["merge-base", "--all", "HEAD", R]).split()
+    tip = "HEAD"
+    if base_sha is None and landed and _is_ancestor(root, "HEAD", landed["ref"]):
+        # HEAD landed too: main just before the landing is the integration
+        # base, so the ticket's delta is not read as empty against main after
+        # it. A HEAD past the landing merge (a branch at main, where
+        # /crew:done check 4 says to close a landed ticket) holds main's later
+        # merges too; what this ticket brought is the landing merge's tree.
+        ref = f"{landed['ref']} before its landing {landed['merge'][:12]}"
+        R = landed["before"]  # pylint: disable=invalid-name
+        if _is_ancestor(root, landed["merge"], "HEAD"):
+            tip = landed["merge"]
+    else:
+        ref = integration_ref(root, ticket)
+        R = base_sha or _resolve(root, ref)  # pylint: disable=invalid-name
+    merge_bases = _ok(root, ["merge-base", "--all", tip, R]).split()
     if len(merge_bases) != 1:
-        raise Stale(f"HEAD and {R[:12]} have {len(merge_bases)} merge bases, not one")
+        raise Stale(f"{tip if tip == 'HEAD' else tip[:12]} and {R[:12]} have "
+                    f"{len(merge_bases)} merge bases, not one")
     mb = merge_bases[0]
     if _is_ancestor(root, base, mb):
         new_base = mb
@@ -756,18 +837,24 @@ def _judge(root, ticket, receipt, row, base_sha):  # pylint: disable=too-many-lo
     tree, problem = _clean_head_tree(root)
     if problem:
         raise Stale(problem)
+    if tip != "HEAD":
+        tree = _tree(root, tip)
     problem = checkout_problem(root, [head_tree, _tree(root, R), tree])
     if problem:
         raise Stale(problem)
     # D_r is the reviewed bundle's own delta: from the tree it diffed from
     # (T-0100's, when a merge of main applied), not the bare start.
     d_r, d_c = delta(root, reviewed_from, head_tree), delta(root, new_base, tree)
-    identical, anchor_only, exempt, judged = [], [], [], {}
+    identical, anchor_only, exempt, merged, judged = [], [], [], [], {}
     keys = sorted(set(d_r) | set(d_c))
     # Code maps first, so a rules file can ask whether its source map passed.
     keys.sort(key=lambda k: _exempt_class(k) != "codemap")
     for path in keys:
         er, ec = d_r.get(path), d_c.get(path)
+        if _lands_as_reviewed(root, tree, path, er, ec):
+            merged.append(path)
+            judged[path] = True
+            continue
         how, ok = _exempt(root, path, er, ec, d_r, d_c, judged)
         judged[path] = ok
         if how == "anchor-only" and not ok:
@@ -788,4 +875,4 @@ def _judge(root, ticket, receipt, row, base_sha):  # pylint: disable=too-many-lo
             raise Stale(f"{path} differs from the reviewed change (status, modes or blob ids)")
         identical.append(path)
     return True, "kept", {"head": head, "base": new_base, "ref": ref, "identical": identical,
-                          "anchor_only": anchor_only, "exempt": exempt}
+                          "anchor_only": anchor_only, "exempt": exempt, "merged": merged}

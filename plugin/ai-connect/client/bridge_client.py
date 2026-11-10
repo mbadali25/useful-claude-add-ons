@@ -14,7 +14,8 @@ from typing import Any
 import websockets
 from websockets import ClientConnection
 
-from config_loader import DEFAULT_MAX_MESSAGE_BYTES, ws_uri
+from bridge_tls import PinMismatch
+from config_loader import DEFAULT_MAX_MESSAGE_BYTES, connect_options, ws_uri
 
 logger = logging.getLogger(__name__)
 
@@ -73,14 +74,20 @@ class BridgeClient:
         machine_name: str = "",
         collision_suffix: str = "",
         on_registered: Callable[[str], None] | None = None,
+        fingerprint: str = "",
     ):
         """peer_name is the name to join as. For a session named after its machine
         ("<machine_name>:<label>"), machine_name is what an older Bridge accepts
         instead, and collision_suffix (the session's process id) what is appended
         when a sibling session holds the name. on_registered hears the name the
-        Bridge registered, which is only then known for sure."""
+        Bridge registered, which is only then known for sure. fingerprint: the
+        Bridge certificate's pinned SHA-256; set, every connection is wss://
+        with that pin and nothing else, reconnects included."""
         self.host = host
         self.port = port
+        self.fingerprint = fingerprint
+        # The pinned certificate did not match: like a refused token, retrying cannot help
+        self._pin_mismatch = False
         # The name in use; differs from _session_name only after falling back to _machine_name
         self.peer_name = peer_name
         self._session_name = peer_name
@@ -145,19 +152,32 @@ class BridgeClient:
     def token_refused(self) -> bool:
         return self._token_refused
 
+    @property
+    def pin_mismatch(self) -> bool:
+        return self._pin_mismatch
+
     async def connect(self) -> bool:
         """Connect to the Bridge and register under peer_name.
 
         On standby the Bridge registers the client only once the name is free.
         """
-        uri = ws_uri(self.host, self.port)
+        uri = ws_uri(self.host, self.port, bool(self.fingerprint))
         try:
             self._ws = await websockets.connect(
                 uri,
                 ping_interval=60,
                 ping_timeout=300,
                 additional_headers={"Authorization": f"Bearer {self._token}"},
+                **connect_options(self.fingerprint),
             )
+        except PinMismatch as e:
+            # Fail closed: the token was never sent (the pin is checked inside the TLS
+            # handshake), and nothing retries, over wss:// or ws://
+            logger.error(f"Bridge at {uri}: {e}")
+            self._connected = False
+            self._pin_mismatch = True
+            self._should_reconnect = False
+            return False
         except websockets.exceptions.InvalidStatus as e:
             if e.response.status_code != HTTPStatus.UNAUTHORIZED:
                 raise
