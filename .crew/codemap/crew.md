@@ -382,10 +382,12 @@ e.g. `CONTEXT_HANDOFF_PATH` (`:995`, `.work/HANDOFF.md`), `MEMORY_INJECT` (`:100
 | `PROD_GUARD_NAMES` | `prodDatabase`, `prodServer` (2) | `none`/`read`/`full`, `prod_level_rank` (`:499`) | `:128` |
 | `ROLE_WRITE_GUARD_NAMES` | `roleWrites` (1) | `block`/`report`/`off`, default `off` not floor, `role_writes_rank` (`:535`) | `:151` |
 | `CLOUD_GUARD_NAMES` | `cloudGuard` (1) | same vocabulary and functions as `roleWrites`, its own words | `:190` |
-| `ENV_GUARD_NAMES` | `envGuard` (1) | same vocabulary and functions as `roleWrites` (`guard_tiers` `:549`); switches `env_guard.py` | `:207` |
+| `ENV_GUARD_NAMES` | `envGuard` (1) | same vocabulary and functions as `roleWrites` (`guard_tiers` `:556`); switches `env_guard.py` | `:207` |
 
-`ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:214`) is the concatenation of all
+`ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:221`) is the concatenation of all
 five — **twelve** guard names in total (executed: `len(crew_guards.ALL_GUARD_NAMES)`).
+An explicit `null` at `guards.envGuard` is the floor, not the default
+(`NULL_IS_MALFORMED`, `plugin/crew/hooks/scripts/crew_guards.py:214`, read by `layer_guard_state`).
 `cloud_guard.py`'s own docstring (`:1-6`) states what `cloudGuard` actually
 is: a switch, not a policy — turning it on is what makes the seven
 `GUARD_NAMES` policies (which existed and ratcheted but governed nothing
