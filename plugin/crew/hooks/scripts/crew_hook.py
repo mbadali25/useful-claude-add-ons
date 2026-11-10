@@ -642,6 +642,7 @@ NO_PYTHON_REFUSALS = (
     "env-guard: no usable python, and",                                    # env-guard.sh
     "COMPLETION AUDIT: no usable python - the tree was not audited",       # completion-audit.sh
     "crew: /crew:approve was NOT recorded -- no usable python",            # approval-hook.sh
+    "crew: /crew:confirm-config was NOT recorded -- no usable python",     # approval-hook.sh
     "PROMOTION BLOCKED: no usable python",                                 # promote-gate.sh
     "role-write-guard: no usable python found",                            # role-write-guard.sh
 )

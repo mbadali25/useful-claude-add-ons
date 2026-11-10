@@ -102,6 +102,8 @@ SEAM = (
     "plugin/crew/hooks/scripts/crew_instructions.py",
     "plugin/crew/commands/status.md",
     "plugin/crew/commands/autopilot.md",
+    # L-0724 moves the command into the crew-autopilot plugin; both paths are seams.
+    "plugin/crew-autopilot/commands/autopilot.md",
 )
 
 TRAILER = "Tooling-seam"
