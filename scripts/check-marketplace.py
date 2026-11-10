@@ -1611,8 +1611,8 @@ CONFIG_REFERENCE = os.path.join("docs", "guides", "crew", "src", "config_referen
 def check_config_reference(fail, root=ROOT):
     """crew's generated configuration reference is current (T-0048).
 
-    `docs/guides/crew/src/configuration-reference.md` and the two generated
-    tables inside `plugin/crew/CONFIG.md` are rendered from the code by
+    `docs/guides/crew/src/configuration-reference.md` and `plugin/crew/CONFIG.md`
+    (generated whole since L-0725) are rendered from the code by
     `config_reference.py`; this runs its `--check` and fails once per stale
     file, naming the regenerate command.
 

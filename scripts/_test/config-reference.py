@@ -12,9 +12,12 @@ code, and each must turn both the generator's `--check` and the gate red. The
 generator failing to import is in this list on purpose: a check that could not
 run compared nothing, and must never read as current.
 
-Must-allow: an unchanged copy, an edit to CONFIG.md's hand-written prose, and a
-machine-global config in HOME (the generator reads no config file, so the
-output is the same on every machine).
+CONFIG.md is generated WHOLE (L-0725): a one-byte edit anywhere in it, a deleted
+file and a changed default are all stale.
+
+Must-allow: an unchanged copy, a CRLF checkout, and a machine-global config in
+HOME (the generator reads no config file, so the output is the same on every
+machine).
 
 Run: python3 scripts/_test/config-reference.py
 """
@@ -109,15 +112,27 @@ def _crlf_one_byte(tmp):
 
 
 def _default_changed(tmp):
-    edit(tmp, os.path.join(SCRIPTS, "crew_state.py"), '"quietLines": 8,', '"quietLines": 9,')
+    edit(tmp, os.path.join(SCRIPTS, "crew_state.py"), '"maxDispatches": 3,', '"maxDispatches": 4,')
 
 
-def _block_hand_edit(tmp):
-    edit(tmp, CONFIG_MD, "| `pm.maxLines` | both |", "| `pm.maxLines` | repo |")
+def _table_hand_edit(tmp):
+    edit(tmp, CONFIG_MD, "| `pm.maxDispatches` | both |", "| `pm.maxDispatches` | repo |")
 
 
-def _no_end_marker(tmp):
-    edit(tmp, CONFIG_MD, "<!-- generated:config-keys-repo end -->", "")
+def _preamble_one_byte(tmp):
+    edit(tmp, CONFIG_MD, "## The two layers", "## The two layers.")
+
+
+def _last_byte(tmp):
+    path = os.path.join(tmp, CONFIG_MD)
+    with open(path, encoding="utf-8", newline="") as fh:
+        text = fh.read()
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text + " ")
+
+
+def _config_md_deleted(tmp):
+    os.remove(os.path.join(tmp, CONFIG_MD))
 
 
 def _import_raises(tmp):
@@ -134,18 +149,17 @@ MUST_BLOCK = [
      "stale: docs/guides/crew/src/configuration-reference.md", "configuration-reference.md"),
     ("a default changed in crew_state.py", _default_changed, 1,
      "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
-    ("a hand edit inside CONFIG.md's block", _block_hand_edit, 1,
+    ("a hand edit inside a CONFIG.md table row", _table_hand_edit, 1,
      "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
-    ("CONFIG.md's end marker missing", _no_end_marker, 2,
-     "generated:config-keys-repo end", "generated:config-keys-repo end"),
+    ("a one-byte edit in CONFIG.md's preamble", _preamble_one_byte, 1,
+     "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
+    ("one byte appended to CONFIG.md", _last_byte, 1,
+     "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
+    ("CONFIG.md deleted", _config_md_deleted, 1,
+     "stale: plugin/crew/CONFIG.md", "CONFIG.md"),
     ("the generator's import raises", _import_raises, 2,
      "sabotaged crew_keys", "sabotaged crew_keys"),
 ]
-
-
-def _prose_edit(tmp):
-    edit(tmp, CONFIG_MD, "## 12. Drift found while deriving this",
-         "## 12. Drift found while deriving this (edited)")
 
 
 def _unchanged(_tmp):
@@ -170,8 +184,7 @@ def run():
                                 f"gate {gate!r}")
 
     for name, change in (("an unchanged copy", _unchanged),
-                         ("an unchanged copy checked out with CRLF line endings", _crlf),
-                         ("an edit to CONFIG.md prose outside the block", _prose_edit)):
+                         ("an unchanged copy checked out with CRLF line endings", _crlf)):
         with tempfile.TemporaryDirectory() as tmp:
             build(tmp)
             change(tmp)
@@ -188,7 +201,7 @@ def run():
         os.makedirs(os.path.join(home, ".claude", "crew"))
         with open(os.path.join(home, ".claude", "crew", "config.json"), "w",
                   encoding="utf-8") as fh:
-            json.dump({"qa": {"provider": "codex"}, "pm": {"maxLines": 3}}, fh)
+            json.dump({"qa": {"provider": "codex"}, "pm": {"maxDispatches": 9}}, fh)
         got, out, err = run_gen(tmp, home=home)
         ok = got == 0
         print(f"  {'ok  ' if ok else 'FAIL'} must-allow: a machine-global config in HOME "

@@ -118,7 +118,9 @@ def test_claude_reserve_only_writes_no_row(repo, tmp_path):
 
     result = _claude(repo, scratch, "--reserve-only", "--authors", "gpt")
 
-    assert (result.stdout.strip(), _rows(repo)) == ("ROUND=1", []), result.stderr
+    lines = result.stdout.strip().splitlines()
+    assert (lines[0], len(lines), lines[-1].startswith("next: "), _rows(repo)) == (
+        "ROUND=1", 2, True, []), result.stderr
 
 
 def test_claude_recorded_round_writes_exactly_one_row(repo, tmp_path):

@@ -55,19 +55,20 @@ def test_declare_writes_an_active_incident_with_a_default_ttl(tmp_path):
     assert on_disk["expiresAt"].endswith("Z")
 
 
-def test_declare_honours_a_configured_ttl(tmp_path):
+def test_ttl_minutes_is_constant(tmp_path):
     root = _repo(tmp_path)
     cfg = {"emergency": {"ttlMinutes": 30}}
     state = crew_incident.declare(root, "db failover", cfg=cfg, now=T0)
-    assert state["minutesLeft"] == 30
+    assert (state["minutesLeft"], crew_incident.DEFAULT_TTL_MINUTES) == (
+        crew_state.EMERGENCY_TTL_MINUTES, crew_state.EMERGENCY_TTL_MINUTES)
 
 
 def test_ttl_is_capped_by_max_ttl_minutes(tmp_path):
     root = _repo(tmp_path)
-    cfg = {"emergency": {"ttlMinutes": 60, "maxTtlMinutes": 90}}
+    cfg = {"emergency": {"maxTtlMinutes": 200}}
     state = crew_incident.declare(root, "cache stampede", cfg=cfg,
                                   ttl_minutes=10_000, now=T0)
-    assert state["minutesLeft"] == 90
+    assert state["minutesLeft"] == 200
 
 
 def test_redeclaring_extends_rather_than_forking_the_record(tmp_path):

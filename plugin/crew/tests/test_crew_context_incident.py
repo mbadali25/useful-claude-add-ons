@@ -3,7 +3,7 @@
 crew 1.0 removed pm_brief, which was the only thing that announced an open
 incident when a session started. The context hook now carries one line for an
 open or expired-unclosed incident, inside the startup budget, and emits it
-whether or not `memory.inject` is on.
+always.
 
 Same isolation as test_crew_context.py: throwaway repos, never the machine's
 `~/.claude`.
@@ -79,21 +79,6 @@ def test_the_banner_is_emitted_whatever_memory_inject_says(tmp_path, inject):
     lines = _incident_lines(_start(root, source="clear"))
 
     assert [line.split(":")[0] for line in lines] == [f"INCIDENT {state['id']} open"]
-
-
-def test_with_inject_off_the_banner_is_all_that_is_emitted(tmp_path):
-    root = make_repo(tmp_path, config={}, inject=False)
-    crew_incident.declare(str(root), "prod is down")
-
-    text = _start(root)
-
-    assert (len(text.splitlines()), text.startswith("INCIDENT ")) == (1, True)
-
-
-def test_with_inject_off_and_no_incident_nothing_is_emitted(tmp_path):
-    root = make_repo(tmp_path, config={}, inject=False)
-
-    assert _start(root) == ""
 
 
 def test_the_banner_rides_inside_the_startup_budget_even_when_the_codemap_is_huge(tmp_path):

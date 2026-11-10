@@ -1,0 +1,148 @@
+# Crew review-finding classes that a pattern can express (L-0715).
+#
+# Opt-in: nothing runs these by default. A repo lists the linter in its own .crew/verify.json
+# (preReview.linters); the runner that reads this file lands separately.
+#
+# Each rule carries metadata.class, one of the six classes below. Every class is either shipped
+# (an enabled rule here) or named under not-shipped with the reason. The suite
+# plugin/crew/tests/test_crew_lint_rules.py fails when a class is in neither, when fewer than four
+# classes are enabled, when more than two are not shipped, or when a protected class is not shipped.
+#
+# classes: u2028-line-protocol, unquoted-plugin-root, symlink-fifo-open, duplicate-key-json,
+#          bare-executable, test-no-assertion
+# protected: u2028-line-protocol, duplicate-key-json, bare-executable
+#
+# not-shipped:
+#   symlink-fifo-open: open flags are built in variables and getattr(os, "O_NOFOLLOW", 0) in 58 of 58 os.open sites at bdde58724, so a pattern cannot tell a safe open from an unsafe one; the probe stays in recurring-findings.md (RF-01) and review.md step 2d
+#
+# Windows: semgrep 1.95.0 ships no semgrep-core.exe on native Windows (CI run 40410430154, crew-windows-default:
+# "Failed to find semgrep-core.exe in PATH or in the semgrep package"), so the semgrep-running tests skip there,
+# by OS. A stdlib checker for every host belongs to L-0715 PR B.
+#
+# Suppress one reviewed-safe site with an inline "# nosemgrep: <rule id>" that names the reason.
+# Rule ids are matched by suffix, so the config path does not change them.
+rules:
+  - id: crew-splitlines-untrusted-text
+    languages: [python]
+    severity: WARNING
+    mode: taint
+    message: >-
+      str.splitlines() on text read from a file, stdin or a child process also splits on U+2028,
+      U+2029, U+0085 and the \x1c-\x1e separators, so a line protocol can be forged by one stray
+      character. Split on "\n" (after normalising "\r\n"), or mark a reviewed-safe site with
+      # nosemgrep: crew-splitlines-untrusted-text and the reason.
+    metadata:
+      class: u2028-line-protocol
+      standards: [GEN-06]
+    paths:
+      exclude: ["**/tests/**", "**/_test/**", "**/test_*.py", "**/lint/semgrep/fixtures/**"]
+    pattern-sources:
+      - pattern: $P.read_text(...)
+      - pattern: $F.read(...)
+      - pattern: $R.stdout
+      - pattern: $R.stderr
+      - pattern: subprocess.check_output(...)
+      - pattern: sys.stdin
+    pattern-sinks:
+      - patterns:
+          - pattern: $X.splitlines(...)
+          - pattern-not-inside: ($X.splitlines(...) or [...])[0]
+
+  - id: crew-json-duplicate-keys
+    languages: [python]
+    severity: WARNING
+    mode: taint
+    message: >-
+      json.load/json.loads on persisted or external JSON keeps the last of two equal keys silently.
+      Pass object_pairs_hook that refuses a duplicate, or mark a reviewed-safe site with
+      # nosemgrep: crew-json-duplicate-keys and the reason.
+    metadata:
+      class: duplicate-key-json
+      standards: [PYTHON-10]
+    paths:
+      exclude: ["**/tests/**", "**/_test/**", "**/test_*.py", "**/lint/semgrep/fixtures/**"]
+    pattern-sources:
+      - pattern: open(...)
+      - pattern: $P.read_text(...)
+      - pattern: $P.read_bytes()
+      - pattern: $F.read(...)
+      - pattern: $R.stdout
+      - pattern: subprocess.check_output(...)
+      - pattern: sys.stdin
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: json.loads(...)
+              - pattern: json.load(...)
+          - pattern-not: json.loads(..., object_pairs_hook=..., ...)
+          - pattern-not: json.load(..., object_pairs_hook=..., ...)
+
+  - id: crew-bare-interpreter
+    languages: [python]
+    severity: WARNING
+    message: >-
+      A bare interpreter name in a subprocess argument list is resolved from PATH, and pwsh and
+      python3 are often not on PATH (Git Bash on Windows). Resolve the executable (sys.executable,
+      shutil.which with a failure path) and name it absolutely. Ruff S607 covers the other bare
+      names.
+    metadata:
+      class: bare-executable
+      standards: [GEN-08, PYTHON-06]
+    paths:
+      exclude: ["**/tests/**", "**/_test/**", "**/test_*.py", "**/lint/semgrep/fixtures/**"]
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.$F([$E, ...], ...)
+          - pattern: subprocess.$F(($E, ...), ...)
+          - patterns:
+              - pattern-either:
+                  - pattern: $G([$E, ...], ...)
+                  - pattern: $G(($E, ...), ...)
+              - metavariable-regex:
+                  metavariable: $G
+                  regex: '^(run|Popen|call|check_call|check_output)$'
+      - metavariable-regex:
+          metavariable: $E
+          regex: '^[rRbBuU]?["''](pwsh|powershell|python3?|py)["'']$'
+
+  - id: crew-unquoted-plugin-root
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      An interpreter command in a command or skill file takes CLAUDE_PLUGIN_ROOT without quotes, so
+      an install path with a space splits into two arguments. Write "${CLAUDE_PLUGIN_ROOT}/..." in
+      double quotes.
+    metadata:
+      class: unquoted-plugin-root
+      standards: [GEN-09]
+    paths:
+      include: ["*.md"]
+      exclude: ["**/lint/semgrep/fixtures/**"]
+    pattern-regex: '(?:python3?|bash|sh|node|pwsh|source)(?:[ \t]+-[A-Za-z]+)*[ \t]+\$\{?CLAUDE_PLUGIN_ROOT'
+
+  - id: crew-test-no-assertion
+    languages: [python]
+    severity: WARNING
+    message: >-
+      A test_* function whose body holds no assert, raises, fail or check(...) call can only fail by
+      raising. Assert the property, or mark an intentional must-not-raise test with
+      # nosemgrep: crew-test-no-assertion and say so. Whether a test goes red when its guard is
+      removed still needs a mutation run (review.md step 2d); this rule does not claim that.
+    metadata:
+      class: test-no-assertion
+      standards: [GEN-04]
+    paths:
+      include: ["**/tests/**", "**/_test/**", "**/test_*.py"]
+      exclude: ["**/lint/semgrep/fixtures/**"]
+    patterns:
+      - pattern-either:
+          - pattern: |
+              def $T(...):
+                  ...
+          - pattern: |
+              async def $T(...):
+                  ...
+      - metavariable-regex:
+          metavariable: $T
+          regex: '^test_'
+      - pattern-not-regex: '(?<!\w)assert\b|(?<!def )(?<!def\s)\b\w*assert\w*\(|(?<!\w)(raises|fail|check|expect|ok)\('

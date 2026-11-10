@@ -57,11 +57,15 @@ MIGRATE_FIX_MUTATIONS = (
     ),
     (
         # Rollback trusts manifest paths again, the pre-fix loop.
+        # L-0875: the find stops before the closing parenthesis and the
+        # replacement ends inside a call, so the line's tail -- `)` on main,
+        # `, scope)` on L-0725's branch -- closes it either way.
         "migrate rollback trusts the manifest's paths",
         MIGRATE,
-        "    targets, dirs = _manifest_entries(root, manifest)\n",
+        "    targets, dirs = _manifest_entries(root, manifest",
         "    targets = [(t, os.path.join(root, t[\"path\"])) for t in manifest[\"targets\"]]\n"
-        "    dirs = manifest.get(\"createdDirs\", [])\n",
+        "    dirs = manifest.get(\"createdDirs\", [])\n"
+        "    _unused = (lambda *a: a)(root, manifest",
         ("tests/test_migrate.py::"
          "test_rollback_refuses_a_manifest_path_outside_the_repo"),
     ),
@@ -71,9 +75,10 @@ MIGRATE_FIX_MUTATIONS = (
         # check refuses the symlinked dir too, so this restores both.)
         "migrate rollback removes through a symlinked dir",
         MIGRATE,
-        "    targets, dirs = _manifest_entries(root, manifest)\n",
+        "    targets, dirs = _manifest_entries(root, manifest",
         "    targets = [(t, os.path.join(root, t[\"path\"])) for t in manifest[\"targets\"]]\n"
-        "    dirs = manifest.get(\"createdDirs\", [])\n",
+        "    dirs = manifest.get(\"createdDirs\", [])\n"
+        "    _unused = (lambda *a: a)(root, manifest",
         ("tests/test_migrate.py::"
          "test_rollback_refuses_to_remove_through_a_symlinked_dir"),
     ),
@@ -129,9 +134,12 @@ MIGRATE_FIX_MUTATIONS = (
      '            cfg = plan.pop("upgraded")\n',
      '            plan.pop("upgraded")\n',
      "tests/test_migrate.py::test_pre_0_20_config_upgrades_then_migrates_in_one_apply"),
+    # L-0875: lengthened to the message that opens the repo-layer conflict, the
+    # only `notes["unmigrated"]` branch whose text is the same on main and on
+    # L-0725's branch up to this point (a second branch exists there).
     ("T-0038: migrate ignores the upgrade's unmigrated blocks", MIGRATE,
-     '    if notes["unmigrated"]:\n',
-     "    if False:\n",
+     '    if notes["unmigrated"]:\n        plan["conflicts"].append(\n            ".crew/config.json: the ',
+     '    if False:\n        plan["conflicts"].append(\n            ".crew/config.json: the ',
      "tests/test_migrate.py::test_unmigrated_block_is_a_conflict_and_nothing_is_written"),
     ("T-0038: the in-process undo removes config.json instead of restoring it", MIGRATE,
      '        elif item.get("replaces"):\n            atomic_write(path, item["original"], _mode_of(path))\n',

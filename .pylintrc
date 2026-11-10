@@ -44,7 +44,10 @@ ignored-modules=botocore,botocore.*,conftest,docx,docx.*,fcntl,markdown,
                 reportlab,reportlab.*,requests,requests.*,urllib3,urllib3.*,
                 vsdx,vsdx.*,weasyprint,weasyprint.*,yaml,yaml.*,
                 aiosqlite,aiosqlite.*,fastmcp,fastmcp.*,websockets,websockets.*,
+                cryptography,cryptography.*,
                 server
+# cryptography (bridge_tls.py, the Bridge's TLS certificate) is the same case as the
+# three below: pinned in ai-connect's requirements.txt, absent from CI's pylint env.
 # aiosqlite, fastmcp and websockets arrived with the ai-connect plugin, the same
 # case as localgpu's below: installed in its own venv, absent from CI's.
 # `server` is not third-party: it is two LOCAL top-level names, localgpu's

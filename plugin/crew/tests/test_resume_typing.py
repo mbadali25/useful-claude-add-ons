@@ -6,19 +6,17 @@ Must-fire and must-not-fire for each rule the typing path depends on:
     the machine's onlyRepos/onlySessions narrowing, then the method -- tmux
     into the pane whose pid is an ancestor, `auto` never sendkeys on Windows,
     wtype refused, notify types nothing;
-  - the sender (`auto-clear.sh --resume`, `auto-clear.ps1 -Resume`): the
+  - the sender (`auto-clear.sh --resume`): the
     per-handoff marker claimed only after every refusal, the run recorded
     before anything is spawned, then delay -> ready probe -> inhibit -> keys;
-  - the entry point: the context hook starts this flavour's sender on
+  - the entry point: the context hook starts the sender on
     SessionStart clear|compact only, before its own claim, and a failing
     sender never costs the session its context.
 
 No test sends a keystroke or enumerates a real window: every run sets
 CREW_AUTOCLEAR_INHIBIT, points HOME at the fixture, puts a `tmux` stub that
 records its argv first on PATH (the sender's keys would reach the stub even
-without the inhibit), and gives the .ps1 a stubbed window list. The .ps1
-cases are told they are on Windows (`OS=Windows_NT`) and skip without pwsh --
-a skip there means the PowerShell flavour was NOT run.
+without the inhibit). A skip without bash means the sh flavour was NOT run.
 
 Every case resumes a manual /compact: it is bound by session_id, the same on
 every host, where a /clear is bound by the Claude Code process (T-0042) and
@@ -45,9 +43,7 @@ from poll_fixtures import poll_until
 _SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
 _PLUGIN = context._ROOT  # pylint: disable=protected-access
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = crew_fixtures.resolve_pwsh()
 needs_bash = pytest.mark.skipif(_BASH is None, reason="bash not installed - the sh flavour was NOT run")
-needs_pwsh = pytest.mark.skipif(_PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")
 needs_posix = pytest.mark.skipif(os.name == "nt", reason="the tmux path is POSIX-only - NOT run here")
 
 SESSION = "sess-t0013"
@@ -112,7 +108,7 @@ class Fixture:
         self.binding = crew_fixtures.bind_session(self.home, SESSION)
 
     def machine(self, auto=True, auto_clear=None, resume=None):
-        block = {"auto": auto, "typeDelaySeconds": 0, "readyTimeoutSeconds": 2}
+        block = {"auto": auto}
         block.update(resume or {})
         data = {"resume": block}
         if auto_clear is not None:
@@ -141,7 +137,7 @@ class Fixture:
         env.update(extra)
         return env
 
-    def plan(self, monkeypatch, tmux=True, flavour="sh", **extra):
+    def plan(self, monkeypatch, tmux=True, **extra):
         """resume_plan in-process, with this fixture's environment."""
         env = self.env(tmux=tmux, **extra)
         monkeypatch.setenv("PATH", env["PATH"])
@@ -150,7 +146,7 @@ class Fixture:
             if name in env:
                 monkeypatch.setenv(name, env[name])
         return crew_autocycle.resume_plan(str(self.root), SESSION, "compact", global_path=str(self.global_path),
-                                          env=env, flavour=flavour, plugin_root=_PLUGIN)
+                                          env=env, plugin_root=_PLUGIN)
 
     def sh(self, *args, tmux=True, wait=True, **extra):
         done = subprocess.run([_BASH, os.path.join(_SCRIPTS, "auto-clear.sh").replace("\\", "/"), "--resume",
@@ -160,19 +156,6 @@ class Fixture:
         if wait and "autoresume: typing" in done.stdout:
             self.wait_for_sender()
         return done
-
-    def ps1(self, *args, method="sendkeys", **extra):
-        stub = self.tmp / "windows.json"
-        stub.write_text(json.dumps([{"id": 4242, "pid": crew_fixtures.TERMINAL_PID, "title": "crew session"}]),
-                        encoding="utf-8")
-        env = self.env(tmux=False, OS="Windows_NT", CREW_AUTOCLEAR_WINDOW_STUB=str(stub), **extra)
-        if method is not None:
-            self.machine(auto_clear={"method": method})
-        return subprocess.run([_PWSH, "-NoProfile", "-NonInteractive", "-File",
-                               os.path.join(_SCRIPTS, "auto-clear.ps1"), "-Resume", "-Session", SESSION,
-                               "-Source", "compact", "-Root", str(self.root), "-Python", sys.executable, *args],
-                              cwd=str(self.root), env=env, capture_output=True, text=True, check=False,
-                              timeout=120)
 
     def log(self):
         path = self.root / ".crew" / ".autoclear.log"
@@ -203,7 +186,7 @@ def test_resume_plan_send_on_tmux_ancestor_pane(fx, monkeypatch):
 
     assert (got["status"], got["method"], got["target"], got["command"], got["delay"], got["timeout"],
             got["key"], got["marker"].endswith(f"resume-typed-{fx.key}"), json.loads(got["decision"])["action"]) == \
-        ("send", "tmux", PANE, PROMPT, "0", "2", fx.key, True, "run")
+        ("send", "tmux", PANE, PROMPT, "2", "15", fx.key, True, "run")
 
 
 def test_resume_plan_off_when_decide_off(fx, monkeypatch):
@@ -250,7 +233,7 @@ def test_resume_plan_off_outside_only_repos(fx, monkeypatch, narrowing):
 
 
 def test_resume_plan_refuses_wtype(fx, monkeypatch):
-    fx.machine(auto_clear={"method": "wtype", "unsafeFocus": True})
+    fx.machine(auto_clear={"method": "wtype"})
 
     got = fx.plan(monkeypatch)
 
@@ -283,24 +266,24 @@ def test_resume_plan_refuses_xdotool(fx, monkeypatch):
     assert (got["status"], "xdotool cannot see" in got["reason"]) == ("refuse", True)
 
 
-def test_resume_plan_ps1_flavour_leaves_the_method_to_the_ps1(fx, monkeypatch):
-    fx.machine(auto_clear={"method": "sendkeys"})
+def test_type_delay_seconds_is_constant(fx):
+    fx.machine(resume={"typeDelaySeconds": 7})
 
-    got = fx.plan(monkeypatch, tmux=False, OS="Windows_NT", flavour="ps1")
-
-    assert (got["status"], got["method"], got["command"]) == ("send", "sendkeys", PROMPT)
+    assert crew_autocycle.resume_typing()[0] == crew_state.RESUME_TYPE_DELAY_SECONDS == 2
 
 
-@pytest.mark.parametrize("value,expected", [(5, (5, 2)), (-1, (2, 2)), ("x", (2, 2)), (True, (2, 2))])
-def test_resume_typing_reads_the_machine_file_and_rejects_unusable_values(fx, value, expected):
-    fx.machine(resume={"typeDelaySeconds": value})
+def test_ready_timeout_seconds_is_constant(fx):
+    fx.machine(resume={"readyTimeoutSeconds": 1})
 
-    assert crew_autocycle.resume_typing(str(fx.global_path)) == expected
+    assert crew_autocycle.resume_typing()[1] == crew_state.RESUME_READY_TIMEOUT_SECONDS == 15
 
 
-def test_resume_typing_defaults_are_crew_states(tmp_path):
-    assert crew_autocycle.resume_typing(str(tmp_path / "absent.json")) == \
-        (crew_state.RESUME_DEFAULTS["typeDelaySeconds"], crew_state.RESUME_DEFAULTS["readyTimeoutSeconds"])
+def test_resume_plan_ignores_the_machine_files_timing_keys(fx, monkeypatch):
+    fx.machine(resume={"typeDelaySeconds": 0, "readyTimeoutSeconds": 1})
+
+    got = fx.plan(monkeypatch)
+
+    assert (got["delay"], got["timeout"]) == ("2", "15")
 
 
 @pytest.mark.parametrize("capture,state", [
@@ -334,12 +317,28 @@ def test_types_rendered_prompt_via_tmux_stub(fx):
 
     assert dry.stdout.splitlines()[:5] == ["autoresume: would send", "  method: tmux",
                                            f"  target: {PANE} [pane pid " + dry.stdout.split("[pane pid ")[1]
-                                           .split("]")[0] + "]", f"  command: {PROMPT}", "  delay: 0s"]
-    assert done.stdout.strip() == f"autoresume: typing {PROMPT} in 0s (method tmux)"
+                                           .split("]")[0] + "]", f"  command: {PROMPT}", "  delay: 2s"]
+    assert done.stdout.strip() == f"autoresume: typing {PROMPT} in 2s (method tmux)"
     assert f"would have typed '{PROMPT}' into {PANE}, but CREW_AUTOCLEAR_INHIBIT is set" in log, log
     assert (os.path.isfile(fx.marker), fx.recorded()) == (True, True)
     assert f"capture-pane -p -e -t {PANE}" in fx.tmux_calls()
     assert "send-keys" not in fx.tmux_calls()
+
+
+@needs_bash
+@needs_posix
+@pytest.mark.parametrize("pathconv", ["", "1"])
+def test_types_rendered_prompt_when_git_bash_path_conversion_is_off(fx, pathconv):
+    """L-0868: MSYS_NO_PATHCONV set, even empty, turns Git Bash's argument
+    conversion off, so a POSIX `--root`/script path reaches native python.exe
+    as written. The hook must hand python converted paths itself. The variable
+    is set here, never popped: on Linux it is inert and this passes; on
+    win-repo-2 it fails without crew_native_path on the path arguments."""
+    done = fx.sh(MSYS_NO_PATHCONV=pathconv)
+    log = fx.wait_for_sender()
+
+    assert done.stdout.strip() == f"autoresume: typing {PROMPT} in 2s (method tmux)"
+    assert f"would have typed '{PROMPT}' into {PANE}" in log, log
 
 
 @needs_bash
@@ -381,32 +380,10 @@ def test_both_flavours_type_at_most_once(fx):
     assert fx.log().count("would have typed") == 1, fx.log()
 
 
-@needs_pwsh
-@needs_bash
-def test_both_flavours_type_at_most_once_sh_and_ps1(fx):
-    """Both flavours on one SessionStart (method sendkeys): the sh one refuses
-    without claiming, the .ps1 one claims, records and reaches the keys."""
-    fx.machine(auto_clear={"method": "sendkeys"})
-    stub = fx.tmp / "windows.json"
-    stub.write_text(json.dumps([{"id": 4242, "pid": crew_fixtures.TERMINAL_PID, "title": "crew session"}]),
-                    encoding="utf-8")
-    sh_env = fx.env(tmux=False, OS="Windows_NT")
-    ps_env = fx.env(tmux=False, OS="Windows_NT", CREW_AUTOCLEAR_WINDOW_STUB=str(stub))
-    outs = _race(fx, ([_BASH, os.path.join(_SCRIPTS, "auto-clear.sh"), "--resume", "--session", SESSION,
-                       "--source", "compact", "--root", str(fx.root)], sh_env),
-                 ([_PWSH, "-NoProfile", "-NonInteractive", "-File", os.path.join(_SCRIPTS, "auto-clear.ps1"),
-                   "-Resume", "-Session", SESSION, "-Source", "compact", "-Root", str(fx.root),
-                   "-Python", sys.executable], ps_env))
-
-    assert "auto-clear.ps1's job" in outs[0], outs
-    assert fx.log().count("would have sent, but CREW_AUTOCLEAR_INHIBIT is set") == 1, fx.log()
-    assert (os.path.isfile(fx.marker), fx.recorded()) == (True, True)
-
-
 @needs_bash
 @pytest.mark.parametrize("auto_clear,expect", [
-    ({"method": "wtype", "unsafeFocus": True}, "wtype types into whatever has focus"),
-    ({"method": "sendkeys"}, "auto-clear.ps1's job"),
+    ({"method": "wtype"}, "wtype types into whatever has focus"),
+    ({"method": "sendkeys"}, crew_autocycle.SENDKEYS_REMOVED),
 ])
 def test_refusing_flavour_leaves_marker_unclaimed(fx, auto_clear, expect):
     fx.machine(auto_clear=auto_clear)
@@ -451,12 +428,11 @@ def test_nonempty_input_line_refuses(fx):
 @needs_posix
 def test_probe_timeout_refuses(fx):
     fx.pane.write_text(BUSY, encoding="utf-8")
-    fx.machine(resume={"readyTimeoutSeconds": 1})
 
     fx.sh()
-    log = fx.wait_for_sender()
+    log = fx.wait_for_sender(timeout=40)
 
-    assert f"the input line of {PANE} did not become ready within 1s (last probe: busy)" in log, log
+    assert f"the input line of {PANE} did not become ready within 15s (last probe: busy)" in log, log
     assert ("would have typed" in log, "send-keys" in fx.tmux_calls()) == (False, False)
 
 
@@ -465,7 +441,6 @@ def test_probe_timeout_refuses(fx):
 def test_a_busy_pane_that_turns_ready_is_typed(fx):
     """The probe waits rather than refusing while the /compact frame is busy."""
     fx.pane.write_text(BUSY, encoding="utf-8")
-    fx.machine(resume={"readyTimeoutSeconds": 10})
 
     fx.sh(wait=False)
     time.sleep(1)
@@ -506,6 +481,18 @@ def test_tmux_unset_is_logged(fx):
 
 
 @needs_bash
+@pytest.mark.parametrize("pathconv", ["", "1"])
+def test_tmux_unset_is_logged_when_git_bash_path_conversion_is_off(fx, pathconv):
+    """L-0868, no tmux needed, so it RUNS on native Windows: MSYS_NO_PATHCONV
+    set (even empty) must not stop the sh sender reading its plan."""
+    fx.machine(auto_clear={"method": "tmux"})
+
+    done = fx.sh(tmux=False, MSYS_NO_PATHCONV=pathconv)
+
+    assert "$TMUX is unset" in done.stdout and "$TMUX is unset" in fx.log(), (done.stdout, fx.log())
+
+
+@needs_bash
 def test_notify_types_nothing_and_claims_nothing(fx):
     done = fx.sh(tmux=False, OS="Windows_NT")
 
@@ -522,122 +509,6 @@ def test_stop_path_never_types_a_resume(fx):
                           check=False, timeout=60)
 
     assert (done.stdout, fx.log(), os.path.exists(fx.marker)) == ("", "", False)
-
-
-@needs_pwsh
-def test_ps1_sendkeys_must_fire_dry_run_and_inhibited_send(fx):
-    dry = fx.ps1("-DryRun")
-    done = fx.ps1()
-
-    assert dry.stdout.splitlines()[:2] == ["autoclear: would send", "  method: sendkeys"], dry.stdout + dry.stderr
-    assert f"  command: {PROMPT}" in dry.stdout and "  delay: 0s" in dry.stdout, dry.stdout
-    assert "would have sent, but CREW_AUTOCLEAR_INHIBIT is set" in fx.log(), fx.log() + done.stderr
-    assert (os.path.isfile(fx.marker), fx.recorded()) == (True, True)
-
-
-@needs_pwsh
-def test_ps1_auto_is_notify_and_claims_nothing(fx):
-    done = fx.ps1(method="auto")
-
-    assert done.stdout.strip() == f"autoresume: notify - run {PROMPT} yourself", done.stdout + done.stderr
-    assert (os.path.exists(fx.marker), fx.recorded()) == (False, False)
-
-
-@needs_pwsh
-def test_ps1_second_run_same_handoff_types_nothing(fx):
-    os.makedirs(os.path.dirname(fx.marker), exist_ok=True)
-    with open(fx.marker, "w", encoding="utf-8"):
-        pass
-
-    done = fx.ps1()
-
-    assert done.stdout.strip() == ("autoresume: refused - this handoff was already typed once "
-                                   f"(marker resume-typed-{fx.key} exists)"), done.stdout + done.stderr
-    assert (fx.recorded(), "would have sent" in fx.log()) == (False, False)
-
-
-@needs_pwsh
-def test_ps1_record_failure_types_nothing(fx):
-    lock = crew_resume.state_path(str(fx.root)) + ".lock"
-    os.makedirs(os.path.dirname(lock), exist_ok=True)
-    with open(lock, "w", encoding="utf-8"):
-        pass
-
-    done = fx.ps1()
-
-    assert "could not record the run (could not take the resume-state lock)" in done.stdout, \
-        done.stdout + done.stderr
-    assert (fx.recorded(), "would have sent" in fx.log()) == (False, False)
-
-
-@needs_pwsh
-def test_ps1_off_is_silent(fx):
-    fx.machine(auto=None, auto_clear={"method": "sendkeys"})
-
-    done = fx.ps1(method=None)
-
-    assert (done.stdout, fx.log()) == ("", ""), done.stderr
-
-
-@needs_pwsh
-def test_ps1_tmux_method_refuses_without_claiming(fx):
-    done = fx.ps1(method="tmux")
-
-    assert ("auto-clear.sh's job" in done.stdout, os.path.exists(fx.marker)) == (True, False), done.stdout
-
-
-def _child_source():
-    with open(os.path.join(_SCRIPTS, "auto-clear.ps1"), encoding="utf-8") as handle:
-        source = handle.read()
-    start = source.index("$child = @'\n") + len("$child = @'\n")
-    return source[start:source.index("\n'@", start)]
-
-
-def _run_child_slice(tmp_path, body, env_overrides):
-    """A slice of the child heredoc that ends before any SendWait, under pwsh
-    with the log replaced by stdout. Refuses a slice that could type."""
-    code = "\n".join(line for line in body.splitlines() if not line.lstrip().startswith("#"))
-    assert "SendWait" not in code and "Windows.Forms" not in code, code
-    script = tmp_path / "slice.ps1"
-    script.write_text(
-        "function Write-CrewChildNote { param($m) Write-Output \"NOTE: $m\" }\n"
-        "[long]$Hwnd = [long]$env:CREW_TEST_HWND\n$Delay = 0\n"
-        f"$Text = '{PROMPT}'\n$WindowTitle = ''\n$IsWindowsTerminalBool = $true\n"
-        + body + "\nWrite-Output 'PROCEEDED'\n", encoding="utf-8")
-    env = {k: v for k, v in os.environ.items() if k != "CREW_AUTOCLEAR_INHIBIT"}
-    env.update(env_overrides)
-    done = subprocess.run([_PWSH, "-NoProfile", "-NonInteractive", "-File", str(script)], env=env,
-                          capture_output=True, text=True, check=False, timeout=60)
-    assert done.returncode == 0, done.stderr
-    return done.stdout
-
-
-@needs_pwsh
-def test_sendkeys_focus_lost_refuses(tmp_path):
-    """The child resume mode spawns is the /clear path's own: after the delay,
-    another window in front declines, naming the resume command."""
-    child = _child_source()
-    body = child[child.index("$fg = "):child.index("$recheck = Get-CrewChildTabRecheck")]
-    body = body.replace("[CrewAC.Win]::GetForegroundWindow().ToInt64()", "[long]$env:CREW_TEST_FG")
-
-    out = _run_child_slice(tmp_path, body, {"CREW_TEST_FG": "7", "CREW_TEST_HWND": "42"})
-
-    assert ("lost focus" in out, f"run {PROMPT} yourself" in out, "PROCEEDED" in out) == (True, True, False), out
-
-
-@needs_pwsh
-def test_sendkeys_tab_mismatch_refuses(tmp_path):
-    """The tab recheck after the delay, for a Windows Terminal owner: with no
-    provable single tab (here: no UI Automation at all) it declines."""
-    child = _child_source()
-    functions = child[child.index("function Get-CrewWindowsTerminalTabState"):child.index("Start-Sleep -Seconds")]
-    body = functions + child[child.index("$recheck = Get-CrewChildTabRecheck"):
-                             child.index("if ($env:CREW_AUTOCLEAR_INHIBIT)")]
-
-    out = _run_child_slice(tmp_path, body, {"CREW_TEST_HWND": "42"})
-
-    assert ("cannot verify the active tab" in out, f"run {PROMPT} yourself" in out, "PROCEEDED" in out) == \
-        (True, True, False), out
 
 
 # --- step 4: the entry point ---------------------------------------------------
@@ -690,7 +561,7 @@ def test_context_hook_names_the_typing_on_compact(fx):
     _done, text = _hook(fx, _start(fx))
     log = fx.wait_for_sender()
 
-    assert f"Auto-resume: typing {PROMPT} into this session in 0s (method tmux); if it does not arrive, " \
+    assert f"Auto-resume: typing {PROMPT} into this session in 2s (method tmux); if it does not arrive, " \
         "type it yourself." in text, text
     assert "Auto-resume did not start" not in text and f"would have typed '{PROMPT}'" in log, (text, log)
 
@@ -744,19 +615,13 @@ def test_resume_mode_failure_keeps_context_output(fx, monkeypatch):
     assert [r["resumeTyping"] for r in _typing_log(fx)] == ["failed"]
 
 
-def _ps1_tmux_refusal():
-    """auto-clear.ps1's own refusal text for method tmux, read from the script."""
-    with open(os.path.join(_SCRIPTS, "auto-clear.ps1"), encoding="utf-8") as handle:
-        got = re.search(r'"tmux"\s*\{\s*Stop-CrewAutoClear "([^"]+)"', handle.read())
-    assert got, "auto-clear.ps1 no longer refuses method tmux by name"
-    return got.group(1)
-
-
 @pytest.mark.parametrize("reason,expected", [
-    (crew_autocycle.resolve_method({"method": "sendkeys"}, {})["reason"],
+    ("method sendkeys is auto-clear.ps1's job; this is the POSIX flavour.",
      "Auto-resume was left to the PowerShell hook (auto-clear.ps1): this flavour does not type method sendkeys."),
-    (_ps1_tmux_refusal(),
+    ("method tmux is auto-clear.sh's job; this is the Windows flavour.",
      "Auto-resume was left to the bash hook (auto-clear.sh): this flavour does not type method tmux."),
+    (crew_autocycle.resolve_method({"method": "sendkeys"}, {})["reason"],
+     f"Auto-resume was not typed: {crew_autocycle.SENDKEYS_REMOVED}."),
     (f"the input line of {PANE} is not empty, so nothing was typed - run {PROMPT} yourself",
      f"Auto-resume was not typed: the input line of {PANE} is not empty, so nothing was typed - run {PROMPT} "
      "yourself."),
@@ -764,26 +629,20 @@ def _ps1_tmux_refusal():
      f"Auto-resume was not typed: the input line of {PANE} did not become ready within 1s (last probe: busy)."),
 ])
 def test_not_typed_line_tells_the_other_flavours_job_from_a_real_refusal(reason, expected):
-    """On Windows both flavours run: a refusal that only says "the other
-    flavour types this method" must never read as "not typed", because the
-    other flavour may be typing it. Every other refusal still says so. The
-    two other-flavour texts are each sender's own, so a reworded one fails."""
+    """A refusal line written by a build that still had two flavours, saying
+    "the other flavour types this method", must never read as "not typed".
+    Every live refusal, sendkeys's removal included, says it was not typed."""
     assert crew_context.not_typed_line({"status": "refused", "text": f"refused - {reason}"}) == expected
 
 
 @needs_bash
-def test_sh_hook_with_sendkeys_leaves_the_resume_to_the_ps1(fx):
-    """Windows with method sendkeys: the sh hook can win the context claim
-    before the ps1 sender records its run, so decide still reads `run`. Its
-    context must not say the resume was not typed."""
+def test_sh_hook_with_sendkeys_says_it_was_removed_and_types_nothing(fx):
     fx.machine(auto_clear={"method": "sendkeys"})
 
     _done, text = _hook(fx, _start(fx), tmux=False)
 
     assert f"Auto-resume: ready to run {PROMPT}." in text, text
-    assert "was not typed" not in text, text
-    assert "Auto-resume was left to the PowerShell hook (auto-clear.ps1): this flavour does not type method " \
-        "sendkeys." in text, text
+    assert f"Auto-resume was not typed: {crew_autocycle.SENDKEYS_REMOVED}." in text, text
     assert ([r["resumeTyping"] for r in _typing_log(fx)], os.path.exists(fx.marker)) == (["refused"], False)
 
 

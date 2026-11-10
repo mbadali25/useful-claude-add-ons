@@ -89,8 +89,7 @@ wrapping it.
 
 **On native Windows, pick the shell route.** Run
 `crew_shell.py probe --write`. When the state is `usable`, also run
-`crew_shell.py measure --write`. Report the state and the numbers, then ask
-which `shellRoute.mode` I want (`auto`, `wsl`, `powershell` or `gitbash`) and
+`crew_shell.py measure --write`. Report the state and the numbers (the route is automatic), then ask
 whether I want the in-WSL clone it offers. On `not-installed`, print the
 recommendation it gives and never run it. See "Choosing the shell route on
 Windows" in `crew-setup/platform.md`.
@@ -160,6 +159,17 @@ It compares the repo's CLAUDE.md against the template section by section and
 prints what is missing, what is extra, the line count against the 60-line
 ceiling, and how many template placeholders are still unfilled.
 
+A placeholder is one of the template's own blanks, read from
+`repo-claude-template.md` on each run: an angle-bracket token standing where a
+value goes, outside a code span (`# <repo-name>`) or alone inside one. A token
+that shares its code span or fenced line with other text is a command's
+metavariable (`/crew:promote <env>`, `git checkout -- <path>`) and is not
+counted, so a CLAUDE.md may document its commands. A blank that was edited but
+not replaced (`<linux | windows>`) is no longer the template's text and is not
+counted either: read the header lines yourself. `Placeholder check NOT RUN`
+means the count could not be taken (no `awk`, or no readable template): it is
+not a zero, and the phase does not close on it.
+
 - **No CLAUDE.md:** create it from `repo-claude-template.md` and fill it in with
   me.
 - **One already exists:** **append the missing sections, never regenerate.** Most
@@ -212,14 +222,14 @@ On **Linux, macOS, WSL or Git Bash**, describe the tmux path instead
 (`describe_tmux_path()` in the same module) and write nothing — there is no
 method to propose there, `auto` already resolves to it. Either way, **enabling**
 auto-clear (`context.autoClear.enabled: true`) is a separate question with its
-own yes: never bundle it into the method question, and never write `sendkeys`
-without being asked for it by name (`apply-method sendkeys --yes` refuses
-without `--yes`).
+own yes: never bundle it into the method question. `sendkeys` was removed in
+crew 1.2.61 (L-0727) and is never offered (`apply-method sendkeys` refuses by
+name, whatever `--yes` says).
 
 Tell them the threshold is read from the transcript's own usage records, not
 estimated, and that the window is derived from the model (Claude 5 family 1M,
-Haiku and 4.x 200k) and corrected by the session's peak. Leave `budgetTokens`
-at `null` unless `/context` and the warning disagree.
+Haiku and 4.x 200k) and corrected by the session's peak. There is no budget
+setting to pin; the window is always derived.
 
 The warning fires at the **later** of `warnAt` and `reserveTokens` of remaining
 headroom (default 100k), so a 1M session is not asked to wrap up with 200k still
@@ -248,7 +258,7 @@ human line. `tracked` lines name files the new pattern cannot untrack; `needs-ow
 committed secret - report it to me, never untrack or rewrite history; exit 4 is "could not tell".
 
 **Done when:** `.crew/config.json` is complete, `claude-md-audit.sh` reports no
-missing sections and no remaining placeholders,
+missing sections and no remaining placeholders (no placeholder line at all; `NOT RUN` is not that),
 and `.gitignore` covers secrets and transcripts, and the managed language block is current
 (`crew_gitignore.py check` exits 0, or 3 with the owner told).
 
@@ -265,7 +275,7 @@ Run `providers.sh`. Then, per the `crew-providers` skill:
   leaving it unset makes crew skip Copilot on purpose.
 - **Design:** offer Gemini. Walk me through getting a key from AI Studio if I
   want it, and confirm the CLI's non-interactive flag rather than assuming.
-  Write `secondOpinion` into config with `sendsCode: false`.
+  Write `secondOpinion` into config (second opinions never send code; that is fixed).
 - **Dev:** leave `dev.provider` on `claude` unless I ask otherwise. If I do want
   Codex writing code, set it and tell me plainly that Codex is then barred from
   reviewing its own diff, so QA drops to the next family in `qa.order`.

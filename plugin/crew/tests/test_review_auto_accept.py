@@ -288,6 +288,12 @@ REFUSALS = [
     ("ignored-lines-3", _final_with(ignored=3), FOLLOW, "recovered from 3 stray line(s)"),
     ("ignored-lines-missing", _final_with(ignored=_ABSENT), FOLLOW,
      "no readable ignored_lines"),
+    # L-0897: the case above only passes through `record`, which writes the key as
+    # null, and review.json's own check also says "no readable ignored_lines", so a
+    # `.get("ignored_lines", 0)` default on the ROW stayed unseen. A row with the
+    # key gone (recorded before L-0576) next to a review.json that reads 0 isolates it.
+    ("ignored-lines-row-key-gone", _final_row_edit(lambda row: row.pop("ignored_lines")), FOLLOW,
+     "has no readable ignored_lines"),
     ("ignored-lines-string", _final_with(ignored="x"), FOLLOW, "no readable ignored_lines"),
     ("ignored-lines-bool", _final_with(ignored=True), FOLLOW, "no readable ignored_lines"),
     ("ignored-lines-negative", _final_with(ignored=-1), FOLLOW, "no readable ignored_lines"),
@@ -671,7 +677,7 @@ def _step3_closure_lines():
     path = os.path.join(context._ROOT, "commands", "review.md")  # pylint: disable=protected-access
     with open(path, encoding="utf-8") as fh:
         text = fh.read()
-    start = text.index("3. **Closure (L-0510).**")
+    start = text.index("**3.3 Closure (L-0510).**")
     block = text[start:text.index("\n4. ", start)]
     return [line for line in block.split("\n") if "CLAUDE_PLUGIN_ROOT" in line]
 
@@ -680,7 +686,7 @@ def test_step3_closure_commands_quote_the_plugin_root():
     lines = _step3_closure_lines()
     unquoted = [line for line in lines if re.search(r'(?<!")\$\{CLAUDE_PLUGIN_ROOT\}', line)]
 
-    assert (len(lines) >= 2, unquoted) == (True, []), lines
+    assert (len(lines) >= 1, unquoted) == (True, []), lines
 
 
 # --- review round 6 FIX 4: only "\n" separates direction.md lines -------------

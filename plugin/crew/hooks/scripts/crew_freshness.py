@@ -75,8 +75,8 @@ def contained_path(root, value, default):
     Config is hand-edited and, in a cloned repo, is written by whoever wrote
     the repo. A relative path with `..`, an absolute path, or a UNC path all
     resolve outside `root` -- and these values are used to READ files that
-    then reach the model's context (`context.handoffPath` under
-    `context.autoResume` injects the whole file at session start). A repo that
+    then reach the model's context (the handoff note is injected whole at
+    session start). A repo that
     can name any file on the machine and have it read into a session is a repo
     that can exfiltrate through the next thing the session says.
 

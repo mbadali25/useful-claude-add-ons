@@ -53,7 +53,7 @@ _NO_PYTHON = "no usable python"
 
 # What a real, over-threshold (or interpreter-failure) run says on stderr --
 # both now write the handoff instruction and claim the same marker.
-_HANDOFF_MARKER = "write the handoff note to"
+_HANDOFF_MARKER = "Reach a stopping point"
 
 # Keyed on the session since the auto-cycle fix; these payloads carry no
 # session_id, so this is the documented fallback key.
@@ -99,10 +99,8 @@ def _stub(directory, exit_code=9009, stdout="", names=("python3", "python", "py"
     return directory
 
 
-def _config(budget=100, warn_at=0.8, reserve=0):
-    cfg = {"warnAt": warn_at, "budgetTokens": budget,
-           "handoffPath": ".work/HANDOFF.md", "reserveTokens": reserve,
-           "autoWrapUp": False}
+def _config(warn_at=0.8, reserve=0):
+    cfg = {"warnAt": warn_at, "reserveTokens": reserve}
     return {"context": cfg}
 
 
@@ -167,9 +165,9 @@ def _coreutils_only(tmp_path):
 
 @needs_bash
 def test_must_block_over_threshold_with_real_python(tmp_path):
-    root = _repo(tmp_path, budget=100)
-    # ~500 bytes clears the 80-token threshold on the size-fallback estimate.
-    proc = _run(root, [_real_python_dir()], transcript_bytes=500)
+    root = _repo(tmp_path)
+    # ~1MB clears the 160,000-token threshold on the size-fallback estimate.
+    proc = _run(root, [_real_python_dir()], transcript_bytes=1_000_000)
     assert proc.returncode == 2, proc.stderr
     assert _HANDOFF_MARKER in proc.stderr, proc.stderr
     assert (root / _MARKER_REL).exists()
@@ -179,7 +177,7 @@ def test_must_block_over_threshold_with_real_python(tmp_path):
 
 @needs_bash
 def test_must_allow_under_threshold_with_real_python(tmp_path):
-    root = _repo(tmp_path, budget=100)
+    root = _repo(tmp_path)
     proc = _run(root, [_real_python_dir()], transcript_bytes=100)
     assert proc.returncode == 0, proc.stderr
     assert proc.stderr.strip() == "", proc.stderr
@@ -205,10 +203,10 @@ def test_must_allow_under_threshold_with_real_python(tmp_path):
 def test_stub_python_blocks_on_a_real_stop_without_claiming_the_marker(tmp_path):
     """The reported defect, re-shaped by the round-4 review. The stub is the
     only python on PATH."""
-    root = _repo(tmp_path, budget=100)
+    root = _repo(tmp_path)
     apps = _stub(tmp_path / "fakepath" / "WindowsApps")
 
-    proc = _run(root, [str(apps)], transcript_bytes=500)
+    proc = _run(root, [str(apps)], transcript_bytes=1_000_000)
     assert proc.returncode == 2, (
         "a broken interpreter must block on a real Stop event: " + proc.stderr)
     assert _NO_PYTHON in proc.stderr, (
@@ -225,10 +223,10 @@ def test_stub_python_stands_down_on_the_forced_continuation_retry(tmp_path):
     Claude Code's own retry after the block above. Checked FIRST, before the
     resolver ever runs, so this must be silent (exit 0, no message) even
     though the interpreter is exactly as broken as the must-block case."""
-    root = _repo(tmp_path, budget=100)
+    root = _repo(tmp_path)
     apps = _stub(tmp_path / "fakepath" / "WindowsApps")
 
-    proc = _run(root, [str(apps)], transcript_bytes=500, stop_hook_active=True)
+    proc = _run(root, [str(apps)], transcript_bytes=1_000_000, stop_hook_active=True)
     assert proc.returncode == 0, (
         "stop_hook_active must stand this down before the resolver runs: "
         + proc.stderr)
@@ -241,10 +239,10 @@ def test_stub_outside_a_windowsapps_directory_also_blocks_without_a_marker(tmp_p
     """Only the EXECUTE probe catches this: the directory name gives no clue,
     so nothing but running the candidate and reading back `sys.executable`
     distinguishes it from a real interpreter."""
-    root = _repo(tmp_path, budget=100)
+    root = _repo(tmp_path)
     apps = _stub(tmp_path / "some" / "ordinary" / "bin")
 
-    proc = _run(root, [str(apps)], transcript_bytes=500)
+    proc = _run(root, [str(apps)], transcript_bytes=1_000_000)
 
     assert proc.returncode == 2, proc.stderr
     assert _NO_PYTHON in proc.stderr, proc.stderr
@@ -256,10 +254,10 @@ def test_candidate_printing_a_plausible_path_but_exiting_nonzero_blocks_without_
     """A wrapper that LOOKS like an answer: prints a plausible interpreter
     path and then exits non-zero. The exit-status check rejects it even
     though a path was printed."""
-    root = _repo(tmp_path, budget=100)
+    root = _repo(tmp_path)
     apps = _stub(tmp_path / "wrappers", exit_code=1, stdout="/fake/python")
 
-    proc = _run(root, [str(apps)], transcript_bytes=500)
+    proc = _run(root, [str(apps)], transcript_bytes=1_000_000)
 
     assert proc.returncode == 2, proc.stderr
     assert _NO_PYTHON in proc.stderr, proc.stderr
@@ -270,10 +268,10 @@ def test_candidate_printing_a_plausible_path_but_exiting_nonzero_blocks_without_
 def test_no_python_at_all_blocks_without_a_marker(tmp_path):
     """The plainer case: PATH genuinely has nothing named python3/python/py
     anywhere -- not shadowed, absent."""
-    root = _repo(tmp_path, budget=100)
+    root = _repo(tmp_path)
     bindir = _coreutils_only(tmp_path)
 
-    proc = _run(root, [str(bindir)], transcript_bytes=500, isolate_path=True)
+    proc = _run(root, [str(bindir)], transcript_bytes=1_000_000, isolate_path=True)
 
     assert proc.returncode == 2, proc.stderr
     assert _NO_PYTHON in proc.stderr, proc.stderr
@@ -282,10 +280,10 @@ def test_no_python_at_all_blocks_without_a_marker(tmp_path):
 
 @needs_bash
 def test_no_python_at_all_stands_down_on_the_forced_continuation_retry(tmp_path):
-    root = _repo(tmp_path, budget=100)
+    root = _repo(tmp_path)
     bindir = _coreutils_only(tmp_path)
 
-    proc = _run(root, [str(bindir)], transcript_bytes=500, isolate_path=True,
+    proc = _run(root, [str(bindir)], transcript_bytes=1_000_000, isolate_path=True,
                 stop_hook_active=True)
     assert proc.returncode == 0, proc.stderr
     assert proc.stderr.strip() == "", proc.stderr
@@ -298,10 +296,10 @@ def test_real_python_behind_a_stub_still_delivers_the_warning(tmp_path):
     never fires again". A WindowsApps stub ahead of a real interpreter is the
     exact machine layout reported. Resolution SUCCEEDS here, so this is the
     normal over-threshold path, not the interpreter-failure one."""
-    root = _repo(tmp_path, budget=100)
+    root = _repo(tmp_path)
     apps = _stub(tmp_path / "fakepath" / "WindowsApps", names=("python3",))
 
-    proc = _run(root, [str(apps), _real_python_dir()], transcript_bytes=500)
+    proc = _run(root, [str(apps), _real_python_dir()], transcript_bytes=1_000_000)
 
     assert proc.returncode == 2, proc.stderr
     assert _HANDOFF_MARKER in proc.stderr, proc.stderr
@@ -333,7 +331,7 @@ def test_non_crew_repo_never_attempts_python_at_all(tmp_path):
     (root / ".crew").mkdir(parents=True)
     bindir = _coreutils_only(tmp_path)
 
-    proc = _run(root, [str(bindir)], transcript_bytes=500, isolate_path=True)
+    proc = _run(root, [str(bindir)], transcript_bytes=1_000_000, isolate_path=True)
 
     assert proc.returncode == 0, proc.stderr
     assert proc.stderr.strip() == "", (
@@ -353,7 +351,7 @@ def test_context_null_is_reported_as_malformed_not_interpreter(tmp_path):
     interpreter for a config problem."""
     root = crew_fixtures.make_repo(
         tmp_path, config={"context": None}, git=False)
-    proc = _run(root, [_real_python_dir()], transcript_bytes=500)
+    proc = _run(root, [_real_python_dir()], transcript_bytes=1_000_000)
     assert proc.returncode == 0, proc.stderr
     assert "context" in proc.stderr and "malformed" in proc.stderr, (
         "must name the config as malformed: " + proc.stderr)
@@ -365,7 +363,7 @@ def test_context_null_is_reported_as_malformed_not_interpreter(tmp_path):
 def test_context_wrong_type_is_also_reported_as_malformed(tmp_path):
     root = crew_fixtures.make_repo(
         tmp_path, config={"context": "off"}, git=False)
-    proc = _run(root, [_real_python_dir()], transcript_bytes=500)
+    proc = _run(root, [_real_python_dir()], transcript_bytes=1_000_000)
     assert proc.returncode == 0, proc.stderr
     assert "malformed" in proc.stderr, proc.stderr
     assert "interpreter" not in proc.stderr, proc.stderr
@@ -1155,7 +1153,7 @@ def test_context_disabled_with_broken_python_stands_down_silently(tmp_path):
     # not "only dirname and cat", which stopped being the true dependency
     # set once the cwd-extraction and enabled-check fixes below were added.
     bindir = _coreutils_only(tmp_path)
-    proc = _run(root, [str(bindir)], transcript_bytes=500, isolate_path=True)
+    proc = _run(root, [str(bindir)], transcript_bytes=1_000_000, isolate_path=True)
     assert proc.returncode == 0, proc.stderr
     assert not (root / _MARKER_REL).exists()
 
@@ -1171,9 +1169,9 @@ def test_nested_repo_cwd_from_json_wins_over_claude_project_dir(tmp_path):
     inner = outer / "inner"
     (inner / ".crew").mkdir(parents=True)
     (inner / ".crew" / "config.json").write_text(
-        json.dumps(_config(budget=100)), encoding="utf-8")
+        json.dumps(_config()), encoding="utf-8")
     transcript = inner / "transcript.jsonl"
-    transcript.write_bytes(b"x" * 500)  # clears the threshold, as elsewhere
+    transcript.write_bytes(b"x" * 1_000_000)  # clears the threshold, as elsewhere
     payload = json.dumps({"transcript_path": str(transcript), "cwd": str(inner)})
     env = os.environ.copy()
     env["PATH"] = os.pathsep.join([_real_python_dir(), env.get("PATH", "")])

@@ -1,0 +1,12 @@
+# test_routine_cli.py's manifest. Every host is an RFC 6761 `.invalid` name,
+# so nothing here can resolve even if a real scanner were ever reached; the
+# suite never reaches one (every in-process run injects a FakeRegistry).
+authorized_by: "ACME-0107 - test harness, authorized to test these names"
+targets:
+  - name: site-a
+    kind: web
+    url: https://routine-cli-a.invalid/x?id=1
+    options: {sqlmap: true}
+  - name: site-b
+    kind: web
+    url: https://routine-cli-b.invalid/

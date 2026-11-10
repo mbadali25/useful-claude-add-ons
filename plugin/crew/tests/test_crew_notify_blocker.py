@@ -508,7 +508,7 @@ def _plan(root, text):
 
 
 def test_approval_same_plan_is_deduped_new_plan_sends(tmp_path, telegram):
-    """approve -> replan -> approve again inside realertHours: the second plan
+    """approve -> replan -> approve again inside the realert window: the second plan
     is a new episode, so it pings; the same plan seen twice does not."""
     root = _blocker_repo(tmp_path)
     _plan(root, "# plan v1\n")

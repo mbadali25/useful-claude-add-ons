@@ -92,6 +92,9 @@ import time
 import crew_backup
 import crew_common
 import crew_config_files
+import crew_dropped
+import crew_guard_notes
+import crew_humanonly
 import crew_state
 
 sys.path.insert(0, os.path.join(
@@ -257,17 +260,12 @@ def default_config():
     """
     return {
         "schema": crew_state.SCHEMA_CURRENT,
-        "tier": 0,
-        "roles": ["explorer", "reviewer"],
         "qa": copy.deepcopy(crew_state.QA_DEFAULTS),
         "dev": copy.deepcopy(crew_state.DEV_DEFAULTS),
-        "worktree": copy.deepcopy(crew_state.WORKTREE_DEFAULTS),
         "secondOpinion": {
             "provider": "none",
             "mode": "cli",
             "model": None,
-            "keyEnv": "GEMINI_API_KEY",
-            "sendsCode": False,
         },
         "tracker": "files",
         # `cloudId` is cached by `/crew:jira-sync` (commands/jira-sync.md:25)
@@ -279,30 +277,16 @@ def default_config():
         # made it silently un-settable in the global layer. Declaring it is
         # what makes the key set the file's own answer rather than a guess.
         "jira": {"project": None, "cloudId": None},
-        "sdp": {
-            "portal": None,
-            "noteVisibility": "private",
-            "closeOnDone": False,
-        },
         "obsidian": {
             "vaultPath": None,
             "boardDir": None,
-            "board": "Board.md",
-            "columns": {
-                "backlog": "Backlog",
-                "ready": "Ready",
-                "inProgress": "In Progress",
-                "review": "Review",
-                "done": "Done",
-            },
         },
         # `inject` and `recall` are the context hook's (crew_context.py,
         # crew_recall.py). Repo-only on purpose: that hook reads the repo's
         # file and nothing else, so a machine-global value would be accepted
         # and then do nothing. `inject` is on by default since 1.0.0; see
         # crew_context.inject_enabled.
-        "memory": {"mode": "repo", "vaultPath": None, "inject": True,
-                   "recall": {"vaults": [], "maxChars": 800, "projects": []}},
+        "memory": {"mode": "repo", "vaultPath": None},
         "verifyGate": True,
         "context": copy.deepcopy(crew_state.CONTEXT_DEFAULTS),
         # T-0006. In both layers, but only the MACHINE layer can arm it:
@@ -310,9 +294,13 @@ def default_config():
         # treats a repo value as a veto (`false`) or nothing. Declared here so
         # a repo can say `false` and `leaf_paths` can see the key.
         "resume": copy.deepcopy(crew_state.RESUME_DEFAULTS),
+        # crew 1.3.9: the owner's opt-out of the two human-only rules. Both
+        # layers; `crew_humanonly.resolve` is its reader (a tracked repo file
+        # never opts out, a `true` anywhere vetoes, a `false` needs a double
+        # confirmation). Nothing in the hooks acts on it yet.
+        "humanOnly": copy.deepcopy(crew_state.HUMAN_ONLY_DEFAULTS),
         "emergency": {
             "standDown": True,
-            "ttlMinutes": 120,
             "maxTtlMinutes": 480,
         },
         # `provider` is null, not "none": a repo that leaves it null inherits the
@@ -320,12 +308,9 @@ def default_config():
         # a deliberate opt-out that wins. crew_notify.py reads this block (T-0051).
         "notify": {
             "provider": None,
-            "urlEnv": None,
             "tokenEnv": None,
             "chatId": None,
             "events": ["blocker", "deploy", "question"],
-            "realertHours": 6,
-            "questionTypes": None,
         },
         # Left nulled deliberately -- the platform-sync SessionStart hook
         # fills these in on first run and repairs them on every later one.
@@ -343,12 +328,8 @@ def default_config():
         # a repo that chose nothing inherits the machine's value
         # (`without_null_shadows`, review round 2); unset everywhere,
         # `crew_shell.mode` reads it as `auto`.
-        "shellRoute": {"mode": None, "distro": None},
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
         "graph": copy.deepcopy(crew_upgrade.GRAPH_BLOCK),
-        "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
-        "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
-        "github": copy.deepcopy(crew_upgrade.GITHUB_BLOCK),
         # Present on BOTH sides. A repo may narrow what the machine allows --
         # see `crew_state.effective_ratcheted` -- and a key that exists only
         # globally would fail `is_global_path`'s rule that every
@@ -357,7 +338,7 @@ def default_config():
         # Same rule, same ratchet, seven more keys (the six command/production
         # guards plus `roleWrites`). Both layers, because a repo
         # that may only NARROW still has to be able to say so.
-        "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
+        "guards": copy.deepcopy(crew_state.GUARD_BLOCK_DEFAULTS),
         # REPO ONLY, and the asymmetry is the design. `guards.prodDatabase`
         # and `guards.prodServer` say how much of production crew may reach,
         # which is a machine fact and ratchets; `production.databases` and
@@ -490,15 +471,8 @@ def default_global_config():
         cannot know whether `codex` is on PATH. Global is the DEFAULT, not a
         lock: a repo that wants a different reviewer still overrides it.
       * `secondOpinion` -- same reasoning: a CLI and a key that live on this
-        machine, plus `sendsCode`, which is a standing decision by the person
-        rather than by the project.
+        machine.
       * `notify` -- the person's own chat, not the project's.
-      * `worktree.root` -- which disk has room for a worktree, and which
-        directory is not synced to cloud storage, are facts about the
-        machine. Someone who keeps worktrees on a second drive keeps them
-        there for every repo; making them say so once per checkout is the
-        friction this layer exists to remove. A repo that genuinely needs
-        its own answer still overrides it.
       * `memory` -- BOTH keys. `mode` is here alongside `vaultPath` because
         the user ruled in 2026-09-05's global/repo split that memory is a
         property of the person, not of the checkout: someone who keeps their
@@ -518,7 +492,7 @@ def default_global_config():
         resolved from the API per repo, so a global value for it would be the
         one key here that genuinely IS a fact about a checkout.
       * `github` -- the same two keys for the GitHub twin, minus `preset`,
-        which is not copied because it binds to nothing (CONFIG.md §8).
+        which is not copied because it binds to nothing (docs/crew/config-rationale.md).
       * `guards` -- all four. The strongest machine fact on this list after
         `install`: it is the machine owner saying which dangerous commands
         crew may run HERE. Like `install.policy` and unlike everything else
@@ -544,23 +518,17 @@ def default_global_config():
     return {
         "qa": copy.deepcopy(crew_state.QA_DEFAULTS),
         "dev": copy.deepcopy(crew_state.DEV_DEFAULTS),
-        "worktree": copy.deepcopy(crew_state.WORKTREE_DEFAULTS),
         "secondOpinion": {
             "provider": "none",
             "mode": "cli",
             "model": None,
-            "keyEnv": "GEMINI_API_KEY",
-            "sendsCode": False,
         },
         "memory": {"mode": "repo", "vaultPath": None},
         "notify": {
             "provider": None,
-            "urlEnv": None,
             "tokenEnv": None,
             "chatId": None,
             "events": ["blocker", "deploy", "question"],
-            "realertHours": 6,
-            "questionTypes": None,
         },
         "pm": copy.deepcopy(crew_state.PM_DEFAULTS),
         # `context.autoClear` and NOTHING ELSE under `context`. How a terminal
@@ -574,19 +542,15 @@ def default_global_config():
         # measured rather than assumed -- see `test_autoclear_is_global_and_
         # its_siblings_are_not`. `_prune` and `is_global_path` both descend
         # structurally, so naming `context` here grants exactly the
-        # `autoClear` leaves (all but `unsafeFocus`) and nothing beside them.
-        "context": {"autoClear": {
-            key: copy.deepcopy(value)
-            for key, value in crew_state.AUTOCLEAR_DEFAULTS.items()
-            if key not in crew_state.AUTOCLEAR_CONSENT_KEYS
-        }},
+        # `autoClear` leaves and nothing beside them.
+        "context": {"autoClear": copy.deepcopy(crew_state.AUTOCLEAR_DEFAULTS)},
         # T-0006's auto-resume switch. The one place it can be switched ON
         # (`crew_resume.settings`): it starts work in this machine's session,
         # so, like `autoClear.enabled`, it is the machine owner's answer.
         "resume": copy.deepcopy(crew_state.RESUME_DEFAULTS),
-        "docs": copy.deepcopy(crew_upgrade.DOCS_BLOCK),
-        "bitbucket": copy.deepcopy(crew_upgrade.BITBUCKET_BLOCK),
-        "github": copy.deepcopy(crew_upgrade.GITHUB_BLOCK),
+        # crew 1.3.9: the owner's human-only opt-out is the owner's answer
+        # first of all, so the machine file is where it normally lives.
+        "humanOnly": copy.deepcopy(crew_state.HUMAN_ONLY_DEFAULTS),
         # How much crew may do about a skill it needs and cannot find. This is
         # a machine fact in the strongest sense on this list: it is the machine
         # owner saying how much they trust crew to run commands HERE. It was
@@ -602,7 +566,7 @@ def default_global_config():
         # them arrived inside a clone written by someone else. Note what is
         # NOT here: `production.*`, the patterns the first two match against,
         # which is a repo fact.
-        "guards": copy.deepcopy(crew_state.GUARD_DEFAULTS),
+        "guards": copy.deepcopy(crew_state.GUARD_BLOCK_DEFAULTS),
         # `environments.prodUnattended` and NOTHING ELSE: whether this machine
         # lets crew write to production with nobody attending is the owner's
         # answer, and it ratchets. `environments.nonProd` is absent on
@@ -643,7 +607,6 @@ def default_global_config():
         # T-0040. Which shell is fast is a fact about the machine (Git Bash's
         # per-fork cost differs 16-21x between two of the owner's hosts), so
         # the shell route is settable here; a repo may still override it.
-        "shellRoute": {"mode": "auto", "distro": None},
         # T-0044. Which cloud identity an unattended run holds. In THIS layer
         # only and absent from `default_config()`: `crew_unattended.py` reads
         # it from the machine file alone, `resolve_config` drops a repo copy
@@ -735,8 +698,8 @@ def null_shadows(repo_cfg, global_cfg, defaults=None):
     treats that null as a supplied value, so it beat the machine-global layer
     and the global file did nothing for any repo that had been initialised --
     which is every managed repo. Measured on this template: `memory.vaultPath`,
-    `qa.codex.model`, `notify.chatId`, `secondOpinion.model` and
-    `worktree.root` all resolved to `None` with a global value set.
+    `qa.codex.model`, `notify.chatId` and `secondOpinion.model` all resolved
+    to `None` with a global value set.
 
     That is `_layer_supplies`' own rule, one case wider: an empty dict
     "mentions a key without deciding its value", and so does a null. The
@@ -842,7 +805,19 @@ def filter_global(global_cfg):
     `/crew:upgrade` and `/crew:config` read it out, because a key that
     silently does nothing is worse than one that is refused out loud.
     """
-    return _prune(global_cfg, default_global_config())
+    kept, ignored = _prune(global_cfg, default_global_config())
+    # L-0725: the twelve legacy `guards.<name>` keys are no longer template
+    # keys, but an unmigrated machine file still holds them and they are READ
+    # (as aliases for `guards.overrides.<name>`). Re-admit them, so a
+    # narrowing the owner wrote is never pruned and reported as "does nothing".
+    block = global_cfg.get("guards") if isinstance(global_cfg, dict) else None
+    if isinstance(block, dict) and isinstance(kept.get("guards"), dict):
+        for name in crew_state.ALL_GUARD_NAMES:
+            if name in block:
+                kept["guards"][name] = block[name]
+                if f"guards.{name}" in ignored:
+                    ignored.remove(f"guards.{name}")
+    return kept, ignored
 
 
 def is_global_path(dotted):
@@ -1041,11 +1016,31 @@ def resolve_ratcheted(root, dotted, path=None):
     _tiers, normalise, rank = crew_state.ratchet_spec(dotted) or (
         None, None, None)
     parts = dotted.split(".")
-    repo_value = _dig(crew_state.load_config(root), parts)
-    global_cfg, _ = filter_global(read_global_config(path))
-    global_value = _dig(global_cfg, parts)
-    repo_value = None if repo_value is _MISSING else repo_value
-    global_value = None if global_value is _MISSING else global_value
+    guard = parts[1] if (len(parts) == 2 and parts[0] == "guards"
+                         and parts[1] in crew_state.ALL_GUARD_NAMES) else None
+    unmigrated, conflicts = [], []
+    if guard is not None:
+        # L-0725: a guard's per-layer value is its profile, override and any
+        # legacy key together (`crew_state.layer_guard_state`). The machine
+        # file is read raw, not through `filter_global`, because the pruning
+        # shape no longer lists the twelve legacy names and an unmigrated
+        # machine layer must keep its narrowing, never be dropped.
+        repo_state = crew_state.layer_guard_state(
+            crew_state.load_config(root), guard)
+        global_state = crew_state.layer_guard_state(
+            read_global_config(path), guard)
+        repo_value, global_value = repo_state["value"], global_state["value"]
+        for layer, state in (("repo", repo_state), ("global", global_state)):
+            if state["legacy"]:
+                unmigrated.append(layer)
+            if state["conflict"]:
+                conflicts.append(layer)
+    else:
+        repo_value = _dig(crew_state.load_config(root), parts)
+        global_cfg, _ = filter_global(read_global_config(path))
+        global_value = _dig(global_cfg, parts)
+        repo_value = None if repo_value is _MISSING else repo_value
+        global_value = None if global_value is _MISSING else global_value
 
     effective = crew_state.effective_ratcheted(dotted, repo_value, global_value)
 
@@ -1054,13 +1049,17 @@ def resolve_ratcheted(root, dotted, path=None):
         held = "global"
     elif rank(global_value) > rank(effective):
         held = "repo"
-    return {
+    row = {
         "path": dotted,
         "effective": effective,
         "repo": normalise(repo_value),
         "global": normalise(global_value),
         "heldDownBy": held,
     }
+    if guard is not None:
+        row["unmigrated"] = unmigrated
+        row["conflicts"] = conflicts
+    return row
 
 
 def resolve_install_policy(root, path=None):
@@ -1711,8 +1710,17 @@ def _guard_row(name, policy, decision, reason, marker, target, resolved):
     }
 
 
-def _maybe_log(root, record, decision, name, policy, target, command):
+def _maybe_log(root, record, decision, name, policy, target, command,
+               record_command=False):
     """Append the decision row. Every decision, allow and refusal alike.
+
+    The sixth field is `-` unless `record_command` is set (`--record-command`
+    on the CLI). The row says what the guard decided about which rule and
+    target; the command line itself is persisted only when the operator asks
+    for it, because a command can carry anything typed inline and
+    `.crew/guard.log` is an ordinary file in the project tree. `-` is what
+    `env_guard._log` writes in the same slot, so the row keeps six fields and
+    every reader of the log sees one shape.
 
     The "unless it is a refusal in a repo with no `.crew/`" rule that used to
     live here was half a fail-safe, and the wrong half: it read as "do not
@@ -1726,14 +1734,18 @@ def _maybe_log(root, record, decision, name, policy, target, command):
         return
     # Tabs and newlines in a command would forge a row. Same normalisation
     # `crew_incident_log` (`_common.sh:104`) applies, and for the same reason.
-    flat = command
-    for char in ("\t", "\r", "\n"):
-        flat = flat.replace(char, " ")
+    # It runs only on the opt-in; the default field is the literal `-`.
+    flat = "-"
+    if record_command and command:
+        flat = command
+        for char in ("\t", "\r", "\n"):
+            flat = flat.replace(char, " ")
     _log_guard(root, (str(int(time.time())), name, policy, decision,
                       target or "-", flat))
 
 
-def guard_decision(root, name, command, path=None, record=False):
+def guard_decision(root, name, command, path=None, record=False,
+                   record_command=False):
     """What crew's command guard must do about `command` under `guards.<name>`.
 
     Returns `{"guard", "policy", "decision", "reason", "marker", "target",
@@ -1761,10 +1773,13 @@ def guard_decision(root, name, command, path=None, record=False):
     **Under `allow` nothing is silent.** `record=True` appends a row to
     `.crew/guard.log` for every decision, not only the permissive ones -- the
     log is then the record of what the guard did, rather than a record of the
-    half somebody thought worth keeping. Consuming the marker is deliberately
-    NOT done here: a `PreToolUse` hook can fire more than once for one command
-    (both shell flavours are registered on Windows), and deleting the marker on
-    the first read would refuse the second. The marker is one-shot in the sense
+    half somebody thought worth keeping. The row holds the time, guard,
+    policy, decision and target; the command line is added only with
+    `record_command=True`, an opt-in (see `_maybe_log`). Consuming the
+    marker is deliberately NOT done here: a `PreToolUse` hook can fire more
+    than once for one command (both shell flavours are registered on
+    Windows), and deleting the marker on the first read would refuse the
+    second. The marker is one-shot in the sense
     that it names one command, and it is the user's to remove.
     """
     resolved = resolve_guard(root, name, path)
@@ -1800,7 +1815,8 @@ def guard_decision(root, name, command, path=None, record=False):
         out = _guard_row(name, policy, decision, reason, "", target, resolved)
         out["access"] = access
         out["declaration"] = declared.state
-        _maybe_log(root, record, decision, name, policy, target, command)
+        _maybe_log(root, record, decision, name, policy, target, command,
+                   record_command)
         return out
 
     if policy == "allow":
@@ -1829,7 +1845,8 @@ def guard_decision(root, name, command, path=None, record=False):
     # `production` block at all, so the honest value is "not applicable" rather
     # than any of the five declaration states.
     out["declaration"] = ""
-    _maybe_log(root, record, decision, name, policy, target, command)
+    _maybe_log(root, record, decision, name, policy, target, command,
+               record_command)
     return out
 
 
@@ -2102,7 +2119,34 @@ def explain_config(root, path=None, all_keys=False):
             "value": None if value is _MISSING else value,
             "source": source,
         })
-    return rows
+    return _with_guard_rows(rows, root, path)
+
+
+def _with_guard_rows(rows, root, path):
+    """L-0725: after the `guards.profile` and `guards.overrides` rows, one
+    ratcheted row per guard -- the value IN FORCE, which neither the profile
+    nor the overrides print on their own -- carrying `unmigrated` (the layers
+    still holding a legacy `guards.<name>`) and `conflicts`."""
+    at = max((i for i, r in enumerate(rows) if r["path"] == "guards.overrides"),
+             default=None)
+    if at is None:
+        return rows
+    extra = []
+    for name in crew_state.ALL_GUARD_NAMES:
+        dotted = f"guards.{name}"
+        ratchet = resolve_ratcheted(root, dotted, path)
+        extra.append({
+            "path": dotted,
+            "value": ratchet["effective"],
+            "source": ratchet["heldDownBy"] or "resolved",
+            "ratchet": True,
+            "heldDownBy": ratchet["heldDownBy"],
+            "repo": ratchet["repo"],
+            "global": ratchet["global"],
+            "unmigrated": ratchet["unmigrated"],
+            "conflicts": ratchet["conflicts"],
+        })
+    return rows[:at + 1] + extra + rows[at + 1:]
 
 
 def explain_findings(root, path=None):
@@ -2359,9 +2403,13 @@ def inert_settings(root, path=None):
                 "ticket": None,
                 "kind": "repo-ignored", "layer": "repo"}
             continue
+        if len(parts) == 2 and parts[0] == "guards" and parts[1] in crew_state.ALL_GUARD_NAMES:
+            continue  # a legacy per-guard key is READ (as an override) until /crew:migrate
         if not _known_leaf(parts, known_global if layer(parts) == "global" else known):
-            effect, ticket = pending or (_UNKNOWN_EFFECT, None)
-            kind = "pending" if pending else "unknown"
+            effect, ticket = pending or (_dropped_effect(dotted) or _UNKNOWN_EFFECT, None)
+            kind = "pending" if pending else "dropped" if _dropped_effect(dotted) else "unknown"
+            if kind == "dropped":
+                ticket = "L-0725"
         elif isinstance(value, (str, int, float, bool)) \
                 and (dotted, value) in INERT_PENDING:
             effect, ticket = INERT_PENDING[(dotted, value)]
@@ -2375,10 +2423,23 @@ def inert_settings(root, path=None):
             continue  # `schema` has its own --check-global finding
         for dotted, value in _dropped_leaves(global_raw, dropped):
             entries[(dotted, "global")] = {"key": dotted, "value": value,
-                                           "effect": _GLOBAL_IGNORED_EFFECT, "ticket": None,
+                                           "effect": _dropped_effect(dotted) or _GLOBAL_IGNORED_EFFECT,
+                                           "ticket": None,
                                            "kind": "global-ignored", "layer": "global"}
     # A could-not-tell first: a line cut at `+N more` must still say it.
     return [entries[k] for k in sorted(entries, key=lambda k: (k[1] != "unreadable", k))]
+
+
+def _dropped_effect(dotted):
+    """What an L-0725 dropped key now means, or None for any other key:
+    `crew_dropped.DROPPED` pairs each with the constant that replaced it."""
+    row = crew_dropped.DROPPED.get(dotted)
+    if row is None:
+        return None
+    if row[1].startswith("retired"):
+        return f"dropped in L-0725 ({row[1]}); the value has no effect"
+    return (f"dropped in L-0725, now the constant {row[1]} "
+            f"(={row[0]!r}); the value has no effect")
 
 
 def _dropped_leaves(raw, dropped):
@@ -2433,7 +2494,18 @@ def _unreadable_config(path):
     return None if isinstance(data, dict) else f"{os.path.basename(path)} is not a JSON object"
 
 
+def _is_removed_key(key):
+    """A key L-0725 removed, or anything under the retired `tier`/`roles`."""
+    return key in crew_dropped.DROPPED or key.split(".")[0] in ("tier", "roles")
+
+
 def _inert_item(entry):
+    if _is_removed_key(entry["key"]) and entry["kind"] != "unreadable":
+        # A removed key's value is never shown: it may be a path, a URL or a
+        # name the person did not mean to put in a status line (L-0725).
+        lost = (", the restriction it set is gone"
+                if entry["key"] in crew_dropped.NARROWED else "")
+        return f"{_escaped(entry['key'])} (removed in L-0725, value ignored{lost})"
     value = entry["value"]
     shown = _escaped(value if isinstance(value, str) else json.dumps(value))
     if entry["kind"] == "unreadable":
@@ -2666,8 +2738,12 @@ def model_report(root, which=None, stale=False):
         every = list(names) + [r for r in pinned if r not in names]
         out = []
         for role in every:
-            row = crew_state.resolve_role(cfg, kind, role,
-                                          author=author_for_guard)
+            # A `dev` role that reviews (`security`, L-0777) is judged
+            # against the author families like a `qa` one, so this report
+            # shows the bar `crew_kimi_agent.py` will apply.
+            guard = (authors if kind == "dev" and role in crew_state.REVIEWING_DEV_ROLES
+                     else author_for_guard)
+            row = crew_state.resolve_role(cfg, kind, role, author=guard)
             row["display"] = (crew_state.display_model(row["model"])
                               or ("n/a (subagent)" if row["provider"] == "claude"
                                   else "(cli default)"))
@@ -2987,198 +3063,7 @@ def _widens(dotted, before, after):
     return rank(after) > rank(None if before is _MISSING else before)
 
 
-# What each guard actually governs, in the words the `! widens to` line reads
-# out. Keyed on every member of `crew_state.GUARD_NAMES`, so a fifth guard
-# added there is a KeyError below rather than a guard that widens with no note
-# -- the same totality rule `_INSTALL_WIDENING_NOTES` carries, one level up.
-_GUARD_ACTIONS = {
-    "terraformApply": "terraform/tofu apply and destroy, -chdir forms included",
-    "forcePush": "git push --force / -f / --force-with-lease, and a "
-                 "leading-plus refspec",
-    "adminMerge": "gh pr merge --admin, which merges past a branch protection "
-                  "rule somebody put there",
-    "mergeGate": "taking a live repository's merge gate down and putting it "
-                 "back, through /crew:gate",
-    "prodDatabase": "a database matching a `production.databases` pattern",
-    "prodServer": "a host matching a `production.hosts` pattern",
-    "roleWrites": "a Write or Edit outside the calling role's declared scope, "
-                  "per the policy table in "
-                  "hooks/scripts/role_write_guard.py",
-    "cloudDestructive": "aws delete-*/terminate-*/purge-*, s3 rm/rb and "
-                        "sync --delete, az ... delete/purge, and Remove-Az*",
-    "sqlDestructive": "DROP or TRUNCATE handed to psql, mysql, sqlcmd, "
-                      "sqlite3 or Invoke-Sqlcmd, by flag, heredoc or pipe",
-    "cloudGuard": "the Bash/PowerShell cloud guard's per-rule policies",
-    "envGuard": "a Bash or PowerShell command that prints the whole process "
-                "environment, or a credential-named variable, into the "
-                "agent's context",
-    "deployWorkflow": "a `gh workflow run` or `gh api .../dispatches` of a "
-                      "workflow listed in `environments.workflows`",
-}
-
-
-def _guard_widening_notes(name, what):
-    """The `! widens to` note for one guard, total over `GUARD_POLICIES`.
-
-    Total on purpose, `block` included: the CLI does `notes[granted]`, and a
-    missing key there is a `KeyError` at the point of use rather than a warning
-    that silently describes the wrong tier. That is the failure mode that
-    produced `_INSTALL_WIDENING_NOTES`' own totality, and softening it here
-    would reintroduce it for four keys at once.
-    """
-    return {
-        "block": (
-            f"crew refuses {what}. This is the narrowest policy and nothing "
-            "widens into it."
-        ),
-        "ask": (
-            f"crew will print the exact {what} command it was about to run "
-            "and refuse until you approve THAT command by creating the marker "
-            "file it names. The approval covers one command, not the guard: "
-            "the next one asks again."
-        ),
-        "allow": (
-            f"crew will run {what} WITHOUT asking. It still writes a row to "
-            f"`{crew_state.GUARD_LOG_PATH}` saying what it let through, so "
-            "the record exists - but nothing stops it at the time."
-        ),
-    }
-
-
-def _prod_widening_notes(name, what):
-    """The `! widens to` note for one production guard, total over
-    `PROD_LEVELS`.
-
-    Total for the same reason `_guard_widening_notes` is: the CLI indexes this
-    with the tier being granted, so a missing key is a `KeyError` where a
-    reader is being told what they just bought, rather than a note describing
-    the wrong tier.
-    """
-    del name
-    return {
-        "none": (
-            f"crew refuses every command aimed at {what}. This is the "
-            "narrowest level and nothing widens into it."
-        ),
-        "read": (
-            f"crew may run commands against {what} that it can POSITIVELY "
-            "classify as read-only. Anything it cannot classify - an "
-            "interactive session, an unrecognised tool, a command it cannot "
-            "parse - is treated as a write and refused."
-        ),
-        "full": (
-            f"crew may run ANY command against {what}, writes and deletes "
-            f"included. Every one is recorded in `{crew_state.GUARD_LOG_PATH}`, "
-            "so the record exists - but nothing stops it at the time."
-        ),
-    }
-
-
-def _role_write_widening_notes(name, what):
-    """The `! widens to` note for `guards.roleWrites`, total over
-    `crew_state.ROLE_WRITE_POLICIES`.
-
-    Total for the same reason every other note table here is: the CLI does
-    `notes[granted]`, and a missing key is a `KeyError` at the point of use
-    rather than a note describing the wrong tier.
-
-    Unlike `_guard_widening_notes` and `_prod_widening_notes`, the NARROWEST
-    tier (`block`) is not this key's default -- `off` is, per CONFIG.md
-    Sec18 and CLAUDE.md's rule that a hook which can block ships disabled.
-    So the widening direction a reader most needs warned about is the same
-    one every fresh repo already sits at: nothing narrows FROM `off`, because
-    nothing narrower has been chosen yet.
-
-    `off` and `report` both carry a Python caveat `block` does not need:
-    only `role_write_guard.py` (Python) can actually evaluate this policy.
-    `role-write-guard.sh`'s no-python fallback (its own "THE NO-PYTHON
-    CONTRACT" comment) reads only the deny-list floor and fails CLOSED on a
-    restricted role or one it cannot read at all -- so a repo set to `off`
-    or `report` still gets `block`'s behaviour for a restricted role the
-    moment python is unavailable. Printing `off`/`report` here with no
-    mention of that would tell a reader those tiers apply unconditionally,
-    which is the "unknown collapsing into the safe-looking value" shape
-    CLAUDE.md names, worn the other way: not a guard that fails open, but a
-    note that describes a WIDER guarantee than the fallback actually keeps.
-    """
-    del name
-    return {
-        "block": (
-            f"crew refuses {what}. This is the narrowest policy and nothing "
-            "widens into it."
-        ),
-        "report": (
-            f"crew allows {what}, and appends a row to "
-            f"`{crew_state.GUARD_LOG_PATH}` for every decision, not only "
-            "the ones outside scope -- so the record exists, but nothing "
-            "stops it at the time. Requires Python: without a usable "
-            "interpreter, role-write-guard.sh/.ps1 cannot evaluate `report` "
-            "at all and falls back to blocking a restricted role's write "
-            "instead of logging it."
-        ),
-        "off": (
-            f"crew's role-write guard does not run its policy check at all. "
-            f"{what.capitalize()} is not refused and nothing is logged. "
-            "This is the WIDEST tier and it is also the default -- every "
-            "repo that has never set `guards.roleWrites` is already here. "
-            "Requires Python: without a usable interpreter, the fallback "
-            "cannot evaluate `off` either, so a restricted role's write is "
-            "blocked anyway rather than let through."
-        ),
-    }
-
-
-def _cloud_guard_widening_notes(name, what):
-    """The `! widens to` note for `guards.cloudGuard`, total over
-    `crew_state.ROLE_WRITE_POLICIES` -- the vocabulary it shares with
-    `roleWrites`, and the same split default (`off`) for the same reason.
-    """
-    del name
-    return {
-        "block": (
-            f"crew enforces {what}: `block` denies, `ask` prompts (or denies "
-            "when nobody is attending), `allow` lets through and logs. This is "
-            "the narrowest tier and nothing widens into it."
-        ),
-        "report": (
-            f"crew evaluates {what} and appends what it WOULD have done to "
-            f"`{crew_state.GUARD_LOG_PATH}`, but refuses and prompts for "
-            "nothing -- so the record exists, but nothing stops it at the time."
-        ),
-        "off": (
-            "the cloud guard does not judge any command. This is the WIDEST "
-            "tier and it is also the default -- every repo that has never set "
-            "`guards.cloudGuard` is already here."
-        ),
-    }
-
-
-def _env_guard_widening_notes(name, what):
-    """The `! widens to` note for `guards.envGuard`, total over
-    `crew_state.ROLE_WRITE_POLICIES` -- `cloudGuard`'s vocabulary and split
-    default (`off`), for the same reason (L-0772).
-    """
-    del name
-    return {
-        "block": (
-            f"crew refuses {what}, and refuses a command it could not read "
-            "well enough to tell. This is the narrowest tier and nothing "
-            "widens into it."
-        ),
-        "report": (
-            f"crew notes {what} in `{crew_state.GUARD_LOG_PATH}` (the rule "
-            "and form, never the command or a value), but refuses nothing -- "
-            "so the record exists, and the environment still reaches the "
-            "agent's context."
-        ),
-        "off": (
-            "the environment guard does not judge any command. This is the "
-            "WIDEST tier and it is also the default -- every repo that has "
-            "never set `guards.envGuard` is already here."
-        ),
-    }
-
-
+_ACTIONS = crew_guard_notes.GUARD_ACTIONS
 _RATCHETED = {
     "pm.authority": (
         crew_state.authority_rank,
@@ -3198,7 +3083,7 @@ _RATCHETED.update({
     f"guards.{_name}": (
         crew_state.guard_policy_rank,
         crew_state.normalise_guard_policy,
-        _guard_widening_notes(_name, _GUARD_ACTIONS[_name]),
+        crew_guard_notes.guard_widening_notes(_name, _ACTIONS[_name]),
     )
     for _name in crew_state.GUARD_NAMES
 })
@@ -3206,7 +3091,7 @@ _RATCHETED.update({
 # (T-0009 amendment): it covers nonProd only, so the generic "run WITHOUT
 # asking" would describe a grant the guard never makes.
 _RATCHETED["guards.deployWorkflow"][2]["allow"] = (
-    f"crew will run {_GUARD_ACTIONS['deployWorkflow']} WITHOUT asking when "
+    f"crew will run {_ACTIONS['deployWorkflow']} WITHOUT asking when "
     "its environment is nonProd, and write a row to "
     f"`{crew_state.GUARD_LOG_PATH}`. It still asks -- and refuses when nobody "
     "is attending -- for production unless environments.prodUnattended is "
@@ -3222,18 +3107,18 @@ _RATCHETED.update({
     f"guards.{_name}": (
         crew_state.prod_level_rank,
         crew_state.normalise_prod_level,
-        _prod_widening_notes(_name, _GUARD_ACTIONS[_name]),
+        crew_guard_notes.prod_widening_notes(_name, _ACTIONS[_name]),
     )
     for _name in crew_state.PROD_GUARD_NAMES
 })
 # The one role-write guard, whose vocabulary is `block`/`report`/`off` and
 # whose DEFAULT (`off`) is not its floor (`block`) -- see
-# `_role_write_widening_notes` for why that is not a bug in this table.
+# `crew_guard_notes.role_write_widening_notes` for why that is not a bug in this table.
 _RATCHETED.update({
     f"guards.{_name}": (
         crew_state.role_writes_rank,
         crew_state.normalise_role_writes,
-        _role_write_widening_notes(_name, _GUARD_ACTIONS[_name]),
+        crew_guard_notes.role_write_widening_notes(_name, _ACTIONS[_name]),
     )
     for _name in crew_state.ROLE_WRITE_GUARD_NAMES
 })
@@ -3243,7 +3128,7 @@ _RATCHETED.update({
     f"guards.{_name}": (
         crew_state.role_writes_rank,
         crew_state.normalise_role_writes,
-        _cloud_guard_widening_notes(_name, _GUARD_ACTIONS[_name]),
+        crew_guard_notes.cloud_guard_widening_notes(_name, _ACTIONS[_name]),
     )
     for _name in crew_state.CLOUD_GUARD_NAMES
 })
@@ -3253,7 +3138,7 @@ _RATCHETED.update({
     f"guards.{_name}": (
         crew_state.role_writes_rank,
         crew_state.normalise_role_writes,
-        _env_guard_widening_notes(_name, _GUARD_ACTIONS[_name]),
+        crew_guard_notes.env_guard_widening_notes(_name, _ACTIONS[_name]),
     )
     for _name in crew_state.ENV_GUARD_NAMES
 })
@@ -3347,6 +3232,12 @@ for _key in ("approval", "questions"):
         "self": f"autopilot may {_act} itself on EVERY ticket, whatever its "
                 "risk",
     }
+_APPROVAL_NEEDS = (" -- plan approval also needs autopilot.mode \"plan\" and, as a "
+                   "hand edit of the repo's .crew/config.json by the owner, "
+                   "scope.allowCliApproval true; until both hold autopilot "
+                   "approves nothing (crew_autopilot.py approve names what is unmet)")
+for _value in ("risk", "self"):
+    _PERSONAL_NOTES["autopilot.approval"][_value] += _APPROVAL_NEEDS
 
 
 def personal_widening_note(dotted, after):
@@ -3366,6 +3257,9 @@ def _personal_widens(dotted, before, after):
             > crew_state.personal_rank(dotted, before))
 
 
+_OVERRIDE_PREFIX = "guards.overrides."
+
+
 def enum_values(dotted):
     """The values `dotted` may take, as a tuple, or None for an open key: the
     tuple its READER normalises against, never a second list, so both writers
@@ -3373,13 +3267,19 @@ def enum_values(dotted):
     spec = crew_state.ratchet_spec(dotted)
     if spec is not None:
         return tuple(spec[0])
+    if dotted == "guards.profile":
+        return tuple(crew_state.GUARD_PROFILES)
+    if dotted.startswith(_OVERRIDE_PREFIX):
+        name = dotted[len(_OVERRIDE_PREFIX):]
+        if name in crew_state.ALL_GUARD_NAMES:
+            return tuple(crew_state.guard_tiers(name)[0])
     personal = crew_state.PERSONAL_KEYS.get(dotted)
     if personal is not None and personal[0] == "tiers":
         return tuple(personal[1])
     if dotted == "pm.authority":
         return tuple(crew_state.AUTHORITIES)
-    if dotted == "pm.ticketGranularity":
-        return tuple(crew_state.TICKET_GRANULARITIES)
+    if crew_humanonly.is_path(dotted):
+        return crew_humanonly.VALUES
     if dotted == "qa.provider":
         return ("auto",) + tuple(QA_PROVIDERS)
     if dotted == "dev.provider":
@@ -3424,14 +3324,10 @@ def assignments(updates):
 # Consent keys, refused at the machine layer by name and reason (the
 # structural rule behind them is still `is_global_path`).
 MACHINE_REFUSED = {
-    "context.autoClear." + key: (
-        "consent, not a capability: accepting this risk is a per-repo "
-        "decision, never granted machine-wide")
-    for key in crew_state.AUTOCLEAR_CONSENT_KEYS
+    "graph.obsidian.confirmed": (
+        "consent to write into your own notes outside the repo; no guided "
+        "flow may grant it"),
 }
-MACHINE_REFUSED["graph.obsidian.confirmed"] = (
-    "consent to write into your own notes outside the repo; no guided flow "
-    "may grant it")
 
 
 def _shape(dotted):
@@ -3464,7 +3360,10 @@ def null_means(dotted, layer):
     """What a `null` at `dotted` in `layer` means, or None (refused). Repo:
     a veto-only key's null clears the veto; a machine-settable key inherits
     the machine value (`without_null_shadows`). An open key is unset. An enum
-    key at the machine layer has no null meaning."""
+    key at the machine layer has no null meaning, except a `humanOnly` key,
+    whose null is silent: human-only unless the other layer opts out."""
+    if crew_humanonly.is_path(dotted):
+        return "silent (human-only unless the other layer opts out)"
     if layer == "repo":
         if dotted in REPO_VETO_ONLY:
             return "clears the veto"
@@ -3487,7 +3386,27 @@ _VETO_ONLY = ("a repo may only veto this (false) or clear its veto (null); "
 _FIX_FIRST = "fix that key first (it can be fixed in the same write)"
 
 
+def _guard_path_refusal(dotted):
+    """L-0725: why a `guards.*` write is refused, or None. A legacy
+    `guards.<name>` is no longer written (it is still READ, until
+    `/crew:migrate`); an override names a real guard."""
+    if dotted.startswith("guards."):
+        rest = dotted[len("guards."):]
+        if rest in crew_state.ALL_GUARD_NAMES:
+            return (f"the per-guard key is read but no longer written; use "
+                    f"guards.overrides.{rest} (or guards.profile)")
+        if rest.startswith("overrides."):
+            name = rest[len("overrides."):]
+            if name not in crew_state.ALL_GUARD_NAMES:
+                return (f"{name!r} is not a guard (guards: "
+                        + ", ".join(crew_state.ALL_GUARD_NAMES) + ")")
+    return None
+
+
 def _layer_path_refusal(dotted, layer, value):
+    reason = _guard_path_refusal(dotted) or crew_humanonly.write_refusal(dotted, layer, value)
+    if reason is not None:
+        return reason
     if layer == "machine":
         if _consent_refusal(dotted):
             return _consent_refusal(dotted)
@@ -3670,11 +3589,67 @@ def _plan_on(base, updates, layer, label, global_cfg=None):
             change["null"] = null_means(dotted, layer)
         changes.append(change)
         _set_path(merged, parts, value)
+    if any(d == "guards.profile" or d.startswith(_OVERRIDE_PREFIX)
+           for d, _v in units):
+        _fold_guard_widenings(
+            changes, _guard_derived_changes(base, merged, layer, global_cfg))
     problems = merged_problems(merged, {d for d, _v in units}, label, layer)
     if problems:
         error = GlobalWriteRefused if layer == "machine" else RepoWriteRefused
         raise error(f"refused at the {layer} layer: " + "; ".join(problems))
     return merged, changes
+
+
+def _guard_derived_changes(before_cfg, after_cfg, layer, global_cfg):
+    """One derived change per guard whose in-force value WIDENS (or is held
+    down) because a `guards.profile` / `guards.overrides.<name>` write
+    expanded differently (L-0725). The profile and override are shorthand; the
+    grant is per guard, so the `!` line is too. Marked `derived` so a caller
+    that counts what it wrote can tell them from the unit written."""
+    out = []
+    for name in crew_state.ALL_GUARD_NAMES:
+        dotted = f"guards.{name}"
+        _tiers, normalise, rank = crew_state.guard_tiers(name)
+        was_layer = crew_state.layer_guard_value(before_cfg, name)
+        now_layer = crew_state.layer_guard_value(after_cfg, name)
+        if layer == "machine":
+            if rank(now_layer) > rank(was_layer):
+                out.append({"path": dotted, "before": normalise(was_layer),
+                            "after": normalise(now_layer), "widens": True,
+                            "widensTo": normalise(now_layer), "derived": True})
+            continue
+        held = crew_state.layer_guard_value(global_cfg or {}, name)
+        was = crew_state.effective_ratcheted(dotted, was_layer, held)
+        now = crew_state.effective_ratcheted(dotted, now_layer, held)
+        widens = rank(now) > rank(was)
+        held_down = rank(now_layer) > rank(now)
+        if widens or (held_down and now_layer != was_layer):
+            change = {"path": dotted, "before": normalise(was_layer),
+                      "after": normalise(now_layer), "widens": widens,
+                      "widensTo": now, "derived": True,
+                      "globalValue": None if held is None else normalise(held)}
+            if held_down:
+                change["heldDownBy"], change["heldAt"] = "global", now
+            out.append(change)
+    return out
+
+
+def _fold_guard_widenings(changes, derived):
+    """Put each guard's widening on the change that caused it: an override
+    write carries its own guard's mark; a profile write gets one derived
+    change per guard (`derived: True`), so the `!` line names the guard."""
+    by_path = {d["path"]: d for d in derived}
+    for change in changes:
+        if not change["path"].startswith(_OVERRIDE_PREFIX):
+            continue
+        found = by_path.pop(
+            "guards." + change["path"][len(_OVERRIDE_PREFIX):], None)
+        if found is None:
+            continue
+        for field in ("widens", "widensTo", "heldDownBy", "heldAt"):
+            if field in found:
+                change[field] = found[field]
+    changes.extend(by_path.values())
 
 
 def _del_path(target, parts):
@@ -3765,6 +3740,7 @@ def write_global_config(updates, path=None, expect=None):
         raise GlobalWriteRefused(f"{real_path}: {crew_config_files.os_error_text(exc)}; nothing written (its "
                                  "directory, its lock or the write itself failed at the OS; check the "
                                  "directory)") from exc
+    _revoke_human_only("machine", real_path, out["plan"][1], path)
     return out["plan"]
 
 
@@ -3803,6 +3779,14 @@ REPO_REFUSED = {
     "scope.allowCliApproval": "decides which approvals the scope guard "
                               "accepts; a hand edit by the owner only",
 }
+# The hand-edit hint (#624) is appended, never written into the entry above: that
+# entry's text is a sabotage anchor (sabotage_config.py). The append is guarded: that
+# mutation deletes the entry, and an unguarded `+=` would raise a KeyError at import,
+# so the suite would fail at collection instead of on its own assertion.
+if "scope.allowCliApproval" in REPO_REFUSED:
+    REPO_REFUSED["scope.allowCliApproval"] += (
+        ": in this repo's .crew/config.json set "
+        '"scope": {"allowCliApproval": true}')
 # From the tuple, never written out: their readers consult the machine file
 # only, so a repo value would be a narrowing the run never applies.
 REPO_REFUSED.update({
@@ -3829,9 +3813,6 @@ def is_repo_veto(value):
 # keys (`_PERSONAL_NOTES`, by rank). Keyed on (path, value); the note is the
 # `!` line's text.
 _REPO_WIDENING = {
-    ("context.autoClear.unsafeFocus", True): (
-        "auto-clear may send its keystroke to a window it could not confirm "
-        "is this session's -- consent, not a preference"),
     ("verifyGate", False): (
         "the verify gate stops holding the session at Stop for unverified "
         "changed paths"),
@@ -4009,13 +3990,59 @@ def write_repo_config(root, updates, global_path=None, expect=None,
     except OSError as exc:
         raise RepoWriteRefused(f"{crew_config_files.os_error_text(exc)}; nothing written (the machine-global "
                                "directory, a lock or the write failed at the OS)") from exc
+    _revoke_human_only("repo", real_path, out["plan"][1], global_path)
     return out["plan"]
+
+
+# --- crew 1.3.9: the human-only opt-out -------------------------------------
+
+
+def _revoke_human_only(layer, path, changes, global_path):
+    """After a crew write sets a `humanOnly` key back (the only values a
+    writer may set there: `true`, or a machine `null` / removal), record a
+    revocation so an earlier double-confirmed `false` at this file no longer
+    counts if a `false` reappears there by any other route."""
+    for change in changes or ():
+        if crew_humanonly.is_path(change.get("path")):
+            crew_humanonly.revoke(layer, path, change["path"], global_path=global_path)
+
+
+def apply_confirmed_optout(layer, dotted, path, expect, global_path=None):
+    """Write `dotted: false` into the config file at `path` (`layer` is
+    `machine` or `repo`). The one writer that bypasses
+    `crew_humanonly.write_refusal`, and only `crew_confirm_config` calls it,
+    once a proposal has its two user-prompt confirmations. `expect` is the
+    file's state digest when the change was proposed: a file that changed
+    since is refused (`crew_config_files.Conflict`), never merged over.
+    Returns `(merged, changes)`."""
+    if not crew_humanonly.is_path(dotted):
+        raise ValueError(f"{dotted} is not a humanOnly key")
+    if layer not in ("machine", "repo"):
+        raise ValueError(f"unknown layer {layer!r}")
+    out = {}
+
+    def _mutate(parsed):
+        global_cfg = None if layer == "machine" else machine_view(global_path)[0]
+        out["plan"] = _plan_on(parsed, {dotted: False}, layer, path, global_cfg)
+        if not out["plan"][1]:
+            return None
+        crew_backup.backup(path)
+        return out["plan"][0]
+    if layer == "machine":
+        crew_config_files.update_json(path, _mutate, expect=expect, create=True)
+    else:
+        lock = crew_config_files.machine_lock(_global_label(global_path))
+        with lock:
+            crew_config_files.update_json(path, _mutate, expect=expect)
+    return out.get("plan", ({}, []))
 
 
 def widening_note(dotted, after):
     """The `!` line's text for a widening change at `dotted`."""
     if dotted in crew_state.PERSONAL_KEYS:
         return personal_widening_note(dotted, after)
+    if dotted.startswith(_OVERRIDE_PREFIX):
+        dotted = "guards." + dotted[len(_OVERRIDE_PREFIX):]
     if dotted in _RATCHETED:
         _, normalise, notes = _RATCHETED[dotted]
         return notes[normalise(after)]
@@ -4471,6 +4498,20 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
         print("  layers, never the repo's: a cloned repo may ask for less "
               "than your machine allows")
         print("  and be obeyed, and may ask for more and be refused.")
+    unmigrated = sorted({layer for row in rows
+                         for layer in row.get("unmigrated", ())})
+    if unmigrated:
+        print()
+        print("! guards: unmigrated: run /crew:migrate. The "
+              + " and ".join(unmigrated) + " layer still holds per-guard keys "
+              "(guards.<name>); they are read as guards.overrides.<name> and "
+              "not written.")
+    conflicts = sorted({layer for row in rows
+                        for layer in row.get("conflicts", ())})
+    if conflicts:
+        print("! guards: the " + " and ".join(conflicts) + " layer holds both "
+              "a per-guard key and a profile or override for the same guard; "
+              "the NARROWER wins.")
     # A repo-level onlyRepos/onlySessions is not merely lower precedence --
     # the hooks that narrow auto-clear never read it at all, so printing it
     # unlabelled would claim a restriction that is not in force.
@@ -4748,7 +4789,13 @@ def main(argv=None):
                         help="the command being judged, for --guard")
     parser.add_argument("--record", action="store_true",
                         help="with --guard, append the decision to "
-                             + crew_state.GUARD_LOG_PATH)
+                             + crew_state.GUARD_LOG_PATH
+                             + " (time, guard, policy, decision, target; "
+                             "the command field is `-`)")
+    parser.add_argument("--record-command", action="store_true",
+                        help="with --guard --record, also write the command "
+                             "line itself into the row. Off by default: a "
+                             "command can carry anything typed inline")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -4767,8 +4814,14 @@ def main(argv=None):
                   + ", ".join(crew_state.ALL_GUARD_NAMES) + ")",
                   file=sys.stderr)
             return 2
+        if args.record_command and not args.record:
+            # Exit 2 like the unknown name above: a flag that would silently
+            # do nothing reads as a row that was written.
+            print("--record-command needs --record", file=sys.stderr)
+            return 2
         out = guard_decision(args.root, args.guard, args.command,
-                             args.global_path, record=args.record)
+                             args.global_path, record=args.record,
+                             record_command=args.record_command)
         if args.json:
             print(json.dumps(out, indent=2, sort_keys=True))
             return 0
@@ -4867,7 +4920,8 @@ def main(argv=None):
     if args.inert:
         entries = inert_settings(args.root, args.global_path)
         if args.json:
-            print(json.dumps(entries, indent=2))
+            print(json.dumps([dict(e, value="<hidden: removed key>")
+                              if _is_removed_key(e["key"]) else e for e in entries], indent=2))
         elif not entries:
             print("inert settings: none")
         else:

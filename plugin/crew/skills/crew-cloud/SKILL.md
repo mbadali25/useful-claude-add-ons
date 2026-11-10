@@ -61,7 +61,7 @@ default: `guards.cloudDestructive` for `aws … delete-*/terminate-*/purge-*`,
 `ask` prompts; `allow` lets it through and logs it — except that since crew
 1.0.42 a terraform destroy (or an apply of a plan crew cannot read) asks even
 under `allow`, and `environments.*` lets non-production applies run unattended
-under `ask` (README "Cloud guard", CONFIG.md §16).
+under `ask` (README "Cloud guard", docs/crew/config-rationale.md).
 
 `guards.deployWorkflow` (T-0009) judges `gh workflow run <wf>` and its REST
 twin, `gh api -X POST repos/<o>/<r>/actions/workflows/<wf>/dispatches`, when

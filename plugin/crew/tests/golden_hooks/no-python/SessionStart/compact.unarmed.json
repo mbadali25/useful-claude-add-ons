@@ -1,0 +1,45 @@
+{
+ "armed": false,
+ "case": "compact",
+ "dirty": "",
+ "event": "SessionStart",
+ "harness": "claude",
+ "no_python": true,
+ "payload": "{\"hook_event_name\": \"SessionStart\", \"source\": \"compact\", \"session_id\": \"s-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "handoff-read.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "handoff-read.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "platform-sync.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "platform-sync.sh",
+   "stderr": "crew platform-sync: no usable python (stub or unusable interpreter) - the platform config will not be repaired\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "crew-context.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "stderr": "crew context: no usable python (stub or unusable interpreter) - no code-map or recall context this event\n",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

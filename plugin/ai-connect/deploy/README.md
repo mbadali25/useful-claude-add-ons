@@ -35,12 +35,23 @@ install it when it is missing. On Debian and Ubuntu that is Tailscale's apt repo
 with its key in a `signed-by` keyring; elsewhere on Linux, and for a release the
 repository does not carry, Tailscale's install script; any other apt failure (a held
 dpkg lock, no network) stops instead of falling back. Every command is printed before
-it runs, as root nothing goes through `sudo`, and deploy says what is about to ask for
+it runs, as root nothing goes through `sudo` (tests force either branch with `AI_CONNECT_DEPLOY_ROOT=1` or `0`), and deploy says what is about to ask for
 you (sudo's password, a UAC prompt, a browser login).
 
 Tailscale takes no routes, no exit node and no DNS on either machine, so a VPN client
 that is already there keeps working: see [Running alongside other VPNs](#running-alongside-other-vpns).
 Use the Bridge's `100.x.y.z` address, not its name.
+
+**As root** (Linux, macOS): every verb takes `--allow-root`; `AI_CONNECT_ALLOW_ROOT=1`
+or `install.allow_root: true` in `config.yaml` say the same, in that order below the
+flag, and `0` / `false` refuse root. With none set a root run goes ahead silently, as
+before 0.2.13. Allowed, deploy prints one warning line that the Bridge runs as root,
+keeps the config and tokens in root's own `~/.config/ai-connect` and closes it to
+0700 (every file 0600) after the run, and refuses a root whose `HOME` or user name is
+another user's (`sudo -E`; use `sudo -i`). A dedicated service user is safer and is
+not created for you. `status` and `list` ignore the switch; on Windows it has no
+effect (UAC elevation is by design there). The same switch governs `setup.sh` and
+`install.sh`: see the plugin README, "Installing as root".
 
 **See everything first.** `bridge`, `peer`, `add-peer` and `uninstall` take `--dry-run`:
 it runs no tool at all (no `tailscale`, `claude`, `sudo`, `ufw`), needs no token or key
@@ -135,8 +146,14 @@ up from inside a worktree is moved the same way: its scheduled task is registere
 
 ## Adding the peer: no long-lived secret crosses machines
 
-The short way is three commands, `invite`, `join` and `approve`:
-[ONBOARDING.md](ONBOARDING.md). The steps below are the same flow by hand.
+Since 0.2.12 the short way is two commands and no restart: `ai-connect bridge invite --name
+laptop --host <Bridge VPN IP>` on machine 1 prints a one-time join code, and `ai-connect
+join` on machine 2 redeems it ([ONBOARDING.md](ONBOARDING.md), and the
+[README](../README.md#5-adding-machines-join-codes-and-the-ai-connect-cli)). deploy's own
+`invite`, `join` and `approve` (Tailscale auth keys) are deprecated: they print a notice,
+keep working through 0.2.x, and are removed in the next minor release. The steps below are
+the by-hand flow. A running Bridge now re-reads `auth.peers` every 2 seconds, so the
+restarts deploy still does are no longer needed for a token change.
 
 **Machine 2** makes its own token and prints only its hash:
 
@@ -176,6 +193,20 @@ MCP server, `--install-hooks` the plugin's hooks for every session on the machin
 prints a warning: in a bypass-permissions session, what another peer sends is acted on
 with no prompt in between.
 
+The peer-state hooks (busy / idle / waiting) call the MCP server, so they are written
+with `--register-mcp` (since 0.2.4; before, `--install-hooks` was needed as well, and a
+peer registered without it reports `state unknown` until `deploy peer --register-mcp`
+is run again). `--no-state-hooks` keeps the server alone. This is the one hook that is on by
+default: it sends a literal state, never a prompt or a peer's message. They go into the
+settings of the scope the server is in: the user's
+`~/.claude/settings.json` with `--scope user`, this project's `.claude/settings.local.json`
+with `--scope project` (in the user's settings they would fail in every other project,
+which has no such server). Other hooks and keys in that file are kept, a file that is not
+valid JSON stops the step untouched, and `deploy uninstall` takes them out again from the
+user's settings and from the project it is run in. A peer deployed with both options
+before 0.1.11 got these hooks from the plugin; after updating the plugin, run the same
+`deploy peer` command again to write them.
+
 The older way still works: `deploy bridge --peer laptop` makes the token on the Bridge
 and writes `~/.config/ai-connect/peer-tokens/laptop.token`, which then has to be carried
 to machine 2 and passed with `--token-file`.
@@ -206,11 +237,125 @@ The exit code is 1 when any line says `FAIL`. What each failure means:
 | VPN up | Tailscale is stopped or logged out here: run `deploy peer` again |
 | Bridge port reachable | wrong `--bridge`, the Bridge service is down (`deploy status` on machine 1), or the policy does not allow `tag:ai-peer` to reach `tag:bridge:9999` |
 | Bridge accepts this token | the hash given to `add-peer` is not this machine's (run `--print-enrolment` again and compare), or the Bridge was not restarted |
-| Message round trip | `name_taken`: a session is already online as this peer, close it. `name_not_bound_to_token`: `--name` is not the name the token was made for |
+| Message round trip | `name_taken`: a 0.1.8 session (or the HTTP/SSE server) is online under the machine's bare name, close it; 0.2.0 sessions register as `<name>:<project>` and leave it free. `name_not_bound_to_token`: `--name` is not the name the token was made for |
 | Wrong token refused | the Bridge takes any token: do not use it until `auth` in its `config.yaml` is fixed |
+
+### TLS (0.2.15) and the cut-over to `wss://` only (0.3.1)
+
+From 0.2.15 the Bridge also serves `wss://` on `server.tls.port` (default `server.port + 1`,
+10000) with a self-signed certificate it makes on first start, beside plain `ws://` on 9999.
+`deploy` itself still writes `ws://` in 0.2.15 and its firewall step opens `server.port` only,
+so this test checks the plain port. To move a deployed pair over before 0.3.1, which serves
+`wss://` alone:
+
+1. Add `tcp:10000` to the tailnet policy ([the template](../vpn/acl-template.hujson) has it;
+   an applied policy does not) and open 10000 for the VPN subnet in the Bridge's firewall.
+2. On machine 1: `ai-connect bridge cert show` prints the fingerprint.
+3. On each machine, the Bridge included: `ai-connect pin <fingerprint>`. It checks the
+   certificate at `wss://<bridge>:10000` first and refuses a mismatch; the client then
+   fails closed on any other certificate and never falls back to `ws://`.
+4. The full check over TLS: `config_tool.py smoke --bridge 100.x.y.z --port 10000 --name laptop
+   --fingerprint <fingerprint>` (with the venv's Python). `ai-connect status` shows the pin.
+5. Once every peer is pinned: `server.tls.required: true` closes the plain port.
 
 The test leaves one message in the peer's own history on the Bridge and one refused
 token in the Bridge's log.
+
+## One run per machine: setup
+
+`deploy/setup.sh` (Linux, macOS for a peer) and `deploy\setup.ps1` (Windows) take a machine
+that has the plugin and nothing else to a working peer in one run. Both hand straight to
+`deploy/peer_setup.py`, so they take the same options in the same order and print the same
+text. It is a thin layer: every change is made by the `deploy` commands above (`bridge`,
+`peer`, `join`, `add-peer`), in this process, with their own text.
+
+**Without `--apply` it prints the plan and changes nothing** (it runs no tool at all, like
+`--dry-run`). With `--apply` it does the work. Either can be run again; a step that is done
+says `already done`.
+
+| Command | What it does |
+|---|---|
+| `setup bridge [--name N] [--peer P ...] [--enrol NAME=SHA256 ...] [--port N] [--vpn-subnet CIDR]` | `deploy bridge` (venv, Tailscale, config, one token file per `--peer`, the service, the firewall rule, the health check), then `deploy add-peer` for each `--enrol`, then the two checks below, then the lines to run on each peer, for both operating systems |
+| `setup peer --name N --bridge IP --token-file F [--auth-key-file F]` | `deploy peer` with the token file the Bridge made (`~/.config/ai-connect/peer-tokens/N.token` there). Run again without the file, it checks the connection and rewrites nothing |
+| `setup peer --name N --bridge IP` | `deploy join`: the machine makes its own token and prints `{name, token_sha256}`; the Bridge lets it in with `setup bridge --enrol N=<token_sha256>` |
+| `setup peer --invite-file F` | `deploy join` with an invite from `deploy invite` |
+| `setup session --name N` | A second peer name on this machine, with its own token: see below |
+| `setup session --project DIR [--project DIR ...]` | One peer name per project for `client.name_mode: per-project`, each with its own token and `.dir`; one Bridge restart for all: see below |
+
+`bridge` and `peer` also take `--register-mcp` (off by default; `--scope user`, the
+default, or `project`), `--no-install-tailscale` and `--port`. `setup` installs no plugin
+hooks.
+
+**What it checks that `deploy` left to the reader**
+
+- **Is the firewall on?** `ufw allow` succeeds on an inactive ufw, and `ufw status` then
+  lists no rule at all, so a rule could be reported as done while it filtered nothing, and
+  be added again on every run. The firewall step now asks: ufw from `ufw status` (or
+  `ENABLED=` in `/etc/ufw/ufw.conf` when ufw answers in another language), firewalld from
+  `firewall-cmd --state`, Windows from the Private profile's state
+  (`Get-NetFirewallProfile`). It prints `NOT ENFORCED` when the firewall is off and
+  `NOT VERIFIED` when it could not tell, repeats that in the summary, and reads the rules
+  of an inactive ufw from `ufw show added`. **It never turns a firewall on**: enabling one
+  applies its default policy to every port of the machine, an SSH session included. With
+  firewalld not running no rule is added, and the deploy goes on to its health check.
+  `deploy status` flags a rule that is not enforced, and `deploy uninstall` removes the
+  stored rule of an inactive ufw.
+- **Has the tailnet policy been set?** `setup` never runs `tailnet-setup`: it needs the
+  owner's Tailscale API token, and `--apply` replaces the whole tailnet policy. On the
+  Bridge, `setup bridge` reads this machine's tags (`tailscale status`) and looks for the
+  stored OAuth client, the two things `tailnet-setup --apply` leaves there, and prints
+  `OUTSTANDING` with the commands when either is missing. It does not read the policy
+  itself. On a peer, `setup peer` opens one TCP connection to the Bridge's port; a port
+  that does not answer is the usual sign of a policy that does not let `tag:ai-peer`
+  reach `tag:bridge:9999`.
+
+### A second session on one machine
+
+Since 0.2.0 every session on a machine is online by itself, as `<client.name>:<project>`
+(since 0.2.2 `<client.name>:s-<session name>` for a named Claude Code session) with `client.token`: nothing to set up ([ONBOARDING.md](ONBOARDING.md#several-sessions-on-one-machine)).
+Before 0.2.0 they all joined as `client.name`, and a live name cannot be taken over, so a
+second session waited on standby. A session that should have a name and a **token of its
+own** (one that can be revoked without the machine's) is still made like this:
+
+```bash
+deploy/setup.sh session --name laptop-2            # the plan
+deploy/setup.sh session --name laptop-2 --apply
+AI_CONNECT_PEER_NAME=laptop-2 claude               # PowerShell: $env:AI_CONNECT_PEER_NAME = 'laptop-2'; claude
+```
+
+It makes a token for that name, owner-only, in
+`~/.config/ai-connect/session-tokens/laptop-2.token`. On the Bridge machine it enrols the
+token's hash and restarts the Bridge (every peer that is online is disconnected for a
+moment). On any other machine it prints `{name, token_sha256}`, and the Bridge lets it in
+with `setup bridge --enrol laptop-2=<token_sha256> --apply`. The client then sends that
+token whenever `AI_CONNECT_PEER_NAME` is `laptop-2`, and `client.token` otherwise. Set the
+variable for the `claude` command itself, not in the MCP server's registration: the
+watcher hook reads it too. To take it back, on the Bridge: `deploy remove --name laptop-2
+--yes` (it asks the Tailscale API for a node of that name first, so it needs the stored
+OAuth client), or `installer.py revoke-peer laptop-2` and a Bridge restart; then delete the
+token file.
+
+### One name per project
+
+With `client.name_mode: per-project` in `config.yaml`, a session joins as
+`<client.name>-<project folder name>` (the project is `CLAUDE_PROJECT_DIR`, else the working
+directory; the folder name is cut down to letters, digits and single hyphens, the whole
+name to 63 characters), so every project on the machine can be online at once:
+
+```bash
+deploy/setup.sh session --project ~/src/api --project ~/src/web            # the plan
+deploy/setup.sh session --project ~/src/api --project ~/src/web --apply    # laptop-api, laptop-web
+```
+
+For each project it writes `session-tokens/<name>.token` (owner-only) and
+`session-tokens/<name>.dir`, the project's absolute resolved path on one line (UTF-8, one
+trailing `\n`; a reader also takes it without one, or with `\r\n`). On the Bridge machine
+every hash is enrolled and the Bridge restarted once; elsewhere one `{name, token_sha256}`
+line per name is printed for `setup bridge --enrol`. It refuses two projects with one name,
+a name whose `.dir` holds another project, and `Bridge` / `User:...`. A session falls back
+to `client.name` and `client.token`, with one line on stderr, when its token is missing,
+not a regular file owned by the user with mode 600, or its `.dir` names another directory.
+`AI_CONNECT_PEER_NAME` still wins. The details are in the plugin README, "Details".
 
 ## Afterwards
 
@@ -231,3 +376,10 @@ sends one message. It runs no test suite and installs nothing.
 fakes: a fake Tailscale API on a loopback port, fake system tools on a minimal `PATH`, a
 fake credential store, and the real Bridge server on a loopback port for `deploy test`.
 No test calls Tailscale or installs anything.
+
+`tests/test_ops_setup.py` runs `setup` on the same fake machine: the plan changes nothing
+and runs no tool, both roles end to end, a second session whose token the client then
+sends, per-project names (the name, each fallback with its one stderr line, the watcher
+taking the client's name, and `session --project` with one restart, through `setup.sh`
+and `setup.ps1` alike), an inactive ufw, a firewalld that is not running, the Windows profile states, the
+outstanding tailnet policy, and `setup.sh` against `setup.ps1` line for line.

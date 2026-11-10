@@ -128,6 +128,9 @@ You MUST complete each phase before proceeding to the next.
    **This reveals:** which layer fails - secrets reached the workflow, the
    workflow did not reach the build.
 
+   Tag every debug log you add with a unique prefix such as `[DEBUG-a4f2]`, so
+   cleanup is one grep for the prefix.
+
 5. **Trace Data Flow**
 
    **WHEN error is deep in call stack:**
@@ -140,6 +143,11 @@ You MUST complete each phase before proceeding to the next.
    - What called this with bad value?
    - Keep tracing up until you find the source
    - Fix at source, not at symptom
+
+**Phase 1 is done when** one command has already been run, with its output shown
+(secrets redacted), that goes red on this symptom and can go green once it is
+fixed. It must assert the reported symptom, not merely run without error. No such
+command, no Phase 2: build it, or report "cause not established".
 
 ### Phase 1 in a crew repository - read what is already written down
 

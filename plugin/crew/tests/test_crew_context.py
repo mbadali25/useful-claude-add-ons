@@ -170,32 +170,33 @@ def test_label_puts_the_vault_first():
     assert crew_recall.label({"vault": "v1", "note": "a.md", "text": "t"}) == "- [vault:v1] a.md: t"
 
 
-def test_snippets_follow_the_repo_vault_priority_not_the_cli_order(tmp_path, stub, monkeypatch):
-    root = make_repo(tmp_path, config={"memory": {"recall": {"vaults": ["recall-v", "primary-v"],
-                                                             "maxChars": 600}}})
+def test_vaults_is_constant(tmp_path, stub, monkeypatch):
+    root = make_repo(tmp_path, config={"memory": {"recall": {"vaults": ["recall-v", "primary-v"]}}})
     monkeypatch.setenv("STUB_JSON", json.dumps(
-        [{"vault": "primary-v", "note": "p.md", "text": "FROM-PRIMARY"},
-         {"vault": "recall-v", "note": "r.md", "text": "FROM-RECALL"}]))
+        [{"vault": "recall-v", "note": "r.md", "text": "FROM-RECALL"},
+         {"vault": "primary-v", "note": "p.md", "text": "FROM-PRIMARY"}]))
 
     text = _run(payload("UserPromptSubmit", root, prompt="deploy checklist please", prompt_id="p1"))
 
-    assert text.index("FROM-RECALL") < text.index("FROM-PRIMARY")
+    assert text.index("FROM-PRIMARY") < text.index("FROM-RECALL")
     argv = json.loads(stub.read_text(encoding="utf-8").splitlines()[-1])
-    assert argv[argv.index("--vaults") + 1] == "recall-v,primary-v"
-    assert argv[argv.index("--max-chars") + 1] == "600"
+    assert argv[argv.index("--vaults") + 1] == "primary-v,recall-v"
     assert "--json" in argv
 
 
+def test_max_chars_is_constant(tmp_path, stub):
+    root = make_repo(tmp_path, config={"memory": {"recall": {"maxChars": 600}}})
+
+    _run(payload("UserPromptSubmit", root, prompt="deploy checklist please", prompt_id="p1"))
+
+    argv = json.loads(stub.read_text(encoding="utf-8").splitlines()[-1])
+    assert argv[argv.index("--max-chars") + 1] == "800"
+
+
 def test_default_order_is_primary_then_recall_and_ignore_is_never_asked(tmp_path, stub):
-    order = crew_recall.vault_order({})
+    order = crew_recall.vault_order()
 
     assert order == ["primary-v", "recall-v"]
-
-
-def test_a_repo_list_cannot_resurrect_an_ignored_vault(stub):
-    order = crew_recall.vault_order({"memory": {"recall": {"vaults": ["ignored-v", "recall-v"]}}})
-
-    assert order == ["recall-v"]
 
 
 @pytest.mark.parametrize("mode, reason, used", [("exit", "cli-exit-2", None),
@@ -230,7 +231,7 @@ def test_a_cli_timeout_is_a_miss(monkeypatch, stub):
     def slow(*_a, **_k):
         raise subprocess.TimeoutExpired("vault_ops", 4)
 
-    result = crew_recall.recall("some query", {}, runner=slow)
+    result = crew_recall.recall("some query", runner=slow)
 
     assert (result["status"], result["reason"]) == ("miss", "cli-timeout")
 
@@ -382,10 +383,11 @@ def test_session_start_names_inert_settings_in_one_line(tmp_path):
     assert "autopilot.laterKnob=3 (unknown key)" in lines[0]
 
 
-def test_inert_line_survives_memory_inject_off(tmp_path):
+def test_inject_is_constant(tmp_path):
     root = make_repo(tmp_path, config={"autopilot": {"laterKnob": 3}}, inject=False)
-    lines = _inert_lines(_start(root))
-    assert len(lines) == 1 and "autopilot.laterKnob=3 (unknown key)" in lines[0]
+    text = _start(root)
+    assert text.startswith("crew context (startup)")
+    assert "autopilot.laterKnob=3 (unknown key)" in _inert_lines(text)[0]
 
 
 def test_session_start_is_quiet_without_inert_settings(tmp_path):

@@ -286,7 +286,7 @@ def build_fixture(root):
     (crew / "verify.json").write_text(json.dumps({
         "environments": {"prod": {"deploy": "deploy-to-prod"}},
     }), encoding="utf-8")
-    # The two markers handoff-read.ps1 deletes on its second and third lines.
+    # The two markers crew's handoff-read hook deletes on its second and third lines.
     # They are the sharpest evidence available that a stood-down hook did
     # nothing: a guard one line too low removes them and still exits 0.
     (crew / ".handoff-requested").write_text("marker\n", encoding="utf-8")

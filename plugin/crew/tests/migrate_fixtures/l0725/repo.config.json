@@ -1,0 +1,309 @@
+{
+  "schema": 7,
+  "tier": 2,
+  "roles": [
+    "explorer",
+    "qa-reviewer",
+    "developer",
+    "security",
+    "smoke-author",
+    "analyst",
+    "browser-tester",
+    "dba",
+    "docs-writer",
+    "infrastructure-architect",
+    "planner",
+    "researcher",
+    "scribe",
+    "ad-security-reviewer",
+    "ai-writing-auditor",
+    "angular-architect",
+    "api-designer",
+    "architect-reviewer",
+    "backend-developer",
+    "code-reviewer",
+    "compliance-auditor",
+    "database-administrator",
+    "design-bridge",
+    "dotnet-core-expert",
+    "dotnet-framework-4.8-expert",
+    "exchange-online-specialist",
+    "fintech-engineer",
+    "git-workflow-manager",
+    "graphql-architect",
+    "kimi-consult",
+    "legacy-modernizer",
+    "microservices-architect",
+    "multi-agent-coordinator",
+    "network-engineer",
+    "node-developer",
+    "payment-integration",
+    "penetration-tester",
+    "php-pro",
+    "platform-engineer",
+    "power-automate-specialist",
+    "powershell-5.1-expert",
+    "powershell-7-expert",
+    "powershell-security-hardening",
+    "python-pro",
+    "qa-researcher",
+    "react-specialist",
+    "rust-engineer",
+    "sharepoint-developer",
+    "skill-author",
+    "sql-pro",
+    "terraform-engineer",
+    "windows-infra-admin",
+    "workflow-orchestrator"
+  ],
+  "qa": {
+    "provider": "auto",
+    "order": [
+      "codex",
+      "kimi",
+      "copilot"
+    ],
+    "fallback": "kimi-code/k3",
+    "codex": {
+      "model": "gpt-6-sol",
+      "reasoningEffort": "medium"
+    },
+    "copilot": {
+      "model": null
+    },
+    "kimi": {
+      "model": null
+    },
+    "roles": {},
+    "claude": {
+      "model": "claude-opus-5-5"
+    },
+    "tssPinsNote": "SET 2026-10-16 (L-0798) on owner instruction: TSS repo-layer model pins adopted, owner overrides: developer and dev.fallback = sonnet, qa.order without a claude rung. qa.fallback unchanged."
+  },
+  "dev": {
+    "provider": "claude",
+    "fallback": "sonnet",
+    "codex": {
+      "model": null,
+      "reasoningEffort": null
+    },
+    "copilot": {
+      "model": null
+    },
+    "kimi": {
+      "model": "kimi-code/k3"
+    },
+    "roles": {
+      "developer": {
+        "provider": "claude",
+        "model": "sonnet"
+      },
+      "coordinator": {
+        "provider": "claude",
+        "model": "opus"
+      }
+    },
+    "tssPinsNote": "SET 2026-10-16 (L-0798) on owner instruction: TSS repo-layer model pins adopted, owner overrides: developer and dev.fallback = sonnet, qa.order without a claude rung. qa.fallback unchanged."
+  },
+  "worktree": {
+    "root": null
+  },
+  "secondOpinion": {
+    "provider": "none",
+    "mode": "cli",
+    "model": null,
+    "keyEnv": "GEMINI_API_KEY",
+    "sendsCode": false
+  },
+  "tracker": "obsidian",
+  "jira": {
+    "project": null,
+    "cloudId": null
+  },
+  "sdp": {
+    "portal": null,
+    "noteVisibility": "private",
+    "closeOnDone": false
+  },
+  "obsidian": {
+    "vaultPath": "/repos/example/claude-memories",
+    "boardDir": "Boards/example",
+    "board": "Board.md",
+    "columns": {
+      "backlog": "Backlog",
+      "ready": "Ready",
+      "inProgress": "In Progress",
+      "review": "Review",
+      "done": "Done"
+    }
+  },
+  "memory": {
+    "mode": "repo",
+    "vaultPath": null
+  },
+  "verifyGate": true,
+  "context": {
+    "enabled": true,
+    "warnAt": 0.4,
+    "budgetTokens": null,
+    "reserveTokens": 0,
+    "handoffPath": ".work/HANDOFF.md",
+    "keepTranscripts": 5,
+    "autoClear": {
+      "method": "auto",
+      "windowTitle": null,
+      "command": "/clear",
+      "delaySeconds": 3,
+      "minHandoffLines": 5,
+      "unsafeFocus": false,
+      "enabled": true,
+      "wrapUp": true
+    },
+    "autoWrapUp": true,
+    "autoResume": true,
+    "staleHandoff": {
+      "maxAgeHours": 72,
+      "maxCommitsBehind": 3
+    }
+  },
+  "emergency": {
+    "standDown": true,
+    "ttlMinutes": 120,
+    "maxTtlMinutes": 480
+  },
+  "notify": {
+    "provider": "telegram",
+    "urlEnv": null,
+    "tokenEnv": "TELEGRAM_BOT_TOKEN",
+    "chatId": "REDACTED",
+    "events": [
+      "gate"
+    ]
+  },
+  "platform": {
+    "os": "linux",
+    "wsl": "no",
+    "wslVersion": "",
+    "distro": "",
+    "windowsHostIp": "",
+    "repoFilesystem": "native",
+    "shell": "bash",
+    "tools": {
+      "git": true,
+      "docker": false,
+      "jq": true,
+      "python3": true,
+      "node": true,
+      "npx": true,
+      "dotnet": false,
+      "php": false,
+      "composer": false,
+      "terraform": false,
+      "aws": false,
+      "az": false,
+      "psql": false,
+      "codex": true,
+      "pwsh": true
+    },
+    "crlfDetected": false,
+    "resolvedTools": {
+      "python3": "python3",
+      "node": "node",
+      "npm": "npm",
+      "pwsh": "pwsh",
+      "git": "git",
+      "jq": "jq"
+    }
+  },
+  "pm": {
+    "enabled": true,
+    "mode": "adaptive",
+    "quietLines": 8,
+    "maxLines": 40,
+    "authority": "autonomous",
+    "ticketGranularity": "system",
+    "maxDispatches": 9
+  },
+  "graph": {
+    "enabled": true,
+    "tool": "graphify",
+    "out": "graphify-out",
+    "mode": "code-only",
+    "commitHook": false
+  },
+  "docs": {
+    "theme": null,
+    "reportTheme": null
+  },
+  "bitbucket": {
+    "mergeGate": {
+      "enabled": false,
+      "branch": null,
+      "preset": "standard"
+    }
+  },
+  "github": {
+    "mergeGate": {
+      "enabled": false,
+      "branch": null
+    }
+  },
+  "install": {
+    "policy": "ask"
+  },
+  "guards": {
+    "terraformApply": "block",
+    "forcePush": "block",
+    "adminMerge": "ask",
+    "mergeGate": "block",
+    "prodDatabase": "none",
+    "prodServer": "none",
+    "roleWrites": "report",
+    "cloudGuard": "block",
+    "sqlDestructive": "block",
+    "cloudDestructive": "block"
+  },
+  "production": {
+    "databases": [],
+    "hosts": []
+  },
+  "change": {
+    "requester": null,
+    "implementor": null,
+    "requireForProduction": false,
+    "sdpTemplate": "Change Management Request",
+    "jiraIssueType": "Change",
+    "category": null
+  },
+  "scope": {
+    "allowCliApproval": true
+  },
+  "autopilot": {
+    "approval": "self",
+    "deploy": "nonprod",
+    "questions": "self",
+    "mode": "plan",
+    "maxPhases": 100,
+    "ship": "merge",
+    "reviewPolicy": "fix-and-rereview",
+    "maxLanes": 3,
+    "maxTicketsPerRun": 50,
+    "maxAutoReplans": 2
+  },
+  "environments": {
+    "prodUnattended": true
+  },
+  "cloud": {
+    "awsProfiles": [
+      "example"
+    ],
+    "awsRegions": [
+      "us-east-1",
+      "us-east-2",
+      "us-west-2"
+    ]
+  },
+  "resume": {
+    "auto": true
+  }
+}

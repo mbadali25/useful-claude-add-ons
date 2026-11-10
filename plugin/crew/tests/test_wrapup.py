@@ -8,24 +8,23 @@ auto-clear refuse unless the results are on disk: the handoff's `head:` is
 HEAD, its `branch:` is the checkout, no tracked file is modified, and its
 `resume:` line parses under T-0006's grammar or is `resume: none`.
 
-Must-allow / must-block pairs, both flavours where the path exists:
+Must-allow / must-block pairs:
 
   - arming: only machine `true` + armed, in-scope `enabled` + no repo `false`;
   - the check: a committed, fresh handoff passes (also with `resume: none`);
     every missing or mismatched result refuses with its reason; untracked
     files alone do not block; "could not tell" (git failing, crew_resume
-    missing, ps1 with no python) refuses;
+    missing) refuses;
   - unarmed: plan output and context-watch's stderr, exit and marker are
     byte-identical to before;
   - escalation: a refusal is fed back once at the next non-continuation Stop,
-    never on `stop_hook_active`, and exactly once across both flavours;
+    never on `stop_hook_active`, and exactly once;
   - order: the check runs before the sent-marker claim.
 
 No case reads the developer's config or process table, types a keystroke, or
 commits outside a fixture repo: HOME, CLAUDE_CONFIG_DIR and
 CREW_AUTOCLEAR_PROC_STUB point at fixtures and CREW_AUTOCLEAR_INHIBIT is set.
-The .ps1 cases are told they are on Windows and skip without pwsh -- a skip
-there means that flavour did NOT run.
+A skip without bash means the sh flavour did NOT run.
 """
 import json
 import os
@@ -43,10 +42,8 @@ import crew_fixtures as cf
 _PLUGIN = pathlib.Path(context._ROOT)  # pylint: disable=protected-access
 _SCRIPTS = _PLUGIN / "hooks" / "scripts"
 _BASH = cf.resolve_bash()
-_PWSH = cf.resolve_pwsh()
 needs_bash = pytest.mark.skipif(_BASH is None, reason="bash not installed - the sh flavour was NOT run")
-needs_pwsh = pytest.mark.skipif(_PWSH is None, reason="pwsh not installed - the .ps1 flavour was NOT run")
-FLAVORS = [pytest.param("sh", marks=needs_bash), pytest.param("ps1", marks=needs_pwsh)]
+FLAVORS = [pytest.param("sh", marks=needs_bash)]
 # A test that shadows a real tool with a stub first on PATH. On Windows,
 # _BASH is Git's bin/bash.exe launcher, which prepends /mingw64/bin:/usr/bin
 # ahead of any PATH it is handed: the real git always wins and the stub is
@@ -56,8 +53,7 @@ _BASH_NO_PREPEND = cf.resolve_bash_no_prepend() if os.name == "nt" else _BASH
 SHADOW_FLAVORS = [
     pytest.param("sh", marks=pytest.mark.skipif(
         _BASH_NO_PREPEND is None,
-        reason="no bash that keeps a stub first on PATH - the sh flavour was NOT run")),
-    pytest.param("ps1", marks=needs_pwsh)]
+        reason="no bash that keeps a stub first on PATH - the sh flavour was NOT run"))]
 
 SESSION = "55555555-eeee-4eee-8eee-000000000005"
 KEY = crew_autocycle.session_key(SESSION)
@@ -78,8 +74,7 @@ class Repo:
 
     def __init__(self, tmp_path, repo_auto=None, machine_auto=None):
         self.tmp = tmp_path
-        context_cfg = {"handoffPath": ".work/HANDOFF.md", "warnAt": 0.8, "budgetTokens": None,
-                       "reserveTokens": 0, "autoWrapUp": True}
+        context_cfg = {"warnAt": 0.8, "reserveTokens": 0}
         if repo_auto is not None:
             context_cfg["autoClear"] = repo_auto
         self.root = cf.make_repo(tmp_path, config={"context": context_cfg})
@@ -147,19 +142,12 @@ class Repo:
             env.pop(name, None)
         env.update(self.env)
         env.update(extra or {})
-        if flavor == "ps1":
-            env["OS"] = "Windows_NT"
         return env
 
     def autoclear(self, flavor, *args, extra=None, bash=None):
         env = self.base_env(flavor, extra)
-        if flavor == "ps1":
-            names = {"--dry-run": "-DryRun", "--force": "-Force"}
-            cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(_SCRIPTS / "auto-clear.ps1"),
-                   "-Session", SESSION, "-Root", str(self.root), *[names.get(a, a) for a in args]]
-        else:
-            cmd = [bash or _BASH, str(_SCRIPTS / "auto-clear.sh").replace("\\", "/"),
-                   "--session", SESSION, "--root", str(self.root), *args]
+        cmd = [bash or _BASH, str(_SCRIPTS / "auto-clear.sh").replace("\\", "/"),
+               "--session", SESSION, "--root", str(self.root), *args]
         return subprocess.run(cmd, cwd=str(self.root), env=env, capture_output=True, text=True,
                               stdin=subprocess.DEVNULL, check=False, timeout=120)
 
@@ -177,10 +165,7 @@ class Repo:
                               "cwd": str(self.root), "hook_event_name": "Stop",
                               "stop_hook_active": active})
         env = self.base_env(flavor, extra)
-        if flavor == "ps1":
-            cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(_SCRIPTS / "context-watch.ps1")]
-        else:
-            cmd = [_BASH, str(_SCRIPTS / "context-watch.sh").replace("\\", "/")]
+        cmd = [_BASH, str(_SCRIPTS / "context-watch.sh").replace("\\", "/")]
         return subprocess.run(cmd, input=payload, cwd=str(self.root), env=env, capture_output=True,
                               text=True, check=False, timeout=120)
 
@@ -275,7 +260,7 @@ def test_wrapup_armed_cli_prints_on_or_off(repo):
 # --- Step 1: the check ---------------------------------------------------------
 
 def _check(box):
-    return crew_autocycle.wrapup_check(str(box.root), box.cfg())
+    return crew_autocycle.wrapup_check(str(box.root))
 
 
 def test_check_passes_committed_fresh_handoff(repo):
@@ -367,15 +352,15 @@ def test_check_ignores_a_tracked_handoff_itself(repo):
     assert _check(repo) == (True, "")
 
 
-def _subdir_repo(tmp_path, handoff_rel=".work/HANDOFF.md"):
+def _subdir_repo(tmp_path):
     """A git repo at `top` whose crew root is `top/sub`: git status names
-    paths from the top, handoffPath is relative to `sub`."""
+    paths from the top, the handoff path is relative to `sub`."""
+    handoff_rel = ".work/HANDOFF.md"
     top = tmp_path / "top"
     sub = top / "sub"
     (sub / ".crew").mkdir(parents=True)
     (top / ".work").mkdir()
-    (sub / ".crew" / "config.json").write_text(json.dumps({"context": {"handoffPath": handoff_rel}}),
-                                              encoding="utf-8")
+    (sub / ".crew" / "config.json").write_text("{}", encoding="utf-8")
     _git(top, "init", "-q")
     _git(top, "config", "user.email", "t@example.invalid")
     _git(top, "config", "user.name", "T")
@@ -385,37 +370,32 @@ def _subdir_repo(tmp_path, handoff_rel=".work/HANDOFF.md"):
         path.write_text("placeholder\n", encoding="utf-8")
     _git(top, "add", "-A")
     _git(top, "commit", "-q", "-m", "fixture")
-    gpath = tmp_path / "machine.json"
-    gpath.write_text(json.dumps({"context": {"autoClear": {"enabled": True, "wrapUp": True}}}),
-                     encoding="utf-8")
-    cfg = crew_autocycle.settings(str(sub), str(gpath))
-
     def write_handoff():
         branch = _git(top, "rev-parse", "--abbrev-ref", "HEAD")
         head = _git(top, "rev-parse", "HEAD")[:7]
         (sub / handoff_rel).write_text(
             f"# H\nbranch: {branch}\nhead: {head}\nresume: {RESUME}\n", encoding="utf-8")
-    return top, sub, cfg, write_handoff
+    return top, sub, write_handoff
 
 
 def test_check_exempts_the_handoff_when_root_is_a_subdirectory(tmp_path):
-    _top, sub, cfg, write_handoff = _subdir_repo(tmp_path)
+    _top, sub, write_handoff = _subdir_repo(tmp_path)
     write_handoff()             # sub/.work/HANDOFF.md, tracked, now modified
-    assert crew_autocycle.wrapup_check(str(sub), cfg) == (True, "")
+    assert crew_autocycle.wrapup_check(str(sub)) == (True, "")
 
 
 def test_check_does_not_exempt_a_top_level_namesake_from_a_subdirectory(tmp_path):
-    top, sub, cfg, write_handoff = _subdir_repo(tmp_path)
+    top, sub, write_handoff = _subdir_repo(tmp_path)
     write_handoff()
     (top / ".work" / "HANDOFF.md").write_text("uncommitted work\n", encoding="utf-8")
-    ok, why = crew_autocycle.wrapup_check(str(sub), cfg)
+    ok, why = crew_autocycle.wrapup_check(str(sub))
     assert not ok and "1 tracked file is modified (.work/HANDOFF.md)" in why
 
 
 def test_check_counts_the_source_of_a_rename_onto_the_handoff(tmp_path):
     # `git mv sub/work.py sub/.work/HANDOFF.md`: the destination is exempt,
     # the staged deletion of its source is uncommitted work and must block.
-    top, sub, cfg, write_handoff = _subdir_repo(tmp_path)
+    top, sub, write_handoff = _subdir_repo(tmp_path)
     _git(top, "rm", "-q", "sub/.work/HANDOFF.md")
     (sub / "work.py").write_text("print('work')\n", encoding="utf-8")
     _git(top, "add", "sub/work.py")
@@ -423,16 +403,9 @@ def test_check_counts_the_source_of_a_rename_onto_the_handoff(tmp_path):
     (sub / ".work").mkdir(exist_ok=True)
     _git(top, "mv", "sub/work.py", "sub/.work/HANDOFF.md")
     write_handoff()
-    ok, why = crew_autocycle.wrapup_check(str(sub), cfg)
+    ok, why = crew_autocycle.wrapup_check(str(sub))
     assert not ok, why
     assert "1 tracked file is modified (sub/work.py)" in why
-
-
-def test_check_exempts_an_absolute_handoff_path_inside_the_root(tmp_path):
-    handoff = tmp_path / "top" / "sub" / ".work" / "HANDOFF.md"
-    _top, sub, cfg, write_handoff = _subdir_repo(tmp_path, str(handoff))
-    write_handoff()
-    assert crew_autocycle.wrapup_check(str(sub), cfg) == (True, "")
 
 
 def test_git_output_is_decoded_as_utf8_whatever_the_locale(monkeypatch, tmp_path):
@@ -446,12 +419,6 @@ def test_git_output_is_decoded_as_utf8_whatever_the_locale(monkeypatch, tmp_path
     crew_autocycle._git_out(str(tmp_path), "status")  # pylint: disable=protected-access
     assert seen.get("encoding") == "utf-8"
     assert seen.get("errors") == "surrogateescape"
-
-
-def test_check_exempts_a_handoff_path_git_would_quote(tmp_path):
-    _top, sub, cfg, write_handoff = _subdir_repo(tmp_path, ".work/HANDÖFF notes.md")
-    write_handoff()
-    assert crew_autocycle.wrapup_check(str(sub), cfg) == (True, "")
 
 
 def test_check_refuses_missing_resume(repo):
@@ -515,7 +482,7 @@ def _which_git(monkeypatch, git):
 
 
 def test_check_runs_the_git_which_resolves(repo, monkeypatch, tmp_path):
-    # The veto must judge the git PATH resolves the way bash, pwsh and
+    # The veto must judge the git PATH resolves the way bash and
     # shutil.which do (PATHEXT: git.cmd), not whatever a bare "git" reaches --
     # on Windows CreateProcess skips git.cmd for a later git.exe, so a failing
     # git read as a clean tree and the clear went ahead. The resolved git is
@@ -537,11 +504,10 @@ def test_check_refuses_when_git_does_not_resolve(repo, monkeypatch):
 
 
 def test_check_refuses_outside_a_git_repo(tmp_path):
-    root = cf.make_repo(tmp_path, config={"context": {"handoffPath": ".work/HANDOFF.md"}}, git=False)
+    root = cf.make_repo(tmp_path, config={}, git=False)
     (root / ".work" / "HANDOFF.md").write_text(
         f"# H\nbranch: main\nhead: abcdef1\nresume: {RESUME}\n", encoding="utf-8")
-    cfg = crew_autocycle.settings(str(root), str(tmp_path / "absent.json"))
-    ok, why = crew_autocycle.wrapup_check(str(root), cfg)
+    ok, why = crew_autocycle.wrapup_check(str(root))
     assert not ok and "git" in why
 
 
@@ -632,10 +598,6 @@ _PROCEDURE = ("crew wrap-up (context.autoClear.wrapUp) - context at 90%.",
               "its resume: line parses")
 
 
-def _norm(text):
-    return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").strip().splitlines())
-
-
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_armed_message_is_the_procedure(repo, flavor):
     repo.arm()
@@ -659,19 +621,6 @@ def test_armed_message_names_the_active_ticket(repo, monkeypatch):
     assert "Active ticket: T-0007" in crew_autocycle.wrapup_message(str(repo.root), 90)
 
 
-@needs_bash
-@needs_pwsh
-def test_armed_message_parity(tmp_path):
-    texts = []
-    for flavor in ("sh", "ps1"):
-        box = Repo(tmp_path / flavor)
-        box.arm()
-        done = box.stop(flavor)
-        assert done.returncode == 2, done.stderr
-        texts.append(_norm(done.stderr))
-    assert texts[0] == texts[1]
-
-
 def _marker_shape(box):
     data = json.loads((box.root / ".crew" / (".handoff-requested-" + KEY)).read_text(encoding="utf-8"))
     data.pop("requested_at")
@@ -680,7 +629,7 @@ def _marker_shape(box):
 
 @pytest.mark.parametrize("flavor", FLAVORS)
 @pytest.mark.parametrize("auto_wrap_up", [True, False])
-def test_unarmed_messages_unchanged_for_both_autowrapup_values(tmp_path, flavor, auto_wrap_up):
+def test_unarmed_messages_ignore_the_dropped_autowrapup_key(tmp_path, flavor, auto_wrap_up):
     seen = []
     unarmed = ({"enabled": True}, {"enabled": True, "wrapUp": None},
                {"enabled": False, "wrapUp": True}, {"wrapUp": True}, {"enabled": True, "wrapUp": "true"})
@@ -694,7 +643,7 @@ def test_unarmed_messages_unchanged_for_both_autowrapup_values(tmp_path, flavor,
         done = box.stop(flavor)
         seen.append((done.returncode, done.stderr, _marker_shape(box)))
     assert seen[0][0] == 2
-    assert seen[0][1].startswith("You are at roughly" if auto_wrap_up else "Context:")
+    assert seen[0][1].startswith("You are at roughly")
     assert all(item == seen[0] for item in seen), seen
 
 
@@ -789,32 +738,6 @@ def test_rearm_removes_the_escalation_marker(repo, flavor):
     assert not repo.escalated().exists()
 
 
-@needs_bash
-@needs_pwsh
-def test_both_flavours_escalate_once(repo):
-    _refusing(repo)
-    codes = [repo.stop("sh").returncode, repo.stop("ps1").returncode]
-    assert sorted(codes) == [0, 2], codes
-    codes = [repo.stop("ps1").returncode, repo.stop("sh").returncode]
-    assert codes == [0, 0], codes
-
-
-def _no_python_path(tmp_path):
-    tools = tmp_path / "tools"
-    tools.mkdir()
-    cf.link_path_dirs(tools, skip=lambda name: name.startswith(("python", "py")))
-    return str(tools)
-
-
-@needs_pwsh
-def test_ps1_without_python_reads_unarmed(repo, tmp_path):
-    repo.arm()
-    done = repo.stop("ps1", extra={"PATH": _no_python_path(tmp_path)})
-    assert done.returncode == 2, done.stderr
-    assert done.stderr.startswith("You are at roughly")
-    assert "crew wrap-up" not in done.stderr
-
-
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_session_start_resets_escalation_marker(repo, flavor):
     other = repo.root / ".crew" / ".wrapup-escalated-someone-else"
@@ -823,17 +746,14 @@ def test_session_start_resets_escalation_marker(repo, flavor):
     payload = json.dumps({"session_id": SESSION, "cwd": str(repo.root), "hook_event_name": "SessionStart",
                           "source": "startup"})
     env = repo.base_env(flavor)
-    if flavor == "ps1":
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(_SCRIPTS / "handoff-read.ps1")]
-    else:
-        cmd = [_BASH, str(_SCRIPTS / "handoff-read.sh").replace("\\", "/")]
+    cmd = [_BASH, str(_SCRIPTS / "handoff-read.sh").replace("\\", "/")]
     subprocess.run(cmd, input=payload, cwd=str(repo.root), env=env, capture_output=True, text=True,
                    check=False, timeout=120)
     assert not repo.escalated().exists()
     assert other.exists()
 
 
-# --- Step 3: auto-clear shows a refusal, and the ps1 twin runs the check ----------
+# --- Step 3: auto-clear shows a refusal ----------
 
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_dry_run_send_when_wrapup_passes(repo, flavor):
@@ -910,26 +830,6 @@ def test_unarmed_autoclear_ignores_the_wrapup_results(repo, flavor):
     assert "wrap-up" not in repo.log()
 
 
-@needs_pwsh
-def test_ps1_runs_wrapup_check_when_armed(repo):
-    _refusing(repo)
-    done = repo.autoclear("ps1", "--dry-run", extra=cf.bind_session(repo.home, SESSION))
-    assert "would send" not in done.stdout
-    assert "refusing - wrap-up: the handoff's head: is not HEAD" in repo.log()
-
-
-@needs_pwsh
-def test_ps1_no_python_refuses_armed_clear(repo, tmp_path):
-    repo.arm()
-    repo.wrapped()
-    extra = cf.bind_session(repo.home, SESSION)
-    extra["PATH"] = _no_python_path(tmp_path)
-    done = repo.autoclear("ps1", extra=extra)
-    assert "refusing - wrap-up: no usable python" in repo.log(), (done.stdout, done.stderr)
-    assert not repo.sent_marker().exists()
-    assert any("no usable python" in m for m in _system_messages(done.stdout))
-
-
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_crew_resume_missing_refuses_the_clear(repo, flavor, tmp_path):
     # A copy of the hook scripts without T-0006's module: "could not tell".
@@ -939,12 +839,8 @@ def test_crew_resume_missing_refuses_the_clear(repo, flavor, tmp_path):
     repo.arm()
     repo.wrapped()
     env = repo.base_env(flavor, cf.bind_session(repo.home, SESSION))
-    if flavor == "ps1":
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", str(scripts / "auto-clear.ps1"),
-               "-Session", SESSION, "-Root", str(repo.root), "-DryRun"]
-    else:
-        cmd = [_BASH, str(scripts / "auto-clear.sh").replace("\\", "/"), "--session", SESSION,
-               "--root", str(repo.root), "--dry-run"]
+    cmd = [_BASH, str(scripts / "auto-clear.sh").replace("\\", "/"), "--session", SESSION,
+           "--root", str(repo.root), "--dry-run"]
     done = subprocess.run(cmd, cwd=str(repo.root), env=env, capture_output=True, text=True,
                           stdin=subprocess.DEVNULL, check=False, timeout=120)
     assert "would send" not in done.stdout

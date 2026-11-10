@@ -1,0 +1,23 @@
+{
+ "armed": false,
+ "case": "reviewer",
+ "dirty": "",
+ "event": "SubagentStart",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"SubagentStart\", \"agent_type\": \"crew:reviewer\", \"session_id\": \"s-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "crew-context.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

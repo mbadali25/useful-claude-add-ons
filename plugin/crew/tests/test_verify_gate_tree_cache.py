@@ -12,9 +12,7 @@ the tree under test.
 """
 import json
 import os
-import shutil
 import subprocess
-import sys
 
 import pytest
 
@@ -24,15 +22,10 @@ import context  # noqa: F401  pylint: disable=unused-import
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
-_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = shutil.which("pwsh")
 
 _FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="needs bash")),
-    pytest.param("ps1", marks=pytest.mark.skipif(
-        not sys.platform.startswith("win") or _PWSH is None,
-        reason="the .ps1 gate is the native-Windows flavour")),
 ]
 
 
@@ -60,11 +53,7 @@ def _repo(tmp_path, rules):
 
 
 def _run(flavour, root, *extra, env=None):
-    if flavour == "sh":
-        cmd = [_BASH, _SH, *extra]
-    else:
-        cmd = [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1,
-               *[a.replace("--all", "-All") for a in extra]]
+    cmd = [_BASH, _SH, *extra]
     full = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
     full.pop("CREW_VERIFY_FRESH", None)
     full.update(env or {})
@@ -75,7 +64,7 @@ def _run(flavour, root, *extra, env=None):
 
 def _forget_timings(root):
     """Drop the measured-timings cache between runs. A rule measured at 1s is
-    priced at 1s (min(declared, measured)), which alone would let both 40s
+    priced at its measurement (1s), which alone would let both 40s
     rules fit on the second run -- these tests must isolate the tree cache."""
     (root / ".crew" / ".verify-gate.timings.json").unlink(missing_ok=True)
 

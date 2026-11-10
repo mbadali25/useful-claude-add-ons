@@ -1,6 +1,7 @@
 %% Generated from useful-claude-add-ons@452b30cc on 2026-10-02. Verify before trusting.
 %% Anchors: plugin/crew/hooks/scripts/crew_config_menu.py, plugin/crew/hooks/scripts/crew_config_files.py, plugin/crew/hooks/scripts/crew_config.py
 %% Purpose: The /crew:config menu (its rows, choices, Save, and repo-file delete and restore) and the one file layer every crew config write goes through: lock, compare-and-swap update, no-clobber move.
+%% Embed: none
 %% Split from data-flow-crew-config.mmd (the overview); edges to other parts are drawn there.
 %% Note FLOCK: Lock :104 - O_CREAT|O_EXCL &lt;path&gt;.lock holding the PID (a failed PID write removes it,
 %%    :134-141); Busy :63 after LOCK_WAIT_SECONDS :43. Serialises crew's writers, not a hand edit.

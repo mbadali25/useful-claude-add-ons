@@ -20,7 +20,6 @@ import os
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS = os.path.join(CREW, "hooks", "scripts")
 SH = os.path.join(SCRIPTS, "verify-gate.sh")
-PS1 = os.path.join(SCRIPTS, "verify-gate.ps1")
 RECORD = os.path.join(SCRIPTS, "verify_record.py")
 _T = "tests/test_verify_gate_reach_notice.py::"
 
@@ -29,10 +28,6 @@ REACH_NOTICE_MUTATIONS = (
      "        if STOP_MODE and _kind in _UNDECLARED_KINDS:\n",
      "        if False and STOP_MODE and _kind in _UNDECLARED_KINDS:\n",
      _T + "test_later_stops_say_it_in_one_line[sh]"),
-    ("L-0733 b: the ps1 matcher names every undeclared rule on every Stop", PS1,
-     "    if ($stopMode -and ($undeclaredKinds -contains $stopExcluded[$ri].kind)) {\n",
-     "    if ($false -and $stopMode -and ($undeclaredKinds -contains $stopExcluded[$ri].kind)) {\n",
-     _T + "test_later_stops_say_it_in_one_line[ps1]"),
     ("L-0733 c: the record prints a line per undeclared entry again", RECORD,
      '    return isinstance(info, dict) and info.get("status") in UNDECLARED_REACH_KINDS\n',
      "    return False\n",
@@ -78,10 +73,6 @@ REACH_NOTICE_MUTATIONS = (
      "trap '_crew_gate_exit_line $?' EXIT\n",
      "trap '' EXIT\n",
      _T + "test_a_usage_error_writes_stdout_too[sh]"),
-    ("L-0733 n: ps1 exits 2 with empty stdout (Claude Code downgrades it)", PS1,
-     '  [Console]::Out.WriteLine("VERIFY GATE: BLOCKED (exit 2)',
-     '  [Console]::Error.WriteLine("VERIFY GATE: BLOCKED (exit 2)',
-     _T + "test_a_no_such_file_failure_blocks_with_stdout[ps1]"),
     ("L-0733 o: the owed lines do not say which record", RECORD,
      '    where = f" [record: {_record_abs()}]"\n',
      '    where = ""\n',

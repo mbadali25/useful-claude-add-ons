@@ -40,8 +40,10 @@ bash ${CLAUDE_PLUGIN_ROOT}/skills/crew-setup/scripts/claude-md-audit.sh
 
 It reports which template sections are missing, which sections the repo has that
 the template does not, the line count against the ceiling, and how many
-placeholders remain. Then **append the missing sections; never regenerate the
-file.** A repo's existing CLAUDE.md encodes things nobody wrote down twice, and
+placeholders remain - the template's own blanks only (`# <repo-name>`, a
+`<path>` alone in its code span), never a metavariable in a command the repo
+documents (`git checkout -- <path>`). Then **append the missing sections; never
+regenerate the file.** A repo's existing CLAUDE.md encodes things nobody wrote down twice, and
 regenerating it from a template destroys exactly that.
 
 The same command is how an existing crew repo picks up template changes. The

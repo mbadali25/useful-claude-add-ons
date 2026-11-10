@@ -1,6 +1,6 @@
 # mcp-servers
-anchor: useful-claude-add-ons@09e31dba
-verified: 2026-10-01
+anchor: useful-claude-add-ons@c43ccae58
+verified: 2026-10-26
 paths: mcp-servers/packages/**, mcp-servers/scripts/**
 
 ## Does
@@ -56,16 +56,16 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
   `this.resolved` and never retries an earlier, higher-priority link. Deliberate - the comment at
   `:44-46` says so - but fixing `MS_ADMIN_CLIENT_SECRET` after `cli` or `device` has won changes
   nothing until restart, and nothing tells you that. Re-verified unchanged 2026-09-06 at
-  `1f97e51c`; still open as `TODO.md:218` (item 2; was `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
-  move an insertion earlier in the file - re-read at `f2bb919b` on 2026-09-25, same heading and body).
+  `1f97e51c`; still open as `TODO.md:478` (item 2 heading; was `:218` at `9ba355d7c`, `:110` at `f2bb919b`, `:80` at `6c497a14` and `:51` before that, each
+  move an insertion earlier in the file - re-read at `bdde58724` on 2026-10-26, same heading and body).
 - **`scopesOverride` silently broadens a narrow scope request.**
   `mcp-servers/packages/core/src/adminAuth.ts:29-36` (the field and its doc comment), `:127`
   (`secret`) and `:144` (`cli`) force `.default` regardless of what the caller asked for. Only
   `device` (`mcp-servers/packages/core/src/adminAuth.ts:149-158` - no `scopesOverride` key, and the
   comment at `:155-158` says why) honours caller-supplied delegated scopes. Code that requests a
   narrow scope and receives `.default` did not fail - it was never asked. Re-verified unchanged
-  2026-09-06 at `1f97e51c`; still open as `TODO.md:229` (item 3; was `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
-  `f2bb919b` on 2026-09-25, same heading and body).
+  2026-09-06 at `1f97e51c`; still open as `TODO.md:489` (item 3 heading; was `:229` at `9ba355d7c`, `:121` at `f2bb919b`, `:91`, and `:62` before that - re-read at
+  `bdde58724` on 2026-10-26, same heading and body).
 - **`dist/` is what runs, `src/` is what you edit.** Editing a `.ts` file and then *starting a
   server* leaves the stale compiled JS in place and the change does not take effect. Nothing guards
   that path - the guard below is a `pretest`, so it fires on `npm test` and on nothing else.
@@ -78,7 +78,7 @@ registers it. (DERIVED: `grep -c mcp-servers .claude-plugin/marketplace.json` re
     `core/dist` is still stale.
   - **Equal mtimes are stale, not fresh** (`:96-97`, reasoning at `:82-94`). The commit message for
     `4e2bfb78` states the opposite ("Equal timestamps count as fresh"); the shipped code and
-    `TODO.md:321-328` (was `:202-209` at `f2bb919b`, `:172-179`, and `:143-150` before that; re-read at `f2bb919b` on 2026-09-25, same reasoning)
+    `TODO.md:580-588` (was `:321-328` at `9ba355d7c`, which already pointed at unrelated text; `:202-209` at `f2bb919b`; re-read at `bdde58724` on 2026-10-26, same reasoning)
     are the later, correct account. Trust the code.
   - An unreadable directory throws rather than returning mtime `0` (`:44-51`), because `0` compares
     older than everything and would read as fresh.
@@ -727,3 +727,45 @@ standing rule, 2026-09-28); no test suite was executed for this note.
 **Re-anchored `adb3c2a7` -> `926f1277` on 2026-10-10 (L-0753 landing prep).** Per-path check `git diff --name-only adb3c2a7..926f1277`: besides the code maps, rules, diagrams and graph themselves, only the crew version lines (README.md, CHANGELOG.md, marketplace.json, PLUGINS.md, plugin.json; crew 1.2.20) and main's `plugin/crew/tests/test_promote_gate_review.py` (merged from `d8de3dafb`, PR #594) changed. No claim in this map moved.
 
 **Re-anchored `926f1277` -> `09e31dba` on 2026-10-10 (L-0753, after merging main `e77532e01`).** Per-path check `git diff --name-only 926f1277..09e31dba`: main's L-0759 (#595: `plugin/crew/tests/test_promote_gate_review.py`, crew 1.2.19) and L-0760 (#596: `.github/workflows/runner-autostart.yml`, SECURITY.md) plus the version and CHANGELOG/README lines moved. No claim in this map moved.
+
+**Re-anchored `09e31dba` -> `0bf364417` on 2026-10-17 (L-0796, crew 1.2.39, quiet Stop gate).** Scope of this check is the ticket's own change, `git diff --name-only 786687e60..0bf364417`: `verify-gate.sh` (+258) and `verify-gate.ps1` (+343) grew above most of their cited lines, `verify_fingerprint.py` gained 5 lines at `:192`, `crew_fixtures.py` 7 lines, the sabotage tables a few lines in place, and `CONFIG.md` one 44-line insertion at `:3056` (after every `CONFIG.md` line cited here). Every cited `verify-gate.sh` / `.ps1` / `crew_fixtures.py` / `sabotage*.py` / `CONFIG.md` line was shifted by the hunks of that diff (a script walking the `-U0` hunks, no cited line fell inside a hunk); version lines (`plugin.json:3`, `marketplace.json`, `PLUGINS.md`, `BUDGETS.md`) and README lines changed in place and moved nothing. NOT VERIFIED: that each shifted citation still says what its sentence claims. This pass did not re-read them, and drift from the commits between `09e31dba` and `786687e60` is not re-derived here; `/crew:onboard --refresh` is the full pass. Nothing was executed for this note.
+
+**Re-anchored `291801622` -> `c1d365d72` on 2026-10-20 (L-0850 / PR #656 close).** Per-path re-verify: every `path:line` outside the re-anchor history paragraphs was re-mapped by diffing its file at `291801622` against HEAD; none moved or was lost, so no citation changed. The paths this PR changes that this note names (`.claude-plugin/marketplace.json`, `plugin/PLUGINS.md`, `plugin/crew/.claude-plugin/plugin.json`, `INSTALLATION.md`, `README.md`) changed by version bumps and registration text, line-neutral for what is cited. NOT re-read word for word: prose claims whose cited lines did not move.
+
+
+**Re-anchored `c1d365d72` -> `9ba355d7c` on 2026-10-20 (L-0850 / PR #656 close: the docs and artifact refresh commit, owner waiver 2026-10-20).** `git diff 9ba355d7c~1 9ba355d7c` changes only docs, diagrams, codemap, rules and graph output; the one code-adjacent text is `plugin/crew/README.md` (+2 lines after line 366, inside section 25) and `SECURITY.md` (+4 lines after line 46). Every live `path:line` citation into those two files was checked: this note has none at or after those lines outside its re-anchor history paragraphs (whose lines describe past moments and are not re-mapped), and `plugin/crew/BUDGETS.md` only changed a count in place (line 11, line-neutral). No citation changed. NOT re-read word for word: prose claims whose cited lines did not move.
+
+## Re-anchor provenance - `9ba355d7c` -> `bdde58724`, 2026-10-26 (L-0928)
+Per-path check: `git diff --name-status 9ba355d7c bdde58724 -- mcp-servers/` returns nothing, so no
+`mcp-servers/**` file changed. Re-measured at `bdde58724`: `grep -c mcp-servers
+.claude-plugin/marketplace.json` = 0; `git ls-files mcp-servers/packages/core/dist` = 0 files;
+`grep -c '^test(' mcp-servers/scripts/_test/check-dist-fresh.test.mjs` = 14; `4e2bfb78`'s message
+still says "Equal timestamps count as fresh" and "Ten tests".
+
+Citations: `cite_check.py` found 19 in the non-history sections, all SAME, none to shift or GONE. Its SAME
+proves only no change since the old anchor, so every `mcp-servers/**` cite was also checked against its
+named symbol with `sed -n` at `bdde58724`: all hold (cli.ts:1, package.json:9-11, writeGate.ts:19/20/26,
+check-dist-fresh.mjs:126/95-101/117-122/82-94, graphClient.ts:30/48/64/166/168/197/198/246/257,
+adminAuth.ts:29-36/44-46/48-109/127/144/149-158/176, auth.ts:55-61/66-70, o365-user cli.ts:3/11, the four
+`pretest` lines at :25 and core dep pins at :29, core package.json:3/11/26).
+
+Changed (bare `TODO.md` cites the tool does not see, all were stale at the old anchor):
+- item 2 `TODO.md:218` -> `:478`; item 3 `:229` -> `:489` (heading text and bodies match the note).
+- equal-timestamps reasoning `TODO.md:321-328` -> `:580-588`; the old range was unrelated text
+  (a crew_autocycle.py Windows note), so that cite was wrong at `9ba355d7c` and the tool called nothing.
+Minor: `:44-51` and `:117-122` are each one line loose at the ends (code ends `:50`, `:123`); left, still
+inside the region.
+
+Demoted/dropped: none. Not verified: no build, test or `npm` run; `index.ts`, `tools.test.ts`, `jwt.ts`,
+`doctor.ts` bodies still unread (the `## Unverified` section stands). Its "dist/ is stale" measurement
+is a 2026-09-06 fact; this worktree has no `dist/` at all now (`ls` fails), which makes `pretest` fail
+for a different reason (missing, not stale).
+
+## Re-anchor provenance - `bdde58724` -> `c43ccae58`, 2026-10-26 (L-0928 rebased onto main)
+
+Main moved four commits (`bb942e03d`, `9ea896157`, `237809449`, `c43ccae58`) while this pass was in review. Per-path check
+`git diff --name-only bdde58724 c43ccae58 -- . ':!.crew/codemap' ':!.claude/rules'` lists four files: `.crew/verify.json`
+(appended `environments` at `:1051`), `.github/workflows/pytest-ai-connect.yml`, `.github/workflows/verify-gate.yml`,
+`_verify/README.md`. `cite_check.py` against `c43ccae58` reports every full `path:line` cite in this note SAME (none moved).
+`237809449` (a mechanical competing refresh of five notes to `bdde587`, no ticket) was superseded for the notes this pass
+touched; its claims are not carried. Claims touched by the four files, if any, are listed in `verification-harness.md`'s body.

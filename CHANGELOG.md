@@ -32,6 +32,981 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
   after this merges.
 - No plugin or skill content changes, so no version moves.
 
+### Fixed — crew 1.3.18: the scope guard's allow path starts a handful of processes, not a dozen
+
+- **Summary.** `crew` 1.3.18: scope-guard.sh clears an in-scope write or a plain command with one python and one `git` process (it was a dozen starts, about 1.3s per write), so several lanes at once no longer time the guard out on Git Bash; every decision is unchanged.
+- Measured before changing anything, on a clean main worktree (ref `b0bf059f1`, crew 1.3.15, Windows 11, Git Bash, CREW_PYTHON set, a repo with `scope.mode` block and one approved ticket; 9 runs each, median): a Write inside Touch ran `dirname`, `cat`, one python and EIGHT `git rev-parse` processes, 1.27s median (0.95-1.57s); a plain Bash command ran the same helpers, one python and two `git rev-parse`, 0.72s. After: no helper in bash, one python, one `git rev-parse --show-toplevel --git-common-dir`; 0.53s and 0.49s.
+- `scope-guard.sh`: `$DIR` from `${BASH_SOURCE[0]%/*}` when the path is absolute (relative falls back to the old `cd`/`dirname`), and python reads the payload from the wrapper's stdin itself instead of `INPUT=$(cat)` and `printf |`. The fail-closed branches are untouched.
+- `crew_ticket.py`: `memoize_git()` turns on a per-process memo of `toplevel` and `common_dir`, primed by one `git rev-parse --show-toplevel --git-common-dir`; off unless asked, so no long-lived caller sees a stale answer. A failed answer is never remembered, the memo is keyed by the directory asked, and a combined ask that fails whole (a bare repo answers only the common dir) falls back to the two single asks as before. `scope_guard.main()` is the only caller that turns it on.
+- Tests: `test_scope_guard_spawns.py` (allow path: exactly one git and one python, no helper under `bash -x`; the payload still reaches python; the memo's contract incl. "could not tell" asked again and the bare-repo half answer). Six new mutations in `sabotage_scope.py`, each run by hand and seen red.
+- Developed as 1.3.17; re-bumped to 1.3.18 after merging main's 1.3.16 (role-write-guard), because the version-drift check measures from the commit that set the version and 1.3.16's `plugin/crew/` changes arrived after it.
+- Harness-only PR: scope_guard.py, scope-guard.sh and crew_ticket.py are `HARNESS` paths, so it carries no feature work; `_common.sh` is unchanged (#713 already trimmed it).
+
+### Fixed — crew 1.3.16: role-write-guard's allow path starts fewer helper processes in bash
+
+- **Summary.** `crew` 1.3.16: the Write/Edit guard (`role-write-guard.sh`) no longer starts `dirname`, `cat` or two command-substitution subshells before python judges the write, so it stays well inside its 10 s limit on Git Bash, where each process start is an MSYS fork; every decision is unchanged.
+- `role-write-guard.sh`: `$DIR` from `${BASH_SOURCE[0]%/*}` when the path is absolute (as cloud-guard.sh does), the payload read with the `read -r -d ''` builtin instead of `$(cat)`, and `crew_py_script`'s variable form instead of `$(...)`. Measured on this Windows host at origin/main b0bf059f1 with `CREW_PYTHON` exported: 8 to 4 bash processes in a `bash -x` trace, and about 730 ms to 480 ms mean wall time over 15 runs each (noisy; no config layer involved). The resolver subshell stays because its CREW_PYTHON block must remain identical across `crew_py`, `crew_py_strict` and this script.
+- Tests: `test_guard_spawns.py` gains a must-allow case (no helper program, no `cat`, one python) and a must-block case (an explorer's write is still refused). Sabotage-tested: restoring `INPUT=$(cat)` or the `dirname` form turns the allow case red.
+
+### Added — crew 1.3.15: the `fable` alias is accepted as an explicit claude model pin
+
+- **Summary.** `crew` 1.3.15: a `dev.roles.developer` or `dev.roles.coordinator` pin of `{"provider": "claude", "model": "fable"}` (Fable 5.1, `claude-fable-5-1`) is now put on the wave launch line instead of being refused as "not a claude model"; Fable is opt-in only and nothing in crew selects it.
+- `crew_wave.py` `CLAUDE_MODEL_HEADS` gains `fable`; the full id `claude-fable-5-1` already passed as family `claude`. `validate-prompts.py` accepts `fable` as an agent `model:` value (the per-agent tier check still applies). Opus stays the default escalation target; no router or escalation logic is added here.
+- Tests: `test_crew_wave.py` must-allow `fable`, `Fable` and `claude-fable-5-1` on the launch line; must-block `fables-9` (and `gpt-6` still refused); a provider-less `fable` pin under a codex block still warns. Sabotage-checked: removing `fable` turns the alias cases red.
+- Docs: `commands/model.md`, crew `README.md`, the crew guide (rebuilt), `.crew/codemap/crew.md`.
+
+### Fixed — crew 1.3.13: session-relay keeps sending when ListAgents is unavailable
+
+- **Summary.** `crew` 1.3.13: `crew:session-relay` no longer stalls when `ListAgents` is missing at runtime; it sends to the name as given and marks that report line `could not verify recipient`.
+- `agents/session-relay.md`: a session reported that `ListAgents` was unavailable to the relay at runtime although its `tools:` line grants it, and the prompt said to check every name in `ListAgents` with no fallback. The prompt now says that is not fatal: send with `SendMessage` to the name exactly as the main session gave it, never invent or alter a name, do not retry in a loop, report a `SendMessage` failure verbatim, and append ` | could not verify recipient` to that final-report line. The `tools:` line and the `claude-haiku-5-5` pin are unchanged (pinned by `tests/test_session_relay.py`, `tests/agent_frontmatter_snapshot.json` and `validate-prompts.py`).
+- `tests/test_session_relay.py` asserts the two new phrases; `plugin/crew/README.md`, `docs/crew/config-rationale.md` and the crew guide (rebuilt HTML, DOCX, PDF) describe the fallback. `plugin/crew/BUDGETS.md`'s line count follows the new prompt line; 1.2.111 was set on this branch before that edit and never released, so the drift check required this second bump.
+
+### Fixed — crew 1.3.11: four flaky or environment-dependent gate tests made deterministic
+
+- **Summary.** `crew` 1.3.11: test-only; no hook behaviour changes. Four tests that failed on a loaded runner, a path containing a digit, or a newer pytest now prove the same thing without depending on any of those.
+- `test_refuses_non_default_dropped_key[emergency.ttlMinutes-30]` failed whenever pytest's temp path contained `30` (`--basetemp .../pytest-30207`): the leak check now removes the `tmp_path` prefix from the output before looking for the value, so a value printed anywhere else is still caught.
+- `test_io_error_after_open_is_a_rule_file_error` patched the shared `os.fstat`, which pytest 9.2's own output capture calls before monkeypatch undoes it; it now replaces `review_lint_rules.os` alone (CI pins pytest 8, so only a local pytest 9.2 run failed).
+- `test_heartbeat_process_exits_after_pid_gone` timed the loop's exit against one interval plus 5s, which one slow push on a loaded Windows runner exceeded (CI runs 41099703404, 41661892436, 42322693048); it now counts heartbeats on the channel: at most the one in flight when the pid dies.
+- `test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout` slowed all seven python starts before the search by 1.8s, leaving a loaded runner too little of the gate's 16s to reach the hung check (CI runs 41099703404, 42319792723, 42411612824); the slow python now costs a fixed 9s however many starts the gate makes.
+- `scripts/check_instructions.py` measures a command file's bytes with CRLF counted as LF, the form git commits, so a Windows `core.autocrlf` checkout no longer fails autopilot, model, onboard and verify against their byte allowances.
+
+### Changed - crew 1.3.10: version follows the merge of main's crew 1.3.6 into the opt-out branch
+
+- **Summary.** `crew` 1.3.10: no behaviour change beyond 1.3.9; the version moves past main's 1.3.6 so the drift check counts the merged-in crew changes. The human-only opt-out settings and `/crew:confirm-config` are as described under 1.3.9.
+
+### Added — crew 1.3.9: the human-only opt-out settings and their double confirmation (inert until the hook wiring lands)
+
+- **Summary.** `crew` 1.3.9: two new settings, `humanOnly.approve` and `humanOnly.promoteMarker`, record the owner's opt-out of `/crew:approve` and the production promote marker being human-only, behind a double confirmation; no hook reads them yet, so nothing changes until a later harness release wires them in.
+- The rules (`hooks/scripts/crew_humanonly.py`, the owner's 2026-11-06 decisions): `null` and `true` are human-only. A `false` counts only from the machine file or an untracked repo `.crew/config.json` (git tracking it, or git unable to tell, never counts), only when no layer says `true` (a `true` anywhere vetoes), and only when an applied receipt in `~/.claude/crew/confirm-config/` backs it; a malformed value, an unreadable receipt, or a newer revocation reads as human-only.
+- The double confirmation (`hooks/scripts/crew_confirm_config.py`, `/crew:confirm-config`): `propose` records a pending change and prints `cc-<8 hex>`; the change applies only after two confirmations from two different user prompts within 15 minutes, compare-and-swap against the file as proposed (a changed file goes `stale`), with the repo file re-checked as untracked at the second one. `confirm` accepts only `via: "user-prompt"`; the CLI has no confirm subcommand, and the command file is `disable-model-invocation: true`. No hook calls `confirm` yet, so in 1.3.9 a proposal can only be listed, cancelled or left to expire.
+- `crew_config.py --set` and the `/crew:config` menu refuse a `humanOnly` `false` at either layer and a repo `null` / `--unset` (it drops a veto); `true` is a plain write, and a machine `null` / `--unset` too. A crew write that sets a key back records a revocation, so an old receipt no longer backs a `false` that reappears by hand.
+- Docs: `CONFIG.md` and the configuration reference gain the `human-only opt-out` layer and a section saying what is NOT enforced yet; the guide, `/crew:config`, `/crew:approve`, the crew README and `plugin/PLUGINS.md` (39 commands) say the same. Tests: `test_crew_humanonly.py` (must-block and must-allow cases) and `humanonly_mutations.py` (16 mutations, each turning a named case red; run alone until the harness change wires them into `sabotage.py`). The L-0725 key set gains the two keys (89 / 85 / 52).
+
+### Fixed — crew 1.2.124: the hook-faults test accepts the deadline-exhausted reason
+
+- **Summary.** `crew` 1.2.124: test-only; `test_a_fault_in_an_armed_repo_is_exit_2_naming_the_cause` for `guard-past-its-timeout` and `dispatcher-hangs-before-main` also accepts `the python probe used the whole deadline`, which a loaded runner can print when the probe exhausts the deadline in startup; the hook still fails closed with exit 2 and the test still requires a named cause.
+
+### Fixed - crew 1.3.6: the diff-base note is in the detail log, not on stderr; a failed buffer split leaves no half-written log
+
+- **Summary.** `crew` 1.3.6: the Stop gate's `diff base: the merge-base of HEAD with ...` note (new in 1.3.0) was written to stderr on every Stop, a clean tree's included; it now goes to `.crew/.verify-gate.log` as 1.3.0 said it would. It carries a commit sha, so the recorded Stop goldens could never match it (CI of #715: `crew-shell-matrix`).
+
+### Fixed - crew 1.3.1: pylint findings in the deadline work
+
+- **Summary.** `crew` 1.3.1: lint-only follow-up to 1.3.0 (CI of #715); `verify_record.py` and `test_verify_gate_deadline.py` use f-strings and `with` for the process handles; no behaviour or message text changes.
+
+### Fixed — crew 1.3.0: the Stop gate keeps the hook deadline and survives being killed
+
+- **Summary.** `crew` 1.3.0: the verify gate no longer runs past the Stop hook's deadline (measured 862s against 600s on Windows); a rule that would not fit is deferred by name, what a run measured is saved as it goes so a killed run still corrects the next one, the diff base is `origin/<default>`, and a lock left by a killed gate no longer blocks the next turn.
+- **Deadline.** Before each rule, its price is held against `CREW_HOOK_DEADLINE` less a 60s margin; a rule that would not fit prints `deferred: would pass the hook deadline - <why> - NOT VERIFIED this turn: <command>` and holds the verified marker and fingerprint back. A rule with no price runs only while time is left. Stop only; `--all` and `--ci` are unchanged. An unreadable deadline is said and defers nothing.
+- **Persistence.** Before each command the gate caches the timing of every rule that has passed so far, records the command now starting (`.crew/.verify-gate.inflight.json`), and rewrites `.crew/.verify-gate.log` headed `RUN NOT FINISHED`; all through a temp file and rename. A run killed at its deadline leaves the in-flight record, and the next run prices that rule at no less than the time it ran, so it is deferred by name instead of killed again.
+- **Base.** The diff base is the merge-base with `origin/<default>` when that ref exists (a local `main` behind the remote had widened scope by 31 commits), else the local branch; the choice is in the detail log.
+- **Lock.** The lock records its holder's Windows pid (Git Bash) or pid and start time (Linux) beside its token; a lock whose holder process no longer exists is reclaimed at once. A live holder, or one that cannot be asked, backs off as before.
+- Tests: `test_verify_gate_deadline.py` (must-block and must-allow for each), nine mutations in `sabotage_deadline.py`.
+### Fixed — crew 1.2.122: three pylint findings in crew test files
+
+- **Summary.** `crew` 1.2.122: test-only; the two open() pass-through wrappers in `test_crew_autopilot_goal_resume.py` and `test_crew_resume.py` carry an `unspecified-encoding` disable (they forward the caller's mode and arguments), and the shadowed first `_write_config` helper in `test_migrate.py` is removed (the later definition always won, so no behaviour changes).
+
+### Fixed — crew 1.2.121: a migrate test no longer fails when the pytest tmp path holds the value's digits
+
+- **Summary.** `crew` 1.2.121: test-only; `test_refuses_non_default_dropped_key` strips the pytest tmp root from the output before checking that the refused value is not printed, so a run whose process number contains 30 (`/pytest-30306/`) no longer fails `emergency.ttlMinutes-30`; a real leak of the value still fails it (sabotage-checked).
+
+### Fixed — crew 1.2.119: the guards' allow path starts no helper processes in bash
+
+- **Summary.** `crew` 1.2.119: cloud-guard, env-guard and promote-gate clear a command that deploys nothing with one python and no `tr`, `cut`, `dirname`, `uname`, `cygpath`, `date`, `jq` or `git` process from bash, so several lanes running at once no longer time the guards out on Git Bash, where each process start is an MSYS fork; every decision is unchanged.
+- Developed as 1.2.115, the version the new code comments and tests name. Re-bumped to 1.2.118 after merging main's 1.2.113: the version-drift check measures from the commit that set the version, main's test changes arrived after it, and 1.2.116 / 1.2.117 are claimed by open PRs.
+- 1.2.119 (CI of #713): `test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout` slows each python start by 1.5s instead of 1.8s. The fast path is one more interpreter start before a deploy reaches the full gate, so eight starts of 1.8s left a CI runner no time to reach the hung receipt check (the case's own precondition); 8 x 1.5s is the 12s that 7 x 1.8s was. What it proves is unchanged. Two lint findings in the new tests are fixed.
+- `_common.sh`: `crew_strip_cr` is a parameter expansion; the CREW_PYTHON check (identical in `crew_py`, `crew_py_strict` and role-write-guard.sh) converts `C:\..` to `/c/..` by hand and asks `cygpath -u` only when that names no executable file (Cygwin); `crew_native_path` reads `$OSTYPE` instead of `uname -s`, passes a mixed `D:/..` path through, converts `/d/..` by hand when both spellings name the same file (`-ef`), and bounds the remaining `cygpath -m` with `timeout 5` (orphaned `cygpath -m` processes were measured spinning on a core for 30 minutes); `crew_py_script` can assign into a variable instead of printing.
+- cloud-guard.sh and env-guard.sh: `$DIR` from `${BASH_SOURCE[0]%/*}` when absolute, and python reads the payload from stdin itself (no `INPUT=$(cat)` / `printf |`). promote-gate.sh: the same `$DIR`, the clock from printf's `%(%s)T` (date(1) on an older bash), and a new allow fast path, `_promote_fast.py`, which exits 99 only when the map is committed as it is (raw or CRLF-to-LF bytes hash to HEAD's blob), the command is plain ASCII that MSYS argument conversion leaves alone, the containment match (its heredoc read out of promote-gate.sh, not copied) names nothing and refuses nothing, and `_promote_dispatch.decide()` returns nothing; anything else falls through to the full gate unchanged.
+- Tests: `test_guard_spawns.py` (the allow path of each guard starts no helper program and exactly one python, read from `bash -x`; a declared deploy still takes the full gate), `test_promote_fast.py` (must-allow and must-fall-through cases), `test_crew_python_env.py` (a Windows path converted by hand with no cygpath asked), `test_native_script_path.py` (fakes Windows with `OSTYPE` instead of a `uname` stub; mixed paths skip cygpath; bash keeps an inherited `OSTYPE`); seven new fast-path mutations in `promote_tree_mutations.py`, and its deadline anchor follows the new line.
+
+### Fixed — crew 1.2.113: crew's tests clear an inherited CREW_PYTHON
+
+- **Summary.** `crew` 1.2.113: test-only; crew's suite no longer goes red when it runs from a crew-hooked session.
+- `plugin/crew/tests/conftest.py` removes `CREW_PYTHON` for every test (and for the session, before module fixtures spawn). crew-hook.ps1 / crew-hook.sh export it into the dispatcher, so a suite started from a hooked session inherited it, and since 1.2.109 `crew_py` / `crew_py_strict` return a valid one before walking PATH: the python stubs `test_native_script_path.py` and `test_python_probe_signals.py` plant were never reached, 44 cases failed on Linux with it set and passed without.
+- `test_crew_python_env.py` pins the isolation (no ambient `CREW_PYTHON` inside a test) and proves through the shipped `_common.sh`, sourced whole, that an explicitly set valid `CREW_PYTHON` is still returned without running the PATH stub, while an unset, missing or relative one falls back to it.
+- No hook, command or doc changes.
+
+### Fixed — crew 1.2.110: test anchors follow the crew_py_script change (CI of #703)
+
+- **Summary.** `crew` 1.2.110: test-only follow-up to 1.2.109; no hook behaviour changes.
+- `test_native_script_path.py` accepts `crew_py_script` as a helper that wraps a script path (new must-allow and must-flag cases for a bare path); `promote_tree_mutations.py`'s two promote-gate anchors follow the new lines; `.claude/rules/crew.md` is regenerated from the codemap.
+
+### Fixed — crew 1.2.109: shell guards honour CREW_PYTHON and fail closed on a missing helper script
+
+- **Summary.** `crew` 1.2.109: the bash guards reuse the interpreter the hook launcher already ran instead of probing PATH again, which was the slow step that timed Windows guards out, and a guard whose helper script cannot be found now refuses by name instead of making python run the repository directory.
+- `_common.sh` `crew_py` and `crew_py_strict`, and role-write-guard.sh's `_resolve_role_write_python` (byte-identical to `crew_py_strict`, pinned by `test_context_watch_python_resolver.py`): a validated `CREW_PYTHON` is returned first. Valid means an absolute path (Windows `C:\..` is converted with `cygpath -u`), a regular executable file, named `py`/`python`/`python3.x` with or without `.exe`; anything else is ignored and the PATH walk runs as before.
+- New `crew_py_script`: a script path native python can open, or status 1 with nothing printed. promote-gate.sh (four helpers), cloud-guard.sh, env-guard.sh and role-write-guard.sh use it and fail CLOSED with a message naming the missing script, instead of handing python an empty operand (`python3.exe: can't find '__main__' module in '<repo>'`).
+- Not changed: scope-guard.sh, approval-hook.sh and completion-audit.sh get the same wrap in a separate harness-only PR (they are in `HARNESS`); the 3 s / 8 s probe budget is kept (pinned by tests and by the shortest hook timeout, and the launcher's CREW_PYTHON now skips the walk on the hot path); role-write-guard keeps running python every time (a skip could drop audit rows).
+- Tests: `test_crew_python_env.py` (valid POSIX, CRLF and Windows-shaped values returned without a probe; missing, directory, wrong name, relative, empty and non-executable values never returned; fallback to the walk; the three resolver blocks identical; `crew_py_script` allow and block; cloud-guard, env-guard, role-write-guard and promote-gate with the helper removed fail closed and name it, each with a control).
+
+### Fixed — crew 1.2.108: the allowCliApproval refusal append is guarded (round 3 review of #701)
+
+- **Summary.** `crew` 1.2.108: the hand-edit hint appended to the `scope.allowCliApproval` refusal is skipped when that entry is absent, so the sabotage harness can delete the entry without an import-time KeyError.
+
+### Fixed — crew 1.2.107: the approval listing covers the risk policy and says which file to edit (round 2 review of #701)
+
+- **Summary.** `crew` 1.2.107: a refused `approve` under `autopilot.approval: risk` now also lists the spec's own risk (`risk: med`, or no risk header) as an unmet line with what the policy needs (`risk: low`, or `approval: self`), so the owner sees every blocker at once. Lines for `autopilot.approval` and `autopilot.mode` name which file holds which value (the repo `.crew/config.json` or the machine-global file, with its path) and which one to edit, and an unreadable file is named by its own path, not always the repo's.
+- `crew_approval_unmet.py`: `_risk_line` (reads the decision `approval_policy` already made; nothing is decided here), `_layer_note` for `approval` and `mode`, `_broken_files` per layer; the fallback line quotes exception text.
+- `crew_autopilot.py` (frozen, L-0727; bug fix, `autopilot_frozen.json` regenerated, 3392 -> 3393 lines, total 8009 -> 8010): a 5 KB `autopilot` value in either config layer is cut at 40 characters in the refusal (`{block!r:.40}`, no new line); a missing or broken listing module appends one fixed "list unavailable" line instead of nothing.
+- Tests: the linked-worktree test now builds a real `git worktree add` layout; new cases for the risk line, both layer notes, the sleep-schedule note, per-layer broken-file attribution, quoted exception text and the unavailable line.
+- Docs: `CONFIG.md`, the autopilot guide.
+
+### Fixed — crew 1.2.106: the approval refusal listing never reports unknown as known, and bounds what it echoes (review of #701)
+
+- **Summary.** `crew` 1.2.106: the unmet-prerequisite lines autopilot adds to a refused `approve` no longer print a concrete value for something it could not read: with a corrupt `.crew/config.json` the `autopilot.mode` and `autopilot.approval` lines say "could not be told" instead of `"off"`. Values are shown as written (a typo like `"plna"` appears as `"plna"` with a note that it is not a valid value), and nothing echoed from config is free text: a bool or short plain word is shown, anything else only as its type (`<string>`), exception text and long values are cut at 40 characters with a marker. The hand-edit hint names the file this checkout actually reads (the main checkout's in a lane worktree).
+- `crew_approval_unmet.py`: `_word`/`_bound` bound every echoed value; `scope.allowCliApproval` is shown only as `true`/`false` or its type; the machine-global layer is named when it sets `autopilot.mode` too.
+- `crew_autopilot.py`: a missing or broken `crew_approval_unmet` module no longer makes `approve` raise; the old refusal text and exit 2 stand (`_unmet_block`).
+- Docs: `CONFIG.md` and the configuration reference (`autopilot.mode: plan` or `backlog` arms; `self` or `risk` need `allowCliApproval`), the autopilot guide.
+
+### Fixed — crew 1.2.104: approval refusals list every unmet prerequisite (#624)
+
+- **Summary.** `crew` 1.2.104: when autopilot refuses to approve a plan, the message now lists every setting still missing (`autopilot.mode`, `scope.allowCliApproval`, `autopilot.approval`) with its value as written (1.2.106) and the value needed, instead of only the first, and setting `autopilot.approval` to `self` or `risk` says up front what else it needs.
+- `crew_autopilot.py approve`: `unmet_prerequisites` collects them in one pass; the decision (`approval_policy`) is unchanged and never reads the list.
+- `crew_config.py`: the `scope.allowCliApproval` refusal names the file and key to hand-edit; the `autopilot.approval` self/risk note names the two prerequisites.
+- Docs: `CONFIG.md`, `commands/autopilot.md`, the autopilot guide source and HTML.
+
+### Fixed — crew 1.2.103: the retry-deadline test bites on POSIX too
+
+- **Summary.** `crew` 1.2.103: test only, no behaviour change. A Linux sabotage run of #700 found one of 52 mutations ("the retry ignores the dispatch deadline") staying green, because the old test's window left a negative retry budget that never started a script off Windows. `test_the_retry_gate_sits_exactly_at_the_floor_whichever_reserve_applies` derives its window from `_retry_reserve()` for each platform (POSIX and Windows reserves on either OS), asserting no retry just under reserve + `RETRY_FLOOR` and a retry with room beyond it; the sabotage entry now points at it. Docs: none - test-only change.
+- Test: retry-deadline mutation now caught on POSIX (`plugin/crew/tests/test_crew_hook_faults.py`, `sabotage_crew_hook.py`).
+
+### Fixed — crew 1.2.102: wrap the long lines pylint rejects, regenerate the crew rules file
+
+- **Summary.** `crew` 1.2.102: no behaviour change. Five lines over pylint's 120-column limit in the hook dispatcher and its tests are wrapped, and `.claude/rules/crew.md` is regenerated, which clears the two CI failures on #700 (Pylint C0301, Instruction budgets "generated rules: drift").
+- Lint (`crew_hook.py`, `crew_hook_harness.py`, `test_crew_hook_faults.py`): lines wrapped with implicit string concatenation or parenthesised continuation; `_RESOURCE_RE.pattern` is byte-identical before and after (520 characters, flags 42).
+- Rules: `.claude/rules/crew.md` regenerated with `crew_instructions.py rules --root .`, not by hand; only its `sha256` header line changes.
+
+### Fixed — crew 1.2.101: the resource-exhaustion label reads only diagnostic lines, not quoted text
+
+- **Summary.** `crew` 1.2.101: a guard's refusal is labelled `UNKNOWN (resource exhaustion, ...)` only when stderr has a real fork or allocation diagnostic line, so a path such as `MemoryError-tests` or a quoted command naming `EAGAIN` no longer gets that label (the refusal itself is unchanged: exit 2).
+- Fix (`crew_hook.py`, Codex review of #700): `_RESOURCE_RE` is anchored to the start of a stderr line (after optional `word: ` labels) instead of matching anywhere. `_append_trace`'s docstring and ADR 0009 now say the timing and trace files refuse a symlink only where `O_NOFOLLOW` exists (POSIX), not on Windows, matching the 1.2.100 entry below.
+- Tests: `test_crew_hook_faults.py` gains negative cases (a `MemoryError-tests` path, a quoted `EAGAIN`, `errno 11` and `fork failed` mid-sentence) and a Cygwin `dofork` positive; two new sabotage entries un-anchor the regex and go red.
+
+### Fixed — crew 1.2.100: a hook timeout is retried once and reads as UNKNOWN, not as a policy deny
+
+- **Summary.** `crew` 1.2.100: when a crew guard times out or cannot fork under load, the dispatcher retries the stateless PreToolUse judges once, and a refusal that still follows says `UNKNOWN (guard timeout, not a policy deny)` or `UNKNOWN (resource exhaustion, not a policy deny)` instead of reading like a real deny.
+- Root cause: under process or memory pressure a guard past its limit (or one whose `fork` failed with `Resource temporarily unavailable`) was reported as a plain `crew-hook: <guard> timed out ...; failing closed (armed repo)`, indistinguishable at a glance from a guard that decided to block, and was never given a second chance.
+- Fix (`crew_hook.py`): only a row in the explicit allow-list `RETRY_SAFE` (`role-write-guard.sh`, `cloud-guard.sh`, `env-guard.sh`, `scope-guard.sh`) that times out is run once more, and only when the dispatch deadline still leaves `RETRY_FLOOR` (2 s) plus `_retry_reserve` (the worst-case cleanup of a second timeout: two `POST_KILL` joins, `taskkill`'s 2 s on Windows, and half a second), so a retried guard cannot outlive the deadline. The retry is not side-effect free: `cloud-guard`, `env-guard`, `scope-guard` and `role-write-guard` append a `guard.log` row per run, so a retried call can leave a duplicate row, and `cloud-guard` may already have written its said-once marker, so the repeat is silent about it; the decision is never changed. `approval-hook` (records an approval), `completion-audit` (`_block_once` writes a marker and then exits 2, so a kill between the two would make a repeat delete the marker and exit 0), `promote-gate` and `verify-gate` are never retried. At the default table the retry is reachable for `role-write-guard.sh` on every platform, and for the 15 s `cloud-guard`, `env-guard` and `scope-guard` rows only off Windows (on Windows the larger reserve leaves no room when they run to their limit); `promote-gate`, `approval-hook` and `verify-gate` never retry. The fault line now says `attempts=N` (and `no retry: <why>` or `attempt 1 said: '...'` when relevant), and the timing file keeps the first attempt's first stderr line as `first_said=`. A final timeout still exits 2 in an armed repo, now printing `crew-hook: UNKNOWN (guard timeout, not a policy deny)` before the existing text and keeping `failing closed (armed repo)`. `_settle` also reads stderr (and the start error) of an errored, timed-out or undecided child for a resource-exhaustion diagnostic line (anchored to its start, after optional `word: ` labels: `fork: ... Resource temporarily unavailable`, a failed fork, a Cygwin `dofork: child ... errno 11`, `[Errno 11]`/`[Errno 12]`, an exception line `OSError: [Errno 11]` / `...Error: EAGAIN`, or a line starting `MemoryError`; a path such as `C:\work\MemoryError-tests\guard.py` or a quoted command naming `EAGAIN` no longer matches) and labels it `UNKNOWN (resource exhaustion, not a policy deny)`, and labels a guard's own fixed "no usable python" refusal `UNKNOWN (no usable python, not a policy deny)` only when that refusal is the whole of the exit-2 child's stderr and starts with the guard's literal text (`NO_PYTHON_REFUSALS`, each pinned to the `.sh` that prints it); a real deny that merely quotes the words, such as a `refused Write on notes/no usable python.md` path, passes through untouched. Every label sits on a refusal that was already exit 2; none turns a block into an allow, and a child's real exit-2 deny text is passed on untouched. `CREW_HOOK_TIMING_FILE` (same rules as `CREW_HOOK_TRACE_FILE`: the path must end in `.crew-trace`; a symlink is refused only where the platform has `O_NOFOLLOW`, i.e. not on Windows, where only the suffix rule is enforced) opts in to one line per child with `start_ms`, `end_ms`, `ms`, attempts and outcome.
+- `crew-hook.sh` and `crew-hook.ps1` export the interpreter they resolved as `CREW_PYTHON` next to `CREW_HOOK_DEADLINE`, so the guards the dispatcher starts inherit it. Nothing reads it yet (PR B makes `crew_py_strict` consume it; on Windows it is a native path that a Git Bash guard would first convert with `cygpath`).
+- Tests: `test_crew_hook_faults.py` (retry then answer, retry then deny, twice-timed-out fails closed with the label, no retry without deadline room or when the cleanup reserve would not fit, a stateful row is never retried, the default table's retry set, the first attempt's stderr is kept, unarmed is a note, every guard's timeout exits 2, a deny that quotes `MemoryError` is not relabelled, each resource spelling, a hang after a resource message, the anchored "no usable python" label with the path-quoting and multi-line repros, the timing file, the launcher's `CREW_PYTHON`), `test_crew_hook_parity.py` (both launchers export it), new `sabotage_crew_hook.py` mutations (the allow-list, the reserve, the anchoring, `attempts=`, `first_said`). Docs: the troubleshooting guide and reference, ADR 0009 and the code map.
+### Fixed — crew 1.2.98: the scope guard no longer refuses the session handoff note
+
+- **Summary.** `crew` 1.2.98: with an active ticket, `/crew:handoff --wrap-up` can write `.work/HANDOFF.md` again, so auto-resume and auto-clear work for a session that has a ticket open.
+- Root cause: `scope_guard.classify` judged `.work/HANDOFF.md` against the ticket's `spec.md ## Touch` like any repo file ("`.work/HANDOFF.md` is outside T's spec ## Touch"). The handoff skill must write the note with the Write tool (a Bash or hand-made note has no author record in `handoff-author.json`), so the real note was never written, the PreCompact skeleton stayed, and the Stop hook said `crew wrap-up incomplete: resume line: the handoff is the automatic PreCompact skeleton; it names no next action`.
+- Fix: `crew_ticket.HANDOFF_PATHS` / `is_handoff_path` (`.work/HANDOFF.md`, `.work/HANDOFF-*.md`, whole names, real and named path both) and a rule 5b in `scope_guard.classify`, allowed with or without an approval. Every other out-of-Touch path is still refused. The completion audit already leaves `.work/` out of its listing (`_ONLY`), so it needed no change; a test pins that. The "Write tool, not Bash" author-record requirement is unchanged.
+- `plugin/crew/tests/test_scope_guard_handoff.py`: handoff writes allowed for approved and unapproved tickets (Write/Edit/MultiEdit, module and sh); `.work/HANDOFF.md.bak`, `.work/HANDOFFX.md`, `.work/notes/HANDOFF.md`, `docs/HANDOFF.md`, `HANDOFF.md`, `.work/INDEX.md` and `other/keep.py` still refused; a handoff symlink to an out-of-Touch file and a `..` path still refused; the audit still lists other changes. Docs: none - an allowlist entry documented in `scope_guard.py`'s docstring; no narrative doc lists the guard's allowed paths.
+
+### Fixed — crew 1.2.97: a lane asks git for its main checkout once per process (A-0014, A-0013 part 2)
+
+- **Summary.** `crew` 1.2.97: in a lane worktree with no `.crew/` config of its own, reading the repo config no longer starts a git process every time, so hooks and the scope guard's autopilot approval judgement spend less of their time limit on git.
+- Root cause: `crew_common.repo_config_dir` asks `_main_checkout` where the main checkout is on every read in such a lane, and `_main_checkout` ran `git rev-parse --git-dir --git-common-dir` each time; one approval judgement read the config eight times.
+- Fix: `_main_checkout` keeps its answers for the life of the process, keyed on the lane's real path, the bytes of its `.git` file, the bytes of the `commondir` file in the git dir it names (both read only when they are regular files, so a FIFO is never waited on), the resolved git dir and common dir those name, and `GIT_WORK_TREE`, so a lane re-pointed at another repository, or at a retargeted symlinked git dir, is asked again. An answer is kept only when the git dir and common dir git reports are the key's own, so a pointer or `commondir` changed while git ran is not stored under the old key. Nothing is kept, and git is asked on every read, when either file is not a readable regular file, a path in either holds a byte a path cannot (NUL), or `GIT_DIR` / `GIT_COMMON_DIR` is set (git then reads neither file). Could-not-tell is never kept. Second half of A-0013; the scope guard's own fix is crew 1.2.94.
+- `plugin/crew/tests/test_worktree_config.py`: repeated reads in a lane ask git once (8 before the fix), a changed `.git` pointer or `commondir` is asked again, a git failure is not remembered, a NUL in the pointer raises nothing (`repo_config_dir` and `metrics_crew_dir`) and a NUL in `commondir` is not remembered, a retargeted git-dir symlink is asked again (POSIX only), an answer git read from a pointer or `commondir` swapped during the call is not kept, a FIFO `commondir` or `.git` does not block (POSIX only), a directory `commondir` is not remembered, `GIT_DIR` or `GIT_COMMON_DIR` set asks every time, and `GIT_WORK_TREE` alone keeps the memo.
+
+### Fixed — crew 1.2.95: a review receipt survives main absorbing the reviewed branch (A-0012)
+
+- **Summary.** `crew` 1.2.95: `/crew:done` check 1 no longer calls a receipt stale with "the reviewed head's tree does not rebuild the reviewed bundle" once the reviewed head is inside main (it landed, or a stacked PR cut from it did), and a reviewed path main landed byte-identical counts as main's.
+- Root cause: the delta gate rebuilds the reviewed bundle with `merged_main.resolve(head=<reviewed head>)`. Once that head is inside main, `merge-base <head> main` is the head itself, so every committed path read as identical to merged main and the rebuild was empty: `receipt is stale: round 2 accepted bundle c607134bbc39, the tree now builds nothing; ... delta gate: the reviewed head's tree does not rebuild the reviewed bundle (a review of uncommitted bytes cannot be reconstructed); merged main: f01eeb32e5d9 (107 path(s) identical to it left out)` (ITI-371, 2026-10-29). Separately, a reviewed path main had landed with the same bytes read `<path> is reviewed but gone from the current delta`.
+- Fix (`review_delta.py`): `landing` finds the landing merge the way `/crew:done` check 4 does (`crew_refresh_check._landing`, the first commit on the base branch's first-parent line holding the head) and the rebuild is pinned at `merge-base <head> <landing^1>` (L-0770's `merged_main.pinned`), tried only when the unpinned rebuild misses and accepted only when it reproduces the receipt's hash. The landing is looked for whether or not a caller pins `base_sha`. A HEAD that landed too is judged against `landing^1` instead of needing a train entry, and a HEAD past the landing merge (a branch at main, where check 4 says to close a landed ticket) is judged on the landing merge's tree, so main's later merges are not read as the ticket's. `_lands_as_reviewed` keeps a reviewed path that is out of the current delta only when HEAD's entry is exactly the reviewed new side; the kept line adds `N identical to merged main`. A fast-forward or rebase landing (no merge) stays could-not-tell, and a path both main and the ticket changed still reads `differs from the reviewed change` (ITI-371 now stops there, on its two generated README/header files).
+- `plugin/crew/tests/test_review_delta.py`: landed and caught-up-then-landed heads, a pinned `base_sha`, a branch at main after later merges, a stacked PR landing the head, an edit after landing, a fast-forward landing, a byte-identical path and deletion main also made, a `.work/` path main landed differently; the old `..._reads_gone_from_the_current_delta` case now asserts the keep. Docs: `plugin/crew/README.md`'s refresh paragraph, the code map.
+
+### Fixed — crew 1.2.94: the scope guard judges an autopilot approve once, not three times (A-0013)
+
+- **Summary.** `crew` 1.2.94: in a lane worktree the scope guard no longer times out (and fails closed) on the bare autopilot approval command, because it now asks the approval policy once instead of three times.
+- Root cause: `scope_guard.shell_refusal` judges every reading `_joined` gives (the command as written, as bash joins continuations, as PowerShell does). With no continuation the three are the same string, and each ran `crew_autopilot.approval_policy`: 14 git calls in a linked worktree with no `.crew/config.json` of its own, so about 42 per judgement, past `crew_hook.py`'s 15 s limit at about 0.4 s a call.
+- Fix: the readings are deduplicated in order (`dict.fromkeys`), so the first refusal still wins and a command whose readings differ is still judged every way.
+- `plugin/crew/tests/test_scope_guard.py`: in a lane inheriting the main checkout's config, the policy is asked once per judgement, and the git processes it starts are one policy call's worth (43 before the fix, against 14 for one call). Docs: the code map.
+
+### Fixed — crew 1.2.92: an INCOMPLETE review round no longer stops autopilot's size check forever (A-0011)
+
+- **Summary.** `crew` 1.2.92: a review round with no verdict, which `.crew/metrics.md` records as `INCOMPLETE | INCOMPLETE`, no longer makes the findings rate unknown, so `/crew:autopilot` stops halting every later ticket at `split-check-unknown`.
+- Root cause: `review_metrics.row` writes the literal `INCOMPLETE` in both count cells for an INCOMPLETE round, and `crew_split._malformed_rows` read any non-numeric count cell as a malformed row. `measure` then left `findings_rate` unknown, `absent_sources` did not call the source absent, and `crew_autopilot.py next` stopped at `phase=split-check-unknown ... could not read findings-rate, tickets-too-large (its source is there)` for as long as the row stayed; later clean rows did not help. It blocked four tickets in two repos on 2026-10-28, worked round by commenting the row out.
+- Fix: `crew_split._row_kind` classifies each metrics row. A row whose two count cells are both exactly `INCOMPLETE` is skipped as a round with no counts; the rate comes from the numeric rows, as `crew_state.read_metrics` already computed it. A file holding only such rows reads as "no review recorded yet" (`unmeasured`, no stop). Too few cells, a non-numeric count, or one `INCOMPLETE` beside a number is still malformed and still unknown.
+- `plugin/crew/tests/test_crew_split.py`: the reported row beside numeric rows, an INCOMPLETE-only file, four still-malformed shapes, and a writer/reader contract test that every row `review_metrics.row` can emit (each verdict, with and without a model, refunded or not, `|` in a cell) parses in `crew_split`. Docs: `plugin/crew/README.md`'s size-check paragraph and the code map.
+
+### Fixed — crew 1.2.91: Codex can read its review bundle on Windows again
+
+- **Summary.** `crew` 1.2.91: on Windows with Python 3.13 or later, Codex reviews came back INCOMPLETE because Codex could not read its own review bundle; the bundle directory now inherits the repo's permissions there, and Linux and macOS are unchanged.
+- Root cause: `review_run.py`'s `claim_scratch` has used `tempfile.mkdtemp` since the `/crew:review` mechanics moved into Python (5c600df71). Python 3.13+ (CVE-2024-4030) turns mkdtemp's mode 0o700 into a protected owner-only ACL on Windows (SYSTEM, Administrators, OWNER RIGHTS), which blocks the `CodexSandboxUsers` and per-workspace capability-SID entries the repo root grants. Codex answered "Access to the path ... is denied" and crew reported `no READ line for 1 of 1 bundle part(s)`.
+- Fix: on Windows the scratch directory is a plain `os.mkdir` with an mkdtemp-style random name, so it inherits the repo ACL, the same boundary as the tree the diff comes from. POSIX keeps `tempfile.mkdtemp` and mode 0o700.
+- `plugin/crew/tests/test_review_prepare.py`: a Windows test that every ACE on the claimed directory and on a file inside it is inherited (fails with mkdtemp restored), and a POSIX test that the mode stays 0o700. Docs: none, because no crew document describes the scratch directory's permissions.
+
+### Added — crew 1.2.89: a reader for the review-finding rule file (L-0931, L-0715 PR B1)
+
+- **Summary.** `crew` 1.2.89: adds `review_lint_rules.py`, which reads the review-finding rule file and refuses every shape it does not know; nothing calls it yet, so no behaviour a user runs changes.
+- `plugin/crew/hooks/scripts/review_lint_rules.py` reads `plugin/crew/lint/semgrep/crew-classes.yml` without a YAML package: rule ids, messages, classes, standards, path scopes, the five regexes the checker will execute, and the `# not-shipped:` header. An extra or missing key, a tab in the indentation, an anchor, alias, merge key or tag, a duplicate rule id or key, a symlink or non-regular file, an empty file, an unterminated flow list, an unknown escape or any quoting form it does not read raises `RuleFileError` with the rule id and line; it never returns part of a file.
+- It fingerprints each rule's pattern blocks (sha256 over the dedented, right-stripped lines, so relative indentation counts; the five regex values are replaced first because they are data), matches a rule's `paths` globs on relative POSIX paths, and holds one canary snippet per rule for the checker's self-test. The set of accepted fingerprints belongs to the checker (L-0715 PR B2), so a rule edit can land as harness PR, feature PR, cleanup PR.
+- `plugin/crew/tests/test_review_lint_rules.py`: 105 cases; each guard was sabotaged by hand (25 mutations, all red). Docs: none beyond this entry and the code map, because the module is inert.
+
+### Added — crew 1.2.86: semgrep rules for the review-finding classes a pattern can express (L-0715 PR A)
+
+- **Summary.** `crew` 1.2.86: ships pinned semgrep rules for five recurring review-finding classes (`splitlines()` on untrusted text, duplicate-key JSON, bare interpreters, unquoted `CLAUDE_PLUGIN_ROOT`, tests with no assertion); they are opt-in and do nothing until the `semgrep` linter kind lands in a second change.
+- `plugin/crew/lint/semgrep/crew-classes.yml` and one positive and one negative fixture per rule. Symlink and FIFO opens are listed `not-shipped` with the reason (open flags are built in variables, so no pattern can tell a safe open from an unsafe one). Measured at bdde58724 over `plugin scripts docs .crew`: `crew-json-duplicate-keys` 172, `crew-unquoted-plugin-root` 149, `crew-splitlines-untrusted-text` 56, `crew-test-no-assertion` 4, `crew-bare-interpreter` 0.
+- `plugin/crew/tests/test_crew_lint_rules.py` runs the pinned `semgrep==1.95.0` over a throwaway copy of the fixtures, fails when semgrep cannot start, and skips only under `CREW_SKIP_SEMGREP=1` or, for the two semgrep-running tests, on native Windows by OS (semgrep 1.95.0 ships no `semgrep-core.exe` there; PR B owns a stdlib checker). It also fails if a class is neither shipped nor listed `not-shipped`, if fewer than four classes are shipped, or if a protected class is not shipped.
+- `recurring-findings.md` and `.crew/standards.md` say which probe each rule now covers. No harness path changes; the runner (`review_checks.py`) and `.crew/verify.json` wiring are PR B.
+- Docs: `plugin/crew/README.md`, `docs/crew/review.md` and `docs/guides/crew/src/working-with-codex.md` with the rebuilt guide; `plugin/crew/CONFIG.md` and the configuration reference are unchanged because no setting moves.
+
+### Added — crew 1.2.84: the planner learns the `Lines:` label, kind tags and the 300-line cap (L-0714 slice 1)
+
+- **Summary.** `crew` 1.2.84: `/crew:plan` now asks each step for a projected `Lines:` count and a kind tag on each production Files entry and states a 300-production-line cap per plan, which nothing enforces yet.
+- `plugin/crew/commands/plan.md`, `skills/crew-plan/SKILL.md`, `skills/crew-execute/SKILL.md` and `skills/crew-standards/SKILL.md` carry the `Lines:` label, the `` `path` [parser|guard|state-machine|other] `` form, the cap and the mixing rule, and name `/crew:split` and the owner's typed size waiver at approval as the ways on. Not enforced: `crew_ticket.approve` still accepts any plan; enforcement is a separate harness PR (L-0714 slice 2), after this one is in the plugin cache.
+- `plugin/crew/tests/test_plan_templates.py` reads the four templates and fails if one has no `Lines:`, no kind tag, or no longer validates under `crew_ticket.validate`.
+- Docs: `plugin/crew/README.md`, `docs/crew/reference/10-the-daily-loop.md`, the guide sources (`guide.md`, `daily-workflow.md`, `daily-workflow-scope.md`, `troubleshooting.md`) and the rebuilt HTML, DOCX and PDF (LibreOffice, not Word).
+
+### Fixed — crew 1.2.83: the verify-map price test rejects a NaN or infinite `seconds` (L-0910)
+
+- **Summary.** `crew` 1.2.83: a rule priced `NaN` can no longer pass the verify-map price test, and the L-0904 note sentence in `.crew/verify.json` starts its own line; no behaviour a user runs changes.
+- `plugin/crew/tests/test_verify_map_prices.py`: `seconds` must be finite (NaN failed both `<` comparisons), and an int too large for a float is accepted rather than crashing the check. Tests and a line split only. Docs: none.
+
+### Fixed — crew 1.2.79: the sabotage suite reports no STILL GREEN and no unproven entry (L-0897, L-0906, L-0903)
+
+- **Summary.** `crew` 1.2.79: the gate's sabotage step now goes red by a real assertion for every entry it keeps, so a vacuous test can no longer pass as coverage; no behaviour a user runs changes.
+- Ten of the twelve STILL GREEN entries are retargeted or re-aimed at a test that fails under their mutation (one new row each where none existed: `test_review_auto_accept.py` row-key-gone, `test_cloud_guard_environments.py` taint row, `test_cloud_guard_deploy.py` string piped to `iex`; `test_review_limit.py` now reserves a round so its marker cases reach the shape check). Two PowerShell r7 entries (a lone quoted string, colon-bound values) are removed and recorded as unfalsifiable in `sabotage_cloud.py`, with the measurement behind it.
+- L-0906: `the deploy default is all` names a surviving test; `approve writes beside the receipt` no longer breaks the module (it was exit 4). L-0903: two entries for the php value-letter and info-only guard halves. The `_interp_codes` docstring NIT stays open: it edits production code, which a harness PR cannot carry.
+- `mcp-servers/node_modules` installed with `npm ci`; the gate's `mcp-servers-npm-test` step runs (69 pass). Tests and sabotage entries only. Docs: none.
+
+### Changed — crew 1.2.78: the 30 rules that cost more than the Stop budget on Windows are priced as such in `.crew/verify.json` (L-0904)
+
+- **Summary.** `crew` 1.2.78: a cold Windows checkout no longer runs 30 slow rules at Stop; they are priced at what win-repo-2 measured and deferred to CI until `/crew:verify --all` times them on that host.
+- `.crew/verify.json` `seconds` for 30 rules (by `id`) now carry the Windows figure, and each `why` states it as `Windows <N>s (win-repo-2, ...)`; no `paths`, `run`, `reach` or `id` changes. L-0905's per-machine cache replaces these numbers after a clean run on a host: run `/crew:verify --all` once per host after this lands.
+- Tests: `plugin/crew/tests/test_verify_map_prices.py` (a rule is never priced below the Windows figure its `why` states; the 30 all state one).
+
+### Changed — crew 1.2.77: crew config from 157 keys to 87, guards profile, generated CONFIG.md (L-0725)
+
+- **Summary.** `crew` 1.2.77: the config shrinks from 157 keys to 87 (60 keys became constants at their old defaults), the twelve `guards.<name>` keys are replaced by `guards.profile` (`off | standard | strict`) plus `guards.overrides`, and `/crew:migrate` carries a schema 7 setup to schema 8.
+- **Breaking.** The old `guards.<name>` keys are still read as aliases for `guards.overrides.<name>` until `/crew:migrate` runs; a config carrying a removed key is told so by the inert-setting report, and `/crew:migrate` refuses while a removed key holds a non-default value unless `--accept-dropped <key>`. `CONFIG.md` is generated whole (217 lines, was 3,897) and its rationale moved to `docs/crew/config-rationale.md`; `CONFIG.md §N` citations are gone.
+- The no-python fallbacks in `cloud-guard.sh` and `env-guard.sh` no longer trust the first match; a layer is unarmed only when `off` can be proved.
+- Equivalence against the base on the full host corpus: 181 of 181 readable inputs identical, 0 differences.
+- Review round 2 fixes: the no-python guard fallback no longer reads a config path whose parent is a file (or cannot be searched) as absent, and `/crew:migrate --global --rollback` now holds the config writer's lock from its edited-since check through the restore.
+
+### Fixed — crew 1.2.76: the Stop gate re-prices a rule from its latest measurement both ways, and a dead record sync no longer advances the verified marker (L-0905)
+
+- **Summary.** `crew` 1.2.76: a rule that really costs more on this machine than its declared `seconds` is now priced at what it cost and deferred when that is over the Stop budget, a large rule set no longer fails the record sync with "Argument list too long", and a record sync that did not run no longer marks the tree verified.
+- `verify-gate.sh` prices a rule at its cached measurement in both directions (the latest valid positive integer wins; it was `min(declared, cached)`, so a slow rule kept its stale cheap price and never deferred its neighbour). A rule re-priced over the budget alone is chronic and runs only under `/crew:verify --all`, which re-measures it; the notice (`priced at Ns, measured on this machine, above its declared Ds`) names that. The matched-rule JSON now reaches the record sync through a temp file instead of one argv element (a single argument is capped at 128 KiB on Linux, the whole command line at 32,767 characters on Windows). The sync status is nonzero when any stage of its pipeline failed, and `verify_record.py sync` refuses an empty payload, so the marker does not advance on a record that was never written. Breaking: a rule measured over the budget on a machine stops running at Stop there; a failed sync now holds the marker.
+- Tests: `test_verify_gate_reprice.py`, `test_verify_gate_sync_payload.py`, one case in `test_verify_gate_quiet.py`; nine `sabotage_*.py` entries, each confirmed red. Docs: `plugin/crew/CONFIG.md` Pricing paragraph.
+
+### Added — taste-skill and ui-ux-pro-max in the Community install rows (L-0887)
+
+- **Summary.** The installers now offer `taste-skill` (art direction for frontend design) and `ui-ux-pro-max` (UI/UX styles, palettes, fonts and stacks) in the Community picker, opt-in (unticked by default because a tag can move and a SHA ref is rejected), pinned to the reviewed tags v2.1.4 and v2.15.0.
+- **Caveat.** Both are unaudited third-party plugins: ui-ux-pro-max's design-skill scripts call `api.muapi.ai` on explicit user action; taste-skill's scripts fetch images from Openverse, Wikimedia and the Art Institute and drive a local Chrome.
+- **Changed.** `scripts/install-prerequisites.{sh,ps1}` (same rows, same order), `scripts/_test/mcp-preflight-catalog.sh`, `scripts/_test/menu-groups.sh`, README and INSTALLATION. No plugin version changes; `crew` is untouched.
+
+### Fixed — crew 1.2.75: the cloud guard no longer reads a php option value or `php -v` as code (L-0853)
+
+- **Summary.** `crew` 1.2.75: `php -dxdebug.mode=coverage vendor/bin/phpunit`, `php -v`, `php -m`, `php --ini` and `xargs php -l` are no longer refused by the terraform-apply guard; php given code (`-r`, a heredoc, a pipe) is still refused.
+- `_interp_codes` in `crew_guards.py` read the `r` in an attached php option value (`-dxdebug.mode=coverage`, `-dmemory_limit=-1`) as the `-r` code option, and read a php command with no script and only `-v`, `-m`, `-i`, `-l`, `-h` or `--version`, `--ini` as code on stdin. Value letters now take their attached value, and those report-only options mark the run as reading nothing. Because one such word made the whole line could-not-tell, the denial also quoted the first glob, quoted pattern, heredoc or sed expression of the line; those lines are allowed again.
+- Tests: `L0853_ALLOW` and `L0853_REFUSE` in `plugin/crew/tests/test_cloud_guard.py`, through both drivers. Sabotage-checked by hand: reverting either half turns the matching allow rows red. No `sabotage*.py` entry (harness path; follow-up).
+
+### Added — crew 1.2.74: the crew-outcome eval harness, container isolation and a two-task baseline (L-0728 slice 2, L-0851)
+
+- **Summary.** `crew` 1.2.74: the repo now carries the harness that measures whether crew's process beats a plain Claude run on real tasks (isolated container, frozen hidden tests, two baseline tasks); no crew runtime behaviour changes, and the measured results come in slice 3. The Codex reviewer's list price (`gpt-6-sol`) is now pinned, so the Codex part of a crew run's cost is priced; the run's total stays UNKNOWN when Claude usage cannot be counted (T-0509 folded in).
+- **Added.** `scripts/crew-outcome-eval.py` (validate, run, report) with `evals/crew-outcome/` (method, arm protocols, container image, network proxy and canary, spike, tasks t-0107 and t-0108) and its suite `scripts/_test/crew-outcome-eval.py`, registered in `marketplace.yml`, `gate-runner.py` and `.crew/verify.json`.
+- **Behaviour.** A grading infrastructure failure or timeout is an unscored `infra` row, never an escaped defect; a grading exception still writes the paid row; a crew run that hits the harness resume cap is graded as it stands and marked `endedBy: resume-cap`; Codex cost is a lower bound at the short-context list price (read 2026-10-23).
+- **Spike.** The crew arm showed a Codex FINDINGS, fix, re-review cycle (2 review cycles, 0.68 USD Claude list price, Codex unpriced).
+- **Docs.** none - evals/ and scripts/ only, no plugin/crew change.
+
+### Changed — crew 1.2.69: sabotage entry retargeted to a test id that survives L-0725 (L-0898)
+
+- **Summary.** `crew` 1.2.69: test harness only. The sabotage entry "merged machine file keeps a consent key" now names `[machine-obsidian]` instead of `[machine-unsafeFocus]`, because L-0725 (#665) removes `context.autoClear.unsafeFocus` and the old id would collect nothing (exit 4). Checked with the mutation applied: `[machine-obsidian]` fails (RED, a real assertion). No behaviour change for users.
+
+### Changed — crew 1.2.68: text-only prompt improvements, functional QA checklist, able-to-fail rule, deploy-evidence wording (L-0872)
+
+- **Summary.** `crew` 1.2.68: prompt text only. `crew-execute` gains a reuse-first ladder and a no-tautological-assertion rule; `crew-debugging` and `/crew:debug` require a red-capable command before Phase 2 and tagged debug logs; `/crew:handoff` says to reference by path and redact secrets; `crew-qa-standards` gains a functional (API, CLI, job, webhook) QA checklist and an able-to-fail rule with benchmark questions; `/crew:promote` reports a deploy with merged sha, deployed sha and health result, else `unverified`. Two stale comments fixed. NOTICE.md credits Pocock, Ponytail, gstack and pstack (all MIT).
+
+### Changed — crew 1.2.67: four harness hook PowerShell twins deleted (L-0869, slice 4 of L-0727)
+
+- **Summary.** `crew` 1.2.67: the last four PowerShell hook twins (`verify-gate`, `completion-audit`, `scope-guard`, `approval-hook`) are deleted, so only `crew-hook.ps1` and `promote-gate.ps1` remain; Windows behaviour does not change because those hooks already ran their `.sh` under Git Bash.
+- **Deleted.** `verify-gate.ps1` (3051 lines), `completion-audit.ps1` (462), `scope-guard.ps1` (419) and `approval-hook.ps1` (316). This is the last four of the fourteen hook `.ps1` files L-0727 deletes. `hooks.json` has named none of the four since L-0727 slice 2; the dispatcher (`crew_hook.TABLE`) already ran `approval-hook.sh`, `scope-guard.sh`, `verify-gate.sh` and `completion-audit.sh`.
+- **Breaking (B2).** A direct `pwsh verify-gate.ps1 -Ci` (also `-Price` and `-All`) no longer works; use `bash verify-gate.sh --ci` / `--price` / `--all`. A `.codex/hooks.json` that points at any of the four must be regenerated with `crew_instructions.py codex`.
+- **Risk accepted by the owner.** Fail-closed stays: on an armed repo, no Git Bash or a launch fault on PreToolUse, UserPromptSubmit or Stop exits 2 and names the cause; an unarmed repo exits 0.
+- **Left for a harness-only follow-up.** The four `HARNESS` entries in `scripts/check-tooling-pr.py`, the now-dead stdin-JSON subcommands in `verify_record.py`, and a stale comment at `_test/test_flavour_guard.py:358` (recorded in `docs/adr/0009-hook-single-dispatch.md`).
+- **Verified.** `verify-gate.sh --all` exit 0 at d0d0807e6 (non-root clone); gate-runner at de70ca092: pytest-combined 22,293 passed, sabotage non-RED set a subset of the main baseline; native Windows (win-repo-2) at de70ca092: stop-gate 14/14 with 0 skipped, items 3 to 9 pass, sabotage S4 to S9 6/6 red. Review: round 2 (Kimi) was INCOMPLETE (226 output lines matched no part of the contract) and was rejected; a successor plan opened a fresh budget; round 1 of that budget: 0 BLOCK, 2 FIX, accepted. Independent Claude read and the security pass: 0 BLOCK. Every FIX and NIT is quoted in L-0882 and L-0884; the Windows timing fragility is L-0886.
+- **Follow-ups.** L-0876 to L-0880, L-0882, L-0884, L-0886.
+
+### Fixed — crew 1.2.66: sh hooks hand native python a path it can open, with or without Git Bash path conversion (L-0868)
+
+- **Summary.** `crew` 1.2.66: on Windows, the bash hooks no longer fail with `can't open file 'D:\\tmp\\...'` when `MSYS_NO_PATHCONV` is set in the environment (even empty), because they now convert script and path arguments themselves.
+- **Changed.** New `crew_native_path` in `_common.sh` (`cygpath -m` under MSYS/Cygwin, the input unchanged elsewhere and on any cygpath failure, never an exit-code change) wraps the script path and the `--root "$PWD"`, config and data path arguments in auto-clear, handoff-read, notify, context-watch, crew-context, platform-sync, cloud-guard, env-guard, role-write-guard and promote-gate. `handoff-write.sh:71` and the harness callers are deferred to L-0874; `crew_context`'s `shutil.which("bash")` is L-0881; cygpath hardening is L-0883.
+- **Verified.** Gate `verify-gate.sh --all` exit 0; Kimi review CLEAN; native Windows (win-repo-2) 94 passed, 0 failed with `MSYS_NO_PATHCONV` unset, empty and 1 when Git `usr\\bin` is first on PATH.
+
+### Changed — crew 1.2.65: the cloud guard no longer refuses python or node code that names nothing (L-0871)
+
+- **Summary.** `crew` 1.2.65: with the cloud guard on, `python3 -c`, a python heredoc or `node -e` that neither names terraform, terragrunt or tofu nor builds that name is no longer refused as "could not tell", and a refusal now quotes the construct that caused it instead of an unrelated word on the line.
+- **Still refused.** Code that names the tool and can start a process; code that reaches a process and builds the name (adjacent literals, `+`, `%`, `.format`, f-strings, `join`, `chr`, `bytes`, escapes, a shell expansion in a process argument, or a name assembled through any chain of assignments, aliases and `getattr(os, ...)` calls). Code too hostile to read in bounded time is refused unread.
+- **Known limits.** A command read from input, a file or an environment variable that the line never names, `eval` of a string, and obfuscation beyond the listed constructs are not caught; the guard is a heuristic against accidental runs (spec "Known limits", README "What the guard does not catch").
+- **Also.** Every bypass found in review is a must-block row in `plugin/crew/tests/test_cloud_guard.py`, each sabotage-tested.
+
+### Changed — crew 1.2.63: sabotage table retires 30 mutations and dual-anchors 7 so L-0725 can gate (L-0875)
+
+- **Summary.** `crew` 1.2.63: the sabotage mutation table drops 30 mutations that no longer match shipped code and gives 7 a second anchor, so the config-key reduction (L-0725, #665) can pass the sabotage gate; no runtime behaviour changes.
+- **Changed.** `plugin/crew/tests/sabotage*.py` only (tests); no hook, command or skill file changed.
+
+### Changed — crew 1.2.62: `commands/autopilot.md` is 1,323 bytes shorter and its rationale has a home (L-0870, slice 5 of L-0727)
+
+- **Summary.** `crew` 1.2.62: the `/crew:autopilot` command a session loads is about 6% shorter (21,176 to 19,853 bytes) with the same steps, refusals and commands, and the reasons behind its rules now live in `docs/crew/autopilot-rationale.md`.
+- **Target missed.** The slice asked for 12,288 bytes and the owner's fallback aimed at about 18,000. The command is 19,853 bytes because what is left is procedure, and a procedure cut was ruled out; `plugin/crew/.budget-allowance.json` now lists `autopilot.md` at 19,900 bytes (was 21,188) for the Phase 4 close-out to tighten.
+- **Changed.** Ticket and owner-date parentheticals and descriptions of script output moved to the rationale doc; the script directory prefix is `$H` on prose lines (the lines tests, sabotage mutations and the scope guard read stay literal). No sabotage anchor, test or golden fixture changed.
+- **Also.** Review round 2 left six FIXes (the `$H` alias and five stale codemap line citations), filed as L-0873. The verify-gate pass was recorded in a non-root clone because the ai-connect tests fail as root (L-0850).
+
+### Changed — crew 1.2.61, obsidian-vault 0.5.2: ten hook PowerShell twins deleted, the `sendkeys` auto-clear method removed (L-0727, slice 3; landed as L-0867)
+
+- **Summary.** `crew` 1.2.61: the ten PowerShell twins of crew's hook scripts are deleted, so on Windows every crew hook runs its `.sh` under Git Bash, and `context.autoClear.method: "sendkeys"` (the Windows keystroke sender) is removed and refused by name.
+- **Deleted.** `cloud-guard`, `env-guard`, `role-write-guard`, `crew-context`, `handoff-read`, `handoff-write`, `notify`, `platform-sync`, `context-watch` and `auto-clear` `.ps1`. `promote-gate.ps1` stays (the PowerShell-tool judge); the four harness twins are slice 4. A `PowerShell`-tool call now reaches `cloud-guard.sh` and `env-guard.sh`.
+- **Breaking.** A direct `pwsh notify.ps1 ...` (or any of the ten) no longer exists. `verify-gate.ps1 -Price/-All/-Ci` is documented as `bash verify-gate.sh --price/--all/--ci` (under Git Bash on Windows). `sendkeys` is refused with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or tmux"; `auto` never chose it, and on native Windows with no tmux pane it resolves to `notify`. A `.codex/hooks.json` generated before 1.2.58 stops working on Windows; regenerate it with `crew_instructions.py codex`.
+- **Also.** `event_claim.designated`: the sh flavour always emits when the claim store is unusable. obsidian-vault 0.5.2: only its probe test now reads `crew-hook.ps1`'s resolver instead of `role-write-guard.ps1`'s. Known and tracked separately: a POSIX `/d/...` path handed to native python.exe on one MSYS environment (L-0868). Not run: `scripts/_test/drift-detection.sh`.
+
+### Fixed — crew 1.2.60: the crew test suite no longer dies with WinError 6 under the Stop hook on Windows
+
+- **Summary.** `crew` 1.2.60: on Windows the crew test suite no longer fails with `[WinError 6] The handle is invalid` when the Stop hook's verify gate runs it, so the gate reports real test results.
+- **Cause.** pytest's default `--capture=fd` closes the Win32 stdin handle, and `subprocess.run` without `stdin=` reads that handle (`GetStdHandle`), not fd 0, so it fails in `subprocess._make_inheritable`. `test_context_watch_python_resolver.py` failed at collection; elsewhere 107 tests failed. Reproduced with `cmd /c "python -m pytest ... <NUL"`.
+- **Fix.** `plugin/crew/tests/_stdin_guard.py`, installed by `conftest.py`, points `STD_INPUT_HANDLE` at an owned NUL handle capture cannot close. `pytest_rule.py` starts its pytest children with `stdin=subprocess.DEVNULL`. Pinned by `test_stdin_guard.py`, sabotage-checked. Not run: the real Stop hook end to end.
+
+### Changed — crew 1.2.59: the review prompt shows a literal four-field finding and a literal READ line (L-0858)
+
+- **Summary.** `crew` 1.2.58: the instructions every reviewer reads now include one example finding line and one example READ line, so a reviewer is less likely to print a finding with too few fields or a part path without its directory and have the round read INCOMPLETE.
+- `review_prompt.PROMPT_HEAD` states that a defect line has exactly four non-blank fields (reproduction last), that a line with fewer than four is discarded, and gives one example of the form.
+- `review_prompt._bundle_block` tells the reviewer to copy a part path character for character, directory included (or give only the bare file name), and gives `READ|<path>` built from the first listed part's exact path.
+- The parser (`review_verdict`) is unchanged. Evidence: Codex rounds 1 and 2 of L-0851 were INCOMPLETE for these two reasons. The six `golden/prepare` prompts gain the same inserted lines.
+
+### Changed — ai-connect 0.2.2: a session is labelled with its Claude Code session name
+
+- **Summary.** `ai-connect` 0.2.2: a Claude Code session joins the bridge as `laptop:s-cross-session`, named after its Claude Code session name, instead of `laptop:my-repo`; a session without a usable name, and every other harness, keeps the project's name.
+- **Name format change.** A session's label always starts with `s-`, and a project whose label would be `s` or start with `s-` gets `p-` in front (`s-tools` joins as `laptop:p-s-tools`), so a session renamed after another project cannot take that project's name. Every other project label is unchanged.
+- **Read once.** The name is read when Claude Code starts the MCP server from `~/.claude/sessions/<pid>.json`; a `/rename` takes effect after reconnecting ai-connect from `/mcp`. Missing, unreadable or odd files, and anything that is not a regular file (a FIFO cannot hang start-up), fall back to the project's name without raising.
+- **Compatibility.** The Bridge is unchanged; clients on 0.2.2 mix with 0.2.1 and 0.2.0 clients. Messages waiting for the old `laptop:<project>` name stay there until a session joins under it.
+
+### Changed — crew 1.2.58: one dispatcher behind sixteen hook registrations (L-0727, slice 2; landed as L-0850)
+
+- **Summary.** `crew` 1.2.58: `hooks.json` registers one launcher per event per shell (16 entries, not 36) and one dispatcher runs each event's hook scripts and combines them, so on Windows no event runs twice, and a launcher or dispatcher fault in a repo crew governs now refuses the call instead of letting it through unjudged.
+- **New.** `hooks/scripts/crew_hook.py` (`TABLE`, `select`, `merge`, `armed`, `dispatch`), `crew-hook.sh` and `crew-hook.ps1`. The launchers supervise the dispatcher; the dispatcher runs the event's `.sh` scripts at once with the payload bytes, kills each with its tree at its own timeout or the whole-dispatch deadline (the registration timeout minus 5 s), and merges the results (exit 2 wins; deny over ask over allow; `decision: block` and `continue: false` win; contexts and messages joined in order; plain stdout folded into `additionalContext` when another script printed JSON). `crew_instructions.claude_hooks()` renders `hooks.json` from `TABLE`; `codex_hooks()` renders the same launcher with `--harness codex`.
+- **Breaking (B1).** `hooks.json` goes from 36 registrations to 16; a hook override naming a script path stops matching. None was found in the owner's settings.
+- **Breaking (B4, B7, B9, B10), Windows.** `crew-hook.ps1` is the single path (`crew-hook.sh` exits 0 there), so no hook runs twice. The `.sh` scripts run through a strictly resolved Git Bash and a `PowerShell` call goes to the cloud-guard, env-guard and promote-gate twins; every other `PowerShell` call is judged by the `.sh` (`scope-guard.sh`, not its twin). With no strict Git Bash, or no python, an armed repo is refused on `PreToolUse`, `UserPromptSubmit` and `Stop`; an unarmed one is not.
+- **Breaking (B8).** In an armed repo (an own, inherited or machine-global crew config, or one that cannot be told) a dispatcher fault, a missing hook script, a guard past its timeout or a launcher crash is exit 2 naming the cause on `PreToolUse`, `UserPromptSubmit` and `Stop`; elsewhere and when unarmed it is exit 0.
+- **Proof.** `record_golden_hooks.py` recorded what every `.sh` hook does for 107 payloads in armed and unarmed repos (and with no python) from the real scripts; the parity, merge, fault, shape and Windows suites replay it through the real launcher. `sabotage_crew_hook.py` adds 29 entries; the entries that mutate the ten `.ps1` twins slice 3 deletes are removed. Latency on the dev host: PreToolUse(`Bash`) 117 to 146 ms, Stop (clean tree) 124 to 159 ms (limits: +60 ms and +100 ms).
+- **Security pass.** Two BLOCKs fixed before merge: an `OS=Windows_NT` variable no longer stands the bash launcher down on Linux or macOS (uname decides; the PowerShell launcher tells Windows by the platform), and a guard that crashes is a fault instead of an exit 1 the launcher retried with the stdin it had already read. The no-python path now has the same deadline, a bounded stdin and the same fault rule; `CREW_HOOK_TRACE_FILE` is honoured only for `*.crew-trace` and never through a symlink; the Windows dispatcher no longer uses bare `taskkill`/`powershell` names. A payload over 8 MiB is a fault (refused when armed). A second read of those fixes added: the PowerShell launcher catches an unexpected error and exits 2 for an armed blocking event (a script that ended with no exit code read as an allow through `exit $LASTEXITCODE`), and the no-python watchdog can no longer orphan its sleeper.
+- **Tooling.** `check-tooling-pr.py`: `hooks.json`, `crew_hook.py` and the two launchers are HARNESS, `crew_instructions.py` is a declared seam, and `INSTALLATION.md` and `plugin/README.md` (which carry the `plugin-hooks:crew` claim) ride along with a harness PR.
+- **Docs.** ADR 0009; the hooks reference, the Windows section, the troubleshooting guide and the Codex guide (rebuilt); the hook-count claims read 16. The `.ps1` twins stay in place and unregistered except the three PowerShell-tool judges; slices 3 and 4 delete them. `scripts/_test/drift-detection.sh` is not run by the gate.
+
+### Fixed — ai-connect 0.2.1: the watcher finds the venv deploy made
+
+- **Summary.** On a machine set up with `ai-connect`'s own `deploy.sh` or `setup.sh`, the message watcher
+  now runs and wakes the session when a message arrives; up to 0.2.0 it exited 1 on every session start and
+  turn end there, because it looked for a venv only inside the plugin directory (not run on Windows).
+- **Order.** `watch.sh` and `watch.ps1` use the first venv that is there: `AI_CONNECT_VENV`; the plugin
+  directory's own (`install.sh` / `install.cmd`, as before); then deploy's,
+  `${AI_CONNECT_HOME:-~/.local/share/ai-connect}/venv`, on Windows
+  `%USERPROFILE%\AppData\Local\ai-connect\venv`. With deploy's venv the watcher script runs from deploy's
+  copy of the plugin beside it when there is one.
+- **Security.** `AI_CONNECT_VENV` and `AI_CONNECT_HOME` choose the program the hook starts, and a project's
+  settings can set environment variables, so each is used only as an absolute path (no `..`) under the home,
+  outside the project, and only on a machine that has been set up; `AI_CONNECT_VENV`'s `bin/python` must be the
+  user's own (Linux, macOS). Otherwise it is ignored. The watcher also starts without any `PYTHON*`
+  variable, and ignores a home directory the project moved into itself; a project directory that is set but does not exist makes the variables untrusted.
+- **Unchanged.** Installed but never set up, the hooks stay silent whatever the variables say. Set up with no
+  venv anywhere, the error names the places it looked, not the values of the variables.
+
+### Changed — crew 1.2.57: wave lanes run as a Claude Code workflow, the autopilot modules are frozen, and the Git Bash resolver has a strict mode (L-0727, slice 1)
+
+- **Summary.** `crew` 1.2.57: `/crew:autopilot wave` now fans its lanes out through the plugin's `wave` workflow (`/crew:wave`), a lane that fails or returns nothing readable is reported `unknown` instead of clean, and every lane brief opens with a `Ticket ID:` line.
+- **New.** `plugin/crew/workflows/wave.js` (`/crew:wave` with `{"set": "<slug>"}`): one `isolation: worktree` agent per lane, never more than `maxLanes` at once, then `crew_wave.py collect --json`. `crew_wave.py start --json` gains `launches: [{ticket, argv[, model]}]`, one per `launch` line, in the same order.
+- **Changed.** `commands/autopilot.md` section 7 runs `/crew:wave` instead of launching one Agent per `launch` line. Every lane brief from `crew_wave.lane_prompt` starts with `Ticket ID: <id>` (cost attribution, L-0728).
+- **Frozen.** The 17 `crew_autopilot*.py` modules are held by a sha256 and line-count manifest (`tests/autopilot_frozen.json`, `tests/test_autopilot_frozen.py`); only a bug fix or a removal may change one.
+- **Strict Git Bash.** `crew_shell.resolve_gitbash(strict=True)` takes only the `git --exec-path`-derived or default `bin/bash.exe`, never a PATH `bash` or a `usr/bin/bash.exe`, and only one that runs `-c 'exit 0'`. The default is unchanged; the hook dispatcher (a later slice) is its first caller.
+- **Codex hooks.** `crew_instructions._codex_hooks_generated` recognises a `.codex/hooks.json` whose commands run `crew-hook` as well as `crew-context`.
+- **Docs.** ADR 0007 (codex-plugin-cc evaluated, not adopted) and ADR 0008 (native resume does not cover session typing). No config key, command, skill, agent or hook registration changes. Measured first: a workflow agent's PreToolUse payload carries `agent_type: workflow-subagent` and a `cwd` under `<main>/.claude/worktrees/`, the root `lane-init` already admits (`tests/fixtures/workflow_worktree_payload.json`).
+
+### Fixed — crew 1.2.56: a hook-script child that ignores its kill can no longer hold a review step open (L-0836)
+
+- **Summary.** `crew` 1.2.56: a review step that runs a helper script gives up on a hung or unkillable helper after the bound instead of waiting on it, and the codemap notes it reads must be regular files.
+- `review_run._bounded` no longer uses a `with Popen` block, whose `__exit__` waits for the child with no timeout; `_end_child` kills it (Windows: `taskkill /T` first), waits at most `POST_KILL_TIMEOUT` and survives a kill that raises `OSError`.
+- `review_prompt.gather_landmines` reads codemap notes through `review_checks.read_regular`, so a symlinked note is could-not-tell.
+- The descendant-holds-the-pipe test now runs on Windows too, and a failed-kill test and sabotage entry were added.
+
+### Changed — crew 1.2.55: the instruction surface is capped: README, promote.md and verify.json rationale move out of the plugin (L-0726, slice 2)
+
+- **Summary.** `crew` 1.2.55: `plugin/crew/README.md` is an entry point of at most 800 lines, `commands/promote.md` is at most 120 lines and 12,288 bytes, and the rationale that was in them (and in `.crew/verify.json`'s `why` text) now lives under `docs/crew/`, with new gates that stop it growing back.
+- **BC1.** `plugin/crew/README.md` is rebuilt as an entry point; its reference sections moved verbatim to `docs/crew/reference/` and the README carries a "Moved sections" index (old title, new path). Section numbers and anchors of moved sections no longer resolve in the README; in-repo pointers are repointed.
+- **BC4.** In this repo every `.crew/verify.json` rule has a unique kebab-case `id` and a `why` of at most 300 characters; the full text is in `docs/crew/verify-rationale.md`, one `## <id>` section per rule. In other repos `id` stays optional and `why` uncapped.
+- **BC5.** `scripts/check_instructions.py` fails any command file over 12,288 bytes that is not in `.budget-allowance.json`, and a README over 800 lines; `review.md` and `promote.md` lose their allowances, and a listed file may not grow in bytes.
+- **BC6.** `commands/promote.md`'s rationale ("What is enforced, and what is not", "What not to do", the merge-gate background) moved to `docs/crew/promote.md`.
+- **BC7.** Rationale moved to `docs/crew/` and `docs/crew/reference/` is repo-only: a marketplace install of crew no longer carries it in `plugin/crew/`.
+- **Docs.** ADR 0006, the guides, `plugin/PLUGINS.md`, `BUDGETS.md`, the code map and the diagrams' Embed headers follow. No config key, command, skill, agent or hook changes.
+
+### Changed — crew 1.2.54: per-ticket token and cost telemetry, and a goal cap that counts each message once (L-0728, slice 1)
+
+- **Summary.** `crew` 1.2.54: `/crew:done` now records what a ticket cost: tokens split by kind and a list-price cost, counted from the Claude Code transcripts tied to that ticket and labelled an attributed lower bound, with `UNKNOWN` (never `0`) when none can be tied.
+- **B1, the row.** `crew_metrics.py record` writes schema `1.1` rows: `tokens` is an object `{input, output, cacheRead, cacheCreation, total}` (it was an integer), plus `tokensBasis`, `tokensAttribution {files, mainSessions, subagents, conflicting, conflictingMessages, unreadable}`, `pricesAsOf` and `pricesSource`. Old rows still read.
+- **B2, each message once.** `transcript_tokens` counts each assistant message once (keyed by `message.id`, else `uuid`, else file and line): Claude Code repeats a message's usage on every line it writes for it. `autopilot.maxTokensPerSession` therefore stops a goal run later than before for the same work (the stop is still `tokens > limit`); its description, CONFIG.md, the README and the guide say so.
+- **B3, the scan.** With no `--transcript`, `record` reads the transcripts under `CLAUDE_CONFIG_DIR` (or `~/.claude`) for every worktree of the repository, subagent files included, and ties a file to a ticket only by an exclusive rule: a `Ticket ID: <id>` line or `/crew:<command> <id>` in its user messages, or one linked worktree whose branch starts `<id>-`; a file that names two tickets, or cannot be read in full, belongs to none and is counted (`conflicting`, `unreadable`). It stores ids, usage and models only, never prompt text. `--no-scan` restores the old behaviour; `--transcript` with `--no-scan` exits 2.
+- **B4, cost.** `cost` is computed from a built-in dated price table (`PRICES`, list prices; Haiku 5.5 over a 100K prompt at its higher tier); an unpriced model with tokens makes it `UNKNOWN`, never a partial sum. `--cost` still overrides.
+- **B5, the fold.** `effective_ticket_metrics` folds `tokens`, `cost`, their basis, attribution and price fields as one unit: the latest 1.1 row replaces the group, `UNKNOWN` included; an `escaped` row leaves it alone.
+- **B6, compare.** `compare` selects schema 1.0 and 1.1 `record` rows.
+- **Docs.** `done.md` step 2, the README metrics table, the daily-workflow guide, the done diagram and the code map describe the 1.1 row. No hook, config key, command name or plugin path changes.
+
+### Changed — crew 1.2.53: the config ratchet diagram in crew's README cites the current line (L-0789)
+
+- **Summary.** `crew` 1.2.53 (L-0789, a refresh): the config ratchet diagram embedded in crew's README
+  cites `effective_ratcheted` at its current line, `crew_guards.py:594`, where it said `:564`. No
+  behaviour changes.
+- **Diagrams re-anchored.** `docs/diagrams/data-flow-crew-config.mmd` and
+  `data-flow-crew-config-ratchet.mmd` are re-anchored to 7c9e13349 (crew 1.2.52); since a792ce66b only `crew_migrate.py` (L-0782) changed among their anchors, and the main diagram already carried that note. Since their last anchor,
+  `CONFIG.md`, `crew_context.py` and `crew_state.py` changed for L-0805 (`context.warnAt` 0.4), and
+  L-0772 and SRL-2308 had moved the lines the ratchet part cites in `crew_guards.py` and
+  `crew_config.py`. The ratchet part's Note lines now carry the measured counts (12 guards, 15
+  read-side and 16 write-side ratchet keys) and current line numbers; no box or arrow was added or
+  removed.
+
+### Changed — crew 1.2.52: /crew:review is a script, not 230 lines of shell (L-0726, slice 1)
+
+- **Summary.** `crew` 1.2.52: `/crew:review` shrinks from 551 lines to 46 and stops asking the model to copy shell: `review_run.py --prepare` does the setup and every `review_run.py` exit ends with one `next:` line saying what to do.
+- **`review_run.py --prepare`.** Does what the snippets did before a reviewer runs, in the same order: the ticket (the one active `.work/INDEX.md` row, else stop), a claimed scratch directory, the review base (`scope_base.py --base`), dispatch staleness against that base, `crew_config.py --models --json`, the author families and `ELIGIBLE`, the bundle, `changed.txt`, the codemap landmines (capped at 200 lines), and `prompt.txt`. It reserves no round and launches no reviewer, and it reproduces `changed.txt`, the bundle, `context.txt` and `prompt.txt` byte for byte on seven fixture scenarios captured from the old snippets (`golden/prepare/`). It prints `KEY=VALUE` lines, then one `next:`.
+- **`--resolve-run --probe-status <n>`.** The live Codex probe stays `--probe`; this turns its exit code into `FALLBACK` / `RUN_PROVIDER` / `RUN_MODEL` (the one-line `python3 -c` review.md carried) and the command to run.
+- **BC2 `review.md` no longer carries shell or its variables.** `$SCRATCH`, `$ELIGIBLE`, `$AUTHORS`, `$STALE_FLAG`, `$FALLBACK`, `$RUN_PROVIDER`, `$RUN_MODEL`, `$PROBE_STATUS` and `qm()` are gone from it: anything outside crew that copied them (lane briefs, prompts, handoff recipes) calls `review_run.py --prepare` instead. Steps 2a-2e, 2d and 3.1-3.9 keep their labels; the rationale moved to `docs/crew/review.md`, which the installed plugin does not ship.
+- **BC3 Every `review_run.py` exit ends with one `next: <action>` line**, picked by reason (exit 2 and exit 9 each have several causes): `--prepare`, `--probe` (5, 6, 7), `--reserve-only`, `--round`, the run (0, 1, 2, 3, 4, 8, 9, 10) and argparse errors. A caller that parses its stdout by exact line count or by its last line sees a new last line. Exit codes are unchanged; `--ticket`, `--scratch` and `--provider` are now required by the code (with the same argparse message) rather than by argparse, so `--prepare` can omit them.
+- **BC8 An unreadable input is a stop, not a guess.** `--prepare` prints a `could not tell` line and exits 11 where the snippets carried on: an unreadable `.work/INDEX.md`, review ledger, `.crew/verify.json`, dispatch record or codemap note, a failed `git log` of the base, a failed models report or a ticket contract that did not build. A `.crew/verify.json` that is absent, empty, or has no matching rule are three different outputs. Specialists are now matched against the files the bundle carries (committed, staged, unstaged and untracked), where the old step 0b listed only `git diff --name-only HEAD` and untracked files and so found none for a change that was already committed; an agent that is not installed is `MISSING`, one that could not be checked is `unknown` (`verify_agents.py`'s answer).
+### Fixed — crew 1.2.51: `verify-gate.sh --verbose --all` runs every rule, as `--all --verbose` does (L-0710)
+
+- **Summary.** `crew` 1.2.51 makes the Bash verify gate read `--all` from anywhere in its arguments, so
+  `verify-gate.sh --verbose --all` runs every rule and records a pass instead of running as a budgeted
+  Stop that defers the expensive rules.
+- **Why.** The L-0710 successor review round (Codex, round 5) found that `--verbose` (L-0796) is accepted
+  before `--all`, while three later checks read only the first argument: the diff-baseline read, the
+  whole-tree scope and the budget flag. The PowerShell gate has switch parameters and never had the
+  problem, so the two flavours disagreed.
+- **Unchanged.** `--all` and `--ci` alone, `--all --verbose`, and the PowerShell flavour.
+
+### Changed — crew 1.2.50: a missing review ledger is could-not-tell, and `review_status.py check` reads the published `crew/review` status (L-0780)
+
+- **Summary.** `crew` 1.2.50: a missing review ledger on another host reads as "could not tell whether this head was reviewed" instead of "nothing to gate", and `review_status.py check` reads the commit status `crew/review` of one exact head, strictly and read-only.
+- **Why.** The review ledger and receipt are host-local (`<git-common-dir>/crew/review/`, `.work/`), so a session on another
+  host found none and PR #599 merged with 4 open BLOCKs, its reviewed head never gated.
+- **`review_status.py check (--pr N | --head SHA)`.** `REVIEW_GATE ALLOW|BLOCK|COULD_NOT_TELL head=<sha>` (exit 0, 1, 2) from one
+  `gh api` read. It reads no local ledger, working tree or HEAD. The reply is parsed by allowlist (strict UTF-8 JSON with no duplicate key, at most 4 MiB; the sha asked, a complete
+  list of objects, exactly one `crew/review` row, a description that fully matches the receipt schema with `blocks=0`); anything
+  unexpected, no status, `pending`, gh missing or unauthenticated, a rate limit and an API error are COULD_NOT_TELL.
+- **`--check-receipt`.** An absent ledger still refuses and now names the head and says ledgers are host-local.
+- **Not done here.** Nothing publishes the status yet: the producer (`post`) moves to L-0821, rebuilt on one validated ledger
+  read, with wiring into `/crew:done`, `check-land` and autopilot ship and a guard on a raw `gh pr merge`. Until then every
+  head reads COULD_NOT_TELL, which is safe. Requiring `crew/review` in branch protection is the repository owner's setting.
+  A status attests, it does not prove, and `gh pr merge --admin` bypasses a required check.
+
+### Fixed — crew 1.2.49: migrate backup messages name `.crew/backups` the same on Windows (L-0782)
+
+- **Summary.** `crew` 1.2.49: the `could not tell` and rollback-refusal messages about `.crew/backups` print forward slashes on Windows too, and a dangling `.crew/backups` link is reported as such there.
+- **Cause.** `scan_backups` and `--rollback` interpolated `BACKUP_DIR` (`.crew\backups` on Windows) into messages while every other path went through `_rel`; and Windows raises `WinError 267` rather than `FileNotFoundError` for a dangling link, so the "link to a missing target" wording was never reached.
+- **Fix.** Messages use `BACKUP_DIR_SHOWN` (`.crew/backups`); the dangling-link check runs before the generic `OSError` wording. Three tests simulate the backslash constant and the `WinError` on Linux.
+- **Docs.** none - no document quotes the changed wording.
+
+### Fixed — crew 1.2.48: /crew:status no longer crashes on a file in .crew/backups (L-0782)
+
+- **Summary.** `crew` 1.2.48: `/crew:status` no longer dies with a traceback when `.crew/backups/` holds a
+  file that is not a migrate backup, and says `could not tell` instead of "nothing interrupted" when it cannot read an entry.
+- **Cause.** `crew_migrate.find_interrupted` opened `<entry>/manifest.json` for every name in
+  `.crew/backups/`; for a regular file that raised `NotADirectoryError`, which nothing caught, and it
+  also returned "nothing interrupted" on any listing error. `/crew:migrate --rollback <file>` crashed the same way.
+- **Fix.** `crew_migrate.scan_backups(root)` replaces it and sorts each entry into three outcomes: not a
+  backup (a file, or a folder with no manifest: skipped), an interrupted or unparseable backup (reported
+  as before), or could not tell (a symlinked or unreadable manifest, an unlistable `.crew/backups`: named
+  with the reason). Only an absent `.crew/backups/` means clean. `/crew:status` prints
+  `migrate  could not tell - <path>: <why>` and carries on; the migrate preview lists a conflict;
+  `--rollback` of a non-directory is refused in one line. Nothing `/crew:migrate --apply` writes changes.
+- **Docs.** `status.md` migrate row and note, the quickstart troubleshooting row, the status diagram's line anchors.
+
+### Fixed — crew 1.2.47: a reviewed bundle can be rebuilt after its head merged, and `scope_base.py --base` says could-not-tell on the base branch (L-0770)
+
+- **Summary.** `crew` 1.2.47 lets the review harness rebuild a round's bundle after its reviewed head
+  has merged into main (`merged_main.pinned`, `review_delta.reviewed_bundle(..., merged=)`), and makes
+  `scope_base.py --base` exit 3 instead of answering HEAD when no start is recorded on the base branch
+  itself, so `/crew:review` stops rather than reporting "nothing to review".
+- **Why.** The harness half of L-0765 (TSS-win report: a main-tip release can never pass promote-gate).
+  Once a reviewed head is in main, `merge-base <head> main` is the head, so the rebuild dropped every
+  path and no accepted round could be checked again; release mode (L-0765) needs that check. And on the
+  base branch with no record, the merge-base fallback is HEAD itself: an unknown start read as an empty
+  change.
+- **Unchanged.** Every existing caller of `reviewed_bundle` and `_ticket_base_tree` (no `merged`), and
+  `scope_base.resolve()` (its other callers run on main for merged lane tickets). A named ticket branch at
+  its fork point still gets HEAD.
+- **Round 2 FIXes closed here (L-0775).** A base branch configured on a remote other than `origin`
+  (`upstream/main`) is now the base branch too, a failed `git remote` listing is could-not-tell, and
+  the three controls the round named exist: a start recorded at the current HEAD still answers, a
+  failed ancestry probe in `merged_main.pinned` is could-not-tell, and each has a sabotage entry run red.
+- **Round 3 FIXes closed here.** A local ticket branch named like the remote base (`origin/main`) at
+  its fork point is a ticket branch and still gets HEAD, and `merged_main.pinned` reads a commit that
+  shares no history with the ticket start as could-not-tell instead of an applied pin; each has a test
+  and a sabotage entry run red.
+- **Freeze.** Landed under an explicit owner exception to the 2026-10 crew feature freeze (L-0765).
+
+### Changed — crew 1.2.43: every crew test runs under a home of its own (L-0709)
+
+- **Summary.** `crew` 1.2.43: the crew test suite no longer reads your real
+  `~/.claude/crew/config.json`: every test, and every script it spawns, runs under a throwaway home, so the Stop hook's suite run stops
+  failing on settings you chose.
+- **Isolation.** `plugin/crew/tests/conftest.py`'s autouse `_isolated_home` points HOME,
+  USERPROFILE and `XDG_CONFIG_HOME`/`XDG_DATA_HOME`/`XDG_STATE_HOME` at a per-test directory
+  beside `tmp_path`, and a session-wide one covers collection. `GLOBAL_CONFIG_PATH` was patched
+  in-process only, so a spawned script still read the real file: with `autopilot.*` keys in the
+  machine layer, `test_status_mode_line_reads_off_by_default` (L-0704) and both
+  `test_bash_flavour_emits_and_logs_nothing_when_inject_is_false` cases (L-0729) failed locally and
+  passed in CI. The Python user base and pwsh's CurrentUser module directory are carried over, as
+  installed code rather than configuration.
+- **Audit.** `crew_fixtures.home_audit` fails a test that opens a file under the real home, or
+  spawns a process handed the real HOME, naming each path; the checkout, the interpreter and the
+  temp directory are allowed, and an import path is allowed only outside the real home's `.claude`
+  (`PYTHONPATH=~/.claude` no longer exempts the crew config) unless it is the running
+  interpreter's own prefix (a venv at `~/.claude/venv` still imports). The guard is pre-open only:
+  a symlink swapped in between the check and the open, an `os.open` relative to a `dir_fd`, and an
+  open alias captured before the audit installed are a declared known limit (L-0761). A session or module fixture is tested
+  in an inner run against a planted home: it is handed no real-home record, no
+  `CLAUDE_CONFIG_DIR`/`CLAUDE_PROJECT_DIR` and no real `GLOBAL_CONFIG_PATH`. `test_hermetic_home.py` holds it, with a regression run against a
+  planted home carrying the owner's keys; removing the isolation turns it red (checked by hand;
+  the sabotage-suite entries are L-0738, a tooling PR).
+- **`monkeypatch.undo()` no longer drops the isolation.** conftest's isolation fixtures shared the
+  test's `monkeypatch`, so the 16 tests that call `monkeypatch.undo()` to drop their own patches
+  also put `GLOBAL_CONFIG_PATH` back on the real `~/.claude/crew/config.json`; the new audit caught
+  `test_crew_split.py::test_orphan_without_index_row_not_adopted` opening it on a runner with a
+  user layer. The fixtures now write through a private `MonkeyPatch`. A module or session
+  fixture, set up before any per-test patch, read it too
+  (`test_crew_autopilot_stop_contract.py`'s `built`): the session now moves `GLOBAL_CONFIG_PATH`
+  under its own home as well.
+- **Quarantine.** `@pytest.mark.quarantine(owner=..., ticket=...)` deselects a known timing flake
+  until `-m quarantine` or its node id (`file.py::test`) names it, so a sabotage entry targeting
+  one still runs it; a quarantine missing either, or a skip marker whose reason
+  says flaky/timing/intermittent, fails collection, and a `pytest.skip()` or `pytest.xfail()`
+  saying so at run time fails the test. Quarantined (L-0737 fixes them):
+  `test_a_clean_linter_s_detached_leftover_is_ended` (the only failure in 4 of 7 red main runs,
+  2026-10-06..08) and `test_near_deadline_candidates_then_a_hang_stay_within_the_hook_timeout`.
+
+### Changed — crew 1.2.42: the wave sabotage table covers the lane launch model (L-0802)
+
+- **Summary.** `crew` 1.2.42 adds a mutation to the wave sabotage table so a developer model pin that never reaches the lane launch line turns a test red.
+- **What.** One `WAVE_MUTATIONS` entry in `sabotage_wave.py`: the launch line drops the developer model, and `test_launch_line_carries_developer_model` must fail. No behaviour or documented surface moves.
+- **Tests.** The mutation was run red and green (restore). Review round 1 by Kimi: clean; round 2 re-reviewed the version bump; a narrow delta round covered the fixes and the 1.2.42 re-bump.
+- **Process.** The crew feature freeze was waived by the owner for this batch (L-0802 spec, Exclusions). Tooling PR, landing alone. NIT 1 and NIT 2 are split to a separate ticket (L-0810).
+
+### Changed — crew 1.2.41: the Windows skips in test_verify_gate_quiet.py name their real reasons (L-0806)
+
+- **Summary.** `crew` 1.2.41 changes one test file only: the Windows skips now state why they skip, and the backgrounded-process timing test runs serially; the gate itself is unchanged.
+- Test-only change to `plugin/crew/tests/test_verify_gate_quiet.py`. Reproduction on native Windows (win-repo-2) is NOT VERIFIED; follow-up L-0809.
+
+### Changed — crew 1.2.40: auto wrap-up and auto-clear fire at 40% of the context window (L-0805)
+
+- **Summary.** `crew` 1.2.40 moves the default context threshold from 50% to 40% of the window, so the handoff warning, auto wrap-up and auto-clear all start earlier; an explicit `context.warnAt` is untouched.
+- **What.** `context.warnAt` default `0.5` -> `0.4` in `crew_state.py`, `config.template.json`, both `context-watch` flavours (fallback and comments) and `low_context_note` in `crew_context.py`. One shared key, as before: auto wrap-up and auto-clear change what happens at the threshold, not when. A 1M window now warns at 400k (`reserveTokens` default 0, so the percentage rules). Precedent: crew 0.19.52 moved `0.8` -> `0.5` the same way.
+- **Existing repos.** Only the unset default moved. A `warnAt` in `~/.claude/crew/config.json` or `.crew/config.json` keeps its value; there is no auto-migration. A repo created from the template while the default was `0.5` carries a literal `"warnAt": 0.5` and stays at 50% until that line is edited or deleted. This repo's own `.crew/config.json` was moved to `0.4` by hand.
+- **Tests.** `test_context_warnat_default.py` pins the default in the state dict, the template, both hook flavours and `low_context_note`. Manual sabotage (default put back to 0.5) was run and went red; recorded in the PR.
+- **Docs.** CONFIG.md, the crew README, the best-practices and setup skills, the configuration reference and troubleshooting guide (rebuilt HTML, DOCX, PDF). Not fixed here: `low_context_note` defaults `reserveTokens` to 100000 while every other site uses 0 (L-0807).
+- **Process.** The crew feature freeze was waived by the owner on 2026-10-17.
+
+### Changed — crew 1.2.39: the Stop gate prints one verdict line and keeps the rest in a log (L-0796)
+
+- **Summary.** `crew` 1.2.39 makes the Stop verify gate quiet: one verdict line, then each failure exactly as before, with the pricing, reach, deferral, tree-credit, env-pin and timing lines moved to `.crew/.verify-gate.log`.
+- **What.** On the Stop path `verify-gate.sh` / `.ps1` print `verify-gate: FAILED n cmd | PASSED n cmd | NOT VERIFIED n item(s) (reach, over-budget, dirty tree, deferred, skipped, other) | credited n | budget Xs/Ys | detail: <log>`, then every line they cannot prove informational (failure blocks with their last 25 lines, COULD NOT TELL, SKIP, UNMAPPED CHANGES, lock back-off, any unknown line). Classification is by the site that wrote the line, never a filter over the stream, so a failing rule that prints text shaped like an informational line is still shown. An unwritable log degrades to the full text with `detail: unavailable`. The same session still failing the same way prints one `unchanged since last Stop` line that names the detail log and `/crew:verify --all` (exit 2 unchanged); any other case prints the full block. `--verbose` / `-Verbose` or `CREW_VERIFY_VERBOSE=1` restore the old text byte for byte; `--ci`, `--all` and `--price` stay verbose. Exit codes and the L-0733 stdout line are unchanged. The `.ps1` buffers in memory and flushes in a `finally`.
+- **Tests.** `test_verify_gate_quiet.py` (18 cases: one verdict line, failure span identical to a verbose run, decoy rule output not demoted, unknown notice shown, unwritable log, verbose env and flag, `--ci`/`--all` verbose, the unchanged line and its fallbacks, NOT VERIFIED never in PASSED, exit codes and the stdout line over five paths) and `test_verify_gate_quiet_ps1.py` (site parity, plus a sh-vs-ps1 run that drives pwsh with `OS=Windows_NT` on this host: a simulation of the native flavour, not a Windows run). Nine sabotage entries in `sabotage_quiet.py`, each red. `crew_fixtures.popen_gate` defaults `CREW_VERIFY_VERBOSE=1`, so the existing suites that assert the per-rule text run unchanged.
+- **Review round 1 (fixed).** The saved stderr pipe (fd 4) is closed in the rule subshell, so a rule that backgrounds a process no longer holds the hook open until that process exits (measured 8s vs 1s on `(sleep 8 &); true`); the verdict names its units (`cmd` for FAILED/PASSED, `item(s)` for NOT VERIFIED, which counts commands for skipped and tree-withdrawn credits); the `.ps1` treats any exit other than 0 after the rules were judged as failing, as the `.sh` does, and keeps the repeat state; seven more sabotage entries, four of them against `verify-gate.ps1`.
+- **Review round 2 (fixed).** An unchanged repeat Stop now prints the full block when the detail log could not be written, so a failure is never on neither stderr nor disk; the sabotage edit left in `crew-context.ps1` is reverted (that file is untouched by this PR); the troubleshooting guide says deferred and over-budget lines go to the log (`commands/verify.md` has the same stale sentence but is a prompt, so it waits for a follow-up PR under the harness-alone rule); a lost backtick in CONFIG.md is restored.
+- **Review round 3 (fixed).** `.crew/.verify-gate.log` and `.crew/.verify-gate.last-stop` are named in the fingerprint's gate-owned list, so an untracked, unignored log no longer makes every Stop re-run every rule; a run killed before its verdict prints the whole buffer (deferral, over-budget and stop-budget notices) plus the log path instead of only the untagged lines; the unknown-argument message names `--verbose` / `-Verbose`; the record's owed-obligation line says it is not in the verdict's NOT VERIFIED item total.
+- **Process.** The crew feature freeze was waived for this ticket by the owner. The review/gate harness lands alone: this is a tooling PR. Not verified: a native Windows run of `verify-gate.ps1`.
+
+### Added — crew 1.2.38: the coordinator is a model pin on an existing role, and wave lanes carry the developer model (L-0799)
+
+- **Summary.** `crew` 1.2.38 makes `dev.roles.coordinator` a documented model pin (no fifth role, no
+  persona, default unset) and puts `dev.roles.developer`'s claude model on each wave lane launch.
+- **What.** `crew_wave.py start` adds `model: <id>` to each `launch` line when `dev.roles.developer`
+  is a claude pin with a model, and prints `coordinator: model <id>` when `dev.roles.coordinator` is
+  one. Unset or non-claude pins leave the output byte-identical to 1.2.37; a pinned value that is
+  not a model id prints a `warning:` and pins nothing. Docs: CONFIG.md, the crew README,
+  `commands/autopilot.md`, `commands/model.md`, the guide.
+- **Tests.** New cases in `tests/test_crew_wave.py` (launch line with, without and with a non-claude
+  pin, an odd model text, the coordinator line, and `--models` listing the coordinator as
+  `role-pin`). The sabotage was run by hand (drop the model from the launch line: the pinned-launch
+  test goes red, restored it goes green); its permanent entry in `sabotage_wave.py` is harness work
+  and goes in a separate tooling PR.
+- **Process.** The crew feature freeze was waived for this ticket by the owner on 2026-10-16. The
+  measured Opus 5.5 vs Sonnet 5.5 comparison was waived by the same decision. Not verified: that the
+  in-session `Agent` tool accepts explicit model ids (aliases are the fallback).
+
+### Added — crew 1.2.37: a Haiku 5.5 `session-relay` agent for messages between sessions (L-0797)
+
+- **Summary.** `crew` 1.2.37 ships `crew:session-relay`, a transport-only agent pinned to Haiku 5.5
+  that carries every message between sessions, so peer traffic costs a cheap model and never reaches
+  the main session unread.
+- **What.** `agents/session-relay.md` (`model: claude-haiku-5-5`, the full id, probed accepted in a scratch HOME; tools `SendMessage` and `ListAgents`, no `Read`;
+  inbound `PEER IN from <name>:`, outbound `RELAY OUT to <name>:` as `FROM>TO | TYPE | IDS | NEED:`).
+  It is a model pin on a shipped agent, not a fifth role: `crew_state.TRANSPORT_AGENTS` names it,
+  `ROLE_TIERS` stays at four, and it has no config key and no hook. `validate-prompts.py` gains a
+  named `BRIDGE_ALLOWED` carve-out from the L-0637 bridge-tool rule and a `claude-haiku-5-5` model tier for this agent only;
+  `role_write_guard.py` denies it Write and Edit like every shipped agent.
+- **Tests.** `tests/test_session_relay.py` (model, tools, no write tool, transport-only rules);
+  `tests/test_role_ladder.py` now holds the agent files to the roster plus `TRANSPORT_AGENTS`.
+  Four hand sabotages (model `opus`, `Bash` added, deny-list entry removed, bridge carve-out
+  removed) each go red.
+- **Process.** The crew feature freeze was waived for this ticket by the owner on 2026-10-16.
+
+### Fixed — crew 1.2.36: the terraform guard's fallbacks no longer refuse a line for mentioning "apply" (SRL-2308)
+
+- **Summary.** `crew` 1.2.36: when the cloud guard cannot read a line, or meets a command word made
+  at run time, it now asks whether a command word on the line could run terraform, terragrunt or
+  tofu, instead of refusing any line that mentions terraform, `apply`, `destroy` or `workspace`.
+- **Before.** `crew_guards._bash_trigger`'s give-up path used `names_terraform` (any word on the line
+  naming terraform) and `_TerraformTool.hole` used `_verb_on_line` (that, or any word dequoting to
+  destroy/apply/workspace). A lone `W=$S/wt1863r8` reads as a run-time command word, so
+  `W=$S/x; cd $W && python3 - <<'EOF'` with "apply" in the Python was refused, and so were a send.md
+  heredoc, `B=$W/x.py; sed -n 1,30p $B | grep apply`, `R=$W; python3 -c "...('apply')..."` and an
+  inline `$T/stub apply` test.
+- **Now.** Both ask `crew_guards.command_word_names_tool`: a command word naming the tool directly,
+  by path, behind a wrapper (`env`, `npx`, `sudo`, `timeout`, `xargs`, `npm exec`, ...), through
+  `$(...)` or backquotes, or as a variable whose literal value on the same line names one
+  (`T=terraform; $T apply`); a variable the line never sets followed by a changing verb (`$TF
+  apply`); and the old any-word rule for a line that hands text to a shell (`bash`, `eval`, `ssh`,
+  `source`, `parallel`, an alias or function) or that the new splitter cannot split either. Quoted
+  heredoc bodies and quoted arguments are data. The precise reading, the `xargs` path and
+  PowerShell are unchanged. `$TF apply` on a line the reader gives up on is now gated where it was
+  not before.
+- **Variables (review round 1).** A variable counts as resolved only when every way the line sets
+  it is a plain `NAME=literal` (a directory part may hold a variable: `S=$W/stub.sh` runs
+  `stub.sh`) or a `for NAME in` list of literals, standing alone, at the top level, run
+  unconditionally and before the command that uses it. `T=$X`, `T=$1`, `T=$(cat f)`,
+  `T=/opt/tf/t*`, `for f in *.exe`, `T+=x`, `read T`, `printf -v T`, `mapfile T`, `declare -n`,
+  `T=x cmd`, `${T:=x}`, an assignment after `&&`/`||`, in a pipeline, subshell, `if`/`case`/loop
+  body or function, a `source`/`.`/`eval` or an `IFS` on the line all leave it unresolved (and a
+  line making IFS split on more than blanks is refused when it names the tool anywhere), so
+  `$T apply` is refused. `${T/x/o}` and `$(...)` as a command word are made at run time;
+  `T=terra; U=form; $T$U apply` and `T=sudo; $T terraform apply` are read as the command they
+  spell. A script crew cannot name run with a changing verb (`for f in *.ps1; do pwsh -File $f
+  apply; done`) is refused, and so is a `bash -c` or heredoc'd shell script with `$TF apply` in it.
+- **Interpreters (review round 1, on both paths).** `python`/`py`/`pypy`, `node`/`nodejs`/`bun`,
+  `deno eval`, `perl`, `ruby` and `php` code given on the command line (`-c`, `-e`, `-p`, `-r`,
+  `--eval`, ...), or fed by a heredoc, here-string or pipe, is refused when it names terraform,
+  terragrunt or tofu (or a `$VAR` before a changing verb) and does more than print: anything beyond
+  `print`/`puts`/`console.log`-style calls and plain strings. `python3 -c "print('terraform
+  apply')"` still passes; `python3 -c "import os; os.system('terraform apply')"` is refused, which
+  1.2.35 allowed on a plain line.
+- **Fail closed (review round 2).** The narrowing only stops a mention from counting; it never
+  decides that a command word crew cannot name is safe. Every command word made at run time
+  (`$1`, `"$@"`, `$*`, `$0`, `$SHELL`, `${BASH:-bash}`, `$(command -v bash)`, a variable the line
+  does not resolve) is gated by 1.2.35's rule whatever follows it, so `set -- terraform apply; $1
+  $2`, `V=apply; $TF $V` and `$SHELL <<< 'terraform apply'` are refused. A resolved variable counts
+  as a program only when its value is a path (`S=$W/stub.sh`) to one that runs nothing else: a bare
+  name (`T=ls`, `T=echo`) may be an inherited function, so `T=ls; $T apply` is refused. A line
+  the fallback reads that changes PATH, `hash` or `enable` (`PATH=/opt/x:$PATH; ls apply`) is
+  decided by 1.2.35's rule, as before. Python code that can start a process is refused when the
+  line names the tool or the code builds its command (`"terra"+"form"`, `"terr" "aform"`,
+  `"\x74erraform"`, `sys.argv`, `" ".join`); perl, ruby, node and deno code with a process API,
+  and PHP code that does more than print, are refused outright, and perl's bundled `-pe`,
+  `-lne` now read the program. Print-only code with a trailing `# comment` passes, and a Python
+  placeholder string such as `"__COUNTS__"` is text, not code. A run-time argument of the literal
+  program `timeout` runs (`timeout 1500 codex exec "$(cat p)"`) is that program's argument, and
+  `[` is the test builtin, not a glob. `R=$W; python3 -c "...print('$R')"` is refused again: a
+  run-time value inside interpreter code is code.
+- **Fail closed (review round 3).** On a line the fallbacks read, an awk program (`awk`, `gawk`,
+  `mawk`, `nawk`, `busybox awk`) that can start a process (`system()`, `print | "cmd"`,
+  `"cmd" | getline`, `|&`, `@load`/`@include`) is refused, and so is a sed script with the `e`
+  command or the `s///e` flag; `awk -f`/`sed -f` and a program made at run time are decided by
+  1.2.35's rule, and a sed script made at run time is refused when the line names terraform.
+  `read`, `mapfile`, `readarray`, `declare` and `printf -v` behind `command`, `builtin` or another
+  wrapper (`command read "$N"`) now make the line's variables unknown. A program by path under a
+  run-time directory (`$W/stub`, `"$T/stub"`, `S=$W/stub.sh; $S`) keeps its literal name only when
+  no operand is a changing verb (`apply`, `destroy`, `import`, `state`, `-destroy`, ...) and the
+  line writes, copies, moves, links or chmods nothing into that directory or at that name;
+  otherwise 1.2.35's rule decides. On a line the precise reader reads cleanly, plain awk/sed and a
+  literal script path are still not gated, as in 1.2.35.
+- **Splitting (review round 1).** The fallback's splitter, and the precise reader for the
+  delimiter, give up (the line-wide name rule decides) on a substitution or nested expansion inside
+  `$((...))` or `${...}` and on a heredoc delimiter quoted both ways (`<<"'END'"`), instead of
+  skipping text bash runs.
+- **Wildcards (shared name check).** `crew_guards._names_tool` no longer counts a wildcard whose
+  only literal letters are an extension (`*.ps1`, `*.exe`) as naming terraform: it could match
+  `terraform.ps1`, but so could every script on the disk, and a `for f in test/*.ps1` or `cp *.ps1`
+  on a line refused it. The three letters must be the name's own (`terr*`, `*form` still count).
+  This check is shared with the precise path; a wildcard COMMAND word is still gated before a
+  changing verb (`./*.ps1 destroy`).
+- **Read-only.** In the fallbacks, the tool and one read-only subcommand with nothing after it
+  (`$S/bin/terraform version`) is not gated, as on the precise path. Any further word (`-json`,
+  `-chdir=x apply`, `apply`) or a second command that runs terraform keeps the line refused.
+- **Not changed.** `npx terraform apply` on a line the reader reads cleanly is still not gated: the
+  precise path does not know `npx` as a wrapper, before and after this change. A line that sets
+  `T=terraform` and runs `bash <script named by a variable> $T/...` is still refused: crew cannot
+  see what that script runs.
+- **Real refusals.** 26 commands the installed 1.2.30 refused tonight are rows in
+  `plugin/crew/tests/fixtures/srl2308_refused_tf.json`, sanitised (this repository is public): host
+  names, instance ids, vault names, paths, numbers, hashes, schema, table, module and ticket names
+  replaced by stand-ins of the same shape. Each row was re-checked through `cloud_guard.py`: all 26
+  refused by 1.2.30 and by 1.2.35; 1.2.36 allows 24 and refuses `real-24`, the `bash
+  <script named by a variable>` line above, and `real-19`, whose heredoc'd Python calls
+  `subprocess` with an argument it builds (`'origin/development:'+p`), refused since review round 2.
+- **Tests.** `plugin/crew/tests/test_cloud_guard.py`: fifteen must-allow rows (eleven red on 1.2.35;
+  the two `-verbatim` rows, a heredoc after `W=...` and a `.ps1` copied into `$W/amut`, were already
+  allowed and are pinned), the 25 real rows, thirty-nine must-refuse rows through both fallbacks
+  (the read-only allowance's abuse cases among them) plus `real-24`, and a check that each
+  unreadable-line row really is one the reader gives up on. Review round 1 adds 68 must-refuse
+  and 14 must-allow rows, each run through `cloud_guard.py` and the real hook `cloud-guard.sh`
+  (block config): 65 of the 68 were allowed by the round-1 head through `cloud-guard.sh`, the
+  other three (Codex's exact `$((...))`, `${...}` and mixed-delimiter forms) were refused there by
+  another layer and their splitter defect is pinned directly. The real and earlier rows also run
+  through `cloud-guard.sh` now. Review round 2 adds 34 must-refuse and 4 must-allow rows through
+  both entry points: 33 of the 34 were allowed by the round-2 head through `cloud-guard.sh`
+  (Codex's exact `perl -pe` form was refused there by another layer; `perl -lne` is its fail-open
+  twin), as was `real-19`; `r2-6`, print-only code with a comment, was refused there. Three
+  round-1 must-allow rows moved to must-refuse (`T=echo; $T apply`, the `for t in echo printf`
+  loop and `R=$W; python3 -c "...('$R')"`). Review round 3 adds 28 must-refuse and 10 must-allow
+  rows through both entry points, and 16 sed scripts read directly: every must-refuse row,
+  Codex's r3-1..r3-3 and the gate's variants among them, was allowed by the round-3 head through
+  `cloud-guard.sh`. The must-allow `srl2308-d-inline-stub` (a stub written into `$T`, then run
+  with `apply`) moved to must-refuse: it is r3-2's shape.
+  Every existing `sabotage_cloud.py` anchor still hits exactly once (the bash hole still calls
+  `_verb_on_line`, which now holds the new rule, and the give-up still calls `tool.on_line` on the
+  tool's `unreadable` reading), and the four cloud-guard mutations on these lines still go red. Seven
+  new mutations were run by hand through `sabotage.py`'s apply/restore, each red: five undo one part
+  of the new reading, two put the old rules back. Adding them to `sabotage_cloud.py` is harness and
+  lands in its own PR.
+
+### Changed — crew 1.2.35: `crew_config.py --guard --record` no longer stores the command line unless `--record-command` is given
+
+- **Summary.** A `.crew/guard.log` row written through `crew_config.py --guard <name> --record` now
+  holds the time, guard, policy, decision and target, with `-` for the command; the full command
+  line is stored only when the operator also passes the new `--record-command`.
+- **Before.** `--record` (`crew_config._maybe_log`) wrote the whole command line, as typed, into the
+  row's last field. A command can carry whatever was typed inline, and `.crew/guard.log` is an
+  ordinary file in the project tree, so keeping the full line is now the operator's choice rather
+  than the default. `-` is what `env_guard.py` already writes in that field, so every row keeps six
+  fields.
+- **Now.** `--record-command` (`record_command=True` on `crew_config.guard_decision`) restores the
+  full line, still with tabs and newlines flattened so a command cannot forge a row.
+  `--record-command` without `--record` exits 2. The target field is unchanged and is still derived
+  from the command (a push's branch, a matched production host or database).
+- **Scope.** This is the `crew_config.py` writer only. No shipped hook, command or skill passes
+  `--record` today (found by grep); the cloud guard's own writer (`cloud_guard._log`) is a separate
+  path and is not changed here. Rows already in a `.crew/guard.log` are not rewritten: review and
+  delete an old file if it may hold commands you would not keep.
+- **Tests.** `plugin/crew/tests/test_guards.py`: the existing `--record` tests now assert `-` in the
+  command field (the forge test opts in, since it is about the opt-in path), plus three new cases
+  (default vs opt-in through `guard_decision`, `record_command` alone writes nothing, and the CLI
+  including the exit-2 refusal). The existing `sabotage.py` entry for `allow` recording still
+  applies unchanged. Three new mutations were run by hand (each red) and are not added to
+  `tests/sabotage*.py` here, since that is harness and lands in its own PR.
+
+### Fixed — crew 1.2.33: the docs no longer say `/crew:review` cannot launch Kimi (L-0743)
+
+- **Summary.** The crew-providers skill and `kimi_probe.py` now say what has been true since
+  L-0527: `/crew:review` launches Kimi as a reviewer.
+- `plugin/crew/skills/crew-providers/SKILL.md` said "`/crew:review` does not launch Kimi yet" and
+  that the launch gate leaves Kimi ineligible; `review_run.LAUNCHED` has named `kimi` since L-0527,
+  so `crew_config.review_launchable()` makes it eligible in the `qa.order` walk (step 2e).
+  `kimi_probe.py`'s docstring made the same claim. Text only; no behaviour changes.
+
+### Fixed — crew 1.2.32: the CLAUDE.md audit counts the template's own blanks, not the commands a repo documents (P1-03)
+
+- **Summary.** `crew` 1.2.32: `claude-md-audit.sh` no longer reports a CLAUDE.md's documented commands as
+  unfilled template placeholders, so a repo whose CLAUDE.md explains its own commands can finish setup Phase 1.
+- **Defect.** The count was one regex over the whole file (any `<word>`, any `...`, `OWNER_`,
+  `YYYY-MM-DD`). On this repository's CLAUDE.md it reported 8 lines, all of them command metavariables
+  or code: `Docs: none - <why>`, `plugin-version:<name>`, `Tooling-seam: <path>`,
+  `/crew:onboard --refresh <subsystem>`, two `git diff --name-only <anchor>..HEAD` lines,
+  `open(...)` and `git checkout -- <path>`. Phase 1 is done on "no remaining placeholders", so it could
+  not close. The same regex missed three real blanks of the template: `<bash | powershell>` and its
+  two neighbours are not `<[a-z-]+>`.
+- **Now.** The blanks are read from `skills/crew-setup/repo-claude-template.md` on every run, so the
+  list cannot drift from the template. A blank is an angle-bracket token standing where a value goes:
+  outside a code span, or the whole content of one (or of a fenced line). A token that shares its code
+  span or fenced line with other text is a command's metavariable, in the template
+  (`/crew:promote <env>`) and in the audited file, and is not counted. An untouched template reports 10
+  lines (it was 8: one command line too many, three blanks too few).
+- **Could not tell.** With no `awk`, no readable template, or a template with no blanks, the audit
+  prints `Placeholder check NOT RUN: <which of the three>` instead of staying silent, which read as
+  zero. Every other line of the report and both exit codes are unchanged.
+- **Not counted, by design.** A blank that was edited but not replaced (`<linux | windows>`) is no
+  longer the template's text. A template blank quoted in prose outside a code span (`the <path>
+  element`) is counted. An indented code block is read as ordinary text.
+- **Tests.** `skills/crew-setup/scripts/_test/placeholders.sh`: 51 checks, each fixture under the
+  suite's own `mktemp` directory, run by `_verify/smoke.sh` (check 8b, so by CI), `_verify/run-all.sh`
+  and a new `.crew/verify.json` rule for the audit script and the template. Sabotage, in a copy where
+  50 of them run: with the old script put back, 27 go red; six single-rule mutations of the new awk
+  each turn at least one red. Run in containers under bash 5.2 and bash 3.2, with mawk, gawk, BusyBox
+  awk and the BSD `original-awk`, LF and CRLF fixtures. Not run on Windows Git Bash or macOS.
+
+### Added — crew 1.2.31: explorer, researcher and security can run on Kimi K3 (L-0777)
+
+- **Summary.** Pin an agent to Kimi with `/crew:model dev.roles.explorer '{"provider": "kimi", "model":
+  "k3"}'` and crew's explorer, researcher or security agent hands its task to the Kimi Code CLI, read-only,
+  and falls back to Claude when Kimi cannot run. Nothing changes until you pin one.
+- **Why a dispatcher.** Claude Code's subagent `model` field accepts Claude models only, and
+  `ANTHROPIC_BASE_URL` moves a whole session. So each agent's first step is one Bash call to the new
+  `hooks/scripts/crew_kimi_agent.py`, and it relays the answer. Line 1 is the contract: `KIMI OK` (exit
+  0), `KIMI UNAVAILABLE: <state>` (exit 3, the agent does the task on Claude and says so), or `KIMI
+  CHANGED THE TREE` / `KIMI TREE UNKNOWN` (exit 8, the agent stops).
+- **Read-only.** `/crew:review` step 2e's controls, reused: a per-role Kimi agent file with no Bash, Write
+  or Edit, an empty skills directory, the probe first, and the working tree fingerprinted before the
+  probe, after it and after the run. A write outside the repository is not seen.
+- **Security is family-guarded.** `crew_state.REVIEWING_DEV_ROLES` puts `dev.roles.security` under
+  `resolve_role`'s family guard: a pin in the author's family is BARRED, as a `qa` pin is, and
+  `/crew:model` shows it. With a Kimi developer, `security` on Kimi is the same family as the author, so
+  cross-family review needs Codex or Claude. `explorer` and `researcher` join `dev`'s role kinds.
+- **Changed tools.** `explorer` and `researcher` gain `Bash`, for the dispatch command only (by
+  instruction; a plugin agent cannot hook-narrow it). The reviewer's half is L-0778.
+- **Review round 1 (Codex).** The dispatchers make up a fresh heredoc delimiter per call, so a line of
+  the task cannot end it and run as a command; a line starting `crew-kimi-agent:` (exit 2, e.g. an
+  unreadable config layer, now refused rather than read as defaults) stops them instead of falling back;
+  security passes only the author families its caller names, and a dispatch record of unknown family is
+  `author-unknown`. A tree that cannot be fingerprinted before the probe is `KIMI TREE UNKNOWN` (exit 8),
+  a failed scratch write is `KIMI UNAVAILABLE: failed`, and every contract line is one line.
+- **Review round 2 (Codex), under a successor plan (owner 3-round cap).** The security dispatcher hands
+  Kimi the change with `--diff-base '<base>'`, the same committed, staged, unstaged and untracked bundle
+  `/crew:review` builds, and quotes every value; `--authors` names are normalised (`Kimi` is `kimi`) and a
+  non-family is exit 2; a 2-second settle before the last fingerprint catches a process that left Kimi's
+  group (a later write is L-0785); an unpinned role is `not-routed` before any author check; a pin of the
+  wrong type is exit 2; stdin is read to a bound. The config's check-then-resolve race is L-0786.
+- **Review round 3 (Codex), round 4 granted by the owner past the 3-round cap.** A `--diff-base` outside a
+  strict ref charset (letters, digits, `/ . _ -`) is refused by the dispatcher before the shell and by the
+  script before git; a failed probe settles and re-checks the tree before the fallback; `--authors` takes
+  only `claude`, `gpt`, `kimi` and `gemini`; an unsearchable config parent and an `OSError` building the
+  bundle are exit 2; the task keeps its indentation; a scratch directory that cannot be removed is never
+  `KIMI OK`.
+
+### Changed — ai-connect 0.2.0: every session on a machine is online at once
+
+- **Summary.** Every Claude Code session on an enrolled machine now connects to the `ai-connect` Bridge under
+  its own name, `<machine>:<project>`, with the machine's one token; before, the first session held the
+  machine's name and every other one sat on standby with no working tools.
+- **Addressing.** `laptop:repo` reaches that session. `laptop` alone reaches every online session of that
+  machine, and waits for the first to join when none is online. Two sessions in one project: the second
+  appends its process id.
+- **No extra enrolment.** Auth stays per machine: no per-session token, no change to `auth.peers`, no Bridge
+  restart per session. A machine's token registers and watches names under its own name only, compared with
+  the separator and by the longest enrolled name; the legacy shared token can no longer take a name under an
+  enrolled one.
+- **Updating.** Update the Bridge first. A 0.1.8 client against a 0.2.0 Bridge works as before, one session
+  per machine. A 0.2.0 session against a 0.1.8 Bridge falls back to the machine's name and says so in
+  `peer_read`.
+- **Tested.** Two sessions of one machine both online and receiving, the prefix guard (must-block and
+  must-allow, for register and watch), a label collision, disconnect and reconnect, odd and non-Latin project
+  names, both mixed-version pairings, two sessions replaying the machine's backlog at once, and a replay whose
+  connection breaks. Thirteen mutations of the guard, the fan-out, the replay lock and the fallback each turn
+  the suites red. Not run against a live Bridge.
+
+### Changed — ai-connect 0.1.16: test line lengths for pylint
+
+- 0.1.16: test line lengths for pylint
+
+### Added — ai-connect 0.1.15: one peer name per project, opt-in
+
+- **Summary.** With `client.name_mode: per-project`, each Claude Code session of `ai-connect` joins as
+  `<client.name>-<project folder>` with that name's own token, so sessions in different projects on one
+  machine are online at once; `setup session --project DIR ...` makes the tokens (not run on Windows).
+- **Fallback.** Without an owner-only token for that name (a regular file of this user, mode 600), or when
+  `session-tokens/<name>.dir` records another directory, the session joins as `client.name` with
+  `client.token` and says why in one stderr line. `AI_CONNECT_PEER_NAME` still wins.
+- **`.dir` format.** UTF-8, one line, the project's absolute path as `Path(dir).resolve()` gives it, at most
+  one trailing newline.
+- **Watcher.** It sends the token of the name the session's client recorded, not one it works out itself.
+- **Setup.** `setup session --project DIR [--project DIR ...]` writes each token and `.dir`, and on the Bridge
+  machine enrols every hash with one restart. `Bridge` and `User:...` are refused as session names.
+
+### Added — ai-connect 0.1.12: setup in one run per machine, and a firewall rule that is checked
+
+- **Summary.** `ai-connect` gets `deploy/setup.sh` and `deploy/setup.ps1`, which take a machine from "plugin
+  installed" to a working peer in one run (a plan by default, `--apply` to do it), and its firewall step now
+  says `NOT ENFORCED` when the firewall holding the rule is switched off (not run on Windows or against a real
+  firewall: the suite drives fakes).
+- **Setup.** `setup bridge [--peer NAME] [--enrol NAME=SHA256]`, `setup peer --name N --bridge IP
+  [--token-file F]` and `setup session --name N` are a thin layer over `deploy bridge`, `peer`, `join` and
+  `add-peer`, which still make every change. `--register-mcp` is off by default and registers at user scope.
+  `setup` never runs `tailnet-setup`; it says when that step looks outstanding.
+- **Firewall.** `ufw allow` succeeds on an inactive ufw and `ufw status` then lists no rule, so `deploy bridge`
+  called the rule done while it filtered nothing, and added it again on every run. It now asks whether ufw,
+  firewalld or the Windows Firewall's Private profile is on, answers on, off or could not tell, and never turns
+  a firewall on.
+- **A second session.** `AI_CONNECT_PEER_NAME` changed a session's name while the client still sent
+  `client.token`, which the Bridge refuses under another name. `setup session --name N` makes that name's own
+  token, and the client sends it for that name.
+- **Order.** Versioned after PR #610 (0.1.11), which merged first.
+
+### Fixed — ai-connect 0.1.11: installed but not set up, the plugin no longer errors on every prompt, tool call and turn end
+
+- **Summary.** `ai-connect` no longer reports `MCP server 'ai-connect' not connected` on every prompt, tool call and turn end on a machine where the plugin is installed but its installer never ran; if you already use it, run its installer once more after updating, or your session stops reporting busy / idle / waiting.
+- **Cause.** `plugin/ai-connect/hooks/hooks.json` shipped four `mcp_tool` hooks calling `peer_set_state`
+  on a server that only the plugin's installer registers, and that hook type has no quiet mode. The
+  watcher (`hooks/watch.sh`, `hooks/watch.ps1`) also exited 1 with "no venv" at every session start
+  and turn end.
+- **Fix.** The state hooks left `hooks.json`. Whatever registers the MCP server now writes them into
+  Claude Code's settings next to that registration and removes them with it
+  (`plugin/ai-connect/state_hooks.py`): `installer.py claude` / `unregister` in the user's
+  `settings.json` (`CLAUDE_CONFIG_DIR` honoured), `deploy peer` / `deploy join` with both
+  `--install-hooks` and `--register-mcp` in the settings of the scope the server is in. The write is
+  idempotent, keeps every other hook and key, removes only an exact match on its own entries, goes
+  through a temp file and a rename, and refuses a settings file that is not valid JSON without
+  touching it. The watcher exits 0 silently when there is neither a venv nor
+  `~/.config/ai-connect/config.yaml`, and still exits 1 naming the installer when the config exists
+  and the venv does not (a plugin update without the installer).
+- **Behaviour change.** A machine set up on 0.1.8 or earlier has the server registered but, after
+  this update, no state hooks until the installer (or the same `deploy` command) is run again.
+  Messages and tools keep working meanwhile. With the venv lost, the state hooks in the settings
+  still fail as before, alongside the watcher's message.
+- **Verified.** The three states for every command line in `hooks.json`, both flavours, on Linux;
+  the `.ps1` under PowerShell 7 on Linux with `OS=Windows_NT` forced, which runs its branches and is
+  not a run on Windows. Not run on Windows or under Windows PowerShell 5.1. Whether Claude Code
+  accepts an `mcp_tool` hook from `settings.json` as it does from a plugin was read from its
+  documentation, not observed in a live session.
+- **Not fixed here.** On a machine set up with `deploy` and `--install-hooks`, the watcher looks for
+  a venv in the plugin directory, finds none (deploy's is in `~/.local/share/ai-connect`) and exits
+  1, as in 0.1.8.
+### Added — bash-lsp, pwsh-lsp and powershell-lsp 0.1.0: language-server plugins for Bash and PowerShell
+
+- **Summary.** Three new plugins give Claude Code language-server support for Bash and PowerShell; each registers
+  one LSP server and nothing else, and a machine gets exactly one of the two PowerShell plugins.
+- **`bash-lsp`.** Starts `bash-language-server start` for `.sh` and `.bash` (`shellscript`). Diagnostics come from
+  `shellcheck` when it is on `PATH`; the server works without it. `.zsh` and `.ksh` are not mapped. Needs Node.js
+  20 or newer.
+- **`pwsh-lsp`.** Starts PowerShell Editor Services inside PowerShell 7 (`pwsh`) for `.ps1`, `.psm1` and `.psd1`,
+  on Windows, Linux and macOS. A small launcher finds the unzipped release, sends the session file Editor Services
+  would otherwise write into the project to the temp directory, and writes nothing to stdout.
+- **`powershell-lsp`.** The same server and the same launcher file, hosted in Windows PowerShell 5.1
+  (`powershell.exe`), for Windows machines without PowerShell 7. Upstream supports 5.1 on a best-effort basis. It
+  starts its one server process with `-ExecutionPolicy RemoteSigned`, because 5.1's default policy runs no script
+  at all. **It has never been run**: no Windows machine was available.
+- **One PowerShell plugin per machine.** Both serve the same three extensions and Claude Code runs one server per
+  extension, so the install scripts install `pwsh-lsp` where `pwsh` resolves and `powershell-lsp` only on Windows
+  where it does not, and refuse to add either beside the other. That rule sits on both menu rows that can install
+  them, `repo-plugins` included.
+- **Editor Services is downloaded, pinned.** It is not on the PowerShell Gallery. The `lsp-plugins` row downloads
+  one release zip (v4.7.0), checks it against a sha256 written in both scripts, refuses a mismatch, and unzips it
+  into `~/.local/share/powershell-editor-services` (Linux, macOS) or `%LOCALAPPDATA%\powershell-editor-services`
+  (Windows), which is where the launcher looks. The scripts do not install PowerShell 7.
+- **Python is unchanged.** The row still installs the official `pyright-lsp`.
+- **Not verified.** Anything on Windows or macOS, which is all of `powershell-lsp`; any request beyond
+  `initialize` and `shutdown`; a Claude Code session using any of the servers; and whether Claude Code takes up
+  the capabilities Editor Services registers after start-up.
+
+### Added — terraform-lsp, angular-lsp, sql-lsp and css-lsp 0.1.0: four language-server plugins
+
+- **Summary.** Four new plugins give Claude Code language-server support for Terraform, Angular templates, SQL
+  and CSS; each registers one LSP server and nothing else, and none of them installs the server it starts.
+- **`terraform-lsp`.** Starts HashiCorp's `terraform-ls serve` for `.tf` (`terraform`) and `.tfvars`
+  (`terraform-vars`), the language IDs the server's own usage guide requires.
+- **`angular-lsp`.** Starts `@angular/language-server` for `.html`. `ngserver --stdio` alone exits before reading
+  a request, because it needs probe locations for `typescript` and `@angular/language-service`, and where a global
+  npm package lives differs per machine. A small launcher (`scripts/ngserver-launch.js`) finds the package at
+  start-up and passes the project directory, then the server's bundled copies. `.ts` is left to `typescript-lsp`,
+  so inline templates in a component's `.ts` file get no Angular analysis.
+- **`sql-lsp`.** Starts `sqls` for `.sql`. It ships **no database connection, DSN or credential**. With none it
+  gives keyword completion and formatting only; schema-aware completion, hover and go-to-definition need a config
+  the user writes, and the README says plainly that which database to point it at, production included, is the
+  user's decision.
+- **`css-lsp`.** Starts `vscode-css-language-server --stdio`, from the npm package `vscode-langservers-extracted`,
+  for `.css` (`css`), `.scss` (`scss`) and `.less` (`less`). `.sass` is not mapped: the server parses SCSS, not
+  indented Sass. The package is a community repackaging of Visual Studio Code's servers, not a Microsoft release.
+- **Config lives in `plugin.json`.** Each `lspServers` block is inline in the plugin's own manifest, not in a
+  `.lsp.json`: `claude plugin validate` checks an inline block and does not read `.lsp.json`, so a malformed
+  inline block fails the gate and a malformed `.lsp.json` passes it. Both were tried.
+- **Installer.** The `lsp-plugins` row of `install-prerequisites.sh` / `.ps1` now adds this repo's marketplace and
+  installs the four plugins and their servers. `terraform-ls` goes in through Homebrew (`hashicorp/tap`) or
+  `winget`; `sqls` through a version-pinned `go install` (`v0.2.48`); the CSS server through `npm install -g`,
+  unpinned like the other npm servers in that row. Where no such route exists the step stops and names the
+  manual, verify-it-yourself route, as `tflint` already does. The four also join the `repo-plugins` catalog.
+- **Not verified.** Windows and macOS for all four, a Claude Code session using any of the servers on a real
+  project, the CSS server beyond `initialize` and `shutdown`, `sqls` with a database connected (none was, on
+  purpose), and the `go install`, Homebrew and `winget` routes for real: this machine has none of those three
+  tools, so they were exercised against stubs only.
+
 ### Added — ai-connect 0.1.8: one-command deployment and onboarding over Tailscale (W-0129)
 
 - **Summary.** `ai-connect` can now be set up with one command per machine, and a new machine joins in three:

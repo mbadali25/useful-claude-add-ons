@@ -11,12 +11,6 @@ covers the OS it happens to be running on. That is how a cross-platform bug
 survives: the one machine that would have caught it is the one nobody tests on.
 """
 import json
-import os
-import pathlib
-import re
-import shutil
-import subprocess
-import sys
 
 import pytest
 
@@ -35,7 +29,7 @@ BASE = {
     "verifyGate": True,
     "qa": {"provider": "auto"},
     "context": {"warnAt": 0.8, "reserveTokens": 100000},
-    "emergency": {"standDown": True, "ttlMinutes": 120},
+    "emergency": {"standDown": True, "maxTtlMinutes": 480},
     "notify": {"provider": "none"},
 }
 
@@ -239,7 +233,7 @@ def test_preferences_survive_a_repair(tmp_path, monkeypatch):
     assert after["roles"] == ["explorer", "qa-reviewer"]
     assert after["qa"] == {"provider": "auto"}
     assert after["context"] == {"warnAt": 0.8, "reserveTokens": 100000}
-    assert after["emergency"] == {"standDown": True, "ttlMinutes": 120}
+    assert after["emergency"] == {"standDown": True, "maxTtlMinutes": 480}
     assert after["notify"] == {"provider": "none"}
     assert after["schema"] == 2
 
@@ -338,14 +332,11 @@ def test_auto_is_valid_everywhere(tmp_path, monkeypatch):
         assert not crew_platform.concerns(cfg, crew_platform.detect(str(root)))
 
 
-def test_notify_is_valid_everywhere_and_sendkeys_is_windows_only(tmp_path, monkeypatch):
-    """`notify` types nothing, so every flavour implements it. `sendkeys` is
-    auto-clear.ps1's SendKeys mechanism -- the renamed `"windows"` literal --
-    and does not exist on the POSIX flavour, which has no equivalent."""
-    for method, systems_ok in (
-        ("notify", ("Linux", "Darwin", "Windows")),
-        ("sendkeys", ("Windows",)),
-    ):
+def test_notify_is_valid_everywhere_and_sendkeys_is_valid_nowhere(tmp_path, monkeypatch):
+    """`notify` types nothing, so every platform implements it. `sendkeys` was
+    removed in crew 1.2.61 (L-0727): no platform lists it, and the concern
+    says it was removed rather than that it does not exist on this OS."""
+    for method, valid in (("notify", True), ("sendkeys", False)):
         root = _repo(tmp_path / method, context={
             "autoClear": {"enabled": True, "method": method}})
         cfg, _ = crew_platform.load(str(root))
@@ -353,14 +344,15 @@ def test_notify_is_valid_everywhere_and_sendkeys_is_windows_only(tmp_path, monke
                                 ("Windows", None)):
             _fake(monkeypatch, system, osrelease=release)
             found = crew_platform.concerns(cfg, crew_platform.detect(str(root)))
-            if system in systems_ok:
+            if valid:
                 assert not found, (method, system, found)
             else:
-                assert any("does not exist" in c for c in found), (method, system, found)
+                assert any("was removed in crew 1.2.61" in c for c in found), (method, system, found)
+                assert not any("does not exist" in c for c in found), (method, system, found)
 
 
 def test_the_old_windows_literal_is_no_longer_a_valid_method_anywhere(tmp_path, monkeypatch):
-    """`"windows"` was renamed to `"sendkeys"` -- see auto-clear.ps1. A config
+    """`"windows"` was the old name of the removed `"sendkeys"` method. A config
     still carrying the old literal must be reported everywhere, including on
     the platform it used to mean, not silently accepted as a synonym."""
     root = _repo(tmp_path, context={
@@ -398,7 +390,7 @@ def test_crlf_in_a_committed_shell_script_is_reported_on_bash_platforms(
 
 
 def test_crlf_is_not_reported_on_native_windows(tmp_path, monkeypatch):
-    # There, CRLF is simply correct and the .ps1 half is what runs.
+    # There, CRLF is simply correct.
     root = _repo(tmp_path)
     verify = root / "_verify"
     verify.mkdir(exist_ok=True)
@@ -711,124 +703,3 @@ def test_heal_config_refuses_rather_than_destroy_an_unbackupable_config(
     assert cfg is None
     assert "could NOT be backed up" in message
     assert path.read_text(encoding="utf-8") == "{ the only copy"
-
-
-# --- platform-sync.ps1's python resolver ------------------------------------
-#
-# Carried over from test_pm_brief_platform_sync_python_resolver.py when crew
-# 1.0 deleted pm-brief: platform-sync.ps1 still carries a byte-for-byte copy
-# of role-write-guard.ps1's hardened `Resolve-CrewPython` (execute-to-verify,
-# WindowsApps filter), and it is the one hook that WRITES config, so the
-# parity and the tripwire outlive the file they were first written beside.
-# Behavioural cases need a real Windows host; the static checks run anywhere.
-
-_SCRIPTS = os.path.join(context._ROOT, "hooks", "scripts")  # pylint: disable=protected-access
-_PLATFORM_SYNC_PS1 = os.path.join(_SCRIPTS, "platform-sync.ps1")
-_GUARD_PS1 = os.path.join(_SCRIPTS, "role-write-guard.ps1")
-_PWSH = shutil.which("pwsh")
-_WINDOWS_ONLY = pytest.mark.skipif(
-    not sys.platform.startswith("win") or _PWSH is None,
-    reason="Get-Command Application classification needs a real Windows host")
-_PWSH_ANY = pytest.mark.skipif(_PWSH is None, reason="no pwsh on PATH")
-_OLD_ONE_LINER = (
-    "$py = (Get-Command python3, python -ErrorAction SilentlyContinue |\n"
-    "       Select-Object -First 1).Source")
-
-
-def _resolver_source(path):
-    src = pathlib.Path(path).read_text(encoding="utf-8")
-    start = src.find("function Resolve-CrewPython {")
-    assert start != -1, "Resolve-CrewPython is gone from " + path
-    end = src.find("\n}\n", start)
-    assert end != -1, "could not find the end of Resolve-CrewPython in " + path
-    return src[start:end + 3]
-
-
-def _resolver_code_lines(path):
-    return [re.sub(r"\s+", " ", line.strip())
-            for line in _resolver_source(path).splitlines()
-            if line.strip() and not line.strip().startswith("#")]
-
-
-def test_platform_sync_resolver_matches_role_write_guard():
-    guard = _resolver_code_lines(_GUARD_PS1)
-    sync = _resolver_code_lines(_PLATFORM_SYNC_PS1)
-    assert guard == sync, (
-        "platform-sync.ps1's Resolve-CrewPython has drifted from "
-        "role-write-guard.ps1's. A hook that WRITES config is the last "
-        "place this should happen.")
-
-
-def test_platform_sync_call_site_no_longer_uses_the_unhardened_one_liner():
-    src = pathlib.Path(_PLATFORM_SYNC_PS1).read_text(encoding="utf-8")
-    outside = src.replace(_resolver_source(_PLATFORM_SYNC_PS1), "")
-    assert _OLD_ONE_LINER not in outside
-
-
-def test_platform_sync_call_site_still_calls_the_hardened_resolver():
-    src = pathlib.Path(_PLATFORM_SYNC_PS1).read_text(encoding="utf-8")
-    assert "$py = Resolve-CrewPython" in src
-
-
-@_PWSH_ANY
-def test_platform_sync_resolver_failure_is_loud_on_stderr_and_still_exits_0(tmp_path):
-    empty_path = tmp_path / "empty-path"
-    empty_path.mkdir()
-    repo = tmp_path / "repo"
-    (repo / ".crew").mkdir(parents=True)
-    env = dict(os.environ, PATH=str(empty_path), OS="Windows_NT",
-               CLAUDE_PROJECT_DIR=str(repo))
-    proc = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PLATFORM_SYNC_PS1],
-        input="{}", cwd=str(repo), env=env, capture_output=True, text=True,
-        check=False)
-    assert proc.returncode == 0, proc.stderr
-    assert "crew platform-sync: no usable python" in proc.stderr, proc.stderr
-
-
-def _print_python(path_entries):
-    env = dict(os.environ, PATH=os.pathsep.join(path_entries))
-    result = subprocess.run(
-        [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PLATFORM_SYNC_PS1,
-         "-PrintPython"],
-        env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-        check=False)
-    assert result.returncode == 0, result.stderr
-    return result.stdout.strip()
-
-
-def _stub(path):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    pathlib.Path(path).write_text("rem stub, never executed by -PrintPython\n",
-                                  encoding="ascii")
-
-
-def _launchable(path):
-    """A stub that RUNS and answers like an interpreter: it prints the JSON
-    proof object Resolve-CrewPython requires -- {"v": [major, minor],
-    "exe": sys.executable, "impl": sys.implementation.name} -- rather than a
-    bare path. Since crew 1.0 every candidate is executed and its answer is
-    parsed as that JSON, so a plain `echo <path>`, as `print(sys.executable)`
-    would produce, no longer stands in for a real python."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    proof = '{"v": [3, 9], "exe": "' + path.replace("\\", "\\\\") + '", "impl": "cpython"}'
-    with open(path, "w", encoding="ascii") as fh:
-        fh.write("@echo off" + chr(13) + chr(10) + "echo " + proof + chr(13) + chr(10))
-    return path
-
-
-@_WINDOWS_ONLY
-def test_platform_sync_windowsapps_stub_is_never_returned(tmp_path):
-    apps = tmp_path / "WindowsApps"
-    _stub(str(apps / "python3.exe"))
-    _stub(str(apps / "python.exe"))
-    assert _print_python([str(apps)]) == ""
-
-
-@_WINDOWS_ONLY
-def test_platform_sync_a_real_python_beside_a_stub_still_resolves(tmp_path):
-    apps = tmp_path / "WindowsApps"
-    real = tmp_path / "tools"
-    _stub(str(apps / "python3.exe"))
-    _launchable(str(real / "python3.cmd"))
-    assert _print_python([str(apps), str(real)]).lower().startswith(str(real).lower())

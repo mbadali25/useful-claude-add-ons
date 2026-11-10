@@ -13,7 +13,14 @@
 # Decisions travel as PreToolUse JSON on stdout with exit 0. The one exit 2
 # here is the fallback below: python could not judge, and a config file says
 # the guard is armed.
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The script's directory without a subshell when the path is absolute (the
+# dispatcher starts every guard by its full `D:/...` path): on Git Bash each
+# fork is an MSYS process start, and the guards' budget is shared by every
+# lane that runs at once. A relative path falls back to the old `cd`.
+case "${BASH_SOURCE[0]}" in
+  /*|[A-Za-z]:/*) DIR=${BASH_SOURCE[0]%/*} ;;
+  *) DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" ;;
+esac
 
 # Flavour stand-down: by the TOOL, never by the OS. Both flavours are
 # registered and on Windows both run, so each call must be judged by exactly
@@ -26,28 +33,28 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 . "$DIR/_common.sh"
 
-INPUT=$(cat)
+# The payload is not read here: cloud_guard.py reads it from this script's own
+# stdin, which it inherits. `INPUT=$(cat)` and `printf | python` cost two MSYS
+# process starts on Git Bash, and nothing else in this wrapper reads it.
 
 # Whether a config layer arms the guard, read WITHOUT python -- only consulted
-# when python could not run at all. Crude on purpose: any `cloudGuard` value
-# other than "off", in the repo config or the machine-global one, counts as
-# armed, so a value this cannot parse fails closed rather than open. The repo
-# file is the resolved one (crew_repo_config_dir, T-0096): a lane with no config
-# of its own reads the main checkout's, and when git cannot tell which that is
-# (`unknown`) the guard counts as armed -- an absent own file is no proof of off.
-# So does a resolver that is not there at all (`_common.sh` failed to source):
-# that is "could not tell" too, and refused as it was before T-0096.
+# when python could not run at all. A layer counts as unarmed only when
+# `crew_guard_layer_armed` (_common.sh) can PROVE it: the file is absent, or it
+# parses far enough that every `profile` and `cloudGuard` value is the literal `off`
+# (L-0725: the first match is no longer trusted, token absence is no longer
+# "off", and a file it cannot read is armed). The repo file is the resolved one
+# (crew_repo_config_dir, T-0096): a lane with no config of its own reads the main
+# checkout's, and when git cannot tell which that is (`unknown`) the guard counts
+# as armed -- an absent own file is no proof of off. So does a resolver that is
+# not there at all (`_common.sh` failed to source): that is "could not tell" too.
 _cloud_guard_armed() {
   root="${CLAUDE_PROJECT_DIR:-.}"
   command -v crew_repo_config_dir >/dev/null 2>&1 || return 0
+  command -v crew_guard_layer_armed >/dev/null 2>&1 || return 0
   crew_repo_config_dir "$root"
   [ "$CREW_CFG_SOURCE" = unknown ] && return 0
   for cfg in "$CREW_CFG_DIR/config.json" "$HOME/.claude/crew/config.json"; do
-    [ -f "$cfg" ] || continue
-    value=$(grep -o '"cloudGuard"[[:space:]]*:[[:space:]]*[^,}]*' "$cfg" 2>/dev/null \
-            | head -n 1 | sed -E 's/.*:[[:space:]]*//' | tr -d '"[:space:]\r')
-    [ -z "$value" ] && continue
-    [ "$value" = "off" ] || return 0
+    crew_guard_layer_armed "$cfg" profile cloudGuard && return 0
   done
   return 1
 }
@@ -61,9 +68,14 @@ if [ -z "$PY" ]; then
   exit 0
 fi
 
-printf '%s' "$INPUT" | CREW_CLOUD_GUARD_FLAVOUR=bash PYTHONUTF8=1 \
-  PYTHONIOENCODING=utf-8 "$PY" "$DIR/cloud_guard.py"
-status=$?
+if crew_py_script "$DIR/cloud_guard.py" GUARD_PY; then
+  CREW_CLOUD_GUARD_FLAVOUR=bash PYTHONUTF8=1 \
+    PYTHONIOENCODING=utf-8 "$PY" "$GUARD_PY"
+  status=$?
+else
+  echo "cloud-guard: cloud_guard.py is missing or its path could not be resolved (looked in $DIR)." >&2
+  status=127
+fi
 
 if [ "$status" -ne 0 ]; then
   # cloud_guard.py only ever exits 0 -- its decisions are JSON -- so any other

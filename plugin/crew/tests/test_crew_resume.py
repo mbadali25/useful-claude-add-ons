@@ -814,7 +814,7 @@ def test_precompact_write_leaves_no_tmp_when_the_replace_fails(fx, monkeypatch):
 
 def test_precompact_tmp_files_older_than_a_day_are_pruned(fx):
     """Review round 2 NIT :209: a writer killed between open and os.replace
-    (handoff-write.ps1 does that at 10 s) leaves `precompact-<key>.json.<pid>.tmp`."""
+    (a hook killed at its timeout does that) leaves `precompact-<key>.json.<pid>.tmp`."""
     state = crew_resume.state_dir(str(fx.root))
     os.makedirs(state, exist_ok=True)
     old = os.path.join(state, "precompact-old.json.123.tmp")
@@ -1163,7 +1163,7 @@ def _refuse_replacing(monkeypatch, path):
         mode = args[0] if args else kwargs.get("mode", "r")
         if os.fspath(target) == path and "w" in mode:
             raise PermissionError(13, "Permission denied", target)
-        return open(target, *args, **kwargs)
+        return open(target, *args, **kwargs)  # pylint: disable=unspecified-encoding
     monkeypatch.setattr(crew_resume.os, "unlink", unlink)
     monkeypatch.setattr(crew_resume, "open", opener, raising=False)
     monkeypatch.setattr(crew_resume.os, "access", lambda target, mode, *a, **k: True
@@ -1630,8 +1630,8 @@ def test_a_failed_author_removal_leaves_no_entry_behind(fx, monkeypatch):
 
 # --- T-0042 step 7: every wait reason is named where people read ------------
 
-_DOCS = ("plugin/crew/README.md", "plugin/crew/skills/crew-context/SKILL.md",
-         "docs/guides/crew/src/auto-cycle.md", "plugin/crew/CONFIG.md")
+_DOCS = ("docs/crew/reference/16-context-handoff.md", "plugin/crew/skills/crew-context/SKILL.md",
+         "docs/guides/crew/src/auto-cycle.md", "docs/crew/config-rationale.md")
 _REASON_PHRASES = ("internal error", "automatic PreCompact skeleton", "written by another session",
                    "no record of which session wrote", "could not be identified",
                    "changed since its author session wrote it", "handoff-author.json",
@@ -1644,7 +1644,7 @@ def test_the_author_record_residual_is_named_as_an_accepted_risk():
     blank and marker all fail while `os.access` says writable -- is named in
     CONFIG.md's accepted risks and in `_mark_author_stuck`'s docstring."""
     repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    with open(os.path.join(repo, "plugin/crew/CONFIG.md"), encoding="utf-8") as handle:
+    with open(os.path.join(repo, "docs/crew/config-rationale.md"), encoding="utf-8") as handle:
         config = " ".join(handle.read().split())
     risks = config[config.index("**Accepted risks.**"):]
     risks = risks[:risks.index("**Unchanged")]

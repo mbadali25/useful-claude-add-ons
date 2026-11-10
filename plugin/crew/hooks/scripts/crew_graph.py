@@ -13,7 +13,7 @@ either rule.
 `refresh` stops at the first step that fails: graphify missing (exit 2); T-0064's
 `crew_graph_ignore.coverage` uncovered (exit 1) or unknown (exit 2), before
 anything is built; the sanctioned command, run from the repository root through
-`crew_shell.run` (exactly `bash -c` off Windows, the configured route on it),
+`crew_shell.run` (exactly `bash -c` off Windows, the automatic route on it),
 exiting non-zero (exit 1, its output verbatim); the built graph carrying no
 `built_at_commit` (exit 2); and, where the report is tracked, the pair check:
 the first `- <N> nodes · <M> edges` line under the report's `## Summary` must
@@ -235,7 +235,7 @@ def render_status(result):
 
 def _run_graphify(command, top):
     """(exit code, combined output). Off Windows `crew_shell.run` is exactly
-    `bash -c <command>`; on it, the route `shellRoute` picks."""
+    `bash -c <command>`; on it, the automatic shell route."""
     captured = {}
 
     def execute(argv, cwd):

@@ -99,7 +99,7 @@ def test_g1_a_rule_the_stop_gate_defers_is_named_skipped(tmp_path):
 
 
 def test_g1_an_undeclared_local_rule_runs_and_is_not_called_skipped(tmp_path):
-    """CONFIG.md §19: a plain local command runs on Stop without `reach`. It is
+    """docs/crew/config-rationale.md: a plain local command runs on Stop without `reach`. It is
     still a GAP (the standard wants it declared) but never reads as skipped."""
     _map(tmp_path, rules=[_undeclared(["python3 -m pytest tests -q"])])
     row = _row(tmp_path, "G1")

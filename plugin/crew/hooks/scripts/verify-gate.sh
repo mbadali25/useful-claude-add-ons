@@ -9,6 +9,7 @@
 # exit-2 path, the early ones included. The trap installed with the gate's
 # cleanup below calls this too, since a second `trap ... EXIT` replaces this one.
 _crew_gate_exit_line() {
+  [ "${CREW_GATE_QUIET:-0}" -eq 1 ] && _crew_gate_quiet_flush "${1:-0}"
   [ "${1:-0}" -eq 2 ] || return 0
   echo "VERIFY GATE: BLOCKED (exit 2) - this Stop did not pass; the reason is in the lines above. Work is not complete."
 }
@@ -17,7 +18,7 @@ trap '_crew_gate_exit_line $?' EXIT
 # the gate cd's into the project. `pwd -W` is Git Bash's native form (D:/...),
 # which a native python can open; elsewhere it is not an option, so `pwd`.
 # CDPATH emptied: a match makes `cd` echo the directory into the value.
-GATE_PLUGIN_ROOT="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 &&
+GATE_PLUGIN_ROOT="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 &&
   { pwd -W 2>/dev/null || pwd; })"
 
 # --price is an OPERATOR command only, and is handled here, before ANYTHING
@@ -105,15 +106,17 @@ fi
 # pair would be a guess about what the caller meant.
 CI_MODE=0
 CI_ALL_SEEN=0
+VERBOSE_ARG=0
 for CI_ARG in "$@"; do
   case "$CI_ARG" in
     --ci) CI_MODE=1 ;;
     --all) CI_ALL_SEEN=1 ;;
+    --verbose) VERBOSE_ARG=1 ;;
     --price)
       echo "verify-gate: --price must be the first argument and cannot be combined with --ci or --all. Nothing was verified." >&2
       exit 2 ;;
     *)
-      echo "verify-gate: unknown argument '$CI_ARG' - the gate accepts --all, --ci, or --price as the first argument. Nothing was verified." >&2
+      echo "verify-gate: unknown argument '$CI_ARG' - the gate accepts --all, --ci, --verbose, or --price as the first argument. Nothing was verified." >&2
       exit 2 ;;
   esac
 done
@@ -121,6 +124,309 @@ if [ "$CI_MODE" -eq 1 ] && [ "$CI_ALL_SEEN" -eq 1 ]; then
   echo "verify-gate: --all and --ci cannot be combined (--all runs every rule and records a pass; --ci excludes network/host rules and never records one). Pass one of them. Nothing was verified." >&2
   exit 2
 fi
+
+# --- quiet Stop output (L-0796) --------------------------------------------
+# On the Stop path (no --ci, --all or --verbose, and CREW_VERIFY_VERBOSE not 1)
+# the gate prints ONE verdict line, then every line that is not gate-authored
+# informational text, byte for byte, and writes the complete verbose text of
+# the run to .crew/.verify-gate.log. Nothing that fails or is unproven is
+# hidden: the classification is by EMITTING SITE, never a filter over the
+# stream. Only a line the gate itself wrote through gate_detail (or a matcher
+# NOTICES line on the prefix allowlist below) is held back; rule output ($OUT)
+# is never classified, and any line this file does not know prints.
+#
+# Mechanism: stderr points at a buffer file for the rest of the run and
+# gate_detail tags its lines with a per-run nonce no rule can know. The EXIT
+# trap splits the buffer on that tag. Exit codes and the L-0733 stdout line
+# are untouched; a gate killed with SIGKILL prints nothing, as it could not
+# have finished anyway.
+CREW_GATE_QUIET=0
+CREW_GATE_READY=0
+CREW_GATE_UNMAPPED_FAILED=0
+CREW_GATE_MAY_LOG=0
+CREW_GATE_BACKED_OFF=0
+CREW_GATE_BUF=""
+CREW_GATE_NONCE=""
+CREW_GATE_SESSION=""
+gate_detail() {
+  local _gd_line
+  if [ "${CREW_GATE_QUIET:-0}" -eq 1 ]; then
+    while IFS= read -r _gd_line; do
+      printf '%s%s\n' "$CREW_GATE_NONCE" "$_gd_line" >&2
+    done <<< "$1"
+  else
+    printf '%s\n' "$1" >&2
+  fi
+}
+# The matcher's own informational NOTICES lines. A line not matched here
+# prints: a new or unexpected notice is shown, never swallowed.
+gate_notice_is_info() {
+  case "$1" in
+    "verify-gate: rules["*"] priced from a cached measurement"*) return 0 ;;
+    "verify-gate: rules["*"] priced at "*) return 0 ;;
+    "verify-gate: "*'has no `seconds` in verify.json - cost UNSTATED, ran anyway') return 0 ;;
+    "verify-gate: "*"it RAN past the budget; the cost is charged but cannot defer it") return 0 ;;
+    "deferred to /crew:verify: "*) return 0 ;;
+    "verify-gate: rules["*"] is permanently over budget"*) return 0 ;;
+    "verify-gate: stop budget "*) return 0 ;;
+    "verify-gate: rules["*"] declared reach: "*) return 0 ;;
+    "verify-gate: rules["*"] requires a clean working tree"*) return 0 ;;
+    "verify-gate: "*" command(s) passed on this exact tree in an earlier run and are credited"*) return 0 ;;
+  esac
+  return 1
+}
+# The record's standing "NOT VERIFIED ON THIS TREE" lines (verify_record.py:
+# one per owed obligation, every Stop) are gate-authored and counted: quiet
+# mode keeps each in the log and prints one line with the count. Any other
+# line verify_record.py writes prints as it is.
+_crew_gate_owed_filter() {
+  local _of_line _of_n=0
+  while IFS= read -r _of_line || [ -n "$_of_line" ]; do
+    case "$_of_line" in
+      "verify-gate: NOT VERIFIED ON THIS TREE - "*) gate_detail "$_of_line"; _of_n=$((_of_n + 1)) ;;
+      *) printf '%s\n' "$_of_line" >&2 ;;
+    esac
+  done
+  [ "$_of_n" -eq 0 ] || printf 'verify-gate: NOT VERIFIED ON THIS TREE - %s further obligation(s) owed by the record (not in the NOT VERIFIED item total above), each listed in the detail log\n' "$_of_n" >&2
+}
+# verify_record.py report / sync with stdout on stderr, as before; in quiet
+# mode stdout goes through the filter above. The exit status is the script's.
+gate_record_report() {
+  if [ "${CREW_GATE_QUIET:-0}" -eq 1 ]; then
+    "$1" "$2" report 2>/dev/null | _crew_gate_owed_filter
+    return "${PIPESTATUS[0]}"
+  fi
+  "$1" "$2" report >&2 2>/dev/null
+}
+gate_record_sync() {
+  if [ "${CREW_GATE_QUIET:-0}" -eq 1 ]; then
+    "$1" "$2" sync | _crew_gate_owed_filter
+    return "${PIPESTATUS[0]}"
+  fi
+  "$1" "$2" sync >&2
+}
+_crew_gate_quiet_install() {
+  [ "$CI_MODE" -eq 0 ] && [ "$CI_ALL_SEEN" -eq 0 ] && [ "$VERBOSE_ARG" -eq 0 ] || return 0
+  [ "${CREW_VERIFY_VERBOSE:-}" = 1 ] && return 0
+  local _qi_buf
+  _qi_buf=$(mktemp "${TMPDIR:-/tmp}/crew-gate-out.XXXXXX" 2>/dev/null) || _qi_buf=""
+  if [ -z "$_qi_buf" ]; then
+    printf 'verify-gate: output buffer unavailable, printing everything | detail: unavailable\n' >&2
+    return 0
+  fi
+  CREW_GATE_BUF="$_qi_buf"
+  CREW_GATE_NONCE="@@crew-detail-$$-${RANDOM}${RANDOM}-$(date +%s)@@"
+  # The key must occur exactly once, with a string value, directly inside the
+  # payload's top-level object: a second "session_id", a nested one, or one of
+  # another type cannot be told from the session, so it reads as no session and
+  # prints the full block.
+  local _qi_in _qi_prefix _qi_bare _qi_o _qi_c _qi_ao _qi_ac
+  _qi_in=$(printf '%s' "$INPUT" | tr -d '\n\r')
+  if [ "$(printf '%s' "$_qi_in" | grep -o '"session_id"[[:space:]]*:' | wc -l | tr -d '[:space:]')" = 1 ]; then
+    _qi_prefix=${_qi_in%%'"session_id"'*}
+    _qi_bare=$(printf '%s' "$_qi_prefix" | sed -e 's/\\.//g' -e 's/"[^"]*"//g')
+    _qi_o=$(printf '%s' "$_qi_bare" | tr -cd '{' | wc -c | tr -d '[:space:]')
+    _qi_c=$(printf '%s' "$_qi_bare" | tr -cd '}' | wc -c | tr -d '[:space:]')
+    _qi_ao=$(printf '%s' "$_qi_bare" | tr -cd '[' | wc -c | tr -d '[:space:]')
+    _qi_ac=$(printf '%s' "$_qi_bare" | tr -cd ']' | wc -c | tr -d '[:space:]')
+    if [ $((_qi_o - _qi_c)) -eq 1 ] && [ "$_qi_ao" = "$_qi_ac" ]; then
+      CREW_GATE_SESSION=$(printf '%s' "$_qi_in" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    fi
+  fi
+  exec 4>&2 2>>"$_qi_buf"
+  CREW_GATE_QUIET=1
+}
+# Tallies for the verdict line, from the counters the run already keeps.
+_crew_gate_counts() {
+  local _s _k
+  G_FAIL=0; G_PASS=0
+  for _s in "${STATUS_AT[@]+"${STATUS_AT[@]}"}"; do
+    case "$_s" in
+      fail|unknown) G_FAIL=$((G_FAIL + 1)) ;;
+      pass) G_PASS=$((G_PASS + 1)) ;;
+    esac
+  done
+  [ "$CREW_GATE_UNMAPPED_FAILED" -eq 1 ] && G_FAIL=$((G_FAIL + 1))
+  G_CRED=$((${COVERED_N:-0} + ${TREE_N:-0}))
+  G_REACH=0; G_OVER=0; G_DIRTY=0; G_OTHER=0
+  G_DEFER=$(( ${DEFERRED_COUNT:-0} + ${DEADLINE_DEFER_N:-0} )); G_SKIP="${SKIP_N:-0}"
+  G_OTHER_UNKNOWN=0; G_NVD=""
+  if [ "${TREE_MOVED:-0}" -ne 0 ]; then
+    G_CRED=${COVERED_N:-0}
+    G_OTHER=$((G_OTHER + ${TREE_N:-0}))
+  fi
+  if [ -n "${EXTRAS:-}" ]; then
+    while IFS= read -r _k; do
+      case "$_k" in
+        normal|"") ;;
+        reach_*) G_REACH=$((G_REACH + 1)) ;;
+        clean_tree_required) G_DIRTY=$((G_DIRTY + 1)) ;;
+        chronic) G_OVER=$((G_OVER + 1)) ;;
+        *) G_OTHER=$((G_OTHER + 1)) ;;
+      esac
+    done <<< "$(printf '%s\n' "$EXTRAS" | grep -o '"kind": "[A-Za-z_]*"' | sed 's/"kind": "\(.*\)"/\1/')"
+    G_FB=$(printf '%s' "$EXTRAS" | sed -n 's/.*"fallback_excluded": \([0-9][0-9]*\).*/\1/p' | head -1)
+    G_REACH=$((G_REACH + ${G_FB:-0}))
+    G_NVD=$(printf '%s' "$EXTRAS" | sed -n 's/.*"nv_digest": "\([0-9a-f]*\)".*/\1/p' | head -1)
+    G_BUDGET=$(printf '%s' "$EXTRAS" | sed -n 's/.*"budget": \([0-9][0-9]*\).*/\1/p' | head -1)
+    if [ -z "$G_BUDGET" ]; then
+      case "$EXTRAS" in *'"budget": null'*) G_BUDGET="none" ;; *) G_BUDGET="?" ;; esac
+    fi
+  else
+    G_OTHER_UNKNOWN=1
+    G_BUDGET="?"
+  fi
+  G_NV=$((G_REACH + G_OVER + G_DIRTY + G_DEFER + G_SKIP + G_OTHER))
+}
+# The verdict line for a finished run: sets G_VERDICT and G_NVTXT. $1 is the
+# exit code, $2 the detail text.
+_crew_gate_verdict_line() {
+  _crew_gate_counts
+  local _fail_txt="$G_FAIL" _other_txt="$G_OTHER"
+  G_NVTXT="$G_NV"
+  if [ "$G_OTHER_UNKNOWN" -eq 1 ]; then G_NVTXT="$G_NV+"; _other_txt="unknown"; fi
+  if [ "$1" -eq 2 ] && [ "$G_FAIL" -eq 0 ]; then _fail_txt="0 (exit 2, see below)"; fi
+  G_VERDICT="verify-gate: FAILED $_fail_txt cmd | PASSED $G_PASS cmd | NOT VERIFIED $G_NVTXT item(s) (reach $G_REACH, over-budget $G_OVER, dirty tree $G_DIRTY, deferred $G_DEFER, skipped $G_SKIP, other $_other_txt) | credited $G_CRED | budget ${TOTAL_ELAPSED:-0}s/${G_BUDGET}s | detail: $2"
+}
+# Print a buffer file: as it is when the split worked and cat can read all of it
+# (read first and printed once, so a cat that fails half way cannot print its
+# first part twice), else line by line with the nonce a gate-authored line
+# carries stripped (bash only, so a failed cat or sed cannot drop the text).
+_crew_gate_emit() {
+  local _l _out
+  if [ "$_split_ok" -eq 1 ] && _out=$(cat "$1" && printf x); then
+    printf '%s' "${_out%x}"
+    return
+  fi
+  while IFS= read -r _l || [ -n "$_l" ]; do
+    printf '%s\n' "${_l#"$CREW_GATE_NONCE"}"
+  done < "$1"
+}
+_crew_gate_quiet_flush() {
+  local _rc="${1:-0}"
+  CREW_GATE_QUIET=0
+  exec 2>&4 4>&-
+  # An exit-0 Stop (a pass, or a turn with nothing to check) clears the repeat
+  # state; a run that only backed off on the lock must not touch the holder's.
+  if [ "$_rc" -eq 0 ] && [ "$CREW_GATE_BACKED_OFF" -eq 0 ]; then
+    rm -f ".crew/.verify-gate.last-stop" 2>/dev/null
+  fi
+  local _buf="$CREW_GATE_BUF" _plain _full _log=".crew/.verify-gate.log" _logtmp _statetmp _state=".crew/.verify-gate.last-stop"
+  [ -f "$_buf" ] || return 0
+  # The two halves of the split are their own mktemp files (mode 0600, unguessable
+  # names), never names derived from the buffer's. grep -v exits 1 when every
+  # line was tagged (nothing plain), which is fine; 2 or more, any sed failure,
+  # or a half that is not a regular file means the split is not trustworthy:
+  # then the raw buffer prints whole, there is no log, and no repeat state.
+  local _split_ok=1 _plain_t _full_t
+  _plain_t=$(mktemp "${TMPDIR:-/tmp}/crew-gate-plain.XXXXXX" 2>/dev/null) || _plain_t=""
+  _full_t=$(mktemp "${TMPDIR:-/tmp}/crew-gate-full.XXXXXX" 2>/dev/null) || _full_t=""
+  if [ -n "$_plain_t" ] && [ -n "$_full_t" ]; then
+    LC_ALL=C grep -a -v "^$CREW_GATE_NONCE" "$_buf" > "$_plain_t" 2>/dev/null
+    [ "$?" -le 1 ] || _split_ok=0
+    LC_ALL=C sed "s/^$CREW_GATE_NONCE//" "$_buf" > "$_full_t" 2>/dev/null || _split_ok=0
+    { [ -f "$_plain_t" ] && [ ! -L "$_plain_t" ] && [ -f "$_full_t" ] && [ ! -L "$_full_t" ]; } || _split_ok=0
+  else
+    _split_ok=0
+  fi
+  if [ "$_split_ok" -eq 1 ]; then
+    _plain="$_plain_t"; _full="$_full_t"
+  else
+    rm -f "$_plain_t" "$_full_t" 2>/dev/null
+    _plain="$_buf"; _full="$_buf"
+  fi
+  if [ ! -s "$_buf" ] && [ "$CREW_GATE_READY" -eq 0 ]; then
+    if [ "$_rc" -eq 0 ] && [ "$CREW_GATE_BACKED_OFF" -eq 0 ] && [ ! -d "$_log" ]; then
+      rm -f "$_log" 2>/dev/null
+    fi
+    rm -f "$_buf" "$_plain" "$_full"
+    return 0
+  fi
+  local _log_ok=0
+  if [ "$_split_ok" -eq 1 ] && [ "$CREW_GATE_MAY_LOG" -eq 1 ] && [ -s "$_buf" ] && [ -d .crew ] && [ ! -d "$_log" ]; then
+    _logtmp=$(mktemp ".crew/.verify-gate.log.tmpXXXXXX" 2>/dev/null) || _logtmp=""
+    if [ -n "$_logtmp" ] && cp "$_full" "$_logtmp" 2>/dev/null && mv -f "$_logtmp" "$_log" 2>/dev/null; then
+      _log_ok=1
+    else
+      [ -z "$_logtmp" ] || rm -f "$_logtmp" 2>/dev/null
+    fi
+  fi
+  # A split that failed leaves no trustworthy log. gate_progress may already
+  # have written a "RUN NOT FINISHED" copy this run (its own sed worked), and
+  # the line below says "detail: unavailable": remove it so the two agree.
+  if [ "$_split_ok" -eq 0 ] && [ ! -d "$_log" ] && [ -f "$_log" ] \
+     && [ "$(head -n 1 "$_log" 2>/dev/null | cut -c1-34)" = "verify-gate: RUN NOT FINISHED when" ]; then
+    rm -f "$_log" 2>/dev/null
+  fi
+  local _detail="unavailable" _body="$_full"
+  [ "$_log_ok" -eq 1 ] && { _detail="$_log"; _body="$_plain"; }
+  if [ "$CREW_GATE_READY" -eq 0 ]; then
+    # The run ended before the rules were judged: say what it said, in full.
+    # The held-back notices (deferred, over-budget, stop budget) are the only
+    # record of what this turn never checked, so the whole buffer prints.
+    # A successful early exit wrote no log of its own: the previous run's would
+    # now describe a different tree, so it goes.
+    if [ "$_log_ok" -eq 0 ] && [ "$_rc" -eq 0 ] && [ "$CREW_GATE_BACKED_OFF" -eq 0 ] && [ ! -d "$_log" ]; then
+      rm -f "$_log" 2>/dev/null
+    fi
+    printf 'verify-gate: run ended before a verdict; unproven rules are listed below | detail: %s\n' "$_detail" >&2
+    _crew_gate_emit "$_full" >&2
+    rm -f "$_buf" "$_plain" "$_full"
+    return 0
+  fi
+  _crew_gate_verdict_line "$_rc" "$_detail"
+  local _nvtxt="$G_NVTXT" _verdict="$G_VERDICT"
+  local _hint="verify-gate: Stop does not run reach-excluded, over-budget, dirty-tree or deferred rules; /crew:verify --all runs every rule."
+  if [ "$_rc" -eq 0 ]; then
+    {
+      printf '%s\n' "$_verdict"
+      _crew_gate_emit "$_body"
+      [ "$G_NV" -gt 0 ] && printf '%s\n' "$_hint"
+    } >&2
+    rm -f "$_buf" "$_plain" "$_full"
+    return 0
+  fi
+  # A failing run. Dedupe per session: the same failure set, the same session
+  # and a readable state file print one line; anything else prints it all.
+  local _hash="" _st_sid="" _st_hash="" _first _unchanged=0
+  if [ -n "$CREW_GATE_SESSION" ] && [ "$_split_ok" -eq 1 ]; then
+    _hash=$( { cat "$_plain"; printf '\n--nv %s %s %s %s %s %s %s %s\n' "$G_REACH" "$G_OVER" "$G_DIRTY" "$G_DEFER" "$G_SKIP" "$G_OTHER" "$G_FAIL" "$G_NVD"; } \
+      | { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; } | cut -d' ' -f1)
+    case "$_hash" in *[!0-9a-f]*) _hash="" ;; esac
+    [ "${#_hash}" -eq 64 ] || _hash=""
+  fi
+  if [ -n "$_hash" ] && [ -f "$_state" ] && [ ! -L "$_state" ] && [ -w "$_state" ] \
+     && [ "$(wc -l < "$_state" 2>/dev/null | tr -d '[:space:]')" = 1 ]; then
+    IFS=$'\t' read -r _st_sid _st_hash < "$_state" 2>/dev/null || true
+    if [ "$_st_sid" = "$CREW_GATE_SESSION" ] && [ "$_st_hash" = "$_hash" ]; then
+      _unchanged=1
+    fi
+  fi
+  [ "$_log_ok" -eq 1 ] || _unchanged=0
+  if [ "$_unchanged" -eq 1 ]; then
+    _first=$(grep -a -m1 '^VERIFY FAILED: ' "$_plain" | sed 's/^VERIFY FAILED: //')
+    [ -n "$_first" ] || _first=$(head -n 1 "$_plain")
+    local _nfail="$G_FAIL"; [ "$_nfail" -gt 0 ] || _nfail=1
+    printf 'verify-gate: unchanged since last Stop (%s failing, %s NOT VERIFIED): %s | detail: %s | /crew:verify --all runs every rule\n' "$_nfail" "$_nvtxt" "$_first" "$_detail" >&2
+  else
+    {
+      printf '%s\n' "$_verdict"
+      _crew_gate_emit "$_body"
+      printf '%s\n' "$_hint"
+    } >&2
+    if [ -n "$_hash" ] && [ -d .crew ]; then
+      _statetmp=$(mktemp ".crew/.verify-gate.last-stop.tmpXXXXXX" 2>/dev/null) || _statetmp=""
+      if [ -n "$_statetmp" ]; then
+        if ! { printf '%s\t%s\n' "$CREW_GATE_SESSION" "$_hash" > "$_statetmp" 2>/dev/null \
+               && mv -f "$_statetmp" "$_state" 2>/dev/null; }; then
+          rm -f "$_statetmp" 2>/dev/null
+        fi
+      fi
+    fi
+  fi
+  rm -f "$_buf" "$_plain" "$_full"
+  return 0
+}
 
 # End-of-turn gate. Runs the checks that the CHANGED FILES actually require,
 # from .crew/verify.json. Exit 2 = the work is not done.
@@ -188,6 +494,8 @@ if grep -q '"verifyGate"[[:space:]]*:[[:space:]]*false' "$CREW_REPO_CONFIG" 2>/d
   exit 0
 fi
 
+_crew_gate_quiet_install
+
 # Emergency lane. An incident is open, so this turn is not blocked and the
 # checks do not run - that is the entire point of declaring one, since these
 # are the checks that take minutes. What would have run is written down
@@ -224,7 +532,7 @@ fi
 # check removes the marker on success - a job must not consume it.
 if [ "$CI_MODE" -eq 0 ] && [ -f .crew/.deploy-in-flight ]; then
   read -r DENV DSHA < .crew/.deploy-in-flight
-  if grep -qE "\|[[:space:]]*$DENV[[:space:]]*\|[[:space:]]*$DSHA" .work/PROMOTIONS.md 2>/dev/null; then
+  if grep -qE "\|[[:space:]]*${DENV}[[:space:]]*\|[[:space:]]*$DSHA" .work/PROMOTIONS.md 2>/dev/null; then
     rm -f .crew/.deploy-in-flight
   else
     echo "DEPLOY NOT RECORDED: $DENV was deployed at $DSHA and .work/PROMOTIONS.md has no row for it." >&2
@@ -309,7 +617,9 @@ zero_rules_line() {
 # verify_record.py persists it by content hash and reports it every run
 # until it is actually checked, via /crew:verify --all.
 # TREE_MOVED: tree-pass credits withdrawn after the loop, same effect.
-fully_verified() { [ "${DEFERRED_COUNT:-1}" -eq 0 ] && [ "${TREE_MOVED:-0}" -eq 0 ]; }
+# DEADLINE_DEFER_N (crew 1.2.117): rules the run loop deferred because they
+# would pass the hook deadline. Never run, so never verified.
+fully_verified() { [ "${DEFERRED_COUNT:-1}" -eq 0 ] && [ "${TREE_MOVED:-0}" -eq 0 ] && [ "${DEADLINE_DEFER_N:-0}" -eq 0 ]; }
 
 record_verified_fingerprint() {
   [ -n "$FINGERPRINT" ] || return 0
@@ -336,8 +646,10 @@ record_verified_fingerprint() {
 #      about this checkout and travels with nobody. Note `verify.json` IS
 #      tracked: the MAP travels, the record of what was checked against it does
 #      not, and conflating the two is how a clone inherits a pass it never ran.
-#   2. The merge-base with the default branch, when there is no marker or it
-#      names a commit this repo no longer contains (a squash merge, a rebase).
+#   2. The merge-base with the default branch (origin/<default> when that ref
+#      exists, else the local branch - crew 1.2.117, see below), when there is
+#      no marker or it names a commit this repo no longer contains (a squash
+#      merge, a rebase).
 #      Nothing on this branch has been shown to be verified, so all of it is in
 #      scope. Unknown resolves to checking MORE, never less.
 #   3. HEAD, when there is no branch point to use -- a detached checkout, or
@@ -389,7 +701,7 @@ fi
 # would hide every commit since it (review round 2). --all and --ci do not
 # diff from a base, so they never read it.
 if [ -z "$BASE" ] && [ -e "$BASE_AT" ] \
-   && [ "${1:-}" != "--all" ] && [ "$CI_MODE" -eq 0 ]; then
+   && [ "$CI_ALL_SEEN" -eq 0 ] && [ "$CI_MODE" -eq 0 ]; then
   # Read only a regular file (a link to one counts): `head` on a FIFO waits
   # for a writer forever and hangs Stop (review round 3); a FIFO, socket,
   # device or directory is refused below like an unreadable file.
@@ -416,7 +728,30 @@ if [ -z "$BASE" ]; then
   DEF=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || DEF=""
   DEF=${DEF#origin/}
   [ -z "$DEF" ] && DEF=main
-  BASE=$(git merge-base HEAD "$DEF" 2>/dev/null) || BASE=""
+  # crew 1.2.117: the REMOTE-TRACKING branch first. The local default branch
+  # is only as fresh as the last `git pull` on it, and a worktree's is often
+  # far behind: measured 2026-11-07, a local main 31 commits behind
+  # origin/main, so every Stop diffed 31 commits of other people's merged
+  # work into scope, priced rules it never needed, deferred them, and so
+  # never wrote the verified marker that would have narrowed it again.
+  # origin/<default> is what this branch will merge into. When that ref is
+  # absent (no remote, a fixture, a clone made with --no-checkout of refs),
+  # or shares no history with HEAD, the local branch is used as before. The
+  # choice is named in the detail log every time.
+  BASE=""
+  BASE_REF=""
+  if git rev-parse --verify -q "refs/remotes/origin/$DEF^{commit}" >/dev/null 2>&1; then
+    BASE=$(git merge-base HEAD "refs/remotes/origin/$DEF" 2>/dev/null) || BASE=""
+    [ -n "$BASE" ] && BASE_REF="origin/$DEF (remote-tracking)"
+  fi
+  if [ -z "$BASE" ]; then
+    BASE=$(git merge-base HEAD "$DEF" 2>/dev/null) || BASE=""
+    [ -n "$BASE" ] && BASE_REF="$DEF (local; no usable origin/$DEF)"
+  fi
+  # Said later (after CREW_GATE_READY=1), into the detail log: written here it
+  # reached stderr on every Stop, a clean tree's included, where a run that
+  # ends before a verdict prints its whole buffer.
+  [ -n "$BASE_REF" ] && BASE_NOTE="verify-gate: diff base: the merge-base of HEAD with $BASE_REF, $BASE"
 fi
 [ -z "$BASE" ] && BASE=HEAD
 # `-c core.quotePath=false` on every path-listing git call. With the default
@@ -428,7 +763,7 @@ fi
 # the matcher and the scope report read the same list.
 # --ci takes this branch too: its scope is the whole tree, for the same reason
 # --all's is, and a fresh CI checkout has no marker to diff from anyway.
-if [ "${1:-}" = "--all" ] || [ "$CI_MODE" -eq 1 ]; then
+if [ "$CI_ALL_SEEN" -eq 1 ] || [ "$CI_MODE" -eq 1 ]; then
   # --all does not diff against ANY commit. A commit-range diff, however
   # wide, is still bounded by SOME ancestor, and on a single-branch repo
   # (or one sitting ON its own default branch) merge-base(HEAD, main) IS
@@ -492,7 +827,7 @@ if [ -z "$CHANGED" ]; then
   REPORT_PY=$(crew_py 2>/dev/null) || REPORT_PY=""
   REPORT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   if [ -n "$REPORT_PY" ] && [ -f "$REPORT_DIR/verify_record.py" ]; then
-    "$REPORT_PY" "$REPORT_DIR/verify_record.py" report >&2 2>/dev/null || true
+    gate_record_report "$REPORT_PY" "$REPORT_DIR/verify_record.py" || true
   fi
   # L-0710: nothing ran, so nothing is recorded as verified (see BASE_AT).
   echo "verify-gate: 0 rules ran - nothing changed since the last verified commit or branch point, so nothing was checked and the verified marker (.crew/.verify-verified-at) was not written." >&2
@@ -565,6 +900,17 @@ fi
 # corpse as a live holder -- it would never reclaim, and the one time it fired
 # it would be on evidence that does not hold. The age window stays the only
 # answer for a lock directory that can be dated.
+#
+# crew 1.2.117 closes it without that check: the holder records its WINDOWS
+# pid (/proc/$$/winpid) and the epoch it took the lock, and the challenger
+# asks Windows (OpenProcess / GetExitCodeProcess / GetProcessTimes, in
+# verify_record.py owner-state), not the MSYS pid table. Re-measured
+# 2026-11-07: after `taskkill /F` of a Git Bash process the Windows answer was
+# alive before and dead at +0.5s/+5s/+15s (kill -0 also said dead that time,
+# so the 2026-09-13 result above did not reproduce - not depended on either
+# way). Linux records pid + /proc starttime. A dead owner is reclaimed at
+# once; a live or unanswerable one falls through to the deadline and age
+# rules unchanged.
 # --all runs the WHOLE map with no Stop budget. /crew:verify is the caller
 # that wants it; the Stop hook never passes it. Anything else leaves the flag
 # empty so the matcher always sees the same argv shape.
@@ -575,7 +921,7 @@ fi
 # for the full verification that would let the record clear a reach-excluded
 # rule it did not run.
 BUDGET_FLAG=""
-[ "${1:-}" = "--all" ] && BUDGET_FLAG="--all"
+[ "$CI_ALL_SEEN" -eq 1 ] && BUDGET_FLAG="--all"
 [ "$CI_MODE" -eq 1 ] && BUDGET_FLAG="--ci"
 
 # --- CLAUDE_PLUGIN_ROOT for the rule commands ------------------------------
@@ -627,7 +973,7 @@ if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ -z "$BUDGET_FL
     # rule that was chronic/skipped/reach-excluded on a PRIOR run and has
     # not been touched since. Read-only reminder, same fail-safe direction
     # as the empty-CHANGED path above.
-    [ -f "$FP_DIR/verify_record.py" ] && "$FP_PY" "$FP_DIR/verify_record.py" report >&2 2>/dev/null
+    [ -f "$FP_DIR/verify_record.py" ] && gate_record_report "$FP_PY" "$FP_DIR/verify_record.py"
     exit 0
   fi
 fi
@@ -639,6 +985,7 @@ LOCK=".crew/.verify-gate.lock"
 # off checked nothing, and whichever run holds the lock is not this job's
 # verdict.
 lock_back_off() {
+  CREW_GATE_BACKED_OFF=1
   if [ "$CI_MODE" -eq 1 ]; then
     echo "verify-gate --ci: $1 - this run checked nothing" >&2
     exit 2
@@ -772,6 +1119,58 @@ lock_touch() {
   printf '%s
 ' "$LOCK_TOKEN" > "$LOCK/token" 2>/dev/null || true
 }
+# WHO HOLDS IT (crew 1.2.117). A holder killed with taskkill /F or SIGKILL
+# never runs its trap, so its lock outlived it and every later Stop backed off
+# ("NOTHING WAS VERIFIED") until the published deadline - up to 2 x the
+# largest rule price, minutes. `owner` names the holder in a form its
+# liveness CAN be asked of: `win <Windows pid> <epoch the lock was taken>`
+# under Git Bash (/proc/$$/winpid - the Windows process the hook kills, not
+# the MSYS pid the 2026-09-13 note above measured unreliable), or `proc <pid>
+# <starttime ticks>` where /proc/<pid>/stat exists. The second field pairs
+# the pid with something a REUSED pid cannot share. Anything else writes no
+# owner, and a lock with no readable owner keeps the deadline/age rules
+# exactly as before. Written via a temp name and mv, so a challenger never
+# reads half of it.
+lock_owner_write() {
+  local _ow_scheme="" _ow_pid="" _ow_stamp=""
+  if [ -r "/proc/$$/winpid" ]; then
+    _ow_pid=$(tr -dc '0-9' < "/proc/$$/winpid" 2>/dev/null)
+    _ow_scheme=win
+    _ow_stamp=$(date +%s)
+  elif [ -r "/proc/$$/stat" ]; then
+    _ow_stamp=$(sed 's/^.*) //' "/proc/$$/stat" 2>/dev/null | cut -d' ' -f20)
+    _ow_scheme=proc
+    _ow_pid=$$
+  fi
+  case "$_ow_pid$_ow_stamp" in ''|*[!0-9]*) return 0 ;; esac
+  [ -n "$_ow_pid" ] && [ -n "$_ow_stamp" ] || return 0
+  # The token last: two reclaimers can interleave their token and owner
+  # writes, and an owner naming the LOSER beside the winner's token would let
+  # a challenger judge a live holder by a dead pid. A challenger trusts an
+  # owner line only when its token is the one on disk.
+  printf '%s %s %s %s\n' "$_ow_scheme" "$_ow_pid" "$_ow_stamp" "$LOCK_TOKEN" > "$LOCK/owner.tmp.$$" 2>/dev/null \
+    && mv -f "$LOCK/owner.tmp.$$" "$LOCK/owner" 2>/dev/null
+}
+# alive | dead | unknown. Only `dead` lets a challenger reclaim early: a holder
+# that is alive, or that cannot be asked about, still holds the lock - fail
+# closed, because two gates in one turn is what the lock prevents.
+lock_owner_state() {
+  local _os_line _os_scheme _os_pid _os_stamp _os_token _os_extra
+  [ -f "$LOCK/owner" ] && [ ! -L "$LOCK/owner" ] || { echo unknown; return; }
+  [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_record.py" ] || { echo unknown; return; }
+  _os_line=$(head -c 300 "$LOCK/owner" 2>/dev/null | tr -d '\r')
+  read -r _os_scheme _os_pid _os_stamp _os_token _os_extra <<< "$_os_line"
+  case "$_os_scheme" in win|proc) ;; *) echo unknown; return ;; esac
+  case "$_os_pid" in ''|*[!0-9]*) echo unknown; return ;; esac
+  case "$_os_stamp" in ''|*[!0-9]*) echo unknown; return ;; esac
+  [ -n "$_os_token" ] && [ -z "$_os_extra" ] || { echo unknown; return; }
+  [ "$_os_token" = "$(tr -d '\r\n' < "$LOCK/token" 2>/dev/null)" ] || { echo unknown; return; }
+  case "$("$FP_PY" "$FP_DIR/verify_record.py" owner-state "$_os_scheme" "$_os_pid" "$_os_stamp" 2>/dev/null | tr -d '\r')" in
+    alive) echo alive ;;
+    dead) echo dead ;;
+    *) echo unknown ;;
+  esac
+}
 mkdir -p .crew 2>/dev/null
 if ! mkdir "$LOCK" 2>/dev/null; then
   if [ ! -d "$LOCK" ]; then
@@ -828,6 +1227,15 @@ if ! mkdir "$LOCK" 2>/dev/null; then
       case "$HOLD_DEADLINE" in
         ''|*[!0-9]*) HOLD_DEADLINE="" ;;
       esac
+      # crew 1.2.117: a holder whose process is GONE holds nothing, whatever
+      # its deadline or age says - see lock_owner_write. Asked only here, on
+      # the rare path where a lock is found, so the common path pays nothing.
+      OWNER_STATE=$(lock_owner_state)
+      if [ "$OWNER_STATE" = dead ]; then
+        echo "verify-gate: the lock at $LOCK names a holder ($(cat "$LOCK/token" 2>/dev/null || echo 'an unreadable token'); $(head -c 200 "$LOCK/owner" 2>/dev/null | tr -d '\r\n')) whose process no longer exists - it was killed before it could release the lock, so the lock is reclaimed instead of backing off." >&2
+        HOLD_DEADLINE=""
+        HOLDER_AT=0
+      fi
       if [ -n "$HOLD_DEADLINE" ] && [ "$((10#$HOLD_DEADLINE))" -gt 0 ] 2>/dev/null && [ "$NOW" -lt "$((10#$HOLD_DEADLINE))" ] 2>/dev/null; then
         echo "verify-gate: backed off, lock held by $(cat "$LOCK/token" 2>/dev/null || echo 'an unreadable token') (holder declared it may run for another $((10#$HOLD_DEADLINE - NOW))s); NOTHING WAS VERIFIED this turn." >&2
         lock_back_off "backed off: the lock at $LOCK is held by another gate run"
@@ -842,6 +1250,7 @@ if ! mkdir "$LOCK" 2>/dev/null; then
     fi
   fi
 fi
+CREW_GATE_MAY_LOG=1
 # --- shared cleanup registry -----------------------------------------
 # Every exit-path cleanup from here on (this lock's own release when a lock
 # is actually held, and the python3 shim's temp dir below) registers a
@@ -923,6 +1332,7 @@ if [ "$UNLOCKED" -eq 0 ]; then
   }
   _crew_gate_register_cleanup _crew_gate_cleanup_lock
   printf '%s\n' "$LOCK_TOKEN" > "$LOCK/token" 2>/dev/null
+  lock_owner_write
   # Only the reclaim path can race another reclaimer; the plain-mkdir winner
   # cannot be clobbered, since its lock is far too young for anyone to reclaim.
   # Do not tax the common path with the settle wait.
@@ -1017,6 +1427,17 @@ fi
 # that exists in case some OTHER broken-but-`command -v`-resolvable
 # interpreter ever slips past crew_py_strict the same way.
 PY=$(crew_py_strict) || { echo "VERIFY GATE: no python (python3, python or py) resolves to a PROVED working interpreter anywhere on PATH - .crew/verify.json cannot be read and nothing can be verified. Work is not complete. Install python (3.10+) on this machine, or set \"verifyGate\": false in .crew/config.json to stand this gate down deliberately (honoured at the top of this file)." >&2; exit 2; }
+
+# crew 1.2.117: a run killed mid-command (taskkill /F, SIGKILL - no trap runs)
+# leaves its in-flight record behind. Settled HERE, before the matcher reads
+# the timings cache, and only by a run that holds the lock - so the run that
+# wrote it is over. A kill at the hook deadline becomes a price for the rule
+# that was running; anything else re-prices nothing. See verify_record.py.
+# Only when the file exists: the common path must not pay a python spawn
+# between taking the lock and publishing its deadline.
+if [ "$UNLOCKED" -eq 0 ] && [ -e .crew/.verify-gate.inflight.json ] && [ -f "$FP_DIR/verify_record.py" ]; then
+  "$PY" "$FP_DIR/verify_record.py" inflight-settle 2>&1 | tr -d '\r' >&2 || true
+fi
 
 # The changed-file list goes through a temp FILE, never argv. E2BIG counts argv
 # PLUS the environment, so a hook invoked with a large environment fails to exec
@@ -1297,6 +1718,7 @@ def _rule_key(rule):
 
 measured_used = {}   # rule index -> True when its cost came from the cache
 measured_below = {} # rule index -> declared seconds a cheaper measurement replaced
+measured_above = {} # rule index -> declared seconds a dearer measurement replaced
 truly_unknown = {}   # rule index -> True when it needs a fresh measurement
 
 # COMMAND IDENTITY includes the rule's declared env, not just its text. Two
@@ -1348,23 +1770,28 @@ for f in changed:
                 if (isinstance(secs, (int, float))
                         and not isinstance(secs, bool) and secs >= 0):
                     rule_secs[ri] = secs
-                    # A measurement on THIS machine below the declared price
-                    # wins; one above it never does. Declared `seconds` are
-                    # timed on one host and go stale, and an over-stated rule
-                    # that reads as over the budget alone is chronic: never
-                    # run at Stop at all. min() can only make a rule cheaper,
-                    # so it can turn this rule's chronic deferral into a run,
-                    # never this rule's run into a deferral (the budget it now
-                    # takes can still defer a LATER rule acutely). The cache is rewritten from every
-                    # clean run, so a rule that slows down re-prices upward.
+                    # A valid measurement on THIS machine replaces the declared
+                    # price in BOTH directions (latest wins). Declared `seconds`
+                    # are timed on one host and go stale: an over-stated rule
+                    # that reads as over the budget alone is chronic and never
+                    # runs at Stop, and an under-stated one spends budget it
+                    # does not have and never defers its neighbour. The cache
+                    # is rewritten from every clean run, so a rule that slows
+                    # down re-prices upward. A rule priced over the budget by
+                    # measurement is chronic and its entry is refreshed only by
+                    # `/crew:verify --all`, which the notice names.
                     cached = _timings.get(key)
                     if (isinstance(cached, int) and not isinstance(cached, bool)
-                            and 0 < cached < secs):
+                            and cached > 0):
                         rule_secs[ri] = cached
-                        measured_below[ri] = secs
+                        if cached < secs:
+                            measured_below[ri] = secs
+                        elif cached > secs:
+                            measured_above[ri] = secs
                 else:
                     cached = _timings.get(key)
-                    if isinstance(cached, int) and cached > 0:
+                    if (isinstance(cached, int) and not isinstance(cached, bool)
+                            and cached > 0):
                         rule_secs[ri] = cached
                         measured_used[ri] = True
                 if REACH_FILTER:
@@ -1512,6 +1939,10 @@ for _ri in sorted(measured_used):
 for _ri in sorted(measured_below):
     notices.append("verify-gate: rules[%d] priced at %ss, measured on this machine, below its declared %ss"
                    % (_ri, int(rule_secs[_ri]), measured_below[_ri]))
+for _ri in sorted(measured_above):
+    notices.append("verify-gate: rules[%d] priced at %ss, measured on this machine, above its declared %ss "
+                   "- run /crew:verify --all to re-measure"
+                   % (_ri, int(rule_secs[_ri]), measured_above[_ri]))
 
 # --- the tree-pass cache (verify_record.passes_load) ------------------------
 # A command that passed on this exact tree (tree_snapshot(stable=True): HEAD,
@@ -1540,6 +1971,11 @@ if tree_cached:
         notices.append("verify-gate: %d command(s) passed on this exact tree in an earlier run "
                        "and are credited, not re-run (CREW_VERIFY_FRESH=1 runs them anyway)" % _n)
 
+# Which rule SCHEDULES each command (crew 1.2.117, record 9): the run loop's
+# deadline guard decides rule by rule, so a command must know the rule it
+# runs as part of. Filled by the budget below; a command it did not place
+# falls back to the first matched rule naming it, after the budget.
+_owner = {}
 if budget is not None:
     unknown = [c for c in cmds if c not in cost]
     # MANDATORY-NESS IS A PROPERTY OF THE RULE, NOT OF A COMMAND ON ITS OWN,
@@ -1626,6 +2062,13 @@ if budget is not None:
     # A command can be deferred by one rule and kept by a later, cheaper one
     # -- keeping wins, because the command does run.
     deferred = [c for c in deferred if c not in keep]
+    # Record 9's owners: the first rule, in the order the budget visited them,
+    # whose every priced command was kept - the rule that scheduled it.
+    for ri in must + may:
+        _priced = [c for c in rule_cmds[ri] if c in cost]
+        if _priced and all(c in keep for c in _priced):
+            for c in _priced:
+                _owner.setdefault(c, ri)
     # Unknown-cost commands run FIRST, so a map with no `seconds` anywhere
     # behaves exactly as it did before this feature existed.
     cmds = unknown + keep
@@ -1721,7 +2164,19 @@ for _ri in rule_order:
         "cmds": rule_cmds.get(_ri, []),
         "unknown": bool(truly_unknown.get(_ri)),
     })
-_extras = {"matched_rules": matched_rules}
+_extras = {"matched_rules": matched_rules, "budget": budget}
+# Quiet Stop (L-0796): reach-excluded `always`/`default` commands are
+# NOT VERIFIED items too, and the repeat check hashes the IDENTITIES of what
+# was not run (rule keys by kind, fallback commands, deferred and reach
+# notice lines), not just their counts.
+import hashlib as _nvh
+_extras["fallback_excluded"] = len(fallback_notices)
+_nv_ids = (sorted(m["key"] + "|" + m["kind"] for m in matched_rules if m["kind"] != "normal")
+           + sorted(fallback_notices)
+           + sorted(n for n in notices if n.startswith("deferred to /crew:verify: ")
+                    or " is permanently over budget" in n or " declared reach: " in n
+                    or " requires a clean working tree" in n))
+_extras["nv_digest"] = _nvh.sha256("\n".join(_nv_ids).encode("utf-8", "replace")).hexdigest()
 # --ci only: how many rules and fallback commands the reach filter took out
 # (the pass line says whether any did), and, when nothing is left to run,
 # why - the caller exits 2 on an empty command list and names this reason.
@@ -1740,12 +2195,29 @@ if CI_MODE:
     if not cmds and fallback_notices:
         _extras["ci_nothing"] += " (%d `always`/`default` command(s) excluded for reach)" % len(fallback_notices)
 extras = json.dumps(_extras)
+# Record 9 (crew 1.2.117), aligned with record 1: `<rule index>:<price>` for
+# each command - the rule it runs as part of, and that rule's price in whole
+# seconds as the budget charged it. Either half is empty when unknown (an
+# `always`/`default` command has no rule; a rule with no `seconds` and no
+# cached measurement has no price), and the run loop treats empty as unknown,
+# never as zero.
+import math as _m9
+def _owner_spec(c):
+    ri = _owner.get(c)
+    if ri is None:
+        ri = next((r for r in rule_order if c in rule_cmds.get(r, [])), None)
+    if ri is None:
+        return ":"
+    price = rule_secs.get(ri)
+    return "%d:%s" % (ri, "" if price is None else str(int(_m9.ceil(price))))
+owner_record = "\x1e".join(_owner_spec(c) for c in cmds)
 sys.stdout.write("\x1e".join(cmds) + "\x1d" + "\x1e".join(unmatched) + "\x1d" + "\x1e".join(notices)
                  + "\x1d" + str(acute_count)
                  + "\x1d" + str(int(max_cost))
                  + "\x1d" + extras
                  + "\x1d" + cover_record
-                 + "\x1d" + "\x1e".join("1" if c in tree_cached else "" for c in cmds) + "\n")
+                 + "\x1d" + "\x1e".join("1" if c in tree_cached else "" for c in cmds)
+                 + "\x1d" + owner_record + "\n")
 PY
 )
 # CAPTURE FIRST, STRIP SECOND - not piped directly through `tr -d '\r'` on
@@ -1848,8 +2320,21 @@ TREE_AT=()
 while IFS= read -r TREE_LINE; do
   TREE_AT+=("$TREE_LINE")
 done <<< "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 8p | tr '\036' '\n')"
+# Record 9 (crew 1.2.117): `<rule index>:<price>` per position, for the
+# deadline guard in the run loop. Missing or short means "rule and price
+# unknown" - the guard then runs the command only while time is left.
+OWN_AT=()
+while IFS= read -r OWN_LINE; do
+  OWN_AT+=("$OWN_LINE")
+done <<< "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 9p | tr '\036' '\n')"
 if [ -n "$NOTICES" ]; then
-  printf '%s\n' "$NOTICES" >&2
+  while IFS= read -r NOTICE_LINE; do
+    if gate_notice_is_info "$NOTICE_LINE"; then
+      gate_detail "$NOTICE_LINE"
+    else
+      printf '%s\n' "$NOTICE_LINE" >&2
+    fi
+  done <<< "$NOTICES"
 fi
 
 # --ci: zero commands to run is not a pass. Every matched rule excluded for
@@ -2062,6 +2547,130 @@ cover_credit() {
   fi
   [ "$COVER_STATE" = ok ]
 }
+# --- the hook deadline (crew 1.2.117) ---------------------------------------
+# The Stop budget picks rules by ESTIMATED cost, then each one ran to the end
+# with no clock at all. When the estimates were wrong the hook killed the
+# gate (taskkill /F: no trap, nothing recorded) - measured 2026-11-07, 862s
+# against the 600s limit on a clean origin/main. So before each RULE starts,
+# its price is held against the time left before the hook deadline, less
+# DEADLINE_MARGIN for what follows the loop (the record sync, the markers,
+# the log). A rule that would not fit is DEFERRED, by name, with the reason
+# `deferred: would pass the hook deadline`; it counts as deferred, so the
+# verified marker and fingerprint do not advance over it.
+#
+# The deadline is CREW_HOOK_DEADLINE (epoch MILLISECONDS), exported by the
+# launcher (crew-hook.sh/.ps1, crew_hook.py). On Stop it sits at most
+# EVENT_SLACK - DEADLINE_MARGIN (5s) past the row's own kill time, because
+# verify-gate is Stop's largest row (test_verify_gate_deadline.py holds that).
+# Stop only: --all and --ci are not run by the hook. Absent (a manual run)
+# means no deadline to keep, so nothing is deferred for one. Present but not
+# an epoch means the deadline CANNOT be told: said out loud, and nothing is
+# deferred for it - the rules run as they did before this guard existed,
+# which never reports anything as verified that did not run.
+#
+# A rule with no price runs while ANY time is left and is deferred once none
+# is: its cost is unknown, and an unknown is neither zero nor infinity. If it
+# then overruns and the hook kills the run, the in-flight record prices it
+# for the next Stop (verify_record.py inflight-settle). A rule already part
+# way through keeps running while time is left; with none left, the rest of
+# it is deferred and the rule is NOT verified (the record keeps whatever it
+# held, because some of its commands never ran).
+DEADLINE_MARGIN=60
+# TEST SEAM, read from the environment like CREW_VERIFY_LOCK_TTL: 0..60 is
+# honoured, anything larger or not a plain decimal leaves 60, so a suite can
+# drive a real kill at a real deadline in seconds instead of waiting out the
+# margin. Stated plainly: unlike the TTL seam, a SMALLER value here is the
+# riskier direction - the gate then cuts closer to the kill, and the worst
+# case is the pre-1.2.117 behaviour (a killed run), which the in-flight record
+# still prices for the next Stop. Nothing operator-facing names it; it exists
+# for tests/test_verify_gate_deadline.py and must not be set elsewhere.
+case "${CREW_VERIFY_DEADLINE_MARGIN:-}" in
+  ''|*[!0-9]*|???*) ;;
+  *) [ "$((10#$CREW_VERIFY_DEADLINE_MARGIN))" -le "$DEADLINE_MARGIN" ] \
+       && DEADLINE_MARGIN=$((10#$CREW_VERIFY_DEADLINE_MARGIN)) ;;
+esac
+GATE_DEADLINE_S=""
+DEADLINE_DEFER_N=0
+DEADLINE_STARTED=" "
+DEADLINE_DEFERRED=" "
+if [ -z "$BUDGET_FLAG" ] && [ -n "${CREW_HOOK_DEADLINE:-}" ]; then
+  case "$CREW_HOOK_DEADLINE" in
+    *[!0-9]*|0*|??????????????????*)
+      echo "verify-gate: CREW_HOOK_DEADLINE is not an epoch in milliseconds ('$(printf '%s' "$CREW_HOOK_DEADLINE" | head -c 40)') - the hook deadline cannot be told, so no rule is deferred for it this run" >&2 ;;
+    *) GATE_DEADLINE_S=$(( 10#$CREW_HOOK_DEADLINE / 1000 )) ;;
+  esac
+fi
+# 0 = run it, 1 = deferred (the line is printed here). $1 rule index or
+# empty, $2 price in seconds or empty, $3 the command text.
+deadline_defers() {
+  [ -n "$GATE_DEADLINE_S" ] || return 1
+  local _dd_ri="$1" _dd_price="$2" _dd_key _dd_left _dd_why
+  _dd_key="r${_dd_ri:-pos$POS}"
+  _dd_left=$(( GATE_DEADLINE_S - DEADLINE_MARGIN - $(date +%s) ))
+  case "$DEADLINE_DEFERRED" in
+    *" $_dd_key "*)
+      echo "verify-gate: deferred: would pass the hook deadline - part of rules[${_dd_ri:-?}], deferred with it - NOT VERIFIED this turn: $3" >&2
+      return 0 ;;
+  esac
+  case "$DEADLINE_STARTED" in
+    *" $_dd_key "*)
+      [ "$_dd_left" -gt 0 ] && return 1
+      _dd_why="no time is left before the hook deadline (${DEADLINE_MARGIN}s margin) and rules[${_dd_ri:-?}] is part-run, so it is NOT verified" ;;
+    *)
+      if [ -n "$_dd_price" ] && [ "$_dd_price" -le "$_dd_left" ]; then
+        DEADLINE_STARTED="$DEADLINE_STARTED$_dd_key "; return 1
+      elif [ -z "$_dd_price" ] && [ "$_dd_left" -gt 0 ]; then
+        gate_detail "verify-gate: rules[${_dd_ri:-?}] has no price; running it with ${_dd_left}s left before the hook deadline (${DEADLINE_MARGIN}s margin)"
+        DEADLINE_STARTED="$DEADLINE_STARTED$_dd_key "; return 1
+      fi
+      if [ -n "$_dd_price" ]; then
+        _dd_why="rules[${_dd_ri:-?}] is priced ${_dd_price}s and ${_dd_left}s are left before the hook deadline (${DEADLINE_MARGIN}s margin)"
+      else
+        _dd_why="rules[${_dd_ri:-?}] has no price and no time is left before the hook deadline (${DEADLINE_MARGIN}s margin)"
+      fi ;;
+  esac
+  DEADLINE_DEFERRED="$DEADLINE_DEFERRED$_dd_key "
+  DEADLINE_DEFER_N=$((DEADLINE_DEFER_N + 1))
+  echo "verify-gate: deferred: would pass the hook deadline - $_dd_why - NOT VERIFIED this turn: $3" >&2
+  return 0
+}
+# --- persistence after EACH rule (crew 1.2.117) -----------------------------
+# The timings cache, the quiet log and the in-flight record used to be written
+# only when the run ENDED, and a hook kill ends nothing: the next turn priced
+# the same rules from the same stale numbers and was killed the same way.
+# gate_progress runs before each command and once after the loop: it caches
+# every rule that has run clean so far and names the command now starting
+# (verify_record.py progress), and replaces .crew/.verify-gate.log with the
+# run so far, headed as unfinished. Both writes go through a temp file and a
+# rename, never a truncating open. A failure is said and changes nothing
+# about this run's verdict.
+PROGRESS_EXTRAS=""
+if [ -n "$PY" ] && [ -n "$EXTRAS" ] && [ -f "$FP_DIR/verify_record.py" ]; then
+  PROGRESS_EXTRAS=$(mktemp 2>/dev/null) || PROGRESS_EXTRAS=""
+  if [ -n "$PROGRESS_EXTRAS" ]; then
+    printf '%s\n' "$EXTRAS" > "$PROGRESS_EXTRAS" 2>/dev/null || PROGRESS_EXTRAS=""
+    _crew_gate_progress_cleanup() { rm -f "${PROGRESS_EXTRAS:-}"; }
+    _crew_gate_register_cleanup _crew_gate_progress_cleanup
+  fi
+fi
+gate_progress() {
+  local _gp_tmp
+  if [ -n "$PROGRESS_EXTRAS" ]; then
+    printf '%s\n' "$CMD_LOG" | "$PY" "$FP_DIR/verify_record.py" progress "$PROGRESS_EXTRAS" "$@" 2>&1 \
+      | tr -d '\r' >&2
+  fi
+  if [ "${CREW_GATE_QUIET:-0}" -eq 1 ] && [ "$CREW_GATE_MAY_LOG" -eq 1 ] && [ -f "$CREW_GATE_BUF" ] \
+     && [ -d .crew ] && [ ! -d .crew/.verify-gate.log ]; then
+    _gp_tmp=$(mktemp ".crew/.verify-gate.log.tmpXXXXXX" 2>/dev/null) || return 0
+    if { printf 'verify-gate: RUN NOT FINISHED when this was written (%s) - if no verdict line follows in a later write, the run was killed; the rules below it did not run\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+         LC_ALL=C sed "s/^$CREW_GATE_NONCE//" "$CREW_GATE_BUF"; } > "$_gp_tmp" 2>/dev/null \
+       && mv -f "$_gp_tmp" .crew/.verify-gate.log 2>/dev/null; then
+      :
+    else
+      rm -f "$_gp_tmp" 2>/dev/null
+    fi
+  fi
+}
 while IFS= read -r IDENT; do
   # Incremented BEFORE any `continue`, so positions stay aligned with
   # record 7 even across a blank line.
@@ -2090,7 +2699,7 @@ print(text + "\x1e" + (envjson if sep else ""), end="")
   c="${SPLIT%%$'\x1e'*}"
   ENV_JSON="${SPLIT#*$'\x1e'}"
   if [ -n "$TREE_PRE" ] && [ "${TREE_AT[$POS]:-}" = 1 ]; then
-    echo "verify-gate: PASSED on this exact tree in an earlier run - not re-run: $c" >&2
+    gate_detail "verify-gate: PASSED on this exact tree in an earlier run - not re-run: $c"
     STATUS_AT[$POS]="covered"
     TREE_N=$((TREE_N + 1))
     # "tree" LAST, so the withdrawal after the loop can match it at end of line.
@@ -2101,12 +2710,27 @@ $LOG_LINE"
   fi
   GUARD="${COVER_AT[$POS]:-}"
   if [ -n "$GUARD" ] && cover_credit "$GUARD"; then
-    echo "verify-gate: COVERED by rules[${GUARD%%;*}] (passed this run): $c" >&2
+    gate_detail "verify-gate: COVERED by rules[${GUARD%%;*}] (passed this run): $c"
     STATUS_AT[$POS]="covered"
     COVERED_N=$((COVERED_N + 1))
     LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0}))' "$IDENT" 2>/dev/null | tr -d '\r')
     [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
 $LOG_LINE"
+    continue
+  fi
+  # --- the hook deadline (crew 1.2.117; see deadline_defers above) -----
+  # A deferred command is left out of CMD_LOG, so the record sync reads its
+  # rule as not run and leaves that rule's entry as it was.
+  OWN_SPEC="${OWN_AT[$POS]:-}"
+  OWN_RI=""
+  OWN_PRICE=""
+  case "$OWN_SPEC" in
+    *:*) OWN_RI="${OWN_SPEC%%:*}"; OWN_PRICE="${OWN_SPEC#*:}" ;;
+  esac
+  case "$OWN_RI" in *[!0-9]*) OWN_RI="" ;; esac
+  case "$OWN_PRICE" in *[!0-9]*|????????*) OWN_PRICE="" ;; esac
+  if deadline_defers "$OWN_RI" "$OWN_PRICE" "$c"; then
+    STATUS_AT[$POS]="deadline"
     continue
   fi
   # --- env pinning ---------------------------------------------------
@@ -2152,9 +2776,13 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
       PIN_REPORT="$PIN_REPORT $VAR=unset"
     fi
   done <<< "$ENV_LINES"
-  echo "verify-gate: env pinned -$PIN_REPORT" >&2
+  gate_detail "verify-gate: env pinned -$PIN_REPORT"
   # </dev/null: a check that reads stdin (some test runners do) would otherwise
   # consume the rest of $CMDS from the here-string and silently skip those checks.
+  # crew 1.2.117: what has run so far is on disk, and so is what starts now.
+  # BEFORE RULE_START, so the python spawn is not billed to the rule's own
+  # measured time (measured: up to 10s a spawn on a loaded Windows host).
+  gate_progress "$IDENT" "$(date +%s)" "$GATE_DEADLINE_S"
   RULE_START=$(date +%s)
   # Captured through a REGULAR FILE, not the `$(...)` pipe this used before
   # (kept as the fallback below for the one case a temp file cannot be
@@ -2245,7 +2873,7 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # or 143 for a rule that passed, exited 3, or was ended by KILL or TERM;
     # killing the outer wrapper gives `wait` 137 and no record.
     RULE_IN_FLIGHT="$c"
-    ( ( eval "$c" ); printf '%s\n' "$?" > "$RULE_DONE_FILE" ) >"$RULE_OUT_FILE" 2>&1 </dev/null &
+    ( ( eval "$c" ); printf '%s\n' "$?" > "$RULE_DONE_FILE" ) >"$RULE_OUT_FILE" 2>&1 </dev/null 4>&- &
     RULE_SUBSHELL_PID=$!
     wait "$RULE_SUBSHELL_PID" 2>/dev/null
     RULE_WRAP_RC=$?
@@ -2380,7 +3008,7 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
   STATUS_AT[$POS]="$CMD_STATUS"
   RULE_ELAPSED=$(( $(date +%s) - RULE_START ))
   TOTAL_ELAPSED=$(( TOTAL_ELAPSED + RULE_ELAPSED ))
-  echo "verify-gate: ${RULE_ELAPSED}s  $c" >&2
+  gate_detail "verify-gate: ${RULE_ELAPSED}s  $c"
   if [ -n "$PY" ]; then
     # $IDENT, not $c: matched_rules[...].cmds carries identities (text+env),
     # so the record-sync classification (which matches THIS log against
@@ -2400,17 +3028,24 @@ $LOG_LINE"
   # finished', so a long run keeps extending while it makes progress.
   lock_extend
 done <<< "$CMDS"
+# The last command's timing, and no command in flight any more.
+gate_progress
+CREW_GATE_READY=1
+[ -z "${BASE_NOTE:-}" ] || gate_detail "$BASE_NOTE"
+if [ "$DEADLINE_DEFER_N" -gt 0 ]; then
+  echo "verify-gate: $DEADLINE_DEFER_N rule(s) deferred: would pass the hook deadline - NOT VERIFIED this turn; /crew:verify --all runs them with no deadline" >&2
+fi
 
-echo "verify-gate: ${TOTAL_ELAPSED}s total across $(printf '%s
-' "$CMDS" | grep -c .) rule command(s)" >&2
+gate_detail "verify-gate: ${TOTAL_ELAPSED}s total across $(printf '%s
+' "$CMDS" | grep -c .) rule command(s)"
 if [ "$UNKNOWN_N" -gt 0 ]; then
   echo "verify-gate: $UNKNOWN_N rule command(s) COULD NOT BE JUDGED - counted as FAILED" >&2
 fi
 if [ "$COVERED_N" -gt 0 ]; then
-  echo "verify-gate: $COVERED_N of them COVERED by a declared superset rule that passed this run - not re-run" >&2
+  gate_detail "verify-gate: $COVERED_N of them COVERED by a declared superset rule that passed this run - not re-run"
 fi
 if [ "$TREE_N" -gt 0 ]; then
-  echo "verify-gate: $TREE_N of them PASSED on this exact tree in an earlier run - not re-run" >&2
+  gate_detail "verify-gate: $TREE_N of them PASSED on this exact tree in an earlier run - not re-run"
 fi
 # Save what passed, for this tree only, and only when the tree did not move
 # while the rules ran: a rule that edits files, or an edit made meanwhile,
@@ -2438,6 +3073,7 @@ if [ -n "$UNMAPPED" ] && grep -q '"unmapped"[[:space:]]*:[[:space:]]*"fail"' .cr
   echo "UNMAPPED CHANGES - .crew/verify.json has no rule for:" >&2
   echo "$UNMAPPED" >&2
   echo "Add a rule (or mark it deliberately unchecked) before reporting this complete." >&2
+  CREW_GATE_UNMAPPED_FAILED=1
   FAILED=1
 fi
 
@@ -2500,13 +3136,22 @@ if [ -n "$PY" ] && [ -n "$EXTRAS" ]; then
   SYNC_PY="$FP_DIR/verify_record.py"
   if [ -f "$SYNC_PY" ]; then
     SYNC_SHA=$(git rev-parse HEAD 2>/dev/null)
-    "$PY" -c '
+    # EXTRAS goes through a temp FILE, never argv (see CHANGED_FILE above):
+    # one argv element is capped at 128 KiB on Linux and the whole command line
+    # at 32,767 characters on Windows, and a large map's matched rules pass both.
+    EXTRAS_FILE=$(mktemp 2>/dev/null) || EXTRAS_FILE=""
+    if [ -z "$EXTRAS_FILE" ]; then
+      echo "verify-gate: could not create a temp file for the record sync; NOT advancing the marker" >&2
+    else
+      printf '%s\n' "$EXTRAS" > "$EXTRAS_FILE"
+      "$PY" -c '
 import json, sys
 try:
     sys.stdout.reconfigure(newline="\n")
 except (AttributeError, ValueError):
     pass
-extras = json.loads(sys.argv[1])
+with open(sys.argv[1], encoding="utf-8") as fh:
+    extras = json.loads(fh.read())
 cmd_log = []
 for line in sys.stdin.read().split("\n"):
     line = line.strip()
@@ -2517,8 +3162,17 @@ for line in sys.stdin.read().split("\n"):
     except ValueError:
         pass
 print(json.dumps({"sha": sys.argv[2], "all": sys.argv[3] == "--all", "matched_rules": extras.get("matched_rules", []), "cmd_log": cmd_log}))
-' "$EXTRAS" "$SYNC_SHA" "$BUDGET_FLAG" <<< "$CMD_LOG" | tr -d '\r' | "$PY" "$SYNC_PY" sync >&2
-    SYNC_STATUS=$?
+  ' "$EXTRAS_FILE" "$SYNC_SHA" "$BUDGET_FLAG" <<< "$CMD_LOG" | tr -d '\r' | gate_record_sync "$PY" "$SYNC_PY"
+      SYNC_PIPE=("${PIPESTATUS[@]}")
+      rm -f "$EXTRAS_FILE"
+      SYNC_STATUS=${SYNC_PIPE[2]}
+      # A producer or filter that failed is a failed sync even when the stage
+      # after it read an empty stdin and exited 0: the marker must not advance.
+      if [ "$SYNC_STATUS" -eq 0 ] && { [ "${SYNC_PIPE[0]}" -ne 0 ] || [ "${SYNC_PIPE[1]}" -ne 0 ]; }; then
+        echo "verify-gate: the record sync payload could not be built (producer exit ${SYNC_PIPE[0]}, filter exit ${SYNC_PIPE[1]}); NOT advancing the marker" >&2
+        SYNC_STATUS=1
+      fi
+    fi
   else
     echo "verify-gate: could not sync the record (verify_record.py not found at $SYNC_PY); NOT advancing the marker" >&2
   fi
@@ -2608,6 +3262,10 @@ elif [ "${TREE_MOVED:-0}" -ne 0 ]; then
   ALSO_DEFERRED=""
   [ "${DEFERRED_COUNT:-0}" -gt 0 ] && ALSO_DEFERRED="; $DEFERRED_COUNT rule command(s) were also deferred"
   echo "verify-gate: the verified baseline was NOT advanced - the tree changed during this run, and $TREE_N credited command(s) were not checked against it$ALSO_DEFERRED." >&2
+elif [ "${DEADLINE_DEFER_N:-0}" -gt 0 ]; then
+  ALSO_DEFERRED=""
+  [ "${DEFERRED_COUNT:-0}" -gt 0 ] && ALSO_DEFERRED=", and $DEFERRED_COUNT more by the Stop budget"
+  echo "verify-gate: the verified baseline was NOT advanced - $DEADLINE_DEFER_N rule(s) were deferred because they would pass the hook deadline$ALSO_DEFERRED, and have not been checked against this tree." >&2
 else
   echo "verify-gate: the verified baseline was NOT advanced - $DEFERRED_COUNT rule command(s) were deferred and have not been checked against this tree." >&2
 fi

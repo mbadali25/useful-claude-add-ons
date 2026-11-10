@@ -15,8 +15,7 @@ status not 0 -> unknown; record missing, empty, not 1-3 digits or above 255
 prints `VERIFY FAILED: <cmd>` and `verify-gate: COULD NOT TELL (<reason>):
 <cmd>`, fails the run, logs status `unknown` and never advances the marker.
 
-Every `[ps1]` case runs wherever pwsh exists (OS=Windows_NT past the flavour
-guard, as test_verify_gate_subset_cover.py does). A rule that kills its
+The `[ps1]` cases (verify-gate.ps1, deleted in L-0869) are gone. A rule that kills its
 wrapper never signals `$$` or `$PPID` under `[sh]`: those are the gate and
 this test. The native-Windows run the spec asks for is not done here.
 """
@@ -37,21 +36,16 @@ import context  # noqa: F401  pylint: disable=unused-import
 
 _ROOT = context._ROOT  # pylint: disable=protected-access
 _SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
-_PS1 = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.ps1")
 
 _BASH = crew_fixtures.resolve_bash()
-_PWSH = shutil.which("pwsh")
 
-_NEEDS_PS1 = pytest.mark.skipif(_PWSH is None or _BASH is None, reason="needs pwsh and bash")
-# F1: the [ps1] halves are `slow` (the gate's own rule 4 stays inside a Stop
-# budget); a smoke set of three keeps the .ps1 table on the default path.
+# F1: the [ps1] halves were `slow` and a smoke set kept a few on the default
+# path (verify-gate.ps1, deleted in L-0869); only [sh] remains.
 _SMOKE_FLAVOURS = [
     pytest.param("sh", marks=pytest.mark.skipif(_BASH is None, reason="needs bash")),
-    pytest.param("ps1", marks=_NEEDS_PS1),
 ]
 _FLAVOURS = [
     _SMOKE_FLAVOURS[0],
-    pytest.param("ps1", marks=[_NEEDS_PS1, pytest.mark.slow]),
 ]
 
 
@@ -102,16 +96,14 @@ def _repo(tmp_path, run):
 
 
 def _cmd(flavour):
-    if flavour == "sh":
-        return [_BASH, _SH, "--all"]
-    return [_PWSH, "-NoProfile", "-NonInteractive", "-File", _PS1, "-All"]
+    assert flavour == "sh"
+    return [_BASH, _SH, "--all"]
 
 
 def _env(flavour, root, extra=None):
+    assert flavour == "sh"
     full = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
     full.pop("PYTEST_ADDOPTS", None)
-    if flavour == "ps1" and not sys.platform.startswith("win"):
-        full["OS"] = "Windows_NT"
     full.update(extra or {})
     return full
 
@@ -129,15 +121,11 @@ def _marker(root):
 
 
 def _runner_killed(flavour):
-    """The wrapper's status as its parent sees it: 137 from bash, and from a
-    native Windows parent (pwsh) of an MSYS bash.exe ended by SIGKILL, 2304 -
-    MSYS hands the signal back as `9 << 8` (measured on CI's windows-latest).
-    2304 is accepted only there: [sh], and [ps1] off Windows, still 137 only.
-    Either way the reason, and the could-not-tell outcome, are the same."""
-    msys = flavour == "ps1" and sys.platform.startswith("win")
-    status = "(137|2304)" if msys else "137"
-    return re.compile(r"the rule's runner ended with status " + status
-                      + r" before it recorded a result")
+    """The wrapper's status as its parent sees it: 137 from bash. (A native
+    Windows pwsh parent, deleted in L-0869, saw 2304 = `9 << 8` instead.)"""
+    del flavour  # only [sh] remains; 2304 was the native-Windows .ps1 parent's form
+    return re.compile(r"the rule's runner ended with status 137"
+                      r" before it recorded a result")
 
 
 def _says(stderr, reason, cmd):
@@ -266,29 +254,6 @@ def test_unreadable_record_could_not_tell(flavour, value, tmp_path):
 
     assert res.returncode == 2, res.stderr
     assert f"{_TELL}no completion record): {cmd}" in res.stderr
-
-
-@pytest.mark.skipif(_PWSH is None or _BASH is None, reason="needs pwsh and bash")
-@pytest.mark.skipif(sys.platform.startswith("win"),
-                    reason="Resolve-CrewBash takes Git's own bash.exe there (walked up from "
-                           "git.exe), so the fixture cannot remove the bash the gate resolved")
-def test_ps1_launch_failure_does_not_inherit_the_previous_status(tmp_path):
-    """The first rule passes and removes the bash the gate resolved; the second
-    rule's `& $bashExe` cannot start. Before T-0082 `$rc` still held the first
-    rule's 0 and the second rule passed without running."""
-    bindir = tmp_path / "bin"
-    bindir.mkdir()
-    os.symlink(shutil.which("bash") or _BASH, bindir / "bash")
-    first = f"rm -f {(bindir / 'bash').as_posix()}"
-    second = "echo second-rule-ran"
-    root = _repo(tmp_path, [first, second])
-
-    res = _run("ps1", root, env={"PATH": str(bindir) + os.pathsep + os.environ["PATH"]})
-
-    assert res.returncode == 2, res.stderr
-    assert f"VERIFY FAILED: {first}" not in res.stderr
-    assert f"{_TELL}the rule's shell could not be started): {second}" in res.stderr
-    assert _marker(root) is None
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
@@ -434,9 +399,8 @@ def test_no_record_file_is_left_behind(flavour, tmp_path):
     root = _repo(tmp_path, ["echo ok", "exit 1", "kill -KILL $BASHPID"])
     # TMP/TEMP handed to a child: inside the MSYS /tmp pin (a no-op off
     # Windows), pinning the bash the gate's own rules run under - resolved
-    # before `env` exists, as test_34d_ps1 does (it only reads PATH).
-    pin = (crew_fixtures.gate_bash(_PWSH, _PS1)
-           if flavour == "ps1" and sys.platform.startswith("win") else _BASH)
+    # before `env` exists.
+    pin = _BASH
     env = dict(_env(flavour, root), TMPDIR=str(tmpdir), TMP=str(tmpdir), TEMP=str(tmpdir))
     with crew_fixtures.msys_tmp_pinned(pin, env):
         res = crew_fixtures.run_gate(_cmd(flavour), input="{}", cwd=str(root), env=env,
@@ -497,25 +461,3 @@ def test_the_record_lives_in_a_private_directory(flavour, tmp_path):
     assert lines[0] == "rc", lines
     if not sys.platform.startswith("win"):
         assert lines[1] == "700", lines
-
-
-@pytest.mark.skipif(_PWSH is None or _BASH is None, reason="needs pwsh and bash")
-def test_ps1_fallback_record_from_a_subdirectory_passes(tmp_path):
-    """F3: TMPDIR unusable, so both files fall back under `.crew/`; the gate is
-    started from a subdirectory. .NET resolves a relative path against the
-    process directory, not PowerShell's location, so the paths must be made
-    absolute from the repo root or the record is never found."""
-    root = _repo(tmp_path, ["echo ok"])
-    sub = root / "sub"
-    sub.mkdir()
-    gone = tmp_path / "no-such-tmp"
-    pin = crew_fixtures.gate_bash(_PWSH, _PS1) if sys.platform.startswith("win") else _BASH
-    env = dict(_env("ps1", root), TMPDIR=str(gone), TMP=str(gone), TEMP=str(gone))
-
-    with crew_fixtures.msys_tmp_pinned(pin, env):
-        res = crew_fixtures.run_gate(_cmd("ps1"), input="{}", cwd=str(sub), env=env,
-                                     capture_output=True, text=True, check=False,
-                                     timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
-
-    assert res.returncode == 0, res.stderr
-    assert "COULD NOT TELL" not in res.stderr

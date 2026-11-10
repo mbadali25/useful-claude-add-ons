@@ -223,6 +223,39 @@ def case_harness_nested_readme(tmp: str) -> str:
     return _harness_with(tmp, "skills/x/README.md")
 
 
+def case_harness_hooks_registration(tmp: str) -> str:
+    """hooks.json and the dispatcher's three files are harness (L-0727), and they ride
+    with the claim-carrying docs and the declared crew_instructions.py seam."""
+    root = repo(tmp)
+    commit(root, ["plugin/crew/hooks/hooks.json", "plugin/crew/hooks/scripts/crew_hook.py",
+                  "plugin/crew/hooks/scripts/crew-hook.sh", "plugin/crew/hooks/scripts/crew-hook.ps1",
+                  "plugin/crew/hooks/scripts/crew_instructions.py", "INSTALLATION.md", "plugin/README.md"],
+           "the dispatcher\n\nTooling-seam: plugin/crew/hooks/scripts/crew_instructions.py")
+    return root
+
+
+def case_hooks_json_alone_is_harness(tmp: str) -> str:
+    """hooks.json with a feature file: the registration is harness now."""
+    root = repo(tmp)
+    commit(root, ["plugin/crew/hooks/hooks.json", "plugin/crew/hooks/scripts/crew_tracker.py"],
+           "hooks.json plus a feature")
+    return root
+
+
+def case_dispatcher_launcher_with_feature(tmp: str) -> str:
+    root = repo(tmp)
+    commit(root, ["plugin/crew/hooks/scripts/crew-hook.ps1", "skills/x/SKILL.md"], "launcher plus a feature")
+    return root
+
+
+def case_instructions_undeclared(tmp: str) -> str:
+    """crew_instructions.py rides only when a commit declares it."""
+    root = repo(tmp)
+    commit(root, ["plugin/crew/hooks/scripts/crew_hook.py", "plugin/crew/hooks/scripts/crew_instructions.py"],
+           "dispatcher and its renderer, undeclared")
+    return root
+
+
 def case_no_origin(tmp: str) -> str:
     root = repo(tmp, origin=False)
     commit(root, [HARNESS_FILE], "harness")
@@ -260,6 +293,12 @@ CASES = [
     ("must-block harness+readme+feature", case_harness_readme_and_feature, 1,
      "  skills/x/SKILL.md"),
     ("must-block harness+nested-readme", case_harness_nested_readme, 1, "  skills/x/README.md"),
+    ("must-allow hooks-registration+claim-docs+declared-seam", case_harness_hooks_registration, 0, "OK"),
+    ("must-block hooks.json+feature", case_hooks_json_alone_is_harness, 1,
+     "  plugin/crew/hooks/scripts/crew_tracker.py"),
+    ("must-block launcher+feature", case_dispatcher_launcher_with_feature, 1, "  skills/x/SKILL.md"),
+    ("must-block dispatcher+undeclared-crew_instructions", case_instructions_undeclared, 1,
+     "  plugin/crew/hooks/scripts/crew_instructions.py"),
 ]
 
 

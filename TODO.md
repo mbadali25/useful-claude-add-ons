@@ -10,6 +10,13 @@ be wrong can be closed on evidence.
   a lint gate (`.pylintrc`'s max-module-lines note: sabotage and codemap anchors). Unblocked by a
   ticket that picks the seam (the deploy-allowed policy, or ship/focus) and moves its sabotage rows.
 
+- **Split `plugin/crew/hooks/scripts/crew_guards.py` (over `.pylintrc`'s 3400 lines).** SRL-2308's
+  review round 2 (the command-word fallback's variable and interpreter reading) took it past 3400;
+  it carries a module-level `# pylint: disable=too-many-lines`, as `crew_config.py` and
+  `crew_autopilot.py` do. The natural seam is the SRL-2308 fallback (`_CommandSplitter` through
+  `command_word_names_tool`), which `crew_guards` calls in three places; moving it needs a ticket
+  that also moves its sabotage rows.
+
 - **L-0509 harness follow-up (the Complete archive), lands alone under T-0087.** L-0509 routed
   every non-harness ticket reader through `crew_common.locate_ticket`; these harness paths still
   read only the live `.work/tickets/<id>/`: (a) `plugin/crew/hooks/scripts/crew_ticket.py`
@@ -303,7 +310,7 @@ be wrong can be closed on evidence.
   (T-0042 round-4 neighbour). `crew_resume.py::settings` reads each repo file through `_load`,
   which returns `{}` for a malformed or unreadable file, so it vetoes nothing - the same class as
   round 4's FIX (an unreadable veto reads as no veto). T-0006's approved plan chose it and
-  CONFIG.md §14a documents it; reported to the owner, not changed quietly.
+  docs/crew/config-rationale.md documents it; reported to the owner, not changed quietly.
 - `plugin/crew/tests/test_auto_cycle.py` (24 failures, measured both
   before and after crew-1.0-win-ps1-ac's fix, identical set both times):
   bash/tmux/symlink-flavour tests fail on this Windows dev host for
@@ -491,7 +498,7 @@ at minimum be loud.
 
 ## Correctness and verification gaps
 
-### CONFIG.md §10/§11 tables
+### docs/crew/config-rationale.md/§11 tables
 
 Found by T-0066 (2026-10-03, crew 1.0.185) while re-measuring the two headings:
 `len(leaf_paths(default_global_config()))` is 73 and the repo-only remainder is 57.
@@ -3229,6 +3236,7 @@ than writing a second one: `verify-gate.sh` already stripped the `**/` form
 correctly, so the report was the only copy that was wrong.
 
 ## The two gate matchers disagree with each other
+> **Superseded 2026-10-22 (L-0869):** `verify-gate.ps1` is deleted; the PowerShell side of this item no longer exists. Only the `.sh` half, if any, remains open.
 
 Filed 2026-09-18, found while fixing the above. **Not blocking that work, so
 not folded into it:** this is a change to a hook that can `exit 2`, so under
@@ -3341,6 +3349,7 @@ while closing the two BLOCKs and the budget FIX. None of them blocked that
 work, so none of them was widened into it.
 
 ### 1. A filename containing a NEWLINE still breaks the whole gate, not only the digest
+> **Note 2026-10-22 (L-0869):** the `verify-gate.ps1` half of this is gone with the file; the `verify-gate.sh` reader remains.
 
 `plugin/crew/hooks/scripts/verify-gate.sh:166` and
 `plugin/crew/hooks/scripts/verify-gate.ps1:247` produce one newline-delimited
@@ -4373,6 +4382,7 @@ The 6,000 target is far off. Ticket: cut the held command/skill allowances in `p
 prioritising what loads into context (skill/agent descriptions, commands) over on-disk reference files; measure
 per-session loaded characters as well as total lines; record both in `BUDGETS.md`. The scorecard prose row stays
 **Behind** until this lands. The post-1.0 review decides whether 6,000 is the right target.
+PARTLY CLOSED 2026-10-19 (L-0726 slices 1 and 2): `review.md` is 46 lines and `promote.md` 96, both with a 12,288-byte ceiling, the README is under 800 lines, and `BUDGETS.md` states the measured gap by area. The 6,000 target moves to the Phase 4 close-out after L-0724 and L-0725, with a skill-trim ticket (not filed).
 Also: wire `scripts/check_instructions.py` into CI once T2 clears its 4 intentional red findings
 (`review.md:450,465` qa-reviewer dispatch; README `guard.sh`/`.ps1` citations).
 
@@ -4780,6 +4790,7 @@ Closed by T-0091: the AST scan was reconstructed, calibrated against the origina
 (57 sites, 9 shipped, none live on reading), and CLAUDE.md's paragraph rewritten from that output.
 
 ### win-repo hand-offs from the merge/pipe-capture/test-hygiene pass (filed 2026-09-24) - OPEN
+> **Superseded 2026-10-22 (L-0869):** `verify-gate.ps1` is deleted; the PowerShell side of this item no longer exists. Only the `.sh` half, if any, remains open.
 
 - `plugin/crew/hooks/scripts/verify-gate.ps1` twin of the `.sh` pipe-capture fix (`verify-gate.sh`, this session):
   when the per-rule output-capture temp file cannot be created, `.sh` now tries a second, repo-local location
@@ -5069,6 +5080,7 @@ whose creator can be re-proven at signal time by more than a session id -
 rather than re-deriving pid/pgid ownership proofs from `/proc` and `ps` by
 hand, which is what cost five rounds here.
 ### verify-gate.ps1 B4 fix (pipe-fallback): three pre-existing test failures on this host, unrelated to the fix - OPEN (filed 2026-09-25, win-repo)
+> **Superseded 2026-10-22 (L-0869):** `verify-gate.ps1` is deleted; the PowerShell side of this item no longer exists. Only the `.sh` half, if any, remains open.
 
 Fixing B4 (`plugin/crew/hooks/scripts/verify-gate.ps1:1601`-area: a failed temp-file creation fell back to a
 bare pipe capture, restoring the background-grandchild hang) surfaced three tests that are RED on this host at
@@ -5123,6 +5135,7 @@ From the Codex delta reviews of integ-ps1 (gpt-5.6-sol, high, read-only). None b
 - `plugin/crew/hooks/scripts/verify-gate.ps1:1684` - the transport variables that carry the rule command/output path into bash (`CREW_VERIFY_RULE_*`) stay visible to every rule, so a rule inspecting them behaves differently under the .ps1 flavour than under verify-gate.sh. Unset them inside the bash command before `eval`; add a parity test.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:1722` - the capped tail read seeks from the LIVE end of file (`Seek(-$readLen, End)`), not from the snapshotted `.Length`, so a leftover background writer still appending replaces the snapshot window with newer bytes. Still bounded (not a hang). Seek to `$snapshotLen - $readLen` from Begin, mirroring the .sh size snapshot + `tail -c`.
 - `plugin/crew/hooks/scripts/verify-gate.ps1:1736` - a zero-byte partial read produces two NUL bytes because `$buffer[0..($totalRead - 1)]` with `$totalRead = 0` is `0..-1`. Special-case 0; check the file for the same idiom elsewhere.
+> **Superseded 2026-10-22 (L-0869):** the three `verify-gate.ps1` bullets above are moot; the file is deleted.
 - `plugin/crew/hooks/scripts/auto-clear.ps1` - the parent claims the one-shot `.crew/.autoclear-sent-<key>` marker BEFORE it spawns the sendkeys child, so a child that fails to start or to bind its parameters consumes the session's only attempt without typing anything. Pre-existing; claim in the child after it has verified and typed, or release the claim on child failure.
 - `plugin/crew/tests/test_auto_clear_review_fixes.py:730` (Windows-only test) - the binding test's false case uses `Hwnd=0`, which equals `GetForegroundWindow()` when Windows returns NULL (locked/headless session), so the child reaches a real `SendWait` and could type `/clear` into another application. Use a real, known non-foreground window handle (or skip the false case when GetForegroundWindow() is 0).
 - `plugin/crew/tests/test_verify_gate_stop_gate_record.py:1803` - the no-bash skip uses `crew_fixtures.resolve_bash()`, a different discovery algorithm from verify-gate.ps1's `Resolve-CrewBash` (which walks up from git.exe), so a Git for Windows install with only its `cmd` dir on PATH silently skips this test. Skip based on the gate's own `-PrintBash` result instead.
@@ -5442,3 +5455,7 @@ counts` (`plugin/crew/tests/sabotage_prereview.py`; RED again after main's f808e
 real vacuity, not a platform skip. Each needs its target test re-checked against the code it guards.
 Also still open: `docs.theme default goes back to the string neutral` exits 4 (its target does not
 collect).
+
+- **L-0725 follow-up: fold `.crew/crew.json` into `.crew/config.json`.** L-0725 left the two repo files as it found them (`crew_common.CONFIG_NAMES`, `plugin/crew/hooks/scripts/crew_common.py`) to keep the config shrink away from the readers of the second file; the single-file question (which file is authoritative, and what `crew_migrate.py` writes) is the one in the entries above. File it as its own ticket, next free L- id.
+
+- **L-0725 follow-up: the tooling PR (lands alone under T-0087).** The feature PR touched no HARNESS path, so these stay for one tooling-only PR: (a) sabotage entries for the new code - `crew_guards.layer_guard_state` (min for max, malformed profile as `off`, override over a legacy key, profile over an override, an absent base compared with a legacy key, an override lifting a malformed profile), `_common.sh crew_guard_layer_armed` (first match restored, empty extraction as unarmed, an unreadable file skipped, the `\u` escape rule, the guards-shape and closing-brace rules) and the `crew_upgrade` schema-8 step; (b) every `plugin/crew/tests/sabotage*.py` anchor the 60 removed keys and the twelve guard keys moved (a dry `find`-count over `MUTATIONS`, no mutation run); (c) the `CONFIG.md` citations in `sabotage.py` (about `:2124`), `plugin/crew/commands/review.md` and `plugin/crew/agents/reviewer.md`, which cite sections of a file that is now generated. `tests/golden/**` citations are recorded evidence and stay.

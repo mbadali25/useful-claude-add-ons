@@ -6,13 +6,16 @@ token comes in through AI_CONNECT_PEER_TOKEN, a new peer's token goes straight
 to an owner-only file.
 
   config_tool.py inspect
-  config_tool.py bridge --host IP --port N --name NAME
+  config_tool.py bridge --host IP --port N --name NAME         (also makes the TLS certificate; own peer on wss://)
   config_tool.py add-peer NAME --out FILE
   config_tool.py enrol NAME --sha256 HEX                       (the peer made its own token; only the hash is here)
   config_tool.py revoke NAME                                   (take the peer out of auth.peers)
-  config_tool.py client --name NAME --bridge HOST --port N     (token in AI_CONNECT_PEER_TOKEN)
-  config_tool.py verify
-  config_tool.py smoke --bridge HOST --port N --name NAME      (token in AI_CONNECT_PEER_TOKEN, else client.token)
+  config_tool.py client --name NAME --bridge HOST --port N [--fingerprint SHA256]
+                                                               (token in AI_CONNECT_PEER_TOKEN; with the
+                                                               fingerprint wss:// pinned to it, else ws://)
+  config_tool.py verify                                        (client.bridge_url, pinned when it is wss://)
+  config_tool.py smoke --bridge HOST --port N --name NAME [--fingerprint SHA256]
+                                                               (token in AI_CONNECT_PEER_TOKEN, else client.token)
 """
 import argparse
 import asyncio
@@ -29,10 +32,11 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import bridge_tls  # noqa: E402  pylint: disable=wrong-import-position,import-error
 import installer  # noqa: E402  pylint: disable=wrong-import-position,import-error
 sys.path.append(str(Path(__file__).resolve().parent.parent / "vpn"))
 import tsadmin  # noqa: E402  pylint: disable=wrong-import-position,import-error
-from config_loader import CONFIG_PATH  # noqa: E402  pylint: disable=wrong-import-position,import-error
+from config_loader import CONFIG_PATH, bridge_endpoint, connect_options  # noqa: E402  pylint: disable=wrong-import-position,import-error
 
 # client/ goes last: its server.py must not shadow the plugin's server package
 sys.path.append(str(Path(__file__).resolve().parent.parent / "client"))
@@ -84,7 +88,9 @@ def cmd_inspect(_args) -> dict:
     token = client.get("token") or ""
     peers = (config.get("auth") or {}).get("peers") or {}
     return {"exists": True, "host": server.get("host"), "port": server.get("port"),
-            "name": client.get("name"), "bridge_url": client.get("bridge_url"),
+            "name": client.get("name"), "name_mode": client.get("name_mode"), "bridge_url": client.get("bridge_url"),
+            # Public: the SHA-256 of the Bridge's certificate, as every join code carries it
+            "bridge_fingerprint": client.get("bridge_fingerprint") or "",
             # Hashes, as config.yaml itself holds them: not secrets
             "peers": sorted(peers), "peer_sha256": {str(name): str(digest) for name, digest in peers.items()},
             "token_sha256": hashlib.sha256(token.encode()).hexdigest() if token else None}
@@ -103,7 +109,10 @@ def cmd_bridge(args) -> dict:
     installer.check_config()
     config = load()
     config["server"]["host"], config["server"]["port"] = args.host, args.port
+    # deploy keeps the Bridge's own peer on plain ws:// in the 0.2.15 transition release (its firewall step opens
+    # server.port only); the Bridge itself serves wss:// beside it, and `ai-connect pin` moves this peer over
     config["client"]["bridge_url"] = url
+    config["client"].pop("bridge_fingerprint", None)
     installer._save_config(config)  # pylint: disable=protected-access
     return {"action": action}
 
@@ -151,29 +160,47 @@ def cmd_revoke(args) -> dict:
     return {"action": "revoked"}
 
 
+def _fingerprint(text: str | None) -> str:
+    """--fingerprint normalised, or "" (plain ws://, deprecated); SystemExit for one that is not a SHA-256."""
+    if not text:
+        return ""
+    try:
+        return bridge_tls.normalize_fingerprint(text)
+    except ValueError as err:
+        raise SystemExit(f"--fingerprint: {err}") from None
+
+
 def cmd_client(args) -> dict:
     token = os.environ.get("AI_CONNECT_PEER_TOKEN", "").strip()
     if not token:
         raise SystemExit("AI_CONNECT_PEER_TOKEN is not set")
     installer._reject_placeholder(token, "Peer token")  # pylint: disable=protected-access
+    fingerprint = _fingerprint(args.fingerprint)
     if not CONFIG_PATH.exists():
         ask = answers({"Peer name": args.name, "IP or hostname": args.bridge, "peer token": token})
         installer._ask = ask  # pylint: disable=protected-access
         quietly(installer.write_config, server=False)
     installer.check_config()
     config = load()
-    url = installer._bridge_url(args.bridge, args.port)  # pylint: disable=protected-access
+    url = installer._bridge_url(args.bridge, args.port, tls=bool(fingerprint))  # pylint: disable=protected-access
     config["client"].update(name=args.name, token=token, bridge_url=url)
+    if fingerprint:
+        config["client"]["bridge_fingerprint"] = fingerprint
+    else:
+        config["client"].pop("bridge_fingerprint", None)
     installer._save_config(config)  # pylint: disable=protected-access
     return {"action": "written"}
 
 
-async def _handshake(url: str, token: str) -> dict:
+async def _handshake(url: str, token: str, fingerprint: str = "") -> dict:
     import websockets  # pylint: disable=import-outside-toplevel
     try:
         async with websockets.connect(url, additional_headers={"Authorization": f"Bearer {token}"},
-                                      open_timeout=5):
+                                      open_timeout=5, **connect_options(fingerprint)):
             return {"result": "ok", "url": url}
+    except bridge_tls.PinMismatch as err:
+        # Fail closed, before the OSError below: the token was not sent, and nothing retries over ws://
+        return {"result": "mismatch", "url": url, "detail": str(err)}
     except websockets.exceptions.InvalidStatus as err:
         if err.response.status_code == HTTPStatus.UNAUTHORIZED:
             return {"result": "refused", "url": url, "detail": f"{url} refused this machine's token (client.token)"}
@@ -183,12 +210,19 @@ async def _handshake(url: str, token: str) -> dict:
 
 
 def cmd_verify(_args) -> dict:
-    """Open a WebSocket to client.bridge_url with client.token and close it: no register, no message."""
+    """Open a WebSocket to client.bridge_url with client.token and close it: no register, no message.
+
+    wss:// is opened with client.bridge_fingerprint's pin and nothing else.
+    """
     if not CONFIG_PATH.exists():
         return {"result": "unknown", "detail": f"{CONFIG_PATH} missing"}
     client = load().get("client") or {}
     tsadmin.remember_secret(client.get("token"))
-    return asyncio.run(_handshake(client.get("bridge_url", ""), client.get("token") or ""))
+    try:
+        _host, _port, fingerprint = bridge_endpoint(client)
+    except ValueError as err:
+        return {"result": "unknown", "detail": str(err)}
+    return asyncio.run(_handshake(client.get("bridge_url", ""), client.get("token") or "", fingerprint))
 
 
 async def _frame_of(ws, wanted: str, deadline: float, accept=lambda frame: True) -> dict:
@@ -238,17 +272,19 @@ async def _round_trip(ws, name: str) -> tuple[bool, str]:
     return (False, wrong) if wrong else (True, f"a message to '{name}' came back inside the untrusted frame")
 
 
-async def _smoke(url: str, name: str, token: str) -> list[dict]:
+async def _smoke(url: str, name: str, token: str, fingerprint: str = "") -> list[dict]:
     import websockets  # pylint: disable=import-outside-toplevel
     checks = []
     opened = False
     try:
         async with websockets.connect(url, additional_headers={"Authorization": f"Bearer {token}"},
-                                      open_timeout=5) as ws:
+                                      open_timeout=5, **connect_options(fingerprint)) as ws:
             opened = True
             checks.append({"check": "auth", "ok": True, "detail": f"{url} accepted this machine's token"})
             ok, detail = await _round_trip(ws, name)
             checks.append({"check": "round_trip", "ok": ok, "detail": detail})
+    except bridge_tls.PinMismatch as err:
+        checks.append({"check": "auth", "ok": False, "detail": f"{url}: {err}"})
     except websockets.exceptions.InvalidStatus as err:
         refused = err.response.status_code == HTTPStatus.UNAUTHORIZED
         checks.append({"check": "auth", "ok": False, "detail": f"{url} refused this machine's token" if refused
@@ -259,7 +295,7 @@ async def _smoke(url: str, name: str, token: str) -> list[dict]:
                        "detail": f"{what}: {type(err).__name__}"})
     if len(checks) < 2:
         checks.append({"check": "round_trip", "ok": False, "detail": "not run: no authenticated connection"})
-    wrong = await _handshake(url, secrets.token_hex(32))
+    wrong = await _handshake(url, secrets.token_hex(32), fingerprint)
     detail = {"refused": "a random token was refused (HTTP 401)", "ok": "the Bridge ACCEPTED a random token"}.get(
         wrong["result"], f"could not tell: {wrong.get('detail')}")
     checks.append({"check": "wrong_token", "ok": wrong["result"] == "refused", "detail": detail})
@@ -275,8 +311,9 @@ def cmd_smoke(args) -> dict:
         raise SystemExit(f"no peer token: pass --token-file, set AI_CONNECT_PEER_TOKEN, or deploy this machine "
                          f"first ({CONFIG_PATH} has no client.token)")
     tsadmin.remember_secret(token)
-    url = installer._bridge_url(args.bridge, args.port)  # pylint: disable=protected-access
-    return {"checks": asyncio.run(_smoke(url, args.name, token))}
+    fingerprint = _fingerprint(args.fingerprint)
+    url = installer._bridge_url(args.bridge, args.port, tls=bool(fingerprint))  # pylint: disable=protected-access
+    return {"checks": asyncio.run(_smoke(url, args.name, token, fingerprint))}
 
 
 def main() -> int:
@@ -303,12 +340,14 @@ def main() -> int:
     c.add_argument("--name", required=True)
     c.add_argument("--bridge", required=True)
     c.add_argument("--port", type=int, required=True)
+    c.add_argument("--fingerprint", help="the Bridge certificate's SHA-256: wss:// pinned to it (else plain ws://)")
     c.set_defaults(func=cmd_client)
     sub.add_parser("verify").set_defaults(func=cmd_verify)
     s = sub.add_parser("smoke")
     s.add_argument("--bridge", required=True)
     s.add_argument("--port", type=int, required=True)
     s.add_argument("--name", required=True)
+    s.add_argument("--fingerprint", help="the Bridge certificate's SHA-256: test over wss:// pinned to it")
     s.set_defaults(func=cmd_smoke)
     args = p.parse_args()
     try:

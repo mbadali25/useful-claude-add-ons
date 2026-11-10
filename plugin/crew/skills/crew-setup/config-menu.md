@@ -82,7 +82,7 @@ row, then show its `choices` in order, 3 choices per page plus More: the
 first is the recommendation, and each label already names which choice is
 `current` and which is the `default`. Before offering a value that widens
 something (a ratcheted key, `pm.authority`, `autopilot.mode: plan`,
-`verifyGate: false`, `context.autoClear.unsafeFocus: true`), say what it
+`verifyGate: false`), say what it
 grants, from `global-config.md` or the `!` line Save will print.
 
 A read-only row shows its `refusedReason` and offers nothing.

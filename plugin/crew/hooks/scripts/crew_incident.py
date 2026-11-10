@@ -38,6 +38,9 @@ SKIP_LOG_PATH = ".crew/incident-skips.log"
 ARCHIVE_DIR = ".crew/incidents"
 REPORT_DIR = ".work"
 
+# L-0725: the stand-down length is fixed, no longer `emergency.ttlMinutes`.
+# crew_state imports this module, so the value cannot be imported from there:
+# `crew_state.EMERGENCY_TTL_MINUTES` is the same number and a test holds the two equal.
 DEFAULT_TTL_MINUTES = 120
 # A ceiling on `extend`, so "extend it again" cannot quietly become a policy.
 # Eight hours is one shift: past that, the environment is not in an incident
@@ -58,7 +61,7 @@ def _int_or(value, default):
     Same shape as crew_state.int_or, duplicated rather than imported: crew_state
     imports this module, and a cycle in a SessionStart hook breaks every session
     opened in the repository. A bool is rejected on purpose - True is an int in
-    Python, and `"ttlMinutes": true` means someone was confused.
+    Python, and `"maxTtlMinutes": true` means someone was confused.
     """
     if isinstance(value, bool):
         return default
@@ -79,9 +82,7 @@ def _dict_or_empty(value):
 def emergency_config(cfg):
     """The `emergency` block of .crew/config.json, with defaults applied."""
     block = _dict_or_empty(_dict_or_empty(cfg).get("emergency"))
-    ttl = _int_or(block.get("ttlMinutes"), DEFAULT_TTL_MINUTES)
-    if ttl <= 0:
-        ttl = DEFAULT_TTL_MINUTES
+    ttl = DEFAULT_TTL_MINUTES
     # A ceiling below the default window would make every declaration shorter
     # than asked for without saying so; the larger of the two is the honest
     # reading of "cap it at this".

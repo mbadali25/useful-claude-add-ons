@@ -110,47 +110,31 @@ def test_the_four_guards_are_declared_in_both_layers_and_default_to_block():
     repo = crew_config.default_config()
     glob = crew_config.default_global_config()
 
-    assert set(repo["guards"]) == set(crew_state.ALL_GUARD_NAMES)
+    assert repo["guards"] == {"profile": "off", "overrides": {}}
     assert repo["guards"] == glob["guards"]
+    assert crew_config.is_global_path("guards.profile")
+    assert crew_config.is_global_path("guards.overrides.forcePush")
+    # `off` is exactly the guard defaults: the six command guards at `block`
+    # and the two production guards at `none` (their own vocabulary, so the
+    # floor is asserted in its own words).
     for name in crew_state.GUARD_NAMES:
-        assert repo["guards"][name] == "block", name
-        assert crew_config.is_global_path(f"guards.{name}"), name
-    # The two production guards share the block and the ratchet and NOT the
-    # vocabulary, so their floor is asserted in their own words. A test that
-    # looped `== "block"` over all six would either fail or, worse, be
-    # "fixed" by giving them a tier name that means nothing to them.
+        assert crew_state.PROFILE_MAP["off"][name] == "block", name
     for name in crew_state.PROD_GUARD_NAMES:
-        assert repo["guards"][name] == "none", name
-        assert crew_config.is_global_path(f"guards.{name}"), name
+        assert crew_state.PROFILE_MAP["off"][name] == "none", name
 
 
-def test_github_merge_gate_is_declared_in_both_layers_without_a_preset():
-    """`preset`'s ABSENCE is the decision, not an omission.
-    `bitbucket.mergeGate.preset` binds to nothing -- CONFIG.md §8 records why it
-    stays unwired -- so copying it here would ship that defect a second time,
-    on purpose. Asserted negatively because a `preset` arriving later would
-    otherwise pass every other test in this file."""
-    repo = crew_config.default_config()
-    glob = crew_config.default_global_config()
-
-    assert repo["github"] == crew_upgrade.GITHUB_BLOCK
-    assert glob["github"] == crew_upgrade.GITHUB_BLOCK
-    assert set(repo["github"]["mergeGate"]) == {"enabled", "branch"}
-    assert "preset" not in repo["github"]["mergeGate"]
-    assert repo["github"]["mergeGate"]["enabled"] is False
-    assert repo["github"]["mergeGate"]["branch"] is None
-    for dotted in ("github.mergeGate.enabled", "github.mergeGate.branch"):
-        assert crew_config.is_global_path(dotted), dotted
-
-
-def test_the_guards_and_github_blocks_are_carried_by_an_upgrade():
-    """A top-level block absent from `CONFIG_BLOCKS` is never written into an
-    already-initialised repo -- the whole of the 0.16.0 qa/dev bug. Without
-    this the keys ship to fresh repos only, and every existing one reads the
-    built-in default forever while its config file says nothing."""
+def test_the_guards_block_is_rewritten_by_an_upgrade_not_seeded_from_defaults():
+    """`guards` is deliberately absent from `CONFIG_BLOCKS` since L-0725: a
+    block seeded from defaults would write twelve per-guard keys back into a
+    file that has just lost them. `rewrite_guards` owns the block, from the
+    incoming file only, and `github` no longer exists as a block at all."""
     carried = {key for key, _block in crew_upgrade.CONFIG_BLOCKS}
     for key in ("guards", "github"):
-        assert key in carried, key
+        assert key not in carried, key
+    out, notes = crew_upgrade.upgrade_config(
+        {"schema": 7, "guards": {"forcePush": "ask"}})
+    assert out["guards"] == {"profile": "off", "overrides": {"forcePush": "ask"}}
+    assert notes["guardOverrides"] == {"forcePush": "ask"}
 
 
 def test_the_schema_6_bump_reaches_a_repo_at_schema_5(tmp_path):
@@ -206,19 +190,22 @@ def test_the_schema_6_bump_reaches_a_repo_at_schema_5(tmp_path):
 
 
 def test_a_three_part_key_does_not_crash_the_keys_added_walk():
-    """`github.mergeGate.enabled` has three parts. The old loop unpacked
+    """`guards.overrides.forcePush` has three parts. The old loop unpacked
     exactly two (`block_key, leaf = dotted.split(".")`) and would have raised
     `ValueError` inside `upgrade_config` -- before `run()` writes anything, so
     loud rather than silent, but still a migration that dies at its first
     nested block."""
-    _out, notes = crew_upgrade.upgrade_config({"schema": 5})
-    assert "github.mergeGate.enabled" in notes["guardKeysAdded"]
+    keys = ("guards.overrides.forcePush", "guards.overrides.adminMerge")
+    notes = {"unmigrated": []}
+
+    added = crew_upgrade._keys_added({}, notes, keys)  # pylint: disable=protected-access
+
+    assert added == list(keys)
     # A config that already carries the key is not reported as having just
     # gained it -- computed from the incoming file, not from the version.
-    _out, notes = crew_upgrade.upgrade_config(
-        {"schema": 5, "github": {"mergeGate": {"enabled": True}}})
-    assert "github.mergeGate.enabled" not in notes["guardKeysAdded"]
-    assert "github.mergeGate.branch" in notes["guardKeysAdded"]
+    added = crew_upgrade._keys_added(  # pylint: disable=protected-access
+        {"guards": {"overrides": {"forcePush": "ask"}}}, notes, keys)
+    assert added == ["guards.overrides.adminMerge"]
 
 
 def test_the_cli_prints_every_key_list_the_report_does():
@@ -237,18 +224,19 @@ def test_the_cli_prints_every_key_list_the_report_does():
 
 
 def test_the_migration_report_does_not_claim_a_neutrality_it_lacks():
-    """`terraformApply` and `forcePush` at `block` are what the guard already
-    did; `adminMerge` and `tofu` are NEW refusals. A report that said "the
-    default is block, so nothing changed" would be an unknown wearing the
-    label of a check that happened -- and the user meeting a command that ran
-    yesterday being refused today would go looking for a bug in their
-    tooling."""
-    _out, notes = crew_upgrade.upgrade_config({"schema": 5})
+    """The schema 8 guards line states exactly what happened to the layer: the
+    profile it chose and each override it kept, by name and value. A report
+    that said "nothing changed" for a layer whose twelve keys were rewritten
+    would be an unknown wearing the label of a check that happened."""
+    _out, notes = crew_upgrade.upgrade_config(
+        {"schema": 7, "guards": {"adminMerge": "allow"}})
     body = "\n".join(crew_upgrade._config_lines(notes))  # pylint: disable=protected-access
+    guards_line = next(line for line in body.splitlines()
+                       if line.startswith("- guards:"))
 
-    assert "NOT entirely behaviour-neutral" in body
-    assert "adminMerge" in body
-    assert "tofu" in body
+    assert "`guards.profile` off with 1 override(s): adminMerge=allow" in guards_line
+    assert "every guard keeps the value it had here" in guards_line
+    assert "neutral" not in guards_line
 
 
 def test_an_unknown_guard_value_fails_closed_to_block():
@@ -615,7 +603,71 @@ def test_under_allow_nothing_is_silent(tmp_path):
     with open(log, encoding="utf-8") as handle:
         row = handle.read().strip().split("\t")
     assert row[1:5] == ["forcePush", "allow", "allow", "main"]
-    assert row[5] == _TRIPS["forcePush"]
+    assert row[5] == "-"
+
+
+def test_the_row_holds_the_command_only_when_asked(tmp_path):
+    """`--record` writes the decision; the command line itself is the
+    operator's opt-in (`record_command`), never the default. A command can
+    carry anything typed inline, and `.crew/guard.log` is a plain file in the
+    project tree. The made-up value below must not reach the file by default,
+    and must reach it when asked for, so the test fails if either half
+    regresses."""
+    root = _repo(tmp_path, guards={"forcePush": "allow"})
+    path = _global_file(tmp_path, guards={"forcePush": "allow"})
+    log = os.path.join(root, crew_state.GUARD_LOG_PATH)
+    command = f"NOTE=NOT-A-REAL-VALUE-1234 {_PUSH} --force origin main"
+
+    crew_config.guard_decision(root, "forcePush", command, path, record=True)
+    crew_config.guard_decision(root, "forcePush", command, path, record=True,
+                               record_command=True)
+
+    with open(log, encoding="utf-8") as handle:
+        rows = [line.split("\t") for line in handle.read().splitlines()]
+    assert len(rows) == 2
+    assert all(len(row) == 6 for row in rows)
+    assert rows[0][1:6] == ["forcePush", "allow", "allow", "main", "-"]
+    assert "NOT-A-REAL-VALUE-1234" not in "\t".join(rows[0])
+    assert rows[1][5] == command
+
+
+def test_record_command_without_record_writes_nothing(tmp_path):
+    """The opt-in widens a row; it is not a second way to write one."""
+    root = _repo(tmp_path, guards={"forcePush": "allow"})
+    path = _global_file(tmp_path, guards={"forcePush": "allow"})
+
+    crew_config.guard_decision(root, "forcePush", _TRIPS["forcePush"], path,
+                               record_command=True)
+
+    assert not os.path.exists(os.path.join(root, crew_state.GUARD_LOG_PATH))
+
+
+def test_the_cli_records_the_command_only_with_record_command(tmp_path,
+                                                              capsys):
+    """The same rule through `crew_config.py --guard`, the entry point the
+    flag belongs to, plus the refusal of `--record-command` on its own."""
+    root = _repo(tmp_path, guards={"forcePush": "allow"})
+    path = _global_file(tmp_path, guards={"forcePush": "allow"})
+    log = os.path.join(root, crew_state.GUARD_LOG_PATH)
+    command = f"NOTE=NOT-A-REAL-VALUE-5678 {_PUSH} --force origin main"
+    base = ["--root", root, "--global-path", path, "--guard", "forcePush",
+            "--command", command]
+
+    assert crew_config.main(base + ["--record"]) == 0
+    with open(log, encoding="utf-8") as handle:
+        assert "NOT-A-REAL-VALUE-5678" not in handle.read()
+
+    assert crew_config.main(base + ["--record", "--record-command"]) == 0
+    with open(log, encoding="utf-8") as handle:
+        rows = handle.read().splitlines()
+    assert len(rows) == 2
+    assert rows[1].split("\t")[5] == command
+
+    capsys.readouterr()
+    assert crew_config.main(base + ["--record-command"]) == 2
+    assert "--record-command needs --record" in capsys.readouterr().err
+    with open(log, encoding="utf-8") as handle:
+        assert len(handle.read().splitlines()) == 2
 
 
 def test_a_logged_command_cannot_forge_a_row(tmp_path):
@@ -627,7 +679,8 @@ def test_a_logged_command_cannot_forge_a_row(tmp_path):
     path = _global_file(tmp_path, guards={"forcePush": "allow"})
     nasty = f"{_PUSH} --force\torigin\nblock\tblock\tfaked"
 
-    crew_config.guard_decision(root, "forcePush", nasty, path, record=True)
+    crew_config.guard_decision(root, "forcePush", nasty, path, record=True,
+                               record_command=True)
 
     with open(os.path.join(root, crew_state.GUARD_LOG_PATH),
               encoding="utf-8") as handle:
@@ -792,10 +845,9 @@ def test_the_two_production_guards_are_declared_in_both_layers_at_none():
     glob = crew_config.default_global_config()
 
     for name in crew_guards.PROD_GUARD_NAMES:
-        assert repo["guards"][name] == "none", name
-        assert glob["guards"][name] == "none", name
-        assert crew_config.is_global_path(f"guards.{name}"), name
-    assert set(repo["guards"]) == set(crew_guards.ALL_GUARD_NAMES)
+        assert crew_guards.PROFILE_MAP["off"][name] == "none", name
+        assert crew_config.is_global_path(f"guards.overrides.{name}"), name
+    assert repo["guards"] == glob["guards"] == {"profile": "off", "overrides": {}}
 
 
 def test_production_is_repo_only_and_a_global_one_is_reported():
@@ -916,7 +968,10 @@ def test_full_allows_everything_and_logs_it(tmp_path, command):
     log = os.path.join(root, crew_state.GUARD_LOG_PATH)
     assert os.path.isfile(log)
     with open(log, encoding="utf-8") as handle:
-        assert command.replace("\t", " ") in handle.read()
+        row = handle.read().rstrip("\n").split("\t")
+    # The decision is logged; the command is not, unless asked for.
+    assert row[1] == _guard_for(command) and row[3] == "allow", command
+    assert row[5] == "-", command
 
 
 def test_a_repo_cannot_widen_the_production_level(tmp_path):

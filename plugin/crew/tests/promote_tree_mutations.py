@@ -22,6 +22,8 @@ PS1 = os.path.join(_SCRIPTS, "promote-gate.ps1")
 TREE = os.path.join(_SCRIPTS, "_promote_tree.py")
 DISPATCH = os.path.join(_SCRIPTS, "_promote_dispatch.py")
 REVIEW = os.path.join(_SCRIPTS, "_promote_review.py")
+FAST = os.path.join(_SCRIPTS, "_promote_fast.py")
+_F = "tests/test_promote_fast.py::"
 _T = "tests/test_promote_gate_effective_tree.py::"
 _D = "tests/test_promote_gate_dispatch.py::"
 _R = "tests/test_promote_gate_rows.py::test_the_newest_row_decides"
@@ -157,7 +159,7 @@ PROMOTE_TREE_MUTATIONS = (
      _T + "test_an_unreadable_committed_map_is_could_not_tell_while_the_map_is_dirty[ps1]"),
     # T-0062: promote-gate reads a workflow dispatch with T-0009's reader.
     ("promote-gate.sh no longer reads an unmatched command as a dispatch", SH,
-     '  "$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_dispatch.py" "$CMD") \\\n',
+     '  "$PY" "$DISPATCH_PY" "$CMD") \\\n',
      '  true) \\\n',
      _D + "test_the_rest_spelling_of_a_prod_deploy_is_gated[sh]"),
     ("_promote_dispatch.py does not read a command again without its declared deploys",
@@ -280,8 +282,8 @@ PROMOTE_TREE_MUTATIONS = (
      '  "$(( $(date +%s) + 60 ))" "${ENVLIST[@]}")\n',
      _V + "test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout[sh]"),
     ("promote-gate.sh skips the review evidence", SH,
-     'REVIEW=$("$PY" "$(dirname "${BASH_SOURCE[0]}")/_promote_review.py" "$TREE" "$FULL" \\\n',
-     'REVIEW=$(true "$(dirname "${BASH_SOURCE[0]}")/_promote_review.py" "$TREE" "$FULL" \\\n',
+     '  REVIEW=$("$PY" "$REVIEW_PY" "$TREE" "$FULL" \\\n',
+     '  REVIEW=$(true "$REVIEW_PY" "$TREE" "$FULL" \\\n',
      _V + "test_no_ledger_is_refused[sh]"),
     ("promote-gate.ps1 skips the review evidence", PS1,
      'foreach ($reason in ($reviewOut -split [char]0x1e)) {\n',
@@ -309,8 +311,8 @@ PROMOTE_TREE_MUTATIONS = (
      '    if False:\n',
      _V + "test_the_helper_refuses_a_map_that_is_not_the_committed_one"),
     ("promote-gate.sh starts its deadline after the first probes", SH,
-     'GATE_DEADLINE=$(( $(date +%s) - SECONDS + 16 ))\n',
-     'GATE_DEADLINE=$(( $(date +%s) - SECONDS + 21 ))\n',
+     'GATE_DEADLINE=$(( GATE_NOW - SECONDS + 16 ))\n',
+     'GATE_DEADLINE=$(( GATE_NOW - SECONDS + 21 ))\n',
      _V + "test_a_slow_first_git_probe_counts_against_the_deadline"),
     ("_promote_review.py hashes the map without git's eol rules for its path", REVIEW,
      '[git, "hash-object", "--stdin", "--path", ".crew/verify.json"]',
@@ -379,6 +381,35 @@ PROMOTE_TREE_MUTATIONS = (
      'timeout=max((until - time.monotonic()) / 2, 0.1))',
      'timeout=5)',
      _V + "test_windows_cleanup_stays_inside_the_reap_allowance"),
+    # --- crew 1.2.115: the allow fast path (_promote_fast.py) ------------------
+    ("promote-gate.sh allows on any fast-path exit, not only 99", SH,
+     '  [ "$?" -eq 99 ] && exit 0\n',
+     '  exit 0\n',
+     "tests/test_guard_spawns.py::test_a_declared_deploy_still_takes_the_full_gate"),
+    ("_promote_fast.py stops comparing the map with HEAD's blob", FAST,
+     '    return blob is not None and _committed_as_is(blob)\n',
+     '    return blob is not None\n',
+     _F + "test_must_fall_through_on_an_uncommitted_map_edit"),
+    ("_promote_fast.py skips the containment match", FAST,
+     '    if source is None or not _matches_nothing(command, source):\n',
+     '    if source is None:\n',
+     _F + "test_must_fall_through_on_a_declared_deploy[declared]"),
+    ("_promote_fast.py skips the dispatch read", FAST,
+     '    if not _dispatches_nothing(command):\n        return False\n',
+     '    if False:\n        return False\n',
+     _F + "test_must_fall_through_on_a_dispatch_of_a_declared_workflow"),
+    ("_promote_fast.py forgets MSYS argument conversion", FAST,
+     '    if not words or "/" in words[0] or "\\\\" in words[0]:\n',
+     '    if not words:\n',
+     _F + "test_must_fall_through_on_a_command_it_cannot_read_identically[leading-slash]"),
+    ("_promote_fast.py reads a non-ASCII command", FAST,
+     '    if not isinstance(command, str) or not set(command) <= _PLAIN:\n',
+     '    if not isinstance(command, str):\n',
+     _F + "test_must_fall_through_on_a_command_it_cannot_read_identically[non-ascii]"),
+    ("_promote_fast.py ignores a project file shadowing an import", FAST,
+     '    if _shadowed(source):\n        return False\n',
+     '    if False:\n        return False\n',
+     _F + "test_must_fall_through_when_a_project_file_shadows_an_import"),
     # --- rush 1.2.1: L-0703's no-python shape check meets main's L-0648 rule --
     ("promote-gate.sh's fallback passes a map whose github entry python refuses", SH,
      '              elif has_ci("github") and (get_ci("github") | github_ok | not) then',

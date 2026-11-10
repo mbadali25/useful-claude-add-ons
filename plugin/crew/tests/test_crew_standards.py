@@ -426,7 +426,7 @@ def test_pwsh_set_applies_to_powershell_files_only():
     def applies(files):
         return "PWSH" in cs.effective_set(_REPO_ROOT, files)["sets"]
 
-    assert (applies(["plugin/crew/hooks/scripts/verify-gate.ps1"]), applies(["Mod/Mod.psm1"]),
+    assert (applies(["plugin/crew/hooks/scripts/promote-gate.ps1"]), applies(["Mod/Mod.psm1"]),
             applies(["Mod/Mod.psd1"]), applies(["plugin/crew/hooks/scripts/crew_guards.py"]),
             applies(["README.md"]), applies(["x.ps1xml"])) == (
         True, True, True, False, False, False)
@@ -500,7 +500,7 @@ def test_overlay_file_parses():
     supplemented = [s["id"] for s in found["standards"] if s["supplements"]]
     assert (found["problems"], found["overlay"], overlay, supplemented) == (
         [], "present", ["REPO-01", "REPO-02", "REPO-03"],
-        ["GEN-08", "GEN-09", "GEN-11", "GEN-12"])
+        ["GEN-04", "GEN-06", "GEN-08", "GEN-09", "GEN-11", "GEN-12", "PYTHON-10"])
 
 
 # ---- Step 3: the self-check record and its stamp ----------------------------------

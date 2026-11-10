@@ -1,0 +1,45 @@
+{
+ "armed": false,
+ "case": "unmapped-change",
+ "dirty": "src/app.py",
+ "event": "Stop",
+ "harness": "claude",
+ "no_python": true,
+ "payload": "{\"hook_event_name\": \"Stop\", \"stop_hook_active\": false, \"session_id\": \"s-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "verify-gate.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "verify-gate.sh",
+   "stderr": "verify-gate: run ended before a verdict; unproven rules are listed below | detail: .crew/.verify-gate.log\noutside-scope: (no python; scope not checked)\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "context-watch.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "context-watch.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "completion-audit.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "completion-audit.sh",
+   "stderr": "completion audit: no usable python - not audited (scope.mode is off).\n",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

@@ -17,7 +17,11 @@ ufw status), fw_permanent / fw_runtime [rich rules], reload_rc (exit code of fir
 vpns [{name, routes}] (other VPN interfaces, for ip and Get-NetAdapter), vpn_probe_rc,
 noise (tailscale ip -4 also writes a byte that is neither cp1252 nor UTF-8),
 after_up (BackendState after `tailscale up`), ts_node_id, install_rc (exit code of an installer),
-shim (the launcher text an installer writes as the tailscale command into $FAKE_DEPLOY_BIN).
+shim (the launcher text an installer writes as the tailscale command into $FAKE_DEPLOY_BIN),
+ufw_active (false: `ufw status` says inactive and lists no rule; `ufw show added` still lists them),
+ufw_status_text (what `ufw status` prints instead, e.g. a translated line), firewalld_state
+("running", or anything else for exit 252), fw_profiles {name: 0|1} (Get-NetFirewallProfile),
+fw_profile_rc (its exit code), ts_tags [tags] (Self.Tags in tailscale status).
 """
 import hashlib
 import json
@@ -63,6 +67,8 @@ def tailscale(args, state):
         return 0
     if args and args[0] == "status":
         me = {"ID": state.get("ts_node_id", "nFAKENODE11CNTRL")}
+        if state.get("ts_tags"):  # as tailscale prints it: Tags only on a tagged node
+            me["Tags"] = state["ts_tags"]
         if state.get("ts_key_expiry"):  # as tailscale prints it: KeyExpiry only while the key expires
             me["KeyExpiry"] = state["ts_key_expiry"]
         print(json.dumps({"BackendState": state.get("ts_backend", "Running"), "Self": me}))
@@ -216,9 +222,24 @@ def ufw(args, state):
         if state.get("ufw_status_rc"):
             print("ERROR: You need to be root to run this script", file=sys.stderr)
             return int(state["ufw_status_rc"])
+        if state.get("ufw_status_text"):
+            print(state["ufw_status_text"])
+            return 0
+        if state.get("ufw_active") is False:  # what a real inactive ufw prints: this line and no rule
+            print("Status: inactive")
+            return 0
         print("Status: active\n\nTo                         Action      From")
         print("--                         ------      ----")
         print("\n".join(rules))
+        return 0
+    if args[:2] == ["show", "added"]:
+        # ufw's own command syntax, one rule per line (ufw/frontend.py get_show_added)
+        print("Added user rules (see 'ufw status' for running firewall):")
+        for line in rules:
+            port, source = line.split("/tcp")[0], line.split()[2]
+            print(f"ufw allow from {source} to any port {port} proto tcp comment 'AI-Connect Bridge'")
+        if not rules:
+            print("(None)")
         return 0
     delete = args[0] == "delete"
     words = args[1:] if delete else args
@@ -234,6 +255,12 @@ def ufw(args, state):
 
 def firewall_cmd(args, state):
     permanent, runtime = state.setdefault("fw_permanent", []), state.setdefault("fw_runtime", [])
+    if args == ["--state"]:
+        if state.get("firewalld_state", "running") == "running":
+            print("running")
+            return 0
+        print("not running", file=sys.stderr)
+        return 252
     if args == ["--reload"]:
         if state.get("reload_rc"):
             print("Error: INVALID_ZONE: another zone's file is broken", file=sys.stderr)
@@ -259,6 +286,13 @@ def firewall_cmd(args, state):
 def powershell(args, state):
     """The scheduled-task state query (the state as a number, never as a word in some language), and the
     list of other VPN adapters that are up (state vpns [{name, routes}])."""
+    if "Get-NetFirewallProfile" in args[-1]:
+        if state.get("fw_profile_rc"):
+            print("Get-NetFirewallProfile : Access is denied.", file=sys.stderr)
+            return int(state["fw_profile_rc"])
+        for name, on in state.get("fw_profiles", {"Domain": 1, "Private": 1, "Public": 1}).items():
+            print(f"profile:{name}={on}")
+        return 0
     if "Get-NetAdapter" in args[-1]:
         if state.get("vpn_probe_rc"):
             return int(state["vpn_probe_rc"])

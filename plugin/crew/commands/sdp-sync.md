@@ -63,7 +63,7 @@ and stop — never guess. Two writes at most:
 
 1. **The status** the target means, via `sdp_transition`.
 2. **One note**, on `--to done` only — `sdp_add_note module=request id=<id>`,
-   with `public=false` unless `sdp.noteVisibility` is `"public"`:
+   with `public=false` always (`crew_state.SDP_NOTE_VISIBILITY` is `"private"`):
 
    > files touched, smoke result, reviewer used (Codex or Claude), BLOCK count.
    > Two sentences.
@@ -83,11 +83,11 @@ for the next person to read.
   update. Resolve names first with `sdp_list_metadata` (`collection=status`,
   `category`, `priority`) and send what the desk will actually accept, rather than
   what the local ticket happens to call it.
-- **Closing is not crew's decision by default.** `sdp.closeOnDone` is `false`:
-  push transitions the request and leaves closure to whoever owns the queue.
-  Set it to `true` only for a queue that is genuinely yours, and even then use
-  `sdp_close` (which goes through the desk's closure endpoint and satisfies
-  mandatory closure fields) rather than an `sdp_update` that fakes it.
+- **Closing is not crew's decision.** Push transitions the request and leaves
+  closure to whoever owns the queue (`crew_state.SDP_CLOSE_ON_DONE` is `False`).
+  If the person asks you to close one, use `sdp_close` (which goes through the
+  desk's closure endpoint and satisfies mandatory closure fields) rather than
+  an `sdp_update` that fakes it.
 - **A failed write is simply gone.** There is no local outbox. If a note fails,
   say so in the session rather than assuming the desk has it — and re-read with
   `sdp_get` before retrying, so a partial success is not duplicated.
@@ -100,10 +100,12 @@ cache is wrong — fix the cache rather than adding calls.
 ## Configuration
 
 ```json
-"tracker": "sdp",
-"sdp": { "portal": null, "noteVisibility": "private", "closeOnDone": false }
+"tracker": "sdp"
 ```
 
-`portal` is only needed where the connector serves more than one SDP
-instance/portal; leave it `null` otherwise. Write it once, from
-`sdp_whoami`/`sdp_list_metadata`, rather than looking it up per ticket.
+Nothing else is configurable. The note visibility is fixed at private and
+closure at off, as above. There is no `sdp.portal` setting
+(`crew_state.SDP_PORTAL` is `None`): where the connector serves more than one
+SDP instance/portal, ask the person which one to use, once per session, from
+`sdp_whoami`/`sdp_list_metadata`, rather than looking it up per ticket. A
+`sdp` block left in a config file has no effect.

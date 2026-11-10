@@ -24,10 +24,9 @@ Four rules hold everywhere below, and each has a test:
 - **Only the vaults asked for.** A snippet naming a vault outside the list
   this module passed to `--vaults` is dropped, as is one whose vault or note
   name carries a control character or line break.
-- **Priority is the repo's.** `memory.recall.vaults` in the crew config is an
-  ordered list; snippets are ordered by that list first and the CLI's own rank
-  second. With no list, vaults come from `~/.claude/obsidian/config.json`:
-  role `primary` first, then `recall`; role `ignore` is never asked.
+- **Priority is the machine's.** Vaults come from `~/.claude/obsidian/config.json`:
+  role `primary` first, then `recall`; role `ignore` is never asked. No crew
+  config lists vaults (`crew_state.MEMORY_RECALL_VAULTS` is empty).
 
 Standard library plus crew_common (git, resolved the way the user's shell
 resolves it). Read-only: this module writes nothing anywhere.
@@ -42,8 +41,8 @@ import sys
 import time
 
 import crew_common
+import crew_state
 
-DEFAULT_MAX_CHARS = 800
 CLI_TIMEOUT_SECONDS = 4
 # The contract is Lane A's. `scripts/` is what it names; `hooks/scripts/` is
 # where vault_ops.py lived before that contract, so a plugin that predates it
@@ -119,10 +118,10 @@ def find_cli(crew_root=None):
     return None
 
 
-def vault_order(crew_cfg, obsidian_cfg=None):
+def vault_order(obsidian_cfg=None):
     """The ordered vault names to ask. Never includes a vault whose role is
-    `ignore`, whatever the repo list says -- the machine's owner decided that
-    vault is not for recall, and a cloned repo does not get to override it.
+    `ignore` -- the machine's owner decided that vault is not for recall, and
+    a cloned repo does not get to override it.
     """
     if obsidian_cfg is None:
         obsidian_cfg = _read_json(obsidian_config_path())
@@ -140,31 +139,10 @@ def vault_order(crew_cfg, obsidian_cfg=None):
         # a recall vault. Lane A's config gains `role`; older files lack it.
         return "primary" if entry.get("default") is True else "recall"
 
-    recall = (crew_cfg or {}).get("memory", {})
-    recall = recall.get("recall", {}) if isinstance(recall, dict) else {}
-    listed = recall.get("vaults") if isinstance(recall, dict) else None
-    if isinstance(listed, list) and listed:
-        names = [n for n in listed if isinstance(n, str) and n]
-        return [n for n in dict.fromkeys(names) if role(n) != "ignore"]
     known = [(name, role(name)) for name in vaults]
     ranked = [(n, r) for n, r in known if r in _ROLE_ORDER]
     ranked.sort(key=lambda pair: _ROLE_ORDER[pair[1]])
     return [n for n, _ in ranked]
-
-
-def max_chars(crew_cfg):
-    recall = (crew_cfg or {}).get("memory", {})
-    recall = recall.get("recall", {}) if isinstance(recall, dict) else {}
-    value = recall.get("maxChars") if isinstance(recall, dict) else None
-    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-        return value
-    return DEFAULT_MAX_CHARS
-
-
-def _recall_cfg(crew_cfg):
-    recall = (crew_cfg or {}).get("memory", {})
-    recall = recall.get("recall", {}) if isinstance(recall, dict) else {}
-    return recall if isinstance(recall, dict) else {}
 
 
 def _usable_project(name):
@@ -185,18 +163,9 @@ def _main_checkout_name(root):
     return os.path.basename(os.path.dirname(common)) or None
 
 
-def projects(crew_cfg, root):
-    """The project names to pass as `--project`. `memory.recall.projects`
-    when it is a non-empty list (usable names only, trimmed, de-duplicated;
-    an all-unusable list sends none); else the main checkout's directory
-    name; else nothing."""
-    listed = _recall_cfg(crew_cfg).get("projects")
-    if isinstance(listed, list) and listed:
-        # Control characters are checked before trimming: `"acme\n"` is
-        # dropped, not sent as `acme`.
-        names = [n.strip() for n in listed
-                 if isinstance(n, str) and not _CONTROL_RE.search(n)]
-        return list(dict.fromkeys(n for n in names if _usable_project(n)))
+def projects(root):
+    """The project names to pass as `--project`: the main checkout's
+    directory name, else nothing."""
     if not root:
         return []
     name = _main_checkout_name(root)
@@ -231,7 +200,7 @@ def parse(stdout, order):
     vault, note, text, rank. Counted in `dropped`, never injected: an item
     with no vault label, a vault or note name carrying a control character
     or line break, and an item from a vault the repo did not ask for -- the
-    CLI's answer does not get to widen `memory.recall.vaults`."""
+    CLI's answer does not get to widen the list of vaults asked for."""
     try:
         parsed = json.loads(stdout)
     except ValueError:
@@ -268,7 +237,7 @@ def label(snippet):
     return f"- [vault:{snippet['vault']}] {snippet['note']}: {snippet['text']}"
 
 
-def recall(query, crew_cfg, crew_root=None, budget=None, runner=None, root=None):
+def recall(query, crew_root=None, budget=None, runner=None, root=None):
     """Ask the vault CLI. Returns a dict that never raises:
 
     {"status": "hit"|"miss"|"skipped", "reason": str, "snippets": [...],
@@ -284,7 +253,7 @@ def recall(query, crew_cfg, crew_root=None, budget=None, runner=None, root=None)
     if len(query) < 3:
         result["reason"] = "no-query"
         return result
-    order = vault_order(crew_cfg)
+    order = vault_order()
     result["vaults"] = order
     if not order:
         result.update(status="miss", reason="no-vaults")
@@ -293,7 +262,7 @@ def recall(query, crew_cfg, crew_root=None, budget=None, runner=None, root=None)
     if not cli:
         result.update(status="miss", reason="cli-missing")
         return result
-    limit = max_chars(crew_cfg)
+    limit = crew_state.MEMORY_RECALL_MAX_CHARS
     if budget is not None:
         limit = max(0, min(limit, budget))
     if limit < 80:
@@ -301,7 +270,7 @@ def recall(query, crew_cfg, crew_root=None, budget=None, runner=None, root=None)
         return result
     argv = [sys.executable, cli, "recall", "--query", query[:500],
             "--vaults", ",".join(order), "--max-chars", str(limit), "--json"]
-    names = projects(crew_cfg, root)
+    names = projects(root)
     result["project"] = names
     run = runner or subprocess.run
     deadline = _clock() + CLI_TIMEOUT_SECONDS

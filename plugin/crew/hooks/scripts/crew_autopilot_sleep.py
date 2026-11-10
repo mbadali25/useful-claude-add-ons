@@ -23,9 +23,9 @@ asleep -- appends a `- reported` marker; `wake` prints it after its state
 line; `settings` warns while unreported entries wait (`log_warnings`). A log
 that is there and cannot be read is said so, never "nothing to report".
 
-L-0656: the summary also carries the pings `autopilot.sleep.notifyHold` held
-(crew_notify_hold.py), `settings` warns while any are held and not asleep,
-and a summary reported awake is passed to the notifier once, under a lock,
+L-0656: the summary also carries the pings an earlier version held (L-0725: the
+`notifyHold` key is gone and nothing holds one now; crew_notify_hold.py), `settings` warns
+while any are held and not asleep, and a summary reported awake is passed to the notifier once, under a lock,
 and empties the held record.
 """
 import contextlib

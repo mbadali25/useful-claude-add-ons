@@ -1,0 +1,16 @@
+diff --git a/src/a.py b/src/a.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..b1bfde2df873c68eb18a9b0954aaf23f71e981f2
+--- /dev/null
++++ b/src/a.py
+@@ -0,0 +1,2 @@
++def a():
++    return 1
+diff --git a/src/b.py b/src/b.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..91db9cba2679e7de9a4bc3616ae1b187339370bc
+--- /dev/null
++++ b/src/b.py
+@@ -0,0 +1,2 @@
++def b():
++    return 2

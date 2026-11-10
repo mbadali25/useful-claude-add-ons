@@ -37,8 +37,11 @@ crew_tool_dispatch() {
 }
 
 # Strip carriage returns. jq and some Windows tools emit CRLF, and a trailing
-# CR breaks every regex anchored with $.
-crew_strip_cr() { printf '%s' "$1" | tr -d '\r'; }
+# CR breaks every regex anchored with $. A parameter expansion, not `tr`: on
+# Git Bash every process start is an MSYS fork, and the pipe into `tr` cost two
+# of them per call. The CR is held in a variable because `$'\r'` inside a
+# double-quoted expansion is not portable to bash 3.2.
+crew_strip_cr() { local cr=$'\r'; printf '%s' "${1//$cr/}"; }
 
 # Resolve a usable Python. Echoes nothing when there is none.
 #
@@ -67,6 +70,59 @@ crew_py() {
   # `$(crew_py...)` call site across this directory to avoid a subshell --
   # a change to the whole hook layer to speed up a function nothing here
   # calls more than once or twice per process anyway.
+  # BEGIN CREW_PYTHON (identical in crew_py, crew_py_strict and role-write-guard.sh)
+  # The dispatcher's launcher already resolved and ran an interpreter, and
+  # exports it as CREW_PYTHON for the guards it starts, so a guard need not
+  # walk PATH and probe again (on Windows each probe is a process tree, and
+  # under load the walk is what timed the guards out). Trusted only after it
+  # is checked: an absolute path (Windows `C:\..` or POSIX), a regular
+  # executable file, named like an interpreter (py / python / python3.x, with
+  # or without .exe, any case). Anything else is ignored and the walk below
+  # runs as before. The variable is only ever consulted here, never executed
+  # unchecked. crew-hook.ps1 exports a Windows path, converted first by hand,
+  # `C:\x\py.exe` -> `/c/x/py.exe` (what cygpath -u answers under Git Bash's
+  # default `/` drive prefix), and with `cygpath -u` only when that names no
+  # executable file (Cygwin, whose drives live under /cygdrive, or a custom
+  # prefix). On Git Bash each fork is an MSYS process start, and this block
+  # used to cost five per guard; `$OSTYPE` cannot tell the two apart (Git
+  # Bash's bash 5.3 reports `cygwin`), so the file itself decides.
+  if [ -n "${CREW_PYTHON:-}" ]; then
+    local _crew_env_py _crew_env_cr=$'\r' _crew_env_d _crew_env_h
+    _crew_env_py=${CREW_PYTHON//$_crew_env_cr/}
+    case "$_crew_env_py" in
+      [A-Za-z]:\\*|[A-Za-z]:/*)
+        _crew_env_d=${_crew_env_py:0:1}
+        _crew_env_h=ABCDEFGHIJKLMNOPQRSTUVWXYZ
+        _crew_env_h=${_crew_env_h%%"$_crew_env_d"*}
+        if [ "${#_crew_env_h}" -lt 26 ]; then
+          _crew_env_d=abcdefghijklmnopqrstuvwxyz
+          _crew_env_d=${_crew_env_d:${#_crew_env_h}:1}
+        fi
+        _crew_env_h=${_crew_env_py:2}
+        _crew_env_h=${_crew_env_h//\\//}
+        _crew_env_h="/$_crew_env_d$_crew_env_h"
+        if { [ ! -f "$_crew_env_h" ] || [ ! -x "$_crew_env_h" ]; } \
+           && command -v cygpath >/dev/null 2>&1; then
+          _crew_env_py=$(cygpath -u -- "$_crew_env_py" 2>/dev/null) || _crew_env_py=""
+        else
+          _crew_env_py=$_crew_env_h
+        fi
+        ;;
+    esac
+    case "$_crew_env_py" in
+      /*)
+        case "${_crew_env_py##*/}" in
+          [Pp][Yy]|[Pp][Yy].[Ee][Xx][Ee]|[Pp][Yy][Tt][Hh][Oo][Nn]|[Pp][Yy][Tt][Hh][Oo][Nn].[Ee][Xx][Ee]|[Pp][Yy][Tt][Hh][Oo][Nn][0-9]*)
+            if [ -f "$_crew_env_py" ] && [ -x "$_crew_env_py" ]; then
+              printf '%s\n' "$_crew_env_py"
+              return 0
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  fi
+  # END CREW_PYTHON
   local candidate first=""
   # An OVERALL deadline on top of each candidate's own 3s probe bound: a
   # PATH with several hung candidates would otherwise cost 3s EACH, adding
@@ -167,6 +223,59 @@ crew_py_strict() {
   # twin, 10s) even though every individual probe is bounded. Kept well
   # inside that: the walk gives up and reports "no python" rather than keep
   # trying once this much of the budget is spent.
+  # BEGIN CREW_PYTHON (identical in crew_py, crew_py_strict and role-write-guard.sh)
+  # The dispatcher's launcher already resolved and ran an interpreter, and
+  # exports it as CREW_PYTHON for the guards it starts, so a guard need not
+  # walk PATH and probe again (on Windows each probe is a process tree, and
+  # under load the walk is what timed the guards out). Trusted only after it
+  # is checked: an absolute path (Windows `C:\..` or POSIX), a regular
+  # executable file, named like an interpreter (py / python / python3.x, with
+  # or without .exe, any case). Anything else is ignored and the walk below
+  # runs as before. The variable is only ever consulted here, never executed
+  # unchecked. crew-hook.ps1 exports a Windows path, converted first by hand,
+  # `C:\x\py.exe` -> `/c/x/py.exe` (what cygpath -u answers under Git Bash's
+  # default `/` drive prefix), and with `cygpath -u` only when that names no
+  # executable file (Cygwin, whose drives live under /cygdrive, or a custom
+  # prefix). On Git Bash each fork is an MSYS process start, and this block
+  # used to cost five per guard; `$OSTYPE` cannot tell the two apart (Git
+  # Bash's bash 5.3 reports `cygwin`), so the file itself decides.
+  if [ -n "${CREW_PYTHON:-}" ]; then
+    local _crew_env_py _crew_env_cr=$'\r' _crew_env_d _crew_env_h
+    _crew_env_py=${CREW_PYTHON//$_crew_env_cr/}
+    case "$_crew_env_py" in
+      [A-Za-z]:\\*|[A-Za-z]:/*)
+        _crew_env_d=${_crew_env_py:0:1}
+        _crew_env_h=ABCDEFGHIJKLMNOPQRSTUVWXYZ
+        _crew_env_h=${_crew_env_h%%"$_crew_env_d"*}
+        if [ "${#_crew_env_h}" -lt 26 ]; then
+          _crew_env_d=abcdefghijklmnopqrstuvwxyz
+          _crew_env_d=${_crew_env_d:${#_crew_env_h}:1}
+        fi
+        _crew_env_h=${_crew_env_py:2}
+        _crew_env_h=${_crew_env_h//\\//}
+        _crew_env_h="/$_crew_env_d$_crew_env_h"
+        if { [ ! -f "$_crew_env_h" ] || [ ! -x "$_crew_env_h" ]; } \
+           && command -v cygpath >/dev/null 2>&1; then
+          _crew_env_py=$(cygpath -u -- "$_crew_env_py" 2>/dev/null) || _crew_env_py=""
+        else
+          _crew_env_py=$_crew_env_h
+        fi
+        ;;
+    esac
+    case "$_crew_env_py" in
+      /*)
+        case "${_crew_env_py##*/}" in
+          [Pp][Yy]|[Pp][Yy].[Ee][Xx][Ee]|[Pp][Yy][Tt][Hh][Oo][Nn]|[Pp][Yy][Tt][Hh][Oo][Nn].[Ee][Xx][Ee]|[Pp][Yy][Tt][Hh][Oo][Nn][0-9]*)
+            if [ -f "$_crew_env_py" ] && [ -x "$_crew_env_py" ]; then
+              printf '%s\n' "$_crew_env_py"
+              return 0
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  fi
+  # END CREW_PYTHON
   local _crew_py_strict_deadline=$((SECONDS + 8))
   while IFS= read -r candidate; do
     [ -n "$candidate" ] || continue
@@ -349,6 +458,112 @@ crew_py_strict() {
   return 1
 }
 
+# --- A script path native python can open (L-0868) -------------------------
+#
+# Print $1 in a form a NATIVE interpreter can open when this shell runs under
+# MSYS/Cygwin (Git Bash), and $1 unchanged everywhere else. Every
+# `"$PY" "$DIR/x.py"` caller wraps its script path in this.
+#
+# Why: Git Bash rewrites a POSIX-looking argument (`/d/repo/x.py`, `/tmp/x.py`)
+# into a Windows path when it execs a native program -- but only while
+# MSYS_NO_PATHCONV is unset. Set, even to the empty string (a user profile, a
+# CI runner or a parent process can do that), the argument reaches python.exe
+# as written and Windows resolves it against the current drive:
+# `can't open file 'D:\tmp\...'`. `cygpath -m` does not depend on argument
+# conversion, so the result is right in either state. `-m`, not `-w`: mixed
+# `D:/d/repo/x.py` has no backslashes to survive `printf %q`, `$(...)` or `tr`,
+# and python.exe accepts it.
+#
+# This is about SCRIPT paths only. It does not change the form `crew_py` /
+# `crew_py_strict` return for the interpreter itself (the DECIDED CONTRACT in
+# `crew_py_strict`: POSIX-shaped, what this bash execs), and it never sets
+# MSYS_NO_PATHCONV or MSYS2_ARG_CONV_EXCL, which would make conversion OFF the
+# norm. Fail open: no MSYS kernel, no `cygpath`, or a `cygpath` that fails or
+# prints nothing all print the input, never an empty string. It only changes
+# the path text, never an exit code, so a blocking hook decides as before.
+#
+# Which shell this is comes from bash's own `$OSTYPE` (`msys` under MSYS2,
+# `cygwin` under Cygwin and under Git Bash's bash 5.3), not `$(uname -s)`: that
+# was a fork and an exec on every call, on Git Bash an MSYS process start each.
+# A mixed `D:/x/y.py` - the form crew_hook.py starts every .sh with, so the one
+# a guard's own `$DIR` has - is already what `cygpath -m` would print, and is
+# printed as it is; every other shape (`/d/..`, `/tmp/..`, a backslash path)
+# still goes through `cygpath -m`.
+crew_native_path() {
+  local _crew_native_path_out
+  _crew_native_path_into _crew_native_path_out "$1"
+  printf '%s' "$_crew_native_path_out"
+}
+
+# `crew_native_path` into the variable named $1, without the `$(...)` fork a
+# caller capturing its output pays. Same contract: fail open to the input.
+_crew_native_path_into() {
+  local _cnp_given="$2" _cnp_native _cnp_h _cnp_d
+  case "${OSTYPE:-}" in
+    msys* | cygwin*)
+      case "$_cnp_given" in
+        [A-Za-z]:/*) printf -v "$1" '%s' "$_cnp_given"; return 0 ;;
+        /[A-Za-z]/*)
+          # `/c/x` -> `C:/x` by hand, kept only when both spellings name the
+          # same existing file (`-ef`, a builtin): true under Git Bash's `/`
+          # drive prefix, false under Cygwin's /cygdrive, which then asks
+          # cygpath below as before.
+          _cnp_d=${_cnp_given:1:1}
+          _cnp_h=abcdefghijklmnopqrstuvwxyz
+          _cnp_h=${_cnp_h%%"$_cnp_d"*}
+          if [ "${#_cnp_h}" -lt 26 ]; then
+            _cnp_d=ABCDEFGHIJKLMNOPQRSTUVWXYZ
+            _cnp_d=${_cnp_d:${#_cnp_h}:1}
+          fi
+          _cnp_native="$_cnp_d:${_cnp_given:2}"
+          if [ -e "$_cnp_given" ] && [ "$_cnp_given" -ef "$_cnp_native" ]; then
+            printf -v "$1" '%s' "$_cnp_native"
+            return 0
+          fi
+          ;;
+      esac
+      ;;
+    *) printf -v "$1" '%s' "$_cnp_given"; return 0 ;;
+  esac
+  # The last resort, and bounded: an orphaned `cygpath -m` was measured
+  # spinning on a core for over 30 minutes (2026-11-07), starving every guard.
+  if command -v cygpath >/dev/null 2>&1 \
+     && _cnp_native=$(if command -v timeout >/dev/null 2>&1; then
+                        timeout 5 cygpath -m -- "$_cnp_given"
+                      else cygpath -m -- "$_cnp_given"; fi 2>/dev/null) \
+     && [ -n "$_cnp_native" ]; then
+    printf -v "$1" '%s' "${_cnp_native%$'\r'}"
+  else
+    printf -v "$1" '%s' "$_cnp_given"
+  fi
+}
+
+# A script path native python can open, or a failure. `crew_native_path` fails
+# OPEN (it echoes its input), and a call site written `"$PY" "$(crew_native_path
+# "$DIR/x.py")"` hands python an EMPTY operand when the substitution yields
+# nothing, which makes python run the current directory as a package
+# (`can't find '__main__' module in '<repo>'`). This helper refuses instead:
+# nothing printed and status 1 when the converted path is empty or not a file.
+# The caller names the failure and fails CLOSED.
+#
+# With a second argument, the path goes into the variable it names instead of
+# stdout (`if crew_py_script "$DIR/x.py" X_PY; then`), which spares the caller
+# the `$(...)` fork; on a refusal that variable is left empty.
+crew_py_script() {
+  local _cps_s
+  _crew_native_path_into _cps_s "$1"
+  if [ -n "$_cps_s" ] && [ -f "$1" ]; then
+    if [ -n "${2:-}" ]; then
+      printf -v "$2" '%s' "$_cps_s"
+    else
+      printf '%s' "$_cps_s"
+    fi
+    return 0
+  fi
+  [ -z "${2:-}" ] || printf -v "$2" '%s' ""
+  return 1
+}
+
 # --- The repo config's directory (T-0096) ---------------------------------
 #
 # Sets CREW_CFG_DIR (the `.crew/` to read config.json or crew.json from) and
@@ -386,48 +601,160 @@ crew_repo_config_dir() {
   done
 }
 
+# Whether the absence of file $1 is PROVED: the nearest ancestor that exists is a
+# searchable directory, so the lookup can only have failed with "no such file".
+# A parent that is a file (`/etc/passwd/config.json`), a dangling link or a
+# directory that cannot be searched says nothing about the file: not proved.
+crew_guard_absent_proved() {
+  local d="$1"
+  while :; do
+    case "$d" in
+      */*) d="${d%/*}"; [ -n "$d" ] || d=/ ;;
+      *) d=. ;;
+    esac
+    if [ -d "$d" ]; then
+      [ -x "$d" ] && return 0
+      return 1
+    fi
+    { [ -e "$d" ] || [ -L "$d" ]; } && return 1
+    case "$d" in / | .) return 1 ;; esac
+  done
+}
+
+# Whether config file $1 may arm a guard, read WITHOUT python (L-0725). Status 0
+# means armed; status 1 means the layer is PROVED off. The keys to look for follow
+# the file: `profile` and the guard's own key, e.g. `crew_guard_layer_armed F
+# profile cloudGuard`. Only the fallbacks in cloud-guard.sh and env-guard.sh call
+# it, when python could not run at all, so every doubt answers "armed".
+#
+# Off is proved only when ALL of these hold, and any doubt is "armed":
+#   - the file does not exist and the nearest existing ancestor is a searchable
+#     directory (one that exists but is not a readable regular file, or whose
+#     parent is a file, is armed), or it is readable, at most 262144 bytes, holds no NUL byte
+#     and no control character other than tab, CR and LF (a NUL is invalid JSON
+#     to python, and bash would silently drop it), and no `\u` escape (an escape
+#     can spell a key without the literal token);
+#   - it is VALID JSON whose top level is an object: a small recursive-descent
+#     check in awk (nesting capped at 100) that rejects a trailing comma, a missing
+#     comma, unbalanced braces or brackets, trailing text, bare tokens, single
+#     quotes and raw control characters in a string. Whitespace of any kind,
+#     newlines included, may sit between tokens, as in JSON;
+#   - every `"guards"` key holds an object (so `{"guards":null}` and
+#     `{"guards":42}` are armed, as the python resolvers treat them);
+#   - every `"profile"` and guard-key value, at any depth, is EXACTLY the JSON
+#     string "off" (so `"off,block"`, `"off "`, `"OFF"`, `'off'`, a number and
+#     `true` are armed). Duplicates are fine only if each one is off. An unrelated
+#     `"profile"` (`unattendedCloud.aws.readOnly.profile`) arms it: a refusal
+#     while python is missing, never a pass;
+#   - for the cloud guard (the keys name `cloudGuard`), every `"cloud"` and
+#     `"environments"` key holds an object: python's `layer_state(cloud=True,
+#     environments=True)` calls any other shape corrupt. Stricter than python
+#     needs (it only blocks on a corrupt block when the guard is armed); the
+#     contents of a well-shaped block are not checked.
+# What this cannot do without a real JSON parser: reject a number or string that
+# the awk grammar accepts but python would not (it follows the JSON grammar, so
+# none is known), or read a file that python decodes differently (invalid UTF-8,
+# a leading BOM: the BOM arms it).
+crew_guard_layer_armed() {
+  local f="$1" keys size plain verdict
+  shift
+  if ! { [ -e "$f" ] || [ -L "$f" ]; }; then
+    crew_guard_absent_proved "$f" && return 1
+    return 0
+  fi
+  { [ -f "$f" ] && [ -r "$f" ]; } || return 0
+  size=$(LC_ALL=C wc -c <"$f" 2>/dev/null | tr -d '[:space:]') || return 0
+  case "$size" in '' | *[!0-9]*) return 0 ;; esac
+  [ "$size" -gt 0 ] && [ "$size" -le 262144 ] || return 0
+  plain=$(LC_ALL=C tr -d '\011\012\015\040-\377' <"$f" 2>/dev/null | wc -c | tr -d '[:space:]')
+  [ "$plain" = "0" ] || return 0
+  LC_ALL=C grep -q '\\u' -- "$f" 2>/dev/null && return 0
+  keys=$(printf '%s|' "$@")
+  verdict=$(LC_ALL=C awk -v keys="|$keys" '
+    function ws(   c) {
+      while ((c = substr(s, p, 1)) == " " || c == "\t" || c == "\n" || c == "\r") p++
+    }
+    function pstr(   c, start, e) {
+      p++; start = p
+      while (1) {
+        c = substr(s, p, 1)
+        if (c == "") return 0
+        if (c == "\"") { raw = substr(s, start, p - start); p++; return 1 }
+        if (c == "\n" || c == "\t" || c == "\r") return 0
+        if (c == "\\") {
+          e = substr(s, p + 1, 1)
+          if (index("\"\\/bfnrt", e) > 0 && e != "") { p += 2; continue }
+          return 0
+        }
+        p++
+      }
+    }
+    function pnum(   t) {
+      t = substr(s, p, 400)
+      if (match(t, /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?/)) { p += RLENGTH; return 1 }
+      return 0
+    }
+    function pval(d,   c) {
+      if (d > 100) return 0
+      ws(); c = substr(s, p, 1)
+      if (c == "{") return pobj(d + 1)
+      if (c == "[") return parr(d + 1)
+      if (c == "\"") return pstr()
+      if (c == "-" || (c >= "0" && c <= "9")) return pnum()
+      if (substr(s, p, 4) == "true" || substr(s, p, 4) == "null") { p += 4; return 1 }
+      if (substr(s, p, 5) == "false") { p += 5; return 1 }
+      return 0
+    }
+    function parr(d,   c) {
+      p++; ws()
+      if (substr(s, p, 1) == "]") { p++; return 1 }
+      while (1) {
+        if (!pval(d)) return 0
+        ws(); c = substr(s, p, 1)
+        if (c == ",") { p++; continue }
+        if (c == "]") { p++; return 1 }
+        return 0
+      }
+    }
+    function pobj(d,   c, k) {
+      p++; ws()
+      if (substr(s, p, 1) == "}") { p++; return 1 }
+      while (1) {
+        ws()
+        if (substr(s, p, 1) != "\"") return 0
+        if (!pstr()) return 0
+        k = raw
+        ws()
+        if (substr(s, p, 1) != ":") return 0
+        p++; ws(); c = substr(s, p, 1)
+        if ((k == "guards" || k == "overrides") && c != "{") return 0
+        if (cloudmode && (k == "cloud" || k == "environments") && c != "{") return 0
+        if (k == "profile" || index(keys, "|" k "|") > 0) {
+          if (substr(s, p, 5) != "\"off\"") return 0
+        }
+        if (!pval(d)) return 0
+        ws(); c = substr(s, p, 1)
+        if (c == ",") { p++; continue }
+        if (c == "}") { p++; return 1 }
+        return 0
+      }
+    }
+    BEGIN { RS = "\001"; cloudmode = index(keys, "|cloudGuard|") > 0 }
+    { s = s $0 }
+    END {
+      p = 1; ws()
+      if (substr(s, p, 1) == "{" && pobj(0)) { ws(); if (p == length(s) + 1) { print "OFF"; exit } }
+      print "ARMED"
+    }' <"$f" 2>/dev/null) || return 0
+  [ "$verdict" = "OFF" ] && return 1
+  return 0
+}
+
 # Print the resolved path of repo config file $1 (default config.json) for the
 # checkout at $2 (default: the cwd).
 crew_repo_config_file() {
   crew_repo_config_dir "${2:-.}"
   printf '%s/%s\n' "$CREW_CFG_DIR" "${1:-config.json}"
-}
-
-# Print where the handoff note lives, relative to the cwd (the checkout root):
-# context.handoffPath from config file $2, read with python $1 through
-# crew_state.handoff_path -- the Python readers' own containment
-# (crew_freshness.contained_path): a value that leaves the checkout (absolute,
-# `..`, a symlink out) is the default .work/HANDOFF.md, with a warning on
-# stderr; so is one naming a directory (`.`, `notes/`, an existing folder),
-# which cannot hold the note. Printed with forward slashes on every OS. Matters most in a linked worktree that inherits the main checkout's
-# config (L-0680): an absolute path there would name the main checkout's file.
-# Any failure prints the default, which is inside the checkout.
-crew_handoff_path() {
-  "$1" - "$(dirname "${BASH_SOURCE[0]}")" "$2" << 'PY'
-import json, os, sys
-default = ".work/HANDOFF.md"
-try:
-    sys.path.insert(0, sys.argv[1])
-    from crew_state import handoff_path
-    try:
-        with open(sys.argv[2], encoding="utf-8") as fh:
-            cfg = json.load(fh)
-    except Exception:
-        cfg = {}
-    cfg = cfg if isinstance(cfg, dict) else {}
-    root = os.path.realpath(os.getcwd())
-    got = handoff_path(root, cfg)
-    ctx = cfg.get("context")
-    value = ctx.get("handoffPath") if isinstance(ctx, dict) else None
-    if isinstance(value, str) and value and os.path.realpath(os.path.join(root, value)) != got:
-        sys.stderr.write("crew: context.handoffPath leaves this checkout - using %s\n" % default)
-    elif got == root or os.path.isdir(got) or (isinstance(value, str) and value.endswith(("/", os.sep))):
-        sys.stderr.write("crew: context.handoffPath names a directory - using %s\n" % default)
-        got = os.path.join(root, default)
-    print(os.path.relpath(got, root).replace(os.sep, "/"))
-except Exception:
-    print(default)
-PY
 }
 
 # --- Emergency lane -------------------------------------------------------

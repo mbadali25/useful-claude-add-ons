@@ -221,7 +221,7 @@ DEPLOY_MUTATIONS = (
     ("the deploy default is all", STATE,
      'AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "none", ',
      'AUTOPILOT_DEFAULTS = {"mode": "off", "maxPhases": 12, "deploy": "all", ',
-     _D + "test_deploy_only_in_machine_layer_reads_none"),
+     _D + "test_deploy_null_in_the_repo_is_silent_and_reads_the_default"),
     ("deploy none still deploys nonProd", AUTOPILOT,
      '    if deploy == "none":\n        return "ask", "autopilot.deploy is none", deploy\n',
      '    if False:\n        return "ask", "autopilot.deploy is none", deploy\n',
@@ -853,10 +853,13 @@ POLICY_MUTATIONS = (
       '        open(os.path.join(args.root, ".work", "deploy-ran"), "a").close()\n'
       '        text, json_text, report = _cli_deploy(args)\n'),
      _P + "test_approve_is_the_only_writing_subcommand"),
+    # L-0906: the write goes AFTER the try/finally. Inserted inside the call's
+    # continuation line, as it was, it broke the module (exit 4, collection).
     ("approve writes beside the receipt", AUTOPILOT,
-     "        top, ticket, by=f\"autopilot:{got['policy']}\", via=crew_ticket.AUTOPILOT)\n",
-     ("        top, ticket, by=f\"autopilot:{got['policy']}\", via=crew_ticket.AUTOPILOT)\n"
-      '    open(os.path.join(crew_ticket.ticket_dir(top, ticket), "approved"), "w").close()\n'),
+     "    finally:\n        _PINNED.decisions = {}\n    text = (f\"self-approved {ticket}",
+     ("    finally:\n        _PINNED.decisions = {}\n"
+      '    open(os.path.join(crew_ticket.ticket_dir(top, ticket), "approved"), "w").close()\n'
+      "    text = (f\"self-approved {ticket}"),
      _P + "test_approve_is_the_only_writing_subcommand"),
     ("a refused approve still writes", AUTOPILOT,
      "        return 2, f\"refused: {got['reason']}; {human}\"\n",
@@ -1150,7 +1153,6 @@ AUTOPILOT_MUTATIONS += ASSIGN_MUTATIONS
 SLEEP = os.path.join(SCRIPTS, "crew_sleep.py")
 AUTOSLEEP = os.path.join(SCRIPTS, "crew_autopilot_sleep.py")
 _Z = "tests/test_crew_autopilot_sleep.py::"
-HOLD = os.path.join(SCRIPTS, "crew_notify_hold.py")
 
 SLEEP_MUTATIONS = (
     ("L-0651 (a): in_window counts the end minute as inside", SLEEP,
@@ -1295,20 +1297,6 @@ SLEEP_MUTATIONS = (
      '    if sleep.get("state") not in (ASLEEP, UNKNOWN) and not woke:\n        return deploy\n',
      _Z + "test_sleep_deploy_matrix"),
     # --- H2b: C-0055, L-0656's hold list and send-once summary ------------------------
-    # crew_notify.send asks HOLDABLE before holds() does, so the list itself is aimed at.
-    ("C-0055 L-0656: a deploy failure is on the hold list", HOLD,
-     'HOLDABLE = (("question", "ask"), ("question", "permission"),\n',
-     'HOLDABLE = (("deploy", "fail"), ("question", "ask"), ("question", "permission"),\n',
-     _Z + "test_failure_ping_is_sent_asleep"),
-    ("C-0055 L-0656: pings held awake or when sleep cannot be told", HOLD,
-     '    return (conf.get("armed") is True and sleep.get("state") == "asleep"\n',
-     '    return (conf.get("armed") is True and sleep.get("state") in ("asleep", "awake", "unknown")\n',
-     _Z + "test_hold_is_off_awake_and_when_unknown"),
-    # crew_sleep.resolve reads the key; holds() only sees its answer.
-    ("C-0055 L-0656: a notifyHold that is not exactly true holds", SLEEP,
-     "    if value is None or value is True:\n",
-     '    if value is None or value is True or value == "true":\n',
-     _Z + "test_a_notify_hold_that_is_not_true_holds_nothing"),
     ("C-0055 L-0656: a summary that died mid-send is sent again", AUTOSLEEP,
      "        unfinished = _finish_delivered(top)\n",
      '        unfinished = ""\n',
@@ -1329,8 +1317,8 @@ _RJ = _RP + "test_auto_reject_refusals_write_nothing"
 REPLAN_MUTATIONS = (
     # Entry 1 re-added in H2b, on the defaults line as G6b rewrote it.
     ("L-0671 1: maxAutoReplans defaults to 1", STATE,
-     '"maxAutoReplans": 0, "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,',
-     '"maxAutoReplans": 1, "ship": "merge", "knownFailures": [], "ciTimeoutMinutes": 60,',
+     '"maxAutoReplans": 0, "ship": "merge",',
+     '"maxAutoReplans": 1, "ship": "merge",',
      _RP + "test_setting_defaults_to_zero"),
     ("L-0671 2: a garbage maxAutoReplans reads as 1", AUTOPILOT,
      "        replans = 0\n    if replans > MAX_AUTO_REPLANS:\n",

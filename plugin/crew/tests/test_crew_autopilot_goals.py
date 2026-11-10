@@ -1311,6 +1311,37 @@ def test_token_cap_stops(tmp_path, monkeypatch, usage, stops):
             crew_autopilot_goal.read_goal(str(root), slug)["runs"] == []) == (stops, stops, stops)
 
 
+def _repeated_message(tmp_path, monkeypatch, earlier, final):
+    """One assistant message written on two lines, as Claude Code writes a
+    message per content block: the earlier snapshot, then the final one."""
+    base = tmp_path / "claude-config"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(base))
+    lines = [json.dumps({"type": "assistant", "timestamp": f"2026-10-05T00:00:0{n}Z",
+                         "message": {"id": "msg_1", "usage": {"input_tokens": 0, "output_tokens": out}}})
+             for n, out in enumerate((earlier, final))]
+    _write(base / "projects" / "-repo" / f"{SESSION}.jsonl", "\n".join(lines) + "\n")
+
+
+@pytest.mark.parametrize("final", [1_999_999, 2_000_000])
+def test_goal_cap_counts_each_message_once_below_limit(tmp_path, monkeypatch, final):
+    root, slug, _ids = _minted(tmp_path)
+    _repeated_message(tmp_path, monkeypatch, earlier=2_400_000 - final, final=final)
+
+    got = _run(root, slug)
+
+    assert (got["stop"], crew_autopilot_goal.read_goal(str(root), slug)["runs"] == []) == (
+        False, False)
+
+
+def test_goal_cap_stops_at_limit_deduplicated(tmp_path, monkeypatch):
+    root, slug, _ids = _minted(tmp_path)
+    _repeated_message(tmp_path, monkeypatch, earlier=1, final=2_000_001)
+
+    got = _run(root, slug)
+
+    assert (got["stop"], "maxTokensPerSession" in got["reason"]) == (True, True)
+
+
 @pytest.mark.parametrize("how", ["no-session", "bad-session", "no-file", "two-files",
                                  "corrupt-line", "no-usage"])
 def test_unreadable_transcript_stops(tmp_path, monkeypatch, how):

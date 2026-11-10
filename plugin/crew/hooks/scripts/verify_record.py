@@ -1,5 +1,5 @@
 """Per-rule verified record, machine-local, shared by verify-gate.sh and
-verify-gate.ps1 so the two flavours cannot write two different shapes of the
+verify-gate.ps1 (deleted in L-0869) so the two flavours could not write two different shapes of the
 same file.
 
 WHY THIS EXISTS. The single sha marker (.crew/.verify-verified-at) only ever
@@ -55,6 +55,9 @@ import crew_common
 
 RECORD_PATH = os.path.join(".crew", ".verify-gate.record.json")
 TIMINGS_PATH = os.path.join(".crew", ".verify-gate.timings.json")
+# The command a Stop run is executing right now, with when it started and the
+# hook deadline it started under (see cmd_progress / cmd_inflight_settle).
+INFLIGHT_PATH = os.path.join(".crew", ".verify-gate.inflight.json")
 
 
 def _load_state(path):
@@ -119,7 +122,7 @@ def _save(path, data):
 
 # CANONICAL, and the ONLY place this hash is computed - verify-gate.sh
 # imports this module in-process (it is already a python interpreter) and
-# verify-gate.ps1 shells out to `rule_key` below, rather than either flavour
+# verify-gate.ps1 (deleted in L-0869) shelled out to `rule_key` below, rather than either flavour
 # hashing independently. They used to: the .sh matcher's own inline
 # `_rule_key` used `json.dumps(..., sort_keys=True)` (space-separated,
 # python's default), while the .ps1 side used `ConvertTo-Json -Compress`
@@ -162,7 +165,7 @@ def rule_key(rule):
 # Set-Item/Remove-Item); --price ran commands with NO pinning at all, so a
 # caller's inherited ENV=prod rode straight into a `seconds` measurement
 # whose whole point is to be reusable by everyone who later reads the map.
-# verify_price.py reads PINNED_VARS. verify-gate.sh and verify-gate.ps1 name
+# verify_price.py reads PINNED_VARS. verify-gate.sh and verify-gate.ps1 (deleted in L-0869) name
 # the list literally (they pin it in shell, before any python runs), and
 # `tests/test_cloud_guard.py` asserts all three spellings are this tuple -- the
 # earlier version of this comment said both gates read PINNED_VARS, which they
@@ -389,8 +392,9 @@ def scan_reach(run, repo_root):
 
 
 def cmd_scan_reach():
-    """CLI entry for verify-gate.ps1: reads {"run": [...], "root": "..."}
-    from stdin, prints `status\\tdetail` (detail empty for "local").
+    """CLI entry that existed for verify-gate.ps1 (deleted in L-0869; no caller remains, removal is a
+    harness-only follow-up, docs/adr/0009-hook-single-dispatch.md):
+    reads {"run": [...], "root": "..."} from stdin, prints `status\\tdetail` (detail empty for "local").
     verify-gate.sh and verify_price.py never call this - both already run
     inside python and import scan_reach directly."""
     try:
@@ -404,7 +408,9 @@ def cmd_scan_reach():
 
 
 def cmd_rule_key():
-    """CLI entry for verify-gate.ps1: reads a JSON object from stdin with
+    """CLI entry that existed for verify-gate.ps1 (deleted in L-0869; no caller remains, removal is a
+    harness-only follow-up, docs/adr/0009-hook-single-dispatch.md):
+    reads a JSON object from stdin with
     the same fields rule_key() hashes (paths, run, env, reach,
     requiresCleanTree - extra keys are ignored), prints the canonical key.
     verify-gate.sh never calls this - it imports rule_key directly, since
@@ -434,7 +440,7 @@ def cmd_time_key(cmd):
 # gate, from the superset's actual exit codes in the same invocation.
 #
 # Shared by both flavours for the same reason as scan_reach: verify-gate.sh
-# imports it, verify-gate.ps1 pipes JSON to `cover-plan`. Every way this can
+# imports it, verify-gate.ps1 (deleted in L-0869) piped JSON to `cover-plan`. Every way this can
 # go wrong resolves to RUNNING the subset, never to crediting it.
 COVERED = "covered"
 
@@ -761,7 +767,9 @@ def _int_list(value):
 
 
 def cmd_cover_plan():
-    """CLI entry for verify-gate.ps1. stdin: {"rules": [...], "always": [...],
+    """CLI entry that existed for verify-gate.ps1 (deleted in L-0869; no caller remains, removal is a
+    harness-only follow-up, docs/adr/0009-hook-single-dispatch.md).
+    stdin: {"rules": [...], "always": [...],
     "rule_order": [int], "rule_cmds": {"<int>": [identity]}, "cmds":
     [identity]} - the .ps1's OWN parsed map, never a second read of the
     file. stdout: {"cmds": [...], "guards": [...], "notices": [...]}. Any
@@ -946,7 +954,8 @@ def _print_owed(entries):
 
 
 def cmd_reach_notice():
-    """verify-gate.ps1's half of `reach_notice` (the .sh matcher imports it):
+    """verify-gate.ps1's (deleted in L-0869; no caller remains, harness-only
+    follow-up) half of `reach_notice` (the .sh matcher imports it):
     stdin is a JSON list of [index, reason] pairs; prints the lines."""
     try:
         payload = json.load(sys.stdin)
@@ -1047,8 +1056,21 @@ def cmd_sync():
         price it instead of running it forever.
     """
     try:
-        payload = json.load(sys.stdin)
-    except (OSError, ValueError):
+        raw = sys.stdin.read()
+    except OSError:
+        raw = ""
+    if not raw.strip():
+        # An empty payload means the producer upstream of this pipe died
+        # before printing (an exec that failed): refusing is the only answer
+        # that cannot let the caller advance its verified marker on nothing.
+        print("verify_record: sync refused an empty payload (the producer "
+              "printed nothing); the record was not written", file=sys.stderr)
+        return False
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        payload = {}
+    if not isinstance(payload, dict):
         payload = {}
     sha = payload.get("sha") or ""
     matched = payload.get("matched_rules") or []
@@ -1130,8 +1152,8 @@ def _record_abs():
     return os.path.abspath(RECORD_PATH)
 
 
-def _sync(sha, matched, cmd_log, all_run=False):
-
+def _cmd_log_index(cmd_log):
+    """({identity: status}, {identity: elapsed seconds}) from a run's cmd_log."""
     status_by_cmd = {}
     elapsed_by_cmd = {}
     for row in cmd_log:
@@ -1145,6 +1167,30 @@ def _sync(sha, matched, cmd_log, all_run=False):
             elapsed_by_cmd[c] = int(row.get("elapsed") or 0)
         except (TypeError, ValueError):
             elapsed_by_cmd[c] = 0
+    return status_by_cmd, elapsed_by_cmd
+
+
+def _clean_timing(statuses, cmds, elapsed_by_cmd):
+    """The seconds to cache for a rule, or None when nothing may be cached.
+
+    Only a rule whose every command actually RAN and passed has a wall time
+    worth caching. A credited command took 0s here and costs its full price
+    wherever it runs, so caching it would price the rule as free.
+
+    STORE EVEN 0s, as max(1, ceil(...)). `if total > 0` used to discard a
+    subsecond measurement outright, so a genuinely fast rule with no declared
+    `seconds` never got cached at all and stayed "truly unknown" (mandatory,
+    runs every Stop) forever - the one case measure-and-cache exists for and
+    the one case the old guard silently excluded from it."""
+    if not cmds or not all(s == "pass" for s in statuses):
+        return None
+    total = sum(elapsed_by_cmd.get(c, 0) for c in cmds)
+    return max(1, math.ceil(total))
+
+
+def _sync(sha, matched, cmd_log, all_run=False):
+
+    status_by_cmd, elapsed_by_cmd = _cmd_log_index(cmd_log)
 
     record, record_state = _load_state(RECORD_PATH)
     entries = record.get("rules")
@@ -1236,16 +1282,14 @@ def _sync(sha, matched, cmd_log, all_run=False):
         # Only a rule whose every command actually RAN has a wall time worth
         # caching. A credited command took 0s here and costs its full price
         # wherever it runs, so caching it would price the rule as free.
-        # Cached for EVERY rule, declared `seconds` or not: the gates price a
-        # declared rule at min(declared, cached), so a stale over-statement
-        # stops reading as chronic once one clean run here measures it.
+        # Cached for EVERY rule, declared `seconds` or not: the gate prices a
+        # rule at its cached measurement when one is valid (latest wins), so a
+        # stale declared price, over- or under-stated, is replaced once one
+        # clean run here measures it.
+        # Inline rather than through _clean_timing (which `progress` uses with
+        # the same rule): sabotage_tooling.py's two timing mutations anchor here.
         if all(s == "pass" for s in statuses):
-            # STORE EVEN 0s, as max(1, ceil(...)). `if total > 0` used to
-            # discard a subsecond measurement outright, so a genuinely fast
-            # rule with no declared `seconds` never got cached at all and
-            # stayed "truly unknown" (mandatory, runs every Stop) forever -
-            # the one case measure-and-cache exists for and the one case the
-            # old guard silently excluded from it.
+            # STORE EVEN 0s, as max(1, ceil(...)) - see _clean_timing.
             total = sum(elapsed_by_cmd.get(c, 0) for c in cmds)
             timings["rules"][key] = max(1, math.ceil(total))
 
@@ -1382,6 +1426,267 @@ def cmd_timings_get():
             print(f"{key}\t{secs}")
 
 
+# --- persistence DURING a run (crew 1.2.117) ---------------------------------
+#
+# The timings cache used to be written only by `sync`, after the run loop. The
+# Stop hook kills a gate that outlives its deadline with `taskkill /F` (or
+# SIGKILL), so no exit trap runs: a killed run recorded NOTHING, the matcher
+# priced the same rules from the same stale numbers next turn, and the same
+# run was killed again. Measured 2026-11-07 on a Windows desktop: 862s on a
+# clean origin/main against the 600s hook limit, every turn.
+#
+# So the gate calls `progress` before each command it runs, and once after the
+# loop. Each call (1) caches the wall time of every rule that has by then run
+# clean, exactly as `sync` would, and (2) records which command is starting
+# (INFLIGHT_PATH), or removes that record when none is. A run killed mid-rule
+# leaves the in-flight record behind, and the next run settles it
+# (`inflight-settle`) into a price for the rule that was running.
+
+def _matched_from_file(path):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            extras = json.loads(fh.read() or "{}")
+    except (OSError, ValueError):
+        return None
+    matched = extras.get("matched_rules") if isinstance(extras, dict) else None
+    return matched if isinstance(matched, list) else None
+
+
+def _read_cmd_log(text):
+    log = []
+    for line in text.splitlines():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict):
+            log.append(entry)
+    return log
+
+
+def _write_json_atomic(path, data):
+    """None on success, the exception on failure. The payload is serialised
+    BEFORE anything is opened, and lands by os.replace, so a reader (or a kill)
+    never sees a truncated file: `open(p, "w")` truncates at open time."""
+    try:
+        text = json.dumps(data, indent=2, sort_keys=True)
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        tmp = f"{path}.{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+        return None
+    except OSError as exc:
+        return exc
+
+
+def progress(matched, cmd_log, inflight=None):
+    """Cache every clean rule's timing so far, then record (or clear) the
+    command now in flight. Returns a list of problems, empty when both writes
+    landed. Never decides anything about the run: the end-of-run `sync` still
+    owns the record and the markers."""
+    problems = []
+    status_by_cmd, elapsed_by_cmd = _cmd_log_index(cmd_log)
+    timings = _load(TIMINGS_PATH)
+    rules = timings.get("rules")
+    if not isinstance(rules, dict):
+        rules = timings["rules"] = {}
+    changed = False
+    for rule in matched:
+        if not isinstance(rule, dict) or rule.get("kind") in _NEVER_RAN_KINDS:
+            continue
+        key = rule.get("key")
+        cmds = rule.get("cmds") or []
+        if not isinstance(key, str) or not key or not cmds:
+            continue
+        measured = _clean_timing([status_by_cmd.get(c) for c in cmds], cmds, elapsed_by_cmd)
+        if measured is not None and rules.get(key) != measured:
+            rules[key] = measured
+            changed = True
+    if changed:
+        err = _write_json_atomic(TIMINGS_PATH, timings)
+        if err is not None:
+            problems.append(f"the timings cache could not be written ({err})")
+    if inflight is None:
+        try:
+            if os.path.lexists(INFLIGHT_PATH):
+                os.remove(INFLIGHT_PATH)
+        except OSError as exc:
+            problems.append(f"the in-flight record could not be removed ({exc})")
+        return problems
+    ident = inflight["cmd"]
+    keys = sorted({r.get("key") for r in matched
+                   if isinstance(r, dict) and isinstance(r.get("key"), str)
+                   and ident in (r.get("cmds") or [])})
+    record = {"cmd": ident.split("\x1c", 1)[0], "keys": keys,
+              "started": inflight["started"], "deadline": inflight.get("deadline")}
+    err = _write_json_atomic(INFLIGHT_PATH, record)
+    if err is not None:
+        problems.append(f"the in-flight record could not be written ({err})")
+    return problems
+
+
+def cmd_progress(argv):
+    """`progress <extras-file> [<identity> <started-epoch> [<deadline-epoch>]]`,
+    the run's cmd_log so far on stdin. Exit 0 when everything landed, 1 when a
+    write failed (said on stderr; the gate carries on - this is evidence for a
+    later run, not a verdict on this one), 2 on a usage error."""
+    if len(argv) < 3:
+        print("usage: verify_record.py progress <extras-file> [<identity> <started> [<deadline>]]",
+              file=sys.stderr)
+        return 2
+    matched = _matched_from_file(argv[2])
+    if matched is None:
+        print(f"verify-gate: progress could not read the matched rules ({argv[2]}) - nothing was "
+              "persisted for this rule", file=sys.stderr)
+        return 1
+    cmd_log = _read_cmd_log(sys.stdin.read())
+    inflight = None
+    if len(argv) >= 5 and argv[4].isdigit():
+        deadline = int(argv[5]) if len(argv) >= 6 and argv[5].isdigit() else None
+        inflight = {"cmd": argv[3], "started": int(argv[4]), "deadline": deadline}
+    problems = progress(matched, cmd_log, inflight)
+    for problem in problems:
+        print("verify-gate: " + problem + " - a run killed from here on records less",
+              file=sys.stderr)
+    return 1 if problems else 0
+
+
+def inflight_settle(now):
+    """Settle a leftover in-flight record into a price; returns the lines to
+    print ([] when there was nothing to settle).
+
+    Called by a gate that HOLDS the lock, so the run that wrote the record is
+    over. If it started under a known hook deadline and that deadline has now
+    passed, it was killed at that deadline with the command still going: the
+    rule ran at least `deadline - started` seconds, and that is cached as its
+    price (raised, never lowered). The next Stop then prices it honestly -
+    over the Stop budget it is chronic and named, never retried into the same
+    kill. Anything else (no deadline, or one still in the future, so the run
+    ended some other way) re-prices nothing and says so: how long it ran is
+    unknown, and an unknown is not a measurement."""
+    if not os.path.lexists(INFLIGHT_PATH):
+        return []
+    data, state = _load_state(INFLIGHT_PATH)
+    try:
+        os.remove(INFLIGHT_PATH)
+    except OSError as exc:
+        return [f"verify-gate: a previous run's in-flight record could not be removed ({exc}) - "
+                "it was not used"]
+    if state != "ok":
+        return ["verify-gate: a previous run left an unreadable in-flight record - removed; "
+                "nothing was re-priced"]
+    cmd = data.get("cmd") if isinstance(data.get("cmd"), str) else "?"
+    keys = [k for k in (data.get("keys") or []) if isinstance(k, str) and k]
+    started, deadline = data.get("started"), data.get("deadline")
+    ints = all(isinstance(v, int) and not isinstance(v, bool) for v in (started, deadline))
+    if not ints or deadline <= started or now < deadline or not keys:
+        return [f"verify-gate: a previous run ended while running {cmd} without recording a result, "
+                "and not at a known hook deadline - how long it ran is unknown, so nothing was "
+                "re-priced"]
+    lower = deadline - started
+    timings = _load(TIMINGS_PATH)
+    rules = timings.get("rules")
+    if not isinstance(rules, dict):
+        rules = timings["rules"] = {}
+    for key in keys:
+        old = rules.get(key)
+        if not (isinstance(old, int) and not isinstance(old, bool) and old >= lower):
+            rules[key] = lower
+    err = _write_json_atomic(TIMINGS_PATH, timings)
+    if err is not None:
+        return [f"verify-gate: a previous run was killed at the hook deadline while running {cmd}, "
+                f"but its price could not be recorded ({err})"]
+    return [f"verify-gate: a previous run was killed at the hook deadline while running {cmd} "
+            f"({lower}s after it started) - its rule is priced at {lower}s or more from now on, so Stop "
+            "defers it by name until /crew:verify --all measures it"]
+
+
+# --- whether a lock's holder is still alive (crew 1.2.117) -------------------
+#
+# The lock records its holder as `win <windows pid> <epoch the lock was taken>`
+# (Git Bash: /proc/$$/winpid) or `proc <pid> <starttime ticks>` (Linux:
+# /proc/<pid>/stat field 22). Both pair the pid with something a reused pid
+# cannot share. NOT `kill -0` on the MSYS pid: verify-gate.sh's 2026-09-13
+# note measured it reporting a hard-killed Git Bash process ALIVE. Re-measured
+# 2026-11-07 (Git for Windows bash, `taskkill /F /PID <winpid>`): kill -0
+# said dead at +0.5s, +5s and +15s that time, so the old result is not
+# reliably reproducible either way - which is reason enough not to depend on
+# it. Asking Windows about the Windows pid read alive before the kill, dead
+# after it at all three points, and dead for a pid that never existed. One
+# trap measured on the way: an `exec` in Git Bash starts a NEW Windows process,
+# so a winpid read before an exec names a process that has already exited.
+# The gate never execs itself.
+
+def _win_owner_state(pid, stamp):
+    import ctypes  # pylint: disable=import-outside-toplevel
+    from ctypes import wintypes  # pylint: disable=import-outside-toplevel
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.OpenProcess.restype = wintypes.HANDLE
+    k32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    k32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    k32.GetProcessTimes.argtypes = (wintypes.HANDLE,) + (ctypes.POINTER(wintypes.FILETIME),) * 4
+    k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        err = ctypes.get_last_error()
+        if err == 87:   # ERROR_INVALID_PARAMETER: no process has this id
+            return "dead"
+        if err == 5:    # ERROR_ACCESS_DENIED: one exists, and is not ours to read
+            return "alive"
+        return "unknown"
+    try:
+        code = wintypes.DWORD()
+        if not k32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return "unknown"
+        if code.value != 259:  # not STILL_ACTIVE: exited, the handle merely outlives it
+            return "dead"
+        times = [wintypes.FILETIME() for _ in range(4)]
+        if not k32.GetProcessTimes(handle, *[ctypes.byref(t) for t in times]):
+            return "alive"
+        ticks = (times[0].dwHighDateTime << 32) | times[0].dwLowDateTime
+        created = ticks / 10_000_000 - 11_644_473_600
+        # Created after the lock was taken: the id now belongs to someone else.
+        return "alive" if created < stamp + 2 else "dead"
+    finally:
+        k32.CloseHandle(handle)
+
+
+def owner_state(scheme, pid, stamp):
+    """"alive", "dead" or "unknown" for a lock holder. Only "dead" lets the
+    gate reclaim a lock early; "unknown" keeps the deadline and age rules."""
+    try:
+        pid, stamp = int(pid), int(stamp)
+    except (TypeError, ValueError):
+        return "unknown"
+    if pid <= 0 or stamp < 0:
+        return "unknown"
+    if scheme == "win":
+        if os.name != "nt":
+            return "unknown"
+        try:
+            return _win_owner_state(pid, stamp)
+        except (OSError, AttributeError, ValueError):
+            return "unknown"
+    if scheme != "proc" or not os.path.isdir("/proc"):
+        return "unknown"
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as fh:
+            text = fh.read()
+    except FileNotFoundError:
+        return "dead"
+    except OSError:
+        return "unknown"
+    try:
+        rest = text.rsplit(")", 1)[1].split()
+        state, start = rest[0], int(rest[19])
+    except (IndexError, ValueError):
+        return "unknown"
+    if state in ("Z", "X"):
+        return "dead"
+    return "alive" if start == stamp else "dead"
+
+
 def main(argv):
     # Every line this module writes is read one record per line by a shell;
     # see the comment above RECORD_PATH for the '\r' this prevents.
@@ -1391,11 +1696,22 @@ def main(argv):
         pass
     usage = ("usage: verify_record.py sync|report|timings-get|rule-key|scan-reach|"
              "cover-plan|tree-snapshot|passes-load|passes-save|passes-clear|"
-             "reach-notice|forget-orphans")
+             "reach-notice|forget-orphans|progress|inflight-settle|owner-state")
     if len(argv) < 2:
         print(usage, file=sys.stderr)
         return 2
     cmd = argv[1]
+    if cmd == "progress":
+        return cmd_progress(argv)
+    if cmd == "inflight-settle":
+        import time  # pylint: disable=import-outside-toplevel
+        for line in inflight_settle(int(time.time())):
+            print(line)
+        return 0
+    if cmd == "owner-state":
+        # argv: scheme pid stamp. Prints alive | dead | unknown.
+        print(owner_state(argv[2], argv[3], argv[4]) if len(argv) >= 5 else "unknown")
+        return 0
     if cmd == "sync":
         # Non-zero exit is the signal the gate scripts check: a record that
         # could not be persisted must not let the sha marker or fingerprint

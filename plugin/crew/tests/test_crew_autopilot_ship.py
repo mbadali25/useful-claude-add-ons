@@ -3,8 +3,8 @@
     python3 -m pytest plugin/crew/tests/test_crew_autopilot_ship.py -q
 
 `crew_ship.ship_decision` is the pure rule that decides whether an
-unattended merge happens: it merges only on every required check `pass` (or a
-failing one named EXACTLY in `autopilot.knownFailures`), waits on pending,
+unattended merge happens: it merges only on every required check `pass` (L-0725:
+no failing check is excused), waits on pending,
 stops on anything it could not read, and never merges a high- or
 unknown-risk ticket whose completed review rounds are all same-family
 (`claude`, or no `model_family` at all). Everything that runs `gh` or
@@ -22,6 +22,7 @@ import pytest
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_autopilot
 import crew_ship
+import crew_state
 import crew_ticket
 import review_ledger
 from review_fixtures import git
@@ -35,9 +36,9 @@ def _check(name, state):
 GREEN = [_check("build (3.12)", "pass"), _check("check", "pass")]
 
 
-def _decide(policy="merge", risk="low", checks=None, families=("gpt",), known=()):
+def _decide(policy="merge", risk="low", checks=None, families=("gpt",)):
     return crew_ship.ship_decision(policy, risk, GREEN if checks is None else checks,
-                                        list(families), list(known))
+                                   list(families))
 
 
 # --- step 1: the decision, pure ----------------------------------------------
@@ -80,7 +81,7 @@ def test_decision_merge_stops_on_a_state_outside_the_known_set():
 
 
 def test_decision_merge_stops_on_unreadable_checks():
-    got = crew_ship.ship_decision("merge", "low", None, ["gpt"], [])
+    got = crew_ship.ship_decision("merge", "low", None, ["gpt"])
 
     assert got["action"] == "stop"
 
@@ -101,30 +102,6 @@ def test_decision_merge_stops_on_unlisted_failure():
     got = _decide(checks=[_check("check", "pass"), _check("shell", "fail")])
 
     assert (got["action"], "shell" in got["reason"]) == ("stop", True)
-
-
-def test_decision_merge_allows_listed_known_failure():
-    got = _decide(checks=[_check("check", "pass"),
-                          _check("crew-shell-matrix (windows-latest)", "fail")],
-                  known=("crew-shell-matrix (windows-latest)",))
-
-    assert (got["action"], "crew-shell-matrix (windows-latest)" in got["reason"]) == (
-        "merge", True)
-
-
-def test_decision_known_failure_needs_exact_name():
-    got = _decide(checks=[_check("check", "pass"),
-                          _check("crew-shell-matrix (windows-latest)", "fail")],
-                  known=("crew-shell-matrix",))
-
-    assert got["action"] == "stop"
-
-
-def test_decision_known_failure_is_not_a_prefix_of_the_list_entry():
-    got = _decide(checks=[_check("check", "pass"), _check("shell", "fail")],
-                  known=("shell (windows-latest)",))
-
-    assert got["action"] == "stop"
 
 
 def test_decision_high_risk_same_family_stops():
@@ -516,7 +493,7 @@ def test_adapter_checks_an_unknown_bucket_reads_unknown(monkeypatch):
 
     got = crew_ship.read_checks(".", 7)
 
-    assert crew_ship.ship_decision("merge", "low", got, ["gpt"], [])["action"] == "stop"
+    assert crew_ship.ship_decision("merge", "low", got, ["gpt"])["action"] == "stop"
 
 
 def test_adapter_check_name_is_read_verbatim(monkeypatch):
@@ -525,8 +502,7 @@ def test_adapter_check_name_is_read_verbatim(monkeypatch):
 
     got = crew_ship.read_checks(".", 7)
 
-    assert crew_ship.ship_decision("merge", "low", got, ["gpt"], ["check"])["action"] == (
-        "stop")
+    assert crew_ship.ship_decision("merge", "low", got, ["gpt"])["action"] == "stop"
 
 
 @pytest.mark.parametrize("bucket", ["PASS", "Pass", " pass", "pass "])
@@ -536,7 +512,7 @@ def test_adapter_bucket_is_read_verbatim(monkeypatch, bucket):
 
     got = crew_ship.read_checks(".", 7)
 
-    assert crew_ship.ship_decision("merge", "low", got, ["gpt"], [])["action"] == "stop"
+    assert crew_ship.ship_decision("merge", "low", got, ["gpt"])["action"] == "stop"
 
 
 def _queue(enabled, queued):
@@ -734,11 +710,12 @@ def test_ship_pr_policy_opens_and_never_merges(tmp_path, monkeypatch):
 
 def test_ship_timeout_pending_stops(tmp_path, monkeypatch):
     fake = FakeGh(pr_checks=_checks(("check", "pending"), code=8))
-    root, _, clock, _ = _ship_env(tmp_path, monkeypatch, fake, ciTimeoutMinutes=2)
+    root, _, clock, _ = _ship_env(tmp_path, monkeypatch, fake)
 
     got = crew_autopilot.ship(str(root), T)
 
-    assert (got["action"], got["stop"], fake.ran("pr", "merge"), clock.now >= 120,
+    assert (got["action"], got["stop"], fake.ran("pr", "merge"),
+            clock.now >= crew_state.AUTOPILOT_CI_TIMEOUT_MINUTES * 60,
             set(clock.slept) <= {30}) == ("stop", True, [], True, True)
 
 
@@ -758,12 +735,13 @@ def test_ship_waits_then_merges_when_checks_go_green(tmp_path, monkeypatch):
 
 def test_ship_green_after_the_deadline_stops(tmp_path, monkeypatch):
     fake = _pending_then_green(polls=2)
-    root, _, clock, _ = _ship_env(tmp_path, monkeypatch, fake, ciTimeoutMinutes=1)
-    clock.drift = 10
+    root, _, clock, _ = _ship_env(tmp_path, monkeypatch, fake)
+    clock.drift = crew_state.AUTOPILOT_CI_TIMEOUT_MINUTES * 60
 
     got = crew_autopilot.ship(str(root), T)
 
-    assert (got["action"], clock.now > 60, fake.ran("pr", "merge")) == ("stop", True, [])
+    assert (got["action"], clock.now > crew_state.AUTOPILOT_CI_TIMEOUT_MINUTES * 60,
+            fake.ran("pr", "merge")) == ("stop", True, [])
 
 
 def test_ship_rereads_the_review_families_while_waiting(tmp_path, monkeypatch):
@@ -968,7 +946,7 @@ def test_read_checks_tab_in_name_is_unreadable(tmp_path, monkeypatch, answer):
     monkeypatch.setattr(crew_ship, "_run_gh", FakeGh(pr_checks=answer))
     alone = crew_ship.read_checks(".", 7)
     fake = FakeGh(pr_checks=answer)
-    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake, knownFailures=["check"])
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake)
 
     got = crew_autopilot.ship(str(root), T)
 
@@ -1225,8 +1203,7 @@ def test_ship_default_merge(tmp_path):
 
     got = crew_autopilot.settings(str(root))
 
-    assert (got["ship"], got["knownFailures"], got["ciTimeoutMinutes"], got["warnings"]) == (
-        "merge", [], 60, [])
+    assert (got["ship"], got["warnings"]) == ("merge", [])
 
 
 @pytest.mark.parametrize("value", ["Merge", "merge ", "squash", True, None, "auto"])
@@ -1248,32 +1225,30 @@ def test_ship_pr_is_kept(tmp_path):
     assert (got["ship"], got["warnings"]) == ("pr", [])
 
 
-@pytest.mark.parametrize("value", ["windows", [1], ["ok", None], {"a": 1}, None])
-def test_known_failures_bad_type_is_empty(tmp_path, value):
+def test_known_failures_is_constant(tmp_path, monkeypatch):
+    fake = FakeGh(pr_checks=_checks(("check", "pass"), ("shell", "fail"), code=1))
+    root, _, _, _ = _ship_env(tmp_path, monkeypatch, fake, knownFailures=["shell"])
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (crew_state.AUTOPILOT_KNOWN_FAILURES, got["stop"], fake.ran("pr", "merge"),
+            "shell" in got["reason"]) == ((), True, [], True)
+
+
+def test_ci_timeout_minutes_is_constant(tmp_path, monkeypatch):
+    fake = FakeGh(pr_checks=_checks(("check", "pending"), code=8))
+    root, _, clock, _ = _ship_env(tmp_path, monkeypatch, fake, ciTimeoutMinutes=1)
+
+    got = crew_autopilot.ship(str(root), T)
+
+    assert (got["stop"], fake.ran("pr", "merge"),
+            clock.now >= crew_state.AUTOPILOT_CI_TIMEOUT_MINUTES * 60) == (True, [], True)
+
+
+def test_settings_carry_no_known_failures_or_ci_timeout(tmp_path):
     root = make_repo(tmp_path, mode="off")
-    _config(root, knownFailures=value)
+    _config(root, knownFailures=["shell"], ciTimeoutMinutes=1)
 
     got = crew_autopilot.settings(str(root))
 
-    assert (got["knownFailures"], any("knownFailures" in w for w in got["warnings"])) == (
-        [], True)
-
-
-def test_known_failures_list_is_kept(tmp_path):
-    root = make_repo(tmp_path, mode="off")
-    _config(root, knownFailures=["crew-shell-matrix (windows-latest)"])
-
-    got = crew_autopilot.settings(str(root))
-
-    assert got["knownFailures"] == ["crew-shell-matrix (windows-latest)"]
-
-
-@pytest.mark.parametrize("value", [0, -5, "60", True, 2.5, None])
-def test_ci_timeout_bad_value_reads_60(tmp_path, value):
-    root = make_repo(tmp_path, mode="off")
-    _config(root, ciTimeoutMinutes=value)
-
-    got = crew_autopilot.settings(str(root))
-
-    assert (got["ciTimeoutMinutes"], any("ciTimeoutMinutes" in w for w in got["warnings"])) == (
-        60, True)
+    assert ("knownFailures" in got, "ciTimeoutMinutes" in got) == (False, False)

@@ -4,8 +4,8 @@
 WHERE. `.crew/metrics.jsonl`, one JSON object per line, append-only. It
 replaces `.crew/metrics.md`; `/crew:migrate` (`crew_migrate.py`) writes the
 historical rows there already, each carrying `_METRIC_FIELDS_1_0` set to
-UNKNOWN and no `schema` key. A row this module writes always carries
-`"schema": "1.0"` (or an explicit `--schema` override for a hand-reconstructed
+UNKNOWN and no `schema` key. A row this module writes carries
+`"schema": "1.1"` since L-0728 (1.0 before; or an explicit `--schema` override for a hand-reconstructed
 baseline row, see `record`'s `--schema` flag) -- that key, not file identity,
 is what `baseline` and `compare` use to tell a migrated 0.20 row from a
 prospective 1.0 one.
@@ -20,7 +20,8 @@ lock below). Nothing here ever opens the file with "w", seeks into it, or
 rewrites a previous line: rewriting metrics is an AUTONOMOUS_STOP. A stale
 `escapedDefects` value is corrected by appending a new `escaped` row, not by
 editing the `record` row that first wrote it -- `effective_ticket_metrics`
-folds the two by taking the latest value per ticket, per field.
+folds the two by taking the latest value per ticket, per field (the tokens/cost
+measurement group of a 1.1 row folds as one unit instead).
 
 CONCURRENT WRITERS. `_Lock` is `review_ledger._Lock`'s O_CREAT|O_EXCL design,
 reused rather than re-derived, held only around the read-then-append.
@@ -42,17 +43,24 @@ module measured, an UNKNOWN is a count it could not):
                     `transcript_path` -- see `crew_context.py`), so the
                     caller must pass it explicitly or leave the field
                     UNKNOWN. This is a decision the brief left open.
-  tokens            the same transcript: the sum of every main-chain
-                    assistant message's `usage` fields. This over-counts
-                    against a true "billed tokens" figure (context resent on
-                    every turn is counted every time it appears), and is
-                    reported as such -- it is the only figure obtainable
-                    from a transcript alone, with no session-report tool
-                    wired in. UNKNOWN without `--transcript`.
-  cost              always UNKNOWN: no transcript or session-report source in
-                    this repository prices a session. `--cost` (a plain
-                    override) is accepted for a future wiring but nothing
-                    computes it yet.
+  tokens            an object {input, output, cacheRead, cacheCreation,
+                    total} in which each assistant message is counted once
+                    (Claude Code writes a message's usage on every line it
+                    writes for it). With `--transcript <path>`: that file's
+                    main chain only. Otherwise (L-0728) `attributed_usage`
+                    scans the Claude Code transcripts of every worktree of
+                    this repository, subagent files included, and counts the
+                    files an exclusive rule ties to the ticket (a `Ticket ID:`
+                    line, a `/crew:<command> <id>`, or one linked worktree; a
+                    file it cannot read in full is counted `unreadable`):
+                    an attributed LOWER BOUND, so the row says
+                    `tokensBasis: attributed lower bound` and carries
+                    `tokensAttribution`. UNKNOWN when nothing is tied to the
+                    ticket or with `--no-scan`; never 0.
+  cost              list-price USD computed from the dated `PRICES` table
+                    (`pricesAsOf`, `pricesSource` on the row); UNKNOWN when a
+                    counted model with tokens has no price (never a partial
+                    sum). `--cost` overrides it.
   reviewRounds      `review_ledger.status(root, ticket)["rounds"]`, verbatim
                     (round, provider, model, verdict, timestamps). UNKNOWN if
                     the ledger is corrupt.
@@ -102,6 +110,10 @@ import review_ledger
 
 UNKNOWN = "UNKNOWN"
 SCHEMA_1_0 = "1.0"
+SCHEMA_1_1 = "1.1"
+# Rows that carry the measurement group fold it as one unit (B5).
+MEASUREMENT_GROUP = ("tokens", "cost", "tokensBasis", "tokensAttribution", "pricesAsOf",
+                     "pricesSource", "sourceTokens", "sourceCost")
 DEFAULT_IDLE_SECONDS = 300
 MIN_COMPARE_TICKETS = 10
 # The 30% criterion compares medians; a median over fewer than this many
@@ -439,59 +451,573 @@ def active_time_seconds(transcript, idle_threshold=DEFAULT_IDLE_SECONDS):
 TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens",
                 "cache_creation_input_tokens")
 
+# List prices, USD per million tokens, keyed by model-id PREFIX (longest
+# prefix wins). Read from the `claude-api` skill's model table, itself cached
+# 2026-10-06 from the vendor pricing page; the cache-write multipliers are the
+# published 1.25x (5-minute TTL) and 2x (1-hour TTL) of the input rate. A
+# cache-read rate the table states is used as stated (Fable 5.1 0.25, Fable 5
+# 1.00, Opus 5.5 0.20, Sonnet 0.20); where it states none the standard 0.1x of
+# input is ASSUMED (opus-5, opus-4.x, sonnet-4-6, haiku). Haiku 5.5 messages
+# with a prompt above 100K tokens use PRICES_LONG ($0.50 in / $2.50 out, cache
+# read ASSUMED 0.1x). A model with no entry makes cost UNKNOWN, never a partial sum.
+PRICES_AS_OF = "2026-10-06"
+PRICES_SOURCE = ("claude-api skill model table (cached 2026-10-06; "
+                 "https://platform.claude.com/docs/en/about-claude/pricing); "
+                 "cache write 1.25x (5m) / 2x (1h) of input; cache read as stated "
+                 "there, else assumed 0.1x of input; Haiku 5.5 above a 100K prompt at "
+                 "$0.50 in / $2.50 out, its cache read assumed 0.1x")
+
+
+def _price(inp, out, cache_read=None):
+    read = inp * 0.1 if cache_read is None else cache_read
+    return {"input": inp, "output": out, "cacheRead": read,
+            "cacheWrite5m": inp * 1.25, "cacheWrite1h": inp * 2.0}
+
+
+PRICES = {
+    "claude-fable-5-1": _price(10.0, 50.0, 0.25),
+    "claude-mythos-5-1": _price(10.0, 50.0, 0.25),
+    "claude-fable-5": _price(10.0, 50.0, 1.0),
+    "claude-mythos-5": _price(10.0, 50.0, 1.0),
+    "claude-opus-5-5": _price(4.0, 20.0, 0.20),
+    "claude-opus-5": _price(5.0, 25.0),
+    "claude-opus-4-8": _price(5.0, 25.0),
+    "claude-opus-4-7": _price(5.0, 25.0),
+    "claude-opus-4-6": _price(5.0, 25.0),
+    "claude-sonnet-5-5": _price(2.0, 10.0, 0.20),
+    "claude-sonnet-5": _price(2.0, 10.0, 0.20),
+    "claude-sonnet-4-6": _price(3.0, 15.0),
+    "claude-haiku-5-5": _price(0.10, 0.50),
+    "claude-haiku-4-5": _price(1.0, 5.0),
+}
+
+NO_MODEL = "(no model)"
+ATTRIBUTION_FIELDS = ("files", "mainSessions", "subagents", "conflicting",
+                      "conflictingMessages", "unreadable")
+# A model id from a transcript is hostile text (GEN-06): only this allowlist is kept
+# and echoed into a row; anything else reads as no model, hence unpriced.
+_MODEL_RE = re.compile(r"^[A-Za-z0-9<][A-Za-z0-9._:<>/-]{0,79}\Z")
+KIND_KEYS = ("input", "output", "cacheRead", "cacheWrite5m", "cacheWrite1h")
+
+
+def _iter_jsonl(path, state):
+    """Yield (line_no, record) for every line of `path` that is a JSON object,
+    streaming (no record is kept by the reader). `state["bad"]` is set when a
+    line does not parse or the file cannot be read: a fragment of a corrupt
+    file is not a trustworthy measurement of it. Lines are the "\\n"-separated
+    ones (PYTHON-03): str.splitlines() also breaks on U+2028, which Claude Code
+    can write raw inside a JSON string."""
+    try:
+        with open(path, encoding="utf-8", errors="surrogateescape", newline="") as handle:
+            for number, line in enumerate(handle, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    state["bad"] = True
+                    continue
+                if isinstance(rec, dict):
+                    yield number, rec
+                else:
+                    state["bad"] = True
+    except (OSError, TypeError):
+        state["bad"] = True
+
+
+def _read_jsonl(path):
+    """([(line_no, record)], had_unreadable_or_unparseable_line)."""
+    state = {"bad": False}
+    records = list(_iter_jsonl(path, state))
+    return records, state["bad"]
+
+
+def _message_key(rec, scope, number):
+    """Identity of one assistant message: `message.id`, else the record's
+    `uuid`, else its own position (file and line) so id-less records never
+    collapse into each other. The kinds are never merged with one another."""
+    message = rec.get("message")
+    message_id = message.get("id") if isinstance(message, dict) else None
+    if isinstance(message_id, str) and message_id:
+        return ("id", message_id)
+    uuid = rec.get("uuid")
+    if isinstance(uuid, str) and uuid:
+        return ("uuid", uuid)
+    return ("pos", scope, number)
+
+
+def _bad_count(value):
+    return isinstance(value, bool) or not isinstance(value, int) or value < 0
+
+
+_CREATION_SPLIT = ("ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens")
+
+
+def _usage_of(rec, fields, validate, include_sidechain):
+    """(usage, model) of an assistant record that carries a `usage` object with
+    at least one of `fields`, else None. Every name in `validate` that is
+    present must be a non-negative integer (and so must the cache-creation
+    split when cache creation is validated), else ValueError: a bad count is
+    never read as 0."""
+    if rec.get("type") != "assistant" or not rec.get("timestamp"):
+        return None
+    if rec.get("isSidechain") is True and not include_sidechain:
+        return None
+    message = rec.get("message")
+    usage = message.get("usage") if isinstance(message, dict) else None
+    if not isinstance(usage, dict) or not any(k in usage for k in fields):
+        # A `usage` object carrying none of the fields this module
+        # recognizes is not a measurement.
+        return None
+    if any(k in usage and _bad_count(usage[k]) for k in validate):
+        raise ValueError("a usage count is not a non-negative integer")
+    split = usage.get("cache_creation")
+    if "cache_creation_input_tokens" in validate and split is not None:
+        if not isinstance(split, dict) or any(k in split and _bad_count(split[k])
+                                              for k in _CREATION_SPLIT):
+            raise ValueError("a cache creation count is not a non-negative integer")
+        if sum(split.get(k) or 0 for k in _CREATION_SPLIT) != (
+                usage.get("cache_creation_input_tokens") or 0):
+            raise ValueError("the cache creation split does not add up to its total")
+    model = message.get("model")
+    return usage, model if isinstance(model, str) and _MODEL_RE.match(model) else NO_MODEL
+
+
+def _messages(records, scope, fields, validate, include_sidechain):
+    """{key: (usage, model)}: one entry per assistant message, the LAST record
+    in file order being its canonical usage (Claude Code writes a message once
+    per content block and the usage repeats on every line). Every record's
+    counts are validated before the dedup, duplicates included, so a malformed
+    duplicate still raises ValueError."""
+    messages = {}
+    for number, rec in records:
+        got = _usage_of(rec, fields, validate, include_sidechain)
+        if got is not None:
+            messages[_message_key(rec, scope, number)] = got
+    return messages
+
 
 def transcript_tokens(transcript, fields=TOKEN_FIELDS, strict=False):
-    """Sum of every main-chain assistant message's usage `fields` (all four
-    by default; L-0541's goal cap passes input and output only). UNKNOWN when
-    no assistant message carries a `usage` object with at least one of
-    `fields`, or when any line in the transcript failed to parse. `strict`
-    (the goal cap's): a present field that is not a non-negative integer
-    raises ValueError, so a negative count can never lower the total."""
-    events, had_unparseable = _transcript_events(transcript)
+    """Sum of the usage `fields` (all four by default; L-0541's goal cap
+    passes input and output only) over the main-chain assistant messages,
+    each message counted ONCE: Claude Code repeats a message's usage on every
+    line it writes for it, so a per-line sum over-counts (about 1.8x on this
+    project's transcripts). UNKNOWN when no assistant message carries a
+    `usage` object with at least one of `fields`, when any line in the
+    transcript failed to parse, or when a count is not a non-negative integer.
+    `strict` (the goal cap's): a present `fields` count that is not a
+    non-negative integer raises ValueError instead, so a negative count can
+    never lower the total."""
+    records, had_unparseable = _read_jsonl(transcript)
     if had_unparseable:
         return UNKNOWN
     token_fields = tuple(fields)
-    found = False
-    total = 0
-    for _, rec in events:
-        if rec.get("type") != "assistant":
+    try:
+        messages = _messages(records, transcript, token_fields,
+                             token_fields if strict else TOKEN_FIELDS, False)
+    except ValueError:
+        if strict:
+            raise
+        return UNKNOWN
+    if not messages:
+        return UNKNOWN
+    return sum(int(usage.get(k) or 0) for usage, _ in messages.values() for k in token_fields)
+
+
+def _kinds(usage):
+    """One message's tokens split by price kind. Cache creation uses the 5m/1h
+    breakdown when it adds up to the total, else all of it counts as 5m."""
+    def num(source, key):
+        value = source.get(key) if isinstance(source, dict) else None
+        return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+    created = num(usage, "cache_creation_input_tokens")
+    split = usage.get("cache_creation")
+    c5, c1 = num(split, "ephemeral_5m_input_tokens"), num(split, "ephemeral_1h_input_tokens")
+    if c5 + c1 != created:
+        c1 = min(c1, created)
+        c5 = created - c1
+    return {"input": num(usage, "input_tokens"), "output": num(usage, "output_tokens"),
+            "cacheRead": num(usage, "cache_read_input_tokens"),
+            "cacheWrite5m": c5, "cacheWrite1h": c1}
+
+
+def _kinds_tuple(usage):
+    kinds = _kinds(usage)
+    return tuple(kinds[k] for k in KIND_KEYS)
+
+
+# A model's higher rate above a prompt size: Haiku 5.5 charges $0.50 in / $2.50 out for a
+# prompt above 100K tokens. Such a message is priced under the model's key plus LONG_SUFFIX.
+LONG_PROMPT = (("claude-haiku-5-5", 100_000),)
+LONG_SUFFIX = ">100K"
+PRICES_LONG = {"claude-haiku-5-5": _price(0.50, 2.50)}
+
+
+def _tier(model, kinds):
+    """`model`, or `model` + LONG_SUFFIX for a message whose prompt (input plus
+    cache reads and writes) is over that model's long-prompt threshold."""
+    prompt = kinds[0] + kinds[2] + kinds[3] + kinds[4]
+    for prefix, threshold in LONG_PROMPT:
+        if model.startswith(prefix) and prompt > threshold:
+            return model + LONG_SUFFIX
+    return model
+
+
+def _fold_kinds(entries):
+    """({model: kinds}, tokens) for (kinds_tuple, model) entries, where tokens is
+    {input, output, cacheRead, cacheCreation, total}."""
+    by_model = {}
+    for kinds, model in entries:
+        into = by_model.setdefault(_tier(model, kinds), dict.fromkeys(KIND_KEYS, 0))
+        for key, count in zip(KIND_KEYS, kinds):
+            into[key] += count
+    return by_model, tokens_from_models(by_model)
+
+
+def tokens_from_models(by_model):
+    total = dict.fromkeys(KIND_KEYS, 0)
+    for kinds in by_model.values():
+        for key in KIND_KEYS:
+            total[key] += kinds[key]
+    creation = total["cacheWrite5m"] + total["cacheWrite1h"]
+    return {"input": total["input"], "output": total["output"], "cacheRead": total["cacheRead"],
+            "cacheCreation": creation, "total": sum(total.values())}
+
+
+def transcript_token_kinds(transcript):
+    """{"tokens": {input, output, cacheRead, cacheCreation, total}, "byModel":
+    {model: {input, output, cacheRead, cacheWrite5m, cacheWrite1h}}} over the
+    main-chain assistant messages, each counted once; UNKNOWN as
+    `transcript_tokens` is."""
+    records, had_unparseable = _read_jsonl(transcript)
+    if had_unparseable:
+        return UNKNOWN
+    try:
+        messages = _messages(records, transcript, TOKEN_FIELDS, TOKEN_FIELDS, False)
+    except ValueError:
+        return UNKNOWN
+    if not messages:
+        return UNKNOWN
+    by_model, tokens = _fold_kinds((_kinds_tuple(usage), model)
+                                   for usage, model in messages.values())
+    return {"tokens": tokens, "byModel": by_model}
+
+
+def price_for(model, prices=None):
+    """The price row whose key is the longest prefix of `model`, else None. A
+    `model` carrying LONG_SUFFIX is looked up in the long-prompt table."""
+    table = PRICES if prices is None else prices
+    if model.endswith(LONG_SUFFIX):
+        model = model[:-len(LONG_SUFFIX)]
+        table = PRICES_LONG if prices is None else {}
+    best = None
+    for key in table:
+        if model.startswith(key) and (best is None or len(key) > len(best)):
+            best = key
+    return table[best] if best else None
+
+
+def cost_usd(by_model, prices=None):
+    """(USD, unpriced_models). USD is the list-price cost to 6 places, or
+    UNKNOWN when any model with tokens > 0 has no price (never a partial sum);
+    a model whose counts are all 0 (`<synthetic>`) needs no price."""
+    total, unpriced = 0.0, []
+    for model, kinds in sorted(by_model.items()):
+        if not any(kinds[k] for k in KIND_KEYS):
             continue
-        message = rec.get("message")
-        usage = message.get("usage") if isinstance(message, dict) else None
-        if not isinstance(usage, dict):
+        row = price_for(model, prices)
+        if row is None:
+            unpriced.append(model)
             continue
-        if not any(k in usage for k in token_fields):
-            # A `usage` object present but carrying none of the fields this
-            # module recognizes is not a measurement -- do not let it mark
-            # tokens as "found" (and thus 0) instead of UNKNOWN.
+        total += sum(kinds[k] * row[k] for k in KIND_KEYS) / 1_000_000
+    if unpriced:
+        return UNKNOWN, unpriced
+    return round(total, 6), []
+
+
+# --------------------------------------------------------------------------
+# attribution: which Claude Code transcripts belong to a ticket
+
+_ID = rf"({crew_common.TICKET_ID_CORE})(?![A-Za-z0-9_]|[.-][A-Za-z0-9])"
+_STAMP_LINE = re.compile(rf"(?m)^[ \t]*Ticket ID:[ \t]*{_ID}[ \t]*$")
+_CREW_COMMAND = re.compile(rf"(?<![A-Za-z0-9_/])/crew:[a-z][a-z-]*[ \t]+{_ID}")
+_COMMAND_TAGS = re.compile(
+    rf"<command-name>\s*/crew:[a-z][a-z-]*\s*</command-name>.{{0,400}}?<command-args>\s*{_ID}", re.S)
+_BRANCH_ID = re.compile(rf"^({crew_common.TICKET_ID_CORE})-")
+
+
+def claude_config_dir():
+    return os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+
+
+def project_slug(path):
+    """Claude Code's project-directory name for a path: every character
+    outside [A-Za-z0-9] becomes '-'."""
+    return re.sub(r"[^A-Za-z0-9]", "-", path)
+
+
+def worktrees(root):
+    """[{"path": realpath, "branch": name-or-None, "main": bool}] from
+    `git worktree list --porcelain` run in `root`; the first entry is the main
+    checkout. When git cannot answer, `root` alone, as the main checkout."""
+    import shutil  # pylint: disable=import-outside-toplevel
+    import subprocess  # pylint: disable=import-outside-toplevel
+    found = []
+    git = shutil.which("git")
+    env = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+    out = ""
+    if git:
+        try:
+            out = subprocess.run([git, "worktree", "list", "--porcelain"], cwd=root, check=True,
+                                 capture_output=True, text=True, encoding="utf-8",
+                                 errors="surrogateescape", timeout=30, env=env).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+    for block in out.split("\n\n"):
+        path, branch = None, None
+        for line in block.splitlines():
+            if line.startswith("worktree "):
+                path = line[len("worktree "):]
+            elif line.startswith("branch "):
+                branch = line[len("branch "):]
+                if branch.startswith("refs/heads/"):
+                    branch = branch[len("refs/heads/"):]
+        if path:
+            found.append({"path": os.path.realpath(path), "branch": branch, "main": not found})
+    if not found:
+        found.append({"path": os.path.realpath(root), "branch": None, "main": True})
+    return found
+
+
+def project_dirs(root):
+    """The existing Claude project directories whose slug matches the realpath
+    of any worktree of this repository."""
+    base = os.path.join(claude_config_dir(), "projects")
+    dirs = []
+    for tree in worktrees(root):
+        candidate = os.path.join(base, project_slug(tree["path"]))
+        if os.path.isdir(candidate) and candidate not in dirs:
+            dirs.append(candidate)
+    return dirs
+
+
+def _user_text(rec):
+    """Text a person (or a dispatching parent) typed in a user record: a string
+    body or its text blocks. Tool results, meta records and everything else are
+    not evidence (they quote files, which can name any ticket)."""
+    if rec.get("type") != "user" or rec.get("isMeta") is True:
+        return ""
+    message = rec.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(block["text"] for block in content
+                         if isinstance(block, dict) and block.get("type") == "text"
+                         and isinstance(block.get("text"), str))
+    return ""
+
+
+def _inside(path, root):
+    """True when the canonical `path` is `root` or lies under it (PYTHON-13)."""
+    left, right = os.path.normcase(path), os.path.normcase(root)
+    try:
+        return os.path.commonpath([left, right]) == right
+    except ValueError:
+        return False
+
+
+def _worktree_id(cwds, missing_cwd, trees, ticket):
+    """The ticket id a file's records place it in: X when EVERY message-bearing
+    record has a `cwd` and all of them lie inside ONE linked worktree whose
+    branch starts `X-`. A record with no `cwd` is no evidence (could-not-tell),
+    and the main checkout's branch is never evidence."""
+    if missing_cwd or not cwds:
+        return None
+    real = {os.path.realpath(cwd) for cwd in cwds}
+    for tree in trees:
+        if tree["main"] or not tree["branch"]:
             continue
-        found = True
-        if strict and any(k in usage and (isinstance(usage[k], bool) or not isinstance(
-                usage[k], int) or usage[k] < 0) for k in token_fields):
-            raise ValueError("a usage count is not a non-negative integer")
-        total += sum(int(usage.get(k) or 0) for k in token_fields)
-    return total if found else UNKNOWN
+        if all(_inside(c, tree["path"]) for c in real):
+            if tree["branch"].startswith(ticket + "-"):
+                return ticket
+            match = _BRANCH_ID.match(tree["branch"])
+            return match.group(1) if match else None
+    return None
+
+
+def _session_files(project_dir, errors):
+    """[(path, parent_session_path_or_None)]: the main `<session>.jsonl` files
+    and every `*.jsonl` anywhere under `<session>/subagents/` (the direct
+    `agent-*.jsonl` files and `workflows/wf_<id>/agent-*.jsonl`), regular files
+    only (opening a FIFO would block). A directory that cannot be listed or
+    walked is appended to `errors`: an unreadable place is not an empty one."""
+    files = []
+    try:
+        names = sorted(os.listdir(project_dir))
+    except OSError as exc:
+        errors.append(exc)
+        return files
+    for name in names:
+        full = os.path.join(project_dir, name)
+        if name.endswith(".jsonl") and os.path.isfile(full):
+            files.append((full, None))
+        elif os.path.isdir(os.path.join(full, "subagents")):
+            parent = os.path.join(project_dir, name + ".jsonl")
+            for here, _dirs, found in os.walk(os.path.join(full, "subagents"),
+                                              onerror=errors.append):
+                for leaf in sorted(found):
+                    if leaf.endswith(".jsonl") and os.path.isfile(os.path.join(here, leaf)):
+                        files.append((os.path.join(here, leaf), parent))
+    return files
+
+
+def _scan_file(path):
+    """One streaming pass over a transcript. Returns (bad, ids, cwds, missing_cwd,
+    messages): `bad` when a line does not parse, the file cannot be read or a
+    usage count is invalid (the file then yields nothing); `ids` the ticket ids
+    its user text names; `cwds` the working directories of its message-bearing
+    records and `missing_cwd` whether one had none; `messages`
+    {key: (kinds_tuple, model)}. No record is kept after its pass."""
+    state = {"bad": False}
+    ids, cwds, missing_cwd, messages = set(), set(), False, {}
+    for number, rec in _iter_jsonl(path, state):
+        text = _user_text(rec)
+        if text:
+            for pattern in (_STAMP_LINE, _CREW_COMMAND, _COMMAND_TAGS):
+                ids.update(m.group(1) for m in pattern.finditer(text))
+        cwd = rec.get("cwd")
+        if isinstance(cwd, str) and cwd:
+            cwds.add(cwd)
+        elif rec.get("type") in ("user", "assistant") or "cwd" in rec:
+            missing_cwd = True
+        try:
+            got = _usage_of(rec, TOKEN_FIELDS, TOKEN_FIELDS, True)
+        except ValueError:
+            state["bad"] = True
+            continue
+        if got is not None:
+            messages[_message_key(rec, path, number)] = (_kinds_tuple(got[0]), got[1])
+    return state["bad"], ids, cwds, missing_cwd, messages
+
+
+def attributed_usage(root, ticket):
+    """Token usage of the Claude Code transcripts that an exclusive rule ties to
+    `ticket`, as an attributed LOWER BOUND. One decision per transcript file;
+    its evidence set is every id in a `Ticket ID: <id>` line or a
+    `/crew:<command> <id>` in its user messages plus the id of the one linked
+    worktree all its records sit in. One id: the file belongs to it. Two or more:
+    the file is conflicting and belongs to nobody. None: a subagent file takes
+    its parent session file's owner, a main file has none. A file that cannot be
+    read in full (a line that does not parse, an unreadable file, an invalid
+    count) is `unreadable`: the part that did parse could be hiding the id that
+    would have made it conflicting, so it is attributed to nobody. Each message
+    id counts once per scan; one seen under different owners counts for no
+    ticket. A directory that cannot be listed counts in `unreadable` too. Returns
+    {"files", "mainSessions", "subagents", "conflicting",
+    "conflictingMessages", "unreadable", "tokens", "byModel"}; tokens and byModel
+    are None when no file belongs to `ticket`. Only usage, ids, models, `cwd` and
+    the matched ids are kept, one file at a time: no prompt text is stored or
+    echoed."""
+    check_ticket(ticket)
+    trees = worktrees(root)
+    files, errors = [], []
+    for project_dir in project_dirs(root):
+        files.extend(_session_files(project_dir, errors))
+    files.sort(key=lambda item: item[1] is not None)  # main sessions first: a child reads its parent's owner
+    owner, seen = {}, {}
+    out = {"files": 0, "mainSessions": 0, "subagents": 0, "conflicting": 0,
+           "conflictingMessages": 0, "unreadable": len(errors), "tokens": None, "byModel": None}
+    for path, parent in files:
+        bad, ids, cwds, missing_cwd, messages = _scan_file(path)
+        if bad:
+            owner[path] = None
+            out["unreadable"] += 1
+            continue
+        tree_id = _worktree_id(cwds, missing_cwd, trees, ticket)
+        if tree_id:
+            ids.add(tree_id)
+        if len(ids) == 1:
+            owner[path] = next(iter(ids))
+        elif ids:
+            owner[path] = None
+            if ticket in ids:
+                out["conflicting"] += 1
+        else:
+            owner[path] = owner.get(parent) if parent else None
+        if owner[path] == ticket:
+            out["files"] += 1
+            out["subagents" if parent else "mainSessions"] += 1
+        for key, (kinds, model) in messages.items():
+            entry = seen.get(key)
+            if entry is None:
+                seen[key] = [kinds, model, owner[path], False, owner[path] == ticket]
+                continue
+            if owner[path] != entry[2]:
+                entry[3] = True
+            if owner[path] == ticket:
+                entry[4] = True
+            # across files there is no file order to call "last": keep the fullest snapshot
+            if sum(kinds) > sum(entry[0]):
+                entry[0], entry[1] = kinds, model
+    mine = [(entry[0], entry[1]) for entry in seen.values() if not entry[3] and entry[2] == ticket]
+    out["conflictingMessages"] = sum(1 for entry in seen.values() if entry[3] and entry[4])
+    if out["files"] and mine:
+        out["byModel"], out["tokens"] = _fold_kinds(mine)
+    return out
 
 
 # --------------------------------------------------------------------------
 # record
 
+def _measurement(root, ticket, transcript, scan):
+    """(tokens, cost-fields, basis, attribution, source-tokens): the measurement
+    group a row carries."""
+    if transcript:
+        kinds = transcript_token_kinds(transcript)
+        attribution = dict(zip(ATTRIBUTION_FIELDS, (1, 1, 0, 0, 0, 0)))
+        basis = "single transcript, main chain (--transcript)"
+        source = transcript
+    elif scan:
+        used = attributed_usage(root, ticket)
+        attribution = {k: used[k] for k in ATTRIBUTION_FIELDS}
+        kinds = UNKNOWN if used["tokens"] is None else {
+            "tokens": used["tokens"], "byModel": used["byModel"]}
+        basis = "attributed lower bound"
+        source = ("scan of the Claude Code transcripts of this repository's worktrees "
+                  "(exclusive attribution)" if used["tokens"] is not None else
+                  "scan found no transcript tied to this ticket"
+                  + (f" ({used['unreadable']} unreadable)" if used["unreadable"] else ""))
+    else:
+        return UNKNOWN, UNKNOWN, "not measured (--no-scan)", UNKNOWN, "--no-scan"
+    if kinds == UNKNOWN:
+        return UNKNOWN, UNKNOWN, basis, attribution, source
+    return kinds["tokens"], kinds["byModel"], basis, attribution, source
+
+
 def record(root, ticket, transcript=None, session=None, idle_threshold=DEFAULT_IDLE_SECONDS,
-           cost=None, schema=SCHEMA_1_0):
+           cost=None, schema=SCHEMA_1_1, scan=True):
     """Build and append one row for `ticket`. Returns the row."""
     check_ticket(ticket)
+    if transcript and not scan:
+        raise MetricsError("--transcript and --no-scan contradict each other")
     review_rounds, review_source = _review_rounds(root, ticket)
     scope_blocks, scope_source = _scope_blocks(root, ticket)
     injected, injected_source = _injected_chars(root, ticket, session)
     unapproved, unapproved_source = _unapproved_scope_changes(root, ticket)
-    if transcript:
-        active = active_time_seconds(transcript, idle_threshold)
-        tokens = transcript_tokens(transcript)
-        transcript_note = transcript
+    active = active_time_seconds(transcript, idle_threshold) if transcript else UNKNOWN
+    transcript_note = transcript or "no --transcript given"
+    tokens, by_model, basis, attribution, tokens_source = _measurement(
+        root, ticket, transcript, scan)
+    if cost is not None:
+        cost_value, cost_source = cost, "--cost"
+    elif tokens == UNKNOWN:
+        cost_value, cost_source = UNKNOWN, "no tokens measured"
     else:
-        active = UNKNOWN
-        tokens = UNKNOWN
-        transcript_note = "no --transcript given"
+        cost_value, unpriced = cost_usd(by_model)
+        cost_source = ("computed from PRICES (list price)" if not unpriced else
+                       "UNKNOWN: no price for model(s) " + ", ".join(unpriced))
     row = {
         "schema": schema,
         "kind": "record",
@@ -501,7 +1027,11 @@ def record(root, ticket, transcript=None, session=None, idle_threshold=DEFAULT_I
         "phases": _phases(root, ticket),
         "activeTime": active,
         "tokens": tokens,
-        "cost": cost if cost is not None else UNKNOWN,
+        "cost": cost_value,
+        "tokensBasis": basis,
+        "tokensAttribution": attribution,
+        "pricesAsOf": PRICES_AS_OF,
+        "pricesSource": PRICES_SOURCE,
         "reviewRounds": review_rounds,
         "findingsConfirmed": UNKNOWN,
         "findingsRejected": UNKNOWN,
@@ -513,8 +1043,8 @@ def record(root, ticket, transcript=None, session=None, idle_threshold=DEFAULT_I
         "source": {
             "reviewRounds": review_source, "scopeBlocks": scope_source,
             "injectedChars": injected_source, "unapprovedScopeChanges": unapproved_source,
-            "activeTime": transcript_note, "tokens": transcript_note,
-            "cost": "no cost source wired in" if cost is None else "--cost",
+            "activeTime": transcript_note, "tokens": tokens_source,
+            "cost": cost_source,
             "findingsConfirmed": "no automatic source (review ledger records severity, "
                                  "not disposition)",
             "findingsRejected": "no automatic source (review ledger records severity, "
@@ -554,15 +1084,37 @@ def _row_ticket(row):
 def effective_ticket_metrics(rows):
     """{ticketId: {field: value}}, folding every row for a ticket in file
     order. A later row's non-UNKNOWN value for a field wins; UNKNOWN never
-    overwrites an earlier known value."""
+    overwrites an earlier known value.
+
+    The MEASUREMENT GROUP (`tokens`, `cost`, `tokensBasis`, `tokensAttribution`,
+    `pricesAsOf`, `pricesSource` and `source.tokens` / `source.cost`) folds as
+    one unit: a row that carries it (a schema 1.1 measurement attempt, marked by
+    `tokensBasis`) replaces the whole group, UNKNOWN values included, so a later
+    attempt that could not price its tokens cannot keep an earlier cost that
+    belongs to other tokens. A row without the group (an `escaped` row, a 0.20
+    or 1.0 row) leaves a group already folded alone."""
     by_ticket = {}
     for row in rows:
         ticket = _row_ticket(row)
         if not ticket:
             continue
         current = by_ticket.setdefault(ticket, {})
+        grouped = "tokensBasis" in row
+        if grouped:
+            source = row.get("source") if isinstance(row.get("source"), dict) else {}
+            for name in MEASUREMENT_GROUP:
+                current.pop(name, None)
+            for name in MEASUREMENT_GROUP:
+                if name == "sourceTokens":
+                    current[name] = source.get("tokens", UNKNOWN)
+                elif name == "sourceCost":
+                    current[name] = source.get("cost", UNKNOWN)
+                elif name in row:
+                    current[name] = row[name]
         for field in METRIC_FIELDS:
-            if field not in row:
+            if field not in row or (grouped and field in MEASUREMENT_GROUP):
+                continue
+            if field in ("tokens", "cost") and "tokensBasis" in current:
                 continue
             value = row[field]
             if value == UNKNOWN and field in current and current[field] != UNKNOWN:
@@ -605,7 +1157,7 @@ def baseline(root):
 
 
 def _select_prospective(rows, since):
-    prospective = [r for r in rows if r.get("schema") == SCHEMA_1_0]
+    prospective = [r for r in rows if r.get("schema") in (SCHEMA_1_0, SCHEMA_1_1)]
     by_ticket = effective_ticket_metrics(prospective)
     order = []
     for row in prospective:
@@ -761,9 +1313,13 @@ def main(argv):
     rec.add_argument("--transcript")
     rec.add_argument("--session")
     rec.add_argument("--idle-threshold-seconds", type=int, default=DEFAULT_IDLE_SECONDS)
-    rec.add_argument("--cost", type=float)
-    rec.add_argument("--schema", default=SCHEMA_1_0,
-                     help="1.0 (default) for a prospective ticket, or 0.20 to hand-"
+    rec.add_argument("--cost", type=float,
+                     help="USD; overrides the cost computed from the price table")
+    rec.add_argument("--no-scan", action="store_true",
+                     help="do not read Claude Code transcripts: tokens and cost UNKNOWN "
+                          "(not with --transcript)")
+    rec.add_argument("--schema", default=SCHEMA_1_1,
+                     help="1.1 (default) for a prospective ticket, or 0.20 to hand-"
                           "reconstruct a baseline row from an old transcript")
 
     esc = sub.add_parser("escaped", help="record escaped defects found after done")
@@ -782,12 +1338,14 @@ def main(argv):
                             "(YYYY-MM-DD, tickets recorded on/after it)")
 
     args = parser.parse_args(argv)
+    if args.cmd == "record" and args.transcript and args.no_scan:
+        parser.error("--transcript counts that file and --no-scan reads none; pass one")
     root = os.path.abspath(args.root)
     try:
         if args.cmd == "record":
             row = record(root, args.ticket, transcript=args.transcript, session=args.session,
                         idle_threshold=args.idle_threshold_seconds, cost=args.cost,
-                        schema=args.schema)
+                        schema=args.schema, scan=not args.no_scan)
             print(json.dumps(row, indent=2, sort_keys=True))
             return 0
         if args.cmd == "escaped":

@@ -23,8 +23,8 @@
 # code; only CODEOWNERS review or a ruleset on `.github/workflows/` stops a PR
 # from turning its own gate off.
 #
-# Ubuntu only: macOS is untested, and a Windows runner would need
-# `verify-gate.ps1 -Ci` instead.
+# Ubuntu only: macOS is untested, and a Windows runner would run
+# `bash verify-gate.sh --ci` under Git Bash instead.
 #
 # Actions are pinned by major tag, not by SHA: both are first-party and run
 # with the read-only token below. That trade is accepted here.

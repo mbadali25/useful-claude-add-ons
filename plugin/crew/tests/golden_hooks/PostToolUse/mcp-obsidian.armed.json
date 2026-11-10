@@ -1,0 +1,23 @@
+{
+ "armed": true,
+ "case": "mcp-obsidian",
+ "dirty": "",
+ "event": "PostToolUse",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"PostToolUse\", \"tool_name\": \"mcp__obsidian__search\", \"tool_input\": {\"query\": \"x\"}, \"tool_response\": {\"ok\": true}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"cwd\": \"{ROOT}\"}",
+ "rows": [
+  {
+   "argv": [
+    "crew-context.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "crew-context.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": ""
+}

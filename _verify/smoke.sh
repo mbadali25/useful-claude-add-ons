@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # _verify/smoke.sh - fast and shallow. Exit 0 = safe to merge/promote, 1 = stop.
-# 11 checks, target is under 90 seconds. Depth belongs in run-all.sh.
+# 12 checks, target is under 90 seconds. Depth belongs in run-all.sh.
 #
 # This repo is a Claude Code marketplace: there is no service to curl and no
 # environment to deploy to. "Smoke" here means the registration invariants hold
@@ -150,6 +150,14 @@ check_optional "powershell: every .ps1 parses and every Verb-Noun call resolves 
 # --- check 8: the audit's own label()/canon() contract -----------------------
 check "crew-setup: every recommended CLAUDE.md heading round-trips through canon()" \
       bash plugin/crew/skills/crew-setup/scripts/_test/round-trip.sh
+
+# --- check 8b: the audit counts the template's own blanks, and only those -----
+# P1-03: the count was one regex over the whole file, so a CLAUDE.md that
+# documents its commands (`Docs: none - <why>`, `open(...)`) could never reach
+# Phase 1's "no remaining placeholders". Must-flag and must-not-flag fixtures,
+# all under the suite's own mktemp directory.
+check "crew-setup: the CLAUDE.md audit counts template blanks, not documented commands" \
+      bash plugin/crew/skills/crew-setup/scripts/_test/placeholders.sh
 
 # --- check 9: the localgpu console script is on the PERSISTENT PATH ----------
 # T-0001: 'pip install -e' puts a working console script in the venv's script dir, but
@@ -393,7 +401,7 @@ claude_validate_check() {
     return 2
   fi
   local rc=0 target out
-  for target in . plugin/ai-connect plugin/crew plugin/gizmoduck plugin/rule-of-two plugin/localgpu plugin/obsidian-vault; do
+  for target in . plugin/ai-connect plugin/angular-lsp plugin/bash-lsp plugin/crew plugin/css-lsp plugin/gizmoduck plugin/rule-of-two plugin/localgpu plugin/obsidian-vault plugin/powershell-lsp plugin/pwsh-lsp plugin/sql-lsp plugin/terraform-lsp; do
     if out="$(claude plugin validate --strict "$target" 2>&1)"; then
       echo "  ok: $target"
     else

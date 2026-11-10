@@ -1,5 +1,287 @@
 # Changelog
 
+## [0.2.17] - 2026-11-09
+
+Release bump only: merges main's 0.2.13 (configurable root install) and 0.2.14 (test fix) into the TLS pinned-fingerprint line. `install.sh` opens both ports (9999, 10000) through `$SUDO`. No other behaviour change.
+
+## [0.2.16] - 2026-11-08
+
+Lint only (CI pylint on 0.2.15): two lines over 120 characters, a reimport of `join_codes` in `installer.py`, and `PinnedSocket`'s abstract `SSLSocket` methods. No behaviour change.
+
+## [0.2.15] - 2026-11-08
+
+TLS with a pinned certificate fingerprint (installer phase 1, part 2). The transition release: the Bridge serves `wss://` and plain `ws://` side by side; **0.3.1 serves `wss://` only**.
+
+### Added
+- `bridge_tls.py`: the Bridge makes a self-signed EC P-256 certificate on first start (or `ai-connect bridge cert show`), valid 730 days (`server.tls.validity_days`), in `~/.config/ai-connect/tls/` (directory 0700, key 0600; on Windows an ACL of the current user alone). A key that group or others can read stops the Bridge. Generation uses `cryptography` (now pinned, `cryptography==50.0.2`; it was already in the venv through fastmcp); the TLS contexts and the pin check use the stdlib `ssl` only
+- `wss://` on its own port, `server.tls.port` (default `server.port + 1`, 10000): TLS and plain WebSocket cannot share one socket without sniffing the first byte, which would hide client addresses from the logs and the join rate limit. `server.tls.enabled` (default true), `server.tls.required` (default false; true opens no `ws://` listener at all)
+- Clients pin the certificate by its SHA-256 (`client.bridge_fingerprint`): the digest is checked inside the TLS handshake, before the WebSocket upgrade carries a token or a join secret. No CA, no hostname check. A mismatch fails closed (`PinMismatch`), the MCP client stops reconnecting (like a refused token, `peer_status` says why) and nothing ever falls back to `ws://`. MCP client, watcher, observer/user client and `deploy/config_tool.py` (`verify`, `smoke --fingerprint`, `client --fingerprint`) all build `wss://` with the pin
+- Join codes carry the fingerprint and the `wss://` port; `ai-connect join` redeems over TLS with that pin and writes `client.bridge_url: wss://...` and `client.bridge_fingerprint`
+- `ai-connect bridge cert show|rotate`, `ai-connect pin <fingerprint> [--port N]` (checks the certificate at the Bridge first, refuses a mismatch), `ai-connect join --token-file ... --fingerprint`, `ai-connect bridge invite --plain` (a code without a fingerprint, for a machine still on 0.2.6 to 0.2.8); `status` shows the pin and whether the Bridge's certificate matches it
+- `installer.py config --server` pins the Bridge machine's own peer to its own certificate over `wss://`
+
+### Changed
+- A config that pairs a fingerprint with `ws://`, or `wss://` with no fingerprint, is refused (a downgrade, or a connection with no trust anchor)
+- Plain `ws://` is deprecated: the Bridge logs a warning at start and once per client address; a client on `ws://` logs one warning per process (to its log, never to bare stderr). Codes without a fingerprint still join over `ws://`, with a warning
+- `install.sh --server` and `install.ps1 -Server` open ports 9999 and 10000 for the VPN subnet (an existing Windows rule gets 10000 added); `vpn/acl-template.hujson` grants `tcp:9999` and `tcp:10000`
+- The auth reload logs a YAML error's line and column only, never its text (it can quote a token), and a file that keeps failing once, not every poll
+
+### Notes
+- **Rotation** (`bridge cert rotate`) changes the fingerprint: it ends every pending join code and re-pins the Bridge machine's own peer; restart the Bridge, then re-pin every other peer (`ai-connect pin <new fingerprint>`) or give it a new code. Until then each one fails closed
+- **Manual steps before 0.3.1:** add `tcp:10000` to an existing tailnet policy by hand (the template is pasted, not pushed), pin every peer, then `server.tls.required: true`
+- `deploy` still writes `ws://` and its firewall step opens `server.port` only in this release; pin deployed peers with `ai-connect pin`. Moving deploy to `wss://` is a follow-up before 0.3.1
+- An expired certificate is still the pinned one and still connects; the Bridge logs `tls_certificate_expired` until it is rotated
+
+## [0.2.14] - 2026-11-08
+
+Test only: `tests/test_ops_root_policy.py` resets `tsadmin.NO_EXEC` after each test. A dry-run deploy in that module left it set, and later CLI tests in the same worker failed with "a dry run runs no tool, and icacls.EXE was about to run" on Windows. No behaviour change.
+
+## [0.2.13] - 2026-11-08
+
+Installing and running as root is a configurable option. The default is unchanged: nothing before 0.2.13 refused root, and with no switch set nothing does now. Client, installer and deploy only: the Bridge is unchanged.
+
+### Added
+- `root_policy.py`: one switch for whether `install.sh`, `installer.py`, `deploy` and `setup` may run as root (euid 0, Linux and macOS). Highest first: the `--allow-root` flag (every `installer.py` step, every `deploy` and `setup` verb, `install.sh`), `AI_CONNECT_ALLOW_ROOT=1` or `0`, the config key `install.allow_root: true` or `false`. A value that is not true or false (in the environment or the config) stops the run instead of being guessed
+- Unset (the default): a root run goes ahead silently, exactly as before. `false`: root is refused before anything changes. `true`: one warning line that the services run as root and that a dedicated service user is safer (never created for you); a root whose `HOME` or user name belongs to another user (`sudo -E`) is refused; after the run the config directory is closed to 0700 and every file in it to 0600 (symbolic links are not followed). `install.sh` then needs no `sudo` and writes no polkit rule, and the units name the process's own user
+- `deploy status` and `deploy list` run as root whatever the switch says. On Windows the switch has no effect: `install.cmd` and `deploy.ps1` ask for elevation through UAC by design and run the tasks as the user without it
+- `config.yaml.example` documents `install.allow_root` as a comment, since `installer.py` requires every active key in the template to be in an existing config
+- `tests/test_ops_root_policy.py`: precedence, must-block (env `0`, config `false`, for `installer.py`, `deploy`, `setup` and the `install.sh` check), must-allow (flag, env, config), file modes 0700/0600, the `sudo -E` refusal, `status` exempt, and that no root-only step in `install.sh` bypasses `$SUDO`. Root is simulated through `AI_CONNECT_DEPLOY_ROOT` and the new `AI_CONNECT_ROOT_HOME` test seam
+
+### Fixed
+- The root switch's refusal for a config that is not valid YAML names only the line and column, never PyYAML's own text, which quotes the offending value (a token can be that value)
+
+## [0.2.12] - 2026-11-08
+
+Enrol a machine with one copy-paste code, and revoke one without restarting the Bridge. Installer phase 1 of 2: TLS with a pinned certificate follows in its own release.
+
+### Added
+- `ai-connect`, a CLI (`bin/ai-connect`, `bin\ai-connect.cmd`; `ai_connect_cli.py`): `bridge invite --name N [--expiry 1h]`, `join [<code>]`, `bridge token --name N`, `bridge revoke --name N`, `bridge list`, `status`. Every changing verb takes `--dry-run`. The launchers use the plugin's venv, else `python3`/`python`/`py -3`, and exit 127 with a message on stderr when no Python 3.10+ is found
+- One-time join codes (`join_codes.py`): version, expiry, Bridge host:port, a slot for the Bridge certificate's SHA-256 fingerprint (all zero until the TLS release), a 128-bit single-use secret, the peer name and a checksum, in base32. The Bridge stores only the secret's SHA-256 (`invites.json` beside `config.yaml`). Redemption (`GET /join` on the Bridge's port) is one locked read-check-mark-write: the code is marked used (temp file + `os.replace`) before the peer's token is written, so a crash burns the code. Expired, used, unknown and wrong-name codes all get the same refusal; past 5 failures a minute from one address (30 in total) the Bridge answers 429
+- Bridge-issued long-lived tokens: `bridge token --name N` writes the token to an owner-only file and shows only its last 4 characters. They do not expire; `bridge revoke` ends them
+- The Bridge reloads its auth table from `config.yaml` by polling (every 2 seconds, Windows and Linux alike, `server/auth_reload.py`): a new peer connects with no restart, and a revoked or replaced token's live connections are closed with 1008 `token revoked`. A config that does not parse or whose `auth:` is invalid is logged and the old table stays
+
+### Changed
+- `installer.py add-peer`, `revoke-peer`, `observer-token` and `user-token` no longer ask for a Bridge restart: the running Bridge picks the change up within seconds
+- Every `installer.py` writer of `config.yaml` (`add-peer`, `revoke-peer`, `observer-token`, `user-token`, `config --server`) takes the same lock as join-code redemption and the `ai-connect` CLI, so a revoke racing a redemption can neither write the revoked peer back nor drop the redeemed one
+- `bridge invite` warns when the Bridge address in the code is not loopback or Tailscale (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`, `*.ts.net`; a private LAN address or a host name is warned about too), and refuses an `--expiry` past 24 hours unless `--allow-long-expiry` (up to 7 days, with a warning): the join is plain HTTP in this release. `join --help` names the code on the command line as the weakest form
+- A `config.yaml` that does not parse is reported by line and column only, by the Bridge's reload log (once per broken file, not every poll), the `ai-connect` CLI and `installer.py`: PyYAML's own message quotes the offending line, which can hold a token
+- `deploy invite` and `deploy join` (Tailscale auth keys) are deprecated: they print a line pointing at `ai-connect bridge invite` / `ai-connect join` and keep working through this release only, because the deploy suites still drive them; they go in the next minor release. The tailnet itself stays `deploy tailnet-setup` and `vpn/vpn-up`
+
+### Notes
+- Transport is still plain `ws://` inside the VPN in this release, redemption included. The join sends the code's secret and receives the new peer's permanent token unencrypted: redeem a code over a VPN only; a join code that carries a certificate fingerprint is refused by this client, never redeemed over `ws://`. The next release serves `wss://` beside `ws://` for one release, with a warning, then `wss://` only
+- Settings under `server:` (address, port, limits) are still read once at start; changing one logs that a restart is needed
+## [0.2.11] - 2026-11-08
+
+Deploy test seam only; no behaviour change for a normal run.
+
+### Changed
+- `AI_CONNECT_DEPLOY_ROOT=0` now means "not root" even when the real euid is 0 (`1` still means root; unset keeps the euid check). The deploy test box sets it to `0`, so `tests/` passes when run as root (#609). Complements 0.2.10's per-test `non_root` option rather than replacing it
+
+## [0.2.10] - 2026-11-08
+
+Test only (0.2.8 and 0.2.9 were never released; this folds them in): test_bridge_status[linux] and test_join_with_an_invite_on_linux_runs_tailscale_up_as_root[user] assumed a
+non-root host and failed under uid 0. Their deploy child now runs with os.geteuid() reporting a user (the new
+non_root option on Box.deploy and Phase), so they pass whatever uid the suite runs under. No behaviour change.
+
+## [0.2.7] - 2026-11-08
+
+Lint only (line length) on the 0.2.6 test change; no behaviour change.
+
+## [0.2.6] - 2026-11-08
+
+Test isolation only: the setup and deploy suites ran their child processes in the checkout, so a project-scope
+setup test wrote plugin/ai-connect/.claude/settings.local.json. They now run in the throwaway project, and a
+suite guard fails any test that writes that path. No behaviour change from 0.2.5.
+
+## [0.2.5] - 2026-11-06
+
+Lint only (line length, final newline); no behaviour change from 0.2.4.
+
+## [0.2.4] - 2026-11-06
+
+Session state reporting is on by default. Client and deploy only: the Bridge is unchanged.
+
+### Changed
+- `deploy peer|join --register-mcp` now also writes the peer-state hooks (busy on prompt submit and after each tool, waiting on a permission prompt, idle when a turn ends) beside the MCP server, so `peer_list` shows the state instead of `state unknown`. `--no-state-hooks` registers the server alone. `--install-hooks` (the watcher plugin) stays opt-in and no longer has anything to do with state. `installer.py claude` already wrote them
+- This is the owner's explicit decision of 2026-11-06 and an exception to the repository's rule that a hook defaults to off: the hooks send a literal state, never a prompt, tool text or a peer's message
+- Each state hook has `timeout: 5` (Claude Code's default is 600 seconds, 30 on `UserPromptSubmit`). An older hook entry is replaced by the next `deploy peer --register-mcp` or `installer.py claude`
+- `peer_set_state` answers with text for every failure (Bridge down, connection lost, a client that raises) and cuts `detail` to 200 characters, so a hook never ends as an error in the transcript
+
+### Notes
+- Existing machines get the hooks (and the timeout) when `deploy peer --register-mcp` or `installer.py claude` is run again there; nothing writes into a settings file by itself. A hook is not shipped in the plugin's `hooks/hooks.json` because an `mcp_tool` hook with no registered server is an error on every event, and the state belongs to the session's own Bridge connection, which only its MCP server holds
+- There is no clear-on-exit hook: `peer_set_state` accepts only busy, idle and waiting, and a session that ends drops its Bridge connection, so the peer leaves `peer_list`
+
+## [0.2.3] - 2026-11-06
+
+Easier to tell peers apart and to address them. Client only: the Bridge is unchanged and needs no redeploy.
+
+### Changed
+- `peer_list` gives each peer's machine and project or session name (`dadeush-ai:s-crew-win-ai` is `machine dadeush-ai, session crew-win-ai`) and its state. A peer that reported no state reads `state unknown`, not idle; a state the client does not know is shown marked `unrecognised state`. State detail and status line are cut to 200 characters (control characters were already escaped, and every line stays inside the untrusted block)
+- `peer_send`, `peer_history` and `peer_notify_when_idle` accept a session name (`tss-ai`), `Machine:session`, a label (`SRL`) or the start of one, compared without case, when exactly one other online peer matches. More than one is refused with the candidates named and nothing is sent; none leaves the name as given, as before (an offline peer still gets the message). A full name, `*` and a machine's name are used as they are. The client only picks among names the Bridge listed: registration and watch checks on the Bridge are untouched, so a session name cannot claim another peer's
+
+### Notes
+- A peer that shows `state unknown` has no state hooks (`state_hooks.py`, written by the installer into that machine's settings) or runs a client older than the hooks; nothing in this change reports state for it. Bare names like `laptop:SRL` come from sessions with no name in Claude Code, or from clients older than 0.2.2 on that machine
+- A project named like a session (`s-x`) on a client older than 0.2.2 is listed as a session
+## [0.2.2] - 2026-10-20
+
+A session is named after its Claude Code session name: `laptop:s-cross-session` instead of `laptop:my-repo`.
+
+> **Name format change.** A label taken from a session's name always starts with `s-` (`laptop:s-cross-session`), and a project label that would be `s` or start with `s-` (any case) now gets `p-` in front (a project `s-tools` joins as `laptop:p-s-tools`, not `laptop:s-tools`). So a session renamed after another project, say `deploy`, joins as `laptop:s-deploy` and can no longer take `laptop:deploy` from that project's session. Every other project label is unchanged. Peers that address a session by name use the new form; a project named `s` or `s-…` is reached at its `p-` name.
+
+### Changed
+- The label in `<client.name>:<label>` is `s-` and the session's name in Claude Code when it has one, made plain as the project's name was (accents dropped, other characters a hyphen, at most 40 characters). A session without a usable name, and every other harness, keeps the project's name as in 0.2.0. `AI_CONNECT_PEER_SUFFIX` is appended to either; `AI_CONNECT_PEER_NAME` still replaces the whole name. Unchanged: the legacy `Host:Project` name (no `client.name`) and `client.name_mode: per-project` with a project token
+- The name is read once, when Claude Code starts the MCP server (`client/server.py`), from `~/.claude/sessions/<the session's process id>.json` (`name`; under `CLAUDE_CONFIG_DIR` when set). A `/rename` in a running session takes effect only after ai-connect is reconnected from `/mcp`
+- That file is an internal of Claude Code, not a documented interface. Missing, not a regular file (a FIFO there is opened without waiting and refused, so start-up cannot hang), unreadable, over 64 KB, nested too deep to decode, not a JSON object, or with no text under `name`: the label is the project's and nothing is raised or reported (`peer_name.claude_session_title`). Only that one file is opened and the directory is never listed, so the `<pid>.<hash>.key` files beside it are not read
+- A project label that is `s` or starts with `s-` (compared without case) gets `p-` in front, so no project label, with or without `AI_CONNECT_PEER_SUFFIX` or the collision suffix, reads as a session's (`peer_name.SESSION_PREFIX`, `PROJECT_ESCAPE`)
+- Two sessions with the same session name are told apart as two in one project were: the second gets `name_taken` and registers as `<client.name>:<label>-<process id>`
+- The STDIO client's log file follows the name: `mcp-<client.name>_s-<session name>.log`
+
+### Compatibility
+- The Bridge is unchanged; only clients need 0.2.2, and they mix freely with 0.2.1 and 0.2.0 clients
+- A project named `s` or `s-…` joins as `<client.name>:p-<project>` instead of `<client.name>:<project>`; messages waiting for its old name stay on the Bridge as below
+- A named session no longer joins as `<client.name>:<project>`. Messages already waiting on the Bridge for that name stay there until a session joins under it (an unnamed session in that project); a message to the machine's name reaches every session as before
+- The watcher is unchanged: it reads the name the client recorded in `~/.config/ai-connect/sessions/<pid>` and never works one out. Token lookup is unchanged: a name with a colon uses `client.token`
+
+## [0.2.1] - 2026-10-20
+
+### Fixed
+- The watcher hooks (`hooks/watch.sh`, `hooks/watch.ps1`) looked for a venv only in the plugin directory, where `install.sh` / `install.cmd` create it. `deploy/deploy.sh bridge|peer` and `deploy/setup.sh` (and their `.ps1` twins) install outside it (`deploy_core.py`'s `APP_HOME`), so on a machine they set up the watcher exited 1 at every SessionStart and Stop with `no venv at <plugin directory>/venv`, and no session was ever woken by a message. Seen on a Linux Bridge machine
+- Both wrappers now use the first venv that is there: `AI_CONNECT_VENV` (the variable `deploy_core.py` reads); the plugin directory's own `venv/`, as before; then deploy's, `${AI_CONNECT_HOME:-~/.local/share/ai-connect}/venv`, on Windows `%USERPROFILE%\AppData\Local\ai-connect\venv` (`Path.home()` joined with `AppData\Local`, as `deploy_core.py` spells it, not `%LOCALAPPDATA%`). With deploy's venv the watcher script is run from deploy's copy of the plugin (`.../ai-connect/app`) when that holds it, and from the plugin directory otherwise: `deploy peer --install-hooks` without `--register-mcp` makes the venv and no copy
+- An `AI_CONNECT_VENV` that holds no venv is passed over, not an error by itself
+
+### Security
+- `AI_CONNECT_VENV` and `AI_CONNECT_HOME` decide which interpreter the hook starts at every SessionStart and Stop, and a project's `settings.json` can set environment variables, so a repository could plant `bin/python` and name it (security review of this change, 2 FIX). Each is now used only when it is an absolute path with no `..`, whose real location is under the user's home and not inside the project (working directory, `CLAUDE_PROJECT_DIR`), and only on a machine that has a `config.yaml`; `AI_CONNECT_VENV`'s `bin/python` must also be owned by the user (`watch.sh`). A value that fails is ignored as if unset. `watch.ps1` compares paths as text after `Resolve-Path` and does not check ownership
+- The watcher is started without any `PYTHON*` variable (a denylist missed `PYTHONPYCACHEPREFIX`), which a project's settings could set to make a trusted interpreter import the repository's code. A `HOME` (`USERPROFILE`) that differs from the account's home directory and lies inside the project is ignored
+- A `CLAUDE_PROJECT_DIR` that is set but names no directory makes both hooks refuse a venv chosen by `AI_CONNECT_VENV` / `AI_CONNECT_HOME`; `watch.sh` also drops `__PYVENV_LAUNCHER__`; the no-venv error names `setup.sh` / `setup.ps1`; README and README_DE no longer say the venv always lives in the plugin directory
+- `watch.sh` unsets `CDPATH` and ignores a relative `HOME` (with `HOME=bin` and `CDPATH=/usr`, `cd bin` resolved outside the project while later uses of `HOME` stayed project-relative)
+
+### Changed
+- With a config and no venv in any of the places, the error names each place looked at (not the values of the two variables) and both ways to get one (`install.sh --client`, or `deploy/deploy.sh peer`; `install.cmd -Client` / `deploy\deploy.ps1 peer` on Windows). With no config and no venv the hooks stay silent (0.1.11), whatever the two variables say
+
+### Tests
+- `tests/test_client_hooks.py`: one case per place and per order, for both events and both flavours: deploy's venv with and without the copy, `AI_CONNECT_HOME`, the plugin's own venv before deploy's, `AI_CONNECT_VENV` first, an `AI_CONNECT_VENV` without a venv, the error naming all three, and silence with both variables set on a machine never set up. One case asks `deploy_core.py`, on the deploy suite's fake machine (`tests/deploy_box.py`), where it installs for that HOME and puts the stub venv exactly there; the Windows spelling is held by a text tripwire on `deploy_core.py` instead. With the 0.2.0 wrapper put back (unchanged since 0.1.9), 15 cases fail per flavour
+
+- Must-block cases for the two variables (both flavours, both events): a planted `python` inside the project, outside the home, behind a relative path, behind `..`, and inside the project named by `CLAUDE_PROJECT_DIR` is never run; a good venv chosen by variable on a machine with no config stays silent; a session started in the home still honours a trusted variable. With the check removed from `watch.sh` and `watch.ps1` (and the config requirement dropped) they go red: 32 of 32 planted-interpreter cases, plus the project-directory, no-config, `PYTHON*` and moved-home cases
+
+### Known limitations
+- Not run on Windows. `watch.ps1` was run with PowerShell 7 on Linux with `OS=Windows_NT` forced, against a stub `python.exe`: its branches, not Windows, and not Windows PowerShell 5.1
+
+## [0.2.0] - 2026-10-12
+
+Every session on an enrolled machine is online at once. In 0.1.8 all sessions of a machine registered under its one
+`client.name`: the first held it, and every other one sat on standby with none of its tools working.
+
+### Changed
+- A machine's token registers its name and every `<name>:<label>` under it (`server/roles.py`). The STDIO client joins as `<client.name>:<project>` (`peer_name.py`): the project directory's name made plain (accents dropped, other characters a hyphen, at most 40 characters, a short hash for a name with nothing plain in it). No second enrolment, no change to `auth.peers`, no Bridge restart per session
+- A message to a machine's name (`laptop`) reaches every online session of that machine except the sender; with none online it waits for the first to register and is delivered once. A message to `laptop:repo` reaches that session only. A peer writing to its own name still gets it back alone, so `deploy test` wakes nobody
+- `peer_history` of a session includes what was sent to its machine's name; asked by a machine's name it is the conversation with all of that machine's sessions. `peer_notify_when_idle` on a machine's name answers for its first session to be done. A session's watcher is woken by messages to the machine's name too
+- Two sessions in one project: the second gets `name_taken` and registers as `<client.name>:<project>-<process id>`, kept for the process's life. Standby stays for a name held twice over and for 0.1.8 clients
+- `AI_CONNECT_PEER_SUFFIX` now applies with `client.name` set (`<client.name>:<project>-<suffix>`); `AI_CONNECT_PEER_NAME` may be any name the machine's token may register
+- The watcher's name file (`~/.config/ai-connect/sessions/<pid>`) is rewritten with the name the Bridge registered, once it differs from the one asked for
+
+### Security
+- The prefix is compared with its separator and by the longest enrolled name: `Mini` does not own `MiniOther:x`, and with both `Host` and `Host:Alice` enrolled, `Host`'s token cannot register under `Host:Alice`. The same rule guards `watch`. Refused with `name_not_bound_to_token` / `watch_not_own_name`
+- A label is letters, digits, `.`, `_`, `-`, at most 64, with no colon (`invalid_session_label`)
+- The legacy shared token can no longer register or watch a name under an enrolled machine's (`laptop:x`); before, only the bare enrolled name was protected
+
+### Fixed
+- One watcher per session was keyed on the session's process id alone, so two machines whose sessions shared a process id turned each other's watcher away; it is keyed on the token as well
+
+### Delivery of what waited
+- One replay per machine at a time (a lock around read, send and mark): two sessions registering together cannot both send the rows that waited for the machine's name, whichever read the store first
+- A replay whose connection breaks hands what still waits for the machine to one of its other online sessions at once, instead of leaving it until the next registration; what waited for the broken session's own name stays for that name
+
+### Compatibility
+- 0.1.8 client, 0.2.0 Bridge: works as before, one session per machine under `client.name`, standby for a second
+- 0.2.0 client, 0.1.8 Bridge: the session name is refused (`name_not_bound_to_token`); the client registers as `client.name` instead, says so once in `peer_read`, and asks for its own name again at every new connection. One session per machine until the Bridge is updated
+- A 0.2.0 Bridge sends the same code for a name another enrolled machine owns (`client.name: Host`, project `Alice`, with `Host:Alice` enrolled) or a wrong `client.name`, and marks every register refusal with `"session_names": true`. The client falls back only when the mark is absent; with it, the session stays offline and `peer_read` names the conflict instead of blaming the Bridge's age
+- Update the Bridge first. Messages already waiting under a machine's name are delivered to its first 0.2.0 session
+- `client.name_mode: per-project` (0.1.13) still names a session `<client.name>-<project>` under that project's own token, registered as it is. Where the mode fell back to `client.name` (no token for the project, a loose or foreign token file, another directory's `.dir`), and with the mode off, the session is now `<client.name>:<project>` on `client.token`; the stderr line reads `joining under client.name` instead of `joining as`. `AI_CONNECT_PEER_NAME` with a session token is unchanged, and the watcher sends `client.token` for a session name
+- `tests/test_ops_setup.py::test_no_usable_name_falls_back` used a project folder named `...`, which Windows drops from a path, so it failed there on main; it uses `___`
+
+## [0.1.16] - 2026-10-12
+
+- 0.1.16: test line lengths for pylint
+
+## [0.1.15] - 2026-10-12
+
+One peer name per project, opt-in, on the same branch as 0.1.12 (PR #614). 0.1.13 was the feature's commit
+(c6f7d5893) and 0.1.14 the test changes after it (5978d7ac4); the merge of main with #610 (0.1.11) after that
+changed this directory again, so neither was published.
+
+### Added
+- `client.name_mode: per-project` (left out = unchanged). A session's name is `<client.name>-<project>`: the project is `CLAUDE_PROJECT_DIR`, else the working directory, resolved; its folder name is cut down to a peer name (every run of characters other than `A-Za-z0-9-` becomes one `-`, hyphens at either end dropped, the whole name cut to 63 characters with no trailing hyphen). Its token is `~/.config/ai-connect/session-tokens/<name>.token`, the directory 0.1.12's `session --name` uses. `AI_CONNECT_PEER_NAME` still wins. Any other `name_mode` value stops the client with a message
+- `session-tokens/<name>.dir`: UTF-8, one line, the project's absolute path as `Path(dir).resolve()` gives it, followed by at most one `\n` (or `\r\n`). Without one, the token is used as it is; with one, only by a session in that directory
+- The session joins as `client.name` with `client.token`, and writes exactly one line starting `ai-connect: client.name_mode per-project:` to stderr (stdout is the MCP protocol), when the folder gives no usable name or `client.name` is empty; the token file is missing or empty; it is not a regular file (symbolic links are not followed) owned by this user with no group or other permission bit; or the `.dir` is unreadable, malformed or records another directory
+- `setup session --project DIR [--project DIR ...]` (setup.sh and setup.ps1): derives each name the same way (`peer_name.project_peer_name`, shared with the client), writes each token owner-only and its `.dir`, and on the Bridge machine enrols every hash with one Bridge restart; elsewhere one `{name, token_sha256}` line per name. It refuses two projects with one name, a name whose `.dir` holds another project, and a project that gives no name; an existing token others may read is written owner-only again, unchanged
+- Tests in `tests/test_ops_setup.py`: name derivation, `AI_CONNECT_PEER_NAME` precedence, each fallback with its stderr line and empty stdout, the `.dir` collision, reserved names, the watcher taking the client's name, `session --project` with one restart, and `setup.sh` against `setup.ps1` for `session --project` (same steps, same token, `.dir` and enrolment; skipped without pwsh)
+
+### Fixed
+- The fake machine (`tests/deploy_box.py`) passed the caller's `XDG_*` variables and `DOTNET_BUNDLE_EXTRACT_BASE_DIR` to pwsh and Python, so a test could write under the caller's real directories. It now drops every caller `XDG_*` and that variable, and sets `XDG_CACHE_HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` inside the box; a test asserts that HOME, USERPROFILE and every `XDG_*` there point inside the box
+
+### Changed
+- `AI_CONNECT_PEER_NAME`'s session token (0.1.12) is now read with the same checks: owner-only regular file, never for `Bridge` or `User:...`. A token file setup did not write may need `chmod 600`
+- `setup session` refuses the names the Bridge keeps for itself (`Bridge`, `User:...`, compared without case), which it accepted before
+- The watcher sends the token of the name the session's client recorded in `sessions/<CLAUDE_PID>` (`client_settings(..., name=peer)`), not of a name it works out from its own environment: a hook's working directory need not be the project
+- The STDIO client reads its settings once and hands them to the MCP app, so a fallback is said once; the HTTP/SSE server ignores `name_mode` (one service for every project)
+
+### Known limitations
+- Not run on Windows. There only the regular-file check applies to a session token: setup writes it with an ACL of the current user alone (0.1.12), and the client does not read that ACL back
+- Peer names hold no `.` or `_` (`vpn/tsadmin.py` `PEER_NAME_RE`, which deploy and setup enrol by), so a folder name's `.` and `_` become `-`; `my.app` and `my_app` give one name, and the `.dir` tells them apart
+- A token with no `.dir` is used by any project with that name; `setup session --project` always writes one
+
+## [0.1.12] - 2026-10-12
+
+Setup in one run per machine, a firewall step that says when its rule does nothing, and a second peer name
+for a second session. The quiet-when-unconfigured change (PR #610) merged first, as 0.1.11 (below). This
+branch's first commit was also numbered 0.1.11 before that; a test fix changed content after it, so that
+number was never published from here.
+
+### Added
+- `deploy/setup.sh` and `deploy/setup.ps1`, one core (`deploy/peer_setup.py`): `bridge`, `peer` and `session`. A thin layer over `deploy bridge`, `peer`, `join` and `add-peer`, which still make every change. Without `--apply` it prints the plan and changes nothing; `--register-mcp` (off by default) registers the MCP server at user scope
+- `setup bridge --peer NAME` makes a peer's token file and prints the command to run on that machine for both operating systems; `--enrol NAME=SHA256` lets in a peer that made its own token
+- `setup session --name N`: a second peer name on this machine with its own owner-only token (`~/.config/ai-connect/session-tokens/N.token`), enrolled by hash on the Bridge machine or printed as `{name, token_sha256}` elsewhere
+- The client sends that token when `AI_CONNECT_PEER_NAME` names a second peer that has one (`config_loader.session_token`), so two sessions on one machine can both be online. Until now the variable changed the name only, the client still sent `client.token`, and the Bridge refused the name
+- `setup bridge` says when `deploy tailnet-setup --apply` looks outstanding (this machine not tagged `tag:bridge`, or no OAuth client stored) and prints the commands; `setup peer` says so when the Bridge's port does not answer. `setup` never runs `tailnet-setup`
+- `deploy/firewall_state.py`: whether ufw, firewalld or the Windows Firewall's Private profile is on, with three answers (on, off, could not tell)
+- `tests/test_ops_setup.py`, against the fake machine (`tests/deploy_box.py`); the fakes learned an inactive ufw, `ufw show added`, `firewall-cmd --state`, `Get-NetFirewallProfile` and a tagged node
+
+### Fixed
+- `deploy bridge` reported a firewall rule as done on an inactive ufw, where it filters nothing, and added it again on every run: `ufw status` lists no rule while ufw is inactive. It now prints `NOT ENFORCED` (or `NOT VERIFIED`), finds the stored rule through `ufw show added`, and never turns a firewall on
+- `deploy bridge` stopped at the firewall step, before its health check, when firewalld was installed and not running. It now says so, adds no rule, and goes on
+- `deploy status` shows a rule in a firewall that is off as `NOT ENFORCED`; `deploy uninstall` removes the stored rule of an inactive ufw, which it did not find before
+
+### Known limitations
+- Nothing here has run on Windows, or against a real ufw, firewalld, Windows Firewall or tailnet: the suite drives fakes. `setup.ps1` was parsed and run by PowerShell 7 on Linux against those fakes only. The `Get-NetFirewallProfile` query and whether it needs elevation are untested on a real Windows
+- The Windows rule is in the Private profile, and only that profile's state is checked: whether the Tailscale adapter is classified Private on a given machine is not
+- A translated `ufw status` is told on from off through `/etc/ufw/ufw.conf`; with ufw active and translated, the rule list (`ALLOW`) may still not be read, as before
+- The tailnet-policy check reads what `tailnet-setup --apply` leaves on the Bridge machine, not the policy
+
+## [0.1.11] - 2026-10-12
+
+A plugin that is installed but was never set up no longer reports an error on every prompt, tool call and
+turn end. Numbered 0.1.9 on its branch and published under 0.1.11, after the review fixes and a merge of main.
+
+### Fixed
+- `hooks/hooks.json` no longer ships the four `mcp_tool` state hooks (`peer_set_state` on `UserPromptSubmit`, `PostToolUse`, `Notification` and `Stop`). That hook type has no quiet mode, and the MCP server it names exists only once an installer registered it, so `claude plugin install` alone produced `MCP server 'ai-connect' not connected` on each of those events
+- `hooks/watch.sh` and `hooks/watch.ps1` exit 0 and print nothing when AI-Connect was never set up on the machine: no venv in the plugin directory and no `~/.config/ai-connect/config.yaml`. Before, they exited 1 with "no venv" at every session start and turn end
+
+### Changed
+- **The state hooks are written by whatever registers the MCP server, into Claude Code's settings** (`state_hooks.py`). `installer.py claude` (run by `install.sh` / `install.cmd`) writes them to the user's `settings.json`, in `CLAUDE_CONFIG_DIR` when that is set; `installer.py unregister` removes them. `deploy peer` / `deploy join` write them only with both `--install-hooks` (`--with-hooks`) and `--register-mcp`: to the user's settings for `--scope user`, to the project's `.claude/settings.local.json` for `--scope project`, where the server is; `deploy uninstall` removes them from both
+- Writing them never duplicates an entry (the installer runs again after every plugin update), keeps every other hook and key, replaces an entry an older run left in another arrangement, and removes only what matches type `mcp_tool`, server `ai-connect`, tool `peer_set_state`. The full text is built first, written to a temp file and moved into place; a linked `settings.json` stays a link. A settings file that is not valid JSON, or whose `hooks` is not what Claude Code's are, is not touched: the step stops with an error before it registers or removes the MCP server (`deploy uninstall` instead warns and goes on, so the rest is still removed)
+- `install.sh --uninstall` / `install.cmd -Uninstall` without a venv (after a plugin update) still take the state hooks out, with any Python 3 on PATH (`state_hooks.py remove`), and name the `claude mcp remove` command they could not run
+- `installer.py` reads Claude Code's settings from `CLAUDE_CONFIG_DIR` when that is set, also for the token deny rules
+- **Updating from 0.1.8 or earlier: run the installer again** (`install.sh --client` / `install.cmd -Client`, or the same `deploy peer` / `deploy join` command as before). The plugin no longer carries the state hooks, so until then the session reports no busy / idle / waiting state; messages and the MCP tools are not affected. The README already asked for this after every update, because the venv is in the plugin directory
+- With the config present and the venv gone (a plugin update without the installer), the watcher still exits 1 naming the installer to re-run, and the state hooks in the settings still fail with `MCP server 'ai-connect' not connected` until it has run
+
+### Not changed
+- A machine set up with `deploy peer` / `deploy join` has its venv in `~/.local/share/ai-connect`, not in the plugin directory, so with `--install-hooks` the watcher there still exits 1 with "no venv", as in 0.1.8, and names `install.sh --client` as the fix. That is a separate defect
+
+### Tests
+- `tests/test_client_hooks.py`: every command line in `hooks/hooks.json`, run as Claude Code runs it against a throwaway plugin root and HOME, in the three states (never set up: exit 0 and silent; set up: the venv's Python is started on the watcher and its exit 2 comes through; venv lost: exit 1 with the message), and that `hooks.json` holds no `mcp_tool` hook. The PowerShell flavour runs where a PowerShell 7 is found, outside Windows with `OS=Windows_NT` forced: its branches, not Windows itself
+- `tests/test_ops_state_hooks.py`: adding and removing in a fresh file, in a file with foreign hooks, twice, with an older arrangement, with look-alike entries, in invalid files, through a link, and `installer.py claude` / `unregister` as subprocesses against a temp `CLAUDE_CONFIG_DIR` and a fake `claude`
+- `tests/test_ops_deploy.py`: the hooks per scope, neither option alone, the dry run, invalid settings, uninstall. `tests/deploy_box.py` now runs deploy in a throwaway project directory and drops `CLAUDE_CONFIG_DIR`, so no test reads the settings of whoever runs the suite
+
 ## [0.1.8] - 2026-10-12
 
 One-command deployment over Tailscale, onboarding in three commands, and the peer-deploy fixes from crew's

@@ -115,13 +115,6 @@ TRACKER_MUTATIONS = (
         _TESTS + "test_board_dir_dotdot",
     ),
     (
-        "tracker accepts a board name with a path separator",
-        TRACKER,
-        '        if not name or name in (".", "..") or any(sep in name for sep in "/\\\\"):\n',
-        "        if False:\n",
-        _TESTS + "test_board_name_with_separator",
-    ),
-    (
         # The confinement check itself: a board symlink out of the vault.
         "tracker writes a board that resolves outside the vault",
         TRACKER,
@@ -303,13 +296,6 @@ TRACKER_MUTATIONS = (
         '    except OSError as exc:\n        return _result(backend, FAILED, f".work: {exc.strerror or exc}")\n',
         '    except KeyError as exc:\n        return _result(backend, FAILED, f".work: {exc.strerror or exc}")\n',
         _TESTS + "test_create_with_work_a_file_is_could_not_update",
-    ),
-    (
-        "tracker takes a non-string obsidian.board as a file name",
-        TRACKER,
-        "        if not isinstance(name, str):\n",
-        "        if False:\n",
-        _TESTS + "test_non_string_board_name_is_refused",
     ),
     (
         # Round 1 FIX: brainstorm's approval status had no lane.
@@ -610,14 +596,6 @@ TRACKER_MUTATIONS = (
         "If a line says `id taken`, that id is not yours",
         "If a line says anything, carry on",
         _LIFECYCLE + "test_a_taken_id_is_never_written_under[fix.md]",
-    ),
-    (
-        # Round 3 FIX (:222): only one file carried the block.
-        "tracker resolve compares only the vault and boardDir each file yields",
-        TRACKER,
-        '    for field in ("vaultPath", "boardDir", "board", "columns"):\n',
-        '    for field in ("vaultPath", "boardDir"):\n',
-        _TESTS + "test_resolve_compares_every_effective_obsidian_setting",
     ),
     (
         "tracker resolve takes a value one file yields and the other does not",

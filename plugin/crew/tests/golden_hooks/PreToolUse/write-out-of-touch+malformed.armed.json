@@ -1,0 +1,67 @@
+{
+ "armed": true,
+ "case": "write-out-of-touch",
+ "dirty": "",
+ "event": "PreToolUse",
+ "harness": "claude",
+ "no_python": false,
+ "payload": "{\"hook_event_name\": \"PreToolUse\", \"tool_name\": \"Write\", \"tool_input\": {\"file_path\": \"{ROOT}/other/keep.py\"}, \"session_id\": \"s-1\", \"tool_use_id\": \"tu-1\", \"cwd\": \"{ROOT}\"",
+ "rows": [
+  {
+   "argv": [
+    "promote-gate.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "promote-gate.sh",
+   "stderr": "",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "role-write-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "role-write-guard.sh",
+   "stderr": "role-write-guard: hook input did not parse as JSON; allowing the call unjudged.\n",
+   "stdout": "",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "cloud-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "cloud-guard.sh",
+   "stderr": "",
+   "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"crew cloud guard: the hook input did not parse as UTF-8 JSON; refusing rather than letting a command through unjudged.\"}}\n",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "env-guard.sh"
+   ],
+   "exit": 0,
+   "flavour": "bash",
+   "script": "env-guard.sh",
+   "stderr": "",
+   "stdout": "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"crew env guard: refused (could-not-tell:malformed-input): it could not read this command well enough to tell whether it prints the environment into the agent's context, where credentials end up in the transcript. Read the one non-secret variable you need by name, or use the credential without printing it. guards.envGuard decides this (plugin/crew/README.md, \\\"Environment guard\\\").\"}}\n",
+   "timed_out": false
+  },
+  {
+   "argv": [
+    "scope-guard.sh"
+   ],
+   "exit": 2,
+   "flavour": "bash",
+   "script": "scope-guard.sh",
+   "stderr": "SCOPE GUARD: the hook payload did not parse; failing closed because the effective scope mode is block.\n",
+   "stdout": "",
+   "timed_out": false
+  }
+ ],
+ "variant": "malformed"
+}

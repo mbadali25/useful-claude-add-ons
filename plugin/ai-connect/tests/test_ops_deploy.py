@@ -56,7 +56,7 @@ def bridge(request, tmp_path_factory, venv):
                        (config_dir / "observer.token").read_text(encoding="utf-8").strip(),
                        (config_dir / "user.token").read_text(encoding="utf-8").strip()]
         run.second = Phase(box, *args)
-        run.status = Phase(box, "status")
+        run.status = Phase(box, "status", non_root=True)  # ufw is read only as root: a user, whatever the uid
         run.add_peer = Phase(box, *args, "--peer", "desk")
         run.peers_after_add = set(box.config()["auth"]["peers"])
         run.uninstall_dry = Phase(box, "uninstall", "--purge", "--dry-run", *port)
@@ -141,7 +141,7 @@ def test_bridge_status(bridge):
     status = bridge.status
     assert status.res.returncode == 0, status.text
     assert "service: running" in status.out
-    if bridge.target == "linux":  # not root here, and status runs nothing through sudo
+    if bridge.target == "linux":  # run as a user, and status runs nothing through sudo
         assert "firewall: not checked (ufw needs root" in status.out
     else:
         assert f"firewall: rule present for {SUBNET} on port {bridge.port}" in status.out
@@ -673,7 +673,7 @@ def peer(tmp_path_factory, venv):
         run.state = box.state()
         run.client = box.config()["client"]
         run.second = Phase(box, *args, extra_env=key)
-        run.status = Phase(box, "status")
+        run.status = Phase(box, "status", non_root=True)  # ufw is read only as root: a user, whatever the uid
     finally:
         server.close()
     return run
@@ -772,6 +772,127 @@ def test_peer_opt_ins_in_a_dry_run_run_no_claude_command(box, tmp_path):
     assert run.res.returncode == 0, run.text
     assert run.calls == [] and run.changed_nothing()
     assert "would: claude plugin install" in run.out and "would: register MCP server" in run.out
+
+
+# The peer-state hooks (busy / idle / waiting) are mcp_tool hooks: an error on every event wherever the MCP
+# server they call is not registered. So the plugin ships none, and deploy writes them with the server
+# (--register-mcp, on by default since 0.2.4; --no-state-hooks opts out), into the settings of the scope
+# the server is in (state_hooks.py).
+
+
+def state_hooks_module():
+    sys.path.insert(0, str(PLUGIN))
+    import state_hooks  # pylint: disable=import-outside-toplevel,import-error
+    return state_hooks
+
+
+def test_peer_writes_the_state_hooks_for_this_project_with_both_opt_ins(box, tmp_path):
+    """--scope project (the default): the server is in this project's .mcp.json, so the hooks are in this
+    project's settings. In the user's settings they would fail in every other project."""
+    run = peer_on_tailnet(box, tmp_path, "--install-hooks", "--register-mcp")
+    assert run.res.returncode == 0, run.text
+    assert state_hooks_module().present(box.project_settings), run.out
+    assert not box.user_settings.exists()
+    assert f"done: write the peer-state hooks to {box.project_settings}" in run.out
+    calls = [c[:3] for c in run.calls if c[0] == "claude" and c[1:3] in (["mcp", "add"], ["plugin", "install"])]
+    assert calls == [["claude", "plugin", "install"], ["claude", "mcp", "add"]]  # the server before its hooks
+    written = box.project_settings.read_bytes()
+    again = peer_on_tailnet(box, tmp_path, "--install-hooks", "--register-mcp")
+    # Not changed_nothing(): each run here has a new fake Bridge on a new port, which rewrites config.yaml
+    assert again.res.returncode == 0 and again.mutations == [], again.mutations
+    assert f"already done: peer-state hooks in {box.project_settings}" in again.out
+    assert box.project_settings.read_bytes() == written
+
+
+def test_peer_writes_the_state_hooks_for_the_user_with_scope_user(box, tmp_path):
+    foreign = {"model": "opus", "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "echo stopped"}]}]}}
+    box.user_settings.parent.mkdir(parents=True)
+    box.user_settings.write_text(json.dumps(foreign), encoding="utf-8")
+    run = peer_on_tailnet(box, tmp_path, "--install-hooks", "--register-mcp", "--scope", "user")
+    assert run.res.returncode == 0, run.text
+    hooks = state_hooks_module()
+    assert hooks.present(box.user_settings) and not box.project_settings.exists()
+    assert hooks.without_state_hooks(json.loads(box.user_settings.read_text(encoding="utf-8"))) == foreign
+
+
+def test_peer_writes_the_state_hooks_with_the_server_alone(box, tmp_path):
+    """--register-mcp is enough: the owner's 2026-11-06 default is state reporting ON where the server is."""
+    run = peer_on_tailnet(box, tmp_path, "--register-mcp")
+    assert run.res.returncode == 0, run.text
+    assert state_hooks_module().present(box.project_settings), run.out
+    assert [c for c in run.calls if c[:3] == ["claude", "plugin", "install"]] == []  # the watcher stays opt-in
+
+
+@pytest.mark.parametrize("opt_in", [["--install-hooks"], []])
+def test_peer_writes_no_state_hooks_without_the_server(box, tmp_path, opt_in):
+    """Hooks alone have no server to call: they would be an error on every event."""
+    run = peer_on_tailnet(box, tmp_path, *opt_in)
+    assert run.res.returncode == 0, run.text
+    assert not box.user_settings.exists() and not box.project_settings.exists()
+    assert "peer-state hooks to" not in run.out
+    assert ("note: the peer-state hooks" in run.out) == (opt_in == ["--install-hooks"])
+
+
+@pytest.mark.parametrize("scope", [[], ["--scope", "user"]])
+def test_peer_no_state_hooks_keeps_the_server_alone(box, tmp_path, scope):
+    run = peer_on_tailnet(box, tmp_path, "--register-mcp", "--no-state-hooks", *scope)
+    assert run.res.returncode == 0, run.text
+    assert [c for c in run.calls if c[:3] == ["claude", "mcp", "add"]]
+    assert not box.user_settings.exists() and not box.project_settings.exists()
+    assert "peer-state hooks to" not in run.out
+
+
+def test_peer_dry_run_names_the_state_hooks_and_writes_none(box, tmp_path):
+    run = peer_on_tailnet(box, tmp_path, "--install-hooks", "--register-mcp", dry=True)
+    assert run.res.returncode == 0 and run.changed_nothing(), run.text
+    assert f"would: write the peer-state hooks to {box.project_settings}" in run.out
+    assert not box.project_settings.exists()
+
+
+def test_peer_stops_on_settings_it_cannot_read_before_registering_anything(box, tmp_path):
+    box.project_settings.parent.mkdir(parents=True)
+    box.project_settings.write_text('{"hooks": [', encoding="utf-8")
+    run = peer_on_tailnet(box, tmp_path, "--install-hooks", "--register-mcp")
+    assert run.res.returncode == 1, run.text
+    assert "not valid JSON" in run.text and str(box.project_settings) in run.text
+    assert box.project_settings.read_text(encoding="utf-8") == '{"hooks": ['
+    assert [c for c in run.calls if c[:3] == ["claude", "mcp", "add"]] == []
+    assert box.state().get("mcp", {}) == {}
+
+
+def test_uninstall_removes_the_state_hooks_and_nothing_else_from_the_settings(box, tmp_path):
+    foreign = {"hooks": {"PostToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": "fmt"}]}]}}
+    for path in (box.user_settings, box.project_settings):
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(foreign), encoding="utf-8")
+    assert peer_on_tailnet(box, tmp_path, "--install-hooks", "--register-mcp").res.returncode == 0
+    assert peer_on_tailnet(box, tmp_path, "--install-hooks", "--register-mcp", "--scope", "user").res.returncode == 0
+    hooks = state_hooks_module()
+    assert hooks.present(box.user_settings) and hooks.present(box.project_settings)
+    dry = Phase(box, "uninstall", "--dry-run")
+    assert dry.res.returncode == 0 and dry.changed_nothing(), dry.text
+    assert "would: remove the peer-state hooks from" in dry.out
+    run = Phase(box, "uninstall", "--yes")
+    assert run.res.returncode == 0, run.text
+    for path in (box.user_settings, box.project_settings):
+        assert json.loads(path.read_text(encoding="utf-8")) == foreign
+        assert f"done: remove the peer-state hooks from {path}" in run.out
+    again = Phase(box, "uninstall", "--yes")
+    assert again.res.returncode == 0 and "peer-state hooks" not in again.out, again.text
+
+
+def test_uninstall_removes_the_state_hooks_without_the_claude_cli_and_past_unreadable_settings(box, tmp_path):
+    """The hooks are in files: no CLI is needed to take them out. And settings uninstall cannot read must not
+    stop it half-way, with the service gone and the rest left."""
+    assert peer_on_tailnet(box, tmp_path, "--install-hooks", "--register-mcp", "--scope", "user").res.returncode == 0
+    box.project_settings.parent.mkdir(parents=True)
+    box.project_settings.write_text("{", encoding="utf-8")
+    box.remove_tool("claude")
+    run = Phase(box, "uninstall", "--yes")
+    assert run.res.returncode == 0, run.text
+    assert json.loads(box.user_settings.read_text(encoding="utf-8")) == {}
+    assert "WARNING" in run.out and str(box.project_settings) in run.out
+    assert box.project_settings.read_text(encoding="utf-8") == "{"
 
 
 def test_peer_dry_run_needs_no_token_and_no_key(box):
@@ -921,13 +1042,14 @@ def _sh(box, args):
     if os.name == "nt":  # Git Bash needs its own coreutils (dirname) on PATH
         env["PATH"] = os.pathsep.join([r"C:\Program Files\Git\usr\bin", env["PATH"]])
     return subprocess.run([BASH, str(DEPLOY_DIR / "deploy.sh"), *args], capture_output=True, text=True,
-                          check=False, stdin=subprocess.DEVNULL, env=env, timeout=180)
+                          check=False, stdin=subprocess.DEVNULL, env=env, timeout=180,
+                          cwd=box.project)
 
 
 def _ps1(box, args, tmp_path):
     return subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(DEPLOY_DIR / "deploy.ps1"), *args],
                           capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL, timeout=180,
-                          env=dict(box.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
+                          cwd=box.project, env=dict(box.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
 
 
 @pytest.mark.skipif(not BASH or not PWSH, reason="needs both bash and pwsh at known paths")
@@ -950,9 +1072,31 @@ def test_deploy_sh_syntax():
 
 
 @pytest.mark.skipif(not PWSH, reason="pwsh not found at an absolute path")
-def test_deploy_ps1_passes_the_repo_powershell_static_check(tmp_path):
+def test_deploy_ps1_passes_the_repo_powershell_static_check(box, tmp_path):
+    # The fake machine's environment: with the caller's HOME, PowerShell writes into the real ~/.local/share
     checker = PLUGIN.parents[1] / "scripts" / "check-powershell.ps1"
     res = subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(checker), "-Path",
                           str(DEPLOY_DIR / "deploy.ps1")], capture_output=True, text=True, check=False,
-                         stdin=subprocess.DEVNULL, env=dict(os.environ, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
+                         stdin=subprocess.DEVNULL, env=dict(box.env, XDG_CACHE_HOME=str(tmp_path / "xdg-cache")))
     assert res.returncode == 0, res.stdout + res.stderr
+
+
+# ---------------------------------------------------------------- root seam (#609)
+
+
+@pytest.mark.parametrize("forced,euid,expect", [("0", 0, False), ("1", 1000, True), ("", 0, True), ("", 1000, False)])
+def test_deploy_root_seam_wins_over_the_real_euid(forced, euid, expect):
+    """AI_CONNECT_DEPLOY_ROOT=0 means not root even when the real euid is 0; unset keeps the euid."""
+    env = {k: v for k, v in os.environ.items() if k != "AI_CONNECT_DEPLOY_ROOT"}
+    if forced:
+        env["AI_CONNECT_DEPLOY_ROOT"] = forced
+    code = (f"import os, sys; os.geteuid = lambda: {euid}; sys.path.insert(0, {str(DEPLOY_DIR)!r}); "
+            "import deploy_core; print(deploy_core.IS_ROOT)")
+    res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=60, check=False)
+    assert res.stdout.strip() == str(expect), res.stderr
+
+
+def test_the_box_defaults_to_not_root(tmp_path, venv):
+    """A suite run as root still exercises the sudo branch unless a test asks for root."""
+    box = Box(tmp_path, venv, NATIVE)
+    assert box.env["AI_CONNECT_DEPLOY_ROOT"] == "0"

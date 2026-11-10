@@ -126,8 +126,13 @@ def test_reviewer_agent_states_the_read_form_the_parser_accepts():
     assert review_verdict.READ_FORM in _read("agents", "reviewer.md")
 
 
+def test_the_prompt_every_provider_reads_states_the_finding_line_the_parser_accepts():
+    """review.md's prompt heredoc moved into `review_prompt.PROMPT_HEAD` (L-0726)."""
+    assert review_verdict.FINDING_FORM in review_prompt.PROMPT_HEAD
+    assert review_verdict.FINDING_FORM in review_prompt.prompt_text("s", b"c", b"x").decode()
+
+
 @pytest.mark.parametrize("doc", [
-    ("commands", "review.md"),
     ("agents", "reviewer.md"),
     ("evals", "qa-reviewer-stays-read-only", "prompt.md"),
 ])
@@ -344,6 +349,7 @@ HARNESS_SUITES = (
     "plugin/crew/tests/test_external_tool_formats.py",
     "plugin/crew/tests/test_status.py",
     "plugin/crew/tests/test_review_metrics.py",
+    "plugin/crew/tests/test_review_status.py",
 )
 
 

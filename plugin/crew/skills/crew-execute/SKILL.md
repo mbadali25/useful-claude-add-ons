@@ -29,10 +29,30 @@ does not keep a separate ledger file the way upstream's does.
 
 ## Per step
 
-1. Read the step's Files, Test and Risk.
+A step reads like this:
+
+```
+### Step 2: Reject an empty name
+Files: `src/names.py` [parser], `tests/test_names.py`
+Lines: 12
+Test: `pytest tests/test_names.py -q`
+Risk: low
+```
+
+1. Read the step's Files, Test and Risk, and its `Lines:` projection and the
+   kind tag on each production Files entry (the example above). `Lines:` is the
+   plan's own estimate against a 300-production-line cap, not yet enforced; a
+   step growing past its projection is a reason to stop and say so. Then pick
+   the smallest complete change, in this order: what the codebase already has (a helper, component, service or
+   pattern); the standard library or a platform feature; a dependency already
+   installed. Add no dependency for a few lines, and no option, flag or config
+   nobody asked for.
 2. Write the test first. Run it. Confirm it fails for the reason the step
    expects, not for an unrelated reason (a typo, a missing import) that would
-   pass trivially once fixed and prove nothing about the real code.
+   pass trivially once fixed and prove nothing about the real code. An expected
+   value is a literal, a worked example or the spec's number, never the code's own
+   computation repeated in the test: that assertion passes by construction and
+   cannot go red.
 3. Implement the minimal change the step describes.
 4. Run the test again. Confirm it passes.
 5. Move to the next step. Do not batch several steps' tests into one run at
@@ -42,8 +62,8 @@ does not keep a separate ledger file the way upstream's does.
 On native Windows, run each step's test through
 `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_shell.py" run -- "<test command>"`
 and repeat its `crew-shell:` route line in your report. On Git Bash without
-`python3`, use `python` or `py -3` with the same arguments. It picks the shell from
-`shellRoute.mode`; see "Choosing the shell route on Windows" in
+`python3`, use `python` or `py -3` with the same arguments. It picks the shell
+automatically; see "Choosing the shell route on Windows" in
 `crew-setup/platform.md`. Elsewhere, run the command as written.
 
 ## Rulings, not stalls
