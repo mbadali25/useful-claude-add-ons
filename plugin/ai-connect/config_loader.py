@@ -84,6 +84,40 @@ class ServerSettings:
     max_stored_per_peer: int
     max_unread_per_peer: int
     max_unread_bytes_per_peer: int
+    # server.tls: the wss:// listener (bridge_tls.py). On by default; its port
+    # defaults to server.port + 1 (0 stays 0: any free port, for tests)
+    tls_enabled: bool = True
+    tls_port: int = 0
+    # True: no plain ws:// listener at all, so no token ever crosses in clear
+    tls_required: bool = False
+    tls_validity_days: int = 730
+
+    @property
+    def plain_enabled(self) -> bool:
+        return not self.tls_required
+
+
+def _tls_settings(server: dict, port: int) -> dict:
+    """server.tls as ServerSettings fields; ValueError for a value that would leave the Bridge unsafe or unreachable."""
+    tls = server.get("tls")
+    if tls is None:
+        tls = {}
+    if not isinstance(tls, dict):
+        raise ValueError("server.tls must be a mapping (enabled, port, required, validity_days)")
+    enabled, required = tls.get("enabled", True), tls.get("required", False)
+    if not isinstance(enabled, bool) or not isinstance(required, bool):
+        raise ValueError("server.tls.enabled and server.tls.required must be true or false")
+    if required and not enabled:
+        raise ValueError("server.tls.required is true but server.tls.enabled is false: the Bridge would listen "
+                         "on nothing")
+    tls_port = _number(tls.get("port", port + 1 if port else 0), "server.tls.port", 0)
+    if not 0 <= tls_port <= 65535:
+        raise ValueError(f"server.tls.port must be 0 to 65535, got {tls_port}")
+    if enabled and not required and tls_port and tls_port == port:
+        raise ValueError(f"server.tls.port ({tls_port}) must differ from server.port: during the transition "
+                         "release ws:// and wss:// listen on two ports (set server.tls.required: true to drop ws://)")
+    validity = _number(tls.get("validity_days", 730), "server.tls.validity_days", 1)
+    return {"tls_enabled": enabled, "tls_port": tls_port, "tls_required": required, "tls_validity_days": validity}
 
 
 def _number(value: Any, key: str, minimum: float, kind: type = int) -> Any:
@@ -148,9 +182,11 @@ def server_settings(config: dict) -> ServerSettings:
     if not isinstance(peers, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in peers.items()):
         raise ValueError("auth.peers must map peer names to SHA-256 hex strings")
 
+    port = _number(port, "server.port", 0)
     return ServerSettings(
         host=server.get("host") or DEFAULT_SERVER_HOST,
-        port=_number(port, "server.port", 0),
+        port=port,
+        **_tls_settings(server, port),
         history_days=_number(
             _setting(server, "history_days", bridge, "server", DEFAULT_HISTORY_DAYS), "server.history_days", 1
         ),
@@ -186,16 +222,89 @@ class ClientSettings:
     port: int
     # "" = the directory the MCP server started in
     project_dir: str
+    # client.bridge_fingerprint: the Bridge certificate's SHA-256 (64 hex).
+    # Set = wss:// with that pin, and nothing else; "" = plain ws:// (deprecated)
+    fingerprint: str = ""
+
+    @property
+    def tls(self) -> bool:
+        return bool(self.fingerprint)
 
     @property
     def uri(self) -> str:
-        return ws_uri(self.host, self.port)
+        return ws_uri(self.host, self.port, self.tls)
+
+    def connect_options(self) -> dict:
+        """websockets.connect() keywords: the pinned TLS context for wss://, none for ws://."""
+        return connect_options(self.fingerprint)
 
 
-def ws_uri(host: str, port: int) -> str:
-    """The Bridge's WebSocket URI; an IPv6 literal is bracketed."""
+def ws_uri(host: str, port: int, tls: bool = False) -> str:
+    """The Bridge's WebSocket URI, wss:// when tls; an IPv6 literal is bracketed."""
     host = f"[{host}]" if ":" in host else host
-    return f"ws://{host}:{port}"
+    return f"{'wss' if tls else 'ws'}://{host}:{port}"
+
+
+def connect_options(fingerprint: str) -> dict:
+    """websockets.connect() keywords for a Bridge pinned to fingerprint ("" = plain ws://, no options)."""
+    if not fingerprint:
+        return {}
+    import bridge_tls  # pylint: disable=import-outside-toplevel  # stdlib ssl only on a client
+    return bridge_tls.connect_options(fingerprint)
+
+
+PLAIN_WS_WARNING = (
+    "client.bridge_url is plain ws://: the token and every message cross the VPN unencrypted by AI-Connect. "
+    "Deprecated since 0.2.15, removed in 0.3.1 (wss:// only): pin the Bridge with `ai-connect pin <fingerprint>` "
+    "(the fingerprint is what `ai-connect bridge cert show` prints on the Bridge machine) or join with a new code"
+)
+_warned_plain = False
+# Its own logger, with a NullHandler: the warning goes to a process's configured log (the MCP client's
+# file, the Bridge's journal), never to bare stderr through logging's last resort, which a hook or a
+# CLI prints as its own output
+_transport_logger = logging.getLogger("ai_connect.transport")
+_transport_logger.addHandler(logging.NullHandler())
+
+
+def bridge_endpoint(client: dict) -> tuple[str, int, str]:
+    """(host, port, fingerprint) of client.bridge_url and client.bridge_fingerprint; ValueError when unsafe.
+
+    wss:// needs the fingerprint: there is no CA, the pin is the only trust
+    anchor. A fingerprint with ws:// is refused rather than ignored: that pair
+    would send the token in clear to a Bridge this machine knows serves TLS
+    (a downgrade). ws:// alone still works in the transition release, with
+    one warning per process.
+    """
+    global _warned_plain  # pylint: disable=global-statement
+    url = urlsplit(client.get("bridge_url") or "")
+    try:
+        port = url.port
+    except ValueError:
+        port = None
+    if url.scheme not in ("ws", "wss") or not url.hostname or port is None:
+        raise ValueError("client.bridge_url must look like wss://<bridge VPN address>:<port> (or, deprecated, "
+                         f"ws://), got {url.geturl()!r}")
+    raw = client.get("bridge_fingerprint") or ""
+    try:
+        fingerprint = normalize_fingerprint(raw) if raw else ""
+    except ValueError as err:
+        raise ValueError(f"client.bridge_fingerprint: {err}") from None
+    if url.scheme == "wss" and not fingerprint:
+        raise ValueError("client.bridge_url is wss:// but client.bridge_fingerprint is not set: the Bridge's "
+                         "certificate is self-signed and the pinned fingerprint is the only way to trust it "
+                         "(`ai-connect pin <fingerprint>`)")
+    if url.scheme == "ws" and fingerprint:
+        raise ValueError("client.bridge_fingerprint pins a TLS Bridge but client.bridge_url is ws://: refusing to "
+                         "send the token in clear. Set bridge_url to wss://<host>:<the Bridge's TLS port>")
+    if not fingerprint and not _warned_plain:
+        _warned_plain = True
+        _transport_logger.warning(PLAIN_WS_WARNING)
+    return url.hostname, port, fingerprint
+
+
+def normalize_fingerprint(text: str) -> str:
+    import bridge_tls  # pylint: disable=import-outside-toplevel
+    return bridge_tls.normalize_fingerprint(text)
 
 
 MISSING = "missing"
@@ -343,13 +452,7 @@ def client_settings(config: dict, environ: Mapping[str, str] | None = None, cwd:
             "bridge_url": f"ws://{bridge.get('host', '')}:{bridge.get('port', '')}",
         }
     client = client or {}
-    url = urlsplit(client.get("bridge_url") or "")
-    try:
-        port = url.port
-    except ValueError:
-        port = None
-    if url.scheme != "ws" or not url.hostname or port is None:
-        raise ValueError(f"client.bridge_url must look like ws://<bridge VPN address>:<port>, got {url.geturl()!r}")
+    hostname, port, fingerprint = bridge_endpoint(client)
     if not client.get("token"):
         raise ValueError("client.token is required (installer.py add-peer <name> on the Bridge machine prints one)")
     mode = client.get("name_mode") or ""
@@ -368,7 +471,8 @@ def client_settings(config: dict, environ: Mapping[str, str] | None = None, cwd:
     return ClientSettings(
         name=chosen,
         token=token or client["token"],
-        host=bridge_target(url.hostname),
+        host=bridge_target(hostname),
         port=port,
         project_dir=client.get("project_dir") or "",
+        fingerprint=fingerprint,
     )

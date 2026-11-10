@@ -946,6 +946,32 @@ calls `confirm`; both are harness (`scripts/check-tooling-pr.py` `HARNESS`:
 `plugin/crew/tests/humanonly_mutations.py` (16, run alone until PR 2 wires
 them into `sabotage.py`).
 
+## Worktree root and `/crew:worktrees` (crew 1.3.19)
+
+DERIVED on `feat/worktrees-root` (cut from main `e65a067a4`); this section does
+not move the anchor. One leaf, `worktrees.root`, default `null` in both templates
+(`plugin/crew/hooks/scripts/crew_config.py` `default_config` and
+`default_global_config`; `crew_state.WORKTREES_DEFAULTS`). The reader is
+`plugin/crew/hooks/scripts/crew_worktrees.py:129` (`resolve`): a value that is
+not a non-empty string, not absolute after `~` expansion, or inside the main
+checkout is a `problem` and `dir` stays `None` (never the default); the
+directory is `<base>/<repo>-<digest>` from `crew_state._repo_digest` of the main
+checkout (first `git worktree list` record). `crew_state.py --worktree-path`
+answers through it and exits 2 on a problem. `classify` (`:202`) marks a
+worktree removable only when status, unpushed (`rev-list HEAD --not --remotes`),
+merge into the default ref, lock and age all prove it, every failed probe being
+`could not tell`; `remove` (`:280`) needs `--yes` and runs `git worktree remove`
+without `--force`. `hook_create` (`:348`) and `hook_remove` are the entry points
+of Claude Code's `WorktreeCreate` / `WorktreeRemove` hooks (replacing git's
+creation; documented behaviour, not run against the live CLI);
+`crew_wave._init_refusal` admits a lane under the same directory. JUDGEMENT:
+nothing registers the hook. `hooks.json` is harness (`HARNESS`) and a hook that
+replaces creation for every user is the owner's to opt into, so
+`hook-snippet` prints the settings block. Tests:
+`plugin/crew/tests/test_crew_worktrees.py`; mutations
+`plugin/crew/tests/worktrees_mutations.py` (17, run alone: `sabotage*.py` is
+harness).
+
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 
 JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose in this section is as of the commit it names, not re-read at `bdde58724`; only its `name` plus line citations were re-resolved by symbol against the `bdde58724` tree, and a line cited with no name beside it was not.

@@ -51,9 +51,10 @@ from urllib.parse import urlsplit
 
 import yaml
 
+import bridge_tls
 import installer
 import join_codes
-from config_loader import CONFIG_PATH
+from config_loader import CONFIG_PATH, bridge_endpoint, bridge_target, server_settings, ws_uri
 
 EXIT_OK, EXIT_FAILED, EXIT_USAGE = 0, 1, 2
 ISSUED_DIR = "issued-tokens"
@@ -189,7 +190,13 @@ def cmd_bridge_invite(args) -> int:
                       EXIT_USAGE)
     config_path = _config_path(args)
     config = _load(config_path)
-    host, port = _bridge_address(config, args.host, args.port)
+    settings = _tls_settings(config)
+    # A TLS Bridge's code carries its wss:// port and certificate fingerprint; --plain (or TLS off) the old way
+    tls = settings.tls_enabled and not args.plain
+    if args.plain and settings.tls_required:
+        raise Failure("--plain: this Bridge has no ws:// listener (server.tls.required), so a plain code could "
+                      "not be redeemed", EXIT_USAGE)
+    host, port = _bridge_address(config, args.host, args.port or (settings.tls_port if tls else None))
     if args.name in ((config.get("auth") or {}).get("peers") or {}):
         raise Failure(f"peer '{args.name}' already exists; revoke it first (ai-connect bridge revoke --name "
                       f"{args.name})")
@@ -203,13 +210,24 @@ def cmd_bridge_invite(args) -> int:
         out(f"  WARNING: --allow-long-expiry: this code works for {args.expiry}, longer than the 24h cap. Revoke "
             f"it with `ai-connect bridge revoke --name {args.name}` if it is not used soon.")
     where = f"write it owner-only to {args.out}" if args.out else "show it once"
-    what = f"a single-use join code for '{args.name}' (Bridge {host}:{port}, expires in {args.expiry})"
+    transport = "wss://, pinned to this Bridge's certificate" if tls else "plain ws://, deprecated"
+    what = f"a single-use join code for '{args.name}' (Bridge {host}:{port}, {transport}, expires in {args.expiry})"
     if args.dry_run:
         out(f"  would: make {what}, keep only its secret's SHA-256 in {join_codes.invites_path(config_path)}, "
             f"and {where}")
         return EXIT_OK
+    fingerprint = join_codes.NO_FINGERPRINT
+    if tls:
+        info, created = _ensure_cert(config_path, settings.tls_validity_days)
+        if created:
+            out(f"  done: made this Bridge's TLS certificate ({info.cert_path}); RESTART the Bridge so it serves "
+                "it, or this code cannot be redeemed")
+        fingerprint = bridge_tls.fingerprint_bytes(info.fingerprint)
+    else:
+        out("  WARNING: a code without a fingerprint: the new machine redeems it and joins over plain ws:// "
+            "(deprecated since 0.2.15, gone in 0.3.1)")
     try:
-        code = join_codes.create_invite(config_path, args.name, expiry, host, port)
+        code = join_codes.create_invite(config_path, args.name, expiry, host, port, fingerprint)
     except (ValueError, TimeoutError, OSError, yaml.YAMLError) as err:
         raise Failure(_reason(err)) from None
     out(f"  done: {what}")
@@ -335,17 +353,28 @@ def _read_code(args) -> str:
 
 
 def redeem_remote(code: join_codes.JoinCode, timeout: float = JOIN_TIMEOUT_SECONDS) -> str:
-    """Ask the Bridge the code names for this machine's token; Failure with the Bridge's reason otherwise."""
+    """Ask the Bridge the code names for this machine's token; Failure with the Bridge's reason otherwise.
+
+    A code with a fingerprint is redeemed over TLS with that pin, checked in
+    the handshake before the secret is sent; a mismatch fails closed, and
+    nothing is ever retried over plain HTTP. A code without one (an older
+    Bridge, or `bridge invite --plain`) goes over plain HTTP, with a warning.
+    """
     if code.tls:
-        # Fail closed: a code that pins a certificate is never redeemed over plain ws://
-        raise Failure("this join code is for a Bridge that serves TLS (it pins the Bridge's certificate), and this "
-                      "ai-connect cannot check that yet: update ai-connect on this machine and run join again")
-    connection = http.client.HTTPConnection(code.host, code.port, timeout=timeout)
+        connection = http.client.HTTPSConnection(code.host, code.port, timeout=timeout,
+                                                 context=bridge_tls.client_context(code.fingerprint_hex))
+    else:
+        out("  WARNING: this join code carries no certificate fingerprint, so it is redeemed over plain HTTP and "
+            "this machine joins over plain ws:// (deprecated since 0.2.15; ask for a new code to get wss://)")
+        connection = http.client.HTTPConnection(code.host, code.port, timeout=timeout)
     try:
         connection.request("GET", join_codes.JOIN_PATH, headers={
             join_codes.SECRET_HEADER: code.secret.hex(), join_codes.NAME_HEADER: code.name})
         response = connection.getresponse()
         body = response.read(64 * 1024).decode("utf-8", "replace")
+    except bridge_tls.PinMismatch as err:
+        # Before the OSError below: a PinMismatch is one, and must not read as "unreachable"
+        raise Failure(f"not joined: {err}") from None
     except (OSError, http.client.HTTPException) as err:
         raise Failure(f"could not reach the Bridge at {code.host}:{code.port}: {err} (is the VPN up?)") from None
     finally:
@@ -366,8 +395,8 @@ def redeem_remote(code: join_codes.JoinCode, timeout: float = JOIN_TIMEOUT_SECON
     return token
 
 
-def _bridge_url(host: str, port: int) -> str:
-    return f"ws://[{host}]:{port}" if ":" in host else f"ws://{host}:{port}"
+def _bridge_url(host: str, port: int, tls: bool = False) -> str:
+    return ws_uri(host, port, tls)
 
 
 def _client_config(config_path: Path, force: bool) -> dict:
@@ -382,10 +411,21 @@ def _client_config(config_path: Path, force: bool) -> dict:
     return config
 
 
-def _write_identity(config_path: Path, config: dict, name: str, host: str, port: int, token: str) -> None:
+def _write_identity(config_path: Path, config: dict, name: str, host: str, port: int, token: str,
+                    fingerprint: str = "") -> None:
+    """client.name, token, bridge_url and the pin: wss:// with client.bridge_fingerprint, or ws:// without one."""
     client = config.setdefault("client", {})
-    client["name"], client["token"], client["bridge_url"] = name, token, _bridge_url(host, port)
+    client["name"], client["token"] = name, token
+    _set_endpoint(client, host, port, fingerprint)
     installer._save_config(config, config_path)  # pylint: disable=protected-access  # owner-only, atomic
+
+
+def _set_endpoint(client: dict, host: str, port: int, fingerprint: str) -> None:
+    client["bridge_url"] = _bridge_url(host, port, bool(fingerprint))
+    if fingerprint:
+        client["bridge_fingerprint"] = fingerprint
+    else:
+        client.pop("bridge_fingerprint", None)
 
 
 def _parse_bridge(text: str) -> tuple[str, int]:
@@ -416,16 +456,21 @@ def cmd_join(args) -> int:
     if code.expires <= time.time():
         raise Failure(f"this join code expired at {_when(code.expires)}: ask for a new one")
     config = _client_config(config_path, args.force)
+    transport = (f"wss:// pinned to certificate SHA-256 {code.fingerprint_hex}" if code.tls
+                 else "plain ws:// (the code carries no fingerprint; deprecated)")
     if args.dry_run:
-        out(f"  would: redeem the code at {code.host}:{code.port} (single use) for this machine's token")
-        out(f"  would: write client.name '{code.name}', the token and bridge_url into {config_path} (owner-only)")
+        out(f"  would: redeem the code at {code.host}:{code.port} (single use) for this machine's token, "
+            f"over {'TLS with that pin' if code.tls else 'plain HTTP'}")
+        out(f"  would: write client.name '{code.name}', the token, bridge_url ({transport}) into {config_path} "
+            "(owner-only)")
         return EXIT_OK
     token = redeem_remote(code)
-    _write_identity(config_path, config, code.name, code.host, code.port, token)
+    _write_identity(config_path, config, code.name, code.host, code.port, token, code.fingerprint_hex)
     if args.code_file:
         Path(args.code_file).unlink(missing_ok=True)
         out(f"  done: used code file {args.code_file} deleted")
     out(f"  done: joined as '{code.name}'; token {join_codes.mask(token)} written owner-only to {config_path}")
+    out(f"  transport: {transport}")
     out(f"  Next: register with Claude Code: \"{sys.executable}\" \"{installer.REPO / 'installer.py'}\" claude")
     return EXIT_OK
 
@@ -435,12 +480,16 @@ def _join_with_token(args, config_path: Path) -> int:
         raise Failure("--token-file needs --bridge HOST:PORT and --name N", EXIT_USAGE)
     _check_name(args.name)
     host, port = _parse_bridge(args.bridge)
+    fingerprint = _fingerprint_arg(args.fingerprint) if args.fingerprint else ""
     out(f"=== ai-connect join '{args.name}' to {host}:{port} with a token file"
         f"{' (dry run)' if args.dry_run else ''} ===")
+    if not fingerprint:
+        out("  WARNING: no --fingerprint: this machine joins over plain ws:// (deprecated since 0.2.15). On the "
+            "Bridge machine `ai-connect bridge cert show` prints the fingerprint and the wss:// port")
     config = _client_config(config_path, args.force)
     if args.dry_run:
-        out(f"  would: write client.name '{args.name}', the token from {args.token_file} and bridge_url into "
-            f"{config_path} (owner-only)")
+        out(f"  would: write client.name '{args.name}', the token from {args.token_file} and bridge_url "
+            f"{_bridge_url(host, port, bool(fingerprint))} into {config_path} (owner-only)")
         return EXIT_OK
     try:
         token = Path(args.token_file).read_text(encoding="utf-8").strip()
@@ -448,7 +497,7 @@ def _join_with_token(args, config_path: Path) -> int:
         raise Failure(f"cannot read the token file {args.token_file}: {err.strerror}", EXIT_USAGE) from None
     if len(token) < 32 or any(c.isspace() for c in token):
         raise Failure(f"{args.token_file} does not hold one token", EXIT_USAGE)
-    _write_identity(config_path, config, args.name, host, port, token)
+    _write_identity(config_path, config, args.name, host, port, token, fingerprint)
     out(f"  done: token {join_codes.mask(token)} for '{args.name}' written owner-only to {config_path}")
     out(f"  Delete {args.token_file} once the Bridge accepts this machine (ai-connect status)")
     return EXIT_OK
@@ -486,6 +535,16 @@ def cmd_status(args) -> int:
     if url.hostname and port:
         out(f"  bridge: {client.get('bridge_url')} - "
             f"{'not checked (--offline)' if args.offline else _reachable(url.hostname, port)}")
+        try:
+            _host, _port, fingerprint = bridge_endpoint(client)
+        except ValueError as err:
+            out(f"  transport: NOT USABLE - {err}")
+        else:
+            if not fingerprint:
+                out("  transport: plain ws:// (deprecated since 0.2.15; pin the Bridge: ai-connect pin <fingerprint>)")
+            else:
+                check = "not checked (--offline)" if args.offline else _pin_check(url.hostname, port, fingerprint)
+                out(f"  transport: wss:// pinned to SHA-256 {fingerprint} - {check}")
     else:
         out("  bridge: client.bridge_url is not set")
     peers = (config.get("auth") or {}).get("peers") or {}
@@ -495,6 +554,163 @@ def cmd_status(args) -> int:
         except (ValueError, OSError):
             pending = "unknown (invites.json unreadable)"
         out(f"  this is a Bridge: {len(peers)} peer(s) enrolled, {pending} join code(s) pending")
+        try:
+            info = bridge_tls.load(config_path.parent)
+        except bridge_tls.TlsError as err:
+            out(f"  Bridge certificate: UNUSABLE - {err}")
+        else:
+            described = "none yet (made at the next Bridge start)" if info is None else _describe(info)
+            out(f"  Bridge certificate: {described}")
+    return EXIT_OK
+
+
+def _pin_check(host: str, port: int, fingerprint: str) -> str:
+    """A pinned TLS handshake to host:port, no HTTP sent: whether the certificate there is the pinned one."""
+    try:
+        with socket.create_connection((host, port), timeout=STATUS_TIMEOUT_SECONDS) as raw:
+            with bridge_tls.client_context(fingerprint).wrap_socket(raw, server_hostname=host):
+                return "the certificate matches the pin"
+    except bridge_tls.PinMismatch as err:
+        return f"MISMATCH: the certificate there has SHA-256 {err.got} (not connecting; re-pin only if it was rotated)"
+    except OSError as err:
+        return f"not checked: {err.strerror or err}"
+
+
+def _describe(info: bridge_tls.CertInfo) -> str:
+    expired = " - EXPIRED: rotate it" if info.not_after <= datetime.now(timezone.utc) else ""
+    return f"SHA-256 {info.fingerprint}, valid until {info.not_after:%Y-%m-%d}{expired}"
+
+
+# ---------------------------------------------------------------- TLS: the certificate and the pin
+
+
+def _fingerprint_arg(text: str) -> str:
+    try:
+        return bridge_tls.normalize_fingerprint(text)
+    except ValueError as err:
+        raise Failure(str(err), EXIT_USAGE) from None
+
+
+def _ensure_cert(config_path: Path, validity_days: int) -> tuple[bridge_tls.CertInfo, bool]:
+    """The Bridge's certificate, made now if there is none; under the auth lock, as the Bridge takes it at start."""
+    try:
+        with join_codes.auth_lock(config_path.parent):
+            return bridge_tls.ensure(config_path.parent, validity_days)
+    except bridge_tls.TlsError as err:
+        raise Failure(str(err)) from None
+
+
+def _tls_settings(config: dict):
+    try:
+        return server_settings(config)
+    except ValueError as err:
+        raise Failure(f"server: in config.yaml: {err}") from None
+
+
+def cmd_bridge_cert_show(args) -> int:
+    config_path = _config_path(args)
+    settings = _tls_settings(_load(config_path))
+    info, created = _ensure_cert(config_path, settings.tls_validity_days)
+    out("=== ai-connect bridge cert show ===")
+    if created:
+        out(f"  done: made a new self-signed certificate (valid {settings.tls_validity_days} days); restart the "
+            "Bridge so it serves it")
+    out(f"  certificate: {info.cert_path}")
+    out(f"  private key: {info.key_path} (owner-only; never copy it off this machine)")
+    out(f"  fingerprint (SHA-256): {info.fingerprint}")
+    out(f"  valid: {info.not_before:%Y-%m-%d} to {info.not_after:%Y-%m-%d}"
+        + (" - EXPIRED: rotate it" if info.not_after <= datetime.now(timezone.utc) else ""))
+    if settings.tls_enabled:
+        out(f"  wss:// port: {settings.tls_port or '(any free port)'}; plain ws:// port: "
+            f"{'closed (server.tls.required)' if settings.tls_required else settings.port}")
+    else:
+        out("  server.tls.enabled is false: the Bridge does not serve this certificate")
+    out("  Join codes carry this fingerprint. A peer joined with a token file pins it with: "
+        f"ai-connect pin {info.fingerprint} --port {settings.tls_port}")
+    return EXIT_OK
+
+
+def cmd_bridge_cert_rotate(args) -> int:
+    config_path = _config_path(args)
+    config = _load(config_path)
+    settings = _tls_settings(config)
+    validity = args.validity_days or settings.tls_validity_days
+    try:
+        old = bridge_tls.load(config_path.parent)
+    except bridge_tls.TlsError:
+        old = None  # unusable: rotation is exactly what replaces it
+    out(f"=== ai-connect bridge cert rotate{' (dry run)' if args.dry_run else ''} ===")
+    if args.dry_run:
+        out(f"  would: replace {bridge_tls.cert_paths(config_path.parent)[0]} and its key with a new self-signed "
+            f"pair valid {validity} days; the fingerprint changes")
+        out("  would: end every pending join code (each carries the old fingerprint)")
+        out("  then: every peer must re-pin (ai-connect pin <new fingerprint>) or join again; restart the Bridge")
+        return EXIT_OK
+    try:
+        with join_codes.auth_lock(config_path.parent):
+            info = bridge_tls.generate(config_path.parent, validity)
+            ended = sum(join_codes.cancel_invites(config_path, entry["name"])
+                        for entry in join_codes.pending_names(config_path) if entry["state"] == "pending")
+            # This machine's own peer follows its own Bridge's new certificate
+            config = join_codes.read_config(config_path)
+            client = config.get("client") or {}
+            own = bool(old and client.get("bridge_fingerprint") == old.fingerprint)
+            if own:
+                client["bridge_fingerprint"] = info.fingerprint
+                installer._save_config(config, config_path)  # pylint: disable=protected-access
+    except (bridge_tls.TlsError, ValueError, OSError) as err:
+        raise Failure(str(err)) from None
+    out(f"  done: new certificate, SHA-256 {info.fingerprint}, valid until {info.not_after:%Y-%m-%d}")
+    if old:
+        out(f"  the old fingerprint {old.fingerprint} is no longer this Bridge's")
+    if ended:
+        out(f"  done: ended {ended} pending join code(s): they carried the old fingerprint")
+    if own:
+        out("  done: this machine's own client.bridge_fingerprint now pins the new certificate")
+    out("  NEXT: restart the Bridge so it serves the new certificate. Until each peer re-pins, it FAILS CLOSED "
+        "(it refuses the new certificate and never falls back to ws://). On each peer:")
+    out(f"    ai-connect pin {info.fingerprint}")
+    out("  or make it a new join code (ai-connect bridge invite, after revoking the peer)")
+    return EXIT_OK
+
+
+def cmd_pin(args) -> int:
+    """Pin this machine's peer to the Bridge's certificate: wss:// with client.bridge_fingerprint."""
+    config_path = _config_path(args)
+    fingerprint = _fingerprint_arg(args.fingerprint)
+    config = _load(config_path)
+    client = config.get("client") or {}
+    url = urlsplit(client.get("bridge_url") or "")
+    try:
+        port = url.port
+    except ValueError:
+        port = None
+    if not url.hostname or not port:
+        raise Failure("client.bridge_url is not set: join a Bridge first (ai-connect join)")
+    host = args.host or url.hostname
+    if args.port:
+        new_port = args.port
+    elif url.scheme == "wss":
+        new_port = port
+    else:
+        # The Bridge's default: server.tls.port = server.port + 1
+        new_port = port + 1
+    new_url = _bridge_url(host, new_port, True)
+    out(f"=== ai-connect pin{' (dry run)' if args.dry_run else ''} ===")
+    if args.dry_run:
+        out(f"  would: set client.bridge_url to {new_url} and client.bridge_fingerprint to {fingerprint} in "
+            f"{config_path}")
+        return EXIT_OK
+    if not args.offline:
+        check = _pin_check(bridge_target(host), new_port, fingerprint)
+        if check.startswith("MISMATCH"):
+            raise Failure(f"not pinned: {new_url}: {check}")
+        out(f"  {new_url}: {check}")
+    _set_endpoint(client, host, new_port, fingerprint)
+    config["client"] = client
+    installer._save_config(config, config_path)  # pylint: disable=protected-access
+    out(f"  done: client.bridge_url {new_url}, pinned to SHA-256 {fingerprint}")
+    out("  Restart the Claude Code sessions on this machine so their AI-Connect clients reconnect over wss://")
     return EXIT_OK
 
 
@@ -535,6 +751,24 @@ def build_parser() -> argparse.ArgumentParser:
     revoke.set_defaults(func=cmd_bridge_revoke)
     listing = bridge_verbs.add_parser("list", help="enrolled peers and the join codes made")
     listing.set_defaults(func=cmd_bridge_list, dry_run=False)
+    cert = bridge_verbs.add_parser("cert", help="the Bridge's TLS certificate: show its fingerprint, or rotate it")
+    cert_verbs = cert.add_subparsers(dest="cert_verb", required=True)
+    cert_show = cert_verbs.add_parser("show", help="path, SHA-256 fingerprint and validity (made if missing)")
+    cert_show.set_defaults(func=cmd_bridge_cert_show, dry_run=False)
+    rotate = cert_verbs.add_parser("rotate", help="a new key and certificate: every peer must re-pin")
+    rotate.add_argument("--validity-days", type=int, help="days the new certificate is valid (default "
+                        "server.tls.validity_days, 730)")
+    rotate.set_defaults(func=cmd_bridge_cert_rotate)
+    invite.add_argument("--plain", action="store_true", help="a code without the certificate fingerprint, redeemed "
+                        "over plain ws:// (deprecated; only for a machine still on ai-connect 0.2.6 to 0.2.8)")
+
+    pin = verbs.add_parser("pin", help="this machine: pin the Bridge's certificate and switch to wss://")
+    pin.add_argument("fingerprint", help="the SHA-256 that `ai-connect bridge cert show` prints on the Bridge")
+    pin.add_argument("--port", type=int, help="the Bridge's wss:// port (default: the current one for wss://, "
+                     "else the ws:// port + 1, the Bridge's default)")
+    pin.add_argument("--host", help="the Bridge's address (default: the one in client.bridge_url)")
+    pin.add_argument("--offline", action="store_true", help="do not check the certificate at the Bridge first")
+    pin.set_defaults(func=cmd_pin)
 
     join = verbs.add_parser("join", help="this machine: redeem a join code (or a token file) and write its config")
     join.add_argument("code", nargs="?",
@@ -544,6 +778,8 @@ def build_parser() -> argparse.ArgumentParser:
     join.add_argument("--token-file", help="use a token from `bridge token` instead of a code")
     join.add_argument("--bridge", help="with --token-file: the Bridge's HOST:PORT")
     join.add_argument("--name", help="with --token-file: this machine's peer name")
+    join.add_argument("--fingerprint", help="with --token-file: the Bridge certificate's SHA-256 (`bridge cert "
+                      "show`); --bridge is then its wss:// port. Without it: plain ws://, deprecated")
     join.add_argument("--force", action="store_true", help="replace a peer token this machine already has")
     join.set_defaults(func=cmd_join)
 
@@ -551,7 +787,7 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--offline", action="store_true", help="do not try to reach the Bridge")
     status.set_defaults(func=cmd_status, dry_run=False)
 
-    for verb in (invite, token, revoke, join):
+    for verb in (invite, token, revoke, join, rotate, pin):
         verb.add_argument("--dry-run", action="store_true", help="print what would change, change nothing")
     return parser
 

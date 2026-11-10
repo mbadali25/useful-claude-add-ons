@@ -411,7 +411,7 @@ def test_key_set_is_the_l0725_set():
     assert repo | machine == l0725_keyset.L0725_KEYS
     assert repo == l0725_keyset.L0725_REPO_KEYS
     assert machine == l0725_keyset.L0725_MACHINE_KEYS
-    assert (len(l0725_keyset.L0725_KEYS), len(repo), len(machine)) == (90, 86, 52)
+    assert (len(l0725_keyset.L0725_KEYS), len(repo), len(machine)) == (91, 87, 53)
 
 
 def test_no_dropped_key_is_a_leaf():

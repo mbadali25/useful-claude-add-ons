@@ -413,6 +413,7 @@ Parallelism scales on independent work units, not job titles.
 | `/crew:graph [--status\|--refresh\|--query "<question>"]` | The code graph (L-0667). `--status` (default): one read-only line, `graph=<fresh\|stale\|unknown\|absent> built_at=<sha> pair=<agree\|disagree\|unknown\|untracked> ignore=<covered\|uncovered\|unknown> command=<line>`. `--refresh`: graphify missing exits 2; a denylisted file uncovered exits 1, uncertain 2, before anything is built; then the sanctioned line (`graphify update .` where `GRAPH_REPORT.md` is tracked, else `graphify . --no-viz --code-only`), and the tracked pair must agree: the report's `## Summary` line against `graph.json`'s `nodes` and `links` (a mismatch exits 1, an unreadable side or a graph with no `links` exits 2). It never commits. `--query`: warns when the graph is not `fresh`, then `graphify query` |
 | `/crew:verify` | Build or refresh the change-to-check map; creates `_verify/` if the repo has no check directory |
 | `/crew:webtest <id> [--stage spec\|implement\|heal\|evidence]` | Drive Playwright's Test Agents inside the ticket lifecycle; a healer skip is a finding, and the trace and axe results go to the reviewer |
+| `/crew:worktrees [list \| root \| path <branch> \| remove <path> \| hook]` | Where this repo's worktrees go (crew 1.3.19): `worktrees.root` (repo or machine layer; null is `~/.claude/crew/worktrees`) holds them as `<root>/<repo>-<digest>/<name>`, outside the repo. `list` is a read-only survey of every worktree (`standard`, `in-repo`, `elsewhere`, `unreachable`; `REMOVABLE` only when clean, pushed, merged and older than `--days`, anything unreadable is `could not tell`); `remove <path>` needs the owner's `--yes`, takes one path and never forces. Claude Code's own worktrees (`claude --worktree`, an Agent with `isolation: worktree`) stay under `.claude/worktrees/` unless the owner registers the opt-in `WorktreeCreate` hook (`hook` prints the block; crew registers nothing). See `CONFIG.md` and `hooks/scripts/crew_worktrees.py` |
 | `/crew:promote <env> [--dry-run\|--status]` | Promote development -> qa -> production with deploy, smoke, regression and post-soak verification as separate gates |
 | `/crew:survey [area]` | Research gaps, produce ranked findings with options |
 | `/crew:debug <symptom\|id>` | Find the cause of a defect before anyone proposes a fix |
@@ -430,7 +431,7 @@ Parallelism scales on independent work units, not job titles.
 | `/crew:gate <disable\|enable\|status> <github\|bitbucket>` | Take a repository's merge gate down and put it back **from the export**. Gated by `guards.mergeGate`, which ships as `block` |
 | `/crew:change <new\|status <id>\|close <id>\|list>` | File a change request into SDP, Jira or `.work/changes/`, one process either way. `new` refuses to file while any of the template's questions 1–9 is unanswered or a placeholder and names which; `close` refuses without the post-change validation results — see §24b |
 
-39 commands.<!-- claim: plugin-commands:crew -->
+40 commands.<!-- claim: plugin-commands:crew -->
 
 ### Agents
 
