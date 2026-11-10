@@ -146,8 +146,8 @@ def cases(module):
 
     @case("PASS a new entry in the marketplace with its heading", 0)
     def _(tmp):
-        data = json.loads(open(os.path.join(tmp, ".claude-plugin/marketplace.json"),
-                               encoding="utf-8").read())
+        with open(os.path.join(tmp, ".claude-plugin/marketplace.json"), encoding="utf-8") as fh:
+            data = json.loads(fh.read())
         data["plugins"].append({"name": "fresh", "source": "./plugin/fresh", "version": "0.1.0"})
         write(tmp, ".claude-plugin/marketplace.json", json.dumps(data))
         write(tmp, "CHANGELOG.md", log(entries="### Added - fresh 0.1.0: a new plugin\n\n- s\n\n"))
@@ -232,7 +232,8 @@ def main():
         found = original_introduced(root, base)
         top = {}
         for (name, version), sha in found.items():
-            top[name] = max(top.get(name, (version, sha)), (version, sha), key=lambda p: [int(x) for x in p[0].split(".")])
+            top[name] = max(top.get(name, (version, sha)), (version, sha),
+                            key=lambda p: [int(x) for x in p[0].split(".")])
         return {(n, v): s for n, (v, s) in top.items()}
 
     module.introduced = final_only
