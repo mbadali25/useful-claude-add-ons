@@ -31,6 +31,11 @@ read entries under any `## [` heading.
 
 - crew 1.3.24: re-bump only - interim number on the context-watch branch before main reached 1.3.25; the change is recorded under crew 1.3.26
 
+### Fixed — crew 1.3.27: the lock test no longer fails when it lists the lock mid-rename of `owner`
+
+- **Summary.** `crew` 1.3.27: test-only. `test_the_lock_never_records_a_pid` listed the lock directory as soon as `token` appeared and allowed only the name `owner`, but `verify-gate.sh` writes `owner.tmp.<pid>` and renames it to `owner`, so a listing in that window failed with `AssertionError: ['owner.tmp.515831', 'token']` (it failed required CI `test (3.12)` on PRs #679 and #597). The test now also ignores `owner.tmp.*`; a `pid` file or any other name still fails. No gate code changed.
+- Tests: 20 consecutive passes on Linux; sabotaged by hand: the gate writing `$LOCK/pid` turns it red (`the lock records a PID again: ['owner', 'pid', 'token']`).
+
 ### Fixed — crew 1.3.26: context-watch's no-op Stop turn starts one process, not a dozen
 
 - **Summary.** `crew` 1.3.26: the Stop hook `context-watch.sh` clears an ordinary turn with one python start instead of five plus a handful of helper programs, so it no longer runs into its 20 s limit on a loaded Git Bash host; what it warns about and when is unchanged.
