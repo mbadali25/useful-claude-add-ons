@@ -6,9 +6,29 @@ by an accepted review?
 `<deadline>` is the gate's own deadline as a Unix time in seconds, so the
 time this interpreter takes to start counts against it too.
 
-Run by BOTH promote-gate.sh and promote-gate.ps1 from the project dir (the
-map is `.crew/verify.json` there), so the two flavours cannot decide this
-differently. stdout carries only the unmet preconditions, joined by U+001E
+Run by BOTH promote-gate.sh and promote-gate.ps1 from the project dir, so
+the two flavours cannot decide this differently.
+
+WHICH MAP (L-0768). The policy is the map COMMITTED IN THE SHA BEING DEPLOYED:
+`git -C <tree> ls-tree --full-tree <sha> -- .crew/verify.json`, then that
+blob (`policy_map_text`). The sha is the tree's HEAD (T-0505), so this is
+exactly what a deploy from a checkout of that sha reads: a worktree can do
+nothing a checkout of the same sha could not, and a waiver committed on the
+branch being deployed is seen. Read from the project dir instead, a
+worktree deploy was judged by the main checkout's map - its waiver admitted
+a branch that required review, and the branch's own waiver was never read.
+Only when the sha carries no map at all (an old sha, a repo whose map is
+ignored) is the project dir's map the policy, read as before: the working
+file held to the project dir's HEAD (`project_map_text`). That fallback is
+why this still runs with the project dir as cwd: a worktree's untracked or
+ignored copy is never read. A listing that fails is could-not-tell, never
+"no map". Every read of the sha's map passes `--no-replace-objects`: a
+`refs/replace/` entry would otherwise swap the map's bytes (or the commit's
+tree) with nothing committed and the sha and tree hashes unchanged.
+promote-gate.sh's VERDICT step imports `policy_map_text`, and
+promote-gate.ps1 makes the same two git calls (`ls-tree --full-tree`, then
+`cat-file blob`), so requires / rollback / requireHuman come from the same
+map as requireReview. stdout carries only the unmet preconditions, joined by U+001E
 (the gates' separator), and is empty when every environment is satisfied.
 Exit 0 means "decided". Any other status is could-not-tell, and both gates
 block on it ("the pre-deploy check could not be evaluated"); a traceback is a
@@ -16,7 +36,15 @@ non-zero status too, so a crash never reads as a pass.
 
 WHICH ENVIRONMENTS. Every gated environment requires review evidence unless
 its map entry says `"requireReview": false` AND gives a non-empty
-`reviewReason` string - the `rollback: "none"` + `rollbackReason` pattern. A
+`reviewReason` string - the `rollback: "none"` + `rollbackReason` pattern - AND
+a `reviewWaiverSha` equal to the train base of the promotion (SRL-3312, owner
+decision 2026-11-08). The train base is `train_base_sha()`: the merge-base of
+the promoted sha with the base branch, or, when the promoted sha is itself on
+the base branch, its first parent (a commit cannot name its own sha, and the
+waiver is committed with the change). A missing, non-string or different
+`reviewWaiverSha`, or a train base that could not be told, leaves review
+required. KNOWN WEAKNESS: the waiver covers the train built on that base, so a
+later commit on the same base inherits it. A
 `requireReview` that is anything but true or false is refused, never read as
 either. `requireHuman` does not waive it: the human's yes is a deploy
 go/no-go, not a code review, and the approval marker is a file the session
@@ -94,8 +122,51 @@ def no_case_twins(pairs):
     return {fold(k): v for k, v in pairs}
 
 
-def requirement(env, cfg):
-    """(needs review, problem or None) for one environment's map entry."""
+def train_base_sha(tree, sha, deadline):
+    """The full sha of the train base for the promoted `sha`, or None.
+
+    merge-base of `sha` with the base branch (scope_base.base_branch); when
+    that is `sha` itself (the promotion is on the base branch) its first
+    parent. None - never a guess - when git cannot answer, there is no base
+    branch, or there is no parent; the caller then keeps review required."""
+    import scope_base  # noqa: E402  pylint: disable=import-outside-toplevel
+    real_git_out = scope_base.crew_common.git_out
+
+    def bounded_git_out(root, *args):
+        _left(deadline)  # past the deadline: CouldNotTell, so no further probe runs
+        return real_git_out(root, *args)
+
+    try:
+        _left(deadline)
+        scope_base.crew_common.git_out = bounded_git_out
+        try:
+            ref, problem = scope_base.base_branch(tree)
+        finally:
+            scope_base.crew_common.git_out = real_git_out
+        if problem or not ref:
+            return None
+        git = crew_common.require_tool("git")
+
+        def ask(*args):
+            done = subprocess.run([git, "-C", tree, *args], capture_output=True, text=True,
+                                  check=False, timeout=_left(deadline),
+                                  stdin=subprocess.DEVNULL)
+            out = done.stdout.strip().lower()
+            return out if done.returncode == 0 and _FULL_SHA.fullmatch(out) else None
+        base = ask("merge-base", sha, ref)
+        if base == sha:
+            base = ask("rev-parse", "--verify", "--end-of-options", f"{sha}^1^{{commit}}")
+        return base
+    except (OSError, subprocess.SubprocessError, CouldNotTell):
+        return None
+
+
+def requirement(env, cfg, train_base=None):
+    """(needs review, problem or None) for one environment's map entry.
+
+    `requireReview: false` waives review only when the entry's
+    `reviewWaiverSha` equals `train_base` (SRL-3312); a missing, non-string or
+    different value, or an unknown `train_base`, leaves review required."""
     if "REQUIREREVIEW" not in cfg:
         return True, None
     value = cfg["REQUIREREVIEW"]
@@ -104,7 +175,11 @@ def requirement(env, cfg):
     if value is False:
         reason = cfg.get("REVIEWREASON")
         if isinstance(reason, str) and reason.strip():
-            return False, None
+            waiver = cfg.get("REVIEWWAIVERSHA")
+            if (train_base is not None and isinstance(waiver, str)
+                    and waiver.strip().lower() == train_base):
+                return False, None
+            return True, None
         return False, (f"'{env}' sets requireReview: false but has no reviewReason string. "
                        f"State why {env} may take a deploy nobody reviewed. Fix: add a "
                        "non-empty reviewReason string next to requireReview in "
@@ -316,10 +391,11 @@ def search(tree, sha, seconds):
                        f"{tail[0]})")
 
 
-def committed_map_text(deadline):
-    """`.crew/verify.json`'s text, read ONCE, and - when HEAD carries a map -
-    only when those bytes are the map committed at HEAD. The gate refused an uncommitted map before it
-    ran this, but that check and this read are two moments: an opt-out
+def project_map_text(deadline):
+    """The PROJECT DIR's `.crew/verify.json` text (the cwd), read ONCE, and -
+    when HEAD carries a map - only when those bytes are the map committed at
+    HEAD. Used only when the deployed sha carries no map (policy_map_text).
+    The gate refused an uncommitted map before it ran this, but that check and this read are two moments: an opt-out
     written in between would otherwise waive review for a deploy (L-0703
     review r1). git hash-object compares the bytes read, not the file now."""
     # Every git call here is bounded by what is left of the gate's deadline
@@ -362,6 +438,52 @@ def committed_map_text(deadline):
     return raw.decode("utf-8-sig")
 
 
+def _sha_map_blob(tree, sha, deadline):
+    """The blob id of `.crew/verify.json` in commit `sha` of `tree`, or None
+    when that commit carries no map. Could-not-tell raises."""
+    try:
+        found = subprocess.run(
+            [crew_common.require_tool("git"), "--no-replace-objects", "-C", tree, "ls-tree",
+             "--full-tree", sha, "--", ".crew/verify.json"],
+            capture_output=True, check=False, timeout=_left(deadline), stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise CouldNotTell(f"the deployed sha's .crew/verify.json could not be listed: {exc}") \
+            from exc
+    if found.returncode != 0:
+        raise CouldNotTell(f"git could not list .crew/verify.json in the deployed sha {sha} of "
+                           f"{tree}, so which map is policy cannot be told")
+    entry = found.stdout.decode("utf-8", errors="replace").split()
+    if not entry:
+        return None
+    if len(entry) < 4 or entry[1] != "blob" or not _FULL_SHA.fullmatch(entry[2]):
+        raise CouldNotTell(f".crew/verify.json in the deployed sha {sha} is not a file "
+                           f"({' '.join(entry[:2])}), so it cannot be read as the map")
+    return entry[2]
+
+
+def policy_map_text(tree, sha, deadline):
+    """(text, source) of the map that is policy for deploying `sha` from
+    `tree` (module docstring, WHICH MAP). `source` is "sha" or "project"."""
+    blob = _sha_map_blob(tree, sha, deadline)
+    if blob is None:
+        return project_map_text(deadline), "project"
+    try:
+        # Bounded by what is left of the gate's deadline, like every probe.
+        shown = subprocess.run([crew_common.require_tool("git"), "--no-replace-objects", "-C",
+                                tree, "cat-file", "blob", blob], capture_output=True, check=False,
+                               stdin=subprocess.DEVNULL, timeout=_left(deadline))
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise CouldNotTell(f"the deployed sha's .crew/verify.json could not be read: {exc}") \
+            from exc
+    if shown.returncode != 0:
+        raise CouldNotTell(f"the deployed sha's .crew/verify.json could not be read (git "
+                           f"cat-file exited {shown.returncode})")
+    try:
+        return shown.stdout.decode("utf-8-sig"), "sha"
+    except UnicodeDecodeError as exc:
+        raise CouldNotTell(f"the deployed sha's .crew/verify.json is not UTF-8: {exc}") from exc
+
+
 def main(argv):
     if argv[:1] == ["--cover"] and len(argv) == 3:
         return child_main(argv[1], argv[2])
@@ -374,15 +496,23 @@ def main(argv):
         print(f"_promote_review.py: not a full sha: {sha!r}", file=sys.stderr)
         return 2
     try:
-        doc = json.loads(committed_map_text(deadline), object_pairs_hook=no_case_twins)
+        doc = json.loads(policy_map_text(tree, sha, deadline)[0], object_pairs_hook=no_case_twins)
+    except ValueError as exc:
+        print(f"_promote_review.py: the deployment map does not parse: {exc}", file=sys.stderr)
+        return 3
     except CouldNotTell as exc:
         print(f"_promote_review.py: {exc}", file=sys.stderr)
         return 3
     environments = doc.get("ENVIRONMENTS", {}) if isinstance(doc, dict) else {}
     problems, needing = [], []
+    base = None
+    if any(isinstance(c, dict) and c.get("REQUIREREVIEW") is False
+           for c in (environments.get(fold(e)) for e in envs)
+           if isinstance(environments, dict)):
+        base = train_base_sha(tree, sha, deadline)
     for env in envs:
         cfg = environments.get(fold(env), {}) if isinstance(environments, dict) else {}
-        need, problem = requirement(env, cfg if isinstance(cfg, dict) else {})
+        need, problem = requirement(env, cfg if isinstance(cfg, dict) else {}, base)
         if problem:
             problems.append((env, problem))
         elif need:
@@ -400,7 +530,8 @@ def main(argv):
                 problems.append((env, (
                     f"'{env}' requires an accepted review of the sha being deployed ({sha}), "
                     f"and there is none: {detail}. Run /crew:review on this exact tree and get "
-                    f"it accepted, or set requireReview: false plus a reviewReason on '{env}' "
+                    f"it accepted, or set requireReview: false plus a reviewReason and a reviewWaiverSha "
+                    f"(the train base: {base or 'could not be told'}) on '{env}' "
                     "in .crew/verify.json.")))
     sys.stdout.write(SEP.join(f"[{env}] {msg}" if len(envs) > 1 else msg
                               for env, msg in problems))

@@ -51,11 +51,15 @@ scoped to both:
 > `.work/review/` does not already exist - which is every fresh one.
 > no $1: exactly one active row, else empty - stop and ask, never guess
 
-**Review runs after tests and docs**, and has **two rounds per ticket in
-total** (`review_ledger.py`, in `<git-common-dir>/crew/review/<id>.json`,
-shared by every worktree). A round is reserved before the reviewer launches,
-so a crashed one still counts; a third is refused and the ticket becomes
-`NEEDS_REPLAN`. Step 3.3 says how round 2's FINDINGS close. No flag, variable or config key changes it.
+<!-- review-budget-doc -->
+**Review runs after tests and docs**, and has **three rounds per ticket in
+total, counted across every plan the ticket ran under** (`review_ledger.py`, in
+`<git-common-dir>/crew/review/<id>.json`, shared by every worktree). A round is
+reserved before the reviewer launches, so a crashed one still counts; one past
+the budget is refused and the ticket becomes `NEEDS_REPLAN`. A successor plan does
+not reopen the budget: only the owner's `review_ledger.py --grant-round --by <who>
+--reason <text>` adds one round, recorded in the ledger. Step 3.3 says how the
+budget's last round's FINDINGS close. No flag, variable or config key changes it.
 
 `mktemp`'s branch-prefixed, randomly-suffixed directory is ticket-scoped (the
 branch name) and session-scoped (no other process can be handed the same
@@ -460,7 +464,7 @@ Read ONLY `$SCRATCH/out.txt` and the `review:` lines. Never load the diff back i
 no other line; any BLOCK/FIX/NIT is FINDINGS, even beside harmless stray prose (the script ignores it and names
 it on a `review: FINDINGS kept; ...` line); a non-zero exit, empty output, a possibly misformatted contract line,
 a line admitting the review fell short, a skipped part or a timeout is INCOMPLETE — never report INCOMPLETE as
-clean. Only a `tool` INCOMPLETE (no intact answer) is refunded, up to two per plan, as its `review:` line says; 2a/2b retry a refunded round once in-process (L-0514), never a usage limit or a timeout, and `review: retry:` / `review: options:` lines say what stopped it.
+clean. Only a `tool` INCOMPLETE (no intact answer) is refunded, up to three per ticket (a successor plan does not reset that), as its `review:` line says; 2a/2b retry a refunded round once in-process (L-0514), never a usage limit or a timeout, and `review: retry:` / `review: options:` lines say what stopped it.
 
 ## Step 2d: re-run the failing control
 
@@ -480,14 +484,15 @@ loses the most time to.
    printed, also show every ignored line verbatim (`review.json` `ignored_text`, counted by `ignored_lines`): the script
    ignored them, it did not read them for defects. State the review range and file list **from `$MANIFEST`**, not re-derived:
    base, head, branch, dirty or not, and each changed file's category (committed / staged / unstaged / untracked).
-2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once — round 2 is the last,
-   counting only rounds not refunded. A refusal (exit 4, `NEEDS_REPLAN`) is terminal in this
-   release: stop, say so, and replan the ticket; there is no third round.
+2. Fix all BLOCK items. Rerun `./_verify/smoke.sh`. Rerun this review once while a round is left,
+   counting only rounds not refunded; the budget's last round is the last. A refusal (exit 4, `NEEDS_REPLAN`) is
+   terminal in this release: stop, say so, and replan the ticket; only the owner's `--grant-round` gives a
+   successor plan a round.
 3. **Closure (L-0510).** `review: auto-accept: eligible` (a final round: FINDINGS, 0 BLOCK, no open healer skip, no verdict recovered from stray lines (`ignored_lines` 0 and readable), reviewed by Codex or Kimi) AND no BLOCK from step 0b's specialists or step 2d's controls, which the ledger never sees: mint the next free id as `/crew:brainstorm` step 1 does, run
    `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --auto-accept --follow-up <id>`, then `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_tracker.py" create --root . --ticket <id> --title "<title>"` and write its `direction.md`: source ticket, round, bundle sha, then every line printed after the first, verbatim, one per line inside one fenced block, no `>` or list prefix (`--check-follow-up` matches whole lines verbatim, as many times as the receipt carries each). A same-family (Claude-fallback) round is never eligible: it is mine to accept. `tracker not updated: <reason>` stops for me.
    Anything else (any BLOCK, a `refused -` line, a specialist BLOCK, an unverified control) stops for me with 2-4 options, recommended first, each with a one-line tradeoff (reject and replan / I accept as is / fix and I grant a round); under `/crew:autopilot` with `autopilot.maxAutoReplans` 1 or more, `crew_autopilot.py next` then names `auto-reject` for an out-of-rounds BLOCK round it may reject and replan itself, and this command still ends at its verdict. Disagree with a finding? Say so. If I accept, record it - the receipt names who and when; a `--by` starting `auto:` is refused:
    `python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/review_ledger.py" --ticket "$TICKET" --accept --by "<who>"`.
-   Only the most recent round can be accepted, once, and not once the ticket is `NEEDS_REPLAN` (a refused third reservation, or `review_ledger.py --ticket "$TICKET" --reject --by "<who>"`; an ACCEPTED ticket only with `--reject --by "<who>" --supersede-accepted`, my call, which keeps the old receipt under `superseded`). A receipt naming the wrong accepter is mine to fix: `--correct-acceptance --by "<who>" --reason "<why>"` (rows kept in `acceptance_corrections`; never on a clean or auto-accepted receipt). `--by` is a recorded name, not an identity check.
+   Only the most recent round can be accepted, once, and not once the ticket is `NEEDS_REPLAN` (a refused reservation past the budget, or `review_ledger.py --ticket "$TICKET" --reject --by "<who>"`; an ACCEPTED ticket only with `--reject --by "<who>" --supersede-accepted`, my call, which keeps the old receipt under `superseded`). A receipt naming the wrong accepter is mine to fix: `--correct-acceptance --by "<who>" --reason "<why>"` (rows kept in `acceptance_corrections`; never on a clean or auto-accepted receipt). `--by` is a recorded name, not an identity check.
    A CLEAN round writes its receipt itself. `review_ledger.py --ticket "$TICKET" --check-receipt` rebuilds the bundle and fails if anything changed since - except where the delta gate (L-0522) proves the ticket's own delta byte-identical across a catch-up merge, a version bump or an anchor-only refresh (`receipt kept by delta gate: ...`, judged on HEAD's tree with a clean checkout, and only where this clone's merge train is armed); anything it cannot prove reads stale.
 4. **Land the verdict as a review, not a comment.** If the change is on a GitHub PR, post the outcome
    with `gh pr review` so it exists as an artifact that tooling and branch protection can see:
@@ -527,3 +532,7 @@ loses the most time to.
    exists to make visible.
 
 That metrics line is crew bookkeeping to the review bundle, the completion audit and the verify gate (`crew_ticket.CREW_BOOKKEEPING_PATHS`), so appending it never stales a receipt; it is not throwaway: `/crew:status` reads it to show whether this setup is actually catching anything.
+
+## Standards for PR-side reviewers (L-0718)
+
+A repository can publish the same standards to the reviewers that read a pull request without crew (Claude Code Review, Cursor Bugbot, Codex, Copilot). It opts in with `export: ["review", "agents", "bugbot"]` (any non-empty subset) in the overlay's front matter, and `crew_standards.py export --root . --write` renders every standard of every set, each with its `applies-to`, as `docs/review-rules/<SET>.md` (one file per set: Bugbot truncates a rule at 30,000 characters, so each file stays under `EXPORT_MAX_CHARS`), plus `REVIEW.md` and `.cursor/BUGBOT.md` (the always-on sets in full, the stack sets as ids, names and a link) and a marked `## Code Review Rules` block in a hand-written `AGENTS.md` (never one carrying `crew:generated`). Only Rule, Self-check and Supplements are exported, never Why or Earned by, and a reader that does not follow links sees ids and names for the stack sets, not their rules. `--check` fails when an output is stale, missing, hand-edited or orphaned, by the standards' content digest and the crew version, not a commit; freshness is as of the last check, because `claude plugin update` changes the plugin's sets without touching any path in the repo, and a gate rule that reaches the script through `$CLAUDE_PLUGIN_ROOT` exits 77 (SKIP, not coverage) where the variable is unset. Regenerate with `export --write` after an approved proposal edits `.crew/standards.md`. `/crew:docs` reports a `standards export` row when a ticket changes a standards file: `updated`, `MISSING` when `export --check` is stale, `not applicable` for a repo that never opted in, and `unknown` when the check could not run (exit 77, 2, a timeout), never `updated`. This file describes `/crew:review`'s own checklist, which `export` reads but does not change.

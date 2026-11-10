@@ -473,7 +473,7 @@ unless, for the sha at HEAD:
 - `requireHuman` has an approval marker at `.crew/.approved-<env>-<sha>`
 - an accepted review receipt covers the deployed tree - ask whether any
   environment (a development box fed from branches, say) deploys unreviewed
-  builds, and if so set `requireReview: false` plus a `reviewReason` on it
+  builds, and if so set `requireReview: false` plus a `reviewReason` and a `reviewWaiverSha` (the train base) on it
 - the working tree is clean
 
 And `verify-gate.sh` will not let the turn end after a deploy that wrote no

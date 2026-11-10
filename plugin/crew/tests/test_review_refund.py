@@ -4,7 +4,7 @@ An INCOMPLETE round is classed by `review_verdict.failure_class`: the answer
 never arrived intact (timeout, unknown or non-zero exit, empty output, a failed
 or unreadable Codex stream) is `tool`; a bundle/webtest reason is `tree`;
 anything else -- output that arrived and broke the contract -- is `reviewer`.
-Only `tool` is refunded, at most `review_ledger.REFUND_LIMIT` times per plan
+Only `tool` is refunded, at most `review_ledger.REFUND_LIMIT` times per ticket
 (T-0087; the owner chose automatic refunds, 2026-09-28).
 """
 import json
@@ -55,7 +55,7 @@ def test_verdict_and_codex_vocabularies_are_declared():
     assert rv.FINDING_FORM == "SEVERITY|file:line|what breaks|how to reproduce"
 
 
-# --- Step 2: the ledger refunds a tool-failure round, up to REFUND_LIMIT per plan ----
+# --- Step 2: the ledger refunds a tool-failure round, up to REFUND_LIMIT per ticket ----
 
 def _review(verdict, failure_class=None, provider="codex", bundle="b" * 64, base="c" * 40):
     """The minimal review.json dict `review_ledger.record` reads."""
@@ -87,7 +87,7 @@ def test_ledger_refunds_a_tool_failure_round(repo):
     row = status["rounds"][0]
     assert (row["refunded"], row["failure_class"]) == (True, "tool")
     assert (status["rounds_left"], status["rounds_spent"], status["rounds_refunded"],
-            status["rounds_used"]) == (2, 0, 1, 1)
+            status["rounds_used"]) == (rl.BUDGET, 0, 1, 1)
 
 
 @pytest.mark.parametrize("failure", ["reviewer", "tree", None])
@@ -95,33 +95,47 @@ def test_ledger_does_not_refund_a_reviewer_or_tree_round(repo, failure):
     _round(repo, "T1", "INCOMPLETE", failure)
 
     status = rl.status(str(repo), "T1")
-    assert (status["rounds"][0]["refunded"], status["rounds_left"]) == (False, 1)
+    assert (status["rounds"][0]["refunded"], status["rounds_left"]) == (False, rl.BUDGET - 1)
 
 
 def test_refunded_rounds_do_not_exhaust_the_budget(repo):
-    _round(repo, "T1", "INCOMPLETE", "tool")
-    _round(repo, "T1", "INCOMPLETE", "tool")
+    for _ in range(rl.REFUND_LIMIT):
+        _round(repo, "T1", "INCOMPLETE", "tool")
 
     ok, number, message = rl.reserve(str(repo), "T1", "codex")
 
-    assert (ok, number, rl.status(str(repo), "T1")["state"]) == (True, 3, rl.IN_REVIEW), message
+    assert (ok, number, rl.status(str(repo), "T1")["state"]) == (
+        True, rl.REFUND_LIMIT + 1, rl.IN_REVIEW), message
 
 
-def test_refund_limit_is_two_per_plan(repo):
-    for _ in range(3):
+def test_refund_limit_is_per_ticket(repo):
+    for _ in range(rl.REFUND_LIMIT + 1):
         _round(repo, "T1", "INCOMPLETE", "tool")
 
     rows = _rows(repo)
-    assert [r["refunded"] for r in rows] == [True, True, False]
-    assert "refund limit 2" in rows[2]["refund_refused"]
-    assert rl.status(str(repo), "T1")["rounds_left"] == 1
+    assert [r["refunded"] for r in rows] == [True] * rl.REFUND_LIMIT + [False]
+    assert f"refund limit {rl.REFUND_LIMIT} per ticket" in rows[-1]["refund_refused"]
+    assert rl.status(str(repo), "T1")["rounds_left"] == rl.BUDGET - 1
+
+
+def test_launched_rounds_are_bounded_by_budget_plus_refund_limit(repo):
+    launched = 0
+    while True:
+        ok, number, _ = rl.reserve(str(repo), "T1", "codex")
+        if not ok:
+            break
+        launched += 1
+        rl.record(str(repo), "T1", number, _review("INCOMPLETE", "tool"))
+
+    assert launched == rl.BUDGET + rl.REFUND_LIMIT
+    assert rl.status(str(repo), "T1")["state"] == rl.NEEDS_REPLAN
 
 
 def test_budget_still_refuses_after_refunds(repo):
     _round(repo, "T1", "INCOMPLETE", "tool")
     _round(repo, "T1", "INCOMPLETE", "tool")
-    _round(repo, "T1", "FINDINGS")
-    _round(repo, "T1", "FINDINGS")
+    for _ in range(rl.BUDGET):
+        _round(repo, "T1", "FINDINGS")
 
     ok, number, _ = rl.reserve(str(repo), "T1", "codex")
 
@@ -139,7 +153,7 @@ def test_legacy_rows_without_failure_class_count_as_spent(repo):
 
     status = rl.status(str(repo), "T1")
 
-    assert (status["rounds_left"], status["rounds_refunded"]) == (1, 0)
+    assert (status["rounds_left"], status["rounds_refunded"]) == (rl.BUDGET - 1, 0)
 
 
 # Successor-plan cases: a ticket with an approved plan, as test_crew_ticket.py builds it.
@@ -161,19 +175,18 @@ def _ticket_repo(tmp_path):
     return root
 
 
-def test_refunds_reset_with_a_successor_plan(ticket_repo):
+def test_refunds_are_ticket_wide_across_a_successor(ticket_repo):
     repo = ticket_repo
-    for verdict, failure in (("INCOMPLETE", "tool"), ("INCOMPLETE", "tool"),
-                             ("FINDINGS", None), ("FINDINGS", None)):
-        _round(repo, "T-1", verdict, failure)
-    assert rl.reserve(str(repo), "T-1", "codex")[0] is False
-    assert rl.status(str(repo), "T-1")["state"] == rl.NEEDS_REPLAN
+    for _ in range(rl.REFUND_LIMIT):
+        _round(repo, "T-1", "INCOMPLETE", "tool")
+    _round(repo, "T-1", "FINDINGS")
+    rl.reject(str(repo), "T-1", "owner")
     _successor(repo, 2)
 
     _round(repo, "T-1", "INCOMPLETE", "tool")
-    _round(repo, "T-1", "INCOMPLETE", "tool")
 
-    assert [r["refunded"] for r in _rows(repo, "T-1")[4:]] == [True, True]
+    row = _rows(repo, "T-1")[-1]
+    assert (row["refunded"], "refund_refused" in row) == (False, True)
 
 
 def test_record_after_a_refund_still_refuses_a_round_from_a_replaced_plan(ticket_repo):
@@ -218,7 +231,7 @@ def _assert_refunded_tool_failure(repo, result, review):
     assert result.returncode == 3, result.stdout + result.stderr
     assert (review["failure_class"], review["refunded"]) == ("tool", True)
     assert (_rows(repo)[0]["failure_class"], _rows(repo)[0]["refunded"]) == ("tool", True)
-    assert (status["rounds_left"], status["rounds_refunded"]) == (2, len(_rows(repo)))
+    assert (status["rounds_left"], status["rounds_refunded"]) == (rl.BUDGET, len(_rows(repo)))
     assert any(ln.startswith("review: round 1 was a tool failure") and "refunded" in ln
                for ln in result.stdout.splitlines()), result.stdout
 
@@ -240,7 +253,7 @@ def test_contract_broken_round_is_not_refunded(repo, tmp_path):
 
     assert result.returncode == 3, result.stdout + result.stderr
     assert (review["failure_class"], review["refunded"]) == ("reviewer", False)
-    assert rl.status(str(repo), "T1")["rounds_left"] == 1
+    assert rl.status(str(repo), "T1")["rounds_left"] == rl.BUDGET - 1
 
 
 def test_tree_changed_round_is_not_refunded(repo, tmp_path):
@@ -257,7 +270,7 @@ def test_tree_changed_round_is_not_refunded(repo, tmp_path):
     review = json.loads((work / "review.json").read_text(encoding="utf-8"))
     assert result.returncode == 3, result.stdout + result.stderr
     assert (review["failure_class"], review["refunded"]) == ("tree", False)
-    assert rl.status(str(repo), "T1")["rounds_left"] == 1
+    assert rl.status(str(repo), "T1")["rounds_left"] == rl.BUDGET - 1
 
 
 @pytest.mark.parametrize("mode", ["clean", "findings"])
@@ -365,15 +378,16 @@ def test_finish_records_no_ignored_lines_on_a_strict_round(repo, tmp_path):
 
 
 def test_refund_limit_holds_through_review_run(repo, tmp_path):
-    """Two invocations: the first's round and its retry take both refunds, so
-    the second's round is NOT refunded, counts, and is not retried."""
+    """Two invocations: the first's round and its retry take two refunds, the
+    second's round takes the last, and its retry is NOT refunded and counts."""
     outs = []
     for n in range(2):
         result, _ = _run(repo, tmp_path / str(n), "turnfail")
         outs.append(result.stdout)
 
     assert "NOT refunded" in outs[1], outs[1]
-    assert (len(_rows(repo)), rl.status(str(repo), "T1")["rounds_left"]) == (3, 1)
+    assert (len(_rows(repo)), rl.status(str(repo), "T1")["rounds_left"]) == (
+        rl.REFUND_LIMIT + 1, rl.BUDGET - 1)
 
 
 def test_summary_line_after_refunds_is_never_over_budget(repo, tmp_path):
@@ -382,7 +396,7 @@ def test_summary_line_after_refunds_is_never_over_budget(repo, tmp_path):
     result, _ = _run(repo, tmp_path / "2", "findings")
 
     first = result.stdout.splitlines()[0]
-    assert (first.startswith("review: FINDINGS round 3, 1 of 2 budget rounds used, "
+    assert (first.startswith("review: FINDINGS round 3, 1 of 3 budget rounds used, "
                              "2 refunded ("), "3/2" in result.stdout) == (True, False), first
 
 
@@ -458,7 +472,7 @@ def test_no_retry_when_refund_refused(repo, tmp_path):
     result, _ = _run(repo, tmp_path, "turnfail,clean")
 
     _not_retried(repo, tmp_path, result, rl.REFUND_LIMIT + 1,
-                 f"refund was refused (refund limit {rl.REFUND_LIMIT} per plan reached)")
+                 f"refund was refused (refund limit {rl.REFUND_LIMIT} per ticket reached)")
     assert _calls(tmp_path) == 1
 
 

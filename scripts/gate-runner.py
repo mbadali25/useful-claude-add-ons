@@ -188,6 +188,11 @@ TABLE = (
          (PY, "docs/guides/crew/src/config_reference.py", "--check"),
          ci=(("marketplace.yml", "python3 docs/guides/crew/src/config_reference.py --check"),)),
     _py_suite("sync-updates-suite", "scripts/_test/sync-updates.py"),
+    # Every version the branch sets owes a CHANGELOG.md entry or a `re-bump only`
+    # line. A missing origin/main is exit 77, recorded as SKIP, never PASS.
+    Step("check-changelog", "cheap", (PY, "scripts/check-changelog.py"),
+         ci=(("marketplace.yml", "python3 scripts/check-changelog.py"),)),
+    _py_suite("check-changelog-suite", "scripts/_test/check-changelog.py"),
     Step("install-prerequisites-syntax", "cheap", ("bash", "-n", "scripts/install-prerequisites.sh"),
          needs=("bash",), ci=(("marketplace.yml", "bash -n scripts/install-prerequisites.sh"),)),
     _bash_suite("menu-groups", "scripts/_test/menu-groups.sh", "marketplace.yml",

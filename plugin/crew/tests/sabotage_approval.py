@@ -303,11 +303,14 @@ APPROVAL_MUTATIONS = (
      "    except OSError:\n        return False\n",
      _G + "test_a_long_range_token_is_not_mistaken_for_a_folder"),
     ("GROUP APPROVAL: the bash no-python branch blocks every 'approve'", HOOK_SH,
-     "PY=$(crew_py_strict) || {\n  case \"$INPUT\" in *crew:approve*) ;; *) exit 0 ;; esac\n",
+     "PY=$(crew_py_strict) || {\n  case \"$INPUT\" in\n    *crew:approve*) ;;\n"
+     "    *crew:confirm-config*)\n"
+     "      echo \"crew: /crew:confirm-config was NOT recorded -- no usable python to record the confirmation.\" >&2\n"
+     "      exit 2 ;;\n    *) exit 0 ;;\n  esac\n",
      "PY=$(crew_py_strict) || {\n",
      _AH + "test_without_python_only_an_approve_prompt_is_blocked[approve T-1-0-sh]"),
     ("GROUP APPROVAL: the bash fast path skips plain-text approvals", HOOK_SH,
-     'case "$INPUT" in *[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*) ;; *) exit 0 ;; esac\n',
-     'case "$INPUT" in *crew:approve*) ;; *) exit 0 ;; esac\n',
+     'case "$INPUT" in *[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*|*crew:confirm-config*) ;; *) exit 0 ;; esac\n',
+     'case "$INPUT" in *crew:approve*|*crew:confirm-config*) ;; *) exit 0 ;; esac\n',
      _AH + "test_a_plain_text_approval_goes_pending_then_confirm_records[sh]"),
 )

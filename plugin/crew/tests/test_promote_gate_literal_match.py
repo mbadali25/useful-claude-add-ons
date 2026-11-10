@@ -73,6 +73,7 @@ import pytest
 import crew_fixtures
 
 import context  # noqa: F401  pylint: disable=unused-import
+from _train_base import TRAIN_BASE, seed_train_base
 
 _SCRIPTS = pathlib.Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 _SH = _SCRIPTS / "promote-gate.sh"
@@ -112,7 +113,8 @@ def _git(cwd, *args):
 def _env(deploy, human=False, key="deploy"):
     # L-0703: review evidence opted out; test_promote_gate_review.py owns it.
     cfg = {key: deploy, "rollback": "none", "rollbackReason": "fixture",
-           "requireReview": False, "reviewReason": "fixture"}
+           "requireReview": False, "reviewReason": "fixture",
+           "reviewWaiverSha": TRAIN_BASE}
     if human:
         cfg["requireHuman"] = True
     return cfg
@@ -129,6 +131,7 @@ class Repo:
         _git(root, "config", "user.email", "t@example.invalid")
         _git(root, "config", "user.name", "T")
         _git(root, "config", "commit.gpgsign", "false")
+        seed_train_base(root)
         (root / ".gitignore").write_text(
             ".crew/*\n!.crew/verify.json\n.work/\n", encoding="utf-8")
         (root / ".crew").mkdir()
