@@ -332,33 +332,33 @@ KEY_META = {
     "guards.mass.enabled": _row(
         "Turns the mass delete / create / change stop on (it is also armed by a "
         "double-confirmed `humanOnly` opt-out). On if EITHER layer says exactly `true`; off by "
-        "default.", "type", since="1.3.34", source=_S + "crew_mass.py", type_="boolean"),
+        "default.", "type", since="1.3.35", source=_S + "crew_mass.py", type_="boolean"),
     "guards.mass.deleteCount": _row(
         "Files a command may delete before it waits for `/crew:approve-mass`; a count at "
         "the limit stops. The machine file sets it; the repo file can only lower it; a value "
-        "that is not a positive integer reads as the default.", "type", since="1.3.34",
+        "that is not a positive integer reads as the default.", "type", since="1.3.35",
         source=_S + "crew_mass.py", type_="integer (1 or more)"),
     "guards.mass.createCount": _row(
         "Files a command may create before it waits for `/crew:approve-mass`; a count at "
         "the limit stops. The machine file sets it; the repo file can only lower it; a value "
-        "that is not a positive integer reads as the default.", "type", since="1.3.34",
+        "that is not a positive integer reads as the default.", "type", since="1.3.35",
         source=_S + "crew_mass.py", type_="integer (1 or more)"),
     "guards.mass.changeCount": _row(
         "Files a command may rewrite before it waits for `/crew:approve-mass`; a count at "
         "the limit stops. The machine file sets it; the repo file can only lower it; a value "
-        "that is not a positive integer reads as the default.", "type", since="1.3.34",
+        "that is not a positive integer reads as the default.", "type", since="1.3.35",
         source=_S + "crew_mass.py", type_="integer (1 or more)"),
     "guards.mass.overrides": _row(
         "`guards.mass.overrides.<files|git|terraform>.<deleteCount|createCount|"
         "changeCount>`: one limit for one kind of command. Unset, `terraform` is delete 3, "
         "create 10, change 10 (inferred, not measured); the others use the limits above.",
-        "open-table", since="1.3.34", source=_S + "crew_mass.py",
+        "open-table", since="1.3.35", source=_S + "crew_mass.py",
         type_="object of category to {deleteCount, createCount, changeCount}"),
     "guards.mass.exempt": _row(
         "Repo-relative globs of generated files that never count toward a limit, read from "
         "the machine file only (a glob can only loosen the stop), on top of the built-in "
         " regenerable directories (node_modules, __pycache__, .venv, caches, "
-        "build, dist, .work, worktrees).", "type", since="1.3.34",
+        "build, dist, .work, worktrees).", "type", since="1.3.35",
         source=_S + "crew_mass.py", type_="list of globs"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),

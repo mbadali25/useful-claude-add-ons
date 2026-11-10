@@ -1,7 +1,7 @@
 """L-0725: the committed key set (87 keys; 83 repo and 50 machine leaves,
 plus the two `humanOnly` keys crew 1.3.9 added, the `worktrees.root` key crew 1.3.19 added,
 the `environments.preProduction` key crew 1.3.23 added and the six `guards.mass.*`
-keys crew 1.3.34 added: 97, 93 and 59) and the
+keys crew 1.3.35 added: 97, 93 and 59) and the
 60 keys it drops. Generated once from the reviewed Disposition in
 `.work/tickets/L-0725/spec.md`; changing a key here is a spec amendment, not a
 test fix. `guards.profile` and `guards.overrides` replace the twelve

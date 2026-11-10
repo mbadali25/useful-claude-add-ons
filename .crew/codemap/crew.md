@@ -991,7 +991,7 @@ passes a prompt naming `crew:confirm-config`. `scope_guard.py` refuses writes to
 `len(HUMANONLY_MUTATIONS)`). JUDGEMENT: `humanOnly.promoteMarker` is still read
 by no hook, and a session that runs arbitrary python can still forge a receipt.
 
-## Mass delete, create and change: `guards.mass` (crew 1.3.34)
+## Mass delete, create and change: `guards.mass` (crew 1.3.35)
 
 DERIVED from `plugin/crew/hooks/scripts/crew_mass.py` (stdlib only) and
 `plugin/crew/hooks/scripts/cloud_guard.py`; tests `plugin/crew/tests/test_mass_guard.py`,

@@ -73,7 +73,7 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
 meaningful only with `scope.mode` `block`.
 
-**`/crew:approve-mass <id>` (crew 1.3.34).** Your yes to ONE blocked mass
+**`/crew:approve-mass <id>` (crew 1.3.35).** Your yes to ONE blocked mass
 operation, typed by you and recorded by the same prompt hook in
 `<git-common-dir>/crew/mass-approvals/<id>.json`, good for 15 minutes. The
 directory is under `<git-common-dir>/crew/`, which the scope guard refuses to
@@ -81,7 +81,7 @@ every Write/Edit and every shell command naming it, so the session cannot
 write the file. The cloud guard (`cloud_guard.py`) prints the `<id>` with its
 stop and reads the file; see "Mass operations".
 
-## Mass operations (`guards.mass`, crew 1.3.34)
+## Mass operations (`guards.mass`, crew 1.3.35)
 
 The rule for an autopilot that runs without a human: full automation, except a
 mass delete, a mass create or a mass change, which wait for your yes. The stop
