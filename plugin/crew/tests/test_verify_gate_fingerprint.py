@@ -133,24 +133,41 @@ def test_an_unchanged_turn_skips_the_second_time(flavour, tmp_path):
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
-def test_a_crlf_fingerprint_file_still_matches(flavour, tmp_path):
-    """MUST-ALLOW: a fingerprint file rewritten with CRLF (an editor, a
-    Windows tool) names the same digest. `$(cat ...)` kept the CR, so the
-    compare never matched and every turn re-ran; the gate drops CRs before
-    comparing. Anything else in the file still fails the compare."""
+@pytest.mark.parametrize("wrap", [(b"", b"\r\n"), (b" \t", b" \r\n"), (b"", b"")],
+                         ids=["crlf", "spaces-around", "no-newline"])
+def test_a_crlf_fingerprint_file_still_matches(flavour, wrap, tmp_path):
+    """MUST-ALLOW: a fingerprint file rewritten with CRLF or surrounding
+    whitespace (an editor, a Windows tool) names the same digest. `$(cat ...)`
+    kept the CR, so the compare never matched and every turn re-ran; the gate
+    trims surrounding whitespace before comparing."""
     root = _repo(tmp_path)
     first = _run(flavour, root)
     assert _ran(first), first.stderr
     fp = root / ".crew" / ".verify-gate.fingerprint"
-    digest = fp.read_text(encoding="utf-8").strip()
-    fp.write_bytes(digest.encode("ascii") + b"\r\n")
+    digest = fp.read_text(encoding="utf-8").strip().encode("ascii")
+    fp.write_bytes(wrap[0] + digest + wrap[1])
     second = _run(flavour, root)
     assert second.returncode == 0, second.stderr
     assert _skipped(second), second.stderr
-    fp.write_bytes(digest.encode("ascii") + b"\r\nextra\r\n")
-    third = _run(flavour, root)
-    assert third.returncode == 0, third.stderr
-    assert _ran(third), third.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("damage", ["interior-cr", "second-line"])
+def test_a_malformed_fingerprint_file_never_skips(flavour, damage, tmp_path):
+    """MUST-BLOCK the skip: trimming must not let damage inside the value
+    authorise one (Codex review round 1). An interior CR, or a second line
+    after the digest, fails the compare and the checks run."""
+    root = _repo(tmp_path)
+    first = _run(flavour, root)
+    assert _ran(first), first.stderr
+    fp = root / ".crew" / ".verify-gate.fingerprint"
+    digest = fp.read_text(encoding="utf-8").strip().encode("ascii")
+    body = (digest[:8] + b"\r" + digest[8:] + b"\n" if damage == "interior-cr"
+            else digest + b"\r\nextra\r\n")
+    fp.write_bytes(body)
+    second = _run(flavour, root)
+    assert second.returncode == 0, second.stderr
+    assert not _skipped(second), second.stderr
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)

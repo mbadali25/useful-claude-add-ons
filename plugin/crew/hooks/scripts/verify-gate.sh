@@ -513,6 +513,17 @@ gate_marker_line() {
   _ml="${_ml%"${_ml##*[![:space:]]}"}"
   printf '%s' "$_ml"
 }
+# The WHOLE of a file that holds one value (the fingerprint), with only the
+# surrounding whitespace removed - CR and LF included. Anything inside the
+# value - an interior CR, a second line - is kept, so it fails the compare:
+# a malformed record never authorises a skip (Codex review round 1).
+gate_marker_text() {
+  local _mt=""
+  _mt=$(cat "$1" 2>/dev/null) || _mt=""
+  _mt="${_mt#"${_mt%%[![:space:]]*}"}"
+  _mt="${_mt%"${_mt##*[![:space:]]}"}"
+  printf '%s' "$_mt"
+}
 
 # Emergency lane. An incident is open, so this turn is not blocked and the
 # checks do not run - that is the entire point of declaring one, since these
@@ -1010,7 +1021,7 @@ FINGERPRINT=""
 if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ -z "$BUDGET_FLAG" ]; then
   FINGERPRINT=$(printf '%s\n' "$CHANGED" | "$FP_PY" "$FP_DIR/verify_fingerprint.py" "$PWD" 2>/dev/null)
   if [ -n "$FINGERPRINT" ] && [ -f "$FP_FILE" ] \
-     && [ "$FINGERPRINT" = "$(tr -d '\r' < "$FP_FILE" 2>/dev/null)" ]; then
+     && [ "$FINGERPRINT" = "$(gate_marker_text "$FP_FILE")" ]; then
     echo "verify-gate: nothing the gate depends on has changed since the last CLEAN run (fingerprint $FINGERPRINT) - checks were SKIPPED, not re-run. Edit a file, or run the gate with --all, to force them." >&2
     # The fingerprint only proves nothing changed; it says nothing about a
     # rule that was chronic/skipped/reach-excluded on a PRIOR run and has

@@ -86,6 +86,10 @@ STOP_BUDGET_MUTATIONS = (
      "  CAND=$(gate_marker_line .crew/.verify-verified-at)\n",
      "  read -r CAND < .crew/.verify-verified-at\n",
      "tests/test_verify_gate_baseline.py::test_an_orphan_branch_marker_written_with_crlf_is_still_refused[crlf]"),
+    ("a fingerprint with an interior CR authorises a skip (every CR dropped)", SH,
+     '     && [ "$FINGERPRINT" = "$(gate_marker_text "$FP_FILE")" ]; then\n',
+     '     && [ "$FINGERPRINT" = "$(tr -d \'\\r\' < "$FP_FILE")" ]; then\n',
+     "tests/test_verify_gate_fingerprint.py::test_a_malformed_fingerprint_file_never_skips[interior-cr-sh]"),
     # L-0905: the pricing floor, the sync payload and the dead producer.
     ("a cached zero prices a declared rule (the positive floor is dropped)", SH,
      "                            and cached > 0):\n"

@@ -262,7 +262,7 @@ only `bash "..."` and `& "..."` launcher commands (8 of each).
   history; one left by another branch is replaced by its merge-base with HEAD (refused with no shared history), the
   rule `BASE_AT` already had. Every marker or base file the gate reads (the verified marker, `BASE_AT`,
   `.crew/.deploy-in-flight`) goes through `gate_marker_line` (surrounding whitespace, a trailing CR included,
-  removed); the fingerprint compare drops CRs. The merge-base fallback keeps `BASE_FROM_MARKER=1`, so a quiet
+  removed); the fingerprint compare uses `gate_marker_text` (whole file, surrounding whitespace removed). The merge-base fallback keeps `BASE_FROM_MARKER=1`, so a quiet
   turn writes no `BASE_AT` while the stale marker remains.
 
 ## `scripts/check-marketplace.py` - the direct gate
