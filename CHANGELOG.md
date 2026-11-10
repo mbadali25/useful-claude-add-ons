@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- obsidian-vault 0.5.1: re-bump only - main's version carried in by this branch's earlier merge of main (commit bd1a467e8); main's own entry records the change and it has since moved to 0.5.2
 - crew 1.3.21: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.32; the change is recorded under crew 1.3.33
 - crew 1.3.24: re-bump only - interim number on the context-watch branch before main reached 1.3.25; the change is recorded under crew 1.3.26
 - crew 1.3.27: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.32; the change is recorded under crew 1.3.33
@@ -41,6 +42,29 @@ read entries under any `## [` heading.
 - crew 1.3.8: re-bump only - the human-only opt-out re-versioned so installs update (commit 438b1869c); recorded under crew 1.3.9
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
+
+### Fixed — install script: a piped `curl | bash` run no longer stops at find-skills, and find-skills installs user-level
+
+- **Summary.** The documented `curl … | bash` install now runs every selected step and prints its summary instead of stopping silently at `find-skills`, and `find-skills` lands in the user skills directory whatever directory the script was run from (bash side run against stubs on Linux; the PowerShell change was not executed).
+- **Cause, piped run.** Under `curl | bash` the script is bash's stdin and bash reads it a command
+  at a time. The `find-skills` step's `npx skills add` child inherited that pipe and read the rest
+  of the script, so community plugins and `claude-code-setup` never ran and no summary or
+  failed-step list was printed.
+- **Cause, wrong directory.** `npx skills add` was called without `--global`, so the `skills` CLI
+  wrote `./.claude/skills/find-skills` in the current directory and exited 0; the script's own
+  on-disk check then failed everywhere but `$HOME`.
+- **Fix.** `scripts/install-prerequisites.sh` is now one `{ … }` group, which bash parses to its
+  closing brace before running any of it, and the `find-skills` call is
+  `npx -y skills add … --global --yes </dev/null`. `scripts/install-prerequisites.ps1` passes the
+  same `--global --yes`; it has no stdin defect (`irm | iex` hands PowerShell the whole script as
+  one string), so it gets no wrapper.
+- **Rule for the next edit.** No code outside the brace group, and a child that could read stdin on
+  the piped path gets `</dev/null`. `scripts/_test/menu-groups.sh` case 9 pipes the script into
+  `bash -s` with stub `claude` and `npx` that drain stdin, in a temp `HOME`.
+- `INSTALLATION.md` and `MARKETPLACE.md` show the command as the scripts now run it. The README
+  install URLs are pinned to a commit and still serve the old scripts until they are re-pinned
+  after this merges.
+- No plugin or skill content changes, so no version moves.
 
 ### Added — crew 1.3.35: a stdlib checker for the review-finding rules (L-0715 PR B2)
 
