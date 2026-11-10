@@ -382,6 +382,12 @@
       "reach": "local",
       "why": "Windows 83s (win-repo-2, 2026-10-24): over the 60s Stop budget, deferred on a cold Windows checkout. T-0055: a PR that changes crew code touches a narrative crew doc or declares `Docs: none - <reason>`. Full rationale: docs/crew/verify-rationale.md#crew-docs-check-script" },
 
+    { "id": "changelog-per-version", "paths": ["scripts/check-changelog.py", "scripts/_test/check-changelog.py"],
+      "seconds": 80,
+      "run": ["python3 scripts/_test/check-changelog.py"],
+      "reach": "local",
+      "why": "Every version a branch sets owes a CHANGELOG.md entry or a `re-bump only` line. Suite only; the check itself runs in CI and gate-runner. Full rationale: docs/crew/verify-rationale.md#changelog-per-version" },
+
     { "id": "powershell-lint", "paths": ["**/*.ps1", "**/*.psm1"],
       "seconds": 5,
       "run": ["sh scripts/pwsh-isolated.sh -NoProfile -File ./scripts/check-powershell.ps1"],
