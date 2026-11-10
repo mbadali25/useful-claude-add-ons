@@ -44,8 +44,8 @@ STOP_BUDGET_MUTATIONS = (
      _T + "test_a_commit_on_the_default_branch_after_a_quiet_turn_is_in_scope[sh]"),
     # Review round 1 (Codex): the baseline's own guards, each both flavours.
     ("a baseline left on another branch is trusted", SH,
-     '      BASE=$(git merge-base "$CAND" HEAD 2>/dev/null) || BASE=""\n',
-     '      BASE="$CAND"\n',
+     '      BASE=$(git merge-base "$CAND" HEAD 2>/dev/null) || BASE=""\n    fi\n  fi\n  if [ -z "$BASE" ]; then\n',
+     '      BASE="$CAND"\n    fi\n  fi\n  if [ -z "$BASE" ]; then\n',
      _T + "test_a_baseline_left_on_another_branch_is_not_used[sh]"),
     ("a zero-command turn moves the baseline past a committed change", SH,
      '     && git diff --quiet "$BASE" HEAD -- 2>/dev/null; then\n',

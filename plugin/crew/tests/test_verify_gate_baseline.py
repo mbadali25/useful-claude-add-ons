@@ -277,8 +277,10 @@ def _marker_on_a_sibling_branch(tmp_path):
     sibling = _head(root)
     _git(root, "checkout", "-q", "main")
     _git(root, "checkout", "-q", "-b", "work")
+    # newline="\n": the gate writes the marker with printf (LF); a CRLF
+    # marker written by Python on Windows would not be read as a commit.
     (root / ".crew" / ".verify-verified-at").write_text(
-        sibling + "\n", encoding="utf-8")
+        sibling + "\n", encoding="utf-8", newline="\n")
     return root, sibling
 
 
@@ -325,7 +327,7 @@ def test_a_marker_sharing_no_history_with_head_is_refused(tmp_path):
     orphan = _head(root)
     _git(root, "checkout", "-q", "main")
     (root / ".crew" / ".verify-verified-at").write_text(
-        orphan + "\n", encoding="utf-8")
+        orphan + "\n", encoding="utf-8", newline="\n")
     (root / "mod.py").write_text("x = 1\n", encoding="utf-8")
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "committed on main")
