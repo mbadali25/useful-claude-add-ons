@@ -334,14 +334,14 @@ def test_ufw_adds_rule_and_is_idempotent(tmp_path):
     assert state.exists()
     logged = state.read_text(encoding="utf-8")
     assert "100.64.0.0/10" in logged
-    assert "9999" in logged
+    assert "9999" in logged and "10000" in logged  # ws:// (0.2.15 only) and wss://
     assert "tcp" in logged
 
     second = run_configure_firewall(bin_dir)
     assert second.returncode == 0, second.stderr
-    assert "already present" in second.stdout
-    # Still exactly one allow line: the second run did not add it again.
-    assert len(state.read_text(encoding="utf-8").splitlines()) == 1
+    assert "already present" in second.stdout and "added" not in second.stdout
+    # Still exactly one allow line per port: the second run did not add either again.
+    assert len(state.read_text(encoding="utf-8").splitlines()) == 2
 
 
 def test_firewalld_adds_rule_and_is_idempotent(tmp_path):
@@ -356,13 +356,13 @@ def test_firewalld_adds_rule_and_is_idempotent(tmp_path):
     assert "added" in first.stdout
     logged = state.read_text(encoding="utf-8")
     assert "100.64.0.0/10" in logged
-    assert '"9999"' in logged
+    assert '"9999"' in logged and '"10000"' in logged
     assert '"tcp"' in logged
 
     second = run_configure_firewall(bin_dir)
     assert second.returncode == 0, second.stderr
-    assert "already present" in second.stdout
-    assert len(state.read_text(encoding="utf-8").splitlines()) == 1
+    assert "already present" in second.stdout and "added" not in second.stdout
+    assert len(state.read_text(encoding="utf-8").splitlines()) == 2
 
 
 def test_ufw_preferred_over_firewalld(tmp_path):

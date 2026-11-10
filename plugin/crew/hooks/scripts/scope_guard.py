@@ -449,6 +449,9 @@ def decide(data):
 
 
 def main():
+    # One process judges one call: remember git's answers for it (see
+    # crew_ticket.memoize_git) instead of asking again at every step.
+    crew_ticket.memoize_git()
     data = _read_payload()
     try:
         code = decide(data)

@@ -464,6 +464,10 @@ async def peer_status() -> str:
         return f"✅ Connected as '{client.peer_name}' to the Bridge Server {bridge}"
     if client.token_refused:
         return f"❌ The Bridge Server {bridge} refused the token: check client.token in config.yaml"
+    if getattr(client, "pin_mismatch", False):
+        return (f"❌ The Bridge Server {bridge} presented a TLS certificate that does not match "
+                "client.bridge_fingerprint: not connected, token not sent. Re-pin (ai-connect pin) if the "
+                "Bridge's certificate was rotated")
     if client.standby:
         return f"⏸️ Standby: another session holds the name '{client.peer_name}' on the Bridge Server {bridge}"
     if client.reconnecting:

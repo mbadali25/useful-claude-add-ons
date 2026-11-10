@@ -281,7 +281,7 @@ def test_join_with_an_invite_on_linux_runs_tailscale_up_as_root(box, root):
     invite = box.tmp / "laptop.invite"
     invite.write_text(invite_code("laptop", "127.0.0.1", server.port), encoding="utf-8")
     try:
-        run = Phase(box, "join", "--invite-file", str(invite), extra_env=env)
+        run = Phase(box, "join", "--invite-file", str(invite), extra_env=env, non_root=not root)
     finally:
         server.close()
     assert run.res.returncode == 0, run.text

@@ -477,12 +477,6 @@ def test_autopilot_note_names_the_shipped_command_not_a_future_release():
 AUTOPILOT = {"mode": "off", "maxPhases": 12, "deploy": "none"}
 
 
-def _write_config(root, cfg):
-    text = json.dumps(cfg)
-    with open(os.path.join(root, ".crew", "config.json"), "w", encoding="utf-8") as fh:
-        fh.write(text)
-
-
 def _with_autopilot(root, value=None, **extra):
     """The fixture config with `autopilot` (and `extra` keys) added; the PM
     block is made non-autonomous so the PM note does not appear."""
