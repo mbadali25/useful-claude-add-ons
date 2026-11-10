@@ -36,9 +36,9 @@ def _tf(name):
     return f"{TFW}={name} terraform apply {PLAN}"
 
 
-def _repo(pre=PRE, **extra):
+def _repo(pre=None, **extra):
     cfg = copy.deepcopy(HOSTS)
-    cfg["environments"] = {"nonProd": [], "preProduction": copy.deepcopy(pre)}
+    cfg["environments"] = {"nonProd": [], "preProduction": copy.deepcopy(PRE if pre is None else pre)}
     cfg.update(copy.deepcopy(extra))
     return cfg
 

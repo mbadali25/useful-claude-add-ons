@@ -73,7 +73,8 @@ PREPRODUCTION_MUTATIONS = (
      'audits = audits if worst == "allow" else []', 'audits = audits',
      _T + "test_an_unlisted_production_target_is_still_refused[ssh-listed-plus-unlisted-same-line]"),
     ("preProduction: a nonProd glob's allow is claimed as an exemption", PRE,
-     "    if entry is None or any(fnmatch.fnmatch(value.lower(), g.lower())\n                            for g in declared):",
+     "    if entry is None or any(fnmatch.fnmatch(value.lower(), g.lower())\n"
+     "                            for g in declared):",
      "    if entry is None:",
      _T + "test_a_name_the_nonprod_globs_already_cover_is_not_claimed"),
     # --- must-allow non-vacuity: an allow path broken the cases must catch
