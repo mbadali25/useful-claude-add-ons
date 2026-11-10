@@ -37,8 +37,12 @@ WORKTREES_MUTATIONS = (
      "    if False:\n",
      _T + "test_remove_needs_the_owners_yes"),
     ("worktrees: remove forces", WT,
-     '    code, _, err = _git(main, "worktree", "remove", target["path"])\n    if code != 0:\n        return False, f"git worktree remove failed',
-     '    code, _, err = _git(main, "worktree", "remove", "--force", target["path"])\n    if code != 0:\n        return False, f"git worktree remove failed',
+     ('    code, _, err = _git(main, "worktree", "remove", target["path"])\n'
+      '    if code != 0:\n'
+      '        return False, f"git worktree remove failed'),
+     ('    code, _, err = _git(main, "worktree", "remove", "--force", target["path"])\n'
+      '    if code != 0:\n'
+      '        return False, f"git worktree remove failed'),
      _T + "test_remove_never_forces"),
     ("worktrees: a could-not-tell dirty probe counts as clean", WT,
      '    if row["dirty"] is not False:\n',
@@ -73,16 +77,27 @@ WORKTREES_MUTATIONS = (
      "    if False:\n        return False, f\"refused: {dest} exists",
      _T + "test_hook_create_reuses_its_own_worktree_and_refuses_a_stranger_directory"),
     ("worktrees: the hook removes the main checkout", WT,
-     "    target = next((r for r in found[1:] if _norm(r[\"path\"]) == _norm(path)), None)\n    if target is None:\n        return False, f\"refused: {path} is not a linked worktree\"",
-     "    target = next((r for r in found if _norm(r[\"path\"]) == _norm(path)), None)\n    if target is None:\n        return False, f\"refused: {path} is not a linked worktree\"",
+     ("    target = next((r for r in found[1:] if _norm(r[\"path\"]) == _norm(path)), None)\n"
+      "    if target is None:\n"
+      "        return False, f\"refused: {path} is not a linked worktree\""),
+     ("    target = next((r for r in found if _norm(r[\"path\"]) == _norm(path)), None)\n"
+      "    if target is None:\n"
+      "        return False, f\"refused: {path} is not a linked worktree\""),
      _T + "test_hook_remove_refuses_the_main_checkout_and_a_path_that_is_not_a_worktree"),
     ("worktrees: the hook forces its removal", WT,
-     '    code, _, err = _git(main, "worktree", "remove", target["path"])\n    if code != 0:\n        return False, f"left in place',
-     '    code, _, err = _git(main, "worktree", "remove", "--force", target["path"])\n    if code != 0:\n        return False, f"left in place',
+     ('    code, _, err = _git(main, "worktree", "remove", target["path"])\n'
+      '    if code != 0:\n'
+      '        return False, f"left in place'),
+     ('    code, _, err = _git(main, "worktree", "remove", "--force", target["path"])\n'
+      '    if code != 0:\n'
+      '        return False, f"left in place'),
      _T + "test_hook_remove_leaves_uncommitted_work_and_unmerged_commits_in_place"),
     ("worktrees: the hook prints more than the path on stdout", WT,
      "        if ok:\n            print(message)\n            return 0\n        print(message, file=sys.stderr)",
-     "        if ok:\n            print(\"created\" + message)\n            return 0\n        print(message, file=sys.stderr)",
+     ("        if ok:\n"
+      "            print(\"created\" + message)\n"
+      "            return 0\n"
+      "        print(message, file=sys.stderr)"),
      _T + "test_the_hook_cli_prints_only_the_path_on_stdout_and_exits_1_on_refusal"),
     ("worktrees: the wave admits any directory", CW,
      "        if not (standard and os.path.normcase(os.path.realpath(top)).startswith(",

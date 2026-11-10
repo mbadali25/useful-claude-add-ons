@@ -32,7 +32,6 @@ files, or commits no remote has.
 from __future__ import annotations
 
 import argparse
-import datetime
 import json
 import os
 import re
@@ -44,6 +43,7 @@ import time
 if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import crew_common  # noqa: E402  pylint: disable=wrong-import-position
 import crew_state  # noqa: E402  pylint: disable=wrong-import-position
 
 DEFAULT_BASE = os.path.join("~", ".claude", "crew", "worktrees")
@@ -63,8 +63,9 @@ class WorktreeRootError(ValueError):
 def _git(cwd, *args, timeout=60):
     """(returncode, stdout, stderr); returncode None when git could not run."""
     try:
-        done = subprocess.run(["git", "-C", cwd] + list(args), capture_output=True, text=True,
-                              check=False, timeout=timeout, stdin=subprocess.DEVNULL)
+        done = subprocess.run([crew_common.require_tool("git"), "-C", cwd] + list(args),
+                              capture_output=True, text=True, check=False, timeout=timeout,
+                              stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "", f"{type(exc).__name__}: {exc}"
     return done.returncode, done.stdout, done.stderr.strip()
@@ -448,7 +449,7 @@ def _stdin_payload():
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="crew_worktrees.py", description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(prog="crew_worktrees.py", description=__doc__.split("\n", 1)[0])
     parser.add_argument("command", choices=["root", "path", "list", "remove", "hook-snippet",
                                             "hook-create", "hook-remove", "status"])
     parser.add_argument("target", nargs="?", default=None)

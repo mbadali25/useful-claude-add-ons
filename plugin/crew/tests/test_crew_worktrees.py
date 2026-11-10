@@ -190,9 +190,14 @@ def test_a_clean_merged_pushed_old_worktree_is_removable(repo):
     assert (row["removable"], row["where"], row["why"]) == (True, "standard", [])
 
 
+def _write(path, name, text):
+    with open(os.path.join(path, name), "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
 @pytest.mark.parametrize("make, reason", [
-    (lambda p: open(os.path.join(p, "a.txt"), "w", encoding="utf-8").write("changed\n"), "uncommitted"),
-    (lambda p: open(os.path.join(p, "new.txt"), "w", encoding="utf-8").write("x\n"), "uncommitted"),
+    (lambda p: _write(p, "a.txt", "changed\n"), "uncommitted"),
+    (lambda p: _write(p, "new.txt", "x\n"), "uncommitted"),
 ])
 def test_uncommitted_or_untracked_work_is_never_removable(repo, make, reason):
     path = _lane(repo, "wip")
@@ -444,9 +449,9 @@ def test_hook_remove_refuses_the_main_checkout_and_a_path_that_is_not_a_worktree
 
 
 def test_the_hook_cli_prints_only_the_path_on_stdout_and_exits_1_on_refusal(repo):
-    run = lambda payload: subprocess.run(  # noqa: E731
-        [sys.executable, _SCRIPT, "hook-create"], input=json.dumps(payload), capture_output=True,
-        text=True, check=False, cwd=str(repo))
+    def run(payload):
+        return subprocess.run([sys.executable, _SCRIPT, "hook-create"], input=json.dumps(payload),
+                              capture_output=True, text=True, check=False, cwd=str(repo))
 
     good = run({"cwd": str(repo), "name": "cli"})
     bad = run({"cwd": str(repo), "name": "../x"})
