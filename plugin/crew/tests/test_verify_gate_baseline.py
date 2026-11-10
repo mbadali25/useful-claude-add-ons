@@ -440,3 +440,13 @@ def test_a_crlf_deploy_marker_with_no_row_still_blocks(tmp_path):
     _deploy_marker(root, b"qa abc123\r\n", None)
     assert _run(root) == 2
     assert (root / ".crew" / ".deploy-in-flight").exists()
+
+
+def test_a_base_at_holding_a_nul_byte_is_refused(tmp_path):
+    """MUST-BLOCK: `<sha>\\0\\r\\n` is not a clean baseline. Bash would drop
+    the NUL and the trim the CR, so the reader treats any NUL-bearing file
+    as unreadable, and an unreadable base-at is refused (exit 2), not used."""
+    root = _repo(tmp_path)          # on main, no marker
+    (root / ".crew" / ".verify-gate.base-at").write_bytes(
+        _head(root).encode("ascii") + b"\0\r\n")
+    assert _run(root) == 2

@@ -152,18 +152,20 @@ def test_a_crlf_fingerprint_file_still_matches(flavour, wrap, tmp_path):
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
-@pytest.mark.parametrize("damage", ["interior-cr", "second-line"])
+@pytest.mark.parametrize("damage", ["interior-cr", "second-line", "nul-crlf"])
 def test_a_malformed_fingerprint_file_never_skips(flavour, damage, tmp_path):
     """MUST-BLOCK the skip: trimming must not let damage inside the value
-    authorise one (Codex review round 1). An interior CR, or a second line
-    after the digest, fails the compare and the checks run."""
+    authorise one (Codex review rounds 1 and 2). An interior CR, a second line
+    after the digest, or a NUL byte fails the compare and the checks run."""
     root = _repo(tmp_path)
     first = _run(flavour, root)
     assert _ran(first), first.stderr
     fp = root / ".crew" / ".verify-gate.fingerprint"
     digest = fp.read_text(encoding="utf-8").strip().encode("ascii")
-    body = (digest[:8] + b"\r" + digest[8:] + b"\n" if damage == "interior-cr"
-            else digest + b"\r\nextra\r\n")
+    body = {"interior-cr": digest[:8] + b"\r" + digest[8:] + b"\n",
+            "second-line": digest + b"\r\nextra\r\n",
+            # Bash drops the NUL in $(...), so a trim alone matched (round 2).
+            "nul-crlf": digest + b"\0\r\n"}[damage]
     fp.write_bytes(body)
     second = _run(flavour, root)
     assert second.returncode == 0, second.stderr

@@ -90,6 +90,10 @@ STOP_BUDGET_MUTATIONS = (
      '     && [ "$FINGERPRINT" = "$(gate_marker_text "$FP_FILE")" ]; then\n',
      '     && [ "$FINGERPRINT" = "$(tr -d \'\\r\' < "$FP_FILE")" ]; then\n',
      "tests/test_verify_gate_fingerprint.py::test_a_malformed_fingerprint_file_never_skips[interior-cr-sh]"),
+    ("a NUL-bearing marker file reads as its trimmed value", SH,
+     "  gate_marker_has_nul \"$1\" && return 0\n  _mt=$(cat",
+     "  _mt=$(cat",
+     "tests/test_verify_gate_fingerprint.py::test_a_malformed_fingerprint_file_never_skips[nul-crlf-sh]"),
     # L-0905: the pricing floor, the sync payload and the dead producer.
     ("a cached zero prices a declared rule (the positive floor is dropped)", SH,
      "                            and cached > 0):\n"

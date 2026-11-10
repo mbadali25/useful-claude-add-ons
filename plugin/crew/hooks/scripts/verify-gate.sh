@@ -506,8 +506,20 @@ _crew_gate_quiet_install
 # kept, so a line with two words stays one value that names no commit. A file
 # with no newline at all still yields its line. Only ever called on a regular
 # file ([ -f ]), never a FIFO, which would hang `read` waiting for a writer.
+#
+# A file holding a NUL byte reads as EMPTY, the value its caller already
+# treats as unreadable. Bash drops a NUL in `read` and in `$(...)` without a
+# word, so `<digest>\0\r\n` would otherwise trim to a clean value and a
+# malformed record would count (Codex review round 2).
+gate_marker_has_nul() {
+  local _nn
+  _nn=$(LC_ALL=C tr -dc '\000' < "$1" 2>/dev/null | wc -c) || return 0
+  _nn=${_nn//[[:space:]]/}
+  [ "${_nn:-1}" != 0 ]
+}
 gate_marker_line() {
   local _ml=""
+  gate_marker_has_nul "$1" && return 0
   IFS= read -r _ml < "$1" 2>/dev/null || [ -n "$_ml" ] || _ml=""
   _ml="${_ml#"${_ml%%[![:space:]]*}"}"
   _ml="${_ml%"${_ml##*[![:space:]]}"}"
@@ -519,6 +531,7 @@ gate_marker_line() {
 # a malformed record never authorises a skip (Codex review round 1).
 gate_marker_text() {
   local _mt=""
+  gate_marker_has_nul "$1" && return 0
   _mt=$(cat "$1" 2>/dev/null) || _mt=""
   _mt="${_mt#"${_mt%%[![:space:]]*}"}"
   _mt="${_mt%"${_mt##*[![:space:]]}"}"
