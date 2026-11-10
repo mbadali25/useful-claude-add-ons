@@ -170,6 +170,31 @@ _HIDE_MARKDOWN = (
 )
 
 
+# Loads build.py, swaps render_engine for a recorder, and checks which platforms
+# reach soffice. Word is reported absent so win32 takes the skip branch.
+_OS_GATE = (
+    "import importlib.util, sys\n"
+    "spec = importlib.util.spec_from_file_location('build_under_test', sys.argv[1])\n"
+    "mod = importlib.util.module_from_spec(spec)\n"
+    "spec.loader.exec_module(mod)\n"
+    "g = mod.__dict__\n"
+    "calls = []\n"
+    "class Fake:\n"
+    "    @staticmethod\n"
+    "    def to_soffice(*a, **k):\n"
+    "        calls.append(a); return 0\n"
+    "    @staticmethod\n"
+    "    def _word_com_available():\n"
+    "        return False\n"
+    "g['render_engine'] = Fake\n"
+    "rc = {p: g['convert_for_os']('x.html', platform=p) for p in\n"
+    "      ('linux', 'win32', 'darwin')}\n"
+    "assert rc == {'linux': 0, 'win32': 0, 'darwin': 0}, rc\n"
+    "assert len(calls) == 1, calls\n"
+    "print('OS-GATE-OK')\n"
+)
+
+
 def guide_names():
     """The guide names build.py builds, read from its GUIDES table."""
     with open(BUILD, encoding="utf-8") as fh:
@@ -273,6 +298,12 @@ def main():
     code, out = run_build_check(SRC, extra=_HIDE_MARKDOWN)
     report(code == 2 and "DID NOT RUN" in out,
            "build.py --check exits 2 when markdown cannot be imported", f"exit {code}: {out}")
+
+    # Owner rule 2026-11-10: LibreOffice runs on Linux only. convert_for_os must
+    # reach soffice on linux and never on win32/darwin.
+    code, out = run_build_check(SRC, extra=_OS_GATE)
+    report(code == 0 and "OS-GATE-OK" in out,
+           "build.py convert_for_os runs soffice on linux only", f"exit {code}: {out}")
 
     if failures:
         print("\ncrew-guide suite FAILED:")

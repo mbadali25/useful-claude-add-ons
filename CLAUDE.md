@@ -101,6 +101,16 @@ or the 15-20 s guard caps), reduce lanes rather than disable guards. ALL communi
 outbound sends and condensing inbound messages, goes through one `crew:session-relay` agent kept
 available for the session; the main session never sends to a peer directly.
 
+## Standing rule - LibreOffice runs on Linux only
+
+**LibreOffice (`soffice`) is only run on Linux. On any other system, build `.docx`/`.pdf` with
+Microsoft Office (Word over COM on Windows).** Owner rule, 2026-11-10 ("LibreOffice should only be
+run on Linux systems ... On other systems, you can use Office ... I know it's two separate
+processes"). They are separate processes, so a build branches on the platform and never falls back
+from one to the other; a machine with neither builds the HTML only and says what it skipped.
+`docs/guides/crew/src/build.py` (`convert_for_os`) enforces it; `skills/doc-builder` has its own
+`--renderer` choice and is outside this rule's enforcement.
+
 ## Standing rule - verify before you state a problem
 
 **Before stating anything as a problem (bug, cause, failure, risk), verify it** by running the state
