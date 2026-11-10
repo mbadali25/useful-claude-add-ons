@@ -25,6 +25,7 @@ import pytest
 import crew_fixtures
 
 import context  # noqa: F401  pylint: disable=unused-import
+from _train_base import TRAIN_BASE, seed_train_base
 
 _GATE = (pathlib.Path(__file__).resolve().parents[1]
          / "hooks" / "scripts" / "promote-gate.sh")
@@ -49,6 +50,7 @@ def _fixture(tmp_path, verified_line):
                  ["config", "user.email", "t@example.invalid"],
                  ["config", "user.name", "T"]):
         subprocess.run(["git"] + args, cwd=root, check=False)
+    seed_train_base(root)
     (root / "README.md").write_text("x\n", encoding="utf-8")
     (root / "runbook.md").write_text(
         f"# Rollback\n{verified_line}\n", encoding="utf-8")
@@ -56,7 +58,8 @@ def _fixture(tmp_path, verified_line):
         "environments": {
             # L-0703: review evidence opted out; test_promote_gate_review.py owns it.
             "prod": {"deploy": "deploy-prod", "rollback": "runbook.md",
-                     "requireReview": False, "reviewReason": "fixture"}}},
+                     "requireReview": False, "reviewReason": "fixture",
+                     "reviewWaiverSha": TRAIN_BASE}}},
     ), encoding="utf-8")
     subprocess.run(["git", "add", "-A", "-f"], cwd=root, check=False)
     subprocess.run(["git", "commit", "-q", "-m", "fixture"],
