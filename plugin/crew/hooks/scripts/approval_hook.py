@@ -651,8 +651,8 @@ def _approve_mass(root, data, args):
         os.makedirs(directory, exist_ok=True)
         final = os.path.join(directory, args + ".json")
         tmp = f"{final}.{uuid.uuid4().hex}.tmp"
-        with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(text)
+        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(text)
         os.replace(tmp, final)
     except OSError as exc:
         return _refuse_command(MASS_COMMAND, f"the approval could not be written ({exc})")
