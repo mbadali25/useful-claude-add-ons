@@ -1,5 +1,5 @@
 """Mass delete, mass create, mass change: the stop that stays when a human step
-is opted out of (crew 1.3.28).
+is opted out of (crew 1.3.34).
 
 The owner's rule: full automation, except a MASS delete, a MASS create or a MASS
 change, which wait for a human yes. This module is that exception. It is armed

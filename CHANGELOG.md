@@ -29,12 +29,34 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
-- crew 1.3.21: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.26; the change is recorded under crew 1.3.27
+- crew 1.3.21: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.32; the change is recorded under crew 1.3.33
 - crew 1.3.24: re-bump only - interim number on the context-watch branch before main reached 1.3.25; the change is recorded under crew 1.3.26
+- crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.33; the change is recorded under crew 1.3.34
+- crew 1.3.27: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.32; the change is recorded under crew 1.3.33
+- crew 1.3.32: re-bump only - the two tests that patch `no_round_after_successor` now patch it in `crew_autopilot_replan` (tests only); the change is recorded under crew 1.3.19
+- crew 1.3.31: re-bump only - merge of main's crew 1.3.30 into the L-0717 budget branch; the budget change is recorded under crew 1.3.19 and 1.3.20, and `no_round_after_successor` moved from `crew_autopilot.py` to `crew_autopilot_replan.py` to stay under the 3400-line module limit
+- crew 1.2.85: re-bump only - interim number on the L-0717 branch (commit 4a4ae04); the change is recorded under crew 1.3.19
+- crew 1.2.87: re-bump only - interim number on the L-0717 branch (commit e8a027c); the change is recorded under crew 1.3.19
+- crew 1.2.88: re-bump only - interim number on the L-0717 branch (commit 188cded); the change is recorded under crew 1.3.19
+- crew 1.2.88: re-bump only - interim number on the L-0718 branch (commit e2f8ab0); the change is recorded under crew 1.3.30
+- crew 1.2.90: re-bump only - interim number on the L-0718 branch (commit ee4309a); the change is recorded under crew 1.3.30
+- crew 1.2.22: re-bump only - interim re-bump on the L-0768 branch (commit f7e38e3); the change is recorded under crew 1.3.25
+- crew 1.2.29: re-bump only - interim re-bump on this branch after merging main (commit a7f25e1); the change is recorded under crew 1.3.26
+- crew 1.2.27: re-bump only - interim re-bump on the L-0768 branch after merging main (commit 0f5c3e91c); the change is recorded under crew 1.3.25
+- crew 1.3.19: re-bump only - re-bump after merging main's crew 1.3.18 (commit c124014f4); the change is recorded under crew 1.3.25
+- crew 1.3.24: re-bump only - tree-policy fixtures name the train base in reviewWaiverSha (commit 363364791); recorded under crew 1.3.25
+- crew 1.3.2: re-bump only - drift-check bump for the diff-base note fix (commits a514c5405, 48ce2f0ae); its change is recorded under crew 1.3.6's entry
+- crew 1.3.3: re-bump only - drift-check bump for a test change (commits 05f18d246, 1cfde9907)
+- crew 1.3.4: re-bump only - the failed-buffer-split fix (commit b0845f0c6); recorded under crew 1.3.6
+- crew 1.3.5: re-bump only - drift-check bump after merging main's crew test change (commit 42251fce6)
+- crew 1.3.7: re-bump only - re-bump above main's crew 1.2.122 (commit 2f019af34); the change is recorded under crew 1.3.9
+- crew 1.3.8: re-bump only - the human-only opt-out re-versioned so installs update (commit 438b1869c); recorded under crew 1.3.9
+- crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
+- crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 
-### Added — crew 1.3.28: the mass delete, create and change stop (`guards.mass`)
+### Added — crew 1.3.34: the mass delete, create and change stop (`guards.mass`)
 
-- **Summary.** `crew` 1.3.28: with `guards.mass.enabled: true` (or a double-confirmed `humanOnly` opt-out) the cloud guard's hook stops a shell command that would delete 10 or more files, create 20 or more, or change 30 or more, until you type `/crew:approve-mass <id>`; everything else stays automatic. Off by default.
+- **Summary.** `crew` 1.3.34: with `guards.mass.enabled: true` (or a double-confirmed `humanOnly` opt-out) the cloud guard's hook stops a shell command that would delete 10 or more files, create 20 or more, or change 30 or more, until you type `/crew:approve-mass <id>`; everything else stays automatic. Off by default.
 - Limits (`guards.mass.deleteCount` 10, `createCount` 20, `changeCount` 30) were measured on this repo's own history: 104 days, 623 merged PRs (a PR adds a median 0 and p95 16 files, changes a median 5 and p95 30, deletes none in all but 15; 10 trips 5 PRs, 20 trips 29, 30 trips 35). `guards.mass.overrides.<files|git|terraform>.<limit>` replaces one; terraform defaults to delete 3, create 10, change 10 (inferred - the history held no terraform). The machine file sets limits and `guards.mass.exempt`; the repo file can only lower a limit or turn the stop on.
 - What it counts: `rm`, `Remove-Item`, `git clean -f`, `git rm` (delete); `cp`, `mv`, `rsync`, `Copy-Item`, `touch` (create and change); `sed -i`, `git reset --hard`, `git checkout -- <paths>`, `git restore` (change); `git commit`, `git push` and `gh pr create` count the branch's added, deleted and changed files against its base, so Write and Edit work is caught where it is about to be shared; `terraform apply <plan>` (from `terraform show -json`), `destroy`, `apply -auto-approve`; an unfiltered SQL `DELETE` or `UPDATE`. A count that cannot be taken (a variable in a path, a path after `cd`, `find -delete`, `xargs rm`, a failed `git`, any row count) stops: could not tell is mass. node_modules, `__pycache__`, `.venv`, caches, `build`, `dist`, `.work`, egg-info and worktrees (including `~/.claude/crew/worktrees/<repo>/<name>`) never count.
 - Attended, the stop is an `ask`; unattended a `deny`. It prints a 12-digit id binding the exact command and worktree; `/crew:approve-mass <id>` (new `commands/approve-mass.md`; recorded by the harness half's prompt hook) approves that command for 15 minutes, and one id covers every limit it trips. A command that writes `mass-approvals` is refused.
@@ -52,6 +74,50 @@ read entries under any `## [` heading.
 - Tests: `test_humanonly_live.py` (51 cases: must-allow with a real propose/confirm/confirm, must-block for no receipt, tracked file, repo `true` veto, other key, resolver raising/odd answers, quoted or malformed commands, no prompt id, the store). `humanonly_mutations.py` is wired into `sabotage.py`: 27 entries, 11 new, all seen red (the first run caught one vacuous mutation - a mid-sentence command with trailing words was refused for its bad id, not for being quoted - fixed by a case whose id is exact).
 - Harness-only PR (`approval_hook.py`, `approval-hook.sh`, `crew_hook.py`, `crew_ticket.py`, `scope_guard.py`, `sabotage.py`). Stale text that cannot ride with it - `commands/confirm-config.md`, `commands/approve.md`, `commands/config.md`, `crew_keys.py`'s two rows and `crew_humanonly.SENSITIVE_REFUSAL` still say "no hook acts" - is fixed in the follow-up PR, which also adds `commands/approve-mass.md`.
 
+### Added — crew 1.3.33: the human-only opt-out goes live for plan approval (harness half)
+
+- **Summary.** `crew` 1.3.33: once you have typed `/crew:confirm-config <id>` twice, `humanOnly.approve: false` now takes effect (an autopilot-recorded approval counts without hand-editing `scope.allowCliApproval`), and `/crew:approve-mass <id>` exists as a user-typed yes that the session cannot write; `humanOnly.promoteMarker` is still read by no hook.
+- `crew_ticket.cli_approval_allowed` is the one decision point: `scope.allowCliApproval` exactly true, OR `crew_humanonly.resolve(top, "approve")` answering exactly `humanOnly: False` (module missing, resolver raising, any other answer: human-only). `accepted`, the scope guard, the Stop audit and every autopilot reader already call it, so they agree by construction. `scope_guard.py` still refuses the session running `crew_ticket.py approve`; the session's route is `crew_autopilot.py approve`, which still needs `autopilot.approval` `self`/`risk`.
+- `approval_hook.py` (UserPromptSubmit) records `/crew:confirm-config <change_id>` (via `crew_confirm_config.confirm`, `via=user-prompt`, the payload's `prompt_id`; two distinct prompts apply it) and `/crew:approve-mass <id>` (`<git-common-dir>/crew/mass-approvals/<id>.json`, 15 minutes, id must be 12 lowercase hex digits). One line, command alone, raw or expanded form, as `/crew:approve`; a command quoted mid-sentence is nothing. `approval-hook.sh` passes a prompt naming `crew:confirm-config` (it has no `approve` in it) and, with no python, blocks it with its own message (added to `crew_hook.NO_PYTHON_REFUSALS`).
+- `scope_guard.py` refuses Write/Edit under `~/.claude/crew/confirm-config/` and a shell command naming that store beside a writing word. A tripwire, not a sandbox: arbitrary python can still forge a receipt, and `scope.mode: off` has none. Stated in CONFIG.md.
+- Tests: `test_humanonly_live.py` (51 cases: must-allow with a real propose/confirm/confirm, must-block for no receipt, tracked file, repo `true` veto, other key, resolver raising/odd answers, quoted or malformed commands, no prompt id, the store). `humanonly_mutations.py` is wired into `sabotage.py`: 27 entries, 11 new, all seen red (the first run caught one vacuous mutation - a mid-sentence command with trailing words was refused for its bad id, not for being quoted - fixed by a case whose id is exact).
+- Harness-only PR (`approval_hook.py`, `approval-hook.sh`, `crew_hook.py`, `crew_ticket.py`, `scope_guard.py`, `sabotage.py`). Stale text that cannot ride with it - `commands/confirm-config.md`, `commands/approve.md`, `commands/config.md`, `crew_keys.py`'s two rows and `crew_humanonly.SENSITIVE_REFUSAL` still say "no hook acts" - is fixed in the follow-up PR, which also adds `commands/approve-mass.md`.
+
+### Fixed — crew 1.3.20: the docs no longer say a successor plan opens a fresh review budget (L-0717)
+
+- **Summary.** `crew` 1.3.20: `plugin/crew/README.md` and `docs/crew/config-rationale.md` said the NEEDS_REPLAN -> IN_REVIEW successor continuation opens a fresh review budget; since 1.3.19 it keeps the budget the ticket has left. Wording only, no code change.
+- Docs: the two files above; the crew guide does not carry the phrase (`build.py --check` clean).
+
+### Changed — crew 1.3.19: one review budget of three per ticket, counted across successor plans; the owner's `--grant-round` (L-0717, absorbs L-0781)
+
+- **Summary.** `crew` 1.3.19: a ticket now gets three review rounds in total, a successor plan no longer reopens them, and only the owner's `review_ledger.py --grant-round` adds a round.
+- `review_ledger.py`: `BUDGET` 3, `REFUND_LIMIT` 3 counted per ticket, a recorded `grants` list (malformed is could-not-tell), `--grant-round --by --reason` (refused while rounds remain, for `auto:`/autopilot names, multi-line text), successor rows carry `carry_over: true` (a row written before keeps resetting). `scope_guard.py` refuses the verb to subagents with every abbreviation; `review_run.py` and `crew_status.py` print the ledger's budget; `crew_autopilot.py` refuses an auto-reject whose successor would have no round (seam; bug fix under the L-0727 freeze, manifest updated). Docs: updated, with a drift test (`test_review_budget.py`).
+### Added — crew 1.3.30: `crew_standards.py export` publishes the standards to PR-side reviewers (L-0718)
+
+- **Summary.** `crew` 1.3.30: a repo that opts in (`export:` in `.crew/standards.md`) gets `docs/review-rules/<SET>.md`, `REVIEW.md`, `.cursor/BUGBOT.md` and a `## Code Review Rules` block in `AGENTS.md`, generated from the same standards `/crew:review` hands its own reviewer and checked for staleness by `export --check`.
+- `plugin/crew/hooks/scripts/crew_standards.py`: new `export --write | --check | --dry-run`; Rule, Self-check and Supplements only (never Why or Earned by), one file per set under a 28,000-character budget (Bugbot truncates a rule at 30,000), refused rather than truncated; `--check` compares by the standards' content digest and the crew version, and reports orphans; a crew-generated `AGENTS.md` is refused. `crew_docs_check.py` gains a `standards export` row; `.crew/verify.json` gains rule `standards-export`. This repository opts in. Because every output records the crew version, each crew release PR in an opted-in repo reruns `export --write`. Docs: README, the standards skills, `/crew:init`, the daily-loop and review notes and the guides.
+
+### Fixed — crew 1.3.29: the backgrounded-process wallclock test compares against a baseline gate run
+
+- **Summary.** A flaky Windows CI test now measures the gate against its own no-op run instead of a fixed 6-second limit.
+- `test_rule_that_backgrounds_a_process_does_not_hold_the_hook_open` asserted `elapsed < 6` against `(sleep 8 &); true`, but the plain gate takes 9.6-18.7s on loaded Windows runners (main run 42734866921 failed at 6.09s; PR #679 at 8.8s and 6.5s), so the bound could not tell a fixed gate from a broken one. It now times the same gate with a no-op rule, then with `(sleep 25 &); true`, and asserts the exit code is 0, elapsed is under 25s and elapsed is under the baseline plus 12s. With the `4>&-` removed from the rule launch the test fails (25.4s against a 0.8s baseline). Test-only; no gate behaviour changed.
+
+### Fixed — crew 1.3.28: the environment guard's review fixes, re-applied on the L-0725 guard (L-0772)
+
+- **Summary.** `crew` 1.3.28: the environment guard no longer misses attached code (`bash -c'env'`, `node -pe`) or a globbed program name, and an explicit `guards.envGuard: null` now blocks instead of switching it off.
+- Re-applied from PR #603 (L-0772-fix, which could not merge after L-0725 rewrote the config handling and L-0867 removed `env-guard.ps1`) onto current main. The no-python fallbacks (BLOCKs 3 and 4) are already covered by main's `crew_guard_layer_armed` and `env_guard._layer_text_armed`, so only the python judge and the null rule were ported; the `.ps1` fix is not ported.
+- **Attached code.** `-cCODE`, `-eCODE` and `-neCODE` are scanned, and a run of code letters (`node -pe 'process.env'`) is read every way it could split. A globbed or brace-expanded program name (`/usr/bin/en?`, `e{n,}v`) and a non-literal name in inline code (`os.environ[name]`) are could-not-tell. `env --help`, `env --version` and `printenv --help` are allowed.
+- **`guards.envGuard: null`** is `block`, the floor, in either layer: only an absent key is `off` (`crew_guards.NULL_IS_MALFORMED`, read by `layer_guard_state`). `roleWrites` and `cloudGuard` are unchanged.
+- **Security passes from #603.** `$'\u0065nv'` and `$'\x{65}nv'` decode to `env`; an option that takes an argument (`node -r dotenv/config`, `python3 -W x`) no longer hides the `-c`/`-e` code after it; `powershell 'gci env:'` and `pwsh` options are read in any order; `/proc/self//environ`, `/./` and `/../` spellings are folded; a name assigned from a credential is a credential for the rest of the command (`env T="$TOKEN" printenv T`); a program from `${X:-env}`, a shell or interpreter left to read its code from stdin, a command substitution inside `(( ))` and a non-literal `.../environ` path are could-not-tell; `trap CODE` and `su -c CODE` are read; `cmd //c set` is `cmd /c set`.
+- **Hook input** without a string `tool_name` is `could-not-tell:malformed-input`.
+- **`plugin-hooks:<name>`** reports a `hooks.json` that is a directory or cannot be decoded as could-not-verify, never a zero or a crash.
+- Docs: `plugin/crew/CONFIG.md` (envGuard null) and the troubleshooting guide's could-not-tell forms, rebuilt as HTML/DOCX/PDF.
+
+### Fixed — crew 1.3.27: the lock test no longer fails when it lists the lock mid-rename of `owner`
+
+- **Summary.** `crew` 1.3.27: test-only. `test_the_lock_never_records_a_pid` listed the lock directory as soon as `token` appeared and allowed only the name `owner`, but `verify-gate.sh` writes `owner.tmp.<pid>` and renames it to `owner`, so a listing in that window failed with `AssertionError: ['owner.tmp.515831', 'token']` (it failed required CI `test (3.12)` on PRs #679 and #597). The test now also ignores `owner.tmp.*`; a `pid` file or any other name still fails. No gate code changed.
+- Tests: 20 consecutive passes on Linux; sabotaged by hand: the gate writing `$LOCK/pid` turns it red (`the lock records a PID again: ['owner', 'pid', 'token']`).
+
 ### Fixed — crew 1.3.26: context-watch's no-op Stop turn starts one process, not a dozen
 
 - **Summary.** `crew` 1.3.26: the Stop hook `context-watch.sh` clears an ordinary turn with one python start instead of five plus a handful of helper programs, so it no longer runs into its 20 s limit on a loaded Git Bash host; what it warns about and when is unchanged.
@@ -60,19 +126,6 @@ read entries under any `## [` heading.
 - Decisions unchanged. One edge differs: a payload carrying two `"cwd"` keys used to make the hook exit 0 without checking anything; the first key now wins. A non-ASCII character in a session id is passed on as `?`, which the session key turns into `_` exactly as before.
 - Tests: `tests/test_context_watch_spawns.py` (the no-op path starts one python and none of `dirname cat grep sed tr cygpath timeout`; over the threshold it still blocks; a disabled or malformed `context` block still stands down; `stop_hook_active` is left alone), sabotaged by hand: `INPUT=$(cat)`, an extra python, a `grep` for `cwd` and `dirname` for `$DIR` each turn it red.
 - Docs: none - an internal process-count change; the hook's decisions, config and documented behaviour are unchanged. The code map's `context-watch.sh` line references were refreshed.
-
-- crew 1.2.22: re-bump only - interim re-bump on the L-0768 branch (commit f7e38e3); the change is recorded under crew 1.3.25
-- crew 1.2.27: re-bump only - interim re-bump on the L-0768 branch after merging main (commit 0f5c3e91c); the change is recorded under crew 1.3.25
-- crew 1.3.19: re-bump only - re-bump after merging main's crew 1.3.18 (commit c124014f4); the change is recorded under crew 1.3.25
-- crew 1.3.24: re-bump only - tree-policy fixtures name the train base in reviewWaiverSha (commit 363364791); recorded under crew 1.3.25
-- crew 1.3.2: re-bump only - drift-check bump for the diff-base note fix (commits a514c5405, 48ce2f0ae); its change is recorded under crew 1.3.6's entry
-- crew 1.3.3: re-bump only - drift-check bump for a test change (commits 05f18d246, 1cfde9907)
-- crew 1.3.4: re-bump only - the failed-buffer-split fix (commit b0845f0c6); recorded under crew 1.3.6
-- crew 1.3.5: re-bump only - drift-check bump after merging main's crew test change (commit 42251fce6)
-- crew 1.3.7: re-bump only - re-bump above main's crew 1.2.122 (commit 2f019af34); the change is recorded under crew 1.3.9
-- crew 1.3.8: re-bump only - the human-only opt-out re-versioned so installs update (commit 438b1869c); recorded under crew 1.3.9
-- crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
-- crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 
 ### Fixed — crew 1.3.25: promote-gate reads deploy policy from the sha being deployed, not the session's checkout (L-0768)
 
@@ -1403,7 +1456,6 @@ read entries under any `## [` heading.
   could-not-tell dropped from the line, and a file name printed raw (a newline forges a line).
 
 ### Fixed — crew 1.2.13: the Stop's `outside-scope:` line reads the crew 1.0 Touch (L-0711)
-
 
 - **Summary.** The verify gate's scope line now names a file a shell command (`sed -i`, a
   redirect) wrote outside the ticket's approved Touch, instead of saying every crew 1.0 ticket's

@@ -150,8 +150,11 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   recovered from stray lines - `ignored_lines` above 0, or missing or unreadable, which is
   could-not-tell, as on a round recorded before L-0576 wrote the count). Otherwise own the FINDINGS with `--accept --by <who>` (only the most recent completed round,
   only once, never once `NEEDS_REPLAN`; a name starting `auto:` is refused), or write a new plan and get it approved — `crew_ticket.py
-  approve` on a `NEEDS_REPLAN` ticket opens a fresh budget of two rounds counted from the successor
-  plan; the rounds already spent stay in the ledger and are not erased. With notify on, a spent
+  approve` on a `NEEDS_REPLAN` ticket continues review only while a round of the ticket's three
+  is left (<!-- review-budget-doc -->a successor plan does not reopen the budget; the rounds already spent stay in
+  the ledger and keep counting). With none left it says `0 review rounds available` and the owner's
+  `review_ledger.py --ticket <id> --grant-round --by <you> --reason <why>` adds one; after a grant,
+  approve a changed plan, or record the unchanged one with `review_ledger.py --successor-plan <sha256>`. With notify on, a spent
   budget whose last round carries a BLOCK sends the `Review out of rounds` ping when
   `/crew:autopilot` stops on it.
 
@@ -168,14 +171,14 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   still INCOMPLETE `reviewer`. That list cannot catch every admission: one it misses ("I only
   inspected one of the nine files") is ignored as prose and the round stays FINDINGS, so read the
   ignored lines.
-  **Fix:** a `tool` round is refunded automatically, up to two per plan. The line reads
+  **Fix:** a `tool` round is refunded automatically, up to three per ticket. The line reads
   `review: round N was a tool failure (...); refunded`. `review_run.py` retries it once by itself
   (L-0514), except a usage limit or a timeout; `review: retry: not retried - <why>` says when it
   did not. Only the failed round is given back: the
   rerun `/crew:review` reserves a new round, charged like any other unless it is a tool failure
-  too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
-  Codex is out of quota, use the next eligible provider. A third tool failure under
-  one plan reads `NOT refunded - refund limit 2 per plan reached` and counts. A `reviewer` or `tree`
+  too, so a ticket with two charged rounds that reruns and gets FINDINGS has spent the budget. If
+  Codex is out of quota, use the next eligible provider. A fourth tool failure on
+  one ticket reads `NOT refunded - refund limit 3 per ticket reached` and counts. A `reviewer` or `tree`
   round always counts. Rebuild the bundle (tree), or rerun and read what the reviewer wrote
   (reviewer).
 
@@ -262,7 +265,7 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   python3 "<crew>/hooks/scripts/review_run.py" --root . --ticket <id> --scratch <dir> \
     --provider codex --probe
   ```
-- **Symptom: you want to send a ticket back without spending the third round.**
+- **Symptom: you want to send a ticket back without spending another round.**
   ```bash
   python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --reject --by <who>
   ```
@@ -778,8 +781,18 @@ off** (`guards.profile: off`); turn it on with `{"guards": {"overrides": {"envGu
 - **`secret-read:<form>`:** it prints a credential-named variable. Use it without printing it
   (`curl -H "Authorization: Bearer $TOKEN"`), or test that it is set (`[ -n "$TOKEN" ]`).
 - **`could-not-tell:<why>`:** it could not read the command well enough: an unbalanced quote,
-  `eval "$X"`, `bash -c "$CMD"`, `eval "$(ssh-agent -s)"`, nesting deeper than 8. Write the command
+  `eval "$X"`, `bash -c "$CMD"`, `eval "$(ssh-agent -s)"`, nesting deeper than 8, a globbed or
+  brace-expanded program name (`/usr/bin/en?`, `e{n,}v`), a program from an expansion with a default
+  (`${X:-env}`), inline code that reads a variable whose name is not a literal (`os.environ[name]`),
+  a shell or interpreter left to read its code from stdin (`echo env | bash`, `bash < f`, a bare
+  `python3`), a command substitution
+  inside `(( ))`, or a non-literal path ending in `environ` (`cat $d/environ`). Write the command
   out literally. Under `report` these are logged, not refused.
+- **Refused although the config says `off`, with no python:** the shell fallback reads the config
+  file itself and arms the guard for a file it cannot judge: unreadable, under a directory it cannot
+  enter, not one strict JSON object (a trailing comma, a comment, a bare word), holding a `\u`
+  escape, or with `envGuard` set to anything but `off` anywhere
+  in it, an explicit `null` included. Fix the file, or make python available to the hook.
 - **A `/proc/*/environ` mention** outside a `git commit -m` message, a `grep` pattern or `echo` text
   (a `sed` script, a `find -name`) is refused too: a known false positive.
 

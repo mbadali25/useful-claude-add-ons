@@ -203,7 +203,7 @@ takes effect only when all of these hold (`crew_humanonly.resolve`):
   `null` or removal, which drops a veto); a `false` written by hand reads as
   human-only.
 
-**What is live (crew 1.3.27).** The prompt hook (`approval_hook.py`) now
+**What is live (crew 1.3.33).** The prompt hook (`approval_hook.py`) now
 records `/crew:confirm-config <change_id>` from a prompt you typed, so a
 double confirmation can complete, and `humanOnly.approve: false` takes effect
 through ONE decision point, `crew_ticket.cli_approval_allowed`: with an opt-out
@@ -216,7 +216,7 @@ which still needs `autopilot.approval` `self` or `risk` and `autopilot.mode`
 raising or answering anything but exactly `humanOnly: false` - reads as
 human-only.
 
-**Still human-only (crew 1.3.27).** No hook reads `humanOnly.promoteMarker`:
+**Still human-only (crew 1.3.33).** No hook reads `humanOnly.promoteMarker`:
 the promote marker is human-only by instruction alone, and no hook checks who
 created it. `crew_confirm_config.py resolve` shows what each key would
 resolve to.
@@ -230,7 +230,7 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
 meaningful only with `scope.mode` `block`.
 
-**`/crew:approve-mass <id>` (crew 1.3.28).** Your yes to ONE blocked mass
+**`/crew:approve-mass <id>` (crew 1.3.34).** Your yes to ONE blocked mass
 operation, typed by you and recorded by the same prompt hook in
 `<git-common-dir>/crew/mass-approvals/<id>.json`, good for 15 minutes. The
 directory is under `<git-common-dir>/crew/`, which the scope guard refuses to
@@ -238,7 +238,7 @@ every Write/Edit and every shell command naming it, so the session cannot
 write the file. The cloud guard (`cloud_guard.py`) prints the `<id>` with its
 stop and reads the file; see "Mass operations".
 
-## Mass operations (`guards.mass`, crew 1.3.28)
+## Mass operations (`guards.mass`, crew 1.3.34)
 
 The rule for an autopilot that runs without a human: full automation, except a
 mass delete, a mass create or a mass change, which wait for your yes. The stop
@@ -471,7 +471,9 @@ guard, and the per-guard ratchet then takes the narrower layer. A malformed
 profile or override reads as the guard's floor (`block`, or `none` for the
 production guards), never as `off`. The per-guard keys of earlier versions
 (`guards.<guard>`) are still READ as aliases for `guards.overrides.<guard>`
-until `/crew:migrate` rewrites them, and are never written.
+until `/crew:migrate` rewrites them, and are never written. For `envGuard` an
+explicit `null` (`"guards": {{"envGuard": null}}`) is malformed and reads as `block`; only an
+absent key is `off`. The other guards still read a legacy `null` as absent.
 
 {profile_table}
 

@@ -193,8 +193,8 @@ def _blocked(tmp_path, **kwargs):
 
 def test_final_round_stops_under_fix_and_rereview(tmp_path):
     root = _approved(tmp_path)
-    second = dict(_round(2, "FINDINGS"), findings=FINDINGS)
-    _findings_round(root, rounds=[_round(1, "CLEAN"), second])
+    last = dict(_round(3, "FINDINGS"), findings=FINDINGS)
+    _findings_round(root, rounds=[_round(1, "CLEAN"), _round(2, "CLEAN"), last])
 
     got = _next(root)
 

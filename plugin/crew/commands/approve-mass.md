@@ -6,7 +6,7 @@ disable-model-invocation: true
 ---
 
 The user typed `/crew:approve-mass $1`. The cloud guard (`guards.mass`, crew
-1.3.28) stopped a shell command that would delete, create or change a mass of
+1.3.34) stopped a shell command that would delete, create or change a mass of
 files, and printed a 12-digit id with the stop. Typing this command with that id
 is the owner's yes to THAT command only: the UserPromptSubmit hook
 (`approval_hook.py`) records it from the prompt in

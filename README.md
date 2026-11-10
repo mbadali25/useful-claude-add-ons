@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.34**: The mass delete, create and change stop (`guards.mass`). `crew` 1.3.34: with `guards.mass.enabled: true` (or a double-confirmed `humanOnly` opt-out) the cloud guard's hook stops a shell command that would delete 10 or more files, create 20 or more, or change 30 or more, until you type `/crew:approve-mass <id>`; everything else stays automatic. Off by default.
 - **crew 1.3.27**: The human-only opt-out goes live for plan approval (harness half). `crew` 1.3.27: once you have typed `/crew:confirm-config <id>` twice, `humanOnly.approve: false` now takes effect (an autopilot-recorded approval counts without hand-editing `scope.allowCliApproval`), and `/crew:approve-mass <id>` exists as a user-typed yes that the session cannot write; `humanOnly.promoteMarker` is still read by no hook.
-- **crew 1.3.26**: Context-watch's no-op Stop turn starts one process, not a dozen. `crew` 1.3.26: the Stop hook `context-watch.sh` clears an ordinary turn with one python start instead of five plus a handful of helper programs, so it no longer runs into its 20 s limit on a loaded Git Bash host; what it warns about and when is unchanged.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
