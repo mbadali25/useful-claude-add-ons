@@ -4,7 +4,7 @@ Each case is a repository state plus a Bash command, and the decision the gate
 had before it became one python process: the exit status and a phrase its
 stderr must carry. The expectations were RECORDED by running the shell-only gate (the
 `promote-gate.sh` of crew 1.3.32, `git show 48ef62231:...`) over these same
-cases on 2026-11-10 (all 40 agreed with the new gate, exit status, phrase,
+cases on 2026-11-10 (all 41 agreed with the new gate, exit status, phrase,
 in-flight marker and skip rows); `test_promote_gate_one_process.py` replays them
 on the current gate, so a rule the rewrite dropped or changed turns a case red.
 
@@ -82,6 +82,9 @@ CASES = (
          state={"staging_row": None, "runbook": "stale", "marker": False}),
     case("a-dispatch-of-prod-without-its-staging-row",
          "gh workflow run deploy.yml -f environment=production", 2, "has no all-pass row",
+         state={"staging_row": None, "runbook": "fresh", "marker": True}),
+    case("a-dispatch-only-the-dispatch-reader-can-see",
+         "gh workflow run deploy.yml -f x=1 -f environment=production", 2, "has no all-pass row",
          state={"staging_row": None, "runbook": "fresh", "marker": True}),
     case("a-dispatch-that-fits-no-single-environment", "gh workflow run deploy.yml", 2, None,
          state=GOOD),

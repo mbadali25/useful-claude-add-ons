@@ -39,7 +39,7 @@ configured value is clamped to the row's timeout less REAP (the helper's own
 reap), so the setting can lengthen the gate up to what the hook allows and no
 further.
 
-What changed in what it decides: nothing that was measured (40 recorded cases
+What changed in what it decides: nothing that was measured (41 recorded cases
 agree). One input differs by construction: the shell passed the command to
 python as an ARGUMENT, and Git Bash rewrites an argument that starts like a POSIX
 path (`/opt/deploy.sh prod` became `C:/Program Files/Git/opt/deploy.sh prod`).

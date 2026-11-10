@@ -79,7 +79,7 @@ PROMOTE_GATE_MUTATIONS = (
     ("_promote_gate.py drops the environments a dispatch names", GATE,
      '            elif kind == "env" and tok not in names:\n',
      '            elif False:\n',
-     _CORPUS.format("a-dispatch-of-prod-without-its-staging-row")),
+     _CORPUS.format("a-dispatch-only-the-dispatch-reader-can-see")),
     ("_promote_gate.py reads an expired incident as open", GATE,
      "    return expires > 0 and int(time.time()) < expires\n",
      "    return expires > 0\n",
@@ -112,4 +112,8 @@ PROMOTE_GATE_MUTATIONS = (
      '    return real(path) if os.path.isdir(path) else ""\n',
      "    return real(path)\n",
      _CORPUS.format("a-cd-that-resolves-nowhere")),
+    ("_promote_gate.py reads a helper that ends the interpreter as an allow", GATE,
+     '        traceback.print_exc()\n        return 1\n',
+     '        traceback.print_exc()\n        return 0\n',
+     _P + "test_a_helper_that_ends_the_interpreter_is_never_an_allow"),
 )

@@ -5,7 +5,7 @@ What this holds, each a must-block or a must-allow:
 1. The decision corpus (promote_gate_corpus.py). Its expected exit statuses and
    phrases were RECORDED from the shell-only gate of crew 1.3.32 and are
    replayed here on the current gate, so a rule the rewrite dropped turns a case
-   red. All 40 recorded cases agreed with the new gate when it was written.
+   red. All 41 recorded cases agreed with the new gate when it was written.
 2. The protocol between the shell and the python gate: statuses 10+N and 20+N
    keep their wording, any other non-zero status blocks, and a missing gate
    blocks. An error is not permission.
@@ -330,6 +330,8 @@ def test_the_fast_path_refuses_a_command_the_map_declares(tmp_path, monkeypatch)
 def test_the_fast_path_refuses_a_dispatch_of_a_declared_workflow(tmp_path, monkeypatch):
     _repo(tmp_path, monkeypatch, _DISPATCH_MAP)
     assert _gate("gh workflow run deploy.yml -f environment=prod").provably_no_deploy() is False
+    # not a substring of the declared command, so only the dispatch reader can see it
+    assert _gate("gh workflow run deploy.yml -f x=1 -f environment=prod").provably_no_deploy() is False
     # a declared workflow with an input that fits no environment is could-not-tell, not "nothing"
     assert _gate("gh workflow run deploy.yml -f environment=dev").provably_no_deploy() is False
     assert _gate("gh workflow run other.yml -f environment=prod").provably_no_deploy() is True
@@ -414,3 +416,38 @@ def test_tree_asks_git_once_and_names_the_failing_field_when_it_cannot(tmp_path)
          "--allow-empty", "-m", "x")
     got = _promote_gate.Tree(str(committed))
     assert len(got.full) == 40 and got.full.startswith(got.short) and len(got.short) >= 7
+
+
+# --- a reader that raises --------------------------------------------------------
+
+def test_a_dispatch_reader_that_raises_blocks(tmp_path, monkeypatch, capsys):
+    """A reader that FAILS is never "nothing": the gate blocks (exit 2) and names it."""
+    _repo(tmp_path, monkeypatch, _DISPATCH_MAP)
+    import _promote_dispatch  # pylint: disable=import-outside-toplevel
+
+    def boom(command, shell):
+        raise RuntimeError("reader broke")
+    monkeypatch.setattr(_promote_dispatch, "decide", boom)
+    gate = _gate("gh workflow run deploy.yml -f environment=prod")
+    with pytest.raises(_promote_gate.Stop) as stop:
+        gate.add_dispatched([])
+    assert stop.value.code == 2
+    assert "_promote_dispatch.py failed" in capsys.readouterr().err
+
+
+@needs_bash
+@pytest.mark.parametrize("helper", ["_promote_dispatch.py", "_promote_tree.py", "_promote_github.py"])
+def test_a_helper_that_ends_the_interpreter_is_never_an_allow(tmp_path, helper):
+    """The helpers are imported now, so a broken or replaced one that calls
+    sys.exit(0) must not end the whole gate with an allow nobody decided."""
+    plugin = tmp_path / "plugin"
+    scripts = plugin / "hooks" / "scripts"
+    skip = shutil.ignore_patterns("_test", "__pycache__")
+    shutil.copytree(_SCRIPTS, scripts, ignore=skip)
+    graph = pathlib.Path("skills") / "crew-graph" / "scripts"
+    shutil.copytree(_SCRIPTS.parents[1] / graph, plugin / graph, ignore=skip)
+    (scripts / helper).write_text("raise SystemExit(0)\n", encoding="utf-8")
+    spec = next(c for c in corpus.CASES if c["name"] == "prod-with-every-precondition-met")
+    proc, root, _ = _run(tmp_path / "run", spec, scripts=scripts)
+    assert proc.returncode == 2, _text(proc.stderr)
+    assert not (root / ".crew" / ".deploy-in-flight").exists()

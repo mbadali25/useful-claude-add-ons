@@ -87,9 +87,9 @@ PROMOTE_TREE_MUTATIONS = (
      """(?:^|(?<=[\\s;&|(){}]))(?:cd|pushd|popd|chdir)""",
      _T + "test_a_cd_in_any_other_form_is_could_not_tell[sh-bash -c 'cd {wt} && deploy-qa']"),
     # T-0505 review round 1 (Codex): one mutation per fixed finding.
-    ("promote-gate.sh trusts git status for the map again (skip-worktree hides an edit)", SH,
-     '  elif [ "$WORK_MAP" != "$HEAD_MAP" ]; then\n',
-     '  elif false; then\n',
+    ("_promote_gate.py trusts git status for the map again (skip-worktree hides an edit)", GATE,
+     '            elif work != self.head_map:\n',
+     '            elif False:\n',
      _T + "test_skip_worktree_does_not_hide_an_uncommitted_map_edit[sh]"),
     ('_promote_gate.py stops matching a dirty map against the committed one', MATCH,
      '        hits = matching(committed_envs, False, fcmd)\n',
@@ -196,7 +196,7 @@ PROMOTE_TREE_MUTATIONS = (
      ('            self.block("the command could not be read as a workflow dispatch "\n'
       '                       "(_promote_dispatch.py failed). This is not a pass.")\n'),
      '            records = []\n',
-     _D + "test_the_helper_failing_blocks[sh]"),
+     "tests/test_promote_gate_one_process.py::test_a_dispatch_reader_that_raises_blocks"),
     # L-0664: promote-gate.ps1 reads a workflow dispatch with the same helper.
     ("promote-gate.ps1 no longer reads an unmatched command as a dispatch", PS1,
      "    $dispatch = @($cmd | & $py (Join-Path $scriptDir '_promote_dispatch.py') --shell powershell -)\n",
