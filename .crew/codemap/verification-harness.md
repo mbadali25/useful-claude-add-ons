@@ -258,6 +258,9 @@ only `bash "..."` and `& "..."` launcher commands (8 of each).
   (`BASE_AT`, `:671`) and `refuse_base_write` (`:576`) exits 2 when that fails. A turn where no rule command ran prints
   `verify-gate: 0 rules ran ...` (`:581-584`, `:799`) and writes neither marker; the exit-0 tail calls
   `record_base || refuse_base_write`, `record_verified` and `record_verified_fingerprint` (`:2949-2953`).
+  On the read side (crew 1.3.37) the marker is the diff base only when `git merge-base --is-ancestor` says it is on HEAD's
+  history; one left by another branch is replaced by its merge-base with HEAD (or ignored with no shared history), the
+  rule `BASE_AT` already had.
 
 ## `scripts/check-marketplace.py` - the direct gate
 

@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.37**: A verified marker left by another branch no longer puts that branch's paths in the Stop gate's scope. `crew` 1.3.37: the Stop gate now uses `.crew/.verify-verified-at` as its diff base only when that commit is an ancestor of HEAD; a marker left by another branch is replaced by its merge-base with HEAD (or ignored when they share no history), so a clean tree no longer fails with phantom changed paths.
 - **crew 1.3.36**: The mass delete, create and change stop (`guards.mass`). `crew` 1.3.36: with `guards.mass.enabled: true` (or a double-confirmed `humanOnly` opt-out) the cloud guard's hook stops a shell command that would delete 10 or more files, create 20 or more, or change 30 or more, until you type `/crew:approve-mass <id>`; everything else stays automatic. Off by default.
-- **install script**: A piped `curl | bash` run no longer stops at find-skills, and find-skills installs user-level. The documented `curl … | bash` install now runs every selected step and prints its summary instead of stopping silently at `find-skills`, and `find-skills` lands in the user skills directory whatever directory the script was run from (bash side run against stubs on Linux; the PowerShell change was not executed).
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -46,6 +46,13 @@ read entries under any `## [` heading.
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 
+### Fixed — crew 1.3.37: a verified marker left by another branch no longer puts that branch's paths in the Stop gate's scope
+
+- **Summary.** `crew` 1.3.37: the Stop gate now uses `.crew/.verify-verified-at` as its diff base only when that commit is an ancestor of HEAD; a marker left by another branch is replaced by its merge-base with HEAD (or ignored when they share no history), so a clean tree no longer fails with phantom changed paths.
+- **Cause.** `verify-gate.sh` trusted the marker whenever `git cat-file -e` found the commit. A marker written by a pass on a sibling branch exists in the repo but is not on HEAD's history, so the diff included every path that branch touched. Measured in a real checkout: about 1368 phantom paths and `UNMAPPED CHANGES ... FAILED 1` on a clean tree; the marker is only rewritten on a clean pass, so it never healed.
+- **Fix.** The marker now gets the same `git merge-base --is-ancestor` check `.crew/.verify-gate.base-at` already had. Not an ancestor: its merge-base with HEAD is the base (an ancestor of the verified commit and of HEAD), and the detail log says so in one line. No shared history: the marker is ignored and the default-branch merge-base applies, as with no marker.
+- **Tests.** `test_verify_gate_baseline.py`: a marker on a sibling branch must not put that branch's file in scope (red on 1.3.36, green here, and the clean pass rewrites the marker at HEAD), and must not hide a committed change on this branch (must-block).
+
 ### Added — crew 1.3.36: the mass delete, create and change stop (`guards.mass`)
 
 - **Summary.** `crew` 1.3.36: with `guards.mass.enabled: true` (or a double-confirmed `humanOnly` opt-out) the cloud guard's hook stops a shell command that would delete 10 or more files, create 20 or more, or change 30 or more, until you type `/crew:approve-mass <id>`; everything else stays automatic. Off by default.

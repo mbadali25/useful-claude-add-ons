@@ -256,3 +256,57 @@ def test_on_the_default_branch_with_no_marker_a_commit_still_ends_the_turn(tmp_p
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", "the next one is caught")
     assert _run(root) == 2
+
+
+# --- a marker left on another branch ---------------------------------------
+
+def _marker_on_a_sibling_branch(tmp_path):
+    """A repo where the verified marker names a commit on a SIBLING branch.
+
+    `sibling` adds a .py file (which the always-failing rule matches) and
+    passes there in some earlier turn; the checkout then moves to `work`, cut
+    from the same seed, which has never had that file. The marker survives the
+    checkout - it is machine-local and nothing clears it - and names a commit
+    that exists in this repo but is NOT an ancestor of HEAD.
+    """
+    root = _repo(tmp_path, _VERIFY_MD_PASSES)
+    _git(root, "checkout", "-q", "-b", "sibling")
+    (root / "sib.py").write_text("s = 1\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "sibling work")
+    sibling = _head(root)
+    _git(root, "checkout", "-q", "main")
+    _git(root, "checkout", "-q", "-b", "work")
+    (root / ".crew" / ".verify-verified-at").write_text(
+        sibling + "\n", encoding="utf-8")
+    return root, sibling
+
+
+def test_a_marker_on_a_sibling_branch_does_not_put_its_paths_in_scope(tmp_path):
+    """Measured in a real checkout: a marker left by another branch made the
+    gate diff against an unrelated commit, so every path that branch touched
+    (about 1368 there) was reported as changed on a clean tree, and the turn
+    could never end clean, so the marker never refreshed itself.
+
+    The marker is used only when it is an ancestor of HEAD; otherwise its
+    merge-base with HEAD is, which is an ancestor of both. `sib.py` never
+    existed on `work`, so it must not be in scope.
+    """
+    root, sibling = _marker_on_a_sibling_branch(tmp_path)
+    (root / "ok.md").write_text("fine\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "clean turn on work")
+    assert _run(root) == 0
+    # And it heals: the clean pass records HEAD, replacing the stale marker.
+    assert _marker(root) == _head(root)
+    assert _marker(root) != sibling
+
+
+def test_a_marker_on_a_sibling_branch_does_not_hide_this_branch_s_work(tmp_path):
+    """The other side of the boundary: ignoring the stale marker must widen
+    nothing into silence. A committed .py on `work` is still in scope."""
+    root, _ = _marker_on_a_sibling_branch(tmp_path)
+    (root / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "committed on work")
+    assert _run(root) == 2
