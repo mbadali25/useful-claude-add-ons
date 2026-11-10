@@ -914,7 +914,7 @@ def human_only_approve_opted_out(top):
     """True only when `crew_humanonly.resolve(top, "approve")` says
     `humanOnly` is exactly False: the owner's `humanOnly.approve: false` sits
     in the machine file or an untracked repo file, a double confirmation
-    backs it, and no layer vetoes (crew 1.3.21). This is the ONE place the
+    backs it, and no layer vetoes (crew 1.3.27). This is the ONE place the
     opt-out is read, so `accepted`, the scope guard, the Stop audit and every
     autopilot reader agree. Anything else -- the module missing, the call
     raising, an answer that is not a dict, a `humanOnly` that is not the bool

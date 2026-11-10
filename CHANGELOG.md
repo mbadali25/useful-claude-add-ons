@@ -7,16 +7,123 @@ The root [`README.md`](README.md)'s "What's new" shows the newest two entries he
 what the change means for a user), or the first sentence of its first bullet when it has none. After
 adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails until the README matches.
 
+**Every version gets a line.** A branch that sets a plugin's or skill's `version` in
+`.claude-plugin/marketplace.json` (a bump, a re-bump after main moved, a new entry) leaves this file
+naming that exact version, in one of two forms, and `scripts/check-changelog.py` fails CI otherwise:
+
+- an entry heading (`###`) containing `<name> <version>`, as below; or
+- for a version that carries no change of its own, one line in the **re-number block** (the lines
+  directly under `## [Unreleased]`, before its first `###`; the README generator ignores them):
+  `- <name> <version>: re-bump only - <why: what it follows, or which entry carries the change>`.
+
+A version a branch set and then replaced still gets its line, because merge commits carry it into
+main's history. Only versions a branch newly sets are checked, so older history is not backfilled
+(the gaps below were added once, by hand).
+
+**Release sections.** Entries stay under `## [Unreleased]`; they are not moved into dated version
+headings. The file is append-only history of about 19,000 lines, each entry is already stamped with
+its exact version in its heading, and a release here is a merge to `main`, so moving entries would
+rewrite thousands of lines for no reader. A repo that tags a release (see `Skill-Pipeline.md`) may
+still cut a dated `## [x.y.z]` heading above the entries it covers; `sync-updates.py` and the checker
+read entries under any `## [` heading.
+
 ## [Unreleased]
 
-### Added — crew 1.3.21: the human-only opt-out goes live for plan approval (harness half)
+- crew 1.3.21: re-bump only - interim number on the human-only-live harness branch before main reached 1.3.26; the change is recorded under crew 1.3.27
+- crew 1.3.24: re-bump only - interim number on the context-watch branch before main reached 1.3.25; the change is recorded under crew 1.3.26
 
-- **Summary.** `crew` 1.3.21: once you have typed `/crew:confirm-config <id>` twice, `humanOnly.approve: false` now takes effect (an autopilot-recorded approval counts without hand-editing `scope.allowCliApproval`), and `/crew:approve-mass <id>` exists as a user-typed yes that the session cannot write; `humanOnly.promoteMarker` is still read by no hook.
+### Added — crew 1.3.27: the human-only opt-out goes live for plan approval (harness half)
+
+- **Summary.** `crew` 1.3.27: once you have typed `/crew:confirm-config <id>` twice, `humanOnly.approve: false` now takes effect (an autopilot-recorded approval counts without hand-editing `scope.allowCliApproval`), and `/crew:approve-mass <id>` exists as a user-typed yes that the session cannot write; `humanOnly.promoteMarker` is still read by no hook.
 - `crew_ticket.cli_approval_allowed` is the one decision point: `scope.allowCliApproval` exactly true, OR `crew_humanonly.resolve(top, "approve")` answering exactly `humanOnly: False` (module missing, resolver raising, any other answer: human-only). `accepted`, the scope guard, the Stop audit and every autopilot reader already call it, so they agree by construction. `scope_guard.py` still refuses the session running `crew_ticket.py approve`; the session's route is `crew_autopilot.py approve`, which still needs `autopilot.approval` `self`/`risk`.
 - `approval_hook.py` (UserPromptSubmit) records `/crew:confirm-config <change_id>` (via `crew_confirm_config.confirm`, `via=user-prompt`, the payload's `prompt_id`; two distinct prompts apply it) and `/crew:approve-mass <id>` (`<git-common-dir>/crew/mass-approvals/<id>.json`, 15 minutes, id must be 12 lowercase hex digits). One line, command alone, raw or expanded form, as `/crew:approve`; a command quoted mid-sentence is nothing. `approval-hook.sh` passes a prompt naming `crew:confirm-config` (it has no `approve` in it) and, with no python, blocks it with its own message (added to `crew_hook.NO_PYTHON_REFUSALS`).
 - `scope_guard.py` refuses Write/Edit under `~/.claude/crew/confirm-config/` and a shell command naming that store beside a writing word. A tripwire, not a sandbox: arbitrary python can still forge a receipt, and `scope.mode: off` has none. Stated in CONFIG.md.
 - Tests: `test_humanonly_live.py` (51 cases: must-allow with a real propose/confirm/confirm, must-block for no receipt, tracked file, repo `true` veto, other key, resolver raising/odd answers, quoted or malformed commands, no prompt id, the store). `humanonly_mutations.py` is wired into `sabotage.py`: 27 entries, 11 new, all seen red (the first run caught one vacuous mutation - a mid-sentence command with trailing words was refused for its bad id, not for being quoted - fixed by a case whose id is exact).
 - Harness-only PR (`approval_hook.py`, `approval-hook.sh`, `crew_hook.py`, `crew_ticket.py`, `scope_guard.py`, `sabotage.py`). Stale text that cannot ride with it - `commands/confirm-config.md`, `commands/approve.md`, `commands/config.md`, `crew_keys.py`'s two rows and `crew_humanonly.SENSITIVE_REFUSAL` still say "no hook acts" - is fixed in the follow-up PR, which also adds `commands/approve-mass.md`.
+
+### Fixed — crew 1.3.26: context-watch's no-op Stop turn starts one process, not a dozen
+
+- **Summary.** `crew` 1.3.26: the Stop hook `context-watch.sh` clears an ordinary turn with one python start instead of five plus a handful of helper programs, so it no longer runs into its 20 s limit on a loaded Git Bash host; what it warns about and when is unchanged.
+- Cause (measured, not assumed): process starts, not a lock or a slow git. Traced on a clean `origin/main` worktree (crew 1.3.23, Windows 11, Git Bash, `CREW_PYTHON` set, a crew repo with a 27 MB transcript under the threshold, three runs): 9.0-9.8 s wall per no-op turn with `bash -x`, five python starts (three one-field `read_json`, the config read, the transcript scan), plus `dirname`, `cat`, `grep`, `sed`, `tr`, `cygpath` and `timeout`. The transcript scan itself is 0.7 s warm.
+- After: one python start (payload, config and transcript in one), no helper in bash (`$DIR` by expansion, a builtin `read` for the payload, a bash regex for `cwd`, the relative config path used as it is). Same trace: 3.4 s, 3.4 s and 5.3 s.
+- Decisions unchanged. One edge differs: a payload carrying two `"cwd"` keys used to make the hook exit 0 without checking anything; the first key now wins. A non-ASCII character in a session id is passed on as `?`, which the session key turns into `_` exactly as before.
+- Tests: `tests/test_context_watch_spawns.py` (the no-op path starts one python and none of `dirname cat grep sed tr cygpath timeout`; over the threshold it still blocks; a disabled or malformed `context` block still stands down; `stop_hook_active` is left alone), sabotaged by hand: `INPUT=$(cat)`, an extra python, a `grep` for `cwd` and `dirname` for `$DIR` each turn it red.
+- Docs: none - an internal process-count change; the hook's decisions, config and documented behaviour are unchanged. The code map's `context-watch.sh` line references were refreshed.
+
+- crew 1.2.22: re-bump only - interim re-bump on the L-0768 branch (commit f7e38e3); the change is recorded under crew 1.3.25
+- crew 1.2.27: re-bump only - interim re-bump on the L-0768 branch after merging main (commit 0f5c3e91c); the change is recorded under crew 1.3.25
+- crew 1.3.19: re-bump only - re-bump after merging main's crew 1.3.18 (commit c124014f4); the change is recorded under crew 1.3.25
+- crew 1.3.24: re-bump only - tree-policy fixtures name the train base in reviewWaiverSha (commit 363364791); recorded under crew 1.3.25
+- crew 1.3.2: re-bump only - drift-check bump for the diff-base note fix (commits a514c5405, 48ce2f0ae); its change is recorded under crew 1.3.6's entry
+- crew 1.3.3: re-bump only - drift-check bump for a test change (commits 05f18d246, 1cfde9907)
+- crew 1.3.4: re-bump only - the failed-buffer-split fix (commit b0845f0c6); recorded under crew 1.3.6
+- crew 1.3.5: re-bump only - drift-check bump after merging main's crew test change (commit 42251fce6)
+- crew 1.3.7: re-bump only - re-bump above main's crew 1.2.122 (commit 2f019af34); the change is recorded under crew 1.3.9
+- crew 1.3.8: re-bump only - the human-only opt-out re-versioned so installs update (commit 438b1869c); recorded under crew 1.3.9
+- crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
+- crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
+
+### Fixed — crew 1.3.25: promote-gate reads deploy policy from the sha being deployed, not the session's checkout (L-0768)
+
+- **Summary.** `crew` 1.3.25 reads every promote-gate requirement (`requires`, `rollback`,
+  `requireHuman`, a `github` entry's `shaInput` and `requireReview`) from the `.crew/verify.json`
+  committed in the sha being deployed, so a deploy from a git worktree honours a waiver committed on
+  its own branch and is no longer blocked by the main checkout's uncommitted map.
+- **Why.** Reported by the TSS-win session (crew 1.2.17, deploying from a worktree on Windows): both
+  flavours `cd` to the project dir and read its map, the review helper ran there and ignored its tree
+  argument, and the uncommitted-map guard judged the project dir. A waiver committed on the release
+  branch was never seen; `_promote_review.py` run by hand in the worktree exited 0 while the hook's
+  call blocked.
+- **The rule.** `git -C <tree> ls-tree <sha> -- .crew/verify.json`'s blob is the policy: what a
+  checkout of that sha reads, so a worktree can do nothing a checkout of the same sha could not. A
+  matched environment that map does not declare, a map there that cannot be listed or parsed, block.
+  A sha carrying no map falls back to the project dir's map, which must then be clean. Which command
+  is a deploy is still matched against the project dir's map; PROMOTIONS.md, approval markers and
+  the in-flight marker stay in the project dir. The uncommitted-map guard now judges the map that is
+  policy: the deploying tree's own copy (its clean-tree check), or the project dir's when the deploy
+  runs there or falls back to it. Every read of the sha's map passes `--no-replace-objects`, so a
+  `refs/replace/` entry cannot swap in a weaker map with nothing committed.
+- **Freeze.** Landed under an explicit owner exception to the 2026-10 crew feature freeze.
+- **Tests.** `test_promote_gate_tree_policy.py` (must-block and must-allow, sh and ps1, ps1 cases
+  `wallclock`), new sabotage entries in `promote_tree_mutations.py` for each new branch; cases that asserted the old
+  project-dir guard from a worktree are retargeted to the requirement that now applies.
+- **Merged with SRL-3312.** The tree-policy fixtures seed the shared train base (`tests/_train_base.py`)
+  and name it in `reviewWaiverSha`, so a branch's own waiver still admits under the train-base rule.
+  Re-bumped to 1.3.25 after the merge (1.3.23 is on main).
+
+### Added — changelog: every version a branch sets gets a CHANGELOG.md line, checked in CI
+
+- **Summary.** A plugin or skill version bump, including a re-bump after main moved, now needs a CHANGELOG.md entry for that exact version or a `re-bump only` line, and CI fails without one.
+- `scripts/check-changelog.py` reads `.claude-plugin/marketplace.json` at every commit in `origin/main..HEAD` (merges included) and fails each version the branch set that no `###` heading or re-number line names; history is not backfilled. Wired into `marketplace.yml`, `scripts/gate-runner.py` and `.crew/verify.json`; `scripts/_test/check-changelog.py` holds the must-pass and must-fail cases and two sabotage runs.
+- The re-number block under `## [Unreleased]` and the release-section convention (entries stay under `[Unreleased]`) are written at the top of this file. The eight missing crew 1.3.x versions (1.3.2-1.3.5, 1.3.7, 1.3.8, 1.3.12, 1.3.14) were added once as `re-bump only` lines from `git log`.
+
+### Added — crew 1.3.23: `environments.preProduction` treats a named production-labelled environment as not live yet
+
+- **Summary.** `crew` 1.3.23: a new repo-only setting, `environments.preProduction`, lists by exact name (each with a written reason) an environment that is labelled production but not live yet, so the cloud guard judges it as non-production without turning any guard off; every use prints and logs an audit line, and everything not listed is judged as before.
+- `crew_preprod.py` (new): validates the block (exact names and `targets`, no wildcard or whitespace, `reason` of at least 10 characters, no unknown field; a malformed entry makes the whole `environments` block unreadable, which is the existing "every environment is unknown" state), arms the listed names as `nonProd` for `cloud_guard.evaluate` (non-destroying terraform apply and `deployWorkflow` dispatch), and relabels the allow as `env:preProduction:<name>`. `crew_config.guard_decision` lets `guards.prodDatabase` and `guards.prodServer` stand down for a command only when EVERY declared production target on it is a listed name or one of its exact `targets`. Each use writes a `crew PRE-PRODUCTION EXEMPTION` line to stderr and on screen and the policy `env:preProduction:<name>` to `.crew/guard.log`.
+- Developed as 1.3.20 (the `since` labels, code comments and README section still say 1.3.20); shipped as 1.3.23 because 1.3.20 went to `worktrees.root` and 1.3.22 to the review-waiver binding first.
+- Not changed: a destroy still asks, `block` policies, `cloudDestructive`, `sqlDestructive`, `forcePush`, the identity pins, promote-gate, autopilot's deploy ladder and `crew_unattended` ignore the setting; the machine-global file cannot supply it; default `{}` leaves every decision as before.
+- Tests: `tests/test_preproduction.py` (46 cases: must-allow for listed targets, must-block for unlisted, prefix, mixed-line, jump-host, destroy, malformed-entry, machine-layer and default-config cases, plus a bash-wrapper parity sample). Sabotage-tested with `tests/preproduction_mutations.py`, 17 of 17 red; unwired until a harness-only PR registers it in `sabotage.py`, because `sabotage*.py` is review harness.
+- Docs: crew `README.md`, generated `CONFIG.md` and the guide's configuration reference, `docs/crew/config-rationale.md` ("Pre-production environments"), the guide's troubleshooting source (rebuilt), `.crew/codemap/crew.md`, `crew-setup`'s template listing. `docs/diagrams/` hold dated snapshots with their own anchors and are not regenerated.
+
+### Changed — crew 1.3.22: a review waiver binds to the train base (SRL-3312)
+
+- **Summary.** `crew` 1.3.22: `requireReview: false` with a `reviewReason` no longer waives promote-gate's review evidence on its own; the environment must also name the promotion's train base in `reviewWaiverSha`.
+- `_promote_review.py`: `train_base_sha()` is the merge-base of the promoted sha with the base branch (`scope_base.base_branch`), or its first parent when the promoted sha is itself on the base branch (a commit cannot name its own sha). The waiver holds only when `reviewWaiverSha` equals it (case-insensitive, full sha); missing, non-string, different, or an unknowable base leaves review required, and the refusal names the base.
+- Weakness, stated: the waiver covers the train built on that base, so a later commit on the same base inherits it.
+- Owner decisions 2026-11-08 (picker): bind to the train base; update each promote-gate fixture. Fixtures seed one fixed empty-tree base commit (`tests/_train_base.py`; `_test/run-tests.sh` makes its own base commit); `record_golden_hooks.py` names its first parent and the armed goldens were re-recorded (sha strings only).
+- Tests: waiver matches / missing / mismatched / a non-string value / the promoted sha or an ancestor that is not the base / no base branch (first parent) / a later commit inherits it; two sabotage rows in `promote_tree_mutations.py`.
+- Docs: crew-verification SKILL.md, commands/promote.md, crew-setup phases.md, docs/crew/promote.md, config-rationale.md, reference 23.
+
+### Added — crew 1.3.20: one standard worktree root outside the repo (`worktrees.root`) and `/crew:worktrees`
+
+- **Summary.** `crew` 1.3.20: a new `worktrees.root` setting (repo or machine layer; default `~/.claude/crew/worktrees`) names one place outside the repo for crew's worktrees, and `/crew:worktrees` lists every worktree read-only and removes one on your `--yes`; Claude Code's own agent worktrees still go to `.claude/worktrees/` unless you register the opt-in `WorktreeCreate` hook it prints.
+- Why this is not the whole fix, read from Claude Code's docs on 2026-11-09 (worktrees, hooks, settings-reference; not run against the live CLI here): `claude --worktree` and an Agent with `isolation: worktree` place worktrees under `<repo>/.claude/worktrees/`, and no setting changes that (`worktree.location` is for Desktop SSH sessions only). The one supported redirect is a `WorktreeCreate` hook, which replaces git's own creation (it must create the worktree and print its path), and `WorktreeRemove` does not fire for subagent worktrees. crew registers neither: a hook that replaces creation for every user is the owner's to opt into, and `hooks.json` is review harness.
+- `hooks/scripts/crew_worktrees.py`: `root` / `path <branch>` (also what `crew_state.py --worktree-path` now answers: `<root>/<repo>-<digest>/<name>`, the digest of the main checkout so two repos called `myrepo` stay apart; a setting that is not an absolute path, or is inside the repo, exits 2 with `refused:` and is never replaced by the default); `list` (read-only: each worktree is `main`, `standard`, `in-repo`, `elsewhere` or `unreachable`, and `REMOVABLE` only when clean with no untracked files, no commits a remote lacks, merged into the default branch, unlocked and older than `--days`, 14; any probe that fails reads `could not tell` and keeps it); `remove <path> --yes` (one path, `git worktree remove` without `--force`, never the main checkout or the checkout it runs in); `hook-snippet`, `status`, and the `hook-create` / `hook-remove` entry points (create at `<root>/<repo>-<digest>/<name>` on `worktree-<name>` from origin's default branch, or HEAD with `worktree.baseRef: head`, copying `.worktreeinclude` matches; remove without force, deleting only a merged `worktree-*` branch).
+- `crew_wave.py` `lane-init` also admits a lane under the standard root, so a wave whose Agents run under crew's hook still passes its location check; a sibling directory is still refused. `/crew:emergency` points at the new answer. Nothing existing is moved or deleted: worktrees already scattered stay where they are, and `list` is how they are found.
+- Tests: `test_crew_worktrees.py` (55 cases: a refused setting never falls back, a root inside the repo, every reason a worktree is kept, `--yes` and no `--force`, the hook's name, directory and stdout rules, crew registers no worktree hook). Sabotage-tested with `worktrees_mutations.py` (17 mutations, all red; run alone because `sabotage*.py` is harness). Config keys 89 to 90.
+- Developed as 1.3.19 (the `since` labels and code comments still say 1.3.19); re-bumped to 1.3.20 after the pylint, ruff and tool-resolution fixes (git is now resolved through `crew_common.require_tool`), because the version-drift check measures from the commit that set the version.
+- Docs: `CONFIG.md` and the configuration reference (regenerated), `commands/worktrees.md`, `commands/config.md`, `commands/emergency.md`, the crew `README.md`, `plugin/PLUGINS.md` (40 commands), the crew guide (rebuilt), `.crew/codemap/crew.md`.
 
 ### Fixed — crew 1.3.18: the scope guard's allow path starts a handful of processes, not a dozen
 

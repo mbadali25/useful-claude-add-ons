@@ -96,7 +96,7 @@ takes effect only when all of these hold (`crew_humanonly.resolve`):
   `null` or removal, which drops a veto); a `false` written by hand reads as
   human-only.
 
-**What is live (crew 1.3.21).** The prompt hook (`approval_hook.py`) now
+**What is live (crew 1.3.27).** The prompt hook (`approval_hook.py`) now
 records `/crew:confirm-config <change_id>` from a prompt you typed, so a
 double confirmation can complete, and `humanOnly.approve: false` takes effect
 through ONE decision point, `crew_ticket.cli_approval_allowed`: with an opt-out
@@ -109,7 +109,7 @@ which still needs `autopilot.approval` `self` or `risk` and `autopilot.mode`
 raising or answering anything but exactly `humanOnly: false` - reads as
 human-only.
 
-**Still human-only (crew 1.3.21).** No hook reads `humanOnly.promoteMarker`:
+**Still human-only (crew 1.3.27).** No hook reads `humanOnly.promoteMarker`:
 the promote marker is human-only by instruction alone, and no hook checks who
 created it. `crew_confirm_config.py resolve` shows what each key would
 resolve to.
@@ -123,7 +123,7 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
 meaningful only with `scope.mode` `block`.
 
-**`/crew:approve-mass <id>` (crew 1.3.21).** Your yes to ONE blocked mass
+**`/crew:approve-mass <id>` (crew 1.3.27).** Your yes to ONE blocked mass
 delete or mass overwrite, typed by you and recorded by the same prompt hook in
 `<git-common-dir>/crew/mass-approvals/<id>.json`, good for 15 minutes. The
 directory is under `<git-common-dir>/crew/`, which the scope guard refuses to
@@ -136,7 +136,7 @@ write the file. Nothing in this release reads it: the guard that prints an
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**89 keys**: 52 settable in the machine-global file, 37 repo-only.
+**91 keys**: 53 settable in the machine-global file, 38 repo-only.
 
 Columns:
 
@@ -246,6 +246,12 @@ Columns:
 | `humanOnly.approve` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_humanonly.py`) | 1.3.9 | The owner's opt-out of `/crew:approve` being human-only. null or `true` keeps it human-only; `false` opts out only from the machine file or an untracked repo file, only after `/crew:confirm-config` twice, and a `true` in either layer vetoes. crew 1.3.9: no hook acts on it yet, so it changes nothing today. |
 | `humanOnly.promoteMarker` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_humanonly.py`) | 1.3.9 | The same opt-out for the production promote marker `.crew/.approved-<env>-<sha>`, under the same rules. crew 1.3.9: no hook acts on it yet, and no hook today checks who created the marker. |
 
+### `worktrees`
+
+| Setting | Layer | Default | Values | Since | Summary |
+|---|---|---|---|---|---|
+| `worktrees.root` | both | `null` | absolute path or null (coerced in `plugin/crew/hooks/scripts/crew_worktrees.py`) | 1.3.19 | The base directory for this repo's git worktrees, OUTSIDE the repo: they go in `<root>/<repo>-<digest>/<name>`. null is `~/.claude/crew/worktrees`; `~` is expanded, a relative path or one inside the repo is refused (never replaced by the default). It places the worktrees crew places (`/crew:emergency`, `crew_worktrees.py path`) and, once the owner registers the opt-in `WorktreeCreate` hook, the ones Claude Code creates; without the hook Claude Code keeps using `.claude/worktrees/`. |
+
 ### `emergency`
 
 | Setting | Layer | Default | Values | Since | Summary |
@@ -319,6 +325,7 @@ Columns:
 | `environments.nonProd` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_config.py` (expects list of globs) | 1.0.37 | Terraform targets that are not production and may run unattended. |
 | `environments.prodUnattended` | both, ratchet | `false` | `false` \| `true` (ratchet: narrower layer wins; listed narrowest first) | 1.0.37 | Whether production terraform may run unattended; `true` only when both layers say so. |
 | `environments.workflows` | repo | `{}` | not validated - read by `plugin/crew/hooks/scripts/crew_config.py` (expects object of glob to string) | 1.1.16 | Deploy workflow globs, each mapped to its environment or `input:<name>`. |
+| `environments.preProduction` | repo | `{}` | not validated - read by `plugin/crew/hooks/scripts/crew_preprod.py` (expects object of exact name to {reason, targets}) | 1.3.20 | Environments labelled production that are not live yet: exact name -> `reason` (+ optional exact `targets`); judged non-production by the cloud guard, with an audit line. |
 
 ### `change`
 

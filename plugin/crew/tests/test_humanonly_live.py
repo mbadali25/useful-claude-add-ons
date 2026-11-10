@@ -1,4 +1,4 @@
-"""crew 1.3.21: the human-only opt-out goes live (harness half).
+"""crew 1.3.27: the human-only opt-out goes live (harness half).
 
 `crew_ticket.cli_approval_allowed` now reads `crew_humanonly.resolve(..,
 "approve")`; `approval_hook.py` records `/crew:confirm-config <id>` (the double
@@ -351,4 +351,5 @@ def test_the_session_may_still_propose(repo, home):
 
 @pytest.mark.parametrize("name", ["approval-hook.sh", "approval_hook.py", "scope_guard.py"])
 def test_every_changed_file_is_lf_only(name):
-    assert b"\r" not in open(os.path.join(SCRIPTS, name), "rb").read()
+    with open(os.path.join(SCRIPTS, name), "rb") as fh:
+        assert b"\r" not in fh.read()

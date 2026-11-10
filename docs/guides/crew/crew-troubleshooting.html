@@ -946,7 +946,14 @@ every literal sha the command names. <code>.crew/verify.json</code>, <code>.work
 <li><strong>"has uncommitted changes: it ..."</strong> also fires when the map is deleted or untracked, or edited
   under skip-worktree: the gate compares the file with HEAD's copy, not with <code>git status</code>.</li>
 <li><strong>".crew/verify.json in the project dir ... has uncommitted changes"</strong>: commit or revert the map;
-  an uncommitted map is not policy.</li>
+  an uncommitted map is not policy. Since crew L-0768 this fires only when the project dir's map is
+  the policy: the deploy runs from the project dir, or the deployed sha carries no map ("carries no
+  committed .crew/verify.json"). A worktree deploy reads the map committed in its own sha.</li>
+<li><strong>"the map committed in the deployed sha ... does not declare it"</strong> (L-0768): the project dir's
+  map matched the command to an environment the deployed sha's own map lacks. Deploy a sha whose
+  committed map declares it.</li>
+<li><strong>A waiver on the release branch is ignored</strong> (crew before L-0768): older gates read the main
+  checkout's map for a worktree deploy. Update crew; the waiver must be committed in the sha deployed.</li>
 <li><strong>"records the short sha X"</strong> (L-0703): a <code>requires</code> row counts only with the full 40-character
   sha. Re-run the upstream promotion, or rewrite the row with <code>git rev-parse HEAD</code> of the tree that
   passed, after checking it is that commit.</li>
@@ -1000,6 +1007,20 @@ off</strong> (<code>guards.profile: off</code>); turn it on with <code>{"guards"
 (<code>guards.profile: off</code>); turn it on with <code>{"guards": {"overrides": {"cloudGuard": "report"}}}</code> first to see what
 it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
 <ul>
+<li>
+<p><strong>A production-labelled environment that is not live yet keeps being refused.</strong> Do not turn the guard
+  off for it: list it. In <code>.crew/config.json</code> (the repo file; the machine file cannot supply it)
+  set <code>{"environments": {"preProduction": {"acme-new": {"reason": "stood up in November, no
+  customer traffic yet", "targets": ["acme-new-web1", "acme-new-db1"]}}}}</code>. Names and <code>targets</code> are
+  exact, the <code>reason</code> is 10+ characters, and a malformed entry makes every environment unknown (so
+  the refusals get stricter, not looser: the deny message says which entry is wrong). A listed name
+  is judged non-production for a non-destroying <code>terraform apply</code> or deploy dispatch, and
+  <code>prodDatabase</code> / <code>prodServer</code> let a command through when every production target on it is the
+  name or one of its <code>targets</code>. A destroy, an unlisted host on the same line and every other guard
+  are unchanged. Each use prints <code>crew PRE-PRODUCTION EXEMPTION</code> on screen and stderr and logs
+  <code>env:preProduction:&lt;name&gt;</code> to <code>.crew/guard.log</code>. Remove the entry when the environment goes live
+  (<code>docs/crew/config-rationale.md</code>, "Pre-production environments").</p>
+</li>
 <li>
 <p><strong>SQL text that merely looks destructive is not blocked.</strong> <code>DROP</code>/<code>TRUNCATE</code> inside a string
   literal or a comment does not count: the guard strips literals and comments before matching, read
@@ -1465,6 +1486,12 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 <td>repo only</td>
 <td>list of globs</td>
 <td><code>[]</code>: nothing is nonProd, so every terraform apply asks (denied unattended)</td>
+</tr>
+<tr>
+<td><code>environments.preProduction</code></td>
+<td>repo only</td>
+<td>object: exact name to <code>reason</code> (10+ characters) and optional exact <code>targets</code></td>
+<td><code>{}</code>: nothing is exempt. A listed environment is judged non-production by the cloud guard (non-destroying apply and dispatch; <code>prodDatabase</code>/<code>prodServer</code> for its exact targets), with an audit line on screen, stderr and <code>.crew/guard.log</code>; a destroy, <code>block</code> policies and every unlisted target are unchanged</td>
 </tr>
 <tr>
 <td><code>environments.prodUnattended</code></td>

@@ -303,11 +303,15 @@ CLOUD_DEFAULTS = {"awsProfiles": [], "awsRegions": [], "azureSubscriptions": []}
 #                   not judged. It does NOT count toward the terraform layer's
 #                   `engaged` (`cloud_guard.environments_config`).
 #
+# `preProduction` (crew 1.3.20) is REPO ONLY like `nonProd`: an object of exact
+# environment name -> {"reason", "targets"} for an environment LABELLED
+# production that is not live yet. See `crew_preprod.py`.
+#
 # At these defaults nothing is nonProd, production is never unattended and no
 # workflow is classified, so an upgraded repo decides every apply and every
 # dispatch exactly as before.
 ENVIRONMENTS_DEFAULTS = {"nonProd": [], "prodUnattended": False,
-                         "workflows": {}}
+                         "workflows": {}, "preProduction": {}}
 
 # Least to most permissive, like every tier tuple here: letting production be
 # written unattended is the capability, so `True` ranks above `False`.
