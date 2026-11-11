@@ -620,6 +620,17 @@ _LEADING_CD_RE = re.compile(
     r"""\s*(?:&&|;)\s*(?P<rest>\S.*)$""", re.IGNORECASE | re.DOTALL)
 
 
+def _cdpath_may_apply(target, command):
+    """True when bash's `cd <target>` could resolve through CDPATH: a bare relative
+    name (not `.`, `..`, `./x`, `../x`, `~x` or absolute) while CDPATH is set in
+    this environment or named in the command."""
+    if target in (".", "..") or target.startswith(("/", "./", "../", "~")):
+        return False
+    if os.path.isabs(target) or _DRIVE_RE.match(target):
+        return False
+    return bool(os.environ.get("CDPATH") or re.search("CDPATH", command, re.IGNORECASE))
+
+
 def leading_cd(command, cwd, shell="bash"):
     """`(directory, rest)` when `command` is exactly `cd <literal> && <rest>`
     (or `;`) and the literal names an existing directory, else None. This is
@@ -639,10 +650,7 @@ def leading_cd(command, cwd, shell="bash"):
     target = match.group("dq") or match.group("sq") or match.group("bare")
     if target is None or (not powershell and "\\" in (match.group("bare") or "")):
         return None
-    if not powershell and target not in (".", "..") \
-            and not target.startswith(("/", "./", "../", "~")) \
-            and not os.path.isabs(target) and not _DRIVE_RE.match(target) \
-            and (os.environ.get("CDPATH") or re.search("CDPATH", command, re.IGNORECASE)):
+    if not powershell and _cdpath_may_apply(target, command):
         return None
     path, ok = _resolve(target, cwd, False)
     if not ok or not os.path.isdir(path):
