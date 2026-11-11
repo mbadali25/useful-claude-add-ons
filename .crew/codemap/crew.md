@@ -1656,7 +1656,11 @@ DERIVED at `c0e582fbe` (L-0725, 2026-10-22), re-read after the `shellRoute` conf
 picks the shell crew's long-running jobs run in on native Windows. It is a CLI
 (`probe`, `measure`, `classify`, `run`; `main` at `:930`) and a library for
 `crew_status.py` (`crew_shell.status_line`, `plugin/crew/hooks/scripts/crew_status.py:719`). It imports no crew
-module at import time. No hook calls it
+module at import time. The one exception is the dispatcher's `resolve_gitbash(strict=True)`
+(`plugin/crew/hooks/scripts/crew_hook.py`, `dispatch`), which returns a `Problem` whose `.kind`
+(`absent` / `unknown` / `broken`) keeps a Git Bash that exists but did not answer apart from a missing
+one; `unknown` is retried with backoff and answered from `LastKnownGood` (`~/.claude/crew/gitbash-lkg.json`,
+JUDGEMENT: path + size + mtime is a proxy for "the same bash.exe that passed"). Otherwise no hook calls it
 (`crew_platform.py` unchanged since the earlier anchor; `hooks.json` is launcher-only since L-0850). `host_os` (`:57`) gives
 `windows`, `windows-bash`, `linux`, `macos`, `wsl` or `other`, and `on_windows` (`:80`) gates
 everything: off native Windows `probe` returns `n/a`, `status_line` returns None, and `run`

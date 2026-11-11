@@ -51,6 +51,14 @@ read entries under any `## [` heading.
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Fixed — crew 1.3.45: a Git Bash that did not answer is reported as could-not-tell, and the dispatcher trusts the last one that passed
+
+- **Summary.** `crew` 1.3.45: when the hook dispatcher cannot confirm Git Bash on Windows it now says what it established (a Git Bash that exists but did not answer is "could not tell, retry", never "Install Git for Windows"), and it trusts the last Git Bash that passed while that file is unchanged, so a busy host stops blocking Bash, PowerShell and Edit calls.
+- **Cause.** `crew_hook._no_bash` printed "none was found ... Install Git for Windows" for every strict-resolver failure, and `crew_hook.dispatch` passed no last known good. With the 1.3.41 resolver this wording was wrong for an unanswered self-test.
+- **Fix.** `crew_hook.dispatch` builds the strict resolver with a `crew_shell.LastKnownGood()` (`~/.claude/crew/gitbash-lkg.json`); `_no_bash` reads the reason's `.kind` (a bare string from a stub or an older resolver counts as `absent`, so the old wording stays the default): `absent` keeps "Install Git for Windows", `unknown` says Git Bash did not answer, that this is not a missing-Git error and to retry the same call, `broken` says the self-test failed and to repair Git. All three still exit 2 on `PreToolUse`, `UserPromptSubmit` and `Stop` in an armed repo and stay silent-exit-0 in an unarmed one (fail-closed is unchanged). One Python path serves the bash and powershell registrations, so they stay consistent. No config key.
+- **Tests.** `test_crew_hook_gitbash_kind.py`: an armed call is blocked for each kind, and only `absent` says "Install Git for Windows". `sabotage_shell.py` gains eight anchored mutants (a self-test timeout reported as broken, no retry, a resource-failure exit counted as broken, the last known good ignoring a changed file, an unanswered Git Bash reported as absent, a `git --exec-path` timeout counted as absent, every failure saying Install Git, an unknown letting an armed call through), each run alone and red.
+- Docs: `docs/guides/crew/src/troubleshooting.md` (Windows notes) and its rebuilt HTML, `plugin/crew/README.md`.
+
 ### Fixed — crew 1.3.44: the strict Git Bash resolver no longer reports a slow Git Bash as a missing one
 
 - **Summary.** `crew` 1.3.44: `crew_shell.resolve_gitbash(strict=True)` now tells a Git Bash that exists but did not answer (could not tell) from one that is absent or broken, retries the unanswered self-test with backoff, and can answer from a last known good; the dispatcher half (wording and wiring) follows in 1.3.45.
