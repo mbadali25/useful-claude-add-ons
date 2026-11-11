@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.23**: The trust-seam venv fails loudly and no longer re-adds the user site. `crew` 1.3.23: no behaviour change; the test-only trust seam venv now fails the suite naming itself when its interpreter will not start, and keeps the gate's `-E -s` isolation.
 - **crew 1.3.22**: The Windows trust-store seam interpreter is the one the gate runs. `crew` 1.3.22: no behaviour change; the test-only trust seam now works on Windows, where the verify gate was picking a different `python3` and reporting UNTRUSTED.
-- **crew 1.3.21**: Revert of the Windows python3.exe seam copy. `crew` 1.3.21: no behaviour change; reverts the Windows `python3.exe` seam copy added in 01ebec33e, and the Windows UNTRUSTED CI failure is open.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -182,12 +182,18 @@ def _trust_seam_python(tmp_path_factory):
     venv.create(str(root), with_pip=False, symlinks=os.name != "nt", system_site_packages=True)
     found = list(root.glob("lib/python*/site-packages")) + list(root.glob("Lib/site-packages"))
     if not found:
-        pytest.skip("venv has no site-packages directory")
+        pytest.fail(f"the trust-seam venv {root} has no site-packages directory")
     (found[0] / "_crew_trust_seam.py").write_text(_TRUST_SEAM, encoding="utf-8", newline="\n")
     # The parent may itself be a venv, whose packages `system_site_packages`
-    # (the BASE interpreter's) does not reach: chain its site dirs explicitly.
-    parent_sites = [p for p in sys.path
-                    if p and os.path.isdir(p) and "site-packages" in p.replace("\\", "/")]
+    # (the BASE interpreter's) does not reach: chain ITS site dirs, and only
+    # then. Never the user site, and never a plain parent's: the gate runs
+    # `python -E -s`, and a `.pth` that re-adds the user site would defeat it.
+    parent_sites = []
+    if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
+        user_site = os.path.normcase(site.getusersitepackages())
+        parent_sites = [p for p in site.getsitepackages()
+                        if os.path.basename(p) == "site-packages" and os.path.isdir(p)
+                        and os.path.normcase(p) != user_site]
     pth = "import _crew_trust_seam\n" + "".join(
         f"import site; site.addsitedir({p!r})\n" for p in parent_sites)
     (found[0] / "_crew_trust_seam.pth").write_text(pth, encoding="utf-8", newline="\n")
@@ -206,8 +212,14 @@ def _trust_seam_python(tmp_path_factory):
         # 0.08 s on the second launch), and the resolver gives each candidate
         # 3 s: a cold python3.exe would time out, be skipped, and the gate
         # would fall through to the next python3 on PATH -- UNTRUSTED again.
-        subprocess.run([str(bindir / "python3.exe"), "-c", "pass"], check=False,
-                       stdin=subprocess.DEVNULL, capture_output=True, timeout=600)
+        try:
+            warm = subprocess.run([str(bindir / "python3.exe"), "-c", "pass"], check=False,
+                                  stdin=subprocess.DEVNULL, capture_output=True, timeout=600)
+        except subprocess.TimeoutExpired:
+            pytest.fail(f"the trust-seam venv {root}: python3.exe did not start within 600 s")
+        if warm.returncode != 0:
+            pytest.fail(f"the trust-seam venv {root}: python3.exe exited {warm.returncode}: "
+                        f"{warm.stderr.decode('utf-8', 'replace').strip()}")
     return bindir
 
 
