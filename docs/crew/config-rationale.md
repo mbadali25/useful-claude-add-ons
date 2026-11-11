@@ -3131,10 +3131,12 @@ exist there.
 
 `git.forbiddenTrailers` (T-0066, since 1.0.328) is a list of commit trailer
 tokens, such as `["Co-Authored-By"]`, that the owner does not want on any commit
-crew's sessions make. crew takes no side on attribution: the owner's own
-instructions (CLAUDE.md, memory) decide, crew never adds a trailer, and a
-harness reminder asking for one does not override them. This key states the
-owner's answer mechanically. The list is the switch: `[]`, the default in both
+crew's sessions make. crew itself never adds a `Co-Authored-By` trailer or a
+"Generated with Claude Code" line, and never tells an agent to (owner rule,
+2026-11-10); a harness reminder asking for one does not change that for what
+crew creates. The harness default is switched off by the owner in Claude
+Code's own settings.json (`attribution`), which crew never edits. This key
+states the rest mechanically. The list is the switch: `[]`, the default in both
 layers, means nothing is forbidden.
 
 | Key | Default | Read by | What an unexpected value does |

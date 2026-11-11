@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.41: re-bump only - interim number on the no-coauthored branch before main reached 1.3.41 with the promote gate change; the change is recorded under crew 1.3.42
 - crew 1.3.37: re-bump only - interim land number on the verify-gate stale-marker branch (commit dca02a908) before main reached 1.3.38; the change is recorded under crew 1.3.39
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.34; the change is recorded under crew 1.3.36
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.33; the change is recorded under crew 1.3.34
@@ -48,21 +49,50 @@ read entries under any `## [` heading.
 - crew 1.3.8: re-bump only - the human-only opt-out re-versioned so installs update (commit 438b1869c); recorded under crew 1.3.9
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
+- crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Fixed — crew 1.3.42: a Git Bash that did not answer is reported as could-not-tell, and the dispatcher trusts the last one that passed
+### Fixed — crew 1.3.45: a Git Bash that did not answer is reported as could-not-tell, and the dispatcher trusts the last one that passed
 
-- **Summary.** `crew` 1.3.42: when the hook dispatcher cannot confirm Git Bash on Windows it now says what it established (a Git Bash that exists but did not answer is "could not tell, retry", never "Install Git for Windows"), and it trusts the last Git Bash that passed while that file is unchanged, so a busy host stops blocking Bash, PowerShell and Edit calls.
+- **Summary.** `crew` 1.3.45: when the hook dispatcher cannot confirm Git Bash on Windows it now says what it established (a Git Bash that exists but did not answer is "could not tell, retry", never "Install Git for Windows"), and it trusts the last Git Bash that passed while that file is unchanged, so a busy host stops blocking Bash, PowerShell and Edit calls.
 - **Cause.** `crew_hook._no_bash` printed "none was found ... Install Git for Windows" for every strict-resolver failure, and `crew_hook.dispatch` passed no last known good. With the 1.3.41 resolver this wording was wrong for an unanswered self-test.
 - **Fix.** `crew_hook.dispatch` builds the strict resolver with a `crew_shell.LastKnownGood()` (`~/.claude/crew/gitbash-lkg.json`); `_no_bash` reads the reason's `.kind` (a bare string from a stub or an older resolver counts as `absent`, so the old wording stays the default): `absent` keeps "Install Git for Windows", `unknown` says Git Bash did not answer, that this is not a missing-Git error and to retry the same call, `broken` says the self-test failed and to repair Git. All three still exit 2 on `PreToolUse`, `UserPromptSubmit` and `Stop` in an armed repo and stay silent-exit-0 in an unarmed one (fail-closed is unchanged). One Python path serves the bash and powershell registrations, so they stay consistent. No config key.
 - **Tests.** `test_crew_hook_gitbash_kind.py`: an armed call is blocked for each kind, and only `absent` says "Install Git for Windows". `sabotage_shell.py` gains eight anchored mutants (a self-test timeout reported as broken, no retry, a resource-failure exit counted as broken, the last known good ignoring a changed file, an unanswered Git Bash reported as absent, a `git --exec-path` timeout counted as absent, every failure saying Install Git, an unknown letting an armed call through), each run alone and red.
 - Docs: `docs/guides/crew/src/troubleshooting.md` (Windows notes) and its rebuilt HTML, `plugin/crew/README.md`.
 
-### Fixed — crew 1.3.41: the strict Git Bash resolver no longer reports a slow Git Bash as a missing one
+### Fixed — crew 1.3.44: the strict Git Bash resolver no longer reports a slow Git Bash as a missing one
 
-- **Summary.** `crew` 1.3.41: `crew_shell.resolve_gitbash(strict=True)` now tells a Git Bash that exists but did not answer (could not tell) from one that is absent or broken, retries the unanswered self-test with backoff, and can answer from a last known good; the dispatcher half (wording and wiring) follows in 1.3.42.
+- **Summary.** `crew` 1.3.44: `crew_shell.resolve_gitbash(strict=True)` now tells a Git Bash that exists but did not answer (could not tell) from one that is absent or broken, retries the unanswered self-test with backoff, and can answer from a last known good; the dispatcher half (wording and wiring) follows in 1.3.45.
 - **Cause.** The strict resolver ran `bash.exe -c 'exit 0'` once under a 5 s bound and returned `(None, "Git Bash not found (strict; ...)")` for a timeout exactly as for a missing file, so an unknown collapsed into "not found" and `crew_hook._no_bash` printed "none was found ... Install Git for Windows" on a loaded host while the file was there. Measured on this host (Windows 11, 32 cores, `fix/crew-gitbash-resolver-unknown` off `86744b56f`): `bash.exe -c 'exit 0'` took 2.9 to 5.5 s with nothing else running; with 8 busy processes (4 CPU spinners, 4 loops of `bash.exe -c 'exit 0'`) the unchanged resolver returned None in 10 of 12 runs, each with the self-test timing out at 5 s and the message naming the same path twice (the `git --exec-path` candidate and the default are one file). The same load with the fix returned a path in 11 of 11 runs.
 - **Fix.** A `str` subclass, `Problem`, carries a `.kind` through the reason: `absent` (no candidate file exists), `unknown` (a file exists but the self-test timed out, could not start, or died on a fork or allocation failure) or `broken` (it ran and exited non-zero for another reason). `unknown` is retried (5, 6 and 6 s with 0.3 and 0.6 s pauses, stopping once 14 s are spent so the 25 s dispatch deadline holds) and, when a `LastKnownGood` is passed, answered right after the first unanswered attempt from the record of the last Git Bash that passed (`~/.claude/crew/gitbash-lkg.json`: path, size, mtime; written atomically with LF after a clean pass; trusted only while the file exists and is unchanged). A `git --exec-path` timeout with no candidate file is also `unknown`. The default (non-strict) resolution is unchanged, and nothing passes a `LastKnownGood` yet, so the record is not written until the dispatcher wiring lands. No config key.
-- **Tests.** `test_crew_gitbash_unknown.py` (must-allow: present but slow, retry answers, trusted last known good; must-block: never answers, absent, broken, changed or missing file never trusted from the record, record atomic and LF) and `test_crew_shell.py` (the two strict tests that pinned a hang as "not found" now expect `unknown`). Sabotage entries for these ride with the harness PR (1.3.42), which owns `tests/sabotage*.py`.
+- **Tests.** `test_crew_gitbash_unknown.py` (must-allow: present but slow, retry answers, trusted last known good; must-block: never answers, absent, broken, changed or missing file never trusted from the record, record atomic and LF) and `test_crew_shell.py` (the two strict tests that pinned a hang as "not found" now expect `unknown`). Sabotage entries for these ride with the harness PR (1.3.45), which owns `tests/sabotage*.py`.
+
+
+### Fixed — crew 1.3.41: the promote gate decides in one process and keeps its own, configurable deadline
+
+- **Summary.** `crew` 1.3.41: a deploy-shaped command no longer times the promote gate out on Git Bash; the gate now runs as one python process instead of about forty-five, and a new `promote.deadlineSeconds` setting controls how long it may run.
+- **Cause (verified).** `promote-gate.sh` started about forty-five processes for a declared or dispatched deploy (34 traced external commands in `bash -x`, eight of them python, eleven git, plus the `$(...)` subshells around them). On Git Bash each is an MSYS fork, 0.3-0.5 s on a quiet host and 1.7 s measured on a loaded one, against the guard's 20 s hook timeout (its own deadline was 16 s). A timeout is not a block, so the deploy-shaped command either timed out or hit "inside the gate's deadline".
+- **Fix.** `hooks/scripts/_promote_gate.py` makes the whole decision in one process. The heredocs that were `python -` steps are now modules it imports (`_promote_match.py`, `_promote_verdict.py`), the dispatch, tree, github and review readers are called in-process, and `git` is asked once per directory for its top, common dir and sha. `promote-gate.sh` keeps the PowerShell hand-off, the no-map opt-out, the python lookup and the jq fallback, and reads the payload with the `read` builtin instead of `cat`. `_promote_fast.py` is gone: its allow fast path is the first step of the gate. Rules and messages are unchanged; the two failures the shell used to word itself (the map cannot be read, the pre-deploy check errored) keep their wording through exit statuses 10+N and 20+N.
+- **Same decisions (verified), one input differs by construction.** 41 recorded cases (exit status, message phrase, in-flight marker, incident skip rows) were run through the old and new gate and agree. The command now reaches the matcher as written; Git Bash used to rewrite an argument that starts like a POSIX path into a Windows path first (inferred to matter only for such commands; the one recorded case, a declared deploy beginning with `/`, blocked in both).
+- **New setting.** `promote.deadlineSeconds` (either layer; null by default) is the one deadline the gate keeps, counted from its shell's start. null derives it from the guard's row in `crew_hook.TABLE` less 4 s (16 of 20); a number is clamped to the timeout less 2 s so the setting can never let the gate outlive its hook.
+- **Docs.** `CONFIG.md`, the configuration reference and guide, the troubleshooting guide, `README.md`, `commands/config.md`, `crew-setup`'s template copy, `PLUGINS.md`, the code map, the budgets. DOCX and PDF were not rebuilt (LibreOffice runs on Linux only).
+- **Tests.** `test_promote_gate_one_process.py`: a decision corpus recorded from the old gate and replayed on the new one, the spawn count, the deadline rules and the fast path; `promote_gate_mutations.py` holds the sabotage cases, and `test_promote_fast.py` moved into it.
+
+
+### Changed — crew 1.3.43: standards test expectations and export wording for REPO-04 / GEN-10
+
+- **Summary.** `crew` 1.3.43: the standards tests now expect the REPO-04 and GEN-10 overlay, and the standards wording is trimmed to fit the 28,000 character export budget; the exports are regenerated.
+- **Cause.** The standards edit on this branch changed what `test_crew_standards.py` must expect, and the exports carry the crew version stamp, so a version bump and regeneration follow.
+- **Fix.** `test_crew_standards.py` expectations updated; `standards.md` wording trimmed; `crew_standards.py export --write` run so the exports match.
+- **Not changed.** No config key, value or default.
+- **Docs.** none - standards export and test only.
+
+### Changed — crew 1.3.42: crew never adds or instructs a `Co-Authored-By` trailer
+
+- **Summary.** `crew` 1.3.42: crew no longer takes "no side" on commit attribution; it never adds a `Co-Authored-By` trailer or a "Generated with Claude Code" line to a commit or PR body, and the briefs it sends to developers and wave lanes say so.
+- **Cause.** Owner order 2026-11-10. crew's own files never told anyone to add the trailer (verified by grep over `plugin/crew`), but `practices.md` said crew "takes no side" and left it to the owner's instructions, so a harness reminder asking for the trailer could still reach a dispatched developer or a wave lane unopposed.
+- **Fix.** `commands/implement.md` step 2 tells the developer to add no `Co-Authored-By` trailer and no "Generated with Claude Code" line; the wave lane prompt (`crew_wave.lane_prompt`, step 2) says the same; `practices.md` states the owner rule and where the harness default is switched off (`attribution` in Claude Code's own settings.json, which crew never edits).
+- **Not changed.** No config key, value or default; `git.forbiddenTrailers` stays `[]` by default and its refusal wiring stays a separate harness change. The `Claude-Session:` trailer is untouched.
+- **Tests.** `test_crew_no_coauthored.py`: no command, skill, agent or template line may name the trailer without a forbid word, the lane prompt and `implement.md` carry the rule, and the detector flags an instruction to add it.
 
 ### Fixed — crew 1.3.40: a verified marker written with CRLF is no longer ignored by the Stop gate
 

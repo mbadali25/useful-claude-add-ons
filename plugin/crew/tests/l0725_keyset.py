@@ -1,7 +1,8 @@
 """L-0725: the committed key set (87 keys; 83 repo and 50 machine leaves,
 plus the two `humanOnly` keys crew 1.3.9 added, the `worktrees.root` key crew 1.3.19 added,
-the `environments.preProduction` key crew 1.3.23 added and the six `guards.mass.*`
-keys crew 1.3.36 added: 97, 93 and 59) and the
+the `environments.preProduction` key crew 1.3.23 added, the six `guards.mass.*`
+keys crew 1.3.36 added and the `promote.deadlineSeconds` key crew 1.3.41 added:
+98, 94 and 60) and the
 60 keys it drops. Generated once from the reviewed Disposition in
 `.work/tickets/L-0725/spec.md`; changing a key here is a spec amendment, not a
 test fix. `guards.profile` and `guards.overrides` replace the twelve
@@ -91,6 +92,7 @@ L0725_KEYS = frozenset((
     "humanOnly.approve",       # crew 1.3.9, the owner's 2026-11-06 decision
     "humanOnly.promoteMarker",  # crew 1.3.9, the same decision
     "worktrees.root",           # crew 1.3.19, the owner's 2026-11-09 request
+    "promote.deadlineSeconds",  # crew 1.3.41, the owner's 2026-11-10 request
     "resume.auto",
     "route.enabled",
     "schema",
@@ -191,6 +193,7 @@ L0725_REPO_KEYS = frozenset((
     "humanOnly.approve",       # crew 1.3.9, the owner's 2026-11-06 decision
     "humanOnly.promoteMarker",  # crew 1.3.9, the same decision
     "worktrees.root",           # crew 1.3.19, the owner's 2026-11-09 request
+    "promote.deadlineSeconds",  # crew 1.3.41, the owner's 2026-11-10 request
     "resume.auto",
     "route.enabled",
     "schema",
@@ -255,6 +258,7 @@ L0725_MACHINE_KEYS = frozenset((
     "humanOnly.approve",       # crew 1.3.9, the owner's 2026-11-06 decision
     "humanOnly.promoteMarker",  # crew 1.3.9, the same decision
     "worktrees.root",           # crew 1.3.19, the owner's 2026-11-09 request
+    "promote.deadlineSeconds",  # crew 1.3.41, the owner's 2026-11-10 request
     "resume.auto",
     "route.enabled",
     "secondOpinion.mode",
