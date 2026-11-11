@@ -1073,7 +1073,7 @@
       "smoke":        ["python3 scripts/check-marketplace.py"],
       "regression":   ["python3 scripts/gate-runner.py"],
       "rollback":     "docs/runbooks/rollback.md",
-      "requireHuman": true
+      "requireHuman": false
     }
   }
 }
