@@ -49,6 +49,12 @@ read entries under any `## [` heading.
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 
+### Changed — crew 1.3.40: the 40 `guards.mass` sabotage mutations are registered in the harness
+
+- **Summary.** `crew` 1.3.40: the 40 mutations that prove the mass-guard suite goes red when the guard is broken now run with every sabotage pass instead of only when invoked by hand; no runtime behaviour changes.
+- **Change.** `plugin/crew/tests/sabotage.py` appends `mass_mutations.MASS_MUTATIONS` to `MUTATIONS`, the same way the sibling families are registered. `mass_mutations.py` shipped unwired in crew 1.3.36 because `sabotage*.py` is review harness and a harness change lands alone (`scripts/check-tooling-pr.py`); this is that harness-only follow-up. Tests, comments and version files only.
+- **Verified.** The 40 entries run alone through `sabotage.main()` and each goes red.
+
 ### Fixed — crew 1.3.39: a verified marker left by another branch no longer puts that branch's paths in the Stop gate's scope
 
 - **Summary.** `crew` 1.3.39: the Stop gate now uses `.crew/.verify-verified-at` as its diff base only when that commit is an ancestor of HEAD; a marker left by another branch is replaced by its merge-base with HEAD (or refused when they share no history), so a clean tree no longer fails with phantom changed paths.
