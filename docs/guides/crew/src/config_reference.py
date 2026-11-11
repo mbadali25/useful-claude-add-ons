@@ -275,10 +275,21 @@ against its base - so Write and Edit work is counted where it is about to be
 shared; `terraform apply <plan>` (the plan's own changes), `destroy` and
 `apply -auto-approve`; and an unfiltered SQL `DELETE` or `UPDATE`.
 
-A count that cannot be taken - a variable in a path, a path after a `cd`,
-`find -delete`, `xargs rm`, a failed `git`, an unfiltered SQL statement (no
-command text says how many rows it hits) - is "could not tell", and could not
-tell stops. It does NOT see a script (`bash cleanup.sh`, `python -c`,
+A command that starts `cd <dir> && ...` (or `;`, and `pushd`) is counted in
+that directory when `<dir>` is a literal path to an existing directory and
+nothing after it moves the shell or names a command at run time (an expansion,
+command substitution, backticks, `eval`, `source`). In bash only a lowercase
+`cd` or `pushd` counts (`CD`, `sl` and `Set-Location` are not cd there); in
+PowerShell `Set-Location`, `sl` and `-LiteralPath` count. A relative name is
+not followed when `CDPATH` is set, since `cd` may resolve it elsewhere. Several
+`-C` options are resolved one after another, as git does.
+
+A count that cannot be taken - a variable in a path, any other `cd` (a second
+one, one not first, `cd $DIR`, a missing directory), `GIT_DIR`, `GIT_WORK_TREE`,
+`GIT_INDEX_FILE` or another `GIT_` location variable or `--git-dir` /
+`--work-tree` in the command, `find -delete`, `xargs rm`, a failed `git`, an
+unfiltered SQL statement (no command text says how many rows it hits) - is
+"could not tell", and could not tell stops. It does NOT see a script (`bash cleanup.sh`, `python -c`,
 `make clean`), an MCP server, the Write and Edit tools before they are
 committed, `tar -x` or `unzip`, `git merge` or `pull`, or many small commands
 each under a limit: a tripwire in front of native permissions, not a sandbox.

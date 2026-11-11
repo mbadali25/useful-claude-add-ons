@@ -2038,7 +2038,8 @@ def _tf_environment(scope, cwd, state, cfg, sidecar=None):
 
 
 _GIT_VALUE_OPTS = frozenset(("-C", "-c", "--git-dir", "--work-tree",
-                             "--namespace", "--exec-path", "--config-env"))
+                             "--namespace", "--exec-path", "--config-env",
+                             "--attr-source", "--super-prefix"))
 
 
 def _git_force_push(args):
@@ -3179,22 +3180,26 @@ def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
         # `cd DIR && git commit`: a first, literal cd names where the rest runs
         # (the count is then taken there); any other move stays "could not tell".
         moved = crew_mass.leading_cd(command, mass_cwd, shell)
-        if moved:
+        if moved and not crew_mass.runtime_command_word(moved[1], shell):
             sub = {"cd": False, "switch": False, "engaged": envs["engaged"],
                    "dispatch": dict(envs)}
             scan(shell, moved[1], ctx=sub)
             if not sub["cd"]:
                 mass_cwd, mass_cd = moved[0], False
-    git_env = bool(re.search(r"\bGIT_(?:DIR|WORK_TREE)\b", command or "", re.IGNORECASE))
+    git_env = bool(re.search(
+        r"\bGIT_(?:DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|"
+        r"COMMON_DIR|CEILING_DIRECTORIES|NAMESPACE)\b", command or "", re.IGNORECASE))
     for finding in findings:
         if finding.rule in crew_mass.RULES:
             if not mass_armed:
                 continue
             if git_env and finding.scope["mass"].git:
                 finding.scope["mass"].unknown = True
-                finding.scope["mass"].why = ("GIT_DIR / GIT_WORK_TREE in the command points git "
-                                             "at a repository other than the working "
-                                             "directory's, and that is not read here")
+                finding.scope["mass"].why = ("GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE (or "
+                                             "another GIT_ location variable) in the command "
+                                             "points git at a repository, index or object "
+                                             "store other than the working directory's, and "
+                                             "that is not read here")
             verdict = crew_mass.judge(finding.scope["mass"], finding.text,
                                       mass_cwd, mass_cd, alone, mass)
             if verdict is None:

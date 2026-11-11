@@ -106,7 +106,7 @@ _GLOB_RE = re.compile(r"[*?\[]")
 _DYNAMIC_RE = re.compile(r"[$`]|\$\(")
 _DRIVE_RE = re.compile(r"^/([A-Za-z])(/.*)?$")
 _GIT_VALUE_OPTS = frozenset(("-c", "--git-dir", "--work-tree", "--namespace", "--exec-path",
-                             "--config-env"))
+                             "--config-env", "--attr-source", "--super-prefix"))
 _RM_HEADS = frozenset(("rm", "unlink"))
 _PS_RM = frozenset(("remove-item", "ri", "rm", "del", "erase", "rd", "rmdir"))
 _PS_COPY = frozenset(("copy-item", "cpi", "copy", "cp", "move-item", "mi", "move", "mv"))
@@ -298,7 +298,10 @@ def _git_split(args):
     index, override = 0, None
     while index < len(args) and args[index].startswith("-"):
         if args[index] == "-C" and index + 1 < len(args):
-            override = args[index + 1]
+            # git resolves each -C against the one before it (an empty one is a no-op)
+            value = args[index + 1]
+            if value:
+                override = value if override is None else os.path.join(override, value)
             index += 2
         elif args[index] in _GIT_VALUE_OPTS:
             index += 2
@@ -612,7 +615,7 @@ def _resolve(operand, cwd, cd):
 
 
 _LEADING_CD_RE = re.compile(
-    r"""^\s*(?:cd|pushd|set-location|sl)\s+(?:-(?:literalpath|path)\s+)?"""
+    r"""^\s*(?P<cmd>cd|pushd|set-location|sl)\s+(?P<opt>-(?:literalpath|path)\s+)?"""
     r"""(?:"(?P<dq>[^"$`*?\[\]]+)"|'(?P<sq>[^']+)'|(?P<bare>[^\s"'$`*?\[\]{}()<>|;&]+))"""
     r"""\s*(?:&&|;)\s*(?P<rest>\S.*)$""", re.IGNORECASE | re.DOTALL)
 
@@ -622,17 +625,65 @@ def leading_cd(command, cwd, shell="bash"):
     (or `;`) and the literal names an existing directory, else None. This is
     the one cd whose destination is certain: it comes first, so the whole of
     `rest` runs there. The caller must still check `rest` moves nowhere else.
-    A backslash path is read only for PowerShell (in bash it is an escape)."""
+    A backslash path is read only for PowerShell (in bash it is an escape).
+    Bash runs exactly lowercase `cd` / `pushd`: `CD`, `sl`, `Set-Location` and
+    `-LiteralPath` are not cd there, so git would run in the ORIGINAL directory
+    and they are never followed. A relative name with CDPATH set (or named in the
+    command) may resolve elsewhere, so it is not followed either."""
     match = _LEADING_CD_RE.match(command or "")
     if not match or not cwd:
         return None
+    powershell = shell == "powershell"
+    if not powershell and (match.group("cmd") not in ("cd", "pushd") or match.group("opt")):
+        return None
     target = match.group("dq") or match.group("sq") or match.group("bare")
-    if target is None or (shell != "powershell" and "\\" in (match.group("bare") or "")):
+    if target is None or (not powershell and "\\" in (match.group("bare") or "")):
+        return None
+    if not powershell and target not in (".", "..") \
+            and not target.startswith(("/", "./", "../", "~")) \
+            and not os.path.isabs(target) and not _DRIVE_RE.match(target) \
+            and (os.environ.get("CDPATH") or re.search("CDPATH", command, re.IGNORECASE)):
         return None
     path, ok = _resolve(target, cwd, False)
     if not ok or not os.path.isdir(path):
         return None
     return os.path.normpath(path), match.group("rest")
+
+
+_BASH_SPLIT_RE = re.compile(r"&&|\|\||[;|&\n]")
+_PS_SPLIT_RE = re.compile(r"&&|\|\||[;|\n]")
+_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\+?=")
+_BASH_EVALS = frozenset(("eval", "source", ".", "exec"))
+_BASH_WRAPPERS = frozenset(("command", "builtin"))
+_PS_EVALS = frozenset(("iex", "invoke-expression", "&", "."))
+
+
+def runtime_command_word(rest, shell="bash"):
+    """True when any command in `rest` is named at run time (an expansion,
+    command substitution or backticks as the command word, `eval`, `source`,
+    `command cd`, PowerShell `& $x` / `iex`), so it could be a `cd` this scan
+    cannot see. After a followed leading cd that is "could not tell": the guard
+    would count one directory while git ran in another."""
+    powershell = shell == "powershell"
+    splitter = _PS_SPLIT_RE if powershell else _BASH_SPLIT_RE
+    for segment in splitter.split(rest or ""):
+        words = segment.strip().lstrip("({!").split()
+        while words and not powershell and _ASSIGN_RE.match(words[0]):
+            words = words[1:]
+        if not words:
+            continue
+        head = words[0].lower() if powershell else words[0]
+        if powershell:
+            if head[0] in "$(" or head in _PS_EVALS:
+                return True
+        elif head in _BASH_EVALS:
+            return True
+        elif head in _BASH_WRAPPERS and (len(words) < 2 or words[1] in ("cd", "pushd")
+                                         or _DYNAMIC_RE.search(words[1])):
+            return True
+        if not powershell and _DYNAMIC_RE.search(words[0]):
+            return True
+    return False
 
 
 def _exempt_at(path, cwd, globs=()):

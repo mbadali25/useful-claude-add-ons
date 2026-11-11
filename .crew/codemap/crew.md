@@ -1024,7 +1024,12 @@ a worktree is still counted. The approval id (`approval_id`, `crew_mass.py:815`)
 is a digest of the exact command text and worktree, not of the rule; the file
 is written by `approval_hook._approve_mass` (harness PR, #737). `count_git`
 (`crew_mass.py:735`) counts `git diff --name-status -M` lines, the branch
-against `_base` (`crew_mass.py:713`: `origin/HEAD`, `origin/main`, `origin/master`);
+against `_base` (`crew_mass.py:833`: `origin/HEAD`, `origin/main`, `origin/master`, then the
+branch's own upstream; on a branch that is its own base, its upstream). A leading
+`cd DIR &&` is followed by `leading_cd` (`crew_mass.py:623`) and `runtime_command_word` refuses
+a run-time-built command word after it; bash follows only lowercase `cd` / `pushd`; a
+relative name under `CDPATH`, `GIT_DIR` / `GIT_INDEX_FILE` and kin are could-not-tell;
+repeated `-C` is joined in `_git_split`;
 `count_terraform` (`crew_mass.py:774`) reads `terraform show -json <plan>`.
 The six keys are rows in `crew_keys.KEY_META` (`crew_keys.py:330`) with defaults
 in `crew_guards.GUARD_BLOCK_DEFAULTS` (`crew_guards.py:242`).

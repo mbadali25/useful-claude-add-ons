@@ -256,10 +256,20 @@ the added, deleted and changed files of the commit or of the whole branch
 against its base - so Write and Edit work is counted where it is about to be
 shared; <code>terraform apply &lt;plan&gt;</code> (the plan's own changes), <code>destroy</code> and
 <code>apply -auto-approve</code>; and an unfiltered SQL <code>DELETE</code> or <code>UPDATE</code>.</p>
-<p>A count that cannot be taken - a variable in a path, a path after a <code>cd</code>,
-<code>find -delete</code>, <code>xargs rm</code>, a failed <code>git</code>, an unfiltered SQL statement (no
-command text says how many rows it hits) - is "could not tell", and could not
-tell stops. It does NOT see a script (<code>bash cleanup.sh</code>, <code>python -c</code>,
+<p>A command that starts <code>cd &lt;dir&gt; &amp;&amp; ...</code> (or <code>;</code>, and <code>pushd</code>) is counted in
+that directory when <code>&lt;dir&gt;</code> is a literal path to an existing directory and
+nothing after it moves the shell or names a command at run time (an expansion,
+command substitution, backticks, <code>eval</code>, <code>source</code>). In bash only a lowercase
+<code>cd</code> or <code>pushd</code> counts (<code>CD</code>, <code>sl</code> and <code>Set-Location</code> are not cd there); in
+PowerShell <code>Set-Location</code>, <code>sl</code> and <code>-LiteralPath</code> count. A relative name is
+not followed when <code>CDPATH</code> is set, since <code>cd</code> may resolve it elsewhere. Several
+<code>-C</code> options are resolved one after another, as git does.</p>
+<p>A count that cannot be taken - a variable in a path, any other <code>cd</code> (a second
+one, one not first, <code>cd $DIR</code>, a missing directory), <code>GIT_DIR</code>, <code>GIT_WORK_TREE</code>,
+<code>GIT_INDEX_FILE</code> or another <code>GIT_</code> location variable or <code>--git-dir</code> /
+<code>--work-tree</code> in the command, <code>find -delete</code>, <code>xargs rm</code>, a failed <code>git</code>, an
+unfiltered SQL statement (no command text says how many rows it hits) - is
+"could not tell", and could not tell stops. It does NOT see a script (<code>bash cleanup.sh</code>, <code>python -c</code>,
 <code>make clean</code>), an MCP server, the Write and Edit tools before they are
 committed, <code>tar -x</code> or <code>unzip</code>, <code>git merge</code> or <code>pull</code>, or many small commands
 each under a limit: a tripwire in front of native permissions, not a sandbox.</p>

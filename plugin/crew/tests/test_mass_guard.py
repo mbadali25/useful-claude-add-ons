@@ -484,6 +484,129 @@ def test_a_leading_cd_into_a_worktree_is_followed(repo, tmp_path):
     _stopped_in(repo, repo, f"cd {wt} && git commit -m x", crew_mass.MASS_CREATE)
 
 
+def _big_wt(repo, tmp_path, count=22):
+    """A linked worktree with `count` files staged; `repo` itself has nothing staged."""
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", count)
+    git(wt, "add", "-A")
+    return wt
+
+
+@pytest.mark.parametrize("form", [
+    "CD {wt}; git commit -m x", "Cd {wt} && git commit -m x", "PUSHD {wt}; git commit -m x",
+    "sl {wt}; git commit -m x", "set-location {wt}; git commit -m x",
+    "Set-Location {wt}; git commit -m x", "cd -LiteralPath {wt}; git commit -m x",
+    "cd -Path {wt}; git commit -m x"])
+def test_bash_only_follows_a_lowercase_cd_or_pushd(repo, tmp_path, form):
+    # Bash does not run `CD` / `sl` / `Set-Location`: git runs in the ORIGINAL directory,
+    # so the worktree's 22 staged files must never be what is counted for an allow.
+    wt = _big_wt(repo, tmp_path)
+    assert crew_mass.leading_cd(form.format(wt=wt).replace("\\", "/"), str(repo), "bash") is None
+    # not followed, so the worktree's files are never what is counted (main refused these
+    # as could-not-tell; counting the worktree would be the bug)
+    result = _in(repo, repo, form.format(wt=wt))
+    assert "22" not in result["reason"], result
+    assert result["decision"] == "allow" or "moves the shell" in result["reason"], result
+
+
+@pytest.mark.parametrize("form", ["cd {wt} && git commit -m x", "pushd {wt}; git commit -m x"])
+def test_a_lowercase_cd_or_pushd_in_bash_is_still_followed(repo, tmp_path, form):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    _clean_in(repo, repo, form.format(wt=wt))
+
+
+@pytest.mark.parametrize("form", ["Set-Location {wt}; git commit -m x",
+                                  "sl {wt}; git commit -m x",
+                                  "cd -LiteralPath {wt}; git commit -m x"])
+def test_powershell_follows_its_own_location_commands(repo, tmp_path, form):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    command = form.format(wt=wt).replace("\\", "/")
+    mass = crew_mass.settings(str(repo))
+    result = cloud_guard.evaluate(str(repo), "PowerShell", command, {"cwd": str(repo)},
+                                  "block", mass)
+    assert not _mass_rows(result) and result["decision"] == "allow", result
+
+
+@pytest.mark.parametrize("word", ["${{X:-cd}}", "`echo cd`", "$(echo cd)", "$X", "eval cd",
+                                  "source ./go.sh", "command cd", "builtin cd"])
+def test_a_command_word_built_at_run_time_after_a_leading_cd_is_could_not_tell(
+        repo, tmp_path, word):
+    wt = _big_wt(repo, tmp_path)
+    command = f"cd {repo} && {word.format()} {wt} && git commit -m x"
+    result = _stopped_in(repo, repo, command, crew_mass.MASS_DELETE)
+    assert "could not be counted" in result["reason"], result
+
+
+def test_an_expansion_that_is_not_the_command_word_is_still_followed(repo, tmp_path):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    _clean_in(repo, repo, f'cd {wt} && git commit -m "$(echo hi)"')
+    _clean_in(repo, repo, f"cd {wt} && X=1 git commit -m x")
+    _clean_in(repo, repo, f"cd {wt} && echo $HOME > /dev/null && git commit -m x")
+
+
+def test_cdpath_makes_a_relative_cd_could_not_tell(repo, tmp_path, monkeypatch):
+    (repo / "sub").mkdir()
+    _fill(repo / "docs", 2)
+    git(repo, "add", "-A")
+    monkeypatch.delenv("CDPATH", raising=False)
+    _clean_in(repo, repo, "cd sub && git commit -m x")
+    monkeypatch.setenv("CDPATH", str(tmp_path))
+    result = _stopped_in(repo, repo, "cd sub && git commit -m x", crew_mass.MASS_DELETE)
+    assert "moves the shell" in result["reason"], result
+    # an explicit ./ or ../ or absolute path never consults CDPATH
+    _clean_in(repo, repo, "cd ./sub && git commit -m x")
+    _clean_in(repo, repo, f"cd {repo}/sub && git commit -m x")
+    monkeypatch.delenv("CDPATH")
+    result = _stopped_in(repo, repo, "CDPATH=/x; cd sub && git commit -m x", crew_mass.MASS_DELETE)
+    assert "moves the shell" in result["reason"], result
+
+
+@pytest.mark.parametrize("opt", ["--attr-source HEAD", "--attr-source=HEAD",
+                                 "--super-prefix x/"])
+def test_git_value_options_do_not_hide_the_subcommand(repo, tmp_path, opt):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    _clean_in(repo, wt, f"git {opt} commit -m x")
+    git(wt, "reset", "-q")
+    _fill(wt / "docs", 22)
+    git(wt, "add", "-A")
+    _stopped_in(repo, wt, f"git {opt} commit -m x", crew_mass.MASS_CREATE)
+    _stopped_in(repo, repo, f"git -C {wt} {opt} commit -m x", crew_mass.MASS_CREATE)
+
+
+def test_a_repeated_C_is_resolved_cumulatively(repo, tmp_path):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    _clean_in(repo, repo, f"git -C {tmp_path} -C wt-records commit -m x")
+    _clean_in(repo, repo, f"git -C {tmp_path} -C . -C wt-records/docs commit -m x")
+    git(wt, "reset", "-q")
+    _fill(wt / "docs", 22)
+    git(wt, "add", "-A")
+    _stopped_in(repo, repo, f"git -C {tmp_path} -C wt-records commit -m x", crew_mass.MASS_CREATE)
+    # the second -C is absolute: it replaces the first
+    _stopped_in(repo, repo, f"git -C {repo} -C {wt} commit -m x", crew_mass.MASS_CREATE)
+
+
+@pytest.mark.parametrize("env", ["GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR",
+                                 "GIT_CEILING_DIRECTORIES", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                                 "GIT_NAMESPACE"])
+def test_a_git_location_variable_in_the_command_is_could_not_tell(repo, tmp_path, env):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    result = _stopped_in(repo, wt, f"{env}={tmp_path}/x git commit -m x", crew_mass.MASS_DELETE)
+    assert "not read here" in result["reason"], result
+    _clean_in(repo, wt, "git commit -m x")
+
+
 @pytest.mark.parametrize("prefix", ["git --git-dir={g}", "git --git-dir {g}",
                                     "git --work-tree={w}", "GIT_DIR={g} git"])
 def test_a_command_that_redirects_git_to_another_repo_is_could_not_tell(repo, tmp_path, prefix):
