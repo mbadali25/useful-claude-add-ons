@@ -69,6 +69,13 @@ read entries under any `## [` heading.
 - **Tests.** `test_mass_guard.py` (333 cases): the linked-worktree and refusal-reason cases, the redirect cases, the `-C` / `GIT_` cases, the accept cases for the one plain line in bash and PowerShell (counted in the right directory, and stopped over 32 files), a must-refuse case per class above (each run from a worktree with 32 files staged and `cd`-ing into an empty repo, so a wrongly followed cd counts 0 and is let through), and, new in round 5, a timing test that runs hostile inputs (a 5000-character word, 600 paths, long and nested quoting, the real hook shapes) through `leading_cd` and `sets_git_location` in a CHILD process with a timeout, each under 0.2 s (a thread cannot interrupt a backtracking `re` match, and a mutant must go red rather than hang the suite). `mass_mutations.py` holds 101 mutations, each seen red when its fix is reverted, including one that restores the nested-quantifier pattern. One round-5 test names no mutation, on purpose: the glob/tab `cd` and `git -C` cases pin an outcome (could-not-tell, in under 5 s) that the grammar already gives, so no one-line change to the source turns them red.
 - Docs: the Configuration Guide's guard section (`docs/guides/crew/src/config_reference.py`, generated into `configuration-reference.md`, the rebuilt HTML and `plugin/crew/CONFIG.md`) and the code map's `guards.mass` entry (`.crew/codemap/crew.md`) now describe the narrow design; no config key, value or default changed.
 
+### Changed — crew 1.3.46: re-bump only, and the standards exports regenerated
+
+- **Summary.** `crew` 1.3.46: re-bump only - 1.3.45 `plugin/crew` changed after the version was set (37d60bf62); regenerates the standards exports.
+- **Cause.** Merge 37d60bf62 changed `plugin/crew/` after 1.3.45 was set (ea207e31b) without a bump, so `scripts/check-marketplace.py` failed on main.
+- **Fix.** Version bump in `plugin/crew/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` and `plugin/PLUGINS.md`; generated standards exports re-stamped (`crew_standards.py export --write`).
+- Docs: none - version bump and generated headers only.
+
 ### Fixed — crew 1.3.45: a Git Bash that did not answer is reported as could-not-tell, and the dispatcher trusts the last one that passed
 
 - **Summary.** `crew` 1.3.45: when the hook dispatcher cannot confirm Git Bash on Windows it now says what it established (a Git Bash that exists but did not answer is "could not tell, retry", never "Install Git for Windows"), and it trusts the last Git Bash that passed while that file is unchanged, so a busy host stops blocking Bash, PowerShell and Edit calls.
