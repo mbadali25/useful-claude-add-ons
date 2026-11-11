@@ -52,7 +52,7 @@
 # verify actually ran AFTER the deploy. verify-gate.sh picks that up at Stop by
 # refusing to end a turn that deployed and recorded nothing.
 #
-# HOW IT RUNS (crew 1.3.36). The whole decision above is _promote_gate.py, ONE
+# HOW IT RUNS (crew 1.3.40). The whole decision above is _promote_gate.py, ONE
 # python process: the containment match (_promote_match.py), the dispatch, tree
 # and github readers, the verdict (_promote_verdict.py) and the review search
 # (_promote_review.py) are modules it calls in-process. This script keeps only
@@ -142,7 +142,7 @@ fi
 #     exists. Doubly degraded, a deploy cannot be told from anything else.
 PY=$(crew_py) || PY=""
 
-# The python gate (crew 1.3.36). It decides everything below in one process and
+# The python gate (crew 1.3.40). It decides everything below in one process and
 # exits 0 (allow) or 2 (block). Any other status - a crash, a kill, an interpreter
 # that would not start - is a block too: an error is not permission.
 if [ -n "$PY" ]; then

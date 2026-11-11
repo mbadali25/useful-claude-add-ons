@@ -406,7 +406,7 @@ PROMOTE_TREE_MUTATIONS = (
      'timeout=max((until - time.monotonic()) / 2, 0.1))',
      'timeout=5)',
      _V + "test_windows_cleanup_stays_inside_the_reap_allowance"),
-    # --- crew 1.2.115: the allow fast path (first step of _promote_gate.py since 1.3.36) --
+    # --- crew 1.2.115: the allow fast path (first step of _promote_gate.py since 1.3.40) --
     ('_promote_gate.py allows on any fast-path exit, not only 99', GATE,
      '        return committed_as_is(blob)\n',
      '        return True\n',
@@ -522,7 +522,7 @@ PROMOTE_TREE_MUTATIONS = (
 )
 
 
-# crew 1.3.36: the one-process gate's own mutations ride in this tuple, which
+# crew 1.3.40: the one-process gate's own mutations ride in this tuple, which
 # sabotage.py already imports, so the harness file is not touched.
 from promote_gate_mutations import PROMOTE_GATE_MUTATIONS  # noqa: E402  pylint: disable=wrong-import-position
 

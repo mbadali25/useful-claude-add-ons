@@ -649,7 +649,9 @@ record_verified_fingerprint() {
 #   2. The merge-base with the default branch (origin/<default> when that ref
 #      exists, else the local branch - crew 1.2.117, see below), when there is
 #      no marker or it names a commit this repo no longer contains (a squash
-#      merge, a rebase).
+#      merge, a rebase). A marker that is not an ancestor of HEAD (left by
+#      another branch) is replaced by its merge-base with HEAD; one that
+#      shares no history with HEAD is refused.
 #      Nothing on this branch has been shown to be verified, so all of it is in
 #      scope. Unknown resolves to checking MORE, never less.
 #   3. HEAD, when there is no branch point to use -- a detached checkout, or
@@ -688,8 +690,30 @@ if [ -f .crew/.verify-verified-at ]; then
   # Trust it only if it still names a commit. A marker surviving a squash merge
   # would otherwise diff against nothing and report the whole branch as clean.
   if [ -n "$CAND" ] && git cat-file -e "${CAND}^{commit}" 2>/dev/null; then
-    BASE="$CAND"
-    BASE_FROM_MARKER=1
+    # It must also be an ancestor of HEAD. A marker a pass left on ANOTHER
+    # branch still names a commit here, and diffing against it put every path
+    # that branch touched in scope - measured: ~1368 phantom paths and an
+    # UNMAPPED failure on a clean tree, which never let a pass refresh the
+    # marker. Its merge-base with HEAD is an ancestor of the verified commit,
+    # so it is covered by that pass, and an ancestor of HEAD, so only this
+    # branch's own changes since it are in scope - the same rule BASE_AT
+    # gets below. No shared history at all (an orphan branch's marker) is
+    # refused like an unshared BASE_AT: falling through could reach
+    # merge-base = HEAD on the default branch and pass an unchecked commit
+    # (review round 1). --all and --ci do not diff from a base, so they go on.
+    if git merge-base --is-ancestor "$CAND" HEAD 2>/dev/null; then
+      BASE="$CAND"
+      BASE_FROM_MARKER=1
+    else
+      BASE=$(git merge-base "$CAND" HEAD 2>/dev/null) || BASE=""
+      if [ -n "$BASE" ]; then
+        BASE_FROM_MARKER=1
+        BASE_NOTE="verify-gate: diff base: the verified marker ($CAND) is not an ancestor of HEAD (left by another branch?), so its merge-base with HEAD is used, $BASE"
+      elif [ "$CI_ALL_SEEN" -eq 0 ] && [ "$CI_MODE" -eq 0 ]; then
+        echo "verify-gate: the verified marker (.crew/.verify-verified-at, $CAND) shares no history with HEAD - the gate cannot tell what changed since it, so it refuses rather than check less. Run /crew:verify --all, then remove that file." >&2
+        exit 2
+      fi
+    fi
   fi
 fi
 # A baseline that is not an ancestor of HEAD - one a quiet turn left on

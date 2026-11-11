@@ -90,7 +90,7 @@ How it writes, whatever the arguments say:
   refused wherever it is read (`/crew:worktrees` prints `refused: ...`), and the
   default is never substituted for it. Setting it moves nothing: existing
   worktrees stay where they are (`/crew:worktrees list` shows them).
-- **`promote.deadlineSeconds` (crew 1.3.36).** A plain number of seconds in either layer (the repo
+- **`promote.deadlineSeconds` (crew 1.3.40).** A plain number of seconds in either layer (the repo
   wins) or `null`: how long `promote-gate.sh` may run, counted from the moment its
   shell began. null derives it from the guard's hook timeout less 4 s (16 of 20). A value above
   the timeout less 2 s is clamped to that; zero, a negative, a string or a boolean reads as null.
@@ -101,8 +101,9 @@ How it writes, whatever the arguments say:
   --key <path>` and applies only after the owner types
   `/crew:confirm-config <change_id>` twice. A repo `null` or `--unset` drops a
   veto and is a hand edit by the owner. Never propose one on your own
-  initiative, never confirm one, and say plainly that in 1.3.9 no hook acts on
-  these keys yet (`CONFIG.md`, "The human-only opt-out").
+  initiative, never confirm one, and say plainly that `humanOnly.approve` is acted on
+  since 1.3.27 and `humanOnly.promoteMarker` by no hook
+  (`CONFIG.md`, "The human-only opt-out").
 - **Deleting the repo config** is the menu's delete step only: preview, typed
   repo name, then one rename of the file to `.crew/config.json.bak-<UTC>`
   under the lock, compared with what the preview read (a changed file is put

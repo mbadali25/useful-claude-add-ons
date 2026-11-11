@@ -10,7 +10,7 @@ promote-gate.sh was cut to the python that judges:
 `crew_native_path` reads `$OSTYPE` and passes a mixed `D:/...` path through,
 `$DIR` comes from `${BASH_SOURCE[0]%/*}`, the clock from printf's `%(%s)T`,
 and promote-gate.sh decides in one python, deploy or not (_promote_gate.py, crew
-1.3.36; its payload is read with the `read` builtin).
+1.3.40; its payload is read with the `read` builtin).
 
 This runs each guard with `bash -x` on a command that deploys nothing, in a
 repo whose guards are armed and whose deploy map is committed, and fails if a
@@ -114,7 +114,7 @@ def test_the_allow_path_starts_no_helper_programs(tmp_path, script):
 def test_a_declared_deploy_still_takes_the_full_gate(tmp_path):
     """The control: a declared deploy is not an allow, and it is judged (here
     blocked, for the missing PASS row) by the same single python, with no helper
-    program started by bash. Before crew 1.3.36 this path started git and seven
+    program started by bash. Before crew 1.3.40 this path started git and seven
     more pythons from bash."""
     root = _repo(tmp_path)
     proc = _traced("promote-gate.sh", root, tmp_path, command="deploy-prod --now")

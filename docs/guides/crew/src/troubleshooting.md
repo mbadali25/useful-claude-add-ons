@@ -690,7 +690,7 @@ and named by any `git -C <dir>`. That tree must be a worktree of the same reposi
 every literal sha the command names. `.crew/verify.json`, `.work/PROMOTIONS.md` and the
 `.crew/.approved-<env>-<sha>` markers are still read from the session's project directory.
 
-**It is one process (crew 1.3.36).** The gate used to start about forty-five (eight pythons, a dozen `git` probes), which on
+**It is one process (crew 1.3.40).** The gate used to start about forty-five (eight pythons, a dozen `git` probes), which on
 Git Bash took 19-20 s best case and timed out at 20 s; now the shell starts one python and that python decides. It keeps one deadline
 counted from its shell's start, `promote.deadlineSeconds` (null: the hook timeout less 4 s, 16 s of 20). If a deploy still ends in
 "inside the gate's deadline" on a very loaded host, the deadline expired before the gate finished: that is a block, not a timeout.

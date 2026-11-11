@@ -1,4 +1,4 @@
-"""The decision corpus for the one-process promote gate (crew 1.3.36).
+"""The decision corpus for the one-process promote gate (crew 1.3.40).
 
 Each case is a repository state plus a Bash command, and the decision the gate
 had before it became one python process: the exit status and a phrase its

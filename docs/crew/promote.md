@@ -138,7 +138,7 @@ reader needs (`skills/bitbucket/scripts/merge_gate.sh:30-35`):
 Be precise about this, because the difference decides how much the sequence above
 can be trusted.
 
-**Enforced by `promote-gate.sh` (`PreToolUse`), decided in one process (crew 1.3.36).** The shell script starts `_promote_gate.py` once; it keeps one deadline, `promote.deadlineSeconds` (null: the hook timeout less 4 s), so a slow host ends in a named block, never a timeout. It fires on any command that contains the declared `deploy`
+**Enforced by `promote-gate.sh` (`PreToolUse`), decided in one process (crew 1.3.40).** The shell script starts `_promote_gate.py` once; it keeps one deadline, `promote.deadlineSeconds` (null: the hook timeout less 4 s), so a slow host ends in a named block, never a timeout. It fires on any command that contains the declared `deploy`
 text (a fragment of it is no deploy) - and, on either tool, on a workflow dispatch of a declared deploy workflow in either spelling
 (`gh workflow run` or `gh api .../dispatches`; inputs must fit one environment; a dispatch it cannot read is
 could-not-tell and blocks; a `github` entry's `shaInput` must be given once, as that full sha) - and refuses it unless, for the sha at

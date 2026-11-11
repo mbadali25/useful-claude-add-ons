@@ -38,7 +38,7 @@ A fifth file, `session-relay`, is not a role: it is a transport agent on Haiku 5
 `{"provider": "claude", "model": "claude-sonnet-5-5"}`) in `/crew:model`. A wave prints the
 coordinator pin and puts the developer model on every lane launch. Both default to unset, which
 changes nothing. A Claude pin takes a full Claude id or `opus`, `sonnet`, `haiku` or `fable`
-(Fable 5.1). Fable runs only when you pin it like this; crew never picks it for you.
+(Fable 5.2). Fable runs only when you pin it like this; crew never picks it for you.
 
 **Running agents on Kimi.** Claude Code runs subagents on Claude models only,
 so `explorer`, `researcher` and `security` can hand their task to the Kimi Code
@@ -297,7 +297,7 @@ paths the review bundle left out (identical to merged main, or under
 `.work/`, `graphify-out/`, `.crew/metrics.md`) or ignored build output a
 deploy script ships were reviewed, nor who wrote the local ledger.
 
-The gate is one python process (crew 1.3.36), so a deploy-shaped command costs a handful of process starts, not
+The gate is one python process (crew 1.3.40), so a deploy-shaped command costs a handful of process starts, not
 forty-five. It stops itself before its hook times out, because a timeout is not a block: `promote.deadlineSeconds`
 (either layer) sets how many seconds it may run, and null derives it from the hook timeout less four seconds.
 
@@ -402,7 +402,7 @@ worktree:
   always a merge, never a rebase. The train never merges, pushes or opens the
   PR; only autopilot's ship step does, under `autopilot.ship`.
 - **Where worktrees live (crew 1.3.19).** `worktrees.root` (either layer, the repo wins; null is `~/.claude/crew/worktrees`) is the one place outside the repo for crew's worktrees, laid out as `<root>/<repo>-<digest>/<name>`; a value that is relative or inside the repo is refused, never swapped for the default. Claude Code's own agent worktrees (`claude --worktree`, an Agent with `isolation: worktree`) stay under `.claude/worktrees/`: it has no setting for another place, and the one redirect it supports is a `WorktreeCreate` hook, which replaces git's creation, so crew prints the block (`/crew:worktrees hook`) and registers nothing. `/crew:worktrees list` is a read-only survey of every worktree; `remove <path>` needs your `--yes`, takes one path and never forces. Nothing existing is moved.
-- **How long the promote gate may run (crew 1.3.36).** `promote.deadlineSeconds` (either layer, the repo wins; null derives it from the guard's hook timeout less 4 s, so 16 s of the 20 s row) is the one deadline `promote-gate.sh` keeps for its whole decision, counted from the moment its shell began. A value above the hook timeout less 2 s is clamped to that, and a value that is not a positive number reads as null.
+- **How long the promote gate may run (crew 1.3.40).** `promote.deadlineSeconds` (either layer, the repo wins; null derives it from the guard's hook timeout less 4 s, so 16 s of the 20 s row) is the one deadline `promote-gate.sh` keeps for its whole decision, counted from the moment its shell began. A value above the hook timeout less 2 s is clamped to that, and a value that is not a positive number reads as null.
 - **Check before assuming a diff is yours.** Another session may have
   changed the tree, a branch or the stash (root `CLAUDE.md`, "Lessons").
 
@@ -524,6 +524,19 @@ only through the double confirmation); `humanOnly.promoteMarker` is still
 read by no hook. The owner's `/crew:approve-mass <id>` is recorded the same
 way, for one blocked mass operation. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.
+
+**Mass operations (crew 1.3.36).** The rule for an autopilot that runs without a
+human: full automation, except a mass delete, a mass create or a mass change,
+which wait for your yes. `guards.mass.enabled: true`, or a double-confirmed
+`humanOnly` opt-out, arms a stop on the cloud guard's hook for any shell command
+that would delete 10 or more files, create 20 or more, or change 30 or more
+(`guards.mass.deleteCount`, `createCount`, `changeCount`; terraform's are 3, 10
+and 10). It counts files, a commit's or branch's added, deleted and changed
+files against its base, a terraform plan's resource changes, and treats an
+unfiltered SQL `DELETE` or `UPDATE` and any count it cannot take as mass. It
+prints an id; `/crew:approve-mass <id>` approves that one command for 15
+minutes. The configuration reference's "Mass operations" section lists what it
+sees, what it does not, and the keys.
 
 - `/crew:config` shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.

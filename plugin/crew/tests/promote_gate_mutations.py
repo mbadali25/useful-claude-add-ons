@@ -1,4 +1,4 @@
-"""crew 1.3.36 one-process promote-gate mutations, in `sabotage.py`'s tuple shape.
+"""crew 1.3.40 one-process promote-gate mutations, in `sabotage.py`'s tuple shape.
 
 Each puts back one way the rewrite could have lost a decision, the deadline, or
 the shell's fail-closed hand-off, and names the must-block or must-allow case
