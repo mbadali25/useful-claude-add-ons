@@ -308,6 +308,9 @@ def default_config():
         # both layers (a slow host is a fact of the machine; a repo may differ); null
         # derives it from the guard's hook timeout. Read by `_promote_gate.py`.
         "promote": copy.deepcopy(crew_state.PROMOTE_DEFAULTS),
+        # crew 1.3.46. The orphan reaper (crew_reaper.py): off by default, dry run when on.
+        # Declared in both layers; the reader takes the machine file only.
+        "reaper": copy.deepcopy(crew_state.REAPER_DEFAULTS),
         "emergency": {
             "standDown": True,
             "maxTtlMinutes": 480,
@@ -566,6 +569,9 @@ def default_global_config():
         # crew 1.3.41: how long the promote gate may run is a fact about THIS machine's
         # speed first; a repo file may still name its own.
         "promote": copy.deepcopy(crew_state.PROMOTE_DEFAULTS),
+        # crew 1.3.46: the orphan reaper acts on THIS machine's processes, so the machine file is
+        # the only one its reader takes.
+        "reaper": copy.deepcopy(crew_state.REAPER_DEFAULTS),
         # How much crew may do about a skill it needs and cannot find. This is
         # a machine fact in the strongest sense on this list: it is the machine
         # owner saying how much they trust crew to run commands HERE. It was

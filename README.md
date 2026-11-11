@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.46**: An orphan reaper, and hook-side self-limits so a guard cannot block forever. `crew` 1.3.46: hook processes whose parent died no longer spin or hang for hours; the guards end themselves at their hook timeout, and an opt-in `crew_reaper.py` (dry run by default) finds and ends orphaned shells and scripts.
 - **crew 1.3.45**: A Git Bash that did not answer is reported as could-not-tell, and the dispatcher trusts the last one that passed. `crew` 1.3.45: when the hook dispatcher cannot confirm Git Bash on Windows it now says what it established (a Git Bash that exists but did not answer is "could not tell, retry", never "Install Git for Windows"), and it trusts the last Git Bash that passed while that file is unchanged, so a busy host stops blocking Bash, PowerShell and Edit calls.
-- **crew 1.3.44**: The strict Git Bash resolver no longer reports a slow Git Bash as a missing one. `crew` 1.3.44: `crew_shell.resolve_gitbash(strict=True)` now tells a Git Bash that exists but did not answer (could not tell) from one that is absent or broken, retries the unanswered self-test with backoff, and can answer from a last known good; the dispatcher half (wording and wiring) follows in 1.3.45.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

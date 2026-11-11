@@ -269,7 +269,7 @@ exact command. One id covers every limit that command trips.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>98 keys</strong>: 60 settable in the machine-global file, 38 repo-only.</p>
+<p><strong>106 keys</strong>: 68 settable in the machine-global file, 38 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -801,6 +801,85 @@ exact command. One id covers every limit that command trips.</p>
 <td>number of seconds, or null (coerced in <code>plugin/crew/hooks/scripts/_promote_gate.py</code>)</td>
 <td>1.3.41</td>
 <td>How many seconds the promote gate (<code>promote-gate.sh</code>) may run, counted from the moment its shell began, before it gives up and blocks (a hook that times out is not a block, so the gate stops itself first). null derives it from the guard's hook timeout less a 4 s margin: 16 s of the 20 s row. A number above the timeout less 2 s (18 s of 20) is clamped to that, so the setting can never let the gate outlive its hook; zero, a negative, a string or a boolean reads as null. The hook timeout is the guard's row in the dispatcher's table, not a setting.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="reaper"><code>Reaper</code></h3>
+<table>
+<thead>
+<tr>
+<th width="20%">Setting</th>
+<th width="11%">Layer</th>
+<th>Default</th>
+<th>Values</th>
+<th width="9%">Since</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>reaper.enabled</code></td>
+<td>both</td>
+<td><code>false</code></td>
+<td>boolean (coerced in <code>plugin/crew/hooks/scripts/crew_reaper.py</code>)</td>
+<td>1.3.46</td>
+<td>Whether scheduled and session-start passes of the orphan reaper (<code>crew_reaper.py --scheduled</code>) do anything. false by default; a manual <code>crew_reaper.py</code> run always works and is a dry run unless given <code>--apply</code>. Read from the machine file only: a repo value is ignored, because the reaper ends processes on this machine.</td>
+</tr>
+<tr>
+<td><code>reaper.dryRun</code></td>
+<td>both</td>
+<td><code>true</code></td>
+<td>boolean (coerced in <code>plugin/crew/hooks/scripts/crew_reaper.py</code>)</td>
+<td>1.3.46</td>
+<td>When true (the default) a scheduled or session-start pass only logs what it would end to <code>~/.claude/crew/reaper.log</code>; set false to let it end processes. Only a scheduled pass reads it; a manual run ends processes only with <code>--apply</code>.</td>
+</tr>
+<tr>
+<td><code>reaper.spinCpuPct</code></td>
+<td>both</td>
+<td><code>50</code></td>
+<td>percent of one core (coerced in <code>plugin/crew/hooks/scripts/crew_reaper.py</code>)</td>
+<td>1.3.46</td>
+<td>An orphan is SPINNING when it used at least this percentage of one core over the reaper's short sample (5 s) and is older than <code>spinMinAgeMin</code>. A number above 0; anything else reads as 50.</td>
+</tr>
+<tr>
+<td><code>reaper.spinMinAgeMin</code></td>
+<td>both</td>
+<td><code>15</code></td>
+<td>number of minutes (coerced in <code>plugin/crew/hooks/scripts/crew_reaper.py</code>)</td>
+<td>1.3.46</td>
+<td>Minutes an orphan must be running before the spinning rule (and the self-matching <code>until pgrep -f</code> watcher rule) may end it. A number above 0; anything else reads as 15.</td>
+</tr>
+<tr>
+<td><code>reaper.blockedMinAgeHours</code></td>
+<td>both</td>
+<td><code>2</code></td>
+<td>number of hours (coerced in <code>plugin/crew/hooks/scripts/crew_reaper.py</code>)</td>
+<td>1.3.46</td>
+<td>Hours an orphan using under 1% of a core must be running before it counts as BLOCKED and may be ended. A number above 0; anything else reads as 2.</td>
+</tr>
+<tr>
+<td><code>reaper.protectedRegex</code></td>
+<td>both</td>
+<td><code>null</code></td>
+<td>regular expression, or null (coerced in <code>plugin/crew/hooks/scripts/crew_reaper.py</code>)</td>
+<td>1.3.46</td>
+<td>A regular expression; a process whose image name or command line matches is never ended, it REPLACES the built-in list (claude, node, MCP servers, ai-connect, psmux/tmux, tailscale, language servers, obsidian, perplexity, vscode, wsl/docker/vm, Defender, ssh). null keeps the built-in list; an invalid expression reads as null.</td>
+</tr>
+<tr>
+<td><code>reaper.intervalMin</code></td>
+<td>both</td>
+<td><code>10</code></td>
+<td>whole number of minutes (coerced in <code>plugin/crew/hooks/scripts/crew_reaper.py</code>)</td>
+<td>1.3.46</td>
+<td>Minutes between runs of the scheduled task <code>crew_reaper.py --install-task</code> creates, and the least gap between two session-start passes. A whole number from 1; anything else reads as 10. The task is never installed by default.</td>
+</tr>
+<tr>
+<td><code>reaper.onSessionStart</code></td>
+<td>both</td>
+<td><code>false</code></td>
+<td>boolean (coerced in <code>plugin/crew/hooks/scripts/crew_reaper.py</code>)</td>
+<td>1.3.46</td>
+<td>When true and <code>reaper.enabled</code> is true, the SessionStart context hook starts one detached reaper pass (at most one per <code>intervalMin</code>) and does not wait for it. false by default.</td>
 </tr>
 </tbody>
 </table>

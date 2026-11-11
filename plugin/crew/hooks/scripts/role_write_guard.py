@@ -215,6 +215,7 @@ import time
 
 import crew_common
 import crew_config
+import crew_selflimit
 import crew_state
 
 # --- The policy table -------------------------------------------------
@@ -890,4 +891,6 @@ def main(argv=None):  # pylint: disable=unused-argument
 
 
 if __name__ == "__main__":
+    # only as a script: an in-process caller (a test) must not get an exit timer
+    crew_selflimit.arm(8, "role_write_guard")
     sys.exit(main(sys.argv[1:]))
