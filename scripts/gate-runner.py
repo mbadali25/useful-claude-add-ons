@@ -164,6 +164,7 @@ TABLE = (
     _py_suite("check-diagram-embeds", "scripts/_test/check-diagram-embeds.py"),
     _py_suite("plugin-evals-runner", "scripts/_test/plugin-evals-runner.py"),
     _py_suite("crew-outcome-eval", "scripts/_test/crew-outcome-eval.py"),
+    _py_suite("recall-eval", "scripts/_test/recall-eval.py"),
     _py_suite("version-drift", "scripts/_test/version-drift.py"),
     _py_suite("shellcheck-directives", "scripts/_test/shellcheck-directives.py"),
     _py_suite("windows-shards", "scripts/_test/windows-shards.py"),
