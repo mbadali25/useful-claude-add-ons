@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.23**: Review findings on the git-not-found handling in the trust check. `crew` 1.3.23: a repo approved by hash is trusted again on a machine where the gate cannot find `git`, `approve` and `revoke` print a clean message instead of a traceback, and the gate no longer reads "git could not name the main checkout" as "nothing to strip".
 - **crew 1.3.22**: The verify gate's trust check finds git on Git for Windows 2.56. `crew` 1.3.22: the verify gate's trust check now finds `git` on Git for Windows 2.56 and later, so an allowlisted remote owner is no longer reported UNTRUSTED there; a machine where `git` cannot be found now says UNKNOWN and names git.
-- **crew 1.3.21**: Revert of the Windows python3.exe seam copy. `crew` 1.3.21: no behaviour change; reverts the Windows `python3.exe` seam copy added in 01ebec33e, and the Windows UNTRUSTED CI failure is open.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

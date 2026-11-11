@@ -99,6 +99,13 @@ class TrustError(Exception):
     """The store or the repo could not be read: an UNKNOWN, never a pass."""
 
 
+class GitNotFound(TrustError):
+    """No git on PATH: not "not a repo" and not "untrusted", a could-not-tell.
+    A repo this machine approved BY HASH needs no git to be recognised, so a
+    caller that can answer without git catches this one; every other caller
+    lets it surface as an UNKNOWN that names git."""
+
+
 class Verdict:
     """What `evaluate` decided: an exit code, the line to print, the facts."""
 
@@ -117,7 +124,14 @@ def _repo_bounds(root):
     file instead of asking git for the common dir: the gate asks git that
     exact question once, after the first digest, and a fixture keys on it."""
     bounds = {os.path.realpath(root)}
-    top = _git(root, "rev-parse", "--show-toplevel")
+    try:
+        top = _git(root, "rev-parse", "--show-toplevel")
+    except GitNotFound:
+        # No git: the directory itself stands in for the top level, which is
+        # right for the gate (it runs at the repo's top) and reads the same
+        # `.git` file. A subdirectory then yields only its own path, as it did
+        # before git was required here.
+        top = root
     if top:
         top = os.path.realpath(top.strip())
         bounds.add(top)
@@ -390,8 +404,9 @@ def _git(root, *args):
     except crew_common.ToolNotFound as exc:
         # No git on PATH is not "not a repo" and not "untrusted": trust cannot
         # be decided, so it is an UNKNOWN that names git.
-        raise TrustError("git was not found on PATH (the gate's fixed PATH lists "
-                         "/mingw64/bin, /ucrt64/bin and /clangarm64/bin on Windows)") from exc
+        raise GitNotFound("git was not found on PATH (the gate does not use your PATH, only a "
+                          "fixed list: /mingw64/bin, /ucrt64/bin and /clangarm64/bin on Windows, "
+                          "/usr/local/bin, /usr/bin, /bin and /opt/homebrew/bin elsewhere)") from exc
     try:
         proc = subprocess.run([git, *args], cwd=root,
                               capture_output=True, env=env, stdin=subprocess.DEVNULL,
@@ -594,12 +609,21 @@ def _evaluate(root, path, write_pin, euid, verify_file=None):
     current, _targets = digest(root, verify_file)
     if current is None:
         return Verdict(EXIT_TRUSTED, "verify trust: nothing to run here")
-    identity, toplevel = repo_identity(root)
+    git_missing = None
+    try:
+        identity, toplevel = repo_identity(root)
+    except GitNotFound as exc:
+        # A hash approval is recognised without git; anything else needs it.
+        identity, toplevel, git_missing = os.path.realpath(root), None, exc
     entry = store["repos"].get(identity) or {}
     hashes = entry.get("hashes") or []
     if current in hashes:
         return Verdict(EXIT_TRUSTED, f"verify trust: trusted (approved bytes {current[:12]})",
                        digest=current, identity=identity)
+    if git_missing is not None and store["owners"]:
+        # The allowlist cannot be consulted without git. With no owner allowlisted
+        # there is nothing to consult, and the verdict below needs no git.
+        raise git_missing
     ok, why, remotes = owner_trust(root, identity, toplevel, store, euid)
     if ok and verify_file:
         ok, why = False, "a named verify map is trusted by its approved bytes only"
@@ -707,7 +731,10 @@ def cmd_status(args):
         return 0
     print(f"store: {path}")
     verdict = evaluate(root, path, write_pin=False)
-    print(f"repo: {repo_identity(root)[0]}")
+    try:
+        print(f"repo: {repo_identity(root)[0]}")
+    except TrustError as exc:
+        print(f"repo: unknown ({exc})")
     print(f"verdict: exit {verdict.code} - {verdict.message}")
     try:
         store = load_store(path)
@@ -731,8 +758,12 @@ def cmd_approve(args):
         print("verify_trust: nothing to approve - no .crew/verify.json and no smoke script.",
               file=sys.stderr)
         return 1
-    identity, _top = repo_identity(root)
-    remotes = remote_set(root)
+    try:
+        identity, _top = repo_identity(root)
+        remotes = remote_set(root)
+    except TrustError as exc:
+        print(f"verify_trust: {exc}. Nothing was approved.", file=sys.stderr)
+        return 1
     rules = _rule_count(root)
     print(f"repo:    {identity}")
     print(f"runs:    {', '.join(label for label, _ in targets)}"
@@ -764,7 +795,11 @@ def cmd_approve(args):
 
 def cmd_revoke(args):
     root = os.path.abspath(args.root)
-    identity, _top = repo_identity(root)
+    try:
+        identity, _top = repo_identity(root)
+    except TrustError as exc:
+        print(f"verify_trust: {exc}. Nothing was revoked.", file=sys.stderr)
+        return 1
     found = []
 
     def drop(st):

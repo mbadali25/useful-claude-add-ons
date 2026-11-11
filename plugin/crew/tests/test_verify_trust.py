@@ -823,3 +823,70 @@ def test_evaluate_a_path_that_holds_git_finds_it(tmp_path, store, monkeypatch):
     monkeypatch.setenv("PATH", os.path.dirname(git))
 
     assert _code(root) == verify_trust.EXIT_TRUSTED
+
+
+def _no_git(tmp_path, monkeypatch):
+    empty = tmp_path / "no-tools"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+
+
+def test_evaluate_a_hash_approved_repo_is_trusted_without_git(tmp_path, store, monkeypatch):
+    """A repo approved by hash is recognised from its bytes and its path alone.
+    Requiring git to find it made every approved repo UNKNOWN on a machine whose
+    gate could not find git, though nothing about the approval had changed."""
+    root = _repo(tmp_path)
+    assert _approve(root) == 0
+    _no_git(tmp_path, monkeypatch)
+
+    verdict = verify_trust.evaluate(str(root))
+
+    assert verdict.code == verify_trust.EXIT_TRUSTED, verdict.message
+
+
+def test_evaluate_a_hash_approved_repo_with_changed_bytes_and_no_git_is_not_trusted(
+        tmp_path, store, monkeypatch):
+    root = _repo(tmp_path)
+    assert _approve(root) == 0
+    (root / ".crew" / "verify.json").write_text(_VERIFY.replace("true", "tru3"), encoding="utf-8")
+    _no_git(tmp_path, monkeypatch)
+
+    assert _code(root) == verify_trust.EXIT_CHANGED
+
+
+def test_evaluate_an_unapproved_repo_under_an_allowlisted_owner_and_no_git_is_unknown(
+        tmp_path, store, monkeypatch):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    assert _allow() == 0
+    _no_git(tmp_path, monkeypatch)
+
+    verdict = verify_trust.evaluate(str(root))
+
+    assert verdict.code == verify_trust.EXIT_UNKNOWN
+    assert "git" in verdict.message
+
+
+@pytest.mark.parametrize("verb", ["approve", "revoke"])
+def test_approve_and_revoke_without_git_say_so_and_change_nothing(
+        tmp_path, store, monkeypatch, capsys, verb):
+    """No git is a could-not-tell. It used to escape as a TrustError traceback."""
+    root = _repo(tmp_path)
+    _no_git(tmp_path, monkeypatch)
+    argv = [verb, "--root", str(root)] + (["--yes"] if verb == "approve" else [])
+
+    code = verify_trust.main(argv)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "git was not found" in err
+    assert "Traceback" not in err
+    assert not store.exists()
+
+
+def test_status_without_git_still_prints_a_verdict(tmp_path, store, monkeypatch, capsys):
+    root = _repo(tmp_path)
+    _no_git(tmp_path, monkeypatch)
+
+    assert verify_trust.main(["status", "--root", str(root)]) == 0
+
+    assert "verdict:" in capsys.readouterr().out

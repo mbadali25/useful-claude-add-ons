@@ -441,17 +441,45 @@ def test_gate_a_module_the_repo_ships_is_not_imported_by_the_gate(tmp_path, stor
     assert not shadow.exists(), "the repo's own json.py ran inside the gate"
 
 
-def test_gate_fixed_paths_list_every_git_for_windows_layout():
-    """Git for Windows 2.56 has no mingw64/ (git.exe is in /cmd and /ucrt64/bin);
-    clangarm64/ is the Arm64 layout. The directories are fixed literals: deriving
-    them from MINGW_PREFIX would let the environment choose where git comes from."""
+def test_gate_a_worktree_whose_main_checkout_git_cannot_name_is_unknown(tmp_path):
+    """A directory with a `.git` FILE is a linked worktree (or a submodule). If git
+    cannot say where its main checkout is, that checkout cannot be kept off the
+    interpreter search PATH, and an empty answer read as "nothing to strip" is an
+    unknown collapsed into the safe-looking value. `gate_trust_check` is run on its
+    own with a `git` function that fails, which is what the gate's fixed PATH
+    lacking git looks like; the python probe fails too, so the only way to the
+    "main checkout" line is the new check."""
+    lane = tmp_path / "lane"
+    lane.mkdir()
+    (lane / ".git").write_text("gitdir: " + str(tmp_path / "gone") + "\n", encoding="utf-8")
     with open(_SH, encoding="utf-8") as handle:
         text = handle.read()
-    lines = [line for line in text.splitlines()
-             if "git rev-parse --git-common-dir" in line and "PATH=" in line
-             or line.strip().startswith("MINGW*|MSYS*|CYGWIN*) _tpath=")]
-    assert len(lines) == 2, lines
-    for line in lines:
-        for directory in ("/mingw64/bin", "/ucrt64/bin", "/clangarm64/bin"):
-            assert directory in line, line
-    assert "MINGW_PREFIX" not in text
+    start = text.index("gate_trust_check() {")
+    body = text[start:text.index("\n}\n", start) + 3]
+    program = tmp_path / "probe.sh"
+    program.write_text("git() { return 1; }\ncrew_py_strict() { return 1; }\n" + body
+                       + 'gate_trust_check "$1"\necho "rc=$?"\n', encoding="utf-8", newline="\n")
+
+    done = subprocess.run([_BASH, str(program), str(tmp_path)], cwd=str(lane), check=False,
+                          capture_output=True, text=True,
+                          timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+    assert "rc=13" in done.stdout, done.stdout + done.stderr
+    assert "UNKNOWN, not run" in done.stderr and "main checkout" in done.stderr, done.stderr
+
+
+def test_gate_an_approved_linked_worktree_still_runs_its_rules(tmp_path, store):
+    """The other side of the guard above: where git DOES name the main checkout
+    (Git for Windows prints it as C:/...), a linked worktree of an approved repo
+    runs, and is not read as an unknown."""
+    sentinel = tmp_path / "ran.txt"
+    main = _repo(tmp_path, sentinel)
+    lane = tmp_path / "lane"
+    _git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    _approve(lane)
+
+    done = _run(lane, "--all")
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.is_file(), done.stdout + done.stderr
+    assert "UNKNOWN" not in done.stdout + done.stderr

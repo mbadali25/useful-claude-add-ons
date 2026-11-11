@@ -9,6 +9,15 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.3.23: review findings on the git-not-found handling in the trust check (L-0888)
+
+- **Summary.** `crew` 1.3.23: a repo approved by hash is trusted again on a machine where the gate cannot find `git`, `approve` and `revoke` print a clean message instead of a traceback, and the gate no longer reads "git could not name the main checkout" as "nothing to strip".
+- Cause (reproduced): 1.3.22 made `repo_identity` raise when git is missing, before the approved hash was looked at, so every hash-approved repo came back UNKNOWN; `approve` and `revoke` called it outside any handler and printed a `TrustError` traceback. In `verify-gate.sh` an empty answer from `git rev-parse --git-common-dir` meant "no main checkout to strip", so a linked worktree on a machine where git was missing from the gate's fixed PATH (and every linked worktree on Git for Windows, whose `C:/...` output matched neither case pattern) kept its main checkout on the interpreter search PATH.
+- Fix: `verify_trust.py` raises `GitNotFound` (a `TrustError`); a hash approval is recognised without git, anything that needs the allowlist is UNKNOWN naming git, and `approve`, `revoke` and `status` report it. `verify-gate.sh` reads `C:/...` common dirs and answers UNKNOWN for a `.git` file whose main checkout git cannot name.
+- Docs: the troubleshooting guide's remedy was wrong (it said to fix PATH; the gate ignores your PATH, which was verified by running it); it now says to install git where the gate looks or to approve by hash.
+- Tests: five in `test_verify_trust.py`, two in `test_verify_gate_trust.py`; the source-text test `test_gate_fixed_paths_list_every_git_for_windows_layout` (it read the script's text, so it could stay green while the gate's behaviour broke) is replaced by behavioural ones, and six `sabotage_trust.py` entries are added or retargeted (three Windows-only).
+- Version: 1.3.23 is one patch above 1.3.22 on this branch; main is ahead, so the number is reconciled at merge.
+
 ### Fixed — crew 1.3.22: the verify gate's trust check finds git on Git for Windows 2.56 (L-0888)
 
 - **Summary.** `crew` 1.3.22: the verify gate's trust check now finds `git` on Git for Windows 2.56 and later, so an allowlisted remote owner is no longer reported UNTRUSTED there; a machine where `git` cannot be found now says UNKNOWN and names git.

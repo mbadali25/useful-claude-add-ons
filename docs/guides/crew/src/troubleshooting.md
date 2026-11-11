@@ -543,8 +543,13 @@ machine trusts. Otherwise it prints one line, runs nothing, writes no pass recor
   on first sight. Check `git remote -v`, then `approve` to re-pin.
 - **`UNKNOWN, not run`**: the trust store could not be read (corrupt, unreadable or locked). Fix or delete
   `${CLAUDE_CONFIG_DIR:-~/.claude}/crew/verify-trust.json`; an unknown is never read as trusted.
-  It is also what you see when `git` cannot be found on the gate's fixed PATH (the line names git): on Windows
-  the gate searches `/mingw64/bin`, `/ucrt64/bin` and `/clangarm64/bin`; a git installed elsewhere needs fixing on PATH.
+  It is also what you see when `git` cannot be found (the line names git), in a linked worktree, or when an
+  allowlisted owner has to be checked. The gate does not use your PATH: it searches a fixed list only
+  (`/mingw64/bin`, `/ucrt64/bin` and `/clangarm64/bin` on Windows; `/usr/local/bin`, `/usr/bin`, `/bin` and
+  `/opt/homebrew/bin` elsewhere), so putting git on your own PATH changes nothing (verified: with git on the shell's PATH
+  and absent from that list, the gate still answered UNKNOWN naming git). Install git where the gate looks (a
+  standard Git for Windows install does), or approve the repo by hash: `approve` runs in your own terminal with your
+  own PATH, and a hash-approved repo is recognised without git.
 
 To trust every repo of one owner: `verify_trust.py allow-owner github.com/<owner> --under <dir>` (the `--under`
 limit is optional and recommended: without it a fresh directory whose `.git/config` merely names that owner is

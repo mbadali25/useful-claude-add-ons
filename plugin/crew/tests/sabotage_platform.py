@@ -68,6 +68,12 @@ PLATFORM_ONLY = {
                                          "handle walk runs instead and its own entry covers it"),
     "T-0081: a zero inode on the walk is no longer could-not-tell":
         (frozenset({"linux", "darwin"}), "its target test is skipped where there is no fd walk"),
+    "trust gate: the fixed interpreter PATH loses /ucrt64/bin, where Git for Windows 2.56 keeps git (L-0888)":
+        (_WIN, "git is in /usr/bin on Linux and macOS, so dropping /ucrt64/bin changes nothing there"),
+    "trust gate: the main-checkout probe PATH loses /ucrt64/bin (L-0888)":
+        (_WIN, "git is in /usr/bin on Linux and macOS, so dropping /ucrt64/bin changes nothing there"),
+    "trust gate: a Git for Windows C:/ common dir is not recognised, so a worktree reads UNKNOWN (L-0888)":
+        (_WIN, "only Git for Windows prints the common dir as C:/..."),
     "a displaced move back says moved back without checking the inode":
         (frozenset({"linux", "darwin"}), "its target test is skipped on Windows: "
                                          "the link-then-park move is POSIX's"),

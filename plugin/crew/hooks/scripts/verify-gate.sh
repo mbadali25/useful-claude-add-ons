@@ -55,9 +55,20 @@ gate_trust_check() {
   _tpr=$(pwd -P)
   _tmain=$(PATH="/usr/local/bin:/usr/bin:/bin:/mingw64/bin:/ucrt64/bin:/clangarm64/bin:/opt/homebrew/bin" git rev-parse --git-common-dir 2>/dev/null) || _tmain=""
   case "$_tmain" in
-    /*/.git) _tmain=$(CDPATH='' cd -- "${_tmain%/.git}" 2>/dev/null && pwd -P) || _tmain="" ;;
+    /*/.git|[A-Za-z]:/*/.git) _tmain=$(CDPATH='' cd -- "${_tmain%/.git}" 2>/dev/null && pwd -P) || _tmain="" ;;
     *) _tmain="" ;;
   esac
+  # An empty _tmain means "no main checkout to strip" only when this directory
+  # is not a linked worktree. A linked worktree has a `.git` FILE, and when git
+  # could not tell us where the main checkout is (git missing from the fixed
+  # PATH, or it failed) leaving _tmain empty would keep a repo-authored
+  # directory on the interpreter search PATH: an unknown read as safe. It is an
+  # UNKNOWN. (Git for Windows prints the common dir as C:/..., hence the second
+  # pattern.) An ordinary checkout (a `.git` directory) has no main checkout.
+  if [ -z "$_tmain" ] && [ -f .git ]; then
+    echo "VERIFY GATE: UNKNOWN, not run - nothing was verified. This is a linked worktree or submodule and git could not say where its main checkout is (git is searched only in a fixed list: /mingw64/bin, /ucrt64/bin and /clangarm64/bin on Windows, /usr/local/bin, /usr/bin, /bin and /opt/homebrew/bin elsewhere)." >&2
+    return 13
+  fi
   _tsafe="" _tentry=""
   while IFS= read -r -d ':' _tentry || [ -n "$_tentry" ]; do
     case "$_tentry" in /*|[A-Za-z]:*) ;; *) continue ;; esac
