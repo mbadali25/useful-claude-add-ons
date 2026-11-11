@@ -528,6 +528,41 @@ security dispatcher feeds the diff in on stdin.
 `opus` and `sonnet` here are tiers, not pinned versions. Agent frontmatter asks for a tier and gets whatever the session's strongest model at that tier is; there is no way to pin a point release from a plugin.
 
 
+## Orphan reaper
+
+A hook or shell process whose parent has died can run for hours: measured on one Windows host, a bash
+guard at 27,604 CPU-seconds, a `python -` reading a program from stdin at 43,165 CPU-seconds, and
+18 python guards blocked 4.5 to 36.7 hours at zero CPU. crew now limits itself and cleans up after
+the rest. Both halves are inert until you opt in, except the self-limit, which is always on.
+
+- **Self-limit (always on).** `cloud_guard.py`, `env_guard.py`, `role_write_guard.py`,
+  `_promote_gate.py` and `crew_context.py` start a watchdog (`crew_selflimit.py`) at their own hook
+  timeout less 2 s. A guard whose parent shell died ends itself with exit 124. 124 is neither allow (0)
+  nor deny (2): the dispatcher reads it as "exited without a decision", the same fail-closed UNKNOWN it
+  gives a guard it killed at the timeout. No deny decision changes. `CREW_SELF_LIMIT_S` overrides the
+  seconds. `scope_guard.py` and `approval_hook.py` are review-harness files that must land alone, so
+  they are not covered yet.
+- **Reaper (off by default).** `python3 hooks/scripts/crew_reaper.py` judges processes and prints what
+  it would end; nothing is ended without `--apply`. Candidates are allow-listed images (bash, sh,
+  python, python3, py, git, cygpath, timeout, sleep, cat, tail, curl) and crew hook scripts. An orphan
+  has no live parent (or only a chain of dead shells). It is ended when spinning (>= `reaper.spinCpuPct`
+  of a core over a 5 s sample, older than `reaper.spinMinAgeMin`), blocked (under 1% of a core, older
+  than `reaper.blockedMinAgeHours`), or a self-matching `until ! pgrep -f` watcher. A process with a
+  live parent is only reported, with its owner chain. On Linux and macOS the kernel reparents an
+  orphan to init or a subreaper, which is alive, so there an orphan is reported and never ended;
+  ending one needs a host where the parent pid is really gone (Windows).
+  Protected processes (claude, node, MCP servers,
+  ai-connect, psmux/tmux, tailscale, language servers, obsidian, perplexity, vscode, wsl/docker/vm,
+  Defender, ssh, `reaper.protectedRegex`) and any process with a protected child are never ended.
+  Every decision is a JSON line in `~/.claude/crew/reaper.log` (1 MiB, three generations kept).
+- **Scheduling (opt-in, never automatic).** Windows: `crew_reaper.py --install-task --yes` creates the
+  per-user task `CrewOrphanReaper` (no admin) every `reaper.intervalMin` minutes running
+  `--scheduled`; without `--yes` it prints the `schtasks` command. Linux and macOS:
+  `crew_reaper.py --print-schedule` prints a crontab line and a systemd `--user` service and timer.
+  A scheduled pass needs `reaper.enabled: true` and ends processes only with `reaper.dryRun: false`
+  in `~/.claude/crew/config.json`. `reaper.onSessionStart: true` also starts one detached pass at
+  SessionStart, at most once per interval. Remove the task with `--uninstall-task --yes`.
+
 ## Moved sections
 
 Every section below moved verbatim out of this README to `docs/crew/reference/` (repo-only; a marketplace install of crew does not carry it). Old section numbers and anchors no longer resolve here; look the old title up in this table.

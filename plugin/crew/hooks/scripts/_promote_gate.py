@@ -62,6 +62,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
+import crew_selflimit  # noqa: E402  pylint: disable=wrong-import-position
+
 GATE_ROW = "promote-gate.sh"
 FALLBACK_TIMEOUT = 20          # crew_hook.TABLE could not be read: the row's value when written
 DEFAULT_MARGIN = 4             # seconds kept back from the hook timeout (20 -> the old 16)
@@ -835,4 +837,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # only as a script: an in-process caller (a test) must not get an exit timer
+    crew_selflimit.arm(18, "_promote_gate")
     sys.exit(main())

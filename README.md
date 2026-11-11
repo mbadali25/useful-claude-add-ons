@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.50**: An orphan reaper, and hook-side self-limits so a guard cannot block forever. `crew` 1.3.50: hook processes whose parent died no longer spin or hang for hours; the guards end themselves at their hook timeout, and an opt-in `crew_reaper.py` (dry run by default) finds and ends orphaned shells and scripts.
 - **crew 1.3.47**: The Windows no-op bash registration stops spawning processes. `crew` 1.3.47: on Windows the second, bash registration of every crew hook now exits immediately without starting `uname` or any subshell, which removes about eight process starts from every hook event and changes no guard decision.
-- **crew 1.3.46**: Re-bump only, and the standards exports regenerated. `crew` 1.3.46: re-bump only - 1.3.45 `plugin/crew` changed after the version was set (37d60bf62); regenerates the standards exports.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

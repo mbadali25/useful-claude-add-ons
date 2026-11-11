@@ -2486,4 +2486,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # only as a script: an in-process caller (a test) must not get an exit timer
+    import crew_selflimit  # pylint: disable=import-outside-toplevel
+    crew_selflimit.arm(13, "env_guard")
     sys.exit(main())
