@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.52**: The mass guard follows one plain `cd <dir> && git ...` line in linear time, and says why it could not count. `crew` 1.3.52: a commit or push in a linked worktree written as one plain `cd <dir> && git ...` line is counted in that directory instead of refused as "could not be counted"; every other command with a `cd` is "could not tell", exactly as before, and every refusal names its real reason.
-- **crew 1.3.46**: Re-bump only, and the standards exports regenerated. `crew` 1.3.46: re-bump only - 1.3.45 `plugin/crew` changed after the version was set (37d60bf62); regenerates the standards exports.
+- **crew 1.3.53**: The mass guard follows one plain `cd <dir> && git ...` line in linear time, and says why it could not count. `crew` 1.3.52: a commit or push in a linked worktree written as one plain `cd <dir> && git ...` line is counted in that directory instead of refused as "could not be counted"; every other command with a `cd` is "could not tell", exactly as before, and every refusal names its real reason.
+- **crew 1.3.47**: The Windows no-op bash registration stops spawning processes. `crew` 1.3.47: on Windows the second, bash registration of every crew hook now exits immediately without starting `uname` or any subshell, which removes about eight process starts from every hook event and changes no guard decision.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
