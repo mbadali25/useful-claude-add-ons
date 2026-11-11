@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.47**: The Windows no-op bash registration stops spawning processes. `crew` 1.3.47: on Windows the second, bash registration of every crew hook now exits immediately without starting `uname` or any subshell, which removes about eight process starts from every hook event and changes no guard decision.
 - **crew 1.3.46**: Re-bump only, and the standards exports regenerated. `crew` 1.3.46: re-bump only - 1.3.45 `plugin/crew` changed after the version was set (37d60bf62); regenerates the standards exports.
-- **crew 1.3.45**: A Git Bash that did not answer is reported as could-not-tell, and the dispatcher trusts the last one that passed. `crew` 1.3.45: when the hook dispatcher cannot confirm Git Bash on Windows it now says what it established (a Git Bash that exists but did not answer is "could not tell, retry", never "Install Git for Windows"), and it trusts the last Git Bash that passed while that file is unchanged, so a busy host stops blocking Bash, PowerShell and Edit calls.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
