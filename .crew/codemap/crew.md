@@ -1002,7 +1002,7 @@ by no hook, and a session that runs arbitrary python can still forge a receipt.
 
 DERIVED from `plugin/crew/hooks/scripts/crew_mass.py` (stdlib only) and
 `plugin/crew/hooks/scripts/cloud_guard.py`; tests `plugin/crew/tests/test_mass_guard.py`,
-mutations `plugin/crew/tests/mass_mutations.py` (69 by `len(MASS_MUTATIONS)`, run alone:
+mutations `plugin/crew/tests/mass_mutations.py` (67 by `len(MASS_MUTATIONS)`, run alone:
 `sabotage*.py` is harness).
 `cloud_guard._classify` (`cloud_guard.py:2149`) asks `crew_mass.classify`
 (`crew_mass.py:461`) for `Spec`s on every simple command and wraps each as a

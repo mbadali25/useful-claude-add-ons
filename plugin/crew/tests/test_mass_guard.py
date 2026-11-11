@@ -534,7 +534,7 @@ def test_powershell_follows_its_own_location_commands(repo, tmp_path, form):
 # the round-3 review). The old check tested only each segment's first word and let
 # `if`/`then`/`time`/`{ }`/redirections/assignments/`command -p`/brace and glob words
 # and PowerShell `&`, aliases and method calls through. The cases below build a real
-# worktree with 32 staged files and `cd` the command into an EMPTY directory first, so
+# worktree with 32 staged files and `cd` the command into a repo with nothing staged first, so
 # a wrongly followed cd counts the empty one and lets the 32-file commit through.
 
 BASH_HIDDEN_CD = [
@@ -560,8 +560,6 @@ BASH_HIDDEN_CD = [
     "c* {wt}",
     "~/cd {wt}",
     "'cd' {wt}",
-    "\\cd {wt}",
-    "c\\d {wt}",
     "${{X:-cd}} {wt}",
     "`echo cd` {wt}",
     "$(echo cd) {wt}",
@@ -586,6 +584,9 @@ PS_HIDDEN_CD = [
     "sal g sl; g '{wt}'",
     "New-Alias g sl; g '{wt}'",
     "Set-Item Alias:g Set-Location; g '{wt}'",
+    "Copy-Item Alias:sl Alias:g; g '{wt}'",
+    "Rename-Item Function:f g; g '{wt}'",
+    'echo "${{x}}"',
     "[scriptblock]::Create('s'+'l {wt}').Invoke()",
     "& $x '{wt}'",
     "& 'Set-Location' '{wt}'",
@@ -606,9 +607,7 @@ PS_HIDDEN_CD = [
 
 def _empty_dir_and_big_wt(repo, tmp_path):
     wt = _big_wt(repo, tmp_path, count=32)
-    empty = tmp_path / "empty-dir"
-    empty.mkdir()
-    return wt, empty
+    return wt, repo  # `repo` has nothing staged: a wrongly followed cd counts 0 there
 
 
 @pytest.mark.parametrize("form", BASH_HIDDEN_CD)
@@ -683,7 +682,7 @@ BASH_PLAIN = ["git commit -m x", "git status && git commit -m x", "git add -A; g
               "git commit -m \"$(cat <<'EOF'\nit's\n`x`\nEOF\n)\"",
               "echo $HOME > /dev/null && git commit -m x", "git log HEAD@{1}",
               "git commit -m x 2>&1 | tail -3", "ls | wc -l"]
-BASH_NOT_PLAIN = ["", "   ", ";", "{cd,B}", "c[d] B", "c* B", "'cd' B", 'A="a b" ls', "A[0]=1 ls",
+BASH_NOT_PLAIN = ["", "   ", ";", "\\cd B", "c\\d B", "{cd,B}", "c[d] B", "c* B", "'cd' B", 'A="a b" ls', "A[0]=1 ls",
                   ">/dev/null ls", "~/cd B", "git commit &&", "&& git commit", "exec git commit -m x",
                   "X=1 git commit -m x", "cd /x", "popd", "if true; then git commit; fi",
                   "! git commit", "git commit -m 'x", 'git commit -m "x', "git commit `x",

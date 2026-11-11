@@ -22,6 +22,10 @@ MASS = os.path.join(_S, "crew_mass.py")
 GUARD = os.path.join(_S, "cloud_guard.py")
 _T = "tests/test_mass_guard.py::"
 
+# Two guards are DEFENCE IN DEPTH and have no mutation: the `sub["cd"]` re-scan in
+# `cloud_guard.evaluate` and the `first.redir` test in `plain_tail`. `plain_tail` already
+# refuses what each would catch (a second cd; a command word holding `>`), so reverting
+# either leaves every case green. Reverting `plain_tail` itself is mutated below.
 MASS_MUTATIONS = (
     # --- the count and the limit
     ("mass: a count AT the limit passes", MASS,
@@ -182,9 +186,6 @@ MASS_MUTATIONS = (
      "    if alone:\n        reason +=", "    if False:\n        reason +=",
      _T + "test_attended_is_an_ask_unattended_is_a_deny"),
     # --- a leading cd, the real reason, a redirected repo (crew 1.3.46, second review 1.3.47)
-    ("mass: a leading cd is followed even when the rest moves again", GUARD,
-     '            if not sub["cd"]:\n', "            if True:\n",
-     _T + "test_any_other_cd_is_still_could_not_tell_and_stops"),
     ("mass: a leading cd into a missing directory is followed", MASS,
      "    if not ok or not os.path.isdir(path):\n        return None",
      "    if not ok:\n        return None",
@@ -218,9 +219,6 @@ MASS_MUTATIONS = (
     ("mass: keywords, wrappers and evaluators are plain command words", MASS,
      "        denied = _PS_NOT_PLAIN if powershell else _BASH_NOT_PLAIN",
      "        denied = ()",
-     _T + "test_a_tail_that_is_not_positively_plain_is_could_not_tell_in_bash"),
-    ("mass: a redirection before the command word is plain", MASS,
-     "        if first.redir:\n            return False", "        if False:\n            return False",
      _T + "test_a_tail_that_is_not_positively_plain_is_could_not_tell_in_bash"),
     ("mass: any PowerShell $variable statement is plain", MASS,
      "            if not _ps_assignment_ok(words):\n                return False",
