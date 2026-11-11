@@ -546,7 +546,10 @@ the rest. Both halves are inert until you opt in, except the self-limit, which i
   has no live parent (or only a chain of dead shells). It is ended when spinning (>= `reaper.spinCpuPct`
   of a core over a 5 s sample, older than `reaper.spinMinAgeMin`), blocked (under 1% of a core, older
   than `reaper.blockedMinAgeHours`), or a self-matching `until ! pgrep -f` watcher. A process with a
-  live parent is only reported, with its owner chain. Protected processes (claude, node, MCP servers,
+  live parent is only reported, with its owner chain. On Linux and macOS the kernel reparents an
+  orphan to init or a subreaper, which is alive, so there an orphan is reported and never ended;
+  ending one needs a host where the parent pid is really gone (Windows).
+  Protected processes (claude, node, MCP servers,
   ai-connect, psmux/tmux, tailscale, language servers, obsidian, perplexity, vscode, wsl/docker/vm,
   Defender, ssh, `reaper.protectedRegex`) and any process with a protected child are never ended.
   Every decision is a JSON line in `~/.claude/crew/reaper.log` (1 MiB, three generations kept).

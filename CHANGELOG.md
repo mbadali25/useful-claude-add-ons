@@ -51,13 +51,21 @@ read entries under any `## [` heading.
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Added — crew 1.3.46: an orphan reaper, and hook-side self-limits so a guard cannot block forever
+### Added — crew 1.3.48: an orphan reaper, and hook-side self-limits so a guard cannot block forever
 
-- **Summary.** `crew` 1.3.46: hook processes whose parent died no longer spin or hang for hours; the guards end themselves at their hook timeout, and an opt-in `crew_reaper.py` (dry run by default) finds and ends orphaned shells and scripts.
+- **Summary.** `crew` 1.3.48: hook processes whose parent died no longer spin or hang for hours; the guards end themselves at their hook timeout, and an opt-in `crew_reaper.py` (dry run by default) finds and ends orphaned shells and scripts.
 - **Cause.** On one Windows host, orphaned hook and guard processes accumulated for hours: a bash guard at 27,604 CPU-seconds, a `python -` reading stdin at 43,165 CPU-seconds, 18 crew python guards blocked 4.5 to 36.7 hours at zero CPU (a blocking stdin read, inferred), a `git rev-parse` 4 hours old, review loops spinning after finishing, and an `until ! pgrep -f` watcher that matches itself and can never exit.
 - **Fix.** New `crew_selflimit.py`: `cloud_guard.py`, `env_guard.py`, `role_write_guard.py`, `_promote_gate.py` and `crew_context.py` arm a watchdog at their row timeout less 2 s that exits 124 (an undecided exit, the dispatcher's existing fail-closed UNKNOWN); no deny decision changes. New `crew_reaper.py`: allow-listed images only, orphan = parent gone (or a chain of dead shells), ended when spinning past `reaper.spinMinAgeMin` or blocked past `reaper.blockedMinAgeHours` or a self-matching pgrep watcher; a live parent is only reported; protected processes and any process with a protected child are never ended; dry run unless `--apply`; JSON log in `~/.claude/crew/reaper.log`. Opt-in scheduling: `--install-task --yes` (Windows per-user task), `--print-schedule` (cron, systemd `--user`), and `reaper.onSessionStart`. Eight new `reaper.*` config keys, off by default, machine file only.
 - **Tests.** `test_crew_reaper.py` runs real throwaway processes (spinning orphan, blocked orphan on a held stdin, self-matching watcher, dry run, live parent, protected name, protected child, young orphan) and the guards with a stdin that never closes; six mutations (live parent killed, protected list ignored, never dry-run, protected child tree-killed, watcher undetected, watchdog never armed) each turn it red.
+- **CI fixes (same version).** The reaper resolves `ps` and `taskkill` through `crew_common.require_tool` (a missing tool is could-not-tell, never an empty table) and runs `ps -axww` (without it a narrow ps truncated the command line and the protected-name check missed); `env_guard.py` imports `crew_selflimit` only when run as a script; the orphan fixtures on Linux/macOS use a snapshot view that gives the fixture orphan a gone parent, because the kernel reparents a real orphan to a live init or subreaper, which the reaper correctly never ends (a test pins that).
 - Docs: `plugin/crew/README.md`, `plugin/crew/CONFIG.md`, `docs/guides/crew/src/configuration-reference.md` and `troubleshooting.md` and the rebuilt HTML, the code map.
+
+### Changed — crew 1.3.46: re-bump only, and the standards exports regenerated
+
+- **Summary.** `crew` 1.3.46: re-bump only - 1.3.45 `plugin/crew` changed after the version was set (37d60bf62); regenerates the standards exports.
+- **Cause.** Merge 37d60bf62 changed `plugin/crew/` after 1.3.45 was set (ea207e31b) without a bump, so `scripts/check-marketplace.py` failed on main.
+- **Fix.** Version bump in `plugin/crew/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` and `plugin/PLUGINS.md`; generated standards exports re-stamped (`crew_standards.py export --write`).
+- Docs: none - version bump and generated headers only.
 
 ### Fixed — crew 1.3.45: a Git Bash that did not answer is reported as could-not-tell, and the dispatcher trusts the last one that passed
 

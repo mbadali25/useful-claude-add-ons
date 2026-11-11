@@ -1034,7 +1034,7 @@ measured. `cloud_guard.py` already exceeds 3,400 lines, so the module is a new
 file rather than more glue there. A script, an MCP server, Write and Edit before
 commit, `tar -x`, `unzip` and `git merge` / `pull` are not seen.
 
-## Orphan reaper and hook self-limit (crew 1.3.46)
+## Orphan reaper and hook self-limit (crew 1.3.48)
 
 anchor for this section: 170d4c4b2
 
