@@ -310,7 +310,7 @@ def test_the_approval_hook_is_refused_with_git_bash_hidden(tmp_path):
     resolver inside the real dispatcher process; everything else is the native path."""
     root, home = rgh.build_repo(str(tmp_path), True)
     driver = ("import sys, crew_shell, crew_hook\n"
-              "crew_shell.resolve_gitbash = lambda strict=False: (None, 'Git Bash hidden for this test')\n"
+              "crew_shell.resolve_gitbash = lambda strict=False, lkg=None: (None,'Git Bash hidden for this test')\n"
               "sys.exit(crew_hook.main(['UserPromptSubmit']))\n")
     env = rgh.env_for(root, home)
     env["PYTHONPATH"] = h.SCRIPTS

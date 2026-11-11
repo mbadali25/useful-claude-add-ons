@@ -614,7 +614,8 @@ def _no_bash(event, problem, root, armed_fn):
                    "This is not a missing-Git error: wait a few seconds and retry the same call. Nothing was "
                    "judged, so this call is blocked rather than let through unchecked.")
     else:
-        message = f"crew hooks found Git Bash but it failed its self-test: {problem}. Repair or reinstall Git for Windows."
+        message = (f"crew hooks found Git Bash but it failed its self-test: {problem}. "
+                   "Repair or reinstall Git for Windows.")
     if event in BLOCKING_EVENTS and armed_fn(root):
         return 2, b"", (message + "\n").encode("utf-8")
     if event == "SessionStart":
