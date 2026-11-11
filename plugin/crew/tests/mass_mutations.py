@@ -181,7 +181,7 @@ MASS_MUTATIONS = (
     ("mass: an unattended stop is an ask", MASS,
      "    if alone:\n        reason +=", "    if False:\n        reason +=",
      _T + "test_attended_is_an_ask_unattended_is_a_deny"),
-    # --- a leading cd, the real reason, a redirected repo (crew 1.3.43)
+    # --- a leading cd, the real reason, a redirected repo (crew 1.3.44)
     ("mass: a leading cd is followed even when the rest moves again", GUARD,
      '            if not sub["cd"]:\n', "            if True:\n",
      _T + "test_any_other_cd_is_still_could_not_tell_and_stops"),
@@ -202,6 +202,10 @@ MASS_MUTATIONS = (
     ("mass: --git-dir / --work-tree is ignored", MASS,
      "    if _redirects_repo(args):", "    if False:",
      _T + "test_a_command_that_redirects_git_to_another_repo_is_could_not_tell"),
+    ("mass: the redirect scan stops at the first non-dash word (-c k=v / -C X)", MASS,
+     "        index += 2 if takes_value else 1\n    return False",
+     "        index += 1\n    return False\n",
+     _T + "test_a_redirect_after_a_c_or_C_value_is_still_could_not_tell"),
     ("mass: GIT_DIR in the command is ignored", GUARD,
      "            if git_env and finding.scope", "            if False and finding.scope",
      _T + "test_a_command_that_redirects_git_to_another_repo_is_could_not_tell"),

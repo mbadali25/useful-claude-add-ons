@@ -393,12 +393,15 @@ def _classify_git(args, fed):
 
 def _redirects_repo(args):
     """True when git's own options (before the subcommand) move it to another
-    repository: `--git-dir[=]`, `--work-tree[=]`."""
-    for arg in args:
-        if not arg.startswith("-"):
-            return False
-        if arg.split("=", 1)[0] in ("--git-dir", "--work-tree"):
+    repository: `--git-dir[=]`, `--work-tree[=]`. The value of `-c <k=v>`, `-C <path>` and
+    the other value-taking options is skipped, not mistaken for the subcommand."""
+    index = 0
+    while index < len(args) and args[index].startswith("-"):
+        name = args[index].split("=", 1)[0]
+        if name in ("--git-dir", "--work-tree"):
             return True
+        takes_value = (args[index] == "-C" or args[index] in _GIT_VALUE_OPTS)
+        index += 2 if takes_value else 1
     return False
 
 

@@ -495,6 +495,32 @@ def test_a_command_that_redirects_git_to_another_repo_is_could_not_tell(repo, tm
     assert "not read here" in result["reason"], result["reason"]
 
 
+@pytest.mark.parametrize("prefix", [
+    "git -c k=v --git-dir={g} --work-tree={w}",
+    "git -C {w} --git-dir={g} --work-tree={w}",
+    "git -c a=b -C {w} --git-dir={g}",
+    "git -C {w} -c k=v --git-dir={g}",
+    "git -c a=b -c c=d --work-tree={w}",
+    "git --namespace ns --git-dir={g}",
+])
+def test_a_redirect_after_a_c_or_C_value_is_still_could_not_tell(repo, tmp_path, prefix):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    command = prefix.format(g=repo / ".git", w=wt) + " commit -m x"
+    result = _stopped_in(repo, repo, command, crew_mass.MASS_DELETE)
+    assert "not read here" in result["reason"], result["reason"]
+
+
+def test_a_c_option_without_a_redirect_is_still_counted_and_allowed(repo, tmp_path):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    _clean_in(repo, wt, "git -c k=v commit -m x")
+    _clean_in(repo, wt, "git -c a=b -c c=d commit -m x")
+    _clean_in(repo, repo, f"git -C {wt} -c k=v commit -m x")
+
+
 @pytest.mark.parametrize("make", [
     lambda wt, other: f"cd {wt}/missing && git commit -m x",       # not a directory
     lambda wt, other: f"cd {wt} && cd {other} && git commit -m x",  # a second move
