@@ -419,7 +419,7 @@ Source: `plugin/crew/skills/crew-setup/platform.md` and `CLAUDE.md`,
   wrappers resolve both explicitly and fail loudly when neither resolves.
 - Long jobs take an automatically chosen shell route. `/crew:status`'s
   `shell` line says which route is in force and why.
-- Auto-clear on native Windows with no tmux pane never types: `auto` resolves to
+- Auto-clear on native Windows with no tmux or pmux (psmux) pane never types: `auto` resolves to
   `notify`, which prints a message (the `sendkeys` method was removed in crew 1.2.61).
 
 Deeper: "Windows notes" in [Troubleshooting](troubleshooting.md) and

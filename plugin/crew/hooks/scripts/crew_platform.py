@@ -398,11 +398,13 @@ def diff(cfg, facts):
 # owns the POSIX keystroke methods; `sendkeys` (the Windows SendKeys sender
 # that lived in the deleted auto-clear.ps1) was removed in L-0727 slice 3. A
 # config naming the other platform's method is a preference this machine
-# cannot honour, so it is reported rather than rewritten.
+# cannot honour, so it is reported rather than rewritten. `tmux` on both
+# Windows rows is psmux/pmux (a native tmux clone whose `tmux` shim is on
+# PATH): auto-clear.sh runs under Git Bash whichever shell started Claude.
 _AUTOCLEAR_METHODS = {
     "linux": ("auto", "none", "notify", "tmux", "xdotool", "wtype"),
     "macos": ("auto", "none", "notify", "tmux"),
-    "windows": ("auto", "none", "notify"),
+    "windows": ("auto", "none", "notify", "tmux"),
     "windows-bash": ("auto", "none", "notify", "tmux"),
 }
 

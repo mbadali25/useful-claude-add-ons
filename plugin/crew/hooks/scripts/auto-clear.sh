@@ -178,6 +178,7 @@ print("ok" if isinstance(d, dict) and d.get("ok") is True else (isinstance(d, di
     printf 'LOG=%q; PY=%q; AC=%q; PANE=%q; TEXT=%q; TIMEOUT=%q\n' \
       "$PWD/$LOG" "$PY" "$(crew_native_path "$DIR/crew_autocycle.py")" "$TARGET" "$COMMAND" "$TIMEOUT"
     cat <<'SENDER'
+export MSYS_NO_PATHCONV=1  # Git Bash must not rewrite a leading-/ command typed by a native tmux/psmux
 note() { printf '%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "auto-resume: $1" >> "$LOG" 2>/dev/null; }
 probe() { tmux capture-pane -p -e -t "$PANE" 2>/dev/null | "$PY" "$AC" probe 2>/dev/null | tr -d '\r'; }
 SENDER
@@ -366,6 +367,10 @@ send_script=$(mktemp) || { note "refusing - could not create the sender script";
   case "$RESOLVED" in
     tmux)
       # -l sends the string literally, so a command containing ; or " is safe.
+      # MSYS_NO_PATHCONV: Git Bash rewrites an argument that starts with / when
+      # it launches a native exe (tmux.exe, psmux), so "/clear" arrived as
+      # "C:/Program Files/Git/clear" -- verified in a pmux pane. No-op elsewhere.
+      echo 'export MSYS_NO_PATHCONV=1'
       printf 'tmux send-keys -t %q -l %q\n' "$TARGET" "$COMMAND"
       printf 'tmux send-keys -t %q Enter\n' "$TARGET"
       ;;

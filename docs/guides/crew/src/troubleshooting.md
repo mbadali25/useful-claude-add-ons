@@ -1012,7 +1012,7 @@ each do, the machine-global keys that turn auto-clear on, and every reason a cle
 command — no keystrokes appear at all.
 
 - **Check `context.autoClear.method`** with `/crew:config --explain` or `crew_config.py --explain`.
-  On native Windows with no tmux pane, `"auto"` (the default) resolves to `"notify"`, not to any
+  On native Windows with no tmux or pmux (psmux) pane, `"auto"` (the default) resolves to `"notify"`, not to any
   keystroke method — **this is not a bug**, it is the owner decision: crew does not type into a
   window it found itself on Windows. `"notify"` types nothing at all; instead the `Stop` hook prints a
   `systemMessage` telling you the handoff is written and verified and it is safe to run the

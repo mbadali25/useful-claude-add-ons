@@ -628,13 +628,117 @@ def _parse_ps(line):
             "comm": os.path.basename(parts[2].strip())}
 
 
+# Native Windows has no /proc and no controlling terminal, so the process
+# facts come from the Win32 process snapshot. Every process there is given the
+# same stand-in tty (non-zero: "has a console"), so the pane-vs-owner terminal
+# comparison is trivially equal and proves nothing; what proves the pane is the
+# pane's pid being an ancestor of the session (psmux's `#{pane_pid}` is a
+# Windows pid, verified), plus `_windows_crossing` below.
+_WIN_TTY = 1
+# comm of a process that can host a Claude Code CLI on Windows when the tty
+# check is unavailable: refuse to type through one between the session and the
+# pane. Real Windows tables only: a stubbed table keeps its own tty values.
+_WIN_HOST_COMMS = frozenset({"node", "bun"})
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_TH32CS_SNAPPROCESS = 0x2
+
+
+def _native_windows():
+    return os.name == "nt"
+
+
+def _win_snapshot():
+    """{pid: (ppid, exe name)} for every process via the Toolhelp snapshot, or
+    None when it cannot be taken. Windows only."""
+    try:
+        import ctypes  # pylint: disable=import-outside-toplevel
+        from ctypes import wintypes  # pylint: disable=import-outside-toplevel
+
+        class _Entry(ctypes.Structure):
+            _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                        ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
+                        ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                        ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                        ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+        kernel.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+        kernel.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(_Entry)]
+        kernel.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(_Entry)]
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = kernel.CreateToolhelp32Snapshot(_TH32CS_SNAPPROCESS, 0)
+        if handle in (None, wintypes.HANDLE(-1).value):
+            return None
+        try:
+            entry = _Entry(dwSize=ctypes.sizeof(_Entry))
+            out = {}
+            more = kernel.Process32FirstW(handle, ctypes.byref(entry))
+            while more:
+                out[int(entry.th32ProcessID)] = (int(entry.th32ParentProcessID), entry.szExeFile)
+                more = kernel.Process32NextW(handle, ctypes.byref(entry))
+            return out or None
+        finally:
+            kernel.CloseHandle(handle)
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def _win_start(pid):
+    """The process creation time as the decimal FILETIME string Claude Code
+    records as `procStart` (100 ns ticks since 1601), or None when the process
+    cannot be opened. Windows only."""
+    try:
+        import ctypes  # pylint: disable=import-outside-toplevel
+        from ctypes import wintypes  # pylint: disable=import-outside-toplevel
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = kernel.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return None
+        try:
+            created, _exit, _kernel, _user = (wintypes.FILETIME() for _ in range(4))
+            if not kernel.GetProcessTimes(handle, *(ctypes.byref(t) for t in (created, _exit, _kernel, _user))):
+                return None
+            return str((created.dwHighDateTime << 32) | created.dwLowDateTime)
+        finally:
+            kernel.CloseHandle(handle)
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def _proc_windows(pid):
+    """{ppid, tty, start, comm} for `pid` on native Windows, or None when it is
+    not running or the snapshot cannot be taken. A parent that started AFTER
+    its child is a reused pid, not the parent: the child is then a root."""
+    table = _win_snapshot() or {}
+    if pid not in table:
+        return None
+    ppid, exe = table[pid]
+    start = _win_start(pid)
+    if ppid in table:
+        parent_start = _win_start(ppid)
+        if start is not None and parent_start is not None and int(parent_start) > int(start):
+            ppid = 0
+    else:
+        ppid = 0
+    comm = exe[:-4] if exe.lower().endswith(".exe") else exe
+    return {"ppid": ppid, "tty": _WIN_TTY, "start": start, "comm": comm}
+
+
 def _proc(pid):
     """{ppid, tty, start, comm} for `pid`, or None when it cannot be read."""
     table, _fails, _self = _proc_stub()
     if table is not None:
         return _stub_entry(table.get(pid))
     found = _read_stat(pid)
-    if found is not None or os.name == "nt":
+    if found is None and _native_windows():
+        return _proc_windows(pid)
+    if found is not None or _native_windows():
         return found
     try:
         out = subprocess.run(["ps", "-o", "ppid=,tty=,comm=", "-p", str(pid)], capture_output=True,
@@ -651,6 +755,9 @@ def _gone(pid):
     if table is not None:
         entry = table.get(pid)
         return isinstance(entry, dict) and entry.get("gone") is True
+    if _native_windows():
+        snapshot = _win_snapshot() or {}
+        return bool(snapshot) and pid not in snapshot
     return os.path.isdir("/proc") and not os.path.exists(f"/proc/{pid}")
 
 
@@ -902,7 +1009,8 @@ def prove_target(owner, got, env=None):
 
     def crossing(pid):
         comm = (_proc(pid) or {}).get("comm") or ""
-        return pid in others or comm == CLAUDE_COMM or bool(_VERSIONED_COMM.fullmatch(comm))
+        return (pid in others or comm == CLAUDE_COMM or bool(_VERSIONED_COMM.fullmatch(comm))
+                or (_native_windows() and _proc_stub()[0] is None and comm.lower() in _WIN_HOST_COMMS))
 
     if got["method"] == "tmux":
         pane_pid = got.get("pane_pid") or 0

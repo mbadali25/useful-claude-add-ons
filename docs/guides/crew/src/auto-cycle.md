@@ -12,7 +12,7 @@ cleanly, clear, and pick up where it stopped.
    forced continuation that follows a block. With `context.autoClear.wrapUp` armed (below), the
    block carries the wrap-up procedure instead, and the clear waits for its results.
 2. **Clear, or notify.** After the handoff is written, auto-clear acts on it. What it does depends
-   on `method` (below): `notify` (the default on native Windows) prints a message telling you the
+   on `method` (below): `notify` (the default on native Windows outside a pmux pane) prints a message telling you the
    handoff is written and it is safe to run `/clear` (or `/compact`) yourself — it types nothing.
    `tmux` and `xdotool` actually type the configured command into the terminal that runs
    this session. Whichever method is in force, it acts only when all five of these hold:
@@ -69,7 +69,7 @@ cleanly, clear, and pick up where it stopped.
    sender in resume mode (under Git Bash on Windows). Consent is `resume.auto`; `context.autoClear` only describes the terminal.
    In tmux it waits 2 seconds, polls the pane for an idle, empty input
    line for up to 15 seconds (both fixed), then sends the command and, half a
-   second later, Enter. On native Windows it types nothing (`auto` there is `notify`; the `sendkeys` method was removed in crew 1.2.61). It types once per
+   second later, Enter. On native Windows outside a pmux pane it types nothing (`auto` there is `notify`; the `sendkeys` method was removed in crew 1.2.61); inside a pmux pane it types through `tmux send-keys` like any tmux pane. It types once per
    handoff (a marker under `<git-common-dir>/crew/`) and records the run first, so a run that could
    not be recorded is never typed. The context then says `Auto-resume: typing /crew:done T-0001 into
    this session in 2s (method tmux)`, or keeps the line above and adds `Auto-resume was not typed:
@@ -182,9 +182,9 @@ arm only that repo without anyone noticing.
 
 | Method | What it does | Where `auto` picks it |
 |---|---|---|
-| `tmux` | Types the command into the `$TMUX_PANE` whose process is this session's own process or an ancestor of it. No focus involved — the most reliable method. | Linux, macOS, WSL, Git Bash on Windows, when `$TMUX` names a pane and `tmux` is on PATH |
+| `tmux` | Types the command into the `$TMUX_PANE` whose process is this session's own process or an ancestor of it. No focus involved — the most reliable method. | Linux, macOS, WSL, Git Bash on Windows, and a pmux (psmux) pane on native Windows, when `$TMUX` names a pane and `tmux` is on PATH (psmux installs a `tmux` shim) |
 | `xdotool` | Types into the one X11 window owned by the nearest ancestor of this session's own process, when that window hosts no other terminal (or matching `windowTitle`). | Linux with `xdotool` on PATH and `$DISPLAY` set |
-| `notify` | Types nothing. Prints a message saying the handoff is written and verified and it is safe to run the command yourself. Never says anything was cleared or compacted — it does not know that, and it did not do it. | **native Windows**, whenever there is no tmux pane — this is the default there, not a fallback for something missing |
+| `notify` | Types nothing. Prints a message saying the handoff is written and verified and it is safe to run the command yourself. Never says anything was cleared or compacted — it does not know that, and it did not do it. | **native Windows**, whenever there is no tmux or pmux pane — this is the default there, not a fallback for something missing |
 | `sendkeys` | **Removed in crew 1.2.61 (L-0727 slice 3).** It was the Windows-only `System.Windows.Forms.SendKeys` sender in `auto-clear.ps1`, which is deleted. A config that names it is refused with "sendkeys was removed in crew 1.2.61 (L-0727); use notify or tmux". | nowhere |
 | `none` | Refused outright. | never |
 
@@ -235,6 +235,14 @@ their limits (Windows' entrypoint is unmeasured; macOS cannot check the start ti
 
 - **tmux (Linux, macOS, WSL):** the pane in `$TMUX_PANE`, and only when that pane's process is this
   session's own process or an ancestor of it. No title is needed. This is the most reliable method.
+- **pmux / psmux (native Windows, crew 1.3.43):** psmux is a native tmux clone whose `tmux`, `pmux`
+  and `psmux` commands are one program; it sets `$TMUX` and `$TMUX_PANE` in the pane's shell and
+  `display-message -p '#{pane_pid}'` returns a Windows pid. crew reads the process tree from the Win32
+  process snapshot (there is no `/proc`) and applies the tmux rule above: the pane's pid must be an
+  ancestor of the session's own process. Windows has no controlling terminal to compare, so a `node`,
+  `bun` or `claude` process between the session and the pane (a parent session) also refuses. The
+  `tmux` command must be on PATH (psmux's winget install adds it); `/clear` is sent with
+  `MSYS_NO_PATHCONV=1` so Git Bash does not rewrite it into a file path.
 - **X11 (`xdotool`):** the one visible window owned by the nearest ancestor of the session's process,
   and only when no other terminal (another tab's tty, another session) runs under that window's
   owner. If

@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.41: re-bump only - interim number on the autoclear-pmux branch before main reached 1.3.42; the change is recorded under crew 1.3.43
 - crew 1.3.41: re-bump only - interim number on the no-coauthored branch before main reached 1.3.41 with the promote gate change; the change is recorded under crew 1.3.42
 - crew 1.3.37: re-bump only - interim land number on the verify-gate stale-marker branch (commit dca02a908) before main reached 1.3.38; the change is recorded under crew 1.3.39
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.34; the change is recorded under crew 1.3.36
@@ -69,6 +70,14 @@ read entries under any `## [` heading.
 - **Fix.** `commands/implement.md` step 2 tells the developer to add no `Co-Authored-By` trailer and no "Generated with Claude Code" line; the wave lane prompt (`crew_wave.lane_prompt`, step 2) says the same; `practices.md` states the owner rule and where the harness default is switched off (`attribution` in Claude Code's own settings.json, which crew never edits).
 - **Not changed.** No config key, value or default; `git.forbiddenTrailers` stays `[]` by default and its refusal wiring stays a separate harness change. The `Claude-Session:` trailer is untouched.
 - **Tests.** `test_crew_no_coauthored.py`: no command, skill, agent or template line may name the trailer without a forbid word, the lane prompt and `implement.md` carry the rule, and the detector flags an instruction to add it.
+
+### Added — crew 1.3.43: auto-clear types into a pmux (psmux) pane on native Windows
+
+- **Summary.** `crew` 1.3.43: in a pmux (psmux) pane on native Windows, `context.autoClear` now types the clear through `tmux send-keys` instead of falling back to a notice, with the same checks as any tmux pane (the pane must be an ancestor of this session, with no other session in between); outside a pmux pane nothing changes.
+- **Cause.** Two defects, both measured on psmux 3.4.0 under Git Bash. (1) Native Windows has no `/proc`, so `_proc` returned nothing: `tmux pane %1 could not be confirmed as the pane running this session (pane pid unknown is not an ancestor of this hook)`, even though psmux sets `$TMUX` and `$TMUX_PANE` and `display-message -p '#{pane_pid}'` returns a Windows pid that IS an ancestor. (2) Git Bash rewrote the `/clear` argument handed to the native `tmux.exe` into `C:/Program Files/Git/clear`, so a program in the pane received that path.
+- **Fix.** `crew_autocycle._proc` reads the Win32 process snapshot and `GetProcessTimes` on native Windows (the creation FILETIME equals the `procStart` Claude Code records, checked), with a stand-in console tty for every process, a parent that started after its child treated as a reused pid, and a `node`, `bun` or `claude` process between the session and the pane refused because the tty comparison cannot run. `auto-clear.sh` exports `MSYS_NO_PATHCONV=1` before `tmux send-keys` in both the clear and the resume sender. `tmux` is now listed for the `windows` platform row too.
+- **Verified.** In a pmux pane a program with a real session record received `/clear` and Enter from the real `auto-clear.sh` (method tmux, target `%1`); `send-keys -l` and `Enter` reach a raw-mode console program. Not verified: a real Claude Code TUI as the receiving program.
+- **Tests.** `test_autoclear_pmux.py`: must-fire (a bound session in a pmux pane), must-not-fire (another pane, a parent session host in between, a reused parent pid, a start-time mismatch, an unreadable snapshot, off Windows the reader is never used) and the sender's `MSYS_NO_PATHCONV`; five sabotages (drop the reader, the host check, the reuse guard, the export, the gone check) each turn it red.
 
 ### Fixed — crew 1.3.40: a verified marker written with CRLF is no longer ignored by the Stop gate
 
