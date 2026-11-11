@@ -127,31 +127,24 @@ child process (it also splits on U+2028, U+2029, U+0085 and `\x1c`-`\x1e`). A re
 
 ## REPO-04 A resource held across an error path is released before its reference is dropped
 
-**Rule.** A socket, file handle, connection or lock acquired earlier in a `try` body is explicitly
-released (`close()`, `await x.close()`, lock release) before the code that handles that `try`'s
-exception drops or reassigns the variable holding it - including inside a broad `except Exception`
-handler added specifically to keep a loop alive (the PYTHON-11 sanctioned boundary-catch pattern).
-The handler's job is "log and move on, not crash the loop"; it is not a license to skip the cleanup
-the normal path would have done.
+**Rule.** A socket, file handle, connection or lock acquired in a `try` body is explicitly released
+(`close()`, `await x.close()`, lock release) before the exception handler drops or reassigns the
+variable holding it, including in a broad `except Exception`
+added to keep a loop alive (PYTHON-11). "Log and move on" does not skip normal-path cleanup.
 
-**Why.** 1 finding, 1 change set (A-0001 review round 4); added on the owner's explicit approval
-2026-10-27. Too new to say how often this recurs; promote past overlay status once a second,
-independent change set earns it.
+**Why.** 1 finding, 1 change set (A-0001 r4); owner-approved 2026-10-27. Promote once a second
+change set earns it.
 
 **Self-check.**
-1. For every `except Exception` (or other broad handler) added to keep a loop or retry alive: does
-   the `try` body acquire a resource (socket, file, connection, lock)? If so, does the handler close
-   or release it before setting the holding reference to `None` or reassigning it? Pass: yes, or the
-   resource was never actually open at the point of failure.
-2. Reproduce the failure the handler exists for (send malformed input, force the exception) and
-   confirm the resource is actually released - not just that the handler ran. Pass: a leak-detection
-   check (open-file/socket count, or the peer side observing a close) shows the resource gone.
+1. For each broad handler added to keep a loop alive: does its `try` body acquire a resource
+   (socket, file, connection, lock)? If so, does the handler release it before the reference is
+   set to `None` or reassigned? Pass: yes, or it was never open.
+2. Force the handler's exception and confirm the resource is released, not just that
+   the handler ran. Pass: a leak check (fd/socket count, or the peer seeing a close) shows it gone.
 
-**Earned by.** A-0001 r4 @321fabdf3, FIX `plugin/ai-connect/client/bridge_client.py:359`: "An unexpected
-handler exception abandons an open WebSocket without closing it, leaving the old registration live and
-leaking the connection - the receive loop drops `self._ws` and reconnects without closing the original
-socket, so registration encounters `name_taken` until the original peer times out." Fix tracked as a
-follow-up, ticket A-0007.
+**Earned by.** A-0001 r4 @321fabdf3, FIX `plugin/ai-connect/client/bridge_client.py:359`: an unexpected
+handler exception abandons an open WebSocket without closing it; the receive loop drops `self._ws` and
+reconnects, so registration hits `name_taken` until the old peer times out. Follow-up: ticket A-0007.
 
 ## Supplements GEN-08
 
@@ -179,14 +172,9 @@ output with no `object_pairs_hook` (the last of two equal keys wins silently).
 ## Supplements GEN-10
 
 "The recovery behaviour" in GEN-10's self-check means the automatic trigger
-firing on its own, not a test that manually drives the recovery and treats
-that as proof the trigger exists. Owner-approved amendment from A-0001
-review round 4's proposal 1 (2026-10-27): A-0001's self-check marked GEN-10
-`addressed` for a reconnect fix whose test reset the blocking flag and then
-called `start_reconnect` itself - round 4's FIX finding showed the flag
-reset alone never schedules a reconnect, so the client stayed offline in
-production exactly as before, while the self-check's own test passed. One
-change set so far.
+firing on its own, not a test that drives the recovery by hand. Owner-approved
+(A-0001 r4, 2026-10-27): a test reset the blocking flag and called
+`start_reconnect` itself; production never reconnected. One change set so far.
 
 ## Supplements GEN-11
 
