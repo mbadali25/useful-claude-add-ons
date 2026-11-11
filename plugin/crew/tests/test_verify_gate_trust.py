@@ -455,4 +455,3 @@ def test_gate_fixed_paths_list_every_git_for_windows_layout():
         for directory in ("/mingw64/bin", "/ucrt64/bin", "/clangarm64/bin"):
             assert directory in line, line
     assert "MINGW_PREFIX" not in text
-
