@@ -124,8 +124,9 @@ def _bash_triple():
 def test_crew_hook_sh_decides_windows_from_a_builtin_before_any_external_command():
     """ANEWINF-1314: the no-op path on Windows cost 8 process starts (two command-substitution forks
     and uname). The stand-down must be the first statement and must not fork."""
-    text = open(os.path.join(os.path.dirname(__file__), "..", "hooks", "scripts", "crew-hook.sh"),
-                encoding="utf-8").read()
+    with open(os.path.join(os.path.dirname(__file__), "..", "hooks", "scripts", "crew-hook.sh"),
+              encoding="utf-8") as fh:
+        text = fh.read()
     code = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
 
     assert code[0] == 'case "${BASH_VERSINFO[5]:-}" in'
