@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.44**: The strict Git Bash resolver no longer reports a slow Git Bash as a missing one. `crew` 1.3.44: `crew_shell.resolve_gitbash(strict=True)` now tells a Git Bash that exists but did not answer (could not tell) from one that is absent or broken, retries the unanswered self-test with backoff, and can answer from a last known good; the dispatcher half (wording and wiring) follows in 1.3.45.
 - **crew 1.3.41**: The promote gate decides in one process and keeps its own, configurable deadline. `crew` 1.3.41: a deploy-shaped command no longer times the promote gate out on Git Bash; the gate now runs as one python process instead of about forty-five, and a new `promote.deadlineSeconds` setting controls how long it may run.
-- **crew 1.3.43**: Standards test expectations and export wording for REPO-04 / GEN-10. `crew` 1.3.43: the standards tests now expect the REPO-04 and GEN-10 overlay, and the standards wording is trimmed to fit the 28,000 character export budget; the exports are regenerated.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
