@@ -51,6 +51,13 @@ read entries under any `## [` heading.
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Changed — crew 1.3.46: re-bump only, and the standards exports regenerated
+
+- **Summary.** `crew` 1.3.46: re-bump only - 1.3.45 `plugin/crew` changed after the version was set (37d60bf62); regenerates the standards exports.
+- **Cause.** Merge 37d60bf62 changed `plugin/crew/` after 1.3.45 was set (ea207e31b) without a bump, so `scripts/check-marketplace.py` failed on main.
+- **Fix.** Version bump in `plugin/crew/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` and `plugin/PLUGINS.md`; generated standards exports re-stamped (`crew_standards.py export --write`).
+- Docs: none - version bump and generated headers only.
+
 ### Fixed — crew 1.3.45: a Git Bash that did not answer is reported as could-not-tell, and the dispatcher trusts the last one that passed
 
 - **Summary.** `crew` 1.3.45: when the hook dispatcher cannot confirm Git Bash on Windows it now says what it established (a Git Bash that exists but did not answer is "could not tell, retry", never "Install Git for Windows"), and it trusts the last Git Bash that passed while that file is unchanged, so a busy host stops blocking Bash, PowerShell and Edit calls.
