@@ -2815,10 +2815,14 @@ commits merged in from main are not the ticket's (a deliberate refinement of the
 fallback base that reads no commit, are unknown; a line from any other fallback base
 says so. `main` is the `--check` CLI; any unexpected exception, an import failure included, is `unknown` with exit 2. Suite: `plugin/crew/tests/test_crew_trailers.py`,
 mapped by `.crew/verify.json:556-563`. The practice note it replaces said a
-repository's attribution adds `Co-Authored-By`; it now says the owner's instructions
-decide (`plugin/crew/skills/crew-best-practices/references/practices.md:58-62`), and
+repository's attribution adds `Co-Authored-By`; it now says crew never adds a
+`Co-Authored-By` trailer or a "Generated with Claude Code" line (owner rule 2026-11-10;
+`plugin/crew/skills/crew-best-practices/references/practices.md:58-64`), and
 `/crew:implement` step 2 says a dispatched prompt carries no attribution or trailer
-instruction (`plugin/crew/commands/implement.md:48-51`). docs/crew/config-rationale.md
+instruction and tells the developer to add none (`plugin/crew/commands/implement.md:48-52`);
+`crew_wave.lane_prompt` step 2 says the same, and
+`plugin/crew/tests/test_crew_no_coauthored.py` fails a command, skill, agent or template line
+that names the trailer without a forbid word. docs/crew/config-rationale.md
 (`docs/crew/config-rationale.md`:3052`, `git.forbiddenTrailers`) is the user-facing account.
 
 ## Native-memory vault pointers (T-0084)

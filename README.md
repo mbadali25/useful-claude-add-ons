@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.41**: Crew never adds or instructs a `Co-Authored-By` trailer. `crew` 1.3.41: crew no longer takes "no side" on commit attribution; it never adds a `Co-Authored-By` trailer or a "Generated with Claude Code" line to a commit or PR body, and the briefs it sends to developers and wave lanes say so.
 - **crew 1.3.40**: A verified marker written with CRLF is no longer ignored by the Stop gate. `crew` 1.3.40: the Stop gate now trims the line it reads from `.crew/.verify-verified-at`, `.crew/.verify-gate.base-at` and `.crew/.deploy-in-flight` (a trailing CR included), so a marker written with CRLF line endings is read as the commit it names; an orphan branch's CRLF marker is now refused like an LF one instead of letting an unchecked commit on the default branch pass.
-- **crew 1.3.39**: A verified marker left by another branch no longer puts that branch's paths in the Stop gate's scope. `crew` 1.3.39: the Stop gate now uses `.crew/.verify-verified-at` as its diff base only when that commit is an ancestor of HEAD; a marker left by another branch is replaced by its merge-base with HEAD (or refused when they share no history), so a clean tree no longer fails with phantom changed paths.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
