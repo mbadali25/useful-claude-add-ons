@@ -60,6 +60,14 @@ read entries under any `## [` heading.
 - **CI fixes (same version).** The reaper resolves `ps` and `taskkill` through `crew_common.require_tool` (a missing tool is could-not-tell, never an empty table) and runs `ps -axww` (without it a narrow ps truncated the command line and the protected-name check missed); `env_guard.py` imports `crew_selflimit` only when run as a script; the orphan fixtures on Linux/macOS use a snapshot view that gives the fixture orphan a gone parent, because the kernel reparents a real orphan to a live init or subreaper, which the reaper correctly never ends (a test pins that).
 - Docs: `plugin/crew/README.md`, `plugin/crew/CONFIG.md`, `docs/guides/crew/src/configuration-reference.md` and `troubleshooting.md` and the rebuilt HTML, the code map.
 
+### Changed — crew 1.3.47: the Windows no-op bash registration stops spawning processes
+
+- **Summary.** `crew` 1.3.47: on Windows the second, bash registration of every crew hook now exits immediately without starting `uname` or any subshell, which removes about eight process starts from every hook event and changes no guard decision.
+- **Cause.** Every hook event is registered twice (bash and PowerShell). On Windows `crew-hook.sh` exits 0 because `crew-hook.ps1` is the real path, but it first ran `$(cd ... && pwd)` and `$(uname -s)`: two command-substitution forks plus `uname.exe`, on top of the Git Bash launcher chain, about eight process starts per event for a script that does nothing (ANEWINF-1314, B1 under ANEWINF-1307; a measured 88 s trace put that at 13.5% of all process starts on the host).
+- **Fix.** `crew-hook.sh` decides Windows first, from `BASH_VERSINFO[5]` (the shell's own readonly build triple, `*-msys*|*-cygwin*|*-mingw*`), a builtin that costs no process and that an environment variable cannot set, so L-0850 still holds. The `uname -s` and `OS=Windows_NT` cases stay below it, unchanged, for any other shell. No decision changes: the same hosts exit 0, the same hosts dispatch. `hooks.json` is unchanged; dropping the bash entry on Windows was not adopted because it could leave a host unregistered.
+- **Tests.** `test_crew_hook_windows.py`: the stand-down is the first statement and contains no command substitution; on a Windows Git Bash the launcher exits 0 with empty output and stderr under `env` with an empty `PATH` (no external command available). `sabotage_crew_hook.py` gains one anchored mutant (a leading external command) that turns the first red.
+- Docs: `plugin/crew/README.md`.
+
 ### Changed — crew 1.3.46: re-bump only, and the standards exports regenerated
 
 - **Summary.** `crew` 1.3.46: re-bump only - 1.3.45 `plugin/crew` changed after the version was set (37d60bf62); regenerates the standards exports.

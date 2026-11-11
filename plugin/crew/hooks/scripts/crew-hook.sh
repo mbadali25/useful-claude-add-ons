@@ -16,7 +16,8 @@
 # before the outer timeout turns a fault into an allow.
 #
 # On Windows the PowerShell launcher is the single path (crew-hook.ps1), so this
-# one exits 0 there: `uname -s` MINGW*/MSYS*/CYGWIN*. `$OS` = Windows_NT is
+# one exits 0 there: first on the shell's own build triple (a builtin, no fork), then
+# `uname -s` MINGW*/MSYS*/CYGWIN*. `$OS` = Windows_NT is
 # consulted only when uname is not a POSIX kernel's name or cannot be read: an
 # environment variable cannot stand the guards down on a Linux or macOS host
 # (security pass, L-0850; cloud-guard.sh has always said the same).
@@ -26,6 +27,16 @@
 # (any 2 -> 2) and stdout order. Each script's own no-python fallback then
 # decides, exactly as it did when it was registered alone. The list is asserted
 # equal to crew_hook.TABLE by tests/test_hooks_json_shape.py.
+# The Windows stand-down comes first and costs no process: BASH_VERSINFO[5] is the
+# shell's own readonly build triple (x86_64-pc-msys on Git Bash), a builtin that an
+# environment variable cannot set, so it keeps the L-0850 rule that nothing in the
+# hook environment may stand the guards down. Before this check the launcher paid
+# for a `$(cd ... && pwd)` fork and a `uname` fork on every Windows hook event only
+# to exit 0 (ANEWINF-1314). The `uname` case below stays for any other shell.
+case "${BASH_VERSINFO[5]:-}" in
+  *-msys*|*-cygwin*|*-mingw*) exit 0 ;;
+esac
+
 _src="${BASH_SOURCE[0]}"
 case "$_src" in
   */*) DIR="$(cd "${_src%/*}" && pwd)" ;;
