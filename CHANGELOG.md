@@ -62,6 +62,14 @@ read entries under any `## [` heading.
 - **Tests.** `test_promote_gate_one_process.py`: a decision corpus recorded from the old gate and replayed on the new one, the spawn count, the deadline rules and the fast path; `promote_gate_mutations.py` holds the sabotage cases, and `test_promote_fast.py` moved into it.
 
 
+### Changed — crew 1.3.43: standards test expectations and export wording for REPO-04 / GEN-10
+
+- **Summary.** `crew` 1.3.43: the standards tests now expect the REPO-04 and GEN-10 overlay, and the standards wording is trimmed to fit the 28,000 character export budget; the exports are regenerated.
+- **Cause.** The standards edit on this branch changed what `test_crew_standards.py` must expect, and the exports carry the crew version stamp, so a version bump and regeneration follow.
+- **Fix.** `test_crew_standards.py` expectations updated; `standards.md` wording trimmed; `crew_standards.py export --write` run so the exports match.
+- **Not changed.** No config key, value or default.
+- **Docs.** none - standards export and test only.
+
 ### Changed — crew 1.3.42: crew never adds or instructs a `Co-Authored-By` trailer
 
 - **Summary.** `crew` 1.3.42: crew no longer takes "no side" on commit attribution; it never adds a `Co-Authored-By` trailer or a "Generated with Claude Code" line to a commit or PR body, and the briefs it sends to developers and wave lanes say so.
