@@ -1,4 +1,4 @@
-<!-- crew-standards-export digest=144f6cb513f1d6fdf9e4aeecf61983a84e4370e9e55c9dc05e01c01c6aa4e385 crew=1.3.34 -->
+<!-- crew-standards-export digest=216c55f69ca9990200a4fc41bb74eab810d6c2702871601fc48a6b108fe72b74 crew=1.3.43 -->
 # Review rules: set GEN
 
 Applies to: always (`**`).
@@ -245,6 +245,12 @@ as an assumption in the spec's Unknowns.
 1. List every third-party behaviour the change relies on. For each, name the source (URL fetched, or
    file at a pinned version) or the test that exercises it. Pass: every row has one, or is an Unknown in
    the spec.
+
+**Supplement (.crew/standards.md).**
+"The recovery behaviour" in GEN-10's self-check means the automatic trigger
+firing on its own, not a test that drives the recovery by hand. Owner-approved
+(A-0001 r4, 2026-10-27): a test reset the blocking flag and called
+`start_reconnect` itself; production never reconnected. One change set so far.
 
 ## GEN-11 Named requirements hold on every path
 

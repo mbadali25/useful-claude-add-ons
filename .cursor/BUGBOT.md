@@ -1,4 +1,4 @@
-<!-- crew-standards-export digest=144f6cb513f1d6fdf9e4aeecf61983a84e4370e9e55c9dc05e01c01c6aa4e385 crew=1.3.34 -->
+<!-- crew-standards-export digest=216c55f69ca9990200a4fc41bb74eab810d6c2702871601fc48a6b108fe72b74 crew=1.3.43 -->
 # Review rules
 
 Generated from crew's standards by `crew_standards.py export --write`; do not edit by hand. Check every change against the standards below. The always-on standards are written out in full. For each stack set, read the linked file when the change touches files matching its scope; the lists show ids and names only.
@@ -249,6 +249,12 @@ as an assumption in the spec's Unknowns.
    file at a pinned version) or the test that exercises it. Pass: every row has one, or is an Unknown in
    the spec.
 
+**Supplement (.crew/standards.md).**
+"The recovery behaviour" in GEN-10's self-check means the automatic trigger
+firing on its own, not a test that drives the recovery by hand. Owner-approved
+(A-0001 r4, 2026-10-27): a test reset the blocking flag and called
+`start_reconnect` itself; production never reconnected. One change set so far.
+
 ## GEN-11 Named requirements hold on every path
 
 **Rule.** Four triggers, each with its own check. (1) A new member of an enumeration (a provider, a policy
@@ -362,6 +368,20 @@ On the build branch: `git diff origin/main -- plugin/crew/.claude-plugin/plugin.
 (branch is greater); `gh pr list --state open` plus each worktree's `plugin.json` (not already declared);
 `git merge-base --is-ancestor origin/main HEAD` exits 0; `python3 scripts/check-marketplace.py` exits 0;
 `git diff origin/main...HEAD -- CHANGELOG.md` shows no removed `###` heading.
+
+## REPO-04 A resource held across an error path is released before its reference is dropped
+
+**Rule.** A socket, file handle, connection or lock acquired in a `try` body is explicitly released
+(`close()`, `await x.close()`, lock release) before the exception handler drops or reassigns the
+variable holding it, including in a broad `except Exception`
+added to keep a loop alive (PYTHON-11). "Log and move on" does not skip normal-path cleanup.
+
+**Self-check.**
+1. For each broad handler added to keep a loop alive: does its `try` body acquire a resource
+   (socket, file, connection, lock)? If so, does the handler release it before the reference is
+   set to `None` or reassigned? Pass: yes, or it was never open.
+2. Force the handler's exception and confirm the resource is released, not just that
+   the handler ran. Pass: a leak check (fd/socket count, or the peer seeing a close) shows it gone.
 
 # Stack sets
 

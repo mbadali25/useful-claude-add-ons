@@ -1,4 +1,4 @@
-<!-- crew-standards-export digest=144f6cb513f1d6fdf9e4aeecf61983a84e4370e9e55c9dc05e01c01c6aa4e385 crew=1.3.34 -->
+<!-- crew-standards-export digest=216c55f69ca9990200a4fc41bb74eab810d6c2702871601fc48a6b108fe72b74 crew=1.3.43 -->
 # Review rules: set REPO
 
 Applies to: always (`**`).
@@ -66,4 +66,18 @@ On the build branch: `git diff origin/main -- plugin/crew/.claude-plugin/plugin.
 (branch is greater); `gh pr list --state open` plus each worktree's `plugin.json` (not already declared);
 `git merge-base --is-ancestor origin/main HEAD` exits 0; `python3 scripts/check-marketplace.py` exits 0;
 `git diff origin/main...HEAD -- CHANGELOG.md` shows no removed `###` heading.
+
+## REPO-04 A resource held across an error path is released before its reference is dropped
+
+**Rule.** A socket, file handle, connection or lock acquired in a `try` body is explicitly released
+(`close()`, `await x.close()`, lock release) before the exception handler drops or reassigns the
+variable holding it, including in a broad `except Exception`
+added to keep a loop alive (PYTHON-11). "Log and move on" does not skip normal-path cleanup.
+
+**Self-check.**
+1. For each broad handler added to keep a loop alive: does its `try` body acquire a resource
+   (socket, file, connection, lock)? If so, does the handler release it before the reference is
+   set to `None` or reassigned? Pass: yes, or it was never open.
+2. Force the handler's exception and confirm the resource is released, not just that
+   the handler ran. Pass: a leak check (fd/socket count, or the peer seeing a close) shows it gone.
 
