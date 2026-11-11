@@ -304,7 +304,7 @@ def default_config():
         # repo. In both layers (a person's habit first, a repo may differ); null is
         # ~/.claude/crew/worktrees. Read by `crew_worktrees.resolve`.
         "worktrees": copy.deepcopy(crew_state.WORKTREES_DEFAULTS),
-        # crew 1.3.40. How long the promote gate may run before it gives up and blocks. In
+        # crew 1.3.41. How long the promote gate may run before it gives up and blocks. In
         # both layers (a slow host is a fact of the machine; a repo may differ); null
         # derives it from the guard's hook timeout. Read by `_promote_gate.py`.
         "promote": copy.deepcopy(crew_state.PROMOTE_DEFAULTS),
@@ -563,7 +563,7 @@ def default_global_config():
         # crew 1.3.19: where worktrees go is a habit of the person and the machine
         # first; a repo file may still name its own.
         "worktrees": copy.deepcopy(crew_state.WORKTREES_DEFAULTS),
-        # crew 1.3.40: how long the promote gate may run is a fact about THIS machine's
+        # crew 1.3.41: how long the promote gate may run is a fact about THIS machine's
         # speed first; a repo file may still name its own.
         "promote": copy.deepcopy(crew_state.PROMOTE_DEFAULTS),
         # How much crew may do about a skill it needs and cannot find. This is

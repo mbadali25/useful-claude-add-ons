@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""promote-gate.sh's whole decision, in ONE python process (crew 1.3.40).
+"""promote-gate.sh's whole decision, in ONE python process (crew 1.3.41).
 
     python3 _promote_gate.py < <hook payload>      (cwd: the project dir)
 

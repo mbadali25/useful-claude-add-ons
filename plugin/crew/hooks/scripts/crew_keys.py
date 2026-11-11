@@ -245,7 +245,7 @@ KEY_META = {
                            "hook Claude Code keeps using `.claude/worktrees/`.", "type",
                            since="1.3.19", source=_S + "crew_worktrees.py",
                            type_="absolute path or null"),
-    # --- promote (crew 1.3.40)
+    # --- promote (crew 1.3.41)
     "promote.deadlineSeconds": _row("How many seconds the promote gate (`promote-gate.sh`) may run, "
                                     "counted from the moment its shell began, before it gives up and "
                                     "blocks (a hook that times out is not a block, so the gate stops "
@@ -255,7 +255,7 @@ KEY_META = {
                                     "can never let the gate outlive its hook; zero, a negative, a "
                                     "string or a boolean reads as null. The hook timeout is the "
                                     "guard's row in the dispatcher's table, not a setting.",
-                                    "type", since="1.3.40", source=_S + "_promote_gate.py",
+                                    "type", since="1.3.41", source=_S + "_promote_gate.py",
                                     type_="number of seconds, or null"),
     # --- emergency
     "emergency.standDown": _unv("Whether a declared incident may stand gates down; "

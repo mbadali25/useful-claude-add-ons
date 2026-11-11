@@ -1,4 +1,4 @@
-"""crew 1.3.40: promote-gate.sh decides in ONE python process (_promote_gate.py).
+"""crew 1.3.41: promote-gate.sh decides in ONE python process (_promote_gate.py).
 
 What this holds, each a must-block or a must-allow:
 
