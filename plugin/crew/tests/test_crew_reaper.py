@@ -24,6 +24,35 @@ NOWIN = 0x08000000 if os.name == "nt" else 0
 EAGER = {"enabled": True, "dryRun": True, "spinCpuPct": 50.0, "spinMinAgeMin": 0.0,
          "blockedMinAgeHours": 0.0, "protectedRegex": None, "intervalMin": 10, "onSessionStart": False}
 SPIN = "while True:\n    pass\n"
+POSIX = os.name != "nt"
+# pids Fleet.orphan() made: real processes whose real parent really exited.
+ORPHANS = set()
+
+
+def _gone_pid():
+    """A pid that names no process: a child that has exited and been reaped."""
+    child = subprocess.Popen([sys.executable, "-c", "pass"], creationflags=NOWIN)
+    child.wait(timeout=30)
+    return child.pid
+
+
+def posix_view(snapshot=None):
+    """Snapshot seam for POSIX. Linux and macOS reparent an orphan to init (or to a
+    subreaper such as the WSL relay or a CI runner), and that parent is alive, so the
+    reaper's own rule says "live parent, never ended" and the host decides the result.
+    A fixture must not depend on that: this view reports each fixture orphan with the
+    parent it has on Windows, a pid that no longer exists. The process, its CPU, its
+    age and the kill are all still real."""
+    snapshot = snapshot or crew_reaper.snapshot
+    dead = _gone_pid()
+
+    def view():
+        procs = snapshot()
+        for pid in ORPHANS:
+            if pid in procs:
+                procs[pid] = dict(procs[pid], ppid=dead)
+        return procs
+    return view
 
 
 def alive(pid):
@@ -58,6 +87,7 @@ class Fleet:
                                   stdin=subprocess.PIPE if hold_stdin else subprocess.DEVNULL,
                                   text=True, creationflags=NOWIN)
         pid = self._read_pid(parent)
+        ORPHANS.add(pid)
         parent.wait(timeout=30)
         if hold_stdin:
             self.handles.append(parent)  # keeps the write end of the child's stdin open
@@ -109,7 +139,8 @@ def _fleet():
 
 
 def judge(pid, apply=False, cfg=None):
-    records = crew_reaper.run(dict(cfg or EAGER), apply=apply, sample_s=1.5, pids={pid})
+    records = crew_reaper.run(dict(cfg or EAGER), apply=apply, sample_s=1.5, pids={pid},
+                              snap=posix_view() if POSIX and pid in ORPHANS else None)
     return next((r for r in records if r["pid"] == pid), None)
 
 
@@ -123,6 +154,17 @@ def wait_gone(pid, seconds=15):
 
 
 # ------------------------------------------------------------------ must kill
+
+@pytest.mark.skipif(not POSIX, reason="reparenting to init or a subreaper is a POSIX behaviour")
+def test_a_posix_orphan_reparented_to_a_live_process_is_never_ended(fleet):
+    """The real kernel behaviour, no seam: the orphan's new parent is alive, so the rule
+    "a live parent is never ended" holds and nothing is killed (reported at most)."""
+    pid = fleet.orphan(SPIN)
+    records = crew_reaper.run(dict(EAGER), apply=True, sample_s=1.5, pids={pid})
+    rec = next((r for r in records if r["pid"] == pid), None)
+    assert rec is None or (rec["decision"] == "report" and rec["applied"] is False), rec
+    assert alive(pid)
+
 
 def test_a_spinning_orphan_is_ended(fleet):
     pid = fleet.orphan(SPIN)
@@ -339,3 +381,19 @@ def test_a_guard_that_decides_in_time_keeps_its_own_exit_code():
                          capture_output=True, text=True, env=env, timeout=60, check=False,
                          creationflags=NOWIN)
     assert res.returncode == 0, res.stderr
+
+
+# ------------------------------------------------- could not tell, not "no orphans"
+
+def test_a_missing_ps_is_could_not_tell_not_an_empty_table(monkeypatch):
+    monkeypatch.setattr(crew_reaper.crew_common, "resolve_tool", lambda name: None)
+    with pytest.raises(OSError):
+        crew_reaper.snapshot_posix()
+    with pytest.raises(OSError):
+        crew_reaper.run(dict(EAGER), snap=crew_reaper.snapshot_posix)
+
+
+def test_a_missing_taskkill_fails_the_kill_loudly_not_silently(monkeypatch):
+    monkeypatch.setattr(crew_reaper, "IS_WINDOWS", True)
+    monkeypatch.setattr(crew_reaper.crew_common, "resolve_tool", lambda name: None)
+    assert crew_reaper.kill_pid(2 ** 22 - 1) is False

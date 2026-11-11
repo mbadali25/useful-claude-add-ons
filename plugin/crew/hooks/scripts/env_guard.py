@@ -41,8 +41,6 @@ import re
 import sys
 import time
 
-import crew_selflimit
-
 RULE = "envGuard"
 MAX_DEPTH = 8
 # Python recursion bound for the readers themselves, far above MAX_DEPTH: a
@@ -2489,5 +2487,6 @@ def main():
 
 if __name__ == "__main__":
     # only as a script: an in-process caller (a test) must not get an exit timer
+    import crew_selflimit  # pylint: disable=import-outside-toplevel
     crew_selflimit.arm(13, "env_guard")
     sys.exit(main())

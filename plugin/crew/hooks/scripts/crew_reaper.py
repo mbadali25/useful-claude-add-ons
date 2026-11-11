@@ -51,6 +51,8 @@ import subprocess
 import sys
 import time
 
+import crew_common
+
 IS_WINDOWS = os.name == "nt"
 
 ALLOW_IMAGES = frozenset({
@@ -177,9 +179,14 @@ def _parse_etime(text):
 def snapshot_posix(now=None):
     """{pid: proc} from `ps`. proc keys: pid, ppid, name, cmd, age_s, cpu_s, start."""
     now = time.time() if now is None else now
-    out = subprocess.run(["ps", "-axo", "pid=,ppid=,etime=,time=,comm=,args="],
+    ps = crew_common.require_tool("ps")  # ToolNotFound is an OSError: could not tell
+    res = subprocess.run([ps, "-axww", "-o", "pid=,ppid=,etime=,time=,comm=,args="],
                          capture_output=True, text=True, check=False, timeout=30,
-                         stdin=subprocess.DEVNULL).stdout
+                         stdin=subprocess.DEVNULL)
+    if res.returncode != 0 or not res.stdout.strip():
+        # an unreadable table is "could not tell", never "no orphans"
+        raise OSError("ps failed: " + (res.stderr or "").strip()[:300])
+    out = res.stdout
     procs = {}
     for line in out.splitlines():
         parts = line.split(None, 5)
@@ -395,7 +402,11 @@ def decide(proc, first, second, elapsed, procs, cfg, rx):
 def kill_pid(pid):
     """End one pid (no tree flag). True when the call succeeded."""
     if IS_WINDOWS:
-        res = subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True,
+        try:
+            taskkill = crew_common.require_tool("taskkill")
+        except crew_common.ToolNotFound:
+            return False  # could not end it: the record says "kill call failed"
+        res = subprocess.run([taskkill, "/PID", str(pid), "/F"], capture_output=True,
                              check=False, timeout=15, stdin=subprocess.DEVNULL,
                              creationflags=0x08000000)
         return res.returncode == 0
