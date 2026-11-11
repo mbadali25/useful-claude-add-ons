@@ -133,6 +133,46 @@ def test_an_unchanged_turn_skips_the_second_time(flavour, tmp_path):
 
 
 @pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("wrap", [(b"", b"\r\n"), (b" \t", b" \r\n"), (b"", b"")],
+                         ids=["crlf", "spaces-around", "no-newline"])
+def test_a_crlf_fingerprint_file_still_matches(flavour, wrap, tmp_path):
+    """MUST-ALLOW: a fingerprint file rewritten with CRLF or surrounding
+    whitespace (an editor, a Windows tool) names the same digest. `$(cat ...)`
+    kept the CR, so the compare never matched and every turn re-ran; the gate
+    trims surrounding whitespace before comparing."""
+    root = _repo(tmp_path)
+    first = _run(flavour, root)
+    assert _ran(first), first.stderr
+    fp = root / ".crew" / ".verify-gate.fingerprint"
+    digest = fp.read_text(encoding="utf-8").strip().encode("ascii")
+    fp.write_bytes(wrap[0] + digest + wrap[1])
+    second = _run(flavour, root)
+    assert second.returncode == 0, second.stderr
+    assert _skipped(second), second.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
+@pytest.mark.parametrize("damage", ["interior-cr", "second-line", "nul-crlf"])
+def test_a_malformed_fingerprint_file_never_skips(flavour, damage, tmp_path):
+    """MUST-BLOCK the skip: trimming must not let damage inside the value
+    authorise one (Codex review rounds 1 and 2). An interior CR, a second line
+    after the digest, or a NUL byte fails the compare and the checks run."""
+    root = _repo(tmp_path)
+    first = _run(flavour, root)
+    assert _ran(first), first.stderr
+    fp = root / ".crew" / ".verify-gate.fingerprint"
+    digest = fp.read_text(encoding="utf-8").strip().encode("ascii")
+    body = {"interior-cr": digest[:8] + b"\r" + digest[8:] + b"\n",
+            "second-line": digest + b"\r\nextra\r\n",
+            # Bash drops the NUL in $(...), so a trim alone matched (round 2).
+            "nul-crlf": digest + b"\0\r\n"}[damage]
+    fp.write_bytes(body)
+    second = _run(flavour, root)
+    assert second.returncode == 0, second.stderr
+    assert not _skipped(second), second.stderr
+
+
+@pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_the_skip_says_so_rather_than_exiting_silently(flavour, tmp_path):
     """Must-allow, and the lesson 0.19.65 paid for: an exit 0 with nothing on
     stderr is byte-identical to a pass."""

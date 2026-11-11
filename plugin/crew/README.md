@@ -205,7 +205,8 @@ so a run that is killed anyway prices the rule it was running for the next turn,
 lock no longer blocks the next one. The diff base is `origin/<default>` when that ref exists.
 The last verified commit (`.crew/.verify-verified-at`) is the diff base only when it
 is on HEAD's history; one left by another branch is replaced by its merge-base with HEAD, and one sharing no history
-with HEAD is refused.
+with HEAD is refused. Every marker and baseline file the gate reads is trimmed first, so one written with
+CRLF line endings is read as the commit it names instead of being silently ignored.
 
 **Fill in the `CLAUDE.md`.** The template leaves blanks on purpose: build and test commands, where the entry point lives, which directories are off limits, and the landmine that breaks every time someone touches it. Thirty lines beats three hundred, because every line is re-read on every delegation.
 
