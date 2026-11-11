@@ -450,3 +450,34 @@ def test_a_base_at_holding_a_nul_byte_is_refused(tmp_path):
     (root / ".crew" / ".verify-gate.base-at").write_bytes(
         _head(root).encode("ascii") + b"\0\r\n")
     assert _run(root) == 2
+
+
+def test_an_orphan_branch_marker_holding_a_nul_byte_is_refused(tmp_path):
+    """MUST-BLOCK: `<orphan sha>\\0\\n`. Read as empty it would be ignored, and
+    on the default branch the fallback to merge-base = HEAD would pass the
+    committed .py below; a NUL-bearing marker is refused instead (Codex
+    review round 3)."""
+    root = _repo(tmp_path)          # on main, no origin
+    _git(root, "checkout", "-q", "--orphan", "orphan")
+    (root / "o.txt").write_text("unrelated\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "orphan root")
+    orphan = _head(root)
+    _git(root, "checkout", "-q", "main")
+    (root / ".crew" / ".verify-verified-at").write_bytes(
+        orphan.encode("ascii") + b"\0\n")
+    (root / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "committed on main")
+    assert _run(root) == 2
+
+
+@pytest.mark.parametrize("body", [b"\r\n", b"\0\r\n", b"qa\r\n"],
+                         ids=["cr-only", "nul", "no-sha"])
+def test_a_deploy_marker_with_an_empty_field_is_not_matched_to_blank_cells(tmp_path, body):
+    """MUST-BLOCK: a marker whose env or sha is empty must not match a row
+    with two adjacent blank cells and clear itself (Codex review round 3)."""
+    root = _repo(tmp_path)
+    _deploy_marker(root, body, "| prod | | | ok |\n")
+    assert _run(root) == 2
+    assert (root / ".crew" / ".deploy-in-flight").exists()

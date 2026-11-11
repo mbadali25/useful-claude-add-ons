@@ -94,6 +94,15 @@ STOP_BUDGET_MUTATIONS = (
      "  gate_marker_has_nul \"$1\" && return 0\n  _mt=$(cat",
      "  _mt=$(cat",
      "tests/test_verify_gate_fingerprint.py::test_a_malformed_fingerprint_file_never_skips[nul-crlf-sh]"),
+    ("a NUL-bearing verified marker is ignored, so an orphan sha passes on main", SH,
+     "  if gate_marker_has_nul .crew/.verify-verified-at \\\n",
+     "  if false \\\n",
+     "tests/test_verify_gate_baseline.py::test_an_orphan_branch_marker_holding_a_nul_byte_is_refused"),
+    ("an empty deploy-marker field matches two blank cells and clears the marker", SH,
+     '  if [ -n "$DENV" ] && [ -n "$DSHA" ] \\\n',
+     "  if true \\\n",
+     "tests/test_verify_gate_baseline.py::"
+     "test_a_deploy_marker_with_an_empty_field_is_not_matched_to_blank_cells[cr-only]"),
     # L-0905: the pricing floor, the sync payload and the dead producer.
     ("a cached zero prices a declared rule (the positive floor is dropped)", SH,
      "                            and cached > 0):\n"

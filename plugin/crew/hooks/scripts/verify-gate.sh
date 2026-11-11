@@ -574,7 +574,11 @@ fi
 # check removes the marker on success - a job must not consume it.
 if [ "$CI_MODE" -eq 0 ] && [ -f .crew/.deploy-in-flight ]; then
   read -r DENV DSHA <<< "$(gate_marker_line .crew/.deploy-in-flight)"
-  if grep -qE "\|[[:space:]]*${DENV}[[:space:]]*\|[[:space:]]*$DSHA" .work/PROMOTIONS.md 2>/dev/null; then
+  # An empty field (a blank, CR-only or NUL-bearing marker) would make the
+  # pattern match any two adjacent empty cells and clear the marker for a
+  # deploy nobody recorded, so it counts as no row (Codex review round 3).
+  if [ -n "$DENV" ] && [ -n "$DSHA" ] \
+     && grep -qE "\|[[:space:]]*${DENV}[[:space:]]*\|[[:space:]]*$DSHA" .work/PROMOTIONS.md 2>/dev/null; then
     rm -f .crew/.deploy-in-flight
   else
     echo "DEPLOY NOT RECORDED: $DENV was deployed at $DSHA and .work/PROMOTIONS.md has no row for it." >&2
@@ -728,6 +732,15 @@ SCAN_HEAD=$(git rev-parse --verify -q HEAD 2>/dev/null) || SCAN_HEAD=""
 BASE=""
 BASE_FROM_MARKER=0
 if [ -f .crew/.verify-verified-at ]; then
+  # A NUL-bearing marker reads as empty, and an empty marker is ignored - which
+  # for an orphan branch's sha would skip the refusal below and, on the
+  # default branch, pass an unchecked commit. So it is refused here instead
+  # (Codex review round 3). --all and --ci do not diff from a base.
+  if gate_marker_has_nul .crew/.verify-verified-at \
+     && [ "$CI_ALL_SEEN" -eq 0 ] && [ "$CI_MODE" -eq 0 ]; then
+    echo "verify-gate: the verified marker (.crew/.verify-verified-at) holds a NUL byte - the gate cannot tell which commit it names, so it refuses rather than check less. Run /crew:verify --all, then remove .crew/.verify-verified-at." >&2
+    exit 2
+  fi
   CAND=$(gate_marker_line .crew/.verify-verified-at)
   # Trust it only if it still names a commit. A marker surviving a squash merge
   # would otherwise diff against nothing and report the whole branch as clean.
