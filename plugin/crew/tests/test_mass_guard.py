@@ -712,9 +712,8 @@ def test_a_bare_relative_bash_cd_is_could_not_tell_whatever_cdpath_shows(
     _stopped_in(repo, repo, "cd sub && git commit -m x", crew_mass.MASS_DELETE)
     # an explicit ./ or ../ or absolute path never consults CDPATH
     _clean_in(repo, repo, "cd ./sub && git commit -m x")
-    _clean_in(repo, repo / "sub", "cd ../docs && git commit -m x")
     _clean_in(repo, repo, f"cd {repo}/sub && git commit -m x")
-    assert crew_mass.leading_cd("cd .. && git status", str(repo / "sub"), "bash")
+    assert crew_mass.leading_cd("cd ./sub/. && git status", str(repo), "bash")
     assert crew_mass.leading_cd("cd . && git status", str(repo), "bash")
     monkeypatch.delenv("CDPATH")
     assert crew_mass.leading_cd("cd sub && git status", str(repo), "bash") is None
@@ -799,29 +798,40 @@ cases = {{
 }}
 out = {{}}
 for label, text in cases.items():
-    start = time.perf_counter()
+    start = time.process_time()
     for shell in ("bash", "powershell"):
         crew_mass.leading_cd(text, "/", shell)
     crew_mass.sets_git_location(text, "bash")
-    out[label] = time.perf_counter() - start
+    out[label] = time.process_time() - start
 for label, text in {{
     "unterminated nested substitutions": '"$(' * 2000 + "a " * 3000,
     "many quotes": "\\"a\\" " * 5000 + "'",
     "many heredocs": "cat <<A <<B <<C\\n" + "x\\n" * 3000,
     "many words": "x " * 20000 + "GIT_DIR",
+    "many env words": "env " * 20000 + "x",
+    "many statements": "a; " * 20000 + "GIT_DIR=x",
+    "many exported names": "export " + "A=1 " * 20000,
+    "many brace words": "X{{a,b}}{{c,d}}{{e,f}}{{g,h}}{{i,j}}{{k,l}}{{m,n}} " * 3000,
+    "one huge brace word": "export " + "{{a,b}}" * 5000,
+    "unterminated ANSI-C quote": "export $'" + chr(92) * 5000,
+    "nested eval": "eval " * 2000 + "x",
+    "many redirects": "a >f " * 5000 + "GIT_DIR=x",
+    "many dollar-quotes": "$'a' " * 5000 + "b",
 }}.items():
-    start = time.perf_counter()
+    start = time.process_time()
     crew_mass.sets_git_location(text, "bash")
-    out[label] = time.perf_counter() - start
+    out[label] = time.process_time() - start
 print(json.dumps(out))
 '''
 
 
 def test_the_cd_grammar_and_the_git_variable_scan_are_linear_on_adversarial_input():
     """A nested quantifier in the old argument pattern took 12 s on a 16-character path and
-    18 s through the real hook. Each input must take < 0.2 s, in a CHILD process with a
-    timeout: `re` holds the GIL, so a thread could not interrupt a backtracking match, and a
-    mutant that restores the pattern must go red rather than hang the suite."""
+    18 s through the real hook. Each input must take < 0.2 s of CPU time (`time.process_time`
+    in the child, so a loaded host cannot fail it: round 6 saw 0.25 s and 0.5 s of wall clock
+    for 0.02 s of CPU), in a CHILD process with a wall-clock timeout: `re` holds the GIL, so
+    a thread could not interrupt a backtracking match, and a mutant that restores the pattern
+    must go red rather than hang the suite."""
     scripts = os.path.dirname(os.path.abspath(crew_mass.__file__))
     try:
         done = subprocess.run([sys.executable, "-c", _LINEAR_CHILD.format(scripts=scripts)],
@@ -831,7 +841,7 @@ def test_the_cd_grammar_and_the_git_variable_scan_are_linear_on_adversarial_inpu
     assert done.returncode == 0, done.stderr
     timings = json.loads(done.stdout)
     slow = {label: round(secs, 3) for label, secs in timings.items() if secs >= 0.2}
-    assert not slow, f"slower than 0.2 s: {slow}"
+    assert not slow, f"slower than 0.2 s of CPU: {slow}"
 
 
 def test_a_glob_or_tab_in_a_cd_or_dash_C_target_is_could_not_tell_and_quick(repo, tmp_path):
@@ -855,6 +865,18 @@ _LOCATION_WORDS = [
     "git commit -m `GIT_DIR=x true`", 'git commit -m "a $(b "$(GIT_DIR=x true)")"',
     "git commit -F - <<EOF\n$(GIT_DIR=x echo)\nEOF", "git_dir=x git commit",
     'git commit -m "$(a "$(b "$(c "$(d "$(GIT_DIR=x e)")")")")"', "GIT_DIR='x' git commit",
+    # round 7 (F3): the cheap spellings
+    "GIT_INDEX_FILE+=/x git commit -m x", "export GIT_INDEX_FILE+=/x; git commit -m x",
+    "export $'GIT_INDEX_FILE=/x'; git commit -m x", "eval 'export GIT_INDEX_FILE=/x'; git commit",
+    "export GIT_{INDEX_FILE,ZZ}=/x; git commit -m x", "GIT_{DIR,ZZ}=/x git commit -m x",
+    "env -S 'X=1 GIT_INDEX_FILE=/x git commit -m x'", "env --split-string='GIT_DIR=/x git status'",
+    "bash -c 'GIT_DIR=/x git commit -m x'", "sh -lc 'export GIT_WORK_TREE=/x; git commit'",
+    "FOO=1 BAR=2 GIT_DIR=/x git commit -m x", "time GIT_DIR=/x git commit -m x",
+    "if true; then GIT_DIR=/x git commit -m x; fi", "{ GIT_DIR=/x git commit -m x; }",
+    "sudo GIT_DIR=/x git commit -m x", "env -u FOO GIT_DIR=/x git commit",
+    "readonly GIT_DIR=/x", "local GIT_DIR=/x", "typeset -x GIT_DIR=/x",
+    "eval \"eval 'GIT_DIR=/x git commit'\"", "pwsh -c '$env:GIT_DIR = 1; git commit'",
+    "2>/dev/null GIT_DIR=/x git commit -m x",
 ]
 _LOCATION_MESSAGES = [
     'git commit -m "docs: explain GIT_DIR handling"', 'git commit -m "note on git_namespace"',
@@ -863,6 +885,19 @@ _LOCATION_MESSAGES = [
     "git -C repo commit -m 'fix GIT_DIR handling'", 'git commit -m "docs: GIT_DIR=x is documented"',
     "git commit -m 'GIT_WORK_TREE and GIT_COMMON_DIR'", "echo GIT_DIRECTORY=x; git commit",
     "git commit -F - <<-EOF\n\tGIT_DIR=x\n\tEOF\ngit status",
+    # round 7 (F4): a mention is not an assignment
+    'git commit -m "GIT_DIR=/x was wrong"', "git commit -m GIT_DIR",
+    "unset GIT_DIR GIT_WORK_TREE; git commit -m x", "grep -rn GIT_INDEX_FILE . ; git commit -m x",
+    "echo GIT_INDEX_FILE=x; git commit -m x", "git commit -m 'GIT_DIR=x' -m GIT_WORK_TREE=y",
+    "env -u GIT_DIR git commit -m x", "MY_GIT_DIR=x git commit -m x",
+    "cat GIT_DIR=x | git commit -F - ", "git log --grep=GIT_DIR=x; git commit -m x",
+    "GIT_DIR; git commit -m x", "export -n; GIT_WORK_TREE; git commit -m x",
+]
+_LOCATION_MESSAGES_PS = [
+    "git commit -m $env:GIT_DIR", 'git commit -m "GIT_DIR=/x was wrong"',
+    "Write-Output $env:GIT_INDEX_FILE; git commit -m x", "Get-Item Env:GIT_DIR; git commit -m x",
+    "Remove-Item Env:GIT_DIR; git commit -m x", "git commit -m x # $env:GIT_DIR = 'y'",
+    "$env:GIT_DIR; git commit -m x", "$env:GIT_INDEX_FILE -eq 'x'; git commit -m x",
 ]
 
 
@@ -874,7 +909,15 @@ def test_an_assignment_of_a_git_location_variable_is_seen(command):
 @pytest.mark.parametrize("command", [
     "$env:GIT_DIR = 'x'; git commit", "$env:git_index_file='x'; git commit",
     "Set-Item Env:GIT_DIR x; git commit",
-    "[Environment]::SetEnvironmentVariable('GIT_DIR','x'); git commit"])
+    "[Environment]::SetEnvironmentVariable('GIT_DIR','x'); git commit",
+    # round 7 (F3)
+    "${env:GIT_INDEX_FILE}='/x'; git commit -m x", "$env:GIT_INDEX_FILE+='/x'; git commit -m x",
+    "$env:GIT_INDEX_FILE += '/x'; git commit -m x",
+    "Set-Item -Path Env:\\GIT_INDEX_FILE /x; git commit -m x",
+    "Set-Content env:\\GIT_INDEX_FILE /x; git commit -m x",
+    "Set-Item -Path:Env:GIT_DIR -Value x; git commit",
+    "if ($true) { $env:GIT_DIR = 'x' }; git commit",
+    "iex '$env:GIT_DIR = 1'; git commit", "bash -c 'GIT_DIR=/x git commit'"])
 def test_a_powershell_assignment_of_a_git_location_variable_is_seen(command):
     assert crew_mass.sets_git_location(command, "powershell"), command
 
@@ -1266,3 +1309,131 @@ def test_report_mode_enforces_nothing_but_logs_the_stop(repo):
                                   crew_mass.settings(str(repo)))
     assert result["decision"] is None
     assert any(row[2] == "report:ask" for row in result["rows"])
+
+
+# --- round 7 (crew 1.3.52) -------------------------------------------------------------
+
+@pytest.mark.parametrize("command", _LOCATION_MESSAGES_PS)
+def test_a_powershell_mention_of_a_git_variable_is_not_an_assignment(command):
+    assert not crew_mass.sets_git_location(command, "powershell"), command
+
+
+def test_a_git_variable_mention_is_counted_not_refused_and_the_count_is_still_taken(
+        repo, tmp_path):
+    """F4: these were asked on the PR and allowed on main (0 files). They must be counted."""
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    mentions = ('git commit -m "GIT_DIR=/x was wrong"', "git commit -m GIT_DIR",
+                "unset GIT_DIR GIT_WORK_TREE; git commit -m x",
+                "grep -rn GIT_INDEX_FILE . ; git commit -m x", "env -u GIT_DIR git commit -m x")
+    for command in mentions:
+        _clean_in(repo, wt, command)
+    git(wt, "reset", "-q")
+    _fill(wt / "docs", 22)
+    git(wt, "add", "-A")
+    for command in mentions:
+        _stopped_in(repo, wt, command, crew_mass.MASS_CREATE)
+
+
+@pytest.mark.parametrize("command", [
+    "export GIT_INDEX_FILE+={x}; git commit -m x",
+    "eval 'export GIT_INDEX_FILE={x}'; git commit -m x",
+    "env -S 'X=1 GIT_INDEX_FILE={x} git commit -m x'",
+    "export GIT_{{INDEX_FILE,ZZ}}={x}; git commit -m x",
+    "GIT_INDEX_FILE+={x} git commit -m x"])
+def test_a_cheap_spelling_of_a_git_location_assignment_still_stops(repo, tmp_path, command):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    result = _stopped_in(repo, wt, command.format(x=_fwd(tmp_path / "x")), crew_mass.MASS_DELETE)
+    assert "not read here" in result["reason"], result
+
+
+@pytest.mark.parametrize("command", [
+    "${{env:GIT_INDEX_FILE}}='{x}'; git commit -m x", "$env:GIT_INDEX_FILE+='{x}'; git commit -m x",
+    "Set-Item -Path Env:/GIT_INDEX_FILE {x}; git commit -m x"])
+def test_a_powershell_location_assignment_still_stops(repo, tmp_path, command):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    _ps_stopped(repo, wt, command.format(x=_fwd(tmp_path / "x")))
+
+
+@pytest.mark.parametrize("command", [
+    "bash <<< 'GIT_INDEX_FILE=x git commit -m y'",
+    "bash <<'EOT'\nGIT_INDEX_FILE=x git commit -m y\nEOT",
+    "printf -v GIT_INDEX_FILE %s /x; git commit -m x", "n=GIT_INDEX_FILE; export $n=/x"])
+def test_the_known_gaps_of_the_git_variable_scan_are_pinned(command):
+    """Not caught, as on main (listed in CONFIG.md under the known gaps): the assignment is
+    in a heredoc or here-string fed to a shell, built by `printf -v`, or its name comes from a
+    variable. Pinned so closing a gap shows up here, and in the docs, as a deliberate change."""
+    assert not crew_mass.sets_git_location(command, "bash"), command
+
+
+@pytest.mark.parametrize("target", ["..", "../x", "./..", "a/..", "a/../b", "./lnk/..", "a/b/../c",
+                                    "../..", "x/../.."])
+def test_a_dotdot_component_in_a_cd_target_is_never_followed(repo, tmp_path, target):
+    """B1: bash may walk a symlink for `..` (a logical cd, or `set -P` from BASH_ENV) and this
+    process would cut the text, so any `..` component is could-not-tell in both shells."""
+    root = repo / "sub"
+    for name in ("a/b", "x", "lnk"):
+        (root / name).mkdir(parents=True, exist_ok=True)
+    assert crew_mass.leading_cd(f"cd {target} && git status", str(root), "bash") is None, target
+    for sep in ("; ", " && "):
+        assert crew_mass.leading_cd(f"cd {target}{sep}git status", str(root), "powershell") \
+            is None, target
+
+
+def test_a_dotdot_cd_is_asked_where_the_text_says_the_repo_is_clean(repo):
+    """B1, reviewer scenario A: the hook's cwd is `repo/sub` (clean); bash may really be in a
+    symlink that `..` leaves for a 32-file worktree. A followed `cd ..` counts the clean parent
+    (0) and passes; refused, it is asked, exactly as on main."""
+    (repo / "sub").mkdir()
+    result = _stopped_in(repo, repo / "sub", "cd .. && git commit -m x", crew_mass.MASS_DELETE)
+    assert "moves the shell" in result["reason"], result
+    result = _stopped_in(repo, repo, "cd ./sub/.. && git commit -m x", crew_mass.MASS_DELETE)
+    assert "moves the shell" in result["reason"], result
+    result = _ps_in(repo, repo / "sub", "cd ..; git commit -m x")
+    assert _mass_rows(result) and result["decision"] in ("ask", "deny"), result
+
+
+def test_a_name_that_only_contains_dots_is_still_followed(repo):
+    """The refusal is the whole component `..`, not any two dots: `..x` and `a..b` are names."""
+    for name in ("..x", "a..b"):
+        (repo / name).mkdir()
+        assert crew_mass.leading_cd(f"cd ./{name} && git status", str(repo), "bash"), name
+        assert crew_mass.leading_cd(f"cd ./{name}; git status", str(repo), "powershell"), name
+
+
+def test_a_powershell_drive_prefix_is_followed_only_where_drives_exist(repo, tmp_path,
+                                                                       monkeypatch):
+    """F1: on Linux a directory can be named `c:`; pwsh Set-Location 'c:/x' fails ("Cannot find
+    drive") but `;` still runs git where the shell was. A drive prefix is a target only when
+    os.name == "nt"."""
+    if os.name == "nt":
+        target = _fwd(_worktree(repo, tmp_path))
+    else:
+        (repo / "c:" / "x").mkdir(parents=True)
+        target = "c:/x"
+    cwd = str(repo)
+    monkeypatch.setattr(crew_mass, "_WINDOWS", False)
+    assert crew_mass.leading_cd(f"cd {target}; git status", cwd, "powershell") is None
+    assert crew_mass.leading_cd(f"Set-Location {target} && git status", cwd, "powershell") is None
+    (repo / "plain").mkdir()
+    assert crew_mass.leading_cd("cd ./plain; git status", cwd, "powershell")
+    monkeypatch.setattr(crew_mass, "_WINDOWS", True)
+    if os.name == "nt":
+        assert crew_mass.leading_cd(f"cd {target}; git status", cwd, "powershell")
+
+
+def test_an_absolute_dash_C_after_a_cd_is_counted_there_as_on_main(repo, tmp_path):
+    """`cd X && git -C /abs commit` is not a followed cd (-C is refused after one), but the
+    absolute -C path is still counted: allowed when /abs is clean, stopped when it is not,
+    the same on origin/main (round-5 report said "could not tell"; that was wrong)."""
+    wt = _big_wt(repo, tmp_path, count=32)
+    other = tmp_path / "other"
+    other.mkdir()
+    _clean_in(repo, wt, f"cd {_fwd(other)} && git -C {_fwd(repo)} commit -m x")
+    _stopped_in(repo, repo, f"cd {_fwd(other)} && git -C {_fwd(wt)} commit -m x",
+                crew_mass.MASS_CREATE)

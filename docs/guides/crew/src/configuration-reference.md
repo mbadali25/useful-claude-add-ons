@@ -172,11 +172,17 @@ A command is counted in another directory ONLY when the whole command is one pla
 line: in bash `cd <path> && git <args>`; in PowerShell `Set-Location`, `sl` or `cd`
 `<path>`, then `;` or `&&`, then `git <args>`. The path is an existing directory with no
 quote, `~`, `$` or glob. In bash it is letters, digits and `_ . / : -` and it must be
-absolute, `.`, `..`, or start with `./` or `../`: a bare name (`cd sub`) is "could not
+absolute, `.`, or start with `./`: a bare name (`cd sub`) is "could not
 tell", because bash may resolve it through `CDPATH`, which it can take from `BASH_ENV` or
 a profile without exporting it, so the hook cannot see it (bash does not consult `CDPATH`
-for `/x`, `./x` or `../x`). In PowerShell it is letters, digits and `_ . / -` with at most
-one leading `<letter>:/` or `<letter>:\` drive prefix; any other colon (`Env:`, `Variable:`,
+for `/x` or `./x`). A target with a `..` component (`cd ..`, `cd ../x`, `cd ./a/..`) is
+"could not tell" in both shells: bash may walk a symlink for `..` (a logical `cd`, or
+`set -P` from `BASH_ENV`) and the hook would cut the text instead, so it could count a
+different repository than the one git commits in. In PowerShell the path is letters,
+digits and `_ . / -` with at most
+one leading `<letter>:/` or `<letter>:\` drive prefix, and a drive prefix is followed
+only on Windows (elsewhere `c:/x` is a directory name, Set-Location fails and the `;`
+still runs git where the shell was); any other colon (`Env:`, `Variable:`,
 `HKLM:`, `foo:bar`) or backslash (`C:\a\b`, `x\y`) is "could not tell", so write the path
 with forward slashes. The arguments start with the git subcommand (no global option before
 it: not `-C`, `-c`, `--git-dir`, `--work-tree`, `--namespace`), then bare words, flags
@@ -190,22 +196,35 @@ seconds. EVERYTHING else after a `cd` is "could not tell", exactly as it was bef
 change: a second command, a chain, a pipe, a redirect, `$(...)`, a backtick, a heredoc, an
 assignment, an alias, `pushd`, a quoted or `~` path, a `;` in bash, a newline or NBSP after
 the target, PowerShell `cd..` or a `$m` variable. `cd X && git add -A && git commit` is
-therefore still refused; run it as two commands. Several `-C` options are resolved one
-after another, as git does.
+therefore still refused; run it as two commands. So are `cd X && git commit -m x -- path`,
+`--author=...`, `-m"x"` and a trailing newline (the grammar admits none of them; a bare
+`--` is one). `cd X && git -C /abs commit` is not a followed cd (`-C` is refused after a
+cd), but the absolute `-C` path is counted as it is on main: allowed when `/abs` is clean,
+stopped when it is not. Several `-C` options are resolved one after another, as git does.
 A count that cannot be taken - a variable in a path, any `cd` that is not that one plain
 line (a second one, one not first, `cd $DIR`, a missing directory), a `GIT_DIR`,
 `GIT_WORK_TREE`, `GIT_INDEX_FILE` or other `GIT_` location variable ASSIGNED in the
-command (a word that starts `GIT_DIR=`, `export GIT_DIR`, `env GIT_DIR=x`, `$env:GIT_DIR`;
-a commit message or heredoc that only mentions the name is not an assignment), or
+command (a real assignment: `GIT_DIR=x` or `GIT_DIR+=x` as a command word or after other
+`NAME=v` words, `export`/`declare`/`typeset`/`readonly`/`local GIT_DIR[=x]`, `env GIT_DIR=x`
+and `env -S 'GIT_DIR=x git ...'`, `export $'GIT_DIR=x'`, `export GIT_{DIR,X}=x`, the string
+of `eval`, `bash -c` or `pwsh -c`; PowerShell `$env:GIT_DIR = x`, `${env:GIT_DIR}=`,
+`$env:GIT_DIR +=`, `Set-Item` / `Set-Content Env:\GIT_DIR`, `[Environment]::SetEnvironmentVariable`.
+A name that is only an argument is not an assignment and is counted as usual: a commit message
+`-m "GIT_DIR=/x was wrong"`, `-m GIT_DIR`, `unset GIT_DIR`, `grep -rn GIT_INDEX_FILE .`,
+`env -u GIT_DIR`, a heredoc that only mentions it), or
 `--git-dir` / `--work-tree` in the command, `find -delete`, `xargs rm`, a failed `git`, an
 unfiltered SQL statement (no command text says how many rows it hits) - is
 "could not tell", and could not tell stops. It does NOT see a script (`bash cleanup.sh`, `python -c`,
 `make clean`), an MCP server, the Write and Edit tools before they are
 committed, `tar -x` or `unzip`, `git merge` or `pull`, or many small commands
 each under a limit: a tripwire in front of native permissions, not a sandbox.
-Known gaps, not fixed here (all as on main): an alias set with `git -c alias.x=...`
-hides the subcommand it runs; a `GIT_` variable whose name is built with an expansion
-is not seen; and a cd run without a `cd` word (`trap`, `find -exec`,
+Known gaps, not fixed here (all as on main, so nothing got worse): an alias set with
+`git -c alias.x=...` or in a repository config (`git ci -m x`) hides the subcommand it runs;
+a command word built by a substitution (`$(echo git) -C <worktree> commit`) is not read;
+`GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n` can set that alias too; a
+`GIT_` location variable assigned inside a heredoc or here-string fed to a shell, by
+`printf -v` or `read`, through `xargs` or `sudo -u`, or whose name is built from another
+variable is not seen; and a cd run without a `cd` word (`trap`, `find -exec`,
 `Start-Process`, a command word built from a variable) is not seen.
 
 A stopped command prints an id. Attended, the stop is an `ask`; unattended

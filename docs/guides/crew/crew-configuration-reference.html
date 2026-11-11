@@ -260,11 +260,17 @@ shared; <code>terraform apply &lt;plan&gt;</code> (the plan's own changes), <cod
 line: in bash <code>cd &lt;path&gt; &amp;&amp; git &lt;args&gt;</code>; in PowerShell <code>Set-Location</code>, <code>sl</code> or <code>cd</code>
 <code>&lt;path&gt;</code>, then <code>;</code> or <code>&amp;&amp;</code>, then <code>git &lt;args&gt;</code>. The path is an existing directory with no
 quote, <code>~</code>, <code>$</code> or glob. In bash it is letters, digits and <code>_ . / : -</code> and it must be
-absolute, <code>.</code>, <code>..</code>, or start with <code>./</code> or <code>../</code>: a bare name (<code>cd sub</code>) is "could not
+absolute, <code>.</code>, or start with <code>./</code>: a bare name (<code>cd sub</code>) is "could not
 tell", because bash may resolve it through <code>CDPATH</code>, which it can take from <code>BASH_ENV</code> or
 a profile without exporting it, so the hook cannot see it (bash does not consult <code>CDPATH</code>
-for <code>/x</code>, <code>./x</code> or <code>../x</code>). In PowerShell it is letters, digits and <code>_ . / -</code> with at most
-one leading <code>&lt;letter&gt;:/</code> or <code>&lt;letter&gt;:\</code> drive prefix; any other colon (<code>Env:</code>, <code>Variable:</code>,
+for <code>/x</code> or <code>./x</code>). A target with a <code>..</code> component (<code>cd ..</code>, <code>cd ../x</code>, <code>cd ./a/..</code>) is
+"could not tell" in both shells: bash may walk a symlink for <code>..</code> (a logical <code>cd</code>, or
+<code>set -P</code> from <code>BASH_ENV</code>) and the hook would cut the text instead, so it could count a
+different repository than the one git commits in. In PowerShell the path is letters,
+digits and <code>_ . / -</code> with at most
+one leading <code>&lt;letter&gt;:/</code> or <code>&lt;letter&gt;:\</code> drive prefix, and a drive prefix is followed
+only on Windows (elsewhere <code>c:/x</code> is a directory name, Set-Location fails and the <code>;</code>
+still runs git where the shell was); any other colon (<code>Env:</code>, <code>Variable:</code>,
 <code>HKLM:</code>, <code>foo:bar</code>) or backslash (<code>C:\a\b</code>, <code>x\y</code>) is "could not tell", so write the path
 with forward slashes. The arguments start with the git subcommand (no global option before
 it: not <code>-C</code>, <code>-c</code>, <code>--git-dir</code>, <code>--work-tree</code>, <code>--namespace</code>), then bare words, flags
@@ -278,22 +284,35 @@ seconds. EVERYTHING else after a <code>cd</code> is "could not tell", exactly as
 change: a second command, a chain, a pipe, a redirect, <code>$(...)</code>, a backtick, a heredoc, an
 assignment, an alias, <code>pushd</code>, a quoted or <code>~</code> path, a <code>;</code> in bash, a newline or NBSP after
 the target, PowerShell <code>cd..</code> or a <code>$m</code> variable. <code>cd X &amp;&amp; git add -A &amp;&amp; git commit</code> is
-therefore still refused; run it as two commands. Several <code>-C</code> options are resolved one
-after another, as git does.
+therefore still refused; run it as two commands. So are <code>cd X &amp;&amp; git commit -m x -- path</code>,
+<code>--author=...</code>, <code>-m"x"</code> and a trailing newline (the grammar admits none of them; a bare
+<code>--</code> is one). <code>cd X &amp;&amp; git -C /abs commit</code> is not a followed cd (<code>-C</code> is refused after a
+cd), but the absolute <code>-C</code> path is counted as it is on main: allowed when <code>/abs</code> is clean,
+stopped when it is not. Several <code>-C</code> options are resolved one after another, as git does.
 A count that cannot be taken - a variable in a path, any <code>cd</code> that is not that one plain
 line (a second one, one not first, <code>cd $DIR</code>, a missing directory), a <code>GIT_DIR</code>,
 <code>GIT_WORK_TREE</code>, <code>GIT_INDEX_FILE</code> or other <code>GIT_</code> location variable ASSIGNED in the
-command (a word that starts <code>GIT_DIR=</code>, <code>export GIT_DIR</code>, <code>env GIT_DIR=x</code>, <code>$env:GIT_DIR</code>;
-a commit message or heredoc that only mentions the name is not an assignment), or
+command (a real assignment: <code>GIT_DIR=x</code> or <code>GIT_DIR+=x</code> as a command word or after other
+<code>NAME=v</code> words, <code>export</code>/<code>declare</code>/<code>typeset</code>/<code>readonly</code>/<code>local GIT_DIR[=x]</code>, <code>env GIT_DIR=x</code>
+and <code>env -S 'GIT_DIR=x git ...'</code>, <code>export $'GIT_DIR=x'</code>, <code>export GIT_{DIR,X}=x</code>, the string
+of <code>eval</code>, <code>bash -c</code> or <code>pwsh -c</code>; PowerShell <code>$env:GIT_DIR = x</code>, <code>${env:GIT_DIR}=</code>,
+<code>$env:GIT_DIR +=</code>, <code>Set-Item</code> / <code>Set-Content Env:\GIT_DIR</code>, <code>[Environment]::SetEnvironmentVariable</code>.
+A name that is only an argument is not an assignment and is counted as usual: a commit message
+<code>-m "GIT_DIR=/x was wrong"</code>, <code>-m GIT_DIR</code>, <code>unset GIT_DIR</code>, <code>grep -rn GIT_INDEX_FILE .</code>,
+<code>env -u GIT_DIR</code>, a heredoc that only mentions it), or
 <code>--git-dir</code> / <code>--work-tree</code> in the command, <code>find -delete</code>, <code>xargs rm</code>, a failed <code>git</code>, an
 unfiltered SQL statement (no command text says how many rows it hits) - is
 "could not tell", and could not tell stops. It does NOT see a script (<code>bash cleanup.sh</code>, <code>python -c</code>,
 <code>make clean</code>), an MCP server, the Write and Edit tools before they are
 committed, <code>tar -x</code> or <code>unzip</code>, <code>git merge</code> or <code>pull</code>, or many small commands
 each under a limit: a tripwire in front of native permissions, not a sandbox.
-Known gaps, not fixed here (all as on main): an alias set with <code>git -c alias.x=...</code>
-hides the subcommand it runs; a <code>GIT_</code> variable whose name is built with an expansion
-is not seen; and a cd run without a <code>cd</code> word (<code>trap</code>, <code>find -exec</code>,
+Known gaps, not fixed here (all as on main, so nothing got worse): an alias set with
+<code>git -c alias.x=...</code> or in a repository config (<code>git ci -m x</code>) hides the subcommand it runs;
+a command word built by a substitution (<code>$(echo git) -C &lt;worktree&gt; commit</code>) is not read;
+<code>GIT_CONFIG_COUNT</code> / <code>GIT_CONFIG_KEY_n</code> / <code>GIT_CONFIG_VALUE_n</code> can set that alias too; a
+<code>GIT_</code> location variable assigned inside a heredoc or here-string fed to a shell, by
+<code>printf -v</code> or <code>read</code>, through <code>xargs</code> or <code>sudo -u</code>, or whose name is built from another
+variable is not seen; and a cd run without a <code>cd</code> word (<code>trap</code>, <code>find -exec</code>,
 <code>Start-Process</code>, a command word built from a variable) is not seen.</p>
 <p>A stopped command prints an id. Attended, the stop is an <code>ask</code>; unattended
 it is a <code>deny</code>. Type <code>/crew:approve-mass &lt;id&gt;</code> in the session, then re-run the

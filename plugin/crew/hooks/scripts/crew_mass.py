@@ -627,6 +627,9 @@ def _resolve(operand, cwd, cd):
 #     (`-m`, `-a`, `--amend`; a flag with a glued value or a path is refused, and so are
 #     `-C`/`-c`/`--git-dir`... anywhere), or quoted strings that hold no `$`, backtick,
 #     backslash, `;`, newline or non-ASCII.
+# A target with a `..` component is never followed: bash may take `..` through a symlink
+# (a logical `cd ..`, or `set -P` from BASH_ENV) and this process would cut the text. A drive
+# prefix (`c:/x`) is followed only where drives exist (os.name == "nt").
 # Anything else after a cd (a second command, pipe, redirect, expansion, heredoc, assignment,
 # alias, NBSP...) does not match and stays "could not tell", exactly as on main. A tripwire,
 # not a sandbox: it decides only that the one git command runs in the cd's directory.
@@ -640,6 +643,8 @@ _QCHARS = frozenset(chr(c) for c in range(0x20, 0x7f) if chr(c) not in "$`\\;")
 _BASH_WORD_RE = re.compile(r"[A-Za-z0-9_\-./=:@,+%]+")
 _PS_WORD_RE = re.compile(r"[A-Za-z0-9_\-./=:,+%]+")
 _FLAG_RE = re.compile(r"--?[A-Za-z][A-Za-z-]*")
+_WINDOWS = os.name == "nt"
+_DRIVE_PREFIX_RE = re.compile(r"[A-Za-z]:")
 _GIT_REDIRECT_FLAGS = frozenset((
     "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env",
     "--attr-source", "--super-prefix"))
@@ -703,6 +708,10 @@ def leading_cd(command, cwd, shell="bash"):
     if not _plain_tail(text[match.end():], _PS_WORD_RE if powershell else _BASH_WORD_RE):
         return None
     target = match.group("path")
+    if ".." in re.split(r"[/\\]", target):
+        return None  # bash may walk a symlink for `..`; this process would cut the text
+    if powershell and not _WINDOWS and _DRIVE_PREFIX_RE.match(target):
+        return None  # `c:` is no drive here: Set-Location fails and `;` still runs git
     if not powershell and _cdpath_may_apply(target):
         return None
     path, ok = _resolve(target, cwd, False)
@@ -713,17 +722,168 @@ def leading_cd(command, cwd, shell="bash"):
 
 # --- a GIT_* location variable set in the command -----------------------------------
 #
-# Only an assignment counts: a WORD (quotes removed, so `export "GIT_DIR=x"` and
-# `env GIT_DIR=x git` are words too) that STARTS with the variable name and then `=`, `,` or
-# its end (`export GIT_DIR`, PowerShell `$env:GIT_DIR = 'x'`, `SetEnvironmentVariable('GIT_DIR',
-# ...)`). A message that merely mentions the name (`-m "docs: explain GIT_DIR handling"`), or a
-# heredoc body, holds no such word. One left-to-right pass; a `$(...)` or backtick inside a
-# double-quoted string or an unquoted heredoc body runs, so that text is scanned as a command
-# too, to a nesting of 3 (deeper is reported as a location variable: "could not tell").
-_GIT_LOCATION_RE = re.compile(
-    r"(?:\$?env:)?GIT_(?:DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|"
-    r"COMMON_DIR|CEILING_DIRECTORIES|NAMESPACE)(?:=|,|\Z)", re.IGNORECASE)
+# Only a REAL assignment counts, judged per statement (round 7):
+#   - a `GIT_X=` / `GIT_X+=` word at COMMAND position (the first word of a statement, after
+#     any other `NAME=v` words, `time`, `if`, `then`, `sudo`, `{`...), brace-expanded
+#     (`GIT_{INDEX_FILE,ZZ}=x`), quotes removed (`"GIT_X=v"`, `$'GIT_X=v'`);
+#   - the same words after `export`, `declare`, `typeset`, `readonly`, `local` (a bare
+#     `export GIT_DIR` counts), and after `env` (with `-S <string>` read as a command);
+#   - the string given to `eval`, `bash|sh|dash|zsh|ksh -c`, `pwsh|powershell -c`, `iex`;
+#   - PowerShell: a statement that starts `$env:GIT_X =`, `${env:GIT_X} =`, `$env:GIT_X +=`,
+#     `Set-Item|Set-Content|New-Item|Add-Content|Set-ItemProperty ... Env:\GIT_X`, or a call
+#     `[Environment]::SetEnvironmentVariable('GIT_X', ...)`.
+# NOT an assignment, so allowed as on main: a quoted argument (`git commit -m "GIT_DIR=/x was
+# wrong"`), a bare word (`-m GIT_DIR`), `unset GIT_DIR`, `grep -rn GIT_INDEX_FILE .`, a heredoc
+# body that holds no running `$(...)`. Known gaps, the same on main: a heredoc or here-string
+# fed to a shell, `printf -v`, `read`, a variable that builds the name, `xargs`, `sudo -u`.
+# One left-to-right pass; a `$(...)` or backtick inside a double-quoted string or an
+# unquoted heredoc body runs, so it is scanned as a command too, to a nesting of 3 (deeper is
+# reported as a location variable: "could not tell"). No nested quantifier anywhere.
+_GIT_NAMES = (r"GIT_(?:DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|"
+              r"COMMON_DIR|CEILING_DIRECTORIES|NAMESPACE)")
+_GIT_ASSIGN_RE = re.compile(_GIT_NAMES + r"\+?=", re.IGNORECASE)
+_GIT_EXPORT_RE = re.compile(_GIT_NAMES + r"(?:\+?=|\Z)", re.IGNORECASE)
+_GIT_SETENV_RE = re.compile(_GIT_NAMES + r"(?:,|\Z)", re.IGNORECASE)
+_PS_VAR_RE = re.compile(r"\$\{?env:" + _GIT_NAMES + r"\}?(?P<tail>.*)\Z",
+                        re.IGNORECASE | re.DOTALL)
+_PS_ENVPATH_RE = re.compile(r"(?:\A|[:=])env:[\\/]?" + _GIT_NAMES + r"\Z", re.IGNORECASE)
+_ASSIGN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\+?=")
 _SHELL_BREAK = frozenset(" \t\r\n;|&()<>`")
+_STMT_BREAK = frozenset("\r\n;|&()`")
+_KEYWORDS = frozenset(("time", "!", "if", "then", "elif", "else", "while", "until", "do", "{",
+                       "nohup", "exec", "command", "builtin", "sudo", "nice", "setsid"))
+_EXPORTERS = frozenset(("export", "declare", "typeset", "readonly", "local"))
+_SHELLS = frozenset(("bash", "sh", "dash", "zsh", "ksh", "ash"))
+_PS_SHELLS = frozenset(("pwsh", "powershell"))
+_PS_SETTERS = frozenset(("set-item", "si", "set-content", "sc", "new-item", "ni",
+                         "add-content", "ac", "set-itemproperty", "sp", "new-itemproperty"))
+_MAX_NEST = 3
+
+
+def _braces(word):
+    """The words bash brace expansion makes of `word` (`GIT_{A,B}=x`): up to 6 groups, 64
+    results; a longer word is left as it is (a GIT_ name is short)."""
+    if "{" not in word or len(word) > 200:
+        return [word]
+    found = [word]
+    for _ in range(6):
+        grown, changed = [], False
+        for item in found:
+            start = item.find("{")
+            end = item.find("}", start) if start >= 0 else -1
+            if end > start and "," in item[start:end]:
+                changed = True
+                grown.extend(item[:start] + alt + item[end + 1:]
+                             for alt in item[start + 1:end].split(","))
+            else:
+                grown.append(item)
+        found = grown[:64]
+        if not changed:
+            break
+    return found
+
+
+def _name_hit(word, pattern):
+    return any(pattern.match(item) for item in _braces(word))
+
+
+def _cmd_name(word):
+    name = word.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return name[:-4] if name.endswith(".exe") else name
+
+
+def _script_after(rest, is_flag):
+    """The word after the first flag (by `is_flag`) in `rest`, else None."""
+    for pos, word in enumerate(rest):
+        if is_flag(word):
+            return rest[pos + 1] if pos + 1 < len(rest) else None
+    return None
+
+
+def _is_bash_c(word):
+    return (word.startswith("-") and not word.startswith("--") and "c" in word[1:]
+            and word[1:].isalpha())
+
+
+def _env_prefix(words, pos, shell, depth):
+    """Read `env` options and `NAME=v` words from `pos`. `(True, _)` when one is a GIT_
+    assignment (or an `-S` string that is); else `(False, index of the utility)`."""
+    size = len(words)
+    while pos < size:
+        arg = words[pos]
+        script = None
+        if arg in ("-u", "--unset", "-C", "--chdir"):
+            pos += 2
+            continue
+        if arg in ("-S", "--split-string"):
+            script = words[pos + 1] if pos + 1 < size else ""
+        elif arg.startswith("--split-string="):
+            script = arg.split("=", 1)[1]
+        elif arg.startswith("-S") and len(arg) > 2:
+            script = arg[2:]
+        if script is not None:
+            return depth >= _MAX_NEST or sets_git_location(script, shell, depth + 1), pos
+        if arg.startswith("-") or _ASSIGN_RE.match(arg):
+            if _name_hit(arg, _GIT_ASSIGN_RE):
+                return True, pos
+            pos += 1
+        elif _name_hit(arg, _GIT_ASSIGN_RE):
+            return True, pos
+        else:
+            break
+    return False, pos
+
+
+def _statement_sets(words, shell, depth, after_setenv):
+    """True when one statement (its words, quotes removed) assigns a GIT_ location variable."""
+    powershell = shell == "powershell"
+    size = len(words)
+    if after_setenv and _GIT_SETENV_RE.match(words[0]):
+        return True
+    pos = 0
+    while pos < size:
+        word = words[pos]
+        if powershell:
+            match = _PS_VAR_RE.match(word)
+            if match:
+                tail = match.group("tail")
+                if not tail and pos + 1 < size:
+                    tail = words[pos + 1]
+                if tail.startswith(("=", "+=")):
+                    return True
+        elif _name_hit(word, _GIT_ASSIGN_RE):
+            return True
+        elif _ASSIGN_RE.match(word):
+            pos += 1
+            continue
+        name = _cmd_name(word)
+        if name in _KEYWORDS:
+            pos += 1
+            continue
+        if name == "env":
+            found, pos = _env_prefix(words, pos + 1, shell, depth)
+            if found:
+                return True
+            continue
+        break
+    if pos >= size:
+        return False
+    name, rest = _cmd_name(words[pos]), words[pos + 1:]
+    script, script_shell = None, shell
+    if name in _EXPORTERS and not powershell:
+        return any(_name_hit(arg, _GIT_EXPORT_RE) for arg in rest if not arg.startswith("-"))
+    if (name == "eval" and not powershell) or name in ("iex", "invoke-expression"):
+        script = " ".join(rest)
+    elif name in _SHELLS:
+        script, script_shell = _script_after(rest, _is_bash_c), "bash"
+    elif name in _PS_SHELLS:
+        script = _script_after(rest, lambda w: w.lower() in ("-c", "-command"))
+        script_shell = "powershell"
+    elif powershell and name in _PS_SETTERS:
+        return any(_PS_ENVPATH_RE.search(arg) for arg in rest)
+    if script:
+        return depth >= _MAX_NEST or sets_git_location(script, script_shell, depth + 1)
+    return False
 
 
 def _heredoc_skip(text, index, tags):
@@ -748,30 +908,53 @@ def _heredoc_skip(text, index, tags):
 def sets_git_location(command, shell="bash", _depth=0):
     """True when `command` assigns a `GIT_DIR`-style variable (see above)."""
     text = command or ""
-    escape = "`" if shell == "powershell" else "\\"
+    powershell = shell == "powershell"
+    escape = "`" if powershell else "\\"
     size, index = len(text), 0
-    word, pending = [], []
-
-    def hit(body):
-        return "$(" in body or "`" in body
+    word, stmt, pending = [], [], []
+    carry = [False, False]  # [the last statement ended in SetEnvironmentVariable, skip a word]
 
     def nested(body):
-        return hit(body) and (_depth >= 3 or sets_git_location(body, shell, _depth + 1))
+        if "$(" not in body and "`" not in body:
+            return False
+        return _depth >= _MAX_NEST or sets_git_location(body, shell, _depth + 1)
 
-    def flush():
-        joined = "".join(word)
-        word.clear()
-        return bool(joined) and bool(_GIT_LOCATION_RE.match(joined))
+    def end_word():
+        if word:
+            joined = "".join(word)
+            word.clear()
+            if carry[1]:  # the target of a redirect is not an argument
+                carry[1] = False
+            else:
+                stmt.append(joined)
+
+    def end_stmt():
+        end_word()
+        words = stmt[:]
+        stmt.clear()
+        carry[1] = False
+        if not words:
+            return False
+        found = _statement_sets(words, shell, _depth, carry[0])
+        carry[0] = words[-1].lower().endswith("setenvironmentvariable")
+        return found
 
     while index < size:
         char = text[index]
         if char == escape and index + 1 < size:
-            word.append(text[index + 1])
+            if text[index + 1] != "\n":
+                word.append(text[index + 1])
             index += 2
         elif char == "'":
             end = text.find("'", index + 1)
             end = size if end < 0 else end
             word.append(text[index + 1:end])
+            index = end + 1
+        elif char == "$" and not powershell and text.startswith("$'", index):
+            end = index + 2
+            while end < size and text[end] != "'":
+                end += 2 if text[end] == "\\" else 1
+            word.append(text[index + 2:end])
             index = end + 1
         elif char == '"':
             end = index + 1
@@ -783,8 +966,7 @@ def sets_git_location(command, shell="bash", _depth=0):
             word.append(body)
             index = end + 1
         elif text.startswith("<<", index) and not text.startswith("<<<", index):
-            if flush():
-                return True
+            end_word()
             index += 2
             dash = text.startswith("-", index)
             index += dash
@@ -800,9 +982,21 @@ def sets_git_location(command, shell="bash", _depth=0):
                     end += 1
                 tag, index = text[index:end], end
             pending.append((tag, dash, bool(quote)))
+        elif char in "<>":
+            if "".join(word).isdigit():
+                word.clear()  # the `2` of `2>file`
+            else:
+                end_word()
+            carry[1] = True
+            index += 1
+            if char == ">" and text.startswith("&", index):
+                index += 1
         elif char in _SHELL_BREAK:
-            if flush():
-                return True
+            if char in _STMT_BREAK:
+                if end_stmt():
+                    return True
+            else:
+                end_word()
             if char == "\n" and pending:
                 index, bodies = _heredoc_skip(text, index, pending)
                 pending = []
@@ -812,7 +1006,7 @@ def sets_git_location(command, shell="bash", _depth=0):
         else:
             word.append(char)
             index += 1
-    return flush()
+    return end_stmt()
 
 
 def _exempt_at(path, cwd, globs=()):

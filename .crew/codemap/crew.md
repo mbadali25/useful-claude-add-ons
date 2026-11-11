@@ -1021,26 +1021,31 @@ anything unreadable is off. `_limits` (`crew_mass.py:200`): machine value, else
 the repo layer can only lower. `exempt` (`crew_mass.py:261`) is the regenerable
 directory list; `worktrees` exempts by path only within two components below it,
 and `_exempt_at` judges a path by its part below `cwd`, so a repo that lives in
-a worktree is still counted. The approval id (`approval_id`, `crew_mass.py:1084`)
+a worktree is still counted. The approval id (`approval_id`, `crew_mass.py:1279`)
 is a digest of the exact command text and worktree, not of the rule; the file
 is written by `approval_hook._approve_mass` (harness PR, #737). `count_git`
-(`crew_mass.py:993`) counts `git diff --name-status -M` lines, the branch
-against `_base` (`crew_mass.py:961`: `origin/HEAD`, `origin/main`, `origin/master`, then the
+(`crew_mass.py:1188`) counts `git diff --name-status -M` lines, the branch
+against `_base` (`crew_mass.py:1156`: `origin/HEAD`, `origin/main`, `origin/master`, then the
 branch's own upstream; on a branch that is its own base, its upstream).
 A `cd` is followed ONLY when the whole command is one plain line: `leading_cd`
-(`crew_mass.py:693`, with `_BASH_CD_RE` / `_PS_CD_RE` for the prefix and `_plain_tail`,
-`crew_mass.py:654`, for the arguments) matches `cd <path> && git <args>` in bash (lowercase
+(`crew_mass.py:699`, with `_BASH_CD_RE` / `_PS_CD_RE` for the prefix and `_plain_tail`,
+`crew_mass.py:659`, for the arguments) matches `cd <path> && git <args>` in bash (lowercase
 `cd` only, `&&` only) and `Set-Location|cd|sl <path>` then `;` or `&&` then `git <args>` in
 PowerShell. The prefix patterns hold no nested quantifier and the tail is read in one pass
 (round 5: the old `(?:WORD+|'..'|".."|[ \t])+` pattern backtracked exponentially, 18 s through
 the real hook; `test_the_cd_grammar_and_the_git_variable_scan_are_linear_on_adversarial_input`
 runs hostile inputs in a child process under a timeout). The bash path is letters, digits and
-`_ . / : -`, an existing directory, absolute or `.` / `..` / `./x` / `../x`: a bare name is
+`_ . / : -`, an existing directory, absolute or `.` / `./x`: a bare name is
 could-not-tell whatever `CDPATH` shows in this process (`_cdpath_may_apply`,
-`crew_mass.py:684`), because bash may take `CDPATH` from `BASH_ENV` or a profile; bash ignores
-it for `/x`, `./x` and `../x` (verified by running `CDPATH=d bash -c 'cd ./r'`). The
+`crew_mass.py:690`), because bash may take `CDPATH` from `BASH_ENV` or a profile; bash ignores
+it for `/x` and `./x` (verified by running `CDPATH=d bash -c 'cd ./r'`). Any `..` component is
+could-not-tell in both shells (round 7, JUDGEMENT from the crew-lin Linux reproduction: bash may
+walk a symlink for `..`, a logical `cd` or `set -P` from `BASH_ENV`, so the text cut would count
+another repository). The
 PowerShell path is letters, digits and `_ . / -` with at most one leading `<letter>:/` or
-`<letter>:\` and no other colon or backslash (`Env:`, `Variable:`, `C:\a\b` are refused). The
+`<letter>:\` and no other colon or backslash (`Env:`, `Variable:`, `C:\a\b` are refused); the
+drive prefix is followed only when `_WINDOWS` (`os.name == "nt"`), because on Linux `c:` is a
+directory name (round 7). The
 arguments start with the subcommand (no global option, so no `-C`, `-c`, `--git-dir`,
 `--work-tree`, `--namespace`), then bare words, flags of letters and dashes only (a glued
 value or path such as `-C../wt`, `-n5`, `--format=x` is refused; `-C`, `-c`, `--git-dir`...
@@ -1051,16 +1056,25 @@ path, NBSP, a newline) is could-not-tell, as on origin/main. The round-3 tokeniz
 (`plain_tail`, `shell_commands`, `_Lexer`), the `sub["cd"]` re-scan in `cloud_guard.evaluate`
 and `obscures_env_name` are gone: the grammar admits one command, so nothing is left to
 re-scan. `GIT_DIR` / `GIT_INDEX_FILE` and kin are could-not-tell when ASSIGNED:
-`sets_git_location` (`crew_mass.py:747`, called at `cloud_guard.py:3186`) reads the command
-once and looks only at WORDS (quotes removed) that start with the name and then `=`, `,` or
-the end (`GIT_DIR=x git`, `export GIT_DIR`, `env GIT_DIR=x`, `$env:GIT_DIR`); a message such as
-`-m "docs: explain GIT_DIR handling"` and a heredoc body are not words of that kind, while a
-`$( )` or backtick inside double quotes or an unquoted heredoc is scanned as a command. Known
-gaps, as on main: an alias set by `git -c alias.x=...`, a `GIT_` name built with an expansion,
-and a cd run without a `cd` word (`trap`, `find -exec`, `Start-Process`, a command word built
-from a variable). A tripwire, not a sandbox. Repeated `-C` is joined in `_git_split`
-(`crew_mass.py:296`);
-`count_terraform` (`crew_mass.py:1033`) reads `terraform show -json <plan>`.
+`sets_git_location` (`crew_mass.py:908`, called at `cloud_guard.py:3186`) reads the command
+once into statements of WORDS (quotes removed, `$'..'` unquoted) and `_statement_sets`
+(`crew_mass.py:837`) asks, per statement, whether a real assignment sits where bash would run it:
+a `GIT_X=` or `GIT_X+=` word at command position (after other `NAME=v` words, `time`, `if`,
+`then`, `sudo`, `{`; brace-expanded by `_braces`), after `export`/`declare`/`typeset`/`readonly`/
+`local`, after `env` (`-S` strings read), in the string given to `eval`, `bash -c`, `pwsh -c`
+or `iex` (nesting capped at 3, deeper is could-not-tell), and in PowerShell `$env:GIT_X =`,
+`${env:GIT_X}=`, `Set-Item|Set-Content Env:\GIT_X` and `SetEnvironmentVariable('GIT_X'`. A quoted
+argument (`-m "GIT_DIR=/x was wrong"`), `-m GIT_DIR`, `unset GIT_DIR`, `grep ... GIT_INDEX_FILE`,
+`env -u GIT_DIR` and a heredoc body are not assignments (round 7 fixed this regression against
+main: the round-5 scan flagged any word that began with the name). A `$( )` or backtick inside
+double quotes or an unquoted heredoc is scanned as a command. Known gaps, all as on main: an
+alias set by `git -c alias.x=...` or in the repo config, `$(echo git) -C <wt> commit`,
+`GIT_CONFIG_COUNT/KEY/VALUE`, an assignment inside a heredoc or here-string fed to a shell,
+`printf -v`/`read`/`xargs`/`sudo -u`, a `GIT_` name built from a variable, and a cd run without a
+`cd` word (`trap`, `find -exec`, `Start-Process`, a command word built from a variable);
+`test_the_known_gaps_of_the_git_variable_scan_are_pinned` pins the scan's. A tripwire, not a sandbox. Repeated `-C` is joined in `_git_split`
+(`crew_mass.py:296`); `cd X && git -C /abs commit` is not a followed cd but `/abs` is counted as on main;
+`count_terraform` (`crew_mass.py:1228`) reads `terraform show -json <plan>`.
 The six keys are rows in `crew_keys.KEY_META` (`crew_keys.py:106`; the mass rows from
 `crew_keys.py:344`) with defaults in `crew_guards.GUARD_BLOCK_DEFAULTS`
 (`crew_guards.py:249`).
