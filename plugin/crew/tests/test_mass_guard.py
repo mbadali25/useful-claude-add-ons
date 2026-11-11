@@ -530,23 +530,228 @@ def test_powershell_follows_its_own_location_commands(repo, tmp_path, form):
     assert not _mass_rows(result) and result["decision"] == "allow", result
 
 
-@pytest.mark.parametrize("word", ["${{X:-cd}}", "`echo cd`", "$(echo cd)", "$X", "eval cd",
-                                  "source ./go.sh", "command cd", "builtin cd"])
-def test_a_command_word_built_at_run_time_after_a_leading_cd_is_could_not_tell(
-        repo, tmp_path, word):
-    wt = _big_wt(repo, tmp_path)
-    command = f"cd {repo} && {word.format()} {wt} && git commit -m x"
+# After a followed cd the rest of the command must be positively PLAIN (crew 1.3.48,
+# the round-3 review). The old check tested only each segment's first word and let
+# `if`/`then`/`time`/`{ }`/redirections/assignments/`command -p`/brace and glob words
+# and PowerShell `&`, aliases and method calls through. The cases below build a real
+# worktree with 32 staged files and `cd` the command into an EMPTY directory first, so
+# a wrongly followed cd counts the empty one and lets the 32-file commit through.
+
+BASH_HIDDEN_CD = [
+    "if true; then ${{X:-cd}} {wt}; fi",
+    "while true; do ${{X:-cd}} {wt}; break; done",
+    "until false; do cd {wt}; break; done",
+    "for i in 1; do cd {wt}; done",
+    "case x in x) cd {wt};; esac",
+    "time ${{X:-cd}} {wt}",
+    "{{ ${{X:-cd}} {wt}; }}",
+    "f(){{ ${{X:-cd}} {wt}; }}; f",
+    "function f {{ cd {wt}; }}; f",
+    ">/dev/null ${{X:-cd}} {wt}",
+    "2>&1 cd {wt}",
+    'A="a b" ${{X:-cd}} {wt}',
+    "A[0]=1 ${{X:-cd}} {wt}",
+    "A=1 cd {wt}",
+    "command -p ${{X:-cd}} {wt}",
+    "command cd {wt}",
+    "builtin cd {wt}",
+    "{{cd,{wt}}}",
+    "c[d] {wt}",
+    "c* {wt}",
+    "~/cd {wt}",
+    "'cd' {wt}",
+    "\\cd {wt}",
+    "c\\d {wt}",
+    "${{X:-cd}} {wt}",
+    "`echo cd` {wt}",
+    "$(echo cd) {wt}",
+    "$X {wt}",
+    "eval cd {wt}",
+    "source ./go.sh",
+    "env cd {wt}",
+    "xargs cd {wt}",
+    "sudo cd {wt}",
+    "bash -c 'cd {wt}'",
+    "alias c=cd; c {wt}",
+    "(cd {wt})",
+    "echo hi & cd {wt}",
+    "echo <(cd {wt})",
+    "echo $((1+1))",
+    "echo 'unterminated",
+    'echo "$(cat <<EOF\nnever closed\n)"',
+]
+PS_HIDDEN_CD = [
+    "1|%{{ & ('s'+'l') '{wt}' }}",
+    "Set-Alias g Set-Location; g '{wt}'",
+    "sal g sl; g '{wt}'",
+    "New-Alias g sl; g '{wt}'",
+    "Set-Item Alias:g Set-Location; g '{wt}'",
+    "[scriptblock]::Create('s'+'l {wt}').Invoke()",
+    "& $x '{wt}'",
+    "& 'Set-Location' '{wt}'",
+    "iex 'cd {wt}'",
+    "Invoke-Expression 'sl {wt}'",
+    ". ./go.ps1",
+    "$x '{wt}'",
+    "function f {{ sl '{wt}' }}; f",
+    "foreach ($i in 1) {{ sl '{wt}' }}",
+    "(sl '{wt}')",
+    "echo \"$(sl '{wt}')\"",
+    "echo $(sl '{wt}')",
+    "sl '{wt}'",
+    "echo hi & sl '{wt}'",
+    "echo `\n",
+]
+
+
+def _empty_dir_and_big_wt(repo, tmp_path):
+    wt = _big_wt(repo, tmp_path, count=32)
+    empty = tmp_path / "empty-dir"
+    empty.mkdir()
+    return wt, empty
+
+
+@pytest.mark.parametrize("form", BASH_HIDDEN_CD)
+def test_a_tail_that_is_not_positively_plain_is_could_not_tell_in_bash(repo, tmp_path, form):
+    wt, empty = _empty_dir_and_big_wt(repo, tmp_path)
+    command = f"cd {empty} && {form.format(wt=wt)} && git commit -m x"
     result = _stopped_in(repo, repo, command, crew_mass.MASS_DELETE)
     assert "could not be counted" in result["reason"], result
 
 
-def test_an_expansion_that_is_not_the_command_word_is_still_followed(repo, tmp_path):
+@pytest.mark.parametrize("form", PS_HIDDEN_CD)
+def test_a_tail_that_is_not_positively_plain_is_could_not_tell_in_powershell(
+        repo, tmp_path, form):
+    wt, empty = _empty_dir_and_big_wt(repo, tmp_path)
+    command = f"Set-Location '{empty}'; {form.format(wt=wt)}; git commit -m x".replace("\\", "/")
+    result = cloud_guard.evaluate(str(repo), "PowerShell", command, {"cwd": str(repo)}, "block",
+                                  crew_mass.settings(str(repo)))
+    assert crew_mass.MASS_DELETE in _mass_rows(result) and result["decision"] in ("ask", "deny"), \
+        result
+    assert "could not be counted" in result["reason"], result
+
+
+HEREDOC_BODY = ("fix: the thing\n\n`code` span at the start of a line\n$HOME and $(date) too\n"
+                "source ./not-run.sh; cd /somewhere\nit's a \"quoted\" word; ) ( ' \"\n")
+
+
+def test_the_plain_forms_after_a_cd_are_followed_and_counted(repo, tmp_path):
+    # the case this guard exists for: a plain `cd X && git commit` in a worktree
     wt = _worktree(repo, tmp_path)
     _fill(wt / "docs", 2)
     git(wt, "add", "-A")
-    _clean_in(repo, repo, f'cd {wt} && git commit -m "$(echo hi)"')
-    _clean_in(repo, repo, f"cd {wt} && X=1 git commit -m x")
-    _clean_in(repo, repo, f"cd {wt} && echo $HOME > /dev/null && git commit -m x")
+    heredoc = f"git commit -m \"$(cat <<'EOF'\n{HEREDOC_BODY}EOF\n)\""
+    for tail in ("git commit -m x", "git add -A && git commit -m x", "git status; git commit -m x",
+                 "git status | tail -3 && git commit -m x", "git commit -m x 2>&1 | tail -3",
+                 "git commit -m 'a; `b` x'", 'git commit -m "a; `b` $(echo x) ; z"',
+                 "echo $HOME > /dev/null && git commit -m x", 'git commit -m "$(echo hi)"',
+                 "git log HEAD@{1} && git commit -m x", heredoc,
+                 heredoc + " && git push origin HEAD", "git commit -m x\ngit status"):
+        _clean_in(repo, repo, f"cd {wt} && {tail}")
+    # ...and still counted: the same shapes over a 32-file worktree stop
+    git(wt, "reset", "-q")
+    _fill(wt / "docs", 32)
+    git(wt, "add", "-A")
+    for tail in ("git commit -m x", heredoc, "git commit -m 'a; `b` x'"):
+        _stopped_in(repo, repo, f"cd {wt} && {tail}", crew_mass.MASS_CREATE)
+
+
+def test_a_powershell_message_variable_after_a_cd_is_followed(repo, tmp_path):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    mass = crew_mass.settings(str(repo))
+    for tail in ("$m='msg'; git commit -m $m", '$m = "msg"; git commit -m $m',
+                 "git add -A; git commit -m 'a; b'", "git commit -m x | Out-Null"):
+        command = f"Set-Location '{wt}'; {tail}".replace("\\", "/")
+        result = cloud_guard.evaluate(str(repo), "PowerShell", command, {"cwd": str(repo)},
+                                      "block", mass)
+        assert not _mass_rows(result) and result["decision"] == "allow", (tail, result)
+
+
+def test_exec_and_a_prefix_assignment_after_a_cd_are_refused_on_purpose(repo, tmp_path):
+    # harmless in fact, but `exec` and `X=1 cmd` are two of the shapes a hidden cd uses and
+    # the grammar is positive: not provably plain is "could not tell" (documented).
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    _stopped_in(repo, repo, f"cd {wt} && exec git commit -m x", crew_mass.MASS_DELETE)
+    _stopped_in(repo, repo, f"cd {wt} && X=1 git commit -m x", crew_mass.MASS_DELETE)
+
+
+BASH_PLAIN = ["git commit -m x", "git status && git commit -m x", "git add -A; git commit -m 'a;b'",
+              "git commit -m \"$(cat <<'EOF'\nit's\n`x`\nEOF\n)\"",
+              "echo $HOME > /dev/null && git commit -m x", "git log HEAD@{1}",
+              "git commit -m x 2>&1 | tail -3", "ls | wc -l"]
+BASH_NOT_PLAIN = ["", "   ", ";", "{cd,B}", "c[d] B", "c* B", "'cd' B", 'A="a b" ls', "A[0]=1 ls",
+                  ">/dev/null ls", "~/cd B", "git commit &&", "&& git commit", "exec git commit -m x",
+                  "X=1 git commit -m x", "cd /x", "popd", "if true; then git commit; fi",
+                  "! git commit", "git commit -m 'x", 'git commit -m "x', "git commit `x",
+                  "git commit $(x", "git commit -m \"$(cat <<'EOF'\nbody\n)\"", "git commit # c",
+                  "echo a\\", "git commit &", "git commit |& cat", "git commit <(x)",
+                  "git commit $((1))", "git commit -m \"$((1))\"", "$(x)", "git $(x\ncase x in a) b",
+                  "git commit -m x\rcd /y"]
+PS_PLAIN = ["git commit -m x", "$m='a'; git commit -m $m", "$m = 'a b'; git commit -m $m",
+            "git add -A; git commit -m x", "git commit -m 'it''s'", "git status | Out-Null",
+            "git commit -m @'\nbody; sl x\n'@"]
+PS_NOT_PLAIN = ["", "sl x", "Set-Location x", "cd x", "& git commit", ". x", "iex x", "$x git commit",
+                "$m = $(sl x)", "$m = $n; git commit", "$m = 'a' 'b'", "git commit -m \"$(sl x)\"",
+                "git commit -m \"${env:X}\"", "(sl x)", "{ sl x }", "foreach ($i in 1) { }",
+                "git commit < x", "git commit -m `\n", "git commit ‘x’",
+                "git commit -m @\"\n$(sl x)\n\"@", "Set-Alias g sl", "git commit; New-Alias g sl",
+                "Invoke-Command { sl x }", "1 | % { sl x }"]
+
+
+@pytest.mark.parametrize("text", BASH_PLAIN)
+def test_plain_tail_accepts_the_plain_bash_forms(text):
+    assert crew_mass.plain_tail(text, "bash"), text
+
+
+@pytest.mark.parametrize("text", BASH_NOT_PLAIN)
+def test_plain_tail_refuses_everything_it_cannot_prove_plain_in_bash(text):
+    assert not crew_mass.plain_tail(text, "bash"), text
+
+
+@pytest.mark.parametrize("text", PS_PLAIN)
+def test_plain_tail_accepts_the_plain_powershell_forms(text):
+    assert crew_mass.plain_tail(text, "powershell"), text
+
+
+@pytest.mark.parametrize("text", PS_NOT_PLAIN)
+def test_plain_tail_refuses_everything_it_cannot_prove_plain_in_powershell(text):
+    assert not crew_mass.plain_tail(text, "powershell"), text
+
+
+@pytest.mark.parametrize("assign", [
+    'export GIT_INDEX_"FILE"={x}/idx', "export GIT_INDEX_'FILE'={x}/idx",
+    'env GIT_""DIR={x}/.git', "export ${{G}}INDEX_FILE={x}/idx",
+    '"GIT_"INDEX_FILE={x}/idx', "export $NAME={x}/idx", 'export "$NAME={x}/idx"',
+    "declare -x GIT_INDEX_$S={x}/idx", "readonly GIT_{{INDEX}}_FILE={x}/idx"])
+def test_a_git_variable_spelled_with_quotes_or_expansions_is_could_not_tell(
+        repo, tmp_path, assign):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    assign = assign.format(x=str(tmp_path).replace("\\", "/"))
+    command = assign + " && git commit -m x" if assign.startswith(
+        ("export", "declare", "readonly")) else assign + " git commit -m x"
+    result = _stopped_in(repo, wt, command, crew_mass.MASS_DELETE)
+    assert "not read here" in result["reason"], result
+
+
+def test_quoted_equals_signs_and_ordinary_exports_are_not_git_variables(repo, tmp_path):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    for command in ('git commit -m "a=b"', 'env FOO=1 git commit -m "a=b"',
+                    'export FOO="a b" && git commit -m x', 'A="x y" git commit -m x'):
+        _clean_in(repo, wt, command)
+    assert not crew_mass.obscures_env_name("[Environment]::SetEnvironmentVariable('FOO','x')",
+                                           "powershell")
+    assert crew_mass.obscures_env_name(
+        "[Environment]::SetEnvironmentVariable('GIT_'+'DIR','x')", "powershell")
+    assert crew_mass.obscures_env_name("$env:GIT_$x = 1", "powershell")
+    assert not crew_mass.obscures_env_name("$env:FOO = 1; git commit -m x", "powershell")
 
 
 def test_cdpath_makes_a_relative_cd_could_not_tell(repo, tmp_path, monkeypatch):

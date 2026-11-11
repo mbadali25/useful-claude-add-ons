@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.47**: The mass guard follows a leading `cd` and says why it could not count. `crew` 1.3.47: a commit or push in a linked worktree that starts with `cd <dir> && ...` is counted instead of refused as "could not be counted", and every refusal now names its real reason.
+- **crew 1.3.48**: The mass guard follows a leading `cd` only for plain commands, and says why it could not count. `crew` 1.3.48: a commit or push in a linked worktree that starts with `cd <dir> && ...` is counted instead of refused as "could not be counted" when the rest of the command is plain, anything it cannot prove plain is still "could not tell", and every refusal names its real reason.
 - **crew 1.3.45**: A Git Bash that did not answer is reported as could-not-tell, and the dispatcher trusts the last one that passed. `crew` 1.3.45: when the hook dispatcher cannot confirm Git Bash on Windows it now says what it established (a Git Bash that exists but did not answer is "could not tell, retry", never "Install Git for Windows"), and it trusts the last Git Bash that passed while that file is unchanged, so a busy host stops blocking Bash, PowerShell and Edit calls.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
