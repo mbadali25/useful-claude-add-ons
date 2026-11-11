@@ -1,4 +1,4 @@
-<!-- crew-standards-export digest=2c5f9149f788a7c39fa9f70ce42faf0a9b4de218af9e3f11e21573da9c2e7c74 crew=1.3.49 -->
+<!-- crew-standards-export digest=2c5f9149f788a7c39fa9f70ce42faf0a9b4de218af9e3f11e21573da9c2e7c74 crew=1.3.50 -->
 # Review rules: set PWSH
 
 Applies to: files matching `**/*.ps1`, `**/*.psm1`, `**/*.psd1`.
