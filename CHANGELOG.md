@@ -48,6 +48,18 @@ read entries under any `## [` heading.
 - crew 1.3.8: re-bump only - the human-only opt-out re-versioned so installs update (commit 438b1869c); recorded under crew 1.3.9
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
+- crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
+
+### Fixed — crew 1.3.41: the promote gate decides in one process and keeps its own, configurable deadline
+
+- **Summary.** `crew` 1.3.41: a deploy-shaped command no longer times the promote gate out on Git Bash; the gate now runs as one python process instead of about forty-five, and a new `promote.deadlineSeconds` setting controls how long it may run.
+- **Cause (verified).** `promote-gate.sh` started about forty-five processes for a declared or dispatched deploy (34 traced external commands in `bash -x`, eight of them python, eleven git, plus the `$(...)` subshells around them). On Git Bash each is an MSYS fork, 0.3-0.5 s on a quiet host and 1.7 s measured on a loaded one, against the guard's 20 s hook timeout (its own deadline was 16 s). A timeout is not a block, so the deploy-shaped command either timed out or hit "inside the gate's deadline".
+- **Fix.** `hooks/scripts/_promote_gate.py` makes the whole decision in one process. The heredocs that were `python -` steps are now modules it imports (`_promote_match.py`, `_promote_verdict.py`), the dispatch, tree, github and review readers are called in-process, and `git` is asked once per directory for its top, common dir and sha. `promote-gate.sh` keeps the PowerShell hand-off, the no-map opt-out, the python lookup and the jq fallback, and reads the payload with the `read` builtin instead of `cat`. `_promote_fast.py` is gone: its allow fast path is the first step of the gate. Rules and messages are unchanged; the two failures the shell used to word itself (the map cannot be read, the pre-deploy check errored) keep their wording through exit statuses 10+N and 20+N.
+- **Same decisions (verified), one input differs by construction.** 41 recorded cases (exit status, message phrase, in-flight marker, incident skip rows) were run through the old and new gate and agree. The command now reaches the matcher as written; Git Bash used to rewrite an argument that starts like a POSIX path into a Windows path first (inferred to matter only for such commands; the one recorded case, a declared deploy beginning with `/`, blocked in both).
+- **New setting.** `promote.deadlineSeconds` (either layer; null by default) is the one deadline the gate keeps, counted from its shell's start. null derives it from the guard's row in `crew_hook.TABLE` less 4 s (16 of 20); a number is clamped to the timeout less 2 s so the setting can never let the gate outlive its hook.
+- **Docs.** `CONFIG.md`, the configuration reference and guide, the troubleshooting guide, `README.md`, `commands/config.md`, `crew-setup`'s template copy, `PLUGINS.md`, the code map, the budgets. DOCX and PDF were not rebuilt (LibreOffice runs on Linux only).
+- **Tests.** `test_promote_gate_one_process.py`: a decision corpus recorded from the old gate and replayed on the new one, the spawn count, the deadline rules and the fast path; `promote_gate_mutations.py` holds the sabotage cases, and `test_promote_fast.py` moved into it.
+
 
 ### Fixed — crew 1.3.40: a verified marker written with CRLF is no longer ignored by the Stop gate
 
