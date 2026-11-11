@@ -360,7 +360,7 @@ def test_practices_md_does_not_claim_a_required_trailer():
     text = _read("skills", "crew-best-practices", "references", "practices.md")
 
     assert "adds `Co-Authored-By`" not in text
-    assert "owner's own instructions" in text and "git.forbiddenTrailers" in text
+    assert "never adds a `Co-Authored-By` trailer" in text and "git.forbiddenTrailers" in text
 
 
 def test_implement_md_forbids_attribution_in_dispatch_prompts():
