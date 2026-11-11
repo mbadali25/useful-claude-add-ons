@@ -4,10 +4,9 @@ CLAUDE.md: a change that adds a hook that can block needs a committed
 must-block / must-allow suite (`test_mass_guard.py`), sabotage-tested --
 reintroduce each bug it should catch and confirm the suite goes red.
 
-UNWIRED, as `preproduction_mutations.py` is: `sabotage*.py` is in the review
-harness (`HARNESS` in `scripts/check-tooling-pr.py`), and a harness change lands
-alone, so the one-line registration in `sabotage.py` is a harness-only
-follow-up. Until then run this family on its own with `sabotage.py`'s machinery:
+Registered in `sabotage.py`'s `MUTATIONS`, so every gate run includes this
+family (it was wired in a harness-only follow-up to the PR that added it).
+To run it alone:
 
     cd plugin/crew/tests && python3 -c "import sabotage, mass_mutations as m; \
         sabotage.MUTATIONS = m.MASS_MUTATIONS; raise SystemExit(sabotage.main())"
