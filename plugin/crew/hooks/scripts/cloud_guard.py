@@ -3183,9 +3183,7 @@ def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
         moved = crew_mass.leading_cd(command, mass_cwd, shell)
         if moved:
             mass_cwd, mass_cd = moved, False
-    git_env = bool(re.search(
-        r"\bGIT_(?:DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|"
-        r"COMMON_DIR|CEILING_DIRECTORIES|NAMESPACE)\b", command or "", re.IGNORECASE))
+    git_env = crew_mass.sets_git_location(command, shell)
     for finding in findings:
         if finding.rule in crew_mass.RULES:
             if not mass_armed:

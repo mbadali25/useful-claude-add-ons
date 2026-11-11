@@ -1002,16 +1002,16 @@ by no hook, and a session that runs arbitrary python can still forge a receipt.
 
 DERIVED from `plugin/crew/hooks/scripts/crew_mass.py` (stdlib only) and
 `plugin/crew/hooks/scripts/cloud_guard.py`; tests `plugin/crew/tests/test_mass_guard.py`,
-mutations `plugin/crew/tests/mass_mutations.py` (78 by `len(MASS_MUTATIONS)`, run alone:
+mutations `plugin/crew/tests/mass_mutations.py` (101 by `len(MASS_MUTATIONS)`, run alone:
 `sabotage*.py` is harness).
 `cloud_guard._classify` (`cloud_guard.py:2149`) asks `crew_mass.classify`
 (`crew_mass.py:461`) for `Spec`s on every simple command and wraps each as a
 `Finding` whose rule is `massDelete`, `massCreate` or `massChange`
 (`crew_mass.RULES`). `cloud_guard.evaluate` (`cloud_guard.py:3140`) ignores those
-findings unless `mass["armed"]`, then `crew_mass.judge` (`crew_mass.py:1004`)
+findings unless `mass["armed"]`, then `crew_mass.judge` (`crew_mass.py:1147`)
 counts, compares with the limit and answers `ask` (attended) or `deny`
-(`unattended`), or `allow` when `live_approval` (`crew_mass.py:952`) finds the
-owner's file. `cloud_guard.main` (`cloud_guard.py:3412`) calls
+(`unattended`), or `allow` when `live_approval` (`crew_mass.py:1095`) finds the
+owner's file. `cloud_guard.main` (`cloud_guard.py:3410`) calls
 `crew_mass.settings` (`crew_mass.py:164`) before the `guards.cloudGuard`
 `off` early return, so the stop works with the cloud guard off (`only_mass`).
 The switch is `guards.mass.enabled` true in either layer, else
@@ -1021,29 +1021,46 @@ anything unreadable is off. `_limits` (`crew_mass.py:200`): machine value, else
 the repo layer can only lower. `exempt` (`crew_mass.py:261`) is the regenerable
 directory list; `worktrees` exempts by path only within two components below it,
 and `_exempt_at` judges a path by its part below `cwd`, so a repo that lives in
-a worktree is still counted. The approval id (`approval_id`, `crew_mass.py:941`)
+a worktree is still counted. The approval id (`approval_id`, `crew_mass.py:1084`)
 is a digest of the exact command text and worktree, not of the rule; the file
 is written by `approval_hook._approve_mass` (harness PR, #737). `count_git`
-(`crew_mass.py:850`) counts `git diff --name-status -M` lines, the branch
-against `_base` (`crew_mass.py:818`: `origin/HEAD`, `origin/main`, `origin/master`, then the
+(`crew_mass.py:993`) counts `git diff --name-status -M` lines, the branch
+against `_base` (`crew_mass.py:961`: `origin/HEAD`, `origin/main`, `origin/master`, then the
 branch's own upstream; on a branch that is its own base, its upstream).
 A `cd` is followed ONLY when the whole command is one plain line: `leading_cd`
-(`crew_mass.py`, with `_BASH_CD_RE` / `_PS_CD_RE`) matches `cd <path> && git <args>` in bash
-(lowercase `cd` only, `&&` only) and `Set-Location|cd|sl <path>` then `;` or `&&` then
-`git <args>` in PowerShell. The path is letters, digits and `_ . / : -` (PowerShell also
-`\`), an existing directory, with no quote, `~`, `$` or glob; a relative name under `CDPATH`
-is not followed. The arguments are bare words or quoted strings holding no `$`, backtick,
-backslash, `;`, newline or non-ASCII character; only an ASCII space or tab separates tokens.
-Everything else after a cd (a second command, pipe, redirect, `$( )`, heredoc, assignment,
-alias, `pushd`, a quoted path, NBSP, a newline) is could-not-tell, as on origin/main. The
-round-3 tokenizer (`plain_tail`, `shell_commands`, `_Lexer`), the `sub["cd"]` re-scan in
-`cloud_guard.evaluate` and `obscures_env_name` are gone: the grammar admits one command, so
-nothing is left to re-scan. `GIT_DIR` / `GIT_INDEX_FILE` and kin are could-not-tell by the
-literal regex in `cloud_guard.evaluate` only. Known gaps, as on main: an alias set by
-`git -c alias.x=...`, an unexported `CDPATH`, a `GIT_` name spelled with quotes or `$`, and a
-cd run without a `cd` word (`trap`, `find -exec`, `Start-Process`, a command word built from
-a variable). A tripwire, not a sandbox. Repeated `-C` is joined in `_git_split`;
-`count_terraform` (`crew_mass.py:890`) reads `terraform show -json <plan>`.
+(`crew_mass.py:693`, with `_BASH_CD_RE` / `_PS_CD_RE` for the prefix and `_plain_tail`,
+`crew_mass.py:654`, for the arguments) matches `cd <path> && git <args>` in bash (lowercase
+`cd` only, `&&` only) and `Set-Location|cd|sl <path>` then `;` or `&&` then `git <args>` in
+PowerShell. The prefix patterns hold no nested quantifier and the tail is read in one pass
+(round 5: the old `(?:WORD+|'..'|".."|[ \t])+` pattern backtracked exponentially, 18 s through
+the real hook; `test_the_cd_grammar_and_the_git_variable_scan_are_linear_on_adversarial_input`
+runs hostile inputs in a child process under a timeout). The bash path is letters, digits and
+`_ . / : -`, an existing directory, absolute or `.` / `..` / `./x` / `../x`: a bare name is
+could-not-tell whatever `CDPATH` shows in this process (`_cdpath_may_apply`,
+`crew_mass.py:684`), because bash may take `CDPATH` from `BASH_ENV` or a profile; bash ignores
+it for `/x`, `./x` and `../x` (verified by running `CDPATH=d bash -c 'cd ./r'`). The
+PowerShell path is letters, digits and `_ . / -` with at most one leading `<letter>:/` or
+`<letter>:\` and no other colon or backslash (`Env:`, `Variable:`, `C:\a\b` are refused). The
+arguments start with the subcommand (no global option, so no `-C`, `-c`, `--git-dir`,
+`--work-tree`, `--namespace`), then bare words, flags of letters and dashes only (a glued
+value or path such as `-C../wt`, `-n5`, `--format=x` is refused; `-C`, `-c`, `--git-dir`...
+are refused anywhere) or quoted strings holding no `$`, backtick, backslash, `;`, newline or
+non-ASCII character; only an ASCII space or tab separates tokens. Everything else after a cd
+(a second command, pipe, redirect, `$( )`, heredoc, assignment, alias, `pushd`, a quoted
+path, NBSP, a newline) is could-not-tell, as on origin/main. The round-3 tokenizer
+(`plain_tail`, `shell_commands`, `_Lexer`), the `sub["cd"]` re-scan in `cloud_guard.evaluate`
+and `obscures_env_name` are gone: the grammar admits one command, so nothing is left to
+re-scan. `GIT_DIR` / `GIT_INDEX_FILE` and kin are could-not-tell when ASSIGNED:
+`sets_git_location` (`crew_mass.py:747`, called at `cloud_guard.py:3186`) reads the command
+once and looks only at WORDS (quotes removed) that start with the name and then `=`, `,` or
+the end (`GIT_DIR=x git`, `export GIT_DIR`, `env GIT_DIR=x`, `$env:GIT_DIR`); a message such as
+`-m "docs: explain GIT_DIR handling"` and a heredoc body are not words of that kind, while a
+`$( )` or backtick inside double quotes or an unquoted heredoc is scanned as a command. Known
+gaps, as on main: an alias set by `git -c alias.x=...`, a `GIT_` name built with an expansion,
+and a cd run without a `cd` word (`trap`, `find -exec`, `Start-Process`, a command word built
+from a variable). A tripwire, not a sandbox. Repeated `-C` is joined in `_git_split`
+(`crew_mass.py:296`);
+`count_terraform` (`crew_mass.py:1033`) reads `terraform show -json <plan>`.
 The six keys are rows in `crew_keys.KEY_META` (`crew_keys.py:106`; the mass rows from
 `crew_keys.py:344`) with defaults in `crew_guards.GUARD_BLOCK_DEFAULTS`
 (`crew_guards.py:249`).
@@ -1051,11 +1068,10 @@ JUDGEMENT: the limits come from this repo's own 104-day history (10 trips 5 of
 623 PRs, 20 trips 29, 30 trips 35); the terraform limits are inferred, not
 measured. `cloud_guard.py` already exceeds 3,400 lines, so the module is a new
 file rather than more glue there. A script, an MCP server, Write and Edit before
-commit, `tar -x`, `unzip` and `git merge` / `pull` are not seen. Known gaps, not
-fixed (pre-existing on main): an alias set through `git -c alias.x=...` hides the
-subcommand, a `CDPATH` set but not exported is not seen, and an env name built
-inside a nested `bash -c '...'` string is read only by the literal regex. It is a
-tripwire, not a sandbox.
+commit, `tar -x`, `unzip` and `git merge` / `pull` are not seen. Known gaps, not fixed (as on main): an alias set through
+`git -c alias.x=...` hides the subcommand, and an env name built inside a nested
+`bash -c '...'` string is read only by the word scan. `CDPATH` is handled, not a gap: a
+bare relative `cd` name is never followed. It is a tripwire, not a sandbox.
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 

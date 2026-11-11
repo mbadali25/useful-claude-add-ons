@@ -618,40 +618,77 @@ def _resolve(operand, cwd, cd):
 #
 # ONE strict grammar over the WHOLE command: `cd <plain path> && git <plain args>` on one
 # plain line (PowerShell: `Set-Location|cd|sl <plain path>`, then `;` or `&&`, then git).
-# Plain: ASCII only, ASCII space or tab between tokens, a path of letters digits and
-# `_ . / : -` (PowerShell also `\`), and git arguments of bare words or quoted strings that
-# hold no `$`, backtick, backslash, `;`, newline or non-ASCII. Anything else after a cd (a
-# second command, pipe, redirect, expansion, heredoc, assignment, alias, NBSP...) does not
-# match and stays "could not tell", exactly as on main. A tripwire, not a sandbox: it decides
-# only that the one git command runs in the cd's directory.
-_QCHARS = "".join(chr(c) for c in range(0x20, 0x7f) if chr(c) not in "$`\\;")
-
-
-def _quoted(quote):
-    return quote + "[" + re.escape(_QCHARS.replace(quote, "")) + "]*" + quote
-
-
-def _args(word):
-    return rf"(?:{word}|{_quoted(chr(39))}|{_quoted(chr(34))}|[ \t])+"
-
-
+# Plain: ASCII only, ASCII space or tab between tokens, and
+#   - a bash path of letters digits and `_ . / : -`; a PowerShell path of letters digits
+#     `_ . / -` with at most one leading `<letter>:/` or `<letter>:\` drive prefix (no other
+#     colon: `Env:`, `Variable:`, `HKLM:` are provider drives, and no other backslash);
+#   - git arguments: the subcommand first (no global option, so no `-C`, `-c`, `--git-dir`,
+#     `--work-tree`, `--namespace`), then bare words, flags that are letters and dashes only
+#     (`-m`, `-a`, `--amend`; a flag with a glued value or a path is refused, and so are
+#     `-C`/`-c`/`--git-dir`... anywhere), or quoted strings that hold no `$`, backtick,
+#     backslash, `;`, newline or non-ASCII.
+# Anything else after a cd (a second command, pipe, redirect, expansion, heredoc, assignment,
+# alias, NBSP...) does not match and stays "could not tell", exactly as on main. A tripwire,
+# not a sandbox: it decides only that the one git command runs in the cd's directory.
+#
+# LINEAR by construction (round 5): the old pattern put the arguments in one nested
+# quantifier, `(?:WORD+|'..'|".."|[ \t])+`, which backtracks exponentially on a command that
+# fails near its end (18 s through the real hook). The two prefix patterns below hold no
+# nested quantifier and no overlapping alternation; the tail is read once, left to right, by
+# `_plain_tail`.
+_QCHARS = frozenset(chr(c) for c in range(0x20, 0x7f) if chr(c) not in "$`\\;")
+_BASH_WORD_RE = re.compile(r"[A-Za-z0-9_\-./=:@,+%]+")
+_PS_WORD_RE = re.compile(r"[A-Za-z0-9_\-./=:,+%]+")
+_FLAG_RE = re.compile(r"--?[A-Za-z][A-Za-z-]*")
+_GIT_REDIRECT_FLAGS = frozenset((
+    "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env",
+    "--attr-source", "--super-prefix"))
 _BASH_CD_RE = re.compile(
-    r"[ \t]*cd[ \t]+(?P<path>(?!-)[A-Za-z0-9_./:-]+)[ \t]*&&[ \t]*git[ \t]+"
-    + _args(r"[A-Za-z0-9_\-./=:@,+%]+") + r"\Z")
+    r"[ \t]*cd[ \t]+(?P<path>(?!-)[A-Za-z0-9_./:-]+)[ \t]*&&[ \t]*git[ \t]+")
 _PS_CD_RE = re.compile(
-    r"[ \t]*(?:set-location|cd|sl)[ \t]+(?P<path>(?!-)[A-Za-z0-9_./:\\-]+)[ \t]*(?:&&|;)[ \t]*"
-    r"git[ \t]+" + _args(r"[A-Za-z0-9_\-./=:,+%]+") + r"\Z", re.IGNORECASE)
+    r"[ \t]*(?:set-location|cd|sl)[ \t]+"
+    r"(?P<path>(?!-)(?:[A-Za-z]:[/\\][A-Za-z0-9_./-]*|[A-Za-z0-9_./-]+))"
+    r"[ \t]*(?:&&|;)[ \t]*git[ \t]+", re.IGNORECASE)
 
 
-def _cdpath_may_apply(target, command):
-    """True when bash's `cd <target>` could resolve through CDPATH: a bare relative
-    name (not `.`, `..`, `./x`, `../x` or absolute) while CDPATH is set in this
-    environment or named in the command."""
+def _plain_tail(tail, word_re):
+    """True when `tail` (what follows `git `) is plain git arguments (see above). One
+    left-to-right pass: every character is looked at once, so the time is linear."""
+    size, index, first = len(tail), 0, True
+    while index < size:
+        char = tail[index]
+        if char in " \t":
+            index += 1
+            continue
+        if char in "'\"":
+            end = tail.find(char, index + 1)
+            if first or end < 0 or not _QCHARS.issuperset(tail[index + 1:end]):
+                return False
+            index = end + 1
+            if index < size and tail[index] not in " \t":
+                return False
+            first = False
+            continue
+        end = index
+        while end < size and tail[end] not in " \t":
+            end += 1
+        word = tail[index:end]
+        if not word_re.fullmatch(word):
+            return False
+        if word.startswith("-") and (first or word in _GIT_REDIRECT_FLAGS
+                                     or not _FLAG_RE.fullmatch(word)):
+            return False
+        first, index = False, end
+    return not first
+
+
+def _cdpath_may_apply(target):
+    """True when bash's `cd <target>` could resolve through CDPATH: a bare relative name
+    (not `.`, `..`, `./x`, `../x`, or absolute). CDPATH is not read from this process: bash
+    may take it from BASH_ENV or a profile, unexported, so every bare name is refused."""
     if target in (".", "..") or target.startswith(("/", "./", "../")):
         return False
-    if os.path.isabs(target) or _DRIVE_RE.match(target):
-        return False
-    return bool(os.environ.get("CDPATH") or re.search("CDPATH", command, re.IGNORECASE))
+    return not (os.path.isabs(target) or _DRIVE_RE.match(target))
 
 
 def leading_cd(command, cwd, shell="bash"):
@@ -659,16 +696,123 @@ def leading_cd(command, cwd, shell="bash"):
     `cd <path> && git <args>` line (see above) and the path is an existing
     directory, else None ("could not tell")."""
     powershell = shell == "powershell"
-    match = (_PS_CD_RE if powershell else _BASH_CD_RE).match(command or "")
+    text = command or ""
+    match = (_PS_CD_RE if powershell else _BASH_CD_RE).match(text)
     if not match or not cwd:
         return None
+    if not _plain_tail(text[match.end():], _PS_WORD_RE if powershell else _BASH_WORD_RE):
+        return None
     target = match.group("path")
-    if not powershell and _cdpath_may_apply(target, command):
+    if not powershell and _cdpath_may_apply(target):
         return None
     path, ok = _resolve(target, cwd, False)
     if not ok or not os.path.isdir(path):
         return None
     return os.path.normpath(path)
+
+
+# --- a GIT_* location variable set in the command -----------------------------------
+#
+# Only an assignment counts: a WORD (quotes removed, so `export "GIT_DIR=x"` and
+# `env GIT_DIR=x git` are words too) that STARTS with the variable name and then `=`, `,` or
+# its end (`export GIT_DIR`, PowerShell `$env:GIT_DIR = 'x'`, `SetEnvironmentVariable('GIT_DIR',
+# ...)`). A message that merely mentions the name (`-m "docs: explain GIT_DIR handling"`), or a
+# heredoc body, holds no such word. One left-to-right pass; a `$(...)` or backtick inside a
+# double-quoted string or an unquoted heredoc body runs, so that text is scanned as a command
+# too, to a nesting of 3 (deeper is reported as a location variable: "could not tell").
+_GIT_LOCATION_RE = re.compile(
+    r"(?:\$?env:)?GIT_(?:DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|"
+    r"COMMON_DIR|CEILING_DIRECTORIES|NAMESPACE)(?:=|,|\Z)", re.IGNORECASE)
+_SHELL_BREAK = frozenset(" \t\r\n;|&()<>`")
+
+
+def _heredoc_skip(text, index, tags):
+    """`(index after the heredoc bodies, [expanding bodies])` for the heredocs `tags`
+    (tag, tab-stripped, quoted) whose bodies start after the newline at `index`."""
+    expanding, size = [], len(text)
+    pos = index + 1
+    for tag, dash, quoted in tags:
+        start = pos
+        while pos < size:
+            end = text.find("\n", pos)
+            end = size if end < 0 else end
+            line = text[pos:end].rstrip("\r")
+            pos = min(end + 1, size)
+            if (line.lstrip("\t") if dash else line) == tag:
+                break
+        if not quoted:
+            expanding.append(text[start:pos])
+    return pos - 1, expanding
+
+
+def sets_git_location(command, shell="bash", _depth=0):
+    """True when `command` assigns a `GIT_DIR`-style variable (see above)."""
+    text = command or ""
+    escape = "`" if shell == "powershell" else "\\"
+    size, index = len(text), 0
+    word, pending = [], []
+
+    def hit(body):
+        return "$(" in body or "`" in body
+
+    def nested(body):
+        return hit(body) and (_depth >= 3 or sets_git_location(body, shell, _depth + 1))
+
+    def flush():
+        joined = "".join(word)
+        word.clear()
+        return bool(joined) and bool(_GIT_LOCATION_RE.match(joined))
+
+    while index < size:
+        char = text[index]
+        if char == escape and index + 1 < size:
+            word.append(text[index + 1])
+            index += 2
+        elif char == "'":
+            end = text.find("'", index + 1)
+            end = size if end < 0 else end
+            word.append(text[index + 1:end])
+            index = end + 1
+        elif char == '"':
+            end = index + 1
+            while end < size and text[end] != '"':
+                end += 2 if text[end] == escape else 1
+            body = text[index + 1:end]
+            if nested(body):
+                return True
+            word.append(body)
+            index = end + 1
+        elif text.startswith("<<", index) and not text.startswith("<<<", index):
+            if flush():
+                return True
+            index += 2
+            dash = text.startswith("-", index)
+            index += dash
+            while index < size and text[index] in " \t":
+                index += 1
+            quote = text[index] if index < size and text[index] in "'\"" else ""
+            end = text.find(quote, index + 1) if quote else index
+            if quote:
+                end = size if end < 0 else end
+                tag, index = text[index + 1:end], end + 1
+            else:
+                while end < size and text[end] not in _SHELL_BREAK:
+                    end += 1
+                tag, index = text[index:end], end
+            pending.append((tag, dash, bool(quote)))
+        elif char in _SHELL_BREAK:
+            if flush():
+                return True
+            if char == "\n" and pending:
+                index, bodies = _heredoc_skip(text, index, pending)
+                pending = []
+                if any(nested(body) for body in bodies):
+                    return True
+            index += 1
+        else:
+            word.append(char)
+            index += 1
+    return flush()
 
 
 def _exempt_at(path, cwd, globs=()):

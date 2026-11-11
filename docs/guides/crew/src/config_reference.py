@@ -277,21 +277,33 @@ shared; `terraform apply <plan>` (the plan's own changes), `destroy` and
 
 A command is counted in another directory ONLY when the whole command is one plain
 line: in bash `cd <path> && git <args>`; in PowerShell `Set-Location`, `sl` or `cd`
-`<path>`, then `;` or `&&`, then `git <args>`. The path is an existing directory written
-with letters, digits and `_ . / : -` (PowerShell also `\\`) - no quotes, `~`, `$` or glob.
-The arguments are bare words or quoted strings that hold no `$`, backtick, backslash, `;`,
-newline or non-ASCII character, and only an ASCII space or tab separates tokens. So `cd X &&
-git commit -m 'simple'` and `cd X && git push` are counted in X. EVERYTHING else after a
-`cd` is "could not tell", exactly as it was before this change: a second command, a chain,
-a pipe, a redirect, `$(...)`, a backtick, a heredoc, an assignment, an alias, `pushd`, a
-quoted or `~` path, a `;` in bash, a newline or NBSP after the target, PowerShell `cd..` or
-a `$m` variable. `cd X && git add -A && git commit` is therefore still refused; run it as two
-commands. A relative name is not followed when `CDPATH` is set, since `cd` may resolve it
-elsewhere. Several `-C` options are resolved one after another, as git does.
+`<path>`, then `;` or `&&`, then `git <args>`. The path is an existing directory with no
+quote, `~`, `$` or glob. In bash it is letters, digits and `_ . / : -` and it must be
+absolute, `.`, `..`, or start with `./` or `../`: a bare name (`cd sub`) is "could not
+tell", because bash may resolve it through `CDPATH`, which it can take from `BASH_ENV` or
+a profile without exporting it, so the hook cannot see it (bash does not consult `CDPATH`
+for `/x`, `./x` or `../x`). In PowerShell it is letters, digits and `_ . / -` with at most
+one leading `<letter>:/` or `<letter>:\\` drive prefix; any other colon (`Env:`, `Variable:`,
+`HKLM:`, `foo:bar`) or backslash (`C:\\a\\b`, `x\\y`) is "could not tell", so write the path
+with forward slashes. The arguments start with the git subcommand (no global option before
+it: not `-C`, `-c`, `--git-dir`, `--work-tree`, `--namespace`), then bare words, flags
+written as letters and dashes only (`-m`, `-a`, `--amend`, `--no-edit`) or quoted strings
+that hold no `$`, backtick, backslash, `;`, newline or non-ASCII character; a flag with a
+glued value or path (`-C../wt`, `--format=x`, `-n5`) is "could not tell", and so are `-C`,
+`-c`, `--git-dir`, `--work-tree` anywhere. Only an ASCII space or tab separates tokens. So
+`cd /abs/X && git commit -m 'simple'` and `cd ./X && git push` are counted in X. The line is
+read once, left to right, so a very long or hostile command costs milliseconds, not
+seconds. EVERYTHING else after a `cd` is "could not tell", exactly as it was before this
+change: a second command, a chain, a pipe, a redirect, `$(...)`, a backtick, a heredoc, an
+assignment, an alias, `pushd`, a quoted or `~` path, a `;` in bash, a newline or NBSP after
+the target, PowerShell `cd..` or a `$m` variable. `cd X && git add -A && git commit` is
+therefore still refused; run it as two commands. Several `-C` options are resolved one
+after another, as git does.
 A count that cannot be taken - a variable in a path, any `cd` that is not that one plain
-line (a second one, one not first, `cd $DIR`, a missing directory), `GIT_DIR`,
-`GIT_WORK_TREE`, `GIT_INDEX_FILE` or another `GIT_` location variable spelled out in the
-command, or
+line (a second one, one not first, `cd $DIR`, a missing directory), a `GIT_DIR`,
+`GIT_WORK_TREE`, `GIT_INDEX_FILE` or other `GIT_` location variable ASSIGNED in the
+command (a word that starts `GIT_DIR=`, `export GIT_DIR`, `env GIT_DIR=x`, `$env:GIT_DIR`;
+a commit message or heredoc that only mentions the name is not an assignment), or
 `--git-dir` / `--work-tree` in the command, `find -delete`, `xargs rm`, a failed `git`, an
 unfiltered SQL statement (no command text says how many rows it hits) - is
 "could not tell", and could not tell stops. It does NOT see a script (`bash cleanup.sh`, `python -c`,
@@ -299,9 +311,8 @@ unfiltered SQL statement (no command text says how many rows it hits) - is
 committed, `tar -x` or `unzip`, `git merge` or `pull`, or many small commands
 each under a limit: a tripwire in front of native permissions, not a sandbox.
 Known gaps, not fixed here (all as on main): an alias set with `git -c alias.x=...`
-hides the subcommand it runs; a `CDPATH` that is set in the shell but not exported to
-the hook is not seen; a `GIT_` variable whose name is spelled with quotes or an
-expansion is not seen; and a cd run without a `cd` word (`trap`, `find -exec`,
+hides the subcommand it runs; a `GIT_` variable whose name is built with an expansion
+is not seen; and a cd run without a `cd` word (`trap`, `find -exec`,
 `Start-Process`, a command word built from a variable) is not seen.
 
 A stopped command prints an id. Attended, the stop is an `ask`; unattended

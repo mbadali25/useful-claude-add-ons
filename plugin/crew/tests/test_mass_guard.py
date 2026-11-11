@@ -14,6 +14,8 @@ under `tmp_path`, and no case installs anything.
 """
 import json
 import os
+import subprocess
+import sys
 import time
 
 import pytest
@@ -565,6 +567,7 @@ BASH_REFUSED = [
     "cd {c} && git log HEAD@{{1}}", "cd {c} && git commit -m x #c",
     "cd {c} && alias git=true; git commit -m x", "cd {c} && cd {wt} && git commit -m x",
     "cd {c} && bash -c 'cd {wt}; git commit -m x'", "cd {c} && git commit -m 'x",
+    "cd {c} && git commit -m x \n", "cd {c} && git commit  -m x",
     "cd {c} && git commit -m \u00e9", "cd {c} && cd",
 ]
 
@@ -583,6 +586,7 @@ PS_REFUSED = [
     "Set-Location {c}; git commit -m `\n", "Set-Location {c}; git commit -m 'a;b'",
     "Set-Location {c}; sl {wt}; git commit -m x", "Set-Alias g sl; Set-Location {c}; git commit",
     "Set-Location {c}; git commit -m @x", "Set-Location {c} || git commit -m x",
+    "Set-Location {c}; git commit -m x \n",
     "Set-Location {c}; git commit -m \u2018x\u2019", "(Set-Location {c}); git commit -m x",
 ]
 
@@ -612,7 +616,8 @@ def test_the_one_plain_bash_line_is_followed_and_counted_there(repo, tmp_path):
     git(wt, "add", "-A")
     for tail in ("git commit -m x", "git commit -m 'simple'", 'git commit -m "simple message"',
                  "git commit -am 'a & b | c > d'", "git push", "git push origin HEAD",
-                 "git commit\t-m\tx", "git -c k=v commit -m x"):
+                 "git commit\t-m\tx", "git commit --amend --no-edit -q", "git log --oneline",
+                 "git add src/a.py docs/b.md"):
         for sep in (" && ", "  &&\t"):
             _clean_in(repo, repo, f"cd {wt}{sep}{tail}")
     assert crew_mass.leading_cd(f"cd {_fwd(wt)} && git push", str(repo), "bash") \
@@ -650,7 +655,7 @@ def test_bash_does_not_run_powershell_spellings_and_powershell_is_case_blind(rep
                  "Set-Location {wt} && git commit -m x", "pushd {wt} && git commit -m x"):
         assert crew_mass.leading_cd(form.format(wt=_fwd(wt)), str(repo), "bash") is None, form
     for form in ("CD {wt}; git commit", "Cd {wt}; git commit", "SET-LOCATION {wt}; git commit"):
-        assert crew_mass.leading_cd(form.format(wt=wt), str(repo), "powershell"), form
+        assert crew_mass.leading_cd(form.format(wt=_fwd(wt)), str(repo), "powershell"), form
 
 
 def test_what_was_followed_on_the_branch_but_is_could_not_tell_again_equals_main(
@@ -670,12 +675,17 @@ def test_what_was_followed_on_the_branch_but_is_could_not_tell_again_equals_main
 
 
 def test_a_dash_a_glob_and_a_tilde_are_never_a_followed_target(repo, tmp_path):
-    # `cd -` is OLDPWD in bash, `cd d[1]` globs, `cd ~` is home; none is the literal path.
-    for name in ("-", "d[1]", "d1"):
+    # `cd -` is OLDPWD (bash) or the previous location (PowerShell), `cd d[1]` globs, `cd ~`
+    # is home; none is the literal path. Bash refuses all three as a bare name anyway, so the
+    # PowerShell grammar (no bare-name rule) is where the character class itself is held.
+    for name in ("-", "d[1]", "d1", "~"):
         (repo / name).mkdir()
     for form in ("cd - && git commit -m x", "cd d[1] && git commit -m x",
-                 "cd ~ && git commit -m x"):
+                 "cd ~ && git commit -m x", "cd ./d[1] && git commit -m x"):
         assert crew_mass.leading_cd(form, str(repo), "bash") is None, form
+    for form in ("cd - ; git commit -m x", "cd d[1]; git commit -m x", "cd ~; git commit -m x",
+                 "sl -; git commit -m x", "cd ./d[1]; git commit -m x"):
+        assert crew_mass.leading_cd(form, str(repo), "powershell") is None, form
 
 
 def test_leading_cd_needs_an_existing_directory_and_no_cdpath(repo, tmp_path, monkeypatch):
@@ -686,21 +696,233 @@ def test_leading_cd_needs_an_existing_directory_and_no_cdpath(repo, tmp_path, mo
 
 
 
-def test_cdpath_makes_a_relative_cd_could_not_tell(repo, tmp_path, monkeypatch):
+def test_a_bare_relative_bash_cd_is_could_not_tell_whatever_cdpath_shows(
+        repo, tmp_path, monkeypatch):
+    # bash may take CDPATH from BASH_ENV or a profile, unexported, so this process cannot see
+    # it: a bare name (`cd sub`) is never followed. Only absolute, ./x and ../x are (bash
+    # does not consult CDPATH for those; verified with `CDPATH=d bash -c 'cd ./r'`).
     (repo / "sub").mkdir()
     _fill(repo / "docs", 2)
     git(repo, "add", "-A")
     monkeypatch.delenv("CDPATH", raising=False)
-    _clean_in(repo, repo, "cd sub && git commit -m x")
+    for form in ("cd sub && git commit -m x", "cd sub/ && git commit -m x"):
+        result = _stopped_in(repo, repo, form, crew_mass.MASS_DELETE)
+        assert "moves the shell" in result["reason"], result
     monkeypatch.setenv("CDPATH", str(tmp_path))
-    result = _stopped_in(repo, repo, "cd sub && git commit -m x", crew_mass.MASS_DELETE)
-    assert "moves the shell" in result["reason"], result
+    _stopped_in(repo, repo, "cd sub && git commit -m x", crew_mass.MASS_DELETE)
     # an explicit ./ or ../ or absolute path never consults CDPATH
     _clean_in(repo, repo, "cd ./sub && git commit -m x")
+    _clean_in(repo, repo / "sub", "cd ../docs && git commit -m x")
     _clean_in(repo, repo, f"cd {repo}/sub && git commit -m x")
+    assert crew_mass.leading_cd("cd .. && git status", str(repo / "sub"), "bash")
+    assert crew_mass.leading_cd("cd . && git status", str(repo), "bash")
     monkeypatch.delenv("CDPATH")
-    result = _stopped_in(repo, repo, "CDPATH=/x; cd sub && git commit -m x", crew_mass.MASS_DELETE)
-    assert "moves the shell" in result["reason"], result
+    assert crew_mass.leading_cd("cd sub && git status", str(repo), "bash") is None
+    assert crew_mass.leading_cd("cd ./sub && git status", str(repo), "bash")
+
+
+# --- round 5: linear time, flags, PowerShell paths, GIT_* words, the upstream base -----
+
+_GIT_TAILS_REFUSED = [
+    "git -C ../wt commit -m x", "git -C../wt commit -m x", "git -C./../wt commit -m x",
+    "git -c k=v commit -m x", "git --git-dir ../x commit -m x",
+    "git --git-dir=../x commit -m x", "git --work-tree ../x commit -m x",
+    "git commit --work-tree ../x -m x", "git commit -C HEAD", "git commit -c HEAD",
+    "git --namespace ns commit -m x", "git --exec-path commit", "git --attr-source HEAD commit",
+    "git commit --format=%s", "git log -5", "git commit -n5", "git commit -F -", "git -- commit",
+    "git commit -m x --", "git commit --1x", "git -p log", "git --no-pager log",
+    'git "commit" -m x', "git commit -m 'a'b", 'git commit -m "a""b"', "git commit -m 'a' 'b",
+]
+
+
+@pytest.mark.parametrize("tail", _GIT_TAILS_REFUSED)
+def test_a_flag_that_carries_a_path_a_value_or_moves_git_is_could_not_tell(
+        repo, tmp_path, tail):
+    wt, clean = _cwd_big_cd_clean(repo, tmp_path)
+    tail = tail.format(c=_fwd(clean))
+    assert crew_mass.leading_cd(f"cd {_fwd(clean)} && {tail}", str(wt), "bash") is None, tail
+    for sep in ("; ", " && "):
+        assert crew_mass.leading_cd(f"cd {_fwd(clean)}{sep}{tail}", str(wt), "powershell") \
+            is None, tail
+    if "commit" in tail and "-m x" in tail:
+        # the real shell is at the 32-file worktree: a followed cd would count the clean repo
+        result = _in(repo, wt, f"cd {_fwd(clean)} && {tail}")
+        assert _mass_rows(result) and result["decision"] in ("ask", "deny"), (tail, result)
+        _ps_stopped(repo, wt, f"cd {_fwd(clean)}; {tail}")
+
+
+def test_plain_flags_are_followed_in_both_shells(repo, tmp_path):
+    wt = _worktree(repo, tmp_path)
+    for tail in ("git commit --amend --no-edit", "git commit -a -q -m 'x y'", "git commit -am x",
+                 "git log --oneline --decorate origin/main..HEAD", "git status -s -b"):
+        assert crew_mass.leading_cd(f"cd {_fwd(wt)} && {tail}", str(repo), "bash"), tail
+        assert crew_mass.leading_cd(f"cd {_fwd(wt)}; {tail}", str(repo), "powershell"), tail
+
+
+@pytest.mark.parametrize("target", [
+    "Env:", "Variable:", "Function:", "Alias:", "Cert:", "HKLM:", "HKCU:/x", "foo:bar",
+    "x\\y", "C:\\a\\b", "c:", "C:foo", "a/b:c", "C:/a:b", "C::/x", ":/x", "1:/x/y", "C:\\a:b",
+    "\\\\srv\\share", "sub\\", "a\\b/c"])
+def test_powershell_provider_drives_and_backslash_paths_are_not_a_target(target):
+    line = f"cd {target}; git status"
+    assert not crew_mass._PS_CD_RE.match(line), line  # pylint: disable=protected-access
+    assert not crew_mass._PS_CD_RE.match(f"Set-Location {target} && git status")  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("target", ["C:/x", "C:\\x", "c:/Users/a-b_c.d/e", "sub/dir", "../x", ".",
+                                    "..", "a-b_c.d"])
+def test_powershell_a_plain_path_and_one_drive_prefix_are_a_target(target):
+    assert crew_mass._PS_CD_RE.match(f"cd {target}; git status"), target  # pylint: disable=protected-access
+
+
+_LINEAR_CHILD = '''
+import json, sys, time
+sys.path.insert(0, {scripts!r})
+import crew_mass
+A = "a" * 5000
+cases = {{
+    "5000-char word": "cd /tmp && git add " + A + " && git commit -m x",
+    "5000-char word, no second command": "cd /tmp && git add " + A + " | x",
+    "600 paths": "cd /tmp && git add " + " ".join(["src/aaa.py"] * 600) + " && git commit -m x",
+    "the real hook shape, log": "cd /tmp/repo && git log --oneline --decorate origin/main..HEAD | head -5",
+    "the real hook shape, add and commit":
+        "cd /tmp/repo && git add plugin/crew/hooks/scripts/crew_mass.py && git commit -m x",
+    "the short form that took 12 s": "cd /tmp && git add src/aaaaaaaaaaaaaaaa.py && git commit -m x",
+    "a long quoted string": "cd /tmp && git commit -m '" + "x " * 3000 + "' && git push",
+    "nested quote characters": "cd /tmp && git commit -m " + "'\\"' " * 1500 + "'",
+    "many quoted words": "cd /tmp && git commit " + "'a' " * 3000 + "&& x",
+    "many flags": "cd /tmp && git commit " + "-a " * 3000 + "$",
+    "very long spacing": "cd /tmp && git" + " " * 5000 + "x y;",
+    "a deep path": "cd " + "a/" * 2500 + " && git commit; x",
+    "a long drive path": "cd C:/" + "a/" * 2500 + " && git commit; x",
+    "tabs everywhere": "cd\\t/tmp\\t&&\\tgit\\t" + "a\\t" * 3000 + "&",
+}}
+out = {{}}
+for label, text in cases.items():
+    start = time.perf_counter()
+    for shell in ("bash", "powershell"):
+        crew_mass.leading_cd(text, "/", shell)
+    crew_mass.sets_git_location(text, "bash")
+    out[label] = time.perf_counter() - start
+for label, text in {{
+    "unterminated nested substitutions": '"$(' * 2000 + "a " * 3000,
+    "many quotes": "\\"a\\" " * 5000 + "'",
+    "many heredocs": "cat <<A <<B <<C\\n" + "x\\n" * 3000,
+    "many words": "x " * 20000 + "GIT_DIR",
+}}.items():
+    start = time.perf_counter()
+    crew_mass.sets_git_location(text, "bash")
+    out[label] = time.perf_counter() - start
+print(json.dumps(out))
+'''
+
+
+def test_the_cd_grammar_and_the_git_variable_scan_are_linear_on_adversarial_input():
+    """A nested quantifier in the old argument pattern took 12 s on a 16-character path and
+    18 s through the real hook. Each input must take < 0.2 s, in a CHILD process with a
+    timeout: `re` holds the GIL, so a thread could not interrupt a backtracking match, and a
+    mutant that restores the pattern must go red rather than hang the suite."""
+    scripts = os.path.dirname(os.path.abspath(crew_mass.__file__))
+    try:
+        done = subprocess.run([sys.executable, "-c", _LINEAR_CHILD.format(scripts=scripts)],
+                              capture_output=True, text=True, timeout=60, check=False)
+    except subprocess.TimeoutExpired:
+        pytest.fail("leading_cd / sets_git_location did not finish in 60 s: exponential backtracking")
+    assert done.returncode == 0, done.stderr
+    timings = json.loads(done.stdout)
+    slow = {label: round(secs, 3) for label, secs in timings.items() if secs >= 0.2}
+    assert not slow, f"slower than 0.2 s: {slow}"
+
+
+def test_a_glob_or_tab_in_a_cd_or_dash_C_target_is_could_not_tell_and_quick(repo, tmp_path):
+    base = _fwd(tmp_path)
+    (tmp_path / "w1").mkdir()
+    for command in (f"git -C {base}/w? commit -m x", f"git -C {base}/w\t commit -m x",
+                    f"cd {base}/w? && git commit -m x", f"cd {base}/w\t && git commit -m x",
+                    f"cd {base}/w[1] && git commit -m x"):
+        start = time.perf_counter()
+        result = _in(repo, repo, command)
+        assert time.perf_counter() - start < 5, command
+        assert result["decision"] in ("ask", "deny"), (command, result)
+        assert crew_mass.leading_cd(command, str(repo), "bash") is None, command
+
+
+_LOCATION_WORDS = [
+    "GIT_DIR=x git commit -m x", "export GIT_INDEX_FILE=x; git commit -m x",
+    "env GIT_DIR=x git commit -m x", "export GIT_DIR", "git status && GIT_WORK_TREE=/x git commit",
+    "(GIT_DIR=x git commit)", 'export "GIT_DIR=x"', "declare -x GIT_NAMESPACE=n; git commit",
+    "env -i GIT_COMMON_DIR=x git commit", 'git commit -m "$(GIT_DIR=x true)"',
+    "git commit -m `GIT_DIR=x true`", 'git commit -m "a $(b "$(GIT_DIR=x true)")"',
+    "git commit -F - <<EOF\n$(GIT_DIR=x echo)\nEOF", "git_dir=x git commit",
+    'git commit -m "$(a "$(b "$(c "$(d "$(GIT_DIR=x e)")")")")"', "GIT_DIR='x' git commit",
+]
+_LOCATION_MESSAGES = [
+    'git commit -m "docs: explain GIT_DIR handling"', 'git commit -m "note on git_namespace"',
+    "git commit -F - <<'EOF'\nGIT_INDEX_FILE=x is documented here\nEOF",
+    "git commit -F - <<EOF\nGIT_INDEX_FILE=x is documented here\nEOF",
+    "git -C repo commit -m 'fix GIT_DIR handling'", 'git commit -m "docs: GIT_DIR=x is documented"',
+    "git commit -m 'GIT_WORK_TREE and GIT_COMMON_DIR'", "echo GIT_DIRECTORY=x; git commit",
+    "git commit -F - <<-EOF\n\tGIT_DIR=x\n\tEOF\ngit status",
+]
+
+
+@pytest.mark.parametrize("command", _LOCATION_WORDS)
+def test_an_assignment_of_a_git_location_variable_is_seen(command):
+    assert crew_mass.sets_git_location(command, "bash"), command
+
+
+@pytest.mark.parametrize("command", [
+    "$env:GIT_DIR = 'x'; git commit", "$env:git_index_file='x'; git commit",
+    "Set-Item Env:GIT_DIR x; git commit",
+    "[Environment]::SetEnvironmentVariable('GIT_DIR','x'); git commit"])
+def test_a_powershell_assignment_of_a_git_location_variable_is_seen(command):
+    assert crew_mass.sets_git_location(command, "powershell"), command
+
+
+@pytest.mark.parametrize("command", _LOCATION_MESSAGES)
+def test_a_message_or_heredoc_that_only_mentions_a_git_variable_is_not_an_assignment(command):
+    assert not crew_mass.sets_git_location(command, "bash"), command
+
+
+def test_a_commit_message_naming_a_git_variable_is_counted_not_refused(repo, tmp_path):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    for command in _LOCATION_MESSAGES[:6]:
+        command = command.replace("git -C repo", f"git -C {_fwd(wt)}")
+        _clean_in(repo, wt if "-C" not in command else repo, command)
+    git(wt, "reset", "-q")
+    _fill(wt / "docs", 22)
+    git(wt, "add", "-A")
+    # the count is still taken: a real mass commit with such a message stops
+    _stopped_in(repo, wt, 'git commit -m "docs: explain GIT_DIR handling"', crew_mass.MASS_CREATE)
+    _stopped_in(repo, repo, f"git -C {_fwd(wt)} commit -m 'fix GIT_DIR handling'",
+                crew_mass.MASS_CREATE)
+
+
+@pytest.mark.parametrize("command", ["GIT_DIR={x} git commit -m x",
+                                     "export GIT_INDEX_FILE={x}; git commit -m x",
+                                     "env GIT_DIR={x} git commit -m x"])
+def test_a_git_location_assignment_in_the_command_still_stops(repo, tmp_path, command):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    result = _stopped_in(repo, wt, command.format(x=_fwd(tmp_path / "x")), crew_mass.MASS_DELETE)
+    assert "not read here" in result["reason"], result
+
+
+def test_the_branch_upstream_is_the_base_when_no_origin_ref_exists(repo):
+    git(repo, "checkout", "-qb", "feat")
+    git(repo, "branch", "-q", "--set-upstream-to=main", "feat")
+    for ref in ("origin/HEAD", "origin/main", "origin/master"):
+        assert not git(repo, "rev-parse", "--verify", "-q", ref, check=False)
+    assert git(repo, "rev-parse", "--abbrev-ref", "@{u}") == "main"
+    _fill(repo / "q", 2)
+    _commit_all(repo, "two")
+    _passes(repo, "git push origin feat")
+    _fill(repo / "r", 25)
+    _commit_all(repo, "twenty-five")
+    _stops(repo, "git push origin feat", crew_mass.MASS_CREATE)
 
 
 @pytest.mark.parametrize("opt", ["--attr-source HEAD", "--attr-source=HEAD",
