@@ -75,7 +75,7 @@ this project's `.codex/config.toml`. Create `$CODEX_HOME/review.config.toml` /
 those.
 
 A review that exits non-zero, prints nothing, times out or ends in a failed turn is INCOMPLETE,
-never CLEAN. That is a tool failure, and the round is refunded automatically, up to two per plan
+never CLEAN. That is a tool failure, and the round is refunded automatically, up to three per ticket
 (for example when Codex answers with its usage-limit `error` event). A refunded round that was not a
 usage limit or a timeout is retried once by `review_run.py` itself, after a 30-second backoff; a
 `review: retry:` line says whether it was, and why not. What crew relies on from
@@ -95,6 +95,12 @@ approval receipt is told the gate does not apply, and during a declared incident
 (`/crew:emergency`) the gate stands down and logs the skip. The self-check is asked for last: a
 CLEAN receipt that already covers the bundle answers CLEAN without it, and a tree the verify gate
 has not passed is refused (exit 9) before it.
+
+Codex reviewing a pull request outside crew reads `AGENTS.md`, not this prompt. A repository that opts in
+(`export:` in `.crew/standards.md`) gets a marked `## Code Review Rules` block there, listing every standard
+with a link to `docs/review-rules/<SET>.md`, plus the full always-on text in `REVIEW.md`; the list is a
+superset of what `/crew:review` hands for one change, each standard carrying its `applies-to`. Whether a
+given reviewer follows those links is not something crew can promise.
 
 After the standards checklist comes the **recurring-findings checklist**: the defect classes earlier
 reviews kept finding (processes and races, claims not true at the commit, tests that cannot fail,

@@ -169,7 +169,8 @@ GROUPS = (
     ("through-help", ("docs", "diagram", "graph", "onboard", "reference", "verify", "runbook", "handoff",
                       "init", "config", "config-setup", "model", "migrate", "debug", "survey")),
     ("merge-candidates", ("jira-sync", "sdp-sync", "obsidian-sync")),
-    ("specialist", ("change", "emergency", "gate", "promote", "split", "webtest")),
+    ("specialist", ("approve-mass", "change", "confirm-config", "emergency", "gate", "promote", "split",
+                    "webtest", "worktrees")),
     ("removed", ("ticket", "work", "upgrade")),
 )
 

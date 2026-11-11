@@ -13,9 +13,9 @@
     "reason": "T8: to trim"
   },
   "plugin/crew/commands/model.md": {
-    "lines": 249,
-    "reason": "T8: to trim",
-    "bytes": 15308
+    "lines": 250,
+    "reason": "raised: the fable alias is accepted as an explicit claude model pin (full id claude-fable-5-2; never selected on its own), one sentence and one example row in the command",
+    "bytes": 15623
   },
   "plugin/crew/commands/onboard.md": {
     "lines": 255,

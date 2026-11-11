@@ -116,6 +116,7 @@ precisely because it matched words anywhere -- inside commit messages and
 comment bodies. So this reads each shell into simple commands first and judges
 only the command a segment actually runs, never a word inside an argument.
 """
+# pylint: disable=too-many-lines  # past 3400 by the environments.preProduction glue; the split is owed (TODO.md)
 import base64
 import collections
 import fnmatch
@@ -129,6 +130,8 @@ import time
 
 import crew_common
 import crew_config
+import crew_mass
+import crew_preprod
 import crew_state
 from crew_guards import _head_name as _guards_head_name
 from crew_guards import InterpreterReason, command_trigger, first_non_literal, \
@@ -2155,6 +2158,12 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
     text = " ".join(argv)
     out = []
 
+    # crew_mass: a mass delete, create or change. Always recognised here, judged
+    # in `evaluate` only when `guards.mass` or a humanOnly opt-out arms it.
+    sql = _sql_payloads(head, args, stdin) if head in _SQL_FLAGS else ()
+    for mass in crew_mass.classify(head, args, shell, bool(fed), sql):
+        out.append(Finding(mass.rule, text, mass.what, None, False, None, {"mass": mass}))
+
     if head in _SHELLS:
         # `-c`, and every cluster carrying it: `bash -lc`, `sh -ec`. With no
         # `-c` at all, a heredoc or pipe on stdin is the script.
@@ -2547,7 +2556,7 @@ def environments_config(root):
     environment layer is configured at all: while it is not, `workspace`
     commands are not judged, exactly as before T-0005.
     """
-    out = {"nonProd": [], "problem": "", "workflows": {}}
+    out = {"nonProd": [], "problem": "", "workflows": {}, "preProduction": {}}
     path = crew_common.repo_config_file(root, "config.json")
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as handle:
@@ -2567,13 +2576,14 @@ def environments_config(root):
     elif "environments" in cfg:
         problem = crew_config.environments_block_problem(cfg["environments"])
         if problem:
-            out = {"nonProd": [], "problem": problem, "workflows": {}}
+            out = {"nonProd": [], "problem": problem, "workflows": {}, "preProduction": {}}
         else:
+            out["preProduction"] = crew_preprod.entries(cfg["environments"].get("preProduction", {}))
             out["nonProd"] = [v.strip() for v in cfg["environments"].get("nonProd", [])]
             out["workflows"] = dict(cfg["environments"].get("workflows", {}))
     out["dispatchProblem"] = out["problem"] or crew_config.global_environments_problem()
     out["prodUnattended"] = crew_config.resolve_ratcheted(root, "environments.prodUnattended")["effective"] is True
-    out["engaged"] = bool(out["nonProd"] or out["prodUnattended"] or out["problem"])
+    out["engaged"] = bool(out["nonProd"] or out["preProduction"] or out["prodUnattended"] or out["problem"])
     return out
 
 
@@ -3100,6 +3110,9 @@ def _judge_one(root, finding, pins, problem, envs=None):
         verdict = (decision, reason, out["policy"], out["marker"])
         if finding.rule in crew_state.PROD_GUARD_NAMES:
             applies = bool(out["target"])
+            if out.get("preProduction"):  # crew_preprod: reason is the audit line
+                verdict = (decision, f"[{finding.rule}] {finding.what}: {out['reason']}",
+                           crew_preprod.POLICY_PREFIX + ",".join(out["preProduction"]["names"]), "")
     else:
         verdict = ("allow", "", "", "")
         applies = False
@@ -3123,7 +3136,8 @@ def _judge_one(root, finding, pins, problem, envs=None):
     return (ask if _RANK[ask[0]] > _RANK[verdict[0]] else verdict) + (True,)
 
 
-def evaluate(root, tool_name, command, data=None, mode="block"):
+def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
+             only_mass=False):
     """The whole judgement for one tool call, as a dict. Pure apart from
     reading config and approval markers; `main` does the printing and logging.
 
@@ -3135,9 +3149,15 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     Code's own permission flow runs exactly as it would without this hook --
     and `note` says what `block` would have done. Never `allow`: that would
     skip the user's own prompt, and report mode judged nothing.
+
+    `mass` (`crew_mass.settings`) with `armed` true turns on the mass delete /
+    create / change findings, which are otherwise ignored; `only_mass` is the
+    cloud guard being `off` while `guards.mass` or the owner's opt-out arms
+    those alone: every other finding is skipped, as `off` means.
     """
+    mass_armed = bool(mass and mass.get("armed"))
     shell = "powershell" if tool_name == "PowerShell" else "bash"
-    envs = dict(environments_config(root), command=command)
+    envs = crew_preprod.arm(dict(environments_config(root), command=command))
     ctx = {"cd": False, "switch": False, "engaged": envs["engaged"], "dispatch": dict(envs)}
     findings = scan(shell, command, ctx=ctx)
     cwd = (data or {}).get("cwd")
@@ -3145,13 +3165,40 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     envs["ctx"] = ctx
     pins, problem = cloud_pins(root)
     worst, reasons, rows, unpinned = "allow", [], [], []
-    said = []
+    said, audits = [], []
     alone = unattended(data or {})
+    if mass_armed and crew_mass.tampers(command):
+        reason_t = ("[massApprovals] this command writes under the mass-approvals "
+                    "directory, where only the owner's own /crew:approve-mass prompt "
+                    "may write")
+        rows.append(("massApprovals", "-", "deny", command))
+        reasons.append(reason_t)
+        worst = "deny"
     for finding in findings:
+        if finding.rule in crew_mass.RULES:
+            if not mass_armed:
+                continue
+            verdict = crew_mass.judge(finding.scope["mass"], finding.text,
+                                      envs["cwd"] or root, bool((ctx or {}).get("cd")), alone,
+                                      mass)
+            if verdict is None:
+                continue
+            decision, reason, policy = verdict
+            rows.append((finding.rule, policy, decision, finding.what))
+            if decision != "allow":
+                reasons.append(reason)
+            if _RANK[decision] > _RANK[worst]:
+                worst = decision
+            continue
+        if only_mass:
+            continue
         decision, reason, policy, marker, applies = _judge_one(
             root, finding, pins, problem, envs)
         if not applies:
             continue
+        policy, reason = crew_preprod.retag(policy, reason, decision, envs, finding.what)
+        if policy.startswith(crew_preprod.POLICY_PREFIX) and decision == "allow":
+            audits.append(reason)
         if policy == UNPINNED:
             unpinned.append(finding.what)
             continue
@@ -3174,7 +3221,8 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
         if _RANK[decision] > _RANK[worst]:
             worst = decision
     reason = "crew cloud guard: " + " | ".join(reasons) if reasons else ""
-    note = " | ".join(said)
+    audits = audits if worst == "allow" else []  # nothing was exempted if the line is refused
+    note = " | ".join(said + audits)
     if mode == "report":
         rows = [(r, p, "report:" + d, t) for r, p, d, t in rows]
         if worst != "allow":
@@ -3182,7 +3230,7 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
                     f"mode would {worst} this -- " + " | ".join(reasons))
         worst, reason = None, ""
     return {"decision": worst, "reason": reason, "rows": rows,
-            "unpinned": unpinned, "note": note}
+            "unpinned": unpinned, "note": note, "audit": audits}
 
 
 def resolve_mode(root):
@@ -3362,8 +3410,16 @@ def main():
         sys.stderr.write(f"cloud-guard: could not read guards.cloudGuard "
                          f"({type(exc).__name__}); not judged.\n")
         return 0
+    # `guards.mass.enabled`, or the owner's opt-out of a human-only rule, arms
+    # the mass delete / create / change stop even where the cloud guard is
+    # `off` (`crew_mass.settings` never raises).
+    mass = crew_mass.settings(root)
+    only_mass = False
     if mode == "off":
-        return 0
+        if not mass["armed"]:
+            return 0
+        only_mass = True
+        mode = "block"
     if problem:
         # Armed, and handed something it cannot read as a command. Refuse in
         # every armed mode: report mode's promise is "nothing refused that
@@ -3374,7 +3430,7 @@ def main():
                       "letting a command through unjudged.")
         return 0
     try:
-        result = evaluate(root, data["tool_name"], command, data, mode)
+        result = evaluate(root, data["tool_name"], command, data, mode, mass, only_mass)
     except Exception as exc:  # pylint: disable=broad-except
         # The guard IS on and could not finish. Refuse: a check that could not
         # run is not a check that passed.
@@ -3387,6 +3443,8 @@ def main():
     now = str(int(time.time()))
     for rule, policy, decision, target in result["rows"]:
         _log(root, (now, rule, policy, decision, target, command))
+    for line in result["audit"]:
+        sys.stderr.write(f"{line}\n")  # beside the on-screen note and the guard.log row
     reason = result["reason"]
     if note and reason:
         reason += f" ({note})"

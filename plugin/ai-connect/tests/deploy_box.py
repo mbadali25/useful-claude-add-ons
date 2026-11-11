@@ -145,16 +145,21 @@ class Box:
                         FAKE_KEYRING_FILE=str(tmp_path / "keyring.json"),
                         AI_CONNECT_OAUTH_FILE=str(self.home / ".config" / "ai-connect" / "tailscale-oauth.json"))
         for name in ("TS_API_TOKEN", "TS_OAUTH_CLIENT_ID", "TS_OAUTH_CLIENT_SECRET",
-                     "AI_CONNECT_DEPLOY_PLATFORM", "AI_CONNECT_DEPLOY_ROOT", "AI_CONNECT_HOME",
+                     "AI_CONNECT_DEPLOY_PLATFORM", "AI_CONNECT_HOME",
                      # Claude Code's settings are then the fake HOME's, never the real ones of whoever runs this
                      "CLAUDE_CONFIG_DIR"):
             self.env.pop(name, None)
+        # Not root unless a test passes AI_CONNECT_DEPLOY_ROOT=1: the suite must not depend on who runs it (#609)
+        self.env["AI_CONNECT_DEPLOY_ROOT"] = "0"
         # Never the real Tailscale API: a closed loopback port unless a test passes its fake's address
         self.env["TS_API_BASE"] = "http://127.0.0.1:9/api/v2"
         self.target = target
         # Where deploy installs the copy of the plugin the service and the MCP server run from
         self.app = self.home.joinpath(*(("AppData", "Local") if os.name == "nt" else (".local", "share")),
                                       "ai-connect", "app")
+        # The root switch (root_policy.py) is a test's to set, never inherited from whoever runs the suite
+        for name in ("AI_CONNECT_ALLOW_ROOT", "AI_CONNECT_ROOT_HOME", "AI_CONNECT_ROOT_WARNED"):
+            self.env.pop(name, None)
 
     @staticmethod
     def shim(name: str) -> str:
@@ -211,8 +216,16 @@ class Box:
     def config(self) -> dict:
         return yaml.safe_load(self.config_file.read_text(encoding="utf-8"))
 
-    def deploy(self, *args: str, extra_env: dict | None = None) -> subprocess.CompletedProcess:
-        return subprocess.run([sys.executable, str(DEPLOY), *args], capture_output=True, text=True, check=False,
+    def deploy(self, *args: str, extra_env: dict | None = None,
+               non_root: bool = False) -> subprocess.CompletedProcess:
+        """Run deploy.py in the fake machine. non_root runs it as a user whatever uid the suite has: the child
+        sees os.geteuid() == 1000, so a root host (a container, a root CI job) takes the sudo paths too. Not
+        a way past AI_CONNECT_DEPLOY_ROOT: pass that in extra_env for a root run."""
+        argv = [sys.executable, str(DEPLOY), *args]
+        if non_root:
+            assert "AI_CONNECT_DEPLOY_ROOT" not in (extra_env or {}), "non_root contradicts the root override"
+            argv = [sys.executable, "-c", NON_ROOT_LAUNCHER, str(DEPLOY), *args]
+        return subprocess.run(argv, capture_output=True, text=True, check=False,
                               stdin=subprocess.DEVNULL, env=dict(self.env, **(extra_env or {})), timeout=180,
                               cwd=self.project)
 
@@ -222,6 +235,11 @@ class Box:
                 for p in sorted(root.rglob("*"))
                 if p.is_file()}
 
+
+# Runs a script as __main__ with os.geteuid() reporting an ordinary user (deploy_core reads it at import)
+NON_ROOT_LAUNCHER = (
+    "import os, runpy, sys; os.geteuid = lambda: 1000; script = sys.argv[1]; sys.argv = sys.argv[1:]; "
+    "sys.path.insert(0, os.path.dirname(script)); runpy.run_path(script, run_name='__main__')")
 
 NATIVE = "windows" if os.name == "nt" else "linux"
 
@@ -258,10 +276,10 @@ def already(res: subprocess.CompletedProcess) -> list[str]:
 class Phase:
     """One deploy run on a Box, with what it changed."""
 
-    def __init__(self, box: Box, *args: str, extra_env: dict | None = None):
+    def __init__(self, box: Box, *args: str, extra_env: dict | None = None, non_root: bool = False):
         before, state = box.snapshot(), box.state()
         box.clear_log()
-        self.res = box.deploy(*args, extra_env=extra_env)
+        self.res = box.deploy(*args, extra_env=extra_env, non_root=non_root)
         self.calls = box.calls()
         self.mutations = box.mutations()
         self.files_changed = box.snapshot() != before

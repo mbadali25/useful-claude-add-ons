@@ -19,7 +19,7 @@ can be different models from different families, and a block-level row hides
 that completely — the same argument that already forced one row per QA
 candidate rather than a single line reading `auto / (cli default)`, applied one
 level down. The command reads the layered config (`~/.claude/crew/config.json`
-under `.crew/config.json`), so the values it prints are the effective ones. A `dev.roles.coordinator` pin (L-0799; a model pin, not a role, shown only when set) and a claude `dev.roles.developer` model, which `crew_wave.py start` puts on lane launches, appear as ordinary rows.
+under `.crew/config.json`), so the values it prints are the effective ones. A `dev.roles.coordinator` pin (L-0799; a model pin, not a role, shown only when set) and a claude `dev.roles.developer` model, which `crew_wave.py start` puts on lane launches, appear as ordinary rows. A claude pin takes a full Claude id or the bare aliases `opus`, `sonnet`, `haiku` and `fable` (Fable 5.2, `claude-fable-5-2`); `fable` is honoured only as an explicit pin, and nothing in crew selects it on its own.
 
 Read out all five things it reports, and do not summarise any of them away:
 
@@ -238,6 +238,7 @@ a claim, not a change.
 /crew:model qa.copilot.model kimi-k2.7-code      # Kimi 2.7 - the suffix is required
 /crew:model dev.provider codex                   # then read step 3 out loud
 /crew:model dev.roles.developer '{"provider": "codex", "model": "gpt-6-astra"}'
+/crew:model dev.roles.developer '{"provider": "claude", "model": "fable"}'   # explicit opt-in only
 /crew:model qa.roles.review '{"provider": "codex", "model": "gpt-5.6-luna"}'
 /crew:model dev.fallback claude-sonnet-5
 ```

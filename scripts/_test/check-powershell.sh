@@ -256,6 +256,8 @@ f="$(fixture 'plugin/ai-connect/install.ps1' \
   '$r = Get-NetFirewallRule -DisplayName "x" -ErrorAction SilentlyContinue' \
   '$a = $r | Get-NetFirewallAddressFilter' \
   'Remove-NetFirewallRule -DisplayName "x"' \
+  '$p = Get-NetFirewallPortFilter -AssociatedNetFirewallRule $r' \
+  'Set-NetFirewallRule -DisplayName "x" -LocalPort 1' \
   'New-NetFirewallRule -DisplayName "x" -Direction Inbound -LocalPort 1 -Protocol TCP -Action Allow' \
   '$c = Get-NetTCPConnection -LocalPort 1 -ErrorAction SilentlyContinue' \
   'Stop-ScheduledTask -TaskName "x"' \

@@ -242,7 +242,13 @@ def test_the_lock_never_records_a_pid(tmp_path):
         proc.wait(timeout=10)
 
     assert "pid" not in names, f"the lock records a PID again: {names}"
-    assert names == ["token"], names
+    # crew 1.3.0 added `owner` on purpose: the holder's pid, paired with a start
+    # stamp and the lock's token, so a challenger can ask the OS whether it is
+    # alive. It is not a `pid` file, and it is never trusted without the token.
+    # `owner` is written as `owner.tmp.<pid>` and then renamed, so a listing
+    # taken in that window sees the temp name. It is the same file in flight,
+    # not a PID file; any other name (or a bare `pid`) still fails here.
+    assert [n for n in names if n != "owner" and not n.startswith("owner.tmp.")] == ["token"], names
 
 
 def test_a_lock_path_that_is_a_file_does_not_stand_the_gate_down(tmp_path):

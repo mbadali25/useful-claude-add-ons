@@ -37,6 +37,7 @@ from __future__ import annotations
 import crew_autopilot
 import crew_config
 import crew_guards
+import crew_humanonly
 import crew_notify
 import crew_platform
 import crew_sleep
@@ -217,6 +218,45 @@ KEY_META = {
                         "machine file can arm it (exactly `true`); a repo `false` vetoes "
                         "it.", "branch", (None, True, False), "1.0.40",
                         _S + "crew_resume.py"),
+    # --- humanOnly (crew 1.3.9; read by crew_humanonly.resolve; acted on since 1.3.27 for
+    # `approve`, by no hook for `promoteMarker`)
+    "humanOnly.approve": _row("The owner's opt-out of `/crew:approve` being human-only. "
+                              "null or `true` keeps it human-only; `false` opts out only "
+                              "from the machine file or an untracked repo file, only after "
+                              "`/crew:confirm-config` twice, and a `true` in either layer "
+                              "vetoes. crew 1.3.27: with an opt-out in force a cli-recorded "
+                              "approval counts (`crew_ticket.cli_approval_allowed`).", "branch",
+                              crew_humanonly.VALUES, "1.3.9",
+                              _S + "crew_humanonly.py"),
+    "humanOnly.promoteMarker": _row("The same opt-out for the production promote marker "
+                                    "`.crew/.approved-<env>-<sha>`, under the same rules. "
+                                    "crew 1.3.9: no hook acts on it yet, and no hook today "
+                                    "checks who created the marker.", "branch",
+                                    crew_humanonly.VALUES, "1.3.9",
+                                    _S + "crew_humanonly.py"),
+    # --- worktrees (crew 1.3.19)
+    "worktrees.root": _row("The base directory for this repo's git worktrees, OUTSIDE the "
+                           "repo: they go in `<root>/<repo>-<digest>/<name>`. null is "
+                           "`~/.claude/crew/worktrees`; `~` is expanded, a relative path or one "
+                           "inside the repo is refused (never replaced by the default). It "
+                           "places the worktrees crew places (`/crew:emergency`, "
+                           "`crew_worktrees.py path`) and, once the owner registers the opt-in "
+                           "`WorktreeCreate` hook, the ones Claude Code creates; without the "
+                           "hook Claude Code keeps using `.claude/worktrees/`.", "type",
+                           since="1.3.19", source=_S + "crew_worktrees.py",
+                           type_="absolute path or null"),
+    # --- promote (crew 1.3.41)
+    "promote.deadlineSeconds": _row("How many seconds the promote gate (`promote-gate.sh`) may run, "
+                                    "counted from the moment its shell began, before it gives up and "
+                                    "blocks (a hook that times out is not a block, so the gate stops "
+                                    "itself first). null derives it from the guard's hook timeout "
+                                    "less a 4 s margin: 16 s of the 20 s row. A number above the "
+                                    "timeout less 2 s (18 s of 20) is clamped to that, so the setting "
+                                    "can never let the gate outlive its hook; zero, a negative, a "
+                                    "string or a boolean reads as null. The hook timeout is the "
+                                    "guard's row in the dispatcher's table, not a setting.",
+                                    "type", since="1.3.41", source=_S + "_promote_gate.py",
+                                    type_="number of seconds, or null"),
     # --- emergency
     "emergency.standDown": _unv("Whether a declared incident may stand gates down; "
                                 "`false` forbids it.", FIRST, _S + "_common.sh", "boolean"),
@@ -301,6 +341,37 @@ KEY_META = {
                              "that guard's own tiers; a bad one reads as the floor.",
                              "open-table", since="1.2.62", source=_S + "crew_guards.py",
                              type_="object of guard name to tier"),
+    "guards.mass.enabled": _row(
+        "Turns the mass delete / create / change stop on (it is also armed by a "
+        "double-confirmed `humanOnly` opt-out). On if EITHER layer says exactly `true`; off by "
+        "default.", "type", since="1.3.36", source=_S + "crew_mass.py", type_="boolean"),
+    "guards.mass.deleteCount": _row(
+        "Files a command may delete before it waits for `/crew:approve-mass`; a count at "
+        "the limit stops. The machine file sets it; the repo file can only lower it; a value "
+        "that is not a positive integer reads as the default.", "type", since="1.3.36",
+        source=_S + "crew_mass.py", type_="integer (1 or more)"),
+    "guards.mass.createCount": _row(
+        "Files a command may create before it waits for `/crew:approve-mass`; a count at "
+        "the limit stops. The machine file sets it; the repo file can only lower it; a value "
+        "that is not a positive integer reads as the default.", "type", since="1.3.36",
+        source=_S + "crew_mass.py", type_="integer (1 or more)"),
+    "guards.mass.changeCount": _row(
+        "Files a command may rewrite before it waits for `/crew:approve-mass`; a count at "
+        "the limit stops. The machine file sets it; the repo file can only lower it; a value "
+        "that is not a positive integer reads as the default.", "type", since="1.3.36",
+        source=_S + "crew_mass.py", type_="integer (1 or more)"),
+    "guards.mass.overrides": _row(
+        "`guards.mass.overrides.<files|git|terraform>.<deleteCount|createCount|"
+        "changeCount>`: one limit for one kind of command. Unset, `terraform` is delete 3, "
+        "create 10, change 10 (inferred, not measured); the others use the limits above.",
+        "open-table", since="1.3.36", source=_S + "crew_mass.py",
+        type_="object of category to {deleteCount, createCount, changeCount}"),
+    "guards.mass.exempt": _row(
+        "Repo-relative globs of generated files that never count toward a limit, read from "
+        "the machine file only (a glob can only loosen the stop), on top of the built-in "
+        " regenerable directories (node_modules, __pycache__, .venv, caches, "
+        "build, dist, .work, worktrees).", "type", since="1.3.36",
+        source=_S + "crew_mass.py", type_="list of globs"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),
     "production.hosts": _unv("Globs naming production hosts.", "0.19.30",
@@ -314,6 +385,11 @@ KEY_META = {
     "environments.nonProd": _unv("Terraform targets that are not production and may run "
                                  "unattended.", "1.0.37", _S + "crew_config.py",
                                  "list of globs"),
+    "environments.preProduction": _unv("Environments labelled production that are not live yet: exact "
+                                       "name -> `reason` (+ optional exact `targets`); judged "
+                                       "non-production by the cloud guard, with an audit line.",
+                                       "1.3.20", _S + "crew_preprod.py",
+                                       "object of exact name to {reason, targets}"),
     "environments.prodUnattended": _rat("Whether production terraform may run unattended; "
                                         "`true` only when both layers say so.", "1.0.37"),
     "environments.workflows": _unv("Deploy workflow globs, each mapped to its environment "
@@ -328,7 +404,13 @@ KEY_META = {
                        "outside these fails closed to `block`.", "tuple",
                        crew_ticket.MODES, "1.0.25"),
     "scope.allowCliApproval": _row("Whether a CLI-written approval receipt counts; only "
-                                   "exactly `true` allows it.", "branch", (False, True),
+                                   "exactly `true` allows it. `autopilot.approval: self` or `risk` "
+                                   "needs it, and `autopilot.mode: plan` or `backlog`, to "
+                                   "approve anything. A "
+                                   "hand edit by the owner in the repo's `.crew/config.json` "
+                                   "(`\"scope\": {\"allowCliApproval\": true}`); "
+                                   "`crew_config.py --set` refuses it.", "branch",
+                                   (False, True),
                                    "1.0.25", _S + "crew_ticket.py"),
     # --- autopilot
     "autopilot.mode": _row("Only the exact strings `plan` (one ticket per run) and `backlog` "
@@ -342,7 +424,13 @@ KEY_META = {
     "autopilot.deploy": _row("Where a deploy may run without asking; anything else reads "
                              "as `none`.", "tuple", crew_autopilot.DEPLOY_VALUES, "1.0.42"),
     "autopilot.approval": _row("Who approves a ticket under autopilot; anything else reads "
-                               "as `human`.", "tuple", crew_autopilot.POLICIES, "1.0.42"),
+                               "as `human`. `risk` and `self` also need `autopilot.mode: "
+                               "plan` (or `backlog`) and `scope.allowCliApproval: true` (a hand "
+                               "edit of the repo's `.crew/config.json`); a refused `approve` "
+                               "lists each unmet one, with its value as written, the file "
+                               "that holds it and, under `risk`, the spec risk that blocks.",
+                               "tuple",
+                               crew_autopilot.POLICIES, "1.0.42"),
     "autopilot.questions": _row("Who answers a ticket's open questions under autopilot; "
                                 "anything else reads as `human`.", "tuple",
                                 crew_autopilot.POLICIES, "1.0.42"),
@@ -427,6 +515,7 @@ _FAMILY_OF_KEY = {
     "environments.prodUnattended": "cloud",
     "environments.nonProd": "cloud",
     "environments.workflows": "cloud",
+    "environments.preProduction": "cloud",
 }
 _FAMILY_OF_SEGMENT = {
     "qa": "providers", "dev": "providers", "secondOpinion": "providers",
@@ -509,11 +598,15 @@ _MACHINE_ONLY = (tuple("context.autoClear." + k for k in crew_state.AUTOCLEAR_MA
 def layer_of(key):
     """Which layer may set `key`, derived from the code that enforces it:
     `machine-arms` (`crew_config.REPO_VETO_ONLY`: only the machine file arms
-    it, a repo may only veto), `machine-only` (read from the machine file
-    alone), `repo`, `both, stricter wins` (`crew_guards.PERSONAL_KEYS`, T-0050),
+    it, a repo may only veto), `human-only opt-out` (`crew_humanonly`: the
+    machine file or an untracked repo file may opt out, a `true` anywhere
+    vetoes), `machine-only` (read from the machine file alone), `repo`,
+    `both, stricter wins` (`crew_guards.PERSONAL_KEYS`, T-0050),
     `both, ratchet`, `both, widening warned` or `both`."""
     if key in crew_config.REPO_VETO_ONLY:
         return "machine-arms"
+    if crew_humanonly.is_path(key):
+        return "human-only opt-out"
     if key in _MACHINE_ONLY or key.split(".", 1)[0] in crew_state.UNATTENDED_CLOUD_MACHINE_ONLY:
         return "machine-only"
     if not crew_config.is_global_path(key):

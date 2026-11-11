@@ -492,6 +492,41 @@ def run_bytes_growth(recorded_bytes: int, total_bytes: int,
             return problems
 
 
+def run_crlf_bytes(recorded_bytes, lf_bytes: int, listed: bool = True):
+    """check_command_budget and check_allowance_growth on autopilot.md as a
+    Windows autocrlf checkout writes it: `lf_bytes` bytes committed, every LF
+    on disk as CRLF. `recorded_bytes` is its allowance, or unlisted if not
+    `listed`."""
+    path_rel = "plugin/crew/commands/autopilot.md"
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, path_rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        text = _padded_command(lf_bytes)
+        crlf = text.replace("\n", "\r\n").encode("utf-8")
+        assert len(crlf) == lf_bytes + text.count("\n")
+        with open(path, "wb") as fh:
+            fh.write(crlf)
+        entries = {path_rel: {"lines": 100, "reason": "T8: to trim", "bytes": recorded_bytes}} if listed else {}
+        _write(os.path.join(tmp, "plugin", "crew", ".budget-allowance.json"), json.dumps(entries))
+        with _root_at(tmp):
+            problems: list[str] = []
+            allowance = CHECKER.load_allowance(problems.append)
+            CHECKER.check_command_budget(allowance, problems.append)
+            CHECKER.check_allowance_growth(allowance, problems.append)
+            return problems
+
+
+def run_lone_cr_bytes(total_bytes: int):
+    """A command of `total_bytes` bytes whose last byte is a lone CR (not
+    part of a CRLF): a byte git stores, so it counts."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "plugin", "crew", "commands", "promote.md")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as fh:
+            fh.write((_padded_command(total_bytes - 1) + "\r").encode("utf-8"))
+        return _patched(tmp, CHECKER.check_command_budget, {})
+
+
 def run_malformed_bytes():
     with tempfile.TemporaryDirectory() as tmp:
         _write(os.path.join(tmp, "plugin", "crew", ".budget-allowance.json"),
@@ -774,6 +809,23 @@ def main() -> int:
         "stale name",
     )
     check(
+        "a command whose name merely starts with a retired one (/crew:worktrees) is not stale",
+        run_stale_names(
+            FRONTMATTER + "Run /crew:worktrees list.\n",
+            "plugin/crew/commands/newthing.md",
+        ),
+        False,
+    )
+    check(
+        "the retired /crew:work itself is still red next to a longer name",
+        run_stale_names(
+            FRONTMATTER + "Run /crew:worktrees list or /crew:work.\n",
+            "plugin/crew/commands/newthing.md",
+        ),
+        True,
+        "stale name",
+    )
+    check(
         "the same stale name marked <!-- deliberate --> in the same paragraph is allowed",
         run_stale_names(
             FRONTMATTER + "Dispatch qa-reviewer for the fallback pass. <!-- deliberate -->\n",
@@ -1008,6 +1060,18 @@ def main() -> int:
           run_bytes_growth(recorded_bytes=0, total_bytes=9000, with_bytes=False), False)
     check("an allowance entry whose bytes is not an int is red",
           run_malformed_bytes(), True, "bytes")
+    # A Windows autocrlf checkout adds one byte per line on disk; the
+    # allowance records committed (LF) bytes, so CRLF counts as LF.
+    check("a CRLF checkout of a file exactly at its LF bytes allowance is allowed",
+          run_crlf_bytes(recorded_bytes=19900, lf_bytes=19900), False)
+    check("a CRLF checkout one LF byte over its bytes allowance is still red",
+          run_crlf_bytes(recorded_bytes=19900, lf_bytes=19901), True, "grew to 19901 bytes")
+    check("an unlisted command at 12,288 LF bytes checked out as CRLF is allowed",
+          run_crlf_bytes(recorded_bytes=None, lf_bytes=12288, listed=False), False)
+    check("an unlisted command at 12,289 LF bytes checked out as CRLF is red",
+          run_crlf_bytes(recorded_bytes=None, lf_bytes=12289, listed=False), True, "autopilot.md: 12289 bytes")
+    check("a lone CR still counts as a byte",
+          run_lone_cr_bytes(12289), True, "promote.md: 12289 bytes")
     real_allowance = CHECKER.load_allowance(lambda _msg: None)
     check_true("the real allowance has dropped review.md and promote.md",
                "plugin/crew/commands/review.md" not in real_allowance

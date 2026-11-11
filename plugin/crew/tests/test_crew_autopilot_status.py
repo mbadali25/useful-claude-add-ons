@@ -255,7 +255,7 @@ def test_status_lines_on_an_implement_phase(tmp_path):
             _field(lines, "review")) == (
         0, "ticket: T-1 (from active-ticket)", "phase: implement - next: /crew:implement T-1",
         "waiting on: autopilot - run /crew:autopilot to continue",
-        "review: EMPTY, 2 of 2 rounds left")
+        f"review: EMPTY, {review_ledger.BUDGET} of {review_ledger.BUDGET} rounds left")
 
 
 def test_status_mode_line_reads_off_by_default(tmp_path):

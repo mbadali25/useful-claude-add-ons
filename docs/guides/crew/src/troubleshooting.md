@@ -65,7 +65,18 @@ registers one launcher per event per shell (`crew-hook.sh`, and `crew-hook.ps1` 
 the launcher starts one dispatcher, `crew_hook.py <Event>`, which runs that event's scripts below at once and
 combines what they print. On Windows only the PowerShell launcher runs, so no event fires twice. When the
 launcher or dispatcher itself fails in a repo crew governs, `PreToolUse`, `UserPromptSubmit` and `Stop` refuse
-with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged.
+with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged. Only the four stateless PreToolUse judges (`role-write-guard`, `cloud-guard`, `env-guard`, `scope-guard`) are run
+once more after a timeout, and only when the dispatch deadline leaves room for a second timeout's cleanup; at the
+defaults that is `role-write-guard` on every platform and the 15-second `cloud-guard`, `env-guard` and `scope-guard`
+rows off Windows. `promote-gate`, `approval-hook`, `verify-gate` and `completion-audit` are never retried (they record
+state), and a retried guard can leave a duplicate `guard.log` row. The line says `attempts=N`, so you can tell whether
+a retry ran. If the guard still cannot answer, the refusal is led by `crew-hook: UNKNOWN (guard timeout, not a policy
+deny)`. A guard that could not fork or allocate (a stderr line that is itself `fork: ... Resource temporarily unavailable`, `OSError: [Errno 11]`, `BlockingIOError: EAGAIN`, a bare `MemoryError`; text that merely quotes those words, such as a path, is not matched)
+is led by `UNKNOWN (resource exhaustion, not a policy deny)`, and a guard's own "no usable python" refusal
+by `UNKNOWN (no usable python, not a policy deny)` (only that fixed one-line refusal; a deny that quotes the words in
+a path is still a deny). An `UNKNOWN` line is a refusal because crew could not tell, not because a rule said
+no: retry the call, and free memory or processes if it repeats. A real deny never carries the label. Setting
+`CREW_HOOK_TIMING_FILE` to a path ending `.crew-trace` records each guard's start, end and milliseconds.
 
 | Event | Script | What it does | Switch | Default |
 |---|---|---|---|---|
@@ -139,8 +150,11 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   recovered from stray lines - `ignored_lines` above 0, or missing or unreadable, which is
   could-not-tell, as on a round recorded before L-0576 wrote the count). Otherwise own the FINDINGS with `--accept --by <who>` (only the most recent completed round,
   only once, never once `NEEDS_REPLAN`; a name starting `auto:` is refused), or write a new plan and get it approved — `crew_ticket.py
-  approve` on a `NEEDS_REPLAN` ticket opens a fresh budget of two rounds counted from the successor
-  plan; the rounds already spent stay in the ledger and are not erased. With notify on, a spent
+  approve` on a `NEEDS_REPLAN` ticket continues review only while a round of the ticket's three
+  is left (<!-- review-budget-doc -->a successor plan does not reopen the budget; the rounds already spent stay in
+  the ledger and keep counting). With none left it says `0 review rounds available` and the owner's
+  `review_ledger.py --ticket <id> --grant-round --by <you> --reason <why>` adds one; after a grant,
+  approve a changed plan, or record the unchanged one with `review_ledger.py --successor-plan <sha256>`. With notify on, a spent
   budget whose last round carries a BLOCK sends the `Review out of rounds` ping when
   `/crew:autopilot` stops on it.
 
@@ -157,14 +171,14 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   still INCOMPLETE `reviewer`. That list cannot catch every admission: one it misses ("I only
   inspected one of the nine files") is ignored as prose and the round stays FINDINGS, so read the
   ignored lines.
-  **Fix:** a `tool` round is refunded automatically, up to two per plan. The line reads
+  **Fix:** a `tool` round is refunded automatically, up to three per ticket. The line reads
   `review: round N was a tool failure (...); refunded`. `review_run.py` retries it once by itself
   (L-0514), except a usage limit or a timeout; `review: retry: not retried - <why>` says when it
   did not. Only the failed round is given back: the
   rerun `/crew:review` reserves a new round, charged like any other unless it is a tool failure
-  too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
-  Codex is out of quota, use the next eligible provider. A third tool failure under
-  one plan reads `NOT refunded - refund limit 2 per plan reached` and counts. A `reviewer` or `tree`
+  too, so a ticket with two charged rounds that reruns and gets FINDINGS has spent the budget. If
+  Codex is out of quota, use the next eligible provider. A fourth tool failure on
+  one ticket reads `NOT refunded - refund limit 3 per ticket reached` and counts. A `reviewer` or `tree`
   round always counts. Rebuild the bundle (tree), or rerun and read what the reviewer wrote
   (reviewer).
 
@@ -251,7 +265,7 @@ worktree of the same repo spends the same budget (`review_ledger.py`).
   python3 "<crew>/hooks/scripts/review_run.py" --root . --ticket <id> --scratch <dir> \
     --provider codex --probe
   ```
-- **Symptom: you want to send a ticket back without spending the third round.**
+- **Symptom: you want to send a ticket back without spending another round.**
   ```bash
   python3 "<crew>/hooks/scripts/review_ledger.py" --root . --ticket <id> --reject --by <who>
   ```
@@ -470,6 +484,14 @@ contract itself. This section is what goes wrong with the approval and the audit
   its time and what happened (`killed-at-bound`, `exit-nonzero`, `not-python-proof`,
   `not-tried-budget-spent`, ...). A timeout under heavy load is the machine, not a missing python:
   re-run when it is idle. The other PowerShell hooks and the bash twins do not report this yet.
+- **`CREW_PYTHON` and the bash guards (crew 1.2.109).** The launcher exports the interpreter it
+  already ran as `CREW_PYTHON`; `crew_py`, `crew_py_strict` and `role-write-guard.sh` take it before
+  walking `PATH`, so a guard started by the dispatcher no longer probes every candidate again (the
+  walk was the slow part on Windows under load). It is used only when it is an absolute path
+  (`C:\...` is converted with `cygpath -u`), a regular executable file, named `py`, `python` or
+  `python3.x`; anything else is ignored and the old walk runs. A guard whose helper script is
+  missing (or whose path cannot be resolved) now refuses with `<name>.py is missing or its path could
+  not be resolved` instead of python's `can't find '__main__' module in '<repo>'`.
 
 ## Verify gate says 0 rules ran, or deferred to CI
 
@@ -489,6 +511,26 @@ not errors, and neither blocks the turn:
   Push the branch, or run `/crew:verify --all` to check it here.
 
 A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.
+
+Since crew 1.3.0 the gate also keeps the **hook deadline** (`CREW_HOOK_DEADLINE`, the Stop hook's
+600s limit), because the budget works from estimates and an estimate can be wrong (measured: 862s
+on Windows, killed by the hook, nothing recorded):
+
+- **`verify-gate: deferred: would pass the hook deadline - rules[N] is priced Ms and Ks are left ...
+  - NOT VERIFIED this turn: <command>`**: before each rule, its price is held against the time left
+  less a 60s margin. The rule did not run; the verified marker does not advance. Run
+  `/crew:verify --all` (no deadline) to check it here.
+- **`a previous run was killed at the hook deadline while running <command> ... priced at Ns or
+  more from now on`**: the last run was killed mid-rule. The gate saved what it had measured as it
+  went (`.crew/.verify-gate.timings.json`, `.crew/.verify-gate.log` headed `RUN NOT FINISHED`), and
+  the command in flight is now priced at no less than the time it ran, so Stop defers it by name
+  instead of starting it into the same kill. `/crew:verify --all` measures it again.
+- **`the lock at .crew/.verify-gate.lock names a holder ... whose process no longer exists`**: a
+  killed gate's lock is reclaimed at once instead of backing off until its deadline. A holder that is
+  alive, or that cannot be asked, still makes the next run back off (`NOTHING WAS VERIFIED`).
+- **Scope larger than the branch**: the diff base is the merge-base with `origin/<default>` when that
+  ref exists, else the local branch; the detail log (`--verbose`) names which. A local `main` behind
+  the remote no longer drags merged work into scope.
 
 ## Verify gate prints one line, or says "unchanged since last Stop"
 
@@ -648,6 +690,12 @@ and named by any `git -C <dir>`. That tree must be a worktree of the same reposi
 every literal sha the command names. `.crew/verify.json`, `.work/PROMOTIONS.md` and the
 `.crew/.approved-<env>-<sha>` markers are still read from the session's project directory.
 
+**It is one process (crew 1.3.41).** The gate used to start about forty-five (eight pythons, a dozen `git` probes), which on
+Git Bash took 19-20 s best case and timed out at 20 s; now the shell starts one python and that python decides. It keeps one deadline
+counted from its shell's start, `promote.deadlineSeconds` (null: the hook timeout less 4 s, 16 s of 20). If a deploy still ends in
+"inside the gate's deadline" on a very loaded host, the deadline expired before the gate finished: that is a block, not a timeout.
+A number above the hook timeout less 2 s is clamped; the hook timeout itself is not a setting.
+
 - **"the tree this deploy runs from ('...') is dirty"** names the tree it judged. If that is the
   main checkout while you meant a worktree, run the command there: `cd <worktree> && <deploy>`, or
   enter the worktree first. A dirty main checkout no longer blocks a clean worktree.
@@ -685,7 +733,14 @@ every literal sha the command names. `.crew/verify.json`, `.work/PROMOTIONS.md` 
 - **"has uncommitted changes: it ..."** also fires when the map is deleted or untracked, or edited
   under skip-worktree: the gate compares the file with HEAD's copy, not with `git status`.
 - **".crew/verify.json in the project dir ... has uncommitted changes"**: commit or revert the map;
-  an uncommitted map is not policy.
+  an uncommitted map is not policy. Since crew L-0768 this fires only when the project dir's map is
+  the policy: the deploy runs from the project dir, or the deployed sha carries no map ("carries no
+  committed .crew/verify.json"). A worktree deploy reads the map committed in its own sha.
+- **"the map committed in the deployed sha ... does not declare it"** (L-0768): the project dir's
+  map matched the command to an environment the deployed sha's own map lacks. Deploy a sha whose
+  committed map declares it.
+- **A waiver on the release branch is ignored** (crew before L-0768): older gates read the main
+  checkout's map for a worktree deploy. Update crew; the waiver must be committed in the sha deployed.
 - **"records the short sha X"** (L-0703): a `requires` row counts only with the full 40-character
   sha. Re-run the upstream promotion, or rewrite the row with `git rev-parse HEAD` of the tree that
   passed, after checking it is that commit.
@@ -732,8 +787,18 @@ off** (`guards.profile: off`); turn it on with `{"guards": {"overrides": {"envGu
 - **`secret-read:<form>`:** it prints a credential-named variable. Use it without printing it
   (`curl -H "Authorization: Bearer $TOKEN"`), or test that it is set (`[ -n "$TOKEN" ]`).
 - **`could-not-tell:<why>`:** it could not read the command well enough: an unbalanced quote,
-  `eval "$X"`, `bash -c "$CMD"`, `eval "$(ssh-agent -s)"`, nesting deeper than 8. Write the command
+  `eval "$X"`, `bash -c "$CMD"`, `eval "$(ssh-agent -s)"`, nesting deeper than 8, a globbed or
+  brace-expanded program name (`/usr/bin/en?`, `e{n,}v`), a program from an expansion with a default
+  (`${X:-env}`), inline code that reads a variable whose name is not a literal (`os.environ[name]`),
+  a shell or interpreter left to read its code from stdin (`echo env | bash`, `bash < f`, a bare
+  `python3`), a command substitution
+  inside `(( ))`, or a non-literal path ending in `environ` (`cat $d/environ`). Write the command
   out literally. Under `report` these are logged, not refused.
+- **Refused although the config says `off`, with no python:** the shell fallback reads the config
+  file itself and arms the guard for a file it cannot judge: unreadable, under a directory it cannot
+  enter, not one strict JSON object (a trailing comma, a comment, a bare word), holding a `\u`
+  escape, or with `envGuard` set to anything but `off` anywhere
+  in it, an explicit `null` included. Fix the file, or make python available to the hook.
 - **A `/proc/*/environ` mention** outside a `git commit -m` message, a `grep` pattern or `echo` text
   (a `sed` script, a `find -name`) is refused too: a known false positive.
 
@@ -742,6 +807,19 @@ off** (`guards.profile: off`); turn it on with `{"guards": {"overrides": {"envGu
 `cloud-guard.sh` / `cloud_guard.py`, a `PreToolUse` hook on `Bash` and `PowerShell`. **Ships off**
 (`guards.profile: off`); turn it on with `{"guards": {"overrides": {"cloudGuard": "report"}}}` first to see what
 it *would* refuse before enforcing with `"block"`.
+
+- **A production-labelled environment that is not live yet keeps being refused.** Do not turn the guard
+  off for it: list it. In `.crew/config.json` (the repo file; the machine file cannot supply it)
+  set `{"environments": {"preProduction": {"acme-new": {"reason": "stood up in November, no
+  customer traffic yet", "targets": ["acme-new-web1", "acme-new-db1"]}}}}`. Names and `targets` are
+  exact, the `reason` is 10+ characters, and a malformed entry makes every environment unknown (so
+  the refusals get stricter, not looser: the deny message says which entry is wrong). A listed name
+  is judged non-production for a non-destroying `terraform apply` or deploy dispatch, and
+  `prodDatabase` / `prodServer` let a command through when every production target on it is the
+  name or one of its `targets`. A destroy, an unlisted host on the same line and every other guard
+  are unchanged. Each use prints `crew PRE-PRODUCTION EXEMPTION` on screen and stderr and logs
+  `env:preProduction:<name>` to `.crew/guard.log`. Remove the entry when the environment goes live
+  (`docs/crew/config-rationale.md`, "Pre-production environments").
 
 - **SQL text that merely looks destructive is not blocked.** `DROP`/`TRUNCATE` inside a string
   literal or a comment does not count: the guard strips literals and comments before matching, read
@@ -1169,6 +1247,7 @@ but returns immediately without judging anything; "off" for `verifyGate` means t
 | `guards.overrides.<guard>` for `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive` | both layers, ratchets | `block`/`ask`/`allow` | there is no "off" — `allow` is the most permissive tier, still logged |
 | `guards.overrides.deployWorkflow` | both layers, ratchets | `block`/`ask`/`allow` | `block` is default and floor; `allow` covers nonProd only — production without `environments.prodUnattended` in both layers, and an unknown environment, still ask (denied unattended) |
 | `environments.nonProd` | repo only | list of globs | `[]`: nothing is nonProd, so every terraform apply asks (denied unattended) |
+| `environments.preProduction` | repo only | object: exact name to `reason` (10+ characters) and optional exact `targets` | `{}`: nothing is exempt. A listed environment is judged non-production by the cloud guard (non-destroying apply and dispatch; `prodDatabase`/`prodServer` for its exact targets), with an audit line on screen, stderr and `.crew/guard.log`; a destroy, `block` policies and every unlisted target are unchanged |
 | `environments.prodUnattended` | both layers, ratchets (true only when both say `true`) | bool | `false` in either layer holds it down: production applies and dispatches ask |
 | `guards.overrides.prodDatabase`, `guards.overrides.prodServer` | both layers, ratchets | `none`/`read`/`full` | `none` is both the default and the floor |
 | `scope.mode` | repo only | `off`/`report`/`block`/`auto` | `off`: neither the edit guard nor the completion audit runs |

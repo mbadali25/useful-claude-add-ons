@@ -31,6 +31,9 @@ the payload in, so the two shells cannot disagree.
    `scope.allowCliApproval: true`) -- inside `spec.Touch`. The approval and
    the Touch it is judged against come from ONE read of spec.md
    (`crew_ticket.status`).
+5b. The repo handoff note (`.work/HANDOFF.md`, `.work/HANDOFF-*.md`) is
+   always writable, approval or not: session metadata, not ticket scope
+   (`crew_ticket.is_handoff_path`). Real and named path must both match.
 6. With that SAME approval -- current, from the user's prompt, a `cli`
    receipt only under `scope.allowCliApproval` -- the refresh-artifact paths
    are writable too: `crew_refresh_check.REFRESH_ARTIFACT_PATHS`, the code
@@ -144,12 +147,16 @@ _AUTOPILOT_BARE_RE = re.compile(
     r"[ \t]*python3?(?:[ \t]+-B)?[ \t]+[\w./\\:~${}-]*crew_autopilot\.py[ \t]+approve"
     r"(?:[ \t]+--root[ \t]+\.)?[ \t]+--ticket[ \t]+([A-Z][A-Z0-9]*-[0-9]+)[ \t]*")
 # T-0029: the never-list, refused only when the payload shows a subagent.
+# L-0717: `--grant-round` is the owner's one extra review round, so it joins
+# `--accept` and `--reject` here with every abbreviation back to `--g`.
 _ACCEPT_RE = re.compile(r"review_ledger(?:\.py)?\b[^\n;&|]*--(?:a(?:c(?:c(?:e(?:pt?)?)?)?)?"
-                        r"|rej(?:e(?:ct?)?)?)(?![\w-])", re.IGNORECASE)
+                        r"|rej(?:e(?:ct?)?)?"
+                        r"|g(?:r(?:a(?:n(?:t(?:-(?:r(?:o(?:u(?:nd?)?)?)?)?)?)?)?)?)?)(?![\w-])",
+                        re.IGNORECASE)
 _ADMIN_MERGE_RE = re.compile(r"\bgh\b[^\n;&|]*\bpr\b[^\n;&|]*\bmerge\b[^\n;&|]*--admin\b",
                              re.IGNORECASE)
-LANE_REFUSAL = ("a lane may not accept, reject or admin-merge; that is the owner's, from the "
-                "main session")
+LANE_REFUSAL = ("a lane may not accept, reject, grant a review round or admin-merge; that is "
+                "the owner's, from the main session")
 _HOOK_RE = re.compile(r"approval[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
 # A line continuation: bash's backslash-newline, which the shell deletes (so it
 # can split a word), and PowerShell's backtick-newline, which reads as a space.
@@ -157,6 +164,10 @@ _BASH_CONTINUATION_RE = re.compile(r"\\\r?\n")
 _PS_CONTINUATION_RE = re.compile(r"`\r?\n")
 _DOTGIT_CREW_RE = re.compile(r"\.git[\\/]+crew\b|git-common-dir\b.*\bcrew\b",
                              re.IGNORECASE | re.DOTALL)
+# The double-confirmation store (`crew_humanonly.store_dir`): the receipts that
+# make a `humanOnly.*: false` count. A shell command naming `confirm-config/`
+# beside a writing word is refused like one naming <git-common-dir>/crew/.
+_CONFIRM_STORE_RE = re.compile(r"confirm-config[\\/]", re.IGNORECASE)
 # A redirect (not into /dev/null, $null or another descriptor), or a word
 # that writes files. Reading crew's state -- `cat`, `Get-Content` -- passes.
 _WRITES_RE = re.compile(
@@ -224,6 +235,8 @@ def classify(top, common, ticket, touch, approval, target, base):
         return True, "the ticket's own files"
     if real_rel is not None and all(crew_ticket.is_crew_write_allowed(r) for r in checks):
         return True, "crew bookkeeping"
+    if real_rel is not None and all(crew_ticket.is_handoff_path(r) for r in checks):
+        return True, "the session handoff note"
     if _refresh_artifact(top, real_rel, checks, approval):
         return True, "a refresh artifact of an approved ticket"
     if approval["status"] != "approved":
@@ -252,6 +265,13 @@ def _refresh_artifact(top, real_rel, checks, approval):
     return all(crew_refresh_check.is_refresh_artifact(r, dirs) for r in checks)
 
 
+def confirm_store():
+    """The double-confirmation receipts store, beside the machine config
+    (`crew_humanonly.store_dir()` for the default config path). Spelled here
+    so this guard imports neither `crew_state` nor `crew_humanonly`."""
+    return os.path.join(os.path.expanduser("~"), ".claude", "crew", "confirm-config")
+
+
 def protected(top, state, target, base):
     """True when `target` names crew's approval/ledger state, or bookkeeping
     a Write/Edit may never touch (module docstring, rule 2)."""
@@ -260,6 +280,8 @@ def protected(top, state, target, base):
     named = os.path.normpath(absolute)
     for path in (real, named):
         if state and _under(path, state):
+            return True
+        if _under(path, confirm_store()):
             return True
         rel = _rel(path, top)
         if rel is not None and os.path.normcase(rel) == os.path.normcase(SCOPE_BASE):
@@ -304,10 +326,14 @@ def shell_refusal(command, common, top=None, agent_type=None):
     `top` is the worktree whose autopilot policy judges `crew_autopilot.py
     approve`; without it that command is refused. `agent_type`, when a
     non-empty string, is a subagent: the never-list is refused too. Every
-    reading `_joined` gives is judged; the first refusal wins."""
+    distinct reading `_joined` gives is judged, in its order; the first
+    refusal wins. A command with no continuation reads the same three ways,
+    and judging it once matters (A-0013): an autopilot approve runs
+    `approval_policy`, about fourteen git calls in a lane, and three of those
+    ran past crew_hook's 15 s limit, so the guard failed closed."""
     if not isinstance(command, str):
         return None
-    for reading in _joined(command):
+    for reading in dict.fromkeys(_joined(command)):
         reason = _reading_refusal(reading, command, common, top, agent_type)
         if reason:
             return reason
@@ -333,6 +359,10 @@ def _reading_refusal(command, written, common, top, agent_type=None):
         state and os.path.normcase(state).replace("\\", "/") in folded)
     if names_state and _WRITES_RE.search(command):
         return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
+    store = os.path.normcase(confirm_store()).replace("\\", "/")
+    if (_CONFIRM_STORE_RE.search(command) or store in folded) and _WRITES_RE.search(command):
+        return ("it writes under the confirm-config store, the receipts of the owner's "
+                "double confirmation")
     return None
 
 
@@ -440,6 +470,9 @@ def decide(data):
 
 
 def main():
+    # One process judges one call: remember git's answers for it (see
+    # crew_ticket.memoize_git) instead of asking again at every step.
+    crew_ticket.memoize_git()
     data = _read_payload()
     try:
         code = decide(data)

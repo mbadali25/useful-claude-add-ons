@@ -279,9 +279,14 @@ def load_allowance(fail) -> dict:
 
 
 def _byte_size(path: str) -> int:
-    """File size in bytes, read as bytes: never a decoded character count."""
+    """File size in bytes as committed: read as bytes (never a decoded
+    character count), with each CRLF counted as the LF git stores. The
+    allowance records committed bytes, and a Windows checkout with
+    core.autocrlf=true writes CRLF, one extra byte per line: autopilot.md
+    read 19995 bytes on disk against 19878 in the blob and its 19900
+    allowance, a failure no commit could fix. A lone CR still counts."""
     with open(path, "rb") as handle:
-        return len(handle.read())
+        return len(handle.read().replace(b"\r\n", b"\n"))
 
 
 def check_command_budget(allowance: dict, fail) -> None:
@@ -669,7 +674,9 @@ def check_stale_names(fail) -> None:
                 continue
             for offset, line in enumerate(block):
                 for stale in STALE_NAMES:
-                    if stale in line:
+                    # Not a prefix of a longer name: `/crew:work` is retired,
+                    # `/crew:worktrees` is not.
+                    if re.search(re.escape(stale) + r"(?![A-Za-z0-9_])", line):
                         fail(f"{path_rel}:{start_line + start + offset}: stale name "
                              f"'{stale}' in a crew 1.0 file")
 
@@ -734,7 +741,8 @@ def _guard_names() -> set[str] | None:
         return None
     # `guards.profile` and `guards.overrides` are the two keys the twelve guard
     # names collapsed into (L-0725); `guards.overrides.<guard>` still names a guard.
-    return set(crew_guards.ALL_GUARD_NAMES) | {"profile", "overrides"}
+    # `guards.mass` (crew 1.3.36) is the mass stop's own block, not a guard tier.
+    return set(crew_guards.ALL_GUARD_NAMES) | {"profile", "overrides", "mass"}
 
 
 def check_policy_ids(fail) -> None:

@@ -1289,8 +1289,11 @@ def test_root_is_constant(tmp_path, capsys):
     assert crew_state.main(["--root", str(repo), "--worktree-path", "fix"]) == 0
 
     printed = capsys.readouterr().out.splitlines()
-    assert printed[0] == os.path.abspath(str(tmp_path))
-    assert os.path.dirname(printed[1]) == os.path.abspath(str(tmp_path))
+    # crew 1.3.19: the standard root outside the repo (`crew_worktrees`), under
+    # the isolated HOME, never the checkout's parent and never `worktree.root`.
+    assert os.path.dirname(printed[0]) == os.path.join(os.path.expanduser("~"), ".claude", "crew", "worktrees")
+    assert os.path.dirname(printed[1]) == printed[0]
+    assert os.path.basename(printed[1]) == "fix"
 
 
 def test_worktree_path_names_the_repo_so_two_repos_can_share_a_root(tmp_path):

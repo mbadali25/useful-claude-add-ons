@@ -18,6 +18,8 @@ CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GH = os.path.join(CREW, "hooks", "scripts", "crew_ghdeploy.py")
 GHRULE = os.path.join(CREW, "hooks", "scripts", "_promote_github.py")
 SH = os.path.join(CREW, "hooks", "scripts", "promote-gate.sh")
+GATE = os.path.join(CREW, "hooks", "scripts", "_promote_gate.py")
+MATCH = os.path.join(CREW, "hooks", "scripts", "_promote_match.py")
 PS1 = os.path.join(CREW, "hooks", "scripts", "promote-gate.ps1")
 _G = "tests/test_promote_gate_github.py::"
 APD = os.path.join(CREW, "hooks", "scripts", "crew_autopilot_deploy.py")
@@ -640,18 +642,18 @@ GHDEPLOY_MUTATIONS = (
      '    if kind == "unsure":\n        flags = ',
      '    if kind == "unsure":\n        return []\n        flags = ',
      _G + "test_the_sha_input_must_be_the_reviewed_head[sha-input-non-literal-sh]"),
-    ("promote-gate.sh no longer runs the sha rule", SH,
-     '  [ "$kind" = block ] && block "$tok"\ndone <<GHRULE\n',
-     '  [ "$kind" = block ] && true "$tok"\ndone <<GHRULE\n',
+    ('_promote_gate.py no longer runs the sha rule', GATE,
+     '        self.github_rule(full, tree, policy_blob)\n',
+     '        pass\n',
      _G + "test_the_sha_input_must_be_the_reviewed_head[sha-input-short-sh]"),
     ("promote-gate.ps1 no longer runs the sha rule", PS1,
      "    if ($parts.Count -ge 2 -and $parts[0] -ceq 'block') { Stop-Promotion $parts[1] }\n",
      "    if ($parts.Count -ge 2 -and $parts[0] -ceq 'block') { continue }\n",
      _G + "test_the_sha_input_must_be_the_reviewed_head[sha-input-short-ps1]"),
-    ("promote-gate.sh reads a malformed github as no github", SH,
+    ('_promote_gate.py reads a malformed github as no github', MATCH,
      '            unreadable(f"environment `{name}` in .crew/verify.json has a `github` "\n',
-     '            pass\n        if False:\n            unreadable(f"environment `{name}` in .cre'
-     'w/verify.json has a `github` "\n',
+     ('            pass\n        if False:\n'
+      '            unreadable(f"environment `{name}` in .crew/verify.json has a `github` "\n'),
      _G + 'test_a_malformed_github_value_refuses_the_map[string-sh]'),
     ("promote-gate.ps1 reads a malformed github as no github", PS1,
      "    if (-not $ghOk) {\n",
@@ -667,7 +669,7 @@ GHDEPLOY_MUTATIONS = (
      "    github = get_ci(cfg, \"github\", None) if isinstance(cfg, dict) else None\n    github "
      "= _ABSENT if github is None else github\n",
      _G + "test_the_helper_alone_refuses_a_null_github"),
-    ("promote-gate.sh: github null reads as no github", SH,
+    ('_promote_gate.py: github null reads as no github', MATCH,
      '        has_github = any(fold(k) == fold("github") for k in cfg)\n',
      '        has_github = get_ci(cfg, "github", None) is not None\n',
      _G + "test_a_malformed_github_value_refuses_the_map[null-sh]"),
@@ -700,9 +702,9 @@ GHDEPLOY_MUTATIONS = (
      "            and fold(refs[0]) == fold(ref)):\n        pass\n",
      _G + "test_an_entry_with_another_ref_does_not_stand_in[two-dispatches-sh]"),
     # --- L-0648 must-allow non-vacuity ---------------------------------------
-    ("promote-gate: the sha rule compares against the project dir's HEAD", SH,
-     '--shell bash --full "$FULL" \\\n',
-     '--shell bash --full "$(git rev-parse HEAD)" \\\n',
+    ("promote-gate: the sha rule compares against the project dir's HEAD", GATE,
+     '_promote_github.decide(command, "bash", full, names,',
+     '_promote_github.decide(command, "bash", Tree(self.project).full, names,',
      _G + "test_canonical_dispatch_from_worktree[sh]"),
     ("promote-gate: the sha rule applies to an entry with no shaInput", GHRULE,
      '    problems = [p for p in (_name_problem(e) for e in picked if "shaInput" in e) if p]\n',

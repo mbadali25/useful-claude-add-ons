@@ -40,6 +40,7 @@ import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_fixtures
+from _train_base import TRAIN_BASE, seed_train_base
 import review_ledger  # pylint: disable=wrong-import-order
 import review_patch  # pylint: disable=wrong-import-order
 
@@ -68,7 +69,8 @@ FLAVOURS_DEFAULT = [FLAVOURS[0], pytest.param("ps1", marks=[_NEEDS_PWSH, pytest.
 _POSIX_ONLY = pytest.mark.skipif(os.name == "nt", reason="PATH shims are POSIX scripts")
 
 _ROLLBACK = {"rollback": "none", "rollbackReason": "fixture"}
-_OPT_OUT = {"requireReview": False, "reviewReason": "fixture: the sha rule alone"}
+_OPT_OUT = {"requireReview": False, "reviewReason": "fixture: the sha rule alone",
+            "reviewWaiverSha": TRAIN_BASE}
 
 # The review tests: development and prod need review (the default).
 REVIEW_MAP = {"environments": {
@@ -98,6 +100,7 @@ class Repo:
         _git(self.root, "config", "user.email", "t@example.invalid")
         _git(self.root, "config", "user.name", "T")
         _git(self.root, "config", "commit.gpgsign", "false")
+        seed_train_base(self.root)
         (self.root / ".gitignore").write_text(ignore, encoding="utf-8")
         (self.root / ".crew").mkdir()
         (self.root / ".work").mkdir()
@@ -455,6 +458,91 @@ def test_require_review_not_a_bool_is_refused(flavour, value, tmp_path):
     assert "not true or false" in err
 
 
+# =============================================================================
+# 2b. the waiver binds to the train base (SRL-3312)
+# =============================================================================
+
+def _waiver_map(**waiver):
+    env = {"deploy": "deploy-dev", "requireReview": False, "reviewReason": "fixture", **_ROLLBACK}
+    env.update(waiver)
+    return {"environments": {"development": env}}
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_a_waiver_naming_the_train_base_admits(flavour, tmp_path):
+    repo = Repo(tmp_path, _waiver_map(reviewWaiverSha=TRAIN_BASE))
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    assert code == 0, err
+
+
+def test_a_waiver_naming_the_train_base_is_read_case_insensitively(tmp_path):
+    repo = Repo(tmp_path, _waiver_map(reviewWaiverSha=TRAIN_BASE.upper()))
+    code, err, _ = run_gate("sh", repo, "deploy-dev")
+    assert code == 0, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_a_waiver_without_a_waiver_sha_leaves_review_required(flavour, tmp_path):
+    repo = Repo(tmp_path, _waiver_map())
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    _blocked_for_review(code, err)
+    assert TRAIN_BASE in err, err
+
+
+@pytest.mark.parametrize("flavour", FLAVOURS_DEFAULT)
+def test_a_waiver_naming_another_sha_leaves_review_required(flavour, tmp_path):
+    repo = Repo(tmp_path, _waiver_map(reviewWaiverSha=_fake_other_sha(TRAIN_BASE)))
+    code, err, _ = run_gate(flavour, repo, "deploy-dev")
+    _blocked_for_review(code, err)
+
+
+@pytest.mark.parametrize("bad", [5, ["x"], "", "   ", None, TRAIN_BASE[:7]])
+def test_a_waiver_sha_that_is_not_the_full_base_string_is_refused(bad, tmp_path):
+    repo = Repo(tmp_path, _waiver_map(reviewWaiverSha=bad))
+    code, err, _ = run_gate("sh", repo, "deploy-dev")
+    _blocked_for_review(code, err)
+
+
+def test_control_a_waiver_naming_the_promoted_sha_or_a_later_ancestor_is_refused(tmp_path):
+    """The FAILING control for the rule. The implementation compares the
+    waiver with the merge-base of the promoted sha and the base branch, not with
+    the promoted sha (which the map committed with it cannot name) and not with
+    any ancestor of it: the ticket's own base commit is an ancestor of HEAD that
+    is NOT the train base, and must not satisfy the waiver. Compare the waiver
+    with the promoted sha, or accept any ancestor, and this goes red."""
+    repo = Repo(tmp_path, _waiver_map(reviewWaiverSha=TRAIN_BASE))
+    for wrong in (repo.base, repo.head):
+        repo.write_map(_waiver_map(reviewWaiverSha=wrong))
+        _git(repo.root, "commit", "-qam", f"waiver names {wrong[:7]}, not the base")
+        code, err, _ = run_gate("sh", repo, "deploy-dev")
+        _blocked_for_review(code, err)
+
+
+def test_a_later_commit_on_the_same_base_inherits_the_waiver(tmp_path):
+    """The documented weakness (SRL-3312): the waiver covers the train built on
+    that base, so another commit on the same base is waived too."""
+    repo = Repo(tmp_path, _waiver_map(reviewWaiverSha=TRAIN_BASE))
+    (repo.root / "later.txt").write_text("later\n", encoding="utf-8")
+    _git(repo.root, "add", "-A")
+    _git(repo.root, "commit", "-qm", "a later commit on the same base")
+    code, err, _ = run_gate("sh", repo, "deploy-dev")
+    assert code == 0, err
+
+
+def test_with_no_base_branch_the_base_is_the_first_parent_of_the_promoted_sha(tmp_path):
+    """With no origin/main ref, `main` IS the promoted sha, so its merge-base is
+    itself and the train base is its first parent."""
+    repo = Repo(tmp_path, _waiver_map(reviewWaiverSha=TRAIN_BASE))
+    _git(repo.root, "update-ref", "-d", "refs/remotes/origin/main")
+    code, err, _ = run_gate("sh", repo, "deploy-dev")
+    _blocked_for_review(code, err)  # the first parent is not TRAIN_BASE any more
+    parent = repo.head
+    repo.write_map(_waiver_map(reviewWaiverSha=parent))
+    _git(repo.root, "commit", "-qam", "waiver names the first parent")
+    code, err, _ = run_gate("sh", repo, "deploy-dev")
+    assert code == 0, err
+
+
 def _copy_scripts(tmp_path):
     """A copy of the gate's scripts in the plugin's own layout: the dispatch
     reader (crew 1.2.0) imports crew_config, which loads crew_upgrade from
@@ -521,29 +609,45 @@ def test_a_hung_receipt_check_blocks_within_the_hook_timeout(flavour, tmp_path):
     assert _all_dead(pids), "a hung git outlived the gate"
 
 
+SLOW_STARTS = 5
+
+
 @_POSIX_ONLY
 @pytest.mark.slow
 @pytest.mark.parametrize("flavour", FLAVOURS)
 def test_a_slow_python_plus_a_hung_check_still_ends_inside_the_hook_timeout(flavour, tmp_path):
-    """Default budget: a python that costs 1.8s per start (crew_py's probe and
-    every interpreter the gate runs - seven since crew 1.2.0 added the dispatch
-    and github readers, about 11.5s before the search starts; 2.5s per start
-    spent the whole deadline before the search) plus
-    a receipt check that never ends. The gate's own 16s deadline must still
-    land it inside the 20s hook; a search that took a fixed 12s from its own
-    start would not."""
+    """Default budget: a python that costs 1.8s per start, for the first
+    SLOW_STARTS starts (9s), plus a receipt check that never ends. The gate's
+    own 16s deadline must still land it inside the 20s hook; a search that
+    took a fixed 12s from its own start would not (9s + 12s > 20s).
+
+    The cost is capped, not paid by every start: the sh gate starts python
+    seven times before the hung git runs (measured with a timestamping
+    shim), so 1.8s on each was 12.6s of the 16s, and a loaded runner spent
+    the other 3.4s before the
+    search began - the hung git was never reached and the case proved
+    nothing (CI runs 41099703404, 42319792723, 42411612824; reproduced under
+    CPU pressure). A fixed total keeps the same headroom however many
+    interpreters a later gate adds."""
     repo = Repo(tmp_path, REVIEW_MAP)
     repo.clean_receipt()
     shim_dir, pids = _git_shim(tmp_path)
     real = os.path.realpath(sys.executable)
+    starts = tmp_path / "python.starts"
     for name in ("python3", "python"):
         slow = shim_dir / name
-        slow.write_text(f'#!/bin/sh\nsleep 1.8\nexec "{real}" "$@"\n', encoding="utf-8")
+        slow.write_text(
+            "#!/bin/sh\n"
+            f'n=$(cat "{starts}" 2>/dev/null || echo 0)\n'
+            f'echo $((n + 1)) > "{starts}"\n'
+            f'if [ "$n" -lt {SLOW_STARTS} ]; then sleep 1.8; fi\n'
+            f'exec "{real}" "$@"\n', encoding="utf-8")
         slow.chmod(0o755)
     code, err, took = run_gate(flavour, repo, "deploy-dev",
                                path=f"{shim_dir}{os.pathsep}{os.environ['PATH']}")
     assert code == 2, err
     assert took < 20, took
+    assert starts.exists(), "the slow python never ran: the case proves nothing"
     assert pids.exists(), "the hung git was never reached: the case proves nothing"
     assert _all_dead(pids)
 
@@ -651,14 +755,32 @@ def test_sh_without_python_blocks_when_jq_stalls(tmp_path):
     assert took < 20, took
 
 
-def test_the_helper_refuses_a_map_that_is_not_the_committed_one(tmp_path):
+def test_the_helper_ignores_an_uncommitted_opt_out(tmp_path):
     """The gate refuses an uncommitted map, then the helper reads the map
-    again: an opt-out written in between must not waive review."""
+    again: an opt-out written in between must not waive review. Since L-0768
+    the helper reads the map COMMITTED in the deployed sha, so the working
+    file's opt-out is never read at all."""
     repo = Repo(tmp_path, REVIEW_MAP)
     loose = {"environments": {"development": {"deploy": "deploy-dev", **_ROLLBACK, **_OPT_OUT}}}
     repo.write_map(loose)
     proc = subprocess.run([sys.executable, str(_SCRIPTS / "_promote_review.py"), str(repo.root),
                            repo.head, str(int(time.time()) + 15), "development"],
+                          cwd=str(repo.root), capture_output=True, text=True, check=False,
+                          timeout=60)
+    assert proc.returncode == 0, proc.stderr
+    assert "requires an accepted review" in proc.stdout, proc.stdout
+
+
+def test_the_fallback_refuses_a_map_that_is_not_the_committed_one(tmp_path):
+    """The project-dir fallback (a deployed sha carrying no map) still holds
+    the working file to the project dir's HEAD: an opt-out written after the
+    gate's check must not waive review."""
+    repo = Repo(tmp_path, REVIEW_MAP)
+    nomap = _no_map_commit(repo)
+    loose = {"environments": {"development": {"deploy": "deploy-dev", **_ROLLBACK, **_OPT_OUT}}}
+    repo.write_map(loose)
+    proc = subprocess.run([sys.executable, str(_SCRIPTS / "_promote_review.py"), str(repo.root),
+                           nomap, str(int(time.time()) + 15), "development"],
                           cwd=str(repo.root), capture_output=True, text=True, check=False,
                           timeout=60)
     assert proc.returncode != 0, proc.stdout
@@ -694,17 +816,64 @@ def test_the_helper_never_reads_a_failed_map_probe_as_no_map(tmp_path):
     repo = Repo(tmp_path, REVIEW_MAP)
     repo.write_map({"environments": {"development": {"deploy": "deploy-dev", **_ROLLBACK,
                                                      **_OPT_OUT}}})
-    path = _git_wrapper(tmp_path, 'case "$*" in *ls-tree*) exit 128 ;; esac')
+    path = _git_wrapper(tmp_path, 'case "$*" in *"ls-tree --full-tree"*) exit 128 ;; esac')
     proc, _ = _helper(repo, path=path)
     assert proc.returncode != 0, proc.stdout
-    assert "could not list" in proc.stderr
+    assert "could not list .crew/verify.json in the deployed sha" in proc.stderr
 
 
 @_POSIX_ONLY
 def test_the_helper_bounds_its_map_probes_by_the_deadline(tmp_path):
     repo = Repo(tmp_path, SHA_MAP)
-    path = _git_wrapper(tmp_path, 'case "$*" in *hash-object*) exec sleep 30 ;; esac')
+    path = _git_wrapper(tmp_path, 'case "$*" in *"cat-file blob"*) exec sleep 30 ;; esac')
     proc, took = _helper(repo, deadline_in=3, path=path)
+    assert proc.returncode != 0, proc.stdout
+    assert took < 8, took
+
+
+def _no_map_commit(repo):
+    """A commit carrying no `.crew/verify.json` (the project-dir fallback's
+    case), left in the object store while HEAD keeps its map."""
+    _git(repo.root, "rm", "-q", "--cached", ".crew/verify.json")
+    _git(repo.root, "commit", "-q", "-m", "no map")
+    nomap = repo.head
+    _git(repo.root, "reset", "-q", "--hard", "HEAD~1")
+    return nomap
+
+
+def _helper_at(repo, sha, deadline_in=15, path=None):
+    env = dict(os.environ)
+    env.pop(_BUDGET, None)
+    if path is not None:
+        env["PATH"] = path
+    start = time.monotonic()
+    proc = subprocess.run([sys.executable, str(_SCRIPTS / "_promote_review.py"), str(repo.root),
+                           sha, str(int(time.time()) + deadline_in), "development"],
+                          cwd=str(repo.root), capture_output=True, text=True, check=False,
+                          timeout=60, env=env)
+    return proc, time.monotonic() - start
+
+
+@_POSIX_ONLY
+def test_the_fallback_never_reads_a_failed_head_probe_as_no_map(tmp_path):
+    """The project-dir fallback's probe of HEAD's map failing must not pass
+    for "HEAD has no map", which would let an uncommitted opt-out waive review."""
+    repo = Repo(tmp_path, REVIEW_MAP)
+    nomap = _no_map_commit(repo)
+    repo.write_map({"environments": {"development": {"deploy": "deploy-dev", **_ROLLBACK,
+                                                     **_OPT_OUT}}})
+    path = _git_wrapper(tmp_path, 'case "$*" in *"ls-tree HEAD"*) exit 128 ;; esac')
+    proc, _ = _helper_at(repo, nomap, path=path)
+    assert proc.returncode != 0, proc.stdout
+    assert "could not list HEAD's" in proc.stderr
+
+
+@_POSIX_ONLY
+def test_the_fallback_bounds_its_map_probes_by_the_deadline(tmp_path):
+    repo = Repo(tmp_path, SHA_MAP)
+    nomap = _no_map_commit(repo)
+    path = _git_wrapper(tmp_path, 'case "$*" in *hash-object*) exec sleep 30 ;; esac')
+    proc, took = _helper_at(repo, nomap, deadline_in=3, path=path)
     assert proc.returncode != 0, proc.stdout
     assert took < 8, took
 

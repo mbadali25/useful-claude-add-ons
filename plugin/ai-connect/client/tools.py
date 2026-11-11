@@ -223,24 +223,125 @@ async def peer_list() -> str:
     return "Online peers:\n" + frame_lines("the Bridge's peer list", [_peer_line(peer) for peer in peers])
 
 
+# What a peer reports about itself is shown cut to this many characters
+FIELD_MAX = 200
+PEER_STATES = ("busy", "idle", "waiting")
+# peer_name.SESSION_PREFIX: a label made from a session's name
+_SESSION_PREFIX = "s-"
+
+
+def _clip(text: object) -> str:
+    """A peer-set field cut to FIELD_MAX characters, with a mark when it was cut."""
+    text = str(text)
+    return text if len(text) <= FIELD_MAX else text[:FIELD_MAX] + "..."
+
+
+def _is_session_label(label: str) -> bool:
+    return label[:len(_SESSION_PREFIX)].casefold() == _SESSION_PREFIX and len(label) > len(_SESSION_PREFIX)
+
+
+def describe_name(name: str) -> str:
+    """Machine, project or session of a peer name, for peer_list: "machine laptop, session
+    cross-session". "machine X" alone is a machine's own name; a label that starts with
+    "s-" is a session's name, any other a project's (peer_name.session_label)."""
+    machine, colon, label = name.partition(":")
+    if not colon:
+        return f"machine {machine}"
+    if _is_session_label(label):
+        return f"machine {machine}, session {label[len(_SESSION_PREFIX):]}"
+    return f"machine {machine}, project {label}"
+
+
 def _peer_line(peer: object) -> str:
     if not isinstance(peer, dict):
         return f"- malformed peer entry: {peer!r}"
-    line = f"- {peer.get('name', '?')} [{peer.get('ip', '?')}]"
-    if peer.get("state"):
-        line += f" {peer['state']} since {_safe_bridge_time(peer.get('state_since'))}"
+    name = peer.get("name", "?")
+    line = f"- {name} [{peer.get('ip', '?')}]"
+    if isinstance(name, str) and name != "?":
+        line += f" ({describe_name(name)})"
+    state = peer.get("state")
+    if not state:
+        # Nothing reported (that session has no state hooks): not idle, not busy
+        line += " state unknown"
+    else:
+        # A value this client does not know is shown as received and marked, never read as idle
+        shown = state if state in PEER_STATES else f"unrecognised state {_clip(state)!r}"
+        line += f" {shown} since {_safe_bridge_time(peer.get('state_since'))}"
         if peer.get("state_detail"):
-            line += f" ({peer['state_detail']})"
+            line += f" ({_clip(peer['state_detail'])})"
     if peer.get("status"):
-        line += f" - {peer['status']}"
+        line += f" - {_clip(peer['status'])}"
     return line
+
+
+def _keys(name: str) -> list[str]:
+    """What a peer can be addressed by besides its full name; all compared without case."""
+    machine, colon, label = name.partition(":")
+    if not colon:
+        return []
+    keys = [label]
+    if _is_session_label(label):
+        session = label[len(_SESSION_PREFIX):]
+        keys += [session, f"{machine}:{session}"]
+    return [key.casefold() for key in keys]
+
+
+def resolve_peer(query: str, names: list[str], me: str = "") -> tuple[str, str | None]:
+    """(the name to send to, None), or ("", why not).
+
+    The full name of an online peer, "*", or a machine's name that an online peer
+    belongs to is used as it is, as before. Otherwise the query is a session name
+    ("crew-win-ai"), a label ("s-crew-win-ai", "SRL"), "machine:session", or the start
+    of one of those, compared without case. Exactly one online peer other than this
+    session must match, else it is refused with the candidates named, never guessed.
+    A whole key matching beats a start. A query nothing matches is passed on unchanged
+    (a peer that is offline now still gets the message).
+
+    This only picks among names the Bridge listed. The Bridge still decides who may
+    register and read a name, so it lets no one claim another's.
+    """
+    if query == "*" or query in names:
+        return query, None
+    folded = query.casefold()
+    if not folded or any(name.partition(":")[0] == query for name in names):
+        return query, None
+    others = [name for name in names if name != me]
+    for matches in (
+        lambda name: folded == name.casefold() or folded in _keys(name),
+        lambda name: any(key.startswith(folded) for key in _keys(name) + [name.casefold()]),
+    ):
+        found = [name for name in others if matches(name)]
+        if len(found) == 1:
+            return found[0], None
+        if found:
+            shown = ", ".join(sorted(found))
+            return "", f"'{sanitize(query, True)}' matches more than one online peer: {sanitize(shown, True)}. Use the full name."
+    return query, None
+
+
+async def _resolve(client: object, query: str) -> tuple[str, str | None]:
+    """resolve_peer against the peers online now; the query as it is when the Bridge cannot say."""
+    try:
+        peers = await client.list_peers()  # type: ignore[attr-defined]
+    except (ConnectionError, OSError, TimeoutError):
+        return query, None
+    names = [p["name"] for p in peers if isinstance(p, dict) and isinstance(p.get("name"), str)]
+    return resolve_peer(query, names, client.peer_name)  # type: ignore[attr-defined]
 
 
 async def peer_set_state(state: str, detail: str) -> str:
     client = get_client()
     if not client or not client.connected:
         return NOT_CONNECTED
-    if not await client.set_state(state, detail):
+    detail = str(detail)[:FIELD_MAX]  # bounded here too; the hooks send none
+    try:
+        sent = await client.set_state(state, detail)
+    except Exception:  # pylint: disable=broad-exception-caught
+        # The state hooks call this on every prompt and turn end: whatever goes wrong with the Bridge
+        # is an answer, never an error (an isError result is a hook error in the user's transcript)
+        log.warning("peer_set_state failed", exc_info=True)
+        return "❌ Connection to the Bridge lost."
+    if not sent:
         return "❌ Connection to the Bridge lost."
     return f"State: {state}" + (f" ({detail})" if detail else "")
 
@@ -258,6 +359,9 @@ async def peer_notify_when_idle(peer: str) -> str:
     client = get_client()
     if not client or not client.connected:
         return NOT_CONNECTED
+    peer, refusal = await _resolve(client, peer)
+    if refusal:
+        return f"❌ {refusal}"
     if not await client.notify_when_idle(peer):
         return "❌ Connection to the Bridge lost."
     return f"The Bridge will send you a message once {peer} is done or waits for approval."
@@ -267,6 +371,9 @@ async def peer_send(to: str, message: str, file: str | None, lines: str | None) 
     client = get_client()
     if not client or not client.connected:
         return NOT_CONNECTED
+    to, refusal = await _resolve(client, to)
+    if refusal:
+        return f"❌ Not sent: {refusal}"
     try:
         context = _build_context(file, lines)
     except (OSError, ValueError) as e:
@@ -316,6 +423,9 @@ async def peer_history(peer: str, limit: int) -> str:
     client = get_client()
     if not client or not client.connected:
         return NOT_CONNECTED
+    peer, refusal = await _resolve(client, peer)
+    if refusal:
+        return f"❌ {refusal}"
     messages = await client.get_history(peer, limit)
     if not messages:
         return f"No conversation with '{peer}'."
@@ -354,6 +464,10 @@ async def peer_status() -> str:
         return f"✅ Connected as '{client.peer_name}' to the Bridge Server {bridge}"
     if client.token_refused:
         return f"❌ The Bridge Server {bridge} refused the token: check client.token in config.yaml"
+    if getattr(client, "pin_mismatch", False):
+        return (f"❌ The Bridge Server {bridge} presented a TLS certificate that does not match "
+                "client.bridge_fingerprint: not connected, token not sent. Re-pin (ai-connect pin) if the "
+                "Bridge's certificate was rotated")
     if client.standby:
         return f"⏸️ Standby: another session holds the name '{client.peer_name}' on the Bridge Server {bridge}"
     if client.reconnecting:

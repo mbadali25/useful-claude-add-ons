@@ -94,6 +94,8 @@ import crew_common
 import crew_config_files
 import crew_dropped
 import crew_guard_notes
+import crew_humanonly
+import crew_preprod
 import crew_state
 
 sys.path.insert(0, os.path.join(
@@ -293,6 +295,19 @@ def default_config():
         # treats a repo value as a veto (`false`) or nothing. Declared here so
         # a repo can say `false` and `leaf_paths` can see the key.
         "resume": copy.deepcopy(crew_state.RESUME_DEFAULTS),
+        # crew 1.3.9: the owner's opt-out of the two human-only rules. Both
+        # layers; `crew_humanonly.resolve` is its reader (a tracked repo file
+        # never opts out, a `true` anywhere vetoes, a `false` needs a double
+        # confirmation). Nothing in the hooks acts on it yet.
+        "humanOnly": copy.deepcopy(crew_state.HUMAN_ONLY_DEFAULTS),
+        # crew 1.3.19. Where this repo's git worktrees go: a directory OUTSIDE the
+        # repo. In both layers (a person's habit first, a repo may differ); null is
+        # ~/.claude/crew/worktrees. Read by `crew_worktrees.resolve`.
+        "worktrees": copy.deepcopy(crew_state.WORKTREES_DEFAULTS),
+        # crew 1.3.41. How long the promote gate may run before it gives up and blocks. In
+        # both layers (a slow host is a fact of the machine; a repo may differ); null
+        # derives it from the guard's hook timeout. Read by `_promote_gate.py`.
+        "promote": copy.deepcopy(crew_state.PROMOTE_DEFAULTS),
         "emergency": {
             "standDown": True,
             "maxTtlMinutes": 480,
@@ -542,6 +557,15 @@ def default_global_config():
         # (`crew_resume.settings`): it starts work in this machine's session,
         # so, like `autoClear.enabled`, it is the machine owner's answer.
         "resume": copy.deepcopy(crew_state.RESUME_DEFAULTS),
+        # crew 1.3.9: the owner's human-only opt-out is the owner's answer
+        # first of all, so the machine file is where it normally lives.
+        "humanOnly": copy.deepcopy(crew_state.HUMAN_ONLY_DEFAULTS),
+        # crew 1.3.19: where worktrees go is a habit of the person and the machine
+        # first; a repo file may still name its own.
+        "worktrees": copy.deepcopy(crew_state.WORKTREES_DEFAULTS),
+        # crew 1.3.41: how long the promote gate may run is a fact about THIS machine's
+        # speed first; a repo file may still name its own.
+        "promote": copy.deepcopy(crew_state.PROMOTE_DEFAULTS),
         # How much crew may do about a skill it needs and cannot find. This is
         # a machine fact in the strongest sense on this list: it is the machine
         # owner saying how much they trust crew to run commands HERE. It was
@@ -1289,6 +1313,10 @@ def environments_block_problem(block):
     if "prodUnattended" in block \
             and not isinstance(block["prodUnattended"], bool):
         return "`environments.prodUnattended` is not true or false"
+    if "preProduction" in block:
+        pre_problem = crew_preprod.problem(block["preProduction"])
+        if pre_problem:
+            return pre_problem
     workflows = block.get("workflows", {})
     if not isinstance(workflows, dict):
         return "`environments.workflows` is not an object"
@@ -1735,6 +1763,24 @@ def _maybe_log(root, record, decision, name, policy, target, command,
                       target or "-", flat))
 
 
+def _preproduction_cover(root, command, patterns):
+    """`(names, reasons, first covered target)` when `environments.preProduction`
+    (repo layer, readable) covers EVERY declared production target `command`
+    names, else None. An unreadable or malformed block covers nothing."""
+    path = crew_common.repo_config_file(root, "config.json")
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as handle:
+            block = json.loads(handle.read()).get("environments", {})
+        block = block.get("preProduction", {}) if isinstance(block, dict) else {}
+    except (OSError, ValueError, AttributeError):
+        return None
+    table = crew_preprod.entries(block)
+    matched = crew_preprod.matched_targets(
+        crew_state.production_targets(command), patterns)
+    covered = crew_preprod.covers(matched, table)
+    return None if covered is None else (covered[0], covered[1], matched[0])
+
+
 def guard_decision(root, name, command, path=None, record=False,
                    record_command=False):
     """What crew's command guard must do about `command` under `guards.<name>`.
@@ -1794,18 +1840,34 @@ def guard_decision(root, name, command, path=None, record=False,
         # `prod_decision` a fourth argument, is what let this land without
         # changing `crew_guards.py`.
         declared = production_declaration(root, name)
+        pre = None
         if declared.state in (PROD_DECL_MALFORMED, PROD_DECL_UNREADABLE):
             decision, reason, target, access = _prod_undeclarable(
                 name, policy, command, declared)
         else:
             decision, reason, target, access = crew_state.prod_decision(
                 policy, command, declared.patterns)
+            pre = None
+            if decision == "block":
+                pre = _preproduction_cover(root, command, declared.patterns)
+            if pre is not None:
+                # `environments.preProduction` (crew_preprod): every declared
+                # production target on this line belongs to a listed,
+                # reasoned, not-yet-live environment. The only way a block
+                # becomes an allow here, and it says so in the reason.
+                names, reasons, covered = pre
+                decision, target = "allow", covered
+                reason = crew_preprod.audit_line(
+                    f"guards.{name}", names, reasons)
+                access = access or ""
         # `ask` is not in this vocabulary, so there is nothing to approve and
         # naming a marker file would invite a user to create one that nothing
         # reads.
         out = _guard_row(name, policy, decision, reason, "", target, resolved)
         out["access"] = access
         out["declaration"] = declared.state
+        if pre is not None:
+            out["preProduction"] = {"names": names, "reasons": reasons}
         _maybe_log(root, record, decision, name, policy, target, command,
                    record_command)
         return out
@@ -3223,6 +3285,12 @@ for _key in ("approval", "questions"):
         "self": f"autopilot may {_act} itself on EVERY ticket, whatever its "
                 "risk",
     }
+_APPROVAL_NEEDS = (" -- plan approval also needs autopilot.mode \"plan\" and, as a "
+                   "hand edit of the repo's .crew/config.json by the owner, "
+                   "scope.allowCliApproval true; until both hold autopilot "
+                   "approves nothing (crew_autopilot.py approve names what is unmet)")
+for _value in ("risk", "self"):
+    _PERSONAL_NOTES["autopilot.approval"][_value] += _APPROVAL_NEEDS
 
 
 def personal_widening_note(dotted, after):
@@ -3263,6 +3331,8 @@ def enum_values(dotted):
         return tuple(personal[1])
     if dotted == "pm.authority":
         return tuple(crew_state.AUTHORITIES)
+    if crew_humanonly.is_path(dotted):
+        return crew_humanonly.VALUES
     if dotted == "qa.provider":
         return ("auto",) + tuple(QA_PROVIDERS)
     if dotted == "dev.provider":
@@ -3343,7 +3413,10 @@ def null_means(dotted, layer):
     """What a `null` at `dotted` in `layer` means, or None (refused). Repo:
     a veto-only key's null clears the veto; a machine-settable key inherits
     the machine value (`without_null_shadows`). An open key is unset. An enum
-    key at the machine layer has no null meaning."""
+    key at the machine layer has no null meaning, except a `humanOnly` key,
+    whose null is silent: human-only unless the other layer opts out."""
+    if crew_humanonly.is_path(dotted):
+        return "silent (human-only unless the other layer opts out)"
     if layer == "repo":
         if dotted in REPO_VETO_ONLY:
             return "clears the veto"
@@ -3384,7 +3457,7 @@ def _guard_path_refusal(dotted):
 
 
 def _layer_path_refusal(dotted, layer, value):
-    reason = _guard_path_refusal(dotted)
+    reason = _guard_path_refusal(dotted) or crew_humanonly.write_refusal(dotted, layer, value)
     if reason is not None:
         return reason
     if layer == "machine":
@@ -3720,6 +3793,7 @@ def write_global_config(updates, path=None, expect=None):
         raise GlobalWriteRefused(f"{real_path}: {crew_config_files.os_error_text(exc)}; nothing written (its "
                                  "directory, its lock or the write itself failed at the OS; check the "
                                  "directory)") from exc
+    _revoke_human_only("machine", real_path, out["plan"][1], path)
     return out["plan"]
 
 
@@ -3758,6 +3832,14 @@ REPO_REFUSED = {
     "scope.allowCliApproval": "decides which approvals the scope guard "
                               "accepts; a hand edit by the owner only",
 }
+# The hand-edit hint (#624) is appended, never written into the entry above: that
+# entry's text is a sabotage anchor (sabotage_config.py). The append is guarded: that
+# mutation deletes the entry, and an unguarded `+=` would raise a KeyError at import,
+# so the suite would fail at collection instead of on its own assertion.
+if "scope.allowCliApproval" in REPO_REFUSED:
+    REPO_REFUSED["scope.allowCliApproval"] += (
+        ": in this repo's .crew/config.json set "
+        '"scope": {"allowCliApproval": true}')
 # From the tuple, never written out: their readers consult the machine file
 # only, so a repo value would be a narrowing the run never applies.
 REPO_REFUSED.update({
@@ -3961,7 +4043,51 @@ def write_repo_config(root, updates, global_path=None, expect=None,
     except OSError as exc:
         raise RepoWriteRefused(f"{crew_config_files.os_error_text(exc)}; nothing written (the machine-global "
                                "directory, a lock or the write failed at the OS)") from exc
+    _revoke_human_only("repo", real_path, out["plan"][1], global_path)
     return out["plan"]
+
+
+# --- crew 1.3.9: the human-only opt-out -------------------------------------
+
+
+def _revoke_human_only(layer, path, changes, global_path):
+    """After a crew write sets a `humanOnly` key back (the only values a
+    writer may set there: `true`, or a machine `null` / removal), record a
+    revocation so an earlier double-confirmed `false` at this file no longer
+    counts if a `false` reappears there by any other route."""
+    for change in changes or ():
+        if crew_humanonly.is_path(change.get("path")):
+            crew_humanonly.revoke(layer, path, change["path"], global_path=global_path)
+
+
+def apply_confirmed_optout(layer, dotted, path, expect, global_path=None):
+    """Write `dotted: false` into the config file at `path` (`layer` is
+    `machine` or `repo`). The one writer that bypasses
+    `crew_humanonly.write_refusal`, and only `crew_confirm_config` calls it,
+    once a proposal has its two user-prompt confirmations. `expect` is the
+    file's state digest when the change was proposed: a file that changed
+    since is refused (`crew_config_files.Conflict`), never merged over.
+    Returns `(merged, changes)`."""
+    if not crew_humanonly.is_path(dotted):
+        raise ValueError(f"{dotted} is not a humanOnly key")
+    if layer not in ("machine", "repo"):
+        raise ValueError(f"unknown layer {layer!r}")
+    out = {}
+
+    def _mutate(parsed):
+        global_cfg = None if layer == "machine" else machine_view(global_path)[0]
+        out["plan"] = _plan_on(parsed, {dotted: False}, layer, path, global_cfg)
+        if not out["plan"][1]:
+            return None
+        crew_backup.backup(path)
+        return out["plan"][0]
+    if layer == "machine":
+        crew_config_files.update_json(path, _mutate, expect=expect, create=True)
+    else:
+        lock = crew_config_files.machine_lock(_global_label(global_path))
+        with lock:
+            crew_config_files.update_json(path, _mutate, expect=expect)
+    return out.get("plan", ({}, []))
 
 
 def widening_note(dotted, after):

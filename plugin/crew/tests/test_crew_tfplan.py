@@ -211,7 +211,7 @@ def test_the_guard_reads_what_summarize_writes(repo, tmp_path, monkeypatch):
         _change("aws_instance.a", ["update"])]})
     assert _summarize(repo) == 0
     ctx = {"cd": False, "switch": False, "engaged": True}
-    finding = cloud_guard.scan("bash", f"terraform apply {PLAN}", ctx=ctx)[0]
+    finding = next(f for f in cloud_guard.scan("bash", f"terraform apply {PLAN}", ctx=ctx) if "op" in f.scope)
     got = cloud_guard._tf_destroy(finding.scope, str(repo), str(repo), ctx)  # pylint: disable=protected-access
     assert got[0] == "no", got
     assert got[2]["workspace"] == "staging"
@@ -283,7 +283,7 @@ def test_a_plan_edited_after_summarise_no_longer_matches(repo, tmp_path,
     assert _summarize(repo) == 0
     (repo / PLAN).write_bytes(DATA + b" edited")
     ctx = {"cd": False, "switch": False, "engaged": True}
-    finding = cloud_guard.scan("bash", f"terraform apply {PLAN}", ctx=ctx)[0]
+    finding = next(f for f in cloud_guard.scan("bash", f"terraform apply {PLAN}", ctx=ctx) if "op" in f.scope)
     got = cloud_guard._tf_destroy(finding.scope, str(repo), str(repo), ctx)  # pylint: disable=protected-access
     assert got[0] == "unknown" and "no summary" in got[1]
 
@@ -371,7 +371,7 @@ def test_the_hook_refuses_a_summary_with_no_bound_workspace(repo, tmp_path,
     (repo / ".terraform" / "environment").write_text("staging",
                                                     encoding="utf-8")
     ctx = {"cd": False, "switch": False, "engaged": True}
-    finding = cloud_guard.scan("bash", f"terraform apply {PLAN}", ctx=ctx)[0]
+    finding = next(f for f in cloud_guard.scan("bash", f"terraform apply {PLAN}", ctx=ctx) if "op" in f.scope)
     destroy, _why, sidecar = cloud_guard._tf_destroy(  # pylint: disable=protected-access
         finding.scope, str(repo), str(repo), ctx)
     assert destroy == "no"

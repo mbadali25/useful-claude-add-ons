@@ -138,14 +138,14 @@ reader needs (`skills/bitbucket/scripts/merge_gate.sh:30-35`):
 Be precise about this, because the difference decides how much the sequence above
 can be trusted.
 
-**Enforced by `promote-gate.sh` (`PreToolUse`).** It fires on any command that contains the declared `deploy`
+**Enforced by `promote-gate.sh` (`PreToolUse`), decided in one process (crew 1.3.41).** The shell script starts `_promote_gate.py` once; it keeps one deadline, `promote.deadlineSeconds` (null: the hook timeout less 4 s), so a slow host ends in a named block, never a timeout. It fires on any command that contains the declared `deploy`
 text (a fragment of it is no deploy) - and, on either tool, on a workflow dispatch of a declared deploy workflow in either spelling
 (`gh workflow run` or `gh api .../dispatches`; inputs must fit one environment; a dispatch it cannot read is
 could-not-tell and blocks; a `github` entry's `shaInput` must be given once, as that full sha) - and refuses it unless, for the sha at
 HEAD **of the tree the deploy runs from**: every `requires` environment has an all-pass row in `.work/PROMOTIONS.md`;
 the `rollback` runbook is verified inside 90 days; `requireHuman` has `.crew/.approved-<env>-<sha>`;
 an accepted review receipt covers that tree (or `requireReview: false` with a
-`reviewReason`); and that tree is clean. A row counts only with the full sha.
+`reviewReason` and a `reviewWaiverSha` equal to the train base, SRL-3312); and that tree is clean. A row counts only with the full sha.
 The review evidence proves the tracked tree deployed is one a reviewer was
 shown under a standing receipt - not that paths the bundle left out or ignored
 build output were reviewed, nor who wrote the ledger (local, unauthenticated).
@@ -160,13 +160,13 @@ process runs. A command that changes directory after it starts (a later `cd`,
 `bash -c 'cd ...'`, `env -C`, `make -C`), names two trees, uses `--git-dir`,
 or puts `git` in a form the gate cannot read with certainty (an unlisted global
 option, quoted text) is refused rather than guessed at. Skip-worktree and
-assume-unchanged entries, and a `git status` that fails, are refused too. `.crew/verify.json`, `.work/PROMOTIONS.md`, the approval
-markers and `.crew/.deploy-in-flight` are read from the session's project
-directory on purpose: they are gitignored per-checkout state, so a fresh
-worktree has none of it and a throwaway one could hold a forged copy. For the
-same reason an uncommitted change to the project's `.crew/verify.json` - an edit,
-a deletion, an untracked map, compared with HEAD's copy rather than with
-`git status` - blocks any command the working or the committed map declares.
+assume-unchanged entries, and a `git status` that fails, are refused too. Policy - `requires`, `rollback`,
+`requireHuman`, `shaInput`, `requireReview` - is the `.crew/verify.json` committed in the deployed sha (L-0768),
+what a checkout of that sha reads: a worktree branch's committed waiver counts, the main checkout's does not; a
+matched environment that map lacks, or a map it cannot read, blocks; a sha with no map falls back to the project
+dir's. Which command deploys is matched on the project dir's map, and `.work/PROMOTIONS.md`, the approval markers
+and `.crew/.deploy-in-flight` stay there (gitignored per-checkout state a fresh worktree lacks and a throwaway one
+could forge). An uncommitted map blocks where it is policy: the deploying tree, or the project dir when it is.
 What it cannot see: a deploy script that changes directory itself, and what a
 workflow does with a branch-name ref (`ref=development`).
 

@@ -177,7 +177,116 @@ LAYER_TERMS = (
      "repo may only veto it with `false` (`crew_config.REPO_VETO_ONLY`)."),
     ("machine-only", "read from the global file alone; a repo's own value is "
      "never consulted."),
+    ("human-only opt-out", "a `humanOnly` key (`crew_humanonly`): `false` opts "
+     "out only from the machine file or an untracked repo file, only after the "
+     "owner types `/crew:confirm-config <change_id>` twice, and a `true` in "
+     "either layer vetoes it. Not acted on by any hook yet (see the section "
+     "below)."),
 )
+
+HUMAN_ONLY_SECTION = """\
+## The human-only opt-out (`humanOnly`)
+
+`humanOnly.approve` and `humanOnly.promoteMarker` are the owner's opt-out of
+two human-only rules: `/crew:approve`, and the production promote marker
+`.crew/.approved-<env>-<sha>`. `null` and `true` mean human-only. A `false`
+takes effect only when all of these hold (`crew_humanonly.resolve`):
+
+- it is in the machine file, or in a repo `.crew/config.json` that git does
+  not track (a tracked or committed repo file can never opt out; "could not
+  tell" counts as tracked);
+- neither layer says `true` (a `true` anywhere vetoes, the stricter wins);
+- it was written by a double confirmation: `crew_confirm_config.py propose`
+  records the change and prints an id, and the owner types
+  `/crew:confirm-config <change_id>` twice, in two prompts, within 15 minutes.
+  `crew_config.py --set` and `/crew:config` refuse a `false` (and a repo
+  `null` or removal, which drops a veto); a `false` written by hand reads as
+  human-only.
+
+**What is live (crew 1.3.33).** The prompt hook (`approval_hook.py`) now
+records `/crew:confirm-config <change_id>` from a prompt you typed, so a
+double confirmation can complete, and `humanOnly.approve: false` takes effect
+through ONE decision point, `crew_ticket.cli_approval_allowed`: with an opt-out
+in force a `cli`-recorded approval receipt counts as if `scope.allowCliApproval`
+were `true`, for the scope guard, the Stop audit and every autopilot reader at
+once. It does NOT let the session run `crew_ticket.py approve` (the scope guard
+still refuses that text); the session's route is `crew_autopilot.py approve`,
+which still needs `autopilot.approval` `self` or `risk` and `autopilot.mode`
+`plan` or `backlog`. Anything unclear - the module missing, the resolver
+raising or answering anything but exactly `humanOnly: false` - reads as
+human-only.
+
+**Still human-only (crew 1.3.33).** No hook reads `humanOnly.promoteMarker`:
+the promote marker is human-only by instruction alone, and no hook checks who
+created it. `crew_confirm_config.py resolve` shows what each key would
+resolve to.
+
+**Who can write the receipts.** The double confirmation is recorded only by
+the prompt hook, from your own prompt. The scope guard (when `scope.mode` is
+not `off`) refuses every Write/Edit under `~/.claude/crew/confirm-config/` and
+every shell command that names that store beside a writing word. That is a
+textual tripwire, not a sandbox: a session that sets out to forge a receipt
+(`python -c`, an encoded command, a variable holding the path) still can, and
+`scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
+meaningful only with `scope.mode` `block`.
+
+**`/crew:approve-mass <id>` (crew 1.3.36).** Your yes to ONE blocked mass
+operation, typed by you and recorded by the same prompt hook in
+`<git-common-dir>/crew/mass-approvals/<id>.json`, good for 15 minutes. The
+directory is under `<git-common-dir>/crew/`, which the scope guard refuses to
+every Write/Edit and every shell command naming it, so the session cannot
+write the file. The cloud guard (`cloud_guard.py`) prints the `<id>` with its
+stop and reads the file; see "Mass operations".
+
+## Mass operations (`guards.mass`, crew 1.3.36)
+
+The rule for an autopilot that runs without a human: full automation, except a
+mass delete, a mass create or a mass change, which wait for your yes. The stop
+is armed by `guards.mass.enabled: true` (either layer) or by a double-confirmed
+`humanOnly` opt-out, and by nothing else; it is off by default. It rides on
+the cloud guard's hook, judges every shell command, and works even where
+`guards.cloudGuard` is `off`.
+
+| Limit | Default | Counts |
+|---|---|---|
+| `deleteCount` | 10 | files a command removes |
+| `createCount` | 20 | files it adds |
+| `changeCount` | 30 | files it rewrites |
+
+A count AT the limit stops. The defaults were measured on this repo's own
+history (104 days, 623 merged PRs: a PR adds a median 0 and p95 16 files,
+changes a median 5 and p95 30, deletes none in all but 15).
+`guards.mass.overrides.<files|git|terraform>.<limit>` replaces one limit for
+one kind of command; with nothing set `terraform` is delete 3, create 10,
+change 10 (inferred - the history held no terraform). The machine file sets
+the limits and `guards.mass.exempt`; the repo file can lower a limit and turn
+the stop on (`enabled` is on if either layer says so), so a cloned repo can
+tighten the stop and never loosen yours. `guards.mass.exempt` (machine file
+only) lists repo-relative globs of generated files that never count; node_modules,
+`__pycache__`, `.venv`, caches, `build`, `dist`, `.work` and worktrees
+(including `~/.claude/crew/worktrees/<repo>/<name>`) are always exempt.
+
+What it sees: `rm`, `Remove-Item`, `git clean -f`, `git rm`, `find -delete`,
+`rsync --delete` (delete); `cp`, `mv`, `rsync`, `Copy-Item`, `touch` (create
+and change); `sed -i` and `git reset --hard` / `checkout -- <paths>` /
+`restore` (change); `git commit`, `git push` and `gh pr create`, which count
+the added, deleted and changed files of the commit or of the whole branch
+against its base - so Write and Edit work is counted where it is about to be
+shared; `terraform apply <plan>` (the plan's own changes), `destroy` and
+`apply -auto-approve`; and an unfiltered SQL `DELETE` or `UPDATE`.
+
+A count that cannot be taken - a variable in a path, a path after a `cd`,
+`find -delete`, `xargs rm`, a failed `git`, an unfiltered SQL statement (no
+command text says how many rows it hits) - is "could not tell", and could not
+tell stops. It does NOT see a script (`bash cleanup.sh`, `python -c`,
+`make clean`), an MCP server, the Write and Edit tools before they are
+committed, `tar -x` or `unzip`, `git merge` or `pull`, or many small commands
+each under a limit: a tripwire in front of native permissions, not a sandbox.
+
+A stopped command prints an id. Attended, the stop is an `ask`; unattended
+it is a `deny`. Type `/crew:approve-mass <id>` in the session, then re-run the
+exact command. One id covers every limit that command trips.
+"""
 
 INTRO = """\
 # crew 1.0 - configuration reference
@@ -266,7 +375,7 @@ def render_reference(model=None):
     model = model or Model()
     keys = model.keys
     total, machine, repo_only = model.counts()
-    out = [INTRO, "## Reference (generated)", "",
+    out = [INTRO, HUMAN_ONLY_SECTION, "## Reference (generated)", "",
            f"Generated from the code by `{COMMAND}`. Do not edit by hand:",
            "`python3 scripts/check-marketplace.py` fails when this file is stale.",
            "",
@@ -348,10 +457,12 @@ column:
   only veto it with `false`.
 - A personal key (`crew_guards.PERSONAL_KEYS`) resolves per key to the stricter
   of the layers that set it; a layer that says nothing imposes nothing.
+- A human-only opt-out key (`humanOnly.*`) has its own rules, below.
 - A `null` in the repo file over a machine value inherits the machine value.
 - In a linked git worktree with no config of its own, the main checkout's repo
   config is the one read.
 
+{human_only}
 ## Guard profiles
 
 `guards.profile` is one word for all twelve guards; `guards.overrides.<guard>`
@@ -360,7 +471,9 @@ guard, and the per-guard ratchet then takes the narrower layer. A malformed
 profile or override reads as the guard's floor (`block`, or `none` for the
 production guards), never as `off`. The per-guard keys of earlier versions
 (`guards.<guard>`) are still READ as aliases for `guards.overrides.<guard>`
-until `/crew:migrate` rewrites them, and are never written.
+until `/crew:migrate` rewrites them, and are never written. For `envGuard` an
+explicit `null` (`"guards": {{"envGuard": null}}`) is malformed and reads as `block`; only an
+absent key is `off`. The other guards still read a legacy `null` as absent.
 
 {profile_table}
 
@@ -406,6 +519,7 @@ def render_config_md(model=None):
     out = [CONFIG_PREAMBLE.format(
         command=COMMAND, rationale=RATIONALE, total=total, machine=machine,
         repo_only=repo_only, profile_table=_profile_table(model),
+        human_only=HUMAN_ONLY_SECTION,
         dropped=len(model.dropped.DROPPED), family_table=family_table)]
     for family in keys.FAMILIES:
         members = by_family[family]

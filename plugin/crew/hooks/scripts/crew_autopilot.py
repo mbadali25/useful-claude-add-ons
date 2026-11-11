@@ -264,6 +264,7 @@ import crew_autopilot_fix
 import crew_autopilot_gates
 import crew_autopilot_paste
 import crew_autopilot_questions
+import crew_autopilot_replan
 import crew_autopilot_sleep
 import crew_autopilot_slices
 import crew_autopilot_split
@@ -1272,6 +1273,10 @@ def _auto_replan_decision(root, ticket):  # pylint: disable=too-many-return-stat
                 "successors": successors, "reason": (
                     f"autopilot.maxAutoReplans ({cap}) reached: {used} successor plan(s) "
                     "on the ledger")}
+    no_round = crew_autopilot_replan.no_round_after_successor(data, state, ticket, path)
+    if no_round:
+        return {"cap": cap, "round": number, "used": used, "successors": successors,
+                "reason": no_round}
     return {"allow": True, "cap": cap, "round": number, "used": used, "blocks": blocks,
             "fixes": fixes, "successors": successors, "reason": (
                 f"round {number} is FINDINGS with {len(blocks)} BLOCK and no round "
@@ -1455,7 +1460,7 @@ def _review_phase(top, ticket, evidence, answer, deep=True):
     left = ledger.get("rounds_left", 0)
     if not ok and (not isinstance(left, int) or left < 1):
         return answer("review", True, f"no review round left and no receipt stands "
-                      f"({message}): /crew:review would reserve a third round and put "
+                      f"({message}): /crew:review would find no round left and put "
                       f"{ticket} in NEEDS_REPLAN, which only a new approved plan leaves. A "
                       "human reverts the edit that staled the receipt, or replans", decision="revert-or-replan")
     if latest.get("refunded") is True and not ok:
@@ -1547,7 +1552,7 @@ def next_phase(root, ticket, phases_run=0, last_command=None, max_phases=None,
     `max_phases` and `last_command` are the session's count and the command it
     last ran: reaching the count, or being handed the same command again, stops
     -- except `/crew:review` after a refunded tool-failure round: each run that
-    records a round moves the ledger, `review_ledger.REFUND_LIMIT` per plan
+    records a round moves the ledger, `review_ledger.REFUND_LIMIT` per ticket
     bounds how many are refunded, and `max_phases` bounds one that records none.
     So does a phase that would run while `crew_ticket.resolve_active` -- what
     the scope guard reads -- names another ticket, none, or a broken pointer.
@@ -1791,7 +1796,7 @@ def _unreadable_autopilot(top):
                 "could not be read")
     block = data.get("autopilot") if state == "ok" else None
     if block is not None and not isinstance(block, dict):
-        return f"autopilot in .crew/config.json is {block!r}, not an object"
+        return f"autopilot in .crew/config.json is {block!r:.40}, not an object"
     return _unreadable_machine_autopilot()
 
 
@@ -1813,7 +1818,7 @@ def _unreadable_machine_autopilot():
                 "object, so it could not be read")
     block = data.get("autopilot") if state == "ok" else None
     if not isinstance(block, (dict, type(None))):
-        return f"autopilot in the machine-global config {path} is {block!r}, not an object"
+        return f"autopilot in the machine-global config {path} is {block!r:.40}, not an object"
     return ""
 
 
@@ -2351,23 +2356,36 @@ def _question_hint(top, ticket):
             f"write questions.md, then crew_autopilot.py questions-check --ticket {ticket}")
 
 
+def _unmet_block(top, ticket):
+    """#624's unmet-prerequisite lines for a refusal, or one fixed line when the module is missing
+    or broken: advice only, so the old refusal text and exit 2 stand either way."""
+    try:
+        return importlib.import_module("crew_approval_unmet").unmet_text(top, ticket)
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return ("\n(the list of unmet prerequisites is unavailable; fix the first reason above "
+                "and run approve again)")
+
+
 def approve(root, ticket):
     """(exit code, text). This module's one writing path, only when autopilot
     is armed and `approval_policy` allows: `crew_ticket.approve` with
     `via=autopilot`, which asks `approval_policy` again and then writes
     `approval.json`, `scope-tickets.json` on a ticket's first approval, and,
     for a distinct successor plan under a NEEDS_REPLAN ledger, the ledger
-    moved NEEDS_REPLAN -> IN_REVIEW. Exit 3 when that continuation refused."""
+    moved NEEDS_REPLAN -> IN_REVIEW. Exit 3 when that continuation refused.
+    A refusal lists every unmet prerequisite, not only the first (#624)."""
     crew_ticket.check_ticket(ticket)
     top = crew_ticket.toplevel(root) or os.path.abspath(root)
     human = f"the human types /crew:approve {ticket}"
     if not settings(top)["armed"]:
         cause = _unreadable_autopilot(top)  # T-0027: name the cause, never "mode is not plan"
+        human += _unmet_block(top, ticket)  # #624
         return 2, (f"refused: {cause}, so autopilot could not tell whether it is armed and "
                    f"approves nothing; {human}" if cause else f"refused: autopilot.mode is not "
                    f"plan, so autopilot approves nothing; {human}")
     got = approval_policy(top, ticket)
     if not got["allow"]:
+        human += _unmet_block(top, ticket)  # #624
         return 2, f"refused: {got['reason']}; {human}"
     replan = importlib.import_module("crew_autopilot_replan").replan_check(top, ticket)  # L-0670
     if replan["applies"] and not replan["ok"]:

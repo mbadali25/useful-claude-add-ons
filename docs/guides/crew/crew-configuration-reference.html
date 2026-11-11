@@ -155,10 +155,121 @@ corrupt file from the template plus that profile, as a dry run until
 </ul>
 <p>The key list is <code>plugin/crew/CONFIG.md</code>, which ships with the plugin; the
 reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
+<h2 id="the-human-only-opt-out-humanonly">The Human-Only Opt-Out (<code>humanOnly</code>)</h2>
+<p><code>humanOnly.approve</code> and <code>humanOnly.promoteMarker</code> are the owner's opt-out of
+two human-only rules: <code>/crew:approve</code>, and the production promote marker
+<code>.crew/.approved-&lt;env&gt;-&lt;sha&gt;</code>. <code>null</code> and <code>true</code> mean human-only. A <code>false</code>
+takes effect only when all of these hold (<code>crew_humanonly.resolve</code>):</p>
+<ul>
+<li>it is in the machine file, or in a repo <code>.crew/config.json</code> that git does
+  not track (a tracked or committed repo file can never opt out; "could not
+  tell" counts as tracked);</li>
+<li>neither layer says <code>true</code> (a <code>true</code> anywhere vetoes, the stricter wins);</li>
+<li>it was written by a double confirmation: <code>crew_confirm_config.py propose</code>
+  records the change and prints an id, and the owner types
+  <code>/crew:confirm-config &lt;change_id&gt;</code> twice, in two prompts, within 15 minutes.
+  <code>crew_config.py --set</code> and <code>/crew:config</code> refuse a <code>false</code> (and a repo
+  <code>null</code> or removal, which drops a veto); a <code>false</code> written by hand reads as
+  human-only.</li>
+</ul>
+<p><strong>What is live (crew 1.3.33).</strong> The prompt hook (<code>approval_hook.py</code>) now
+records <code>/crew:confirm-config &lt;change_id&gt;</code> from a prompt you typed, so a
+double confirmation can complete, and <code>humanOnly.approve: false</code> takes effect
+through ONE decision point, <code>crew_ticket.cli_approval_allowed</code>: with an opt-out
+in force a <code>cli</code>-recorded approval receipt counts as if <code>scope.allowCliApproval</code>
+were <code>true</code>, for the scope guard, the Stop audit and every autopilot reader at
+once. It does NOT let the session run <code>crew_ticket.py approve</code> (the scope guard
+still refuses that text); the session's route is <code>crew_autopilot.py approve</code>,
+which still needs <code>autopilot.approval</code> <code>self</code> or <code>risk</code> and <code>autopilot.mode</code>
+<code>plan</code> or <code>backlog</code>. Anything unclear - the module missing, the resolver
+raising or answering anything but exactly <code>humanOnly: false</code> - reads as
+human-only.</p>
+<p><strong>Still human-only (crew 1.3.33).</strong> No hook reads <code>humanOnly.promoteMarker</code>:
+the promote marker is human-only by instruction alone, and no hook checks who
+created it. <code>crew_confirm_config.py resolve</code> shows what each key would
+resolve to.</p>
+<p><strong>Who can write the receipts.</strong> The double confirmation is recorded only by
+the prompt hook, from your own prompt. The scope guard (when <code>scope.mode</code> is
+not <code>off</code>) refuses every Write/Edit under <code>~/.claude/crew/confirm-config/</code> and
+every shell command that names that store beside a writing word. That is a
+textual tripwire, not a sandbox: a session that sets out to forge a receipt
+(<code>python -c</code>, an encoded command, a variable holding the path) still can, and
+<code>scope.mode: off</code> has no tripwire at all. Treat <code>humanOnly</code> opt-outs as
+meaningful only with <code>scope.mode</code> <code>block</code>.</p>
+<p><strong><code>/crew:approve-mass &lt;id&gt;</code> (crew 1.3.36).</strong> Your yes to ONE blocked mass
+operation, typed by you and recorded by the same prompt hook in
+<code>&lt;git-common-dir&gt;/crew/mass-approvals/&lt;id&gt;.json</code>, good for 15 minutes. The
+directory is under <code>&lt;git-common-dir&gt;/crew/</code>, which the scope guard refuses to
+every Write/Edit and every shell command naming it, so the session cannot
+write the file. The cloud guard (<code>cloud_guard.py</code>) prints the <code>&lt;id&gt;</code> with its
+stop and reads the file; see "Mass operations".</p>
+<h2 id="mass-operations-guardsmass-crew-1336">Mass Operations (<code>guards.mass</code>, Crew 1.3.36)</h2>
+<p>The rule for an autopilot that runs without a human: full automation, except a
+mass delete, a mass create or a mass change, which wait for your yes. The stop
+is armed by <code>guards.mass.enabled: true</code> (either layer) or by a double-confirmed
+<code>humanOnly</code> opt-out, and by nothing else; it is off by default. It rides on
+the cloud guard's hook, judges every shell command, and works even where
+<code>guards.cloudGuard</code> is <code>off</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Limit</th>
+<th>Default</th>
+<th>Counts</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>deleteCount</code></td>
+<td>10</td>
+<td>files a command removes</td>
+</tr>
+<tr>
+<td><code>createCount</code></td>
+<td>20</td>
+<td>files it adds</td>
+</tr>
+<tr>
+<td><code>changeCount</code></td>
+<td>30</td>
+<td>files it rewrites</td>
+</tr>
+</tbody>
+</table>
+<p>A count AT the limit stops. The defaults were measured on this repo's own
+history (104 days, 623 merged PRs: a PR adds a median 0 and p95 16 files,
+changes a median 5 and p95 30, deletes none in all but 15).
+<code>guards.mass.overrides.&lt;files|git|terraform&gt;.&lt;limit&gt;</code> replaces one limit for
+one kind of command; with nothing set <code>terraform</code> is delete 3, create 10,
+change 10 (inferred - the history held no terraform). The machine file sets
+the limits and <code>guards.mass.exempt</code>; the repo file can lower a limit and turn
+the stop on (<code>enabled</code> is on if either layer says so), so a cloned repo can
+tighten the stop and never loosen yours. <code>guards.mass.exempt</code> (machine file
+only) lists repo-relative globs of generated files that never count; node_modules,
+<code>__pycache__</code>, <code>.venv</code>, caches, <code>build</code>, <code>dist</code>, <code>.work</code> and worktrees
+(including <code>~/.claude/crew/worktrees/&lt;repo&gt;/&lt;name&gt;</code>) are always exempt.</p>
+<p>What it sees: <code>rm</code>, <code>Remove-Item</code>, <code>git clean -f</code>, <code>git rm</code>, <code>find -delete</code>,
+<code>rsync --delete</code> (delete); <code>cp</code>, <code>mv</code>, <code>rsync</code>, <code>Copy-Item</code>, <code>touch</code> (create
+and change); <code>sed -i</code> and <code>git reset --hard</code> / <code>checkout -- &lt;paths&gt;</code> /
+<code>restore</code> (change); <code>git commit</code>, <code>git push</code> and <code>gh pr create</code>, which count
+the added, deleted and changed files of the commit or of the whole branch
+against its base - so Write and Edit work is counted where it is about to be
+shared; <code>terraform apply &lt;plan&gt;</code> (the plan's own changes), <code>destroy</code> and
+<code>apply -auto-approve</code>; and an unfiltered SQL <code>DELETE</code> or <code>UPDATE</code>.</p>
+<p>A count that cannot be taken - a variable in a path, a path after a <code>cd</code>,
+<code>find -delete</code>, <code>xargs rm</code>, a failed <code>git</code>, an unfiltered SQL statement (no
+command text says how many rows it hits) - is "could not tell", and could not
+tell stops. It does NOT see a script (<code>bash cleanup.sh</code>, <code>python -c</code>,
+<code>make clean</code>), an MCP server, the Write and Edit tools before they are
+committed, <code>tar -x</code> or <code>unzip</code>, <code>git merge</code> or <code>pull</code>, or many small commands
+each under a limit: a tripwire in front of native permissions, not a sandbox.</p>
+<p>A stopped command prints an id. Attended, the stop is an <code>ask</code>; unattended
+it is a <code>deny</code>. Type <code>/crew:approve-mass &lt;id&gt;</code> in the session, then re-run the
+exact command. One id covers every limit that command trips.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>87 keys</strong>: 50 settable in the machine-global file, 37 repo-only.</p>
+<p><strong>98 keys</strong>: 60 settable in the machine-global file, 38 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -175,6 +286,7 @@ reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
 <li><strong>both, stricter wins</strong>: a personal key (<code>crew_guards.PERSONAL_KEYS</code>): either file may set it, and where both do the STRICTER value wins; a layer that is silent (absent or <code>null</code>) imposes nothing, so a machine value is your default for every repo and a repo may only narrow it.</li>
 <li><strong>machine-arms</strong>: only the global file can turn it on (exactly <code>true</code>); a repo may only veto it with <code>false</code> (<code>crew_config.REPO_VETO_ONLY</code>).</li>
 <li><strong>machine-only</strong>: read from the global file alone; a repo's own value is never consulted.</li>
+<li><strong>human-only opt-out</strong>: a <code>humanOnly</code> key (<code>crew_humanonly</code>): <code>false</code> opts out only from the machine file or an untracked repo file, only after the owner types <code>/crew:confirm-config &lt;change_id&gt;</code> twice, and a <code>true</code> in either layer vetoes it. Not acted on by any hook yet (see the section below).</li>
 </ul>
 <h3 id="top-level-keys">Top-Level Keys</h3>
 <table>
@@ -615,6 +727,83 @@ reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
 </tr>
 </tbody>
 </table>
+<h3 id="humanonly"><code>humanOnly</code></h3>
+<table>
+<thead>
+<tr>
+<th width="20%">Setting</th>
+<th width="11%">Layer</th>
+<th>Default</th>
+<th>Values</th>
+<th width="9%">Since</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>humanOnly.approve</code></td>
+<td>human-only opt-out</td>
+<td><code>null</code></td>
+<td><code>null</code> | <code>true</code> | <code>false</code> (checked in <code>plugin/crew/hooks/scripts/crew_humanonly.py</code>)</td>
+<td>1.3.9</td>
+<td>The owner's opt-out of <code>/crew:approve</code> being human-only. null or <code>true</code> keeps it human-only; <code>false</code> opts out only from the machine file or an untracked repo file, only after <code>/crew:confirm-config</code> twice, and a <code>true</code> in either layer vetoes. crew 1.3.27: with an opt-out in force a cli-recorded approval counts (<code>crew_ticket.cli_approval_allowed</code>).</td>
+</tr>
+<tr>
+<td><code>humanOnly.promoteMarker</code></td>
+<td>human-only opt-out</td>
+<td><code>null</code></td>
+<td><code>null</code> | <code>true</code> | <code>false</code> (checked in <code>plugin/crew/hooks/scripts/crew_humanonly.py</code>)</td>
+<td>1.3.9</td>
+<td>The same opt-out for the production promote marker <code>.crew/.approved-&lt;env&gt;-&lt;sha&gt;</code>, under the same rules. crew 1.3.9: no hook acts on it yet, and no hook today checks who created the marker.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="worktrees"><code>Worktrees</code></h3>
+<table>
+<thead>
+<tr>
+<th width="20%">Setting</th>
+<th width="11%">Layer</th>
+<th>Default</th>
+<th>Values</th>
+<th width="9%">Since</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>worktrees.root</code></td>
+<td>both</td>
+<td><code>null</code></td>
+<td>absolute path or null (coerced in <code>plugin/crew/hooks/scripts/crew_worktrees.py</code>)</td>
+<td>1.3.19</td>
+<td>The base directory for this repo's git worktrees, OUTSIDE the repo: they go in <code>&lt;root&gt;/&lt;repo&gt;-&lt;digest&gt;/&lt;name&gt;</code>. null is <code>~/.claude/crew/worktrees</code>; <code>~</code> is expanded, a relative path or one inside the repo is refused (never replaced by the default). It places the worktrees crew places (<code>/crew:emergency</code>, <code>crew_worktrees.py path</code>) and, once the owner registers the opt-in <code>WorktreeCreate</code> hook, the ones Claude Code creates; without the hook Claude Code keeps using <code>.claude/worktrees/</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="promote"><code>Promote</code></h3>
+<table>
+<thead>
+<tr>
+<th width="20%">Setting</th>
+<th width="11%">Layer</th>
+<th>Default</th>
+<th>Values</th>
+<th width="9%">Since</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>promote.deadlineSeconds</code></td>
+<td>both</td>
+<td><code>null</code></td>
+<td>number of seconds, or null (coerced in <code>plugin/crew/hooks/scripts/_promote_gate.py</code>)</td>
+<td>1.3.41</td>
+<td>How many seconds the promote gate (<code>promote-gate.sh</code>) may run, counted from the moment its shell began, before it gives up and blocks (a hook that times out is not a block, so the gate stops itself first). null derives it from the guard's hook timeout less a 4 s margin: 16 s of the 20 s row. A number above the timeout less 2 s (18 s of 20) is clamped to that, so the setting can never let the gate outlive its hook; zero, a negative, a string or a boolean reads as null. The hook timeout is the guard's row in the dispatcher's table, not a setting.</td>
+</tr>
+</tbody>
+</table>
 <h3 id="emergency"><code>Emergency</code></h3>
 <table>
 <thead>
@@ -846,6 +1035,54 @@ reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
 <td>1.2.62</td>
 <td><code>guards.overrides.&lt;guard&gt;</code>: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor.</td>
 </tr>
+<tr>
+<td><code>guards.mass.enabled</code></td>
+<td>both</td>
+<td><code>false</code></td>
+<td>boolean (coerced in <code>plugin/crew/hooks/scripts/crew_mass.py</code>)</td>
+<td>1.3.36</td>
+<td>Turns the mass delete / create / change stop on (it is also armed by a double-confirmed <code>humanOnly</code> opt-out). On if EITHER layer says exactly <code>true</code>; off by default.</td>
+</tr>
+<tr>
+<td><code>guards.mass.deleteCount</code></td>
+<td>both</td>
+<td><code>10</code></td>
+<td>integer (1 or more) (coerced in <code>plugin/crew/hooks/scripts/crew_mass.py</code>)</td>
+<td>1.3.36</td>
+<td>Files a command may delete before it waits for <code>/crew:approve-mass</code>; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default.</td>
+</tr>
+<tr>
+<td><code>guards.mass.createCount</code></td>
+<td>both</td>
+<td><code>20</code></td>
+<td>integer (1 or more) (coerced in <code>plugin/crew/hooks/scripts/crew_mass.py</code>)</td>
+<td>1.3.36</td>
+<td>Files a command may create before it waits for <code>/crew:approve-mass</code>; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default.</td>
+</tr>
+<tr>
+<td><code>guards.mass.changeCount</code></td>
+<td>both</td>
+<td><code>30</code></td>
+<td>integer (1 or more) (coerced in <code>plugin/crew/hooks/scripts/crew_mass.py</code>)</td>
+<td>1.3.36</td>
+<td>Files a command may rewrite before it waits for <code>/crew:approve-mass</code>; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default.</td>
+</tr>
+<tr>
+<td><code>guards.mass.overrides</code></td>
+<td>both</td>
+<td><code>{}</code></td>
+<td>object of category to {deleteCount, createCount, changeCount} (checked in <code>plugin/crew/hooks/scripts/crew_mass.py</code>)</td>
+<td>1.3.36</td>
+<td><code>guards.mass.overrides.&lt;files\|git\|terraform&gt;.&lt;deleteCount\|createCount\|changeCount&gt;</code>: one limit for one kind of command. Unset, <code>terraform</code> is delete 3, create 10, change 10 (inferred, not measured); the others use the limits above.</td>
+</tr>
+<tr>
+<td><code>guards.mass.exempt</code></td>
+<td>both</td>
+<td><code>[]</code></td>
+<td>list of globs (coerced in <code>plugin/crew/hooks/scripts/crew_mass.py</code>)</td>
+<td>1.3.36</td>
+<td>Repo-relative globs of generated files that never count toward a limit, read from the machine file only (a glob can only loosen the stop), on top of the built-in  regenerable directories (node_modules, <strong>pycache</strong>, .venv, caches, build, dist, .work, worktrees).</td>
+</tr>
 </tbody>
 </table>
 <h3 id="production"><code>Production</code></h3>
@@ -955,6 +1192,14 @@ reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
 <td>1.1.16</td>
 <td>Deploy workflow globs, each mapped to its environment or <code>input:&lt;name&gt;</code>.</td>
 </tr>
+<tr>
+<td><code>environments.preProduction</code></td>
+<td>repo</td>
+<td><code>{}</code></td>
+<td>not validated - read by <code>plugin/crew/hooks/scripts/crew_preprod.py</code> (expects object of exact name to {reason, targets})</td>
+<td>1.3.20</td>
+<td>Environments labelled production that are not live yet: exact name -&gt; <code>reason</code> (+ optional exact <code>targets</code>); judged non-production by the cloud guard, with an audit line.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="change"><code>Change</code></h3>
@@ -1030,7 +1275,7 @@ reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
 <td><code>false</code></td>
 <td><code>false</code> | <code>true</code> (checked in <code>plugin/crew/hooks/scripts/crew_ticket.py</code>)</td>
 <td>1.0.25</td>
-<td>Whether a CLI-written approval receipt counts; only exactly <code>true</code> allows it.</td>
+<td>Whether a CLI-written approval receipt counts; only exactly <code>true</code> allows it. <code>autopilot.approval: self</code> or <code>risk</code> needs it, and <code>autopilot.mode: plan</code> or <code>backlog</code>, to approve anything. A hand edit by the owner in the repo's <code>.crew/config.json</code> (<code>"scope": {"allowCliApproval": true}</code>); <code>crew_config.py --set</code> refuses it.</td>
 </tr>
 </tbody>
 </table>
@@ -1077,7 +1322,7 @@ reasoning behind the keys is in <code>docs/crew/config-rationale.md</code>.</p>
 <td><code>"risk"</code></td>
 <td><code>human</code> | <code>risk</code> | <code>self</code>; personal: listed strictest first, the stricter wins</td>
 <td>1.0.42</td>
-<td>Who approves a ticket under autopilot; anything else reads as <code>human</code>.</td>
+<td>Who approves a ticket under autopilot; anything else reads as <code>human</code>. <code>risk</code> and <code>self</code> also need <code>autopilot.mode: plan</code> (or <code>backlog</code>) and <code>scope.allowCliApproval: true</code> (a hand edit of the repo's <code>.crew/config.json</code>); a refused <code>approve</code> lists each unmet one, with its value as written, the file that holds it and, under <code>risk</code>, the spec risk that blocks.</td>
 </tr>
 <tr>
 <td><code>autopilot.questions</code></td>

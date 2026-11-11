@@ -168,7 +168,7 @@ spec yet:</p>
 ticket: ABC-510 (from .work/INDEX.md)
 phase: spec - next: /crew:spec ABC-510
 waiting on: autopilot - run /crew:autopilot to continue
-review: EMPTY, 2 of 2 rounds left
+review: EMPTY, 3 of 3 rounds left
 resume: no .work/HANDOFF.md
 fell through: no .work/HANDOFF.md
 fell through: no active-ticket entry for this worktree
@@ -276,9 +276,19 @@ policies:</p>
 </tbody>
 </table>
 <p>A missing or unreadable risk counts as <code>high</code>. Every <code>autopilot.approval</code> setting also needs
-<code>scope.allowCliApproval: true</code> in <code>.crew/config.json</code>, which defaults to <code>false</code>, so out of the box
-nothing self-approves (<code>autopilot.questions</code> does not need it). Refused:</p>
+<code>autopilot.mode: "plan"</code> (or <code>"backlog"</code>) and <code>scope.allowCliApproval: true</code> in <code>.crew/config.json</code>
+(the latter defaults to <code>false</code> and is a hand edit by the owner), so out of the box nothing
+self-approves (<code>autopilot.questions</code> does not need either). A refusal lists every unmet one at once,
+not only the first, each with its value as written (a typo such as <code>"plna"</code> is shown, with a note that
+it is not a valid value) and capped at 40 characters; a config file that cannot be read is reported as
+"could not be told", never as a value, and names which file (repo or machine-global, with its path) is
+unreadable. Under <code>risk</code>, a spec that is not <code>risk: low</code> (or has no risk header) is listed too, with what
+the policy needs. When the machine-global file also sets <code>autopilot.mode</code> or <code>autopilot.approval</code>, the
+line says which file holds which value and which to edit. It names the file to hand-edit, which in a lane
+worktree is the main checkout's. Refused:</p>
 <pre><code class="language-text">refused: scope.allowCliApproval is not exactly true in .crew/config.json, so no approval but the human's counts; the human types /crew:approve ABC-510
+For autopilot to approve plans itself ALL of these must hold; unmet now:
+  - scope.allowCliApproval is false, needs true (a hand edit of /path/to/repo/.crew/config.json, the file this checkout reads, by the owner: &quot;scope&quot;: {&quot;allowCliApproval&quot;: true}; crew_config.py --set refuses it)
 </code></pre>
 <p>Allowed (<code>"approval": "self"</code> and <code>"scope": {"allowCliApproval": true}</code>):</p>
 <pre><code class="language-text">self-approved ABC-510 under approval=self, risk=low
@@ -326,11 +336,14 @@ and goes back to <code>next</code>. Fixing, accepting and replying on the PR are
 After the ledger says <code>review: auto-accept: eligible</code> on a final round with no BLOCK, autopilot runs
 <code>review_ledger.py --auto-accept</code>, the guarded accept that refuses anything it cannot read cleanly.
 And with <code>autopilot.maxAutoReplans</code> at 1 or more (default 0, off), a final round with a BLOCK that
-has no review round left can be rejected by autopilot itself (<code>crew_autopilot.py auto-reject</code>,
-which prints an <code>auto-rejected</code> line and every BLOCK and FIX line): <code>/crew:plan</code> then writes a
-successor plan that quotes each of them, and the approve phase decides it under
-<code>autopilot.approval</code>. The BLOCK is never accepted; once <code>maxAutoReplans</code> successor plans are on the
-ledger, autopilot stops at <code>auto-replan-cap</code>.</p>
+has no review round left is the case autopilot could reject itself (<code>crew_autopilot.py auto-reject</code>,
+which prints an <code>auto-rejected</code> line and every BLOCK and FIX line), then <code>/crew:plan</code> writes a
+successor plan that quotes each of them, and the approve phase decides it under <code>autopilot.approval</code>.
+Since L-0717 a successor plan does not reopen the ticket's <!-- review-budget-doc -->three-round budget, so autopilot
+refuses that reject while no round would remain and never grants one: the owner's
+<code>review_ledger.py --grant-round</code> is the only way to give the successor a round. The BLOCK is never
+accepted; once <code>maxAutoReplans</code> successor plans are on the ledger, autopilot stops at
+<code>auto-replan-cap</code>.</p>
 <p><strong>Ship.</strong> After <code>/crew:done</code>, <code>crew_autopilot.py ship</code> pushes the branch (never force), opens the PR,
 and under <code>autopilot.ship: merge</code> (the default; <code>pr</code> stops at the open PR) merges it with a merge
 commit only when every required check passes and the review receipt still stands. A <code>high</code>-risk
