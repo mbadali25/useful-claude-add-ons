@@ -577,8 +577,12 @@ if [ "$CI_MODE" -eq 0 ] && [ -f .crew/.deploy-in-flight ]; then
   # An empty field (a blank, CR-only or NUL-bearing marker) would make the
   # pattern match any two adjacent empty cells and clear the marker for a
   # deploy nobody recorded, so it counts as no row (Codex review round 3).
+  # Both fields are matched literally: with its CR trimmed, a marker like
+  # `prod .*` would otherwise be a pattern matching any prod row (round 4).
+  DENV_RE=$(printf '%s' "$DENV" | sed 's/[][\.*^$+?(){}|]/\\&/g')
+  DSHA_RE=$(printf '%s' "$DSHA" | sed 's/[][\.*^$+?(){}|]/\\&/g')
   if [ -n "$DENV" ] && [ -n "$DSHA" ] \
-     && grep -qE "\|[[:space:]]*${DENV}[[:space:]]*\|[[:space:]]*$DSHA" .work/PROMOTIONS.md 2>/dev/null; then
+     && grep -qE "\|[[:space:]]*${DENV_RE}[[:space:]]*\|[[:space:]]*$DSHA_RE" .work/PROMOTIONS.md 2>/dev/null; then
     rm -f .crew/.deploy-in-flight
   else
     echo "DEPLOY NOT RECORDED: $DENV was deployed at $DSHA and .work/PROMOTIONS.md has no row for it." >&2

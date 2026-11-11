@@ -103,6 +103,11 @@ STOP_BUDGET_MUTATIONS = (
      "  if true \\\n",
      "tests/test_verify_gate_baseline.py::"
      "test_a_deploy_marker_with_an_empty_field_is_not_matched_to_blank_cells[cr-only]"),
+    ("a deploy marker's sha is a regex again, so `prod .*` clears any prod row", SH,
+     '|[[:space:]]*$DSHA_RE" .work/PROMOTIONS.md',
+     '|[[:space:]]*$DSHA" .work/PROMOTIONS.md',
+     "tests/test_verify_gate_baseline.py::"
+     "test_a_deploy_marker_is_matched_literally_not_as_a_pattern[dot-star-sha]"),
     # L-0905: the pricing floor, the sync payload and the dead producer.
     ("a cached zero prices a declared rule (the positive floor is dropped)", SH,
      "                            and cached > 0):\n"

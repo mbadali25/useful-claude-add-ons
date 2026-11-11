@@ -481,3 +481,24 @@ def test_a_deploy_marker_with_an_empty_field_is_not_matched_to_blank_cells(tmp_p
     _deploy_marker(root, body, "| prod | | | ok |\n")
     assert _run(root) == 2
     assert (root / ".crew" / ".deploy-in-flight").exists()
+
+
+@pytest.mark.parametrize("body", [b"prod .*\r\n", b"pr.d abc\r\n", b"prod [0-9a-f]\r\n"],
+                         ids=["dot-star-sha", "dot-env", "bracket-sha"])
+def test_a_deploy_marker_is_matched_literally_not_as_a_pattern(tmp_path, body):
+    """MUST-BLOCK: the marker's fields are text, not a regex. With the CR
+    trimmed, `prod .*` would match the row for any prod sha and clear a
+    marker no row records (Codex review round 4)."""
+    root = _repo(tmp_path)
+    _deploy_marker(root, body, "| prod | abc123 | ok |\n")
+    assert _run(root) == 2
+    assert (root / ".crew" / ".deploy-in-flight").exists()
+
+
+def test_a_deploy_marker_with_a_comma_env_list_still_matches_its_row(tmp_path):
+    """MUST-ALLOW: promote-gate writes a multi-environment deploy as `qa,prod`;
+    escaping the fields must not stop that literal text matching its row."""
+    root = _repo(tmp_path)
+    _deploy_marker(root, b"qa,prod abc123\r\n", "| qa,prod | abc123def | ok |\n")
+    assert _run(root) == 0
+    assert not (root / ".crew" / ".deploy-in-flight").exists()
