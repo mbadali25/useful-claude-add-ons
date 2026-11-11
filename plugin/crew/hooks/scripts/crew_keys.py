@@ -257,52 +257,52 @@ KEY_META = {
                                     "guard's row in the dispatcher's table, not a setting.",
                                     "type", since="1.3.41", source=_S + "_promote_gate.py",
                                     type_="number of seconds, or null"),
-    # --- reaper (crew 1.3.48)
+    # --- reaper (crew 1.3.49)
     "reaper.enabled": _row('Whether scheduled and session-start passes of the orphan reaper '
                            '(`crew_reaper.py --scheduled`) do anything. false by default; a manual'
                            ' `crew_reaper.py` run always works and is a dry run unless given '
                            '`--apply`. Read from the machine file only: a repo value is ignored, '
                            'because the reaper ends processes on this machine.',
-                           "type", since="1.3.48", source=_S + "crew_reaper.py",
+                           "type", since="1.3.49", source=_S + "crew_reaper.py",
                            type_='boolean'),
     "reaper.dryRun": _row('When true (the default) a scheduled or session-start pass only logs '
                           'what it would end to `~/.claude/crew/reaper.log`; set false to let it '
                           'end processes. Only a scheduled pass reads it; a manual run ends '
                           'processes only with `--apply`.',
-                          "type", since="1.3.48", source=_S + "crew_reaper.py",
+                          "type", since="1.3.49", source=_S + "crew_reaper.py",
                           type_='boolean'),
     "reaper.spinCpuPct": _row('An orphan is SPINNING when it used at least this percentage of one '
                               "core over the reaper's short sample (5 s) and is older than "
                               '`spinMinAgeMin`. A number above 0; anything else reads as 50.',
-                              "type", since="1.3.48", source=_S + "crew_reaper.py",
+                              "type", since="1.3.49", source=_S + "crew_reaper.py",
                               type_='percent of one core'),
     "reaper.spinMinAgeMin": _row('Minutes an orphan must be running before the spinning rule (and the '
                                  'self-matching `until pgrep -f` watcher rule) may end it. A number '
                                  'above 0; anything else reads as 15.',
-                                 "type", since="1.3.48", source=_S + "crew_reaper.py",
+                                 "type", since="1.3.49", source=_S + "crew_reaper.py",
                                  type_='number of minutes'),
     "reaper.blockedMinAgeHours": _row('Hours an orphan using under 1% of a core must be running before it '
                                       'counts as BLOCKED and may be ended. A number above 0; anything else '
                                       'reads as 2.',
-                                      "type", since="1.3.48", source=_S + "crew_reaper.py",
+                                      "type", since="1.3.49", source=_S + "crew_reaper.py",
                                       type_='number of hours'),
     "reaper.protectedRegex": _row('A regular expression; a process whose image name or command line '
                                   'matches is never ended, it REPLACES the built-in list (claude, node, '
                                   'MCP servers, ai-connect, psmux/tmux, tailscale, language servers, '
                                   'obsidian, perplexity, vscode, wsl/docker/vm, Defender, ssh). null '
                                   'keeps the built-in list; an invalid expression reads as null.',
-                                  "type", since="1.3.48", source=_S + "crew_reaper.py",
+                                  "type", since="1.3.49", source=_S + "crew_reaper.py",
                                   type_='regular expression, or null'),
     "reaper.intervalMin": _row('Minutes between runs of the scheduled task `crew_reaper.py --install-'
                                'task` creates, and the least gap between two session-start passes. A '
                                'whole number from 1; anything else reads as 10. The task is never '
                                'installed by default.',
-                               "type", since="1.3.48", source=_S + "crew_reaper.py",
+                               "type", since="1.3.49", source=_S + "crew_reaper.py",
                                type_='whole number of minutes'),
     "reaper.onSessionStart": _row('When true and `reaper.enabled` is true, the SessionStart context hook '
                                   'starts one detached reaper pass (at most one per `intervalMin`) and '
                                   'does not wait for it. false by default.',
-                                  "type", since="1.3.48", source=_S + "crew_reaper.py",
+                                  "type", since="1.3.49", source=_S + "crew_reaper.py",
                                   type_='boolean'),
     # --- emergency
     "emergency.standDown": _unv("Whether a declared incident may stand gates down; "

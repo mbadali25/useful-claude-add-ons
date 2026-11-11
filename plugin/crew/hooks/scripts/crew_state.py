@@ -569,7 +569,7 @@ WORKTREES_DEFAULTS = {"root": None}
 # `_promote_gate.deadline_seconds` / `_promote_gate.configured_seconds`.
 PROMOTE_DEFAULTS = {"deadlineSeconds": None}
 
-# crew 1.3.48 `reaper.*`: the orphan reaper (crew_reaper.py). Defined there, beside the code that
+# crew 1.3.49 `reaper.*`: the orphan reaper (crew_reaper.py). Defined there, beside the code that
 # reads it, and referenced here. Both layers declare it, but the reader takes the MACHINE file only.
 REAPER_DEFAULTS = crew_reaper.DEFAULTS
 
