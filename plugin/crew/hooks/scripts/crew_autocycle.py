@@ -636,7 +636,8 @@ def _parse_ps(line):
 # Windows pid, verified), plus `_windows_crossing` below.
 _WIN_TTY = 1
 # comm of a process that can host a Claude Code CLI on Windows when the tty
-# check is unavailable: refuse to type through one between the session and the pane.
+# check is unavailable: refuse to type through one between the session and the
+# pane. Real Windows tables only: a stubbed table keeps its own tty values.
 _WIN_HOST_COMMS = frozenset({"node", "bun"})
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _TH32CS_SNAPPROCESS = 0x2
@@ -670,8 +671,7 @@ def _win_snapshot():
         if handle in (None, wintypes.HANDLE(-1).value):
             return None
         try:
-            entry = _Entry()
-            entry.dwSize = ctypes.sizeof(_Entry)
+            entry = _Entry(dwSize=ctypes.sizeof(_Entry))
             out = {}
             more = kernel.Process32FirstW(handle, ctypes.byref(entry))
             while more:
@@ -715,8 +715,8 @@ def _proc_windows(pid):
     """{ppid, tty, start, comm} for `pid` on native Windows, or None when it is
     not running or the snapshot cannot be taken. A parent that started AFTER
     its child is a reused pid, not the parent: the child is then a root."""
-    table = _win_snapshot()
-    if table is None or pid not in table:
+    table = _win_snapshot() or {}
+    if pid not in table:
         return None
     ppid, exe = table[pid]
     start = _win_start(pid)
@@ -756,8 +756,8 @@ def _gone(pid):
         entry = table.get(pid)
         return isinstance(entry, dict) and entry.get("gone") is True
     if _native_windows():
-        snapshot = _win_snapshot()
-        return snapshot is not None and pid not in snapshot
+        snapshot = _win_snapshot() or {}
+        return bool(snapshot) and pid not in snapshot
     return os.path.isdir("/proc") and not os.path.exists(f"/proc/{pid}")
 
 
@@ -1010,7 +1010,7 @@ def prove_target(owner, got, env=None):
     def crossing(pid):
         comm = (_proc(pid) or {}).get("comm") or ""
         return (pid in others or comm == CLAUDE_COMM or bool(_VERSIONED_COMM.fullmatch(comm))
-                or (_native_windows() and comm.lower() in _WIN_HOST_COMMS))
+                or (_native_windows() and _proc_stub()[0] is None and comm.lower() in _WIN_HOST_COMMS))
 
     if got["method"] == "tmux":
         pane_pid = got.get("pane_pid") or 0

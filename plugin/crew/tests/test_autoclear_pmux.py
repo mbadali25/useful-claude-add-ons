@@ -43,7 +43,7 @@ def _windows(monkeypatch, snapshot, starts=None, tmp_path=None):
     monkeypatch.setattr(ac, "_native_windows", lambda: True)
     monkeypatch.setattr(ac, "_read_stat", lambda pid: None)
     monkeypatch.setattr(ac, "_win_snapshot", lambda: snapshot)
-    monkeypatch.setattr(ac, "_win_start", lambda pid: starts.get(pid))
+    monkeypatch.setattr(ac, "_win_start", starts.get)
     monkeypatch.setattr(ac, "_start_pid", lambda: HOOK)
     if tmp_path is not None:
         monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "cfg"))

@@ -783,12 +783,13 @@ and gets nothing created.
   operator's own machine.
 - **`method: "notify"` is the native-Windows default**, resolving from
   `"auto"` "on native Windows with no tmux pane"
-  (`crew_autoclear_setup.py:223-232`; `plugin/crew/hooks/scripts/crew_autocycle.py:1033`).
+  (`crew_autoclear_setup.py:223-232`; `plugin/crew/hooks/scripts/crew_autocycle.py:1141`).
   **The `sendkeys` method was removed in L-0727 slice 3 (L-0867, crew 1.2.61)** together with
   `auto-clear.ps1`, which held the Windows keystroke sender. DERIVED: `resolve_method` refuses it with
-  `SENDKEYS_REMOVED` (`plugin/crew/hooks/scripts/crew_autocycle.py:1037-1038`, constant at `:1030`),
+  `SENDKEYS_REMOVED` (`plugin/crew/hooks/scripts/crew_autocycle.py:1145-1146`, constant at `:1138`),
   and `write_autoclear_method` raises `PermissionError` for it whatever the caller says
   (`plugin/crew/hooks/scripts/crew_autoclear_setup.py:249-250`, note at `:119-120`).
+- **A pmux (psmux) pane on native Windows types the clear (crew 1.3.41).** DERIVED: `auto` picks `tmux` when `$TMUX` is set and `tmux` is on PATH (`crew_autocycle.py:1148`), which a psmux pane satisfies (psmux sets `$TMUX`/`$TMUX_PANE`; `display-message -p '#{pane_pid}'` is a Windows pid). What failed was `_proc`, which had no source on native Windows; `_proc_windows` (`crew_autocycle.py:714`) now reads the Win32 process snapshot (`_win_snapshot` `:650`) with the `GetProcessTimes` FILETIME as `start` (equal to the record's `procStart`, measured) and the stand-in console tty `_WIN_TTY` (`:637`). JUDGEMENT: the tty comparison in `prove_target` therefore proves nothing on Windows, so `crossing` also refuses a `node`/`bun` host between the session and the pane. `auto-clear.sh` exports `MSYS_NO_PATHCONV=1` before `tmux send-keys` (clear sender and resume sender) because Git Bash rewrote `/clear` for the native exe. Tests: `plugin/crew/tests/test_autoclear_pmux.py`.
 - `crew_autoclear_setup.py` is called from **three** places, confirmed by
   grep and by reading each call site: `/crew:init`'s Phase 1
   (`plugin/crew/skills/crew-setup/phases.md:190-207`, `plan-windows-default`),
@@ -811,7 +812,7 @@ and gets nothing created.
 Read in full on `T-0016-build` after review round 1 and the merge of main ce235468; line citations taken with `grep -n` there.
 
 - DERIVED: the bash flavour binds after `resolve_method` and before returning `send`
-  (`plugin/crew/hooks/scripts/crew_autocycle.py:1007`, `bind_to_session` at `:1184`), so the
+  (`plugin/crew/hooks/scripts/crew_autocycle.py:1247`, `bind_to_session` at `:1292`), so the
   sender's sent-marker claim (`plugin/crew/hooks/scripts/auto-clear.sh`, after the plan) never
   runs for a binding refusal. `session_owner` (`crew_autocycle.py:719`) walks the hook's chain to
   the first `${CLAUDE_CONFIG_DIR:-~/.claude}/sessions/<pid>.json` whose `sessionId` and
@@ -853,7 +854,7 @@ citations taken with `grep -n` there.
   is the constant `crew_state.CONTEXT_AUTO_WRAP_UP`, so the shell has a single text left; the
   `context-watch.ps1` flavour was deleted in L-0867), and in the marker branch escalates a failed
   check once through `.crew/.wrapup-escalated-<key>` (`context-watch.sh:70`, check at `:523-524`);
-  the CLI verbs are `_wrapup_cli` (`crew_autocycle.py:1339`).
+  the CLI verbs are `_wrapup_cli` (`crew_autocycle.py:1447`).
   SessionStart removes the claim (`plugin/crew/hooks/scripts/handoff-read.sh:20`; `handoff-read.ps1` deleted in L-0867).
 - DERIVED: `/crew:handoff --wrap-up` (`plugin/crew/commands/handoff.md:39`) is the one wrap-up
   procedure; `/crew:autopilot`'s context-watch step names it (`plugin/crew/commands/autopilot.md:106`).
