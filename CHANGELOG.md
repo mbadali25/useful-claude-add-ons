@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.41: re-bump only - interim number on the no-coauthored branch before main reached 1.3.41 with the promote gate change; the change is recorded under crew 1.3.42
 - crew 1.3.37: re-bump only - interim land number on the verify-gate stale-marker branch (commit dca02a908) before main reached 1.3.38; the change is recorded under crew 1.3.39
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.34; the change is recorded under crew 1.3.36
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.33; the change is recorded under crew 1.3.34
@@ -60,6 +61,14 @@ read entries under any `## [` heading.
 - **Docs.** `CONFIG.md`, the configuration reference and guide, the troubleshooting guide, `README.md`, `commands/config.md`, `crew-setup`'s template copy, `PLUGINS.md`, the code map, the budgets. DOCX and PDF were not rebuilt (LibreOffice runs on Linux only).
 - **Tests.** `test_promote_gate_one_process.py`: a decision corpus recorded from the old gate and replayed on the new one, the spawn count, the deadline rules and the fast path; `promote_gate_mutations.py` holds the sabotage cases, and `test_promote_fast.py` moved into it.
 
+
+### Changed — crew 1.3.42: crew never adds or instructs a `Co-Authored-By` trailer
+
+- **Summary.** `crew` 1.3.42: crew no longer takes "no side" on commit attribution; it never adds a `Co-Authored-By` trailer or a "Generated with Claude Code" line to a commit or PR body, and the briefs it sends to developers and wave lanes say so.
+- **Cause.** Owner order 2026-11-10. crew's own files never told anyone to add the trailer (verified by grep over `plugin/crew`), but `practices.md` said crew "takes no side" and left it to the owner's instructions, so a harness reminder asking for the trailer could still reach a dispatched developer or a wave lane unopposed.
+- **Fix.** `commands/implement.md` step 2 tells the developer to add no `Co-Authored-By` trailer and no "Generated with Claude Code" line; the wave lane prompt (`crew_wave.lane_prompt`, step 2) says the same; `practices.md` states the owner rule and where the harness default is switched off (`attribution` in Claude Code's own settings.json, which crew never edits).
+- **Not changed.** No config key, value or default; `git.forbiddenTrailers` stays `[]` by default and its refusal wiring stays a separate harness change. The `Claude-Session:` trailer is untouched.
+- **Tests.** `test_crew_no_coauthored.py`: no command, skill, agent or template line may name the trailer without a forbid word, the lane prompt and `implement.md` carry the rule, and the detector flags an instruction to add it.
 
 ### Fixed — crew 1.3.40: a verified marker written with CRLF is no longer ignored by the Stop gate
 

@@ -1139,7 +1139,8 @@ def lane_prompt(root, slug, ticket, resume_round=None):
         f"--ticket {ticket}. If it prints `refused:` or exits non-zero, go to step 8 with "
         "--state failed and that reason.",
         f"2. implement: follow /crew:implement {ticket} here up to, not including, its last "
-        "step's `/crew:review` (step 5 is the only review); commit on the ticket branch.",
+        "step's `/crew:review` (step 5 is the only review); commit on the ticket branch, with "
+        "no Co-Authored-By trailer and no 'Generated with Claude Code' line.",
         bump,
         f"4. refresh: {script('crew_refresh_check.py')} --root . --ticket {ticket}; run each "
         "refresh command it names (/crew:onboard --refresh, /crew:diagram refresh, graphify "
