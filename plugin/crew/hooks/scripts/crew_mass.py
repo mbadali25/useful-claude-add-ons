@@ -136,6 +136,7 @@ class Spec:
         self.category = category
         self.shared = shared if shared is not None else {}
         self.extra = extra
+        self.why = ""  # the real reason a count came back None (set where it fails)
 
 
 # --- settings -----------------------------------------------------------------------
@@ -382,7 +383,23 @@ def _classify_git(args, fed):
     if fed:
         for spec in out:
             spec.unknown = True
+    if _redirects_repo(args):
+        for spec in out:
+            spec.unknown = True
+            spec.why = ("--git-dir / --work-tree points git at a repository other than the "
+                        "working directory's, and that is not read here")
     return out
+
+
+def _redirects_repo(args):
+    """True when git's own options (before the subcommand) move it to another
+    repository: `--git-dir[=]`, `--work-tree[=]`."""
+    for arg in args:
+        if not arg.startswith("-"):
+            return False
+        if arg.split("=", 1)[0] in ("--git-dir", "--work-tree"):
+            return True
+    return False
 
 
 def _classify_gh(args):
@@ -591,6 +608,30 @@ def _resolve(operand, cwd, cd):
     return os.path.join(cwd, operand), True
 
 
+_LEADING_CD_RE = re.compile(
+    r"""^\s*(?:cd|pushd|set-location|sl)\s+(?:-(?:literalpath|path)\s+)?"""
+    r"""(?:"(?P<dq>[^"$`*?\[\]]+)"|'(?P<sq>[^']+)'|(?P<bare>[^\s"'$`*?\[\]{}()<>|;&]+))"""
+    r"""\s*(?:&&|;)\s*(?P<rest>\S.*)$""", re.IGNORECASE | re.DOTALL)
+
+
+def leading_cd(command, cwd, shell="bash"):
+    """`(directory, rest)` when `command` is exactly `cd <literal> && <rest>`
+    (or `;`) and the literal names an existing directory, else None. This is
+    the one cd whose destination is certain: it comes first, so the whole of
+    `rest` runs there. The caller must still check `rest` moves nowhere else.
+    A backslash path is read only for PowerShell (in bash it is an escape)."""
+    match = _LEADING_CD_RE.match(command or "")
+    if not match or not cwd:
+        return None
+    target = match.group("dq") or match.group("sq") or match.group("bare")
+    if target is None or (shell != "powershell" and "\\" in (match.group("bare") or "")):
+        return None
+    path, ok = _resolve(target, cwd, False)
+    if not ok or not os.path.isdir(path):
+        return None
+    return os.path.normpath(path), match.group("rest")
+
+
 def _exempt_at(path, cwd, globs=()):
     """`exempt` for an absolute `path`, judged by its part below `cwd` when it
     is inside it: a repo that itself sits under a `build` or `worktrees`
@@ -690,49 +731,81 @@ def _git_lines(spec, cwd, cd, runner):
     if override:
         base, ok = _resolve(override, cwd, cd)
         if not ok:
+            spec.why = (f"the directory `{override}` is not a literal path this process can "
+                        "open (a variable, a substitution, a POSIX path it cannot map, or "
+                        "relative to an earlier cd)")
             return None
     elif cd or not cwd:
+        spec.why = ("a cd/pushd/Set-Location in this command moves the shell, so which "
+                    "repository it runs in is not known" if cd else
+                    "the hook payload names no working directory")
         return None
     run = runner or subprocess.run
     if "@BASE@...HEAD" in argv:
-        found = _base(base, run)
+        found = _base(base, run, spec)
         if found is None:
             return None
         argv = [found + "...HEAD" if a == "@BASE@...HEAD" else a for a in argv]
     key = (base, tuple(argv))
     if key in spec.shared:
         return spec.shared[key]
-    try:
-        done = run(["git", "-C", base] + argv, capture_output=True, text=True,
-                   timeout=GIT_TIMEOUT, check=False, stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.SubprocessError):
-        spec.shared[key] = None
-        return None
-    lines = None if done.returncode != 0 else [ln for ln in done.stdout.splitlines() if ln.strip()]
+    done, why = _git(run, base, argv)
+    lines = None
+    if done is None:
+        spec.why = why
+    else:
+        lines = [ln for ln in done.stdout.splitlines() if ln.strip()]
     spec.shared[key] = lines
     return lines
 
 
-def _base(cwd, run):
+def _git(run, cwd, argv):
+    """`(completed, "")` for a git command that exited 0, else `(None, why)`
+    with the real reason: git missing, timed out, or its exit code and stderr."""
+    label = "git " + " ".join(argv[:2])
+    try:
+        done = run(["git", "-C", cwd] + list(argv), capture_output=True, text=True,
+                   timeout=GIT_TIMEOUT, check=False, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return None, f"`{label}` timed out after {GIT_TIMEOUT}s"
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, f"`{label}` could not run ({type(exc).__name__}: {exc})"
+    if done.returncode != 0:
+        err = " ".join((done.stderr or "").split())[:200]
+        return None, f"`{label}` exited {done.returncode}" + (f": {err}" if err else "")
+    return done, ""
+
+
+def _base(cwd, run, spec=None):
     """The ref a branch's PR would be measured against: `origin/HEAD`, else
-    `origin/main`, else `origin/master`; on that branch itself, its upstream."""
+    `origin/main`, else `origin/master`, else the branch's upstream; on that
+    branch itself, its upstream. None, with `spec.why` set, when there is none."""
     def one(*argv):
-        try:
-            done = run(["git", "-C", cwd] + list(argv), capture_output=True, text=True,
-                       timeout=GIT_TIMEOUT, check=False, stdin=subprocess.DEVNULL)
-        except (OSError, subprocess.SubprocessError):
-            return None
-        out = done.stdout.strip() if done.returncode == 0 else ""
+        done, _why = _git(run, cwd, list(argv))
+        out = done.stdout.strip() if done is not None else ""
         return out or None
+
+    def fail(why):
+        if spec is not None:
+            spec.why = why
     head = one("symbolic-ref", "--short", "-q", "HEAD")
     candidates = [one("symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"),
                   "origin/main", "origin/master"]
     for ref in candidates:
         if ref and one("rev-parse", "--verify", "-q", ref + "^{commit}"):
             if head and ref.split("/", 1)[-1] == head:
-                return one("rev-parse", "--abbrev-ref", "@{u}") or None
+                return one("rev-parse", "--abbrev-ref", "@{u}") or fail(
+                    f"the branch `{head}` is its own base `{ref}` and has no upstream to "
+                    "measure against")
             return ref
-    return None
+    upstream = one("rev-parse", "--abbrev-ref", "@{u}")
+    if upstream:
+        return upstream
+    done, why = _git(run, cwd, ["rev-parse", "--git-dir"])
+    if done is None:
+        return fail(f"{why}: this is not a git repository, or git cannot read it")
+    return fail("no base to measure the branch against: origin/HEAD, origin/main, "
+                "origin/master and the branch's upstream are all missing")
 
 
 def count_git(spec, cwd, cd, runner=None, globs=()):
@@ -801,17 +874,27 @@ def count_terraform(spec, cwd, cd, runner=None):
 
 
 def count(spec, cwd, cd, runner=None, globs=()):
-    """Files `spec` would touch, or None for "could not tell"."""
+    """Files `spec` would touch, or None for "could not tell" (`spec.why` then
+    says which of the ways it could not)."""
     if spec.unknown:
+        spec.why = spec.why or ("its list is built at run time (xargs, find -delete, rsync "
+                                "--delete, an unfiltered SQL statement or a terraform apply "
+                                "with no plan file), so no count exists to read")
         return None
     if spec.kind == "tf-plan":
-        return count_terraform(spec, cwd, cd, runner)
-    if spec.git:
-        return count_git(spec, cwd, cd, runner, globs)
-    if spec.kind == "copy":
+        found = count_terraform(spec, cwd, cd, runner)
+    elif spec.git:
+        found = count_git(spec, cwd, cd, runner, globs)
+    elif spec.kind == "copy":
         pair = count_copy(spec, cwd, cd, globs)
-        return None if pair is None else pair[0 if spec.rule == MASS_CREATE else 1]
-    return count_operands(spec, cwd, cd, globs)
+        found = None if pair is None else pair[0 if spec.rule == MASS_CREATE else 1]
+    else:
+        found = count_operands(spec, cwd, cd, globs)
+    if found is None and not spec.why:
+        spec.why = ("a path in it is not a literal this process can open (a variable or "
+                    "substitution, a POSIX path it cannot map, or a path relative to an "
+                    "earlier cd), or the terraform plan could not be read")
+    return found
 
 
 # --- the verdict --------------------------------------------------------------------
@@ -858,20 +941,25 @@ def tampers(command):
 def repo_paths(cwd, runner=None):
     """`(toplevel, <git-common-dir>/crew)` for `cwd`, or `(None, None)` outside
     git or when git cannot tell. Called only once a command is already mass."""
-    run = runner or subprocess.run
-    try:
-        done = run(["git", "-C", cwd or ".", "rev-parse", "--show-toplevel",
-                    "--git-common-dir"], capture_output=True, text=True, timeout=GIT_TIMEOUT,
-                   check=False, stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.SubprocessError):
-        return None, None
+    top, state_dir, _why = repo_paths_why(cwd, runner)
+    return top, state_dir
+
+
+def repo_paths_why(cwd, runner=None):
+    """`repo_paths` plus the reason: `(toplevel, state_dir, "")` or
+    `(None, None, "git rev-parse failed: ...")`."""
+    done, why = _git(runner or subprocess.run, cwd or ".",
+                     ["rev-parse", "--show-toplevel", "--git-common-dir"])
+    if done is None:
+        return None, None, "git rev-parse failed: " + why
     lines = done.stdout.splitlines()
-    if done.returncode != 0 or len(lines) != 2 or not all(ln.strip() for ln in lines):
-        return None, None
+    if len(lines) != 2 or not all(ln.strip() for ln in lines):
+        return None, None, ("git rev-parse failed: expected a toplevel and a common dir, got "
+                            f"{len(lines)} line(s)")
     top, common = lines[0].strip(), lines[1].strip()
     if not os.path.isabs(common):
         common = os.path.join(cwd or ".", common)
-    return os.path.realpath(top), os.path.join(os.path.realpath(common), "crew")
+    return os.path.realpath(top), os.path.join(os.path.realpath(common), "crew"), ""
 
 
 def judge(spec, text, cwd, cd, alone, config=None, runner=None, now=None, repo=None):
@@ -885,9 +973,14 @@ def judge(spec, text, cwd, cd, alone, config=None, runner=None, now=None, repo=N
     touched = count(spec, cwd, cd, runner, config["exempt"])
     if touched is not None and touched < limit:
         return None
-    toplevel, state_dir = repo if repo is not None else repo_paths(cwd, runner)
+    repo_why = ""
+    if repo is not None:
+        toplevel, state_dir = repo
+    else:
+        toplevel, state_dir, repo_why = repo_paths_why(cwd, runner)
     mass_id = approval_id(text, toplevel)
-    shown = "could not be counted" if touched is None else f"is {touched} files"
+    shown = (f"could not be counted ({spec.why})" if touched is None
+             else f"is {touched} files")
     policy = f"mass:{spec.rule}:{'unknown' if touched is None else touched}"
     if live_approval(state_dir, mass_id, now):
         return "allow", "", policy + ":approved"
@@ -897,6 +990,8 @@ def judge(spec, text, cwd, cd, alone, config=None, runner=None, now=None, repo=N
               f"(the stop is at {limit}, guards.mass.{key}). To approve THIS command once, "
               f"type `/crew:approve-mass {mass_id}` yourself in this session, then re-run it "
               f"(good for {MASS_APPROVAL_TTL // 60} minutes). Command: {shown_text}")
+    if repo_why:
+        reason += f" -- note: no approval can be recorded for it here ({repo_why})"
     if alone:
         reason += " -- nobody is attending to answer, so it is refused."
         return "deny", reason, policy

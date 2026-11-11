@@ -3174,13 +3174,29 @@ def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
         rows.append(("massApprovals", "-", "deny", command))
         reasons.append(reason_t)
         worst = "deny"
+    mass_cwd, mass_cd = envs["cwd"] or root, bool((ctx or {}).get("cd"))
+    if mass_armed and mass_cd:
+        # `cd DIR && git commit`: a first, literal cd names where the rest runs
+        # (the count is then taken there); any other move stays "could not tell".
+        moved = crew_mass.leading_cd(command, mass_cwd, shell)
+        if moved:
+            sub = {"cd": False, "switch": False, "engaged": envs["engaged"],
+                   "dispatch": dict(envs)}
+            scan(shell, moved[1], ctx=sub)
+            if not sub["cd"]:
+                mass_cwd, mass_cd = moved[0], False
+    git_env = bool(re.search(r"\bGIT_(?:DIR|WORK_TREE)\b", command or "", re.IGNORECASE))
     for finding in findings:
         if finding.rule in crew_mass.RULES:
             if not mass_armed:
                 continue
+            if git_env and finding.scope["mass"].git:
+                finding.scope["mass"].unknown = True
+                finding.scope["mass"].why = ("GIT_DIR / GIT_WORK_TREE in the command points git "
+                                             "at a repository other than the working "
+                                             "directory's, and that is not read here")
             verdict = crew_mass.judge(finding.scope["mass"], finding.text,
-                                      envs["cwd"] or root, bool((ctx or {}).get("cd")), alone,
-                                      mass)
+                                      mass_cwd, mass_cd, alone, mass)
             if verdict is None:
                 continue
             decision, reason, policy = verdict

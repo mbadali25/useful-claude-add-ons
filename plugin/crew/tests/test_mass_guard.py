@@ -396,6 +396,163 @@ def test_push_without_a_base_it_can_find_is_unknown_and_stops(repo):
     _stops(repo, "git push origin HEAD", crew_mass.MASS_DELETE)
 
 
+# --- git: a linked worktree, fileMode / CRLF, no upstream, a leading cd ------------
+# The tss-ai report (crew 1.3.42): a plain `git commit` / `git push` in a linked
+# worktree on a slash-named branch was refused as "could not be counted" with 2
+# files staged. Verified cause: the command was `cd <worktree> && git commit`,
+# and any cd made the count unknowable. A first literal cd is now followed.
+
+def _worktree(repo, tmp_path, branch="docs/tss-ai-records"):
+    """A LINKED worktree of `repo` on a slash-named branch (its .git is a file),
+    with origin/main = the commit it branched from."""
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    wt = tmp_path / "wt-records"
+    git(repo, "worktree", "add", "-q", "-b", branch, str(wt))
+    assert (wt / ".git").is_file()
+    return wt
+
+
+def _in(repo, cwd, command):
+    """`evaluate` for `command` run with the Bash tool's cwd at `cwd`."""
+    command = command.replace("\\", "/")
+    mass = crew_mass.settings(str(repo))
+    return cloud_guard.evaluate(str(repo), "Bash", command, {"cwd": str(cwd)}, "block", mass)
+
+
+def _stopped_in(repo, cwd, command, rule):
+    result = _in(repo, cwd, command)
+    assert rule in _mass_rows(result) and result["decision"] in ("ask", "deny"), result
+    return result
+
+
+def _clean_in(repo, cwd, command):
+    result = _in(repo, cwd, command)
+    assert not _mass_rows(result) and result["decision"] == "allow", result
+
+
+@pytest.mark.parametrize("config", [(), (("core.fileMode", "false"),), (("core.autocrlf", "true"),),
+                                    (("core.fileMode", "false"), ("core.autocrlf", "true"))])
+def test_a_linked_worktree_counts_two_staged_files_as_two(repo, tmp_path, config):
+    for key, value in config:
+        git(repo, "config", key, value)
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    _clean_in(repo, wt, "git commit -m x")
+    _clean_in(repo, wt, "git commit -am x")
+    _clean_in(repo, wt, "git push origin docs/tss-ai-records")
+    _clean_in(repo, wt, "gh pr create --fill")
+
+
+def test_a_linked_worktree_still_stops_a_real_mass_delete_create_and_change(repo, tmp_path):
+    _fill(repo / "e", 11, text="one")
+    _commit_all(repo)
+    wt = _worktree(repo, tmp_path)
+    for item in (wt / "e").iterdir():
+        item.unlink()
+    git(wt, "add", "-A")
+    _stopped_in(repo, wt, "git commit -m x", crew_mass.MASS_DELETE)
+    git(wt, "reset", "-q", "--hard")
+    _fill(wt / "n", 20)
+    git(wt, "add", "-A")
+    _stopped_in(repo, wt, "git commit -m x", crew_mass.MASS_CREATE)
+
+
+def test_a_branch_with_no_upstream_is_counted_against_the_base(repo, tmp_path):
+    wt = _worktree(repo, tmp_path)
+    assert not git(wt, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}", check=False)
+    _fill(wt / "q", 3)
+    git(wt, "add", "-A")
+    git(wt, "commit", "-qm", "small")
+    _clean_in(repo, wt, "git push origin HEAD")
+    _fill(wt / "r", 25)
+    git(wt, "add", "-A")
+    git(wt, "commit", "-qm", "big")
+    _stopped_in(repo, wt, "git push origin HEAD", crew_mass.MASS_CREATE)
+
+
+def test_a_leading_cd_into_a_worktree_is_followed(repo, tmp_path):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    for form in (f"cd {wt} && git commit -m x", f'cd "{wt}" && git commit -m x',
+                 f"cd '{wt}'; git push origin HEAD"):
+        _clean_in(repo, repo, form)
+    git(wt, "reset", "-q")
+    _fill(wt / "docs", 22)
+    git(wt, "add", "-A")
+    _stopped_in(repo, repo, f"cd {wt} && git commit -m x", crew_mass.MASS_CREATE)
+
+
+@pytest.mark.parametrize("prefix", ["git --git-dir={g}", "git --git-dir {g}",
+                                    "git --work-tree={w}", "GIT_DIR={g} git"])
+def test_a_command_that_redirects_git_to_another_repo_is_could_not_tell(repo, tmp_path, prefix):
+    wt = _worktree(repo, tmp_path)
+    _fill(wt / "docs", 2)
+    git(wt, "add", "-A")
+    command = prefix.format(g=repo / ".git", w=wt) + " commit -m x"
+    result = _stopped_in(repo, repo, command, crew_mass.MASS_DELETE)
+    assert "not read here" in result["reason"], result["reason"]
+
+
+@pytest.mark.parametrize("make", [
+    lambda wt, other: f"cd {wt}/missing && git commit -m x",       # not a directory
+    lambda wt, other: f"cd {wt} && cd {other} && git commit -m x",  # a second move
+    lambda wt, other: f"git commit -m x && cd {wt}",                # the cd is not first
+    lambda wt, other: f"cd {wt} || git commit -m x",                # not guaranteed
+    lambda wt, other: "cd $DEST && git commit -m x",                # not a literal
+    lambda wt, other: f"cd {wt} && (cd {other}; git commit -m x)",  # moved again
+])
+def test_any_other_cd_is_still_could_not_tell_and_stops(repo, tmp_path, make):
+    wt = _worktree(repo, tmp_path)
+    other = tmp_path / "other"
+    other.mkdir()
+    result = _stopped_in(repo, repo, make(wt, other), crew_mass.MASS_DELETE)
+    assert "could not be counted" in result["reason"]
+    assert "moves the shell" in result["reason"]
+
+
+def test_the_refusal_names_the_real_reason(repo, tmp_path):
+    wt = _worktree(repo, tmp_path)
+    result = _stopped_in(repo, repo, f"cd {wt} && cd {tmp_path} && git commit -m x",
+                         crew_mass.MASS_CREATE)
+    assert "moves the shell" in result["reason"]
+    # git itself failing is quoted, not summarised
+    outside = tmp_path / "not-a-repo"
+    outside.mkdir()
+    result = _stopped_in(repo, repo, f"git -C {outside} commit -m x", crew_mass.MASS_DELETE)
+    assert "`git diff --name-status` exited" in result["reason"], result["reason"]
+    # no base at all: the missing refs are named
+    _fill(repo / "q", 5)
+    _commit_all(repo)
+    result = _stopped_in(repo, repo, "git push origin HEAD", crew_mass.MASS_DELETE)
+    assert "origin/main" in result["reason"] and "upstream" in result["reason"]
+
+
+def test_git_timing_out_or_missing_is_named(repo):
+    def timeout(argv, **_kwargs):
+        raise crew_mass.subprocess.TimeoutExpired(argv, 15)
+
+    def missing(argv, **_kwargs):
+        raise FileNotFoundError("git")
+    for runner, words in ((timeout, "timed out after"), (missing, "could not run")):
+        spec = crew_mass.classify("git", ["commit"], "bash", False)[0]
+        assert crew_mass.count(spec, str(repo), False, runner) is None
+        assert words in spec.why, spec.why
+
+
+def test_a_repo_that_git_cannot_read_says_rev_parse_failed(repo):
+    def broken(argv, **_kwargs):
+        class Done:  # pylint: disable=too-few-public-methods
+            returncode, stdout, stderr = 128, "", "fatal: not a git repository\n"
+        return Done()
+    spec = crew_mass.classify("git", ["commit"], "bash", False)[0]
+    verdict = crew_mass.judge(spec, "git commit", str(repo), False, False,
+                              crew_mass.settings(str(repo)), runner=broken)
+    assert verdict[0] == "ask" and "git rev-parse failed:" in verdict[1] \
+        and "exited 128" in verdict[1], verdict
+
+
 # --- terraform and sql ------------------------------------------------------------
 
 def _plan_runner(actions):

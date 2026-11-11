@@ -51,6 +51,14 @@ read entries under any `## [` heading.
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Fixed — crew 1.3.44: the mass guard follows a leading `cd` and says why it could not count
+
+- **Summary.** `crew` 1.3.44: a commit or push in a linked worktree that starts with `cd <dir> && ...` is counted instead of refused as "could not be counted", and every refusal now names its real reason.
+- **Cause (verified).** The mass-change counter failed closed on any `cd` or `pushd` in the same Bash command, because it could not know which directory git would run in. A `cd <worktree> && git commit` is the normal way to work in a linked worktree, so it was always refused. Plain commit and push in linked worktrees counted fine. The refusal text also gave one generic reason whatever had gone wrong.
+- **Fix.** `crew_mass.leading_cd` follows a first literal `cd DIR && ...` to an existing directory and counts there. Any other shape still means "could not tell" and stops: a cd into a missing directory, a second cd, `git commit && cd X`, `cd X || git commit`, `cd $DEST`, `(cd ..; git commit)`. `--git-dir`, `--work-tree`, `GIT_DIR` and `GIT_WORK_TREE` are now "could not tell" with a reason ("not read here"). The base ref falls back to the upstream when `origin/main` is absent. Thresholds, the approval and the fail-closed rule are unchanged.
+- **Tests.** `test_mass_guard.py` gains the linked-worktree and refusal-reason cases; `mass_mutations.py` gains the matching sabotage cases (23 mass mutations, all red).
+- Docs: none - the guard's behaviour is described by its refusal text; no config key, value or default changed.
+
 ### Fixed — crew 1.3.41: the promote gate decides in one process and keeps its own, configurable deadline
 
 - **Summary.** `crew` 1.3.41: a deploy-shaped command no longer times the promote gate out on Git Bash; the gate now runs as one python process instead of about forty-five, and a new `promote.deadlineSeconds` setting controls how long it may run.
