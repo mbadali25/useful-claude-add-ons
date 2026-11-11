@@ -12,7 +12,7 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 ### Fixed — crew 1.3.23: the trust-seam venv fails loudly and no longer re-adds the user site (L-0888)
 
 - **Summary.** `crew` 1.3.23: no behaviour change; the test-only trust seam venv now fails the suite naming itself when its interpreter will not start, and keeps the gate's `-E -s` isolation.
-- The warm-up launch of the seam venv's `python3.exe` is checked: a non-zero exit, stderr or a timeout fails the session fixture naming the venv, instead of leaving later gate tests to report UNTRUSTED. A venv without a site-packages directory fails instead of skipping.
+- The warm-up launch of the seam venv's `python3.exe` is checked: a non-zero exit (the failure message carries its stderr) or a timeout fails the session fixture naming the venv; stderr on a zero exit is not checked, instead of leaving later gate tests to report UNTRUSTED. A venv without a site-packages directory fails instead of skipping.
 - The `.pth` chain adds a parent's site dirs only when the parent is itself a venv, and never the user site.
 - `test_trust_seam_venv.py` pins that `crew_py_strict` returns the seam interpreter and that the user site is not on its `sys.path` under `-E -s`.
 
