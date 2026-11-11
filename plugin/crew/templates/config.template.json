@@ -79,6 +79,9 @@
   "worktrees": {
     "root": null
   },
+  "promote": {
+    "deadlineSeconds": null
+  },
   "emergency": {
     "standDown": true,
     "maxTtlMinutes": 480
