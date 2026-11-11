@@ -29,6 +29,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 
 import crew_common
 
@@ -234,17 +235,163 @@ def _is_launcher(path):
 _ABSOLUTE = re.compile(r"^(?:[A-Za-z]:)?[/\\]")
 
 
-def _runs_clean(path, runner):
-    """True when `path -c 'exit 0'` exits 0 within STRICT_RUN_TIMEOUT; a run that cannot start,
-    times out or exits otherwise is False (never believed unrun)."""
+class Problem(str):
+    """Why strict resolution found no usable Git Bash. A `str`, so every caller that
+    prints it is unchanged; `.kind` is the part that must not collapse:
+    `absent` (no candidate file exists: install Git), `unknown` (a file exists but its
+    self-test timed out or hit a resource failure: could not tell, retry) or `broken`
+    (a file exists and ran, and it failed the self-test for good)."""
+
+    kind = "absent"
+
+    def __new__(cls, text, kind="absent"):
+        item = super().__new__(cls, text)
+        item.kind = kind
+        return item
+
+
+# A self-test that dies of load, not of a defect: bash.exe's own fork/allocation failures.
+_LOAD_STDERR = re.compile(r"fork:|Resource temporarily unavailable|Cannot allocate memory|"
+                          r"couldn't create signal pipe|\bsig_send\b|add_item", re.IGNORECASE)
+
+
+def _self_test(path, runner, timeout):
+    """`("ok"|"unknown"|"broken", detail)` for `path -c 'exit 0'`. A timeout, a program that
+    cannot start (an antivirus or indexer lock) and a bash that died on a fork or allocation
+    failure are `unknown`: they say the host is busy, not that Git Bash is wrong. Only a
+    run that exits non-zero with nothing about load on stderr is `broken`."""
     try:
-        code, _, _ = runner([path, "-c", "exit 0"], STRICT_RUN_TIMEOUT)
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return code == 0
+        code, _, err = runner([path, "-c", "exit 0"], timeout)
+    except subprocess.TimeoutExpired:
+        return "unknown", f"did not answer within {timeout}s"
+    except (OSError, subprocess.SubprocessError) as exc:
+        return "unknown", f"could not be started ({exc})"
+    if code == 0:
+        return "ok", ""
+    text = decode(err).strip()
+    first = text.splitlines()[0] if text else "no output"
+    if _LOAD_STDERR.search(text):
+        return "unknown", f"exited {code} on a resource failure ({first})"
+    return "broken", f"exited {code} ({first})"
 
 
-def resolve_gitbash(runner=None, exists=os.path.isfile, which=shutil.which, strict=False):
+def lkg_path():
+    """`~/.claude/crew/gitbash-lkg.json`, beside shell-route.json: which Git Bash last
+    answered is a fact about this machine, never about a repo."""
+    import crew_state
+    return os.path.join(os.path.dirname(crew_state.GLOBAL_CONFIG_PATH), "gitbash-lkg.json")
+
+
+def _fingerprint(path, stat=os.stat):
+    """`{path, size, mtime}` of the file, or None when it cannot be stat'ed."""
+    try:
+        info = stat(path)
+    except OSError:
+        return None
+    return {"path": path, "size": int(info.st_size), "mtime": int(info.st_mtime)}
+
+
+class LastKnownGood:
+    """The Git Bash that last passed its self-test, trusted again only while the file's
+    size and mtime still match what was recorded. Nothing here raises: a record that
+    cannot be read is absent, one that cannot be written is skipped."""
+
+    def __init__(self, path=None, stat=os.stat):
+        self._path = path
+        self._stat = stat
+
+    def _load(self):
+        try:
+            with open(self._path or lkg_path(), encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def recorded(self):
+        """The recorded absolute path, or None. Not yet validated against the file."""
+        path = self._load().get("path")
+        return path if isinstance(path, str) and _ABSOLUTE.match(path) else None
+
+    def trusts(self, path):
+        """True when the record names `path` and the file is what passed."""
+        now = _fingerprint(path, self._stat)
+        data = self._load()
+        return bool(now) and all(data.get(key) == now[key] for key in now)
+
+    def remember(self, path):
+        """Record `path` after a clean self-test; atomic, LF, skipped when unchanged."""
+        now = _fingerprint(path, self._stat)
+        if not now or self.trusts(path):
+            return
+        text = json.dumps(now, indent=2, sort_keys=True) + "\n"
+        target = self._path or lkg_path()
+        tmp = f"{target}.{os.getpid()}.tmp"
+        try:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(text)
+            os.replace(tmp, target)
+        except OSError:
+            pass
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+
+
+# The self-test attempts: (timeout s, pause before it s). Only `unknown` is retried. Worst case
+# 5 + 6 + 6 + 0.9 s of the dispatcher's 25 s; the first attempt keeps the old 5 s bound, and a
+# trusted last-known-good answers right after it.
+STRICT_ATTEMPTS = ((STRICT_RUN_TIMEOUT, 0.0), (6, 0.3), (6, 0.6))
+# A subprocess timeout can overrun its bound while the child tree is killed; stop retrying once
+# this much wall time is spent so the dispatcher's own deadline still holds.
+STRICT_BUDGET = 14.0
+
+
+def _strict_candidate(path, runner, sleep, lkg):
+    """`(state, detail)` for one existing candidate: `ok`, `unknown` or `broken`. After an
+    unanswered self-test the last known good is trusted while the file is unchanged (it
+    passed before); with none, the self-test is retried with backoff. A pass is remembered."""
+    state, detail = "unknown", ""
+    started = time.monotonic()
+    for number, (timeout, pause) in enumerate(STRICT_ATTEMPTS, start=1):
+        if number > 1 and time.monotonic() - started + pause + timeout > STRICT_BUDGET:
+            detail += f" (no time left for attempt {number})"
+            break
+        if pause:
+            sleep(pause)
+        state, detail = _self_test(path, runner, timeout)
+        if state == "ok":
+            if lkg:
+                lkg.remember(path)
+            return "ok", ""
+        if state == "broken":
+            return state, detail
+        if lkg and lkg.trusts(path):
+            return "ok", f"self-test unanswered ({detail}), trusted from the last known good"
+        detail = f"{detail} (attempt {number} of {len(STRICT_ATTEMPTS)})"
+    return state, detail
+
+
+def _strict_problem(tried, trouble, git_unknown):
+    """The reason strict resolution failed, with the kind that survives into the message."""
+    seen = ", ".join(tried)
+    if not trouble:
+        if git_unknown:
+            return Problem("Git Bash not found (strict; tried " + seen + "), but `git --exec-path` "
+                           "did not answer, so another install location could not be checked", "unknown")
+        return Problem("Git Bash not found (strict; tried " + seen + ")", "absent")
+    unknown = [item for item in trouble if item[0] == "unknown"]
+    if unknown:
+        return Problem("Git Bash exists but did not answer: " + "; ".join(
+            f"{path} {detail}" for _, path, detail in trouble)
+            + "; the host looks overloaded. This says nothing about Git being installed", "unknown")
+    return Problem("Git Bash exists but failed its self-test: " + "; ".join(
+        f"{path} {detail}" for _, path, detail in trouble), "broken")
+
+
+def resolve_gitbash(runner=None, exists=os.path.isfile, which=shutil.which, strict=False,
+                    sleep=time.sleep, lkg=None):
     """Git Bash's `bash.exe`, absolutely: three levels above `git --exec-path`
     plus `bin/bash.exe`, else the default install path, else a PATH `bash`
     that is not WSL's launcher. `(None, reason)` naming every path tried.
@@ -252,12 +399,20 @@ def resolve_gitbash(runner=None, exists=os.path.isfile, which=shutil.which, stri
     `strict=True` (the hook dispatcher's, L-0727) takes only those two derived
     candidates, which must be absolute: never a PATH `bash`, never a `usr/bin/bash.exe` (the MSYS bash
     that answers 127 for Git-for-Windows scripts), and only one that runs
-    `-c 'exit 0'`. The default is unchanged."""
+    `-c 'exit 0'`. The default is unchanged.
+
+    Strict keeps three outcomes apart, in the reason's `.kind` (see `Problem`): a file that
+    exists and did not answer is `unknown`, retried with backoff and answered from `lkg` (a
+    `LastKnownGood`, optional) while the file is unchanged; only candidates that do not
+    exist yield `absent`. An unknown must not collapse into "not found"."""
     runner = runner or capture
+    git_unknown = False
     try:
         # The git which() resolves (L-1508): CreateProcess would skip a git.cmd.
         code, out, _ = runner([crew_common.require_tool("git"), "--exec-path"], 10)
         exec_path = decode(out).strip() if code == 0 else ""
+    except subprocess.TimeoutExpired:
+        exec_path, git_unknown = "", True
     except (OSError, subprocess.SubprocessError):
         exec_path = ""
     candidates = []
@@ -265,18 +420,27 @@ def resolve_gitbash(runner=None, exists=os.path.isfile, which=shutil.which, stri
     if len(parts) > 3:
         candidates.append("/".join(parts[:-3]) + "/bin/bash.exe")
     candidates.append(GITBASH_DEFAULT)
-    tried = []
+    if strict and lkg and lkg.recorded():
+        candidates.append(lkg.recorded())
+    tried, trouble = [], []
     for path in candidates:
+        if path in tried:
+            continue
         tried.append(path)
         if _is_launcher(path) or not exists(path):
             continue
-        if strict and not _ABSOLUTE.match(path):
+        if strict and (not _ABSOLUTE.match(path) or "/usr/bin/" in path.replace("\\", "/").lower()):
             continue
-        if strict and ("/usr/bin/" in path.replace("\\", "/").lower() or not _runs_clean(path, runner)):
-            continue
+        if strict:
+            state, detail = _strict_candidate(path, runner, sleep, lkg)
+            if state != "ok":
+                trouble.append((state, path, detail))
+                continue
+            if detail:
+                return path, f"Git Bash at {path} ({detail})"
         return path, f"Git Bash at {path}"
     if strict:
-        return None, "Git Bash not found (strict; tried " + ", ".join(tried) + ")"
+        return None, _strict_problem(tried, trouble, git_unknown)
     found = which("bash")
     if found:
         tried.append(found)

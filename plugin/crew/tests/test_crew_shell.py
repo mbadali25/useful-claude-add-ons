@@ -341,6 +341,10 @@ def _strict_runner(exec_out, runs, ok=lambda path: True):
     return runner
 
 
+def _nosleep(_seconds):
+    pass
+
+
 def _never(_name):
     raise AssertionError("strict mode must not read PATH")
 
@@ -382,10 +386,11 @@ def test_resolve_gitbash_strict_refuses_a_candidate_that_does_not_run_and_names_
 
     path, reason = crew_shell.resolve_gitbash(
         runner=_strict_runner(b"D:/Git/mingw64/libexec/git-core\n", runs, ok=lambda _p: False),
-        exists=lambda _p: True, which=_never, strict=True)
+        exists=lambda _p: True, which=_never, strict=True, sleep=_nosleep)
 
     assert path is None
     assert "D:/Git/bin/bash.exe" in reason and "C:/Program Files/Git/bin/bash.exe" in reason
+    assert reason.kind == "unknown"
 
 
 def test_resolve_gitbash_strict_refuses_a_candidate_that_exits_non_zero():
@@ -415,9 +420,10 @@ def test_resolve_gitbash_strict_refuses_a_candidate_that_hangs():
         raise subprocess.TimeoutExpired(argv, timeout)
 
     path, reason = crew_shell.resolve_gitbash(runner=runner, exists=lambda _p: True,
-                                              which=_never, strict=True)
+                                              which=_never, strict=True, sleep=_nosleep)
 
-    assert path is None, reason
+    assert path is None and reason.kind == "unknown", reason
+    assert "exists but did not answer" in reason and "not found" not in reason
 
 
 def test_resolve_gitbash_strict_skips_a_candidate_that_is_not_a_file_without_running_it():
