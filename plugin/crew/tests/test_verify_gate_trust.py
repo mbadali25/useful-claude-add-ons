@@ -439,3 +439,20 @@ def test_gate_a_module_the_repo_ships_is_not_imported_by_the_gate(tmp_path, stor
     assert done.returncode == 0, done.stderr
     assert sentinel.is_file(), done.stderr
     assert not shadow.exists(), "the repo's own json.py ran inside the gate"
+
+
+def test_gate_fixed_paths_list_every_git_for_windows_layout():
+    """Git for Windows 2.56 has no mingw64/ (git.exe is in /cmd and /ucrt64/bin);
+    clangarm64/ is the Arm64 layout. The directories are fixed literals: deriving
+    them from MINGW_PREFIX would let the environment choose where git comes from."""
+    with open(_SH, encoding="utf-8") as handle:
+        text = handle.read()
+    lines = [line for line in text.splitlines()
+             if "git rev-parse --git-common-dir" in line and "PATH=" in line
+             or line.strip().startswith("MINGW*|MSYS*|CYGWIN*) _tpath=")]
+    assert len(lines) == 2, lines
+    for line in lines:
+        for directory in ("/mingw64/bin", "/ucrt64/bin", "/clangarm64/bin"):
+            assert directory in line, line
+    assert "MINGW_PREFIX" not in text
+

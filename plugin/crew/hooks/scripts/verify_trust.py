@@ -386,7 +386,14 @@ def _git(root, *args):
     env = {k: v for k, v in os.environ.items()
            if k not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR")}
     try:
-        proc = subprocess.run([crew_common.require_tool("git"), *args], cwd=root,
+        git = crew_common.require_tool("git")
+    except crew_common.ToolNotFound as exc:
+        # No git on PATH is not "not a repo" and not "untrusted": trust cannot
+        # be decided, so it is an UNKNOWN that names git.
+        raise TrustError("git was not found on PATH (the gate's fixed PATH lists "
+                         "/mingw64/bin, /ucrt64/bin and /clangarm64/bin on Windows)") from exc
+    try:
+        proc = subprocess.run([git, *args], cwd=root,
                               capture_output=True, env=env, stdin=subprocess.DEVNULL,
                               timeout=GIT_TIMEOUT, check=False)
     except (OSError, subprocess.SubprocessError):

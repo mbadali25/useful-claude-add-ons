@@ -795,3 +795,31 @@ def test_lock_an_owner_token_that_cannot_be_written_gives_up_and_leaves_no_lock(
             pass
 
     assert not os.path.exists(path + ".lock")
+
+
+# ------------------------------------------------------------ git on PATH
+
+def test_evaluate_no_git_on_path_is_unknown_naming_git(tmp_path, store, monkeypatch):
+    """Git for Windows 2.56 has no mingw64/: the gate's fixed PATH missed git and
+    the trust check read "no git" as "not a repo", so an allowlisted owner came
+    out UNTRUSTED. No git is a could-not-tell: UNKNOWN, and the line names git."""
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    assert _allow() == 0
+    empty = tmp_path / "no-tools"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+
+    verdict = verify_trust.evaluate(str(root))
+
+    assert verdict.code == verify_trust.EXIT_UNKNOWN
+    assert "UNKNOWN" in verdict.message and "git" in verdict.message
+
+
+def test_evaluate_a_path_that_holds_git_finds_it(tmp_path, store, monkeypatch):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    assert _allow() == 0
+    git = shutil.which("git")
+    assert git, "the suite needs git"
+    monkeypatch.setenv("PATH", os.path.dirname(git))
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED

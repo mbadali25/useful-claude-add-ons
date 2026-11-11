@@ -53,7 +53,7 @@ gate_trust_check() {
   # A linked worktree's main checkout is repo-authored too: its root (the parent
   # of the git common dir) is stripped as well as this directory.
   _tpr=$(pwd -P)
-  _tmain=$(PATH="/usr/local/bin:/usr/bin:/bin:/mingw64/bin:/opt/homebrew/bin" git rev-parse --git-common-dir 2>/dev/null) || _tmain=""
+  _tmain=$(PATH="/usr/local/bin:/usr/bin:/bin:/mingw64/bin:/ucrt64/bin:/clangarm64/bin:/opt/homebrew/bin" git rev-parse --git-common-dir 2>/dev/null) || _tmain=""
   case "$_tmain" in
     /*/.git) _tmain=$(CDPATH='' cd -- "${_tmain%/.git}" 2>/dev/null && pwd -P) || _tmain="" ;;
     *) _tmain="" ;;
@@ -83,7 +83,7 @@ gate_trust_check() {
   # could point PYTHONPATH at a sitecustomize that answers "trusted" before
   # verify_trust.py runs.
   case "$(uname -s 2>/dev/null)" in
-    MINGW*|MSYS*|CYGWIN*) _tpath="/mingw64/bin:/usr/bin:/bin" ;;
+    MINGW*|MSYS*|CYGWIN*) _tpath="/mingw64/bin:/ucrt64/bin:/clangarm64/bin:/usr/bin:/bin" ;;
     *) _tpath="/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin" ;;
   esac
   _tenv=/usr/bin/env

@@ -9,6 +9,14 @@ adding an entry, run `python3 scripts/sync-updates.py`; CI's `--check` fails unt
 
 ## [Unreleased]
 
+### Fixed — crew 1.3.22: the verify gate's trust check finds git on Git for Windows 2.56 (L-0888)
+
+- **Summary.** `crew` 1.3.22: the verify gate's trust check now finds `git` on Git for Windows 2.56 and later, so an allowlisted remote owner is no longer reported UNTRUSTED there; a machine where `git` cannot be found now says UNKNOWN and names git.
+- Cause (reproduced): `verify-gate.sh` ran the trust check with `PATH=/mingw64/bin:/usr/bin:/bin`, and Git for Windows 2.56 has no `mingw64/` (`git.exe` is in `/cmd` and `/ucrt64/bin`). `verify_trust.py` turned the missing git into "not a repo", which fails closed as `UNTRUSTED`; the Windows CI test `test_gate_an_allowlisted_remote_owner_runs_its_rules` failed with `VERIFY GATE: UNTRUSTED, not run`. The same assumption in the main-checkout probe made the exclusion of the main checkout's directories from the interpreter search fail open when git was missing (inferred, not run).
+- Fix: both fixed PATHs gain `/ucrt64/bin` and `/clangarm64/bin` beside `/mingw64/bin` (literals only, never derived from `MINGW_PREFIX`); `verify_trust.py` raises UNKNOWN naming git when git cannot be found, instead of reading it as "not a repo".
+- Tests: `test_evaluate_no_git_on_path_is_unknown_naming_git`, `test_evaluate_a_path_that_holds_git_finds_it`, `test_gate_fixed_paths_list_every_git_for_windows_layout`; three `sabotage_trust.py` entries, each confirmed red.
+- Version: 1.3.22 is one patch above this branch's own 1.3.21; main is at 1.3.45, so the number is reconciled at merge.
+
 ### Fixed — crew 1.3.21: revert of the Windows python3.exe seam copy (L-0888)
 
 - **Summary.** `crew` 1.3.21: no behaviour change; reverts the Windows `python3.exe` seam copy added in 01ebec33e, and the Windows UNTRUSTED CI failure is open.

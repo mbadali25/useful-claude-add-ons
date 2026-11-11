@@ -543,6 +543,8 @@ machine trusts. Otherwise it prints one line, runs nothing, writes no pass recor
   on first sight. Check `git remote -v`, then `approve` to re-pin.
 - **`UNKNOWN, not run`**: the trust store could not be read (corrupt, unreadable or locked). Fix or delete
   `${CLAUDE_CONFIG_DIR:-~/.claude}/crew/verify-trust.json`; an unknown is never read as trusted.
+  It is also what you see when `git` cannot be found on the gate's fixed PATH (the line names git): on Windows
+  the gate searches `/mingw64/bin`, `/ucrt64/bin` and `/clangarm64/bin`; a git installed elsewhere needs fixing on PATH.
 
 To trust every repo of one owner: `verify_trust.py allow-owner github.com/<owner> --under <dir>` (the `--under`
 limit is optional and recommended: without it a fresh directory whose `.git/config` merely names that owner is

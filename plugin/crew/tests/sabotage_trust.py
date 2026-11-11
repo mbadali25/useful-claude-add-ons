@@ -302,4 +302,13 @@ TRUST_MUTATIONS = (
     ("scope guard: a verb word inside a path argument is read as the verb (L-0888)", GUARD,
      "(?<![/\\\\.=:~])\\b(?:approve", "\\b(?:approve",
      _S_ + "test_a_read_only_trust_command_is_allowed"),
+    ("trust check: no git on PATH reads as not-a-repo, UNTRUSTED, instead of UNKNOWN naming git (L-0888)", TRUST,
+     "    except crew_common.ToolNotFound as exc:" + chr(10), "    except ZeroDivisionError as exc:" + chr(10),
+     _T + "test_evaluate_no_git_on_path_is_unknown_naming_git"),
+    ("trust gate: the fixed interpreter PATH loses /ucrt64/bin, where Git for Windows 2.56 keeps git (L-0888)", GATE,
+     "/mingw64/bin:/ucrt64/bin:/clangarm64/bin:/usr/bin:/bin", "/mingw64/bin:/usr/bin:/bin",
+     _G + "test_gate_fixed_paths_list_every_git_for_windows_layout"),
+    ("trust gate: the main-checkout probe PATH loses /ucrt64/bin (L-0888)", GATE,
+     ":/mingw64/bin:/ucrt64/bin:/clangarm64/bin:/opt/homebrew/bin", ":/mingw64/bin:/opt/homebrew/bin",
+     _G + "test_gate_fixed_paths_list_every_git_for_windows_layout"),
 )
