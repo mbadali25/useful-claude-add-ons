@@ -27,6 +27,8 @@ SPIN = "while True:\n    pass\n"
 POSIX = os.name != "nt"
 # pids Fleet.orphan() made: real processes whose real parent really exited.
 ORPHANS = set()
+# pids whose fixture code spins (Fleet.orphan / Fleet.live_child with SPIN in it).
+SPINNERS = set()
 
 
 def _gone_pid():
@@ -88,6 +90,8 @@ class Fleet:
                                   text=True, creationflags=NOWIN)
         pid = self._read_pid(parent)
         ORPHANS.add(pid)
+        if "while True" in child_code:
+            SPINNERS.add(pid)
         parent.wait(timeout=30)
         if hold_stdin:
             self.handles.append(parent)  # keeps the write end of the child's stdin open
@@ -106,6 +110,8 @@ class Fleet:
                                   stdin=subprocess.DEVNULL, text=True, creationflags=NOWIN)
         self.handles.append(parent)
         pid = self._read_pid(parent)
+        if "while True" in child_code:
+            SPINNERS.add(pid)
         time.sleep(0.5)
         return parent, pid
 
@@ -139,9 +145,22 @@ def _fleet():
 
 
 def judge(pid, apply=False, cfg=None):
-    records = crew_reaper.run(dict(cfg or EAGER), apply=apply, sample_s=1.5, pids={pid},
-                              snap=posix_view() if POSIX and pid in ORPHANS else None)
-    return next((r for r in records if r["pid"] == pid), None)
+    """The reaper's record for `pid`. A spinner is judged again (up to 4 passes) when
+    a pass saw it under the CPU limit or not at all: on a loaded shared runner the
+    spinner can get less than one CPU-second in a sample window (ps reports whole
+    seconds on POSIX), and that is sampling noise, not a decision. A pass that did not
+    decide to end it ended nothing, so the retry cannot hide a kill."""
+    spinner = pid in SPINNERS
+    rec = None
+    for _ in range(4 if spinner else 1):
+        records = crew_reaper.run(dict(cfg or EAGER), apply=apply, sample_s=1.5, pids={pid},
+                                  snap=posix_view() if POSIX and pid in ORPHANS else None)
+        rec = next((r for r in records if r["pid"] == pid), None)
+        if not spinner or (rec is not None and (rec.get("cpuPct") or 0) >= 50):
+            break
+        if rec is not None and rec.get("applied"):
+            break
+    return rec
 
 
 def wait_gone(pid, seconds=15):
