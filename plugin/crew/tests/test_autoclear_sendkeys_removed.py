@@ -93,7 +93,7 @@ def test_no_platform_lists_sendkeys_as_a_method():
 def test_the_windows_platforms_keep_notify_and_lose_only_sendkeys():
     table = crew_platform._AUTOCLEAR_METHODS  # pylint: disable=protected-access
 
-    assert table["windows"] == ("auto", "none", "notify")
+    assert table["windows"] == ("auto", "none", "notify", "tmux")
     assert table["windows-bash"] == ("auto", "none", "notify", "tmux")
 
 
