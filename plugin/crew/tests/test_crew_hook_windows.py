@@ -113,6 +113,42 @@ def test_crew_hook_sh_dispatches_when_uname_cannot_be_read_and_os_is_unset(tmp_p
     assert trace.exists() and "cloud-guard.sh" in trace.read_text(encoding="utf-8")
 
 
+def _bash_triple():
+    if h.BASH is None:
+        return ""
+    got = subprocess.run([h.BASH, "-c", 'printf %s "${BASH_VERSINFO[5]}"'], capture_output=True, text=True,
+                         check=False)
+    return got.stdout
+
+
+def test_crew_hook_sh_decides_windows_from_a_builtin_before_any_external_command():
+    """ANEWINF-1314: the no-op path on Windows cost 8 process starts (two command-substitution forks
+    and uname). The stand-down must be the first statement and must not fork."""
+    text = open(os.path.join(os.path.dirname(__file__), "..", "hooks", "scripts", "crew-hook.sh"),
+                encoding="utf-8").read()
+    code = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+
+    assert code[0] == 'case "${BASH_VERSINFO[5]:-}" in'
+    assert code[1].split(")")[0].strip() == "*-msys*|*-cygwin*|*-mingw*"
+    assert code[1].rstrip().endswith("exit 0 ;;")
+    assert "$(" not in code[0] + code[1] and "`" not in code[0] + code[1]
+
+
+@pytest.mark.skipif(not _bash_triple().endswith(("-msys", "-cygwin")),
+                    reason="needs a bash whose build triple is msys/cygwin (Git Bash on Windows)")
+def test_crew_hook_sh_on_a_windows_bash_exits_0_with_no_external_command_on_the_path(tmp_path):
+    """env -i with an empty PATH: any external command (uname, dirname, cat) would not be found and the
+    old launcher then went on to the dispatch. Exit 0 and no output means it never got that far."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hooks", "scripts", "crew-hook.sh")
+
+    got = subprocess.run([h.BASH, script, "PreToolUse"], input=b"", capture_output=True, check=False,
+                         env={"PATH": str(empty)})
+
+    assert (got.returncode, got.stdout, got.stderr) == (0, b"", b"")
+
+
 # --- the Windows routing of select ----------------------------------------------
 
 def _argvs(tool, windows, exists=os.path.isfile):

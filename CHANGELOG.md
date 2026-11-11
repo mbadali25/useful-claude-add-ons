@@ -51,6 +51,14 @@ read entries under any `## [` heading.
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Changed — crew 1.3.46: the Windows no-op bash registration stops spawning processes
+
+- **Summary.** `crew` 1.3.46: on Windows the second, bash registration of every crew hook now exits immediately without starting `uname` or any subshell, which removes about eight process starts from every hook event and changes no guard decision.
+- **Cause.** Every hook event is registered twice (bash and PowerShell). On Windows `crew-hook.sh` exits 0 because `crew-hook.ps1` is the real path, but it first ran `$(cd ... && pwd)` and `$(uname -s)`: two command-substitution forks plus `uname.exe`, on top of the Git Bash launcher chain, about eight process starts per event for a script that does nothing (ANEWINF-1314, B1 under ANEWINF-1307; a measured 88 s trace put that at 13.5% of all process starts on the host).
+- **Fix.** `crew-hook.sh` decides Windows first, from `BASH_VERSINFO[5]` (the shell's own readonly build triple, `*-msys*|*-cygwin*|*-mingw*`), a builtin that costs no process and that an environment variable cannot set, so L-0850 still holds. The `uname -s` and `OS=Windows_NT` cases stay below it, unchanged, for any other shell. No decision changes: the same hosts exit 0, the same hosts dispatch. `hooks.json` is unchanged; dropping the bash entry on Windows was not adopted because it could leave a host unregistered.
+- **Tests.** `test_crew_hook_windows.py`: the stand-down is the first statement and contains no command substitution; on a Windows Git Bash the launcher exits 0 with empty output and stderr under `env` with an empty `PATH` (no external command available). `sabotage_crew_hook.py` gains one anchored mutant (a leading external command) that turns the first red.
+- Docs: `plugin/crew/README.md`.
+
 ### Fixed — crew 1.3.45: a Git Bash that did not answer is reported as could-not-tell, and the dispatcher trusts the last one that passed
 
 - **Summary.** `crew` 1.3.45: when the hook dispatcher cannot confirm Git Bash on Windows it now says what it established (a Git Bash that exists but did not answer is "could not tell, retry", never "Install Git for Windows"), and it trusts the last Git Bash that passed while that file is unchanged, so a busy host stops blocking Bash, PowerShell and Edit calls.
