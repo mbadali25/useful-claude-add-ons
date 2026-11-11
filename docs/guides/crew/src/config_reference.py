@@ -271,7 +271,10 @@ What it sees: `rm`, `Remove-Item`, `git clean -f`, `git rm`, `find -delete`,
 and change); `sed -i` and `git reset --hard` / `checkout -- <paths>` /
 `restore` (change); `git commit`, `git push` and `gh pr create`, which count
 the added, deleted and changed files of the commit or of the whole branch
-against its base - so Write and Edit work is counted where it is about to be
+against its base (`gh pr create` against the repository's default branch only:
+`origin/HEAD`, `origin/main` or `origin/master`, and "could not tell" when none exists,
+because the branch's upstream may be a fork's feature branch; `git push` also falls back to
+the upstream) - so Write and Edit work is counted where it is about to be
 shared; `terraform apply <plan>` (the plan's own changes), `destroy` and
 `apply -auto-approve`; and an unfiltered SQL `DELETE` or `UPDATE`.
 
@@ -289,7 +292,11 @@ different repository than the one git commits in. In PowerShell the path is lett
 digits and `_ . / -` with at most
 one leading `<letter>:/` or `<letter>:\\` drive prefix, and a drive prefix is followed
 only on Windows (elsewhere `c:/x` is a directory name, Set-Location fails and the `;`
-still runs git where the shell was); any other colon (`Env:`, `Variable:`,
+still runs git where the shell was). A PowerShell target written `/c/x` is "could not
+tell" on Windows: PowerShell reads it against the CURRENT drive (`D:/c/x`, verified with
+`Set-Location /c/Users`), Git Bash against `C:/x`. A target under `/proc/` or `/dev/`
+(`/proc/self/cwd`) is "could not tell" in both shells: the kernel resolves it per process, so
+the hook and the shell would read different directories. Any other colon (`Env:`, `Variable:`,
 `HKLM:`, `foo:bar`) or backslash (`C:\\a\\b`, `x\\y`) is "could not tell", so write the path
 with forward slashes. The arguments start with the git subcommand (no global option before
 it: not `-C`, `-c`, `--git-dir`, `--work-tree`, `--namespace`), then bare words, flags

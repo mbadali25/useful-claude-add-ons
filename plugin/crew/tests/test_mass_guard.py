@@ -827,7 +827,7 @@ print(json.dumps(out))
 
 def test_the_cd_grammar_and_the_git_variable_scan_are_linear_on_adversarial_input():
     """A nested quantifier in the old argument pattern took 12 s on a 16-character path and
-    18 s through the real hook. Each input must take < 0.2 s of CPU time (`time.process_time`
+    18 s through the real hook. Each input must take < 0.5 s of CPU time (round 8 measured 0.12 s at worst, so the old 0.2 s cap had no margin on a loaded host; the old pattern needs seconds) (`time.process_time`
     in the child, so a loaded host cannot fail it: round 6 saw 0.25 s and 0.5 s of wall clock
     for 0.02 s of CPU), in a CHILD process with a wall-clock timeout: `re` holds the GIL, so
     a thread could not interrupt a backtracking match, and a mutant that restores the pattern
@@ -840,8 +840,8 @@ def test_the_cd_grammar_and_the_git_variable_scan_are_linear_on_adversarial_inpu
         pytest.fail("leading_cd / sets_git_location did not finish in 60 s: exponential backtracking")
     assert done.returncode == 0, done.stderr
     timings = json.loads(done.stdout)
-    slow = {label: round(secs, 3) for label, secs in timings.items() if secs >= 0.2}
-    assert not slow, f"slower than 0.2 s of CPU: {slow}"
+    slow = {label: round(secs, 3) for label, secs in timings.items() if secs >= 0.5}
+    assert not slow, f"slower than 0.5 s of CPU: {slow}"
 
 
 def test_a_glob_or_tab_in_a_cd_or_dash_C_target_is_could_not_tell_and_quick(repo, tmp_path):
@@ -966,6 +966,59 @@ def test_the_branch_upstream_is_the_base_when_no_origin_ref_exists(repo):
     _fill(repo / "r", 25)
     _commit_all(repo, "twenty-five")
     _stops(repo, "git push origin feat", crew_mass.MASS_CREATE)
+
+
+def test_gh_pr_create_does_not_use_the_branch_upstream_as_its_base(repo):
+    """Round 9 (F-A): a PR's base is the repository's default branch, not the branch's
+    upstream (a fork's feature branch, say). With no origin/HEAD, origin/main or origin/master
+    `git push` may fall back to the upstream, but `gh pr create` must say it could not tell."""
+    git(repo, "checkout", "-qb", "feat")
+    git(repo, "branch", "-q", "--set-upstream-to=main", "feat")
+    for ref in ("origin/HEAD", "origin/main", "origin/master"):
+        assert not git(repo, "rev-parse", "--verify", "-q", ref, check=False)
+    _fill(repo / "r", 30)
+    _commit_all(repo, "thirty")
+    result = _stops(repo, "gh pr create --fill")
+    assert "pull request" in result["reason"] and "origin/main" in result["reason"], result
+    _stops(repo, "git push origin feat", crew_mass.MASS_CREATE)  # push keeps the upstream base
+
+
+@pytest.mark.parametrize("target", ["/proc/self/cwd", "/proc/1/cwd", "/proc/", "/proc",
+                                    "/dev/fd/3", "/dev/shm/x", "/dev"])
+def test_a_per_process_cd_target_is_never_followed(target):
+    """Round 9 (F-B): `/proc/self/cwd` is the directory of whichever process reads it, so
+    `cd /proc/self/cwd && git commit` names the shell's directory to bash and the hook's own
+    to this process. On Windows `_resolve` refuses any such path anyway; the helper test
+    holds the rule everywhere, and the Linux-only case below holds the call."""
+    assert crew_mass._per_process_dir(target)  # pylint: disable=protected-access
+    for shell in ("bash", "powershell"):
+        assert crew_mass.leading_cd(f"cd {target} && git commit -m x", "/", shell) is None
+
+
+@pytest.mark.parametrize("target", ["/procfs/x", "/devices/x", "/home/proc/x", "/opt/dev/x",
+                                    "/tmp/proc"])
+def test_a_path_that_only_looks_like_proc_or_dev_is_not_per_process(target):
+    assert not crew_mass._per_process_dir(target)  # pylint: disable=protected-access
+
+
+@pytest.mark.skipif(os.name == "nt", reason="/proc/self/cwd exists on Linux only")
+def test_cd_into_proc_self_cwd_is_could_not_tell_on_linux():
+    assert crew_mass.leading_cd("cd /proc/self/cwd && git commit -m x", "/", "bash") is None
+    assert os.path.isdir("/proc/self/cwd")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the /c/ drive form is mapped on Windows only")
+def test_powershell_does_not_read_a_slash_drive_path_as_a_git_bash_drive(tmp_path):
+    """Round 9 (F-C), verified on this host: `Set-Location /c/Users` from drive D fails with
+    `Cannot find path 'D:/c/Users'`; PowerShell reads `/c/x` against the CURRENT drive. Git Bash
+    maps it to C:/x, so the same text is followed in bash and refused in PowerShell."""
+    folder = tmp_path / "d"
+    folder.mkdir()
+    posix = "/" + _fwd(folder)[0].lower() + _fwd(folder)[2:]
+    assert crew_mass.leading_cd(f"cd {posix} && git status", "/", "powershell") is None
+    assert crew_mass.leading_cd(f"cd {posix}; git status", "/", "powershell") is None
+    assert crew_mass.leading_cd(f"cd {posix} && git status", "/", "bash") == os.path.normpath(
+        str(folder))
 
 
 @pytest.mark.parametrize("opt", ["--attr-source HEAD", "--attr-source=HEAD",

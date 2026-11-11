@@ -411,8 +411,8 @@ def _redirects_repo(args):
 def _classify_gh(args):
     words = [a for a in args if not a.startswith("-")]
     if words[:2] == ["pr", "create"] and "--help" not in args and "-h" not in args:
-        return _diff_specs("gh pr create", None, ["diff", "--name-status", "-M", "@BASE@...HEAD",
-                                                   "--"])
+        return _diff_specs("gh pr create", None, ["diff", "--name-status", "-M",
+                                                   "@PRBASE@...HEAD", "--"])
     return []
 
 
@@ -687,6 +687,14 @@ def _plain_tail(tail, word_re):
     return not first
 
 
+def _per_process_dir(target):
+    """True for a cd target under `/proc/` or `/dev/` (`/proc/self/cwd`, `/dev/fd/3`): the
+    kernel resolves it per PROCESS, so it names the shell's directory when the shell reads it
+    and this hook's own directory when the hook does. Never followed."""
+    text = target.rstrip("/")
+    return text in ("/proc", "/dev") or text.startswith(("/proc/", "/dev/"))
+
+
 def _cdpath_may_apply(target):
     """True when bash's `cd <target>` could resolve through CDPATH: a bare relative name
     (not `.`, `..`, `./x`, `../x`, or absolute). CDPATH is not read from this process: bash
@@ -712,6 +720,10 @@ def leading_cd(command, cwd, shell="bash"):
         return None  # bash may walk a symlink for `..`; this process would cut the text
     if powershell and not _WINDOWS and _DRIVE_PREFIX_RE.match(target):
         return None  # `c:` is no drive here: Set-Location fails and `;` still runs git
+    if _per_process_dir(target):
+        return None
+    if powershell and _WINDOWS and _DRIVE_RE.match(target):
+        return None  # PowerShell reads `/c/x` against the CURRENT drive (D:\c\x), not C:\x
     if not powershell and _cdpath_may_apply(target):
         return None
     path, ok = _resolve(target, cwd, False)
@@ -1102,7 +1114,8 @@ def count_copy(spec, cwd, cd, globs=()):
 
 def _git_lines(spec, cwd, cd, runner):
     """Output lines of the read-only git command behind `spec`, or None. The
-    `@BASE@` placeholder is the branch's base (`_base`)."""
+    `@BASE@` placeholder is the branch's base (`_base`); `@PRBASE@` (gh pr create) is the same
+    without the upstream fallback, because a PR's base is the repository's default branch."""
     override, argv = spec.git
     base = cwd
     if override:
@@ -1118,11 +1131,12 @@ def _git_lines(spec, cwd, cd, runner):
                     "the hook payload names no working directory")
         return None
     run = runner or subprocess.run
-    if "@BASE@...HEAD" in argv:
-        found = _base(base, run, spec)
-        if found is None:
-            return None
-        argv = [found + "...HEAD" if a == "@BASE@...HEAD" else a for a in argv]
+    for marker in ("@BASE@...HEAD", "@PRBASE@...HEAD"):
+        if marker in argv:
+            found = _base(base, run, spec, upstream=marker == "@BASE@...HEAD")
+            if found is None:
+                return None
+            argv = [found + "...HEAD" if a == marker else a for a in argv]
     key = (base, tuple(argv))
     if key in spec.shared:
         return spec.shared[key]
@@ -1153,10 +1167,12 @@ def _git(run, cwd, argv):
     return done, ""
 
 
-def _base(cwd, run, spec=None):
+def _base(cwd, run, spec=None, upstream=True):
     """The ref a branch's PR would be measured against: `origin/HEAD`, else
     `origin/main`, else `origin/master`, else the branch's upstream; on that
-    branch itself, its upstream. None, with `spec.why` set, when there is none."""
+    branch itself, its upstream. None, with `spec.why` set, when there is none. With
+    `upstream=False` (`gh pr create`: the PR base is the repository's default branch, never the
+    branch's upstream, which may be a fork's feature branch) only the origin refs count."""
     def one(*argv):
         done, _why = _git(run, cwd, list(argv))
         out = done.stdout.strip() if done is not None else ""
@@ -1171,13 +1187,23 @@ def _base(cwd, run, spec=None):
     for ref in candidates:
         if ref and one("rev-parse", "--verify", "-q", ref + "^{commit}"):
             if head and ref.split("/", 1)[-1] == head:
+                if not upstream:
+                    return fail(f"the branch `{head}` is the default branch `{ref}`: a pull "
+                                "request from it has no base to measure against")
                 return one("rev-parse", "--abbrev-ref", "@{u}") or fail(
                     f"the branch `{head}` is its own base `{ref}` and has no upstream to "
                     "measure against")
             return ref
-    upstream = one("rev-parse", "--abbrev-ref", "@{u}")
-    if upstream:
-        return upstream
+    if not upstream:
+        done, why = _git(run, cwd, ["rev-parse", "--git-dir"])
+        if done is None:
+            return fail(f"{why}: this is not a git repository, or git cannot read it")
+        return fail("no base to measure the pull request against: origin/HEAD, origin/main and "
+                    "origin/master are all missing, and the branch's upstream is not the "
+                    "repository's default branch")
+    tracked = one("rev-parse", "--abbrev-ref", "@{u}")
+    if tracked:
+        return tracked
     done, why = _git(run, cwd, ["rev-parse", "--git-dir"])
     if done is None:
         return fail(f"{why}: this is not a git repository, or git cannot read it")
