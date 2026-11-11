@@ -173,7 +173,9 @@ def evaluate(cases, scripts_dir, config, vr):
         else:
             res = recall_in_process(vr, case, max_chars)
             full = recall_in_process(vr, case, HUGE)
-            patient = recall_in_process(vr, dict(case, timeout_ms=60000), HUGE)                 if full["truncated"] else full
+            patient = full
+            if full["truncated"]:
+                patient = recall_in_process(vr, dict(case, timeout_ms=60000), HUGE)
         row.update(metrics_for(case, res, full, patient))
         if "held_total" in res and res["held_total"] != row["held"]:
             row["reasons"].append(f"held_total={res['held_total']} disagrees with "
