@@ -181,7 +181,7 @@ MASS_MUTATIONS = (
     ("mass: an unattended stop is an ask", MASS,
      "    if alone:\n        reason +=", "    if False:\n        reason +=",
      _T + "test_attended_is_an_ask_unattended_is_a_deny"),
-    # --- a leading cd, the real reason, a redirected repo (crew 1.3.44)
+    # --- a leading cd, the real reason, a redirected repo (crew 1.3.46)
     ("mass: a leading cd is followed even when the rest moves again", GUARD,
      '            if not sub["cd"]:\n', "            if True:\n",
      _T + "test_any_other_cd_is_still_could_not_tell_and_stops"),
