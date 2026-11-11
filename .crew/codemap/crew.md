@@ -202,6 +202,7 @@ list equal. Decision record: `docs/adr/0009-hook-single-dispatch.md`.
 `plugin/crew/hooks/scripts/crew_hook.py` (620 lines) is the dispatcher the launchers run. Its
 `TABLE` (`:65`) is 18 rows (`Row`: event, matcher, script, extra, timeout, guard, twin, codex) over
 **14** distinct `.sh` scripts. Only `promote-gate.ps1` is still a `.ps1` twin in the directory; the other twins were deleted in L-0867 and L-0869, so `select` (`plugin/crew/hooks/scripts/crew_hook.py:140`) takes a twin only when `exists()` finds it and a `PowerShell` call otherwise runs the `.sh`, which Windows runs under Git Bash. The `twin=` names still in `TABLE` for `cloud-guard` and `env-guard` (`:73-74`) point at deleted files and are inert.
+DERIVED (crew 1.3.41): `promote-gate.sh` (`plugin/crew/hooks/scripts/promote-gate.sh`, 346 lines) decides nothing itself any more. After the PowerShell hand-off, the no-map opt-out and `crew_py`, it runs `_promote_gate.py` once (`:153`) and maps its exit status: `0` allow, `2` block (message already written), `10+N` the containment match could not read the map and `20+N` the pre-deploy check could not be evaluated (the shell writes the framing around the reason, `:166-188`, so `sabotage.py`'s two `ENV_STATUS` / `VERDICT_STATUS` mutations still bite), anything else a block. `_promote_gate.py` imports `_promote_match.py` (the containment heredoc), `_promote_verdict.py` (the PASS-row, rollback and marker heredoc), `_promote_dispatch.py`, `_promote_tree.py`, `_promote_github.py` and `_promote_review.py`; its deadline is `Clock.deadline` = the shell's start (`CREW_GATE_START`) + `deadline_seconds(None, configured_seconds())`, i.e. `promote.deadlineSeconds` clamped to the row's `TABLE` timeout less `REAP` 2, else that timeout less `DEFAULT_MARGIN` 4. JUDGEMENT: the fixed 16 s `GATE_DEADLINE` left in the shell belongs to the jq fallback alone. `_promote_fast.py` is gone; its allow fast path is `Gate.provably_no_deploy`.
 Row counts per event, with the registration timeout `event_timeout` gives (largest row + `EVENT_SLACK`
 10, `:44`):
 
@@ -789,7 +790,7 @@ and gets nothing created.
   `SENDKEYS_REMOVED` (`plugin/crew/hooks/scripts/crew_autocycle.py:1145-1146`, constant at `:1138`),
   and `write_autoclear_method` raises `PermissionError` for it whatever the caller says
   (`plugin/crew/hooks/scripts/crew_autoclear_setup.py:249-250`, note at `:119-120`).
-- **A pmux (psmux) pane on native Windows types the clear (crew 1.3.41).** DERIVED: `auto` picks `tmux` when `$TMUX` is set and `tmux` is on PATH (`crew_autocycle.py:1148`), which a psmux pane satisfies (psmux sets `$TMUX`/`$TMUX_PANE`; `display-message -p '#{pane_pid}'` is a Windows pid). What failed was `_proc`, which had no source on native Windows; `_proc_windows` (`crew_autocycle.py:714`) now reads the Win32 process snapshot (`_win_snapshot` `:650`) with the `GetProcessTimes` FILETIME as `start` (equal to the record's `procStart`, measured) and the stand-in console tty `_WIN_TTY` (`:637`). JUDGEMENT: the tty comparison in `prove_target` therefore proves nothing on Windows, so `crossing` also refuses a `node`/`bun` host between the session and the pane. `auto-clear.sh` exports `MSYS_NO_PATHCONV=1` before `tmux send-keys` (clear sender and resume sender) because Git Bash rewrote `/clear` for the native exe. Tests: `plugin/crew/tests/test_autoclear_pmux.py`.
+- **A pmux (psmux) pane on native Windows types the clear (crew 1.3.43).** DERIVED: `auto` picks `tmux` when `$TMUX` is set and `tmux` is on PATH (`crew_autocycle.py:1148`), which a psmux pane satisfies (psmux sets `$TMUX`/`$TMUX_PANE`; `display-message -p '#{pane_pid}'` is a Windows pid). What failed was `_proc`, which had no source on native Windows; `_proc_windows` (`crew_autocycle.py:714`) now reads the Win32 process snapshot (`_win_snapshot` `:650`) with the `GetProcessTimes` FILETIME as `start` (equal to the record's `procStart`, measured) and the stand-in console tty `_WIN_TTY` (`:637`). JUDGEMENT: the tty comparison in `prove_target` therefore proves nothing on Windows, so `crossing` also refuses a `node`/`bun` host between the session and the pane. `auto-clear.sh` exports `MSYS_NO_PATHCONV=1` before `tmux send-keys` (clear sender and resume sender) because Git Bash rewrote `/clear` for the native exe. Tests: `plugin/crew/tests/test_autoclear_pmux.py`.
 - `crew_autoclear_setup.py` is called from **three** places, confirmed by
   grep and by reading each call site: `/crew:init`'s Phase 1
   (`plugin/crew/skills/crew-setup/phases.md:190-207`, `plan-windows-default`),
@@ -1778,7 +1779,7 @@ was discarded before the next call regardless.
   `platform-sync.sh`, `scope-guard.sh`, `auto-clear.sh`, `verify-gate.sh`
   (two call sites, `PY` at `:1322` and `SHIM_PY` at `:2262`), and
   `completion-audit.sh:71`; `role-write-guard.sh` keeps its own private copy. **Three scripts still call plain
-  `crew_py()`**: `promote-gate.sh:115`, `notify.sh:13` and `handoff-write.sh:103` (`handoff-read.sh` calls neither now), plus
+  `crew_py()`**: `promote-gate.sh:143`, `notify.sh:13` and `handoff-write.sh:103` (`handoff-read.sh` calls neither now), plus
   four more plain call sites *within* `verify-gate.sh` itself
   (`PRICE_PY` at `:37`, `REPORT_PY` at `:793`, `FP_PY` at `:919`,
   `SCOPE_PY` at `:1260`) that degrade to a no-op or a narrower error rather
@@ -2816,10 +2817,14 @@ commits merged in from main are not the ticket's (a deliberate refinement of the
 fallback base that reads no commit, are unknown; a line from any other fallback base
 says so. `main` is the `--check` CLI; any unexpected exception, an import failure included, is `unknown` with exit 2. Suite: `plugin/crew/tests/test_crew_trailers.py`,
 mapped by `.crew/verify.json:556-563`. The practice note it replaces said a
-repository's attribution adds `Co-Authored-By`; it now says the owner's instructions
-decide (`plugin/crew/skills/crew-best-practices/references/practices.md:58-62`), and
+repository's attribution adds `Co-Authored-By`; it now says crew never adds a
+`Co-Authored-By` trailer or a "Generated with Claude Code" line (owner rule 2026-11-10;
+`plugin/crew/skills/crew-best-practices/references/practices.md:58-64`), and
 `/crew:implement` step 2 says a dispatched prompt carries no attribution or trailer
-instruction (`plugin/crew/commands/implement.md:48-51`). docs/crew/config-rationale.md
+instruction and tells the developer to add none (`plugin/crew/commands/implement.md:48-52`);
+`crew_wave.lane_prompt` step 2 says the same, and
+`plugin/crew/tests/test_crew_no_coauthored.py` fails a command, skill, agent or template line
+that names the trailer without a forbid word. docs/crew/config-rationale.md
 (`docs/crew/config-rationale.md`:3052`, `git.forbiddenTrailers`) is the user-facing account.
 
 ## Native-memory vault pointers (T-0084)

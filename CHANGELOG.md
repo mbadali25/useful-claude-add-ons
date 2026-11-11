@@ -18,6 +18,8 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.41: re-bump only - interim number on the autoclear-pmux branch before main reached 1.3.42; the change is recorded under crew 1.3.43
+- crew 1.3.41: re-bump only - interim number on the no-coauthored branch before main reached 1.3.41 with the promote gate change; the change is recorded under crew 1.3.42
 - crew 1.3.37: re-bump only - interim land number on the verify-gate stale-marker branch (commit dca02a908) before main reached 1.3.38; the change is recorded under crew 1.3.39
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.34; the change is recorded under crew 1.3.36
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.33; the change is recorded under crew 1.3.34
@@ -48,10 +50,30 @@ read entries under any `## [` heading.
 - crew 1.3.8: re-bump only - the human-only opt-out re-versioned so installs update (commit 438b1869c); recorded under crew 1.3.9
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
+- crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Added — crew 1.3.41: auto-clear types into a pmux (psmux) pane on native Windows
+### Fixed — crew 1.3.41: the promote gate decides in one process and keeps its own, configurable deadline
 
-- **Summary.** `crew` 1.3.41: in a pmux (psmux) pane on native Windows, `context.autoClear` now types the clear through `tmux send-keys` instead of falling back to a notice, with the same checks as any tmux pane (the pane must be an ancestor of this session, with no other session in between); outside a pmux pane nothing changes.
+- **Summary.** `crew` 1.3.41: a deploy-shaped command no longer times the promote gate out on Git Bash; the gate now runs as one python process instead of about forty-five, and a new `promote.deadlineSeconds` setting controls how long it may run.
+- **Cause (verified).** `promote-gate.sh` started about forty-five processes for a declared or dispatched deploy (34 traced external commands in `bash -x`, eight of them python, eleven git, plus the `$(...)` subshells around them). On Git Bash each is an MSYS fork, 0.3-0.5 s on a quiet host and 1.7 s measured on a loaded one, against the guard's 20 s hook timeout (its own deadline was 16 s). A timeout is not a block, so the deploy-shaped command either timed out or hit "inside the gate's deadline".
+- **Fix.** `hooks/scripts/_promote_gate.py` makes the whole decision in one process. The heredocs that were `python -` steps are now modules it imports (`_promote_match.py`, `_promote_verdict.py`), the dispatch, tree, github and review readers are called in-process, and `git` is asked once per directory for its top, common dir and sha. `promote-gate.sh` keeps the PowerShell hand-off, the no-map opt-out, the python lookup and the jq fallback, and reads the payload with the `read` builtin instead of `cat`. `_promote_fast.py` is gone: its allow fast path is the first step of the gate. Rules and messages are unchanged; the two failures the shell used to word itself (the map cannot be read, the pre-deploy check errored) keep their wording through exit statuses 10+N and 20+N.
+- **Same decisions (verified), one input differs by construction.** 41 recorded cases (exit status, message phrase, in-flight marker, incident skip rows) were run through the old and new gate and agree. The command now reaches the matcher as written; Git Bash used to rewrite an argument that starts like a POSIX path into a Windows path first (inferred to matter only for such commands; the one recorded case, a declared deploy beginning with `/`, blocked in both).
+- **New setting.** `promote.deadlineSeconds` (either layer; null by default) is the one deadline the gate keeps, counted from its shell's start. null derives it from the guard's row in `crew_hook.TABLE` less 4 s (16 of 20); a number is clamped to the timeout less 2 s so the setting can never let the gate outlive its hook.
+- **Docs.** `CONFIG.md`, the configuration reference and guide, the troubleshooting guide, `README.md`, `commands/config.md`, `crew-setup`'s template copy, `PLUGINS.md`, the code map, the budgets. DOCX and PDF were not rebuilt (LibreOffice runs on Linux only).
+- **Tests.** `test_promote_gate_one_process.py`: a decision corpus recorded from the old gate and replayed on the new one, the spawn count, the deadline rules and the fast path; `promote_gate_mutations.py` holds the sabotage cases, and `test_promote_fast.py` moved into it.
+
+
+### Changed — crew 1.3.42: crew never adds or instructs a `Co-Authored-By` trailer
+
+- **Summary.** `crew` 1.3.42: crew no longer takes "no side" on commit attribution; it never adds a `Co-Authored-By` trailer or a "Generated with Claude Code" line to a commit or PR body, and the briefs it sends to developers and wave lanes say so.
+- **Cause.** Owner order 2026-11-10. crew's own files never told anyone to add the trailer (verified by grep over `plugin/crew`), but `practices.md` said crew "takes no side" and left it to the owner's instructions, so a harness reminder asking for the trailer could still reach a dispatched developer or a wave lane unopposed.
+- **Fix.** `commands/implement.md` step 2 tells the developer to add no `Co-Authored-By` trailer and no "Generated with Claude Code" line; the wave lane prompt (`crew_wave.lane_prompt`, step 2) says the same; `practices.md` states the owner rule and where the harness default is switched off (`attribution` in Claude Code's own settings.json, which crew never edits).
+- **Not changed.** No config key, value or default; `git.forbiddenTrailers` stays `[]` by default and its refusal wiring stays a separate harness change. The `Claude-Session:` trailer is untouched.
+- **Tests.** `test_crew_no_coauthored.py`: no command, skill, agent or template line may name the trailer without a forbid word, the lane prompt and `implement.md` carry the rule, and the detector flags an instruction to add it.
+
+### Added — crew 1.3.43: auto-clear types into a pmux (psmux) pane on native Windows
+
+- **Summary.** `crew` 1.3.43: in a pmux (psmux) pane on native Windows, `context.autoClear` now types the clear through `tmux send-keys` instead of falling back to a notice, with the same checks as any tmux pane (the pane must be an ancestor of this session, with no other session in between); outside a pmux pane nothing changes.
 - **Cause.** Two defects, both measured on psmux 3.4.0 under Git Bash. (1) Native Windows has no `/proc`, so `_proc` returned nothing: `tmux pane %1 could not be confirmed as the pane running this session (pane pid unknown is not an ancestor of this hook)`, even though psmux sets `$TMUX` and `$TMUX_PANE` and `display-message -p '#{pane_pid}'` returns a Windows pid that IS an ancestor. (2) Git Bash rewrote the `/clear` argument handed to the native `tmux.exe` into `C:/Program Files/Git/clear`, so a program in the pane received that path.
 - **Fix.** `crew_autocycle._proc` reads the Win32 process snapshot and `GetProcessTimes` on native Windows (the creation FILETIME equals the `procStart` Claude Code records, checked), with a stand-in console tty for every process, a parent that started after its child treated as a reused pid, and a `node`, `bun` or `claude` process between the session and the pane refused because the tty comparison cannot run. `auto-clear.sh` exports `MSYS_NO_PATHCONV=1` before `tmux send-keys` in both the clear and the resume sender. `tmux` is now listed for the `windows` platform row too.
 - **Verified.** In a pmux pane a program with a real session record received `/clear` and Enter from the real `auto-clear.sh` (method tmux, target `%1`); `send-keys -l` and `Enter` reach a raw-mode console program. Not verified: a real Claude Code TUI as the receiving program.

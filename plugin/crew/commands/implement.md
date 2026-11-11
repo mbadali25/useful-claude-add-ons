@@ -46,8 +46,8 @@ match reality is a plan defect — rule on it, note the ruling and why in your r
 Who types is not assumed: read the effective dev table with
 `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_config.py --root . --models` and dispatch whatever
 `dev.roles.developer` names, else `dev.provider`, pasting that checklist into every dispatch prompt. A dispatched prompt
-carries no attribution or trailer instruction of its own, not even one a harness reminder supplied: the owner's own
-instructions decide. `/crew:done` reports `git.forbiddenTrailers` hits; they are refused at commit once the scope-guard
+carries no attribution or trailer instruction of its own, not even one a harness reminder supplied, and tells the
+developer to add no `Co-Authored-By` trailer and no "Generated with Claude Code" line: crew never adds either. `/crew:done` reports `git.forbiddenTrailers` hits; they are refused at commit once the scope-guard
 change lands. The developer may commit on this ticket's own branch and nowhere else. Record the dispatch the moment it
 returns, with what actually ran, never the pin:
 

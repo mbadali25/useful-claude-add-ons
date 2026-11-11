@@ -235,7 +235,7 @@ their limits (Windows' entrypoint is unmeasured; macOS cannot check the start ti
 
 - **tmux (Linux, macOS, WSL):** the pane in `$TMUX_PANE`, and only when that pane's process is this
   session's own process or an ancestor of it. No title is needed. This is the most reliable method.
-- **pmux / psmux (native Windows, crew 1.3.41):** psmux is a native tmux clone whose `tmux`, `pmux`
+- **pmux / psmux (native Windows, crew 1.3.43):** psmux is a native tmux clone whose `tmux`, `pmux`
   and `psmux` commands are one program; it sets `$TMUX` and `$TMUX_PANE` in the pane's shell and
   `display-message -p '#{pane_pid}'` returns a Windows pid. crew reads the process tree from the Win32
   process snapshot (there is no `/proc`) and applies the tmux rule above: the pane's pid must be an
