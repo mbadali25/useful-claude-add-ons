@@ -91,7 +91,7 @@ CATEGORIES = ("files", "git", "terraform")
 DEFAULT_OVERRIDES = {"terraform": {"deleteCount": 3, "createCount": 10, "changeCount": 10}}
 
 EXEMPT_NAMES = frozenset((
-    "__pycache__", ".venv", "venv", ".pytest_cache", ".mypy_cache",
+    "node_modules", "__pycache__", ".venv", "venv", ".pytest_cache", ".mypy_cache",
     ".ruff_cache", ".tox", ".cache", "build", "dist", ".work", ".eggs", "_build"))
 WORKTREES = "worktrees"
 MAX_WALK = 5000
@@ -614,17 +614,40 @@ def _resolve(operand, cwd, cd):
     return os.path.join(cwd, operand), True
 
 
-_LEADING_CD_RE = re.compile(
-    r"""^\s*(?P<cmd>cd|pushd|set-location|sl)\s+(?P<opt>-(?:literalpath|path)\s+)?"""
-    r"""(?:"(?P<dq>[^"$`*?\[\]]+)"|'(?P<sq>[^']+)'|(?P<bare>[^\s"'$`*?\[\]{}()<>|;&]+))"""
-    r"""\s*(?:&&|;)\s*(?P<rest>\S.*)$""", re.IGNORECASE | re.DOTALL)
+# --- the one cd this guard follows ---------------------------------------------------
+#
+# ONE strict grammar over the WHOLE command: `cd <plain path> && git <plain args>` on one
+# plain line (PowerShell: `Set-Location|cd|sl <plain path>`, then `;` or `&&`, then git).
+# Plain: ASCII only, ASCII space or tab between tokens, a path of letters digits and
+# `_ . / : -` (PowerShell also `\`), and git arguments of bare words or quoted strings that
+# hold no `$`, backtick, backslash, `;`, newline or non-ASCII. Anything else after a cd (a
+# second command, pipe, redirect, expansion, heredoc, assignment, alias, NBSP...) does not
+# match and stays "could not tell", exactly as on main. A tripwire, not a sandbox: it decides
+# only that the one git command runs in the cd's directory.
+_QCHARS = "".join(chr(c) for c in range(0x20, 0x7f) if chr(c) not in "$`\\;")
+
+
+def _quoted(quote):
+    return quote + "[" + re.escape(_QCHARS.replace(quote, "")) + "]*" + quote
+
+
+def _args(word):
+    return rf"(?:{word}|{_quoted(chr(39))}|{_quoted(chr(34))}|[ \t])+"
+
+
+_BASH_CD_RE = re.compile(
+    r"[ \t]*cd[ \t]+(?P<path>(?!-)[A-Za-z0-9_./:-]+)[ \t]*&&[ \t]*git[ \t]+"
+    + _args(r"[A-Za-z0-9_\-./=:@,+%]+") + r"\Z")
+_PS_CD_RE = re.compile(
+    r"[ \t]*(?:set-location|cd|sl)[ \t]+(?P<path>(?!-)[A-Za-z0-9_./:\\-]+)[ \t]*(?:&&|;)[ \t]*"
+    r"git[ \t]+" + _args(r"[A-Za-z0-9_\-./=:,+%]+") + r"\Z", re.IGNORECASE)
 
 
 def _cdpath_may_apply(target, command):
     """True when bash's `cd <target>` could resolve through CDPATH: a bare relative
-    name (not `.`, `..`, `./x`, `../x`, `~x` or absolute) while CDPATH is set in
-    this environment or named in the command."""
-    if target in (".", "..") or target.startswith(("/", "./", "../", "~")):
+    name (not `.`, `..`, `./x`, `../x` or absolute) while CDPATH is set in this
+    environment or named in the command."""
+    if target in (".", "..") or target.startswith(("/", "./", "../")):
         return False
     if os.path.isabs(target) or _DRIVE_RE.match(target):
         return False
@@ -632,502 +655,20 @@ def _cdpath_may_apply(target, command):
 
 
 def leading_cd(command, cwd, shell="bash"):
-    """`(directory, rest)` when `command` is exactly `cd <literal> && <rest>`
-    (or `;`) and the literal names an existing directory, else None. This is
-    the one cd whose destination is certain: it comes first, so the whole of
-    `rest` runs there. The caller must still check `rest` moves nowhere else.
-    A backslash path is read only for PowerShell (in bash it is an escape).
-    Bash runs exactly lowercase `cd` / `pushd`: `CD`, `sl`, `Set-Location` and
-    `-LiteralPath` are not cd there, so git would run in the ORIGINAL directory
-    and they are never followed. A relative name with CDPATH set (or named in the
-    command) may resolve elsewhere, so it is not followed either."""
-    match = _LEADING_CD_RE.match(command or "")
+    """The directory `command` runs git in when it is exactly one plain
+    `cd <path> && git <args>` line (see above) and the path is an existing
+    directory, else None ("could not tell")."""
+    powershell = shell == "powershell"
+    match = (_PS_CD_RE if powershell else _BASH_CD_RE).match(command or "")
     if not match or not cwd:
         return None
-    powershell = shell == "powershell"
-    if not powershell and (match.group("cmd") not in ("cd", "pushd") or match.group("opt")):
-        return None
-    target = match.group("dq") or match.group("sq") or match.group("bare")
-    if target is None or (not powershell and "\\" in target):
-        return None
+    target = match.group("path")
     if not powershell and _cdpath_may_apply(target, command):
         return None
     path, ok = _resolve(target, cwd, False)
     if not ok or not os.path.isdir(path):
         return None
-    return os.path.normpath(path), match.group("rest")
-
-
-# --- the positive grammar behind a followed cd --------------------------------------
-#
-# After a followed leading cd the rest of the command must be PLAIN, proven, not
-# merely free of the spellings someone thought of. A small tokenizer reads it (quotes,
-# $( ) nesting, backticks, heredoc bodies; it splits only on UNQUOTED operators) and
-# every simple command must then have an ordinary literal command word. Anything the
-# tokenizer is not sure of is "not plain", which is "could not tell". A tripwire, not a
-# sandbox: this decides only whether the shell's directory is still the cd's.
-
-
-class _Unsure(Exception):
-    """The text is not one this tokenizer can read with certainty."""
-
-
-class _Word:
-    """One shell word as written. `dyn`: it holds a quote, an escape or an expansion
-    (it is not a bare literal). `redir`: it carries a redirection operator."""
-    def __init__(self):
-        self.raw, self.dyn, self.redir = "", False, False
-
-
-_OPS = ("&&", "||", "|")
-_CASE_RE = re.compile(r"case(?![\w-])")
-_REDIR_RE = re.compile(r"&?(?:>>|>\|?|<>|<)&?")
-_BASH_PLAIN_WORD = re.compile(r"[A-Za-z0-9_./:+,@%-]+")
-_PS_PLAIN_WORD = re.compile(r"[A-Za-z0-9_./\\:+-]+")
-_PS_ASSIGN_RE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*")
-_PS_TYPOGRAPHIC = "\u2018\u2019\u201a\u201b\u201c\u201d\u201e"
-_BASH_NOT_PLAIN = frozenset((
-    # keywords: a command word after them is not the first word of its segment
-    "if", "then", "else", "elif", "fi", "while", "until", "do", "done", "for", "case", "esac",
-    "function", "select", "time", "coproc", "in", "!",
-    # wrappers and evaluators that run a word built or found at run time
-    "command", "builtin", "exec", "eval", "source", ".", "env", "xargs", "sudo", "doas", "nice",
-    "nohup", "timeout", "setsid", "stdbuf", "ionice", "watch", "parallel", "chroot", "unshare",
-    "nsenter", "strace", "bash", "sh", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "pwsh",
-    "powershell", "cmd",
-    # anything that moves the shell or rewrites how the next word is read
-    "cd", "pushd", "popd", "chdir", "alias", "unalias", "shopt", "enable", "trap", "hash",
-    "set", "setopt", "unsetopt", "declare", "typeset", "local", "readonly", "export", "unset",
-    "read", "mapfile", "readarray", "let", "exit", "return", "break", "continue", "umask"))
-_PS_NOT_PLAIN = frozenset((
-    "&", ".", "iex", "invoke-expression", "invoke-command", "icm", "invoke-item", "ii",
-    "invoke-history", "ihy", "r", "set-alias", "sal", "new-alias", "nal", "import-alias",
-    "ipal", "set-item", "si", "new-item", "ni", "set-variable", "sv", "new-variable", "nv",
-    "set-location", "sl", "cd", "chdir", "push-location", "pushd", "pop-location", "popd",
-    "foreach-object", "foreach", "%", "where-object", "where", "?", "start-job", "sajb",
-    "start-process", "saps", "start", "import-module", "ipmo", "new-module", "nmo",
-    "add-type", "new-psdrive", "mount", "ndr", "set-psdrive", "if", "else", "elseif", "while",
-    "do", "until", "for", "switch", "try", "catch", "finally", "function", "filter", "trap",
-    "return", "break", "continue", "throw", "param", "class", "using", "begin", "process",
-    "end", "dynamicparam", "workflow", "configuration", "data", "exit"))
-
-
-def _skip_single(text, i):
-    end = text.find("'", i + 1)
-    if end < 0:
-        raise _Unsure("unterminated single quote")
-    return end + 1
-
-
-def _skip_backtick(text, i):
-    i += 1
-    while i < len(text):
-        if text[i] == "\\":
-            i += 2
-        elif text[i] == "`":
-            return i + 1
-        else:
-            i += 1
-    raise _Unsure("unterminated backtick")
-
-
-def _skip_dq(text, i):
-    """Index after the closing `"` of the double-quoted string opening at `i`."""
-    i += 1
-    while i < len(text):
-        char = text[i]
-        if char == "\\":
-            i += 2
-        elif char == '"':
-            return i + 1
-        elif char == "`":
-            i = _skip_backtick(text, i)
-        elif text.startswith("$((", i):
-            raise _Unsure("arithmetic expansion")
-        elif text.startswith("$(", i):
-            i = _skip_subst(text, i + 2)
-        else:
-            i += 1
-    raise _Unsure("unterminated double quote")
-
-
-def _heredoc_delim(text, i):
-    """`(index after the operator and its delimiter word, (delimiter, strip_tabs))`
-    for the `<<` at `i`."""
-    j, strip = i + 2, False
-    if text[j:j + 1] == "-":
-        strip, j = True, j + 1
-    while text[j:j + 1] in (" ", "\t"):
-        j += 1
-    if text[j:j + 1] in ("'", '"'):
-        end = text.find(text[j], j + 1)
-        if end < 0:
-            raise _Unsure("unterminated heredoc delimiter")
-        delim, j = text[j + 1:end], end + 1
-    else:
-        match = re.compile(r"\\?([A-Za-z0-9_.-]+)").match(text, j)
-        if not match:
-            raise _Unsure("unreadable heredoc delimiter")
-        delim, j = match.group(1), match.end()
-    if re.match(r"[A-Za-z0-9_$`'\"\\]", text[j:j + 1] or " "):
-        raise _Unsure("heredoc delimiter continues")
-    return j, (delim, strip)
-
-
-def _skip_heredoc_bodies(text, i, pending):
-    """Index after the bodies of `pending` heredocs, which start at `i`; each ends
-    at a line holding exactly its delimiter."""
-    for delim, strip in pending:
-        while True:
-            if i >= len(text):
-                raise _Unsure("heredoc never ends")
-            end = text.find("\n", i)
-            line = text[i:] if end < 0 else text[i:end]
-            i = len(text) if end < 0 else end + 1
-            if (line.lstrip("\t") if strip else line) == delim:
-                break
-    return i
-
-
-def _skip_subst(text, i):
-    """Index after the `)` closing the `$(` whose body starts at `i`."""
-    depth, pending, start = 1, [], i
-    while i < len(text):
-        char = text[i]
-        if char == "'":
-            i = _skip_single(text, i)
-        elif char == '"':
-            i = _skip_dq(text, i)
-        elif char == "\\":
-            i += 2
-        elif char == "`":
-            i = _skip_backtick(text, i)
-        elif text.startswith("$((", i):
-            raise _Unsure("arithmetic expansion")
-        elif text.startswith("$(", i):
-            i = _skip_subst(text, i + 2)
-        elif text.startswith("<<", i) and not text.startswith("<<<", i):
-            i, delim = _heredoc_delim(text, i)
-            pending.append(delim)
-        elif char == "\n" and pending:
-            i, pending = _skip_heredoc_bodies(text, i + 1, pending), []
-        elif char == "#" and (i == start or text[i - 1] in " \t\n;&|("):
-            raise _Unsure("a comment inside a substitution")
-        elif char == "c" and _CASE_RE.match(text, i) and (
-                i == start or not re.match(r"[\w-]", text[i - 1])):
-            raise _Unsure("a case statement inside a substitution")
-        elif char in "()":
-            depth += -1 if char == ")" else 1
-            i += 1
-            if depth == 0:
-                if pending:
-                    raise _Unsure("heredoc opened but never read")
-                return i
-        else:
-            i += 1
-    raise _Unsure("unterminated substitution")
-
-
-def _skip_brace(text, i):
-    """Index after the `}` closing the `${` whose body starts at `i`."""
-    depth = 1
-    while i < len(text):
-        char = text[i]
-        if char == "'":
-            i = _skip_single(text, i)
-        elif char == '"':
-            i = _skip_dq(text, i)
-        elif char == "\\":
-            i += 2
-        elif char == "`":
-            i = _skip_backtick(text, i)
-        elif text.startswith("$(", i):
-            i = _skip_subst(text, i + 2)
-        else:
-            depth += {"{": 1, "}": -1}.get(char, 0)
-            i += 1
-            if depth == 0:
-                return i
-    raise _Unsure("unterminated ${")
-
-
-class _Lexer:
-    """Splits a command into simple commands (lists of `_Word`), on unquoted
-    operators only. Raises `_Unsure` rather than guess."""
-
-    def __init__(self, text, powershell):
-        self.text, self.ps = text, powershell
-        self.i, self.cmds, self.words, self.cur = 0, [], [], None
-        self.pending, self.after_op = [], False
-
-    def add(self, chunk, dyn=False, redir=False):
-        if self.cur is None:
-            self.cur = _Word()
-        self.cur.raw += chunk
-        self.cur.dyn = self.cur.dyn or dyn
-        self.cur.redir = self.cur.redir or redir
-
-    def end_word(self):
-        if self.cur is not None:
-            self.words.append(self.cur)
-            self.cur = None
-
-    def end_cmd(self, op):
-        self.end_word()
-        if self.words:
-            self.cmds.append(self.words)
-            self.words, self.after_op = [], op in _OPS
-        elif op in _OPS or (op == ";" and self.after_op):
-            raise _Unsure("an operator with no command")
-
-    def run(self):
-        text = self.text
-        while self.i < len(text):
-            char = text[self.i]
-            if char in " \t":
-                self.end_word()
-                self.i += 1
-            elif char == "\n":
-                self.end_cmd("\n")
-                self.i += 1
-                if self.pending:
-                    self.i, self.pending = _skip_heredoc_bodies(text, self.i, self.pending), []
-            else:
-                self.step(char)
-        if self.pending:
-            raise _Unsure("heredoc never read")
-        self.end_cmd("\n")
-        if self.after_op:
-            raise _Unsure("ends on an operator")
-        return self.cmds
-
-    def step(self, char):
-        text, i = self.text, self.i
-        if char == "'":
-            self.i = _skip_single(text, i)
-            self.add(text[i:self.i], dyn=True)
-        elif char == '"':
-            self.i = _skip_ps_dq(text, i) if self.ps else _skip_dq(text, i)
-            self.add(text[i:self.i], dyn=True)
-        elif char in "()" or (self.ps and char in "{}`"):
-            raise _Unsure("a group, block or escape")
-        elif char == "#" and self.cur is None:
-            raise _Unsure("a comment")
-        elif char == "$":
-            self.dollar()
-        elif char == ";":
-            if text[i + 1:i + 2] in (";", "&"):
-                raise _Unsure("a case terminator")
-            self.end_cmd(";")
-            self.i += 1
-        elif char == "|" or (char == "&" and text.startswith("&&", i)):
-            self.operator(char)
-        elif char in "<>&":
-            self.redirect()
-        elif char == "\\" and not self.ps:
-            if text[i + 1:i + 2] in ("", "\n"):
-                raise _Unsure("a line continuation")
-            self.add(text[i:i + 2], dyn=True)
-            self.i += 2
-        elif char == "`":
-            self.i = _skip_backtick(text, i)
-            self.add(text[i:self.i], dyn=True)
-        elif char == "@" and self.ps and text[i + 1:i + 2] in ("'", '"'):
-            self.here_string()
-        else:
-            self.add(char)
-            self.i += 1
-
-    def operator(self, char):
-        text, i = self.text, self.i
-        two = text[i:i + 2]
-        if two in ("&&", "||"):
-            self.end_cmd(two)
-            self.i += 2
-        elif char == "|" and text[i + 1:i + 2] != "&":
-            self.end_cmd("|")
-            self.i += 1
-        else:
-            raise _Unsure("a background or stderr pipe")
-
-    def redirect(self):
-        text, i = self.text, self.i
-        if text.startswith(("<(", ">("), i) or (self.ps and text[i] == "<"):
-            raise _Unsure("process substitution or an input redirect")
-        if text.startswith("<<<", i):
-            self.add("<<<", redir=True)
-            self.i += 3
-            return
-        if text.startswith("<<", i):
-            if self.ps:
-                raise _Unsure("a heredoc in PowerShell")
-            self.i, delim = _heredoc_delim(text, i)
-            self.pending.append(delim)
-            self.add(text[i:self.i], redir=True)
-            return
-        match = _REDIR_RE.match(text, i)
-        if not match or text[match.end():match.end() + 1] == "(":
-            raise _Unsure("a redirection or a lone &")
-        self.add(match.group(), redir=True)
-        self.i = match.end()
-
-    def dollar(self):
-        text, i = self.text, self.i
-        nxt = text[i + 1:i + 2]
-        if self.ps:
-            if nxt in ("(", "{"):
-                raise _Unsure("a PowerShell subexpression")
-            self.add("$", dyn=True)
-            self.i += 1
-            return
-        if text.startswith("$((", i):
-            raise _Unsure("arithmetic expansion")
-        if nxt == "(":
-            self.i = _skip_subst(text, i + 2)
-        elif nxt == "{":
-            self.i = _skip_brace(text, i + 2)
-        elif nxt == '"':
-            self.i = _skip_dq(text, i + 1)
-        elif nxt == "'":
-            j = i + 2
-            while j < len(text) and text[j] != "'":
-                j += 2 if text[j] == "\\" else 1
-            if j >= len(text):
-                raise _Unsure("unterminated $'")
-            self.i = j + 1
-        else:
-            match = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*|[0-9?!#$*@-])?").match(text, i)
-            self.i = match.end()
-        self.add(text[i:self.i], dyn=True)
-
-    def here_string(self):
-        text, i = self.text, self.i
-        quote = text[i + 1]
-        if not re.compile(r"[ \t]*\n").match(text, i + 2):
-            raise _Unsure("not a here-string")
-        end = text.find("\n" + quote + "@", i + 2)
-        if end < 0:
-            raise _Unsure("unterminated here-string")
-        if quote == '"' and re.search(r"\$[({]", text[i:end]):
-            raise _Unsure("an expansion in a PowerShell here-string")
-        self.i = end + 3
-        self.add(text[i:self.i], dyn=True)
-
-
-def _skip_ps_dq(text, i):
-    """Index after the closing `"` of a PowerShell double-quoted string at `i`. A
-    subexpression (`$(`) or a braced name is not read: it can run a command."""
-    i += 1
-    while i < len(text):
-        char = text[i]
-        if char == "`":
-            i += 2
-        elif char == '"':
-            return i + 1
-        elif char == "$" and text[i + 1:i + 2] in ("(", "{"):
-            raise _Unsure("a PowerShell subexpression")
-        else:
-            i += 1
-    raise _Unsure("unterminated double quote")
-
-
-def shell_commands(text, shell="bash"):
-    """The simple commands of `text` as lists of `_Word`, or None when the text
-    cannot be read with certainty (the caller treats that as "could not tell")."""
-    powershell = shell == "powershell"
-    text = (text or "").replace("\r\n", "\n")
-    if "\r" in text or (powershell and any(q in text for q in _PS_TYPOGRAPHIC)):
-        return None
-    try:
-        return _Lexer(text, powershell).run()
-    except (_Unsure, IndexError):
-        return None
-
-
-def _ps_assignment_ok(words):
-    """`$name = <literal>` / `$name=<literal>`: the one statement a PowerShell tail
-    may open with that is not a command (a message held in a variable)."""
-    if any(w.redir for w in words):
-        return False
-    if len(words) == 1:
-        head, _eq, value = words[0].raw.partition("=")
-    elif len(words) == 3 and words[1].raw == "=":
-        head, value = words[0].raw, words[2].raw
-    else:
-        return False
-    return bool(_PS_ASSIGN_RE.fullmatch(head) and value and "$" not in value
-                and "`" not in value)
-
-
-def plain_tail(rest, shell="bash"):
-    """True only when every simple command in `rest` is positively PLAIN: an
-    ordinary literal command word (letters, digits and `_ - . / : + , @ %`), not a
-    keyword, wrapper, evaluator or anything that moves the shell, with no
-    assignment or redirection before it, joined by `&&` `||` `;` `|` or a newline.
-    After a followed cd that is the only shape whose directory is certain; anything
-    else (including what the tokenizer is unsure of) is "could not tell".
-    Deliberately refused, though harmless: `exec git commit`, `X=1 git commit`."""
-    cmds = shell_commands(rest, shell)
-    if not cmds:
-        return False
-    powershell = shell == "powershell"
-    for words in cmds:
-        first = words[0]
-        if first.redir:
-            return False
-        if powershell and first.raw.startswith("$"):
-            if not _ps_assignment_ok(words):
-                return False
-            continue
-        word_re = _PS_PLAIN_WORD if powershell else _BASH_PLAIN_WORD
-        if first.dyn or not word_re.fullmatch(first.raw):
-            return False
-        denied = _PS_NOT_PLAIN if powershell else _BASH_NOT_PLAIN
-        if re.split(r"[\\/]", first.raw)[-1].lower() in denied:
-            return False
-        if powershell and any(re.search(r"(?i)\b(?:alias|function):", w.raw) for w in words):
-            return False
-    return True
-
-
-_ENV_HEADS = frozenset(("env", "export", "declare", "typeset", "readonly", "local"))
-_OBSCURED = re.compile(r"[\"'\\`${}]")
-_LOOSE_OBSCURED_RE = re.compile(r"[\w\"'\\$`{}]*[\"'\\$`{}][\w\"'\\$`{}]*=")
-_PS_ENV_NAME = re.compile(r"(?i)(?:\$\{?env:|\benv:)(?:(?![A-Za-z_])|[A-Za-z0-9_]*[$\"'`{+(])")
-_PS_SETENV = re.compile(r"(?i)\bsetenvironmentvariable\b(?!\(\s*(['\"])[A-Za-z_][A-Za-z0-9_]*\1\s*,)")
-
-
-def _name_part(raw):
-    return raw.split("=", 1)[0]
-
-
-def obscures_env_name(command, shell="bash"):
-    """True when an assignment name, or an `env` / `export` / `declare` argument, is
-    spelled with a quote, a backslash, `$`, `${` or backticks (`GIT_""DIR=x`,
-    `export GIT_INDEX_"FILE"=x`, `${G}INDEX_FILE=x`), so a scan for the literal
-    `GIT_DIR` etc. cannot see which variable it sets. Text the tokenizer cannot read
-    falls back to a looser pattern: an unknown does not become "no"."""
-    if shell == "powershell":
-        return bool(_PS_ENV_NAME.search(command or "") or _PS_SETENV.search(command or ""))
-    cmds = shell_commands(command, shell)
-    if cmds is None:
-        return bool(_LOOSE_OBSCURED_RE.search(command or ""))
-    for words in cmds:
-        index = 0
-        while index < len(words) and "=" in words[index].raw:
-            if _OBSCURED.search(_name_part(words[index].raw)):
-                return True
-            index += 1
-        if index >= len(words) or words[index].raw not in _ENV_HEADS:
-            continue
-        for word in words[index + 1:]:
-            if word.raw.startswith("-"):
-                continue
-            if "=" not in word.raw and words[index].raw == "env":
-                break  # env's command starts here
-            if _OBSCURED.search(_name_part(word.raw)):
-                return True
-    return False
+    return os.path.normpath(path)
 
 
 def _exempt_at(path, cwd, globs=()):

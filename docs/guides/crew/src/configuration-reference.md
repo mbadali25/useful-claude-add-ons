@@ -168,39 +168,34 @@ against its base - so Write and Edit work is counted where it is about to be
 shared; `terraform apply <plan>` (the plan's own changes), `destroy` and
 `apply -auto-approve`; and an unfiltered SQL `DELETE` or `UPDATE`.
 
-A command that starts `cd <dir> && ...` (or `;`, and `pushd`) is counted in
-that directory only for the PLAIN forms. `<dir>` must be a literal path to an
-existing directory, and everything after the `cd` must be positively proven
-plain: simple commands joined by `&&`, `||`, `;`, `|` or a newline, each with
-an ordinary literal command word (letters, digits and `_ - . / : + , @ %`)
-that is not a keyword (`if`, `while`, `time`, `{ }`), a wrapper or evaluator
-(`command`, `builtin`, `exec`, `eval`, `source`, `env`, `xargs`, `sudo`, a
-shell) or anything that moves the shell (`cd`, `alias`, `set`, `export`), with
-no assignment or redirection before it and no brace, glob, tilde or `$`
-expansion in it. Quotes, `$(...)`, backticks and heredoc bodies inside an
-argument are read, not guessed at, so `cd <worktree> && git commit -m "$(cat
-<<'EOF' ... EOF)"` is counted. Anything the reader is not sure of, `exec git
-commit` and `X=1 git commit` included, is "could not tell". In PowerShell only
-a literal leading `Set-Location`, `sl` or `cd` with a literal path counts, then
-plain statements (`$m='msg'; git commit -m $m` is one); `&`, `.`, `iex`,
-scriptblocks, aliases, functions, method calls and a `$x` command name are
-"could not tell". In bash only a lowercase `cd` or `pushd` counts (`CD`, `sl`
-and `Set-Location` are not cd there). A relative name is not followed when
-`CDPATH` is set, since `cd` may resolve it elsewhere. Several `-C` options are
-resolved one after another, as git does.
-A count that cannot be taken - a variable in a path, any other `cd` (a second
-one, one not first, `cd $DIR`, a missing directory), `GIT_DIR`, `GIT_WORK_TREE`,
-`GIT_INDEX_FILE` or another `GIT_` location variable (also when its name is
-spelled with quotes or an expansion: `GIT_""DIR=x`, `${G}INDEX_FILE=x`) or
+A command is counted in another directory ONLY when the whole command is one plain
+line: in bash `cd <path> && git <args>`; in PowerShell `Set-Location`, `sl` or `cd`
+`<path>`, then `;` or `&&`, then `git <args>`. The path is an existing directory written
+with letters, digits and `_ . / : -` (PowerShell also `\`) - no quotes, `~`, `$` or glob.
+The arguments are bare words or quoted strings that hold no `$`, backtick, backslash, `;`,
+newline or non-ASCII character, and only an ASCII space or tab separates tokens. So `cd X &&
+git commit -m 'simple'` and `cd X && git push` are counted in X. EVERYTHING else after a
+`cd` is "could not tell", exactly as it was before this change: a second command, a chain,
+a pipe, a redirect, `$(...)`, a backtick, a heredoc, an assignment, an alias, `pushd`, a
+quoted or `~` path, a `;` in bash, a newline or NBSP after the target, PowerShell `cd..` or
+a `$m` variable. `cd X && git add -A && git commit` is therefore still refused; run it as two
+commands. A relative name is not followed when `CDPATH` is set, since `cd` may resolve it
+elsewhere. Several `-C` options are resolved one after another, as git does.
+A count that cannot be taken - a variable in a path, any `cd` that is not that one plain
+line (a second one, one not first, `cd $DIR`, a missing directory), `GIT_DIR`,
+`GIT_WORK_TREE`, `GIT_INDEX_FILE` or another `GIT_` location variable spelled out in the
+command, or
 `--git-dir` / `--work-tree` in the command, `find -delete`, `xargs rm`, a failed `git`, an
 unfiltered SQL statement (no command text says how many rows it hits) - is
 "could not tell", and could not tell stops. It does NOT see a script (`bash cleanup.sh`, `python -c`,
 `make clean`), an MCP server, the Write and Edit tools before they are
 committed, `tar -x` or `unzip`, `git merge` or `pull`, or many small commands
 each under a limit: a tripwire in front of native permissions, not a sandbox.
-Known gaps, not fixed here: an alias set with `git -c alias.x=...` hides the
-subcommand it runs, and a `CDPATH` that is set in the shell but not exported to
-the hook is not seen.
+Known gaps, not fixed here (all as on main): an alias set with `git -c alias.x=...`
+hides the subcommand it runs; a `CDPATH` that is set in the shell but not exported to
+the hook is not seen; a `GIT_` variable whose name is spelled with quotes or an
+expansion is not seen; and a cd run without a `cd` word (`trap`, `find -exec`,
+`Start-Process`, a command word built from a variable) is not seen.
 
 A stopped command prints an id. Attended, the stop is an `ask`; unattended
 it is a `deny`. Type `/crew:approve-mass <id>` in the session, then re-run the

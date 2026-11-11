@@ -1002,16 +1002,16 @@ by no hook, and a session that runs arbitrary python can still forge a receipt.
 
 DERIVED from `plugin/crew/hooks/scripts/crew_mass.py` (stdlib only) and
 `plugin/crew/hooks/scripts/cloud_guard.py`; tests `plugin/crew/tests/test_mass_guard.py`,
-mutations `plugin/crew/tests/mass_mutations.py` (67 by `len(MASS_MUTATIONS)`, run alone:
+mutations `plugin/crew/tests/mass_mutations.py` (78 by `len(MASS_MUTATIONS)`, run alone:
 `sabotage*.py` is harness).
 `cloud_guard._classify` (`cloud_guard.py:2149`) asks `crew_mass.classify`
 (`crew_mass.py:461`) for `Spec`s on every simple command and wraps each as a
 `Finding` whose rule is `massDelete`, `massCreate` or `massChange`
 (`crew_mass.RULES`). `cloud_guard.evaluate` (`cloud_guard.py:3140`) ignores those
-findings unless `mass["armed"]`, then `crew_mass.judge` (`crew_mass.py:1463`)
+findings unless `mass["armed"]`, then `crew_mass.judge` (`crew_mass.py:1004`)
 counts, compares with the limit and answers `ask` (attended) or `deny`
-(`unattended`), or `allow` when `live_approval` (`crew_mass.py:1411`) finds the
-owner's file. `cloud_guard.main` (`cloud_guard.py:3416`) calls
+(`unattended`), or `allow` when `live_approval` (`crew_mass.py:952`) finds the
+owner's file. `cloud_guard.main` (`cloud_guard.py:3412`) calls
 `crew_mass.settings` (`crew_mass.py:164`) before the `guards.cloudGuard`
 `off` early return, so the stop works with the cloud guard off (`only_mass`).
 The switch is `guards.mass.enabled` true in either layer, else
@@ -1021,29 +1021,29 @@ anything unreadable is off. `_limits` (`crew_mass.py:200`): machine value, else
 the repo layer can only lower. `exempt` (`crew_mass.py:261`) is the regenerable
 directory list; `worktrees` exempts by path only within two components below it,
 and `_exempt_at` judges a path by its part below `cwd`, so a repo that lives in
-a worktree is still counted. The approval id (`approval_id`, `crew_mass.py:1400`)
+a worktree is still counted. The approval id (`approval_id`, `crew_mass.py:941`)
 is a digest of the exact command text and worktree, not of the rule; the file
 is written by `approval_hook._approve_mass` (harness PR, #737). `count_git`
-(`crew_mass.py:1309`) counts `git diff --name-status -M` lines, the branch
-against `_base` (`crew_mass.py:1277`: `origin/HEAD`, `origin/main`, `origin/master`, then the
+(`crew_mass.py:850`) counts `git diff --name-status -M` lines, the branch
+against `_base` (`crew_mass.py:818`: `origin/HEAD`, `origin/main`, `origin/master`, then the
 branch's own upstream; on a branch that is its own base, its upstream).
-A leading `cd DIR &&` is followed only for the PLAIN forms: `leading_cd`
-(`crew_mass.py:634`) takes a literal first `cd` (bash: lowercase `cd` / `pushd`
-only; a relative name under `CDPATH` is not followed), and `plain_tail`
-(`crew_mass.py:1062`) must then PROVE the rest plain. Its reader is `shell_commands`
-(`crew_mass.py:1034`, the `_Lexer` class at `crew_mass.py:854`): it tracks quotes,
-`$(...)` nesting, backticks and heredoc bodies and splits only on unquoted
-`&&` `||` `;` `|` and newlines. Every simple command needs an ordinary literal
-command word (no keyword, wrapper, evaluator, `cd`-like builtin, assignment or
-redirection before it, no brace, glob, tilde or `$` in it); PowerShell allows only
-`$name = <literal>` besides plain commands, and `&`, `.`, `iex`, scriptblocks,
-aliases, functions, method calls and `$x` command names fail. Anything the
-reader is unsure of is not plain, which is could-not-tell (`exec git commit` and
-`X=1 git commit` are refused on purpose). `GIT_DIR` / `GIT_INDEX_FILE` and kin are
-could-not-tell by the literal regex in `cloud_guard.evaluate` plus
-`crew_mass.obscures_env_name` (`crew_mass.py:1104`) for names spelled with quotes,
-`$` or `${`; repeated `-C` is joined in `_git_split`;
-`count_terraform` (`crew_mass.py:1349`) reads `terraform show -json <plan>`.
+A `cd` is followed ONLY when the whole command is one plain line: `leading_cd`
+(`crew_mass.py`, with `_BASH_CD_RE` / `_PS_CD_RE`) matches `cd <path> && git <args>` in bash
+(lowercase `cd` only, `&&` only) and `Set-Location|cd|sl <path>` then `;` or `&&` then
+`git <args>` in PowerShell. The path is letters, digits and `_ . / : -` (PowerShell also
+`\`), an existing directory, with no quote, `~`, `$` or glob; a relative name under `CDPATH`
+is not followed. The arguments are bare words or quoted strings holding no `$`, backtick,
+backslash, `;`, newline or non-ASCII character; only an ASCII space or tab separates tokens.
+Everything else after a cd (a second command, pipe, redirect, `$( )`, heredoc, assignment,
+alias, `pushd`, a quoted path, NBSP, a newline) is could-not-tell, as on origin/main. The
+round-3 tokenizer (`plain_tail`, `shell_commands`, `_Lexer`), the `sub["cd"]` re-scan in
+`cloud_guard.evaluate` and `obscures_env_name` are gone: the grammar admits one command, so
+nothing is left to re-scan. `GIT_DIR` / `GIT_INDEX_FILE` and kin are could-not-tell by the
+literal regex in `cloud_guard.evaluate` only. Known gaps, as on main: an alias set by
+`git -c alias.x=...`, an unexported `CDPATH`, a `GIT_` name spelled with quotes or `$`, and a
+cd run without a `cd` word (`trap`, `find -exec`, `Start-Process`, a command word built from
+a variable). A tripwire, not a sandbox. Repeated `-C` is joined in `_git_split`;
+`count_terraform` (`crew_mass.py:890`) reads `terraform show -json <plan>`.
 The six keys are rows in `crew_keys.KEY_META` (`crew_keys.py:106`; the mass rows from
 `crew_keys.py:344`) with defaults in `crew_guards.GUARD_BLOCK_DEFAULTS`
 (`crew_guards.py:249`).

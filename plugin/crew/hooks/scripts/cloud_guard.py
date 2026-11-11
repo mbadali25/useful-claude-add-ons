@@ -3177,19 +3177,15 @@ def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
         worst = "deny"
     mass_cwd, mass_cd = envs["cwd"] or root, bool((ctx or {}).get("cd"))
     if mass_armed and mass_cd:
-        # `cd DIR && git commit`: a first, literal cd names where the rest runs
-        # (the count is then taken there); any other move stays "could not tell".
+        # Only the whole command being one plain `cd DIR && git ...` line names where
+        # git runs (the count is then taken there); every other move stays "could not
+        # tell", as on main. The grammar admits no second command, so no re-scan is needed.
         moved = crew_mass.leading_cd(command, mass_cwd, shell)
-        if moved and crew_mass.plain_tail(moved[1], shell):
-            sub = {"cd": False, "switch": False, "engaged": envs["engaged"],
-                   "dispatch": dict(envs)}
-            scan(shell, moved[1], ctx=sub)
-            if not sub["cd"]:
-                mass_cwd, mass_cd = moved[0], False
+        if moved:
+            mass_cwd, mass_cd = moved, False
     git_env = bool(re.search(
         r"\bGIT_(?:DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJECT_DIRECTORIES|"
-        r"COMMON_DIR|CEILING_DIRECTORIES|NAMESPACE)\b", command or "", re.IGNORECASE)) \
-        or (mass_armed and crew_mass.obscures_env_name(command, shell))
+        r"COMMON_DIR|CEILING_DIRECTORIES|NAMESPACE)\b", command or "", re.IGNORECASE))
     for finding in findings:
         if finding.rule in crew_mass.RULES:
             if not mass_armed:

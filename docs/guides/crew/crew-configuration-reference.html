@@ -256,39 +256,34 @@ the added, deleted and changed files of the commit or of the whole branch
 against its base - so Write and Edit work is counted where it is about to be
 shared; <code>terraform apply &lt;plan&gt;</code> (the plan's own changes), <code>destroy</code> and
 <code>apply -auto-approve</code>; and an unfiltered SQL <code>DELETE</code> or <code>UPDATE</code>.</p>
-<p>A command that starts <code>cd &lt;dir&gt; &amp;&amp; ...</code> (or <code>;</code>, and <code>pushd</code>) is counted in
-that directory only for the PLAIN forms. <code>&lt;dir&gt;</code> must be a literal path to an
-existing directory, and everything after the <code>cd</code> must be positively proven
-plain: simple commands joined by <code>&amp;&amp;</code>, <code>||</code>, <code>;</code>, <code>|</code> or a newline, each with
-an ordinary literal command word (letters, digits and <code>_ - . / : + , @ %</code>)
-that is not a keyword (<code>if</code>, <code>while</code>, <code>time</code>, <code>{ }</code>), a wrapper or evaluator
-(<code>command</code>, <code>builtin</code>, <code>exec</code>, <code>eval</code>, <code>source</code>, <code>env</code>, <code>xargs</code>, <code>sudo</code>, a
-shell) or anything that moves the shell (<code>cd</code>, <code>alias</code>, <code>set</code>, <code>export</code>), with
-no assignment or redirection before it and no brace, glob, tilde or <code>$</code>
-expansion in it. Quotes, <code>$(...)</code>, backticks and heredoc bodies inside an
-argument are read, not guessed at, so <code>cd &lt;worktree&gt; &amp;&amp; git commit -m "$(cat
-&lt;&lt;'EOF' ... EOF)"</code> is counted. Anything the reader is not sure of, <code>exec git
-commit</code> and <code>X=1 git commit</code> included, is "could not tell". In PowerShell only
-a literal leading <code>Set-Location</code>, <code>sl</code> or <code>cd</code> with a literal path counts, then
-plain statements (<code>$m='msg'; git commit -m $m</code> is one); <code>&amp;</code>, <code>.</code>, <code>iex</code>,
-scriptblocks, aliases, functions, method calls and a <code>$x</code> command name are
-"could not tell". In bash only a lowercase <code>cd</code> or <code>pushd</code> counts (<code>CD</code>, <code>sl</code>
-and <code>Set-Location</code> are not cd there). A relative name is not followed when
-<code>CDPATH</code> is set, since <code>cd</code> may resolve it elsewhere. Several <code>-C</code> options are
-resolved one after another, as git does.
-A count that cannot be taken - a variable in a path, any other <code>cd</code> (a second
-one, one not first, <code>cd $DIR</code>, a missing directory), <code>GIT_DIR</code>, <code>GIT_WORK_TREE</code>,
-<code>GIT_INDEX_FILE</code> or another <code>GIT_</code> location variable (also when its name is
-spelled with quotes or an expansion: <code>GIT_""DIR=x</code>, <code>${G}INDEX_FILE=x</code>) or
+<p>A command is counted in another directory ONLY when the whole command is one plain
+line: in bash <code>cd &lt;path&gt; &amp;&amp; git &lt;args&gt;</code>; in PowerShell <code>Set-Location</code>, <code>sl</code> or <code>cd</code>
+<code>&lt;path&gt;</code>, then <code>;</code> or <code>&amp;&amp;</code>, then <code>git &lt;args&gt;</code>. The path is an existing directory written
+with letters, digits and <code>_ . / : -</code> (PowerShell also <code>\</code>) - no quotes, <code>~</code>, <code>$</code> or glob.
+The arguments are bare words or quoted strings that hold no <code>$</code>, backtick, backslash, <code>;</code>,
+newline or non-ASCII character, and only an ASCII space or tab separates tokens. So <code>cd X &amp;&amp;
+git commit -m 'simple'</code> and <code>cd X &amp;&amp; git push</code> are counted in X. EVERYTHING else after a
+<code>cd</code> is "could not tell", exactly as it was before this change: a second command, a chain,
+a pipe, a redirect, <code>$(...)</code>, a backtick, a heredoc, an assignment, an alias, <code>pushd</code>, a
+quoted or <code>~</code> path, a <code>;</code> in bash, a newline or NBSP after the target, PowerShell <code>cd..</code> or
+a <code>$m</code> variable. <code>cd X &amp;&amp; git add -A &amp;&amp; git commit</code> is therefore still refused; run it as two
+commands. A relative name is not followed when <code>CDPATH</code> is set, since <code>cd</code> may resolve it
+elsewhere. Several <code>-C</code> options are resolved one after another, as git does.
+A count that cannot be taken - a variable in a path, any <code>cd</code> that is not that one plain
+line (a second one, one not first, <code>cd $DIR</code>, a missing directory), <code>GIT_DIR</code>,
+<code>GIT_WORK_TREE</code>, <code>GIT_INDEX_FILE</code> or another <code>GIT_</code> location variable spelled out in the
+command, or
 <code>--git-dir</code> / <code>--work-tree</code> in the command, <code>find -delete</code>, <code>xargs rm</code>, a failed <code>git</code>, an
 unfiltered SQL statement (no command text says how many rows it hits) - is
 "could not tell", and could not tell stops. It does NOT see a script (<code>bash cleanup.sh</code>, <code>python -c</code>,
 <code>make clean</code>), an MCP server, the Write and Edit tools before they are
 committed, <code>tar -x</code> or <code>unzip</code>, <code>git merge</code> or <code>pull</code>, or many small commands
 each under a limit: a tripwire in front of native permissions, not a sandbox.
-Known gaps, not fixed here: an alias set with <code>git -c alias.x=...</code> hides the
-subcommand it runs, and a <code>CDPATH</code> that is set in the shell but not exported to
-the hook is not seen.</p>
+Known gaps, not fixed here (all as on main): an alias set with <code>git -c alias.x=...</code>
+hides the subcommand it runs; a <code>CDPATH</code> that is set in the shell but not exported to
+the hook is not seen; a <code>GIT_</code> variable whose name is spelled with quotes or an
+expansion is not seen; and a cd run without a <code>cd</code> word (<code>trap</code>, <code>find -exec</code>,
+<code>Start-Process</code>, a command word built from a variable) is not seen.</p>
 <p>A stopped command prints an id. Attended, the stop is an <code>ask</code>; unattended
 it is a <code>deny</code>. Type <code>/crew:approve-mass &lt;id&gt;</code> in the session, then re-run the
 exact command. One id covers every limit that command trips.</p>
