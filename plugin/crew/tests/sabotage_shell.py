@@ -10,7 +10,10 @@ import os
 
 CREW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHELL = os.path.join(CREW, "hooks", "scripts", "crew_shell.py")
+CREW_HOOK = os.path.join(CREW, "hooks", "scripts", "crew_hook.py")
 _T = "tests/test_crew_shell.py::"
+_U = "tests/test_crew_gitbash_unknown.py::"
+_K = "tests/test_crew_hook_gitbash_kind.py::"
 _S = "tests/test_status.py::"
 
 SHELL_MUTATIONS = (
@@ -60,4 +63,38 @@ SHELL_MUTATIONS = (
      '    if data["state"] == "usable" and not (isinstance(distro, str) and distro):\n',
      "    if False:\n",
      _T + "test_a_usable_cache_without_a_distro_is_unknown"),
+    # A slow Git Bash is could-not-tell, never "not found" (crew 1.3.41/1.3.42).
+    ("strict Git Bash: a self-test timeout is reported as a broken bash", SHELL,
+     '        return "unknown", f"did not answer within {timeout}s"\n',
+     '        return "broken", f"did not answer within {timeout}s"\n',
+     _U + "test_a_present_but_slow_git_bash_is_allowed_once_a_retry_answers"),
+    ("strict Git Bash: an unanswered self-test is never retried", SHELL,
+     '        if state == "broken":\n            return state, detail\n',
+     '        if state != "ok":\n            return state, detail\n',
+     _U + "test_a_present_but_slow_git_bash_is_allowed_once_a_retry_answers"),
+    ("strict Git Bash: a resource-failure exit counts as a broken bash", SHELL,
+     "    if _LOAD_STDERR.search(text):\n",
+     "    if False:\n",
+     _U + "test_a_bash_that_dies_on_a_resource_failure_is_unknown_not_broken"),
+    ("strict Git Bash: the last known good ignores a changed file", SHELL,
+     "        return bool(now) and all(data.get(key) == now[key] for key in now)\n",
+     "        return bool(now)\n",
+     _U + "test_a_changed_bash_exe_is_not_trusted_from_the_last_known_good"),
+    ("strict Git Bash: no answer after the retries is reported as absent", SHELL,
+     "    unknown = [item for item in trouble if item[0] == \"unknown\"]\n    if unknown:\n",
+     "    if False:\n",
+     _U + "test_a_present_git_bash_that_never_answers_blocks_as_unknown_with_bounded_attempts"),
+    ("strict Git Bash: a git --exec-path timeout counts as absent", SHELL,
+     "        exec_path, git_unknown = \"\", True\n",
+     "        exec_path, git_unknown = \"\", False\n",
+     _U + "test_git_exec_path_timing_out_with_no_candidate_file_is_unknown_not_absent"),
+    ("dispatcher: every strict Git Bash failure says Install Git for Windows", CREW_HOOK,
+     '    if kind == "absent":\n',
+     "    if True:\n",
+     _K + "test_unknown_blocks_armed_calls_but_never_says_install_git"),
+    ("dispatcher: an unknown Git Bash lets the armed call through", CREW_HOOK,
+     '    if event in BLOCKING_EVENTS and armed_fn(root):\n        return 2, b"", (message + "\\n").encode("utf-8")\n',
+     '    if event in BLOCKING_EVENTS and armed_fn(root) and kind != "unknown":\n'
+     '        return 2, b"", (message + "\\n").encode("utf-8")\n',
+     _K + "test_unknown_blocks_armed_calls_but_never_says_install_git"),
 )

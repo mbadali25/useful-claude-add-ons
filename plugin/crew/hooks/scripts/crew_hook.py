@@ -25,6 +25,7 @@ missing script, or an exception here is exit 2 with a named reason, on the
 events where a child may block (PreToolUse, UserPromptSubmit, Stop). An
 unarmed repo gets exit 0 for every such fault, as the scripts do today.
 """
+import functools
 import json
 import os
 import re
@@ -524,7 +525,7 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
         if needs_bash:
             if resolve_bash is None:
                 import crew_shell  # pylint: disable=import-outside-toplevel
-                resolve_bash = crew_shell.resolve_gitbash
+                resolve_bash = functools.partial(crew_shell.resolve_gitbash, lkg=crew_shell.LastKnownGood())
             path, reason = resolve_bash(strict=True)
             if path is None:
                 bash, bash_problem = None, reason
@@ -601,8 +602,19 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
 
 
 def _no_bash(event, problem, root, armed_fn):
-    message = ("crew hooks need Git for Windows (a strictly resolved Git Bash), and none was found: "
-               f"{problem}. Install Git for Windows.")
+    # The wording follows what was actually established (a resolver that returns a bare str
+    # means "absent"): a Git Bash that exists but did not answer is a busy host, not a missing
+    # Git, and must never say "Install Git for Windows". Fail closed in every case.
+    kind = getattr(problem, "kind", "absent")
+    if kind == "absent":
+        message = ("crew hooks need Git for Windows (a strictly resolved Git Bash), and none was found: "
+                   f"{problem}. Install Git for Windows.")
+    elif kind == "unknown":
+        message = (f"crew hooks could not tell whether Git Bash works (could not tell, not 'missing'): {problem}. "
+                   "This is not a missing-Git error: wait a few seconds and retry the same call. Nothing was "
+                   "judged, so this call is blocked rather than let through unchecked.")
+    else:
+        message = f"crew hooks found Git Bash but it failed its self-test: {problem}. Repair or reinstall Git for Windows."
     if event in BLOCKING_EVENTS and armed_fn(root):
         return 2, b"", (message + "\n").encode("utf-8")
     if event == "SessionStart":

@@ -1295,6 +1295,17 @@ runs but the visual rule never passes.
 
 ## Windows notes
 
+- **"crew hooks could not tell whether Git Bash works" (crew 1.3.42).** Git Bash is there but did not
+  answer its one-line self-test (`bash.exe -c 'exit 0'`) in time, which on a loaded Windows host (a
+  virus scan, a build, many parallel sessions) is common: each hook has to start Git Bash, and a start
+  can take several seconds. This is **not** a missing Git, so do not install Git; retry the same call
+  after a few seconds. The resolver retries the self-test with backoff (1.3.41), and from 1.3.42 the dispatcher trusts the
+  last Git Bash that passed (`~/.claude/crew/gitbash-lkg.json`: path, size and mtime, honoured only while
+  the file is unchanged) rather than blocking a call on a slow start. It still fails closed in an armed
+  repo when it truly cannot tell, but the message now says so. The older wording, "none was found ...
+  Install Git for Windows", now appears only when no candidate `bin/bash.exe` exists. A third message,
+  "found Git Bash but it failed its self-test", means the file ran and exited non-zero for a reason that
+  is not load; repair or reinstall Git for Windows.
 - **`pwsh` is not on Git Bash's `PATH`.** Every script that shells out to PowerShell names it by an
   absolute path or resolves it explicitly; a bare `pwsh` in a hand-typed command fails as "command
   not found", which is easy to misread as PowerShell itself being broken.
