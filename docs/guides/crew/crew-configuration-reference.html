@@ -269,7 +269,7 @@ exact command. One id covers every limit that command trips.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>97 keys</strong>: 59 settable in the machine-global file, 38 repo-only.</p>
+<p><strong>98 keys</strong>: 60 settable in the machine-global file, 38 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -778,6 +778,29 @@ exact command. One id covers every limit that command trips.</p>
 <td>absolute path or null (coerced in <code>plugin/crew/hooks/scripts/crew_worktrees.py</code>)</td>
 <td>1.3.19</td>
 <td>The base directory for this repo's git worktrees, OUTSIDE the repo: they go in <code>&lt;root&gt;/&lt;repo&gt;-&lt;digest&gt;/&lt;name&gt;</code>. null is <code>~/.claude/crew/worktrees</code>; <code>~</code> is expanded, a relative path or one inside the repo is refused (never replaced by the default). It places the worktrees crew places (<code>/crew:emergency</code>, <code>crew_worktrees.py path</code>) and, once the owner registers the opt-in <code>WorktreeCreate</code> hook, the ones Claude Code creates; without the hook Claude Code keeps using <code>.claude/worktrees/</code>.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="promote"><code>Promote</code></h3>
+<table>
+<thead>
+<tr>
+<th width="20%">Setting</th>
+<th width="11%">Layer</th>
+<th>Default</th>
+<th>Values</th>
+<th width="9%">Since</th>
+<th>Summary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>promote.deadlineSeconds</code></td>
+<td>both</td>
+<td><code>null</code></td>
+<td>number of seconds, or null (coerced in <code>plugin/crew/hooks/scripts/_promote_gate.py</code>)</td>
+<td>1.3.41</td>
+<td>How many seconds the promote gate (<code>promote-gate.sh</code>) may run, counted from the moment its shell began, before it gives up and blocks (a hook that times out is not a block, so the gate stops itself first). null derives it from the guard's hook timeout less a 4 s margin: 16 s of the 20 s row. A number above the timeout less 2 s (18 s of 20) is clamped to that, so the setting can never let the gate outlive its hook; zero, a negative, a string or a boolean reads as null. The hook timeout is the guard's row in the dispatcher's table, not a setting.</td>
 </tr>
 </tbody>
 </table>

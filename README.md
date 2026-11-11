@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.41**: The strict Git Bash resolver no longer reports a slow Git Bash as a missing one. `crew` 1.3.41: `crew_shell.resolve_gitbash(strict=True)` now tells a Git Bash that exists but did not answer (could not tell) from one that is absent or broken, retries the unanswered self-test with backoff, and can answer from a last known good; the dispatcher half (wording and wiring) follows in 1.3.42.
-- **crew 1.3.40**: A verified marker written with CRLF is no longer ignored by the Stop gate. `crew` 1.3.40: the Stop gate now trims the line it reads from `.crew/.verify-verified-at`, `.crew/.verify-gate.base-at` and `.crew/.deploy-in-flight` (a trailing CR included), so a marker written with CRLF line endings is read as the commit it names; an orphan branch's CRLF marker is now refused like an LF one instead of letting an unchecked commit on the default branch pass.
+- **crew 1.3.44**: The strict Git Bash resolver no longer reports a slow Git Bash as a missing one. `crew` 1.3.44: `crew_shell.resolve_gitbash(strict=True)` now tells a Git Bash that exists but did not answer (could not tell) from one that is absent or broken, retries the unanswered self-test with backoff, and can answer from a last known good; the dispatcher half (wording and wiring) follows in 1.3.45.
+- **crew 1.3.41**: The promote gate decides in one process and keeps its own, configurable deadline. `crew` 1.3.41: a deploy-shaped command no longer times the promote gate out on Git Bash; the gate now runs as one python process instead of about forty-five, and a new `promote.deadlineSeconds` setting controls how long it may run.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

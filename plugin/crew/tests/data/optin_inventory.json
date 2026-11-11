@@ -962,7 +962,7 @@
     ]
    }
   ],
-  "mutations_total": 3097,
+  "mutations_total": 3117,
   "stays_in_core": [
    ".crew/codemap/install-scripts.md",
    ".crew/verify.json",
@@ -974,10 +974,12 @@
    "plugin/crew/commands/review.md",
    "plugin/crew/hooks/scripts/_common.sh",
    "plugin/crew/hooks/scripts/_promote_dispatch.py",
-   "plugin/crew/hooks/scripts/_promote_fast.py",
+   "plugin/crew/hooks/scripts/_promote_gate.py",
    "plugin/crew/hooks/scripts/_promote_github.py",
+   "plugin/crew/hooks/scripts/_promote_match.py",
    "plugin/crew/hooks/scripts/_promote_review.py",
    "plugin/crew/hooks/scripts/_promote_tree.py",
+   "plugin/crew/hooks/scripts/_promote_verdict.py",
    "plugin/crew/hooks/scripts/approval-hook.sh",
    "plugin/crew/hooks/scripts/approval_hook.py",
    "plugin/crew/hooks/scripts/auto-clear.sh",

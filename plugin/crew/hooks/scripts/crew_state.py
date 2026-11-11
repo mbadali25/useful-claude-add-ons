@@ -562,6 +562,12 @@ HUMAN_ONLY_DEFAULTS = {"approve": None, "promoteMarker": None}
 # `crew_worktrees.resolve`.
 WORKTREES_DEFAULTS = {"root": None}
 
+# crew 1.3.41 `promote.deadlineSeconds`: how long promote-gate.sh may run, counted from the
+# moment its shell began. null derives it from the guard's hook timeout (crew_hook.TABLE)
+# less a 4 s margin (20 -> 16). Both layers; the reader and its clamp are
+# `_promote_gate.deadline_seconds` / `_promote_gate.configured_seconds`.
+PROMOTE_DEFAULTS = {"deadlineSeconds": None}
+
 # T-0044 `unattendedCloud`: MACHINE file only (crew_unattended.py); a repo copy is ignored and reported.
 UNATTENDED_CLOUD_DEFAULTS = {"aws": {"readOnly": {
     "profile": None, "identity": None, "region": None}, "nonProd": {}}}

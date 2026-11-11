@@ -499,8 +499,8 @@ def test_overlay_file_parses():
     overlay = [s["id"] for s in found["standards"] if s["source"] == cs.OVERLAY_REL]
     supplemented = [s["id"] for s in found["standards"] if s["supplements"]]
     assert (found["problems"], found["overlay"], overlay, supplemented) == (
-        [], "present", ["REPO-01", "REPO-02", "REPO-03"],
-        ["GEN-04", "GEN-06", "GEN-08", "GEN-09", "GEN-11", "GEN-12", "PYTHON-10"])
+        [], "present", ["REPO-01", "REPO-02", "REPO-03", "REPO-04"],
+        ["GEN-04", "GEN-06", "GEN-08", "GEN-09", "GEN-10", "GEN-11", "GEN-12", "PYTHON-10"])
 
 
 # ---- Step 3: the self-check record and its stamp ----------------------------------
