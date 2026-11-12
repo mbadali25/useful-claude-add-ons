@@ -1,7 +1,9 @@
-"""On Windows the PowerShell launcher is the single path (L-0727, A9).
+"""On Windows the bash launcher is the single registration (L-0727 A9, changed in crew 1.3.55).
 
-crew-hook.sh exits 0 there; crew-hook.ps1 runs the dispatcher, which runs `.sh`
-children through a strictly resolved Git Bash and sends a `PowerShell` tool call
+hooks.json registers crew-hook.sh once per event and it runs the dispatcher on Windows too (it used to
+exit 0 there, leaving crew-hook.ps1 as the registered path; crew-hook.ps1 is now only Codex's
+`commandWindows`). The dispatcher runs the hot `.sh` rows' Python directly and the rest through a
+strictly resolved Git Bash (test_crew_hook_direct.py), and sends a `PowerShell` tool call
 to a row's PowerShell twin when the file exists (promote-gate; cloud-guard and
 env-guard are judged by their `.sh` for a `PowerShell` call). With no strict Git Bash
 an armed repo is refused on PreToolUse, UserPromptSubmit and Stop, SessionStart
@@ -54,16 +56,18 @@ def _stub_uname(tmp_path, text):
 @h.needs_bash
 @pytest.mark.skipif(ON_WINDOWS, reason="a POSIX shell stub models uname here")
 @pytest.mark.parametrize("uname", ["MINGW64_NT-10.0-26100", "MSYS_NT-10.0", "CYGWIN_NT-10.0"])
-def test_crew_hook_sh_exits_0_without_dispatching_when_uname_says_windows(uname, tmp_path):
+def test_crew_hook_sh_does_not_stand_down_for_a_windows_uname(uname, tmp_path):
+    """crew 1.3.55: the bash launcher is the Windows registration, so a MINGW/MSYS/CYGWIN uname no longer
+    makes it exit 0 (it used to, while crew-hook.ps1 was the registered path)."""
     root, home = rgh.build_repo(str(tmp_path), True)
     trace = tmp_path / "trace.crew-trace"
     path = _stub_uname(tmp_path, uname) + os.pathsep + os.environ["PATH"]
 
-    code, out, err = h.run_launcher("sh", "PreToolUse", _payload("Bash", command="ls"), root, home, path=path,
-                                    env_extra={"CREW_HOOK_TRACE_FILE": str(trace)})
+    code, _, err = h.run_launcher("sh", "PreToolUse", _payload("Bash", command="ls"), root, home, path=path,
+                                  env_extra={"CREW_HOOK_TRACE_FILE": str(trace)})
 
-    assert (code, out) == (0, "")
-    assert not trace.exists(), err
+    assert code == 0, err
+    assert trace.exists() and "cloud-guard.sh" in h.read_text(str(trace))
 
 
 @h.needs_bash
@@ -84,15 +88,16 @@ def test_an_os_variable_cannot_stand_the_guards_down_on_a_posix_host(tmp_path):
 @h.needs_bash
 @pytest.mark.skipif(ON_WINDOWS, reason="a POSIX shell stub models uname here")
 @pytest.mark.parametrize("uname", ["Interix", ""])
-def test_crew_hook_sh_honours_os_windows_nt_only_when_uname_is_not_a_posix_kernel(uname, tmp_path):
+def test_crew_hook_sh_does_not_stand_down_for_an_unknown_uname_with_os_windows_nt(uname, tmp_path):
     root, home = rgh.build_repo(str(tmp_path), True)
     trace = tmp_path / "trace.crew-trace"
     path = _stub_uname(tmp_path, uname) + os.pathsep + os.environ["PATH"]
 
-    code, out, _ = h.run_launcher("sh", "PreToolUse", _payload("Bash", command="ls"), root, home, path=path,
+    code, _, err = h.run_launcher("sh", "PreToolUse", _payload("Bash", command="ls"), root, home, path=path,
                                   env_extra={"OS": "Windows_NT", "CREW_HOOK_TRACE_FILE": str(trace)})
 
-    assert (code, out) == (0, "") and not trace.exists()
+    assert code == 0, err
+    assert trace.exists() and "cloud-guard.sh" in h.read_text(str(trace))
 
 
 @h.needs_bash
@@ -113,41 +118,9 @@ def test_crew_hook_sh_dispatches_when_uname_cannot_be_read_and_os_is_unset(tmp_p
     assert trace.exists() and "cloud-guard.sh" in trace.read_text(encoding="utf-8")
 
 
-def _bash_triple():
-    if h.BASH is None:
-        return ""
-    got = subprocess.run([h.BASH, "-c", 'printf %s "${BASH_VERSINFO[5]}"'], capture_output=True, text=True,
-                         check=False)
-    return got.stdout
-
-
-def test_crew_hook_sh_decides_windows_from_a_builtin_before_any_external_command():
-    """ANEWINF-1314: the no-op path on Windows cost 8 process starts (two command-substitution forks
-    and uname). The stand-down must be the first statement and must not fork."""
-    with open(os.path.join(os.path.dirname(__file__), "..", "hooks", "scripts", "crew-hook.sh"),
-              encoding="utf-8") as fh:
-        text = fh.read()
-    code = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
-
-    assert code[0] == 'case "${BASH_VERSINFO[5]:-}" in'
-    assert code[1].split(")")[0].strip() == "*-msys*|*-cygwin*|*-mingw*"
-    assert code[1].rstrip().endswith("exit 0 ;;")
-    assert "$(" not in code[0] + code[1] and "`" not in code[0] + code[1]
-
-
-@pytest.mark.skipif(not _bash_triple().endswith(("-msys", "-cygwin")),
-                    reason="needs a bash whose build triple is msys/cygwin (Git Bash on Windows)")
-def test_crew_hook_sh_on_a_windows_bash_exits_0_with_no_external_command_on_the_path(tmp_path):
-    """env -i with an empty PATH: any external command (uname, dirname, cat) would not be found and the
-    old launcher then went on to the dispatch. Exit 0 and no output means it never got that far."""
-    empty = tmp_path / "empty"
-    empty.mkdir()
-    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hooks", "scripts", "crew-hook.sh")
-
-    got = subprocess.run([h.BASH, script, "PreToolUse"], input=b"", capture_output=True, check=False,
-                         env={"PATH": str(empty)})
-
-    assert (got.returncode, got.stdout, got.stderr) == (0, b"", b"")
+# The two tests that held crew-hook.sh's Windows stand-down to "the first statement, no fork" and "exit 0 with an
+# empty PATH" (ANEWINF-1314) are gone with the stand-down: the bash launcher is the Windows registration now, and
+# test_crew_hook_direct.py::test_the_sh_launcher_has_no_windows_stand_down holds that nothing brings it back.
 
 
 # --- the Windows routing of select ----------------------------------------------
@@ -185,7 +158,7 @@ def _no_bash(event, armed):
     payload = json.dumps({"hook_event_name": event, "tool_name": "Bash", "tool_input": {"command": "ls"}}).encode()
     return crew_hook.dispatch(event, "claude", payload, crew_hook.now_ms() + 20000, dict(os.environ), "/nowhere",
                               windows=True, resolve_bash=lambda strict=True: (None, "Git Bash not found (strict)"),
-                              armed_fn=lambda _root: armed)
+                              armed_fn=lambda _root: armed, direct=False)
 
 
 @pytest.mark.parametrize("event", ["PreToolUse", "UserPromptSubmit", "Stop"])
@@ -230,7 +203,7 @@ def test_a_power_shell_cloud_call_is_judged_by_cloud_guard_sh_and_denied(tmp_pat
     payload = _payload("PowerShell", command=rgh.CLOUD)
     code, out, err = crew_hook.dispatch("PreToolUse", "claude", payload, crew_hook.now_ms() + 60000, env, root,
                                         windows=True, resolve_bash=lambda strict=True: (h.BASH, "stub"),
-                                        resolve_pwsh=lambda: (h.PWSH, "stub"))
+                                        resolve_pwsh=lambda: (h.PWSH, "stub"), direct=False)
 
     ran = trace.read_text(encoding="utf-8")
     assert code == 0, err
@@ -240,23 +213,25 @@ def test_a_power_shell_cloud_call_is_judged_by_cloud_guard_sh_and_denied(tmp_pat
 
 # --- native Windows ---------------------------------------------------------------
 
+def _git_bash():
+    import crew_shell  # pylint: disable=import-outside-toplevel
+    return crew_shell.resolve_gitbash(strict=True)[0] if ON_WINDOWS else None
+
+
 def _run_both_registrations(event, payload, root, home, trace):
-    """Both launchers on one payload, as the two registrations run them."""
-    results = []
-    for flavour in ("sh", "ps1"):
-        argv = h.launcher_argv(flavour, event)
-        if flavour == "sh" and h.BASH is None:
-            continue
-        env = rgh.env_for(root, home)
-        env["CREW_HOOK_TRACE_FILE"] = trace
-        done = subprocess.run(argv, input=payload, capture_output=True, env=env, cwd=root, timeout=180, check=False)
-        results.append((flavour, done.returncode, done.stdout.decode("utf-8", "replace"),
-                        done.stderr.decode("utf-8", "replace")))
-    return results
+    """The registered launcher on one payload, as hooks.json runs it: the bash one, once. (The name is the
+    old one; there is no second registration since crew 1.3.55, and a second run here would double-run rows.)"""
+    bash = _git_bash()
+    assert bash, "Git Bash is needed to run the registered launcher on Windows"
+    env = rgh.env_for(root, home)
+    env["CREW_HOOK_TRACE_FILE"] = trace
+    argv = [bash, h.SH.replace("\\", "/"), event]
+    done = subprocess.run(argv, input=payload, capture_output=True, env=env, cwd=root, timeout=180, check=False)
+    return [("sh", done.returncode, done.stdout.decode("utf-8", "replace"), done.stderr.decode("utf-8", "replace"))]
 
 
 @native
-def test_both_registrations_on_one_payload_run_every_applicable_row_exactly_once(tmp_path):
+def test_the_one_registration_on_a_payload_runs_every_applicable_row_exactly_once(tmp_path):
     root, home = rgh.build_repo(str(tmp_path), True)
     trace = str(tmp_path / "trace.crew-trace")
 
@@ -278,7 +253,7 @@ TWIN_BLOCKS_NATIVELY = frozenset({"powershell-declared-deploy"})
 @pytest.mark.parametrize("case", sorted(k for k in rgh.load_golden()
                                         if not k[0] and k[4] and not k[3] and k[2] not in TWIN_BLOCKS_NATIVELY),
                          ids=h.golden_ids)
-def test_both_registrations_together_equal_the_golden_single_result(case, tmp_path):
+def test_the_one_registration_equals_the_golden_single_result(case, tmp_path):
     record = rgh.load_golden()[case]
     root, home = rgh.build_repo(str(tmp_path), True, record.get("dirty") or None)
     trace = str(tmp_path / "trace.crew-trace")
@@ -288,8 +263,8 @@ def test_both_registrations_together_equal_the_golden_single_result(case, tmp_pa
     want = h.expected(record)
     combined_code = 2 if any(code == 2 for _, code, _, _ in results) else 0
     assert combined_code == want["exit"], results
-    ps = next(r for r in results if r[0] == "ps1")
-    h.assert_same(want, (ps[1], ps[2], ps[3]), root, home, strict=False)
+    launcher = results[0]
+    h.assert_same(want, (launcher[1], launcher[2], launcher[3]), root, home, strict=False)
 
 
 @native
@@ -351,6 +326,7 @@ def test_the_approval_hook_is_refused_with_git_bash_hidden(tmp_path):
               "sys.exit(crew_hook.main(['UserPromptSubmit']))\n")
     env = rgh.env_for(root, home)
     env["PYTHONPATH"] = h.SCRIPTS
+    env["CREW_HOOK_DIRECT"] = "0"  # this pins the wrapper route; the direct route needs no Git Bash (test_crew_hook_direct.py)
     payload = json.dumps({"hook_event_name": "UserPromptSubmit", "prompt": "/crew:approve T-2",
                           "session_id": "s-1"}).encode()
 
