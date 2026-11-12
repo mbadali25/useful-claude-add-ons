@@ -106,7 +106,7 @@ CREW_HOOK_MUTATIONS = (
      'undecided = not res["error"] and not res["timed_out"] and res["exit"] not in (0, 2)',
      'undecided = not res["error"] and not res["timed_out"] and res["exit"] not in (0, 1, 2)',
      _F + "test_a_guard_that_exits_without_a_decision_is_a_fault_when_armed[1-own-sh]"),
-    # crew 1.3.55: the bash launcher is the Windows registration and the hot `.sh` rows run their Python
+    # crew 1.3.60: the bash launcher is the Windows registration and the hot `.sh` rows run their Python
     # directly. Each entry puts back a way the fan-out or a guard-semantics slip could return.
     ("the sh launcher stands down on a Windows build triple again", SH,
      '_src="${BASH_SOURCE[0]}"\ncase "$_src" in\n',

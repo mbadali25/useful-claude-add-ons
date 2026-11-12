@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.55**: One hook launcher per event on Windows, and no Git Bash per guard. `crew` 1.3.55: a Bash tool call on Windows now costs about half a second of hook time instead of 1.5 to 2 seconds, because crew registers one bash launcher per event instead of two and runs its guards' Python directly instead of through a Git Bash each; no guard decision changes.
-- **crew 1.3.50**: An orphan reaper, and hook-side self-limits so a guard cannot block forever. `crew` 1.3.50: hook processes whose parent died no longer spin or hang for hours; the guards end themselves at their hook timeout, and an opt-in `crew_reaper.py` (dry run by default) finds and ends orphaned shells and scripts.
+- **crew 1.3.60**: One hook launcher per event on Windows, and no Git Bash per guard. `crew` 1.3.60: a Bash tool call on Windows now costs about half a second of hook time instead of 1.5 to 2 seconds, because crew registers one bash launcher per event instead of two and runs its guards' Python directly instead of through a Git Bash each; no guard decision changes.
+- **crew 1.3.57**: Test-only - the protected-child reaper test no longer starves or races under load. `crew` 1.3.57: test-only, no behaviour change. `test_a_process_with_a_protected_child_is_skipped_not_tree_killed` in `plugin/crew/tests/test_crew_reaper.py` failed on loaded CI runners (`'leave' == 'skip'`): its spinning child got under `spinCpuPct` of a core in every sample, so the reaper correctly left it before the protected-child rule ran. The child is now a blocked orphan (a candidate at about zero CPU under any load), and the protected grandchild writes a ready file after it has exec'd; the test waits for that file, then for the protected command line in the snapshot, each with a 60 s deadline and a named failure. `crew_reaper.py` is unchanged. Locally under 24 CPU burners: 9 of 20 runs failed before, 50 of 50 passed after.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

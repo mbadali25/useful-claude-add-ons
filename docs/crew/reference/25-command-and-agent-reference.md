@@ -3,7 +3,7 @@
 ### Hooks
 
 Fourteen scripts across eight events, run by one dispatcher behind 8 hook entries<!-- claim: plugin-hooks:crew -->:
-`hooks.json` registers one bash launcher per event (`crew-hook.sh`; crew 1.3.55 dropped the `shell: powershell`
+`hooks.json` registers one bash launcher per event (`crew-hook.sh`; crew 1.3.60 dropped the `shell: powershell`
 entry, and `crew-hook.ps1` is only Codex's `commandWindows`), and the launcher starts `crew_hook.py <Event>`, which runs that event's scripts below
 (L-0850). The table lists the scripts, which are unchanged; the `.sh` is the one that runs. crew 1.0 removed
 `pm-brief` and `pm-pulse`.
@@ -243,7 +243,7 @@ model call on your own account.
 
 ### How the Windows half works
 
-`crew-hook.sh` is the single registration on every platform, Windows included (crew 1.3.55; before that
+`crew-hook.sh` is the single registration on every platform, Windows included (crew 1.3.60; before that
 `crew-hook.ps1` was the Windows path and `crew-hook.sh` exited 0 there). Nothing stands the guards down by OS, by
 environment variable or by the shell's build triple. On Windows the dispatcher runs the Python file behind the hot
 `.sh` rows directly (`DIRECT` in `crew_hook.py`: scope-guard, cloud-guard, env-guard, role-write-guard, promote-gate
@@ -266,7 +266,7 @@ judged by the `.sh`. The ten twins of slice 3 are deleted; slice 4 (L-0869) dele
 
 Two things worth knowing:
 
-- **A bare `command` string with no `shell` field goes to Git Bash on Windows**, and since crew 1.3.55 that is the
+- **A bare `command` string with no `shell` field goes to Git Bash on Windows**, and since crew 1.3.60 that is the
   only registration: the `shell: powershell` entry cost about 0.4 s of PowerShell start-up per hook and ran every
   guard a second time. If Git Bash cannot start the hook, Claude Code reports a non-blocking hook error (the
   PowerShell entry used to refuse the call); Claude Code itself needs Git Bash on Windows.

@@ -157,9 +157,11 @@ TABLE = (
          # full check (the stricter one), so the draft invocation is pinned here too.
          ci=(("marketplace.yml", "python3 scripts/check-marketplace.py"),
              ("marketplace.yml", "python3 scripts/check-marketplace.py --pending-bump"))),
+    _py_suite("draft-check-name", "scripts/_test/draft-check-name.py"),
     _py_suite("argument-hint-frontmatter", "scripts/_test/argument-hint-frontmatter.py"),
     _py_suite("self-claims", "scripts/_test/self-claims.py"),
     _py_suite("crew-ignore-policy", "scripts/_test/crew-ignore-policy.py"),
+    _py_suite("codemap-coverage", "scripts/_test/codemap-coverage.py"),
     _py_suite("verifying-doc", "scripts/_test/verifying-doc.py"),
     _py_suite("check-diagram-embeds", "scripts/_test/check-diagram-embeds.py"),
     _py_suite("plugin-evals-runner", "scripts/_test/plugin-evals-runner.py"),

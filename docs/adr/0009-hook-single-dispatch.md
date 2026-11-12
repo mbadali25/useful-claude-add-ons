@@ -179,7 +179,7 @@ Left for a harness-only follow-up, because each touches the review/gate harness 
 A Claude Code per-OS hook registration, or a single hook command that runs on every shell. Re-check then
 whether the launcher pair can become one.
 
-## Amendment, 2026-11-11 (crew 1.3.55): one registration, and no Git Bash per guard
+## Amendment, 2026-11-11 (crew 1.3.60): one registration, and no Git Bash per guard
 
 Decision 1 above (sixteen registrations) is superseded; the rest stands. Measured on Windows, a
 `shell: "powershell"` hook costs about 0.4 s of PowerShell start-up plus a python probe before the

@@ -187,7 +187,7 @@ only `reviewer.md` itself (naming its own predecessor in prose),
 ## Hooks
 
 DERIVED at `8f2267e60` (L-0850, L-0727 slice 2; parsed from the JSON and from
-`crew_hook.TABLE`). SUPERSEDED at crew 1.3.55 (DERIVED, parsed from `plugin/crew/hooks/hooks.json`): it registers **eight** events
+`crew_hook.TABLE`). SUPERSEDED at crew 1.3.60 (DERIVED, parsed from `plugin/crew/hooks/hooks.json`): it registers **eight** events
 and **8** entries, ONE `bash` launcher per event and no `shell: "powershell"` entry (the 16 below were 1.2.58-1.3.54),
 so the line numbers and the pair description in this paragraph are the 16-entry file's. `crew-hook.ps1` is now only Codex's
 `commandWindows`. `plugin/crew/hooks/hooks.json` registered **eight** events and **16** entries
@@ -233,7 +233,7 @@ exception in the dispatcher is exit 2 with a named reason on `BLOCKING_EVENTS` (
 DERIVED (crew 1.2.109): the shell guards consume the launchers' `CREW_PYTHON` first. `crew_py` (`plugin/crew/hooks/scripts/_common.sh:70`), `crew_py_strict` (`:207`) and role-write-guard.sh's `_resolve_role_write_python` (`:64`) carry one identical `BEGIN CREW_PYTHON` block: an absolute path (a Windows one goes through `cygpath -u`), a regular executable file, named `py`/`python`/`python3.x`, else the PATH walk. `crew_py_script` (`:470`) returns a script path or status 1, and promote-gate, cloud-guard, env-guard and role-write-guard fail closed naming the missing script.
 The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 339 lines; `crew-hook.ps1`, 482) supervise
 rather than exec it: exit 0 and 2 pass through, anything else becomes the armed/unarmed fault above,
-under one deadline (`CREW_HOOK_DEADLINE`, the registration timeout minus 5 s). SUPERSEDED at crew 1.3.55 (DERIVED, read in `crew-hook.sh` and `hooks.json`): `crew-hook.sh` no longer exits 0 on
+under one deadline (`CREW_HOOK_DEADLINE`, the registration timeout minus 5 s). SUPERSEDED at crew 1.3.60 (DERIVED, read in `crew-hook.sh` and `hooks.json`): `crew-hook.sh` no longer exits 0 on
 Windows (the build-triple and `uname` stand-downs are gone) and is the only registered launcher on every platform; its
 fast path also treats exit 49 (the Store `python3` stub) as an interpreter failure. `crew-hook.ps1` still exits 0 unless the
 platform is Win32NT or `$env:OS -eq 'Windows_NT'`, and now runs only for Codex's `commandWindows`. On Windows
@@ -290,7 +290,7 @@ docstring (`plugin/crew/hooks/scripts/event_claim.py:1-16`) states the
 problem it exists for: every hook was registered twice (bash + PowerShell),
 and on Windows both flavours ran for one event since no `.sh` may stand
 itself down by OS (CLAUDE.md's own landmine). Since L-0850 the registered
-launchers did stand themselves down by OS until crew 1.3.55 (`crew-hook.sh` exited 0 on Windows,
+launchers did stand themselves down by OS until crew 1.3.60 (`crew-hook.sh` exited 0 on Windows,
 `crew-hook.ps1` exits 0 elsewhere); now only the bash launcher is registered, so one flavour runs per event;
 the claim stays in `notify` and `handoff-write` (re-checked by grep at
 `8f2267e60`: `notify.sh:40`, `handoff-write.sh:40`) as defence in depth, its

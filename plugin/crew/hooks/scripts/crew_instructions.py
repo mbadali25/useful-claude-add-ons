@@ -409,7 +409,7 @@ def claude_hooks():
     dispatcher's `.sh` rows run, so one bash registration serves every platform. The
     `shell: powershell` registration that used to sit beside it cost about 0.4 s of
     PowerShell start-up and a python probe on every hook event and ran every guard a
-    second time (crew 1.3.55); `crew-hook.ps1` is still what Codex's `commandWindows` runs."""
+    second time (crew 1.3.60); `crew-hook.ps1` is still what Codex's `commandWindows` runs."""
     out = {}
     for event in crew_hook.EVENTS:
         hook = {"type": "command",

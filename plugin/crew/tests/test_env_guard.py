@@ -1033,7 +1033,7 @@ def test_registered_once_in_the_dispatcher_table_with_its_powershell_twin():
     with open(os.path.join(_ROOT, "hooks", "hooks.json"), encoding="utf-8") as fh:
         pre = json.load(fh)["hooks"]["PreToolUse"]
     launchers = [h for e in pre for h in e["hooks"]]
-    assert len(launchers) == 1 and all("crew-hook" in h["command"] for h in launchers)  # one bash launcher since 1.3.55
+    assert len(launchers) == 1 and all("crew-hook" in h["command"] for h in launchers)  # one bash launcher since 1.3.60
     assert {e["matcher"] for e in pre} == {crew_hook.REGISTERED_MATCHER["PreToolUse"]}
     rows = [r for r in crew_hook.TABLE if r.script == "env-guard.sh"]
     assert len(rows) == 1

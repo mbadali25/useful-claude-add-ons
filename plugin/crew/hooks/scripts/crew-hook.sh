@@ -15,7 +15,7 @@
 # registration timeout in hooks.json minus 5 s, so the launcher refuses itself
 # before the outer timeout turns a fault into an allow.
 #
-# On Windows this is the single registration too (crew 1.3.55). hooks.json no longer registers
+# On Windows this is the single registration too (crew 1.3.60). hooks.json no longer registers
 # crew-hook.ps1 for Claude Code: a `shell: powershell` hook costs about 0.4 s of PowerShell start-up plus
 # its python probe before any hook runs, against about 0.12 s for Git Bash, and registering both ran every
 # guard twice. Git Bash is the shell Claude Code itself needs on Windows, and the dispatcher already needs

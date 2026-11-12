@@ -1,4 +1,4 @@
-"""On Windows the bash launcher is the single registration (L-0727 A9, changed in crew 1.3.55).
+"""On Windows the bash launcher is the single registration (L-0727 A9, changed in crew 1.3.60).
 
 hooks.json registers crew-hook.sh once per event and it runs the dispatcher on Windows too (it used to
 exit 0 there, leaving crew-hook.ps1 as the registered path; crew-hook.ps1 is now only Codex's
@@ -57,7 +57,7 @@ def _stub_uname(tmp_path, text):
 @pytest.mark.skipif(ON_WINDOWS, reason="a POSIX shell stub models uname here")
 @pytest.mark.parametrize("uname", ["MINGW64_NT-10.0-26100", "MSYS_NT-10.0", "CYGWIN_NT-10.0"])
 def test_crew_hook_sh_does_not_stand_down_for_a_windows_uname(uname, tmp_path):
-    """crew 1.3.55: the bash launcher is the Windows registration, so a MINGW/MSYS/CYGWIN uname no longer
+    """crew 1.3.60: the bash launcher is the Windows registration, so a MINGW/MSYS/CYGWIN uname no longer
     makes it exit 0 (it used to, while crew-hook.ps1 was the registered path)."""
     root, home = rgh.build_repo(str(tmp_path), True)
     trace = tmp_path / "trace.crew-trace"
@@ -220,7 +220,7 @@ def _git_bash():
 
 def _run_both_registrations(event, payload, root, home, trace):
     """The registered launcher on one payload, as hooks.json runs it: the bash one, once. (The name is the
-    old one; there is no second registration since crew 1.3.55, and a second run here would double-run rows.)"""
+    old one; there is no second registration since crew 1.3.60, and a second run here would double-run rows.)"""
     bash = _git_bash()
     assert bash, "Git Bash is needed to run the registered launcher on Windows"
     env = rgh.env_for(root, home)

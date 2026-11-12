@@ -1,4 +1,4 @@
-"""The Windows hot path starts no Git Bash (crew 1.3.55).
+"""The Windows hot path starts no Git Bash (crew 1.3.60).
 
 On Git Bash every process start is an MSYS fork, and a Bash tool call used to cost about thirty of them:
 each `.sh` row started a Git Bash whose wrapper started a subshell, python and git. The wrappers are only

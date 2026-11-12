@@ -54,7 +54,7 @@ RETRY_MARGIN = 0.5
 RETRY_SAFE = frozenset({"role-write-guard.sh", "cloud-guard.sh", "env-guard.sh", "scope-guard.sh"})
 
 
-# Windows direct route (crew 1.3.55). On Git Bash every process start is an MSYS fork (0.1-0.5 s, seconds under
+# Windows direct route (crew 1.3.60). On Git Bash every process start is an MSYS fork (0.1-0.5 s, seconds under
 # load), and a Bash tool call used to cost about thirty of them: each `.sh` row started a Git Bash, whose wrapper
 # started `$(crew_py_strict)` and then python and git. These wrappers are only launchers - the decision is the
 # Python file - so on Windows `dispatch` starts that file with its own interpreter, with the environment the

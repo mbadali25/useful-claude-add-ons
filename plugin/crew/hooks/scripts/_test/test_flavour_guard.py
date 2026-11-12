@@ -3,7 +3,7 @@
 
 ## What this covers and why it exists
 
-crew 1.3.55: crew's `hooks.json` no longer registers a PowerShell hook (one bash launcher per event;
+crew 1.3.60: crew's `hooks.json` no longer registers a PowerShell hook (one bash launcher per event;
 the `shell: "powershell"` entry cost about 0.4 s per hook on Windows and ran every guard twice). The
 `.ps1` it still ships are the ones Codex's `commandWindows` runs (`crew-hook.ps1`, listed from
 `crew_instructions.codex_hooks`, so this stays derived), and they keep the guard below: Codex on
@@ -141,7 +141,7 @@ def registered_powershell_hooks():
                 tail = m.group(2).split(";")[0].strip()
                 args = _split_args(tail)
                 found.setdefault(path, args)
-    # crew 1.3.55: the .ps1 launcher Codex's `commandWindows` runs, derived from the generator.
+    # crew 1.3.60: the .ps1 launcher Codex's `commandWindows` runs, derived from the generator.
     sys.path.insert(0, str(SCRIPTS))
     try:
         import crew_instructions  # pylint: disable=import-outside-toplevel

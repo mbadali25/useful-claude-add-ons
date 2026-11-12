@@ -1,6 +1,6 @@
 """The shape of hooks.json and its agreement with crew_hook.TABLE (L-0727, A8).
 
-hooks.json registers 8 launcher commands: one per event, the bash one (crew 1.3.55: the second,
+hooks.json registers 8 launcher commands: one per event, the bash one (crew 1.3.60: the second,
 PowerShell registration cost about 0.4 s of start-up per hook and ran every guard twice; crew-hook.ps1
 is now only Codex's `commandWindows`). `TABLE` in crew_hook.py is the one contract for what the
 launcher runs. These tests keep
