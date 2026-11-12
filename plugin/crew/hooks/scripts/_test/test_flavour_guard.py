@@ -152,7 +152,8 @@ def registered_powershell_hooks():
             for hook in entry.get("hooks", []):
                 m = re.search(r'-File "(.+?\.ps1)"(.*)', hook.get("commandWindows", ""))
                 if m:
-                    found.setdefault(pathlib.Path(m.group(1)), _split_args(m.group(2).strip())[:1])
+                    found.setdefault(SCRIPTS / pathlib.PureWindowsPath(m.group(1)).name,
+                                     _split_args(m.group(2).strip())[:1])
     return sorted(found.items())
 
 
