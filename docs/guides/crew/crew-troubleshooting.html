@@ -1334,6 +1334,27 @@ agent this machine lacks reviews less, and nothing in the output says so.</p>
   as installed. Managed-policy agents and <code>--agents</code> agents are not checked.
   <strong>Fix:</strong> install the plugin or agent, enable the plugin (<code>enabledPlugins</code>; a narrower settings
   scope's <code>false</code> wins), or change the rule to an agent this machine has.</p>
+<h2 id="hook-processes-that-spin-or-hang-for-hours-after-their-session-ended">Hook Processes That Spin or Hang for Hours After Their Session Ended</h2>
+<p>A hook or shell process whose parent died has no one to stop it. Measured on one Windows host:
+a bash guard at 27,604 CPU-seconds, a <code>python -</code> reading a program from stdin at 43,165
+CPU-seconds, and 18 crew python guards blocked 4.5 to 36.7 hours at zero CPU.</p>
+<ul>
+<li><strong>Symptom:</strong> a fan that never stops, or <code>python3</code> / <code>bash</code> processes years of CPU old whose
+  parent is gone.
+  <strong>Check</strong> (read-only, ends nothing):</li>
+</ul>
+<pre><code class="language-bash">python3 plugin/crew/hooks/scripts/crew_reaper.py
+</code></pre>
+<p>It prints one line per candidate: <code>would-kill</code> (an orphan that spins or is blocked past the
+  limits), <code>report</code> (it has a live parent, so it is never ended; the owner chain is in the log),
+  <code>skip</code> (protected, or it has a protected child) and <code>leave</code> (an orphan under the limits). Every
+  decision is also a JSON line in <code>~/.claude/crew/reaper.log</code>.
+  <strong>Fix:</strong> crew's own guards now end themselves at their hook timeout less 2 s (exit 124, which
+  the dispatcher reads as the same fail-closed UNKNOWN as a timeout). For the rest, run
+  <code>crew_reaper.py --apply</code> once, or opt in to the schedule: set <code>reaper.enabled</code> true (and
+  <code>reaper.dryRun</code> false to let it end processes) in <code>~/.claude/crew/config.json</code>, then
+  <code>crew_reaper.py --install-task --yes</code> on Windows or <code>crew_reaper.py --print-schedule</code> for cron
+  and systemd <code>--user</code> text. Nothing installs the schedule for you.</p>
 <h2 id="the-temp-directory-fills-with-crew-files">The Temp Directory Fills with Crew Files</h2>
 <p>Earlier crew releases' test suites and auto-clear sender could leave files in the
 system temp directory: <code>crew-completion-audit.*</code> markers, <code>tmp.*</code> auto-clear sender scripts

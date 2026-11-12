@@ -1034,6 +1034,19 @@ measured. `cloud_guard.py` already exceeds 3,400 lines, so the module is a new
 file rather than more glue there. A script, an MCP server, Write and Edit before
 commit, `tar -x`, `unzip` and `git merge` / `pull` are not seen.
 
+## Orphan reaper and hook self-limit (crew 1.3.50)
+
+anchor for this section: 170d4c4b2
+
+- DERIVED `plugin/crew/hooks/scripts/crew_reaper.py:356` `decide` returns one of kill, skip, report, leave, ignore for a process; a live parent (`parent_state`, `:301`) is never `kill`, a protected process or one with a protected or unlisted child is `skip`.
+- DERIVED `crew_reaper.py:447` `run(cfg, apply=False, ..., pids=None)` takes two snapshots a sample apart, judges only allow-listed images (`image_allowed`) and kills nothing unless `apply`; `pids` restricts a pass (the tests use it).
+- DERIVED `crew_reaper.py:126` `load_config` reads the machine file's `reaper` block only; a repo value is never read.
+- DERIVED `crew_reaper.py:318` `self_matching_watcher` finds `until/while ... pgrep -f PATTERN` loops whose pattern matches the loop's own command line.
+- DERIVED `crew_reaper.py:498` `task_command` builds (does not run) the per-user `schtasks` argv; `:528` `maybe_spawn_for_session` is the opt-in detached call `crew_context.py:1344` makes at SessionStart.
+- DERIVED `plugin/crew/hooks/scripts/crew_selflimit.py:56` `arm` starts a daemon timer that `os._exit(124)`s; called at `cloud_guard.py:3396`, `env_guard.py:2452`, `role_write_guard.py:689`, `_promote_gate.py:826`, `crew_context.py:1330`. 124 is an undecided exit to `crew_hook._settle`, the same fail-closed path as a timeout.
+- JUDGEMENT `scope_guard.py`, `approval_hook.py` and `crew_hook.py` are review-harness paths (`HARNESS` in `scripts/check-tooling-pr.py`) that must land alone, so they carry no self-limit yet.
+- JUDGEMENT the host-local task `CrewOrphanCygpathSweep` lives outside this repo; the reaper covers its cygpath case through the `cygpath` allow-list entry but does not replace or edit it.
+
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 
 JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose in this section is as of the commit it names, not re-read at `bdde58724`; only its `name` plus line citations were re-resolved by symbol against the `bdde58724` tree, and a line cited with no name beside it was not.

@@ -54,6 +54,7 @@ import crew_common
 from crew_common import dict_or_empty, git_out, read_text
 import crew_incident
 import crew_recall
+import crew_selflimit
 import crew_state
 
 HARD_CAP = 6000
@@ -1336,6 +1337,12 @@ def main(argv=None):
         payload = {}
     if not isinstance(payload, dict):
         return 0
+    if payload.get("hook_event_name") == "SessionStart":
+        try:  # opt-in (reaper.enabled and reaper.onSessionStart); detached, never waited on
+            import crew_reaper  # pylint: disable=import-outside-toplevel
+            crew_reaper.maybe_spawn_for_session()
+        except Exception:  # pylint: disable=broad-except
+            pass
     try:
         text = run(payload, raw, args.harness, args.flavour)
         emit(payload.get("hook_event_name") or "", text)
@@ -1347,4 +1354,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    # only as a script: an in-process caller (a test) must not get an exit timer
+    crew_selflimit.arm(8, "crew_context")
     raise SystemExit(main())

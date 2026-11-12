@@ -20,6 +20,7 @@ import uuid
 
 import crew_common
 import crew_incident
+import crew_reaper
 
 # The endpoint ledger is its own module now, the three shared readers are a
 # third, the install/guard policies are a fourth and the anchor-freshness
@@ -567,6 +568,10 @@ WORKTREES_DEFAULTS = {"root": None}
 # less a 4 s margin (20 -> 16). Both layers; the reader and its clamp are
 # `_promote_gate.deadline_seconds` / `_promote_gate.configured_seconds`.
 PROMOTE_DEFAULTS = {"deadlineSeconds": None}
+
+# crew 1.3.50 `reaper.*`: the orphan reaper (crew_reaper.py). Defined there, beside the code that
+# reads it, and referenced here. Both layers declare it, but the reader takes the MACHINE file only.
+REAPER_DEFAULTS = crew_reaper.DEFAULTS
 
 # T-0044 `unattendedCloud`: MACHINE file only (crew_unattended.py); a repo copy is ignored and reported.
 UNATTENDED_CLOUD_DEFAULTS = {"aws": {"readOnly": {
