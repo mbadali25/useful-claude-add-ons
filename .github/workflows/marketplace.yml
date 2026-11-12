@@ -154,6 +154,17 @@ jobs:
         run: python3 docs/guides/crew/src/build.py --check
       - name: Crew configuration reference is current
         run: python3 docs/guides/crew/src/config_reference.py --check
+      # L-0718: REVIEW.md, AGENTS.md's Code Review Rules block, .cursor/BUGBOT.md
+      # and docs/review-rules/ are generated from crew's standards. Until this step
+      # only the local verify.json rule `standards-export` compared them, so PR #754
+      # carried stale exports (recorded digest 2c5f9149, fresh 216c55f6) with every
+      # CI check green. Standard library only. The suite first: the step is here
+      # unconditionally, and the command is green on a current export and red on
+      # five stale shapes, in a throwaway root.
+      - name: Standards export CI suite
+        run: python3 scripts/_test/standards-export-ci.py
+      - name: Standards exports are current
+        run: python3 plugin/crew/hooks/scripts/crew_standards.py export --check --root .
       # scripts/ci-select.py decides which heavy suites a PR runs in
       # pytest-crew.yml, pylint.yml, shell-suites.yml and mcp-servers.yml
       # (C-0001). A wrong answer there is a suite skipped on a PR that needed
