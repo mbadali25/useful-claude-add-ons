@@ -124,7 +124,8 @@ def test_the_direct_children_get_the_environment_and_stdin_their_wrappers_gave(m
     ("MultiEdit", ["scope_guard.py"]), ("NotebookEdit", ["scope_guard.py"])])
 def test_a_write_call_on_windows_spawns_no_sh(tool, rows, monkeypatch, tmp_path):
     spy = Spy(monkeypatch)
-    payload = json.dumps({"hook_event_name": "PreToolUse", "tool_name": tool, "tool_input": {"file_path": "a"}}).encode()
+    payload = json.dumps({"hook_event_name": "PreToolUse", "tool_name": tool,
+                          "tool_input": {"file_path": "a"}}).encode()
 
     code, _, _, asked, _ = _dispatch(tmp_path, payload)
 
@@ -172,7 +173,8 @@ def test_the_rows_with_no_direct_route_still_resolve_git_bash_up_front(monkeypat
     code, _, _, asked, _ = _dispatch(tmp_path, payload, event="SessionStart")
 
     assert code == 0 and asked == [True]
-    assert len(spy.wrappers()) == 2 and all(c["argv"][0] == FAKE_BASH for c in spy.wrappers())  # handoff-read, platform-sync
+    # handoff-read and platform-sync
+    assert len(spy.wrappers()) == 2 and all(c["argv"][0] == FAKE_BASH for c in spy.wrappers())
 
 
 def test_no_git_bash_still_refuses_an_event_that_has_a_row_with_no_direct_route(monkeypatch, tmp_path):
@@ -201,7 +203,8 @@ def _bad_direct(module, code, noise=b"STALE-DIRECT-OUTPUT"):
     ("env_guard.py", "env-guard.sh", 1), ("env_guard.py", "env-guard.sh", 2),
     ("_promote_gate.py", "promote-gate.sh", 1), ("_promote_gate.py", "promote-gate.sh", 11),
     ("_promote_gate.py", "promote-gate.sh", 22), ("_promote_gate.py", "promote-gate.sh", 127)])
-def test_a_direct_exit_the_wrapper_would_not_pass_through_runs_the_wrapper(module, wrapper, code, monkeypatch, tmp_path):
+def test_a_direct_exit_the_wrapper_would_not_pass_through_runs_the_wrapper(
+        module, wrapper, code, monkeypatch, tmp_path):
     spy = Spy(monkeypatch, _bad_direct(module, code))
 
     got, out, err, asked, _ = _dispatch(tmp_path, BASH_TOOL)
@@ -213,7 +216,8 @@ def test_a_direct_exit_the_wrapper_would_not_pass_through_runs_the_wrapper(modul
 
 
 @pytest.mark.parametrize("module,code", [("scope_guard.py", 2), ("_promote_gate.py", 2)])
-def test_exit_2_from_scope_and_promote_gate_is_a_decision_and_the_wrapper_is_not_run(module, code, monkeypatch, tmp_path):
+def test_exit_2_from_scope_and_promote_gate_is_a_decision_and_the_wrapper_is_not_run(
+        module, code, monkeypatch, tmp_path):
     spy = Spy(monkeypatch, _bad_direct(module, code, noise=b"BLOCKED because reasons\n"))
 
     got, _, err, asked, _ = _dispatch(tmp_path, BASH_TOOL)
@@ -380,7 +384,8 @@ def _registrations():
 def test_hooks_json_registers_one_bash_launcher_per_event_and_no_powershell():
     regs = _registrations()
 
-    assert sorted(e for e, _, _ in regs) == sorted(crew_hook.EVENTS)  # one each: no second flavour runs every guard again
+    # one each: no second flavour runs every guard again
+    assert sorted(e for e, _, _ in regs) == sorted(crew_hook.EVENTS)
     for event, _, hook in regs:
         assert hook.get("shell", "bash") == "bash", event
         assert hook["command"] == f'bash "${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/crew-hook.sh" {event}'
@@ -504,11 +509,11 @@ def _run_route(record, base, direct):
     env = rgh.env_for(root, home)
     code, out, err = crew_hook.dispatch(record["event"], record["harness"], h.payload_bytes(record, root),
                                         crew_hook.now_ms() + 120000, env, root, windows=h.WINDOWS, direct=direct)
-    return code, rgh.normalise(out.decode("utf-8", "replace"), root, home), rgh.normalise(err.decode("utf-8", "replace"),
-                                                                                          root, home)
+    return (code, rgh.normalise(out.decode("utf-8", "replace"), root, home),
+            rgh.normalise(err.decode("utf-8", "replace"), root, home))
 
 
-@pytest.mark.skipif(shutil.which("git") is None or (h.WINDOWS and GIT_BASH is None) or (not h.WINDOWS and h.BASH is None),
+@pytest.mark.skipif(shutil.which("git") is None or GIT_BASH is None,
                     reason="needs git and a bash: the wrapper route was NOT run")
 @pytest.mark.parametrize("key", _equivalence_keys())
 def test_the_direct_route_gives_the_wrappers_exit_stdout_and_stderr(key, tmp_path):

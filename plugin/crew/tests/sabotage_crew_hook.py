@@ -110,7 +110,8 @@ CREW_HOOK_MUTATIONS = (
     # directly. Each entry puts back a way the fan-out or a guard-semantics slip could return.
     ("the sh launcher stands down on a Windows build triple again", SH,
      '_src="${BASH_SOURCE[0]}"\ncase "$_src" in\n',
-     'case "${BASH_VERSINFO[5]:-}" in\n  *-msys*|*-cygwin*|*-mingw*) exit 0 ;;\nesac\n_src="${BASH_SOURCE[0]}"\ncase "$_src" in\n',
+     'case "${BASH_VERSINFO[5]:-}" in\n  *-msys*|*-cygwin*|*-mingw*) exit 0 ;;\nesac\n'
+     '_src="${BASH_SOURCE[0]}"\ncase "$_src" in\n',
      _D + "test_the_sh_launcher_has_no_windows_stand_down"),
     ("the sh launcher stands down on a Windows uname again", SH,
      'HARNESS=claude\n',
@@ -123,7 +124,9 @@ CREW_HOOK_MUTATIONS = (
     ("hooks.json registers a PowerShell launcher again (every guard runs twice, 0.4 s slower)", HOOKS_JSON,
      '"command": "bash \\"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\\" Stop", "timeout": 610}] }\n',
      '"command": "bash \\"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\\" Stop", "timeout": 610}] },\n'
-     '      { "hooks": [{"type": "command", "shell": "powershell", "command": "& \\"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.ps1\\" Stop; exit $LASTEXITCODE", "timeout": 610}] }\n',
+     '      { "hooks": [{"type": "command", "shell": "powershell", "command": '
+     '"& \\"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.ps1\\" Stop; exit $LASTEXITCODE", '
+     '"timeout": 610}] }\n',
      _D + "test_hooks_json_registers_one_bash_launcher_per_event_and_no_powershell"),
     ("the dispatcher resolves Git Bash up front for rows that run directly (the fan-out returns)", HOOK,
      '        needs_bash = any(argv[0].endswith(".sh") and not (direct and argv[0] in DIRECT) for _, argv in chosen)\n',

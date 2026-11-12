@@ -326,7 +326,8 @@ def test_the_approval_hook_is_refused_with_git_bash_hidden(tmp_path):
               "sys.exit(crew_hook.main(['UserPromptSubmit']))\n")
     env = rgh.env_for(root, home)
     env["PYTHONPATH"] = h.SCRIPTS
-    env["CREW_HOOK_DIRECT"] = "0"  # this pins the wrapper route; the direct route needs no Git Bash (test_crew_hook_direct.py)
+    # this pins the wrapper route; the direct route needs no Git Bash (test_crew_hook_direct.py)
+    env["CREW_HOOK_DIRECT"] = "0"
     payload = json.dumps({"hook_event_name": "UserPromptSubmit", "prompt": "/crew:approve T-2",
                           "session_id": "s-1"}).encode()
 

@@ -504,8 +504,8 @@ def _promote_plan(tool, env):
         return (project, gate_env, b"\n") if os.path.isfile(shape) and not os.path.islink(shape) else None
     try:
         import crew_common  # pylint: disable=import-outside-toplevel
-        got = subprocess.run([crew_common.require_tool("git"), "rev-parse", "-q", "--verify", "HEAD:./.crew/verify.json"],
-                             cwd=project, capture_output=True, stdin=subprocess.DEVNULL, check=False,
+        probe = [crew_common.require_tool("git"), "rev-parse", "-q", "--verify", "HEAD:./.crew/verify.json"]
+        got = subprocess.run(probe, cwd=project, capture_output=True, stdin=subprocess.DEVNULL, check=False,
                              timeout=GIT_PROBE_SECONDS)
     except (OSError, subprocess.SubprocessError):
         return None
