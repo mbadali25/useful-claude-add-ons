@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.61: re-bump only - interim number on the git-allow branch (commit 0b15f69a1) before open PR #754 took 1.3.61 and #767/#768 took 1.3.65/1.3.66; the change is recorded under crew 1.3.67
 - crew 1.3.41: re-bump only - interim number on the no-coauthored branch before main reached 1.3.41 with the promote gate change; the change is recorded under crew 1.3.42
 - crew 1.3.37: re-bump only - interim land number on the verify-gate stale-marker branch (commit dca02a908) before main reached 1.3.38; the change is recorded under crew 1.3.39
 - crew 1.3.28: re-bump only - interim number on the mass-guard branch before main reached 1.3.34; the change is recorded under crew 1.3.36
@@ -53,9 +54,9 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Added — crew 1.3.61: `guards.git.allow`, one switch that lets git commands past crew's command guards
+### Added — crew 1.3.67: `guards.git.allow`, one switch that lets git commands past crew's command guards
 
-- **Summary.** `crew` 1.3.61: a new machine-only switch, `guards.git.allow`, stops crew's command guards from blocking or asking on git commands (`"all"`, destructive ones included, or a list of subcommands); it is off by default and takes effect only after the owner types `/crew:confirm-config` twice.
+- **Summary.** `crew` 1.3.67: a new machine-only switch, `guards.git.allow`, stops crew's command guards from blocking or asking on git commands (`"all"`, destructive ones included, or a list of subcommands); it is off by default and takes effect only after the owner types `/crew:confirm-config` twice.
 - **What it loosens.** The cloud guard's `guards.forcePush` rule, the mass stop's git counts (`commit`, `push`, `clean -f`, `rm`, `reset --hard`, `checkout -f`/`--`, `restore`), and the promote gate for a line made only of covered git commands, so a commit message or heredoc that mentions a declared deploy no longer trips it (L-0940's commit-message case). Everything else on the line is still judged; a declared deploy that is itself a git command stays gated; `gh` (`--admin` merges, `gh api` branch protection and rulesets, workflow dispatches, `gh pr create`'s mass count) is untouched. Each pass is a `gitAllow:<value>` row in `.crew/guard.log`.
 - **Who can set it.** Machine file only: `crew_confirm_config.py propose --layer machine --key guards.git.allow --value '"all"'`, then `/crew:confirm-config <id>` twice. A value counts only while the newest receipt for that file applied exactly that value, so a hand or agent edit reads as off; `crew_config.py --set` and `/crew:config` refuse everything but `"off"`/null, and a crew write back to `"off"` revokes the receipt. A repo file can never turn it on; a repo `"off"` or malformed value vetoes it. Anything crew cannot read is off. Both hook flavours honour it: `_promote_gate.py` for bash, and `_promote_dispatch.py`'s existing call for `promote-gate.ps1` (an `allow` record), so the PowerShell gate starts no extra process.
 - **Tests.** `plugin/crew/tests/test_git_allow.py`: must-allow with the switch on and must-block with it off for every path, `gh pr merge --admin` and `gh api` branch-protection / `enforce_admins` / ruleset calls must stay blocked or uncovered, and 24 mutations in `gitallow_mutations.py` (not yet wired into `sabotage.py`, which is review harness) each turn it red.

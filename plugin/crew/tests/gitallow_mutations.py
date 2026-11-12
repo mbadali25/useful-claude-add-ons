@@ -1,4 +1,4 @@
-"""crew 1.3.61 `guards.git.allow` mutations, in `sabotage.py`'s tuple shape.
+"""crew 1.3.67 `guards.git.allow` mutations, in `sabotage.py`'s tuple shape.
 
 Each puts back one way the switch could let a git command through when it must
 not, or stop judging something that is not git, and names the must-block or

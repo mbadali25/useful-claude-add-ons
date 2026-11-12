@@ -428,7 +428,7 @@ KEY_META = {
         "file only, and only after `/crew:confirm-config` twice "
         "(`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value "
         "written any other way reads as off, and a repo `\"off\"` vetoes it.", "type",
-        since="1.3.61", source=_S + "crew_gitallow.py",
+        since="1.3.67", source=_S + "crew_gitallow.py",
         type_="null, `\"off\"`, `\"all\"` or a list of git subcommand names"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),

@@ -287,7 +287,7 @@ A stopped command prints an id. Attended, the stop is an `ask`; unattended
 it is a `deny`. Type `/crew:approve-mass <id>` in the session, then re-run the
 exact command. One id covers every limit that command trips.
 
-## Git commands (`guards.git.allow`, crew 1.3.61)
+## Git commands (`guards.git.allow`, crew 1.3.67)
 
 The owner's switch that stops crew's command guards from blocking or asking on
 git commands, destructive ones included. Off by default (`null`, or `"off"`).

@@ -4070,7 +4070,7 @@ def _revoke_human_only(layer, path, changes, global_path):
 
 def apply_confirmed_optout(layer, dotted, path, expect, global_path=None, value=False):
     """Write `dotted: value` into the config file at `path` (`layer` is
-    `machine` or `repo`): a `humanOnly` key's `false`, or (crew 1.3.61) a
+    `machine` or `repo`): a `humanOnly` key's `false`, or (crew 1.3.67) a
     machine `guards.git.allow` value. The one writer that bypasses
     `crew_humanonly.write_refusal` and `crew_gitallow.write_refusal`, and only
     `crew_confirm_config` calls it, once a proposal has its two user-prompt

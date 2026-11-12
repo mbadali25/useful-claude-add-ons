@@ -538,7 +538,7 @@ prints an id; `/crew:approve-mass <id>` approves that one command for 15
 minutes. The configuration reference's "Mass operations" section lists what it
 sees, what it does not, and the keys.
 
-**Git commands (crew 1.3.61).** `guards.git.allow` is the owner's switch that
+**Git commands (crew 1.3.67).** `guards.git.allow` is the owner's switch that
 stops the command guards blocking or asking on git commands, destructive ones
 included: `"all"`, or a list of subcommands such as `["commit", "push"]`.
 It loosens the force-push rule, the mass stop's git counts and the promote gate

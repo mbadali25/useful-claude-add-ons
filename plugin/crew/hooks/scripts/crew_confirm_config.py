@@ -2,7 +2,7 @@
 """The double confirmation behind a sensitive config change (crew 1.3.9).
 
 A change that lifts a human step -- a `humanOnly.*` key set to `false`
-(`crew_humanonly`), or since crew 1.3.61 a machine `guards.git.allow` set to
+(`crew_humanonly`), or since crew 1.3.67 a machine `guards.git.allow` set to
 `"all"` or a list of git subcommands (`crew_gitallow`) -- is never written by
 `crew_config.py --set` or the
 `/crew:config` menu. It is PROPOSED here, which records a pending change in
@@ -34,7 +34,7 @@ CLI (no writes except `propose` and `cancel`, both into the store only):
 
     crew_confirm_config.py propose --layer machine|repo --key humanOnly.<k> [--root R]
     crew_confirm_config.py propose --layer machine --key guards.git.allow --value '"all"'
-                                   (or --value '["commit","push"]'; crew 1.3.61)
+                                   (or --value '["commit","push"]'; crew 1.3.67)
     crew_confirm_config.py status <change_id>
     crew_confirm_config.py list
     crew_confirm_config.py cancel <change_id>
@@ -82,7 +82,7 @@ def propose(layer, dotted, root=None, global_path=None, now=None, tracker=None,
             value=False):
     """Record a pending change `dotted: value` at `layer`; returns the record.
 
-    `dotted` is a humanOnly key (value `false`) or, crew 1.3.61,
+    `dotted` is a humanOnly key (value `false`) or, crew 1.3.67,
     `guards.git.allow` (machine layer only; value `"all"` or a list of git
     subcommand names). Refused otherwise, and when the repo file is absent,
     tracked by git, or git cannot tell (a tracked file can never opt out, and
@@ -180,7 +180,7 @@ def confirm(change_id, via, prompt_id, session_id=None, global_path=None, now=No
                            f"{record['path']} is {state} in git now", stamp)
     writer = apply or crew_config.apply_confirmed_optout
     try:
-        # crew 1.3.61: a guards.git.allow change carries its value; a humanOnly
+        # crew 1.3.67: a guards.git.allow change carries its value; a humanOnly
         # change is always `false` and the writer's default.
         extra = {"value": record.get("value")} if record["key"] == crew_gitallow.KEY else {}
         writer(record["layer"], record["key"], record["path"], record["targetDigest"],

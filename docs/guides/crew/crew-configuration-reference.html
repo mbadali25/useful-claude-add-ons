@@ -266,7 +266,7 @@ each under a limit: a tripwire in front of native permissions, not a sandbox.</p
 <p>A stopped command prints an id. Attended, the stop is an <code>ask</code>; unattended
 it is a <code>deny</code>. Type <code>/crew:approve-mass &lt;id&gt;</code> in the session, then re-run the
 exact command. One id covers every limit that command trips.</p>
-<h2 id="git-commands-guardsgitallow-crew-1361">Git Commands (<code>guards.git.allow</code>, Crew 1.3.61)</h2>
+<h2 id="git-commands-guardsgitallow-crew-1367">Git Commands (<code>guards.git.allow</code>, Crew 1.3.67)</h2>
 <p>The owner's switch that stops crew's command guards from blocking or asking on
 git commands, destructive ones included. Off by default (<code>null</code>, or <code>"off"</code>).</p>
 <table>
@@ -1218,7 +1218,7 @@ what is in force. Each pass is logged to <code>.crew/guard.log</code> with the p
 <td>both</td>
 <td><code>null</code></td>
 <td>null, <code>"off"</code>, <code>"all"</code> or a list of git subcommand names (coerced in <code>plugin/crew/hooks/scripts/crew_gitallow.py</code>)</td>
-<td>1.3.61</td>
+<td>1.3.67</td>
 <td>The owner's switch that stops crew's command guards blocking or asking on git commands: <code>"all"</code> lets every git command past the force-push rule, the mass guard's git counts and the promote gate (a line of only git commands, unless a declared deploy is itself a git command); a list of subcommands (<code>["commit", "push"]</code>) lets only those through. null or <code>"off"</code> changes nothing. Machine file only, and only after <code>/crew:confirm-config</code> twice (<code>crew_confirm_config.py propose --key guards.git.allow --value ...</code>); a value written any other way reads as off, and a repo <code>"off"</code> vetoes it.</td>
 </tr>
 </tbody>
