@@ -1117,6 +1117,29 @@ agent this machine lacks reviews less, and nothing in the output says so.
   **Fix:** install the plugin or agent, enable the plugin (`enabledPlugins`; a narrower settings
   scope's `false` wins), or change the rule to an agent this machine has.
 
+## Hook processes that spin or hang for hours after their session ended
+
+A hook or shell process whose parent died has no one to stop it. Measured on one Windows host:
+a bash guard at 27,604 CPU-seconds, a `python -` reading a program from stdin at 43,165
+CPU-seconds, and 18 crew python guards blocked 4.5 to 36.7 hours at zero CPU.
+
+- **Symptom:** a fan that never stops, or `python3` / `bash` processes years of CPU old whose
+  parent is gone.
+  **Check** (read-only, ends nothing):
+  ```bash
+  python3 plugin/crew/hooks/scripts/crew_reaper.py
+  ```
+  It prints one line per candidate: `would-kill` (an orphan that spins or is blocked past the
+  limits), `report` (it has a live parent, so it is never ended; the owner chain is in the log),
+  `skip` (protected, or it has a protected child) and `leave` (an orphan under the limits). Every
+  decision is also a JSON line in `~/.claude/crew/reaper.log`.
+  **Fix:** crew's own guards now end themselves at their hook timeout less 2 s (exit 124, which
+  the dispatcher reads as the same fail-closed UNKNOWN as a timeout). For the rest, run
+  `crew_reaper.py --apply` once, or opt in to the schedule: set `reaper.enabled` true (and
+  `reaper.dryRun` false to let it end processes) in `~/.claude/crew/config.json`, then
+  `crew_reaper.py --install-task --yes` on Windows or `crew_reaper.py --print-schedule` for cron
+  and systemd `--user` text. Nothing installs the schedule for you.
+
 ## The temp directory fills with crew files
 
 Earlier crew releases' test suites and auto-clear sender could leave files in the

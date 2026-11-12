@@ -272,6 +272,16 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "promote": {
     "deadlineSeconds": null
   },
+  "reaper": {
+    "enabled": false,
+    "dryRun": true,
+    "spinCpuPct": 50,
+    "spinMinAgeMin": 15,
+    "blockedMinAgeHours": 2,
+    "protectedRegex": null,
+    "intervalMin": 10,
+    "onSessionStart": false
+  },
   "emergency": {
     "standDown": true,
     "maxTtlMinutes": 480

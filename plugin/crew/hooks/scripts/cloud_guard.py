@@ -132,6 +132,7 @@ import crew_common
 import crew_config
 import crew_mass
 import crew_preprod
+import crew_selflimit
 import crew_state
 from crew_guards import _head_name as _guards_head_name
 from crew_guards import InterpreterReason, command_trigger, first_non_literal, \
@@ -3471,4 +3472,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # only as a script: an in-process caller (a test) must not get an exit timer
+    crew_selflimit.arm(13, "cloud_guard")
     sys.exit(main())
