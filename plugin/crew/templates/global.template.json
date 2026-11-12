@@ -105,6 +105,9 @@
       "changeCount": 30,
       "overrides": {},
       "exempt": []
+    },
+    "git": {
+      "allow": null
     }
   },
   "environments": {

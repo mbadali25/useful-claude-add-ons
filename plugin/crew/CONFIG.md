@@ -4,7 +4,7 @@ Generated from the code by `python3 docs/guides/crew/src/config_reference.py --w
 `python3 scripts/check-marketplace.py` fails when this file is stale. The
 reasoning behind the keys is in `docs/crew/config-rationale.md`.
 
-106 keys: 68 settable in the machine-global file, 38 repo-only.
+107 keys: 69 settable in the machine-global file, 38 repo-only.
 
 ## The two layers
 
@@ -130,6 +130,45 @@ A stopped command prints an id. Attended, the stop is an `ask`; unattended
 it is a `deny`. Type `/crew:approve-mass <id>` in the session, then re-run the
 exact command. One id covers every limit that command trips.
 
+## Git commands (`guards.git.allow`, crew 1.3.61)
+
+The owner's switch that stops crew's command guards from blocking or asking on
+git commands, destructive ones included. Off by default (`null`, or `"off"`).
+
+| Value | What passes |
+|---|---|
+| `null` / `"off"` | nothing changes: every guard judges git as before |
+| `"all"` | every git command |
+| `["commit", "push", ...]` | a git command whose subcommand is listed; every other git command keeps today's checks |
+
+What it loosens, and nothing else: the cloud guard's `guards.forcePush` rule
+(`git push --force`, `+ref`, `xargs git` - whose subcommand crew cannot see, so
+only `"all"` covers it); the mass stop's git counts (`git commit`, `git push`,
+`git clean -f`, `git rm`, `git reset --hard`, `git checkout -f` / `-- <paths>`,
+`git restore`); and the promote gate for a command line made ONLY of covered
+git commands, so a commit message or heredoc that merely mentions a declared
+deploy no longer trips it. Everything else on the same line is judged as
+before (`git commit && rm -rf big/` still meets the mass stop for the `rm`). A
+declared deploy that is itself a git command (`git push prod main`) stays
+gated: that is a deploy, not a git block. `gh` is not git: `gh pr merge
+--admin` (`guards.adminMerge`), `gh pr create`'s mass count, workflow
+dispatches and `gh api` calls are untouched.
+
+Who can turn it on: the machine file only, and only through the double
+confirmation. `crew_confirm_config.py propose --layer machine --key
+guards.git.allow --value '"all"'` (or `'["commit","push"]'`) records the change
+and prints an id; you type `/crew:confirm-config <change_id>` twice, in two
+prompts, within 15 minutes. A value counts only while the newest settled
+receipt for that file is an applied change to exactly that value, so a hand
+edit or an agent's Edit reads as off. `crew_config.py --set` and `/crew:config`
+refuse every value but `"off"` and null, and a crew write back to `"off"`
+revokes the receipt. A repo file can never turn it on; a repo `"off"` (or a
+malformed repo value) vetoes it. Anything crew cannot read - a value outside
+the table, a store it cannot read, a line it cannot split, a subcommand it
+cannot see - is off. `python3 hooks/scripts/crew_gitallow.py --root .` prints
+what is in force. Each pass is logged to `.crew/guard.log` with the policy
+`gitAllow:<value>`.
+
 ## Guard profiles
 
 `guards.profile` is one word for all twelve guards; `guards.overrides.<guard>`
@@ -175,7 +214,7 @@ SessionStart notice).
 |---|---|
 | `core` | 26 |
 | `providers` | 18 |
-| `guards` | 8 |
+| `guards` | 9 |
 | `cloud` | 13 |
 | `trackers` | 5 |
 | `autopilot` | 15 |
@@ -238,7 +277,7 @@ SessionStart notice).
 | `secondOpinion.mode` | both | `"cli"` | not validated - read by `skills/crew-providers/SKILL.md` (expects string) | How the second opinion is reached. |
 | `secondOpinion.model` | both | `null` | not validated - read by `skills/crew-providers/SKILL.md` (expects string or null) | Second-opinion model. |
 
-## `guards` keys (8)
+## `guards` keys (9)
 
 | Key | Layer | Default | Values | Summary |
 |---|---|---|---|---|
@@ -250,6 +289,7 @@ SessionStart notice).
 | `guards.mass.changeCount` | both | `30` | integer (1 or more) (coerced in `hooks/scripts/crew_mass.py`) | Files a command may rewrite before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
 | `guards.mass.overrides` | both | `{}` | object of category to {deleteCount, createCount, changeCount} (checked in `hooks/scripts/crew_mass.py`) | `guards.mass.overrides.<files\|git\|terraform>.<deleteCount\|createCount\|changeCount>`: one limit for one kind of command. Unset, `terraform` is delete 3, create 10, change 10 (inferred, not measured); the others use the limits above. |
 | `guards.mass.exempt` | both | `[]` | list of globs (coerced in `hooks/scripts/crew_mass.py`) | Repo-relative globs of generated files that never count toward a limit, read from the machine file only (a glob can only loosen the stop), on top of the built-in  regenerable directories (node_modules, __pycache__, .venv, caches, build, dist, .work, worktrees). |
+| `guards.git.allow` | both | `null` | null, `"off"`, `"all"` or a list of git subcommand names (coerced in `hooks/scripts/crew_gitallow.py`) | The owner's switch that stops crew's command guards blocking or asking on git commands: `"all"` lets every git command past the force-push rule, the mass guard's git counts and the promote gate (a line of only git commands, unless a declared deploy is itself a git command); a list of subcommands (`["commit", "push"]`) lets only those through. null or `"off"` changes nothing. Machine file only, and only after `/crew:confirm-config` twice (`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value written any other way reads as off, and a repo `"off"` vetoes it. |
 
 ## `cloud` keys (13)
 

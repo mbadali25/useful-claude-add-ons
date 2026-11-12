@@ -1034,6 +1034,32 @@ measured. `cloud_guard.py` already exceeds 3,400 lines, so the module is a new
 file rather than more glue there. A script, an MCP server, Write and Edit before
 commit, `tar -x`, `unzip` and `git merge` / `pull` are not seen.
 
+## Git commands past the guards: `guards.git.allow` (crew 1.3.61)
+
+DERIVED from `plugin/crew/hooks/scripts/crew_gitallow.py` (stdlib only); tests
+`plugin/crew/tests/test_git_allow.py`, mutations `plugin/crew/tests/gitallow_mutations.py`
+(24, run alone: `sabotage*.py` is harness). `settings` (`crew_gitallow.py:183`) reads the
+machine file only and honours `"all"` or a list of subcommands only when the newest
+settled confirm-config receipt for that file applied exactly that value
+(`receipt_value`); a repo `"off"` or malformed value vetoes, a repo `"all"` is ignored,
+anything unreadable is off. Writers: `write_refusal` (`crew_gitallow.py:107`) is called
+from `crew_config._layer_path_refusal`; `crew_confirm_config.propose` takes `--value` for
+this key (machine only) and `crew_config.apply_confirmed_optout` writes it;
+`_revoke_human_only` revokes on a crew write back to off. Readers: `cloud_guard._classify`
+(`cloud_guard.py:2168`) tags every finding of a `git` head (and `_fed_finding`'s xargs git)
+with its subcommand, and `cloud_guard.evaluate` (`cloud_guard.py:3187`) passes a tagged
+finding the setting `allows`, logging `gitAllow:<value>`; `_promote_gate.Gate.git_allowed`
+(`_promote_gate.py:451`, bash) and `_promote_dispatch._git_allowed`
+(`_promote_dispatch.py:289`, the `allow` record `promote-gate.ps1:713` exits 0 on) call
+`promote_exempt` (`crew_gitallow.py:396`): every command of the line is git with a covered
+subcommand (`line_exempt`, `crew_gitallow.py:352`, bash through
+`crew_guards._CommandSplitter`, PowerShell through its own conservative reader) and no
+declared deploy that is itself a git command is contained in it. The template default is
+null in both layers (`crew_guards.GUARD_BLOCK_DEFAULTS`).
+JUDGEMENT: `gh` is deliberately not git (admin merges, branch protection, dispatches stay
+with their own keys), and the receipt store is a tripwire, not a sandbox, exactly as for
+`humanOnly`.
+
 ## Orphan reaper and hook self-limit (crew 1.3.50)
 
 anchor for this section: 170d4c4b2

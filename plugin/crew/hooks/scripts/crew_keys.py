@@ -419,6 +419,17 @@ KEY_META = {
         " regenerable directories (node_modules, __pycache__, .venv, caches, "
         "build, dist, .work, worktrees).", "type", since="1.3.36",
         source=_S + "crew_mass.py", type_="list of globs"),
+    "guards.git.allow": _row(
+        "The owner's switch that stops crew's command guards blocking or asking on git "
+        "commands: `\"all\"` lets every git command past the force-push rule, the mass "
+        "guard's git counts and the promote gate (a line of only git commands, unless a "
+        "declared deploy is itself a git command); a list of subcommands (`[\"commit\", "
+        "\"push\"]`) lets only those through. null or `\"off\"` changes nothing. Machine "
+        "file only, and only after `/crew:confirm-config` twice "
+        "(`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value "
+        "written any other way reads as off, and a repo `\"off\"` vetoes it.", "type",
+        since="1.3.61", source=_S + "crew_gitallow.py",
+        type_="null, `\"off\"`, `\"all\"` or a list of git subcommand names"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),
     "production.hosts": _unv("Globs naming production hosts.", "0.19.30",

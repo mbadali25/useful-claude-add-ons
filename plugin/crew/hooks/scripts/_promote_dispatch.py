@@ -286,6 +286,17 @@ def _decide(command, shell, maps):
     return []
 
 
+def _git_allowed(command):
+    """`crew_gitallow.promote_exempt` for promote-gate.ps1 (crew 1.3.61): the
+    PowerShell flavour's one python call answers it too, so the switch costs
+    no extra process start. False whenever it cannot be told."""
+    try:
+        import crew_gitallow  # pylint: disable=import-outside-toplevel
+        return crew_gitallow.promote_exempt(command, "powershell", os.getcwd())
+    except Exception:  # pylint: disable=broad-except
+        return False
+
+
 def main(argv):
     shell = "bash"
     if len(argv) > 2 and argv[1] == "--shell" and argv[2] in ("bash", "powershell"):
@@ -294,6 +305,10 @@ def main(argv):
     if command == "-":
         command = sys.stdin.read()
     command = command.replace("\r", "").rstrip("\n")
+    if shell == "powershell" and command.strip() and _git_allowed(command):
+        # promote-gate.ps1 exits 0 on this record, before any other is read.
+        print("allow\tguards.git.allow")
+        return 0
     try:
         records = decide(command, shell) if command.strip() else []
     except Block as why:

@@ -722,7 +722,7 @@ def test_default_config_ships_the_guard_off():
     import crew_config  # pylint: disable=import-outside-toplevel
     # `guards.mass` (crew 1.3.36) is the mass stop's own block, not a guard tier
     for cfg in (crew_config.default_config(), crew_config.default_global_config()):
-        assert {k: v for k, v in cfg["guards"].items() if k != "mass"} == {
+        assert {k: v for k, v in cfg["guards"].items() if k not in ("mass", "git")} == {
             "profile": "off", "overrides": {}}
         assert cfg["guards"]["mass"]["enabled"] is False
     assert crew_config.default_config()["cloud"] == {

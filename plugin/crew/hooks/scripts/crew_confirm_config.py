@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """The double confirmation behind a sensitive config change (crew 1.3.9).
 
-A change that lifts a human step -- today, a `humanOnly.*` key set to `false`
-(`crew_humanonly`) -- is never written by `crew_config.py --set` or the
+A change that lifts a human step -- a `humanOnly.*` key set to `false`
+(`crew_humanonly`), or since crew 1.3.61 a machine `guards.git.allow` set to
+`"all"` or a list of git subcommands (`crew_gitallow`) -- is never written by
+`crew_config.py --set` or the
 `/crew:config` menu. It is PROPOSED here, which records a pending change in
 the machine's confirmation store (`~/.claude/crew/confirm-config/`) and
 prints a change id. The owner then types `/crew:confirm-config <change_id>`
@@ -31,6 +33,8 @@ cannot be switched on by any route crew offers.
 CLI (no writes except `propose` and `cancel`, both into the store only):
 
     crew_confirm_config.py propose --layer machine|repo --key humanOnly.<k> [--root R]
+    crew_confirm_config.py propose --layer machine --key guards.git.allow --value '"all"'
+                                   (or --value '["commit","push"]'; crew 1.3.61)
     crew_confirm_config.py status <change_id>
     crew_confirm_config.py list
     crew_confirm_config.py cancel <change_id>
@@ -51,6 +55,7 @@ import time
 import crew_common
 import crew_config
 import crew_config_files
+import crew_gitallow
 import crew_humanonly
 import crew_state
 
@@ -73,15 +78,28 @@ def _target(layer, root, global_path):
     raise Refused(f"unknown layer {layer!r} (machine or repo)")
 
 
-def propose(layer, dotted, root=None, global_path=None, now=None, tracker=None):
-    """Record a pending change `dotted: false` at `layer`; returns the record.
+def propose(layer, dotted, root=None, global_path=None, now=None, tracker=None,
+            value=False):
+    """Record a pending change `dotted: value` at `layer`; returns the record.
 
-    Refused when `dotted` is not a humanOnly key, or when the repo file is
-    absent, tracked by git, or git cannot tell (a tracked file can never opt
-    out, and could-not-tell is not untracked)."""
-    if not crew_humanonly.is_path(dotted):
+    `dotted` is a humanOnly key (value `false`) or, crew 1.3.61,
+    `guards.git.allow` (machine layer only; value `"all"` or a list of git
+    subcommand names). Refused otherwise, and when the repo file is absent,
+    tracked by git, or git cannot tell (a tracked file can never opt out, and
+    could-not-tell is not untracked)."""
+    if dotted == crew_gitallow.KEY:
+        if layer != "machine":
+            raise Refused(f"{dotted} lives in the machine file only; a repo file may only "
+                          "veto it with \"off\"")
+        if crew_gitallow.normalise(value) in (None, crew_gitallow.OFF):
+            raise Refused(f"{dotted} = {json.dumps(value)} is not \"all\" or a non-empty list "
+                          "of git subcommand names (turning it off needs no confirmation: "
+                          "crew_config.py --set guards.git.allow='\"off\"' --apply)")
+    elif not crew_humanonly.is_path(dotted):
         raise Refused(f"{dotted} is not a key that needs a double confirmation "
-                      f"(those are: {', '.join(crew_humanonly.PATHS)})")
+                      f"(those are: {', '.join(crew_humanonly.PATHS + (crew_gitallow.KEY,))})")
+    elif value is not False:
+        raise Refused(f"{dotted} is only ever confirmed to false")
     path = _target(layer, root, global_path)
     if layer == "repo":
         if not os.path.isfile(path):
@@ -95,7 +113,7 @@ def propose(layer, dotted, root=None, global_path=None, now=None, tracker=None):
     stamp = _now(now)
     record = {
         "change_id": crew_humanonly.new_change_id(),
-        "layer": layer, "key": dotted, "value": False,
+        "layer": layer, "key": dotted, "value": value,
         "path": path, "target": crew_humanonly.target_key(path),
         "root": os.path.abspath(root) if root else None,
         "targetDigest": digest, "created": stamp,
@@ -162,8 +180,11 @@ def confirm(change_id, via, prompt_id, session_id=None, global_path=None, now=No
                            f"{record['path']} is {state} in git now", stamp)
     writer = apply or crew_config.apply_confirmed_optout
     try:
+        # crew 1.3.61: a guards.git.allow change carries its value; a humanOnly
+        # change is always `false` and the writer's default.
+        extra = {"value": record.get("value")} if record["key"] == crew_gitallow.KEY else {}
         writer(record["layer"], record["key"], record["path"], record["targetDigest"],
-               global_path=global_path)
+               global_path=global_path, **extra)
     except crew_config_files.Conflict as exc:
         return _settle(store, record, "stale",
                        f"the file changed since the proposal ({exc}); propose again", stamp)
@@ -190,6 +211,16 @@ def _line(record):
 
 
 def _instructions(record):
+    if record["key"] == crew_gitallow.KEY:
+        return [
+            f"proposed {record['change_id']}: {record['key']} = {json.dumps(record['value'])} "
+            f"in the machine file {record['path']}",
+            f"to apply it, the owner types /crew:confirm-config {record['change_id']} twice, "
+            "in two separate prompts, within "
+            f"{crew_humanonly.PROPOSAL_TTL_SECONDS // 60} minutes.",
+            "once applied, crew's command guards stop blocking or asking on the git commands "
+            "it covers; `crew_gitallow.py` shows what is in force.",
+        ]
     return [
         f"proposed {record['change_id']}: {record['key']} = false in the {record['layer']} "
         f"file {record['path']}",
@@ -208,6 +239,8 @@ def main(argv=None):
     p = sub.add_parser("propose")
     p.add_argument("--layer", required=True, choices=("machine", "repo"))
     p.add_argument("--key", required=True)
+    p.add_argument("--value", default=None,
+                   help="JSON value; guards.git.allow only (\"all\" or a list of names)")
     p.add_argument("--root", default=None)
     p.add_argument("--global-path", default=None)
     for name in ("status", "cancel"):
@@ -224,8 +257,14 @@ def main(argv=None):
     store = crew_humanonly.store_dir(args.global_path)
     try:
         if args.cmd == "propose":
+            value = False
+            if args.value is not None:
+                try:
+                    value = json.loads(args.value)
+                except ValueError as exc:
+                    raise Refused(f"--value {args.value!r} is not JSON ({exc})") from exc
             record = propose(args.layer, args.key, root=args.root,
-                             global_path=args.global_path)
+                             global_path=args.global_path, value=value)
             print("\n".join(_instructions(record)))
         elif args.cmd == "status":
             record = _expire_if_due(store, _load(store, args.change_id), time.time())

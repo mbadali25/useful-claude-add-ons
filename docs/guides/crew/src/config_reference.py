@@ -286,6 +286,45 @@ each under a limit: a tripwire in front of native permissions, not a sandbox.
 A stopped command prints an id. Attended, the stop is an `ask`; unattended
 it is a `deny`. Type `/crew:approve-mass <id>` in the session, then re-run the
 exact command. One id covers every limit that command trips.
+
+## Git commands (`guards.git.allow`, crew 1.3.61)
+
+The owner's switch that stops crew's command guards from blocking or asking on
+git commands, destructive ones included. Off by default (`null`, or `"off"`).
+
+| Value | What passes |
+|---|---|
+| `null` / `"off"` | nothing changes: every guard judges git as before |
+| `"all"` | every git command |
+| `["commit", "push", ...]` | a git command whose subcommand is listed; every other git command keeps today's checks |
+
+What it loosens, and nothing else: the cloud guard's `guards.forcePush` rule
+(`git push --force`, `+ref`, `xargs git` - whose subcommand crew cannot see, so
+only `"all"` covers it); the mass stop's git counts (`git commit`, `git push`,
+`git clean -f`, `git rm`, `git reset --hard`, `git checkout -f` / `-- <paths>`,
+`git restore`); and the promote gate for a command line made ONLY of covered
+git commands, so a commit message or heredoc that merely mentions a declared
+deploy no longer trips it. Everything else on the same line is judged as
+before (`git commit && rm -rf big/` still meets the mass stop for the `rm`). A
+declared deploy that is itself a git command (`git push prod main`) stays
+gated: that is a deploy, not a git block. `gh` is not git: `gh pr merge
+--admin` (`guards.adminMerge`), `gh pr create`'s mass count, workflow
+dispatches and `gh api` calls are untouched.
+
+Who can turn it on: the machine file only, and only through the double
+confirmation. `crew_confirm_config.py propose --layer machine --key
+guards.git.allow --value '"all"'` (or `'["commit","push"]'`) records the change
+and prints an id; you type `/crew:confirm-config <change_id>` twice, in two
+prompts, within 15 minutes. A value counts only while the newest settled
+receipt for that file is an applied change to exactly that value, so a hand
+edit or an agent's Edit reads as off. `crew_config.py --set` and `/crew:config`
+refuse every value but `"off"` and null, and a crew write back to `"off"`
+revokes the receipt. A repo file can never turn it on; a repo `"off"` (or a
+malformed repo value) vetoes it. Anything crew cannot read - a value outside
+the table, a store it cannot read, a line it cannot split, a subcommand it
+cannot see - is off. `python3 hooks/scripts/crew_gitallow.py --root .` prints
+what is in force. Each pass is logged to `.crew/guard.log` with the policy
+`gitAllow:<value>`.
 """
 
 INTRO = """\

@@ -130,6 +130,7 @@ import time
 
 import crew_common
 import crew_config
+import crew_gitallow
 import crew_mass
 import crew_preprod
 import crew_selflimit
@@ -2162,8 +2163,12 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
     # crew_mass: a mass delete, create or change. Always recognised here, judged
     # in `evaluate` only when `guards.mass` or a humanOnly opt-out arms it.
     sql = _sql_payloads(head, args, stdin) if head in _SQL_FLAGS else ()
+    # A git command's findings carry its subcommand (`crew_gitallow.SCOPE_KEY`),
+    # so `evaluate` can let `guards.git.allow` pass them and nothing else.
+    gitsub = {crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand(args)} if head == "git" else {}
     for mass in crew_mass.classify(head, args, shell, bool(fed), sql):
-        out.append(Finding(mass.rule, text, mass.what, None, False, None, {"mass": mass}))
+        out.append(Finding(mass.rule, text, mass.what, None, False, None,
+                           dict({"mass": mass}, **gitsub)))
 
     if head in _SHELLS:
         # `-c`, and every cluster carrying it: `bash -lc`, `sh -ec`. With no
@@ -2262,7 +2267,7 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
     if head == "git":
         what = _git_force_push(args)
         if what:
-            out.append(Finding("forcePush", text, what, None, True, None))
+            out.append(Finding("forcePush", text, what, None, True, None, gitsub))
         return out
     if head == "gh":
         words = [a for a in args if not a.startswith("-")]
@@ -2416,7 +2421,11 @@ def _fed_finding(argv, env, via, placeholders, ctx=None):
         sub = args[index] if index < len(args) else ""
         if sub and seen([sub]) and sub != "push":
             return None
-        return Finding("forcePush", text, what, None, True, None)
+        # The subcommand counts as read only when it is a literal crew sees;
+        # else `guards.git.allow` lets it through under `all` alone.
+        return Finding("forcePush", text, what, None, True, None,
+                       {crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand([sub])
+                        if sub and seen([sub]) else crew_gitallow.UNSEEN})
     if head in ("aws", "az"):
         words = _aws_words(args) if head == "aws" else [
             a for a in args if not a.startswith("-")]
@@ -3175,7 +3184,21 @@ def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
         rows.append(("massApprovals", "-", "deny", command))
         reasons.append(reason_t)
         worst = "deny"
+    git_allow = None
     for finding in findings:
+        scope = finding.scope if isinstance(finding.scope, dict) else {}
+        if crew_gitallow.SCOPE_KEY in scope and (
+                finding.rule not in crew_mass.RULES or mass_armed) and not (
+                only_mass and finding.rule not in crew_mass.RULES):
+            # `guards.git.allow` (crew 1.3.61): the owner's double-confirmed
+            # switch lets a git command's own findings through, and logs that
+            # it did. Read once per call, and only when there is a git finding.
+            if git_allow is None:
+                git_allow = crew_gitallow.settings(root)["allow"]
+            if crew_gitallow.allows(git_allow, scope[crew_gitallow.SCOPE_KEY]):
+                rows.append((finding.rule, "gitAllow:" + crew_gitallow.label(git_allow),
+                             "allow", finding.what))
+                continue
         if finding.rule in crew_mass.RULES:
             if not mass_armed:
                 continue
