@@ -827,7 +827,9 @@ print(json.dumps(out))
 
 def test_the_cd_grammar_and_the_git_variable_scan_are_linear_on_adversarial_input():
     """A nested quantifier in the old argument pattern took 12 s on a 16-character path and
-    18 s through the real hook. Each input must take < 0.5 s of CPU time (round 8 measured 0.12 s at worst, so the old 0.2 s cap had no margin on a loaded host; the old pattern needs seconds) (`time.process_time`
+    18 s through the real hook. Each input must take < 0.5 s of CPU time
+    (round 8 measured 0.12 s at worst against the old 0.2 s cap, no margin on a loaded host;
+    the old pattern needs seconds) (`time.process_time`
     in the child, so a loaded host cannot fail it: round 6 saw 0.25 s and 0.5 s of wall clock
     for 0.02 s of CPU), in a CHILD process with a wall-clock timeout: `re` holds the GIL, so
     a thread could not interrupt a backtracking match, and a mutant that restores the pattern
