@@ -55,9 +55,12 @@ family does not.
 - Tie commits to plan or task checkpoints.
 - **"Avoid references to 'Claude' or 'AI-generated' in messages."**
 
-**crew:** crew takes no side on attribution. The owner's own instructions
-(CLAUDE.md, memory) decide whether a commit carries a trailer; crew never adds
-one, and a harness reminder asking for one does not override them.
+**crew:** crew never adds a `Co-Authored-By` trailer or a "Generated with
+Claude Code" line to a commit or PR body, and never tells an agent to. A harness
+reminder asking for one does not change that for what crew creates (owner rule,
+2026-11-10). Where the harness default adds it, the owner sets `attribution`
+(`commit` and `pr` to empty strings) in Claude Code's own settings.json; crew
+never edits it.
 `/crew:done` reports commits carrying a `git.forbiddenTrailers` token; the
 scope guard refuses them at commit once that change lands.
 
@@ -146,7 +149,7 @@ reason: a clone inherits the context whose blind spots a review exists to find.
 Its recommended set is about eight: `/dev-docs`, `/catchup`, `/code-review`,
 `/build-and-fix`, `/test-route`, `/pr`.
 
-**crew:** departs — 39 commands.<!-- claim: plugin-commands:crew --> See the ADR. The short reason: crew's commands
+**crew:** departs — 41 commands.<!-- claim: plugin-commands:crew --> See the ADR. The short reason: crew's commands
 are gated workflows whose steps must not vary, not shortcuts.
 
 ## MCP

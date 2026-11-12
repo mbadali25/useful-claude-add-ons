@@ -8,7 +8,8 @@
 # Every prompt the user submits passes through here, so the common case must
 # be cheap: a prompt that does not contain the word `approve` (any case)
 # exits 0 before any python is looked for. With no usable python, only a
-# prompt containing `crew:approve` is BLOCKED with the reason -- the user
+# prompt containing `crew:approve` or `crew:confirm-config` (crew 1.3.33: the
+# word `approve` is not in the latter, so it is matched by name) is BLOCKED with the reason -- the user
 # asked for an approval, and saying nothing would let them believe one was
 # recorded. A plain-text "approve T-1" passes through unrecorded instead:
 # blocking it would block every prompt that uses the word. Python that runs
@@ -17,10 +18,16 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DIR/_common.sh"
 
 INPUT=$(cat)
-case "$INPUT" in *[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*) ;; *) exit 0 ;; esac
+case "$INPUT" in *[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*|*crew:confirm-config*) ;; *) exit 0 ;; esac
 
 PY=$(crew_py_strict) || {
-  case "$INPUT" in *crew:approve*) ;; *) exit 0 ;; esac
+  case "$INPUT" in
+    *crew:approve*) ;;
+    *crew:confirm-config*)
+      echo "crew: /crew:confirm-config was NOT recorded -- no usable python to record the confirmation." >&2
+      exit 2 ;;
+    *) exit 0 ;;
+  esac
   echo "crew: /crew:approve was NOT recorded -- no usable python to validate the plan." >&2
   exit 2
 }

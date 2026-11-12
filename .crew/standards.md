@@ -1,6 +1,7 @@
 ---
 set: REPO
 applies-to: ["**"]
+export: ["review", "agents", "bugbot"]
 ---
 
 # useful-claude-add-ons standards overlay (REPO)
@@ -124,6 +125,27 @@ Lint rule `crew-splitlines-untrusted-text` flags `str.splitlines()` on text read
 child process (it also splits on U+2028, U+2029, U+0085 and `\x1c`-`\x1e`). A reviewed-safe site carries
 `# nosemgrep: crew-splitlines-untrusted-text` and the reason.
 
+## REPO-04 A resource held across an error path is released before its reference is dropped
+
+**Rule.** A socket, file handle, connection or lock acquired in a `try` body is explicitly released
+(`close()`, `await x.close()`, lock release) before the exception handler drops or reassigns the
+variable holding it, including in a broad `except Exception`
+added to keep a loop alive (PYTHON-11). "Log and move on" does not skip normal-path cleanup.
+
+**Why.** 1 finding, 1 change set (A-0001 r4); owner-approved 2026-10-27. Promote once a second
+change set earns it.
+
+**Self-check.**
+1. For each broad handler added to keep a loop alive: does its `try` body acquire a resource
+   (socket, file, connection, lock)? If so, does the handler release it before the reference is
+   set to `None` or reassigned? Pass: yes, or it was never open.
+2. Force the handler's exception and confirm the resource is released, not just that
+   the handler ran. Pass: a leak check (fd/socket count, or the peer seeing a close) shows it gone.
+
+**Earned by.** A-0001 r4 @321fabdf3, FIX `plugin/ai-connect/client/bridge_client.py:359`: an unexpected
+handler exception abandons an open WebSocket without closing it; the receive loop drops `self._ws` and
+reconnects, so registration hits `name_taken` until the old peer times out. Follow-up: ticket A-0007.
+
 ## Supplements GEN-08
 
 `CLAUDE_PLUGIN_ROOT` in shell text is quoted (GEN-06), and `pwsh` is named absolutely (CLAUDE.md
@@ -146,6 +168,13 @@ without double quotes.
 
 Lint rule `crew-json-duplicate-keys` flags `json.load`/`json.loads` on a file, stdin or child-process
 output with no `object_pairs_hook` (the last of two equal keys wins silently).
+
+## Supplements GEN-10
+
+"The recovery behaviour" in GEN-10's self-check means the automatic trigger
+firing on its own, not a test that drives the recovery by hand. Owner-approved
+(A-0001 r4, 2026-10-27): a test reset the blocking flag and called
+`start_reconnect` itself; production never reconnected. One change set so far.
 
 ## Supplements GEN-11
 

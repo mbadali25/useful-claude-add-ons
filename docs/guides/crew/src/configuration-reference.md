@@ -96,21 +96,96 @@ takes effect only when all of these hold (`crew_humanonly.resolve`):
   `null` or removal, which drops a veto); a `false` written by hand reads as
   human-only.
 
-**What this does NOT do yet (crew 1.3.9).** No hook reads these keys. The
-hooks that would honour an opt-out, and the prompt hook that records a
-`/crew:confirm-config` confirmation, are review harness and land in a
-separate change. Until then no confirmation can be recorded, so no opt-out
-can take effect, and the rules are exactly what they were: `/crew:approve` is
-recorded only from your own prompt (`approval_hook.py`), and the promote
-marker is human-only by instruction alone - no hook checks who created it.
-`crew_confirm_config.py resolve` shows what each key would resolve to.
+**What is live (crew 1.3.33).** The prompt hook (`approval_hook.py`) now
+records `/crew:confirm-config <change_id>` from a prompt you typed, so a
+double confirmation can complete, and `humanOnly.approve: false` takes effect
+through ONE decision point, `crew_ticket.cli_approval_allowed`: with an opt-out
+in force a `cli`-recorded approval receipt counts as if `scope.allowCliApproval`
+were `true`, for the scope guard, the Stop audit and every autopilot reader at
+once. It does NOT let the session run `crew_ticket.py approve` (the scope guard
+still refuses that text); the session's route is `crew_autopilot.py approve`,
+which still needs `autopilot.approval` `self` or `risk` and `autopilot.mode`
+`plan` or `backlog`. Anything unclear - the module missing, the resolver
+raising or answering anything but exactly `humanOnly: false` - reads as
+human-only.
+
+**Still human-only (crew 1.3.33).** No hook reads `humanOnly.promoteMarker`:
+the promote marker is human-only by instruction alone, and no hook checks who
+created it. `crew_confirm_config.py resolve` shows what each key would
+resolve to.
+
+**Who can write the receipts.** The double confirmation is recorded only by
+the prompt hook, from your own prompt. The scope guard (when `scope.mode` is
+not `off`) refuses every Write/Edit under `~/.claude/crew/confirm-config/` and
+every shell command that names that store beside a writing word. That is a
+textual tripwire, not a sandbox: a session that sets out to forge a receipt
+(`python -c`, an encoded command, a variable holding the path) still can, and
+`scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
+meaningful only with `scope.mode` `block`.
+
+**`/crew:approve-mass <id>` (crew 1.3.36).** Your yes to ONE blocked mass
+operation, typed by you and recorded by the same prompt hook in
+`<git-common-dir>/crew/mass-approvals/<id>.json`, good for 15 minutes. The
+directory is under `<git-common-dir>/crew/`, which the scope guard refuses to
+every Write/Edit and every shell command naming it, so the session cannot
+write the file. The cloud guard (`cloud_guard.py`) prints the `<id>` with its
+stop and reads the file; see "Mass operations".
+
+## Mass operations (`guards.mass`, crew 1.3.36)
+
+The rule for an autopilot that runs without a human: full automation, except a
+mass delete, a mass create or a mass change, which wait for your yes. The stop
+is armed by `guards.mass.enabled: true` (either layer) or by a double-confirmed
+`humanOnly` opt-out, and by nothing else; it is off by default. It rides on
+the cloud guard's hook, judges every shell command, and works even where
+`guards.cloudGuard` is `off`.
+
+| Limit | Default | Counts |
+|---|---|---|
+| `deleteCount` | 10 | files a command removes |
+| `createCount` | 20 | files it adds |
+| `changeCount` | 30 | files it rewrites |
+
+A count AT the limit stops. The defaults were measured on this repo's own
+history (104 days, 623 merged PRs: a PR adds a median 0 and p95 16 files,
+changes a median 5 and p95 30, deletes none in all but 15).
+`guards.mass.overrides.<files|git|terraform>.<limit>` replaces one limit for
+one kind of command; with nothing set `terraform` is delete 3, create 10,
+change 10 (inferred - the history held no terraform). The machine file sets
+the limits and `guards.mass.exempt`; the repo file can lower a limit and turn
+the stop on (`enabled` is on if either layer says so), so a cloned repo can
+tighten the stop and never loosen yours. `guards.mass.exempt` (machine file
+only) lists repo-relative globs of generated files that never count; node_modules,
+`__pycache__`, `.venv`, caches, `build`, `dist`, `.work` and worktrees
+(including `~/.claude/crew/worktrees/<repo>/<name>`) are always exempt.
+
+What it sees: `rm`, `Remove-Item`, `git clean -f`, `git rm`, `find -delete`,
+`rsync --delete` (delete); `cp`, `mv`, `rsync`, `Copy-Item`, `touch` (create
+and change); `sed -i` and `git reset --hard` / `checkout -- <paths>` /
+`restore` (change); `git commit`, `git push` and `gh pr create`, which count
+the added, deleted and changed files of the commit or of the whole branch
+against its base - so Write and Edit work is counted where it is about to be
+shared; `terraform apply <plan>` (the plan's own changes), `destroy` and
+`apply -auto-approve`; and an unfiltered SQL `DELETE` or `UPDATE`.
+
+A count that cannot be taken - a variable in a path, a path after a `cd`,
+`find -delete`, `xargs rm`, a failed `git`, an unfiltered SQL statement (no
+command text says how many rows it hits) - is "could not tell", and could not
+tell stops. It does NOT see a script (`bash cleanup.sh`, `python -c`,
+`make clean`), an MCP server, the Write and Edit tools before they are
+committed, `tar -x` or `unzip`, `git merge` or `pull`, or many small commands
+each under a limit: a tripwire in front of native permissions, not a sandbox.
+
+A stopped command prints an id. Attended, the stop is an `ask`; unattended
+it is a `deny`. Type `/crew:approve-mass <id>` in the session, then re-run the
+exact command. One id covers every limit that command trips.
 
 ## Reference (generated)
 
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**89 keys**: 52 settable in the machine-global file, 37 repo-only.
+**106 keys**: 68 settable in the machine-global file, 38 repo-only.
 
 Columns:
 
@@ -217,8 +292,33 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `humanOnly.approve` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_humanonly.py`) | 1.3.9 | The owner's opt-out of `/crew:approve` being human-only. null or `true` keeps it human-only; `false` opts out only from the machine file or an untracked repo file, only after `/crew:confirm-config` twice, and a `true` in either layer vetoes. crew 1.3.9: no hook acts on it yet, so it changes nothing today. |
+| `humanOnly.approve` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_humanonly.py`) | 1.3.9 | The owner's opt-out of `/crew:approve` being human-only. null or `true` keeps it human-only; `false` opts out only from the machine file or an untracked repo file, only after `/crew:confirm-config` twice, and a `true` in either layer vetoes. crew 1.3.27: with an opt-out in force a cli-recorded approval counts (`crew_ticket.cli_approval_allowed`). |
 | `humanOnly.promoteMarker` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_humanonly.py`) | 1.3.9 | The same opt-out for the production promote marker `.crew/.approved-<env>-<sha>`, under the same rules. crew 1.3.9: no hook acts on it yet, and no hook today checks who created the marker. |
+
+### `worktrees`
+
+| Setting | Layer | Default | Values | Since | Summary |
+|---|---|---|---|---|---|
+| `worktrees.root` | both | `null` | absolute path or null (coerced in `plugin/crew/hooks/scripts/crew_worktrees.py`) | 1.3.19 | The base directory for this repo's git worktrees, OUTSIDE the repo: they go in `<root>/<repo>-<digest>/<name>`. null is `~/.claude/crew/worktrees`; `~` is expanded, a relative path or one inside the repo is refused (never replaced by the default). It places the worktrees crew places (`/crew:emergency`, `crew_worktrees.py path`) and, once the owner registers the opt-in `WorktreeCreate` hook, the ones Claude Code creates; without the hook Claude Code keeps using `.claude/worktrees/`. |
+
+### `promote`
+
+| Setting | Layer | Default | Values | Since | Summary |
+|---|---|---|---|---|---|
+| `promote.deadlineSeconds` | both | `null` | number of seconds, or null (coerced in `plugin/crew/hooks/scripts/_promote_gate.py`) | 1.3.41 | How many seconds the promote gate (`promote-gate.sh`) may run, counted from the moment its shell began, before it gives up and blocks (a hook that times out is not a block, so the gate stops itself first). null derives it from the guard's hook timeout less a 4 s margin: 16 s of the 20 s row. A number above the timeout less 2 s (18 s of 20) is clamped to that, so the setting can never let the gate outlive its hook; zero, a negative, a string or a boolean reads as null. The hook timeout is the guard's row in the dispatcher's table, not a setting. |
+
+### `reaper`
+
+| Setting | Layer | Default | Values | Since | Summary |
+|---|---|---|---|---|---|
+| `reaper.enabled` | both | `false` | boolean (coerced in `plugin/crew/hooks/scripts/crew_reaper.py`) | 1.3.50 | Whether scheduled and session-start passes of the orphan reaper (`crew_reaper.py --scheduled`) do anything. false by default; a manual `crew_reaper.py` run always works and is a dry run unless given `--apply`. Read from the machine file only: a repo value is ignored, because the reaper ends processes on this machine. |
+| `reaper.dryRun` | both | `true` | boolean (coerced in `plugin/crew/hooks/scripts/crew_reaper.py`) | 1.3.50 | When true (the default) a scheduled or session-start pass only logs what it would end to `~/.claude/crew/reaper.log`; set false to let it end processes. Only a scheduled pass reads it; a manual run ends processes only with `--apply`. |
+| `reaper.spinCpuPct` | both | `50` | percent of one core (coerced in `plugin/crew/hooks/scripts/crew_reaper.py`) | 1.3.50 | An orphan is SPINNING when it used at least this percentage of one core over the reaper's short sample (5 s) and is older than `spinMinAgeMin`. A number above 0; anything else reads as 50. |
+| `reaper.spinMinAgeMin` | both | `15` | number of minutes (coerced in `plugin/crew/hooks/scripts/crew_reaper.py`) | 1.3.50 | Minutes an orphan must be running before the spinning rule (and the self-matching `until pgrep -f` watcher rule) may end it. A number above 0; anything else reads as 15. |
+| `reaper.blockedMinAgeHours` | both | `2` | number of hours (coerced in `plugin/crew/hooks/scripts/crew_reaper.py`) | 1.3.50 | Hours an orphan using under 1% of a core must be running before it counts as BLOCKED and may be ended. A number above 0; anything else reads as 2. |
+| `reaper.protectedRegex` | both | `null` | regular expression, or null (coerced in `plugin/crew/hooks/scripts/crew_reaper.py`) | 1.3.50 | A regular expression; a process whose image name or command line matches is never ended, it REPLACES the built-in list (claude, node, MCP servers, ai-connect, psmux/tmux, tailscale, language servers, obsidian, perplexity, vscode, wsl/docker/vm, Defender, ssh). null keeps the built-in list; an invalid expression reads as null. |
+| `reaper.intervalMin` | both | `10` | whole number of minutes (coerced in `plugin/crew/hooks/scripts/crew_reaper.py`) | 1.3.50 | Minutes between runs of the scheduled task `crew_reaper.py --install-task` creates, and the least gap between two session-start passes. A whole number from 1; anything else reads as 10. The task is never installed by default. |
+| `reaper.onSessionStart` | both | `false` | boolean (coerced in `plugin/crew/hooks/scripts/crew_reaper.py`) | 1.3.50 | When true and `reaper.enabled` is true, the SessionStart context hook starts one detached reaper pass (at most one per `intervalMin`) and does not wait for it. false by default. |
 
 ### `emergency`
 
@@ -270,6 +370,12 @@ Columns:
 |---|---|---|---|---|---|
 | `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | 1.2.62 | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `plugin/crew/hooks/scripts/crew_guards.py`) | 1.2.62 | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
+| `guards.mass.enabled` | both | `false` | boolean (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Turns the mass delete / create / change stop on (it is also armed by a double-confirmed `humanOnly` opt-out). On if EITHER layer says exactly `true`; off by default. |
+| `guards.mass.deleteCount` | both | `10` | integer (1 or more) (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Files a command may delete before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
+| `guards.mass.createCount` | both | `20` | integer (1 or more) (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Files a command may create before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
+| `guards.mass.changeCount` | both | `30` | integer (1 or more) (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Files a command may rewrite before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
+| `guards.mass.overrides` | both | `{}` | object of category to {deleteCount, createCount, changeCount} (checked in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | `guards.mass.overrides.<files\|git\|terraform>.<deleteCount\|createCount\|changeCount>`: one limit for one kind of command. Unset, `terraform` is delete 3, create 10, change 10 (inferred, not measured); the others use the limits above. |
+| `guards.mass.exempt` | both | `[]` | list of globs (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Repo-relative globs of generated files that never count toward a limit, read from the machine file only (a glob can only loosen the stop), on top of the built-in  regenerable directories (node_modules, __pycache__, .venv, caches, build, dist, .work, worktrees). |
 
 ### `production`
 
@@ -293,6 +399,7 @@ Columns:
 | `environments.nonProd` | repo | `[]` | not validated - read by `plugin/crew/hooks/scripts/crew_config.py` (expects list of globs) | 1.0.37 | Terraform targets that are not production and may run unattended. |
 | `environments.prodUnattended` | both, ratchet | `false` | `false` \| `true` (ratchet: narrower layer wins; listed narrowest first) | 1.0.37 | Whether production terraform may run unattended; `true` only when both layers say so. |
 | `environments.workflows` | repo | `{}` | not validated - read by `plugin/crew/hooks/scripts/crew_config.py` (expects object of glob to string) | 1.1.16 | Deploy workflow globs, each mapped to its environment or `input:<name>`. |
+| `environments.preProduction` | repo | `{}` | not validated - read by `plugin/crew/hooks/scripts/crew_preprod.py` (expects object of exact name to {reason, targets}) | 1.3.20 | Environments labelled production that are not live yet: exact name -> `reason` (+ optional exact `targets`); judged non-production by the cloud guard, with an audit line. |
 
 ### `change`
 

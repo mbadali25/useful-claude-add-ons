@@ -444,7 +444,7 @@ def test_next_auto_receipt_on_a_block_row_stops(tmp_path, monkeypatch):
 
 def test_next_eligible_round_without_receipt_names_auto_accept(tmp_path):
     root = _approved(tmp_path)
-    _ledger(root, [_auto_row(1), _auto_row(2)], state="REVIEWED")
+    _ledger(root, [_auto_row(n) for n in range(1, review_ledger.BUDGET + 1)], state="REVIEWED")
 
     got = _next(root)
 
@@ -577,8 +577,8 @@ def test_autopilot_refresh_beyond_anchor_stops_for_a_human(tmp_path, monkeypatch
 def test_autopilot_refresh_beyond_anchor_with_zero_rounds_left_names_the_refresh(tmp_path,
                                                                                  monkeypatch):
     root = _approved(tmp_path)
-    _ledger(root, [_round(1, "CLEAN"), _round(2, "CLEAN")], state="ACCEPTED",
-            receipt=_receipt(2))
+    _ledger(root, [_round(1, "CLEAN"), _round(2, "CLEAN"), _round(3, "CLEAN")], state="ACCEPTED",
+            receipt=_receipt(3))
     _receipt_says(monkeypatch, False, _BEYOND)
     _refresh(monkeypatch, "fresh")
 
@@ -613,17 +613,18 @@ def test_next_closed(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("refresh", ["fresh", "stale"])
 @pytest.mark.parametrize("second,state,receipt", [
-    ("CLEAN", "ACCEPTED", _receipt(2)), ("INCOMPLETE", "REVIEWED", None),
-    ("FINDINGS", "ACCEPTED", _receipt(2, "owner-accepted"))],
-    ids=["round-2-clean-gone-stale", "round-2-incomplete",
-         "round-2-findings-accepted-gone-stale"])
+    ("CLEAN", "ACCEPTED", _receipt(review_ledger.BUDGET)), ("INCOMPLETE", "REVIEWED", None),
+    ("FINDINGS", "ACCEPTED", _receipt(review_ledger.BUDGET, "owner-accepted"))],
+    ids=["final-clean-gone-stale", "final-incomplete",
+         "final-findings-accepted-gone-stale"])
 def test_next_budget_spent_without_a_receipt_stops(tmp_path, monkeypatch, refresh, second,
                                                    state, receipt):
-    """Round 2 CLEAN whose receipt went stale, or round 2 INCOMPLETE (round
-    1's repro): a /crew:review now would reserve a third round and write
+    """The final round CLEAN whose receipt went stale, or INCOMPLETE (round
+    1's repro): a /crew:review now would find no round left and write
     NEEDS_REPLAN, unattended."""
     root = _approved(tmp_path)
-    _ledger(root, [_round(1, "FINDINGS"), _round(2, second)], state=state, receipt=receipt)
+    rounds = [_round(n, "FINDINGS") for n in range(1, review_ledger.BUDGET)]
+    _ledger(root, rounds + [_round(review_ledger.BUDGET, second)], state=state, receipt=receipt)
     _receipt_ok(monkeypatch, False)
     _refresh(monkeypatch, refresh)
 

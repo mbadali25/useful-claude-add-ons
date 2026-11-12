@@ -66,8 +66,7 @@ FINAL_STATES = ("applied", "expired", "cancelled", "stale", "refused", "revoked"
 SENSITIVE_REFUSAL = (
     "removes a human step, so it needs the owner's double confirmation: "
     "`crew_confirm_config.py propose` records it and prints a change id, and "
-    "the owner types /crew:confirm-config <change_id> twice. (In crew 1.3.9 "
-    "nothing records that confirmation yet, so the change cannot complete.)")
+    "the owner types /crew:confirm-config <change_id> twice.")
 REPO_UNVETO_REFUSAL = (
     "removing a repo's human-only veto lifts a human step; the owner edits "
     ".crew/config.json by hand")

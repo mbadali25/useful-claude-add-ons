@@ -170,6 +170,47 @@ _HIDE_MARKDOWN = (
 )
 
 
+# Loads build.py, swaps render_engine for a recorder, and checks which platforms
+# reach soffice. Word is first reported absent so win32 takes the skip branch
+# (SKIPPED_RC, not 0), then present with a fake build_report.to_word.
+_OS_GATE = (
+    "import importlib.util, sys\n"
+    "spec = importlib.util.spec_from_file_location('build_under_test', sys.argv[1])\n"
+    "mod = importlib.util.module_from_spec(spec)\n"
+    "spec.loader.exec_module(mod)\n"
+    "g = mod.__dict__\n"
+    "calls = []\n"
+    "class Fake:\n"
+    "    @staticmethod\n"
+    "    def to_soffice(*a, **k):\n"
+    "        calls.append((a, k)); return 0\n"
+    "    @staticmethod\n"
+    "    def _word_com_available():\n"
+    "        return False\n"
+    "g['render_engine'] = Fake\n"
+    "rc = {p: g['convert_for_os']('x.html', platform=p) for p in\n"
+    "      ('linux', 'win32', 'darwin')}\n"
+    "S = g['SKIPPED_RC']\n"
+    "assert S not in (0, 1, 2), S\n"
+    "assert rc == {'linux': 0, 'win32': S, 'darwin': S}, rc\n"
+    "assert calls == [(('x.html',), {'want_docx': True, 'want_pdf': True})], calls\n"
+    # win32 WITH Word: a fake build_report.to_word must be reached, once, with
+    # (html, True, True), its return code passed through, and soffice untouched.
+    "import types\n"
+    "word_calls = []\n"
+    "fake_report = types.ModuleType('build_report')\n"
+    "fake_report.to_word = lambda *a: (word_calls.append(a), 0)[1]\n"
+    "sys.modules['build_report'] = fake_report\n"
+    "Fake._word_com_available = staticmethod(lambda: True)\n"
+    "assert g['convert_for_os']('x.html', platform='win32') == 0\n"
+    "assert word_calls == [('x.html', True, True)], word_calls\n"
+    "assert len(calls) == 1, calls\n"
+    "fake_report.to_word = lambda *a: 7\n"
+    "assert g['convert_for_os']('x.html', platform='win32') == 7\n"
+    "print('OS-GATE-OK')\n"
+)
+
+
 def guide_names():
     """The guide names build.py builds, read from its GUIDES table."""
     with open(BUILD, encoding="utf-8") as fh:
@@ -273,6 +314,12 @@ def main():
     code, out = run_build_check(SRC, extra=_HIDE_MARKDOWN)
     report(code == 2 and "DID NOT RUN" in out,
            "build.py --check exits 2 when markdown cannot be imported", f"exit {code}: {out}")
+
+    # Owner rule 2026-11-10: LibreOffice runs on Linux only. convert_for_os must
+    # reach soffice on linux and never on win32/darwin.
+    code, out = run_build_check(SRC, extra=_OS_GATE)
+    report(code == 0 and "OS-GATE-OK" in out,
+           "build.py convert_for_os runs soffice on linux only", f"exit {code}: {out}")
 
     if failures:
         print("\ncrew-guide suite FAILED:")

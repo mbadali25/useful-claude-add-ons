@@ -625,6 +625,48 @@ fi
 
 _crew_gate_quiet_install
 
+# The first line of a marker or base file the gate reads, with surrounding
+# whitespace removed - a trailing CR included ([:space:] holds it). A marker
+# written with CRLF (an editor, a PowerShell `Set-Content`, Python on Windows)
+# used to keep its CR through `read -r`, so `git cat-file -e "<sha>\r^{commit}"`
+# failed and the marker was silently ignored: an orphan branch's marker then
+# skipped the no-shared-history refusal and fell through to merge-base = HEAD
+# on the default branch, passing an unchecked commit. Interior whitespace is
+# kept, so a line with two words stays one value that names no commit. A file
+# with no newline at all still yields its line. Only ever called on a regular
+# file ([ -f ]), never a FIFO, which would hang `read` waiting for a writer.
+#
+# A file holding a NUL byte reads as EMPTY, the value its caller already
+# treats as unreadable. Bash drops a NUL in `read` and in `$(...)` without a
+# word, so `<digest>\0\r\n` would otherwise trim to a clean value and a
+# malformed record would count (Codex review round 2).
+gate_marker_has_nul() {
+  local _nn
+  _nn=$(LC_ALL=C tr -dc '\000' < "$1" 2>/dev/null | wc -c) || return 0
+  _nn=${_nn//[[:space:]]/}
+  [ "${_nn:-1}" != 0 ]
+}
+gate_marker_line() {
+  local _ml=""
+  gate_marker_has_nul "$1" && return 0
+  IFS= read -r _ml < "$1" 2>/dev/null || [ -n "$_ml" ] || _ml=""
+  _ml="${_ml#"${_ml%%[![:space:]]*}"}"
+  _ml="${_ml%"${_ml##*[![:space:]]}"}"
+  printf '%s' "$_ml"
+}
+# The WHOLE of a file that holds one value (the fingerprint), with only the
+# surrounding whitespace removed - CR and LF included. Anything inside the
+# value - an interior CR, a second line - is kept, so it fails the compare:
+# a malformed record never authorises a skip (Codex review round 1).
+gate_marker_text() {
+  local _mt=""
+  gate_marker_has_nul "$1" && return 0
+  _mt=$(cat "$1" 2>/dev/null) || _mt=""
+  _mt="${_mt#"${_mt%%[![:space:]]*}"}"
+  _mt="${_mt%"${_mt##*[![:space:]]}"}"
+  printf '%s' "$_mt"
+}
+
 # Emergency lane. An incident is open, so this turn is not blocked and the
 # checks do not run - that is the entire point of declaring one, since these
 # are the checks that take minutes. What would have run is written down
@@ -645,7 +687,7 @@ elif crew_incident_active; then
   CHANGED_N=$( { git -c core.quotePath=false diff --name-only HEAD 2>/dev/null; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; } | grep -c . )
   crew_incident_log verify "stop gate stood down with $CHANGED_N changed file(s) unverified"
   if [ -f .crew/.deploy-in-flight ]; then
-    read -r DENV DSHA < .crew/.deploy-in-flight
+    read -r DENV DSHA <<< "$(gate_marker_line .crew/.deploy-in-flight)"
     crew_incident_log verify "deploy of $DENV at $DSHA has no row in .work/PROMOTIONS.md"
   fi
   exit 0
@@ -660,8 +702,16 @@ fi
 # that deployed, a CI job neither deploys nor owns the promotions log, and the
 # check removes the marker on success - a job must not consume it.
 if [ "$CI_MODE" -eq 0 ] && [ -f .crew/.deploy-in-flight ]; then
-  read -r DENV DSHA < .crew/.deploy-in-flight
-  if grep -qE "\|[[:space:]]*${DENV}[[:space:]]*\|[[:space:]]*$DSHA" .work/PROMOTIONS.md 2>/dev/null; then
+  read -r DENV DSHA <<< "$(gate_marker_line .crew/.deploy-in-flight)"
+  # An empty field (a blank, CR-only or NUL-bearing marker) would make the
+  # pattern match any two adjacent empty cells and clear the marker for a
+  # deploy nobody recorded, so it counts as no row (Codex review round 3).
+  # Both fields are matched literally: with its CR trimmed, a marker like
+  # `prod .*` would otherwise be a pattern matching any prod row (round 4).
+  DENV_RE=$(printf '%s' "$DENV" | sed 's/[][\.*^$+?(){}|]/\\&/g')
+  DSHA_RE=$(printf '%s' "$DSHA" | sed 's/[][\.*^$+?(){}|]/\\&/g')
+  if [ -n "$DENV" ] && [ -n "$DSHA" ] \
+     && grep -qE "\|[[:space:]]*${DENV_RE}[[:space:]]*\|[[:space:]]*$DSHA_RE" .work/PROMOTIONS.md 2>/dev/null; then
     rm -f .crew/.deploy-in-flight
   else
     echo "DEPLOY NOT RECORDED: $DENV was deployed at $DSHA and .work/PROMOTIONS.md has no row for it." >&2
@@ -778,7 +828,9 @@ record_verified_fingerprint() {
 #   2. The merge-base with the default branch (origin/<default> when that ref
 #      exists, else the local branch - crew 1.2.117, see below), when there is
 #      no marker or it names a commit this repo no longer contains (a squash
-#      merge, a rebase).
+#      merge, a rebase). A marker that is not an ancestor of HEAD (left by
+#      another branch) is replaced by its merge-base with HEAD; one that
+#      shares no history with HEAD is refused.
 #      Nothing on this branch has been shown to be verified, so all of it is in
 #      scope. Unknown resolves to checking MORE, never less.
 #   3. HEAD, when there is no branch point to use -- a detached checkout, or
@@ -813,12 +865,43 @@ SCAN_HEAD=$(git rev-parse --verify -q HEAD 2>/dev/null) || SCAN_HEAD=""
 BASE=""
 BASE_FROM_MARKER=0
 if [ -f .crew/.verify-verified-at ]; then
-  read -r CAND < .crew/.verify-verified-at
+  # A NUL-bearing marker reads as empty, and an empty marker is ignored - which
+  # for an orphan branch's sha would skip the refusal below and, on the
+  # default branch, pass an unchecked commit. So it is refused here instead
+  # (Codex review round 3). --all and --ci do not diff from a base.
+  if gate_marker_has_nul .crew/.verify-verified-at \
+     && [ "$CI_ALL_SEEN" -eq 0 ] && [ "$CI_MODE" -eq 0 ]; then
+    echo "verify-gate: the verified marker (.crew/.verify-verified-at) holds a NUL byte - the gate cannot tell which commit it names, so it refuses rather than check less. Run /crew:verify --all, then remove .crew/.verify-verified-at." >&2
+    exit 2
+  fi
+  CAND=$(gate_marker_line .crew/.verify-verified-at)
   # Trust it only if it still names a commit. A marker surviving a squash merge
   # would otherwise diff against nothing and report the whole branch as clean.
   if [ -n "$CAND" ] && git cat-file -e "${CAND}^{commit}" 2>/dev/null; then
-    BASE="$CAND"
-    BASE_FROM_MARKER=1
+    # It must also be an ancestor of HEAD. A marker a pass left on ANOTHER
+    # branch still names a commit here, and diffing against it put every path
+    # that branch touched in scope - measured: ~1368 phantom paths and an
+    # UNMAPPED failure on a clean tree, which never let a pass refresh the
+    # marker. Its merge-base with HEAD is an ancestor of the verified commit,
+    # so it is covered by that pass, and an ancestor of HEAD, so only this
+    # branch's own changes since it are in scope - the same rule BASE_AT
+    # gets below. No shared history at all (an orphan branch's marker) is
+    # refused like an unshared BASE_AT: falling through could reach
+    # merge-base = HEAD on the default branch and pass an unchecked commit
+    # (review round 1). --all and --ci do not diff from a base, so they go on.
+    if git merge-base --is-ancestor "$CAND" HEAD 2>/dev/null; then
+      BASE="$CAND"
+      BASE_FROM_MARKER=1
+    else
+      BASE=$(git merge-base "$CAND" HEAD 2>/dev/null) || BASE=""
+      if [ -n "$BASE" ]; then
+        BASE_FROM_MARKER=1
+        BASE_NOTE="verify-gate: diff base: the verified marker ($CAND) is not an ancestor of HEAD (left by another branch?), so its merge-base with HEAD is used, $BASE"
+      elif [ "$CI_ALL_SEEN" -eq 0 ] && [ "$CI_MODE" -eq 0 ]; then
+        echo "verify-gate: the verified marker (.crew/.verify-verified-at, $CAND) shares no history with HEAD - the gate cannot tell what changed since it, so it refuses rather than check less. Run /crew:verify --all, then remove that file." >&2
+        exit 2
+      fi
+    fi
   fi
 fi
 # A baseline that is not an ancestor of HEAD - one a quiet turn left on
@@ -836,7 +919,7 @@ if [ -z "$BASE" ] && [ -e "$BASE_AT" ] \
   # device or directory is refused below like an unreadable file.
   CAND=""
   if [ -f "$BASE_AT" ]; then
-    CAND=$(head -n 1 "$BASE_AT" 2>/dev/null | tr -d '[:space:]') || CAND=""
+    CAND=$(gate_marker_line "$BASE_AT")
   fi
   if [ -n "$CAND" ] && git cat-file -e "${CAND}^{commit}" 2>/dev/null; then
     if git merge-base --is-ancestor "$CAND" HEAD 2>/dev/null; then
@@ -1096,7 +1179,8 @@ FP_FILE=".crew/.verify-gate.fingerprint"
 FINGERPRINT=""
 if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ -z "$BUDGET_FLAG" ]; then
   FINGERPRINT=$(printf '%s\n' "$CHANGED" | "$FP_PY" "$FP_DIR/verify_fingerprint.py" "$PWD" 2>/dev/null)
-  if [ -n "$FINGERPRINT" ] && [ "$FINGERPRINT" = "$(cat "$FP_FILE" 2>/dev/null)" ]; then
+  if [ -n "$FINGERPRINT" ] && [ -f "$FP_FILE" ] \
+     && [ "$FINGERPRINT" = "$(gate_marker_text "$FP_FILE")" ]; then
     echo "verify-gate: nothing the gate depends on has changed since the last CLEAN run (fingerprint $FINGERPRINT) - checks were SKIPPED, not re-run. Edit a file, or run the gate with --all, to force them." >&2
     # The fingerprint only proves nothing changed; it says nothing about a
     # rule that was chronic/skipped/reach-excluded on a PRIOR run and has

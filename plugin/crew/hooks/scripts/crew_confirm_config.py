@@ -251,8 +251,9 @@ def main(argv=None):
                 for key, got in out.items():
                     state = "human-only" if got["humanOnly"] else "opted out"
                     print(f"humanOnly.{key}: {state} - {got['reason']}")
-                print("crew 1.3.9: no hook acts on these yet; the human-only rules hold "
-                      "whatever this says.")
+                print("crew 1.3.27: humanOnly.approve is acted on "
+                      "(crew_ticket.cli_approval_allowed); no hook reads "
+                      "humanOnly.promoteMarker, which stays human-only whatever this says.")
     except Refused as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 2

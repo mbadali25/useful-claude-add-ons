@@ -42,6 +42,13 @@ nor carries the line; the line also works as a commit trailer, the only form a l
 CI also fails a stale built guide's HTML or configuration reference (`build.py --check`,
 `config_reference.py --check`).
 
+**Every version a branch sets gets a CHANGELOG.md line.** Owner rule, 2026-11-09. A plugin or skill
+`version` bump, a re-bump after main moved included, needs a `###` entry naming `<name> <version>`, or
+under `## [Unreleased]` before its first `###`: `- <name> <version>: re-bump only - <why>`. Entries stay
+under `[Unreleased]`; none is moved into a dated heading. `scripts/check-changelog.py` (CI, gate-runner)
+checks only versions the branch newly sets, so history is never backfilled. It does not check that the
+entry is true, or that the version was bumped at all (`check-marketplace.py` owns that).
+
 **A number this repo states about itself gets a marker, or it is not checked.** Write
 `<!-- claim: skills-count -->` or `<!-- claim: plugin-version:<name> -->` beside it and
 `check_self_claims` in `scripts/check-marketplace.py` verifies it against `marketplace.json` or that
@@ -94,6 +101,34 @@ or the 15-20 s guard caps), reduce lanes rather than disable guards. ALL communi
 outbound sends and condensing inbound messages, goes through one `crew:session-relay` agent kept
 available for the session; the main session never sends to a peer directly.
 
+## Standing rule - LibreOffice runs on Linux only
+
+**LibreOffice (`soffice`) is only run on Linux. On any other system, build `.docx`/`.pdf` with
+Microsoft Office (Word over COM on Windows).** Owner rule, 2026-11-10 ("LibreOffice should only be
+run on Linux systems ... On other systems, you can use Office ... I know it's two separate
+processes"). They are separate processes, so a build branches on the platform and never falls back
+from one to the other; a machine with neither builds the HTML only and says what it skipped.
+`docs/guides/crew/src/build.py` (`convert_for_os`) enforces it; `skills/doc-builder` has its own
+`--renderer` choice and is outside this rule's enforcement.
+
+## Delegation - the main session stays free to answer
+
+**Every task runs in a subagent, and one manager subagent runs them.** Owner rule, 2026-10-12. The
+main session does not do the work itself: it spawns a single manager in the background, and the
+manager splits the request into tasks, spawns one worker subagent per task, checks what each
+returns against the artifact rather than the summary, and sends back one report. That leaves the
+main session idle on purpose, so the owner can reply, redirect or add work while tasks are running.
+
+- **The main session's job is the conversation.** It briefs the manager, relays progress and
+  results, and passes a mid-run message from the owner on with `SendMessage` instead of starting
+  over. It never waits in the foreground on work a subagent is doing.
+- **A new message while work is running is answered first.** If it changes the work, forward it to
+  the manager; if it is a separate request, it gets its own manager. Then resume, do not restart.
+- **The manager owns the workers.** It gives each a narrow brief with what is already ruled out,
+  keeps two workers off the same files, and reports which tasks finished, which failed and what
+  nobody verified. Check `ListAgents` before spawning a second manager for the same work.
+- **The only exception is an answer that needs no tool calls.** That is conversation, not a task.
+
 ## Standing rule - verify before you state a problem
 
 **Before stating anything as a problem (bug, cause, failure, risk), verify it** by running the state
@@ -140,6 +175,40 @@ right for the repo's own files: READMEs, this file, ADRs in `docs/adr/`, the cod
 
 Quote failures exactly; never summarise a stack trace. Name which suites ran and which did not.
 `drift-detection.sh` is skipped by default — say so rather than implying the gate is green.
+
+## Tooling - a missing tool is installed, not skipped
+
+**A tool a test, QA step or gate needs and this machine lacks gets installed - not skipped, stubbed
+or worked around.** Owner rule, 2026-10-12. The owner has given standing authority for that on their
+own machines. A missing tool is reported as *missing*, with the install that fixed it - never as a
+failed check and never as a passed one. Prefer the distro package, then the vendor's own package,
+then `uv tool install`, then `npm -g`; match the version CI pins where it pins one.
+
+Measured on the Ubuntu 26.04 host, 2026-10-12 - what each rule needs is in `.crew/verify.json`:
+
+- **apt**: `shellcheck`; `pylint`, `python3-docx`, `python3-numpy`, `python3-pil`, `python3-pymupdf`
+  (the lint rule and the combined pytest run's doc-builder suites); `libreoffice-writer-nogui`
+  (doc-builder's conversion test and the guide's DOCX/PDF build).
+- **`pip install --break-system-packages`, into `/usr/local`** - the one route left, because the
+  rules call `python3 -m <module>` on the system interpreter, so a venv does not satisfy them:
+  `pytest` and `markdown` (apt's are not the versions CI pins), `pytest-xdist` (kept beside the
+  pytest it loads into) and `ruff` (no apt package on 26.04).
+- **a venv outside every worktree**, `/root/.venvs/ai-connect`, built with `uv` from
+  `plugin/ai-connect/requirements*.txt`: nothing of ai-connect's goes into the system Python, and
+  its rule runs as root only on the owner's say-so.
+- **npm**: `npm --prefix mcp-servers ci` for that suite; `@mermaid-js/mermaid-cli` globally, at the
+  version `verify-gate.yml` pins, for the diagram render suite.
+- **`uv tool install`**: `graphifyy`, as `install-prerequisites.sh` does it.
+- **PowerShell**: the `powershell` snap works on 26.04 as root. A bare `pwsh` that aborts at startup
+  with `FileLoadException: The given assembly name was invalid` is a corrupt
+  `~/.cache/powershell/StartupProfileData-NonInteractive`, not a broken install: delete that file,
+  do not reinstall. `scripts/pwsh-isolated.sh` gives each run a private cache, so the repo's gates
+  stay green while it is corrupt and only a bare `pwsh` (a hook, a shell) shows it. The snap cannot
+  start as `nobody`, so the one `plugin-evals-runner` case that drops privileges stays NOT RUN.
+
+Out of scope for that authority: anything needing credentials or an account, Docker images, GPU
+models, desktop apps, and the real-`claude` `drift-detection.sh` run. Follow-up, not done here:
+`install-prerequisites.{sh,ps1}` install none of the Python modules above.
 
 ## Memory - where the code map and runbooks live
 

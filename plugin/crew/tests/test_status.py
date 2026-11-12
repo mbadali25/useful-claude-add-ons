@@ -399,7 +399,7 @@ def test_status_review_line_shows_budget_and_refunds(tmp_path):
 
     done = _run(root)
 
-    assert "review   T1: REVIEWED, 1/2 rounds used, 1 refunded" in done.stdout, done.stdout
+    assert "review   T1: REVIEWED, 1/3 rounds used, 1 refunded" in done.stdout, done.stdout
 
 
 def test_status_review_line_for_an_unreadable_ledger_is_unknown(tmp_path):
@@ -438,7 +438,7 @@ def test_status_review_line_survives_rounds_that_are_not_objects(tmp_path):
 
     done = _run(root)
 
-    assert (done.returncode, "review   T1: REVIEWED, 2/2 rounds used" in done.stdout) == (
+    assert (done.returncode, "review   T1: REVIEWED, 2/3 rounds used" in done.stdout) == (
         0, True), done.stdout + done.stderr
 
 
@@ -470,7 +470,7 @@ def test_status_marks_a_ticket_with_a_same_family_round(tmp_path):
 
     done = _run(root)
 
-    assert "review   T1: REVIEWED, 1/2 rounds used, same-family round" in done.stdout, done.stdout
+    assert "review   T1: REVIEWED, 1/3 rounds used, same-family round" in done.stdout, done.stdout
 
 
 def test_status_reads_a_claude_model_family_as_same_family_whatever_the_provider(tmp_path):

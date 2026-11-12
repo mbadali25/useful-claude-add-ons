@@ -218,13 +218,15 @@ KEY_META = {
                         "machine file can arm it (exactly `true`); a repo `false` vetoes "
                         "it.", "branch", (None, True, False), "1.0.40",
                         _S + "crew_resume.py"),
-    # --- humanOnly (crew 1.3.9; read by crew_humanonly.resolve, acted on by no hook yet)
+    # --- humanOnly (crew 1.3.9; read by crew_humanonly.resolve; acted on since 1.3.27 for
+    # `approve`, by no hook for `promoteMarker`)
     "humanOnly.approve": _row("The owner's opt-out of `/crew:approve` being human-only. "
                               "null or `true` keeps it human-only; `false` opts out only "
                               "from the machine file or an untracked repo file, only after "
                               "`/crew:confirm-config` twice, and a `true` in either layer "
-                              "vetoes. crew 1.3.9: no hook acts on it yet, so it changes "
-                              "nothing today.", "branch", crew_humanonly.VALUES, "1.3.9",
+                              "vetoes. crew 1.3.27: with an opt-out in force a cli-recorded "
+                              "approval counts (`crew_ticket.cli_approval_allowed`).", "branch",
+                              crew_humanonly.VALUES, "1.3.9",
                               _S + "crew_humanonly.py"),
     "humanOnly.promoteMarker": _row("The same opt-out for the production promote marker "
                                     "`.crew/.approved-<env>-<sha>`, under the same rules. "
@@ -232,6 +234,76 @@ KEY_META = {
                                     "checks who created the marker.", "branch",
                                     crew_humanonly.VALUES, "1.3.9",
                                     _S + "crew_humanonly.py"),
+    # --- worktrees (crew 1.3.19)
+    "worktrees.root": _row("The base directory for this repo's git worktrees, OUTSIDE the "
+                           "repo: they go in `<root>/<repo>-<digest>/<name>`. null is "
+                           "`~/.claude/crew/worktrees`; `~` is expanded, a relative path or one "
+                           "inside the repo is refused (never replaced by the default). It "
+                           "places the worktrees crew places (`/crew:emergency`, "
+                           "`crew_worktrees.py path`) and, once the owner registers the opt-in "
+                           "`WorktreeCreate` hook, the ones Claude Code creates; without the "
+                           "hook Claude Code keeps using `.claude/worktrees/`.", "type",
+                           since="1.3.19", source=_S + "crew_worktrees.py",
+                           type_="absolute path or null"),
+    # --- promote (crew 1.3.41)
+    "promote.deadlineSeconds": _row("How many seconds the promote gate (`promote-gate.sh`) may run, "
+                                    "counted from the moment its shell began, before it gives up and "
+                                    "blocks (a hook that times out is not a block, so the gate stops "
+                                    "itself first). null derives it from the guard's hook timeout "
+                                    "less a 4 s margin: 16 s of the 20 s row. A number above the "
+                                    "timeout less 2 s (18 s of 20) is clamped to that, so the setting "
+                                    "can never let the gate outlive its hook; zero, a negative, a "
+                                    "string or a boolean reads as null. The hook timeout is the "
+                                    "guard's row in the dispatcher's table, not a setting.",
+                                    "type", since="1.3.41", source=_S + "_promote_gate.py",
+                                    type_="number of seconds, or null"),
+    # --- reaper (crew 1.3.50)
+    "reaper.enabled": _row('Whether scheduled and session-start passes of the orphan reaper '
+                           '(`crew_reaper.py --scheduled`) do anything. false by default; a manual'
+                           ' `crew_reaper.py` run always works and is a dry run unless given '
+                           '`--apply`. Read from the machine file only: a repo value is ignored, '
+                           'because the reaper ends processes on this machine.',
+                           "type", since="1.3.50", source=_S + "crew_reaper.py",
+                           type_='boolean'),
+    "reaper.dryRun": _row('When true (the default) a scheduled or session-start pass only logs '
+                          'what it would end to `~/.claude/crew/reaper.log`; set false to let it '
+                          'end processes. Only a scheduled pass reads it; a manual run ends '
+                          'processes only with `--apply`.',
+                          "type", since="1.3.50", source=_S + "crew_reaper.py",
+                          type_='boolean'),
+    "reaper.spinCpuPct": _row('An orphan is SPINNING when it used at least this percentage of one '
+                              "core over the reaper's short sample (5 s) and is older than "
+                              '`spinMinAgeMin`. A number above 0; anything else reads as 50.',
+                              "type", since="1.3.50", source=_S + "crew_reaper.py",
+                              type_='percent of one core'),
+    "reaper.spinMinAgeMin": _row('Minutes an orphan must be running before the spinning rule (and the '
+                                 'self-matching `until pgrep -f` watcher rule) may end it. A number '
+                                 'above 0; anything else reads as 15.',
+                                 "type", since="1.3.50", source=_S + "crew_reaper.py",
+                                 type_='number of minutes'),
+    "reaper.blockedMinAgeHours": _row('Hours an orphan using under 1% of a core must be running before it '
+                                      'counts as BLOCKED and may be ended. A number above 0; anything else '
+                                      'reads as 2.',
+                                      "type", since="1.3.50", source=_S + "crew_reaper.py",
+                                      type_='number of hours'),
+    "reaper.protectedRegex": _row('A regular expression; a process whose image name or command line '
+                                  'matches is never ended, it REPLACES the built-in list (claude, node, '
+                                  'MCP servers, ai-connect, psmux/tmux, tailscale, language servers, '
+                                  'obsidian, perplexity, vscode, wsl/docker/vm, Defender, ssh). null '
+                                  'keeps the built-in list; an invalid expression reads as null.',
+                                  "type", since="1.3.50", source=_S + "crew_reaper.py",
+                                  type_='regular expression, or null'),
+    "reaper.intervalMin": _row('Minutes between runs of the scheduled task `crew_reaper.py --install-'
+                               'task` creates, and the least gap between two session-start passes. A '
+                               'whole number from 1; anything else reads as 10. The task is never '
+                               'installed by default.',
+                               "type", since="1.3.50", source=_S + "crew_reaper.py",
+                               type_='whole number of minutes'),
+    "reaper.onSessionStart": _row('When true and `reaper.enabled` is true, the SessionStart context hook '
+                                  'starts one detached reaper pass (at most one per `intervalMin`) and '
+                                  'does not wait for it. false by default.',
+                                  "type", since="1.3.50", source=_S + "crew_reaper.py",
+                                  type_='boolean'),
     # --- emergency
     "emergency.standDown": _unv("Whether a declared incident may stand gates down; "
                                 "`false` forbids it.", FIRST, _S + "_common.sh", "boolean"),
@@ -316,6 +388,37 @@ KEY_META = {
                              "that guard's own tiers; a bad one reads as the floor.",
                              "open-table", since="1.2.62", source=_S + "crew_guards.py",
                              type_="object of guard name to tier"),
+    "guards.mass.enabled": _row(
+        "Turns the mass delete / create / change stop on (it is also armed by a "
+        "double-confirmed `humanOnly` opt-out). On if EITHER layer says exactly `true`; off by "
+        "default.", "type", since="1.3.36", source=_S + "crew_mass.py", type_="boolean"),
+    "guards.mass.deleteCount": _row(
+        "Files a command may delete before it waits for `/crew:approve-mass`; a count at "
+        "the limit stops. The machine file sets it; the repo file can only lower it; a value "
+        "that is not a positive integer reads as the default.", "type", since="1.3.36",
+        source=_S + "crew_mass.py", type_="integer (1 or more)"),
+    "guards.mass.createCount": _row(
+        "Files a command may create before it waits for `/crew:approve-mass`; a count at "
+        "the limit stops. The machine file sets it; the repo file can only lower it; a value "
+        "that is not a positive integer reads as the default.", "type", since="1.3.36",
+        source=_S + "crew_mass.py", type_="integer (1 or more)"),
+    "guards.mass.changeCount": _row(
+        "Files a command may rewrite before it waits for `/crew:approve-mass`; a count at "
+        "the limit stops. The machine file sets it; the repo file can only lower it; a value "
+        "that is not a positive integer reads as the default.", "type", since="1.3.36",
+        source=_S + "crew_mass.py", type_="integer (1 or more)"),
+    "guards.mass.overrides": _row(
+        "`guards.mass.overrides.<files|git|terraform>.<deleteCount|createCount|"
+        "changeCount>`: one limit for one kind of command. Unset, `terraform` is delete 3, "
+        "create 10, change 10 (inferred, not measured); the others use the limits above.",
+        "open-table", since="1.3.36", source=_S + "crew_mass.py",
+        type_="object of category to {deleteCount, createCount, changeCount}"),
+    "guards.mass.exempt": _row(
+        "Repo-relative globs of generated files that never count toward a limit, read from "
+        "the machine file only (a glob can only loosen the stop), on top of the built-in "
+        " regenerable directories (node_modules, __pycache__, .venv, caches, "
+        "build, dist, .work, worktrees).", "type", since="1.3.36",
+        source=_S + "crew_mass.py", type_="list of globs"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),
     "production.hosts": _unv("Globs naming production hosts.", "0.19.30",
@@ -329,6 +432,11 @@ KEY_META = {
     "environments.nonProd": _unv("Terraform targets that are not production and may run "
                                  "unattended.", "1.0.37", _S + "crew_config.py",
                                  "list of globs"),
+    "environments.preProduction": _unv("Environments labelled production that are not live yet: exact "
+                                       "name -> `reason` (+ optional exact `targets`); judged "
+                                       "non-production by the cloud guard, with an audit line.",
+                                       "1.3.20", _S + "crew_preprod.py",
+                                       "object of exact name to {reason, targets}"),
     "environments.prodUnattended": _rat("Whether production terraform may run unattended; "
                                         "`true` only when both layers say so.", "1.0.37"),
     "environments.workflows": _unv("Deploy workflow globs, each mapped to its environment "
@@ -454,6 +562,7 @@ _FAMILY_OF_KEY = {
     "environments.prodUnattended": "cloud",
     "environments.nonProd": "cloud",
     "environments.workflows": "cloud",
+    "environments.preProduction": "cloud",
 }
 _FAMILY_OF_SEGMENT = {
     "qa": "providers", "dev": "providers", "secondOpinion": "providers",

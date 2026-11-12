@@ -55,6 +55,16 @@
 #                         (both key flags also take the --flag=value spelling; an
 #                         unknown option is reported with any value redacted)
 
+# The whole script body sits inside ONE '{ ... }' group, opened here and closed on the
+# last line. Bash has to parse a group to its closing brace before it runs any of it,
+# so under 'curl ... | bash' the entire script is in memory before the first command
+# starts. Without the group bash reads the script off the pipe one command at a time,
+# and any child that reads its inherited stdin swallows whatever has not been read yet:
+# the run then stops at that step with no summary and no failed-step list. Measured
+# 2026-10-12 with find-skills ('npx skills add' left 0 of 20000 piped lines unread), so
+# community and claude-code-setup never ran. Do not add code outside the group, and do
+# not indent the body. scripts/_test/menu-groups.sh case 9 goes red without it.
+{
 set -uo pipefail
 
 # Under the documented one-liner - 'curl -fsSL ... | bash' - the script itself arrives
@@ -1422,7 +1432,7 @@ PLUGIN_NAME=(
   "ai-connect              - Peer messaging between sessions: bridge, MCP client, state+watch hooks"
   "angular-lsp             - Angular template language server (ngserver). LSP only, no hooks"
   "bash-lsp                - Bash language server (bash-language-server). LSP only, no hooks"
-  "crew                    - Virtual dev team: 5 agents, 39 commands, safety hooks"
+  "crew                    - Virtual dev team: 5 agents, 41 commands, safety hooks"
   "css-lsp                 - CSS/SCSS/Less language server (vscode-langservers-extracted). No hooks"
   "gizmoduck               - Nuclei scans: diff, triaged reports, SDP tickets. No hooks"
   "localgpu                - Local models via Ollama: index, search, ask. MCP, no hooks"
@@ -2709,12 +2719,12 @@ install_find_skills() {
     skip "find-skills already installed at $dir (--no-update set)"
     return 0
   fi
-  # --global --yes: without them the skills CLI stops on a terminal to ask "Installation
-  # scope: Project / Global" and then "Proceed with installation?". Project is its
-  # default, which is not where the check below looks unless the run started in $HOME,
-  # and a Ctrl-C at that unexplained prompt ends the whole run before the community
-  # plugins, this repo's plugins and the language servers were reached.
-  npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code --global --yes || return 1
+  # '--global --yes' go to the skills CLI (the '-y' before 'skills' is npx's own). Without
+  # --global it installs into ./.claude/skills of whatever directory the script was run
+  # from, exits 0, and the check below fails everywhere but $HOME; without --yes it
+  # prompts. --global follows CLAUDE_CONFIG_DIR, the same root claude_skills_dir uses.
+  # </dev/null because it reads stdin, which on the piped path is this script.
+  npx -y skills add vercel-labs/skills --skill find-skills --agent claude-code --global --yes </dev/null || return 1
   if ! user_skill_installed "find-skills"; then
     warn "the installer finished but '$dir/SKILL.md' was not created - see the output above."
     return 1
@@ -3992,3 +4002,5 @@ else
   printf '\033[33mRe-run this script after resolving the above; earlier successful steps are safe to repeat.\033[0m\n'
 fi
 sudo_home_warning
+# Closes the group opened above 'set -uo pipefail'. Nothing may follow this line.
+}

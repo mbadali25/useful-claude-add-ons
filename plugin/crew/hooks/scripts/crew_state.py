@@ -20,6 +20,7 @@ import uuid
 
 import crew_common
 import crew_incident
+import crew_reaper
 
 # The endpoint ledger is its own module now, the three shared readers are a
 # third, the install/guard policies are a fourth and the anchor-freshness
@@ -72,6 +73,7 @@ from crew_guards import (
     CLOUD_DEFAULTS,  # noqa: F401
     CLOUD_GUARD_NAMES,  # noqa: F401
     ENV_GUARD_NAMES,  # noqa: F401
+    NULL_IS_MALFORMED,  # noqa: F401
     ENVIRONMENTS_DEFAULTS,  # noqa: F401
     GUARD_APPROVAL_PREFIX,  # noqa: F401
     GUARD_APPROVAL_TTL,  # noqa: F401
@@ -555,6 +557,21 @@ RESUME_DEFAULTS = {"auto": None}
 # out (`crew_humanonly.resolve`). Nothing outside `crew_humanonly` reads it
 # yet: the hooks that act on it are a separate harness change.
 HUMAN_ONLY_DEFAULTS = {"approve": None, "promoteMarker": None}
+
+# crew 1.3.19 `worktrees.root`: the BASE directory for this repo's worktrees (null:
+# ~/.claude/crew/worktrees). Both layers; the resolver and its refusals are
+# `crew_worktrees.resolve`.
+WORKTREES_DEFAULTS = {"root": None}
+
+# crew 1.3.41 `promote.deadlineSeconds`: how long promote-gate.sh may run, counted from the
+# moment its shell began. null derives it from the guard's hook timeout (crew_hook.TABLE)
+# less a 4 s margin (20 -> 16). Both layers; the reader and its clamp are
+# `_promote_gate.deadline_seconds` / `_promote_gate.configured_seconds`.
+PROMOTE_DEFAULTS = {"deadlineSeconds": None}
+
+# crew 1.3.50 `reaper.*`: the orphan reaper (crew_reaper.py). Defined there, beside the code that
+# reads it, and referenced here. Both layers declare it, but the reader takes the MACHINE file only.
+REAPER_DEFAULTS = crew_reaper.DEFAULTS
 
 # T-0044 `unattendedCloud`: MACHINE file only (crew_unattended.py); a repo copy is ignored and reported.
 UNATTENDED_CLOUD_DEFAULTS = {"aws": {"readOnly": {
@@ -2831,14 +2848,21 @@ def worktree_path(repo_root, branch):
     from a real branch -- but both are reachable from this function's actual
     signature, which is a string.
     """
+    leaf = f"{os.path.basename(os.path.abspath(repo_root))}-{_repo_digest(repo_root)}-{branch_leaf(branch)}"
+    return os.path.join(worktree_root(repo_root), leaf)
+
+
+def branch_leaf(branch):
+    """`branch` as ONE directory level: separators and `:` become `-`, runs of
+    `-` collapse, and a name that is empty or only dots becomes `detached`.
+    Shared by `worktree_path` and `crew_worktrees.worktree_path`."""
     cleaned = branch.strip()
     for sep in _SEPARATORS + (":",):
         cleaned = cleaned.replace(sep, "-")
     cleaned = re.sub(r"-{2,}", "-", cleaned).strip("-")
     if not cleaned or set(cleaned) <= {"."}:
         cleaned = "detached"
-    leaf = f"{os.path.basename(os.path.abspath(repo_root))}-{_repo_digest(repo_root)}-{cleaned}"
-    return os.path.join(worktree_root(repo_root), leaf)
+    return cleaned
 
 
 def evaluate_triggers(state):
@@ -3085,9 +3109,10 @@ def main(argv=None):
                         help="freeze the current scan-artifact path onto a "
                              "ledger record, right after that scan lands")
     parser.add_argument("--worktree-path", metavar="BRANCH", default=None,
-                        help="print where a worktree for BRANCH belongs, per "
-                             "the checkout's parent directory, and exit. Creates "
-                             "nothing. Pass '-' for the root directory alone")
+                        help="print where a worktree for BRANCH belongs, under "
+                             "worktrees.root (default ~/.claude/crew/worktrees), "
+                             "and exit. Creates nothing. Pass '-' for the "
+                             "repo's directory alone")
     parser.add_argument("--archive-stale-handoff", action="store_true",
                         help="judge the configured handoff note against the "
                              "staleness signals (age, and whether its noted "
@@ -3102,10 +3127,20 @@ def main(argv=None):
         # A command that has to place a worktree shells out to THIS, rather
         # than composing a path itself, so two lanes placing worktrees seconds
         # apart agree on one answer.
-        if args.worktree_path == "-":
-            print(worktree_root(root))
-        else:
-            print(worktree_path(root, args.worktree_path))
+        # crew 1.3.19: the answer is `crew_worktrees`'s -- the standard root
+        # outside the repo (`worktrees.root`, default under ~/.claude/crew) --
+        # not `worktree_root`/`worktree_path` above, which are the checkout's
+        # parent that this flag answered before. An unusable setting is a
+        # refusal (exit 2), never the old location.
+        import crew_worktrees  # pylint: disable=import-outside-toplevel
+        try:
+            if args.worktree_path == "-":
+                print(crew_worktrees.repo_dir(root))
+            else:
+                print(crew_worktrees.worktree_path(root, args.worktree_path))
+        except crew_worktrees.WorktreeRootError as exc:
+            print(f"refused: {exc}", file=sys.stderr)
+            return 2
         return 0
     if args.archive_stale_handoff:
         # A bad or absent config must degrade to the unconfigured defaults,

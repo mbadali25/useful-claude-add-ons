@@ -266,6 +266,22 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
     "approve": null,
     "promoteMarker": null
   },
+  "worktrees": {
+    "root": null
+  },
+  "promote": {
+    "deadlineSeconds": null
+  },
+  "reaper": {
+    "enabled": false,
+    "dryRun": true,
+    "spinCpuPct": 50,
+    "spinMinAgeMin": 15,
+    "blockedMinAgeHours": 2,
+    "protectedRegex": null,
+    "intervalMin": 10,
+    "onSessionStart": false
+  },
   "emergency": {
     "standDown": true,
     "maxTtlMinutes": 480
@@ -298,7 +314,15 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   },
   "guards": {
     "profile": "off",
-    "overrides": {}
+    "overrides": {},
+    "mass": {
+      "enabled": false,
+      "deleteCount": 10,
+      "createCount": 20,
+      "changeCount": 30,
+      "overrides": {},
+      "exempt": []
+    }
   },
   "production": {
     "databases": [],
@@ -312,7 +336,8 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "environments": {
     "nonProd": [],
     "prodUnattended": false,
-    "workflows": {}
+    "workflows": {},
+    "preProduction": {}
   },
   "change": {
     "requireForProduction": false
@@ -613,3 +638,8 @@ If they would rather go manually, the order is:
 4. Browser specs if this repo has a UI
 5. `/crew:survey` once the above exist — a survey before the safety net just
    produces a list of things nobody can safely act on
+
+After an approved standards proposal edits `.crew/standards.md` in a repo that
+opted in (`export:` in its front matter), run
+`crew_standards.py export --root . --write` so `docs/review-rules/`, `REVIEW.md`,
+`.cursor/BUGBOT.md` and the `AGENTS.md` block follow it (crew-standards skill).

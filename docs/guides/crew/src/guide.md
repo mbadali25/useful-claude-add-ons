@@ -38,7 +38,7 @@ A fifth file, `session-relay`, is not a role: it is a transport agent on Haiku 5
 `{"provider": "claude", "model": "claude-sonnet-5-5"}`) in `/crew:model`. A wave prints the
 coordinator pin and puts the developer model on every lane launch. Both default to unset, which
 changes nothing. A Claude pin takes a full Claude id or `opus`, `sonnet`, `haiku` or `fable`
-(Fable 5.1). Fable runs only when you pin it like this; crew never picks it for you.
+(Fable 5.2). Fable runs only when you pin it like this; crew never picks it for you.
 
 **Running agents on Kimi.** Claude Code runs subagents on Claude models only,
 so `explorer`, `researcher` and `security` can hand their task to the Kimi Code
@@ -175,15 +175,19 @@ the reviewer, computes the verdict:
 - `INCOMPLETE`: anything else, such as a crash, a timeout or a part not read.
   It is never `CLEAN`.
 
-**Two rounds per ticket, in total.** The ledger lives under the repository's
-git common directory, so every worktree shares it. A round is reserved before
-the reviewer starts, so a crash still spends it. A round the tool lost (a
-timeout, or no answer) is refunded, at most twice per plan. A third
-reservation is refused and the ticket becomes `NEEDS_REPLAN`.
+<!-- review-budget-doc -->
+**Three rounds per ticket, in total, across every plan the ticket ran under.**
+The ledger lives under the repository's git common directory, so every worktree
+shares it. A round is reserved before the reviewer starts, so a crash still
+spends it. A round the tool lost (a timeout, or no answer) is refunded, at most
+three times per ticket. A reservation past the budget is refused and the ticket
+becomes `NEEDS_REPLAN`.
 
-**Successor plans.** The way past `NEEDS_REPLAN` is a different plan:
-approving a changed `plan.md` opens a fresh budget of two rounds. Approving
-the same plan again does not.
+**Successor plans.** The way out of `NEEDS_REPLAN` is a different plan:
+approving a changed `plan.md`. A successor plan does not reopen the budget; it
+continues review only while a round of the three is left. Past that, only the
+owner's `review_ledger.py --ticket <id> --grant-round --by <you> --reason <why>`
+adds one round, and approving the same plan again is still refused.
 
 **Acceptance is yours.** `FINDINGS` become a receipt only when you run
 `review_ledger.py --ticket <id> --accept --by <you>`. It refuses when the tree
@@ -285,11 +289,17 @@ passed for this exact sha (a promotion row carries the full sha), that a
 rollback is declared, that a person approved it when `requireHuman` is set, that
 an accepted review covers the exact tree being deployed (unless the
 environment opts out with `requireReview: false` and a reason), and that the
-tree is clean. The review evidence proves only that the tracked tree deployed
+tree is clean. Those requirements are read from the `.crew/verify.json`
+committed in the sha being deployed, so a deploy from a worktree follows its
+own branch's committed map, not the main checkout's. The review evidence proves only that the tracked tree deployed
 is one a reviewer was shown under a standing receipt: it does not prove that
 paths the review bundle left out (identical to merged main, or under
 `.work/`, `graphify-out/`, `.crew/metrics.md`) or ignored build output a
 deploy script ships were reviewed, nor who wrote the local ledger.
+
+The gate is one python process (crew 1.3.41), so a deploy-shaped command costs a handful of process starts, not
+forty-five. It stops itself before its hook times out, because a timeout is not a block: `promote.deadlineSeconds`
+(either layer) sets how many seconds it may run, and null derives it from the hook timeout less four seconds.
 
 The guards stop drift and accidents, not a session set on forging local
 state: the receipts are files on your machine. The completion audit and the
@@ -391,6 +401,8 @@ worktree:
   gate-and-land stage for tickets whose Touch lists overlap. Catch-up is
   always a merge, never a rebase. The train never merges, pushes or opens the
   PR; only autopilot's ship step does, under `autopilot.ship`.
+- **Where worktrees live (crew 1.3.19).** `worktrees.root` (either layer, the repo wins; null is `~/.claude/crew/worktrees`) is the one place outside the repo for crew's worktrees, laid out as `<root>/<repo>-<digest>/<name>`; a value that is relative or inside the repo is refused, never swapped for the default. Claude Code's own agent worktrees (`claude --worktree`, an Agent with `isolation: worktree`) stay under `.claude/worktrees/`: it has no setting for another place, and the one redirect it supports is a `WorktreeCreate` hook, which replaces git's creation, so crew prints the block (`/crew:worktrees hook`) and registers nothing. `/crew:worktrees list` is a read-only survey of every worktree; `remove <path>` needs your `--yes`, takes one path and never forces. Nothing existing is moved.
+- **How long the promote gate may run (crew 1.3.41).** `promote.deadlineSeconds` (either layer, the repo wins; null derives it from the guard's hook timeout less 4 s, so 16 s of the 20 s row) is the one deadline `promote-gate.sh` keeps for its whole decision, counted from the moment its shell began. A value above the hook timeout less 2 s is clamped to that, and a value that is not a positive number reads as null.
 - **Check before assuming a diff is yours.** Another session may have
   changed the tree, a branch or the stash (root `CLAUDE.md`, "Lessons").
 
@@ -505,10 +517,26 @@ may arm it.
 production promote marker being human-only. A `false` counts only from the
 machine file or an untracked repo file, never a committed one; a `true` in
 either file vetoes it; and it is written only after the owner types
-`/crew:confirm-config <change_id>` twice. In 1.3.9 no hook reads these keys
-and nothing records that confirmation, so the human-only rules hold exactly as
-before; the configuration reference's "The human-only opt-out" section says
-what lands next.
+`/crew:confirm-config <change_id>` twice. Since crew 1.3.33 the prompt hook
+records that confirmation and `humanOnly.approve: false` makes a CLI-recorded
+approval count (the same effect as `scope.allowCliApproval: true`, but set
+only through the double confirmation); `humanOnly.promoteMarker` is still
+read by no hook. The owner's `/crew:approve-mass <id>` is recorded the same
+way, for one blocked mass operation. The configuration reference's "The
+human-only opt-out" section has the rules and their limits.
+
+**Mass operations (crew 1.3.36).** The rule for an autopilot that runs without a
+human: full automation, except a mass delete, a mass create or a mass change,
+which wait for your yes. `guards.mass.enabled: true`, or a double-confirmed
+`humanOnly` opt-out, arms a stop on the cloud guard's hook for any shell command
+that would delete 10 or more files, create 20 or more, or change 30 or more
+(`guards.mass.deleteCount`, `createCount`, `changeCount`; terraform's are 3, 10
+and 10). It counts files, a commit's or branch's added, deleted and changed
+files against its base, a terraform plan's resource changes, and treats an
+unfiltered SQL `DELETE` or `UPDATE` and any count it cannot take as mass. It
+prints an id; `/crew:approve-mass <id>` approves that one command for 15
+minutes. The configuration reference's "Mass operations" section lists what it
+sees, what it does not, and the keys.
 
 - `/crew:config` shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.

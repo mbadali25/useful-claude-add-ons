@@ -898,12 +898,33 @@ def status(root, ticket):
 
 
 def cli_approval_allowed(top):
-    """True only when `.crew/config.json` parses and sets
-    `scope.allowCliApproval` to exactly `true`. In a linked worktree with no
-    config of its own that is the main checkout's file (T-0088)."""
+    """True when `.crew/config.json` parses and sets `scope.allowCliApproval`
+    to exactly `true`, or when the owner opted out of the human-only approval
+    (`humanOnly.approve: false`, `human_only_approve_opted_out`). In a linked
+    worktree with no config of its own the repo file is the main checkout's
+    (T-0088)."""
     data, state = _read_json(crew_common.repo_config_file(top, "config.json"))
     scope = data.get("scope") if state == "ok" and isinstance(data, dict) else None
-    return isinstance(scope, dict) and scope.get("allowCliApproval") is True
+    if isinstance(scope, dict) and scope.get("allowCliApproval") is True:
+        return True
+    return human_only_approve_opted_out(top)
+
+
+def human_only_approve_opted_out(top):
+    """True only when `crew_humanonly.resolve(top, "approve")` says
+    `humanOnly` is exactly False: the owner's `humanOnly.approve: false` sits
+    in the machine file or an untracked repo file, a double confirmation
+    backs it, and no layer vetoes (crew 1.3.33). This is the ONE place the
+    opt-out is read, so `accepted`, the scope guard, the Stop audit and every
+    autopilot reader agree. Anything else -- the module missing, the call
+    raising, an answer that is not a dict, a `humanOnly` that is not the bool
+    False -- is False: an unknown stays human-only, never an opt-out."""
+    try:
+        import crew_humanonly  # pylint: disable=import-outside-toplevel
+        answer = crew_humanonly.resolve(top, "approve")
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return False
+    return isinstance(answer, dict) and answer.get("humanOnly") is False
 
 
 def _autopilot_policy(top, ticket):

@@ -786,7 +786,7 @@ def _receipt_mark(top, ticket):
 MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._\-]*(?:\[[A-Za-z0-9]+\])?\Z")
 
 
-# `fable` (Fable 5.1, `claude-fable-5-1`) is accepted as an explicit pin only: crew
+# `fable` (Fable 5.2, `claude-fable-5-2`) is accepted as an explicit pin only: crew
 # never selects it, and Opus stays the escalation target (owner decision D1).
 CLAUDE_MODEL_HEADS = ("claude", "opus", "sonnet", "haiku", "fable")
 
@@ -962,6 +962,16 @@ def _copy_in(source, target):
     return None if _same_bytes(source, target) else f"{target} does not match {source}"
 
 
+def _standard_worktrees(main_top):
+    """crew's standard worktree directory for this repo, or None when the
+    setting is refused or unreadable (then only `.claude/worktrees` admits)."""
+    try:
+        import crew_worktrees  # pylint: disable=import-outside-toplevel
+        return crew_worktrees.resolve(main_top)["dir"]
+    except Exception:  # pylint: disable=broad-except
+        return None
+
+
 def _init_refusal(top, main_top, slug, ticket):
     """Why `lane-init` must not run here (checks that write nothing), or None."""
     if crew_ticket.common_dir(top) != crew_ticket.common_dir(main_top):
@@ -970,8 +980,13 @@ def _init_refusal(top, main_top, slug, ticket):
         return "this is the main checkout; a lane runs only in its own isolated worktree"
     agents = os.path.join(main_top, AGENT_DIR)
     if not os.path.normcase(top).startswith(os.path.normcase(agents) + os.sep):
-        return (f"{top} is not under {agents.replace(os.sep, '/')} (.claude/worktrees): a lane "
-                "is launched only as an Agent with isolation: worktree")
+        # crew 1.3.19: an Agent whose WorktreeCreate hook is crew's places the
+        # lane under the standard root instead; that directory is admitted too.
+        standard = _standard_worktrees(main_top)
+        if not (standard and os.path.normcase(os.path.realpath(top)).startswith(
+                os.path.normcase(os.path.realpath(standard)) + os.sep)):
+            return (f"{top} is not under {agents.replace(os.sep, '/')} (.claude/worktrees): a lane "
+                    "is launched only as an Agent with isolation: worktree")
     lane, state = read_lane(main_top, slug, ticket)
     if state != "ok":
         return f"{ticket}'s lane file is {state}: `crew_wave.py start --set {slug}` names the lanes"
@@ -1124,7 +1139,8 @@ def lane_prompt(root, slug, ticket, resume_round=None):
         f"--ticket {ticket}. If it prints `refused:` or exits non-zero, go to step 8 with "
         "--state failed and that reason.",
         f"2. implement: follow /crew:implement {ticket} here up to, not including, its last "
-        "step's `/crew:review` (step 5 is the only review); commit on the ticket branch.",
+        "step's `/crew:review` (step 5 is the only review); commit on the ticket branch, with "
+        "no Co-Authored-By trailer and no 'Generated with Claude Code' line.",
         bump,
         f"4. refresh: {script('crew_refresh_check.py')} --root . --ticket {ticket}; run each "
         "refresh command it names (/crew:onboard --refresh, /crew:diagram refresh, graphify "

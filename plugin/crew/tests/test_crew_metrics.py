@@ -356,6 +356,34 @@ def test_haiku_5_5_over_a_100k_prompt_is_priced_at_the_long_tier(tmp_path):
                                       + 100_001 * 0.50 + 1_000_000 * 2.50) / 1_000_000, 6), [])
 
 
+def test_fable_5_2_has_its_own_price_row_not_fable_5s():
+    """claude-fable-5-2 is $8 in / $40 out per MTok with cache reads at $0.20; the
+    longest-prefix lookup must pick that row, not the shorter claude-fable-5
+    ($10 / $50), which would overstate every Fable 5.2 cost."""
+    row = cm.price_for("claude-fable-5-2")
+
+    assert row is not None
+    assert (row["input"], row["output"], row["cacheRead"]) == (8.0, 40.0, 0.20)
+    assert row is cm.PRICES["claude-fable-5-2"]
+    assert row is not cm.PRICES["claude-fable-5"]
+    # a dated suffix still resolves to the 5.2 row; 5.1 and 5 keep theirs
+    assert cm.price_for("claude-fable-5-2-20261110") is row
+    assert cm.price_for("claude-fable-5-1")["input"] == 10.0
+    assert cm.price_for("claude-fable-5")["cacheRead"] == 1.0
+    # the recorded provenance names the page this row came from (not the cached table)
+    assert "claude-fable-5-2" in cm.PRICES_SOURCE
+
+
+def test_fable_5_2_cost_is_computed_at_the_5_2_rates(tmp_path):
+    transcript = _transcript(tmp_path, [
+        _asst(1, "m1", model="claude-fable-5-2", input_tokens=1_000_000,
+              output_tokens=1_000_000, cache_read_input_tokens=1_000_000)])
+
+    usd, unpriced = cm.cost_usd(cm.transcript_token_kinds(transcript)["byModel"])
+
+    assert (usd, unpriced) == (8.0 + 40.0 + 0.20, [])
+
+
 def test_cache_creation_without_breakdown_counts_as_five_minute(tmp_path):
     transcript = _transcript(tmp_path, [_asst(1, "m1", cache_creation_input_tokens=1000)])
 

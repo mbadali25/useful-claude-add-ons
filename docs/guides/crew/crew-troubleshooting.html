@@ -312,8 +312,11 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   recovered from stray lines - <code>ignored_lines</code> above 0, or missing or unreadable, which is
   could-not-tell, as on a round recorded before L-0576 wrote the count). Otherwise own the FINDINGS with <code>--accept --by &lt;who&gt;</code> (only the most recent completed round,
   only once, never once <code>NEEDS_REPLAN</code>; a name starting <code>auto:</code> is refused), or write a new plan and get it approved — <code>crew_ticket.py
-  approve</code> on a <code>NEEDS_REPLAN</code> ticket opens a fresh budget of two rounds counted from the successor
-  plan; the rounds already spent stay in the ledger and are not erased. With notify on, a spent
+  approve</code> on a <code>NEEDS_REPLAN</code> ticket continues review only while a round of the ticket's three
+  is left (<!-- review-budget-doc -->a successor plan does not reopen the budget; the rounds already spent stay in
+  the ledger and keep counting). With none left it says <code>0 review rounds available</code> and the owner's
+  <code>review_ledger.py --ticket &lt;id&gt; --grant-round --by &lt;you&gt; --reason &lt;why&gt;</code> adds one; after a grant,
+  approve a changed plan, or record the unchanged one with <code>review_ledger.py --successor-plan &lt;sha256&gt;</code>. With notify on, a spent
   budget whose last round carries a BLOCK sends the <code>Review out of rounds</code> ping when
   <code>/crew:autopilot</code> stops on it.</p>
 <ul>
@@ -331,14 +334,14 @@ worktree of the same repo spends the same budget (<code>review_ledger.py</code>)
   still INCOMPLETE <code>reviewer</code>. That list cannot catch every admission: one it misses ("I only
   inspected one of the nine files") is ignored as prose and the round stays FINDINGS, so read the
   ignored lines.
-  <strong>Fix:</strong> a <code>tool</code> round is refunded automatically, up to two per plan. The line reads
+  <strong>Fix:</strong> a <code>tool</code> round is refunded automatically, up to three per ticket. The line reads
   <code>review: round N was a tool failure (...); refunded</code>. <code>review_run.py</code> retries it once by itself
   (L-0514), except a usage limit or a timeout; <code>review: retry: not retried - &lt;why&gt;</code> says when it
   did not. Only the failed round is given back: the
   rerun <code>/crew:review</code> reserves a new round, charged like any other unless it is a tool failure
-  too, so a ticket with one charged round that reruns and gets FINDINGS has spent the budget. If
-  Codex is out of quota, use the next eligible provider. A third tool failure under
-  one plan reads <code>NOT refunded - refund limit 2 per plan reached</code> and counts. A <code>reviewer</code> or <code>tree</code>
+  too, so a ticket with two charged rounds that reruns and gets FINDINGS has spent the budget. If
+  Codex is out of quota, use the next eligible provider. A fourth tool failure on
+  one ticket reads <code>NOT refunded - refund limit 3 per ticket reached</code> and counts. A <code>reviewer</code> or <code>tree</code>
   round always counts. Rebuild the bundle (tree), or rerun and read what the reviewer wrote
   (reviewer).</p>
 </li>
@@ -431,7 +434,7 @@ python3 &quot;&lt;crew&gt;/hooks/scripts/ci_receipt.py&quot; check --root .
   --provider codex --probe
 </code></pre>
 <ul>
-<li><strong>Symptom: you want to send a ticket back without spending the third round.</strong></li>
+<li><strong>Symptom: you want to send a ticket back without spending another round.</strong></li>
 </ul>
 <pre><code class="language-bash">python3 &quot;&lt;crew&gt;/hooks/scripts/review_ledger.py&quot; --root . --ticket &lt;id&gt; --reject --by &lt;who&gt;
 </code></pre>
@@ -934,6 +937,11 @@ judges <strong>the tree the deploy runs from</strong>: the Bash call's <code>cwd
 and named by any <code>git -C &lt;dir&gt;</code>. That tree must be a worktree of the same repository, clean, and at
 every literal sha the command names. <code>.crew/verify.json</code>, <code>.work/PROMOTIONS.md</code> and the
 <code>.crew/.approved-&lt;env&gt;-&lt;sha&gt;</code> markers are still read from the session's project directory.</p>
+<p><strong>It is one process (crew 1.3.41).</strong> The gate used to start about forty-five (eight pythons, a dozen <code>git</code> probes), which on
+Git Bash took 19-20 s best case and timed out at 20 s; now the shell starts one python and that python decides. It keeps one deadline
+counted from its shell's start, <code>promote.deadlineSeconds</code> (null: the hook timeout less 4 s, 16 s of 20). If a deploy still ends in
+"inside the gate's deadline" on a very loaded host, the deadline expired before the gate finished: that is a block, not a timeout.
+A number above the hook timeout less 2 s is clamped; the hook timeout itself is not a setting.</p>
 <ul>
 <li><strong>"the tree this deploy runs from ('...') is dirty"</strong> names the tree it judged. If that is the
   main checkout while you meant a worktree, run the command there: <code>cd &lt;worktree&gt; &amp;&amp; &lt;deploy&gt;</code>, or
@@ -972,7 +980,14 @@ every literal sha the command names. <code>.crew/verify.json</code>, <code>.work
 <li><strong>"has uncommitted changes: it ..."</strong> also fires when the map is deleted or untracked, or edited
   under skip-worktree: the gate compares the file with HEAD's copy, not with <code>git status</code>.</li>
 <li><strong>".crew/verify.json in the project dir ... has uncommitted changes"</strong>: commit or revert the map;
-  an uncommitted map is not policy.</li>
+  an uncommitted map is not policy. Since crew L-0768 this fires only when the project dir's map is
+  the policy: the deploy runs from the project dir, or the deployed sha carries no map ("carries no
+  committed .crew/verify.json"). A worktree deploy reads the map committed in its own sha.</li>
+<li><strong>"the map committed in the deployed sha ... does not declare it"</strong> (L-0768): the project dir's
+  map matched the command to an environment the deployed sha's own map lacks. Deploy a sha whose
+  committed map declares it.</li>
+<li><strong>A waiver on the release branch is ignored</strong> (crew before L-0768): older gates read the main
+  checkout's map for a worktree deploy. Update crew; the waiver must be committed in the sha deployed.</li>
 <li><strong>"records the short sha X"</strong> (L-0703): a <code>requires</code> row counts only with the full 40-character
   sha. Re-run the upstream promotion, or rewrite the row with <code>git rev-parse HEAD</code> of the tree that
   passed, after checking it is that commit.</li>
@@ -1016,8 +1031,18 @@ off</strong> (<code>guards.profile: off</code>); turn it on with <code>{"guards"
 <li><strong><code>secret-read:&lt;form&gt;</code>:</strong> it prints a credential-named variable. Use it without printing it
   (<code>curl -H "Authorization: Bearer $TOKEN"</code>), or test that it is set (<code>[ -n "$TOKEN" ]</code>).</li>
 <li><strong><code>could-not-tell:&lt;why&gt;</code>:</strong> it could not read the command well enough: an unbalanced quote,
-  <code>eval "$X"</code>, <code>bash -c "$CMD"</code>, <code>eval "$(ssh-agent -s)"</code>, nesting deeper than 8. Write the command
+  <code>eval "$X"</code>, <code>bash -c "$CMD"</code>, <code>eval "$(ssh-agent -s)"</code>, nesting deeper than 8, a globbed or
+  brace-expanded program name (<code>/usr/bin/en?</code>, <code>e{n,}v</code>), a program from an expansion with a default
+  (<code>${X:-env}</code>), inline code that reads a variable whose name is not a literal (<code>os.environ[name]</code>),
+  a shell or interpreter left to read its code from stdin (<code>echo env | bash</code>, <code>bash &lt; f</code>, a bare
+  <code>python3</code>), a command substitution
+  inside <code>(( ))</code>, or a non-literal path ending in <code>environ</code> (<code>cat $d/environ</code>). Write the command
   out literally. Under <code>report</code> these are logged, not refused.</li>
+<li><strong>Refused although the config says <code>off</code>, with no python:</strong> the shell fallback reads the config
+  file itself and arms the guard for a file it cannot judge: unreadable, under a directory it cannot
+  enter, not one strict JSON object (a trailing comma, a comment, a bare word), holding a <code>\u</code>
+  escape, or with <code>envGuard</code> set to anything but <code>off</code> anywhere
+  in it, an explicit <code>null</code> included. Fix the file, or make python available to the hook.</li>
 <li><strong>A <code>/proc/*/environ</code> mention</strong> outside a <code>git commit -m</code> message, a <code>grep</code> pattern or <code>echo</code> text
   (a <code>sed</code> script, a <code>find -name</code>) is refused too: a known false positive.</li>
 </ul>
@@ -1026,6 +1051,20 @@ off</strong> (<code>guards.profile: off</code>); turn it on with <code>{"guards"
 (<code>guards.profile: off</code>); turn it on with <code>{"guards": {"overrides": {"cloudGuard": "report"}}}</code> first to see what
 it <em>would</em> refuse before enforcing with <code>"block"</code>.</p>
 <ul>
+<li>
+<p><strong>A production-labelled environment that is not live yet keeps being refused.</strong> Do not turn the guard
+  off for it: list it. In <code>.crew/config.json</code> (the repo file; the machine file cannot supply it)
+  set <code>{"environments": {"preProduction": {"acme-new": {"reason": "stood up in November, no
+  customer traffic yet", "targets": ["acme-new-web1", "acme-new-db1"]}}}}</code>. Names and <code>targets</code> are
+  exact, the <code>reason</code> is 10+ characters, and a malformed entry makes every environment unknown (so
+  the refusals get stricter, not looser: the deny message says which entry is wrong). A listed name
+  is judged non-production for a non-destroying <code>terraform apply</code> or deploy dispatch, and
+  <code>prodDatabase</code> / <code>prodServer</code> let a command through when every production target on it is the
+  name or one of its <code>targets</code>. A destroy, an unlisted host on the same line and every other guard
+  are unchanged. Each use prints <code>crew PRE-PRODUCTION EXEMPTION</code> on screen and stderr and logs
+  <code>env:preProduction:&lt;name&gt;</code> to <code>.crew/guard.log</code>. Remove the entry when the environment goes live
+  (<code>docs/crew/config-rationale.md</code>, "Pre-production environments").</p>
+</li>
 <li>
 <p><strong>SQL text that merely looks destructive is not blocked.</strong> <code>DROP</code>/<code>TRUNCATE</code> inside a string
   literal or a comment does not count: the guard strips literals and comments before matching, read
@@ -1321,6 +1360,27 @@ agent this machine lacks reviews less, and nothing in the output says so.</p>
   as installed. Managed-policy agents and <code>--agents</code> agents are not checked.
   <strong>Fix:</strong> install the plugin or agent, enable the plugin (<code>enabledPlugins</code>; a narrower settings
   scope's <code>false</code> wins), or change the rule to an agent this machine has.</p>
+<h2 id="hook-processes-that-spin-or-hang-for-hours-after-their-session-ended">Hook Processes That Spin or Hang for Hours After Their Session Ended</h2>
+<p>A hook or shell process whose parent died has no one to stop it. Measured on one Windows host:
+a bash guard at 27,604 CPU-seconds, a <code>python -</code> reading a program from stdin at 43,165
+CPU-seconds, and 18 crew python guards blocked 4.5 to 36.7 hours at zero CPU.</p>
+<ul>
+<li><strong>Symptom:</strong> a fan that never stops, or <code>python3</code> / <code>bash</code> processes years of CPU old whose
+  parent is gone.
+  <strong>Check</strong> (read-only, ends nothing):</li>
+</ul>
+<pre><code class="language-bash">python3 plugin/crew/hooks/scripts/crew_reaper.py
+</code></pre>
+<p>It prints one line per candidate: <code>would-kill</code> (an orphan that spins or is blocked past the
+  limits), <code>report</code> (it has a live parent, so it is never ended; the owner chain is in the log),
+  <code>skip</code> (protected, or it has a protected child) and <code>leave</code> (an orphan under the limits). Every
+  decision is also a JSON line in <code>~/.claude/crew/reaper.log</code>.
+  <strong>Fix:</strong> crew's own guards now end themselves at their hook timeout less 2 s (exit 124, which
+  the dispatcher reads as the same fail-closed UNKNOWN as a timeout). For the rest, run
+  <code>crew_reaper.py --apply</code> once, or opt in to the schedule: set <code>reaper.enabled</code> true (and
+  <code>reaper.dryRun</code> false to let it end processes) in <code>~/.claude/crew/config.json</code>, then
+  <code>crew_reaper.py --install-task --yes</code> on Windows or <code>crew_reaper.py --print-schedule</code> for cron
+  and systemd <code>--user</code> text. Nothing installs the schedule for you.</p>
 <h2 id="the-temp-directory-fills-with-crew-files">The Temp Directory Fills with Crew Files</h2>
 <p>Earlier crew releases' test suites and auto-clear sender could leave files in the
 system temp directory: <code>crew-completion-audit.*</code> markers, <code>tmp.*</code> auto-clear sender scripts
@@ -1493,6 +1553,12 @@ but returns immediately without judging anything; "off" for <code>verifyGate</co
 <td><code>[]</code>: nothing is nonProd, so every terraform apply asks (denied unattended)</td>
 </tr>
 <tr>
+<td><code>environments.preProduction</code></td>
+<td>repo only</td>
+<td>object: exact name to <code>reason</code> (10+ characters) and optional exact <code>targets</code></td>
+<td><code>{}</code>: nothing is exempt. A listed environment is judged non-production by the cloud guard (non-destroying apply and dispatch; <code>prodDatabase</code>/<code>prodServer</code> for its exact targets), with an audit line on screen, stderr and <code>.crew/guard.log</code>; a destroy, <code>block</code> policies and every unlisted target are unchanged</td>
+</tr>
+<tr>
 <td><code>environments.prodUnattended</code></td>
 <td>both layers, ratchets (true only when both say <code>true</code>)</td>
 <td>bool</td>
@@ -1595,6 +1661,17 @@ runs but the visual rule never passes.</p>
 </ul>
 <h2 id="windows-notes">Windows Notes</h2>
 <ul>
+<li><strong>"crew hooks could not tell whether Git Bash works" (crew 1.3.42).</strong> Git Bash is there but did not
+  answer its one-line self-test (<code>bash.exe -c 'exit 0'</code>) in time, which on a loaded Windows host (a
+  virus scan, a build, many parallel sessions) is common: each hook has to start Git Bash, and a start
+  can take several seconds. This is <strong>not</strong> a missing Git, so do not install Git; retry the same call
+  after a few seconds. The resolver retries the self-test with backoff (1.3.41), and from 1.3.42 the dispatcher trusts the
+  last Git Bash that passed (<code>~/.claude/crew/gitbash-lkg.json</code>: path, size and mtime, honoured only while
+  the file is unchanged) rather than blocking a call on a slow start. It still fails closed in an armed
+  repo when it truly cannot tell, but the message now says so. The older wording, "none was found ...
+  Install Git for Windows", now appears only when no candidate <code>bin/bash.exe</code> exists. A third message,
+  "found Git Bash but it failed its self-test", means the file ran and exited non-zero for a reason that
+  is not load; repair or reinstall Git for Windows.</li>
 <li><strong><code>pwsh</code> is not on Git Bash's <code>PATH</code>.</strong> Every script that shells out to PowerShell names it by an
   absolute path or resolves it explicitly; a bare <code>pwsh</code> in a hand-typed command fails as "command
   not found", which is easy to misread as PowerShell itself being broken.</li>

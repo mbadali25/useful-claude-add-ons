@@ -1,5 +1,9 @@
 """L-0725: the committed key set (87 keys; 83 repo and 50 machine leaves,
-plus the two `humanOnly` keys crew 1.3.9 added: 89, 85 and 52) and the
+plus the two `humanOnly` keys crew 1.3.9 added, the `worktrees.root` key crew 1.3.19 added,
+the `environments.preProduction` key crew 1.3.23 added, the six `guards.mass.*`
+keys crew 1.3.36 added, the `promote.deadlineSeconds` key crew 1.3.41 added and the eight
+`reaper.*` keys crew 1.3.50 added:
+106, 102 and 68) and the
 60 keys it drops. Generated once from the reviewed Disposition in
 `.work/tickets/L-0725/spec.md`; changing a key here is a spec amendment, not a
 test fix. `guards.profile` and `guards.overrides` replace the twelve
@@ -48,9 +52,16 @@ L0725_KEYS = frozenset((
     "environments.nonProd",
     "environments.prodUnattended",
     "environments.workflows",
+    "environments.preProduction",
     "git.forbiddenTrailers",
     "graph.out",
     "guards.overrides",
+    "guards.mass.changeCount",
+    "guards.mass.createCount",
+    "guards.mass.deleteCount",
+    "guards.mass.enabled",
+    "guards.mass.exempt",
+    "guards.mass.overrides",
     "guards.profile",
     "install.policy",
     "jira.cloudId",
@@ -81,6 +92,16 @@ L0725_KEYS = frozenset((
     "qa.roles",
     "humanOnly.approve",       # crew 1.3.9, the owner's 2026-11-06 decision
     "humanOnly.promoteMarker",  # crew 1.3.9, the same decision
+    "worktrees.root",           # crew 1.3.19, the owner's 2026-11-09 request
+    "promote.deadlineSeconds",  # crew 1.3.41, the owner's 2026-11-10 request
+    "reaper.enabled",  # crew 1.3.50, the orphan reaper
+    "reaper.dryRun",  # crew 1.3.50, the orphan reaper
+    "reaper.spinCpuPct",  # crew 1.3.50, the orphan reaper
+    "reaper.spinMinAgeMin",  # crew 1.3.50, the orphan reaper
+    "reaper.blockedMinAgeHours",  # crew 1.3.50, the orphan reaper
+    "reaper.protectedRegex",  # crew 1.3.50, the orphan reaper
+    "reaper.intervalMin",  # crew 1.3.50, the orphan reaper
+    "reaper.onSessionStart",  # crew 1.3.50, the orphan reaper
     "resume.auto",
     "route.enabled",
     "schema",
@@ -140,9 +161,16 @@ L0725_REPO_KEYS = frozenset((
     "environments.nonProd",
     "environments.prodUnattended",
     "environments.workflows",
+    "environments.preProduction",
     "git.forbiddenTrailers",
     "graph.out",
     "guards.overrides",
+    "guards.mass.changeCount",
+    "guards.mass.createCount",
+    "guards.mass.deleteCount",
+    "guards.mass.enabled",
+    "guards.mass.exempt",
+    "guards.mass.overrides",
     "guards.profile",
     "install.policy",
     "jira.cloudId",
@@ -173,6 +201,16 @@ L0725_REPO_KEYS = frozenset((
     "qa.roles",
     "humanOnly.approve",       # crew 1.3.9, the owner's 2026-11-06 decision
     "humanOnly.promoteMarker",  # crew 1.3.9, the same decision
+    "worktrees.root",           # crew 1.3.19, the owner's 2026-11-09 request
+    "promote.deadlineSeconds",  # crew 1.3.41, the owner's 2026-11-10 request
+    "reaper.enabled",  # crew 1.3.50, the orphan reaper
+    "reaper.dryRun",  # crew 1.3.50, the orphan reaper
+    "reaper.spinCpuPct",  # crew 1.3.50, the orphan reaper
+    "reaper.spinMinAgeMin",  # crew 1.3.50, the orphan reaper
+    "reaper.blockedMinAgeHours",  # crew 1.3.50, the orphan reaper
+    "reaper.protectedRegex",  # crew 1.3.50, the orphan reaper
+    "reaper.intervalMin",  # crew 1.3.50, the orphan reaper
+    "reaper.onSessionStart",  # crew 1.3.50, the orphan reaper
     "resume.auto",
     "route.enabled",
     "schema",
@@ -210,6 +248,12 @@ L0725_MACHINE_KEYS = frozenset((
     "environments.prodUnattended",
     "git.forbiddenTrailers",
     "guards.overrides",
+    "guards.mass.changeCount",
+    "guards.mass.createCount",
+    "guards.mass.deleteCount",
+    "guards.mass.enabled",
+    "guards.mass.exempt",
+    "guards.mass.overrides",
     "guards.profile",
     "install.policy",
     "memory.mode",
@@ -230,6 +274,16 @@ L0725_MACHINE_KEYS = frozenset((
     "qa.roles",
     "humanOnly.approve",       # crew 1.3.9, the owner's 2026-11-06 decision
     "humanOnly.promoteMarker",  # crew 1.3.9, the same decision
+    "worktrees.root",           # crew 1.3.19, the owner's 2026-11-09 request
+    "promote.deadlineSeconds",  # crew 1.3.41, the owner's 2026-11-10 request
+    "reaper.enabled",  # crew 1.3.50, the orphan reaper
+    "reaper.dryRun",  # crew 1.3.50, the orphan reaper
+    "reaper.spinCpuPct",  # crew 1.3.50, the orphan reaper
+    "reaper.spinMinAgeMin",  # crew 1.3.50, the orphan reaper
+    "reaper.blockedMinAgeHours",  # crew 1.3.50, the orphan reaper
+    "reaper.protectedRegex",  # crew 1.3.50, the orphan reaper
+    "reaper.intervalMin",  # crew 1.3.50, the orphan reaper
+    "reaper.onSessionStart",  # crew 1.3.50, the orphan reaper
     "resume.auto",
     "route.enabled",
     "secondOpinion.mode",

@@ -14,12 +14,11 @@ separate prompts**, within 15 minutes. The second confirmation writes the key
 and leaves the receipt `crew_humanonly.resolve` requires; a `false` written any
 other way reads as human-only.
 
-**crew 1.3.9: no hook records this confirmation yet.** Recording it from the
-user's own prompt is the UserPromptSubmit hook's job, and that wiring is a
-review-harness change that lands separately. Until it does, typing this
-command records nothing, so tell the user exactly that: the change
-`$1` is still pending (or expired), nothing was confirmed, and the human-only
-rules hold as before. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_confirm_config.py status $1`
+**Since crew 1.3.27 the UserPromptSubmit hook records this confirmation** from
+the prompt the user typed (`approval_hook.py`): the first one reports "1 of 2",
+the second, from another prompt, applies the change. If the hook printed a
+refusal, relay it verbatim; the change `$1` is then still pending (or expired)
+and the human-only rules hold as before. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_confirm_config.py status $1`
 shows the change's state; read it and report it.
 
 **Never confirm a change yourself.** There is no CLI subcommand for it, and a

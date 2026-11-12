@@ -84,6 +84,16 @@ How it writes, whatever the arguments say:
   `context.autoClear.onlyRepos` / `.onlySessions` (read from the machine file
   only); `context.autoClear.enabled` and `resume.auto` take only a veto
   (`false`) or `null` at the repo layer.
+- **`worktrees.root` (crew 1.3.19).** A plain string write in either layer
+  (the repo wins): an absolute directory, `~` allowed, outside the repo. A
+  relative path or one inside the repo is not rejected at write time but is
+  refused wherever it is read (`/crew:worktrees` prints `refused: ...`), and the
+  default is never substituted for it. Setting it moves nothing: existing
+  worktrees stay where they are (`/crew:worktrees list` shows them).
+- **`promote.deadlineSeconds` (crew 1.3.41).** A plain number of seconds in either layer (the repo
+  wins) or `null`: how long `promote-gate.sh` may run, counted from the moment its
+  shell began. null derives it from the guard's hook timeout less 4 s (16 of 20). A value above
+  the timeout less 2 s is clamped to that; zero, a negative, a string or a boolean reads as null.
 - **`humanOnly.approve` / `humanOnly.promoteMarker` (crew 1.3.9).** Either
   writer, either layer, takes `true`; the machine layer also takes `null` and
   `--unset`. A `false` (the owner's opt-out of a human-only rule) is refused:
@@ -91,8 +101,9 @@ How it writes, whatever the arguments say:
   --key <path>` and applies only after the owner types
   `/crew:confirm-config <change_id>` twice. A repo `null` or `--unset` drops a
   veto and is a hand edit by the owner. Never propose one on your own
-  initiative, never confirm one, and say plainly that in 1.3.9 no hook acts on
-  these keys yet (`CONFIG.md`, "The human-only opt-out").
+  initiative, never confirm one, and say plainly that `humanOnly.approve` is acted on
+  since 1.3.27 and `humanOnly.promoteMarker` by no hook
+  (`CONFIG.md`, "The human-only opt-out").
 - **Deleting the repo config** is the menu's delete step only: preview, typed
   repo name, then one rename of the file to `.crew/config.json.bak-<UTC>`
   under the lock, compared with what the preview read (a changed file is put

@@ -76,6 +76,12 @@ does not know; it exposes a per-rule pattern fingerprint, the five regex values,
 scopes. Nothing imports it yet (the checker is PR B2, the `crewlint` linter kind PR B3). JUDGEMENT: the rest of this map
 is unchanged by it.
 
+**Rule checker (L-0715 PR B2).** DERIVED at the PR B2 head, anchor not moved: `plugin/crew/hooks/scripts/review_lint_classes.py`
+(`RULES`, `load_rules`, `applicable_rules`, `run`, `main`) applies the five rules to files with `ast`, `tokenize` and the rule
+file's regexes. `RULES` maps each rule id to its matcher and a frozenset of accepted pattern fingerprints; a rule id with no
+matcher, a matcher with no rule or a fingerprint outside the set is exit 2. It loads the reader by path (`-I` safe). Output is
+one ASCII JSON document per tree. Nothing calls it yet (PR B3 is the runner). JUDGEMENT: the rest of this map is unchanged by it.
+
 ## The roster, replaced wholesale
 
 Crew 0.x shipped 54 agents (13 tiered roles + 40 specialists) plus a standing
@@ -196,6 +202,7 @@ list equal. Decision record: `docs/adr/0009-hook-single-dispatch.md`.
 `plugin/crew/hooks/scripts/crew_hook.py` (620 lines) is the dispatcher the launchers run. Its
 `TABLE` (`:65`) is 18 rows (`Row`: event, matcher, script, extra, timeout, guard, twin, codex) over
 **14** distinct `.sh` scripts. Only `promote-gate.ps1` is still a `.ps1` twin in the directory; the other twins were deleted in L-0867 and L-0869, so `select` (`plugin/crew/hooks/scripts/crew_hook.py:140`) takes a twin only when `exists()` finds it and a `PowerShell` call otherwise runs the `.sh`, which Windows runs under Git Bash. The `twin=` names still in `TABLE` for `cloud-guard` and `env-guard` (`:73-74`) point at deleted files and are inert.
+DERIVED (crew 1.3.41): `promote-gate.sh` (`plugin/crew/hooks/scripts/promote-gate.sh`, 346 lines) decides nothing itself any more. After the PowerShell hand-off, the no-map opt-out and `crew_py`, it runs `_promote_gate.py` once (`:153`) and maps its exit status: `0` allow, `2` block (message already written), `10+N` the containment match could not read the map and `20+N` the pre-deploy check could not be evaluated (the shell writes the framing around the reason, `:166-188`, so `sabotage.py`'s two `ENV_STATUS` / `VERDICT_STATUS` mutations still bite), anything else a block. `_promote_gate.py` imports `_promote_match.py` (the containment heredoc), `_promote_verdict.py` (the PASS-row, rollback and marker heredoc), `_promote_dispatch.py`, `_promote_tree.py`, `_promote_github.py` and `_promote_review.py`; its deadline is `Clock.deadline` = the shell's start (`CREW_GATE_START`) + `deadline_seconds(None, configured_seconds())`, i.e. `promote.deadlineSeconds` clamped to the row's `TABLE` timeout less `REAP` 2, else that timeout less `DEFAULT_MARGIN` 4. JUDGEMENT: the fixed 16 s `GATE_DEADLINE` left in the shell belongs to the jq fallback alone. `_promote_fast.py` is gone; its allow fast path is `Gate.provably_no_deploy`.
 Row counts per event, with the registration timeout `event_timeout` gives (largest row + `EVENT_SLACK`
 10, `:44`):
 
@@ -320,13 +327,13 @@ harness-only follow-ups (`review_*.py`, `verify-gate.*` and `completion_audit.py
 rounds reason fires only through autopilot.
 
 **Context-watch's forced-continuation marker is now session-scoped, not
-repo-scoped.** `plugin/crew/hooks/scripts/context-watch.sh:59-60` defines
+repo-scoped.** `plugin/crew/hooks/scripts/context-watch.sh:68-69` defines
 `MARKER=".crew/.handoff-requested-${SESSION_KEY}"` and
 `SENT_MARKER=".crew/.autoclear-sent-${SESSION_KEY}"` — both keyed on
 `SESSION_KEY`, so two concurrent sessions on the same repo no longer share
 one marker (a correction to the previous anchor's description, which had a
 single per-repository marker). `stop_hook_active`
-(`plugin/crew/hooks/scripts/context-watch.sh:45`) is still checked first,
+(`plugin/crew/hooks/scripts/context-watch.sh:53`) is still checked first,
 and the fail-closed-once branch that asks Claude for a precautionary
 handoff and `exit 2`s still exists in the file at this anchor (confirmed
 present; the exact line range was **not re-verified word-for-word against
@@ -382,10 +389,12 @@ e.g. `CONTEXT_HANDOFF_PATH` (`:995`, `.work/HANDOFF.md`), `MEMORY_INJECT` (`:100
 | `PROD_GUARD_NAMES` | `prodDatabase`, `prodServer` (2) | `none`/`read`/`full`, `prod_level_rank` (`:499`) | `:128` |
 | `ROLE_WRITE_GUARD_NAMES` | `roleWrites` (1) | `block`/`report`/`off`, default `off` not floor, `role_writes_rank` (`:535`) | `:151` |
 | `CLOUD_GUARD_NAMES` | `cloudGuard` (1) | same vocabulary and functions as `roleWrites`, its own words | `:190` |
-| `ENV_GUARD_NAMES` | `envGuard` (1) | same vocabulary and functions as `roleWrites` (`guard_tiers` `:549`); switches `env_guard.py` | `:207` |
+| `ENV_GUARD_NAMES` | `envGuard` (1) | same vocabulary and functions as `roleWrites` (`guard_tiers` `:556`); switches `env_guard.py` | `:207` |
 
-`ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:214`) is the concatenation of all
+`ALL_GUARD_NAMES` (`plugin/crew/hooks/scripts/crew_guards.py:221`) is the concatenation of all
 five — **twelve** guard names in total (executed: `len(crew_guards.ALL_GUARD_NAMES)`).
+An explicit `null` at `guards.envGuard` is the floor, not the default
+(`NULL_IS_MALFORMED`, `plugin/crew/hooks/scripts/crew_guards.py:214`, read by `layer_guard_state`).
 `cloud_guard.py`'s own docstring (`:1-6`) states what `cloudGuard` actually
 is: a switch, not a policy — turning it on is what makes the seven
 `GUARD_NAMES` policies (which existed and ratcheted but governed nothing
@@ -420,6 +429,17 @@ the plan's workspace out of the plan file itself (`plan_workspace`, `:123`). The
 `crew_guards.ENVIRONMENTS_DEFAULTS` (`plugin/crew/hooks/scripts/crew_guards.py:309`):
 `environments.nonProd` is repo-only, `environments.prodUnattended` ratchets (below). DERIVED from
 the docstrings and definitions cited; the verdict table itself is not re-derived here.
+
+`environments.preProduction` (crew 1.3.20) is a second repo-only exemption for an environment
+that is labelled production but not live: exact name -> `{reason, targets}`, validated by
+`crew_preprod.problem` (called from `crew_config.environments_block_problem`, so a malformed entry
+makes every environment unknown). `crew_preprod.arm` (called first in `cloud_guard.evaluate`)
+appends the names to the `nonProd` globs the terraform and dispatch classifiers read;
+`crew_config._preproduction_cover` lets `guards.prodDatabase` / `prodServer` stand down only when
+every declared production target on the command is a listed name or `target`. Both paths write
+`env:preProduction:<name>` to `.crew/guard.log` and a `PRE-PRODUCTION EXEMPTION` line to stderr
+(`cloud_guard.main`). DERIVED from `plugin/crew/hooks/scripts/crew_preprod.py`; tests
+`plugin/crew/tests/test_preproduction.py`.
 
 **GitHub Actions deploys, slice 1 (T-0045).** `plugin/crew/hooks/scripts/crew_ghdeploy.py` reads an
 environment's `github` entry out of `.crew/verify.json` (`_environment`, `:504`; `entries`, `:232`),
@@ -830,10 +850,10 @@ citations taken with `grep -n` there.
   binding or the sender's claim; `plugin/crew/hooks/scripts/auto-clear.sh:260` also prints it as a
   `systemMessage` (the `auto-clear.ps1` flavour that read `wrapUp` natively was deleted in L-0867).
 - DERIVED: context-watch sends `wrapup_message` (`crew_autocycle.py:510`) instead of the one
-  stock warning when armed (`plugin/crew/hooks/scripts/context-watch.sh:557-560`; the `autoWrapUp` switch
+  stock warning when armed (`plugin/crew/hooks/scripts/context-watch.sh:552-555`; the `autoWrapUp` switch
   is the constant `crew_state.CONTEXT_AUTO_WRAP_UP`, so the shell has a single text left; the
   `context-watch.ps1` flavour was deleted in L-0867), and in the marker branch escalates a failed
-  check once through `.crew/.wrapup-escalated-<key>` (`context-watch.sh:61`, check at `:529-530`);
+  check once through `.crew/.wrapup-escalated-<key>` (`context-watch.sh:70`, check at `:523-524`);
   the CLI verbs are `_wrapup_cli` (`crew_autocycle.py:1339`).
   SessionStart removes the claim (`plugin/crew/hooks/scripts/handoff-read.sh:20`; `handoff-read.ps1` deleted in L-0867).
 - DERIVED: `/crew:handoff --wrap-up` (`plugin/crew/commands/handoff.md:39`) is the one wrap-up
@@ -927,13 +947,105 @@ returns `VALUES` (`crew_config.py:3282`). The double confirmation is
 `:131`, `cancel` `:176`, CLI `main` `:205`, no confirm subcommand); its one
 write goes through `crew_config.apply_confirmed_optout` (`:4010`), and a crew
 write back to human-only revokes via `_revoke_human_only` (`:4000`).
-JUDGEMENT: inert by design. No hook imports `crew_humanonly`, and no hook
+JUDGEMENT: inert by design in 1.3.9; live for `approve` since 1.3.33 (the
+paragraph after this section's tests line). In 1.3.9 no hook imported `crew_humanonly`, and no hook
 calls `confirm`; both are harness (`scripts/check-tooling-pr.py` `HARNESS`:
 `approval_hook.py`, `crew_hook.py`, `crew_ticket.py`, `scope_guard.py`,
 `hooks.json`, `sabotage*.py`) and land in PR 2. Tests:
 `plugin/crew/tests/test_crew_humanonly.py`; mutations
 `plugin/crew/tests/humanonly_mutations.py` (16, run alone until PR 2 wires
 them into `sabotage.py`).
+
+## Worktree root and `/crew:worktrees` (crew 1.3.19)
+
+DERIVED on `feat/worktrees-root` (cut from main `e65a067a4`); this section does
+not move the anchor. One leaf, `worktrees.root`, default `null` in both templates
+(`plugin/crew/hooks/scripts/crew_config.py` `default_config` and
+`default_global_config`; `crew_state.WORKTREES_DEFAULTS`). The reader is
+`plugin/crew/hooks/scripts/crew_worktrees.py:129` (`resolve`): a value that is
+not a non-empty string, not absolute after `~` expansion, or inside the main
+checkout is a `problem` and `dir` stays `None` (never the default); the
+directory is `<base>/<repo>-<digest>` from `crew_state._repo_digest` of the main
+checkout (first `git worktree list` record). `crew_state.py --worktree-path`
+answers through it and exits 2 on a problem. `classify` (`:202`) marks a
+worktree removable only when status, unpushed (`rev-list HEAD --not --remotes`),
+merge into the default ref, lock and age all prove it, every failed probe being
+`could not tell`; `remove` (`:280`) needs `--yes` and runs `git worktree remove`
+without `--force`. `hook_create` (`:348`) and `hook_remove` are the entry points
+of Claude Code's `WorktreeCreate` / `WorktreeRemove` hooks (replacing git's
+creation; documented behaviour, not run against the live CLI);
+`crew_wave._init_refusal` admits a lane under the same directory. JUDGEMENT:
+nothing registers the hook. `hooks.json` is harness (`HARNESS`) and a hook that
+replaces creation for every user is the owner's to opt into, so
+`hook-snippet` prints the settings block. Tests:
+`plugin/crew/tests/test_crew_worktrees.py`; mutations
+`plugin/crew/tests/worktrees_mutations.py` (17, run alone: `sabotage*.py` is
+harness).
+
+**1.3.33 (PR 2 of 3, harness only).** DERIVED: `crew_ticket.cli_approval_allowed`
+(`plugin/crew/hooks/scripts/crew_ticket.py`) returns True when
+`scope.allowCliApproval` is true OR `human_only_approve_opted_out` finds
+`crew_humanonly.resolve(top, "approve")["humanOnly"] is False` (anything else,
+an exception included, is False); every reader of the CLI acceptance
+(`accepted`, `scope_guard`, `completion_audit`, `crew_autopilot`) goes through
+that one function. `plugin/crew/hooks/scripts/approval_hook.py` handles
+`/crew:confirm-config <id>` (`_confirm_config`, calls `crew_confirm_config.confirm`
+with `via="user-prompt"`) and `/crew:approve-mass <id>` (`_approve_mass`, writes
+`<git-common-dir>/crew/mass-approvals/<id>.json`); `approval-hook.sh` also
+passes a prompt naming `crew:confirm-config`. `scope_guard.py` refuses writes to
+`~/.claude/crew/confirm-config/` (`confirm_store`, `_CONFIRM_STORE_RE`).
+`humanonly_mutations.py` is wired into `sabotage.py` (27 entries by
+`len(HUMANONLY_MUTATIONS)`). JUDGEMENT: `humanOnly.promoteMarker` is still read
+by no hook, and a session that runs arbitrary python can still forge a receipt.
+
+## Mass delete, create and change: `guards.mass` (crew 1.3.36)
+
+DERIVED from `plugin/crew/hooks/scripts/crew_mass.py` (stdlib only) and
+`plugin/crew/hooks/scripts/cloud_guard.py`; tests `plugin/crew/tests/test_mass_guard.py`,
+mutations `plugin/crew/tests/mass_mutations.py` (40, run alone: `sabotage*.py` is harness).
+`cloud_guard._classify` (`cloud_guard.py:2161`) asks `crew_mass.classify`
+(`crew_mass.py:438`) for `Spec`s on every simple command and wraps each as a
+`Finding` whose rule is `massDelete`, `massCreate` or `massChange`
+(`crew_mass.RULES`). `cloud_guard.evaluate` (`cloud_guard.py:3178`) ignores those
+findings unless `mass["armed"]`, then `crew_mass.judge` (`crew_mass.py:873`)
+counts, compares with the limit and answers `ask` (attended) or `deny`
+(`unattended`), or `allow` when `live_approval` (`crew_mass.py:826`) finds the
+owner's file. `cloud_guard.main` (`cloud_guard.py:3416`) calls
+`crew_mass.settings` (`crew_mass.py:163`) before the `guards.cloudGuard`
+`off` early return, so the stop works with the cloud guard off (`only_mass`).
+The switch is `guards.mass.enabled` true in either layer, else
+`crew_mass.opted_out` (`crew_mass.py:223`: a double-confirmed `humanOnly` `false`);
+anything unreadable is off. `_limits` (`crew_mass.py:199`): machine value, else
+`DEFAULT_OVERRIDES` (terraform 3 / 10 / 10, `crew_mass.py:91`), else 10 / 20 / 30;
+the repo layer can only lower. `exempt` (`crew_mass.py:260`) is the regenerable
+directory list; `worktrees` exempts by path only within two components below it,
+and `_exempt_at` judges a path by its part below `cwd`, so a repo that lives in
+a worktree is still counted. The approval id (`approval_id`, `crew_mass.py:815`)
+is a digest of the exact command text and worktree, not of the rule; the file
+is written by `approval_hook._approve_mass` (harness PR, #737). `count_git`
+(`crew_mass.py:735`) counts `git diff --name-status -M` lines, the branch
+against `_base` (`crew_mass.py:713`: `origin/HEAD`, `origin/main`, `origin/master`);
+`count_terraform` (`crew_mass.py:774`) reads `terraform show -json <plan>`.
+The six keys are rows in `crew_keys.KEY_META` (`crew_keys.py:330`) with defaults
+in `crew_guards.GUARD_BLOCK_DEFAULTS` (`crew_guards.py:242`).
+JUDGEMENT: the limits come from this repo's own 104-day history (10 trips 5 of
+623 PRs, 20 trips 29, 30 trips 35); the terraform limits are inferred, not
+measured. `cloud_guard.py` already exceeds 3,400 lines, so the module is a new
+file rather than more glue there. A script, an MCP server, Write and Edit before
+commit, `tar -x`, `unzip` and `git merge` / `pull` are not seen.
+
+## Orphan reaper and hook self-limit (crew 1.3.50)
+
+anchor for this section: 170d4c4b2
+
+- DERIVED `plugin/crew/hooks/scripts/crew_reaper.py:356` `decide` returns one of kill, skip, report, leave, ignore for a process; a live parent (`parent_state`, `:301`) is never `kill`, a protected process or one with a protected or unlisted child is `skip`.
+- DERIVED `crew_reaper.py:447` `run(cfg, apply=False, ..., pids=None)` takes two snapshots a sample apart, judges only allow-listed images (`image_allowed`) and kills nothing unless `apply`; `pids` restricts a pass (the tests use it).
+- DERIVED `crew_reaper.py:126` `load_config` reads the machine file's `reaper` block only; a repo value is never read.
+- DERIVED `crew_reaper.py:318` `self_matching_watcher` finds `until/while ... pgrep -f PATTERN` loops whose pattern matches the loop's own command line.
+- DERIVED `crew_reaper.py:498` `task_command` builds (does not run) the per-user `schtasks` argv; `:528` `maybe_spawn_for_session` is the opt-in detached call `crew_context.py:1344` makes at SessionStart.
+- DERIVED `plugin/crew/hooks/scripts/crew_selflimit.py:56` `arm` starts a daemon timer that `os._exit(124)`s; called at `cloud_guard.py:3396`, `env_guard.py:2452`, `role_write_guard.py:689`, `_promote_gate.py:826`, `crew_context.py:1330`. 124 is an undecided exit to `crew_hook._settle`, the same fail-closed path as a timeout.
+- JUDGEMENT `scope_guard.py`, `approval_hook.py` and `crew_hook.py` are review-harness paths (`HARNESS` in `scripts/check-tooling-pr.py`) that must land alone, so they carry no self-limit yet.
+- JUDGEMENT the host-local task `CrewOrphanCygpathSweep` lives outside this repo; the reaper covers its cygpath case through the `cygpath` allow-list entry but does not replace or edit it.
 
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 
@@ -1557,7 +1669,11 @@ DERIVED at `c0e582fbe` (L-0725, 2026-10-22), re-read after the `shellRoute` conf
 picks the shell crew's long-running jobs run in on native Windows. It is a CLI
 (`probe`, `measure`, `classify`, `run`; `main` at `:930`) and a library for
 `crew_status.py` (`crew_shell.status_line`, `plugin/crew/hooks/scripts/crew_status.py:719`). It imports no crew
-module at import time. No hook calls it
+module at import time. The one exception is the dispatcher's `resolve_gitbash(strict=True)`
+(`plugin/crew/hooks/scripts/crew_hook.py`, `dispatch`), which returns a `Problem` whose `.kind`
+(`absent` / `unknown` / `broken`) keeps a Git Bash that exists but did not answer apart from a missing
+one; `unknown` is retried with backoff and answered from `LastKnownGood` (`~/.claude/crew/gitbash-lkg.json`,
+JUDGEMENT: path + size + mtime is a proxy for "the same bash.exe that passed"). Otherwise no hook calls it
 (`crew_platform.py` unchanged since the earlier anchor; `hooks.json` is launcher-only since L-0850). `host_os` (`:57`) gives
 `windows`, `windows-bash`, `linux`, `macos`, `wsl` or `other`, and `on_windows` (`:80`) gates
 everything: off native Windows `probe` returns `n/a`, `status_line` returns None, and `run`
@@ -1679,7 +1795,7 @@ was discarded before the next call regardless.
   `platform-sync.sh`, `scope-guard.sh`, `auto-clear.sh`, `verify-gate.sh`
   (two call sites, `PY` at `:1322` and `SHIM_PY` at `:2262`), and
   `completion-audit.sh:71`; `role-write-guard.sh` keeps its own private copy. **Three scripts still call plain
-  `crew_py()`**: `promote-gate.sh:115`, `notify.sh:13` and `handoff-write.sh:103` (`handoff-read.sh` calls neither now), plus
+  `crew_py()`**: `promote-gate.sh:143`, `notify.sh:13` and `handoff-write.sh:103` (`handoff-read.sh` calls neither now), plus
   four more plain call sites *within* `verify-gate.sh` itself
   (`PRICE_PY` at `:37`, `REPORT_PY` at `:793`, `FP_PY` at `:919`,
   `SCOPE_PY` at `:1260`) that degrade to a no-op or a narrower error rather
@@ -2523,6 +2639,17 @@ merged tree) after review round 3's fixes (`33521aa4`), whose hunks were read in
   the one way a ticket reaches review without the gate; it exists because the pre-existing
   review_run tests run tickets with no receipt, and a ticket without one cannot pass
   `/crew:done`.
+- **Export to PR-side reviewers (L-0718, DERIVED at the commit adding this bullet).** An opt-in
+  `export:` key in the overlay front matter (`OVERLAY_KEYS`, plugin sets refuse it) makes
+  `_export_build` (`plugin/crew/hooks/scripts/crew_standards.py:1195`) render every standard of every
+  set from `effective_set(..., applies=lambda g: True)` into `docs/review-rules/<SET>.md`, `REVIEW.md`,
+  `.cursor/BUGBOT.md` and a marked block in a hand-written `AGENTS.md`; `export_write` (`:1402`) writes each
+  complete-or-not-at-all, `export_check` (`:1318`) compares a fresh render by byte and reports orphans
+  (`_orphans` `:1277`), `export_report` (`:1388`) is `--dry-run`. `crew_docs_check._export_rows`
+  (`plugin/crew/hooks/scripts/crew_docs_check.py:488`) adds the `standards export` row; `.crew/verify.json`
+  rule `standards-export` runs `export --check` on every change. Tests: `test_standards_export.py`.
+  JUDGEMENT: the crew version is in every output's marker, so each crew release PR in an opted-in repo must
+  rerun `export --write`.
 
 ## The Kimi Code provider (T-0028 feature half; the review launch, L-0527)
 
@@ -2706,10 +2833,14 @@ commits merged in from main are not the ticket's (a deliberate refinement of the
 fallback base that reads no commit, are unknown; a line from any other fallback base
 says so. `main` is the `--check` CLI; any unexpected exception, an import failure included, is `unknown` with exit 2. Suite: `plugin/crew/tests/test_crew_trailers.py`,
 mapped by `.crew/verify.json:556-563`. The practice note it replaces said a
-repository's attribution adds `Co-Authored-By`; it now says the owner's instructions
-decide (`plugin/crew/skills/crew-best-practices/references/practices.md:58-62`), and
+repository's attribution adds `Co-Authored-By`; it now says crew never adds a
+`Co-Authored-By` trailer or a "Generated with Claude Code" line (owner rule 2026-11-10;
+`plugin/crew/skills/crew-best-practices/references/practices.md:58-64`), and
 `/crew:implement` step 2 says a dispatched prompt carries no attribution or trailer
-instruction (`plugin/crew/commands/implement.md:48-51`). docs/crew/config-rationale.md
+instruction and tells the developer to add none (`plugin/crew/commands/implement.md:48-52`);
+`crew_wave.lane_prompt` step 2 says the same, and
+`plugin/crew/tests/test_crew_no_coauthored.py` fails a command, skill, agent or template line
+that names the trailer without a forbid word. docs/crew/config-rationale.md
 (`docs/crew/config-rationale.md`:3052`, `git.forbiddenTrailers`) is the user-facing account.
 
 ## Native-memory vault pointers (T-0084)
@@ -2977,7 +3108,7 @@ Derived on `L-0799-coordinator-pin`, not at this map's `anchor:`; re-find each n
   `warning:` lines (`:881`) come before the `coordinator: model <id>` line (`:883`), which reports the
   pin only: wave launches no coordinator. No agent file or `ROLE_TIERS` entry exists for the coordinator.
 - DERIVED: `plugin/crew/hooks/scripts/crew_wave.py` `CLAUDE_MODEL_HEADS` is the set of claude
-  families `role_model` accepts: `claude`, `opus`, `sonnet`, `haiku` and `fable` (Fable 5.1, added on
+  families `role_model` accepts: `claude`, `opus`, `sonnet`, `haiku` and `fable` (Fable 5.2, first added as Fable 5.1 on
   `feat/crew-model-accept-fable`). `fable` is an explicit-pin alias only; no code in crew selects it.
 - JUDGEMENT: the coordinator pin is advisory text for the dispatcher; a plugin cannot set the session model.
   Tests: `plugin/crew/tests/test_crew_wave.py` (`test_launch_line_*`, `test_start_*coordinator*`,
@@ -5661,7 +5792,7 @@ past commits, not claims about the present file. No behaviour documented here ch
 ## Re-anchor provenance - `c0e582fbe` -> `bdde58724`, 2026-10-26 (L-0928)
 
 Re-check, not re-derivation. Per-path: `git diff --name-only c0e582fbe..bdde58724` over the cited paths lists 78 changed files (crew 1.2.x -> 1.2.84); the largest are `crew_guards.py` (+443), `crew_config.py` (+222), `_common.sh` (+210), `crew_migrate.py` (+122), `verify-gate.sh` (+60) and the deleted `.ps1` twins (the approval hook, `completion-audit`, `scope-guard`, `verify-gate`); new: `crew_guard_notes.py`, `crew-qa-standards/references/{functional-qa,measurements}.md`. The note itself had also been edited on main after the anchor (so some cites were not at `c0e582fbe` numbering to begin with).
-- Full `path:line` cites, first pass (`cite_check`, vs `c0e582fbe`): 355 SAME, 39 SHIFT (applied), 8 CHANGED and 2 GONE (re-derived by hand: `plan.md:33-34`, `plugin.json:3`, `context-watch.sh:557-560`, `_common.sh:402`, the `_RATCHETED` range, `test_worktree_config_shell.py:45` -> `:52`; two `plugin/crew/README.md:4716-4717` cites in dated paragraphs dropped). Now all 354 resolve at `bdde58724`.
+- Full `path:line` cites, first pass (`cite_check`, vs `c0e582fbe`): 355 SAME, 39 SHIFT (applied), 8 CHANGED and 2 GONE (re-derived by hand: `plan.md:33-34`, `plugin.json:3`, `context-watch.sh:552-555`, `_common.sh:402`, the `_RATCHETED` range, `test_worktree_config_shell.py:45` -> `:52`; two `plugin/crew/README.md:4716-4717` cites in dated paragraphs dropped). Now all 354 resolve at `bdde58724`.
 - The symbol check (a backticked name within 2-4 lines of each cite, plus a def-line check for `name` then `:N`) showed the tool's SAME proves little: about 790 line numbers (full and bare `:N`) had been wrong at the anchor or moved since, and were re-pointed to the `bdde58724` def line; about 105 that named nothing resolvable had the number dropped (name kept). 48 flagged full cites and 146 with no symbol beside them were read and kept (the cited line is the construct named).
 - Claims changed (old -> new): version 1.2.62 -> 1.2.84 (`marketplace.json:248`, `plugin.json:3`); `/crew:done` four -> five checks, check cites `done.md:18-35`, `:49-62`, `:63-71`, `:73-81`; no-python guard fallback proof rewritten (valid-JSON awk check, `_common.sh:430`, `:480`; `env_guard.py:1903`); `crew_guard_notes.py` (new, 201 lines) added to the ratchet paragraph and `NARROWED` (`crew_dropped.py:102`) added; `_RATCHETED` build steps `:3058`..`:3187`; `ALL_GUARD_NAMES` "10 across 4" -> 12 across 5; `default_config` / `default_global_config` entry cites `:246`/`:432` -> `:248`/`:423`; "14-key ratchet table" -> 16; `AUTOPILOT_DEFAULTS` keys (now 12, `crew_state.py:886-891`); `crew_autopilot.py` 1999 -> 3380 lines, 10 -> 27 subcommands, docstring `:1-240`, `next` table `:104-176`; `autopilot.md` 110 -> 117 lines and its section cites; `crew_migrate.py` 1329 -> 1381, `crew_help.py` 414 -> 439, `crew_route.py` 627 -> 650, `verify-gate.sh` 1863 -> 2965 lines; mutation counts (`CONFIG_MENU` 126 -> 130, `SHELL` 14 -> 11, `TRACKER` 106 -> 103, `RESUME` 72 -> 68) and `sabotage.py` registration lines; `crew_py_strict` callers 11 -> 12, plain `crew_py` callers two -> three (`promote-gate.sh:115`, `notify.sh:13`, `handoff-write.sh:103`); `verify-gate.sh` capture cites (`:2516`, `:2635`, `:2656`, `:2579`); T-0096/L-0680 sections: `PS_COPIES` now `("promote-gate",)`, handoff path is the fixed `.work/HANDOFF.md` (`crew_handoff_path` gone), no `keepTranscripts` read in `handoff-write.sh`; held-ping bullet marked SUPERSEDED (`notifyHold` dropped by L-0725; `autopilot.reviewPolicy` now shipped); `TODO.md:4005` -> `:4262`; `GlobalWriteRefused` `:3899` -> `:2961`; `PM_DEFAULTS` `:898-911` -> `:898-906`; the `qa-reviewer` grep result list; many `crew_tracker.py`, `crew_split.py`, `crew_autopilot.py` and `crew_refresh_check.py` cites moved by +20 to +1400 lines.
 - Demoted to JUDGEMENT (carried, not re-verified): 34 sections, each with a marker line under its heading (listed in "Unverified at this anchor"); the long dated `Re-anchored ...` paragraphs keep the numbers of their own commits.
