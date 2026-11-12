@@ -44,9 +44,11 @@ WHAT A HOOK CAN SEE. The command's text, the file system, and `git`:
 COUNTS IT CANNOT TAKE are "could not tell", and could not tell is mass: a
 variable or substitution in a path, a relative path after a `cd`, a POSIX path
 Git Bash maps somewhere this process cannot see, a `cd` or `git -C` directory
-that is, or reaches through a symlink, `/proc` or `/dev` (the kernel resolves
-those per process), a `git push` that names a remote or refspec other than the
-branch's upstream when no origin base exists, `find -delete`, `xargs rm`, a
+that is, or reaches (through a symlink or a mount) `/proc`, `/dev`, a kernel
+pseudo filesystem or a `self/cwd`-shaped path (the kernel resolves those per
+process), a `git push` or `gh pr create` with no origin/HEAD, origin/main or
+origin/master to measure against (the branch's upstream is NOT a base then: git
+can be told to push elsewhere in two dozen ways), `find -delete`, `xargs rm`, a
 git or terraform command that failed, and a row count (SQL: no command text says
 how many rows an unfiltered DELETE hits, so it always asks).
 
@@ -82,6 +84,7 @@ import os
 import re
 import stat
 import subprocess
+import sys
 import time
 
 MASS_DELETE, MASS_CREATE, MASS_CHANGE = "massDelete", "massCreate", "massChange"
@@ -113,7 +116,8 @@ _GIT_VALUE_OPTS = frozenset(("-c", "--git-dir", "--work-tree", "--namespace", "-
                              "--config-env", "--attr-source", "--super-prefix"))
 # `git push` flags that do not change WHAT is pushed or WHERE. Any other flag (`--all`,
 # `--mirror`, `--tags`, `--repo=`, `-o <value>`, a glued `-uq`...) means the push is not
-# known to be "this branch to its upstream" (`_pushes_to_upstream`).
+# known to be "this branch to its upstream" (`_pushes_to_upstream`), and so does a `-c` or
+# `--config-env` before `push` (`_sets_config`).
 _PUSH_PLAIN_FLAGS = frozenset((
     "-u", "--set-upstream", "-v", "--verbose", "-q", "--quiet", "--progress", "--no-progress",
     "--verify", "--no-verify", "--atomic", "--no-atomic", "--porcelain", "--thin", "--no-thin",
@@ -394,7 +398,8 @@ def _classify_git(args, fed):
             return []
         out = _diff_specs("git push", override, ["diff", "--name-status", "-M", "@BASE@...HEAD",
                                                   "--"])
-        named = ([a for a in rest if not a.startswith("-")], flags <= _PUSH_PLAIN_FLAGS)
+        named = ([a for a in rest if not a.startswith("-")],
+                 flags <= _PUSH_PLAIN_FLAGS and not _sets_config(args))
         for spec in out:
             spec.extra = named
     if fed:
@@ -406,6 +411,21 @@ def _classify_git(args, fed):
             spec.why = ("--git-dir / --work-tree points git at a repository other than the "
                         "working directory's, and that is not read here")
     return out
+
+
+def _sets_config(args):
+    """True when git's own options (before the subcommand) carry configuration: `-c <k=v>`,
+    `--config-env[=]`. `-c remote.pushDefault=origin`, `-c branch.feat.pushRemote=`,
+    `-c push.default=matching`, `-c remote.fork.pushurl=`, `-c url.<x>.insteadOf=`... each sends
+    a push somewhere its text does not name, so such a push is never "to the upstream"."""
+    index = 0
+    while index < len(args) and args[index].startswith("-"):
+        name = args[index].split("=", 1)[0]
+        if name in ("-c", "--config-env") or (name.startswith("-c") and name != "-C"
+                                               and not name.startswith("--")):
+            return True
+        index += 2 if (args[index] == "-C" or args[index] in _GIT_VALUE_OPTS) else 1
+    return False
 
 
 def _redirects_repo(args):
@@ -631,7 +651,14 @@ def _resolve(operand, cwd, cd):
 # --- the one cd this guard follows ---------------------------------------------------
 #
 # ONE strict grammar over the WHOLE command: `cd <plain path> && git <plain args>` on one
-# plain line (PowerShell: `Set-Location|cd|sl <plain path>`, then `;` or `&&`, then git).
+# plain line (PowerShell: `Set-Location|cd|sl <plain ABSOLUTE path> && git <plain args>`).
+# `&&` ONLY, in both shells (round 12, BLOCK-2): it is what makes a cd the shell REFUSED
+# harmless, because git then does not run at all. PowerShell's `;` runs git where the shell
+# already was when Set-Location fails, and this process cannot know that it will not (pwsh on
+# Linux refuses `///x` that os.path.isdir accepts; an ACL, a provider, a path rule of its own),
+# so `cd X; git ...` is never followed. A PowerShell target is absolute only (`<letter>:/x` on
+# Windows, `/x` elsewhere): a relative one is read against the CURRENT provider drive, which
+# an earlier `cd Env:` or `cd HKCU:` may have changed.
 # Plain: ASCII only, ASCII space or tab between tokens, and
 #   - a bash path of letters digits and `_ . / : -`; a PowerShell path of letters digits
 #     `_ . / -` with at most one leading `<letter>:/` or `<letter>:\` drive prefix (no other
@@ -641,11 +668,13 @@ def _resolve(operand, cwd, cd):
 #     (`-m`, `-a`, `--amend`; a flag with a glued value or a path is refused, and so are
 #     `-C`/`-c`/`--git-dir`... anywhere), or quoted strings that hold no `$`, backtick,
 #     backslash, `;`, newline or non-ASCII.
-# A target that is, or reaches through a symlink, `/proc` or `/dev` is never followed
-# (`_per_process_dir`: the resolved path is judged, not the text). A target with a `..`
+# A target that is, or reaches through a symlink or a mount, `/proc`, `/dev`, a kernel pseudo
+# file system or a `self/cwd`-shaped path is never followed (`_per_process_dir`: the resolved
+# path is judged, not the text). A target with a `..`
 # component is never followed either: bash may take `..` through a symlink
 # (a logical `cd ..`, or `set -P` from BASH_ENV) and this process would cut the text. A drive
-# prefix (`c:/x`) is followed only where drives exist (os.name == "nt").
+# prefix (`c:/x`) is followed only where drives exist (os.name == "nt"), and `/c/x` never is in
+# PowerShell there (it reads it against the current drive).
 # Anything else after a cd (a second command, pipe, redirect, expansion, heredoc, assignment,
 # alias, NBSP...) does not match and stays "could not tell", exactly as on main. A tripwire,
 # not a sandbox: it decides only that the one git command runs in the cd's directory.
@@ -660,7 +689,6 @@ _BASH_WORD_RE = re.compile(r"[A-Za-z0-9_\-./=:@,+%]+")
 _PS_WORD_RE = re.compile(r"[A-Za-z0-9_\-./=:,+%]+")
 _FLAG_RE = re.compile(r"--?[A-Za-z][A-Za-z-]*")
 _WINDOWS = os.name == "nt"
-_DRIVE_PREFIX_RE = re.compile(r"[A-Za-z]:")
 _GIT_REDIRECT_FLAGS = frozenset((
     "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env",
     "--attr-source", "--super-prefix"))
@@ -668,8 +696,8 @@ _BASH_CD_RE = re.compile(
     r"[ \t]*cd[ \t]+(?P<path>(?!-)[A-Za-z0-9_./:-]+)[ \t]*&&[ \t]*git[ \t]+")
 _PS_CD_RE = re.compile(
     r"[ \t]*(?:set-location|cd|sl)[ \t]+"
-    r"(?P<path>(?!-)(?:[A-Za-z]:[/\\][A-Za-z0-9_./-]*|[A-Za-z0-9_./-]+))"
-    r"[ \t]*(?:&&|;)[ \t]*git[ \t]+", re.IGNORECASE)
+    r"(?P<path>(?:[A-Za-z]:[/\\][A-Za-z0-9_./-]*|[A-Za-z0-9_./-]+))"
+    r"[ \t]*&&[ \t]*git[ \t]+", re.IGNORECASE)
 
 
 def _plain_tail(tail, word_re):
@@ -705,46 +733,143 @@ def _plain_tail(tail, word_re):
 
 _PER_PROCESS_ROOTS = ("/proc", "/dev")
 _MAX_LINKS = 40
+# `<x>/self/cwd`, `<x>/1234/root`, `<x>/thread-self/fd`: the shape of a per-process entry of a
+# procfs, wherever it is mounted (`curproc` is BSD's `self`).
+_PROC_SELF = frozenset(("self", "thread-self", "curproc"))
+_PROC_ENTRIES = frozenset(("cwd", "root", "exe", "fd", "fdinfo", "task", "ns", "map_files"))
+# Kernel pseudo file systems, by the type `/proc/self/mountinfo` names. A path on one is never
+# judged: procfs resolves `self` per process, and none of the others holds a repository. tmpfs
+# is NOT here: it is an ordinary file system (`/tmp` and `/run/user/<n>` are tmpfs on many
+# hosts); `/dev/shm` is refused by its name, as everything under `/dev` is.
+_PSEUDO_FS = frozenset((
+    "proc", "procfs", "linprocfs", "sysfs", "devtmpfs", "devfs", "devpts", "fdescfs", "fdesc",
+    "cgroup", "cgroup2", "debugfs", "tracefs", "securityfs", "configfs", "pstore", "bpf",
+    "mqueue", "hugetlbfs", "binfmt_misc", "nsfs", "fusectl", "efivarfs", "selinuxfs",
+    "rpc_pipefs", "sockfs", "pipefs"))
+# autofs is NOT here either: an automount point (`/home`, `/net/<host>`) is listed as autofs AND
+# as the real file system mounted over it, and repositories live there.
+_MOUNTINFO = "/proc/self/mountinfo"
+_OCTAL_RE = re.compile(r"\\([0-7]{3})")
+
+
+def _proc_shaped(parts):
+    """True when two neighbouring components of `parts` read `self/cwd`, `<pid>/root`,
+    `thread-self/fd`...: a per-process procfs entry by its shape, whatever it is mounted on."""
+    for owner, entry in zip(parts, parts[1:]):
+        owner = owner.lower()
+        if entry.lower() in _PROC_ENTRIES and (owner in _PROC_SELF or owner.isdigit()):
+            return True
+    return False
 
 
 def _names_per_process(path):
     """True when the TEXT of `path` starts at `/proc` or `/dev`, however it is spelled
-    (`//proc/self/cwd`, `///proc`, `/./proc/x`, `/dev/fd/3`, `/PROC`)."""
+    (`//proc/self/cwd`, `///proc`, `/./proc/x`, `/dev/fd/3`, `/PROC`), or holds a procfs
+    per-process shape anywhere (`/mnt/p/self/cwd`, `x/1234/root`)."""
+    parts = [part for part in re.split(r"[\\/]+", path) if part and part != "."]
+    if _proc_shaped(parts):
+        return True
     if path[:1] not in ("/", "\\"):
         return False
-    parts = [part for part in re.split(r"[\\/]+", path) if part and part != "."]
     return bool(parts) and "/" + parts[0].lower() in _PER_PROCESS_ROOTS
 
 
-def _per_process_devices():
-    """The device numbers of `/proc` and `/dev` here (a procfs mounted somewhere else has
-    the same one), or an empty set where there is none to read."""
-    found = set()
-    for root in _PER_PROCESS_ROOTS:
+def _device(major, minor):
+    """The `st_dev` of a `major:minor` pair. `os.makedev` where there is one; Linux's own
+    encoding elsewhere, so a table can be read (and tested) on any host."""
+    make = getattr(os, "makedev", None)
+    if make is not None:
+        return make(major, minor)
+    return (((major & 0xfff) << 8) | (minor & 0xff) | ((minor & ~0xff) << 12)
+            | ((major & ~0xfff) << 32))
+
+
+def _parse_mountinfo(text):
+    """`(mount points, device numbers)` of the pseudo file systems `text` (the content of
+    `/proc/self/mountinfo`) lists, or None when a line cannot be read: an unknown mount table
+    is not an empty one."""
+    points, devices = set(), set()
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        left, sep, right = line.partition(" - ")
+        fields, kind = left.split(" "), right.split(" ", 1)[0].lower()
+        major, colon, minor = fields[2].partition(":") if len(fields) > 4 else ("", "", "")
+        if not (sep and kind and colon and major.isdigit() and minor.isdigit()):
+            return None
+        if kind in _PSEUDO_FS or kind.split(".", 1)[0] in _PSEUDO_FS:
+            points.add(_OCTAL_RE.sub(lambda found: chr(int(found.group(1), 8)), fields[4]))
+            devices.add(_device(int(major), int(minor)))
+    return points, devices
+
+
+def _special_mounts():
+    """`(mount points, device numbers)` of the kernel pseudo file systems mounted here
+    (`_parse_mountinfo`), judged by file-system TYPE: a procfs that root mounted at `/mnt/p`
+    is one, and a `/dev` that is a plain directory of the root file system is not. None when
+    this is Linux and the table cannot be read (could not tell). Where there is no such table
+    (macOS, BSD) the device numbers of `/proc` and `/dev` stand in, each only when it is a
+    mount of its own."""
+    try:
+        with open(_MOUNTINFO, encoding="utf-8", errors="surrogateescape") as handle:
+            text = handle.read()
+    except OSError:
+        if sys.platform.startswith("linux"):
+            return None
+        return _root_mounts()
+    return _parse_mountinfo(text)
+
+
+def _root_mounts():
+    """`_special_mounts` for a host with no mount table to read: `/proc` and `/dev` by name,
+    and the device number of each only when it differs from `/`'s (a `/dev` that is a plain
+    directory shares the root's, and must not make every path on the root one)."""
+    devices = set()
+    try:
+        root = os.stat("/").st_dev
+    except OSError:
+        return None
+    for name in _PER_PROCESS_ROOTS:
         try:
-            found.add(os.stat(root).st_dev)
+            device = os.stat(name).st_dev
         except OSError:
-            pass
-    return found
+            continue
+        if device != root:
+            devices.add(device)
+    return set(_PER_PROCESS_ROOTS), devices
 
 
 def _per_process_dir(path):
-    """True when the absolute `path` is under `/proc` or `/dev`, or REACHES one: the kernel
-    resolves `/proc/self/cwd` and `/dev/fd/3` per PROCESS, so the same text names the shell's
-    directory when the shell reads it and this hook's own when the hook (or the git it starts)
-    does. Judged on the RESOLVED path, not the text: slashes and `.` are collapsed, then every
-    component is walked as the kernel walks it, each symlink read (`ln -s /proc/self/cwd x`,
-    `ln -s /proc y`, a link to a link), `..` taken physically, and each step compared with
-    `/proc`, `/dev` and their device numbers. A walk that cannot be finished (a link loop, a
-    component that cannot be read) is True too: could not tell is never "not per-process".
-    A path that does not exist is False - there is nothing to follow, and the caller's own
-    existence check refuses it. Windows has no such directory a native process can open
-    (`_resolve` already refuses a POSIX path there), so only the text is judged."""
+    """True when the absolute `path` is, or REACHES, a directory the kernel resolves per
+    PROCESS (`/proc/self/cwd`, `/dev/fd/3`): the same text names the shell's directory when the
+    shell reads it and this hook's own when the hook (or the git it starts) does. True is
+    "could not tell", and the caller asks. Judged on the RESOLVED path, not the text: slashes
+    and `.` are collapsed, then every component is walked as the kernel walks it, each symlink
+    read (`ln -s /proc/self/cwd x`, `ln -s /proc y`, a link to a link), `..` taken physically,
+    and each step held against five rules, any one of which is enough:
+
+      name     the step is `/proc` or `/dev` (so `/dev/shm/x` too: stricter than main, on
+               purpose - nothing under `/dev` is a place to keep a repository);
+      shape    the step ends `self/cwd`, `<pid>/root`, `thread-self/fd`... (`_proc_shaped`);
+      type     the step is the mount point of a kernel pseudo file system (`_special_mounts`:
+               a procfs root mounted at `/mnt/p`, or bind-mounted from `/proc/self`);
+      device   the step is ON such a file system (its device number is that mount's);
+      link     the step is a symlink of size 0 - a procfs magic link reports no length, a
+               real symlink reports its target's.
+
+    A walk that cannot be finished (a link loop, a component that cannot be read) is True, and
+    so is every path on a Linux whose mount table cannot be read: could not tell is never "not
+    per-process". A path that does not exist is False - there is nothing to follow, and the
+    caller's own existence check refuses it. Windows has no such directory a native process
+    can open (`_resolve` already refuses a POSIX path there), so only the text is judged."""
     if _names_per_process(path):
         return True
     if _WINDOWS or not path.startswith("/"):
         return False
-    devices = _per_process_devices()
+    mounts = _special_mounts()
+    if mounts is None:
+        return True
+    points, devices = mounts
     pending = [part for part in path.split("/") if part and part != "."]
     current, links = "/", 0
     while pending:
@@ -752,8 +877,10 @@ def _per_process_dir(path):
         if part == "..":
             current = os.path.dirname(current)
             continue
+        owner = os.path.basename(current)
         current = os.path.join(current, part)
-        if current.lower() in _PER_PROCESS_ROOTS:
+        if current.lower() in _PER_PROCESS_ROOTS or current in points \
+                or _proc_shaped((owner, part)):
             return True
         try:
             info = os.lstat(current)
@@ -769,7 +896,7 @@ def _per_process_dir(path):
                 link = os.readlink(current)
             except OSError:
                 return True
-            if links > _MAX_LINKS or not link:
+            if links > _MAX_LINKS or not link or info.st_size == 0:
                 return True
             current = "/" if link.startswith("/") else os.path.dirname(current)
             pending = [item for item in link.split("/") if item and item != "."] + pending
@@ -788,7 +915,9 @@ def _cdpath_may_apply(target):
 def leading_cd(command, cwd, shell="bash"):
     """The directory `command` runs git in when it is exactly one plain
     `cd <path> && git <args>` line (see above) and the path is an existing
-    directory, else None ("could not tell")."""
+    directory, else None ("could not tell"). Only `&&` is followed: a cd the shell refuses
+    then runs no git at all, so a wrong answer here cannot move the count to a repository
+    the shell never entered."""
     powershell = shell == "powershell"
     text = command or ""
     match = (_PS_CD_RE if powershell else _BASH_CD_RE).match(text)
@@ -799,18 +928,26 @@ def leading_cd(command, cwd, shell="bash"):
     target = match.group("path")
     if ".." in re.split(r"[/\\]", target):
         return None  # bash may walk a symlink for `..`; this process would cut the text
-    if powershell and not _WINDOWS and _DRIVE_PREFIX_RE.match(target):
-        return None  # `c:` is no drive here: Set-Location fails and `;` still runs git
-    if powershell and _WINDOWS and _DRIVE_RE.match(target):
-        return None  # PowerShell reads `/c/x` against the CURRENT drive (D:\c\x), not C:\x
+    if powershell and not _ps_absolute(target):
+        # a relative target is read against the current PROVIDER drive (`cd Env:` earlier);
+        # `/c/x` on Windows against the CURRENT drive (D:\c\x); `c:/x` is no drive on Linux
+        return None
     if not powershell and _cdpath_may_apply(target):
         return None
     path, ok = _resolve(target, cwd, False)
-    if not ok or not os.path.isdir(path):
+    if not ok or path is None or not os.path.isdir(path):
         return None
     if _per_process_dir(path):
         return None  # /proc, /dev, or a symlink on the way to one: this hook's, not the shell's
     return os.path.normpath(path)
+
+
+def _ps_absolute(target):
+    """True when a PowerShell `cd` target names its own root: `<letter>:/x` or `<letter>:\\x`
+    where drives exist, `/x` where they do not."""
+    if _WINDOWS:
+        return bool(re.match(r"[A-Za-z]:[/\\]", target))
+    return target.startswith("/")
 
 
 # --- a GIT_* location variable set in the command -----------------------------------
@@ -821,10 +958,23 @@ def leading_cd(command, cwd, shell="bash"):
 #     (`GIT_{INDEX_FILE,ZZ}=x`), quotes removed (`"GIT_X=v"`, `$'GIT_X=v'`);
 #   - the same words after `export`, `declare`, `typeset`, `readonly`, `local` (a bare
 #     `export GIT_DIR` counts), and after `env` (with `-S <string>` read as a command);
-#   - the string given to `eval`, `bash|sh|dash|zsh|ksh -c`, `pwsh|powershell -c`, `iex`;
-#   - PowerShell: a statement that starts `$env:GIT_X =`, `${env:GIT_X} =`, `$env:GIT_X +=`,
-#     `Set-Item|Set-Content|New-Item|Add-Content|Set-ItemProperty ... Env:\GIT_X`, or a call
+#   - behind a command that runs another (`_WRAPPERS`: `timeout 5 env GIT_X=v git ...`,
+#     `nice -n 5`, `stdbuf -oL`, `sudo -u me GIT_X=v`, `coproc`, `xargs`...): the wrapper's own
+#     options cannot be told from the command it runs, so every later word of the statement is
+#     read - a `GIT_X=` word counts, and so does what the next `env`, shell or `eval` is given;
+#   - the string given to `eval`, `bash|sh|dash|zsh|ksh|su|runuser|script|flock -c`,
+#     `pwsh|powershell -c` (any prefix of `-Command`; `-EncodedCommand` cannot be read, so it
+#     counts), `iex`;
+#   - PowerShell, ANYWHERE in a statement (a script block, `% { ... }`, `if (...) { ... }`):
+#     an unquoted `$env:GIT_X` or `${env:GIT_X}` followed by `=`, `+=`, `-=`, `*=`, `/=`, `%=`,
+#     `??=`, `++`, `--` or `,`; a provider cmdlet that writes (`Set-Item`, `Set-Content`,
+#     `New-Item`, `Add-Content`, `Copy-Item`, `Move-Item`, `Rename-Item`... and their aliases)
+#     beside an `Env:\GIT_X` path; the `Env:` drive and a bare `GIT_X` word in one command
+#     (`New-Item -Path Env: -Name GIT_DIR`, `cd Env:; Set-Item GIT_DIR x`); or a call
 #     `[Environment]::SetEnvironmentVariable('GIT_X', ...)`.
+# A `GIT_X=v` assignment counts whether or not it is exported (`GIT_DIR=x; git commit` asks
+# although main allows it): `set -a`, or an `export GIT_DIR` in an earlier command, exports it,
+# and neither is visible here.
 # NOT an assignment, so allowed as on main: a quoted argument (`git commit -m "GIT_DIR=/x was
 # wrong"`), a bare word (`-m GIT_DIR`), `unset GIT_DIR`, `grep -rn GIT_INDEX_FILE .`, a heredoc
 # body that holds no running `$(...)`. Known gaps, the same on main: a heredoc or here-string
@@ -837,20 +987,39 @@ _GIT_NAMES = (r"GIT_(?:DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|ALTERNATE_OBJEC
 _GIT_ASSIGN_RE = re.compile(_GIT_NAMES + r"\+?=", re.IGNORECASE)
 _GIT_EXPORT_RE = re.compile(_GIT_NAMES + r"(?:\+?=|\Z)", re.IGNORECASE)
 _GIT_SETENV_RE = re.compile(_GIT_NAMES + r"(?:,|\Z)", re.IGNORECASE)
-_PS_VAR_RE = re.compile(r"\$\{?env:" + _GIT_NAMES + r"\}?(?P<tail>.*)\Z",
-                        re.IGNORECASE | re.DOTALL)
+_PS_VAR_RE = re.compile(r"\$\{?env:" + _GIT_NAMES + r"\}?", re.IGNORECASE)
+_PS_ASSIGN_OPS = ("=", "+=", "-=", "*=", "/=", "%=", "??=", "++", "--", ",")
 _PS_ENVPATH_RE = re.compile(r"(?:\A|[:=])env:[\\/]?" + _GIT_NAMES + r"\Z", re.IGNORECASE)
+_PS_ENVDRIVE_RE = re.compile(r"(?:\A|[:=])env:", re.IGNORECASE)
+_PS_ESCAPED_RE = re.compile(r"`(.)", re.DOTALL)
+_DQ_ESCAPED_RE = re.compile(r'\\([$`"\\])')
+_PS_BARE_NAME_RE = re.compile(r"(?:\.[\\/])?" + _GIT_NAMES + r"\Z", re.IGNORECASE)
+_QUOTED = "\x01"  # stands for a quoted stretch in the shadow of a word (`_ps_assigns`)
 _ASSIGN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\+?=")
 _SHELL_BREAK = frozenset(" \t\r\n;|&()<>`")
 _STMT_BREAK = frozenset("\r\n;|&()`")
-_KEYWORDS = frozenset(("time", "!", "if", "then", "elif", "else", "while", "until", "do", "{",
-                       "nohup", "exec", "command", "builtin", "sudo", "nice", "setsid"))
+_KEYWORDS = frozenset(("!", "if", "then", "elif", "else", "while", "until", "do", "{"))
+# Commands that run the command they are given. ONE list, read one way (`_statement_sets`),
+# so `nice`, `timeout`, `stdbuf` and `coproc` cannot differ.
+_WRAPPERS = frozenset((
+    "time", "nohup", "exec", "command", "builtin", "sudo", "doas", "nice", "ionice", "setsid",
+    "timeout", "stdbuf", "coproc", "chrt", "taskset", "unbuffer", "strace", "ltrace", "watch",
+    "xargs", "parallel", "chronic", "setpriv", "unshare", "nsenter", "faketime", "setarch",
+    "linux32", "linux64", "numactl", "caffeinate", "busybox", "catchsegv", "systemd-run",
+    "firejail", "fakeroot", "start-process", "saps", "start"))
 _EXPORTERS = frozenset(("export", "declare", "typeset", "readonly", "local"))
-_SHELLS = frozenset(("bash", "sh", "dash", "zsh", "ksh", "ash"))
-_PS_SHELLS = frozenset(("pwsh", "powershell"))
-_PS_SETTERS = frozenset(("set-item", "si", "set-content", "sc", "new-item", "ni",
-                         "add-content", "ac", "set-itemproperty", "sp", "new-itemproperty"))
+_SHELLS = frozenset(("bash", "sh", "dash", "zsh", "ksh", "ash", "su", "runuser", "script",
+                     "flock"))
+_PS_SHELLS = frozenset(("pwsh", "powershell", "pwsh-preview"))
+_PS_SETTERS = frozenset((
+    "set-item", "si", "set-content", "sc", "new-item", "ni", "add-content", "ac",
+    "set-itemproperty", "sp", "new-itemproperty", "copy-item", "cpi", "cp", "copy",
+    "move-item", "mi", "mv", "move", "rename-item", "rni", "ren", "out-file", "tee-object",
+    "tee"))
 _MAX_NEST = 3
+# What `_behind_wrapper` stops at: a word that starts a command this scan reads.
+_RUNNERS = _WRAPPERS | _SHELLS | _PS_SHELLS | _EXPORTERS | frozenset((
+    "env", "eval", "iex", "invoke-expression"))
 
 
 def _braces(word):
@@ -927,23 +1096,62 @@ def _env_prefix(words, pos, shell, depth):
     return False, pos
 
 
-def _statement_sets(words, shell, depth, after_setenv):
+def _ps_command_flag(word):
+    """`"read"` for a `pwsh` flag that is followed by a script (any prefix of `-Command` or
+    `-CommandWithArgs`, `-cwa`), `"opaque"` for one whose script cannot be read (a prefix of
+    `-EncodedCommand`, `-ec`), else None. `/c` is `-c`."""
+    low = word.lower()
+    if low[:1] not in ("-", "/") or len(low) < 2:
+        return None
+    low = "-" + low[1:]
+    if "-commandwithargs".startswith(low) or low == "-cwa":
+        return "read"
+    if "-encodedcommand".startswith(low) or low == "-ec":
+        return "opaque"
+    return None
+
+
+def _ps_assigns(shadow):
+    """True when a PowerShell statement (the SHADOW of its words: every quoted stretch is
+    `_QUOTED`) assigns `$env:GIT_X` anywhere in it. A quoted `'$env:GIT_DIR = x'` is text."""
+    for index, word in enumerate(shadow):
+        for match in _PS_VAR_RE.finditer(word):
+            tail = word[match.end():]
+            if not tail and index + 1 < len(shadow):
+                tail = shadow[index + 1]
+            if tail.startswith(_PS_ASSIGN_OPS):
+                return True
+    return False
+
+
+def _ps_provider_sets(words, seen):
+    """True when a PowerShell statement writes `Env:GIT_X` through the provider: a writing
+    cmdlet anywhere in it beside the path, or - over the whole command, kept in `seen` - the
+    `Env:` drive and a bare `GIT_X` word (`New-Item -Path Env: -Name GIT_DIR`)."""
+    if any(_PS_ENVDRIVE_RE.search(word) for word in words):
+        seen["drive"] = True
+    if any(_PS_BARE_NAME_RE.match(word) for word in words):
+        seen["name"] = True
+    if seen.get("drive") and seen.get("name"):
+        return True
+    return (any(_cmd_name(word) in _PS_SETTERS for word in words)
+            and any(_PS_ENVPATH_RE.search(word) for word in words))
+
+
+def _statement_sets(words, shell, depth, after_setenv, shadow=None, seen=None):
     """True when one statement (its words, quotes removed) assigns a GIT_ location variable."""
     powershell = shell == "powershell"
     size = len(words)
     if after_setenv and _GIT_SETENV_RE.match(words[0]):
         return True
+    if powershell and (_ps_assigns(words if shadow is None else shadow)
+                       or _ps_provider_sets(words, {} if seen is None else seen)):
+        return True
     pos = 0
     while pos < size:
         word = words[pos]
         if powershell:
-            match = _PS_VAR_RE.match(word)
-            if match:
-                tail = match.group("tail")
-                if not tail and pos + 1 < size:
-                    tail = words[pos + 1]
-                if tail.startswith(("=", "+=")):
-                    return True
+            pass  # `$env:GIT_X = v` was read above, wherever it stands
         elif _name_hit(word, _GIT_ASSIGN_RE):
             return True
         elif _ASSIGN_RE.match(word):
@@ -952,6 +1160,11 @@ def _statement_sets(words, shell, depth, after_setenv):
         name = _cmd_name(word)
         if name in _KEYWORDS:
             pos += 1
+            continue
+        if name in _WRAPPERS:
+            pos = _behind_wrapper(words, pos + 1)
+            if pos < 0:
+                return True
             continue
         if name == "env":
             found, pos = _env_prefix(words, pos + 1, shell, depth)
@@ -970,13 +1183,34 @@ def _statement_sets(words, shell, depth, after_setenv):
     elif name in _SHELLS:
         script, script_shell = _script_after(rest, _is_bash_c), "bash"
     elif name in _PS_SHELLS:
-        script = _script_after(rest, lambda w: w.lower() in ("-c", "-command"))
+        for index, word in enumerate(rest):
+            kind = _ps_command_flag(word)
+            if kind == "opaque":
+                return True  # an encoded command cannot be read: could not tell
+            if kind == "read":
+                script = " ".join(rest[index + 1:])
+                break
         script_shell = "powershell"
-    elif powershell and name in _PS_SETTERS:
-        return any(_PS_ENVPATH_RE.search(arg) for arg in rest)
     if script:
         return depth >= _MAX_NEST or sets_git_location(script, script_shell, depth + 1)
     return False
+
+
+def _behind_wrapper(words, pos):
+    """The index of the command a wrapper (`timeout 5 ...`, `nice -n 5 ...`, `sudo -u me ...`)
+    runs: the next word from `pos` that is `env`, a shell, `eval`, an exporter or another
+    wrapper. -1 when a `GIT_X=` word comes first (`sudo GIT_DIR=x git`); `len(words)` when
+    there is neither. The wrapper's options and their values are not parsed - they cannot be
+    told from the command - so every word is looked at, once."""
+    size = len(words)
+    while pos < size:
+        word = words[pos]
+        if _name_hit(word, _GIT_ASSIGN_RE):
+            return -1
+        if _cmd_name(word) in _RUNNERS:
+            return pos
+        pos += 1
+    return size
 
 
 def _heredoc_skip(text, index, tags):
@@ -1005,6 +1239,7 @@ def sets_git_location(command, shell="bash", _depth=0):
     escape = "`" if powershell else "\\"
     size, index = len(text), 0
     word, stmt, pending = [], [], []
+    mask, shadow, seen = [], [], {}  # the shadow of `word` / `stmt`; the Env: drive and name
     carry = [False, False]  # [the last statement ended in SetEnvironmentVariable, skip a word]
 
     def nested(body):
@@ -1014,21 +1249,24 @@ def sets_git_location(command, shell="bash", _depth=0):
 
     def end_word():
         if word:
-            joined = "".join(word)
+            joined, hidden = "".join(word), "".join(mask)
             word.clear()
+            mask.clear()
             if carry[1]:  # the target of a redirect is not an argument
                 carry[1] = False
             else:
                 stmt.append(joined)
+                shadow.append(hidden)
 
     def end_stmt():
         end_word()
-        words = stmt[:]
+        words, hidden = stmt[:], shadow[:]
         stmt.clear()
+        shadow.clear()
         carry[1] = False
         if not words:
             return False
-        found = _statement_sets(words, shell, _depth, carry[0])
+        found = _statement_sets(words, shell, _depth, carry[0], hidden, seen)
         carry[0] = words[-1].lower().endswith("setenvironmentvariable")
         return found
 
@@ -1037,17 +1275,20 @@ def sets_git_location(command, shell="bash", _depth=0):
         if char == escape and index + 1 < size:
             if text[index + 1] != "\n":
                 word.append(text[index + 1])
+                mask.append(_QUOTED)
             index += 2
         elif char == "'":
             end = text.find("'", index + 1)
             end = size if end < 0 else end
             word.append(text[index + 1:end])
+            mask.append(_QUOTED)
             index = end + 1
         elif char == "$" and not powershell and text.startswith("$'", index):
             end = index + 2
             while end < size and text[end] != "'":
                 end += 2 if text[end] == "\\" else 1
             word.append(text[index + 2:end])
+            mask.append(_QUOTED)
             index = end + 1
         elif char == '"':
             end = index + 1
@@ -1056,7 +1297,9 @@ def sets_git_location(command, shell="bash", _depth=0):
             body = text[index + 1:end]
             if nested(body):
                 return True
-            word.append(body)
+            # what the shell hands on: `"`$env:GIT_DIR = 1"` reaches pwsh as `$env:GIT_DIR = 1`
+            word.append((_PS_ESCAPED_RE if powershell else _DQ_ESCAPED_RE).sub(r"\1", body))
+            mask.append(_QUOTED)
             index = end + 1
         elif text.startswith("<<", index) and not text.startswith("<<<", index):
             end_word()
@@ -1078,6 +1321,7 @@ def sets_git_location(command, shell="bash", _depth=0):
         elif char in "<>":
             if "".join(word).isdigit():
                 word.clear()  # the `2` of `2>file`
+                mask.clear()
             else:
                 end_word()
             carry[1] = True
@@ -1096,8 +1340,13 @@ def sets_git_location(command, shell="bash", _depth=0):
                 if any(nested(body) for body in bodies):
                     return True
             index += 1
+        elif char == "#" and not word and (
+                index == 0 or text[index - 1] in " \t\r\n;&|("):
+            end = text.find("\n", index)  # a comment: to the end of the line
+            index = size if end < 0 else end
         else:
             word.append(char)
+            mask.append(char)
             index += 1
     return end_stmt()
 
@@ -1196,7 +1445,7 @@ def count_copy(spec, cwd, cd, globs=()):
 def _git_lines(spec, cwd, cd, runner):
     """Output lines of the read-only git command behind `spec`, or None. The
     `@BASE@` placeholder is the branch's base (`_base`); `@PRBASE@` (gh pr create) is the same
-    without the upstream fallback, because a PR's base is the repository's default branch."""
+    except on the default branch, whose upstream is never a PR's base."""
     override, argv = spec.git
     base = cwd
     if override:
@@ -1207,9 +1456,10 @@ def _git_lines(spec, cwd, cd, runner):
                         "relative to an earlier cd)")
             return None
         if _per_process_dir(base):
-            spec.why = (f"the directory `{override}` is, or reaches through a symlink, /proc "
-                        "or /dev: the kernel resolves it per process, so it names this hook's "
-                        "directory here and the shell's own there")
+            spec.why = (f"the directory `{override}` is, or reaches through a symlink or a "
+                        "mount, /proc or /dev (or another kernel pseudo file system, or a "
+                        "`self/cwd`-shaped path): the kernel resolves it per process, so it "
+                        "names this hook's directory here and the shell's own there")
             return None
     elif cd or not cwd:
         spec.why = ("a cd/pushd/Set-Location in this command moves the shell, so which "
@@ -1257,7 +1507,7 @@ def _git(run, cwd, argv):
 def _pushes_to_upstream(push, tracked, head, one):
     """True when the `git push` behind `push` (`(words, plain)`: its non-flag words, and
     whether every flag is in `_PUSH_PLAIN_FLAGS`) sends the current branch `head` to its
-    upstream `tracked` (`fork/feat`) and nothing else: no words at all, or the upstream's
+    upstream `tracked` (`fork/main`) and nothing else: no words at all, or the upstream's
     remote alone (both read from git's own `@{push}`), or that remote and one refspec whose
     source is this branch (`feat`, `HEAD`, `refs/heads/feat`) and whose destination is the
     upstream branch. Anything else - another remote, another destination, a `+` or empty
@@ -1280,13 +1530,19 @@ def _pushes_to_upstream(push, tracked, head, one):
 
 def _base(cwd, run, spec=None, upstream=True, push=None):
     """The ref a branch's PR would be measured against: `origin/HEAD`, else
-    `origin/main`, else `origin/master`, else the branch's upstream; on that
-    branch itself, its upstream. None, with `spec.why` set, when there is none. With
-    `upstream=False` (`gh pr create`: the PR base is the repository's default branch, never the
-    branch's upstream, which may be a fork's feature branch) only the origin refs count. With
-    `push` (`git push`: its words and flags) the upstream is a base only when that push sends
-    the branch TO its upstream (`_pushes_to_upstream`): `git push origin HEAD:main` from a
-    branch that tracks `fork/feat` is not measured against `fork/feat`."""
+    `origin/main`, else `origin/master`; on that branch itself, its upstream. None, with
+    `spec.why` set, when there is none.
+
+    With NO origin ref there is no base and the command is asked, exactly as on main (round
+    12, BLOCK-1). The branch's upstream is not a fallback: where a push really goes is
+    decided by `-c remote.pushDefault=`, `branch.<n>.pushRemote`, `push.default`,
+    `remote.<n>.pushurl` / `.push` / `.mirror`, `url.<x>.insteadOf` / `pushInsteadOf`,
+    GIT_CONFIG_* and the repository's own config, and a rule that reads some of them allows a
+    push the upstream never saw. The only upstream still read is main's own case, the default
+    branch pushing to its upstream, and there this is stricter than main: with `push` (`git
+    push`: its words and flags) the upstream counts only when the text sends the branch TO it
+    (`_pushes_to_upstream`), and with `upstream=False` (`gh pr create`: a PR from the default
+    branch has no base) it never counts."""
     def one(*argv):
         done, _why = _git(run, cwd, list(argv))
         out = done.stdout.strip() if done is not None else ""
@@ -1300,9 +1556,8 @@ def _base(cwd, run, spec=None, upstream=True, push=None):
         tracked = one("rev-parse", "--abbrev-ref", "@{u}")
         if tracked and push is not None and not _pushes_to_upstream(push, tracked, head, one):
             return fail("this push names a remote, a refspec or an option that sends the "
-                        f"branch somewhere other than its upstream `{tracked}`, and "
-                        "origin/HEAD, origin/main and origin/master give no other base to "
-                        "measure it against")
+                        f"default branch somewhere other than its upstream `{tracked}`, "
+                        "which is the only base it could be measured against")
         return tracked or fail(missing)
     head = one("symbolic-ref", "--short", "-q", "HEAD")
     candidates = [one("symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"),
@@ -1326,8 +1581,9 @@ def _base(cwd, run, spec=None, upstream=True, push=None):
     done, why = _git(run, cwd, ["rev-parse", "--git-dir"])
     if done is None:
         return fail(f"{why}: this is not a git repository, or git cannot read it")
-    return tracked_base("no base to measure the branch against: origin/HEAD, origin/main, "
-                        "origin/master and the branch's upstream are all missing")
+    return fail("no base to measure the branch against: origin/HEAD, origin/main and "
+                "origin/master are all missing (the branch's upstream is not used as one: "
+                "git's config can send a push somewhere else)")
 
 
 def count_git(spec, cwd, cd, runner=None, globs=()):

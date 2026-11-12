@@ -164,21 +164,31 @@ What it sees: `rm`, `Remove-Item`, `git clean -f`, `git rm`, `find -delete`,
 and change); `sed -i` and `git reset --hard` / `checkout -- <paths>` /
 `restore` (change); `git commit`, `git push` and `gh pr create`, which count
 the added, deleted and changed files of the commit or of the whole branch
-against its base (`gh pr create` against the repository's default branch only:
-`origin/HEAD`, `origin/main` or `origin/master`, and "could not tell" when none exists,
-because the branch's upstream may be a fork's feature branch; `git push` also falls back to
-the upstream, but only for a push that goes TO it - a bare `git push` that git itself would
-send there, the upstream's remote alone, or that remote and this branch (`git push fork feat`,
-`git push fork HEAD:feat`); a push that names another remote or destination, a second
-refspec, or `--all`, `--mirror`, `--tags`, `--repo` is "could not tell" when no origin base
-exists) - so Write and Edit work is counted where it is about to be
-shared; `terraform apply <plan>` (the plan's own changes), `destroy` and
+against its base. The base is `origin/HEAD`, else `origin/main`, else `origin/master`. With
+none of the three, `git push` and `gh pr create` are "could not tell" and are asked: the
+branch's upstream is NOT used as a base, because git can be told to push somewhere else in
+many ways the command text does not show (`-c remote.pushDefault=`, `branch.<name>.pushRemote`,
+`push.default`, `remote.<name>.pushurl` / `.push` / `.mirror`, `url.<x>.insteadOf` /
+`pushInsteadOf`, on the command line or in the repository's config). On the default branch
+itself (`main` pushing while `origin/main` exists) the base is that branch's upstream, and
+only for a push whose text sends the branch TO it: a bare `git push`, the upstream's remote
+alone, or that remote and this branch (`git push fork main`, `git push fork HEAD:main`) with
+plain flags; another remote or destination, a second refspec, `--all`, `--mirror`, `--tags`,
+`--repo`, or a `-c` / `--config-env` before `push` is asked. `gh pr create` from the default
+branch is asked too: such a pull request has no base. So Write and Edit work is counted where
+it is about to be shared; `terraform apply <plan>` (the plan's own changes), `destroy` and
 `apply -auto-approve`; and an unfiltered SQL `DELETE` or `UPDATE`.
 
 A command is counted in another directory ONLY when the whole command is one plain
 line: in bash `cd <path> && git <args>`; in PowerShell `Set-Location`, `sl` or `cd`
-`<path>`, then `;` or `&&`, then `git <args>`. The path is an existing directory with no
-quote, `~`, `$` or glob. In bash it is letters, digits and `_ . / : -` and it must be
+`<absolute path> && git <args>`. Only `&&` is followed, in both shells: when the shell
+refuses the `cd`, `&&` runs no git at all. PowerShell's `;` runs git where the shell already
+was when `Set-Location` fails, and the hook cannot know it will not fail (pwsh on Linux
+refuses `cd ///dir` although the directory exists), so `cd X; git commit` is "could not
+tell" and is asked: write `cd X && git commit` (PowerShell 7), or run git with `-C X`. A
+PowerShell target must be absolute (`C:/x` on Windows, `/x` elsewhere), because a relative
+one is read against the current provider drive, which an earlier `cd Env:` or `cd HKCU:` may
+have changed. The path is an existing directory with no quote, `~`, `$` or glob. In bash it is letters, digits and `_ . / : -` and it must be
 absolute, `.`, or start with `./`: a bare name (`cd sub`) is "could not
 tell", because bash may resolve it through `CDPATH`, which it can take from `BASH_ENV` or
 a profile without exporting it, so the hook cannot see it (bash does not consult `CDPATH`
@@ -188,15 +198,22 @@ for `/x` or `./x`). A target with a `..` component (`cd ..`, `cd ../x`, `cd ./a/
 different repository than the one git commits in. In PowerShell the path is letters,
 digits and `_ . / -` with at most
 one leading `<letter>:/` or `<letter>:\` drive prefix, and a drive prefix is followed
-only on Windows (elsewhere `c:/x` is a directory name, Set-Location fails and the `;`
-still runs git where the shell was). A PowerShell target written `/c/x` is "could not
-tell" on Windows: PowerShell reads it against the CURRENT drive (`D:/c/x`, verified with
-`Set-Location /c/Users`), Git Bash against `C:/x`. A target that is under `/proc` or `/dev`,
+only on Windows (elsewhere `c:/x` is a directory name and Set-Location fails). A PowerShell
+target written `/c/x` is "could not tell" on Windows: PowerShell reads it against the CURRENT
+drive (`D:/c/x`, verified with `Set-Location /c/Users`), Git Bash against `C:/x`. A target
+that the kernel resolves per process is "could not tell" in both shells, because the hook and
+the shell would read different directories. That is any path that is under `/proc` or `/dev`
 or reaches one (`/proc/self/cwd`, `//proc/self/cwd`, `/./proc/self/cwd`, a symlink to
-`/proc/self/cwd`, to `/proc` or to `/proc/self`), is "could not tell" in both shells: the
-kernel resolves it per process, so the hook and the shell would read different directories.
-The resolved path is judged, not the text: every symlink on the way is read, and a link loop
-is "could not tell" too. The same holds for a `git -C <dir>` value and for a chain of them
+`/proc/self/cwd`, to `/proc` or to `/proc/self`; `/dev/shm/x` too, although it is an ordinary
+directory: nothing under `/dev` is followed); any path shaped like a per-process entry of a
+procfs wherever it is mounted (`<dir>/self/cwd`, `<dir>/<pid>/root`, `<dir>/thread-self/fd`:
+a directory really named `self/cwd` is asked too); any path on a kernel pseudo file system
+by the TYPE the mount table (`/proc/self/mountinfo`) gives it - a second procfs that root
+mounted somewhere else, a bind of `/proc/<pid>`, sysfs, devpts, cgroup - but not tmpfs, which
+is an ordinary file system (`/tmp` often is one); and a symlink that reports no length, as
+procfs magic links do. The resolved path is judged, not the text: every symlink on the way
+is read, and a link loop, or a Linux host whose mount table cannot be read, is "could not
+tell" too. The same holds for a `git -C <dir>` value and for a chain of them
 (`git -C /proc/self/cwd/sub -C .. commit`). A symlink to an ordinary directory is followed.
 Any other colon (`Env:`, `Variable:`,
 `HKLM:`, `foo:bar`) or backslash (`C:\a\b`, `x\y`) is "could not tell", so write the path
@@ -210,8 +227,9 @@ glued value or path (`-C../wt`, `--format=x`, `-n5`) is "could not tell", and so
 read once, left to right, so a very long or hostile command costs milliseconds, not
 seconds. EVERYTHING else after a `cd` is "could not tell", exactly as it was before this
 change: a second command, a chain, a pipe, a redirect, `$(...)`, a backtick, a heredoc, an
-assignment, an alias, `pushd`, a quoted or `~` path, a `;` in bash, a newline or NBSP after
-the target, PowerShell `cd..` or a `$m` variable. `cd X && git add -A && git commit` is
+assignment, an alias, `pushd`, `chdir`, a quoted or `~` path, a `;` in either shell, `||`,
+a newline or NBSP after the target, PowerShell `cd..`, a relative PowerShell path or a `$m`
+variable. `cd X && git add -A && git commit` is
 therefore still refused; run it as two commands. So are `cd X && git commit -m x -- path`,
 `--author=...`, `-m"x"` and a trailing newline (the grammar admits none of them; a bare
 `--` is one). `cd X && git -C /abs commit` is not a followed cd (`-C` is refused after a
@@ -223,11 +241,20 @@ line (a second one, one not first, `cd $DIR`, a missing directory), a `GIT_DIR`,
 command (a real assignment: `GIT_DIR=x` or `GIT_DIR+=x` as a command word or after other
 `NAME=v` words, `export`/`declare`/`typeset`/`readonly`/`local GIT_DIR[=x]`, `env GIT_DIR=x`
 and `env -S 'GIT_DIR=x git ...'`, `export $'GIT_DIR=x'`, `export GIT_{DIR,X}=x`, the string
-of `eval`, `bash -c` or `pwsh -c`; PowerShell `$env:GIT_DIR = x`, `${env:GIT_DIR}=`,
-`$env:GIT_DIR +=`, `Set-Item` / `Set-Content Env:\GIT_DIR`, `[Environment]::SetEnvironmentVariable`.
+of `eval`, `bash -c`, `su -c` or `pwsh -c` / `-Command` (an `-EncodedCommand` cannot be read
+and counts); the same behind a command that runs another - `timeout 5 env GIT_DIR=x git ...`,
+`nice -n 5`, `stdbuf -oL`, `nohup`, `setsid`, `coproc`, `sudo -u me GIT_DIR=x`, `xargs` - all
+read by one list; PowerShell, anywhere in a statement (`% { ... }`, `if (...) { ... }`):
+`$env:GIT_DIR = x`, `${env:GIT_DIR}=`, `+=`, `??=`, a provider cmdlet that writes
+(`Set-Item`, `Set-Content`, `New-Item`, `Copy-Item`, `Rename-Item` and their aliases) beside
+an `Env:\GIT_DIR` path, the `Env:` drive and a bare `GIT_DIR` word in one command
+(`New-Item -Path Env: -Name GIT_DIR`), `[Environment]::SetEnvironmentVariable`. An assignment
+counts whether or not it is exported (`GIT_DIR=x; git commit` is asked: `set -a` or an earlier
+`export GIT_DIR` would export it, and neither is visible).
 A name that is only an argument is not an assignment and is counted as usual: a commit message
 `-m "GIT_DIR=/x was wrong"`, `-m GIT_DIR`, `unset GIT_DIR`, `grep -rn GIT_INDEX_FILE .`,
-`env -u GIT_DIR`, a heredoc that only mentions it), or
+`env -u GIT_DIR`, a `#` comment, a quoted PowerShell `'$env:GIT_DIR = x'`, a heredoc that only
+mentions it), or
 `--git-dir` / `--work-tree` in the command, `find -delete`, `xargs rm`, a failed `git`, an
 unfiltered SQL statement (no command text says how many rows it hits) - is
 "could not tell", and could not tell stops. It does NOT see a script (`bash cleanup.sh`, `python -c`,
@@ -237,11 +264,21 @@ each under a limit: a tripwire in front of native permissions, not a sandbox.
 Known gaps, not fixed here (all as on main, so nothing got worse): an alias set with
 `git -c alias.x=...` or in a repository config (`git ci -m x`) hides the subcommand it runs;
 a command word built by a substitution (`$(echo git) -C <worktree> commit`) is not read;
-`GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n` can set that alias too; a
-`GIT_` location variable assigned inside a heredoc or here-string fed to a shell, by
-`printf -v` or `read`, through `xargs` or `sudo -u`, or whose name is built from another
-variable is not seen; and a cd run without a `cd` word (`trap`, `find -exec`,
-`Start-Process`, a command word built from a variable) is not seen.
+`GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_n` / `GIT_CONFIG_VALUE_n` / `GIT_CONFIG_GLOBAL` can set
+that alias too, or `core.worktree`, as can `git -c core.worktree=...`; a `GIT_` location
+variable assigned inside a heredoc or here-string fed to a shell, by `printf -v` or `read`,
+behind `find -exec`, or whose name is built from another variable is not seen; a cd run
+without a `cd` word (`trap`, `find -exec`, `Start-Process`, a command word built from a
+variable) is not seen; a `/proc` or `/dev` path given to `rm`, `cp`, `mv` or `touch` as an
+operand is counted where the hook resolves it; on the default branch a `pushurl`,
+`insteadOf` or `remote.<name>.push` in the repository's config is not read; and on macOS or
+BSD, where there is no mount table to read, a procfs or fdescfs mounted somewhere other than
+`/proc` or `/dev` is caught by its `self/cwd` shape only, and nowhere is a FUSE or network
+file system that answers differently per caller known to do so. Known false positives (asked here,
+allowed on main): `vars=(GIT_DIR=/x)`, `echo $((GIT_DIR=1))`, a wrapper followed by a message
+that begins `GIT_DIR=` (`timeout 5 git commit -m GIT_DIR=x`), a repository in a directory
+really named `self/cwd`, anything under `/dev/shm`, and `Get-ChildItem Env:` beside a bare
+`GIT_DIR` word.
 
 A stopped command prints an id. Attended, the stop is an `ask`; unattended
 it is a `deny`. Type `/crew:approve-mass <id>` in the session, then re-run the
