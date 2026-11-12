@@ -126,6 +126,12 @@ ALONGSIDE = (
     "CHANGELOG.md",
     # L-1518: root README.md's "What's new" block is generated from CHANGELOG.md.
     "README.md",
+    # The standards exports (`crew_standards.py export`) are stamped with the crew version, so
+    # every version bump rewrites them and CI's export check fails until they match. They carry
+    # no logic of their own: a harness change that bumps the version has to carry them.
+    "AGENTS.md",
+    "REVIEW.md",
+    ".cursor/BUGBOT.md",
     "CLAUDE.md",
     "TODO.md",
     "docs/**",
