@@ -14,7 +14,10 @@ The rule this suite holds, for every job in every workflow that has a
   - on a ready PR, push or manual run it must still report `check`, or every
     PR would wait forever for a context nothing reports;
   - it must carry no job-level `if:`, because a skipped job reports a
-    conclusion branch protection accepts.
+    conclusion branch protection accepts;
+  - neither the job nor any of its steps may carry `continue-on-error`
+    (other than a literal false), because a failing step under it leaves the
+    job, and so the required context, green.
 A job name this suite cannot evaluate is a failure ("could not tell"), never
 a pass.
 
@@ -87,6 +90,14 @@ def problems(doc: dict, wf: str) -> list:
         if "if" in job:
             out.append(f"{where}: has a job-level `if:`; a skipped job reports a "
                        "conclusion branch protection accepts")
+        if job.get("continue-on-error", False) is not False:
+            out.append(f"{where}: has a job-level `continue-on-error`; a failure "
+                       "would not fail the required context")
+        for n, step in enumerate(job.get("steps") or []):
+            if isinstance(step, dict) and step.get("continue-on-error", False) is not False:
+                label = step.get("name") or step.get("run") or step.get("uses") or f"#{n + 1}"
+                out.append(f"{where}: step {label!r} has `continue-on-error`; its "
+                           "failure would leave the required context green")
         draft_name = job_name(job_id, job, draft=True)
         full_name = job_name(job_id, job, draft=False)
         if draft_name is None or full_name is None:
@@ -116,7 +127,7 @@ def repo_problems() -> tuple:
     return found, out
 
 
-def fixture(name=None, job_if=None, matrix=False) -> dict:
+def fixture(name=None, job_if=None, matrix=False, job_coe=None, step_coe=None) -> dict:
     job = {"runs-on": "ubuntu-latest", "steps": [
         {"run": "python3 scripts/check-marketplace.py", "if": f"{DRAFT} != true"},
         {"run": "python3 scripts/check-marketplace.py --pending-bump", "if": f"{DRAFT} == true"},
@@ -127,6 +138,11 @@ def fixture(name=None, job_if=None, matrix=False) -> dict:
         job["if"] = job_if
     if matrix:
         job["strategy"] = {"matrix": {"python-version": ["3.11"]}}
+    if job_coe is not None:
+        job["continue-on-error"] = job_coe
+    if step_coe is not None:
+        job["steps"].append({"name": "a suite", "run": "python3 x.py",
+                             "continue-on-error": step_coe})
     return {"jobs": {"check": job}}
 
 
@@ -152,6 +168,13 @@ CASES = (
      fixture("${{ format('check{0}', " + DRAFT + ") }}"), True, "could not tell"),
     ("a job-level if (skipped job) fails", fixture(FIXED, job_if=f"{DRAFT} != true"), True,
      "job-level `if:`"),
+    ("a step with continue-on-error: true fails", fixture(FIXED, step_coe=True), True,
+     "step 'a suite' has `continue-on-error`"),
+    ("a step with a continue-on-error expression fails",
+     fixture(FIXED, step_coe="${{ " + DRAFT + " }}"), True, "has `continue-on-error`"),
+    ("a step with continue-on-error: false passes", fixture(FIXED, step_coe=False), False, ""),
+    ("a job-level continue-on-error fails", fixture(FIXED, job_coe=True), True,
+     "job-level `continue-on-error`"),
     ("a job with no --pending-bump step is not judged",
      {"jobs": {"check": {"steps": [{"run": "python3 scripts/check-marketplace.py"}]}}}, False, ""),
 )
