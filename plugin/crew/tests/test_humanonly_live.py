@@ -351,7 +351,7 @@ def test_the_session_may_still_propose(repo, home):
         common, str(repo)) is None
 
 
-# --- /crew:confirm-config with no usable id lists the proposals (crew 1.3.62) ---------
+# --- /crew:confirm-config with no usable id lists the proposals (crew 1.3.63) ---------
 # Must-allow: the owner sees what they could confirm, and the exact command.
 # Must-block: the listing never records, settles or applies anything; an agent's
 # text, a hook's context or another event never confirms.
