@@ -258,6 +258,29 @@ def test_the_cli_has_no_confirm_subcommand(capsys):
     capsys.readouterr()
 
 
+def test_propose_prints_the_lines_to_relay_to_the_owner(tmp_path, capsys):
+    gpath = _machine(tmp_path)
+
+    assert crew_confirm_config.main(["propose", "--layer", "machine", "--key", KEY,
+                                     "--global-path", gpath]) == 0
+
+    out = capsys.readouterr().out
+    records, _ = crew_humanonly.all_records(crew_humanonly.store_dir(gpath))
+    cid = records[0]["change_id"]
+    assert "Relay the next two lines to the owner word for word" in out
+    assert f"  crew proposes {KEY}: false (machine config, {gpath}), change {cid}." in out
+    assert f"  To apply it, type /crew:confirm-config {cid} as its own prompt, twice" in out
+    assert "no hook records" not in out
+    assert records[0]["confirmations"] == []
+
+
+def test_the_command_file_tells_the_agent_to_relay_a_proposal():
+    path = os.path.join(context._ROOT, "commands", "confirm-config.md")  # pylint: disable=protected-access
+    text = " ".join(_slurp(path).split())
+    assert "When you propose a change, relay it." in text
+    assert "never propose a change the owner did not ask for" in text
+
+
 def test_the_command_file_is_user_only():
     path = os.path.join(context._ROOT, "commands", "confirm-config.md")  # pylint: disable=protected-access
     head = _slurp(path).split("---")[1]

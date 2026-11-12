@@ -197,7 +197,9 @@ takes effect only when all of these hold (`crew_humanonly.resolve`):
   tell" counts as tracked);
 - neither layer says `true` (a `true` anywhere vetoes, the stricter wins);
 - it was written by a double confirmation: `crew_confirm_config.py propose`
-  records the change and prints an id, and the owner types
+  records the change and prints an id with two lines the agent relays to you
+  word for word (the change, and the exact command; crew 1.3.64), and the
+  owner types
   `/crew:confirm-config <change_id>` twice, in two prompts, within 15 minutes.
   `crew_config.py --set` and `/crew:config` refuse a `false` (and a repo
   `null` or removal, which drops a veto); a `false` written by hand reads as

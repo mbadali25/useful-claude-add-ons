@@ -53,6 +53,13 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Changed — crew 1.3.64: `crew_confirm_config.py propose` prints the lines the agent relays to the owner
+
+- **Summary.** `crew` 1.3.64: after an agent proposes a sensitive config change, its output now carries the change and the exact `/crew:confirm-config <change_id>` command for the agent to relay word for word, and no longer claims that no hook records the confirmation.
+- **Cause.** The change id exists only in `propose`'s output, which the owner never sees, and nothing told the agent to pass it on. The output's last line still said "crew 1.3.9: no hook records that confirmation yet", stale since crew 1.3.33 wired the prompt hook; `crew_humanonly.py`'s docstring and `USER_PROMPT` comment said the same.
+- **Fix.** `crew_confirm_config._instructions` prints a relay instruction and two indented lines (key, `false`, layer, file, id; then the command to type twice within 15 minutes, or do nothing to refuse). `commands/confirm-config.md` tells the agent to relay those lines and never to propose a change the owner did not ask for; `commands/config.md`, `crew_humanonly.SENSITIVE_REFUSAL` and CONFIG.md say the same. Nothing about who can confirm changes: only the prompt hook, from the owner's typed id.
+- **Tests.** `test_crew_humanonly.py`: the propose output carries both lines and the id, and not the stale sentence; the command file carries the relay rule. One new mutation in `humanonly_mutations.py`, RED.
+
 ### Changed — crew 1.3.57: test-only - the protected-child reaper test no longer starves or races under load
 
 - **Summary.** `crew` 1.3.57: test-only, no behaviour change. `test_a_process_with_a_protected_child_is_skipped_not_tree_killed` in `plugin/crew/tests/test_crew_reaper.py` failed on loaded CI runners (`'leave' == 'skip'`): its spinning child got under `spinCpuPct` of a core in every sample, so the reaper correctly left it before the protected-child rule ran. The child is now a blocked orphan (a candidate at about zero CPU under any load), and the protected grandchild writes a ready file after it has exec'd; the test waits for that file, then for the protected command line in the snapshot, each with a 60 s deadline and a named failure. `crew_reaper.py` is unchanged. Locally under 24 CPU burners: 9 of 20 runs failed before, 50 of 50 passed after.
