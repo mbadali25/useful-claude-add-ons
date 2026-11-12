@@ -258,15 +258,34 @@ def test_the_configured_protected_regex_replaces_the_built_in_list(fleet):
     assert alive(pid)
 
 
-def test_a_process_with_a_protected_child_is_skipped_not_tree_killed(fleet):
+def test_a_process_with_a_protected_child_is_skipped_not_tree_killed(fleet, tmp_path):
+    """A blocked orphan is a candidate regardless of CPU load; the ready file proves grandchild exec.
+    Wait for its protected command line to appear in the snapshot before judging the orphan."""
+    ready = tmp_path / "ready"
+    grandchild = ("\nimport time\n"
+                  f"with open({str(ready)!r}, 'w', encoding='utf-8', errors='strict', newline='') as out:\n"
+                  "    out.write('ok')\n"
+                  "time.sleep(600)\n")
     child = ("import subprocess, sys, time\n"
-             "g = subprocess.Popen([sys.executable, '-c', '# tai' + 'lscale\\nimport time\\ntime.sleep(600)'])\n"
-             "print(g.pid, flush=True)\n" + SPIN)
+             f"subprocess.Popen([sys.executable, '-c', '# tai' + 'lscale' + {grandchild!r}], "
+             f"creationflags={NOWIN})\n"
+             "time.sleep(600)\n")
     pid = fleet.orphan(child)
-    # the grandchild is the protected one; find it among the orphan's children
-    snap = crew_reaper.snapshot()
-    kids = crew_reaper.descendants(pid, snap)
-    assert kids, "the fixture grandchild did not start"
+    deadline = time.monotonic() + 60
+    while not ready.exists():
+        if time.monotonic() >= deadline:
+            pytest.fail("the protected grandchild never wrote its ready file")
+        time.sleep(0.05)
+    kids = []
+    while time.monotonic() < deadline:
+        snap = crew_reaper.snapshot()
+        kids = crew_reaper.descendants(pid, snap)
+        if any("tailscale" in snap[k]["cmd"] for k in kids):
+            break
+        time.sleep(0.1)
+    else:
+        fleet.pids.extend(kids)
+        pytest.fail(f"the protected grandchild never appeared in the snapshot; descendants seen: {kids}")
     fleet.pids.extend(kids)
     rec = judge(pid, apply=True)
     assert rec["decision"] == "skip" and "child" in rec["reason"], rec
