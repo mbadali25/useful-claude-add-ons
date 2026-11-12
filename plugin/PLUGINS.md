@@ -284,7 +284,7 @@ to CI or to branch protection.
 | `/crew:change <new \| status <id> \| close <id> \| list>` | File, check and close a change request — SDP, Jira or local |
 | `/crew:config [--show \| --models]` | Show where every crew setting comes from; with no argument, a menu that sets the machine or repo config and deletes the repo config with a backup |
 | `/crew:config-setup` | Set up crew config from a menu - machine or repo layer, dry run then apply, or delete the repo config |
-| `/crew:confirm-config <change_id>` | Confirm a sensitive config change (a `humanOnly` opt-out) - only you can, by typing it twice; the prompt hook records each confirmation (crew 1.3.33) |
+| `/crew:confirm-config <change_id>` | Confirm a sensitive config change (a `humanOnly` opt-out) - only you can, by typing it twice; the prompt hook records each confirmation (crew 1.3.33). Typed with no id, it records nothing and lists the pending proposals (crew 1.3.62) |
 | `/crew:debug <the symptom, or a ticket id, e.g. "login 500s after deploy" or T-0042>` | Find the cause of a defect before anyone proposes a fix |
 | `/crew:diagram <architecture \| data-flow <area> \| process <name> \| sequence <flow> \| refresh>` | Create or refresh diagrams from the actual code |
 | `/crew:graph [--status \| --refresh \| --query "<question>"]` | The code graph - one-line status, the repo's sanctioned refresh with the pair check, and queries |

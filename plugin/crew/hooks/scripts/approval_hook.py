@@ -78,7 +78,15 @@ prompt -- carries two more commands, each ONE line, raw or expanded exactly as
   `humanOnly.*` change (`crew_confirm_config.confirm`, `via="user-prompt"`, the
   payload's `prompt_id`). The second one, from another prompt, applies it. This
   is the recorder `crew_humanonly.USER_PROMPT` was waiting for; without it no
-  opt-out could ever take effect.
+  opt-out could ever take effect. Typed with no id, a malformed id, or an id
+  `confirm` refuses (crew 1.3.62), the refusal also LISTS the machine's
+  proposals (`_proposals_text`, read-only: it never settles or writes a
+  record) so the owner can copy the exact command, or says plainly that
+  none is pending and why one may be missing. It never confirms anything:
+  even with exactly one pending proposal a bare `/crew:confirm-config`
+  records nothing, because the store is a file an agent's propose step
+  writes, so "the only pending one" is a choice an agent can make for the
+  owner; the id typed in the owner's prompt is what binds the change.
 - `/crew:approve-mass <id>` records the owner's yes to ONE blocked mass delete
   or mass overwrite: `<git-common-dir>/crew/mass-approvals/<id>.json`, good for
   `MASS_APPROVAL_TTL` seconds. `<id>` is the digest the guard printed with its
@@ -607,18 +615,141 @@ def _refuse_command(name, text):
     return 2
 
 
+_UNPRINTABLE_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+SETTLED_SHOWN = 5
+SETTLED_WINDOW = 24 * 3600
+
+
+def _clean(value, limit=200):
+    """One printable line of at most `limit` characters: a record is a file
+    on disk, so nothing in it may add a line or a terminal escape to the
+    owner's screen."""
+    text = _UNPRINTABLE_RE.sub("?", _one_line(value))
+    return text if len(text) <= limit else text[:limit - 3] + "..."
+
+
+def _stamp(value):
+    """A record's time field as a number; anything else sorts as 0."""
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+
+
+def _minutes(seconds):
+    whole = max(0, int(seconds // 60))
+    return "under a minute" if whole == 0 else f"{whole} min"
+
+
+def _current_value(record):
+    """What the proposed key holds now in its file, as text, or 'could not
+    tell'. Read-only: one json.load of the file the record names."""
+    path, key = record.get("path"), str(record.get("key", ""))
+    try:
+        with open(path, encoding="utf-8-sig") as handle:
+            cfg = json.load(handle)
+        section = cfg.get("humanOnly", {}) if isinstance(cfg, dict) else None
+        if not isinstance(section, dict):
+            return "could not tell"
+        leaf = key.split(".", 1)[1]
+        return json.dumps(section[leaf]) if leaf in section else "unset (human-only)"
+    except FileNotFoundError:
+        return "unset (no file)"
+    except (OSError, ValueError, TypeError, IndexError):
+        return "could not tell"
+
+
+def _proposals_text(now=None):
+    """The owner-facing list of proposals a `/crew:confirm-config` could name,
+    for a refusal. READ-ONLY: it never expires, settles or writes a record
+    (`_expire_if_due` is not called here), so showing the list changes
+    nothing. A record that is not a well-formed humanOnly `false` proposal is
+    counted, never shown and never offered for confirmation."""
+    import crew_humanonly  # pylint: disable=import-outside-toplevel
+    stamp = time.time() if now is None else now
+    store = crew_humanonly.store_dir()
+    records, problems = crew_humanonly.all_records(store)
+    pending, settled, odd = [], [], 0
+    for record in records:
+        if (not crew_humanonly.valid_change_id(record.get("change_id"))
+                or record.get("key") not in crew_humanonly.PATHS
+                or record.get("layer") not in ("machine", "repo")
+                or record.get("value") is not False
+                or not _stamp(record.get("expires"))):
+            odd += 1
+        elif record.get("state") == crew_humanonly.PENDING and stamp <= record["expires"]:
+            pending.append(record)
+        else:
+            settled.append(record)
+    lines = [f"Could not read the proposal store completely ({_clean(problem)}); the list "
+             "below may be missing proposals." for problem in problems[:3]]
+    if pending:
+        lines.append(f"Pending proposals on this machine ({_clean(store)}):")
+        for record in sorted(pending, key=lambda r: _stamp(r.get("created"))):
+            created = record.get("created")
+            age = _minutes(stamp - created) + " ago" if _stamp(created) \
+                else "at an unknown time"
+            lines.append(
+                f"  {record['change_id']}  {record['key']}: {_current_value(record)} -> false"
+                f"  ({record['layer']} layer, {_clean(record.get('path'))}); proposed {age}, "
+                f"expires in {_minutes(record['expires'] - stamp)}, confirmations "
+                f"{len(record.get('confirmations') or [])} of 2")
+        lines.append("To apply one, type /crew:confirm-config <change_id> on its own, as "
+                     "two separate prompts. Confirm only a change you asked for; to refuse "
+                     "one, do nothing and it expires.")
+    elif problems:
+        lines.append("No readable pending proposal was found; because of the error above, "
+                     "crew could not tell whether one exists.")
+    else:
+        lines.append(f"No pending proposals on this machine ({_clean(store)}), so there is "
+                     "nothing to confirm.")
+        lines.append("A proposal is missing when none was made (an agent proposes the change "
+                     "and must tell you its id), when it expired "
+                     f"({crew_humanonly.PROPOSAL_TTL_SECONDS // 60} minutes after it was "
+                     "proposed), when it was already applied, cancelled or refused, or when it "
+                     "was proposed under another home directory (for example in WSL rather "
+                     "than Windows), whose store this prompt cannot see. Ask the agent to "
+                     "propose it again and tell you the id.")
+    def ended(record):
+        return _stamp(record.get("settled")) or _stamp(record.get("expires"))
+    recent = sorted((r for r in settled if stamp - ended(r) <= SETTLED_WINDOW),
+                    key=ended, reverse=True)
+    for record in recent[:SETTLED_SHOWN]:
+        state = record.get("state")
+        if state == crew_humanonly.PENDING:
+            state = "expired"
+        lines.append(f"  (cannot be confirmed) {record['change_id']}  {record['key']} -> false"
+                     f"  {_clean(state, 40)}")
+    if odd:
+        lines.append(f"{odd} record(s) in the store could not be read or are not a "
+                     "proposal crew makes; they are not listed and cannot be confirmed here.")
+    return "\n".join(lines)
+
+
+def _refuse_confirm(text):
+    """A `/crew:confirm-config` refusal, followed by the proposals the owner
+    could name. Exit 2, nothing recorded. A listing that fails is said, never
+    turned into 'no proposals'."""
+    try:
+        listing = _proposals_text()
+    except Exception as exc:  # pylint: disable=broad-except
+        listing = (f"Could not tell which proposals are pending ({type(exc).__name__}: "
+                   f"{_clean(exc)}).")
+    sys.stderr.write(f"crew: /{CONFIRM_COMMAND} was NOT recorded -- {text}\n{listing}\n")
+    return 2
+
+
 def _confirm_config(data, args):
     """One `/crew:confirm-config <change_id>` from the user's own prompt."""
+    if not args:
+        return _refuse_confirm("it needs the change id: /crew:confirm-config <change_id>.")
     if not _CHANGE_ID_RE.match(args):
-        return _refuse_command(CONFIRM_COMMAND, "usage: /crew:confirm-config <change_id> "
-                               "(an id like cc-1a2b3c4d, from crew_confirm_config.py propose)")
+        return _refuse_confirm(f"{_clean(args, 40)!r} is not a change id (usage: "
+                               "/crew:confirm-config <change_id>, an id like cc-1a2b3c4d).")
     import crew_confirm_config  # pylint: disable=import-outside-toplevel
     try:
         record = crew_confirm_config.confirm(
             args, via=crew_confirm_config.crew_humanonly.USER_PROMPT,
             prompt_id=data.get("prompt_id"), session_id=_session(data))
     except crew_confirm_config.Refused as exc:
-        return _refuse_command(CONFIRM_COMMAND, _one_line(exc))
+        return _refuse_confirm(_one_line(exc))
     state = record.get("state")
     if state == "pending":
         return _emit(f"crew: the user confirmed {args} once ({len(record.get('confirmations', []))}"

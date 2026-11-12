@@ -109,6 +109,22 @@ which still needs `autopilot.approval` `self` or `risk` and `autopilot.mode`
 raising or answering anything but exactly `humanOnly: false` - reads as
 human-only.
 
+**Finding the change id (crew 1.3.62).** Type `/crew:confirm-config` with no
+id (or with an id that is wrong, expired or already used) and the hook refuses
+it, records nothing, and lists the proposals in this machine's store
+(`~/.claude/crew/confirm-config/`): each pending one's id, key, current value
+-> `false`, layer and file, age, time left and confirmations so far, then up
+to five from the last day that can no longer be confirmed. With none pending
+it says so, and why one may be missing: none was made, it expired, it was
+already applied, cancelled or refused, or it was proposed under another home
+directory (WSL rather than Windows has its own store). The store is per
+machine and home directory, not per repository, so a proposal made in one repo
+or worktree is listed from any other. The listing never confirms: even with
+exactly one pending proposal a bare `/crew:confirm-config` records nothing,
+because "the only pending one" is a choice whoever ran `propose` makes, and the
+id you type is what binds the change. A store crew cannot read is reported as
+"could not tell", never as none pending.
+
 **Still human-only (crew 1.3.33).** No hook reads `humanOnly.promoteMarker`:
 the promote marker is human-only by instruction alone, and no hook checks who
 created it. `crew_confirm_config.py resolve` shows what each key would
