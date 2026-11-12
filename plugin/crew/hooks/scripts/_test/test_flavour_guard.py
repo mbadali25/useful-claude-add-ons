@@ -3,9 +3,13 @@
 
 ## What this covers and why it exists
 
-`hooks.json` registers EVERY event twice - a bash `command` and a
-`shell: "powershell"` command running the `.ps1` twin. That is correct: a
-single-shell machine then always gets exactly one flavour. On a host with BOTH
+crew 1.3.55: crew's `hooks.json` no longer registers a PowerShell hook (one bash launcher per event;
+the `shell: "powershell"` entry cost about 0.4 s per hook on Windows and ran every guard twice). The
+`.ps1` it still ships are the ones Codex's `commandWindows` runs (`crew-hook.ps1`, listed from
+`crew_instructions.codex_hooks`, so this stays derived), and they keep the guard below: Codex on
+Linux or macOS can still start them. Before that, `hooks.json` registered EVERY event twice - a bash
+`command` and a `shell: "powershell"` command running the `.ps1` twin. That was correct: a
+single-shell machine then always got exactly one flavour. On a host with BOTH
 interpreters it is not, and until PowerShell was installed on this repository's
 Linux host the second registration merely printed a red `hook error` per event.
 Installing pwsh converts that loud noise into SILENT DOUBLE EXECUTION - two
@@ -64,11 +68,10 @@ makes a network call.
 
 ## Matched pair
 
-This file is IDENTICAL in every plugin that registers PowerShell hooks - it
-derives the plugin root from its own location and reads that plugin's
-`hooks.json`, so it has no plugin-specific content. Change one copy, change
-the others. It is a matched pair for the same reason
-`scripts/install-prerequisites.{sh,ps1}` are.
+This file is the same in every plugin that registers PowerShell hooks except for the crew-only
+addition in `registered_powershell_hooks` (the Codex `commandWindows` launcher): it derives the
+plugin root from its own location and reads that plugin's `hooks.json`. Change one copy, check the
+other.
 
 Run:  python3 hooks/scripts/_test/test_flavour_guard.py
 Exit 0 = all pass, 1 = something regressed, 77 = pwsh unavailable (skipped).
@@ -138,6 +141,18 @@ def registered_powershell_hooks():
                 tail = m.group(2).split(";")[0].strip()
                 args = _split_args(tail)
                 found.setdefault(path, args)
+    # crew 1.3.55: the .ps1 launcher Codex's `commandWindows` runs, derived from the generator.
+    sys.path.insert(0, str(SCRIPTS))
+    try:
+        import crew_instructions  # pylint: disable=import-outside-toplevel
+    except ImportError:
+        return sorted(found.items())
+    for entries in crew_instructions.codex_hooks(str(PLUGIN))["hooks"].values():
+        for entry in entries:
+            for hook in entry.get("hooks", []):
+                m = re.search(r'-File "(.+?\.ps1)"(.*)', hook.get("commandWindows", ""))
+                if m:
+                    found.setdefault(pathlib.Path(m.group(1)), _split_args(m.group(2).strip())[:1])
     return sorted(found.items())
 
 
@@ -391,7 +406,7 @@ def main():
     hooks = registered_powershell_hooks()
     print(f"== {len(hooks)} powershell hook(s) registered by {HOOKS_JSON.relative_to(PLUGIN)} ==")
     if not hooks:
-        print("FATAL: hooks.json registers no powershell hooks; this suite "
+        print("FATAL: hooks.json and the Codex registration name no powershell hooks; this suite "
               "would pass vacuously.", file=sys.stderr)
         return 1
 

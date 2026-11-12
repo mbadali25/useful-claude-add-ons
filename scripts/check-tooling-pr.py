@@ -110,6 +110,7 @@ TRAILER = "Tooling-seam"
 
 ALONGSIDE = (
     "plugin/crew/tests/**",
+    "plugin/crew/hooks/scripts/_test/**",
     "plugin/crew/README.md",
     "plugin/crew/CONFIG.md",
     "plugin/crew/BUDGETS.md",
