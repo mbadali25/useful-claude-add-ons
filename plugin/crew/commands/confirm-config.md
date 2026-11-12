@@ -21,7 +21,7 @@ refusal, relay it verbatim; the change `$1` is then still pending (or expired)
 and the human-only rules hold as before. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_confirm_config.py status $1`
 shows the change's state; read it and report it. Typed with no id (or a wrong,
 expired or used one), the hook refuses it, records nothing, and itself shows the
-owner the pending proposals, or says none is pending and why (crew 1.3.63).
+owner the pending proposals, or says none is pending and why (crew 1.3.65).
 
 **When you propose a change, relay it.** The owner never sees
 `crew_confirm_config.py propose`'s output, and the change id exists only there.

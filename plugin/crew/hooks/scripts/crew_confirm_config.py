@@ -24,7 +24,7 @@ The state machine, one record per change id:
 the shape crew's UserPromptSubmit hook passes for a prompt the user typed.
 This CLI has no `confirm` subcommand. Since crew 1.3.33 the prompt hook
 (`approval_hook._confirm_config`) is the one caller of `confirm`; since crew
-1.3.63 a `/crew:confirm-config` it refuses also lists the pending proposals.
+1.3.65 a `/crew:confirm-config` it refuses also lists the pending proposals.
 `propose` prints the two lines the agent must relay to the owner (the change
 and the exact command), because the owner never sees this CLI's output.
 
@@ -202,7 +202,7 @@ def _instructions(record):
         f"twice, in two separate prompts, within {minutes} minutes. To refuse it, do nothing; "
         "it expires.",
         "The prompt hook records each confirmation (crew 1.3.33); typed with no id, "
-        "/crew:confirm-config lists the pending proposals instead (crew 1.3.63).",
+        "/crew:confirm-config lists the pending proposals instead (crew 1.3.65).",
     ]
 
 
