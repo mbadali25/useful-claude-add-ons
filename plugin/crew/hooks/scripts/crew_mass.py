@@ -43,7 +43,10 @@ WHAT A HOOK CAN SEE. The command's text, the file system, and `git`:
 
 COUNTS IT CANNOT TAKE are "could not tell", and could not tell is mass: a
 variable or substitution in a path, a relative path after a `cd`, a POSIX path
-Git Bash maps somewhere this process cannot see, `find -delete`, `xargs rm`, a
+Git Bash maps somewhere this process cannot see, a `cd` or `git -C` directory
+that is, or reaches through a symlink, `/proc` or `/dev` (the kernel resolves
+those per process), a `git push` that names a remote or refspec other than the
+branch's upstream when no origin base exists, `find -delete`, `xargs rm`, a
 git or terraform command that failed, and a row count (SQL: no command text says
 how many rows an unfiltered DELETE hits, so it always asks).
 
@@ -77,6 +80,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import time
 
@@ -107,6 +111,13 @@ _DYNAMIC_RE = re.compile(r"[$`]|\$\(")
 _DRIVE_RE = re.compile(r"^/([A-Za-z])(/.*)?$")
 _GIT_VALUE_OPTS = frozenset(("-c", "--git-dir", "--work-tree", "--namespace", "--exec-path",
                              "--config-env", "--attr-source", "--super-prefix"))
+# `git push` flags that do not change WHAT is pushed or WHERE. Any other flag (`--all`,
+# `--mirror`, `--tags`, `--repo=`, `-o <value>`, a glued `-uq`...) means the push is not
+# known to be "this branch to its upstream" (`_pushes_to_upstream`).
+_PUSH_PLAIN_FLAGS = frozenset((
+    "-u", "--set-upstream", "-v", "--verbose", "-q", "--quiet", "--progress", "--no-progress",
+    "--verify", "--no-verify", "--atomic", "--no-atomic", "--porcelain", "--thin", "--no-thin",
+    "-4", "--ipv4", "-6", "--ipv6"))
 _RM_HEADS = frozenset(("rm", "unlink"))
 _PS_RM = frozenset(("remove-item", "ri", "rm", "del", "erase", "rd", "rmdir"))
 _PS_COPY = frozenset(("copy-item", "cpi", "copy", "cp", "move-item", "mi", "move", "mv"))
@@ -383,6 +394,9 @@ def _classify_git(args, fed):
             return []
         out = _diff_specs("git push", override, ["diff", "--name-status", "-M", "@BASE@...HEAD",
                                                   "--"])
+        named = ([a for a in rest if not a.startswith("-")], flags <= _PUSH_PLAIN_FLAGS)
+        for spec in out:
+            spec.extra = named
     if fed:
         for spec in out:
             spec.unknown = True
@@ -627,7 +641,9 @@ def _resolve(operand, cwd, cd):
 #     (`-m`, `-a`, `--amend`; a flag with a glued value or a path is refused, and so are
 #     `-C`/`-c`/`--git-dir`... anywhere), or quoted strings that hold no `$`, backtick,
 #     backslash, `;`, newline or non-ASCII.
-# A target with a `..` component is never followed: bash may take `..` through a symlink
+# A target that is, or reaches through a symlink, `/proc` or `/dev` is never followed
+# (`_per_process_dir`: the resolved path is judged, not the text). A target with a `..`
+# component is never followed either: bash may take `..` through a symlink
 # (a logical `cd ..`, or `set -P` from BASH_ENV) and this process would cut the text. A drive
 # prefix (`c:/x`) is followed only where drives exist (os.name == "nt").
 # Anything else after a cd (a second command, pipe, redirect, expansion, heredoc, assignment,
@@ -687,12 +703,77 @@ def _plain_tail(tail, word_re):
     return not first
 
 
-def _per_process_dir(target):
-    """True for a cd target under `/proc/` or `/dev/` (`/proc/self/cwd`, `/dev/fd/3`): the
-    kernel resolves it per PROCESS, so it names the shell's directory when the shell reads it
-    and this hook's own directory when the hook does. Never followed."""
-    text = target.rstrip("/")
-    return text in ("/proc", "/dev") or text.startswith(("/proc/", "/dev/"))
+_PER_PROCESS_ROOTS = ("/proc", "/dev")
+_MAX_LINKS = 40
+
+
+def _names_per_process(path):
+    """True when the TEXT of `path` starts at `/proc` or `/dev`, however it is spelled
+    (`//proc/self/cwd`, `///proc`, `/./proc/x`, `/dev/fd/3`, `/PROC`)."""
+    if path[:1] not in ("/", "\\"):
+        return False
+    parts = [part for part in re.split(r"[\\/]+", path) if part and part != "."]
+    return bool(parts) and "/" + parts[0].lower() in _PER_PROCESS_ROOTS
+
+
+def _per_process_devices():
+    """The device numbers of `/proc` and `/dev` here (a procfs mounted somewhere else has
+    the same one), or an empty set where there is none to read."""
+    found = set()
+    for root in _PER_PROCESS_ROOTS:
+        try:
+            found.add(os.stat(root).st_dev)
+        except OSError:
+            pass
+    return found
+
+
+def _per_process_dir(path):
+    """True when the absolute `path` is under `/proc` or `/dev`, or REACHES one: the kernel
+    resolves `/proc/self/cwd` and `/dev/fd/3` per PROCESS, so the same text names the shell's
+    directory when the shell reads it and this hook's own when the hook (or the git it starts)
+    does. Judged on the RESOLVED path, not the text: slashes and `.` are collapsed, then every
+    component is walked as the kernel walks it, each symlink read (`ln -s /proc/self/cwd x`,
+    `ln -s /proc y`, a link to a link), `..` taken physically, and each step compared with
+    `/proc`, `/dev` and their device numbers. A walk that cannot be finished (a link loop, a
+    component that cannot be read) is True too: could not tell is never "not per-process".
+    A path that does not exist is False - there is nothing to follow, and the caller's own
+    existence check refuses it. Windows has no such directory a native process can open
+    (`_resolve` already refuses a POSIX path there), so only the text is judged."""
+    if _names_per_process(path):
+        return True
+    if _WINDOWS or not path.startswith("/"):
+        return False
+    devices = _per_process_devices()
+    pending = [part for part in path.split("/") if part and part != "."]
+    current, links = "/", 0
+    while pending:
+        part = pending.pop(0)
+        if part == "..":
+            current = os.path.dirname(current)
+            continue
+        current = os.path.join(current, part)
+        if current.lower() in _PER_PROCESS_ROOTS:
+            return True
+        try:
+            info = os.lstat(current)
+        except (FileNotFoundError, NotADirectoryError):
+            return False
+        except OSError:
+            return True
+        if info.st_dev in devices:
+            return True
+        if stat.S_ISLNK(info.st_mode):
+            links += 1
+            try:
+                link = os.readlink(current)
+            except OSError:
+                return True
+            if links > _MAX_LINKS or not link:
+                return True
+            current = "/" if link.startswith("/") else os.path.dirname(current)
+            pending = [item for item in link.split("/") if item and item != "."] + pending
+    return False
 
 
 def _cdpath_may_apply(target):
@@ -720,8 +801,6 @@ def leading_cd(command, cwd, shell="bash"):
         return None  # bash may walk a symlink for `..`; this process would cut the text
     if powershell and not _WINDOWS and _DRIVE_PREFIX_RE.match(target):
         return None  # `c:` is no drive here: Set-Location fails and `;` still runs git
-    if _per_process_dir(target):
-        return None
     if powershell and _WINDOWS and _DRIVE_RE.match(target):
         return None  # PowerShell reads `/c/x` against the CURRENT drive (D:\c\x), not C:\x
     if not powershell and _cdpath_may_apply(target):
@@ -729,6 +808,8 @@ def leading_cd(command, cwd, shell="bash"):
     path, ok = _resolve(target, cwd, False)
     if not ok or not os.path.isdir(path):
         return None
+    if _per_process_dir(path):
+        return None  # /proc, /dev, or a symlink on the way to one: this hook's, not the shell's
     return os.path.normpath(path)
 
 
@@ -1125,6 +1206,11 @@ def _git_lines(spec, cwd, cd, runner):
                         "open (a variable, a substitution, a POSIX path it cannot map, or "
                         "relative to an earlier cd)")
             return None
+        if _per_process_dir(base):
+            spec.why = (f"the directory `{override}` is, or reaches through a symlink, /proc "
+                        "or /dev: the kernel resolves it per process, so it names this hook's "
+                        "directory here and the shell's own there")
+            return None
     elif cd or not cwd:
         spec.why = ("a cd/pushd/Set-Location in this command moves the shell, so which "
                     "repository it runs in is not known" if cd else
@@ -1133,7 +1219,8 @@ def _git_lines(spec, cwd, cd, runner):
     run = runner or subprocess.run
     for marker in ("@BASE@...HEAD", "@PRBASE@...HEAD"):
         if marker in argv:
-            found = _base(base, run, spec, upstream=marker == "@BASE@...HEAD")
+            found = _base(base, run, spec, upstream=marker == "@BASE@...HEAD",
+                          push=spec.extra if marker == "@BASE@...HEAD" else None)
             if found is None:
                 return None
             argv = [found + "...HEAD" if a == marker else a for a in argv]
@@ -1167,12 +1254,39 @@ def _git(run, cwd, argv):
     return done, ""
 
 
-def _base(cwd, run, spec=None, upstream=True):
+def _pushes_to_upstream(push, tracked, head, one):
+    """True when the `git push` behind `push` (`(words, plain)`: its non-flag words, and
+    whether every flag is in `_PUSH_PLAIN_FLAGS`) sends the current branch `head` to its
+    upstream `tracked` (`fork/feat`) and nothing else: no words at all, or the upstream's
+    remote alone (both read from git's own `@{push}`), or that remote and one refspec whose
+    source is this branch (`feat`, `HEAD`, `refs/heads/feat`) and whose destination is the
+    upstream branch. Anything else - another remote, another destination, a `+` or empty
+    source, a second refspec, a flag that is not plain - is False."""
+    words, plain = push
+    if not (plain and tracked and head) or len(words) > 2:
+        return False
+    if len(words) == 2:
+        src, colon, dst = words[1].partition(":")
+        src, dst = (ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
+                    for ref in (src, dst))
+        if src not in (head, "HEAD") or (colon and not dst):
+            return False
+        return words[0] + "/" + (dst if colon else head) == tracked
+    dest = one("rev-parse", "--abbrev-ref", "@{push}")
+    if words and not (dest or "").startswith(words[0] + "/"):
+        return False
+    return dest == tracked
+
+
+def _base(cwd, run, spec=None, upstream=True, push=None):
     """The ref a branch's PR would be measured against: `origin/HEAD`, else
     `origin/main`, else `origin/master`, else the branch's upstream; on that
     branch itself, its upstream. None, with `spec.why` set, when there is none. With
     `upstream=False` (`gh pr create`: the PR base is the repository's default branch, never the
-    branch's upstream, which may be a fork's feature branch) only the origin refs count."""
+    branch's upstream, which may be a fork's feature branch) only the origin refs count. With
+    `push` (`git push`: its words and flags) the upstream is a base only when that push sends
+    the branch TO its upstream (`_pushes_to_upstream`): `git push origin HEAD:main` from a
+    branch that tracks `fork/feat` is not measured against `fork/feat`."""
     def one(*argv):
         done, _why = _git(run, cwd, list(argv))
         out = done.stdout.strip() if done is not None else ""
@@ -1181,6 +1295,15 @@ def _base(cwd, run, spec=None, upstream=True):
     def fail(why):
         if spec is not None:
             spec.why = why
+
+    def tracked_base(missing):
+        tracked = one("rev-parse", "--abbrev-ref", "@{u}")
+        if tracked and push is not None and not _pushes_to_upstream(push, tracked, head, one):
+            return fail("this push names a remote, a refspec or an option that sends the "
+                        f"branch somewhere other than its upstream `{tracked}`, and "
+                        "origin/HEAD, origin/main and origin/master give no other base to "
+                        "measure it against")
+        return tracked or fail(missing)
     head = one("symbolic-ref", "--short", "-q", "HEAD")
     candidates = [one("symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"),
                   "origin/main", "origin/master"]
@@ -1190,9 +1313,8 @@ def _base(cwd, run, spec=None, upstream=True):
                 if not upstream:
                     return fail(f"the branch `{head}` is the default branch `{ref}`: a pull "
                                 "request from it has no base to measure against")
-                return one("rev-parse", "--abbrev-ref", "@{u}") or fail(
-                    f"the branch `{head}` is its own base `{ref}` and has no upstream to "
-                    "measure against")
+                return tracked_base(f"the branch `{head}` is its own base `{ref}` and has "
+                                    "no upstream to measure against")
             return ref
     if not upstream:
         done, why = _git(run, cwd, ["rev-parse", "--git-dir"])
@@ -1201,14 +1323,11 @@ def _base(cwd, run, spec=None, upstream=True):
         return fail("no base to measure the pull request against: origin/HEAD, origin/main and "
                     "origin/master are all missing, and the branch's upstream is not the "
                     "repository's default branch")
-    tracked = one("rev-parse", "--abbrev-ref", "@{u}")
-    if tracked:
-        return tracked
     done, why = _git(run, cwd, ["rev-parse", "--git-dir"])
     if done is None:
         return fail(f"{why}: this is not a git repository, or git cannot read it")
-    return fail("no base to measure the branch against: origin/HEAD, origin/main, "
-                "origin/master and the branch's upstream are all missing")
+    return tracked_base("no base to measure the branch against: origin/HEAD, origin/main, "
+                        "origin/master and the branch's upstream are all missing")
 
 
 def count_git(spec, cwd, cd, runner=None, globs=()):

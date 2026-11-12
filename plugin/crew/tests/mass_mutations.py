@@ -9,8 +9,13 @@ harness (`HARNESS` in `scripts/check-tooling-pr.py`), and a harness change lands
 alone, so the one-line registration in `sabotage.py` is a harness-only
 follow-up. Until then run this family on its own with `sabotage.py`'s machinery:
 
-    cd plugin/crew/tests && python3 -c "import sabotage, mass_mutations as m; \
-        sabotage.MUTATIONS = m.MASS_MUTATIONS; raise SystemExit(sabotage.main())"
+    cd plugin/crew/tests && python3 -c "import mass_mutations as m; raise SystemExit(m.main())"
+
+`main()` hands `sabotage.main()` this family AND `MASS_PLATFORM_ONLY`: the entries whose
+target case runs on one kind of host only (a `/proc` walk on Linux, a `/c/x` drive on
+Windows). Elsewhere such an entry is printed as PLATFORM-ONLY, NOT EXERCISED and counted in
+the last line, instead of failing the run as a skipped target ("COULD-NOT-TELL"). Both
+tables live here because `sabotage_platform.PLATFORM_ONLY` is harness too.
 
 Each entry names the case that has to go red.
 """
@@ -107,6 +112,47 @@ MASS_MUTATIONS = (
      '(status == "D" and spec.rule == MASS_DELETE)',
      '(status == "X" and spec.rule == MASS_DELETE)',
      _T + "test_commit_counts_deletes"),
+    # --- round 10 (BLOCK-2): the upstream is a base only for a push that goes TO it
+    ("mass: a push to another remote or refspec is measured against the upstream", MASS,
+     "        if tracked and push is not None and not _pushes_to_upstream(push, tracked, head, one):",
+     "        if False:",
+     _T + "test_a_push_that_names_another_remote_or_refspec_is_not_measured_against_the_upstream"),
+    ("mass: a push refspec's destination is not compared with the upstream", MASS,
+     '        return words[0] + "/" + (dst if colon else head) == tracked',
+     '        return words[0] + "/" + head == tracked',
+     _T + "test_a_push_that_names_another_remote_or_refspec_is_not_measured_against_the_upstream"),
+    ("mass: a push refspec's source may be another branch (fork main, +feat, @)", MASS,
+     '        if src not in (head, "HEAD") or (colon and not dst):',
+     "        if colon and not dst:",
+     _T + "test_a_push_that_names_another_remote_or_refspec_is_not_measured_against_the_upstream"),
+    ("mass: an empty push destination (`:feat` deletes) is this branch", MASS,
+     '        if src not in (head, "HEAD") or (colon and not dst):',
+     '        if src not in (head, "HEAD", ""):',
+     _T + "test_a_push_that_names_another_remote_or_refspec_is_not_measured_against_the_upstream"),
+    ("mass: a second refspec is ignored (fork feat main)", MASS,
+     "    if not (plain and tracked and head) or len(words) > 2:",
+     "    if not (plain and tracked and head):",
+     _T + "test_a_push_that_names_another_remote_or_refspec_is_not_measured_against_the_upstream"),
+    ("mass: a lone push remote is not compared with the upstream's (git push origin)", MASS,
+     '    if words and not (dest or "").startswith(words[0] + "/"):\n        return False\n',
+     "",
+     _T + "test_a_push_that_names_another_remote_or_refspec_is_not_measured_against_the_upstream"),
+    ("mass: --all / --mirror / --tags / --repo keep the upstream base", MASS,
+     'flags <= _PUSH_PLAIN_FLAGS)', 'True)',
+     _T + "test_a_push_that_names_another_remote_or_refspec_is_not_measured_against_the_upstream"),
+    ("mass: a bare push is read from the text, not git's @{push} (remote.pushDefault)", MASS,
+     '    dest = one("rev-parse", "--abbrev-ref", "@{push}")',
+     "    dest = tracked",
+     _T + "test_a_plain_push_that_git_would_send_elsewhere_is_not_measured_against_the_upstream"),
+    ("mass: no push that names its remote keeps the upstream base (fork feat is a no-op)", MASS,
+     "    if len(words) == 2:\n        src, colon, dst",
+     "    if words:\n        return False\n    if len(words) == 2:\n        src, colon, dst",
+     _T + "test_a_push_to_the_upstream_itself_is_measured_against_it"),
+    ("mass: a push on its own base branch ignores what the push names (origin main)", MASS,
+     "                return tracked_base(f\"the branch `{head}` is its own base `{ref}` and has \"\n"
+     "                                    \"no upstream to measure against\")",
+     "                return one(\"rev-parse\", \"--abbrev-ref\", \"@{u}\")",
+     _T + "test_a_push_elsewhere_is_asked_with_an_origin_upstream_and_on_main"),
     ("mass: a push with no base is let through", MASS,
      "            if found is None:\n                return None",
      "            if found is None:\n                return []",
@@ -462,19 +508,50 @@ _PS_CD_RE''',
      'r"--?[A-Za-z][A-Za-z-]*"', 'r"--[A-Za-z][A-Za-z-]*"',
      _T + "test_plain_flags_are_followed_in_both_shells"),
     ("mass: the branch upstream is no base", MASS,
-     "    if tracked:\n        return tracked\n", "    if False:\n        return tracked\n",
+     "        return tracked or fail(missing)", "        return fail(missing)",
      _T + "test_the_branch_upstream_is_the_base_when_no_origin_ref_exists"),
     ("mass: gh pr create falls back to the branch upstream", MASS,
      'upstream=marker == "@BASE@...HEAD"', "upstream=True",
      _T + "test_gh_pr_create_does_not_use_the_branch_upstream_as_its_base"),
     ("mass: a /proc or /dev cd target is followed", MASS,
-     '    return text in ("/proc", "/dev") or text.startswith(("/proc/", "/dev/"))',
+     '    return bool(parts) and "/" + parts[0].lower() in _PER_PROCESS_ROOTS',
      "    return False",
      _T + "test_a_per_process_cd_target_is_never_followed"),
+    # --- round 10 (BLOCK-1, FIX-2): the RESOLVED path is judged, for a cd and for -C
+    ("mass: only the literal /proc/ and /dev/ prefixes are refused (//proc, /./proc pass)", MASS,
+     '    return bool(parts) and "/" + parts[0].lower() in _PER_PROCESS_ROOTS',
+     '    return path.rstrip("/") in _PER_PROCESS_ROOTS or path.startswith(("/proc/", "/dev/"))',
+     _T + "test_a_per_process_cd_target_is_never_followed"),
     ("mass: the per-process cd refusal is not called", MASS,
-     "    if _per_process_dir(target):\n        return None\n",
-     "    if False:\n        return None\n",
+     "    if _per_process_dir(path):\n        return None  # /proc",
+     "    if False:\n        return None  # /proc",
      _T + "test_cd_into_proc_self_cwd_is_could_not_tell_on_linux"),
+    ("mass: a cd through a symlink to /proc is followed (the walk reads no link)", MASS,
+     "        if stat.S_ISLNK(info.st_mode):", "        if False:",
+     _T + "test_a_cd_or_dash_C_that_reaches_proc_is_asked_however_it_is_spelled"),
+    ("mass: a PowerShell cd through a symlink to /proc is followed", MASS,
+     "        if stat.S_ISLNK(info.st_mode):", "        if False:",
+     _T + "test_a_powershell_cd_or_dash_C_that_reaches_proc_is_asked"),
+    ("mass: a -C value that reaches /proc is counted in this hook's directory", MASS,
+     "        if _per_process_dir(base):\n", "        if False:\n",
+     _T + "test_a_dash_C_that_reaches_proc_names_the_reason"),
+    ("mass: the -C chain is judged by its text only (the walk is skipped for -C)", MASS,
+     "        if _per_process_dir(base):\n", "        if _names_per_process(base):\n",
+     _T + "test_a_cd_or_dash_C_that_reaches_proc_is_asked_however_it_is_spelled"),
+    ("mass: a step onto /proc or /dev after a symlink is not noticed", MASS,
+     "        if current.lower() in _PER_PROCESS_ROOTS:\n            return True\n", "",
+     _T + "test_the_walk_refuses_proc_by_name_when_no_device_number_can_be_read"),
+    ("mass: a symlink loop is not per-process (could-not-tell collapses to safe)", MASS,
+     "            if links > _MAX_LINKS or not link:\n                return True",
+     "            if links > _MAX_LINKS or not link:\n                return False",
+     _T + "test_a_symlink_walk_that_cannot_finish_is_per_process_and_a_missing_path_is_not"),
+    ("mass: a directory on /proc's device is not per-process (procfs mounted elsewhere)", MASS,
+     "        if info.st_dev in devices:\n            return True\n", "",
+     _T + "test_a_directory_on_the_proc_device_is_per_process_wherever_it_is_mounted"),
+    ("mass: every symlink is refused, not only one that reaches /proc or /dev", MASS,
+     "            if links > _MAX_LINKS or not link:\n                return True",
+     "            if True:\n                return True",
+     _T + "test_an_ordinary_symlink_is_still_followed_and_counted_where_it_points"),
     ("mass: a /c/x PowerShell target is read as a Git Bash drive", MASS,
      "    if powershell and _WINDOWS and _DRIVE_RE.match(target):", "    if False:",
      _T + "test_powershell_does_not_read_a_slash_drive_path_as_a_git_bash_drive"),
@@ -508,3 +585,47 @@ _PS_CD_RE''',
      "    if False and crew_mass.tampers(command):",
      _T + "test_a_command_writing_the_approvals_directory_is_refused"),
 )
+
+_LINUX = frozenset({"linux"})
+_POSIX = frozenset({"linux", "darwin"})
+_PROC_WHY = "its target case needs /proc/self/cwd, which exists on Linux only"
+_LINK_WHY = "its target case walks POSIX symlinks; Windows judges the text and skips it"
+
+# label -> (the hosts whose run exercises it, why), `sabotage_platform.PLATFORM_ONLY`'s shape.
+MASS_PLATFORM_ONLY = {
+    "mass: a /c/x PowerShell target is read as a Git Bash drive":
+        (frozenset({"win"}), "the /c/ drive form is mapped on Windows only"),
+    "mass: the per-process cd refusal is not called": (_LINUX, _PROC_WHY),
+    "mass: a cd through a symlink to /proc is followed (the walk reads no link)":
+        (_LINUX, _PROC_WHY),
+    "mass: a PowerShell cd through a symlink to /proc is followed": (_LINUX, _PROC_WHY),
+    "mass: a -C value that reaches /proc is counted in this hook's directory":
+        (_LINUX, _PROC_WHY),
+    "mass: the -C chain is judged by its text only (the walk is skipped for -C)":
+        (_LINUX, _PROC_WHY),
+    "mass: a step onto /proc or /dev after a symlink is not noticed": (_LINUX, _PROC_WHY),
+    "mass: a symlink loop is not per-process (could-not-tell collapses to safe)":
+        (_POSIX, _LINK_WHY),
+    "mass: a directory on /proc's device is not per-process (procfs mounted elsewhere)":
+        (_POSIX, _LINK_WHY),
+    "mass: every symlink is refused, not only one that reaches /proc or /dev":
+        (_POSIX, _LINK_WHY),
+}
+
+
+def main():
+    """Run this family through `sabotage.main()` with its platform-only table in place."""
+    import sabotage  # pylint: disable=import-outside-toplevel
+    import sabotage_platform  # pylint: disable=import-outside-toplevel
+    labels = {entry[0] for entry in MASS_MUTATIONS}
+    unknown = sorted(set(MASS_PLATFORM_ONLY) - labels)
+    if unknown:
+        print(f"REFUSING TO RUN -- MASS_PLATFORM_ONLY names no entry: {unknown}")
+        return 2
+    sabotage.MUTATIONS = MASS_MUTATIONS
+    sabotage_platform.PLATFORM_ONLY.update(MASS_PLATFORM_ONLY)
+    return sabotage.main()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

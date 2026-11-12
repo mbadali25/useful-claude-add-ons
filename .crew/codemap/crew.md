@@ -1005,34 +1005,34 @@ DERIVED from `plugin/crew/hooks/scripts/crew_mass.py` (stdlib only) and
 mutations `plugin/crew/tests/mass_mutations.py` (see `len(MASS_MUTATIONS)`, run alone:
 `sabotage*.py` is harness).
 `cloud_guard._classify` (`cloud_guard.py:2149`) asks `crew_mass.classify`
-(`crew_mass.py:461`) for `Spec`s on every simple command and wraps each as a
+(`crew_mass.py:475`) for `Spec`s on every simple command and wraps each as a
 `Finding` whose rule is `massDelete`, `massCreate` or `massChange`
 (`crew_mass.RULES`). `cloud_guard.evaluate` (`cloud_guard.py:3140`) ignores those
-findings unless `mass["armed"]`, then `crew_mass.judge` (`crew_mass.py:1368`)
+findings unless `mass["armed"]`, then `crew_mass.judge` (`crew_mass.py:1487`)
 counts, compares with the limit and answers `ask` (attended) or `deny`
-(`unattended`), or `allow` when `live_approval` (`crew_mass.py:1316`) finds the
+(`unattended`), or `allow` when `live_approval` (`crew_mass.py:1435`) finds the
 owner's file. `cloud_guard.main` (`cloud_guard.py:3410`) calls
-`crew_mass.settings` (`crew_mass.py:164`) before the `guards.cloudGuard`
+`crew_mass.settings` (`crew_mass.py:175`) before the `guards.cloudGuard`
 `off` early return, so the stop works with the cloud guard off (`only_mass`).
 The switch is `guards.mass.enabled` true in either layer, else
-`crew_mass.opted_out` (`crew_mass.py:224`: a double-confirmed `humanOnly` `false`);
-anything unreadable is off. `_limits` (`crew_mass.py:200`): machine value, else
-`DEFAULT_OVERRIDES` (terraform 3 / 10 / 10, `crew_mass.py:91`), else 10 / 20 / 30;
-the repo layer can only lower. `exempt` (`crew_mass.py:261`) is the regenerable
+`crew_mass.opted_out` (`crew_mass.py:235`: a double-confirmed `humanOnly` `false`);
+anything unreadable is off. `_limits` (`crew_mass.py:211`): machine value, else
+`DEFAULT_OVERRIDES` (terraform 3 / 10 / 10, `crew_mass.py:95`), else 10 / 20 / 30;
+the repo layer can only lower. `exempt` (`crew_mass.py:272`) is the regenerable
 directory list; `worktrees` exempts by path only within two components below it,
 and `_exempt_at` judges a path by its part below `cwd`, so a repo that lives in
-a worktree is still counted. The approval id (`approval_id`, `crew_mass.py:1305`)
+a worktree is still counted. The approval id (`approval_id`, `crew_mass.py:1424`)
 is a digest of the exact command text and worktree, not of the rule; the file
 is written by `approval_hook._approve_mass` (harness PR, #737). `count_git`
-(`crew_mass.py:1214`) counts `git diff --name-status -M` lines, the branch
-against `_base` (`crew_mass.py:1170`: `origin/HEAD`, `origin/main`, `origin/master`, then the
+(`crew_mass.py:1333`) counts `git diff --name-status -M` lines, the branch
+against `_base` (`crew_mass.py:1281`: `origin/HEAD`, `origin/main`, `origin/master`, then the
 branch's own upstream; on a branch that is its own base, its upstream). `gh pr create` uses the
 `@PRBASE@` placeholder and `_base(upstream=False)`: no upstream fallback, because a PR's base is
 the repository's default branch and the upstream may be a fork's feature branch (round 9, F-A;
 without an origin ref it is could-not-tell).
 A `cd` is followed ONLY when the whole command is one plain line: `leading_cd`
-(`crew_mass.py:707`, with `_BASH_CD_RE` / `_PS_CD_RE` for the prefix and `_plain_tail`,
-`crew_mass.py:659`, for the arguments) matches `cd <path> && git <args>` in bash (lowercase
+(`crew_mass.py:788`, with `_BASH_CD_RE` / `_PS_CD_RE` for the prefix and `_plain_tail`,
+`crew_mass.py:675`, for the arguments) matches `cd <path> && git <args>` in bash (lowercase
 `cd` only, `&&` only) and `Set-Location|cd|sl <path>` then `;` or `&&` then `git <args>` in
 PowerShell. The prefix patterns hold no nested quantifier and the tail is read in one pass
 (round 5: the old `(?:WORD+|'..'|".."|[ \t])+` pattern backtracked exponentially, 18 s through
@@ -1040,7 +1040,7 @@ the real hook; `test_the_cd_grammar_and_the_git_variable_scan_are_linear_on_adve
 runs hostile inputs in a child process under a timeout). The bash path is letters, digits and
 `_ . / : -`, an existing directory, absolute or `.` / `./x`: a bare name is
 could-not-tell whatever `CDPATH` shows in this process (`_cdpath_may_apply`,
-`crew_mass.py:698`), because bash may take `CDPATH` from `BASH_ENV` or a profile; bash ignores
+`crew_mass.py:779`), because bash may take `CDPATH` from `BASH_ENV` or a profile; bash ignores
 it for `/x` and `./x` (verified by running `CDPATH=d bash -c 'cd ./r'`). Any `..` component is
 could-not-tell in both shells (round 7, JUDGEMENT from the crew-lin Linux reproduction: bash may
 walk a symlink for `..`, a logical `cd` or `set -P` from `BASH_ENV`, so the text cut would count
@@ -1048,8 +1048,17 @@ another repository). The
 PowerShell path is letters, digits and `_ . / -` with at most one leading `<letter>:/` or
 `<letter>:\` and no other colon or backslash (`Env:`, `Variable:`, `C:\a\b` are refused); the
 drive prefix is followed only when `_WINDOWS` (`os.name == "nt"`), because on Linux `c:` is a
-directory name (round 7). A cd target under `/proc/` or `/dev/` (`_per_process_dir`) is
-never followed (round 9, F-B: `/proc/self/cwd` is whichever process reads it), and on Windows a
+directory name (round 7). A cd target, or a `git -C` value or chain, that is under `/proc` or
+`/dev` or reaches one through a symlink (`_per_process_dir`, called from `leading_cd` and
+`_git_lines`) is never followed (round 9, F-B: `/proc/self/cwd` is whichever process reads it;
+round 10, BLOCK-1 and FIX-2: the RESOLVED path is judged - slashes and `.` collapsed, each
+component walked with `lstat` / `readlink`, `..` taken physically, each step compared with the
+two names and their device numbers, a link loop counted as per-process; on Windows only the
+text is judged, `_names_per_process`, because `_resolve` refuses a POSIX path there). `git
+push` uses the branch's upstream as its base only when the push goes TO that upstream
+(`_pushes_to_upstream`, round 10 BLOCK-2: git's own `@{push}` for a bare push or a lone remote,
+else remote + one refspec from this branch to the upstream branch, and only plain flags,
+`_PUSH_PLAIN_FLAGS`). On Windows a
 PowerShell target `/c/x` is never followed (round 9, F-C, verified: `Set-Location /c/Users` from
 drive D fails with `Cannot find path 'D:/c/Users'`, so it is not Git Bash's `C:/x`). The
 arguments start with the subcommand (no global option, so no `-C`, `-c`, `--git-dir`,
@@ -1062,9 +1071,9 @@ path, NBSP, a newline) is could-not-tell, as on origin/main. The round-3 tokeniz
 (`plain_tail`, `shell_commands`, `_Lexer`), the `sub["cd"]` re-scan in `cloud_guard.evaluate`
 and `obscures_env_name` are gone: the grammar admits one command, so nothing is left to
 re-scan. `GIT_DIR` / `GIT_INDEX_FILE` and kin are could-not-tell when ASSIGNED:
-`sets_git_location` (`crew_mass.py:920`, called at `cloud_guard.py:3186`) reads the command
+`sets_git_location` (`crew_mass.py:1001`, called at `cloud_guard.py:3187`) reads the command
 once into statements of WORDS (quotes removed, `$'..'` unquoted) and `_statement_sets`
-(`crew_mass.py:849`) asks, per statement, whether a real assignment sits where bash would run it:
+(`crew_mass.py:930`) asks, per statement, whether a real assignment sits where bash would run it:
 a `GIT_X=` or `GIT_X+=` word at command position (after other `NAME=v` words, `time`, `if`,
 `then`, `sudo`, `{`; brace-expanded by `_braces`), after `export`/`declare`/`typeset`/`readonly`/
 `local`, after `env` (`-S` strings read), in the string given to `eval`, `bash -c`, `pwsh -c`
@@ -1079,8 +1088,8 @@ alias set by `git -c alias.x=...` or in the repo config, `$(echo git) -C <wt> co
 `printf -v`/`read`/`xargs`/`sudo -u`, a `GIT_` name built from a variable, and a cd run without a
 `cd` word (`trap`, `find -exec`, `Start-Process`, a command word built from a variable);
 `test_the_known_gaps_of_the_git_variable_scan_are_pinned` pins the scan's. A tripwire, not a sandbox. Repeated `-C` is joined in `_git_split`
-(`crew_mass.py:296`); `cd X && git -C /abs commit` is not a followed cd but `/abs` is counted as on main;
-`count_terraform` (`crew_mass.py:1254`) reads `terraform show -json <plan>`.
+(`crew_mass.py:307`); `cd X && git -C /abs commit` is not a followed cd but `/abs` is counted as on main;
+`count_terraform` (`crew_mass.py:1373`) reads `terraform show -json <plan>`.
 The six keys are rows in `crew_keys.KEY_META` (`crew_keys.py:106`; the mass rows from
 `crew_keys.py:344`) with defaults in `crew_guards.GUARD_BLOCK_DEFAULTS`
 (`crew_guards.py:249`).

@@ -167,7 +167,11 @@ the added, deleted and changed files of the commit or of the whole branch
 against its base (`gh pr create` against the repository's default branch only:
 `origin/HEAD`, `origin/main` or `origin/master`, and "could not tell" when none exists,
 because the branch's upstream may be a fork's feature branch; `git push` also falls back to
-the upstream) - so Write and Edit work is counted where it is about to be
+the upstream, but only for a push that goes TO it - a bare `git push` that git itself would
+send there, the upstream's remote alone, or that remote and this branch (`git push fork feat`,
+`git push fork HEAD:feat`); a push that names another remote or destination, a second
+refspec, or `--all`, `--mirror`, `--tags`, `--repo` is "could not tell" when no origin base
+exists) - so Write and Edit work is counted where it is about to be
 shared; `terraform apply <plan>` (the plan's own changes), `destroy` and
 `apply -auto-approve`; and an unfiltered SQL `DELETE` or `UPDATE`.
 
@@ -187,9 +191,14 @@ one leading `<letter>:/` or `<letter>:\` drive prefix, and a drive prefix is fol
 only on Windows (elsewhere `c:/x` is a directory name, Set-Location fails and the `;`
 still runs git where the shell was). A PowerShell target written `/c/x` is "could not
 tell" on Windows: PowerShell reads it against the CURRENT drive (`D:/c/x`, verified with
-`Set-Location /c/Users`), Git Bash against `C:/x`. A target under `/proc/` or `/dev/`
-(`/proc/self/cwd`) is "could not tell" in both shells: the kernel resolves it per process, so
-the hook and the shell would read different directories. Any other colon (`Env:`, `Variable:`,
+`Set-Location /c/Users`), Git Bash against `C:/x`. A target that is under `/proc` or `/dev`,
+or reaches one (`/proc/self/cwd`, `//proc/self/cwd`, `/./proc/self/cwd`, a symlink to
+`/proc/self/cwd`, to `/proc` or to `/proc/self`), is "could not tell" in both shells: the
+kernel resolves it per process, so the hook and the shell would read different directories.
+The resolved path is judged, not the text: every symlink on the way is read, and a link loop
+is "could not tell" too. The same holds for a `git -C <dir>` value and for a chain of them
+(`git -C /proc/self/cwd/sub -C .. commit`). A symlink to an ordinary directory is followed.
+Any other colon (`Env:`, `Variable:`,
 `HKLM:`, `foo:bar`) or backslash (`C:\a\b`, `x\y`) is "could not tell", so write the path
 with forward slashes. The arguments start with the git subcommand (no global option before
 it: not `-C`, `-c`, `--git-dir`, `--work-tree`, `--namespace`), then bare words, flags

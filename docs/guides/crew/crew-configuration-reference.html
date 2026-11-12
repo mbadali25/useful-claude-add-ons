@@ -256,7 +256,11 @@ the added, deleted and changed files of the commit or of the whole branch
 against its base (<code>gh pr create</code> against the repository's default branch only:
 <code>origin/HEAD</code>, <code>origin/main</code> or <code>origin/master</code>, and "could not tell" when none exists,
 because the branch's upstream may be a fork's feature branch; <code>git push</code> also falls back to
-the upstream) - so Write and Edit work is counted where it is about to be
+the upstream, but only for a push that goes TO it - a bare <code>git push</code> that git itself would
+send there, the upstream's remote alone, or that remote and this branch (<code>git push fork feat</code>,
+<code>git push fork HEAD:feat</code>); a push that names another remote or destination, a second
+refspec, or <code>--all</code>, <code>--mirror</code>, <code>--tags</code>, <code>--repo</code> is "could not tell" when no origin base
+exists) - so Write and Edit work is counted where it is about to be
 shared; <code>terraform apply &lt;plan&gt;</code> (the plan's own changes), <code>destroy</code> and
 <code>apply -auto-approve</code>; and an unfiltered SQL <code>DELETE</code> or <code>UPDATE</code>.</p>
 <p>A command is counted in another directory ONLY when the whole command is one plain
@@ -275,9 +279,14 @@ one leading <code>&lt;letter&gt;:/</code> or <code>&lt;letter&gt;:\</code> drive
 only on Windows (elsewhere <code>c:/x</code> is a directory name, Set-Location fails and the <code>;</code>
 still runs git where the shell was). A PowerShell target written <code>/c/x</code> is "could not
 tell" on Windows: PowerShell reads it against the CURRENT drive (<code>D:/c/x</code>, verified with
-<code>Set-Location /c/Users</code>), Git Bash against <code>C:/x</code>. A target under <code>/proc/</code> or <code>/dev/</code>
-(<code>/proc/self/cwd</code>) is "could not tell" in both shells: the kernel resolves it per process, so
-the hook and the shell would read different directories. Any other colon (<code>Env:</code>, <code>Variable:</code>,
+<code>Set-Location /c/Users</code>), Git Bash against <code>C:/x</code>. A target that is under <code>/proc</code> or <code>/dev</code>,
+or reaches one (<code>/proc/self/cwd</code>, <code>//proc/self/cwd</code>, <code>/./proc/self/cwd</code>, a symlink to
+<code>/proc/self/cwd</code>, to <code>/proc</code> or to <code>/proc/self</code>), is "could not tell" in both shells: the
+kernel resolves it per process, so the hook and the shell would read different directories.
+The resolved path is judged, not the text: every symlink on the way is read, and a link loop
+is "could not tell" too. The same holds for a <code>git -C &lt;dir&gt;</code> value and for a chain of them
+(<code>git -C /proc/self/cwd/sub -C .. commit</code>). A symlink to an ordinary directory is followed.
+Any other colon (<code>Env:</code>, <code>Variable:</code>,
 <code>HKLM:</code>, <code>foo:bar</code>) or backslash (<code>C:\a\b</code>, <code>x\y</code>) is "could not tell", so write the path
 with forward slashes. The arguments start with the git subcommand (no global option before
 it: not <code>-C</code>, <code>-c</code>, <code>--git-dir</code>, <code>--work-tree</code>, <code>--namespace</code>), then bare words, flags

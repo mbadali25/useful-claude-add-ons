@@ -956,18 +956,121 @@ def test_a_git_location_assignment_in_the_command_still_stops(repo, tmp_path, co
     assert "not read here" in result["reason"], result
 
 
-def test_the_branch_upstream_is_the_base_when_no_origin_ref_exists(repo):
-    git(repo, "checkout", "-qb", "feat")
-    git(repo, "branch", "-q", "--set-upstream-to=main", "feat")
+def _tracking(repo, upstream="fork", branch="feat", count=30):
+    """`repo` on `branch` with `count` new files committed and ALREADY pushed to
+    `<upstream>/<branch>`, which it tracks. Remotes `origin` and `fork` exist; origin/HEAD,
+    origin/main and origin/master do not (unless the caller made one)."""
+    for name in ("origin", "fork"):
+        git(repo, "remote", "add", name, f"https://example.invalid/{name}.git")
+    if branch != "main":
+        git(repo, "checkout", "-qb", branch)
+    _fill(repo / "new", count)
+    _commit_all(repo, "new files")
+    git(repo, "update-ref", f"refs/remotes/{upstream}/{branch}", "HEAD")
+    git(repo, "config", f"branch.{branch}.remote", upstream)
+    git(repo, "config", f"branch.{branch}.merge", f"refs/heads/{branch}")
+    assert git(repo, "rev-parse", "--abbrev-ref", "@{u}") == f"{upstream}/{branch}"
+
+
+def _no_origin_base(repo):
     for ref in ("origin/HEAD", "origin/main", "origin/master"):
         assert not git(repo, "rev-parse", "--verify", "-q", ref, check=False)
-    assert git(repo, "rev-parse", "--abbrev-ref", "@{u}") == "main"
+
+
+def test_the_branch_upstream_is_the_base_when_no_origin_ref_exists(repo):
+    """A push TO the upstream is measured against it: nothing new is nothing, 2 new files
+    pass, 25 more stop."""
+    _tracking(repo)
+    _no_origin_base(repo)
+    _passes(repo, "git push")
     _fill(repo / "q", 2)
     _commit_all(repo, "two")
-    _passes(repo, "git push origin feat")
+    _passes(repo, "git push")
+    _passes(repo, "git push fork feat")
     _fill(repo / "r", 25)
     _commit_all(repo, "twenty-five")
-    _stops(repo, "git push origin feat", crew_mass.MASS_CREATE)
+    _stops(repo, "git push", crew_mass.MASS_CREATE)
+    _stops(repo, "git push fork feat", crew_mass.MASS_CREATE)
+
+
+# Round 10 (BLOCK-2). The fixture: no origin/HEAD, origin/main or origin/master; `feat` holds 30
+# new files, tracks fork/feat and is already pushed there. Measured against the upstream every
+# push counts 0 - right for a push TO fork/feat (a no-op), wrong for one that names another
+# remote or destination, which really sends the 30 files. main asks for all of these.
+_PUSH_ELSEWHERE = [
+    "git push origin HEAD:main", "git push origin feat", "git push origin HEAD",
+    "git push -u origin feat", "git push origin feat:refs/heads/other", "git push --all origin",
+    "git push --mirror origin",
+    # past the reviewer's list
+    "git push origin", "git push --set-upstream origin feat", "git push origin refs/heads/feat",
+    "git push fork feat:other", "git push fork HEAD:main", "git push fork main",
+    "git push fork main:feat", "git push fork +feat", "git push fork :feat",
+    "git push fork feat main", "git push --all", "git push --mirror", "git push --tags",
+    "git push --all fork", "git push --mirror fork", "git push --tags fork feat",
+    "git push --repo=origin", "git push -o ci.skip origin feat", "git push -uq origin feat",
+    "git push --follow-tags", "git push --prune fork", "git push fork @",
+    "git push https://example.invalid/origin.git feat", "git -C . push origin feat",
+]
+_PUSH_TO_UPSTREAM = [
+    "git push", "git push fork feat",
+    # the same push, spelled out
+    "git push fork", "git push fork HEAD", "git push fork feat:feat", "git push fork HEAD:feat",
+    "git push fork refs/heads/feat:refs/heads/feat", "git push -u fork feat",
+    "git push --set-upstream fork feat", "git push -q fork feat", "git push --no-verify",
+]
+
+
+@pytest.mark.parametrize("command", _PUSH_ELSEWHERE)
+def test_a_push_that_names_another_remote_or_refspec_is_not_measured_against_the_upstream(
+        repo, command):
+    _tracking(repo)
+    _no_origin_base(repo)
+    result = _stops(repo, command, crew_mass.MASS_CREATE)
+    assert "other than its upstream `fork/feat`" in result["reason"], result
+
+
+@pytest.mark.parametrize("command", _PUSH_TO_UPSTREAM)
+def test_a_push_to_the_upstream_itself_is_measured_against_it(repo, command):
+    """The two real no-ops of the round-10 report (`git push`, `git push fork feat`) and the
+    other spellings of the same push: nothing new to send, so nothing to ask."""
+    _tracking(repo)
+    _no_origin_base(repo)
+    _passes(repo, command)
+
+
+def test_a_push_elsewhere_is_asked_with_an_origin_upstream_and_on_main(repo, tmp_path):
+    """The other two shapes of BLOCK-2: an upstream origin/feat (no origin base ref), and
+    `main` tracking fork/main while origin/main is its own base."""
+    _tracking(repo, upstream="origin")
+    _no_origin_base(repo)
+    for command in ("git push origin HEAD:main", "git push origin feat:other", "git push fork",
+                    "git push fork feat", "git push --all origin"):
+        result = _stops(repo, command, crew_mass.MASS_CREATE)
+        assert "other than its upstream `origin/feat`" in result["reason"], (command, result)
+    for command in ("git push", "git push origin feat", "git push origin HEAD", "git push origin"):
+        _passes(repo, command)
+    other = make_repo(tmp_path / "second", mode=None)
+    (other / ".crew" / "config.json").write_text(
+        json.dumps({"guards": {"mass": {"enabled": True}}}), encoding="utf-8")
+    git(other, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _tracking(other, branch="main")
+    for command in ("git push origin main", "git push origin HEAD", "git push origin",
+                    "git push origin HEAD:main", "git push --all origin"):
+        result = _stops(other, command, crew_mass.MASS_CREATE)
+        assert "other than its upstream `fork/main`" in result["reason"], (command, result)
+    for command in ("git push", "git push fork main", "git push fork"):
+        _passes(other, command)
+
+
+def test_a_plain_push_that_git_would_send_elsewhere_is_not_measured_against_the_upstream(repo):
+    """`remote.pushDefault` sends a bare `git push` to origin although the branch tracks
+    fork/feat: git's own `@{push}` is read, not the text."""
+    _tracking(repo)
+    git(repo, "config", "remote.pushDefault", "origin")
+    for command in ("git push", "git push fork"):
+        result = _stops(repo, command, crew_mass.MASS_CREATE)
+        assert "other than its upstream" in result["reason"], (command, result)
+    _passes(repo, "git push fork feat")
 
 
 def test_gh_pr_create_does_not_use_the_branch_upstream_as_its_base(repo):
@@ -982,31 +1085,193 @@ def test_gh_pr_create_does_not_use_the_branch_upstream_as_its_base(repo):
     _commit_all(repo, "thirty")
     result = _stops(repo, "gh pr create --fill")
     assert "pull request" in result["reason"] and "origin/main" in result["reason"], result
-    _stops(repo, "git push origin feat", crew_mass.MASS_CREATE)  # push keeps the upstream base
+    # `git push origin feat` names a remote the upstream (the local `main`) is not: asked too
+    _stops(repo, "git push origin feat", crew_mass.MASS_CREATE)
 
 
-@pytest.mark.parametrize("target", ["/proc/self/cwd", "/proc/1/cwd", "/proc/", "/proc",
-                                    "/dev/fd/3", "/dev/shm/x", "/dev"])
+_LINUX_ONLY = pytest.mark.skipif(not sys.platform.startswith("linux"),
+                                 reason="/proc/self/cwd exists on Linux only")
+_POSIX_ONLY = pytest.mark.skipif(os.name == "nt",
+                                 reason="the symlink walk is POSIX's (Windows judges the text)")
+
+
+@pytest.mark.parametrize("target", [
+    "/proc/self/cwd", "/proc/1/cwd", "/proc/", "/proc", "/dev/fd/3", "/dev/shm/x", "/dev",
+    # round 10 (BLOCK-1): the same directory under another spelling
+    "//proc/self/cwd", "///proc/self/cwd", "/./proc/self/cwd", "/././proc/self/cwd",
+    "/.//proc/self/cwd", "//proc", "/./proc", "/proc//self/cwd", "/proc/./self/cwd",
+    "//dev/fd/3", "/./dev/fd/3", "///dev", "/PROC/self/cwd", "/Dev/fd/3",
+    "/proc/thread-self/cwd", "/dev/stdin"])
 def test_a_per_process_cd_target_is_never_followed(target):
-    """Round 9 (F-B): `/proc/self/cwd` is the directory of whichever process reads it, so
-    `cd /proc/self/cwd && git commit` names the shell's directory to bash and the hook's own
-    to this process. On Windows `_resolve` refuses any such path anyway; the helper test
-    holds the rule everywhere, and the Linux-only case below holds the call."""
+    """Round 9 (F-B), round 10 (BLOCK-1): `/proc/self/cwd` is the directory of whichever
+    process reads it, so `cd /proc/self/cwd && git commit` names the shell's directory to bash
+    and the hook's own to this process - however the path is spelled. On Windows `_resolve`
+    refuses any such path anyway; this holds the text rule everywhere, and the Linux-only cases
+    below hold the resolved-path walk and the calls."""
+    assert crew_mass._names_per_process(target)  # pylint: disable=protected-access
     assert crew_mass._per_process_dir(target)  # pylint: disable=protected-access
     for shell in ("bash", "powershell"):
         assert crew_mass.leading_cd(f"cd {target} && git commit -m x", "/", shell) is None
 
 
 @pytest.mark.parametrize("target", ["/procfs/x", "/devices/x", "/home/proc/x", "/opt/dev/x",
-                                    "/tmp/proc"])
+                                    "/tmp/proc", "proc/x", "dev", "./proc/x"])
 def test_a_path_that_only_looks_like_proc_or_dev_is_not_per_process(target):
+    assert not crew_mass._names_per_process(target)  # pylint: disable=protected-access
     assert not crew_mass._per_process_dir(target)  # pylint: disable=protected-access
 
 
-@pytest.mark.skipif(os.name == "nt", reason="/proc/self/cwd exists on Linux only")
+@_LINUX_ONLY
 def test_cd_into_proc_self_cwd_is_could_not_tell_on_linux():
-    assert crew_mass.leading_cd("cd /proc/self/cwd && git commit -m x", "/", "bash") is None
     assert os.path.isdir("/proc/self/cwd")
+    for target in ("/proc/self/cwd", "//proc/self/cwd", "/./proc/self/cwd", "/proc/self/cwd/",
+                   "/proc/thread-self/cwd", f"/proc/{os.getpid()}/cwd"):
+        assert crew_mass.leading_cd(f"cd {target} && git commit -m x", "/", "bash") is None
+        assert crew_mass.leading_cd(f"cd {target}; git commit -m x", "/", "powershell") is None
+
+
+def _proc_links(folder):
+    """The round-10 symlinks, made in `folder`: `lncwd` -> /proc/self/cwd, `lnproc` -> /proc,
+    `lnself` -> /proc/self, and the shapes past them."""
+    for name, dest in (("lncwd", "/proc/self/cwd"), ("lnproc", "/proc"),
+                       ("lnself", "/proc/self"), ("ln2", "lncwd"), ("lnroot", "/"),
+                       ("lnslash", "//proc/self/cwd"), ("lnfd", "/dev/fd"),
+                       ("lnrel", os.path.relpath("/proc/self/cwd", str(folder)))):
+        os.symlink(dest, str(folder / name))
+    (folder / "d").mkdir()
+    os.symlink("../lncwd", str(folder / "d" / "up"))
+
+
+# Round 10 (BLOCK-1, FIX-2). {t} is a directory that holds the links; the shell's directory
+# (the payload cwd, a worktree with 32 staged files) holds them too, for the relative forms.
+_PROC_SPELLINGS_BASH = [
+    "cd //proc/self/cwd && git commit -m x", "cd ///proc/self/cwd && git commit -m x",
+    "cd /./proc/self/cwd && git commit -m x", "cd {t}/lncwd && git commit -m x",
+    "cd ./lncwd && git commit -m x", "cd {t}/lnproc/self/cwd && git commit -m x",
+    "cd {t}/lnself/cwd && git commit -m x",
+    # past the reviewer's list
+    "cd /proc/self/cwd/ && git commit -m x", "cd /proc//self/./cwd && git commit -m x",
+    "cd /proc/thread-self/cwd && git commit -m x", "cd {t}/lncwd/ && git commit -m x",
+    "cd {t}/lncwd/. && git commit -m x", "cd {t}//lncwd && git commit -m x",
+    "cd {t}/ln2 && git commit -m x", "cd ./ln2 && git commit -m x",
+    "cd {t}/lnslash && git commit -m x", "cd {t}/lnrel && git commit -m x",
+    "cd {t}/d/up && git commit -m x", "cd {t}/lnroot/proc/self/cwd && git commit -m x",
+    "cd ./lnproc/self/cwd && git commit -m x", "cd ./lnself/cwd && git commit -m x",
+    "cd {t}/lnroot{t}/lncwd && git commit -m x",
+    # FIX-2: the same directory as a -C value, alone and in a chain
+    "git -C /proc/self/cwd commit -m x", "git -C //proc/self/cwd commit -m x",
+    "git -C /./proc/self/cwd commit -m x", "git -C {t}/lncwd commit -m x",
+    "git -C lncwd commit -m x", "git -C {t}/lnproc/self/cwd commit -m x",
+    "git -C {t}/lnself/cwd commit -m x", "git -C /proc/self/cwd/sub -C .. commit -m x",
+    "git -C / -C proc/self/cwd commit -m x", "git -C {t} -C lncwd commit -m x",
+    "git -C {t}/d -C up commit -m x", "git -C {t}/d -C ../lncwd commit -m x",
+    "git -C {t}/lncwd/sub -C .. commit -m x", "git -C {t}/lnproc -C self -C cwd commit -m x",
+    "git -C sub -C ../lncwd commit -m x", "git -C {t}/lnroot -C proc/self/cwd commit -m x",
+]
+_PROC_SPELLINGS_PS = [
+    "cd //proc/self/cwd; git commit -m x", "cd /./proc/self/cwd; git commit -m x",
+    "Set-Location {t}/lncwd; git commit -m x", "cd lncwd; git commit -m x",
+    "sl lnproc/self/cwd; git commit -m x",
+    # past the reviewer's list
+    "cd ///proc/self/cwd && git commit -m x", "sl lnself/cwd && git commit -m x",
+    "Set-Location ./ln2; git commit -m x", "cd {t}/lnrel; git commit -m x",
+    "cd lncwd/; git commit -m x", "cd {t}/d/up; git commit -m x",
+    "git -C lncwd commit -m x", "git -C //proc/self/cwd commit -m x",
+]
+
+
+def _shell_in_big_hook_in_clean(repo, tmp_path, monkeypatch):
+    """The reviewer's scene: THIS process (the hook) sits in the clean repo, so that is what
+    `/proc/self/cwd` names here; the shell sits in a worktree with 32 staged files."""
+    wt = _big_wt(repo, tmp_path, count=32)
+    links = tmp_path / "links"
+    links.mkdir()
+    for folder in (links, wt):
+        _proc_links(folder)
+    for folder in (repo, wt):
+        (folder / "sub").mkdir(exist_ok=True)
+    monkeypatch.chdir(repo)
+    return wt, links
+
+
+@_LINUX_ONLY
+@pytest.mark.parametrize("form", _PROC_SPELLINGS_BASH)
+def test_a_cd_or_dash_C_that_reaches_proc_is_asked_however_it_is_spelled(
+        repo, tmp_path, monkeypatch, form):
+    wt, links = _shell_in_big_hook_in_clean(repo, tmp_path, monkeypatch)
+    result = _stopped_in(repo, wt, form.format(t=links), crew_mass.MASS_CREATE)
+    assert "could not be counted" in result["reason"], result
+
+
+@_LINUX_ONLY
+@pytest.mark.parametrize("form", _PROC_SPELLINGS_PS)
+def test_a_powershell_cd_or_dash_C_that_reaches_proc_is_asked(repo, tmp_path, monkeypatch, form):
+    wt, links = _shell_in_big_hook_in_clean(repo, tmp_path, monkeypatch)
+    _ps_stopped(repo, wt, form.format(t=links))
+
+
+@_LINUX_ONLY
+def test_a_dash_C_that_reaches_proc_names_the_reason(repo, tmp_path, monkeypatch):
+    wt, links = _shell_in_big_hook_in_clean(repo, tmp_path, monkeypatch)
+    for form in ("git -C /proc/self/cwd commit -m x", f"git -C {links}/lncwd commit -m x",
+                 "git -C /proc/self/cwd/sub -C .. commit -m x"):
+        result = _stopped_in(repo, wt, form, crew_mass.MASS_CREATE)
+        assert "/proc or /dev" in result["reason"], result
+
+
+@_POSIX_ONLY
+def test_an_ordinary_symlink_is_still_followed_and_counted_where_it_points(repo, tmp_path):
+    """The walk refuses /proc and /dev, not symlinks: a link to a real directory is the same
+    directory for the shell and for this process."""
+    wt = _big_wt(repo, tmp_path, count=32)
+    os.symlink(str(wt), str(tmp_path / "lnwt"))
+    os.symlink(str(repo), str(tmp_path / "lnrepo"))
+    os.symlink("lnrepo", str(tmp_path / "lnchain"))
+    for name in ("lnwt", "lnrepo", "lnchain"):
+        assert not crew_mass._per_process_dir(str(tmp_path / name))  # pylint: disable=protected-access
+    assert crew_mass.leading_cd(f"cd {tmp_path}/lnrepo && git status", str(wt), "bash")
+    _clean_in(repo, wt, f"cd {tmp_path}/lnrepo && git commit -m x")
+    _clean_in(repo, wt, f"cd {tmp_path}/lnchain && git commit -m x")
+    _clean_in(repo, wt, f"git -C {tmp_path}/lnrepo commit -m x")
+    _stopped_in(repo, repo, f"cd {tmp_path}/lnwt && git commit -m x", crew_mass.MASS_CREATE)
+    _stopped_in(repo, repo, f"git -C {tmp_path}/lnwt commit -m x", crew_mass.MASS_CREATE)
+
+
+@_POSIX_ONLY
+def test_a_symlink_walk_that_cannot_finish_is_per_process_and_a_missing_path_is_not(tmp_path):
+    """Could not tell is never "not per-process": a link loop is refused. A path that is not
+    there has nothing to follow (the caller's own existence check refuses it)."""
+    os.symlink("loop", str(tmp_path / "loop"))
+    os.symlink("b", str(tmp_path / "a"))
+    os.symlink("a", str(tmp_path / "b"))
+    for name in ("loop", "a", "loop/x"):
+        assert crew_mass._per_process_dir(str(tmp_path / name))  # pylint: disable=protected-access
+    assert not crew_mass._per_process_dir(str(tmp_path / "missing" / "x"))  # pylint: disable=protected-access
+    (tmp_path / "file").write_text("x", encoding="utf-8")
+    assert not crew_mass._per_process_dir(str(tmp_path / "file" / "x"))  # pylint: disable=protected-access
+
+
+@_LINUX_ONLY
+def test_the_walk_refuses_proc_by_name_when_no_device_number_can_be_read(tmp_path, monkeypatch):
+    """Two checks hold each step: the name (`/proc`, `/dev`) and the device number. The name
+    alone must be enough, for a host where the device number cannot be read."""
+    _proc_links(tmp_path)
+    monkeypatch.setattr(crew_mass, "_per_process_devices", set)
+    for name in ("lncwd", "lnproc/self/cwd", "lnself/cwd", "ln2", "lnrel", "d/up", "lnfd",
+                 "lnroot/proc/self/cwd", "lnslash"):
+        assert crew_mass._per_process_dir(str(tmp_path / name)), name  # pylint: disable=protected-access
+
+
+@_POSIX_ONLY
+def test_a_directory_on_the_proc_device_is_per_process_wherever_it_is_mounted(tmp_path,
+                                                                              monkeypatch):
+    """A procfs mounted at another path has /proc's device number. No test can mount one, so
+    the device set is replaced with this directory's own."""
+    folder = tmp_path / "mnt"
+    folder.mkdir()
+    assert not crew_mass._per_process_dir(str(folder))  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_mass, "_per_process_devices", lambda: {os.stat(str(folder)).st_dev})
+    assert crew_mass._per_process_dir(str(folder))  # pylint: disable=protected-access
 
 
 @pytest.mark.skipif(os.name != "nt", reason="the /c/ drive form is mapped on Windows only")
