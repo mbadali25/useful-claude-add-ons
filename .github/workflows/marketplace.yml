@@ -90,6 +90,11 @@ jobs:
       # kills every negation below it - each get a case here.
       - name: crew ignore-policy suite
         run: python3 scripts/_test/crew-ignore-policy.py
+      # The code map places every root file a plugin version bump touches, so
+      # autopilot's split-check can count a bump ticket's subsystems instead of
+      # stopping at split-check-unknown. Goes red on the pre-fix paths: line.
+      - name: Code map coverage suite
+        run: python3 scripts/_test/codemap-coverage.py
       # check_verifying_doc: every path VERIFYING.md names exists. Must-fail cases
       # include a misspelt top-level directory and a path inside a fenced block.
       - name: VERIFYING.md path suite
