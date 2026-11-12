@@ -2141,3 +2141,247 @@ def test_an_absolute_dash_C_after_a_cd_is_counted_there_as_on_main(repo, tmp_pat
     _clean_in(repo, wt, f"cd {_fwd(other)} && git -C {_fwd(repo)} commit -m x")
     _stopped_in(repo, repo, f"cd {_fwd(other)} && git -C {_fwd(wt)} commit -m x",
                 crew_mass.MASS_CREATE)
+
+
+# --- round 13 (crew-lin) ------------------------------------------------------------
+# BLOCK-A: a repeated -C was joined as TEXT and then tilde-expanded, so `-C aa -C ~/r` was read
+# as the literal `aa/~/r` (clean) while bash expands `~/r` to $HOME/r (dirty): main asked, the
+# PR allowed, and real bash committed 75 files there. Each -C is now resolved against the
+# directory the one before it reached, and a chain holding a `~` is "could not tell" (its
+# quoting is gone by the time the words reach the guard).
+
+def _dirty(path, count=35, armed=False):
+    """A repo at `path` whose `a/` holds `count` committed files, every one modified and
+    UNSTAGED, plus an unmodified `one.txt` and `README`."""
+    path.mkdir(parents=True, exist_ok=True)
+    git(path, "init", "-q", "-b", "main")
+    for key, value in (("user.name", "t"), ("user.email", "t@example.invalid"),
+                       ("commit.gpgsign", "false"), ("core.autocrlf", "false")):
+        git(path, "config", key, value)
+    _fill(path / "a", count, text="one")
+    (path / "one.txt").write_text("one", encoding="utf-8")
+    (path / "README").write_text("x", encoding="utf-8")
+    if armed:
+        (path / ".crew").mkdir()
+        (path / ".crew" / "config.json").write_text(
+            json.dumps({"guards": {"mass": {"enabled": True}}}), encoding="utf-8")
+        (path / ".gitignore").write_text(".crew/\nlist*\nsmall*\n-\n", encoding="utf-8")
+    _commit_all(path, "root")
+    _fill(path / "a", count, text="two")
+    (path / "one.txt").write_text("two", encoding="utf-8")
+    return path
+
+
+def _raw(repo, cwd, command, tool="Bash"):
+    """`evaluate` with the command text exactly as given (no backslash rewrite)."""
+    return cloud_guard.evaluate(str(repo), tool, command, {"cwd": str(cwd)}, "block",
+                                crew_mass.settings(str(repo)))
+
+
+@pytest.mark.parametrize("command", [
+    "git -C aa -C ~/rbig commit -a -m x", "git -C aa -C ~/rbig reset --hard",
+    "git -C aa -C ~ -C rbig commit -a -m x", "git -C '~' -C rb commit -a -m x",
+    "git -C \\~ -C rb reset --hard", "git -C ~ -C rb commit -a -m x",
+])
+def test_a_repeated_C_holding_a_tilde_is_could_not_tell(repo, tmp_path, command):
+    home = tmp_path / "home"
+    _dirty(home / "rbig", 75)
+    _dirty(home / "rb", 0)  # $HOME/rb: clean
+    _dirty(repo / "aa" / "~" / "rbig", 0)  # the literal aa/~/rbig: clean
+    _dirty(repo / "~" / "rb", 75)  # the literal ./~/rb: dirty
+    git(repo / "aa" / "~" / "rbig", "commit", "-qam", "clean")
+    git(home / "rb", "commit", "-qam", "clean")
+    result = _raw(repo, repo, command)
+    assert _mass_rows(result) and result["decision"] in ("ask", "deny"), (command, result)
+
+
+def test_a_single_tilde_C_and_a_tilde_free_chain_are_still_counted(repo, tmp_path):
+    home = tmp_path / "home"
+    for clean in (home / "rb", repo / "aa" / "rb"):
+        _dirty(clean, 0)
+        git(clean, "commit", "-qam", "clean")
+    _clean_in(repo, repo, "git -C ~/rb commit -a -m x")  # one -C: expanded, as on main
+    _clean_in(repo, repo, f"git -C {_fwd(home)} -C rb commit -a -m x")
+    _clean_in(repo, repo, "git -C aa -C rb reset --hard")
+    _dirty(repo / "aa" / "big", 35)
+    _stopped_in(repo, repo, "git -C aa -C big reset --hard", crew_mass.MASS_CHANGE)
+
+
+def test_a_chain_after_an_unfollowed_cd_is_walked_from_its_absolute_head(repo, tmp_path):
+    """`cd X; git -C /abs -C rel`: the cd is not followed, but every value after an absolute
+    first one is known, so the chain is counted (clean: allowed; dirty: stopped)."""
+    base = tmp_path / "b"
+    git(_dirty(base / "small", 0), "commit", "-qam", "clean")
+    _dirty(base / "big", 35)
+    _clean_in(repo, repo, f"cd {_fwd(tmp_path)}; git -C {_fwd(base)} -C small commit -a -m x")
+    _stopped_in(repo, repo, f"cd {_fwd(tmp_path)}; git -C {_fwd(base)} -C big commit -a -m x",
+                crew_mass.MASS_CHANGE)
+    _stopped_in(repo, repo, f"cd {_fwd(tmp_path)}; git -C b -C small commit -a -m x",
+                crew_mass.MASS_DELETE)  # a relative head after a cd: could not tell
+
+
+@pytest.mark.skipif(os.name != "nt", reason="a drive and Git Bash's /c/ form exist on Windows")
+def test_a_chain_is_not_joined_across_drives_on_windows(tmp_path):
+    """`os.path.join("C:/x", "/c/y")` keeps the drive (`C:/c/y`); git (after Git Bash maps
+    `/c/y` to `C:/y`) goes to C:/y. Each value is resolved on its own."""
+    folder = _fwd(tmp_path)
+    posix = "/" + folder[0].lower() + folder[2:]
+    path, ok = crew_mass._resolve_override(  # pylint: disable=protected-access
+        ("C:/elsewhere", posix), str(tmp_path), False)
+    assert ok and os.path.normcase(os.path.normpath(path)) == os.path.normcase(
+        os.path.normpath(str(tmp_path)))
+
+
+# BLOCK-B: `git commit <pathspec>` commits those paths' WORKING-TREE state whatever is staged,
+# and `--pathspec-from-file <f>` was read as the pathspec `f`. Main counted the index (0) and
+# allowed; real bash committed / deleted / rewrote 45 files. Both forms are now counted, plain
+# and after a followed cd, BESIDE main's own count (never instead of it).
+
+_PATHSPEC_BLOCKS = [
+    "git commit -m x .", "git commit -m x a", "git commit -m x -- a", "git commit -mx a",
+    "git commit -m x -o a", "git commit -m x --only a", "git commit -m x a/",
+    "git commit -m x ':(glob)a/*'", "git commit -F README a",
+    "git commit --author 'a <b@c.d>' -m x a", "git commit -m x --pathspec-from-file list.txt",
+    "git commit -m x --pathspec-from-file=list.txt",
+    "git commit -m x --pathspec-from-file=list0.txt --pathspec-file-nul",
+    "git rm -f --pathspec-from-file list.txt", "git rm -f --pathspec-from-file=list.txt",
+    "git restore --pathspec-from-file list.txt", "git restore --pathspec-from-file=list.txt",
+    "git checkout --pathspec-from-file=list.txt", "git checkout HEAD --pathspec-from-file=list.txt",
+    "git checkout --pathspec-from-file list.txt",
+    # could not tell: standard input, a missing file, a C-quoted line, a NUL without the flag,
+    # a file that is not UTF-8
+    "git commit -m x --pathspec-from-file=-", "git rm -f --pathspec-from-file -",
+    "git commit -m x --pathspec-from-file=missing.txt",
+    "git commit -m x --pathspec-from-file=listq.txt",
+    "git commit -m x --pathspec-from-file=list0.txt",
+    "git restore --pathspec-from-file=listl.txt",
+]
+
+
+def _pathspec_lists(repo, count=35):
+    names = [f"a/f{index}.txt" for index in range(count)]
+    (repo / "list.txt").write_text("\n".join(names) + "\n", encoding="utf-8", newline="\n")
+    (repo / "list0.txt").write_text("\0".join(names) + "\0", encoding="utf-8", newline="\n")
+    (repo / "listq.txt").write_text("\n".join(f'"{n}"' for n in names) + "\n",
+                                    encoding="utf-8", newline="\n")
+    (repo / "listl.txt").write_bytes(b"a/f\xe9.txt\n")
+    (repo / "small.txt").write_text("one.txt\nREADME\n", encoding="utf-8", newline="\n")
+    (repo / "small0.txt").write_text("one.txt\0README\0", encoding="utf-8", newline="\n")
+
+
+@pytest.mark.parametrize("command", _PATHSPEC_BLOCKS)
+def test_a_pathspec_or_a_pathspec_file_is_counted(tmp_path, machine, command):
+    assert machine
+    dirty = _dirty(tmp_path / "dirty", armed=True)
+    _pathspec_lists(dirty)
+    elsewhere = _dirty(tmp_path / "elsewhere", 0, armed=True)
+    _stops(dirty, command)
+    result = _in(dirty, elsewhere, f"cd {_fwd(dirty)} && {command}")
+    assert _mass_rows(result) and result["decision"] in ("ask", "deny"), (command, result)
+
+
+@pytest.mark.parametrize("command", [
+    "git commit -m x one.txt", "git commit -m a one.txt", "git commit -m x README one.txt",
+    "git commit -m x --pathspec-from-file small.txt",
+    "git commit -m x --pathspec-from-file=small0.txt --pathspec-file-nul",
+    "git rm -f --pathspec-from-file small.txt", "git restore --pathspec-from-file small.txt",
+    "git checkout --pathspec-from-file=small.txt",
+])
+def test_a_small_pathspec_beside_a_large_unstaged_change_passes(tmp_path, machine, command):
+    """Must-allow beside each must-block: the 35 unstaged files under a/ are not in the
+    pathspec (and `-m a` is the message, not a pathspec)."""
+    assert machine
+    dirty = _dirty(tmp_path / "dirty", armed=True)
+    _pathspec_lists(dirty)
+    elsewhere = _dirty(tmp_path / "elsewhere", 0, armed=True)
+    _passes(dirty, command)
+    if "=" not in command:  # a glued value is no plain flag: that line is not followed
+        _clean_in(dirty, elsewhere, f"cd {_fwd(dirty)} && {command}")
+
+
+def test_a_file_named_dash_is_not_the_standard_input(tmp_path, machine):
+    assert machine
+    dirty = _dirty(tmp_path / "dirty", armed=True)
+    (dirty / "-").write_text("one.txt\n", encoding="utf-8", newline="\n")
+    _stops(dirty, "git commit -m x --pathspec-from-file -", crew_mass.MASS_CHANGE)
+    (dirty / "-").unlink()
+    _stops(dirty, "git commit -m x --pathspec-from-file -", crew_mass.MASS_CHANGE)
+
+
+def test_commit_include_counts_the_index_and_the_paths_together(tmp_path, machine):
+    """`-i` commits what is staged AND the paths: 20 staged + 20 listed is 40 (> 30), though
+    neither alone reaches the limit."""
+    assert machine
+    dirty = _dirty(tmp_path / "dirty", count=20, armed=True)
+    _fill(dirty / "b", 20, text="one")
+    _commit_all(dirty, "b")
+    _fill(dirty / "b", 20, text="two")
+    _fill(dirty / "a", 20, text="three")
+    git(dirty, "add", "a")
+    _passes(dirty, "git commit -m x")
+    _stops(dirty, "git commit -m x -i b", crew_mass.MASS_CHANGE)
+
+
+# NIT: a bare --attr-source / --super-prefix took the subcommand as its value, so
+# `git --super-prefix reset --hard` was no command at all. Both readings are now judged.
+
+@pytest.mark.parametrize("opt", ["--super-prefix", "--attr-source"])
+def test_a_bare_value_option_cannot_swallow_the_subcommand(tmp_path, machine, opt):
+    assert machine
+    dirty = _dirty(tmp_path / "dirty", armed=True)
+    result = _stops(dirty, f"git {opt} reset --hard")
+    assert "may or may not take the next word" in result["reason"], result["reason"]
+    force = cloud_guard._git_force_push  # pylint: disable=protected-access
+    assert force([opt, "push", "--force"]) and force([opt, "HEAD", "push", "-f"])
+    assert not force([opt, "HEAD", "push"])
+
+
+# FIX-1: PowerShell's legacy native argument passing (pwsh 7.0-7.2, Windows PowerShell 5.1,
+# `$PSNativeCommandArgumentPassing = 'Legacy'`) strips or re-splits a `"` inside a quoted
+# argument and drops an empty one, so neither is a plain PowerShell argument. Measured on
+# Windows pwsh 7.6.9: Legacy passes `'." -dx ".'` as `. -dx .` and drops `''`.
+
+def test_a_powershell_quoted_argument_holding_a_quote_or_nothing_is_not_followed(repo, tmp_path):
+    wt, clean = _cwd_big_cd_clean(repo, tmp_path)
+    target = _fwd(clean)
+    for tail in ("git clean -f '.\" -dx \".'", "git commit -m 'a\"b'", "git commit -m ''",
+                 'git commit -m ""', "git commit -m x ''"):
+        command = f"Set-Location {target} && {tail}"
+        assert crew_mass.leading_cd(command, str(wt), "powershell") is None, command
+    # bash passes both exactly as written
+    assert crew_mass.leading_cd(f"cd {target} && git commit -m 'a\" b'", str(wt), "bash")
+    assert crew_mass.leading_cd(f"cd {target} && git commit -m ''", str(wt), "bash")
+    assert crew_mass.leading_cd(f"Set-Location {target} && git commit -m 'a b'", str(wt),
+                                "powershell")
+
+
+def test_the_powershell_cd_words_are_matched_in_ascii_only(repo, tmp_path):
+    """Python's re.IGNORECASE folds `\u017f` (U+017F) to `s`: `\u017fl` is no PowerShell
+    alias, so it is not a cd here either."""
+    wt, clean = _cwd_big_cd_clean(repo, tmp_path)
+    target = _fwd(clean)
+    assert crew_mass.leading_cd(f"\u017fl {target} && git commit -m x", str(wt),
+                                "powershell") is None
+    assert crew_mass.leading_cd(f"SL {target} && git commit -m x", str(wt), "powershell")
+
+
+# Owner pick (round 13, via crew-lin): pull, fetch and a fast-forward merge carry no mass rule
+# on main or here. Pinned, so a rule added for them later is a deliberate change. The repo has
+# 35 STAGED changes, so a rule that counted the index (as commit does) would stop them.
+
+@pytest.mark.parametrize("tail", ["git pull --ff-only", "git pull", "git fetch",
+                                  "git merge --ff-only origin/main"])
+def test_pull_fetch_and_a_fast_forward_merge_are_not_judged(tmp_path, machine, tail):
+    assert machine
+    dirty = _dirty(tmp_path / "dirty", armed=True)
+    git(dirty, "add", "a")
+    elsewhere = _dirty(tmp_path / "elsewhere", 0, armed=True)
+    assert crew_mass.classify("git", tail.split()[1:]) == []
+    _passes(dirty, tail)
+    _passes(dirty, tail, tool="PowerShell")
+    assert crew_mass.leading_cd(f"cd {_fwd(dirty)} && {tail}", str(elsewhere), "bash")
+    _clean_in(dirty, elsewhere, f"cd {_fwd(dirty)} && {tail}")
+    command = f"Set-Location {_fwd(dirty)} && {tail}"
+    assert crew_mass.leading_cd(command, str(elsewhere), "powershell")
+    result = _ps_in(dirty, elsewhere, command)
+    assert not _mass_rows(result) and result["decision"] == "allow", (command, result)

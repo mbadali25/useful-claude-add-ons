@@ -322,7 +322,18 @@ therefore still refused; run it as two commands. So are <code>cd X &amp;&amp; gi
 <code>--author=...</code>, <code>-m"x"</code> and a trailing newline (the grammar admits none of them; a bare
 <code>--</code> is one). <code>cd X &amp;&amp; git -C /abs commit</code> is not a followed cd (<code>-C</code> is refused after a
 cd), but the absolute <code>-C</code> path is counted as it is on main: allowed when <code>/abs</code> is clean,
-stopped when it is not. Several <code>-C</code> options are resolved one after another, as git does.
+stopped when it is not. Several <code>-C</code> options are resolved one after another, as git does,
+each against the directory the one before reached; a chain where any value starts with <code>~</code>
+is "could not tell", because the hook cannot see whether the shell expanded it (<code>~/x</code>) or not
+(<code>'~'</code>, <code>\~</code>). A pathspec is counted: <code>git commit &lt;paths&gt;</code> commits those paths as they are
+in the working tree, staged or not, so it is counted against HEAD under the paths (with <code>-i</code>,
+every change in the tree), beside the staged count; <code>--pathspec-from-file &lt;f&gt;</code> on <code>commit</code>,
+<code>rm</code>, <code>restore</code> and <code>checkout</code> is read and the paths it lists are counted, and standard input
+(<code>-</code>), a file that cannot be read or is not UTF-8, a NUL byte without <code>--pathspec-file-nul</code>
+or a quoted line is "could not tell". A bare <code>--attr-source</code> or <code>--super-prefix</code> before the
+subcommand is read both ways, so neither reading can hide it. In PowerShell a quoted git
+argument holding a <code>"</code>, or an empty one, is not plain (legacy native argument passing
+re-splits or drops it), so such a line after a <code>Set-Location</code> is "could not tell".
 A count that cannot be taken - a variable in a path, any <code>cd</code> that is not that one plain
 line (a second one, one not first, <code>cd $DIR</code>, a missing directory), a <code>GIT_DIR</code>,
 <code>GIT_WORK_TREE</code>, <code>GIT_INDEX_FILE</code> or other <code>GIT_</code> location variable ASSIGNED in the

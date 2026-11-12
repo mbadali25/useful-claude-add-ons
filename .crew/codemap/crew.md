@@ -1004,28 +1004,28 @@ DERIVED from `plugin/crew/hooks/scripts/crew_mass.py` (stdlib only) and
 `plugin/crew/hooks/scripts/cloud_guard.py`; tests `plugin/crew/tests/test_mass_guard.py`,
 mutations `plugin/crew/tests/mass_mutations.py` (see `len(MASS_MUTATIONS)`, run alone:
 `sabotage*.py` is harness).
-`cloud_guard._classify` (`cloud_guard.py:2149`) asks `crew_mass.classify`
-(`crew_mass.py:495`) for `Spec`s on every simple command and wraps each as a
+`cloud_guard._classify` (`cloud_guard.py:2160`) asks `crew_mass.classify`
+(`crew_mass.py:603`) for `Spec`s on every simple command and wraps each as a
 `Finding` whose rule is `massDelete`, `massCreate` or `massChange`
-(`crew_mass.RULES`). `cloud_guard.evaluate` (`cloud_guard.py:3140`) ignores those
-findings unless `mass["armed"]`, then `crew_mass.judge` (`crew_mass.py:1741`)
+(`crew_mass.RULES`). `cloud_guard.evaluate` (`cloud_guard.py:3151`) ignores those
+findings unless `mass["armed"]`, then `crew_mass.judge` (`crew_mass.py:1927`)
 counts, compares with the limit and answers `ask` (attended) or `deny`
-(`unattended`), or `allow` when `live_approval` (`crew_mass.py:1689`) finds the
-owner's file. `cloud_guard.main` (`cloud_guard.py:3410`) calls
-`crew_mass.settings` (`crew_mass.py:179`) before the `guards.cloudGuard`
+(`unattended`), or `allow` when `live_approval` (`crew_mass.py:1875`) finds the
+owner's file. `cloud_guard.main` (`cloud_guard.py:3421`) calls
+`crew_mass.settings` (`crew_mass.py:198`) before the `guards.cloudGuard`
 `off` early return, so the stop works with the cloud guard off (`only_mass`).
 The switch is `guards.mass.enabled` true in either layer, else
-`crew_mass.opted_out` (`crew_mass.py:239`: a double-confirmed `humanOnly` `false`);
-anything unreadable is off. `_limits` (`crew_mass.py:215`): machine value, else
+`crew_mass.opted_out` (`crew_mass.py:258`: a double-confirmed `humanOnly` `false`);
+anything unreadable is off. `_limits` (`crew_mass.py:234`): machine value, else
 `DEFAULT_OVERRIDES` (terraform 3 / 10 / 10, `crew_mass.py:98`), else 10 / 20 / 30;
-the repo layer can only lower. `exempt` (`crew_mass.py:276`) is the regenerable
+the repo layer can only lower. `exempt` (`crew_mass.py:295`) is the regenerable
 directory list; `worktrees` exempts by path only within two components below it,
 and `_exempt_at` judges a path by its part below `cwd`, so a repo that lives in
-a worktree is still counted. The approval id (`approval_id`, `crew_mass.py:1678`)
+a worktree is still counted. The approval id (`approval_id`, `crew_mass.py:1864`)
 is a digest of the exact command text and worktree, not of the rule; the file
 is written by `approval_hook._approve_mass` (harness PR, #737). `count_git`
-(`crew_mass.py:1587`) counts `git diff --name-status -M` lines, the branch
-against `_base` (`crew_mass.py:1529`: `origin/HEAD`, `origin/main`, `origin/master`; on a
+(`crew_mass.py:1773`) counts `git diff --name-status -M` lines, the branch
+against `_base` (`crew_mass.py:1715`: `origin/HEAD`, `origin/main`, `origin/master`; on a
 branch that is its own base, its upstream). With no origin ref there is NO base and the push is
 asked, exactly as on main (round 12, BLOCK-1, option (a): rounds 9-11 fell back to the branch's
 upstream, and `git -c remote.pushDefault=origin push` - or `pushRemote`, `push.default`,
@@ -1033,8 +1033,8 @@ upstream, and `git -c remote.pushDefault=origin push` - or `pushRemote`, `push.d
 pushed 30 files that counted 0). `gh pr create` uses the `@PRBASE@` placeholder and
 `_base(upstream=False)`: a PR from the default branch has no base (round 9, F-A).
 A `cd` is followed ONLY when the whole command is one plain line: `leading_cd`
-(`crew_mass.py:913`, with `_BASH_CD_RE` / `_PS_CD_RE` for the prefix and `_plain_tail`,
-`crew_mass.py:703`, for the arguments) matches `cd <path> && git <args>` in bash (lowercase
+(`crew_mass.py:1090`, with `_BASH_CD_RE` / `_PS_CD_RE` for the prefix and `_plain_tail`,
+`crew_mass.py:876`, for the arguments) matches `cd <path> && git <args>` in bash (lowercase
 `cd` only) and `Set-Location|cd|sl <absolute path> && git <args>` in PowerShell. `&&` ONLY in
 both shells (round 12, BLOCK-2, verified with pwsh 7.6.9 on Linux: `cd ///<dir>; git commit`
 fails the cd and still runs git in the old directory, while `os.path.isdir('///<dir>')` is
@@ -1046,7 +1046,7 @@ the real hook; `test_the_cd_grammar_and_the_git_variable_scan_are_linear_on_adve
 runs hostile inputs in a child process under a timeout). The bash path is letters, digits and
 `_ . / : -`, an existing directory, absolute or `.` / `./x`: a bare name is
 could-not-tell whatever `CDPATH` shows in this process (`_cdpath_may_apply`,
-`crew_mass.py:904`), because bash may take `CDPATH` from `BASH_ENV` or a profile; bash ignores
+`crew_mass.py:1081`), because bash may take `CDPATH` from `BASH_ENV` or a profile; bash ignores
 it for `/x` and `./x` (verified by running `CDPATH=d bash -c 'cd ./r'`). Any `..` component is
 could-not-tell in both shells (round 7, JUDGEMENT from the crew-lin Linux reproduction: bash may
 walk a symlink for `..`, a logical `cd` or `set -P` from `BASH_ENV`, so the text cut would count
@@ -1055,7 +1055,7 @@ PowerShell path is letters, digits and `_ . / -` with at most one leading `<lett
 `<letter>:\` and no other colon or backslash (`Env:`, `Variable:`, `C:\a\b` are refused); the
 drive prefix is followed only when `_WINDOWS` (`os.name == "nt"`), because on Linux `c:` is a
 directory name (round 7). A cd target, or a `git -C` value or chain, that the kernel resolves
-per process (`_per_process_dir`, `crew_mass.py:840`, called from `leading_cd` and `_git_lines`)
+per process (`_per_process_dir`, `crew_mass.py:1017`, called from `leading_cd` and `_git_lines`)
 is never followed (round 9, F-B: `/proc/self/cwd` is whichever process reads it; round 10: the
 RESOLVED path is judged - slashes and `.` collapsed, each component walked with `lstat` /
 `readlink`, `..` taken physically, a link loop counted as per-process). Round 12 (BLOCK-3: as
@@ -1063,7 +1063,7 @@ root, `mount -t proc proc <dir>` gave a second procfs its own device number, so 
 `/proc`'s `st_dev` said no) holds each step against five rules, any one enough: the NAME
 (`/proc`, `/dev`, so `/dev/shm` too), the SHAPE (`_proc_shaped`: `self/cwd`, `<pid>/root`,
 `thread-self/fd`, on the text and on the walked path), the file-system TYPE (`_special_mounts`,
-`crew_mass.py:804`, reads `/proc/self/mountinfo` through `_parse_mountinfo`; `_PSEUDO_FS` lists
+`crew_mass.py:981`, reads `/proc/self/mountinfo` through `_parse_mountinfo`; `_PSEUDO_FS` lists
 proc, sysfs, devtmpfs, devpts, cgroup and kin, NOT tmpfs), the DEVICE of such a mount, and a
 symlink of size 0 (a procfs magic link). A mount table that cannot be read on Linux is
 could-not-tell (every cd / -C target asked); without one (macOS, BSD) `_root_mounts` lends the
@@ -1071,7 +1071,7 @@ device of `/proc` or `/dev` only when it is a mount of its own (the round-11 NIT
 `/dev` shares the root's device and flagged every path). On Windows only the text is judged,
 `_names_per_process`, because `_resolve` refuses a POSIX path there. On the default branch
 `git push` uses the upstream as its base only when the push goes TO it (`_pushes_to_upstream`,
-`crew_mass.py:1505`: git's own `@{push}` for a bare push or a lone remote, else remote + one
+`crew_mass.py:1691`: git's own `@{push}` for a bare push or a lone remote, else remote + one
 refspec from this branch to the upstream branch, only plain flags, `_PUSH_PLAIN_FLAGS`, and no
 `-c` / `--config-env` before `push`, `_sets_config`); stricter than main there. On Windows a
 PowerShell target `/c/x` is never followed (round 9, F-C, verified: `Set-Location /c/Users` from
@@ -1086,17 +1086,17 @@ path, NBSP, a newline) is could-not-tell, as on origin/main. The round-3 tokeniz
 (`plain_tail`, `shell_commands`, `_Lexer`), the `sub["cd"]` re-scan in `cloud_guard.evaluate`
 and `obscures_env_name` are gone: the grammar admits one command, so nothing is left to
 re-scan. `GIT_DIR` / `GIT_INDEX_FILE` and kin are could-not-tell when ASSIGNED:
-`sets_git_location` (`crew_mass.py:1233`, called at `cloud_guard.py:3187`) reads the command
+`sets_git_location` (`crew_mass.py:1411`, called at `cloud_guard.py:3197`) reads the command
 once into statements of WORDS (quotes removed, `$'..'` unquoted) and `_statement_sets`
-(`crew_mass.py:1139`) asks, per statement, whether a real assignment sits where bash would run it:
+(`crew_mass.py:1317`) asks, per statement, whether a real assignment sits where bash would run it:
 a `GIT_X=` or `GIT_X+=` word at command position (after other `NAME=v` words, `time`, `if`,
 `then`, `sudo`, `{`; brace-expanded by `_braces`), after `export`/`declare`/`typeset`/`readonly`/
 `local`, after `env` (`-S` strings read), in the string given to `eval`, `bash -c`, `pwsh -c`
 or `iex` (nesting capped at 3, deeper is could-not-tell; any prefix of `-Command`, and an
 `-EncodedCommand` counts because it cannot be read), behind a wrapper (`_WRAPPERS`, read by
-`_behind_wrapper`, `crew_mass.py:1197`: ONE list for `timeout`, `stdbuf`, `nice`, `nohup`,
+`_behind_wrapper`, `crew_mass.py:1375`: ONE list for `timeout`, `stdbuf`, `nice`, `nohup`,
 `setsid`, `coproc`, `sudo`, `xargs`...; its options are not parsed, every later word is read),
-and in PowerShell ANYWHERE in a statement (`_ps_assigns`, `crew_mass.py:1112`, over a SHADOW
+and in PowerShell ANYWHERE in a statement (`_ps_assigns`, `crew_mass.py:1290`, over a SHADOW
 of the words in which each quoted stretch is one placeholder, so `'$env:GIT_DIR = x'` is text):
 `$env:GIT_X` followed by `=`, `+=`, `??=`...; a writing provider cmdlet beside an `Env:\GIT_X`
 path, or the `Env:` drive and a bare `GIT_X` word in one command (`_ps_provider_sets`); and
@@ -1112,9 +1112,25 @@ alias set by `git -c alias.x=...` or in the repo config, `$(echo git) -C <wt> co
 a `/proc` or `/dev` operand of `rm`/`cp`/`mv`/`touch`, a push-redirecting repo config on the
 default branch, and a cd run without a `cd` word (`trap`, `find -exec`, `Start-Process`, a
 command word built from a variable);
-`test_the_known_gaps_of_the_git_variable_scan_are_pinned` pins the scan's. A tripwire, not a sandbox. Repeated `-C` is joined in `_git_split`
-(`crew_mass.py:311`); `cd X && git -C /abs commit` is not a followed cd but `/abs` is counted as on main;
-`count_terraform` (`crew_mass.py:1627`) reads `terraform show -json <plan>`.
+`test_the_known_gaps_of_the_git_variable_scan_are_pinned` pins the scan's. A tripwire, not a sandbox. `_git_split`
+(`crew_mass.py:330`) keeps a repeated `-C` as a tuple and `_resolve_override` (`crew_mass.py:759`)
+walks it as git does, each value against the directory the one before reached, never joined as
+text (round 13, BLOCK-A: `-C aa -C ~/r` had been read as the literal `aa/~/r`); a chain with a
+value starting `~` is could-not-tell, because the shell's quoting of `~` is gone by then.
+`cd X && git -C /abs commit` is not a followed cd but `/abs` is counted as on main.
+A pathspec is counted (round 13, BLOCK-B): `_sub_words` (`crew_mass.py:353`) sets apart each
+subcommand's value options (`_SUB_VALUE_OPTS`), `git commit <pathspec>` adds a count of
+`git diff HEAD -- <pathspec>` (every tree change with `-i`) BESIDE main's index count, and
+`--pathspec-from-file` (commit, rm, restore, checkout) is read by `_pathspec_file`
+(`crew_mass.py:782`) once the directory is known; standard input, an unreadable or non-UTF-8
+file, a NUL without `--pathspec-file-nul` and a C-quoted line are could-not-tell. Each new
+reading is a spec added next to main's own, never in place of it. A bare `--attr-source` /
+`--super-prefix` is read both ways (`_classify_git`, `crew_mass.py:403`, the second reading
+could-not-tell; `cloud_guard._git_force_push`, `cloud_guard.py:2049`, both ways for a force
+push). In PowerShell a quoted argument holding `"` or nothing is not plain (`_PS_QCHARS`,
+`crew_mass.py:860`: legacy native argument passing re-splits or drops it), and `_PS_CD_RE` is
+`re.ASCII` (`ſl` is no `sl`);
+`count_terraform` (`crew_mass.py:1813`) reads `terraform show -json <plan>`.
 The six keys are rows in `crew_keys.KEY_META` (`crew_keys.py:106`; the mass rows from
 `crew_keys.py:344`) with defaults in `crew_guards.GUARD_BLOCK_DEFAULTS`
 (`crew_guards.py:249`).

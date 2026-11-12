@@ -114,6 +114,23 @@ _DYNAMIC_RE = re.compile(r"[$`]|\$\(")
 _DRIVE_RE = re.compile(r"^/([A-Za-z])(/.*)?$")
 _GIT_VALUE_OPTS = frozenset(("-c", "--git-dir", "--work-tree", "--namespace", "--exec-path",
                              "--config-env", "--attr-source", "--super-prefix"))
+# Value options whose value git may also take glued only (`--attr-source=<tree>`): a bare one
+# is read BOTH ways (`_classify_git`), so neither reading can hide the subcommand.
+_GIT_EITHER_OPTS = frozenset(("--attr-source", "--super-prefix"))
+# The value-taking options of the subcommands whose pathspec is counted: the word after one of
+# these (or its glued `--opt=v` / `-Xv` form) is its value, never a pathspec. An option NOT
+# listed is read as taking no separate value, so an abbreviation (`--mess x`) leaves `x` a
+# pathspec: one pathspec too many can only widen the count, one too few would narrow it.
+_SUB_VALUE_OPTS = {
+    "commit": frozenset(("-m", "-F", "-c", "-C", "-t", "--message", "--file", "--reuse-message",
+                         "--reedit-message", "--template", "--author", "--date", "--cleanup",
+                         "--fixup", "--squash", "--trailer", "--pathspec-from-file")),
+    "rm": frozenset(("--pathspec-from-file",)),
+    "restore": frozenset(("-s", "--source", "--conflict", "--pathspec-from-file")),
+    "checkout": frozenset(("-b", "-B", "--orphan", "--conflict", "--pathspec-from-file")),
+}
+# stands for the pathspecs `--pathspec-from-file` names, read once the directory is known
+_FROM_FILE = "\x00pathspec-from-file"
 # `git push` flags that do not change WHAT is pushed or WHERE. Any other flag (`--all`,
 # `--mirror`, `--tags`, `--repo=`, `-o <value>`, a glued `-uq`...) means the push is not
 # known to be "this branch to its upstream" (`_pushes_to_upstream`), and so does a `-c` or
@@ -144,8 +161,10 @@ class Spec:
     """What one recognised command would do, before anything is counted."""
 
     def __init__(self, rule, what, kind, operands=(), recursive=False, git=None,
-                 unknown=False, dest=None, category="files", shared=None, extra=None):
+                 unknown=False, dest=None, category="files", shared=None, extra=None,
+                 from_file=None):
         self.rule, self.what, self.kind = rule, what, kind
+        self.from_file = from_file  # `(file, nul)` of a `--pathspec-from-file`, else None
         self.operands, self.recursive = list(operands), recursive
         self.git, self.unknown, self.dest = git, unknown, dest
         self.category = category
@@ -308,23 +327,66 @@ def _option_letters(args):
     return letters, longs, operands
 
 
-def _git_split(args):
-    """`(cwd_override, subcommand, rest)` of a git argument list."""
-    index, override = 0, None
+def _git_split(args, either_bare=False):
+    """`(cwd_override, subcommand, rest)` of a git argument list. `cwd_override` is None, the
+    one `-C` value, or a tuple of every `-C` value in order: git resolves each against the
+    directory the one before it reached, and `_resolve_override` walks them the same way (the
+    values are never joined as text, round 13 BLOCK-A). With `either_bare` an `--attr-source`
+    / `--super-prefix` with no `=` is read as taking no value (`_GIT_EITHER_OPTS`)."""
+    index, chain = 0, []
     while index < len(args) and args[index].startswith("-"):
         if args[index] == "-C" and index + 1 < len(args):
-            # git resolves each -C against the one before it (an empty one is a no-op)
-            value = args[index + 1]
-            if value:
-                override = value if override is None else os.path.join(override, value)
+            if args[index + 1]:  # an empty -C is a no-op
+                chain.append(args[index + 1])
             index += 2
-        elif args[index] in _GIT_VALUE_OPTS:
+        elif args[index] in _GIT_VALUE_OPTS and not (either_bare
+                                                      and args[index] in _GIT_EITHER_OPTS):
             index += 2
         else:
             index += 1
+    override = None if not chain else chain[0] if len(chain) == 1 else tuple(chain)
     if index >= len(args):
         return override, None, []
     return override, args[index], args[index + 1:]
+
+
+def _sub_words(rest, values):
+    """`(operands, options)` of a subcommand's arguments: `operands` are the words that are no
+    option and no option's value (all words after `--` are operands), `options` maps each
+    value-taking option in `values` that is present to its LAST value. Short options may be
+    bundled (`-am x`: `-m` takes the next word; `-mx`: the rest of the bundle)."""
+    operands, options, index = [], {}, 0
+    while index < len(rest):
+        arg = rest[index]
+        index += 1
+        if arg == "--":
+            operands.extend(rest[index:])
+            break
+        if not arg.startswith("-") or arg == "-":
+            operands.append(arg)
+        elif arg.startswith("--"):
+            name, eq, value = arg.partition("=")
+            if name in values:
+                if not eq and index < len(rest):
+                    value, index = rest[index], index + 1
+                options[name] = value
+        else:
+            for at in range(1, len(arg)):
+                name = "-" + arg[at]
+                if name in values:
+                    value = arg[at + 1:]
+                    if not value and index < len(rest):
+                        value, index = rest[index], index + 1
+                    options[name] = value
+                    break
+    return operands, options
+
+
+def _from_file(rest, options):
+    """`(file, nul)` of a `--pathspec-from-file`, else None."""
+    if "--pathspec-from-file" not in options:
+        return None
+    return options["--pathspec-from-file"], "--pathspec-file-nul" in rest
 
 
 def _after_dashdash(rest):
@@ -339,32 +401,53 @@ def _diff_specs(what, override, argv):
 
 
 def _classify_git(args, fed):
-    override, sub, rest = _git_split(args)
+    out = _classify_git_split(args, fed, _git_split(args))
+    either = _git_split(args, either_bare=True)
+    if either != _git_split(args):
+        # `--attr-source` / `--super-prefix` with no `=`: a git that takes the next word as its
+        # value fails, one that does not runs it as the subcommand. Read both ways, and the
+        # second reading is "could not tell" (round 13).
+        for spec in _classify_git_split(args, fed, either):
+            spec.unknown = True
+            spec.why = ("a bare --attr-source / --super-prefix may or may not take the next "
+                        "word as its value, so which git subcommand runs is not known here")
+            out.append(spec)
+    return out
+
+
+def _classify_git_split(args, fed, split):
+    override, sub, rest = split
     if sub is None:
         return []
     flags = {a for a in rest if a.startswith("-")}
     letters = set("".join(a[1:] for a in rest if a.startswith("-") and not a.startswith("--")))
     paths = _after_dashdash(rest)
+    words, options = _sub_words(rest, _SUB_VALUE_OPTS.get(sub, ()))
+    from_file = _from_file(rest, options)
+    listed = [_FROM_FILE] if from_file else []
     out = []
     if sub == "reset" and "--hard" in flags:
         target = next((a for a in rest if not a.startswith("-")), "HEAD")
         out = [Spec(MASS_CHANGE, "git reset --hard", "git-files", category="git",
                     git=(override, ["diff", "--name-only", target, "--"]))]
     elif sub == "checkout":
-        if "--" not in rest and not (letters & {"f"} or flags & {"--force"}) \
-                and "." not in rest:
-            return []
-        tree = next((a for a in rest if not a.startswith("-") and a != "."), None)
-        if "--" in rest:
-            tree = next((a for a in rest[:rest.index("--")] if not a.startswith("-")), None)
-        spec_paths = paths or (["."] if "." in rest else [])
-        if not spec_paths:  # `checkout -f <branch>`: discards every local change
-            out = [Spec(MASS_CHANGE, "git checkout -f", "git-files", category="git",
-                        git=(override, ["diff", "--name-only", "HEAD", "--"]))]
-        else:
-            argv = ["diff", "--name-only"] + ([tree] if tree else []) + ["--"] + spec_paths
-            out = [Spec(MASS_CHANGE, "git checkout -- " + " ".join(spec_paths), "git-files",
-                        category="git", git=(override, argv))]
+        if "--" in rest or letters & {"f"} or flags & {"--force"} or "." in rest:
+            tree = next((a for a in rest if not a.startswith("-") and a != "."), None)
+            if "--" in rest:
+                tree = next((a for a in rest[:rest.index("--")] if not a.startswith("-")), None)
+            spec_paths = paths or (["."] if "." in rest else [])
+            if not spec_paths:  # `checkout -f <branch>`: discards every local change
+                out = [Spec(MASS_CHANGE, "git checkout -f", "git-files", category="git",
+                            git=(override, ["diff", "--name-only", "HEAD", "--"]))]
+            else:
+                argv = ["diff", "--name-only"] + ([tree] if tree else []) + ["--"] + spec_paths
+                out = [Spec(MASS_CHANGE, "git checkout -- " + " ".join(spec_paths), "git-files",
+                            category="git", git=(override, argv))]
+        if from_file:  # `checkout [<tree>] --pathspec-from-file=<f>` overwrites what it lists
+            tree = next((a for a in words if a != "."), None)
+            argv = ["diff", "--name-only"] + ([tree] if tree else []) + ["--"] + listed
+            out.append(Spec(MASS_CHANGE, "git checkout --pathspec-from-file", "git-files",
+                            category="git", git=(override, argv), from_file=from_file))
     elif sub == "restore":
         if "--staged" in flags and "--worktree" not in flags and "-W" not in flags:
             return []
@@ -373,6 +456,14 @@ def _classify_git(args, fed):
         argv = ["diff", "--name-only"] + ([source] if source else []) + ["--"] + spec_paths
         out = [Spec(MASS_CHANGE, "git restore " + " ".join(spec_paths), "git-files",
                     category="git", git=(override, argv))]
+        # the same command read with its option values set apart (`-s X`, `--source X`,
+        # `--pathspec-from-file f`): counted BESIDE the reading above, never instead of it
+        source = options.get("--source") or options.get("-s")
+        argv = ["diff", "--name-only"] + ([source] if source else []) + ["--"] + words + listed
+        if argv != out[0].git[1]:
+            out.append(Spec(MASS_CHANGE, "git restore " + " ".join(words + (
+                ["--pathspec-from-file"] if listed else [])), "git-files", category="git",
+                            git=(override, argv), from_file=from_file))
     elif sub == "clean":
         if "n" in letters or flags & {"--dry-run"} or not ("f" in letters or flags & {"--force"}):
             return []
@@ -385,6 +476,10 @@ def _classify_git(args, fed):
         pathspec = paths or [a for a in rest if not a.startswith("-")]
         out = [Spec(MASS_DELETE, "git rm " + " ".join(rest), "git-files", category="git",
                     git=(override, ["ls-files", "--"] + pathspec))]
+        if from_file:  # `--pathspec-from-file f`: f is no pathspec, what it lists is
+            out.append(Spec(MASS_DELETE, "git rm --pathspec-from-file", "git-files",
+                            category="git", git=(override, ["ls-files", "--"] + words + listed),
+                            from_file=from_file))
     elif sub == "commit":
         if flags & {"--dry-run"}:
             return []
@@ -392,6 +487,19 @@ def _classify_git(args, fed):
         argv = ["diff", "--name-status", "-M"] + ([] if every else ["--cached"])
         argv += (["HEAD"] if every else []) + ["--"]
         out = _diff_specs("git commit", override, argv)
+        if (words or listed) and not every:
+            # `git commit <pathspec>` commits those paths as they are in the WORKING TREE,
+            # staged or not (`--only`, the default; round 13 BLOCK-B): every change against
+            # HEAD under the pathspec. `-i` / `--include` adds them to what is staged, so every
+            # change in the tree is counted. Beside the index count above, never instead of it.
+            include = "i" in letters or "--include" in flags
+            argv = ["diff", "--name-status", "-M", "HEAD", "--"] + (
+                [] if include else words + listed)
+            more = _diff_specs("git commit " + " ".join(words + (
+                ["--pathspec-from-file"] if listed else [])), override, argv)
+            for spec in more:
+                spec.from_file = None if include else from_file
+            out += more
     elif sub == "push":
         if flags & {"--force", "-f", "--force-with-lease", "--dry-run", "-n", "--delete", "-d"} \
                 or any(a.startswith("--force") for a in flags):
@@ -648,6 +756,65 @@ def _resolve(operand, cwd, cd):
     return os.path.join(cwd, operand), True
 
 
+def _resolve_override(override, cwd, cd):
+    """`(path, ok)` of git's `-C` value(s) (`_git_split`). One value is `_resolve`d as on
+    main. A repeated `-C` is walked as git walks it: each value against the directory the one
+    before reached, never joined as text (round 13, BLOCK-A: `-C aa -C ~/r` is `$HOME/r`, not
+    `aa/~/r`). A chain where any value starts with `~` is "could not tell": the shell expands
+    an unquoted `~` and leaves `'~'` or `\\~` alone, and the quoting is gone by the time the
+    words reach here."""
+    if isinstance(override, str):
+        return _resolve(override, cwd, cd)
+    if any(value.startswith("~") for value in override):
+        return None, False
+    base = cwd
+    for number, value in enumerate(override):
+        base, ok = _resolve(value, base, cd if number == 0 else False)
+        if not ok:
+            return None, False
+    return base, True
+
+
+def _override_text(override):
+    return override if isinstance(override, str) else " -C ".join(override)
+
+
+def _pathspec_file(spec, base):
+    """The pathspecs git would read from the `--pathspec-from-file` behind `spec` (relative to
+    `base`, the directory git runs in), or None with `spec.why` set: standard input, a file
+    that cannot be read or is not UTF-8, a NUL byte without `--pathspec-file-nul`, or a
+    C-quoted line (git unquotes `"..."` lines; that is not redone here). An empty list is
+    returned as it is: the diff then runs over the whole tree, which can only count more."""
+    name, nul = spec.from_file
+    if name == "-":
+        spec.why = "--pathspec-from-file=- reads the pathspecs from standard input"
+        return None
+    path, ok = _resolve(name, base, False)
+    why = None
+    if not ok:
+        why = "is not a literal path this process can open"
+    else:
+        try:
+            with open(path, "rb") as handle:
+                text = handle.read().decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            why = f"could not be read ({type(exc).__name__})"
+        else:
+            items = text.split("\0" if nul else "\n")
+            if items and items[-1] == "":
+                items.pop()
+            if not nul:
+                items = [item[:-1] if item.endswith("\r") else item for item in items]
+            if not nul and "\0" in text:
+                why = "holds a NUL byte but --pathspec-file-nul is not given"
+            elif not nul and any(item.startswith('"') for item in items):
+                why = "holds a C-quoted line"
+            else:
+                return items
+    spec.why = f"the --pathspec-from-file `{name}` {why}, so what git reads from it is not known"
+    return None
+
+
 # --- the one cd this guard follows ---------------------------------------------------
 #
 # ONE strict grammar over the WHOLE command: `cd <plain path> && git <plain args>` on one
@@ -667,7 +834,8 @@ def _resolve(operand, cwd, cd):
 #     `--work-tree`, `--namespace`), then bare words, flags that are letters and dashes only
 #     (`-m`, `-a`, `--amend`; a flag with a glued value or a path is refused, and so are
 #     `-C`/`-c`/`--git-dir`... anywhere), or quoted strings that hold no `$`, backtick,
-#     backslash, `;`, newline or non-ASCII.
+#     backslash, `;`, newline or non-ASCII (in PowerShell also no `"` and never empty: legacy
+#     native argument passing re-splits the one and drops the other, round 13).
 # A target that is, or reaches through a symlink or a mount, `/proc`, `/dev`, a kernel pseudo
 # file system or a `self/cwd`-shaped path is never followed (`_per_process_dir`: the resolved
 # path is judged, not the text). A target with a `..`
@@ -685,6 +853,11 @@ def _resolve(operand, cwd, cd):
 # nested quantifier and no overlapping alternation; the tail is read once, left to right, by
 # `_plain_tail`.
 _QCHARS = frozenset(chr(c) for c in range(0x20, 0x7f) if chr(c) not in "$`\\;")
+# PowerShell's legacy native argument passing (pwsh 7.0-7.2, Windows PowerShell 5.1, or
+# `$PSNativeCommandArgumentPassing = 'Legacy'`) re-splits an argument holding a `"`
+# (`'." -dx ".'` reaches git as `.`, `-dx`, `.`) and drops an empty one (`''`), and this
+# process cannot see which mode the shell runs in: neither is a plain PowerShell argument.
+_PS_QCHARS = _QCHARS - {'"'}
 _BASH_WORD_RE = re.compile(r"[A-Za-z0-9_\-./=:@,+%]+")
 _PS_WORD_RE = re.compile(r"[A-Za-z0-9_\-./=:,+%]+")
 _FLAG_RE = re.compile(r"--?[A-Za-z][A-Za-z-]*")
@@ -697,12 +870,13 @@ _BASH_CD_RE = re.compile(
 _PS_CD_RE = re.compile(
     r"[ \t]*(?:set-location|cd|sl)[ \t]+"
     r"(?P<path>(?:[A-Za-z]:[/\\][A-Za-z0-9_./-]*|[A-Za-z0-9_./-]+))"
-    r"[ \t]*&&[ \t]*git[ \t]+", re.IGNORECASE)
+    r"[ \t]*&&[ \t]*git[ \t]+", re.IGNORECASE | re.ASCII)  # ASCII: `ſl` is not `sl`
 
 
-def _plain_tail(tail, word_re):
+def _plain_tail(tail, word_re, qchars=_QCHARS):
     """True when `tail` (what follows `git `) is plain git arguments (see above). One
-    left-to-right pass: every character is looked at once, so the time is linear."""
+    left-to-right pass: every character is looked at once, so the time is linear. A quoted
+    string holds only `qchars`, and in PowerShell (`_PS_QCHARS`) it is never empty."""
     size, index, first = len(tail), 0, True
     while index < size:
         char = tail[index]
@@ -711,7 +885,8 @@ def _plain_tail(tail, word_re):
             continue
         if char in "'\"":
             end = tail.find(char, index + 1)
-            if first or end < 0 or not _QCHARS.issuperset(tail[index + 1:end]):
+            if first or end < 0 or not qchars.issuperset(tail[index + 1:end]) or (
+                    qchars is _PS_QCHARS and end == index + 1):
                 return False
             index = end + 1
             if index < size and tail[index] not in " \t":
@@ -923,7 +1098,8 @@ def leading_cd(command, cwd, shell="bash"):
     match = (_PS_CD_RE if powershell else _BASH_CD_RE).match(text)
     if not match or not cwd:
         return None
-    if not _plain_tail(text[match.end():], _PS_WORD_RE if powershell else _BASH_WORD_RE):
+    if not _plain_tail(text[match.end():], *((_PS_WORD_RE, _PS_QCHARS) if powershell
+                                             else (_BASH_WORD_RE, _QCHARS))):
         return None
     target = match.group("path")
     if ".." in re.split(r"[/\\]", target):
@@ -1449,14 +1625,16 @@ def _git_lines(spec, cwd, cd, runner):
     override, argv = spec.git
     base = cwd
     if override:
-        base, ok = _resolve(override, cwd, cd)
+        base, ok = _resolve_override(override, cwd, cd)
+        shown = _override_text(override)
         if not ok:
-            spec.why = (f"the directory `{override}` is not a literal path this process can "
-                        "open (a variable, a substitution, a POSIX path it cannot map, or "
-                        "relative to an earlier cd)")
+            spec.why = (f"the directory `{shown}` is not a literal path this process can "
+                        "open (a variable, a substitution, a POSIX path it cannot map, "
+                        "relative to an earlier cd, or a repeated -C holding a `~` whose "
+                        "quoting is not visible here)")
             return None
         if _per_process_dir(base):
-            spec.why = (f"the directory `{override}` is, or reaches through a symlink or a "
+            spec.why = (f"the directory `{shown}` is, or reaches through a symlink or a "
                         "mount, /proc or /dev (or another kernel pseudo file system, or a "
                         "`self/cwd`-shaped path): the kernel resolves it per process, so it "
                         "names this hook's directory here and the shell's own there")
@@ -1474,6 +1652,12 @@ def _git_lines(spec, cwd, cd, runner):
             if found is None:
                 return None
             argv = [found + "...HEAD" if a == marker else a for a in argv]
+    if _FROM_FILE in argv:
+        listed = _pathspec_file(spec, base)
+        if listed is None:
+            return None
+        at = argv.index(_FROM_FILE)
+        argv = argv[:at] + listed + argv[at + 1:]
     key = (base, tuple(argv))
     if key in spec.shared:
         return spec.shared[key]
@@ -1613,7 +1797,7 @@ def _count_clean(lines, spec, cwd, cd, globs):
     override = spec.git[0]
     base = cwd
     if override:
-        base, _ok = _resolve(override, cwd, cd)
+        base, _ok = _resolve_override(override, cwd, cd)
     total = 0
     for line in lines:
         if not line.startswith("Would remove "):

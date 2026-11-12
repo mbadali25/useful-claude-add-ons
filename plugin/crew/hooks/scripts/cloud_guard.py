@@ -2043,10 +2043,20 @@ _GIT_VALUE_OPTS = frozenset(("-C", "-c", "--git-dir", "--work-tree",
                              "--attr-source", "--super-prefix"))
 
 
+_GIT_EITHER_OPTS = frozenset(("--attr-source", "--super-prefix"))
+
+
 def _git_force_push(args):
+    # A bare `--attr-source` / `--super-prefix` may or may not take the next word as its
+    # value (a git that does not know it fails): read it both ways, so neither hides a push.
+    return (_git_force_push_with(args, _GIT_VALUE_OPTS)
+            or _git_force_push_with(args, _GIT_VALUE_OPTS - _GIT_EITHER_OPTS))
+
+
+def _git_force_push_with(args, value_opts):
     index = 0
     while index < len(args) and args[index].startswith("-"):
-        index += 2 if args[index] in _GIT_VALUE_OPTS else 1
+        index += 2 if args[index] in value_opts else 1
     if index >= len(args) or args[index] != "push":
         return None
     rest = args[index + 1:]

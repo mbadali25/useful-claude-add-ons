@@ -234,7 +234,18 @@ therefore still refused; run it as two commands. So are `cd X && git commit -m x
 `--author=...`, `-m"x"` and a trailing newline (the grammar admits none of them; a bare
 `--` is one). `cd X && git -C /abs commit` is not a followed cd (`-C` is refused after a
 cd), but the absolute `-C` path is counted as it is on main: allowed when `/abs` is clean,
-stopped when it is not. Several `-C` options are resolved one after another, as git does.
+stopped when it is not. Several `-C` options are resolved one after another, as git does,
+each against the directory the one before reached; a chain where any value starts with `~`
+is "could not tell", because the hook cannot see whether the shell expanded it (`~/x`) or not
+(`'~'`, `\~`). A pathspec is counted: `git commit <paths>` commits those paths as they are
+in the working tree, staged or not, so it is counted against HEAD under the paths (with `-i`,
+every change in the tree), beside the staged count; `--pathspec-from-file <f>` on `commit`,
+`rm`, `restore` and `checkout` is read and the paths it lists are counted, and standard input
+(`-`), a file that cannot be read or is not UTF-8, a NUL byte without `--pathspec-file-nul`
+or a quoted line is "could not tell". A bare `--attr-source` or `--super-prefix` before the
+subcommand is read both ways, so neither reading can hide it. In PowerShell a quoted git
+argument holding a `"`, or an empty one, is not plain (legacy native argument passing
+re-splits or drops it), so such a line after a `Set-Location` is "could not tell".
 A count that cannot be taken - a variable in a path, any `cd` that is not that one plain
 line (a second one, one not first, `cd $DIR`, a missing directory), a `GIT_DIR`,
 `GIT_WORK_TREE`, `GIT_INDEX_FILE` or other `GIT_` location variable ASSIGNED in the
