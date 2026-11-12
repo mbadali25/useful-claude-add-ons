@@ -26,7 +26,13 @@ column:
 - A human-only opt-out key (`humanOnly.*`) has its own rules, below.
 - A `null` in the repo file over a machine value inherits the machine value.
 - In a linked git worktree with no config of its own, the main checkout's repo
-  config is the one read.
+  config is the one read, and the one a repo-layer write lands in
+  (`--set`/`--unset --repo`, `--rebuild`/`--restore --repo`, `--backups
+  --repo`, the menu's Save): the output names the file and adds `(the main
+  checkout <path>: ...)`. A worktree with its own `.crew/config.json` or
+  `.crew/crew.json` reads and writes only its own. When git cannot say where
+  the main checkout is, the write is refused (`could not tell ...; nothing
+  written`) and no file is created in the worktree.
 
 ## The human-only opt-out (`humanOnly`)
 

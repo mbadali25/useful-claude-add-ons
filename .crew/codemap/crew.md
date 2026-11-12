@@ -611,6 +611,15 @@ closed by where the check sits, not by a patch at the call site.
   one is refused; an `OSError` from the machine directory, either lock or the write is a
   `RepoWriteRefused` (`:3729`, round 5). `!` on a widening: the ratchet by what is in force (`repo_widens`, `:3811`) and
   the `_REPO_WIDENING` table (`:3786`).
+- **Repo target (L-0946, crew 1.3.68):** DERIVED - every repo writer (`repo_snapshot`,
+  `plan_repo_write`, `write_repo_config`, `_layer_file` for `--rebuild`/`--restore`/`--backups`,
+  the menu's `save`) names its file through `crew_config.repo_write_target`, which asks
+  `crew_common.repo_config_dir` like the readers: a linked worktree with no own config writes the
+  main checkout's file and the output adds `repo_target_note`; `unknown` raises
+  `RepoTargetUnknown` (both `RepoWriteRefused` and `RebuildRefused`), never the own path.
+  `repo_config_path` stays the own path, for the menu's delete/restore and the ALLOWED count in
+  `test_worktree_config.py`. Suite `tests/test_worktree_config_write.py`; mutations
+  `tests/worktree_write_mutations.py` (unwired: `sabotage*.py` is harness).
 - **CLI:** `--set PATH=JSON [--repo] [--apply [--expect DIGEST|absent] [--expect-global
   DIGEST|absent]]` through `_set_layer` (`:4468`), which prints `digest:` of the bytes the plan
   read and, with `--repo`, `machine digest:`; `main` (`:4643`) refuses a malformed path, value or

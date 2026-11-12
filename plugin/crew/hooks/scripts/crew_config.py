@@ -3957,6 +3957,43 @@ def repo_config_path(root):
     return os.path.join(root, ".crew", "config.json")
 
 
+def repo_write_target(root):
+    """`(path, main_root)`: the `.crew/config.json` a repo-layer write lands in
+    (L-0946). The file reads resolve to (`crew_common.repo_config_dir`), so a
+    linked worktree with no crew config of its own writes the main checkout's
+    file, and `main_root` names that checkout; otherwise `main_root` is "" and
+    the path is `root`'s own. Precedence is the reader's: own files win whole.
+    Raises `RepoTargetUnknown` when git could not tell -- never the worktree's
+    own path in its place, which would create a shadowing file or refuse with
+    the wrong advice."""
+    crew_dir, source, detail = crew_common.repo_config_dir(root)
+    if source == crew_common.SOURCE_UNKNOWN:
+        raise RepoTargetUnknown(
+            f"could not tell which checkout's .crew/config.json {root} reads "
+            f"({detail}); nothing written. Run it with --root <the main checkout>")
+    main_root = detail if source == crew_common.SOURCE_MAIN else ""
+    return os.path.join(crew_dir, "config.json"), main_root
+
+
+def repo_write_label(root):
+    """`repo_write_target`'s path for a label, and `root`'s own path when git
+    could not tell: a display that must not raise. Every write re-resolves
+    through `repo_write_target` and refuses that case."""
+    try:
+        return repo_write_target(root)[0]
+    except RepoTargetUnknown:
+        return repo_config_path(root)
+
+
+def repo_target_note(main_root):
+    """The suffix naming the main checkout a linked worktree's write lands in,
+    or "" when the file is the checkout's own."""
+    if not main_root:
+        return ""
+    return (f" (the main checkout {main_root}: this linked worktree has no crew "
+            "config of its own, so its repo layer is that file)")
+
+
 def _repo_unreadable(path, exc):
     if exc.kind == "absent":
         return RepoWriteRefused(
@@ -3975,8 +4012,12 @@ def _repo_unreadable(path, exc):
 def repo_snapshot(root):
     """`(parsed, raw, digest)` of `.crew/config.json`, strictly, or
     `RepoWriteRefused` -- never `load_config`'s `{}` collapse, which would
-    create a config from one key or destroy the only copy of a broken one."""
-    path = repo_config_path(root)
+    create a config from one key or destroy the only copy of a broken one.
+    The file is `repo_write_target`'s (L-0946)."""
+    return _repo_snapshot_at(repo_write_target(root)[0])
+
+
+def _repo_snapshot_at(path):
     try:
         parsed, raw = crew_config_files.read_strict(path)
     except crew_config_files.Unreadable as exc:
@@ -3985,22 +4026,24 @@ def repo_snapshot(root):
 
 
 def plan_repo_write(root, updates, global_path=None, snapshot=None,
-                    machine=None):
+                    machine=None, target=None):
     """What writing `updates` to the repo's `.crew/config.json` would change.
 
     Pure. Returns `(merged, changes)`, each change carrying `widens`,
     `heldDownBy`, `heldAt`, and `null` (its meaning) for a null `after`;
     `snapshot` is a `repo_snapshot` and `machine` a `machine_view` (the
     widening marks read both). Every LEAF `value_allowed` refuses is refused
-    before the file is read, then the merged file is judged whole.
+    before the file is read, then the merged file is judged whole. `target`
+    is the `repo_write_target` path when the caller resolved it already.
     """
     problems = _leaf_problems(updates, "repo")
     if problems:
         raise RepoWriteRefused("refused at the repo layer: "
                                + "; ".join(problems))
-    parsed = (repo_snapshot(root) if snapshot is None else snapshot)[0]
+    path = repo_write_target(root)[0] if target is None else target
+    parsed = (_repo_snapshot_at(path) if snapshot is None else snapshot)[0]
     global_cfg = (machine_view(global_path) if machine is None else machine)[0]
-    return _plan_on(parsed, updates, "repo", repo_config_path(root), global_cfg)
+    return _plan_on(parsed, updates, "repo", path, global_cfg)
 
 
 def machine_view(global_path=None):
@@ -4011,16 +4054,19 @@ def machine_view(global_path=None):
 
 
 def write_repo_config(root, updates, global_path=None, expect=None,
-                      expect_global=None):
+                      expect_global=None, target=None):
     """Apply `plan_repo_write` to disk; returns `(merged, changes)`. The same
     compare-and-swap (`RepoWriteConflict`), keeping CRLF and BOM; never creates
     the file. The machine file is bound too: read under its lock, always taken
     before the repo lock, and `expect_global` refuses one that changed since.
-    An OS error (either lock, the machine directory, the write) is refused."""
-    merged, changes = plan_repo_write(root, updates, global_path)
+    An OS error (either lock, the machine directory, the write) is refused.
+    The file is `repo_write_target`'s, resolved once (L-0946): from a linked
+    worktree with no config of its own, the main checkout's. `target` is
+    that path when the caller resolved and printed it already."""
+    real_path = repo_write_target(root)[0] if target is None else target
+    merged, changes = plan_repo_write(root, updates, global_path, target=real_path)
     if not changes:
         return merged, changes
-    real_path = repo_config_path(root)
     out = {}
 
     def _mutate(parsed):
@@ -4175,6 +4221,13 @@ class RebuildRefused(Exception):
     """A rebuild, restore or profile write that cannot be planned (exit 2)."""
 
 
+class RepoTargetUnknown(RepoWriteRefused, RebuildRefused):
+    """L-0946: git could not say which checkout's `.crew/config.json` a linked
+    worktree reads, so no repo-layer write can name its file. Both refusals,
+    so every repo writer's caller (`--set`, `--rebuild`, `--restore`, the
+    menu) already refuses on it with nothing written."""
+
+
 def profile_path(global_path=None):
     """`profile.json` beside the machine-global config in use."""
     return os.path.join(os.path.dirname(os.path.abspath(_global_label(global_path))),
@@ -4302,7 +4355,18 @@ def write_profile(profile, global_path=None):
 
 
 def _layer_file(root, layer, global_path=None):
-    return repo_config_path(root) if layer == "repo" else _global_label(global_path)
+    """The layer's file; the repo one is `repo_write_target`'s (L-0946), so
+    `RepoTargetUnknown` when git could not tell."""
+    return repo_write_target(root)[0] if layer == "repo" else _global_label(global_path)
+
+
+def _repo_crew_dir_problem(root):
+    """Why `--rebuild`/`--restore --repo` cannot run: the `.crew/` the repo
+    file lives in (the main checkout's, from a linked worktree) is missing."""
+    crew_dir = os.path.dirname(repo_write_target(root)[0])
+    if os.path.isdir(crew_dir):
+        return ""
+    return f"{os.path.dirname(crew_dir)} has no .crew/ directory"
 
 
 def _layer_template(layer):
@@ -4433,8 +4497,9 @@ def plan_rebuild(root, layer, use_profile=True, global_path=None):
     refuse to write."""
     if layer not in ("repo", "machine"):
         raise RebuildRefused("--rebuild needs --repo or --global")
-    if layer == "repo" and not os.path.isdir(os.path.join(root, ".crew")):
-        raise RebuildRefused(f"{root} has no .crew/ directory; run /crew:init to set it up")
+    problem = _repo_crew_dir_problem(root) if layer == "repo" else ""
+    if problem:
+        raise RebuildRefused(f"{problem}; run /crew:init to set it up")
     path = _layer_file(root, layer, global_path)
     state, current, _raw = _file_state(path)
     target = _layer_template(layer)
@@ -4494,8 +4559,9 @@ def plan_restore(root, layer, stamp, global_path=None, force_invalid=False):
     empty one would read "nothing to change" over a write that breaks the
     file: `RebuildRefused` unless `force_invalid`, and then `changes` is
     `None` -- "could not tell", never `[]`."""
-    if layer == "repo" and not os.path.isdir(os.path.join(root, ".crew")):
-        raise RebuildRefused(f"{root} has no .crew/ directory")
+    problem = _repo_crew_dir_problem(root) if layer == "repo" else ""
+    if problem:
+        raise RebuildRefused(problem)
     path = _layer_file(root, layer, global_path)
     data = crew_backup.read_backup(path, stamp)
     try:
@@ -4602,11 +4668,17 @@ def _set_layer(root, updates, args):
     digest of the bytes the plan read so `--apply --expect` can refuse a file
     that changed since. The one CLI path into either file."""
     repo = args.repo
+    target = main_root = None
     try:
         if repo:
-            snap, machine = repo_snapshot(root), machine_view(args.global_path)
+            # L-0946: resolved once, so the dry run, the digest and the label
+            # all name the file `--apply` writes (`write_repo_config`
+            # resolves again and the digest refuses a file that moved).
+            target, main_root = repo_write_target(root)
+            snap, machine = _repo_snapshot_at(target), machine_view(args.global_path)
             _, changes = plan_repo_write(root, updates, args.global_path,
-                                         snapshot=snap, machine=machine)
+                                         snapshot=snap, machine=machine,
+                                         target=target)
         else:
             snap = global_snapshot(args.global_path)
             _, changes = plan_global_write(updates, args.global_path,
@@ -4614,7 +4686,7 @@ def _set_layer(root, updates, args):
         if args.apply:
             _, changes = (write_repo_config(
                 root, updates, args.global_path, expect=args.expect,
-                expect_global=args.expect_global) if repo else
+                expect_global=args.expect_global, target=target) if repo else
                           write_global_config(updates, args.global_path,
                                               expect=args.expect))
     except WriteBackupRefused as exc:
@@ -4624,7 +4696,8 @@ def _set_layer(root, updates, args):
         print(str(exc), file=sys.stderr)
         return 2
     verb = "wrote" if args.apply else "would write (dry run)"
-    print(f"{verb}: {repo_config_path(root) if repo else _global_label(args.global_path)}")
+    print(f"{verb}: " + (target + repo_target_note(main_root) if repo
+                         else _global_label(args.global_path)))
     print(f"digest: {snap[2]}")
     if repo:
         print(f"machine digest: {machine[1]}")
@@ -4650,8 +4723,13 @@ def _layer_arg(args):
     return "repo" if args.repo else "machine" if args.global_layer else None
 
 
-def _print_rebuild(verb, path, changes, notes):
-    print(f"{verb}: {path}")
+def _layer_note(root, layer):
+    """`repo_target_note` for a repo layer resolved to the main checkout."""
+    return repo_target_note(repo_write_target(root)[1]) if layer == "repo" else ""
+
+
+def _print_rebuild(verb, path, changes, notes, suffix=""):
+    print(f"{verb}: {path}{suffix}")
     for note in notes:
         print(f"  {note}")
     print_changes(changes)
@@ -4666,13 +4744,14 @@ def _rebuild(args):
         if args.apply:
             path, stamp, changes, notes = apply_rebuild(
                 args.root, layer, not args.no_profile, args.global_path)
-            _print_rebuild("rebuilt", path, changes, notes)
+            _print_rebuild("rebuilt", path, changes, notes, _layer_note(args.root, layer))
             print(f"backup of the previous file: {stamp or 'none (there was no file)'}")
             return 0
         _text, changes, notes = plan_rebuild(args.root, layer, not args.no_profile,
                                              args.global_path)
         _print_rebuild("would rebuild (dry run; add --apply)",
-                       _layer_file(args.root, layer, args.global_path), changes, notes)
+                       _layer_file(args.root, layer, args.global_path), changes, notes,
+                       _layer_note(args.root, layer))
         return 0
     except ProfileUnreadable as exc:
         print(f"refused, nothing written: could not tell what your saved values "
@@ -4695,8 +4774,8 @@ def _restore(args):
     if layer is None:
         print("--restore needs --repo or --global", file=sys.stderr)
         return 2
-    path = _layer_file(args.root, layer, args.global_path)
     try:
+        path = _layer_file(args.root, layer, args.global_path) + _layer_note(args.root, layer)
         data, changes = plan_restore(args.root, layer, args.restore,
                                      args.global_path, args.force_invalid)
     except (crew_backup.BackupError, RebuildRefused) as exc:
@@ -4712,7 +4791,7 @@ def _restore(args):
         print(f"refused, nothing written: the backup of the current file failed "
               f"({exc})", file=sys.stderr)
         return 4
-    except crew_config_files.Busy as exc:
+    except (crew_config_files.Busy, RebuildRefused) as exc:
         print(f"refused, nothing written: {exc}", file=sys.stderr)
         return 2
     print(f"restored {args.restore} to {path}")
@@ -4734,9 +4813,14 @@ def _backups(args):
     if layer is None:
         print("--backups needs --repo or --global", file=sys.stderr)
         return 2
-    path = _layer_file(args.root, layer, args.global_path)
+    try:
+        path = _layer_file(args.root, layer, args.global_path)
+        note = _layer_note(args.root, layer)
+    except RepoTargetUnknown as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     stamps = crew_backup.list_backups(path)
-    print(f"backups of {path} (newest first) in {crew_backup.target_dir(path)}:")
+    print(f"backups of {path}{note} (newest first) in {crew_backup.target_dir(path)}:")
     for stamp in stamps:
         print(f"  {stamp}")
     if not stamps:
@@ -4747,7 +4831,7 @@ def _backups(args):
 def _save_profile(args):
     layer = _layer_arg(args)
     layers = [layer] if layer else ["machine", "repo"]
-    if not layer and not os.path.isfile(repo_config_path(args.root)):
+    if not layer and not os.path.isfile(repo_write_label(args.root)):
         layers = ["machine"]
     try:
         profile, sections = plan_profile(args.root, layers, args.global_path)

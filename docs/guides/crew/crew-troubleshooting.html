@@ -543,6 +543,13 @@ contract itself. This section is what goes wrong with the approval and the audit
   and with no python a lane whose main checkout has a config blocks writes and the Stop (the
   PowerShell 7 wrappers still allow one that strictly says <code>scope.mode: off</code>).</p>
 </li>
+<li><strong>Symptom: <code>/crew:config --set ... --repo</code> in a lane said <code>no &lt;worktree&gt;\.crew\config.json -
+  nothing to write into</code></strong> (crew 1.3.67 and earlier, L-0946) although the lane read the main
+  checkout's settings.
+  <strong>Fix:</strong> update crew. Since 1.3.68 the write lands in the main checkout's file, the one the lane
+  reads, and the output names it. On an older crew, run the same command with
+  <code>--root &lt;the main checkout&gt;</code>. A refusal that says <code>could not tell</code> means git could not name the
+  main checkout; run it from the main checkout.</li>
 <li><strong>Symptom: which tickets still need my approval?</strong>
   <strong>Check:</strong> <code>/crew:status --approvals</code>. It prints one ready-to-paste <code>/crew:approve &lt;id&gt;</code> line, with a
   <code>why: &lt;why&gt;</code> line under it, per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,
