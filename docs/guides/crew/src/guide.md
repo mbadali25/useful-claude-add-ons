@@ -521,7 +521,7 @@ either file vetoes it; and it is written only after the owner types
 records that confirmation and `humanOnly.approve: false` makes a CLI-recorded
 approval count (the same effect as `scope.allowCliApproval: true`, but set
 only through the double confirmation); `humanOnly.promoteMarker` is still
-read by no hook. Since crew 1.3.63, `/crew:confirm-config` typed with no id
+read by no hook. Since crew 1.3.65, `/crew:confirm-config` typed with no id
 records nothing and lists the pending proposals, each with its id and the
 exact change, or says that none is pending and why. The owner's `/crew:approve-mass <id>` is recorded the same
 way, for one blocked mass operation. The configuration reference's "The

@@ -59,7 +59,7 @@ which still needs `autopilot.approval` `self` or `risk` and `autopilot.mode`
 raising or answering anything but exactly `humanOnly: false` - reads as
 human-only.
 
-**Finding the change id (crew 1.3.63).** Type `/crew:confirm-config` with no
+**Finding the change id (crew 1.3.65).** Type `/crew:confirm-config` with no
 id (or with an id that is wrong, expired or already used) and the hook refuses
 it, records nothing, and lists the proposals in this machine's store
 (`~/.claude/crew/confirm-config/`): each pending one's id, key, current value
