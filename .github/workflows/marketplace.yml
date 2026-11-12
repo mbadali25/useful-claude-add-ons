@@ -22,6 +22,16 @@ concurrency:
 
 jobs:
   check:
+    # Branch protection requires the `check` context, so only the FULL run may
+    # report under that name. A draft run takes --pending-bump (version drift
+    # passes as "pending at land"), so it reports a different context and can
+    # never satisfy the required one. Without this, PR #758 was marked ready
+    # and merged 6 s later on its draft run's green `check`, before the full
+    # ready_for_review run had reported (and that run then failed). On a ready
+    # PR the required `check` stays "expected" until the full run reports it.
+    # No job-level `if:` here on purpose: a skipped job reports a conclusion
+    # branch protection accepts. scripts/_test/draft-check-name.py holds both.
+    name: ${{ github.event.pull_request.draft && 'check-draft (version bump pending at land)' || 'check' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +62,10 @@ jobs:
       - name: Check the marketplace is internally consistent (draft PR, bump pending at land)
         if: github.event.pull_request.draft == true
         run: python3 scripts/check-marketplace.py --pending-bump
+      # The job name above: a draft (--pending-bump) run must never report a
+      # REQUIRED context, and the full run must still report `check`.
+      - name: Draft run cannot satisfy a required check suite
+        run: python3 scripts/_test/draft-check-name.py
       # check_argument_hint_frontmatter parses every command's and skill's
       # frontmatter with the same PyYAML loader Claude Code uses, so a value
       # like `argument-hint: [a] [b]` - two unquoted bracket groups, read as
