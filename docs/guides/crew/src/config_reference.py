@@ -248,7 +248,7 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
 meaningful only with `scope.mode` `block`.
 
-## Git commands (`guards.git.allow`, crew 1.3.82)
+## Git commands (`guards.git.allow`, crew 1.3.85)
 
 The owner's switch that stops crew's command guards from blocking or asking on
 git commands, destructive ones included. Off by default (`null`, or `"off"`).
@@ -271,7 +271,7 @@ deploy that is itself a git command (`git push prod main`) stays gated: that
 is a deploy, not a git block. `gh` is not git: `gh pr merge --admin`
 (`guards.adminMerge`), workflow dispatches and `gh api` calls are untouched.
 
-**The line is ONE plain git command, fail-closed (crew 1.3.82).** A command
+**The line is ONE plain git command, fail-closed (crew 1.3.85).** A command
 line is exempt only when it is a single simple command: exactly `git` - not a
 path (`/usr/bin/git`, `./git`, `git.exe`), not preceded by `command`, an
 assignment, `cd` or a function, alias or `shopt` that redefines git - followed

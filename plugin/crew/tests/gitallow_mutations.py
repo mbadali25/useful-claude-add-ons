@@ -46,7 +46,7 @@ NotADirectoryError, which never reaches `_dangles`), so they now name
 FileNotFoundError in on every host; a new mutation of the OSError branch names
 its POSIX twin.
 
-Review round 4 (Codex gpt-6-sol, crew 1.3.82) replaced the denylist with a
+Review round 4 (Codex gpt-6-sol, crew 1.3.85) replaced the denylist with a
 fail-closed allowlist read by ONE reader both paths ask (`plain_commands`), so
 it DELETED every mutation of the code that is gone: the cloud guard's own
 `hold` / `-C` / `Expands` marking, `finding_setting`, `_RUNTIME_RE`, the
@@ -60,7 +60,7 @@ cloud guard's `not fed` (an `xargs git` line is never only git), and
 `_ps_commands`' dangling-redirection check (the target word, if read as an
 argument instead, never makes a line exempt that dropping it would not).
 
-Review round 5 (Codex gpt-6-sol, crew 1.3.82) made redirections a fail-closed
+Review round 5 (Codex gpt-6-sol, crew 1.3.85) made redirections a fail-closed
 allowlist and taught the shared splitter bash's `>&-` and fd-prefix reading,
 and added one red mutation per rule (25: the redirection rules, the PowerShell
 parse-error refusals the differential test found, the splitter and the fd
@@ -303,7 +303,7 @@ GITALLOW_MUTATIONS = (
      "        if layer != \"machine\":\n            raise Refused(f\"{dotted} lives",
      "        if False:\n            raise Refused(f\"{dotted} lives",
      _T + "test_propose_refuses_what_it_cannot_confirm"),
-    # --- review round 4 (Codex gpt-6-sol, crew 1.3.82): the fail-closed allowlist ---
+    # --- review round 4 (Codex gpt-6-sol, crew 1.3.85): the fail-closed allowlist ---
     # bash reader (`_bash_plain_word`, `_bash_commands`)
     ("gitAllow r4: an unquoted $ is a plain character (BLOCK A)", GA,
      "_BASH_SAFE = frozenset(string.ascii_letters + string.digits + \"_-./:=+,@%^\")\n",

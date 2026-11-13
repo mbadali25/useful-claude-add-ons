@@ -526,7 +526,7 @@ records nothing and lists the pending proposals, each with its id and the
 exact change, or says that none is pending and why. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.
 
-**Git commands (crew 1.3.82).** `guards.git.allow` is the owner's switch that
+**Git commands (crew 1.3.85).** `guards.git.allow` is the owner's switch that
 stops the command guards blocking or asking on git commands, destructive ones
 included: `"all"`, or a list of subcommands such as `["commit", "push"]`.
 A listed subcommand passes with every option it takes: listing `push` also

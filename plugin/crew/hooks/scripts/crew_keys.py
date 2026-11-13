@@ -404,7 +404,7 @@ KEY_META = {
         "heredoc, continuation or comment, so a chain is judged as before); "
         "a git command carrying `-c`, a command to run (`rebase --exec`, `push "
         "--receive-pack`, `submodule foreach`, ...) or a `git config` write is never exempt.", "type",
-        since="1.3.82", source=_S + "crew_gitallow.py",
+        since="1.3.85", source=_S + "crew_gitallow.py",
         type_="null, `\"off\"`, `\"all\"` or a list of git subcommand names"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),

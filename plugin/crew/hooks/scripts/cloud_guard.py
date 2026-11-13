@@ -3107,7 +3107,7 @@ def _judge_one(root, finding, pins, problem, envs=None):
             return judge_dispatch(finding.scope, finding.what, lambda key: crew_config.guard_decision(
                 root, DEPLOY_RULE, key), finding.text, envs or {}, _approval_is_live)
         out = crew_config.guard_decision(root, finding.rule, finding.text)
-        # A git finding's scope (`crew_gitallow.SCOPE_KEY`, crew 1.3.82) is
+        # A git finding's scope (`crew_gitallow.SCOPE_KEY`, crew 1.3.85) is
         # not a terraform scope: it takes the plain route it took before.
         if finding.scope is not None and envs is not None \
                 and crew_gitallow.SCOPE_KEY not in finding.scope:
@@ -3171,7 +3171,7 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     for finding in findings:
         scope = finding.scope if isinstance(finding.scope, dict) else {}
         if crew_gitallow.SCOPE_KEY in scope:
-            # `guards.git.allow` (crew 1.3.82): the owner's double-confirmed
+            # `guards.git.allow` (crew 1.3.85): the owner's double-confirmed
             # switch lets a git command's own findings through, and logs that
             # it did -- only when the whole line is plain literal git commands
             # by the one reader the promote gate also uses (`line_plan`, an

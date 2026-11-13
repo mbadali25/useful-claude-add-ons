@@ -705,7 +705,7 @@ if (-not $py) {
   if ($dispatchExit -ne 0) {
     Stop-Promotion "the command could not be read as a workflow dispatch (_promote_dispatch.py failed). This is not a pass."
   }
-  # crew 1.3.82: `allow<TAB>guards.git.allow` is the owner's double-confirmed
+  # crew 1.3.85: `allow<TAB>guards.git.allow` is the owner's double-confirmed
   # switch covering a line of only git commands (crew_gitallow.promote_exempt,
   # the function promote-gate.sh's python gate calls). It is printed alone.
   foreach ($line in $dispatch) {
