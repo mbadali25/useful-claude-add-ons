@@ -1,6 +1,7 @@
 """L-0725: the committed key set (87 keys; 83 repo and 50 machine leaves,
 plus the two `humanOnly` keys crew 1.3.9 added, the `worktrees.root` key crew 1.3.19 added,
-the `environments.preProduction` key crew 1.3.23 added, the `promote.deadlineSeconds` key crew 1.3.41 added and the eight
+the `environments.preProduction` key crew 1.3.23 added,
+the `promote.deadlineSeconds` key crew 1.3.41 added and the eight
 `reaper.*` keys crew 1.3.50 added:
 100, 96 and 62) and the
 60 keys it drops. Generated once from the reviewed Disposition in
