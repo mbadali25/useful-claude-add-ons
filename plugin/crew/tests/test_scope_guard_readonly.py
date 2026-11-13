@@ -48,17 +48,14 @@ ALLOWED = [
     pytest.param(f"tail -n 3 {S}/ledger.jsonl", id="tail"),
     pytest.param(f"wc -l {S}/ledger.jsonl", id="wc"),
     pytest.param(f"stat {S}/x", id="stat"),
-    pytest.param(f"file {S}/x", id="file"),
-    pytest.param(f"du -sh {S}", id="du"),
-    pytest.param(f"df {S}", id="df"),
-    pytest.param(f"sort {S}/ledger.jsonl | cut -d, -f1", id="sort-cut"),
-    pytest.param(f"sort -u {S}/ledger.jsonl | head -3", id="sort-u-head"),
-    pytest.param(f"cat {S}/x | tr a-z A-Z", id="tr"),
-    pytest.param(f"readlink -f {S}", id="readlink"),
-    pytest.param(f"realpath {S}", id="realpath"),
-    pytest.param(f"basename {S}/x; dirname {S}/x; pwd", id="basename-dirname-pwd"),
-    pytest.param(f"test -f {S}/x && ls {S}", id="test-and-ls"),
-    pytest.param(f"test -f {S}/x || ls {S}", id="test-or-ls"),
+    pytest.param(f"find {S} -name 'python3*' -type f -print", id="find-name-type-print"),
+    pytest.param(f"find {S} -maxdepth 2 -name x -o -name y", id="find-or"),
+    pytest.param(f"head -n 5 {S}/x | tail -3", id="head-n-tail"),
+    pytest.param(f"tail -n3 {S}/x | wc -l", id="tail-attached-count"),
+    pytest.param(f"stat -c %n {S}/x", id="stat-format"),
+    pytest.param(f"grep -rie python3 {S}", id="grep-cluster-with-e"),
+    pytest.param(f"grep --include='*.json' --color=never -rn echo {S}", id="grep-include"),
+    pytest.param(f"grep -- -x {S}/y", id="grep-double-dash"),
     pytest.param(f"ls \"{S}\" | egrep 'a|b' | fgrep x", id="double-quoted-egrep-fgrep"),
     pytest.param(f"ls {STORE}", id="ls-the-confirm-store"),
     pytest.param(f"grep echo {STORE}x", id="grep-echo-in-the-confirm-store"),
@@ -68,6 +65,12 @@ ALLOWED = [
 @pytest.mark.parametrize("command", ALLOWED)
 def test_a_read_only_listing_of_crews_state_is_allowed(command):
     assert refusal(command) is None
+
+
+@pytest.mark.parametrize("command", ALLOWED)
+def test_every_allowed_form_is_wholly_read_only(command):
+    # The deny-list verdict alone could allow these; the exemption must too.
+    assert scope_guard._read_only(command) is True
 
 
 @pytest.mark.parametrize("command", CORPUS["must_allow"])
@@ -209,3 +212,101 @@ def test_simple_commands_reads_only_the_documented_shapes():
           [[("ls", False), ("a", False)], [("ls", False), ("b", False)],
            [("ls", False), ("c", False)], [("ls", False), ("d", False)]],
           None, None]
+
+
+# The third review round (crew 1.3.82): `test -v 'a[$(cmd)]'` ran cmd (bash
+# evaluates the subscript of `test -v`, `[`, `[[`, `printf -v`, `declare`...)
+# and bfs, Claude Code's own `find`, has `-rm`. The exemption now lists only ten
+# external programs with an allow-list of options, and `$` or a backtick is
+# refused even inside single quotes.
+_PAYLOAD = f"rm {S}/approvals/T-1.json"
+_CP = f"cp /dev/null {S}/ledger.jsonl"
+NOT_EXEMPT = [
+    pytest.param(f"test -v 'a[$({_PAYLOAD})]'", id="test-v-substitution"),
+    pytest.param(f"test -v 'a[$({_CP})]'", id="test-v-cp-substitution"),
+    pytest.param(f"test -v 'a[`{_PAYLOAD}`]'", id="test-v-backtick"),
+    pytest.param(f"[ -v 'a[$({_PAYLOAD})]' ]", id="bracket-v-substitution"),
+    pytest.param(f"[[ -v 'a[$({_PAYLOAD})]' ]]", id="double-bracket-v-substitution"),
+    pytest.param(f"printf -v 'a[$({_PAYLOAD})]' x", id="printf-v-substitution"),
+    pytest.param(f"test -f {S}/x", id="test-is-not-listed"),
+    pytest.param(f"pwd; ls {S}", id="pwd-is-not-listed"),
+    pytest.param(f"file {S}/x", id="file-is-not-listed"),
+    pytest.param(f"du -sh {S}", id="du-is-not-listed"),
+    pytest.param(f"df {S}", id="df-is-not-listed"),
+    pytest.param(f"sort {S}/x", id="sort-is-not-listed"),
+    pytest.param(f"cut -d, -f1 {S}/x", id="cut-is-not-listed"),
+    pytest.param(f"cat {S}/x | tr a b", id="tr-is-not-listed"),
+    pytest.param(f"readlink -f {S}", id="readlink-is-not-listed"),
+    pytest.param(f"realpath {S}", id="realpath-is-not-listed"),
+    pytest.param(f"basename {S}/x", id="basename-is-not-listed"),
+    pytest.param(f"dirname {S}/x", id="dirname-is-not-listed"),
+    pytest.param(f"grep '{_PAYLOAD}$(x)' {S}/y", id="dollar-in-single-quotes"),
+    pytest.param("grep '^x$' /tmp/y", id="regex-anchor-in-single-quotes"),
+    pytest.param(f"ls {S} '`x`'", id="backtick-in-single-quotes"),
+    pytest.param(f"ls {S} \"`x`\"", id="backtick-in-double-quotes"),
+    pytest.param(f"find {S} -name x -rm", id="find-rm"),
+    pytest.param(f"find {S} -rm", id="find-rm-bare"),
+    pytest.param(f"find {S} -name x -o -rm", id="find-or-rm"),
+    pytest.param(f"find {S} -exclude x -rm", id="find-exclude-rm"),
+    pytest.param(f"find {S} -hidden", id="find-hidden-is-unknown"),
+    pytest.param(f"find {S} -printf x", id="find-printf-is-unknown"),
+    pytest.param(f"find {S} -name", id="find-name-without-value"),
+    pytest.param(f"find {S} -D exec", id="find-debug-option"),
+    pytest.param(f"find {S} -name x -execdir ls +", id="find-execdir-ls"),
+    pytest.param(f"grep --pager=less x {S}/y", id="grep-pager"),
+    pytest.param(f"grep --pager 'rm x' x {S}/y", id="grep-pager-space"),
+    pytest.param(f"grep --filter='*:cat' -r x {S}", id="grep-filter"),
+    pytest.param(f"grep --save-config=x -r x {S}", id="grep-save-config"),
+    pytest.param(f"grep --config=x -r x {S}", id="grep-config"),
+    pytest.param(f"grep -z -r x {S}", id="grep-z"),
+    pytest.param(f"grep --decompress x {S}/y", id="grep-decompress"),
+    pytest.param(f"grep -f {S}/x -r y {S}", id="grep-f"),
+    pytest.param(f"grep --pa=x y {S}/z", id="grep-abbreviated-long"),
+    pytest.param(f"grep --color=always x {S}/z", id="grep-color-always"),
+    pytest.param(f"grep -e", id="grep-e-without-value"),
+    pytest.param(f"egrep --pager=x y {S}/z", id="egrep-pager"),
+    pytest.param(f"fgrep -Q y {S}/z", id="fgrep-Q"),
+    pytest.param(f"tail -f {S}/x", id="tail-f"),
+    pytest.param(f"tail -F {S}/x", id="tail-F"),
+    pytest.param(f"tail --follow {S}/x", id="tail-follow"),
+    pytest.param(f"tail -fn 3 {S}/x", id="tail-fn"),
+    pytest.param(f"tail --pid=1 {S}/x", id="tail-pid"),
+    pytest.param(f"tail -n x {S}/y", id="tail-n-not-a-number"),
+    pytest.param(f"head -n -x {S}/y", id="head-n-not-a-number"),
+    pytest.param(f"head --lines=x {S}/y", id="head-lines-not-a-number"),
+    pytest.param(f"cat -f {S}/x", id="cat-unknown-option"),
+    pytest.param(f"ls -I x {S}", id="ls-ignore-takes-a-value"),
+    pytest.param(f"ls --time-style=x {S}", id="ls-long-unknown"),
+    pytest.param(f"wc --files0-from={S}/x", id="wc-files0-from"),
+    pytest.param(f"stat --foo {S}/x", id="stat-unknown-long"),
+    pytest.param(f"stat -c", id="stat-c-without-value"),
+]
+
+
+@pytest.mark.parametrize("command", NOT_EXEMPT)
+def test_a_form_outside_the_option_and_program_allow_lists_is_not_exempt(command):
+    assert scope_guard._read_only(command) is False
+
+
+@pytest.mark.parametrize("command", [
+    p for p in NOT_EXEMPT if scope_guard._WRITES_RE.search(p.values[0])
+    and (S in p.values[0])])
+def test_a_not_exempt_form_naming_a_writing_word_is_refused(command):
+    assert refusal(command) is not None
+
+
+def test_the_exempt_programs_are_exactly_these_ten():
+    assert sorted(scope_guard._READ_ONLY_PROGRAMS) == sorted((
+        "ls", "cat", "head", "tail", "wc", "stat", "grep", "egrep", "fgrep", "find"))
+    assert set(scope_guard._OPTION_RULES) | {"find"} == scope_guard._READ_ONLY_PROGRAMS
+
+
+def test_no_builtin_and_no_bfs_write_primary_is_on_an_allow_list():
+    banned = {"-rm", "-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint",
+              "-fprint0", "-fprintf", "-fls", "-printf", "-exclude", "-hidden"}
+    assert not banned & (scope_guard._FIND_FLAGS | scope_guard._FIND_VALUES)
+    for rule in scope_guard._OPTION_RULES.values():
+        assert "f" not in rule[0] or rule is scope_guard._OPTION_RULES["stat"]
+        assert not {"-f", "-F", "--follow", "--pager", "--filter"} & set(rule[2])
+    assert "f" not in scope_guard._OPTION_RULES["tail"][0]
+    assert "F" not in scope_guard._OPTION_RULES["tail"][0]

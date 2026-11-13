@@ -179,27 +179,66 @@ _WRITES_RE = re.compile(
 
 # Fail-closed exemption from the word list above. The list is a deny-list on
 # purpose, so a command that merely NAMES `python3`/`echo` as an argument
-# (`ls .git/crew | grep python3`) was refused. A command is read-only, and so
+# (`ls <state> | grep python3`) was refused. A command is read-only, and so
 # exempt, ONLY when `_read_only` parses all of it and every simple command is
-# one of these programs with plain literal words. Anything it cannot parse, or
-# any other program, keeps the deny-list verdict unchanged.
+# one of these programs with plain literal words AND only options on that
+# program's explicit allow-list (`_OPTION_RULES`, `_FIND_*`). Anything it cannot
+# parse, any other program, or any option not on the list keeps the deny-list
+# verdict. Shell builtins (`test`, `[`, `printf -v`, `declare`, `let`) are never
+# listed: bash evaluates their arguments itself (`test -v 'a[$(cmd)]'` runs cmd).
 _READ_ONLY_PROGRAMS = frozenset((
-    "ls", "cat", "head", "tail", "wc", "stat", "file", "du", "df", "grep", "egrep",
-    "fgrep", "find", "sort", "cut", "tr", "readlink", "realpath", "basename",
-    "dirname", "pwd", "test"))
+    "ls", "cat", "head", "tail", "wc", "stat", "grep", "egrep", "fgrep", "find"))
 _PLAIN_CHARS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./:=,@%+-")
-_FIND_WRITES = ("-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fls")
 _REDIRECT_WORDS = frozenset(("2>/dev/null", "2>&1"))
+_NUMBER_RE = re.compile(r"^[+-]?[0-9]+$")
+_GREP_RULE = ("rRinlLcvwxFEHhsqoaI", "e", ("--color=never",),
+              ("--include", "--exclude", "--exclude-dir"), None, False)
+# program -> (flag letters, letters taking a value, exact long flags, long options
+# taking `=VALUE`, pattern a value must match, whether a bare `-NUM` is allowed).
+# No option that names a file or program to write or run, pages, follows,
+# decompresses or reads a config is listed; unknown options fall back to the old
+# verdict (so `tail -f`, `grep --pager=...`, `grep -z` are not exempt).
+_OPTION_RULES = {
+    "ls": ("aAlhdR1trSFpisLnU", "", ("--all", "--almost-all", "--human-readable",
+                                     "--recursive", "--directory", "--classify",
+                                     "--color=never", "--reverse", "--size",
+                                     "--inode", "--dereference"), (), None, False),
+    "cat": ("nbsAETv", "", ("--number", "--number-nonblank", "--squeeze-blank",
+                            "--show-all", "--show-ends", "--show-tabs",
+                            "--show-nonprinting"), (), None, False),
+    "head": ("qv", "nc", ("--quiet", "--verbose"), ("--lines", "--bytes"),
+             _NUMBER_RE, True),
+    "tail": ("qv", "nc", ("--quiet", "--verbose"), ("--lines", "--bytes"),
+             _NUMBER_RE, True),
+    "wc": ("lwcmL", "", ("--lines", "--words", "--bytes", "--chars",
+                         "--max-line-length"), (), None, False),
+    "stat": ("Lft", "c", ("--dereference", "--file-system", "--terse"),
+             ("--format", "--printf"), None, False),
+    "grep": _GREP_RULE, "egrep": _GREP_RULE, "fgrep": _GREP_RULE,
+}
+# find: a primary on these lists is read-only. Every other `-word` (-delete,
+# -rm, -exec, -execdir, -ok, -okdir, -fprint*, -fls, -printf, -exclude, ...) is
+# unknown, so find of GNU findutils, of bfs (Claude Code's own `find`) and of
+# any other implementation falls back to the old verdict.
+_FIND_FLAGS = frozenset((
+    "-empty", "-print", "-print0", "-prune", "-o", "-a", "-and", "-or", "-not",
+    "-depth", "-xdev", "-true", "-false", "-L", "-H", "-P"))
+_FIND_VALUES = frozenset((
+    "-name", "-iname", "-path", "-ipath", "-wholename", "-regex", "-iregex",
+    "-type", "-maxdepth", "-mindepth", "-mtime", "-mmin", "-newer", "-size",
+    "-perm", "-user", "-group"))
 
 
 def _simple_commands(command):
     """`command` split into simple commands, each a list of (word, quoted)
     pairs, or None when any of it cannot be read here. Reads only plain words,
     plain '...' and "..." strings, the separators `;` `&&` `||` `|` and the
-    words `2>/dev/null` and `2>&1`; everything else (a `$`, backtick, `\\`,
-    glob, brace, paren, `#`, `~`, `!`, `<`, a lone `&`, a newline, an
-    unterminated quote, an empty command) is None."""
+    words `2>/dev/null` and `2>&1`; everything else (a `$` or backtick anywhere,
+    even inside single quotes, `\\`, glob, brace, paren, `#`, `~`, `!`, `<`, a
+    lone `&`, a newline, an unterminated quote, an empty command) is None. A
+    `$` in single quotes is inert to the shell, but a builtin may evaluate its
+    argument (`test -v 'a[$(cmd)]'`), so it is refused here too."""
     commands, words, word = [], [], None
     quoted, i, n = False, 0, len(command)
 
@@ -230,8 +269,8 @@ def _simple_commands(command):
             if close < 0:
                 return None
             body = command[i + 1:close]
-            if any(c in body for c in "\n\r\0") or (
-                    ch == '"' and any(c in body for c in "$`\\!")):
+            if any(c in body for c in "\n\r\0$`") or (
+                    ch == '"' and any(c in body for c in "\\!")):
                 return None
             word = (word or "") + body
             quoted = True
@@ -271,24 +310,72 @@ def _simple_commands(command):
     return commands
 
 
-def _plain_args_ok(program, args):
-    """No word of a listed program writes a file or runs another program.
-    `uniq` is deliberately NOT a listed program: `uniq IN OUT` writes OUT and an
-    operand can hide as `-`, as anything after `--`, or as an option's argument,
-    so no operand count is trustworthy. Every program left here has no output
-    operand (an output file is only ever an option: `sort -o`, `file -C`,
-    `find -fprint*`), and `--files0-from`/`-f`/`-m` only read."""
-    if program == "find":
-        return not any(a == w or (w == "-fprint" and a.startswith("-fprint"))
-                       for a in args for w in _FIND_WRITES)
-    if program == "sort":
-        return not any((a.startswith("--") and a[2:3] in ("o", "c", "t"))
-                       or (a[:1] == "-" and a[1:2] != "-" and ("o" in a or "T" in a))
-                       for a in args)
-    if program == "file":
-        return not any(a == "-C" or (a.startswith("--") and a[2:3] == "c") or
-                       (a[:1] == "-" and a[1:2] != "-" and "C" in a) for a in args)
+def _options_ok(rule, args):
+    """True when every option word in `args` is on `rule`'s allow-list (see
+    `_OPTION_RULES`). A word that is not an option, or `-` alone, is an operand;
+    `--` ends the options."""
+    flags, value_letters, longs, long_values, valid, numeric = rule
+    i = 0
+    while i < len(args):
+        word = args[i]
+        i += 1
+        if word == "--":
+            return True
+        if word == "-" or not word.startswith("-"):
+            continue
+        if word.startswith("--"):
+            name, equals, value = word.partition("=")
+            if word in longs:
+                continue
+            if name in long_values and equals and (valid is None or valid.match(value)):
+                continue
+            return False
+        body = word[1:]
+        if numeric and body.isdigit():
+            continue
+        for j, letter in enumerate(body):
+            if letter in flags:
+                continue
+            if letter not in value_letters:
+                return False
+            value = body[j + 1:]
+            if not value:
+                if i >= len(args):
+                    return False
+                value, i = args[i], i + 1
+            if valid is not None and not valid.match(value):
+                return False
+            break
     return True
+
+
+def _find_ok(args):
+    """True when every `-word` of a find command line is a primary on the
+    read-only lists. A value primary consumes the next word whatever it looks
+    like; a word not starting with `-` is a start path (or a quoted `!`/`(`)."""
+    i = 0
+    while i < len(args):
+        word = args[i]
+        i += 1
+        if word in _FIND_VALUES:
+            if i >= len(args):
+                return False
+            i += 1
+        elif word in _FIND_FLAGS or word == "-" or not word.startswith("-"):
+            continue
+        else:
+            return False
+    return True
+
+
+def _plain_args_ok(program, args):
+    """No option of a listed program writes a file, runs another program,
+    follows a file forever or is unknown to its allow-list. `uniq`, `sort`,
+    `file`, `test` and the other programs that are shell builtins or whose
+    operands or options can write are deliberately NOT listed."""
+    if program == "find":
+        return _find_ok(args)
+    return _options_ok(_OPTION_RULES[program], args)
 
 
 def _read_only(command):

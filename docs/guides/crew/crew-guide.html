@@ -320,9 +320,12 @@ approval, or when the target is outside Touch. It also refuses a shell command
 that tries to write the approval state. That check is a textual deny-list: a
 command that names crew's state beside a redirect or a writing word (<code>cp</code>,
 <code>mv</code>, <code>rm</code>, <code>sed</code>, <code>tee</code>, <code>echo</code>, <code>python</code>) is refused. The one exemption is
-fail-closed: a command made only of read-only programs (<code>ls</code>, <code>cat</code>, <code>grep</code>,
-<code>find</code> without <code>-delete</code> or <code>-exec</code>, <code>sort</code> without <code>-o</code>, and a few more) with
-plain literal words, so <code>ls .git/crew | grep python3</code> passes; anything the
+fail-closed: a command made only of ten read-only programs (<code>ls</code>, <code>cat</code>,
+<code>head</code>, <code>tail</code>, <code>wc</code>, <code>stat</code>, <code>grep</code>, <code>egrep</code>, <code>fgrep</code>, <code>find</code>), each with
+only options on its explicit allow-list and plain literal words (no <code>$</code> or
+backtick, even inside single quotes), so <code>ls .git/crew | grep python3</code>
+passes; shell builtins such as <code>test</code> and any unknown option (<code>find -rm</code>,
+<code>tail -f</code>, <code>grep --pager</code>) keep the refusal; anything the
 guard cannot parse completely keeps the refusal. <em>What it cannot see:</em> <code>sed -i</code>,
 a redirect or a formatter writing a file outside crew's state. Those are shell
 writes, and the guard judges only the editing tools.</p>

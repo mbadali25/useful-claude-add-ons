@@ -256,9 +256,12 @@ approval, or when the target is outside Touch. It also refuses a shell command
 that tries to write the approval state. That check is a textual deny-list: a
 command that names crew's state beside a redirect or a writing word (`cp`,
 `mv`, `rm`, `sed`, `tee`, `echo`, `python`) is refused. The one exemption is
-fail-closed: a command made only of read-only programs (`ls`, `cat`, `grep`,
-`find` without `-delete` or `-exec`, `sort` without `-o`, and a few more) with
-plain literal words, so `ls .git/crew | grep python3` passes; anything the
+fail-closed: a command made only of ten read-only programs (`ls`, `cat`,
+`head`, `tail`, `wc`, `stat`, `grep`, `egrep`, `fgrep`, `find`), each with
+only options on its explicit allow-list and plain literal words (no `$` or
+backtick, even inside single quotes), so `ls .git/crew | grep python3`
+passes; shell builtins such as `test` and any unknown option (`find -rm`,
+`tail -f`, `grep --pager`) keep the refusal; anything the
 guard cannot parse completely keeps the refusal. *What it cannot see:* `sed -i`,
 a redirect or a formatter writing a file outside crew's state. Those are shell
 writes, and the guard judges only the editing tools.
