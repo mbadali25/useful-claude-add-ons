@@ -31,12 +31,36 @@ WHO MAY TURN IT ON. The machine file only (`~/.claude/crew/config.json`), and
 only through the double confirmation `humanOnly` uses: `crew_confirm_config.py
 propose --layer machine --key guards.git.allow --value '"all"'` records the
 change, and the owner types `/crew:confirm-config <change_id>` twice. A value
-counts only while the newest settled receipt for this key in that file is an
-applied change to EXACTLY that value (`settings`); a value written any other
-way (a hand edit, an agent's Edit) reads as off. `crew_config.py --set` and the
-`/crew:config` menu refuse every value but `"off"` and null (`write_refusal`).
-A repo file can never turn it on (a cloned repository must not loosen a guard
-on someone else's machine); a repo `"off"` vetoes the machine value.
+counts only while the newest settled receipt for this key in that file is a
+WHOLE applied record (`receipt_problem`: two confirmations from two distinct
+user prompts inside the proposal's window, this file's path, a value the
+switch takes) for EXACTLY that value, and the machine file is still the very
+file that confirmation left: its bytes, size and modification time
+(`file_binding`, crew 1.3.71 review). Any later change to the machine file
+by any route but crew's own config writer (`crew_config.write_global_config`,
+which re-binds the receipt when it leaves this key alone, `rebind`) reads as
+off -- so a hand edit to "off" and back to "all" is off. `crew_config.py --set`
+and the `/crew:config` menu refuse every value but `"off"` and null
+(`write_refusal`). A repo file can never turn it on (a cloned repository must
+not loosen a guard on someone else's machine); a repo `"off"` vetoes the
+machine value, and so does a repo file crew cannot read or parse.
+
+WHAT A RECEIPT CANNOT PROVE. The store (`~/.claude/crew/confirm-config/`) is
+plain files. The scope guard refuses a Write/Edit into it and a shell command
+naming it beside a writing word, but a process that runs arbitrary code as the
+user can write a whole, well-formed record. The checks here make a forgery a
+deliberate act, not an accident; they are not a sandbox.
+
+NEVER EXEMPT, whatever the value (`hold`): a git command that carries config
+or a command line of its own -- a global `-c`, `--config-env` or
+`--exec-path`, a `GIT_*` environment assignment, or an option or subcommand
+that runs a command it is handed (`rebase --exec`, `submodule foreach`,
+`bisect run`, `push --receive-pack`, `fetch --upload-pack`, `grep -O`,
+`difftool --extcmd`, `filter-branch`, ...). A git command aimed at another
+repository (`git -C <dir>`) is exempt only when that repository's own file
+does not veto it either; one whose target crew cannot tell (`--git-dir`,
+`--work-tree`, a `-C` it cannot read, a line that changes directory) is not
+exempt.
 
 UNKNOWN IS OFF. A value that is not one of the forms above, an unreadable file
 or receipt store, a line crew cannot split, or a subcommand it cannot read all
@@ -47,12 +71,14 @@ Standard library only; imports nothing that imports `crew_config`, so
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import subprocess
+import time
 
 import crew_common
-import crew_config_files
 import crew_humanonly
 import crew_state
 
@@ -66,8 +92,12 @@ _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _GIT_VALUE_OPTS = frozenset(("-C", "-c", "--git-dir", "--work-tree", "--namespace",
                              "--exec-path", "--config-env", "--super-prefix"))
 
-# The cloud guard's finding scope key carrying a git finding's subcommand.
+# The cloud guard's finding scope key carrying a git finding's subcommand, and
+# the two beside it: why it may never be exempted (`hold`) and the `-C`
+# directories it acts on (`target_dirs`).
 SCOPE_KEY = "gitsub"
+HOLD_KEY = "githold"
+DIRS_KEY = "gitdirs"
 # The subcommand of a git command crew could not read (`xargs git` with the
 # subcommand on stdin, a variable): only `all` lets it through.
 UNSEEN = None
@@ -144,49 +174,288 @@ def allows(setting, sub):
     return False
 
 
+# --- what a git command may never be exempted for -----------------------------------
+
+# Global options that hand git config or a program of its own: `-c k=v` (an
+# alias `!cmd`, `core.sshCommand`, `core.pager`, ...), `--config-env`, and
+# `--exec-path` (where git finds its subcommands).
+_INJECT_GLOBAL_RE = re.compile(r"^(?:-c.*|--config-env(?:=.*)?|--exec-path(?:=.*)?)$")
+# Subcommand options that run a command line they are handed, by subcommand.
+# A word matches when it IS the option, or starts with it and `=` (long) or
+# with the short option's letter (`-xcmd`).
+_RUNS = {
+    "rebase": ("-x", "--exec"),
+    "push": ("--receive-pack", "--exec"),
+    "fetch": ("--upload-pack",),
+    "pull": ("--upload-pack",),
+    "clone": ("--upload-pack", "-u", "-c", "--config", "--template"),
+    "ls-remote": ("--upload-pack",),
+    "archive": ("--exec",),
+    "grep": ("-O", "--open-files-in-pager"),
+    "difftool": ("-x", "--extcmd"),
+    "send-email": ("--to-cmd", "--cc-cmd", "--sendmail-cmd", "--smtp-server"),
+    "daemon": ("--access-hook",),
+}
+# Subcommands that run a handed command whatever their options say.
+_RUNS_ALWAYS = frozenset(("filter-branch", "instaweb"))
+# (subcommand, word) pairs: `git submodule foreach <cmd>`, `git bisect run <cmd>`.
+_RUNS_WORD = {"submodule": "foreach", "bisect": "run"}
+
+
+def _global_split(args):
+    """`(globals, index of the subcommand)` for a git argument list."""
+    index = 0
+    while index < len(args) and isinstance(args[index], str) and args[index].startswith("-"):
+        index += 2 if args[index] in _GIT_VALUE_OPTS else 1
+    return [a for a in args[:index] if isinstance(a, str)], index
+
+
+def _option_hit(word, option):
+    """True when `word` is `option` or carries it: `--opt=v`, or a short
+    option bundled anywhere in a single-dash word (`-x`, `-xcmd`, `-ix`).
+    Over-reading a bundle only withholds an exemption."""
+    if word == option:
+        return True
+    if option.startswith("--"):
+        return word.startswith(option + "=")
+    return word.startswith("-") and not word.startswith("--") and option[1] in word[1:]
+
+
+def hold(args, env=None):
+    """Why a git command (its words after `git`) may never be exempted, or
+    None. `env` is the environment assignments crew saw for it (names any
+    case): a `GIT_*` one hands git a program or config the same way."""
+    for name, value in (env or {}).items():
+        if value is not None and isinstance(name, str) and name.upper().startswith("GIT_"):
+            return f"it sets {name.upper()} for git"
+    words, index = _global_split(list(args))
+    for word in words:
+        if word != "-C" and _INJECT_GLOBAL_RE.match(word):
+            return f"it hands git config or a program of its own ({word.split('=', 1)[0]})"
+    sub = subcommand(args)
+    rest = [a for a in args[index + 1:] if isinstance(a, str)]
+    if sub in _RUNS_ALWAYS:
+        return f"`git {sub}` runs a command it is handed"
+    if sub in _RUNS_WORD and _RUNS_WORD[sub] in rest:
+        return f"`git {sub} {_RUNS_WORD[sub]}` runs a command it is handed"
+    for word in rest:
+        if word == "--":
+            break
+        for option in _RUNS.get(sub, ()):
+            if _option_hit(word, option):
+                return f"`git {sub} {option}` runs a command it is handed"
+    return None
+
+
+_DRIVE_RE = re.compile(r"^/([a-zA-Z])(?=/|$)")
+
+
+def target_dirs(args):
+    """The literal `-C` directories of a git argument list, in order, or
+    `UNSEEN` when crew cannot tell which repository it acts on: a
+    `--git-dir` / `--work-tree` (`=` form too), or a `-C` value that is
+    built at run time (`$`, a backtick, `~`)."""
+    words, _index = _global_split(list(args))
+    out = []
+    for position, word in enumerate(words):
+        if word.split("=", 1)[0] in ("--git-dir", "--work-tree"):
+            return UNSEEN
+        if word == "-C":
+            value = words[position + 1] if position + 1 < len(words) else None
+            if not value or any(c in value for c in "$`~*?"):
+                return UNSEEN
+            out.append(value)
+    return tuple(out)
+
+
+def resolve_target(base, dirs):
+    """The directory `git -C d1 -C d2 ...` runs in, from `base`: each `-C`
+    relative to the one before, as git reads them. An MSYS drive path
+    (`/c/x`) is read as `C:/x` on Windows."""
+    where = os.path.abspath(base)
+    for value in dirs:
+        if os.name == "nt":
+            value = _DRIVE_RE.sub(lambda m: m.group(1).upper() + ":", value)
+        where = os.path.normpath(os.path.join(where, value))
+    return where
+
+
 # --- what is in force --------------------------------------------------------------
 
-def _layer_value(path):
-    """`(present, raw value)` of `guards.git.allow` in one config file."""
-    cfg, _digest = crew_config_files.read_tolerant(path)
-    guards = cfg.get("guards") if isinstance(cfg, dict) else None
-    block = guards.get("git") if isinstance(guards, dict) else None
-    if not isinstance(block, dict) or "allow" not in block:
-        return False, None
-    return True, block["allow"]
+ABSENT, UNSET, SET, UNREADABLE = "absent", "unset", "set", "unreadable"
+
+
+def read_layer(path):
+    """`(state, value_or_why, binding)` for `guards.git.allow` in one config
+    file, from ONE open: `ABSENT` (no file), `UNSET` (the file is fine and
+    says nothing, or null), `SET` with the raw value, or `UNREADABLE` with
+    why (cannot be opened or read, not UTF-8 JSON, not an object, or a
+    `guards` / `guards.git` that is not an object). `binding` is the file's
+    `file_binding` when it was read, else None. Never raises."""
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read()
+            stat = os.fstat(handle.fileno())
+    except FileNotFoundError:
+        return ABSENT, None, None
+    except OSError as exc:
+        return UNREADABLE, f"cannot be read ({type(exc).__name__})", None
+    binding = {"appliedDigest": hashlib.sha256(raw).hexdigest(),
+               "appliedSize": stat.st_size, "appliedMtimeNs": stat.st_mtime_ns}
+    try:
+        cfg = json.loads(raw.decode("utf-8-sig"))
+    except ValueError:
+        return UNREADABLE, "does not parse as UTF-8 JSON", binding
+    if not isinstance(cfg, dict):
+        return UNREADABLE, "is not a JSON object", binding
+    guards = cfg.get("guards")
+    if guards is None:
+        return UNSET, None, binding
+    if not isinstance(guards, dict):
+        return UNREADABLE, "has a `guards` that is not an object", binding
+    block = guards.get("git")
+    if block is None:
+        return UNSET, None, binding
+    if not isinstance(block, dict):
+        return UNREADABLE, "has a `guards.git` that is not an object", binding
+    if block.get("allow") is None:
+        return UNSET, None, binding
+    return SET, block["allow"], binding
+
+
+def file_binding(path):
+    """`{"appliedDigest", "appliedSize", "appliedMtimeNs"}` of the file at
+    `path` now, or None when it cannot be read. A confirmed receipt carries
+    the one its write left; the switch counts only while they are equal."""
+    return read_layer(path)[2]
 
 
 def _canonical(value):
     return json.dumps(value, sort_keys=True)
 
 
-def receipt_value(store, layer, path, dotted=KEY):
-    """`(backed_value_json, why)`: the canonical JSON of the value the NEWEST
-    settled receipt for (layer, file, key) applied, or None with the reason.
-    A later revocation, or a store that cannot be read whole, backs nothing."""
+def _number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def receipt_problem(record, machine_path):
+    """Why an `applied` record is NOT a whole double confirmation of
+    `guards.git.allow` in the file at `machine_path`, or None. The shape is
+    exactly what `crew_confirm_config.confirm` leaves (and `rebind` copies):
+    nothing a record merely claims is taken on trust."""
+    target = crew_humanonly.target_key(machine_path)
+    if record.get("layer") != "machine" or record.get("key") != KEY:
+        return "it is not a machine-file guards.git.allow record"
+    path = record.get("path")
+    if not isinstance(path, str) or record.get("target") != target \
+            or crew_humanonly.target_key(path) != target:
+        return "it names another file"
+    if normalise(record.get("value")) in (None, OFF):
+        return "its value is not one the switch is confirmed to"
+    created, expires, settled = (record.get(k) for k in ("created", "expires", "settled"))
+    if not (_number(created) and _number(expires) and _number(settled)) \
+            or not created <= expires <= created + crew_humanonly.PROPOSAL_TTL_SECONDS:
+        return "its proposal window is missing or longer than a proposal's"
+    confirmations = record.get("confirmations")
+    if not isinstance(confirmations, list) or len(confirmations) != 2 \
+            or not all(isinstance(c, dict) for c in confirmations):
+        return "it does not carry exactly two confirmations"
+    prompts, stamps = set(), []
+    for confirmation in confirmations:
+        prompt, stamp = confirmation.get("prompt"), confirmation.get("at")
+        if confirmation.get("via") != crew_humanonly.USER_PROMPT \
+                or not isinstance(prompt, str) or not prompt.strip() or not _number(stamp):
+            return "a confirmation is not from a prompt the user typed"
+        if not created <= stamp <= expires:
+            return "a confirmation falls outside the proposal's window"
+        prompts.add(prompt)
+        stamps.append(stamp)
+    if len(prompts) != 2:
+        return "both confirmations came from one prompt"
+    if settled < max(stamps):
+        return "it was settled before its second confirmation"
+    binding = record.get("binding")
+    if not isinstance(binding, dict) or not all(
+            isinstance(binding.get(k), (str if k == "appliedDigest" else int))
+            for k in ("appliedDigest", "appliedSize", "appliedMtimeNs")):
+        return "it does not record the file its write left"
+    return None
+
+
+def newest_receipt(store, machine_path):
+    """`(record, why)`: the NEWEST settled record for guards.git.allow at the
+    machine file when it is a whole applied double confirmation, else
+    `(None, why)`. A later revocation, a newer record that is not whole, or a
+    store that cannot be read whole backs nothing."""
     records, problems = crew_humanonly.all_records(store)
     if problems:
         return None, "the confirmation store could not be read: " + "; ".join(problems)
-    target = crew_humanonly.target_key(path)
+    target = crew_humanonly.target_key(machine_path)
     settled = [r for r in records
-               if r.get("layer") == layer and r.get("target") == target
-               and r.get("key") == dotted and r.get("state") in (crew_humanonly.APPLIED, "revoked")
-               and isinstance(r.get("settled"), (int, float))]
+               if r.get("layer") == "machine" and r.get("target") == target
+               and r.get("key") == KEY and r.get("state") in (crew_humanonly.APPLIED, "revoked")
+               and _number(r.get("settled"))]
     if not settled:
         return None, "no double-confirmed change set it"
     newest = max(settled, key=lambda r: r["settled"])
     if newest.get("state") != crew_humanonly.APPLIED:
         return None, f"the last confirmed change ({newest.get('change_id')}) was revoked"
-    return _canonical(newest.get("value")), f"double-confirmed by {newest.get('change_id')}"
+    problem = receipt_problem(newest, machine_path)
+    if problem:
+        return None, f"the last applied record ({newest.get('change_id')}) is not whole: {problem}"
+    return newest, f"double-confirmed by {newest.get('change_id')}"
 
 
-def settings(root, global_path=None, store=None):
-    """`{"allow": OFF|ALL|frozenset, "why": str}` for `root`. Never raises:
-    anything that cannot be told is `OFF` (the guards judge as before)."""
+def _repo_veto(top, label_):
+    """Why the repo file at top-level `top` vetoes the switch, or None. "off",
+    a malformed value, and a file crew cannot read or parse all veto; a file
+    that is absent, or silent (null), does not. When git cannot tell which
+    `.crew/` a linked worktree reads, that is a veto too."""
+    crew_dir, source, detail = crew_common.repo_config_dir(top)
+    if source == crew_common.SOURCE_UNKNOWN:
+        return f"which .crew/ {label_} reads could not be told ({detail}); read as a veto"
+    state, value, _binding = read_layer(os.path.join(crew_dir, "config.json"))
+    if state == UNREADABLE:
+        return f"{label_}'s config {value}; read as a veto"
+    if state != SET:
+        return None
+    repo_setting = normalise(value)
+    if repo_setting == OFF:
+        return f"vetoed by \"off\" in {label_}'s file"
+    if repo_setting is None:
+        return f"{label_}'s {KEY} = {value!r} is malformed; read as a veto"
+    # A repo "all" or list never widens: ignored.
+    return None
+
+
+def _toplevel(directory):
+    """git's top level for `directory`, or None when git cannot tell."""
+    env = {k: v for k, v in os.environ.items()
+           if k.upper() not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")}
     try:
+        proc = subprocess.run(["git", "-C", directory, "rev-parse", "--show-toplevel"],
+                              capture_output=True, text=True, timeout=10, check=False, env=env)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    top = proc.stdout.strip() if proc.returncode == 0 else ""
+    return os.path.realpath(top) if top else None
+
+
+def settings(root, global_path=None, store=None, targets=()):
+    """`{"allow": OFF|ALL|frozenset, "why": str}` for `root`, and for every
+    directory in `targets` a git command acts on (`git -C <dir>`): each one's
+    repo file may veto too. `targets=None` means crew could not tell where a
+    git command acts, which is `OFF`. Never raises: anything that cannot be
+    told is `OFF` (the guards judge as before)."""
+    try:
+        if targets is None:
+            return {"allow": OFF, "why": "which repository the git command acts on could "
+                                         "not be told; read as off"}
         machine_path = global_path or crew_state.GLOBAL_CONFIG_PATH
-        present, value = _layer_value(machine_path)
-        if not present or value is None:
+        state, value, binding = read_layer(machine_path)
+        if state == UNREADABLE:
+            return {"allow": OFF, "why": f"the machine file {value}; read as off"}
+        if state != SET:
             return {"allow": OFF, "why": "not set in the machine file"}
         setting = normalise(value)
         if setting is None:
@@ -194,25 +463,99 @@ def settings(root, global_path=None, store=None):
                                          "or a list of git subcommand names; read as off"}
         if setting == OFF:
             return {"allow": OFF, "why": "\"off\" in the machine file"}
-        backed, why = receipt_value(store or crew_humanonly.store_dir(global_path),
-                                    "machine", machine_path)
-        if backed != _canonical(value):
-            detail = why if backed is None else f"the last confirmed value was {backed}"
+        record, why = newest_receipt(store or crew_humanonly.store_dir(global_path),
+                                     machine_path)
+        detail = why
+        if record is not None and _canonical(record.get("value")) != _canonical(value):
+            detail = f"the last confirmed value was {_canonical(record.get('value'))}"
+            record = None
+        if record is not None and record.get("binding") != binding:
+            detail = ("the machine file changed since that confirmation by a route other "
+                      "than crew's config writer; confirm it again")
+            record = None
+        if record is None:
             return {"allow": OFF, "why": f"{KEY} = {json.dumps(value)} in the machine file, "
                                          f"not honoured: {detail}"}
-        repo_present, repo_value = _layer_value(crew_common.repo_config_file(root, "config.json"))
-        if repo_present and repo_value is not None:
-            # A repo value never widens: "off" vetoes, a malformed one is read
-            # as the veto (unknown is off), and "all" or a list is ignored.
-            repo_setting = normalise(repo_value)
-            if repo_setting == OFF:
-                return {"allow": OFF, "why": "vetoed by \"off\" in the repo file"}
-            if repo_setting is None:
-                return {"allow": OFF, "why": f"the repo file's {KEY} = {repo_value!r} is "
-                                             "malformed; read as a veto"}
+        project = os.path.abspath(root)
+        veto = _repo_veto(project, "the repo")
+        if veto:
+            return {"allow": OFF, "why": veto}
+        seen = {os.path.normcase(os.path.realpath(project))}
+        for target in targets:
+            top = _toplevel(target)
+            if top is None:
+                return {"allow": OFF, "why": f"{target} is not a git work tree crew can read; "
+                                             "read as off"}
+            if os.path.normcase(top) in seen:
+                continue
+            seen.add(os.path.normcase(top))
+            veto = _repo_veto(top, f"the target repo {top}")
+            if veto:
+                return {"allow": OFF, "why": veto}
         return {"allow": setting, "why": f"{label(setting)} in the machine file, {why}"}
     except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-except
         return {"allow": OFF, "why": f"could not be read ({type(exc).__name__}); read as off"}
+
+
+def finding_setting(root, base, scope, ctx, cache):
+    """The setting that applies to ONE cloud-guard git finding (`scope` is
+    its scope dict, `ctx` the whole line's): `OFF` when the command carries
+    config or a command of its own (`HOLD_KEY`; a finding without the key is
+    held too), when the line changes directory or builds env at run time
+    (crew cannot tell where git runs), or when its target cannot be told;
+    else `settings` for the project and the `-C` target. `cache` (a dict per
+    call) keeps one read per target set."""
+    ctx = ctx if isinstance(ctx, dict) else {}
+    if scope.get(HOLD_KEY, "not read") is not None or ctx.get("cd") or ctx.get("opaque"):
+        return OFF
+    dirs = scope.get(DIRS_KEY, UNSEEN)
+    if dirs is UNSEEN:
+        return OFF
+    targets = (resolve_target(base, dirs),) if dirs else ()
+    if targets not in cache:
+        cache[targets] = settings(root, targets=targets)["allow"]
+    return cache[targets]
+
+
+def rebind(machine_path, before, global_path=None, now=None):
+    """After crew's own config writer changed the machine file WITHOUT
+    touching this key: when `before` (the receipt that backed the file as it
+    was, `newest_receipt` read under the writer's lock) is not None, record a
+    copy bound to the file as the write left it, so the owner's confirmation
+    survives crew's own unrelated writes. Best effort; a failure leaves the
+    switch off until it is confirmed again, never on."""
+    if before is None:
+        return False
+    binding = file_binding(machine_path)
+    if binding is None:
+        return False
+    stamp = time.time() if now is None else now
+    record = dict(before, change_id=crew_humanonly.new_change_id(), settled=stamp,
+                  binding=binding, reboundFrom=before.get("change_id"),
+                  reason="re-bound after a crew config write that left guards.git.allow alone")
+    try:
+        crew_humanonly.write_record(crew_humanonly.store_dir(global_path), record)
+    except OSError:
+        return False
+    return True
+
+
+def backing(machine_path, global_path=None, store=None):
+    """The receipt that backs the machine file's `guards.git.allow` as it
+    is NOW (value and binding both), or None. `crew_config.write_global_config`
+    reads it under its lock, before it writes, for `rebind`."""
+    try:
+        state, value, binding = read_layer(machine_path)
+        if state != SET or normalise(value) in (None, OFF):
+            return None
+        record, _why = newest_receipt(store or crew_humanonly.store_dir(global_path),
+                                      machine_path)
+        if record is None or _canonical(record.get("value")) != _canonical(value) \
+                or record.get("binding") != binding:
+            return None
+        return record
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return None
 
 
 # --- is a whole line only git ------------------------------------------------------
@@ -330,6 +673,16 @@ def _ps_commands(text):
             end_statement()
             i += 2 if text.startswith("&&", i) else 1
             continue
+        if c == "&":
+            # A redirection's `&` (`2>&1`, `*>&1`) is part of a word. Any
+            # other single `&` is PowerShell's background operator, which
+            # ends a statement and runs the next (`git status & terraform
+            # apply`), or its call operator (`& $exe`): crew will not read it.
+            if word and word[-1] == ">" and i + 1 < n and text[i + 1].isdigit():
+                word.append(c)
+                i += 1
+                continue
+            return None
         if c == "#" and not word:
             while i < n and text[i] != "\n":
                 i += 1
@@ -349,19 +702,48 @@ def line_commands(command, shell):
     return _bash_commands(command)
 
 
+def line_git_commands(command, shell):
+    """The argument lists (words after `git`) of `command` when EVERY command
+    it runs is a plain git command crew may exempt (none `hold` withholds),
+    else None. Anything crew cannot split is None."""
+    commands = line_commands(command, shell)
+    if not commands:
+        return None
+    out = []
+    for words in commands:
+        if not words or not _is_git_word(words[0]):
+            return None
+        if hold(words[1:]) is not None:
+            return None
+        out.append(words[1:])
+    return out
+
+
+def line_targets(git_commands, base):
+    """Every `-C` target of a line's git commands, resolved from `base` (the
+    directory the line runs in), or None when one cannot be told."""
+    out = []
+    for args in git_commands:
+        dirs = target_dirs(args)
+        if dirs is UNSEEN:
+            return None
+        if dirs:
+            out.append(resolve_target(base, dirs))
+    return tuple(out)
+
+
 def line_exempt(command, shell, setting):
     """True when EVERY command `command` runs is a git command `setting` lets
     through: nothing else on the line, no substitution running anything but
-    such a git command. Anything crew cannot split is False."""
+    such a git command, none carrying config or a command of its own
+    (`hold`). Anything crew cannot split is False."""
     if setting == OFF or setting is None:
         return False
-    commands = line_commands(command, shell)
+    commands = line_git_commands(command, shell)
     if not commands:
         return False
-    for words in commands:
-        if not words or not _is_git_word(words[0]):
-            return False
-        if not allows(setting, subcommand(words[1:])):
+    for args in commands:
+        if not allows(setting, subcommand(args)):
             return False
     return True
 
@@ -401,7 +783,10 @@ def promote_exempt(command, shell, root=".", global_path=None, store=None):
     CREW_HEAD_MAP / CREW_MAP_DIRTY set. Never raises; anything unclear is
     False, and the gate judges the command as before."""
     try:
-        setting = settings(root, global_path, store)["allow"]
+        commands = line_git_commands(command, shell)
+        if not commands:
+            return False
+        setting = settings(root, global_path, store, line_targets(commands, root))["allow"]
         if not line_exempt(command, shell, setting):
             return False
         import _promote_dispatch  # pylint: disable=import-outside-toplevel

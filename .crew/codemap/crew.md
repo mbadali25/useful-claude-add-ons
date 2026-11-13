@@ -1048,27 +1048,34 @@ commit, `tar -x`, `unzip` and `git merge` / `pull` are not seen.
 
 DERIVED from `plugin/crew/hooks/scripts/crew_gitallow.py` (stdlib only); tests
 `plugin/crew/tests/test_git_allow.py`, mutations `plugin/crew/tests/gitallow_mutations.py`
-(24, run alone: `sabotage*.py` is harness). `settings` (`crew_gitallow.py:183`) reads the
-machine file only and honours `"all"` or a list of subcommands only when the newest
-settled confirm-config receipt for that file applied exactly that value
-(`receipt_value`); a repo `"off"` or malformed value vetoes, a repo `"all"` is ignored,
-anything unreadable is off. Writers: `write_refusal` (`crew_gitallow.py:107`) is called
-from `crew_config._layer_path_refusal`; `crew_confirm_config.propose` takes `--value` for
-this key (machine only) and `crew_config.apply_confirmed_optout` writes it;
-`_revoke_human_only` revokes on a crew write back to off. Readers: `cloud_guard._classify`
-(`cloud_guard.py:2168`) tags every finding of a `git` head (and `_fed_finding`'s xargs git)
-with its subcommand, and `cloud_guard.evaluate` (`cloud_guard.py:3187`) passes a tagged
-finding the setting `allows`, logging `gitAllow:<value>`; `_promote_gate.Gate.git_allowed`
+(57, run alone: `sabotage*.py` is harness). `settings` (`crew_gitallow.py:444`) reads the
+machine file only (`read_layer`, `:288`, one open: absent / unset / set / unreadable plus
+the file binding) and honours `"all"` or a list only when `newest_receipt` (`:385`) is a
+whole applied record (`receipt_problem`, `:341`: two confirmations from distinct user
+prompts inside the proposal window, this file's path) for exactly that value AND the
+record's `binding` (sha256, size, mtime_ns) equals the file now. A repo `"off"`, malformed
+value or unreadable file vetoes (`_repo_veto`, `:409`), as does each `git -C` target repo's
+file (`targets`). Writers: `write_refusal` (`:137`) from `crew_config._layer_path_refusal`;
+`crew_confirm_config.confirm` stores the binding `crew_config.apply_confirmed_optout`
+reads under its lock (`crew_config_files.update_json(after=)`);
+`crew_config.write_global_config` re-binds through `_carry_git_allow`
+(`crew_config.py:4077`, `crew_gitallow.backing` `:543` / `rebind` `:520`) when it leaves
+the key alone; `_revoke_human_only` revokes on a crew write back to off. Readers:
+`cloud_guard._classify` (`cloud_guard.py:2171`, and `_fed_finding` `:2433`) tags a `git`
+finding with its subcommand, `hold` (`crew_gitallow.py:224`: `-c`, `--config-env`,
+`--exec-path`, `GIT_*` env, an option that runs a command) and `target_dirs` (`:253`);
+`cloud_guard.evaluate` (`cloud_guard.py:3205`) asks `finding_setting` (`:500`, off for a
+held finding, a `cd` or opaque line, or an unknown target). `_promote_gate.Gate.git_allowed`
 (`_promote_gate.py:451`, bash) and `_promote_dispatch._git_allowed`
 (`_promote_dispatch.py:289`, the `allow` record `promote-gate.ps1:713` exits 0 on) call
-`promote_exempt` (`crew_gitallow.py:396`): every command of the line is git with a covered
-subcommand (`line_exempt`, `crew_gitallow.py:352`, bash through
-`crew_guards._CommandSplitter`, PowerShell through its own conservative reader) and no
-declared deploy that is itself a git command is contained in it. The template default is
-null in both layers (`crew_guards.GUARD_BLOCK_DEFAULTS`).
-JUDGEMENT: `gh` is deliberately not git (admin merges, branch protection, dispatches stay
-with their own keys), and the receipt store is a tripwire, not a sandbox, exactly as for
-`humanOnly`.
+`promote_exempt` (`crew_gitallow.py:778`): every command of the line is a git command no
+`hold` withholds and the setting covers (`line_exempt`, `:735`; PowerShell through
+`_ps_commands`, `:592`, which refuses a single `&`), the setting read for its `-C`
+targets, and no declared deploy that is itself a git command is contained in it.
+JUDGEMENT: `gh` is deliberately not git; the receipt store is plain files the scope guard
+protects only while `scope.mode` is on (harness, unchanged here), so a forged whole record
+is a deliberate act, not a sandbox escape; git programs the repo configures persistently
+(hooks, `alias.*` set earlier) are outside what a command-line guard can read.
 
 ## Orphan reaper and hook self-limit (crew 1.3.50)
 

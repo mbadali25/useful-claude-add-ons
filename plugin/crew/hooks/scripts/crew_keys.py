@@ -424,10 +424,14 @@ KEY_META = {
         "commands: `\"all\"` lets every git command past the force-push rule, the mass "
         "guard's git counts and the promote gate (a line of only git commands, unless a "
         "declared deploy is itself a git command); a list of subcommands (`[\"commit\", "
-        "\"push\"]`) lets only those through. null or `\"off\"` changes nothing. Machine "
+        "\"push\"]`) lets only those through, with every option they take (listing "
+        "`push` lets `push --force` through). null or `\"off\"` changes nothing. Machine "
         "file only, and only after `/crew:confirm-config` twice "
         "(`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value "
-        "written any other way reads as off, and a repo `\"off\"` vetoes it.", "type",
+        "written any other way, or any later change to the machine file outside crew's "
+        "config writer, reads as off, and a repo `\"off\"` or unreadable repo file vetoes "
+        "it. A git command carrying `-c`, a `GIT_*` variable or a command to run "
+        "(`rebase --exec`, `submodule foreach`, ...) is never exempt.", "type",
         since="1.3.71", source=_S + "crew_gitallow.py",
         type_="null, `\"off\"`, `\"all\"` or a list of git subcommand names"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",

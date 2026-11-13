@@ -179,10 +179,14 @@ def confirm(change_id, via, prompt_id, session_id=None, global_path=None, now=No
             return _settle(store, record, "refused",
                            f"{record['path']} is {state} in git now", stamp)
     writer = apply or crew_config.apply_confirmed_optout
+    git_allow = record["key"] == crew_gitallow.KEY
+    bound = {}
     try:
-        # crew 1.3.71: a guards.git.allow change carries its value; a humanOnly
-        # change is always `false` and the writer's default.
-        extra = {"value": record.get("value")} if record["key"] == crew_gitallow.KEY else {}
+        # crew 1.3.71: a guards.git.allow change carries its value, and gets
+        # back the machine file's binding as the write left it (the receipt
+        # counts only while the file is still that file); a humanOnly change
+        # is always `false` and the writer's default.
+        extra = {"value": record.get("value"), "binding_out": bound} if git_allow else {}
         writer(record["layer"], record["key"], record["path"], record["targetDigest"],
                global_path=global_path, **extra)
     except crew_config_files.Conflict as exc:
@@ -191,6 +195,12 @@ def confirm(change_id, via, prompt_id, session_id=None, global_path=None, now=No
     except (OSError, crew_config_files.Unreadable, crew_config_files.Busy,
             crew_config.GlobalWriteRefused, crew_config.RepoWriteRefused) as exc:
         return _settle(store, record, "refused", f"the write failed: {exc}", stamp)
+    if git_allow:
+        if not isinstance(bound.get("binding"), dict):
+            return _settle(store, record, "refused",
+                           "the value was written but the file it left could not be read "
+                           "back, so it is not honoured; propose again", stamp)
+        record["binding"] = bound["binding"]
     return _settle(store, record, crew_humanonly.APPLIED, "confirmed twice", stamp)
 
 

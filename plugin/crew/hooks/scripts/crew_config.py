@@ -3786,11 +3786,17 @@ def write_global_config(updates, path=None, expect=None):
         out["plan"] = _plan_on(parsed, updates, "machine", real_path)
         if not out["plan"][1]:
             return None
+        # crew 1.3.71: the receipt backing guards.git.allow as the file is now,
+        # read under the lock, so `_after` can re-bind it to the new bytes.
+        out["gitallow"] = crew_gitallow.backing(real_path, global_path=real_path)
         crew_backup.backup(real_path)   # T-0050: under the lock, before the replace
         return out["plan"][0]
+
+    def _after(_written):
+        _carry_git_allow(real_path, out)
     try:
         crew_config_files.update_json(real_path, _mutate, expect=expect,
-                                      create=True)
+                                      create=True, after=_after)
     except crew_backup.BackupError as exc:
         raise WriteBackupRefused(str(exc)) from exc
     except crew_config_files.Conflict as exc:
@@ -4068,7 +4074,21 @@ def _revoke_human_only(layer, path, changes, global_path):
             crew_humanonly.revoke(layer, path, change["path"], global_path=global_path)
 
 
-def apply_confirmed_optout(layer, dotted, path, expect, global_path=None, value=False):
+def _carry_git_allow(machine_path, out):
+    """After a crew write to the machine file (under its lock): re-bind the
+    `guards.git.allow` receipt that backed the file before it (`out
+    ["gitallow"]`) to the bytes just written, unless the write changed that
+    key itself (a write to "off" or null revokes it instead). A hand edit
+    never passes here, so it still reads as off (`crew_gitallow.settings`)."""
+    before = out.get("gitallow")
+    changes = (out.get("plan") or ({}, []))[1]
+    if before is None or any(c.get("path") == crew_gitallow.KEY for c in changes or ()):
+        return
+    crew_gitallow.rebind(machine_path, before, global_path=machine_path)
+
+
+def apply_confirmed_optout(layer, dotted, path, expect, global_path=None, value=False,
+                           binding_out=None):
     """Write `dotted: value` into the config file at `path` (`layer` is
     `machine` or `repo`): a `humanOnly` key's `false`, or (crew 1.3.71) a
     machine `guards.git.allow` value. The one writer that bypasses
@@ -4076,7 +4096,13 @@ def apply_confirmed_optout(layer, dotted, path, expect, global_path=None, value=
     `crew_confirm_config` calls it, once a proposal has its two user-prompt
     confirmations. `expect` is the file's state digest when the change was
     proposed: a file that changed since is refused
-    (`crew_config_files.Conflict`), never merged over. Returns `(merged, changes)`."""
+    (`crew_config_files.Conflict`), never merged over. Returns `(merged, changes)`.
+
+    crew 1.3.71: for `guards.git.allow`, `binding_out` (a dict) receives
+    `"binding"`, the machine file's `crew_gitallow.file_binding` as this
+    write left it, read under the same lock; the receipt carries it. Any other
+    machine-layer change re-binds an existing `guards.git.allow` receipt, as
+    `write_global_config` does."""
     if crew_humanonly.is_path(dotted):
         if value is not False:
             raise ValueError(f"{dotted} is only ever confirmed to false")
@@ -4095,10 +4121,19 @@ def apply_confirmed_optout(layer, dotted, path, expect, global_path=None, value=
         out["plan"] = _plan_on(parsed, {dotted: value}, layer, path, global_cfg)
         if not out["plan"][1]:
             return None
+        if layer == "machine" and dotted != crew_gitallow.KEY:
+            out["gitallow"] = crew_gitallow.backing(path, global_path=path)
         crew_backup.backup(path)
         return out["plan"][0]
+
+    def _after(written):
+        if dotted == crew_gitallow.KEY:
+            if isinstance(binding_out, dict):
+                binding_out["binding"] = crew_gitallow.file_binding(written)
+        else:
+            _carry_git_allow(path, out)
     if layer == "machine":
-        crew_config_files.update_json(path, _mutate, expect=expect, create=True)
+        crew_config_files.update_json(path, _mutate, expect=expect, create=True, after=_after)
     else:
         lock = crew_config_files.machine_lock(_global_label(global_path))
         with lock:

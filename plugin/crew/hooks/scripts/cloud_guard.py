@@ -2165,7 +2165,11 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
     sql = _sql_payloads(head, args, stdin) if head in _SQL_FLAGS else ()
     # A git command's findings carry its subcommand (`crew_gitallow.SCOPE_KEY`),
     # so `evaluate` can let `guards.git.allow` pass them and nothing else.
-    gitsub = {crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand(args)} if head == "git" else {}
+    # It also carries why it may never be exempted (`hold`: config or a command
+    # of its own) and the `-C` directories it acts on (`target_dirs`).
+    gitsub = {crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand(args),
+              crew_gitallow.HOLD_KEY: crew_gitallow.hold(args, env),
+              crew_gitallow.DIRS_KEY: crew_gitallow.target_dirs(args)} if head == "git" else {}
     for mass in crew_mass.classify(head, args, shell, bool(fed), sql):
         out.append(Finding(mass.rule, text, mass.what, None, False, None,
                            dict({"mass": mass}, **gitsub)))
@@ -2425,7 +2429,9 @@ def _fed_finding(argv, env, via, placeholders, ctx=None):
         # else `guards.git.allow` lets it through under `all` alone.
         return Finding("forcePush", text, what, None, True, None,
                        {crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand([sub])
-                        if sub and seen([sub]) else crew_gitallow.UNSEEN})
+                        if sub and seen([sub]) else crew_gitallow.UNSEEN,
+                        crew_gitallow.HOLD_KEY: crew_gitallow.hold(args, env),
+                        crew_gitallow.DIRS_KEY: crew_gitallow.target_dirs(args)})
     if head in ("aws", "az"):
         words = _aws_words(args) if head == "aws" else [
             a for a in args if not a.startswith("-")]
@@ -3184,7 +3190,7 @@ def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
         rows.append(("massApprovals", "-", "deny", command))
         reasons.append(reason_t)
         worst = "deny"
-    git_allow = None
+    git_allow_cache = {}
     for finding in findings:
         scope = finding.scope if isinstance(finding.scope, dict) else {}
         if crew_gitallow.SCOPE_KEY in scope and (
@@ -3192,9 +3198,12 @@ def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
                 only_mass and finding.rule not in crew_mass.RULES):
             # `guards.git.allow` (crew 1.3.71): the owner's double-confirmed
             # switch lets a git command's own findings through, and logs that
-            # it did. Read once per call, and only when there is a git finding.
-            if git_allow is None:
-                git_allow = crew_gitallow.settings(root)["allow"]
+            # it did. Read once per call and target set, only for a git finding.
+            # Never for a git command that carries config or a command of its
+            # own, on a line that changes directory, or whose target repo
+            # crew cannot tell; a `git -C` target's repo file may veto too.
+            git_allow = crew_gitallow.finding_setting(
+                root, envs["cwd"] or root, scope, ctx, git_allow_cache)
             if crew_gitallow.allows(git_allow, scope[crew_gitallow.SCOPE_KEY]):
                 rows.append((finding.rule, "gitAllow:" + crew_gitallow.label(git_allow),
                              "allow", finding.what))

@@ -543,15 +543,19 @@ sees, what it does not, and the keys.
 **Git commands (crew 1.3.71).** `guards.git.allow` is the owner's switch that
 stops the command guards blocking or asking on git commands, destructive ones
 included: `"all"`, or a list of subcommands such as `["commit", "push"]`.
-It loosens the force-push rule, the mass stop's git counts and the promote gate
-for a line of only git commands, and nothing else: a declared deploy that is
+A listed subcommand passes with every option it takes: listing `push` also
+lets `git push --force` through. It loosens the force-push rule, the mass
+stop's git counts and the promote gate for a line of only git commands, and
+nothing else (a git command carrying `-c`, a `GIT_*` variable or a command to
+run, such as `rebase --exec`, is never exempt): a declared deploy that is
 itself a git command stays gated, and `gh` (`--admin` merges, branch
 protection, workflow dispatches) is untouched. It is off by default, lives in
 the machine file only, and takes effect only after you type
 `/crew:confirm-config <id>` twice for a proposal
 (`crew_confirm_config.py propose --layer machine --key guards.git.allow
---value '"all"'`). The configuration reference's "Git commands" section has
-the rules.
+--value '"all"'`), and only while the machine file is still the file that
+confirmation left: a hand edit turns it off. The configuration reference's
+"Git commands" section has the rules.
 
 - `/crew:config` shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.

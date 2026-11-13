@@ -57,23 +57,40 @@ def _machine(tmp_path, monkeypatch):
     return path
 
 
-def _receipt(path, value, state="applied", settled=None):
-    """An applied (or revoked) confirm-config record for `guards.git.allow`."""
-    stamp = time.time() if settled is None else settled
-    record = {"change_id": crew_humanonly.new_change_id(), "layer": "machine",
-              "target": crew_humanonly.target_key(str(path)), "key": KEY, "value": value,
-              "state": state, "created": stamp, "settled": stamp, "confirmations": []}
-    crew_humanonly.write_record(crew_humanonly.store_dir(str(path)), record)
+def _confirm(machine, value):
+    """Turn the switch on the one way real code can: `propose`, then two
+    `confirm`s from two distinct user prompts (what the prompt hook passes).
+    Returns the applied record. Never writes a receipt by hand."""
+    gpath = str(machine)
+    cid = crew_confirm_config.propose("machine", KEY, global_path=gpath, value=value)["change_id"]
+    crew_confirm_config.confirm(cid, "user-prompt", f"p1-{cid}", global_path=gpath)
+    record = crew_confirm_config.confirm(cid, "user-prompt", f"p2-{cid}", global_path=gpath)
+    assert record["state"] == "applied", record
     return record
 
 
 def _arm(machine, value, confirmed=True, extra=None):
-    body = {"guards": {"git": {"allow": value}}}
-    if extra:
-        body["guards"].update(extra)
-    machine.write_text(json.dumps(body), encoding="utf-8")
+    """The machine file carrying `extra` guards and `value`: through the
+    double confirmation when `confirmed`, else written by hand (what an
+    agent's Edit or a hand edit leaves)."""
+    body = {"guards": dict(extra or {})}
     if confirmed:
-        _receipt(machine, value)
+        machine.write_text(json.dumps(body), encoding="utf-8")
+        _confirm(machine, value)
+        return
+    body["guards"]["git"] = {"allow": value}
+    machine.write_text(json.dumps(body), encoding="utf-8")
+
+
+def _store(machine):
+    return crew_humanonly.store_dir(str(machine))
+
+
+def _applied(machine):
+    """The newest applied record in the store (the one `settings` reads)."""
+    records, problems = crew_humanonly.all_records(_store(machine))
+    assert not problems
+    return max((r for r in records if r.get("state") == "applied"), key=lambda r: r["settled"])
 
 
 def _setting(root):
@@ -148,8 +165,162 @@ def test_a_receipt_for_another_value_does_not_back_it(tmp_path, machine):
 def test_a_revocation_newer_than_the_receipt_wins(tmp_path, machine):
     root = make_repo(tmp_path, mode=None)
     _arm(machine, "all")
-    _receipt(machine, None, state="revoked", settled=time.time() + 5)
+    assert _setting(root) == "all"
+    crew_humanonly.revoke("machine", str(machine), KEY, global_path=str(machine),
+                          now=time.time() + 5)
     assert _setting(root) == "off"
+
+
+# --- review finding 1: a receipt is a WHOLE double confirmation (crew 1.3.71) --------
+
+def _forge(record, how):
+    """`record` (a real applied receipt) changed the way a forger would."""
+    other = os.path.join(os.path.dirname(record["path"]), "other.json")
+    first, second = record["confirmations"]
+    changes = {
+        "no confirmations": {"confirmations": []},
+        "one confirmation": {"confirmations": [first]},
+        "one prompt twice": {"confirmations": [first, dict(second, prompt=first["prompt"])]},
+        "not a user prompt": {"confirmations": [first, dict(second, via="agent")]},
+        "a blank prompt": {"confirmations": [first, dict(second, prompt=" ")]},
+        "a confirmation after expiry": {
+            "confirmations": [first, dict(second, at=record["expires"] + 1)],
+            "settled": record["expires"] + 1},
+        "settled before the second": {"settled": first["at"] - 1},
+        "a longer window": {"expires": record["created"]
+                            + crew_humanonly.PROPOSAL_TTL_SECONDS + 60},
+        "another path": {"path": other},
+        "another target": {"target": crew_humanonly.target_key(other)},
+        "no binding": {"binding": None},
+        "a value off": {"value": "off"},
+    }[how]
+    return dict(record, **changes)
+
+
+FORGERIES = ["no confirmations", "one confirmation", "one prompt twice", "not a user prompt",
+             "a blank prompt", "a confirmation after expiry", "settled before the second",
+             "a longer window", "another path", "another target", "no binding", "a value off"]
+
+
+def test_a_real_double_confirmation_is_whole(tmp_path, machine):
+    """Must-allow neighbour of every forgery below: the record `confirm` leaves."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    record = _applied(machine)
+    assert crew_gitallow.receipt_problem(record, str(machine)) is None
+    assert len(record["confirmations"]) == 2 and record["binding"]
+    assert _setting(root) == "all"
+
+
+@pytest.mark.parametrize("how", FORGERIES)
+def test_a_forged_receipt_is_not_honoured(tmp_path, machine, how):
+    """The review's case: an `applied` record with no confirmations and another
+    `path` turned "all" on. Each forged field alone now reads as off."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    forged = _forge(_applied(machine), how)
+    crew_humanonly.write_record(_store(machine), forged)
+    got = crew_gitallow.settings(str(root))
+    assert got["allow"] == "off", (how, got)
+    assert "not whole" in got["why"] or "not honoured" in got["why"], got
+
+
+def test_a_receipt_tampered_to_another_value_does_not_back_it(tmp_path, machine):
+    """A whole receipt bound to this very file, but for a different value."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, ["status"])
+    crew_humanonly.write_record(_store(machine), dict(_applied(machine), value="all"))
+    got = crew_gitallow.settings(str(root))
+    assert got["allow"] == "off" and "last confirmed value" in got["why"], got
+
+
+# --- review finding 2: the receipt is bound to the file it left (crew 1.3.71) -------
+
+def test_a_hand_edit_to_off_and_back_is_off(tmp_path, machine):
+    """all (confirmed) -> off by hand -> the confirmed bytes back by hand: off."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    confirmed = machine.read_bytes()
+    machine.write_text(json.dumps({"guards": {"git": {"allow": "off"}}}), encoding="utf-8")
+    assert _setting(root) == "off"
+    time.sleep(0.05)
+    machine.write_bytes(confirmed)
+    got = crew_gitallow.settings(str(root))
+    assert got["allow"] == "off" and "changed since that confirmation" in got["why"], got
+
+
+def test_touching_the_machine_file_turns_it_off(tmp_path, machine):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    stat = os.stat(machine)
+    os.utime(machine, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+    assert _setting(root) == "off"
+
+
+def test_a_crew_write_of_another_machine_key_keeps_it_on(tmp_path, machine):
+    """Must-allow neighbour: crew's own writer re-binds the receipt."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    crew_config.write_global_config({"context.autoClear.enabled": True}, path=str(machine))
+    assert json.loads(machine.read_text(encoding="utf-8"))["context"]["autoClear"]["enabled"]
+    got = crew_gitallow.settings(str(root))
+    assert got["allow"] == "all", got
+    assert _applied(machine).get("reboundFrom")
+
+
+def test_a_hand_edit_then_a_crew_write_stays_off(tmp_path, machine):
+    """crew's writer re-binds only a receipt that backed the file before it."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, ["status"])
+    body = json.loads(machine.read_text(encoding="utf-8"))
+    body["guards"]["git"]["allow"] = "all"
+    machine.write_text(json.dumps(body), encoding="utf-8")
+    crew_config.write_global_config({"context.autoClear.enabled": True}, path=str(machine))
+    assert _setting(root) == "off"
+
+
+def test_a_machine_humanonly_optout_keeps_it_on(tmp_path, machine):
+    """The other double-confirmed machine write re-binds it too."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    gpath = str(machine)
+    cid = crew_confirm_config.propose("machine", "humanOnly.approve", global_path=gpath)["change_id"]
+    crew_confirm_config.confirm(cid, "user-prompt", "h1", global_path=gpath)
+    assert crew_confirm_config.confirm(cid, "user-prompt", "h2",
+                                       global_path=gpath)["state"] == "applied"
+    assert _setting(root) == "all"
+
+
+# --- review finding 3: an unreadable repo file is a veto (crew 1.3.71) ----------------
+
+@pytest.mark.parametrize("content", [
+    b"{ not json", b"[]", b"\xff\xfe\x00garbage", b'{"guards": 5}',
+    b'{"guards": {"git": "off"}}', b'{"guards": {"git": ["all"]}}'])
+def test_an_unreadable_repo_file_is_a_veto(tmp_path, machine, content):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    (root / ".crew" / "config.json").write_bytes(content)
+    got = crew_gitallow.settings(str(root))
+    assert got["allow"] == "off" and "veto" in got["why"], got
+
+
+def test_a_repo_config_that_cannot_be_opened_is_a_veto(tmp_path, machine):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    (root / ".crew" / "config.json").mkdir()
+    assert _setting(root) == "off"
+
+
+@pytest.mark.parametrize("content", [
+    None, b"{}", b'{"guards": {}}', b'{"guards": null}', b'{"guards": {"git": null}}',
+    b'{"guards": {"git": {}}}', b'{"guards": {"git": {"allow": null}}}'])
+def test_an_absent_or_silent_repo_file_is_no_veto(tmp_path, machine, content):
+    """Must-allow neighbour: absent, empty or null is not "unreadable"."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    if content is not None:
+        (root / ".crew" / "config.json").write_bytes(content)
+    assert _setting(root) == "all"
 
 
 def test_a_repo_off_vetoes(tmp_path, machine):
@@ -189,8 +360,9 @@ def test_a_repo_null_is_silent(tmp_path, machine):
 
 @pytest.mark.parametrize("value", ["ALL", "yes", True, [], ["Push"]])
 def test_a_malformed_machine_value_is_off(tmp_path, machine, value):
+    """`propose` refuses these, so only a hand edit can write one."""
     root = make_repo(tmp_path, mode=None)
-    _arm(machine, value)
+    _arm(machine, value, confirmed=False)
     assert _setting(root) == "off"
 
 
@@ -223,13 +395,16 @@ def test_two_confirmations_turn_it_on(tmp_path, machine):
 
 
 def test_a_crew_write_back_to_off_revokes_the_receipt(tmp_path, machine):
+    """Even the confirmed bytes AND modification time put back by hand stay
+    off once crew's writer turned it off: the revocation is newer."""
     root = make_repo(tmp_path, mode=None)
     gpath = str(machine)
-    cid = crew_confirm_config.propose("machine", KEY, global_path=gpath, value="all")["change_id"]
-    crew_confirm_config.confirm(cid, "user-prompt", "p1", global_path=gpath)
-    crew_confirm_config.confirm(cid, "user-prompt", "p2", global_path=gpath)
+    _confirm(machine, "all")
+    confirmed, stat = machine.read_bytes(), os.stat(machine)
     crew_config.write_global_config({KEY: "off"}, path=gpath)
-    machine.write_text(json.dumps({"guards": {"git": {"allow": "all"}}}), encoding="utf-8")
+    machine.write_bytes(confirmed)
+    os.utime(machine, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    assert crew_gitallow.file_binding(gpath) == _applied(machine)["binding"]
     assert _setting(root) == "off", "the old receipt must not back a later hand edit"
 
 
@@ -286,11 +461,193 @@ def test_force_push_passes_with_all(tmp_path, machine, command):
 
 @pytest.mark.parametrize("tool,command", [
     ("PowerShell", "git push --force origin main"),
-    ("PowerShell", "git -C C:/x push -f origin main; git status")])
+    ("PowerShell", "git -C {root} push -f origin main; git status")])
 def test_force_push_passes_with_all_in_powershell(tmp_path, machine, tool, command):
     root = make_repo(tmp_path, mode=None)
     _arm(machine, "all")
+    command = command.format(root=root.as_posix())
     assert _evaluate(root, command, tool)["decision"] == "allow"
+
+
+# --- review finding 4: a git command carrying config or a command is never exempt ---
+
+HELD = [
+    "git -c alias.status='!terraform apply' status",
+    "git -c core.sshCommand='terraform apply' push --force origin main",
+    "git -calias.x=y push --force origin main",
+    "git --config-env=core.pager=EVIL log",
+    "git --exec-path=/tmp/evil push --force origin main",
+    "git rebase --exec 'terraform apply' HEAD~2",
+    "git rebase -x 'terraform apply' HEAD~2",
+    "git rebase -ix 'terraform apply' HEAD~2",
+    "git submodule foreach 'terraform apply'",
+    "git bisect run terraform apply",
+    "git push --receive-pack='terraform apply' --force origin main",
+    "git fetch --upload-pack='terraform apply' origin",
+    "git clone -u 'terraform apply' x y",
+    "git grep -O'terraform apply' foo",
+    "git difftool --extcmd='terraform apply'",
+    "git filter-branch --tree-filter 'terraform apply' HEAD"]
+NOT_HELD = [
+    "git commit -c ORIG_HEAD", "git rebase -i main", "git submodule update --init",
+    "git bisect good", "git push --force origin main", "git grep -n foo",
+    "git -C /x status", "git --no-pager log -1"]
+
+
+@pytest.mark.parametrize("shell", ["bash", "powershell"])
+@pytest.mark.parametrize("command", HELD)
+def test_a_git_command_with_its_own_config_or_command_is_not_line_exempt(command, shell):
+    assert crew_gitallow.line_exempt(command, shell, "all") is False
+
+
+@pytest.mark.parametrize("shell", ["bash", "powershell"])
+@pytest.mark.parametrize("command", NOT_HELD)
+def test_a_plain_git_command_is_line_exempt(command, shell):
+    """Must-allow neighbours: options that merely look alike."""
+    assert crew_gitallow.line_exempt(command, shell, "all") is True
+
+
+def test_the_reviewers_alias_case_is_not_promote_exempt(tmp_path, machine, monkeypatch):
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.promote_exempt(
+            "git -c alias.status='!deploy-prod' status", shell, str(root)) is False
+        assert crew_gitallow.promote_exempt("git status", shell, str(root)) is True
+
+
+@pytest.mark.parametrize("tool,command", [
+    ("Bash", "git -c core.sshCommand='terraform apply' push --force origin main"),
+    ("Bash", "GIT_SSH_COMMAND='terraform apply' git push --force origin main"),
+    ("Bash", "export GIT_SSH_COMMAND='terraform apply'; git push --force origin main"),
+    ("Bash", "git push --force --receive-pack='terraform apply' origin main"),
+    ("PowerShell", "$env:GIT_SSH_COMMAND = 'terraform apply'; git push --force origin main"),
+    ("PowerShell", "git -c core.sshCommand='terraform apply' push --force origin main")])
+def test_force_push_carrying_config_stays_refused_with_all(tmp_path, machine, tool, command):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    result = _evaluate(root, command, tool)
+    assert result["decision"] == "deny", result
+    assert not any(r[1].startswith("gitAllow") for r in result["rows"]), result
+
+
+def test_xargs_git_carrying_config_stays_refused_with_all(tmp_path, machine):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    assert _evaluate(root, "echo push | xargs git -c core.sshCommand=x")["decision"] == "deny"
+
+
+# --- review finding 5: PowerShell's single `&` (crew 1.3.71) ----------------------------
+
+@pytest.mark.parametrize("command,shell", [
+    ("git status & terraform apply", "powershell"),
+    ("git status &terraform apply", "powershell"),
+    ("git status & git push", "powershell"),
+    ("& git push", "powershell"),
+    ("git status & terraform apply", "bash"),
+    ("git status &terraform apply", "bash")])
+def test_a_single_ampersand_is_never_line_exempt(command, shell):
+    assert crew_gitallow.line_exempt(command, shell, "all") is False
+
+
+@pytest.mark.parametrize("command,shell", [
+    ("git push origin main 2>&1", "powershell"),
+    ("git push origin main *>&1", "powershell"),
+    ("git commit -m 'a & b'", "powershell"),
+    ("git commit -m \"a & b\"", "powershell"),
+    ("git status && git log -1", "powershell"),
+    ("git commit -m 'a & b'", "bash"),
+    ("git status && git log -1", "bash")])
+def test_an_ampersand_that_is_not_a_separator_is_line_exempt(command, shell):
+    """Must-allow neighbours: a redirection, a quoted `&`, and `&&`."""
+    assert crew_gitallow.line_exempt(command, shell, "all") is True
+
+
+def test_a_powershell_background_and_is_not_promote_exempt(tmp_path, machine, monkeypatch):
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    assert crew_gitallow.promote_exempt("git status & deploy-prod", "powershell",
+                                        str(root)) is False
+
+
+# --- review finding 6: `git -C <dir>` reads the target repo's veto (crew 1.3.71) -----
+
+def _other_repo(tmp_path, veto):
+    other = make_repo(tmp_path, mode=None, name="other")
+    if veto is not None:
+        (other / ".crew" / "config.json").write_text(
+            json.dumps({"guards": {"git": {"allow": veto}}}), encoding="utf-8")
+    return other
+
+
+@pytest.mark.parametrize("veto", ["off", "ALL"])
+def test_a_target_repo_veto_holds_for_git_dash_c(tmp_path, machine, veto):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    other = _other_repo(tmp_path, veto)
+    result = _evaluate(root, f"git -C {other.as_posix()} push --force origin main")
+    assert result["decision"] == "deny", result
+
+
+def test_a_target_repo_veto_holds_for_a_relative_dash_c(tmp_path, machine):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    _other_repo(tmp_path, "off")
+    assert _evaluate(root, "git -C ../other push --force origin main")["decision"] == "deny"
+
+
+@pytest.mark.parametrize("veto", [None, "all"])
+def test_a_target_repo_without_a_veto_lets_git_dash_c_through(tmp_path, machine, veto):
+    """Must-allow neighbour: another repo that does not veto."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    other = _other_repo(tmp_path, veto)
+    result = _evaluate(root, f"git -C {other.as_posix()} push --force origin main")
+    assert result["decision"] == "allow", result
+
+
+@pytest.mark.parametrize("command", [
+    "git -C {missing} push --force origin main",
+    "git --git-dir={other}/.git push --force origin main",
+    "git --work-tree {other} push --force origin main",
+    "git -C $HOME/x push --force origin main",
+    "cd {other} && git push --force origin main"])
+def test_a_target_crew_cannot_tell_is_not_exempt(tmp_path, machine, command):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    other = _other_repo(tmp_path, None)
+    command = command.format(other=other.as_posix(), missing=(tmp_path / "nope").as_posix())
+    result = _evaluate(root, command)
+    assert result["decision"] == "deny", result
+
+
+def test_the_project_veto_still_holds_for_git_dash_c_elsewhere(tmp_path, machine):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    other = _other_repo(tmp_path, None)
+    (root / ".crew" / "config.json").write_text(
+        json.dumps({"guards": {"git": {"allow": "off"}}}), encoding="utf-8")
+    assert _evaluate(root, f"git -C {other.as_posix()} push --force origin main")[
+        "decision"] == "deny"
+
+
+def test_promote_exempt_reads_the_target_repo_veto(tmp_path, machine, monkeypatch):
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    vetoing = _other_repo(tmp_path, "off")
+    command = f"git -C {vetoing.as_posix()} commit --allow-empty -m 'deploy-prod'"
+    assert crew_gitallow.promote_exempt(command, "bash", str(root)) is False
+    (vetoing / ".crew" / "config.json").write_text("{}", encoding="utf-8")
+    assert crew_gitallow.promote_exempt(command, "bash", str(root)) is True
 
 
 def test_an_allowlist_without_push_still_refuses_force_push(tmp_path, machine):
