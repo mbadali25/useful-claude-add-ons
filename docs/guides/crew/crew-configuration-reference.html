@@ -116,6 +116,13 @@ exceptions, each named in the Layer column below:</p>
 shadow your machine defaults for those; a repo <code>/crew:init</code> set up before that
 still spells <code>autopilot.mode: "off"</code>, which holds a machine <code>plan</code> down until
 you remove it (<code>--explain --all</code> names it as a <code>shadow:</code>).</p>
+<p>In a linked git worktree with no <code>.crew/config.json</code> or <code>.crew/crew.json</code> of its
+own, the repo file is the main checkout's, for reading and, since crew 1.3.68,
+for writing: <code>/crew:config --set ... --repo --apply</code> run in a lane writes the main
+checkout's file and says so (<code>wrote: &lt;path&gt; (the main checkout &lt;path&gt;: ...)</code>), so
+the change reaches every lane of that repo. A worktree with its own file reads
+and writes only that one. When git cannot say where the main checkout is, the
+write is refused and nothing is created in the worktree.</p>
 <h2 id="seeing-what-is-in-force">Seeing What Is in Force</h2>
 <ul>
 <li><code>/crew:config --show</code> prints every machine-settable key, its value and the

@@ -327,6 +327,14 @@ shadow your machine defaults for those; a repo `/crew:init` set up before that
 still spells `autopilot.mode: "off"`, which holds a machine `plan` down until
 you remove it (`--explain --all` names it as a `shadow:`).
 
+In a linked git worktree with no `.crew/config.json` or `.crew/crew.json` of its
+own, the repo file is the main checkout's, for reading and, since crew 1.3.68,
+for writing: `/crew:config --set ... --repo --apply` run in a lane writes the main
+checkout's file and says so (`wrote: <path> (the main checkout <path>: ...)`), so
+the change reaches every lane of that repo. A worktree with its own file reads
+and writes only that one. When git cannot say where the main checkout is, the
+write is refused and nothing is created in the worktree.
+
 ## Seeing what is in force
 
 - `/crew:config --show` prints every machine-settable key, its value and the
@@ -460,7 +468,13 @@ column:
 - A human-only opt-out key (`humanOnly.*`) has its own rules, below.
 - A `null` in the repo file over a machine value inherits the machine value.
 - In a linked git worktree with no config of its own, the main checkout's repo
-  config is the one read.
+  config is the one read, and the one a repo-layer write lands in
+  (`--set`/`--unset --repo`, `--rebuild`/`--restore --repo`, `--backups
+  --repo`, the menu's Save): the output names the file and adds `(the main
+  checkout <path>: ...)`. A worktree with its own `.crew/config.json` or
+  `.crew/crew.json` reads and writes only its own. When git cannot say where
+  the main checkout is, the write is refused (`could not tell ...; nothing
+  written`) and no file is created in the worktree.
 
 {human_only}
 ## Guard profiles

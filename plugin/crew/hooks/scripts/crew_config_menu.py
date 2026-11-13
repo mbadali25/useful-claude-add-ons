@@ -423,7 +423,7 @@ def menu_spec(root, layer, global_path=None, pending=None):
         areas[area_of(dotted)].append(row)
 
     path = (crew_config.GLOBAL_CONFIG_PATH if global_path is None else global_path
-            ) if layer == "machine" else crew_config.repo_config_path(root)
+            ) if layer == "machine" else crew_config.repo_write_label(root)
     return {
         "layer": layer,
         "path": path,
@@ -516,8 +516,15 @@ def save(root, changes, apply, global_path=None, expect=None):
     repo = dict((changes or {}).get("repo") or {})
     expect = {k: v for k, v in (expect or {}).items() if v is not None}
     target = crew_config.GLOBAL_CONFIG_PATH if global_path is None else global_path
-    files = {"machine": target, "repo": crew_config.repo_config_path(root)}
+    files = {"machine": target, "repo": crew_config.repo_write_label(root)}
+    notes = {}
     try:
+        if repo:
+            # L-0946: the file the repo plan reads and the write lands in --
+            # from a linked worktree with no config of its own, the main
+            # checkout's; could-not-tell refuses here, before any plan.
+            files["repo"], main_root = crew_config.repo_write_target(root)
+            notes["repo"] = crew_config.repo_target_note(main_root)
         plans, digests, after = _plan_both(root, machine, repo, global_path)
     except (crew_config.GlobalWriteRefused, crew_config.RepoWriteRefused,
             crew_config.ProviderError) as exc:
@@ -527,7 +534,7 @@ def save(root, changes, apply, global_path=None, expect=None):
     verb = "writing" if apply else "would write (dry run)"
     for layer in LAYERS:
         if layer in plans:
-            print(f"{layer} layer - {verb}: {files[layer]}")
+            print(f"{layer} layer - {verb}: {files[layer]}{notes.get(layer, '')}")
         if layer in plans or (plans and layer == "machine"):
             print(f"{layer} digest: {digests[layer]}")
         if layer in plans:
@@ -564,6 +571,7 @@ def save(root, changes, apply, global_path=None, expect=None):
                         "longer hold")
                 crew_config.write_repo_config(root, repo, global_path,
                                               expect=expect.get("repo"),
+                                              target=files["repo"],
                                               expect_global=bound)
         except (OSError, crew_config.GlobalWriteRefused,
                 crew_config.RepoWriteRefused, crew_config.ProviderError) as exc:

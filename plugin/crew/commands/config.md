@@ -60,6 +60,15 @@ the `repo` layer is the main checkout's file; `--explain` and `--models` print i
 worktree whose main checkout also has a config adds `the main checkout's (<path>)
 is not read`: own wins whole, and a crew <= 1.0.68 heal wrote a default into
 every lane that had none, so say which it is before trusting the lane's settings.
+Writes follow reads: from a linked worktree with no crew config of its own,
+`--set`/`--unset --repo`, `--rebuild`/`--restore --repo` and the menu's Save write
+the main checkout's `.crew/config.json`, and the `wrote:` / `would write` line adds
+`(the main checkout <path>: ...)` - say that to the user before the `--apply`, since
+it changes every lane of that repo. The digest, backup and lock are that file's.
+When git cannot tell where the main checkout is, the write is refused with
+`could not tell ...; nothing written` (exit 2); rerun with `--root <the main checkout>`.
+The menu's delete and restore of the repo file still act on this checkout's own
+`.crew/` only.
 
 How it writes, whatever the arguments say:
 

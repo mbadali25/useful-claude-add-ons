@@ -372,6 +372,13 @@ contract itself. This section is what goes wrong with the approval and the audit
   wrappers inherit as well: an inherited `"verifyGate": false` stands a lane's Stop gate down,
   and with no python a lane whose main checkout has a config blocks writes and the Stop (the
   PowerShell 7 wrappers still allow one that strictly says `scope.mode: off`).
+- **Symptom: `/crew:config --set ... --repo` in a lane said `no <worktree>\.crew\config.json -
+  nothing to write into`** (crew 1.3.67 and earlier, L-0946) although the lane read the main
+  checkout's settings.
+  **Fix:** update crew. Since 1.3.68 the write lands in the main checkout's file, the one the lane
+  reads, and the output names it. On an older crew, run the same command with
+  `--root <the main checkout>`. A refusal that says `could not tell` means git could not name the
+  main checkout; run it from the main checkout.
 - **Symptom: which tickets still need my approval?**
   **Check:** `/crew:status --approvals`. It prints one ready-to-paste `/crew:approve <id>` line, with a
   `  why: <why>` line under it, per open ticket whose approval is missing, stale or unaccepted, and nothing for merged,

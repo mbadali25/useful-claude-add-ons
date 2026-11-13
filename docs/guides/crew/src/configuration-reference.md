@@ -36,6 +36,14 @@ shadow your machine defaults for those; a repo `/crew:init` set up before that
 still spells `autopilot.mode: "off"`, which holds a machine `plan` down until
 you remove it (`--explain --all` names it as a `shadow:`).
 
+In a linked git worktree with no `.crew/config.json` or `.crew/crew.json` of its
+own, the repo file is the main checkout's, for reading and, since crew 1.3.68,
+for writing: `/crew:config --set ... --repo --apply` run in a lane writes the main
+checkout's file and says so (`wrote: <path> (the main checkout <path>: ...)`), so
+the change reaches every lane of that repo. A worktree with its own file reads
+and writes only that one. When git cannot say where the main checkout is, the
+write is refused and nothing is created in the worktree.
+
 ## Seeing what is in force
 
 - `/crew:config --show` prints every machine-settable key, its value and the
