@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.76: re-bump only - interim number on the scope-guard branch (commit 1a86d6841, PR #773) before main reached 1.3.75 and PR #679 1.3.78; the change is recorded under crew 1.3.79
 - crew 1.3.74: re-bump only - interim number on the mass-guard removal branch (commits 188f49e4f, 8c3ac53a0, PR #772) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.75
 - crew 1.3.64: re-bump only - interim number on the confirm-config-relay branch (commit 6d1d45994, PR #768) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.70
 - crew 1.3.66: re-bump only - interim number on the confirm-config-relay branch (PR #768) before main reached 1.3.69 after #767 merged; the change is recorded under crew 1.3.70
