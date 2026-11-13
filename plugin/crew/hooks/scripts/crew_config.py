@@ -3786,7 +3786,7 @@ def write_global_config(updates, path=None, expect=None):
         out["plan"] = _plan_on(parsed, updates, "machine", real_path)
         if not out["plan"][1]:
             return None
-        # crew 1.3.75: the receipt backing guards.git.allow as the file is now,
+        # crew 1.3.76: the receipt backing guards.git.allow as the file is now,
         # read under the lock, so `_after` can re-bind it to the new bytes.
         out["gitallow"] = crew_gitallow.backing(real_path, global_path=real_path)
         crew_backup.backup(real_path)   # T-0050: under the lock, before the replace
@@ -4090,7 +4090,7 @@ def _carry_git_allow(machine_path, out):
 def apply_confirmed_optout(layer, dotted, path, expect, global_path=None, value=False,
                            binding_out=None):
     """Write `dotted: value` into the config file at `path` (`layer` is
-    `machine` or `repo`): a `humanOnly` key's `false`, or (crew 1.3.75) a
+    `machine` or `repo`): a `humanOnly` key's `false`, or (crew 1.3.76) a
     machine `guards.git.allow` value. The one writer that bypasses
     `crew_humanonly.write_refusal` and `crew_gitallow.write_refusal`, and only
     `crew_confirm_config` calls it, once a proposal has its two user-prompt
@@ -4098,7 +4098,7 @@ def apply_confirmed_optout(layer, dotted, path, expect, global_path=None, value=
     proposed: a file that changed since is refused
     (`crew_config_files.Conflict`), never merged over. Returns `(merged, changes)`.
 
-    crew 1.3.75: for `guards.git.allow`, `binding_out` (a dict) receives
+    crew 1.3.76: for `guards.git.allow`, `binding_out` (a dict) receives
     `"binding"`, the machine file's `crew_gitallow.file_binding` as this
     write left it, read under the same lock; the receipt carries it. Any other
     machine-layer change re-binds an existing `guards.git.allow` receipt, as

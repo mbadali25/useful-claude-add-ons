@@ -1,31 +1,52 @@
 """`guards.git.allow`: the owner's switch that stops crew's command guards from
-blocking or asking on git commands (crew 1.3.75).
+blocking or asking on git commands (crew 1.3.76).
 
 THE VALUES.
 
     null / absent   off: every guard judges git exactly as before (the default)
     "off"           the same, said out loud; in the repo file it is a VETO
-    "all"           no crew command guard blocks or asks on a git command
+    "all"           no crew command guard blocks or asks on a plain git line
     ["commit", ...] an allowlist: a git command whose SUBCOMMAND is listed
                     passes; every other git command keeps today's checks
 
-WHAT IT LOOSENS, and nothing else. Only the parts of a guard that judge a git
-command (a simple command whose program is `git`):
+WHAT IT LOOSENS, and nothing else, for a line `line_exempt` reads as only
+plain git commands:
 
-  - the cloud guard's `guards.forcePush` rule (`git push --force`, `+ref`; not
-    `xargs git ...`, whose appended arguments crew cannot see, review round 2);
-  - the mass guard's git counts (`git commit`, `git push`, `git clean -f`,
-    `git rm`, `git reset --hard`, `git checkout -f` / `-- <paths>`,
-    `git restore`);
-  - the promote gate, for a command line that is ONLY git commands
-    (`promote_exempt`): a commit message or heredoc that merely contains a
-    declared deploy's text no longer trips it. A declared deploy that is
-    itself a git command (`git push prod main`) stays gated: that is a deploy,
-    not a git block.
+  - the cloud guard's `guards.forcePush` rule (`git push --force`, `+ref`);
+  - the promote gate (`promote_exempt`): a commit message or heredoc that
+    merely contains a declared deploy's text no longer trips it. A declared
+    deploy that is itself a git command (`git push prod main`) stays gated:
+    that is a deploy, not a git block.
 
-Every other finding on the same line is judged as before (`git push -f && rm
--rf x` still meets the mass guard for the `rm`). `gh` is not git: `gh pr
-create`'s mass count and `gh pr merge --admin` keep their own keys.
+`gh` is not git: `gh pr merge --admin` and `gh api` keep their own keys.
+
+THE LINE IS AN ALLOWLIST, FAIL-CLOSED (crew 1.3.76, PR #769 review round 4).
+A line is exempt only when EVERY command on it is exactly `git` (no path, no
+function, alias or `shopt` on the line -- a line holding any other command is
+never exempt) followed by words that are plain literals as ONE reader
+(`plain_commands`) reads them: in bash only `_BASH_SAFE` characters unquoted,
+whole `'...'` runs, `"..."` runs with no `$` or backtick, backslash escapes
+and git's `@{...}`; in PowerShell only `_PS_SAFE` characters, whole quoted
+words with no `$`, here-strings and harmless backtick escapes. Anything else
+-- `$` in any form (`"$OPT"`, `$'\\x2d...'`, `$(...)`), a backtick
+substitution, a glob, a brace expansion, a leading `~`, a subshell or group,
+a PowerShell `(expr)`, `@(...)`, splat, script block, `--%`, `%NAME%` or curly
+quote, an assignment, a pipe into something else -- is "cannot tell", and
+cannot tell is never exempt. Both the cloud guard (`line_plan`,
+`finding_exempt`) and the promote gate ask this reader and nothing else.
+
+NEVER EXEMPT even when every word is plain (`hold`): a git command that
+carries config or a command line of its own -- a global `-c`, `--config-env`
+or `--exec-path`, an option or subcommand that runs a command it is handed
+(`rebase --exec`, `submodule foreach`, `bisect run`, `push --receive-pack`,
+`send-pack --exec`, `fetch --upload-pack`, `fetch-pack --exec`, `grep -O`,
+`difftool --extcmd`, `init --template`, `filter-branch`, ...), in any
+abbreviation git accepts (`--exe`, `--receive=`), and a `git config` that is
+not plainly a read (it may set `alias.*` or a program-valued key such as
+`core.sshCommand` that a later git command on the line runs). A git command
+aimed at another repository (`git -C <dir>`) is exempt only when that
+repository's own file does not veto it either; one whose target crew cannot
+tell (`--git-dir`, `--work-tree`) is not exempt.
 
 WHO MAY TURN IT ON. The machine file only (`~/.claude/crew/config.json`), and
 only through the double confirmation `humanOnly` uses: `crew_confirm_config.py
@@ -36,45 +57,23 @@ WHOLE applied record (`receipt_problem`: two confirmations from two distinct
 user prompts inside the proposal's window, this file's path, a value the
 switch takes) for EXACTLY that value, and the machine file is still the very
 file that confirmation left: its bytes, size, modification time and
-metadata-change time (`file_binding`, crew 1.3.75 review; the change time
-from round 2, so a copy put back with `cp -p` reads as changed -- except a
-Windows CopyFile, which carries the change time over, `_change_ns`). Any later change to the machine file
-by any route but crew's own config writer (`crew_config.write_global_config`,
-which re-binds the receipt when it leaves this key alone, `rebind`) reads as
-off -- so a hand edit to "off" and back to "all" is off. `crew_config.py --set`
-and the `/crew:config` menu refuse every value but `"off"` and null
-(`write_refusal`). A repo file can never turn it on (a cloned repository must
-not loosen a guard on someone else's machine); a repo `"off"` vetoes the
-machine value, and so does a repo file crew cannot read or parse.
+metadata-change time (`file_binding`; a Windows CopyFile carries the change
+time over, `_change_ns`). Any later change to the machine file by any route
+but crew's own config writer (`crew_config.write_global_config`, which
+re-binds the receipt when it leaves this key alone, `rebind`) reads as off.
+`crew_config.py --set` and the `/crew:config` menu refuse every value but
+`"off"` and null (`write_refusal`). A repo file can never turn it on; a repo
+`"off"` vetoes the machine value, and so does a repo file crew cannot read.
 
-WHAT A RECEIPT CANNOT PROVE. The store (`~/.claude/crew/confirm-config/`) is
-plain files. The scope guard refuses a Write/Edit into it and a shell command
-naming it beside a writing word, but a process that runs arbitrary code as the
-user can write a whole, well-formed record. The checks here make a forgery a
-deliberate act, not an accident; they are not a sandbox.
-
-NEVER EXEMPT, whatever the value (`hold`): a git command that carries config
-or a command line of its own -- a global `-c`, `--config-env` or
-`--exec-path`, a `GIT_*` environment assignment or one of `PROGRAM_VARS`
-(`HOME`, `XDG_CONFIG_HOME`, `PATH`, ...; also a name exported after a plain
-assignment, `X=v; export X`), or an option or subcommand
-that runs a command it is handed (`rebase --exec`, `submodule foreach`,
-`bisect run`, `push --receive-pack`, `send-pack --exec`, `fetch --upload-pack`,
-`fetch-pack --exec`, `grep -O`,
-`difftool --extcmd`, `filter-branch`, ...), in any abbreviation git accepts
-(`--exe`, `--receive=`); and a git command crew cannot read whole: a word
-built when it runs (`$`, a backtick, a PowerShell `@splat`; in bash an
-unquoted brace expansion, glob or leading `~`, `Expands`; in PowerShell
-`--%`, a `%NAME%`, a glob character or a leading `~`), or arguments
-`xargs` / `parallel` append from input (crew 1.3.75 review rounds 2-3). A git command aimed at another
-repository (`git -C <dir>`) is exempt only when that repository's own file
-does not veto it either; one whose target crew cannot tell (`--git-dir`,
-`--work-tree`, a `-C` it cannot read, a line that changes directory) is not
-exempt.
+WHAT IT CANNOT SEE. Config and hooks set EARLIER, in a file (`.git/hooks/`,
+`core.hooksPath`, `alias.*`, `core.sshCommand`), run under "all" exactly as
+they would with crew absent: crew reads only the command line. The receipt
+store (`~/.claude/crew/confirm-config/`) is plain files; the checks here make
+a forgery a deliberate act, not an accident; they are not a sandbox.
 
 UNKNOWN IS OFF. A value that is not one of the forms above, an unreadable file
-or receipt store, a line crew cannot split, or a subcommand it cannot read all
-leave the guards judging as before. Never an exemption by default.
+or receipt store, or a line crew cannot read whole all leave the guards
+judging as before. Never an exemption by default.
 
 Standard library only; imports nothing that imports `crew_config`, so
 `crew_config` may import it.
@@ -85,6 +84,7 @@ import hashlib
 import json
 import os
 import re
+import string
 import subprocess
 import time
 
@@ -102,30 +102,13 @@ _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _GIT_VALUE_OPTS = frozenset(("-C", "-c", "--git-dir", "--work-tree", "--namespace",
                              "--exec-path", "--config-env", "--super-prefix"))
 
-# The cloud guard's finding scope key carrying a git finding's subcommand, and
-# the two beside it: why it may never be exempted (`hold`) and the `-C`
-# directories it acts on (`target_dirs`).
+# The cloud guard's finding scope key carrying a git finding's subcommand
+# (`finding_exempt`). An `xargs git` finding carries none: the words xargs
+# appends come from input crew cannot see, so it is never exempt.
 SCOPE_KEY = "gitsub"
-HOLD_KEY = "githold"
-DIRS_KEY = "gitdirs"
-# The subcommand of a git command crew could not read (`xargs git` with the
-# subcommand on stdin, a variable): only `all` lets it through -- and since
-# review round 2 both of those are held anyway (`hold`, `FED_HOLD`).
+# The subcommand of a git command crew could not read: only `all` lets it
+# through, and only on a line `line_exempt` reads whole.
 UNSEEN = None
-# Why a git command run by `xargs` / `parallel` is never exempt: the words they
-# append come from input crew cannot see (`echo "push --receive-pack=x" | xargs
-# git`), the same hole as a word built at run time (crew 1.3.75 review round 2).
-FED_HOLD = "xargs / parallel append arguments to it that crew cannot see"
-# Environment names, beside `GIT_*`, from which git -- or the ssh, shell,
-# pager, editor or perl it starts -- reads a program, config or code: `HOME`
-# (and Windows' fallbacks) and `XDG_CONFIG_HOME` name the global gitconfig
-# (an alias `!cmd`, `core.sshCommand`; measured), `PATH` picks which `ssh`
-# runs, and the rest are programs or code by name (crew 1.3.75 review round 3).
-PROGRAM_VARS = frozenset((
-    "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "XDG_CONFIG_HOME", "PATH",
-    "EDITOR", "VISUAL", "PAGER", "LESSOPEN", "LESSCLOSE", "SSH_ASKPASS",
-    "BASH_ENV", "ENV", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
-    "DYLD_LIBRARY_PATH", "PERL5OPT", "PERL5LIB"))
 
 _REFUSAL = ("lets every git command past crew's command guards, so it needs the "
             "owner's double confirmation: `crew_confirm_config.py propose --layer "
@@ -218,6 +201,9 @@ _RUNS = {
     "fetch": ("--upload-pack",),
     "pull": ("--upload-pack",),
     "clone": ("--upload-pack", "-u", "-c", "--config", "--template"),
+    # `git init --template=<dir>` copies that directory's hooks into the repo,
+    # and a later git command on the same line runs them (round 4).
+    "init": ("--template",),
     "ls-remote": ("--upload-pack",),
     "archive": ("--exec",),
     "grep": ("-O", "--open-files-in-pager"),
@@ -229,6 +215,50 @@ _RUNS = {
 _RUNS_ALWAYS = frozenset(("filter-branch", "instaweb"))
 # (subcommand, word) pairs: `git submodule foreach <cmd>`, `git bisect run <cmd>`.
 _RUNS_WORD = {"submodule": "foreach", "bisect": "run"}
+
+# `git config` (review round 4, FIX D): a write may set an alias (`alias.p
+# '!deploy-prod'`) or a program-valued key (`core.sshCommand`, `core.pager`,
+# `core.editor`, `core.fsmonitor`, `core.hooksPath`, `diff.external`,
+# `credential.helper`, `sequence.editor`, `gpg.program`, ...) that a later git
+# command on the same line runs. Rather than list those keys, every `git
+# config` that is not plainly a READ is held -- an allowlist like the rest.
+# A read: only the options below, and either a read action (`--get*`, `-l`,
+# `--list`, the `get` / `list` subcommands) or exactly one key.
+_CONFIG_READ_ACTIONS = frozenset(("--get", "--get-all", "--get-regexp", "--get-urlmatch",
+                                  "--get-color", "--get-colorbool", "-l", "--list"))
+_CONFIG_READ_FLAGS = frozenset((
+    "--global", "--system", "--local", "--worktree", "--show-origin", "--show-scope",
+    "--null", "-z", "--name-only", "--includes", "--no-includes", "--bool", "--int",
+    "--bool-or-int", "--path", "--expiry-date", "--all"))
+_CONFIG_READ_VALUE_OPTS = frozenset(("-f", "--file", "--blob", "--type", "--default"))
+
+
+def _config_is_read(rest):
+    """True when `git config <rest>` (the words after `config`) is plainly a
+    read of config, never a write or `--edit` (which runs the editor)."""
+    positionals, action, index = [], False, 0
+    while index < len(rest):
+        word = rest[index]
+        name = word.split("=", 1)[0]
+        if word == "--":
+            positionals.extend(rest[index + 1:])
+            break
+        if word.startswith("-") and word != "-":
+            if name in _CONFIG_READ_ACTIONS:
+                action = True
+            elif name in _CONFIG_READ_VALUE_OPTS:
+                index += 0 if "=" in word else 1
+            elif word not in _CONFIG_READ_FLAGS:
+                return False
+        else:
+            positionals.append(word)
+        index += 1
+    if positionals and positionals[0] in ("get", "list"):
+        return True
+    if positionals and positionals[0] in ("set", "unset", "rename-section",
+                                          "remove-section", "edit"):
+        return False
+    return action or len(positionals) == 1
 
 
 def _global_split(args):
@@ -254,104 +284,12 @@ def _option_hit(word, option):
     return word.startswith("-") and not word.startswith("--") and option[1] in word[1:]
 
 
-# A word whose text is built when the command runs: a `$` expansion
-# (`"$OPT"`, `${X:-...}`, PowerShell's `$env:X`), a backtick substitution, or
-# a PowerShell splat (`@opts`). crew cannot see what it becomes, so it may
-# become `--receive-pack=...` or `-c ...` (crew 1.3.75 review round 2).
-_RUNTIME_RE = re.compile(r"[$`]|^@[A-Za-z_]")
-
-
-class Expands(str):
-    """A bash word the shell rewrites when it runs, marked by whoever split
-    it with its quoting in view (`bash_word`, cloud_guard's lexer): brace
-    expansion (`--rece{ive-pack,}=x` is `--receive-pack=x`), a glob
-    (`--rece*` matches a file named `--receive-pack=x`) or a leading tilde
-    (`~` is $HOME, which the line may have set). crew 1.3.75 review round 3.
-    Anything that rebuilds the word drops the mark, so a rebuilder that may
-    keep such a word re-marks it (cloud_guard's `_substitute`)."""
-
-    __slots__ = ()
-
-
-# Brace expansion: an unquoted `{...}` holding an unquoted `,` or `..`.
-_BRACE_RE = re.compile(r"\{[^{}]*(?:,|\.\.)[^{}]*\}")
-_GLOB_CHARS = "*?["
-
-
-def skeleton_expands(skeleton):
-    """True when a bash word whose UNQUOTED text is `skeleton` (each quoted or
-    escaped run replaced by a NUL) is rewritten when it runs: a brace
-    expansion, a glob character, or a leading tilde. `'why?'` and `"{a,b}"`
-    are literal; `why?` and `{a,b}` are not."""
-    return (any(c in skeleton for c in _GLOB_CHARS) or skeleton.startswith("~")
-            or bool(_BRACE_RE.search(skeleton)))
-
-
-def bash_skeleton(raw):
-    """Raw bash word `raw` with every quoted or escaped run (`'...'`,
-    `"..."`, `$'...'`, `\\x`) replaced by a NUL: the text bash still
-    expands."""
-    out, pos, n = [], 0, len(raw)
-    while pos < n:
-        char = raw[pos]
-        if char == "\\":
-            out.append("\0")
-            pos += 2
-        elif char == "'" or raw.startswith("$'", pos) or char == '"':
-            start = pos + (2 if char == "$" else 1)
-            close = "'" if char != '"' else '"'
-            end = start
-            while end < n and raw[end] != close:
-                # `'...'` has no escapes; `"..."` and `$'...'` do.
-                end += 2 if raw[end] == "\\" and char != "'" else 1
-            out.append("\0")
-            pos = end + 1
-        else:
-            out.append(char)
-            pos += 1
-    return "".join(out)
-
-
-def bash_word(raw):
-    """Raw bash word `raw` after quote removal, marked `Expands` when bash
-    rewrites it when it runs."""
-    import crew_guards  # pylint: disable=import-outside-toplevel
-    word = crew_guards._shell_unquote(raw)  # pylint: disable=protected-access
-    return Expands(word) if skeleton_expands(bash_skeleton(raw)) else word
-
-
-# PowerShell: after `--%` the rest of the line goes to git unparsed, with
-# `%NAME%` expanded when it runs (measured, PowerShell 7 on Windows), and a
-# `.cmd` shim named git has cmd.exe expand `%NAME%` anyway; PowerShell 7 on
-# Linux and macOS globs a bare native argument and expands a bare `~`. crew's
-# PowerShell readers do not keep which part of a word was quoted, so any
-# `%NAME%`, glob character or leading `~` in a PowerShell git word is read as
-# run-time (crew 1.3.75 review round 3).
-_PS_RUNTIME_RE = re.compile(r"%[^%\s]+%|[*?\[]|^~")
-# A PowerShell redirection word (`*>&1`, `2>>log`, `>out`): its `*` is a
-# stream, not a glob.
-_PS_REDIRECT_RE = re.compile(r"^(?:\d|\*)?>")
-
-
-def hold(args, env=None, shell="bash"):
-    """Why a git command (its words after `git`, read as `shell`) may never be
-    exempted, or None. `env` is the environment assignments crew saw for it
-    (names any case): a `GIT_*` one hands git a program or config the same
-    way, and so does one git or what it runs reads a program or config
-    from (`PROGRAM_VARS`)."""
-    for name, value in (env or {}).items():
-        if value is None or not isinstance(name, str):
-            continue
-        if name.upper().startswith("GIT_") or name.upper() in PROGRAM_VARS:
-            return f"it sets {name.upper()} for git"
-    for word in args:
-        if not isinstance(word, str) or isinstance(word, Expands) or _RUNTIME_RE.search(word):
-            return "a word of it is built when it runs, so crew cannot see what git is handed"
-        if shell == "powershell" and _PS_REDIRECT_RE.match(word):
-            continue  # `*>&1`, `2>out`: a redirection, not an argument git sees
-        if shell == "powershell" and (word == "--%" or _PS_RUNTIME_RE.search(word)):
-            return ("a word of it is expanded when it runs (PowerShell `--%`, `%NAME%`, a "
-                    "glob or `~`), so crew cannot see what git is handed")
+def hold(args):
+    """Why a git command may never be exempted, or None. `args` are its words
+    after `git`, already read as plain literals by `plain_commands` (the one
+    reader both the cloud guard and the promote gate use): what is left to
+    withhold is a literal option or subcommand that hands git config or a
+    command line of its own."""
     words, index = _global_split(list(args))
     for word in words:
         if word != "-C" and _INJECT_GLOBAL_RE.match(word):
@@ -362,6 +300,9 @@ def hold(args, env=None, shell="bash"):
         return f"`git {sub}` runs a command it is handed"
     if sub in _RUNS_WORD and _RUNS_WORD[sub] in rest:
         return f"`git {sub} {_RUNS_WORD[sub]}` runs a command it is handed"
+    if sub == "config" and not _config_is_read(rest):
+        return ("`git config` that is not plainly a read may set an alias or a program "
+                "a later git command runs")
     for word in rest:
         if word == "--":
             break
@@ -681,26 +622,6 @@ def settings(root, global_path=None, store=None, targets=()):
         return {"allow": OFF, "why": f"could not be read ({type(exc).__name__}); read as off"}
 
 
-def finding_setting(root, base, scope, ctx, cache):
-    """The setting that applies to ONE cloud-guard git finding (`scope` is
-    its scope dict, `ctx` the whole line's): `OFF` when the command carries
-    config or a command of its own (`HOLD_KEY`; a finding without the key is
-    held too), when the line changes directory or builds env at run time
-    (crew cannot tell where git runs), or when its target cannot be told;
-    else `settings` for the project and the `-C` target. `cache` (a dict per
-    call) keeps one read per target set."""
-    ctx = ctx if isinstance(ctx, dict) else {}
-    if scope.get(HOLD_KEY, "not read") is not None or ctx.get("cd") or ctx.get("opaque"):
-        return OFF
-    dirs = scope.get(DIRS_KEY, UNSEEN)
-    if dirs is UNSEEN:
-        return OFF
-    targets = (resolve_target(base, dirs),) if dirs else ()
-    if targets not in cache:
-        cache[targets] = settings(root, targets=targets)["allow"]
-    return cache[targets]
-
-
 def rebind(machine_path, before, global_path=None, now=None):
     """After crew's own config writer changed the machine file WITHOUT
     touching this key: when `before` (the receipt that backed the file as it
@@ -742,147 +663,273 @@ def backing(machine_path, global_path=None, store=None):
         return None
 
 
-# --- is a whole line only git ------------------------------------------------------
+# --- the one reader: is a whole line only plain git ----------------------------------
+#
+# A FAIL-CLOSED ALLOWLIST (crew 1.3.76, PR #769 review round 4). Four review
+# rounds each found a new way to build a git word at run time (`"$OPT"`, a
+# brace expansion, `$'\x2d...'`, a PowerShell `(expr)`), so the reader no
+# longer lists what is dangerous: it lists what is plain, and anything else is
+# "cannot tell", which is never exempt. A line is exempt only when EVERY
+# command on it is exactly `git` followed by words that are plain literals,
+# joined by nothing but `;`, `&&`, `||`, a newline (and in bash `|` and `&`).
+# The cloud guard (`cloud_guard.evaluate`, through `line_plan`) and the promote
+# gate (`promote_exempt`) both ask this reader and nothing else, so they cannot
+# read a line two ways again.
 
-_GIT_HEAD_RE = re.compile(r"^(?:.*[/\\])?git(?:\.exe)?$", re.IGNORECASE)
+# Characters an UNQUOTED bash word may hold and still be the literal it looks
+# like. Not `$` or a backtick (expansion), `*?[` (glob), `{}` (brace
+# expansion; `@{...}` is let through below), `()<>|&;` (operators, split
+# before here), `!`, `#`, `"`/`'` (handled), `\\` (handled) or non-ASCII.
+_BASH_SAFE = frozenset(string.ascii_letters + string.digits + "_-./:=+,@%^")
+# git's reflog / upstream spelling: `HEAD@{1}`, `@{u}`, `@{-1}`, with no `,`
+# or `..` inside, so bash's brace expansion leaves it alone.
+_REFLOG_RE = re.compile(r"@\{[A-Za-z0-9_.:+-]*\}")
+# The operators that may join the commands of an exempt bash line.
+_BASH_OPS = frozenset((None, "\n", ";", "&&", "||", "|", "&"))
 
 
-def _is_git_word(word):
-    return bool(word) and "$" not in word and "`" not in word and bool(_GIT_HEAD_RE.match(word))
+def _bash_plain_word(raw):
+    """Raw bash word `raw` (quotes kept, as `crew_guards._CommandSplitter`
+    leaves it) as the literal bash passes, or None when it is not plainly
+    one: any `$` (a variable, `$(...)`, `$'...'`, `$"..."`), a backtick
+    outside single quotes, a glob, a brace expansion, a leading `~` (or one
+    after `=` or `:`), or a character outside `_BASH_SAFE`. A single-quoted
+    run is literal; a double-quoted run is literal when it holds no `$` or
+    backtick; a backslash escapes one character."""
+    out, pos, n = [], 0, len(raw)
+    while pos < n:
+        char = raw[pos]
+        if char == "'":
+            end = raw.find("'", pos + 1)
+            if end == -1:
+                return None
+            out.append(raw[pos + 1:end])
+            pos = end + 1
+        elif char == '"':
+            end, buf = pos + 1, []
+            while end < n and raw[end] != '"':
+                here = raw[end]
+                if here == "\\" and raw[end + 1:end + 2] in ("$", "`", '"', "\\"):
+                    buf.append(raw[end + 1])
+                    end += 2
+                elif here == "\\" and raw[end + 1:end + 2] == "\n":
+                    end += 2
+                elif here in "$`":
+                    return None
+                else:
+                    buf.append(here)
+                    end += 1
+            if end >= n:
+                return None
+            out.append("".join(buf))
+            pos = end + 1
+        elif char == "\\":
+            if pos + 1 >= n or raw[pos + 1] == "\n":
+                return None
+            out.append(raw[pos + 1])
+            pos += 2
+        elif char == "@" and raw.startswith("@{", pos):
+            match = _REFLOG_RE.match(raw, pos)
+            if not match or ".." in match.group(0):
+                return None
+            out.append(match.group(0))
+            pos = match.end()
+        elif char == "~":
+            if pos == 0 or raw[pos - 1] in "=:":
+                return None
+            out.append(char)
+            pos += 1
+        elif char in _BASH_SAFE:
+            out.append(char)
+            pos += 1
+        else:
+            return None
+    return "".join(out)
 
 
-def _bash_commands(text, depth=0):
-    """Every simple command of bash `text` as dequoted words, its substitutions'
-    commands included, or None when crew cannot split it whole."""
+def _bash_commands(text):
+    """Every simple command of bash `text` as plain literal words, or None
+    when crew cannot read the line as only such commands: it does not split
+    whole, it has a substitution anywhere (`$(...)`, a backtick, `<(...)`,
+    one in an unquoted heredoc body), a subshell or group, an operator outside
+    `_BASH_OPS`, an unquoted heredoc body with `$`, a backtick or `\\`, or a
+    word or here-string that is not plain (`_bash_plain_word`)."""
     import crew_guards  # pylint: disable=import-outside-toplevel
-    if depth > 4:
-        return None
     splitter = crew_guards._CommandSplitter(text)  # pylint: disable=protected-access
     try:
         commands, subs = splitter.split()
     except crew_guards._Unsure:  # pylint: disable=protected-access
         return None
+    if subs:
+        return None
     out = []
-    for words in commands:
-        # bash's own quote removal (`_shell_unquote`, in `bash_word`), not
-        # `_dequote`, which drops every quote character: `"./g'it"` runs a
-        # program named `./g'it`, not git (crew 1.3.75 review round 2). A word
-        # bash rewrites when it runs is marked `Expands` (round 3).
-        out.append([bash_word(w) for w in words])
-    for sub in subs:
-        inner = _bash_commands(sub, depth + 1)
-        if inner is None:
+    for raw_words, meta in zip(commands, splitter.metas):
+        if meta.get("nest") != 1 or meta.get("before") not in _BASH_OPS \
+                or meta.get("after") not in _BASH_OPS:
             return None
-        out.extend(inner)
+        for body, quoted in meta.get("bodies", ()):
+            if not quoted and any(c in body for c in "$`\\"):
+                return None
+        if any(_bash_plain_word(w) is None for w in meta.get("here", ())):
+            return None
+        words = [_bash_plain_word(w) for w in raw_words]
+        if any(w is None for w in words):
+            return None
+        out.append(words)
     return out
 
 
-def _ps_commands(text):
-    """Every pipeline-free statement of PowerShell `text` as dequoted words, or
-    None when crew will not read it: a pipe, a subexpression (`$(`, `@(`), a
-    script block, or a quote or here-string left open."""
+# Characters an UNQUOTED PowerShell word may hold. Not `$` (a variable or
+# `$(...)`), `@` at a word's start (a splat, `@(...)`, `@{...}`), `(){}[]`
+# (an expression, a script block, a type or glob), `*?` (a glob on Linux and
+# macOS), `,` (an array), `<>|&;#!"'` (handled or operators), a backtick
+# (handled) or non-ASCII (PowerShell reads curly quotes as quotes and en and
+# em dashes as dashes).
+_PS_SAFE = frozenset(string.ascii_letters + string.digits + "_-./:=+\\^%~@")
+# Curly quotes, which PowerShell reads as `'` and `"` (measured, pwsh 7): a
+# reader that took them as text would see one word where PowerShell sees three.
+_PS_CURLY = "‘’‚‛“”„"
+# `%NAME%`: expanded at run time after `--%`, and by cmd.exe when git is a
+# `.cmd` shim -- quoted or not (crew 1.3.75 review round 3).
+_PS_PERCENT_RE = re.compile(r"%[^%\s]+%")
+# A redirection at a word's start: `>out`, `2>>log`, `2>&1`, `*>&1`.
+_PS_REDIRECT_RE = re.compile(r"(?:[1-6*])?>>?(?:&[12])?")
+
+
+def _ps_commands(text):  # pylint: disable=too-many-branches,too-many-statements
+    """Every statement of PowerShell `text` as plain literal words, or None
+    when crew cannot read the line as only such statements. Plain: a bare
+    word of `_PS_SAFE` characters (no leading `~`, `@` only alone or inside a
+    word), a whole `'...'` or `"..."` word (a double-quoted one holding no
+    `$`; a quote may not start or end mid-word), a here-string, or a
+    backtick escaping a character that is not a letter or digit (`` `u{2d} ``
+    is a `-`). Joined only by `;`, a newline, `&&` or `||`; a redirection
+    (`2>&1`, `> out`) is dropped with its target. Anything else -- a pipe, a
+    single `&`, `(`, `$(`, `@(`, a script block, a curly quote, `--%` or a
+    `%NAME%` -- is None."""
+    if any(c in text for c in _PS_CURLY):
+        return None
     statements, words, word = [], [], []
+    state = {"started": False, "target": False, "closed": False}
     i, n = 0, len(text)
 
     def end_word():
-        if word:
-            words.append("".join(word))
-            word.clear()
+        if state["started"]:
+            if state["target"]:
+                state["target"] = False
+            else:
+                words.append("".join(word))
+        word.clear()
+        state["started"] = state["closed"] = False
 
     def end_statement():
         end_word()
+        if state["target"]:
+            return False
         if words:
             statements.append(list(words))
         words.clear()
+        return True
 
     while i < n:
         c = text[i]
+        if state["closed"] and c not in " \t;\n&|":
+            return None  # `'a'b`: a quote ending mid-word
         if text.startswith("@'", i) or text.startswith('@"', i):
             quote = text[i + 1]
-            start = text.find("\n", i)
-            close = text.find("\n" + quote + "@", start if start != -1 else n)
-            if start == -1 or close == -1:
+            if state["started"] or text[i + 2:i + 3] != "\n":
                 return None
-            body = text[start + 1:close]
-            if quote == '"' and ("$(" in body or "@(" in body):
+            close = text.find("\n" + quote + "@", i + 2)
+            if close == -1:
+                return None
+            body = text[i + 3:close]
+            if quote == '"' and ("$" in body or "`" in body):
                 return None
             word.append(body)
-            i = close + 2
+            state["started"] = state["closed"] = True
+            i = close + 3
             continue
-        if c == "'":
-            end = i + 1
+        if c in "'\"":
+            if state["started"]:
+                return None  # `a'b'`: a quote starting mid-word
+            end, buf = i + 1, []
             while True:
-                end = text.find("'", end)
-                if end == -1:
+                if end >= n:
                     return None
-                if text.startswith("''", end):
+                here = text[end]
+                if here == c and text[end + 1:end + 2] == c:
+                    buf.append(c)
                     end += 2
-                    continue
-                break
-            word.append(text[i + 1:end].replace("''", "'"))
-            i = end + 1
-            continue
-        if c == '"':
-            end = i + 1
-            buf = []
-            while end < n and text[end] != '"':
-                if text[end] == "`" and end + 1 < n:
+                elif here == c:
+                    break
+                elif c == '"' and here == "$":
+                    return None
+                elif c == '"' and here == "`":
+                    if end + 1 >= n or text[end + 1].isalnum():
+                        return None
                     buf.append(text[end + 1])
                     end += 2
-                    continue
-                if text.startswith("$(", end) or text.startswith("@(", end):
-                    return None
-                buf.append(text[end])
-                end += 1
-            if end >= n:
-                return None
+                else:
+                    buf.append(here)
+                    end += 1
             word.append("".join(buf))
+            state["started"] = state["closed"] = True
             i = end + 1
             continue
         if c == "`":
-            if i + 1 < n and text[i + 1] == "\n":
+            if text[i + 1:i + 2] == "\n":
+                end_word()
                 i += 2
                 continue
-            if i + 1 < n:
-                word.append(text[i + 1])
+            if i + 1 >= n or text[i + 1].isalnum():
+                return None
+            word.append(text[i + 1])
+            state["started"] = True
             i += 2
             continue
-        if text.startswith("$(", i) or text.startswith("@(", i) or c in "{}()|":
-            if c == "|" and text.startswith("||", i):
-                end_statement()
-                i += 2
-                continue
-            return None
         if c in " \t":
             end_word()
             i += 1
             continue
-        if c in ";\n\r" or text.startswith("&&", i):
-            end_statement()
-            i += 2 if text.startswith("&&", i) else 1
+        if c in ";\n" or text.startswith("&&", i) or text.startswith("||", i):
+            if not end_statement():
+                return None
+            i += 2 if text.startswith(("&&", "||"), i) else 1
             continue
-        if c == "&":
-            # A redirection's `&` (`2>&1`, `*>&1`) is part of a word. Any
-            # other single `&` is PowerShell's background operator, which
-            # ends a statement and runs the next (`git status & terraform
-            # apply`), or its call operator (`& $exe`): crew will not read it.
-            if word and word[-1] == ">" and i + 1 < n and text[i + 1].isdigit():
-                word.append(c)
-                i += 1
-                continue
-            return None
-        if c == "#" and not word:
+        if c == "#" and not state["started"]:
             while i < n and text[i] != "\n":
                 i += 1
             continue
-        word.append(c)
-        i += 1
-    end_statement()
+        if not state["started"]:
+            match = _PS_REDIRECT_RE.match(text, i)
+            if match and ">" in match.group(0):
+                if state["target"]:
+                    return None
+                state["target"] = "&" not in match.group(0)
+                i = match.end()
+                continue
+            if c == "~":
+                return None
+            if c == "@" and text[i + 1:i + 2] not in ("", " ", "\t", "\n", ";"):
+                return None
+        if c in _PS_SAFE:
+            word.append(c)
+            state["started"] = True
+            i += 1
+            continue
+        return None
+    if not end_statement():
+        return None
+    for statement in statements:
+        for item in statement:
+            if item == "--%" or _PS_PERCENT_RE.search(item):
+                return None
     return statements
 
 
-def line_commands(command, shell):
-    """The simple commands of `command` read as `shell`, or None (cannot tell)."""
+def plain_commands(command, shell):
+    """The simple commands of `command` read as `shell`, every word a plain
+    literal, or None (cannot tell: never exempt)."""
     if not isinstance(command, str) or not command.strip():
         return None
     if shell == "powershell":
@@ -892,16 +939,16 @@ def line_commands(command, shell):
 
 def line_git_commands(command, shell):
     """The argument lists (words after `git`) of `command` when EVERY command
-    it runs is a plain git command crew may exempt (none `hold` withholds),
-    else None. Anything crew cannot split is None."""
-    commands = line_commands(command, shell)
+    it runs is exactly `git` with plain literal words and nothing `hold`
+    withholds, else None."""
+    commands = plain_commands(command, shell)
     if not commands:
         return None
     out = []
     for words in commands:
-        if not words or not _is_git_word(words[0]):
+        if not words or words[0] != "git":
             return None
-        if hold(words[1:], shell=shell) is not None:
+        if hold(words[1:]) is not None:
             return None
         out.append(words[1:])
     return out
@@ -921,10 +968,8 @@ def line_targets(git_commands, base):
 
 
 def line_exempt(command, shell, setting):
-    """True when EVERY command `command` runs is a git command `setting` lets
-    through: nothing else on the line, no substitution running anything but
-    such a git command, none carrying config or a command of its own
-    (`hold`). Anything crew cannot split is False."""
+    """True when EVERY command `command` runs is a plain git command
+    (`line_git_commands`) whose subcommand `setting` lets through."""
     if setting == OFF or setting is None:
         return False
     commands = line_git_commands(command, shell)
@@ -934,6 +979,36 @@ def line_exempt(command, shell, setting):
         if not allows(setting, subcommand(args)):
             return False
     return True
+
+
+def line_plan(command, shell, root, base, global_path=None, store=None):
+    """`{"allow": setting, "subs": frozenset}` for the cloud guard: the
+    setting in force for `command`'s line (its `-C` targets' repo files read
+    too, from `base`) and the subcommands of its git commands, when the line
+    is `line_exempt`; else `{"allow": OFF, "subs": frozenset()}`. Never
+    raises."""
+    none = {"allow": OFF, "subs": frozenset()}
+    try:
+        commands = line_git_commands(command, shell)
+        if not commands:
+            return none
+        setting = settings(root, global_path, store, line_targets(commands, base))["allow"]
+        if not line_exempt(command, shell, setting):
+            return none
+        return {"allow": setting, "subs": frozenset(subcommand(a) for a in commands)}
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return none
+
+
+def finding_exempt(plan, scope):
+    """True when the cloud-guard git finding with scope dict `scope` is let
+    through by `plan` (`line_plan`): its subcommand is one of the line's
+    plain git commands and the setting allows it. A finding with no
+    `SCOPE_KEY` (an `xargs git` finding carries none) never is."""
+    if not isinstance(plan, dict) or not isinstance(scope, dict) or SCOPE_KEY not in scope:
+        return False
+    sub = scope[SCOPE_KEY]
+    return sub in plan.get("subs", ()) and allows(plan.get("allow"), sub)
 
 
 # --- the promote gate --------------------------------------------------------------

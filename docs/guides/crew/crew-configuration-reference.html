@@ -213,10 +213,139 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 (<code>python -c</code>, an encoded command, a variable holding the path) still can, and
 <code>scope.mode: off</code> has no tripwire at all. Treat <code>humanOnly</code> opt-outs as
 meaningful only with <code>scope.mode</code> <code>block</code>.</p>
+<h2 id="git-commands-guardsgitallow-crew-1376">Git Commands (<code>guards.git.allow</code>, Crew 1.3.76)</h2>
+<p>The owner's switch that stops crew's command guards from blocking or asking on
+git commands, destructive ones included. Off by default (<code>null</code>, or <code>"off"</code>).</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>What passes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>null</code> / <code>"off"</code></td>
+<td>nothing changes: every guard judges git as before</td>
+</tr>
+<tr>
+<td><code>"all"</code></td>
+<td>a line made only of plain git commands</td>
+</tr>
+<tr>
+<td><code>["commit", "push", ...]</code></td>
+<td>such a line whose every git command's subcommand is listed; every other line keeps today's checks</td>
+</tr>
+</tbody>
+</table>
+<p>A listed subcommand passes with every option it takes: listing <code>push</code> also lets
+<code>git push --force</code> and <code>git push origin +main</code> through, because the force-push
+rule is a finding on the <code>push</code> subcommand. To keep force pushes stopped, leave
+<code>push</code> out of the list.</p>
+<p>What it loosens, and nothing else: the cloud guard's <code>guards.forcePush</code> rule
+(<code>git push --force</code>, <code>+ref</code>) and the promote gate, so a commit message or
+heredoc that merely mentions a declared deploy no longer trips it. A declared
+deploy that is itself a git command (<code>git push prod main</code>) stays gated: that
+is a deploy, not a git block. <code>gh</code> is not git: <code>gh pr merge --admin</code>
+(<code>guards.adminMerge</code>), workflow dispatches and <code>gh api</code> calls are untouched.</p>
+<p><strong>The line is a fail-closed allowlist (crew 1.3.76).</strong> A command line is
+exempt only when EVERY command on it is exactly <code>git</code> - not a path
+(<code>/usr/bin/git</code>, <code>./git</code>, <code>git.exe</code>), and with no other command on the line,
+so a function, alias or <code>shopt</code> that redefines git, an assignment, <code>cd</code>,
+<code>command git</code>, a subshell <code>( )</code> or group <code>{ }</code> all leave the line judged as
+before - and every word of every git command is a plain literal, read by ONE
+reader that both the cloud guard and the promote gate use:</p>
+<ul>
+<li>bash: unquoted letters, digits and <code>_ - . / : = + , @ % ^</code>, a <code>~</code> that is
+  not at the start (<code>HEAD~3</code>), git's <code>@{...}</code> (<code>@{u}</code>, <code>HEAD@{1}</code>) with no <code>,</code>
+  or <code>..</code> inside; whole <code>'...'</code> runs; <code>"..."</code> runs with no <code>$</code> or backtick; a
+  backslash escaping one character; a heredoc whose delimiter is quoted, or
+  whose body has no <code>$</code>, backtick or backslash. Commands joined only by <code>;</code>,
+  <code>&amp;&amp;</code>, <code>||</code>, <code>|</code>, <code>&amp;</code> or a newline.</li>
+<li>PowerShell: unquoted letters, digits and <code>_ - . / : = + \ ^ % ~ @</code> (no
+  leading <code>~</code>, <code>@</code> only alone or inside a word); a whole <code>'...'</code> or <code>"..."</code>
+  word (a double-quoted one holding no <code>$</code>); a here-string (<code>@"..."@</code> with no
+  <code>$</code> or backtick); a backtick escaping a character that is not a letter or
+  digit; a redirection (<code>2&gt;&amp;1</code>, <code>&gt; out</code>). Statements joined only by <code>;</code>,
+  <code>&amp;&amp;</code>, <code>||</code> or a newline.</li>
+</ul>
+<p>Anything else is "cannot tell", and cannot tell is never exempt: <code>$</code> in any
+form (<code>"$OPT"</code>, <code>${X:-...}</code>, <code>$'\x2d...'</code>, <code>$"..."</code>, <code>$env:X</code>, <code>$(...)</code>), a
+backtick substitution, a glob (<code>*</code>, <code>?</code>, <code>[</code>), a brace expansion, a leading
+<code>~</code>, a PowerShell <code>(expr)</code>, <code>@(...)</code>, <code>@splat</code>, <code>{ }</code> or <code>[type]</code>, a pipe into
+anything, a single <code>&amp;</code>, <code>--%</code>, a <code>%NAME%</code>, a curly quote, or a backtick
+before a letter (<code>`u{2d}</code> is a <code>-</code>). Four review rounds each found a new
+way to build a git word at run time; the allowlist lists what is plain
+instead of what is dangerous, so a form nobody has thought of yet is judged,
+not exempt.</p>
+<p>Never exempt even when every word is plain: a git command that hands git
+config or a command of its own - a global <code>-c</code> (an alias <code>!cmd</code>,
+<code>core.sshCommand</code>, <code>core.pager</code>), <code>--config-env</code> or <code>--exec-path</code>; an option or
+subcommand that runs a command it is given (<code>rebase --exec</code>/<code>-x</code>,
+<code>submodule foreach</code>, <code>bisect run</code>, <code>push</code>/<code>send-pack --receive-pack</code>/<code>--exec</code>,
+<code>fetch-pack --upload-pack</code>/<code>--exec</code>, <code>fetch</code>/<code>pull</code>/<code>clone</code>/<code>ls-remote
+--upload-pack</code>, <code>clone -u</code>/<code>-c</code>/<code>--template</code>, <code>init --template</code>, <code>grep -O</code>,
+<code>difftool --extcmd</code>, <code>filter-branch</code>, <code>instaweb</code>, <code>send-email --*-cmd</code>,
+<code>daemon --access-hook</code>), in any abbreviation git accepts (<code>--exe</code>,
+<code>--receive=...</code>); and a <code>git config</code> that is not plainly a read (<code>--get*</code>,
+<code>-l</code>/<code>--list</code>, <code>get</code>, <code>list</code>, or one key alone, with only read options): a
+write may set <code>alias.*</code> or a program-valued key (<code>core.sshCommand</code>,
+<code>core.pager</code>, <code>core.editor</code>, <code>core.fsmonitor</code>, <code>core.hooksPath</code>,
+<code>diff.external</code>, <code>credential.helper</code>, <code>sequence.editor</code>, <code>gpg.program</code>, ...)
+that a later git command on the same line runs. A git command aimed at another
+repository (<code>git -C &lt;dir&gt;</code>) passes only when that repository's own file does
+not veto it either; one whose repository crew cannot tell (<code>--git-dir</code>,
+<code>--work-tree</code>) is judged as before.</p>
+<p>What stays exempt, for example: <code>git commit -m "fix: x"</code>, <code>git push
+--force-with-lease origin topic</code>, <code>git push -f origin topic</code>, <code>git rebase -i
+HEAD~3</code>, <code>git -C &lt;path&gt; status</code>, <code>git log --format=%H</code>, <code>git log @{u}..HEAD</code>,
+<code>git add -A &amp;&amp; git commit -m 'x' &amp;&amp; git push origin topic</code>, <code>git config
+user.name</code>, and <code>git commit -F - &lt;&lt;'EOF' ... EOF</code>. What no longer is: <code>git
+commit -m "$(...)"</code> (a substitution), a line with anything but git on it
+(<code>git push -f &amp;&amp; rm x</code>, <code>FOO=1 git push</code>), <code>/usr/bin/git ...</code>, and <code>git config
+&lt;key&gt; &lt;value&gt;</code>.</p>
+<p>Who can turn it on: the machine file only, and only through the double
+confirmation. <code>crew_confirm_config.py propose --layer machine --key
+guards.git.allow --value '"all"'</code> (or <code>'["commit","push"]'</code>) records the change
+and prints an id; you type <code>/crew:confirm-config &lt;change_id&gt;</code> twice, in two
+prompts, within 15 minutes. A value counts only while the newest settled
+receipt for that file is a whole double confirmation (two confirmations from
+two distinct prompts you typed, inside the proposal's window, for that file)
+of exactly that value, AND the machine file is still the file that
+confirmation left: the same bytes, size, modification time and change time
+(the metadata-change time: POSIX <code>ctime</code>, NTFS ChangeTime on Windows). crew's own
+config writer (<code>crew_config.py --set</code>, <code>/crew:config</code>, a confirmed <code>humanOnly</code>
+change) carries the receipt over when it changes another key. Any other change
+to the machine file turns the switch off until you confirm it again: a hand
+edit, an agent's Edit, a restore from backup, even setting <code>"off"</code> by hand and
+then the same <code>"all"</code> back, or putting a copy of the confirmed file back with
+<code>cp -p</code> (bytes and modification time restored; the change time still moves).
+One gap, on Windows only: a copy made AND put back with a Windows file copy
+(<code>Copy-Item</code>, Explorer, <code>shutil.copy2</code>) carries the change time over with the
+bytes, so crew cannot tell it from the confirmed file. <code>crew_config.py --set</code> and <code>/crew:config</code> refuse
+every value but <code>"off"</code> and null, and a crew write back to <code>"off"</code> revokes the
+receipt. A repo file can never turn it on; a repo <code>"off"</code>, a malformed repo
+value, or a repo <code>.crew/config.json</code> crew cannot read or parse (a link that
+does not resolve, or a <code>.crew</code> that is a file, included) vetoes it.
+Anything crew cannot read - a value outside the table, a store it cannot read,
+a line it cannot read whole - is off.</p>
+<p>What a receipt cannot prove: the store (<code>~/.claude/crew/confirm-config/</code>) is
+plain files. It is protected from an agent's writes ONLY while <code>scope.mode</code> is
+on: then the scope guard refuses a Write/Edit into it, and a shell command
+naming it beside a writing word. With <code>scope.mode</code> off nothing stops an agent
+writing a receipt, and even with it on a process that runs arbitrary code as
+you can write a whole, well-formed record. And <code>"all"</code> does not stop what git
+runs from its own persistent configuration: hooks (<code>.git/hooks/</code>,
+<code>core.hooksPath</code>), aliases (<code>alias.*</code> set in a config file earlier, by an
+earlier command line), and <code>core.sshCommand</code>, <code>core.pager</code>, <code>core.editor</code>,
+filters and the like all run under <code>"all"</code> exactly as they would with crew
+absent. crew reads only the command line, never git's config files or hooks.</p>
+<p><code>python3 hooks/scripts/crew_gitallow.py --root .</code> prints what is in force.
+Each pass is logged to <code>.crew/guard.log</code> with the policy <code>gitAllow:&lt;value&gt;</code>.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>
-<p><strong>100 keys</strong>: 62 settable in the machine-global file, 38 repo-only.</p>
+<p><strong>101 keys</strong>: 63 settable in the machine-global file, 38 repo-only.</p>
 <p>Columns:</p>
 <ul>
 <li><strong>Layer</strong>: which file may set the key.</li>
@@ -1060,6 +1189,14 @@ meaningful only with <code>scope.mode</code> <code>block</code>.</p>
 <td>object of guard name to tier (checked in <code>plugin/crew/hooks/scripts/crew_guards.py</code>)</td>
 <td>1.2.62</td>
 <td><code>guards.overrides.&lt;guard&gt;</code>: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor.</td>
+</tr>
+<tr>
+<td><code>guards.git.allow</code></td>
+<td>both</td>
+<td><code>null</code></td>
+<td>null, <code>"off"</code>, <code>"all"</code> or a list of git subcommand names (coerced in <code>plugin/crew/hooks/scripts/crew_gitallow.py</code>)</td>
+<td>1.3.76</td>
+<td>The owner's switch that stops crew's command guards blocking or asking on git commands: <code>"all"</code> lets a line of only plain git commands past the force-push rule and the promote gate (unless a declared deploy is itself a git command); a list of subcommands (<code>["commit", "push"]</code>) lets only those through, with every option they take (listing <code>push</code> lets <code>push --force</code> through). null or <code>"off"</code> changes nothing. Machine file only, and only after <code>/crew:confirm-config</code> twice (<code>crew_confirm_config.py propose --key guards.git.allow --value ...</code>); a value written any other way, or any later change to the machine file outside crew's config writer, reads as off, and a repo <code>"off"</code> or unreadable repo file vetoes it. FAIL-CLOSED ALLOWLIST: a line is exempt only when every command on it is exactly <code>git</code> with plain literal words (no <code>$</code>, backtick, glob, brace, leading <code>~</code>, parenthesis, PowerShell expression or <code>%NAME%</code>; nothing else on the line); a git command carrying <code>-c</code>, a command to run (<code>rebase --exec</code>, <code>push --receive-pack</code>, <code>submodule foreach</code>, ...) or a <code>git config</code> write is never exempt.</td>
 </tr>
 </tbody>
 </table>

@@ -1007,45 +1007,45 @@ passes a prompt naming `crew:confirm-config`. Since crew 1.3.69 every
 `len(HUMANONLY_MUTATIONS)`; 34 at crew 1.3.69). JUDGEMENT: `humanOnly.promoteMarker` is still read
 by no hook, and a session that runs arbitrary python can still forge a receipt.
 
-## Git commands past the guards: `guards.git.allow` (crew 1.3.75)
+## Git commands past the guards: `guards.git.allow` (crew 1.3.76)
 
 DERIVED from `plugin/crew/hooks/scripts/crew_gitallow.py` (stdlib only); tests
 `plugin/crew/tests/test_git_allow.py`, mutations `plugin/crew/tests/gitallow_mutations.py`
-(64, run alone: `sabotage*.py` is harness). `settings` (`crew_gitallow.py:528`) reads the
-machine file only (`read_layer`, `:312`, one open: absent / unset / set / unreadable plus
-the file binding; a dangling link or a non-directory parent is unreadable, `_dangles`
-`:355`) and honours `"all"` or a list only when `newest_receipt` (`:464`) is a
-whole applied record (`receipt_problem`, `:420`: two confirmations from distinct user
-prompts inside the proposal window, this file's path) for exactly that value AND the
-record's `binding` (sha256, size, mtime_ns, change time: POSIX ctime or NTFS ChangeTime,
-`_change_ns` `:370`) equals the file now. A repo `"off"`, malformed
-value or unreadable file vetoes (`_repo_veto`, `:488`), as does each `git -C` target repo's
-file (`targets`). Writers: `write_refusal` (`:147`) from `crew_config._layer_path_refusal`;
-`crew_confirm_config.confirm` stores the binding `crew_config.apply_confirmed_optout`
-reads under its lock (`crew_config_files.update_json(after=)`);
-`crew_config.write_global_config` re-binds through `_carry_git_allow`
-(`crew_config.py:4077`, `crew_gitallow.backing` `:627` / `rebind` `:604`) when it leaves
-the key alone; `_revoke_human_only` revokes on a crew write back to off. Readers:
-`cloud_guard._classify` (`cloud_guard.py:2170`, and `_fed_finding` `:2435`, always held
-with `FED_HOLD`) tags a `git`
-finding with its subcommand, `hold` (`crew_gitallow.py:245`: `-c`, `--config-env`,
-`--exec-path`, `GIT_*` env, a word built at run time `_RUNTIME_RE` `:242`, an option that
-runs a command in any prefix git accepts `_option_hit` `:223`) and `target_dirs` (`:277`);
-`_judge_one` (`cloud_guard.py:3126`) keeps a git scope off the terraform table;
-`cloud_guard.evaluate` (`cloud_guard.py:3210`) asks `finding_setting` (`:584`, off for a
-held finding, a `cd` or opaque line, or an unknown target). `_promote_gate.Gate.git_allowed`
-(`_promote_gate.py:451`, bash) and `_promote_dispatch._git_allowed`
-(`_promote_dispatch.py:289`, the `allow` record `promote-gate.ps1:713` exits 0 on) call
-`promote_exempt` (`crew_gitallow.py:866`): every command of the line is a git command no
-`hold` withholds and the setting covers (`line_exempt`, `:823`; bash words through
-`crew_guards._shell_unquote`; PowerShell through
-`_ps_commands`, `:680`, which refuses a single `&`), the setting read for its `-C`
-targets, and no declared deploy that is itself a git command is contained in it.
-JUDGEMENT: `gh` is deliberately not git; the receipt store is plain files the scope guard
-protects only while `scope.mode` is on (harness, unchanged here), so a forged whole record
-is a deliberate act, not a sandbox escape; git programs the repo configures persistently
-(hooks, `alias.*` set earlier) are outside what a command-line guard can read; a Windows
-CopyFile restore carries ChangeTime over, so on Windows that restore is not told apart.
+(re-measure with `len(GITALLOW_MUTATIONS)`; 85 at crew 1.3.76, run alone: `sabotage*.py` is
+harness). `settings` (`crew_gitallow.py:569`) reads the machine file only (`read_layer`,
+`:353`, one open: absent / unset / set / unreadable plus the file binding; a dangling link
+or a non-directory parent is unreadable, `_dangles` `:396`) and honours `"all"` or a list
+only when `newest_receipt` (`:505`) is a whole applied record (`receipt_problem`, `:461`)
+for exactly that value AND the record's `binding` (sha256, size, mtime_ns, change time,
+`_change_ns` `:411`) equals the file now. A repo `"off"`, malformed value or unreadable file
+vetoes (`_repo_veto`, `:529`), as does each `git -C` target repo's file. Writers:
+`write_refusal` (`:145`) from `crew_config._layer_path_refusal`; `crew_config.write_global_config`
+re-binds through `_carry_git_allow` (`crew_config.py:4077`, `crew_gitallow.backing` `:648` /
+`rebind` `:625`) when it leaves the key alone. Readers, since round 4 ONE reader: a
+fail-closed allowlist. `plain_commands` (`:930`) reads a line as simple commands of plain
+literal words or None: bash through `crew_guards._CommandSplitter` and `_bash_commands`
+(`:750`: no substitution, subshell or group, only `;` `&&` `||` `|` `&` newline) and
+`_bash_plain_word` (`:691`); PowerShell through `_ps_commands` (`:799`: `_PS_SAFE` bare
+words, whole quoted words with no `$`, no curly quotes, `--%` or `%NAME%`).
+`line_git_commands` (`:940`) needs every command to be exactly `git` and `hold` (`:287`:
+`-c`, `--config-env`, `--exec-path`, an option that runs a command in any prefix git takes
+`_option_hit` `:272`, a `git config` that is not plainly a read `_config_is_read` `:236`) to
+say nothing; `line_exempt` (`:970`) adds the setting. The cloud guard: `_classify`
+(`cloud_guard.py:2168`) tags a `git` finding with its subcommand only (none for an `xargs`
+finding); `evaluate` (`cloud_guard.py:3181`) asks `line_plan` (`:984`, the setting read for
+the line's `-C` targets, or off) and `finding_exempt` (`:1003`); `_judge_one`
+(`cloud_guard.py:3113`) keeps a git scope off the terraform table. The promote gate:
+`_promote_gate.Gate.git_allowed` (`_promote_gate.py:451`, bash) and
+`_promote_dispatch._git_allowed` (`_promote_dispatch.py:289`, the `allow` record
+`promote-gate.ps1:713` exits 0 on) call `promote_exempt` (`crew_gitallow.py:1041`): the line
+is `line_exempt` and no declared deploy that is itself a git command is contained in it.
+JUDGEMENT: four review rounds each found a new run-time word form, so the reader lists what
+is plain rather than what is dangerous; one reader for both paths is what keeps them from
+diverging (`test_both_paths_read_one_corpus_alike`). `gh` is deliberately not git; the
+receipt store is plain files the scope guard protects only while `scope.mode` is on, so a
+forged whole record is a deliberate act, not a sandbox escape; git programs the repo
+configures persistently (hooks, `alias.*` set earlier) are outside what a command-line
+guard can read; a Windows CopyFile restore carries ChangeTime over.
 
 ## Orphan reaper and hook self-limit (crew 1.3.50)
 

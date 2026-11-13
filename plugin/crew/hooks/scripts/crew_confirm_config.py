@@ -2,7 +2,7 @@
 """The double confirmation behind a sensitive config change (crew 1.3.9).
 
 A change that lifts a human step -- a `humanOnly.*` key set to `false`
-(`crew_humanonly`), or since crew 1.3.75 a machine `guards.git.allow` set to
+(`crew_humanonly`), or since crew 1.3.76 a machine `guards.git.allow` set to
 `"all"` or a list of git subcommands (`crew_gitallow`) -- is never written by
 `crew_config.py --set` or the
 `/crew:config` menu. It is PROPOSED here, which records a pending change in
@@ -34,7 +34,7 @@ CLI (no writes except `propose` and `cancel`, both into the store only):
 
     crew_confirm_config.py propose --layer machine|repo --key humanOnly.<k> [--root R]
     crew_confirm_config.py propose --layer machine --key guards.git.allow --value '"all"'
-                                   (or --value '["commit","push"]'; crew 1.3.75)
+                                   (or --value '["commit","push"]'; crew 1.3.76)
     crew_confirm_config.py status <change_id>
     crew_confirm_config.py list
     crew_confirm_config.py cancel <change_id>
@@ -82,7 +82,7 @@ def propose(layer, dotted, root=None, global_path=None, now=None, tracker=None,
             value=False):
     """Record a pending change `dotted: value` at `layer`; returns the record.
 
-    `dotted` is a humanOnly key (value `false`) or, crew 1.3.75,
+    `dotted` is a humanOnly key (value `false`) or, crew 1.3.76,
     `guards.git.allow` (machine layer only; value `"all"` or a list of git
     subcommand names). Refused otherwise, and when the repo file is absent,
     tracked by git, or git cannot tell (a tracked file can never opt out, and
@@ -182,7 +182,7 @@ def confirm(change_id, via, prompt_id, session_id=None, global_path=None, now=No
     git_allow = record["key"] == crew_gitallow.KEY
     bound = {}
     try:
-        # crew 1.3.75: a guards.git.allow change carries its value, and gets
+        # crew 1.3.76: a guards.git.allow change carries its value, and gets
         # back the machine file's binding as the write left it (the receipt
         # counts only while the file is still that file); a humanOnly change
         # is always `false` and the writer's default.

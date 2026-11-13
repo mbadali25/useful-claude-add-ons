@@ -2160,14 +2160,13 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
     out = []
 
     # A git command's findings carry its subcommand (`crew_gitallow.SCOPE_KEY`)
-    # and the words crew read after `git` (`ARGS_KEY`), so `evaluate` can let
-    # `guards.git.allow` pass them -- and only when the SHARED reader
-    # (`crew_gitallow.line_plan`, the one the promote gate uses) read the same
-    # git command as a plain literal on a line of nothing but such commands.
-    # An `xargs git` finding (`_fed_finding`) carries none: the words xargs
-    # appends come from input crew cannot see.
-    gitsub = {crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand(args),
-              crew_gitallow.ARGS_KEY: None if fed else tuple(args)} if head == "git" else {}
+    # so `evaluate` can let `guards.git.allow` pass them -- only when the ONE
+    # shared reader (`crew_gitallow.line_plan`, the promote gate's too) reads
+    # the whole line as plain literal git commands. Nothing read here decides
+    # it. An `xargs git` finding (`_fed_finding`) carries no key: the words
+    # xargs appends come from input crew cannot see.
+    gitsub = ({crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand(args)}
+              if head == "git" and not fed else {})
 
     if head in _SHELLS:
         # `-c`, and every cluster carrying it: `bash -lc`, `sh -ec`. With no

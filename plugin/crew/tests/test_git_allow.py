@@ -1,4 +1,4 @@
-"""crew 1.3.75: `guards.git.allow`, the owner's switch that lets git commands past
+"""crew 1.3.76: `guards.git.allow`, the owner's switch that lets git commands past
 crew's command guards (`crew_gitallow.py`).
 
 CLAUDE.md: a hook change that can block carries must-block and must-allow cases,
@@ -28,7 +28,6 @@ import crew_confirm_config
 import crew_fixtures
 import crew_gitallow
 import crew_humanonly
-import crew_mass
 import crew_state
 from review_fixtures import git
 from scope_fixtures import make_repo
@@ -430,12 +429,11 @@ def test_apply_refuses_a_repo_or_off_value(machine):
                                                global_path=str(machine), value=value)
 
 
-# --- the cloud guard: forcePush and the mass guard's git counts ----------------------
+# --- the cloud guard: forcePush ---------------------------------------------------------
 
 def _evaluate(root, command, tool="Bash", mode="block"):
-    mass = crew_mass.settings(str(root))
     return cloud_guard.evaluate(str(root), tool, command.replace("\\", "/"),
-                                {"cwd": str(root)}, mode, mass)
+                                {"cwd": str(root)}, mode)
 
 
 def _rules(result, rule):
@@ -665,6 +663,15 @@ def test_an_allowlist_with_push_lets_force_push_through(tmp_path, machine):
     assert _evaluate(root, "git push --force origin main")["decision"] == "allow"
 
 
+def test_an_allowlist_covers_the_whole_line_or_nothing(tmp_path, machine):
+    """Round 4: `["push"]` lets a line of push commands through, not a push on a
+    line that also runs an unlisted git command."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, ["push"])
+    assert _evaluate(root, "git push --force origin main; git status")["decision"] == "deny"
+    assert _evaluate(root, "git push --force origin main; git push o t")["decision"] == "allow"
+
+
 def test_an_unconfirmed_all_still_refuses_force_push(tmp_path, machine):
     root = make_repo(tmp_path, mode=None)
     _arm(machine, "all", confirmed=False)
@@ -689,63 +696,6 @@ def test_report_mode_records_the_exemption(tmp_path, machine):
     result = _evaluate(root, "git push --force origin main", mode="report")
     assert result["decision"] is None and not result["note"]
     assert any(r[2] == "report:allow" and r[1].startswith("gitAllow") for r in result["rows"])
-
-
-def _mass_repo(tmp_path, machine, files=40):
-    assert machine
-    root = make_repo(tmp_path, mode=None)
-    (root / ".crew" / "config.json").write_text(
-        json.dumps({"guards": {"mass": {"enabled": True}}}), encoding="utf-8")
-    folder = root / "gen"
-    folder.mkdir()
-    for index in range(files):
-        (folder / f"f{index}.txt").write_text("x", encoding="utf-8")
-    git(root, "add", "-A")
-    return root
-
-
-def test_a_mass_commit_stops_with_the_switch_off(tmp_path, machine):
-    root = _mass_repo(tmp_path, machine)
-    result = _evaluate(root, "git commit -qm big")
-    assert result["decision"] in ("ask", "deny"), result
-    assert _rules(result, crew_mass.MASS_CREATE)
-
-
-def test_a_mass_commit_passes_with_all(tmp_path, machine):
-    root = _mass_repo(tmp_path, machine)
-    _arm(machine, "all", extra={"mass": {"enabled": True}})
-    result = _evaluate(root, "git commit -qm big")
-    assert result["decision"] == "allow", result
-
-
-def test_a_mass_commit_passes_with_commit_listed(tmp_path, machine):
-    root = _mass_repo(tmp_path, machine)
-    _arm(machine, ["commit"])
-    assert _evaluate(root, "git commit -qm big")["decision"] == "allow"
-
-
-def test_a_mass_commit_stops_when_commit_is_not_listed(tmp_path, machine):
-    root = _mass_repo(tmp_path, machine)
-    _arm(machine, ["push"])
-    assert _evaluate(root, "git commit -qm big")["decision"] in ("ask", "deny")
-
-
-def test_the_rest_of_the_line_is_still_judged(tmp_path, machine):
-    """`all` loosens git findings only: the `rm` beside the commit still stops."""
-    root = _mass_repo(tmp_path, machine)
-    _arm(machine, "all")
-    big = (root / "gen").as_posix()
-    result = _evaluate(root, f"git commit -qm big && rm -rf {big}")
-    assert result["decision"] in ("ask", "deny"), result
-    assert _rules(result, crew_mass.MASS_DELETE)
-    assert not _rules(result, crew_mass.MASS_CREATE)
-
-
-def test_the_mass_tamper_check_is_untouched(tmp_path, machine):
-    root = _mass_repo(tmp_path, machine)
-    _arm(machine, "all")
-    result = _evaluate(root, "git commit -qm x > .git/crew/mass-approvals/abc.json")
-    assert result["decision"] == "deny"
 
 
 # --- what must stay blocked whatever the switch says ----------------------------------
@@ -1238,13 +1188,15 @@ def test_a_program_variable_reaching_git_stays_refused_with_all(tmp_path, machin
     "GIT_SSH_COMMAND=x; declare GIT_SSH_COMMAND; git push -f origin main",
     "GIT_SSH_COMMAND=x; export -n GIT_SSH_COMMAND; git push -f origin main",
     "FOO=1 git push -f origin main"])
-def test_a_variable_that_does_not_reach_git_as_a_program_passes_with_all(
-        tmp_path, machine, monkeypatch, command):
-    """Must-allow neighbours: not a program name, or never exported."""
+def test_an_assignment_on_the_line_is_not_exempt_with_all(tmp_path, machine, monkeypatch,
+                                                         command):
+    """Round 4 changed this from must-allow to must-block: the allowlist exempts a
+    line only when every command on it is a plain git command, so an assignment,
+    `export` or `declare` beside it (harmless or not) leaves the guards judging."""
     monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
     root = make_repo(tmp_path, mode=None)
     _arm(machine, "all")
-    assert _evaluate(root, command)["decision"] == "allow"
+    assert _evaluate(root, command)["decision"] == "deny"
 
 
 # FIX 4: a `.crew` that is a file, as each host reports it -- Windows says
@@ -1317,6 +1269,176 @@ def test_a_powershell_stop_parsing_force_push_stays_refused_with_all(tmp_path, m
     result = _evaluate(root, "git --% push --force %PACK% origin main", "PowerShell")
     assert result["decision"] == "deny", result
     assert not any(r[1].startswith("gitAllow") for r in result["rows"]), result
+
+
+# --- review round 4 (Codex gpt-6-sol, crew 1.3.76): a fail-closed allowlist -------------
+#
+# The design change: `plain_commands` lists what is plain, and anything else is
+# not exempt. One reader serves the cloud guard (`line_plan`) and the promote
+# gate (`promote_exempt`); `test_both_paths_read_one_corpus_alike` holds them
+# to it.
+
+# BLOCK A: bash ANSI-C quoting (`$'...'`) and `$"..."` hid options from the
+# cloud guard's own lexer (it decoded them to inert text).
+ANSI_C = [
+    "git push -f $'\\x2d\\x2dreceive-pack=x' origin topic",
+    "git push -f $'\\055\\055receive-pack=x' origin topic",
+    "git push -f --rece$'\\x69've-pack=x origin topic",
+    "git push -f origin topic $'\\x2d\\x2dreceive-pack=x'",
+    "git push -f $\"--receive-pack=x\" origin topic"]
+# BLOCK B: a PowerShell expression as an argument; and two more PowerShell
+# forms the old reader took as text (round 4, measured with pwsh 7): a
+# `` `u{2d} `` escape is a `-`, and a curly quote ends a string.
+PS_EXPR = [
+    "git push --force (echo '--receive-pack=deploy-prod') o topic",
+    "git push --force $(echo '--receive-pack=deploy-prod') o topic",
+    "git push --force @(echo '--receive-pack=deploy-prod') o topic",
+    "git push --force \"`u{2d}`u{2d}receive-pack=deploy-prod\" o topic",
+    "git push --force 'a\u2019 --receive-pack=deploy-prod \u2018' o topic",
+    "git push --force {--receive-pack=deploy-prod} o topic",
+    "git push --force [string]'--receive-pack=x' o topic",
+    "git push --force (deploy-prod) o topic"]
+# FIX C: the program word, and a redefinition of git on the same line.
+PROGRAM = [
+    "/usr/*/git push -f origin topic",
+    "/u?r/bin/git push -f origin topic",
+    "~/git push -f origin topic",
+    "/usr/bin/git push -f origin topic",
+    "./git push -f origin topic",
+    "git.exe push -f origin topic",
+    "git() { sh -c id; }; git push -f origin topic",
+    "function git { sh -c id; }; git push -f origin topic",
+    "shopt -s expand_aliases; alias git='sh -c id'; git push -f origin topic",
+    "command git push -f origin topic",
+    "(git push -f origin topic)",
+    "{ git push -f origin topic; }"]
+PS_PROGRAM = [
+    "function git { sh -c id }; git push -f origin topic",
+    "Set-Alias git deploy-prod; git push -f origin topic",
+    "C:/Program/git.exe push -f origin topic",
+    "& git push -f origin topic"]
+# FIX D: `git config` that may set an alias or a program a later git command runs.
+CONFIG_WRITES = [
+    "git config alias.p '!deploy-prod'; git p",
+    "git config core.sshCommand deploy-prod; git push o topic",
+    "git config --global core.pager deploy-prod; git log",
+    "git config --local core.hooksPath /tmp/deploy-prod; git commit -m x",
+    "git config diff.external deploy-prod; git diff",
+    "git config credential.helper '!deploy-prod'; git fetch o",
+    "git config --add sequence.editor deploy-prod; git rebase -i HEAD~2",
+    "git config set gpg.program deploy-prod; git commit -S -m x",
+    "git config --replace-all core.fsmonitor deploy-prod; git status",
+    "git config --edit",
+    "git config --ed",
+    "git config --unset core.hooksPath; git commit -m x",
+    "git config --file .git/config core.editor deploy-prod",
+    "git init --template=/tmp/deploy-prod . ; git commit -m x"]
+CONFIG_READS = [
+    "git config user.name", "git config --get remote.origin.url", "git config --list",
+    "git config -l --show-origin", "git config --global --get-regexp '^alias'",
+    "git config get core.editor", "git config --type=bool --get core.bare",
+    "git config list --name-only"]
+
+# Further forms the allowlist refuses (each pins one rule for a mutation).
+BASH_MORE = [
+    "git push -f origin @{a..c}", "git push -f origin @{a,b}",
+    "git commit -F - <<EOF\n$X\nEOF\n", "git commit -F - <<< $X", "git config edit"]
+PS_MORE = [
+    "git push `n origin topic", "git push --force x'--receive-pack=y' o t",
+    "git push 'a'b origin topic"]
+ROUND4_BLOCK = ([(c, "bash") for c in ANSI_C + PROGRAM + CONFIG_WRITES + BASH_MORE]
+                + [(c, "powershell") for c in PS_EXPR + PS_PROGRAM + CONFIG_WRITES + PS_MORE])
+
+# What stays exempt: plain literal lines of git commands (the broad must-allow).
+PLAIN = [
+    "git commit -m \"fix: x\"", "git commit -m 'wip: x (y) & z'",
+    "git push --force-with-lease origin topic", "git push -f origin topic",
+    "git push -u origin HEAD", "git rebase -i HEAD~3", "git rebase origin/main",
+    "git -C /c/repos/x status", "git --no-pager log -1", "git log --format=%H",
+    "git log --oneline -5", "git status --short", "git diff HEAD~1 -- plugin/crew/CONFIG.md",
+    "git add -A && git commit -m 'x' && git push origin topic",
+    "git fetch origin && git rebase origin/main", "git checkout -b feat/x",
+    "git stash push -m \"msg\"", "git tag -a v1.0 -m \"release 1.0\"", "git branch -D old",
+    "git push origin +topic", "git reset --hard origin/main", "git clean -fdx",
+    "git status; git log -1", "git fetch --all\ngit status"] + CONFIG_READS
+BASH_PLAIN = [
+    "git log @{u}..HEAD", "git rev-parse HEAD@{1}", "git commit -m \"say \\\"hi\\\"\"",
+    "git commit -m \\*", "git commit -F - <<'EOF'\nnotes: deploy-prod $X `y`\nEOF\n",
+    "git commit -F - <<EOF\nplain body\nEOF\n", "git status 2>&1", "git log | git status",
+    "\"git\" status", "'git' status", "\\git status"]
+PS_PLAIN = [
+    "git -C C:\\repos\\x status", "git status 2>&1", "git push origin main *>&1",
+    "git log -1 > out.txt", "git commit -m @'\nit's $deploy-prod\n'@",
+    "git commit -m \"a `\"b`\" c\"", "git commit -m 'it''s'", "git push origin @"]
+ROUND4_ALLOW = ([(c, "bash") for c in PLAIN + BASH_PLAIN]
+                + [(c, "powershell") for c in PLAIN + PS_PLAIN])
+
+
+@pytest.mark.parametrize("command,shell", ROUND4_BLOCK)
+def test_round4_must_block_is_not_line_exempt(command, shell):
+    assert crew_gitallow.line_exempt(command, shell, "all") is False
+
+
+@pytest.mark.parametrize("command,shell", ROUND4_ALLOW)
+def test_round4_plain_git_lines_stay_exempt(command, shell):
+    assert crew_gitallow.line_exempt(command, shell, "all") is True
+
+
+@pytest.mark.parametrize("tool,command", [("Bash", c) for c in ANSI_C + PROGRAM]
+                         + [("PowerShell", c) for c in PS_EXPR + PS_PROGRAM])
+def test_round4_force_push_stays_refused_with_all(tmp_path, machine, tool, command):
+    """The reviewer's repros, through the cloud guard (deny off / allow on before)."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    result = _evaluate(root, command, tool)
+    assert result["decision"] == "deny", result
+    assert not any(r[1].startswith("gitAllow") for r in result["rows"]), result
+
+
+@pytest.mark.parametrize("command", CONFIG_WRITES[:2])
+def test_round4_config_write_is_not_promote_exempt(tmp_path, machine, monkeypatch, command):
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.promote_exempt(command, shell, str(root)) is False
+    assert crew_gitallow.promote_exempt("git config user.name; git commit -m deploy-prod",
+                                        "bash", str(root)) is True
+
+
+@pytest.mark.parametrize("command", CONFIG_WRITES[:2])
+def test_round4_gate_still_gates_a_config_write_with_all(tmp_path, machine, command):
+    if _BASH is None:
+        pytest.skip("no MSYS/POSIX bash")
+    root = _gate_repo(tmp_path)
+    _arm(machine, "all")
+    code, err = run_gate("sh", root, tmp_path / "home", command)
+    assert code == 2, err
+
+
+# One corpus, both paths: the cloud guard exempts a line's force push exactly
+# when the promote gate's reader calls the line exempt.
+PARITY = ([(c, "Bash") for c in ANSI_C + PROGRAM[:6] + EXPANDS[:4]
+           + ["git push -f origin topic", "git push -f origin topic && git status",
+              "git push -f origin 'topic*'", "git push -f origin HEAD@{0}:topic",
+              "git push -f \"$OPT\" origin topic", "git push -f origin topic | tee x",
+              "git config core.sshCommand x; git push -f origin topic"]]
+          + [(c, "PowerShell") for c in PS_EXPR + PS_PROGRAM[2:]
+             + ["git push --force origin topic", "git push --force origin topic; git status",
+                "git push --force $env:OPT origin topic", "git --% push --force %P% o t"]])
+
+
+@pytest.mark.parametrize("tool,command", PARITY)
+def test_both_paths_read_one_corpus_alike(tmp_path, machine, tool, command):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    shell = "powershell" if tool == "PowerShell" else "bash"
+    line = crew_gitallow.line_exempt(command, shell, "all")
+    result = _evaluate(root, command, tool)
+    cloud = any(r[0] == "forcePush" and r[1].startswith("gitAllow") for r in result["rows"])
+    assert cloud is line, (line, result)
 
 
 # --- the mutation table ----------------------------------------------------------------
