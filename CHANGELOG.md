@@ -59,6 +59,14 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Fixed — crew 1.3.76: the scope guard no longer refuses a read-only `echo` or `python3 -c` that names crew's state
+
+- **Summary.** `crew` 1.3.76: reading crew's state with `ls`, `find`, `grep`, `echo`, `printf` or a read-only `python3 -c`/`node -e` is no longer refused by the scope guard, and a quoted `--last-command "..."` value is no longer read as the autopilot approve verb; every write form still blocks.
+- **Cause.** `scope_guard._WRITES_RE` listed `echo`, `printf`, `python*`, `py`, `node` and `perl` by name, so any command that named crew's state beside one of them was refused as a write, and `_AUTOPILOT_APPROVE_RE` matched the word after `--last-command`, so data text that quoted the approve command was refused as a chained approval.
+- **Fix.** A new `_writes()` counts an interpreter as writing unless EVERY interpreter named runs inline code the command shows (`-c`, `-e`, `-p`, a heredoc, a here-string) and that code shows no write marker; a script file, `-m`, a piped or file-fed `-`, a command substitution or any shape it cannot read keeps counting as a write. Redirects, `tee`, `cp`, `mv`, `rm` and `sed` still count. `_LAST_COMMAND_RE` strips a quoted `--last-command` value (not a double-quoted one holding `$` or a backtick) before the approve check. Chained approve, `goal-approve` and the `env -C` form are unchanged (open owner decisions, listed in the PR).
+- **Tests.** `test_scope_guard.py`: 14 read-only commands allowed, 42 write forms refused, the confirm-config store judged the same way, six `--last-command` data cases allowed and eleven approve forms still refused. `sabotage_scope.py`: the stale `_WRITES_RE` anchor now points at `_writes`, and ten new mutations (the interpreter judgement, the write markers, the piped `-`, `echo` and `python` back in the word list, the confirm-config store, `--last-command` stripping), each RED. `humanonly_mutations.py`: its `_WRITES_RE` anchor follows.
+- **Docs.** `docs/guides/crew/src/guide.md` and the rebuilt crew guide (HTML, DOCX, PDF) describe the rule.
+
 ### Changed — crew 1.3.70: `crew_confirm_config.py propose` prints the lines the agent relays to the owner
 
 - **Summary.** `crew` 1.3.70: after an agent proposes a sensitive config change, its output now carries the change and the exact `/crew:confirm-config <change_id>` command for the agent to relay word for word, and no longer claims that no hook records the confirmation.

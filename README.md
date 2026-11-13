@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.76**: The scope guard no longer refuses a read-only `echo` or `python3 -c` that names crew's state. `crew` 1.3.76: reading crew's state with `ls`, `find`, `grep`, `echo`, `printf` or a read-only `python3 -c`/`node -e` is no longer refused by the scope guard, and a quoted `--last-command "..."` value is no longer read as the autopilot approve verb; every write form still blocks.
 - **crew 1.3.70**: `crew_confirm_config.py propose` prints the lines the agent relays to the owner. `crew` 1.3.70: after an agent proposes a sensitive config change, its output now carries the change and the exact `/crew:confirm-config <change_id>` command for the agent to relay word for word, and no longer claims that no hook records the confirmation.
-- **crew 1.3.69**: `/crew:confirm-config` with no id lists the pending proposals instead of naming an agent-side command. `crew` 1.3.69: typing `/crew:confirm-config` with no id (or a wrong, expired or used one) still records nothing, but now shows the proposals you could confirm, each with its id and exact change, or says plainly that none is pending and why.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

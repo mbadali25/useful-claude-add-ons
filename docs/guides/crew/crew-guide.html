@@ -317,9 +317,16 @@ profile and overrides, and the narrower layer wins per guard.
 <p><strong>The scope guard</strong> (<code>scope.mode</code>) runs before each Write, Edit, MultiEdit and
 NotebookEdit. It refuses an edit when the active ticket has no current
 approval, or when the target is outside Touch. It also refuses a shell command
-that tries to write the approval state. <em>What it cannot see:</em> <code>sed -i</code>, a
-redirect or a formatter writing a file. Those are shell writes, and the guard
-judges only the editing tools.</p>
+that tries to write the approval state. That check is textual: a command that
+names crew's state beside a redirect or a writing word (<code>cp</code>, <code>mv</code>, <code>rm</code>,
+<code>sed</code>, <code>tee</code>) is refused, while <code>ls</code>, <code>grep</code>, <code>echo</code> and <code>cat</code> of it are not.
+A script interpreter (<code>python</code>, <code>node</code>, <code>perl</code>) counts as writing only when
+its inline code (<code>-c</code>, <code>-e</code>, a heredoc) shows a write, or when its code cannot
+be read from the command (a script file, <code>-m</code>, a piped <code>-</code>); a quoted
+<code>--last-command "..."</code> value is data and is never read as the approve verb.
+<em>What it cannot see:</em> <code>sed -i</code>, a redirect or a formatter writing a file
+outside crew's state. Those are shell writes, and the guard judges only the
+editing tools.</p>
 <p><strong>The completion audit</strong> runs at Stop. It diffs the whole tree against the
 ticket's start (committed, staged, unstaged and untracked), so shell-made
 writes are caught after the fact. <em>What it cannot see:</em> gitignored files

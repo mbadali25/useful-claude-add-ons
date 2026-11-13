@@ -170,12 +170,58 @@ _DOTGIT_CREW_RE = re.compile(r"\.git[\\/]+crew\b|git-common-dir\b.*\bcrew\b",
 _CONFIRM_STORE_RE = re.compile(r"confirm-config[\\/]", re.IGNORECASE)
 # A redirect (not into /dev/null, $null or another descriptor), or a word
 # that writes files. Reading crew's state -- `cat`, `Get-Content` -- passes.
+# `echo`/`printf` write only through a redirect (already counted above) and
+# the interpreters are judged by `_writes` below, so none is in this list.
 _WRITES_RE = re.compile(
     r"(?<!>)>>?(?!>)(?!\s*(?:&\d|/dev/null\b|\$null\b))|"
-    r"\b(?:tee|cp|mv|rm|ln|touch|mkdir|rmdir|install|dd|rsync|truncate|sed|perl|"
-    r"python[0-9.]*|py|node|chmod|echo|printf|set-content|add-content|out-file|"
+    r"\b(?:tee|cp|mv|rm|ln|touch|mkdir|rmdir|install|dd|rsync|truncate|sed|"
+    r"chmod|set-content|add-content|out-file|"
     r"new-item|copy-item|move-item|remove-item|rename-item|clear-content|set-item|ni|"
     r"sc|ac)\b", re.IGNORECASE)
+# A script interpreter writes only if its code does. EVERY interpreter named in
+# the command must run inline code the command shows (`-c`, `-e`, `-p`, a
+# heredoc or here-string, or `-` read from one): that code is judged by the
+# write markers below. A script file, `-m module`, `-` fed by a pipe or a file,
+# or any other shape cannot be read here, so it counts as a write.
+_INTERP = (r"(?<![\w.-])(?:python[0-9]+(?:\.[0-9]+)?|python|py|node|perl)"
+           r"(?![\w-])(?!\.\w)")
+_INTERP_RE = re.compile(_INTERP, re.IGNORECASE)
+_INLINE_AT = re.compile(
+    _INTERP + r"(?:[ \t]+-[\w-]+(?![\w-]))*[ \t]+(?:-[ce]|-p)(?![\w-])|"
+    + _INTERP + r"(?:[ \t]+-[\w-]+(?![\w-]))*[ \t]+-(?=[ \t]*<<)|"
+    + _INTERP + r"(?:[ \t]+-[\w-]+(?![\w-]))*[ \t]*<<", re.IGNORECASE)
+_OS_READ = (r"path|environ|getcwdb?|listdir|scandir|walk|l?stat|getenv|sep|linesep|"
+            r"fspath|fsencode|fsdecode|name|curdir|pardir|access|readlink|cpu_count|"
+            r"getpid|getuid|getlogin|uname|devnull")
+_INTERP_WRITE_RE = re.compile(
+    r"\bopen\s*\(.*?,\s*(?:mode\s*=\s*)?[\"'][rbtU]*[wax+]|"
+    r"\bopen\s*\(\s*[\"'][rbtU]*[wax+]|\bopen\s*\(.*?\bmode\s*=|"
+    r"\bos\.(?!(?:" + _OS_READ + r")\b)\w|\bos\s+as\b|\bfrom\s+os\s+import\s+(?!path\b)|"
+    r"write_text|write_bytes|\.write\s*\(|writeFile|appendFile|createWriteStream|"
+    r"\bshutil\b|\bunlink\b|\brmtree\b|\bsubprocess\b|\bchild_process\b|\bPopen\b|"
+    r"\bsystem\s*\(|\bexec\w*\s*\(|\bspawn\w*|\bfork\w*|\beval\b|\bcompile\s*\(|"
+    r"__import__|\bimportlib\b|\bgetattr\b|\bctypes\b|\bfileinput\b|"
+    r"\bfs\.\w*(?:write|append|rm|unlink|rename|copy|mkdir|truncate|symlink|chmod)\w*|"
+    r"\.touch\s*\(|\.mkdir\s*\(|\$[\w{(]|`|"
+    r"\bperl\b[^\n;&|]*[ \t]-\w*i", re.IGNORECASE)
+# `--last-command "..."` carries the previous command as DATA; a quoted value
+# there is never the approve verb. A double-quoted value holding `$` or a
+# backtick is left alone: the shell would run what it substitutes.
+_LAST_COMMAND_RE = re.compile(
+    r"(--last-command(?:=|[ \t]+))(?:\"(?:[^\"\\$`]|\\[^$`])*\"|'[^']*')")
+
+
+def _writes(command):
+    """True when `command` shows a write: a redirect or writing word, or an
+    interpreter whose code writes or cannot be read."""
+    if _WRITES_RE.search(command):
+        return True
+    found = list(_INTERP_RE.finditer(command))
+    if not found:
+        return False
+    if any(not _INLINE_AT.match(command, m.start()) for m in found):
+        return True
+    return bool(_INTERP_WRITE_RE.search(command))
 
 
 def _read_payload():
@@ -349,7 +395,7 @@ def _reading_refusal(command, written, common, top, agent_type=None):
         return LANE_REFUSAL
     if _APPROVE_RE.search(command):
         return "it runs `crew_ticket.py approve`; approval comes from the user's own prompt"
-    if _AUTOPILOT_APPROVE_RE.search(command):
+    if _AUTOPILOT_APPROVE_RE.search(_LAST_COMMAND_RE.sub(r"\1", command)):
         return _autopilot_refusal(written, top)
     if _HOOK_RE.search(command):
         return "it names the approval hook, which only the user's prompt may drive"
@@ -357,10 +403,10 @@ def _reading_refusal(command, written, common, top, agent_type=None):
     folded = os.path.normcase(command).replace("\\", "/")
     names_state = bool(_DOTGIT_CREW_RE.search(command)) or bool(
         state and os.path.normcase(state).replace("\\", "/") in folded)
-    if names_state and _WRITES_RE.search(command):
+    if names_state and _writes(command):
         return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
     store = os.path.normcase(confirm_store()).replace("\\", "/")
-    if (_CONFIRM_STORE_RE.search(command) or store in folded) and _WRITES_RE.search(command):
+    if (_CONFIRM_STORE_RE.search(command) or store in folded) and _writes(command):
         return ("it writes under the confirm-config store, the receipts of the owner's "
                 "double confirmation")
     return None

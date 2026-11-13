@@ -177,7 +177,7 @@ SCOPE_MUTATIONS = (
      _SG + "test_a_shell_command_forging_approval_state_is_refused"
      "[Bash-python3 hooks/scripts/crew_ticket.py approve --ticket T-1-module]"),
     ("the session may write crew's state through the shell", GUARD,
-     "    if names_state and _WRITES_RE.search(command):\n",
+     "    if names_state and _writes(command):\n",
      "    if False:\n",
      _SG + "test_a_shell_write_to_the_absolute_state_path_is_refused[module]"),
     ("the bash audit misses stop_hook_active across a newline", AUDIT_SH,
@@ -722,4 +722,48 @@ SCOPE_MUTATIONS = (
     ("the bash wrapper reads the payload itself again", GUARD_SH,
      'PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$DIR/scope_guard.py"\n',
      'INPUT=$(cat)\nprintf \'%s\' "$INPUT" | PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$DIR/scope_guard.py"\n',
-     _SS + "test_the_bash_wrapper_starts_no_helper_programs[bash-echo]"),)
+     _SS + "test_the_bash_wrapper_starts_no_helper_programs[bash-echo]"),
+    # The interpreter judgement (`_writes`) and the `--last-command` data rule.
+    ("an interpreter running a script file no longer counts as a write", GUARD,
+     "    if any(not _INLINE_AT.match(command, m.start()) for m in found):\n"
+     "        return True\n",
+     "",
+     _SG + "test_a_write_to_crews_state_is_still_refused_in_every_form"
+     "[python-script-file-module]"),
+    ("an interpreter running a script after an inline one counts as read-only", GUARD,
+     "    if any(not _INLINE_AT.match(command, m.start()) for m in found):\n",
+     "    if not _INLINE_AT.match(command, found[0].start()):\n",
+     _SG + "test_a_write_to_crews_state_is_still_refused_in_every_form"
+     "[inline-then-script-file-module]"),
+    ("inline interpreter code that writes is read as read-only", GUARD,
+     "    return bool(_INTERP_WRITE_RE.search(command))\n",
+     "    return False\n",
+     _SG + "test_a_write_to_crews_state_is_still_refused_in_every_form"
+     "[python-c-open-w-module]"),
+    ("an interpreter is never a write", GUARD,
+     "    found = list(_INTERP_RE.finditer(command))\n    if not found:\n        return False\n",
+     "    return False\n",
+     _SG + "test_a_write_to_crews_state_is_still_refused_in_every_form"
+     "[python-heredoc-write-module]"),
+    ("a piped stdin script reads as inline code", GUARD,
+     "[ \\t]+-(?=[ \\t]*<<)|\"", "[ \\t]+-|\"",
+     _SG + "test_a_write_to_crews_state_is_still_refused_in_every_form"
+     "[python-stdin-from-a-pipe-module]"),
+    ("echo and printf count as writes by name again", GUARD,
+     'r"chmod|set-content|add-content|out-file|"', 'r"chmod|echo|printf|set-content|add-content|out-file|"',
+     _SG + "test_reading_crews_state_with_a_read_only_interpreter_or_echo_is_allowed"
+     "[echo-module]"),
+    ("any python or node name counts as a write by name again", GUARD,
+     'r"chmod|set-content|add-content|out-file|"', 'r"chmod|python[0-9.]*|node|set-content|out-file|"',
+     _SG + "test_reading_crews_state_with_a_read_only_interpreter_or_echo_is_allowed"
+     "[python-c-open-module]"),
+    ("the confirm-config store ignores interpreter code", GUARD,
+     "store in folded) and _writes(command):", "store in folded) and False:",
+     _SG + "test_the_confirm_config_store_is_judged_the_same_way[python-c-open-w-module]"),
+    ("last-command text is read as the approve verb again", GUARD,
+     'if _AUTOPILOT_APPROVE_RE.search(_LAST_COMMAND_RE.sub(r"\\1", command)):',
+     "if _AUTOPILOT_APPROVE_RE.search(command):",
+     _SG + "test_last_command_text_is_data_and_never_the_approve_verb[double-quoted-word-module]"),
+    ("last-command strips a value that substitutes a command", GUARD,
+     '(?:[^\\"\\\\$`]|\\\\[^$`])*', '(?:[^\\"\\\\]|\\\\.)*',
+     _SG + "test_autopilot_approve_still_needs_the_bare_command[substitution-in-value-module]"),)
