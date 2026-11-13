@@ -131,7 +131,7 @@ HUMANONLY_MUTATIONS = (
      "[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*|*crew:confirm-config*) ;;",
      "[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*) ;;",
      _L + "test_the_wrapper_passes_a_confirm_config_prompt_to_python"),
-    # crew 1.3.65: /crew:confirm-config with no usable id lists the proposals.
+    # crew 1.3.69: /crew:confirm-config with no usable id lists the proposals.
     ("confirm-config list: a bare command confirms the only pending proposal", HOOK,
      '    if not args:\n        return _refuse_confirm(',
      '    if not args:\n        import crew_humanonly as _h  # sabotage\n'

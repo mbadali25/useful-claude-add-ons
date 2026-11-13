@@ -79,7 +79,7 @@ prompt -- carries two more commands, each ONE line, raw or expanded exactly as
   payload's `prompt_id`). The second one, from another prompt, applies it. This
   is the recorder `crew_humanonly.USER_PROMPT` was waiting for; without it no
   opt-out could ever take effect. Typed with no id, a malformed id, or an id
-  `confirm` refuses (crew 1.3.65), the refusal also LISTS the machine's
+  `confirm` refuses (crew 1.3.69), the refusal also LISTS the machine's
   proposals (`_proposals_text`, read-only: it never settles or writes a
   record) so the owner can copy the exact command, or says plainly that
   none is pending and why one may be missing. It never confirms anything:

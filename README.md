@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.65**: `/crew:confirm-config` with no id lists the pending proposals instead of naming an agent-side command. `crew` 1.3.65: typing `/crew:confirm-config` with no id (or a wrong, expired or used one) still records nothing, but now shows the proposals you could confirm, each with its id and exact change, or says plainly that none is pending and why.
+- **crew 1.3.69**: `/crew:confirm-config` with no id lists the pending proposals instead of naming an agent-side command. `crew` 1.3.69: typing `/crew:confirm-config` with no id (or a wrong, expired or used one) still records nothing, but now shows the proposals you could confirm, each with its id and exact change, or says plainly that none is pending and why.
 - **crew 1.3.60**: One hook launcher per event on Windows, and no Git Bash per guard. `crew` 1.3.60: a Bash tool call on Windows now costs about half a second of hook time instead of 1.5 to 2 seconds, because crew registers one bash launcher per event instead of two and runs its guards' Python directly instead of through a Git Bash each; no guard decision changes.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
