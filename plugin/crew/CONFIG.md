@@ -206,15 +206,21 @@ a line it cannot split, a subcommand it cannot see - is off.
 Never exempt, whatever the value: a git command that hands git config or a
 command of its own - a global `-c` (an alias `!cmd`, `core.sshCommand`,
 `core.pager`), `--config-env` or `--exec-path`, a `GIT_*` environment variable
-set on the line, or an option or subcommand that runs a command it is given
-(`rebase --exec`/`-x`, `submodule foreach`, `bisect run`, `push
---receive-pack`, `fetch`/`pull`/`clone`/`ls-remote --upload-pack`, `clone
+set on the line (or assigned and then exported by name, `X=v; export X`), one
+git or what it starts reads a program or config from (`HOME`,
+`XDG_CONFIG_HOME`, `PATH`, `EDITOR`, `PAGER`, `SSH_ASKPASS`, `LD_PRELOAD`,
+...), or an option or subcommand that runs a command it is given
+(`rebase --exec`/`-x`, `submodule foreach`, `bisect run`, `push`/`send-pack
+--receive-pack`/`--exec`, `fetch-pack --upload-pack`/`--exec`,
+`fetch`/`pull`/`clone`/`ls-remote --upload-pack`, `clone
 -u`/`-c`/`--template`, `grep -O`, `difftool --extcmd`, `filter-branch`,
 `instaweb`, `send-email --*-cmd`, `daemon --access-hook`), in any
 abbreviation git accepts (`--exe`, `--receive=...`: git takes an unambiguous
 prefix of a long option). Nor a git command crew cannot read whole: a word
 built when it runs (`"$OPT"`, `${X:-...}`, `$env:X`, a backtick or `$(...)`
-substitution, a PowerShell `@splat`) - so `git commit -m "$(git rev-parse
+substitution, a PowerShell `@splat`; in bash an unquoted brace expansion
+(`--rece{ive-pack,}=x`), glob (`*`, `?`, `[`) or leading `~`; in PowerShell
+`--%`, a `%NAME%`, a glob character or a leading `~`) - so `git commit -m "$(git rev-parse
 HEAD)"` is judged as before - or a git command `xargs` / `parallel` runs,
 whose appended arguments come from input crew cannot see. In PowerShell a
 single `&` (the background or call operator) makes the line unreadable for the

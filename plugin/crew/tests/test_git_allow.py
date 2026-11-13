@@ -1111,6 +1111,214 @@ def test_a_force_push_under_a_looser_policy_does_not_crash(tmp_path, machine, po
     assert rows and not any(r[1].startswith("gitAllow") for r in rows), result
 
 
+# --- review round 3 (Codex gpt-6-sol, crew 1.3.75) ----------------------------------------
+
+# BLOCK 1: a bash word built by brace expansion, a glob or a tilde is run-time.
+EXPANDS = [
+    "git push --rece{ive-pack,ive-pack}=x origin topic",
+    "git push --{receive-pack=x,} origin topic",
+    "git push {--receive-pack=x,--force} origin topic",
+    "git push --rece* origin topic",
+    "git push --rece?ve-pack=x origin topic",
+    "git push --rece[i]ve-pack=x origin topic",
+    "git push ~ origin topic",
+    "git rebase --{exec,} 'deploy-prod' HEAD~1",
+    "git {-c,core.sshCommand=deploy-prod} push o topic",
+    "git push --receive-pac{k..k}=x origin topic"]
+NOT_EXPANDS = [
+    "git commit -m 'why? {a,b} * [x] ~'",
+    "git commit -m \"fix: why?\"",
+    "git commit -m \\*",
+    "git log @{u}..HEAD",
+    "git rev-parse HEAD@{1}",
+    "git push origin HEAD~1:topic",
+    "git commit -m '{a,b}'x"]
+
+
+@pytest.mark.parametrize("command", EXPANDS)
+def test_a_word_bash_expands_is_never_exempt(command):
+    assert crew_gitallow.line_exempt(command, "bash", "all") is False
+
+
+@pytest.mark.parametrize("command", NOT_EXPANDS)
+def test_a_quoted_or_inert_brace_or_glob_is_exempt(command):
+    """Must-allow neighbours: quoted, escaped, or a brace with no `,`/`..`."""
+    assert crew_gitallow.line_exempt(command, "bash", "all") is True
+
+
+@pytest.mark.parametrize("tool,command", [
+    ("Bash", "git push -f --rece{ive-pack,ive-pack}=x origin topic"),
+    ("Bash", "git push -f --{receive-pack=x,} origin topic"),
+    ("Bash", "git push -f --rece* origin topic"),
+    ("Bash", "P=x; git push -f --rece{ive-pack,}=$P origin topic"),
+    ("Bash", "P='--rece*'; git push -f $P origin topic"),
+    ("PowerShell", "git push --force --rece* origin topic")])
+def test_a_force_push_with_a_word_the_shell_expands_stays_refused_with_all(
+        tmp_path, machine, tool, command):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    result = _evaluate(root, command, tool)
+    assert result["decision"] == "deny", result
+    assert not any(r[1].startswith("gitAllow") for r in result["rows"]), result
+
+
+@pytest.mark.parametrize("command", [
+    "git push -f origin 'topic*'", "git push -f origin HEAD@{0}:topic"])
+def test_a_force_push_with_a_quoted_glob_passes_with_all(tmp_path, machine, command):
+    """Must-allow neighbour: quoted, or a brace with no `,`/`..`."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    assert _evaluate(root, command)["decision"] == "allow"
+
+
+_GATE_EXPANDS = [
+    "git push --rece{ive-pack,ive-pack}='deploy-prod' o topic",
+    "git rebase --{exec,} 'deploy-prod' HEAD~1",
+    "git {-c,core.sshCommand=deploy-prod} push o topic",
+    "git send-pack --receive-pack='deploy-prod' o main",
+    "git fetch-pack --exec='deploy-prod' o"]
+
+
+@pytest.mark.parametrize("command", _GATE_EXPANDS)
+def test_gate_still_gates_an_expanded_or_plumbing_program_with_all(tmp_path, machine, command):
+    if _BASH is None:
+        pytest.skip("no MSYS/POSIX bash")
+    root = _gate_repo(tmp_path)
+    code, err = run_gate("sh", root, tmp_path / "home", command)
+    assert code == 2, err
+    _arm(machine, "all")
+    code, err = run_gate("sh", root, tmp_path / "home", command)
+    assert code == 2, err
+
+
+# FIX 2: the plumbing under push and fetch takes a program too.
+PLUMBING = [
+    "git send-pack --receive-pack='terraform apply' o main",
+    "git send-pack --exec='terraform apply' o main",
+    "git send-pack --rec='terraform apply' o main",
+    "git fetch-pack --upload-pack='terraform apply' o",
+    "git fetch-pack --exec='terraform apply' o"]
+
+
+@pytest.mark.parametrize("shell", ["bash", "powershell"])
+@pytest.mark.parametrize("command", PLUMBING)
+def test_plumbing_that_runs_a_program_is_held(command, shell):
+    assert crew_gitallow.line_exempt(command, shell, "all") is False
+
+
+@pytest.mark.parametrize("shell", ["bash", "powershell"])
+@pytest.mark.parametrize("command", ["git send-pack --dry-run o main",
+                                     "git fetch-pack --depth=1 o"])
+def test_plain_plumbing_is_exempt(command, shell):
+    """Must-allow neighbours."""
+    assert crew_gitallow.line_exempt(command, shell, "all") is True
+
+
+# FIX 3: a name exported after a plain assignment carries that value to git;
+# so do the names git reads a program or config from beside GIT_*.
+@pytest.mark.parametrize("command", [
+    "GIT_SSH_COMMAND=x; export GIT_SSH_COMMAND; git push -f origin topic",
+    "GIT_SSH_COMMAND=x; declare -x GIT_SSH_COMMAND; git push -f origin topic",
+    "GIT_SSH_COMMAND=x; typeset -rx GIT_SSH_COMMAND; git push -f origin topic",
+    "HOME=/tmp/evil git push -f origin topic",
+    "XDG_CONFIG_HOME=/tmp/evil git push -f origin topic",
+    "export PATH=/tmp/evil; git push -f origin topic"])
+def test_a_program_variable_reaching_git_stays_refused_with_all(tmp_path, machine,
+                                                               monkeypatch, command):
+    monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    result = _evaluate(root, command)
+    assert result["decision"] == "deny", result
+    assert not any(r[1].startswith("gitAllow") for r in result["rows"]), result
+
+
+@pytest.mark.parametrize("command", [
+    "X=1; export X; git push -f origin main",
+    "GIT_SSH_COMMAND=x; declare GIT_SSH_COMMAND; git push -f origin main",
+    "GIT_SSH_COMMAND=x; export -n GIT_SSH_COMMAND; git push -f origin main",
+    "FOO=1 git push -f origin main"])
+def test_a_variable_that_does_not_reach_git_as_a_program_passes_with_all(
+        tmp_path, machine, monkeypatch, command):
+    """Must-allow neighbours: not a program name, or never exported."""
+    monkeypatch.delenv("GIT_SSH_COMMAND", raising=False)
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    assert _evaluate(root, command)["decision"] == "allow"
+
+
+# FIX 4: a `.crew` that is a file, as each host reports it -- Windows says
+# FileNotFoundError (and `_dangles` must call it unreadable), POSIX says
+# NotADirectoryError (an OSError that is not FileNotFoundError). Each host
+# runs the other's path through a stand-in `open`.
+def _open_raising(exc_type, monkeypatch):
+    real = open
+
+    def fake(path, *args, **kwargs):
+        if str(path).replace("\\", "/").endswith("/.crew/config.json"):
+            raise exc_type(2, "stand-in", str(path))
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(crew_gitallow, "open", fake, raising=False)
+
+
+def test_a_crew_file_windows_reports_missing_is_a_veto(tmp_path, machine, monkeypatch):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    (root / ".crew").rmdir()
+    (root / ".crew").write_text("not a directory", encoding="utf-8")
+    _open_raising(FileNotFoundError, monkeypatch)
+    got = crew_gitallow.settings(str(root))
+    assert got["allow"] == "off" and "veto" in got["why"], got
+
+
+def test_a_crew_file_posix_reports_as_no_directory_is_a_veto(tmp_path, machine, monkeypatch):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    (root / ".crew").rmdir()
+    (root / ".crew").write_text("not a directory", encoding="utf-8")
+    _open_raising(NotADirectoryError, monkeypatch)
+    got = crew_gitallow.settings(str(root))
+    assert got["allow"] == "off" and "veto" in got["why"], got
+
+
+def test_a_missing_repo_config_under_a_real_crew_dir_is_no_veto(tmp_path, machine,
+                                                                monkeypatch):
+    """Must-allow neighbour: `.crew/` is a directory, the file just is not there."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    _open_raising(FileNotFoundError, monkeypatch)
+    assert _setting(root) == "all"
+
+
+# FIX 5: PowerShell's `--%` hands git the rest with %NAME% expanded at run time.
+PS_RUNTIME = [
+    "git --% push %PACK% --force origin main",
+    "git push %PACK% --force origin main",
+    "git --% push --force origin main",
+    "git push --force --rece* origin main",
+    "git push --force origin ~"]
+
+
+@pytest.mark.parametrize("command", PS_RUNTIME)
+def test_a_powershell_word_expanded_at_run_time_is_never_exempt(command):
+    assert crew_gitallow.line_exempt(command, "powershell", "all") is False
+
+
+@pytest.mark.parametrize("command", [
+    "git log -1 --format=%H", "git commit -m '100% done'", "git push origin HEAD~1:topic"])
+def test_a_powershell_percent_that_is_no_variable_is_exempt(command):
+    """Must-allow neighbours: one `%`, no `%NAME%` pair, a `~` inside a word."""
+    assert crew_gitallow.line_exempt(command, "powershell", "all") is True
+
+
+def test_a_powershell_stop_parsing_force_push_stays_refused_with_all(tmp_path, machine):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    result = _evaluate(root, "git --% push --force %PACK% origin main", "PowerShell")
+    assert result["decision"] == "deny", result
+    assert not any(r[1].startswith("gitAllow") for r in result["rows"]), result
+
+
 # --- the mutation table ----------------------------------------------------------------
 
 def test_every_mutation_anchor_is_present_exactly_once():

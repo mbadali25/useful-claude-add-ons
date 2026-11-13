@@ -55,13 +55,18 @@ deliberate act, not an accident; they are not a sandbox.
 
 NEVER EXEMPT, whatever the value (`hold`): a git command that carries config
 or a command line of its own -- a global `-c`, `--config-env` or
-`--exec-path`, a `GIT_*` environment assignment, or an option or subcommand
+`--exec-path`, a `GIT_*` environment assignment or one of `PROGRAM_VARS`
+(`HOME`, `XDG_CONFIG_HOME`, `PATH`, ...; also a name exported after a plain
+assignment, `X=v; export X`), or an option or subcommand
 that runs a command it is handed (`rebase --exec`, `submodule foreach`,
-`bisect run`, `push --receive-pack`, `fetch --upload-pack`, `grep -O`,
+`bisect run`, `push --receive-pack`, `send-pack --exec`, `fetch --upload-pack`,
+`fetch-pack --exec`, `grep -O`,
 `difftool --extcmd`, `filter-branch`, ...), in any abbreviation git accepts
 (`--exe`, `--receive=`); and a git command crew cannot read whole: a word
-built when it runs (`$`, a backtick, a PowerShell `@splat`), or arguments
-`xargs` / `parallel` append from input (crew 1.3.75 review round 2). A git command aimed at another
+built when it runs (`$`, a backtick, a PowerShell `@splat`; in bash an
+unquoted brace expansion, glob or leading `~`, `Expands`; in PowerShell
+`--%`, a `%NAME%`, a glob character or a leading `~`), or arguments
+`xargs` / `parallel` append from input (crew 1.3.75 review rounds 2-3). A git command aimed at another
 repository (`git -C <dir>`) is exempt only when that repository's own file
 does not veto it either; one whose target crew cannot tell (`--git-dir`,
 `--work-tree`, a `-C` it cannot read, a line that changes directory) is not
@@ -111,6 +116,16 @@ UNSEEN = None
 # append come from input crew cannot see (`echo "push --receive-pack=x" | xargs
 # git`), the same hole as a word built at run time (crew 1.3.75 review round 2).
 FED_HOLD = "xargs / parallel append arguments to it that crew cannot see"
+# Environment names, beside `GIT_*`, from which git -- or the ssh, shell,
+# pager, editor or perl it starts -- reads a program, config or code: `HOME`
+# (and Windows' fallbacks) and `XDG_CONFIG_HOME` name the global gitconfig
+# (an alias `!cmd`, `core.sshCommand`; measured), `PATH` picks which `ssh`
+# runs, and the rest are programs or code by name (crew 1.3.75 review round 3).
+PROGRAM_VARS = frozenset((
+    "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "XDG_CONFIG_HOME", "PATH",
+    "EDITOR", "VISUAL", "PAGER", "LESSOPEN", "LESSCLOSE", "SSH_ASKPASS",
+    "BASH_ENV", "ENV", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES",
+    "DYLD_LIBRARY_PATH", "PERL5OPT", "PERL5LIB"))
 
 _REFUSAL = ("lets every git command past crew's command guards, so it needs the "
             "owner's double confirmation: `crew_confirm_config.py propose --layer "
@@ -196,6 +211,10 @@ _INJECT_GLOBAL_RE = re.compile(r"^(?:-c.*|--config-env(?:=.*)?|--exec-path(?:=.*
 _RUNS = {
     "rebase": ("-x", "--exec"),
     "push": ("--receive-pack", "--exec"),
+    # The plumbing under push and fetch takes the same program option (crew
+    # 1.3.75 review round 3: both ran a handed program, measured).
+    "send-pack": ("--receive-pack", "--exec"),
+    "fetch-pack": ("--upload-pack", "--exec"),
     "fetch": ("--upload-pack",),
     "pull": ("--upload-pack",),
     "clone": ("--upload-pack", "-u", "-c", "--config", "--template"),
@@ -242,16 +261,97 @@ def _option_hit(word, option):
 _RUNTIME_RE = re.compile(r"[$`]|^@[A-Za-z_]")
 
 
-def hold(args, env=None):
-    """Why a git command (its words after `git`) may never be exempted, or
-    None. `env` is the environment assignments crew saw for it (names any
-    case): a `GIT_*` one hands git a program or config the same way."""
+class Expands(str):
+    """A bash word the shell rewrites when it runs, marked by whoever split
+    it with its quoting in view (`bash_word`, cloud_guard's lexer): brace
+    expansion (`--rece{ive-pack,}=x` is `--receive-pack=x`), a glob
+    (`--rece*` matches a file named `--receive-pack=x`) or a leading tilde
+    (`~` is $HOME, which the line may have set). crew 1.3.75 review round 3.
+    Anything that rebuilds the word drops the mark, so a rebuilder that may
+    keep such a word re-marks it (cloud_guard's `_substitute`)."""
+
+    __slots__ = ()
+
+
+# Brace expansion: an unquoted `{...}` holding an unquoted `,` or `..`.
+_BRACE_RE = re.compile(r"\{[^{}]*(?:,|\.\.)[^{}]*\}")
+_GLOB_CHARS = "*?["
+
+
+def skeleton_expands(skeleton):
+    """True when a bash word whose UNQUOTED text is `skeleton` (each quoted or
+    escaped run replaced by a NUL) is rewritten when it runs: a brace
+    expansion, a glob character, or a leading tilde. `'why?'` and `"{a,b}"`
+    are literal; `why?` and `{a,b}` are not."""
+    return (any(c in skeleton for c in _GLOB_CHARS) or skeleton.startswith("~")
+            or bool(_BRACE_RE.search(skeleton)))
+
+
+def bash_skeleton(raw):
+    """Raw bash word `raw` with every quoted or escaped run (`'...'`,
+    `"..."`, `$'...'`, `\\x`) replaced by a NUL: the text bash still
+    expands."""
+    out, pos, n = [], 0, len(raw)
+    while pos < n:
+        char = raw[pos]
+        if char == "\\":
+            out.append("\0")
+            pos += 2
+        elif char == "'" or raw.startswith("$'", pos) or char == '"':
+            start = pos + (2 if char == "$" else 1)
+            close = "'" if char != '"' else '"'
+            end = start
+            while end < n and raw[end] != close:
+                # `'...'` has no escapes; `"..."` and `$'...'` do.
+                end += 2 if raw[end] == "\\" and char != "'" else 1
+            out.append("\0")
+            pos = end + 1
+        else:
+            out.append(char)
+            pos += 1
+    return "".join(out)
+
+
+def bash_word(raw):
+    """Raw bash word `raw` after quote removal, marked `Expands` when bash
+    rewrites it when it runs."""
+    import crew_guards  # pylint: disable=import-outside-toplevel
+    word = crew_guards._shell_unquote(raw)  # pylint: disable=protected-access
+    return Expands(word) if skeleton_expands(bash_skeleton(raw)) else word
+
+
+# PowerShell: after `--%` the rest of the line goes to git unparsed, with
+# `%NAME%` expanded when it runs (measured, PowerShell 7 on Windows), and a
+# `.cmd` shim named git has cmd.exe expand `%NAME%` anyway; PowerShell 7 on
+# Linux and macOS globs a bare native argument and expands a bare `~`. crew's
+# PowerShell readers do not keep which part of a word was quoted, so any
+# `%NAME%`, glob character or leading `~` in a PowerShell git word is read as
+# run-time (crew 1.3.75 review round 3).
+_PS_RUNTIME_RE = re.compile(r"%[^%\s]+%|[*?\[]|^~")
+# A PowerShell redirection word (`*>&1`, `2>>log`, `>out`): its `*` is a
+# stream, not a glob.
+_PS_REDIRECT_RE = re.compile(r"^(?:\d|\*)?>")
+
+
+def hold(args, env=None, shell="bash"):
+    """Why a git command (its words after `git`, read as `shell`) may never be
+    exempted, or None. `env` is the environment assignments crew saw for it
+    (names any case): a `GIT_*` one hands git a program or config the same
+    way, and so does one git or what it runs reads a program or config
+    from (`PROGRAM_VARS`)."""
     for name, value in (env or {}).items():
-        if value is not None and isinstance(name, str) and name.upper().startswith("GIT_"):
+        if value is None or not isinstance(name, str):
+            continue
+        if name.upper().startswith("GIT_") or name.upper() in PROGRAM_VARS:
             return f"it sets {name.upper()} for git"
     for word in args:
-        if not isinstance(word, str) or _RUNTIME_RE.search(word):
+        if not isinstance(word, str) or isinstance(word, Expands) or _RUNTIME_RE.search(word):
             return "a word of it is built when it runs, so crew cannot see what git is handed"
+        if shell == "powershell" and _PS_REDIRECT_RE.match(word):
+            continue  # `*>&1`, `2>out`: a redirection, not an argument git sees
+        if shell == "powershell" and (word == "--%" or _PS_RUNTIME_RE.search(word)):
+            return ("a word of it is expanded when it runs (PowerShell `--%`, `%NAME%`, a "
+                    "glob or `~`), so crew cannot see what git is handed")
     words, index = _global_split(list(args))
     for word in words:
         if word != "-C" and _INJECT_GLOBAL_RE.match(word):
@@ -664,11 +764,11 @@ def _bash_commands(text, depth=0):
         return None
     out = []
     for words in commands:
-        # bash's own quote removal (`_shell_unquote`), not `_dequote`, which
-        # drops every quote character: `"./g'it"` runs a program named
-        # `./g'it`, not git (crew 1.3.75 review round 2).
-        out.append([crew_guards._shell_unquote(w)  # pylint: disable=protected-access
-                    for w in words])
+        # bash's own quote removal (`_shell_unquote`, in `bash_word`), not
+        # `_dequote`, which drops every quote character: `"./g'it"` runs a
+        # program named `./g'it`, not git (crew 1.3.75 review round 2). A word
+        # bash rewrites when it runs is marked `Expands` (round 3).
+        out.append([bash_word(w) for w in words])
     for sub in subs:
         inner = _bash_commands(sub, depth + 1)
         if inner is None:
@@ -801,7 +901,7 @@ def line_git_commands(command, shell):
     for words in commands:
         if not words or not _is_git_word(words[0]):
             return None
-        if hold(words[1:]) is not None:
+        if hold(words[1:], shell=shell) is not None:
             return None
         out.append(words[1:])
     return out

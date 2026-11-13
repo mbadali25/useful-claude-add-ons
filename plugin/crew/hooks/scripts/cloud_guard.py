@@ -547,7 +547,7 @@ def _lex_bash(text, unsure=None):
     cmds, subs, pending = [], [], []
     unsure = [] if unsure is None else unsure
     state = {"cur": _Cmd(), "word": None, "redirect": None, "quoted": False,
-             "reread": False}
+             "reread": False, "skel": []}
 
     def doubt(reason, alt=None):
         unsure.append(reason)
@@ -562,6 +562,10 @@ def _lex_bash(text, unsure=None):
         if word is None:
             return
         value = "".join(word)
+        if crew_gitallow.skeleton_expands("".join(state["skel"])):
+            # Brace expansion, a glob or a leading tilde: bash rewrites the
+            # word when it runs (crew 1.3.75 review round 3).
+            value = crew_gitallow.Expands(value)
         state["word"] = None
         quoted, state["quoted"] = state["quoted"], False
         redirect = state["redirect"]
@@ -596,8 +600,11 @@ def _lex_bash(text, unsure=None):
 
     def add(chars, quoted=False):
         if state["word"] is None:
-            state["word"] = []
+            state["word"], state["skel"] = [], []
         state["word"].append(chars)
+        # The word's unquoted text, each quoted run a NUL (`crew_gitallow.
+        # skeleton_expands`).
+        state["skel"].append("\0" if quoted else chars)
         state["quoted"] = state["quoted"] or quoted
 
     i, n = 0, len(text)
@@ -2169,7 +2176,7 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
     # of its own) and the `-C` directories it acts on (`target_dirs`).
     gitsub = {crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand(args),
               crew_gitallow.HOLD_KEY: crew_gitallow.FED_HOLD if fed
-              else crew_gitallow.hold(args, env),
+              else crew_gitallow.hold(args, env, shell),
               crew_gitallow.DIRS_KEY: crew_gitallow.target_dirs(args)} if head == "git" else {}
     for mass in crew_mass.classify(head, args, shell, bool(fed), sql):
         out.append(Finding(mass.rule, text, mass.what, None, False, None,
@@ -2706,7 +2713,13 @@ def _substitute(word, variables):
     out = re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)",
                  repl, word)
     # The same object when nothing changed, so a `_Bare` word stays marked.
-    return word if out == word else out
+    if out == word:
+        return word
+    # A word bash rewrites when it runs stays marked, and so does one whose
+    # substituted value bash may glob (crew 1.3.75 review round 3).
+    if isinstance(word, crew_gitallow.Expands) or crew_gitallow.skeleton_expands(out):
+        return crew_gitallow.Expands(out)
+    return out
 
 
 _PS_ENV_RE = re.compile(r"^\$env:([A-Za-z_][A-Za-z0-9_]*)(?:=(.*))?$",
@@ -2919,6 +2932,8 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
         else:
             head = words[0]
             if head in ("export", "declare", "typeset", "local", "readonly"):
+                flags = "".join(w[1:] for w in words[1:] if w.startswith("-"))
+                exporting = "n" not in flags if head == "export" else "x" in flags
                 for word in words[1:]:
                     if ctx is not None and ("$" in word or "`" in word):
                         # `export $(cat prod.env)`: names and values built at
@@ -2931,6 +2946,11 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
                         exported.add(match.group(1))
                     elif not word.startswith("-"):
                         exported.add(word)
+                        if exporting and word.lower() in variables:
+                            # `X=v; export X`: the value assigned before
+                            # reaches every child from here on (crew 1.3.75
+                            # review round 3).
+                            env[word] = variables[word.lower()]
                 continue
             if head == "unset":
                 for word in words[1:]:

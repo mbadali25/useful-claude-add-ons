@@ -352,15 +352,21 @@ a line it cannot split, a subcommand it cannot see - is off.</p>
 <p>Never exempt, whatever the value: a git command that hands git config or a
 command of its own - a global <code>-c</code> (an alias <code>!cmd</code>, <code>core.sshCommand</code>,
 <code>core.pager</code>), <code>--config-env</code> or <code>--exec-path</code>, a <code>GIT_*</code> environment variable
-set on the line, or an option or subcommand that runs a command it is given
-(<code>rebase --exec</code>/<code>-x</code>, <code>submodule foreach</code>, <code>bisect run</code>, <code>push
---receive-pack</code>, <code>fetch</code>/<code>pull</code>/<code>clone</code>/<code>ls-remote --upload-pack</code>, <code>clone
+set on the line (or assigned and then exported by name, <code>X=v; export X</code>), one
+git or what it starts reads a program or config from (<code>HOME</code>,
+<code>XDG_CONFIG_HOME</code>, <code>PATH</code>, <code>EDITOR</code>, <code>PAGER</code>, <code>SSH_ASKPASS</code>, <code>LD_PRELOAD</code>,
+...), or an option or subcommand that runs a command it is given
+(<code>rebase --exec</code>/<code>-x</code>, <code>submodule foreach</code>, <code>bisect run</code>, <code>push</code>/<code>send-pack
+--receive-pack</code>/<code>--exec</code>, <code>fetch-pack --upload-pack</code>/<code>--exec</code>,
+<code>fetch</code>/<code>pull</code>/<code>clone</code>/<code>ls-remote --upload-pack</code>, <code>clone
 -u</code>/<code>-c</code>/<code>--template</code>, <code>grep -O</code>, <code>difftool --extcmd</code>, <code>filter-branch</code>,
 <code>instaweb</code>, <code>send-email --*-cmd</code>, <code>daemon --access-hook</code>), in any
 abbreviation git accepts (<code>--exe</code>, <code>--receive=...</code>: git takes an unambiguous
 prefix of a long option). Nor a git command crew cannot read whole: a word
 built when it runs (<code>"$OPT"</code>, <code>${X:-...}</code>, <code>$env:X</code>, a backtick or <code>$(...)</code>
-substitution, a PowerShell <code>@splat</code>) - so <code>git commit -m "$(git rev-parse
+substitution, a PowerShell <code>@splat</code>; in bash an unquoted brace expansion
+(<code>--rece{ive-pack,}=x</code>), glob (<code>*</code>, <code>?</code>, <code>[</code>) or leading <code>~</code>; in PowerShell
+<code>--%</code>, a <code>%NAME%</code>, a glob character or a leading <code>~</code>) - so <code>git commit -m "$(git rev-parse
 HEAD)"</code> is judged as before - or a git command <code>xargs</code> / <code>parallel</code> runs,
 whose appended arguments come from input crew cannot see. In PowerShell a
 single <code>&amp;</code> (the background or call operator) makes the line unreadable for the
