@@ -260,7 +260,9 @@ fail-closed: a command made only of ten read-only programs (`ls`, `cat`,
 `head`, `tail`, `wc`, `stat`, `grep`, `egrep`, `fgrep`, `find`), each with
 only options on its explicit allow-list and plain literal words (no `$` or
 backtick, even inside single quotes), so `ls .git/crew | grep python3`
-passes; shell builtins such as `test` and any unknown option (`find -rm`,
+passes. The reader takes `2>/dev/null` and `2>&1` out of the word list wherever
+they stand, before it checks any option, because bash removes them before the
+program runs (a quoted look-alike is refused); shell builtins such as `test` and any unknown option (`find -rm`,
 `tail -f`, `grep --pager`) keep the refusal; anything the
 guard cannot parse completely keeps the refusal. *What it cannot see:* `sed -i`,
 a redirect or a formatter writing a file outside crew's state. Those are shell

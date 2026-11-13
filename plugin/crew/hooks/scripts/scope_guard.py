@@ -231,30 +231,39 @@ _FIND_VALUES = frozenset((
 
 
 def _simple_commands(command):
-    """`command` split into simple commands, each a list of (word, quoted)
-    pairs, or None when any of it cannot be read here. Reads only plain words,
+    """`command` split into simple commands, each an (argv, redirects) pair, or
+    None when any of it cannot be read here. `argv` is the list of (word, quoted)
+    pairs bash hands the program; `redirects` is the list of the words
+    `2>/dev/null` and `2>&1` that bash removes from the line BEFORE the program
+    runs (a redirect is parsed out wherever it stands: before the program, between
+    an option and its value, after `--`), so no option check may ever count one as
+    an argument. Only an UNQUOTED word is a redirect; a quoted look-alike contains
+    `>` and is refused below. Reads only plain words,
     plain '...' and "..." strings, the separators `;` `&&` `||` `|` and the
     words `2>/dev/null` and `2>&1`; everything else (a `$` or backtick anywhere,
     even inside single quotes, `\\`, glob, brace, paren, `#`, `~`, `!`, `<`, a
     lone `&`, a newline, an unterminated quote, an empty command) is None. A
     `$` in single quotes is inert to the shell, but a builtin may evaluate its
     argument (`test -v 'a[$(cmd)]'`), so it is refused here too."""
-    commands, words, word = [], [], None
+    commands, words, redirects, word = [], [], [], None
     quoted, i, n = False, 0, len(command)
 
     def end_word():
         nonlocal word, quoted
         if word is not None:
-            words.append((word, quoted))
+            if not quoted and word in _REDIRECT_WORDS:
+                redirects.append(word)
+            else:
+                words.append((word, quoted))
         word, quoted = None, False
 
     def end_command():
-        nonlocal words
+        nonlocal words, redirects
         end_word()
         if not words:
             return False
-        commands.append(words)
-        words = []
+        commands.append((words, redirects))
+        words, redirects = [], []
         return True
 
     while i < n:
@@ -303,8 +312,12 @@ def _simple_commands(command):
             return None
     if not end_command():
         return None
-    for each in commands:
-        for text, was_quoted in each:
+    # A redirect word never reaches argv (`end_word` moved it out), so any `<`, `>`
+    # or `&` left in argv is something this reader does not know. The
+    # `text not in _REDIRECT_WORDS` clause is a second line of defence: should
+    # one ever be kept in argv, it is still refused as soon as it is quoted.
+    for argv, _ in commands:
+        for text, was_quoted in argv:
             if any(c in text for c in "<>&") and (was_quoted or text not in _REDIRECT_WORDS):
                 return None
     return commands
@@ -384,8 +397,8 @@ def _read_only(command):
     parsed = _simple_commands(command)
     if not parsed:
         return False
-    for each in parsed:
-        (program, was_quoted), args = each[0], [t for t, _ in each[1:]]
+    for argv, _redirects in parsed:
+        (program, was_quoted), args = argv[0], [t for t, _ in argv[1:]]
         if was_quoted or program not in _READ_ONLY_PROGRAMS:
             return False
         if not _plain_args_ok(program, args):

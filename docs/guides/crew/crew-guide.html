@@ -324,7 +324,9 @@ fail-closed: a command made only of ten read-only programs (<code>ls</code>, <co
 <code>head</code>, <code>tail</code>, <code>wc</code>, <code>stat</code>, <code>grep</code>, <code>egrep</code>, <code>fgrep</code>, <code>find</code>), each with
 only options on its explicit allow-list and plain literal words (no <code>$</code> or
 backtick, even inside single quotes), so <code>ls .git/crew | grep python3</code>
-passes; shell builtins such as <code>test</code> and any unknown option (<code>find -rm</code>,
+passes. The reader takes <code>2&gt;/dev/null</code> and <code>2&gt;&amp;1</code> out of the word list wherever
+they stand, before it checks any option, because bash removes them before the
+program runs (a quoted look-alike is refused); shell builtins such as <code>test</code> and any unknown option (<code>find -rm</code>,
 <code>tail -f</code>, <code>grep --pager</code>) keep the refusal; anything the
 guard cannot parse completely keeps the refusal. <em>What it cannot see:</em> <code>sed -i</code>,
 a redirect or a formatter writing a file outside crew's state. Those are shell

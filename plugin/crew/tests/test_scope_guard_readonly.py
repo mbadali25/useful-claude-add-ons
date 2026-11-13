@@ -204,14 +204,92 @@ def test_approve_forms_stay_refused_exactly_as_on_main(command):
 
 
 def test_simple_commands_reads_only_the_documented_shapes():
+    ls_a = [("ls", False), ("a", False)]
     assert [scope_guard._simple_commands(c) for c in (
         "ls a", "ls 'a b' | wc -l", "ls a 2>&1", "ls a; ls b && ls c || ls d", "ls $x", "ls a &")
-    ] == [[[("ls", False), ("a", False)]],
-          [[("ls", False), ("a b", True)], [("wc", False), ("-l", False)]],
-          [[("ls", False), ("a", False), ("2>&1", False)]],
-          [[("ls", False), ("a", False)], [("ls", False), ("b", False)],
-           [("ls", False), ("c", False)], [("ls", False), ("d", False)]],
+    ] == [[(ls_a, [])],
+          [([("ls", False), ("a b", True)], []), ([("wc", False), ("-l", False)], [])],
+          [(ls_a, ["2>&1"])],
+          [(ls_a, []), ([("ls", False), ("b", False)], []),
+           ([("ls", False), ("c", False)], []), ([("ls", False), ("d", False)], [])],
           None, None]
+
+
+@pytest.mark.parametrize("command,argv,redirects", [
+    pytest.param("find . -name 2>/dev/null -name", ["find", ".", "-name", "-name"],
+                 ["2>/dev/null"], id="between-a-value-option-and-its-value"),
+    pytest.param("2>&1 ls a", ["ls", "a"], ["2>&1"], id="before-the-program"),
+    pytest.param("ls -- 2>/dev/null a", ["ls", "--", "a"], ["2>/dev/null"], id="after-double-dash"),
+    pytest.param("ls 2>&1 a 2>/dev/null", ["ls", "a"], ["2>&1", "2>/dev/null"], id="two"),
+])
+def test_a_redirect_word_is_never_part_of_argv(command, argv, redirects):
+    ((words, found),) = scope_guard._simple_commands(command)
+    assert ([w for w, _ in words], found) == (argv, redirects)
+
+
+@pytest.mark.parametrize("command", [
+    pytest.param("ls '2>/dev/null'", id="quoted-redirect"),
+    pytest.param("ls \"2>&1\"", id="double-quoted-redirect"),
+    pytest.param("ls 2'>'/dev/null", id="quote-inside-the-redirect"),
+    pytest.param("ls x2>/dev/null", id="redirect-glued-to-a-word"),
+    pytest.param("ls 22>/dev/null", id="other-descriptor"),
+    pytest.param("ls 2>/dev/nullx", id="redirect-target-extended"),
+    pytest.param("ls 2>&1x", id="dup-target-extended"),
+    pytest.param("2>/dev/null", id="only-a-redirect"),
+    pytest.param("ls 2> /dev/null", id="space-after-the-operator"),
+    pytest.param("ls 1>/dev/null", id="stdout-redirect"),
+])
+def test_only_an_unquoted_standalone_redirect_word_is_read(command):
+    assert scope_guard._simple_commands(command) is None
+
+
+# Review round 4 (crew 1.3.86): `_simple_commands` kept `2>/dev/null` and `2>&1` in
+# the argument list, so a value option swallowed one and every real argument after
+# it shifted by one position. `find ./-name -name 2>/dev/null -name -exec touch X
+# '{}' +` read as `-name` taking the redirect and `-name` taking `-exec`; real find
+# sees `-name` taking `-name` and `-exec` as an action. The exemption must read
+# the argv bash hands the program, so a redirect word is dropped before any option
+# check.
+_PWN = f"{S}/approvals/PWN"
+_FIND_PAYLOADS = ["-delete", f"-fprint {_PWN}", f"-exec touch {_PWN} '{{}}' +",
+                  f"-exec rm {_PWN} '{{}}' +", f"-execdir touch {_PWN} '{{}}' +",
+                  f"-ok rm {_PWN} '{{}}' ;"]
+_FIND_VALUE_OPTIONS = ["-name", "-iname", "-path", "-regex", "-newer", "-user", "-group",
+                       "-size", "-perm", "-type", "-maxdepth", "-mtime"]
+_REDIRECTS = ["2>/dev/null", "2>&1"]
+
+
+@pytest.mark.parametrize("redirect", _REDIRECTS)
+@pytest.mark.parametrize("payload", _FIND_PAYLOADS)
+@pytest.mark.parametrize("option", _FIND_VALUE_OPTIONS)
+def test_a_redirect_never_shifts_find_options_into_the_exemption(option, payload, redirect):
+    for line in (f"find {S} {option} {redirect} {option} {payload}",
+                 f"find ./-name -name {redirect} -name {payload}",
+                 f"find {S} {redirect} {option} {option} {payload}",
+                 f"{redirect} find {S} {option} {redirect} {option} {payload}",
+                 f"find {S} -- {redirect} {option} {option} {payload}"):
+        assert not scope_guard._read_only(line), line
+
+
+@pytest.mark.parametrize("redirect", _REDIRECTS)
+@pytest.mark.parametrize("line", [
+    "grep -e x {r} -f {S}/x {S}", "grep -e x {r} --pager=sh {S}", "grep --include=x {r} -f x {S}",
+    "grep {r} -e x --pager=sh {S}", "head -n 3 {r} -c {S}/x", "head {r} -n {r} -c 3 {S}/x",
+    "tail -c {r} -f {S}/x", "tail {r} -f {S}/x", "ls {r} -I x {S}",
+    "cat {r} -f {S}",
+])
+def test_a_redirect_never_hides_an_option_that_is_off_the_allow_list(line, redirect):
+    assert not scope_guard._read_only(line.format(r=redirect, S=S))
+
+
+@pytest.mark.parametrize("line", [
+    "ls 2>&1 {S}/x", "grep -rn x {S} 2>/dev/null | head", "cat {S}/x 2>/dev/null",
+    "cat 2>/dev/null {S}/x", "head -n 2>&1 3 {S}/x", "tail 2>&1 -n 3 {S}/x",
+    "grep -e 2>/dev/null python3 {S}", "find {S} -name 2>/dev/null 'x*' -type f -print",
+    "stat -c 2>&1 %n {S}/x", "find {S} 2>&1 -maxdepth 2 -name x -o -name y",
+])
+def test_a_redirect_is_dropped_from_argv_so_real_reads_stay_exempt(line):
+    assert scope_guard._read_only(line.format(S=S))
 
 
 # The third review round (crew 1.3.82): `test -v 'a[$(cmd)]'` ran cmd (bash

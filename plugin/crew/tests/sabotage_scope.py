@@ -761,6 +761,24 @@ SCOPE_MUTATIONS = (
      "_REDIRECT_WORDS):\n                return None\n",
      "            pass\n",
      _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[stderr-to-a-file]"),
+    # Review round 4: a redirect word counted as an argument shifted every option
+    # value after it by one word (`find ./-name -name 2>/dev/null -name -exec ...`).
+    ("a redirect word stays in argv, so it shifts the option check", GUARD,
+     "            if not quoted and word in _REDIRECT_WORDS:\n"
+     "                redirects.append(word)\n            else:\n"
+     "                words.append((word, quoted))\n",
+     "            words.append((word, quoted))\n",
+     _RO + "test_a_redirect_never_shifts_find_options_into_the_exemption"),
+    ("a redirect word stays in argv (the origin/main corpus forms)", GUARD,
+     "            if not quoted and word in _REDIRECT_WORDS:\n"
+     "                redirects.append(word)\n            else:\n"
+     "                words.append((word, quoted))\n",
+     "            words.append((word, quoted))\n",
+     _RO + "test_no_write_form_the_old_guard_refused_is_allowed"),
+    ("a quoted look-alike of a redirect is read as a redirect", GUARD,
+     "            if not quoted and word in _REDIRECT_WORDS:\n",
+     "            if word in _REDIRECT_WORDS:\n",
+     _RO + "test_only_an_unquoted_standalone_redirect_word_is_read[quoted-redirect]"),
     ("the tokenizer accepts a quoted program word", GUARD,
      "        if was_quoted or program not in _READ_ONLY_PROGRAMS:\n",
      "        if program not in _READ_ONLY_PROGRAMS:\n",
