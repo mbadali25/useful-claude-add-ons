@@ -18,6 +18,9 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.65: re-bump only - interim number on the confirm-config-list branch (PR #767) before merging main brought plugin/crew changes after the version was set and main and the open PRs reached 1.3.68; the change is recorded under crew 1.3.69
+- crew 1.3.63: re-bump only - interim number on the confirm-config-list branch (commit fcb2bd4d3, PR #767) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.69
+- crew 1.3.62: re-bump only - interim number on the confirm-config-list branch (commit 151aebea7, PR #767) before a later doc commit in the same branch needed a fresh bump; the change is recorded under crew 1.3.69
 - crew 1.3.55: re-bump only - interim number on the hook-fanout branch before main reached 1.3.57 and the mass-guard branch 1.3.59; the change is recorded under crew 1.3.60
 - crew 1.3.41: re-bump only - interim number on the no-coauthored branch before main reached 1.3.41 with the promote gate change; the change is recorded under crew 1.3.42
 - crew 1.3.37: re-bump only - interim land number on the verify-gate stale-marker branch (commit dca02a908) before main reached 1.3.38; the change is recorded under crew 1.3.39
@@ -54,6 +57,12 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Changed — crew 1.3.69: `/crew:confirm-config` with no id lists the pending proposals instead of naming an agent-side command
+
+- **Summary.** `crew` 1.3.69: typing `/crew:confirm-config` with no id (or a wrong, expired or used one) still records nothing, but now shows the proposals you could confirm, each with its id and exact change, or says plainly that none is pending and why.
+- **Cause.** The refusal said "usage: /crew:confirm-config <change_id> (an id like cc-1a2b3c4d, from crew_confirm_config.py propose)". The id comes from a `propose` step an agent runs, so the owner had no way to find it from the message, and the message pointed the owner at an agent-side command.
+- **Fix.** `approval_hook.py` (review harness, so this lands alone): every `/crew:confirm-config` refusal is followed by a read-only listing of the machine store `~/.claude/crew/confirm-config/`: each pending proposal's id, key, current value -> `false`, layer and file, age, time left and confirmations so far, then up to five from the last day that can no longer be confirmed; with none pending, "No pending proposals on this machine" and the reasons one may be missing (none made, expired after 15 minutes, already applied, cancelled or refused, proposed under another home directory such as WSL). The listing never writes, settles or confirms a record. A bare command never confirms, even with exactly one pending proposal: the store is written by whoever runs `propose`, so "the only pending one" is a choice an agent could make for the owner, and the typed id is what binds the change. Records that are not a well-formed `humanOnly.*` `false` proposal are counted, never shown; record text is reduced to one printable line; a store crew cannot read is "could not tell", never "none pending".
+- **Tests.** `plugin/crew/tests/test_humanonly_live.py`: must-allow (the listing and its fields; "no pending proposals" with reasons; an unknown id lists the real one) and must-block (no id never records, even with one pending, across two prompts; the listing settles nothing and never offers an expired proposal; an expired or used id is refused; an agent's or peer's quoted text, a hook's context, or another event never confirms; a forged record is not listed; a record cannot draw on the screen; an unreadable store is not "none pending"; a listing failure still refuses). Seven new mutations in `humanonly_mutations.py`, each turning its test red.
 ### Changed — crew 1.3.60: one hook launcher per event on Windows, and no Git Bash per guard
 
 - **Summary.** `crew` 1.3.60: a Bash tool call on Windows now costs about half a second of hook time instead of 1.5 to 2 seconds, because crew registers one bash launcher per event instead of two and runs its guards' Python directly instead of through a Git Bash each; no guard decision changes.

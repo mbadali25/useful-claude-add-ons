@@ -998,10 +998,14 @@ that one function. `plugin/crew/hooks/scripts/approval_hook.py` handles
 `/crew:confirm-config <id>` (`_confirm_config`, calls `crew_confirm_config.confirm`
 with `via="user-prompt"`) and `/crew:approve-mass <id>` (`_approve_mass`, writes
 `<git-common-dir>/crew/mass-approvals/<id>.json`); `approval-hook.sh` also
-passes a prompt naming `crew:confirm-config`. `scope_guard.py` refuses writes to
+passes a prompt naming `crew:confirm-config`. Since crew 1.3.69 every
+`/crew:confirm-config` refusal goes through `_refuse_confirm`, which appends
+`_proposals_text` (a read-only listing of the machine store; it never calls
+`_expire_if_due`, so it writes nothing); no path confirms without a typed id.
+`scope_guard.py` refuses writes to
 `~/.claude/crew/confirm-config/` (`confirm_store`, `_CONFIRM_STORE_RE`).
-`humanonly_mutations.py` is wired into `sabotage.py` (27 entries by
-`len(HUMANONLY_MUTATIONS)`). JUDGEMENT: `humanOnly.promoteMarker` is still read
+`humanonly_mutations.py` is wired into `sabotage.py` (re-measure with
+`len(HUMANONLY_MUTATIONS)`; 34 at crew 1.3.69). JUDGEMENT: `humanOnly.promoteMarker` is still read
 by no hook, and a session that runs arbitrary python can still forge a receipt.
 
 ## Mass delete, create and change: `guards.mass` (crew 1.3.36)
