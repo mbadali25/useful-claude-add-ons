@@ -917,6 +917,25 @@ Twelve guards, one block, one ratchet, **three vocabularies**. What crew's comma
 
 The twelve are `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive`, `deployWorkflow`, `prodDatabase`, `prodServer`, `roleWrites`, `cloudGuard` and `envGuard`.
 
+### `guards.enabled` - the master switch (crew 1.3.87, L-0947)
+
+The per-guard switches each turn one guard down and ratchet, so no combination of them is "run everything": the
+scope guard, the verify gate, the completion audit and the promote gate each have a key of their own, and the
+owner's rule is that a problem is solved by disabling the guard, not by rolling back a version. `guards.enabled:
+false` is that one key. It is read by the dispatcher (`crew_hook.guards_switched_off`), not by each guard, because the
+dispatcher is the one place every guard row passes through: it drops every `guard` row from the event's list
+except `approval-hook.sh`, so a guard hook never starts and a fault in one cannot fail closed.
+
+* Off wins: `false` in either layer is enough, over any profile or override, and a `true` in the other layer
+  cannot switch it back on. This is deliberately not a ratchet (a ratchet would let the machine file veto the
+  owner's own switch), and it means a repo file can switch the guards off, as `scope.mode: off` already can.
+* Only the JSON literal `false` counts. Absent, `null`, `true`, a string, `0`, a corrupt or unreadable file and a
+  `guards` that is not an object all leave the guards on: could-not-tell is never the value that disables one.
+* `approval-hook.sh` stays. It records `/crew:approve` and the `/crew:confirm-config` double confirmation, and
+  judges no command, so the `humanOnly.*` opt-out keeps working with the guards off.
+* No python, no switch: the bash launcher has no JSON parser by design (`scope-guard.sh`), so it still fails
+  closed in an armed repo. Fix python, or remove `.crew/` and the machine file, to run without it.
+
 ### Profile plus overrides
 
 A layer states its guards with two keys:

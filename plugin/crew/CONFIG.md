@@ -91,6 +91,22 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
 meaningful only with `scope.mode` `block`.
 
+## The guards master switch
+
+`guards.enabled: false` (crew 1.3.87) turns EVERY guard hook off: the promote
+gate, the role-write, cloud, environment and scope guards, the verify gate and
+the completion audit. None of them starts, so nothing is judged, refused, asked
+or logged. It beats every per-guard setting (`guards.profile`,
+`guards.overrides.*`, `scope.mode`, `verifyGate`), and `false` in EITHER layer
+(`.crew/config.json` or `~/.claude/crew/config.json`) is enough; neither layer
+can switch it back on over the other. Only the JSON literal `false` counts: an
+absent key, `null`, `true`, a string, a corrupt file or a `guards` that is not an
+object leaves the guards on. It takes effect on the next hook call, with no
+reinstall. `/crew:approve` and `/crew:confirm-config` keep working, so the
+`humanOnly.*` opt-out still works with the guards off. It needs python: with
+none, the bash launcher still fails closed in an armed repo. To go back, delete
+the key or set it to `true` in every layer that holds `false`.
+
 ## Guard profiles
 
 `guards.profile` is one word for all twelve guards; `guards.overrides.<guard>`

@@ -311,9 +311,17 @@ To move one guard away from the profile, set <code>guards.overrides.&lt;guard&gt
 example <code>guards.overrides.roleWrites: report</code>. The twelve per-guard keys
 (<code>guards.cloudGuard</code> and the rest) are no longer written; an old one still
 counts until <code>/crew:migrate</code> rewrites the layer. Each layer expands its own
-profile and overrides, and the narrower layer wins per guard.
-- <strong>On by default:</strong> the Stop verify gate (<code>verifyGate: true</code>) blocks when a
-  verify rule fails.</p>
+profile and overrides, and the narrower layer wins per guard.</p>
+<p>To run everything with no guard at all, set <code>guards.enabled: false</code> in either config layer (crew 1.3.87). It
+stands down every guard hook (the cloud, environment, role-write, scope and promote guards, the verify gate and
+the completion audit) whatever the profile, the overrides, <code>scope.mode</code> and <code>verifyGate</code> say, and <code>false</code> in
+either layer is enough. Only the JSON literal <code>false</code> counts, so a typo leaves the guards on. <code>/crew:approve</code> and
+<code>/crew:confirm-config</code> keep working, so the <code>humanOnly.*</code> opt-out does too. It needs python: with none, the bash
+launcher still fails closed in an armed repo.</p>
+<ul>
+<li><strong>On by default:</strong> the Stop verify gate (<code>verifyGate: true</code>) blocks when a
+  verify rule fails.</li>
+</ul>
 <p><strong>The scope guard</strong> (<code>scope.mode</code>) runs before each Write, Edit, MultiEdit and
 NotebookEdit. It refuses an edit when the active ticket has no current
 approval, or when the target is outside Touch. It also refuses a shell command

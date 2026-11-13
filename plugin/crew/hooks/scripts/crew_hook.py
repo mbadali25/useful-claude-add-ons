@@ -344,6 +344,64 @@ def armed(root, home=None):
 # --------------------------------------------------------------------------
 # running children
 
+# --------------------------------------------------------------------------
+# the guards master switch (`guards.enabled`, crew 1.3.87)
+#
+# `guards.enabled: false` in EITHER config layer stands every guard row down: none starts, so nothing is
+# judged, refused, asked or logged, and a fault in one cannot fail closed. Off wins over any profile,
+# override, `scope.mode` or `verifyGate`, and neither layer can switch it back on over the other. ONLY the
+# JSON literal `false` counts: absent, null, true, a string, a corrupt or unreadable file, or a `guards`
+# that is not an object leave the guards ON (could-not-tell is never the value that disables one).
+# approval-hook.sh is the exception: it records `/crew:approve` and the `/crew:confirm-config` double
+# confirmation and judges no command, so the humanOnly opt-out keeps working with the guards off.
+# Read here, not in each guard, because every guard row passes through `dispatch`. With no usable python the
+# bash launcher never reaches this and still fails closed in an armed repo (it has no JSON parser by design).
+GUARDS_KEPT = frozenset({"approval-hook.sh"})
+
+
+def _layer_says_off(path):
+    """True only when the file at `path` parses to an object whose `guards` is an object holding
+    `enabled: false` (the JSON literal)."""
+    try:
+        with open(path, encoding="utf-8-sig") as handle:
+            parsed = json.load(handle)
+    except (OSError, ValueError):
+        return False
+    guards = parsed.get("guards") if isinstance(parsed, dict) else None
+    return isinstance(guards, dict) and guards.get("enabled") is False
+
+
+def guards_switched_off(root, home=None):
+    """The layer that switched the guards off (`"machine"` or `"repo"`), or None when they are on. Never
+    raises: a failure to look reads as ON."""
+    try:
+        home = home if home is not None else os.path.expanduser("~")
+        if _layer_says_off(os.path.join(home, GLOBAL_CONFIG)):
+            return "machine"
+        if root:
+            import crew_common  # pylint: disable=import-outside-toplevel
+            crew_dir = crew_common.repo_config_dir(root)[0]
+            for name in crew_common.CONFIG_NAMES:
+                if _layer_says_off(os.path.join(crew_dir, name)):
+                    return "repo"
+    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
+        return None
+    return None
+
+
+def without_guards(chosen):
+    """`chosen` (`[(row, argv)]`) minus every guard row except `GUARDS_KEPT`."""
+    return [(row, argv) for row, argv in chosen if not row.guard or row.script in GUARDS_KEPT]
+
+
+def _guards_off(root):
+    return guards_switched_off(root) is not None
+
+
+def _never_armed(_root):
+    return False
+
+
 def now_ms():
     return int(time.time() * 1000)
 
@@ -603,9 +661,14 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
     direct = (windows and env.get("CREW_HOOK_DIRECT") != "0") if direct is None else direct
     payload = parse_payload(raw)
     chosen = select(event, harness, payload, windows=windows, scripts=scripts)
+    armed_fn = armed_fn or armed
+    if chosen and _guards_off(root):
+        # `guards.enabled: false` (crew 1.3.87): no guard row starts, so nothing is judged, logged or
+        # refused, and a fault in what is left cannot fail closed either. approval-hook.sh stays.
+        chosen = without_guards(chosen)
+        armed_fn = _never_armed
     if not chosen:
         return 0, b"", b""
-    armed_fn = armed_fn or armed
     bash, pwsh, bash_problem = "bash", None, ""
     bash_state = {"lock": threading.Lock(), "done": False}
 
@@ -902,7 +965,7 @@ def main(argv=None, stdin=None, stdout=None, stderr=None, env=None):
 
 
 def _fault(event, root, message):
-    if event in BLOCKING_EVENTS and armed(root):
+    if event in BLOCKING_EVENTS and armed(root) and not _guards_off(root):
         return 2, f"{message}; failing closed (armed repo).\n".encode("utf-8")
     return 0, f"{message}; the repo is not armed, or this event cannot block, so nothing is blocked.\n".encode("utf-8")
 

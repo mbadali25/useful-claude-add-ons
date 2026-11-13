@@ -60,6 +60,14 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Added — crew 1.3.87: `guards.enabled`, one switch that turns every guard hook off (L-0947, dispatcher half)
+
+- **Summary.** `crew` 1.3.87 makes the hook dispatcher honour `guards.enabled: false`: set it in either config layer and none of crew's guards runs, so nothing is blocked, with no downgrade and no reinstall.
+- **Behaviour.** `false` in `.crew/config.json` or `~/.claude/crew/config.json` (either layer; off wins, and the other layer cannot switch it back on) makes the dispatcher (`crew_hook.py`) start no guard row: the promote gate, role-write, cloud, environment and scope guards, the verify gate and the completion audit do no work, log nothing and refuse nothing, whatever `guards.profile`, `guards.overrides.*`, `scope.mode` and `verifyGate` say; the per-guard switches are unchanged for when it is on. Only the JSON literal `false` counts: absent, `null`, `true`, a string, a corrupt file or a `guards` that is not an object leave the guards on. `approval-hook.sh` keeps running, so `/crew:approve` and the `/crew:confirm-config` double confirmation (the `humanOnly.*` opt-out) still work. A dispatcher fault no longer fails closed while the switch is off.
+- **Split off.** This is a harness change (`crew_hook.py`), so by the 2026-09-28 rule it lands alone. Declaring the key (`crew_keys.py`, both templates, the config writers and menu, the `/crew:status` line, the key table in CONFIG.md) is the follow-up PR; until then the key is honoured but written by hand.
+- **Not covered.** With no usable python the bash launcher still fails closed in an armed repo (it has no JSON parser by design).
+- **Files.** `hooks/scripts/crew_hook.py` (`guards_switched_off`, `without_guards`, `dispatch`, `_fault`); `tests/test_guards_master.py` and `tests/sabotage_guards_master.py` (12 mutations, wired into `sabotage.py`); crew README.md, `docs/crew/config-rationale.md` and the guide sources.
+
 ### Removed — crew 1.3.75: the mass delete, create and change guard (`guards.mass`) is gone, not just off
 
 - **Summary.** `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
