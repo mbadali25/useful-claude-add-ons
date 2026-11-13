@@ -890,3 +890,124 @@ def test_status_without_git_still_prints_a_verdict(tmp_path, store, monkeypatch,
     assert verify_trust.main(["status", "--root", str(root)]) == 0
 
     assert "verdict:" in capsys.readouterr().out
+
+
+# -------------------------------------------------- review round: PR 679 BLOCKs
+
+def _commit(root):
+    (root / "a.py").write_text("x = 1", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@e.invalid", "commit", "-q", "-m", "x")
+
+
+def test_evaluate_a_subdirectory_with_an_identical_map_does_not_inherit_the_hash_approval(
+        tmp_path, store):
+    """MUST-BLOCK: the hash binds the repo's top level, because the gate runs
+    the map's commands from the directory it stands in."""
+    root = _repo(tmp_path)
+    _approve(root)
+    sub = root / "sub"
+    (sub / ".crew").mkdir(parents=True)
+    (sub / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+    assert _code(sub) != verify_trust.EXIT_TRUSTED
+
+
+def test_approve_from_a_subdirectory_of_a_repo_is_refused(tmp_path, store):
+    """MUST-BLOCK: an approval made at a subdirectory would trust that
+    directory's map under the repo's identity."""
+    root = _repo(tmp_path)
+    sub = root / "sub"
+    (sub / ".crew").mkdir(parents=True)
+    (sub / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+
+    assert _approve(sub) == 1
+    assert not store.exists()
+
+
+def test_evaluate_a_plain_directory_that_is_not_a_repo_is_still_approvable(tmp_path, store):
+    """MUST-ALLOW: no git repo anywhere above it is a real standalone answer."""
+    plain = tmp_path / "plain"
+    (plain / ".crew").mkdir(parents=True)
+    (plain / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+
+    assert _approve(plain) == 0
+    assert _code(plain) == verify_trust.EXIT_TRUSTED
+
+
+def test_disallow_owner_keeps_the_pin_of_a_repo_trusted_by_another_owner(tmp_path, store):
+    """MUST-BLOCK: disallowing owner A must not clear owner B's pin, or B's
+    changed remote reads as trusted instead of REMOTE CHANGED."""
+    other = "github.com/otherowner"
+    repo_a = _repo(tmp_path, "a", remotes=[_OK_URL])
+    repo_b = _repo(tmp_path, "b", remotes=["https://github.com/otherowner/b.git"])
+    _allow()
+    _allow(other)
+    assert _code(repo_a) == verify_trust.EXIT_TRUSTED
+    assert _code(repo_b) == verify_trust.EXIT_TRUSTED
+    _git(repo_b, "remote", "set-url", "origin", "https://github.com/otherowner/changed.git")
+
+    assert verify_trust.main(["disallow-owner", _OWNER, "--yes"]) == 0
+
+    assert _code(repo_b) == verify_trust.EXIT_REMOTE_CHANGED
+    assert _code(repo_a) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_disallow_owner_clears_the_pin_of_a_repo_that_owner_trusted(tmp_path, store):
+    """MUST-ALLOW: the owner's own repo is re-pinned fresh after allow again."""
+    repo_a = _repo(tmp_path, "a", remotes=[_OK_URL])
+    _allow()
+    assert _code(repo_a) == verify_trust.EXIT_TRUSTED
+    _git(repo_a, "remote", "set-url", "origin", "https://github.com/mbadali25/moved.git")
+    verify_trust.main(["disallow-owner", _OWNER, "--yes"])
+    _allow()
+
+    assert _code(repo_a) == verify_trust.EXIT_TRUSTED
+
+
+def _probe_fails(patch):
+    real = verify_trust._git  # pylint: disable=protected-access
+
+    def failing(root, *args):
+        if args[:1] == ("rev-parse",):
+            return None
+        return real(root, *args)
+    patch.setattr(verify_trust, "_git", failing)
+
+
+def test_a_failed_git_probe_on_a_linked_worktree_fails_closed(tmp_path, store, monkeypatch):
+    """MUST-BLOCK: a probe that fails is not 'a standalone directory'. revoke
+    must fail loudly and leave the shared approval; approve must record
+    nothing; the verdict is UNKNOWN."""
+    root = _repo(tmp_path)
+    _commit(root)
+    _approve(root)
+    linked = tmp_path / "linked"
+    _git(root, "worktree", "add", "-q", "-b", "lane", str(linked))
+    with monkeypatch.context() as patch:
+        _probe_fails(patch)
+
+        assert verify_trust.main(["revoke", "--root", str(linked)]) == 1
+        assert verify_trust.main(["approve", "--root", str(linked), "--yes"]) == 1
+        assert _code(linked) == verify_trust.EXIT_UNKNOWN
+    assert _code(linked) == verify_trust.EXIT_TRUSTED
+
+
+def test_approve_with_an_unreadable_remote_set_is_refused(tmp_path, store, monkeypatch):
+    """MUST-BLOCK: 'could not read the remotes' must not be stored as a null
+    pin and reported as approved."""
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    monkeypatch.setattr(verify_trust, "remote_set", lambda _root: None)
+
+    assert _approve(root) == 1
+    assert not store.exists()
+
+
+def test_approve_a_repo_with_no_remote_records_an_empty_pin(tmp_path, store):
+    """MUST-ALLOW: no remote is a known answer, distinct from unknown."""
+    root = _repo(tmp_path)
+
+    assert _approve(root) == 0
+    entry = json.loads(store.read_text(encoding="utf-8"))["repos"][verify_trust.repo_identity(str(root))[0]]
+    assert entry["pin"] == []

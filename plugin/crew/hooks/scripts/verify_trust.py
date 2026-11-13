@@ -418,12 +418,30 @@ def _git(root, *args):
     return proc.stdout.decode("utf-8", "backslashreplace")
 
 
+def _inside_git_dir(root):
+    """True when `root` or any parent holds a `.git` (directory or file)."""
+    here = os.path.realpath(root)
+    while True:
+        if os.path.lexists(os.path.join(here, ".git")):
+            return True
+        parent = os.path.dirname(here)
+        if parent == here:
+            return False
+        here = parent
+
+
 def repo_identity(root):
     """`(identity, toplevel)`. A directory that is not a git repo has its own
     real path as identity and no toplevel (so no owner trust)."""
     out = _git(root, "rev-parse", "--git-common-dir")
     top = _git(root, "rev-parse", "--show-toplevel")
     if out is None or top is None:
+        # Git did not answer. That is a standalone directory only when no `.git`
+        # exists here or above; otherwise it is a probe that failed, and a failed
+        # probe must not become a path identity (a linked worktree would then
+        # miss its shared approval, and revoke would report "no entry").
+        if _inside_git_dir(root):
+            raise TrustError("git could not identify the repository this directory belongs to")
         return os.path.realpath(root), None
     common = out.strip()
     if not os.path.isabs(common):
@@ -617,6 +635,14 @@ def _evaluate(root, path, write_pin, euid, verify_file=None):
         identity, toplevel, git_missing = os.path.realpath(root), None, exc
     entry = store["repos"].get(identity) or {}
     hashes = entry.get("hashes") or []
+    # A hash approval is for the map at the repo's top level: the gate runs a
+    # map's commands from the directory it stands in, so a subdirectory with
+    # byte-identical content is a different place and inherits nothing.
+    if toplevel is not None and os.path.realpath(root) != toplevel:
+        return Verdict(EXIT_UNTRUSTED,
+                       "VERIFY GATE: UNTRUSTED, not run - nothing was verified. This directory "
+                       "is below the repository's top level; an approval covers the top level's "
+                       "map only. Run the gate from the top level.", identity=identity)
     if current in hashes:
         return Verdict(EXIT_TRUSTED, f"verify trust: trusted (approved bytes {current[:12]})",
                        digest=current, identity=identity)
@@ -759,10 +785,20 @@ def cmd_approve(args):
               file=sys.stderr)
         return 1
     try:
-        identity, _top = repo_identity(root)
+        identity, top = repo_identity(root)
         remotes = remote_set(root)
     except TrustError as exc:
         print(f"verify_trust: {exc}. Nothing was approved.", file=sys.stderr)
+        return 1
+    if top is not None and os.path.realpath(root) != top:
+        print("verify_trust: this directory is below the repository's top level; approve from "
+              f"{top}. Nothing was approved.", file=sys.stderr)
+        return 1
+    if top is not None and remotes is None:
+        # Unknown is not "no remotes": a null pin would later let the owner
+        # allowlist pin a changed remote without a REMOTE CHANGED.
+        print("verify_trust: git could not read this repo's remotes. Nothing was approved.",
+              file=sys.stderr)
         return 1
     rules = _rule_count(root)
     print(f"repo:    {identity}")
@@ -853,7 +889,11 @@ def cmd_disallow_owner(args):
         if st["owners"].pop(owner, None) is not None:
             found.append(1)
         for entry in st["repos"].values():
-            if not entry.get("hashes"):
+            # Only a pin this owner's trust made: a hashless repo trusted
+            # through another owner keeps its pin.
+            pinned = {parse_remote(u[5:] if u.startswith("push:") else u)
+                      for u in (entry.get("pin") or []) if isinstance(u, str)}
+            if not entry.get("hashes") and owner in pinned:
                 entry["pin"] = None
     try:
         update_store(store_path(), drop)

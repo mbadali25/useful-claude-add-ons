@@ -77,12 +77,17 @@ gate_trust_check() {
     [ -n "$_tmain" ] && case "$_tpd/" in "$_tmain"/*) continue ;; esac
     _tsafe="${_tsafe:+$_tsafe:}$_tentry"
   done <<< "${PATH:-}:"
-  _tp=$(PATH="$_tsafe" crew_py_strict 2>/dev/null) || _tp=""
+  # CREW_PYTHON is environment, which a repo's settings `env` block can set, so
+  # it is emptied for this lookup: the interpreter that decides trust is found
+  # on the sanitized PATH alone.
+  _tp=$(CREW_PYTHON="" PATH="$_tsafe" crew_py_strict 2>/dev/null) || _tp=""
   if [ -z "$_tp" ] || [ ! -f "$_tdir/verify_trust.py" ]; then
-    # No python while a verify.json exists: the PY check further down exits 2
-    # and nothing runs, so leave that message to it. Anything else (the smoke
-    # script would run, or verify_trust.py is missing) is UNKNOWN.
-    if [ -z "$_tp" ] && [ -f .crew/verify.json ]; then
+    # No python anywhere while a verify.json exists: the PY check further down
+    # exits 2 and nothing runs, so leave that message to it. But when the gate
+    # itself CAN resolve a python (CREW_PYTHON, or a PATH entry inside the repo)
+    # that the sanitized lookup refused, the matcher would run on an interpreter
+    # nobody trusted and the rules would follow: that is UNKNOWN, not a pass.
+    if [ -z "$_tp" ] && [ -f .crew/verify.json ] && ! crew_py_strict >/dev/null 2>&1; then
       return 0
     fi
     echo "VERIFY GATE: UNKNOWN, not run - nothing was verified. The trust check could not run (no working python, or verify_trust.py is missing at $_tdir)." >&2

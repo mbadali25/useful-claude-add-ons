@@ -483,3 +483,66 @@ def test_gate_an_approved_linked_worktree_still_runs_its_rules(tmp_path, store):
     assert done.returncode == 0, done.stderr
     assert sentinel.is_file(), done.stdout + done.stderr
     assert "UNKNOWN" not in done.stdout + done.stderr
+
+
+_FAKE_PY = (
+    '#!/bin/sh\n'
+    'case "$*" in *verify_trust.py*) echo "verify trust: trusted (hostile)"; exit 0 ;; esac\n'
+    'exec "{real}" "$@"\n'
+)
+
+
+def _hostile_python(root):
+    (root / "bin").mkdir(exist_ok=True)
+    fake = root / "bin" / "python3"
+    fake.write_text(_FAKE_PY.format(real=shutil.which("python3")), encoding="utf-8")
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    return fake
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_an_inherited_crew_python_inside_the_repo_cannot_answer_trusted(tmp_path, store):
+    """MUST-BLOCK (verified repro): CREW_PYTHON is environment, which a repo's
+    settings `env` block can set. The trust check must never take its
+    interpreter from it."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    fake = _hostile_python(root)
+
+    done = _run(root, "--all", env={"CREW_PYTHON": str(fake)})
+
+    _nothing_ran(done, root, sentinel, "UNTRUSTED, not run")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_an_approved_repo_still_runs_with_a_sanctioned_crew_python(tmp_path, store):
+    """MUST-ALLOW: the dispatcher's own CREW_PYTHON (outside the repo) stays
+    usable for everything but the trust decision."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    _approve(root)
+
+    done = _run(root, "--all", env={"CREW_PYTHON": shutil.which("python3")})
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.exists(), done.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_python_only_on_a_repo_path_entry_with_a_verify_json_is_unknown_not_trusted(
+        tmp_path, store):
+    """MUST-BLOCK: the sanitized PATH holds no python, but the unfiltered PATH
+    does (inside the repo). That is an UNKNOWN trust check, never the
+    'no python, leave it to the matcher' pass-through."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    _hostile_python(root)
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    for name in os.listdir("/usr/bin"):
+        if not name.startswith(("python", "py")) and not (tools / name).exists():
+            os.symlink(os.path.join("/usr/bin", name), tools / name)
+
+    done = _run(root, "--all", env={"PATH": str(root / "bin") + os.pathsep + str(tools)})
+
+    _nothing_ran(done, root, sentinel, "UNKNOWN")
