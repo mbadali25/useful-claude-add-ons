@@ -429,11 +429,16 @@ def _repo_veto(top, label_):
 
 
 def _toplevel(directory):
-    """git's top level for `directory`, or None when git cannot tell."""
+    """git's top level for `directory`, or None when git cannot tell (git
+    not on PATH included: resolved with `crew_common.resolve_tool`, never a
+    bare name, L-1508)."""
     env = {k: v for k, v in os.environ.items()
            if k.upper() not in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR")}
+    git = crew_common.resolve_tool("git")
+    if git is None:
+        return None
     try:
-        proc = subprocess.run(["git", "-C", directory, "rev-parse", "--show-toplevel"],
+        proc = subprocess.run([git, "-C", directory, "rev-parse", "--show-toplevel"],
                               capture_output=True, text=True, timeout=10, check=False, env=env)
     except (OSError, subprocess.SubprocessError):
         return None
