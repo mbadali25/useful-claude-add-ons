@@ -390,6 +390,59 @@ def test_push_a_small_branch_passes(repo):
     _passes(repo, "gh pr view 3")
 
 
+def _track(repo, branch):
+    git(repo, "config", "remote.origin.url", ".")
+    git(repo, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+    git(repo, "config", "branch.feat.remote", "origin")
+    git(repo, "config", "branch.feat.merge", "refs/heads/" + branch)
+
+
+def _qa_based_branch(repo, extra, name="feat"):
+    """origin/main is old; origin/qa is 25 files ahead; `name` is cut from origin/qa
+    and adds `extra` files of its own."""
+    git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(repo, "checkout", "-qb", "qa")
+    _fill(repo / "qa-only", 25)
+    _commit_all(repo, "qa work")
+    git(repo, "update-ref", "refs/remotes/origin/qa", "HEAD")
+    git(repo, "checkout", "-qb", name)
+    if extra:
+        _fill(repo / "mine", extra)
+        _commit_all(repo, "mine")
+
+
+@pytest.mark.parametrize("flag", ["--base qa", "--base=qa", "-B qa", "-B origin/qa"])
+def test_pr_create_measures_against_its_explicit_base(repo, flag):
+    _qa_based_branch(repo, 1)
+    _stops(repo, "gh pr create --fill", crew_mass.MASS_CREATE)  # origin/HEAD: 26 files
+    _passes(repo, f"gh pr create --fill {flag}")
+
+
+def test_pr_create_still_stops_a_mass_change_against_its_explicit_base(repo):
+    _qa_based_branch(repo, 25)
+    _stops(repo, "gh pr create --fill --base qa", crew_mass.MASS_CREATE)
+
+
+def test_pr_create_with_an_unresolvable_base_falls_back_to_the_default(repo):
+    _qa_based_branch(repo, 1)
+    _stops(repo, "gh pr create --fill --base nope", crew_mass.MASS_CREATE)
+
+
+def test_push_measures_against_a_different_named_upstream(repo):
+    _qa_based_branch(repo, 1)
+    _stops(repo, "git push origin feat", crew_mass.MASS_CREATE)
+    _track(repo, "qa")
+    _passes(repo, "git push origin feat")
+    _passes(repo, "gh pr create --fill")
+
+
+def test_push_ignores_a_same_named_upstream(repo):
+    _qa_based_branch(repo, 1)
+    git(repo, "update-ref", "refs/remotes/origin/feat", "HEAD")
+    _track(repo, "feat")
+    _stops(repo, "git push origin feat", crew_mass.MASS_CREATE)
+
+
 def test_push_without_a_base_it_can_find_is_unknown_and_stops(repo):
     _fill(repo / "q", 5)
     _commit_all(repo)

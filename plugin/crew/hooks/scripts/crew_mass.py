@@ -129,13 +129,15 @@ class Spec:
     """What one recognised command would do, before anything is counted."""
 
     def __init__(self, rule, what, kind, operands=(), recursive=False, git=None,
-                 unknown=False, dest=None, category="files", shared=None, extra=None):
+                 unknown=False, dest=None, category="files", shared=None, extra=None,
+                 base=None):
         self.rule, self.what, self.kind = rule, what, kind
         self.operands, self.recursive = list(operands), recursive
         self.git, self.unknown, self.dest = git, unknown, dest
         self.category = category
         self.shared = shared if shared is not None else {}
         self.extra = extra
+        self.base = base  # the PR base the command names (`gh pr create --base`), if any
 
 
 # --- settings -----------------------------------------------------------------------
@@ -312,10 +314,11 @@ def _after_dashdash(rest):
     return rest[rest.index("--") + 1:] if "--" in rest else []
 
 
-def _diff_specs(what, override, argv):
+def _diff_specs(what, override, argv, base=None):
     """Three specs (delete, create, change) over one `git diff --name-status`."""
     shared = {}
-    return [Spec(rule, what, "git-diff", git=(override, argv), category="git", shared=shared)
+    return [Spec(rule, what, "git-diff", git=(override, argv), category="git", shared=shared,
+                 base=base)
             for rule in RULES]
 
 
@@ -385,11 +388,26 @@ def _classify_git(args, fed):
     return out
 
 
+def _gh_base(args):
+    """The branch named by `--base X`, `--base=X`, `-B X` or `-BX`, else None."""
+    for index, arg in enumerate(args):
+        if arg in ("--base", "-B"):
+            value = args[index + 1] if index + 1 < len(args) else ""
+        elif arg.startswith("--base="):
+            value = arg[len("--base="):]
+        elif arg.startswith("-B") and not arg.startswith("--"):
+            value = arg[2:]
+        else:
+            continue
+        return value if value and not value.startswith("-") else None
+    return None
+
+
 def _classify_gh(args):
     words = [a for a in args if not a.startswith("-")]
     if words[:2] == ["pr", "create"] and "--help" not in args and "-h" not in args:
         return _diff_specs("gh pr create", None, ["diff", "--name-status", "-M", "@BASE@...HEAD",
-                                                   "--"])
+                                                   "--"], base=_gh_base(args))
     return []
 
 
@@ -695,7 +713,7 @@ def _git_lines(spec, cwd, cd, runner):
         return None
     run = runner or subprocess.run
     if "@BASE@...HEAD" in argv:
-        found = _base(base, run)
+        found = _base(base, run, spec.base)
         if found is None:
             return None
         argv = [found + "...HEAD" if a == "@BASE@...HEAD" else a for a in argv]
@@ -713,9 +731,12 @@ def _git_lines(spec, cwd, cd, runner):
     return lines
 
 
-def _base(cwd, run):
-    """The ref a branch's PR would be measured against: `origin/HEAD`, else
-    `origin/main`, else `origin/master`; on that branch itself, its upstream."""
+def _base(cwd, run, named=None):
+    """The ref a branch's PR would be measured against: the base the command names
+    (`gh pr create --base`), else the upstream it tracks when that is a different
+    branch (cut from `origin/qa`), else `origin/HEAD`, else `origin/main`, else
+    `origin/master`; on that branch itself, its upstream. A named base that does not
+    resolve is ignored, so it can only fall back to the stricter default."""
     def one(*argv):
         try:
             done = run(["git", "-C", cwd] + list(argv), capture_output=True, text=True,
@@ -725,6 +746,14 @@ def _base(cwd, run):
         out = done.stdout.strip() if done.returncode == 0 else ""
         return out or None
     head = one("symbolic-ref", "--short", "-q", "HEAD")
+    if named:
+        for ref in ("origin/" + named, named):
+            if one("rev-parse", "--verify", "-q", ref + "^{commit}"):
+                return ref
+    tracked = one("rev-parse", "--abbrev-ref", "@{u}") if head else None
+    if tracked and tracked.split("/", 1)[-1] != head \
+            and one("rev-parse", "--verify", "-q", tracked + "^{commit}"):
+        return tracked
     candidates = [one("symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"),
                   "origin/main", "origin/master"]
     for ref in candidates:
