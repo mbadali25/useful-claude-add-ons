@@ -36,7 +36,8 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
 # This script's own directory by parameter expansion: `dirname` is an external
 # command found on PATH, which a repo's settings `env` block can set.
 _crew_src="${BASH_SOURCE[0]}"
-case "$_crew_src" in */*) _crew_srcdir="${_crew_src%/*}" ;; *) _crew_srcdir="." ;; esac
+# Git Bash can hand over a native `D:\a\b\verify-gate.sh`, so both separators split.
+case "$_crew_src" in */*|*\\*) _crew_srcdir="${_crew_src%[/\\]*}" ;; *) _crew_srcdir="." ;; esac
 [ -n "$_crew_srcdir" ] || _crew_srcdir="/"
 
 . "$_crew_srcdir/_common.sh"
