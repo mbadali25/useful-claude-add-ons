@@ -805,6 +805,24 @@ SCOPE_MUTATIONS = (
      '                       (a[:1] == "-" and a[1:2] != "-" and "C" in a) for a in args)\n',
      "        return True\n",
      _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[file-compile]"),
-    ("uniq may write a second positional output file", GUARD,
-     "        return positional <= 1\n", "        return True\n",
-     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[uniq-output-file]"),)
+    ("uniq is a read-only program (its second operand writes a file)", GUARD,
+     '"fgrep", "find", "sort", "cut"', '"fgrep", "find", "sort", "uniq", "cut"',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt"
+     "[uniq-stdin-dash-then-output]"),
+    ("uniq is a read-only program (a double-dash operand writes a file)", GUARD,
+     '"fgrep", "find", "sort", "cut"', '"fgrep", "find", "sort", "uniq", "cut"',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt"
+     "[uniq-double-dash-dashname-output]"),
+    ("uniq is a read-only program (option arguments hide the operand)", GUARD,
+     '"fgrep", "find", "sort", "cut"', '"fgrep", "find", "sort", "uniq", "cut"',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt"
+     "[uniq-s-dash-output]"),
+    ("sort -oFILE (attached output file) is read-only", GUARD,
+     '"o" in a or "T" in a', '"o" in a[:1] or "T" in a',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[sort-oFILE]"),
+    ("file -Cm (clustered compile flag) is read-only", GUARD,
+     '"C" in a) for a in args)', '"C" == a[1:]) for a in args)',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[file-Cm-cluster]"),
+    ("find -fprint0 is read-only", GUARD,
+     '"-fprint", "-fls")', '"-fls")',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[find-fprint0]"),)

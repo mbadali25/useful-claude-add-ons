@@ -185,7 +185,7 @@ _WRITES_RE = re.compile(
 # any other program, keeps the deny-list verdict unchanged.
 _READ_ONLY_PROGRAMS = frozenset((
     "ls", "cat", "head", "tail", "wc", "stat", "file", "du", "df", "grep", "egrep",
-    "fgrep", "find", "sort", "uniq", "cut", "tr", "readlink", "realpath", "basename",
+    "fgrep", "find", "sort", "cut", "tr", "readlink", "realpath", "basename",
     "dirname", "pwd", "test"))
 _PLAIN_CHARS = frozenset(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./:=,@%+-")
@@ -272,8 +272,12 @@ def _simple_commands(command):
 
 
 def _plain_args_ok(program, args):
-    """No word of a listed program writes a file, runs another program or names
-    a second output."""
+    """No word of a listed program writes a file or runs another program.
+    `uniq` is deliberately NOT a listed program: `uniq IN OUT` writes OUT and an
+    operand can hide as `-`, as anything after `--`, or as an option's argument,
+    so no operand count is trustworthy. Every program left here has no output
+    operand (an output file is only ever an option: `sort -o`, `file -C`,
+    `find -fprint*`), and `--files0-from`/`-f`/`-m` only read."""
     if program == "find":
         return not any(a == w or (w == "-fprint" and a.startswith("-fprint"))
                        for a in args for w in _FIND_WRITES)
@@ -284,16 +288,6 @@ def _plain_args_ok(program, args):
     if program == "file":
         return not any(a == "-C" or (a.startswith("--") and a[2:3] == "c") or
                        (a[:1] == "-" and a[1:2] != "-" and "C" in a) for a in args)
-    if program == "uniq":
-        positional, skip = 0, False
-        for a in args:
-            if skip:
-                skip = False
-            elif a in ("-f", "-s", "-w"):
-                skip = True
-            elif a[:1] != "-":
-                positional += 1
-        return positional <= 1
     return True
 
 
