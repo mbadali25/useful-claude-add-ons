@@ -1127,6 +1127,17 @@ def test_lock_a_holder_note_with_a_huge_pid_is_not_an_exception(tmp_path):
     assert verify_trust._holder_alive(path + ".lock") is False
 
 
+@pytest.mark.skipif(os.name != "posix", reason="os.kill's pid_t is a POSIX type")
+def test_lock_a_pid_between_2_31_and_2_32_is_dead_not_an_exception(tmp_path):
+    """Round 10: `os.kill` raises OverflowError for a pid that does not fit a signed 32-bit
+    pid_t; no process has one, and the lock must not raise or read it alive."""
+    path = str(tmp_path / "s.json")
+    _aged_lock(path, f"{verify_trust.socket.gethostname()} 3000000000")
+
+    assert verify_trust._pid_alive(3_000_000_000) is False  # pylint: disable=protected-access
+    assert verify_trust._holder_alive(path + ".lock") is False
+
+
 def test_lock_a_missing_empty_or_foreign_host_note_older_than_the_bound_is_broken(tmp_path):
     for note in ("", "no-pid", "some-other-host.invalid 12345"):
         path = str(tmp_path / "s.json")

@@ -24,6 +24,8 @@ _G = "tests/test_verify_gate_trust.py::"
 _S_ = "tests/test_scope_guard_trust.py::"
 SEAMFIX = os.path.join(CREW, "tests", "crew_fixtures.py")
 _CALL = '  gate_trust_check "$GATE_SCRIPT_DIR" || _trust_rc=$?\n'
+_RESTORE = ("# Trusted (or --ci, or nothing to run): the user's own PATH is back for the rules.\n"
+            'PATH="$GATE_USER_PATH"\n')
 
 TRUST_MUTATIONS = (
     ("trust gate: the main checkout of a linked worktree stays on the interpreter search PATH (L-0888)", GATE,
@@ -405,9 +407,9 @@ TRUST_MUTATIONS = (
      _G + "test_gate_a_user_site_under_a_repo_home_never_runs_in_the_probe"),
     ("trust gate: a trust check that cannot run carries on to the matcher's own interpreter (L-0888, round 9)", GATE,
      '  case "$_trust_rc" in\n    0) ;;\n    14) gate_trust_broken; exit 2 ;;\n'
-     '    *) exit 0 ;;\n  esac\nfi\n\nif [ ! -f .crew/verify.json ]; then',
+     '    *) exit 0 ;;\n  esac\nfi\n' + _RESTORE + '\nif [ ! -f .crew/verify.json ]; then',
      '  case "$_trust_rc" in\n    0) ;;\n    14) GATE_TRUST_BROKEN=1 ;;\n    *) exit 0 ;;\n'
-     '  esac\nfi\n\nif [ ! -f .crew/verify.json ]; then',
+     '  esac\nfi\n' + _RESTORE + '\nif [ ! -f .crew/verify.json ]; then',
      _G + "test_gate_a_trust_check_that_cannot_run_never_reaches_the_matcher_on_a_repo_python"),
     ("trust store: a store in a submodule's superproject is not refused (L-0888, round 9)", TRUST,
      '                if parts[index] == ".git" and parts[index + 1] == "modules":', '                if False:',
@@ -415,10 +417,9 @@ TRUST_MUTATIONS = (
     ("trust store: a hand-written .git file borrows a trusted repo's remotes (L-0888, round 9)", TRUST,
      "    if not _gitfile_backlink_ok(top):\n", "    if False:\n",
      _T + "test_owner_trust_a_hand_written_git_file_naming_a_trusted_repo_is_not_trusted"),
-    ("trust store: a huge pid in a holder note escapes as OverflowError (L-0888, round 9)", TRUST,
-     "    except (OSError, ValueError, OverflowError):\n        return False\n"
-     "", "    except (OSError, ValueError):\n        return False\n",
-     _T + "test_lock_a_holder_note_with_a_huge_pid_is_not_an_exception"),
+    ("trust store: a pid that does not fit pid_t escapes os.kill as OverflowError (L-0888, round 10)", TRUST,
+     '    if os.name != "nt" and 2 ** 31 <= pid < 2 ** 32:\n', '    if False:\n',
+     _T + "test_lock_a_pid_between_2_31_and_2_32_is_dead_not_an_exception"),
     ("trust store: a pid beyond 32 bits is handed to the system (L-0888, round 9)", TRUST,
      "    if pid <= 0 or pid >= 2 ** 32:\n", "    if pid <= 0:\n",
      _T + "test_lock_a_pid_beyond_any_real_process_id_is_dead_without_a_system_call"),
@@ -427,7 +428,8 @@ TRUST_MUTATIONS = (
      "    if not _gitfile_backlink_ok(top):\n", "    if False:\n",
      _T + "test_hash_approval_a_hand_written_git_file_naming_an_approved_repo_is_not_trusted"),
     ("trust gate: the pre-trust PATH is the user's own, repo entries included (L-0888, round 10)", GATE,
-     '  PATH="${GATE_SAFE_PATH:-/usr/local/bin:/usr/bin:/bin:/mingw64/bin:/ucrt64/bin:/clangarm64/bin:/opt/homebrew/bin}"\n',
+     '  PATH="${GATE_SAFE_PATH:-/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin:'
+     '/mingw64/bin:/ucrt64/bin:/clangarm64/bin}"\n',
      "  :\n",
      _G + "test_gate_a_tool_planted_in_a_repo_path_dir_never_runs_ahead_of_the_trust_decision"),
     ("trust gate: the user's PATH is not put back after the trust decision (L-0888, round 10)", GATE,
@@ -448,7 +450,7 @@ TRUST_MUTATIONS = (
      _G + "test_gate_a_core_fsmonitor_hook_in_the_repo_config_never_runs_before_the_trust_decision"),
     ("trust gate: the fingerprint's index listing lets git run core.fsmonitor (L-0888, round 10)",
      os.path.join(_S, "verify_fingerprint.py"),
-     '"-c", "core.fsmonitor=false", "-c", "core.quotePath=false", "ls-files", "-s", "-z"',
+     '*_GIT_QUIET, "ls-files", "-s", "-z"',
      '"-c", "core.quotePath=false", "ls-files", "-s", "-z"',
      _G + "test_gate_a_core_fsmonitor_hook_in_the_repo_config_never_runs_before_the_trust_decision"),
     ("trust gate: an inherited GIT_DIR points the scan at another repository (L-0888, round 10)", GATE,

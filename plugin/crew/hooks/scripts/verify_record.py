@@ -39,6 +39,10 @@ import hashlib
 
 import crew_common
 
+# `core.fsmonitor` off: a repo's `.git/config` can name a command git runs for
+# `diff` and `ls-files` (L-0888).
+_GIT_QUIET = ("-c", "core.fsmonitor=false", "-c", "core.quotePath=false")
+
 # Every line this module writes to stdout is read by a shell on the other
 # end (bash `read` or a PowerShell pipe), one record per line. On native
 # Windows Python, stdout defaults to TEXT mode and translates every '\n' to
@@ -590,7 +594,7 @@ def tree_snapshot(root, stable=False):
                  ("diff", "--name-only", "-z", "--cached"),
                  ("diff", "--name-only", "-z", "HEAD")):
         try:
-            out = subprocess.run((crew_common.require_tool("git"), "-c", "core.fsmonitor=false", "-c", "core.quotePath=false") + args,
+            out = subprocess.run((crew_common.require_tool("git"), *_GIT_QUIET) + args,
                                  cwd=root,
                                  capture_output=True, check=False, timeout=120,
                                  stdin=subprocess.DEVNULL)
@@ -600,7 +604,7 @@ def tree_snapshot(root, stable=False):
             return None
         listing.extend(p for p in out.stdout.decode("utf-8", "surrogateescape").split("\0") if p)
     try:
-        flags = subprocess.run((crew_common.require_tool("git"), "-c", "core.fsmonitor=false", "-c", "core.quotePath=false", "ls-files", "-v", "-z"),
+        flags = subprocess.run((crew_common.require_tool("git"), *_GIT_QUIET, "ls-files", "-v", "-z"),
                                cwd=root, capture_output=True, check=False, timeout=120,
                                stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):

@@ -278,6 +278,10 @@ def _pid_alive(pid):
     number, so a larger one names nothing and is never handed to the system."""
     if pid <= 0 or pid >= 2 ** 32:
         return False
+    if os.name != "nt" and 2 ** 31 <= pid < 2 ** 32:
+        # POSIX's pid_t is a signed 32-bit integer: os.kill raises OverflowError for
+        # this pid, and no process has it.
+        return False
     if os.name == "nt":
         try:
             import ctypes  # pylint: disable=import-outside-toplevel
@@ -310,7 +314,7 @@ def _holder_alive(lock_dir):
         if host != socket.gethostname():
             return False
         return _pid_alive(int(pid))
-    except (OSError, ValueError, OverflowError):
+    except (OSError, ValueError):
         return False
 
 

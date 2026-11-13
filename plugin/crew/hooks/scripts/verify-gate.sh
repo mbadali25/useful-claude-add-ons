@@ -752,7 +752,7 @@ cd "${CLAUDE_PROJECT_DIR:-.}" || {
 GATE_USER_PATH="${PATH-}"
 if [ "$CI_MODE" -eq 0 ]; then
   gate_prepare_path || true
-  PATH="${GATE_SAFE_PATH:-/usr/local/bin:/usr/bin:/bin:/mingw64/bin:/ucrt64/bin:/clangarm64/bin:/opt/homebrew/bin}"
+  PATH="${GATE_SAFE_PATH:-/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin:/mingw64/bin:/ucrt64/bin:/clangarm64/bin}"
 fi
 # The resolved repo config (T-0096's crew_repo_config_dir, L-0681): a linked
 # worktree with no config of its own reads the main checkout's, the file
@@ -822,7 +822,7 @@ gate_incident_active() {
   gate_prepare_safe || return 1
   [ -n "${GATE_SAFE_PY:-}" ] || return 1
   (
-    for _hv in $(compgen -e); do case "$_hv" in PYTHON*) unset "$_hv" ;; esac; done
+    for _hv in $(compgen -e -X '!PYTHON*'); do unset "$_hv"; done
     export PYTHONNOUSERSITE=1
     PATH="$GATE_SAFE_PATH"
     CREW_PYTHON=""

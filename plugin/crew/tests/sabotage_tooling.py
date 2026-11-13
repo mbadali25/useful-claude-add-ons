@@ -784,8 +784,9 @@ TOOLING_MUTATIONS += (
     (
         "--ci: untracked files are in scope",
         GATE_SH,
-        '{ [ "$CI_MODE" -eq 1 ] || git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; })\n',
-        '{ git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; })\n',
+        '{ [ "$CI_MODE" -eq 1 ] || git -c core.fsmonitor=false -c core.quotePath=false '
+        'ls-files --others --exclude-standard 2>/dev/null; })\n',
+        '{ git -c core.fsmonitor=false -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; })\n',
         _CI + "test_an_untracked_unmapped_file_is_not_in_scope[sh]",
     ),
     (
