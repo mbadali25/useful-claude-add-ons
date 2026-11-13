@@ -202,6 +202,12 @@ PROMOTE_TREE_MUTATIONS = (
      "    except KeyError:\n",
      "tests/test_promote_dispatch_reader.py::"
      "test_a_selector_the_command_gives_beats_stripping_the_declared_deploy"),
+    ("_promote_dispatch.py lets a selecting command that fits nothing take the stripped retry",
+     DISPATCH,
+     "            raise (Selector if not fit and chosen is not None else Block)(\n",
+     "            raise (Selector if named else Block)(\n",
+     "tests/test_promote_dispatch_reader.py::"
+     "test_a_dev_dispatch_matching_no_declared_deploy_is_not_stripped_to_nothing"),
     ("_promote_dispatch.py drops the committed map's declared dispatches", DISPATCH,
      '        ("the committed .crew/verify.json", committed_envs()),\n',
      '        ("the committed .crew/verify.json", None),\n',

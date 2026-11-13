@@ -199,9 +199,19 @@ def test_a_mismatch_on_another_input_does_not_claim_the_environment_is_undeclare
     project({"development": {"deploy": "gh workflow run w.yml -f environment=development -f site=a"}})
     with pytest.raises(helper.Block, match="fits no declared environment") as got:
         helper.decide("gh workflow run w.yml -f environment=development -f site=b")
-    assert not isinstance(got.value, helper.Selector)
     assert "selects environment" not in str(got.value)
     project({"production": {"deploy": "gh workflow run w.yml -f site=a"}})
     with pytest.raises(helper.Block) as got:
         helper.decide("gh workflow run w.yml -f site=b -f environment=production")
     assert "selects environment" not in str(got.value)
+
+
+def test_a_dev_dispatch_matching_no_declared_deploy_is_not_stripped_to_nothing(project):
+    """L-0948 review round 2 (BLOCK): production declares `site=a` (a substring
+    of the command) and development declares `environment=development site=b`;
+    the command fits neither, and must stay blocked rather than read as
+    nothing once production's declared text is stripped."""
+    project({"production": {"deploy": "gh workflow run w.yml -f site=a"},
+             "development": {"deploy": "gh workflow run w.yml -f environment=development -f site=b"}})
+    with pytest.raises(helper.Selector, match="fits no declared environment"):
+        helper.decide("gh workflow run w.yml -f site=a -f environment=development")

@@ -230,7 +230,11 @@ def match(scopes, envs, label):
                      "which no declared deploy of this workflow names: declare "
                      "that environment's deploy with the same input)"
                      if not fit and chosen is not None and not known else "")
-            raise (Selector if named else Block)(
+            # A command that selects an environment and fits none never takes
+            # the retry that strips declared deploys (L-0948 r2 BLOCK): the
+            # remainder would read as no dispatch and leave only containment's
+            # substring hit to judge it.
+            raise (Selector if not fit and chosen is not None else Block)(
                         f"the dispatch of `{workflow}` fits {which} in {label}"
                         f"{named}, so which environment's preconditions apply "
                         "cannot be told. Give the inputs a declared deploy "
