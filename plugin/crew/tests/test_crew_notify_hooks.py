@@ -50,7 +50,7 @@ def test_hooks_json_notification_goes_through_the_launcher_and_the_table_passes_
     rows = [(r.script, r.extra, r.matcher) for r in crew_hook.TABLE if r.event == "Notification"]
     assert ([("matcher" in entry) for entry in entries], len(commands),
             all(re.search(r'crew-hook\.(sh|ps1)\\?" Notification(;|$)', command) for command in commands),
-            rows) == ([False, False], 2, True, [("notify.sh", ("hook",), "")])
+            rows) == ([False], 1, True, [("notify.sh", ("hook",), "")])
 
 
 # --- the callers ------------------------------------------------------------------------------

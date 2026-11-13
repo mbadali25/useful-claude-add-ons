@@ -1,7 +1,9 @@
 """The shape of hooks.json and its agreement with crew_hook.TABLE (L-0727, A8).
 
-hooks.json registers 16 launcher commands: one per event per shell. `TABLE` in
-crew_hook.py is the one contract for what those launchers run. These tests keep
+hooks.json registers 8 launcher commands: one per event, the bash one (crew 1.3.60: the second,
+PowerShell registration cost about 0.4 s of start-up per hook and ran every guard twice; crew-hook.ps1
+is now only Codex's `commandWindows`). `TABLE` in crew_hook.py is the one contract for what the
+launcher runs. These tests keep
 the rest of the system on that contract:
 
   * hooks.json is exactly what `crew_instructions.claude_hooks()` renders from TABLE;
@@ -51,23 +53,18 @@ def _registrations():
     return out
 
 
-def test_hooks_json_has_exactly_sixteen_registrations_two_per_event():
+def test_hooks_json_has_exactly_eight_registrations_one_bash_launcher_per_event():
     registrations = _registrations()
 
-    assert len(registrations) == 16
-    assert sorted(set(e for e, _, _ in registrations)) == sorted(crew_hook.EVENTS)
-    for event in crew_hook.EVENTS:
-        shells = sorted(h.get("shell", "bash") for e, _, h in registrations if e == event)
-        assert shells == ["bash", "powershell"], event
+    assert len(registrations) == 8
+    assert sorted(e for e, _, _ in registrations) == sorted(crew_hook.EVENTS)
+    for event, _, hook in registrations:
+        assert hook.get("shell", "bash") == "bash", event
 
 
-def test_every_registration_runs_a_launcher_and_names_its_event():
+def test_every_registration_runs_the_bash_launcher_and_names_its_event():
     for event, _, hook in _registrations():
-        if hook.get("shell") == "powershell":
-            assert hook["command"] == (f'& "${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/crew-hook.ps1" {event}; '
-                                       "exit $LASTEXITCODE")
-        else:
-            assert hook["command"] == f'bash "${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/crew-hook.sh" {event}'
+        assert hook["command"] == f'bash "${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/crew-hook.sh" {event}'
 
 
 def _tool_names(matcher):
@@ -279,7 +276,7 @@ def test_no_registration_names_a_hook_script_directly():
 
     scripts = set(re.findall(r"hooks/scripts/([\w.-]+)", text))
 
-    assert scripts == {"crew-hook.sh", "crew-hook.ps1"}
+    assert scripts == {"crew-hook.sh"}
 
 
 def test_the_ps1_launcher_catches_an_unexpected_error_and_exits_2_for_an_armed_blocking_event():

@@ -1027,13 +1027,13 @@ def test_bash_wrapper_without_python_a_directory_is_armed(tmp_path):
 
 
 def test_registered_once_in_the_dispatcher_table_with_its_powershell_twin():
-    """L-0727: hooks.json registers the PreToolUse launcher once per shell for Bash and
+    """L-0727: hooks.json registers the PreToolUse launcher (bash, once) for Bash and
     PowerShell calls; crew_hook.TABLE holds the one env-guard row, with the twin."""
     import crew_hook  # pylint: disable=import-outside-toplevel
     with open(os.path.join(_ROOT, "hooks", "hooks.json"), encoding="utf-8") as fh:
         pre = json.load(fh)["hooks"]["PreToolUse"]
     launchers = [h for e in pre for h in e["hooks"]]
-    assert len(launchers) == 2 and all("crew-hook" in h["command"] for h in launchers)
+    assert len(launchers) == 1 and all("crew-hook" in h["command"] for h in launchers)  # one bash launcher since 1.3.60
     assert {e["matcher"] for e in pre} == {crew_hook.REGISTERED_MATCHER["PreToolUse"]}
     rows = [r for r in crew_hook.TABLE if r.script == "env-guard.sh"]
     assert len(rows) == 1

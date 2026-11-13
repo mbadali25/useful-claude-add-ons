@@ -2,9 +2,9 @@
 
 ### Hooks
 
-Fourteen scripts across eight events, run by one dispatcher behind 16 hook entries<!-- claim: plugin-hooks:crew -->:
-`hooks.json` registers one launcher per event per shell (`crew-hook.sh`, and `crew-hook.ps1` with
-`shell: powershell`), and the launcher starts `crew_hook.py <Event>`, which runs that event's scripts below
+Fourteen scripts across eight events, run by one dispatcher behind 8 hook entries<!-- claim: plugin-hooks:crew -->:
+`hooks.json` registers one bash launcher per event (`crew-hook.sh`; crew 1.3.60 dropped the `shell: powershell`
+entry, and `crew-hook.ps1` is only Codex's `commandWindows`), and the launcher starts `crew_hook.py <Event>`, which runs that event's scripts below
 (L-0850). The table lists the scripts, which are unchanged; the `.sh` is the one that runs. crew 1.0 removed
 `pm-brief` and `pm-pulse`.
 
@@ -243,9 +243,13 @@ model call on your own account.
 
 ### How the Windows half works
 
-`crew-hook.ps1` is the single path on Windows; `crew-hook.sh` exits 0 there (`uname -s` MINGW*/MSYS*/CYGWIN*; an `OS=Windows_NT`
-variable counts only where uname names no POSIX kernel, so it cannot switch the guards off on Linux) so no event
-runs twice. The dispatcher runs each `.sh` script through a strictly resolved
+`crew-hook.sh` is the single registration on every platform, Windows included (crew 1.3.60; before that
+`crew-hook.ps1` was the Windows path and `crew-hook.sh` exited 0 there). Nothing stands the guards down by OS, by
+environment variable or by the shell's build triple. On Windows the dispatcher runs the Python file behind the hot
+`.sh` rows directly (`DIRECT` in `crew_hook.py`: scope-guard, cloud-guard, env-guard, role-write-guard, promote-gate
+for a Bash call, approval-hook after its `approve` pre-filter, crew-context), believes the run only when it exits
+with a code the wrapper would have passed through, and otherwise runs the wrapper; `CREW_HOOK_DIRECT=0` takes the
+wrapper route. It runs every other `.sh` script through a strictly resolved
 Git Bash (`crew_shell.resolve_gitbash(strict=True)`): the `bin/bash.exe` that `git --exec-path` or the default
 install names, that runs `-c 'exit 0'`, never a PATH `bash` and never `usr/bin/bash.exe`, which exits 127 on
 these scripts where `bin/bash.exe` runs them fine. With no such Git Bash an armed repo is refused on
@@ -262,9 +266,10 @@ judged by the `.sh`. The ten twins of slice 3 are deleted; slice 4 (L-0869) dele
 
 Two things worth knowing:
 
-- **A bare `command` string with no `shell` field still goes to Git Bash on Windows** (PowerShell only when
-  Git Bash isn't installed), which is why the PowerShell launcher is registered with `shell: powershell` and
-  the bash one is not expected to run there at all.
+- **A bare `command` string with no `shell` field goes to Git Bash on Windows**, and since crew 1.3.60 that is the
+  only registration: the `shell: powershell` entry cost about 0.4 s of PowerShell start-up per hook and ran every
+  guard a second time. If Git Bash cannot start the hook, Claude Code reports a non-blocking hook error (the
+  PowerShell entry used to refuse the call); Claude Code itself needs Git Bash on Windows.
 - **With no python on Windows** an armed repo is refused on the same three events and an unarmed one is not,
   except that a `PreToolUse` write by a restricted or unreadable role is still refused (the config-independent
   fallback the deleted `role-write-guard.ps1` always had).

@@ -402,23 +402,23 @@ def agents(root, check=False):
 # hook registrations, both harnesses, one table
 
 def claude_hooks():
-    """hooks.json for crew's plugin manifest: one launcher per event per shell
-    flavour (CLAUDE.md: a bare command goes to Git Bash on Windows). Rendered
-    from `crew_hook.TABLE`, the contract the dispatcher runs (L-0727)."""
+    """hooks.json for crew's plugin manifest: ONE launcher per event, the bash one.
+    Rendered from `crew_hook.TABLE`, the contract the dispatcher runs (L-0727).
+
+    On Windows a bare `command` goes to Git Bash (CLAUDE.md), which is also where the
+    dispatcher's `.sh` rows run, so one bash registration serves every platform. The
+    `shell: powershell` registration that used to sit beside it cost about 0.4 s of
+    PowerShell start-up and a python probe on every hook event and ran every guard a
+    second time (crew 1.3.60); `crew-hook.ps1` is still what Codex's `commandWindows` runs."""
     out = {}
     for event in crew_hook.EVENTS:
-        timeout = crew_hook.event_timeout(event)
-        sh = {"type": "command",
-              "command": f'bash "${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/{LAUNCHER}.sh" {event}',
-              "timeout": timeout}
-        ps = {"type": "command", "shell": "powershell",
-              "command": f'& "${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/{LAUNCHER}.ps1" {event}; exit $LASTEXITCODE',
-              "timeout": timeout}
-        for hook in (sh, ps):
-            entry = {"hooks": [hook]}
-            if crew_hook.REGISTERED_MATCHER[event]:
-                entry = {"matcher": crew_hook.REGISTERED_MATCHER[event], "hooks": [hook]}
-            out.setdefault(event, []).append(entry)
+        hook = {"type": "command",
+                "command": f'bash "${{CLAUDE_PLUGIN_ROOT}}/hooks/scripts/{LAUNCHER}.sh" {event}',
+                "timeout": crew_hook.event_timeout(event)}
+        entry = {"hooks": [hook]}
+        if crew_hook.REGISTERED_MATCHER[event]:
+            entry = {"matcher": crew_hook.REGISTERED_MATCHER[event], "hooks": [hook]}
+        out.setdefault(event, []).append(entry)
     return {"hooks": out}
 
 
