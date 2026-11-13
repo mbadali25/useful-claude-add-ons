@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.71: re-bump only - interim number on the L-0888 trust-store branch (commit 8a0d46ca4) before the open #769 took 1.3.71; the change is recorded under crew 1.3.72
 - crew 1.3.64: re-bump only - interim number on the confirm-config-relay branch (commit 6d1d45994, PR #768) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.70
 - crew 1.3.66: re-bump only - interim number on the confirm-config-relay branch (PR #768) before main reached 1.3.69 after #767 merged; the change is recorded under crew 1.3.70
 - crew 1.3.65: re-bump only - interim number on the confirm-config-list branch (PR #767) before merging main brought plugin/crew changes after the version was set and main and the open PRs reached 1.3.68; the change is recorded under crew 1.3.69
@@ -61,9 +62,9 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Changed — crew 1.3.71: the verify-gate trust store, re-numbered above main (L-0888)
+### Changed — crew 1.3.72: the verify-gate trust store, re-numbered above main (L-0888)
 
-- **Summary.** `crew` 1.3.71: re-number only. This branch's trust-store work (recorded under crew 1.3.19 to 1.3.23 below) is merged with main at crew 1.3.70 and carries a version above main; the behaviour is the one described in those entries, and the troubleshooting guide's DOCX and PDF are rebuilt.
+- **Summary.** `crew` 1.3.72: re-number only. This branch's trust-store work (recorded under crew 1.3.19 to 1.3.23 below) is merged with main at crew 1.3.70 and carries a version above main and above the open #769 (crew 1.3.71); the behaviour is the one described in those entries, and the troubleshooting guide's DOCX and PDF are rebuilt.
 - Re-bump only: 1.3.19 to 1.3.23 were interim numbers on the L-0888 branch before main reached 1.3.50.
 - Tests: the trust-seam venv in `plugin/crew/tests/conftest.py` is created with `system_site_packages=True`, because its `python3` heads PATH and `test_27_python_dash_m_is_local_again` (`python3 -m pytest --version`) failed with `No module named pytest` without it (reproduced locally at the pre-merge head too); `plugin/crew/tests/data/optin_inventory.json` regenerated (`optin_inventory.py --write`).
 - Docs: the crew troubleshooting guide (HTML, DOCX, PDF) rebuilt by `docs/guides/crew/src/build.py`.
