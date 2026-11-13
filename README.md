@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.76**: The verify-gate trust store, with the round-8 review fixes. `crew` 1.3.76: nothing the repo supplies runs ahead of the verify-gate trust decision. Round 8 of the independent review (Codex gpt-6-sol, NOT CLEAN, one new BLOCK) is fixed below; the trust-store work recorded under crew 1.3.19 to 1.3.75 is unchanged. Docs: `plugin/crew/CONFIG.md` and the troubleshooting guide (HTML, DOCX, PDF) state the new behaviour and the accepted residuals.
 - **crew 1.3.75**: The verify-gate trust store, re-numbered above main, with six review fixes and the Windows test-seam fix. `crew` 1.3.75: re-number (1.3.73 is held by the open #769), the six review fixes below, and a test-only fix that makes the trust-seam venv take effect on Windows. This branch's trust-store work (recorded under crew 1.3.19 to 1.3.23 below) is merged with main at crew 1.3.70 and carries a version above main and above the open #769 (crew 1.3.71); the behaviour is the one described in those entries, and the troubleshooting guide's DOCX and PDF are rebuilt.
-- **crew 1.3.70**: `crew_confirm_config.py propose` prints the lines the agent relays to the owner. `crew` 1.3.70: after an agent proposes a sensitive config change, its output now carries the change and the exact `/crew:confirm-config <change_id>` command for the agent to relay word for word, and no longer claims that no hook records the confirmation.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

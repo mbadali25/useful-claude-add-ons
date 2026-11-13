@@ -962,7 +962,7 @@
     ]
    }
   ],
-  "mutations_total": 3245,
+  "mutations_total": 3255,
   "stays_in_core": [
    ".crew/codemap/install-scripts.md",
    ".crew/verify.json",
