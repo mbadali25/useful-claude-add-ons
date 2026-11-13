@@ -131,7 +131,6 @@ import time
 import crew_common
 import crew_config
 import crew_gitallow
-import crew_mass
 import crew_preprod
 import crew_selflimit
 import crew_state
@@ -547,7 +546,7 @@ def _lex_bash(text, unsure=None):
     cmds, subs, pending = [], [], []
     unsure = [] if unsure is None else unsure
     state = {"cur": _Cmd(), "word": None, "redirect": None, "quoted": False,
-             "reread": False, "skel": []}
+             "reread": False}
 
     def doubt(reason, alt=None):
         unsure.append(reason)
@@ -562,10 +561,6 @@ def _lex_bash(text, unsure=None):
         if word is None:
             return
         value = "".join(word)
-        if crew_gitallow.skeleton_expands("".join(state["skel"])):
-            # Brace expansion, a glob or a leading tilde: bash rewrites the
-            # word when it runs (crew 1.3.75 review round 3).
-            value = crew_gitallow.Expands(value)
         state["word"] = None
         quoted, state["quoted"] = state["quoted"], False
         redirect = state["redirect"]
@@ -600,11 +595,8 @@ def _lex_bash(text, unsure=None):
 
     def add(chars, quoted=False):
         if state["word"] is None:
-            state["word"], state["skel"] = [], []
+            state["word"] = []
         state["word"].append(chars)
-        # The word's unquoted text, each quoted run a NUL (`crew_gitallow.
-        # skeleton_expands`).
-        state["skel"].append("\0" if quoted else chars)
         state["quoted"] = state["quoted"] or quoted
 
     i, n = 0, len(text)
@@ -2167,20 +2159,15 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
     text = " ".join(argv)
     out = []
 
-    # crew_mass: a mass delete, create or change. Always recognised here, judged
-    # in `evaluate` only when `guards.mass` or a humanOnly opt-out arms it.
-    sql = _sql_payloads(head, args, stdin) if head in _SQL_FLAGS else ()
-    # A git command's findings carry its subcommand (`crew_gitallow.SCOPE_KEY`),
-    # so `evaluate` can let `guards.git.allow` pass them and nothing else.
-    # It also carries why it may never be exempted (`hold`: config or a command
-    # of its own) and the `-C` directories it acts on (`target_dirs`).
+    # A git command's findings carry its subcommand (`crew_gitallow.SCOPE_KEY`)
+    # and the words crew read after `git` (`ARGS_KEY`), so `evaluate` can let
+    # `guards.git.allow` pass them -- and only when the SHARED reader
+    # (`crew_gitallow.line_plan`, the one the promote gate uses) read the same
+    # git command as a plain literal on a line of nothing but such commands.
+    # An `xargs git` finding (`_fed_finding`) carries none: the words xargs
+    # appends come from input crew cannot see.
     gitsub = {crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand(args),
-              crew_gitallow.HOLD_KEY: crew_gitallow.FED_HOLD if fed
-              else crew_gitallow.hold(args, env, shell),
-              crew_gitallow.DIRS_KEY: crew_gitallow.target_dirs(args)} if head == "git" else {}
-    for mass in crew_mass.classify(head, args, shell, bool(fed), sql):
-        out.append(Finding(mass.rule, text, mass.what, None, False, None,
-                           dict({"mass": mass}, **gitsub)))
+              crew_gitallow.ARGS_KEY: None if fed else tuple(args)} if head == "git" else {}
 
     if head in _SHELLS:
         # `-c`, and every cluster carrying it: `bash -lc`, `sh -ec`. With no
@@ -2433,14 +2420,7 @@ def _fed_finding(argv, env, via, placeholders, ctx=None):
         sub = args[index] if index < len(args) else ""
         if sub and seen([sub]) and sub != "push":
             return None
-        # The subcommand counts as read only when it is a literal crew sees.
-        # Held whatever it is: the appended words may carry `-c` or
-        # `--receive-pack` (crew 1.3.75 review round 2).
-        return Finding("forcePush", text, what, None, True, None,
-                       {crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand([sub])
-                        if sub and seen([sub]) else crew_gitallow.UNSEEN,
-                        crew_gitallow.HOLD_KEY: crew_gitallow.FED_HOLD,
-                        crew_gitallow.DIRS_KEY: crew_gitallow.target_dirs(args)})
+        return Finding("forcePush", text, what, None, True, None)
     if head in ("aws", "az"):
         words = _aws_words(args) if head == "aws" else [
             a for a in args if not a.startswith("-")]
@@ -2713,13 +2693,7 @@ def _substitute(word, variables):
     out = re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)",
                  repl, word)
     # The same object when nothing changed, so a `_Bare` word stays marked.
-    if out == word:
-        return word
-    # A word bash rewrites when it runs stays marked, and so does one whose
-    # substituted value bash may glob (crew 1.3.75 review round 3).
-    if isinstance(word, crew_gitallow.Expands) or crew_gitallow.skeleton_expands(out):
-        return crew_gitallow.Expands(out)
-    return out
+    return word if out == word else out
 
 
 _PS_ENV_RE = re.compile(r"^\$env:([A-Za-z_][A-Za-z0-9_]*)(?:=(.*))?$",
@@ -2932,8 +2906,6 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
         else:
             head = words[0]
             if head in ("export", "declare", "typeset", "local", "readonly"):
-                flags = "".join(w[1:] for w in words[1:] if w.startswith("-"))
-                exporting = "n" not in flags if head == "export" else "x" in flags
                 for word in words[1:]:
                     if ctx is not None and ("$" in word or "`" in word):
                         # `export $(cat prod.env)`: names and values built at
@@ -2946,11 +2918,6 @@ def scan(shell, text, env=None, depth=0, ctx=None, seq=None):
                         exported.add(match.group(1))
                     elif not word.startswith("-"):
                         exported.add(word)
-                        if exporting and word.lower() in variables:
-                            # `X=v; export X`: the value assigned before
-                            # reaches every child from here on (crew 1.3.75
-                            # review round 3).
-                            env[word] = variables[word.lower()]
                 continue
             if head == "unset":
                 for word in words[1:]:
@@ -3141,7 +3108,7 @@ def _judge_one(root, finding, pins, problem, envs=None):
             return judge_dispatch(finding.scope, finding.what, lambda key: crew_config.guard_decision(
                 root, DEPLOY_RULE, key), finding.text, envs or {}, _approval_is_live)
         out = crew_config.guard_decision(root, finding.rule, finding.text)
-        # A git finding's scope (`crew_gitallow.SCOPE_KEY`, crew 1.3.75) is
+        # A git finding's scope (`crew_gitallow.SCOPE_KEY`, crew 1.3.76) is
         # not a terraform scope: it takes the plain route it took before.
         if finding.scope is not None and envs is not None \
                 and crew_gitallow.SCOPE_KEY not in finding.scope:
@@ -3177,8 +3144,7 @@ def _judge_one(root, finding, pins, problem, envs=None):
     return (ask if _RANK[ask[0]] > _RANK[verdict[0]] else verdict) + (True,)
 
 
-def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
-             only_mass=False):
+def evaluate(root, tool_name, command, data=None, mode="block"):
     """The whole judgement for one tool call, as a dict. Pure apart from
     reading config and approval markers; `main` does the printing and logging.
 
@@ -3190,13 +3156,7 @@ def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
     Code's own permission flow runs exactly as it would without this hook --
     and `note` says what `block` would have done. Never `allow`: that would
     skip the user's own prompt, and report mode judged nothing.
-
-    `mass` (`crew_mass.settings`) with `armed` true turns on the mass delete /
-    create / change findings, which are otherwise ignored; `only_mass` is the
-    cloud guard being `off` while `guards.mass` or the owner's opt-out arms
-    those alone: every other finding is skipped, as `off` means.
     """
-    mass_armed = bool(mass and mass.get("armed"))
     shell = "powershell" if tool_name == "PowerShell" else "bash"
     envs = crew_preprod.arm(dict(environments_config(root), command=command))
     ctx = {"cd": False, "switch": False, "engaged": envs["engaged"], "dispatch": dict(envs)}
@@ -3208,48 +3168,22 @@ def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
     worst, reasons, rows, unpinned = "allow", [], [], []
     said, audits = [], []
     alone = unattended(data or {})
-    if mass_armed and crew_mass.tampers(command):
-        reason_t = ("[massApprovals] this command writes under the mass-approvals "
-                    "directory, where only the owner's own /crew:approve-mass prompt "
-                    "may write")
-        rows.append(("massApprovals", "-", "deny", command))
-        reasons.append(reason_t)
-        worst = "deny"
-    git_allow_cache = {}
+    git_plan = None
     for finding in findings:
         scope = finding.scope if isinstance(finding.scope, dict) else {}
-        if crew_gitallow.SCOPE_KEY in scope and (
-                finding.rule not in crew_mass.RULES or mass_armed) and not (
-                only_mass and finding.rule not in crew_mass.RULES):
-            # `guards.git.allow` (crew 1.3.75): the owner's double-confirmed
+        if crew_gitallow.SCOPE_KEY in scope:
+            # `guards.git.allow` (crew 1.3.76): the owner's double-confirmed
             # switch lets a git command's own findings through, and logs that
-            # it did. Read once per call and target set, only for a git finding.
-            # Never for a git command that carries config or a command of its
-            # own, on a line that changes directory, or whose target repo
-            # crew cannot tell; a `git -C` target's repo file may veto too.
-            git_allow = crew_gitallow.finding_setting(
-                root, envs["cwd"] or root, scope, ctx, git_allow_cache)
-            if crew_gitallow.allows(git_allow, scope[crew_gitallow.SCOPE_KEY]):
-                rows.append((finding.rule, "gitAllow:" + crew_gitallow.label(git_allow),
+            # it did -- only when the whole line is plain literal git commands
+            # by the one reader the promote gate also uses (`line_plan`, an
+            # allowlist: anything it cannot read whole is not exempt), the
+            # finding is one of them, and no repo file vetoes. Read once.
+            if git_plan is None:
+                git_plan = crew_gitallow.line_plan(command, shell, root, envs["cwd"] or root)
+            if crew_gitallow.finding_exempt(git_plan, scope):
+                rows.append((finding.rule, "gitAllow:" + crew_gitallow.label(git_plan["allow"]),
                              "allow", finding.what))
                 continue
-        if finding.rule in crew_mass.RULES:
-            if not mass_armed:
-                continue
-            verdict = crew_mass.judge(finding.scope["mass"], finding.text,
-                                      envs["cwd"] or root, bool((ctx or {}).get("cd")), alone,
-                                      mass)
-            if verdict is None:
-                continue
-            decision, reason, policy = verdict
-            rows.append((finding.rule, policy, decision, finding.what))
-            if decision != "allow":
-                reasons.append(reason)
-            if _RANK[decision] > _RANK[worst]:
-                worst = decision
-            continue
-        if only_mass:
-            continue
         decision, reason, policy, marker, applies = _judge_one(
             root, finding, pins, problem, envs)
         if not applies:
@@ -3468,16 +3402,8 @@ def main():
         sys.stderr.write(f"cloud-guard: could not read guards.cloudGuard "
                          f"({type(exc).__name__}); not judged.\n")
         return 0
-    # `guards.mass.enabled`, or the owner's opt-out of a human-only rule, arms
-    # the mass delete / create / change stop even where the cloud guard is
-    # `off` (`crew_mass.settings` never raises).
-    mass = crew_mass.settings(root)
-    only_mass = False
     if mode == "off":
-        if not mass["armed"]:
-            return 0
-        only_mass = True
-        mode = "block"
+        return 0
     if problem:
         # Armed, and handed something it cannot read as a command. Refuse in
         # every armed mode: report mode's promise is "nothing refused that
@@ -3488,7 +3414,7 @@ def main():
                       "letting a command through unjudged.")
         return 0
     try:
-        result = evaluate(root, data["tool_name"], command, data, mode, mass, only_mass)
+        result = evaluate(root, data["tool_name"], command, data, mode)
     except Exception as exc:  # pylint: disable=broad-except
         # The guard IS on and could not finish. Refuse: a check that could not
         # run is not a check that passed.

@@ -110,7 +110,7 @@ def test_the_four_guards_are_declared_in_both_layers_and_default_to_block():
     repo = crew_config.default_config()
     glob = crew_config.default_global_config()
 
-    assert {k: v for k, v in repo["guards"].items() if k not in ("mass", "git")} == {
+    assert {k: v for k, v in repo["guards"].items() if k != "git"} == {
         "profile": "off", "overrides": {}}
     assert repo["guards"] == glob["guards"]
     assert crew_config.is_global_path("guards.profile")
@@ -849,7 +849,7 @@ def test_the_two_production_guards_are_declared_in_both_layers_at_none():
         assert crew_guards.PROFILE_MAP["off"][name] == "none", name
         assert crew_config.is_global_path(f"guards.overrides.{name}"), name
     assert repo["guards"] == glob["guards"]
-    assert {k: v for k, v in repo["guards"].items() if k not in ("mass", "git")} == {
+    assert {k: v for k, v in repo["guards"].items() if k != "git"} == {
         "profile": "off", "overrides": {}}
 
 

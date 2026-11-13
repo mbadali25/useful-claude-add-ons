@@ -388,52 +388,22 @@ KEY_META = {
                              "that guard's own tiers; a bad one reads as the floor.",
                              "open-table", since="1.2.62", source=_S + "crew_guards.py",
                              type_="object of guard name to tier"),
-    "guards.mass.enabled": _row(
-        "Turns the mass delete / create / change stop on (it is also armed by a "
-        "double-confirmed `humanOnly` opt-out). On if EITHER layer says exactly `true`; off by "
-        "default.", "type", since="1.3.36", source=_S + "crew_mass.py", type_="boolean"),
-    "guards.mass.deleteCount": _row(
-        "Files a command may delete before it waits for `/crew:approve-mass`; a count at "
-        "the limit stops. The machine file sets it; the repo file can only lower it; a value "
-        "that is not a positive integer reads as the default.", "type", since="1.3.36",
-        source=_S + "crew_mass.py", type_="integer (1 or more)"),
-    "guards.mass.createCount": _row(
-        "Files a command may create before it waits for `/crew:approve-mass`; a count at "
-        "the limit stops. The machine file sets it; the repo file can only lower it; a value "
-        "that is not a positive integer reads as the default.", "type", since="1.3.36",
-        source=_S + "crew_mass.py", type_="integer (1 or more)"),
-    "guards.mass.changeCount": _row(
-        "Files a command may rewrite before it waits for `/crew:approve-mass`; a count at "
-        "the limit stops. The machine file sets it; the repo file can only lower it; a value "
-        "that is not a positive integer reads as the default.", "type", since="1.3.36",
-        source=_S + "crew_mass.py", type_="integer (1 or more)"),
-    "guards.mass.overrides": _row(
-        "`guards.mass.overrides.<files|git|terraform>.<deleteCount|createCount|"
-        "changeCount>`: one limit for one kind of command. Unset, `terraform` is delete 3, "
-        "create 10, change 10 (inferred, not measured); the others use the limits above.",
-        "open-table", since="1.3.36", source=_S + "crew_mass.py",
-        type_="object of category to {deleteCount, createCount, changeCount}"),
-    "guards.mass.exempt": _row(
-        "Repo-relative globs of generated files that never count toward a limit, read from "
-        "the machine file only (a glob can only loosen the stop), on top of the built-in "
-        " regenerable directories (node_modules, __pycache__, .venv, caches, "
-        "build, dist, .work, worktrees).", "type", since="1.3.36",
-        source=_S + "crew_mass.py", type_="list of globs"),
     "guards.git.allow": _row(
         "The owner's switch that stops crew's command guards blocking or asking on git "
-        "commands: `\"all\"` lets every git command past the force-push rule, the mass "
-        "guard's git counts and the promote gate (a line of only git commands, unless a "
-        "declared deploy is itself a git command); a list of subcommands (`[\"commit\", "
-        "\"push\"]`) lets only those through, with every option they take (listing "
-        "`push` lets `push --force` through). null or `\"off\"` changes nothing. Machine "
-        "file only, and only after `/crew:confirm-config` twice "
+        "commands: `\"all\"` lets a line of only plain git commands past the force-push rule "
+        "and the promote gate (unless a declared deploy is itself a git command); a list of "
+        "subcommands (`[\"commit\", \"push\"]`) lets only those through, with every option "
+        "they take (listing `push` lets `push --force` through). null or `\"off\"` changes "
+        "nothing. Machine file only, and only after `/crew:confirm-config` twice "
         "(`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value "
         "written any other way, or any later change to the machine file outside crew's "
         "config writer, reads as off, and a repo `\"off\"` or unreadable repo file vetoes "
-        "it. A git command carrying `-c`, a `GIT_*` variable or a command to run "
-        "(`rebase --exec` or an abbreviation such as `--exe`, `submodule foreach`, ...), "
-        "a word built when it runs (`\"$OPT\"`), or run by `xargs` is never exempt.", "type",
-        since="1.3.75", source=_S + "crew_gitallow.py",
+        "it. FAIL-CLOSED ALLOWLIST: a line is exempt only when every command on it is "
+        "exactly `git` with plain literal words (no `$`, backtick, glob, brace, leading "
+        "`~`, parenthesis, PowerShell expression or `%NAME%`; nothing else on the line); "
+        "a git command carrying `-c`, a command to run (`rebase --exec`, `push "
+        "--receive-pack`, `submodule foreach`, ...) or a `git config` write is never exempt.", "type",
+        since="1.3.76", source=_S + "crew_gitallow.py",
         type_="null, `\"off\"`, `\"all\"` or a list of git subcommand names"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),

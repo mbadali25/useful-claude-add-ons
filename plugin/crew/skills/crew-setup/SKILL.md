@@ -315,14 +315,6 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "guards": {
     "profile": "off",
     "overrides": {},
-    "mass": {
-      "enabled": false,
-      "deleteCount": 10,
-      "createCount": 20,
-      "changeCount": 30,
-      "overrides": {},
-      "exempt": []
-    },
     "git": {
       "allow": null
     }

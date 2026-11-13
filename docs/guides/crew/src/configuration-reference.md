@@ -141,166 +141,12 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
 meaningful only with `scope.mode` `block`.
 
-**`/crew:approve-mass <id>` (crew 1.3.36).** Your yes to ONE blocked mass
-operation, typed by you and recorded by the same prompt hook in
-`<git-common-dir>/crew/mass-approvals/<id>.json`, good for 15 minutes. The
-directory is under `<git-common-dir>/crew/`, which the scope guard refuses to
-every Write/Edit and every shell command naming it, so the session cannot
-write the file. The cloud guard (`cloud_guard.py`) prints the `<id>` with its
-stop and reads the file; see "Mass operations".
-
-## Mass operations (`guards.mass`, crew 1.3.36)
-
-The rule for an autopilot that runs without a human: full automation, except a
-mass delete, a mass create or a mass change, which wait for your yes. The stop
-is armed by `guards.mass.enabled: true` (either layer) or by a double-confirmed
-`humanOnly` opt-out, and by nothing else; it is off by default. It rides on
-the cloud guard's hook, judges every shell command, and works even where
-`guards.cloudGuard` is `off`.
-
-| Limit | Default | Counts |
-|---|---|---|
-| `deleteCount` | 10 | files a command removes |
-| `createCount` | 20 | files it adds |
-| `changeCount` | 30 | files it rewrites |
-
-A count AT the limit stops. The defaults were measured on this repo's own
-history (104 days, 623 merged PRs: a PR adds a median 0 and p95 16 files,
-changes a median 5 and p95 30, deletes none in all but 15).
-`guards.mass.overrides.<files|git|terraform>.<limit>` replaces one limit for
-one kind of command; with nothing set `terraform` is delete 3, create 10,
-change 10 (inferred - the history held no terraform). The machine file sets
-the limits and `guards.mass.exempt`; the repo file can lower a limit and turn
-the stop on (`enabled` is on if either layer says so), so a cloned repo can
-tighten the stop and never loosen yours. `guards.mass.exempt` (machine file
-only) lists repo-relative globs of generated files that never count; node_modules,
-`__pycache__`, `.venv`, caches, `build`, `dist`, `.work` and worktrees
-(including `~/.claude/crew/worktrees/<repo>/<name>`) are always exempt.
-
-What it sees: `rm`, `Remove-Item`, `git clean -f`, `git rm`, `find -delete`,
-`rsync --delete` (delete); `cp`, `mv`, `rsync`, `Copy-Item`, `touch` (create
-and change); `sed -i` and `git reset --hard` / `checkout -- <paths>` /
-`restore` (change); `git commit`, `git push` and `gh pr create`, which count
-the added, deleted and changed files of the commit or of the whole branch
-against its base - so Write and Edit work is counted where it is about to be
-shared; `terraform apply <plan>` (the plan's own changes), `destroy` and
-`apply -auto-approve`; and an unfiltered SQL `DELETE` or `UPDATE`.
-
-A count that cannot be taken - a variable in a path, a path after a `cd`,
-`find -delete`, `xargs rm`, a failed `git`, an unfiltered SQL statement (no
-command text says how many rows it hits) - is "could not tell", and could not
-tell stops. It does NOT see a script (`bash cleanup.sh`, `python -c`,
-`make clean`), an MCP server, the Write and Edit tools before they are
-committed, `tar -x` or `unzip`, `git merge` or `pull`, or many small commands
-each under a limit: a tripwire in front of native permissions, not a sandbox.
-
-A stopped command prints an id. Attended, the stop is an `ask`; unattended
-it is a `deny`. Type `/crew:approve-mass <id>` in the session, then re-run the
-exact command. One id covers every limit that command trips.
-
-## Git commands (`guards.git.allow`, crew 1.3.75)
-
-The owner's switch that stops crew's command guards from blocking or asking on
-git commands, destructive ones included. Off by default (`null`, or `"off"`).
-
-| Value | What passes |
-|---|---|
-| `null` / `"off"` | nothing changes: every guard judges git as before |
-| `"all"` | every git command |
-| `["commit", "push", ...]` | a git command whose subcommand is listed; every other git command keeps today's checks |
-
-A listed subcommand passes with every option it takes: listing `push` also lets
-`git push --force` and `git push origin +main` through, because the force-push
-rule is a finding on the `push` subcommand. To keep force pushes stopped, leave
-`push` out of the list.
-
-What it loosens, and nothing else: the cloud guard's `guards.forcePush` rule
-(`git push --force`, `+ref`; not `xargs git`, whose appended arguments crew
-cannot see); the mass stop's git counts (`git commit`, `git push`,
-`git clean -f`, `git rm`, `git reset --hard`, `git checkout -f` / `-- <paths>`,
-`git restore`); and the promote gate for a command line made ONLY of covered
-git commands, so a commit message or heredoc that merely mentions a declared
-deploy no longer trips it. Everything else on the same line is judged as
-before (`git commit && rm -rf big/` still meets the mass stop for the `rm`). A
-declared deploy that is itself a git command (`git push prod main`) stays
-gated: that is a deploy, not a git block. `gh` is not git: `gh pr merge
---admin` (`guards.adminMerge`), `gh pr create`'s mass count, workflow
-dispatches and `gh api` calls are untouched.
-
-Who can turn it on: the machine file only, and only through the double
-confirmation. `crew_confirm_config.py propose --layer machine --key
-guards.git.allow --value '"all"'` (or `'["commit","push"]'`) records the change
-and prints an id; you type `/crew:confirm-config <change_id>` twice, in two
-prompts, within 15 minutes. A value counts only while the newest settled
-receipt for that file is a whole double confirmation (two confirmations from
-two distinct prompts you typed, inside the proposal's window, for that file)
-of exactly that value, AND the machine file is still the file that
-confirmation left: the same bytes, size, modification time and change time
-(the metadata-change time: POSIX `ctime`, NTFS ChangeTime on Windows). crew's own
-config writer (`crew_config.py --set`, `/crew:config`, a confirmed `humanOnly`
-change) carries the receipt over when it changes another key. Any other change
-to the machine file turns the switch off until you confirm it again: a hand
-edit, an agent's Edit, a restore from backup, even setting `"off"` by hand and
-then the same `"all"` back, or putting a copy of the confirmed file back with
-`cp -p` (bytes and modification time restored; the change time still moves).
-One gap, on Windows only: a copy made AND put back with a Windows file copy
-(`Copy-Item`, Explorer, `shutil.copy2`) carries the change time over with the
-bytes, so crew cannot tell it from the confirmed file. `crew_config.py --set` and `/crew:config` refuse
-every value but `"off"` and null, and a crew write back to `"off"` revokes the
-receipt. A repo file can never turn it on; a repo `"off"`, a malformed repo
-value, or a repo `.crew/config.json` crew cannot read or parse (a link that
-does not resolve, or a `.crew` that is a file, included) vetoes it.
-Anything crew cannot read - a value outside the table, a store it cannot read,
-a line it cannot split, a subcommand it cannot see - is off.
-
-Never exempt, whatever the value: a git command that hands git config or a
-command of its own - a global `-c` (an alias `!cmd`, `core.sshCommand`,
-`core.pager`), `--config-env` or `--exec-path`, a `GIT_*` environment variable
-set on the line (or assigned and then exported by name, `X=v; export X`), one
-git or what it starts reads a program or config from (`HOME`,
-`XDG_CONFIG_HOME`, `PATH`, `EDITOR`, `PAGER`, `SSH_ASKPASS`, `LD_PRELOAD`,
-...), or an option or subcommand that runs a command it is given
-(`rebase --exec`/`-x`, `submodule foreach`, `bisect run`, `push`/`send-pack
---receive-pack`/`--exec`, `fetch-pack --upload-pack`/`--exec`,
-`fetch`/`pull`/`clone`/`ls-remote --upload-pack`, `clone
--u`/`-c`/`--template`, `grep -O`, `difftool --extcmd`, `filter-branch`,
-`instaweb`, `send-email --*-cmd`, `daemon --access-hook`), in any
-abbreviation git accepts (`--exe`, `--receive=...`: git takes an unambiguous
-prefix of a long option). Nor a git command crew cannot read whole: a word
-built when it runs (`"$OPT"`, `${X:-...}`, `$env:X`, a backtick or `$(...)`
-substitution, a PowerShell `@splat`; in bash an unquoted brace expansion
-(`--rece{ive-pack,}=x`), glob (`*`, `?`, `[`) or leading `~`; in PowerShell
-`--%`, a `%NAME%`, a glob character or a leading `~`) - so `git commit -m "$(git rev-parse
-HEAD)"` is judged as before - or a git command `xargs` / `parallel` runs,
-whose appended arguments come from input crew cannot see. In PowerShell a
-single `&` (the background or call operator) makes the line unreadable for the
-promote gate; `2>&1` and a quoted `&` do not. A git command aimed at another
-repository (`git -C <dir>`) passes only when that repository's own file does
-not veto it either; one whose repository crew cannot tell (`--git-dir`,
-`--work-tree`, a `-C` built from a variable, or any `cd` on the line) is
-judged as before.
-
-What a receipt cannot prove: the store (`~/.claude/crew/confirm-config/`) is
-plain files. It is protected from an agent's writes ONLY while `scope.mode` is
-on: then the scope guard refuses a Write/Edit into it, and a shell command
-naming it beside a writing word. With `scope.mode` off nothing stops an agent
-writing a receipt, and even with it on a process that runs arbitrary code as
-you can write a whole, well-formed record. And `"all"` does not stop what git
-runs from its own persistent configuration: hooks (`.git/hooks/`,
-`core.hooksPath`), aliases (`alias.*` set in a config file earlier), and
-`core.sshCommand`, `core.pager`, `core.editor`, filters and the like all run
-under `"all"` exactly as they would with crew absent. crew reads only the
-command line, never git's config files or hooks.
-
-`python3 hooks/scripts/crew_gitallow.py --root .` prints what is in force.
-Each pass is logged to `.crew/guard.log` with the policy `gitAllow:<value>`.
-
 ## Reference (generated)
 
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**107 keys**: 69 settable in the machine-global file, 38 repo-only.
+**100 keys**: 62 settable in the machine-global file, 38 repo-only.
 
 Columns:
 
@@ -485,13 +331,6 @@ Columns:
 |---|---|---|---|---|---|
 | `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | 1.2.62 | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `plugin/crew/hooks/scripts/crew_guards.py`) | 1.2.62 | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
-| `guards.mass.enabled` | both | `false` | boolean (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Turns the mass delete / create / change stop on (it is also armed by a double-confirmed `humanOnly` opt-out). On if EITHER layer says exactly `true`; off by default. |
-| `guards.mass.deleteCount` | both | `10` | integer (1 or more) (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Files a command may delete before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
-| `guards.mass.createCount` | both | `20` | integer (1 or more) (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Files a command may create before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
-| `guards.mass.changeCount` | both | `30` | integer (1 or more) (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Files a command may rewrite before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
-| `guards.mass.overrides` | both | `{}` | object of category to {deleteCount, createCount, changeCount} (checked in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | `guards.mass.overrides.<files\|git\|terraform>.<deleteCount\|createCount\|changeCount>`: one limit for one kind of command. Unset, `terraform` is delete 3, create 10, change 10 (inferred, not measured); the others use the limits above. |
-| `guards.mass.exempt` | both | `[]` | list of globs (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Repo-relative globs of generated files that never count toward a limit, read from the machine file only (a glob can only loosen the stop), on top of the built-in  regenerable directories (node_modules, __pycache__, .venv, caches, build, dist, .work, worktrees). |
-| `guards.git.allow` | both | `null` | null, `"off"`, `"all"` or a list of git subcommand names (coerced in `plugin/crew/hooks/scripts/crew_gitallow.py`) | 1.3.75 | The owner's switch that stops crew's command guards blocking or asking on git commands: `"all"` lets every git command past the force-push rule, the mass guard's git counts and the promote gate (a line of only git commands, unless a declared deploy is itself a git command); a list of subcommands (`["commit", "push"]`) lets only those through, with every option they take (listing `push` lets `push --force` through). null or `"off"` changes nothing. Machine file only, and only after `/crew:confirm-config` twice (`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value written any other way, or any later change to the machine file outside crew's config writer, reads as off, and a repo `"off"` or unreadable repo file vetoes it. A git command carrying `-c`, a `GIT_*` variable or a command to run (`rebase --exec` or an abbreviation such as `--exe`, `submodule foreach`, ...), a word built when it runs (`"$OPT"`), or run by `xargs` is never exempt. |
 
 ### `production`
 
