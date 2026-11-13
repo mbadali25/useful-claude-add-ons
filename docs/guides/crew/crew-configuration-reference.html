@@ -261,23 +261,39 @@ reader that both the cloud guard and the promote gate use:</p>
   or <code>..</code> inside; whole <code>'...'</code> runs; <code>"..."</code> runs with no <code>$</code> or backtick; a
   backslash escaping one character; a heredoc whose delimiter is quoted, or
   whose body has no <code>$</code>, backtick or backslash. Commands joined only by <code>;</code>,
-  <code>&amp;&amp;</code>, <code>||</code>, <code>|</code>, <code>&amp;</code> or a newline.</li>
+  <code>&amp;&amp;</code>, <code>||</code>, <code>|</code>, <code>&amp;</code> or a newline. A redirection only AFTER the
+  subcommand, and only <code>&gt;</code> / <code>&gt;&gt;</code> (an optional digit descriptor) to a plain
+  file name not starting with <code>-</code>, <code>N&gt;&amp;M</code> between digit descriptors
+  (<code>2&gt;&amp;1</code>), or a heredoc / here-string (crew 1.3.77).</li>
 <li>PowerShell: unquoted letters, digits and <code>_ - . / : = + \ ^ % ~ @</code> (no
-  leading <code>~</code>, <code>@</code> only alone or inside a word); a whole <code>'...'</code> or <code>"..."</code>
+  leading <code>~</code>, <code>@</code> only inside a word); a whole <code>'...'</code> or <code>"..."</code>
   word (a double-quoted one holding no <code>$</code>); a here-string (<code>@"..."@</code> with no
   <code>$</code> or backtick); a backtick escaping a character that is not a letter or
-  digit; a redirection (<code>2&gt;&amp;1</code>, <code>&gt; out</code>). Statements joined only by <code>;</code>,
-  <code>&amp;&amp;</code>, <code>||</code> or a newline.</li>
+  digit; an unquoted first word; a redirection after the subcommand
+  (<code>2&gt;&amp;1</code>, <code>*&gt;&amp;1</code>, <code>&gt; out</code>; only <code>n&gt;&amp;1</code> merges, PowerShell reserves <code>1&gt;&amp;2</code>).
+  Statements joined only by <code>;</code>, <code>&amp;&amp;</code>, <code>||</code> or a newline, with a statement on
+  both sides of every <code>&amp;&amp;</code> and <code>||</code>.</li>
 </ul>
 <p>Anything else is "cannot tell", and cannot tell is never exempt: <code>$</code> in any
 form (<code>"$OPT"</code>, <code>${X:-...}</code>, <code>$'\x2d...'</code>, <code>$"..."</code>, <code>$env:X</code>, <code>$(...)</code>), a
 backtick substitution, a glob (<code>*</code>, <code>?</code>, <code>[</code>), a brace expansion, a leading
 <code>~</code>, a PowerShell <code>(expr)</code>, <code>@(...)</code>, <code>@splat</code>, <code>{ }</code> or <code>[type]</code>, a pipe into
-anything, a single <code>&amp;</code>, <code>--%</code>, a <code>%NAME%</code>, a curly quote, or a backtick
-before a letter (<code>`u{2d}</code> is a <code>-</code>). Four review rounds each found a new
-way to build a git word at run time; the allowlist lists what is plain
-instead of what is dangerous, so a form nobody has thought of yet is judged,
-not exempt.</p>
+anything, a single <code>&amp;</code>, <code>--%</code>, a <code>%NAME%</code>, a curly quote, a backtick
+before a letter (<code>`u{2d}</code> is a <code>-</code>) or a newline inside a word, a
+dangling <code>&amp;&amp;</code> / <code>||</code> (or an empty command after one), and every other
+redirection: <code>&lt;</code>, <code>&lt;&amp;</code>, <code>&lt;&gt;</code>, <code>&gt;|</code>, <code>&amp;&gt;</code>, <code>&gt;&amp;-</code>, <code>&gt;&amp; file</code>, a <code>{var}&gt;</code>
+descriptor, one with no target, and any redirection between <code>git</code> and its
+subcommand. Bash reads <code>&gt;&amp;-</code> as "close the descriptor" and hands the rest of
+that word to git, so <code>git push &gt;&amp;---receive-pack=x origin main</code> runs git with
+<code>--receive-pack=x</code>; and <code>git 2&gt;&amp;1 -c core.sshCommand=x push</code> hid its <code>-c</code>
+from a reader that kept the <code>2</code> (crew 1.3.77, review round 5). Five review
+rounds each found a new way to build a git word at run time; the allowlist
+lists what is plain instead of what is dangerous, so a form nobody has
+thought of yet is judged, not exempt. A differential test
+(<code>tests/test_git_allow_differential.py</code>) runs every line of a generated
+corpus that the allowlist accepts under real bash and PowerShell 7 with a
+shim <code>git</code> that logs its argv, and fails when git is handed anything other
+than the argv crew read.</p>
 <p>Never exempt even when every word is plain: a git command that hands git
 config or a command of its own - a global <code>-c</code> (an alias <code>!cmd</code>,
 <code>core.sshCommand</code>, <code>core.pager</code>), <code>--config-env</code> or <code>--exec-path</code>; an option or

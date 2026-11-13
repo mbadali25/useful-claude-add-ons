@@ -284,23 +284,39 @@ reader that both the cloud guard and the promote gate use:
   or `..` inside; whole `'...'` runs; `"..."` runs with no `$` or backtick; a
   backslash escaping one character; a heredoc whose delimiter is quoted, or
   whose body has no `$`, backtick or backslash. Commands joined only by `;`,
-  `&&`, `||`, `|`, `&` or a newline.
+  `&&`, `||`, `|`, `&` or a newline. A redirection only AFTER the
+  subcommand, and only `>` / `>>` (an optional digit descriptor) to a plain
+  file name not starting with `-`, `N>&M` between digit descriptors
+  (`2>&1`), or a heredoc / here-string (crew 1.3.77).
 - PowerShell: unquoted letters, digits and `_ - . / : = + \\ ^ % ~ @` (no
-  leading `~`, `@` only alone or inside a word); a whole `'...'` or `"..."`
+  leading `~`, `@` only inside a word); a whole `'...'` or `"..."`
   word (a double-quoted one holding no `$`); a here-string (`@"..."@` with no
   `$` or backtick); a backtick escaping a character that is not a letter or
-  digit; a redirection (`2>&1`, `> out`). Statements joined only by `;`,
-  `&&`, `||` or a newline.
+  digit; an unquoted first word; a redirection after the subcommand
+  (`2>&1`, `*>&1`, `> out`; only `n>&1` merges, PowerShell reserves `1>&2`).
+  Statements joined only by `;`, `&&`, `||` or a newline, with a statement on
+  both sides of every `&&` and `||`.
 
 Anything else is "cannot tell", and cannot tell is never exempt: `$` in any
 form (`"$OPT"`, `${X:-...}`, `$'\\x2d...'`, `$"..."`, `$env:X`, `$(...)`), a
 backtick substitution, a glob (`*`, `?`, `[`), a brace expansion, a leading
 `~`, a PowerShell `(expr)`, `@(...)`, `@splat`, `{ }` or `[type]`, a pipe into
-anything, a single `&`, `--%`, a `%NAME%`, a curly quote, or a backtick
-before a letter (`` `u{2d} `` is a `-`). Four review rounds each found a new
-way to build a git word at run time; the allowlist lists what is plain
-instead of what is dangerous, so a form nobody has thought of yet is judged,
-not exempt.
+anything, a single `&`, `--%`, a `%NAME%`, a curly quote, a backtick
+before a letter (`` `u{2d} `` is a `-`) or a newline inside a word, a
+dangling `&&` / `||` (or an empty command after one), and every other
+redirection: `<`, `<&`, `<>`, `>|`, `&>`, `>&-`, `>& file`, a `{var}>`
+descriptor, one with no target, and any redirection between `git` and its
+subcommand. Bash reads `>&-` as "close the descriptor" and hands the rest of
+that word to git, so `git push >&---receive-pack=x origin main` runs git with
+`--receive-pack=x`; and `git 2>&1 -c core.sshCommand=x push` hid its `-c`
+from a reader that kept the `2` (crew 1.3.77, review round 5). Five review
+rounds each found a new way to build a git word at run time; the allowlist
+lists what is plain instead of what is dangerous, so a form nobody has
+thought of yet is judged, not exempt. A differential test
+(`tests/test_git_allow_differential.py`) runs every line of a generated
+corpus that the allowlist accepts under real bash and PowerShell 7 with a
+shim `git` that logs its argv, and fails when git is handed anything other
+than the argv crew read.
 
 Never exempt even when every word is plain: a git command that hands git
 config or a command of its own - a global `-c` (an alias `!cmd`,

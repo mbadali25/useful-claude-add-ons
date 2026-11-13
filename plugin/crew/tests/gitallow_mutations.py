@@ -60,6 +60,20 @@ cloud guard's `not fed` (an `xargs git` line is never only git), and
 `_ps_commands`' dangling-redirection check (the target word, if read as an
 argument instead, never makes a line exempt that dropping it would not).
 
+Review round 5 (Codex gpt-6-sol, crew 1.3.77) made redirections a fail-closed
+allowlist and taught the shared splitter bash's `>&-` and fd-prefix reading,
+and added one red mutation per rule (25: the redirection rules, the PowerShell
+parse-error refusals the differential test found, the splitter and the fd
+prefix both readers share). It DELETED "a substitution anywhere on the line
+is ignored" (`_bash_commands`' `if subs`): measured green, now a shadowed belt.
+Its case, a substitution in a redirection target (`> "$(deploy-prod)"`), is
+refused first by `_bash_redirect_problem`'s plain-target rule, and every other
+place a substitution sits is refused by the word, nesting or heredoc-body
+checks. `_fd_prefix`'s raw-text check is a belt too (no mutation): its boundary
+check refuses every case it would, because raw text is never shorter than the
+word read from it; so is `_bash_redirect_problem`'s ASCII check on the fd
+(`_fd_prefix` never records a non-ASCII descriptor). The total is 109.
+
 HOST-SPECIFIC, and therefore not in this table: promote-gate.ps1's
 `allow<TAB>guards.git.allow` -> `exit 0` line. Its cases
 (`test_gate_*[ps1]`) need PowerShell 7 and skip without it, and a skipped case
@@ -77,6 +91,7 @@ PD = os.path.join(_SCRIPTS, "_promote_dispatch.py")
 CFG = os.path.join(_SCRIPTS, "crew_config.py")
 CFF = os.path.join(_SCRIPTS, "crew_config_files.py")
 CC = os.path.join(_SCRIPTS, "crew_confirm_config.py")
+GU = os.path.join(_SCRIPTS, "crew_guards.py")
 _T = "tests/test_git_allow.py::"
 
 GITALLOW_MUTATIONS = (
@@ -308,10 +323,6 @@ GITALLOW_MUTATIONS = (
      "            out.append(raw[pos + 1])\n            pos += 2\n",
      "            out.append(raw[pos:pos + 2])\n            pos += 2\n",
      _T + "test_round4_plain_git_lines_stay_exempt"),
-    ("gitAllow r4: a substitution anywhere on the line is ignored", GA,
-     "    if subs:\n        return None\n",
-     "    if False:\n        return None\n",
-     _T + "test_line_exempt"),
     ("gitAllow r4: a subshell, group or other operator is read as plain (FIX C)", GA,
      "        if meta.get(\"nest\") != 1 or meta.get(\"before\") not in _BASH_OPS \\\n"
      "                or meta.get(\"after\") not in _BASH_OPS:\n",
@@ -400,8 +411,8 @@ GITALLOW_MUTATIONS = (
      "            if False:\n                return None\n",
      _T + "test_a_powershell_word_expanded_at_run_time_is_never_exempt"),
     ("gitAllow r4: a PowerShell leading @ (splat) is plain", GA,
-     "            if c == \"@\" and text[i + 1:i + 2] not in",
-     "            if False and text[i + 1:i + 2] not in",
+     "            if c == \"@\":\n                return None  # a splat",
+     "            if False:\n                return None  # a splat",
      _T + "test_a_word_built_at_run_time_is_never_exempt"),
     ("gitAllow r4: no PowerShell --% / %NAME% word is refused", GA,
      "            if item == \"--%\" or _PS_PERCENT_RE.search(item):\n",
@@ -432,4 +443,106 @@ GITALLOW_MUTATIONS = (
      "        if not line_exempt(command, shell, setting):\n            return none\n",
      "        if False:\n            return none\n",
      _T + "test_an_allowlist_covers_the_whole_line_or_nothing"),
+    # --- review round 5: redirections (one red per rule) ---
+    ("gitAllow r5: a redirection before the subcommand is plain", GA,
+     "    if redir.get(\"at\", 0) <= _subcommand_at(words):\n",
+     "    if False:\n",
+     _T + "test_round5_a_redirection_crew_cannot_read_is_not_exempt"),
+    ("gitAllow r5: a {var} descriptor is plain", GA,
+     "    if fd and not (fd.isdigit() and fd.isascii()):\n",
+     "    if False:\n",
+     _T + "test_round5_a_redirection_crew_cannot_read_is_not_exempt"),
+    ("gitAllow r5: a redirection with no target is plain", GA,
+     "        return \"a redirection with no target\"\n",
+     "        return None\n",
+     _T + "test_round5_a_redirection_crew_cannot_read_is_not_exempt"),
+    ("gitAllow r5: any > target is plain", GA,
+     "        return None if plain and not plain.startswith(\"-\") else \"a target that is not plain\"\n",
+     "        return None\n",
+     _T + "test_round5_a_redirection_crew_cannot_read_is_not_exempt"),
+    ("gitAllow r5: a > target may start with -", GA,
+     "        return None if plain and not plain.startswith(\"-\") else",
+     "        return None if plain else",
+     _T + "test_round5_a_redirection_crew_cannot_read_is_not_exempt"),
+    ("gitAllow r5: >& to a file is plain", GA,
+     "    if op == \">&\" and target.isdigit() and target.isascii():\n",
+     "    if op == \">&\":\n",
+     _T + "test_round5_a_redirection_crew_cannot_read_is_not_exempt"),
+    ("gitAllow r5: >& to a non-ASCII digit is plain", GA,
+     "    if op == \">&\" and target.isdigit() and target.isascii():\n",
+     "    if op == \">&\" and target.isdigit():\n",
+     _T + "test_round5_a_redirection_crew_cannot_read_is_not_exempt"),
+    ("gitAllow r5: every redirection operator is plain", GA,
+     "    return f\"a {op} redirection\"\n",
+     "    return None\n",
+     _T + "test_round5_a_redirection_crew_cannot_read_is_not_exempt"),
+    ("gitAllow r5: a trailing && is plain", GA,
+     "or splitter.metas[-1].get(\"after\") in (\"&&\", \"||\", \"|\")):\n",
+     "or splitter.metas[-1].get(\"after\") in ()):\n",
+     _T + "test_round5_a_redirection_crew_cannot_read_is_not_exempt"),
+    ("gitAllow r5: a leading && is plain", GA,
+     "    if splitter.metas and (splitter.metas[0].get(\"before\") not in (None, \"\\n\")\n",
+     "    if splitter.metas and (splitter.metas[0].get(\"before\") not in (None, \"\\n\", \"&&\")\n",
+     _T + "test_round5_a_redirection_crew_cannot_read_is_not_exempt"),
+    ("gitAllow r5: a PowerShell redirection before the subcommand is plain", GA,
+     "        if any(place <= _subcommand_at(statement) for place in places):\n",
+     "        if False:\n",
+     _T + "test_round5_a_powershell_redirection_before_the_subcommand_is_not_exempt"),
+    ("gitAllow r5: a quoted PowerShell program word is a command", GA,
+     "            if not words:\n                return None  # `\"git\" status`",
+     "            if False:\n                return None  # `\"git\" status`",
+     _T + "test_round5_a_powershell_line_pwsh_cannot_parse_is_not_exempt"),
+    ("gitAllow r5: a PowerShell here-string program word is a command", GA,
+     "            if state[\"started\"] or not words or text[i + 2:i + 3] != \"\\n\":\n",
+     "            if state[\"started\"] or text[i + 2:i + 3] != \"\\n\":\n",
+     _T + "test_round5_a_powershell_line_pwsh_cannot_parse_is_not_exempt"),
+    ("gitAllow r5: PowerShell's reserved 1>&2 is a merge", GA,
+     "_PS_REDIRECT_RE = re.compile(r\"(?:[1-6*])?>>?(?:&1)?\")\n",
+     "_PS_REDIRECT_RE = re.compile(r\"(?:[1-6*])?>>?(?:&[12])?\")\n",
+     _T + "test_round5_a_powershell_line_pwsh_cannot_parse_is_not_exempt"),
+    ("gitAllow r5: a PowerShell && with nothing before it is plain", GA,
+     "            if not end_statement() or (chain and len(statements) == count):\n",
+     "            if not end_statement():\n",
+     _T + "test_round5_a_powershell_line_pwsh_cannot_parse_is_not_exempt"),
+    ("gitAllow r5: a PowerShell && with nothing after it is plain", GA,
+     "    if not end_statement() or state[\"join\"]:\n",
+     "    if not end_statement():\n",
+     _T + "test_round5_a_powershell_line_pwsh_cannot_parse_is_not_exempt"),
+    ("gitAllow r5: a PowerShell backtick-newline inside a word ends it", GA,
+     "                if state[\"started\"]:\n                    return None  # `a`<newline>b`",
+     "                if False:\n                    return None  # `a`<newline>b`",
+     _T + "test_round5_a_powershell_line_pwsh_cannot_parse_is_not_exempt"),
+    ("gitAllow r5: an empty command after || is plain", GA,
+     "                right.get(\"before\") not in (left.get(\"after\"), \"\\n\"):\n",
+     "                False:\n",
+     _T + "test_round5_a_redirection_crew_cannot_read_is_not_exempt"),
+    # the splitter both paths read, and the fd prefix both readers strip alike
+    ("splitter r5: >&- takes a word as its target", GU,
+     "                    if redir[\"op\"] in (\">&\", \"<&\") and text[look:look + 1] == \"-\":\n",
+     "                    if False:\n",
+     _T + "test_round5_the_splitter_reads_redirections_as_bash_does"),
+    ("splitter r5: an fd prefix stays a word", GU,
+     "                if char in \"<>\" and _fd_prefix(text, self.pos, \"\".join(word)):\n",
+     "                if False:\n",
+     _T + "test_round5_a_redirection_crew_cannot_read_is_not_exempt"),
+    ("splitter r5: a dangling redirection takes the next command's word", GU,
+     "            # target is never the next command's first word.\n            state[\"target\"] = None\n",
+     "            # target is never the next command's first word.\n",
+     _T + "test_round5_the_splitter_reads_redirections_as_bash_does"),
+    ("splitter r5: a redirection's target is not recorded", GU,
+     "                    state[\"redir\"][\"target\"] = \"\".join(word)\n",
+     "                    pass\n",
+     _T + "test_round5_a_plain_redirection_after_the_subcommand_stays_exempt"),
+    ("gate reader r5: a quoted digit word is an fd prefix", GU,
+     "                        _fd_prefix(self.text, self.pos, \"\".join(word)):",
+     "                        _FD_WORD_RE.match(\"\".join(word)):",
+     _T + "test_round5_the_gate_reader_strips_an_fd_prefix_as_the_splitter_does"),
+    ("fd prefix r5: a digit word need not start a word", GU,
+     "    return start == 0 or text[start - 1] in _FD_BOUNDARY\n",
+     "    return True\n",
+     _T + "test_round5_the_gate_reader_strips_an_fd_prefix_as_the_splitter_does"),
+    ("fd prefix r5: a non-ASCII digit is a descriptor", GU,
+     "    if not word or not word.isascii() or not _FD_WORD_RE.match(word) \\\n",
+     "    if not word or not _FD_WORD_RE.match(word) \\\n",
+     _T + "test_round5_the_gate_reader_strips_an_fd_prefix_as_the_splitter_does"),
 )

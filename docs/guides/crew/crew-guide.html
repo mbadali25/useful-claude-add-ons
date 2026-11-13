@@ -593,8 +593,9 @@ line is a fail-closed allowlist. Every command on it must be exactly <code>git</
 (no path, no other command, so nothing on the line can redefine git), and
 every word a plain literal as one shared reader reads it - no <code>$</code> in any form,
 backtick, glob, brace expansion, leading <code>~</code>, subshell, PowerShell <code>(expr)</code>,
-<code>@(...)</code>, splat, <code>--%</code> or <code>%NAME%</code>. Anything it cannot read whole is judged as
-before. A plain git command carrying <code>-c</code> or a command to run (<code>rebase
+<code>@(...)</code>, splat, <code>--%</code> or <code>%NAME%</code>, and no redirection but <code>&gt;</code>, <code>&gt;&gt;</code> or
+<code>2&gt;&amp;1</code> after the subcommand (bash reads <code>&gt;&amp;-</code> as "close" and hands the rest
+of the word to git). Anything it cannot read whole is judged as before. A plain git command carrying <code>-c</code> or a command to run (<code>rebase
 --exec</code> or its abbreviation <code>--exe</code>, <code>push --receive-pack</code>, <code>init
 --template</code>), or a <code>git config</code> that is not plainly a read, is never exempt.
 Plain lines - <code>git commit -m "fix: x"</code>, <code>git push --force-with-lease origin

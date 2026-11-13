@@ -536,8 +536,9 @@ line is a fail-closed allowlist. Every command on it must be exactly `git`
 (no path, no other command, so nothing on the line can redefine git), and
 every word a plain literal as one shared reader reads it - no `$` in any form,
 backtick, glob, brace expansion, leading `~`, subshell, PowerShell `(expr)`,
-`@(...)`, splat, `--%` or `%NAME%`. Anything it cannot read whole is judged as
-before. A plain git command carrying `-c` or a command to run (`rebase
+`@(...)`, splat, `--%` or `%NAME%`, and no redirection but `>`, `>>` or
+`2>&1` after the subcommand (bash reads `>&-` as "close" and hands the rest
+of the word to git). Anything it cannot read whole is judged as before. A plain git command carrying `-c` or a command to run (`rebase
 --exec` or its abbreviation `--exe`, `push --receive-pack`, `init
 --template`), or a `git config` that is not plainly a read, is never exempt.
 Plain lines - `git commit -m "fix: x"`, `git push --force-with-lease origin

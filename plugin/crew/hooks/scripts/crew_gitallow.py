@@ -775,8 +775,51 @@ def _bash_commands(text):
         words = [_bash_plain_word(w) for w in raw_words]
         if any(w is None for w in words):
             return None
+        if any(_bash_redirect_problem(r, words) for r in meta.get("redirs", ())):
+            return None
         out.append(words)
+    if splitter.metas and (splitter.metas[0].get("before") not in (None, "\n")
+                           or splitter.metas[-1].get("after") in ("&&", "||", "|")):
+        return None  # `&& git x`, `git x &&`: bash refuses the line, so it runs nothing
+    for left, right in zip(splitter.metas, splitter.metas[1:]):
+        if left.get("after") in ("&&", "||", "|") and \
+                right.get("before") not in (left.get("after"), "\n"):
+            return None  # `git x ||& git y`: an empty command after `||`, a syntax error
     return out
+
+
+def _subcommand_at(words):
+    """The index in `words` (`git` first) of the subcommand word."""
+    return 1 + _global_split(list(words[1:]))[1]
+
+
+def _bash_redirect_problem(redir, words):
+    """Why a bash redirection keeps a git line from being exempt, or None.
+    A FAIL-CLOSED allowlist (PR #769 review round 5: `>&-` closes stdout and
+    hands the rest of its word to git as an argument, and an fd prefix before
+    the subcommand hid `-c`): only, AFTER the subcommand, `>` / `>>` to a
+    plain literal file not starting with `-`, `N>&M` between plain digit
+    descriptors, and a heredoc or here-string (whose body the reader checks).
+    Anything else -- `<`, `<&`, `<>`, `>|`, `&>`, `>&-`, `>& file`, a `{var}`
+    descriptor, a redirection with no target, or any redirection between
+    `git` and the subcommand -- is "cannot tell"."""
+    fd, op, target = redir.get("fd") or "", redir.get("op"), redir.get("target")
+    if redir.get("at", 0) <= _subcommand_at(words):
+        return "a redirection before the subcommand"
+    if fd and not (fd.isdigit() and fd.isascii()):
+        return "a {var} descriptor"
+    if op in ("<<", "<<-"):
+        return None
+    if target is None:
+        return "a redirection with no target"
+    if op == "<<<":
+        return None
+    if op in (">", ">>"):
+        plain = _bash_plain_word(target)
+        return None if plain and not plain.startswith("-") else "a target that is not plain"
+    if op == ">&" and target.isdigit() and target.isascii():
+        return None
+    return f"a {op} redirection"
 
 
 # Characters an UNQUOTED PowerShell word may hold. Not `$` (a variable or
@@ -792,8 +835,11 @@ _PS_CURLY = "‘’‚‛“”„"
 # `%NAME%`: expanded at run time after `--%`, and by cmd.exe when git is a
 # `.cmd` shim -- quoted or not (crew 1.3.75 review round 3).
 _PS_PERCENT_RE = re.compile(r"%[^%\s]+%")
-# A redirection at a word's start: `>out`, `2>>log`, `2>&1`, `*>&1`.
-_PS_REDIRECT_RE = re.compile(r"(?:[1-6*])?>>?(?:&[12])?")
+# A redirection at a word's start: `>out`, `2>>log`, `2>&1`, `*>&1`. Only
+# `n>&1` merges: `1>&2` / `2>&2` are "reserved for future use", a parse error
+# (measured, pwsh 7; review round 5), so they do not match and the `&` is
+# then refused.
+_PS_REDIRECT_RE = re.compile(r"(?:[1-6*])?>>?(?:&1)?")
 
 
 def _ps_commands(text):  # pylint: disable=too-many-branches,too-many-statements
@@ -809,8 +855,8 @@ def _ps_commands(text):  # pylint: disable=too-many-branches,too-many-statements
     `%NAME%` -- is None."""
     if any(c in text for c in _PS_CURLY):
         return None
-    statements, words, word = [], [], []
-    state = {"started": False, "target": False, "closed": False}
+    statements, words, word, redirs, at = [], [], [], [], []
+    state = {"started": False, "target": False, "closed": False, "join": False}
     i, n = 0, len(text)
 
     def end_word():
@@ -828,7 +874,10 @@ def _ps_commands(text):  # pylint: disable=too-many-branches,too-many-statements
             return False
         if words:
             statements.append(list(words))
+            at.append(list(redirs))
+            state["join"] = False
         words.clear()
+        redirs.clear()
         return True
 
     while i < n:
@@ -837,7 +886,7 @@ def _ps_commands(text):  # pylint: disable=too-many-branches,too-many-statements
             return None  # `'a'b`: a quote ending mid-word
         if text.startswith("@'", i) or text.startswith('@"', i):
             quote = text[i + 1]
-            if state["started"] or text[i + 2:i + 3] != "\n":
+            if state["started"] or not words or text[i + 2:i + 3] != "\n":
                 return None
             close = text.find("\n" + quote + "@", i + 2)
             if close == -1:
@@ -852,6 +901,8 @@ def _ps_commands(text):  # pylint: disable=too-many-branches,too-many-statements
         if c in "'\"":
             if state["started"]:
                 return None  # `a'b'`: a quote starting mid-word
+            if not words:
+                return None  # `"git" status`: a quoted first word is a string, not a command
             end, buf = i + 1, []
             while True:
                 if end >= n:
@@ -878,6 +929,8 @@ def _ps_commands(text):  # pylint: disable=too-many-branches,too-many-statements
             continue
         if c == "`":
             if text[i + 1:i + 2] == "\n":
+                if state["started"]:
+                    return None  # `a`<newline>b`: one word holding a newline (measured, pwsh 7)
                 end_word()
                 i += 2
                 continue
@@ -892,9 +945,12 @@ def _ps_commands(text):  # pylint: disable=too-many-branches,too-many-statements
             i += 1
             continue
         if c in ";\n" or text.startswith("&&", i) or text.startswith("||", i):
-            if not end_statement():
-                return None
-            i += 2 if text.startswith(("&&", "||"), i) else 1
+            chain = text.startswith(("&&", "||"), i)
+            count = len(statements)
+            if not end_statement() or (chain and len(statements) == count):
+                return None  # `&& git x`, `git x; && ...`: a parse error, runs nothing
+            state["join"] = state["join"] or chain
+            i += 2 if chain else 1
             continue
         if c == "#" and not state["started"]:
             while i < n and text[i] != "\n":
@@ -906,24 +962,30 @@ def _ps_commands(text):  # pylint: disable=too-many-branches,too-many-statements
                 if state["target"]:
                     return None
                 state["target"] = "&" not in match.group(0)
+                redirs.append(len(words))
                 i = match.end()
                 continue
             if c == "~":
                 return None
-            if c == "@" and text[i + 1:i + 2] not in ("", " ", "\t", "\n", ";"):
-                return None
+            if c == "@":
+                return None  # a splat, `@(...)`, `@{...}`; a bare `@` is a parse error
         if c in _PS_SAFE:
             word.append(c)
             state["started"] = True
             i += 1
             continue
         return None
-    if not end_statement():
-        return None
-    for statement in statements:
+    if not end_statement() or state["join"]:
+        return None  # `git x &&`: a parse error, runs nothing
+    for statement, places in zip(statements, at):
         for item in statement:
             if item == "--%" or _PS_PERCENT_RE.search(item):
                 return None
+        # Review round 5: a redirection between `git` and its subcommand is
+        # never exempt, in PowerShell as in bash (fail closed; PowerShell
+        # drops it, but crew does not lean on that).
+        if any(place <= _subcommand_at(statement) for place in places):
+            return None
     return statements
 
 

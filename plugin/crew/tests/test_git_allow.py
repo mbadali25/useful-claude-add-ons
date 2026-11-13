@@ -956,10 +956,12 @@ def test_a_word_built_at_run_time_is_never_exempt(command, shell):
     assert crew_gitallow.line_exempt(command, shell, "all") is False
 
 
-@pytest.mark.parametrize("shell", ["bash", "powershell"])
-def test_a_bare_at_sign_is_not_a_splat(shell):
-    """Must-allow neighbour: git's `@` (HEAD) is a literal."""
-    assert crew_gitallow.line_exempt("git push origin @", shell, "all") is True
+@pytest.mark.parametrize("shell,expect", [("bash", True), ("powershell", False)])
+def test_a_bare_at_sign_is_not_a_splat(shell, expect):
+    """Must-allow neighbour in bash: git's `@` (HEAD) is a literal. In
+    PowerShell a bare `@` is "Unrecognized token" (measured, pwsh 7; review
+    round 5's differential test): the line runs nothing, so it is refused."""
+    assert crew_gitallow.line_exempt("git push origin @", shell, "all") is expect
 
 
 # FIX 3: a repo file that is there but cannot be resolved vetoes.
@@ -1342,7 +1344,8 @@ CONFIG_READS = [
 # Further forms the allowlist refuses (each pins one rule for a mutation).
 BASH_MORE = [
     "git push -f origin @{a..c}", "git push -f origin @{a,b}",
-    "git commit -F - <<EOF\n$X\nEOF\n", "git commit -F - <<< $X", "git config edit"]
+    "git commit -F - <<EOF\n$X\nEOF\n", "git commit -F - <<< $X", "git config edit",
+    "git status; (git log -1)"]
 PS_MORE = [
     "git push `n origin topic", "git push --force x'--receive-pack=y' o t",
     "git push 'a'b origin topic"]
@@ -1369,7 +1372,7 @@ BASH_PLAIN = [
 PS_PLAIN = [
     "git -C C:\\repos\\x status", "git status 2>&1", "git push origin main *>&1",
     "git log -1 > out.txt", "git commit -m @'\nit's $deploy-prod\n'@",
-    "git commit -m \"a `\"b`\" c\"", "git commit -m 'it''s'", "git push origin @"]
+    "git commit -m \"a `\"b`\" c\"", "git commit -m 'it''s'"]
 ROUND4_ALLOW = ([(c, "bash") for c in PLAIN + BASH_PLAIN]
                 + [(c, "powershell") for c in PLAIN + PS_PLAIN])
 
@@ -1439,6 +1442,164 @@ def test_both_paths_read_one_corpus_alike(tmp_path, machine, tool, command):
     result = _evaluate(root, command, tool)
     cloud = any(r[0] == "forcePush" and r[1].startswith("gitAllow") for r in result["rows"])
     assert cloud is line, (line, result)
+
+
+# --- review round 5: redirections ------------------------------------------------------
+#
+# BLOCK 1: bash reads `>&-` / `<&-` as "close the descriptor" and hands the rest
+# of that word (after blanks too) to the command as an argument, so
+# `git push >&---receive-pack=deploy-prod origin main` runs git with
+# `--receive-pack=deploy-prod` (measured with a shim git under bash 5).
+# BLOCK 2: an fd prefix (`2>&1`) between `git` and the subcommand was left in
+# the word list, so `-c` / `--exec-path` / `--receive-pack` were never seen.
+# The fix: the allowlist accepts a redirection only after the subcommand and
+# only in the plain forms `_bash_redirect_problem` lists.
+
+REDIRECT_BLOCK = [
+    "git push >&---receive-pack=deploy-prod origin main",
+    "git push >& ---receive-pack=deploy-prod origin main",
+    "git push <&-\"--receive-pack=deploy-prod\" origin main",
+    "git push 2>&---receive-pack=deploy-prod origin main",
+    "git push -f >&---receive-pack=deploy-prod origin main",
+    "git 2>&1 -c core.sshCommand=x push -f o t",
+    "git 2>&1 push --receive-pack=deploy-prod o m",
+    "git 2>/dev/null --exec-path=/tmp/x status",
+    "git 2>&1 -c alias.p='!printf HIT' p"]
+# Each pins one rule of `_bash_redirect_problem` (and the line-end check).
+REDIRECT_RULES = {
+    "before": "git 2>/dev/null status",
+    "var": "git status {v}>out",
+    "notarget": "git status >",
+    "plain": "git status > \"$OUT\"",
+    "dash": "git status > -x",
+    "dupfile": "git status >&out",
+    "dupascii": "git status 2>&١",
+    "op": "git status < in",
+    "close": "git status >&-",
+    "trailing": "git status &&",
+    "leading": "&& git status",
+    "empty": "git fetch ||& git log origin",
+}
+REDIRECT_ALLOW = [
+    "git status 2>&1", "git log -1 > out.txt", "git status >>log 2>&1",
+    "git status 2>/dev/null", "git status 1>&2", "git -C /x status 2>&1",
+    "git push -f origin topic 2>&1", "git commit -F - <<'EOF'\nx\nEOF\n",
+    "git status; git log -1 >out", "git fetch &&\ngit status", "git log | git status"]
+
+
+@pytest.mark.parametrize("command", REDIRECT_BLOCK + list(REDIRECT_RULES.values()))
+def test_round5_a_redirection_crew_cannot_read_is_not_exempt(command):
+    assert crew_gitallow.line_exempt(command, "bash", "all") is False
+
+
+@pytest.mark.parametrize("command", REDIRECT_ALLOW)
+def test_round5_a_plain_redirection_after_the_subcommand_stays_exempt(command):
+    assert crew_gitallow.line_exempt(command, "bash", "all") is True
+
+
+def test_round5_an_fd_prefix_is_not_an_argument():
+    """The non-blocking note: `git status 2>&1` read `2` as a word."""
+    assert crew_gitallow.line_git_commands("git status 2>&1", "bash") == [["status"]]
+    assert crew_gitallow.line_git_commands("git status \"2\">/dev/null", "bash") == \
+        [["status", "2"]]
+
+
+@pytest.mark.parametrize("command", ["git 2>&1 push origin main", "git 2>err.txt status"])
+def test_round5_a_powershell_redirection_before_the_subcommand_is_not_exempt(command):
+    assert crew_gitallow.line_exempt(command, "powershell", "all") is False
+    after = "git push origin main 2>&1"
+    assert crew_gitallow.line_exempt(after, "powershell", "all") is True
+
+
+# Found by the differential test (`test_git_allow_differential.py`): lines the
+# reader accepted that real pwsh 7 refuses to parse, so they ran nothing -- an
+# over-read, refused now so the reader and PowerShell agree exactly.
+PS_PARSE_ERRORS = {
+    "quoted": "\"git\" status",
+    "single": "'git' status *>&1",
+    "dup2": "git status 1>&2",
+    "trailing": "git status &&",
+    "leading": "&& git status",
+    "double": "git status; && git log",
+    "at": "git push origin @",
+    "herestring": "@'\ngit\n'@ status",
+    "joined": "git status`\n-x",
+}
+
+
+@pytest.mark.parametrize("command", list(PS_PARSE_ERRORS.values()))
+def test_round5_a_powershell_line_pwsh_cannot_parse_is_not_exempt(command):
+    assert crew_gitallow.line_exempt(command, "powershell", "all") is False
+
+
+@pytest.mark.parametrize("command", [
+    "git status 3>&1", "git status &&\ngit log -1", "git fetch || git status", "git status `\n-x",
+    "git status; git log -1"])
+def test_round5_a_powershell_neighbour_that_parses_stays_exempt(command):
+    assert crew_gitallow.line_exempt(command, "powershell", "all") is True
+
+
+def _split(text):
+    import crew_guards  # pylint: disable=import-outside-toplevel
+    return crew_guards._CommandSplitter(text).split()[0]  # pylint: disable=protected-access
+
+
+def _gate_read(text):
+    import crew_guards  # pylint: disable=import-outside-toplevel
+    cmds = []
+    crew_guards._GateReader(text, 0, cmds).read()  # pylint: disable=protected-access
+    return cmds
+
+
+@pytest.mark.parametrize("text,expect", [
+    ("git push >&---receive-pack=x origin main",
+     [["git", "push", "--receive-pack=x", "origin", "main"]]),
+    ("git push >& -y z", [["git", "push", "y", "z"]]),
+    ("a x <&-\"q\" z", [["a", "x", "\"q\"", "z"]]),
+    ("a x >&2y z", [["a", "x", "z"]]),
+    ("a x 2>&1 z", [["a", "x", "z"]]),
+    ("a x \"2\">f z", [["a", "x", "\"2\"", "z"]]),
+    ("git status >\ngit log", [["git", "status"], ["git", "log"]]),
+])
+def test_round5_the_splitter_reads_redirections_as_bash_does(text, expect):
+    """Measured with bash 5: `>&-` takes the `-` (after blanks too) and the
+    rest of that word is an argument; `"2">` is an argument, `2>` is not."""
+    assert _split(text) == expect
+
+
+@pytest.mark.parametrize("text,expect", [
+    ("echo \"2\">f", [["echo", "2"]]),
+    ("echo \"\"2>f", [["echo", "2"]]),
+    ("echo ٢>f", [["echo", "٢"]]),
+    ("echo 2>f", [["echo"]]),
+])
+def test_round5_the_gate_reader_strips_an_fd_prefix_as_the_splitter_does(text, expect):
+    assert _gate_read(text) == expect
+
+
+def test_round5_force_push_with_a_closed_descriptor_stays_refused_with_all(tmp_path, machine):
+    """The reviewer's cloud-guard repro: deny off -> allow on, before."""
+    root = make_repo(tmp_path, mode=None)
+    command = "git push -f >&---receive-pack=deploy-prod origin main"
+    assert _evaluate(root, command)["decision"] == "deny"
+    _arm(machine, "all")
+    result = _evaluate(root, command)
+    assert result["decision"] == "deny", result
+    assert not any(r[1].startswith("gitAllow") for r in result["rows"]), result
+
+
+@pytest.mark.parametrize("command", [
+    "git push >&---receive-pack=deploy-prod origin main",
+    "git 2>&1 push --receive-pack=deploy-prod o m"])
+def test_round5_gate_still_gates_a_redirection_repro_with_all(tmp_path, machine, command):
+    if _BASH is None:
+        pytest.skip("no MSYS/POSIX bash")
+    root = _gate_repo(tmp_path)
+    code, err = run_gate("sh", root, tmp_path / "home", command)
+    assert code == 2, err
+    _arm(machine, "all")
+    code, err = run_gate("sh", root, tmp_path / "home", command)
+    assert code == 2, err
 
 
 # --- the mutation table ----------------------------------------------------------------

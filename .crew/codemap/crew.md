@@ -1011,8 +1011,8 @@ by no hook, and a session that runs arbitrary python can still forge a receipt.
 
 DERIVED from `plugin/crew/hooks/scripts/crew_gitallow.py` (stdlib only); tests
 `plugin/crew/tests/test_git_allow.py`, mutations `plugin/crew/tests/gitallow_mutations.py`
-(re-measure with `len(GITALLOW_MUTATIONS)`; 85 at crew 1.3.76, run alone: `sabotage*.py` is
-harness). `settings` (`crew_gitallow.py:569`) reads the machine file only (`read_layer`,
+(re-measure with `len(GITALLOW_MUTATIONS)`; 109 at crew 1.3.77, run alone: `sabotage*.py` is
+harness), and the differential test `plugin/crew/tests/test_git_allow_differential.py`. `settings` (`crew_gitallow.py:569`) reads the machine file only (`read_layer`,
 `:353`, one open: absent / unset / set / unreadable plus the file binding; a dangling link
 or a non-directory parent is unreadable, `_dangles` `:396`) and honours `"all"` or a list
 only when `newest_receipt` (`:505`) is a whole applied record (`receipt_problem`, `:461`)
@@ -1022,26 +1022,32 @@ vetoes (`_repo_veto`, `:529`), as does each `git -C` target repo's file. Writers
 `write_refusal` (`:145`) from `crew_config._layer_path_refusal`; `crew_config.write_global_config`
 re-binds through `_carry_git_allow` (`crew_config.py:4077`, `crew_gitallow.backing` `:648` /
 `rebind` `:625`) when it leaves the key alone. Readers, since round 4 ONE reader: a
-fail-closed allowlist. `plain_commands` (`:930`) reads a line as simple commands of plain
+fail-closed allowlist. `plain_commands` (`:992`) reads a line as simple commands of plain
 literal words or None: bash through `crew_guards._CommandSplitter` and `_bash_commands`
-(`:750`: no substitution, subshell or group, only `;` `&&` `||` `|` `&` newline) and
-`_bash_plain_word` (`:691`); PowerShell through `_ps_commands` (`:799`: `_PS_SAFE` bare
-words, whole quoted words with no `$`, no curly quotes, `--%` or `%NAME%`).
-`line_git_commands` (`:940`) needs every command to be exactly `git` and `hold` (`:287`:
+(`:750`: no substitution, subshell or group, only `;` `&&` `||` `|` `&` newline, none
+dangling), `_bash_plain_word` (`:691`) and `_bash_redirect_problem` (`:796`, review round 5:
+a redirection only after the subcommand, `>`/`>>` to a plain file, `N>&M` between digits, a
+heredoc or here-string) over the splitter's per-command `redirs` (`crew_guards.py:1935`; an fd
+prefix is stripped by `_fd_prefix`, `crew_guards.py:1540`, which `_GateReader` `:1567` shares,
+and `>&-` takes its `-` as bash does); PowerShell through `_ps_commands` (`:845`: `_PS_SAFE` bare
+words, whole quoted words with no `$`, no curly quotes, `--%` or `%NAME%`, an unquoted first
+word, no redirection before the subcommand, only `n>&1` merges, no dangling `&&`/`||`).
+`line_git_commands` (`:1002`) needs every command to be exactly `git` and `hold` (`:287`:
 `-c`, `--config-env`, `--exec-path`, an option that runs a command in any prefix git takes
 `_option_hit` `:272`, a `git config` that is not plainly a read `_config_is_read` `:236`) to
-say nothing; `line_exempt` (`:970`) adds the setting. The cloud guard: `_classify`
+say nothing; `line_exempt` (`:1032`) adds the setting. The cloud guard: `_classify`
 (`cloud_guard.py:2168`) tags a `git` finding with its subcommand only (none for an `xargs`
-finding); `evaluate` (`cloud_guard.py:3181`) asks `line_plan` (`:984`, the setting read for
-the line's `-C` targets, or off) and `finding_exempt` (`:1003`); `_judge_one`
+finding); `evaluate` (`cloud_guard.py:3181`) asks `line_plan` (`:1046`, the setting read for
+the line's `-C` targets, or off) and `finding_exempt` (`:1065`); `_judge_one`
 (`cloud_guard.py:3113`) keeps a git scope off the terraform table. The promote gate:
 `_promote_gate.Gate.git_allowed` (`_promote_gate.py:451`, bash) and
 `_promote_dispatch._git_allowed` (`_promote_dispatch.py:289`, the `allow` record
-`promote-gate.ps1:713` exits 0 on) call `promote_exempt` (`crew_gitallow.py:1041`): the line
+`promote-gate.ps1:713` exits 0 on) call `promote_exempt` (`crew_gitallow.py:1103`): the line
 is `line_exempt` and no declared deploy that is itself a git command is contained in it.
-JUDGEMENT: four review rounds each found a new run-time word form, so the reader lists what
+JUDGEMENT: five review rounds each found a new run-time word form, so the reader lists what
 is plain rather than what is dangerous; one reader for both paths is what keeps them from
-diverging (`test_both_paths_read_one_corpus_alike`). `gh` is deliberately not git; the
+diverging (`test_both_paths_read_one_corpus_alike`), and the differential test is what keeps
+that reader honest against the shells themselves (a shim git logging its argv). `gh` is deliberately not git; the
 receipt store is plain files the scope guard protects only while `scope.mode` is on, so a
 forged whole record is a deliberate act, not a sandbox escape; git programs the repo
 configures persistently (hooks, `alias.*` set earlier) are outside what a command-line
