@@ -90,7 +90,9 @@ takes effect only when all of these hold (`crew_humanonly.resolve`):
   tell" counts as tracked);
 - neither layer says `true` (a `true` anywhere vetoes, the stricter wins);
 - it was written by a double confirmation: `crew_confirm_config.py propose`
-  records the change and prints an id, and the owner types
+  records the change and prints an id with two lines the agent relays to you
+  word for word (the change, and the exact command; crew 1.3.70), and the
+  owner types
   `/crew:confirm-config <change_id>` twice, in two prompts, within 15 minutes.
   `crew_config.py --set` and `/crew:config` refuse a `false` (and a repo
   `null` or removal, which drops a veto); a `false` written by hand reads as
@@ -108,6 +110,22 @@ which still needs `autopilot.approval` `self` or `risk` and `autopilot.mode`
 `plan` or `backlog`. Anything unclear - the module missing, the resolver
 raising or answering anything but exactly `humanOnly: false` - reads as
 human-only.
+
+**Finding the change id (crew 1.3.69).** Type `/crew:confirm-config` with no
+id (or with an id that is wrong, expired or already used) and the hook refuses
+it, records nothing, and lists the proposals in this machine's store
+(`~/.claude/crew/confirm-config/`): each pending one's id, key, current value
+-> `false`, layer and file, age, time left and confirmations so far, then up
+to five from the last day that can no longer be confirmed. With none pending
+it says so, and why one may be missing: none was made, it expired, it was
+already applied, cancelled or refused, or it was proposed under another home
+directory (WSL rather than Windows has its own store). The store is per
+machine and home directory, not per repository, so a proposal made in one repo
+or worktree is listed from any other. The listing never confirms: even with
+exactly one pending proposal a bare `/crew:confirm-config` records nothing,
+because "the only pending one" is a choice whoever ran `propose` makes, and the
+id you type is what binds the change. A store crew cannot read is reported as
+"could not tell", never as none pending.
 
 **Still human-only (crew 1.3.33).** No hook reads `humanOnly.promoteMarker`:
 the promote marker is human-only by instruction alone, and no hook checks who

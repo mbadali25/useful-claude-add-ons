@@ -1,6 +1,8 @@
 anchor: useful-claude-add-ons@c43ccae58
 verified: 2026-10-26
-paths: scripts/**, plugin/PLUGINS.md
+paths: scripts/**, plugin/PLUGINS.md, .claude-plugin/**, README.md, CHANGELOG.md
+
+**`paths:` line widened 2026-11-12; anchor NOT moved.** Added `.claude-plugin/**`, `README.md` and `CHANGELOG.md`, which no note claimed, so autopilot's split-check read a ticket touching them as `split-check-unknown` (found on T-0112). No claim in this note was re-verified.
 
 **Targeted check at `c0e582fbe` (2026-10-22, L-0725); anchor NOT moved.** Re-read: `scripts/check-marketplace.py`'s `main()` call list and line numbers, and the smoke-gap count ("Two version-check paths"); L-0725 changed that file's `check_config_reference` docstring only. Nothing else in this note was
 re-verified: a claim here is as of this note's own anchor.
@@ -64,7 +66,7 @@ is gone). Measured against disk:
 | agents | 4 + the `session-relay` transport agent = 5 | `git ls-files plugin/crew/agents` -> 5 `.md` (explorer, researcher, reviewer, security, session-relay) | `plugin/PLUGINS.md:157` ("4 agents plus the `session-relay`"), install-script catalog rows say "5 agents" (below); `README.md:168`, `README.md:405`, `plugin/README.md:417` say "4 agents" and are not marked |
 | commands | 38 | `git ls-files plugin/crew/commands` `.md` -> 38 | `.claude-plugin/marketplace.json:247`, `plugin/PLUGINS.md:157` and `:275` (`plugin-commands:crew`), `README.md:168`/`:405`, `plugin/README.md:417`, install scripts; **`INSTALLATION.md:259` still reads "34 slash commands"**, unmarked, so no check catches it |
 | skills | 33 | `find plugin/crew/skills -maxdepth 1 -mindepth 1 -type d` -> 33 | same sites, each `plugin-skills:crew`-marked (`INSTALLATION.md:259` included; it is correct on skills) |
-| hook entries | 16 | `plugin/crew/hooks/hooks.json`: 8 events, 16 command entries | `plugin/PLUGINS.md:157`, `README.md:168`, `plugin/README.md:417`, `INSTALLATION.md:259`, each `plugin-hooks:crew`-marked |
+| hook entries | 8 | `plugin/crew/hooks/hooks.json`: 8 events, 8 command entries (one bash launcher each; 16 until crew 1.3.54) | `plugin/PLUGINS.md:157`, `README.md:168`, `plugin/README.md:417`, `INSTALLATION.md:259`, each `plugin-hooks:crew`-marked |
 
 Both install scripts' crew catalog row (`scripts/install-prerequisites.sh:1425`,
 `scripts/install-prerequisites.ps1:1179`) reads "Virtual dev team: 5 agents, 38 commands, safety

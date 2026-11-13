@@ -221,6 +221,20 @@ def case_harness_root_readme(tmp: str) -> str:
     return root
 
 
+def case_harness_shell_suite(tmp: str) -> str:
+    """The hooks' shell/python regression suites live beside the scripts and are tests like any other."""
+    root = repo(tmp)
+    commit(root, [HARNESS_FILE, "plugin/crew/hooks/scripts/_test/test_flavour_guard.py"], "harness with its suite")
+    return root
+
+
+def case_harness_standards_exports(tmp: str) -> str:
+    """The standards exports carry the crew version, so a harness change that bumps it regenerates them."""
+    root = repo(tmp)
+    commit(root, [HARNESS_FILE, "AGENTS.md", "REVIEW.md", ".cursor/BUGBOT.md"], "harness with its re-stamped exports")
+    return root
+
+
 def case_harness_readme_and_feature(tmp: str) -> str:
     """The README entry admits only itself: a feature file beside it still blocks."""
     root = repo(tmp)
@@ -320,6 +334,8 @@ CASES = [
     ("must-allow harness+optin-autopilot-declared-seam", case_harness_optin_autopilot_declared, 0, "OK"),
     ("must-allow harness+review-prompts", case_harness_review_prompts, 0, "OK"),
     ("must-allow harness+root-readme", case_harness_root_readme, 0, "OK"),
+    ("must-allow harness+standards-exports", case_harness_standards_exports, 0, "OK"),
+    ("must-allow harness+hooks-shell-suite", case_harness_shell_suite, 0, "OK"),
     ("must-block harness+readme+feature", case_harness_readme_and_feature, 1,
      "  skills/x/SKILL.md"),
     ("must-block harness+nested-readme", case_harness_nested_readme, 1, "  skills/x/README.md"),

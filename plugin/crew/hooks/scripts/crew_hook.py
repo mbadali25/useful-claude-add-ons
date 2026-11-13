@@ -54,6 +54,32 @@ RETRY_MARGIN = 0.5
 RETRY_SAFE = frozenset({"role-write-guard.sh", "cloud-guard.sh", "env-guard.sh", "scope-guard.sh"})
 
 
+# Windows direct route (crew 1.3.60). On Git Bash every process start is an MSYS fork (0.1-0.5 s, seconds under
+# load), and a Bash tool call used to cost about thirty of them: each `.sh` row started a Git Bash, whose wrapper
+# started `$(crew_py_strict)` and then python and git. These wrappers are only launchers - the decision is the
+# Python file - so on Windows `dispatch` starts that file with its own interpreter, with the environment the
+# wrapper would have given it. A direct run is believed ONLY when it exits with a code the wrapper would have
+# passed through unchanged; any other exit, a failed launch or a missing file runs the original `.sh` wrapper, so
+# the wrapper's fail-closed handling, `armed` logic and `scope.mode off` proof stay where they are. A timeout is
+# never rerun through the wrapper (the retry rule below already covers it). `CREW_HOOK_DIRECT=0` takes the old route.
+#   module   the Python file that holds the decision
+#   args     argv between the module and the row's extra args
+#   accept   exit codes the wrapper passes through as they are
+#   env      what the wrapper sets for the child
+Direct = namedtuple("Direct", "module args accept env")
+_UTF8 = {"PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+DIRECT = {
+    "scope-guard.sh": Direct("scope_guard.py", (), (0, 2), _UTF8),
+    "cloud-guard.sh": Direct("cloud_guard.py", (), (0,), dict(_UTF8, CREW_CLOUD_GUARD_FLAVOUR="bash")),
+    "env-guard.sh": Direct("env_guard.py", (), (0,), dict(_UTF8, CREW_ENV_GUARD_FLAVOUR="bash")),
+    "role-write-guard.sh": Direct("role_write_guard.py", (), (0, 2), _UTF8),
+    "approval-hook.sh": Direct("approval_hook.py", (), (0, 2), _UTF8),
+    "promote-gate.sh": Direct("_promote_gate.py", (), (0, 2), {"PYTHONIOENCODING": "utf-8"}),
+    "crew-context.sh": Direct("crew_context.py", ("--flavour", "sh"), (0,), {}),
+}
+GIT_PROBE_SECONDS = 5
+
+
 def _retry_reserve(windows):
     """Seconds the dispatch deadline must still have, beyond the retry's own run, for a second
     timeout to clean up: run_child after a timeout spends up to taskkill (Windows) + the
@@ -453,6 +479,62 @@ def _text(data):
     return data.decode("utf-8", errors="replace") if isinstance(data, bytes) else (data or "")
 
 
+_SKIP = "skip"
+
+
+def _approval_wanted(raw):
+    """approval-hook.sh's own pre-filter: the word `approve` in any case, or `crew:confirm-config`.
+    A prompt with neither exits 0 before any python is looked for."""
+    return re.search(rb"approve", raw, re.IGNORECASE) is not None or b"crew:confirm-config" in raw
+
+
+def _promote_plan(tool, env):
+    """promote-gate.sh's own routing, for a Bash call: (cwd, extra env, stdin suffix) when the python gate
+    decides, _SKIP when the wrapper would exit 0 before python (no map in the checkout and none at HEAD),
+    None when the wrapper has to judge. The wrapper `cd`s to CLAUDE_PROJECT_DIR (else `.`) and a failed `cd` is
+    its own exit 0; an unusable directory or a map that is not a regular file is left to it."""
+    if tool != "Bash":
+        return None
+    project = env.get("CLAUDE_PROJECT_DIR") or "."
+    if not os.path.isdir(project):
+        return None
+    gate_env = {"CREW_GATE_START": str(int(time.time())), "CREW_HEAD_MAP": "", "CREW_MAP_DIRTY": ""}
+    shape = os.path.join(project, ".crew", "verify.json")
+    if os.path.lexists(shape):
+        return (project, gate_env, b"\n") if os.path.isfile(shape) and not os.path.islink(shape) else None
+    try:
+        import crew_common  # pylint: disable=import-outside-toplevel
+        probe = [crew_common.require_tool("git"), "rev-parse", "-q", "--verify", "HEAD:./.crew/verify.json"]
+        got = subprocess.run(probe, cwd=project, capture_output=True, stdin=subprocess.DEVNULL, check=False,
+                             timeout=GIT_PROBE_SECONDS)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return _SKIP if not got.stdout.strip() else None
+
+
+def direct_plan(argv, payload, raw, env, scripts, executable=None):
+    """How to run one `.sh` row without its wrapper: None (use the wrapper), `_SKIP` (the wrapper would have
+    exited 0 without python) or (command, child env, cwd, stdin, accept). Pure but for promote-gate's git probe."""
+    spec = DIRECT.get(argv[0])
+    executable = sys.executable if executable is None else executable
+    if spec is None or not executable:
+        return None
+    module = os.path.join(scripts, spec.module)
+    if not os.path.isfile(module):
+        return None
+    cwd, extra, stdin = None, {}, raw
+    if argv[0] == "approval-hook.sh" and not _approval_wanted(raw):
+        return _SKIP
+    if argv[0] == "promote-gate.sh":
+        got = _promote_plan(tool_name(payload), env)
+        if got in (None, _SKIP):
+            return got
+        cwd, extra, suffix = got
+        stdin = raw + suffix
+    command = [executable, module, *spec.args, *argv[1:]]
+    return command, dict(env, **spec.env, **extra), cwd, stdin, spec.accept
+
+
 def _argv_for(argv, scripts, bash, pwsh):
     """(command, flavour) for a selected argv: the twin through PowerShell, a
     `.sh` through bash (or the caller's resolved Git Bash)."""
@@ -502,31 +584,51 @@ def _timing(path, event, argv, res):
         return
     outcome = "timeout" if res.get("timed_out") else f"exit={res.get('exit')}"
     first = f" first_said={json.dumps(res['first_said'])}" if res.get("first_said") else ""
+    if res.get("fell_back"):
+        first += f" fell_back={json.dumps(res['fell_back'])}"
     _append_trace(path, f"{event} {' '.join(argv)} {res.get('pid', 0)} attempts={res.get('attempts', 1)} "
                         f"start_ms={res['start_ms']} end_ms={res['end_ms']} "
                         f"ms={res['end_ms'] - res['start_ms']}{first} {outcome}\n")
 
 
 def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_bash=None,
-             resolve_pwsh=None, scripts=SCRIPTS, armed_fn=None):
+             resolve_pwsh=None, scripts=SCRIPTS, armed_fn=None, direct=None):
     """Run the event's rows; returns (exit, stdout bytes, stderr bytes). `deadline_ms` is
     the epoch deadline the launcher handed over; it is turned into a monotonic one here, so
-    a clock that steps cannot stretch or shrink any bound after this point."""
+    a clock that steps cannot stretch or shrink any bound after this point. `direct` (default:
+    on Windows unless CREW_HOOK_DIRECT=0) lets the rows in `DIRECT` run their Python file
+    without the Git Bash wrapper; see the comment at `DIRECT`."""
     mono_end = time.monotonic() + (deadline_ms - now_ms()) / 1000.0
     windows = _windows() if windows is None else windows
+    direct = (windows and env.get("CREW_HOOK_DIRECT") != "0") if direct is None else direct
     payload = parse_payload(raw)
     chosen = select(event, harness, payload, windows=windows, scripts=scripts)
     if not chosen:
         return 0, b"", b""
     armed_fn = armed_fn or armed
     bash, pwsh, bash_problem = "bash", None, ""
+    bash_state = {"lock": threading.Lock(), "done": False}
+
+    def get_bash():
+        """(path or None, problem): Git Bash resolved once, on first need. A row the direct route
+        runs never asks."""
+        with bash_state["lock"]:
+            if not bash_state["done"]:
+                resolver = resolve_bash
+                if resolver is None:
+                    import crew_shell  # pylint: disable=import-outside-toplevel
+                    resolver = functools.partial(crew_shell.resolve_gitbash, lkg=crew_shell.LastKnownGood())
+                path, reason = resolver(strict=True)
+                bash_state["value"] = (path, reason if path is None else "")
+                bash_state["done"] = True
+            return bash_state["value"]
+
     if windows:
-        needs_bash = any(argv[0].endswith(".sh") for _, argv in chosen)
+        # A row with no direct route always needs Git Bash, so it is resolved up front and a missing one
+        # refuses the event as before. A row that has one asks only if its direct run is not believed.
+        needs_bash = any(argv[0].endswith(".sh") and not (direct and argv[0] in DIRECT) for _, argv in chosen)
         if needs_bash:
-            if resolve_bash is None:
-                import crew_shell  # pylint: disable=import-outside-toplevel
-                resolve_bash = functools.partial(crew_shell.resolve_gitbash, lkg=crew_shell.LastKnownGood())
-            path, reason = resolve_bash(strict=True)
+            path, reason = get_bash()
             if path is None:
                 bash, bash_problem = None, reason
             else:
@@ -543,26 +645,9 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
     results = [None] * len(chosen)
     threads = []
 
-    def work(index, row, argv):
-        remaining = mono_end - time.monotonic()
-        own = min(float(row.timeout), remaining)
-        script = os.path.join(scripts, argv[0])
-        if not os.path.isfile(script):
-            results[index] = {"exit": None, "stdout": b"", "stderr": b"", "timed_out": False, "pid": 0,
-                              "error": f"{argv[0]} is missing at {script}"}
-            return
-        if own <= 0:
-            results[index] = {"exit": None, "stdout": b"", "stderr": b"", "timed_out": True, "pid": 0,
-                              "error": "", "attempts": 0, "no_retry": "the dispatch deadline had passed"}
-            return
-        command, flavour = _argv_for(argv, scripts, bash, pwsh)
-        if command is None:
-            results[index] = {"exit": None, "stdout": b"", "stderr": b"", "timed_out": False, "pid": 0,
-                              "error": f"no PowerShell was found to run {argv[0]}"}
-            return
-        child_env = dict(env, CREW_HOOK_FLAVOUR=flavour)
-        started = now_ms()
-        res = run_child(command, raw, own, child_env, cwd=None)
+    def attempt(row, command, child_env, stdin, cwd, own):
+        """One run of `command` with the row's single bounded retry (RETRY_SAFE only)."""
+        res = run_child(command, stdin, own, child_env, cwd=cwd)
         res["attempts"] = 1
         if res["timed_out"] and row.guard:
             # One bounded retry, only for the rows in RETRY_SAFE (the PreToolUse judges). What
@@ -582,11 +667,58 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
                                 mono_end - time.monotonic() - _retry_reserve(windows))
                 if retry_for >= RETRY_FLOOR:
                     first = res
-                    res = run_child(command, raw, retry_for, child_env, cwd=None)
+                    res = run_child(command, stdin, retry_for, child_env, cwd=cwd)
                     res["attempts"] = 2
                     res["first_said"] = _excerpt(first["stderr"])
                 else:
                     res["no_retry"] = "no room before the dispatch deadline"
+        return res
+
+    def run_wrapper(row, argv, own):
+        use_bash = bash
+        if windows and bash == "bash":  # not resolved up front: every row so far ran directly
+            use_bash, problem = get_bash()
+            if use_bash is None:
+                return {"exit": None, "stdout": b"", "stderr": b"", "timed_out": False, "pid": 0,
+                        "error": _no_bash_message(problem)}
+        command, flavour = _argv_for(argv, scripts, use_bash, pwsh)
+        if command is None:
+            return {"exit": None, "stdout": b"", "stderr": b"", "timed_out": False, "pid": 0,
+                    "error": f"no PowerShell was found to run {argv[0]}"}
+        return attempt(row, command, dict(env, CREW_HOOK_FLAVOUR=flavour), raw, None, own)
+
+    def work(index, row, argv):
+        remaining = mono_end - time.monotonic()
+        own = min(float(row.timeout), remaining)
+        script = os.path.join(scripts, argv[0])
+        if not os.path.isfile(script):
+            results[index] = {"exit": None, "stdout": b"", "stderr": b"", "timed_out": False, "pid": 0,
+                              "error": f"{argv[0]} is missing at {script}"}
+            return
+        if own <= 0:
+            results[index] = {"exit": None, "stdout": b"", "stderr": b"", "timed_out": True, "pid": 0,
+                              "error": "", "attempts": 0, "no_retry": "the dispatch deadline had passed"}
+            return
+        started = now_ms()
+        plan = direct_plan(argv, payload, raw, env, scripts) if direct and argv[0] in DIRECT else None
+        if plan == _SKIP:
+            res = {"exit": 0, "stdout": b"", "stderr": b"", "timed_out": False, "error": "", "pid": 0,
+                   "attempts": 1}
+        elif plan is not None:
+            command, child_env, cwd, stdin, accept = plan
+            res = attempt(row, command, dict(child_env, CREW_HOOK_FLAVOUR="bash"), stdin, cwd, own)
+            if not res["timed_out"] and (res["error"] or res["exit"] not in accept):
+                # not a decision the wrapper would have passed through: the wrapper judges, as it always did
+                said = res["error"] or f"exit {res['exit']}"
+                own = min(float(row.timeout), mono_end - time.monotonic())
+                if own <= 0:
+                    res = {"exit": None, "stdout": b"", "stderr": b"", "timed_out": True, "pid": 0, "error": "",
+                           "attempts": 0, "no_retry": "the dispatch deadline had passed"}
+                else:
+                    res = run_wrapper(row, argv, own)
+                res["fell_back"] = said
+        else:
+            res = run_wrapper(row, argv, own)
         res["start_ms"], res["end_ms"] = started, now_ms()
         results[index] = res
         _trace(trace, event, argv, res["pid"])
@@ -601,7 +733,7 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
     return _settle(event, chosen, results, root, armed_fn)
 
 
-def _no_bash(event, problem, root, armed_fn):
+def _no_bash_message(problem):
     # The wording follows what was actually established (a resolver that returns a bare str
     # means "absent"): a Git Bash that exists but did not answer is a busy host, not a missing
     # Git, and must never say "Install Git for Windows". Fail closed in every case.
@@ -616,6 +748,11 @@ def _no_bash(event, problem, root, armed_fn):
     else:
         message = (f"crew hooks found Git Bash but it failed its self-test: {problem}. "
                    "Repair or reinstall Git for Windows.")
+    return message
+
+
+def _no_bash(event, problem, root, armed_fn):
+    message = _no_bash_message(problem)
     if event in BLOCKING_EVENTS and armed_fn(root):
         return 2, b"", (message + "\n").encode("utf-8")
     if event == "SessionStart":

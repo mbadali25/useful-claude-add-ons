@@ -22,11 +22,11 @@ The state machine, one record per change id:
 
 **User-only.** `confirm` accepts only `via="user-prompt"` with a prompt id,
 the shape crew's UserPromptSubmit hook passes for a prompt the user typed.
-This CLI has no `confirm` subcommand, and in crew 1.3.9 no hook calls
-`confirm` yet: wiring it into the prompt hook is review harness
-(`approval_hook.py` / `crew_hook.py`), which lands alone. Until then a
-proposal can be made, listed and cancelled, and never applied, so an opt-out
-cannot be switched on by any route crew offers.
+This CLI has no `confirm` subcommand. Since crew 1.3.33 the prompt hook
+(`approval_hook._confirm_config`) is the one caller of `confirm`; since crew
+1.3.65 a `/crew:confirm-config` it refuses also lists the pending proposals.
+`propose` prints the two lines the agent must relay to the owner (the change
+and the exact command), because the owner never sees this CLI's output.
 
 CLI (no writes except `propose` and `cancel`, both into the store only):
 
@@ -190,15 +190,19 @@ def _line(record):
 
 
 def _instructions(record):
+    minutes = crew_humanonly.PROPOSAL_TTL_SECONDS // 60
     return [
         f"proposed {record['change_id']}: {record['key']} = false in the {record['layer']} "
         f"file {record['path']}",
-        f"to apply it, the owner types /crew:confirm-config {record['change_id']} twice, "
-        "in two separate prompts, within "
-        f"{crew_humanonly.PROPOSAL_TTL_SECONDS // 60} minutes.",
-        "crew 1.3.9: no hook records that confirmation yet (the prompt-hook wiring lands "
-        "separately), so this change stays pending and then expires; nothing acts on "
-        "humanOnly until that wiring lands either.",
+        "Only the owner can apply it. Relay the next two lines to the owner word for word; "
+        "never type or confirm it yourself:",
+        f"  crew proposes {record['key']}: false ({record['layer']} config, "
+        f"{record['path']}), change {record['change_id']}.",
+        f"  To apply it, type /crew:confirm-config {record['change_id']} as its own prompt, "
+        f"twice, in two separate prompts, within {minutes} minutes. To refuse it, do nothing; "
+        "it expires.",
+        "The prompt hook records each confirmation (crew 1.3.33); typed with no id, "
+        "/crew:confirm-config lists the pending proposals instead (crew 1.3.65).",
     ]
 
 

@@ -579,7 +579,9 @@ either file vetoes it; and it is written only after the owner types
 records that confirmation and <code>humanOnly.approve: false</code> makes a CLI-recorded
 approval count (the same effect as <code>scope.allowCliApproval: true</code>, but set
 only through the double confirmation); <code>humanOnly.promoteMarker</code> is still
-read by no hook. The owner's <code>/crew:approve-mass &lt;id&gt;</code> is recorded the same
+read by no hook. Since crew 1.3.69, <code>/crew:confirm-config</code> typed with no id
+records nothing and lists the pending proposals, each with its id and the
+exact change, or says that none is pending and why. The owner's <code>/crew:approve-mass &lt;id&gt;</code> is recorded the same
 way, for one blocked mass operation. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.</p>
 <p><strong>Mass operations (crew 1.3.36).</strong> The rule for an autopilot that runs without a

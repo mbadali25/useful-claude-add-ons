@@ -63,6 +63,10 @@ def _repo(tmp_path, config):
 def _run(flavour, scripts, event, data, root, home, env_extra=None, path=None, timeout=60):
     env = rgh.env_for(root, home, path=path)
     env["CLAUDE_PLUGIN_ROOT"] = os.path.dirname(os.path.dirname(scripts))
+    if h.WINDOWS:
+        # These cases plant wrapper-level fakes (a `.sh` that exits N), so they pin the wrapper route; the direct
+        # route would run the real Python file beside it (test_crew_hook_direct.py covers that route).
+        env["CREW_HOOK_DIRECT"] = "0"
     env.update(env_extra or {})
     if flavour == "ps1":
         argv = [h.PWSH or "pwsh", "-NoProfile", "-File", os.path.join(scripts, "crew-hook.ps1"), event]
