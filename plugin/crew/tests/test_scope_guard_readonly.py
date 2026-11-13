@@ -263,7 +263,7 @@ NOT_EXEMPT = [
     pytest.param(f"grep -f {S}/x -r y {S}", id="grep-f"),
     pytest.param(f"grep --pa=x y {S}/z", id="grep-abbreviated-long"),
     pytest.param(f"grep --color=always x {S}/z", id="grep-color-always"),
-    pytest.param(f"grep -e", id="grep-e-without-value"),
+    pytest.param("grep -e", id="grep-e-without-value"),
     pytest.param(f"egrep --pager=x y {S}/z", id="egrep-pager"),
     pytest.param(f"fgrep -Q y {S}/z", id="fgrep-Q"),
     pytest.param(f"tail -f {S}/x", id="tail-f"),
@@ -279,7 +279,7 @@ NOT_EXEMPT = [
     pytest.param(f"ls --time-style=x {S}", id="ls-long-unknown"),
     pytest.param(f"wc --files0-from={S}/x", id="wc-files0-from"),
     pytest.param(f"stat --foo {S}/x", id="stat-unknown-long"),
-    pytest.param(f"stat -c", id="stat-c-without-value"),
+    pytest.param("stat -c", id="stat-c-without-value"),
 ]
 
 
