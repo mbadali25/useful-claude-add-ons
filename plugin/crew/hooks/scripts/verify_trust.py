@@ -147,6 +147,16 @@ def _repo_bounds(root):
             if os.path.basename(os.path.dirname(gitdir)) == "worktrees" \
                     and os.path.basename(main) == ".git":
                 bounds.add(os.path.dirname(main))
+            # A submodule's gitdir is <superproject>/.git/modules/<name>: the
+            # superproject checkout is repo-authored too, and the gate strips it
+            # from the interpreter PATH, so a store there is refused alike.
+            parts = gitdir.split(os.sep)
+            for index in range(len(parts) - 1):
+                if parts[index] == ".git" and parts[index + 1] == "modules":
+                    sup = os.sep.join(parts[:index])
+                    if sup:
+                        bounds.add(os.path.realpath(sup))
+                    break
     return bounds
 
 
@@ -278,7 +288,7 @@ def _pid_alive(pid):
             ok = kernel.GetExitCodeProcess(handle, ctypes.byref(code))
             kernel.CloseHandle(handle)
             return (not ok) or code.value == 259
-        except (OSError, AttributeError, ValueError):
+        except (OSError, AttributeError, ValueError, OverflowError):
             return True
     try:
         os.kill(pid, 0)
@@ -299,7 +309,7 @@ def _holder_alive(lock_dir):
         if host != socket.gethostname():
             return False
         return _pid_alive(int(pid))
-    except (OSError, ValueError):
+    except (OSError, ValueError, OverflowError):
         return False
 
 
@@ -341,30 +351,44 @@ class _Lock:
         except OSError:
             pass
 
+    def _publish(self):
+        """Take the lock with its token and holder note ALREADY inside: both are
+        written into a private directory that is then renamed onto the lock
+        path. A rename onto an existing non-empty directory fails, so only one
+        taker wins, and no other process can ever see a lock that has no
+        holder note yet (a writer paused between a bare mkdir and its note
+        write used to look dead to a stale-lock breaker). True when taken,
+        False when the lock exists, TrustError for anything else."""
+        mine = f"{self.path}.new.{self.token}"
+        try:
+            os.mkdir(mine)
+            with open(os.path.join(mine, "token"), "w", encoding="utf-8") as handle:
+                handle.write(self.token)
+            with open(os.path.join(mine, "holder"), "w", encoding="utf-8") as handle:
+                handle.write(f"{socket.gethostname()} {os.getpid()}")
+        except OSError as exc:
+            shutil.rmtree(mine, ignore_errors=True)
+            raise TrustError(f"cannot take the store lock: {exc.__class__.__name__}") from exc
+        try:
+            os.rename(mine, self.path)
+            return True
+        except OSError as exc:
+            shutil.rmtree(mine, ignore_errors=True)
+            if os.path.lexists(self.path):
+                return False
+            raise TrustError(f"cannot take the store lock: {exc.__class__.__name__}") from exc
+
     def __enter__(self):
         deadline = time.monotonic() + LOCK_WAIT
         while True:
             if time.monotonic() > deadline:
                 raise TrustError(f"the store lock {self.path} is held")
-            try:
-                os.mkdir(self.path)
-                try:
-                    with open(os.path.join(self.path, "token"), "w", encoding="utf-8") as handle:
-                        handle.write(self.token)
-                    with open(os.path.join(self.path, "holder"), "w", encoding="utf-8") as handle:
-                        handle.write(f"{socket.gethostname()} {os.getpid()}")
-                except OSError as exc:
-                    shutil.rmtree(self.path, ignore_errors=True)
-                    raise TrustError("cannot record the store lock's owner: "
-                                     f"{exc.__class__.__name__}") from exc
+            if self._publish():
                 return self
-            except FileExistsError:
-                if self._stale():
-                    self._break()
-                else:
-                    time.sleep(0.05)
-            except OSError as exc:
-                raise TrustError(f"cannot take the store lock: {exc.__class__.__name__}") from exc
+            if self._stale():
+                self._break()
+            else:
+                time.sleep(0.05)
 
     def __exit__(self, *exc):
         """Release by claiming the directory with an atomic rename to a private
@@ -564,6 +588,43 @@ def _under(path, parents):
     return False
 
 
+def _gitfile_backlink_ok(top):
+    """True when `top/.git` is a directory, or a `.git` FILE whose gitdir names
+    this directory back: a linked worktree's gitdir holds a `gitdir` file
+    pointing at `top/.git`, and a submodule's config names `top` as
+    `core.worktree`. A hand-written `gitdir: <trusted repo>/.git` file has
+    neither, and would otherwise borrow that repo's remotes for owner trust
+    while its own verify.json is what the gate runs."""
+    dot_git = os.path.join(top, ".git")
+    if os.path.isdir(dot_git):
+        return True
+    try:
+        with open(dot_git, encoding="utf-8", errors="replace") as handle:
+            head = handle.readline().strip()
+    except OSError:
+        return False
+    if not head.startswith("gitdir:"):
+        return False
+    gitdir = os.path.realpath(os.path.join(top, head[len("gitdir:"):].strip()))
+    me = os.path.realpath(dot_git)
+    try:
+        with open(os.path.join(gitdir, "gitdir"), encoding="utf-8", errors="replace") as handle:
+            if os.path.realpath(os.path.join(gitdir, handle.readline().strip())) == me:
+                return True
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(gitdir, "config"), encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                key, _, value = line.partition("=")
+                if key.strip().lower() == "worktree" and value.strip():
+                    if os.path.realpath(os.path.join(gitdir, value.strip())) == os.path.realpath(top):
+                        return True
+    except OSError:
+        pass
+    return False
+
+
 def owner_trust(root, identity, toplevel, store, euid=None):
     """`(ok, reason, remotes)`: whether the allowlist trusts this repo now."""
     owners = store["owners"]
@@ -575,6 +636,8 @@ def owner_trust(root, identity, toplevel, store, euid=None):
         # The gate runs the map of the directory it stands in. A directory
         # below a trusted repo's top level is not that repo.
         return False, "the directory is not the repository's top level", None
+    if not _gitfile_backlink_ok(toplevel):
+        return False, "the .git file here does not name a gitdir that names this directory back", None
     cfg = local_remote_config(root)
     if cfg is None:
         return False, "git could not read the local config", None

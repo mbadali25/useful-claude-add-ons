@@ -766,6 +766,8 @@ def test_lock_one_that_stays_stale_is_given_up_on_at_the_deadline(tmp_path, monk
     monkeypatch.setattr(lock, "_stale", lambda: True)
     monkeypatch.setattr(lock, "_break", lambda: None)
     os.mkdir(lock.path)
+    with open(os.path.join(lock.path, "token"), "w", encoding="utf-8") as handle:
+        handle.write("someone else")
 
     with pytest.raises(verify_trust.TrustError), lock:
         pass
@@ -1068,3 +1070,87 @@ def test_second_check_with_verify_json_deleted_is_changed_not_trusted(tmp_path, 
     code = verify_trust.main(["check", "--root", str(root), "--expect-verify-sha", "ab" * 32])
 
     assert code == verify_trust.EXIT_CHANGED
+
+
+def _submodule(tmp_path):
+    src = _repo(tmp_path, name="src")
+    _git(src, "add", "-A")
+    _git(src, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q", "-m", "x")
+    sup = _repo(tmp_path, name="sup", verify=None)
+    _git(sup, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(src), "mod")
+    return sup, sup / "mod"
+
+
+def test_store_a_trust_file_in_the_superproject_of_a_submodule_is_refused(tmp_path, monkeypatch):
+    """Round 9: the gate strips a submodule's superproject from the interpreter PATH;
+    a store there is repo-authored and must be refused alike."""
+    sup, mod = _submodule(tmp_path)
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(sup / "trust.json"))
+
+    assert _code(mod) == verify_trust.EXIT_UNKNOWN
+
+
+def test_owner_trust_a_hand_written_git_file_naming_a_trusted_repo_is_not_trusted(
+        tmp_path, store, monkeypatch):
+    """Round 9: `.git` = `gitdir: <trusted repo>/.git` borrows that repo's remotes while
+    its own verify.json is what the gate would run. A real worktree names itself back."""
+    monkeypatch.setattr(verify_trust.sys.stdin, "isatty", lambda: False)
+    trusted = _repo(tmp_path, name="trusted", remotes=[_OK_URL])
+    assert _allow() == 0
+    assert _code(trusted) == verify_trust.EXIT_TRUSTED
+    liar = tmp_path / "liar"
+    (liar / ".crew").mkdir(parents=True)
+    (liar / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    (liar / ".git").write_text(f"gitdir: {trusted / '.git'}\n", encoding="utf-8")
+
+    assert _code(liar) != verify_trust.EXIT_TRUSTED
+
+
+def test_owner_trust_a_real_linked_worktree_still_trusted_by_owner(tmp_path, store, monkeypatch):
+    monkeypatch.setattr(verify_trust.sys.stdin, "isatty", lambda: False)
+    main = _repo(tmp_path, name="main", remotes=[_OK_URL])
+    _git(main, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q",
+         "--allow-empty", "-m", "x")
+    lane = tmp_path / "lane"
+    _git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    (lane / ".crew").mkdir(exist_ok=True)
+    (lane / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    assert _allow() == 0
+
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+
+
+def test_lock_a_holder_note_with_a_huge_pid_is_not_an_exception(tmp_path):
+    path = str(tmp_path / "s.json")
+    _aged_lock(path, f"{verify_trust.socket.gethostname()} 99999999999999999999")
+
+    assert verify_trust._holder_alive(path + ".lock") is False
+
+
+def test_lock_a_taken_lock_always_carries_its_holder_note_and_leaves_no_staging_directory(tmp_path):
+    path = str(tmp_path / "s.json")
+
+    with verify_trust._Lock(path):
+        assert os.path.isfile(os.path.join(path + ".lock", "holder"))
+        assert os.path.isfile(os.path.join(path + ".lock", "token"))
+        assert [n for n in os.listdir(tmp_path) if ".new." in n] == []
+    assert not os.path.exists(path + ".lock")
+
+
+def test_evaluate_a_real_linked_worktree_outside_the_owner_place_does_not_borrow_it(tmp_path, store):
+    """The `--under` limit holds for a GENUINE linked worktree too (its gitdir names it
+    back, so the back-link check passes): the top level it stands at is what is judged."""
+    inside = tmp_path / "work"
+    inside.mkdir()
+    trusted = _repo(inside, "good", remotes=[_OK_URL])
+    _git(trusted, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q",
+         "--allow-empty", "-m", "x")
+    lane = tmp_path / "elsewhere" / "lane"
+    lane.parent.mkdir()
+    _git(trusted, "worktree", "add", "-q", str(lane), "-b", "lane")
+    (lane / ".crew").mkdir(exist_ok=True)
+    (lane / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    _allow(_OWNER, [inside])
+
+    assert _code(trusted) == verify_trust.EXIT_TRUSTED
+    assert _code(lane) == verify_trust.EXIT_UNTRUSTED

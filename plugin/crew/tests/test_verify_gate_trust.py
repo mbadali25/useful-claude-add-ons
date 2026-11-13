@@ -697,3 +697,118 @@ def test_gate_an_approved_submodule_runs_its_rules(tmp_path, store):
     assert done.returncode == 0, done.stderr
     assert sentinel.is_file(), done.stdout + done.stderr
     assert "UNKNOWN" not in done.stdout + done.stderr
+
+
+# Round 9 (L-0888): the gate's own state and its environment are not input.
+
+_MODES = [(), ("--all",), ("--price", "--force")]
+
+
+def _expect_nothing_ran(done, args, sentinel):
+    assert not sentinel.exists(), "the repo-authored command RAN"
+    assert done.returncode == (1 if args and args[0] == "--price" else 0), done.stdout + done.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+@pytest.mark.parametrize("args", _MODES)
+def test_gate_an_inherited_cache_variable_cannot_pre_seed_the_interpreter(tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 9): GATE_SAFE_DONE=1 GATE_SAFE_RC=0
+    GATE_SAFE_PY=<repo>/bin/python3 in a repo's settings `env` block made the
+    'worked out once' cache answer for the gate, and the repo's python said trusted."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    fake = _hostile_python(root)
+
+    done = _run(root, *args, env={"GATE_SAFE_DONE": "1", "GATE_SAFE_RC": "0",
+                                  "GATE_SAFE_PY": str(fake), "GATE_SAFE_PATH": str(root / "bin")})
+
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="a user site under HOME is a POSIX layout here")
+@pytest.mark.parametrize("args", _MODES)
+def test_gate_a_user_site_under_a_repo_home_never_runs_in_the_probe(tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 9): HOME=<repo>/home with a usercustomize.py
+    in its user site ran inside the proving probe's own `-c`, before the trust decision."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    home = root / "home"
+    marker = tmp_path / "pwned.txt"
+    site_dir = subprocess.run(
+        [shutil.which("python3"), "-c", "import site; print(site.getusersitepackages())"],
+        env=dict(os.environ, HOME=str(home), PYTHONUSERBASE=""), capture_output=True, text=True,
+        check=True).stdout.strip()
+    os.makedirs(site_dir, exist_ok=True)
+    with open(os.path.join(site_dir, "usercustomize.py"), "w", encoding="utf-8") as handle:
+        handle.write(f"open({str(marker)!r}, 'a').close()\n")
+
+    done = _run(root, *args, env={"HOME": str(home), "PYTHONUSERBASE": ""})
+
+    assert not marker.exists(), "a repo user site ran ahead of the trust decision"
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_a_trust_check_that_cannot_run_never_reaches_the_matcher_on_a_repo_python(tmp_path, store):
+    """MUST-BLOCK (round 9): status 14 used to set a flag and carry on to the
+    matcher's own interpreter lookup, which CREW_PYTHON can point inside the repo."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned.txt"
+    fake = _logging_python(root, marker)
+    scripts = tmp_path / "plugin" / "hooks" / "scripts"
+    shutil.copytree(os.path.join(_ROOT, "hooks", "scripts"), scripts,
+                    ignore=shutil.ignore_patterns("__pycache__", "_test"))
+    (scripts / "verify_trust.py").write_text("import sys\nsys.exit(7)\n", encoding="utf-8")
+
+    done = crew_fixtures.run_gate(
+        [_BASH, str(scripts / "verify-gate.sh"), "--all"], input="{}", cwd=str(root),
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root), CREW_PYTHON=str(fake)),
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+    assert done.returncode == 2, done.stderr
+    assert not marker.exists(), "the repo's python ran after the trust check broke"
+    assert not sentinel.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="exported shell functions are a POSIX bash feature")
+@pytest.mark.parametrize("name", ["git", "dirname"])
+@pytest.mark.parametrize("args", _MODES)
+def test_gate_an_exported_shell_function_never_runs_ahead_of_the_trust_decision(tmp_path, store, args, name):
+    """MUST-BLOCK (verified repro, round 9): a `BASH_FUNC_git%%` variable ran
+    repo code the first time the gate called git."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned.txt"
+
+    done = _run(root, *args, env={f"BASH_FUNC_{name}%%": f"() {{ : >> '{marker}'; command {name} \"$@\"; }}"})
+
+    assert not marker.exists(), f"an exported {name} function ran ahead of the trust decision"
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_a_second_trust_check_that_cannot_run_blocks_with_exit_2(tmp_path, store):
+    """MUST-BLOCK: the FIRST trust check answers (the repo is approved) and the SECOND,
+    after the matcher parsed, cannot run: exit 2, nothing runs."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    _approve(root)
+    scripts = tmp_path / "plugin" / "hooks" / "scripts"
+    shutil.copytree(os.path.join(_ROOT, "hooks", "scripts"), scripts,
+                    ignore=shutil.ignore_patterns("__pycache__", "_test"))
+    shutil.copy(scripts / "verify_trust.py", scripts / "verify_trust_real.py")
+    (scripts / "verify_trust.py").write_text(
+        "import os, runpy, sys\n"
+        "if '--expect-verify-sha' in sys.argv:\n    sys.exit(7)\n"
+        "runpy.run_path(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'verify_trust_real.py'),"
+        " run_name='__main__')\n", encoding="utf-8")
+
+    done = crew_fixtures.run_gate(
+        [_BASH, str(scripts / "verify-gate.sh"), "--all"], input="{}", cwd=str(root),
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), capture_output=True, text=True,
+        check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert not sentinel.exists(), "the repo-authored command RAN"
+    assert "could not RUN the trust check" in done.stdout + done.stderr

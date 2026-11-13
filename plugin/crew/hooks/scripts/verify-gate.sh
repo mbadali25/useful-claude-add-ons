@@ -1,5 +1,26 @@
 #!/usr/bin/env bash
 
+# L-0888: an exported shell function (a `BASH_FUNC_git%%` or `BASH_FUNC_dirname%%`
+# variable, which a repo's settings `env` block can set) is imported by bash
+# before this line and would run repo code the first time the gate calls `git`
+# or `dirname`. Every function inherited at this point is removed before
+# anything is called; the functions this script needs are defined below.
+# (BASH_ENV, sourced before line 1, is a documented residual.)
+for _crew_inherited_fn in $(compgen -A function); do unset -f "$_crew_inherited_fn"; done
+unset _crew_inherited_fn
+# Every inherited GATE_* variable is this script's own state, never input, and
+# the once-per-run cache is then set UNCONDITIONALLY: a repo's settings `env`
+# block can export a variable of any name, and a pre-seeded GATE_SAFE_DONE=1
+# with a GATE_SAFE_PY of its own would make the cache answer for the gate
+# (verified repro, round 9). Nothing inherited is read.
+for _crew_inherited_var in $(compgen -v GATE_); do unset "$_crew_inherited_var"; done
+unset _crew_inherited_var
+GATE_SAFE_DONE=0
+GATE_SAFE_RC=0
+GATE_SAFE_PY=""
+GATE_SAFE_PATH=""
+GATE_SAFE_MSG=""
+
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 # L-0733: every exit 2 leaves one line on STDOUT. Claude Code reads a Stop
 # hook that exits 2 with empty stdout and a stderr matching "no such file" or
@@ -34,8 +55,8 @@ GATE_SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2
 # NOTHING, writes no pass record, and says why. The caller exits 0 (Stop and
 # --all) or 1 (--price): an unknown is never read as trusted. A trust check
 # that could not run at all (status 14) is exit 2 on the Stop path, like a
-# matcher that cannot run (the first call defers to the matcher's own message
-# when verify.json exists; the second call, after the matcher parsed, cannot).
+# matcher that cannot run (both calls exit 2 at once: the matcher is never reached on an interpreter
+# or script that could not even answer the trust question).
 # $1 is the directory holding verify_trust.py. --ci is exempt and says so: a CI job's
 # checkout is its own pipeline's trust and has no home store.
 gate_trust_broken() {
@@ -106,7 +127,10 @@ gate_helper_py() {
 gate_py_on_path() {
   (
     for _hv in $(compgen -e); do case "$_hv" in PYTHON*) unset "$_hv" ;; esac; done
-    CREW_PYTHON="" PATH="$1" crew_py_strict 2>/dev/null
+    # No user site: `HOME=<repo>/home` would otherwise let a repo's usercustomize.py
+    # run inside the probe's own `-c` (verified repro, round 9). The variable is
+    # ours, set after every inherited PYTHON* variable was removed above.
+    PYTHONNOUSERSITE=1 CREW_PYTHON="" PATH="$1" crew_py_strict 2>/dev/null
   )
 }
 
@@ -1688,7 +1712,7 @@ elif [ -f .crew/verify.json ] || [ -f ./_verify/smoke.sh ] || [ -f ./scripts/smo
   gate_trust_check "$GATE_SCRIPT_DIR" || _trust_rc=$?
   case "$_trust_rc" in
     0) ;;
-    14) if [ -f .crew/verify.json ]; then GATE_TRUST_BROKEN=1; else gate_trust_broken; exit 2; fi ;;
+    14) gate_trust_broken; exit 2 ;;
     *) exit 0 ;;
   esac
 fi

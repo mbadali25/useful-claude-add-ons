@@ -52,8 +52,8 @@ TRUST_MUTATIONS = (
      '    case "$_tpd/" in "$_tpr"/*) continue ;; esac\n', "",
      _G + "test_gate_a_python_on_a_repo_path_entry_is_never_run_for_the_trust_check"),
     ("trust gate: the first check is dropped, so an unapproved smoke script runs (L-0888)", GATE,
-     _CALL + '  case "$_trust_rc" in\n    0) ;;\n    14) if [ -f',
-     '  :\n  case "$_trust_rc" in\n    0) ;;\n    14) if [ -f',
+     _CALL + '  case "$_trust_rc" in\n    0) ;;\n    14) gate_trust_broken; exit 2 ;;',
+     '  :\n  case "$_trust_rc" in\n    0) ;;\n    14) gate_trust_broken; exit 2 ;;',
      _G + "test_gate_a_smoke_script_nobody_approved_runs_nothing"),
     ("trust gate: the second check is dropped, so a verify.json swapped after the first "
      "check runs (L-0888)", GATE,
@@ -68,8 +68,10 @@ TRUST_MUTATIONS = (
      '      GATE_TRUST_RC="$_trc"\n      return 14 ;;\n', '      GATE_TRUST_RC="$_trc"\n      return 13 ;;\n',
      _G + "test_gate_a_trust_check_that_cannot_run_blocks_with_exit_2"),
     ("trust gate: the second check ignores a check that could not run (L-0888)", GATE,
-     "    14) gate_trust_broken; exit 2 ;;\n", "    14) exit 0 ;;\n",
-     _G + "test_gate_a_trust_check_that_cannot_run_blocks_with_exit_2"),
+     '  [ "$GATE_TRUST_BROKEN" -eq 0 ] || _trust_rc=14\n  case "$_trust_rc" in\n'
+     '    0) ;;\n    14) gate_trust_broken; exit 2 ;;\n',
+     '  [ "$GATE_TRUST_BROKEN" -eq 0 ] || _trust_rc=14\n  case "$_trust_rc" in\n    0) ;;\n    14) exit 0 ;;\n',
+     _G + "test_gate_a_second_trust_check_that_cannot_run_blocks_with_exit_2"),
     ("trust gate: the matcher imports modules from the repo's own directory (L-0888)", GATE,
      '"$PY" -I - "$CHANGED_FILE"', '"$PY" - "$CHANGED_FILE"',
      _G + "test_gate_a_module_the_repo_ships_is_not_imported_by_the_gate"),
@@ -132,10 +134,11 @@ TRUST_MUTATIONS = (
      TRUST, '    if "CLAUDECODE" in os.environ:\n', '    if os.environ.get("CLAUDECODE"):\n',
      _T + "test_approve_inside_a_claude_code_session_changes_nothing_even_with_yes[]"),
     ("trust store: a lock whose owner token cannot be written is kept (L-0888)", TRUST,
-     "                    shutil.rmtree(self.path, ignore_errors=True)\n"
-     "                    raise TrustError(\"cannot record the store lock's owner: \"\n"
-     "                                     f\"{exc.__class__.__name__}\") from exc\n",
-     "                    pass\n",
+     "        except OSError as exc:\n"
+     "            shutil.rmtree(mine, ignore_errors=True)\n"
+     "            raise TrustError(f\"cannot take the store lock: {exc.__class__.__name__}\") from exc\n"
+     "        try:\n            os.rename(mine, self.path)\n",
+     "        except OSError:\n            pass\n        try:\n            os.rename(mine, self.path)\n",
      _T + "test_lock_an_owner_token_that_cannot_be_written_gives_up_and_leaves_no_lock"),
     ("scope guard: an unreadable store location crashes the trust refusal (L-0888)", GUARD,
      "    except verify_trust.TrustError:\n", "    except ZeroDivisionError:\n",
@@ -178,7 +181,7 @@ TRUST_MUTATIONS = (
     ("trust store: a gitdir file borrows the trusted repo's --under place (L-0888)", TRUST,
      "        if under and not _under(toplevel, under):\n",
      "        if under and not _under(identity, under):\n",
-     _T + "test_evaluate_a_git_file_pointing_at_a_trusted_repo_does_not_borrow_its_place"),
+     _T + "test_evaluate_a_real_linked_worktree_outside_the_owner_place_does_not_borrow_it"),
     ("trust store: a pin that cannot be written still trusts (L-0888)", TRUST,
      "            except TrustError as exc:\n                return Verdict(EXIT_UNTRUSTED,",
      "            except TrustError as exc:\n                return Verdict(EXIT_TRUSTED,",
@@ -332,7 +335,8 @@ TRUST_MUTATIONS = (
      "/*/.git|[A-Za-z]:/*/.git) _tmain=", "/*/.git) _tmain=",
      _G + "test_gate_an_approved_linked_worktree_still_runs_its_rules"),
     ("trust gate: the trust check takes its interpreter from an inherited CREW_PYTHON (L-0888)", GATE,
-     '    CREW_PYTHON="" PATH="$1" crew_py_strict 2>/dev/null', '    PATH="$1" crew_py_strict 2>/dev/null',
+     '    PYTHONNOUSERSITE=1 CREW_PYTHON="" PATH="$1" crew_py_strict 2>/dev/null',
+     '    PYTHONNOUSERSITE=1 PATH="$1" crew_py_strict 2>/dev/null',
      _G + "test_gate_an_inherited_crew_python_inside_the_repo_cannot_answer_trusted"),
     ("trust gate: no trusted python but a resolvable one reads as the matcher's no-python pass (L-0888)", GATE,
      ' && ! gate_unsafe_python_present "$_tsafe"; then', "; then",
@@ -387,4 +391,32 @@ TRUST_MUTATIONS = (
      "    except (OSError, TrustError):\n        now = None\n",
      "    except (OSError, TrustError):\n        now = expect\n",
      _T + "test_second_check_with_verify_json_deleted_is_changed_not_trusted"),
+    ("trust gate: inherited GATE_* variables are neither removed nor initialised, "
+     "so a pre-seeded cache answers (L-0888, round 9)", GATE,
+     'for _crew_inherited_var in $(compgen -v GATE_); do unset "$_crew_inherited_var"; done\n'
+     'unset _crew_inherited_var\n'
+     'GATE_SAFE_DONE=0\nGATE_SAFE_RC=0\nGATE_SAFE_PY=""\nGATE_SAFE_PATH=""\nGATE_SAFE_MSG=""\n', "",
+     _G + "test_gate_an_inherited_cache_variable_cannot_pre_seed_the_interpreter"),
+    ("trust gate: an exported shell function survives to the first git or dirname call (L-0888, round 9)", GATE,
+     'for _crew_inherited_fn in $(compgen -A function); do unset -f "$_crew_inherited_fn"; done\n', "",
+     _G + "test_gate_an_exported_shell_function_never_runs_ahead_of_the_trust_decision"),
+    ("trust gate: the proving probe keeps the user site, so a repo HOME's usercustomize runs (L-0888, round 9)", GATE,
+     'PYTHONNOUSERSITE=1 CREW_PYTHON="" PATH="$1"', 'CREW_PYTHON="" PATH="$1"',
+     _G + "test_gate_a_user_site_under_a_repo_home_never_runs_in_the_probe"),
+    ("trust gate: a trust check that cannot run carries on to the matcher's own interpreter (L-0888, round 9)", GATE,
+     '  case "$_trust_rc" in\n    0) ;;\n    14) gate_trust_broken; exit 2 ;;\n'
+     '    *) exit 0 ;;\n  esac\nfi\n\nif [ ! -f .crew/verify.json ]; then',
+     '  case "$_trust_rc" in\n    0) ;;\n    14) GATE_TRUST_BROKEN=1 ;;\n    *) exit 0 ;;\n'
+     '  esac\nfi\n\nif [ ! -f .crew/verify.json ]; then',
+     _G + "test_gate_a_trust_check_that_cannot_run_never_reaches_the_matcher_on_a_repo_python"),
+    ("trust store: a store in a submodule's superproject is not refused (L-0888, round 9)", TRUST,
+     '                if parts[index] == ".git" and parts[index + 1] == "modules":', '                if False:',
+     _T + "test_store_a_trust_file_in_the_superproject_of_a_submodule_is_refused"),
+    ("trust store: a hand-written .git file borrows a trusted repo's remotes (L-0888, round 9)", TRUST,
+     "    if not _gitfile_backlink_ok(toplevel):\n", "    if False:\n",
+     _T + "test_owner_trust_a_hand_written_git_file_naming_a_trusted_repo_is_not_trusted"),
+    ("trust store: a huge pid in a holder note escapes as OverflowError (L-0888, round 9)", TRUST,
+     "    except (OSError, ValueError, OverflowError):\n        return False\n"
+     "", "    except (OSError, ValueError):\n        return False\n",
+     _T + "test_lock_a_holder_note_with_a_huge_pid_is_not_an_exception"),
 )
