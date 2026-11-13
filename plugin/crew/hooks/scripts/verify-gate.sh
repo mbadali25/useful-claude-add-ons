@@ -1248,7 +1248,7 @@ if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ -z "$BUDGET_FL
     # rule that was chronic/skipped/reach-excluded on a PRIOR run and has
     # not been touched since. Read-only reminder, same fail-safe direction
     # as the empty-CHANGED path above.
-    [ -f "$FP_DIR/verify_record.py" ] && gate_record_report "$FP_PY" -E -s "$FP_DIR/verify_record.py"
+    [ -f "$FP_DIR/verify_record.py" ] && gate_record_report "$FP_PY" "$FP_DIR/verify_record.py"
     exit 0
   fi
 fi
