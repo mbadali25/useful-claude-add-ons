@@ -164,23 +164,6 @@ _TRUST_SEAM = (
 )
 
 
-def seam_alias_python3(bindir):
-    """Give a Windows seam venv a `python3.exe` beside its `python.exe`.
-
-    A Windows venv ships `python.exe` only, and the gate's resolver
-    (`crew_py_strict`: `type -ap python3 python py`) takes ANY `python3` on PATH
-    before any `python`, so without this copy the seam venv is never the
-    interpreter the gate runs and every fixture repo reads UNTRUSTED. First
-    shipped in 01ebec33e and reverted in 7d4375146 because the copy exposed a
-    venv without the runner's packages (`python3 -m pytest` failed); the venv is
-    now made with `system_site_packages=True`, which is what makes the copy safe.
-    A no-op where `python.exe` is absent (POSIX) or `python3.exe` already exists."""
-    src, dst = pathlib.Path(bindir) / "python.exe", pathlib.Path(bindir) / "python3.exe"
-    if src.is_file() and not dst.exists():
-        shutil.copyfile(src, dst)
-    return dst
-
-
 @pytest.fixture(scope="session")
 def _trust_seam_python(tmp_path_factory):
     """A virtualenv whose site-packages carries the seam. The gate runs
@@ -202,7 +185,7 @@ def _trust_seam_python(tmp_path_factory):
     (found[0] / "_crew_trust_seam.pth").write_text("import _crew_trust_seam\n", encoding="utf-8", newline="\n")
     bindir = root / ("Scripts" if os.name == "nt" else "bin")
     if os.name == "nt":
-        seam_alias_python3(bindir)
+        crew_fixtures.seam_alias_python3(bindir)
     return bindir
 
 

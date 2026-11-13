@@ -553,18 +553,17 @@ def test_seam_venv_on_windows_gets_a_python3_beside_its_python_exe(tmp_path):
     venv ships `python.exe` only, and the gate's resolver takes any `python3`
     on PATH before any `python`, so the seam venv must carry a `python3.exe` or
     the gate never runs it and every fixture repo reads UNTRUSTED."""
-    import conftest  # the suite's own fixtures; pylint: disable=import-outside-toplevel
     scripts = tmp_path / "Scripts"
     scripts.mkdir()
     (scripts / "python.exe").write_bytes(b"the venv launcher")
-    alias = conftest.seam_alias_python3(scripts)
+    alias = crew_fixtures.seam_alias_python3(scripts)
     assert alias == scripts / "python3.exe"
     assert alias.read_bytes() == b"the venv launcher"
     # An existing python3.exe is left alone; a POSIX bin dir (no python.exe) gains nothing.
     (scripts / "python3.exe").write_bytes(b"already here")
-    conftest.seam_alias_python3(scripts)
+    crew_fixtures.seam_alias_python3(scripts)
     assert (scripts / "python3.exe").read_bytes() == b"already here"
     posix = tmp_path / "bin"
     posix.mkdir()
-    conftest.seam_alias_python3(posix)
+    crew_fixtures.seam_alias_python3(posix)
     assert not (posix / "python3.exe").exists()
