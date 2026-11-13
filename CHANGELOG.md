@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.74: re-bump only - interim number on the mass-guard removal branch (commits 188f49e4f, 8c3ac53a0, PR #772) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.75
 - crew 1.3.64: re-bump only - interim number on the confirm-config-relay branch (commit 6d1d45994, PR #768) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.70
 - crew 1.3.66: re-bump only - interim number on the confirm-config-relay branch (PR #768) before main reached 1.3.69 after #767 merged; the change is recorded under crew 1.3.70
 - crew 1.3.65: re-bump only - interim number on the confirm-config-list branch (PR #767) before merging main brought plugin/crew changes after the version was set and main and the open PRs reached 1.3.68; the change is recorded under crew 1.3.69
@@ -58,6 +59,13 @@ read entries under any `## [` heading.
 - crew 1.3.49: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
+
+### Removed — crew 1.3.75: the mass delete, create and change guard (`guards.mass`) is gone, not just off
+
+- **Summary.** `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
+- **What was removed.** `hooks/scripts/crew_mass.py`; `commands/approve-mass.md` (40 commands now, was 41); the `/crew:approve-mass` recorder in `approval_hook.py`; the `crew_mass` import, the `massDelete`/`massCreate`/`massChange` findings, the `massApprovals` tamper rule, the `mass`/`only_mass` arguments of `evaluate` and the `guards.mass` early-return branch in `cloud_guard.py`; the six `guards.mass.*` keys in `crew_keys.py`, `crew_guards.GUARD_BLOCK_DEFAULTS`, both config templates and the `crew-setup` template; tests `test_mass_guard.py` and `mass_mutations.py` and the mass cases in `test_humanonly_live.py`, `humanonly_mutations.py`, `l0725_keyset.py`, `test_guards.py`, `test_cloud_guard.py`, `test_guard_writers.py`; and the docs that described it (CONFIG.md, README, PLUGINS.md, configuration reference, guide, config rationale, code map).
+- **Behaviour.** With the guard gone, `guards.cloudGuard: off` again means the hook does nothing and returns at once. The humanOnly opt-out no longer arms any stop. A `guards.mass` block left in a config file is now an unknown key and is ignored. `.git/crew/mass-approvals/` is no longer protected by the scope guard's dedicated rule; nothing writes there any more.
+- **Rebuild starting point.** The version that reached `main` was crew 1.3.36 (commit 3973dc52a, fixes 2aa164b26 and 5a8e9fdff, merged as 6d5703cf1); its last form on `main` is `git show bd647d715:plugin/crew/hooks/scripts/crew_mass.py`. The later hardening rounds never reached `main`: PR #754 (branch `fix/mass-guard-linked-worktree`, round 13 at a609c13b3), PR #771 and PR #748 (sabotage wiring) are NOT merged and are untouched by this removal.
 
 ### Changed — crew 1.3.70: `crew_confirm_config.py propose` prints the lines the agent relays to the owner
 

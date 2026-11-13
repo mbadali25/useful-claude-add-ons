@@ -1,9 +1,9 @@
 """L-0725: the committed key set (87 keys; 83 repo and 50 machine leaves,
 plus the two `humanOnly` keys crew 1.3.9 added, the `worktrees.root` key crew 1.3.19 added,
-the `environments.preProduction` key crew 1.3.23 added, the six `guards.mass.*`
-keys crew 1.3.36 added, the `promote.deadlineSeconds` key crew 1.3.41 added and the eight
+the `environments.preProduction` key crew 1.3.23 added,
+the `promote.deadlineSeconds` key crew 1.3.41 added and the eight
 `reaper.*` keys crew 1.3.50 added:
-106, 102 and 68) and the
+100, 96 and 62) and the
 60 keys it drops. Generated once from the reviewed Disposition in
 `.work/tickets/L-0725/spec.md`; changing a key here is a spec amendment, not a
 test fix. `guards.profile` and `guards.overrides` replace the twelve
@@ -56,12 +56,6 @@ L0725_KEYS = frozenset((
     "git.forbiddenTrailers",
     "graph.out",
     "guards.overrides",
-    "guards.mass.changeCount",
-    "guards.mass.createCount",
-    "guards.mass.deleteCount",
-    "guards.mass.enabled",
-    "guards.mass.exempt",
-    "guards.mass.overrides",
     "guards.profile",
     "install.policy",
     "jira.cloudId",
@@ -165,12 +159,6 @@ L0725_REPO_KEYS = frozenset((
     "git.forbiddenTrailers",
     "graph.out",
     "guards.overrides",
-    "guards.mass.changeCount",
-    "guards.mass.createCount",
-    "guards.mass.deleteCount",
-    "guards.mass.enabled",
-    "guards.mass.exempt",
-    "guards.mass.overrides",
     "guards.profile",
     "install.policy",
     "jira.cloudId",
@@ -248,12 +236,6 @@ L0725_MACHINE_KEYS = frozenset((
     "environments.prodUnattended",
     "git.forbiddenTrailers",
     "guards.overrides",
-    "guards.mass.changeCount",
-    "guards.mass.createCount",
-    "guards.mass.deleteCount",
-    "guards.mass.enabled",
-    "guards.mass.exempt",
-    "guards.mass.overrides",
     "guards.profile",
     "install.policy",
     "memory.mode",
