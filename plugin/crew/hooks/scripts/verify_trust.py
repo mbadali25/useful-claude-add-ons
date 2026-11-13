@@ -601,8 +601,10 @@ def _gitfile_backlink_ok(top):
     this directory back: a linked worktree's gitdir holds a `gitdir` file
     pointing at `top/.git`, and a submodule's config names `top` as
     `core.worktree`. A hand-written `gitdir: <trusted repo>/.git` file has
-    neither, and would otherwise borrow that repo's remotes for owner trust
-    while its own verify.json is what the gate runs."""
+    neither, and would otherwise borrow that repo's identity (its remotes for
+    owner trust, its approved bytes for hash approval) while its own verify.json
+    is what the gate runs. `repo_identity` applies it, so every path that keys
+    on the identity is covered by the one test."""
     dot_git = os.path.join(top, ".git")
     if os.path.isdir(dot_git):
         return True
