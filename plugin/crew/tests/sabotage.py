@@ -2722,6 +2722,7 @@ MUTATIONS += (REVIEW_FIX_MUTATIONS + CONTEXT_MUTATIONS + MIGRATE_FIX_MUTATIONS +
               + sabotage_platform.PLATFORM_MUTATIONS + BUDGET_MUTATIONS)
 MUTATIONS += (__import__("sabotage_reach_notice").REACH_NOTICE_MUTATIONS + __import__("sabotage_quiet").QUIET_MUTATIONS
               + __import__("sabotage_crew_hook").CREW_HOOK_MUTATIONS
+              + __import__("sabotage_trust").TRUST_MUTATIONS
               + __import__("sabotage_deadline").DEADLINE_MUTATIONS)
 
 # pytest's own exit codes: 0 all passed, 1 a test FAILED, 2 interrupted, 3

@@ -1,0 +1,1394 @@
+"""`verify_trust.py` (L-0888): does this machine trust a repo's verify map?
+
+MUST-BLOCK (the verdict is not 0, so the gate runs nothing): no store entry;
+one byte changed in verify.json or in the smoke script after approval; the
+verify.json deleted so a smoke script would run; a corrupt or unreadable
+store (UNKNOWN, never trusted); a `testTrustAll` flag in a store (honoured by
+nothing); a store location a repo can author (relative, or inside the repo, set
+through CREW_VERIFY_TRUST_FILE, CLAUDE_CONFIG_DIR or HOME); every lookalike host,
+owner and URL form; an allowlisted remote beside a foreign one; a foreign
+`pushurl`; a local `insteadOf`; a global rewrite that makes the raw and the
+resolved URL disagree; a top level owned by another user; an owner entry
+restricted to a directory the repo is not under; a remote changed after the
+pin; a pin that cannot be written; an `approve` with no terminal and no --yes.
+
+MUST-ALLOW: approved bytes; approve, revoke, approve again; an allowlisted
+https, ssh://git@ and scp-style remote; case-folded host and owner; a linked
+worktree of an approved repo with identical bytes; an allowlisted repo after a
+legitimate verify.json edit (owner trust follows the remote, not the bytes); a
+repo below its owner entry's --under directory; a repo with nothing to run.
+"""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import threading
+
+import pytest
+
+import context  # noqa: F401  pylint: disable=unused-import
+import verify_trust
+
+_VERIFY = json.dumps({"version": 1, "rules": [{"paths": ["a.py"], "run": ["true"]}]})
+_OWNER = "github.com/mbadali25"
+_OK_URL = "https://github.com/mbadali25/useful.git"
+
+
+def _git(root, *args):
+    subprocess.run(("git",) + args, cwd=root, check=True, capture_output=True, timeout=60)
+
+
+@pytest.fixture(name="store")
+def _store(tmp_path, monkeypatch):
+    path = tmp_path / "trust" / "verify-trust.json"
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(path))
+    monkeypatch.delenv("CREW_TEST_TRUST_ALL", raising=False)
+    return path
+
+
+def _repo(tmp_path, name="repo", remotes=(), verify=_VERIFY, smoke=None):
+    root = tmp_path / name
+    (root / ".crew").mkdir(parents=True)
+    _git(root, "init", "-q")
+    for index, url in enumerate(remotes):
+        _git(root, "remote", "add", "origin" if index == 0 else f"r{index}", url)
+    if verify is not None:
+        (root / ".crew" / "verify.json").write_text(verify, encoding="utf-8")
+    if smoke is not None:
+        (root / "_verify").mkdir()
+        (root / "_verify" / "smoke.sh").write_text(smoke, encoding="utf-8")
+    return root
+
+
+def _approve(root):
+    return verify_trust.main(["approve", "--root", str(root), "--yes"])
+
+
+def _allow(owner=_OWNER, under=()):
+    args = ["allow-owner", owner, "--yes"]
+    for directory in under:
+        args += ["--under", str(directory)]
+    return verify_trust.main(args)
+
+
+def _code(root, **kwargs):
+    return verify_trust.evaluate(str(root), **kwargs).code
+
+
+# ------------------------------------------------------------ hash approval
+
+def test_evaluate_no_entry_is_untrusted(tmp_path, store):
+    root = _repo(tmp_path)
+
+    assert _code(root) == verify_trust.EXIT_UNTRUSTED
+    assert not store.exists()
+
+
+def test_evaluate_approved_bytes_are_trusted(tmp_path, store):
+    root = _repo(tmp_path)
+    _approve(root)
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+
+
+def test_evaluate_one_byte_changed_in_verify_json_is_changed(tmp_path, store):
+    root = _repo(tmp_path)
+    _approve(root)
+    (root / ".crew" / "verify.json").write_text(_VERIFY.replace("true", "tru3"), encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_CHANGED
+
+
+def test_evaluate_one_byte_changed_in_the_smoke_script_is_changed(tmp_path, store):
+    root = _repo(tmp_path, verify=None, smoke="echo one\n")
+    _approve(root)
+    (root / "_verify" / "smoke.sh").write_text("echo two\n", encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_CHANGED
+
+
+def test_evaluate_smoke_script_stands_in_when_verify_json_is_deleted(tmp_path, store):
+    root = _repo(tmp_path, smoke="echo evil\n")
+    _approve(root)
+    os.remove(root / ".crew" / "verify.json")
+
+    assert _code(root) == verify_trust.EXIT_CHANGED
+
+
+def test_evaluate_same_bytes_in_a_smoke_script_are_not_the_verify_json(tmp_path, store):
+    root = _repo(tmp_path)
+    _approve(root)
+    os.remove(root / ".crew" / "verify.json")
+    (root / "_verify").mkdir()
+    (root / "_verify" / "smoke.sh").write_text(_VERIFY, encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_CHANGED
+
+
+def test_evaluate_revoke_then_reapprove(tmp_path, store):
+    root = _repo(tmp_path)
+    _approve(root)
+    verify_trust.main(["revoke", "--root", str(root)])
+
+    assert _code(root) == verify_trust.EXIT_UNTRUSTED
+
+    _approve(root)
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+
+
+def test_evaluate_linked_worktree_with_identical_bytes_shares_the_approval(tmp_path, store):
+    root = _repo(tmp_path)
+    (root / "a.py").write_text("x = 1", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@e.invalid", "commit", "-q", "-m", "x")
+    _approve(root)
+    linked = tmp_path / "linked"
+    _git(root, "worktree", "add", "-q", "-b", "lane", str(linked))
+
+    assert _code(linked) == verify_trust.EXIT_TRUSTED
+
+    (linked / ".crew" / "verify.json").write_text(_VERIFY + "\n", encoding="utf-8")
+
+    assert _code(linked) == verify_trust.EXIT_CHANGED
+
+
+def test_evaluate_nothing_to_run_is_trusted(tmp_path, store):
+    root = _repo(tmp_path, verify=None)
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+
+
+def test_approve_without_a_terminal_and_without_yes_changes_nothing(tmp_path, store):
+    root = _repo(tmp_path)
+
+    code = verify_trust.main(["approve", "--root", str(root)])
+
+    assert code == 1
+    assert not store.exists()
+
+
+def test_approve_writes_a_store_only_the_owner_can_read(tmp_path, store):
+    root = _repo(tmp_path)
+    _approve(root)
+
+    assert json.loads(store.read_text(encoding="utf-8"))["version"] == 1
+    if os.name == "posix":
+        assert store.stat().st_mode & 0o077 == 0
+
+
+# ----------------------------------------------------------------- the store
+
+def test_evaluate_a_corrupt_store_is_unknown(tmp_path, store):
+    root = _repo(tmp_path)
+    store.parent.mkdir(parents=True)
+    store.write_text("{not json", encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_evaluate_an_unreadable_store_is_unknown(tmp_path, store):
+    root = _repo(tmp_path)
+    store.mkdir(parents=True)
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+@pytest.mark.parametrize("body", [
+    '{"version": 2, "repos": {}, "owners": {}}',
+    '{"version": 1, "repos": [], "owners": {}}',
+    '{"version": 1, "repos": {"x": {"hashes": "abc"}}, "owners": {}}',
+    "[]",
+])
+def test_evaluate_a_malformed_store_is_unknown(tmp_path, store, body):
+    root = _repo(tmp_path)
+    store.parent.mkdir(parents=True)
+    store.write_text(body, encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+_TRUST_ALL_STORE = '{"version": 1, "repos": {}, "owners": {}, "testTrustAll": true}'
+
+
+def test_evaluate_a_test_trust_all_flag_in_the_store_trusts_nothing(tmp_path, store):
+    root = _repo(tmp_path)
+    store.parent.mkdir(parents=True)
+    store.write_text(_TRUST_ALL_STORE, encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_evaluate_a_test_trust_all_flag_in_a_config_dir_store_trusts_nothing(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    config = tmp_path / "claude"
+    (config / "crew").mkdir(parents=True)
+    (config / "crew" / "verify-trust.json").write_text(_TRUST_ALL_STORE, encoding="utf-8")
+    monkeypatch.delenv(verify_trust.ENV_STORE, raising=False)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
+
+    assert _code(root) == verify_trust.EXIT_UNTRUSTED
+
+
+# ------------------------------------- a repo-authored store location (settings env)
+
+def test_evaluate_a_relative_store_override_is_unknown(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(verify_trust.ENV_STORE, "store/t.json")
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_evaluate_a_store_override_inside_the_repo_is_unknown(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    inside = root / ".claude" / "t.json"
+    inside.parent.mkdir()
+    inside.write_text(_TRUST_ALL_STORE, encoding="utf-8")
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(inside))
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_evaluate_a_store_override_through_a_symlink_into_the_repo_is_unknown(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    (root / "real").mkdir()
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(root / "real", target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available")
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(link / "t.json"))
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_evaluate_a_store_override_inside_a_linked_worktrees_main_checkout_is_unknown(
+        tmp_path, monkeypatch):
+    main = _repo(tmp_path, name="main")
+    _git(main, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-q", "-m", "x")
+    work = tmp_path / "work"
+    _git(main, "worktree", "add", "-q", str(work))
+    (work / ".crew").mkdir(exist_ok=True)
+    (work / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(main / "t.json"))
+
+    assert _code(work) == verify_trust.EXIT_UNKNOWN
+
+
+def test_evaluate_a_relative_claude_config_dir_is_unknown(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    monkeypatch.delenv(verify_trust.ENV_STORE, raising=False)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", "claude")
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_evaluate_a_claude_config_dir_inside_the_repo_is_unknown(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    (root / "cfg" / "crew").mkdir(parents=True)
+    (root / "cfg" / "crew" / "verify-trust.json").write_text(_TRUST_ALL_STORE, encoding="utf-8")
+    monkeypatch.delenv(verify_trust.ENV_STORE, raising=False)
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(root / "cfg"))
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_evaluate_a_home_inside_the_repo_is_unknown(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    monkeypatch.delenv(verify_trust.ENV_STORE, raising=False)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(root / "home"))
+    monkeypatch.setenv("USERPROFILE", str(root / "home"))
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_approve_with_a_store_inside_the_repo_writes_nothing(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    inside = root / "t.json"
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(inside))
+
+    code = _approve(root)
+
+    assert code == 1
+    assert not inside.exists()
+
+
+def test_evaluate_an_absolute_store_outside_the_repo_is_honoured(tmp_path, store):
+    root = _repo(tmp_path)
+    _approve(root)
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+
+
+def test_evaluate_the_default_home_store_outside_the_repo_is_honoured(tmp_path, monkeypatch):
+    root = _repo(tmp_path)
+    monkeypatch.delenv(verify_trust.ENV_STORE, raising=False)
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    _approve(root)
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+
+
+# ------------------------------------------------------------- the allowlist
+
+@pytest.mark.parametrize("url", [
+    _OK_URL,
+    "https://github.com/mbadali25/useful",
+    "ssh://git@github.com/mbadali25/useful.git",
+    "git@github.com:mbadali25/useful.git",
+    "https://GitHub.COM/MBadali25/Useful.git",
+])
+def test_evaluate_an_allowlisted_remote_is_trusted_and_pinned(tmp_path, store, url):
+    root = _repo(tmp_path, remotes=[url])
+    _allow()
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+
+    entry = json.loads(store.read_text(encoding="utf-8"))["repos"]
+    assert [e["pin"] for e in entry.values()] == [[url]]
+
+
+@pytest.mark.parametrize("url", [
+    "https://github.com.evil.io/mbadali25/x.git",
+    "https://githuh.com/mbadali25/x",
+    "https://evilgithub.com/mbadali25/x",
+    "https://github.com/mbadali25x/x",
+    "https://github.com/xmbadali25/x",
+    "https://github.com/mbadali2/x",
+    "https://github.com/evil/mbadali25",
+    "https://mbadali25@github.com/mbadali25/x",
+    "https://evil@github.com/mbadali25/x",
+    "http://github.com/mbadali25/x",
+    "https://github.com:8443/mbadali25/x",
+    "ssh://git@github.com:22/mbadali25/x",
+    "ssh://root@github.com/mbadali25/x",
+    "git@github.com.evil.io:mbadali25/x",
+    "git@github.com:mbadali25/x/extra",
+    "git@github.com:mbadali25",
+    "file:///srv/github.com/mbadali25/x",
+    "ext::sh -c id",
+    "/srv/github.com/mbadali25/x",
+    "../github.com/mbadali25/x",
+    "https://github.com/mbadali25/../evil/x",
+    "https://github.com/mbadali25/..",
+    "https://github.com/%6dbadali25/x",
+    "https://github.com/mbadali25/x\\y",
+    " https://github.com/mbadali25/x",
+])
+def test_evaluate_a_lookalike_remote_is_untrusted(tmp_path, store, url):
+    root = _repo(tmp_path, remotes=[url])
+    _allow()
+
+    assert _code(root) == verify_trust.EXIT_UNTRUSTED
+
+
+@pytest.mark.parametrize("url", ["https://github.com/mbadali25x/x", "https://github.com/evil/x"])
+def test_parse_remote_never_returns_the_allowlisted_owner_for_another(url):
+    assert verify_trust.parse_remote(url) != _OWNER
+
+
+def test_evaluate_an_allowlisted_remote_beside_a_foreign_one_is_untrusted(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL, "https://github.com/evil/x.git"])
+    _allow()
+
+    assert _code(root) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_evaluate_a_foreign_pushurl_is_untrusted(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _git(root, "config", "remote.origin.pushurl", "https://github.com/evil/x.git")
+    _allow()
+
+    assert _code(root) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_evaluate_a_local_rewrite_is_untrusted_even_when_it_changes_nothing(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _git(root, "config", "url.https://unrelated.example/.insteadOf", "https://elsewhere.example/")
+    _allow()
+
+    assert _code(root) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_evaluate_a_rewrite_outside_the_local_config_is_untrusted(tmp_path, store, monkeypatch):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _allow()
+    count = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
+    monkeypatch.setenv(f"GIT_CONFIG_KEY_{count}", "url.https://github.com/evil/.insteadOf")
+    monkeypatch.setenv(f"GIT_CONFIG_VALUE_{count}", "https://github.com/mbadali25/")
+    monkeypatch.setenv("GIT_CONFIG_COUNT", str(count + 1))
+
+    assert _code(root) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_evaluate_no_remote_is_untrusted(tmp_path, store):
+    root = _repo(tmp_path)
+    _allow()
+
+    assert _code(root) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_evaluate_a_top_level_owned_by_another_user_is_untrusted(tmp_path, store):
+    if os.name != "posix":
+        pytest.skip("the ownership check is POSIX only")
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _allow()
+    other = os.geteuid() + 1
+
+    assert _code(root, euid=other) == verify_trust.EXIT_UNTRUSTED
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+
+
+def test_evaluate_a_remote_changed_after_the_pin_is_remote_changed(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _allow()
+    _code(root)
+    _git(root, "remote", "set-url", "origin", "https://github.com/mbadali25/other.git")
+
+    assert _code(root) == verify_trust.EXIT_REMOTE_CHANGED
+
+
+def test_approve_repins_a_changed_remote(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _allow()
+    _code(root)
+    _git(root, "remote", "set-url", "origin", "https://github.com/mbadali25/other.git")
+    _approve(root)
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+
+
+def test_evaluate_a_pin_that_cannot_be_written_is_untrusted(tmp_path, store, monkeypatch):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _allow()
+
+    def refuse(*_args, **_kwargs):
+        raise verify_trust.TrustError("disk full")
+    monkeypatch.setattr(verify_trust, "update_store", refuse)
+
+    assert _code(root) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_evaluate_an_allowlisted_repo_stays_trusted_after_a_verify_json_edit(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _allow()
+    _code(root)
+    (root / ".crew" / "verify.json").write_text(_VERIFY + " ", encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+
+
+def test_evaluate_an_owner_entry_trusts_nothing_after_disallow(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _allow()
+    verify_trust.main(["disallow-owner", _OWNER, "--yes"])
+
+    assert _code(root) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_evaluate_an_owner_restricted_to_a_directory_trusts_only_below_it(tmp_path, store):
+    inside = tmp_path / "work"
+    inside.mkdir()
+    below = _repo(inside, "below", remotes=[_OK_URL])
+    outside = _repo(tmp_path, "outside", remotes=[_OK_URL])
+    _allow(_OWNER, [inside])
+
+    assert _code(below) == verify_trust.EXIT_TRUSTED
+    assert _code(outside) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_allow_owner_refuses_a_malformed_owner(tmp_path, store):
+    assert verify_trust.main(["allow-owner", "github.com", "--yes"]) == 2
+    assert verify_trust.main(["allow-owner", "https://github.com/x", "--yes"]) == 2
+    assert not store.exists()
+
+
+def test_allow_owner_without_a_terminal_and_without_yes_changes_nothing(store):
+    assert verify_trust.main(["allow-owner", _OWNER]) == 1
+    assert not store.exists()
+
+
+def test_status_does_not_write_a_pin(tmp_path, store, capsys):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _allow()
+    before = store.read_text(encoding="utf-8")
+
+    verify_trust.main(["status", "--root", str(root)])
+
+    assert store.read_text(encoding="utf-8") == before
+    assert _OWNER in capsys.readouterr().out
+
+
+def test_approve_prints_a_hostile_remote_escaped(tmp_path, store, capsys):
+    root = _repo(tmp_path, remotes=["https://example.com/a\x1b[2Jb"])
+
+    _approve(root)
+
+    out = capsys.readouterr().out
+    assert "\x1b" not in out
+    assert "\\u001b" in out
+
+
+def test_update_store_two_writers_at_once_both_land(tmp_path, store):
+    roots = [_repo(tmp_path, f"repo{i}") for i in range(6)]
+    threads = [threading.Thread(target=_approve, args=(root,)) for root in roots]
+
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert len(json.loads(store.read_text(encoding="utf-8"))["repos"]) == 6
+
+
+def test_evaluate_a_subdirectory_of_an_allowlisted_repo_is_untrusted(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    sub = root / "sub"
+    (sub / ".crew").mkdir(parents=True)
+    (sub / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    _allow()
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+    assert _code(sub) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_evaluate_a_git_file_pointing_at_a_trusted_repo_does_not_borrow_its_place(
+        tmp_path, store):
+    inside = tmp_path / "work"
+    inside.mkdir()
+    trusted = _repo(inside, "good", remotes=[_OK_URL])
+    evil = tmp_path / "elsewhere" / "evil"
+    (evil / ".crew").mkdir(parents=True)
+    (evil / ".git").write_text(f"gitdir: {trusted / '.git'}\n", encoding="utf-8")
+    (evil / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    _allow(_OWNER, [inside])
+
+    assert _code(trusted) == verify_trust.EXIT_TRUSTED
+    assert _code(evil) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_disallow_owner_without_a_terminal_or_yes_changes_nothing(tmp_path, store, monkeypatch):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _allow()
+    monkeypatch.setattr(verify_trust.sys.stdin, "isatty", lambda: False)
+
+    code = verify_trust.main(["disallow-owner", _OWNER])
+
+    assert code == 1
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+
+
+def test_lock_a_stale_lock_is_broken_once_and_a_fresh_one_is_kept(tmp_path):
+    path = str(tmp_path / "s.json")
+    lock_dir = path + ".lock"
+    os.mkdir(lock_dir)
+    old = os.stat(lock_dir).st_mtime - verify_trust.LOCK_STALE - 5
+    os.utime(lock_dir, (old, old))
+
+    with verify_trust._Lock(path):
+        assert os.path.isdir(lock_dir)
+    assert not os.path.exists(lock_dir)
+
+    os.mkdir(lock_dir)
+    verify_trust._Lock(path)._break()
+    assert os.path.isdir(lock_dir)
+
+
+def test_lock_release_leaves_a_lock_another_holder_took(tmp_path):
+    path = str(tmp_path / "s.json")
+    mine = verify_trust._Lock(path)
+    other = path + ".lock"
+
+    with mine:
+        with open(os.path.join(other, "token"), "w", encoding="utf-8") as handle:
+            handle.write("someone-else")
+
+    assert os.path.isdir(other)
+
+
+def test_lock_release_does_not_remove_a_holder_that_replaced_it_mid_release(tmp_path, monkeypatch):
+    path = str(tmp_path / "s.json")
+    mine = verify_trust._Lock(path)
+    real = shutil.rmtree
+
+    def replaced_first(target, *args, **kwargs):
+        real(target, ignore_errors=True)
+        os.mkdir(mine.path)
+        with open(os.path.join(mine.path, "token"), "w", encoding="utf-8") as handle:
+            handle.write("the-replacement-holder")
+        real(target, *args, **kwargs)
+
+    monkeypatch.setattr(verify_trust.shutil, "rmtree", replaced_first)
+
+    with mine:
+        pass
+
+    assert os.path.isdir(mine.path)
+
+
+def test_lock_release_puts_back_a_foreign_directory_it_claimed(tmp_path):
+    path = str(tmp_path / "s.json")
+    mine = verify_trust._Lock(path)
+
+    with mine:
+        shutil.rmtree(mine.path)
+        os.mkdir(mine.path)
+        with open(os.path.join(mine.path, "token"), "w", encoding="utf-8") as handle:
+            handle.write("someone-else")
+
+    with open(os.path.join(mine.path, "token"), encoding="utf-8") as handle:
+        assert handle.read() == "someone-else"
+    assert sorted(os.listdir(tmp_path)) == ["s.json.lock"]
+
+
+def test_replace_retries_a_permission_error_then_succeeds(tmp_path, monkeypatch):
+    src, dst = tmp_path / "a", tmp_path / "b"
+    src.write_text("x", encoding="utf-8")
+    real, calls = os.replace, []
+
+    def flaky(a, b):
+        calls.append(1)
+        if len(calls) < 3:
+            raise PermissionError
+        real(a, b)
+
+    monkeypatch.setattr(verify_trust.os, "replace", flaky)
+
+    verify_trust._replace(str(src), str(dst))
+
+    assert dst.read_text(encoding="utf-8") == "x" and len(calls) == 3
+
+
+def test_git_output_with_invalid_bytes_stays_distinct(tmp_path):
+    first = b"https://github.com/\xff/x".decode("utf-8", "backslashreplace")
+    second = b"https://github.com/\xfe/x".decode("utf-8", "backslashreplace")
+
+    assert first != second and verify_trust.parse_remote(first) is None
+
+
+def test_check_expect_verify_sha_for_other_bytes_is_changed_though_trusted(tmp_path, store, capsys):
+    root = _repo(tmp_path)
+    _approve(root)
+
+    code = verify_trust.main(["check", "--root", str(root), "--expect-verify-sha", "0" * 64])
+
+    assert code == verify_trust.EXIT_CHANGED
+    assert "CHANGED, not run" in capsys.readouterr().out
+
+
+def test_check_expect_verify_sha_for_the_same_bytes_is_trusted(tmp_path, store):
+    import hashlib
+    root = _repo(tmp_path)
+    _approve(root)
+    sha = hashlib.sha256((root / ".crew" / "verify.json").read_bytes()).hexdigest()
+
+    code = verify_trust.main(["check", "--root", str(root), "--expect-verify-sha", sha])
+
+    assert code == verify_trust.EXIT_TRUSTED
+
+
+def test_check_a_named_verify_file_is_not_trusted_by_the_remote_owner(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    _allow()
+    other = tmp_path / "other.json"
+    other.write_text(_VERIFY + " ", encoding="utf-8")
+
+    own = verify_trust.evaluate(str(root)).code
+    named = verify_trust.evaluate(str(root), verify_file=str(other)).code
+
+    assert (own, named) == (verify_trust.EXIT_TRUSTED, verify_trust.EXIT_UNTRUSTED)
+
+
+def test_check_a_named_verify_file_with_approved_bytes_is_trusted(tmp_path, store):
+    root = _repo(tmp_path)
+    _approve(root)
+    copy = tmp_path / "copy.json"
+    copy.write_text(_VERIFY, encoding="utf-8")
+
+    assert verify_trust.evaluate(str(root), verify_file=str(copy)).code == verify_trust.EXIT_TRUSTED
+
+
+def test_evaluate_a_malformed_owner_restriction_is_unknown(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    store.parent.mkdir(parents=True)
+    store.write_text(json.dumps({"version": verify_trust.STORE_VERSION, "repos": {},
+                                 "owners": {_OWNER: {"under": [1]}}}), encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs a FIFO")
+def test_evaluate_a_fifo_as_the_store_is_unknown_and_does_not_hang(tmp_path, store):
+    root = _repo(tmp_path)
+    store.parent.mkdir(parents=True)
+    os.mkfifo(store)
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+@pytest.mark.parametrize("value", ["1", ""])
+def test_approve_inside_a_claude_code_session_changes_nothing_even_with_yes(
+        tmp_path, monkeypatch, value):
+    root = _repo(tmp_path)
+    monkeypatch.delenv(verify_trust.ENV_STORE, raising=False)
+    monkeypatch.setenv("CLAUDECODE", value)
+
+    code = verify_trust.main(["approve", "--root", str(root), "--yes"])
+
+    assert code == 1
+
+
+@pytest.mark.parametrize("url", ["https://github.com/mbadali25/evil..repo",
+                                 "https://github.com/mbadali25..x/repo"])
+def test_parse_remote_a_double_dot_inside_a_segment_is_refused(url):
+    assert verify_trust.parse_remote(url) is None
+
+
+def test_evaluate_a_lone_surrogate_in_an_owner_restriction_is_unknown(tmp_path, store):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    store.parent.mkdir(parents=True)
+    store.write_text('{"version": %d, "repos": {}, "owners": {"%s": {"under": ["\\ud800"]}}}'
+                     % (verify_trust.STORE_VERSION, _OWNER), encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_UNKNOWN
+
+
+def test_lock_one_that_stays_stale_is_given_up_on_at_the_deadline(tmp_path, monkeypatch):
+    path = str(tmp_path / "s.json")
+    monkeypatch.setattr(verify_trust, "LOCK_WAIT", 0.3)
+    lock = verify_trust._Lock(path)
+    monkeypatch.setattr(lock, "_stale", lambda: True)
+    monkeypatch.setattr(lock, "_break", lambda: None)
+    os.mkdir(lock.path)
+    with open(os.path.join(lock.path, "token"), "w", encoding="utf-8") as handle:
+        handle.write("someone else")
+
+    with pytest.raises(verify_trust.TrustError), lock:
+        pass
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="needs a FIFO")
+def test_check_a_named_verify_file_that_is_a_fifo_is_unknown_and_does_not_hang(tmp_path, store):
+    root = _repo(tmp_path)
+    fifo = tmp_path / "map.json"
+    os.mkfifo(fifo)
+
+    assert verify_trust.evaluate(str(root), verify_file=str(fifo)).code == verify_trust.EXIT_UNKNOWN
+
+
+def test_lock_an_owner_token_that_cannot_be_written_gives_up_and_leaves_no_lock(
+        tmp_path, monkeypatch):
+    path = str(tmp_path / "s.json")
+    real_open = open
+
+    def refuse_token(name, *args, **kwargs):
+        if str(name).endswith("token") and "w" in (args[0] if args else kwargs.get("mode", "r")):
+            raise OSError("disk full")
+        return real_open(name, *args, **kwargs)
+    monkeypatch.setattr(verify_trust, "open", refuse_token, raising=False)
+
+    with pytest.raises(verify_trust.TrustError):
+        with verify_trust._Lock(path):
+            pass
+
+    assert not os.path.exists(path + ".lock")
+
+
+# ------------------------------------------------------------ git on PATH
+
+def test_evaluate_no_git_on_path_is_unknown_naming_git(tmp_path, store, monkeypatch):
+    """Git for Windows 2.56 has no mingw64/: the gate's fixed PATH missed git and
+    the trust check read "no git" as "not a repo", so an allowlisted owner came
+    out UNTRUSTED. No git is a could-not-tell: UNKNOWN, and the line names git."""
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    assert _allow() == 0
+    empty = tmp_path / "no-tools"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+
+    verdict = verify_trust.evaluate(str(root))
+
+    assert verdict.code == verify_trust.EXIT_UNKNOWN
+    assert "UNKNOWN" in verdict.message and "git" in verdict.message
+
+
+def test_evaluate_a_path_that_holds_git_finds_it(tmp_path, store, monkeypatch):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    assert _allow() == 0
+    git = shutil.which("git")
+    assert git, "the suite needs git"
+    monkeypatch.setenv("PATH", os.path.dirname(git))
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+
+
+def _no_git(tmp_path, monkeypatch):
+    empty = tmp_path / "no-tools"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+
+
+def test_evaluate_a_hash_approved_repo_is_trusted_without_git(tmp_path, store, monkeypatch):
+    """A repo approved by hash is recognised from its bytes and its path alone.
+    Requiring git to find it made every approved repo UNKNOWN on a machine whose
+    gate could not find git, though nothing about the approval had changed."""
+    root = _repo(tmp_path)
+    assert _approve(root) == 0
+    _no_git(tmp_path, monkeypatch)
+
+    verdict = verify_trust.evaluate(str(root))
+
+    assert verdict.code == verify_trust.EXIT_TRUSTED, verdict.message
+
+
+def test_evaluate_a_hash_approved_repo_with_changed_bytes_and_no_git_is_not_trusted(
+        tmp_path, store, monkeypatch):
+    root = _repo(tmp_path)
+    assert _approve(root) == 0
+    (root / ".crew" / "verify.json").write_text(_VERIFY.replace("true", "tru3"), encoding="utf-8")
+    _no_git(tmp_path, monkeypatch)
+
+    assert _code(root) == verify_trust.EXIT_CHANGED
+
+
+def test_evaluate_an_unapproved_repo_under_an_allowlisted_owner_and_no_git_is_unknown(
+        tmp_path, store, monkeypatch):
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    assert _allow() == 0
+    _no_git(tmp_path, monkeypatch)
+
+    verdict = verify_trust.evaluate(str(root))
+
+    assert verdict.code == verify_trust.EXIT_UNKNOWN
+    assert "git" in verdict.message
+
+
+@pytest.mark.parametrize("verb", ["approve", "revoke"])
+def test_approve_and_revoke_without_git_say_so_and_change_nothing(
+        tmp_path, store, monkeypatch, capsys, verb):
+    """No git is a could-not-tell. It used to escape as a TrustError traceback."""
+    root = _repo(tmp_path)
+    _no_git(tmp_path, monkeypatch)
+    argv = [verb, "--root", str(root)] + (["--yes"] if verb == "approve" else [])
+
+    code = verify_trust.main(argv)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "git was not found" in err
+    assert "Traceback" not in err
+    assert not store.exists()
+
+
+def test_status_without_git_still_prints_a_verdict(tmp_path, store, monkeypatch, capsys):
+    root = _repo(tmp_path)
+    _no_git(tmp_path, monkeypatch)
+
+    assert verify_trust.main(["status", "--root", str(root)]) == 0
+
+    assert "verdict:" in capsys.readouterr().out
+
+
+# -------------------------------------------------- review round: PR 679 BLOCKs
+
+def _commit(root):
+    (root / "a.py").write_text("x = 1", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@e.invalid", "commit", "-q", "-m", "x")
+
+
+def test_evaluate_a_subdirectory_with_an_identical_map_does_not_inherit_the_hash_approval(
+        tmp_path, store):
+    """MUST-BLOCK: the hash binds the repo's top level, because the gate runs
+    the map's commands from the directory it stands in."""
+    root = _repo(tmp_path)
+    _approve(root)
+    sub = root / "sub"
+    (sub / ".crew").mkdir(parents=True)
+    (sub / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+
+    assert _code(root) == verify_trust.EXIT_TRUSTED
+    assert _code(sub) != verify_trust.EXIT_TRUSTED
+
+
+def test_approve_from_a_subdirectory_of_a_repo_is_refused(tmp_path, store):
+    """MUST-BLOCK: an approval made at a subdirectory would trust that
+    directory's map under the repo's identity."""
+    root = _repo(tmp_path)
+    sub = root / "sub"
+    (sub / ".crew").mkdir(parents=True)
+    (sub / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+
+    assert _approve(sub) == 1
+    assert not store.exists()
+
+
+def test_evaluate_a_plain_directory_that_is_not_a_repo_is_still_approvable(tmp_path, store):
+    """MUST-ALLOW: no git repo anywhere above it is a real standalone answer."""
+    plain = tmp_path / "plain"
+    (plain / ".crew").mkdir(parents=True)
+    (plain / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+
+    assert _approve(plain) == 0
+    assert _code(plain) == verify_trust.EXIT_TRUSTED
+
+
+def test_disallow_owner_keeps_the_pin_of_a_repo_trusted_by_another_owner(tmp_path, store):
+    """MUST-BLOCK: disallowing owner A must not clear owner B's pin, or B's
+    changed remote reads as trusted instead of REMOTE CHANGED."""
+    other = "github.com/otherowner"
+    repo_a = _repo(tmp_path, "a", remotes=[_OK_URL])
+    repo_b = _repo(tmp_path, "b", remotes=["https://github.com/otherowner/b.git"])
+    _allow()
+    _allow(other)
+    assert _code(repo_a) == verify_trust.EXIT_TRUSTED
+    assert _code(repo_b) == verify_trust.EXIT_TRUSTED
+    _git(repo_b, "remote", "set-url", "origin", "https://github.com/otherowner/changed.git")
+
+    assert verify_trust.main(["disallow-owner", _OWNER, "--yes"]) == 0
+
+    assert _code(repo_b) == verify_trust.EXIT_REMOTE_CHANGED
+    assert _code(repo_a) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_disallow_owner_clears_the_pin_of_a_repo_that_owner_trusted(tmp_path, store):
+    """MUST-ALLOW: the owner's own repo is re-pinned fresh after allow again."""
+    repo_a = _repo(tmp_path, "a", remotes=[_OK_URL])
+    _allow()
+    assert _code(repo_a) == verify_trust.EXIT_TRUSTED
+    _git(repo_a, "remote", "set-url", "origin", "https://github.com/mbadali25/moved.git")
+    verify_trust.main(["disallow-owner", _OWNER, "--yes"])
+    _allow()
+
+    assert _code(repo_a) == verify_trust.EXIT_TRUSTED
+
+
+def _probe_fails(patch):
+    real = verify_trust._git  # pylint: disable=protected-access
+
+    def failing(root, *args):
+        if args[:1] == ("rev-parse",):
+            return None
+        return real(root, *args)
+    patch.setattr(verify_trust, "_git", failing)
+
+
+def test_a_failed_git_probe_on_a_linked_worktree_fails_closed(tmp_path, store, monkeypatch):
+    """MUST-BLOCK: a probe that fails is not 'a standalone directory'. revoke
+    must fail loudly and leave the shared approval; approve must record
+    nothing; the verdict is UNKNOWN."""
+    root = _repo(tmp_path)
+    _commit(root)
+    _approve(root)
+    linked = tmp_path / "linked"
+    _git(root, "worktree", "add", "-q", "-b", "lane", str(linked))
+    with monkeypatch.context() as patch:
+        _probe_fails(patch)
+
+        assert verify_trust.main(["revoke", "--root", str(linked)]) == 1
+        assert verify_trust.main(["approve", "--root", str(linked), "--yes"]) == 1
+        assert _code(linked) == verify_trust.EXIT_UNKNOWN
+    assert _code(linked) == verify_trust.EXIT_TRUSTED
+
+
+def test_approve_with_an_unreadable_remote_set_is_refused(tmp_path, store, monkeypatch):
+    """MUST-BLOCK: 'could not read the remotes' must not be stored as a null
+    pin and reported as approved."""
+    root = _repo(tmp_path, remotes=[_OK_URL])
+    monkeypatch.setattr(verify_trust, "remote_set", lambda _root: None)
+
+    assert _approve(root) == 1
+    assert not store.exists()
+
+
+def test_approve_a_repo_with_no_remote_records_an_empty_pin(tmp_path, store):
+    """MUST-ALLOW: no remote is a known answer, distinct from unknown."""
+    root = _repo(tmp_path)
+
+    assert _approve(root) == 0
+    entry = json.loads(store.read_text(encoding="utf-8"))["repos"][verify_trust.repo_identity(str(root))[0]]
+    assert entry["pin"] == []
+
+
+def _aged_lock(path, holder):
+    lock_dir = path + ".lock"
+    os.mkdir(lock_dir)
+    if holder is not None:
+        with open(os.path.join(lock_dir, "holder"), "w", encoding="utf-8") as handle:
+            handle.write(holder)
+    old = os.stat(lock_dir).st_mtime - verify_trust.LOCK_STALE - 5
+    os.utime(lock_dir, (old, old))
+    return lock_dir
+
+
+def test_lock_an_old_lock_whose_holder_is_still_running_is_not_broken(tmp_path):
+    """A writer paused past LOCK_STALE still owns the lock: breaking it would let
+    it later restore a snapshot taken before a revocation (round 8, inferred)."""
+    path = str(tmp_path / "s.json")
+    lock_dir = _aged_lock(path, f"{verify_trust.socket.gethostname()} {os.getpid()}")
+
+    verify_trust._Lock(path)._break()
+
+    assert os.path.isdir(lock_dir)
+    assert verify_trust._Lock(path)._stale() is False
+
+
+def test_lock_an_old_lock_whose_holder_is_gone_is_broken(tmp_path):
+    path = str(tmp_path / "s.json")
+    with subprocess.Popen([sys.executable, "-c", "pass"]) as child:
+        child.wait()
+    lock_dir = _aged_lock(path, f"{verify_trust.socket.gethostname()} {child.pid}")
+
+    with verify_trust._Lock(path):
+        assert os.path.isdir(lock_dir)
+    assert not os.path.exists(lock_dir)
+
+
+def test_lock_an_old_lock_with_no_holder_note_is_broken_by_age(tmp_path):
+    path = str(tmp_path / "s.json")
+    lock_dir = _aged_lock(path, None)
+
+    with verify_trust._Lock(path):
+        assert os.path.isdir(lock_dir)
+    assert not os.path.exists(lock_dir)
+
+
+def test_second_check_with_verify_json_deleted_is_changed_not_trusted(tmp_path, monkeypatch):
+    """The second map check, raced through an ABSENT verify.json (round 8,
+    inferred): 'nothing to run here' is a trusted verdict, and the parsed-bytes
+    comparison must still turn it into CHANGED rather than let it stand."""
+    root = _repo(tmp_path)
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(tmp_path / "store.json"))
+    os.remove(os.path.join(root, ".crew", "verify.json"))
+
+    code = verify_trust.main(["check", "--root", str(root), "--expect-verify-sha", "ab" * 32])
+
+    assert code == verify_trust.EXIT_CHANGED
+
+
+def _submodule(tmp_path):
+    src = _repo(tmp_path, name="src")
+    _git(src, "add", "-A")
+    _git(src, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q", "-m", "x")
+    sup = _repo(tmp_path, name="sup", verify=None)
+    _git(sup, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(src), "mod")
+    return sup, sup / "mod"
+
+
+def test_store_a_trust_file_in_the_superproject_of_a_submodule_is_refused(tmp_path, monkeypatch):
+    """Round 9: the gate strips a submodule's superproject from the interpreter PATH;
+    a store there is repo-authored and must be refused alike."""
+    sup, mod = _submodule(tmp_path)
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(sup / "trust.json"))
+
+    assert _code(mod) == verify_trust.EXIT_UNKNOWN
+
+
+def test_owner_trust_a_hand_written_git_file_naming_a_trusted_repo_is_not_trusted(
+        tmp_path, store, monkeypatch):
+    """Round 9: `.git` = `gitdir: <trusted repo>/.git` borrows that repo's remotes while
+    its own verify.json is what the gate would run. A real worktree names itself back."""
+    monkeypatch.setattr(verify_trust.sys.stdin, "isatty", lambda: False)
+    trusted = _repo(tmp_path, name="trusted", remotes=[_OK_URL])
+    assert _allow() == 0
+    assert _code(trusted) == verify_trust.EXIT_TRUSTED
+    liar = tmp_path / "liar"
+    (liar / ".crew").mkdir(parents=True)
+    (liar / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    (liar / ".git").write_text(f"gitdir: {trusted / '.git'}\n", encoding="utf-8")
+
+    assert _code(liar) != verify_trust.EXIT_TRUSTED
+
+
+def test_owner_trust_a_real_linked_worktree_still_trusted_by_owner(tmp_path, store, monkeypatch):
+    monkeypatch.setattr(verify_trust.sys.stdin, "isatty", lambda: False)
+    main = _repo(tmp_path, name="main", remotes=[_OK_URL])
+    _git(main, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q",
+         "--allow-empty", "-m", "x")
+    lane = tmp_path / "lane"
+    _git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    (lane / ".crew").mkdir(exist_ok=True)
+    (lane / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    assert _allow() == 0
+
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+
+
+def test_lock_a_holder_note_with_a_huge_pid_is_not_an_exception(tmp_path):
+    path = str(tmp_path / "s.json")
+    _aged_lock(path, f"{verify_trust.socket.gethostname()} 99999999999999999999")
+
+    assert verify_trust._holder_alive(path + ".lock") is False
+
+
+@pytest.mark.skipif(os.name != "posix", reason="os.kill's pid_t is a POSIX type")
+def test_lock_a_pid_between_2_31_and_2_32_is_dead_not_an_exception(tmp_path):
+    """Round 10: `os.kill` raises OverflowError for a pid that does not fit a signed 32-bit
+    pid_t; no process has one, and the lock must not raise or read it alive."""
+    path = str(tmp_path / "s.json")
+    _aged_lock(path, f"{verify_trust.socket.gethostname()} 3000000000")
+
+    assert verify_trust._pid_alive(3_000_000_000) is False  # pylint: disable=protected-access
+    assert verify_trust._holder_alive(path + ".lock") is False
+
+
+def test_lock_a_missing_empty_or_foreign_host_note_older_than_the_bound_is_broken(tmp_path):
+    for note in ("", "no-pid", "some-other-host.invalid 12345"):
+        path = str(tmp_path / "s.json")
+        _aged_lock(path, note)
+        assert verify_trust._holder_alive(path + ".lock") is False
+        shutil.rmtree(path + ".lock")
+
+
+def test_lock_a_taken_lock_always_carries_its_holder_note_and_leaves_no_staging_directory(tmp_path):
+    path = str(tmp_path / "s.json")
+
+    with verify_trust._Lock(path):
+        assert os.path.isfile(os.path.join(path + ".lock", "holder"))
+        assert os.path.isfile(os.path.join(path + ".lock", "token"))
+        assert [n for n in os.listdir(tmp_path) if ".new." in n] == []
+    assert not os.path.exists(path + ".lock")
+
+
+def test_evaluate_a_real_linked_worktree_outside_the_owner_place_does_not_borrow_it(tmp_path, store):
+    """The `--under` limit holds for a GENUINE linked worktree too (its gitdir names it
+    back, so the back-link check passes): the top level it stands at is what is judged."""
+    inside = tmp_path / "work"
+    inside.mkdir()
+    trusted = _repo(inside, "good", remotes=[_OK_URL])
+    _git(trusted, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q",
+         "--allow-empty", "-m", "x")
+    lane = tmp_path / "elsewhere" / "lane"
+    lane.parent.mkdir()
+    _git(trusted, "worktree", "add", "-q", str(lane), "-b", "lane")
+    (lane / ".crew").mkdir(exist_ok=True)
+    (lane / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    _allow(_OWNER, [inside])
+
+    assert _code(trusted) == verify_trust.EXIT_TRUSTED
+    assert _code(lane) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_lock_a_pid_beyond_any_real_process_id_is_dead_without_a_system_call():
+    """A process id is a 32-bit number; a larger one cannot name a process. On Windows the
+    huge value reached ctypes and raised ArgumentError (CI, crew-windows-default 5/6)."""
+    assert verify_trust._pid_alive(2 ** 32 + 5) is False  # pylint: disable=protected-access
+    assert verify_trust._pid_alive(10 ** 30) is False  # pylint: disable=protected-access
+
+
+# ------------------------------------------------- round 10: hash approval back-link
+
+def _liar(tmp_path, trusted, name="liar"):
+    """A directory with a hand-written `.git` file naming `trusted`'s git dir and the same
+    verify.json bytes: nothing names it back."""
+    liar = tmp_path / name
+    (liar / ".crew").mkdir(parents=True)
+    (liar / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    (liar / ".git").write_text(f"gitdir: {trusted / '.git'}\n", encoding="utf-8")
+    return liar
+
+
+def test_hash_approval_a_hand_written_git_file_naming_an_approved_repo_is_not_trusted(
+        tmp_path, store):
+    """Round 10: the approval is keyed by the identity git reports, and a hand-written
+    `.git` file reports the approved repo's. Byte-identical bytes there are not approved."""
+    trusted = _repo(tmp_path, name="trusted")
+    assert _approve(trusted) == 0
+    assert _code(trusted) == verify_trust.EXIT_TRUSTED
+    liar = _liar(tmp_path, trusted)
+
+    assert _code(liar) != verify_trust.EXIT_TRUSTED
+    assert verify_trust.main(["check", "--root", str(liar)]) != 0
+
+
+def test_hash_approval_a_hand_written_git_file_is_judged_by_its_own_path_on_approve(
+        tmp_path, store):
+    """The refusal is an identity, not a dead end: approving the liar by its own path works
+    and covers it alone."""
+    trusted = _repo(tmp_path, name="trusted")
+    liar = _liar(tmp_path, trusted)
+
+    assert _approve(liar) == 0
+    assert _code(liar) == verify_trust.EXIT_TRUSTED
+    assert _code(trusted) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_hash_approval_a_real_linked_worktree_shares_the_approval(tmp_path, store):
+    main = _repo(tmp_path, name="main")
+    _git(main, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q",
+         "--allow-empty", "-m", "x")
+    lane = tmp_path / "lane"
+    _git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    (lane / ".crew").mkdir(exist_ok=True)
+    (lane / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    assert _approve(main) == 0
+
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_real_submodule_is_approved_by_its_own_identity(tmp_path, store):
+    _sup, mod = _submodule(tmp_path)
+    assert (mod / ".git").is_file()
+    top = str(mod.resolve())
+    identity, found_top = verify_trust.repo_identity(str(mod))
+    assert found_top == top and identity.endswith(os.path.join(".git", "modules", "mod"))
+    assert _approve(mod) == 0
+
+    assert _code(mod) == verify_trust.EXIT_TRUSTED
+
+
+# ------------------------------------------- round 11: the identity is confirmed by the other side
+
+_FORGES = ("dir_commondir", "dir_commondir_config", "symlink", "gitfile_selfadmin_gitdir",
+           "gitfile_selfadmin_worktree", "gitfile_relative_dotdot", "gitfile_dot_segments",
+           "gitfile_trailing_slash", "gitfile_upper_case")
+
+
+def _forge(tmp_path, trusted, kind, name=None):
+    """A directory with `trusted`'s verify.json bytes whose own `.git` claims `trusted`'s
+    identity, in one of the layouts a hostile repository can write without touching `trusted`."""
+    bad = tmp_path / (name or "forged_" + kind)
+    (bad / ".crew").mkdir(parents=True)
+    (bad / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    real = str(trusted / ".git")
+    if kind in ("dir_commondir", "dir_commondir_config"):
+        (bad / ".git").mkdir()
+        (bad / ".git" / "HEAD").write_text("ref: refs/heads/master\n", encoding="utf-8")
+        (bad / ".git" / "commondir").write_text(real + "\n", encoding="utf-8")
+        if kind == "dir_commondir_config":
+            (bad / ".git" / "config").write_text(
+                f"[core]\n\trepositoryformatversion = 0\n\tworktree = {bad}\n", encoding="utf-8")
+    elif kind == "symlink":
+        os.symlink(real, bad / ".git")
+    elif kind in ("gitfile_selfadmin_gitdir", "gitfile_selfadmin_worktree"):
+        (bad / "gd").mkdir()
+        (bad / ".git").write_text("gitdir: gd\n", encoding="utf-8")
+        (bad / "gd" / "HEAD").write_text("ref: refs/heads/master\n", encoding="utf-8")
+        (bad / "gd" / "commondir").write_text(real + "\n", encoding="utf-8")
+        if kind == "gitfile_selfadmin_gitdir":
+            (bad / "gd" / "gitdir").write_text(str(bad / ".git") + "\n", encoding="utf-8")
+        else:
+            (bad / "gd" / "config").write_text(f"[core]\n\tworktree = {bad}\n", encoding="utf-8")
+    elif kind == "gitfile_relative_dotdot":
+        (bad / ".git").write_text(f"gitdir: ../{trusted.name}/.git\n", encoding="utf-8")
+    elif kind == "gitfile_dot_segments":
+        (bad / ".git").write_text(f"gitdir: {trusted}/./../{trusted.name}/./.git\n", encoding="utf-8")
+    elif kind == "gitfile_trailing_slash":
+        (bad / ".git").write_text(f"gitdir: {real}/\n", encoding="utf-8")
+    else:
+        (bad / ".git").write_text(f"gitdir: {real.upper()}\n", encoding="utf-8")
+    return bad
+
+
+@pytest.mark.parametrize("kind", _FORGES)
+def test_hash_approval_a_forged_git_layout_never_borrows_an_approved_repo(tmp_path, store, kind):
+    """Round 11: each layout a hostile directory can write by itself, a `.git` directory or
+    symlink or a gitfile to its own admin directory naming the approved repo as `commondir`,
+    reports the approved repo's identity to git. None of them is that repo."""
+    trusted = _repo(tmp_path, name="approved")
+    assert _approve(trusted) == 0
+    bad = _forge(tmp_path, trusted, kind)
+
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+    assert verify_trust.main(["check", "--root", str(bad)]) != 0
+    assert _code(trusted) == verify_trust.EXIT_TRUSTED
+
+
+@pytest.mark.parametrize("kind", _FORGES)
+def test_owner_trust_a_forged_git_layout_never_borrows_a_trusted_repos_remotes(
+        tmp_path, store, kind):
+    """The same layouts borrow an allowlisted remote when the owner is allowed: the identity
+    must come from the directory's own git dir, not from a `commondir` it wrote."""
+    trusted = _repo(tmp_path, name="approved", remotes=[_OK_URL])
+    assert _allow() == 0
+    assert _code(trusted) == verify_trust.EXIT_TRUSTED
+    bad = _forge(tmp_path, trusted, kind)
+    (bad / ".crew" / "verify.json").write_text(
+        json.dumps({"version": 1, "rules": [{"paths": ["a.py"], "run": ["echo hostile"]}]}),
+        encoding="utf-8")
+
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_git_symlink_to_a_different_trusted_repo_is_not_trusted(tmp_path, store):
+    one = _repo(tmp_path, name="one")
+    two = _repo(tmp_path, name="two")
+    assert _approve(one) == 0
+    assert _approve(two) == 0
+    bad = _forge(tmp_path, one, "symlink")
+
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_gitfile_naming_a_real_worktrees_admin_dir_is_not_that_worktree(
+        tmp_path, store):
+    """The other side's record decides: `<main>/.git/worktrees/lane/gitdir` names the lane's
+    `.git`, so a different directory naming that admin dir is not the lane."""
+    main = _repo(tmp_path, name="main")
+    _git(main, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q",
+         "--allow-empty", "-m", "x")
+    lane = tmp_path / "lane"
+    _git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    assert _approve(main) == 0
+    bad = tmp_path / "impostor"
+    (bad / ".crew").mkdir(parents=True)
+    (bad / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    (bad / ".git").write_text(f"gitdir: {main / '.git' / 'worktrees' / 'lane'}\n", encoding="utf-8")
+
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_directory_nested_in_a_trusted_tree_with_a_forged_gitfile_is_refused(
+        tmp_path, store):
+    main = _repo(tmp_path, name="main")
+    assert _approve(main) == 0
+    nested = main / "sub"
+    (nested / ".crew").mkdir(parents=True)
+    (nested / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    (nested / ".git").write_text("gitdir: ../.git\n", encoding="utf-8")
+
+    assert _code(nested) != verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_real_worktree_nested_inside_the_trusted_tree_shares_the_approval(
+        tmp_path, store):
+    main = _repo(tmp_path, name="main")
+    _git(main, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q",
+         "--allow-empty", "-m", "x")
+    lane = main / "wt" / "lane"
+    _git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    (lane / ".crew").mkdir(exist_ok=True)
+    (lane / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    assert _approve(main) == 0
+
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_plain_repo_and_a_standalone_directory_still_work(tmp_path, store):
+    plain = _repo(tmp_path, name="plain")
+    plain_dir = tmp_path / "standalone"
+    (plain_dir / ".crew").mkdir(parents=True)
+    (plain_dir / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+
+    assert _approve(plain) == 0
+    assert _approve(plain_dir) == 0
+    assert _code(plain) == verify_trust.EXIT_TRUSTED
+    assert _code(plain_dir) == verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_submodule_with_a_hand_written_commondir_is_refused(tmp_path, store):
+    """A real submodule's git dir is not an admin dir: a `commondir` added to it by the
+    directory is what a forger writes, so the submodule layout no longer holds."""
+    sup, mod = _submodule(tmp_path)
+    assert _approve(mod) == 0
+    gitdir = sup / ".git" / "modules" / "mod"
+    (gitdir / "commondir").write_text(str(sup / ".git") + "\n", encoding="utf-8")
+
+    top = str(mod.resolve())
+    assert verify_trust._identity_confirmed(top, top, str(sup / ".git")) is False  # pylint: disable=protected-access
