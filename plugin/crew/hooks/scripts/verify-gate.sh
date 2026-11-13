@@ -106,7 +106,7 @@ gate_helper_py() {
 # PYTHONPATH cannot run a sitecustomize inside the probe's own `-c`.
 gate_py_on_path() {
   (
-    for _hv in $(compgen -e | grep '^PYTHON'); do unset "$_hv"; done
+    for _hv in $(compgen -e); do case "$_hv" in PYTHON*) unset "$_hv" ;; esac; done
     CREW_PYTHON="" PATH="$1" crew_py_strict 2>/dev/null
   )
 }
@@ -1639,7 +1639,9 @@ fi
 # and MSYS rewrote that to "C:\Program Files\Git\scope_report.py". The gate then
 # printed a python "No such file" line as its scope report. Resolve it here.
 SCOPE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCOPE_PY=$(gate_helper_py 2>/dev/null) || SCOPE_PY=""
+# The same interpreter the fingerprint helper resolved above: one proving probe, not two
+# (each probe is a process, and on Windows a process is what the gate's wall clock pays for).
+SCOPE_PY="$FP_PY"
 # The two preconditions are reported APART. Both used to fall into one
 # "(no python)" sentence, so a missing scope_report.py -- a different
 # cause with a different fix -- was announced as an absent interpreter.

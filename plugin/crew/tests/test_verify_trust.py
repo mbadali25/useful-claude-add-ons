@@ -1039,8 +1039,8 @@ def test_lock_an_old_lock_whose_holder_is_still_running_is_not_broken(tmp_path):
 
 def test_lock_an_old_lock_whose_holder_is_gone_is_broken(tmp_path):
     path = str(tmp_path / "s.json")
-    child = subprocess.Popen([sys.executable, "-c", "pass"])
-    child.wait()
+    with subprocess.Popen([sys.executable, "-c", "pass"]) as child:
+        child.wait()
     lock_dir = _aged_lock(path, f"{verify_trust.socket.gethostname()} {child.pid}")
 
     with verify_trust._Lock(path):
