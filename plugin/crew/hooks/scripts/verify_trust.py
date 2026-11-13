@@ -517,12 +517,19 @@ def repo_identity(root):
         if _inside_git_dir(root):
             raise TrustError("git could not identify the repository this directory belongs to")
         return os.path.realpath(root), None
+    top = os.path.realpath(top.strip())
+    if not _gitfile_backlink_ok(top):
+        # A `.git` FILE that names a git dir which does not name this directory back
+        # is hand-written (round 10): git would report the NAMED repository's
+        # identity, and a hash approval keyed by it would cover this directory's
+        # own, different bytes. Such a directory is judged by its own path alone.
+        return os.path.realpath(root), None
     common = out.strip()
     if not os.path.isabs(common):
         common = os.path.join(root, common)
     common = os.path.realpath(common)
     identity = os.path.dirname(common) if os.path.basename(common) == ".git" else common
-    return identity, os.path.realpath(top.strip())
+    return identity, top
 
 
 def local_remote_config(root):
@@ -637,8 +644,6 @@ def owner_trust(root, identity, toplevel, store, euid=None):
         # The gate runs the map of the directory it stands in. A directory
         # below a trusted repo's top level is not that repo.
         return False, "the directory is not the repository's top level", None
-    if not _gitfile_backlink_ok(toplevel):
-        return False, "the .git file here does not name a gitdir that names this directory back", None
     cfg = local_remote_config(root)
     if cfg is None:
         return False, "git could not read the local config", None

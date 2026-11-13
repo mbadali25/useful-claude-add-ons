@@ -410,9 +410,9 @@ def changed(root, base):
     (`-c core.quotePath=false`, for the reason verify-gate.sh gives at its
     CHANGED= line). None when git could not answer."""
     tracked = crew_common.git_out(
-        root, "-c", "core.quotePath=false", "diff", "--name-only", base)
+        root, "-c", "core.fsmonitor=false", "-c", "core.quotePath=false", "diff", "--name-only", base)
     untracked = crew_common.git_out(
-        root, "-c", "core.quotePath=false", "ls-files", "--others",
+        root, "-c", "core.fsmonitor=false", "-c", "core.quotePath=false", "ls-files", "--others",
         "--exclude-standard")
     if tracked is None or untracked is None:
         return None

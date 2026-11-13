@@ -590,7 +590,7 @@ def tree_snapshot(root, stable=False):
                  ("diff", "--name-only", "-z", "--cached"),
                  ("diff", "--name-only", "-z", "HEAD")):
         try:
-            out = subprocess.run((crew_common.require_tool("git"), "-c", "core.quotePath=false") + args,
+            out = subprocess.run((crew_common.require_tool("git"), "-c", "core.fsmonitor=false", "-c", "core.quotePath=false") + args,
                                  cwd=root,
                                  capture_output=True, check=False, timeout=120,
                                  stdin=subprocess.DEVNULL)
@@ -600,7 +600,7 @@ def tree_snapshot(root, stable=False):
             return None
         listing.extend(p for p in out.stdout.decode("utf-8", "surrogateescape").split("\0") if p)
     try:
-        flags = subprocess.run((crew_common.require_tool("git"), "-c", "core.quotePath=false", "ls-files", "-v", "-z"),
+        flags = subprocess.run((crew_common.require_tool("git"), "-c", "core.fsmonitor=false", "-c", "core.quotePath=false", "ls-files", "-v", "-z"),
                                cwd=root, capture_output=True, check=False, timeout=120,
                                stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):

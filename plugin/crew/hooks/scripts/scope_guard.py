@@ -398,7 +398,14 @@ _WRAPPERS = frozenset({"env", "sudo", "command", "exec", "nohup", "time", "nice"
 # Scripts with a guard and an `approve` verb of their own (judged above, by
 # `_autopilot_refusal` and the `crew_ticket` approve rule): not a trust verb.
 _OWN_APPROVER_RE = re.compile(r"crew_(?:autopilot|ticket)(?:\.py)?$")
+_WRAPPER_VALUE_OPTIONS = {
+    "env": ("-u", "-C", "-S"),
+    "sudo": ("-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U"),
+    "nice": ("-n",),
+    "time": ("-f", "-o"),
+}
 _PROGRAM_OPTIONS = frozenset({"-m"})
+_MODULE_EXPANSION_RE = re.compile(r"[$`*?\[]")
 _VALUE_OPTIONS = frozenset({"-W", "-X", "-Q"})
 
 
@@ -418,9 +425,11 @@ def _first_word_index(tokens):
             index += 1
         elif token in _WRAPPERS:
             index += 1
+            takes_value = _WRAPPER_VALUE_OPTIONS.get(token, ())
             while index < len(tokens) and (tokens[index].startswith("-")
                                            or _ASSIGNMENT_RE.match(tokens[index])):
-                index += 1
+                # `env -u CLAUDECODE python3 ...`: the option's value is not the command.
+                index += 2 if tokens[index] in takes_value else 1
         else:
             return index
     return None
@@ -451,7 +460,11 @@ def _segment_verb(tokens):
         if token == "-c":
             return _segment_verb(rest[index + 1:])
         if token in _PROGRAM_OPTIONS:
-            return False
+            # A module word a shell will expand (`verify_tru${X}`, `$MOD`, a backtick,
+            # a wildcard) may become verify_trust at run time (round 10): refused when a
+            # trust verb follows. A literal module name is judged by the other checks.
+            expanded = index + 1 < len(rest) and _MODULE_EXPANSION_RE.search(rest[index + 1])
+            return bool(expanded) and any(t.lower() in _TRUST_VERBS for t in rest[index + 2:])
         if token in _VALUE_OPTIONS:
             index += 2
             continue

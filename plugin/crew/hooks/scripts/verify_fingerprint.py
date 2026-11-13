@@ -270,7 +270,7 @@ def _index_entries(root):
     """
     try:
         out = subprocess.run(
-            (crew_common.require_tool("git"), "-c", "core.quotePath=false", "ls-files", "-s", "-z"),
+            (crew_common.require_tool("git"), "-c", "core.fsmonitor=false", "-c", "core.quotePath=false", "ls-files", "-s", "-z"),
             cwd=root, capture_output=True, text=True, check=False,
             stdin=subprocess.DEVNULL)
     except OSError:
@@ -310,7 +310,7 @@ def _sub_changed(root):
                  ("ls-files", "--others", "--exclude-standard")):
         try:
             done = subprocess.run(
-                (crew_common.require_tool("git"), "-c", "core.quotePath=false") + args, cwd=root,
+                (crew_common.require_tool("git"), "-c", "core.fsmonitor=false", "-c", "core.quotePath=false") + args, cwd=root,
                 capture_output=True, text=True, check=False,
                 stdin=subprocess.DEVNULL)
         except OSError:

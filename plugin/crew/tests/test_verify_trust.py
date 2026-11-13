@@ -1127,6 +1127,14 @@ def test_lock_a_holder_note_with_a_huge_pid_is_not_an_exception(tmp_path):
     assert verify_trust._holder_alive(path + ".lock") is False
 
 
+def test_lock_a_missing_empty_or_foreign_host_note_older_than_the_bound_is_broken(tmp_path):
+    for note in ("", "no-pid", "some-other-host.invalid 12345"):
+        path = str(tmp_path / "s.json")
+        _aged_lock(path, note)
+        assert verify_trust._holder_alive(path + ".lock") is False
+        shutil.rmtree(path + ".lock")
+
+
 def test_lock_a_taken_lock_always_carries_its_holder_note_and_leaves_no_staging_directory(tmp_path):
     path = str(tmp_path / "s.json")
 
@@ -1161,3 +1169,62 @@ def test_lock_a_pid_beyond_any_real_process_id_is_dead_without_a_system_call():
     huge value reached ctypes and raised ArgumentError (CI, crew-windows-default 5/6)."""
     assert verify_trust._pid_alive(2 ** 32 + 5) is False  # pylint: disable=protected-access
     assert verify_trust._pid_alive(10 ** 30) is False  # pylint: disable=protected-access
+
+
+# ------------------------------------------------- round 10: hash approval back-link
+
+def _liar(tmp_path, trusted, name="liar"):
+    """A directory with a hand-written `.git` file naming `trusted`'s git dir and the same
+    verify.json bytes: nothing names it back."""
+    liar = tmp_path / name
+    (liar / ".crew").mkdir(parents=True)
+    (liar / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    (liar / ".git").write_text(f"gitdir: {trusted / '.git'}\n", encoding="utf-8")
+    return liar
+
+
+def test_hash_approval_a_hand_written_git_file_naming_an_approved_repo_is_not_trusted(
+        tmp_path, store):
+    """Round 10: the approval is keyed by the identity git reports, and a hand-written
+    `.git` file reports the approved repo's. Byte-identical bytes there are not approved."""
+    trusted = _repo(tmp_path, name="trusted")
+    assert _approve(trusted) == 0
+    assert _code(trusted) == verify_trust.EXIT_TRUSTED
+    liar = _liar(tmp_path, trusted)
+
+    assert _code(liar) != verify_trust.EXIT_TRUSTED
+    assert verify_trust.main(["check", "--root", str(liar)]) != 0
+
+
+def test_hash_approval_a_hand_written_git_file_is_judged_by_its_own_path_on_approve(
+        tmp_path, store):
+    """The refusal is an identity, not a dead end: approving the liar by its own path works
+    and covers it alone."""
+    trusted = _repo(tmp_path, name="trusted")
+    liar = _liar(tmp_path, trusted)
+
+    assert _approve(liar) == 0
+    assert _code(liar) == verify_trust.EXIT_TRUSTED
+    assert _code(trusted) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_hash_approval_a_real_linked_worktree_shares_the_approval(tmp_path, store):
+    main = _repo(tmp_path, name="main")
+    _git(main, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q",
+         "--allow-empty", "-m", "x")
+    lane = tmp_path / "lane"
+    _git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    (lane / ".crew").mkdir(exist_ok=True)
+    (lane / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    assert _approve(main) == 0
+
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_real_submodule_is_approved_by_its_own_identity(tmp_path, store):
+    _sup, mod = _submodule(tmp_path)
+    assert (mod / ".git").is_file()
+    assert verify_trust._gitfile_backlink_ok(str(mod.resolve())) is True
+    assert _approve(mod) == 0
+
+    assert _code(mod) == verify_trust.EXIT_TRUSTED

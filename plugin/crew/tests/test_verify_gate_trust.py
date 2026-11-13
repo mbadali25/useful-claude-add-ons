@@ -324,7 +324,7 @@ def test_gate_a_verify_json_rewritten_between_the_two_checks_runs_nothing(tmp_pa
     script = shim / "git"
     script.write_text(
         '#!/usr/bin/env bash\n'
-        'if [ "$3" = ls-files ] && [ "$4" = -z ] '
+        'if [[ " $* " == *" ls-files -z "* ]] '
         '&& [ ! -e "$SWAP_FLAG" ]; then : > "$SWAP_FLAG"; cp "$SWAP_FROM" "$SWAP_TO"; fi\n'
         f'exec "{shutil.which("git")}" "$@"\n', encoding="utf-8")
     script.chmod(script.stat().st_mode | stat.S_IXUSR)
@@ -361,7 +361,7 @@ def test_gate_a_verify_json_swapped_for_the_matcher_and_restored_runs_nothing(tm
     git = shim / "git"
     git.write_text(
         '#!/usr/bin/env bash\n'
-        'if [ "$3" = ls-files ] && [ "$4" = -z ] '
+        'if [[ " $* " == *" ls-files -z "* ]] '
         '&& [ ! -e "$SWAP_FLAG" ]; then : > "$SWAP_FLAG"; cp "$HOSTILE" "$TARGET"; fi\n'
         f'exec "{shutil.which("git")}" "$@"\n', encoding="utf-8")
     rm = shim / "rm"
@@ -812,3 +812,179 @@ def test_gate_a_second_trust_check_that_cannot_run_blocks_with_exit_2(tmp_path, 
     assert done.returncode == 2, done.stdout + done.stderr
     assert not sentinel.exists(), "the repo-authored command RAN"
     assert "could not RUN the trust check" in done.stdout + done.stderr
+
+
+# ------------------------------------------------------------------ round 10
+
+def _planting_dir(root, marker, names):
+    """`<repo>/bin` holding a script for each name that records a hit, then runs the real tool."""
+    (root / "bin").mkdir(exist_ok=True)
+    for name in names:
+        real = shutil.which(name) or f"/usr/bin/{name}"
+        script = root / "bin" / name
+        script.write_text(f'#!/bin/sh\n: >> "{marker}.{name}"\nexec "{real}" "$@"\n', encoding="utf-8")
+        script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    return root / "bin"
+
+
+_PLANTED = ["dirname", "basename", "uname", "tr", "git", "grep", "sed", "wc", "cut", "head", "date", "cat"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the planted tools are POSIX scripts")
+@pytest.mark.parametrize("args", _MODES)
+def test_gate_a_tool_planted_in_a_repo_path_dir_never_runs_ahead_of_the_trust_decision(
+        tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 10): PATH=<repo>/bin:... ran a repo-planted
+    dirname, uname, tr and git in Stop, --all and --price before the trust decision."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "hit"
+    planted = _planting_dir(root, marker, _PLANTED)
+
+    done = _run(root, *args, env={"PATH": f"{planted}{os.pathsep}{os.environ['PATH']}"})
+
+    hits = sorted(n for n in _PLANTED if os.path.exists(f"{marker}.{n}"))
+    assert hits == [], f"a repo-planted tool ran ahead of the trust decision: {hits}"
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the planted tools are POSIX scripts")
+def test_gate_an_approved_repo_still_finds_a_tool_in_its_own_path_dir_for_a_rule(tmp_path, store):
+    """MUST-ALLOW: the user's PATH is back once the repo is trusted, so a rule can use a
+    tool from a repo-local directory (a `.venv/bin`, a `node_modules/.bin`)."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    tool = root / "bin" / "repo-tool"
+    tool.parent.mkdir()
+    tool.write_text(f'#!/bin/sh\necho used > "{sentinel}"\n', encoding="utf-8")
+    tool.chmod(tool.stat().st_mode | stat.S_IXUSR)
+    (root / ".crew" / "verify.json").write_text(_map(sentinel, "repo-tool"), encoding="utf-8")
+    _approve(root)
+
+    done = _run(root, "--all", env={"PATH": f"{root / 'bin'}{os.pathsep}{os.environ['PATH']}"})
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.read_text(encoding="utf-8").strip() == "used"
+
+
+_SWEEP = ["git", "dirname", "basename", "uname", "tr", "grep", "sed", "wc", "cut", "head", "date",
+          "cat", "printf", "echo", "cd", "pwd", "read", "local", "test", "[", "mkdir", "rm", "env",
+          "exec", "eval", "export", "trap", "return", "exit", "set", "shift", "type", "hash",
+          "source", ".", "mapfile", "readonly", "wait", "kill", "sleep", "mktemp", "stat", "sort"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="exported shell functions are a POSIX bash feature")
+@pytest.mark.parametrize("args", _MODES)
+def test_gate_no_exported_shell_function_but_the_sweeps_own_words_runs_ahead_of_the_trust_decision(
+        tmp_path, store, args):
+    """Round 10: the boundary, measured. Every name in the sweep (the commands and
+    builtins the gate calls) is an exported function that records a hit; none runs.
+    The sweep's own two words, `compgen` and `unset`, are the documented residual:
+    they are looked up before any line of this script can remove a function."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned"
+    env = {f"BASH_FUNC_{name}%%": f"() {{ : >> '{marker}.x'; command {name} \"$@\"; }}" for name in _SWEEP}
+
+    done = _run(root, *args, env=env)
+
+    assert not os.path.exists(f"{marker}.x"), "an exported function ran ahead of the trust decision"
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="exported shell functions are a POSIX bash feature")
+@pytest.mark.parametrize("name", ["builtin", "command", "declare", "typeset", "enable", "eval"])
+def test_gate_an_exported_function_named_for_a_word_the_sweep_does_not_use_never_runs(tmp_path, store, name):
+    """Round 10: `builtin`, `command` and `declare` are the names a reviewer would try next.
+    The sweep calls neither, so each is swept before anything looks it up."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned"
+
+    done = _run(root, "--all", env={f"BASH_FUNC_{name}%%": f"() {{ : >> '{marker}'; return 0; }}"})
+
+    assert not marker.exists(), f"an exported {name} function ran ahead of the trust decision"
+    _expect_nothing_ran(done, ("--all",), sentinel)
+
+
+_INCIDENT = json.dumps({"expiresAtEpoch": 4102444800})
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+@pytest.mark.parametrize("args", [(), ("--all",)])
+def test_gate_an_incident_file_never_runs_the_repos_crew_python_ahead_of_the_trust_decision(
+        tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 10): `.crew/incident.json` plus
+    CREW_PYTHON=<repo>/bin/python3 ran the repo's script from `crew_incident_active`."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    (root / ".crew" / "incident.json").write_text(_INCIDENT, encoding="utf-8")
+    hit = tmp_path / "python-hit"
+    (root / "bin").mkdir()
+    fake = root / "bin" / "python3"
+    fake.write_text(f'#!/bin/sh\n: >> "{hit}"\nexec "{shutil.which("python3")}" "$@"\n', encoding="utf-8")
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+
+    done = _run(root, *args, env={"CREW_PYTHON": str(fake)})
+
+    assert not hit.exists(), "the repo's python ran before the trust decision"
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_an_open_incident_still_stands_the_gate_down_with_the_proved_python(tmp_path, store):
+    """MUST-ALLOW: the emergency lane is unchanged for an honest incident."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    (root / ".crew" / "incident.json").write_text(_INCIDENT, encoding="utf-8")
+
+    done = _run(root)
+
+    assert done.returncode == 0, done.stderr
+    assert not sentinel.exists()
+    assert (root / ".crew" / "incident-skips.log").is_file()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the fsmonitor hook is a POSIX script")
+@pytest.mark.parametrize("args", [(), ("--all",)])
+def test_gate_a_core_fsmonitor_hook_in_the_repo_config_never_runs_before_the_trust_decision(
+        tmp_path, store, args):
+    """MUST-BLOCK (verified, round 10): `git diff` and `git ls-files` run the
+    `core.fsmonitor` command named in `.git/config`."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    hit = tmp_path / "fsmonitor-hit"
+    hook = root / "hook.sh"
+    hook.write_text(f'#!/bin/sh\n: >> "{hit}"\n', encoding="utf-8")
+    hook.chmod(hook.stat().st_mode | stat.S_IXUSR)
+    _git(root, "config", "core.fsmonitor", str(hook))
+
+    done = _run(root, *args)
+
+    assert not hit.exists(), "the repo's core.fsmonitor command ran before the trust decision"
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX paths")
+def test_gate_an_inherited_git_dir_cannot_blank_the_changed_file_scan(tmp_path, store):
+    """MUST-BLOCK (round 10): GIT_DIR/GIT_WORK_TREE naming a clean repository emptied the
+    scan, and the gate exited 0 having verified nothing; the approved rule must still run."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    _approve(root)
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    _git(clean, "init", "-q")
+
+    done = _run(root, "--all", env={"GIT_DIR": str(clean / ".git"), "GIT_WORK_TREE": str(clean)})
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.is_file(), "the scan was pointed at another repository and ran nothing"
+
+
+def test_gate_the_documented_function_scrub_boundary_names_its_own_words():
+    """Round 10: the configuration reference states what the scrub does NOT cover."""
+    text = open(os.path.join(_ROOT, "CONFIG.md"), encoding="utf-8").read()
+    assert "BASH_FUNC_compgen%%" in text and "BASH_FUNC_unset%%" in text
+    assert "removes every inherited function before anything is called" not in text
+    assert "every shell function it inherits" not in text
