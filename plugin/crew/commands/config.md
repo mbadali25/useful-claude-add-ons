@@ -99,7 +99,9 @@ How it writes, whatever the arguments say:
   `--unset`. A `false` (the owner's opt-out of a human-only rule) is refused:
   it is proposed with `crew_confirm_config.py propose --layer machine|repo
   --key <path>` and applies only after the owner types
-  `/crew:confirm-config <change_id>` twice. A repo `null` or `--unset` drops a
+  `/crew:confirm-config <change_id>` twice; relay propose's two indented lines
+  (the change and the exact command) to the owner word for word, since the
+  owner never sees its output. A repo `null` or `--unset` drops a
   veto and is a hand edit by the owner. Never propose one on your own
   initiative, never confirm one, and say plainly that `humanOnly.approve` is acted on
   since 1.3.27 and `humanOnly.promoteMarker` by no hook

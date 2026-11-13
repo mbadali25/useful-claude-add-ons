@@ -131,6 +131,10 @@ HUMANONLY_MUTATIONS = (
      "[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*|*crew:confirm-config*) ;;",
      "[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*) ;;",
      _L + "test_the_wrapper_passes_a_confirm_config_prompt_to_python"),
+    ("confirm-config: propose no longer tells the agent the exact command to relay", CC,
+     '        f"  To apply it, type /crew:confirm-config {record[\'change_id\']} as its own prompt, "\n',
+     '        "  To apply it, the owner types the confirm command, "\n',
+     _T + "test_propose_prints_the_lines_to_relay_to_the_owner"),
     # crew 1.3.69: /crew:confirm-config with no usable id lists the proposals.
     ("confirm-config list: a bare command confirms the only pending proposal", HOOK,
      '    if not args:\n        return _refuse_confirm(',

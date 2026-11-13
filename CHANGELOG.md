@@ -18,6 +18,8 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.64: re-bump only - interim number on the confirm-config-relay branch (commit 6d1d45994, PR #768) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.70
+- crew 1.3.66: re-bump only - interim number on the confirm-config-relay branch (PR #768) before main reached 1.3.69 after #767 merged; the change is recorded under crew 1.3.70
 - crew 1.3.65: re-bump only - interim number on the confirm-config-list branch (PR #767) before merging main brought plugin/crew changes after the version was set and main and the open PRs reached 1.3.68; the change is recorded under crew 1.3.69
 - crew 1.3.63: re-bump only - interim number on the confirm-config-list branch (commit fcb2bd4d3, PR #767) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.69
 - crew 1.3.62: re-bump only - interim number on the confirm-config-list branch (commit 151aebea7, PR #767) before a later doc commit in the same branch needed a fresh bump; the change is recorded under crew 1.3.69
@@ -57,6 +59,12 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Changed — crew 1.3.70: `crew_confirm_config.py propose` prints the lines the agent relays to the owner
+
+- **Summary.** `crew` 1.3.70: after an agent proposes a sensitive config change, its output now carries the change and the exact `/crew:confirm-config <change_id>` command for the agent to relay word for word, and no longer claims that no hook records the confirmation.
+- **Cause.** The change id exists only in `propose`'s output, which the owner never sees, and nothing told the agent to pass it on. The output's last line still said "crew 1.3.9: no hook records that confirmation yet", stale since crew 1.3.33 wired the prompt hook; `crew_humanonly.py`'s docstring and `USER_PROMPT` comment said the same.
+- **Fix.** `crew_confirm_config._instructions` prints a relay instruction and two indented lines (key, `false`, layer, file, id; then the command to type twice within 15 minutes, or do nothing to refuse). `commands/confirm-config.md` tells the agent to relay those lines and never to propose a change the owner did not ask for; `commands/config.md`, `crew_humanonly.SENSITIVE_REFUSAL` and CONFIG.md say the same. Nothing about who can confirm changes: only the prompt hook, from the owner's typed id.
+- **Tests.** `test_crew_humanonly.py`: the propose output carries both lines and the id, and not the stale sentence; the command file carries the relay rule. One new mutation in `humanonly_mutations.py`, RED.
 ### Changed — crew 1.3.69: `/crew:confirm-config` with no id lists the pending proposals instead of naming an agent-side command
 
 - **Summary.** `crew` 1.3.69: typing `/crew:confirm-config` with no id (or a wrong, expired or used one) still records nothing, but now shows the proposals you could confirm, each with its id and exact change, or says plainly that none is pending and why.
