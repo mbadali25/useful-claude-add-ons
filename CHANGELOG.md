@@ -65,6 +65,7 @@ read entries under any `## [` heading.
 
 - **Summary.** `crew` 1.3.71: re-number only. This branch's trust-store work (recorded under crew 1.3.19 to 1.3.23 below) is merged with main at crew 1.3.70 and carries a version above main; the behaviour is the one described in those entries, and the troubleshooting guide's DOCX and PDF are rebuilt.
 - Re-bump only: 1.3.19 to 1.3.23 were interim numbers on the L-0888 branch before main reached 1.3.50.
+- Tests: the trust-seam venv in `plugin/crew/tests/conftest.py` is created with `system_site_packages=True`, because its `python3` heads PATH and `test_27_python_dash_m_is_local_again` (`python3 -m pytest --version`) failed with `No module named pytest` without it (reproduced locally at the pre-merge head too); `plugin/crew/tests/data/optin_inventory.json` regenerated (`optin_inventory.py --write`).
 - Docs: the crew troubleshooting guide (HTML, DOCX, PDF) rebuilt by `docs/guides/crew/src/build.py`.
 
 ### Changed — crew 1.3.70: `crew_confirm_config.py propose` prints the lines the agent relays to the owner

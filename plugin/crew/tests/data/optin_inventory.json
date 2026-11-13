@@ -962,7 +962,7 @@
     ]
    }
   ],
-  "mutations_total": 3151,
+  "mutations_total": 3237,
   "stays_in_core": [
    ".crew/codemap/install-scripts.md",
    ".crew/verify.json",
@@ -1069,6 +1069,7 @@
    "plugin/crew/hooks/scripts/verify-gate.sh",
    "plugin/crew/hooks/scripts/verify_fingerprint.py",
    "plugin/crew/hooks/scripts/verify_record.py",
+   "plugin/crew/hooks/scripts/verify_trust.py",
    "plugin/crew/hooks/scripts/webtest_guard.py",
    "plugin/crew/hooks/scripts/webtest_rules.py",
    "plugin/crew/hooks/scripts/webtest_scaffold.py",

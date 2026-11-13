@@ -174,8 +174,10 @@ def _trust_seam_python(tmp_path_factory):
     `.pth` import line, not a `sitecustomize`: a distribution's own
     sitecustomize (Debian ships one) is found first on sys.path and shadows it."""
     import venv
+    # system_site_packages: the venv's python3 heads PATH, so a rule like `python3 -m pytest`
+    # must still find the runner's own packages (test_27).
     root = tmp_path_factory.mktemp("trust-seam-venv")
-    venv.create(str(root), with_pip=False, symlinks=os.name != "nt")
+    venv.create(str(root), with_pip=False, symlinks=os.name != "nt", system_site_packages=True)
     found = list(root.glob("lib/python*/site-packages")) + list(root.glob("Lib/site-packages"))
     if not found:
         pytest.skip("venv has no site-packages directory")
