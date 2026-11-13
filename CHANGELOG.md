@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.74: re-bump only - interim number on the mass-guard removal branch (commits 188f49e4f, 8c3ac53a0, PR #772) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.75
 - crew 1.3.64: re-bump only - interim number on the confirm-config-relay branch (commit 6d1d45994, PR #768) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.70
 - crew 1.3.66: re-bump only - interim number on the confirm-config-relay branch (PR #768) before main reached 1.3.69 after #767 merged; the change is recorded under crew 1.3.70
 - crew 1.3.65: re-bump only - interim number on the confirm-config-list branch (PR #767) before merging main brought plugin/crew changes after the version was set and main and the open PRs reached 1.3.68; the change is recorded under crew 1.3.69
