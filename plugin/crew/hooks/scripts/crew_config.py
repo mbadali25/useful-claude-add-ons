@@ -3328,6 +3328,9 @@ def enum_values(dotted):
         return tuple(spec[0])
     if dotted == "guards.profile":
         return tuple(crew_state.GUARD_PROFILES)
+    if dotted == "guards.enabled":
+        # only the JSON literal `false` switches the guards off (crew_hook.guards_switched_off): refuse a string
+        return (True, False)
     if dotted.startswith(_OVERRIDE_PREFIX):
         name = dotted[len(_OVERRIDE_PREFIX):]
         if name in crew_state.ALL_GUARD_NAMES:
@@ -3875,6 +3878,9 @@ _REPO_WIDENING = {
     ("verifyGate", False): (
         "the verify gate stops holding the session at Stop for unverified "
         "changed paths"),
+    ("guards.enabled", False): (
+        "EVERY guard stands down (cloud, environment, role-write, scope, promote, verify gate, "
+        "completion audit): nothing is blocked or logged, whatever the profile and overrides say"),
     ("scope.mode", "off"): (
         "the plan-approval scope guard and the completion audit stand down: "
         "edits outside an approved plan's Touch list are no longer blocked"),

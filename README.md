@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.88**: `guards.enabled` is a declared key. `crew` 1.3.88 declares `guards.enabled`, the key crew 1.3.87's dispatcher already honours, so `/crew:config` can write it and `/crew:status` shows when the guards are off.
 - **crew 1.3.87**: `guards.enabled`, one switch that turns every guard hook off. `crew` 1.3.87 makes the hook dispatcher honour `guards.enabled: false`: set it in either config layer and none of crew's guards runs, so nothing is blocked, with no downgrade and no reinstall.
-- **crew 1.3.75**: The mass delete, create and change guard (`guards.mass`) is gone, not just off. `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

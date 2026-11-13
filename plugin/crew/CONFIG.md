@@ -4,7 +4,7 @@ Generated from the code by `python3 docs/guides/crew/src/config_reference.py --w
 `python3 scripts/check-marketplace.py` fails when this file is stale. The
 reasoning behind the keys is in `docs/crew/config-rationale.md`.
 
-100 keys: 62 settable in the machine-global file, 38 repo-only.
+101 keys: 63 settable in the machine-global file, 38 repo-only.
 
 ## The two layers
 
@@ -152,7 +152,7 @@ SessionStart notice).
 |---|---|
 | `core` | 26 |
 | `providers` | 18 |
-| `guards` | 2 |
+| `guards` | 3 |
 | `cloud` | 13 |
 | `trackers` | 5 |
 | `autopilot` | 15 |
@@ -215,12 +215,13 @@ SessionStart notice).
 | `secondOpinion.mode` | both | `"cli"` | not validated - read by `skills/crew-providers/SKILL.md` (expects string) | How the second opinion is reached. |
 | `secondOpinion.model` | both | `null` | not validated - read by `skills/crew-providers/SKILL.md` (expects string or null) | Second-opinion model. |
 
-## `guards` keys (2)
+## `guards` keys (3)
 
 | Key | Layer | Default | Values | Summary |
 |---|---|---|---|---|
 | `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `hooks/scripts/crew_guards.py`) | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
+| `guards.enabled` | both | `true` | `true` \| `false` (checked in `hooks/scripts/crew_hook.py`) | The master switch for every guard hook. `false` in EITHER layer stands them all down (the cloud, environment, role-write, scope, promote and verify guards, and the completion audit): nothing is judged, refused or logged, whatever `guards.profile`, `guards.overrides.*`, `scope.mode` or `verifyGate` say. Only the JSON literal `false` turns them off; absent, `true` or anything unreadable leaves them on. `/crew:approve` and `/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. Needs python: with none the guards still fail closed. |
 
 ## `cloud` keys (13)
 

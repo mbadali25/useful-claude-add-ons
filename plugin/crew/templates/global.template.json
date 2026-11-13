@@ -97,7 +97,8 @@
   },
   "guards": {
     "profile": "off",
-    "overrides": {}
+    "overrides": {},
+    "enabled": true
   },
   "environments": {
     "prodUnattended": false

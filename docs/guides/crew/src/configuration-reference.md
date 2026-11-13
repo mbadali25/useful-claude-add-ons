@@ -146,7 +146,7 @@ meaningful only with `scope.mode` `block`.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**100 keys**: 62 settable in the machine-global file, 38 repo-only.
+**101 keys**: 63 settable in the machine-global file, 38 repo-only.
 
 Columns:
 
@@ -331,6 +331,7 @@ Columns:
 |---|---|---|---|---|---|
 | `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | 1.2.62 | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `plugin/crew/hooks/scripts/crew_guards.py`) | 1.2.62 | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
+| `guards.enabled` | both | `true` | `true` \| `false` (checked in `plugin/crew/hooks/scripts/crew_hook.py`) | 1.3.88 | The master switch for every guard hook. `false` in EITHER layer stands them all down (the cloud, environment, role-write, scope, promote and verify guards, and the completion audit): nothing is judged, refused or logged, whatever `guards.profile`, `guards.overrides.*`, `scope.mode` or `verifyGate` say. Only the JSON literal `false` turns them off; absent, `true` or anything unreadable leaves them on. `/crew:approve` and `/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. Needs python: with none the guards still fail closed. |
 
 ### `production`
 

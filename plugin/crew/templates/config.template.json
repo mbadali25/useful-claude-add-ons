@@ -124,7 +124,8 @@
   },
   "guards": {
     "profile": "off",
-    "overrides": {}
+    "overrides": {},
+    "enabled": true
   },
   "production": {
     "databases": [],

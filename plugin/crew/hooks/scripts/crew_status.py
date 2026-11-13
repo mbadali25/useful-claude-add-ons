@@ -482,6 +482,10 @@ def _guards_line(root):
         for name in crew_state.ALL_GUARD_NAMES:
             layers.update(crew_config.resolve_guard(root, name)["unmigrated"])
         shown = []
+        import crew_hook  # pylint: disable=import-outside-toplevel
+        off = crew_hook.guards_switched_off(root)
+        if off:
+            shown.append(f"DISABLED - guards.enabled is false in the {off} layer, so no guard runs")
         if profile is not None or overrides:
             shown.append(f"profile {profile if profile is not None else 'off'}, "
                          f"overrides {json.dumps(overrides or {}, sort_keys=True)}")

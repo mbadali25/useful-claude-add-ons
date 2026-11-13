@@ -60,6 +60,12 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Added — crew 1.3.88: `guards.enabled` is a declared key (L-0947, key half)
+
+- **Summary.** `crew` 1.3.88 declares `guards.enabled`, the key crew 1.3.87's dispatcher already honours, so `/crew:config` can write it and `/crew:status` shows when the guards are off.
+- **What it adds.** `guards.enabled` (default `true`) in both default layers, both config templates and the `crew-setup` template; `crew_keys.py` row; `crew_config.enum_values` takes only the JSON booleans (a string, `0` or `null` is refused by both writers); a repo-layer `false` earns the usual `!` widening note; `/crew:status` prints `guards   DISABLED - guards.enabled is false in the repo|machine layer, so no guard runs`; the key table in CONFIG.md and the Configuration Guide.
+- **No behaviour change to the guards.** The switch itself is crew 1.3.87; with the key at its default every guard behaves as before.
+
 ### Added — crew 1.3.87: `guards.enabled`, one switch that turns every guard hook off (L-0947, dispatcher half)
 
 - **Summary.** `crew` 1.3.87 makes the hook dispatcher honour `guards.enabled: false`: set it in either config layer and none of crew's guards runs, so nothing is blocked, with no downgrade and no reinstall.
