@@ -546,3 +546,25 @@ def test_gate_python_only_on_a_repo_path_entry_with_a_verify_json_is_unknown_not
     done = _run(root, "--all", env={"PATH": str(root / "bin") + os.pathsep + str(tools)})
 
     _nothing_ran(done, root, sentinel, "UNKNOWN")
+
+
+def test_seam_venv_on_windows_gets_a_python3_beside_its_python_exe(tmp_path):
+    """MUST-ALLOW (test seam, Windows layout simulated on any host): a Windows
+    venv ships `python.exe` only, and the gate's resolver takes any `python3`
+    on PATH before any `python`, so the seam venv must carry a `python3.exe` or
+    the gate never runs it and every fixture repo reads UNTRUSTED."""
+    import conftest  # the suite's own fixtures; pylint: disable=import-outside-toplevel
+    scripts = tmp_path / "Scripts"
+    scripts.mkdir()
+    (scripts / "python.exe").write_bytes(b"the venv launcher")
+    alias = conftest.seam_alias_python3(scripts)
+    assert alias == scripts / "python3.exe"
+    assert alias.read_bytes() == b"the venv launcher"
+    # An existing python3.exe is left alone; a POSIX bin dir (no python.exe) gains nothing.
+    (scripts / "python3.exe").write_bytes(b"already here")
+    conftest.seam_alias_python3(scripts)
+    assert (scripts / "python3.exe").read_bytes() == b"already here"
+    posix = tmp_path / "bin"
+    posix.mkdir()
+    conftest.seam_alias_python3(posix)
+    assert not (posix / "python3.exe").exists()

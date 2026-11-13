@@ -22,6 +22,7 @@ CHECKER = os.path.join(os.path.dirname(os.path.dirname(CREW)), "scripts", "check
 _T = "tests/test_verify_trust.py::"
 _G = "tests/test_verify_gate_trust.py::"
 _S_ = "tests/test_scope_guard_trust.py::"
+CONFTEST = os.path.join(CREW, "tests", "conftest.py")
 _CALL = '  gate_trust_check "$GATE_SCRIPT_DIR" || _trust_rc=$?\n'
 
 TRUST_MUTATIONS = (
@@ -351,4 +352,7 @@ TRUST_MUTATIONS = (
     ("trust store: approve stores a null pin when the remotes cannot be read (L-0888)", TRUST,
      "    if top is not None and remotes is None:\n", "    if False:\n",
      _T + "test_approve_with_an_unreadable_remote_set_is_refused"),
+    ("test seam: the Windows seam venv gets no python3.exe, so the gate never runs it (L-0888)", CONFTEST,
+     "    if src.is_file() and not dst.exists():\n", "    if False:\n",
+     _G + "test_seam_venv_on_windows_gets_a_python3_beside_its_python_exe"),
 )
