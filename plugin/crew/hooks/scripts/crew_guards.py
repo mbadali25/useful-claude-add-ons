@@ -246,7 +246,7 @@ GUARD_PROFILES = ("off", "standard", "strict")
 # (lower limit wins across layers, `enabled` on if either layer says so). The
 # terraform limits (delete 3, create 10, change 10) are `crew_mass.
 # DEFAULT_OVERRIDES`, applied when `overrides.terraform` is absent.
-# `git.allow` (crew 1.3.71) is not a guard name either: the owner's switch that
+# `git.allow` (crew 1.3.72) is not a guard name either: the owner's switch that
 # lets git commands past the command guards, read by `crew_gitallow.settings`
 # (machine file only, double-confirmed; a repo may only veto with "off"). null
 # is off, and is what both templates carry so a repo file never vetoes by default.

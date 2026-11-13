@@ -232,7 +232,7 @@ def test_the_menu_offers_the_profile_first_and_an_override_per_guard(tmp_path):
     assert rows[0] == "guards.profile"
     assert rows[1:1 + len(NAMES)] == [f"guards.overrides.{n}" for n in NAMES]
     # crew 1.3.36: the mass stop's own six keys follow, none of them a guard tier
-    # crew 1.3.71: and `guards.git.allow`, which the menu may only set to "off" or null
+    # crew 1.3.72: and `guards.git.allow`, which the menu may only set to "off" or null
     assert sorted(rows[1 + len(NAMES):]) == sorted(
         [f"guards.mass.{k}" for k in ("enabled", "deleteCount", "createCount", "changeCount",
                                       "overrides", "exempt")] + ["guards.git.allow"])
