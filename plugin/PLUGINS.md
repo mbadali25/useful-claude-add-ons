@@ -151,10 +151,10 @@ measured.
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.3.67<!-- claim: plugin-version:crew --> |
+| **Version** | 1.3.71<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents plus the `session-relay` transport agent, 41 commands, 33 skills<!-- claim: plugin-skills:crew -->, 16 hook entries<!-- claim: plugin-hooks:crew --> (a launcher per event per shell, running 14 scripts) across 8 events, and the `wave` workflow (`/crew:wave`, in `workflows/`) |
+| **Registers** | 4 agents plus the `session-relay` transport agent, 41 commands, 33 skills<!-- claim: plugin-skills:crew -->, 8 hook entries<!-- claim: plugin-hooks:crew --> (a bash launcher per event, running 14 scripts) across 8 events, and the `wave` workflow (`/crew:wave`, in `workflows/`) |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — the entry point; its reference sections moved to `docs/crew/reference/` (see its "Moved sections" index) |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -164,7 +164,7 @@ Its central design claim is worth repeating, because it is the opposite of how m
 ### Hooks — the part that runs without being asked
 
 Fourteen scripts across eight events, run by one dispatcher behind
-16 hook entries<!-- claim: plugin-hooks:crew --> (a launcher per event per shell). **These are why
+8 hook entries<!-- claim: plugin-hooks:crew --> (a bash launcher per event). **These are why
 menu item 21 is unticked by default.**
 
 | Script | Event | What it does |
@@ -188,7 +188,7 @@ menu item 21 is unticked by default.**
 
 **crew 1.0 removed the PM agent, its `pm-brief` SessionStart brief and its `pm-pulse` Stop hook.** Nothing in crew dispatches work on its own any more: one interactive session owns a ticket, and the Stop hooks that remain (`verify-gate`, `completion-audit`, `context-watch`) block on a failed check, not on a changed project state.
 
-Every event is registered twice, once per flavour, each with the matching `shell` field on the PowerShell side — a `shell: powershell` entry is documented and Claude Code does read it, running that entry via PowerShell without needing `CLAUDE_CODE_USE_POWERSHELL_TOOL`. `promote-gate.sh` / `promote-gate.ps1` additionally branch on `tool_name` at the `PreToolUse` matcher (and `cloud-guard` inside `cloud_guard.py`) — a `PowerShell` tool call goes to the `.ps1`, a `Bash` tool call is judged by the `.sh` — because that is which language the command is actually written in, not which OS is running. Branching on the OS instead would judge bash commands with PowerShell rules on Windows, which blocks the correct secret-capture form and misses the wrong one. The other hooks judge no command, so both flavours are simply wired to their event with no branch. `hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging a command from inside a single bash-registered script; it is unused here in favour of the explicit dual-matcher registration above, but stays available for a hook that wants that shape instead.
+Every event is registered once, as a bash launcher (crew 1.3.55; before that twice, once per flavour, with a `shell: powershell` entry that cost about 0.4 s of PowerShell start-up per hook and ran every guard a second time). `promote-gate.sh` / `promote-gate.ps1` additionally branch on `tool_name` at the `PreToolUse` matcher (and `cloud-guard` inside `cloud_guard.py`) — a `PowerShell` tool call goes to the `.ps1`, a `Bash` tool call is judged by the `.sh` — because that is which language the command is actually written in, not which OS is running. Branching on the OS instead would judge bash commands with PowerShell rules on Windows, which blocks the correct secret-capture form and misses the wrong one. The other hooks judge no command, so both flavours are simply wired to their event with no branch. `hooks/scripts/_common.sh` also ships a `crew_tool_dispatch` helper for judging a command from inside a single bash-registered script; it is unused here in favour of the explicit dual-matcher registration above, but stays available for a hook that wants that shape instead.
 
 A hook cannot be argued out of blocking `terraform apply`; an agent can. That is the entire value, and also the reason a bootstrap run should not install one without the box being ticked.
 
@@ -284,7 +284,7 @@ to CI or to branch protection.
 | `/crew:change <new \| status <id> \| close <id> \| list>` | File, check and close a change request — SDP, Jira or local |
 | `/crew:config [--show \| --models]` | Show where every crew setting comes from; with no argument, a menu that sets the machine or repo config and deletes the repo config with a backup |
 | `/crew:config-setup` | Set up crew config from a menu - machine or repo layer, dry run then apply, or delete the repo config |
-| `/crew:confirm-config <change_id>` | Confirm a sensitive config change (a `humanOnly` opt-out) - only you can, by typing it twice; the prompt hook records each confirmation (crew 1.3.33) |
+| `/crew:confirm-config <change_id>` | Confirm a sensitive config change (a `humanOnly` opt-out) - only you can, by typing it twice; the prompt hook records each confirmation (crew 1.3.33). Typed with no id, it records nothing and lists the pending proposals (crew 1.3.69) |
 | `/crew:debug <the symptom, or a ticket id, e.g. "login 500s after deploy" or T-0042>` | Find the cause of a defect before anyone proposes a fix |
 | `/crew:diagram <architecture \| data-flow <area> \| process <name> \| sequence <flow> \| refresh>` | Create or refresh diagrams from the actual code |
 | `/crew:graph [--status \| --refresh \| --query "<question>"]` | The code graph - one-line status, the repo's sanctioned refresh with the pair check, and queries |

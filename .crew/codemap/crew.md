@@ -187,7 +187,10 @@ only `reviewer.md` itself (naming its own predecessor in prose),
 ## Hooks
 
 DERIVED at `8f2267e60` (L-0850, L-0727 slice 2; parsed from the JSON and from
-`crew_hook.TABLE`). `plugin/crew/hooks/hooks.json` registers **eight** events and **16** entries
+`crew_hook.TABLE`). SUPERSEDED at crew 1.3.60 (DERIVED, parsed from `plugin/crew/hooks/hooks.json`): it registers **eight** events
+and **8** entries, ONE `bash` launcher per event and no `shell: "powershell"` entry (the 16 below were 1.2.58-1.3.54),
+so the line numbers and the pair description in this paragraph are the 16-entry file's. `crew-hook.ps1` is now only Codex's
+`commandWindows`. `plugin/crew/hooks/hooks.json` registered **eight** events and **16** entries
 (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `SubagentStart`, `PreCompact`,
 `Notification`, `Stop`, at `plugin/crew/hooks/hooks.json:3`, `:7`, `:11`, `:17`, `:23`, `:27`, `:31`,
 `:35`): per event one `bash` launcher entry (`crew-hook.sh <Event>`) and one `shell: "powershell"`
@@ -230,10 +233,13 @@ exception in the dispatcher is exit 2 with a named reason on `BLOCKING_EVENTS` (
 DERIVED (crew 1.2.109): the shell guards consume the launchers' `CREW_PYTHON` first. `crew_py` (`plugin/crew/hooks/scripts/_common.sh:70`), `crew_py_strict` (`:207`) and role-write-guard.sh's `_resolve_role_write_python` (`:64`) carry one identical `BEGIN CREW_PYTHON` block: an absolute path (a Windows one goes through `cygpath -u`), a regular executable file, named `py`/`python`/`python3.x`, else the PATH walk. `crew_py_script` (`:470`) returns a script path or status 1, and promote-gate, cloud-guard, env-guard and role-write-guard fail closed naming the missing script.
 The launchers (`plugin/crew/hooks/scripts/crew-hook.sh`, 339 lines; `crew-hook.ps1`, 482) supervise
 rather than exec it: exit 0 and 2 pass through, anything else becomes the armed/unarmed fault above,
-under one deadline (`CREW_HOOK_DEADLINE`, the registration timeout minus 5 s). `crew-hook.sh` exits 0 on
-Windows (`uname -s` MINGW/MSYS/CYGWIN; `OS=Windows_NT` only when uname names no POSIX kernel) and
-`crew-hook.ps1` exits 0 unless the platform is Win32NT or `$env:OS -eq 'Windows_NT'`, so each platform runs exactly one
-launcher. With no usable python `crew-hook.sh` runs the event's `.sh` scripts directly from a static
+under one deadline (`CREW_HOOK_DEADLINE`, the registration timeout minus 5 s). SUPERSEDED at crew 1.3.60 (DERIVED, read in `crew-hook.sh` and `hooks.json`): `crew-hook.sh` no longer exits 0 on
+Windows (the build-triple and `uname` stand-downs are gone) and is the only registered launcher on every platform; its
+fast path also treats exit 49 (the Store `python3` stub) as an interpreter failure. `crew-hook.ps1` still exits 0 unless the
+platform is Win32NT or `$env:OS -eq 'Windows_NT'`, and now runs only for Codex's `commandWindows`. On Windows
+`crew_hook.dispatch` runs `DIRECT`'s Python files without their `.sh` wrappers (`crew_hook.py`, `DIRECT`, `direct_plan`; the
+wrapper is the fallback for any exit it would not pass through) and resolves Git Bash lazily; `CREW_HOOK_DIRECT=0` turns it off.
+Tests: `test_crew_hook_direct.py`. With no usable python `crew-hook.sh` runs the event's `.sh` scripts directly from a static
 list and `crew-hook.ps1` fails an armed repo closed on the three blocking events. Tests:
 `plugin/crew/tests/test_crew_hook_parity.py`, `test_crew_hook_merge.py`, `test_crew_hook_faults.py`,
 `test_crew_hook_windows.py`, `test_hooks_json_shape.py`, recorded goldens in
@@ -284,8 +290,8 @@ docstring (`plugin/crew/hooks/scripts/event_claim.py:1-16`) states the
 problem it exists for: every hook was registered twice (bash + PowerShell),
 and on Windows both flavours ran for one event since no `.sh` may stand
 itself down by OS (CLAUDE.md's own landmine). Since L-0850 the registered
-launchers do stand themselves down by OS (`crew-hook.sh` exits 0 on Windows,
-`crew-hook.ps1` exits 0 elsewhere, see above), so one flavour runs per event;
+launchers did stand themselves down by OS until crew 1.3.60 (`crew-hook.sh` exited 0 on Windows,
+`crew-hook.ps1` exits 0 elsewhere); now only the bash launcher is registered, so one flavour runs per event;
 the claim stays in `notify` and `handoff-write` (re-checked by grep at
 `8f2267e60`: `notify.sh:40`, `handoff-write.sh:40`) as defence in depth, its
 premise below is the pre-L-0850 one and is not re-derived. For a **blocking** hook
@@ -992,10 +998,14 @@ that one function. `plugin/crew/hooks/scripts/approval_hook.py` handles
 `/crew:confirm-config <id>` (`_confirm_config`, calls `crew_confirm_config.confirm`
 with `via="user-prompt"`) and `/crew:approve-mass <id>` (`_approve_mass`, writes
 `<git-common-dir>/crew/mass-approvals/<id>.json`); `approval-hook.sh` also
-passes a prompt naming `crew:confirm-config`. `scope_guard.py` refuses writes to
+passes a prompt naming `crew:confirm-config`. Since crew 1.3.69 every
+`/crew:confirm-config` refusal goes through `_refuse_confirm`, which appends
+`_proposals_text` (a read-only listing of the machine store; it never calls
+`_expire_if_due`, so it writes nothing); no path confirms without a typed id.
+`scope_guard.py` refuses writes to
 `~/.claude/crew/confirm-config/` (`confirm_store`, `_CONFIRM_STORE_RE`).
-`humanonly_mutations.py` is wired into `sabotage.py` (27 entries by
-`len(HUMANONLY_MUTATIONS)`). JUDGEMENT: `humanOnly.promoteMarker` is still read
+`humanonly_mutations.py` is wired into `sabotage.py` (re-measure with
+`len(HUMANONLY_MUTATIONS)`; 34 at crew 1.3.69). JUDGEMENT: `humanOnly.promoteMarker` is still read
 by no hook, and a session that runs arbitrary python can still forge a receipt.
 
 ## Mass delete, create and change: `guards.mass` (crew 1.3.36)
@@ -1034,7 +1044,7 @@ measured. `cloud_guard.py` already exceeds 3,400 lines, so the module is a new
 file rather than more glue there. A script, an MCP server, Write and Edit before
 commit, `tar -x`, `unzip` and `git merge` / `pull` are not seen.
 
-## Git commands past the guards: `guards.git.allow` (crew 1.3.67)
+## Git commands past the guards: `guards.git.allow` (crew 1.3.71)
 
 DERIVED from `plugin/crew/hooks/scripts/crew_gitallow.py` (stdlib only); tests
 `plugin/crew/tests/test_git_allow.py`, mutations `plugin/crew/tests/gitallow_mutations.py`

@@ -2,7 +2,7 @@
 """The double confirmation behind a sensitive config change (crew 1.3.9).
 
 A change that lifts a human step -- a `humanOnly.*` key set to `false`
-(`crew_humanonly`), or since crew 1.3.67 a machine `guards.git.allow` set to
+(`crew_humanonly`), or since crew 1.3.71 a machine `guards.git.allow` set to
 `"all"` or a list of git subcommands (`crew_gitallow`) -- is never written by
 `crew_config.py --set` or the
 `/crew:config` menu. It is PROPOSED here, which records a pending change in
@@ -24,17 +24,17 @@ The state machine, one record per change id:
 
 **User-only.** `confirm` accepts only `via="user-prompt"` with a prompt id,
 the shape crew's UserPromptSubmit hook passes for a prompt the user typed.
-This CLI has no `confirm` subcommand, and in crew 1.3.9 no hook calls
-`confirm` yet: wiring it into the prompt hook is review harness
-(`approval_hook.py` / `crew_hook.py`), which lands alone. Until then a
-proposal can be made, listed and cancelled, and never applied, so an opt-out
-cannot be switched on by any route crew offers.
+This CLI has no `confirm` subcommand. Since crew 1.3.33 the prompt hook
+(`approval_hook._confirm_config`) is the one caller of `confirm`; since crew
+1.3.65 a `/crew:confirm-config` it refuses also lists the pending proposals.
+`propose` prints the two lines the agent must relay to the owner (the change
+and the exact command), because the owner never sees this CLI's output.
 
 CLI (no writes except `propose` and `cancel`, both into the store only):
 
     crew_confirm_config.py propose --layer machine|repo --key humanOnly.<k> [--root R]
     crew_confirm_config.py propose --layer machine --key guards.git.allow --value '"all"'
-                                   (or --value '["commit","push"]'; crew 1.3.67)
+                                   (or --value '["commit","push"]'; crew 1.3.71)
     crew_confirm_config.py status <change_id>
     crew_confirm_config.py list
     crew_confirm_config.py cancel <change_id>
@@ -82,7 +82,7 @@ def propose(layer, dotted, root=None, global_path=None, now=None, tracker=None,
             value=False):
     """Record a pending change `dotted: value` at `layer`; returns the record.
 
-    `dotted` is a humanOnly key (value `false`) or, crew 1.3.67,
+    `dotted` is a humanOnly key (value `false`) or, crew 1.3.71,
     `guards.git.allow` (machine layer only; value `"all"` or a list of git
     subcommand names). Refused otherwise, and when the repo file is absent,
     tracked by git, or git cannot tell (a tracked file can never opt out, and
@@ -180,7 +180,7 @@ def confirm(change_id, via, prompt_id, session_id=None, global_path=None, now=No
                            f"{record['path']} is {state} in git now", stamp)
     writer = apply or crew_config.apply_confirmed_optout
     try:
-        # crew 1.3.67: a guards.git.allow change carries its value; a humanOnly
+        # crew 1.3.71: a guards.git.allow change carries its value; a humanOnly
         # change is always `false` and the writer's default.
         extra = {"value": record.get("value")} if record["key"] == crew_gitallow.KEY else {}
         writer(record["layer"], record["key"], record["path"], record["targetDigest"],
@@ -221,15 +221,19 @@ def _instructions(record):
             "once applied, crew's command guards stop blocking or asking on the git commands "
             "it covers; `crew_gitallow.py` shows what is in force.",
         ]
+    minutes = crew_humanonly.PROPOSAL_TTL_SECONDS // 60
     return [
         f"proposed {record['change_id']}: {record['key']} = false in the {record['layer']} "
         f"file {record['path']}",
-        f"to apply it, the owner types /crew:confirm-config {record['change_id']} twice, "
-        "in two separate prompts, within "
-        f"{crew_humanonly.PROPOSAL_TTL_SECONDS // 60} minutes.",
-        "crew 1.3.9: no hook records that confirmation yet (the prompt-hook wiring lands "
-        "separately), so this change stays pending and then expires; nothing acts on "
-        "humanOnly until that wiring lands either.",
+        "Only the owner can apply it. Relay the next two lines to the owner word for word; "
+        "never type or confirm it yourself:",
+        f"  crew proposes {record['key']}: false ({record['layer']} config, "
+        f"{record['path']}), change {record['change_id']}.",
+        f"  To apply it, type /crew:confirm-config {record['change_id']} as its own prompt, "
+        f"twice, in two separate prompts, within {minutes} minutes. To refuse it, do nothing; "
+        "it expires.",
+        "The prompt hook records each confirmation (crew 1.3.33); typed with no id, "
+        "/crew:confirm-config lists the pending proposals instead (crew 1.3.65).",
     ]
 
 

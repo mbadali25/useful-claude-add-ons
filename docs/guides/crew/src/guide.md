@@ -521,7 +521,9 @@ either file vetoes it; and it is written only after the owner types
 records that confirmation and `humanOnly.approve: false` makes a CLI-recorded
 approval count (the same effect as `scope.allowCliApproval: true`, but set
 only through the double confirmation); `humanOnly.promoteMarker` is still
-read by no hook. The owner's `/crew:approve-mass <id>` is recorded the same
+read by no hook. Since crew 1.3.69, `/crew:confirm-config` typed with no id
+records nothing and lists the pending proposals, each with its id and the
+exact change, or says that none is pending and why. The owner's `/crew:approve-mass <id>` is recorded the same
 way, for one blocked mass operation. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.
 
@@ -538,7 +540,7 @@ prints an id; `/crew:approve-mass <id>` approves that one command for 15
 minutes. The configuration reference's "Mass operations" section lists what it
 sees, what it does not, and the keys.
 
-**Git commands (crew 1.3.67).** `guards.git.allow` is the owner's switch that
+**Git commands (crew 1.3.71).** `guards.git.allow` is the owner's switch that
 stops the command guards blocking or asking on git commands, destructive ones
 included: `"all"`, or a list of subcommands such as `["commit", "push"]`.
 It loosens the force-push rule, the mass stop's git counts and the promote gate

@@ -126,9 +126,9 @@ def test_codex_hooks_and_claude_hooks_come_from_the_same_table():
     assert sorted((e, m and next(r["matcher"] for r in ci.HOOK_TABLE if r["codex"] == m and r["event"] == e))
                   for e, m in _registrations(codex)) == expected
     assert sorted(set(event for event, _ in _registrations(claude))) == sorted(crew_hook.EVENTS)
-    assert len(_registrations(claude)) == 2 * len(crew_hook.EVENTS)
+    assert len(_registrations(claude)) == len(crew_hook.EVENTS)  # one bash launcher per event (crew 1.3.60)
     assert sorted(_registrations(claude)) == sorted(
-        (event, crew_hook.REGISTERED_MATCHER[event] or None) for event in crew_hook.EVENTS for _ in range(2))
+        (event, crew_hook.REGISTERED_MATCHER[event] or None) for event in crew_hook.EVENTS)
 
 
 def test_every_codex_hook_has_a_windows_command_and_passes_the_codex_harness():

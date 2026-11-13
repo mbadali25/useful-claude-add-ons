@@ -3190,7 +3190,7 @@ def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
         if crew_gitallow.SCOPE_KEY in scope and (
                 finding.rule not in crew_mass.RULES or mass_armed) and not (
                 only_mass and finding.rule not in crew_mass.RULES):
-            # `guards.git.allow` (crew 1.3.67): the owner's double-confirmed
+            # `guards.git.allow` (crew 1.3.71): the owner's double-confirmed
             # switch lets a git command's own findings through, and logs that
             # it did. Read once per call, and only when there is a git finding.
             if git_allow is None:

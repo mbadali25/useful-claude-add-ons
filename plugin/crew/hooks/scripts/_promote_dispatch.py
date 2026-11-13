@@ -287,7 +287,7 @@ def _decide(command, shell, maps):
 
 
 def _git_allowed(command):
-    """`crew_gitallow.promote_exempt` for promote-gate.ps1 (crew 1.3.67): the
+    """`crew_gitallow.promote_exempt` for promote-gate.ps1 (crew 1.3.71): the
     PowerShell flavour's one python call answers it too, so the switch costs
     no extra process start. False whenever it cannot be told."""
     try:

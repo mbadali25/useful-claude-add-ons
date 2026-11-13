@@ -1,5 +1,5 @@
 """`guards.git.allow`: the owner's switch that stops crew's command guards from
-blocking or asking on git commands (crew 1.3.67).
+blocking or asking on git commands (crew 1.3.71).
 
 THE VALUES.
 

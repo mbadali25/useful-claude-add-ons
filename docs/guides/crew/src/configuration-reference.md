@@ -90,7 +90,9 @@ takes effect only when all of these hold (`crew_humanonly.resolve`):
   tell" counts as tracked);
 - neither layer says `true` (a `true` anywhere vetoes, the stricter wins);
 - it was written by a double confirmation: `crew_confirm_config.py propose`
-  records the change and prints an id, and the owner types
+  records the change and prints an id with two lines the agent relays to you
+  word for word (the change, and the exact command; crew 1.3.70), and the
+  owner types
   `/crew:confirm-config <change_id>` twice, in two prompts, within 15 minutes.
   `crew_config.py --set` and `/crew:config` refuse a `false` (and a repo
   `null` or removal, which drops a veto); a `false` written by hand reads as
@@ -108,6 +110,22 @@ which still needs `autopilot.approval` `self` or `risk` and `autopilot.mode`
 `plan` or `backlog`. Anything unclear - the module missing, the resolver
 raising or answering anything but exactly `humanOnly: false` - reads as
 human-only.
+
+**Finding the change id (crew 1.3.69).** Type `/crew:confirm-config` with no
+id (or with an id that is wrong, expired or already used) and the hook refuses
+it, records nothing, and lists the proposals in this machine's store
+(`~/.claude/crew/confirm-config/`): each pending one's id, key, current value
+-> `false`, layer and file, age, time left and confirmations so far, then up
+to five from the last day that can no longer be confirmed. With none pending
+it says so, and why one may be missing: none was made, it expired, it was
+already applied, cancelled or refused, or it was proposed under another home
+directory (WSL rather than Windows has its own store). The store is per
+machine and home directory, not per repository, so a proposal made in one repo
+or worktree is listed from any other. The listing never confirms: even with
+exactly one pending proposal a bare `/crew:confirm-config` records nothing,
+because "the only pending one" is a choice whoever ran `propose` makes, and the
+id you type is what binds the change. A store crew cannot read is reported as
+"could not tell", never as none pending.
 
 **Still human-only (crew 1.3.33).** No hook reads `humanOnly.promoteMarker`:
 the promote marker is human-only by instruction alone, and no hook checks who
@@ -180,7 +198,7 @@ A stopped command prints an id. Attended, the stop is an `ask`; unattended
 it is a `deny`. Type `/crew:approve-mass <id>` in the session, then re-run the
 exact command. One id covers every limit that command trips.
 
-## Git commands (`guards.git.allow`, crew 1.3.67)
+## Git commands (`guards.git.allow`, crew 1.3.71)
 
 The owner's switch that stops crew's command guards from blocking or asking on
 git commands, destructive ones included. Off by default (`null`, or `"off"`).
@@ -415,7 +433,7 @@ Columns:
 | `guards.mass.changeCount` | both | `30` | integer (1 or more) (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Files a command may rewrite before it waits for `/crew:approve-mass`; a count at the limit stops. The machine file sets it; the repo file can only lower it; a value that is not a positive integer reads as the default. |
 | `guards.mass.overrides` | both | `{}` | object of category to {deleteCount, createCount, changeCount} (checked in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | `guards.mass.overrides.<files\|git\|terraform>.<deleteCount\|createCount\|changeCount>`: one limit for one kind of command. Unset, `terraform` is delete 3, create 10, change 10 (inferred, not measured); the others use the limits above. |
 | `guards.mass.exempt` | both | `[]` | list of globs (coerced in `plugin/crew/hooks/scripts/crew_mass.py`) | 1.3.36 | Repo-relative globs of generated files that never count toward a limit, read from the machine file only (a glob can only loosen the stop), on top of the built-in  regenerable directories (node_modules, __pycache__, .venv, caches, build, dist, .work, worktrees). |
-| `guards.git.allow` | both | `null` | null, `"off"`, `"all"` or a list of git subcommand names (coerced in `plugin/crew/hooks/scripts/crew_gitallow.py`) | 1.3.67 | The owner's switch that stops crew's command guards blocking or asking on git commands: `"all"` lets every git command past the force-push rule, the mass guard's git counts and the promote gate (a line of only git commands, unless a declared deploy is itself a git command); a list of subcommands (`["commit", "push"]`) lets only those through. null or `"off"` changes nothing. Machine file only, and only after `/crew:confirm-config` twice (`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value written any other way reads as off, and a repo `"off"` vetoes it. |
+| `guards.git.allow` | both | `null` | null, `"off"`, `"all"` or a list of git subcommand names (coerced in `plugin/crew/hooks/scripts/crew_gitallow.py`) | 1.3.71 | The owner's switch that stops crew's command guards blocking or asking on git commands: `"all"` lets every git command past the force-push rule, the mass guard's git counts and the promote gate (a line of only git commands, unless a declared deploy is itself a git command); a list of subcommands (`["commit", "push"]`) lets only those through. null or `"off"` changes nothing. Machine file only, and only after `/crew:confirm-config` twice (`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value written any other way reads as off, and a repo `"off"` vetoes it. |
 
 ### `production`
 

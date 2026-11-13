@@ -1,4 +1,4 @@
-"""crew 1.3.67: `guards.git.allow`, the owner's switch that lets git commands past
+"""crew 1.3.71: `guards.git.allow`, the owner's switch that lets git commands past
 crew's command guards (`crew_gitallow.py`).
 
 CLAUDE.md: a hook change that can block carries must-block and must-allow cases,

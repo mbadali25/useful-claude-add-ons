@@ -7,11 +7,10 @@ or `false` (the owner opts out). The default is human-only.
 
 **What this module is, and is not.** It holds the rules for WHEN an opt-out is
 in force (`resolve`) and the receipts store the double confirmation writes
-(`crew_confirm_config`). Nothing in crew's hooks reads `resolve` yet: the hooks
-that would accept an agent-written approval or promote marker once a key is
-`false` are review harness (`scripts/check-tooling-pr.py` `HARNESS`), so they
-land alone in a later change. Until then every key's value changes nothing,
-and the human-only rules hold exactly as they did before 1.3.9.
+(`crew_confirm_config`). Since crew 1.3.33 `crew_ticket.cli_approval_allowed`
+reads `resolve(.., "approve")` and the prompt hook (`approval_hook.py`)
+records the double confirmation; no hook reads `promoteMarker`, which stays
+human-only whatever it says.
 
 The owner's decisions (2026-11-06), each enforced here:
 
@@ -56,8 +55,8 @@ TRACKED, UNTRACKED, UNKNOWN = "tracked", "untracked", "could not tell"
 # A proposal must be confirmed twice within this many seconds of being made.
 PROPOSAL_TTL_SECONDS = 15 * 60
 # The only `via` a confirmation may carry: the UserPromptSubmit hook's, for a
-# prompt the user typed. Nothing in this plugin passes it yet (see the module
-# docstring), so no confirmation can be recorded until that hook lands.
+# prompt the user typed. Only `approval_hook._confirm_config` passes it (crew
+# 1.3.33), for a `/crew:confirm-config <change_id>` the user typed.
 USER_PROMPT = "user-prompt"
 
 PENDING, APPLIED = "pending", "applied"
@@ -65,8 +64,9 @@ FINAL_STATES = ("applied", "expired", "cancelled", "stale", "refused", "revoked"
 
 SENSITIVE_REFUSAL = (
     "removes a human step, so it needs the owner's double confirmation: "
-    "`crew_confirm_config.py propose` records it and prints a change id, and "
-    "the owner types /crew:confirm-config <change_id> twice.")
+    "`crew_confirm_config.py propose` records it and prints a change id, the "
+    "agent relays the id and the change to the owner, and the owner types "
+    "/crew:confirm-config <change_id> twice.")
 REPO_UNVETO_REFUSAL = (
     "removing a repo's human-only veto lifts a human step; the owner edits "
     ".crew/config.json by hand")

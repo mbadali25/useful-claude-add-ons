@@ -67,7 +67,7 @@ def test_select_returns_the_recorded_argv_for_every_golden_case(key):
 @pytest.mark.parametrize("key", PYTHON_KEYS, ids=h.golden_ids)
 def test_launcher_matches_the_golden_result(key, flavour, tmp_path):
     if h.WINDOWS and flavour == "sh":
-        pytest.skip("crew-hook.sh exits 0 on Windows by design; the ps1 flavour is the one run here")
+        pytest.skip("the sh launcher is run on Windows by test_crew_hook_windows.py and test_crew_hook_direct.py")
     record = rgh.load_golden()[key]
     if flavour == "ps1" and not h.WINDOWS and record["case"].startswith("powershell-cloud"):
         pytest.skip("the fake OS=Windows_NT stands the bash cloud-guard down for a PowerShell call (its twin "

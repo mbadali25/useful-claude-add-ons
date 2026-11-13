@@ -449,7 +449,7 @@ class Gate:  # pylint: disable=too-many-instance-attributes
         return committed_as_is(blob)
 
     def git_allowed(self):
-        """`guards.git.allow` (crew 1.3.67): a line of only git commands the
+        """`guards.git.allow` (crew 1.3.71): a line of only git commands the
         owner's double-confirmed switch covers, containing no declared deploy
         that is itself a git command, is not judged (`crew_gitallow.
         promote_exempt`, which never raises and reads anything unclear as
