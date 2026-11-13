@@ -94,6 +94,7 @@ import crew_common
 import crew_config_files
 import crew_dropped
 import crew_guard_notes
+import crew_gitallow
 import crew_humanonly
 import crew_preprod
 import crew_state
@@ -3463,7 +3464,8 @@ def _guard_path_refusal(dotted):
 
 
 def _layer_path_refusal(dotted, layer, value):
-    reason = _guard_path_refusal(dotted) or crew_humanonly.write_refusal(dotted, layer, value)
+    reason = (_guard_path_refusal(dotted) or crew_humanonly.write_refusal(dotted, layer, value)
+              or crew_gitallow.write_refusal(dotted, layer, value))
     if reason is not None:
         return reason
     if layer == "machine":
@@ -3784,11 +3786,17 @@ def write_global_config(updates, path=None, expect=None):
         out["plan"] = _plan_on(parsed, updates, "machine", real_path)
         if not out["plan"][1]:
             return None
+        # crew 1.3.85: the receipt backing guards.git.allow as the file is now,
+        # read under the lock, so `_after` can re-bind it to the new bytes.
+        out["gitallow"] = crew_gitallow.backing(real_path, global_path=real_path)
         crew_backup.backup(real_path)   # T-0050: under the lock, before the replace
         return out["plan"][0]
+
+    def _after(_written):
+        _carry_git_allow(real_path, out)
     try:
         crew_config_files.update_json(real_path, _mutate, expect=expect,
-                                      create=True)
+                                      create=True, after=_after)
     except crew_backup.BackupError as exc:
         raise WriteBackupRefused(str(exc)) from exc
     except crew_config_files.Conflict as exc:
@@ -4062,33 +4070,70 @@ def _revoke_human_only(layer, path, changes, global_path):
     revocation so an earlier double-confirmed `false` at this file no longer
     counts if a `false` reappears there by any other route."""
     for change in changes or ():
-        if crew_humanonly.is_path(change.get("path")):
+        if crew_humanonly.is_path(change.get("path")) or change.get("path") == crew_gitallow.KEY:
             crew_humanonly.revoke(layer, path, change["path"], global_path=global_path)
 
 
-def apply_confirmed_optout(layer, dotted, path, expect, global_path=None):
-    """Write `dotted: false` into the config file at `path` (`layer` is
-    `machine` or `repo`). The one writer that bypasses
-    `crew_humanonly.write_refusal`, and only `crew_confirm_config` calls it,
-    once a proposal has its two user-prompt confirmations. `expect` is the
-    file's state digest when the change was proposed: a file that changed
-    since is refused (`crew_config_files.Conflict`), never merged over.
-    Returns `(merged, changes)`."""
-    if not crew_humanonly.is_path(dotted):
-        raise ValueError(f"{dotted} is not a humanOnly key")
+def _carry_git_allow(machine_path, out):
+    """After a crew write to the machine file (under its lock): re-bind the
+    `guards.git.allow` receipt that backed the file before it (`out
+    ["gitallow"]`) to the bytes just written, unless the write changed that
+    key itself (a write to "off" or null revokes it instead). A hand edit
+    never passes here, so it still reads as off (`crew_gitallow.settings`)."""
+    before = out.get("gitallow")
+    changes = (out.get("plan") or ({}, []))[1]
+    if before is None or any(c.get("path") == crew_gitallow.KEY for c in changes or ()):
+        return
+    crew_gitallow.rebind(machine_path, before, global_path=machine_path)
+
+
+def apply_confirmed_optout(layer, dotted, path, expect, global_path=None, value=False,
+                           binding_out=None):
+    """Write `dotted: value` into the config file at `path` (`layer` is
+    `machine` or `repo`): a `humanOnly` key's `false`, or (crew 1.3.85) a
+    machine `guards.git.allow` value. The one writer that bypasses
+    `crew_humanonly.write_refusal` and `crew_gitallow.write_refusal`, and only
+    `crew_confirm_config` calls it, once a proposal has its two user-prompt
+    confirmations. `expect` is the file's state digest when the change was
+    proposed: a file that changed since is refused
+    (`crew_config_files.Conflict`), never merged over. Returns `(merged, changes)`.
+
+    crew 1.3.85: for `guards.git.allow`, `binding_out` (a dict) receives
+    `"binding"`, the machine file's `crew_gitallow.file_binding` as this
+    write left it, read under the same lock; the receipt carries it. Any other
+    machine-layer change re-binds an existing `guards.git.allow` receipt, as
+    `write_global_config` does."""
+    if crew_humanonly.is_path(dotted):
+        if value is not False:
+            raise ValueError(f"{dotted} is only ever confirmed to false")
+    elif dotted == crew_gitallow.KEY:
+        if layer != "machine" or crew_gitallow.normalise(value) in (None, crew_gitallow.OFF):
+            raise ValueError(f"{dotted} is confirmed only in the machine file, to \"all\" or "
+                             "a list of git subcommand names")
+    else:
+        raise ValueError(f"{dotted} is not a key that needs a double confirmation")
     if layer not in ("machine", "repo"):
         raise ValueError(f"unknown layer {layer!r}")
     out = {}
 
     def _mutate(parsed):
         global_cfg = None if layer == "machine" else machine_view(global_path)[0]
-        out["plan"] = _plan_on(parsed, {dotted: False}, layer, path, global_cfg)
+        out["plan"] = _plan_on(parsed, {dotted: value}, layer, path, global_cfg)
         if not out["plan"][1]:
             return None
+        if layer == "machine" and dotted != crew_gitallow.KEY:
+            out["gitallow"] = crew_gitallow.backing(path, global_path=path)
         crew_backup.backup(path)
         return out["plan"][0]
+
+    def _after(written):
+        if dotted == crew_gitallow.KEY:
+            if isinstance(binding_out, dict):
+                binding_out["binding"] = crew_gitallow.file_binding(written)
+        else:
+            _carry_git_allow(path, out)
     if layer == "machine":
-        crew_config_files.update_json(path, _mutate, expect=expect, create=True)
+        crew_config_files.update_json(path, _mutate, expect=expect, create=True, after=_after)
     else:
         lock = crew_config_files.machine_lock(_global_label(global_path))
         with lock:

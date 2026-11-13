@@ -526,6 +526,37 @@ records nothing and lists the pending proposals, each with its id and the
 exact change, or says that none is pending and why. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.
 
+**Git commands (crew 1.3.85).** `guards.git.allow` is the owner's switch that
+stops the command guards blocking or asking on git commands, destructive ones
+included: `"all"`, or a list of subcommands such as `["commit", "push"]`.
+A listed subcommand passes with every option it takes: listing `push` also
+lets `git push --force` through. It loosens the force-push rule and the
+promote gate, and only for a line that is ONE plain git command, fail-closed:
+the command must be exactly `git` (no path, no other command, so nothing on the
+line can redefine git) and every word a plain literal as one shared reader
+reads it - no `$` in any form, backtick, glob, brace expansion, leading `~`,
+subshell, PowerShell `(expr)`, `@(...)`, splat, `--%` or `%NAME%`, and no
+separator, redirection, heredoc, here-string, continuation or comment at all
+(a chain such as `git add -A && git commit`, `git status 2>&1` or a heredoc
+commit message is judged as before). Anything it cannot read whole is judged
+as before. A plain git command carrying `-c` or a command to run (`rebase
+--exec` or its abbreviation `--exe`, `push --receive-pack`, `init
+--template`), or a `git config` that is not plainly a read, is never exempt.
+Plain lines - `git commit -m "fix: x"`, `git push --force-with-lease origin
+topic`, `git rebase -i HEAD~3`, `git log --format=%H` - stay exempt. A
+declared deploy that is itself a git command stays gated, and `gh`
+(`--admin` merges, branch protection, workflow dispatches) is untouched. It
+is off by default, lives in the machine file only, and takes effect only
+after you type `/crew:confirm-config <id>` twice for a proposal
+(`crew_confirm_config.py propose --layer machine --key guards.git.allow
+--value '"all"'`), and only while the machine file is still the file that
+confirmation left: a hand edit turns it off, and so does a copy put back
+with `cp -p` (on Windows a `Copy-Item` copy put back is the one restore crew
+cannot tell apart). The receipts are protected from an agent's writes only
+while `scope.mode` is on, and `"all"` does not stop git's own hooks, aliases
+or `core.sshCommand` set earlier in a config file: those run as if crew were
+absent. The configuration reference's "Git commands" section has the rules.
+
 - `/crew:config` shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.
 - The [configuration reference](configuration-reference.md) lists every

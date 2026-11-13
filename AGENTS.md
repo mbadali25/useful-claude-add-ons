@@ -109,7 +109,7 @@ Prefer "couldn't determine X" over a guess reported as clean.
 Claude Code sessions read `CLAUDE.md` at the repo root — the full house
 rules and incident history. This file is the short form for other tools.
 
-<!-- crew-standards-export start digest=216c55f69ca9990200a4fc41bb74eab810d6c2702871601fc48a6b108fe72b74 crew=1.3.75 -->
+<!-- crew-standards-export start digest=2c5f9149f788a7c39fa9f70ce42faf0a9b4de218af9e3f11e21573da9c2e7c74 crew=1.3.85 -->
 ## Code Review Rules
 
 Every standard crew applies in review is written out in `docs/review-rules/`, one file per set, each stating the files it applies to.

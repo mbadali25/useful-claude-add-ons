@@ -583,6 +583,36 @@ read by no hook. Since crew 1.3.69, <code>/crew:confirm-config</code> typed with
 records nothing and lists the pending proposals, each with its id and the
 exact change, or says that none is pending and why. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.</p>
+<p><strong>Git commands (crew 1.3.85).</strong> <code>guards.git.allow</code> is the owner's switch that
+stops the command guards blocking or asking on git commands, destructive ones
+included: <code>"all"</code>, or a list of subcommands such as <code>["commit", "push"]</code>.
+A listed subcommand passes with every option it takes: listing <code>push</code> also
+lets <code>git push --force</code> through. It loosens the force-push rule and the
+promote gate, and only for a line that is ONE plain git command, fail-closed:
+the command must be exactly <code>git</code> (no path, no other command, so nothing on the
+line can redefine git) and every word a plain literal as one shared reader
+reads it - no <code>$</code> in any form, backtick, glob, brace expansion, leading <code>~</code>,
+subshell, PowerShell <code>(expr)</code>, <code>@(...)</code>, splat, <code>--%</code> or <code>%NAME%</code>, and no
+separator, redirection, heredoc, here-string, continuation or comment at all
+(a chain such as <code>git add -A &amp;&amp; git commit</code>, <code>git status 2&gt;&amp;1</code> or a heredoc
+commit message is judged as before). Anything it cannot read whole is judged
+as before. A plain git command carrying <code>-c</code> or a command to run (<code>rebase
+--exec</code> or its abbreviation <code>--exe</code>, <code>push --receive-pack</code>, <code>init
+--template</code>), or a <code>git config</code> that is not plainly a read, is never exempt.
+Plain lines - <code>git commit -m "fix: x"</code>, <code>git push --force-with-lease origin
+topic</code>, <code>git rebase -i HEAD~3</code>, <code>git log --format=%H</code> - stay exempt. A
+declared deploy that is itself a git command stays gated, and <code>gh</code>
+(<code>--admin</code> merges, branch protection, workflow dispatches) is untouched. It
+is off by default, lives in the machine file only, and takes effect only
+after you type <code>/crew:confirm-config &lt;id&gt;</code> twice for a proposal
+(<code>crew_confirm_config.py propose --layer machine --key guards.git.allow
+--value '"all"'</code>), and only while the machine file is still the file that
+confirmation left: a hand edit turns it off, and so does a copy put back
+with <code>cp -p</code> (on Windows a <code>Copy-Item</code> copy put back is the one restore crew
+cannot tell apart). The receipts are protected from an agent's writes only
+while <code>scope.mode</code> is on, and <code>"all"</code> does not stop git's own hooks, aliases
+or <code>core.sshCommand</code> set earlier in a config file: those run as if crew were
+absent. The configuration reference's "Git commands" section has the rules.</p>
 <ul>
 <li><code>/crew:config</code> shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.</li>

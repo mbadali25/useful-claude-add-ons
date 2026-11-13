@@ -130,6 +130,7 @@ import time
 
 import crew_common
 import crew_config
+import crew_gitallow
 import crew_preprod
 import crew_selflimit
 import crew_state
@@ -2158,6 +2159,15 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
     text = " ".join(argv)
     out = []
 
+    # A git command's findings carry its subcommand (`crew_gitallow.SCOPE_KEY`)
+    # so `evaluate` can let `guards.git.allow` pass them -- only when the ONE
+    # shared reader (`crew_gitallow.line_plan`, the promote gate's too) reads
+    # the whole line as plain literal git commands. Nothing read here decides
+    # it. An `xargs git` finding (`_fed_finding`) carries no key: the words
+    # xargs appends come from input crew cannot see.
+    gitsub = ({crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand(args)}
+              if head == "git" and not fed else {})
+
     if head in _SHELLS:
         # `-c`, and every cluster carrying it: `bash -lc`, `sh -ec`. With no
         # `-c` at all, a heredoc or pipe on stdin is the script.
@@ -2255,7 +2265,7 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
     if head == "git":
         what = _git_force_push(args)
         if what:
-            out.append(Finding("forcePush", text, what, None, True, None))
+            out.append(Finding("forcePush", text, what, None, True, None, gitsub))
         return out
     if head == "gh":
         words = [a for a in args if not a.startswith("-")]
@@ -3097,7 +3107,10 @@ def _judge_one(root, finding, pins, problem, envs=None):
             return judge_dispatch(finding.scope, finding.what, lambda key: crew_config.guard_decision(
                 root, DEPLOY_RULE, key), finding.text, envs or {}, _approval_is_live)
         out = crew_config.guard_decision(root, finding.rule, finding.text)
-        if finding.scope is not None and envs is not None:
+        # A git finding's scope (`crew_gitallow.SCOPE_KEY`, crew 1.3.85) is
+        # not a terraform scope: it takes the plain route it took before.
+        if finding.scope is not None and envs is not None \
+                and crew_gitallow.SCOPE_KEY not in finding.scope:
             return _terraform_verdict(root, finding, out, envs) + (True,)
         decision = {"block": "deny"}.get(out["decision"], out["decision"])
         reason = f"[{finding.rule}] {finding.what}: {out['reason']}"
@@ -3154,7 +3167,22 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     worst, reasons, rows, unpinned = "allow", [], [], []
     said, audits = [], []
     alone = unattended(data or {})
+    git_plan = None
     for finding in findings:
+        scope = finding.scope if isinstance(finding.scope, dict) else {}
+        if crew_gitallow.SCOPE_KEY in scope:
+            # `guards.git.allow` (crew 1.3.85): the owner's double-confirmed
+            # switch lets a git command's own findings through, and logs that
+            # it did -- only when the whole line is plain literal git commands
+            # by the one reader the promote gate also uses (`line_plan`, an
+            # allowlist: anything it cannot read whole is not exempt), the
+            # finding is one of them, and no repo file vetoes. Read once.
+            if git_plan is None:
+                git_plan = crew_gitallow.line_plan(command, shell, root, envs["cwd"] or root)
+            if crew_gitallow.finding_exempt(git_plan, scope):
+                rows.append((finding.rule, "gitAllow:" + crew_gitallow.label(git_plan["allow"]),
+                             "allow", finding.what))
+                continue
         decision, reason, policy, marker, applies = _judge_one(
             root, finding, pins, problem, envs)
         if not applies:

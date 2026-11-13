@@ -241,8 +241,12 @@ GUARD_PROFILES = ("off", "standard", "strict")
 # the profile at `off` (= `GUARD_DEFAULTS`) and an empty overrides table. The
 # twelve per-guard names are no longer config keys; a file that still holds
 # them is read as a legacy alias (`layer_guard_state`) until `/crew:migrate`.
+# `git.allow` (crew 1.3.85) is not a guard name: the owner's switch that
+# lets git commands past the command guards, read by `crew_gitallow.settings`
+# (machine file only, double-confirmed; a repo may only veto with "off"). null
+# is off, and is what both templates carry so a repo file never vetoes by default.
 GUARD_BLOCK_DEFAULTS = {
-    "profile": "off", "overrides": {}}
+    "profile": "off", "overrides": {}, "git": {"allow": None}}
 _ALWAYS_BLOCK = ("terraformApply", "forcePush", "mergeGate", "cloudDestructive",
                  "sqlDestructive", "deployWorkflow")
 PROFILE_MAP = {
@@ -1530,6 +1534,41 @@ _GATE_OPS = ("&>>", "<<<", "<<-", ";;&", "&&", "||", ";;", ";&", "|&", "<<",
              "<>", "<&", ">>", ">&", ">|", "&>", ";", "&", "|", "<", ">")
 _GATE_PARAM_RE = re.compile(r"[A-Za-z0-9_#!@*?:%/=+^,.~\[\] -]*")
 _FD_WORD_RE = re.compile(r"^(?:\d+|\{[A-Za-z_][A-Za-z0-9_]*\})$")
+_FD_BOUNDARY = " \t\n;&|()"
+
+
+def _fd_prefix(text, pos, word):
+    """True when `word` -- the word read so far, ending right before the `<`
+    or `>` at `pos` -- is that redirection's file descriptor as bash reads
+    it: the RAW text right before `pos` is exactly `word`, all digits or a
+    `{name}`, and starts a word. A quoted or escaped `"2">` is an argument
+    (measured, bash 5). Both `_GateReader` and `_CommandSplitter` ask this,
+    so the two readers strip an fd prefix alike (PR #769 review round 5)."""
+    if not word or not word.isascii() or not _FD_WORD_RE.match(word) \
+            or not text.startswith(word, pos - len(word)):
+        return False
+    start = pos - len(word)
+    return start == 0 or text[start - 1] in _FD_BOUNDARY
+
+
+def _dangling_backslash(raw):
+    """True when `raw` ends in an unpaired backslash: the word ended at a
+    newline, a blank or an operator that the backslash escapes, so bash reads
+    a longer delimiter than this reading does (`<<E\\<NL>OF` is `EOF`,
+    `<<E\\ OF` is `E OF`; PR #769 review round 6)."""
+    return (len(raw) - len(raw.rstrip("\\"))) % 2 == 1
+
+
+def _continuation_in_fd_prefix(text, pos, word):
+    """Raise `_Unsure` for a backslash-newline at `pos` that bash would join
+    into a redirection's fd prefix: the word read so far looks like a
+    descriptor and a `<` or `>` follows the continuation (`2\\<NL>>&1` is
+    `2>&1`, but the raw text before the `>` is a newline, so `_fd_prefix`
+    would read `2` as an argument; PR #769 review round 6)."""
+    if word and _FD_WORD_RE.match(word) and text[pos + 2:pos + 3] in ("<", ">"):
+        raise _Unsure("a line continuation inside a redirection's fd prefix")
+
+
 # A command word this far into a line runs terraform only through a script
 # crew cannot split: the Step 8 trigger decides for the whole line.
 _GATE_OPAQUE = frozenset((
@@ -1596,6 +1635,7 @@ class _GateReader:
         while self.pos < len(self.text):
             char = self.text[self.pos]
             if self._peek(2) == "\\\n":
+                _continuation_in_fd_prefix(self.text, self.pos, "".join(word))
                 self.pos += 2
             elif char in " \t":
                 end_word()
@@ -1626,7 +1666,7 @@ class _GateReader:
                 state["word"] = True
             elif char in ";&|<>":
                 if state["word"] and char in "<>" and \
-                        _FD_WORD_RE.match("".join(word)):
+                        _fd_prefix(self.text, self.pos, "".join(word)):
                     word.clear()
                     state["word"] = False
                 self._operator(end_word, end_command, state)
@@ -1669,6 +1709,7 @@ class _GateReader:
         mixed = "\\" in raw and ("'" in raw or '"' in raw)
         mixed = mixed or "'" in raw and '"' in raw
         odd = raw.count("'") % 2 or raw.count('"') % 2
+        mixed = mixed or _dangling_backslash(raw)
         if not raw or odd or mixed or "$" in raw or "`" in raw:
             raise _Unsure("a heredoc delimiter crew cannot spell")
         quoted = any(c in raw for c in "'\"\\")
@@ -1938,12 +1979,12 @@ class _CommandSplitter:
     @staticmethod
     def _meta():
         return {"before": None, "after": None, "nest": 1, "bodies": [],
-                "here": []}
+                "here": [], "redirs": []}
 
     def _read(self, closer):  # pylint: disable=too-many-branches,too-many-statements
         cmd, word = [], []
         state = {"target": None, "before": None, "meta": self._meta(),
-                 "parens": 0}
+                 "parens": 0, "redir": {}}
         self.depth += 1
         if self.depth > 4 * _GATE_DEPTH:
             raise _Unsure("nested too deep")
@@ -1953,6 +1994,7 @@ class _CommandSplitter:
                 if state["target"] == "here":
                     state["meta"]["here"].append("".join(word))
                 if state["target"]:
+                    state["redir"]["target"] = "".join(word)
                     state["target"] = None
                 else:
                     cmd.append("".join(word))
@@ -1960,6 +2002,9 @@ class _CommandSplitter:
 
         def end_command(op):
             end_word()
+            # A redirection with no target is a syntax error in bash; its
+            # target is never the next command's first word.
+            state["target"] = None
             if cmd:
                 state["meta"].update(before=state["before"], after=op,
                                      nest=self.depth + self.parens)
@@ -1976,6 +2021,7 @@ class _CommandSplitter:
         while self.pos < len(text):
             char = text[self.pos]
             if text.startswith("\\\n", self.pos):
+                _continuation_in_fd_prefix(text, self.pos, "".join(word))
                 self.pos += 2
             elif char == "\\":
                 word.append(text[self.pos:self.pos + 2])
@@ -2012,21 +2058,49 @@ class _CommandSplitter:
                 self._read(")")
                 self.subs.append(text[start:self.pos - 1])
                 word.append("$(...)")
-            elif text.startswith("<<<", self.pos):
-                end_word()
-                self.pos += 3
-                state["target"] = "here"
-            elif text.startswith("<<", self.pos):
-                end_word()
-                self.pos += 2
-                strip = text[self.pos:self.pos + 1] == "-"
-                self.pos += 1 if strip else 0
-                self.pending.append(self._delimiter(strip) + (state["meta"],))
             elif char in "<>" or text.startswith("&>", self.pos):
+                # `metas[i]["redirs"]`: every redirection of the command, as
+                # `{"fd", "op", "at", "target"}` -- the raw fd prefix (`2`,
+                # `{v}`, or ""), the operator, how many words precede it,
+                # and the raw target word (None when there is none).
+                fd = ""
+                if char in "<>" and _fd_prefix(text, self.pos, "".join(word)):
+                    fd = "".join(word)
+                    word.clear()
                 end_word()
-                while self.pos < len(text) and text[self.pos] in "<>&|":
-                    self.pos += 1
-                state["target"] = "file"
+                redir = {"fd": fd, "op": None, "at": len(cmd), "target": None}
+                state["meta"]["redirs"].append(redir)
+                state["redir"] = redir
+                if text.startswith("<<<", self.pos):
+                    self.pos += 3
+                    redir["op"] = "<<<"
+                    state["target"] = "here"
+                elif text.startswith("<<", self.pos):
+                    self.pos += 2
+                    strip = text[self.pos:self.pos + 1] == "-"
+                    self.pos += 1 if strip else 0
+                    redir["op"] = "<<-" if strip else "<<"
+                    pending = self._delimiter(strip)
+                    redir["target"] = pending[0]
+                    self.pending.append(pending + (state["meta"],))
+                else:
+                    start = self.pos
+                    while self.pos < len(text) and text[self.pos] in "<>&|":
+                        self.pos += 1
+                    redir["op"] = text[start:self.pos]
+                    look = self.pos
+                    while look < len(text) and text[look] in " \t":
+                        look += 1
+                    if redir["op"] in (">&", "<&") and text[look:look + 1] == "-":
+                        # `>&-` closes the descriptor: bash takes the `-`
+                        # (after blanks too) and the rest of that word is
+                        # an ordinary argument (`>&---receive-pack=x`
+                        # passes `--receive-pack=x`; measured, review
+                        # round 5).
+                        self.pos = look + 1
+                        redir["target"] = "-"
+                    else:
+                        state["target"] = "file"
             elif char in ";&|":
                 op = next(o for o in _FALLBACK_OPS
                           if text.startswith(o, self.pos))
@@ -2054,6 +2128,7 @@ class _CommandSplitter:
         escaped_quote = "\\" in raw and ("'" in raw or '"' in raw)
         both = "'" in raw and '"' in raw
         odd = raw.count("'") % 2 or raw.count('"') % 2
+        both = both or _dangling_backslash(raw)
         if not raw or escaped_quote or both or odd or \
                 any(c in raw for c in "$`"):
             raise _Unsure("a heredoc delimiter crew cannot spell")

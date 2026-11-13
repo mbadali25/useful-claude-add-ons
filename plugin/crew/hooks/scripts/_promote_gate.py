@@ -448,6 +448,23 @@ class Gate:  # pylint: disable=too-many-instance-attributes
         self.head_map = blob
         return committed_as_is(blob)
 
+    def git_allowed(self):
+        """`guards.git.allow` (crew 1.3.85): a line of only git commands the
+        owner's double-confirmed switch covers, containing no declared deploy
+        that is itself a git command, is not judged (`crew_gitallow.
+        promote_exempt`, which never raises and reads anything unclear as
+        "judge it"). The PowerShell flavour asks the same function through
+        _promote_dispatch.py."""
+        if not os.path.isfile(os.path.join(HERE, "crew_gitallow.py")):
+            return False
+        os.environ["CREW_HEAD_MAP"] = self.head_map
+        os.environ["CREW_MAP_DIRTY"] = self.map_dirty
+        try:
+            import crew_gitallow  # pylint: disable=import-outside-toplevel
+            return crew_gitallow.promote_exempt(self.cmd, "bash", self.project)
+        except Exception:  # pylint: disable=broad-except
+            return False
+
     # -- the run ------------------------------------------------------------
 
     def run(self, raw):  # pylint: disable=too-many-branches,too-many-statements
@@ -457,6 +474,8 @@ class Gate:  # pylint: disable=too-many-instance-attributes
         if self.provably_no_deploy():
             return 0
         self.hash_dirt()
+        if self.git_allowed():
+            return 0
 
         names = self.match_environments()
         names = self.add_dispatched(names)
