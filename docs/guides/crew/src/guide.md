@@ -547,15 +547,21 @@ A listed subcommand passes with every option it takes: listing `push` also
 lets `git push --force` through. It loosens the force-push rule, the mass
 stop's git counts and the promote gate for a line of only git commands, and
 nothing else (a git command carrying `-c`, a `GIT_*` variable or a command to
-run, such as `rebase --exec`, is never exempt): a declared deploy that is
+run, such as `rebase --exec` or its abbreviation `--exe`, is never exempt, nor
+is one with a word built when it runs, such as `"$OPT"`, or one `xargs` runs):
+a declared deploy that is
 itself a git command stays gated, and `gh` (`--admin` merges, branch
 protection, workflow dispatches) is untouched. It is off by default, lives in
 the machine file only, and takes effect only after you type
 `/crew:confirm-config <id>` twice for a proposal
 (`crew_confirm_config.py propose --layer machine --key guards.git.allow
 --value '"all"'`), and only while the machine file is still the file that
-confirmation left: a hand edit turns it off. The configuration reference's
-"Git commands" section has the rules.
+confirmation left: a hand edit turns it off, and so does a copy put back
+with `cp -p` (on Windows a `Copy-Item` copy put back is the one restore crew
+cannot tell apart). The receipts are protected from an agent's writes only
+while `scope.mode` is on, and `"all"` does not stop git's own hooks, aliases
+or `core.sshCommand` set in a config file: those run as if crew were absent.
+The configuration reference's "Git commands" section has the rules.
 
 - `/crew:config` shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.

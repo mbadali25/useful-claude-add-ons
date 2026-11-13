@@ -431,7 +431,8 @@ KEY_META = {
         "written any other way, or any later change to the machine file outside crew's "
         "config writer, reads as off, and a repo `\"off\"` or unreadable repo file vetoes "
         "it. A git command carrying `-c`, a `GIT_*` variable or a command to run "
-        "(`rebase --exec`, `submodule foreach`, ...) is never exempt.", "type",
+        "(`rebase --exec` or an abbreviation such as `--exe`, `submodule foreach`, ...), "
+        "a word built when it runs (`\"$OPT\"`), or run by `xargs` is never exempt.", "type",
         since="1.3.73", source=_S + "crew_gitallow.py",
         type_="null, `\"off\"`, `\"all\"` or a list of git subcommand names"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",

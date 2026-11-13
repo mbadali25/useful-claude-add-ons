@@ -2168,7 +2168,8 @@ def _classify(argv, stdin, env, shell, depth, ctx=None, seq=None, fed=False):
     # It also carries why it may never be exempted (`hold`: config or a command
     # of its own) and the `-C` directories it acts on (`target_dirs`).
     gitsub = {crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand(args),
-              crew_gitallow.HOLD_KEY: crew_gitallow.hold(args, env),
+              crew_gitallow.HOLD_KEY: crew_gitallow.FED_HOLD if fed
+              else crew_gitallow.hold(args, env),
               crew_gitallow.DIRS_KEY: crew_gitallow.target_dirs(args)} if head == "git" else {}
     for mass in crew_mass.classify(head, args, shell, bool(fed), sql):
         out.append(Finding(mass.rule, text, mass.what, None, False, None,
@@ -2425,12 +2426,13 @@ def _fed_finding(argv, env, via, placeholders, ctx=None):
         sub = args[index] if index < len(args) else ""
         if sub and seen([sub]) and sub != "push":
             return None
-        # The subcommand counts as read only when it is a literal crew sees;
-        # else `guards.git.allow` lets it through under `all` alone.
+        # The subcommand counts as read only when it is a literal crew sees.
+        # Held whatever it is: the appended words may carry `-c` or
+        # `--receive-pack` (crew 1.3.73 review round 2).
         return Finding("forcePush", text, what, None, True, None,
                        {crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand([sub])
                         if sub and seen([sub]) else crew_gitallow.UNSEEN,
-                        crew_gitallow.HOLD_KEY: crew_gitallow.hold(args, env),
+                        crew_gitallow.HOLD_KEY: crew_gitallow.FED_HOLD,
                         crew_gitallow.DIRS_KEY: crew_gitallow.target_dirs(args)})
     if head in ("aws", "az"):
         words = _aws_words(args) if head == "aws" else [
@@ -3119,7 +3121,10 @@ def _judge_one(root, finding, pins, problem, envs=None):
             return judge_dispatch(finding.scope, finding.what, lambda key: crew_config.guard_decision(
                 root, DEPLOY_RULE, key), finding.text, envs or {}, _approval_is_live)
         out = crew_config.guard_decision(root, finding.rule, finding.text)
-        if finding.scope is not None and envs is not None:
+        # A git finding's scope (`crew_gitallow.SCOPE_KEY`, crew 1.3.73) is
+        # not a terraform scope: it takes the plain route it took before.
+        if finding.scope is not None and envs is not None \
+                and crew_gitallow.SCOPE_KEY not in finding.scope:
             return _terraform_verdict(root, finding, out, envs) + (True,)
         decision = {"block": "deny"}.get(out["decision"], out["decision"])
         reason = f"[{finding.rule}] {finding.what}: {out['reason']}"

@@ -13,6 +13,19 @@ value and binding-shape checks, `_repo_veto`'s could-not-tell source, and the
 None branches of `settings` and `line_targets` (a TypeError there is caught
 and read as off) are such belts.
 
+Review round 2 (Codex gpt-6-sol) added one red mutation per fix (BLOCK 1-2,
+FIX 3-6). It also DELETED "cloud guard: xargs git's unseen subcommand is read
+as push": every `xargs git` finding is now held (`FED_HOLD`), so reading its
+subcommand as `push` can no longer let anything through -- a shadowed check
+with no red. `allows`' UNSEEN branch keeps its mutation, against `test_allows`.
+Three more are shadowed belts now, measured green and deleted: `receipt_problem`'s
+`appliedChangeNs` key and `read_layer`'s None binding for an unknown change time
+(the binding equality in `settings` and the record's int check refuse the same
+record first), and `_ps_commands`' refusal of `$(` inside double quotes (every
+PowerShell word reaches `hold`, whose run-time rule refuses the `$` first). The
+bash substitution reading keeps its mutation: a substitution in a redirection
+target (`git status > "$(deploy-prod)"`) is in no word `hold` sees.
+
 NOT wired into `sabotage.py`'s MUTATIONS: `sabotage*.py` is review harness
 (`scripts/check-tooling-pr.py` `HARNESS`), and a harness change lands alone. Until
 a harness-only change registers this table, run it with sabotage.py's own
@@ -181,25 +194,60 @@ GITALLOW_MUTATIONS = (
      "        if False:\n",
      _T + "test_a_git_command_with_its_own_config_or_command_is_not_line_exempt"),
     ("cloud guard: a git finding carries no hold", CG,
-     "{crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand(args),\n"
-     "              crew_gitallow.HOLD_KEY: crew_gitallow.hold(args, env),\n",
-     "{crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand(args),\n"
-     "              crew_gitallow.HOLD_KEY: None,\n",
+     "              else crew_gitallow.hold(args, env),\n",
+     "              else None,\n",
      _T + "test_force_push_carrying_config_stays_refused_with_all"),
     ("cloud guard: a git finding's hold ignores the environment", CG,
-     "              crew_gitallow.HOLD_KEY: crew_gitallow.hold(args, env),\n"
+     "              else crew_gitallow.hold(args, env),\n"
      "              crew_gitallow.DIRS_KEY",
-     "              crew_gitallow.HOLD_KEY: crew_gitallow.hold(args, {}),\n"
+     "              else crew_gitallow.hold(args, {}),\n"
      "              crew_gitallow.DIRS_KEY",
      _T + "test_force_push_carrying_config_stays_refused_with_all"),
-    ("cloud guard: an xargs git finding carries no hold", CG,
+    ("cloud guard: an xargs git finding is held only for what crew sees", CG,
+     "                        crew_gitallow.HOLD_KEY: crew_gitallow.FED_HOLD,\n",
      "                        crew_gitallow.HOLD_KEY: crew_gitallow.hold(args, env),\n",
-     "                        crew_gitallow.HOLD_KEY: None,\n",
-     _T + "test_xargs_git_carrying_config_stays_refused_with_all"),
+     _T + "test_xargs_git_is_never_exempt"),
     ("cloud guard: a git finding carries no -C target", CG,
      "crew_gitallow.DIRS_KEY: crew_gitallow.target_dirs(args)} if head == \"git\" else {}\n",
      "crew_gitallow.DIRS_KEY: ()} if head == \"git\" else {}\n",
      _T + "test_a_target_repo_veto_holds_for_git_dash_c"),
+    # --- review round 2 (Codex gpt-6-sol): one red mutation per fix ---
+    ("gitAllow: an abbreviated long option is not held (BLOCK 1)", GA,
+     "        return len(name) > 2 and name.startswith(\"--\") and option.startswith(name)\n",
+     "        return word.startswith(option + \"=\")\n",
+     _T + "test_an_abbreviated_option_that_runs_a_command_is_held"),
+    ("gitAllow: a word built at run time is not held (BLOCK 2)", GA,
+     "        if not isinstance(word, str) or _RUNTIME_RE.search(word):\n",
+     "        if not isinstance(word, str):\n",
+     _T + "test_a_word_built_at_run_time_is_never_exempt"),
+    ("gitAllow: a PowerShell splat is not read as run-time (BLOCK 2)", GA,
+     "_RUNTIME_RE = re.compile(r\"[$`]|^@[A-Za-z_]\")\n",
+     "_RUNTIME_RE = re.compile(r\"[$`]\")\n",
+     _T + "test_a_word_built_at_run_time_is_never_exempt"),
+    ("cloud guard: a git command xargs feeds is held only for what crew sees (BLOCK 2)", CG,
+     "              crew_gitallow.HOLD_KEY: crew_gitallow.FED_HOLD if fed\n",
+     "              crew_gitallow.HOLD_KEY: None if fed\n",
+     _T + "test_a_force_push_crew_cannot_read_whole_stays_refused_with_all"),
+    ("gitAllow: a dangling repo config reads as absent (FIX 3)", GA,
+     "        if _dangles(path):\n",
+     "        if False:\n",
+     _T + "test_a_crew_path_that_is_a_file_is_a_veto"),
+    ("gitAllow: a .crew that is no directory reads as absent (FIX 3)", GA,
+     "    return probe == os.path.abspath(path) or not os.path.isdir(probe)\n",
+     "    return probe == os.path.abspath(path)\n",
+     _T + "test_a_crew_path_that_is_a_file_is_a_veto"),
+    ("gitAllow: the binding drops the change time (FIX 4)", GA,
+     "        \"appliedMtimeNs\": stat.st_mtime_ns, \"appliedChangeNs\": change}\n",
+     "        \"appliedMtimeNs\": stat.st_mtime_ns, \"appliedChangeNs\": 0}\n",
+     _T + "test_a_copy_put_back_with_its_mtime_is_off"),
+    ("gitAllow: a line's words lose every quote character (FIX 5)", GA,
+     "        out.append([crew_guards._shell_unquote(w)  # pylint: disable=protected-access\n",
+     "        out.append([crew_guards._dequote(w)  # pylint: disable=protected-access\n",
+     _T + "test_a_quote_inside_the_program_name_is_not_git"),
+    ("cloud guard: a git finding is judged as terraform (FIX 6)", CG,
+     "                and crew_gitallow.SCOPE_KEY not in finding.scope:\n",
+     "                and True:\n",
+     _T + "test_a_force_push_under_a_looser_policy_does_not_crash"),
     # --- PowerShell's single `&` (review finding 5) ---
     ("gitAllow: PowerShell's single & is read as a word", GA,
      "        if c == \"&\":\n",
@@ -217,7 +265,7 @@ GITALLOW_MUTATIONS = (
     ("gitAllow: an unseen subcommand passes an allowlist", GA,
      "        return sub is not UNSEEN and sub in setting\n",
      "        return sub is UNSEEN or sub in setting\n",
-     _T + "test_xargs_git_unseen_subcommand_passes_only_under_all"),
+     _T + "test_allows"),
     ("gitAllow: the machine writer accepts \"all\"", GA,
      "        return None if value is None or value == OFF else _REFUSAL\n",
      "        return None\n",
@@ -238,11 +286,6 @@ GITALLOW_MUTATIONS = (
      "    for sub in subs:\n        inner = _bash_commands(sub, depth + 1)\n",
      "    for sub in ():\n        inner = _bash_commands(sub, depth + 1)\n",
      _T + "test_line_exempt"),
-    ("gitAllow: a PowerShell subexpression in double quotes is read as text", GA,
-     "                if text.startswith(\"$(\", end) or text.startswith(\"@(\", end):\n"
-     "                    return None\n",
-     "                if False:\n                    return None\n",
-     _T + "test_line_exempt"),
     ("gitAllow: a PowerShell pipe is read as a separator", GA,
      "            if c == \"|\" and text.startswith(\"||\", i):\n",
      "            if c == \"|\":\n",
@@ -259,10 +302,6 @@ GITALLOW_MUTATIONS = (
      "crew_gitallow.DIRS_KEY: crew_gitallow.target_dirs(args)} if head == \"git\" else {}\n",
      "crew_gitallow.DIRS_KEY: crew_gitallow.target_dirs(args)} if True else {}\n",
      _T + "test_the_rest_of_the_line_is_still_judged"),
-    ("cloud guard: xargs git's unseen subcommand is read as push", CG,
-     "                        if sub and seen([sub]) else crew_gitallow.UNSEEN,\n",
-     "                        if sub and seen([sub]) else \"push\",\n",
-     _T + "test_xargs_git_unseen_subcommand_passes_only_under_all"),
     ("promote gate (bash): the switch is not asked", PG,
      "        if self.git_allowed():\n            return 0\n",
      "        if False:\n            return 0\n",

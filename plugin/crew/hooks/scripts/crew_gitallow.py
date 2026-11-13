@@ -12,8 +12,8 @@ THE VALUES.
 WHAT IT LOOSENS, and nothing else. Only the parts of a guard that judge a git
 command (a simple command whose program is `git`):
 
-  - the cloud guard's `guards.forcePush` rule (`git push --force`, `+ref`, and
-    `xargs git ...` whose subcommand crew cannot see);
+  - the cloud guard's `guards.forcePush` rule (`git push --force`, `+ref`; not
+    `xargs git ...`, whose appended arguments crew cannot see, review round 2);
   - the mass guard's git counts (`git commit`, `git push`, `git clean -f`,
     `git rm`, `git reset --hard`, `git checkout -f` / `-- <paths>`,
     `git restore`);
@@ -35,8 +35,10 @@ counts only while the newest settled receipt for this key in that file is a
 WHOLE applied record (`receipt_problem`: two confirmations from two distinct
 user prompts inside the proposal's window, this file's path, a value the
 switch takes) for EXACTLY that value, and the machine file is still the very
-file that confirmation left: its bytes, size and modification time
-(`file_binding`, crew 1.3.73 review). Any later change to the machine file
+file that confirmation left: its bytes, size, modification time and
+metadata-change time (`file_binding`, crew 1.3.73 review; the change time
+from round 2, so a copy put back with `cp -p` reads as changed -- except a
+Windows CopyFile, which carries the change time over, `_change_ns`). Any later change to the machine file
 by any route but crew's own config writer (`crew_config.write_global_config`,
 which re-binds the receipt when it leaves this key alone, `rebind`) reads as
 off -- so a hand edit to "off" and back to "all" is off. `crew_config.py --set`
@@ -56,7 +58,10 @@ or a command line of its own -- a global `-c`, `--config-env` or
 `--exec-path`, a `GIT_*` environment assignment, or an option or subcommand
 that runs a command it is handed (`rebase --exec`, `submodule foreach`,
 `bisect run`, `push --receive-pack`, `fetch --upload-pack`, `grep -O`,
-`difftool --extcmd`, `filter-branch`, ...). A git command aimed at another
+`difftool --extcmd`, `filter-branch`, ...), in any abbreviation git accepts
+(`--exe`, `--receive=`); and a git command crew cannot read whole: a word
+built when it runs (`$`, a backtick, a PowerShell `@splat`), or arguments
+`xargs` / `parallel` append from input (crew 1.3.73 review round 2). A git command aimed at another
 repository (`git -C <dir>`) is exempt only when that repository's own file
 does not veto it either; one whose target crew cannot tell (`--git-dir`,
 `--work-tree`, a `-C` it cannot read, a line that changes directory) is not
@@ -99,8 +104,13 @@ SCOPE_KEY = "gitsub"
 HOLD_KEY = "githold"
 DIRS_KEY = "gitdirs"
 # The subcommand of a git command crew could not read (`xargs git` with the
-# subcommand on stdin, a variable): only `all` lets it through.
+# subcommand on stdin, a variable): only `all` lets it through -- and since
+# review round 2 both of those are held anyway (`hold`, `FED_HOLD`).
 UNSEEN = None
+# Why a git command run by `xargs` / `parallel` is never exempt: the words they
+# append come from input crew cannot see (`echo "push --receive-pack=x" | xargs
+# git`), the same hole as a word built at run time (crew 1.3.73 review round 2).
+FED_HOLD = "xargs / parallel append arguments to it that crew cannot see"
 
 _REFUSAL = ("lets every git command past crew's command guards, so it needs the "
             "owner's double confirmation: `crew_confirm_config.py propose --layer "
@@ -211,14 +221,25 @@ def _global_split(args):
 
 
 def _option_hit(word, option):
-    """True when `word` is `option` or carries it: `--opt=v`, or a short
-    option bundled anywhere in a single-dash word (`-x`, `-xcmd`, `-ix`).
-    Over-reading a bundle only withholds an exemption."""
+    """True when `word` is `option` or carries it: `--opt=v`, any
+    abbreviation git would accept for it (`--exe`, `--receive=v`: git's
+    option parser takes an unambiguous prefix of a long option, crew 1.3.73
+    review round 2), or a short option bundled anywhere in a single-dash word
+    (`-x`, `-xcmd`, `-ix`). Every prefix counts, ambiguous or not: over-reading
+    only withholds an exemption."""
     if word == option:
         return True
     if option.startswith("--"):
-        return word.startswith(option + "=")
+        name = word.split("=", 1)[0]
+        return len(name) > 2 and name.startswith("--") and option.startswith(name)
     return word.startswith("-") and not word.startswith("--") and option[1] in word[1:]
+
+
+# A word whose text is built when the command runs: a `$` expansion
+# (`"$OPT"`, `${X:-...}`, PowerShell's `$env:X`), a backtick substitution, or
+# a PowerShell splat (`@opts`). crew cannot see what it becomes, so it may
+# become `--receive-pack=...` or `-c ...` (crew 1.3.73 review round 2).
+_RUNTIME_RE = re.compile(r"[$`]|^@[A-Za-z_]")
 
 
 def hold(args, env=None):
@@ -228,6 +249,9 @@ def hold(args, env=None):
     for name, value in (env or {}).items():
         if value is not None and isinstance(name, str) and name.upper().startswith("GIT_"):
             return f"it sets {name.upper()} for git"
+    for word in args:
+        if not isinstance(word, str) or _RUNTIME_RE.search(word):
+            return "a word of it is built when it runs, so crew cannot see what git is handed"
     words, index = _global_split(list(args))
     for word in words:
         if word != "-C" and _INJECT_GLOBAL_RE.match(word):
@@ -290,18 +314,23 @@ def read_layer(path):
     file, from ONE open: `ABSENT` (no file), `UNSET` (the file is fine and
     says nothing, or null), `SET` with the raw value, or `UNREADABLE` with
     why (cannot be opened or read, not UTF-8 JSON, not an object, or a
-    `guards` / `guards.git` that is not an object). `binding` is the file's
-    `file_binding` when it was read, else None. Never raises."""
+    `guards` / `guards.git` that is not an object; a link or path that does
+    not resolve, `_dangles`). `binding` is the file's `file_binding` when it
+    was read and its change time could be told, else None. Never raises."""
     try:
         with open(path, "rb") as handle:
             raw = handle.read()
             stat = os.fstat(handle.fileno())
+            change = _change_ns(handle, stat)
     except FileNotFoundError:
+        if _dangles(path):
+            return UNREADABLE, "is a link or path that does not resolve", None
         return ABSENT, None, None
     except OSError as exc:
         return UNREADABLE, f"cannot be read ({type(exc).__name__})", None
-    binding = {"appliedDigest": hashlib.sha256(raw).hexdigest(),
-               "appliedSize": stat.st_size, "appliedMtimeNs": stat.st_mtime_ns}
+    binding = None if change is None else {
+        "appliedDigest": hashlib.sha256(raw).hexdigest(), "appliedSize": stat.st_size,
+        "appliedMtimeNs": stat.st_mtime_ns, "appliedChangeNs": change}
     try:
         cfg = json.loads(raw.decode("utf-8-sig"))
     except ValueError:
@@ -323,9 +352,59 @@ def read_layer(path):
     return SET, block["allow"], binding
 
 
+def _dangles(path):
+    """True when `path` could not be opened as missing although it is not
+    simply absent: the nearest part of it that exists is a link that does not
+    resolve, or is not a directory (a dangling `.crew/config.json` symlink, a
+    `.crew` that is a file or a dead link). Such a file is unreadable, never
+    absent: a repo file that cannot be read vetoes (crew 1.3.73 review round 2)."""
+    probe = os.path.abspath(path)
+    while not os.path.lexists(probe):
+        parent = os.path.dirname(probe)
+        if parent == probe:
+            return False
+        probe = parent
+    return probe == os.path.abspath(path) or not os.path.isdir(probe)
+
+
+def _change_ns(handle, stat):
+    """The open file's metadata-change time, or None when it cannot be read.
+    POSIX `st_ctime_ns`: every write and every `utime` moves it, and only the
+    clock can set it, so a copy put back with `cp -p` (bytes and modification
+    time restored) still reads as a change. Windows' `st_ctime` is the
+    creation time, so there it is the NTFS ChangeTime
+    (`GetFileInformationByHandleEx`). A Windows CopyFile (`Copy-Item`,
+    Explorer, `shutil.copy2`) carries ChangeTime over with the bytes, so on
+    Windows a copy of the confirmed file put back that way is NOT told apart
+    (CONFIG.md says so)."""
+    if os.name != "nt":
+        return stat.st_ctime_ns
+    try:
+        import ctypes  # pylint: disable=import-outside-toplevel
+        import msvcrt  # pylint: disable=import-outside-toplevel,import-error
+        from ctypes import wintypes  # pylint: disable=import-outside-toplevel
+
+        class _BasicInfo(ctypes.Structure):  # FILE_BASIC_INFO
+            _fields_ = [("creation", ctypes.c_longlong), ("access", ctypes.c_longlong),
+                        ("write", ctypes.c_longlong), ("change", ctypes.c_longlong),
+                        ("attributes", wintypes.DWORD)]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        query = kernel32.GetFileInformationByHandleEx
+        query.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        query.restype = wintypes.BOOL
+        info = _BasicInfo()
+        if not query(msvcrt.get_osfhandle(handle.fileno()), 0,  # 0: FileBasicInfo
+                     ctypes.byref(info), ctypes.sizeof(info)):
+            return None
+        return int(info.change) * 100
+    except Exception:  # noqa: BLE001  # pylint: disable=broad-except
+        return None
+
+
 def file_binding(path):
-    """`{"appliedDigest", "appliedSize", "appliedMtimeNs"}` of the file at
-    `path` now, or None when it cannot be read. A confirmed receipt carries
+    """`{"appliedDigest", "appliedSize", "appliedMtimeNs", "appliedChangeNs"}`
+    of the file at `path` now, or None when it cannot be read. A confirmed receipt carries
     the one its write left; the switch counts only while they are equal."""
     return read_layer(path)[2]
 
@@ -377,7 +456,7 @@ def receipt_problem(record, machine_path):
     binding = record.get("binding")
     if not isinstance(binding, dict) or not all(
             isinstance(binding.get(k), (str if k == "appliedDigest" else int))
-            for k in ("appliedDigest", "appliedSize", "appliedMtimeNs")):
+            for k in ("appliedDigest", "appliedSize", "appliedMtimeNs", "appliedChangeNs")):
         return "it does not record the file its write left"
     return None
 
@@ -585,7 +664,11 @@ def _bash_commands(text, depth=0):
         return None
     out = []
     for words in commands:
-        out.append([crew_guards._dequote(w) for w in words])  # pylint: disable=protected-access
+        # bash's own quote removal (`_shell_unquote`), not `_dequote`, which
+        # drops every quote character: `"./g'it"` runs a program named
+        # `./g'it`, not git (crew 1.3.73 review round 2).
+        out.append([crew_guards._shell_unquote(w)  # pylint: disable=protected-access
+                    for w in words])
     for sub in subs:
         inner = _bash_commands(sub, depth + 1)
         if inner is None:

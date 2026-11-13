@@ -322,8 +322,8 @@ rule is a finding on the `push` subcommand. To keep force pushes stopped, leave
 `push` out of the list.
 
 What it loosens, and nothing else: the cloud guard's `guards.forcePush` rule
-(`git push --force`, `+ref`, `xargs git` - whose subcommand crew cannot see, so
-only `"all"` covers it); the mass stop's git counts (`git commit`, `git push`,
+(`git push --force`, `+ref`; not `xargs git`, whose appended arguments crew
+cannot see); the mass stop's git counts (`git commit`, `git push`,
 `git clean -f`, `git rm`, `git reset --hard`, `git checkout -f` / `-- <paths>`,
 `git restore`); and the promote gate for a command line made ONLY of covered
 git commands, so a commit message or heredoc that merely mentions a declared
@@ -342,15 +342,21 @@ prompts, within 15 minutes. A value counts only while the newest settled
 receipt for that file is a whole double confirmation (two confirmations from
 two distinct prompts you typed, inside the proposal's window, for that file)
 of exactly that value, AND the machine file is still the file that
-confirmation left: the same bytes, size and modification time. crew's own
+confirmation left: the same bytes, size, modification time and change time
+(the metadata-change time: POSIX `ctime`, NTFS ChangeTime on Windows). crew's own
 config writer (`crew_config.py --set`, `/crew:config`, a confirmed `humanOnly`
 change) carries the receipt over when it changes another key. Any other change
 to the machine file turns the switch off until you confirm it again: a hand
 edit, an agent's Edit, a restore from backup, even setting `"off"` by hand and
-then the same `"all"` back. `crew_config.py --set` and `/crew:config` refuse
+then the same `"all"` back, or putting a copy of the confirmed file back with
+`cp -p` (bytes and modification time restored; the change time still moves).
+One gap, on Windows only: a copy made AND put back with a Windows file copy
+(`Copy-Item`, Explorer, `shutil.copy2`) carries the change time over with the
+bytes, so crew cannot tell it from the confirmed file. `crew_config.py --set` and `/crew:config` refuse
 every value but `"off"` and null, and a crew write back to `"off"` revokes the
 receipt. A repo file can never turn it on; a repo `"off"`, a malformed repo
-value, or a repo `.crew/config.json` crew cannot read or parse vetoes it.
+value, or a repo `.crew/config.json` crew cannot read or parse (a link that
+does not resolve, or a `.crew` that is a file, included) vetoes it.
 Anything crew cannot read - a value outside the table, a store it cannot read,
 a line it cannot split, a subcommand it cannot see - is off.
 
@@ -361,7 +367,13 @@ set on the line, or an option or subcommand that runs a command it is given
 (`rebase --exec`/`-x`, `submodule foreach`, `bisect run`, `push
 --receive-pack`, `fetch`/`pull`/`clone`/`ls-remote --upload-pack`, `clone
 -u`/`-c`/`--template`, `grep -O`, `difftool --extcmd`, `filter-branch`,
-`instaweb`, `send-email --*-cmd`, `daemon --access-hook`). In PowerShell a
+`instaweb`, `send-email --*-cmd`, `daemon --access-hook`), in any
+abbreviation git accepts (`--exe`, `--receive=...`: git takes an unambiguous
+prefix of a long option). Nor a git command crew cannot read whole: a word
+built when it runs (`"$OPT"`, `${X:-...}`, `$env:X`, a backtick or `$(...)`
+substitution, a PowerShell `@splat`) - so `git commit -m "$(git rev-parse
+HEAD)"` is judged as before - or a git command `xargs` / `parallel` runs,
+whose appended arguments come from input crew cannot see. In PowerShell a
 single `&` (the background or call operator) makes the line unreadable for the
 promote gate; `2>&1` and a quoted `&` do not. A git command aimed at another
 repository (`git -C <dir>`) passes only when that repository's own file does
@@ -370,12 +382,16 @@ not veto it either; one whose repository crew cannot tell (`--git-dir`,
 judged as before.
 
 What a receipt cannot prove: the store (`~/.claude/crew/confirm-config/`) is
-plain files. The scope guard refuses a Write/Edit into it, and a shell command
-naming it beside a writing word, while `scope.mode` is on; a process that runs
-arbitrary code as you can still write a whole, well-formed record. And git runs
-programs the repository itself configures (hooks, a persistent `alias.*` or
-`core.sshCommand` set earlier): crew reads only the command line, so under
-`"all"` those run as they would with crew absent.
+plain files. It is protected from an agent's writes ONLY while `scope.mode` is
+on: then the scope guard refuses a Write/Edit into it, and a shell command
+naming it beside a writing word. With `scope.mode` off nothing stops an agent
+writing a receipt, and even with it on a process that runs arbitrary code as
+you can write a whole, well-formed record. And `"all"` does not stop what git
+runs from its own persistent configuration: hooks (`.git/hooks/`,
+`core.hooksPath`), aliases (`alias.*` set in a config file earlier), and
+`core.sshCommand`, `core.pager`, `core.editor`, filters and the like all run
+under `"all"` exactly as they would with crew absent. crew reads only the
+command line, never git's config files or hooks.
 
 `python3 hooks/scripts/crew_gitallow.py --root .` prints what is in force.
 Each pass is logged to `.crew/guard.log` with the policy `gitAllow:<value>`.

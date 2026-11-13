@@ -603,15 +603,21 @@ A listed subcommand passes with every option it takes: listing <code>push</code>
 lets <code>git push --force</code> through. It loosens the force-push rule, the mass
 stop's git counts and the promote gate for a line of only git commands, and
 nothing else (a git command carrying <code>-c</code>, a <code>GIT_*</code> variable or a command to
-run, such as <code>rebase --exec</code>, is never exempt): a declared deploy that is
+run, such as <code>rebase --exec</code> or its abbreviation <code>--exe</code>, is never exempt, nor
+is one with a word built when it runs, such as <code>"$OPT"</code>, or one <code>xargs</code> runs):
+a declared deploy that is
 itself a git command stays gated, and <code>gh</code> (<code>--admin</code> merges, branch
 protection, workflow dispatches) is untouched. It is off by default, lives in
 the machine file only, and takes effect only after you type
 <code>/crew:confirm-config &lt;id&gt;</code> twice for a proposal
 (<code>crew_confirm_config.py propose --layer machine --key guards.git.allow
 --value '"all"'</code>), and only while the machine file is still the file that
-confirmation left: a hand edit turns it off. The configuration reference's
-"Git commands" section has the rules.</p>
+confirmation left: a hand edit turns it off, and so does a copy put back
+with <code>cp -p</code> (on Windows a <code>Copy-Item</code> copy put back is the one restore crew
+cannot tell apart). The receipts are protected from an agent's writes only
+while <code>scope.mode</code> is on, and <code>"all"</code> does not stop git's own hooks, aliases
+or <code>core.sshCommand</code> set in a config file: those run as if crew were absent.
+The configuration reference's "Git commands" section has the rules.</p>
 <ul>
 <li><code>/crew:config</code> shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.</li>

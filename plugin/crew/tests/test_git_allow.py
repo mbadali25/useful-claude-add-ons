@@ -394,9 +394,12 @@ def test_two_confirmations_turn_it_on(tmp_path, machine):
     assert _setting(root) == "all"
 
 
-def test_a_crew_write_back_to_off_revokes_the_receipt(tmp_path, machine):
+def test_a_crew_write_back_to_off_revokes_the_receipt(tmp_path, machine, monkeypatch):
     """Even the confirmed bytes AND modification time put back by hand stay
-    off once crew's writer turned it off: the revocation is newer."""
+    off once crew's writer turned it off: the revocation is newer. The change
+    time is pinned so the binding matches and the revocation alone holds it
+    off (a Windows CopyFile restore carries the change time over too)."""
+    monkeypatch.setattr(crew_gitallow, "_change_ns", lambda handle, stat: 0)
     root = make_repo(tmp_path, mode=None)
     gpath = str(machine)
     _confirm(machine, "all")
@@ -668,14 +671,16 @@ def test_an_unconfirmed_all_still_refuses_force_push(tmp_path, machine):
     assert _evaluate(root, "git push --force origin main")["decision"] == "deny"
 
 
-def test_xargs_git_unseen_subcommand_passes_only_under_all(tmp_path, machine):
+def test_xargs_git_is_never_exempt(tmp_path, machine):
+    """Review round 2: the words xargs appends may carry `--receive-pack` or
+    `-c`, so `xargs git` is held under every value, `all` included."""
     root = make_repo(tmp_path, mode=None)
     command = "echo push | xargs git"
     assert _evaluate(root, command)["decision"] == "deny"
     _arm(machine, ["push"])
     assert _evaluate(root, command)["decision"] == "deny", "an unseen subcommand is not listed"
     _arm(machine, "all")
-    assert _evaluate(root, command)["decision"] == "allow"
+    assert _evaluate(root, command)["decision"] == "deny"
 
 
 def test_report_mode_records_the_exemption(tmp_path, machine):
@@ -786,11 +791,16 @@ def test_the_switch_never_covers_gh(tmp_path, machine, command, monkeypatch):
 @pytest.mark.parametrize("command,shell,setting,expect", [
     ("git commit -m 'deploy-prod'", "bash", "all", True),
     ("git commit -F - <<'EOF'\nrun deploy-prod, then cd x\nEOF\n", "bash", "all", True),
-    ("git -C /x commit -m \"$(git rev-parse HEAD)\"", "bash", "all", True),
+    # A substitution running only git still builds a word at run time
+    # (review round 2): `git config` output may be `--receive-pack=...`.
+    ("git -C /x commit -m \"$(git rev-parse HEAD)\"", "bash", "all", False),
     ("git status && deploy-prod", "bash", "all", False),
     ("git log $(deploy-prod)", "bash", "all", False),
     ("git log `deploy-prod`", "bash", "all", False),
-    ("git log \"`git rev-parse HEAD`\"", "bash", "all", True),
+    # A substitution in a redirection target is in no word `hold` reads.
+    ("git status > \"$(deploy-prod)\"", "bash", "all", False),
+    ("git status > `deploy-prod`", "bash", "all", False),
+    ("git log \"`git rev-parse HEAD`\"", "bash", "all", False),
     ("GIT_DIR=/x git push", "bash", "all", False),
     ("git commit -m 'x' | tee log", "bash", "all", False),
     ("git commit -m 'unclosed", "bash", "all", False),
@@ -933,6 +943,172 @@ def test_dispatch_prints_the_allow_record_for_powershell(tmp_path, machine, monk
     assert capsys.readouterr().out == "allow\tguards.git.allow\n"
     _promote_dispatch.main(["x", "--shell", "bash", "git commit --allow-empty -m 'deploy-prod'"])
     assert "allow\t" not in capsys.readouterr().out, "the bash gate asks crew_gitallow itself"
+
+
+# --- review round 2 (Codex gpt-6-sol, crew 1.3.73) ----------------------------------------
+
+# BLOCK 1: git takes any unambiguous prefix of a long option.
+ABBREVIATED = [
+    "git rebase --exe 'terraform apply' HEAD~1",
+    "git rebase -i --ex 'terraform apply' HEAD~1",
+    "git push --receive='terraform apply' origin main",
+    "git push --receive 'terraform apply' origin main",
+    "git fetch --upload='terraform apply' origin",
+    "git grep --open 'terraform apply' foo",
+    "git difftool --extc='terraform apply'",
+    "git clone --temp=/tmp/evil a b",
+    "git clone --conf=core.sshCommand=x a b"]
+NOT_ABBREVIATED = [
+    "git push --force-with-lease origin main", "git push --recurse-submodules=check origin main",
+    "git rebase --empty=drop main", "git fetch --unshallow origin", "git grep --or foo"]
+
+
+@pytest.mark.parametrize("shell", ["bash", "powershell"])
+@pytest.mark.parametrize("command", ABBREVIATED)
+def test_an_abbreviated_option_that_runs_a_command_is_held(command, shell):
+    assert crew_gitallow.line_exempt(command, shell, "all") is False
+
+
+@pytest.mark.parametrize("shell", ["bash", "powershell"])
+@pytest.mark.parametrize("command", NOT_ABBREVIATED)
+def test_a_long_option_that_is_no_prefix_of_a_held_one_is_exempt(command, shell):
+    """Must-allow neighbours: not a prefix of any held option."""
+    assert crew_gitallow.line_exempt(command, shell, "all") is True
+
+
+@pytest.mark.parametrize("tool,command", [
+    ("Bash", "git push --force --receive=x origin main"),
+    ("PowerShell", "git push --force --rec=x origin main"),
+    ("Bash", "git push --force \"${PACK:---receive-pack=terraform apply}\" origin main"),
+    ("Bash", "git push --force $OPT origin main"),
+    ("PowerShell", "git push --force $env:OPT origin main"),
+    ("Bash", "echo main | xargs git push --force origin"),
+    ("Bash", "echo --receive-pack=x | xargs git push --force origin main"),
+    ("Bash", "echo push | xargs git")])
+def test_a_force_push_crew_cannot_read_whole_stays_refused_with_all(tmp_path, machine, tool,
+                                                                     command):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    result = _evaluate(root, command, tool)
+    assert result["decision"] == "deny", result
+    assert not any(r[1].startswith("gitAllow") for r in result["rows"]), result
+
+
+# BLOCK 2: a word built at run time (or appended by xargs) may become any option.
+@pytest.mark.parametrize("command,shell", [
+    ("git push \"$OPT\" origin main", "bash"),
+    ("git push --force \"${PACK:---receive-pack=terraform apply}\" origin main", "bash"),
+    ("git \"$X\" status", "bash"),
+    ("git push $env:OPT origin main", "powershell"),
+    ("git push \"$x\" origin main", "powershell"),
+    ("git push @opts origin main", "powershell")])
+def test_a_word_built_at_run_time_is_never_exempt(command, shell):
+    assert crew_gitallow.line_exempt(command, shell, "all") is False
+
+
+@pytest.mark.parametrize("shell", ["bash", "powershell"])
+def test_a_bare_at_sign_is_not_a_splat(shell):
+    """Must-allow neighbour: git's `@` (HEAD) is a literal."""
+    assert crew_gitallow.line_exempt("git push origin @", shell, "all") is True
+
+
+# FIX 3: a repo file that is there but cannot be resolved vetoes.
+def _symlink_or_skip(link, target, directory=False):
+    try:
+        os.symlink(target, link, target_is_directory=directory)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"cannot create a symlink here: {exc}")
+
+
+def test_a_dangling_repo_config_link_is_a_veto(tmp_path, machine):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    _symlink_or_skip(root / ".crew" / "config.json", tmp_path / "nowhere.json")
+    got = crew_gitallow.settings(str(root))
+    assert got["allow"] == "off" and "veto" in got["why"], got
+
+
+def test_a_dangling_crew_dir_link_is_a_veto(tmp_path, machine):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    (root / ".crew").rmdir()
+    _symlink_or_skip(root / ".crew", tmp_path / "nowhere", directory=True)
+    assert _setting(root) == "off"
+
+
+def test_a_crew_path_that_is_a_file_is_a_veto(tmp_path, machine):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    (root / ".crew").rmdir()
+    (root / ".crew").write_text("not a directory", encoding="utf-8")
+    assert _setting(root) == "off"
+
+
+def test_no_crew_dir_at_all_is_no_veto(tmp_path, machine):
+    """Must-allow neighbour: a repo with no `.crew/` is absent, not unreadable."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    (root / ".crew").rmdir()
+    assert _setting(root) == "all"
+
+
+# FIX 4: a copy of the confirmed file put back with its bytes AND modification
+# time (`cp -p`) still reads as changed: the binding carries the change time.
+def test_a_copy_put_back_with_its_mtime_is_off(tmp_path, machine):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    confirmed, stat = machine.read_bytes(), os.stat(machine)
+    machine.write_text(json.dumps({"guards": {"git": {"allow": "off"}}}), encoding="utf-8")
+    time.sleep(0.05)
+    machine.write_bytes(confirmed)
+    os.utime(machine, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    now = crew_gitallow.file_binding(str(machine))
+    bound = _applied(machine)["binding"]
+    assert {k: now[k] for k in ("appliedDigest", "appliedSize", "appliedMtimeNs")} == \
+        {k: bound[k] for k in ("appliedDigest", "appliedSize", "appliedMtimeNs")}
+    got = crew_gitallow.settings(str(root))
+    assert got["allow"] == "off" and "changed since that confirmation" in got["why"], got
+
+
+def test_a_binding_without_a_change_time_is_not_whole(tmp_path, machine):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    record = _applied(machine)
+    binding = dict(record["binding"])
+    binding.pop("appliedChangeNs")
+    crew_humanonly.write_record(_store(machine), dict(record, binding=binding,
+                                                      settled=record["settled"] + 1))
+    assert _setting(root) == "off"
+
+
+def test_an_unknown_change_time_is_off(tmp_path, machine, monkeypatch):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    monkeypatch.setattr(crew_gitallow, "_change_ns", lambda handle, stat: None)
+    assert _setting(root) == "off"
+
+
+# FIX 5: bash's quote removal, not "drop every quote".
+@pytest.mark.parametrize("command,expect", [
+    ("\"./g'it\" push --force origin main", False),
+    ("'g\"it' status", False),
+    ("\"git\" push --force origin main", True),
+    ("'git' status", True)])
+def test_a_quote_inside_the_program_name_is_not_git(command, expect):
+    assert crew_gitallow.line_exempt(command, "bash", "all") is expect
+
+
+# FIX 6: a git finding's scope is not a terraform scope.
+@pytest.mark.parametrize("policy", ["ask", "allow"])
+@pytest.mark.parametrize("command", ["git push --force origin main", "echo push | xargs git"])
+def test_a_force_push_under_a_looser_policy_does_not_crash(tmp_path, machine, policy, command):
+    root = make_repo(tmp_path, mode=None)
+    overrides = {"guards": {"overrides": {"forcePush": policy}}}
+    machine.write_text(json.dumps(overrides), encoding="utf-8")
+    (root / ".crew" / "config.json").write_text(json.dumps(overrides), encoding="utf-8")
+    result = _evaluate(root, command)
+    rows = [r for r in result["rows"] if r[0] == "forcePush"]
+    assert rows and not any(r[1].startswith("gitAllow") for r in rows), result
 
 
 # --- the mutation table ----------------------------------------------------------------
