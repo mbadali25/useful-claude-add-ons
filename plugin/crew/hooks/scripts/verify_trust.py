@@ -522,15 +522,15 @@ def repo_identity(root):
             raise TrustError("git could not identify the repository this directory belongs to")
         return os.path.realpath(root), None
     top = os.path.realpath(top.strip())
-    if not _gitfile_backlink_ok(top):
-        # A `.git` FILE that names a git dir which does not name this directory back
-        # is hand-written (round 10): git would report the NAMED repository's
-        # identity, and a hash approval keyed by it would cover this directory's
-        # own, different bytes. Such a directory is judged by its own path alone.
-        return os.path.realpath(root), None
     common = out.strip()
     if not os.path.isabs(common):
         common = os.path.join(root, common)
+    if not _identity_confirmed(root, top, common):
+        # A `.git` that names an identity this directory cannot confirm from a record
+        # it does not write (round 11) is hand-written: git would report the NAMED
+        # repository's identity, and a hash approval keyed by it would cover this directory's
+        # own, different bytes. Such a directory is judged by its own path alone.
+        return os.path.realpath(root), None
     common = os.path.realpath(common)
     identity = os.path.dirname(common) if os.path.basename(common) == ".git" else common
     return identity, top
@@ -600,40 +600,75 @@ def _under(path, parents):
     return False
 
 
-def _gitfile_backlink_ok(top):
-    """True when `top/.git` is a directory, or a `.git` FILE whose gitdir names
-    this directory back: a linked worktree's gitdir holds a `gitdir` file
-    pointing at `top/.git`, and a submodule's config names `top` as
-    `core.worktree`. A hand-written `gitdir: <trusted repo>/.git` file has
-    neither, and would otherwise borrow that repo's identity (its remotes for
-    owner trust, its approved bytes for hash approval) while its own verify.json
-    is what the gate runs. `repo_identity` applies it, so every path that keys
-    on the identity is covered by the one test."""
+def _same(a, b):
+    """True when two paths are the very same filesystem object (`samefile`
+    reads the inode, so case, Unicode form, `..`, dot segments and a trailing
+    slash cannot make two spellings differ or a forged one match)."""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def _first_line(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            return handle.readline().strip()
+    except OSError:
+        return None
+
+
+def _identity_confirmed(root, top, common):
+    """True when the repository identity git reports for `top` is confirmed
+    from a record the directory itself cannot write. Git resolves the identity
+    (`common`) from whatever the directory's own `.git` says, and a hostile
+    directory writes that freely: a `.git` directory or symlink, or a gitfile
+    to its own admin directory, each naming a trusted repo as `commondir`. So
+    the identity is accepted only in these three layouts:
+      1. a plain repository: `<top>/.git` is a real directory (never a symlink),
+         it is git's own git dir, and it names no `commondir`;
+      2. a linked worktree: `<top>/.git` is a gitfile naming `<common>/worktrees/
+         <name>` and that admin directory's own
+         `gitdir` record (written by the main repository, not by this directory)
+         names `<top>/.git`;
+      3. a submodule: `<top>/.git` is a gitfile naming a git dir under a
+         `.git/modules/` tree, whose config names `top` as
+         `core.worktree` and which names no `commondir`.
+    Anything else, a `commondir` or `core.worktree` the directory wrote itself
+    included, is judged by its own path alone (the caller). A directory that
+    controls the process launching the gate is out of scope (documented)."""
     dot_git = os.path.join(top, ".git")
+    own = _git(root, "rev-parse", "--absolute-git-dir")
+    if own is None:
+        return False
+    gitdir = os.path.realpath(own.strip())
+    common = os.path.realpath(common)
+    if os.path.islink(dot_git):
+        return False
     if os.path.isdir(dot_git):
-        return True
-    try:
-        with open(dot_git, encoding="utf-8", errors="replace") as handle:
-            head = handle.readline().strip()
-    except OSError:
+        return (_same(gitdir, dot_git) and _same(common, dot_git)
+                and not os.path.lexists(os.path.join(dot_git, "commondir")))
+    head = _first_line(dot_git) if os.path.isfile(dot_git) else None
+    if head is None or not head.startswith("gitdir:"):
         return False
-    if not head.startswith("gitdir:"):
+    named = os.path.join(top, head[len("gitdir:"):].strip())
+    if not _same(named, gitdir):
         return False
-    gitdir = os.path.realpath(os.path.join(top, head[len("gitdir:"):].strip()))
-    me = os.path.realpath(dot_git)
-    try:
-        with open(os.path.join(gitdir, "gitdir"), encoding="utf-8", errors="replace") as handle:
-            if os.path.realpath(os.path.join(gitdir, handle.readline().strip())) == me:
-                return True
-    except OSError:
-        pass
+    if gitdir != common:
+        admin = os.path.dirname(gitdir)
+        if os.path.basename(admin) != "worktrees" or not _same(os.path.dirname(admin), common):
+            return False
+        record = _first_line(os.path.join(gitdir, "gitdir"))
+        return bool(record) and _same(os.path.join(gitdir, record), dot_git)
+    if os.path.lexists(os.path.join(gitdir, "commondir")) \
+            or os.sep + ".git" + os.sep + "modules" + os.sep not in gitdir + os.sep:
+        return False
     try:
         with open(os.path.join(gitdir, "config"), encoding="utf-8", errors="replace") as handle:
             for line in handle:
                 key, _, value = line.partition("=")
                 if key.strip().lower() == "worktree" and value.strip():
-                    if os.path.realpath(os.path.join(gitdir, value.strip())) == os.path.realpath(top):
-                        return True
+                    return _same(os.path.join(gitdir, value.strip()), top)
     except OSError:
         pass
     return False

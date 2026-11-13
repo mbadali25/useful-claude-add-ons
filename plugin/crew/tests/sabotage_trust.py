@@ -415,7 +415,7 @@ TRUST_MUTATIONS = (
      '                if parts[index] == ".git" and parts[index + 1] == "modules":', '                if False:',
      _T + "test_store_a_trust_file_in_the_superproject_of_a_submodule_is_refused"),
     ("trust store: a hand-written .git file borrows a trusted repo's remotes (L-0888, round 9)", TRUST,
-     "    if not _gitfile_backlink_ok(top):\n", "    if False:\n",
+     "    if not _identity_confirmed(root, top, common):\n", "    if False:\n",
      _T + "test_owner_trust_a_hand_written_git_file_naming_a_trusted_repo_is_not_trusted"),
     ("trust store: a pid that does not fit pid_t escapes os.kill as OverflowError (L-0888, round 10)", TRUST,
      '    if os.name != "nt" and 2 ** 31 <= pid < 2 ** 32:\n', '    if False:\n',
@@ -425,7 +425,7 @@ TRUST_MUTATIONS = (
      _T + "test_lock_a_pid_beyond_any_real_process_id_is_dead_without_a_system_call"),
     # ---- round 10 (L-0888)
     ("trust store: a hand-written .git file shares an approved repo's HASH approval (L-0888, round 10)", TRUST,
-     "    if not _gitfile_backlink_ok(top):\n", "    if False:\n",
+     "    if not _identity_confirmed(root, top, common):\n", "    if False:\n",
      _T + "test_hash_approval_a_hand_written_git_file_naming_an_approved_repo_is_not_trusted"),
     ("trust gate: the pre-trust PATH is the user's own, repo entries included (L-0888, round 10)", GATE,
      '  PATH="${GATE_SAFE_PATH:-/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin:'
@@ -468,4 +468,19 @@ TRUST_MUTATIONS = (
      "                index += 2 if tokens[index] in takes_value else 1\n",
      "                index += 1\n",
      _S_ + "test_a_spelled_out_trust_change_is_refused"),
+    # ---- round 11 (L-0888)
+    ("trust store: a .git directory is a plain repository whatever commondir it names (L-0888, round 11)", TRUST,
+     '        return (_same(gitdir, dot_git) and _same(common, dot_git)\n'
+     '                and not os.path.lexists(os.path.join(dot_git, "commondir")))\n', '        return True\n',
+     _T + "test_hash_approval_a_forged_git_layout_never_borrows_an_approved_repo"),
+    ("trust store: a symlinked .git is followed as a plain repository (L-0888, round 11)", TRUST,
+     '    if os.path.islink(dot_git):\n        return False\n', '',
+     _T + "test_hash_approval_a_git_symlink_to_a_different_trusted_repo_is_not_trusted"),
+    ("trust store: a worktree's own admin dir stands in for the main repository's record (L-0888, round 11)", TRUST,
+     '        return bool(record) and _same(os.path.join(gitdir, record), dot_git)\n', '        return True\n',
+     _T + "test_hash_approval_a_gitfile_naming_a_real_worktrees_admin_dir_is_not_that_worktree"),
+    ("trust store: a core.worktree the directory wrote is believed (L-0888, round 11)", TRUST,
+     '        return False\n    try:\n        with open(os.path.join(gitdir, "config")',
+     '        return True\n    try:\n        with open(os.path.join(gitdir, "config")',
+     _T + "test_hash_approval_a_forged_git_layout_never_borrows_an_approved_repo"),
 )

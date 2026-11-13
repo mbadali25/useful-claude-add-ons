@@ -1235,7 +1235,160 @@ def test_hash_approval_a_real_linked_worktree_shares_the_approval(tmp_path, stor
 def test_hash_approval_a_real_submodule_is_approved_by_its_own_identity(tmp_path, store):
     _sup, mod = _submodule(tmp_path)
     assert (mod / ".git").is_file()
-    assert verify_trust._gitfile_backlink_ok(str(mod.resolve())) is True
+    top = str(mod.resolve())
+    identity, found_top = verify_trust.repo_identity(str(mod))
+    assert found_top == top and identity.endswith(os.path.join(".git", "modules", "mod"))
     assert _approve(mod) == 0
 
     assert _code(mod) == verify_trust.EXIT_TRUSTED
+
+
+# ------------------------------------------- round 11: the identity is confirmed by the other side
+
+_FORGES = ("dir_commondir", "dir_commondir_config", "symlink", "gitfile_selfadmin_gitdir",
+           "gitfile_selfadmin_worktree", "gitfile_relative_dotdot", "gitfile_dot_segments",
+           "gitfile_trailing_slash", "gitfile_upper_case")
+
+
+def _forge(tmp_path, trusted, kind, name=None):
+    """A directory with `trusted`'s verify.json bytes whose own `.git` claims `trusted`'s
+    identity, in one of the layouts a hostile repository can write without touching `trusted`."""
+    bad = tmp_path / (name or "forged_" + kind)
+    (bad / ".crew").mkdir(parents=True)
+    (bad / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    real = str(trusted / ".git")
+    if kind in ("dir_commondir", "dir_commondir_config"):
+        (bad / ".git").mkdir()
+        (bad / ".git" / "HEAD").write_text("ref: refs/heads/master\n", encoding="utf-8")
+        (bad / ".git" / "commondir").write_text(real + "\n", encoding="utf-8")
+        if kind == "dir_commondir_config":
+            (bad / ".git" / "config").write_text(
+                f"[core]\n\trepositoryformatversion = 0\n\tworktree = {bad}\n", encoding="utf-8")
+    elif kind == "symlink":
+        os.symlink(real, bad / ".git")
+    elif kind in ("gitfile_selfadmin_gitdir", "gitfile_selfadmin_worktree"):
+        (bad / "gd").mkdir()
+        (bad / ".git").write_text("gitdir: gd\n", encoding="utf-8")
+        (bad / "gd" / "HEAD").write_text("ref: refs/heads/master\n", encoding="utf-8")
+        (bad / "gd" / "commondir").write_text(real + "\n", encoding="utf-8")
+        if kind == "gitfile_selfadmin_gitdir":
+            (bad / "gd" / "gitdir").write_text(str(bad / ".git") + "\n", encoding="utf-8")
+        else:
+            (bad / "gd" / "config").write_text(f"[core]\n\tworktree = {bad}\n", encoding="utf-8")
+    elif kind == "gitfile_relative_dotdot":
+        (bad / ".git").write_text(f"gitdir: ../{trusted.name}/.git\n", encoding="utf-8")
+    elif kind == "gitfile_dot_segments":
+        (bad / ".git").write_text(f"gitdir: {trusted}/./../{trusted.name}/./.git\n", encoding="utf-8")
+    elif kind == "gitfile_trailing_slash":
+        (bad / ".git").write_text(f"gitdir: {real}/\n", encoding="utf-8")
+    else:
+        (bad / ".git").write_text(f"gitdir: {real.upper()}\n", encoding="utf-8")
+    return bad
+
+
+@pytest.mark.parametrize("kind", _FORGES)
+def test_hash_approval_a_forged_git_layout_never_borrows_an_approved_repo(tmp_path, store, kind):
+    """Round 11: each layout a hostile directory can write by itself, a `.git` directory or
+    symlink or a gitfile to its own admin directory naming the approved repo as `commondir`,
+    reports the approved repo's identity to git. None of them is that repo."""
+    trusted = _repo(tmp_path, name="approved")
+    assert _approve(trusted) == 0
+    bad = _forge(tmp_path, trusted, kind)
+
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+    assert verify_trust.main(["check", "--root", str(bad)]) != 0
+    assert _code(trusted) == verify_trust.EXIT_TRUSTED
+
+
+@pytest.mark.parametrize("kind", _FORGES)
+def test_owner_trust_a_forged_git_layout_never_borrows_a_trusted_repos_remotes(
+        tmp_path, store, kind):
+    """The same layouts borrow an allowlisted remote when the owner is allowed: the identity
+    must come from the directory's own git dir, not from a `commondir` it wrote."""
+    trusted = _repo(tmp_path, name="approved", remotes=[_OK_URL])
+    assert _allow() == 0
+    assert _code(trusted) == verify_trust.EXIT_TRUSTED
+    bad = _forge(tmp_path, trusted, kind)
+    (bad / ".crew" / "verify.json").write_text(
+        json.dumps({"version": 1, "rules": [{"paths": ["a.py"], "run": ["echo hostile"]}]}),
+        encoding="utf-8")
+
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_git_symlink_to_a_different_trusted_repo_is_not_trusted(tmp_path, store):
+    one = _repo(tmp_path, name="one")
+    two = _repo(tmp_path, name="two")
+    assert _approve(one) == 0
+    assert _approve(two) == 0
+    bad = _forge(tmp_path, one, "symlink")
+
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_gitfile_naming_a_real_worktrees_admin_dir_is_not_that_worktree(
+        tmp_path, store):
+    """The other side's record decides: `<main>/.git/worktrees/lane/gitdir` names the lane's
+    `.git`, so a different directory naming that admin dir is not the lane."""
+    main = _repo(tmp_path, name="main")
+    _git(main, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q",
+         "--allow-empty", "-m", "x")
+    lane = tmp_path / "lane"
+    _git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    assert _approve(main) == 0
+    bad = tmp_path / "impostor"
+    (bad / ".crew").mkdir(parents=True)
+    (bad / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    (bad / ".git").write_text(f"gitdir: {main / '.git' / 'worktrees' / 'lane'}\n", encoding="utf-8")
+
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_directory_nested_in_a_trusted_tree_with_a_forged_gitfile_is_refused(
+        tmp_path, store):
+    main = _repo(tmp_path, name="main")
+    assert _approve(main) == 0
+    nested = main / "sub"
+    (nested / ".crew").mkdir(parents=True)
+    (nested / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    (nested / ".git").write_text("gitdir: ../.git\n", encoding="utf-8")
+
+    assert _code(nested) != verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_real_worktree_nested_inside_the_trusted_tree_shares_the_approval(
+        tmp_path, store):
+    main = _repo(tmp_path, name="main")
+    _git(main, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q",
+         "--allow-empty", "-m", "x")
+    lane = main / "wt" / "lane"
+    _git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    (lane / ".crew").mkdir(exist_ok=True)
+    (lane / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    assert _approve(main) == 0
+
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_plain_repo_and_a_standalone_directory_still_work(tmp_path, store):
+    plain = _repo(tmp_path, name="plain")
+    plain_dir = tmp_path / "standalone"
+    (plain_dir / ".crew").mkdir(parents=True)
+    (plain_dir / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+
+    assert _approve(plain) == 0
+    assert _approve(plain_dir) == 0
+    assert _code(plain) == verify_trust.EXIT_TRUSTED
+    assert _code(plain_dir) == verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_submodule_with_a_hand_written_commondir_is_refused(tmp_path, store):
+    """A real submodule's git dir is not an admin dir: a `commondir` added to it by the
+    directory is what a forger writes, so the submodule layout no longer holds."""
+    sup, mod = _submodule(tmp_path)
+    assert _approve(mod) == 0
+    gitdir = sup / ".git" / "modules" / "mod"
+    (gitdir / "commondir").write_text(str(sup / ".git") + "\n", encoding="utf-8")
+
+    top = str(mod.resolve())
+    assert verify_trust._identity_confirmed(top, top, str(sup / ".git")) is False  # pylint: disable=protected-access
