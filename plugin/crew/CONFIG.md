@@ -93,19 +93,21 @@ meaningful only with `scope.mode` `block`.
 
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.87) turns EVERY guard hook off: the promote
+`guards.enabled: false` (crew 1.3.89) turns EVERY guard hook off: the promote
 gate, the role-write, cloud, environment and scope guards, the verify gate and
 the completion audit. None of them starts, so nothing is judged, refused, asked
 or logged. It beats every per-guard setting (`guards.profile`,
-`guards.overrides.*`, `scope.mode`, `verifyGate`), and `false` in EITHER layer
-(`.crew/config.json` or `~/.claude/crew/config.json`) is enough; neither layer
-can switch it back on over the other. Only the JSON literal `false` counts: an
+`guards.overrides.*`, `scope.mode`, `verifyGate`), and `false` in the MACHINE layer
+(`~/.claude/crew/config.json`) is the only one that counts: a `false` in
+`.crew/config.json`, tracked or not, is ignored and the guards stay on (a checkout
+must not be able to turn every guard off), and a repo `true` cannot switch a machine
+`false` back on. Only the JSON literal `false` counts: an
 absent key, `null`, `true`, a string, a corrupt file or a `guards` that is not an
 object leaves the guards on. It takes effect on the next hook call, with no
 reinstall. `/crew:approve` and `/crew:confirm-config` keep working, so the
 `humanOnly.*` opt-out still works with the guards off. It needs python: with
 none, the bash launcher still fails closed in an armed repo. To go back, delete
-the key or set it to `true` in every layer that holds `false`.
+the key or set it to `true` in the machine file.
 
 ## Guard profiles
 
@@ -221,7 +223,7 @@ SessionStart notice).
 |---|---|---|---|---|
 | `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `hooks/scripts/crew_guards.py`) | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
-| `guards.enabled` | both | `true` | `true` \| `false` (checked in `hooks/scripts/crew_hook.py`) | The master switch for every guard hook. `false` in EITHER layer stands them all down (the cloud, environment, role-write, scope, promote and verify guards, and the completion audit): nothing is judged, refused or logged, whatever `guards.profile`, `guards.overrides.*`, `scope.mode` or `verifyGate` say. Only the JSON literal `false` turns them off; absent, `true` or anything unreadable leaves them on. `/crew:approve` and `/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. Needs python: with none the guards still fail closed. |
+| `guards.enabled` | machine-only | `true` | `true` \| `false` (checked in `hooks/scripts/crew_hook.py`) | The master switch for every guard hook, read from the machine file ALONE. `false` there stands them all down (the cloud, environment, role-write, scope, promote and verify guards, and the completion audit): nothing is judged, refused or logged, whatever `guards.profile`, `guards.overrides.*`, `scope.mode` or `verifyGate` say. A `false` in `.crew/config.json` is refused by the writer and ignored by the dispatcher, so a checkout cannot turn every guard off. Only the JSON literal `false` turns them off; absent, `true` or anything unreadable leaves them on. `/crew:approve` and `/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. Needs python: with none the guards still fail closed. |
 
 ## `cloud` keys (13)
 

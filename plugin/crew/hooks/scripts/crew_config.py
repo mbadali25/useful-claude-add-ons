@@ -1988,6 +1988,11 @@ def _layer_supplies(layer, parts, defaults):
 
 _AUTOCLEAR_MACHINE_ONLY_PATHS = tuple(
     "context.autoClear." + key for key in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
+# Leaves a reader takes from the machine file ALONE: the auto-clear scopes, and `guards.enabled` (crew 1.3.90,
+# owner decision 2026-11-13: a checkout must not be able to turn every guard off; `crew_hook.guards_switched_off`
+# reads the machine layer only). A repo copy is refused by the writers, named "not in effect" by `explain_config`
+# and reported by `inert_settings`.
+_MACHINE_ONLY_LEAVES = _AUTOCLEAR_MACHINE_ONLY_PATHS + ("guards.enabled",)
 
 
 def _without_machine_only(repo_cfg):
@@ -2109,7 +2114,7 @@ def explain_config(root, path=None, all_keys=False):
                 "global": personal["global"],
             })
             continue
-        if dotted in _AUTOCLEAR_MACHINE_ONLY_PATHS:
+        if dotted in _MACHINE_ONLY_LEAVES:
             # `crew_autocycle.settings` and `auto-clear.ps1` read onlyRepos
             # / onlySessions from the machine file ONLY -- a repo's own copy
             # is never consulted (AUTOCLEAR_DEFAULTS's comment: a narrowing a
@@ -2453,12 +2458,13 @@ def inert_settings(root, path=None):
         pending = INERT_PENDING.get(dotted)
         # Any repo value, `[]` and `""` included (an empty scope matches
         # nothing, so it would narrow everything if it were read).
-        if dotted in _AUTOCLEAR_MACHINE_ONLY_PATHS and _dig(repo_cfg, parts) not in (
-                None, _MISSING):
+        if dotted in _MACHINE_ONLY_LEAVES and _dig(repo_cfg, parts) not in (
+                None, _MISSING) and _dig(repo_cfg, parts) is not _REPO_QUIET.get(dotted, _MISSING):
             # Read from the machine file only (crew_autocycle.settings): a
             # repo value narrows nothing.
             entries[(dotted, "inert")] = {
-                "key": dotted, "value": _dig(repo_cfg, parts), "effect": _REPO_IGNORED_EFFECT,
+                "key": dotted, "value": _dig(repo_cfg, parts),
+                "effect": _REPO_IGNORED_EFFECTS.get(dotted, _REPO_IGNORED_EFFECT),
                 "ticket": None,
                 "kind": "repo-ignored", "layer": "repo"}
             continue
@@ -2538,6 +2544,10 @@ def _escaped(text):
 
 _REPO_IGNORED_EFFECT = ("read from the machine file only (~/.claude/crew/config.json): "
                         "a repo value narrows nothing")
+# A repo value that is the key's own default says nothing and is not reported (the shipped repo template carries it).
+_REPO_QUIET = {"guards.enabled": True}
+_REPO_IGNORED_EFFECTS = {"guards.enabled": (
+    "read from the machine file only (~/.claude/crew/config.json): a repo value stands no guard down")}
 
 
 def _unreadable_config(path):
@@ -3329,7 +3339,8 @@ def enum_values(dotted):
     if dotted == "guards.profile":
         return tuple(crew_state.GUARD_PROFILES)
     if dotted == "guards.enabled":
-        # only the JSON literal `false` switches the guards off (crew_hook.guards_switched_off): refuse a string
+        # only the JSON literal `false` switches the guards off (crew_hook.guards_switched_off): refuse a string.
+        # Machine layer only (`_MACHINE_ONLY_LEAVES`): the repo writer refuses the key outright.
         return (True, False)
     if dotted.startswith(_OVERRIDE_PREFIX):
         name = dotted[len(_OVERRIDE_PREFIX):]
@@ -3854,7 +3865,7 @@ if "scope.allowCliApproval" in REPO_REFUSED:
 REPO_REFUSED.update({
     path: "read from the machine-global file only; a repo value would do "
           "nothing"
-    for path in _AUTOCLEAR_MACHINE_ONLY_PATHS
+    for path in _MACHINE_ONLY_LEAVES
 })
 
 # Keys whose readers ARM only from the machine file. A repo may veto them
@@ -3878,9 +3889,6 @@ _REPO_WIDENING = {
     ("verifyGate", False): (
         "the verify gate stops holding the session at Stop for unverified "
         "changed paths"),
-    ("guards.enabled", False): (
-        "EVERY guard stands down (cloud, environment, role-write, scope, promote, verify gate, "
-        "completion audit): nothing is blocked or logged, whatever the profile and overrides say"),
     ("scope.mode", "off"): (
         "the plan-approval scope guard and the completion audit stand down: "
         "edits outside an approved plan's Touch list are no longer blocked"),

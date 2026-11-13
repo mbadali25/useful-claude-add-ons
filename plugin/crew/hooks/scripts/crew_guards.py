@@ -241,8 +241,8 @@ GUARD_PROFILES = ("off", "standard", "strict")
 # the profile at `off` (= `GUARD_DEFAULTS`) and an empty overrides table. The
 # twelve per-guard names are no longer config keys; a file that still holds
 # them is read as a legacy alias (`layer_guard_state`) until `/crew:migrate`.
-# `enabled` (crew 1.3.88) is the master switch, not a guard: `false` in EITHER layer stops every
-# guard hook starting (`crew_hook.guards_switched_off`), whatever the profile and overrides say; anything else, an
+# `enabled` (crew 1.3.90) is the master switch, not a guard: `false` in the MACHINE layer ALONE stops every
+# guard hook starting (a repo-layer `false` is ignored, owner decision 2026-11-13) (`crew_hook.guards_switched_off`), whatever the profile and overrides say; anything else, an
 # absent key included, leaves the guards on.
 GUARD_BLOCK_DEFAULTS = {
     "profile": "off", "overrides": {}, "enabled": True}

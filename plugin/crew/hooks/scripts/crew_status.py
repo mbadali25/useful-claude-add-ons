@@ -486,6 +486,9 @@ def _guards_line(root):
         off = crew_hook.guards_switched_off(root)
         if off:
             shown.append(f"DISABLED - guards.enabled is false in the {off} layer, so no guard runs")
+        elif crew_hook.repo_switch_ignored(root):
+            shown.append("guards.enabled is false in .crew/config.json but only the machine layer counts, "
+                         "so every guard still runs")
         if profile is not None or overrides:
             shown.append(f"profile {profile if profile is not None else 'off'}, "
                          f"overrides {json.dumps(overrides or {}, sort_keys=True)}")

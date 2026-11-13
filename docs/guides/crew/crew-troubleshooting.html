@@ -268,10 +268,10 @@ no: retry the call, and free memory or processes if it repeats. A real deny neve
   found another runner's in-flight marker <code>stale</code> (a dead pid, or no heartbeat inside T-0049's
   30-minute TTL) and names the owner's <code>crew_inflight.py clear</code>; <code>Lane state unknown</code> means it could
   not tell. <code>Approval waiting</code> is autopilot stopped at <code>approve</code>.</li>
-<li><strong>Silence every guard at once:</strong> set <code>guards.enabled: false</code> in <code>.crew/config.json</code> or <code>~/.claude/crew/config.json</code>
-  (crew 1.3.87). The dispatcher then starts no guard hook, so nothing is blocked, asked or logged, whatever
-  <code>guards.profile</code>, <code>guards.overrides.*</code>, <code>scope.mode</code> and <code>verifyGate</code> say; <code>false</code> in either layer is enough.
-  <code>/crew:approve</code> and <code>/crew:confirm-config</code> still work. Remove the key (or set <code>true</code> everywhere it is <code>false</code>)
+<li><strong>Silence every guard at once:</strong> set <code>guards.enabled: false</code> in the machine file <code>~/.claude/crew/config.json</code>
+  (crew 1.3.89). The dispatcher then starts no guard hook, so nothing is blocked, asked or logged, whatever
+  <code>guards.profile</code>, <code>guards.overrides.*</code>, <code>scope.mode</code> and <code>verifyGate</code> say; only the machine layer counts, a <code>false</code> in <code>.crew/config.json</code> is ignored.
+  <code>/crew:approve</code> and <code>/crew:confirm-config</code> still work. Remove the key (or set it <code>true</code> in the machine file)
   to turn them back on. With no usable python the bash launcher still fails closed in an armed repo.</li>
 <li><strong>Silence one hook without touching the rest:</strong> set its own key. <code>guards.profile: off</code> (which leaves
   the role-write, cloud and environment guards off) and <code>scope.mode: off</code> are already the shipped defaults — a noisy session

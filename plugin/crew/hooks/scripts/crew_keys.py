@@ -388,16 +388,18 @@ KEY_META = {
                              "that guard's own tiers; a bad one reads as the floor.",
                              "open-table", since="1.2.62", source=_S + "crew_guards.py",
                              type_="object of guard name to tier"),
-    "guards.enabled": _row("The master switch for every guard hook. `false` in EITHER layer "
-                           "stands them all down (the cloud, environment, role-write, scope, "
+    "guards.enabled": _row("The master switch for every guard hook, read from the machine file "
+                           "ALONE. `false` there stands them all down (the cloud, environment, role-write, scope, "
                            "promote and verify guards, and the completion audit): nothing is "
                            "judged, refused or logged, whatever `guards.profile`, "
-                           "`guards.overrides.*`, `scope.mode` or `verifyGate` say. Only the JSON "
+                           "`guards.overrides.*`, `scope.mode` or `verifyGate` say. A `false` in "
+                           "`.crew/config.json` is refused by the writer and ignored by the dispatcher, "
+                           "so a checkout cannot turn every guard off. Only the JSON "
                            "literal `false` turns them off; absent, `true` or anything unreadable "
                            "leaves them on. `/crew:approve` and `/crew:confirm-config` keep "
                            "working, so the `humanOnly.*` opt-out does too. Needs python: with "
                            "none the guards still fail closed.", "branch", (True, False),
-                           "1.3.88", _S + "crew_hook.py"),
+                           "1.3.90", _S + "crew_hook.py"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),
     "production.hosts": _unv("Globs naming production hosts.", "0.19.30",
@@ -618,7 +620,8 @@ def values_of(key):
 # from the machine file alone (T-0051: each names the variable whose value becomes
 # the request URL, so a cloned repo may not choose it).
 _MACHINE_ONLY = (tuple("context.autoClear." + k for k in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
-                 + tuple("notify." + k for k in crew_notify.GLOBAL_ONLY_KEYS))
+                 + tuple("notify." + k for k in crew_notify.GLOBAL_ONLY_KEYS)
+                 + ("guards.enabled",))  # crew 1.3.90: a repo file cannot turn every guard off
 
 
 def layer_of(key):
