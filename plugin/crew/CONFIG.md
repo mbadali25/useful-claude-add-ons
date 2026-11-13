@@ -135,13 +135,13 @@ Accepted residuals: `--price` opens its map, and `bash` reopens the smoke script
 check, so a process running as you that swaps the file in that interval runs the swapped bytes (you can
 edit the store too). The scope guard is a textual tripwire, not a sandbox: the boundary is the OS user.
 
-Round 8 (crew 1.3.80): before the trust decision the gate runs only a proved interpreter found on a PATH
+Round 8 (crew 1.3.81): before the trust decision the gate runs only a proved interpreter found on a PATH
 stripped of repo entries, with `CREW_PYTHON` and every `PYTHON*` variable ignored and the script run as
 `python -E -s`; it never executes a python it found inside the repo, even to probe it, and where none
 qualifies the fingerprint, scope and record helpers are skipped and `--price` says there is no python. A
 submodule is judged like a linked worktree, so a hash-approved submodule runs. A store lock is not broken
 while the holder named in it still runs on this host, however old it is. Two more accepted residuals, both
-pre-existing: the Stop launcher (`hooks/crew-hook.sh`, `hooks.json`) takes the first `python3` on the PATH it
+pre-existing: the Stop launcher (`crew-hook.sh`, `hooks.json`) takes the first `python3` on the PATH it
 is started with, and `BASH_ENV` is sourced by bash before the launcher can scrub it; both run before any gate
 code and are properties of how the hook is started.
 
