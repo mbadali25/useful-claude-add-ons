@@ -178,3 +178,22 @@ Left for a harness-only follow-up, because each touches the review/gate harness 
 
 A Claude Code per-OS hook registration, or a single hook command that runs on every shell. Re-check then
 whether the launcher pair can become one.
+
+## Amendment, 2026-11-11 (crew 1.3.60): one registration, and no Git Bash per guard
+
+Decision 1 above (sixteen registrations) is superseded; the rest stands. Measured on Windows, a
+`shell: "powershell"` hook costs about 0.4 s of PowerShell start-up plus a python probe before the
+dispatcher runs (0.73-0.81 s for a `PreToolUse` call that selects no row), and a Bash tool call fanned out
+to about thirty processes (18 bash, 6 python3, 3 git) because every `.sh` row started its own Git Bash. So:
+
+1. **Eight registrations**, the bash launcher only. `crew-hook.sh` no longer stands down on Windows (the
+   build-triple stand-down of 1.3.46 is gone) and `crew-hook.ps1` is only Codex's `commandWindows`. Claude
+   Code needs Git Bash on Windows, so the registration can start there; if it cannot, the hook is a
+   non-blocking error where the PowerShell entry used to refuse the call.
+2. **A direct route** (`DIRECT` in `crew_hook.py`, Windows by default, `CREW_HOOK_DIRECT=0` to turn off):
+   the dispatcher runs the Python file behind the hot `.sh` rows and believes the run only for an exit the
+   wrapper passes through unchanged; any other exit, a failed launch or a missing file runs the wrapper.
+   Rows with no direct route still resolve Git Bash up front and are refused without it, as before.
+
+The golden corpus is still the oracle; `test_crew_hook_direct.py` holds zero `.sh` starts on the hot path,
+the fallback, the one-registration shape, and the same exit, stdout and stderr by either route.

@@ -16,7 +16,7 @@ def _dispatch(problem):
                           "tool_input": {"command": "ls"}}).encode()
     return crew_hook.dispatch("PreToolUse", "claude", payload, crew_hook.now_ms() + 20000, {}, "/nowhere",
                               windows=True, resolve_bash=lambda strict=True: (None, problem),
-                              armed_fn=lambda _root: True)
+                              armed_fn=lambda _root: True, direct=False)
 
 
 def test_unknown_blocks_armed_calls_but_never_says_install_git():

@@ -15,28 +15,18 @@
 # registration timeout in hooks.json minus 5 s, so the launcher refuses itself
 # before the outer timeout turns a fault into an allow.
 #
-# On Windows the PowerShell launcher is the single path (crew-hook.ps1), so this
-# one exits 0 there: first on the shell's own build triple (a builtin, no fork), then
-# `uname -s` MINGW*/MSYS*/CYGWIN*. `$OS` = Windows_NT is
-# consulted only when uname is not a POSIX kernel's name or cannot be read: an
-# environment variable cannot stand the guards down on a Linux or macOS host
-# (security pass, L-0850; cloud-guard.sh has always said the same).
+# On Windows this is the single registration too (crew 1.3.60). hooks.json no longer registers
+# crew-hook.ps1 for Claude Code: a `shell: powershell` hook costs about 0.4 s of PowerShell start-up plus
+# its python probe before any hook runs, against about 0.12 s for Git Bash, and registering both ran every
+# guard twice. Git Bash is the shell Claude Code itself needs on Windows, and the dispatcher already needs
+# it for the `.sh` rows it does not run directly. crew-hook.ps1 stays for Codex's `commandWindows`. Nothing
+# here stands the guards down by the OS, the environment or the shell's build triple (L-0850).
 #
 # With no usable python it runs the event's `.sh` scripts directly from the
 # static list in `_rows_for` below, in parallel, and combines them by exit code
 # (any 2 -> 2) and stdout order. Each script's own no-python fallback then
 # decides, exactly as it did when it was registered alone. The list is asserted
 # equal to crew_hook.TABLE by tests/test_hooks_json_shape.py.
-# The Windows stand-down comes first and costs no process: BASH_VERSINFO[5] is the
-# shell's own readonly build triple (x86_64-pc-msys on Git Bash), a builtin that an
-# environment variable cannot set, so it keeps the L-0850 rule that nothing in the
-# hook environment may stand the guards down. Before this check the launcher paid
-# for a `$(cd ... && pwd)` fork and a `uname` fork on every Windows hook event only
-# to exit 0 (ANEWINF-1314). The `uname` case below stays for any other shell.
-case "${BASH_VERSINFO[5]:-}" in
-  *-msys*|*-cygwin*|*-mingw*) exit 0 ;;
-esac
-
 _src="${BASH_SOURCE[0]}"
 case "$_src" in
   */*) DIR="$(cd "${_src%/*}" && pwd)" ;;
@@ -48,12 +38,6 @@ HARNESS=claude
 if [ "${2:-}" = "--harness" ]; then
   HARNESS="${3:-claude}"
 fi
-
-case "$(uname -s 2>/dev/null)" in
-  MINGW*|MSYS*|CYGWIN*) exit 0 ;;
-  Linux|Darwin|FreeBSD|OpenBSD|NetBSD|DragonFly|SunOS|AIX) ;;
-  *) [ "${OS:-}" = "Windows_NT" ] && exit 0 ;;
-esac
 
 # Registration timeout (s) per event, from hooks.json: the largest hook in the
 # event plus 10. A test asserts this equals crew_hook.event_timeout.
@@ -323,7 +307,11 @@ _dispatch() {
 # slow, proven way (`crew_py_strict` runs a probe of its own, about 17 ms) is
 # kept for when this one cannot run the dispatcher. Exit 0 and 2 are decisions.
 # Exit 1, 126 and 127 mean the interpreter itself failed (a shim, a stub, a
-# syntax or import error) before the dispatcher ran any hook -- crew_hook.main
+# syntax or import error), and so does 49: the Windows Store "python3" stub
+# answers 9009, which a shell reports modulo 256 (MEASURED on Windows 11). It is
+# the first python3 on some Windows PATHs while a real one sits further down, and
+# without it here the stub would fail every armed call closed. All of these come
+# before the dispatcher ran any hook -- crew_hook.main
 # returns only 0 or 2 once it has started, tests/test_crew_hook_faults.py holds
 # it to that -- so nothing has been run twice, and stdin not yet read, if the
 # slow resolution below tries again.
@@ -333,7 +321,7 @@ if [ -n "$FAST" ]; then
   _dispatch "$FAST"
   case "$STATUS" in
     0|2) exit "$STATUS" ;;
-    1|126|127) ;;
+    1|126|127|49) ;;
     *) _fail "crew_hook.py failed (exit $STATUS)" ;;
   esac
 fi

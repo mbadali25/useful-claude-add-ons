@@ -16,11 +16,11 @@ else, and records the result in `.crew/config.json`. It distinguishes native
 Linux, macOS, WSL1, WSL2, Git Bash on Windows, and native Windows, and reports
 which toolchains are actually present.
 
-`hooks.json` registers **one launcher per event per shell** — `crew-hook.sh`, and
-`crew-hook.ps1` with `shell: powershell` — because it cannot know which shell a
-given machine has. On Windows the PowerShell launcher is the only one that runs
-and the dispatcher it starts needs Git for Windows; elsewhere the bash launcher
-runs. The `PreToolUse` guards branch on which **tool** the command came from
+`hooks.json` registers **one bash launcher per event** (`crew-hook.sh`), on every
+platform; `crew-hook.ps1` is only Codex's `commandWindows`. On Windows the
+launcher runs under Git for Windows, which Claude Code itself needs, and the
+dispatcher it starts runs the hot guards' Python directly and the remaining
+`.sh` scripts through a strictly resolved Git Bash. The `PreToolUse` guards branch on which **tool** the command came from
 rather than on the OS, so a `Bash` call is judged by bash rules even on Windows.
 See [How the Windows half works](25-command-and-agent-reference.md#how-the-windows-half-works).
 
