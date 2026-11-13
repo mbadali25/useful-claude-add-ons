@@ -68,10 +68,10 @@ prompt that STARTS with one is refused: an approval is one line.
   to the user, which is the point: the user asked for an approval and must
   see that none was recorded.
 
-## Two more user-typed commands (crew 1.3.33)
+## One more user-typed command (crew 1.3.33)
 
 The same rule -- the one input the session does not author is the user's own
-prompt -- carries two more commands, each ONE line, raw or expanded exactly as
+prompt -- carries one more command, ONE line, raw or expanded exactly as
 `/crew:approve` is:
 
 - `/crew:confirm-config <change_id>` records one confirmation of a proposed
@@ -87,13 +87,6 @@ prompt -- carries two more commands, each ONE line, raw or expanded exactly as
   records nothing, because the store is a file an agent's propose step
   writes, so "the only pending one" is a choice an agent can make for the
   owner; the id typed in the owner's prompt is what binds the change.
-- `/crew:approve-mass <id>` records the owner's yes to ONE blocked mass delete
-  or mass overwrite: `<git-common-dir>/crew/mass-approvals/<id>.json`, good for
-  `MASS_APPROVAL_TTL` seconds. `<id>` is the digest the guard printed with its
-  refusal (it binds the exact command and worktree), so the yes cannot be
-  spent on another command. The directory is under `<git-common-dir>/crew/`,
-  which the scope guard refuses to every Write/Edit and every shell command
-  that names it, so the session cannot write the file; only this hook does.
 
 The session can still pipe a forged payload into this script through its
 shell; `scope_guard.py` refuses a Bash/PowerShell command naming it, which
@@ -112,13 +105,6 @@ import crew_ticket
 
 COMMAND = "crew:approve"
 CONFIRM_COMMAND = "crew:confirm-config"
-MASS_COMMAND = "crew:approve-mass"
-# How long a typed `/crew:approve-mass` stays good. Equal to
-# `crew_state.GUARD_APPROVAL_TTL` (the `ask` marker's), repeated here so this
-# hook imports nothing heavy; `cloud_guard` reads the file's own `expires`.
-MASS_APPROVAL_TTL = 900
-MASS_APPROVAL_DIR = "mass-approvals"
-_MASS_ID_RE = re.compile(r"^[0-9a-f]{12}$")
 _CHANGE_ID_RE = re.compile(r"^cc-[0-9a-f]{8}$")
 CONFIRM_TOKEN = "--confirm"
 MAX_GROUP = 20
@@ -763,46 +749,14 @@ def _confirm_config(data, args):
     return 2
 
 
-def _approve_mass(root, data, args):
-    """One `/crew:approve-mass <id>`: the owner's yes to the mass operation the
-    guard refused under that id. Written by this hook alone."""
-    if not _MASS_ID_RE.match(args):
-        return _refuse_command(MASS_COMMAND, "usage: /crew:approve-mass <id> (12 hex digits, "
-                               "printed by the guard that blocked the command)")
-    state = crew_ticket.state_dir(root)
-    if not state:
-        return _refuse_command(MASS_COMMAND, f"{root} is not a git repository")
-    directory = os.path.join(state, MASS_APPROVAL_DIR)
-    now = time.time()
-    record = {"id": args, "approved_at": now, "expires": now + MASS_APPROVAL_TTL,
-              "approved_via": crew_ticket.USER_PROMPT, "session_id": _session(data),
-              "prompt_id": data.get("prompt_id")}
-    text = json.dumps(record, indent=2, sort_keys=True) + "\n"
-    try:
-        os.makedirs(directory, exist_ok=True)
-        final = os.path.join(directory, args + ".json")
-        tmp = f"{final}.{uuid.uuid4().hex}.tmp"
-        with open(tmp, "w", encoding="utf-8", newline="\n") as fh:
-            fh.write(text)
-        os.replace(tmp, final)
-    except OSError as exc:
-        return _refuse_command(MASS_COMMAND, f"the approval could not be written ({exc})")
-    return _emit(f"crew: the user approved mass operation {args} from their own prompt, good "
-                 f"for {MASS_APPROVAL_TTL // 60} minutes. Re-run that exact command.")
-
-
-def _user_command(root, data):
-    """Exit code when the prompt is one of the two commands above, else None."""
-    prompt = data.get("prompt")
-    for name, run in ((CONFIRM_COMMAND, lambda args: _confirm_config(data, args)),
-                      (MASS_COMMAND, lambda args: _approve_mass(root, data, args))):
-        found, args = _command_args(prompt, name)
-        if not found:
-            continue
-        if args.startswith("error:"):
-            return _refuse_command(name, args[len("error:"):].strip())
-        return run(args)
-    return None
+def _user_command(data):
+    """Exit code when the prompt is `/crew:confirm-config`, else None."""
+    found, args = _command_args(data.get("prompt"), CONFIRM_COMMAND)
+    if not found:
+        return None
+    if args.startswith("error:"):
+        return _refuse_command(CONFIRM_COMMAND, args[len("error:"):].strip())
+    return _confirm_config(data, args)
 
 
 def handle(data):
@@ -811,7 +765,7 @@ def handle(data):
         return 0
     root = data.get("cwd") if isinstance(data.get("cwd"), str) else None
     root = os.path.abspath(root or os.environ.get("CLAUDE_PROJECT_DIR") or ".")
-    done = _user_command(root, data)
+    done = _user_command(data)
     if done is not None:
         return done
     request = parse(data.get("prompt"), root)
