@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.91**: A workflow dispatch's `environment` input selects the environment in the promote gate. `crew` 1.3.91 stops the promote gate reading `gh workflow run deploy.yml -f environment=development` (or `qa`) as the production deploy when production's declared dispatch has no `environment` input; it now blocks as could-not-tell, naming the environment it selected, until every environment (production included) declares its own `environment` input; a production declared without it still matches by substring and keeps its own checks.
 - **crew 1.3.75**: The mass delete, create and change guard (`guards.mass`) is gone, not just off. `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
-- **crew 1.3.70**: `crew_confirm_config.py propose` prints the lines the agent relays to the owner. `crew` 1.3.70: after an agent proposes a sensitive config change, its output now carries the change and the exact `/crew:confirm-config <change_id>` command for the agent to relay word for word, and no longer claims that no hook records the confirmation.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
