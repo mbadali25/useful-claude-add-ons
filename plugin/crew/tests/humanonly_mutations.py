@@ -117,16 +117,8 @@ HUMANONLY_MUTATIONS = (
     ("humanOnly live: a command quoted mid-sentence is a command", HOOK,
      '    raw = re.match(r"^\\s*/" + re.escape(name)',
      '    raw = re.search(r"\\s*/" + re.escape(name)',
-     _L + "test_a_quoted_or_pasted_mass_approval_records_nothing"
-          "[so run /crew:approve-mass 0123456789ab]"),
-    ("humanOnly live: a mass approval id may be any text", HOOK,
-     '_MASS_ID_RE = re.compile(r"^[0-9a-f]{12}$")',
-     '_MASS_ID_RE = re.compile(r"^.+$")',
-     _L + "test_a_malformed_mass_id_is_refused_and_writes_nothing[../../evil]"),
-    ("humanOnly live: a mass approval needs no git repository", HOOK,
-     "    if not state:\n        return _refuse_command(MASS_COMMAND,",
-     "    if False:\n        return _refuse_command(MASS_COMMAND,",
-     _L + "test_a_mass_approval_outside_git_is_refused"),
+     _L + "test_a_quoted_or_padded_confirmation_records_nothing"
+          "[please run /crew:confirm-config cc-0123abcd for me]"),
     ("humanOnly live: the wrapper drops a confirm-config prompt", WRAP,
      "[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*|*crew:confirm-config*) ;;",
      "[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*) ;;",

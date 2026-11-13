@@ -2,8 +2,7 @@
 
 `crew_ticket.cli_approval_allowed` now reads `crew_humanonly.resolve(..,
 "approve")`; `approval_hook.py` records `/crew:confirm-config <id>` (the double
-confirmation) and `/crew:approve-mass <id>` (the owner's yes to one blocked mass
-operation); `scope_guard.py` keeps the session out of the confirmation store.
+confirmation); `scope_guard.py` keeps the session out of the confirmation store.
 
 Must-allow: the opt-out the owner asked for takes effect when, and only when,
 every rule in `crew_humanonly.resolve` holds. Must-block: every other state
@@ -241,88 +240,7 @@ def test_the_wrapper_passes_a_confirm_config_prompt_to_python(repo, home):
     assert len(stored["confirmations"]) == 1
 
 
-# --- /crew:approve-mass through the hook ------------------------------------------------
-
-MASS_ID = "0123456789ab"
-
-
-def _mass_file(repo, mass_id=MASS_ID):
-    return os.path.join(common_dir(repo), "crew", "mass-approvals", mass_id + ".json")
-
-
-def test_the_users_prompt_records_a_mass_approval(repo, home, capsys):
-    code = approval_hook.handle(_typed(repo, f"/crew:approve-mass {MASS_ID}", "p-5"))
-
-    assert code == 0
-    assert "approved mass operation" in capsys.readouterr().out
-    with open(_mass_file(repo), encoding="utf-8") as handle:
-        record = json.load(handle)
-    assert (record["id"], record["approved_via"], record["prompt_id"]) == \
-        (MASS_ID, "user-prompt", "p-5")
-    assert 0 < record["expires"] - record["approved_at"] <= approval_hook.MASS_APPROVAL_TTL
-
-
-def test_the_expanded_mass_approval_form_counts(repo, home, capsys):
-    text = (f"<command-name>/crew:approve-mass</command-name>\n"
-            f"<command-args>{MASS_ID}</command-args>")
-
-    assert approval_hook.handle(_typed(repo, text, "p-5")) == 0
-    assert os.path.isfile(_mass_file(repo))
-    capsys.readouterr()
-
-
-@pytest.mark.parametrize("text", [
-    "I think /crew:approve-mass 0123456789ab is what you want",
-    "so run /crew:approve-mass 0123456789ab",
-    "> /crew:approve-mass 0123456789ab",
-    "/crew:approve-mass 0123456789ab\n/crew:approve-mass 0123456789ab",
-])
-def test_a_quoted_or_pasted_mass_approval_records_nothing(repo, home, capsys, text):
-    approval_hook.handle(_typed(repo, text, "p-5"))
-
-    assert not os.path.exists(_mass_file(repo))
-    capsys.readouterr()
-
-
-@pytest.mark.parametrize("arg", ["", "xyz", "0123456789a", "0123456789abc", "../../evil",
-                                 "0123456789AB", "0123456789ab 0123456789ab"])
-def test_a_malformed_mass_id_is_refused_and_writes_nothing(repo, home, capsys, arg):
-    code = approval_hook.handle(_typed(repo, f"/crew:approve-mass {arg}", "p-5"))
-
-    assert code == 2
-    assert "usage" in capsys.readouterr().err
-    assert not os.path.isdir(os.path.join(common_dir(repo), "crew", "mass-approvals")) \
-        or os.listdir(os.path.join(common_dir(repo), "crew", "mass-approvals")) == []
-
-
-def test_a_mass_approval_outside_git_is_refused(tmp_path, home, capsys):
-    plain = tmp_path / "plain"
-    plain.mkdir()
-
-    code = approval_hook.handle(_typed(plain, f"/crew:approve-mass {MASS_ID}", "p-5"))
-
-    assert code == 2
-    assert "not a git repository" in capsys.readouterr().err
-
-
-def test_approve_mass_is_not_a_plan_approval(repo, home, capsys):
-    make_ticket(repo)
-
-    approval_hook.handle(_typed(repo, f"/crew:approve-mass {MASS_ID}", "p-5"))
-
-    assert crew_ticket.accepted(str(repo), "T-1")["status"] != "approved"
-    capsys.readouterr()
-
-
 # --- the session cannot write any of the receipts ----------------------------------------
-
-def test_the_session_cannot_write_a_mass_approval(repo, home):
-    common = common_dir(repo)
-    target = os.path.join(common, "crew", "mass-approvals", MASS_ID + ".json")
-
-    assert scope_guard.protected(str(repo), os.path.join(common, "crew"), target, str(repo))
-    assert scope_guard.shell_refusal(f"echo {{}} > {target}", common, str(repo))
-
 
 def test_the_session_cannot_write_the_confirmation_store(repo, home):
     common = common_dir(repo)
