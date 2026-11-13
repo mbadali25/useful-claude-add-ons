@@ -1,4 +1,4 @@
-"""crew 1.3.76: `guards.git.allow`, the owner's switch that lets git commands past
+"""crew 1.3.82: `guards.git.allow`, the owner's switch that lets git commands past
 crew's command guards (`crew_gitallow.py`).
 
 CLAUDE.md: a hook change that can block carries must-block and must-allow cases,
@@ -1273,7 +1273,7 @@ def test_a_powershell_stop_parsing_force_push_stays_refused_with_all(tmp_path, m
     assert not any(r[1].startswith("gitAllow") for r in result["rows"]), result
 
 
-# --- review round 4 (Codex gpt-6-sol, crew 1.3.76): a fail-closed allowlist -------------
+# --- review round 4 (Codex gpt-6-sol, crew 1.3.82): a fail-closed allowlist -------------
 #
 # The design change: `plain_commands` lists what is plain, and anything else is
 # not exempt. One reader serves the cloud guard (`line_plan`) and the promote

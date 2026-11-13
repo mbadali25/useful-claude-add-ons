@@ -1007,11 +1007,11 @@ passes a prompt naming `crew:confirm-config`. Since crew 1.3.69 every
 `len(HUMANONLY_MUTATIONS)`; 34 at crew 1.3.69). JUDGEMENT: `humanOnly.promoteMarker` is still read
 by no hook, and a session that runs arbitrary python can still forge a receipt.
 
-## Git commands past the guards: `guards.git.allow` (crew 1.3.76)
+## Git commands past the guards: `guards.git.allow` (crew 1.3.82)
 
 DERIVED from `plugin/crew/hooks/scripts/crew_gitallow.py` (stdlib only); tests
 `plugin/crew/tests/test_git_allow.py`, mutations `plugin/crew/tests/gitallow_mutations.py`
-(re-measure with `len(GITALLOW_MUTATIONS)`; 109 at crew 1.3.77, run alone: `sabotage*.py` is
+(re-measure with `len(GITALLOW_MUTATIONS)`; 109 at crew 1.3.82, run alone: `sabotage*.py` is
 harness), and the differential test `plugin/crew/tests/test_git_allow_differential.py`. `settings` (`crew_gitallow.py:569`) reads the machine file only (`read_layer`,
 `:353`, one open: absent / unset / set / unreadable plus the file binding; a dangling link
 or a non-directory parent is unreadable, `_dangles` `:396`) and honours `"all"` or a list

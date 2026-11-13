@@ -403,7 +403,7 @@ KEY_META = {
         "`~`, parenthesis, PowerShell expression or `%NAME%`; nothing else on the line); "
         "a git command carrying `-c`, a command to run (`rebase --exec`, `push "
         "--receive-pack`, `submodule foreach`, ...) or a `git config` write is never exempt.", "type",
-        since="1.3.76", source=_S + "crew_gitallow.py",
+        since="1.3.82", source=_S + "crew_gitallow.py",
         type_="null, `\"off\"`, `\"all\"` or a list of git subcommand names"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),

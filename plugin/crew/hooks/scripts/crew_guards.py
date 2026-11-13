@@ -241,7 +241,7 @@ GUARD_PROFILES = ("off", "standard", "strict")
 # the profile at `off` (= `GUARD_DEFAULTS`) and an empty overrides table. The
 # twelve per-guard names are no longer config keys; a file that still holds
 # them is read as a legacy alias (`layer_guard_state`) until `/crew:migrate`.
-# `git.allow` (crew 1.3.76) is not a guard name: the owner's switch that
+# `git.allow` (crew 1.3.82) is not a guard name: the owner's switch that
 # lets git commands past the command guards, read by `crew_gitallow.settings`
 # (machine file only, double-confirmed; a repo may only veto with "off"). null
 # is off, and is what both templates carry so a repo file never vetoes by default.

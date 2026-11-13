@@ -1,5 +1,5 @@
 """`guards.git.allow`: the owner's switch that stops crew's command guards from
-blocking or asking on git commands (crew 1.3.76).
+blocking or asking on git commands (crew 1.3.82).
 
 THE VALUES.
 
@@ -20,7 +20,7 @@ plain git commands:
 
 `gh` is not git: `gh pr merge --admin` and `gh api` keep their own keys.
 
-THE LINE IS AN ALLOWLIST, FAIL-CLOSED (crew 1.3.76, PR #769 review round 4).
+THE LINE IS AN ALLOWLIST, FAIL-CLOSED (crew 1.3.82, PR #769 review round 4).
 A line is exempt only when EVERY command on it is exactly `git` (no path, no
 function, alias or `shopt` on the line -- a line holding any other command is
 never exempt) followed by words that are plain literals as ONE reader
@@ -665,7 +665,7 @@ def backing(machine_path, global_path=None, store=None):
 
 # --- the one reader: is a whole line only plain git ----------------------------------
 #
-# A FAIL-CLOSED ALLOWLIST (crew 1.3.76, PR #769 review round 4). Four review
+# A FAIL-CLOSED ALLOWLIST (crew 1.3.82, PR #769 review round 4). Four review
 # rounds each found a new way to build a git word at run time (`"$OPT"`, a
 # brace expansion, `$'\x2d...'`, a PowerShell `(expr)`), so the reader no
 # longer lists what is dangerous: it lists what is plain, and anything else is

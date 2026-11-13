@@ -442,7 +442,7 @@ def update_json(path, mutate, *, expect=None, create=False, wait=None, after=Non
 
     `after(path)`, when given, runs still inside the lock once the write is
     done (or skipped because `mutate` returned None), so it sees the file as
-    this call left it (crew 1.3.76: `guards.git.allow`'s file binding).
+    this call left it (crew 1.3.82: `guards.git.allow`'s file binding).
 
     Returns `(result, raw_before)`, `result` being what `mutate` returned.
     Raises `Unreadable`, `Busy`, `Conflict`, or the OS error of the write.

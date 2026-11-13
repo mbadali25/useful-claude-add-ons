@@ -141,7 +141,7 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
 meaningful only with `scope.mode` `block`.
 
-## Git commands (`guards.git.allow`, crew 1.3.76)
+## Git commands (`guards.git.allow`, crew 1.3.82)
 
 The owner's switch that stops crew's command guards from blocking or asking on
 git commands, destructive ones included. Off by default (`null`, or `"off"`).
@@ -164,7 +164,7 @@ deploy that is itself a git command (`git push prod main`) stays gated: that
 is a deploy, not a git block. `gh` is not git: `gh pr merge --admin`
 (`guards.adminMerge`), workflow dispatches and `gh api` calls are untouched.
 
-**The line is a fail-closed allowlist (crew 1.3.76).** A command line is
+**The line is a fail-closed allowlist (crew 1.3.82).** A command line is
 exempt only when EVERY command on it is exactly `git` - not a path
 (`/usr/bin/git`, `./git`, `git.exe`), and with no other command on the line,
 so a function, alias or `shopt` that redefines git, an assignment, `cd`,
@@ -180,7 +180,7 @@ reader that both the cloud guard and the promote gate use:
   `&&`, `||`, `|`, `&` or a newline. A redirection only AFTER the
   subcommand, and only `>` / `>>` (an optional digit descriptor) to a plain
   file name not starting with `-`, `N>&M` between digit descriptors
-  (`2>&1`), or a heredoc / here-string (crew 1.3.77).
+  (`2>&1`), or a heredoc / here-string (crew 1.3.82).
 - PowerShell: unquoted letters, digits and `_ - . / : = + \ ^ % ~ @` (no
   leading `~`, `@` only inside a word); a whole `'...'` or `"..."`
   word (a double-quoted one holding no `$`); a here-string (`@"..."@` with no
@@ -202,7 +202,7 @@ descriptor, one with no target, and any redirection between `git` and its
 subcommand. Bash reads `>&-` as "close the descriptor" and hands the rest of
 that word to git, so `git push >&---receive-pack=x origin main` runs git with
 `--receive-pack=x`; and `git 2>&1 -c core.sshCommand=x push` hid its `-c`
-from a reader that kept the `2` (crew 1.3.77, review round 5). Five review
+from a reader that kept the `2` (crew 1.3.82, review round 5). Five review
 rounds each found a new way to build a git word at run time; the allowlist
 lists what is plain instead of what is dangerous, so a form nobody has
 thought of yet is judged, not exempt. A differential test
@@ -470,7 +470,7 @@ Columns:
 |---|---|---|---|---|---|
 | `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | 1.2.62 | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `plugin/crew/hooks/scripts/crew_guards.py`) | 1.2.62 | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
-| `guards.git.allow` | both | `null` | null, `"off"`, `"all"` or a list of git subcommand names (coerced in `plugin/crew/hooks/scripts/crew_gitallow.py`) | 1.3.76 | The owner's switch that stops crew's command guards blocking or asking on git commands: `"all"` lets a line of only plain git commands past the force-push rule and the promote gate (unless a declared deploy is itself a git command); a list of subcommands (`["commit", "push"]`) lets only those through, with every option they take (listing `push` lets `push --force` through). null or `"off"` changes nothing. Machine file only, and only after `/crew:confirm-config` twice (`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value written any other way, or any later change to the machine file outside crew's config writer, reads as off, and a repo `"off"` or unreadable repo file vetoes it. FAIL-CLOSED ALLOWLIST: a line is exempt only when every command on it is exactly `git` with plain literal words (no `$`, backtick, glob, brace, leading `~`, parenthesis, PowerShell expression or `%NAME%`; nothing else on the line); a git command carrying `-c`, a command to run (`rebase --exec`, `push --receive-pack`, `submodule foreach`, ...) or a `git config` write is never exempt. |
+| `guards.git.allow` | both | `null` | null, `"off"`, `"all"` or a list of git subcommand names (coerced in `plugin/crew/hooks/scripts/crew_gitallow.py`) | 1.3.82 | The owner's switch that stops crew's command guards blocking or asking on git commands: `"all"` lets a line of only plain git commands past the force-push rule and the promote gate (unless a declared deploy is itself a git command); a list of subcommands (`["commit", "push"]`) lets only those through, with every option they take (listing `push` lets `push --force` through). null or `"off"` changes nothing. Machine file only, and only after `/crew:confirm-config` twice (`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value written any other way, or any later change to the machine file outside crew's config writer, reads as off, and a repo `"off"` or unreadable repo file vetoes it. FAIL-CLOSED ALLOWLIST: a line is exempt only when every command on it is exactly `git` with plain literal words (no `$`, backtick, glob, brace, leading `~`, parenthesis, PowerShell expression or `%NAME%`; nothing else on the line); a git command carrying `-c`, a command to run (`rebase --exec`, `push --receive-pack`, `submodule foreach`, ...) or a `git config` write is never exempt. |
 
 ### `production`
 

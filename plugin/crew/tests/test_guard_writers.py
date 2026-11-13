@@ -231,5 +231,5 @@ def test_the_menu_offers_the_profile_first_and_an_override_per_guard(tmp_path):
             if r["path"].startswith("guards.")]
     assert rows[0] == "guards.profile"
     assert rows[1:1 + len(NAMES)] == [f"guards.overrides.{n}" for n in NAMES]
-    # crew 1.3.76: `guards.git.allow` follows, which the menu may only set to "off" or null
+    # crew 1.3.82: `guards.git.allow` follows, which the menu may only set to "off" or null
     assert rows[1 + len(NAMES):] == ["guards.git.allow"]

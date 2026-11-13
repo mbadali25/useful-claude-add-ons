@@ -248,7 +248,7 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
 meaningful only with `scope.mode` `block`.
 
-## Git commands (`guards.git.allow`, crew 1.3.76)
+## Git commands (`guards.git.allow`, crew 1.3.82)
 
 The owner's switch that stops crew's command guards from blocking or asking on
 git commands, destructive ones included. Off by default (`null`, or `"off"`).
@@ -271,7 +271,7 @@ deploy that is itself a git command (`git push prod main`) stays gated: that
 is a deploy, not a git block. `gh` is not git: `gh pr merge --admin`
 (`guards.adminMerge`), workflow dispatches and `gh api` calls are untouched.
 
-**The line is a fail-closed allowlist (crew 1.3.76).** A command line is
+**The line is a fail-closed allowlist (crew 1.3.82).** A command line is
 exempt only when EVERY command on it is exactly `git` - not a path
 (`/usr/bin/git`, `./git`, `git.exe`), and with no other command on the line,
 so a function, alias or `shopt` that redefines git, an assignment, `cd`,
@@ -287,7 +287,7 @@ reader that both the cloud guard and the promote gate use:
   `&&`, `||`, `|`, `&` or a newline. A redirection only AFTER the
   subcommand, and only `>` / `>>` (an optional digit descriptor) to a plain
   file name not starting with `-`, `N>&M` between digit descriptors
-  (`2>&1`), or a heredoc / here-string (crew 1.3.77).
+  (`2>&1`), or a heredoc / here-string (crew 1.3.82).
 - PowerShell: unquoted letters, digits and `_ - . / : = + \\ ^ % ~ @` (no
   leading `~`, `@` only inside a word); a whole `'...'` or `"..."`
   word (a double-quoted one holding no `$`); a here-string (`@"..."@` with no
@@ -309,7 +309,7 @@ descriptor, one with no target, and any redirection between `git` and its
 subcommand. Bash reads `>&-` as "close the descriptor" and hands the rest of
 that word to git, so `git push >&---receive-pack=x origin main` runs git with
 `--receive-pack=x`; and `git 2>&1 -c core.sshCommand=x push` hid its `-c`
-from a reader that kept the `2` (crew 1.3.77, review round 5). Five review
+from a reader that kept the `2` (crew 1.3.82, review round 5). Five review
 rounds each found a new way to build a git word at run time; the allowlist
 lists what is plain instead of what is dangerous, so a form nobody has
 thought of yet is judged, not exempt. A differential test
