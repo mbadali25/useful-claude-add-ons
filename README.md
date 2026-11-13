@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.72**: `guards.git.allow`, one switch that lets git commands past crew's command guards. `crew` 1.3.72: a new machine-only switch, `guards.git.allow`, stops crew's command guards from blocking or asking on git commands (`"all"`, destructive ones included, or a list of subcommands); it is off by default and takes effect only after the owner types `/crew:confirm-config` twice.
+- **crew 1.3.73**: `guards.git.allow`, one switch that lets git commands past crew's command guards. `crew` 1.3.73: a new machine-only switch, `guards.git.allow`, stops crew's command guards from blocking or asking on git commands (`"all"`, destructive ones included, or a list of subcommands); it is off by default and takes effect only after the owner types `/crew:confirm-config` twice.
 - **crew 1.3.70**: `crew_confirm_config.py propose` prints the lines the agent relays to the owner. `crew` 1.3.70: after an agent proposes a sensitive config change, its output now carries the change and the exact `/crew:confirm-config <change_id>` command for the agent to relay word for word, and no longer claims that no hook records the confirmation.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

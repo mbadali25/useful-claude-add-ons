@@ -1,5 +1,5 @@
 """`guards.git.allow`: the owner's switch that stops crew's command guards from
-blocking or asking on git commands (crew 1.3.72).
+blocking or asking on git commands (crew 1.3.73).
 
 THE VALUES.
 
@@ -36,7 +36,7 @@ WHOLE applied record (`receipt_problem`: two confirmations from two distinct
 user prompts inside the proposal's window, this file's path, a value the
 switch takes) for EXACTLY that value, and the machine file is still the very
 file that confirmation left: its bytes, size and modification time
-(`file_binding`, crew 1.3.72 review). Any later change to the machine file
+(`file_binding`, crew 1.3.73 review). Any later change to the machine file
 by any route but crew's own config writer (`crew_config.write_global_config`,
 which re-binds the receipt when it leaves this key alone, `rebind`) reads as
 off -- so a hand edit to "off" and back to "all" is off. `crew_config.py --set`

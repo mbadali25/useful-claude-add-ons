@@ -1,4 +1,4 @@
-"""crew 1.3.72: `guards.git.allow`, the owner's switch that lets git commands past
+"""crew 1.3.73: `guards.git.allow`, the owner's switch that lets git commands past
 crew's command guards (`crew_gitallow.py`).
 
 CLAUDE.md: a hook change that can block carries must-block and must-allow cases,
@@ -171,7 +171,7 @@ def test_a_revocation_newer_than_the_receipt_wins(tmp_path, machine):
     assert _setting(root) == "off"
 
 
-# --- review finding 1: a receipt is a WHOLE double confirmation (crew 1.3.72) --------
+# --- review finding 1: a receipt is a WHOLE double confirmation (crew 1.3.73) --------
 
 def _forge(record, how):
     """`record` (a real applied receipt) changed the way a forger would."""
@@ -234,7 +234,7 @@ def test_a_receipt_tampered_to_another_value_does_not_back_it(tmp_path, machine)
     assert got["allow"] == "off" and "last confirmed value" in got["why"], got
 
 
-# --- review finding 2: the receipt is bound to the file it left (crew 1.3.72) -------
+# --- review finding 2: the receipt is bound to the file it left (crew 1.3.73) -------
 
 def test_a_hand_edit_to_off_and_back_is_off(tmp_path, machine):
     """all (confirmed) -> off by hand -> the confirmed bytes back by hand: off."""
@@ -291,7 +291,7 @@ def test_a_machine_humanonly_optout_keeps_it_on(tmp_path, machine):
     assert _setting(root) == "all"
 
 
-# --- review finding 3: an unreadable repo file is a veto (crew 1.3.72) ----------------
+# --- review finding 3: an unreadable repo file is a veto (crew 1.3.73) ----------------
 
 @pytest.mark.parametrize("content", [
     b"{ not json", b"[]", b"\xff\xfe\x00garbage", b'{"guards": 5}',
@@ -540,7 +540,7 @@ def test_xargs_git_carrying_config_stays_refused_with_all(tmp_path, machine):
     assert _evaluate(root, "echo push | xargs git -c core.sshCommand=x")["decision"] == "deny"
 
 
-# --- review finding 5: PowerShell's single `&` (crew 1.3.72) ----------------------------
+# --- review finding 5: PowerShell's single `&` (crew 1.3.73) ----------------------------
 
 @pytest.mark.parametrize("command,shell", [
     ("git status & terraform apply", "powershell"),
@@ -576,7 +576,7 @@ def test_a_powershell_background_and_is_not_promote_exempt(tmp_path, machine, mo
                                         str(root)) is False
 
 
-# --- review finding 6: `git -C <dir>` reads the target repo's veto (crew 1.3.72) -----
+# --- review finding 6: `git -C <dir>` reads the target repo's veto (crew 1.3.73) -----
 
 def _other_repo(tmp_path, veto):
     other = make_repo(tmp_path, mode=None, name="other")

@@ -741,7 +741,7 @@ def _guard_names() -> set[str] | None:
         return None
     # `guards.profile` and `guards.overrides` are the two keys the twelve guard
     # names collapsed into (L-0725); `guards.overrides.<guard>` still names a guard.
-    # `guards.mass` (crew 1.3.36) and `guards.git` (crew 1.3.72) are blocks of
+    # `guards.mass` (crew 1.3.36) and `guards.git` (crew 1.3.73) are blocks of
     # their own, not guard tiers: every key of the template's guards block counts.
     return (set(crew_guards.ALL_GUARD_NAMES) | {"profile", "overrides"}
             | set(crew_guards.GUARD_BLOCK_DEFAULTS))
