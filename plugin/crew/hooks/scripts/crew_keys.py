@@ -433,7 +433,7 @@ KEY_META = {
         "it. A git command carrying `-c`, a `GIT_*` variable or a command to run "
         "(`rebase --exec` or an abbreviation such as `--exe`, `submodule foreach`, ...), "
         "a word built when it runs (`\"$OPT\"`), or run by `xargs` is never exempt.", "type",
-        since="1.3.73", source=_S + "crew_gitallow.py",
+        since="1.3.75", source=_S + "crew_gitallow.py",
         type_="null, `\"off\"`, `\"all\"` or a list of git subcommand names"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),

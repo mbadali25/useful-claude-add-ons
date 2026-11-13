@@ -2428,7 +2428,7 @@ def _fed_finding(argv, env, via, placeholders, ctx=None):
             return None
         # The subcommand counts as read only when it is a literal crew sees.
         # Held whatever it is: the appended words may carry `-c` or
-        # `--receive-pack` (crew 1.3.73 review round 2).
+        # `--receive-pack` (crew 1.3.75 review round 2).
         return Finding("forcePush", text, what, None, True, None,
                        {crew_gitallow.SCOPE_KEY: crew_gitallow.subcommand([sub])
                         if sub and seen([sub]) else crew_gitallow.UNSEEN,
@@ -3121,7 +3121,7 @@ def _judge_one(root, finding, pins, problem, envs=None):
             return judge_dispatch(finding.scope, finding.what, lambda key: crew_config.guard_decision(
                 root, DEPLOY_RULE, key), finding.text, envs or {}, _approval_is_live)
         out = crew_config.guard_decision(root, finding.rule, finding.text)
-        # A git finding's scope (`crew_gitallow.SCOPE_KEY`, crew 1.3.73) is
+        # A git finding's scope (`crew_gitallow.SCOPE_KEY`, crew 1.3.75) is
         # not a terraform scope: it takes the plain route it took before.
         if finding.scope is not None and envs is not None \
                 and crew_gitallow.SCOPE_KEY not in finding.scope:
@@ -3201,7 +3201,7 @@ def evaluate(root, tool_name, command, data=None, mode="block", mass=None,
         if crew_gitallow.SCOPE_KEY in scope and (
                 finding.rule not in crew_mass.RULES or mass_armed) and not (
                 only_mass and finding.rule not in crew_mass.RULES):
-            # `guards.git.allow` (crew 1.3.73): the owner's double-confirmed
+            # `guards.git.allow` (crew 1.3.75): the owner's double-confirmed
             # switch lets a git command's own findings through, and logs that
             # it did. Read once per call and target set, only for a git finding.
             # Never for a git command that carries config or a command of its

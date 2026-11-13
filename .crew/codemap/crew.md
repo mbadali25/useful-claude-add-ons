@@ -1044,7 +1044,7 @@ measured. `cloud_guard.py` already exceeds 3,400 lines, so the module is a new
 file rather than more glue there. A script, an MCP server, Write and Edit before
 commit, `tar -x`, `unzip` and `git merge` / `pull` are not seen.
 
-## Git commands past the guards: `guards.git.allow` (crew 1.3.73)
+## Git commands past the guards: `guards.git.allow` (crew 1.3.75)
 
 DERIVED from `plugin/crew/hooks/scripts/crew_gitallow.py` (stdlib only); tests
 `plugin/crew/tests/test_git_allow.py`, mutations `plugin/crew/tests/gitallow_mutations.py`

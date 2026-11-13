@@ -1,5 +1,5 @@
 """`guards.git.allow`: the owner's switch that stops crew's command guards from
-blocking or asking on git commands (crew 1.3.73).
+blocking or asking on git commands (crew 1.3.75).
 
 THE VALUES.
 
@@ -36,7 +36,7 @@ WHOLE applied record (`receipt_problem`: two confirmations from two distinct
 user prompts inside the proposal's window, this file's path, a value the
 switch takes) for EXACTLY that value, and the machine file is still the very
 file that confirmation left: its bytes, size, modification time and
-metadata-change time (`file_binding`, crew 1.3.73 review; the change time
+metadata-change time (`file_binding`, crew 1.3.75 review; the change time
 from round 2, so a copy put back with `cp -p` reads as changed -- except a
 Windows CopyFile, which carries the change time over, `_change_ns`). Any later change to the machine file
 by any route but crew's own config writer (`crew_config.write_global_config`,
@@ -61,7 +61,7 @@ that runs a command it is handed (`rebase --exec`, `submodule foreach`,
 `difftool --extcmd`, `filter-branch`, ...), in any abbreviation git accepts
 (`--exe`, `--receive=`); and a git command crew cannot read whole: a word
 built when it runs (`$`, a backtick, a PowerShell `@splat`), or arguments
-`xargs` / `parallel` append from input (crew 1.3.73 review round 2). A git command aimed at another
+`xargs` / `parallel` append from input (crew 1.3.75 review round 2). A git command aimed at another
 repository (`git -C <dir>`) is exempt only when that repository's own file
 does not veto it either; one whose target crew cannot tell (`--git-dir`,
 `--work-tree`, a `-C` it cannot read, a line that changes directory) is not
@@ -109,7 +109,7 @@ DIRS_KEY = "gitdirs"
 UNSEEN = None
 # Why a git command run by `xargs` / `parallel` is never exempt: the words they
 # append come from input crew cannot see (`echo "push --receive-pack=x" | xargs
-# git`), the same hole as a word built at run time (crew 1.3.73 review round 2).
+# git`), the same hole as a word built at run time (crew 1.3.75 review round 2).
 FED_HOLD = "xargs / parallel append arguments to it that crew cannot see"
 
 _REFUSAL = ("lets every git command past crew's command guards, so it needs the "
@@ -223,7 +223,7 @@ def _global_split(args):
 def _option_hit(word, option):
     """True when `word` is `option` or carries it: `--opt=v`, any
     abbreviation git would accept for it (`--exe`, `--receive=v`: git's
-    option parser takes an unambiguous prefix of a long option, crew 1.3.73
+    option parser takes an unambiguous prefix of a long option, crew 1.3.75
     review round 2), or a short option bundled anywhere in a single-dash word
     (`-x`, `-xcmd`, `-ix`). Every prefix counts, ambiguous or not: over-reading
     only withholds an exemption."""
@@ -238,7 +238,7 @@ def _option_hit(word, option):
 # A word whose text is built when the command runs: a `$` expansion
 # (`"$OPT"`, `${X:-...}`, PowerShell's `$env:X`), a backtick substitution, or
 # a PowerShell splat (`@opts`). crew cannot see what it becomes, so it may
-# become `--receive-pack=...` or `-c ...` (crew 1.3.73 review round 2).
+# become `--receive-pack=...` or `-c ...` (crew 1.3.75 review round 2).
 _RUNTIME_RE = re.compile(r"[$`]|^@[A-Za-z_]")
 
 
@@ -357,7 +357,7 @@ def _dangles(path):
     simply absent: the nearest part of it that exists is a link that does not
     resolve, or is not a directory (a dangling `.crew/config.json` symlink, a
     `.crew` that is a file or a dead link). Such a file is unreadable, never
-    absent: a repo file that cannot be read vetoes (crew 1.3.73 review round 2)."""
+    absent: a repo file that cannot be read vetoes (crew 1.3.75 review round 2)."""
     probe = os.path.abspath(path)
     while not os.path.lexists(probe):
         parent = os.path.dirname(probe)
@@ -666,7 +666,7 @@ def _bash_commands(text, depth=0):
     for words in commands:
         # bash's own quote removal (`_shell_unquote`), not `_dequote`, which
         # drops every quote character: `"./g'it"` runs a program named
-        # `./g'it`, not git (crew 1.3.73 review round 2).
+        # `./g'it`, not git (crew 1.3.75 review round 2).
         out.append([crew_guards._shell_unquote(w)  # pylint: disable=protected-access
                     for w in words])
     for sub in subs:
