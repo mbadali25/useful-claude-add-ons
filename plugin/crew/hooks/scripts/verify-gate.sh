@@ -96,9 +96,8 @@ gate_safe_path() {
 # answer, and every caller treats that as "skip this helper", never as a pass.
 # Callers run the script it finds with `-E -s`.
 gate_helper_py() {
-  local _hp
-  _hp=$(gate_safe_path "${GATE_SCRIPT_DIR:-}" 2>/dev/null) || return 1
-  gate_py_on_path "$_hp"
+  [ "${GATE_SAFE_DONE:-0}" -eq 1 ] && [ -n "${GATE_SAFE_PY:-}" ] || return 1
+  printf '%s\n' "$GATE_SAFE_PY"
 }
 
 # gate_py_on_path "<path>": the PROVED interpreter on exactly that PATH, with
@@ -109,6 +108,25 @@ gate_py_on_path() {
     for _hv in $(compgen -e); do case "$_hv" in PYTHON*) unset "$_hv" ;; esac; done
     CREW_PYTHON="" PATH="$1" crew_py_strict 2>/dev/null
   )
+}
+
+# gate_prepare_safe works the sanitized PATH and the proved interpreter on it out
+# ONCE per gate run, in the main shell (never in a `$(...)`, which would lose the
+# cache): GATE_SAFE_PATH, GATE_SAFE_PY, GATE_SAFE_RC, GATE_SAFE_MSG. Both trust
+# checks and every pre-trust helper share the answer; each repeat used to walk
+# the PATH with a subshell per entry and start a proving python, and on Windows
+# a process is what the gate's wall clock pays for. Returns 13 when git cannot
+# name a linked worktree's main checkout (the message is in GATE_SAFE_MSG).
+gate_prepare_safe() {
+  [ "${GATE_SAFE_DONE:-0}" -eq 1 ] && return "$GATE_SAFE_RC"
+  GATE_SAFE_DONE=1 GATE_SAFE_RC=0 GATE_SAFE_PY="" GATE_SAFE_MSG=""
+  GATE_SAFE_PATH=$(gate_safe_path "${GATE_SCRIPT_DIR:-}" 2>&1) || GATE_SAFE_RC=$?
+  if [ "$GATE_SAFE_RC" -ne 0 ]; then
+    GATE_SAFE_MSG="$GATE_SAFE_PATH" GATE_SAFE_PATH=""
+    return "$GATE_SAFE_RC"
+  fi
+  GATE_SAFE_PY=$(gate_py_on_path "$GATE_SAFE_PATH") || GATE_SAFE_PY=""
+  return 0
 }
 
 # gate_unsafe_python_present: succeeds when the gate COULD resolve a python the
@@ -133,11 +151,12 @@ gate_unsafe_python_present() {
 gate_trust_check() {
   local _tdir="$1" _tp _tpd _tpr _tmain _tsafe _tentry _tpath _tenv _tmsg _trc=0
   shift
-  _tsafe=$(gate_safe_path "$_tdir") || return 13
+  gate_prepare_safe || { printf '%s\n' "$GATE_SAFE_MSG" >&2; return 13; }
+  _tsafe="$GATE_SAFE_PATH"
   # CREW_PYTHON is environment, which a repo's settings `env` block can set, so
   # it is emptied for this lookup: the interpreter that decides trust is found
   # on the sanitized PATH alone.
-  _tp=$(gate_py_on_path "$_tsafe") || _tp=""
+  _tp="$GATE_SAFE_PY"
   if [ -z "$_tp" ] || [ ! -f "$_tdir/verify_trust.py" ]; then
     # No python anywhere while a verify.json exists: the PY check further down
     # exits 2 and nothing runs, so leave that message to it. But when the gate
@@ -207,6 +226,7 @@ gate_trust_check() {
 if [ "${1:-}" = "--price" ]; then
   cd "${CLAUDE_PROJECT_DIR:-.}" || exit 1
   PRICE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  gate_prepare_safe || true
   PRICE_PY=$(gate_helper_py) || { echo "verify-gate --price: no python available" >&2; exit 1; }
   shift
   PRICE_TARGET=".crew/verify.json"
@@ -1098,6 +1118,7 @@ if [ -z "$CHANGED" ]; then
   # rule's own files last changed, it goes quiet with nobody told. Best
   # effort and read-only: no python, no script, or a corrupt record file
   # all mean "say nothing extra", never "invent a status".
+  gate_prepare_safe || true
   REPORT_PY=$(gate_helper_py 2>/dev/null) || REPORT_PY=""
   REPORT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   if [ -n "$REPORT_PY" ] && [ -f "$REPORT_DIR/verify_record.py" ]; then
@@ -1235,6 +1256,7 @@ fi
 # Neither --all nor --ci ever skips here: any non-empty BUDGET_FLAG means the
 # caller asked for the whole map, and a PR job that exits 0 on a fingerprint
 # left by an earlier run would pass a change it never looked at.
+gate_prepare_safe || true
 FP_PY=$(gate_helper_py 2>/dev/null) || FP_PY=""
 FP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FP_FILE=".crew/.verify-gate.fingerprint"
