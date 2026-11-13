@@ -1154,3 +1154,10 @@ def test_evaluate_a_real_linked_worktree_outside_the_owner_place_does_not_borrow
 
     assert _code(trusted) == verify_trust.EXIT_TRUSTED
     assert _code(lane) == verify_trust.EXIT_UNTRUSTED
+
+
+def test_lock_a_pid_beyond_any_real_process_id_is_dead_without_a_system_call():
+    """A process id is a 32-bit number; a larger one cannot name a process. On Windows the
+    huge value reached ctypes and raised ArgumentError (CI, crew-windows-default 5/6)."""
+    assert verify_trust._pid_alive(2 ** 32 + 5) is False  # pylint: disable=protected-access
+    assert verify_trust._pid_alive(10 ** 30) is False  # pylint: disable=protected-access

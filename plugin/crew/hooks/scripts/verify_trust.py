@@ -274,8 +274,9 @@ def load_store(path):
 def _pid_alive(pid):
     """True when process `pid` on this machine exists. Unknown reads as alive:
     a lock whose holder cannot be shown dead is not broken. (Never os.kill on
-    Windows: any signal there terminates the process.)"""
-    if pid <= 0:
+    Windows: any signal there terminates the process.) A process id is a 32-bit
+    number, so a larger one names nothing and is never handed to the system."""
+    if pid <= 0 or pid >= 2 ** 32:
         return False
     if os.name == "nt":
         try:

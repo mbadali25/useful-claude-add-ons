@@ -419,4 +419,7 @@ TRUST_MUTATIONS = (
      "    except (OSError, ValueError, OverflowError):\n        return False\n"
      "", "    except (OSError, ValueError):\n        return False\n",
      _T + "test_lock_a_holder_note_with_a_huge_pid_is_not_an_exception"),
+    ("trust store: a pid beyond 32 bits is handed to the system (L-0888, round 9)", TRUST,
+     "    if pid <= 0 or pid >= 2 ** 32:\n", "    if pid <= 0:\n",
+     _T + "test_lock_a_pid_beyond_any_real_process_id_is_dead_without_a_system_call"),
 )
