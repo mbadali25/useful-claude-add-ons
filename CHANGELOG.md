@@ -60,6 +60,13 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Fixed — crew 1.3.91: a workflow dispatch's `environment` input selects the environment in the promote gate (L-0948)
+
+- **Summary.** `crew` 1.3.91 stops the promote gate reading `gh workflow run deploy.yml -f environment=development` (or `qa`) as the production deploy when production's declared dispatch has no `environment` input; it now blocks as could-not-tell, naming the environment it selected, until every environment (production included) declares its own `environment` input; a production declared without it still matches by substring and keeps its own checks.
+- **What changed.** `_promote_dispatch.fits()` no longer treats `environment` as an allowed extra input: a command that gives it where the declared dispatch omits it fits only the environment of that name (case ignored). A new `Selector` block survives the retry that strips declared deploys, so the selector is not hidden. Other extra inputs stay allowed.
+- **Not changed.** The containment match (`_promote_match.py`, `promote-gate.ps1`) still hits a production declared without `environment` as a substring of a longer command; declare `-f environment=<name>` for every environment.
+- **Tests.** Must-block and must-allow cases in `test_promote_dispatch_reader.py` and `test_promote_gate_dispatch.py` (sh and ps1); one existing case re-aimed (a bare second dispatch no longer ties with production); four `promote_tree_mutations.py` mutations.
+
 ### Removed — crew 1.3.75: the mass delete, create and change guard (`guards.mass`) is gone, not just off
 
 - **Summary.** `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
