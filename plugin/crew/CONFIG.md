@@ -135,7 +135,7 @@ Accepted residuals: `--price` opens its map, and `bash` reopens the smoke script
 check, so a process running as you that swaps the file in that interval runs the swapped bytes (you can
 edit the store too). The scope guard is a textual tripwire, not a sandbox: the boundary is the OS user.
 
-Round 8 (crew 1.3.76): before the trust decision the gate runs only a proved interpreter found on a PATH
+Round 8 (crew 1.3.77): before the trust decision the gate runs only a proved interpreter found on a PATH
 stripped of repo entries, with `CREW_PYTHON` and every `PYTHON*` variable ignored and the script run as
 `python -E -s`; it never executes a python it found inside the repo, even to probe it, and where none
 qualifies the fingerprint, scope and record helpers are skipped and `--price` says there is no python. A
