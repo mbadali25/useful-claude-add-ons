@@ -191,3 +191,17 @@ def test_a_selector_the_command_gives_beats_stripping_the_declared_deploy(projec
     project({"production": {"deploy": "gh workflow run w.yml -f site=a"}})
     with pytest.raises(helper.Selector):
         helper.decide("gh workflow run w.yml -f site=a -f environment=development")
+
+
+def test_a_mismatch_on_another_input_does_not_claim_the_environment_is_undeclared(project):
+    """L-0948 review round 1 (NIT): the environment IS declared, another
+    input differs, so the message is the plain one and no selector is blamed."""
+    project({"development": {"deploy": "gh workflow run w.yml -f environment=development -f site=a"}})
+    with pytest.raises(helper.Block, match="fits no declared environment") as got:
+        helper.decide("gh workflow run w.yml -f environment=development -f site=b")
+    assert not isinstance(got.value, helper.Selector)
+    assert "selects environment" not in str(got.value)
+    project({"production": {"deploy": "gh workflow run w.yml -f site=a"}})
+    with pytest.raises(helper.Block) as got:
+        helper.decide("gh workflow run w.yml -f site=b -f environment=production")
+    assert "selects environment" not in str(got.value)

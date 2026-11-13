@@ -217,10 +217,19 @@ def match(scopes, envs, label):
         if len(fit) != 1:
             which = ("no declared environment" if not fit else
                      "more than one declared environment (" + ", ".join(fit) + ")")
-            named = (f" (the command selects environment `{inputs[SELECTOR]}`, "
+            # Only when NO declared deploy of the workflow names the selected
+            # environment (by its name or its own `environment` input): a
+            # mismatch on another input is the plain message (L-0948 r1 NIT).
+            chosen = inputs.get(SELECTOR)
+            known = chosen is not None and any(
+                fold(env) == fold(chosen) or any(
+                    name == SELECTOR and value == chosen
+                    for name, value, _why in decl.get("inputs", []))
+                for env, decl in names[workflow])
+            named = (f" (the command selects environment `{chosen}`, "
                      "which no declared deploy of this workflow names: declare "
                      "that environment's deploy with the same input)"
-                     if not fit and SELECTOR in inputs else "")
+                     if not fit and chosen is not None and not known else "")
             raise (Selector if named else Block)(
                         f"the dispatch of `{workflow}` fits {which} in {label}"
                         f"{named}, so which environment's preconditions apply "
