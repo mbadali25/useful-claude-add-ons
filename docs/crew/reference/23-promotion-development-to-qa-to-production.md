@@ -181,8 +181,17 @@ ref=<sha> -f environment=production` (inputs reordered) and `gh api -X POST
 repos/<o>/<r>/actions/workflows/deploy.yml/dispatches -f ref=main -f
 'inputs[environment]=production'` both reach the environment whose declared
 dispatch names `deploy.yml` and whose declared literal inputs all appear with
-the same value; extra inputs are allowed, and a declared input whose value is a
-`$(...)` or backtick substitution is not compared. Workflow names compare as
+the same value; extra inputs are allowed, except `environment` (L-0948): it
+selects the environment, so a command that gives it where a declared dispatch
+does not list it fits only the environment of that name (case ignored). A
+`-f environment=development` dispatch is therefore never read as the production
+deploy whose declaration omits `environment`; with no environment of that name
+declared it is could-not-tell and blocks, naming the environment it selected.
+A declared input whose value is a `$(...)` or backtick substitution is not
+compared. Known limit: the containment match is unchanged, so a production
+declared without `environment` still matches as a substring of a command that
+extends it, and the gate then applies production's checks beside the dispatch's
+answer; declare `-f environment=<name>` for every environment to avoid it. Workflow names compare as
 file names, a leading `.github/workflows/` dropped. Blocked:
 
 - a declared workflow whose inputs fit no environment, or more than one

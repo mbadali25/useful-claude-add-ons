@@ -169,3 +169,25 @@ def test_a_substitution_beside_a_literal_placeholder_word_is_still_skipped(proje
     ("SUBSTITUTED SUBSTITUTED1", "SUBSTITUTED2")])
 def test_placeholder_is_a_word_the_text_does_not_hold(text, word):
     assert helper.placeholder(text) == word
+
+
+def test_environment_is_a_selector_not_an_extra_input(project):
+    """L-0948: production declared without `environment`; a command that
+    selects another environment fits nothing, one naming production fits it."""
+    project({"production": {"deploy": "gh workflow run w.yml -f site=a"}})
+    for env in ("development", "qa"):
+        with pytest.raises(helper.Selector, match="selects environment"):
+            helper.decide(f"gh workflow run w.yml -f site=a -f environment={env}")
+        with pytest.raises(helper.Selector, match="selects environment"):
+            helper.decide(f"gh workflow run w.yml -f environment={env} -f site=a")
+    assert helper.decide("gh workflow run w.yml -f site=a -f environment=Production") \
+        == ["env\tproduction"]
+    assert helper.decide("gh workflow run w.yml -f site=a") == ["env\tproduction"]
+
+
+def test_a_selector_the_command_gives_beats_stripping_the_declared_deploy(project):
+    """The command contains production's declared text, so the retry that
+    strips declared deploys must not hide the selector."""
+    project({"production": {"deploy": "gh workflow run w.yml -f site=a"}})
+    with pytest.raises(helper.Selector):
+        helper.decide("gh workflow run w.yml -f site=a -f environment=development")
