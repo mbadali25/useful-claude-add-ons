@@ -3186,47 +3186,6 @@ python3 plugin/crew/hooks/scripts/crew_config.py --set 'git.forbiddenTrailers=["
 
 ---
 
-## `guards.mass` - the mass delete, create and change stop (crew 1.3.36)
-
-**The question.** An owner who lets autopilot run without a human (a
-`humanOnly` opt-out, or just `autopilot.approval`) still wants one stop: a
-command that wipes, floods or rewrites a lot of the tree. "A lot" has to be a
-number, and a number picked by feel is either always tripped or never.
-
-**The measurement.** On this repo's own history (`git log origin/main`, 104
-days, 623 first-parent units; generated paths excluded): deletes are rare
-(median, p90 and p95 are 0; 15 PRs delete anything; the deliberate bulk ones
-are 10, 11, 25, 81 and a 12,230-file vendored tree), creates have a median of 0
-and p95 of 16, changes a median of 5 and p95 of 30. A limit at the count trips:
-`deleteCount` 10 trips 5 PRs (0.8%), `createCount` 20 trips 29 (4.7%),
-`changeCount` 30 trips 35 (5.6%). Per commit the same numbers trip 6, 22 and 12
-of 5,828, which is why the git rules count the whole branch against its base
-(the unit that was measured) and not each commit.
-
-**Terraform is inferred.** The history tracked no `.tf` file, so delete 3,
-create 10, change 10 are a judgement: a plan rarely touches more than a handful
-of resources, and destroying three is the review line. Change them in
-`guards.mass.overrides.terraform` once there is a plan history to measure.
-
-**A hook cannot read a row count.** `DELETE FROM t` with no `WHERE` could be one
-row or a million, and no command text says which, so an unfiltered `DELETE` or
-`UPDATE` (and `WHERE 1=1`) always stops. "Could not tell is mass" holds for
-every count the hook cannot take, for the reason in CLAUDE.md: an unknown must
-not collapse into the safe-looking value.
-
-**Who may loosen it.** A limit or an exempt glob only loosens the stop, and the
-repo file is the one a clone brings with it, so the machine file sets limits and
-`guards.mass.exempt`, and the repo file can lower a limit or turn the stop on.
-The stop is off by default (CLAUDE.md: a hook that can block defaults off); a
-double-confirmed `humanOnly` opt-out arms it, because that is the moment the
-human step it compensates for goes away.
-
-**What it cannot see.** A script, an MCP server, Write and Edit before they are
-committed (a branch's count at `git commit`, `git push` and `gh pr create` is
-where they show up), `tar -x`, `unzip`, `git merge` and `pull`. Tests:
-`tests/test_mass_guard.py`; mutations (unwired, because `sabotage*.py` is review
-harness and lands alone): `tests/mass_mutations.py`.
-
 ## The no-python fallback in cloud-guard.sh and env-guard.sh
 
 Both hooks normally resolve their guard through `crew_config.py --guard`, which needs python. When python cannot run at all, `cloud-guard.sh` and `env-guard.sh` fall back to a shell check of the config files, `crew_guard_layer_armed` in `hooks/scripts/_common.sh`. The fallback used to take the first textual match of the guard key and read a missing token as "off". That let a legacy key saying `off` win over an override saying `block`, and it let a file the shell could not make sense of count as unarmed.

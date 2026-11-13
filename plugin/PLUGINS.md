@@ -151,10 +151,10 @@ measured.
 | | |
 |---|---|
 | **Source** | [`crew/`](crew) |
-| **Version** | 1.3.76<!-- claim: plugin-version:crew --> |
+| **Version** | 1.3.79<!-- claim: plugin-version:crew --> |
 | **Install** | `claude plugin install crew@useful-claude-add-ons` |
 | **Menu item** | 21, `repo-plugins` — **off by default**. Menu item 22, `graphify`, is a separate, also-off-by-default install of the `graphify` CLI this plugin's graph feature depends on — see **The code graph** below. |
-| **Registers** | 4 agents plus the `session-relay` transport agent, 41 commands, 33 skills<!-- claim: plugin-skills:crew -->, 8 hook entries<!-- claim: plugin-hooks:crew --> (a bash launcher per event, running 14 scripts) across 8 events, and the `wave` workflow (`/crew:wave`, in `workflows/`) |
+| **Registers** | 4 agents plus the `session-relay` transport agent, 40 commands, 33 skills<!-- claim: plugin-skills:crew -->, 8 hook entries<!-- claim: plugin-hooks:crew --> (a bash launcher per event, running 14 scripts) across 8 events, and the `wave` workflow (`/crew:wave`, in `workflows/`) |
 | **Upstream guide** | [`crew/README.md`](crew/README.md) — the entry point; its reference sections moved to `docs/crew/reference/` (see its "Moved sections" index) |
 
 Built for the awkward case: several repositories, mixed stacks, legacy code, and almost no test coverage. The workflow is file-backed tickets, one implementation session, an independent reviewer, and deterministic gates that block on failure rather than offering an opinion.
@@ -272,13 +272,12 @@ Enforcement is session-local, like every other gate here: an incident stands
 the hooks down for sessions in this repository on this machine. It does nothing
 to CI or to branch protection.
 
-### Commands — all 41 commands, explicit<!-- claim: plugin-commands:crew -->
+### Commands — all 40 commands, explicit<!-- claim: plugin-commands:crew -->
 
 <!-- claim: plugin-command-table:crew -->
 | Command | Purpose |
 |---|---|
 | `/crew:approve <ticket-id>` | Approve a ticket's plan - only you can, by typing this, unless you opt `/crew:autopilot` into `autopilot.approval`; the prompt hook records the receipt |
-| `/crew:approve-mass <id>` | Approve ONE command the mass-operation stop (`guards.mass`) refused - only you can, by typing the id it printed; the prompt hook records it for 15 minutes |
 | `/crew:autopilot [status\|run\|sleep\|wake\|focus] [ticket id\|off]` | Report a ticket's standing (`status`, read-only) or drive it through the lifecycle until a human is needed (`run`) - off until `autopilot.mode: plan`; accepting a review with a BLOCK always stops (with `autopilot.maxAutoReplans` at 1 or more, an out-of-rounds BLOCK round is rejected by `crew_autopilot.py auto-reject` and replanned instead, capped), and plan approval stops unless `autopilot.approval` lets `crew_autopilot.py approve` write the receipt (needs `scope.allowCliApproval: true`); its other writers are `sleep` and `wake`, which start or end sleep mode now (until L-1504 a manual sleep only tightens a day value) and write only `<git-common-dir>/crew/autopilot-sleep.json` (`sleep` needs `scope.allowCliApproval: true`); `focus <id>` / `focus off` set or drop an explicit lock on one ticket in `<git-common-dir>/crew/autopilot-focus.json` (an active ticket alone is not focus), refusing other tickets and stopping on a change outside Touch; `autopilot.deploy` (default `none`) says where a deploy may run unattended - production only with `environments.prodUnattended` true in both layers |
 | `/crew:brainstorm <what needs doing>` | Brainstorm a request into an approved direction, before it becomes a spec |
 | `/crew:change <new \| status <id> \| close <id> \| list>` | File, check and close a change request — SDP, Jira or local |
