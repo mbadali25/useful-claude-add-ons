@@ -398,9 +398,10 @@ KEY_META = {
         "(`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value "
         "written any other way, or any later change to the machine file outside crew's "
         "config writer, reads as off, and a repo `\"off\"` or unreadable repo file vetoes "
-        "it. FAIL-CLOSED ALLOWLIST: a line is exempt only when every command on it is "
-        "exactly `git` with plain literal words (no `$`, backtick, glob, brace, leading "
-        "`~`, parenthesis, PowerShell expression or `%NAME%`; nothing else on the line); "
+        "it. FAIL-CLOSED ALLOWLIST: a line is exempt only when it is ONE command, exactly "
+        "`git` with plain literal words (no `$`, backtick, glob, brace, leading `~`, "
+        "parenthesis, PowerShell expression or `%NAME%`; no separator, redirection, "
+        "heredoc, continuation or comment, so a chain is judged as before); "
         "a git command carrying `-c`, a command to run (`rebase --exec`, `push "
         "--receive-pack`, `submodule foreach`, ...) or a `git config` write is never exempt.", "type",
         since="1.3.82", source=_S + "crew_gitallow.py",

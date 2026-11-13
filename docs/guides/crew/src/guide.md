@@ -531,14 +531,15 @@ stops the command guards blocking or asking on git commands, destructive ones
 included: `"all"`, or a list of subcommands such as `["commit", "push"]`.
 A listed subcommand passes with every option it takes: listing `push` also
 lets `git push --force` through. It loosens the force-push rule and the
-promote gate, and only for a line made of nothing but plain git commands: the
-line is a fail-closed allowlist. Every command on it must be exactly `git`
-(no path, no other command, so nothing on the line can redefine git), and
-every word a plain literal as one shared reader reads it - no `$` in any form,
-backtick, glob, brace expansion, leading `~`, subshell, PowerShell `(expr)`,
-`@(...)`, splat, `--%` or `%NAME%`, and no redirection but `>`, `>>` or
-`2>&1` after the subcommand (bash reads `>&-` as "close" and hands the rest
-of the word to git). Anything it cannot read whole is judged as before. A plain git command carrying `-c` or a command to run (`rebase
+promote gate, and only for a line that is ONE plain git command, fail-closed:
+the command must be exactly `git` (no path, no other command, so nothing on the
+line can redefine git) and every word a plain literal as one shared reader
+reads it - no `$` in any form, backtick, glob, brace expansion, leading `~`,
+subshell, PowerShell `(expr)`, `@(...)`, splat, `--%` or `%NAME%`, and no
+separator, redirection, heredoc, here-string, continuation or comment at all
+(a chain such as `git add -A && git commit`, `git status 2>&1` or a heredoc
+commit message is judged as before). Anything it cannot read whole is judged
+as before. A plain git command carrying `-c` or a command to run (`rebase
 --exec` or its abbreviation `--exe`, `push --receive-pack`, `init
 --template`), or a `git config` that is not plainly a read, is never exempt.
 Plain lines - `git commit -m "fix: x"`, `git push --force-with-lease origin

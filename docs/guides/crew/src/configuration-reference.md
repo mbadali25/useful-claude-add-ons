@@ -159,53 +159,48 @@ rule is a finding on the `push` subcommand. To keep force pushes stopped, leave
 
 What it loosens, and nothing else: the cloud guard's `guards.forcePush` rule
 (`git push --force`, `+ref`) and the promote gate, so a commit message or
-heredoc that merely mentions a declared deploy no longer trips it. A declared
+that merely mentions a declared deploy no longer trips it. A declared
 deploy that is itself a git command (`git push prod main`) stays gated: that
 is a deploy, not a git block. `gh` is not git: `gh pr merge --admin`
 (`guards.adminMerge`), workflow dispatches and `gh api` calls are untouched.
 
-**The line is a fail-closed allowlist (crew 1.3.82).** A command line is
-exempt only when EVERY command on it is exactly `git` - not a path
-(`/usr/bin/git`, `./git`, `git.exe`), and with no other command on the line,
-so a function, alias or `shopt` that redefines git, an assignment, `cd`,
-`command git`, a subshell `( )` or group `{ }` all leave the line judged as
-before - and every word of every git command is a plain literal, read by ONE
-reader that both the cloud guard and the promote gate use:
+**The line is ONE plain git command, fail-closed (crew 1.3.82).** A command
+line is exempt only when it is a single simple command: exactly `git` - not a
+path (`/usr/bin/git`, `./git`, `git.exe`), not preceded by `command`, an
+assignment, `cd` or a function, alias or `shopt` that redefines git - followed
+by plain literal words, read by ONE reader that both the cloud guard and the
+promote gate use. Nothing else is read at all:
 
-- bash: unquoted letters, digits and `_ - . / : = + , @ % ^`, a `~` that is
-  not at the start (`HEAD~3`), git's `@{...}` (`@{u}`, `HEAD@{1}`) with no `,`
-  or `..` inside; whole `'...'` runs; `"..."` runs with no `$` or backtick; a
-  backslash escaping one character; a heredoc whose delimiter is quoted, or
-  whose body has no `$`, backtick or backslash. Commands joined only by `;`,
-  `&&`, `||`, `|`, `&` or a newline. A redirection only AFTER the
-  subcommand, and only `>` / `>>` (an optional digit descriptor) to a plain
-  file name not starting with `-`, `N>&M` between digit descriptors
-  (`2>&1`), or a heredoc / here-string (crew 1.3.82).
-- PowerShell: unquoted letters, digits and `_ - . / : = + \ ^ % ~ @` (no
-  leading `~`, `@` only inside a word); a whole `'...'` or `"..."`
-  word (a double-quoted one holding no `$`); a here-string (`@"..."@` with no
-  `$` or backtick); a backtick escaping a character that is not a letter or
-  digit; an unquoted first word; a redirection after the subcommand
-  (`2>&1`, `*>&1`, `> out`; only `n>&1` merges, PowerShell reserves `1>&2`).
-  Statements joined only by `;`, `&&`, `||` or a newline, with a statement on
-  both sides of every `&&` and `||`.
+- NO separator: `;`, `&`, `&&`, `||`, `|`, or a second line. A newline counts
+  only inside a quoted word (a multi-line commit message).
+- NO redirection of any kind (`>`, `>>`, `<`, `2>&1`, `&>`, `{v}>`), no
+  heredoc, no here-string, no line continuation, no comment, no subshell
+  `( )`, group `{ }` or command with only a redirection.
+- bash words: unquoted letters, digits and `_ - . / : = + , @ % ^`, a `~`
+  that is not at the start (`HEAD~3`), git's `@{...}` (`@{u}`, `HEAD@{1}`) with
+  no `,` or `..` inside; whole `'...'` runs; `"..."` runs with no `$` or
+  backtick; a backslash escaping one character.
+- PowerShell words: unquoted letters, digits and `_ - . / : = + \ ^ % ~ @` (no
+  leading `~`, `@` only inside a word); a whole `'...'` or `"..."` word (a
+  double-quoted one holding no `$`); a backtick only before one of
+  `- . / : = _ +` (never before a letter or digit, `` `u{2d} `` is a `-`, and
+  never before `*`, `?` or `[`, which PowerShell still expands as a wildcard
+  for a native command's arguments); an unquoted first word.
 
-Anything else is "cannot tell", and cannot tell is never exempt: `$` in any
-form (`"$OPT"`, `${X:-...}`, `$'\x2d...'`, `$"..."`, `$env:X`, `$(...)`), a
+Anything else is "cannot tell", and cannot tell is never exempt: the guards
+judge that line exactly as they did before the switch. That includes `$` in
+any form (`"$OPT"`, `${X:-...}`, `$'...'`, `$"..."`, `$env:X`, `$(...)`), a
 backtick substitution, a glob (`*`, `?`, `[`), a brace expansion, a leading
-`~`, a PowerShell `(expr)`, `@(...)`, `@splat`, `{ }` or `[type]`, a pipe into
-anything, a single `&`, `--%`, a `%NAME%`, a curly quote, a backtick
-before a letter (`` `u{2d} `` is a `-`) or a newline inside a word, a
-dangling `&&` / `||` (or an empty command after one), and every other
-redirection: `<`, `<&`, `<>`, `>|`, `&>`, `>&-`, `>& file`, a `{var}>`
-descriptor, one with no target, and any redirection between `git` and its
-subcommand. Bash reads `>&-` as "close the descriptor" and hands the rest of
-that word to git, so `git push >&---receive-pack=x origin main` runs git with
-`--receive-pack=x`; and `git 2>&1 -c core.sshCommand=x push` hid its `-c`
-from a reader that kept the `2` (crew 1.3.82, review round 5). Five review
-rounds each found a new way to build a git word at run time; the allowlist
-lists what is plain instead of what is dangerous, so a form nobody has
-thought of yet is judged, not exempt. A differential test
+`~`, a PowerShell `(expr)`, `@(...)`, `@splat`, `{ }` or `[type]`, `--%`, a
+`%NAME%`, a curly quote, and every chain such as `git add -A && git commit -m
+x`. Six review rounds each found a new shape of redirect, heredoc,
+continuation or expansion for a reader that tried to follow them (a command
+made only of redirects such as `> $((_))`, a heredoc delimiter ending in a
+backslash, a continuation splitting `2>&1`, a backtick before `*`); the reader
+now follows none of them, so a form nobody has thought of yet is judged, not
+exempt. The convenience cost is that a chain, a redirect or a heredoc commit
+message is judged as before (run the commands as separate calls, and pass a
+message with `-m '...'`). A differential test
 (`tests/test_git_allow_differential.py`) runs every line of a generated
 corpus that the allowlist accepts under real bash and PowerShell 7 with a
 shim `git` that logs its argv, and fails when git is handed anything other
@@ -232,12 +227,12 @@ not veto it either; one whose repository crew cannot tell (`--git-dir`,
 
 What stays exempt, for example: `git commit -m "fix: x"`, `git push
 --force-with-lease origin topic`, `git push -f origin topic`, `git rebase -i
-HEAD~3`, `git -C <path> status`, `git log --format=%H`, `git log @{u}..HEAD`,
-`git add -A && git commit -m 'x' && git push origin topic`, `git config
-user.name`, and `git commit -F - <<'EOF' ... EOF`. What no longer is: `git
-commit -m "$(...)"` (a substitution), a line with anything but git on it
-(`git push -f && rm x`, `FOO=1 git push`), `/usr/bin/git ...`, and `git config
-<key> <value>`.
+HEAD~3`, `git -C <path> status`, `git log --format=%H`, `git log @{u}..HEAD`
+and `git config user.name`. What no longer is: `git commit -m "$(...)"` (a
+substitution), a line with anything but one git command on it (`git push -f &&
+rm x`, `git add -A && git commit`, `FOO=1 git push`, `git status 2>&1`, `git
+commit -F - <<'EOF' ... EOF`), `/usr/bin/git ...`, and `git config <key>
+<value>`.
 
 Who can turn it on: the machine file only, and only through the double
 confirmation. `crew_confirm_config.py propose --layer machine --key
@@ -470,7 +465,7 @@ Columns:
 |---|---|---|---|---|---|
 | `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | 1.2.62 | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `plugin/crew/hooks/scripts/crew_guards.py`) | 1.2.62 | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
-| `guards.git.allow` | both | `null` | null, `"off"`, `"all"` or a list of git subcommand names (coerced in `plugin/crew/hooks/scripts/crew_gitallow.py`) | 1.3.82 | The owner's switch that stops crew's command guards blocking or asking on git commands: `"all"` lets a line of only plain git commands past the force-push rule and the promote gate (unless a declared deploy is itself a git command); a list of subcommands (`["commit", "push"]`) lets only those through, with every option they take (listing `push` lets `push --force` through). null or `"off"` changes nothing. Machine file only, and only after `/crew:confirm-config` twice (`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value written any other way, or any later change to the machine file outside crew's config writer, reads as off, and a repo `"off"` or unreadable repo file vetoes it. FAIL-CLOSED ALLOWLIST: a line is exempt only when every command on it is exactly `git` with plain literal words (no `$`, backtick, glob, brace, leading `~`, parenthesis, PowerShell expression or `%NAME%`; nothing else on the line); a git command carrying `-c`, a command to run (`rebase --exec`, `push --receive-pack`, `submodule foreach`, ...) or a `git config` write is never exempt. |
+| `guards.git.allow` | both | `null` | null, `"off"`, `"all"` or a list of git subcommand names (coerced in `plugin/crew/hooks/scripts/crew_gitallow.py`) | 1.3.82 | The owner's switch that stops crew's command guards blocking or asking on git commands: `"all"` lets a line of only plain git commands past the force-push rule and the promote gate (unless a declared deploy is itself a git command); a list of subcommands (`["commit", "push"]`) lets only those through, with every option they take (listing `push` lets `push --force` through). null or `"off"` changes nothing. Machine file only, and only after `/crew:confirm-config` twice (`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value written any other way, or any later change to the machine file outside crew's config writer, reads as off, and a repo `"off"` or unreadable repo file vetoes it. FAIL-CLOSED ALLOWLIST: a line is exempt only when it is ONE command, exactly `git` with plain literal words (no `$`, backtick, glob, brace, leading `~`, parenthesis, PowerShell expression or `%NAME%`; no separator, redirection, heredoc, continuation or comment, so a chain is judged as before); a git command carrying `-c`, a command to run (`rebase --exec`, `push --receive-pack`, `submodule foreach`, ...) or a `git config` write is never exempt. |
 
 ### `production`
 

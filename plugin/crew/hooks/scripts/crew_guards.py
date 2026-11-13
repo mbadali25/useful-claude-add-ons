@@ -1549,6 +1549,26 @@ def _fd_prefix(text, pos, word):
         return False
     start = pos - len(word)
     return start == 0 or text[start - 1] in _FD_BOUNDARY
+
+
+def _dangling_backslash(raw):
+    """True when `raw` ends in an unpaired backslash: the word ended at a
+    newline, a blank or an operator that the backslash escapes, so bash reads
+    a longer delimiter than this reading does (`<<E\\<NL>OF` is `EOF`,
+    `<<E\\ OF` is `E OF`; PR #769 review round 6)."""
+    return (len(raw) - len(raw.rstrip("\\"))) % 2 == 1
+
+
+def _continuation_in_fd_prefix(text, pos, word):
+    """Raise `_Unsure` for a backslash-newline at `pos` that bash would join
+    into a redirection's fd prefix: the word read so far looks like a
+    descriptor and a `<` or `>` follows the continuation (`2\\<NL>>&1` is
+    `2>&1`, but the raw text before the `>` is a newline, so `_fd_prefix`
+    would read `2` as an argument; PR #769 review round 6)."""
+    if word and _FD_WORD_RE.match(word) and text[pos + 2:pos + 3] in ("<", ">"):
+        raise _Unsure("a line continuation inside a redirection's fd prefix")
+
+
 # A command word this far into a line runs terraform only through a script
 # crew cannot split: the Step 8 trigger decides for the whole line.
 _GATE_OPAQUE = frozenset((
@@ -1615,6 +1635,7 @@ class _GateReader:
         while self.pos < len(self.text):
             char = self.text[self.pos]
             if self._peek(2) == "\\\n":
+                _continuation_in_fd_prefix(self.text, self.pos, "".join(word))
                 self.pos += 2
             elif char in " \t":
                 end_word()
@@ -1688,6 +1709,7 @@ class _GateReader:
         mixed = "\\" in raw and ("'" in raw or '"' in raw)
         mixed = mixed or "'" in raw and '"' in raw
         odd = raw.count("'") % 2 or raw.count('"') % 2
+        mixed = mixed or _dangling_backslash(raw)
         if not raw or odd or mixed or "$" in raw or "`" in raw:
             raise _Unsure("a heredoc delimiter crew cannot spell")
         quoted = any(c in raw for c in "'\"\\")
@@ -1999,6 +2021,7 @@ class _CommandSplitter:
         while self.pos < len(text):
             char = text[self.pos]
             if text.startswith("\\\n", self.pos):
+                _continuation_in_fd_prefix(text, self.pos, "".join(word))
                 self.pos += 2
             elif char == "\\":
                 word.append(text[self.pos:self.pos + 2])
@@ -2105,6 +2128,7 @@ class _CommandSplitter:
         escaped_quote = "\\" in raw and ("'" in raw or '"' in raw)
         both = "'" in raw and '"' in raw
         odd = raw.count("'") % 2 or raw.count('"') % 2
+        both = both or _dangling_backslash(raw)
         if not raw or escaped_quote or both or odd or \
                 any(c in raw for c in "$`"):
             raise _Unsure("a heredoc delimiter crew cannot spell")

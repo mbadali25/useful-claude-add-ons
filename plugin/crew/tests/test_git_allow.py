@@ -431,8 +431,10 @@ def test_apply_refuses_a_repo_or_off_value(machine):
 
 # --- the cloud guard: forcePush ---------------------------------------------------------
 
-def _evaluate(root, command, tool="Bash", mode="block"):
-    return cloud_guard.evaluate(str(root), tool, command.replace("\\", "/"),
+def _evaluate(root, command, tool="Bash", mode="block", raw=False):
+    """`raw` keeps the backslashes (a continuation, a heredoc delimiter); the
+    default turns them into `/` so a Windows path in a command reads as POSIX."""
+    return cloud_guard.evaluate(str(root), tool, command if raw else command.replace("\\", "/"),
                                 {"cwd": str(root)}, mode)
 
 
@@ -462,7 +464,7 @@ def test_force_push_passes_with_all(tmp_path, machine, command):
 
 @pytest.mark.parametrize("tool,command", [
     ("PowerShell", "git push --force origin main"),
-    ("PowerShell", "git -C {root} push -f origin main; git status")])
+    ("PowerShell", "git -C {root} push -f origin main")])
 def test_force_push_passes_with_all_in_powershell(tmp_path, machine, tool, command):
     root = make_repo(tmp_path, mode=None)
     _arm(machine, "all")
@@ -555,15 +557,12 @@ def test_a_single_ampersand_is_never_line_exempt(command, shell):
 
 
 @pytest.mark.parametrize("command,shell", [
-    ("git push origin main 2>&1", "powershell"),
-    ("git push origin main *>&1", "powershell"),
     ("git commit -m 'a & b'", "powershell"),
     ("git commit -m \"a & b\"", "powershell"),
-    ("git status && git log -1", "powershell"),
-    ("git commit -m 'a & b'", "bash"),
-    ("git status && git log -1", "bash")])
+    ("git commit -m 'a & b'", "bash")])
 def test_an_ampersand_that_is_not_a_separator_is_line_exempt(command, shell):
-    """Must-allow neighbours: a redirection, a quoted `&`, and `&&`."""
+    """Must-allow neighbours: a quoted `&` (round 6: a redirection, `&&` or
+    any separator is not exempt at all, see `test_round6_*`)."""
     assert crew_gitallow.line_exempt(command, shell, "all") is True
 
 
@@ -664,12 +663,13 @@ def test_an_allowlist_with_push_lets_force_push_through(tmp_path, machine):
 
 
 def test_an_allowlist_covers_the_whole_line_or_nothing(tmp_path, machine):
-    """Round 4: `["push"]` lets a line of push commands through, not a push on a
-    line that also runs an unlisted git command."""
+    """Round 4 / 6: `["push"]` lets a lone push through, not a push on a line
+    that also runs another command (round 6: no chain is exempt at all)."""
     root = make_repo(tmp_path, mode=None)
     _arm(machine, ["push"])
     assert _evaluate(root, "git push --force origin main; git status")["decision"] == "deny"
-    assert _evaluate(root, "git push --force origin main; git push o t")["decision"] == "allow"
+    assert _evaluate(root, "git push --force origin main; git push o t")["decision"] == "deny"
+    assert _evaluate(root, "git push --force origin main")["decision"] == "allow"
 
 
 def test_an_unconfirmed_all_still_refuses_force_push(tmp_path, machine):
@@ -740,7 +740,9 @@ def test_the_switch_never_covers_gh(tmp_path, machine, command, monkeypatch):
 
 @pytest.mark.parametrize("command,shell,setting,expect", [
     ("git commit -m 'deploy-prod'", "bash", "all", True),
-    ("git commit -F - <<'EOF'\nrun deploy-prod, then cd x\nEOF\n", "bash", "all", True),
+    ("git commit -m 'deploy-prod\nsecond line'", "bash", "all", True),
+    # Round 6: a heredoc is never read, so it is not exempt.
+    ("git commit -F - <<'EOF'\nrun deploy-prod, then cd x\nEOF\n", "bash", "all", False),
     # A substitution running only git still builds a word at run time
     # (review round 2): `git config` output may be `--receive-pack=...`.
     ("git -C /x commit -m \"$(git rev-parse HEAD)\"", "bash", "all", False),
@@ -756,10 +758,14 @@ def test_the_switch_never_covers_gh(tmp_path, machine, command, monkeypatch):
     ("git commit -m 'unclosed", "bash", "all", False),
     ("git commit -m x", "bash", "off", False),
     ("git commit -m x; git push", "bash", frozenset({"commit"}), False),
-    ("git commit -m x; git push", "bash", frozenset({"commit", "push"}), True),
-    ("git commit -m @'\nit's deploy-prod\n'@", "powershell", "all", True),
+    ("git push", "bash", frozenset({"commit"}), False),
+    ("git commit -m x", "bash", frozenset({"commit"}), True),
+    ("git commit -m x; git push", "bash", frozenset({"commit", "push"}), False),
+    ("git push", "bash", frozenset({"commit", "push"}), True),
+    ("git commit -m @'\nit's deploy-prod\n'@", "powershell", "all", False),
     ("git commit -m \"deploy-prod `\"x`\"\"", "powershell", "all", True),
-    ("git fetch origin; git status", "powershell", "all", True),
+    ("git fetch origin; git status", "powershell", "all", False),
+    ("git fetch origin", "powershell", "all", True),
     ("git log | Select-Object -First 3", "powershell", "all", False),
     ("git log | git status", "powershell", "all", False),
     ("git commit -m \"$(deploy-prod)\"", "powershell", "all", False),
@@ -818,8 +824,12 @@ FLAVOURS = [
     pytest.param("ps1", marks=[pytest.mark.skipif(_PWSH is None, reason="no PowerShell 7"),
                                pytest.mark.slow]),
 ]
-_HEREDOC = {"sh": "git commit --allow-empty -F - <<'EOF'\nnotes: run deploy-prod after cd x\nEOF\n",
-            "ps1": "git commit --allow-empty -m @'\nnotes: run deploy-prod after cd x\n'@"}
+_HEREDOC = {"sh": "git commit --allow-empty -m 'notes: run deploy-prod after cd x'",
+            "ps1": "git commit --allow-empty -m 'notes: run deploy-prod after cd x'"}
+# Round 6: the heredoc / here-string spellings are no longer read, so they stay gated.
+_HEREDOC_BODY = {
+    "sh": "git commit --allow-empty -F - <<'EOF'\nnotes: run deploy-prod after cd x\nEOF\n",
+    "ps1": "git commit --allow-empty -m @'\nnotes: run deploy-prod after cd x\n'@"}
 
 
 @pytest.mark.parametrize("flavour", FLAVOURS)
@@ -856,6 +866,16 @@ def test_gate_still_gates_a_line_that_is_not_only_git(tmp_path, machine, flavour
     assert code == 2, err
 
 
+@pytest.mark.parametrize("flavour", FLAVOURS)
+def test_gate_still_gates_a_heredoc_message_with_all(tmp_path, machine, flavour):
+    """Round 6: a heredoc or here-string is not read, so the switch does not
+    cover it; the gate judges it as it did before."""
+    root = _gate_repo(tmp_path)
+    _arm(machine, "all")
+    code, err = run_gate(flavour, root, tmp_path / "home", _HEREDOC_BODY[flavour])
+    assert code == 2, err
+
+
 def test_gate_honours_the_allowlist(tmp_path, machine):
     if _BASH is None:
         pytest.skip("no MSYS/POSIX bash")
@@ -877,6 +897,8 @@ def test_gate_python_exemption_in_process(tmp_path, machine, monkeypatch):
     assert crew_gitallow.promote_exempt(command, "bash", str(root)) is True
     assert crew_gitallow.promote_exempt("git push prod-remote main", "bash", str(root)) is False
     assert crew_gitallow.promote_exempt(_HEREDOC["ps1"], "powershell", str(root)) is True
+    assert crew_gitallow.promote_exempt(_HEREDOC_BODY["sh"], "bash", str(root)) is False
+    assert crew_gitallow.promote_exempt(_HEREDOC_BODY["ps1"], "powershell", str(root)) is False
 
 
 def test_dispatch_prints_the_allow_record_for_powershell(tmp_path, machine, monkeypatch, capsys):
@@ -1359,20 +1381,39 @@ PLAIN = [
     "git push -u origin HEAD", "git rebase -i HEAD~3", "git rebase origin/main",
     "git -C /c/repos/x status", "git --no-pager log -1", "git log --format=%H",
     "git log --oneline -5", "git status --short", "git diff HEAD~1 -- plugin/crew/CONFIG.md",
-    "git add -A && git commit -m 'x' && git push origin topic",
-    "git fetch origin && git rebase origin/main", "git checkout -b feat/x",
+    "git checkout -b feat/x",
     "git stash push -m \"msg\"", "git tag -a v1.0 -m \"release 1.0\"", "git branch -D old",
     "git push origin +topic", "git reset --hard origin/main", "git clean -fdx",
-    "git status; git log -1", "git fetch --all\ngit status"] + CONFIG_READS
+    "git commit -m 'subject\n\nbody line'"] + CONFIG_READS
+# Round 6: everything the reader no longer follows is "cannot tell", never exempt
+# -- a chain, a pipe, a newline between commands, a redirection, a heredoc, a
+# here-string, a comment, a subshell.
+FALLBACK_BASH = [
+    "git add -A && git commit -m 'x' && git push origin topic",
+    "git fetch origin && git rebase origin/main", "git status; git log -1",
+    "git fetch --all\ngit status", "git status 2>&1", "git log | git status",
+    "git commit -F - <<'EOF'\nnotes: deploy-prod $X `y`\nEOF\n",
+    "git commit -F - <<EOF\nplain body\nEOF\n", "git status # comment", "git status &",
+    "git log -1 > out.txt", "git status >>log 2>&1", "git status 2>/dev/null",
+    "git status <<<x", "git status\n\ngit log", "git status \\\n-s",
+    "(git status)", "git status;", "git status; ; git log", "git status; >", "> x git status",
+    "git commit -m x \\\n --amend", "git status;git log", "git status&&git log",
+    "git status|git log", "git status>x", "git status<x", "git status&", "git status\ngit log"]
+FALLBACK_PS = [
+    "git add -A; git commit -m 'x'", "git fetch origin && git rebase origin/main",
+    "git status; git log -1", "git fetch --all\ngit status", "git status 2>&1",
+    "git push origin main *>&1", "git log -1 > out.txt", "git status 3>&1",
+    "git fetch || git status", "git status # comment", "git status | git log",
+    "git commit -m @'\nit's $deploy-prod\n'@", "git status `\n-x", "git status &&\ngit log",
+    "git status;", "(git status)", "git status\n\ngit log", "git status;git log",
+    "git status>x", "git status\ngit log", "git status|git log"]
 BASH_PLAIN = [
     "git log @{u}..HEAD", "git rev-parse HEAD@{1}", "git commit -m \"say \\\"hi\\\"\"",
-    "git commit -m \\*", "git commit -F - <<'EOF'\nnotes: deploy-prod $X `y`\nEOF\n",
-    "git commit -F - <<EOF\nplain body\nEOF\n", "git status 2>&1", "git log | git status",
-    "\"git\" status", "'git' status", "\\git status"]
+    "git commit -m \\*", "\"git\" status", "'git' status", "\\git status",
+    "git status \n", "\ngit status"]
 PS_PLAIN = [
-    "git -C C:\\repos\\x status", "git status 2>&1", "git push origin main *>&1",
-    "git log -1 > out.txt", "git commit -m @'\nit's $deploy-prod\n'@",
-    "git commit -m \"a `\"b`\" c\"", "git commit -m 'it''s'"]
+    "git -C C:\\repos\\x status", "git commit -m \"a `\"b`\" c\"", "git commit -m 'it''s'",
+    "git push `-f origin topic", "git commit -m 'two\nlines'"]
 ROUND4_ALLOW = ([(c, "bash") for c in PLAIN + BASH_PLAIN]
                 + [(c, "powershell") for c in PLAIN + PS_PLAIN])
 
@@ -1380,6 +1421,23 @@ ROUND4_ALLOW = ([(c, "bash") for c in PLAIN + BASH_PLAIN]
 @pytest.mark.parametrize("command,shell", ROUND4_BLOCK)
 def test_round4_must_block_is_not_line_exempt(command, shell):
     assert crew_gitallow.line_exempt(command, shell, "all") is False
+
+
+@pytest.mark.parametrize("command,shell", [(c, "bash") for c in FALLBACK_BASH]
+                         + [(c, "powershell") for c in FALLBACK_PS])
+def test_round6_what_the_reader_does_not_follow_is_not_exempt(command, shell):
+    assert crew_gitallow.line_exempt(command, shell, "all") is False
+    assert crew_gitallow.line_git_commands(command, shell) is None
+
+
+@pytest.mark.parametrize("command", [c.split(";")[0].strip() for c in CONFIG_WRITES]
+                         + ["git config --unknown-flag a b", "git config --file x a b",
+                            "git config --unknown-flag user.name"])
+def test_round6_a_config_or_program_command_alone_is_not_exempt(command):
+    """Round 6 refuses every chain, so the `hold` rules are held to each
+    command on its own: the chain-free head of every CONFIG_WRITES line."""
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_exempt(command, shell, "all") is False, command
 
 
 @pytest.mark.parametrize("command,shell", ROUND4_ALLOW)
@@ -1407,8 +1465,9 @@ def test_round4_config_write_is_not_promote_exempt(tmp_path, machine, monkeypatc
     _arm(machine, "all")
     for shell in ("bash", "powershell"):
         assert crew_gitallow.promote_exempt(command, shell, str(root)) is False
+    assert crew_gitallow.promote_exempt("git commit -m deploy-prod", "bash", str(root)) is True
     assert crew_gitallow.promote_exempt("git config user.name; git commit -m deploy-prod",
-                                        "bash", str(root)) is True
+                                        "bash", str(root)) is False
 
 
 @pytest.mark.parametrize("command", CONFIG_WRITES[:2])
@@ -1480,7 +1539,8 @@ REDIRECT_RULES = {
     "leading": "&& git status",
     "empty": "git fetch ||& git log origin",
 }
-REDIRECT_ALLOW = [
+# Round 6: no redirection is read at all, so none of these is exempt now.
+REDIRECT_FALLBACK = [
     "git status 2>&1", "git log -1 > out.txt", "git status >>log 2>&1",
     "git status 2>/dev/null", "git status 1>&2", "git -C /x status 2>&1",
     "git push -f origin topic 2>&1", "git commit -F - <<'EOF'\nx\nEOF\n",
@@ -1492,23 +1552,24 @@ def test_round5_a_redirection_crew_cannot_read_is_not_exempt(command):
     assert crew_gitallow.line_exempt(command, "bash", "all") is False
 
 
-@pytest.mark.parametrize("command", REDIRECT_ALLOW)
-def test_round5_a_plain_redirection_after_the_subcommand_stays_exempt(command):
-    assert crew_gitallow.line_exempt(command, "bash", "all") is True
+@pytest.mark.parametrize("command", REDIRECT_FALLBACK)
+def test_round5_a_plain_redirection_is_not_exempt_either_since_round6(command):
+    assert crew_gitallow.line_exempt(command, "bash", "all") is False
 
 
-def test_round5_an_fd_prefix_is_not_an_argument():
-    """The non-blocking note: `git status 2>&1` read `2` as a word."""
-    assert crew_gitallow.line_git_commands("git status 2>&1", "bash") == [["status"]]
-    assert crew_gitallow.line_git_commands("git status \"2\">/dev/null", "bash") == \
-        [["status", "2"]]
+def test_round5_an_fd_prefix_is_never_read_as_an_argument_or_dropped():
+    """Round 6: `git status 2>&1` is not read at all (it was read as
+    `status` with the descriptor dropped)."""
+    assert crew_gitallow.line_git_commands("git status 2>&1", "bash") is None
+    assert crew_gitallow.line_git_commands("git status \"2\">/dev/null", "bash") is None
+    assert crew_gitallow.line_git_commands("git status \"2\"", "bash") == [["status", "2"]]
 
 
 @pytest.mark.parametrize("command", ["git 2>&1 push origin main", "git 2>err.txt status"])
 def test_round5_a_powershell_redirection_before_the_subcommand_is_not_exempt(command):
     assert crew_gitallow.line_exempt(command, "powershell", "all") is False
     after = "git push origin main 2>&1"
-    assert crew_gitallow.line_exempt(after, "powershell", "all") is True
+    assert crew_gitallow.line_exempt(after, "powershell", "all") is False
 
 
 # Found by the differential test (`test_git_allow_differential.py`): lines the
@@ -1535,8 +1596,8 @@ def test_round5_a_powershell_line_pwsh_cannot_parse_is_not_exempt(command):
 @pytest.mark.parametrize("command", [
     "git status 3>&1", "git status &&\ngit log -1", "git fetch || git status", "git status `\n-x",
     "git status; git log -1"])
-def test_round5_a_powershell_neighbour_that_parses_stays_exempt(command):
-    assert crew_gitallow.line_exempt(command, "powershell", "all") is True
+def test_round5_a_powershell_neighbour_that_parses_is_not_exempt_since_round6(command):
+    assert crew_gitallow.line_exempt(command, "powershell", "all") is False
 
 
 def _split(text):
@@ -1600,6 +1661,113 @@ def test_round5_gate_still_gates_a_redirection_repro_with_all(tmp_path, machine,
     _arm(machine, "all")
     code, err = run_gate("sh", root, tmp_path / "home", command)
     assert code == 2, err
+
+
+# --- review round 6 (Codex gpt-6-sol, crew 1.3.85): ONE plain command ------------------
+#
+# BLOCK 1: a WORD-LESS command (only redirects) skipped every redirect check:
+# `git status 'a[$(touch x)]'; > $((_))` ran the substitution through `$_`.
+# BLOCK 2: a heredoc delimiter holding backslash-newline or backslash-space.
+# BLOCK 3: a line continuation splitting an fd prefix: `git 2\<NL>>&1 push ...`.
+# BLOCK 4: PowerShell backtick before `*` `?` `[`: `` git push `* origin main ``.
+# The fix: the reader follows none of those shapes. A line is exempt only as
+# ONE simple command with plain literal words (`FALLBACK_*` above holds the
+# convenience forms that fell back); these are the reviewer's repros.
+
+_BS, _NL = "\\", "\n"
+R6_BASH = [
+    "git status 'a[$(touch /tmp/pwn6c)]'; > $((_))",
+    "git status; > $((X))", "git status; > ${X@P}", "git status; <<<$((X))",
+    "git status; <<EOF\n$((X))\nEOF\n", "git status; (> $((X)))", "git status; > *",
+    "git status; > ~", "git status; > -x", "git status; {v}>x", "git status; >$X",
+    "> $((X))", ">$X", "git status\n> $((X))",
+    f"git status <<E{_BS}{_NL}OF{_NL}EOF{_NL}deploy-prod{_NL}exit{_NL}E{_BS}{_NL}",
+    f"git status <<E{_BS} OF{_NL}EOF{_NL}deploy-prod{_NL}E{_BS} OF{_NL}",
+    f"git 2{_BS}{_NL}>&1 push --receive-pack=deploy-prod origin main",
+    f"git 1{_BS}{_NL}>&2 push --force o m",
+    f"git status{_BS}{_NL}", f"git{_BS}{_NL} status",
+    "git status; >", "git status; ; git log"]
+R6_PS = [
+    "git push `* origin main", "git push `? origin main", "git push `[a] origin main",
+    "git push `n origin main", "git push `0 origin main", "git status; > $((_))",
+    "git status; >$x", "> $x", "git status\n> $x", "git push \"a`*\" origin main",
+    "git status; ; git log", "git status; >"]
+
+
+@pytest.mark.parametrize("text", [
+    "git 2\\\n>&1 push --receive-pack=deploy-prod origin main",
+    "git 1\\\n>&2 push --force o m", "echo 2\\\n<in", "echo {v}\\\n>x"])
+def test_round6_the_splitters_refuse_a_continuation_inside_an_fd_prefix(text):
+    """BLOCK 3: bash joins `2\\<NL>>&1` into `2>&1`; the readers took `2` for
+    an argument. Both shared readers now say "cannot tell"."""
+    import crew_guards  # pylint: disable=import-outside-toplevel
+    with pytest.raises(crew_guards._Unsure):  # pylint: disable=protected-access
+        _split(text)
+    with pytest.raises(crew_guards._Unsure):  # pylint: disable=protected-access
+        _gate_read(text)
+    assert _split("echo 2 \\\n>f") == [["echo", "2"]], "a blank before the continuation is fine"
+
+
+@pytest.mark.parametrize("text", [
+    f"git status <<E{_BS}{_NL}OF{_NL}EOF{_NL}deploy-prod{_NL}exit{_NL}E{_BS}{_NL}",
+    f"git status <<E{_BS} OF{_NL}EOF{_NL}deploy-prod{_NL}E{_BS} OF{_NL}",
+    f"cat <<E{_BS};x{_NL}body{_NL}E;x{_NL}"])
+def test_round6_the_splitters_refuse_a_heredoc_delimiter_with_a_dangling_backslash(text):
+    """BLOCK 2: bash reads `<<E\\<NL>OF` as the delimiter `EOF` and `<<E\\ OF`
+    as `E OF`, so the lines the readers took for the body ran as commands."""
+    import crew_guards  # pylint: disable=import-outside-toplevel
+    with pytest.raises(crew_guards._Unsure):  # pylint: disable=protected-access
+        _split(text)
+    with pytest.raises(crew_guards._Unsure):  # pylint: disable=protected-access
+        _gate_read(text)
+    paired = f"cat <<E{_BS}{_BS}{_NL}body{_NL}E{_BS}{_NL}"
+    assert _split(paired)[0] == ["cat"], "an escaped backslash is a whole delimiter"
+
+
+@pytest.mark.parametrize("command", R6_BASH)
+def test_round6_bash_blocks_are_not_exempt(command):
+    assert crew_gitallow.line_exempt(command, "bash", "all") is False
+    assert crew_gitallow.line_git_commands(command, "bash") is None
+
+
+@pytest.mark.parametrize("command", R6_PS)
+def test_round6_powershell_blocks_are_not_exempt(command):
+    assert crew_gitallow.line_exempt(command, "powershell", "all") is False
+    assert crew_gitallow.line_git_commands(command, "powershell") is None
+
+
+@pytest.mark.parametrize("tool,command", [("Bash", c) for c in [
+    "git push --force o m; > $((_))",
+    f"git push -f origin main <<E{_BS}{_NL}OF{_NL}EOF{_NL}deploy-prod{_NL}E{_BS}{_NL}",
+    f"git 2{_BS}{_NL}>&1 push -f --receive-pack=deploy-prod origin main",
+    f"git 1{_BS}{_NL}>&2 push --force o m"]]
+    + [("PowerShell", "git push --force `* origin main"),
+       ("PowerShell", "git push --force o m; > $x")])
+def test_round6_force_push_stays_refused_with_all(tmp_path, machine, tool, command):
+    """The reviewer's repros through the cloud guard: deny with the switch off
+    and still deny, with no gitAllow row, with it on."""
+    root = make_repo(tmp_path, mode=None)
+    assert _evaluate(root, command, tool, raw=True)["decision"] == "deny"
+    _arm(machine, "all")
+    result = _evaluate(root, command, tool, raw=True)
+    assert result["decision"] == "deny", result
+    assert not any(r[1].startswith("gitAllow") for r in result["rows"]), result
+
+
+@pytest.mark.parametrize("shell,command", [
+    ("bash", "git status"), ("bash", "git push --force-with-lease origin topic"),
+    ("bash", "git commit -m 'a\nb'"), ("bash", "git log HEAD@{1}"),
+    ("powershell", "git status"), ("powershell", "git push `-f origin topic"),
+    ("powershell", "git commit -m 'a\nb'")])
+def test_round6_one_plain_command_is_still_exempt(shell, command):
+    assert crew_gitallow.line_exempt(command, shell, "all") is True
+
+
+def test_round6_one_plain_force_push_passes_with_all(tmp_path, machine):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    for tool in ("Bash", "PowerShell"):
+        assert _evaluate(root, "git push --force origin main", tool)["decision"] == "allow"
 
 
 # --- the mutation table ----------------------------------------------------------------

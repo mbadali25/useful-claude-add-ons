@@ -20,20 +20,25 @@ plain git commands:
 
 `gh` is not git: `gh pr merge --admin` and `gh api` keep their own keys.
 
-THE LINE IS AN ALLOWLIST, FAIL-CLOSED (crew 1.3.82, PR #769 review round 4).
-A line is exempt only when EVERY command on it is exactly `git` (no path, no
-function, alias or `shopt` on the line -- a line holding any other command is
-never exempt) followed by words that are plain literals as ONE reader
-(`plain_commands`) reads them: in bash only `_BASH_SAFE` characters unquoted,
-whole `'...'` runs, `"..."` runs with no `$` or backtick, backslash escapes
-and git's `@{...}`; in PowerShell only `_PS_SAFE` characters, whole quoted
-words with no `$`, here-strings and harmless backtick escapes. Anything else
--- `$` in any form (`"$OPT"`, `$'\\x2d...'`, `$(...)`), a backtick
-substitution, a glob, a brace expansion, a leading `~`, a subshell or group,
-a PowerShell `(expr)`, `@(...)`, splat, script block, `--%`, `%NAME%` or curly
-quote, an assignment, a pipe into something else -- is "cannot tell", and
-cannot tell is never exempt. Both the cloud guard (`line_plan`,
-`finding_exempt`) and the promote gate ask this reader and nothing else.
+THE LINE IS ONE PLAIN COMMAND, FAIL-CLOSED (crew 1.3.82, PR #769 review
+round 6). A line is exempt only when it is ONE simple command: exactly `git`
+(no path, no function, alias or `shopt`) followed by words that are plain
+literals as ONE reader (`plain_commands`) reads them: in bash only `_BASH_SAFE`
+characters unquoted, whole `'...'` runs, `"..."` runs with no `$` or backtick,
+backslash escapes and git's `@{...}`; in PowerShell only `_PS_SAFE`
+characters, whole quoted words with no `$`, and a backtick before one of
+`_PS_ESCAPES`. NO separator (`;` `&` `&&` `||` `|`, a newline), NO redirection
+of any kind, NO heredoc or here-string, NO continuation, NO comment, NO
+subshell or group. A newline is read only inside a quoted word (a commit
+message). Six rounds each found a new shape of redirect, heredoc, continuation
+or expansion for a reader that tried to follow them, so this reader follows
+none: anything else -- `$` in any form, a backtick substitution, a glob, a
+brace expansion, a leading `~`, a PowerShell `(expr)`, `@(...)`, splat, script
+block, `--%`, `%NAME%` or curly quote, an assignment, a chain such as
+`git add . && git commit` -- is "cannot tell", and cannot tell is never exempt:
+the guards judge that line exactly as before. Both the cloud guard
+(`line_plan`, `finding_exempt`) and the promote gate ask this reader and
+nothing else.
 
 NEVER EXEMPT even when every word is plain (`hold`): a git command that
 carries config or a command line of its own -- a global `-c`, `--config-env`
@@ -684,10 +689,6 @@ _BASH_SAFE = frozenset(string.ascii_letters + string.digits + "_-./:=+,@%^")
 # git's reflog / upstream spelling: `HEAD@{1}`, `@{u}`, `@{-1}`, with no `,`
 # or `..` inside, so bash's brace expansion leaves it alone.
 _REFLOG_RE = re.compile(r"@\{[A-Za-z0-9_.:+-]*\}")
-# The operators that may join the commands of an exempt bash line.
-_BASH_OPS = frozenset((None, "\n", ";", "&&", "||", "|", "&"))
-
-
 def _bash_plain_word(raw):
     """Raw bash word `raw` (quotes kept, as `crew_guards._CommandSplitter`
     leaves it) as the literal bash passes, or None when it is not plainly
@@ -747,79 +748,67 @@ def _bash_plain_word(raw):
     return "".join(out)
 
 
-def _bash_commands(text):
-    """Every simple command of bash `text` as plain literal words, or None
-    when crew cannot read the line as only such commands: it does not split
-    whole, it has a substitution anywhere (`$(...)`, a backtick, `<(...)`,
-    one in an unquoted heredoc body), a subshell or group, an operator outside
-    `_BASH_OPS`, an unquoted heredoc body with `$`, a backtick or `\\`, or a
-    word or here-string that is not plain (`_bash_plain_word`)."""
-    import crew_guards  # pylint: disable=import-outside-toplevel
-    splitter = crew_guards._CommandSplitter(text)  # pylint: disable=protected-access
-    try:
-        commands, subs = splitter.split()
-    except crew_guards._Unsure:  # pylint: disable=protected-access
-        return None
-    if subs:
-        return None
-    out = []
-    for raw_words, meta in zip(commands, splitter.metas):
-        if meta.get("nest") != 1 or meta.get("before") not in _BASH_OPS \
-                or meta.get("after") not in _BASH_OPS:
-            return None
-        for body, quoted in meta.get("bodies", ()):
-            if not quoted and any(c in body for c in "$`\\"):
+def _bash_raw_words(text):
+    """The raw words of `text` (quotes kept) when it is ONE line of words and
+    nothing else, else None: a word is quoted runs, backslash escapes and
+    characters of `_BASH_SAFE` (plus `@`, `{`, `}` and `~`, which
+    `_bash_plain_word` then judges). Anything else outside quotes is "cannot
+    tell" and ends the reading: a newline or backslash-newline (a second
+    command, a continuation, a heredoc body), `;&|` (a separator), `<>` (a
+    redirection or heredoc), `()` (a subshell), `#` (a comment), `$` and the
+    backtick (an expansion), a glob character, `!`. No other reader is asked,
+    so no shape of redirection, heredoc, continuation or subshell can be
+    mis-split (PR #769 review round 6)."""
+    words, word, pos, n = [], [], 0, len(text)
+    while pos < n:
+        char = text[pos]
+        if char in " \t":
+            if word:
+                words.append("".join(word))
+                word = []
+            pos += 1
+        elif char == "'":
+            end = text.find("'", pos + 1)
+            if end == -1:
                 return None
-        if any(_bash_plain_word(w) is None for w in meta.get("here", ())):
+            word.append(text[pos:end + 1])
+            pos = end + 1
+        elif char == '"':
+            end = pos + 1
+            while end < n and text[end] != '"':
+                end += 2 if text[end] == "\\" else 1
+            if end >= n:
+                return None
+            word.append(text[pos:end + 1])
+            pos = end + 1
+        elif char == "\\":
+            if text[pos + 1:pos + 2] in ("", "\n"):
+                return None
+            word.append(text[pos:pos + 2])
+            pos += 2
+        elif char in _BASH_SAFE or char in "@{}~":
+            word.append(char)
+            pos += 1
+        else:
             return None
-        words = [_bash_plain_word(w) for w in raw_words]
-        if any(w is None for w in words):
-            return None
-        if any(_bash_redirect_problem(r, words) for r in meta.get("redirs", ())):
-            return None
-        out.append(words)
-    if splitter.metas and (splitter.metas[0].get("before") not in (None, "\n")
-                           or splitter.metas[-1].get("after") in ("&&", "||", "|")):
-        return None  # `&& git x`, `git x &&`: bash refuses the line, so it runs nothing
-    for left, right in zip(splitter.metas, splitter.metas[1:]):
-        if left.get("after") in ("&&", "||", "|") and \
-                right.get("before") not in (left.get("after"), "\n"):
-            return None  # `git x ||& git y`: an empty command after `||`, a syntax error
-    return out
+    if word:
+        words.append("".join(word))
+    return words
 
 
-def _subcommand_at(words):
-    """The index in `words` (`git` first) of the subcommand word."""
-    return 1 + _global_split(list(words[1:]))[1]
-
-
-def _bash_redirect_problem(redir, words):
-    """Why a bash redirection keeps a git line from being exempt, or None.
-    A FAIL-CLOSED allowlist (PR #769 review round 5: `>&-` closes stdout and
-    hands the rest of its word to git as an argument, and an fd prefix before
-    the subcommand hid `-c`): only, AFTER the subcommand, `>` / `>>` to a
-    plain literal file not starting with `-`, `N>&M` between plain digit
-    descriptors, and a heredoc or here-string (whose body the reader checks).
-    Anything else -- `<`, `<&`, `<>`, `>|`, `&>`, `>&-`, `>& file`, a `{var}`
-    descriptor, a redirection with no target, or any redirection between
-    `git` and the subcommand -- is "cannot tell"."""
-    fd, op, target = redir.get("fd") or "", redir.get("op"), redir.get("target")
-    if redir.get("at", 0) <= _subcommand_at(words):
-        return "a redirection before the subcommand"
-    if fd and not (fd.isdigit() and fd.isascii()):
-        return "a {var} descriptor"
-    if op in ("<<", "<<-"):
+def _bash_commands(text):
+    """The ONE simple command of bash `text` as plain literal words, or None
+    when crew cannot read the line as exactly one such command: anything
+    `_bash_raw_words` refuses (every separator, redirection, heredoc,
+    here-string, continuation, comment, subshell and expansion), or a word
+    `_bash_plain_word` does not read as a plain literal."""
+    raw = _bash_raw_words(text.strip())
+    if not raw:
         return None
-    if target is None:
-        return "a redirection with no target"
-    if op == "<<<":
+    words = [_bash_plain_word(w) for w in raw]
+    if any(w is None for w in words):
         return None
-    if op in (">", ">>"):
-        plain = _bash_plain_word(target)
-        return None if plain and not plain.startswith("-") else "a target that is not plain"
-    if op == ">&" and target.isdigit() and target.isascii():
-        return None
-    return f"a {op} redirection"
+    return [words]
 
 
 # Characters an UNQUOTED PowerShell word may hold. Not `$` (a variable or
@@ -835,88 +824,59 @@ _PS_CURLY = "‘’‚‛“”„"
 # `%NAME%`: expanded at run time after `--%`, and by cmd.exe when git is a
 # `.cmd` shim -- quoted or not (crew 1.3.75 review round 3).
 _PS_PERCENT_RE = re.compile(r"%[^%\s]+%")
-# A redirection at a word's start: `>out`, `2>>log`, `2>&1`, `*>&1`. Only
-# `n>&1` merges: `1>&2` / `2>&2` are "reserved for future use", a parse error
-# (measured, pwsh 7; review round 5), so they do not match and the `&` is
-# then refused.
-_PS_REDIRECT_RE = re.compile(r"(?:[1-6*])?>>?(?:&1)?")
+# The characters a backtick may escape in an exempt PowerShell word, and
+# nothing else: a letter or digit is a control character (`` `n ``, `` `0 ``),
+# and `` `* `` / `` `? `` / `` `[ `` are still wildcards a native command's
+# arguments are expanded with on Linux and macOS (PR #769 review round 6).
+_PS_ESCAPES = frozenset("-./:=_+")
+# What a backtick may escape inside a double-quoted word: the above, the quote
+# itself and the backtick.
+_PS_DQ_ESCAPES = _PS_ESCAPES | frozenset('"`')
 
 
-def _ps_commands(text):  # pylint: disable=too-many-branches,too-many-statements
-    """Every statement of PowerShell `text` as plain literal words, or None
-    when crew cannot read the line as only such statements. Plain: a bare
+def _ps_commands(text):  # pylint: disable=too-many-branches
+    """The ONE statement of PowerShell `text` as plain literal words, or None
+    when crew cannot read the line as exactly one such statement. Plain: a bare
     word of `_PS_SAFE` characters (no leading `~`, `@` only alone or inside a
     word), a whole `'...'` or `"..."` word (a double-quoted one holding no
-    `$`; a quote may not start or end mid-word), a here-string, or a
-    backtick escaping a character that is not a letter or digit (`` `u{2d} ``
-    is a `-`). Joined only by `;`, a newline, `&&` or `||`; a redirection
-    (`2>&1`, `> out`) is dropped with its target. Anything else -- a pipe, a
-    single `&`, `(`, `$(`, `@(`, a script block, a curly quote, `--%` or a
-    `%NAME%` -- is None."""
+    `$`; a quote may not start or end mid-word), and a backtick escaping one
+    of `_PS_ESCAPES`. Everything else is None: a separator (`;`, a newline,
+    `&&`, `||`, `|`, `&`), a redirection (`>`), a comment, a here-string, a
+    backtick-newline, `(`, `$(`, `@(`, a script block, a glob, a curly quote,
+    `--%` or a `%NAME%` (review round 6: no redirection, separator or
+    continuation shape is read at all, so none can be mis-read)."""
+    text = text.replace("\r\n", "\n").strip()
     if any(c in text for c in _PS_CURLY):
         return None
-    statements, words, word, redirs, at = [], [], [], [], []
-    state = {"started": False, "target": False, "closed": False, "join": False}
+    words, word = [], []
+    started = closed = False
     i, n = 0, len(text)
-
-    def end_word():
-        if state["started"]:
-            if state["target"]:
-                state["target"] = False
-            else:
-                words.append("".join(word))
-        word.clear()
-        state["started"] = state["closed"] = False
-
-    def end_statement():
-        end_word()
-        if state["target"]:
-            return False
-        if words:
-            statements.append(list(words))
-            at.append(list(redirs))
-            state["join"] = False
-        words.clear()
-        redirs.clear()
-        return True
-
     while i < n:
-        c = text[i]
-        if state["closed"] and c not in " \t;\n&|":
+        char = text[i]
+        if closed and char not in " \t":
             return None  # `'a'b`: a quote ending mid-word
-        if text.startswith("@'", i) or text.startswith('@"', i):
-            quote = text[i + 1]
-            if state["started"] or not words or text[i + 2:i + 3] != "\n":
-                return None
-            close = text.find("\n" + quote + "@", i + 2)
-            if close == -1:
-                return None
-            body = text[i + 3:close]
-            if quote == '"' and ("$" in body or "`" in body):
-                return None
-            word.append(body)
-            state["started"] = state["closed"] = True
-            i = close + 3
-            continue
-        if c in "'\"":
-            if state["started"]:
-                return None  # `a'b'`: a quote starting mid-word
-            if not words:
-                return None  # `"git" status`: a quoted first word is a string, not a command
+        if char in " \t":
+            if started:
+                words.append("".join(word))
+            word, started, closed = [], False, False
+            i += 1
+        elif char in "'\"":
+            if started or not words:
+                return None  # `a'b'`; and `"git" status` is a string, not a command
             end, buf = i + 1, []
             while True:
                 if end >= n:
                     return None
                 here = text[end]
-                if here == c and text[end + 1:end + 2] == c:
-                    buf.append(c)
+                if here == char and text[end + 1:end + 2] == char:
+                    buf.append(char)
                     end += 2
-                elif here == c:
+                elif here == char:
                     break
-                elif c == '"' and here == "$":
+                elif char == '"' and here == "$":
                     return None
-                elif c == '"' and here == "`":
-                    if end + 1 >= n or text[end + 1].isalnum():
+                elif char == '"' and here == "`":
+                    if text[end + 1:end + 2] not in _PS_DQ_ESCAPES or end + 1 >= n:
                         return None
                     buf.append(text[end + 1])
                     end += 2
@@ -924,69 +884,27 @@ def _ps_commands(text):  # pylint: disable=too-many-branches,too-many-statements
                     buf.append(here)
                     end += 1
             word.append("".join(buf))
-            state["started"] = state["closed"] = True
+            started = closed = True
             i = end + 1
-            continue
-        if c == "`":
-            if text[i + 1:i + 2] == "\n":
-                if state["started"]:
-                    return None  # `a`<newline>b`: one word holding a newline (measured, pwsh 7)
-                end_word()
-                i += 2
-                continue
-            if i + 1 >= n or text[i + 1].isalnum():
+        elif char == "`":
+            if i + 1 >= n or text[i + 1] not in _PS_ESCAPES:
                 return None
             word.append(text[i + 1])
-            state["started"] = True
+            started = True
             i += 2
-            continue
-        if c in " \t":
-            end_word()
+        elif char in "~@" and not started:
+            return None  # a leading `~` expands; `@` is a splat or `@(...)`
+        elif char in _PS_SAFE:
+            word.append(char)
+            started = True
             i += 1
-            continue
-        if c in ";\n" or text.startswith("&&", i) or text.startswith("||", i):
-            chain = text.startswith(("&&", "||"), i)
-            count = len(statements)
-            if not end_statement() or (chain and len(statements) == count):
-                return None  # `&& git x`, `git x; && ...`: a parse error, runs nothing
-            state["join"] = state["join"] or chain
-            i += 2 if chain else 1
-            continue
-        if c == "#" and not state["started"]:
-            while i < n and text[i] != "\n":
-                i += 1
-            continue
-        if not state["started"]:
-            match = _PS_REDIRECT_RE.match(text, i)
-            if match and ">" in match.group(0):
-                if state["target"]:
-                    return None
-                state["target"] = "&" not in match.group(0)
-                redirs.append(len(words))
-                i = match.end()
-                continue
-            if c == "~":
-                return None
-            if c == "@":
-                return None  # a splat, `@(...)`, `@{...}`; a bare `@` is a parse error
-        if c in _PS_SAFE:
-            word.append(c)
-            state["started"] = True
-            i += 1
-            continue
-        return None
-    if not end_statement() or state["join"]:
-        return None  # `git x &&`: a parse error, runs nothing
-    for statement, places in zip(statements, at):
-        for item in statement:
-            if item == "--%" or _PS_PERCENT_RE.search(item):
-                return None
-        # Review round 5: a redirection between `git` and its subcommand is
-        # never exempt, in PowerShell as in bash (fail closed; PowerShell
-        # drops it, but crew does not lean on that).
-        if any(place <= _subcommand_at(statement) for place in places):
+        else:
             return None
-    return statements
+    if started:
+        words.append("".join(word))
+    if not words or any(w == "--%" or _PS_PERCENT_RE.search(w) for w in words):
+        return None
+    return [words]
 
 
 def plain_commands(command, shell):

@@ -1,4 +1,4 @@
-"""crew 1.3.82: a DIFFERENTIAL test of `guards.git.allow`'s one reader
+"""crew 1.3.85: a DIFFERENTIAL test of `guards.git.allow`'s one reader
 (`crew_gitallow.line_git_commands`) against the real shells (PR #769 review
 round 5).
 
@@ -16,7 +16,7 @@ the subcommand), quotes (`'..'`, `".."`, `$'..'`, `$".."`), expansions,
 separators (`;`, `&`, `&&`, `||`, `|`, `|&`, newline, CR, tab, NBSP, a
 fullwidth hyphen, zero-width characters, backslash-newline, `#`), config and
 program options, wrappers (`time`, `env`, `command`, ...), and every repro of
-review rounds 1-5 from `test_git_allow.py`. The default run is a fixed slice
+review rounds 1-6 from `test_git_allow.py`. The default run is a fixed slice
 of a few hundred lines; `--run-slow` runs the whole cross product and a
 seeded random fuzz (fixed seed, so a failure reproduces).
 
@@ -89,7 +89,12 @@ BASH_FRAGMENTS = [
     # config and program options
     "-c alias.p='!printf HIT'", "--exec-path=/tmp/x", "--receive-pack=x", "--rece=x",
     "--exec=x", "-x x", "--upload-pack=x", "-O", "--template=/t", "--config-env=a=b",
-    "core.sshCommand x", "--get user.name", "-l", "-v", "--force-with-lease"]
+    "core.sshCommand x", "--get user.name", "-l", "-v", "--force-with-lease",
+    # review round 6: word-less redirects, `$_`, heredoc delimiters, continuations
+    "; > $((_))", "; > ${X@P}", "; <<<$((X))", "; (> $((X)))", "; > *", "; > ~",
+    "; > -x", "; {v}>x", "; >$X", "\n> $((X))", "$_", "$((_))", "; >", "; ; git log",
+    "2\\\n>&1", "1\\\n>&2", "<<E\\\nOF\nEOF\nx\nE\\\n", "<<E\\ OF\nEOF\nx\nE\\ OF\n",
+    "<<EOF\n$((X))\nEOF\n", "\\\n", "2\\\n"]
 
 PS_FRAGMENTS = [
     # redirections
@@ -106,7 +111,10 @@ PS_FRAGMENTS = [
     # config and program options
     "-c alias.p='!printf HIT'", "--exec-path=/tmp/x", "--receive-pack=x", "--rece=x",
     "--exec=x", "-x x", "--upload-pack=x", "--template=/t", "-l", "-v",
-    "--force-with-lease"]
+    "--force-with-lease",
+    # review round 6: wildcard-valued and backtick-escaped words, word-less redirects
+    "`*", "`?", "`[x]", "*", "?", "[x]", "-*", "\"a`*\"", "`n", "`0", "; > $((_))",
+    "; > $x", "> $x", "\n> $x", "; >", "; ; git log"]
 
 
 def _repros():
