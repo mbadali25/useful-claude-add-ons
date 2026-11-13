@@ -571,8 +571,8 @@ def save(root, changes, apply, global_path=None, expect=None):
                         "longer hold")
                 crew_config.write_repo_config(root, repo, global_path,
                                               expect=expect.get("repo"),
-                                              expect_global=bound,
-                                              target=files["repo"])
+                                              target=files["repo"],
+                                              expect_global=bound)
         except (OSError, crew_config.GlobalWriteRefused,
                 crew_config.RepoWriteRefused, crew_config.ProviderError) as exc:
             # Validated a moment ago, refused now: the file changed (deleted,
