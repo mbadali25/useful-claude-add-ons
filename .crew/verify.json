@@ -124,7 +124,8 @@
               "bash scripts/_test/uv-install.sh",
               "bash -n scripts/install-prerequisites.sh", "python3 scripts/_test/shellcheck-directives.py",
               "python3 scripts/_test/plugin-evals-runner.py",
-              "python3 scripts/_test/crew-outcome-eval.py"],
+              "python3 scripts/_test/crew-outcome-eval.py",
+              "python3 scripts/_test/recall-eval.py"],
       "reach": "local",
       "why": "104s declared after L-0728 added scripts/_test/crew-outcome-eval.py (20s, stub docker and claude); evals/crew-outcome/** joins the paths because the harness reads the arm files and tasks. Full rationale: docs/crew/verify-rationale.md#scripts-checks" },
 
