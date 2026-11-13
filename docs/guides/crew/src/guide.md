@@ -263,7 +263,7 @@ backtick, even inside single quotes), so `ls .git/crew | grep python3`
 passes. The reader takes `2>/dev/null` and `2>&1` out of the word list wherever
 they stand, before it checks any option, because bash removes them before the
 program runs (a quoted look-alike is refused); shell builtins such as `test` and any unknown option (`find -rm`,
-`tail -f`, `grep --pager`) keep the refusal; anything the
+`tail -f`, `tail +f`, `grep --pager`) keep the refusal; anything the
 guard cannot parse completely keeps the refusal. *What it cannot see:* `sed -i`,
 a redirect or a formatter writing a file outside crew's state. Those are shell
 writes, and the guard judges only the editing tools.

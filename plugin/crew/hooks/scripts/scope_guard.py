@@ -323,17 +323,23 @@ def _simple_commands(command):
     return commands
 
 
-def _options_ok(rule, args):
+def _options_ok(rule, args, plus_is_operand=True):
     """True when every option word in `args` is on `rule`'s allow-list (see
     `_OPTION_RULES`). A word that is not an option, or `-` alone, is an operand;
-    `--` ends the options."""
+    `--` ends the options. With `plus_is_operand` False (`tail`), a word starting
+    with `+` is refused wherever it stands: `tail +f` and `tail +1f` are the legacy
+    `+N[bcl][f]` form and follow the file forever (GNU, uutils), though they look
+    like operands. The value of an option (`-n +3`) is consumed as a value, not seen
+    here."""
     flags, value_letters, longs, long_values, valid, numeric = rule
     i = 0
     while i < len(args):
         word = args[i]
         i += 1
         if word == "--":
-            return True
+            return plus_is_operand or not any(w.startswith("+") for w in args[i:])
+        if word.startswith("+") and not plus_is_operand:
+            return False
         if word == "-" or not word.startswith("-"):
             continue
         if word.startswith("--"):
@@ -388,7 +394,7 @@ def _plain_args_ok(program, args):
     operands or options can write are deliberately NOT listed."""
     if program == "find":
         return _find_ok(args)
-    return _options_ok(_OPTION_RULES[program], args)
+    return _options_ok(_OPTION_RULES[program], args, program != "tail")
 
 
 def _read_only(command):
