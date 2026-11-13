@@ -170,58 +170,146 @@ _DOTGIT_CREW_RE = re.compile(r"\.git[\\/]+crew\b|git-common-dir\b.*\bcrew\b",
 _CONFIRM_STORE_RE = re.compile(r"confirm-config[\\/]", re.IGNORECASE)
 # A redirect (not into /dev/null, $null or another descriptor), or a word
 # that writes files. Reading crew's state -- `cat`, `Get-Content` -- passes.
-# `echo`/`printf` write only through a redirect (already counted above) and
-# the interpreters are judged by `_writes` below, so none is in this list.
 _WRITES_RE = re.compile(
     r"(?<!>)>>?(?!>)(?!\s*(?:&\d|/dev/null\b|\$null\b))|"
-    r"\b(?:tee|cp|mv|rm|ln|touch|mkdir|rmdir|install|dd|rsync|truncate|sed|"
-    r"chmod|set-content|add-content|out-file|"
+    r"\b(?:tee|cp|mv|rm|ln|touch|mkdir|rmdir|install|dd|rsync|truncate|sed|perl|"
+    r"python[0-9.]*|py|node|chmod|echo|printf|set-content|add-content|out-file|"
     r"new-item|copy-item|move-item|remove-item|rename-item|clear-content|set-item|ni|"
     r"sc|ac)\b", re.IGNORECASE)
-# A script interpreter writes only if its code does. EVERY interpreter named in
-# the command must run inline code the command shows (`-c`, `-e`, `-p`, a
-# heredoc or here-string, or `-` read from one): that code is judged by the
-# write markers below. A script file, `-m module`, `-` fed by a pipe or a file,
-# or any other shape cannot be read here, so it counts as a write.
-_INTERP = (r"(?<![\w.-])(?:python[0-9]+(?:\.[0-9]+)?|python|py|node|perl)"
-           r"(?![\w-])(?!\.\w)")
-_INTERP_RE = re.compile(_INTERP, re.IGNORECASE)
-_INLINE_AT = re.compile(
-    _INTERP + r"(?:[ \t]+-[\w-]+(?![\w-]))*[ \t]+(?:-[ce]|-p)(?![\w-])|"
-    + _INTERP + r"(?:[ \t]+-[\w-]+(?![\w-]))*[ \t]+-(?=[ \t]*<<)|"
-    + _INTERP + r"(?:[ \t]+-[\w-]+(?![\w-]))*[ \t]*<<", re.IGNORECASE)
-_OS_READ = (r"path|environ|getcwdb?|listdir|scandir|walk|l?stat|getenv|sep|linesep|"
-            r"fspath|fsencode|fsdecode|name|curdir|pardir|access|readlink|cpu_count|"
-            r"getpid|getuid|getlogin|uname|devnull")
-_INTERP_WRITE_RE = re.compile(
-    r"\bopen\s*\(.*?,\s*(?:mode\s*=\s*)?[\"'][rbtU]*[wax+]|"
-    r"\bopen\s*\(\s*[\"'][rbtU]*[wax+]|\bopen\s*\(.*?\bmode\s*=|"
-    r"\bos\.(?!(?:" + _OS_READ + r")\b)\w|\bos\s+as\b|\bfrom\s+os\s+import\s+(?!path\b)|"
-    r"write_text|write_bytes|\.write\s*\(|writeFile|appendFile|createWriteStream|"
-    r"\bshutil\b|\bunlink\b|\brmtree\b|\bsubprocess\b|\bchild_process\b|\bPopen\b|"
-    r"\bsystem\s*\(|\bexec\w*\s*\(|\bspawn\w*|\bfork\w*|\beval\b|\bcompile\s*\(|"
-    r"__import__|\bimportlib\b|\bgetattr\b|\bctypes\b|\bfileinput\b|"
-    r"\bfs\.\w*(?:write|append|rm|unlink|rename|copy|mkdir|truncate|symlink|chmod)\w*|"
-    r"\.touch\s*\(|\.mkdir\s*\(|\$[\w{(]|`|"
-    r"\bperl\b[^\n;&|]*[ \t]-\w*i", re.IGNORECASE)
-# `--last-command "..."` carries the previous command as DATA; a quoted value
-# there is never the approve verb. A double-quoted value holding `$` or a
-# backtick is left alone: the shell would run what it substitutes.
-_LAST_COMMAND_RE = re.compile(
-    r"(--last-command(?:=|[ \t]+))(?:\"(?:[^\"\\$`]|\\[^$`])*\"|'[^']*')")
+
+# Fail-closed exemption from the word list above. The list is a deny-list on
+# purpose, so a command that merely NAMES `python3`/`echo` as an argument
+# (`ls .git/crew | grep python3`) was refused. A command is read-only, and so
+# exempt, ONLY when `_read_only` parses all of it and every simple command is
+# one of these programs with plain literal words. Anything it cannot parse, or
+# any other program, keeps the deny-list verdict unchanged.
+_READ_ONLY_PROGRAMS = frozenset((
+    "ls", "cat", "head", "tail", "wc", "stat", "file", "du", "df", "grep", "egrep",
+    "fgrep", "find", "sort", "uniq", "cut", "tr", "readlink", "realpath", "basename",
+    "dirname", "pwd", "test"))
+_PLAIN_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./:=,@%+-")
+_FIND_WRITES = ("-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fls")
+_REDIRECT_WORDS = frozenset(("2>/dev/null", "2>&1"))
 
 
-def _writes(command):
-    """True when `command` shows a write: a redirect or writing word, or an
-    interpreter whose code writes or cannot be read."""
-    if _WRITES_RE.search(command):
+def _simple_commands(command):
+    """`command` split into simple commands, each a list of (word, quoted)
+    pairs, or None when any of it cannot be read here. Reads only plain words,
+    plain '...' and "..." strings, the separators `;` `&&` `||` `|` and the
+    words `2>/dev/null` and `2>&1`; everything else (a `$`, backtick, `\\`,
+    glob, brace, paren, `#`, `~`, `!`, `<`, a lone `&`, a newline, an
+    unterminated quote, an empty command) is None."""
+    commands, words, word = [], [], None
+    quoted, i, n = False, 0, len(command)
+
+    def end_word():
+        nonlocal word, quoted
+        if word is not None:
+            words.append((word, quoted))
+        word, quoted = None, False
+
+    def end_command():
+        nonlocal words
+        end_word()
+        if not words:
+            return False
+        commands.append(words)
+        words = []
         return True
-    found = list(_INTERP_RE.finditer(command))
-    if not found:
+
+    while i < n:
+        ch = command[i]
+        if ch in "\n\r\0":
+            return None
+        if ch in " \t":
+            end_word()
+            i += 1
+        elif ch in "'\"":
+            close = command.find(ch, i + 1)
+            if close < 0:
+                return None
+            body = command[i + 1:close]
+            if any(c in body for c in "\n\r\0") or (
+                    ch == '"' and any(c in body for c in "$`\\!")):
+                return None
+            word = (word or "") + body
+            quoted = True
+            i = close + 1
+        elif ch in ";|&":
+            pair = command[i:i + 2]
+            if ch == "&" and word is not None and word.endswith(">"):
+                word += ch
+                i += 1
+                continue
+            if pair in ("&&", "||"):
+                step = 2
+            elif ch in ";|" and pair not in ("|&", ";;", ";&"):
+                step = 1
+            else:
+                return None
+            if not end_command():
+                return None
+            i += step
+        elif ch == ">" and not quoted and word == "2":
+            word += ch
+            i += 1
+        elif ch in _PLAIN_CHARS:
+            if quoted:
+                word += ch
+            else:
+                word = (word or "") + ch
+            i += 1
+        else:
+            return None
+    if not end_command():
+        return None
+    for each in commands:
+        for text, was_quoted in each:
+            if any(c in text for c in "<>&") and (was_quoted or text not in _REDIRECT_WORDS):
+                return None
+    return commands
+
+
+def _plain_args_ok(program, args):
+    """No word of a listed program writes a file, runs another program or names
+    a second output."""
+    if program == "find":
+        return not any(a == w or (w == "-fprint" and a.startswith("-fprint"))
+                       for a in args for w in _FIND_WRITES)
+    if program == "sort":
+        return not any((a.startswith("--") and a[2:3] in ("o", "c", "t"))
+                       or (a[:1] == "-" and a[1:2] != "-" and ("o" in a or "T" in a))
+                       for a in args)
+    if program == "file":
+        return not any(a == "-C" or (a.startswith("--") and a[2:3] == "c") or
+                       (a[:1] == "-" and a[1:2] != "-" and "C" in a) for a in args)
+    if program == "uniq":
+        positional, skip = 0, False
+        for a in args:
+            if skip:
+                skip = False
+            elif a in ("-f", "-s", "-w"):
+                skip = True
+            elif a[:1] != "-":
+                positional += 1
+        return positional <= 1
+    return True
+
+
+def _read_only(command):
+    """True only when `command` is wholly a pipeline or list of the listed
+    read-only programs with plain literal words (see `_READ_ONLY_PROGRAMS`)."""
+    parsed = _simple_commands(command)
+    if not parsed:
         return False
-    if any(not _INLINE_AT.match(command, m.start()) for m in found):
-        return True
-    return bool(_INTERP_WRITE_RE.search(command))
+    for each in parsed:
+        (program, was_quoted), args = each[0], [t for t, _ in each[1:]]
+        if was_quoted or program not in _READ_ONLY_PROGRAMS:
+            return False
+        if not _plain_args_ok(program, args):
+            return False
+    return True
 
 
 def _read_payload():
@@ -395,7 +483,7 @@ def _reading_refusal(command, written, common, top, agent_type=None):
         return LANE_REFUSAL
     if _APPROVE_RE.search(command):
         return "it runs `crew_ticket.py approve`; approval comes from the user's own prompt"
-    if _AUTOPILOT_APPROVE_RE.search(_LAST_COMMAND_RE.sub(r"\1", command)):
+    if _AUTOPILOT_APPROVE_RE.search(command):
         return _autopilot_refusal(written, top)
     if _HOOK_RE.search(command):
         return "it names the approval hook, which only the user's prompt may drive"
@@ -403,10 +491,11 @@ def _reading_refusal(command, written, common, top, agent_type=None):
     folded = os.path.normcase(command).replace("\\", "/")
     names_state = bool(_DOTGIT_CREW_RE.search(command)) or bool(
         state and os.path.normcase(state).replace("\\", "/") in folded)
-    if names_state and _writes(command):
+    if names_state and _WRITES_RE.search(command) and not _read_only(command):
         return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
     store = os.path.normcase(confirm_store()).replace("\\", "/")
-    if (_CONFIRM_STORE_RE.search(command) or store in folded) and _writes(command):
+    if ((_CONFIRM_STORE_RE.search(command) or store in folded)
+            and _WRITES_RE.search(command) and not _read_only(command)):
         return ("it writes under the confirm-config store, the receipts of the owner's "
                 "double confirmation")
     return None

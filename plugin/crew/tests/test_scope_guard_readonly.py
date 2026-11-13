@@ -1,0 +1,189 @@
+"""scope_guard's fail-closed read-only exemption (`_read_only`, `_simple_commands`).
+
+The guard's word list is a deny-list: a command naming crew's state beside
+`echo`, `python3`, `cp` ... is refused. The one exemption is a command that
+`_read_only` parses completely into simple commands of a small set of
+read-only programs with plain literal words. So `ls <state> | grep python3` is
+allowed, and everything else keeps the deny-list verdict.
+
+Two checked-in corpora back it: `data/scope_guard_corpus.json` holds every write
+form crew 1.3.75 (origin/main) refused (`must_block`: this guard must refuse
+every one, so the exemption can never allow a write the old guard refused), the
+write forms it already allowed (`residual_allowed`, known gaps, not asserted)
+and the read-only forms the exemption allows (`must_allow`).
+"""
+import json
+import os
+
+import pytest
+
+import context  # noqa: F401  pylint: disable=unused-import
+import scope_guard
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(_HERE, "data", "scope_guard_corpus.json"), encoding="utf-8") as _fh:
+    CORPUS = json.load(_fh)
+
+COMMON, TOP = "/repo/.git", "/repo"
+S = "/repo/.git/crew"
+STORE = "confirm-config/"
+
+
+def refusal(command):
+    return scope_guard.shell_refusal(command, COMMON, TOP)
+
+
+ALLOWED = [
+    pytest.param(f"ls {S}", id="ls"),
+    pytest.param(f"ls -la {S}/approvals", id="ls-la"),
+    pytest.param(f"find {S} -name 'python3*'", id="find-name-python3"),
+    pytest.param(f"find {S} -name '*.json' -type f", id="find-name-json"),
+    pytest.param(f"ls {S} | grep python3", id="ls-pipe-grep-python3"),
+    pytest.param(f"ls {S} | grep echo", id="ls-pipe-grep-echo"),
+    pytest.param(f"grep -r echo {S}", id="grep-r-echo"),
+    pytest.param(f"grep -rn 'python3' {S}/tickets", id="grep-rn-quoted"),
+    pytest.param(f"cat {S}/x 2>/dev/null", id="cat-stderr-null"),
+    pytest.param(f"cat {S}/x 2>&1 | head -3", id="cat-stderr-to-stdout"),
+    pytest.param(f"head -5 {S}/ledger.jsonl", id="head"),
+    pytest.param(f"tail -n 3 {S}/ledger.jsonl", id="tail"),
+    pytest.param(f"wc -l {S}/ledger.jsonl", id="wc"),
+    pytest.param(f"stat {S}/x", id="stat"),
+    pytest.param(f"file {S}/x", id="file"),
+    pytest.param(f"du -sh {S}", id="du"),
+    pytest.param(f"df {S}", id="df"),
+    pytest.param(f"sort {S}/ledger.jsonl | uniq -c | cut -d, -f1", id="sort-uniq-cut"),
+    pytest.param(f"cat {S}/x | tr a-z A-Z", id="tr"),
+    pytest.param(f"readlink -f {S}", id="readlink"),
+    pytest.param(f"realpath {S}", id="realpath"),
+    pytest.param(f"basename {S}/x; dirname {S}/x; pwd", id="basename-dirname-pwd"),
+    pytest.param(f"test -f {S}/x && ls {S}", id="test-and-ls"),
+    pytest.param(f"test -f {S}/x || ls {S}", id="test-or-ls"),
+    pytest.param(f"ls \"{S}\" | egrep 'a|b' | fgrep x", id="double-quoted-egrep-fgrep"),
+    pytest.param(f"ls {STORE}", id="ls-the-confirm-store"),
+    pytest.param(f"grep echo {STORE}x", id="grep-echo-in-the-confirm-store"),
+]
+
+
+@pytest.mark.parametrize("command", ALLOWED)
+def test_a_read_only_listing_of_crews_state_is_allowed(command):
+    assert refusal(command) is None
+
+
+@pytest.mark.parametrize("command", CORPUS["must_allow"])
+def test_the_corpus_read_only_forms_are_allowed(command):
+    assert refusal(command) is None
+
+
+@pytest.mark.parametrize("command", CORPUS["must_block"])
+def test_no_write_form_the_old_guard_refused_is_allowed(command):
+    assert refusal(command) is not None
+
+
+def test_the_corpus_has_its_size():
+    assert (len(CORPUS["must_block"]) >= 380, len(CORPUS["must_allow"]) >= 50) == (True, True)
+
+
+# Everything below names crew's state and must keep the deny-list verdict.
+REFUSED = [
+    pytest.param(f"echo hi {S}", id="echo-stays-refused"),
+    pytest.param(f"printf x {S}", id="printf-stays-refused"),
+    pytest.param(f"python3 -c \"print(open('{S}/x').read())\"", id="python-c-stays-refused"),
+    pytest.param(f"ls {S} > {S}/x", id="redirect-out"),
+    pytest.param(f"ls {S} >> {S}/x", id="redirect-append"),
+    pytest.param(f"cat {S}/x 2> {S}/y", id="stderr-to-a-file"),
+    pytest.param(f"cat < {S}/x", id="redirect-in"),
+    pytest.param(f"cat <<EOF\n{S}\nEOF", id="heredoc"),
+    pytest.param(f"ls {S}; rm {S}/x", id="semicolon-rm"),
+    pytest.param(f"ls {S} && rm {S}/x", id="and-rm"),
+    pytest.param(f"ls {S} || rm {S}/x", id="or-rm"),
+    pytest.param(f"ls {S} | tee {S}/x", id="pipe-tee"),
+    pytest.param(f"ls {S} & rm {S}/x", id="background-rm"),
+    pytest.param(f"ls {S} |& tee {S}/x", id="pipe-ampersand"),
+    pytest.param(f"ls {S}\nrm {S}/x", id="newline-rm"),
+    pytest.param(f"ls {S};", id="trailing-semicolon"),
+    pytest.param(f"ls {S} | ", id="empty-command"),
+    pytest.param(f"ls {S} $(rm {S}/x)", id="command-substitution"),
+    pytest.param(f"ls {S} `rm {S}/x`", id="backticks"),
+    pytest.param(f"ls \"{S} $(rm {S}/x)\"", id="substitution-in-double-quotes"),
+    pytest.param(f"ls \"{S}/$X\" > {S}/x", id="variable-and-redirect"),
+    pytest.param(f"ls {S}/* > {S}/x", id="glob-and-redirect"),
+    pytest.param(f"ls {S}/*", id="glob"),
+    pytest.param(f"ls ~ {S}", id="tilde"),
+    pytest.param(f"ls {S} # rm", id="comment"),
+    pytest.param(f"ls 'unterminated {S}", id="unterminated-quote"),
+    pytest.param(f"A=1 ls {S}", id="env-assignment-prefix"),
+    pytest.param(f"'ls' {S}", id="quoted-program"),
+    pytest.param(f"/bin/ls {S}", id="program-by-path"),
+    pytest.param(f"find {S} $A -name python3", id="variable-word"),
+    pytest.param(f"find {S} -delete", id="find-delete"),
+    pytest.param(f"find {S} -exec ls +", id="find-exec-plus"),
+    pytest.param(f"find {S} -execdir ls +", id="find-execdir-plus"),
+    pytest.param(f"find {S} -ok ls +", id="find-ok-plus"),
+    pytest.param(f"find {S} -okdir ls +", id="find-okdir-plus"),
+    pytest.param(f"find {S} -exec rm {{}} ;", id="find-exec"),
+    pytest.param(f"find {S} -execdir rm {{}} ;", id="find-execdir"),
+    pytest.param(f"find {S} -ok rm {{}} ;", id="find-ok"),
+    pytest.param(f"find {S} -fprint {S}/x", id="find-fprint"),
+    pytest.param(f"find {S} -fprintf {S}/x x", id="find-fprintf"),
+    pytest.param(f"find {S} -fls {S}/x", id="find-fls"),
+    pytest.param(f"sort -o {S}/x /tmp/a", id="sort-o"),
+    pytest.param(f"sort -ro {S}/x /tmp/a", id="sort-ro"),
+    pytest.param(f"sort --output={S}/x /tmp/a", id="sort-output"),
+    pytest.param(f"sort --out {S}/x /tmp/a", id="sort-output-abbreviated"),
+    pytest.param(f"sort --compress-program=sh {S}/x", id="sort-compress-program"),
+    pytest.param(f"sort -T {S} /tmp/a", id="sort-temp-dir"),
+    pytest.param(f"uniq /tmp/a {S}/x", id="uniq-output-file"),
+    pytest.param(f"file -C -m {S}/x", id="file-compile"),
+    pytest.param(f"file --compile {S}/x", id="file-compile-long"),
+    pytest.param(f"sed -i s/a/b/ {S}/x", id="sed-i"),
+    pytest.param(f"cp /tmp/a {S}/x", id="cp"),
+]
+
+
+@pytest.mark.parametrize("command", REFUSED)
+def test_a_command_outside_the_strict_allowlist_is_never_exempt(command):
+    assert scope_guard._read_only(command) is False
+
+
+# find -delete, sort -o and the like name no word on the deny-list: origin/main
+# allowed them too (residual_allowed), so only the rest is judged.
+@pytest.mark.parametrize("command", [
+    p for p in REFUSED if scope_guard._WRITES_RE.search(p.values[0])])
+def test_a_refused_command_naming_a_writing_word_keeps_the_deny_list_verdict(command):
+    assert refusal(command) is not None
+
+
+@pytest.mark.parametrize("command", [
+    pytest.param(f"ls {STORE} > x", id="redirect"),
+    pytest.param(f"ls {STORE}; rm {STORE}x", id="semicolon-rm"),
+    pytest.param(f"echo x {STORE}", id="echo"),
+    pytest.param(f"ls {STORE}$(rm x)", id="substitution"),
+])
+def test_the_confirm_config_store_keeps_the_same_verdicts(command):
+    assert refusal(command) is not None
+
+
+# Unchanged from origin/main: a quoted `--last-command` value is still read as
+# the approve verb, chained approve and `goal-approve` stay refused. The strict
+# allowlist never applies to these (an approve is refused before it is reached).
+@pytest.mark.parametrize("command", [
+    pytest.param("python3 crew_autopilot.py next --last-command 'approve'", id="last-command"),
+    pytest.param("echo \"--last-command 'x\" ; python3 crew_autopilot.py approve "
+                 "--ticket T-1 ; echo \"'\"", id="quote-trick-chained-approve"),
+    pytest.param("ls x && python3 crew_autopilot.py approve --ticket T-1", id="chained-approve"),
+    pytest.param("python3 crew_autopilot.py goal-approve --ticket T-1", id="goal-approve"),
+    pytest.param("python3 crew_ticket.py approve --ticket T-1", id="ticket-approve"),
+])
+def test_approve_forms_stay_refused_exactly_as_on_main(command):
+    assert refusal(command) is not None
+
+
+def test_simple_commands_reads_only_the_documented_shapes():
+    assert [scope_guard._simple_commands(c) for c in (
+        "ls a", "ls 'a b' | wc -l", "ls a 2>&1", "ls a; ls b && ls c || ls d", "ls $x", "ls a &")
+    ] == [[[("ls", False), ("a", False)]],
+          [[("ls", False), ("a b", True)], [("wc", False), ("-l", False)]],
+          [[("ls", False), ("a", False), ("2>&1", False)]],
+          [[("ls", False), ("a", False)], [("ls", False), ("b", False)],
+           [("ls", False), ("c", False)], [("ls", False), ("d", False)]],
+          None, None]

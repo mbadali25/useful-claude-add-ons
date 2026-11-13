@@ -238,7 +238,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.3.75**: The mass delete, create and change guard (`guards.mass`) is gone, not just off. `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
-- **crew 1.3.79**: The scope guard no longer refuses a read-only `echo` or `python3 -c` that names crew's state. `crew` 1.3.79: reading crew's state with `ls`, `find`, `grep`, `echo`, `printf` or a read-only `python3 -c`/`node -e` is no longer refused by the scope guard, and a quoted `--last-command "..."` value is no longer read as the autopilot approve verb; every write form still blocks.
+- **crew 1.3.81**: The scope guard no longer refuses `ls`, `find` or `grep` that merely name `python3` or `echo` beside crew's state. `crew` 1.3.81: listing or searching crew's state with a fixed set of read-only programs (`ls`, `cat`, `grep`, `find`, `sort` ...) is no longer refused by the scope guard just because a word such as `python3` or `echo` appears as an argument (`ls .git/crew | grep python3`); every other command keeps the old, stricter verdict.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

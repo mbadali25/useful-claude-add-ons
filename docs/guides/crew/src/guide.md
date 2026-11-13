@@ -253,16 +253,15 @@ profile and overrides, and the narrower layer wins per guard.
 **The scope guard** (`scope.mode`) runs before each Write, Edit, MultiEdit and
 NotebookEdit. It refuses an edit when the active ticket has no current
 approval, or when the target is outside Touch. It also refuses a shell command
-that tries to write the approval state. That check is textual: a command that
-names crew's state beside a redirect or a writing word (`cp`, `mv`, `rm`,
-`sed`, `tee`) is refused, while `ls`, `grep`, `echo` and `cat` of it are not.
-A script interpreter (`python`, `node`, `perl`) counts as writing only when
-its inline code (`-c`, `-e`, a heredoc) shows a write, or when its code cannot
-be read from the command (a script file, `-m`, a piped `-`); a quoted
-`--last-command "..."` value is data and is never read as the approve verb.
-*What it cannot see:* `sed -i`, a redirect or a formatter writing a file
-outside crew's state. Those are shell writes, and the guard judges only the
-editing tools.
+that tries to write the approval state. That check is a textual deny-list: a
+command that names crew's state beside a redirect or a writing word (`cp`,
+`mv`, `rm`, `sed`, `tee`, `echo`, `python`) is refused. The one exemption is
+fail-closed: a command made only of read-only programs (`ls`, `cat`, `grep`,
+`find` without `-delete` or `-exec`, `sort` without `-o`, and a few more) with
+plain literal words, so `ls .git/crew | grep python3` passes; anything the
+guard cannot parse completely keeps the refusal. *What it cannot see:* `sed -i`,
+a redirect or a formatter writing a file outside crew's state. Those are shell
+writes, and the guard judges only the editing tools.
 
 **The completion audit** runs at Stop. It diffs the whole tree against the
 ticket's start (committed, staged, unstaged and untracked), so shell-made

@@ -35,6 +35,7 @@ _AD = "tests/test_approval_digest.py::"
 _MM = "tests/test_merged_main.py::"
 _SR = "tests/test_scope_report.py::"
 _SS = "tests/test_scope_guard_spawns.py::"
+_RO = "tests/test_scope_guard_readonly.py::"
 
 SCOPE_MUTATIONS = (
     ("the scope guard allows an edit with no approved plan", GUARD,
@@ -177,7 +178,7 @@ SCOPE_MUTATIONS = (
      _SG + "test_a_shell_command_forging_approval_state_is_refused"
      "[Bash-python3 hooks/scripts/crew_ticket.py approve --ticket T-1-module]"),
     ("the session may write crew's state through the shell", GUARD,
-     "    if names_state and _writes(command):\n",
+     "    if names_state and _WRITES_RE.search(command) and not _read_only(command):\n",
      "    if False:\n",
      _SG + "test_a_shell_write_to_the_absolute_state_path_is_refused[module]"),
     ("the bash audit misses stop_hook_active across a newline", AUDIT_SH,
@@ -723,47 +724,87 @@ SCOPE_MUTATIONS = (
      'PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$DIR/scope_guard.py"\n',
      'INPUT=$(cat)\nprintf \'%s\' "$INPUT" | PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$PY" "$DIR/scope_guard.py"\n',
      _SS + "test_the_bash_wrapper_starts_no_helper_programs[bash-echo]"),
-    # The interpreter judgement (`_writes`) and the `--last-command` data rule.
-    ("an interpreter running a script file no longer counts as a write", GUARD,
-     "    if any(not _INLINE_AT.match(command, m.start()) for m in found):\n"
+    # The fail-closed read-only exemption (`_read_only`, `_simple_commands`).
+    ("the read-only exemption is never judged: every command is exempt", GUARD,
+     "    parsed = _simple_commands(command)\n    if not parsed:\n        return False\n",
+     "    return True\n",
+     _RO + "test_no_write_form_the_old_guard_refused_is_allowed"),
+    ("the exemption is gone: a read-only listing is refused again", GUARD,
+     "    if names_state and _WRITES_RE.search(command) and not _read_only(command):\n",
+     "    if names_state and _WRITES_RE.search(command):\n",
+     _RO + "test_a_read_only_listing_of_crews_state_is_allowed[ls-pipe-grep-python3]"),
+    ("the exemption is gone for the confirm-config store", GUARD,
+     "            and _WRITES_RE.search(command) and not _read_only(command)):\n",
+     "            and _WRITES_RE.search(command)):\n",
+     _RO + "test_a_read_only_listing_of_crews_state_is_allowed[grep-echo-in-the-confirm-store]"),
+    ("the tokenizer reads a dollar sign as a plain character", GUARD,
+     '0123456789_./:=,@%+-")', '0123456789_./:=,@%+-$")',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt"
+     "[variable-word]"),
+    ("the tokenizer reads a backtick as a plain character", GUARD,
+     '0123456789_./:=,@%+-")', '0123456789_./:=,@%+-`")',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[backticks]"),
+    ("the tokenizer lets a substitution through double quotes", GUARD,
+     r'any(c in body for c in "$`\\!")', "False",
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt"
+     "[substitution-in-double-quotes]"),
+    ("the tokenizer treats a separator as a space", GUARD,
+     "            if not end_command():\n                return None\n            i += step\n",
+     "            end_word()\n            i += step\n",
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[semicolon-rm]"),
+    ("the tokenizer reads a newline as a space", GUARD,
+     r'''        if ch in "\n\r\0":
+            return None
+        if ch in " \t":''',
+     r'''        if ch in "\0":
+            return None
+        if ch in " \t\n":''',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[newline-rm]"),
+    ("the tokenizer lets a redirect to a file through", GUARD,
+     '            if any(c in text for c in "<>&") and (was_quoted or text not in '
+     "_REDIRECT_WORDS):\n                return None\n",
+     "            pass\n",
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[stderr-to-a-file]"),
+    ("the tokenizer accepts a quoted program word", GUARD,
+     "        if was_quoted or program not in _READ_ONLY_PROGRAMS:\n",
+     "        if program not in _READ_ONLY_PROGRAMS:\n",
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[quoted-program]"),
+    ("echo is a read-only program", GUARD,
+     '"dirname", "pwd", "test"))', '"dirname", "pwd", "test", "echo"))',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt"
+     "[echo-stays-refused]"),
+    ("tee is a read-only program", GUARD,
+     '"dirname", "pwd", "test"))', '"dirname", "pwd", "test", "tee"))',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[pipe-tee]"),
+    ("sed is a read-only program", GUARD,
+     '"dirname", "pwd", "test"))', '"dirname", "pwd", "test", "sed"))',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[sed-i]"),
+    ("find -delete, -exec and -fprint are read-only", GUARD,
+     '        return not any(a == w or (w == "-fprint" and a.startswith("-fprint"))\n'
+     "                       for a in args for w in _FIND_WRITES)\n",
      "        return True\n",
-     "",
-     _SG + "test_a_write_to_crews_state_is_still_refused_in_every_form"
-     "[python-script-file-module]"),
-    ("an interpreter running a script after an inline one counts as read-only", GUARD,
-     "    if any(not _INLINE_AT.match(command, m.start()) for m in found):\n",
-     "    if not _INLINE_AT.match(command, found[0].start()):\n",
-     _SG + "test_a_write_to_crews_state_is_still_refused_in_every_form"
-     "[inline-then-script-file-module]"),
-    ("inline interpreter code that writes is read as read-only", GUARD,
-     "    return bool(_INTERP_WRITE_RE.search(command))\n",
-     "    return False\n",
-     _SG + "test_a_write_to_crews_state_is_still_refused_in_every_form"
-     "[python-c-open-w-module]"),
-    ("an interpreter is never a write", GUARD,
-     "    found = list(_INTERP_RE.finditer(command))\n    if not found:\n        return False\n",
-     "    return False\n",
-     _SG + "test_a_write_to_crews_state_is_still_refused_in_every_form"
-     "[python-heredoc-write-module]"),
-    ("a piped stdin script reads as inline code", GUARD,
-     "[ \\t]+-(?=[ \\t]*<<)|\"", "[ \\t]+-|\"",
-     _SG + "test_a_write_to_crews_state_is_still_refused_in_every_form"
-     "[python-stdin-from-a-pipe-module]"),
-    ("echo and printf count as writes by name again", GUARD,
-     'r"chmod|set-content|add-content|out-file|"', 'r"chmod|echo|printf|set-content|add-content|out-file|"',
-     _SG + "test_reading_crews_state_with_a_read_only_interpreter_or_echo_is_allowed"
-     "[echo-module]"),
-    ("any python or node name counts as a write by name again", GUARD,
-     'r"chmod|set-content|add-content|out-file|"', 'r"chmod|python[0-9.]*|node|set-content|out-file|"',
-     _SG + "test_reading_crews_state_with_a_read_only_interpreter_or_echo_is_allowed"
-     "[python-c-open-module]"),
-    ("the confirm-config store ignores interpreter code", GUARD,
-     "store in folded) and _writes(command):", "store in folded) and False:",
-     _SG + "test_the_confirm_config_store_is_judged_the_same_way[python-c-open-w-module]"),
-    ("last-command text is read as the approve verb again", GUARD,
-     'if _AUTOPILOT_APPROVE_RE.search(_LAST_COMMAND_RE.sub(r"\\1", command)):',
-     "if _AUTOPILOT_APPROVE_RE.search(command):",
-     _SG + "test_last_command_text_is_data_and_never_the_approve_verb[double-quoted-word-module]"),
-    ("last-command strips a value that substitutes a command", GUARD,
-     '(?:[^\\"\\\\$`]|\\\\[^$`])*', '(?:[^\\"\\\\]|\\\\.)*',
-     _SG + "test_autopilot_approve_still_needs_the_bare_command[substitution-in-value-module]"),)
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[find-exec-plus]"),
+    ("find -fprint matches by exact word only", GUARD,
+     '(w == "-fprint" and a.startswith("-fprint"))', "False",
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[find-fprintf]"),
+    ("sort -o and --output are read-only", GUARD,
+     '        return not any((a.startswith("--") and a[2:3] in ("o", "c", "t"))\n'
+     '                       or (a[:1] == "-" and a[1:2] != "-" and ("o" in a or "T" in a))\n'
+     "                       for a in args)\n",
+     "        return True\n",
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[sort-o]"),
+    ("sort --output abbreviations are read-only", GUARD,
+     '(a.startswith("--") and a[2:3] in ("o", "c", "t"))', '(a.startswith("--output"))',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt"
+     "[sort-output-abbreviated]"),
+    ("sort -T is read-only", GUARD,
+     'and ("o" in a or "T" in a))', 'and ("o" in a))',
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[sort-temp-dir]"),
+    ("file -C is read-only", GUARD,
+     '        return not any(a == "-C" or (a.startswith("--") and a[2:3] == "c") or\n'
+     '                       (a[:1] == "-" and a[1:2] != "-" and "C" in a) for a in args)\n',
+     "        return True\n",
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[file-compile]"),
+    ("uniq may write a second positional output file", GUARD,
+     "        return positional <= 1\n", "        return True\n",
+     _RO + "test_a_command_outside_the_strict_allowlist_is_never_exempt[uniq-output-file]"),)
