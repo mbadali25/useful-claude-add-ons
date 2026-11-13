@@ -1,40 +1,30 @@
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" SessionStart", "timeout": 30}] },
-      { "hooks": [{"type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.ps1\" SessionStart; exit $LASTEXITCODE", "timeout": 30}] }
+      { "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" SessionStart", "timeout": 30}] }
     ],
     "UserPromptSubmit": [
-      { "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" UserPromptSubmit", "timeout": 30}] },
-      { "hooks": [{"type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.ps1\" UserPromptSubmit; exit $LASTEXITCODE", "timeout": 30}] }
+      { "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" UserPromptSubmit", "timeout": 30}] }
     ],
     "PreToolUse": [
       { "matcher": "Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit",
-        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" PreToolUse", "timeout": 30}] },
-      { "matcher": "Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit",
-        "hooks": [{"type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.ps1\" PreToolUse; exit $LASTEXITCODE", "timeout": 30}] }
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" PreToolUse", "timeout": 30}] }
     ],
     "PostToolUse": [
       { "matcher": "Read|Edit|Write|MultiEdit|mcp__.*(obsidian|vault|basic[-_]memory).*",
-        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" PostToolUse", "timeout": 20}] },
-      { "matcher": "Read|Edit|Write|MultiEdit|mcp__.*(obsidian|vault|basic[-_]memory).*",
-        "hooks": [{"type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.ps1\" PostToolUse; exit $LASTEXITCODE", "timeout": 20}] }
+        "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" PostToolUse", "timeout": 20}] }
     ],
     "SubagentStart": [
-      { "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" SubagentStart", "timeout": 25}] },
-      { "hooks": [{"type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.ps1\" SubagentStart; exit $LASTEXITCODE", "timeout": 25}] }
+      { "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" SubagentStart", "timeout": 25}] }
     ],
     "PreCompact": [
-      { "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" PreCompact", "timeout": 40}] },
-      { "hooks": [{"type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.ps1\" PreCompact; exit $LASTEXITCODE", "timeout": 40}] }
+      { "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" PreCompact", "timeout": 40}] }
     ],
     "Notification": [
-      { "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" Notification", "timeout": 25}] },
-      { "hooks": [{"type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.ps1\" Notification; exit $LASTEXITCODE", "timeout": 25}] }
+      { "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" Notification", "timeout": 25}] }
     ],
     "Stop": [
-      { "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" Stop", "timeout": 610}] },
-      { "hooks": [{"type": "command", "shell": "powershell", "command": "& \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.ps1\" Stop; exit $LASTEXITCODE", "timeout": 610}] }
+      { "hooks": [{"type": "command", "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew-hook.sh\" Stop", "timeout": 610}] }
     ]
   }
 }
