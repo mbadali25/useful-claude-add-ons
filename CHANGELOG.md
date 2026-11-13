@@ -59,7 +59,6 @@ read entries under any `## [` heading.
 - crew 1.3.49: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
-- crew 1.3.74: re-bump only - interim number on the mass-guard-removal branch (pushed, never on main); the change is recorded under crew 1.3.75
 
 ### Removed — crew 1.3.75: the mass delete, create and change guard (`guards.mass`) is gone, not just off
 
