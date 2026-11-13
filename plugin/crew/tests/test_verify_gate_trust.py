@@ -454,8 +454,10 @@ def test_gate_a_worktree_whose_main_checkout_git_cannot_name_is_unknown(tmp_path
     (lane / ".git").write_text("gitdir: " + str(tmp_path / "gone") + "\n", encoding="utf-8")
     with open(_SH, encoding="utf-8") as handle:
         text = handle.read()
-    start = text.index("gate_trust_check() {")
-    body = text[start:text.index("\n}\n", start) + 3]
+    start = text.index("gate_safe_path() {")
+    end = text.index("\ngate_trust_check() {")
+    end = text.index("\n}\n", end + 1) + 3
+    body = text[start:end]
     program = tmp_path / "probe.sh"
     program.write_text("git() { return 1; }\ncrew_py_strict() { return 1; }\n" + body
                        + 'gate_trust_check "$1"\necho "rc=$?"\n', encoding="utf-8", newline="\n")
@@ -567,3 +569,131 @@ def test_seam_venv_on_windows_gets_a_python3_beside_its_python_exe(tmp_path):
     posix.mkdir()
     crew_fixtures.seam_alias_python3(posix)
     assert not (posix / "python3.exe").exists()
+
+
+# Round 8 (L-0888): nothing the repo supplies is executed ahead of the trust
+# decision, not even by the helpers (fingerprint, scope report, record report,
+# `--price`) or by the interpreter probe itself.
+
+_LOGGING_PY = (
+    '#!/bin/sh\n'
+    ': >> "{marker}"\n'
+    'exec "{real}" "$@"\n'
+)
+
+
+def _logging_python(root, marker, works=True):
+    """A repo `bin/python3` that records every call; `works=False` makes it fail
+    the strict probe (it prints nothing), the verified --price repro."""
+    (root / "bin").mkdir(exist_ok=True)
+    fake = root / "bin" / "python3"
+    if works:
+        fake.write_text(_LOGGING_PY.format(marker=marker, real=shutil.which("python3")), encoding="utf-8")
+    else:
+        fake.write_text(f'#!/bin/sh\n: >> "{marker}"\nexit 1\n', encoding="utf-8")
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    return fake
+
+
+def _tools_without_python(tmp_path):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    for name in os.listdir("/usr/bin"):
+        if not name.startswith(("python", "py")) and not (tools / name).exists():
+            os.symlink(os.path.join("/usr/bin", name), tools / name)
+    return tools
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+@pytest.mark.parametrize("args", [(), ("--all",), ("--price",)])
+def test_gate_never_runs_a_repo_python_that_fails_the_strict_probe(tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 8): PATH=repo/bin:tools, the repo's
+    python3 fails the strict probe and the sanitized PATH holds none. The old
+    trust check read that as 'no python, nothing to run' (0), and --price then
+    ran the repo's python3 on verify_price.py."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned.txt"
+    _logging_python(root, marker, works=False)
+    tools = _tools_without_python(tmp_path)
+
+    done = _run(root, *args, env={"PATH": str(root / "bin") + os.pathsep + str(tools)})
+
+    assert not marker.exists(), "the repo's python3 was executed ahead of the trust decision"
+    assert not sentinel.exists()
+    assert done.returncode == (1 if args == ("--price",) else 0), done.stdout + done.stderr
+    assert "nothing was verified" in done.stdout + done.stderr or args == ("--price",)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_price_of_an_approved_repo_still_prices_with_a_sanctioned_python(tmp_path, store):
+    """MUST-ALLOW: a trusted repo prices on the sanitized PATH's own python."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    _approve(root)
+
+    done = _run(root, "--price", "--force", env={"CREW_PYTHON": shutil.which("python3")})
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert sentinel.exists(), done.stdout + done.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+@pytest.mark.parametrize("args", [(), ("--all",)])
+def test_gate_an_untrusted_repo_python_named_by_crew_python_is_never_executed(tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 8): CREW_PYTHON=repo/bin/python3 ran the
+    repo's python on scope_report.py before the trust check."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned.txt"
+    fake = _logging_python(root, marker)
+
+    done = _run(root, *args, env={"CREW_PYTHON": str(fake)})
+
+    assert not marker.exists(), "the repo's python was executed ahead of the trust decision"
+    assert not sentinel.exists()
+    assert "nothing was verified" in done.stdout + done.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+@pytest.mark.parametrize("args", [(), ("--all",), ("--price",)])
+def test_gate_a_repo_pythonpath_sitecustomize_never_runs_ahead_of_the_trust_decision(tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 8): PYTHONPATH=repo/evil ran its
+    sitecustomize inside the probe's `-c` and inside the helpers."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned.txt"
+    evil = root / "evil"
+    evil.mkdir()
+    (evil / "sitecustomize.py").write_text(f"open({str(marker)!r}, 'a').close()\n", encoding="utf-8")
+
+    done = _run(root, *args, env={"PYTHONPATH": str(evil)})
+
+    assert not marker.exists(), "a repo sitecustomize ran ahead of the trust decision"
+    assert not sentinel.exists(), done.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="needs git submodules over a file remote")
+def test_gate_an_approved_submodule_runs_its_rules(tmp_path, store):
+    """A submodule's git common dir is <super>/.git/modules/<name> and its `.git` is
+    a file; that is not an unknown when the repo is hash-approved."""
+    sentinel = tmp_path / "ran.txt"
+    sub_src = _repo(tmp_path / "src", sentinel)
+    _git(sub_src, "commit", "-q", "-am", "x")
+    sup = tmp_path / "sup"
+    sup.mkdir()
+    _git(sup, "init", "-q")
+    _git(sup, "config", "user.email", "t@example.invalid")
+    _git(sup, "config", "user.name", "t")
+    _git(sup, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub_src), "mod")
+    _git(sup, "commit", "-q", "-m", "sub")
+    mod = sup / "mod"
+    assert (mod / ".git").is_file()
+    (mod / "a.py").write_text("x = 3", encoding="utf-8")
+    _approve(mod)
+
+    done = _run(mod, "--all")
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.is_file(), done.stdout + done.stderr
+    assert "UNKNOWN" not in done.stdout + done.stderr

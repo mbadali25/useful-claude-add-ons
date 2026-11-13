@@ -44,9 +44,13 @@ gate_trust_broken() {
 GATE_TRUST_RC=""
 GATE_TRUST_BROKEN=0
 
-gate_trust_check() {
-  local _tdir="$1" _tp _tpd _tpr _tmain _tsafe _tentry _tpath _tenv _tmsg _trc=0
-  shift
+# gate_safe_path prints the PATH the gate may search for an interpreter before
+# it has decided to trust the repo: every relative entry and every directory
+# inside this repo (or the main checkout of a linked worktree) is stripped.
+# Returns 13 (and says why) when git cannot name the main checkout of a linked
+# worktree: an unknown is never read as "nothing to strip".
+gate_safe_path() {
+  local _tdir="$1" _tpd _tpr _tmain _tsafe _tentry
   # The interpreter is found on a PATH stripped of every relative entry and every
   # directory inside this repo: the repo's settings `env` block can set PATH, and
   # even the probe that proves an interpreter runs it.
@@ -56,6 +60,9 @@ gate_trust_check() {
   _tmain=$(PATH="/usr/local/bin:/usr/bin:/bin:/mingw64/bin:/ucrt64/bin:/clangarm64/bin:/opt/homebrew/bin" git rev-parse --git-common-dir 2>/dev/null) || _tmain=""
   case "$_tmain" in
     /*/.git|[A-Za-z]:/*/.git) _tmain=$(CDPATH='' cd -- "${_tmain%/.git}" 2>/dev/null && pwd -P) || _tmain="" ;;
+    # A submodule's common dir is <superproject>/.git/modules/<name>: the
+    # superproject checkout is repo-authored too, and is what gets stripped.
+    /*/.git/modules/*|[A-Za-z]:/*/.git/modules/*) _tmain=$(CDPATH='' cd -- "${_tmain%%/.git/modules/*}" 2>/dev/null && pwd -P) || _tmain="" ;;
     *) _tmain="" ;;
   esac
   # An empty _tmain means "no main checkout to strip" only when this directory
@@ -77,17 +84,67 @@ gate_trust_check() {
     [ -n "$_tmain" ] && case "$_tpd/" in "$_tmain"/*) continue ;; esac
     _tsafe="${_tsafe:+$_tsafe:}$_tentry"
   done <<< "${PATH:-}:"
+  printf '%s\n' "$_tsafe"
+}
+
+# gate_helper_py resolves the interpreter for the helpers that run BEFORE the
+# trust decision (fingerprint, scope report, record report, --price): a PROVED
+# interpreter found on the sanitized PATH alone, with CREW_PYTHON ignored and
+# every PYTHON* variable removed from the probe, so a hostile repo's settings
+# `env` block (CREW_PYTHON, a repo PATH entry, PYTHONPATH) cannot make the gate
+# run repo code ahead of the trust check. No such interpreter is an empty
+# answer, and every caller treats that as "skip this helper", never as a pass.
+# Callers run the script it finds with `-E -s`.
+gate_helper_py() {
+  local _hp
+  _hp=$(gate_safe_path "${GATE_SCRIPT_DIR:-}" 2>/dev/null) || return 1
+  gate_py_on_path "$_hp"
+}
+
+# gate_py_on_path "<path>": the PROVED interpreter on exactly that PATH, with
+# CREW_PYTHON ignored and every PYTHON* variable removed so a repo-set
+# PYTHONPATH cannot run a sitecustomize inside the probe's own `-c`.
+gate_py_on_path() {
+  (
+    for _hv in $(compgen -e | grep '^PYTHON'); do unset "$_hv"; done
+    CREW_PYTHON="" PATH="$1" crew_py_strict 2>/dev/null
+  )
+}
+
+# gate_unsafe_python_present: succeeds when the gate COULD resolve a python the
+# sanitized lookup refused (a CREW_PYTHON, or a python-named executable in a
+# PATH entry that is relative or inside the repo). It only looks at file names:
+# nothing it finds is executed, because running an untrusted interpreter to
+# ask whether it works is itself running repo code ahead of the trust check.
+gate_unsafe_python_present() {
+  local _up_safe=":$1:" _up_entry _up_name _up_dir
+  [ -n "${CREW_PYTHON:-}" ] && return 0
+  while IFS= read -r -d ':' _up_entry || [ -n "$_up_entry" ]; do
+    case "$_up_safe" in *":$_up_entry:"*) continue ;; esac
+    _up_dir="${_up_entry:-.}"
+    for _up_name in "$_up_dir"/python "$_up_dir"/python3 "$_up_dir"/py "$_up_dir"/python3.* \
+                    "$_up_dir"/python.exe "$_up_dir"/python3.exe "$_up_dir"/py.exe; do
+      [ -e "$_up_name" ] && return 0
+    done
+  done <<< "${PATH:-}:"
+  return 1
+}
+
+gate_trust_check() {
+  local _tdir="$1" _tp _tpd _tpr _tmain _tsafe _tentry _tpath _tenv _tmsg _trc=0
+  shift
+  _tsafe=$(gate_safe_path "$_tdir") || return 13
   # CREW_PYTHON is environment, which a repo's settings `env` block can set, so
   # it is emptied for this lookup: the interpreter that decides trust is found
   # on the sanitized PATH alone.
-  _tp=$(CREW_PYTHON="" PATH="$_tsafe" crew_py_strict 2>/dev/null) || _tp=""
+  _tp=$(gate_py_on_path "$_tsafe") || _tp=""
   if [ -z "$_tp" ] || [ ! -f "$_tdir/verify_trust.py" ]; then
     # No python anywhere while a verify.json exists: the PY check further down
     # exits 2 and nothing runs, so leave that message to it. But when the gate
     # itself CAN resolve a python (CREW_PYTHON, or a PATH entry inside the repo)
-    # that the sanitized lookup refused, the matcher would run on an interpreter
+    # that the sanitized lookup refused (named by file name only, never run), the matcher would run on an interpreter
     # nobody trusted and the rules would follow: that is UNKNOWN, not a pass.
-    if [ -z "$_tp" ] && [ -f .crew/verify.json ] && ! crew_py_strict >/dev/null 2>&1; then
+    if [ -z "$_tp" ] && [ -f .crew/verify.json ] && ! gate_unsafe_python_present "$_tsafe"; then
       return 0
     fi
     echo "VERIFY GATE: UNKNOWN, not run - nothing was verified. The trust check could not run (no working python, or verify_trust.py is missing at $_tdir)." >&2
@@ -150,7 +207,7 @@ gate_trust_check() {
 if [ "${1:-}" = "--price" ]; then
   cd "${CLAUDE_PROJECT_DIR:-.}" || exit 1
   PRICE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  PRICE_PY=$(crew_py) || { echo "verify-gate --price: no python available" >&2; exit 1; }
+  PRICE_PY=$(gate_helper_py) || { echo "verify-gate --price: no python available" >&2; exit 1; }
   shift
   PRICE_TARGET=".crew/verify.json"
   PRICE_FORCE=""
@@ -183,7 +240,7 @@ if [ "${1:-}" = "--price" ]; then
     [ "$_price_rc" -eq 14 ] && gate_trust_broken
     exit 1
   fi
-  "$PRICE_PY" "$PRICE_DIR/verify_price.py" "$PRICE_TARGET" $PRICE_FORCE
+  "$PRICE_PY" -E -s "$PRICE_DIR/verify_price.py" "$PRICE_TARGET" $PRICE_FORCE
   exit $?
 fi
 
@@ -327,17 +384,17 @@ _crew_gate_owed_filter() {
 # mode stdout goes through the filter above. The exit status is the script's.
 gate_record_report() {
   if [ "${CREW_GATE_QUIET:-0}" -eq 1 ]; then
-    "$1" "$2" report 2>/dev/null | _crew_gate_owed_filter
+    "$1" -E -s "$2" report 2>/dev/null | _crew_gate_owed_filter
     return "${PIPESTATUS[0]}"
   fi
-  "$1" "$2" report >&2 2>/dev/null
+  "$1" -E -s "$2" report >&2 2>/dev/null
 }
 gate_record_sync() {
   if [ "${CREW_GATE_QUIET:-0}" -eq 1 ]; then
-    "$1" "$2" sync | _crew_gate_owed_filter
+    "$1" -E -s "$2" sync | _crew_gate_owed_filter
     return "${PIPESTATUS[0]}"
   fi
-  "$1" "$2" sync >&2
+  "$1" -E -s "$2" sync >&2
 }
 _crew_gate_quiet_install() {
   [ "$CI_MODE" -eq 0 ] && [ "$CI_ALL_SEEN" -eq 0 ] && [ "$VERBOSE_ARG" -eq 0 ] || return 0
@@ -1041,7 +1098,7 @@ if [ -z "$CHANGED" ]; then
   # rule's own files last changed, it goes quiet with nobody told. Best
   # effort and read-only: no python, no script, or a corrupt record file
   # all mean "say nothing extra", never "invent a status".
-  REPORT_PY=$(crew_py 2>/dev/null) || REPORT_PY=""
+  REPORT_PY=$(gate_helper_py 2>/dev/null) || REPORT_PY=""
   REPORT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   if [ -n "$REPORT_PY" ] && [ -f "$REPORT_DIR/verify_record.py" ]; then
     gate_record_report "$REPORT_PY" "$REPORT_DIR/verify_record.py" || true
@@ -1178,12 +1235,12 @@ fi
 # Neither --all nor --ci ever skips here: any non-empty BUDGET_FLAG means the
 # caller asked for the whole map, and a PR job that exits 0 on a fingerprint
 # left by an earlier run would pass a change it never looked at.
-FP_PY=$(crew_py 2>/dev/null) || FP_PY=""
+FP_PY=$(gate_helper_py 2>/dev/null) || FP_PY=""
 FP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FP_FILE=".crew/.verify-gate.fingerprint"
 FINGERPRINT=""
 if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ -z "$BUDGET_FLAG" ]; then
-  FINGERPRINT=$(printf '%s\n' "$CHANGED" | "$FP_PY" "$FP_DIR/verify_fingerprint.py" "$PWD" 2>/dev/null)
+  FINGERPRINT=$(printf '%s\n' "$CHANGED" | "$FP_PY" -E -s "$FP_DIR/verify_fingerprint.py" "$PWD" 2>/dev/null)
   if [ -n "$FINGERPRINT" ] && [ -f "$FP_FILE" ] \
      && [ "$FINGERPRINT" = "$(gate_marker_text "$FP_FILE")" ]; then
     echo "verify-gate: nothing the gate depends on has changed since the last CLEAN run (fingerprint $FINGERPRINT) - checks were SKIPPED, not re-run. Edit a file, or run the gate with --all, to force them." >&2
@@ -1191,7 +1248,7 @@ if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ -z "$BUDGET_FL
     # rule that was chronic/skipped/reach-excluded on a PRIOR run and has
     # not been touched since. Read-only reminder, same fail-safe direction
     # as the empty-CHANGED path above.
-    [ -f "$FP_DIR/verify_record.py" ] && gate_record_report "$FP_PY" "$FP_DIR/verify_record.py"
+    [ -f "$FP_DIR/verify_record.py" ] && gate_record_report "$FP_PY" -E -s "$FP_DIR/verify_record.py"
     exit 0
   fi
 fi
@@ -1383,7 +1440,7 @@ lock_owner_state() {
   case "$_os_stamp" in ''|*[!0-9]*) echo unknown; return ;; esac
   [ -n "$_os_token" ] && [ -z "$_os_extra" ] || { echo unknown; return; }
   [ "$_os_token" = "$(tr -d '\r\n' < "$LOCK/token" 2>/dev/null)" ] || { echo unknown; return; }
-  case "$("$FP_PY" "$FP_DIR/verify_record.py" owner-state "$_os_scheme" "$_os_pid" "$_os_stamp" 2>/dev/null | tr -d '\r')" in
+  case "$("$FP_PY" -E -s "$FP_DIR/verify_record.py" owner-state "$_os_scheme" "$_os_pid" "$_os_stamp" 2>/dev/null | tr -d '\r')" in
     alive) echo alive ;;
     dead) echo dead ;;
     *) echo unknown ;;
@@ -1582,7 +1639,7 @@ fi
 # and MSYS rewrote that to "C:\Program Files\Git\scope_report.py". The gate then
 # printed a python "No such file" line as its scope report. Resolve it here.
 SCOPE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCOPE_PY=$(crew_py 2>/dev/null) || SCOPE_PY=""
+SCOPE_PY=$(gate_helper_py 2>/dev/null) || SCOPE_PY=""
 # The two preconditions are reported APART. Both used to fall into one
 # "(no python)" sentence, so a missing scope_report.py -- a different
 # cause with a different fix -- was announced as an absent interpreter.
@@ -1593,7 +1650,7 @@ elif [ ! -f "$SCOPE_DIR/scope_report.py" ]; then
   echo "outside-scope: (scope_report.py not found at $SCOPE_DIR/scope_report.py; scope not checked)" >&2
 else
   printf '%s
-' "$CHANGED" | "$SCOPE_PY" "$SCOPE_DIR/scope_report.py" "$PWD" || true
+' "$CHANGED" | "$SCOPE_PY" -E -s "$SCOPE_DIR/scope_report.py" "$PWD" || true
 fi
 : # keep the scope report from ever deciding this script's status
 

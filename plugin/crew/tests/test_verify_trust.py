@@ -22,6 +22,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 
 import pytest
@@ -1011,3 +1012,59 @@ def test_approve_a_repo_with_no_remote_records_an_empty_pin(tmp_path, store):
     assert _approve(root) == 0
     entry = json.loads(store.read_text(encoding="utf-8"))["repos"][verify_trust.repo_identity(str(root))[0]]
     assert entry["pin"] == []
+
+
+def _aged_lock(path, holder):
+    lock_dir = path + ".lock"
+    os.mkdir(lock_dir)
+    if holder is not None:
+        with open(os.path.join(lock_dir, "holder"), "w", encoding="utf-8") as handle:
+            handle.write(holder)
+    old = os.stat(lock_dir).st_mtime - verify_trust.LOCK_STALE - 5
+    os.utime(lock_dir, (old, old))
+    return lock_dir
+
+
+def test_lock_an_old_lock_whose_holder_is_still_running_is_not_broken(tmp_path):
+    """A writer paused past LOCK_STALE still owns the lock: breaking it would let
+    it later restore a snapshot taken before a revocation (round 8, inferred)."""
+    path = str(tmp_path / "s.json")
+    lock_dir = _aged_lock(path, f"{verify_trust.socket.gethostname()} {os.getpid()}")
+
+    verify_trust._Lock(path)._break()
+
+    assert os.path.isdir(lock_dir)
+    assert verify_trust._Lock(path)._stale() is False
+
+
+def test_lock_an_old_lock_whose_holder_is_gone_is_broken(tmp_path):
+    path = str(tmp_path / "s.json")
+    child = subprocess.Popen([sys.executable, "-c", "pass"])
+    child.wait()
+    lock_dir = _aged_lock(path, f"{verify_trust.socket.gethostname()} {child.pid}")
+
+    with verify_trust._Lock(path):
+        assert os.path.isdir(lock_dir)
+    assert not os.path.exists(lock_dir)
+
+
+def test_lock_an_old_lock_with_no_holder_note_is_broken_by_age(tmp_path):
+    path = str(tmp_path / "s.json")
+    lock_dir = _aged_lock(path, None)
+
+    with verify_trust._Lock(path):
+        assert os.path.isdir(lock_dir)
+    assert not os.path.exists(lock_dir)
+
+
+def test_second_check_with_verify_json_deleted_is_changed_not_trusted(tmp_path, monkeypatch):
+    """The second map check, raced through an ABSENT verify.json (round 8,
+    inferred): 'nothing to run here' is a trusted verdict, and the parsed-bytes
+    comparison must still turn it into CHANGED rather than let it stand."""
+    root = _repo(tmp_path)
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(tmp_path / "store.json"))
+    os.remove(os.path.join(root, ".crew", "verify.json"))
+
+    code = verify_trust.main(["check", "--root", str(root), "--expect-verify-sha", "ab" * 32])
+
+    assert code == verify_trust.EXIT_CHANGED

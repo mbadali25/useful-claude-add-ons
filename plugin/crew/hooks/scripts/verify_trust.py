@@ -64,6 +64,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -260,6 +261,48 @@ def load_store(path):
     return data
 
 
+def _pid_alive(pid):
+    """True when process `pid` on this machine exists. Unknown reads as alive:
+    a lock whose holder cannot be shown dead is not broken. (Never os.kill on
+    Windows: any signal there terminates the process.)"""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        try:
+            import ctypes  # pylint: disable=import-outside-toplevel
+            kernel = ctypes.windll.kernel32
+            handle = kernel.OpenProcess(0x1000, False, pid)
+            if not handle:
+                return kernel.GetLastError() == 5
+            code = ctypes.c_ulong()
+            ok = kernel.GetExitCodeProcess(handle, ctypes.byref(code))
+            kernel.CloseHandle(handle)
+            return (not ok) or code.value == 259
+        except (OSError, AttributeError, ValueError):
+            return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _holder_alive(lock_dir):
+    """True when the lock directory names a holder on THIS host that is still
+    running. A lock with no readable holder note, or one from another host, is
+    judged by its age alone."""
+    try:
+        with open(os.path.join(lock_dir, "holder"), encoding="utf-8") as handle:
+            host, _, pid = handle.read().strip().rpartition(" ")
+        if host != socket.gethostname():
+            return False
+        return _pid_alive(int(pid))
+    except (OSError, ValueError):
+        return False
+
+
 class _Lock:
     """A directory lock beside the store: portable, bounded, self-expiring.
     The holder writes a random token inside the directory and releases only a
@@ -272,8 +315,12 @@ class _Lock:
         self.token = uuid.uuid4().hex
 
     def _stale(self):
+        # Old AND its holder not running: a writer paused past LOCK_STALE still
+        # owns the lock, and breaking it would let that writer later restore a
+        # snapshot taken before a revocation.
         try:
-            return time.time() - os.stat(self.path).st_mtime > LOCK_STALE
+            return (time.time() - os.stat(self.path).st_mtime > LOCK_STALE
+                    and not _holder_alive(self.path))
         except OSError:
             return False
 
@@ -284,7 +331,7 @@ class _Lock:
         except OSError:
             return
         try:
-            if time.time() - os.stat(claimed).st_mtime <= LOCK_STALE:
+            if time.time() - os.stat(claimed).st_mtime <= LOCK_STALE or _holder_alive(claimed):
                 try:
                     os.rename(claimed, self.path)
                 except OSError:
@@ -304,6 +351,8 @@ class _Lock:
                 try:
                     with open(os.path.join(self.path, "token"), "w", encoding="utf-8") as handle:
                         handle.write(self.token)
+                    with open(os.path.join(self.path, "holder"), "w", encoding="utf-8") as handle:
+                        handle.write(f"{socket.gethostname()} {os.getpid()}")
                 except OSError as exc:
                     shutil.rmtree(self.path, ignore_errors=True)
                     raise TrustError("cannot record the store lock's owner: "
