@@ -917,7 +917,7 @@ Twelve guards, one block, one ratchet, **three vocabularies**. What crew's comma
 
 The twelve are `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive`, `deployWorkflow`, `prodDatabase`, `prodServer`, `roleWrites`, `cloudGuard` and `envGuard`.
 
-### `guards.enabled` - the master switch (crew 1.3.87, L-0947)
+### `guards.enabled` - the master switch (crew 1.3.89, L-0947)
 
 The per-guard switches each turn one guard down and ratchet, so no combination of them is "run everything": the
 scope guard, the verify gate, the completion audit and the promote gate each have a key of their own, and the
@@ -926,9 +926,12 @@ false` is that one key. It is read by the dispatcher (`crew_hook.guards_switched
 dispatcher is the one place every guard row passes through: it drops every `guard` row from the event's list
 except `approval-hook.sh`, so a guard hook never starts and a fault in one cannot fail closed.
 
-* Off wins: `false` in either layer is enough, over any profile or override, and a `true` in the other layer
-  cannot switch it back on. This is deliberately not a ratchet (a ratchet would let the machine file veto the
-  owner's own switch), and it means a repo file can switch the guards off, as `scope.mode: off` already can.
+* Machine layer only (owner decision, 2026-11-13): a repo file (`.crew/config.json`, tracked or not) is a checkout
+  anyone can hand you, so it must not be able to turn every guard off. A repo `false` is ignored, whether the
+  machine layer is silent or `true`, and the guards stay on (`crew_hook.repo_switch_ignored` reports it so a status
+  line can say so; nothing is blocked or logged on its account). This differs from `scope.mode: off`, which a repo
+  file can still set, because that one switches off a single guard, not all of them.
+* Off wins: a machine `false` beats any profile or override, and a repo `true` cannot switch it back on.
 * Only the JSON literal `false` counts. Absent, `null`, `true`, a string, `0`, a corrupt or unreadable file and a
   `guards` that is not an object all leave the guards on: could-not-tell is never the value that disables one.
 * `approval-hook.sh` stays. It records `/crew:approve` and the `/crew:confirm-config` double confirmation, and

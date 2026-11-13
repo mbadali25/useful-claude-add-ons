@@ -93,19 +93,21 @@ meaningful only with `scope.mode` `block`.
 
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.87) turns EVERY guard hook off: the promote
+`guards.enabled: false` (crew 1.3.89) turns EVERY guard hook off: the promote
 gate, the role-write, cloud, environment and scope guards, the verify gate and
 the completion audit. None of them starts, so nothing is judged, refused, asked
 or logged. It beats every per-guard setting (`guards.profile`,
-`guards.overrides.*`, `scope.mode`, `verifyGate`), and `false` in EITHER layer
-(`.crew/config.json` or `~/.claude/crew/config.json`) is enough; neither layer
-can switch it back on over the other. Only the JSON literal `false` counts: an
+`guards.overrides.*`, `scope.mode`, `verifyGate`), and `false` in the MACHINE layer
+(`~/.claude/crew/config.json`) is the only one that counts: a `false` in
+`.crew/config.json`, tracked or not, is ignored and the guards stay on (a checkout
+must not be able to turn every guard off), and a repo `true` cannot switch a machine
+`false` back on. Only the JSON literal `false` counts: an
 absent key, `null`, `true`, a string, a corrupt file or a `guards` that is not an
 object leaves the guards on. It takes effect on the next hook call, with no
 reinstall. `/crew:approve` and `/crew:confirm-config` keep working, so the
 `humanOnly.*` opt-out still works with the guards off. It needs python: with
 none, the bash launcher still fails closed in an armed repo. To go back, delete
-the key or set it to `true` in every layer that holds `false`.
+the key or set it to `true` in the machine file.
 
 ## Guard profiles
 

@@ -1,4 +1,5 @@
-"""`guards.enabled: false` stands every guard hook down (crew 1.3.87, the dispatcher half).
+"""`guards.enabled: false` in the MACHINE layer stands every guard hook down (crew 1.3.89, the dispatcher half).
+A repo-layer `false` is ignored (owner decision 2026-11-13): a checkout cannot turn every guard off.
 
 The must-block half and the must-allow half run the REAL dispatcher (`crew_hook.py`) and the REAL guard
 scripts against the armed fixture repo of `record_golden_hooks.build_repo` (scope guard, cloud guard, env
@@ -91,27 +92,51 @@ def test_must_allow_with_the_guards_on(name, armed):
     assert not blocked(_run("PreToolUse", MUST_ALLOW[name], root, home)), name
 
 
-@pytest.mark.parametrize("layer", ["repo", "machine"])
 @pytest.mark.parametrize("name", sorted(MUST_BLOCK))
-def test_must_allow_with_the_switch_off_in_either_layer(name, layer, armed):
+def test_must_allow_with_the_switch_off_in_the_machine_layer(name, armed):
     root, home = armed
-    if layer == "repo":
-        _repo_config(root, {"enabled": False})
-    else:
-        _machine_config(home, {"guards": {"enabled": False}})
+    _machine_config(home, {"guards": {"enabled": False}})
     result = _run("PreToolUse", MUST_BLOCK[name], root, home)
-    assert not blocked(result), (name, layer, result)
+    assert not blocked(result), (name, result)
     assert result[0] == 0
 
 
-def test_off_wins_over_a_strict_profile_in_the_other_layer(armed):
+@pytest.mark.parametrize("name", sorted(MUST_BLOCK))
+def test_must_block_when_only_the_repo_layer_says_false(name, armed):
+    """A repo file cannot stand the guards down: a repo `false` with the machine file absent still blocks."""
+    root, home = armed
+    _repo_config(root, {"enabled": False})
+    assert blocked(_run("PreToolUse", MUST_BLOCK[name], root, home)), name
+
+
+@pytest.mark.parametrize("machine", [{"guards": {"enabled": True}}, {"guards": {}}, {}])
+@pytest.mark.parametrize("name", sorted(MUST_BLOCK))
+def test_must_block_when_the_repo_says_false_and_the_machine_does_not(name, machine, armed):
+    """A repo `false` with the machine layer `true` (or silent) still blocks."""
+    root, home = armed
+    _repo_config(root, {"enabled": False})
+    _machine_config(home, machine)
+    assert blocked(_run("PreToolUse", MUST_BLOCK[name], root, home)), (name, machine)
+
+
+def test_a_repo_false_is_reported_as_ignored_and_never_as_off(armed):
+    root, home = armed
+    assert crew_hook.repo_switch_ignored(root) is False
+    _repo_config(root, {"enabled": False})
+    assert crew_hook.repo_switch_ignored(root) is True
+    assert crew_hook.guards_switched_off(root, home) is None
+    _machine_config(home, {"guards": {"enabled": False}})
+    assert crew_hook.guards_switched_off(root, home) == "machine"
+
+
+def test_off_wins_over_a_strict_profile_in_the_repo_layer(armed):
     root, home = armed
     _repo_config(root, {"profile": "strict"})
     _machine_config(home, {"guards": {"enabled": False, "profile": "strict"}})
     assert not blocked(_run("PreToolUse", MUST_BLOCK["cloud-guard"], root, home))
 
 
-def test_a_true_in_one_layer_cannot_switch_back_on_a_false_in_the_other(armed):
+def test_a_true_in_the_repo_layer_cannot_switch_back_on_a_machine_false(armed):
     root, home = armed
     _repo_config(root, {"enabled": True})
     _machine_config(home, {"guards": {"enabled": False}})
@@ -121,7 +146,7 @@ def test_a_true_in_one_layer_cannot_switch_back_on_a_false_in_the_other(armed):
 def test_a_stop_and_a_user_prompt_are_not_refused_by_a_guard_either(armed):
     """The Stop guards (verify gate, completion audit) are guard rows too."""
     root, home = armed
-    _repo_config(root, {"enabled": False})
+    _machine_config(home, {"guards": {"enabled": False}})
     names = [argv[0] for row, argv in crew_hook.without_guards(crew_hook.select("Stop", "claude", None))]
     assert names == ["context-watch.sh"]
     assert not blocked(_run("Stop", {"hook_event_name": "Stop", "session_id": "s-1"}, root, home))
@@ -137,22 +162,21 @@ def test_only_the_json_literal_false_switches_them_off(text, armed):
     assert blocked(_run("PreToolUse", MUST_BLOCK["cloud-guard"], root, home)), text
 
 
-def test_an_unreadable_repo_layer_leaves_the_guards_on(armed):
+def test_an_unreadable_machine_layer_leaves_the_guards_on(armed):
     root, home = armed
-    with open(os.path.join(root, ".crew", "config.json"), "w", encoding="utf-8") as handle:
-        handle.write('{"guards": {"enabled": false,}}')
+    _machine_config(home, '{"guards": {"enabled": false,}}')
     assert crew_hook.guards_switched_off(root, home) is None
 
 
 def test_a_lookup_that_raises_leaves_the_guards_on(armed, monkeypatch):
-    """Could not tell is never off: a resolver that raises must read as ON."""
-    import crew_common  # pylint: disable=import-outside-toplevel
+    """Could not tell is never off: a reader that raises must read as ON."""
     root, home = armed
+    _machine_config(home, {"guards": {"enabled": False}})
 
-    def boom(_root):
+    def boom(*_args, **_kwargs):
         raise OSError("planted")
 
-    monkeypatch.setattr(crew_common, "repo_config_dir", boom)
+    monkeypatch.setattr(crew_hook, "_layer_says_off", boom)
     assert crew_hook.guards_switched_off(root, home) is None
 
 
@@ -181,8 +205,7 @@ def test_the_humanonly_opt_out_still_works_with_the_guards_off(tmp_path, monkeyp
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
     repo = make_repo(tmp_path, mode="block")
-    _repo_config(str(repo), {"enabled": False})
-    assert crew_hook.guards_switched_off(str(repo)) is not None
+    assert crew_hook.guards_switched_off(str(repo)) == "machine"
     assert crew_ticket.cli_approval_allowed(str(repo)) is False
     record = crew_confirm_config.propose("machine", "humanOnly.approve", root=str(repo))
     for index in (1, 2):
@@ -195,15 +218,19 @@ def test_the_humanonly_opt_out_still_works_with_the_guards_off(tmp_path, monkeyp
 
 def test_a_dispatcher_fault_does_not_fail_closed_with_the_guards_off(armed):
     root, home = armed
-    _repo_config(root, {"enabled": False})
+    _machine_config(home, {"guards": {"enabled": False}})
     old = os.environ.get("HOME"), os.environ.get("USERPROFILE")
     os.environ["HOME"] = os.environ["USERPROFILE"] = home
     try:
         code, _ = crew_hook._fault("PreToolUse", root, "crew-hook: planted")  # pylint: disable=protected-access
         assert code == 0
-        _repo_config(root, {"enabled": True})
+        _machine_config(home, {"guards": {"enabled": True}})
         code, _ = crew_hook._fault("PreToolUse", root, "crew-hook: planted")  # pylint: disable=protected-access
         assert code == 2
+        _machine_config(home, {})
+        _repo_config(root, {"enabled": False})
+        code, _ = crew_hook._fault("PreToolUse", root, "crew-hook: planted")  # pylint: disable=protected-access
+        assert code == 2, "a repo-layer false must not relax the fail-closed fault path"
     finally:
         for key, value in zip(("HOME", "USERPROFILE"), old):
             if value is None:

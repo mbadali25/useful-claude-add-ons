@@ -1,4 +1,4 @@
-"""The `guards.enabled` master-switch mutations (crew 1.3.87). Same tuple shape as `sabotage.py`'s
+"""The `guards.enabled` master-switch mutations (crew 1.3.89). Same tuple shape as `sabotage.py`'s
 MUTATIONS -- (label, target, find, replace, test) -- appended to it there. Run `sabotage.py`, not this file.
 
 The switch is the one key that turns EVERY guard off, so a slip in it either leaves a guard running that the
@@ -16,11 +16,7 @@ GUARDS_MASTER_MUTATIONS = (
     ("the machine layer's false is not read", HOOK,
      '        if _layer_says_off(os.path.join(home, GLOBAL_CONFIG)):\n',
      '        if False and _layer_says_off(os.path.join(home, GLOBAL_CONFIG)):\n',
-     _G + "test_must_allow_with_the_switch_off_in_either_layer[cloud-guard-machine]"),
-    ("the repo layer's false is not read", HOOK,
-     '                if _layer_says_off(os.path.join(crew_dir, name)):\n',
-     '                if False and _layer_says_off(os.path.join(crew_dir, name)):\n',
-     _G + "test_must_allow_with_the_switch_off_in_either_layer[cloud-guard-repo]"),
+     _G + "test_must_allow_with_the_switch_off_in_the_machine_layer[cloud-guard]"),
     ("the string \"false\" switches the guards off", HOOK,
      '    return isinstance(guards, dict) and guards.get("enabled") is False\n',
      '    return isinstance(guards, dict) and guards.get("enabled") in (False, "false")\n',
@@ -45,11 +41,11 @@ GUARDS_MASTER_MUTATIONS = (
      '    return [(row, argv) for row, argv in chosen if not row.guard or row.script in GUARDS_KEPT]\n',
      '    return [(row, argv) for row, argv in chosen if not row.guard or row.script in GUARDS_KEPT\n'
      '            or row.script == "scope-guard.sh"]\n',
-     _G + "test_must_allow_with_the_switch_off_in_either_layer[scope-guard-repo]"),
+     _G + "test_must_allow_with_the_switch_off_in_the_machine_layer[scope-guard]"),
     ("the switch is never consulted by dispatch", HOOK,
      '    if chosen and _guards_off(root):\n',
      '    if False and chosen and _guards_off(root):\n',
-     _G + "test_must_allow_with_the_switch_off_in_either_layer[env-guard-repo]"),
+     _G + "test_must_allow_with_the_switch_off_in_the_machine_layer[env-guard]"),
     ("the Stop guards ignore the switch", HOOK,
      '    return [(row, argv) for row, argv in chosen if not row.guard or row.script in GUARDS_KEPT]\n',
      '    return [(row, argv) for row, argv in chosen if not row.guard or row.script in GUARDS_KEPT\n'
@@ -59,8 +55,18 @@ GUARDS_MASTER_MUTATIONS = (
      '    if event in BLOCKING_EVENTS and armed(root) and not _guards_off(root):\n',
      '    if event in BLOCKING_EVENTS and armed(root):\n',
      _G + "test_a_dispatcher_fault_does_not_fail_closed_with_the_guards_off"),
-    ("off no longer wins over a true in the other layer", HOOK,
-     '        if _layer_says_off(os.path.join(home, GLOBAL_CONFIG)):\n            return "machine"\n',
-     '        if _layer_says_off(os.path.join(home, GLOBAL_CONFIG)) and not _repo_says_true(root):\n            return "machine"\n',
-     _G + "test_a_true_in_one_layer_cannot_switch_back_on_a_false_in_the_other"),
+    ("the repo layer counts (a repo false stands the guards down)", HOOK,
+     '            return "machine"\n    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught\n        return None\n    return None\n',
+     '            return "machine"\n        if repo_switch_ignored(root):\n            return "repo"\n'
+     '    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught\n        return None\n    return None\n',
+     _G + "test_must_block_when_only_the_repo_layer_says_false[cloud-guard]"),
+    ("the repo layer counts when the machine layer is silent or true", HOOK,
+     '        if _layer_says_off(os.path.join(home, GLOBAL_CONFIG)):\n',
+     '        if _layer_says_off(os.path.join(home, GLOBAL_CONFIG)) or repo_switch_ignored(root):\n',
+     _G + "test_must_block_when_the_repo_says_false_and_the_machine_does_not[cloud-guard-machine0]"),
+    ("a repo-layer true overrides the machine layer's false", HOOK,
+     '        if _layer_says_off(os.path.join(home, GLOBAL_CONFIG)):\n',
+     '        if _layer_says_off(os.path.join(home, GLOBAL_CONFIG)) and not os.path.exists(\n'
+     '                os.path.join(root or "", ".crew", "config.json")):\n',
+     _G + "test_a_true_in_the_repo_layer_cannot_switch_back_on_a_machine_false"),
 )

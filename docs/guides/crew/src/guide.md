@@ -248,10 +248,10 @@ example `guards.overrides.roleWrites: report`. The twelve per-guard keys
 counts until `/crew:migrate` rewrites the layer. Each layer expands its own
 profile and overrides, and the narrower layer wins per guard.
 
-To run everything with no guard at all, set `guards.enabled: false` in either config layer (crew 1.3.87). It
+To run everything with no guard at all, set `guards.enabled: false` in the machine config layer, `~/.claude/crew/config.json` (crew 1.3.89). It
 stands down every guard hook (the cloud, environment, role-write, scope and promote guards, the verify gate and
 the completion audit) whatever the profile, the overrides, `scope.mode` and `verifyGate` say, and `false` in
-either layer is enough. Only the JSON literal `false` counts, so a typo leaves the guards on. `/crew:approve` and
+only that layer counts: a `false` in `.crew/config.json` is ignored, so a checkout cannot turn every guard off. Only the JSON literal `false` counts, so a typo leaves the guards on. `/crew:approve` and
 `/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. It needs python: with none, the bash
 launcher still fails closed in an armed repo.
 

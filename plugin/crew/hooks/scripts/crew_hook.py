@@ -345,13 +345,16 @@ def armed(root, home=None):
 # running children
 
 # --------------------------------------------------------------------------
-# the guards master switch (`guards.enabled`, crew 1.3.87)
+# the guards master switch (`guards.enabled`, crew 1.3.89)
 #
-# `guards.enabled: false` in EITHER config layer stands every guard row down: none starts, so nothing is
-# judged, refused, asked or logged, and a fault in one cannot fail closed. Off wins over any profile,
-# override, `scope.mode` or `verifyGate`, and neither layer can switch it back on over the other. ONLY the
-# JSON literal `false` counts: absent, null, true, a string, a corrupt or unreadable file, or a `guards`
-# that is not an object leave the guards ON (could-not-tell is never the value that disables one).
+# `guards.enabled: false` in the MACHINE config layer (`~/.claude/crew/config.json`) stands every guard row
+# down: none starts, so nothing is judged, refused, asked or logged, and a fault in one cannot fail closed.
+# Off wins over any profile, override, `scope.mode` or `verifyGate`. ONLY the machine layer counts (owner
+# decision, 2026-11-13): a repo file (`.crew/config.json`, tracked or not) is a checkout anyone can hand you,
+# so it must not be able to turn every guard off; a `false` there is IGNORED and the guards stay on
+# (`repo_switch_ignored` reports it so `/crew:status` can say so). ONLY the JSON literal `false` counts:
+# absent, null, true, a string, a corrupt or unreadable file, or a `guards` that is not an object leave the
+# guards ON (could-not-tell is never the value that disables one).
 # approval-hook.sh is the exception: it records `/crew:approve` and the `/crew:confirm-config` double
 # confirmation and judges no command, so the humanOnly opt-out keeps working with the guards off.
 # Read here, not in each guard, because every guard row passes through `dispatch`. With no usable python the
@@ -371,22 +374,29 @@ def _layer_says_off(path):
     return isinstance(guards, dict) and guards.get("enabled") is False
 
 
-def guards_switched_off(root, home=None):
-    """The layer that switched the guards off (`"machine"` or `"repo"`), or None when they are on. Never
-    raises: a failure to look reads as ON."""
+def guards_switched_off(root, home=None):  # pylint: disable=unused-argument
+    """`"machine"` when the machine layer switched the guards off, else None. `root` is accepted and not read:
+    a repo file cannot switch the guards off. Never raises: a failure to look reads as ON."""
     try:
         home = home if home is not None else os.path.expanduser("~")
         if _layer_says_off(os.path.join(home, GLOBAL_CONFIG)):
             return "machine"
-        if root:
-            import crew_common  # pylint: disable=import-outside-toplevel
-            crew_dir = crew_common.repo_config_dir(root)[0]
-            for name in crew_common.CONFIG_NAMES:
-                if _layer_says_off(os.path.join(crew_dir, name)):
-                    return "repo"
     except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
         return None
     return None
+
+
+def repo_switch_ignored(root):
+    """True when a repo-layer file holds `guards.enabled: false`, which does NOT stand any guard down. Never
+    raises; None when it could not tell."""
+    try:
+        if not root:
+            return False
+        import crew_common  # pylint: disable=import-outside-toplevel
+        crew_dir = crew_common.repo_config_dir(root)[0]
+        return any(_layer_says_off(os.path.join(crew_dir, name)) for name in crew_common.CONFIG_NAMES)
+    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
+        return None
 
 
 def without_guards(chosen):
@@ -663,7 +673,7 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
     chosen = select(event, harness, payload, windows=windows, scripts=scripts)
     armed_fn = armed_fn or armed
     if chosen and _guards_off(root):
-        # `guards.enabled: false` (crew 1.3.87): no guard row starts, so nothing is judged, logged or
+        # `guards.enabled: false` in the machine layer (crew 1.3.89): no guard row starts, so nothing is judged, logged or
         # refused, and a fault in what is left cannot fail closed either. approval-hook.sh stays.
         chosen = without_guards(chosen)
         armed_fn = _never_armed
