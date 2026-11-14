@@ -1,4 +1,4 @@
-"""`guards.enabled`, the guards master switch's key (crew 1.3.95): declared, validated, written only through the
+"""`guards.enabled`, the guards master switch's key (crew 1.3.97): declared, validated, written only through the
 owner's double confirmation, and judged by every planner that writes a whole file.
 
 The hook half (`crew_hook.guards_switched_off`, the receipt it requires, context-watch standing down, the duplicate
@@ -74,7 +74,7 @@ def _machine(home, cfg):
 
 
 def _receipt(path, state="applied", value=False, settled=None):
-    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.95): two typed-prompt confirmations and
+    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.97): two typed-prompt confirmations and
     `appliedDigest`, the canonical digest of the file as applied."""
     import crew_hook  # pylint: disable=import-outside-toplevel
     record = {"change_id": crew_humanonly.new_change_id(), "layer": "machine",
@@ -100,6 +100,15 @@ def _stamp_of(path, content):
     with open(path, "w", encoding="utf-8") as handle:
         handle.write("{}")
     return stamp
+
+
+def _newest_state(path, layer="machine", dotted=KEY):
+    """The state of the newest settled receipt for (layer, file, key): `revoked` after a retirement. Since the
+    receipt binds the file's modification time, ANY later write already leaves the guards on; this asks the
+    store itself, so a missing revocation cannot hide behind that."""
+    record = crew_humanonly._newest_settled(  # pylint: disable=protected-access
+        crew_humanonly.store_dir(path), layer, path, dotted)
+    return record and record["state"]
 
 
 # --- the key and its values ----------------------------------------------------------------------------------
@@ -210,6 +219,7 @@ def test_a_crew_write_back_to_true_revokes_the_receipt(home, tmp_path):
     assert _confirm_twice(path)["state"] == "applied"
     assert crew_hook.guards_switched_off(root, str(home)) == "machine"
     crew_config.write_global_config({KEY: True}, path=path)
+    assert _newest_state(path) == "revoked"
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(json.dumps({"guards": {"enabled": False}}))
     assert crew_hook.guards_switched_off(root, str(home)) is None
@@ -221,6 +231,7 @@ def test_removing_the_key_revokes_the_receipt_too(home, tmp_path):
     path = _machine(home, {})
     _confirm_twice(path)
     crew_config.write_global_config({KEY: crew_config.UNSET}, path=path)
+    assert _newest_state(path) == "revoked"
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(json.dumps({"guards": {"enabled": False}}))
     assert crew_hook.guards_switched_off(root, str(home)) is None
@@ -421,7 +432,7 @@ def test_explain_reports_a_repo_null_even_when_the_machine_file_holds_the_key(ho
     assert "repoIgnored" in rows[KEY] and rows[KEY]["repoIgnored"] is None
 
 
-# --- the receipt is bound to the file, and every route that replaces the file retires it (crew 1.3.95) --------------
+# --- the receipt is bound to the file, and every route that replaces the file retires it (crew 1.3.97) --------------
 
 def _confirmed(home, tmp_path, cfg=None):
     """A repo, and a machine file the owner switched off by the real propose / confirm / confirm route."""
@@ -494,6 +505,7 @@ def test_restoring_a_backup_retires_the_receipt_even_when_the_content_is_the_sam
     crew_config.apply_restore(root, "machine", stamp, global_path=path)
     with open(path, encoding="utf-8") as handle:
         assert handle.read() == confirmed_text
+    assert _newest_state(path) == "revoked"
     assert crew_hook.guards_switched_off(root, str(home)) is None
 
 
@@ -503,6 +515,7 @@ def test_rebuilding_the_file_retires_the_receipt(home, tmp_path):
     with open(path, encoding="utf-8") as handle:
         confirmed_text = handle.read()
     crew_config.apply_rebuild(root, "machine", use_profile=False, global_path=path)
+    assert _newest_state(path) == "revoked"
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(confirmed_text)
     assert crew_hook.guards_switched_off(root, str(home)) is None, "the confirmed bytes written back by hand"
@@ -517,6 +530,7 @@ def test_migrating_the_machine_file_retires_the_receipt(home, tmp_path):
         confirmed_text = handle.read()
     crew_migrate.apply_plan(plan)
     assert json.load(open(path, encoding="utf-8"))["guards"]["enabled"] is False
+    assert _newest_state(path) == "revoked"
     assert crew_hook.guards_switched_off(root, str(home)) is None
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(confirmed_text)
@@ -531,7 +545,7 @@ def test_revoke_all_names_what_it_retired(home):
     assert crew_humanonly.revoke_all("repo", path, global_path=path) == []
 
 
-# --- a repo copy is never carried into a rewritten repo file (crew 1.3.95) ----------------------------------------
+# --- a repo copy is never carried into a rewritten repo file (crew 1.3.97) ----------------------------------------
 
 @pytest.mark.parametrize("value", [False, None, "false", 0])
 def test_an_upgrade_does_not_carry_a_repo_copy_of_the_switch_through(value):
@@ -552,7 +566,7 @@ def test_an_upgrade_leaves_the_default_true_and_the_machine_file_alone():
     assert machine["guards"]["enabled"] is False and not mnotes.get("repoSwitchRemoved")
 
 
-# --- the reports say the right thing (crew 1.3.95) ----------------------------------------------------------------
+# --- the reports say the right thing (crew 1.3.97) ----------------------------------------------------------------
 
 def test_status_does_not_claim_the_guards_still_run_when_the_machine_false_is_confirmed(home, tmp_path):
     """The finding: with a confirmed machine false AND a repo false, status said DISABLED and then 'so every guard

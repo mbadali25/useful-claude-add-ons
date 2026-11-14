@@ -426,12 +426,12 @@ column:
 {human_only}
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.94) turns EVERY guard hook off: the promote
+`guards.enabled: false` (crew 1.3.96) turns EVERY guard hook off: the promote
 gate, the role-write, cloud, environment and scope guards, the verify gate, the
 completion audit and the context-watch Stop hook. None of them starts, so nothing
 is judged, refused, asked, warned or logged: with the switch off, nothing blocks. It
 beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mode`,
-`verifyGate`). Three things must all hold for it to count (crew 1.3.94):
+`verifyGate`). Three things must all hold for it to count (crew 1.3.96):
 
 - It is in the MACHINE layer (`~/.claude/crew/config.json`). A `false` in
   `.crew/config.json`, tracked or not, is ignored and the guards stay on (a
@@ -440,15 +440,31 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
 - It is the OWNER's. Like the `humanOnly.*` opt-out, a `false` counts only when an
   applied `/crew:confirm-config` double confirmation backs it: two confirmations
   from two prompts the owner typed, and the digest of the machine file as the
-  owner left it (crew 1.3.94). An agent's Write or Edit, a hook-side write, a
-  hand edit, a bare hand-written receipt, or ANY later change to the file (a
-  restore, a rebuild, an unrelated edit) leaves the guards ON; so does a missing,
-  revoked or unreadable receipt. The scope guard refuses an agent's Write or Edit
-  of the machine config file and the receipts beside it, and a shell command that
-  names them (spelled out, or through `cd`, a variable, a glob or a path built
-  from `.claude`, `crew` and `config.json`) and can write, or runs a script that
-  does, in every `scope.mode` (`off`, the default, included). Reading them
-  (`cat`, `crew_config.py --show`) passes.
+  owner left it: its content (canonical JSON) AND its modification time (crew
+  1.3.96). An agent's Write or Edit, a hook-side write, a hand edit, a bare
+  hand-written receipt, or ANY later write to the file (a restore, a rebuild, an
+  unrelated edit, or a hand edit that sets the key `true` and a later one that
+  writes the identical `false` back) leaves the guards ON; so does a missing,
+  revoked or unreadable receipt. The modification time is what ends that
+  round trip, because no hand edit writes a revoke and the hook may not write
+  one; a copy that puts the old time back (`cp -p`, an archive extract,
+  `os.utime`) replays it, an accepted limit (below). The scope guard refuses an
+  agent's Write or Edit of the machine config file and the receipts beside it
+  (every spelling: case, `..`, a trailing dot or space, a junction, a UNC path,
+  the `\\\\?\\` prefix), and a shell command that WRITES TO them: a redirect, `tee`,
+  `cp`, `mv`, `rm`, `sed -i`, `Set-Content`, `Out-File`, `Add-Content`, `copy`,
+  `move`, `xcopy`, `robocopy`, `curl -o`, `wget -O`, `-OutFile`, `tar -C`,
+  `unzip -d`, `Expand-Archive`, `patch`, `git apply`, `mklink /J`, `awk -i
+  inplace` and the like, aimed at them (spelled out, or through `cd`, a variable,
+  a glob or a path built from `.claude`, `crew` and `config.json`), or inline
+  code (`python -c`, a heredoc, `pwsh -Command`) that names them beside a write
+  call, in every `scope.mode` (`off`, the default, included). A command that only
+  MENTIONS them (a commit message, a PR body, `ls ~/.claude/crew/ > out.txt`,
+  `cat config.json | tee out.json`) passes, and so does an unrelated write in the
+  same line; reading them (`cat`, `jq`, `stat`, `crew_config.py --show`) passes.
+  The crew runs every normal command: no script is opened or sized, so one that
+  cannot be read or is large refuses nothing (crew 1.3.96 refused any script over
+  1 MB; that rule is gone).
 - It is unambiguous. Only the JSON literal `false` counts: an absent key, `null`,
   `true`, a string, a corrupt file, a `guards` that is not an object, a file
   with a duplicate key (`{{"enabled": true, "enabled": false}}` is read differently
@@ -456,7 +472,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   project or the working directory (a HOME redirected into a checkout) never
   counts.
 
-It takes effect on the next hook call, with no reinstall. To turn it off, ask crew to propose it (`/crew:config`, which runs `crew_confirm_config.py propose --layer machine --key guards.enabled` and relays the change id), then type `/crew:confirm-config <change_id>` yourself, twice, in two separate prompts, within 15 minutes. `--set guards.enabled=false` is refused (crew 1.3.95). `approval-hook.sh` keeps
+It takes effect on the next hook call, with no reinstall. To turn it off, ask crew to propose it (`/crew:config`, which runs `crew_confirm_config.py propose --layer machine --key guards.enabled` and relays the change id), then type `/crew:confirm-config <change_id>` yourself, twice, in two separate prompts, within 15 minutes. `--set guards.enabled=false` is refused (crew 1.3.97). `approval-hook.sh` keeps
 running, so `/crew:approve` and `/crew:confirm-config` keep working and the
 `humanOnly.*` opt-out still works with the guards off. It needs python: with
 none, the bash launcher still fails closed in an armed repo (known limitation).
@@ -467,10 +483,15 @@ and agent drift, not a security boundary against a hostile agent running as the
 same user. The receipt and the machine file are files that user can write, and the
 scope guard reads command text: an agent that builds a path in a way the text
 never shows (`'.cl' + 'aude'`, a command fetched at run time) can forge the whole
-receipt and the `false` together, and nothing here stops it. Keep an untrusted
-agent out of the account rather than behind this key. A working directory equal to
-your home, or an ancestor of it, makes an owner-confirmed switch do nothing (the
-guards stay on, as for a HOME redirected into the project).
+receipt and the `false` together, and nothing here stops it. Accepted limits, by
+the owner's decision (the guard stays out of the way of normal commands): a helper
+script that writes the file (written first, then run behind `cd`), a launcher such
+as `pytest`, `uv`, `make` or `python -m` that runs one, an 8.3 short name used
+through a shell, base64 or other encoded code, and a file copied back with its
+modification time kept all still write the file or replay a receipt. Keep an
+untrusted agent out of the account rather than behind this key. A working
+directory equal to your home, or an ancestor of it, makes an owner-confirmed
+switch do nothing (the guards stay on, as for a HOME redirected into the project).
 
 ## Guard profiles
 

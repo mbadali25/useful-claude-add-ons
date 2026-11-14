@@ -841,7 +841,7 @@ def _plan_global_file(plan, path, raw, accept_dropped):
     master = crew_config.master_switch_problem(out, "machine", cfg)
     if master:
         # The machine file is rewritten whole: a `guards.enabled` that is not a boolean (or a `false` the owner never
-        # confirmed) is not carried through into the new file (crew 1.3.95).
+        # confirmed) is not carried through into the new file (crew 1.3.97).
         plan["conflicts"].append(f"{path}: {master} - fix it by hand, then preview again")
     if plan["conflicts"]:
         return
@@ -1092,7 +1092,7 @@ def apply_plan(plan):
             os.replace(path + TMP_SUFFIX, path)
             landed.append((item, path))
             if scope == "global" and item.get("replaces"):
-                # The machine file was rewritten whole: the owner's receipts were for the old content (crew 1.3.95).
+                # The machine file was rewritten whole: the owner's receipts were for the old content (crew 1.3.97).
                 # A revocation that cannot be written is reported on stderr, not dropped.
                 crew_humanonly.retire("machine", path, global_path=path,
                                       reason="/crew:migrate rewrote the machine file")

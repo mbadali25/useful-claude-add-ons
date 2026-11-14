@@ -494,7 +494,7 @@ def _guards_line(root):
         for entry in crew_config.inert_settings(root):
             # Any repo copy but the default `true`, `null` included (the same entries `--inert` lists). Where the
             # machine switch IS in effect, the repo copy changes nothing either, and "every guard still runs"
-            # would be false (crew 1.3.95).
+            # would be false (crew 1.3.97).
             if entry["key"] == "guards.enabled" and entry["kind"] == "repo-ignored":
                 shown.append(f"guards.enabled is {json.dumps(entry['value'])} in .crew/config.json (ignored: only "
                              "the machine layer counts)" + ("" if off else ", so every guard still runs"))

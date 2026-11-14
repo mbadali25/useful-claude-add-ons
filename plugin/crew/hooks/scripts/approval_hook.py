@@ -75,7 +75,7 @@ prompt -- carries one more command, ONE line, raw or expanded exactly as
 `/crew:approve` is:
 
 - `/crew:confirm-config <change_id>` records one confirmation of a proposed
-  `humanOnly.*` change, or of `guards.enabled: false` (crew 1.3.94) (`crew_confirm_config.confirm`, `via="user-prompt"`, the
+  `humanOnly.*` change, or of `guards.enabled: false` (crew 1.3.96) (`crew_confirm_config.confirm`, `via="user-prompt"`, the
   payload's `prompt_id`). The second one, from another prompt, applies it. This
   is the recorder `crew_humanonly.USER_PROMPT` was waiting for; without it no
   opt-out could ever take effect. Typed with no id, a malformed id, or an id
@@ -602,7 +602,7 @@ def _refuse_command(name, text):
 
 
 _UNPRINTABLE_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
-# The second key a double confirmation covers besides `crew_humanonly.PATHS` (crew 1.3.94): the guards master
+# The second key a double confirmation covers besides `crew_humanonly.PATHS` (crew 1.3.96): the guards master
 # switch. Spelled here, not read from `crew_humanonly`, so this harness file does not depend on the writer half.
 MASTER_KEY = "guards.enabled"
 SETTLED_SHOWN = 5
