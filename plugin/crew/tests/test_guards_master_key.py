@@ -74,10 +74,15 @@ def _machine(home, cfg):
 
 
 def _receipt(path, state="applied", value=False, settled=None):
+    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.95): two typed-prompt confirmations and
+    `appliedDigest`, the canonical digest of the file as applied."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
     record = {"change_id": crew_humanonly.new_change_id(), "layer": "machine",
               "target": crew_humanonly.target_key(path), "key": KEY, "value": value, "state": state,
               "created": time.time(), "settled": time.time() if settled is None else settled,
-              "confirmations": [], "reason": "test"}
+              "confirmations": [{"at": 1, "via": "user-prompt", "prompt": f"p{n}", "session": None}
+                                for n in (1, 2)],
+              "appliedDigest": crew_hook.canonical_digest(path), "reason": "test"}
     crew_humanonly.write_record(crew_humanonly.store_dir(path), record)
 
 
@@ -414,3 +419,202 @@ def test_explain_reports_a_repo_null_even_when_the_machine_file_holds_the_key(ho
     path = _machine(home, {"guards": {"enabled": True}})
     rows = {row["path"]: row for row in crew_config.explain_config(root, path=path, all_keys=True)}
     assert "repoIgnored" in rows[KEY] and rows[KEY]["repoIgnored"] is None
+
+
+# --- the receipt is bound to the file, and every route that replaces the file retires it (crew 1.3.95) --------------
+
+def _confirmed(home, tmp_path, cfg=None):
+    """A repo, and a machine file the owner switched off by the real propose / confirm / confirm route."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, {})
+    path = _machine(home, cfg or {})
+    assert _confirm_twice(path)["state"] == "applied"
+    assert crew_hook.guards_switched_off(root, str(home)) == "machine"
+    return root, path
+
+
+def test_confirm_records_the_two_confirmations_and_the_digest_of_the_file_it_applied(home):
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    path = _machine(home, {})
+    record = _confirm_twice(path)
+    assert record["appliedDigest"] == crew_hook.canonical_digest(path)
+    assert {c["prompt"] for c in record["confirmations"]} == {"p1", "p2"}
+    stored = crew_humanonly.read_record(crew_humanonly.store_dir(path), record["change_id"])
+    assert stored["appliedDigest"] == record["appliedDigest"]
+
+
+def test_a_hand_written_false_after_a_set_back_to_true_does_not_count(home, tmp_path):
+    """The finding: the receipt survived the key being set back, and a later hand-written `false` counted again."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root, path = _confirmed(home, tmp_path)
+    crew_config.write_global_config({KEY: True}, path=path)
+    assert crew_hook.guards_switched_off(root, str(home)) is None
+    _machine(home, {"guards": {"enabled": False}})
+    assert crew_hook.guards_switched_off(root, str(home)) is None
+
+
+def test_an_unrelated_set_keeps_a_confirmed_switch_in_force(home, tmp_path):
+    """The receipt is bound to the file, so a write by crew itself must rebind it, or the guards come back on
+    silently the first time the owner changes anything else."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root, path = _confirmed(home, tmp_path)
+    crew_config.write_global_config({"guards.profile": "standard"}, path=path)
+    assert json.load(open(path, encoding="utf-8"))["guards"]["profile"] == "standard"
+    assert crew_hook.guards_switched_off(root, str(home)) == "machine"
+
+
+def test_a_hand_edit_after_a_set_still_leaves_the_guards_on(home, tmp_path):
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root, path = _confirmed(home, tmp_path)
+    crew_config.write_global_config({"guards.profile": "standard"}, path=path)
+    cfg = json.load(open(path, encoding="utf-8"))
+    cfg["tier"] = "hand-edited"
+    _machine(home, cfg)
+    assert crew_hook.guards_switched_off(root, str(home)) is None
+
+
+def test_another_keys_confirmation_keeps_a_confirmed_switch_in_force(home, tmp_path):
+    """`/crew:confirm-config` of `humanOnly.approve` rewrites the same machine file."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root, path = _confirmed(home, tmp_path)
+    cid = crew_confirm_config.propose("machine", "humanOnly.approve", global_path=path, now=10)["change_id"]
+    crew_confirm_config.confirm(cid, "user-prompt", "q1", global_path=path, now=11)
+    record = crew_confirm_config.confirm(cid, "user-prompt", "q2", global_path=path, now=12)
+    assert record["state"] == "applied"
+    assert crew_hook.guards_switched_off(root, str(home)) == "machine"
+
+
+def test_restoring_a_backup_retires_the_receipt_even_when_the_content_is_the_same(home, tmp_path):
+    """The digest alone would let a restore of identical bytes keep the receipt: the explicit revocation does not."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root, path = _confirmed(home, tmp_path)
+    with open(path, encoding="utf-8") as handle:
+        confirmed_text = handle.read()
+    stamp = crew_backup.backup(path)
+    crew_config.apply_restore(root, "machine", stamp, global_path=path)
+    with open(path, encoding="utf-8") as handle:
+        assert handle.read() == confirmed_text
+    assert crew_hook.guards_switched_off(root, str(home)) is None
+
+
+def test_rebuilding_the_file_retires_the_receipt(home, tmp_path):
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root, path = _confirmed(home, tmp_path)
+    with open(path, encoding="utf-8") as handle:
+        confirmed_text = handle.read()
+    crew_config.apply_rebuild(root, "machine", use_profile=False, global_path=path)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(confirmed_text)
+    assert crew_hook.guards_switched_off(root, str(home)) is None, "the confirmed bytes written back by hand"
+
+
+def test_migrating_the_machine_file_retires_the_receipt(home, tmp_path):
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root, path = _confirmed(home, tmp_path, {"guards": {"forcePush": "block"}})
+    plan = crew_migrate.build_global_plan(path)
+    assert plan["writes"], plan
+    with open(path, encoding="utf-8") as handle:
+        confirmed_text = handle.read()
+    crew_migrate.apply_plan(plan)
+    assert json.load(open(path, encoding="utf-8"))["guards"]["enabled"] is False
+    assert crew_hook.guards_switched_off(root, str(home)) is None
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(confirmed_text)
+    assert crew_hook.guards_switched_off(root, str(home)) is None, "the confirmed bytes written back by hand"
+
+
+def test_revoke_all_names_what_it_retired(home):
+    path = _machine(home, {})
+    _confirm_twice(path)
+    assert crew_humanonly.revoke_all("machine", path, global_path=path) == [KEY]
+    assert crew_humanonly.revoke_all("machine", path, global_path=path) == [], "nothing left to retire"
+    assert crew_humanonly.revoke_all("repo", path, global_path=path) == []
+
+
+# --- a repo copy is never carried into a rewritten repo file (crew 1.3.95) ----------------------------------------
+
+@pytest.mark.parametrize("value", [False, None, "false", 0])
+def test_an_upgrade_does_not_carry_a_repo_copy_of_the_switch_through(value):
+    crew_upgrade = crew_migrate._upgrade_module()  # pylint: disable=protected-access
+    for cfg in ({"schema": 8, "guards": {"profile": "standard", "overrides": {}, "enabled": value}},
+                {"schema": 1, "guards": {"scope": "block", "enabled": value}}):
+        out, notes = crew_upgrade.upgrade_config(json.loads(json.dumps(cfg)), ())
+        assert "enabled" not in out["guards"], cfg
+        assert notes["repoSwitchRemoved"] == [json.dumps(value)]
+        assert any("guards.enabled" in line for line in crew_upgrade.schema8_lines(notes))
+
+
+def test_an_upgrade_leaves_the_default_true_and_the_machine_file_alone():
+    crew_upgrade = crew_migrate._upgrade_module()  # pylint: disable=protected-access
+    out, notes = crew_upgrade.upgrade_config({"schema": 8, "guards": {"profile": "standard", "enabled": True}}, ())
+    assert out["guards"]["enabled"] is True and notes["repoSwitchRemoved"] == []
+    machine, mnotes = crew_upgrade.upgrade_global({"guards": {"enabled": False}}, ())
+    assert machine["guards"]["enabled"] is False and not mnotes.get("repoSwitchRemoved")
+
+
+# --- the reports say the right thing (crew 1.3.95) ----------------------------------------------------------------
+
+def test_status_does_not_claim_the_guards_still_run_when_the_machine_false_is_confirmed(home, tmp_path):
+    """The finding: with a confirmed machine false AND a repo false, status said DISABLED and then 'so every guard
+    still runs'."""
+    root = _repo(tmp_path, {"guards": {"enabled": False}})
+    path = _machine(home, {})
+    _confirm_twice(path)
+    line = crew_status._guards_line(root)  # pylint: disable=protected-access
+    assert line.startswith("guards   DISABLED")
+    assert "ignored" in line and "only the machine layer counts" in line
+    assert "every guard still runs" not in line, line
+
+
+def test_status_reports_a_repo_null_like_inert_does(home, tmp_path):
+    root = _repo(tmp_path, {"guards": {"enabled": None}})
+    line = crew_status._guards_line(root)  # pylint: disable=protected-access
+    assert "guards.enabled is null" in line and "every guard still runs" in line, line
+
+
+def test_explain_says_so_when_the_machine_false_is_unconfirmed_and_a_repo_false_is_there_too(home, tmp_path, capsys):
+    root = _repo(tmp_path, {"guards": {"enabled": False}})
+    path = _machine(home, {"guards": {"enabled": False}})
+    crew_config._print_explain(  # pylint: disable=protected-access
+        crew_config.explain_config(root, path=path, all_keys=True), root, True)
+    out = capsys.readouterr().out
+    assert "NOT confirmed" in out and "every guard still runs" in out, out
+    assert "`false` is in force" not in out, out
+
+
+def test_explain_keeps_the_in_force_wording_for_a_confirmed_machine_false(home, tmp_path, capsys):
+    root = _repo(tmp_path, {"guards": {"enabled": False}})
+    path = _machine(home, {})
+    _confirm_twice(path)
+    crew_config._print_explain(  # pylint: disable=protected-access
+        crew_config.explain_config(root, path=path, all_keys=True), root, True)
+    out = capsys.readouterr().out
+    assert "`false` is in force" in out and "NOT confirmed" not in out, out
+
+
+def test_a_crew_write_does_not_launder_a_hand_edit_into_a_confirmed_switch(home, tmp_path):
+    """The rebinding applies only when the receipt backed the file BEFORE the write; a hand edit in between means
+    it did not, so the next `--set` must not bless the edited file."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root, path = _confirmed(home, tmp_path)
+    cfg = json.load(open(path, encoding="utf-8"))
+    cfg["tier"] = "hand-edited"
+    _machine(home, cfg)
+    assert crew_hook.guards_switched_off(root, str(home)) is None
+    crew_config.write_global_config({"guards.profile": "standard"}, path=path)
+    assert crew_hook.guards_switched_off(root, str(home)) is None
+
+
+def test_explain_and_status_agree_with_the_hook_about_a_bare_record(home, tmp_path):
+    """A record without the confirmations and the digest backs nothing for the hook, so the reports must not call
+    it confirmed."""
+    root = _repo(tmp_path, {})
+    path = _machine(home, {"guards": {"enabled": False}})
+    record = {"change_id": crew_humanonly.new_change_id(), "layer": "machine",
+              "target": crew_humanonly.target_key(path), "key": KEY, "value": False, "state": "applied",
+              "created": time.time(), "settled": time.time(), "confirmations": [], "reason": "forged"}
+    crew_humanonly.write_record(crew_humanonly.store_dir(path), record)
+    rows = {row["path"]: row for row in crew_config.explain_config(root, path=path, all_keys=True)}
+    assert rows[KEY]["unconfirmed"] is True
+    line = crew_status._guards_line(root)  # pylint: disable=protected-access
+    assert "DISABLED" not in line and "NOT in effect" in line

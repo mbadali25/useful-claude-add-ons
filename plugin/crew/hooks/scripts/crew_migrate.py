@@ -125,6 +125,7 @@ import crew_common
 import crew_config_files
 import crew_dropped
 import crew_guards
+import crew_humanonly
 
 CREW_SCHEMA = 1
 LEGACY_SCHEMA_MAX = 8
@@ -1090,6 +1091,10 @@ def apply_plan(plan):
             _check_pre_state(root, item)
             os.replace(path + TMP_SUFFIX, path)
             landed.append((item, path))
+            if scope == "global" and item.get("replaces"):
+                # The machine file was rewritten whole: the owner's receipts were for the old content (crew 1.3.95).
+                crew_humanonly.revoke_all("machine", path, global_path=path,
+                                          reason="/crew:migrate rewrote the machine file")
         manifest["state"] = "applied"
         atomic_write(_manifest_path(backup), _json_bytes(manifest))
     except BaseException:

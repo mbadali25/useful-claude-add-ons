@@ -32,6 +32,7 @@ change the owner did not ask for.
 
 **Never confirm a change yourself.** There is no CLI subcommand for it, and a
 confirmation counts only when the prompt hook saw the user type this command.
-Never write into `~/.claude/crew/confirm-config/`, and never edit a
+Never write into `~/.claude/crew/confirm-config/` (the scope guard refuses a shell command that reaches it
+through `cd`, a variable, a glob or a built path, and a script that does), and never edit a
 `humanOnly` key or `guards.enabled` to `false` by hand or through Edit: crew reads such a value as
 human-only, and doing it is the step the owner asked to keep for themselves.

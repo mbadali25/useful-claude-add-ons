@@ -2133,8 +2133,8 @@ def explain_config(root, path=None, all_keys=False):
                 "value": None if only_value is _MISSING else only_value,
                 "source": "global" if from_global else "default",
             }
-            if only_value is False and dotted == crew_humanonly.MASTER_KEY and not crew_humanonly.receipt_backs(
-                    crew_humanonly.store_dir(path), "machine", _global_label(path), dotted)[0]:
+            if only_value is False and dotted == crew_humanonly.MASTER_KEY and not crew_humanonly.master_confirmed(
+                    _global_label(path)):
                 row["unconfirmed"] = True  # false in the file, but no applied double confirmation backs it
             if dotted in _REPO_REPORTS_NULL:
                 # Any repo value but the default `true` is ignored, `null` included (a null is read as "inherit"
@@ -3835,6 +3835,7 @@ def write_global_config(updates, path=None, expect=None):
     if not changes:
         return merged, changes
     out = {}
+    backed = crew_humanonly.master_confirmed(real_path)
 
     def _mutate(parsed):
         out["plan"] = _plan_on(parsed, updates, "machine", real_path)
@@ -3856,6 +3857,10 @@ def write_global_config(updates, path=None, expect=None):
                                  "directory, its lock or the write itself failed at the OS; check the "
                                  "directory)") from exc
     _revoke_human_only("machine", real_path, out["plan"][1], path)
+    if backed:
+        # The owner confirmed `guards.enabled: false` and this write left it alone: bind the receipt to the file
+        # as it now is, so an unrelated `--set` does not put the guards back on (crew 1.3.95).
+        crew_humanonly.restamp("machine", real_path, crew_humanonly.MASTER_KEY, global_path=path)
     return out["plan"]
 
 
@@ -4139,6 +4144,7 @@ def apply_confirmed_optout(layer, dotted, path, expect, global_path=None):
     if dotted == crew_humanonly.MASTER_KEY and layer != "machine":
         raise ValueError(f"{dotted} is read from the machine file only; a repo copy is never written")
     out = {}
+    backed = layer == "machine" and dotted != crew_humanonly.MASTER_KEY and crew_humanonly.master_confirmed(path)
 
     def _mutate(parsed):
         global_cfg = None if layer == "machine" else machine_view(global_path)[0]
@@ -4153,6 +4159,9 @@ def apply_confirmed_optout(layer, dotted, path, expect, global_path=None):
         lock = crew_config_files.machine_lock(_global_label(global_path))
         with lock:
             crew_config_files.update_json(path, _mutate, expect=expect)
+    if backed:
+        # Another key's confirmation rewrote the machine file under a confirmed master switch: rebind the receipt.
+        crew_humanonly.restamp("machine", path, crew_humanonly.MASTER_KEY, global_path=global_path)
     return out.get("plan", ({}, []))
 
 
@@ -4538,6 +4547,9 @@ def _replace_layer_file(root, layer, data, global_path=None):
     with lock:
         stamp = crew_backup.backup(path)
         crew_config_files.replace_bytes(path, data)
+    # The owner confirmed the content that was there, not what replaced it (crew 1.3.95): retire its receipts, so
+    # a `false` the replacement carries, or one hand-written later, is not backed by them.
+    crew_humanonly.revoke_all(layer, path, global_path=global_path, reason="--rebuild or --restore replaced the file")
     return path, stamp
 
 
@@ -4654,7 +4666,11 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
         print()
         print(f"! {row['path']}: repo asks `{asked}`, but only "
               "the machine-global file's value is ever read for this key")
-        if row["path"] == "guards.enabled":
+        if row["path"] == "guards.enabled" and row.get("unconfirmed"):
+            print("  -> the machine file's `false` is NOT confirmed, so it is not in force either: every guard "
+                  "still runs. A repo file cannot stand a guard down, and a machine `false` counts only once the "
+                  "owner confirmed it.")
+        elif row["path"] == "guards.enabled":
             print(f"  -> `{forced}` is in force. A repo file cannot stand a guard down "
                   "(and a machine `false` counts only once the owner confirmed it).")
         else:

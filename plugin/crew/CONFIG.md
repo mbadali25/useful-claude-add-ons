@@ -93,24 +93,29 @@ meaningful only with `scope.mode` `block`.
 
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.92) turns EVERY guard hook off: the promote
+`guards.enabled: false` (crew 1.3.94) turns EVERY guard hook off: the promote
 gate, the role-write, cloud, environment and scope guards, the verify gate, the
 completion audit and the context-watch Stop hook. None of them starts, so nothing
 is judged, refused, asked, warned or logged: with the switch off, nothing blocks. It
 beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mode`,
-`verifyGate`). Three things must all hold for it to count (crew 1.3.92):
+`verifyGate`). Three things must all hold for it to count (crew 1.3.94):
 
 - It is in the MACHINE layer (`~/.claude/crew/config.json`). A `false` in
   `.crew/config.json`, tracked or not, is ignored and the guards stay on (a
   checkout must not be able to turn every guard off), and a repo `true` cannot
   switch a machine `false` back on.
 - It is the OWNER's. Like the `humanOnly.*` opt-out, a `false` counts only when an
-  applied `/crew:confirm-config` double confirmation backs it (two prompts the
-  owner typed). An agent's Write or Edit, a hook-side write or a hand edit that
-  only sets the `false` leaves the guards ON; so does a missing, revoked or
-  unreadable receipt. The scope guard refuses an agent's Write, Edit or shell
-  write to the machine config file and to the receipts beside it, in every
-  `scope.mode` (`off`, the default, included).
+  applied `/crew:confirm-config` double confirmation backs it: two confirmations
+  from two prompts the owner typed, and the digest of the machine file as the
+  owner left it (crew 1.3.94). An agent's Write or Edit, a hook-side write, a
+  hand edit, a bare hand-written receipt, or ANY later change to the file (a
+  restore, a rebuild, an unrelated edit) leaves the guards ON; so does a missing,
+  revoked or unreadable receipt. The scope guard refuses an agent's Write or Edit
+  of the machine config file and the receipts beside it, and a shell command that
+  names them (spelled out, or through `cd`, a variable, a glob or a path built
+  from `.claude`, `crew` and `config.json`) and can write, or runs a script that
+  does, in every `scope.mode` (`off`, the default, included). Reading them
+  (`cat`, `crew_config.py --show`) passes.
 - It is unambiguous. Only the JSON literal `false` counts: an absent key, `null`,
   `true`, a string, a corrupt file, a `guards` that is not an object, a file
   with a duplicate key (`{"enabled": true, "enabled": false}` is read differently
@@ -123,6 +128,16 @@ running, so `/crew:approve` and `/crew:confirm-config` keep working and the
 `humanOnly.*` opt-out still works with the guards off. It needs python: with
 none, the bash launcher still fails closed in an armed repo (known limitation).
 To go back, delete the key or set it to `true` in the machine file.
+
+**What this is, and is not.** The master switch is a guardrail against accidents
+and agent drift, not a security boundary against a hostile agent running as the
+same user. The receipt and the machine file are files that user can write, and the
+scope guard reads command text: an agent that builds a path in a way the text
+never shows (`'.cl' + 'aude'`, a command fetched at run time) can forge the whole
+receipt and the `false` together, and nothing here stops it. Keep an untrusted
+agent out of the account rather than behind this key. A working directory equal to
+your home, or an ancestor of it, makes an owner-confirmed switch do nothing (the
+guards stay on, as for a HOME redirected into the project).
 
 ## Guard profiles
 
@@ -238,7 +253,7 @@ SessionStart notice).
 |---|---|---|---|---|
 | `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `hooks/scripts/crew_guards.py`) | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
-| `guards.enabled` | machine-only | `true` | `true` \| `false` (checked in `hooks/scripts/crew_hook.py`) | The master switch for every guard hook, read from the machine file ALONE and counted only once the OWNER confirmed it. `false` there, backed by an applied `/crew:confirm-config` double confirmation (propose it with `crew_confirm_config.py propose --layer machine --key guards.enabled`), stands them all down (the cloud, environment, role-write, scope and promote guards, the completion audit, the verify gate, and the context-watch Stop hook): nothing is judged, refused, warned or logged, whatever `guards.profile`, `guards.overrides.*`, `scope.mode` or `verifyGate` say. A `false` that is not confirmed (a hand edit, an agent's write) leaves the guards on, and the scope guard refuses an agent's write to the file. A `false` in `.crew/config.json` is refused by the writer and ignored by the dispatcher, so a checkout cannot turn every guard off. Only the JSON literal `false` turns them off (a duplicate key, `null`, a string or anything unreadable leaves them on). `/crew:approve` and `/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. Needs python: with none the guards still fail closed. |
+| `guards.enabled` | machine-only | `true` | `true` \| `false` (checked in `hooks/scripts/crew_hook.py`) | The master switch for every guard hook, read from the machine file ALONE and counted only once the OWNER confirmed it. `false` there, backed by an applied `/crew:confirm-config` double confirmation (propose it with `crew_confirm_config.py propose --layer machine --key guards.enabled`), stands them all down (the cloud, environment, role-write, scope and promote guards, the completion audit, the verify gate, and the context-watch Stop hook): nothing is judged, refused, warned or logged, whatever `guards.profile`, `guards.overrides.*`, `scope.mode` or `verifyGate` say. A `false` that is not confirmed (a hand edit, an agent's write) leaves the guards on, and the scope guard refuses an agent's write to the file. The confirmation is bound to the machine file as the owner left it: a later hand edit, `--restore`, `--rebuild` or `/crew:migrate` leaves the guards on until it is confirmed again, while a crew `--set` of another key rebinds it. A guardrail against accidents and agent drift, NOT a security boundary against a hostile agent running as the same user. A `false` in `.crew/config.json` is refused by the writer and ignored by the dispatcher, so a checkout cannot turn every guard off. Only the JSON literal `false` turns them off (a duplicate key, `null`, a string or anything unreadable leaves them on). `/crew:approve` and `/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. Needs python: with none the guards still fail closed. |
 
 ## `cloud` keys (13)
 

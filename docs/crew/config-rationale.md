@@ -917,7 +917,7 @@ Twelve guards, one block, one ratchet, **three vocabularies**. What crew's comma
 
 The twelve are `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive`, `deployWorkflow`, `prodDatabase`, `prodServer`, `roleWrites`, `cloudGuard` and `envGuard`.
 
-### `guards.enabled` - the master switch (crew 1.3.92, L-0947)
+### `guards.enabled` - the master switch (crew 1.3.94, L-0947)
 
 The per-guard switches each turn one guard down and ratchet, so no combination of them is "run everything": the
 scope guard, the verify gate, the completion audit and the promote gate each have a key of their own, and the
@@ -933,7 +933,7 @@ the switch off NOTHING blocks, so it stands down with them.)
   machine layer is silent or `true`, and the guards stay on (`crew_hook.repo_switch_ignored` reports it so a status
   line can say so; nothing is blocked or logged on its account). This differs from `scope.mode: off`, which a repo
   file can still set, because that one switches off a single guard, not all of them.
-* The OWNER's `false` only (owner decision, 2026-11-13, crew 1.3.92): turning every guard off is a human step like
+* The OWNER's `false` only (owner decision, 2026-11-13, crew 1.3.94): turning every guard off is a human step like
   the `humanOnly.*` opt-out, so it reuses that mechanism rather than a weaker one. A machine `false` counts only
   when `crew_humanonly.receipt_backs` finds an applied double confirmation for `guards.enabled` at this very file
   (`/crew:confirm-config <change_id>` typed twice, in two prompts the owner typed). An unconfirmed `false`, whoever
@@ -942,6 +942,8 @@ the switch off NOTHING blocks, so it stands down with them.)
   `~/.claude/crew/config.json` and to the receipts beside it, in every `scope.mode`: with `scope.mode` off (the default) the
   scope guard otherwise does nothing, and an agent could write both the `false` and its receipt (verified: both passed
   before this change). The confirm-config store was protected in `block`/`auto` only; the config not at all.
+* The receipt is bound to the file and to the confirmations (crew 1.3.94, the Codex re-review: any JSON file shaped like a record used to count). `crew_hook.owner_confirmed` wants the newest settled record to be an applied `false` that carries two confirmations from two different typed prompts and `appliedDigest`, the canonical digest (sorted keys, no whitespace) of the machine file as the owner's second confirmation left it. A file changed after that (a hand edit, `--restore`, `--rebuild`, `/crew:migrate`, an unrelated key) no longer matches, so an older receipt cannot back a `false` written later by another route; a bare hand-written record carries neither field. The scope guard now refuses what it can SEE reaching the owner's files through a shell: `cd` into the folder, a variable, a glob, a path built from `.claude`, `crew` and `config.json`, `cp`/`mv`/`tee`/`sed -i`, an inline `python -c` or heredoc that writes, and running a script (other than crew's own) whose text names them beside a write call. Reads still pass. FIX4 (the old check counted `python` as a writer, so `crew_config.py --show --global-path` was refused) is fixed: a writer is a redirect, a write word, or a write call in inline code.
+* LIMIT, stated plainly: this is a guardrail against accidents and agent drift, not a security boundary against a hostile agent running as the same user. Every receipt here is a file that user can write, and the scope guard reads command text, so an agent that builds a path the text never shows (`'.cl' + 'aude'`, a command fetched at run time) can forge the digest, the confirmations and the `false` together. Nothing in a file-based design closes that; a boundary needs the receipt held somewhere the agent's account cannot write. A working directory equal to your home, or an ancestor of it, makes the confirmed switch do nothing (the machine path then lies inside the working directory, so the guards stay on).
 * The writer half (crew 1.3.93): `crew_humanonly.write_refusal` refuses `guards.enabled: false` at both layers
   (`MASTER_REFUSAL`), `crew_confirm_config.propose` takes it at the machine layer only and prints a three-line relay
   with a warning, `apply_confirmed_optout` writes it after the second confirmation, and a crew write of `true` or a
@@ -951,6 +953,7 @@ the switch off NOTHING blocks, so it stands down with them.)
   `/crew:migrate` refuse a repo copy that is not `true`, a machine value that is not a boolean (`null` included),
   and a machine `false` the file did not already hold. `--explain` and `--inert` report any repo copy but `true`,
   `null` included, and `/crew:status` says unconfirmed, ignored or DISABLED.
+  Since crew 1.3.95 the writers keep the receipt bound: `write_global_config` and `apply_confirmed_optout` call `crew_humanonly.restamp` when the receipt backed the file BEFORE the write, so an unrelated `--set` (or another key's confirmation) does not put the guards back on, and a hand edit in between is never blessed; `--restore`, `--rebuild` and `/crew:migrate` call `crew_humanonly.revoke_all`, because the owner confirmed the content that was there, not what replaced it (the digest alone would let a restore of identical bytes keep the receipt). `crew_upgrade` no longer carries a repo `false`, `null` or other non-`true` copy of the key into the repo file it rewrites. `--explain` and `/crew:status` judge confirmation with the dispatcher's own reader (`crew_hook.owner_confirmed`), so they cannot call a bare record confirmed, and `/crew:status` no longer says the guards still run when the machine `false` is in force. A machine `guards.enabled: null` is left alone by an unrelated `--set` (it reads as ON, and stays until you remove it).
 * The machine file must be the machine's. A config path inside the project (or the working directory) never
   counts, because a `HOME`/`USERPROFILE` pointed at a fake home shipped in a repo would otherwise carry its own
   config and its own forged receipts.

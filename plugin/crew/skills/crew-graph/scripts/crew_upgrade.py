@@ -567,6 +567,17 @@ def refused_drops(notes):
             if key not in notes["acceptedDropped"]]
 
 
+def drop_repo_switch(out):
+    """Remove a repo copy of the guards master switch from `out["guards"]` in place; returns what was removed, as
+    `[json text]` (empty when nothing was). The switch is read from the machine file only (crew 1.3.95), so a repo
+    `false`, `null` or other value stands nothing down and is not carried into the rewritten repo file; the shipped
+    default `true` is left. The backup the write takes holds the old file."""
+    block = out.get("guards")
+    if isinstance(block, dict) and "enabled" in block and block["enabled"] is not True:
+        return [json.dumps(block.pop("enabled"))]
+    return []
+
+
 def upgrade_global(cfg, accept_dropped=()):
     """The machine file (`~/.claude/crew/config.json`) brought to the L-0725
     shape. Pure; returns `(out, notes)`. It has no schema and no blocks to
@@ -733,6 +744,7 @@ def upgrade_config(cfg, accept_dropped=()):
 
     notes["guardProfile"], notes["guardOverrides"] = rewrite_guards(
         out, notes["unmigrated"], notes["unknown"])
+    notes["repoSwitchRemoved"] = drop_repo_switch(out)
     drop_keys(out, notes, accept_dropped)
 
     conflicts = [key for key in notes["droppedNonDefault"]
@@ -913,6 +925,11 @@ def schema8_lines(notes):
             f"- guards: `guards.profile` {notes['guardProfile']}{what}. The "
             "twelve per-guard keys are gone from this file and every guard "
             "keeps the value it had here.")
+    if notes.get("repoSwitchRemoved"):
+        lines.append(
+            "- removed: `guards.enabled` " + ", ".join(notes["repoSwitchRemoved"]) + " in this repo file. The "
+            "master switch is read from the machine file only, so a repo copy stands no guard down and is not "
+            "carried through. The backup holds it.")
     if notes["removedDefault"]:
         lines.append(
             "- removed (held their default, now a code constant): "

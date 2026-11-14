@@ -270,6 +270,88 @@ def revoke(layer, path, dotted, global_path=None, now=None, reason="a later crew
     return True
 
 
+def _newest_settled(store, layer, path, dotted):
+    """The newest settled record (applied or revoked) for this (layer, file, key), or None; None too when the
+    store cannot be read whole."""
+    records, problems = all_records(store)
+    if problems:
+        return None
+    key = target_key(path)
+    settled = [r for r in records
+               if r.get("layer") == layer and r.get("target") == key and r.get("key") == dotted
+               and r.get("state") in (APPLIED, "revoked") and isinstance(r.get("settled"), (int, float))]
+    return max(settled, key=lambda r: r["settled"]) if settled else None
+
+
+def applied_digest(path):
+    """The canonical digest of the file at `path` as the dispatcher reads it (`crew_hook.canonical_digest`), or
+    None when it cannot be taken. A confirmed `guards.enabled: false` is bound to it (crew 1.3.95)."""
+    try:
+        import crew_hook  # pylint: disable=import-outside-toplevel
+        return crew_hook.canonical_digest(path)
+    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
+        return None
+
+
+def master_confirmed(path):
+    """True when an applied double confirmation backs `guards.enabled: false` at the machine file `path`, as the
+    dispatcher judges it (`crew_hook.owner_confirmed`: two typed-prompt confirmations and the file's digest).
+    One reader for `--explain`, `/crew:status` and the writers, so none of them disagrees with the hook."""
+    try:
+        import crew_hook  # pylint: disable=import-outside-toplevel
+        return crew_hook.owner_confirmed(path)
+    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
+        return False
+
+
+def _still_false(path, dotted):
+    """True when the file at `path` still holds `dotted: false` (the JSON literal): a receipt is rebound only
+    while the value it backs is still there."""
+    try:
+        node = crew_config_files.read_tolerant(path)[0]
+        for part in dotted.split("."):
+            node = node[part]
+    except (KeyError, TypeError, OSError):
+        return False
+    return node is False
+
+
+def restamp(layer, path, dotted, global_path=None):
+    """After a crew writer changed the file at `path` while a receipt backed `dotted: false` there, bind that
+    receipt to the file as it now is, so an unrelated `--set` (or another key's confirmation) does not silently
+    put the guards back on. Only the newest settled record, and only an applied `false`, is touched; a file the
+    owner never confirmed has no such record, so nothing here can make a hand-written `false` count. Best
+    effort: a record that cannot be written leaves the old digest, which then no longer matches (guards ON)."""
+    store = store_dir(global_path)
+    newest = _newest_settled(store, layer, path, dotted)
+    if newest is None or newest.get("state") != APPLIED or newest.get("value") is not False:
+        return False
+    stamped = applied_digest(path)
+    if stamped is None or not _still_false(path, dotted):
+        return False
+    newest["appliedDigest"] = stamped
+    try:
+        write_record(store, newest)
+    except OSError:
+        return False
+    return True
+
+
+def revoke_all(layer, path, global_path=None, reason="the file was replaced whole"):
+    """Revoke every applied double-confirmed `false` at (`layer`, `path`): the machine file backs `guards.enabled`
+    and the `humanOnly.*` keys, a repo file only the latter. For the routes that replace a file whole (`--rebuild`,
+    `--restore`, `/crew:migrate`): the owner confirmed the content that was there, not what replaced it, and a
+    receipt that outlived the replacement would back a `false` any later hand edit wrote. Returns the keys
+    revoked."""
+    revoked = []
+    for dotted in (CONFIRMED_PATHS if layer == "machine" else PATHS):
+        newest = _newest_settled(store_dir(global_path), layer, path, dotted)
+        if newest is not None and newest.get("state") == APPLIED and revoke(
+                layer, path, dotted, global_path=global_path, reason=reason):
+            revoked.append(dotted)
+    return revoked
+
+
 # --- what is in force -------------------------------------------------------------
 
 def _layer_value(cfg, key):

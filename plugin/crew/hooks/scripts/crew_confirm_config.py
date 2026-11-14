@@ -177,6 +177,11 @@ def confirm(change_id, via, prompt_id, session_id=None, global_path=None, now=No
     except (OSError, crew_config_files.Unreadable, crew_config_files.Busy,
             crew_config.GlobalWriteRefused, crew_config.RepoWriteRefused) as exc:
         return _settle(store, record, "refused", f"the write failed: {exc}", stamp)
+    # The receipt is bound to the file as the owner's second confirmation left it (crew 1.3.95): the dispatcher
+    # honours a `guards.enabled: false` only while the file still digests to this.
+    digest = crew_humanonly.applied_digest(record["path"])
+    if digest is not None:
+        record["appliedDigest"] = digest
     return _settle(store, record, crew_humanonly.APPLIED, "confirmed twice", stamp)
 
 

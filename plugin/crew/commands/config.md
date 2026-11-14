@@ -54,7 +54,11 @@ changed in 0.16.0 and both are silent if unmentioned:
   `crew_confirm_config.py propose --layer machine --key guards.enabled`, relayed to the owner, and applies only
   after the owner types `/crew:confirm-config <change_id>` twice. A `false` set any other way (a hand edit, an
   agent's write) leaves the guards on, and `/crew:status` says so. `--set guards.enabled=true` and `--unset` are
-  plain writes (they turn the guards back on).
+  plain writes (they turn the guards back on). The confirmation is bound to the machine file as you left it (crew
+  1.3.95): a `--set` of another key, or another key's confirmation, rebinds it, so the guards stay off; a hand edit,
+  `--restore`, `--rebuild` or `/crew:migrate` does not, and the last three also retire the receipt, so a `false`
+  written afterwards needs a new confirmation. This is a guardrail against accidents and agent drift, not a security
+  boundary against a hostile agent running as the same user.
 
 On native Windows the walkthrough also probes WSL (`crew_shell.py probe --write`)
 and reports the state. The shell route itself is automatic and has no setting.

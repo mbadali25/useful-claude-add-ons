@@ -165,8 +165,7 @@ HUMANONLY_MUTATIONS = (
      "",
      _L + "test_the_session_cannot_write_the_confirmation_store"),
     ("humanOnly live: a shell command may write the confirmation store", SCOPE,
-     "    if (_CONFIRM_STORE_RE.search(command) or store in folded)"
-     " and _WRITES_RE.search(command):\n",
+     "    if named and _writes(command):\n",
      "    if False:\n",
      _L + "test_the_session_cannot_write_the_confirmation_store"),
 )

@@ -491,9 +491,13 @@ def _guards_line(root):
             shown.append("guards.enabled is false in the machine file but NOT in effect: no applied "
                          "/crew:confirm-config double confirmation backs it at that file (or the file lies "
                          "inside the project), so every guard still runs")
-        if crew_hook.repo_switch_ignored(root):
-            shown.append("guards.enabled is false in .crew/config.json (ignored: only the machine layer counts), "
-                         "so every guard still runs")
+        for entry in crew_config.inert_settings(root):
+            # Any repo copy but the default `true`, `null` included (the same entries `--inert` lists). Where the
+            # machine switch IS in effect, the repo copy changes nothing either, and "every guard still runs"
+            # would be false (crew 1.3.95).
+            if entry["key"] == "guards.enabled" and entry["kind"] == "repo-ignored":
+                shown.append(f"guards.enabled is {json.dumps(entry['value'])} in .crew/config.json (ignored: only "
+                             "the machine layer counts)" + ("" if off else ", so every guard still runs"))
         if profile is not None or overrides:
             shown.append(f"profile {profile if profile is not None else 'off'}, "
                          f"overrides {json.dumps(overrides or {}, sort_keys=True)}")
