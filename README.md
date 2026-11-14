@@ -238,7 +238,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.3.75**: The mass delete, create and change guard (`guards.mass`) is gone, not just off. `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
-- **crew 1.3.70**: `crew_confirm_config.py propose` prints the lines the agent relays to the owner. `crew` 1.3.70: after an agent proposes a sensitive config change, its output now carries the change and the exact `/crew:confirm-config <change_id>` command for the agent to relay word for word, and no longer claims that no hook records the confirmation.
+- **crew 1.3.88**: The scope guard no longer refuses `ls`, `find` or `grep` that merely name `python3` or `echo` beside crew's state. `crew` 1.3.88: listing or searching crew's state with ten plain read-only programs (`ls`, `cat`, `head`, `tail`, `wc`, `stat`, `grep`, `egrep`, `fgrep`, `find`) and only their plain read options is no longer refused by the scope guard just because a word such as `python3` or `echo` appears as an argument (`ls .git/crew | grep python3`); every other command keeps the old, stricter verdict.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
