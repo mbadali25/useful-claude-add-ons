@@ -237,9 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.85**: `guards.git.allow`, one switch that lets git commands past crew's command guards. `crew` 1.3.85: a new machine-only switch, `guards.git.allow`, stops crew's command guards from blocking or asking on git commands (`"all"`, destructive ones included, or a list of subcommands); it is off by default and takes effect only after the owner types `/crew:confirm-config` twice.
+- **crew 1.3.102**: `guards.git.allow`, one switch that lets git commands past crew's command guards. `crew` 1.3.102: a new machine-only switch, `guards.git.allow`, stops crew's command guards from blocking or asking on git commands (`"all"`, destructive ones included, or a list of subcommands); it is off by default and takes effect only after the owner types `/crew:confirm-config` twice.
 - **crew 1.3.75**: The mass delete, create and change guard (`guards.mass`) is gone, not just off. `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
-- **crew 1.3.88**: The scope guard no longer refuses `ls`, `find` or `grep` that merely name `python3` or `echo` beside crew's state. `crew` 1.3.88: listing or searching crew's state with ten plain read-only programs (`ls`, `cat`, `head`, `tail`, `wc`, `stat`, `grep`, `egrep`, `fgrep`, `find`) and only their plain read options is no longer refused by the scope guard just because a word such as `python3` or `echo` appears as an argument (`ls .git/crew | grep python3`); every other command keeps the old, stricter verdict.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
