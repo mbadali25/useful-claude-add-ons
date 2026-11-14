@@ -77,7 +77,7 @@ DIRECT = {
     "approval-hook.sh": Direct("approval_hook.py", (), (0, 2), _UTF8),
     "promote-gate.sh": Direct("_promote_gate.py", (), (0, 2), {"PYTHONIOENCODING": "utf-8"}),
     "crew-context.sh": Direct("crew_context.py", ("--flavour", "sh"), (0,), {}),
-    # The Stop completion audit (crew 1.3.96): Git Bash's 15-20 forks cost 40-50 s on a loaded Windows host for a
+    # The Stop completion audit (crew 1.3.99): Git Bash's 15-20 forks cost 40-50 s on a loaded Windows host for a
     # decision python reaches in 0.2-0.6 s. The wrapper's blocked-once marker is kept by `_audit_marker_clear`.
     "completion-audit.sh": Direct("completion_audit.py", (), (0, 2), _UTF8),
 }

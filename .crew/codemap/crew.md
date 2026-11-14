@@ -239,7 +239,7 @@ fast path also treats exit 49 (the Store `python3` stub) as an interpreter failu
 platform is Win32NT or `$env:OS -eq 'Windows_NT'`, and now runs only for Codex's `commandWindows`. On Windows
 `crew_hook.dispatch` runs `DIRECT`'s Python files without their `.sh` wrappers (`crew_hook.py`, `DIRECT`, `direct_plan`; the
 wrapper is the fallback for any exit it would not pass through) and resolves Git Bash lazily; `CREW_HOOK_DIRECT=0` turns it off.
-DERIVED (crew 1.3.96, `crew_hook.py`: `DIRECT["completion-audit.sh"]`, `_audit_marker`, `_audit_marker_clear`, `direct_plan`): the Stop
+DERIVED (crew 1.3.99, `crew_hook.py`: `DIRECT["completion-audit.sh"]`, `_audit_marker`, `_audit_marker_clear`, `direct_plan`): the Stop
 row `completion-audit.sh` is also in `DIRECT` (accept `(0, 2)`); the dispatcher keeps the wrapper's blocked-once marker itself (the
 `crew-completion-audit.<session>-<cksum>` file, a Python POSIX cksum), skips python on a `stop_hook_active` continuation and clears the
 marker on that and on a verdict, never on a timeout. `_audit_scope_unknown` (`CLAUDE_PROJECT_DIR` unset/empty, or `TMPDIR` set to a

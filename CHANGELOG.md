@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.96: re-bump only - interim number on the stop-audit-native-python branch (commit 21c1dc6a6, PR #777) before the direct route had to defer to the wrapper for an unknown project directory and TMPDIR, and open PRs reached 1.3.98; the change is recorded under crew 1.3.99
 - crew 1.3.74: re-bump only - interim number on the mass-guard removal branch (commits 188f49e4f, 8c3ac53a0, PR #772) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.75
 - crew 1.3.64: re-bump only - interim number on the confirm-config-relay branch (commit 6d1d45994, PR #768) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.70
 - crew 1.3.66: re-bump only - interim number on the confirm-config-relay branch (PR #768) before main reached 1.3.69 after #767 merged; the change is recorded under crew 1.3.70
@@ -60,7 +61,7 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Changed — crew 1.3.96: the Stop completion audit runs in Python on Windows, not through Git Bash
+### Changed — crew 1.3.99: the Stop completion audit runs in Python on Windows, not through Git Bash
 
 - **Summary.** `crew` 1.3.96 stops the Stop-time completion audit from starting about twenty Git Bash processes on Windows: it now runs its Python directly, finishing in about a second and a half where the Git Bash route took 40-49 s and could run out of its 60 s limit.
 - **Cause.** `completion-audit.sh` forks 15-20 times (python resolution, a `printf | tr | grep` pipeline, the blocked-once marker's `sed`, `cksum`, `cut` and `rm`) before it runs `completion_audit.py`; on Git Bash that is 1.3-3 s per fork on a loaded host, 40-49 s measured against 0.2-0.6 s for the Python alone, and a timeout is `UNKNOWN`, a block in an armed repo.

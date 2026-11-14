@@ -1,4 +1,4 @@
-"""The Stop completion audit runs natively on Windows (crew 1.3.96).
+"""The Stop completion audit runs natively on Windows (crew 1.3.99).
 
 `completion-audit.sh` is a wrapper for `completion_audit.py`: python resolution, a printf|tr|grep pipeline, the
 blocked-once marker (printf|tr|sed, cksum|cut, rm) and then python. On Git Bash that is 15-20 forks, 40-50 s on a

@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.96**: The Stop completion audit runs in Python on Windows, not through Git Bash. `crew` 1.3.96 stops the Stop-time completion audit from starting about twenty Git Bash processes on Windows: it now runs its Python directly, finishing in about a second and a half where the Git Bash route took 40-49 s and could run out of its 60 s limit.
+- **crew 1.3.99**: The Stop completion audit runs in Python on Windows, not through Git Bash. `crew` 1.3.96 stops the Stop-time completion audit from starting about twenty Git Bash processes on Windows: it now runs its Python directly, finishing in about a second and a half where the Git Bash route took 40-49 s and could run out of its 60 s limit.
 - **crew 1.3.75**: The mass delete, create and change guard (`guards.mass`) is gone, not just off. `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

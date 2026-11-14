@@ -198,7 +198,7 @@ to about thirty processes (18 bash, 6 python3, 3 git) because every `.sh` row st
 The golden corpus is still the oracle; `test_crew_hook_direct.py` holds zero `.sh` starts on the hot path,
 the fallback, the one-registration shape, and the same exit, stdout and stderr by either route.
 
-## Amendment, 2026-11-14 (crew 1.3.96): the Stop completion audit goes direct
+## Amendment, 2026-11-14 (crew 1.3.99): the Stop completion audit goes direct
 
 The Stop row `completion-audit.sh` was left out of `DIRECT` in 1.3.60 because its wrapper keeps a blocked-once
 marker. Measured on a loaded Windows host it cost 40-49 s through Git Bash (15-20 forks at 1.3-3 s each) against

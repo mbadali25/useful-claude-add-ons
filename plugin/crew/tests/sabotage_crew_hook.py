@@ -278,7 +278,7 @@ CREW_HOOK_MUTATIONS = (
      "  $psi.EnvironmentVariables['CREW_PYTHON'] = [string]$py\n",
      "",
      _F + "test_the_launcher_hands_the_python_it_resolved_to_the_guards_as_crew_python[ps1]"),
-    # crew 1.3.96: the Stop completion audit runs in Python on Windows. Each entry puts back a way the new route
+    # crew 1.3.99: the Stop completion audit runs in Python on Windows. Each entry puts back a way the new route
     # could turn a block into a pass, lose an UNKNOWN, or leave the wrapper's marker out of step.
     ("the completion audit loses its direct route (a Git Bash per Stop again)", HOOK,
      '    "completion-audit.sh": Direct("completion_audit.py", (), (0, 2), _UTF8),\n',

@@ -248,7 +248,7 @@ model call on your own account.
 environment variable or by the shell's build triple. On Windows the dispatcher runs the Python file behind the hot
 `.sh` rows directly (`DIRECT` in `crew_hook.py`: scope-guard, cloud-guard, env-guard, role-write-guard, promote-gate
 for a Bash call, approval-hook after its `approve` pre-filter, crew-context, and the Stop row `completion-audit`,
-whose blocked-once marker the dispatcher keeps itself, crew 1.3.96), believes the run only when it exits
+whose blocked-once marker the dispatcher keeps itself, crew 1.3.99), believes the run only when it exits
 with a code the wrapper would have passed through, and otherwise runs the wrapper; `CREW_HOOK_DIRECT=0` takes the
 wrapper route. It runs every other `.sh` script through a strictly resolved
 Git Bash (`crew_shell.resolve_gitbash(strict=True)`): the `bin/bash.exe` that `git --exec-path` or the default
