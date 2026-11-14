@@ -32,8 +32,10 @@ GUARDS_MASTER_MUTATIONS = (
      '    except (OSError, ValueError):\n        return True\n    guards = parsed.get("guards")',
      _G + "test_the_layer_reader_alone_says_off_only_for_the_literal_false"),
     ("a failure to look reads as off", HOOK,
-     '    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught\n        return None\n    return None\n',
-     '    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught\n        return "repo"\n    return None\n',
+     '    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught\n        return '
+     'None\n    return None\n',
+     '    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught\n        return '
+     '"repo"\n    return None\n',
      _G + "test_a_lookup_that_raises_leaves_the_guards_on"),
     ("the approval recorder is stood down with the guards", HOOK,
      'GUARDS_KEPT = frozenset({"approval-hook.sh"})\n',
@@ -58,9 +60,11 @@ GUARDS_MASTER_MUTATIONS = (
      '    if event in BLOCKING_EVENTS and armed(root):\n',
      _G + "test_a_dispatcher_fault_does_not_fail_closed_with_the_guards_off"),
     ("the repo layer counts (a repo false stands the guards down)", HOOK,
-     '            return "machine"\n    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught\n        return None\n    return None\n',
+     '            return "machine"\n    except Exception:  # noqa: BLE001  pylint: '
+     'disable=broad-exception-caught\n        return None\n    return None\n',
      '            return "machine"\n        if repo_switch_ignored(root):\n            return "repo"\n'
-     '    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught\n        return None\n    return None\n',
+     '    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught\n        return '
+     'None\n    return None\n',
      _G + "test_must_block_when_only_the_repo_layer_says_false[cloud-guard]"),
     ("the repo layer counts when the machine layer is silent or true", HOOK,
      '        if path and _layer_says_off(path) and owner_confirmed(path):\n',
@@ -71,7 +75,7 @@ GUARDS_MASTER_MUTATIONS = (
      '        if path and _layer_says_off(path) and owner_confirmed(path) and not os.path.exists(\n'
      '                os.path.join(root or "", ".crew", "config.json")):\n',
      _G + "test_a_true_in_the_repo_layer_cannot_switch_back_on_a_machine_false"),
-    # crew 1.3.98: context-watch, the owner's confirmation, duplicate keys, the BOM, a redirected HOME, the machine
+    # crew 1.3.104: context-watch, the owner's confirmation, duplicate keys, the BOM, a redirected HOME, the machine
     # config's protection, and the approval hook's fault path.
     ("context-watch keeps running with the guards off", HOOK,
      'STOOD_DOWN = frozenset({"context-watch.sh"})\n',
@@ -117,14 +121,15 @@ GUARDS_MASTER_MUTATIONS = (
      '    if not top:\n        return _owner_files_only(tool, data, root)\n',
      '    if not top:\n        return 0\n',
      _G + "test_the_owners_files_are_protected_outside_a_work_tree_too"),
-    # crew 1.3.98: the receipt is bound to the confirmations and to the file; the shell forms; the script runs.
+    # crew 1.3.104: the receipt is bound to the confirmations and to the file; the shell forms; the script runs.
     ("a receipt of another file's false counts (the target is not matched)", HOOK,
      'r.get("layer") == "machine" and r.get("target") == target and r.get("key") == MASTER_KEY\n',
      'r.get("layer") == "machine" and r.get("key") == MASTER_KEY\n',
      _G + "test_a_receipt_that_does_not_back_this_false_leaves_the_guards_on[_case_other_file]"),
     ("a humanOnly receipt backs the guards switch (the key is not matched)", HOOK,
      'r.get("layer") == "machine" and r.get("target") == target and r.get("key") == MASTER_KEY\n',
-     'r.get("layer") == "machine" and r.get("target") == target and r.get("key") in (MASTER_KEY, "humanOnly.approve")\n',
+     'r.get("layer") == "machine" and r.get("target") == target and r.get("key") in (MASTER_KEY, '
+     '"humanOnly.approve")\n',
      _G + "test_a_receipt_that_does_not_back_this_false_leaves_the_guards_on[_case_other_key]"),
     ("the file's digest is not compared (another content's digest counts)", HOOK,
      '    return digest is not None and newest.get("appliedDigest") == digest and _double_confirmed(newest)\n',
@@ -155,7 +160,8 @@ GUARDS_MASTER_MUTATIONS = (
      '               if isinstance(c, dict)\n',
      _G + "test_a_forged_or_bare_record_leaves_the_guards_on[_case_not_typed_by_the_user]"),
     ("the digest is of the raw bytes, not the canonical content", HOOK,
-     '    content = hashlib.sha256(json.dumps(parsed, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()\n',
+     '    content = hashlib.sha256(json.dumps(parsed, sort_keys=True, separators=(",", '
+     '":")).encode("utf-8")).hexdigest()\n',
      '    content = hashlib.sha256(open(path, "rb").read()).hexdigest()\n',
      _G + "test_the_digest_is_canonical_in_its_content_half_and_binds_the_modification_time"),
     ("a bare record stands the dispatcher down", HOOK,
@@ -192,7 +198,7 @@ GUARDS_MASTER_MUTATIONS = (
      r'''(?<![:\w-])confirm-config(?![\w-]|\.md)''',
      r'''(?<![\w-])confirm-config(?![\w-]|\.md)''',
      _G + "test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass"),
-    # crew 1.3.98, round 3: the shell check is target-based (a write AIMED AT the owner's file refuses; a mention, or an
+    # crew 1.3.104, round 3: the shell check is target-based (a write AIMED AT the owner's file refuses; a mention, or an
     # unrelated write in the same line, does not), no script is opened, the plain verbs are covered, `\\?\` is refused,
     # and the receipt binds the file's modification time.
     ("a redirect is not a target", SCOPE,
@@ -205,7 +211,8 @@ GUARDS_MASTER_MUTATIONS = (
      _G + "test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass"),
     ("a mention beside a write verb counts (cp with the owner's file as its source)", SCOPE,
      '    if _verb_hits(name, args, shell):\n        return',
-     '    if _verb_hits(name, args, shell) or (name in _WRITERS | _COPIERS | _REMOVERS and any(\n            _hit(a, shell, "destroy") for a in args)):\n        return',
+     '    if _verb_hits(name, args, shell) or (name in _WRITERS | _COPIERS | _REMOVERS and any(\n    '
+     '        _hit(a, shell, "destroy") for a in args)):\n        return',
      _G + "test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass"),
     ("a quoted > is a redirect", SCOPE,
      '''        if char in "'\\"":\n            end = index + 1\n''',
@@ -296,7 +303,8 @@ GUARDS_MASTER_MUTATIONS = (
      '    return False\n',
      _G + "test_the_indirect_ways_to_write_the_owners_files_are_refused"),
     ("the owner's folder as a destination or a delete target is not seen", SCOPE,
-     '    folders = {"file": (), "dir": (folder, parent), "destroy": (folder, parent, posixpath.dirname(parent))}[mode]\n',
+     '    folders = {"file": (), "dir": (folder, parent), "destroy": (folder, parent, '
+     'posixpath.dirname(parent))}[mode]\n',
      '    folders = ()\n',
      _G + "test_the_indirect_ways_to_write_the_owners_files_are_refused"),
     ("a glob is not matched against the owner's files", SCOPE,
@@ -314,7 +322,8 @@ GUARDS_MASTER_MUTATIONS = (
     ("a script is sized and refused when large", SCOPE,
      '    return _analyze(command, _Shell(cwd))\n',
      '    return _analyze(command, _Shell(cwd)) or ("it runs a script too large to read" if any(\n'
-     '        os.path.isfile(os.path.join(cwd or ".", w)) and os.path.getsize(os.path.join(cwd or ".", w)) > 1024 * 1024\n'
+     '        os.path.isfile(os.path.join(cwd or ".", w)) and os.path.getsize(os.path.join(cwd or '
+     '".", w)) > 1024 * 1024\n'
      '        for w in command.split()) else None)\n',
      _G + "test_a_script_is_never_opened_so_an_unreadable_or_huge_one_refuses_nothing"),
     ("the extended-length prefix is not stripped", SCOPE,
@@ -326,16 +335,19 @@ GUARDS_MASTER_MUTATIONS = (
      '        pass\n',
      _G + "test_every_spelling_of_the_owners_path_is_refused_for_write_edit_and_notebookedit"),
     ("the owner-file refusal offers /crew:approve", SCOPE,
-     '''    return [f"SCOPE GUARD: {what}.",\n            "  The owner edits these files, or /crew:config and /crew:confirm-config do; /crew:approve has nothing "\n            "to do with them."]\n''',
-     '''    return [f"SCOPE GUARD: {what}.",\n            "  Approval is recorded when the USER types `/crew:approve <id>`."]\n''',
+     '''    return [f"SCOPE GUARD: {what}.",\n            "  The owner edits these files, or '''
+     '''/crew:config and /crew:confirm-config do; /crew:approve has nothing "\n            "to do with them."]\n''',
+     '''    return [f"SCOPE GUARD: {what}.",\n            "  Approval is recorded when the USER types '''
+     '''`/crew:approve <id>`."]\n''',
      _G + "test_the_refusal_of_the_owners_files_does_not_offer_crew_approve"),
     ("the file's modification time is not part of the stamp (the round-trip replay counts)", HOOK,
      '    return f"{content}@{after}"\n',
      '    return content\n',
      _G + "test_the_round_trip_replay_does_not_count"),
-    # crew 1.3.98 (round 4): plain verbs in every option order, only a destination counts, the one-line .NET write.
+    # crew 1.3.104 (round 4): plain verbs in every option order, only a destination counts, the one-line .NET write.
     ("tar's mode letters are read only from the first word (-C before -xf)", SCOPE,
-     '    bundles = [a for position, a in enumerate(args) if re.match(r"^-[A-Za-z]+$", a) or (position == 0 and a[:1].isalpha())]\n',
+     '    bundles = [a for position, a in enumerate(args)\n               if '
+     're.match(r"^-[A-Za-z]+$", a) or (position == 0 and a[:1].isalpha())]\n',
      '    bundles = [a for position, a in enumerate(args) if position == 0 and re.match(r"^-?[A-Za-z]+$", a)]\n',
      _G + "test_the_indirect_ways_to_write_the_owners_files_are_refused"),
     ("curl's bundled short flags (-sSo) are not read", SCOPE,
@@ -347,8 +359,8 @@ GUARDS_MASTER_MUTATIONS = (
      '        outdir = None\n',
      _G + "test_the_indirect_ways_to_write_the_owners_files_are_refused"),
     ("7z's attached -o<dir> is not read", SCOPE,
-     '        attached = next((a[2:] for a in args if a.startswith("-o") and len(a) > 2), None)',
-     '        attached = None',
+     ' if name == "unzip" else next((a[2:] for a in args if a.startswith("-o") and len(a) > 2), None)',
+     ' if name == "unzip" else None',
      _G + "test_the_indirect_ways_to_write_the_owners_files_are_refused"),
     ("every operand of Set-Content counts as written to (-Value naming the owner's file refuses)", SCOPE,
      'written = _ps_destinations(args) if name in _PS_CMDLETS and mode == "file" else operands',
@@ -375,11 +387,59 @@ GUARDS_MASTER_MUTATIONS = (
      '    word = re.sub(r":[^/]*$", "", word)',
      _G + "test_the_indirect_ways_to_write_the_owners_files_are_refused"),
     ("fsutil hardlink is not read", SCOPE,
-     '    if name == "fsutil":\n',
-     '    if False:\n',
+     '    if name == "fsutil":',
+     '    if False:',
      _G + "test_the_indirect_ways_to_write_the_owners_files_are_refused"),
     ("every fsutil call counts, a read-only query too", SCOPE,
-     '        return "hardlink" in lowered and any(_hit(w, shell, "dir") for w in operands)\n',
+     '        return lowered[:2] == ["hardlink", "create"] and len(operands) > 2 and '
+     '_hit(operands[2], shell, "file")\n',
      '        return any(_hit(w, shell, "dir") for w in operands)\n',
      _G + "test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass"),
+    ('-Verbose is read as a value parameter (swallows the destination)', SCOPE,
+     '"asbytestream", "usetransaction", "verbose", "debug", "recurse"})',
+     '"asbytestream", "usetransaction", "debug", "recurse"})',
+     _G + 'test_the_indirect_ways_to_write_the_owners_files_are_refused'),
+    ('-Debug is read as a value parameter', SCOPE,
+     '"asbytestream", "usetransaction", "verbose", "debug", "recurse"})',
+     '"asbytestream", "usetransaction", "verbose", "recurse"})',
+     _G + 'test_the_indirect_ways_to_write_the_owners_files_are_refused'),
+    ('an abbreviated switch (-Fo) is read as a value parameter', SCOPE,
+     '            param = _ps_param(param.lower())\n',
+     '            param = param.lower()\n',
+     _G + 'test_the_indirect_ways_to_write_the_owners_files_are_refused'),
+    ('a comma-separated -Path list is read as one word', SCOPE,
+     '    found = [piece for word in found for piece in ([word, *word.split(",")] if "," in word else [word])]\n',
+     '    pass\n',
+     _G + 'test_the_indirect_ways_to_write_the_owners_files_are_refused'),
+    ('[System.IO.File]:: is not read in inline code', SCOPE,
+     'r"\\[(?:system\\.)?io\\.file\\]::(?:write|',
+     'r"\\[io\\.file\\]::(?:write|',
+     _G + 'test_the_indirect_ways_to_write_the_owners_files_are_refused'),
+    ('[IO.File]:: Copy/Move/Delete/Create/Append are not write members', SCOPE,
+     'r"\\[(?:system\\.)?io\\.file\\]::(?:write|append|copy|move|delete|create|replace|setattributes|openwrite|"',
+     'r"\\[(?:system\\.)?io\\.file\\]::(?:write|openwrite|"',
+     _G + 'test_the_indirect_ways_to_write_the_owners_files_are_refused'),
+    ('a statement-initial [IO.File]:: counts whatever the member (a read is refused)', SCOPE,
+     '    if positions is None or (member == "open" and not _CODE_WRITES_RE.search(text)):\n        return None\n',
+     '    positions = positions or (0,)\n',
+     _G + 'test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass'),
+    ('a [IO.File]:: write counts every argument (the text written is refused)', SCOPE,
+     '    for position in positions:\n        word = arguments[position]',
+     '    for position in range(len(arguments)):\n        word = arguments[position]',
+     _G + 'test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass'),
+    ("unzip's -oq is read as an attached destination", SCOPE,
+     '        attached = None if name == "unzip" else next(',
+     '        attached = next(',
+     _G + 'test_the_indirect_ways_to_write_the_owners_files_are_refused'),
+    ('fsutil hardlink: every subcommand counts (list is refused)', SCOPE,
+     '        return lowered[:2] == ["hardlink", "create"] and len(operands) > 2 and '
+     '_hit(operands[2], shell, "file")\n',
+     '        return "hardlink" in lowered and any(_hit(w, shell, "dir") for w in operands)\n',
+     _G + 'test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass'),
+    ('fsutil hardlink create checks the existing file, not the new link', SCOPE,
+     '        return lowered[:2] == ["hardlink", "create"] and len(operands) > 2 and '
+     '_hit(operands[2], shell, "file")\n',
+     '        return lowered[:2] == ["hardlink", "create"] and len(operands) > 3 and '
+     '_hit(operands[3], shell, "file")\n',
+     _G + 'test_the_indirect_ways_to_write_the_owners_files_are_refused'),
 )
