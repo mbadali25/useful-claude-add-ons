@@ -1,4 +1,4 @@
-"""The `guards.enabled` key/writer-half mutations (crew 1.3.105), in `sabotage.py`'s tuple shape:
+"""The `guards.enabled` key/writer-half mutations (crew 1.3.108), in `sabotage.py`'s tuple shape:
 (label, target, find, replace, test).
 
 Each puts back one way the master switch could be set, kept or reported wrongly, and names the case in
@@ -104,7 +104,7 @@ MASTER_KEY_MUTATIONS = (
      '            if entry["key"] == "guards.enabled" and entry["kind"] == "repo-ignored":\n',
      '            if False:\n',
      _K + "test_status_says_a_repo_false_is_ignored"),
-    # crew 1.3.105: the receipt is bound to the file; every route that replaces it retires the receipt.
+    # crew 1.3.108: the receipt is bound to the file; every route that replaces it retires the receipt.
     ("status says the guards still run when the confirmed machine false is in force", STATUS,
      '("" if off else ", so every guard still runs"))',
      '", so every guard still runs")',
@@ -208,7 +208,7 @@ MASTER_KEY_MUTATIONS = (
      '            elif scope == "repo" and item.get("replaces"):\n',
      '            elif False:\n',
      _K + "test_migrating_a_repo_file_retires_its_human_only_receipts_like_rebuild_and_restore_do"),
-    # crew 1.3.105 (round 4): --explain and /crew:status agree with dispatch when the machine file lies inside cwd.
+    # crew 1.3.108 (round 4): --explain and /crew:status agree with dispatch when the machine file lies inside cwd.
     ("--explain ignores the working-directory check the dispatcher makes", CFG,
      '                if causes:\n                    # the dispatcher',
      '                if False:\n                    # the dispatcher',
@@ -265,4 +265,16 @@ MASTER_KEY_MUTATIONS = (
      '"runs; " + crew_humanonly.unread_advice(causes).lower())\n',
      '"runs; " + crew_humanonly.unread_advice(()).lower())\n',
      _K + "test_the_advice_follows_the_cause_a_working_directory_at_home_or_a_project_holding_it"),
+    ('the advice for a project that holds the home directory says to move it out of the home directory', HO,
+     '        return ("Use a project folder that does not contain your home directory '
+     '(the machine file must not lie "\n'
+     '                "inside the project; a project that is your home directory has to move out of it)"\n',
+     '        return ("Move the project out of your home directory (the machine file must not lie "\n'
+     '                "inside the project)"\n',
+     _K + 'test_the_advice_follows_the_cause_a_working_directory_at_home_or_a_project_holding_it'),
+    ('no cause is read as a working directory at home (a confident cure for an unknown)', HO,
+     '    return "Could not tell which folder holds it (neither the project nor the working directory does)"\n',
+     '    return "Run crew from another directory '
+     '(the working directory is, or is above, your home directory)"\n',
+     _K + 'test_the_advice_for_no_cause_says_it_could_not_tell_and_names_no_cure'),
 )

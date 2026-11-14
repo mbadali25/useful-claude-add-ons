@@ -47,7 +47,7 @@ import crew_state
 
 KEYS = ("approve", "promoteMarker")
 PATHS = tuple(f"humanOnly.{key}" for key in KEYS)
-# The guards master switch (crew 1.3.105) takes the SAME double confirmation: `guards.enabled: false` in the
+# The guards master switch (crew 1.3.108) takes the SAME double confirmation: `guards.enabled: false` in the
 # machine file counts only when an applied receipt backs it (`crew_hook.guards_switched_off` reads
 # `receipt_backs` for this key). It is not a `humanOnly` key (it has no repo layer, no `true` veto and no
 # `null`), so `is_path` stays humanOnly's; `is_confirmed_path` is "needs a receipt".
@@ -106,7 +106,7 @@ def write_refusal(dotted, layer, value):
     `crew_confirm_config`, the second is a hand edit. A value outside
     `VALUES` is left to the enum check, which names the values.
 
-    `guards.enabled` (crew 1.3.105): `true` is a plain write, `false` goes through `crew_confirm_config` at the
+    `guards.enabled` (crew 1.3.108): `true` is a plain write, `false` goes through `crew_confirm_config` at the
     machine layer and is refused outright at the repo layer; a removal is the guards-on default; anything
     else is left to the enum check."""
     if dotted == MASTER_KEY:
@@ -285,7 +285,7 @@ def _newest_settled(store, layer, path, dotted):
 
 def applied_digest(path):
     """The canonical digest of the file at `path` as the dispatcher reads it (`crew_hook.canonical_digest`), or
-    None when it cannot be taken. A confirmed `guards.enabled: false` is bound to it (crew 1.3.105)."""
+    None when it cannot be taken. A confirmed `guards.enabled: false` is bound to it (crew 1.3.108)."""
     try:
         import crew_hook  # pylint: disable=import-outside-toplevel
         return crew_hook.canonical_digest(path)
@@ -327,11 +327,16 @@ def machine_file_unread(path, root):
 
 def unread_advice(causes):
     """What to do about each cause of `machine_file_unread_causes`: a working directory that is, or is above, the
-    home is cured by running crew elsewhere; a project that holds the home directory is not (it must move out)."""
+    home is cured by running crew elsewhere; a project that holds the machine file (it is, or lies above, the home
+    directory, or HOME was redirected into it) is not: use a project folder that does not contain it. No cause at
+    all means the caller could not tell why, and it says so rather than naming a cure."""
     if "project" in causes:
-        return ("Move the project out of your home directory (the machine file must not lie inside the project)"
+        return ("Use a project folder that does not contain your home directory (the machine file must not lie "
+                "inside the project; a project that is your home directory has to move out of it)"
                 + (", and run crew from another directory" if "cwd" in causes else ""))
-    return "Run crew from another directory (the working directory is, or is above, your home directory)"
+    if "cwd" in causes:
+        return "Run crew from another directory (the working directory is, or is above, your home directory)"
+    return "Could not tell which folder holds it (neither the project nor the working directory does)"
 
 
 def _still_false(path, dotted):

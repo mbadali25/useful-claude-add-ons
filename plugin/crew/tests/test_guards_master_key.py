@@ -1,4 +1,4 @@
-"""`guards.enabled`, the guards master switch's key (crew 1.3.105): declared, validated, written only through the
+"""`guards.enabled`, the guards master switch's key (crew 1.3.108): declared, validated, written only through the
 owner's double confirmation, and judged by every planner that writes a whole file.
 
 The hook half (`crew_hook.guards_switched_off`, the receipt it requires, context-watch standing down, the duplicate
@@ -84,7 +84,7 @@ def _machine(home, cfg):
 
 
 def _receipt(path, state="applied", value=False, settled=None):
-    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.105): two typed-prompt confirmations and
+    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.108): two typed-prompt confirmations and
     `appliedDigest`, the canonical digest of the file as applied."""
     import crew_hook  # pylint: disable=import-outside-toplevel
     record = {"change_id": crew_humanonly.new_change_id(), "layer": "machine",
@@ -508,6 +508,13 @@ def test_explain_repo_copy_line_still_says_not_confirmed_for_an_unconfirmed_fals
     assert "NOT confirmed" in line and "home-directory limit" not in line
 
 
+def test_the_advice_for_no_cause_says_it_could_not_tell_and_names_no_cure():
+    """An empty cause list is an unknown, not a working directory at home: it must not collapse into the confident
+    `Run crew from another directory`."""
+    advice = crew_humanonly.unread_advice(())
+    assert "could not tell" in advice.lower() and "run crew from another" not in advice.lower()
+
+
 def test_the_advice_follows_the_cause_a_working_directory_at_home_or_a_project_holding_it(home, tmp_path, monkeypatch,
                                                                                          capsys):
     """cwd is the home, the project elsewhere: run crew from another directory. The project holds the home (the
@@ -517,9 +524,12 @@ def test_the_advice_follows_the_cause_a_working_directory_at_home_or_a_project_h
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     cases = (
-        (home, _repo(tmp_path, {}), ["cwd"], "Run crew from another directory", "Move the project"),
-        (elsewhere, str(home), ["project"], "Move the project out of your home directory", "Run crew from another"),
-        (home, str(home), ["project", "cwd"], "Move the project out of your home directory",
+        (home, _repo(tmp_path, {}), ["cwd"], "Run crew from another directory", "project folder"),
+        (elsewhere, str(home), ["project"], "Use a project folder that does not contain your home directory",
+         "Run crew from another"),
+        (elsewhere, str(home.parent), ["project"], "Use a project folder that does not contain your home directory",
+         "Move the project out of your home directory"),
+        (home, str(home), ["project", "cwd"], "Use a project folder that does not contain your home directory",
          "(the working directory is, or is above"),
     )
     for cwd, root, causes, wanted, unwanted in cases:
@@ -572,7 +582,7 @@ def test_explain_reports_a_repo_null_even_when_the_machine_file_holds_the_key(ho
     assert "repoIgnored" in rows[KEY] and rows[KEY]["repoIgnored"] is None
 
 
-# --- the receipt is bound to the file, and every route that replaces the file retires it (crew 1.3.105) --------------
+# --- the receipt is bound to the file, and every route that replaces the file retires it (crew 1.3.108) --------------
 
 def _confirmed(home, tmp_path, cfg=None):
     """A repo, and a machine file the owner switched off by the real propose / confirm / confirm route."""
@@ -685,7 +695,7 @@ def test_revoke_all_names_what_it_retired(home):
     assert crew_humanonly.revoke_all("repo", path, global_path=path) == []
 
 
-# --- a repo copy is never carried into a rewritten repo file (crew 1.3.105) ----------------------------------------
+# --- a repo copy is never carried into a rewritten repo file (crew 1.3.108) ----------------------------------------
 
 @pytest.mark.parametrize("value", [False, None, "false", 0])
 def test_an_upgrade_does_not_carry_a_repo_copy_of_the_switch_through(value):
@@ -706,7 +716,7 @@ def test_an_upgrade_leaves_the_default_true_and_the_machine_file_alone():
     assert machine["guards"]["enabled"] is False and not mnotes.get("repoSwitchRemoved")
 
 
-# --- the reports say the right thing (crew 1.3.105) ----------------------------------------------------------------
+# --- the reports say the right thing (crew 1.3.108) ----------------------------------------------------------------
 
 def test_status_does_not_claim_the_guards_still_run_when_the_machine_false_is_confirmed(home, tmp_path):
     """The finding: with a confirmed machine false AND a repo false, status said DISABLED and then 'so every guard
