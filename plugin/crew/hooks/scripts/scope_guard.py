@@ -177,6 +177,240 @@ _WRITES_RE = re.compile(
     r"new-item|copy-item|move-item|remove-item|rename-item|clear-content|set-item|ni|"
     r"sc|ac)\b", re.IGNORECASE)
 
+# Fail-closed exemption from the word list above. The list is a deny-list on
+# purpose, so a command that merely NAMES `python3`/`echo` as an argument
+# (`ls <state> | grep python3`) was refused. A command is read-only, and so
+# exempt, ONLY when `_read_only` parses all of it and every simple command is
+# one of these programs with plain literal words AND only options on that
+# program's explicit allow-list (`_OPTION_RULES`, `_FIND_*`). Anything it cannot
+# parse, any other program, or any option not on the list keeps the deny-list
+# verdict. Shell builtins (`test`, `[`, `printf -v`, `declare`, `let`) are never
+# listed: bash evaluates their arguments itself (`test -v 'a[$(cmd)]'` runs cmd).
+_READ_ONLY_PROGRAMS = frozenset((
+    "ls", "cat", "head", "tail", "wc", "stat", "grep", "egrep", "fgrep", "find"))
+_PLAIN_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./:=,@%+-")
+_REDIRECT_WORDS = frozenset(("2>/dev/null", "2>&1"))
+_NUMBER_RE = re.compile(r"^[+-]?[0-9]+$")
+_GREP_RULE = ("rRinlLcvwxFEHhsqoaI", "e", ("--color=never",),
+              ("--include", "--exclude", "--exclude-dir"), None, False)
+# program -> (flag letters, letters taking a value, exact long flags, long options
+# taking `=VALUE`, pattern a value must match, whether a bare `-NUM` is allowed).
+# No option that names a file or program to write or run, pages, follows,
+# decompresses or reads a config is listed; unknown options fall back to the old
+# verdict (so `tail -f`, `grep --pager=...`, `grep -z` are not exempt).
+_OPTION_RULES = {
+    "ls": ("aAlhdR1trSFpisLnU", "", ("--all", "--almost-all", "--human-readable",
+                                     "--recursive", "--directory", "--classify",
+                                     "--color=never", "--reverse", "--size",
+                                     "--inode", "--dereference"), (), None, False),
+    "cat": ("nbsAETv", "", ("--number", "--number-nonblank", "--squeeze-blank",
+                            "--show-all", "--show-ends", "--show-tabs",
+                            "--show-nonprinting"), (), None, False),
+    "head": ("qv", "nc", ("--quiet", "--verbose"), ("--lines", "--bytes"),
+             _NUMBER_RE, True),
+    "tail": ("qv", "nc", ("--quiet", "--verbose"), ("--lines", "--bytes"),
+             _NUMBER_RE, True),
+    "wc": ("lwcmL", "", ("--lines", "--words", "--bytes", "--chars",
+                         "--max-line-length"), (), None, False),
+    "stat": ("Lft", "c", ("--dereference", "--file-system", "--terse"),
+             ("--format", "--printf"), None, False),
+    "grep": _GREP_RULE, "egrep": _GREP_RULE, "fgrep": _GREP_RULE,
+}
+# find: a primary on these lists is read-only. Every other `-word` (-delete,
+# -rm, -exec, -execdir, -ok, -okdir, -fprint*, -fls, -printf, -exclude, ...) is
+# unknown, so find of GNU findutils, of bfs (Claude Code's own `find`) and of
+# any other implementation falls back to the old verdict.
+_FIND_FLAGS = frozenset((
+    "-empty", "-print", "-print0", "-prune", "-o", "-a", "-and", "-or", "-not",
+    "-depth", "-xdev", "-true", "-false", "-L", "-H", "-P"))
+_FIND_VALUES = frozenset((
+    "-name", "-iname", "-path", "-ipath", "-wholename", "-regex", "-iregex",
+    "-type", "-maxdepth", "-mindepth", "-mtime", "-mmin", "-newer", "-size",
+    "-perm", "-user", "-group"))
+
+
+def _simple_commands(command):
+    """`command` split into simple commands, each an (argv, redirects) pair, or
+    None when any of it cannot be read here. `argv` is the list of (word, quoted)
+    pairs bash hands the program; `redirects` is the list of the words
+    `2>/dev/null` and `2>&1` that bash removes from the line BEFORE the program
+    runs (a redirect is parsed out wherever it stands: before the program, between
+    an option and its value, after `--`), so no option check may ever count one as
+    an argument. Only an UNQUOTED word is a redirect; a quoted look-alike contains
+    `>` and is refused below. Reads only plain words,
+    plain '...' and "..." strings, the separators `;` `&&` `||` `|` and the
+    words `2>/dev/null` and `2>&1`; everything else (a `$` or backtick anywhere,
+    even inside single quotes, `\\`, glob, brace, paren, `#`, `~`, `!`, `<`, a
+    lone `&`, a newline, an unterminated quote, an empty command) is None. A
+    `$` in single quotes is inert to the shell, but a builtin may evaluate its
+    argument (`test -v 'a[$(cmd)]'`), so it is refused here too."""
+    commands, words, redirects, word = [], [], [], None
+    quoted, i, n = False, 0, len(command)
+
+    def end_word():
+        nonlocal word, quoted
+        if word is not None:
+            if not quoted and word in _REDIRECT_WORDS:
+                redirects.append(word)
+            else:
+                words.append((word, quoted))
+        word, quoted = None, False
+
+    def end_command():
+        nonlocal words, redirects
+        end_word()
+        if not words:
+            return False
+        commands.append((words, redirects))
+        words, redirects = [], []
+        return True
+
+    while i < n:
+        ch = command[i]
+        if ch in "\n\r\0":
+            return None
+        if ch in " \t":
+            end_word()
+            i += 1
+        elif ch in "'\"":
+            close = command.find(ch, i + 1)
+            if close < 0:
+                return None
+            body = command[i + 1:close]
+            if any(c in body for c in "\n\r\0$`") or (
+                    ch == '"' and any(c in body for c in "\\!")):
+                return None
+            word = (word or "") + body
+            quoted = True
+            i = close + 1
+        elif ch in ";|&":
+            pair = command[i:i + 2]
+            if ch == "&" and word is not None and word.endswith(">"):
+                word += ch
+                i += 1
+                continue
+            if pair in ("&&", "||"):
+                step = 2
+            elif ch in ";|" and pair not in ("|&", ";;", ";&"):
+                step = 1
+            else:
+                return None
+            if not end_command():
+                return None
+            i += step
+        elif ch == ">" and not quoted and word == "2":
+            word += ch
+            i += 1
+        elif ch in _PLAIN_CHARS:
+            if quoted:
+                word += ch
+            else:
+                word = (word or "") + ch
+            i += 1
+        else:
+            return None
+    if not end_command():
+        return None
+    # A redirect word never reaches argv (`end_word` moved it out), so any `<`, `>`
+    # or `&` left in argv is something this reader does not know. The
+    # `text not in _REDIRECT_WORDS` clause is a second line of defence: should
+    # one ever be kept in argv, it is still refused as soon as it is quoted.
+    for argv, _ in commands:
+        for text, was_quoted in argv:
+            if any(c in text for c in "<>&") and (was_quoted or text not in _REDIRECT_WORDS):
+                return None
+    return commands
+
+
+def _options_ok(rule, args, plus_is_operand=True):
+    """True when every option word in `args` is on `rule`'s allow-list (see
+    `_OPTION_RULES`). A word that is not an option, or `-` alone, is an operand;
+    `--` ends the options. With `plus_is_operand` False (`tail`), a word starting
+    with `+` is refused wherever it stands: `tail +f` and `tail +1f` are the legacy
+    `+N[bcl][f]` form and follow the file forever (GNU, uutils), though they look
+    like operands. The value of an option (`-n +3`) is consumed as a value, not seen
+    here."""
+    flags, value_letters, longs, long_values, valid, numeric = rule
+    i = 0
+    while i < len(args):
+        word = args[i]
+        i += 1
+        if word == "--":
+            return plus_is_operand or not any(w.startswith("+") for w in args[i:])
+        if word.startswith("+") and not plus_is_operand:
+            return False
+        if word == "-" or not word.startswith("-"):
+            continue
+        if word.startswith("--"):
+            name, equals, value = word.partition("=")
+            if word in longs:
+                continue
+            if name in long_values and equals and (valid is None or valid.match(value)):
+                continue
+            return False
+        body = word[1:]
+        if numeric and body.isdigit():
+            continue
+        for j, letter in enumerate(body):
+            if letter in flags:
+                continue
+            if letter not in value_letters:
+                return False
+            value = body[j + 1:]
+            if not value:
+                if i >= len(args):
+                    return False
+                value, i = args[i], i + 1
+            if valid is not None and not valid.match(value):
+                return False
+            break
+    return True
+
+
+def _find_ok(args):
+    """True when every `-word` of a find command line is a primary on the
+    read-only lists. A value primary consumes the next word whatever it looks
+    like; a word not starting with `-` is a start path (or a quoted `!`/`(`)."""
+    i = 0
+    while i < len(args):
+        word = args[i]
+        i += 1
+        if word in _FIND_VALUES:
+            if i >= len(args):
+                return False
+            i += 1
+        elif word in _FIND_FLAGS or word == "-" or not word.startswith("-"):
+            continue
+        else:
+            return False
+    return True
+
+
+def _plain_args_ok(program, args):
+    """No option of a listed program writes a file, runs another program,
+    follows a file forever or is unknown to its allow-list. `uniq`, `sort`,
+    `file`, `test` and the other programs that are shell builtins or whose
+    operands or options can write are deliberately NOT listed."""
+    if program == "find":
+        return _find_ok(args)
+    return _options_ok(_OPTION_RULES[program], args, program != "tail")
+
+
+def _read_only(command):
+    """True only when `command` is wholly a pipeline or list of the listed
+    read-only programs with plain literal words (see `_READ_ONLY_PROGRAMS`)."""
+    parsed = _simple_commands(command)
+    if not parsed:
+        return False
+    for argv, _redirects in parsed:
+        (program, was_quoted), args = argv[0], [t for t, _ in argv[1:]]
+        if was_quoted or program not in _READ_ONLY_PROGRAMS:
+            return False
+        if not _plain_args_ok(program, args):
+            return False
+    return True
+
 
 def _read_payload():
     try:
@@ -357,10 +591,11 @@ def _reading_refusal(command, written, common, top, agent_type=None):
     folded = os.path.normcase(command).replace("\\", "/")
     names_state = bool(_DOTGIT_CREW_RE.search(command)) or bool(
         state and os.path.normcase(state).replace("\\", "/") in folded)
-    if names_state and _WRITES_RE.search(command):
+    if names_state and _WRITES_RE.search(command) and not _read_only(command):
         return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
     store = os.path.normcase(confirm_store()).replace("\\", "/")
-    if (_CONFIRM_STORE_RE.search(command) or store in folded) and _WRITES_RE.search(command):
+    if ((_CONFIRM_STORE_RE.search(command) or store in folded)
+            and _WRITES_RE.search(command) and not _read_only(command)):
         return ("it writes under the confirm-config store, the receipts of the owner's "
                 "double confirmation")
     return None
