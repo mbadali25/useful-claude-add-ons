@@ -1,4 +1,4 @@
-"""The `guards.enabled` key/writer-half mutations (crew 1.3.97), in `sabotage.py`'s tuple shape:
+"""The `guards.enabled` key/writer-half mutations (crew 1.3.99), in `sabotage.py`'s tuple shape:
 (label, target, find, replace, test).
 
 Each puts back one way the master switch could be set, kept or reported wrongly, and names the case in
@@ -102,7 +102,7 @@ MASTER_KEY_MUTATIONS = (
      '            if entry["key"] == "guards.enabled" and entry["kind"] == "repo-ignored":\n',
      '            if False:\n',
      _K + "test_status_says_a_repo_false_is_ignored"),
-    # crew 1.3.97: the receipt is bound to the file; every route that replaces it retires the receipt.
+    # crew 1.3.99: the receipt is bound to the file; every route that replaces it retires the receipt.
     ("status says the guards still run when the confirmed machine false is in force", STATUS,
      '("" if off else ", so every guard still runs"))',
      '", so every guard still runs")',

@@ -569,7 +569,7 @@ def refused_drops(notes):
 
 def drop_repo_switch(out):
     """Remove a repo copy of the guards master switch from `out["guards"]` in place; returns what was removed, as
-    `[json text]` (empty when nothing was). The switch is read from the machine file only (crew 1.3.97), so a repo
+    `[json text]` (empty when nothing was). The switch is read from the machine file only (crew 1.3.99), so a repo
     `false`, `null` or other value stands nothing down and is not carried into the rewritten repo file; the shipped
     default `true` is left. The backup the write takes holds the old file."""
     block = out.get("guards")

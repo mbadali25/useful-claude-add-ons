@@ -3,7 +3,7 @@
 
 A change that lifts a human step -- a `humanOnly.*` key set to `false`
 (`crew_humanonly`), or `guards.enabled: false` (the guards master switch, crew
-1.3.97: it turns every guard off) -- is never written by `crew_config.py --set` or the
+1.3.99: it turns every guard off) -- is never written by `crew_config.py --set` or the
 `/crew:config` menu. It is PROPOSED here, which records a pending change in
 the machine's confirmation store (`~/.claude/crew/confirm-config/`) and
 prints a change id. The owner then types `/crew:confirm-config <change_id>`
@@ -79,7 +79,7 @@ def propose(layer, dotted, root=None, global_path=None, now=None, tracker=None):
     """Record a pending change `dotted: false` at `layer`; returns the record.
 
     Refused when `dotted` is not a humanOnly key or `guards.enabled` (the
-    guards master switch, crew 1.3.97: machine layer only, a repo copy counts
+    guards master switch, crew 1.3.99: machine layer only, a repo copy counts
     for nothing), or when the repo file is absent, tracked by git, or git
     cannot tell (a tracked file can never opt out, and could-not-tell is not
     untracked)."""
@@ -179,7 +179,7 @@ def confirm(change_id, via, prompt_id, session_id=None, global_path=None, now=No
     except (OSError, crew_config_files.Unreadable, crew_config_files.Busy,
             crew_config.GlobalWriteRefused, crew_config.RepoWriteRefused) as exc:
         return _settle(store, record, "refused", f"the write failed: {exc}", stamp)
-    # The receipt is bound to the file as the owner's second confirmation left it (crew 1.3.97): the dispatcher
+    # The receipt is bound to the file as the owner's second confirmation left it (crew 1.3.99): the dispatcher
     # honours a `guards.enabled: false` only while the file still digests to this.
     # The digest the writer read inside its lock, right after the replace; a custom writer that does not report
     # one falls back to reading it here (a hand edit that never takes the lock can still land in that window).

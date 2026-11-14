@@ -6,7 +6,7 @@ disable-model-invocation: true
 ---
 
 The user typed `/crew:confirm-config $1`. A change that lifts a human step
-(`humanOnly.approve` or `humanOnly.promoteMarker` set to `false`, and, since crew 1.3.97, `guards.enabled` set to `false`, which turns every guard off) is
+(`humanOnly.approve` or `humanOnly.promoteMarker` set to `false`, and, since crew 1.3.99, `guards.enabled` set to `false`, which turns every guard off) is
 never written by `/crew:config` or `crew_config.py --set`. It is proposed with
 `crew_confirm_config.py propose`, which prints a change id, and it applies only
 after the owner types `/crew:confirm-config <change_id>` **twice, in two

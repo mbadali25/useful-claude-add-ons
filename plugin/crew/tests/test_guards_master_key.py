@@ -1,4 +1,4 @@
-"""`guards.enabled`, the guards master switch's key (crew 1.3.97): declared, validated, written only through the
+"""`guards.enabled`, the guards master switch's key (crew 1.3.99): declared, validated, written only through the
 owner's double confirmation, and judged by every planner that writes a whole file.
 
 The hook half (`crew_hook.guards_switched_off`, the receipt it requires, context-watch standing down, the duplicate
@@ -74,7 +74,7 @@ def _machine(home, cfg):
 
 
 def _receipt(path, state="applied", value=False, settled=None):
-    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.97): two typed-prompt confirmations and
+    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.99): two typed-prompt confirmations and
     `appliedDigest`, the canonical digest of the file as applied."""
     import crew_hook  # pylint: disable=import-outside-toplevel
     record = {"change_id": crew_humanonly.new_change_id(), "layer": "machine",
@@ -509,7 +509,7 @@ def test_explain_reports_a_repo_null_even_when_the_machine_file_holds_the_key(ho
     assert "repoIgnored" in rows[KEY] and rows[KEY]["repoIgnored"] is None
 
 
-# --- the receipt is bound to the file, and every route that replaces the file retires it (crew 1.3.97) --------------
+# --- the receipt is bound to the file, and every route that replaces the file retires it (crew 1.3.99) --------------
 
 def _confirmed(home, tmp_path, cfg=None):
     """A repo, and a machine file the owner switched off by the real propose / confirm / confirm route."""
@@ -622,7 +622,7 @@ def test_revoke_all_names_what_it_retired(home):
     assert crew_humanonly.revoke_all("repo", path, global_path=path) == []
 
 
-# --- a repo copy is never carried into a rewritten repo file (crew 1.3.97) ----------------------------------------
+# --- a repo copy is never carried into a rewritten repo file (crew 1.3.99) ----------------------------------------
 
 @pytest.mark.parametrize("value", [False, None, "false", 0])
 def test_an_upgrade_does_not_carry_a_repo_copy_of_the_switch_through(value):
@@ -643,7 +643,7 @@ def test_an_upgrade_leaves_the_default_true_and_the_machine_file_alone():
     assert machine["guards"]["enabled"] is False and not mnotes.get("repoSwitchRemoved")
 
 
-# --- the reports say the right thing (crew 1.3.97) ----------------------------------------------------------------
+# --- the reports say the right thing (crew 1.3.99) ----------------------------------------------------------------
 
 def test_status_does_not_claim_the_guards_still_run_when_the_machine_false_is_confirmed(home, tmp_path):
     """The finding: with a confirmed machine false AND a repo false, status said DISABLED and then 'so every guard
