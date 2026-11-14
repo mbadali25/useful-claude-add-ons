@@ -618,3 +618,166 @@ def test_explain_and_status_agree_with_the_hook_about_a_bare_record(home, tmp_pa
     assert rows[KEY]["unconfirmed"] is True
     line = crew_status._guards_line(root)  # pylint: disable=protected-access
     assert "DISABLED" not in line and "NOT in effect" in line
+
+
+# --- round 3: report in every machine state, race windows, revocations that fail ----------------------------------
+
+@pytest.mark.parametrize("machine", [None, {}, {"guards": {"enabled": True}}, {"guards": {"enabled": False}}])
+@pytest.mark.parametrize("repo_value", [None, False])
+def test_inert_and_status_report_a_repo_copy_of_the_switch_in_every_machine_state(machine, repo_value, home, tmp_path):
+    """The finding: with the machine file holding an explicit `true` (the shipped global template) a repo `null`
+    was shadowed away and `--inert` and `/crew:status` said nothing."""
+    root = _repo(tmp_path, {"guards": {"enabled": repo_value}})
+    path = _gpath(home)
+    if machine is not None:
+        _machine(home, machine)
+    entries = [e for e in crew_config.inert_settings(root, path) if e["key"] == KEY]
+    assert [(e["kind"], e["value"]) for e in entries] == [("repo-ignored", repo_value)], machine
+    line = crew_status._guards_line(root)  # pylint: disable=protected-access
+    assert line and "ignored" in line and "guards.enabled" in line, (machine, line)
+
+
+def test_explain_value_column_says_an_unconfirmed_false_is_not_in_effect(home, tmp_path, capsys):
+    root = _repo(tmp_path, {})
+    path = _machine(home, {"guards": {"enabled": False}})
+
+    def row_line():
+        rows = crew_config.explain_config(root, path=path, all_keys=True)
+        crew_config._print_explain(rows, root, all_keys=True)  # pylint: disable=protected-access
+        return next(line for line in capsys.readouterr().out.splitlines() if line.startswith(KEY))
+
+    unconfirmed = row_line()
+    assert "NOT in effect" in unconfirmed and unconfirmed.split()[2] == "false", unconfirmed
+    _receipt(path)
+    assert "NOT in effect" not in row_line()
+
+
+def test_a_hand_edit_between_the_check_and_the_lock_is_not_laundered_by_the_restamp(home, tmp_path, monkeypatch):
+    """N1, simulated: the old code judged `backed` before the lock, so a hand edit that landed after that check
+    and before the write rode along under the restamp. `backed` is judged under the lock now."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root, path = _confirmed(home, tmp_path)
+    real = crew_config.crew_config_files.update_json
+
+    def edit_then_write(target, mutate, **kwargs):
+        cfg = json.load(open(target, encoding="utf-8"))
+        cfg["hand"] = "edit"
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(cfg))
+        return real(target, mutate, **kwargs)
+
+    monkeypatch.setattr(crew_config.crew_config_files, "update_json", edit_then_write)
+    crew_config.write_global_config({"guards.profile": "standard"}, path=path)
+    assert json.load(open(path, encoding="utf-8"))["hand"] == "edit"
+    assert crew_hook.guards_switched_off(root, str(home)) is None
+
+
+def test_the_receipt_is_rebound_and_the_confirmed_digest_taken_inside_the_lock(home, tmp_path, monkeypatch):
+    """The post-write window: the digest a receipt is bound to is read inside the file's lock, right after the
+    replace. (A hand edit that never takes the lock can still land anywhere; this narrows it, it does not close
+    it, and CONFIG.md says so.)"""
+    held = []
+    real_digest, real_restamp = crew_humanonly.applied_digest, crew_humanonly.restamp
+
+    def digest(path):
+        held.append(("digest", os.path.exists(path + ".lock")))
+        return real_digest(path)
+
+    def restamp(*args, **kwargs):
+        held.append(("restamp", os.path.exists(args[1] + ".lock")))
+        return real_restamp(*args, **kwargs)
+
+    monkeypatch.setattr(crew_humanonly, "applied_digest", digest)
+    monkeypatch.setattr(crew_humanonly, "restamp", restamp)
+    path = _machine(home, {})
+    _confirm_twice(path)
+    assert held and all(inside for _, inside in held), held
+    held.clear()
+    crew_config.write_global_config({"guards.profile": "standard"}, path=path)
+    assert ("restamp", True) in held and all(inside for _, inside in held), held
+
+
+def _fail_revocations(monkeypatch):
+    real = crew_humanonly.write_record
+
+    def refuse(store, record):
+        if record.get("state") == "revoked":
+            raise OSError("simulated: the confirmation store is read-only")
+        return real(store, record)
+
+    monkeypatch.setattr(crew_humanonly, "write_record", refuse)
+
+
+def test_a_revocation_that_cannot_be_written_is_reported_and_the_receipt_still_backs_nothing(
+        home, tmp_path, monkeypatch, capsys):
+    """N3: `revoke` swallowed the OSError and `retire_receipts`' callers dropped the answer."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root, path = _confirmed(home, tmp_path)
+    stamp = crew_backup.backup(path)
+    _fail_revocations(monkeypatch)
+    capsys.readouterr()
+    crew_config.apply_restore(root, "machine", stamp, global_path=path)
+    err = capsys.readouterr().err
+    assert "could not record the revocation of guards.enabled" in err, err
+    assert crew_hook.guards_switched_off(root, str(home)) is None, "fail closed: the receipt backs nothing"
+
+
+def test_apply_rebuild_surfaces_a_failed_revocation(home, tmp_path, monkeypatch, capsys):
+    root, path = _confirmed(home, tmp_path)
+    _fail_revocations(monkeypatch)
+    capsys.readouterr()
+    crew_config.apply_rebuild(root, "machine", use_profile=False, global_path=path)
+    assert "could not record the revocation" in capsys.readouterr().err
+
+
+def test_migrate_apply_surfaces_a_failed_revocation(home, tmp_path, monkeypatch, capsys):
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root, path = _confirmed(home, tmp_path, {"guards": {"forcePush": "block"}})
+    plan = crew_migrate.build_global_plan(path)
+    _fail_revocations(monkeypatch)
+    capsys.readouterr()
+    crew_migrate.apply_plan(plan)
+    assert "could not record the revocation" in capsys.readouterr().err
+    assert crew_hook.guards_switched_off(root, str(home)) is None
+
+
+def test_a_set_back_to_true_surfaces_a_failed_revocation(home, tmp_path, monkeypatch, capsys):
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root, path = _confirmed(home, tmp_path)
+    _fail_revocations(monkeypatch)
+    capsys.readouterr()
+    crew_config.write_global_config({KEY: True}, path=path)
+    assert "could not record the revocation of guards.enabled" in capsys.readouterr().err
+    _machine(home, {"guards": {"enabled": False}})
+    assert crew_hook.guards_switched_off(root, str(home)) is None
+
+
+def test_retire_returns_what_failed_and_revoke_all_stays_quiet(home, monkeypatch, capsys):
+    path = _machine(home, {})
+    _confirm_twice(path)
+    _fail_revocations(monkeypatch)
+    capsys.readouterr()
+    assert crew_humanonly.retire("machine", path, global_path=path) == ([], [KEY])
+    assert "could not record the revocation" in capsys.readouterr().err
+    assert crew_humanonly.revoke_all("machine", path, global_path=path) == []
+    assert capsys.readouterr().err == ""
+
+
+def test_migrating_a_repo_file_retires_its_human_only_receipts_like_rebuild_and_restore_do(home, tmp_path, capsys):
+    """L: `--rebuild` and `--restore` retire a repo file's `humanOnly` receipts; `/crew:migrate` rewriting the same
+    file now does too (the owner confirmed the content that was there, not what replaced it)."""
+    import subprocess  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, {"schema": crew_migrate.LEGACY_SCHEMA_MAX, "guards": {"forcePush": "block"},
+                            "humanOnly": {"approve": False}})
+    subprocess.run(["git", "init", "-q", root], check=True)
+    config = os.path.join(root, ".crew", "config.json")
+    record = {"change_id": crew_humanonly.new_change_id(), "layer": "repo", "target": crew_humanonly.target_key(config),
+              "key": "humanOnly.approve", "value": False, "state": "applied", "created": 1.0, "settled": 100.0,
+              "confirmations": []}
+    store = crew_humanonly.store_dir(_gpath(home))
+    crew_humanonly.write_record(store, record)
+    plan = crew_migrate.build_plan(root)
+    assert [w["path"] for w in plan["writes"] if w.get("replaces")] == [".crew/config.json"], plan["writes"]
+    crew_migrate.apply_plan(plan)
+    newest = crew_humanonly._newest_settled(store, "repo", config, "humanOnly.approve")  # pylint: disable=protected-access
+    assert newest["state"] == "revoked", newest

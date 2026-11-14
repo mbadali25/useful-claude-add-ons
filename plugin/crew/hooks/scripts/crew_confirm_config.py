@@ -168,9 +168,14 @@ def confirm(change_id, via, prompt_id, session_id=None, global_path=None, now=No
             return _settle(store, record, "refused",
                            f"{record['path']} is {state} in git now", stamp)
     writer = apply or crew_config.apply_confirmed_optout
+    stamp_out = {}
     try:
-        writer(record["layer"], record["key"], record["path"], record["targetDigest"],
-               global_path=global_path)
+        if apply is None:
+            writer(record["layer"], record["key"], record["path"], record["targetDigest"],
+                   global_path=global_path, stamp_out=stamp_out)
+        else:
+            writer(record["layer"], record["key"], record["path"], record["targetDigest"],
+                   global_path=global_path)
     except crew_config_files.Conflict as exc:
         return _settle(store, record, "stale",
                        f"the file changed since the proposal ({exc}); propose again", stamp)
@@ -179,7 +184,9 @@ def confirm(change_id, via, prompt_id, session_id=None, global_path=None, now=No
         return _settle(store, record, "refused", f"the write failed: {exc}", stamp)
     # The receipt is bound to the file as the owner's second confirmation left it (crew 1.3.95): the dispatcher
     # honours a `guards.enabled: false` only while the file still digests to this.
-    digest = crew_humanonly.applied_digest(record["path"])
+    # The digest the writer read inside its lock, right after the replace; a custom writer that does not report
+    # one falls back to reading it here (a hand edit that never takes the lock can still land in that window).
+    digest = stamp_out.get("digest") or crew_humanonly.applied_digest(record["path"])
     if digest is not None:
         record["appliedDigest"] = digest
     return _settle(store, record, crew_humanonly.APPLIED, "confirmed twice", stamp)

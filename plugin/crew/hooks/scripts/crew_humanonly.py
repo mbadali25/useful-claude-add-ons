@@ -342,14 +342,41 @@ def revoke_all(layer, path, global_path=None, reason="the file was replaced whol
     and the `humanOnly.*` keys, a repo file only the latter. For the routes that replace a file whole (`--rebuild`,
     `--restore`, `/crew:migrate`): the owner confirmed the content that was there, not what replaced it, and a
     receipt that outlived the replacement would back a `false` any later hand edit wrote. Returns the keys
-    revoked."""
-    revoked = []
+    revoked. A revocation that could not be written is NOT in this list; `retire` is the caller that says so."""
+    return _revoke_report(layer, path, global_path, reason)[0]
+
+
+def _revoke_report(layer, path, global_path, reason):
+    """`(revoked, failed)`: the keys whose applied receipt was revoked, and those whose revocation could not be
+    written (`revoke` returns False on an OSError, and a caller that drops that answer loses the failure)."""
+    revoked, failed = [], []
     for dotted in (CONFIRMED_PATHS if layer == "machine" else PATHS):
         newest = _newest_settled(store_dir(global_path), layer, path, dotted)
-        if newest is not None and newest.get("state") == APPLIED and revoke(
-                layer, path, dotted, global_path=global_path, reason=reason):
-            revoked.append(dotted)
-    return revoked
+        if newest is not None and newest.get("state") == APPLIED:
+            ok = revoke(layer, path, dotted, global_path=global_path, reason=reason)
+            (revoked if ok else failed).append(dotted)
+    return revoked, failed
+
+
+def warn_revoke_failed(path, failed, reason, global_path=None, stream=None):
+    """The loud line for a revocation that could not be recorded. Fails closed in effect: a receipt is bound to the
+    file's content AND modification time (`crew_hook.canonical_digest`), so one that outlives a replacement backs
+    nothing at the replaced file; but the store could not be written, so the owner should remove it."""
+    import sys  # pylint: disable=import-outside-toplevel
+    (stream or sys.stderr).write(
+        f"crew: WARNING: could not record the revocation of {', '.join(failed)} at {path} ({reason}): the "
+        f"confirmation store could not be written. An earlier double confirmation may still be on file; it no "
+        f"longer matches this file, so nothing it backed is in effect, but delete the receipts in "
+        f"{store_dir(global_path)} if you want them gone.\n")
+
+
+def retire(layer, path, global_path=None, reason="the file was replaced whole"):
+    """`revoke_all`, but a revocation that could not be written is reported on stderr (`warn_revoke_failed`)
+    rather than dropped. Returns `(revoked, failed)`."""
+    revoked, failed = _revoke_report(layer, path, global_path, reason)
+    if failed:
+        warn_revoke_failed(path, failed, reason, global_path)
+    return revoked, failed
 
 
 # --- what is in force -------------------------------------------------------------

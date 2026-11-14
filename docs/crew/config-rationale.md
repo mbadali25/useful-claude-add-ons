@@ -954,6 +954,21 @@ the switch off NOTHING blocks, so it stands down with them.)
   and a machine `false` the file did not already hold. `--explain` and `--inert` report any repo copy but `true`,
   `null` included, and `/crew:status` says unconfirmed, ignored or DISABLED.
   Since crew 1.3.95 the writers keep the receipt bound: `write_global_config` and `apply_confirmed_optout` call `crew_humanonly.restamp` when the receipt backed the file BEFORE the write, so an unrelated `--set` (or another key's confirmation) does not put the guards back on, and a hand edit in between is never blessed; `--restore`, `--rebuild` and `/crew:migrate` call `crew_humanonly.revoke_all`, because the owner confirmed the content that was there, not what replaced it (the digest alone would let a restore of identical bytes keep the receipt). `crew_upgrade` no longer carries a repo `false`, `null` or other non-`true` copy of the key into the repo file it rewrites. `--explain` and `/crew:status` judge confirmation with the dispatcher's own reader (`crew_hook.owner_confirmed`), so they cannot call a bare record confirmed, and `/crew:status` no longer says the guards still run when the machine `false` is in force. A machine `guards.enabled: null` is left alone by an unrelated `--set` (it reads as ON, and stays until you remove it).
+  Round 3 (crew 1.3.95): (a) `--inert` and `/crew:status` reported a repo `null` only when the machine file held no value
+  (`without_null_shadows` had already removed it); they read the raw repo layer now, so a repo copy is reported in every
+  machine state (reproduced with an explicit machine `true`, the shipped global template). (b) `--explain`'s value column
+  says `NOT in effect: unconfirmed` for a machine `false` nobody confirmed, instead of printing `false` as if it were in
+  force. (c) Whether a receipt backs the file is judged INSIDE the file's lock, on the bytes about to be replaced
+  (`write_global_config`, `apply_confirmed_optout`), and the digest `confirm` binds its receipt to is read inside the lock
+  right after the replace (`crew_config_files.update_json(after=...)`); a hand edit that landed between the old check and
+  the write used to ride along under the restamp (simulated). A hand edit that never takes the lock can still race, and
+  this narrows that window, it does not close it. (d) `revoke` swallowed an OSError and its callers ignored the result: a
+  revocation that cannot be written is now reported on stderr by `--restore`, `--rebuild`, `/crew:migrate` and a crew write
+  that sets the key back (`crew_humanonly.retire`, `warn_revoke_failed`); the receipt backs nothing at the replaced file
+  anyway, because it binds content and modification time (simulated with an OSError). (e) `/crew:migrate` rewriting a REPO
+  file now retires that file's `humanOnly` receipts, as `--rebuild` and `--restore` already did. (f) Wording: a later write
+  to the machine file leaves the guards on until it is confirmed again, whether or not the content differs, because the
+  receipt binds the modification time (the dispatcher half); only a copy that restores the old time replays it.
 * The machine file must be the machine's. A config path inside the project (or the working directory) never
   counts, because a `HOME`/`USERPROFILE` pointed at a fake home shipped in a repo would otherwise carry its own
   config and its own forged receipts.

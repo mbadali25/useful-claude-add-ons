@@ -2467,11 +2467,13 @@ def inert_settings(root, path=None):
         pending = INERT_PENDING.get(dotted)
         # Any repo value, `[]` and `""` included (an empty scope matches
         # nothing, so it would narrow everything if it were read).
-        if dotted in _MACHINE_ONLY_LEAVES and _repo_value_ignored(dotted, _dig(repo_cfg, parts)):
+        # The RAW repo layer, not `repo_cfg`: a repo `null` is shadowed (removed) when the machine file holds a
+        # value, and for the master switch a repo `null` is one `--inert` must report in every machine state.
+        if dotted in _MACHINE_ONLY_LEAVES and _repo_value_ignored(dotted, _dig(repo_raw, parts)):
             # Read from the machine file only (crew_autocycle.settings): a
             # repo value narrows nothing.
             entries[(dotted, "inert")] = {
-                "key": dotted, "value": _dig(repo_cfg, parts),
+                "key": dotted, "value": _dig(repo_raw, parts),
                 "effect": _REPO_IGNORED_EFFECTS.get(dotted, _REPO_IGNORED_EFFECT),
                 "ticket": None,
                 "kind": "repo-ignored", "layer": "repo"}
@@ -3835,17 +3837,27 @@ def write_global_config(updates, path=None, expect=None):
     if not changes:
         return merged, changes
     out = {}
-    backed = crew_humanonly.master_confirmed(real_path)
 
     def _mutate(parsed):
+        # Whether a receipt backs the file is judged HERE, under the lock, on the bytes about to be replaced: a
+        # hand edit that landed between an earlier check and this lock would otherwise ride along under the
+        # restamp (round 3, N1). A hand edit that never takes the lock can still land after this read.
+        out["backed"] = crew_humanonly.master_confirmed(real_path)
         out["plan"] = _plan_on(parsed, updates, "machine", real_path)
         if not out["plan"][1]:
             return None
         crew_backup.backup(real_path)   # T-0050: under the lock, before the replace
         return out["plan"][0]
+
+    def _restamp(_result):
+        # The owner confirmed `guards.enabled: false` and this write left it alone: bind the receipt to the file
+        # as it now is, so an unrelated `--set` does not put the guards back on (crew 1.3.95). Read inside the
+        # lock, right after the replace, so no other crew writer lands between the write and the digest.
+        if out.get("backed"):
+            crew_humanonly.restamp("machine", real_path, crew_humanonly.MASTER_KEY, global_path=path)
     try:
         crew_config_files.update_json(real_path, _mutate, expect=expect,
-                                      create=True)
+                                      create=True, after=_restamp)
     except crew_backup.BackupError as exc:
         raise WriteBackupRefused(str(exc)) from exc
     except crew_config_files.Conflict as exc:
@@ -3857,10 +3869,6 @@ def write_global_config(updates, path=None, expect=None):
                                  "directory, its lock or the write itself failed at the OS; check the "
                                  "directory)") from exc
     _revoke_human_only("machine", real_path, out["plan"][1], path)
-    if backed:
-        # The owner confirmed `guards.enabled: false` and this write left it alone: bind the receipt to the file
-        # as it now is, so an unrelated `--set` does not put the guards back on (crew 1.3.95).
-        crew_humanonly.restamp("machine", real_path, crew_humanonly.MASTER_KEY, global_path=path)
     return out["plan"]
 
 
@@ -4122,12 +4130,14 @@ def _revoke_human_only(layer, path, changes, global_path):
     writer may set there: `true`, or a machine `null` / removal), record a
     revocation so an earlier double-confirmed `false` at this file no longer
     counts if a `false` reappears there by any other route."""
-    for change in changes or ():
-        if crew_humanonly.is_confirmed_path(change.get("path")):
-            crew_humanonly.revoke(layer, path, change["path"], global_path=global_path)
+    failed = [change["path"] for change in changes or ()
+              if crew_humanonly.is_confirmed_path(change.get("path"))
+              and not crew_humanonly.revoke(layer, path, change["path"], global_path=global_path)]
+    if failed:
+        crew_humanonly.warn_revoke_failed(path, failed, "a crew write set it back", global_path)
 
 
-def apply_confirmed_optout(layer, dotted, path, expect, global_path=None):
+def apply_confirmed_optout(layer, dotted, path, expect, global_path=None, stamp_out=None):
     """Write `dotted: false` into the config file at `path` (`layer` is
     `machine` or `repo`). The one writer that bypasses
     `crew_humanonly.write_refusal`, and only `crew_confirm_config` calls it,
@@ -4135,7 +4145,8 @@ def apply_confirmed_optout(layer, dotted, path, expect, global_path=None):
     file's state digest when the change was proposed: a file that changed
     since is refused (`crew_config_files.Conflict`), never merged over.
     `dotted` is a `humanOnly` key or `guards.enabled` (machine layer only: a
-    repo copy of the master switch counts for nothing).
+    repo copy of the master switch counts for nothing). `stamp_out`, a dict, receives `digest`: the file's
+    `crew_hook.canonical_digest` read inside the lock right after the replace.
     Returns `(merged, changes)`."""
     if not crew_humanonly.is_confirmed_path(dotted):
         raise ValueError(f"{dotted} is not a key that takes a double confirmation")
@@ -4144,24 +4155,33 @@ def apply_confirmed_optout(layer, dotted, path, expect, global_path=None):
     if dotted == crew_humanonly.MASTER_KEY and layer != "machine":
         raise ValueError(f"{dotted} is read from the machine file only; a repo copy is never written")
     out = {}
-    backed = layer == "machine" and dotted != crew_humanonly.MASTER_KEY and crew_humanonly.master_confirmed(path)
 
     def _mutate(parsed):
+        # Judged under the lock, on the bytes about to be replaced (round 3, N1).
+        out["backed"] = layer == "machine" and dotted != crew_humanonly.MASTER_KEY and crew_humanonly.master_confirmed(
+            path)
         global_cfg = None if layer == "machine" else machine_view(global_path)[0]
         out["plan"] = _plan_on(parsed, {dotted: False}, layer, path, global_cfg)
         if not out["plan"][1]:
             return None
         crew_backup.backup(path)
         return out["plan"][0]
+
+    def _after(_result):
+        # What the owner's second confirmation left: the digest `crew_confirm_config.confirm` binds its receipt to
+        # is read here, inside the lock, right after the replace, so no other crew writer lands between the write
+        # and the digest. Another key's confirmation that rewrote the machine file under a confirmed master switch
+        # rebinds that switch's receipt the same way. A hand edit that never takes the lock can still land.
+        if stamp_out is not None:
+            stamp_out["digest"] = crew_humanonly.applied_digest(path)
+        if out.get("backed"):
+            crew_humanonly.restamp("machine", path, crew_humanonly.MASTER_KEY, global_path=global_path)
     if layer == "machine":
-        crew_config_files.update_json(path, _mutate, expect=expect, create=True)
+        crew_config_files.update_json(path, _mutate, expect=expect, create=True, after=_after)
     else:
         lock = crew_config_files.machine_lock(_global_label(global_path))
         with lock:
-            crew_config_files.update_json(path, _mutate, expect=expect)
-    if backed:
-        # Another key's confirmation rewrote the machine file under a confirmed master switch: rebind the receipt.
-        crew_humanonly.restamp("machine", path, crew_humanonly.MASTER_KEY, global_path=global_path)
+            crew_config_files.update_json(path, _mutate, expect=expect, after=_after)
     return out.get("plan", ({}, []))
 
 
@@ -4549,7 +4569,8 @@ def _replace_layer_file(root, layer, data, global_path=None):
         crew_config_files.replace_bytes(path, data)
     # The owner confirmed the content that was there, not what replaced it (crew 1.3.95): retire its receipts, so
     # a `false` the replacement carries, or one hand-written later, is not backed by them.
-    crew_humanonly.revoke_all(layer, path, global_path=global_path, reason="--rebuild or --restore replaced the file")
+    # A revocation that cannot be written is reported on stderr, not dropped (round 3, N3).
+    crew_humanonly.retire(layer, path, global_path=global_path, reason="--rebuild or --restore replaced the file")
     return path, stamp
 
 
@@ -4615,8 +4636,11 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
     for row in rows:
         marks = (["repo-only"] if row.get("repoOnly") else []) + (
             [f"held down by {row['heldDownBy']}"] if row.get("heldDownBy") else [])
-        print(f"{row['path'].ljust(width)}  {row['source'].ljust(8)}  "
-              f"{json.dumps(row['value'])}"
+        # A machine `false` the owner never confirmed is NOT in force: the value column says so itself, so a reader
+        # of this one column is not told `false` as if the guards were off (round 3).
+        shown = json.dumps(row["value"]) + (" (NOT in effect: unconfirmed, every guard still runs)"
+                                            if row.get("unconfirmed") else "")
+        print(f"{row['path'].ljust(width)}  {row['source'].ljust(8)}  {shown}"
               + (f"  ({', '.join(marks)})" if marks else ""))
         if row.get("heldDownBy"):
             narrowed.append(row)

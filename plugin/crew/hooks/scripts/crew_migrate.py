@@ -1093,8 +1093,13 @@ def apply_plan(plan):
             landed.append((item, path))
             if scope == "global" and item.get("replaces"):
                 # The machine file was rewritten whole: the owner's receipts were for the old content (crew 1.3.95).
-                crew_humanonly.revoke_all("machine", path, global_path=path,
-                                          reason="/crew:migrate rewrote the machine file")
+                # A revocation that cannot be written is reported on stderr, not dropped.
+                crew_humanonly.retire("machine", path, global_path=path,
+                                      reason="/crew:migrate rewrote the machine file")
+            elif scope == "repo" and item.get("replaces"):
+                # The same for the repo file (round 3): its own `humanOnly` receipts were for the content that was
+                # there, and `--rebuild` / `--restore` already retire them on a repo file.
+                crew_humanonly.retire("repo", path, reason="/crew:migrate rewrote the repo file")
         manifest["state"] = "applied"
         atomic_write(_manifest_path(backup), _json_bytes(manifest))
     except BaseException:
