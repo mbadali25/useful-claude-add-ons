@@ -69,7 +69,7 @@ def _confirmations(count=2):
 
 def _receipt(path, state="applied", value=False, key="guards.enabled", layer="machine", target=None, settled=None,
              confirmations=None, digest="file"):
-    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.96): what makes a machine `false` the
+    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.98): what makes a machine `false` the
     OWNER's. Two typed-prompt confirmations and `appliedDigest`, the canonical digest of the file as applied;
     `digest="file"` reads it now, a string or None overrides it (None leaves the field out)."""
     record = {"change_id": crew_humanonly.new_change_id(), "layer": layer,
@@ -275,7 +275,7 @@ def test_a_dispatcher_fault_does_not_fail_closed_with_the_guards_off(armed):
                 os.environ[key] = value
 
 
-# --- the owner's confirmation (decision A, crew 1.3.96) ---------------------------------------------------------
+# --- the owner's confirmation (decision A, crew 1.3.98) ---------------------------------------------------------
 
 @pytest.mark.parametrize("name", sorted(MUST_BLOCK))
 def test_an_unconfirmed_false_stands_nothing_down(name, armed):
@@ -420,7 +420,7 @@ def test_an_approval_hook_fault_does_not_fail_closed_with_the_guards_off(tmp_pat
     assert code_on == 2, "the control: with the guards on, the same fault fails closed"
 
 
-# --- the machine config is the owner's: an agent cannot write it (scope guard, crew 1.3.96) ---------------------
+# --- the machine config is the owner's: an agent cannot write it (scope guard, crew 1.3.98) ---------------------
 
 def _machine_path(home):
     return os.path.join(home, ".claude", "crew", "config.json")
@@ -518,7 +518,7 @@ def test_the_owners_files_are_protected_outside_a_work_tree_too(tmp_path):
     assert blocked(_run("PreToolUse", payload, str(bare), str(home)))
 
 
-# --- the receipt is bound to the confirmations and to the file (crew 1.3.96) --------------------------------------
+# --- the receipt is bound to the confirmations and to the file (crew 1.3.98) --------------------------------------
 
 def _case_bare_record(path):
     _receipt(path, confirmations=[], digest=None)
@@ -622,7 +622,7 @@ def test_a_forged_bare_record_does_not_stand_the_dispatcher_down(armed):
     assert blocked(_run("PreToolUse", MUST_BLOCK["env-guard"], root, home))
 
 
-# --- the owner's files through a shell: indirect forms are refused, reads still pass (crew 1.3.96) ----------------
+# --- the owner's files through a shell: indirect forms are refused, reads still pass (crew 1.3.98) ----------------
 
 @pytest.fixture(name="home_env")
 def _home_env(tmp_path, monkeypatch):
@@ -698,6 +698,24 @@ SHELL_MUST_BLOCK = [
     "pwsh -NoProfile -Command \"'{}' > ~/.claude/crew/config.json\"",
     "dd if=x.bin of=~/.claude/crew/config.json",
     "New-Item -ItemType Junction -Path lnk -Target ~/.claude/crew",
+    # round 4: the plain verbs in every option order, and the one-line .NET write
+    "tar -C ~/.claude/crew -xf a.tar",
+    "tar -C ~/.claude/crew -xzf a.tar",
+    "tar -C ~/.claude/crew --extract -f a.tar",
+    "curl -sSo ~/.claude/crew/config.json http://x/y",
+    "curl -sSo~/.claude/crew/config.json http://x/y",
+    "curl -O --output-dir ~/.claude/crew http://x/y",
+    "curl -sSO --output-dir ~/.claude/crew http://x/y",
+    "curl -o c.json --output-dir ~/.claude/crew http://x/y",
+    "7z x a.7z -o~/.claude/crew",
+    "Set-Content -Value x -Path ~/.claude/crew/config.json",
+    "Set-Content -LiteralPath:~/.claude/crew/config.json x",
+    "Out-File -FilePath ~/.claude/crew/config.json -Encoding utf8",
+    "New-Item -Path ~/.claude/crew -Name config.json -ItemType File",
+    "[IO.File]::WriteAllText('~/.claude/crew/config.json','x')",
+    "[System.IO.File]::WriteAllText(\"$HOME/.claude/crew/config.json\", 'x')",
+    "echo x > ~/.claude/crew/config.json::$DATA",
+    "fsutil hardlink create ~/.claude/crew/config.json x",
     # inline code that names the owner's files only by a glob
     "python3 -c \"import glob; open(glob.glob('/h/.claude/c*/x')[0], 'w').write('x')\"",
     "python3 -c \"import glob; open(glob.glob('~/.cl*/cr*/co*')[0], 'w').write('x')\"",
@@ -746,6 +764,19 @@ SHELL_MUST_ALLOW = [
     "node ./tool.exe --version",
     "echo ok 2>&1 > /dev/null",
     "echo \"wrote > ~/.claude/crew/confirm-config/cc-1.json\" > notes.txt",
+    # round 4: the owner's file named as the text written, or as a source, is not a write to it
+    "Set-Content -Path C:/tmp/out -Value 'C:/Users/x/.claude/crew/config.json'",
+    "Set-Content C:/tmp/out '~/.claude/crew/config.json'",
+    "Add-Content -Path out.txt -Value ~/.claude/crew/config.json",
+    "'~/.claude/crew/config.json' | Set-Content -Path C:/tmp/out",
+    "tar -C /tmp -xf a.tar",
+    "tar -tf a.tar",
+    "tar -czf /tmp/a.tgz ~/.claude/crew/config.json",
+    "curl -sSo /tmp/x http://x/y",
+    "curl -O --output-dir /tmp http://x/y",
+    "7z x a.7z -o/tmp/x",
+    "fsutil file queryfileid ~/.claude/crew/config.json",
+    "echo x > C:\tmp\a.txt",
     # inline code that writes a repo file named like the owner's, or only mentions the slash command
     "python3 -c \"open('.crew/config.json', 'w').write('x')\"",
     "python3 -c \"open('plugin/crew/commands/confirm-config.md', 'w').write('x')\"",

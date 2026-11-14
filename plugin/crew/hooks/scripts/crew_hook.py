@@ -346,7 +346,7 @@ def armed(root, home=None):
 # running children
 
 # --------------------------------------------------------------------------
-# the guards master switch (`guards.enabled`, crew 1.3.89; the owner's confirmation, 1.3.96)
+# the guards master switch (`guards.enabled`, crew 1.3.89; the owner's confirmation, 1.3.98)
 #
 # `guards.enabled: false` in the MACHINE config layer (`~/.claude/crew/config.json`) stands every guard row
 # down: none starts, so nothing is judged, refused, asked or logged, and a fault in one cannot fail closed.
@@ -360,7 +360,7 @@ def armed(root, home=None):
 #   3. The `false` must be the OWNER's (owner decision, 2026-11-13): `owner_confirmed` must find an applied
 #      `/crew:confirm-config` double confirmation for `guards.enabled` at this very file, recording two
 #      confirmations from two typed prompts and the canonical digest of the file as the owner left it (crew
-#      1.3.96). An agent, a hook-side write or a hand edit that only sets the `false` leaves the guards ON
+#      1.3.98). An agent, a hook-side write or a hand edit that only sets the `false` leaves the guards ON
 #      (`machine_switch_unconfirmed` reports it), and so does a file edited after the owner applied it, or a bare
 #      hand-written record. These are guardrails against accidents and drift, NOT a boundary: the receipt is a
 #      file the same user can write, so an agent that forges the whole of it is not stopped here.
@@ -451,7 +451,7 @@ def _double_confirmed(record):
 
 def owner_confirmed(path):
     """True when an applied `/crew:confirm-config` double confirmation backs `guards.enabled: false` at `path`
-    (crew 1.3.96): the newest settled record for this (layer, file, key) is an applied `false`, records two
+    (crew 1.3.98): the newest settled record for this (layer, file, key) is an applied `false`, records two
     confirmations from two typed prompts, and its `appliedDigest` is the canonical digest of the file AS IT IS.
     A file edited after the owner applied it (a hand edit, a restore, a rebuild, an agent) no longer matches, so
     the receipt backs nothing, and a record written without the confirmations, or without the digest, backs
@@ -782,7 +782,7 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
     chosen = select(event, harness, payload, windows=windows, scripts=scripts)
     armed_fn = armed_fn or armed
     if chosen and _guards_off(root):
-        # `guards.enabled: false` in the machine layer, owner-confirmed (crew 1.3.96): no guard row starts, so nothing is judged, logged or
+        # `guards.enabled: false` in the machine layer, owner-confirmed (crew 1.3.98): no guard row starts, so nothing is judged, logged or
         # refused, and a fault in what is left cannot fail closed either. approval-hook.sh stays.
         chosen = without_guards(chosen)
         armed_fn = _never_armed

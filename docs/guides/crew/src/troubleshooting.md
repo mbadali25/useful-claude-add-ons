@@ -103,7 +103,7 @@ no: retry the call, and free memory or processes if it repeats. A real deny neve
   30-minute TTL) and names the owner's `crew_inflight.py clear`; `Lane state unknown` means it could
   not tell. `Approval waiting` is autopilot stopped at `approve`.
 - **Silence every guard at once:** set `guards.enabled: false` in the machine file `~/.claude/crew/config.json`
-  (crew 1.3.96) and confirm it as the owner with the `/crew:confirm-config` double confirmation (crew 1.3.96;
+  (crew 1.3.98) and confirm it as the owner with the `/crew:confirm-config` double confirmation (crew 1.3.98;
   an unconfirmed `false` leaves the guards on, so does a file written after you confirmed it (even with the same bytes), and the scope guard refuses an agent's write to that file, not a command that only mentions it; a session started in your home directory, or above it, makes a confirmed switch do nothing, because the machine config then lies inside the working directory; this is a guardrail against accidents and drift, not a boundary against a hostile agent running as you; `--set guards.enabled=false` is refused (crew 1.3.97), so ask crew to propose it with `/crew:config`, then type `/crew:confirm-config <change_id>` twice). The
   dispatcher then starts no guard hook and no context-watch, so nothing is blocked, asked, warned or logged,
   whatever `guards.profile`, `guards.overrides.*`, `scope.mode` and `verifyGate` say; only the machine layer

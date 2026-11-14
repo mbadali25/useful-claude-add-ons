@@ -11,7 +11,7 @@ the payload in, so the two shells cannot disagree.
    the key gets), or the cwd is no work tree -> exit 0 before anything else is
    read, EXCEPT that a Write/Edit of, or a shell write to, the owner's own
    files (the machine config `~/.claude/crew/config.json` and the
-   confirm-config store beside it) is still refused (crew 1.3.96): those hold
+   confirm-config store beside it) is still refused (crew 1.3.98): those hold
    `guards.enabled` and its receipts, and a guard that stood down with
    `scope.mode` would let an agent write both.
 2. A target under `<git-common-dir>/crew/` -- approval receipts, the review
@@ -277,14 +277,14 @@ def confirm_store():
 
 def machine_config():
     """The machine config file (`~/.claude/crew/config.json`), which holds `guards.enabled`, the switch that
-    stands every guard down (crew 1.3.96). Like `confirm_store`, spelled here so this guard imports no config
+    stands every guard down (crew 1.3.98). Like `confirm_store`, spelled here so this guard imports no config
     module."""
     return os.path.join(os.path.expanduser("~"), ".claude", "crew", "config.json")
 
 
 def _owner_path(path):
     """True for the owner's own files: the double-confirmation store and the machine config, which holds
-    `guards.enabled` (crew 1.3.96)."""
+    `guards.enabled` (crew 1.3.98)."""
     return _under(path, confirm_store()) or os.path.normcase(path) == os.path.normcase(machine_config())
 
 
@@ -378,7 +378,7 @@ def _reading_refusal(command, written, common, top, agent_type=None):
     return _owner_command_refusal(command, top)
 
 
-# --- the owner's files, through a shell (crew 1.3.96, target-based since the round-3 owner decision) ------------
+# --- the owner's files, through a shell (crew 1.3.98, target-based since the round-3 owner decision) ------------
 # A command is refused when something in it WRITES TO the owner's files: a redirect, or the argument a write verb
 # aims at (`tee`, `cp`, `mv`, `rm`, `sed -i`, `Set-Content`, `curl -o`, `tar -C`, `git apply` ...), or inline code
 # (`python -c`, a heredoc) that names them beside a write call. A command that merely MENTIONS them -- a commit
@@ -651,6 +651,7 @@ def _hit(word, shell, mode):  # pylint: disable=too-many-return-statements
     and the confirm-config store; "dir" adds the folders a copy or an extraction lands in (`~/.claude/crew`,
     `~/.claude`); "destroy" adds home itself, for a delete or a move."""
     word = _expand(word, shell)
+    word = re.sub(r"(?<=[^/\\:]):(?::\$\w+|[^/\\:]+)(?::\$\w+)?$", "", word)   # an NTFS stream: `f::$DATA`, `f:s`
     if not word or _IGNORED_TARGET_RE.match(word):
         return False
     path = _canon(word, shell.cwd)
@@ -728,22 +729,36 @@ def _download_hits(name, args, shell):
         folder = _option_value(args, "-P", "--directory-prefix")
         return folder is not None and _hit(folder, shell, "dir")
     out = _option_value(args, "-o", "--output", "-OutFile")
+    remote_name = "-O" in args or "--remote-name" in args
+    if name.startswith("curl"):
+        for position, arg in enumerate(args):   # a bundle of short flags: `-sSo file`, `-sSO`, `-sSofile`
+            bundle = re.match(r"^-[sSLkvfiIgGJNZ#]*([oO])(.*)$", arg)
+            if bundle and not arg.startswith("--"):
+                if bundle.group(1) == "O":
+                    remote_name = True
+                elif out is None:
+                    out = bundle.group(2) or (args[position + 1] if position + 1 < len(args) else None)
+        outdir = _option_value(args, "--output-dir")
+        if outdir is not None and (remote_name or (out is not None and not os.path.isabs(out)))                 and _hit(outdir, shell, "dir"):
+            return True
     if out is not None:
         return _hit(out, shell, "file")
-    return name.startswith("curl") and "-O" in args and _in_owner_folder(shell)
+    return name.startswith("curl") and remote_name and _in_owner_folder(shell)
 
 
 def _archive_hits(name, args, shell):
     """True when an extraction lands in the owner's folder (or an archive is created as one of its files)."""
     if name in ("unzip", "7z", "7za"):
-        where = _option_value(args, "-d")
+        attached = next((a[2:] for a in args if a.startswith("-o") and len(a) > 2), None)   # 7z x a.7z -o<dir>
+        where = _option_value(args, "-d") or attached
         return _hit(where, shell, "dir") if where else (name == "unzip" and _in_owner_folder(shell))
     if name == "expand-archive":
         where = _option_value(args, "-DestinationPath", "-Dest")
         return where is not None and _hit(where, shell, "dir")
-    cluster = args[0] if args and not args[0].startswith("--") else ""
-    extracting = "--extract" in args or "-x" in args or bool(re.match(r"^-?[A-Za-z]*x", cluster))
-    creating = "--create" in args or bool(re.match(r"^-?[A-Za-z]*c", cluster))
+    # the mode letters are a bundle (`xf`, `-xzf`) wherever the options put it: `-C dir -xf a.tar` too
+    bundles = [a for position, a in enumerate(args) if re.match(r"^-[A-Za-z]+$", a) or (position == 0 and a[:1].isalpha())]
+    extracting = "--extract" in args or any("x" in b for b in bundles)
+    creating = "--create" in args or any("c" in b for b in bundles)
     if extracting:
         where = _option_value(args, "-C", "--directory")
         return _hit(where, shell, "dir") if where else _in_owner_folder(shell)
@@ -764,16 +779,54 @@ def _copy_hits(name, args, shell):
     return _hit(dest, shell, "dir")
 
 
+_PS_CMDLETS = frozenset({"clear-content", "set-content", "add-content", "out-file", "new-item", "ni", "set-item",
+                         "sc", "ac"})
+_PS_SWITCHES = frozenset({"force", "nonewline", "append", "noclobber", "whatif", "confirm", "passthru", "wait",
+                          "asbytestream", "usetransaction"})
+_PS_PATH_PARAMS = frozenset({"path", "literalpath", "lp", "pspath", "filepath", "destination"})
+
+
+def _ps_destinations(args):
+    """The words a PowerShell write cmdlet WRITES TO: `-Path`/`-LiteralPath`/`-FilePath`/`-Destination`, the first
+    positional word, and `-Name` joined to the path. `-Value`, `-InputObject` and the other parameter values are
+    the text written, not where, and naming the owner's file there is not a write to it."""
+    found, name, positional, position = [], None, 0, 0
+    while position < len(args):
+        arg = args[position]
+        position += 1
+        if arg.startswith("-") and len(arg) > 1 and not arg[1].isdigit():
+            param, _, attached = arg[1:].partition(":")
+            param = param.lower()
+            if param in _PS_SWITCHES:
+                continue
+            value = attached or (args[position] if position < len(args) else "")
+            position += 0 if attached else 1
+            if param in _PS_PATH_PARAMS:
+                found.append(value)
+                positional += 1
+            elif param == "name":
+                name = value
+        elif positional == 0:
+            found.append(arg)
+            positional = 1
+    if name is not None:
+        found = [base.rstrip("/\\") + "/" + name for base in found] or [name]
+    return found
+
+
 def _verb_hits(name, args, shell):  # pylint: disable=too-many-return-statements
     """True when the command `name args` writes the owner's files (what it is aimed at, per verb)."""
     lowered = [a.lower() for a in args]
     operands = [w for w in _operands(args) if w]
     if name in _REMOVERS:
         return any(_hit(w, shell, "destroy") for w in operands)
+    if name == "fsutil":
+        return "hardlink" in lowered and any(_hit(w, shell, "dir") for w in operands)
     if name in _WRITERS:
         mode = "dir" if name == "mklink" or any(x in lowered for x in ("junction", "symboliclink", "hardlink")) \
             else "file"
-        return any(_hit(w, shell, mode) for w in operands)
+        written = _ps_destinations(args) if name in _PS_CMDLETS and mode == "file" else operands
+        return any(_hit(w, shell, mode) for w in written if w)
     if name in _COPIERS:
         return _copy_hits(name, args, shell) or (name == "ln" and any(_hit(w, shell, "file") for w in operands))
     if name in ("sed", "perl", "ruby", "awk", "gawk"):
@@ -872,6 +925,8 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
     words = _leading(seg.words, shell)
     if not words:
         return None
+    if words[0].lower().startswith(("[io.file]::", "[system.io.file]::")):   # a .NET write with the path spelled out
+        return _code_refusal(" ".join(words))
     name = _command_name(_expand(words[0], shell))
     args = [_expand(w, shell) for w in words[1:]]
     if name in _CD:
@@ -943,7 +998,7 @@ def _owner_lines(what):
 
 def _owner_files_only(tool, data, root):
     """What the guard still decides where it otherwise does nothing: `scope.mode` off (the default) or no work
-    tree (crew 1.3.96). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
+    tree (crew 1.3.98). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
     and the master switch are what make an owner-only change the owner's: a guard that stood down with
     `scope.mode` would let an agent write both the `false` and its receipt."""
     if tool in SHELLS:
