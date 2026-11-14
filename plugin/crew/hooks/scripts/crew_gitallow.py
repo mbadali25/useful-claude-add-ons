@@ -105,7 +105,7 @@ _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 # git's global options that take a VALUE as the next word (`-C dir`, `-c k=v`).
 _GIT_VALUE_OPTS = frozenset(("-C", "-c", "--git-dir", "--work-tree", "--namespace",
-                             "--exec-path", "--config-env", "--super-prefix"))
+                             "--exec-path", "--config-env", "--super-prefix", "--attr-source"))
 
 # The cloud guard's finding scope key carrying a git finding's subcommand
 # (`finding_exempt`). An `xargs git` finding carries none: the words xargs
@@ -209,7 +209,7 @@ _RUNS = {
     # `git init --template=<dir>` copies that directory's hooks into the repo,
     # and a later git command on the same line runs them (round 4).
     "init": ("--template",),
-    "ls-remote": ("--upload-pack",),
+    "ls-remote": ("--upload-pack", "--exec"),
     "archive": ("--exec",),
     "grep": ("-O", "--open-files-in-pager"),
     "difftool": ("-x", "--extcmd"),
@@ -796,13 +796,19 @@ def _bash_raw_words(text):
     return words
 
 
+# The only characters trimmed from a line's ends: str.strip() also drops CR, VT, FF,
+# U+001C-1F, NBSP, U+0085, U+2028/9 and other Unicode spaces, which a shell keeps as
+# part of the last word or as a word of its own (PR #769 review round 8).
+_EDGE_BLANKS = " \t\n"
+
+
 def _bash_commands(text):
     """The ONE simple command of bash `text` as plain literal words, or None
     when crew cannot read the line as exactly one such command: anything
     `_bash_raw_words` refuses (every separator, redirection, heredoc,
     here-string, continuation, comment, subshell and expansion), or a word
     `_bash_plain_word` does not read as a plain literal."""
-    raw = _bash_raw_words(text.strip())
+    raw = _bash_raw_words(text.strip(_EDGE_BLANKS))
     if not raw:
         return None
     words = [_bash_plain_word(w) for w in raw]
@@ -845,7 +851,11 @@ def _ps_commands(text):  # pylint: disable=too-many-branches
     backtick-newline, `(`, `$(`, `@(`, a script block, a glob, a curly quote,
     `--%` or a `%NAME%` (review round 6: no redirection, separator or
     continuation shape is read at all, so none can be mis-read)."""
-    text = text.replace("\r\n", "\n").strip()
+    # A carriage return is refused outright: PowerShell's reader rewrites a
+    # quoted CRLF to LF, so the literal would differ from what git receives.
+    if "\r" in text:
+        return None
+    text = text.strip(_EDGE_BLANKS)
     if any(c in text for c in _PS_CURLY):
         return None
     words, word = [], []
@@ -913,7 +923,7 @@ def plain_commands(command, shell):
     if not isinstance(command, str) or not command.strip():
         return None
     if shell == "powershell":
-        return _ps_commands(command.replace("\r\n", "\n"))
+        return _ps_commands(command)
     return _bash_commands(command)
 
 

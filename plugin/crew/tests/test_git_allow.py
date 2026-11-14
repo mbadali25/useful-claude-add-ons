@@ -1770,6 +1770,44 @@ def test_round6_one_plain_force_push_passes_with_all(tmp_path, machine):
         assert _evaluate(root, "git push --force origin main", tool)["decision"] == "allow"
 
 
+# --- review round 8 (Codex gpt-6-sol): edge blanks, ls-remote --exec, --attr-source ----
+
+@pytest.mark.parametrize("command", [
+    "git status\r", "git status\r\n", "git push --force origin main\x0c",
+    "git push --force\x1f", "git status ", "\x0cgit status", "git status\x0b",
+    "git status ", "git status\u0085", " git status"])
+def test_round8_a_bash_line_with_a_stray_edge_character_is_not_read(command):
+    """`str.strip()` ate these, so crew read `git status` while bash ran git
+    with the word `status<CR>` (or a command named `<FF>git`)."""
+    assert crew_gitallow.plain_commands(command, "bash") is None
+    assert crew_gitallow.line_exempt(command, "bash", "all") is False
+
+
+@pytest.mark.parametrize("command", [
+    "git status\r", "git status\r\n", "git status\x1f", "\x1cgit status",
+    "git commit -m 'a\r\nb'", "git status "])
+def test_round8_a_powershell_line_with_a_stray_character_is_not_read(command):
+    assert crew_gitallow.plain_commands(command, "powershell") is None
+    assert crew_gitallow.line_exempt(command, "powershell", "all") is False
+
+
+@pytest.mark.parametrize("shell", ["bash", "powershell"])
+def test_round8_plain_edge_blanks_are_still_trimmed(shell):
+    assert crew_gitallow.plain_commands("  git status \t\n", shell) == [["git", "status"]]
+
+
+@pytest.mark.parametrize("args", [
+    ["ls-remote", "--exec=deploy-prod", "/tmp/x"], ["ls-remote", "--exe=deploy-prod", "x"],
+    ["ls-remote", "--exec", "deploy-prod", "x"], ["ls-remote", "--upload", "deploy-prod", "x"]])
+def test_round8_ls_remote_exec_is_a_program_option(args):
+    assert crew_gitallow.hold(args)
+
+
+def test_round8_attr_source_takes_a_value():
+    args = ["--attr-source", "commit", "push", "--force", "origin", "main"]
+    assert crew_gitallow.subcommand(args) == "push"
+
+
 # --- the mutation table ----------------------------------------------------------------
 
 def test_every_mutation_anchor_is_present_exactly_once():

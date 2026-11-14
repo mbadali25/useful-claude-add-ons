@@ -1,4 +1,4 @@
-"""crew 1.3.85 `guards.git.allow` mutations, in `sabotage.py`'s tuple shape.
+"""crew `guards.git.allow` mutations, in `sabotage.py`'s tuple shape.
 
 Each puts back one way the switch could let a git command through when it must
 not, or stop judging something that is not git, and names the must-block or
@@ -491,4 +491,24 @@ GITALLOW_MUTATIONS = (
      "    return (len(raw) - len(raw.rstrip(\"\\\\\"))) % 2 == 1\n",
      "    return False\n",
      _T + "test_round6_the_splitters_refuse_a_heredoc_delimiter_with_a_dangling_backslash"),
+    ("gitAllow r8: bash trims every Unicode and control blank, not just space/tab/newline", GA,
+     "    raw = _bash_raw_words(text.strip(_EDGE_BLANKS))\n",
+     "    raw = _bash_raw_words(text.strip())\n",
+     _T + "test_round8_a_bash_line_with_a_stray_edge_character_is_not_read"),
+    ("gitAllow r8: PowerShell trims every Unicode and control blank", GA,
+     "    text = text.strip(_EDGE_BLANKS)\n",
+     "    text = text.strip()\n",
+     _T + "test_round8_a_powershell_line_with_a_stray_character_is_not_read"),
+    ("gitAllow r8: PowerShell reads a carriage return", GA,
+     "    if \"\\r\" in text:\n        return None\n",
+     "    text = text.replace(\"\\r\\n\", \"\\n\")\n",
+     _T + "test_round8_a_powershell_line_with_a_stray_character_is_not_read"),
+    ("gitAllow r8: git ls-remote --exec runs a program", GA,
+     "\"ls-remote\": (\"--upload-pack\", \"--exec\"),",
+     "\"ls-remote\": (\"--upload-pack\",),",
+     _T + "test_round8_ls_remote_exec_is_a_program_option"),
+    ("gitAllow r8: git --attr-source takes a value", GA,
+     "\"--super-prefix\", \"--attr-source\"))",
+     "\"--super-prefix\"))",
+     _T + "test_round8_attr_source_takes_a_value"),
 )
