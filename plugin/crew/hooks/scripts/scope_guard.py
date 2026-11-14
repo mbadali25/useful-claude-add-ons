@@ -11,7 +11,7 @@ the payload in, so the two shells cannot disagree.
    the key gets), or the cwd is no work tree -> exit 0 before anything else is
    read, EXCEPT that a Write/Edit of, or a shell write to, the owner's own
    files (the machine config `~/.claude/crew/config.json` and the
-   confirm-config store beside it) is still refused (crew 1.3.96): those hold
+   confirm-config store beside it) is still refused (crew 1.3.98): those hold
    `guards.enabled` and its receipts, and a guard that stood down with
    `scope.mode` would let an agent write both.
 2. A target under `<git-common-dir>/crew/` -- approval receipts, the review
@@ -277,14 +277,14 @@ def confirm_store():
 
 def machine_config():
     """The machine config file (`~/.claude/crew/config.json`), which holds `guards.enabled`, the switch that
-    stands every guard down (crew 1.3.96). Like `confirm_store`, spelled here so this guard imports no config
+    stands every guard down (crew 1.3.98). Like `confirm_store`, spelled here so this guard imports no config
     module."""
     return os.path.join(os.path.expanduser("~"), ".claude", "crew", "config.json")
 
 
 def _owner_path(path):
     """True for the owner's own files: the double-confirmation store and the machine config, which holds
-    `guards.enabled` (crew 1.3.96)."""
+    `guards.enabled` (crew 1.3.98)."""
     return _under(path, confirm_store()) or os.path.normcase(path) == os.path.normcase(machine_config())
 
 
@@ -378,7 +378,7 @@ def _reading_refusal(command, written, common, top, agent_type=None):
     return _owner_command_refusal(command, top)
 
 
-# --- the owner's files, through a shell (crew 1.3.96, target-based since the round-3 owner decision) ------------
+# --- the owner's files, through a shell (crew 1.3.98, target-based since the round-3 owner decision) ------------
 # A command is refused when something in it WRITES TO the owner's files: a redirect, or the argument a write verb
 # aims at (`tee`, `cp`, `mv`, `rm`, `sed -i`, `Set-Content`, `curl -o`, `tar -C`, `git apply` ...), or inline code
 # (`python -c`, a heredoc) that names them beside a write call. A command that merely MENTIONS them -- a commit
@@ -998,7 +998,7 @@ def _owner_lines(what):
 
 def _owner_files_only(tool, data, root):
     """What the guard still decides where it otherwise does nothing: `scope.mode` off (the default) or no work
-    tree (crew 1.3.96). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
+    tree (crew 1.3.98). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
     and the master switch are what make an owner-only change the owner's: a guard that stood down with
     `scope.mode` would let an agent write both the `false` and its receipt."""
     if tool in SHELLS:

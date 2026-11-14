@@ -93,12 +93,12 @@ meaningful only with `scope.mode` `block`.
 
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.96) turns EVERY guard hook off: the promote
+`guards.enabled: false` (crew 1.3.98) turns EVERY guard hook off: the promote
 gate, the role-write, cloud, environment and scope guards, the verify gate, the
 completion audit and the context-watch Stop hook. None of them starts, so nothing
 is judged, refused, asked, warned or logged: with the switch off, nothing blocks. It
 beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mode`,
-`verifyGate`). Three things must all hold for it to count (crew 1.3.96):
+`verifyGate`). Three things must all hold for it to count (crew 1.3.98):
 
 - It is in the MACHINE layer (`~/.claude/crew/config.json`). A `false` in
   `.crew/config.json`, tracked or not, is ignored and the guards stay on (a
@@ -108,7 +108,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   applied `/crew:confirm-config` double confirmation backs it: two confirmations
   from two prompts the owner typed, and the digest of the machine file as the
   owner left it: its content (canonical JSON) AND its modification time (crew
-  1.3.96). An agent's Write or Edit, a hook-side write, a hand edit, a bare
+  1.3.98). An agent's Write or Edit, a hook-side write, a hand edit, a bare
   hand-written receipt, or ANY later write to the file (a restore, a rebuild, an
   unrelated edit, or a hand edit that sets the key `true` and a later one that
   writes the identical `false` back) leaves the guards ON; so does a missing,
