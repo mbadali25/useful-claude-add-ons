@@ -198,8 +198,9 @@ GUARDS_MASTER_MUTATIONS = (
      r'''(?<![:\w-])confirm-config(?![\w-]|\.md)''',
      r'''(?<![\w-])confirm-config(?![\w-]|\.md)''',
      _G + "test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass"),
-    # crew 1.3.104, round 3: the shell check is target-based (a write AIMED AT the owner's file refuses; a mention, or an
-    # unrelated write in the same line, does not), no script is opened, the plain verbs are covered, `\\?\` is refused,
+    # crew 1.3.104, round 3: the shell check is target-based (a write AIMED AT the owner's file refuses; a mention,
+    # or an unrelated write in the same line, does not), no script is opened, the plain verbs are covered,
+    # `\\?\` is refused,
     # and the receipt binds the file's modification time.
     ("a redirect is not a target", SCOPE,
      '    for target in seg.targets:\n        if _hit(target, shell, "file"):\n',
