@@ -90,6 +90,13 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Fixed — crew 1.3.96: the verify-trust store lock no longer fails a writer whose rival released the lock at the wrong moment (L-0888)
+
+- **Summary.** `crew` 1.3.96: with several writers at once, `verify_trust.py approve` could intermittently print `cannot take the store lock: OSError` and exit 1 (the approval was not recorded); a writer now waits and retries instead. No update was ever lost and the lock never admitted two writers.
+- Fixed (PR #679 review notes: `test_update_store_two_writers_at_once_both_land` failed `assert 5 == 6` in 4 of 40 local runs on 631a7b54c; python3.12): VERIFIED by an instrumented run that every lock hold was serial (each ENTER/LOAD/REPLACE/EXIT ran in turn, never overlapping) and that the missing repo belonged to the one writer whose `approve` returned 1 with `cannot take the store lock: OSError`, so it was a refused writer, not a lost update. `_Lock._publish` renames its private directory onto the lock path; when the lock exists that fails with ENOTEMPTY (errno 39, VERIFIED), and the code then asked `os.path.lexists(lock)`; a holder that released between the failed rename and that second look made the answer "absent" and the writer raised. The failed rename is now the evidence (ENOTEMPTY/EEXIST means "taken, wait"), any other error is retried up to three times when the lock is absent and still raises `TrustError` after that (fail closed). The test is not a thread artifact: the instrumentation saw the same on the real code path.
+- Tests: `test_verify_trust.py` (`test_lock_publish_waits_when_the_holder_releases_during_the_failed_rename`, a deterministic reproducer that was red before the fix; `test_lock_publish_still_fails_closed_on_a_persistent_error`), `sabotage_trust.py` (the second look restored, goes RED on the reproducer).
+- Docs: none - the lock's contention behaviour is described in none of `CONFIG.md`, `README.md` or the guides.
+
 ### Fixed — crew 1.3.95: the verify-gate trust docs match what the junction check does, and the Windows short-name fallback is proven to accept (L-0888)
 
 - **Summary.** `crew` 1.3.95: the trust-store documentation no longer says a repository below a junctioned parent directory is always UNTRUSTED (only a linked worktree whose recorded path runs through a junction is), and a test now proves a genuine 8.3 short-name worktree is still trusted on Windows.

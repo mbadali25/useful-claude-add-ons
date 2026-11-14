@@ -59,6 +59,7 @@ tripwire, not a sandbox -- the boundary is the OS user.
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -374,14 +375,21 @@ class _Lock:
         except OSError as exc:
             shutil.rmtree(mine, ignore_errors=True)
             raise TrustError(f"cannot take the store lock: {exc.__class__.__name__}") from exc
-        try:
-            os.rename(mine, self.path)
-            return True
-        except OSError as exc:
-            shutil.rmtree(mine, ignore_errors=True)
-            if os.path.lexists(self.path):
-                return False
-            raise TrustError(f"cannot take the store lock: {exc.__class__.__name__}") from exc
+        failure = None
+        for _attempt in range(3):
+            try:
+                os.rename(mine, self.path)
+                return True
+            except OSError as exc:
+                failure = exc
+                # ENOTEMPTY/EEXIST say the lock was there at that instant. Looking
+                # again afterwards is not the same question: its holder may have
+                # released in between, which is "taken, retry", not a failure.
+                if exc.errno in (errno.ENOTEMPTY, errno.EEXIST) or os.path.lexists(self.path):
+                    shutil.rmtree(mine, ignore_errors=True)
+                    return False
+        shutil.rmtree(mine, ignore_errors=True)
+        raise TrustError(f"cannot take the store lock: {failure.__class__.__name__}") from failure
 
     def __enter__(self):
         deadline = time.monotonic() + LOCK_WAIT

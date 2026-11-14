@@ -547,6 +547,44 @@ def test_update_store_two_writers_at_once_both_land(tmp_path, store):
     assert len(json.loads(store.read_text(encoding="utf-8"))["repos"]) == 6
 
 
+def test_lock_publish_waits_when_the_holder_releases_during_the_failed_rename(tmp_path, monkeypatch):
+    """The lock existed when our rename failed (ENOTEMPTY) and its holder released
+    before we looked again: that is "taken, try again", never "cannot take the lock"
+    (it made one of six concurrent approves exit 1, intermittently)."""
+    path = str(tmp_path / "s.json")
+    lock_dir = path + ".lock"
+    os.mkdir(lock_dir)
+    with open(os.path.join(lock_dir, "token"), "w", encoding="utf-8") as handle:
+        handle.write("holder")
+    real_rename = verify_trust.os.rename
+
+    def rename_then_release(src, dst):
+        try:
+            return real_rename(src, dst)
+        finally:
+            if dst == lock_dir and os.path.isdir(lock_dir) and src != lock_dir:
+                with open(os.path.join(lock_dir, "token"), encoding="utf-8") as handle:
+                    if handle.read() == "holder":
+                        shutil.rmtree(lock_dir)
+
+    monkeypatch.setattr(verify_trust.os, "rename", rename_then_release)
+
+    assert verify_trust._Lock(path)._publish() is False
+
+
+def test_lock_publish_still_fails_closed_on_a_persistent_error(tmp_path, monkeypatch):
+    path = str(tmp_path / "s.json")
+
+    def deny(*_args):
+        raise PermissionError(13, "denied")
+
+    monkeypatch.setattr(verify_trust.os, "rename", deny)
+
+    with pytest.raises(verify_trust.TrustError):
+        verify_trust._Lock(path)._publish()
+    assert [n for n in os.listdir(tmp_path) if ".new." in n] == []
+
+
 def test_evaluate_a_subdirectory_of_an_allowlisted_repo_is_untrusted(tmp_path, store):
     root = _repo(tmp_path, remotes=[_OK_URL])
     sub = root / "sub"

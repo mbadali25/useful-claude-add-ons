@@ -139,8 +139,8 @@ TRUST_MUTATIONS = (
      "        except OSError as exc:\n"
      "            shutil.rmtree(mine, ignore_errors=True)\n"
      "            raise TrustError(f\"cannot take the store lock: {exc.__class__.__name__}\") from exc\n"
-     "        try:\n            os.rename(mine, self.path)\n",
-     "        except OSError:\n            pass\n        try:\n            os.rename(mine, self.path)\n",
+     "        failure = None\n        for _attempt in range(3):\n",
+     "        except OSError:\n            pass\n        failure = None\n        for _attempt in range(3):\n",
      _T + "test_lock_an_owner_token_that_cannot_be_written_gives_up_and_leaves_no_lock"),
     ("scope guard: an unreadable store location crashes the trust refusal (L-0888)", GUARD,
      "    except verify_trust.TrustError:\n", "    except ZeroDivisionError:\n",
@@ -525,4 +525,9 @@ TRUST_MUTATIONS = (
      "                and _spelled(os.path.realpath(recorded)) == _spelled(here))\n",
      "        return False\n",
      _T + "test_hash_approval_the_windows_fallback_accepts_a_genuine_short_name_worktree"),
+    ("trust store: lock publish trusts a second look, so a release in between fails the writer (L-0888, round 15)",
+     TRUST,
+     "                if exc.errno in (errno.ENOTEMPTY, errno.EEXIST) or os.path.lexists(self.path):\n",
+     "                if os.path.lexists(self.path):\n",
+     _T + "test_lock_publish_waits_when_the_holder_releases_during_the_failed_rename"),
 )
