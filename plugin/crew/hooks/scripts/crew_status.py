@@ -490,10 +490,11 @@ def _guards_line(root):
                          "guard runs and nothing blocks (context-watch included)")
         elif (crew_hook.machine_switch_unconfirmed(root) and crew_hook.machine_config_path(root) is None
               and crew_humanonly.master_confirmed(os.path.join(os.path.expanduser("~"), crew_hook.GLOBAL_CONFIG))):
+            causes = crew_humanonly.machine_file_unread_causes(
+                os.path.join(os.path.expanduser("~"), crew_hook.GLOBAL_CONFIG), root)
             shown.append("guards.enabled is false in the machine file and the owner confirmed it, but it is NOT in "
-                         "effect: that file lies inside the working directory or the project (a working directory "
-                         "equal to, or above, your home is the usual cause), so every guard still runs; run crew "
-                         "from another directory")
+                         "effect: that file lies inside the working directory or the project, so every guard still "
+                         "runs; " + crew_humanonly.unread_advice(causes).lower())
         elif crew_hook.machine_switch_unconfirmed(root):
             shown.append("guards.enabled is false in the machine file but NOT in effect: no applied "
                          "/crew:confirm-config double confirmation backs it at that file (or the file lies "

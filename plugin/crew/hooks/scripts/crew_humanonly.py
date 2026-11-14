@@ -304,18 +304,34 @@ def master_confirmed(path):
         return False
 
 
-def machine_file_unread(path, root):
-    """True when the dispatcher does not read the machine file at `path`: it lies inside the project `root` or the
-    working directory (a HOME redirected into a checkout, or a working directory equal to, or above, the home
-    directory). The same rule as `crew_hook.machine_config_path`, so `--explain` and `/crew:status` say what
-    dispatch does (a test holds the two together)."""
+def machine_file_unread_causes(path, root):
+    """Which folders the machine file at `path` lies inside, so the dispatcher does not read it: "project" (the
+    project `root` contains it: a HOME redirected into a checkout, or a project that is, or holds, the home
+    directory) and "cwd" (the working directory is, or is above, the home directory). Empty when it is read."""
     real = os.path.normcase(os.path.realpath(path))
-    for folder in (root, os.getcwd()):
+    causes = []
+    for cause, folder in (("project", root), ("cwd", os.getcwd())):
         if folder:
             base = os.path.normcase(os.path.realpath(folder))
             if real == base or real.startswith(base.rstrip(os.sep) + os.sep):
-                return True
-    return False
+                causes.append(cause)
+    return causes
+
+
+def machine_file_unread(path, root):
+    """True when the dispatcher does not read the machine file at `path`: it lies inside the project `root` or the
+    working directory. The same rule as `crew_hook.machine_config_path`, so `--explain` and `/crew:status` say what
+    dispatch does (a test holds the two together)."""
+    return bool(machine_file_unread_causes(path, root))
+
+
+def unread_advice(causes):
+    """What to do about each cause of `machine_file_unread_causes`: a working directory that is, or is above, the
+    home is cured by running crew elsewhere; a project that holds the home directory is not (it must move out)."""
+    if "project" in causes:
+        return ("Move the project out of your home directory (the machine file must not lie inside the project)"
+                + (", and run crew from another directory" if "cwd" in causes else ""))
+    return "Run crew from another directory (the working directory is, or is above, your home directory)"
 
 
 def _still_false(path, dotted):

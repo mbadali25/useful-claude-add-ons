@@ -2135,9 +2135,11 @@ def explain_config(root, path=None, all_keys=False):
             }
             if only_value is False and dotted == crew_humanonly.MASTER_KEY:
                 confirmed = crew_humanonly.master_confirmed(_global_label(path))
-                if crew_humanonly.machine_file_unread(_global_label(path), root):
+                causes = crew_humanonly.machine_file_unread_causes(_global_label(path), root)
+                if causes:
                     # the dispatcher does not read a machine file inside the working directory or the project
                     row["unconfirmed"], row["homeLimited"] = True, confirmed
+                    row["homeCauses"] = causes
                 elif not confirmed:
                     row["unconfirmed"] = True  # false in the file, but no applied double confirmation backs it
             if dotted in _REPO_REPORTS_NULL:
@@ -4672,8 +4674,8 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
         if row.get("homeLimited"):
             print()
             print(f"! {row['path']}: false in the machine file and confirmed, but that file lies inside the working "
-                  "directory or the project (a working directory equal to, or above, your home is the usual cause), "
-                  "so it is NOT in effect: every guard still runs. Run crew from another directory.")
+                  "directory or the project, so it is NOT in effect: every guard still runs. "
+                  + crew_humanonly.unread_advice(row.get("homeCauses", ())) + ".")
         elif row.get("unconfirmed"):
             print()
             print(f"! {row['path']}: false in the machine file, but no applied /crew:confirm-config double "
@@ -4701,7 +4703,11 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
         print()
         print(f"! {row['path']}: repo asks `{asked}`, but only "
               "the machine-global file's value is ever read for this key")
-        if row["path"] == "guards.enabled" and row.get("unconfirmed"):
+        if row["path"] == "guards.enabled" and row.get("homeLimited"):
+            print("  -> the machine file's `false` is confirmed, but that file lies inside the working directory or "
+                  "the project (the home-directory limit), so it is not in force either: every guard still runs. A "
+                  "repo file cannot stand a guard down.")
+        elif row["path"] == "guards.enabled" and row.get("unconfirmed"):
             print("  -> the machine file's `false` is NOT confirmed, so it is not in force either: every guard "
                   "still runs. A repo file cannot stand a guard down, and a machine `false` counts only once the "
                   "owner confirmed it.")

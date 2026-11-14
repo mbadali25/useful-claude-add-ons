@@ -471,6 +471,59 @@ def test_status_still_asks_for_the_confirmation_when_an_unconfirmed_false_lies_i
     assert "double confirmation" in line and "the owner confirmed it" not in line
 
 
+def test_explain_repo_copy_line_names_the_home_limit_not_a_missing_confirmation(home, tmp_path, monkeypatch, capsys):
+    """A confirmed machine `false` that dispatch does not read (the file lies inside the working directory) is not
+    "unconfirmed": the repo-copy line must give the true reason (round 5)."""
+    root = _repo(tmp_path, {"guards": {"enabled": False}})
+    path = _machine(home, {"guards": {"enabled": False}})
+    _receipt(path)
+    monkeypatch.chdir(home)
+    rows = crew_config.explain_config(root, path=path, all_keys=True)
+    crew_config._print_explain(rows, root=root, all_keys=True)  # pylint: disable=protected-access
+    out = capsys.readouterr().out
+    line = next(ln for ln in out.splitlines() if "-> the machine file's `false`" in ln)
+    assert "confirmed, but that file lies inside the working directory or the project" in line
+    assert "NOT confirmed" not in line and "home-directory limit" in line
+
+
+def test_explain_repo_copy_line_still_says_not_confirmed_for_an_unconfirmed_false(home, tmp_path, monkeypatch, capsys):
+    root = _repo(tmp_path, {"guards": {"enabled": False}})
+    path = _machine(home, {"guards": {"enabled": False}})
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    crew_config._print_explain(  # pylint: disable=protected-access
+        crew_config.explain_config(root, path=path, all_keys=True), root=root, all_keys=True)
+    line = next(ln for ln in capsys.readouterr().out.splitlines() if "-> the machine file's `false`" in ln)
+    assert "NOT confirmed" in line and "home-directory limit" not in line
+
+
+def test_the_advice_follows_the_cause_a_working_directory_at_home_or_a_project_holding_it(home, tmp_path, monkeypatch,
+                                                                                         capsys):
+    """cwd is the home, the project elsewhere: run crew from another directory. The project holds the home (the
+    machine file lies inside it), cwd elsewhere: running crew elsewhere changes nothing, the project must move."""
+    path = _machine(home, {"guards": {"enabled": False}})
+    _receipt(path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    cases = (
+        (home, _repo(tmp_path, {}), ["cwd"], "Run crew from another directory", "Move the project"),
+        (elsewhere, str(home), ["project"], "Move the project out of your home directory", "Run crew from another"),
+        (home, str(home), ["project", "cwd"], "Move the project out of your home directory",
+         "(the working directory is, or is above"),
+    )
+    for cwd, root, causes, wanted, unwanted in cases:
+        monkeypatch.chdir(cwd)
+        assert crew_humanonly.machine_file_unread_causes(path, root) == causes
+        rows = crew_config.explain_config(root, path=path, all_keys=True)
+        crew_config._print_explain(rows, root=root, all_keys=True)  # pylint: disable=protected-access
+        explained = capsys.readouterr().out
+        status = crew_status._guards_line(root)  # pylint: disable=protected-access
+        for text in (explained, status):
+            assert wanted.lower() in text.lower(), (causes, text)
+            assert unwanted.lower() not in text.lower(), (causes, text)
+
+
 def test_the_unread_file_rule_is_the_one_dispatch_applies(home, tmp_path, monkeypatch):
     """`crew_humanonly.machine_file_unread` (used by --explain) and `crew_hook.machine_config_path` (used by dispatch)
     are two spellings of one rule; they must agree for a working directory that is the home, above it, beside it
