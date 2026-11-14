@@ -190,8 +190,11 @@ declared it is could-not-tell and blocks, naming the environment it selected.
 A declared input whose value is a `$(...)` or backtick substitution is not
 compared. Known limit: the containment match is unchanged, so a production
 declared without `environment` still matches as a substring of a command that
-extends it, and the gate then applies production's checks beside the dispatch's
-answer; declare `-f environment=<name>` for every environment to avoid it. Workflow names compare as
+extends it. What follows depends on the dispatch reader: when no environment of
+the selected name is declared it blocks as could-not-tell and the gate stops
+there, so production's own checks do not run; when the selected environment is
+declared, production's checks are applied beside it. Declare
+`-f environment=<name>` for every environment to avoid both. Workflow names compare as
 file names, a leading `.github/workflows/` dropped. Blocked:
 
 - a declared workflow whose inputs fit no environment, or more than one
