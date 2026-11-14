@@ -60,6 +60,13 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Changed — crew 1.3.96: the Stop completion audit runs in Python on Windows, not through Git Bash
+
+- **Summary.** `crew` 1.3.96 stops the Stop-time completion audit from starting about twenty Git Bash processes on Windows: it now runs its Python directly, finishing in about a second and a half where the Git Bash route took 40-49 s and could run out of its 60 s limit.
+- **Cause.** `completion-audit.sh` forks 15-20 times (python resolution, a `printf | tr | grep` pipeline, the blocked-once marker's `sed`, `cksum`, `cut` and `rm`) before it runs `completion_audit.py`; on Git Bash that is 1.3-3 s per fork on a loaded host, 40-49 s measured against 0.2-0.6 s for the Python alone, and a timeout is `UNKNOWN`, a block in an armed repo.
+- **Fix.** `crew_hook.DIRECT` gains `completion-audit.sh` (exits 0 and 2 are decisions). The dispatcher keeps the wrapper's marker itself: the same `crew-completion-audit.<session>-<cksum>` file (a POSIX `cksum` in Python), cleared on a `stop_hook_active` continuation (python is not started) and on a verdict, left alone on a timeout. Any other exit, a failed launch or a missing file runs the wrapper; a timeout is never rerun and stays `UNKNOWN (guard timeout)`. Off Windows, and with `CREW_HOOK_DIRECT=0`, the wrapper is unchanged. The row's 60 s limit and every config key are unchanged.
+- **Tests.** `test_crew_hook_stop_native.py` (route, fail-closed, marker name against the real `cksum` and the real wrapper, must-block and must-allow verdicts and wrapper parity, timing, a hung child) and 18 mutations in `sabotage_crew_hook.py`, all RED.
+
 ### Removed — crew 1.3.75: the mass delete, create and change guard (`guards.mass`) is gone, not just off
 
 - **Summary.** `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
