@@ -55,6 +55,16 @@ def _home(tmp_path, monkeypatch):
     return home
 
 
+def _read(path):
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _load(path):
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
 def _gpath(home):
     return str(home / ".claude" / "crew" / "config.json")
 
@@ -154,10 +164,10 @@ def test_removing_the_key_at_the_machine_layer_is_a_plain_write():
 
 def test_write_global_config_refuses_false_and_leaves_the_file(home):
     path = _machine(home, {"guards": {"profile": "off"}})
-    before = open(path, encoding="utf-8").read()
+    before = _read(path)
     with pytest.raises(crew_config.GlobalWriteRefused):
         crew_config.write_global_config({KEY: False}, path=path)
-    assert open(path, encoding="utf-8").read() == before
+    assert _read(path) == before
 
 
 # --- the owner's double confirmation ---------------------------------------------------------------------------
@@ -169,10 +179,10 @@ def test_two_confirmations_apply_the_machine_switch_and_only_then_does_it_count(
     assert crew_hook.guards_switched_off(root, str(home)) is None
     cid = crew_confirm_config.propose("machine", KEY, global_path=path, now=0)["change_id"]
     crew_confirm_config.confirm(cid, "user-prompt", "p1", global_path=path, now=1)
-    assert json.load(open(path, encoding="utf-8")).get("guards", {}).get("enabled") is not False
+    assert _load(path).get("guards", {}).get("enabled") is not False
     record = crew_confirm_config.confirm(cid, "user-prompt", "p2", global_path=path, now=2)
     assert record["state"] == "applied"
-    assert json.load(open(path, encoding="utf-8"))["guards"]["enabled"] is False
+    assert _load(path)["guards"]["enabled"] is False
     assert crew_hook.guards_switched_off(root, str(home)) == "machine"
 
 
@@ -295,7 +305,7 @@ def test_restore_refuses_a_repo_backup_carrying_a_bad_switch(value, home, tmp_pa
         assert KEY in str(caught.value)
     with pytest.raises(crew_config.RebuildRefused):
         crew_config.apply_restore(root, "repo", stamp, global_path=_gpath(home))
-    assert json.load(open(path, encoding="utf-8")) == {}
+    assert _load(path) == {}
 
 
 @pytest.mark.parametrize("value", MACHINE_BAD + [False])
@@ -600,7 +610,7 @@ def test_an_unrelated_set_keeps_a_confirmed_switch_in_force(home, tmp_path):
     import crew_hook  # pylint: disable=import-outside-toplevel
     root, path = _confirmed(home, tmp_path)
     crew_config.write_global_config({"guards.profile": "standard"}, path=path)
-    assert json.load(open(path, encoding="utf-8"))["guards"]["profile"] == "standard"
+    assert _load(path)["guards"]["profile"] == "standard"
     assert crew_hook.guards_switched_off(root, str(home)) == "machine"
 
 
@@ -608,7 +618,7 @@ def test_a_hand_edit_after_a_set_still_leaves_the_guards_on(home, tmp_path):
     import crew_hook  # pylint: disable=import-outside-toplevel
     root, path = _confirmed(home, tmp_path)
     crew_config.write_global_config({"guards.profile": "standard"}, path=path)
-    cfg = json.load(open(path, encoding="utf-8"))
+    cfg = _load(path)
     cfg["tier"] = "hand-edited"
     _machine(home, cfg)
     assert crew_hook.guards_switched_off(root, str(home)) is None
@@ -659,7 +669,7 @@ def test_migrating_the_machine_file_retires_the_receipt(home, tmp_path):
     with open(path, encoding="utf-8") as handle:
         confirmed_text = handle.read()
     crew_migrate.apply_plan(plan)
-    assert json.load(open(path, encoding="utf-8"))["guards"]["enabled"] is False
+    assert _load(path)["guards"]["enabled"] is False
     assert _newest_state(path) == "revoked"
     assert crew_hook.guards_switched_off(root, str(home)) is None
     with open(path, "w", encoding="utf-8") as handle:
@@ -741,7 +751,7 @@ def test_a_crew_write_does_not_launder_a_hand_edit_into_a_confirmed_switch(home,
     it did not, so the next `--set` must not bless the edited file."""
     import crew_hook  # pylint: disable=import-outside-toplevel
     root, path = _confirmed(home, tmp_path)
-    cfg = json.load(open(path, encoding="utf-8"))
+    cfg = _load(path)
     cfg["tier"] = "hand-edited"
     _machine(home, cfg)
     assert crew_hook.guards_switched_off(root, str(home)) is None
@@ -804,7 +814,7 @@ def test_a_hand_edit_between_the_check_and_the_lock_is_not_laundered_by_the_rest
     real = crew_config.crew_config_files.update_json
 
     def edit_then_write(target, mutate, **kwargs):
-        cfg = json.load(open(target, encoding="utf-8"))
+        cfg = _load(target)
         cfg["hand"] = "edit"
         with open(target, "w", encoding="utf-8") as handle:
             handle.write(json.dumps(cfg))
@@ -812,7 +822,7 @@ def test_a_hand_edit_between_the_check_and_the_lock_is_not_laundered_by_the_rest
 
     monkeypatch.setattr(crew_config.crew_config_files, "update_json", edit_then_write)
     crew_config.write_global_config({"guards.profile": "standard"}, path=path)
-    assert json.load(open(path, encoding="utf-8"))["hand"] == "edit"
+    assert _load(path)["hand"] == "edit"
     assert crew_hook.guards_switched_off(root, str(home)) is None
 
 

@@ -66,9 +66,11 @@ MASTER_KEY_MUTATIONS = (
      '    if value is _MISSING or value is True or value is False:\n',
      _K + "test_rebuild_refuses_a_saved_repo_profile_carrying_a_bad_switch"),
     ("the planners accept a machine null", CFG,
-     '    if value is not False:\n        return f"guards.enabled = {value!r} is not true or false; the machine file takes only those"\n',
+     '    if value is not False:\n        return f"guards.enabled = {value!r} is not true or false; '
+     'the machine file takes only those"\n',
      '    if value is None:\n        return None\n'
-     '    if value is not False:\n        return f"guards.enabled = {value!r} is not true or false; the machine file takes only those"\n',
+     '    if value is not False:\n        return f"guards.enabled = {value!r} is not true or false; '
+     'the machine file takes only those"\n',
      _K + "test_rebuild_refuses_a_saved_machine_profile_carrying_a_bad_switch"),
     ("a machine `false` the file did not hold is introduced", CFG,
      '    if _dig(current, ("guards", "enabled")) is False:\n        return None\n',
@@ -109,7 +111,8 @@ MASTER_KEY_MUTATIONS = (
      _K + "test_status_does_not_claim_the_guards_still_run_when_the_machine_false_is_confirmed"),
     ("status does not report a repo null", STATUS,
      '            if entry["key"] == "guards.enabled" and entry["kind"] == "repo-ignored":\n',
-     '            if entry["key"] == "guards.enabled" and entry["kind"] == "repo-ignored" and entry["value"] is not None:\n',
+     '            if entry["key"] == "guards.enabled" and entry["kind"] == "repo-ignored" and '
+     'entry["value"] is not None:\n',
      _K + "test_status_reports_a_repo_null_like_inert_does"),
     ("explain keeps the in-force wording for an unconfirmed machine false", CFG,
      '        elif row["path"] == "guards.enabled" and row.get("unconfirmed"):\n',
@@ -137,15 +140,18 @@ MASTER_KEY_MUTATIONS = (
      '        out["backed"] = True\n',
      _K + "test_a_crew_write_does_not_launder_a_hand_edit_into_a_confirmed_switch"),
     ("--restore leaves the receipt standing", CFG,
-     '    crew_humanonly.retire(layer, path, global_path=global_path, reason="--rebuild or --restore replaced the file")\n',
+     '    crew_humanonly.retire(layer, path, global_path=global_path, reason="--rebuild or --restore '
+     'replaced the file")\n',
      '    pass\n',
      _K + "test_restoring_a_backup_retires_the_receipt_even_when_the_content_is_the_same"),
     ("--rebuild leaves the receipt standing", CFG,
-     '    crew_humanonly.retire(layer, path, global_path=global_path, reason="--rebuild or --restore replaced the file")\n',
+     '    crew_humanonly.retire(layer, path, global_path=global_path, reason="--rebuild or --restore '
+     'replaced the file")\n',
      '    pass\n',
      _K + "test_rebuilding_the_file_retires_the_receipt"),
     ("/crew:migrate leaves the receipt standing", MIG,
-     '                crew_humanonly.retire("machine", path, global_path=path,\n                                      reason="/crew:migrate rewrote the machine file")\n',
+     '                crew_humanonly.retire("machine", path, global_path=path,\n                     '
+     '                 reason="/crew:migrate rewrote the machine file")\n',
      '                pass\n',
      _K + "test_migrating_the_machine_file_retires_the_receipt"),
     ("revoke_all retires nothing", HO,
@@ -190,7 +196,8 @@ MASTER_KEY_MUTATIONS = (
      '    if failed:\n        pass\n',
      _K + "test_a_revocation_that_cannot_be_written_is_reported_and_the_receipt_still_backs_nothing"),
     ("a set back to true drops the warning for a failed revocation", CFG,
-     '    if failed:\n        crew_humanonly.warn_revoke_failed(path, failed, "a crew write set it back", global_path)\n',
+     '    if failed:\n        crew_humanonly.warn_revoke_failed(path, failed, "a crew write set it '
+     'back", global_path)\n',
      '    if failed:\n        pass\n',
      _K + "test_a_set_back_to_true_surfaces_a_failed_revocation"),
     ("revoke_all counts a failed revocation as retired", HO,
@@ -220,10 +227,12 @@ MASTER_KEY_MUTATIONS = (
      _K + "test_explain_shows_a_confirmed_false_as_in_force_from_another_directory"),
     ("status says unconfirmed for the home-directory limit", STATUS,
      '        elif (crew_hook.machine_switch_unconfirmed(root) and crew_hook.machine_config_path(root) is None\n',
-     '        elif (False and crew_hook.machine_switch_unconfirmed(root) and crew_hook.machine_config_path(root) is None\n',
+     '        elif (False and crew_hook.machine_switch_unconfirmed(root) and '
+     'crew_hook.machine_config_path(root) is None\n',
      _K + "test_status_names_the_home_directory_limit_not_a_missing_confirmation"),
     ("the home-limit status line ignores the receipt", STATUS,
-     '              and crew_humanonly.master_confirmed(os.path.join(os.path.expanduser("~"), crew_hook.GLOBAL_CONFIG))):\n',
+     '              and crew_humanonly.master_confirmed(os.path.join(os.path.expanduser("~"), '
+     'crew_hook.GLOBAL_CONFIG))):\n',
      '              and True):\n',
      _K + "test_status_still_asks_for_the_confirmation_when_an_unconfirmed_false_lies_inside_the_working_directory"),
     ("the unread-file rule ignores the working directory", HO,
@@ -231,7 +240,8 @@ MASTER_KEY_MUTATIONS = (
      '    for cause, folder in (("project", root),):\n',
      _K + "test_the_unread_file_rule_is_the_one_dispatch_applies"),
     ("the unread-file rule matches a sibling folder by prefix", HO,
-     '            if real == base or real.startswith(base.rstrip(os.sep) + os.sep):\n                causes.append(cause)',
+     '            if real == base or real.startswith(base.rstrip(os.sep) + os.sep):\n                '
+     'causes.append(cause)',
      '            if real.startswith(base):\n                causes.append(cause)',
      _K + "test_the_unread_file_rule_is_the_one_dispatch_applies"),
     # crew 1.3.101 (round 5): the repo-copy line and the advice tell the true cause of the home-directory limit.
