@@ -841,7 +841,7 @@ def _plan_global_file(plan, path, raw, accept_dropped):
     master = crew_config.master_switch_problem(out, "machine", cfg)
     if master:
         # The machine file is rewritten whole: a `guards.enabled` that is not a boolean (or a `false` the owner never
-        # confirmed) is not carried through into the new file (crew 1.3.93).
+        # confirmed) is not carried through into the new file (crew 1.3.95).
         plan["conflicts"].append(f"{path}: {master} - fix it by hand, then preview again")
     if plan["conflicts"]:
         return

@@ -1988,7 +1988,7 @@ def _layer_supplies(layer, parts, defaults):
 
 _AUTOCLEAR_MACHINE_ONLY_PATHS = tuple(
     "context.autoClear." + key for key in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
-# Leaves a reader takes from the machine file ALONE: the auto-clear scopes, and `guards.enabled` (crew 1.3.93,
+# Leaves a reader takes from the machine file ALONE: the auto-clear scopes, and `guards.enabled` (crew 1.3.95,
 # owner decision 2026-11-13: a checkout must not be able to turn every guard off; `crew_hook.guards_switched_off`
 # reads the machine layer only). A repo copy is refused by the writers, named "not in effect" by `explain_config`
 # and reported by `inert_settings`.
@@ -3597,7 +3597,7 @@ def _content_problem(dotted, layer, value):
 def master_switch_problem(whole, layer, current=None):
     """Why a WHOLE-FILE replacement (`--rebuild`, `--restore`, `/crew:migrate`) may not carry
     `guards.enabled` as `whole` holds it, or None. Those paths take their content from a saved profile, a
-    backup or the file itself, not from one validated `--set`, so each must judge the key here (crew 1.3.93):
+    backup or the file itself, not from one validated `--set`, so each must judge the key here (crew 1.3.95):
 
     * repo file: only `true` (the template's own value) or absent. A repo `false` does nothing and a repo
       `null` or a string is a value no reader looks at; none of them is written back from a profile or a backup.

@@ -48,7 +48,7 @@ changed in 0.16.0 and both are silent if unmentioned:
   two layers wins, and a silent layer imposes nothing. A repo file that spells
   one at its default holds the global value down; `--show` names it as a
   `shadow:` and `--unset <path> --repo --apply` removes it on a yes.
-- **`guards.enabled` is the other exception: machine-only, and the owner's (crew 1.3.93).** It is NOT overridable
+- **`guards.enabled` is the other exception: machine-only, and the owner's (crew 1.3.95).** It is NOT overridable
   in a repo's `.crew/config.json`: the writer refuses it there and a repo value is ignored (`--show` and `--inert`
   name it). `false` turns every guard hook (and context-watch) off, so `--set` never writes it: it is proposed with
   `crew_confirm_config.py propose --layer machine --key guards.enabled`, relayed to the owner, and applies only

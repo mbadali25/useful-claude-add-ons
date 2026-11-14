@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.93**: `guards.enabled` is a declared key, and turning it off is the owner's. `crew` 1.3.93 declares `guards.enabled`, the key crew 1.3.92's dispatcher honours, so `/crew:config` can propose it, the owner can confirm it with `/crew:confirm-config`, and `/crew:status` shows when the guards are off, unconfirmed or ignored.
-- **crew 1.3.92**: `guards.enabled`, one switch that turns every guard hook off. `crew` 1.3.92 makes the hook dispatcher honour `guards.enabled: false`: set it in the machine config layer (`~/.claude/crew/config.json`), confirm it with the owner's `/crew:confirm-config` double confirmation, and none of crew's guards runs and nothing blocks, with no downgrade and no reinstall. A repo file, an agent's write, a hand edit or an unconfirmed `false` cannot switch the guards off.
+- **crew 1.3.95**: `guards.enabled` is a declared key, and turning it off is the owner's. `crew` 1.3.95 declares `guards.enabled`, the key crew 1.3.92's dispatcher honours, so `/crew:config` can propose it, the owner can confirm it with `/crew:confirm-config`, and `/crew:status` shows when the guards are off, unconfirmed or ignored.
+- **crew 1.3.94**: `guards.enabled`, one switch that turns every guard hook off. `crew` 1.3.94 makes the hook dispatcher honour `guards.enabled: false`: set it in the machine config layer (`~/.claude/crew/config.json`), confirm it with the owner's `/crew:confirm-config` double confirmation, and none of crew's guards runs and nothing blocks, with no downgrade and no reinstall. A repo file, an agent's write, a hand edit or an unconfirmed `false` cannot switch the guards off.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -1,4 +1,4 @@
-"""`guards.enabled`, the guards master switch's key (crew 1.3.93): declared, validated, written only through the
+"""`guards.enabled`, the guards master switch's key (crew 1.3.95): declared, validated, written only through the
 owner's double confirmation, and judged by every planner that writes a whole file.
 
 The hook half (`crew_hook.guards_switched_off`, the receipt it requires, context-watch standing down, the duplicate

@@ -1,4 +1,4 @@
-"""The `guards.enabled` key/writer-half mutations (crew 1.3.93), in `sabotage.py`'s tuple shape:
+"""The `guards.enabled` key/writer-half mutations (crew 1.3.95), in `sabotage.py`'s tuple shape:
 (label, target, find, replace, test).
 
 Each puts back one way the master switch could be set, kept or reported wrongly, and names the case in

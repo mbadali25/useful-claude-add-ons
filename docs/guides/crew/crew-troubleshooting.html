@@ -269,8 +269,8 @@ no: retry the call, and free memory or processes if it repeats. A real deny neve
   30-minute TTL) and names the owner's <code>crew_inflight.py clear</code>; <code>Lane state unknown</code> means it could
   not tell. <code>Approval waiting</code> is autopilot stopped at <code>approve</code>.</li>
 <li><strong>Silence every guard at once:</strong> set <code>guards.enabled: false</code> in the machine file <code>~/.claude/crew/config.json</code>
-  (crew 1.3.92) and confirm it as the owner with the <code>/crew:confirm-config</code> double confirmation (crew 1.3.92;
-  an unconfirmed <code>false</code> leaves the guards on, and the scope guard refuses an agent's write to that file; <code>--set guards.enabled=false</code> is refused (crew 1.3.93), so ask crew to propose it with <code>/crew:config</code>, then type <code>/crew:confirm-config &lt;change_id&gt;</code> twice). The
+  (crew 1.3.94) and confirm it as the owner with the <code>/crew:confirm-config</code> double confirmation (crew 1.3.94;
+  an unconfirmed <code>false</code> leaves the guards on, so does a file edited after you confirmed it, and the scope guard refuses an agent's write to that file; this is a guardrail against accidents and drift, not a boundary against a hostile agent running as you; <code>--set guards.enabled=false</code> is refused (crew 1.3.95), so ask crew to propose it with <code>/crew:config</code>, then type <code>/crew:confirm-config &lt;change_id&gt;</code> twice). The
   dispatcher then starts no guard hook and no context-watch, so nothing is blocked, asked, warned or logged,
   whatever <code>guards.profile</code>, <code>guards.overrides.*</code>, <code>scope.mode</code> and <code>verifyGate</code> say; only the machine layer
   counts, a <code>false</code> in <code>.crew/config.json</code> is ignored. <code>/crew:approve</code> and <code>/crew:confirm-config</code> still work.

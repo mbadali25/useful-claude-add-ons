@@ -3,7 +3,7 @@
 
 A change that lifts a human step -- a `humanOnly.*` key set to `false`
 (`crew_humanonly`), or `guards.enabled: false` (the guards master switch, crew
-1.3.93: it turns every guard off) -- is never written by `crew_config.py --set` or the
+1.3.95: it turns every guard off) -- is never written by `crew_config.py --set` or the
 `/crew:config` menu. It is PROPOSED here, which records a pending change in
 the machine's confirmation store (`~/.claude/crew/confirm-config/`) and
 prints a change id. The owner then types `/crew:confirm-config <change_id>`
@@ -79,7 +79,7 @@ def propose(layer, dotted, root=None, global_path=None, now=None, tracker=None):
     """Record a pending change `dotted: false` at `layer`; returns the record.
 
     Refused when `dotted` is not a humanOnly key or `guards.enabled` (the
-    guards master switch, crew 1.3.93: machine layer only, a repo copy counts
+    guards master switch, crew 1.3.95: machine layer only, a repo copy counts
     for nothing), or when the repo file is absent, tracked by git, or git
     cannot tell (a tracked file can never opt out, and could-not-tell is not
     untracked)."""
