@@ -93,21 +93,36 @@ meaningful only with `scope.mode` `block`.
 
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.89) turns EVERY guard hook off: the promote
-gate, the role-write, cloud, environment and scope guards, the verify gate and
-the completion audit. None of them starts, so nothing is judged, refused, asked
-or logged. It beats every per-guard setting (`guards.profile`,
-`guards.overrides.*`, `scope.mode`, `verifyGate`), and `false` in the MACHINE layer
-(`~/.claude/crew/config.json`) is the only one that counts: a `false` in
-`.crew/config.json`, tracked or not, is ignored and the guards stay on (a checkout
-must not be able to turn every guard off), and a repo `true` cannot switch a machine
-`false` back on. Only the JSON literal `false` counts: an
-absent key, `null`, `true`, a string, a corrupt file or a `guards` that is not an
-object leaves the guards on. It takes effect on the next hook call, with no
-reinstall. `/crew:approve` and `/crew:confirm-config` keep working, so the
+`guards.enabled: false` (crew 1.3.92) turns EVERY guard hook off: the promote
+gate, the role-write, cloud, environment and scope guards, the verify gate, the
+completion audit and the context-watch Stop hook. None of them starts, so nothing
+is judged, refused, asked, warned or logged: with the switch off, nothing blocks. It
+beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mode`,
+`verifyGate`). Three things must all hold for it to count (crew 1.3.92):
+
+- It is in the MACHINE layer (`~/.claude/crew/config.json`). A `false` in
+  `.crew/config.json`, tracked or not, is ignored and the guards stay on (a
+  checkout must not be able to turn every guard off), and a repo `true` cannot
+  switch a machine `false` back on.
+- It is the OWNER's. Like the `humanOnly.*` opt-out, a `false` counts only when an
+  applied `/crew:confirm-config` double confirmation backs it (two prompts the
+  owner typed). An agent's Write or Edit, a hook-side write or a hand edit that
+  only sets the `false` leaves the guards ON; so does a missing, revoked or
+  unreadable receipt. The scope guard refuses an agent's Write, Edit or shell
+  write to the machine config file and to the receipts beside it, in every
+  `scope.mode` (`off`, the default, included).
+- It is unambiguous. Only the JSON literal `false` counts: an absent key, `null`,
+  `true`, a string, a corrupt file, a `guards` that is not an object, a file
+  with a duplicate key (`{"enabled": true, "enabled": false}` is read differently
+  by different parsers) all leave the guards on. A machine config path inside the
+  project or the working directory (a HOME redirected into a checkout) never
+  counts.
+
+It takes effect on the next hook call, with no reinstall. To turn it off, ask crew to propose it (`/crew:config`, which runs `crew_confirm_config.py propose --layer machine --key guards.enabled` and relays the change id), then type `/crew:confirm-config <change_id>` yourself, twice, in two separate prompts, within 15 minutes. `--set guards.enabled=false` is refused (crew 1.3.93). `approval-hook.sh` keeps
+running, so `/crew:approve` and `/crew:confirm-config` keep working and the
 `humanOnly.*` opt-out still works with the guards off. It needs python: with
-none, the bash launcher still fails closed in an armed repo. To go back, delete
-the key or set it to `true` in the machine file.
+none, the bash launcher still fails closed in an armed repo (known limitation).
+To go back, delete the key or set it to `true` in the machine file.
 
 ## Guard profiles
 
@@ -223,7 +238,7 @@ SessionStart notice).
 |---|---|---|---|---|
 | `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `hooks/scripts/crew_guards.py`) | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
-| `guards.enabled` | machine-only | `true` | `true` \| `false` (checked in `hooks/scripts/crew_hook.py`) | The master switch for every guard hook, read from the machine file ALONE. `false` there stands them all down (the cloud, environment, role-write, scope, promote and verify guards, and the completion audit): nothing is judged, refused or logged, whatever `guards.profile`, `guards.overrides.*`, `scope.mode` or `verifyGate` say. A `false` in `.crew/config.json` is refused by the writer and ignored by the dispatcher, so a checkout cannot turn every guard off. Only the JSON literal `false` turns them off; absent, `true` or anything unreadable leaves them on. `/crew:approve` and `/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. Needs python: with none the guards still fail closed. |
+| `guards.enabled` | machine-only | `true` | `true` \| `false` (checked in `hooks/scripts/crew_hook.py`) | The master switch for every guard hook, read from the machine file ALONE and counted only once the OWNER confirmed it. `false` there, backed by an applied `/crew:confirm-config` double confirmation (propose it with `crew_confirm_config.py propose --layer machine --key guards.enabled`), stands them all down (the cloud, environment, role-write, scope and promote guards, the completion audit, the verify gate, and the context-watch Stop hook): nothing is judged, refused, warned or logged, whatever `guards.profile`, `guards.overrides.*`, `scope.mode` or `verifyGate` say. A `false` that is not confirmed (a hand edit, an agent's write) leaves the guards on, and the scope guard refuses an agent's write to the file. A `false` in `.crew/config.json` is refused by the writer and ignored by the dispatcher, so a checkout cannot turn every guard off. Only the JSON literal `false` turns them off (a duplicate key, `null`, a string or anything unreadable leaves them on). `/crew:approve` and `/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. Needs python: with none the guards still fail closed. |
 
 ## `cloud` keys (13)
 

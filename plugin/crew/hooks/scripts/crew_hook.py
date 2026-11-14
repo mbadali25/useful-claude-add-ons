@@ -345,45 +345,95 @@ def armed(root, home=None):
 # running children
 
 # --------------------------------------------------------------------------
-# the guards master switch (`guards.enabled`, crew 1.3.89)
+# the guards master switch (`guards.enabled`, crew 1.3.89; the owner's confirmation, 1.3.92)
 #
 # `guards.enabled: false` in the MACHINE config layer (`~/.claude/crew/config.json`) stands every guard row
 # down: none starts, so nothing is judged, refused, asked or logged, and a fault in one cannot fail closed.
-# Off wins over any profile, override, `scope.mode` or `verifyGate`. ONLY the machine layer counts (owner
-# decision, 2026-11-13): a repo file (`.crew/config.json`, tracked or not) is a checkout anyone can hand you,
-# so it must not be able to turn every guard off; a `false` there is IGNORED and the guards stay on
-# (`repo_switch_ignored` reports it so `/crew:status` can say so). ONLY the JSON literal `false` counts:
-# absent, null, true, a string, a corrupt or unreadable file, or a `guards` that is not an object leave the
-# guards ON (could-not-tell is never the value that disables one).
+# `context-watch.sh` (a Stop hook, not a guard row) stands down with them: with the switch off NOTHING blocks.
+# Off wins over any profile, override, `scope.mode` or `verifyGate`. Three things must all hold:
+#   1. ONLY the machine layer counts (owner decision, 2026-11-13): a repo file (`.crew/config.json`, tracked or
+#      not) is a checkout anyone can hand you; a `false` there is IGNORED (`repo_switch_ignored` reports it).
+#   2. ONLY the JSON literal `false` counts, in a file with no duplicate key: absent, null, true, a string, a
+#      corrupt or unreadable file, a `guards` that is not an object, or `{"enabled": true, "enabled": false}`
+#      (two parsers disagree on which wins) leave the guards ON. Could-not-tell is never the disabling value.
+#   3. The `false` must be the OWNER's (owner decision, 2026-11-13): `crew_humanonly.receipt_backs` must find an
+#      applied `/crew:confirm-config` double confirmation for `guards.enabled` at this very file. An agent, a
+#      hook-side write or a hand edit that only sets the `false` leaves the guards ON (`machine_switch_unconfirmed`
+#      reports it), exactly like an unconfirmed `humanOnly` false reads human-only.
+# The machine file must also be the machine's: a config path inside the project (or the process's working
+# directory), which is what a `HOME` / `USERPROFILE` pointed at a fake home shipped in a repo yields, never counts.
 # approval-hook.sh is the exception: it records `/crew:approve` and the `/crew:confirm-config` double
 # confirmation and judges no command, so the humanOnly opt-out keeps working with the guards off.
 # Read here, not in each guard, because every guard row passes through `dispatch`. With no usable python the
 # bash launcher never reaches this and still fails closed in an armed repo (it has no JSON parser by design).
 GUARDS_KEPT = frozenset({"approval-hook.sh"})
+STOOD_DOWN = frozenset({"context-watch.sh"})
+MASTER_KEY = "guards.enabled"
+
+
+def _no_duplicate_keys(pairs):
+    seen = {}
+    for key, value in pairs:
+        if key in seen:
+            raise ValueError(f"duplicate key {key!r}")
+        seen[key] = value
+    return seen
 
 
 def _layer_says_off(path):
-    """True only when the file at `path` parses to an object whose `guards` is an object holding
-    `enabled: false` (the JSON literal)."""
+    """True only when the file at `path` parses (no duplicate key at any depth) to an object whose `guards` is an
+    object holding `enabled: false` (the JSON literal)."""
     try:
         with open(path, encoding="utf-8-sig") as handle:
-            parsed = json.load(handle)
+            parsed = json.load(handle, object_pairs_hook=_no_duplicate_keys)
     except (OSError, ValueError):
         return False
     guards = parsed.get("guards") if isinstance(parsed, dict) else None
     return isinstance(guards, dict) and guards.get("enabled") is False
 
 
-def guards_switched_off(root, home=None):  # pylint: disable=unused-argument
-    """`"machine"` when the machine layer switched the guards off, else None. `root` is accepted and not read:
-    a repo file cannot switch the guards off. Never raises: a failure to look reads as ON."""
+def _inside(path, folder):
+    path, folder = os.path.normcase(os.path.realpath(path)), os.path.normcase(os.path.realpath(folder))
+    return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
+
+
+def machine_config_path(root, home=None):
+    """The machine config file the switch reads, or None when that path cannot be the machine's: it lies inside
+    the project `root` or the working directory (a HOME redirected into a checkout)."""
+    home = home if home is not None else os.path.expanduser("~")
+    path = os.path.join(home, GLOBAL_CONFIG)
+    for folder in (root, os.getcwd()):
+        if folder and _inside(path, folder):
+            return None
+    return path
+
+
+def _owner_confirmed(path):
+    """True when an applied double confirmation backs `guards.enabled: false` at `path`."""
+    import crew_humanonly  # pylint: disable=import-outside-toplevel
+    return crew_humanonly.receipt_backs(crew_humanonly.store_dir(path), "machine", path, MASTER_KEY)[0]
+
+
+def guards_switched_off(root, home=None):
+    """`"machine"` when the machine layer switched the guards off and the owner confirmed it, else None. A repo
+    file cannot switch the guards off. Never raises: a failure to look reads as ON."""
     try:
-        home = home if home is not None else os.path.expanduser("~")
-        if _layer_says_off(os.path.join(home, GLOBAL_CONFIG)):
+        path = machine_config_path(root, home)
+        if path and _layer_says_off(path) and _owner_confirmed(path):
             return "machine"
     except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
         return None
     return None
+
+
+def machine_switch_unconfirmed(root, home=None):
+    """True when the machine file holds `guards.enabled: false` that stands nothing down because the owner's
+    confirmation is missing (or the path cannot be the machine's). None when it could not tell."""
+    try:
+        path = os.path.join(home if home is not None else os.path.expanduser("~"), GLOBAL_CONFIG)
+        return _layer_says_off(path) and guards_switched_off(root, home) is None
+    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
+        return None
 
 
 def repo_switch_ignored(root):
@@ -400,8 +450,9 @@ def repo_switch_ignored(root):
 
 
 def without_guards(chosen):
-    """`chosen` (`[(row, argv)]`) minus every guard row except `GUARDS_KEPT`."""
-    return [(row, argv) for row, argv in chosen if not row.guard or row.script in GUARDS_KEPT]
+    """`chosen` (`[(row, argv)]`) minus every guard row except `GUARDS_KEPT`, and minus `STOOD_DOWN`."""
+    return [(row, argv) for row, argv in chosen
+            if row.script not in STOOD_DOWN and (not row.guard or row.script in GUARDS_KEPT)]
 
 
 def _guards_off(root):
@@ -673,7 +724,7 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
     chosen = select(event, harness, payload, windows=windows, scripts=scripts)
     armed_fn = armed_fn or armed
     if chosen and _guards_off(root):
-        # `guards.enabled: false` in the machine layer (crew 1.3.89): no guard row starts, so nothing is judged, logged or
+        # `guards.enabled: false` in the machine layer, owner-confirmed (crew 1.3.92): no guard row starts, so nothing is judged, logged or
         # refused, and a fault in what is left cannot fail closed either. approval-hook.sh stays.
         chosen = without_guards(chosen)
         armed_fn = _never_armed

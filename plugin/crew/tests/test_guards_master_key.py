@@ -405,3 +405,12 @@ def test_every_mutation_anchor_is_present_exactly_once():
             text = handle.read().replace("\r\n", "\n")
         assert text.count(find) == 1, label
         assert test.startswith("tests/test_guards_master_key.py::"), label
+
+
+def test_explain_reports_a_repo_null_even_when_the_machine_file_holds_the_key(home, tmp_path):
+    """`without_null_shadows` drops a repo `null` the machine layer has a value for (it means "inherit"), so
+    `--explain` must ask the file as loaded to report it."""
+    root = _repo(tmp_path, {"guards": {"enabled": None}})
+    path = _machine(home, {"guards": {"enabled": True}})
+    rows = {row["path"]: row for row in crew_config.explain_config(root, path=path, all_keys=True)}
+    assert "repoIgnored" in rows[KEY] and rows[KEY]["repoIgnored"] is None

@@ -1988,7 +1988,7 @@ def _layer_supplies(layer, parts, defaults):
 
 _AUTOCLEAR_MACHINE_ONLY_PATHS = tuple(
     "context.autoClear." + key for key in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
-# Leaves a reader takes from the machine file ALONE: the auto-clear scopes, and `guards.enabled` (crew 1.3.90,
+# Leaves a reader takes from the machine file ALONE: the auto-clear scopes, and `guards.enabled` (crew 1.3.93,
 # owner decision 2026-11-13: a checkout must not be able to turn every guard off; `crew_hook.guards_switched_off`
 # reads the machine layer only). A repo copy is refused by the writers, named "not in effect" by `explain_config`
 # and reported by `inert_settings`.

@@ -80,7 +80,7 @@ MASTER_KEY_MUTATIONS = (
     ("--explain drops a repo null", CFG,
      '            if dotted in _REPO_REPORTS_NULL:\n                # Any repo value but',
      '            if False:\n                # Any repo value but',
-     _K + "test_inert_and_explain_report_every_repo_value_but_the_default"),
+     _K + "test_explain_reports_a_repo_null_even_when_the_machine_file_holds_the_key"),
     ("--explain prints Python's False", CFG,
      '        asked, forced = (json.dumps(v) if isinstance(v, bool) or v is None else v\n',
      '        asked, forced = (v if True else v\n',
