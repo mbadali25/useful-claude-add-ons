@@ -477,7 +477,8 @@ TRUST_MUTATIONS = (
      '    if os.path.islink(dot_git):\n        return False\n', '',
      _T + "test_hash_approval_a_git_symlink_to_a_different_trusted_repo_is_not_trusted"),
     ("trust store: a worktree's own admin dir stands in for the main repository's record (L-0888, round 11)", TRUST,
-     '        record = _first_line(record_file)\n        if not record or not _same(os.path.join(gitdir, record), dot_git):\n'
+     '        record = _first_line(record_file)\n'
+     '        if not record or not _same(os.path.join(gitdir, record), dot_git):\n'
      '            return False\n', '        return True\n        if False:\n            return False\n',
      _T + "test_hash_approval_a_gitfile_naming_a_real_worktrees_admin_dir_is_not_that_worktree"),
     ("trust store: a core.worktree the directory wrote is believed (L-0888, round 11)", TRUST,
@@ -495,7 +496,7 @@ TRUST_MUTATIONS = (
     ("trust store: a hardlinked admin commondir is believed (L-0888, round 12)", TRUST,
      '(os.path.lexists(commondir_file) and not _single_link(commondir_file))', 'False',
      _T + "test_hash_approval_a_hardlinked_admin_commondir_is_not_trusted"),
-    ("trust store: the recorded path's spelling is not compared, a symlink at it is the worktree (L-0888, round 12)", TRUST,
+    ("trust store: the recorded path's spelling is not compared (L-0888, round 12)", TRUST,
      '        if _spelled(recorded) == _spelled(here):\n            return True\n', '        return True\n',
      _T + "test_hash_approval_a_symlink_put_at_a_removed_worktrees_path_is_not_it"),
 )
