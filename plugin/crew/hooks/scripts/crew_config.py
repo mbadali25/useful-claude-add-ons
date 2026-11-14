@@ -1988,6 +1988,11 @@ def _layer_supplies(layer, parts, defaults):
 
 _AUTOCLEAR_MACHINE_ONLY_PATHS = tuple(
     "context.autoClear." + key for key in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
+# Leaves a reader takes from the machine file ALONE: the auto-clear scopes, and `guards.enabled` (crew 1.3.99,
+# owner decision 2026-11-13: a checkout must not be able to turn every guard off; `crew_hook.guards_switched_off`
+# reads the machine layer only). A repo copy is refused by the writers, named "not in effect" by `explain_config`
+# and reported by `inert_settings`.
+_MACHINE_ONLY_LEAVES = _AUTOCLEAR_MACHINE_ONLY_PATHS + ("guards.enabled",)
 
 
 def _without_machine_only(repo_cfg):
@@ -2044,6 +2049,7 @@ def explain_config(root, path=None, all_keys=False):
     """
     defaults = default_config()
     repo_cfg = crew_state.load_config(root)
+    repo_loaded = repo_cfg
     global_cfg, _ = filter_global(read_global_config(path))
     # Same prune as `resolve_config`, for the same reason and from the same
     # helper: if the report applied a different rule from the run, the source
@@ -2109,7 +2115,7 @@ def explain_config(root, path=None, all_keys=False):
                 "global": personal["global"],
             })
             continue
-        if dotted in _AUTOCLEAR_MACHINE_ONLY_PATHS:
+        if dotted in _MACHINE_ONLY_LEAVES:
             # `crew_autocycle.settings` and `auto-clear.ps1` read onlyRepos
             # / onlySessions from the machine file ONLY -- a repo's own copy
             # is never consulted (AUTOCLEAR_DEFAULTS's comment: a narrowing a
@@ -2127,8 +2133,20 @@ def explain_config(root, path=None, all_keys=False):
                 "value": None if only_value is _MISSING else only_value,
                 "source": "global" if from_global else "default",
             }
+            if only_value is False and dotted == crew_humanonly.MASTER_KEY:
+                confirmed = crew_humanonly.master_confirmed(_global_label(path))
+                if crew_humanonly.machine_file_unread(_global_label(path), root):
+                    # the dispatcher does not read a machine file inside the working directory or the project
+                    row["unconfirmed"], row["homeLimited"] = True, confirmed
+                elif not confirmed:
+                    row["unconfirmed"] = True  # false in the file, but no applied double confirmation backs it
+            if dotted in _REPO_REPORTS_NULL:
+                # Any repo value but the default `true` is ignored, `null` included (a null is read as "inherit"
+                # by `without_null_shadows`, which has already dropped it from `repo_cfg`): ask the loaded file.
+                repo_value = _dig(repo_loaded, parts)
+                from_repo = repo_value is not _MISSING and repo_value is not _REPO_QUIET.get(dotted, _MISSING)
             if from_repo:
-                repo_value = _dig(repo_cfg, parts)
+                repo_value = _dig(repo_loaded if dotted in _REPO_REPORTS_NULL else repo_cfg, parts)
                 row["repoIgnored"] = None if repo_value is _MISSING else repo_value
             rows.append(row)
             continue
@@ -2453,12 +2471,14 @@ def inert_settings(root, path=None):
         pending = INERT_PENDING.get(dotted)
         # Any repo value, `[]` and `""` included (an empty scope matches
         # nothing, so it would narrow everything if it were read).
-        if dotted in _AUTOCLEAR_MACHINE_ONLY_PATHS and _dig(repo_cfg, parts) not in (
-                None, _MISSING):
+        # The RAW repo layer, not `repo_cfg`: a repo `null` is shadowed (removed) when the machine file holds a
+        # value, and for the master switch a repo `null` is one `--inert` must report in every machine state.
+        if dotted in _MACHINE_ONLY_LEAVES and _repo_value_ignored(dotted, _dig(repo_raw, parts)):
             # Read from the machine file only (crew_autocycle.settings): a
             # repo value narrows nothing.
             entries[(dotted, "inert")] = {
-                "key": dotted, "value": _dig(repo_cfg, parts), "effect": _REPO_IGNORED_EFFECT,
+                "key": dotted, "value": _dig(repo_raw, parts),
+                "effect": _REPO_IGNORED_EFFECTS.get(dotted, _REPO_IGNORED_EFFECT),
                 "ticket": None,
                 "kind": "repo-ignored", "layer": "repo"}
             continue
@@ -2538,6 +2558,20 @@ def _escaped(text):
 
 _REPO_IGNORED_EFFECT = ("read from the machine file only (~/.claude/crew/config.json): "
                         "a repo value narrows nothing")
+# A repo value that is the key's own default says nothing and is not reported (the shipped repo template carries it).
+_REPO_QUIET = {"guards.enabled": True}
+# Keys whose repo `null` is reported too: for the master switch a repo copy of ANY value but its default is not in
+# effect, and `null` is one (it used to vanish from `--inert` and `--explain`).
+_REPO_REPORTS_NULL = ("guards.enabled",)
+
+
+def _repo_value_ignored(dotted, value):
+    """True when a repo-layer `value` at the machine-only leaf `dotted` is one `--inert` reports as ignored."""
+    if value is _MISSING or value is _REPO_QUIET.get(dotted, _MISSING):
+        return False
+    return value is not None or dotted in _REPO_REPORTS_NULL
+_REPO_IGNORED_EFFECTS = {"guards.enabled": (
+    "read from the machine file only (~/.claude/crew/config.json): a repo value stands no guard down")}
 
 
 def _unreadable_config(path):
@@ -3328,6 +3362,10 @@ def enum_values(dotted):
         return tuple(spec[0])
     if dotted == "guards.profile":
         return tuple(crew_state.GUARD_PROFILES)
+    if dotted == "guards.enabled":
+        # only the JSON literal `false` switches the guards off (crew_hook.guards_switched_off): refuse a string.
+        # Machine layer only (`_MACHINE_ONLY_LEAVES`): the repo writer refuses the key outright.
+        return (True, False)
     if dotted.startswith(_OVERRIDE_PREFIX):
         name = dotted[len(_OVERRIDE_PREFIX):]
         if name in crew_state.ALL_GUARD_NAMES:
@@ -3562,6 +3600,30 @@ def _content_problem(dotted, layer, value):
     return f"= {value!r} is not one of its values ({_values_text(allowed)}); {_FIX_FIRST}"
 
 
+def master_switch_problem(whole, layer, current=None):
+    """Why a WHOLE-FILE replacement (`--rebuild`, `--restore`, `/crew:migrate`) may not carry
+    `guards.enabled` as `whole` holds it, or None. Those paths take their content from a saved profile, a
+    backup or the file itself, not from one validated `--set`, so each must judge the key here (crew 1.3.99):
+
+    * repo file: only `true` (the template's own value) or absent. A repo `false` does nothing and a repo
+      `null` or a string is a value no reader looks at; none of them is written back from a profile or a backup.
+    * machine file: only `true` or `false`. A `false` is kept only when `current` (the file being replaced)
+      already holds it; a replacement never INTRODUCES one, because the switch is the owner's
+      (`crew_confirm_config`), and a string, `0`, `1` or `null` is none of the two booleans."""
+    value = _dig(whole, ("guards", "enabled"))
+    if value is _MISSING or value is True:
+        return None
+    if layer == "repo":
+        return (f"guards.enabled = {value!r} in a repo file: the master switch is read from the machine file "
+                "only, so a repo copy is never written (`true`, its default, or absent)")
+    if value is not False:
+        return f"guards.enabled = {value!r} is not true or false; the machine file takes only those"
+    if _dig(current, ("guards", "enabled")) is False:
+        return None
+    return ("guards.enabled = false would be written without the owner's double confirmation; "
+            + crew_humanonly.MASTER_REFUSAL)
+
+
 def merged_problems(merged, touched, label, layer):
     """Refusals for the FILE a write would produce at `layer`: every leaf not
     written now, by `_content_problem`, named pre-existing; then
@@ -3781,14 +3843,25 @@ def write_global_config(updates, path=None, expect=None):
     out = {}
 
     def _mutate(parsed):
+        # Whether a receipt backs the file is judged HERE, under the lock, on the bytes about to be replaced: a
+        # hand edit that landed between an earlier check and this lock would otherwise ride along under the
+        # restamp (round 3, N1). A hand edit that never takes the lock can still land after this read.
+        out["backed"] = crew_humanonly.master_confirmed(real_path)
         out["plan"] = _plan_on(parsed, updates, "machine", real_path)
         if not out["plan"][1]:
             return None
         crew_backup.backup(real_path)   # T-0050: under the lock, before the replace
         return out["plan"][0]
+
+    def _restamp(_result):
+        # The owner confirmed `guards.enabled: false` and this write left it alone: bind the receipt to the file
+        # as it now is, so an unrelated `--set` does not put the guards back on (crew 1.3.99). Read inside the
+        # lock, right after the replace, so no other crew writer lands between the write and the digest.
+        if out.get("backed"):
+            crew_humanonly.restamp("machine", real_path, crew_humanonly.MASTER_KEY, global_path=path)
     try:
         crew_config_files.update_json(real_path, _mutate, expect=expect,
-                                      create=True)
+                                      create=True, after=_restamp)
     except crew_backup.BackupError as exc:
         raise WriteBackupRefused(str(exc)) from exc
     except crew_config_files.Conflict as exc:
@@ -3851,7 +3924,7 @@ if "scope.allowCliApproval" in REPO_REFUSED:
 REPO_REFUSED.update({
     path: "read from the machine-global file only; a repo value would do "
           "nothing"
-    for path in _AUTOCLEAR_MACHINE_ONLY_PATHS
+    for path in _MACHINE_ONLY_LEAVES
 })
 
 # Keys whose readers ARM only from the machine file. A repo may veto them
@@ -4057,42 +4130,62 @@ def write_repo_config(root, updates, global_path=None, expect=None,
 
 
 def _revoke_human_only(layer, path, changes, global_path):
-    """After a crew write sets a `humanOnly` key back (the only values a
+    """After a crew write sets a `humanOnly` key or `guards.enabled` back (the only values a
     writer may set there: `true`, or a machine `null` / removal), record a
     revocation so an earlier double-confirmed `false` at this file no longer
     counts if a `false` reappears there by any other route."""
-    for change in changes or ():
-        if crew_humanonly.is_path(change.get("path")):
-            crew_humanonly.revoke(layer, path, change["path"], global_path=global_path)
+    failed = [change["path"] for change in changes or ()
+              if crew_humanonly.is_confirmed_path(change.get("path"))
+              and not crew_humanonly.revoke(layer, path, change["path"], global_path=global_path)]
+    if failed:
+        crew_humanonly.warn_revoke_failed(path, failed, "a crew write set it back", global_path)
 
 
-def apply_confirmed_optout(layer, dotted, path, expect, global_path=None):
+def apply_confirmed_optout(layer, dotted, path, expect, global_path=None, stamp_out=None):
     """Write `dotted: false` into the config file at `path` (`layer` is
     `machine` or `repo`). The one writer that bypasses
     `crew_humanonly.write_refusal`, and only `crew_confirm_config` calls it,
     once a proposal has its two user-prompt confirmations. `expect` is the
     file's state digest when the change was proposed: a file that changed
     since is refused (`crew_config_files.Conflict`), never merged over.
+    `dotted` is a `humanOnly` key or `guards.enabled` (machine layer only: a
+    repo copy of the master switch counts for nothing). `stamp_out`, a dict, receives `digest`: the file's
+    `crew_hook.canonical_digest` read inside the lock right after the replace.
     Returns `(merged, changes)`."""
-    if not crew_humanonly.is_path(dotted):
-        raise ValueError(f"{dotted} is not a humanOnly key")
+    if not crew_humanonly.is_confirmed_path(dotted):
+        raise ValueError(f"{dotted} is not a key that takes a double confirmation")
     if layer not in ("machine", "repo"):
         raise ValueError(f"unknown layer {layer!r}")
+    if dotted == crew_humanonly.MASTER_KEY and layer != "machine":
+        raise ValueError(f"{dotted} is read from the machine file only; a repo copy is never written")
     out = {}
 
     def _mutate(parsed):
+        # Judged under the lock, on the bytes about to be replaced (round 3, N1).
+        out["backed"] = layer == "machine" and dotted != crew_humanonly.MASTER_KEY and crew_humanonly.master_confirmed(
+            path)
         global_cfg = None if layer == "machine" else machine_view(global_path)[0]
         out["plan"] = _plan_on(parsed, {dotted: False}, layer, path, global_cfg)
         if not out["plan"][1]:
             return None
         crew_backup.backup(path)
         return out["plan"][0]
+
+    def _after(_result):
+        # What the owner's second confirmation left: the digest `crew_confirm_config.confirm` binds its receipt to
+        # is read here, inside the lock, right after the replace, so no other crew writer lands between the write
+        # and the digest. Another key's confirmation that rewrote the machine file under a confirmed master switch
+        # rebinds that switch's receipt the same way. A hand edit that never takes the lock can still land.
+        if stamp_out is not None:
+            stamp_out["digest"] = crew_humanonly.applied_digest(path)
+        if out.get("backed"):
+            crew_humanonly.restamp("machine", path, crew_humanonly.MASTER_KEY, global_path=global_path)
     if layer == "machine":
-        crew_config_files.update_json(path, _mutate, expect=expect, create=True)
+        crew_config_files.update_json(path, _mutate, expect=expect, create=True, after=_after)
     else:
         lock = crew_config_files.machine_lock(_global_label(global_path))
         with lock:
-            crew_config_files.update_json(path, _mutate, expect=expect)
+            crew_config_files.update_json(path, _mutate, expect=expect, after=_after)
     return out.get("plan", ({}, []))
 
 
@@ -4458,6 +4551,9 @@ def plan_rebuild(root, layer, use_profile=True, global_path=None):
         target["platform"] = copy.deepcopy(current["platform"])
     global_cfg = machine_view(global_path)[0]
     problems = merged_problems(target, set(), "the rebuilt file", layer)
+    master = master_switch_problem(target, layer, current)
+    if master:
+        problems.append(master)
     if problems:
         raise RebuildRefused("the rebuilt file would be refused: " + "; ".join(problems))
     text = json.dumps(target, indent=2) + "\n"
@@ -4475,6 +4571,10 @@ def _replace_layer_file(root, layer, data, global_path=None):
     with lock:
         stamp = crew_backup.backup(path)
         crew_config_files.replace_bytes(path, data)
+    # The owner confirmed the content that was there, not what replaced it (crew 1.3.99): retire its receipts, so
+    # a `false` the replacement carries, or one hand-written later, is not backed by them.
+    # A revocation that cannot be written is reported on stderr, not dropped (round 3, N3).
+    crew_humanonly.retire(layer, path, global_path=global_path, reason="--rebuild or --restore replaced the file")
     return path, stamp
 
 
@@ -4503,6 +4603,12 @@ def plan_restore(root, layer, stamp, global_path=None, force_invalid=False):
     except ValueError:
         restored = None
     _state, current, _raw = _file_state(path)
+    if isinstance(restored, dict):
+        # Judged even under --force-invalid, which is for a file that is not valid JSON: a valid one carrying
+        # a bad master switch is not "invalid", it is refused.
+        master = master_switch_problem(restored, layer, current)
+        if master:
+            raise RebuildRefused(f"backup {stamp}: {master}")
     if not isinstance(restored, dict):
         if not force_invalid:
             raise RebuildRefused(
@@ -4534,8 +4640,13 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
     for row in rows:
         marks = (["repo-only"] if row.get("repoOnly") else []) + (
             [f"held down by {row['heldDownBy']}"] if row.get("heldDownBy") else [])
-        print(f"{row['path'].ljust(width)}  {row['source'].ljust(8)}  "
-              f"{json.dumps(row['value'])}"
+        # A machine `false` the owner never confirmed is NOT in force: the value column says so itself, so a reader
+        # of this one column is not told `false` as if the guards were off (round 3).
+        shown = json.dumps(row["value"]) + (
+            " (NOT in effect: the file lies inside the working directory or the project, every guard still runs)"
+            if row.get("homeLimited") else
+            " (NOT in effect: unconfirmed, every guard still runs)" if row.get("unconfirmed") else "")
+        print(f"{row['path'].ljust(width)}  {row['source'].ljust(8)}  {shown}"
               + (f"  ({', '.join(marks)})" if marks else ""))
         if row.get("heldDownBy"):
             narrowed.append(row)
@@ -4557,6 +4668,16 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
         print("  layers, never the repo's: a cloned repo may ask for less "
               "than your machine allows")
         print("  and be obeyed, and may ask for more and be refused.")
+    for row in rows:
+        if row.get("homeLimited"):
+            print()
+            print(f"! {row['path']}: false in the machine file and confirmed, but that file lies inside the working "
+                  "directory or the project (a working directory equal to, or above, your home is the usual cause), "
+                  "so it is NOT in effect: every guard still runs. Run crew from another directory.")
+        elif row.get("unconfirmed"):
+            print()
+            print(f"! {row['path']}: false in the machine file, but no applied /crew:confirm-config double "
+                  "confirmation backs it, so it is NOT in effect: every guard still runs.")
     unmigrated = sorted({layer for row in rows
                          for layer in row.get("unmigrated", ())})
     if unmigrated:
@@ -4575,11 +4696,21 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
     # the hooks that narrow auto-clear never read it at all, so printing it
     # unlabelled would claim a restriction that is not in force.
     for row in ignored:
+        asked, forced = (json.dumps(v) if isinstance(v, bool) or v is None else v
+                         for v in (row["repoIgnored"], row["value"]))
         print()
-        print(f"! {row['path']}: repo asks `{row['repoIgnored']}`, but only "
+        print(f"! {row['path']}: repo asks `{asked}`, but only "
               "the machine-global file's value is ever read for this key")
-        print(f"  -> `{row['value']}` is in force. A repo cannot narrow or "
-              "widen auto-clear's onlyRepos/onlySessions for itself.")
+        if row["path"] == "guards.enabled" and row.get("unconfirmed"):
+            print("  -> the machine file's `false` is NOT confirmed, so it is not in force either: every guard "
+                  "still runs. A repo file cannot stand a guard down, and a machine `false` counts only once the "
+                  "owner confirmed it.")
+        elif row["path"] == "guards.enabled":
+            print(f"  -> `{forced}` is in force. A repo file cannot stand a guard down "
+                  "(and a machine `false` counts only once the owner confirmed it).")
+        else:
+            print(f"  -> `{forced}` is in force. A repo cannot narrow or "
+                  "widen auto-clear's onlyRepos/onlySessions for itself.")
     if all_keys:
         print()
         print("Every key. `repo-only` keys are never read from the global "

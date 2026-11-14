@@ -4,7 +4,7 @@ Generated from the code by `python3 docs/guides/crew/src/config_reference.py --w
 `python3 scripts/check-marketplace.py` fails when this file is stale. The
 reasoning behind the keys is in `docs/crew/config-rationale.md`.
 
-100 keys: 62 settable in the machine-global file, 38 repo-only.
+101 keys: 63 settable in the machine-global file, 38 repo-only.
 
 ## The two layers
 
@@ -144,10 +144,16 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   `true`, a string, a corrupt file, a `guards` that is not an object, a file
   with a duplicate key (`{"enabled": true, "enabled": false}` is read differently
   by different parsers) all leave the guards on. A machine config path inside the
-  project or the working directory (a HOME redirected into a checkout) never
-  counts.
+  project or the working directory (a HOME redirected into a checkout, or a
+  working directory equal to, or above, your home) never counts, even with a
+  confirmation; `--explain` and `/crew:status` say that ("the file lies inside the
+  working directory or the project"), not "unconfirmed". Two notes: `/crew:migrate`
+  rolling back does not restore a receipt it revoked (it fails safe: the guards
+  stay on until the owner confirms again), and a receipts store that cannot be
+  read skips the revocation without a word (the receipt backs nothing anyway: it
+  binds the file's content and modification time).
 
-It takes effect on the next hook call, with no reinstall. `approval-hook.sh` keeps
+It takes effect on the next hook call, with no reinstall. To turn it off, ask crew to propose it (`/crew:config`, which runs `crew_confirm_config.py propose --layer machine --key guards.enabled` and relays the change id), then type `/crew:confirm-config <change_id>` yourself, twice, in two separate prompts, within 15 minutes. `--set guards.enabled=false` is refused (crew 1.3.99). `approval-hook.sh` keeps
 running, so `/crew:approve` and `/crew:confirm-config` keep working and the
 `humanOnly.*` opt-out still works with the guards off. It needs python: with
 none, the bash launcher still fails closed in an armed repo (known limitation).
@@ -213,7 +219,7 @@ SessionStart notice).
 |---|---|
 | `core` | 26 |
 | `providers` | 18 |
-| `guards` | 2 |
+| `guards` | 3 |
 | `cloud` | 13 |
 | `trackers` | 5 |
 | `autopilot` | 15 |
@@ -276,12 +282,13 @@ SessionStart notice).
 | `secondOpinion.mode` | both | `"cli"` | not validated - read by `skills/crew-providers/SKILL.md` (expects string) | How the second opinion is reached. |
 | `secondOpinion.model` | both | `null` | not validated - read by `skills/crew-providers/SKILL.md` (expects string or null) | Second-opinion model. |
 
-## `guards` keys (2)
+## `guards` keys (3)
 
 | Key | Layer | Default | Values | Summary |
 |---|---|---|---|---|
 | `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `hooks/scripts/crew_guards.py`) | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
+| `guards.enabled` | machine-only | `true` | `true` \| `false` (checked in `hooks/scripts/crew_hook.py`) | The master switch for every guard hook, read from the machine file ALONE and counted only once the OWNER confirmed it. `false` there, backed by an applied `/crew:confirm-config` double confirmation (propose it with `crew_confirm_config.py propose --layer machine --key guards.enabled`), stands them all down (the cloud, environment, role-write, scope and promote guards, the completion audit, the verify gate, and the context-watch Stop hook): nothing is judged, refused, warned or logged, whatever `guards.profile`, `guards.overrides.*`, `scope.mode` or `verifyGate` say. A `false` that is not confirmed (a hand edit, an agent's write) leaves the guards on, and the scope guard refuses an agent's write to the file. The confirmation is bound to the machine file as the owner left it, content AND modification time: any later write (a hand edit, even one writing the same bytes back, `--restore`, `--rebuild` or `/crew:migrate`) leaves the guards on until it is confirmed again, while a crew `--set` of another key rebinds it. A write that puts the old modification time back (`cp -p`, an archive extract) replays the receipt: an accepted limit. A guardrail against accidents and agent drift, NOT a security boundary against a hostile agent running as the same user. A `false` in `.crew/config.json` is refused by the writer and ignored by the dispatcher, so a checkout cannot turn every guard off. Only the JSON literal `false` turns them off (a duplicate key, `null`, a string or anything unreadable leaves them on). `/crew:approve` and `/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. Needs python: with none the guards still fail closed. |
 
 ## `cloud` keys (13)
 

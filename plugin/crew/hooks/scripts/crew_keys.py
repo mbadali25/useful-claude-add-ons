@@ -388,6 +388,30 @@ KEY_META = {
                              "that guard's own tiers; a bad one reads as the floor.",
                              "open-table", since="1.2.62", source=_S + "crew_guards.py",
                              type_="object of guard name to tier"),
+    "guards.enabled": _row("The master switch for every guard hook, read from the machine file "
+                           "ALONE and counted only once the OWNER confirmed it. `false` there, backed by "
+                           "an applied `/crew:confirm-config` double confirmation (propose it with "
+                           "`crew_confirm_config.py propose --layer machine --key guards.enabled`), stands them "
+                           "all down (the cloud, environment, role-write, scope and promote guards, the "
+                           "completion audit, the verify gate, and the context-watch Stop hook): nothing is "
+                           "judged, refused, warned or logged, whatever `guards.profile`, "
+                           "`guards.overrides.*`, `scope.mode` or `verifyGate` say. A `false` that is not "
+                           "confirmed (a hand edit, an agent's write) leaves the guards on, and the scope "
+                           "guard refuses an agent's write to the file. The confirmation is bound to the "
+                           "machine file as the owner left it, content AND modification time: any later write "
+                           "(a hand edit, even one writing the same bytes back, `--restore`, `--rebuild` or "
+                           "`/crew:migrate`) leaves the guards on until it is confirmed again, while a crew "
+                           "`--set` of another key rebinds it. A write that puts the old modification time back "
+                           "(`cp -p`, an archive extract) replays the receipt: an accepted limit. "
+                           "A guardrail against accidents and agent drift, "
+                           "NOT a security boundary against a hostile agent running as the same user. A `false` in "
+                           "`.crew/config.json` is refused by the writer and ignored by the dispatcher, "
+                           "so a checkout cannot turn every guard off. Only the JSON "
+                           "literal `false` turns them off (a duplicate key, `null`, a string or "
+                           "anything unreadable leaves them on). `/crew:approve` and `/crew:confirm-config` "
+                           "keep working, so the `humanOnly.*` opt-out does too. Needs python: with "
+                           "none the guards still fail closed.", "branch", (True, False),
+                           "1.3.99", _S + "crew_hook.py"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),
     "production.hosts": _unv("Globs naming production hosts.", "0.19.30",
@@ -608,7 +632,8 @@ def values_of(key):
 # from the machine file alone (T-0051: each names the variable whose value becomes
 # the request URL, so a cloned repo may not choose it).
 _MACHINE_ONLY = (tuple("context.autoClear." + k for k in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
-                 + tuple("notify." + k for k in crew_notify.GLOBAL_ONLY_KEYS))
+                 + tuple("notify." + k for k in crew_notify.GLOBAL_ONLY_KEYS)
+                 + ("guards.enabled",))  # crew 1.3.99: a repo file cannot turn every guard off
 
 
 def layer_of(key):

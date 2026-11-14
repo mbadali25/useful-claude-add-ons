@@ -482,6 +482,29 @@ def _guards_line(root):
         for name in crew_state.ALL_GUARD_NAMES:
             layers.update(crew_config.resolve_guard(root, name)["unmigrated"])
         shown = []
+        import crew_hook  # pylint: disable=import-outside-toplevel
+        import crew_humanonly  # pylint: disable=import-outside-toplevel
+        off = crew_hook.guards_switched_off(root)
+        if off:
+            shown.append(f"DISABLED - guards.enabled is false in the {off} layer and the owner confirmed it, so no "
+                         "guard runs and nothing blocks (context-watch included)")
+        elif (crew_hook.machine_switch_unconfirmed(root) and crew_hook.machine_config_path(root) is None
+              and crew_humanonly.master_confirmed(os.path.join(os.path.expanduser("~"), crew_hook.GLOBAL_CONFIG))):
+            shown.append("guards.enabled is false in the machine file and the owner confirmed it, but it is NOT in "
+                         "effect: that file lies inside the working directory or the project (a working directory "
+                         "equal to, or above, your home is the usual cause), so every guard still runs; run crew "
+                         "from another directory")
+        elif crew_hook.machine_switch_unconfirmed(root):
+            shown.append("guards.enabled is false in the machine file but NOT in effect: no applied "
+                         "/crew:confirm-config double confirmation backs it at that file (or the file lies "
+                         "inside the project), so every guard still runs")
+        for entry in crew_config.inert_settings(root):
+            # Any repo copy but the default `true`, `null` included (the same entries `--inert` lists). Where the
+            # machine switch IS in effect, the repo copy changes nothing either, and "every guard still runs"
+            # would be false (crew 1.3.99).
+            if entry["key"] == "guards.enabled" and entry["kind"] == "repo-ignored":
+                shown.append(f"guards.enabled is {json.dumps(entry['value'])} in .crew/config.json (ignored: only "
+                             "the machine layer counts)" + ("" if off else ", so every guard still runs"))
         if profile is not None or overrides:
             shown.append(f"profile {profile if profile is not None else 'off'}, "
                          f"overrides {json.dumps(overrides or {}, sort_keys=True)}")

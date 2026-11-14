@@ -47,6 +47,12 @@ import crew_state
 
 KEYS = ("approve", "promoteMarker")
 PATHS = tuple(f"humanOnly.{key}" for key in KEYS)
+# The guards master switch (crew 1.3.99) takes the SAME double confirmation: `guards.enabled: false` in the
+# machine file counts only when an applied receipt backs it (`crew_hook.guards_switched_off` reads
+# `receipt_backs` for this key). It is not a `humanOnly` key (it has no repo layer, no `true` veto and no
+# `null`), so `is_path` stays humanOnly's; `is_confirmed_path` is "needs a receipt".
+MASTER_KEY = "guards.enabled"
+CONFIRMED_PATHS = PATHS + (MASTER_KEY,)
 # The values each key takes, the tuple both config writers refuse against.
 VALUES = (None, True, False)
 
@@ -62,6 +68,12 @@ USER_PROMPT = "user-prompt"
 PENDING, APPLIED = "pending", "applied"
 FINAL_STATES = ("applied", "expired", "cancelled", "stale", "refused", "revoked")
 
+MASTER_REFUSAL = (
+    "turns every guard off, so it needs the owner's double confirmation: "
+    "`crew_confirm_config.py propose --layer machine --key guards.enabled` records it and "
+    "prints a change id, the agent relays the id and the change to the owner, and the owner "
+    "types /crew:confirm-config <change_id> twice. Setting it by any other route leaves the "
+    "guards on.")
 SENSITIVE_REFUSAL = (
     "removes a human step, so it needs the owner's double confirmation: "
     "`crew_confirm_config.py propose` records it and prints a change id, the "
@@ -78,6 +90,12 @@ def is_path(dotted):
     return dotted in PATHS
 
 
+def is_confirmed_path(dotted):
+    """True for every key whose `false` needs an applied double confirmation: the `humanOnly` keys and
+    `guards.enabled`."""
+    return dotted in CONFIRMED_PATHS
+
+
 def write_refusal(dotted, layer, value):
     """Why a crew WRITER may not set `dotted` to `value` at `layer`, or None.
 
@@ -86,7 +104,13 @@ def write_refusal(dotted, layer, value):
     the human-only default). A `false` anywhere, or a repo `null` or removal
     (which drops a veto), is refused here; the first goes through
     `crew_confirm_config`, the second is a hand edit. A value outside
-    `VALUES` is left to the enum check, which names the values."""
+    `VALUES` is left to the enum check, which names the values.
+
+    `guards.enabled` (crew 1.3.99): `true` is a plain write, `false` goes through `crew_confirm_config` at the
+    machine layer and is refused outright at the repo layer; a removal is the guards-on default; anything
+    else is left to the enum check."""
+    if dotted == MASTER_KEY:
+        return MASTER_REFUSAL if value is False else None
     if not is_path(dotted):
         return None
     if value is True:
@@ -244,6 +268,129 @@ def revoke(layer, path, dotted, global_path=None, now=None, reason="a later crew
     except OSError:
         return False
     return True
+
+
+def _newest_settled(store, layer, path, dotted):
+    """The newest settled record (applied or revoked) for this (layer, file, key), or None; None too when the
+    store cannot be read whole."""
+    records, problems = all_records(store)
+    if problems:
+        return None
+    key = target_key(path)
+    settled = [r for r in records
+               if r.get("layer") == layer and r.get("target") == key and r.get("key") == dotted
+               and r.get("state") in (APPLIED, "revoked") and isinstance(r.get("settled"), (int, float))]
+    return max(settled, key=lambda r: r["settled"]) if settled else None
+
+
+def applied_digest(path):
+    """The canonical digest of the file at `path` as the dispatcher reads it (`crew_hook.canonical_digest`), or
+    None when it cannot be taken. A confirmed `guards.enabled: false` is bound to it (crew 1.3.99)."""
+    try:
+        import crew_hook  # pylint: disable=import-outside-toplevel
+        return crew_hook.canonical_digest(path)
+    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
+        return None
+
+
+def master_confirmed(path):
+    """True when an applied double confirmation backs `guards.enabled: false` at the machine file `path`, as the
+    dispatcher judges it (`crew_hook.owner_confirmed`: two typed-prompt confirmations and the file's digest).
+    One reader for `--explain`, `/crew:status` and the writers, so none of them disagrees with the hook."""
+    try:
+        import crew_hook  # pylint: disable=import-outside-toplevel
+        return crew_hook.owner_confirmed(path)
+    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
+        return False
+
+
+def machine_file_unread(path, root):
+    """True when the dispatcher does not read the machine file at `path`: it lies inside the project `root` or the
+    working directory (a HOME redirected into a checkout, or a working directory equal to, or above, the home
+    directory). The same rule as `crew_hook.machine_config_path`, so `--explain` and `/crew:status` say what
+    dispatch does (a test holds the two together)."""
+    real = os.path.normcase(os.path.realpath(path))
+    for folder in (root, os.getcwd()):
+        if folder:
+            base = os.path.normcase(os.path.realpath(folder))
+            if real == base or real.startswith(base.rstrip(os.sep) + os.sep):
+                return True
+    return False
+
+
+def _still_false(path, dotted):
+    """True when the file at `path` still holds `dotted: false` (the JSON literal): a receipt is rebound only
+    while the value it backs is still there."""
+    try:
+        node = crew_config_files.read_tolerant(path)[0]
+        for part in dotted.split("."):
+            node = node[part]
+    except (KeyError, TypeError, OSError):
+        return False
+    return node is False
+
+
+def restamp(layer, path, dotted, global_path=None):
+    """After a crew writer changed the file at `path` while a receipt backed `dotted: false` there, bind that
+    receipt to the file as it now is, so an unrelated `--set` (or another key's confirmation) does not silently
+    put the guards back on. Only the newest settled record, and only an applied `false`, is touched; a file the
+    owner never confirmed has no such record, so nothing here can make a hand-written `false` count. Best
+    effort: a record that cannot be written leaves the old digest, which then no longer matches (guards ON)."""
+    store = store_dir(global_path)
+    newest = _newest_settled(store, layer, path, dotted)
+    if newest is None or newest.get("state") != APPLIED or newest.get("value") is not False:
+        return False
+    stamped = applied_digest(path)
+    if stamped is None or not _still_false(path, dotted):
+        return False
+    newest["appliedDigest"] = stamped
+    try:
+        write_record(store, newest)
+    except OSError:
+        return False
+    return True
+
+
+def revoke_all(layer, path, global_path=None, reason="the file was replaced whole"):
+    """Revoke every applied double-confirmed `false` at (`layer`, `path`): the machine file backs `guards.enabled`
+    and the `humanOnly.*` keys, a repo file only the latter. For the routes that replace a file whole (`--rebuild`,
+    `--restore`, `/crew:migrate`): the owner confirmed the content that was there, not what replaced it, and a
+    receipt that outlived the replacement would back a `false` any later hand edit wrote. Returns the keys
+    revoked. A revocation that could not be written is NOT in this list; `retire` is the caller that says so."""
+    return _revoke_report(layer, path, global_path, reason)[0]
+
+
+def _revoke_report(layer, path, global_path, reason):
+    """`(revoked, failed)`: the keys whose applied receipt was revoked, and those whose revocation could not be
+    written (`revoke` returns False on an OSError, and a caller that drops that answer loses the failure)."""
+    revoked, failed = [], []
+    for dotted in (CONFIRMED_PATHS if layer == "machine" else PATHS):
+        newest = _newest_settled(store_dir(global_path), layer, path, dotted)
+        if newest is not None and newest.get("state") == APPLIED:
+            ok = revoke(layer, path, dotted, global_path=global_path, reason=reason)
+            (revoked if ok else failed).append(dotted)
+    return revoked, failed
+
+
+def warn_revoke_failed(path, failed, reason, global_path=None, stream=None):
+    """The loud line for a revocation that could not be recorded. Fails closed in effect: a receipt is bound to the
+    file's content AND modification time (`crew_hook.canonical_digest`), so one that outlives a replacement backs
+    nothing at the replaced file; but the store could not be written, so the owner should remove it."""
+    import sys  # pylint: disable=import-outside-toplevel
+    (stream or sys.stderr).write(
+        f"crew: WARNING: could not record the revocation of {', '.join(failed)} at {path} ({reason}): the "
+        f"confirmation store could not be written. An earlier double confirmation may still be on file; it no "
+        f"longer matches this file, so nothing it backed is in effect, but delete the receipts in "
+        f"{store_dir(global_path)} if you want them gone.\n")
+
+
+def retire(layer, path, global_path=None, reason="the file was replaced whole"):
+    """`revoke_all`, but a revocation that could not be written is reported on stderr (`warn_revoke_failed`)
+    rather than dropped. Returns `(revoked, failed)`."""
+    revoked, failed = _revoke_report(layer, path, global_path, reason)
+    if failed:
+        warn_revoke_failed(path, failed, reason, global_path)
+    return revoked, failed
 
 
 # --- what is in force -------------------------------------------------------------

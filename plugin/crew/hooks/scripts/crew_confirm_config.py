@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """The double confirmation behind a sensitive config change (crew 1.3.9).
 
-A change that lifts a human step -- today, a `humanOnly.*` key set to `false`
-(`crew_humanonly`) -- is never written by `crew_config.py --set` or the
+A change that lifts a human step -- a `humanOnly.*` key set to `false`
+(`crew_humanonly`), or `guards.enabled: false` (the guards master switch, crew
+1.3.99: it turns every guard off) -- is never written by `crew_config.py --set` or the
 `/crew:config` menu. It is PROPOSED here, which records a pending change in
 the machine's confirmation store (`~/.claude/crew/confirm-config/`) and
 prints a change id. The owner then types `/crew:confirm-config <change_id>`
@@ -31,6 +32,7 @@ and the exact command), because the owner never sees this CLI's output.
 CLI (no writes except `propose` and `cancel`, both into the store only):
 
     crew_confirm_config.py propose --layer machine|repo --key humanOnly.<k> [--root R]
+    crew_confirm_config.py propose --layer machine --key guards.enabled
     crew_confirm_config.py status <change_id>
     crew_confirm_config.py list
     crew_confirm_config.py cancel <change_id>
@@ -76,12 +78,17 @@ def _target(layer, root, global_path):
 def propose(layer, dotted, root=None, global_path=None, now=None, tracker=None):
     """Record a pending change `dotted: false` at `layer`; returns the record.
 
-    Refused when `dotted` is not a humanOnly key, or when the repo file is
-    absent, tracked by git, or git cannot tell (a tracked file can never opt
-    out, and could-not-tell is not untracked)."""
-    if not crew_humanonly.is_path(dotted):
+    Refused when `dotted` is not a humanOnly key or `guards.enabled` (the
+    guards master switch, crew 1.3.99: machine layer only, a repo copy counts
+    for nothing), or when the repo file is absent, tracked by git, or git
+    cannot tell (a tracked file can never opt out, and could-not-tell is not
+    untracked)."""
+    if not crew_humanonly.is_confirmed_path(dotted):
         raise Refused(f"{dotted} is not a key that needs a double confirmation "
-                      f"(those are: {', '.join(crew_humanonly.PATHS)})")
+                      f"(those are: {', '.join(crew_humanonly.CONFIRMED_PATHS)})")
+    if dotted == crew_humanonly.MASTER_KEY and layer != "machine":
+        raise Refused(f"{dotted} is read from the machine file only; a repo copy stands no guard "
+                      "down, so propose it with --layer machine")
     path = _target(layer, root, global_path)
     if layer == "repo":
         if not os.path.isfile(path):
@@ -161,15 +168,24 @@ def confirm(change_id, via, prompt_id, session_id=None, global_path=None, now=No
             return _settle(store, record, "refused",
                            f"{record['path']} is {state} in git now", stamp)
     writer = apply or crew_config.apply_confirmed_optout
+    stamp_out = {}
     try:
+        extra = {"stamp_out": stamp_out} if apply is None else {}
         writer(record["layer"], record["key"], record["path"], record["targetDigest"],
-               global_path=global_path)
+               global_path=global_path, **extra)
     except crew_config_files.Conflict as exc:
         return _settle(store, record, "stale",
                        f"the file changed since the proposal ({exc}); propose again", stamp)
     except (OSError, crew_config_files.Unreadable, crew_config_files.Busy,
             crew_config.GlobalWriteRefused, crew_config.RepoWriteRefused) as exc:
         return _settle(store, record, "refused", f"the write failed: {exc}", stamp)
+    # The receipt is bound to the file as the owner's second confirmation left it (crew 1.3.99): the dispatcher
+    # honours a `guards.enabled: false` only while the file still digests to this.
+    # The digest the writer read inside its lock, right after the replace; a custom writer that does not report
+    # one falls back to reading it here (a hand edit that never takes the lock can still land in that window).
+    digest = stamp_out.get("digest") or crew_humanonly.applied_digest(record["path"])
+    if digest is not None:
+        record["appliedDigest"] = digest
     return _settle(store, record, crew_humanonly.APPLIED, "confirmed twice", stamp)
 
 
@@ -191,13 +207,17 @@ def _line(record):
 
 def _instructions(record):
     minutes = crew_humanonly.PROPOSAL_TTL_SECONDS // 60
+    warning = ([f"  WARNING: {record['key']}: false turns EVERY guard off (and context-watch), so nothing "
+                "blocks until it is removed or set true."]
+               if record["key"] == crew_humanonly.MASTER_KEY else [])
     return [
         f"proposed {record['change_id']}: {record['key']} = false in the {record['layer']} "
         f"file {record['path']}",
-        "Only the owner can apply it. Relay the next two lines to the owner word for word; "
-        "never type or confirm it yourself:",
+        f"Only the owner can apply it. Relay the next {("two", "three")[len(warning)]} lines to the owner word for "
+        "word; never type or confirm it yourself:",
         f"  crew proposes {record['key']}: false ({record['layer']} config, "
         f"{record['path']}), change {record['change_id']}.",
+        *warning,
         f"  To apply it, type /crew:confirm-config {record['change_id']} as its own prompt, "
         f"twice, in two separate prompts, within {minutes} minutes. To refuse it, do nothing; "
         "it expires.",

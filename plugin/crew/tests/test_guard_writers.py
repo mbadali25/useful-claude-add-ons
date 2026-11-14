@@ -231,4 +231,5 @@ def test_the_menu_offers_the_profile_first_and_an_override_per_guard(tmp_path):
             if r["path"].startswith("guards.")]
     assert rows[0] == "guards.profile"
     assert rows[1:1 + len(NAMES)] == [f"guards.overrides.{n}" for n in NAMES]
-    assert rows[1 + len(NAMES):] == []
+    # crew 1.3.87: the master switch follows the overrides
+    assert rows[1 + len(NAMES):] == ["guards.enabled"]

@@ -6,7 +6,7 @@ disable-model-invocation: true
 ---
 
 The user typed `/crew:confirm-config $1`. A change that lifts a human step
-(today: `humanOnly.approve` or `humanOnly.promoteMarker` set to `false`) is
+(`humanOnly.approve` or `humanOnly.promoteMarker` set to `false`, and, since crew 1.3.99, `guards.enabled` set to `false`, which turns every guard off) is
 never written by `/crew:config` or `crew_config.py --set`. It is proposed with
 `crew_confirm_config.py propose`, which prints a change id, and it applies only
 after the owner types `/crew:confirm-config <change_id>` **twice, in two
@@ -32,6 +32,7 @@ change the owner did not ask for.
 
 **Never confirm a change yourself.** There is no CLI subcommand for it, and a
 confirmation counts only when the prompt hook saw the user type this command.
-Never write into `~/.claude/crew/confirm-config/`, and never edit a
-`humanOnly` key to `false` by hand or through Edit: crew reads such a value as
+Never write into `~/.claude/crew/confirm-config/` (the scope guard refuses a shell command that writes to it, a
+redirect or a write verb aimed at it, through `cd`, a variable or a glob; a command that only names it passes), and never edit a
+`humanOnly` key or `guards.enabled` to `false` by hand or through Edit: crew reads such a value as
 human-only, and doing it is the step the owner asked to keep for themselves.

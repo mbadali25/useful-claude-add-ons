@@ -125,6 +125,7 @@ import crew_common
 import crew_config_files
 import crew_dropped
 import crew_guards
+import crew_humanonly
 
 CREW_SCHEMA = 1
 LEGACY_SCHEMA_MAX = 8
@@ -836,6 +837,12 @@ def _plan_global_file(plan, path, raw, accept_dropped):
             f"{path}: these blocks are the wrong type and were left as written: "
             f"{', '.join(notes['unmigrated'])} - fix them by hand, then preview again")
     _refuse_dropped(plan, path, crew_upgrade, notes)
+    import crew_config  # pylint: disable=import-outside-toplevel
+    master = crew_config.master_switch_problem(out, "machine", cfg)
+    if master:
+        # The machine file is rewritten whole: a `guards.enabled` that is not a boolean (or a `false` the owner never
+        # confirmed) is not carried through into the new file (crew 1.3.99).
+        plan["conflicts"].append(f"{path}: {master} - fix it by hand, then preview again")
     if plan["conflicts"]:
         return
     if out == cfg:
@@ -1084,6 +1091,15 @@ def apply_plan(plan):
             _check_pre_state(root, item)
             os.replace(path + TMP_SUFFIX, path)
             landed.append((item, path))
+            if scope == "global" and item.get("replaces"):
+                # The machine file was rewritten whole: the owner's receipts were for the old content (crew 1.3.99).
+                # A revocation that cannot be written is reported on stderr, not dropped.
+                crew_humanonly.retire("machine", path, global_path=path,
+                                      reason="/crew:migrate rewrote the machine file")
+            elif scope == "repo" and item.get("replaces"):
+                # The same for the repo file (round 3): its own `humanOnly` receipts were for the content that was
+                # there, and `--rebuild` / `--restore` already retire them on a repo file.
+                crew_humanonly.retire("repo", path, reason="/crew:migrate rewrote the repo file")
         manifest["state"] = "applied"
         atomic_write(_manifest_path(backup), _json_bytes(manifest))
     except BaseException:

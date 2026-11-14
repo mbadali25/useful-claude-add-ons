@@ -427,7 +427,7 @@ def replace_text(path, text, raw_before):
     replace_bytes(path, data)
 
 
-def update_json(path, mutate, *, expect=None, create=False, wait=None):
+def update_json(path, mutate, *, expect=None, create=False, wait=None, after=None):
     """Read, compare, merge and replace `path` inside its `Lock`.
 
     `mutate(parsed_copy)` returns the object to write, or None to write
@@ -439,6 +439,11 @@ def update_json(path, mutate, *, expect=None, create=False, wait=None):
     `expect` the merge is onto the bytes read under the lock. `create` lets
     an absent file be written from `{}` (the machine file's first write) and
     admits a `{}` file; the repo file never passes it.
+
+    `after(result)`, when given, runs once the replace has landed, still inside the lock: a caller that must
+    bind something to the file it just wrote (the master-switch receipt's digest) reads it there, with no
+    other crew writer able to land between the write and the read. A hand edit that never takes this lock
+    can still land anywhere; the lock narrows the race, it does not close it.
 
     Returns `(result, raw_before)`, `result` being what `mutate` returned.
     Raises `Unreadable`, `Busy`, `Conflict`, or the OS error of the write.
@@ -466,6 +471,8 @@ def update_json(path, mutate, *, expect=None, create=False, wait=None):
             return None, raw
         text = json.dumps(result, indent=2) + "\n"
         replace_text(path, text, raw)
+        if after is not None:
+            after(result)
         return result, raw
 
 
