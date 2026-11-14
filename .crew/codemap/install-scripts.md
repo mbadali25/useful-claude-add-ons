@@ -83,11 +83,11 @@ Obsidian, the LSP/stack-tools rows) through their own package managers.
 ## Entry points
 
 - `scripts/install-prerequisites.sh:1227-1235` — `MENU_KEYS`, the top-level
-  picker's ordered key list, **26** keys; `MENU_DEFAULT` at `:1236`, also 26
+  picker's ordered key list, **26** keys at that anchor (27 since the `skill-sets` row was appended last, 2026-11-14, so no existing menu number shifted); `MENU_DEFAULT` at `:1236`, also 26
   values; `MENU_NAME` at `:1237`, also 26. DERIVED by parsing the arrays
   directly. Run by a user on Linux, macOS or Git Bash.
 - `scripts/install-prerequisites.ps1:1067-1094` — `$script:Catalog`, the
-  Windows equivalent: same 26 keys in the same order (`Key`/`Default`/`Name`
+  Windows equivalent: same 26 keys (27 with `skill-sets`) in the same order (`Key`/`Default`/`Name`
   one per row), same defaults. DERIVED by parsing both key and default lists.
 - Sub-picker catalogs, counts parsed directly (the same count in both
   scripts, which `check_group_parity` asserts): `SKILL_KEYS` 36
@@ -95,7 +95,10 @@ Obsidian, the LSP/stack-tools rows) through their own package managers.
   `scripts/install-prerequisites.ps1:1127`), `PLUGIN_KEYS` 13 (`:1406`;
   `$script:PluginCatalog`, `:1175`), `TEAM_KEYS` 4 (`:1469`;
   `$script:TeamCatalog`, `:1198`), `COMMUNITY_KEYS` 10 (`:1505`;
-  `$script:CommunityCatalog`, `:1216`). DERIVED.
+  `$script:CommunityCatalog`, `:1216`), and, added 2026-11-14, `SKILLSET_KEYS` 9
+  (`SKILLSET_*` arrays and `$script:SkillSetCatalog`; commit-pinned third-party
+  marketplaces aws-skills, hashicorp, msp-skills; `check_group_parity` also compares the
+  two scripts' Spec strings for this group). DERIVED.
 - `scripts/install-prerequisites.sh:2889` — `install_web_testing`, the merged
   row (see Landmines), dispatched by `is_selected "web-testing"` at `:2993`.
   PowerShell equivalent is inline under `Test-Selected 'web-testing'`

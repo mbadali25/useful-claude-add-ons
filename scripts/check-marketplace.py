@@ -399,6 +399,7 @@ def check_group_parity(fail):
         ("team", "TEAM_KEYS", "TeamCatalog"),
         ("community", "COMMUNITY_KEYS", "CommunityCatalog"),
         ("repo-plugins", "PLUGIN_KEYS", "PluginCatalog"),
+        ("skill-sets", "SKILLSET_KEYS", "SkillSetCatalog"),
     )
     for menu_key, bash_var, ps_var in groups:
         sh_keys = bash_array(shell, bash_var)
@@ -417,6 +418,21 @@ def check_group_parity(fail):
             )
         if not sh_keys:
             fail(f"{menu_key}: the group is empty, so its sub-picker would show nothing")
+
+    # The skill-sets row names third-party marketplaces, so its Spec strings (plugin,
+    # pinned source, marketplace name) must also match across the two scripts: a name
+    # that differs in one makes that platform re-add the marketplace on every run.
+    sh_specs = re.search(r"^SKILLSET_SPEC=\((.*?)^\)", shell, re.S | re.M)
+    ps_block = re.search(r"\$script:SkillSetCatalog\s*=\s*@\((.*?)^\)", pwsh, re.S | re.M)
+    if sh_specs and ps_block:
+        sh_list = re.findall(r'^\s*"([^"]+)"', sh_specs.group(1), re.M)
+        ps_list = re.findall(r"Spec\s*=\s*'([^']+)'", ps_block.group(1))
+        if sh_list != ps_list:
+            fail(
+                "skill-sets: SKILLSET_SPEC and SkillSetCatalog Spec values do not match\n"
+                f"      .sh:  {sh_list}\n"
+                f"      .ps1: {ps_list}"
+            )
 
 
 def check_docs(entries, fail):

@@ -67,6 +67,13 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Added - installers: a "Skill sets" row (item 27) for the AWS, Terraform + Packer, and Fortinet + Cisco Meraki skills
+
+- **Summary.** The install scripts now have a ticked-by-default "Skill sets" row, with its own sub-picker, that adds the AWS, HashiCorp Terraform and Packer, and Fortinet and Cisco Meraki skills, each marketplace pinned to a reviewed commit.
+- `scripts/install-prerequisites.sh` and `.ps1` gain row 27 (appended last, so no existing menu number moves) backed by a new `SKILLSET` group and the `--skillsets` / `-SkillSets` flag: `aws-common`, `aws-iac`, `aws-cost-ops`, `serverless-eda`, `aws-agentic-ai` from `zxkane/aws-skills`; `terraform`, `packer` from `hashicorp/agent-skills`; only `fortinet` and `cisco-meraki` from `Servosity/msp-skills`.
+- Sources are `owner/repo#<full SHA>` (accepted by CLI 2.1.325; an older CLI fails the step rather than installing unpinned). The scripts print that the Servosity `fortinet-cli` / `cisco-meraki-cli` binary installers are never run, and that `aws-cost-ops` / `aws-agentic-ai` start unpinned `uvx ...@latest` MCP servers.
+- `scripts/check-marketplace.py` checks the new group's keys and Spec strings match across both scripts; `scripts/_test/menu-groups.sh` covers the group. README, INSTALLATION.md and MARKETPLACE.md describe it. No plugin or skill version changes.
+
 ### Removed — crew 1.3.75: the mass delete, create and change guard (`guards.mass`) is gone, not just off
 
 - **Summary.** `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
