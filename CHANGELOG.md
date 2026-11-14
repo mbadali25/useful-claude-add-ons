@@ -19,6 +19,7 @@ read entries under any `## [` heading.
 ## [Unreleased]
 
 - crew 1.3.96: re-bump only - interim number on the stop-audit-native-python branch (commit 21c1dc6a6, PR #777) before the direct route had to defer to the wrapper for an unknown project directory and TMPDIR, and open PRs reached 1.3.98; the change is recorded under crew 1.3.99
+- crew 1.3.99: re-bump only - interim number on the stop-audit-native-python branch (PR #777) before the parity tests' skip guard also matched a loaded host's `UNKNOWN (no usable python` and the marker-name test's inner cap rose to 900 s (test-only; no behaviour change); the change is recorded under crew 1.3.103
 - crew 1.3.74: re-bump only - interim number on the mass-guard removal branch (commits 188f49e4f, 8c3ac53a0, PR #772) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.75
 - crew 1.3.64: re-bump only - interim number on the confirm-config-relay branch (commit 6d1d45994, PR #768) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.70
 - crew 1.3.66: re-bump only - interim number on the confirm-config-relay branch (PR #768) before main reached 1.3.69 after #767 merged; the change is recorded under crew 1.3.70
