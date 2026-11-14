@@ -4,8 +4,8 @@ A repo-layer `false` is ignored (owner decision 2026-11-13): a checkout cannot t
 The must-block half and the must-allow half run the REAL dispatcher (`crew_hook.py`) and the REAL guard
 scripts against the armed fixture repo of `record_golden_hooks.build_repo` (scope guard, cloud guard, env
 guard and role-write guard all at block, a plan-approved ticket T-1), under a temporary HOME. Nothing here
-touches the real config. `sabotage_guards_master.py` replays one mutation per rule below (wired into `sabotage.py`): each
-reintroduces a bug this switch could have, and the suite must go red.
+touches the real config. `sabotage_guards_master.py` replays one mutation per rule below (wired into
+`sabotage.py`): each reintroduces a bug this switch could have, and the suite must go red.
 
 A "block" below is what the dispatcher reports: exit 2, or a PreToolUse `permissionDecision` of `deny`.
 """
@@ -652,7 +652,8 @@ SHELL_MUST_BLOCK = [
     "ln -sf /tmp/x ~/.claude/crew/config.json",
     "rm ~/.claude/crew/confirm-config/cc-00000000.json",
     "cd ~/.claude/crew/confirm-config && echo x > cc-00000000.json",
-    "python3 -c \"import os; open(os.path.join(os.path.expanduser('~'), '.claude', 'crew', 'config.json'), 'w').write('x')\"",
+    "python3 -c \"import os; open(os.path.join(os.path.expanduser('~'), '.claude', 'crew', 'config.json'), "
+    "'w').write('x')\"",
     "python3 -c \"from pathlib import Path; (Path.home() / '.claude' / 'crew' / 'config.json').write_text('{}')\"",
     "python3 -c \"import shutil; shutil.copy('x', '~/.claude/crew/config.json')\"",
     "python3 - <<'EOF'\nimport os\nopen(os.path.expanduser('~/.claude/crew/config.json'), 'w').write('x')\nEOF",
@@ -716,6 +717,34 @@ SHELL_MUST_BLOCK = [
     "[System.IO.File]::WriteAllText(\"$HOME/.claude/crew/config.json\", 'x')",
     "echo x > ~/.claude/crew/config.json::$DATA",
     "fsutil hardlink create ~/.claude/crew/config.json x",
+    # round 5: PowerShell common switches, comma lists, both .NET spellings, unzip -o
+    "Set-Content -Verbose ~/.claude/crew/config.json x",
+    "Out-File -Verbose ~/.claude/crew/config.json",
+    "Add-Content -Verbose ~/.claude/crew/config.json x",
+    "Clear-Content -Verbose ~/.claude/crew/config.json",
+    "New-Item -Verbose ~/.claude/crew/config.json",
+    "Set-Content -Debug ~/.claude/crew/config.json x",
+    "Set-Content -Fo ~/.claude/crew/config.json x",
+    "Set-Content -WhatIf -Confirm ~/.claude/crew/config.json x",
+    "Set-Content -Path ~/.claude/crew/config.json,/tmp/out -Value x",
+    "Set-Content /tmp/out,~/.claude/crew/config.json x",
+    "[System.IO.File]::AppendAllText('~/.claude/crew/config.json','x')",
+    "[System.IO.File]::Copy('x','~/.claude/crew/config.json')",
+    "[System.IO.File]::Move('x','~/.claude/crew/config.json')",
+    "[System.IO.File]::Delete('~/.claude/crew/config.json')",
+    "[System.IO.File]::Create('~/.claude/crew/config.json')",
+    "[IO.File]::AppendAllText('~/.claude/crew/config.json','x')",
+    "[IO.File]::Delete('~/.claude/crew/config.json')",
+    "[IO.File]::OpenWrite('~/.claude/crew/config.json')",
+    "[IO.File]::WriteAllText((Join-Path $HOME '.claude/crew/config.json'),'x')",
+    "pwsh -c \"[System.IO.File]::AppendAllText('~/.claude/crew/config.json','x')\"",
+    "fsutil hardlink create ~/.claude/crew/confirm-config/cc-1.json x",
+    "pwsh -c \"if (1) { [System.IO.File]::Delete('~/.claude/crew/config.json') }\"",
+    "pwsh -c \"if (1) { [IO.File]::Copy('x','~/.claude/crew/config.json') }\"",
+    "pwsh -c \"if (1) { [IO.File]::AppendAllText('~/.claude/crew/config.json','x') }\"",
+    "cd ~/.claude/crew && unzip -oq a.zip",
+    "cd ~/.claude/crew && unzip -o a.zip",
+    "7za x a.7z -o~/.claude/crew",
     # inline code that names the owner's files only by a glob
     "python3 -c \"import glob; open(glob.glob('/h/.claude/c*/x')[0], 'w').write('x')\"",
     "python3 -c \"import glob; open(glob.glob('~/.cl*/cr*/co*')[0], 'w').write('x')\"",
@@ -760,7 +789,8 @@ SHELL_MUST_ALLOW = [
     "git grep confirm-config -- plugin/crew",
     "git -C ~/.claude/crew status",
     "git log --oneline -3 && echo done > /tmp/x.txt",
-    "gh pr create --body \"$(cat <<'EOF'\nthe machine config ~/.claude/crew/config.json -> false\nopen(p, 'w').write(x)\nEOF\n)\"",
+    "gh pr create --body \"$(cat <<'EOF'\nthe machine config ~/.claude/crew/config.json -> false\n"
+    "open(p, 'w').write(x)\nEOF\n)\"",
     "node ./tool.exe --version",
     "echo ok 2>&1 > /dev/null",
     "echo \"wrote > ~/.claude/crew/confirm-config/cc-1.json\" > notes.txt",
@@ -776,6 +806,23 @@ SHELL_MUST_ALLOW = [
     "curl -O --output-dir /tmp http://x/y",
     "7z x a.7z -o/tmp/x",
     "fsutil file queryfileid ~/.claude/crew/config.json",
+    # round 5: a read through .NET, the owner's file as the text written, a read-only fsutil, unzip's -o switch
+    "[IO.File]::ReadAllText('~/.claude/crew/config.json')",
+    "[IO.File]::ReadAllLines('~/.claude/crew/config.json')",
+    "[IO.File]::Exists('~/.claude/crew/config.json')",
+    "[System.IO.File]::ReadAllText('~/.claude/crew/config.json')",
+    "[IO.File]::OpenRead('~/.claude/crew/config.json')",
+    "[IO.File]::WriteAllText('/tmp/x','~/.claude/crew/config.json')",
+    "[IO.File]::Copy('~/.claude/crew/config.json','/tmp/x')",
+    "pwsh -c \"[IO.File]::ReadAllText('~/.claude/crew/config.json')\"",
+    "pwsh -c \"if (1) { [IO.File]::ReadAllText('~/.claude/crew/config.json') }\"",
+    "pwsh -c \"if (1) { [IO.File]::Exists('~/.claude/crew/config.json') }\"",
+    "fsutil hardlink list ~/.claude/crew/config.json",
+    "fsutil hardlink create /tmp/new ~/.claude/crew/config.json",
+    "Set-Content -Verbose /tmp/out -Value x",
+    "Set-Content -Path /tmp/out,/tmp/o2 -Value ~/.claude/crew/config.json",
+    "cd /tmp && unzip -oq a.zip",
+    "unzip -oq a.zip -d /tmp/x",
     "echo x > C:\tmp\a.txt",
     # inline code that writes a repo file named like the owner's, or only mentions the slash command
     "python3 -c \"open('.crew/config.json', 'w').write('x')\"",

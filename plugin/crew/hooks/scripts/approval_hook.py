@@ -75,8 +75,8 @@ prompt -- carries one more command, ONE line, raw or expanded exactly as
 `/crew:approve` is:
 
 - `/crew:confirm-config <change_id>` records one confirmation of a proposed
-  `humanOnly.*` change, or of `guards.enabled: false` (crew 1.3.98) (`crew_confirm_config.confirm`, `via="user-prompt"`, the
-  payload's `prompt_id`). The second one, from another prompt, applies it. This
+  `humanOnly.*` change, or of `guards.enabled: false` (crew 1.3.98) (`crew_confirm_config.confirm`,
+  `via="user-prompt"`, the payload's `prompt_id`). The second one, from another prompt, applies it. This
   is the recorder `crew_humanonly.USER_PROMPT` was waiting for; without it no
   opt-out could ever take effect. Typed with no id, a malformed id, or an id
   `confirm` refuses (crew 1.3.69), the refusal also LISTS the machine's

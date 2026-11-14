@@ -121,9 +121,9 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   the `\\?\` prefix), and a shell command that WRITES TO them: a redirect, `tee`,
   `cp`, `mv`, `rm`, `sed -i`, `Set-Content`, `Out-File`, `Add-Content`, `copy`,
   `move`, `xcopy`, `robocopy`, `curl -o` (also `-sSo` and `-O --output-dir`), `wget -O`,
-  `-OutFile`, `tar -C` (before or after `-xf`), `unzip -d`, `7z -o<dir>`,
-  `Expand-Archive`, `patch`, `git apply`, `mklink /J`, `fsutil hardlink`, `awk -i
-  inplace`, a `[IO.File]::WriteAllText` with the path spelled out and the like, aimed at them (spelled out, or through `cd`, a variable,
+  `-OutFile`, `tar -C` (before or after `-xf`), `unzip -d` (or `unzip` run in that folder; its `-o` is the overwrite switch), `7z -o<dir>`,
+  `Expand-Archive`, `patch`, `git apply`, `mklink /J`, `fsutil hardlink create`, `awk -i
+  inplace`, a `[IO.File]::WriteAllText` (or `[System.IO.File]::`, any write member: `AppendAll*`, `Copy`, `Move`, `Delete`, `Create`, `Replace`) with the path spelled out, aimed at them (spelled out, or through `cd`, a variable,
   a glob or a path built from `.claude`, `crew` and `config.json`), or inline
   code (`python -c`, a heredoc, `pwsh -Command`) that names them beside a write
   call, in every `scope.mode` (`off`, the default, included). A command that only
@@ -132,7 +132,12 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   same line; reading them (`cat`, `jq`, `stat`, `crew_config.py --show`) passes.
   The crew runs every normal command: no script is opened or sized, so one that
   cannot be read or is large refuses nothing. Only the word a verb WRITES TO
-  counts: `Set-Content -Path out.txt -Value '<the machine config path>'` passes.
+  counts: `Set-Content -Path out.txt -Value '<the machine config path>'` passes, as do
+  `[IO.File]::ReadAllText('<it>')` and `fsutil hardlink list <it>`. The PowerShell switches
+  (`-Verbose`, `-Debug`, `-Force`, `-WhatIf` and the rest, abbreviated or not) take no value, and a
+  comma-separated `-Path` list is read item by item. PowerShell's `--%` stop-parsing token, an
+  ambiguous parameter abbreviation and a .NET call whose destination is an expression, not a
+  literal path, are read by their text only.
   Accepted limits, by the owner's decision ("fix the overblock, add the plain
   verbs, stop there"): brace expansion, a path built by `Join-Path` or a
   variable the command did not set, `perl`, `php`, `awk` or `os.system` inline

@@ -397,7 +397,8 @@ _CODE_WRITES_RE = re.compile(
     r"shutil|rmtree|\bcopyfile|\bmove\(|writeall|writefile|appendfile|createwritestream|"
     r"\bopen\([^)]*['\"][rwax]*[wax+][rwabxt+]*['\"]|mode\s*=\s*['\"][rwax]*[wax+]|o_wronly|o_rdwr|o_creat|"
     r"set-content|add-content|out-file|new-item|copy-item|move-item|remove-item|rename-item|clear-content|"
-    r"\[io\.file\]::", re.IGNORECASE)
+    r"\[(?:system\.)?io\.file\]::(?:write|append|copy|move|delete|create|replace|setattributes|openwrite|"
+    r"open\w*\([^)]*(?:create|append|truncate|write))", re.IGNORECASE)
 _HOME_PART = r"(?:~|\$home|\$\{home\}|%userprofile%|\$env:userprofile|\$env:home)"
 _HOME_VARS = frozenset({"home", "userprofile"})
 _CODE_RUNNERS = frozenset({"python", "python3", "py", "node", "nodejs", "deno", "bun", "perl", "ruby", "php", "lua"})
@@ -739,7 +740,8 @@ def _download_hits(name, args, shell):
                 elif out is None:
                     out = bundle.group(2) or (args[position + 1] if position + 1 < len(args) else None)
         outdir = _option_value(args, "--output-dir")
-        if outdir is not None and (remote_name or (out is not None and not os.path.isabs(out)))                 and _hit(outdir, shell, "dir"):
+        lands_there = remote_name or (out is not None and not os.path.isabs(out))
+        if outdir is not None and lands_there and _hit(outdir, shell, "dir"):
             return True
     if out is not None:
         return _hit(out, shell, "file")
@@ -749,14 +751,16 @@ def _download_hits(name, args, shell):
 def _archive_hits(name, args, shell):
     """True when an extraction lands in the owner's folder (or an archive is created as one of its files)."""
     if name in ("unzip", "7z", "7za"):
-        attached = next((a[2:] for a in args if a.startswith("-o") and len(a) > 2), None)   # 7z x a.7z -o<dir>
+        # 7z x a.7z -o<dir>; for unzip `-o` is the overwrite switch (`-oq`), never a destination
+        attached = None if name == "unzip" else next((a[2:] for a in args if a.startswith("-o") and len(a) > 2), None)
         where = _option_value(args, "-d") or attached
         return _hit(where, shell, "dir") if where else (name == "unzip" and _in_owner_folder(shell))
     if name == "expand-archive":
         where = _option_value(args, "-DestinationPath", "-Dest")
         return where is not None and _hit(where, shell, "dir")
     # the mode letters are a bundle (`xf`, `-xzf`) wherever the options put it: `-C dir -xf a.tar` too
-    bundles = [a for position, a in enumerate(args) if re.match(r"^-[A-Za-z]+$", a) or (position == 0 and a[:1].isalpha())]
+    bundles = [a for position, a in enumerate(args)
+               if re.match(r"^-[A-Za-z]+$", a) or (position == 0 and a[:1].isalpha())]
     extracting = "--extract" in args or any("x" in b for b in bundles)
     creating = "--create" in args or any("c" in b for b in bundles)
     if extracting:
@@ -781,9 +785,26 @@ def _copy_hits(name, args, shell):
 
 _PS_CMDLETS = frozenset({"clear-content", "set-content", "add-content", "out-file", "new-item", "ni", "set-item",
                          "sc", "ac"})
+# the switch parameters of the write cmdlets (own and common): they take no value, so the word after one is not theirs
 _PS_SWITCHES = frozenset({"force", "nonewline", "append", "noclobber", "whatif", "confirm", "passthru", "wait",
-                          "asbytestream", "usetransaction"})
+                          "asbytestream", "usetransaction", "verbose", "debug", "recurse"})
 _PS_PATH_PARAMS = frozenset({"path", "literalpath", "lp", "pspath", "filepath", "destination"})
+# the value parameters, so an abbreviation (`-fo`, `-lit`) resolves the way PowerShell does: only when it is unique
+_PS_VALUE_PARAMS = frozenset({"value", "encoding", "name", "itemtype", "stream", "inputobject", "include", "exclude",
+                              "filter", "credential", "width", "target", "delimiter", "erroraction", "warningaction",
+                              "informationaction", "errorvariable", "warningvariable", "informationvariable",
+                              "outvariable", "outbuffer", "pipelinevariable", "ea", "wa", "infa", "ev", "wv", "iv",
+                              "ov", "ob", "pv"})
+
+
+def _ps_param(param):
+    """The full name an abbreviated PowerShell parameter stands for, or `param` itself when it is exact, unknown
+    or ambiguous (PowerShell refuses an ambiguous one, so nothing is written)."""
+    known = _PS_SWITCHES | _PS_PATH_PARAMS | _PS_VALUE_PARAMS
+    if param in known:
+        return param
+    matches = [name for name in known if name.startswith(param)]
+    return matches[0] if len(matches) == 1 else param
 
 
 def _ps_destinations(args):
@@ -796,7 +817,7 @@ def _ps_destinations(args):
         position += 1
         if arg.startswith("-") and len(arg) > 1 and not arg[1].isdigit():
             param, _, attached = arg[1:].partition(":")
-            param = param.lower()
+            param = _ps_param(param.lower())
             if param in _PS_SWITCHES:
                 continue
             value = attached or (args[position] if position < len(args) else "")
@@ -809,6 +830,7 @@ def _ps_destinations(args):
         elif positional == 0:
             found.append(arg)
             positional = 1
+    found = [piece for word in found for piece in ([word, *word.split(",")] if "," in word else [word])]
     if name is not None:
         found = [base.rstrip("/\\") + "/" + name for base in found] or [name]
     return found
@@ -820,8 +842,8 @@ def _verb_hits(name, args, shell):  # pylint: disable=too-many-return-statements
     operands = [w for w in _operands(args) if w]
     if name in _REMOVERS:
         return any(_hit(w, shell, "destroy") for w in operands)
-    if name == "fsutil":
-        return "hardlink" in lowered and any(_hit(w, shell, "dir") for w in operands)
+    if name == "fsutil":   # `fsutil hardlink create <new link> <existing file>`; list and the rest only read
+        return lowered[:2] == ["hardlink", "create"] and len(operands) > 2 and _hit(operands[2], shell, "file")
     if name in _WRITERS:
         mode = "dir" if name == "mklink" or any(x in lowered for x in ("junction", "symboliclink", "hardlink")) \
             else "file"
@@ -917,6 +939,53 @@ def _nested(name, args, shell, depth):
     return None
 
 
+_DOTNET_CALL_RE = re.compile(r"^\[(?:system\.)?io\.file\]::(\w+)\s*\(?(.*)$",
+                             re.IGNORECASE | re.DOTALL)
+# the arguments of a `[IO.File]::Member(...)` that are written to, by position (a destination, not the text written)
+_DOTNET_DESTINATIONS = (("openread", ()), ("opentext", ()), ("copy", (1,)), ("move", (0, 1)),
+                        ("replace", (0, 1, 2)), ("write", (0,)), ("append", (0,)), ("create", (0,)),
+                        ("delete", (0,)), ("openwrite", (0,)), ("setattributes", (0,)), ("open", (0,)))
+
+
+def _dotnet_arguments(text):
+    """The top-level comma-separated arguments in `text` (the part of a call after its opening parenthesis)."""
+    found, depth, current = [], 0, ""
+    for char in text:
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+            if depth < 0:
+                break
+        if char == "," and depth == 0:
+            found.append(current)
+            current = ""
+        else:
+            current += char
+    return [*found, current]
+
+
+def _dotnet_refusal(text, shell):
+    """Why a statement-initial `[IO.File]::Member(...)` writes the owner's files, or None. Only a WRITE member counts
+    (`ReadAllText`, `Exists` read), and only its destination argument: the owner's file as the text written is not
+    a write to it. A destination that is an expression, not a literal path, falls back to naming the owner."""
+    match = _DOTNET_CALL_RE.match(text)
+    if not match:
+        return None
+    member = match.group(1).lower()
+    positions = next((where for prefix, where in _DOTNET_DESTINATIONS if member.startswith(prefix)), None)
+    if positions is None or (member == "open" and not _CODE_WRITES_RE.search(text)):
+        return None
+    arguments = _dotnet_arguments(match.group(2))   # the shell word splitter has dropped the parentheses and quotes
+    for position in positions:
+        word = arguments[position].strip().rstrip(")").strip("'\"") if position < len(arguments) else ""
+        if re.search(r"[(\[{\s]", word):
+            return _code_refusal(text)
+        if _hit(word, shell, "file"):
+            return f"{OWNER_REASON}: a .NET file write is aimed at them"
+    return None
+
+
 def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-statements
     """Why one simple command writes the owner's files, or None."""
     for target in seg.targets:
@@ -926,7 +995,7 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
     if not words:
         return None
     if words[0].lower().startswith(("[io.file]::", "[system.io.file]::")):   # a .NET write with the path spelled out
-        return _code_refusal(" ".join(words))
+        return _dotnet_refusal(" ".join(words), shell)
     name = _command_name(_expand(words[0], shell))
     args = [_expand(w, shell) for w in words[1:]]
     if name in _CD:

@@ -782,8 +782,9 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
     chosen = select(event, harness, payload, windows=windows, scripts=scripts)
     armed_fn = armed_fn or armed
     if chosen and _guards_off(root):
-        # `guards.enabled: false` in the machine layer, owner-confirmed (crew 1.3.98): no guard row starts, so nothing is judged, logged or
-        # refused, and a fault in what is left cannot fail closed either. approval-hook.sh stays.
+        # `guards.enabled: false` in the machine layer, owner-confirmed (crew 1.3.98): no guard row starts, so
+        # nothing is judged, logged or refused, and a fault in what is left cannot fail closed either.
+        # approval-hook.sh stays.
         chosen = without_guards(chosen)
         armed_fn = _never_armed
     if not chosen:
