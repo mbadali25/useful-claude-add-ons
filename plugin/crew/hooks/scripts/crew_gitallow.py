@@ -162,8 +162,11 @@ def write_refusal(dotted, layer, value):
 # --- the subcommand ----------------------------------------------------------------
 
 def subcommand(args):
-    """The subcommand of a git argument list (the words after `git`), lower
-    case, or `UNSEEN` when there is none or it is not a plain name."""
+    """The subcommand of a git argument list (the words after `git`) exactly
+    as written, or `UNSEEN` when there is none or it is not a plain lower-case
+    name. git is case-sensitive: `STATUS` is not `status` (an `alias.STATUS`
+    could run anything), so it is never read as an allowlisted name (PR #769
+    review round 9)."""
     index = 0
     while index < len(args) and isinstance(args[index], str) and args[index].startswith("-"):
         word = args[index]
@@ -173,7 +176,7 @@ def subcommand(args):
             index += 1
     if index >= len(args) or not isinstance(args[index], str):
         return UNSEEN
-    sub = args[index].lower()
+    sub = args[index]
     return sub if _NAME_RE.match(sub) else UNSEEN
 
 
@@ -217,7 +220,10 @@ _RUNS = {
     "daemon": ("--access-hook",),
 }
 # Subcommands that run a handed command whatever their options say.
-_RUNS_ALWAYS = frozenset(("filter-branch", "instaweb"))
+# `for-each-repo` runs `git <args>` in every repo a config key lists, so a
+# `-c alias.x=!cmd x` after `--` runs that command (round 9); `web--browse`
+# runs a browser program.
+_RUNS_ALWAYS = frozenset(("filter-branch", "instaweb", "for-each-repo", "web--browse"))
 # (subcommand, word) pairs: `git submodule foreach <cmd>`, `git bisect run <cmd>`.
 _RUNS_WORD = {"submodule": "foreach", "bisect": "run"}
 
@@ -338,6 +344,18 @@ def target_dirs(args):
     return tuple(out)
 
 
+def _chdir_walk(start, value):
+    """Where a POSIX `chdir(value)` from `start` lands, one component at a
+    time, so `..` is the parent of the directory a link led to."""
+    where = os.path.realpath(start)
+    for part in re.split(r"[\\/]", value):
+        if part == "..":
+            where = os.path.dirname(where)
+        elif part not in ("", "."):
+            where = os.path.realpath(os.path.join(where, part))
+    return where
+
+
 def resolve_target(base, dirs):
     """The directory `git -C d1 -C d2 ...` runs in, from `base`: each `-C`
     relative to the one before, as git reads them. An MSYS drive path
@@ -346,7 +364,17 @@ def resolve_target(base, dirs):
     for value in dirs:
         if os.name == "nt":
             value = _DRIVE_RE.sub(lambda m: m.group(1).upper() + ":", value)
+        before = where
         where = os.path.normpath(os.path.join(where, value))
+        # `-C link -C ..`: a POSIX git changes directory one component at a
+        # time, so `..` after a symlink is the link target's parent, while a
+        # lexical `normpath` says the link's parent (Windows reads `..`
+        # lexically). When the two readings name different directories crew
+        # cannot tell where git acts (round 9).
+        if ".." in re.split(r"[\\/]", value) and (
+                os.path.normcase(os.path.realpath(where))
+                != os.path.normcase(_chdir_walk(before, value))):
+            return UNSEEN
     return where
 
 
@@ -829,7 +857,7 @@ _PS_SAFE = frozenset(string.ascii_letters + string.digits + "_-./:=+\\^%~@")
 _PS_CURLY = "‘’‚‛“”„"
 # `%NAME%`: expanded at run time after `--%`, and by cmd.exe when git is a
 # `.cmd` shim -- quoted or not (crew 1.3.75 review round 3).
-_PS_PERCENT_RE = re.compile(r"%[^%\s]+%")
+_PS_PERCENT_RE = re.compile(r"%[^%]+%")
 # The characters a backtick may escape in an exempt PowerShell word, and
 # nothing else: a letter or digit is a control character (`` `n ``, `` `0 ``),
 # and `` `* `` / `` `? `` / `` `[ `` are still wildcards a native command's
@@ -953,7 +981,10 @@ def line_targets(git_commands, base):
         if dirs is UNSEEN:
             return None
         if dirs:
-            out.append(resolve_target(base, dirs))
+            target = resolve_target(base, dirs)
+            if target is UNSEEN:
+                return None
+            out.append(target)
     return tuple(out)
 
 

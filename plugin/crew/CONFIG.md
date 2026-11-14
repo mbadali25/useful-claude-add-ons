@@ -163,8 +163,8 @@ subcommand that runs a command it is given (`rebase --exec`/`-x`,
 `submodule foreach`, `bisect run`, `push`/`send-pack --receive-pack`/`--exec`,
 `fetch-pack --upload-pack`/`--exec`, `fetch`/`pull`/`clone`/`ls-remote
 --upload-pack`, `clone -u`/`-c`/`--template`, `init --template`, `grep -O`,
-`difftool --extcmd`, `filter-branch`, `instaweb`, `send-email --*-cmd`,
-`daemon --access-hook`), in any abbreviation git accepts (`--exe`,
+`difftool --extcmd`, `filter-branch`, `instaweb`, `for-each-repo`,
+`web--browse`, `send-email --*-cmd`, `daemon --access-hook`), in any abbreviation git accepts (`--exe`,
 `--receive=...`); and a `git config` that is not plainly a read (`--get*`,
 `-l`/`--list`, `get`, `list`, or one key alone, with only read options): a
 write may set `alias.*` or a program-valued key (`core.sshCommand`,
@@ -173,7 +173,9 @@ write may set `alias.*` or a program-valued key (`core.sshCommand`,
 that a later git command on the same line runs. A git command aimed at another
 repository (`git -C <dir>`) passes only when that repository's own file does
 not veto it either; one whose repository crew cannot tell (`--git-dir`,
-`--work-tree`) is judged as before.
+`--work-tree`, or a `-C ..` that follows a link, which git and Windows read
+differently) is judged as before. A subcommand is matched exactly as written:
+`git STATUS` is not `status`.
 
 What stays exempt, for example: `git commit -m "fix: x"`, `git push
 --force-with-lease origin topic`, `git push -f origin topic`, `git rebase -i

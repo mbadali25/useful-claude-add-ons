@@ -109,7 +109,8 @@ def test_normalise(value, expect):
 
 @pytest.mark.parametrize("args,sub", [
     (["push", "--force"], "push"),
-    (["-C", "/x", "-c", "a=b", "--no-pager", "Commit", "-m", "x"], "commit"),
+    (["-C", "/x", "-c", "a=b", "--no-pager", "commit", "-m", "x"], "commit"),
+    (["Commit", "-m", "x"], None), (["STATUS"], None),
     (["--git-dir", "/x/.git", "status"], "status"),
     ([], None), (["-C", "/x"], None), (["$SUB"], None)])
 def test_subcommand(args, sub):
@@ -1806,6 +1807,84 @@ def test_round8_ls_remote_exec_is_a_program_option(args):
 def test_round8_attr_source_takes_a_value():
     args = ["--attr-source", "commit", "push", "--force", "origin", "main"]
     assert crew_gitallow.subcommand(args) == "push"
+
+
+# --- review round 9 (Codex gpt-6-sol): CR, for-each-repo, case, -C .., %X Y% ---------------
+
+def _dispatch(command, monkeypatch, capsys, root):
+    import _promote_dispatch  # pylint: disable=import-outside-toplevel
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _promote_dispatch.main(["x", "--shell", "powershell", command])
+    return capsys.readouterr().out
+
+
+@pytest.mark.parametrize("command", [
+    "git status\rgh workflow run prod", "git status\r\rgh workflow run prod",
+    "git status\r\ngh workflow run prod", "git status\r"])
+def test_round9_a_carriage_return_is_refused_not_stripped_on_the_git_allow_path(
+        tmp_path, machine, monkeypatch, capsys, command):
+    """The dispatcher stripped every CR before asking `_git_allowed`, so
+    `git status<CR>gh workflow run prod` read as one `git statusgh ...`."""
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    assert "guards.git.allow" not in _dispatch(command, monkeypatch, capsys, root)
+
+
+@pytest.mark.parametrize("command", ["git status", "git status\n", "git status\r\n"])
+def test_round9_a_final_line_terminator_is_still_allowed(
+        tmp_path, machine, monkeypatch, capsys, command):
+    root = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    assert _dispatch(command, monkeypatch, capsys, root) == "allow\tguards.git.allow\n"
+
+
+@pytest.mark.parametrize("args", [
+    ["for-each-repo", "--config=x.repos", "--", "-c", "alias.x=!deploy-prod", "x"],
+    ["for-each-repo", "--config", "x.repos", "status"], ["for-each-repo"],
+    ["-C", ".", "for-each-repo", "--config=x", "status"], ["web--browse", "x"]])
+def test_round9_subcommands_that_run_a_git_or_a_program_are_held(args):
+    assert crew_gitallow.hold(args)
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_exempt("git " + " ".join(args), shell, "all") is False
+
+
+@pytest.mark.parametrize("shell", ["bash", "powershell"])
+@pytest.mark.parametrize("command", ["git STATUS", "git Status", "git PUSH --force origin main"])
+def test_round9_git_is_case_sensitive_so_an_allowlist_does_not_match_another_case(
+        shell, command):
+    assert crew_gitallow.subcommand(command.split()[1:]) is crew_gitallow.UNSEEN
+    assert crew_gitallow.line_exempt(command, shell, frozenset({"status", "push"})) is False
+    assert crew_gitallow.line_exempt("git status", shell, frozenset({"status"})) is True
+
+
+def test_round9_a_chained_dot_dot_through_a_symlink_is_not_a_target(tmp_path):
+    """`git -C link -C ..` changes into the link, then `..`: a POSIX git lands in the
+    link TARGET's parent, a lexical reading in the link's parent. Crew cannot tell
+    which, so it does not tell: the target is UNSEEN and the line is off."""
+    (tmp_path / "a" / "b" / "c").mkdir(parents=True)
+    (tmp_path / "base" / "sub").mkdir(parents=True)
+    try:
+        os.symlink(tmp_path / "a" / "b" / "c", tmp_path / "base" / "link",
+                   target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("this host cannot create a symlink")
+    base = str(tmp_path / "base")
+    assert crew_gitallow.resolve_target(base, ["link", ".."]) is crew_gitallow.UNSEEN
+    assert crew_gitallow.resolve_target(base, ["link/.."]) is crew_gitallow.UNSEEN
+    assert crew_gitallow.line_targets([["-C", "link", "-C", "..", "status"]], base) is None
+    assert crew_gitallow.resolve_target(base, ["sub", ".."]) == os.path.normpath(base)
+    assert crew_gitallow.resolve_target(base, ["link"]) == os.path.normpath(
+        os.path.join(base, "link"))
+
+
+@pytest.mark.parametrize("command", [
+    "git log '%X Y%'", "git log --format='%a b%'", "git log %X%", "git log '%X Y%' --oneline"])
+def test_round9_a_powershell_percent_variable_with_a_space_is_not_read(command):
+    assert crew_gitallow.plain_commands(command, "powershell") is None
+    assert crew_gitallow.plain_commands("git log --format=%H", "powershell") == [
+        ["git", "log", "--format=%H"]]
 
 
 # --- the mutation table ----------------------------------------------------------------

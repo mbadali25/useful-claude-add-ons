@@ -304,8 +304,12 @@ def main(argv):
     command = argv[1] if len(argv) > 1 else ""
     if command == "-":
         command = sys.stdin.read()
+    # guards.git.allow reads the command as it arrived, minus only its final line
+    # terminator: a CR inside it (`git status\rgh workflow run prod`) is refused
+    # there, never stripped into one word (PR #769 review round 9).
+    as_sent = command[:-2] if command.endswith("\r\n") else command.rstrip("\n")
     command = command.replace("\r", "").rstrip("\n")
-    if shell == "powershell" and command.strip() and _git_allowed(command):
+    if shell == "powershell" and command.strip() and _git_allowed(as_sent):
         # promote-gate.ps1 exits 0 on this record, before any other is read.
         print("allow\tguards.git.allow")
         return 0
