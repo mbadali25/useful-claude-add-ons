@@ -917,7 +917,7 @@ Twelve guards, one block, one ratchet, **three vocabularies**. What crew's comma
 
 The twelve are `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive`, `deployWorkflow`, `prodDatabase`, `prodServer`, `roleWrites`, `cloudGuard` and `envGuard`.
 
-### `guards.enabled` - the master switch (crew 1.3.92, L-0947)
+### `guards.enabled` - the master switch (crew 1.3.94, L-0947)
 
 The per-guard switches each turn one guard down and ratchet, so no combination of them is "run everything": the
 scope guard, the verify gate, the completion audit and the promote gate each have a key of their own, and the
@@ -933,7 +933,7 @@ the switch off NOTHING blocks, so it stands down with them.)
   machine layer is silent or `true`, and the guards stay on (`crew_hook.repo_switch_ignored` reports it so a status
   line can say so; nothing is blocked or logged on its account). This differs from `scope.mode: off`, which a repo
   file can still set, because that one switches off a single guard, not all of them.
-* The OWNER's `false` only (owner decision, 2026-11-13, crew 1.3.92): turning every guard off is a human step like
+* The OWNER's `false` only (owner decision, 2026-11-13, crew 1.3.94): turning every guard off is a human step like
   the `humanOnly.*` opt-out, so it reuses that mechanism rather than a weaker one. A machine `false` counts only
   when `crew_humanonly.receipt_backs` finds an applied double confirmation for `guards.enabled` at this very file
   (`/crew:confirm-config <change_id>` typed twice, in two prompts the owner typed). An unconfirmed `false`, whoever

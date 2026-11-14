@@ -275,7 +275,7 @@ def test_a_dispatcher_fault_does_not_fail_closed_with_the_guards_off(armed):
                 os.environ[key] = value
 
 
-# --- the owner's confirmation (decision A, crew 1.3.92) ---------------------------------------------------------
+# --- the owner's confirmation (decision A, crew 1.3.94) ---------------------------------------------------------
 
 @pytest.mark.parametrize("name", sorted(MUST_BLOCK))
 def test_an_unconfirmed_false_stands_nothing_down(name, armed):
@@ -420,7 +420,7 @@ def test_an_approval_hook_fault_does_not_fail_closed_with_the_guards_off(tmp_pat
     assert code_on == 2, "the control: with the guards on, the same fault fails closed"
 
 
-# --- the machine config is the owner's: an agent cannot write it (scope guard, crew 1.3.92) ---------------------
+# --- the machine config is the owner's: an agent cannot write it (scope guard, crew 1.3.94) ---------------------
 
 def _machine_path(home):
     return os.path.join(home, ".claude", "crew", "config.json")

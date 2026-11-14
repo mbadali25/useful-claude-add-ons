@@ -346,7 +346,7 @@ def armed(root, home=None):
 # running children
 
 # --------------------------------------------------------------------------
-# the guards master switch (`guards.enabled`, crew 1.3.89; the owner's confirmation, 1.3.92)
+# the guards master switch (`guards.enabled`, crew 1.3.89; the owner's confirmation, 1.3.94)
 #
 # `guards.enabled: false` in the MACHINE config layer (`~/.claude/crew/config.json`) stands every guard row
 # down: none starts, so nothing is judged, refused, asked or logged, and a fault in one cannot fail closed.
@@ -771,7 +771,7 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
     chosen = select(event, harness, payload, windows=windows, scripts=scripts)
     armed_fn = armed_fn or armed
     if chosen and _guards_off(root):
-        # `guards.enabled: false` in the machine layer, owner-confirmed (crew 1.3.92): no guard row starts, so nothing is judged, logged or
+        # `guards.enabled: false` in the machine layer, owner-confirmed (crew 1.3.94): no guard row starts, so nothing is judged, logged or
         # refused, and a fault in what is left cannot fail closed either. approval-hook.sh stays.
         chosen = without_guards(chosen)
         armed_fn = _never_armed

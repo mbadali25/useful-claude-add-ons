@@ -426,12 +426,12 @@ column:
 {human_only}
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.92) turns EVERY guard hook off: the promote
+`guards.enabled: false` (crew 1.3.94) turns EVERY guard hook off: the promote
 gate, the role-write, cloud, environment and scope guards, the verify gate, the
 completion audit and the context-watch Stop hook. None of them starts, so nothing
 is judged, refused, asked, warned or logged: with the switch off, nothing blocks. It
 beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mode`,
-`verifyGate`). Three things must all hold for it to count (crew 1.3.92):
+`verifyGate`). Three things must all hold for it to count (crew 1.3.94):
 
 - It is in the MACHINE layer (`~/.claude/crew/config.json`). A `false` in
   `.crew/config.json`, tracked or not, is ignored and the guards stay on (a

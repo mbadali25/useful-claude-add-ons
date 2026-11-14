@@ -71,7 +71,7 @@ GUARDS_MASTER_MUTATIONS = (
      '        if path and _layer_says_off(path) and owner_confirmed(path) and not os.path.exists(\n'
      '                os.path.join(root or "", ".crew", "config.json")):\n',
      _G + "test_a_true_in_the_repo_layer_cannot_switch_back_on_a_machine_false"),
-    # crew 1.3.92: context-watch, the owner's confirmation, duplicate keys, the BOM, a redirected HOME, the machine
+    # crew 1.3.94: context-watch, the owner's confirmation, duplicate keys, the BOM, a redirected HOME, the machine
     # config's protection, and the approval hook's fault path.
     ("context-watch keeps running with the guards off", HOOK,
      'STOOD_DOWN = frozenset({"context-watch.sh"})\n',

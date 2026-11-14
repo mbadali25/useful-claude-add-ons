@@ -5780,7 +5780,7 @@ Main moved four commits (`bb942e03d`, `9ea896157`, `237809449`, `c43ccae58`) whi
 `237809449` (a mechanical competing refresh of five notes to `bdde587`, no ticket) was superseded for the notes this pass
 touched; its claims are not carried. Claims touched by the four files, if any, are listed in `verification-harness.md`'s body.
 
-## The guards master switch (`guards.enabled`, L-0947, crew 1.3.92; hardened 1.3.94)
+## The guards master switch (`guards.enabled`, L-0947, crew 1.3.94; hardened 1.3.94)
 
 Marker: cites below are DERIVED at the commit that added this section (a `path:line` re-taken by name when it moves); behaviour was run only by `plugin/crew/tests/test_guards_master.py` and its sabotage table.
 
