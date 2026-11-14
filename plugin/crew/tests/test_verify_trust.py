@@ -1392,3 +1392,193 @@ def test_hash_approval_a_submodule_with_a_hand_written_commondir_is_refused(tmp_
 
     top = str(mod.resolve())
     assert verify_trust._identity_confirmed(top, top, str(sup / ".git")) is False  # pylint: disable=protected-access
+
+
+# ------------------------------------- round 12: hardlinks, and a removed worktree's path reused
+
+def _linked(tmp_path, name="main", lane_name="lane", remotes=()):
+    """A real repo with one real linked worktree; returns (main, lane)."""
+    main = _repo(tmp_path, name=name, remotes=remotes)
+    _git(main, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q",
+         "--allow-empty", "-m", "x")
+    lane = tmp_path / lane_name
+    _git(main, "worktree", "add", "-q", str(lane), "-b", lane_name)
+    (lane / ".crew").mkdir(exist_ok=True)
+    (lane / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    return main, lane
+
+
+def _hostile_dir(tmp_path, name):
+    bad = tmp_path / name
+    (bad / ".crew").mkdir(parents=True)
+    (bad / ".crew" / "verify.json").write_text(
+        json.dumps({"version": 1, "rules": [{"paths": ["a.py"], "run": ["echo hostile"]}]}),
+        encoding="utf-8")
+    return bad
+
+
+def _can_hardlink(tmp_path):
+    src = tmp_path / "hl_src"
+    src.write_text("x", encoding="utf-8")
+    try:
+        os.link(src, tmp_path / "hl_dst")
+    except (OSError, NotImplementedError):
+        return False
+    return True
+
+
+def test_hash_approval_a_hardlinked_gitfile_is_not_the_recorded_worktree(tmp_path, store):
+    """Round 12: `samefile` compares inodes, so `ln lane/.git bad/.git` made an unrelated
+    directory 'the recorded file' and it borrowed the main repo's approval. Same-filesystem
+    local access is needed; a hardlink cannot cross filesystems."""
+    if not _can_hardlink(tmp_path):
+        pytest.skip("this filesystem cannot make hardlinks")
+    main, lane = _linked(tmp_path)
+    assert _approve(main) == 0
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+    bad = _hostile_dir(tmp_path, "hardlinked")
+    os.link(lane / ".git", bad / ".git")
+
+    identity, top = verify_trust.repo_identity(str(bad))
+    assert top is None and identity == str(bad.resolve())
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+    assert _code(lane) != verify_trust.EXIT_TRUSTED  # its own gitfile now has two names
+
+
+def test_owner_trust_a_hardlinked_gitfile_never_borrows_the_remote_owner(tmp_path, store):
+    if not _can_hardlink(tmp_path):
+        pytest.skip("this filesystem cannot make hardlinks")
+    _main, lane = _linked(tmp_path, remotes=[_OK_URL])
+    assert _allow() == 0
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+    bad = _hostile_dir(tmp_path, "hardlinked_owner")
+    os.link(lane / ".git", bad / ".git")
+
+    assert verify_trust.main(["check", "--root", str(bad)]) != 0
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_hardlinked_admin_gitdir_record_is_not_trusted(tmp_path, store):
+    """The admin directory's `gitdir` record is read as the main repository's word; a second
+    name for it means someone linked it from elsewhere, so it is not trusted."""
+    if not _can_hardlink(tmp_path):
+        pytest.skip("this filesystem cannot make hardlinks")
+    main, lane = _linked(tmp_path)
+    assert _approve(main) == 0
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+    os.link(main / ".git" / "worktrees" / "lane" / "gitdir", tmp_path / "second_name")
+
+    assert _code(lane) != verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_hardlinked_admin_commondir_is_not_trusted(tmp_path, store):
+    if not _can_hardlink(tmp_path):
+        pytest.skip("this filesystem cannot make hardlinks")
+    main, lane = _linked(tmp_path)
+    assert _approve(main) == 0
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+    os.link(main / ".git" / "worktrees" / "lane" / "commondir", tmp_path / "second_name")
+
+    assert _code(lane) != verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_a_hardlinked_submodule_gitfile_is_not_trusted(tmp_path, store):
+    if not _can_hardlink(tmp_path):
+        pytest.skip("this filesystem cannot make hardlinks")
+    _sup, mod = _submodule(tmp_path)
+    assert _approve(mod) == 0
+    assert _code(mod) == verify_trust.EXIT_TRUSTED
+    bad = _hostile_dir(tmp_path, "hardlinked_sub")
+    os.link(mod / ".git", bad / ".git")
+
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+
+
+def test_a_real_linked_worktree_gitfile_and_records_have_one_name(tmp_path, store):
+    """Must-allow: a genuine worktree's gitfile and admin records each have exactly one name,
+    so the nlink rule never refuses it."""
+    main, lane = _linked(tmp_path)
+    assert _approve(main) == 0
+    for path in (lane / ".git", main / ".git" / "worktrees" / "lane" / "gitdir",
+                 main / ".git" / "worktrees" / "lane" / "commondir"):
+        assert os.stat(path).st_nlink == 1
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+    assert verify_trust.repo_identity(str(lane))[1] == str(lane.resolve())
+
+
+def test_hash_approval_a_removed_worktrees_gitfile_copied_to_another_path_is_not_it(
+        tmp_path, store):
+    """Round 12: remove a linked worktree's directory WITHOUT pruning the main repository's
+    record and copy its `.git` file into another directory: the record still names the old
+    path, so the copy is refused. The same path reused by a new directory is the documented
+    same-user residual (CONFIG.md); it cannot be told from the original without more state."""
+    main, lane = _linked(tmp_path)
+    assert _approve(main) == 0
+    bad = _hostile_dir(tmp_path, "copied")
+    (bad / ".git").write_text((lane / ".git").read_text(encoding="utf-8"), encoding="utf-8")
+    shutil.rmtree(lane)
+
+    assert verify_trust.repo_identity(str(bad))[1] is None
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+
+
+@pytest.mark.skipif(os.name != "posix", reason="a symlink needs no privilege only on POSIX")
+def test_hash_approval_a_symlink_alias_of_a_removed_worktrees_path_is_not_it(tmp_path, store):
+    main, lane = _linked(tmp_path)
+    assert _approve(main) == 0
+    bad = _hostile_dir(tmp_path, "attacker")
+    (bad / ".git").write_text((lane / ".git").read_text(encoding="utf-8"), encoding="utf-8")
+    shutil.rmtree(lane)
+    alias = tmp_path / "alias"
+    os.symlink(bad, alias)
+
+    assert verify_trust.repo_identity(str(alias))[1] is None
+    assert verify_trust.main(["check", "--root", str(alias)]) != 0
+
+
+def test_hash_approval_a_worktree_whose_admin_head_is_gone_is_not_trusted(tmp_path, store):
+    """Git itself refuses an admin directory with no `HEAD`; the probe then fails closed."""
+    main, lane = _linked(tmp_path)
+    assert _approve(main) == 0
+    os.remove(main / ".git" / "worktrees" / "lane" / "HEAD")
+
+    # git itself no longer answers, so the identity probe fails closed
+    with pytest.raises(verify_trust.TrustError):
+        verify_trust.repo_identity(str(lane))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="a symlinked parent needs no privilege only on POSIX")
+def test_hash_approval_a_worktree_reached_through_a_symlinked_parent_is_still_trusted(
+        tmp_path, store):
+    """Must-allow: git records its own real path and `top` is a real path too, so a worktree
+    created and used through a symlinked parent directory still matches."""
+    real = tmp_path / "real_parent"
+    real.mkdir()
+    link = tmp_path / "link_parent"
+    os.symlink(real, link)
+    main = _repo(tmp_path, name="main")
+    _git(main, "-c", "user.email=t@example.invalid", "-c", "user.name=t", "commit", "-q",
+         "--allow-empty", "-m", "x")
+    _git(main, "worktree", "add", "-q", str(link / "lane"), "-b", "lane")
+    (link / "lane" / ".crew").mkdir(exist_ok=True)
+    (link / "lane" / ".crew" / "verify.json").write_text(_VERIFY, encoding="utf-8")
+    assert _approve(main) == 0
+
+    assert _code(link / "lane") == verify_trust.EXIT_TRUSTED
+
+
+@pytest.mark.skipif(os.name != "posix", reason="a symlink needs no privilege only on POSIX")
+def test_hash_approval_a_symlink_put_at_a_removed_worktrees_path_is_not_it(tmp_path, store):
+    """Round 12: the removed worktree's path becomes a symlink to another directory holding a
+    copy of the `.git` file. `samefile` follows the symlink, so the inode test passes from
+    either side; only the recorded SPELLING of the path tells the two directories apart."""
+    main, lane = _linked(tmp_path)
+    assert _approve(main) == 0
+    bad = _hostile_dir(tmp_path, "attacker")
+    (bad / ".git").write_text((lane / ".git").read_text(encoding="utf-8"), encoding="utf-8")
+    shutil.rmtree(lane)
+    os.symlink(bad, lane)
+
+    for root in (bad, lane):
+        assert verify_trust.repo_identity(str(root))[1] is None
+        assert _code(root) != verify_trust.EXIT_TRUSTED

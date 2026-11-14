@@ -610,12 +610,31 @@ def _same(a, b):
         return False
 
 
+def _single_link(path):
+    """True when `path` is a regular file that no other name points at. `samefile`
+    compares inodes, so a HARDLINK of a recorded file (`ln W/.git B/.git`, same
+    filesystem, same user) is "the very same file" and would let an unrelated
+    directory borrow the repository the file names (round 12). A genuine gitfile or
+    admin record has exactly one name."""
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    return stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+
+
 def _first_line(path):
     try:
         with open(path, encoding="utf-8", errors="replace") as handle:
             return handle.readline().strip()
     except OSError:
         return None
+
+
+def _spelled(path):
+    """`path` normalised for a string comparison (dot segments, doubled
+    separators, case on a case-insensitive system)."""
+    return os.path.normcase(os.path.normpath(path))
 
 
 def _identity_confirmed(root, top, common):
@@ -648,7 +667,7 @@ def _identity_confirmed(root, top, common):
     if os.path.isdir(dot_git):
         return (_same(gitdir, dot_git) and _same(common, dot_git)
                 and not os.path.lexists(os.path.join(dot_git, "commondir")))
-    head = _first_line(dot_git) if os.path.isfile(dot_git) else None
+    head = _first_line(dot_git) if _single_link(dot_git) else None
     if head is None or not head.startswith("gitdir:"):
         return False
     named = os.path.join(top, head[len("gitdir:"):].strip())
@@ -658,8 +677,26 @@ def _identity_confirmed(root, top, common):
         admin = os.path.dirname(gitdir)
         if os.path.basename(admin) != "worktrees" or not _same(os.path.dirname(admin), common):
             return False
-        record = _first_line(os.path.join(gitdir, "gitdir"))
-        return bool(record) and _same(os.path.join(gitdir, record), dot_git)
+        # The admin directory's own records must each have one name (git itself already
+        # refuses an admin directory with no `HEAD`).
+        record_file = os.path.join(gitdir, "gitdir")
+        commondir_file = os.path.join(gitdir, "commondir")
+        if not _single_link(record_file) \
+                or (os.path.lexists(commondir_file) and not _single_link(commondir_file)):
+            return False
+        record = _first_line(record_file)
+        if not record or not _same(os.path.join(gitdir, record), dot_git):
+            return False
+        # The record is a PATH, and the inode test alone cannot tell a removed worktree's
+        # directory, replaced by another at the same place, from the original. The recorded
+        # spelling must be the very path this directory stands at, which refuses every
+        # other spelling of it (a symlink alias, a moved or copied tree). On Windows the
+        # recorded 8.3 or other long-path spelling may differ, so its real path is compared.
+        recorded = os.path.join(gitdir, record)
+        here = os.path.join(top, ".git")
+        if _spelled(recorded) == _spelled(here):
+            return True
+        return os.name == "nt" and _spelled(os.path.realpath(recorded)) == _spelled(here)
     if os.path.lexists(os.path.join(gitdir, "commondir")) \
             or os.sep + ".git" + os.sep + "modules" + os.sep not in gitdir + os.sep:
         return False

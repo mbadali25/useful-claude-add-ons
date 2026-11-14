@@ -559,6 +559,16 @@ machine trusts. Otherwise it prints one line, runs nothing, writes no pass recor
   directory, a linked worktree that the main repository's own `worktrees/<name>/gitdir` record confirms, or a
   submodule under `.git/modules`. A `.git` symlink, a `commondir` or `core.worktree` the directory wrote itself,
   or a gitfile naming another repo's directory is judged by its own path, so it needs its own `approve`.
+- **A copied or hardlinked `.git` file, or a worktree directory recreated after removal, says UNTRUSTED**: working
+  as designed (crew 1.3.90, round 12). A gitfile and the worktree admin directory's `gitdir` and `commondir`
+  records must each have one name (a hardlink to them is refused; a hardlink needs the same filesystem and local
+  access), and the recorded worktree path must be this directory's own real path (a symlink alias, a moved or a
+  copied tree is refused). Run `git worktree prune` after removing a worktree directory. Not closed: a new real
+  directory created at exactly a removed worktree's old path with a copied `.git` file looks like the original (the
+  same-user, stale-record case); prune stale worktrees, and do not allowlist an owner with stale entries around.
+  A plain repository's own `.git/config` is what owner trust reads, and an archive can ship a `.git/` directory:
+  scope `allow-owner HOST/OWNER --under <dir>` to one directory of repos you cloned, and approve an unpacked
+  archive by hash after reading its verify map, not by owner.
 - **`--ci` runs the rules and prints `trust check exempt`**: by design. `--ci` never calls the trust check
   (a CI job's checkout is its own pipeline's trust, and CI has no home store), so a missing or failing trust
   helper changes nothing there. Use `--ci` only in a pipeline you control; on a workstation use Stop, `--all` or
