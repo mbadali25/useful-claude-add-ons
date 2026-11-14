@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.98**: `guards.enabled`, one switch that turns every guard hook off. `crew` 1.3.98 makes the hook dispatcher honour `guards.enabled: false`: set it in the machine config layer (`~/.claude/crew/config.json`), confirm it with the owner's `/crew:confirm-config` double confirmation, and none of crew's guards runs and nothing blocks, with no downgrade and no reinstall. A repo file, an agent's write, a hand edit or an unconfirmed `false` cannot switch the guards off.
 - **crew 1.3.75**: The mass delete, create and change guard (`guards.mass`) is gone, not just off. `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
-- **crew 1.3.70**: `crew_confirm_config.py propose` prints the lines the agent relays to the owner. `crew` 1.3.70: after an agent proposes a sensitive config change, its output now carries the change and the exact `/crew:confirm-config <change_id>` command for the agent to relay word for word, and no longer claims that no hook records the confirmation.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

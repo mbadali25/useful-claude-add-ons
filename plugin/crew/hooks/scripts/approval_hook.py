@@ -75,7 +75,7 @@ prompt -- carries one more command, ONE line, raw or expanded exactly as
 `/crew:approve` is:
 
 - `/crew:confirm-config <change_id>` records one confirmation of a proposed
-  `humanOnly.*` change (`crew_confirm_config.confirm`, `via="user-prompt"`, the
+  `humanOnly.*` change, or of `guards.enabled: false` (crew 1.3.98) (`crew_confirm_config.confirm`, `via="user-prompt"`, the
   payload's `prompt_id`). The second one, from another prompt, applies it. This
   is the recorder `crew_humanonly.USER_PROMPT` was waiting for; without it no
   opt-out could ever take effect. Typed with no id, a malformed id, or an id
@@ -602,6 +602,9 @@ def _refuse_command(name, text):
 
 
 _UNPRINTABLE_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+# The second key a double confirmation covers besides `crew_humanonly.PATHS` (crew 1.3.98): the guards master
+# switch. Spelled here, not read from `crew_humanonly`, so this harness file does not depend on the writer half.
+MASTER_KEY = "guards.enabled"
 SETTLED_SHOWN = 5
 SETTLED_WINDOW = 24 * 3600
 
@@ -631,11 +634,13 @@ def _current_value(record):
     try:
         with open(path, encoding="utf-8-sig") as handle:
             cfg = json.load(handle)
-        section = cfg.get("humanOnly", {}) if isinstance(cfg, dict) else None
+        block = key.split(".", 1)[0]
+        section = cfg.get(block, {}) if isinstance(cfg, dict) else None
         if not isinstance(section, dict):
             return "could not tell"
         leaf = key.split(".", 1)[1]
-        return json.dumps(section[leaf]) if leaf in section else "unset (human-only)"
+        unset = "unset (guards on)" if key == MASTER_KEY else "unset (human-only)"
+        return json.dumps(section[leaf]) if leaf in section else unset
     except FileNotFoundError:
         return "unset (no file)"
     except (OSError, ValueError, TypeError, IndexError):
@@ -655,7 +660,7 @@ def _proposals_text(now=None):
     pending, settled, odd = [], [], 0
     for record in records:
         if (not crew_humanonly.valid_change_id(record.get("change_id"))
-                or record.get("key") not in crew_humanonly.PATHS
+                or record.get("key") not in crew_humanonly.PATHS + (MASTER_KEY,)
                 or record.get("layer") not in ("machine", "repo")
                 or record.get("value") is not False
                 or not _stamp(record.get("expires"))):
@@ -674,7 +679,8 @@ def _proposals_text(now=None):
                 else "at an unknown time"
             lines.append(
                 f"  {record['change_id']}  {record['key']}: {_current_value(record)} -> false"
-                f"  ({record['layer']} layer, {_clean(record.get('path'))}); proposed {age}, "
+                + ("  TURNS EVERY GUARD OFF" if record["key"] == MASTER_KEY else "")
+                + f"  ({record['layer']} layer, {_clean(record.get('path'))}); proposed {age}, "
                 f"expires in {_minutes(record['expires'] - stamp)}, confirmations "
                 f"{len(record.get('confirmations') or [])} of 2")
         lines.append("To apply one, type /crew:confirm-config <change_id> on its own, as "

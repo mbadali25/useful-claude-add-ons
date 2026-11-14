@@ -26,6 +26,7 @@ events where a child may block (PreToolUse, UserPromptSubmit, Stop). An
 unarmed repo gets exit 0 for every such fault, as the scripts do today.
 """
 import functools
+import hashlib
 import json
 import os
 import re
@@ -344,6 +345,182 @@ def armed(root, home=None):
 # --------------------------------------------------------------------------
 # running children
 
+# --------------------------------------------------------------------------
+# the guards master switch (`guards.enabled`, crew 1.3.89; the owner's confirmation, 1.3.98)
+#
+# `guards.enabled: false` in the MACHINE config layer (`~/.claude/crew/config.json`) stands every guard row
+# down: none starts, so nothing is judged, refused, asked or logged, and a fault in one cannot fail closed.
+# `context-watch.sh` (a Stop hook, not a guard row) stands down with them: with the switch off NOTHING blocks.
+# Off wins over any profile, override, `scope.mode` or `verifyGate`. Three things must all hold:
+#   1. ONLY the machine layer counts (owner decision, 2026-11-13): a repo file (`.crew/config.json`, tracked or
+#      not) is a checkout anyone can hand you; a `false` there is IGNORED (`repo_switch_ignored` reports it).
+#   2. ONLY the JSON literal `false` counts, in a file with no duplicate key: absent, null, true, a string, a
+#      corrupt or unreadable file, a `guards` that is not an object, or `{"enabled": true, "enabled": false}`
+#      (two parsers disagree on which wins) leave the guards ON. Could-not-tell is never the disabling value.
+#   3. The `false` must be the OWNER's (owner decision, 2026-11-13): `owner_confirmed` must find an applied
+#      `/crew:confirm-config` double confirmation for `guards.enabled` at this very file, recording two
+#      confirmations from two typed prompts and the canonical digest of the file as the owner left it (crew
+#      1.3.98). An agent, a hook-side write or a hand edit that only sets the `false` leaves the guards ON
+#      (`machine_switch_unconfirmed` reports it), and so does a file edited after the owner applied it, or a bare
+#      hand-written record. These are guardrails against accidents and drift, NOT a boundary: the receipt is a
+#      file the same user can write, so an agent that forges the whole of it is not stopped here.
+# The machine file must also be the machine's: a config path inside the project (or the process's working
+# directory), which is what a `HOME` / `USERPROFILE` pointed at a fake home shipped in a repo yields, never counts.
+# approval-hook.sh is the exception: it records `/crew:approve` and the `/crew:confirm-config` double
+# confirmation and judges no command, so the humanOnly opt-out keeps working with the guards off.
+# Read here, not in each guard, because every guard row passes through `dispatch`. With no usable python the
+# bash launcher never reaches this and still fails closed in an armed repo (it has no JSON parser by design).
+GUARDS_KEPT = frozenset({"approval-hook.sh"})
+STOOD_DOWN = frozenset({"context-watch.sh"})
+MASTER_KEY = "guards.enabled"
+
+
+def _no_duplicate_keys(pairs):
+    seen = {}
+    for key, value in pairs:
+        if key in seen:
+            raise ValueError(f"duplicate key {key!r}")
+        seen[key] = value
+    return seen
+
+
+def _read_strict(path):
+    """`path` parsed as JSON with no duplicate key at any depth; OSError or ValueError when it cannot be."""
+    with open(path, encoding="utf-8-sig") as handle:
+        return json.load(handle, object_pairs_hook=_no_duplicate_keys)
+
+
+def _layer_says_off(path):
+    """True only when the file at `path` parses (no duplicate key at any depth) to an object whose `guards` is an
+    object holding `enabled: false` (the JSON literal)."""
+    try:
+        parsed = _read_strict(path)
+    except (OSError, ValueError):
+        return False
+    guards = parsed.get("guards") if isinstance(parsed, dict) else None
+    return isinstance(guards, dict) and guards.get("enabled") is False
+
+
+def _inside(path, folder):
+    path, folder = os.path.normcase(os.path.realpath(path)), os.path.normcase(os.path.realpath(folder))
+    return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
+
+
+def machine_config_path(root, home=None):
+    """The machine config file the switch reads, or None when that path cannot be the machine's: it lies inside
+    the project `root` or the working directory (a HOME redirected into a checkout)."""
+    home = home if home is not None else os.path.expanduser("~")
+    path = os.path.join(home, GLOBAL_CONFIG)
+    for folder in (root, os.getcwd()):
+        if folder and _inside(path, folder):
+            return None
+    return path
+
+
+def canonical_digest(path):
+    """`<sha256>@<mtime_ns>`: the sha256 of the file's parsed content in canonical JSON (sorted keys, no
+    whitespace) and the file's modification time, or None when it does not parse, holds a duplicate key, or
+    changed while it was read. The content half says WHAT the owner confirmed; the time half says it is still the
+    write the owner left. Without it a hand edit that set the key true and a later one that wrote the identical
+    `false` back would count again, because no hand edit writes a revoke and this reader may not write one; with
+    it any later write, even of the same bytes, moves the stamp and the receipt backs nothing. A write that
+    puts the old modification time back (`cp -p`, an archive extract, `os.utime`) still replays it: the stamp
+    is a guardrail against accidents and drift, not a boundary (CONFIG.md)."""
+    try:
+        before = os.stat(path).st_mtime_ns
+        parsed = _read_strict(path)
+        after = os.stat(path).st_mtime_ns
+    except (OSError, ValueError):
+        return None
+    if before != after:
+        return None
+    content = hashlib.sha256(json.dumps(parsed, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    return f"{content}@{after}"
+
+
+def _double_confirmed(record):
+    """True when the record carries two confirmations that came from two DIFFERENT typed prompts."""
+    confirmations = record.get("confirmations")
+    if not isinstance(confirmations, list):
+        return False
+    prompts = {c.get("prompt") for c in confirmations
+               if isinstance(c, dict) and c.get("via") == "user-prompt"
+               and isinstance(c.get("prompt"), str) and c["prompt"].strip()}
+    return len(prompts) >= 2
+
+
+def owner_confirmed(path):
+    """True when an applied `/crew:confirm-config` double confirmation backs `guards.enabled: false` at `path`
+    (crew 1.3.98): the newest settled record for this (layer, file, key) is an applied `false`, records two
+    confirmations from two typed prompts, and its `appliedDigest` is the canonical digest of the file AS IT IS.
+    A file edited after the owner applied it (a hand edit, a restore, a rebuild, an agent) no longer matches, so
+    the receipt backs nothing, and a record written without the confirmations, or without the digest, backs
+    nothing either. The digest and the confirmations live in files the same user can write, so a hostile agent
+    can still forge all of it: this is a guardrail against accidents and drift, not a boundary (CONFIG.md)."""
+    import crew_humanonly  # pylint: disable=import-outside-toplevel
+    records, problems = crew_humanonly.all_records(crew_humanonly.store_dir(path))
+    if problems:
+        return False
+    target = crew_humanonly.target_key(path)
+    settled = [r for r in records
+               if r.get("layer") == "machine" and r.get("target") == target and r.get("key") == MASTER_KEY
+               and r.get("state") in ("applied", "revoked") and isinstance(r.get("settled"), (int, float))]
+    newest = max(settled, key=lambda r: r["settled"]) if settled else None
+    if newest is None or newest.get("state") != "applied" or newest.get("value") is not False:
+        return False
+    digest = canonical_digest(path)
+    return digest is not None and newest.get("appliedDigest") == digest and _double_confirmed(newest)
+
+
+def guards_switched_off(root, home=None):
+    """`"machine"` when the machine layer switched the guards off and the owner confirmed it, else None. A repo
+    file cannot switch the guards off. Never raises: a failure to look reads as ON."""
+    try:
+        path = machine_config_path(root, home)
+        if path and _layer_says_off(path) and owner_confirmed(path):
+            return "machine"
+    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
+        return None
+    return None
+
+
+def machine_switch_unconfirmed(root, home=None):
+    """True when the machine file holds `guards.enabled: false` that stands nothing down because the owner's
+    confirmation is missing (or the path cannot be the machine's). None when it could not tell."""
+    try:
+        path = os.path.join(home if home is not None else os.path.expanduser("~"), GLOBAL_CONFIG)
+        return _layer_says_off(path) and guards_switched_off(root, home) is None
+    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
+        return None
+
+
+def repo_switch_ignored(root):
+    """True when a repo-layer file holds `guards.enabled: false`, which does NOT stand any guard down. Never
+    raises; None when it could not tell."""
+    try:
+        if not root:
+            return False
+        import crew_common  # pylint: disable=import-outside-toplevel
+        crew_dir = crew_common.repo_config_dir(root)[0]
+        return any(_layer_says_off(os.path.join(crew_dir, name)) for name in crew_common.CONFIG_NAMES)
+    except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
+        return None
+
+
+def without_guards(chosen):
+    """`chosen` (`[(row, argv)]`) minus every guard row except `GUARDS_KEPT`, and minus `STOOD_DOWN`."""
+    return [(row, argv) for row, argv in chosen
+            if row.script not in STOOD_DOWN and (not row.guard or row.script in GUARDS_KEPT)]
+
+
+def _guards_off(root):
+    return guards_switched_off(root) is not None
+
+
+def _never_armed(_root):
+    return False
+
+
 def now_ms():
     return int(time.time() * 1000)
 
@@ -603,9 +780,14 @@ def dispatch(event, harness, raw, deadline_ms, env, root, windows=None, resolve_
     direct = (windows and env.get("CREW_HOOK_DIRECT") != "0") if direct is None else direct
     payload = parse_payload(raw)
     chosen = select(event, harness, payload, windows=windows, scripts=scripts)
+    armed_fn = armed_fn or armed
+    if chosen and _guards_off(root):
+        # `guards.enabled: false` in the machine layer, owner-confirmed (crew 1.3.98): no guard row starts, so nothing is judged, logged or
+        # refused, and a fault in what is left cannot fail closed either. approval-hook.sh stays.
+        chosen = without_guards(chosen)
+        armed_fn = _never_armed
     if not chosen:
         return 0, b"", b""
-    armed_fn = armed_fn or armed
     bash, pwsh, bash_problem = "bash", None, ""
     bash_state = {"lock": threading.Lock(), "done": False}
 
@@ -902,7 +1084,7 @@ def main(argv=None, stdin=None, stdout=None, stderr=None, env=None):
 
 
 def _fault(event, root, message):
-    if event in BLOCKING_EVENTS and armed(root):
+    if event in BLOCKING_EVENTS and armed(root) and not _guards_off(root):
         return 2, f"{message}; failing closed (armed repo).\n".encode("utf-8")
     return 0, f"{message}; the repo is not armed, or this event cannot block, so nothing is blocked.\n".encode("utf-8")
 
