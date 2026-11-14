@@ -304,6 +304,20 @@ def master_confirmed(path):
         return False
 
 
+def machine_file_unread(path, root):
+    """True when the dispatcher does not read the machine file at `path`: it lies inside the project `root` or the
+    working directory (a HOME redirected into a checkout, or a working directory equal to, or above, the home
+    directory). The same rule as `crew_hook.machine_config_path`, so `--explain` and `/crew:status` say what
+    dispatch does (a test holds the two together)."""
+    real = os.path.normcase(os.path.realpath(path))
+    for folder in (root, os.getcwd()):
+        if folder:
+            base = os.path.normcase(os.path.realpath(folder))
+            if real == base or real.startswith(base.rstrip(os.sep) + os.sep):
+                return True
+    return False
+
+
 def _still_false(path, dotted):
     """True when the file at `path` still holds `dotted: false` (the JSON literal): a receipt is rebound only
     while the value it backs is still there."""

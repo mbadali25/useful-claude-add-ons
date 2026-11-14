@@ -412,6 +412,83 @@ def test_status_says_nothing_extra_while_the_guards_are_on(home, tmp_path):
     assert crew_status._guards_line(_repo(tmp_path, {}, name="bare")) is None  # pylint: disable=protected-access
 
 
+def test_explain_agrees_with_dispatch_when_the_machine_file_lies_inside_the_working_directory(home, tmp_path,
+                                                                                               monkeypatch, capsys):
+    """cwd == HOME with a confirmed receipt: the dispatcher does not read the file (`machine_config_path` is
+    None), so `--explain` must not show `false` as in force either, and must say why."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    root = _repo(tmp_path, {})
+    path = _machine(home, {"guards": {"enabled": False}})
+    _receipt(path)
+    monkeypatch.chdir(home)
+    assert crew_hook.guards_switched_off(root) is None   # what dispatch does
+    rows = crew_config.explain_config(root, path=path, all_keys=True)
+    row = {r["path"]: r for r in rows}[KEY]
+    assert row["unconfirmed"] is True and row["homeLimited"] is True
+    crew_config._print_explain(rows, root=root, all_keys=True)  # pylint: disable=protected-access
+    out = capsys.readouterr().out
+    assert "NOT in effect: the file lies inside the working directory" in out
+    assert "no applied /crew:confirm-config double confirmation" not in out
+
+
+def test_explain_still_says_unconfirmed_for_an_unconfirmed_false_inside_the_working_directory(home, tmp_path,
+                                                                                                monkeypatch):
+    root = _repo(tmp_path, {})
+    path = _machine(home, {"guards": {"enabled": False}})
+    monkeypatch.chdir(home)
+    row = {r["path"]: r for r in crew_config.explain_config(root, path=path, all_keys=True)}[KEY]
+    assert row["unconfirmed"] is True and row["homeLimited"] is False
+
+
+def test_explain_shows_a_confirmed_false_as_in_force_from_another_directory(home, tmp_path, monkeypatch):
+    root = _repo(tmp_path, {})
+    path = _machine(home, {"guards": {"enabled": False}})
+    _receipt(path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    row = {r["path"]: r for r in crew_config.explain_config(root, path=path, all_keys=True)}[KEY]
+    assert "unconfirmed" not in row and "homeLimited" not in row
+
+
+def test_status_names_the_home_directory_limit_not_a_missing_confirmation(home, tmp_path, monkeypatch):
+    root = _repo(tmp_path, {})
+    path = _machine(home, {"guards": {"enabled": False}})
+    _receipt(path)
+    monkeypatch.chdir(home)
+    line = crew_status._guards_line(root)  # pylint: disable=protected-access
+    assert "DISABLED" not in line and "the owner confirmed it" in line
+    assert "inside the working directory or the project" in line and "every guard still runs" in line
+    assert "no applied" not in line
+
+
+def test_status_still_asks_for_the_confirmation_when_an_unconfirmed_false_lies_inside_the_working_directory(
+        home, tmp_path, monkeypatch):
+    root = _repo(tmp_path, {})
+    _machine(home, {"guards": {"enabled": False}})
+    monkeypatch.chdir(home)
+    line = crew_status._guards_line(root)  # pylint: disable=protected-access
+    assert "double confirmation" in line and "the owner confirmed it" not in line
+
+
+def test_the_unread_file_rule_is_the_one_dispatch_applies(home, tmp_path, monkeypatch):
+    """`crew_humanonly.machine_file_unread` (used by --explain) and `crew_hook.machine_config_path` (used by dispatch)
+    are two spellings of one rule; they must agree for a working directory that is the home, above it, beside it
+    (a sibling whose name is a prefix of the home folder's) and unrelated."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    path = _gpath(home)
+    sibling = tmp_path / "ho"
+    sibling.mkdir()
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    repo_root = _repo(tmp_path, {})
+    for cwd in (home, tmp_path, sibling, other, home / ".claude"):
+        monkeypatch.chdir(cwd)
+        for root in (repo_root, str(home), str(tmp_path)):
+            dispatch_reads = crew_hook.machine_config_path(root) is not None
+            assert crew_humanonly.machine_file_unread(path, root) is (not dispatch_reads), (str(cwd), root)
+
+
 def test_every_mutation_anchor_is_present_exactly_once():
     """`guards_master_key_mutations.py` is not wired into `sabotage.py` (that is a harness file, so a feature PR
     may not edit it): this keeps its anchors honest so a drifted one cannot read as a pass."""

@@ -144,8 +144,14 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   `true`, a string, a corrupt file, a `guards` that is not an object, a file
   with a duplicate key (`{"enabled": true, "enabled": false}` is read differently
   by different parsers) all leave the guards on. A machine config path inside the
-  project or the working directory (a HOME redirected into a checkout) never
-  counts.
+  project or the working directory (a HOME redirected into a checkout, or a
+  working directory equal to, or above, your home) never counts, even with a
+  confirmation; `--explain` and `/crew:status` say that ("the file lies inside the
+  working directory or the project"), not "unconfirmed". Two notes: `/crew:migrate`
+  rolling back does not restore a receipt it revoked (it fails safe: the guards
+  stay on until the owner confirms again), and a receipts store that cannot be
+  read skips the revocation without a word (the receipt backs nothing anyway: it
+  binds the file's content and modification time).
 
 It takes effect on the next hook call, with no reinstall. To turn it off, ask crew to propose it (`/crew:config`, which runs `crew_confirm_config.py propose --layer machine --key guards.enabled` and relays the change id), then type `/crew:confirm-config <change_id>` yourself, twice, in two separate prompts, within 15 minutes. `--set guards.enabled=false` is refused (crew 1.3.97). `approval-hook.sh` keeps
 running, so `/crew:approve` and `/crew:confirm-config` keep working and the

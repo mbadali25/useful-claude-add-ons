@@ -2133,9 +2133,13 @@ def explain_config(root, path=None, all_keys=False):
                 "value": None if only_value is _MISSING else only_value,
                 "source": "global" if from_global else "default",
             }
-            if only_value is False and dotted == crew_humanonly.MASTER_KEY and not crew_humanonly.master_confirmed(
-                    _global_label(path)):
-                row["unconfirmed"] = True  # false in the file, but no applied double confirmation backs it
+            if only_value is False and dotted == crew_humanonly.MASTER_KEY:
+                confirmed = crew_humanonly.master_confirmed(_global_label(path))
+                if crew_humanonly.machine_file_unread(_global_label(path), root):
+                    # the dispatcher does not read a machine file inside the working directory or the project
+                    row["unconfirmed"], row["homeLimited"] = True, confirmed
+                elif not confirmed:
+                    row["unconfirmed"] = True  # false in the file, but no applied double confirmation backs it
             if dotted in _REPO_REPORTS_NULL:
                 # Any repo value but the default `true` is ignored, `null` included (a null is read as "inherit"
                 # by `without_null_shadows`, which has already dropped it from `repo_cfg`): ask the loaded file.
@@ -4638,8 +4642,10 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
             [f"held down by {row['heldDownBy']}"] if row.get("heldDownBy") else [])
         # A machine `false` the owner never confirmed is NOT in force: the value column says so itself, so a reader
         # of this one column is not told `false` as if the guards were off (round 3).
-        shown = json.dumps(row["value"]) + (" (NOT in effect: unconfirmed, every guard still runs)"
-                                            if row.get("unconfirmed") else "")
+        shown = json.dumps(row["value"]) + (
+            " (NOT in effect: the file lies inside the working directory or the project, every guard still runs)"
+            if row.get("homeLimited") else
+            " (NOT in effect: unconfirmed, every guard still runs)" if row.get("unconfirmed") else "")
         print(f"{row['path'].ljust(width)}  {row['source'].ljust(8)}  {shown}"
               + (f"  ({', '.join(marks)})" if marks else ""))
         if row.get("heldDownBy"):
@@ -4663,7 +4669,12 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
               "than your machine allows")
         print("  and be obeyed, and may ask for more and be refused.")
     for row in rows:
-        if row.get("unconfirmed"):
+        if row.get("homeLimited"):
+            print()
+            print(f"! {row['path']}: false in the machine file and confirmed, but that file lies inside the working "
+                  "directory or the project (a working directory equal to, or above, your home is the usual cause), "
+                  "so it is NOT in effect: every guard still runs. Run crew from another directory.")
+        elif row.get("unconfirmed"):
             print()
             print(f"! {row['path']}: false in the machine file, but no applied /crew:confirm-config double "
                   "confirmation backs it, so it is NOT in effect: every guard still runs.")
