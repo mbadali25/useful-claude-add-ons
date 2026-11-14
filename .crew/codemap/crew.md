@@ -5779,3 +5779,12 @@ Main moved four commits (`bb942e03d`, `9ea896157`, `237809449`, `c43ccae58`) whi
 `_verify/README.md`. `cite_check.py` against `c43ccae58` reports every full `path:line` cite in this note SAME (none moved).
 `237809449` (a mechanical competing refresh of five notes to `bdde587`, no ticket) was superseded for the notes this pass
 touched; its claims are not carried. Claims touched by the four files, if any, are listed in `verification-harness.md`'s body.
+
+## The guards master switch (`guards.enabled`, L-0947, crew 1.3.92)
+
+Marker: cites below are DERIVED at the commit that added this section (a `path:line` re-taken by name when it moves); behaviour was run only by `plugin/crew/tests/test_guards_master.py` and its sabotage table.
+
+- DERIVED `plugin/crew/hooks/scripts/crew_hook.py:417` `guards_switched_off(root, home)` returns `"machine"` only when `machine_config_path` (`:400`, None for a path inside the project or the working directory), `_layer_says_off` (the JSON literal `false`, no duplicate key at any depth, `utf-8-sig`) and `_owner_confirmed` (`crew_humanonly.receipt_backs` for `guards.enabled` at that file) all hold; anything else, a raised error included, reads as ON.
+- DERIVED `plugin/crew/hooks/scripts/crew_hook.py:452` `without_guards` drops every `guard` row except `GUARDS_KEPT` (`approval-hook.sh`, which records `/crew:confirm-config`) and the `STOOD_DOWN` rows (`context-watch.sh`, a Stop hook that can block, so with the switch off nothing blocks). `dispatch` swaps `armed_fn` for `_never_armed` when the switch is off, so a fault in a kept row does not fail closed.
+- DERIVED `plugin/crew/hooks/scripts/scope_guard.py` `machine_config` and `protected` refuse an agent's Write/Edit of `~/.claude/crew/config.json`; `_reading_refusal` refuses a shell command that names it beside a writing word. Reading it, and `crew_config.py --set` (which names no path), pass.
+- JUDGEMENT: the no-python launchers (`crew-hook.sh` `_rows_for`/`_armed`, `crew-hook.ps1`) do not read the switch and still fail closed in an armed repo: a documented limitation, not widened.

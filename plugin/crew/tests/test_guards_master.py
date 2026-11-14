@@ -13,11 +13,13 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 import pytest
 
 import context  # noqa: F401  pylint: disable=unused-import
 import crew_hook
+import crew_humanonly
 import record_golden_hooks as rgh
 
 CLOUD = rgh.CLOUD
@@ -60,6 +62,28 @@ def _machine_config(home, text):
         handle.write(text if isinstance(text, str) else json.dumps(text))
 
 
+def _receipt(path, state="applied", value=False, key="guards.enabled", layer="machine", target=None, settled=None):
+    """The record `crew_confirm_config.confirm` leaves behind: what makes a machine `false` the OWNER's."""
+    record = {"change_id": crew_humanonly.new_change_id(), "layer": layer,
+              "target": target or crew_humanonly.target_key(path), "key": key, "value": value, "state": state,
+              "created": time.time(), "settled": time.time() if settled is None else settled,
+              "confirmations": [], "reason": "test"}
+    crew_humanonly.write_record(crew_humanonly.store_dir(path), record)
+    return record
+
+
+def _off(home, text=None, encoding="utf-8"):
+    """The machine layer switched off AND double-confirmed, as the owner would leave it."""
+    folder = os.path.join(home, ".claude", "crew")
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, "config.json")
+    body = text if text is not None else {"guards": {"enabled": False}}
+    with open(path, "w", encoding=encoding) as handle:
+        handle.write(body if isinstance(body, str) else json.dumps(body))
+    _receipt(path)
+    return path
+
+
 @pytest.fixture(name="armed")
 def _armed(tmp_path):
     return rgh.build_repo(str(tmp_path), True)
@@ -95,7 +119,7 @@ def test_must_allow_with_the_guards_on(name, armed):
 @pytest.mark.parametrize("name", sorted(MUST_BLOCK))
 def test_must_allow_with_the_switch_off_in_the_machine_layer(name, armed):
     root, home = armed
-    _machine_config(home, {"guards": {"enabled": False}})
+    _off(home)
     result = _run("PreToolUse", MUST_BLOCK[name], root, home)
     assert not blocked(result), (name, result)
     assert result[0] == 0
@@ -125,30 +149,30 @@ def test_a_repo_false_is_reported_as_ignored_and_never_as_off(armed):
     _repo_config(root, {"enabled": False})
     assert crew_hook.repo_switch_ignored(root) is True
     assert crew_hook.guards_switched_off(root, home) is None
-    _machine_config(home, {"guards": {"enabled": False}})
+    _off(home)
     assert crew_hook.guards_switched_off(root, home) == "machine"
 
 
 def test_off_wins_over_a_strict_profile_in_the_repo_layer(armed):
     root, home = armed
     _repo_config(root, {"profile": "strict"})
-    _machine_config(home, {"guards": {"enabled": False, "profile": "strict"}})
+    _off(home, {"guards": {"enabled": False, "profile": "strict"}})
     assert not blocked(_run("PreToolUse", MUST_BLOCK["cloud-guard"], root, home))
 
 
 def test_a_true_in_the_repo_layer_cannot_switch_back_on_a_machine_false(armed):
     root, home = armed
     _repo_config(root, {"enabled": True})
-    _machine_config(home, {"guards": {"enabled": False}})
+    _off(home)
     assert not blocked(_run("PreToolUse", MUST_BLOCK["cloud-guard"], root, home))
 
 
 def test_a_stop_and_a_user_prompt_are_not_refused_by_a_guard_either(armed):
     """The Stop guards (verify gate, completion audit) are guard rows too."""
     root, home = armed
-    _machine_config(home, {"guards": {"enabled": False}})
+    _off(home)
     names = [argv[0] for row, argv in crew_hook.without_guards(crew_hook.select("Stop", "claude", None))]
-    assert names == ["context-watch.sh"]
+    assert names == [], "context-watch (a Stop hook that can block) stands down too: nothing blocks"
     assert not blocked(_run("Stop", {"hook_event_name": "Stop", "session_id": "s-1"}, root, home))
 
 
@@ -158,20 +182,20 @@ def test_a_stop_and_a_user_prompt_are_not_refused_by_a_guard_either(armed):
 def test_only_the_json_literal_false_switches_them_off(text, armed):
     """Could not tell, or any other value, leaves the guards on."""
     root, home = armed
-    _machine_config(home, text)
+    _off(home, text)
     assert blocked(_run("PreToolUse", MUST_BLOCK["cloud-guard"], root, home)), text
 
 
 def test_an_unreadable_machine_layer_leaves_the_guards_on(armed):
     root, home = armed
-    _machine_config(home, '{"guards": {"enabled": false,}}')
+    _off(home, '{"guards": {"enabled": false,}}')
     assert crew_hook.guards_switched_off(root, home) is None
 
 
 def test_a_lookup_that_raises_leaves_the_guards_on(armed, monkeypatch):
     """Could not tell is never off: a reader that raises must read as ON."""
     root, home = armed
-    _machine_config(home, {"guards": {"enabled": False}})
+    _off(home)
 
     def boom(*_args, **_kwargs):
         raise OSError("planted")
@@ -201,6 +225,7 @@ def test_the_humanonly_opt_out_still_works_with_the_guards_off(tmp_path, monkeyp
     home.mkdir(parents=True)
     path = home / "config.json"
     path.write_text(json.dumps({"guards": {"enabled": False}}), encoding="utf-8")
+    _receipt(str(path))
     monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(path))
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
@@ -218,7 +243,7 @@ def test_the_humanonly_opt_out_still_works_with_the_guards_off(tmp_path, monkeyp
 
 def test_a_dispatcher_fault_does_not_fail_closed_with_the_guards_off(armed):
     root, home = armed
-    _machine_config(home, {"guards": {"enabled": False}})
+    _off(home)
     old = os.environ.get("HOME"), os.environ.get("USERPROFILE")
     os.environ["HOME"] = os.environ["USERPROFILE"] = home
     try:
@@ -237,3 +262,246 @@ def test_a_dispatcher_fault_does_not_fail_closed_with_the_guards_off(armed):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+# --- the owner's confirmation (decision A, crew 1.3.92) ---------------------------------------------------------
+
+@pytest.mark.parametrize("name", sorted(MUST_BLOCK))
+def test_an_unconfirmed_false_stands_nothing_down(name, armed):
+    """A `false` an agent, a hook-side write or a hand edit left in the machine file, with no applied double
+    confirmation behind it, reads as ON (like an unconfirmed humanOnly false reads human-only)."""
+    root, home = armed
+    _machine_config(home, {"guards": {"enabled": False}})
+    assert blocked(_run("PreToolUse", MUST_BLOCK[name], root, home)), name
+    assert crew_hook.guards_switched_off(root, home) is None
+    assert crew_hook.machine_switch_unconfirmed(root, home) is True
+
+
+def _case_pending(path):
+    _receipt(path, state="pending")
+
+
+def _case_expired(path):
+    _receipt(path, state="expired")
+
+
+def _case_other_file(path):
+    _receipt(path, target=os.path.join(os.path.dirname(path), "elsewhere.json"))
+
+
+def _case_other_key(path):
+    _receipt(path, key="humanOnly.approve")
+
+
+def _case_repo_layer(path):
+    _receipt(path, layer="repo")
+
+
+def _case_a_true_receipt(path):
+    _receipt(path, value=True)
+
+
+def _case_revoked_later(path):
+    _receipt(path, settled=time.time() + 5)
+    _receipt(path, state="revoked", value=None, settled=time.time() + 10)
+
+
+def _case_unreadable_store(path):
+    store = crew_humanonly.store_dir(path)
+    os.makedirs(store, exist_ok=True)
+    with open(os.path.join(store, "cc-00000000.json"), "w", encoding="utf-8") as handle:
+        handle.write("{not json")
+
+
+@pytest.mark.parametrize("seed", [_case_pending, _case_expired, _case_other_file, _case_other_key,
+                                  _case_repo_layer, _case_a_true_receipt, _case_revoked_later,
+                                  _case_unreadable_store])
+def test_a_receipt_that_does_not_back_this_false_leaves_the_guards_on(seed, armed):
+    root, home = armed
+    _machine_config(home, {"guards": {"enabled": False}})
+    seed(os.path.join(home, ".claude", "crew", "config.json"))
+    assert blocked(_run("PreToolUse", MUST_BLOCK["cloud-guard"], root, home)), seed.__name__
+    assert crew_hook.guards_switched_off(root, home) is None
+
+
+def test_a_receipt_is_read_at_the_file_it_names_not_at_a_copy(armed):
+    """The receipt binds to the machine config's real path: a receipt for another file's false counts nothing."""
+    root, home = armed
+    path = _off(home)
+    other = os.path.join(root, "copy.json")
+    with open(other, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({"guards": {"enabled": False}}))
+    assert crew_hook.guards_switched_off(root, home) == "machine"
+    assert not crew_hook._owner_confirmed(other)  # pylint: disable=protected-access
+    assert crew_hook._owner_confirmed(path)  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("text", [
+    '{"guards": {"enabled": true, "enabled": false}}',
+    '{"guards": {"enabled": false, "enabled": true}}',
+    '{"guards": {"enabled": false}, "guards": {}}',
+    '{"guards": {"enabled": false, "profile": "off", "profile": "strict"}}',
+    '{"a": {"b": 1, "b": 2}, "guards": {"enabled": false}}'])
+def test_a_duplicate_key_leaves_the_guards_on(text, armed):
+    """Two JSON parsers disagree on which duplicate wins (this one used to read false; a reviewer's reads true):
+    an ambiguous file cannot switch the guards off."""
+    root, home = armed
+    _off(home, text)
+    assert blocked(_run("PreToolUse", MUST_BLOCK["cloud-guard"], root, home)), text
+    assert crew_hook.guards_switched_off(root, home) is None
+
+
+def test_a_utf8_bom_in_the_machine_file_still_reads(armed):
+    """A Windows editor's BOM does not turn a confirmed false into 'could not tell'."""
+    root, home = armed
+    _off(home, encoding="utf-8-sig")
+    assert crew_hook.guards_switched_off(root, home) == "machine"
+    assert not blocked(_run("PreToolUse", MUST_BLOCK["cloud-guard"], root, home))
+
+
+def test_a_home_redirected_into_the_checkout_stands_nothing_down(armed):
+    """HOME / USERPROFILE pointed at a fake home shipped in the repo (config AND forged receipts inside it)."""
+    root, _home = armed
+    fake = os.path.join(root, "fakehome")
+    _off(fake)
+    assert crew_hook.machine_config_path(root, fake) is None
+    assert crew_hook.guards_switched_off(root, fake) is None
+    assert blocked(_run("PreToolUse", MUST_BLOCK["cloud-guard"], root, fake))
+    assert blocked(_run("PreToolUse", MUST_BLOCK["env-guard"], root, fake))
+
+
+def test_a_home_redirected_into_the_working_directory_stands_nothing_down(armed, tmp_path, monkeypatch):
+    root, _home = armed
+    elsewhere = tmp_path / "somewhere"
+    fake = elsewhere / "fakehome"
+    _off(str(fake))
+    monkeypatch.chdir(elsewhere)
+    assert crew_hook.machine_config_path(root, str(fake)) is None
+    assert crew_hook.guards_switched_off(root, str(fake)) is None
+
+
+def test_the_real_machine_home_outside_the_project_is_used(armed):
+    root, home = armed
+    assert crew_hook.machine_config_path(root, home) == os.path.join(home, crew_hook.GLOBAL_CONFIG)
+
+
+def test_an_approval_hook_fault_does_not_fail_closed_with_the_guards_off(tmp_path, monkeypatch):
+    """approval-hook.sh is the one guard row that keeps running with the switch off. If IT faults in an armed
+    repo, the fault must not become a refusal: nothing blocks while the owner has the guards off."""
+    from crew_hook_harness import dispatch_fake  # pylint: disable=import-outside-toplevel
+    scripts = tmp_path / "fakescripts"
+    scripts.mkdir()
+    crash = "import sys; sys.stdin.buffer.read(); sys.stderr.write('planted fault'); sys.exit(1)"
+    for name, body in (("approval-hook.sh", crash), ("crew-context.sh", "import sys; sys.stdin.buffer.read()")):
+        with open(scripts / name, "w", encoding="utf-8", newline=chr(10)) as handle:
+            handle.write(body + chr(10))
+    payload = json.dumps({"hook_event_name": "UserPromptSubmit", "prompt": "hi", "session_id": "s-1"}).encode()
+    home = tmp_path / "home"
+    path = _off(str(home))
+    for key in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(key, str(home))
+    code_off, _out, _err = dispatch_fake(monkeypatch, str(scripts), armed=True, event="UserPromptSubmit",
+                                         payload=payload, env=dict(os.environ))
+    assert code_off == 0
+    os.unlink(path)
+    code_on, _out, _err = dispatch_fake(monkeypatch, str(scripts), armed=True, event="UserPromptSubmit",
+                                        payload=payload, env=dict(os.environ))
+    assert code_on == 2, "the control: with the guards on, the same fault fails closed"
+
+
+# --- the machine config is the owner's: an agent cannot write it (scope guard, crew 1.3.92) ---------------------
+
+def _machine_path(home):
+    return os.path.join(home, ".claude", "crew", "config.json")
+
+
+@pytest.mark.parametrize("tool, args", [
+    ("Write", lambda path: {"file_path": path, "content": "{}"}),
+    ("Edit", lambda path: {"file_path": path, "old_string": "a", "new_string": "b"}),
+    ("MultiEdit", lambda path: {"edits": [{"file_path": path, "old_string": "a", "new_string": "b"}]}),
+    ("Bash", lambda path: {"command": f"echo '{{\"guards\":{{\"enabled\":false}}}}' > '{path}'"}),
+    ("Bash", lambda path: {"command": "echo '{}' > ~/.claude/crew/config.json"}),
+    ("Bash", lambda path: {"command": "printf x | tee $HOME/.claude/crew/config.json"}),
+    ("Bash", lambda path: {"command": r"sed -i s/true/false/ ~\.claude\crew\config.json"}),
+    ("Bash", lambda path: {"command": "Set-Content -Path ~/.claude/crew/config.json -Value x"}),
+])
+def test_an_agent_cannot_write_the_machine_config(tool, args, armed):
+    root, home = armed
+    _machine_config(home, {"guards": {"enabled": True}})
+    result = _run("PreToolUse", _tool(tool, **args(_machine_path(home))), root, home)
+    assert blocked(result), (tool, result)
+
+
+@pytest.mark.parametrize("command", [
+    "cat ~/.claude/crew/config.json", "ls -la ~/.claude/crew", "grep enabled ~/.claude/crew/config.json",
+    "python3 crew_config.py --set guards.profile=standard"])
+def test_reading_the_machine_config_and_the_sanctioned_writer_still_pass(command, armed):
+    root, home = armed
+    assert not blocked(_run("PreToolUse", _tool("Bash", command=command), root, home)), command
+
+
+def test_a_write_to_the_machine_config_is_not_blocked_with_the_guards_off(armed):
+    """Off means off: with a confirmed switch the scope guard is stood down, so nothing blocks."""
+    root, home = armed
+    _off(home)
+    assert not blocked(_run("PreToolUse", _tool("Write", file_path=_machine_path(home), content="{}"), root, home))
+
+
+def test_the_confirm_listing_names_a_pending_master_switch_proposal(tmp_path, monkeypatch):
+    """`/crew:confirm-config` typed with no id lists the pending proposals: the master switch's must be one of
+    them, and be marked as turning every guard off (the listing is how the owner finds the id)."""
+    import approval_hook  # pylint: disable=import-outside-toplevel
+    import crew_state  # pylint: disable=import-outside-toplevel
+    folder = tmp_path / "home" / ".claude" / "crew"
+    folder.mkdir(parents=True)
+    path = folder / "config.json"
+    path.write_text(json.dumps({"guards": {"enabled": True}}), encoding="utf-8")
+    monkeypatch.setattr(crew_state, "GLOBAL_CONFIG_PATH", str(path))
+    now = time.time()
+    record = {"change_id": crew_humanonly.new_change_id(), "layer": "machine", "key": "guards.enabled",
+              "value": False, "state": "pending", "path": str(path), "target": crew_humanonly.target_key(str(path)),
+              "created": now, "expires": now + 900, "confirmations": [], "settled": None, "reason": None}
+    crew_humanonly.write_record(crew_humanonly.store_dir(str(path)), record)
+    text = approval_hook._proposals_text(now)  # pylint: disable=protected-access
+    assert record["change_id"] in text
+    assert "guards.enabled: true -> false" in text and "TURNS EVERY GUARD OFF" in text
+
+
+# --- the owner's files are protected in EVERY scope mode, `off` (the default) included ----------------------------
+
+@pytest.fixture(name="unarmed")
+def _unarmed(tmp_path):
+    """A bare git repo: no `.crew/config.json`, so `scope.mode` is `off`, the default."""
+    return rgh.build_repo(str(tmp_path), False)
+
+
+@pytest.mark.parametrize("tool, args", [
+    ("Write", lambda home: {"file_path": _machine_path(home), "content": "{}"}),
+    ("Edit", lambda home: {"file_path": _machine_path(home), "old_string": "a", "new_string": "b"}),
+    ("Write", lambda home: {"file_path": os.path.join(home, ".claude", "crew", "confirm-config", "cc-00000000.json"),
+                            "content": "{}"}),
+    ("Bash", lambda home: {"command": "echo '{}' > ~/.claude/crew/config.json"}),
+    ("Bash", lambda home: {"command": "cp x ~/.claude/crew/confirm-config/cc-00000000.json"}),
+])
+def test_scope_mode_off_does_not_unprotect_the_owners_files(tool, args, unarmed):
+    """With `scope.mode` off the scope guard does nothing else, but an agent could otherwise write BOTH the
+    `false` and its receipt, so these two paths are refused in every mode."""
+    root, home = unarmed
+    assert blocked(_run("PreToolUse", _tool(tool, **args(home)), root, home)), (tool, args(home))
+
+
+def test_scope_mode_off_still_allows_everything_else(unarmed):
+    root, home = unarmed
+    for payload in (_tool("Write", file_path="src/app.py", content="x = 2\n"),
+                    _tool("Bash", command="cat ~/.claude/crew/config.json"),
+                    _tool("Bash", command="python3 crew_config.py --set guards.profile=standard")):
+        assert not blocked(_run("PreToolUse", payload, root, home)), payload
+
+
+def test_the_owners_files_are_protected_outside_a_work_tree_too(tmp_path):
+    home = tmp_path / "home"
+    (home / ".claude" / "crew").mkdir(parents=True)
+    bare = tmp_path / "notarepo"
+    bare.mkdir()
+    payload = _tool("Write", file_path=_machine_path(str(home)), content="{}")
+    assert blocked(_run("PreToolUse", payload, str(bare), str(home)))

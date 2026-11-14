@@ -93,21 +93,36 @@ meaningful only with `scope.mode` `block`.
 
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.89) turns EVERY guard hook off: the promote
-gate, the role-write, cloud, environment and scope guards, the verify gate and
-the completion audit. None of them starts, so nothing is judged, refused, asked
-or logged. It beats every per-guard setting (`guards.profile`,
-`guards.overrides.*`, `scope.mode`, `verifyGate`), and `false` in the MACHINE layer
-(`~/.claude/crew/config.json`) is the only one that counts: a `false` in
-`.crew/config.json`, tracked or not, is ignored and the guards stay on (a checkout
-must not be able to turn every guard off), and a repo `true` cannot switch a machine
-`false` back on. Only the JSON literal `false` counts: an
-absent key, `null`, `true`, a string, a corrupt file or a `guards` that is not an
-object leaves the guards on. It takes effect on the next hook call, with no
-reinstall. `/crew:approve` and `/crew:confirm-config` keep working, so the
+`guards.enabled: false` (crew 1.3.92) turns EVERY guard hook off: the promote
+gate, the role-write, cloud, environment and scope guards, the verify gate, the
+completion audit and the context-watch Stop hook. None of them starts, so nothing
+is judged, refused, asked, warned or logged: with the switch off, nothing blocks. It
+beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mode`,
+`verifyGate`). Three things must all hold for it to count (crew 1.3.92):
+
+- It is in the MACHINE layer (`~/.claude/crew/config.json`). A `false` in
+  `.crew/config.json`, tracked or not, is ignored and the guards stay on (a
+  checkout must not be able to turn every guard off), and a repo `true` cannot
+  switch a machine `false` back on.
+- It is the OWNER's. Like the `humanOnly.*` opt-out, a `false` counts only when an
+  applied `/crew:confirm-config` double confirmation backs it (two prompts the
+  owner typed). An agent's Write or Edit, a hook-side write or a hand edit that
+  only sets the `false` leaves the guards ON; so does a missing, revoked or
+  unreadable receipt. The scope guard refuses an agent's Write, Edit or shell
+  write to the machine config file and to the receipts beside it, in every
+  `scope.mode` (`off`, the default, included).
+- It is unambiguous. Only the JSON literal `false` counts: an absent key, `null`,
+  `true`, a string, a corrupt file, a `guards` that is not an object, a file
+  with a duplicate key (`{"enabled": true, "enabled": false}` is read differently
+  by different parsers) all leave the guards on. A machine config path inside the
+  project or the working directory (a HOME redirected into a checkout) never
+  counts.
+
+It takes effect on the next hook call, with no reinstall. `approval-hook.sh` keeps
+running, so `/crew:approve` and `/crew:confirm-config` keep working and the
 `humanOnly.*` opt-out still works with the guards off. It needs python: with
-none, the bash launcher still fails closed in an armed repo. To go back, delete
-the key or set it to `true` in the machine file.
+none, the bash launcher still fails closed in an armed repo (known limitation).
+To go back, delete the key or set it to `true` in the machine file.
 
 ## Guard profiles
 

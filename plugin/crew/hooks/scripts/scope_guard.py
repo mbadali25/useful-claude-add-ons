@@ -8,7 +8,12 @@ the payload in, so the two shells cannot disagree.
 ## What it decides, in order
 
 1. `scope.mode` resolves to `off` (the default, and what a repo that never set
-   the key gets) -> exit 0 before anything else is read.
+   the key gets), or the cwd is no work tree -> exit 0 before anything else is
+   read, EXCEPT that a Write/Edit of, or a shell write to, the owner's own
+   files (the machine config `~/.claude/crew/config.json` and the
+   confirm-config store beside it) is still refused (crew 1.3.92): those hold
+   `guards.enabled` and its receipts, and a guard that stood down with
+   `scope.mode` would let an agent write both.
 2. A target under `<git-common-dir>/crew/` -- approval receipts, the review
    ledger, the active-ticket pointer, the ramp count -- or crew bookkeeping
    that is not write-allowed (`crew_ticket.is_crew_write_refused`: the scope
@@ -168,6 +173,10 @@ _DOTGIT_CREW_RE = re.compile(r"\.git[\\/]+crew\b|git-common-dir\b.*\bcrew\b",
 # make a `humanOnly.*: false` count. A shell command naming `confirm-config/`
 # beside a writing word is refused like one naming <git-common-dir>/crew/.
 _CONFIRM_STORE_RE = re.compile(r"confirm-config[\\/]", re.IGNORECASE)
+# The machine config (`~/.claude/crew/config.json`): `guards.enabled` lives there (crew 1.3.92), so a Write/Edit
+# of it is refused and a shell command naming it beside a writing word is refused like one naming the store.
+# `crew_config.py --set` names no path, so the sanctioned writer is not caught.
+_MACHINE_CONFIG_RE = re.compile(r"\.claude[\\/]+crew[\\/]+config\.json\b", re.IGNORECASE)
 # A redirect (not into /dev/null, $null or another descriptor), or a word
 # that writes files. Reading crew's state -- `cat`, `Get-Content` -- passes.
 _WRITES_RE = re.compile(
@@ -272,6 +281,19 @@ def confirm_store():
     return os.path.join(os.path.expanduser("~"), ".claude", "crew", "confirm-config")
 
 
+def machine_config():
+    """The machine config file (`~/.claude/crew/config.json`), which holds `guards.enabled`, the switch that
+    stands every guard down (crew 1.3.92). Like `confirm_store`, spelled here so this guard imports no config
+    module."""
+    return os.path.join(os.path.expanduser("~"), ".claude", "crew", "config.json")
+
+
+def _owner_path(path):
+    """True for the owner's own files: the double-confirmation store and the machine config, which holds
+    `guards.enabled` (crew 1.3.92)."""
+    return _under(path, confirm_store()) or os.path.normcase(path) == os.path.normcase(machine_config())
+
+
 def protected(top, state, target, base):
     """True when `target` names crew's approval/ledger state, or bookkeeping
     a Write/Edit may never touch (module docstring, rule 2)."""
@@ -281,7 +303,7 @@ def protected(top, state, target, base):
     for path in (real, named):
         if state and _under(path, state):
             return True
-        if _under(path, confirm_store()):
+        if _owner_path(path):
             return True
         rel = _rel(path, top)
         if rel is not None and os.path.normcase(rel) == os.path.normcase(SCOPE_BASE):
@@ -359,11 +381,47 @@ def _reading_refusal(command, written, common, top, agent_type=None):
         state and os.path.normcase(state).replace("\\", "/") in folded)
     if names_state and _WRITES_RE.search(command):
         return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
+    return _owner_command_refusal(command)
+
+
+def _owner_command_refusal(command):
+    """Why a shell command may not write the owner's files (`_owner_path`), or None."""
+    folded = os.path.normcase(command).replace("\\", "/")
     store = os.path.normcase(confirm_store()).replace("\\", "/")
     if (_CONFIRM_STORE_RE.search(command) or store in folded) and _WRITES_RE.search(command):
         return ("it writes under the confirm-config store, the receipts of the owner's "
                 "double confirmation")
+    machine = os.path.normcase(machine_config()).replace("\\", "/")
+    if (_MACHINE_CONFIG_RE.search(command) or machine in folded) and _WRITES_RE.search(command):
+        return ("it writes the machine config (~/.claude/crew/config.json), which holds the guards master "
+                "switch; the owner edits it, or /crew:config does")
     return None
+
+
+def _owner_files_only(tool, data, root):
+    """What the guard still decides where it otherwise does nothing: `scope.mode` off (the default) or no work
+    tree (crew 1.3.92). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
+    and the master switch are what make an owner-only change the owner's: a guard that stood down with
+    `scope.mode` would let an agent write both the `false` and its receipt."""
+    if tool in SHELLS:
+        tool_input = data.get("tool_input")
+        command = tool_input.get("command") if isinstance(tool_input, dict) else None
+        readings = dict.fromkeys(_joined(command)) if isinstance(command, str) else ()
+        reason = next((r for r in map(_owner_command_refusal, readings) if r), None)
+        if reason:
+            return _deny([f"SCOPE GUARD: refused this {tool} command -- {reason}.",
+                          "  These are the owner's files: the owner edits them, or /crew:config and "
+                          "/crew:confirm-config do."])
+        return 0
+    base = os.path.abspath(root)
+    for path in targets(data):
+        absolute = path if os.path.isabs(path) else os.path.join(base, path)
+        real = role_write_guard._resolve_real_target(absolute)  # pylint: disable=protected-access
+        if any(_owner_path(p) for p in (real, os.path.normpath(absolute))):
+            return _deny([f"SCOPE GUARD: {path} is the owner's file (the machine config or the "
+                          "confirm-config receipts) and is never written by Write/Edit.",
+                          "  The owner edits it, or /crew:config and /crew:confirm-config do."])
+    return 0
 
 
 def _log(top, mode, decision, ticket, path, reason):
@@ -412,10 +470,10 @@ def decide(data):
     root = root or os.environ.get("CLAUDE_PROJECT_DIR") or "."
     top = crew_ticket.toplevel(root)
     if not top:
-        return 0
+        return _owner_files_only(tool, data, root)
     configured, why = crew_ticket.configured_mode(top)
     if configured == "off":
-        return 0
+        return _owner_files_only(tool, data, root)
     common = crew_ticket.common_dir(root)
     if tool in SHELLS:
         tool_input = data.get("tool_input")

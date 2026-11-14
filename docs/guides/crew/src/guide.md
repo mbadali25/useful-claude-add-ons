@@ -248,12 +248,7 @@ example `guards.overrides.roleWrites: report`. The twelve per-guard keys
 counts until `/crew:migrate` rewrites the layer. Each layer expands its own
 profile and overrides, and the narrower layer wins per guard.
 
-To run everything with no guard at all, set `guards.enabled: false` in the machine config layer, `~/.claude/crew/config.json` (crew 1.3.89). It
-stands down every guard hook (the cloud, environment, role-write, scope and promote guards, the verify gate and
-the completion audit) whatever the profile, the overrides, `scope.mode` and `verifyGate` say, and `false` in
-only that layer counts: a `false` in `.crew/config.json` is ignored, so a checkout cannot turn every guard off. Only the JSON literal `false` counts, so a typo leaves the guards on. `/crew:approve` and
-`/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. It needs python: with none, the bash
-launcher still fails closed in an armed repo.
+To run everything with no guard at all, set `guards.enabled: false` in the machine config layer, `~/.claude/crew/config.json` (crew 1.3.92), and confirm it as the owner (crew 1.3.92): like the `humanOnly.*` opt-out it takes the `/crew:confirm-config` double confirmation, so an agent's edit, a hand edit or a stray write leaves the guards on. Once confirmed it stands down every guard hook (the cloud, environment, role-write, scope and promote guards, the verify gate, the completion audit and the context-watch Stop hook), so nothing blocks, whatever the profile, the overrides, `scope.mode` and `verifyGate` say. Only that layer counts: a `false` in `.crew/config.json` is ignored, so a checkout cannot turn every guard off, and a duplicate key or a typo leaves the guards on. `/crew:approve` and `/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. It needs python: with none, the bash launcher still fails closed in an armed repo.
 
 - **On by default:** the Stop verify gate (`verifyGate: true`) blocks when a
   verify rule fails.
