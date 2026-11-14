@@ -529,6 +529,8 @@ def direct_plan(argv, payload, raw, env, scripts, executable=None):
     cwd, extra, stdin = None, {}, raw
     if argv[0] == "approval-hook.sh" and not _approval_wanted(raw):
         return _SKIP
+    if argv[0] == "completion-audit.sh" and _audit_scope_unknown(env):
+        return None  # the wrapper keeps the whole sequence (marker, crash handling) where its scope is unknowable
     if argv[0] == "completion-audit.sh" and _STOP_ACTIVE.search(_flat(raw)):
         return _SKIP  # a continuation is never audited or blocked again; `work` ends the blocked-once count
     if argv[0] == "promote-gate.sh":
@@ -570,11 +572,23 @@ def _posix_cksum(data):
     return ~crc & 0xFFFFFFFF
 
 
+def _audit_scope_unknown(env):
+    """True when the wrapper's marker cannot be named from `env` alone, so the direct route must not guess:
+    the wrapper hashes `${CLAUDE_PROJECT_DIR:-$PWD}` (a POSIX path python cannot reproduce from os.getcwd()), and
+    with TMPDIR set to a directory that does not exist it fails open ("no marker could be written") where a
+    python fallback to the system temp directory would block. An unknown is not the safe-looking value."""
+    if not env.get("CLAUDE_PROJECT_DIR"):
+        return True
+    tmp = env.get("TMPDIR") or ""
+    return bool(tmp) and not os.path.isdir(tmp)
+
+
 def _audit_marker(raw, env):
-    """The path completion-audit.sh's `_marker` names: one per session and project in the temp directory."""
+    """The path completion-audit.sh's `_marker` names: one per session and project in the temp directory.
+    Only called where `_audit_scope_unknown` is False, so CLAUDE_PROJECT_DIR is set."""
     found = _SESSION_ID.match(_flat(raw))
     sid = found.group(1).decode("ascii") if found else "nosession"
-    project = env.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    project = env.get("CLAUDE_PROJECT_DIR") or ""
     tmp = env.get("TMPDIR") or ""
     tmp = tmp if tmp and os.path.isdir(tmp) else tempfile.gettempdir()
     return os.path.join(tmp, f"crew-completion-audit.{sid}-{_posix_cksum(project.encode('utf-8'))}")

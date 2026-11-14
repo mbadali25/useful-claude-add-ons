@@ -242,7 +242,8 @@ wrapper is the fallback for any exit it would not pass through) and resolves Git
 DERIVED (crew 1.3.96, `crew_hook.py`: `DIRECT["completion-audit.sh"]`, `_audit_marker`, `_audit_marker_clear`, `direct_plan`): the Stop
 row `completion-audit.sh` is also in `DIRECT` (accept `(0, 2)`); the dispatcher keeps the wrapper's blocked-once marker itself (the
 `crew-completion-audit.<session>-<cksum>` file, a Python POSIX cksum), skips python on a `stop_hook_active` continuation and clears the
-marker on that and on a verdict, never on a timeout. Test: `plugin/crew/tests/test_crew_hook_stop_native.py`.
+marker on that and on a verdict, never on a timeout. `_audit_scope_unknown` (`CLAUDE_PROJECT_DIR` unset/empty, or `TMPDIR` set to a
+missing directory) makes `direct_plan` return None, so the wrapper keeps the whole sequence. Test: `plugin/crew/tests/test_crew_hook_stop_native.py`.
 Tests: `test_crew_hook_direct.py`. With no usable python `crew-hook.sh` runs the event's `.sh` scripts directly from a static
 list and `crew-hook.ps1` fails an armed repo closed on the three blocking events. Tests:
 `plugin/crew/tests/test_crew_hook_parity.py`, `test_crew_hook_merge.py`, `test_crew_hook_faults.py`,

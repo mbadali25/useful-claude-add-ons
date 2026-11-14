@@ -206,6 +206,8 @@ marker. Measured on a loaded Windows host it cost 40-49 s through Git Bash (15-2
 `UNKNOWN (guard timeout)`. It now has a direct route (`accept` is `(0, 2)`) and the dispatcher reproduces the
 wrapper's bookkeeping (`_audit_marker`, `_audit_marker_clear`, a POSIX `cksum` in Python): the same marker file,
 cleared on a `stop_hook_active` continuation (python is not started) and on a verdict, untouched on a timeout.
+Where the marker cannot be named from the environment (`CLAUDE_PROJECT_DIR` unset or empty, or `TMPDIR` set to a
+missing directory) the wrapper keeps the whole sequence, so the two routes never split the blocked-once count.
 Fail-closed is unchanged: any other exit, a failed launch or a missing file runs the wrapper, a timeout is never
 rerun and stays `UNKNOWN`, and Linux and macOS keep the wrapper. `test_crew_hook_stop_native.py` holds the
 must-block and must-allow cases through the native route, the marker name against the real `cksum` and the real

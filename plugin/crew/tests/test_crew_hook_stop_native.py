@@ -245,6 +245,58 @@ def test_the_marker_name_is_the_one_the_wrapper_writes(tmp_path):
     assert written == [os.path.basename(_marker(project, tmp, payload))], written
 
 
+@pytest.mark.parametrize("env", [{}, {"CLAUDE_PROJECT_DIR": ""}], ids=["unset", "empty"])
+def test_direct_plan_defers_the_audit_to_the_wrapper_when_the_project_dir_is_unknown(env):
+    """The wrapper hashes `${CLAUDE_PROJECT_DIR:-$PWD}` (a POSIX path); python's os.getcwd() is another string,
+    so a marker named from it could split the blocked-once count between the two routes."""
+    got = crew_hook.direct_plan([AUDIT], {}, _stop("/x"), env, SCRIPTS)
+    assert got is None
+    assert crew_hook.direct_plan([AUDIT], {}, _stop("/x"), {"CLAUDE_PROJECT_DIR": "/x"}, SCRIPTS) is not None
+
+
+def test_direct_plan_defers_the_audit_when_tmpdir_is_not_a_directory(tmp_path):
+    """The wrapper fails open on a TMPDIR it cannot write a marker into; python's fallback to the system temp
+    directory would block instead, so the wrapper keeps that case."""
+    env = {"CLAUDE_PROJECT_DIR": str(tmp_path), "TMPDIR": str(tmp_path / "missing")}
+    assert crew_hook.direct_plan([AUDIT], {}, _stop(tmp_path), env, SCRIPTS) is None
+    env["TMPDIR"] = str(tmp_path)
+    assert crew_hook.direct_plan([AUDIT], {}, _stop(tmp_path), env, SCRIPTS) is not None
+
+
+def test_an_unset_project_dir_sends_the_audit_to_the_wrapper(audit_only, monkeypatch, tmp_path):
+    spy = Spy(monkeypatch)
+
+    _dispatch(tmp_path, _stop(tmp_path), tmp_path, env_extra={"CLAUDE_PROJECT_DIR": ""})
+
+    assert spy.direct() == [] and len(spy.wrappers()) == 1
+
+
+@pytest.mark.skipif(h.BASH is None, reason="no bash: the wrapper fallback was NOT run")
+@crew_fixtures.SLOW
+def test_crash_verdict_crash_with_no_project_dir_blocks_the_third_stop_as_the_wrapper_does(monkeypatch, tmp_path):
+    """CLAUDE_PROJECT_DIR unset: the direct route and the wrapper would name different markers. With the wrapper
+    owning the whole sequence, crash -> block, a verdict clears the marker, crash -> block again (never a pass)."""
+    row = crew_hook._row("Stop", "", AUDIT, 300, guard=True)  # pylint: disable=protected-access
+    monkeypatch.setattr(crew_hook, "TABLE", (row,))
+    project = tmp_path / "proj"
+    (project / ".crew").mkdir(parents=True)
+    (project / ".crew" / "config.json").write_text("{}", encoding="utf-8")
+    tmp = tmp_path / "tmp"
+    tmp.mkdir()
+    payload = _stop(project)
+    monkeypatch.chdir(project)
+    results = []
+    for body in ("raise SystemExit(1)\n", "raise SystemExit(0)\n", "raise SystemExit(1)\n"):
+        home = tmp_path / f"s{len(results)}"
+        home.mkdir()
+        scripts = _fake_scripts(home, body)
+        results.append(_dispatch(project, payload, tmp, scripts=scripts, deadline_s=400, bash=h.BASH,
+                                 real_env=True, env_extra={"CLAUDE_PROJECT_DIR": ""}))
+
+    assert results[0][0] == 2 and results[1][0] == 0, results
+    assert results[2][0] == 2 and "Not blocking again" not in results[2][2], results[2]
+
+
 def test_a_stop_hook_active_stop_runs_nothing_and_ends_the_blocked_once_count(audit_only, monkeypatch, tmp_path):
     spy = Spy(monkeypatch)
     payload = _stop(tmp_path, active=True)
