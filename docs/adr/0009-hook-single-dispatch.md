@@ -197,3 +197,17 @@ to about thirty processes (18 bash, 6 python3, 3 git) because every `.sh` row st
 
 The golden corpus is still the oracle; `test_crew_hook_direct.py` holds zero `.sh` starts on the hot path,
 the fallback, the one-registration shape, and the same exit, stdout and stderr by either route.
+
+## Amendment, 2026-11-14 (crew 1.3.96): the Stop completion audit goes direct
+
+The Stop row `completion-audit.sh` was left out of `DIRECT` in 1.3.60 because its wrapper keeps a blocked-once
+marker. Measured on a loaded Windows host it cost 40-49 s through Git Bash (15-20 forks at 1.3-3 s each) against
+0.2-0.6 s for `completion_audit.py` run natively, which put a 60 s row limit within reach and read as
+`UNKNOWN (guard timeout)`. It now has a direct route (`accept` is `(0, 2)`) and the dispatcher reproduces the
+wrapper's bookkeeping (`_audit_marker`, `_audit_marker_clear`, a POSIX `cksum` in Python): the same marker file,
+cleared on a `stop_hook_active` continuation (python is not started) and on a verdict, untouched on a timeout.
+Fail-closed is unchanged: any other exit, a failed launch or a missing file runs the wrapper, a timeout is never
+rerun and stays `UNKNOWN`, and Linux and macOS keep the wrapper. `test_crew_hook_stop_native.py` holds the
+must-block and must-allow cases through the native route, the marker name against the real `cksum` and the real
+wrapper, the timing, and a hung child; its mutations are in `sabotage_crew_hook.py`. `verify-gate.sh` and
+`context-watch.sh` are the Stop rows that still start Git Bash, and are not changed here.

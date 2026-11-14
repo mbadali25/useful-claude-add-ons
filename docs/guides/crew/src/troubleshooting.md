@@ -63,7 +63,7 @@ or behaves like an older release.
 Every hook crew runs, and the config key that turns its behaviour up or down. `plugin/crew/hooks/hooks.json`
 registers one bash launcher per event (`crew-hook.sh`; `crew-hook.ps1` is only Codex's `commandWindows`);
 the launcher starts one dispatcher, `crew_hook.py <Event>`, which runs that event's scripts below at once and
-combines what they print. On Windows the same bash launcher is the only registration and the dispatcher runs the hot guards' Python directly (set `CREW_HOOK_DIRECT=0` to go back to their `.sh` wrappers), so no event fires twice. When the
+combines what they print. On Windows the same bash launcher is the only registration and the dispatcher runs the hot guards' Python directly, and the `Stop` completion audit's too (set `CREW_HOOK_DIRECT=0` to go back to their `.sh` wrappers), so no event fires twice. A direct completion audit that crashes runs its wrapper, and one that times out is `UNKNOWN (guard timeout)`, a block in an armed repo, never a pass. When the
 launcher or dispatcher itself fails in a repo crew governs, `PreToolUse`, `UserPromptSubmit` and `Stop` refuse
 with `crew-hook: ... failing closed (armed repo)` and the cause, rather than let the call through unjudged. Only the four stateless PreToolUse judges (`role-write-guard`, `cloud-guard`, `env-guard`, `scope-guard`) are run
 once more after a timeout, and only when the dispatch deadline leaves room for a second timeout's cleanup; at the
