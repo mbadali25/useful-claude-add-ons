@@ -474,7 +474,7 @@ TRUST_MUTATIONS = (
      '                and not os.path.lexists(os.path.join(dot_git, "commondir")))\n', '        return True\n',
      _T + "test_hash_approval_a_forged_git_layout_never_borrows_an_approved_repo"),
     ("trust store: a symlinked .git is followed as a plain repository (L-0888, round 11)", TRUST,
-     '    if os.path.islink(dot_git):\n        return False\n', '',
+     '    if _reparse(dot_git):\n        return False\n', '',
      _T + "test_hash_approval_a_git_symlink_to_a_different_trusted_repo_is_not_trusted"),
     ("trust store: a worktree's own admin dir stands in for the main repository's record (L-0888, round 11)", TRUST,
      '        record = _first_line(record_file)\n'
