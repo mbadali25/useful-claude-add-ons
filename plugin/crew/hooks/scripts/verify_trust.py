@@ -610,6 +610,44 @@ def _same(a, b):
         return False
 
 
+_IS_WINDOWS = os.name == "nt"
+_REPARSE_POINT = 0x400  # FILE_ATTRIBUTE_REPARSE_POINT
+
+
+def _attrs(path):
+    """The Windows `st_file_attributes` of `path` itself (not what it points at),
+    0 where there are none (POSIX) or `path` cannot be read."""
+    try:
+        return getattr(os.lstat(path), "st_file_attributes", 0)
+    except OSError:
+        return 0
+
+
+def _reparse(path):
+    """True when `path` itself is a symlink, an NTFS junction or any other
+    reparse point. `os.path.islink` is False for a junction, and `samefile`
+    follows one, so a junction to an approved repository's `.git` would pass every
+    inode test; the reparse attribute is read from `lstat` as well."""
+    if os.path.islink(path):
+        return True
+    isjunction = getattr(os.path, "isjunction", None)
+    if isjunction is not None and isjunction(path):
+        return True
+    return bool(_attrs(path) & _REPARSE_POINT)
+
+
+def _reparse_in_path(path):
+    """True when `path` or any directory above it is a reparse point."""
+    path = os.path.normpath(path)
+    while True:
+        if _reparse(path):
+            return True
+        parent = os.path.dirname(path)
+        if parent == path:
+            return False
+        path = parent
+
+
 def _single_link(path):
     """True when `path` is a regular file that no other name points at. `samefile`
     compares inodes, so a HARDLINK of a recorded file (`ln W/.git B/.git`, same
@@ -620,7 +658,7 @@ def _single_link(path):
         info = os.lstat(path)
     except OSError:
         return False
-    return stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+    return stat.S_ISREG(info.st_mode) and info.st_nlink == 1 and not _reparse(path)
 
 
 def _first_line(path):
@@ -662,7 +700,7 @@ def _identity_confirmed(root, top, common):
         return False
     gitdir = os.path.realpath(own.strip())
     common = os.path.realpath(common)
-    if os.path.islink(dot_git):
+    if _reparse(dot_git):
         return False
     if os.path.isdir(dot_git):
         return (_same(gitdir, dot_git) and _same(common, dot_git)
@@ -681,6 +719,8 @@ def _identity_confirmed(root, top, common):
         # refuses an admin directory with no `HEAD`).
         record_file = os.path.join(gitdir, "gitdir")
         commondir_file = os.path.join(gitdir, "commondir")
+        if _reparse(gitdir):
+            return False
         if not _single_link(record_file) \
                 or (os.path.lexists(commondir_file) and not _single_link(commondir_file)):
             return False
@@ -696,7 +736,11 @@ def _identity_confirmed(root, top, common):
         here = os.path.join(top, ".git")
         if _spelled(recorded) == _spelled(here):
             return True
-        return os.name == "nt" and _spelled(os.path.realpath(recorded)) == _spelled(here)
+        # That fallback is for a spelling difference only, never for a redirect: it is
+        # refused when the recorded path, or any directory above it, is a reparse point
+        # (a symlink or junction left where the removed worktree stood).
+        return (_IS_WINDOWS and not _reparse_in_path(recorded)
+                and _spelled(os.path.realpath(recorded)) == _spelled(here))
     if os.path.lexists(os.path.join(gitdir, "commondir")) \
             or os.sep + ".git" + os.sep + "modules" + os.sep not in gitdir + os.sep:
         return False

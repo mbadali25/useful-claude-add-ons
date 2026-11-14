@@ -538,7 +538,8 @@ on Windows, killed by the hook, nothing recorded):
 `run` strings reach `eval`; the Stop gate (and `--all` and `--price`) therefore runs it only for a repo this
 machine trusts. Otherwise it prints one line, runs nothing, writes no pass record and exits 0 (`--price` exits 1, since nothing was priced):
 
-- **`UNTRUSTED, not run`**: nothing on this machine approves this repo. Read `.crew/verify.json` (or the smoke
+- **`UNTRUSTED, not run`**: nothing on this machine approves this repo (printed only when the gate reaches its trust
+  decision; a Stop with no changed files or a matching fingerprint exits earlier, runs no rule and prints no such line). Read `.crew/verify.json` (or the smoke
   script the line names), then in your own terminal: `python3 <plugin>/hooks/scripts/verify_trust.py approve --root <repo>`.
   It shows the repo, the sha256, the remotes and the rule count, and asks for `yes`.
 - **`CHANGED, not run`**: the bytes differ from every version you approved. Read the diff, then approve again.
@@ -563,7 +564,9 @@ machine trusts. Otherwise it prints one line, runs nothing, writes no pass recor
   as designed (crew 1.3.92, round 12). A gitfile and the worktree admin directory's `gitdir` and `commondir`
   records must each have one name (a hardlink to them is refused; a hardlink needs the same filesystem and local
   access), and the recorded worktree path must be this directory's own real path (a symlink alias, a moved or a
-  copied tree is refused). Run `git worktree prune` after removing a worktree directory. Not closed: a new real
+  copied tree is refused). On Windows a `.git`, admin record or recorded path that is a junction or other reparse
+  point is refused the same way (crew 1.3.93, round 13); a worktree reached through a junctioned parent needs its
+  own `approve`. Run `git worktree prune` after removing a worktree directory. Not closed: a new real
   directory created at exactly a removed worktree's old path with a copied `.git` file looks like the original (the
   same-user, stale-record case); prune stale worktrees, and do not allowlist an owner with stale entries around.
   A plain repository's own `.git/config` is what owner trust reads, and an archive can ship a `.git/` directory:

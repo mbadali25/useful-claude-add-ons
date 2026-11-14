@@ -1582,3 +1582,105 @@ def test_hash_approval_a_symlink_put_at_a_removed_worktrees_path_is_not_it(tmp_p
     for root in (bad, lane):
         assert verify_trust.repo_identity(str(root))[1] is None
         assert _code(root) != verify_trust.EXIT_TRUSTED
+
+
+def _flag_reparse(monkeypatch, *suffixes):
+    """Report `FILE_ATTRIBUTE_REPARSE_POINT` from `lstat` for each path ending in one of
+    `suffixes`, as an NTFS junction does. A junction cannot be made on this host, so the
+    attribute word is mocked and the case runs everywhere."""
+    def attrs(path):
+        norm = os.path.normpath(str(path))
+        return 0x400 if any(norm.endswith(os.path.normpath(s)) for s in suffixes) else 0
+    monkeypatch.setattr(verify_trust, "_attrs", attrs)
+
+
+def test_hash_approval_a_junction_dot_git_to_an_approved_repo_is_not_trusted(
+        tmp_path, store, monkeypatch):
+    """Round 8: on Windows `.git` can be a junction to an approved repository's `.git`.
+    `os.path.islink` is False for it and every inode test follows it, so the reparse
+    attribute is what refuses it. The junction is a symlink here, made invisible to
+    `islink` and flagged through the mocked `lstat` attribute word."""
+    one = _repo(tmp_path, name="one")
+    assert _approve(one) == 0
+    bad = _forge(tmp_path, one, "symlink", name="junction")
+    real_islink = os.path.islink
+    monkeypatch.setattr(
+        verify_trust.os.path, "islink",
+        lambda p: False if os.path.normpath(str(p)).endswith(os.path.join("junction", ".git"))
+        else real_islink(p))
+    assert _code(bad) == verify_trust.EXIT_TRUSTED, "control: islink alone no longer sees it"
+
+    _flag_reparse(monkeypatch, os.path.join("junction", ".git"))
+
+    assert verify_trust.repo_identity(str(bad))[1] is None
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+    assert _code(one) == verify_trust.EXIT_TRUSTED
+
+
+@pytest.mark.parametrize("flagged", [
+    os.path.join("lane", ".git"),
+    os.path.join("main", ".git", "worktrees", "lane"),
+    os.path.join("main", ".git", "worktrees", "lane", "gitdir"),
+    os.path.join("main", ".git", "worktrees", "lane", "commondir"),
+], ids=["gitfile", "admin-dir", "admin-gitdir-record", "admin-commondir"])
+def test_hash_approval_a_reparse_point_in_a_linked_worktrees_records_is_not_trusted(
+        tmp_path, store, monkeypatch, flagged):
+    main, lane = _linked(tmp_path)
+    assert _approve(main) == 0
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+
+    _flag_reparse(monkeypatch, flagged)
+
+    assert _code(lane) != verify_trust.EXIT_TRUSTED
+
+
+def test_hash_approval_an_ordinary_dot_git_with_no_reparse_attribute_is_still_trusted(
+        tmp_path, store, monkeypatch):
+    """Must-allow: the attribute word is read, and an ordinary directory has none."""
+    main, lane = _linked(tmp_path)
+    assert _approve(main) == 0
+    _flag_reparse(monkeypatch, os.path.join("elsewhere", ".git"))
+
+    assert _code(main) == verify_trust.EXIT_TRUSTED
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+
+
+@pytest.mark.skipif(os.name != "posix", reason="a symlink needs no privilege only on POSIX")
+def test_hash_approval_the_windows_realpath_fallback_refuses_a_redirect_at_a_removed_path(
+        tmp_path, store, monkeypatch):
+    """Round 8: the Windows fallback compares real paths for a spelling difference (8.3
+    names), so a symlink or junction left where the removed worktree stood used to satisfy
+    it. It is refused when the recorded path, or a directory above it, is a reparse point."""
+    main, lane = _linked(tmp_path)
+    assert _approve(main) == 0
+    bad = _hostile_dir(tmp_path, "attacker")
+    (bad / ".git").write_text((lane / ".git").read_text(encoding="utf-8"), encoding="utf-8")
+    shutil.rmtree(lane)
+    os.symlink(bad, lane)
+    monkeypatch.setattr(verify_trust, "_IS_WINDOWS", True)
+
+    assert verify_trust.repo_identity(str(bad))[1] is None
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the stand-in junction is a symlink")
+def test_hash_approval_the_windows_fallback_refuses_a_junction_above_the_removed_path(
+        tmp_path, store, monkeypatch):
+    """The same refusal for a junction left at the removed worktree's path. It is a symlink
+    here, hidden from `islink` and flagged through the mocked `lstat` attribute word, and
+    the reparse point is the directory ABOVE the recorded `.git`, not `.git` itself."""
+    main, lane = _linked(tmp_path)
+    assert _approve(main) == 0
+    bad = _hostile_dir(tmp_path, "attacker")
+    (bad / ".git").write_text((lane / ".git").read_text(encoding="utf-8"), encoding="utf-8")
+    shutil.rmtree(lane)
+    os.symlink(bad, lane)
+    real_islink = os.path.islink
+    monkeypatch.setattr(
+        verify_trust.os.path, "islink",
+        lambda p: False if os.path.normpath(str(p)) == str(lane) else real_islink(p))
+    monkeypatch.setattr(verify_trust, "_IS_WINDOWS", True)
+    _flag_reparse(monkeypatch, str(lane))
+
+    assert verify_trust.repo_identity(str(bad))[1] is None
+    assert _code(bad) != verify_trust.EXIT_TRUSTED
