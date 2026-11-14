@@ -485,9 +485,14 @@ def _guards_line(root):
         import crew_hook  # pylint: disable=import-outside-toplevel
         off = crew_hook.guards_switched_off(root)
         if off:
-            shown.append(f"DISABLED - guards.enabled is false in the {off} layer, so no guard runs")
-        elif crew_hook.repo_switch_ignored(root):
-            shown.append("guards.enabled is false in .crew/config.json but only the machine layer counts, "
+            shown.append(f"DISABLED - guards.enabled is false in the {off} layer and the owner confirmed it, so no "
+                         "guard runs and nothing blocks (context-watch included)")
+        elif crew_hook.machine_switch_unconfirmed(root):
+            shown.append("guards.enabled is false in the machine file but NOT in effect: no applied "
+                         "/crew:confirm-config double confirmation backs it at that file (or the file lies "
+                         "inside the project), so every guard still runs")
+        if crew_hook.repo_switch_ignored(root):
+            shown.append("guards.enabled is false in .crew/config.json (ignored: only the machine layer counts), "
                          "so every guard still runs")
         if profile is not None or overrides:
             shown.append(f"profile {profile if profile is not None else 'off'}, "

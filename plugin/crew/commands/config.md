@@ -48,6 +48,13 @@ changed in 0.16.0 and both are silent if unmentioned:
   two layers wins, and a silent layer imposes nothing. A repo file that spells
   one at its default holds the global value down; `--show` names it as a
   `shadow:` and `--unset <path> --repo --apply` removes it on a yes.
+- **`guards.enabled` is the other exception: machine-only, and the owner's (crew 1.3.93).** It is NOT overridable
+  in a repo's `.crew/config.json`: the writer refuses it there and a repo value is ignored (`--show` and `--inert`
+  name it). `false` turns every guard hook (and context-watch) off, so `--set` never writes it: it is proposed with
+  `crew_confirm_config.py propose --layer machine --key guards.enabled`, relayed to the owner, and applies only
+  after the owner types `/crew:confirm-config <change_id>` twice. A `false` set any other way (a hand edit, an
+  agent's write) leaves the guards on, and `/crew:status` says so. `--set guards.enabled=true` and `--unset` are
+  plain writes (they turn the guards back on).
 
 On native Windows the walkthrough also probes WSL (`crew_shell.py probe --write`)
 and reports the state. The shell route itself is automatic and has no setting.
@@ -99,7 +106,7 @@ How it writes, whatever the arguments say:
   `--unset`. A `false` (the owner's opt-out of a human-only rule) is refused:
   it is proposed with `crew_confirm_config.py propose --layer machine|repo
   --key <path>` and applies only after the owner types
-  `/crew:confirm-config <change_id>` twice; relay propose's two indented lines
+  `/crew:confirm-config <change_id>` twice; relay propose's indented lines (two; three for `guards.enabled`, with its warning)
   (the change and the exact command) to the owner word for word, since the
   owner never sees its output. A repo `null` or `--unset` drops a
   veto and is a hand edit by the owner. Never propose one on your own

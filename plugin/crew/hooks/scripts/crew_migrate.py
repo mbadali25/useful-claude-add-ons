@@ -836,6 +836,12 @@ def _plan_global_file(plan, path, raw, accept_dropped):
             f"{path}: these blocks are the wrong type and were left as written: "
             f"{', '.join(notes['unmigrated'])} - fix them by hand, then preview again")
     _refuse_dropped(plan, path, crew_upgrade, notes)
+    import crew_config  # pylint: disable=import-outside-toplevel
+    master = crew_config.master_switch_problem(out, "machine", cfg)
+    if master:
+        # The machine file is rewritten whole: a `guards.enabled` that is not a boolean (or a `false` the owner never
+        # confirmed) is not carried through into the new file (crew 1.3.93).
+        plan["conflicts"].append(f"{path}: {master} - fix it by hand, then preview again")
     if plan["conflicts"]:
         return
     if out == cfg:

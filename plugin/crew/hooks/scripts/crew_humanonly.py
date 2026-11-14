@@ -47,6 +47,12 @@ import crew_state
 
 KEYS = ("approve", "promoteMarker")
 PATHS = tuple(f"humanOnly.{key}" for key in KEYS)
+# The guards master switch (crew 1.3.93) takes the SAME double confirmation: `guards.enabled: false` in the
+# machine file counts only when an applied receipt backs it (`crew_hook.guards_switched_off` reads
+# `receipt_backs` for this key). It is not a `humanOnly` key (it has no repo layer, no `true` veto and no
+# `null`), so `is_path` stays humanOnly's; `is_confirmed_path` is "needs a receipt".
+MASTER_KEY = "guards.enabled"
+CONFIRMED_PATHS = PATHS + (MASTER_KEY,)
 # The values each key takes, the tuple both config writers refuse against.
 VALUES = (None, True, False)
 
@@ -62,6 +68,12 @@ USER_PROMPT = "user-prompt"
 PENDING, APPLIED = "pending", "applied"
 FINAL_STATES = ("applied", "expired", "cancelled", "stale", "refused", "revoked")
 
+MASTER_REFUSAL = (
+    "turns every guard off, so it needs the owner's double confirmation: "
+    "`crew_confirm_config.py propose --layer machine --key guards.enabled` records it and "
+    "prints a change id, the agent relays the id and the change to the owner, and the owner "
+    "types /crew:confirm-config <change_id> twice. Setting it by any other route leaves the "
+    "guards on.")
 SENSITIVE_REFUSAL = (
     "removes a human step, so it needs the owner's double confirmation: "
     "`crew_confirm_config.py propose` records it and prints a change id, the "
@@ -78,6 +90,12 @@ def is_path(dotted):
     return dotted in PATHS
 
 
+def is_confirmed_path(dotted):
+    """True for every key whose `false` needs an applied double confirmation: the `humanOnly` keys and
+    `guards.enabled`."""
+    return dotted in CONFIRMED_PATHS
+
+
 def write_refusal(dotted, layer, value):
     """Why a crew WRITER may not set `dotted` to `value` at `layer`, or None.
 
@@ -86,7 +104,13 @@ def write_refusal(dotted, layer, value):
     the human-only default). A `false` anywhere, or a repo `null` or removal
     (which drops a veto), is refused here; the first goes through
     `crew_confirm_config`, the second is a hand edit. A value outside
-    `VALUES` is left to the enum check, which names the values."""
+    `VALUES` is left to the enum check, which names the values.
+
+    `guards.enabled` (crew 1.3.93): `true` is a plain write, `false` goes through `crew_confirm_config` at the
+    machine layer and is refused outright at the repo layer; a removal is the guards-on default; anything
+    else is left to the enum check."""
+    if dotted == MASTER_KEY:
+        return MASTER_REFUSAL if value is False else None
     if not is_path(dotted):
         return None
     if value is True:
