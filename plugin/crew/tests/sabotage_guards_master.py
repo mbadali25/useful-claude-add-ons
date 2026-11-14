@@ -75,7 +75,7 @@ GUARDS_MASTER_MUTATIONS = (
      '        if path and _layer_says_off(path) and owner_confirmed(path) and not os.path.exists(\n'
      '                os.path.join(root or "", ".crew", "config.json")):\n',
      _G + "test_a_true_in_the_repo_layer_cannot_switch_back_on_a_machine_false"),
-    # crew 1.3.104: context-watch, the owner's confirmation, duplicate keys, the BOM, a redirected HOME, the machine
+    # crew 1.3.107: context-watch, the owner's confirmation, duplicate keys, the BOM, a redirected HOME, the machine
     # config's protection, and the approval hook's fault path.
     ("context-watch keeps running with the guards off", HOOK,
      'STOOD_DOWN = frozenset({"context-watch.sh"})\n',
@@ -121,7 +121,7 @@ GUARDS_MASTER_MUTATIONS = (
      '    if not top:\n        return _owner_files_only(tool, data, root)\n',
      '    if not top:\n        return 0\n',
      _G + "test_the_owners_files_are_protected_outside_a_work_tree_too"),
-    # crew 1.3.104: the receipt is bound to the confirmations and to the file; the shell forms; the script runs.
+    # crew 1.3.107: the receipt is bound to the confirmations and to the file; the shell forms; the script runs.
     ("a receipt of another file's false counts (the target is not matched)", HOOK,
      'r.get("layer") == "machine" and r.get("target") == target and r.get("key") == MASTER_KEY\n',
      'r.get("layer") == "machine" and r.get("key") == MASTER_KEY\n',
@@ -198,7 +198,7 @@ GUARDS_MASTER_MUTATIONS = (
      r'''(?<![:\w-])confirm-config(?![\w-]|\.md)''',
      r'''(?<![\w-])confirm-config(?![\w-]|\.md)''',
      _G + "test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass"),
-    # crew 1.3.104, round 3: the shell check is target-based (a write AIMED AT the owner's file refuses; a mention,
+    # crew 1.3.107, round 3: the shell check is target-based (a write AIMED AT the owner's file refuses; a mention,
     # or an unrelated write in the same line, does not), no script is opened, the plain verbs are covered,
     # `\\?\` is refused,
     # and the receipt binds the file's modification time.
@@ -345,7 +345,7 @@ GUARDS_MASTER_MUTATIONS = (
      '    return f"{content}@{after}"\n',
      '    return content\n',
      _G + "test_the_round_trip_replay_does_not_count"),
-    # crew 1.3.104 (round 4): plain verbs in every option order, only a destination counts, the one-line .NET write.
+    # crew 1.3.107 (round 4): plain verbs in every option order, only a destination counts, the one-line .NET write.
     ("tar's mode letters are read only from the first word (-C before -xf)", SCOPE,
      '    bundles = [a for position, a in enumerate(args)\n               if '
      're.match(r"^-[A-Za-z]+$", a) or (position == 0 and a[:1].isalpha())]\n',
@@ -421,12 +421,12 @@ GUARDS_MASTER_MUTATIONS = (
      'r"\\[(?:system\\.)?io\\.file\\]::(?:write|openwrite|"',
      _G + 'test_the_indirect_ways_to_write_the_owners_files_are_refused'),
     ('a statement-initial [IO.File]:: counts whatever the member (a read is refused)', SCOPE,
-     '    if positions is None or (member == "open" and not _CODE_WRITES_RE.search(text)):\n        return None\n',
+     '    if positions is None:\n        return None\n',
      '    positions = positions or (0,)\n',
      _G + 'test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass'),
     ('a [IO.File]:: write counts every argument (the text written is refused)', SCOPE,
-     '    for position in positions:\n        word = arguments[position]',
-     '    for position in range(len(arguments)):\n        word = arguments[position]',
+     '    for position in positions:\n        word, literal = arguments[position] if',
+     '    for position in range(len(arguments)):\n        word, literal = arguments[position] if',
      _G + 'test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass'),
     ("unzip's -oq is read as an attached destination", SCOPE,
      '        attached = None if name == "unzip" else next(',
@@ -436,6 +436,24 @@ GUARDS_MASTER_MUTATIONS = (
      '        return lowered[:2] == ["hardlink", "create"] and len(operands) > 2 and '
      '_hit(operands[2], shell, "file")\n',
      '        return "hardlink" in lowered and any(_hit(w, shell, "dir") for w in operands)\n',
+     _G + 'test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass'),
+    ('a comma inside a quoted .NET argument splits it (the destination moves)', SCOPE,
+     '        if char == "," and depth == 0 and not quoted:\n',
+     '        if char == "," and depth == 0:\n',
+     _G + 'test_the_indirect_ways_to_write_the_owners_files_are_refused'),
+    ('[IO.File]::Open is never a write (Create, Append, ReadWrite pass)', SCOPE,
+     '    if member == "open" and not any(_WRITE_MODE_RE.search(text) for text, _ in arguments[1:]):\n'
+     '        return None\n',
+     '    if member == "open":\n        return None\n',
+     _G + 'test_the_indirect_ways_to_write_the_owners_files_are_refused'),
+    ('[IO.File]::Open counts whatever its mode (a read-mode Open is refused)', SCOPE,
+     '    if member == "open" and not any(_WRITE_MODE_RE.search(text) for text, _ in arguments[1:]):\n'
+     '        return None\n',
+     '    pass\n',
+     _G + 'test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass'),
+    ('a quoted .NET destination with a space is read as an expression', SCOPE,
+     '        if not literal and re.search(r"[(\\[{\\s]", word):\n',
+     '        if re.search(r"[(\\[{\\s]", word):\n',
      _G + 'test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass'),
     ('fsutil hardlink create checks the existing file, not the new link', SCOPE,
      '        return lowered[:2] == ["hardlink", "create"] and len(operands) > 2 and '

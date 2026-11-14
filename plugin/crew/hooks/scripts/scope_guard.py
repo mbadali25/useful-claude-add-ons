@@ -11,7 +11,7 @@ the payload in, so the two shells cannot disagree.
    the key gets), or the cwd is no work tree -> exit 0 before anything else is
    read, EXCEPT that a Write/Edit of, or a shell write to, the owner's own
    files (the machine config `~/.claude/crew/config.json` and the
-   confirm-config store beside it) is still refused (crew 1.3.104): those hold
+   confirm-config store beside it) is still refused (crew 1.3.107): those hold
    `guards.enabled` and its receipts, and a guard that stood down with
    `scope.mode` would let an agent write both.
 2. A target under `<git-common-dir>/crew/` -- approval receipts, the review
@@ -277,14 +277,14 @@ def confirm_store():
 
 def machine_config():
     """The machine config file (`~/.claude/crew/config.json`), which holds `guards.enabled`, the switch that
-    stands every guard down (crew 1.3.104). Like `confirm_store`, spelled here so this guard imports no config
+    stands every guard down (crew 1.3.107). Like `confirm_store`, spelled here so this guard imports no config
     module."""
     return os.path.join(os.path.expanduser("~"), ".claude", "crew", "config.json")
 
 
 def _owner_path(path):
     """True for the owner's own files: the double-confirmation store and the machine config, which holds
-    `guards.enabled` (crew 1.3.104)."""
+    `guards.enabled` (crew 1.3.107)."""
     return _under(path, confirm_store()) or os.path.normcase(path) == os.path.normcase(machine_config())
 
 
@@ -378,7 +378,7 @@ def _reading_refusal(command, written, common, top, agent_type=None):
     return _owner_command_refusal(command, top)
 
 
-# --- the owner's files, through a shell (crew 1.3.104, target-based since the round-3 owner decision) ------------
+# --- the owner's files, through a shell (crew 1.3.107, target-based since the round-3 owner decision) ------------
 # A command is refused when something in it WRITES TO the owner's files: a redirect, or the argument a write verb
 # aims at (`tee`, `cp`, `mv`, `rm`, `sed -i`, `Set-Content`, `curl -o`, `tar -C`, `git apply` ...), or inline code
 # (`python -c`, a heredoc) that names them beside a write call. A command that merely MENTIONS them -- a commit
@@ -473,11 +473,15 @@ def _balanced(text, start):
     return text[start:], len(text)
 
 
+_QUOTE_OPEN, _QUOTE_CLOSE = "\x01", "\x02"
+
+
 class _Segment:  # pylint: disable=too-few-public-methods
     """One simple command: its words, the targets of its redirects, `$(...)` bodies, and heredoc bodies."""
 
     def __init__(self):
         self.words, self.targets, self.subs, self.bodies = [], [], [], []
+        self.raws = []   # each word again, with a quoted part wrapped in _QUOTE_OPEN ... _QUOTE_CLOSE
 
     def __bool__(self):
         return bool(self.words or self.targets or self.subs or self.bodies)
@@ -486,21 +490,22 @@ class _Segment:  # pylint: disable=too-few-public-methods
 def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
     """The `_Segment`s of `text`, split at `;` `&&` `||` `|` `&` and newlines, outside quotes."""
     result, seg = [], _Segment()
-    buf, has, mode = [], False, None   # mode: None | "target" | "skip" | "heredoc"
+    buf, raw, has, mode = [], [], False, None   # mode: None | "target" | "skip" | "heredoc"
     delims = []
     index, size = 0, len(text)
 
     def flush():
-        nonlocal buf, has, mode
+        nonlocal buf, raw, has, mode
         if not has:
             return
-        word, buf, has = "".join(buf), [], False
+        word, spelled, buf, raw, has = "".join(buf), "".join(raw), [], [], False
         if mode == "heredoc":
             delims.append(word)
         elif mode == "target":
             seg.targets.append(word)
         elif mode is None:
             seg.words.append(word)
+            seg.raws.append(spelled)
         mode = None
 
     def close():
@@ -522,6 +527,7 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
                     inner, _ = _balanced(chunk, found.end())
                     seg.subs.append(inner)
             buf.append(chunk)
+            raw.append(_QUOTE_OPEN + chunk + _QUOTE_CLOSE)
             has = True
             index = end + 1
         elif char == "$" and text[index + 1:index + 2] == "(":
@@ -563,7 +569,7 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
                     index += 1
         elif char == ">":
             if has and "".join(buf).isdigit():
-                buf, has = [], False   # `2>`: the descriptor is no word
+                buf, raw, has = [], [], False   # `2>`: the descriptor is no word
             flush()
             index += 1
             if text[index:index + 1] == ">":
@@ -578,7 +584,7 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
             mode = "target"
         elif char == "<":
             if has and "".join(buf).isdigit():
-                buf, has = [], False
+                buf, raw, has = [], [], False
             flush()
             count = 0
             while text[index:index + 1] == "<":
@@ -595,6 +601,7 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
             index += 1
         else:
             buf.append(char)
+            raw.append(char)
             has = True
             index += 1
     close()
@@ -947,40 +954,65 @@ _DOTNET_DESTINATIONS = (("openread", ()), ("opentext", ()), ("copy", (1,)), ("mo
                         ("delete", (0,)), ("openwrite", (0,)), ("setattributes", (0,)), ("open", (0,)))
 
 
+_WRITE_MODE_RE = re.compile(r"\b(?:create|createnew|append|truncate|write|readwrite|openorcreate)\b", re.IGNORECASE)
+_DOTNET_ARGUMENT_LIMIT = 4   # the last destination is argument 3 (`Replace`); the rest of a long list is never read
+
+
 def _dotnet_arguments(text):
-    """The top-level comma-separated arguments in `text` (the part of a call after its opening parenthesis)."""
-    found, depth, current = [], 0, ""
+    """The top-level comma-separated arguments in `text` (the part of a call after its opening parenthesis), as
+    `(text without quote marks, True when the whole argument is one quoted literal)`. A comma inside a quoted
+    part, or inside brackets, does not split. Only the first few are split out: no later one is ever read."""
+    found, depth, current, quoted = [], 0, "", False
     for char in text:
-        if char in "([{":
+        if char == _QUOTE_OPEN:
+            quoted = True
+        elif char == _QUOTE_CLOSE:
+            quoted = False
+        elif not quoted and char in "([{":
             depth += 1
-        elif char in ")]}":
+        elif not quoted and char in ")]}":
             depth -= 1
             if depth < 0:
                 break
-        if char == "," and depth == 0:
+        if char == "," and depth == 0 and not quoted:
             found.append(current)
             current = ""
+            if len(found) >= _DOTNET_ARGUMENT_LIMIT:
+                return [_dotnet_argument(each) for each in found]
         else:
             current += char
-    return [*found, current]
+    return [_dotnet_argument(each) for each in [*found, current]]
 
 
-def _dotnet_refusal(text, shell):
-    """Why a statement-initial `[IO.File]::Member(...)` writes the owner's files, or None. Only a WRITE member counts
-    (`ReadAllText`, `Exists` read), and only its destination argument: the owner's file as the text written is not
-    a write to it. A destination that is an expression, not a literal path, falls back to naming the owner."""
-    match = _DOTNET_CALL_RE.match(text)
+def _dotnet_argument(raw):
+    """`(plain text, whether it was one quoted literal)` for an argument spelled with quote marks."""
+    stripped = raw.strip()
+    literal = (stripped.startswith(_QUOTE_OPEN) and stripped.endswith(_QUOTE_CLOSE)
+               and stripped.count(_QUOTE_OPEN) == 1)
+    return stripped.replace(_QUOTE_OPEN, "").replace(_QUOTE_CLOSE, ""), literal
+
+
+def _dotnet_refusal(raw, shell):
+    """Why a statement-initial `[IO.File]::Member(...)` (`raw`: the words with quote marks) writes the owner's
+    files, or None. Only a WRITE member counts (`ReadAllText`, `Exists` read), and only its destination argument:
+    the owner's file as the text written is not a write to it. `Open` counts when a later argument names a write
+    mode (Create, CreateNew, Append, Truncate, Write, ReadWrite). A destination that is an expression, not a
+    literal path, falls back to naming the owner."""
+    match = _DOTNET_CALL_RE.match(raw)
     if not match:
         return None
     member = match.group(1).lower()
     positions = next((where for prefix, where in _DOTNET_DESTINATIONS if member.startswith(prefix)), None)
-    if positions is None or (member == "open" and not _CODE_WRITES_RE.search(text)):
+    if positions is None:
         return None
-    arguments = _dotnet_arguments(match.group(2))   # the shell word splitter has dropped the parentheses and quotes
+    arguments = _dotnet_arguments(match.group(2))   # the shell word splitter has dropped the parentheses
+    if member == "open" and not any(_WRITE_MODE_RE.search(text) for text, _ in arguments[1:]):
+        return None
     for position in positions:
-        word = arguments[position].strip().rstrip(")").strip("'\"") if position < len(arguments) else ""
-        if re.search(r"[(\[{\s]", word):
-            return _code_refusal(text)
+        word, literal = arguments[position] if position < len(arguments) else ("", False)
+        word = word if literal else word.rstrip(")").strip("'\"")
+        if not literal and re.search(r"[(\[{\s]", word):
+            return _code_refusal(raw.replace(_QUOTE_OPEN, "").replace(_QUOTE_CLOSE, ""))
         if _hit(word, shell, "file"):
             return f"{OWNER_REASON}: a .NET file write is aimed at them"
     return None
@@ -995,7 +1027,7 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
     if not words:
         return None
     if words[0].lower().startswith(("[io.file]::", "[system.io.file]::")):   # a .NET write with the path spelled out
-        return _dotnet_refusal(" ".join(words), shell)
+        return _dotnet_refusal(" ".join(seg.raws[len(seg.words) - len(words):]), shell)
     name = _command_name(_expand(words[0], shell))
     args = [_expand(w, shell) for w in words[1:]]
     if name in _CD:
@@ -1067,7 +1099,7 @@ def _owner_lines(what):
 
 def _owner_files_only(tool, data, root):
     """What the guard still decides where it otherwise does nothing: `scope.mode` off (the default) or no work
-    tree (crew 1.3.104). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
+    tree (crew 1.3.107). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
     and the master switch are what make an owner-only change the owner's: a guard that stood down with
     `scope.mode` would let an agent write both the `false` and its receipt."""
     if tool in SHELLS:

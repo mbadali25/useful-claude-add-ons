@@ -426,12 +426,12 @@ column:
 {human_only}
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.104) turns EVERY guard hook off: the promote
+`guards.enabled: false` (crew 1.3.107) turns EVERY guard hook off: the promote
 gate, the role-write, cloud, environment and scope guards, the verify gate, the
 completion audit and the context-watch Stop hook. None of them starts, so nothing
 is judged, refused, asked, warned or logged: with the switch off, nothing blocks. It
 beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mode`,
-`verifyGate`). Three things must all hold for it to count (crew 1.3.104):
+`verifyGate`). Three things must all hold for it to count (crew 1.3.107):
 
 - It is in the MACHINE layer (`~/.claude/crew/config.json`). A `false` in
   `.crew/config.json`, tracked or not, is ignored and the guards stay on (a
@@ -441,7 +441,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   applied `/crew:confirm-config` double confirmation backs it: two confirmations
   from two prompts the owner typed, and the digest of the machine file as the
   owner left it: its content (canonical JSON) AND its modification time (crew
-  1.3.104). An agent's Write or Edit, a hook-side write, a hand edit, a bare
+  1.3.107). An agent's Write or Edit, a hook-side write, a hand edit, a bare
   hand-written receipt, or ANY later write to the file (a restore, a rebuild, an
   unrelated edit, or a hand edit that sets the key `true` and a later one that
   writes the identical `false` back) leaves the guards ON; so does a missing,
@@ -456,7 +456,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   `move`, `xcopy`, `robocopy`, `curl -o` (also `-sSo` and `-O --output-dir`), `wget -O`,
   `-OutFile`, `tar -C` (before or after `-xf`), `unzip -d` (or `unzip` run in that folder; its `-o` is the overwrite switch), `7z -o<dir>`,
   `Expand-Archive`, `patch`, `git apply`, `mklink /J`, `fsutil hardlink create`, `awk -i
-  inplace`, a `[IO.File]::WriteAllText` (or `[System.IO.File]::`, any write member: `AppendAll*`, `Copy`, `Move`, `Delete`, `Create`, `Replace`) with the path spelled out, aimed at them (spelled out, or through `cd`, a variable,
+  inplace`, a `[IO.File]::WriteAllText` (or `[System.IO.File]::`, any write member: `AppendAll*`, `Copy`, `Move`, `Delete`, `Create`, `Replace`, and `Open` with a write mode such as `Create`, `Append` or `ReadWrite`) with the path spelled out, aimed at them (spelled out, or through `cd`, a variable,
   a glob or a path built from `.claude`, `crew` and `config.json`), or inline
   code (`python -c`, a heredoc, `pwsh -Command`) that names them beside a write
   call, in every `scope.mode` (`off`, the default, included). A command that only
@@ -470,7 +470,8 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   (`-Verbose`, `-Debug`, `-Force`, `-WhatIf` and the rest, abbreviated or not) take no value, and a
   comma-separated `-Path` list is read item by item. PowerShell's `--%` stop-parsing token, an
   ambiguous parameter abbreviation and a .NET call whose destination is an expression, not a
-  literal path, are read by their text only.
+  literal path, are read by their text only. A comma or a space inside a quoted .NET path is part of the path; inside a quoted cmdlet
+  path (`Set-Content -LiteralPath 'a,b'`) a comma still splits it (accepted limit).
   Accepted limits, by the owner's decision ("fix the overblock, add the plain
   verbs, stop there"): brace expansion, a path built by `Join-Path` or a
   variable the command did not set, `perl`, `php`, `awk` or `os.system` inline
