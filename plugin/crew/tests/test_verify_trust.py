@@ -1664,6 +1664,61 @@ def test_hash_approval_the_windows_realpath_fallback_refuses_a_redirect_at_a_rem
     assert _code(bad) != verify_trust.EXIT_TRUSTED
 
 
+def test_hash_approval_a_plain_repo_below_a_junctioned_parent_is_still_trusted(
+        tmp_path, store, monkeypatch):
+    """Round 14, from the code: only `.git` itself is tested for a reparse point (a plain
+    repository's identity does not run through its parents), so a plain repository reached
+    through a junctioned parent directory stays trusted. The parent is flagged through the
+    mocked `lstat` attribute word."""
+    sub = tmp_path / "parent"
+    sub.mkdir()
+    one = _repo(sub, name="one")
+    assert _approve(one) == 0
+    _flag_reparse(monkeypatch, "parent")
+
+    assert verify_trust._reparse(str(sub)), "control: the parent reads as a reparse point"
+    assert _code(one) == verify_trust.EXIT_TRUSTED
+
+
+def _short_name_spelling(monkeypatch, tmp_path, main, lane):
+    """Make `<tmp>/LANE~1` an alias of `lane`, as an NTFS 8.3 short name is. The alias is
+    not a real directory on this host, so `samefile` and `realpath` are wrapped to read the
+    short component as the long one (the Windows file system does that itself), and the
+    admin directory's `gitdir` record is rewritten to the short spelling, as git records a
+    worktree created through a short path."""
+    short = "LANE~1"
+    real_samefile, real_realpath = os.path.samefile, os.path.realpath
+    monkeypatch.setattr(
+        verify_trust.os.path, "samefile",
+        lambda a, b: real_samefile(str(a).replace(short, lane.name), str(b).replace(short, lane.name)))
+    monkeypatch.setattr(
+        verify_trust.os.path, "realpath",
+        lambda p, *a, **k: real_realpath(str(p).replace(short, lane.name), *a, **k))
+    record = main / ".git" / "worktrees" / lane.name / "gitdir"
+    spelled = tmp_path / short / ".git"
+    record.write_text(str(spelled) + "\n", encoding="utf-8")
+    return spelled
+
+
+def test_hash_approval_the_windows_fallback_accepts_a_genuine_short_name_worktree(
+        tmp_path, store, monkeypatch):
+    """Must-pass, round 14: a worktree whose recorded path is an 8.3 short-name spelling of
+    its own directory is the same place, with no reparse point anywhere in the recorded
+    path, so the Windows real-path fallback ACCEPTS it. Without the fallback a genuine
+    Windows worktree created through a short path would say UNTRUSTED forever. The short
+    name is mocked (no Windows host), and the case runs on Linux."""
+    main, lane = _linked(tmp_path)
+    assert _approve(main) == 0
+    _short_name_spelling(monkeypatch, tmp_path, main, lane)
+
+    # control: off Windows the differing spelling is refused, so the fallback is what accepts it
+    monkeypatch.setattr(verify_trust, "_IS_WINDOWS", False)
+    assert _code(lane) != verify_trust.EXIT_TRUSTED, "control: the spelling differs"
+
+    monkeypatch.setattr(verify_trust, "_IS_WINDOWS", True)
+    assert _code(lane) == verify_trust.EXIT_TRUSTED
+
+
 @pytest.mark.skipif(os.name != "posix", reason="the stand-in junction is a symlink")
 def test_hash_approval_the_windows_fallback_refuses_a_junction_above_the_removed_path(
         tmp_path, store, monkeypatch):

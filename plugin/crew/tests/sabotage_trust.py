@@ -519,4 +519,10 @@ TRUST_MUTATIONS = (
      "        if _reparse(path):\n            return True\n        return False\n"
      "        parent = os.path.dirname(path)\n",
      _T + "test_hash_approval_the_windows_fallback_refuses_a_junction_above_the_removed_path"),
+    ("trust store: the Windows fallback is removed, so an 8.3 short-name worktree is refused (L-0888, round 14)",
+     TRUST,
+     "        return (_IS_WINDOWS and not _reparse_in_path(recorded)\n"
+     "                and _spelled(os.path.realpath(recorded)) == _spelled(here))\n",
+     "        return False\n",
+     _T + "test_hash_approval_the_windows_fallback_accepts_a_genuine_short_name_worktree"),
 )

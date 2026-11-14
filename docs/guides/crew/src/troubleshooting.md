@@ -565,8 +565,9 @@ machine trusts. Otherwise it prints one line, runs nothing, writes no pass recor
   records must each have one name (a hardlink to them is refused; a hardlink needs the same filesystem and local
   access), and the recorded worktree path must be this directory's own real path (a symlink alias, a moved or a
   copied tree is refused). On Windows a `.git`, admin record or recorded path that is a junction or other reparse
-  point is refused the same way (crew 1.3.94, round 13); a worktree reached through a junctioned parent needs its
-  own `approve`. Run `git worktree prune` after removing a worktree directory. Not closed: a new real
+  point is refused the same way (crew 1.3.94, round 13); a linked worktree whose recorded path runs through a junctioned
+  parent, so it differs from its real path, needs its own `approve`, while a plain repository below a junctioned
+  parent stays trusted. Run `git worktree prune` after removing a worktree directory. Not closed: a new real
   directory created at exactly a removed worktree's old path with a copied `.git` file looks like the original (the
   same-user, stale-record case); prune stale worktrees, and do not allowlist an owner with stale entries around.
   A plain repository's own `.git/config` is what owner trust reads, and an archive can ship a `.git/` directory:
