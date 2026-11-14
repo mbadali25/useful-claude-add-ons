@@ -456,7 +456,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   `move`, `xcopy`, `robocopy`, `curl -o` (also `-sSo` and `-O --output-dir`), `wget -O`,
   `-OutFile`, `tar -C` (before or after `-xf`), `unzip -d` (or `unzip` run in that folder; its `-o` is the overwrite switch), `7z -o<dir>`,
   `Expand-Archive`, `patch`, `git apply`, `mklink /J`, `fsutil hardlink create`, `awk -i
-  inplace`, a `[IO.File]::WriteAllText` (or `[System.IO.File]::`, any write member: `AppendAll*`, `Copy`, `Move`, `Delete`, `Create`, `Replace`) with the path spelled out, aimed at them (spelled out, or through `cd`, a variable,
+  inplace`, a `[IO.File]::WriteAllText` (or `[System.IO.File]::`, any write member: `AppendAll*`, `Copy`, `Move`, `Delete`, `Create`, `Replace`, and `Open` with a write mode such as `Create`, `Append` or `ReadWrite`) with the path spelled out, aimed at them (spelled out, or through `cd`, a variable,
   a glob or a path built from `.claude`, `crew` and `config.json`), or inline
   code (`python -c`, a heredoc, `pwsh -Command`) that names them beside a write
   call, in every `scope.mode` (`off`, the default, included). A command that only
@@ -470,7 +470,8 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   (`-Verbose`, `-Debug`, `-Force`, `-WhatIf` and the rest, abbreviated or not) take no value, and a
   comma-separated `-Path` list is read item by item. PowerShell's `--%` stop-parsing token, an
   ambiguous parameter abbreviation and a .NET call whose destination is an expression, not a
-  literal path, are read by their text only.
+  literal path, are read by their text only. A comma or a space inside a quoted .NET path is part of the path; inside a quoted cmdlet
+  path (`Set-Content -LiteralPath 'a,b'`) a comma still splits it (accepted limit).
   Accepted limits, by the owner's decision ("fix the overblock, add the plain
   verbs, stop there"): brace expansion, a path built by `Join-Path` or a
   variable the command did not set, `perl`, `php`, `awk` or `os.system` inline
