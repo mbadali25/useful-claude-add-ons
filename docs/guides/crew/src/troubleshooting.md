@@ -560,7 +560,7 @@ machine trusts. Otherwise it prints one line, runs nothing, writes no pass recor
   submodule under `.git/modules`. A `.git` symlink, a `commondir` or `core.worktree` the directory wrote itself,
   or a gitfile naming another repo's directory is judged by its own path, so it needs its own `approve`.
 - **A copied or hardlinked `.git` file, or a worktree directory recreated after removal, says UNTRUSTED**: working
-  as designed (crew 1.3.90, round 12). A gitfile and the worktree admin directory's `gitdir` and `commondir`
+  as designed (crew 1.3.91, round 12). A gitfile and the worktree admin directory's `gitdir` and `commondir`
   records must each have one name (a hardlink to them is refused; a hardlink needs the same filesystem and local
   access), and the recorded worktree path must be this directory's own real path (a symlink alias, a moved or a
   copied tree is refused). Run `git worktree prune` after removing a worktree directory. Not closed: a new real
