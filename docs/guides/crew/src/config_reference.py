@@ -438,12 +438,17 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   checkout must not be able to turn every guard off), and a repo `true` cannot
   switch a machine `false` back on.
 - It is the OWNER's. Like the `humanOnly.*` opt-out, a `false` counts only when an
-  applied `/crew:confirm-config` double confirmation backs it (two prompts the
-  owner typed). An agent's Write or Edit, a hook-side write or a hand edit that
-  only sets the `false` leaves the guards ON; so does a missing, revoked or
-  unreadable receipt. The scope guard refuses an agent's Write, Edit or shell
-  write to the machine config file and to the receipts beside it, in every
-  `scope.mode` (`off`, the default, included).
+  applied `/crew:confirm-config` double confirmation backs it: two confirmations
+  from two prompts the owner typed, and the digest of the machine file as the
+  owner left it (crew 1.3.94). An agent's Write or Edit, a hook-side write, a
+  hand edit, a bare hand-written receipt, or ANY later change to the file (a
+  restore, a rebuild, an unrelated edit) leaves the guards ON; so does a missing,
+  revoked or unreadable receipt. The scope guard refuses an agent's Write or Edit
+  of the machine config file and the receipts beside it, and a shell command that
+  names them (spelled out, or through `cd`, a variable, a glob or a path built
+  from `.claude`, `crew` and `config.json`) and can write, or runs a script that
+  does, in every `scope.mode` (`off`, the default, included). Reading them
+  (`cat`, `crew_config.py --show`) passes.
 - It is unambiguous. Only the JSON literal `false` counts: an absent key, `null`,
   `true`, a string, a corrupt file, a `guards` that is not an object, a file
   with a duplicate key (`{{"enabled": true, "enabled": false}}` is read differently
@@ -456,6 +461,16 @@ running, so `/crew:approve` and `/crew:confirm-config` keep working and the
 `humanOnly.*` opt-out still works with the guards off. It needs python: with
 none, the bash launcher still fails closed in an armed repo (known limitation).
 To go back, delete the key or set it to `true` in the machine file.
+
+**What this is, and is not.** The master switch is a guardrail against accidents
+and agent drift, not a security boundary against a hostile agent running as the
+same user. The receipt and the machine file are files that user can write, and the
+scope guard reads command text: an agent that builds a path in a way the text
+never shows (`'.cl' + 'aude'`, a command fetched at run time) can forge the whole
+receipt and the `false` together, and nothing here stops it. Keep an untrusted
+agent out of the account rather than behind this key. A working directory equal to
+your home, or an ancestor of it, makes an owner-confirmed switch do nothing (the
+guards stay on, as for a HOME redirected into the project).
 
 ## Guard profiles
 

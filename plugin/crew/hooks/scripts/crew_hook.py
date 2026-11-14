@@ -26,6 +26,7 @@ events where a child may block (PreToolUse, UserPromptSubmit, Stop). An
 unarmed repo gets exit 0 for every such fault, as the scripts do today.
 """
 import functools
+import hashlib
 import json
 import os
 import re
@@ -356,10 +357,13 @@ def armed(root, home=None):
 #   2. ONLY the JSON literal `false` counts, in a file with no duplicate key: absent, null, true, a string, a
 #      corrupt or unreadable file, a `guards` that is not an object, or `{"enabled": true, "enabled": false}`
 #      (two parsers disagree on which wins) leave the guards ON. Could-not-tell is never the disabling value.
-#   3. The `false` must be the OWNER's (owner decision, 2026-11-13): `crew_humanonly.receipt_backs` must find an
-#      applied `/crew:confirm-config` double confirmation for `guards.enabled` at this very file. An agent, a
-#      hook-side write or a hand edit that only sets the `false` leaves the guards ON (`machine_switch_unconfirmed`
-#      reports it), exactly like an unconfirmed `humanOnly` false reads human-only.
+#   3. The `false` must be the OWNER's (owner decision, 2026-11-13): `owner_confirmed` must find an applied
+#      `/crew:confirm-config` double confirmation for `guards.enabled` at this very file, recording two
+#      confirmations from two typed prompts and the canonical digest of the file as the owner left it (crew
+#      1.3.94). An agent, a hook-side write or a hand edit that only sets the `false` leaves the guards ON
+#      (`machine_switch_unconfirmed` reports it), and so does a file edited after the owner applied it, or a bare
+#      hand-written record. These are guardrails against accidents and drift, NOT a boundary: the receipt is a
+#      file the same user can write, so an agent that forges the whole of it is not stopped here.
 # The machine file must also be the machine's: a config path inside the project (or the process's working
 # directory), which is what a `HOME` / `USERPROFILE` pointed at a fake home shipped in a repo yields, never counts.
 # approval-hook.sh is the exception: it records `/crew:approve` and the `/crew:confirm-config` double
@@ -380,12 +384,17 @@ def _no_duplicate_keys(pairs):
     return seen
 
 
+def _read_strict(path):
+    """`path` parsed as JSON with no duplicate key at any depth; OSError or ValueError when it cannot be."""
+    with open(path, encoding="utf-8-sig") as handle:
+        return json.load(handle, object_pairs_hook=_no_duplicate_keys)
+
+
 def _layer_says_off(path):
     """True only when the file at `path` parses (no duplicate key at any depth) to an object whose `guards` is an
     object holding `enabled: false` (the JSON literal)."""
     try:
-        with open(path, encoding="utf-8-sig") as handle:
-            parsed = json.load(handle, object_pairs_hook=_no_duplicate_keys)
+        parsed = _read_strict(path)
     except (OSError, ValueError):
         return False
     guards = parsed.get("guards") if isinstance(parsed, dict) else None
@@ -408,10 +417,48 @@ def machine_config_path(root, home=None):
     return path
 
 
-def _owner_confirmed(path):
-    """True when an applied double confirmation backs `guards.enabled: false` at `path`."""
+def canonical_digest(path):
+    """sha256 over the file's parsed content in canonical JSON (sorted keys, no whitespace), or None when it does
+    not parse or holds a duplicate key. Whitespace and key order do not move it; a changed value does."""
+    try:
+        parsed = _read_strict(path)
+    except (OSError, ValueError):
+        return None
+    return hashlib.sha256(json.dumps(parsed, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _double_confirmed(record):
+    """True when the record carries two confirmations that came from two DIFFERENT typed prompts."""
+    confirmations = record.get("confirmations")
+    if not isinstance(confirmations, list):
+        return False
+    prompts = {c.get("prompt") for c in confirmations
+               if isinstance(c, dict) and c.get("via") == "user-prompt"
+               and isinstance(c.get("prompt"), str) and c["prompt"].strip()}
+    return len(prompts) >= 2
+
+
+def owner_confirmed(path):
+    """True when an applied `/crew:confirm-config` double confirmation backs `guards.enabled: false` at `path`
+    (crew 1.3.94): the newest settled record for this (layer, file, key) is an applied `false`, records two
+    confirmations from two typed prompts, and its `appliedDigest` is the canonical digest of the file AS IT IS.
+    A file edited after the owner applied it (a hand edit, a restore, a rebuild, an agent) no longer matches, so
+    the receipt backs nothing, and a record written without the confirmations, or without the digest, backs
+    nothing either. The digest and the confirmations live in files the same user can write, so a hostile agent
+    can still forge all of it: this is a guardrail against accidents and drift, not a boundary (CONFIG.md)."""
     import crew_humanonly  # pylint: disable=import-outside-toplevel
-    return crew_humanonly.receipt_backs(crew_humanonly.store_dir(path), "machine", path, MASTER_KEY)[0]
+    records, problems = crew_humanonly.all_records(crew_humanonly.store_dir(path))
+    if problems:
+        return False
+    target = crew_humanonly.target_key(path)
+    settled = [r for r in records
+               if r.get("layer") == "machine" and r.get("target") == target and r.get("key") == MASTER_KEY
+               and r.get("state") in ("applied", "revoked") and isinstance(r.get("settled"), (int, float))]
+    newest = max(settled, key=lambda r: r["settled"]) if settled else None
+    if newest is None or newest.get("state") != "applied" or newest.get("value") is not False:
+        return False
+    digest = canonical_digest(path)
+    return digest is not None and newest.get("appliedDigest") == digest and _double_confirmed(newest)
 
 
 def guards_switched_off(root, home=None):
@@ -419,7 +466,7 @@ def guards_switched_off(root, home=None):
     file cannot switch the guards off. Never raises: a failure to look reads as ON."""
     try:
         path = machine_config_path(root, home)
-        if path and _layer_says_off(path) and _owner_confirmed(path):
+        if path and _layer_says_off(path) and owner_confirmed(path):
             return "machine"
     except Exception:  # noqa: BLE001  pylint: disable=broad-exception-caught
         return None

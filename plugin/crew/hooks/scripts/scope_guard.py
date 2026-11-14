@@ -169,14 +169,6 @@ _BASH_CONTINUATION_RE = re.compile(r"\\\r?\n")
 _PS_CONTINUATION_RE = re.compile(r"`\r?\n")
 _DOTGIT_CREW_RE = re.compile(r"\.git[\\/]+crew\b|git-common-dir\b.*\bcrew\b",
                              re.IGNORECASE | re.DOTALL)
-# The double-confirmation store (`crew_humanonly.store_dir`): the receipts that
-# make a `humanOnly.*: false` count. A shell command naming `confirm-config/`
-# beside a writing word is refused like one naming <git-common-dir>/crew/.
-_CONFIRM_STORE_RE = re.compile(r"confirm-config[\\/]", re.IGNORECASE)
-# The machine config (`~/.claude/crew/config.json`): `guards.enabled` lives there (crew 1.3.92), so a Write/Edit
-# of it is refused and a shell command naming it beside a writing word is refused like one naming the store.
-# `crew_config.py --set` names no path, so the sanctioned writer is not caught.
-_MACHINE_CONFIG_RE = re.compile(r"\.claude[\\/]+crew[\\/]+config\.json\b", re.IGNORECASE)
 # A redirect (not into /dev/null, $null or another descriptor), or a word
 # that writes files. Reading crew's state -- `cat`, `Get-Content` -- passes.
 _WRITES_RE = re.compile(
@@ -381,21 +373,130 @@ def _reading_refusal(command, written, common, top, agent_type=None):
         state and os.path.normcase(state).replace("\\", "/") in folded)
     if names_state and _WRITES_RE.search(command):
         return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
-    return _owner_command_refusal(command)
+    return _owner_command_refusal(command, top)
 
 
-def _owner_command_refusal(command):
-    """Why a shell command may not write the owner's files (`_owner_path`), or None."""
-    folded = os.path.normcase(command).replace("\\", "/")
-    store = os.path.normcase(confirm_store()).replace("\\", "/")
-    if (_CONFIRM_STORE_RE.search(command) or store in folded) and _WRITES_RE.search(command):
-        return ("it writes under the confirm-config store, the receipts of the owner's "
-                "double confirmation")
-    machine = os.path.normcase(machine_config()).replace("\\", "/")
-    if (_MACHINE_CONFIG_RE.search(command) or machine in folded) and _WRITES_RE.search(command):
-        return ("it writes the machine config (~/.claude/crew/config.json), which holds the guards master "
-                "switch; the owner edits it, or /crew:config does")
+# --- the owner's files, read through a shell (crew 1.3.94) ------------------------------------------------------
+# A command is refused when it NAMES the owner's files (`_names_owner`) AND can WRITE (`_OWNER_WRITES_RE`, or an
+# inline program with a write call, `_CODE_WRITES_RE`), or runs a script that does. "Names" is looser than the
+# literal path, because `cd ~/.claude/crew && echo x > config.json`, `d=~/.claude/crew; echo x > $d/config.json`,
+# `cd ~/.claude && echo x > crew/config.json`, a glob, and a path built from `'.claude', 'crew', 'config.json'`
+# all write the same file. A read (`cat`, `crew_config.py --show --global-path ...`, `print(open(p).read())`)
+# names the file and writes nothing, so it passes. This is a guardrail against an agent's accident or drift, NOT a
+# boundary against a hostile one running as the same user: that one can still build a path this text never shows
+# (`'.cl' + 'aude'`, a command read from a file or the network). CONFIG.md says so.
+_OWNER_WRITES_RE = re.compile(
+    r"(?<!>)>>?(?!>)(?!\s*(?:&\d|/dev/null\b|\$null\b))|"
+    r"\b(?:tee|cp|mv|rm|ln|touch|mkdir|rmdir|install|dd|rsync|truncate|chmod|chown|unlink|shred|sponge|"
+    r"set-content|add-content|out-file|new-item|copy-item|move-item|remove-item|rename-item|clear-content|"
+    r"set-item|ni|sc|ac)\b|"
+    r"\b(?:sed|perl|ruby)\b[^\n;&|]*\s-[a-z]*i", re.IGNORECASE)
+# A write call inside inline code (`python -c`, a heredoc, `pwsh -Command`, `node -e`) or a script's text.
+_CODE_WRITES_RE = re.compile(
+    r"\.write|write_text|write_bytes|writelines|\bdump\(|\bunlink|os\.remove|os\.replace|os\.rename|\.rename\(|"
+    r"shutil|rmtree|\bcopyfile|\bmove\(|writeall|writefile|appendfile|createwritestream|"
+    r"\bopen\([^)]*['\"][rwax]*[wax+][rwabxt+]*['\"]|mode\s*=\s*['\"][rwax]*[wax+]|o_wronly|o_rdwr|o_creat|"
+    r"set-content|add-content|out-file|new-item|copy-item|move-item|remove-item|rename-item|clear-content|"
+    r"\[io\.file\]::", re.IGNORECASE)
+_HOME_PART = r"(?:~|\$home|\$\{home\}|%userprofile%|\$env:userprofile|\$env:home)"
+_SCRIPT_EXTS = (".py", ".sh", ".ps1", ".js", ".rb", ".pl", ".bat", ".cmd", ".mjs", ".cjs")
+_INTERPRETERS = frozenset({"python", "python3", "py", "node", "bash", "sh", "zsh", "dash", "perl", "ruby",
+                           "pwsh", "powershell", "source", "."})
+_WORD_RE = re.compile(r"[^\s;&|()<>]+")
+_SCRIPT_MAX = 1024 * 1024
+
+
+def _fold(text):
+    folded = os.path.normcase(text).replace("\\", "/").lower()
+    return re.sub(r"/{2,}", "/", folded)
+
+
+def _names_owner(command):
+    """Why `command` names the owner's files (the machine config, its folder, the confirm-config store), or
+    None. Text only: it sees a path spelled out, in pieces or through a glob, never one built by arithmetic."""
+    text = _fold(command)
+    machine = _fold(machine_config())
+    if re.search(r"(?<![:\w-])confirm-config(?![\w-]|\.md)", text):
+        return "the confirm-config store, the receipts of the owner's double confirmation"
+    named = (machine in text or _fold(os.path.dirname(machine)) in text
+             or re.search(r"\.claude/+crew\b", text) or re.search(r"(?<![\w.-])crew/+config\.json\b", text)
+             # a path built from its pieces: `.claude`, a bare `crew` and `config` in one command
+             or (re.search(r"(?<![\w])\.claude(?![\w-])", text) and re.search(r"(?<![\w.-])crew(?![\w-])", text)
+                 and "config" in text)
+             # a glob under `.claude/`, or under a dot-folder of home
+             or re.search(r"\.claude/+[^\s;&|]*[*?\[]", text)
+             or re.search(_HOME_PART + r"/+\.[^/\s;&|]*[*?\[]", text))
+    if named:
+        return ("the machine config (~/.claude/crew/config.json), which holds the guards master switch; "
+                "the owner edits it, or /crew:config does")
     return None
+
+
+def _writes(text):
+    return bool(_OWNER_WRITES_RE.search(text) or _CODE_WRITES_RE.search(text))
+
+
+def _plugin_root():
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _scripts_run(command, cwd):
+    """`[(word, absolute path)]` for each existing script file `command` runs: the word after an interpreter
+    (`python x.py`, `bash x.sh`, `pwsh -File x.ps1`, `source x`) or a `./x` word. A script that does not exist
+    cannot run, so it is not listed."""
+    words = [w.strip("'\"") for w in _WORD_RE.findall(command)]
+    found = []
+    for index, word in enumerate(words):
+        base = os.path.basename(word.lower().replace("\\", "/"))
+        base = base[:-4] if base.endswith(".exe") else base
+        names = []
+        if base in _INTERPRETERS or re.fullmatch(r"python[0-9.]+", base):
+            for after in words[index + 1:index + 8]:
+                if after.lower() in ("-command", "-c", "-e", "-m"):
+                    break
+                if after.startswith("-"):
+                    continue
+                names.append(after)
+                break
+        if word.startswith(("./", ".\\", "../", "..\\")):
+            names.append(word)
+        for name in names:
+            expanded = os.path.expandvars(os.path.expanduser(name))
+            absolute = expanded if os.path.isabs(expanded) else os.path.join(cwd or os.getcwd(), expanded)
+            if os.path.isfile(absolute):
+                found.append((name, os.path.abspath(absolute)))
+    return list(dict.fromkeys(found))
+
+
+def _script_refusal(command, cwd):
+    """Why running a script in `command` may write the owner's files, or None. A script under this plugin
+    (`crew_config.py`, the sanctioned writer) is trusted. Any other, with the owner's files named beside it in
+    the command or in its own text beside a write call, is refused; one too large or too unreadable to judge is
+    refused too, since what it writes cannot be told."""
+    root = os.path.abspath(_plugin_root())
+    for name, path in _scripts_run(command, cwd):
+        if _under(path, root):
+            continue
+        if _names_owner(command):
+            return f"it runs {name}, which is not crew's own script, with the owner's files named beside it"
+        try:
+            if os.path.getsize(path) > _SCRIPT_MAX:
+                return f"it runs {name}, too large to read, so what it writes cannot be told"
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                text = handle.read()
+        except OSError:
+            return f"it runs {name}, which cannot be read, so what it writes cannot be told"
+        if _names_owner(text) and _writes(text):
+            return f"it runs {name}, whose text names the owner's files and can write"
+    return None
+
+
+def _owner_command_refusal(command, cwd=None):
+    """Why a shell command may not write the owner's files (`_owner_path`), or None."""
+    named = _names_owner(command)
+    if named and _writes(command):
+        return f"it writes {named}"
+    return _script_refusal(command, cwd)
 
 
 def _owner_files_only(tool, data, root):
@@ -407,7 +508,7 @@ def _owner_files_only(tool, data, root):
         tool_input = data.get("tool_input")
         command = tool_input.get("command") if isinstance(tool_input, dict) else None
         readings = dict.fromkeys(_joined(command)) if isinstance(command, str) else ()
-        reason = next((r for r in map(_owner_command_refusal, readings) if r), None)
+        reason = next((r for r in (_owner_command_refusal(c, data.get("cwd") or root) for c in readings) if r), None)
         if reason:
             return _deny([f"SCOPE GUARD: refused this {tool} command -- {reason}.",
                           "  These are the owner's files: the owner edits them, or /crew:config and "

@@ -62,12 +62,23 @@ def _machine_config(home, text):
         handle.write(text if isinstance(text, str) else json.dumps(text))
 
 
-def _receipt(path, state="applied", value=False, key="guards.enabled", layer="machine", target=None, settled=None):
-    """The record `crew_confirm_config.confirm` leaves behind: what makes a machine `false` the OWNER's."""
+def _confirmations(count=2):
+    """What `crew_confirm_config.confirm` records: one entry per typed prompt."""
+    return [{"at": time.time(), "via": "user-prompt", "prompt": f"p-{n}", "session": "s-1"} for n in range(count)]
+
+
+def _receipt(path, state="applied", value=False, key="guards.enabled", layer="machine", target=None, settled=None,
+             confirmations=None, digest="file"):
+    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.94): what makes a machine `false` the
+    OWNER's. Two typed-prompt confirmations and `appliedDigest`, the canonical digest of the file as applied;
+    `digest="file"` reads it now, a string or None overrides it (None leaves the field out)."""
     record = {"change_id": crew_humanonly.new_change_id(), "layer": layer,
               "target": target or crew_humanonly.target_key(path), "key": key, "value": value, "state": state,
               "created": time.time(), "settled": time.time() if settled is None else settled,
-              "confirmations": [], "reason": "test"}
+              "confirmations": _confirmations() if confirmations is None else confirmations, "reason": "test"}
+    stamped = crew_hook.canonical_digest(path) if digest == "file" else digest
+    if stamped is not None:
+        record["appliedDigest"] = stamped
     crew_humanonly.write_record(crew_humanonly.store_dir(path), record)
     return record
 
@@ -332,8 +343,8 @@ def test_a_receipt_is_read_at_the_file_it_names_not_at_a_copy(armed):
     with open(other, "w", encoding="utf-8") as handle:
         handle.write(json.dumps({"guards": {"enabled": False}}))
     assert crew_hook.guards_switched_off(root, home) == "machine"
-    assert not crew_hook._owner_confirmed(other)  # pylint: disable=protected-access
-    assert crew_hook._owner_confirmed(path)  # pylint: disable=protected-access
+    assert not crew_hook.owner_confirmed(other)  # pylint: disable=protected-access
+    assert crew_hook.owner_confirmed(path)  # pylint: disable=protected-access
 
 
 @pytest.mark.parametrize("text", [
@@ -505,3 +516,202 @@ def test_the_owners_files_are_protected_outside_a_work_tree_too(tmp_path):
     bare.mkdir()
     payload = _tool("Write", file_path=_machine_path(str(home)), content="{}")
     assert blocked(_run("PreToolUse", payload, str(bare), str(home)))
+
+
+# --- the receipt is bound to the confirmations and to the file (crew 1.3.94) --------------------------------------
+
+def _case_bare_record(path):
+    _receipt(path, confirmations=[], digest=None)
+
+
+def _case_no_confirmations(path):
+    _receipt(path, confirmations=[])
+
+
+def _case_one_confirmation(path):
+    _receipt(path, confirmations=_confirmations(1))
+
+
+def _case_one_prompt_twice(path):
+    _receipt(path, confirmations=[dict(_confirmations(1)[0]), dict(_confirmations(1)[0])])
+
+
+def _case_not_typed_by_the_user(path):
+    _receipt(path, confirmations=[dict(c, via="cli") for c in _confirmations()])
+
+
+def _case_no_digest(path):
+    _receipt(path, digest=None)
+
+
+def _case_digest_of_another_content(path):
+    _receipt(path, digest="0" * 64)
+
+
+@pytest.mark.parametrize("seed", [_case_bare_record, _case_no_confirmations, _case_one_confirmation,
+                                  _case_one_prompt_twice, _case_not_typed_by_the_user, _case_no_digest,
+                                  _case_digest_of_another_content])
+def test_a_forged_or_bare_record_leaves_the_guards_on(seed, armed):
+    """The finding: any JSON file shaped like a record used to count. The receipt must carry the two typed-prompt
+    confirmations AND the digest of the file the owner applied."""
+    root, home = armed
+    _machine_config(home, {"guards": {"enabled": False}})
+    seed(_machine_path(home))
+    assert crew_hook.guards_switched_off(root, home) is None, seed.__name__
+    assert crew_hook.machine_switch_unconfirmed(root, home) is True, seed.__name__
+
+
+def test_a_false_hand_written_after_the_owner_applied_one_does_not_count(armed):
+    """The receipt backs the file AS THE OWNER LEFT IT. Anything that changes it afterwards (the key set true and
+    back to false by hand, a restore, a rebuild, an unrelated edit) leaves the old receipt backing nothing."""
+    root, home = armed
+    path = _off(home)
+    assert crew_hook.guards_switched_off(root, home) == "machine"
+    _machine_config(home, {"guards": {"enabled": True}})
+    assert crew_hook.guards_switched_off(root, home) is None
+    _machine_config(home, {"guards": {"enabled": False}, "tier": "y"})
+    assert crew_hook.guards_switched_off(root, home) is None, "a hand-written false over a changed file"
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"guards": {"enabled": False}}, handle)
+    assert crew_hook.guards_switched_off(root, home) == "machine", "the owner's content again: the receipt backs it"
+
+
+def test_a_reformatted_file_with_the_same_content_still_counts(armed):
+    """Canonical: whitespace and key order do not move the digest."""
+    root, home = armed
+    _off(home, {"b": 1, "guards": {"enabled": False}, "a": 2})
+    _machine_config(home, '{\n  "a": 2,\n\t"guards": {"enabled": false},\n  "b": 1}\n')
+    assert crew_hook.guards_switched_off(root, home) == "machine"
+
+
+def test_a_forged_bare_record_does_not_stand_the_dispatcher_down(armed):
+    root, home = armed
+    _machine_config(home, {"guards": {"enabled": False}})
+    _case_bare_record(_machine_path(home))
+    assert blocked(_run("PreToolUse", MUST_BLOCK["env-guard"], root, home))
+
+
+# --- the owner's files through a shell: indirect forms are refused, reads still pass (crew 1.3.94) ----------------
+
+@pytest.fixture(name="home_env")
+def _home_env(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / ".claude" / "crew").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    return home
+
+
+SHELL_MUST_BLOCK = [
+    "cd ~/.claude/crew && echo x > config.json",
+    "cd ~/.claude && echo x > crew/config.json",
+    "d=~/.claude/crew; echo x > $d/config.json",
+    "d=$HOME/.claude; echo x > $d/crew/config.json",
+    "d=~/.claude; e=crew; echo x > $d/$e/config.json",
+    "cd $X && echo x > crew/config.json",
+    "echo x > ~/.claude/cr*/config.json",
+    "echo x > ~/.claude/crew/conf*",
+    "echo x > ~/.cl*/cr*/co*",
+    "cd ~/.claude/crew && cp /tmp/x config.json",
+    "cd ~/.claude/crew && cp /tmp/x c*",
+    "mv /tmp/x ~/.claude/crew/config.json",
+    "printf x | tee ~/.claude/crew/config.json",
+    "sed -i s/true/false/ ~/.claude/crew/config.json",
+    "perl -pi -e 's/a/b/' ~/.claude/crew/config.json",
+    "ln -sf /tmp/x ~/.claude/crew/config.json",
+    "rm ~/.claude/crew/confirm-config/cc-00000000.json",
+    "cd ~/.claude/crew/confirm-config && echo x > cc-00000000.json",
+    "python3 -c \"import os; open(os.path.join(os.path.expanduser('~'), '.claude', 'crew', 'config.json'), 'w').write('x')\"",
+    "python3 -c \"from pathlib import Path; (Path.home() / '.claude' / 'crew' / 'config.json').write_text('{}')\"",
+    "python3 -c \"import shutil; shutil.copy('x', '~/.claude/crew/config.json')\"",
+    "python3 - <<'EOF'\nimport os\nopen(os.path.expanduser('~/.claude/crew/config.json'), 'w').write('x')\nEOF",
+    "node -e \"require('fs').writeFileSync(require('os').homedir() + '/.claude/crew/config.json', 'x')\"",
+    "Set-Location $HOME\\.claude\\crew; Set-Content config.json '{}'",
+    "Push-Location ~/.claude/crew; Out-File config.json",
+    "pwsh -c \"Set-Content (Join-Path $HOME '.claude/crew/config.json') '{}'\"",
+    "Copy-Item x $env:USERPROFILE\\.claude\\crew\\config.json",
+    "cd %USERPROFILE%\\.claude\\crew && echo x > config.json",
+]
+SHELL_MUST_ALLOW = [
+    "cat ~/.claude/crew/config.json",
+    "cd ~/.claude/crew && cat config.json",
+    "ls -la ~/.claude/crew",
+    "grep enabled ~/.claude/crew/config.json",
+    "Get-Content ~/.claude/crew/config.json",
+    "python3 crew_config.py --show --global-path ~/.claude/crew/config.json",
+    "python3 crew_config.py --explain --global-path $HOME/.claude/crew/config.json",
+    "python3 -c \"print(open('~/.claude/crew/config.json').read())\"",
+    "python3 -c \"import json,os; print(json.load(open(os.path.expanduser('~/.claude/crew/config.json'))))\"",
+    "python3 crew_config.py --set guards.profile=standard",
+    "echo hello > out.txt",
+    "echo x > .crew/config.json",
+    "echo x > .claude/rules/foo.md",
+    "cp a.txt b.txt && git status",
+    "git commit -m 'document the crew config key'",
+    "git mv plugin/crew/commands/confirm-config.md /tmp/confirm-config.md.bak",
+    "echo 'type /crew:confirm-config twice' > note.txt",
+]
+
+
+@pytest.mark.parametrize("command", SHELL_MUST_BLOCK)
+def test_the_indirect_ways_to_write_the_owners_files_are_refused(command, home_env):
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("command", SHELL_MUST_ALLOW)
+def test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass(command, home_env):
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("command", ["cd ~/.claude/crew && echo x > config.json",
+                                     "cd ~/.claude && echo x > crew/config.json",
+                                     "d=~/.claude/crew; echo x > $d/config.json"])
+def test_an_indirect_write_is_refused_by_the_dispatcher_in_both_scope_modes(command, armed, tmp_path):
+    root, home = armed
+    assert blocked(_run("PreToolUse", _tool("Bash", command=command), root, home)), command
+    bare_root, bare_home = rgh.build_repo(str(tmp_path / "bare"), False)
+    assert blocked(_run("PreToolUse", _tool("Bash", command=command), bare_root, bare_home)), command
+
+
+def test_a_helper_script_that_writes_the_owners_files_is_refused_when_run(home_env, tmp_path):
+    """Write a helper (allowed: it is a repo file), then run it: the run is where its text is judged."""
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    helper = tmp_path / "helper.py"
+    helper.write_text("import os\np = os.path.join(os.path.expanduser('~'), '.claude', 'crew', 'config.json')\n"
+                      "open(p, 'w').write('{\"guards\": {\"enabled\": false}}')\n", encoding="utf-8")
+    for command in ("python3 helper.py", "python helper.py && echo done", "bash -c true; python3 ./helper.py"):
+        assert scope_guard._owner_command_refusal(command, str(tmp_path)), command  # pylint: disable=protected-access
+    harmless = tmp_path / "harmless.py"
+    harmless.write_text("print('hello')\n", encoding="utf-8")
+    assert scope_guard._owner_command_refusal("python3 harmless.py", str(tmp_path)) is None  # pylint: disable=protected-access
+    reader = tmp_path / "reader.py"
+    reader.write_text("import os\np = os.path.join(os.path.expanduser('~'), '.claude', 'crew', 'config.json')\n"
+                      "print(open(p).read())\n", encoding="utf-8")
+    assert scope_guard._owner_command_refusal("python3 reader.py", str(tmp_path)) is None  # pylint: disable=protected-access
+
+
+def test_a_script_that_is_not_crews_is_refused_with_the_owners_files_named_beside_it(home_env, tmp_path):
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    (tmp_path / "crew_config.py").write_text("print('an agent wrote this one')\n", encoding="utf-8")
+    command = "python3 crew_config.py --show --global-path ~/.claude/crew/config.json"
+    assert scope_guard._owner_command_refusal(command, str(tmp_path))  # pylint: disable=protected-access
+    own = os.path.join(rgh.SCRIPTS, "crew_config.py")
+    assert scope_guard._owner_command_refusal(  # pylint: disable=protected-access
+        f"python3 {own} --show --global-path ~/.claude/crew/config.json", str(tmp_path)) is None
+
+
+@pytest.mark.parametrize("text, says_off", [
+    ('{"guards": {"enabled": false}}', True), ('﻿{"guards": {"enabled": false}}', True),
+    ('{"guards": {"enabled": "false"}}', False), ('{"guards": {"enabled": null}}', False),
+    ('{"guards": {"enabled": 0}}', False), ('{"guards": {"enabled": true}}', False), ('{"guards": {}}', False),
+    ('{"guards": false}', False), ('{not json', False), ('', False), ('[]', False),
+    ('{"guards": {"enabled": true, "enabled": false}}', False),
+    ('{"x": {"a": 1, "a": 2}, "guards": {"enabled": false}}', False)])
+def test_the_layer_reader_alone_says_off_only_for_the_literal_false(text, says_off, tmp_path):
+    """The reader, apart from the receipt: the receipt's digest would hide a reader that over-reads."""
+    path = tmp_path / "config.json"
+    path.write_bytes(text.encode("utf-8"))
+    assert crew_hook._layer_says_off(str(path)) is says_off, text  # pylint: disable=protected-access
+    assert crew_hook._layer_says_off(str(tmp_path / "absent.json")) is False  # pylint: disable=protected-access
