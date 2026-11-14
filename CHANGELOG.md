@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.96: re-bump only - interim number on the stop-audit-native-python branch (commit 21c1dc6a6, PR #777) before the direct route had to defer to the wrapper for an unknown project directory and TMPDIR, and open PRs reached 1.3.98; the change is recorded under crew 1.3.99
 - crew 1.3.74: re-bump only - interim number on the mass-guard removal branch (commits 188f49e4f, 8c3ac53a0, PR #772) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.75
 - crew 1.3.64: re-bump only - interim number on the confirm-config-relay branch (commit 6d1d45994, PR #768) before the opt-in inventory regeneration needed a fresh bump; the change is recorded under crew 1.3.70
 - crew 1.3.66: re-bump only - interim number on the confirm-config-relay branch (PR #768) before main reached 1.3.69 after #767 merged; the change is recorded under crew 1.3.70
@@ -59,6 +60,13 @@ read entries under any `## [` heading.
 - crew 1.3.49: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
+
+### Changed — crew 1.3.99: the Stop completion audit runs in Python on Windows, not through Git Bash
+
+- **Summary.** `crew` 1.3.96 stops the Stop-time completion audit from starting about twenty Git Bash processes on Windows: it now runs its Python directly, finishing in about a second and a half where the Git Bash route took 40-49 s and could run out of its 60 s limit.
+- **Cause.** `completion-audit.sh` forks 15-20 times (python resolution, a `printf | tr | grep` pipeline, the blocked-once marker's `sed`, `cksum`, `cut` and `rm`) before it runs `completion_audit.py`; on Git Bash that is 1.3-3 s per fork on a loaded host, 40-49 s measured against 0.2-0.6 s for the Python alone, and a timeout is `UNKNOWN`, a block in an armed repo.
+- **Fix.** `crew_hook.DIRECT` gains `completion-audit.sh` (exits 0 and 2 are decisions). The dispatcher keeps the wrapper's marker itself: the same `crew-completion-audit.<session>-<cksum>` file (a POSIX `cksum` in Python), cleared on a `stop_hook_active` continuation (python is not started) and on a verdict, left alone on a timeout. Any other exit, a failed launch or a missing file runs the wrapper; a timeout is never rerun and stays `UNKNOWN (guard timeout)`. With `CLAUDE_PROJECT_DIR` unset or empty, or `TMPDIR` set to a directory that does not exist, the wrapper keeps the whole sequence (it hashes `$PWD`, which Python's `os.getcwd()` does not reproduce, and fails open on a missing `TMPDIR`). Off Windows, and with `CREW_HOOK_DIRECT=0`, the wrapper is unchanged. The row's 60 s limit and every config key are unchanged.
+- **Tests.** `test_crew_hook_stop_native.py` (route, fail-closed, marker name against the real `cksum` and the real wrapper, must-block and must-allow verdicts and wrapper parity, timing, a hung child) and 19 mutations in `sabotage_crew_hook.py`, all RED.
 
 ### Removed — crew 1.3.75: the mass delete, create and change guard (`guards.mass`) is gone, not just off
 
