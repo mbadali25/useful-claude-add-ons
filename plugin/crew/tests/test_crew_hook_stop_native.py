@@ -293,6 +293,10 @@ def test_crash_verdict_crash_with_no_project_dir_blocks_the_third_stop_as_the_wr
         results.append(_dispatch(project, payload, tmp, scripts=scripts, deadline_s=400, bash=h.BASH,
                                  real_env=True, env_extra={"CLAUDE_PROJECT_DIR": ""}))
 
+    # the clean-verdict step cannot be judged when the wrapper's own python probe timed out on a loaded host
+    why = _wrapper_host_slow(results[1][2])
+    if why:
+        pytest.skip(why)
     assert results[0][0] == 2 and results[1][0] == 0, results
     assert results[2][0] == 2 and "Not blocking again" not in results[2][2], results[2]
 
