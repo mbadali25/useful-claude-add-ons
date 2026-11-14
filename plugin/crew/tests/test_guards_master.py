@@ -69,7 +69,7 @@ def _confirmations(count=2):
 
 def _receipt(path, state="applied", value=False, key="guards.enabled", layer="machine", target=None, settled=None,
              confirmations=None, digest="file"):
-    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.94): what makes a machine `false` the
+    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.96): what makes a machine `false` the
     OWNER's. Two typed-prompt confirmations and `appliedDigest`, the canonical digest of the file as applied;
     `digest="file"` reads it now, a string or None overrides it (None leaves the field out)."""
     record = {"change_id": crew_humanonly.new_change_id(), "layer": layer,
@@ -275,7 +275,7 @@ def test_a_dispatcher_fault_does_not_fail_closed_with_the_guards_off(armed):
                 os.environ[key] = value
 
 
-# --- the owner's confirmation (decision A, crew 1.3.94) ---------------------------------------------------------
+# --- the owner's confirmation (decision A, crew 1.3.96) ---------------------------------------------------------
 
 @pytest.mark.parametrize("name", sorted(MUST_BLOCK))
 def test_an_unconfirmed_false_stands_nothing_down(name, armed):
@@ -420,7 +420,7 @@ def test_an_approval_hook_fault_does_not_fail_closed_with_the_guards_off(tmp_pat
     assert code_on == 2, "the control: with the guards on, the same fault fails closed"
 
 
-# --- the machine config is the owner's: an agent cannot write it (scope guard, crew 1.3.94) ---------------------
+# --- the machine config is the owner's: an agent cannot write it (scope guard, crew 1.3.96) ---------------------
 
 def _machine_path(home):
     return os.path.join(home, ".claude", "crew", "config.json")
@@ -518,7 +518,7 @@ def test_the_owners_files_are_protected_outside_a_work_tree_too(tmp_path):
     assert blocked(_run("PreToolUse", payload, str(bare), str(home)))
 
 
-# --- the receipt is bound to the confirmations and to the file (crew 1.3.94) --------------------------------------
+# --- the receipt is bound to the confirmations and to the file (crew 1.3.96) --------------------------------------
 
 def _case_bare_record(path):
     _receipt(path, confirmations=[], digest=None)
@@ -561,27 +561,58 @@ def test_a_forged_or_bare_record_leaves_the_guards_on(seed, armed):
     assert crew_hook.machine_switch_unconfirmed(root, home) is True, seed.__name__
 
 
+def _write_later(path, body):
+    """Write `body` to `path` and make sure its modification time moved (a coarse clock can give two quick writes
+    the same stamp, and the test is about the second write, not about the clock)."""
+    before = os.stat(path).st_mtime_ns
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(body if isinstance(body, str) else json.dumps(body))
+    if os.stat(path).st_mtime_ns == before:
+        os.utime(path, ns=(before + 10**9, before + 10**9))
+
+
 def test_a_false_hand_written_after_the_owner_applied_one_does_not_count(armed):
     """The receipt backs the file AS THE OWNER LEFT IT. Anything that changes it afterwards (the key set true and
     back to false by hand, a restore, a rebuild, an unrelated edit) leaves the old receipt backing nothing."""
     root, home = armed
     path = _off(home)
     assert crew_hook.guards_switched_off(root, home) == "machine"
-    _machine_config(home, {"guards": {"enabled": True}})
+    _write_later(path, {"guards": {"enabled": True}})
     assert crew_hook.guards_switched_off(root, home) is None
-    _machine_config(home, {"guards": {"enabled": False}, "tier": "y"})
+    _write_later(path, {"guards": {"enabled": False}, "tier": "y"})
     assert crew_hook.guards_switched_off(root, home) is None, "a hand-written false over a changed file"
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump({"guards": {"enabled": False}}, handle)
-    assert crew_hook.guards_switched_off(root, home) == "machine", "the owner's content again: the receipt backs it"
 
 
-def test_a_reformatted_file_with_the_same_content_still_counts(armed):
-    """Canonical: whitespace and key order do not move the digest."""
+def test_the_round_trip_replay_does_not_count(armed):
+    """Round 2 left this open: the owner confirmed `false`, a hand edit set `true` (no hand edit writes a revoke),
+    a second hand edit wrote the IDENTICAL `false` back, and the digest of the content matched the receipt again.
+    The receipt now binds the modification time too, so any later write, even of the same bytes, ends it."""
     root, home = armed
-    _off(home, {"b": 1, "guards": {"enabled": False}, "a": 2})
-    _machine_config(home, '{\n  "a": 2,\n\t"guards": {"enabled": false},\n  "b": 1}\n')
+    path = _off(home)
     assert crew_hook.guards_switched_off(root, home) == "machine"
+    _write_later(path, {"guards": {"enabled": True}})
+    assert crew_hook.guards_switched_off(root, home) is None
+    _write_later(path, {"guards": {"enabled": False}})
+    assert crew_hook.guards_switched_off(root, home) is None, "the owner's bytes written again must not replay"
+    assert crew_hook.machine_switch_unconfirmed(root, home) is True
+
+
+def test_the_same_content_written_again_does_not_count_even_when_reformatted(armed):
+    root, home = armed
+    path = _off(home, {"b": 1, "guards": {"enabled": False}, "a": 2})
+    _write_later(path, '{\n  "a": 2,\n\t"guards": {"enabled": false},\n  "b": 1}\n')
+    assert crew_hook.guards_switched_off(root, home) is None
+
+
+def test_the_digest_is_canonical_in_its_content_half_and_binds_the_modification_time(tmp_path):
+    """Whitespace and key order do not move the content half; a rewrite moves the time half."""
+    first, second = tmp_path / "a.json", tmp_path / "b.json"
+    first.write_text('{"b": 1, "guards": {"enabled": false}}', encoding="utf-8")
+    second.write_text('{\n "guards": {"enabled": false},\n "b": 1}', encoding="utf-8")
+    one, two = crew_hook.canonical_digest(str(first)), crew_hook.canonical_digest(str(second))
+    assert one.split("@")[0] == two.split("@")[0]
+    assert one.split("@")[1] == str(os.stat(first).st_mtime_ns)
+    assert crew_hook.canonical_digest(str(tmp_path / "absent.json")) is None
 
 
 def test_a_forged_bare_record_does_not_stand_the_dispatcher_down(armed):
@@ -591,7 +622,7 @@ def test_a_forged_bare_record_does_not_stand_the_dispatcher_down(armed):
     assert blocked(_run("PreToolUse", MUST_BLOCK["env-guard"], root, home))
 
 
-# --- the owner's files through a shell: indirect forms are refused, reads still pass (crew 1.3.94) ----------------
+# --- the owner's files through a shell: indirect forms are refused, reads still pass (crew 1.3.96) ----------------
 
 @pytest.fixture(name="home_env")
 def _home_env(tmp_path, monkeypatch):
@@ -631,6 +662,45 @@ SHELL_MUST_BLOCK = [
     "pwsh -c \"Set-Content (Join-Path $HOME '.claude/crew/config.json') '{}'\"",
     "Copy-Item x $env:USERPROFILE\\.claude\\crew\\config.json",
     "cd %USERPROFILE%\\.claude\\crew && echo x > config.json",
+    # round 3: the plain verbs aimed at the owner's file
+    "copy x.json ~/.claude/crew/config.json",
+    "cmd /c copy /y x.json %USERPROFILE%\\.claude\\crew\\config.json",
+    "move x.json ~/.claude/crew/config.json",
+    "Move-Item x.json ~/.claude/crew/config.json -Force",
+    "mi x.json ~/.claude/crew/config.json",
+    "cpi x.json ~/.claude/crew/config.json",
+    "ren ~/.claude/crew/config.json c.bak",
+    "del ~/.claude/crew/config.json",
+    "Remove-Item ~/.claude/crew/confirm-config -Recurse",
+    "rm -rf ~/.claude/crew",
+    "xcopy x ~/.claude/crew /y",
+    "robocopy x ~/.claude/crew config.json",
+    "curl -o ~/.claude/crew/config.json http://x/y",
+    "wget -O ~/.claude/crew/config.json http://x/y",
+    "iwr http://x/y -OutFile ~/.claude/crew/config.json",
+    "Invoke-WebRequest http://x/y -OutFile ~/.claude/crew/config.json",
+    "tar -xf a.tar -C ~/.claude/crew",
+    "unzip a.zip -d ~/.claude/crew",
+    "Expand-Archive a.zip -DestinationPath ~/.claude/crew -Force",
+    "patch ~/.claude/crew/config.json p.diff",
+    "git -C ~/.claude/crew apply p.diff",
+    "cd ~/.claude/crew && git apply p.diff",
+    "cmd /c mklink /J lnk ~/.claude/crew",
+    "awk -i inplace '{print}' ~/.claude/crew/config.json",
+    "vim -es -c wq ~/.claude/crew/config.json",
+    "Add-Content ~/.claude/crew/config.json x",
+    "echo x | Out-File ~/.claude/crew/config.json",
+    "bash -c 'echo x > ~/.claude/crew/config.json'",
+    "echo hi; echo x >> ~/.claude/crew/config.json",
+    "echo x > \"$HOME/.claude/crew/config.json\"",
+    "cat > ~/.claude/crew/config.json <<'EOF'\n{}\nEOF",
+    "echo $(echo x > ~/.claude/crew/config.json)",
+    "pwsh -NoProfile -Command \"'{}' > ~/.claude/crew/config.json\"",
+    "dd if=x.bin of=~/.claude/crew/config.json",
+    "New-Item -ItemType Junction -Path lnk -Target ~/.claude/crew",
+    # inline code that names the owner's files only by a glob
+    "python3 -c \"import glob; open(glob.glob('/h/.claude/c*/x')[0], 'w').write('x')\"",
+    "python3 -c \"import glob; open(glob.glob('~/.cl*/cr*/co*')[0], 'w').write('x')\"",
 ]
 SHELL_MUST_ALLOW = [
     "cat ~/.claude/crew/config.json",
@@ -650,6 +720,36 @@ SHELL_MUST_ALLOW = [
     "git commit -m 'document the crew config key'",
     "git mv plugin/crew/commands/confirm-config.md /tmp/confirm-config.md.bak",
     "echo 'type /crew:confirm-config twice' > note.txt",
+    # round 3: a command that only MENTIONS the owner's files, or writes elsewhere in the same line
+    "git commit -m \"set ~/.claude/crew/config.json -> off\"",
+    "gh pr create --title t --body \"guards.enabled in ~/.claude/crew/config.json => off\"",
+    "ls ~/.claude/crew/ > /tmp/ls.txt",
+    "cat ~/.claude/crew/config.json | tee out.json",
+    "rm -f tmp.txt; cat ~/.claude/crew/config.json",
+    "grep -rn confirm-config plugin/crew > found.txt",
+    "grep -rn '.claude/crew' docs > found.txt",
+    "echo 'see .claude and crew config' > notes.txt",
+    "Get-Content ~/.claude/crew/config.json; Set-Content ./report.txt x",
+    "cp ~/.claude/crew/config.json /tmp/config.json.bak",
+    "cp ~/.claude/crew/config.json ./config.json.bak",
+    "type ~\\.claude\\crew\\config.json",
+    "jq .guards ~/.claude/crew/config.json",
+    "stat ~/.claude/crew/config.json",
+    "python3 -c \"print(open('~/.claude/crew/config.json').read())\"",
+    "python3 crew_config.py --show --global-path ~/.claude/crew/config.json",
+    "python3 -m pytest plugin/crew/tests/test_guards_master.py -q",
+    "pytest plugin/crew/tests -k confirm-config",
+    "git grep confirm-config -- plugin/crew",
+    "git -C ~/.claude/crew status",
+    "git log --oneline -3 && echo done > /tmp/x.txt",
+    "gh pr create --body \"$(cat <<'EOF'\nthe machine config ~/.claude/crew/config.json -> false\nopen(p, 'w').write(x)\nEOF\n)\"",
+    "node ./tool.exe --version",
+    "echo ok 2>&1 > /dev/null",
+    "echo \"wrote > ~/.claude/crew/confirm-config/cc-1.json\" > notes.txt",
+    # inline code that writes a repo file named like the owner's, or only mentions the slash command
+    "python3 -c \"open('.crew/config.json', 'w').write('x')\"",
+    "python3 -c \"open('plugin/crew/commands/confirm-config.md', 'w').write('x')\"",
+    "python3 -c \"open('n.txt', 'w').write('type /crew:confirm-config twice')\"",
 ]
 
 
@@ -675,31 +775,64 @@ def test_an_indirect_write_is_refused_by_the_dispatcher_in_both_scope_modes(comm
     assert blocked(_run("PreToolUse", _tool("Bash", command=command), bare_root, bare_home)), command
 
 
-def test_a_helper_script_that_writes_the_owners_files_is_refused_when_run(home_env, tmp_path):
-    """Write a helper (allowed: it is a repo file), then run it: the run is where its text is judged."""
+def test_a_script_is_never_opened_so_an_unreadable_or_huge_one_refuses_nothing(home_env, tmp_path):
+    """The owner's order: the crew runs every normal command. Round 2 refused any local script over 1 MB (11
+    repo scripts, `node big.js`, `./tool.exe`); the script text is no longer read at all, so a script that
+    writes the owner's file by a path it hides is an accepted limit, documented in CONFIG.md."""
     import scope_guard  # pylint: disable=import-outside-toplevel
+    big = tmp_path / "big.js"
+    big.write_bytes(b"x" * (2 * 1024 * 1024))
+    odd = tmp_path / "odd.py"
+    odd.write_bytes(b"\xff\xfe\x00 not text")
+    (tmp_path / "tool.exe").write_bytes(b"MZ" + b"\0" * (3 * 1024 * 1024))
+    for command in ("node big.js", "python3 odd.py", "./tool.exe", "dotnet ./tool.exe", "./tool.exe --version",
+                    "python3 missing.py", "bash scripts/menu-groups.sh"):
+        assert scope_guard._owner_command_refusal(command, str(tmp_path)) is None, command  # pylint: disable=protected-access
     helper = tmp_path / "helper.py"
-    helper.write_text("import os\np = os.path.join(os.path.expanduser('~'), '.claude', 'crew', 'config.json')\n"
-                      "open(p, 'w').write('{\"guards\": {\"enabled\": false}}')\n", encoding="utf-8")
-    for command in ("python3 helper.py", "python helper.py && echo done", "bash -c true; python3 ./helper.py"):
-        assert scope_guard._owner_command_refusal(command, str(tmp_path)), command  # pylint: disable=protected-access
-    harmless = tmp_path / "harmless.py"
-    harmless.write_text("print('hello')\n", encoding="utf-8")
-    assert scope_guard._owner_command_refusal("python3 harmless.py", str(tmp_path)) is None  # pylint: disable=protected-access
-    reader = tmp_path / "reader.py"
-    reader.write_text("import os\np = os.path.join(os.path.expanduser('~'), '.claude', 'crew', 'config.json')\n"
-                      "print(open(p).read())\n", encoding="utf-8")
-    assert scope_guard._owner_command_refusal("python3 reader.py", str(tmp_path)) is None  # pylint: disable=protected-access
+    helper.write_text("open('~/.claude/crew/config.json', 'w').write('x')\n", encoding="utf-8")
+    assert scope_guard._owner_command_refusal("python3 helper.py", str(tmp_path)) is None  # pylint: disable=protected-access
 
 
-def test_a_script_that_is_not_crews_is_refused_with_the_owners_files_named_beside_it(home_env, tmp_path):
+def test_the_repo_scripts_round_two_refused_run_again(home_env):
+    """Round 2 refused these 11 repo scripts (over its 1 MB limit); they must run now."""
     import scope_guard  # pylint: disable=import-outside-toplevel
-    (tmp_path / "crew_config.py").write_text("print('an agent wrote this one')\n", encoding="utf-8")
-    command = "python3 crew_config.py --show --global-path ~/.claude/crew/config.json"
-    assert scope_guard._owner_command_refusal(command, str(tmp_path))  # pylint: disable=protected-access
-    own = os.path.join(rgh.SCRIPTS, "crew_config.py")
-    assert scope_guard._owner_command_refusal(  # pylint: disable=protected-access
-        f"python3 {own} --show --global-path ~/.claude/crew/config.json", str(tmp_path)) is None
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    for name in ("scripts/check-tooling-pr.py", "scripts/check_instructions.py", "scripts/ci-select.py",
+                 "scripts/crew-outcome-eval.py", "scripts/_test/ci-select.py", "scripts/_test/config-reference.py",
+                 "scripts/_test/crew-outcome-eval.py", "scripts/_test/instruction-budgets.py",
+                 "scripts/menu-groups.sh", "scripts/install-prerequisites.sh", "scripts/install-prerequisites.ps1"):
+        launcher = "pwsh -File" if name.endswith(".ps1") else "bash" if name.endswith(".sh") else "python3"
+        assert scope_guard._owner_command_refusal(f"{launcher} {name}", root) is None, name  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("path", [
+    "\\\\?\\{c}", "//?/{c}", "\\\\.\\{c}", "\\\\?\\{s}\\cc-00000000.json", "{c}.", "{c} ",
+    "{c_upper}", "{home}\\.claude\\crew\\..\\crew\\config.json", "{home}/./.claude/crew/config.json"])
+@pytest.mark.parametrize("tool", ["Write", "Edit", "NotebookEdit"])
+def test_every_spelling_of_the_owners_path_is_refused_for_write_edit_and_notebookedit(tool, path, home_env):
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    home = str(home_env)
+    config = os.path.join(home, ".claude", "crew", "config.json")
+    store = os.path.join(home, ".claude", "crew", "confirm-config")
+    if os.name != "nt" and path in ("{c}.", "{c} ", "{c_upper}"):
+        pytest.skip("trailing dots, spaces and case are the same file on Windows only")
+    spelled = path.format(c=config, s=store, c_upper=config.upper(), home=home)
+    key = "notebook_path" if tool == "NotebookEdit" else "file_path"
+    payload = {"tool_name": tool, "tool_input": {key: spelled}, "cwd": home}
+    code = scope_guard._owner_files_only(tool, payload, home)  # pylint: disable=protected-access
+    assert code == 2, (tool, spelled)
+
+
+def test_the_refusal_of_the_owners_files_does_not_offer_crew_approve(home_env, capsys):
+    """Round 2 said "Approval is recorded when the USER types /crew:approve <id>" for these files, which is
+    misleading: no ticket approval makes a write to them legitimate."""
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    config = os.path.join(str(home_env), ".claude", "crew", "config.json")
+    for tool, payload in (("Bash", {"command": f"echo x > {config}"}), ("Write", {"file_path": config})):
+        capsys.readouterr()
+        assert scope_guard._owner_files_only(tool, {"tool_name": tool, "tool_input": payload}, str(home_env)) == 2  # pylint: disable=protected-access
+        err = capsys.readouterr().err
+        assert "owner" in err and "Approval is recorded" not in err and "/crew:approve <id>" not in err, err
 
 
 @pytest.mark.parametrize("text, says_off", [

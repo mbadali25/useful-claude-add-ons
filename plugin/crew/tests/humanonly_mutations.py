@@ -165,7 +165,7 @@ HUMANONLY_MUTATIONS = (
      "",
      _L + "test_the_session_cannot_write_the_confirmation_store"),
     ("humanOnly live: a shell command may write the confirmation store", SCOPE,
-     "    if named and _writes(command):\n",
-     "    if False:\n",
+     '    for target in seg.targets:\n        if _hit(target, shell, "file"):\n',
+     '    for target in seg.targets:\n        if False and _hit(target, shell, "file"):\n',
      _L + "test_the_session_cannot_write_the_confirmation_store"),
 )
