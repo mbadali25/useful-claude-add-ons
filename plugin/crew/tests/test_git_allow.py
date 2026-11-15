@@ -2225,7 +2225,7 @@ def test_round13_a_tilde_inside_a_C_value_is_a_name_not_an_expansion():
     for value in ("foo~bar", "PROGRA~1"):
         commands = crew_gitallow.line_git_commands(f"git -C {value} status", "bash")
         assert crew_gitallow.line_targets(commands, ".") is not None
-    assert crew_gitallow.line_targets([["-C", "~x", "status"]], ".") is None
+    assert crew_gitallow.line_targets([["-C", "~x", "status"]], ".") is not None  # round 14
 
 
 def test_round13_a_newer_builtin_is_held_when_the_installed_git_lacks_it(monkeypatch):
@@ -2278,6 +2278,126 @@ def test_round13_a_duplicate_deploy_key_is_not_promote_exempt_committed(
         _promote_dispatch.committed_envs()
     _arm(machine, "all")
     assert crew_gitallow.promote_exempt("git push prod main", "bash", str(root)) is False
+
+
+# --- review round 14 (Codex gpt-6-sol re-review of crew 1.3.121) -------------------------
+
+def test_round14_the_cwd_repo_veto_is_read(tmp_path, machine):
+    """BLOCK 1: a command with no `-C` runs in the directory the line runs in, and
+    that repo's veto is read; a cwd crew cannot read as a work tree is off."""
+    project = make_repo(tmp_path, mode=None)
+    cwd_repo = make_repo(tmp_path, mode=None, name="cwdrepo")
+    _arm(machine, "all")
+    line = "git push -f origin main"
+    assert crew_gitallow.line_plan(line, "bash", str(project), str(cwd_repo))["allow"] == "all"
+    (cwd_repo / ".crew" / "config.json").write_text(
+        json.dumps({"guards": {"git": {"allow": "off"}}}), encoding="utf-8")
+    plan = crew_gitallow.line_plan(line, "bash", str(project), str(cwd_repo))
+    assert plan["allow"] == "off" and not plan["subs"]
+    # the same veto through the cloud guard: the hook's cwd is the vetoing repo
+    result = cloud_guard.evaluate(str(project), "Bash", line, {"cwd": str(cwd_repo)}, "block")
+    assert result["decision"] == "deny", result
+    # a veto in the cwd does not touch a command that acts elsewhere with -C
+    assert crew_gitallow.line_plan(f"git -C {project.as_posix()} status", "bash",
+                                   str(project), str(cwd_repo))["allow"] == "all"
+    # a cwd that is not a work tree (or does not exist) is "could not tell": off
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    for base in (plain, tmp_path / "nope"):
+        assert crew_gitallow.line_plan(line, "bash", str(project), str(base))["allow"] == "off"
+    assert crew_gitallow.line_plan(line, "bash", str(project), "")["allow"] == "off"
+    assert crew_gitallow.line_targets([["status"]], "") is None
+
+
+def test_round14_a_cwd_inside_the_project_is_not_a_second_repo(tmp_path, machine):
+    project = make_repo(tmp_path, mode=None)
+    _arm(machine, "all")
+    sub = project / "src"
+    assert crew_gitallow.line_plan("git status", "bash", str(project), str(sub))["allow"] == "all"
+
+
+@pytest.mark.parametrize("deploy,shell", [
+    (r"g\it push prod main", "bash"), ('"g"it push prod main', "bash"),
+    ("'g'it push prod main", "bash"), ("g`it push prod main", "powershell")])
+def test_round14_an_escaped_git_deploy_is_not_promote_exempt(
+        tmp_path, machine, monkeypatch, deploy, shell):
+    """BLOCK 2: the shell reads the escaped deploy as `git`, so the declared-deploy
+    check must too (it fails closed on an escape or quote that hides `git`)."""
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    verify = json.loads((root / ".crew" / "verify.json").read_text(encoding="utf-8"))
+    verify["environments"]["remote"]["deploy"] = deploy
+    (root / ".crew" / "verify.json").write_text(json.dumps(verify), encoding="utf-8")
+    for command in ("git push prod main", deploy):
+        assert crew_gitallow.promote_exempt(command, shell, str(root)) is False, command
+    # a deploy that is not git at all, escaped or not, leaves the exemption alone
+    verify["environments"]["remote"]["deploy"] = r"d\eploy-prod --x"
+    (root / ".crew" / "verify.json").write_text(json.dumps(verify), encoding="utf-8")
+    assert crew_gitallow.promote_exempt("git status", shell, str(root)) is True
+
+
+def test_round14_a_config_value_after_C_is_not_config_injection():
+    assert crew_gitallow.hold(["-C", "-c", "status"]) is None
+    assert crew_gitallow.hold(["-C", "x", "-c", "a=b", "status"])
+    assert crew_gitallow.hold(["-c", "a=b", "status"])
+    assert crew_gitallow.hold(["--git-dir", "-c", "status"]) is None
+    assert crew_gitallow.hold(["-C", "x", "--exec-path=y", "status"])
+
+
+@pytest.mark.parametrize("args", [
+    ["push", "-o", "--receive-pack=x", "origin", "main"],
+    ["push", "-o", "ext::echo", "origin", "main"],
+    ["push", "--push-option", "--receive-pack=x", "origin", "main"],
+    ["push", "--push-option=ext::echo", "origin", "main"],
+    ["push", "-oext::echo", "origin", "main"],
+    ["push", "-fo", "--receive-pack=x", "origin", "main"]])
+def test_round14_a_push_option_value_is_not_an_option_or_a_url(args):
+    assert crew_gitallow.hold(args) is None, args
+
+
+@pytest.mark.parametrize("args", [
+    ["push", "--receive-pack=x", "origin", "main"],
+    ["push", "-o", "x", "--receive-pack=y", "origin", "main"],
+    ["push", "-o", "x", "ext::echo", "main"],
+    ["push", "-o", "x", "--", "ext::echo", "main"],
+    ["push", "--", "-o", "ext::echo"], ["push", "-ofoo", "--receive-pack=x", "origin"],
+    ["fetch", "-o", "--upload-pack=x", "origin"]])
+def test_round14_a_real_option_or_url_beside_a_push_option_is_still_held(args):
+    assert crew_gitallow.hold(args), args
+
+
+@pytest.mark.parametrize("command", [
+    "git push -ofoo origin main", "git push -ouf origin main", "git push -uofoo origin main",
+    "git push -ofd origin main"])
+def test_round14_an_attached_push_option_value_is_no_force_push(tmp_path, command):
+    assert cloud_guard._git_force_push(command.split()[1:]) is None  # pylint: disable=protected-access
+    root = make_repo(tmp_path, mode=None)
+    assert not _rules(_evaluate(root, command), "forcePush"), command
+
+
+@pytest.mark.parametrize("command", [
+    "git push -fofoo origin main", "git push -dofoo origin main", "git push -ufofoo origin main",
+    "git push -of -f origin main"])
+def test_round14_a_force_before_an_attached_push_option_value_is_still_a_force_push(
+        tmp_path, command):
+    assert cloud_guard._git_force_push(command.split()[1:])  # pylint: disable=protected-access
+    root = make_repo(tmp_path, mode=None)
+    assert _rules(_evaluate(root, command), "forcePush"), command
+
+
+def test_round14_a_quoted_tilde_in_a_C_value_is_a_literal_name():
+    """The readers refuse an UNQUOTED leading `~` (it expands), so one that reaches
+    `target_dirs` was quoted or escaped and is a plain directory name."""
+    for command, shell in (("git -C '~repo' status", "bash"), ('git -C "~repo" status', "bash"),
+                           (r"git -C \~repo status", "bash"), ("git -C '~repo' status", "powershell")):
+        commands = crew_gitallow.line_git_commands(command, shell)
+        assert crew_gitallow.line_targets(commands, ".") is not None, command
+        assert crew_gitallow.target_dirs(commands[0]) == ("~repo",), command
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_git_commands("git -C ~repo status", shell) is None
 
 
 # --- the mutation table ----------------------------------------------------------------

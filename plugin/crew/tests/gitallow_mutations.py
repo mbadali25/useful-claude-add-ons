@@ -45,6 +45,14 @@ had no word after `--` that starts with `-`. One new row was DELETED before it s
 `azureProfile.json` strict reader, reverted because `sabotage_cloud.py` (harness) anchors on that
 line. The total is 141.
 
+Review round 14 (Codex gpt-6-sol re-review of crew 1.3.121) added 18 red mutations (the cwd repo's veto, the
+escaped git deploy and its three stripped characters, the `-C` value read as config, push option values in five
+spellings and on every subcommand, an attached `-o` value in the cloud guard) and re-pointed four (the round 13 tilde
+row, now its inverse; the global `-c` row; the declared-deploy row; the unseen `-C` target row). The first run measured
+THREE rows wrong: two anchors lost to the rewrite, and the round 13 `-o` bundle row STILL GREEN because the new
+attached-value branch makes its mid-word case dead; that code was cut to the last-letter case and the row re-pointed.
+A promote-exempt row also stayed green until the escape branch required an escape to be present. The total is 159.
+
 NOT wired into `sabotage.py`'s MUTATIONS: `sabotage*.py` is review harness
 (`scripts/check-tooling-pr.py` `HARNESS`), and a harness change lands alone. Until
 a harness-only change registers this table, run it with sabotage.py's own
@@ -224,8 +232,8 @@ GITALLOW_MUTATIONS = (
      "settings(root, global_path, store)",
      _T + "test_promote_exempt_reads_the_target_repo_veto"),
     ("gitAllow: a global -c / --config-env / --exec-path is not read", GA,
-     "        if word != \"-C\" and _INJECT_GLOBAL_RE.match(word):\n",
-     "        if False:\n",
+     "        elif word != \"-C\" and _INJECT_GLOBAL_RE.match(word):\n",
+     "        elif False:\n",
      _T + "test_a_git_command_with_its_own_config_or_command_is_not_line_exempt"),
     ("gitAllow: filter-branch / instaweb are not held", GA,
      "    if sub in _RUNS_ALWAYS:\n",
@@ -298,8 +306,8 @@ GITALLOW_MUTATIONS = (
      "        if False:\n",
      _T + "test_line_exempt"),
     ("gitAllow: a declared git deploy is exempted too", GA,
-     "            if _GIT_IN_DEPLOY_RE.search(declared) and",
-     "            if False and",
+     "            if _GIT_IN_DEPLOY_RE.search(declared):\n",
+     "            if False:\n",
      _T + "test_gate_python_exemption_in_process"),
     ("promote gate (bash): the switch is not asked", PG,
      "        if self.git_allowed():\n            return 0\n",
@@ -543,8 +551,8 @@ GITALLOW_MUTATIONS = (
      "                != os.path.normcase(os.path.realpath(where))):\n",
      _T + "test_round9_a_chained_dot_dot_through_a_symlink_is_not_a_target"),
     ("gitAllow r9: line_targets ignores an unseen -C target", GA,
-     "            if target is UNSEEN:\n                return None\n",
-     "            if target is UNSEEN:\n                continue\n",
+     "        if target is UNSEEN:\n            return None\n",
+     "        if target is UNSEEN:\n            continue\n",
      _T + "test_round9_a_chained_dot_dot_through_a_symlink_is_not_a_target"),
     ("gitAllow r9: a PowerShell %X Y% word is plain", GA,
      "_PS_PERCENT_RE = re.compile(r\"%[^%]+%\")",
@@ -647,8 +655,14 @@ GITALLOW_MUTATIONS = (
      "        # A remote-helper URL",
      _T + "test_round13_a_remote_helper_url_is_held"),
     ("gitAllow r13: _toplevel reads text mode again", GA,
-     "capture_output=True, timeout=10, check=False, env=env)\n    except (OSError, subprocess.SubprocessError):\n        return None\n    # Only the line",
-     "capture_output=True, text=True, timeout=10, check=False, env=env)\n    except (OSError, subprocess.SubprocessError):\n        return None\n    # Only the line",
+     ("capture_output=True, timeout=10, check=False, env=env)\n"
+      "    except (OSError, subprocess.SubprocessError):\n"
+      "        return None\n"
+      "    # Only the line"),
+     ("capture_output=True, text=True, timeout=10, check=False, env=env)\n"
+      "    except (OSError, subprocess.SubprocessError):\n"
+      "        return None\n"
+      "    # Only the line"),
      _T + "test_round13_toplevel_reads_bytes_and_keeps_a_carriage_return"),
     ("gitAllow r13: _toplevel strips a CR before the LF on every host", GA,
      '        if os.name == "nt" and raw.endswith(b"\\r"):',
@@ -687,8 +701,14 @@ GITALLOW_MUTATIONS = (
      "        if arg in ():\n            skip = True\n            continue\n",
      _T + "test_round13_an_inert_option_or_an_option_value_is_no_force_push"),
     ("gitAllow r13: a -o bundle's attached value is read as flags", CG,
-     '                if letter == "o":  # the rest of the word is -o\'s value\n                    skip = pos == len(arg) - 1\n                    break\n',
-     '                if letter == "o":  # the rest of the word is -o\'s value\n                    skip = pos == len(arg) - 1\n',
+     ('                if letter == "o":  # last letter (an `o` before it was handled above):\n'
+      '                    skip = True  # -o\'s value is the next word\n'
+      '                    break\n'
+      ''),
+     ('                if letter == "o":  # last letter (an `o` before it was handled above):\n'
+      '                    skip = False  # -o\'s value is the next word\n'
+      '                    break\n'
+      ''),
      _T + "test_round13_an_inert_option_or_an_option_value_is_no_force_push"),
     ("gitAllow r13: a value after -- is not read as a refspec", CG,
      '        if ended or not arg.startswith("-") or arg == "-":\n',
@@ -702,12 +722,85 @@ GITALLOW_MUTATIONS = (
      "        elif word in _GIT_VALUE_OPTS:\n            skip = True\n",
      "        elif word in ():\n            skip = True\n",
      _T + "test_round13_a_value_taking_global_value_is_not_a_pager_option"),
-    ("gitAllow r13: a tilde inside a -C value is read as an expansion", GA,
-     'value.startswith("~") or any(c in value for c in "$`*?")',
-     'any(c in value for c in "$`~*?")',
-     _T + "test_round13_a_tilde_inside_a_C_value_is_a_name_not_an_expansion"),
+    ("gitAllow r14: a quoted leading tilde in a -C value is read as an expansion", GA,
+     'if not value or any(c in value for c in "$`*?"):',
+     'if not value or value.startswith("~") or any(c in value for c in "$`*?"):',
+     _T + "test_round14_a_quoted_tilde_in_a_C_value_is_a_literal_name"),
     ("gitAllow r13: a newer built-in is trusted without asking the installed git", GA,
      "    if isinstance(named, str) and sub in _NEWER_BUILTINS and not _git_has_builtin(sub):\n",
      "    if False:\n",
      _T + "test_round13_a_newer_builtin_is_held_when_the_installed_git_lacks_it"),
+    ("gitAllow r14: the cwd repo's veto is not read for a command with no -C", GA,
+     '        if not dirs and not base:\n            return None\n',
+     '        if not dirs:\n            continue\n',
+     _T + 'test_round14_the_cwd_repo_veto_is_read'),
+    ('gitAllow r14: a command with no -C and no base reads the process cwd', GA,
+     '        if not dirs and not base:\n            return None\n',
+     '',
+     _T + 'test_round14_the_cwd_repo_veto_is_read'),
+    ('gitAllow r14: a deploy hiding git behind an escape or quote is not refused', GA,
+     ('            elif (_SHELL_ESCAPE_RE.search(declared)\n'
+      '                  and _GIT_IN_DEPLOY_RE.search(_SHELL_ESCAPE_RE.sub("", declared))):\n'),
+     '            elif False:\n',
+     _T + 'test_round14_an_escaped_git_deploy_is_not_promote_exempt'),
+    ('gitAllow r14: a backslash is not stripped from a declared deploy', GA,
+     '_SHELL_ESCAPE_RE = re.compile(r"[\\\\\'\\"`]")',
+     '_SHELL_ESCAPE_RE = re.compile(r"[\'\\"`]")',
+     _T + 'test_round14_an_escaped_git_deploy_is_not_promote_exempt'),
+    ('gitAllow r14: a quote is not stripped from a declared deploy', GA,
+     '_SHELL_ESCAPE_RE = re.compile(r"[\\\\\'\\"`]")',
+     '_SHELL_ESCAPE_RE = re.compile(r"[\\\\`]")',
+     _T + 'test_round14_an_escaped_git_deploy_is_not_promote_exempt'),
+    ('gitAllow r14: a backtick is not stripped from a declared deploy', GA,
+     '_SHELL_ESCAPE_RE = re.compile(r"[\\\\\'\\"`]")',
+     '_SHELL_ESCAPE_RE = re.compile(r"[\\\\\'\\"]")',
+     _T + 'test_round14_an_escaped_git_deploy_is_not_promote_exempt'),
+    ('gitAllow r14: a -C value is read as a config option', GA,
+     '    skip = False\n    for word in words:\n        if skip:\n            skip = False\n        elif word != "-C"',
+     '    skip = False\n    for word in words:\n        if False:\n            skip = False\n        elif word != "-C"',
+     _T + 'test_round14_a_config_value_after_C_is_not_config_injection'),
+    ('gitAllow r14: push option values are read as options and URLs', GA,
+     '    rest = _without_push_option_values(sub, rest)\n',
+     '',
+     _T + 'test_round14_a_push_option_value_is_not_an_option_or_a_url'),
+    ('gitAllow r14: push option values are dropped on every subcommand', GA,
+     '    if sub != "push":\n        return rest\n',
+     '',
+     _T + 'test_round14_a_real_option_or_url_beside_a_push_option_is_still_held'),
+    ('gitAllow r14: words after -- are dropped like option values', GA,
+     '        elif word == "--":\n            out.extend(rest[index - 1:])\n            break\n',
+     '',
+     _T + 'test_round14_a_real_option_or_url_beside_a_push_option_is_still_held'),
+    ("gitAllow r14: --push-option's next word is not its value", GA,
+     '        elif word == "--push-option":\n            skip = True\n',
+     '        elif word == "--push-option":\n            pass\n',
+     _T + 'test_round14_a_push_option_value_is_not_an_option_or_a_url'),
+    ('gitAllow r14: --push-option=v is not dropped', GA,
+     '        elif word.startswith("--push-option="):\n            pass\n',
+     '        elif word.startswith("--push-option=") and False:\n            pass\n',
+     _T + 'test_round14_a_push_option_value_is_not_an_option_or_a_url'),
+    ('gitAllow r14: a short bundle ending in o does not take the next word', GA,
+     '            skip = word.index("o") == len(word) - 1\n',
+     '            skip = False\n',
+     _T + 'test_round14_a_push_option_value_is_not_an_option_or_a_url'),
+    ('gitAllow r14: a short bundle with an attached o value takes the next word too', GA,
+     '            skip = word.index("o") == len(word) - 1\n',
+     '            skip = True\n',
+     _T + 'test_round14_a_real_option_or_url_beside_a_push_option_is_still_held'),
+    ('gitAllow r14: an attached -o value is read as -f', CG,
+     '        if not arg.startswith("--") and "o" in arg[1:-1]:\n',
+     '        if False:\n',
+     _T + 'test_round14_an_attached_push_option_value_is_no_force_push'),
+    ('gitAllow r14: the flags before an attached -o value are not read', CG,
+     '            flags = arg[1:arg.index("o")]\n',
+     '            flags = arg[1:2]\n',
+     _T + 'test_round14_a_force_before_an_attached_push_option_value_is_still_a_force_push'),
+    ('gitAllow r14: -d before an attached -o value is not a delete', CG,
+     '            if "f" in flags or "d" in flags:\n',
+     '            if "f" in flags:\n',
+     _T + 'test_round14_a_force_before_an_attached_push_option_value_is_still_a_force_push'),
+    ('gitAllow r14: the flags of an attached -o word are all read', CG,
+     '            flags = arg[1:arg.index("o")]\n',
+     '            flags = arg[1:]\n',
+     _T + 'test_round14_an_attached_push_option_value_is_no_force_push'),
 )

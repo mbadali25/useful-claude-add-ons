@@ -390,6 +390,37 @@ def _option_hit(word, option):
 _HELPER_URL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*::")
 
 
+def _without_push_option_values(sub, rest):
+    """`rest` (the words after the subcommand) without `git push`'s push-option
+    values: `-o <v>`, `--push-option <v>`, `--push-option=<v>` and a short bundle
+    carrying `-o` (`-ofoo`, `-fo <v>`). A push option is a string the remote
+    reads, not an option of this command or a URL, so `-o --receive-pack=x` and
+    `-o ext::echo` run nothing (round 14, finding 4). Only these exact spellings
+    are dropped, and only before `--`: dropping a word that is a real option or
+    URL would be the unsafe direction, so an abbreviation of `--push-option`
+    stays read as written."""
+    if sub != "push":
+        return rest
+    out, skip, index = [], False, 0
+    while index < len(rest):
+        word = rest[index]
+        index += 1
+        if skip:
+            skip = False
+        elif word == "--":
+            out.extend(rest[index - 1:])
+            break
+        elif word == "--push-option":
+            skip = True
+        elif word.startswith("--push-option="):
+            pass
+        elif word.startswith("-") and not word.startswith("--") and "o" in word:
+            skip = word.index("o") == len(word) - 1
+        else:
+            out.append(word)
+    return out
+
+
 def hold(args):
     """Why a git command may never be exempted, or None. `args` are its words
     after `git`, already read as plain literals by `plain_commands` (the one
@@ -397,15 +428,15 @@ def hold(args):
     withhold is a literal option or subcommand that hands git config or a
     command line of its own."""
     words, index = _global_split(list(args))
-    for word in words:
-        if word != "-C" and _INJECT_GLOBAL_RE.match(word):
-            return f"it hands git config or a program of its own ({word.split('=', 1)[0]})"
     # A value-taking global's value is not an option: `git -C -p status` runs in
-    # a directory named `-p` (round 13, finding 6).
+    # a directory named `-p` (round 13, finding 6), and `git -C -c status` in one
+    # named `-c` (round 14, finding 3).
     skip = False
     for word in words:
         if skip:
             skip = False
+        elif word != "-C" and _INJECT_GLOBAL_RE.match(word):
+            return f"it hands git config or a program of its own ({word.split('=', 1)[0]})"
         elif word in _GIT_VALUE_OPTS:
             skip = True
         elif word in _HELPER_GLOBALS:
@@ -428,6 +459,7 @@ def hold(args):
     if sub == "config" and not _config_is_read(rest):
         return ("`git config` that is not plainly a read may set an alias or a program "
                 "a later git command runs")
+    rest = _without_push_option_values(sub, rest)
     for word in rest:
         # A remote-helper URL (`ext::cmd`, `fd::3`, `foo::bar` = git-remote-foo
         # from PATH) runs a program, and sits anywhere a URL may: after `--`
@@ -455,7 +487,7 @@ def target_dirs(args):
     """The literal `-C` directories of a git argument list, in order, or
     `UNSEEN` when crew cannot tell which repository it acts on: a
     `--git-dir` / `--work-tree` (`=` form too), or a `-C` value that is
-    built at run time (`$`, a backtick, `~`)."""
+    built at run time (`$`, a backtick, a glob character)."""
     words, _index = _global_split(list(args))
     out = []
     for position, word in enumerate(words):
@@ -463,9 +495,11 @@ def target_dirs(args):
             return UNSEEN
         if word == "-C":
             value = words[position + 1] if position + 1 < len(words) else None
-            # A tilde expands only at the start of a word: `foo~bar` and
-            # Windows' `PROGRA~1` are plain names (round 13, finding 6).
-            if not value or value.startswith("~") or any(c in value for c in "$`*?"):
+            # No leading-`~` test: both readers (`plain_commands`) refuse an UNQUOTED
+            # word that starts with `~` (it expands), so one that reaches here was
+            # quoted or escaped and is a literal directory name; `foo~bar` and
+            # Windows' `PROGRA~1` are plain names too (rounds 13 and 14).
+            if not value or any(c in value for c in "$`*?"):
                 return UNSEEN
             out.append(value)
     return tuple(out)
@@ -1117,18 +1151,23 @@ def line_git_commands(command, shell):
 
 
 def line_targets(git_commands, base):
-    """Every `-C` target of a line's git commands, resolved from `base` (the
-    directory the line runs in), or None when one cannot be told."""
+    """The directory each git command of a line acts in: its `-C` target(s)
+    resolved from `base` (the directory the line runs in), or `base` itself for
+    a command with no `-C` (round 14, finding 1: a veto in the repo the command
+    RUNS in is read too). None when one cannot be told: an unreadable `-C`, or
+    no `base` for a command that needs it. `settings` then reads each as a repo
+    that must be a work tree it can read."""
     out = []
     for args in git_commands:
         dirs = target_dirs(args)
         if dirs is UNSEEN:
             return None
-        if dirs:
-            target = resolve_target(base, dirs)
-            if target is UNSEEN:
-                return None
-            out.append(target)
+        if not dirs and not base:
+            return None
+        target = resolve_target(base, dirs) if dirs else os.path.abspath(base)
+        if target is UNSEEN:
+            return None
+        out.append(target)
     return tuple(out)
 
 
@@ -1148,9 +1187,9 @@ def line_exempt(command, shell, setting):
 
 def line_plan(command, shell, root, base, global_path=None, store=None):
     """`{"allow": setting, "subs": frozenset}` for the cloud guard: the
-    setting in force for `command`'s line (its `-C` targets' repo files read
-    too, from `base`) and the subcommands of its git commands, when the line
-    is `line_exempt`; else `{"allow": OFF, "subs": frozenset()}`. Never
+    setting in force for `command`'s line (the repo files of the directory each
+    command acts in read too: its `-C` target, else `base`, the cwd) and the
+    subcommands of its git commands, when the line is `line_exempt`; else `{"allow": OFF, "subs": frozenset()}`. Never
     raises."""
     none = {"allow": OFF, "subs": frozenset()}
     try:
@@ -1180,6 +1219,11 @@ def finding_exempt(plan, scope):
 
 _GIT_IN_DEPLOY_RE = re.compile(r"(?:^|[\s;&|(`'\"/\\])git(?:\.exe)?(?=[\s'\"]|$)",
                                re.IGNORECASE)
+
+
+# The characters a shell drops from a word before it runs it: `g\it`, `"g"it`
+# and PowerShell's g`it are all `git` (round 14, finding 2).
+_SHELL_ESCAPE_RE = re.compile(r"[\\'\"`]")
 
 
 def _declared_deploys():
@@ -1224,7 +1268,13 @@ def promote_exempt(command, shell, root=".", global_path=None, store=None):
         import _promote_dispatch  # pylint: disable=import-outside-toplevel
         folded = _promote_dispatch.fold(command)
         for declared in _declared_deploys():
-            if _GIT_IN_DEPLOY_RE.search(declared) and _promote_dispatch.fold(declared) in folded:
+            if _GIT_IN_DEPLOY_RE.search(declared):
+                if _promote_dispatch.fold(declared) in folded:
+                    return False
+            elif (_SHELL_ESCAPE_RE.search(declared)
+                  and _GIT_IN_DEPLOY_RE.search(_SHELL_ESCAPE_RE.sub("", declared))):
+                # `g\it push prod main`: an escape or quote that only hides `git`
+                # from the pattern. Crew does not compare spellings; it fails closed.
                 return False
         return True
     except Exception:  # noqa: BLE001  # pylint: disable=broad-except

@@ -2085,20 +2085,27 @@ def _git_force_push(args):
         if arg in ("--force", "--force-with-lease") \
                 or arg.startswith("--force-with-lease=") or _force_long_option(arg):
             return f"git push {arg}"
+        # A short bundle with `-o` before its last letter carries `-o`'s value attached
+        # (`-ofoo`, `-uofoo`): only the letters BEFORE the `o` are flags, so `-ofoo` is no
+        # `-f` (git reads the rest of the word as the push option; round 14, finding 5).
+        if not arg.startswith("--") and "o" in arg[1:-1]:
+            flags = arg[1:arg.index("o")]
+            if "f" in flags or "d" in flags:
+                return f"git push {arg}"
+            continue
         # The pattern sabotage_cloud.py's "clustered short flags (-uf)" row anchors on
-        # (a harness file, so this line keeps its shape). It also reads the `f` of an
-        # attached `-o` value (`-ofoo`) as `-f`: that only withholds.
+        # (a harness file, so this line keeps its shape).
         if re.match(r"^-[a-zA-Z]*f[a-zA-Z]*$", arg):
             return f"git push {arg}"
         if arg in _PUSH_VALUE_OPTS:
             skip = True
             continue
         if not arg.startswith("--"):
-            for pos, letter in enumerate(arg[1:], 1):
+            for letter in arg[1:]:
                 if letter == "d":
                     return f"git push {arg}"
-                if letter == "o":  # the rest of the word is -o's value
-                    skip = pos == len(arg) - 1
+                if letter == "o":  # last letter (an `o` before it was handled above):
+                    skip = True  # -o's value is the next word
                     break
     # A leading `+` on any refspec forces that ref; a leading `:` (`:topic`)
     # deletes it on the remote. Every positional is checked, not only those
