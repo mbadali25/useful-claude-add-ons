@@ -527,6 +527,8 @@ def direct_plan(argv, payload, raw, env, scripts, executable=None):
     if not os.path.isfile(module):
         return None
     cwd, extra, stdin = None, {}, raw
+    if argv[0] == "completion-audit.sh":
+        stdin = raw.replace(b"\x00", b"")  # `INPUT=$(cat)` drops NULs, so python is handed what the wrapper hands it
     if argv[0] == "approval-hook.sh" and not _approval_wanted(raw):
         return _SKIP
     if argv[0] == "completion-audit.sh" and _audit_scope_unknown(env):
@@ -552,8 +554,10 @@ _SESSION_ID = re.compile(rb'.*"session_id"' + _WS + rb":" + _WS + rb'"([A-Za-z0-
 
 
 def _flat(raw):
-    """`tr -d '\\r\\n'`: the payload on one line, as the wrapper's greps and sed see it."""
-    return raw.replace(b"\r", b"").replace(b"\n", b"")
+    """`tr -d '\\r\\n'` on what bash's `INPUT=$(cat)` kept: the payload on one line, as the wrapper's greps and sed
+    see it. Command substitution drops NUL bytes, so they go first: `stop_hook_ac<NUL>tive` is the key
+    `stop_hook_active` to the wrapper."""
+    return raw.replace(b"\x00", b"").replace(b"\r", b"").replace(b"\n", b"")
 
 
 def _posix_cksum(data):
@@ -576,11 +580,15 @@ def _audit_scope_unknown(env):
     """True when the wrapper's marker cannot be named from `env` alone, so the direct route must not guess:
     the wrapper hashes `${CLAUDE_PROJECT_DIR:-$PWD}` (a POSIX path python cannot reproduce from os.getcwd()), and
     with TMPDIR set to a directory that does not exist it fails open ("no marker could be written") where a
-    python fallback to the system temp directory would block. An unknown is not the safe-looking value."""
+    python fallback to the system temp directory would block. With TMPDIR unset or empty the wrapper names
+    `/tmp`, a POSIX path whose Windows directory python cannot know (it is %TEMP% on the measured Git Bash, not
+    proven everywhere); a native clear under tempfile.gettempdir() could miss the wrapper's marker and the next
+    wrapper failure would then read it as "already blocked" and fail open. An unknown is not the safe-looking
+    value."""
     if not env.get("CLAUDE_PROJECT_DIR"):
         return True
     tmp = env.get("TMPDIR") or ""
-    return bool(tmp) and not os.path.isdir(tmp)
+    return not tmp or not os.path.isdir(tmp)
 
 
 def _audit_marker(raw, env):
@@ -590,7 +598,7 @@ def _audit_marker(raw, env):
     sid = found.group(1).decode("ascii") if found else "nosession"
     project = env.get("CLAUDE_PROJECT_DIR") or ""
     tmp = env.get("TMPDIR") or ""
-    tmp = tmp if tmp and os.path.isdir(tmp) else tempfile.gettempdir()
+    tmp = tmp if tmp and os.path.isdir(tmp) else tempfile.gettempdir()  # the unset case never gets here: see above
     return os.path.join(tmp, f"crew-completion-audit.{sid}-{_posix_cksum(project.encode('utf-8'))}")
 
 

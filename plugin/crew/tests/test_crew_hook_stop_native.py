@@ -246,12 +246,13 @@ def test_the_marker_name_is_the_one_the_wrapper_writes(tmp_path):
 
 
 @pytest.mark.parametrize("env", [{}, {"CLAUDE_PROJECT_DIR": ""}], ids=["unset", "empty"])
-def test_direct_plan_defers_the_audit_to_the_wrapper_when_the_project_dir_is_unknown(env):
+def test_direct_plan_defers_the_audit_to_the_wrapper_when_the_project_dir_is_unknown(env, tmp_path):
     """The wrapper hashes `${CLAUDE_PROJECT_DIR:-$PWD}` (a POSIX path); python's os.getcwd() is another string,
     so a marker named from it could split the blocked-once count between the two routes."""
     got = crew_hook.direct_plan([AUDIT], {}, _stop("/x"), env, SCRIPTS)
     assert got is None
-    assert crew_hook.direct_plan([AUDIT], {}, _stop("/x"), {"CLAUDE_PROJECT_DIR": "/x"}, SCRIPTS) is not None
+    assert crew_hook.direct_plan([AUDIT], {}, _stop("/x"),
+                                  {"CLAUDE_PROJECT_DIR": "/x", "TMPDIR": str(tmp_path)}, SCRIPTS) is not None
 
 
 def test_direct_plan_defers_the_audit_when_tmpdir_is_not_a_directory(tmp_path):
@@ -261,6 +262,49 @@ def test_direct_plan_defers_the_audit_when_tmpdir_is_not_a_directory(tmp_path):
     assert crew_hook.direct_plan([AUDIT], {}, _stop(tmp_path), env, SCRIPTS) is None
     env["TMPDIR"] = str(tmp_path)
     assert crew_hook.direct_plan([AUDIT], {}, _stop(tmp_path), env, SCRIPTS) is not None
+
+
+@pytest.mark.parametrize("env_tmp", [None, ""], ids=["unset", "empty"])
+def test_direct_plan_defers_the_audit_when_tmpdir_is_unset_or_empty(tmp_path, env_tmp):
+    """The wrapper names its marker under `${TMPDIR:-/tmp}`; python can only reproduce `/tmp` as
+    tempfile.gettempdir(), which is another directory wherever Git Bash maps /tmp elsewhere. A clear in one place
+    and a marker in the other would make the next wrapper failure read a stale marker and fail open."""
+    env = {"CLAUDE_PROJECT_DIR": str(tmp_path)}
+    if env_tmp is not None:
+        env["TMPDIR"] = env_tmp
+    assert crew_hook.direct_plan([AUDIT], {}, _stop(tmp_path), env, SCRIPTS) is None
+    env["TMPDIR"] = str(tmp_path)
+    assert crew_hook.direct_plan([AUDIT], {}, _stop(tmp_path), env, SCRIPTS) is not None
+
+
+NUL = bytes(1)  # bash's `INPUT=$(cat)` drops these, so the wrapper reads the joined text
+
+
+def test_a_nul_inside_the_stop_hook_active_key_is_a_continuation_as_in_the_wrapper(audit_only, monkeypatch, tmp_path):
+    spy = Spy(monkeypatch)
+    payload = b'{"session_id":"s","stop_hook_ac' + NUL + b'tive":true}'
+    marker = crew_hook._audit_marker(payload, {"CLAUDE_PROJECT_DIR": str(tmp_path), "TMPDIR": str(tmp_path)})  # pylint: disable=protected-access
+    with open(marker, "w", encoding="utf-8"):
+        pass
+
+    code, _, _ = _dispatch(tmp_path, payload, tmp_path)
+
+    assert code == 0 and spy.calls == [], spy.calls
+    assert not os.path.exists(marker)
+
+
+def test_a_nul_inside_the_session_id_names_the_joined_marker_and_the_audit_is_not_handed_it(audit_only, monkeypatch,
+                                                                                            tmp_path):
+    env = {"CLAUDE_PROJECT_DIR": str(tmp_path), "TMPDIR": str(tmp_path)}
+    split = b'{"session_id":"s' + NUL + b'id"}'
+    joined = b'{"session_id":"sid"}'
+    assert crew_hook._audit_marker(split, env) == crew_hook._audit_marker(joined, env)  # pylint: disable=protected-access
+    assert "nosession" not in crew_hook._audit_marker(split, env)  # pylint: disable=protected-access
+    spy = Spy(monkeypatch)
+
+    _dispatch(tmp_path, split, tmp_path)
+
+    assert len(spy.direct()) == 1 and spy.direct()[0]["raw"] == joined
 
 
 def test_an_unset_project_dir_sends_the_audit_to_the_wrapper(audit_only, monkeypatch, tmp_path):
@@ -293,10 +337,12 @@ def test_crash_verdict_crash_with_no_project_dir_blocks_the_third_stop_as_the_wr
         results.append(_dispatch(project, payload, tmp, scripts=scripts, deadline_s=400, bash=h.BASH,
                                  real_env=True, env_extra={"CLAUDE_PROJECT_DIR": ""}))
 
-    # the clean-verdict step cannot be judged when the wrapper's own python probe timed out on a loaded host
-    why = _wrapper_host_slow(results[1][2])
-    if why:
-        pytest.skip(why)
+    # no step can be judged when the wrapper's own run timed out on a loaded host: a timeout is exit 2 as well,
+    # so the first and third stops would pass their assertions for the wrong reason
+    for number, result in enumerate(results):
+        why = _wrapper_host_slow(result[2])
+        if why:
+            pytest.skip(f"stop {number}: {why}")
     assert results[0][0] == 2 and results[1][0] == 0, results
     assert results[2][0] == 2 and "Not blocking again" not in results[2][2], results[2]
 
@@ -419,28 +465,61 @@ def test_the_native_route_blocks_and_allows_as_the_audit_decides(name, mutate, w
 
 
 HOST_SLOW_LABELS = (
-    ("UNKNOWN (guard timeout", "the wrapper timed out"),
-    ("UNKNOWN (no usable python",
+    (crew_hook.UNKNOWN_TIMEOUT, "the wrapper timed out"),
+    (crew_hook.UNKNOWN_PYTHON,
      "the wrapper's 3 s python probe (crew_py_strict) timed out and was reported as 'no usable python'"),
 )
 
 
+def _python_on_path():
+    """True when the names the wrapper's python probe walks (`crew_py_strict`) resolve on this process's PATH,
+    which the real-env dispatches copy. When it is False a 'no usable python' is TRUE, not a slow host."""
+    return any(shutil.which(name) for name in ("python3", "python", "py"))
+
+
 def _wrapper_host_slow(stderr):
-    """A skip reason when the WRAPPER side shows an UNKNOWN that a loaded host explains, else None. Any real
-    verdict returns None, so a mismatch still fails."""
+    """A skip reason when the WRAPPER side shows an UNKNOWN that a loaded host explains, else None. The label must
+    be a whole line, exactly the one the dispatcher writes (a denial that merely quotes the words, in a file
+    name for one, is a verdict and fails the comparison), and 'no usable python' counts only where python IS on
+    PATH, so a genuinely missing python is not skipped. Any real verdict returns None."""
+    lines = [line.rstrip("\r") for line in stderr.splitlines()]
     for label, what in HOST_SLOW_LABELS:
-        if label in stderr:
-            return (f"{what} on this host (a Git Bash + python probe takes tens of seconds when it is loaded, the "
-                    "fork cost this change removes): the wrapper's verdict was NOT compared")
+        if label not in lines:
+            continue
+        if label == crew_hook.UNKNOWN_PYTHON and not _python_on_path():
+            continue
+        return (f"{what} on this host (a Git Bash + python probe takes tens of seconds when it is loaded, the "
+                "fork cost this change removes): the wrapper's verdict was NOT compared")
     return None
 
 
 def test_the_host_slow_guard_skips_only_on_a_wrapper_unknown():
-    assert "no usable python" in _wrapper_host_slow("crew-hook: UNKNOWN (no usable python, not a policy deny)")
-    assert "timed out" in _wrapper_host_slow("crew-hook: UNKNOWN (guard timeout 60s)")
+    assert "no usable python" in _wrapper_host_slow(crew_hook.UNKNOWN_PYTHON)
+    assert "timed out" in _wrapper_host_slow(os.linesep.join(["COMPLETION AUDIT: x", crew_hook.UNKNOWN_TIMEOUT, ""]))
+    assert "timed out" in _wrapper_host_slow(crlf("COMPLETION AUDIT: x", crew_hook.UNKNOWN_TIMEOUT))
     # a genuinely different verdict must not be skipped
     assert _wrapper_host_slow("crew: BLOCKED - completion audit found unfinished work") is None
     assert _wrapper_host_slow("") is None
+
+
+def crlf(*lines):
+    return "".join(line + chr(13) + chr(10) for line in lines)
+
+
+def test_the_host_slow_guard_does_not_skip_a_denial_that_quotes_a_label():
+    quoted = os.linesep.join([
+        "completion audit: BLOCKED: out-of-scope file docs/UNKNOWN (guard timeout).md",
+        "COMPLETION AUDIT: see 'UNKNOWN (no usable python' in the notes",
+        "  " + crew_hook.UNKNOWN_TIMEOUT,  # indented: not the dispatcher's line either
+        ""])
+    assert _wrapper_host_slow(quoted) is None
+    assert _wrapper_host_slow(f"x {crew_hook.UNKNOWN_PYTHON}") is None
+
+
+def test_the_host_slow_guard_does_not_skip_a_genuinely_missing_python(monkeypatch):
+    monkeypatch.setattr(shutil, "which", lambda _name: None)
+    assert _wrapper_host_slow(crew_hook.UNKNOWN_PYTHON) is None
+    assert "timed out" in _wrapper_host_slow(crew_hook.UNKNOWN_TIMEOUT)  # a timeout is still a slow host
 
 
 @pytestmark_git
