@@ -272,7 +272,7 @@ Columns:
 
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
-| `verify.stopBudgetSeconds` | repo | `60` | whole number of seconds, 1 to 600, or null (coerced in `plugin/crew/hooks/scripts/verify-gate.sh`) | 1.3.117 | How many seconds the Stop row of the verify gate (`verify-gate.sh`, `verify-gate.ps1`) may spend running rules, cheapest first, before it defers the rest to CI and names them. Default 60, which is what the gate used before the key was settable. A write must be a whole number from 1 to 600 (the Stop hook's own timeout); anything else is refused, never stored as a value the gate would quietly replace with 60. null removes the setting. Repo file only: what a rule costs is a fact about the checkout. `--all` and `--ci` ignore it. A hand-edited value the gate cannot use (a string, a boolean, a negative) still reads as 60, never as no limit. |
+| `verify.stopBudgetSeconds` | repo | `60` | whole number of seconds, 1 to 600, or null (coerced in `plugin/crew/hooks/scripts/verify-gate.sh`) | 1.3.127 | How many seconds the Stop row of the verify gate (`verify-gate.sh`, `verify-gate.ps1`) may spend running rules, cheapest first, before it defers the rest to CI and names them. Default 60, which is what the gate used before the key was settable. A write must be a whole number from 1 to 600 (the Stop hook's own timeout); anything else is refused, never stored as a value the gate would quietly replace with 60. null removes the setting. Repo file only: what a rule costs is a fact about the checkout. `--all` and `--ci` ignore it. A hand-edited value the gate cannot use (a string, a boolean, a negative) still reads as 60, never as no limit. |
 
 ### `reaper`
 

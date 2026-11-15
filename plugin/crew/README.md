@@ -207,7 +207,7 @@ The last verified commit (`.crew/.verify-verified-at`) is the diff base only whe
 is on HEAD's history; one left by another branch is replaced by its merge-base with HEAD, and one sharing no history
 with HEAD is refused. Every marker and baseline file the gate reads is trimmed first, so one written with
 CRLF line endings is read as the commit it names instead of being silently ignored.
-`verify.stopBudgetSeconds` (default 60) is a settable repo key since 1.3.117: `/crew:config verify.stopBudgetSeconds 120`
+`verify.stopBudgetSeconds` (default 60) is a settable repo key since 1.3.127: `/crew:config verify.stopBudgetSeconds 120`
 takes a whole number from 1 to 600 and refuses anything else, naming the range, instead of storing a value the gate would replace with 60.
 
 **Fill in the `CLAUDE.md`.** The template leaves blanks on purpose: build and test commands, where the entry point lives, which directories are off limits, and the landmine that breaks every time someone touches it. Thirty lines beats three hundred, because every line is re-read on every delegation.

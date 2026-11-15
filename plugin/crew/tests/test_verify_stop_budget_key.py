@@ -1,6 +1,6 @@
 """`verify.stopBudgetSeconds` is a settable, documented, bounded config key (thd-jobs 5a).
 
-Before crew 1.3.117 the verify gate READ the key (`verify-gate.sh`, default 60) but the key was in
+Before crew 1.3.127 the verify gate READ the key (`verify-gate.sh`, default 60) but the key was in
 no template, so `crew_config` refused every write of it as "not a settable leaf of
 .crew/config.json" and the budget could only be tuned by hand-editing the file. These cases hold:
 
@@ -59,7 +59,7 @@ def test_key_is_repo_only():
 
 def test_key_has_a_documented_row_and_the_upper_bound_is_the_stop_hook_timeout():
     row = crew_keys.KEY_META[KEY]
-    assert row["since"] == "1.3.117" and row["kind"] == "type"
+    assert row["since"] == "1.3.127" and row["kind"] == "type"
     stop = [r for r in crew_hook.TABLE if r.script == "verify-gate.sh"]
     assert [r.event for r in stop] == ["Stop"]
     assert crew_state.STOP_BUDGET_BOUNDS == (1, stop[0].timeout)

@@ -512,10 +512,10 @@ not errors, and neither blocks the turn:
 
 A rule that runs inside the budget and fails still exits 2, whatever was deferred beside it.
 
-**Tuning the budget (crew 1.3.117).** If a rule you want at Stop keeps landing in `deferred to CI`,
+**Tuning the budget (crew 1.3.127).** If a rule you want at Stop keeps landing in `deferred to CI`,
 raise the budget instead of editing code: `/crew:config verify.stopBudgetSeconds 120`. It takes a whole
 number from 1 to 600 (the Stop hook's own timeout is 600 s) and refuses anything else, naming the range.
-If a write is refused with "not a settable leaf" you are on a crew older than 1.3.117. A value you typed
+If a write is refused with "not a settable leaf" you are on a crew older than 1.3.127. A value you typed
 into `.crew/config.json` by hand that the gate cannot use (a string, a boolean, a negative) is read as
 60, never as no limit.
 

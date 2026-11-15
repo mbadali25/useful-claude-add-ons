@@ -308,7 +308,7 @@ def default_config():
         # both layers (a slow host is a fact of the machine; a repo may differ); null
         # derives it from the guard's hook timeout. Read by `_promote_gate.py`.
         "promote": copy.deepcopy(crew_state.PROMOTE_DEFAULTS),
-        # crew 1.3.117. The Stop row's verify budget, read by verify-gate.sh/.ps1. REPO ONLY: a
+        # crew 1.3.127. The Stop row's verify budget, read by verify-gate.sh/.ps1. REPO ONLY: a
         # rule's price is a fact about the checkout, so `default_global_config` omits `verify`.
         # Writes are bounded by `crew_state.STOP_BUDGET_BOUNDS` (`value_allowed`).
         "verify": copy.deepcopy(crew_state.VERIFY_DEFAULTS),

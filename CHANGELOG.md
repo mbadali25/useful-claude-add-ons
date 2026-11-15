@@ -90,9 +90,9 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Added — crew 1.3.117: `verify.stopBudgetSeconds` is a settable, documented, bounded config key (thd-jobs 5a)
+### Added — crew 1.3.127: `verify.stopBudgetSeconds` is a settable, documented, bounded config key (thd-jobs 5a)
 
-- **Summary.** `crew` 1.3.117: the Stop gate's verify budget can now be tuned with `/crew:config verify.stopBudgetSeconds 120` instead of hand-editing the file; the default stays 60 and a value that is not a whole number from 1 to 600 is refused.
+- **Summary.** `crew` 1.3.127: the Stop gate's verify budget can now be tuned with `/crew:config verify.stopBudgetSeconds 120` instead of hand-editing the file; the default stays 60 and a value that is not a whole number from 1 to 600 is refused.
 - **Cause (verified, on origin/main 1.3.96).** `verify-gate.sh` read `verify.stopBudgetSeconds` but no template declared it, so `crew_config.value_allowed("verify.stopBudgetSeconds", "repo", 30)` returned "not a settable leaf of .crew/config.json" and every write was refused.
 - **Fix.** `crew_state.VERIFY_DEFAULTS` (`{"stopBudgetSeconds": 60}`, the number the gate already fell back to) is declared in `crew_config.default_config()` only, so the key is repo-only; `crew_config.bounds_problem` (`INT_BOUNDS`) refuses anything but a whole number in `crew_state.STOP_BUDGET_BOUNDS` (1 to 600, the Stop row's hook timeout, held to `crew_hook.TABLE` by a test) with the value and the range named, and the file is left as it was. `null` removes the key. A key row, both templates and `crew-setup`'s copy carry it.
 - **Not changed.** The reader (`verify-gate.sh`, a review-harness path that must land alone) still turns a hand-edited value it cannot use into 60, never into no limit; making that side fail loudly is a separate harness-only change.

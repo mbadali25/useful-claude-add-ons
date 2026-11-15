@@ -440,7 +440,7 @@ author-family reviewer unless `--same-family "<reason>"` labels the round.
 
 ## Why some keys are repo-only
 
-Repo-only keys are refused in the global file by `plan_global_write`, and pruned out of it by `filter_global` if some other tool wrote one. Each is a fact about one repository or one checkout. `verify.stopBudgetSeconds` is read by the verify gate and, since crew 1.3.117, declared in the repo default only (not the global one); its default is `60`.
+Repo-only keys are refused in the global file by `plan_global_write`, and pruned out of it by `filter_global` if some other tool wrote one. Each is a fact about one repository or one checkout. `verify.stopBudgetSeconds` is read by the verify gate and, since crew 1.3.127, declared in the repo default only (not the global one); its default is `60`.
 
 
 `context.reserveTokens: null` means *off*, and survives as `null` — this is the
@@ -2277,7 +2277,7 @@ verified is NOT a config setting — it is per-rule fields inside
 machine-local record the gate keeps for itself. Documented here rather than
 invented as new config keys, because that is what it actually is.
 
-**`verify.stopBudgetSeconds` is settable (crew 1.3.117).** The gate always read it, but no template
+**`verify.stopBudgetSeconds` is settable (crew 1.3.127).** The gate always read it, but no template
 declared it, so `crew_config` refused every write as "not a settable leaf" and the budget could only
 be changed by editing the file by hand. It is now declared in the repo default (`60`, the number the
 gate already fell back to) and a write is bounded: a whole number from 1 to 600 (the Stop hook's own

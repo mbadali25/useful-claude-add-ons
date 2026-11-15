@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.117**: `verify.stopBudgetSeconds` is a settable, documented, bounded config key (thd-jobs 5a). `crew` 1.3.117: the Stop gate's verify budget can now be tuned with `/crew:config verify.stopBudgetSeconds 120` instead of hand-editing the file; the default stays 60 and a value that is not a whole number from 1 to 600 is refused.
+- **crew 1.3.127**: `verify.stopBudgetSeconds` is a settable, documented, bounded config key (thd-jobs 5a). `crew` 1.3.127: the Stop gate's verify budget can now be tuned with `/crew:config verify.stopBudgetSeconds 120` instead of hand-editing the file; the default stays 60 and a value that is not a whole number from 1 to 600 is refused.
 - **crew 1.3.96**: The verify-trust store lock no longer fails a writer whose rival released the lock at the wrong moment. `crew` 1.3.96: with several writers at once, `verify_trust.py approve` could intermittently print `cannot take the store lock: OSError` and exit 1 (the approval was not recorded); a writer now waits and retries instead. No update was ever lost and the lock never admitted two writers.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

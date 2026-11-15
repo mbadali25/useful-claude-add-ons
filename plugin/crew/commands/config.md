@@ -94,7 +94,7 @@ How it writes, whatever the arguments say:
   wins) or `null`: how long `promote-gate.sh` may run, counted from the moment its
   shell began. null derives it from the guard's hook timeout less 4 s (16 of 20). A value above
   the timeout less 2 s is clamped to that; zero, a negative, a string or a boolean reads as null.
-- **`verify.stopBudgetSeconds` (crew 1.3.117).** Repo layer only. A whole number from 1 to 600 (default
+- **`verify.stopBudgetSeconds` (crew 1.3.127).** Repo layer only. A whole number from 1 to 600 (default
   60, what the gate already used): the seconds the Stop row of the verify gate may spend before it
   defers the rest to CI. Anything else (0, a negative, over 600, a float, a string, a boolean) is
   refused with the range named, not stored; `null` or `--unset` removes it. `--all` and `--ci` ignore it.
