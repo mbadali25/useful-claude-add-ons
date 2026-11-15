@@ -238,6 +238,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- BEGIN CHANGELOG.md -->
 
 - **crew 1.3.99**: The Stop completion audit runs in Python on Windows, not through Git Bash. `crew` 1.3.96 stops the Stop-time completion audit from starting about twenty Git Bash processes on Windows: it now runs its Python directly, finishing in about a second and a half where the Git Bash route took 40-49 s and could run out of its 60 s limit.
+- **crew 1.3.96**: The verify-trust store lock no longer fails a writer whose rival released the lock at the wrong moment. `crew` 1.3.96: with several writers at once, `verify_trust.py approve` could intermittently print `cannot take the store lock: OSError` and exit 1 (the approval was not recorded); a writer now waits and retries instead. No update was ever lost and the lock never admitted two writers.
+- **crew 1.3.95**: The verify-gate trust docs match what the junction check does, and the Windows short-name fallback is proven to accept. `crew` 1.3.95: the trust-store documentation no longer says a repository below a junctioned parent directory is always UNTRUSTED (only a linked worktree whose recorded path runs through a junction is), and a test now proves a genuine 8.3 short-name worktree is still trusted on Windows.
 - **crew 1.3.75**: The mass delete, create and change guard (`guards.mass`) is gone, not just off. `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
