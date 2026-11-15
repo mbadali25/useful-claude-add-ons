@@ -93,12 +93,12 @@ meaningful only with `scope.mode` `block`.
 
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.111) turns EVERY guard hook off: the promote
+`guards.enabled: false` (crew 1.3.117) turns EVERY guard hook off: the promote
 gate, the role-write, cloud, environment and scope guards, the verify gate, the
 completion audit and the context-watch Stop hook. None of them starts, so nothing
 is judged, refused, asked, warned or logged: with the switch off, nothing blocks. It
 beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mode`,
-`verifyGate`). Three things must all hold for it to count (crew 1.3.111):
+`verifyGate`). Three things must all hold for it to count (crew 1.3.117):
 
 - It is in the MACHINE layer (`~/.claude/crew/config.json`). A `false` in
   `.crew/config.json`, tracked or not, is ignored and the guards stay on (a
@@ -108,7 +108,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   applied `/crew:confirm-config` double confirmation backs it: two confirmations
   from two prompts the owner typed, and the digest of the machine file as the
   owner left it: its content (canonical JSON) AND its modification time (crew
-  1.3.111). An agent's Write or Edit, a hook-side write, a hand edit, a bare
+  1.3.117). An agent's Write or Edit, a hook-side write, a hand edit, a bare
   hand-written receipt, or ANY later write to the file (a restore, a rebuild, an
   unrelated edit, or a hand edit that sets the key `true` and a later one that
   writes the identical `false` back) leaves the guards ON; so does a missing,
@@ -126,7 +126,13 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   inplace`, a `[IO.File]::WriteAllText` (or `[System.IO.File]::`, any write member: `AppendAll*`, `Copy`, `Move`, `Delete`, `Create`, `Replace`, and `Open` with a write mode such as `Create`, `Append` or `ReadWrite`) with the path spelled out, aimed at them (spelled out, or through `cd`, a variable,
   a glob or a path built from `.claude`, `crew` and `config.json`), or inline
   code (`python -c`, a heredoc, `pwsh -Command`) that names them beside a write
-  call, in every `scope.mode` (`off`, the default, included). A command that only
+  call, in every `scope.mode` (`off`, the default, included). A shell word is judged against the owner's REAL
+  path (this machine's home), never a suffix of it, so `C:/other/.claude/crew/config.json` is another file. Every
+  spelling of one path is read as that path: trailing dots and spaces on any folder (`crew.\config.json`), an NTFS
+  stream (`::$DATA`, `::$INDEX_ALLOCATION`), `/c/`, `/mnt/c/` and `/cygdrive/c/` drive folders, `\\?\`, an 8.3 short name (`CREW~1`), a link or junction, a brace expansion, and ANY glob that can
+  match a receipt (`cc-1*.json`, `cc-?*`, `cc-[0-9]*`) or anything else below the store. `patch --dry-run` (`--check`,
+  `-C`) writes nothing and passes. A word the shell cannot resolve (an unset variable, a `$` share) is judged by
+  how it ENDS, component by component. A command that only
   MENTIONS them (a commit message, a PR body, `ls ~/.claude/crew/ > out.txt`,
   `cat config.json | tee out.json`) passes, and so does an unrelated write in the
   same line; reading them (`cat`, `jq`, `stat`, `crew_config.py --show`) passes.

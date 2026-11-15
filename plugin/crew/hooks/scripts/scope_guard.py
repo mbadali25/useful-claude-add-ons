@@ -11,7 +11,7 @@ the payload in, so the two shells cannot disagree.
    the key gets), or the cwd is no work tree -> exit 0 before anything else is
    read, EXCEPT that a Write/Edit of, or a shell write to, the owner's own
    files (the machine config `~/.claude/crew/config.json` and the
-   confirm-config store beside it) is still refused (crew 1.3.111): those hold
+   confirm-config store beside it) is still refused (crew 1.3.117): those hold
    `guards.enabled` and its receipts, and a guard that stood down with
    `scope.mode` would let an agent write both.
 2. A target under `<git-common-dir>/crew/` -- approval receipts, the review
@@ -207,6 +207,9 @@ _BASH_CONTINUATION_RE = re.compile(r"\\\r?\n")
 _PS_CONTINUATION_RE = re.compile(r"`\r?\n")
 _DOTGIT_CREW_RE = re.compile(r"\.git[\\/]+crew\b|git-common-dir\b.*\bcrew\b",
                              re.IGNORECASE | re.DOTALL)
+# The double-confirmation store (`crew_humanonly.store_dir`): a shell command naming `confirm-config/` beside a
+# writing word is refused (#679's check, restored in round 8: the merge had kept only the target-based check).
+_CONFIRM_STORE_RE = re.compile(r"confirm-config[\\/]", re.IGNORECASE)
 # A redirect (not into /dev/null, $null or another descriptor), or a word
 # that writes files. Reading crew's state -- `cat`, `Get-Content` -- passes.
 _WRITES_RE = re.compile(
@@ -547,14 +550,14 @@ def confirm_store():
 
 def machine_config():
     """The machine config file (`~/.claude/crew/config.json`), which holds `guards.enabled`, the switch that
-    stands every guard down (crew 1.3.111). Like `confirm_store`, spelled here so this guard imports no config
+    stands every guard down (crew 1.3.117). Like `confirm_store`, spelled here so this guard imports no config
     module."""
     return os.path.join(os.path.expanduser("~"), ".claude", "crew", "config.json")
 
 
 def _owner_path(path):
     """True for the owner's own files: the double-confirmation store and the machine config, which holds
-    `guards.enabled` (crew 1.3.111)."""
+    `guards.enabled` (crew 1.3.117)."""
     return _under(path, confirm_store()) or os.path.normcase(path) == os.path.normcase(machine_config())
 
 
@@ -856,10 +859,15 @@ def _reading_refusal(command, written, common, top, agent_type=None):
         state and os.path.normcase(state).replace("\\", "/") in folded)
     if names_state and _WRITES_RE.search(command) and not _read_only(command):
         return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
+    store = os.path.normcase(confirm_store()).replace("\\", "/")
+    if ((_CONFIRM_STORE_RE.search(command) or store in folded)
+            and _WRITES_RE.search(command) and not _read_only(command)):
+        return ("it writes under the confirm-config store, the receipts of the owner's "
+                "double confirmation")
     return _owner_command_refusal(command, top)
 
 
-# --- the owner's files, through a shell (crew 1.3.111, target-based since the round-3 owner decision) ------------
+# --- the owner's files, through a shell (crew 1.3.117, target-based since the round-3 owner decision) ------------
 # A command is refused when something in it WRITES TO the owner's files: a redirect, or the argument a write verb
 # aims at (`tee`, `cp`, `mv`, `rm`, `sed -i`, `Set-Content`, `curl -o`, `tar -C`, `git apply` ...), or inline code
 # (`python -c`, a heredoc) that names them beside a write call. A command that merely MENTIONS them -- a commit
@@ -1098,16 +1106,31 @@ def _canon(word, base):
     path = re.sub(r"^//[?.]/(unc/)?", lambda m: "//" if m.group(1) else "", path, flags=re.IGNORECASE).lower()
     if "$" in path or "%" in path:
         return None
+    # Git Bash, Cygwin and WSL spell a drive as a folder: `/c/Users/...`, `/cygdrive/c/...`, `/mnt/c/...`
+    path = re.sub(r"^/(?:(?:cygdrive|mnt)/)?([a-z])(?=/|$)", r"\1:", path)
     if not (path.startswith("/") or _DRIVE_RE.match(path)):
         if base is None:
             return None
         path = base + "/" + path
+    path = _win32_names(path)
     unc = path.startswith("//") and not path.startswith("///")
     path = posixpath.normpath(re.sub(r"/{2,}", "/", path))
     if unc:
         path = "/" + path
-    trimmed = path.rstrip(" .")
-    return trimmed if trimmed and not trimmed.endswith(":") else path
+    return path
+
+
+def _win32_names(path):
+    """`path` (forward slashes) with what Win32 strips from every component removed: trailing dots and spaces
+    (`crew./config.json` is `crew/config.json`) and an NTFS directory stream (`crew::$INDEX_ALLOCATION`). A component
+    of only dots (`.`, `..`) is a dot-segment, not a name, and stays."""
+    names = path.split("/")
+    parts = []
+    for index, part in enumerate(names):
+        if index < len(names) - 1:   # the last word's stream is `_hit`'s to strip, with the named ones (`f:s`)
+            part = re.sub(r"::\$\w+$", "", part)
+        parts.append(part.rstrip(" .") or part)
+    return "/".join(parts)
 
 
 class _Shell:  # pylint: disable=too-few-public-methods
@@ -1135,29 +1158,114 @@ def _expand(word, shell):
     return word
 
 
-def _hit(word, shell, mode):  # pylint: disable=too-many-return-statements
+def _braces(word, limit=64):
+    """The words a bash brace expansion makes of `word` (`cc-{1,2}*.json`, `{a..c}`), at most `limit`; `word` itself
+    when it has none. Every alternative is judged, because the shell writes every one."""
+    match = re.search(r"\{([^{}]*)\}", word)
+    if not match or limit < 2:
+        return [word]
+    inner = match.group(1)
+    seq = re.fullmatch(r"(\w)\.\.(\w)", inner)
+    if seq and len(seq.group(1)) == 1 and len(seq.group(2)) == 1:
+        low, high = sorted((ord(seq.group(1)), ord(seq.group(2))))
+        options = [chr(c) for c in range(low, min(high, low + 63) + 1)]
+    elif "," in inner:
+        options = inner.split(",")
+    else:
+        return [word]
+    out = []
+    for option in options:
+        out.extend(_braces(word[:match.start()] + option + word[match.end():], limit // len(options) or 1))
+    return out[:limit]
+
+
+def _globify(component):
+    """A path component as an fnmatch pattern: bash's `[^x]` is `[!x]`, and an 8.3 short name (`CREW~1`,
+    `CONFIG~1.JSO`, `CONFIR~1`) stands for any name that starts with its stem, so it is read as a glob."""
+    component = component.replace("[^", "[!")
+    short = re.fullmatch(r"([^~*?\[]+)~\d+(?:\.[^.]*)?", component)
+    return "*" + short.group(1).lstrip(".") + "*" if short else component
+
+
+def _comp_match(pattern, name):
+    """True when the path component `pattern` (a name or a glob) can be the component `name`."""
+    return pattern == name or (re.search(r"[*?\[~]", pattern) is not None
+                               and fnmatch.fnmatchcase(name, _globify(pattern)))
+
+
+def _glob_match(pattern, target, under):
+    """True when the component list `pattern` (globs allowed; `**` spans any number of folders) names `target`, or,
+    with `under`, anything below it."""
+    if not target:
+        return not pattern or under or all(part == "**" for part in pattern)
+    if not pattern:
+        return False
+    if pattern[0] == "**":
+        return _glob_match(pattern[1:], target, under) or _glob_match(pattern, target[1:], under)
+    return _comp_match(pattern[0], target[0]) and _glob_match(pattern[1:], target[1:], under)
+
+
+def _owner_targets(mode):
+    """The (component list, under) pairs a path must not name: the machine config, the confirm-config store and
+    everything in it (`under`: receipts are `cc-<hex>.json`, but a temp or lock file there is as much the owner's),
+    and, by `mode`, the folders a copy lands in. Spelled as the path is and as the file system resolves it."""
+    pairs = []
+    for spelled in (machine_config(), os.path.realpath(machine_config())):
+        machine = _canon(spelled, None)
+        if machine is None:
+            continue
+        folder = posixpath.dirname(machine)
+        parent = posixpath.dirname(folder)
+        found = [(machine, False), (folder + "/confirm-config", True)]
+        if mode in ("dir", "destroy"):
+            found += [(folder, False), (parent, False)]
+        if mode == "destroy":
+            found.append((posixpath.dirname(parent), False))
+        pairs += [(path.split("/"), under) for path, under in found]
+    return pairs
+
+
+def _tail_hits(parts):
+    """The word is not a path we can resolve (a variable is still in it, or it is relative to an unknown folder): it
+    still names the owner's files when it ENDS the way they do, component by component."""
+    tails = (("crew", "config.json"), (".claude", "crew", "config.json"), (".claude", "crew", "confirm-config"),
+             ("confirm-config",))
+    for tail in tails:
+        for start in range(len(parts) - len(tail) + 1):
+            window = parts[start:start + len(tail)]
+            if all(_comp_match(w, t) for w, t in zip(window, tail)):
+                if tail[-1] == "confirm-config" or start + len(tail) == len(parts):
+                    return True
+    return False
+
+
+def _hit(word, shell, mode):
     """True when `word` names (or, for a glob, can match) the owner's files. `mode` "file" is the machine config
     and the confirm-config store; "dir" adds the folders a copy or an extraction lands in (`~/.claude/crew`,
-    `~/.claude`); "destroy" adds home itself, for a delete or a move."""
+    `~/.claude`); "destroy" adds home itself, for a delete or a move. The word is judged against the owner's REAL
+    path (this machine's home), not a suffix of it, so a file elsewhere named `.claude/crew/config.json` is not the
+    owner's; and every spelling Win32, the MSYS drive letters and a brace expansion give one path is read as that
+    path."""
     word = _expand(word, shell)
     word = re.sub(r"(?<=[^/\\:]):(?::\$\w+|[^/\\:]+)(?::\$\w+)?$", "", word)   # an NTFS stream: `f::$DATA`, `f:s`
     if not word or _IGNORED_TARGET_RE.match(word):
         return False
+    return any(_hit_word(one, shell, mode) for one in _braces(word))
+
+
+def _hit_word(word, shell, mode):
+    """`_hit` for one word with no brace expansion left."""
     path = _canon(word, shell.cwd)
-    machine = _fold(machine_config())
-    folder, store = posixpath.dirname(machine), _fold(confirm_store())
     if path is None:
-        text = word.replace("\\", "/").lower()
-        return bool(re.search(r"(?<![\w.-])crew/+config\.json$", text)
-                    or re.search(r"(?:^|/)\.claude/+crew/+(?:config\.json$|confirm-config(?:/|$))", text)
-                    or re.search(r"(?:^|/)confirm-config(?:/|$)", text))
-    parent = posixpath.dirname(folder)
-    folders = {"file": (), "dir": (folder, parent), "destroy": (folder, parent, posixpath.dirname(parent))}[mode]
-    if any(ch in path for ch in "*?["):
-        samples = (machine, store, store + "/cc-00000000.json") + folders
-        return any(fnmatch.fnmatchcase(sample, path) for sample in samples)
-    return (path == machine or path == store or path.startswith(store + "/") or path in folders
-            or bool(re.search(r"(?:^|/)\.claude/crew/(?:config\.json$|confirm-config(?:/|$))", path)))
+        return _tail_hits(_win32_names(word.replace("\\", "/").lower()).split("/"))
+    spellings = [path]
+    if not any(ch in path for ch in "*?[~"):
+        real = _canon(os.path.realpath(path), None)   # a link, a junction or an 8.3 name that exists
+        if real and real != path:
+            spellings.append(real)
+    targets = _owner_targets(mode)
+    return any(_glob_match(spelled.split("/"), target, under)
+               for spelled in spellings for target, under in targets)
 
 
 def _in_owner_folder(shell):
@@ -1348,6 +1456,8 @@ def _verb_hits(name, args, shell):  # pylint: disable=too-many-return-statements
     if name == "dd":
         return any(a.startswith("of=") and _hit(a[3:], shell, "file") for a in args)
     if name == "patch":
+        if any(a in ("-C", "--check", "--dry-run") for a in args):   # GNU patch: report what would apply, write nothing
+            return False
         where = _option_value(args, "-d", "--directory")
         return any(_hit(w, shell, "file") for w in operands) or (
             _hit(where, shell, "dir") if where else _in_owner_folder(shell))
@@ -1580,7 +1690,7 @@ def _owner_lines(what):
 
 def _owner_files_only(tool, data, root):
     """What the guard still decides where it otherwise does nothing: `scope.mode` off (the default) or no work
-    tree (crew 1.3.111). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
+    tree (crew 1.3.117). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
     and the master switch are what make an owner-only change the owner's: a guard that stood down with
     `scope.mode` would let an agent write both the `false` and its receipt."""
     if tool in SHELLS:
