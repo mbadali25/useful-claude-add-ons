@@ -2907,7 +2907,18 @@ def _main(argv, state):  # pylint: disable=too-many-branches,too-many-statements
     parser.add_argument("--allow-unverified", action="store_true",
                         help="review a tree the verify gate has not passed; recorded in "
                              "review.json as gate.overridden")
+    parser.add_argument("--base-branch", default=None, metavar="REF",
+                        help="--prepare only: measure this run against REF instead of "
+                             "tickets.baseBranch (a PR that targets another branch); "
+                             "falls back to $CREW_BASE_BRANCH; a ref naming no commit stops "
+                             "the run")
     args = parser.parse_args(argv)
+    if args.base_branch is not None:
+        if not args.prepare:
+            parser.error("--base-branch is for --prepare only")
+        if not args.base_branch.strip():
+            parser.error("--base-branch is empty")
+        os.environ["CREW_BASE_BRANCH"] = args.base_branch.strip()  # scope_base.BASE_BRANCH_ENV
     args.root_arg, args.scratch_arg = args.root, args.scratch
     args.root = os.path.abspath(args.root)
     state["mode"], state["args"] = _mode(args), args

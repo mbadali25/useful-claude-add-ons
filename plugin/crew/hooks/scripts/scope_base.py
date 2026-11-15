@@ -137,6 +137,9 @@ def _is_ancestor(root, sha):
         root, "merge-base", "--is-ancestor", sha, "HEAD") is not None
 
 
+BASE_BRANCH_ENV = "CREW_BASE_BRANCH"
+
+
 def read_base_branch(root):
     """`(value, problem)` for `tickets.baseBranch` in `.crew/config.json`.
 
@@ -144,7 +147,14 @@ def read_base_branch(root):
     default. A file that cannot be read or parsed, a `tickets` that is not an
     object, or a value that is not a non-empty string is `(None, problem)` --
     the fail-closed rule of `crew_ticket.configured_mode`, because guessing
-    the default there is exactly the silent fallback the key replaces."""
+    the default there is exactly the silent fallback the key replaces.
+
+    A non-blank `CREW_BASE_BRANCH` in the environment is a per-run override
+    (`review_run.py --prepare --base-branch`, for a PR that targets a branch
+    other than the repo-wide one) and wins over the file."""
+    override = (os.environ.get(BASE_BRANCH_ENV) or "").strip()
+    if override:
+        return override, None
     # The resolved repo config -- a worktree with no `.crew/` of its own reads
     # the main checkout's -- the same file `crew_ticket.configured_mode` reads.
     path = crew_common.repo_config_file(root, "config.json")
@@ -194,7 +204,9 @@ def base_branch(root):
         for ref in candidates:
             if _is_commit(root, ref):
                 return ref, None
-        return None, (f"tickets.baseBranch {value!r} names no commit here "
+        source = (BASE_BRANCH_ENV if (os.environ.get(BASE_BRANCH_ENV) or "").strip()
+                  else "tickets.baseBranch")
+        return None, (f"{source} {value!r} names no commit here "
                       f"(tried {', '.join(candidates)})")
     sym = crew_common.git_out(root, "symbolic-ref", "--short",
                               "refs/remotes/origin/HEAD")
