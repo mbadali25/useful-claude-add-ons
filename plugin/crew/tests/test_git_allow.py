@@ -1,4 +1,4 @@
-"""crew 1.3.114: `guards.git.allow`, the owner's switch that lets git commands past
+"""crew 1.3.116: `guards.git.allow`, the owner's switch that lets git commands past
 crew's command guards (`crew_gitallow.py`).
 
 CLAUDE.md: a hook change that can block carries must-block and must-allow cases,
@@ -1296,7 +1296,7 @@ def test_a_powershell_stop_parsing_force_push_stays_refused_with_all(tmp_path, m
     assert not any(r[1].startswith("gitAllow") for r in result["rows"]), result
 
 
-# --- review round 4 (Codex gpt-6-sol, crew 1.3.114): a fail-closed allowlist -------------
+# --- review round 4 (Codex gpt-6-sol, crew 1.3.116): a fail-closed allowlist -------------
 #
 # The design change: `plain_commands` lists what is plain, and anything else is
 # not exempt. One reader serves the cloud guard (`line_plan`) and the promote
@@ -1664,7 +1664,7 @@ def test_round5_gate_still_gates_a_redirection_repro_with_all(tmp_path, machine,
     assert code == 2, err
 
 
-# --- review round 6 (Codex gpt-6-sol, crew 1.3.114): ONE plain command ------------------
+# --- review round 6 (Codex gpt-6-sol, crew 1.3.116): ONE plain command ------------------
 #
 # BLOCK 1: a WORD-LESS command (only redirects) skipped every redirect check:
 # `git status 'a[$(touch x)]'; > $((_))` ran the substitution through `$_`.

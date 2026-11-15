@@ -213,7 +213,7 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 (<code>python -c</code>, an encoded command, a variable holding the path) still can, and
 <code>scope.mode: off</code> has no tripwire at all. Treat <code>humanOnly</code> opt-outs as
 meaningful only with <code>scope.mode</code> <code>block</code>.</p>
-<h2 id="git-commands-guardsgitallow-crew-13114">Git Commands (<code>guards.git.allow</code>, Crew 1.3.114)</h2>
+<h2 id="git-commands-guardsgitallow-crew-13116">Git Commands (<code>guards.git.allow</code>, Crew 1.3.116)</h2>
 <p>The owner's switch that stops crew's command guards from blocking or asking on
 git commands, destructive ones included. Off by default (<code>null</code>, or <code>"off"</code>).</p>
 <table>
@@ -248,7 +248,7 @@ that merely mentions a declared deploy no longer trips it. A declared
 deploy that is itself a git command (<code>git push prod main</code>) stays gated: that
 is a deploy, not a git block. <code>gh</code> is not git: <code>gh pr merge --admin</code>
 (<code>guards.adminMerge</code>), workflow dispatches and <code>gh api</code> calls are untouched.</p>
-<p><strong>The line is ONE plain git command, fail-closed (crew 1.3.114).</strong> A command
+<p><strong>The line is ONE plain git command, fail-closed (crew 1.3.116).</strong> A command
 line is exempt only when it is a single simple command: exactly <code>git</code> - not a
 path (<code>/usr/bin/git</code>, <code>./git</code>, <code>git.exe</code>), not preceded by <code>command</code>, an
 assignment, <code>cd</code> or a function, alias or <code>shopt</code> that redefines git - followed
@@ -312,7 +312,16 @@ repository (<code>git -C &lt;dir&gt;</code>) passes only when that repository's 
 not veto it either; one whose repository crew cannot tell (<code>--git-dir</code>,
 <code>--work-tree</code>, or a <code>-C ..</code> that follows a link, which git and Windows read
 differently) is judged as before. A subcommand is matched exactly as written:
-<code>git STATUS</code> is not <code>status</code>.</p>
+<code>git STATUS</code> is not <code>status</code>. A word after <code>git</code> that is not one of git's own built-ins
+(<code>git zzz</code>, <code>git svn</code>, <code>git p4</code>, <code>git gui</code>, <code>git citool</code>, an alias such as <code>git co</code>) is held too:
+git runs an alias, or a <code>git-&lt;word&gt;</code> program it finds on PATH. A built-in this version of crew
+does not list is only held, never let through. A <code>deploy</code> in <code>.crew/verify.json</code> that is not a
+command or a list of commands (or an environment that is not an object) makes the promote gate
+exempt nothing, the same map the gate itself refuses to read.</p>
+<p>Accepted residuals: a literal <code>git</code> is read as the git program, so a shell function named <code>git</code>
+that the shell inherited or exported (<code>export -f git</code>) would run instead of it, and crew cannot see
+that from the command line (verified: with <code>git() { echo hijacked; }</code> exported, <code>git status</code> in a
+child bash prints <code>hijacked</code>).</p>
 <p>What stays exempt, for example: <code>git commit -m "fix: x"</code>, <code>git push
 --force-with-lease origin topic</code>, <code>git push -f origin topic</code>, <code>git rebase -i
 HEAD~3</code>, <code>git -C &lt;path&gt; status</code>, <code>git log --format=%H</code>, <code>git log @{u}..HEAD</code>
@@ -1215,7 +1224,7 @@ Each pass is logged to <code>.crew/guard.log</code> with the policy <code>gitAll
 <td>both</td>
 <td><code>null</code></td>
 <td>null, <code>"off"</code>, <code>"all"</code> or a list of git subcommand names (coerced in <code>plugin/crew/hooks/scripts/crew_gitallow.py</code>)</td>
-<td>1.3.114</td>
+<td>1.3.116</td>
 <td>The owner's switch that stops crew's command guards blocking or asking on git commands: <code>"all"</code> lets a line of only plain git commands past the force-push rule and the promote gate (unless a declared deploy is itself a git command); a list of subcommands (<code>["commit", "push"]</code>) lets only those through, with every option they take (listing <code>push</code> lets <code>push --force</code> through). null or <code>"off"</code> changes nothing. Machine file only, and only after <code>/crew:confirm-config</code> twice (<code>crew_confirm_config.py propose --key guards.git.allow --value ...</code>); a value written any other way, or any later change to the machine file outside crew's config writer, reads as off, and a repo <code>"off"</code> or unreadable repo file vetoes it. FAIL-CLOSED ALLOWLIST: a line is exempt only when it is ONE command, exactly <code>git</code> with plain literal words (no <code>$</code>, backtick, glob, brace, leading <code>~</code>, parenthesis, PowerShell expression or <code>%NAME%</code>; no separator, redirection, heredoc, continuation or comment, so a chain is judged as before); a git command carrying <code>-c</code>, a command to run (<code>rebase --exec</code>, <code>push --receive-pack</code>, <code>submodule foreach</code>, ...) or a <code>git config</code> write is never exempt.</td>
 </tr>
 </tbody>
