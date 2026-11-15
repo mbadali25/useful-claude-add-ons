@@ -1,0 +1,991 @@
+"""`verify-gate.sh` and the trust store (L-0888): the gate runs a repo's verify
+map, or its smoke script, only for a repo this machine trusts.
+
+MUST-BLOCK (nothing runs, exit 0, no pass record, the line names the cause):
+a repo with no store entry, for a Stop and for `--all`; one byte changed after
+approval; a smoke script nobody approved; a corrupt store; a verify.json
+rewritten between the first trust check and the second (the matcher reads it
+in between); `--price` on an untrusted repo.
+
+MUST-ALLOW: the same repo after `approve` (both the rules and the smoke script
+run, exit codes unchanged); an allowlisted remote owner; `--ci` with no store
+at all, which says its trust check is exempt.
+"""
+import json
+import os
+import shutil
+import stat
+import subprocess
+
+import pytest
+
+import crew_fixtures
+
+import context  # noqa: F401  pylint: disable=unused-import
+import verify_trust
+
+_ROOT = context._ROOT  # pylint: disable=protected-access
+_SH = os.path.join(_ROOT, "hooks", "scripts", "verify-gate.sh")
+_BASH = crew_fixtures.resolve_bash()
+pytestmark = pytest.mark.skipif(_BASH is None, reason="needs bash")
+
+_MARKER = os.path.join(".crew", ".verify-verified-at")
+_FINGERPRINT = os.path.join(".crew", ".verify-gate.fingerprint")
+
+
+def _git(root, *args):
+    subprocess.run(("git",) + args, cwd=root, check=True, capture_output=True,
+                   timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+
+def _map(sentinel, run=None):
+    return json.dumps({"version": 1, "always": [], "default": [], "unmapped": "ignore",
+                       "rules": [{"paths": ["a.py"], "seconds": 1, "why": "fixture",
+                                  "reach": "local", "run": [run or f"echo ran > '{sentinel}'"]}]})
+
+
+def _repo(tmp_path, sentinel, verify=True, smoke=None, remote=None):
+    root = tmp_path / "repo"
+    (root / ".crew").mkdir(parents=True)
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@example.invalid")
+    _git(root, "config", "user.name", "t")
+    (root / "a.py").write_text("x = 1", encoding="utf-8")
+    if verify:
+        (root / ".crew" / "verify.json").write_text(_map(sentinel), encoding="utf-8")
+    if smoke is not None:
+        (root / "_verify").mkdir()
+        (root / "_verify" / "smoke.sh").write_text(smoke, encoding="utf-8")
+    if remote:
+        _git(root, "remote", "add", "origin", remote)
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "fixture")
+    (root / "a.py").write_text("x = 2", encoding="utf-8")
+    return root
+
+
+@pytest.fixture(name="store")
+def _store(tmp_path, monkeypatch):
+    """A real decision: no `testTrustAll`, so the conftest seam is replaced."""
+    path = tmp_path / "trust" / "verify-trust.json"
+    monkeypatch.setenv(verify_trust.ENV_STORE, str(path))
+    monkeypatch.delenv("CREW_TEST_TRUST_ALL", raising=False)
+    return path
+
+
+def _run(root, *args, env=None):
+    full = dict(os.environ, CLAUDE_PROJECT_DIR=str(root))
+    full.update(env or {})
+    return crew_fixtures.run_gate([_BASH, _SH, *args], input="{}", cwd=str(root), env=full,
+                                  capture_output=True, text=True, check=False,
+                                  timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+
+def _approve(root):
+    assert verify_trust.main(["approve", "--root", str(root), "--yes"]) == 0
+
+
+def _nothing_ran(done, root, sentinel, word):
+    assert done.returncode == 0, done.stderr
+    assert not sentinel.exists(), "the repo-authored command RAN"
+    assert word in done.stdout + done.stderr
+    assert "nothing was verified" in done.stdout + done.stderr
+    assert not (root / _MARKER).exists()
+    assert not (root / _FINGERPRINT).exists()
+
+
+@pytest.mark.parametrize("args", [(), ("--all",)])
+def test_gate_an_untrusted_repo_runs_nothing_and_records_no_pass(tmp_path, store, args):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+
+    done = _run(root, *args)
+
+    _nothing_ran(done, root, sentinel, "UNTRUSTED, not run")
+
+
+def test_gate_an_untrusted_repo_with_a_failing_rule_exits_0_having_run_nothing(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    (root / ".crew" / "verify.json").write_text(_map(sentinel, "exit 1"), encoding="utf-8")
+
+    done = _run(root, "--all")
+
+    _nothing_ran(done, root, sentinel, "UNTRUSTED, not run")
+
+
+@pytest.mark.parametrize("args", [(), ("--all",)])
+def test_gate_an_approved_repo_runs_its_rules(tmp_path, store, args):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    _approve(root)
+
+    done = _run(root, *args)
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.is_file(), done.stderr
+    assert "UNTRUSTED" not in done.stdout + done.stderr
+
+
+def test_gate_an_approved_repo_still_fails_a_failing_rule(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    (root / ".crew" / "verify.json").write_text(_map(sentinel, "exit 1"), encoding="utf-8")
+    _approve(root)
+
+    done = _run(root, "--all")
+
+    assert done.returncode == 2, done.stderr
+
+
+def test_gate_one_byte_changed_after_approval_runs_nothing(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    _approve(root)
+    path = root / ".crew" / "verify.json"
+    path.write_text(path.read_text(encoding="utf-8") + " ", encoding="utf-8")
+
+    done = _run(root, "--all")
+
+    _nothing_ran(done, root, sentinel, "CHANGED, not run")
+
+
+def test_gate_a_smoke_script_nobody_approved_runs_nothing(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel, verify=False, smoke=f"echo ran > '{sentinel}'\n")
+
+    done = _run(root)
+
+    _nothing_ran(done, root, sentinel, "UNTRUSTED, not run")
+
+
+def test_gate_an_approved_smoke_script_runs(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel, verify=False, smoke=f"echo ran > '{sentinel}'\n")
+    _approve(root)
+
+    done = _run(root)
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.is_file(), done.stderr
+
+
+def test_gate_a_smoke_script_changed_after_approval_runs_nothing(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel, verify=False, smoke="true\n")
+    _approve(root)
+    (root / "_verify" / "smoke.sh").write_text(f"echo ran > '{sentinel}'\n", encoding="utf-8")
+
+    done = _run(root)
+
+    _nothing_ran(done, root, sentinel, "CHANGED, not run")
+
+
+def test_gate_a_corrupt_store_runs_nothing(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    store.parent.mkdir(parents=True)
+    store.write_text("{broken", encoding="utf-8")
+
+    done = _run(root, "--all")
+
+    _nothing_ran(done, root, sentinel, "UNKNOWN, not run")
+
+
+def test_gate_an_allowlisted_remote_owner_runs_its_rules(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel, remote="https://github.com/mbadali25/useful.git")
+    assert verify_trust.main(["allow-owner", "github.com/mbadali25", "--yes"]) == 0
+
+    done = _run(root, "--all")
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.is_file(), done.stderr
+
+
+def test_gate_a_foreign_remote_owner_runs_nothing(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel, remote="https://github.com/evil/useful.git")
+    assert verify_trust.main(["allow-owner", "github.com/mbadali25", "--yes"]) == 0
+
+    done = _run(root, "--all")
+
+    _nothing_ran(done, root, sentinel, "UNTRUSTED, not run")
+
+
+def test_gate_ci_mode_needs_no_store_and_says_its_trust_check_is_exempt(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+
+    done = _run(root, "--ci")
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.is_file(), done.stderr
+    assert "trust check exempt" in done.stderr
+
+
+def test_gate_price_on_an_untrusted_repo_runs_nothing(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    before = (root / ".crew" / "verify.json").read_bytes()
+
+    done = _run(root, "--price")
+
+    assert done.returncode == 1, done.stderr
+    assert not sentinel.exists(), "the repo-authored command RAN"
+    assert "UNTRUSTED, not run" in done.stderr
+    assert (root / ".crew" / "verify.json").read_bytes() == before
+
+
+_HOSTILE_SEAM = (
+    "import os, sys\n"
+    "if sys.argv[1:2] == ['check']:\n"
+    "    print('verify trust: trusted (hostile)')\n"
+    "    sys.stdout.flush()\n"
+    "    os._exit(0)\n"
+)
+
+
+def test_gate_a_pythonpath_sitecustomize_cannot_answer_trusted(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    hostile = tmp_path / "hostile"
+    hostile.mkdir()
+    (hostile / "sitecustomize.py").write_text(_HOSTILE_SEAM, encoding="utf-8")
+    (hostile / "json.py").write_text(_HOSTILE_SEAM, encoding="utf-8")
+
+    done = _run(root, "--all", env={"PYTHONPATH": str(hostile)})
+
+    _nothing_ran(done, root, sentinel, "UNTRUSTED, not run")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+@pytest.mark.parametrize("entry", ["inside", "relative"])
+def test_gate_a_python_on_a_repo_path_entry_is_never_run_for_the_trust_check(tmp_path, store, entry):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    (root / "bin").mkdir()
+    marker = tmp_path / "hostile-ran.txt"
+    fake = root / "bin" / "python3"
+    fake.write_text(
+        f'#!/bin/sh\ncase "$*" in *verify_trust.py*) : >> "{marker}"; echo trusted; exit 0 ;; esac\n'
+        'echo "$0"\nexit 0\n',
+        encoding="utf-8",
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    first = str(root / "bin") if entry == "inside" else "bin"
+
+    done = _run(root, "--all", env={"PATH": first + os.pathsep + os.environ["PATH"]})
+
+    assert not marker.exists(), "the repo's python was handed verify_trust.py"
+    assert not sentinel.exists()
+    assert "nothing was verified" in done.stdout + done.stderr
+    assert not (root / _MARKER).exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_a_python_in_the_main_checkout_of_a_linked_worktree_is_never_run_for_the_trust_check(
+        tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    main = _repo(tmp_path, sentinel)
+    lane = tmp_path / "lane"
+    _git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    (main / ".venv" / "bin").mkdir(parents=True)
+    marker = tmp_path / "hostile-ran.txt"
+    fake = main / ".venv" / "bin" / "python3"
+    fake.write_text(f'#!/bin/sh\ncase "$*" in *verify_trust.py*) : >> "{marker}"; echo trusted; exit 0 ;; esac\n'
+                    'echo "$0"\nexit 0\n', encoding="utf-8")
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+
+    done = _run(lane, "--all", env={"PATH": str(main / ".venv" / "bin") + os.pathsep + os.environ["PATH"]})
+
+    assert not marker.exists(), "the main checkout's python was handed verify_trust.py"
+    assert not sentinel.exists()
+    assert "nothing was verified" in done.stdout + done.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the git shim is a POSIX script")
+def test_gate_a_verify_json_rewritten_between_the_two_checks_runs_nothing(tmp_path, store):
+    """The first check runs under a fixed PATH, so the git shim never sees it.
+    The first call the shim sees AFTER that check is the tree snapshot's
+    `git ls-files -z` (the gate takes it just before the matcher). The shim swaps
+    verify.json for one that runs the sentinel on that call, once: the first check
+    has already passed on the approved bytes, the matcher then reads the swapped
+    file, and only the second check can see it."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    swapped = tmp_path / "swapped.json"
+    swapped.write_text(_map(sentinel), encoding="utf-8")
+    original = root / ".crew" / "verify.json"
+    original.write_text(_map(sentinel, "true"), encoding="utf-8")
+    _approve(root)
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    script = shim / "git"
+    script.write_text(
+        '#!/usr/bin/env bash\n'
+        'if [[ " $* " == *" ls-files -z "* ]] '
+        '&& [ ! -e "$SWAP_FLAG" ]; then : > "$SWAP_FLAG"; cp "$SWAP_FROM" "$SWAP_TO"; fi\n'
+        f'exec "{shutil.which("git")}" "$@"\n', encoding="utf-8")
+    script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    flag = tmp_path / "swapped.flag"
+    env = {"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}", "SWAP_FROM": str(swapped),
+           "SWAP_TO": str(original), "SWAP_FLAG": str(flag)}
+
+    done = _run(root, "--all", env=env)
+
+    assert flag.exists(), "fixture: the shim never saw the identity lookup"
+    assert done.returncode == 0, done.stderr
+    assert not sentinel.exists(), "the swapped verify.json ran"
+    assert "CHANGED, not run" in done.stdout + done.stderr
+    assert not (root / _MARKER).exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the git and rm shims are POSIX scripts")
+def test_gate_a_verify_json_swapped_for_the_matcher_and_restored_runs_nothing(tmp_path, store):
+    """A, then B while the matcher reads, then A again before the second check:
+    both checks see the approved bytes, the commands came from B. The git shim
+    swaps in B after the first check; the rm shim (the gate's first rm after the
+    matcher exits) puts A back."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    hostile = tmp_path / "hostile.json"
+    hostile.write_text(_map(sentinel), encoding="utf-8")
+    approved = tmp_path / "approved.json"
+    approved.write_text(_map(sentinel, "true"), encoding="utf-8")
+    target = root / ".crew" / "verify.json"
+    target.write_text(approved.read_text(encoding="utf-8"), encoding="utf-8")
+    _approve(root)
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    git = shim / "git"
+    git.write_text(
+        '#!/usr/bin/env bash\n'
+        'if [[ " $* " == *" ls-files -z "* ]] '
+        '&& [ ! -e "$SWAP_FLAG" ]; then : > "$SWAP_FLAG"; cp "$HOSTILE" "$TARGET"; fi\n'
+        f'exec "{shutil.which("git")}" "$@"\n', encoding="utf-8")
+    rm = shim / "rm"
+    rm.write_text(
+        '#!/usr/bin/env bash\n'
+        'if [ -e "$SWAP_FLAG" ] && [ ! -e "$RESTORE_FLAG" ]; then : > "$RESTORE_FLAG"; '
+        'cp "$APPROVED" "$TARGET"; fi\n'
+        f'exec "{shutil.which("rm")}" "$@"\n', encoding="utf-8")
+    for script in (git, rm):
+        script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    env = {"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}", "HOSTILE": str(hostile),
+           "APPROVED": str(approved), "TARGET": str(target),
+           "SWAP_FLAG": str(tmp_path / "swapped.flag"),
+           "RESTORE_FLAG": str(tmp_path / "restored.flag")}
+
+    done = _run(root, "--all", env=env)
+
+    assert (tmp_path / "restored.flag").exists(), "fixture: the rm shim never ran after the swap"
+    assert done.returncode == 0, done.stderr
+    assert not sentinel.exists(), "commands parsed from the swapped file ran"
+    assert "CHANGED, not run" in done.stdout + done.stderr
+
+
+def test_gate_price_of_a_map_that_is_not_the_repos_own_needs_that_maps_approval(tmp_path, store):
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    (root / ".crew" / "verify.json").write_text(_map(sentinel, "true"), encoding="utf-8")
+    _approve(root)
+    hostile = tmp_path / "hostile.json"
+    hostile.write_text(_map(sentinel), encoding="utf-8")
+
+    done = _run(root, "--price", str(hostile))
+
+    assert done.returncode == 1, done.stderr
+    assert not sentinel.exists(), "the hostile map was priced, i.e. run"
+    assert "not run" in done.stderr
+
+
+@pytest.mark.parametrize("body", ["import sys\nsys.exit(7)\n", ""], ids=["exits-7", "empty-file"])
+def test_gate_a_trust_check_that_cannot_run_blocks_with_exit_2(tmp_path, store, body):
+    """MUST-BLOCK: the interpreter works (the matcher would run) but
+    verify_trust.py itself dies. That is neither trusted nor a verdict: exit 2,
+    the sentinel never runs. A copy of the plugin's scripts carries a
+    verify_trust.py that exits 7."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    scripts = tmp_path / "plugin" / "hooks" / "scripts"
+    shutil.copytree(os.path.join(_ROOT, "hooks", "scripts"), scripts,
+                    ignore=shutil.ignore_patterns("__pycache__", "_test"))
+    (scripts / "verify_trust.py").write_text(body, encoding="utf-8")
+
+    done = crew_fixtures.run_gate(
+        [_BASH, str(scripts / "verify-gate.sh"), "--all"], input="{}", cwd=str(root),
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), capture_output=True, text=True,
+        check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+    assert done.returncode == 2, done.stderr
+    assert not sentinel.exists(), "the repo-authored command RAN"
+    assert "could not RUN the trust check" in done.stdout + done.stderr
+    assert not (root / _MARKER).exists()
+
+
+def test_gate_a_module_the_repo_ships_is_not_imported_by_the_gate(tmp_path, store):
+    """MUST-BLOCK: an approved repo that later gains a `json.py` at its root
+    (a `git pull` changes no byte of verify.json) must not get it imported by
+    the gate's own `python -` and `python -c` steps."""
+    sentinel = tmp_path / "ran.txt"
+    shadow = tmp_path / "shadow.txt"
+    root = _repo(tmp_path, sentinel)
+    _approve(root)
+    (root / "json.py").write_text(f"open({str(shadow)!r}, 'w').write('x')\n", encoding="utf-8")
+
+    done = _run(root, "--all")
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.is_file(), done.stderr
+    assert not shadow.exists(), "the repo's own json.py ran inside the gate"
+
+
+def test_gate_a_worktree_whose_main_checkout_git_cannot_name_is_unknown(tmp_path):
+    """A directory with a `.git` FILE is a linked worktree (or a submodule). If git
+    cannot say where its main checkout is, that checkout cannot be kept off the
+    interpreter search PATH, and an empty answer read as "nothing to strip" is an
+    unknown collapsed into the safe-looking value. `gate_trust_check` is run on its
+    own with a `git` function that fails, which is what the gate's fixed PATH
+    lacking git looks like; the python probe fails too, so the only way to the
+    "main checkout" line is the new check."""
+    lane = tmp_path / "lane"
+    lane.mkdir()
+    (lane / ".git").write_text("gitdir: " + str(tmp_path / "gone") + "\n", encoding="utf-8")
+    with open(_SH, encoding="utf-8") as handle:
+        text = handle.read()
+    start = text.index("gate_safe_path() {")
+    end = text.index("\ngate_trust_check() {")
+    end = text.index("\n}\n", end + 1) + 3
+    body = text[start:end]
+    program = tmp_path / "probe.sh"
+    program.write_text("git() { return 1; }\ncrew_py_strict() { return 1; }\n" + body
+                       + 'gate_trust_check "$1"\necho "rc=$?"\n', encoding="utf-8", newline="\n")
+
+    done = subprocess.run([_BASH, str(program), str(tmp_path)], cwd=str(lane), check=False,
+                          capture_output=True, text=True,
+                          timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+    assert "rc=13" in done.stdout, done.stdout + done.stderr
+    assert "UNKNOWN, not run" in done.stderr and "main checkout" in done.stderr, done.stderr
+
+
+def test_gate_an_approved_linked_worktree_still_runs_its_rules(tmp_path, store):
+    """The other side of the guard above: where git DOES name the main checkout
+    (Git for Windows prints it as C:/...), a linked worktree of an approved repo
+    runs, and is not read as an unknown."""
+    sentinel = tmp_path / "ran.txt"
+    main = _repo(tmp_path, sentinel)
+    lane = tmp_path / "lane"
+    _git(main, "worktree", "add", "-q", str(lane), "-b", "lane")
+    _approve(lane)
+
+    done = _run(lane, "--all")
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.is_file(), done.stdout + done.stderr
+    assert "UNKNOWN" not in done.stdout + done.stderr
+
+
+_FAKE_PY = (
+    '#!/bin/sh\n'
+    'case "$*" in *verify_trust.py*) echo "verify trust: trusted (hostile)"; exit 0 ;; esac\n'
+    'exec "{real}" "$@"\n'
+)
+
+
+def _hostile_python(root):
+    (root / "bin").mkdir(exist_ok=True)
+    fake = root / "bin" / "python3"
+    fake.write_text(_FAKE_PY.format(real=shutil.which("python3")), encoding="utf-8")
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    return fake
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_an_inherited_crew_python_inside_the_repo_cannot_answer_trusted(tmp_path, store):
+    """MUST-BLOCK (verified repro): CREW_PYTHON is environment, which a repo's
+    settings `env` block can set. The trust check must never take its
+    interpreter from it."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    fake = _hostile_python(root)
+
+    done = _run(root, "--all", env={"CREW_PYTHON": str(fake)})
+
+    _nothing_ran(done, root, sentinel, "UNTRUSTED, not run")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_an_approved_repo_still_runs_with_a_sanctioned_crew_python(tmp_path, store):
+    """MUST-ALLOW: the dispatcher's own CREW_PYTHON (outside the repo) stays
+    usable for everything but the trust decision."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    _approve(root)
+
+    done = _run(root, "--all", env={"CREW_PYTHON": shutil.which("python3")})
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.exists(), done.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_python_only_on_a_repo_path_entry_with_a_verify_json_is_unknown_not_trusted(
+        tmp_path, store):
+    """MUST-BLOCK: the sanitized PATH holds no python, but the unfiltered PATH
+    does (inside the repo). That is an UNKNOWN trust check, never the
+    'no python, leave it to the matcher' pass-through."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    _hostile_python(root)
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    for name in os.listdir("/usr/bin"):
+        if not name.startswith(("python", "py")) and not (tools / name).exists():
+            os.symlink(os.path.join("/usr/bin", name), tools / name)
+
+    done = _run(root, "--all", env={"PATH": str(root / "bin") + os.pathsep + str(tools)})
+
+    _nothing_ran(done, root, sentinel, "UNKNOWN")
+
+
+def test_seam_venv_on_windows_gets_a_python3_beside_its_python_exe(tmp_path):
+    """MUST-ALLOW (test seam, Windows layout simulated on any host): a Windows
+    venv ships `python.exe` only, and the gate's resolver takes any `python3`
+    on PATH before any `python`, so the seam venv must carry a `python3.exe` or
+    the gate never runs it and every fixture repo reads UNTRUSTED."""
+    scripts = tmp_path / "Scripts"
+    scripts.mkdir()
+    (scripts / "python.exe").write_bytes(b"the venv launcher")
+    alias = crew_fixtures.seam_alias_python3(scripts)
+    assert alias == scripts / "python3.exe"
+    assert alias.read_bytes() == b"the venv launcher"
+    # An existing python3.exe is left alone; a POSIX bin dir (no python.exe) gains nothing.
+    (scripts / "python3.exe").write_bytes(b"already here")
+    crew_fixtures.seam_alias_python3(scripts)
+    assert (scripts / "python3.exe").read_bytes() == b"already here"
+    posix = tmp_path / "bin"
+    posix.mkdir()
+    crew_fixtures.seam_alias_python3(posix)
+    assert not (posix / "python3.exe").exists()
+
+
+# Round 8 (L-0888): nothing the repo supplies is executed ahead of the trust
+# decision, not even by the helpers (fingerprint, scope report, record report,
+# `--price`) or by the interpreter probe itself.
+
+_LOGGING_PY = (
+    '#!/bin/sh\n'
+    ': >> "{marker}"\n'
+    'exec "{real}" "$@"\n'
+)
+
+
+def _logging_python(root, marker, works=True):
+    """A repo `bin/python3` that records every call; `works=False` makes it fail
+    the strict probe (it prints nothing), the verified --price repro."""
+    (root / "bin").mkdir(exist_ok=True)
+    fake = root / "bin" / "python3"
+    if works:
+        fake.write_text(_LOGGING_PY.format(marker=marker, real=shutil.which("python3")), encoding="utf-8")
+    else:
+        fake.write_text(f'#!/bin/sh\n: >> "{marker}"\nexit 1\n', encoding="utf-8")
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    return fake
+
+
+def _tools_without_python(tmp_path):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    for name in os.listdir("/usr/bin"):
+        if not name.startswith(("python", "py")) and not (tools / name).exists():
+            os.symlink(os.path.join("/usr/bin", name), tools / name)
+    return tools
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+@pytest.mark.parametrize("args", [(), ("--all",), ("--price",)])
+def test_gate_never_runs_a_repo_python_that_fails_the_strict_probe(tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 8): PATH=repo/bin:tools, the repo's
+    python3 fails the strict probe and the sanitized PATH holds none. The old
+    trust check read that as 'no python, nothing to run' (0), and --price then
+    ran the repo's python3 on verify_price.py."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned.txt"
+    _logging_python(root, marker, works=False)
+    tools = _tools_without_python(tmp_path)
+
+    done = _run(root, *args, env={"PATH": str(root / "bin") + os.pathsep + str(tools)})
+
+    assert not marker.exists(), "the repo's python3 was executed ahead of the trust decision"
+    assert not sentinel.exists()
+    assert done.returncode == (1 if args == ("--price",) else 0), done.stdout + done.stderr
+    assert "nothing was verified" in done.stdout + done.stderr or args == ("--price",)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_price_of_an_approved_repo_still_prices_with_a_sanctioned_python(tmp_path, store):
+    """MUST-ALLOW: a trusted repo prices on the sanitized PATH's own python."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    _approve(root)
+
+    done = _run(root, "--price", "--force", env={"CREW_PYTHON": shutil.which("python3")})
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert sentinel.exists(), done.stdout + done.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+@pytest.mark.parametrize("args", [(), ("--all",)])
+def test_gate_an_untrusted_repo_python_named_by_crew_python_is_never_executed(tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 8): CREW_PYTHON=repo/bin/python3 ran the
+    repo's python on scope_report.py before the trust check."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned.txt"
+    fake = _logging_python(root, marker)
+
+    done = _run(root, *args, env={"CREW_PYTHON": str(fake)})
+
+    assert not marker.exists(), "the repo's python was executed ahead of the trust decision"
+    assert not sentinel.exists()
+    assert "nothing was verified" in done.stdout + done.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+@pytest.mark.parametrize("args", [(), ("--all",), ("--price",)])
+def test_gate_a_repo_pythonpath_sitecustomize_never_runs_ahead_of_the_trust_decision(tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 8): PYTHONPATH=repo/evil ran its
+    sitecustomize inside the probe's `-c` and inside the helpers."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned.txt"
+    evil = root / "evil"
+    evil.mkdir()
+    (evil / "sitecustomize.py").write_text(f"open({str(marker)!r}, 'a').close()\n", encoding="utf-8")
+
+    done = _run(root, *args, env={"PYTHONPATH": str(evil)})
+
+    assert not marker.exists(), "a repo sitecustomize ran ahead of the trust decision"
+    assert not sentinel.exists(), done.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="needs git submodules over a file remote")
+def test_gate_an_approved_submodule_runs_its_rules(tmp_path, store):
+    """A submodule's git common dir is <super>/.git/modules/<name> and its `.git` is
+    a file; that is not an unknown when the repo is hash-approved."""
+    sentinel = tmp_path / "ran.txt"
+    sub_src = _repo(tmp_path / "src", sentinel)
+    _git(sub_src, "commit", "-q", "-am", "x")
+    sup = tmp_path / "sup"
+    sup.mkdir()
+    _git(sup, "init", "-q")
+    _git(sup, "config", "user.email", "t@example.invalid")
+    _git(sup, "config", "user.name", "t")
+    _git(sup, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub_src), "mod")
+    _git(sup, "commit", "-q", "-m", "sub")
+    mod = sup / "mod"
+    assert (mod / ".git").is_file()
+    (mod / "a.py").write_text("x = 3", encoding="utf-8")
+    _approve(mod)
+
+    done = _run(mod, "--all")
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.is_file(), done.stdout + done.stderr
+    assert "UNKNOWN" not in done.stdout + done.stderr
+
+
+# Round 9 (L-0888): the gate's own state and its environment are not input.
+
+_MODES = [(), ("--all",), ("--price", "--force")]
+
+
+def _expect_nothing_ran(done, args, sentinel):
+    assert not sentinel.exists(), "the repo-authored command RAN"
+    assert done.returncode == (1 if args and args[0] == "--price" else 0), done.stdout + done.stderr
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+@pytest.mark.parametrize("args", _MODES)
+def test_gate_an_inherited_cache_variable_cannot_pre_seed_the_interpreter(tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 9): GATE_SAFE_DONE=1 GATE_SAFE_RC=0
+    GATE_SAFE_PY=<repo>/bin/python3 in a repo's settings `env` block made the
+    'worked out once' cache answer for the gate, and the repo's python said trusted."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    fake = _hostile_python(root)
+
+    done = _run(root, *args, env={"GATE_SAFE_DONE": "1", "GATE_SAFE_RC": "0",
+                                  "GATE_SAFE_PY": str(fake), "GATE_SAFE_PATH": str(root / "bin")})
+
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="a user site under HOME is a POSIX layout here")
+@pytest.mark.parametrize("args", _MODES)
+def test_gate_a_user_site_under_a_repo_home_never_runs_in_the_probe(tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 9): HOME=<repo>/home with a usercustomize.py
+    in its user site ran inside the proving probe's own `-c`, before the trust decision."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    home = root / "home"
+    marker = tmp_path / "pwned.txt"
+    site_dir = subprocess.run(
+        [shutil.which("python3"), "-c", "import site; print(site.getusersitepackages())"],
+        env=dict(os.environ, HOME=str(home), PYTHONUSERBASE=""), capture_output=True, text=True,
+        check=True).stdout.strip()
+    os.makedirs(site_dir, exist_ok=True)
+    with open(os.path.join(site_dir, "usercustomize.py"), "w", encoding="utf-8") as handle:
+        handle.write(f"open({str(marker)!r}, 'a').close()\n")
+
+    done = _run(root, *args, env={"HOME": str(home), "PYTHONUSERBASE": ""})
+
+    assert not marker.exists(), "a repo user site ran ahead of the trust decision"
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_a_trust_check_that_cannot_run_never_reaches_the_matcher_on_a_repo_python(tmp_path, store):
+    """MUST-BLOCK (round 9): status 14 used to set a flag and carry on to the
+    matcher's own interpreter lookup, which CREW_PYTHON can point inside the repo."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned.txt"
+    fake = _logging_python(root, marker)
+    scripts = tmp_path / "plugin" / "hooks" / "scripts"
+    shutil.copytree(os.path.join(_ROOT, "hooks", "scripts"), scripts,
+                    ignore=shutil.ignore_patterns("__pycache__", "_test"))
+    (scripts / "verify_trust.py").write_text("import sys\nsys.exit(7)\n", encoding="utf-8")
+
+    done = crew_fixtures.run_gate(
+        [_BASH, str(scripts / "verify-gate.sh"), "--all"], input="{}", cwd=str(root),
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root), CREW_PYTHON=str(fake)),
+        capture_output=True, text=True, check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+    assert done.returncode == 2, done.stderr
+    assert not marker.exists(), "the repo's python ran after the trust check broke"
+    assert not sentinel.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="exported shell functions are a POSIX bash feature")
+@pytest.mark.parametrize("name", ["git", "dirname"])
+@pytest.mark.parametrize("args", _MODES)
+def test_gate_an_exported_shell_function_never_runs_ahead_of_the_trust_decision(tmp_path, store, args, name):
+    """MUST-BLOCK (verified repro, round 9): a `BASH_FUNC_git%%` variable ran
+    repo code the first time the gate called git."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned.txt"
+
+    done = _run(root, *args, env={f"BASH_FUNC_{name}%%": f"() {{ : >> '{marker}'; command {name} \"$@\"; }}"})
+
+    assert not marker.exists(), f"an exported {name} function ran ahead of the trust decision"
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_a_second_trust_check_that_cannot_run_blocks_with_exit_2(tmp_path, store):
+    """MUST-BLOCK: the FIRST trust check answers (the repo is approved) and the SECOND,
+    after the matcher parsed, cannot run: exit 2, nothing runs."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    _approve(root)
+    scripts = tmp_path / "plugin" / "hooks" / "scripts"
+    shutil.copytree(os.path.join(_ROOT, "hooks", "scripts"), scripts,
+                    ignore=shutil.ignore_patterns("__pycache__", "_test"))
+    shutil.copy(scripts / "verify_trust.py", scripts / "verify_trust_real.py")
+    (scripts / "verify_trust.py").write_text(
+        "import os, runpy, sys\n"
+        "if '--expect-verify-sha' in sys.argv:\n    sys.exit(7)\n"
+        "runpy.run_path(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'verify_trust_real.py'),"
+        " run_name='__main__')\n", encoding="utf-8")
+
+    done = crew_fixtures.run_gate(
+        [_BASH, str(scripts / "verify-gate.sh"), "--all"], input="{}", cwd=str(root),
+        env=dict(os.environ, CLAUDE_PROJECT_DIR=str(root)), capture_output=True, text=True,
+        check=False, timeout=crew_fixtures.GATE_SUBPROCESS_TIMEOUT_S)
+
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert not sentinel.exists(), "the repo-authored command RAN"
+    assert "could not RUN the trust check" in done.stdout + done.stderr
+
+
+# ------------------------------------------------------------------ round 10
+
+def _planting_dir(root, marker, names):
+    """`<repo>/bin` holding a script for each name that records a hit, then runs the real tool."""
+    (root / "bin").mkdir(exist_ok=True)
+    for name in names:
+        real = shutil.which(name) or f"/usr/bin/{name}"
+        script = root / "bin" / name
+        script.write_text(f'#!/bin/sh\n: >> "{marker}.{name}"\nexec "{real}" "$@"\n', encoding="utf-8")
+        script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    return root / "bin"
+
+
+_PLANTED = ["dirname", "basename", "uname", "tr", "git", "grep", "sed", "wc", "cut", "head", "date", "cat"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the planted tools are POSIX scripts")
+@pytest.mark.parametrize("args", _MODES)
+def test_gate_a_tool_planted_in_a_repo_path_dir_never_runs_ahead_of_the_trust_decision(
+        tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 10): PATH=<repo>/bin:... ran a repo-planted
+    dirname, uname, tr and git in Stop, --all and --price before the trust decision."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "hit"
+    planted = _planting_dir(root, marker, _PLANTED)
+
+    done = _run(root, *args, env={"PATH": f"{planted}{os.pathsep}{os.environ['PATH']}"})
+
+    hits = sorted(n for n in _PLANTED if os.path.exists(f"{marker}.{n}"))
+    assert hits == [], f"a repo-planted tool ran ahead of the trust decision: {hits}"
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the planted tools are POSIX scripts")
+def test_gate_an_approved_repo_still_finds_a_tool_in_its_own_path_dir_for_a_rule(tmp_path, store):
+    """MUST-ALLOW: the user's PATH is back once the repo is trusted, so a rule can use a
+    tool from a repo-local directory (a `.venv/bin`, a `node_modules/.bin`)."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    tool = root / "bin" / "repo-tool"
+    tool.parent.mkdir()
+    tool.write_text(f'#!/bin/sh\necho used > "{sentinel}"\n', encoding="utf-8")
+    tool.chmod(tool.stat().st_mode | stat.S_IXUSR)
+    (root / ".crew" / "verify.json").write_text(_map(sentinel, "repo-tool"), encoding="utf-8")
+    _approve(root)
+
+    done = _run(root, "--all", env={"PATH": f"{root / 'bin'}{os.pathsep}{os.environ['PATH']}"})
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.read_text(encoding="utf-8").strip() == "used"
+
+
+_SWEEP = ["git", "dirname", "basename", "uname", "tr", "grep", "sed", "wc", "cut", "head", "date",
+          "cat", "printf", "echo", "cd", "pwd", "read", "local", "test", "[", "mkdir", "rm", "env",
+          "exec", "eval", "export", "trap", "return", "exit", "set", "shift", "type", "hash",
+          "source", ".", "mapfile", "readonly", "wait", "kill", "sleep", "mktemp", "stat", "sort"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="exported shell functions are a POSIX bash feature")
+@pytest.mark.parametrize("args", _MODES)
+def test_gate_no_exported_shell_function_but_the_sweeps_own_words_runs_ahead_of_the_trust_decision(
+        tmp_path, store, args):
+    """Round 10: the boundary, measured. Every name in the sweep (the commands and
+    builtins the gate calls) is an exported function that records a hit; none runs.
+    The sweep's own two words, `compgen` and `unset`, are the documented residual:
+    they are looked up before any line of this script can remove a function."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned"
+    env = {f"BASH_FUNC_{name}%%": f"() {{ : >> '{marker}.x'; command {name} \"$@\"; }}" for name in _SWEEP}
+
+    done = _run(root, *args, env=env)
+
+    assert not os.path.exists(f"{marker}.x"), "an exported function ran ahead of the trust decision"
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="exported shell functions are a POSIX bash feature")
+@pytest.mark.parametrize("name", ["builtin", "command", "declare", "typeset", "enable", "eval"])
+def test_gate_an_exported_function_named_for_a_word_the_sweep_does_not_use_never_runs(tmp_path, store, name):
+    """Round 10: `builtin`, `command` and `declare` are the names a reviewer would try next.
+    The sweep calls neither, so each is swept before anything looks it up."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    marker = tmp_path / "pwned"
+
+    done = _run(root, "--all", env={f"BASH_FUNC_{name}%%": f"() {{ : >> '{marker}'; return 0; }}"})
+
+    assert not marker.exists(), f"an exported {name} function ran ahead of the trust decision"
+    _expect_nothing_ran(done, ("--all",), sentinel)
+
+
+_INCIDENT = json.dumps({"expiresAtEpoch": 4102444800})
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+@pytest.mark.parametrize("args", [(), ("--all",)])
+def test_gate_an_incident_file_never_runs_the_repos_crew_python_ahead_of_the_trust_decision(
+        tmp_path, store, args):
+    """MUST-BLOCK (verified repro, round 10): `.crew/incident.json` plus
+    CREW_PYTHON=<repo>/bin/python3 ran the repo's script from `crew_incident_active`."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    (root / ".crew" / "incident.json").write_text(_INCIDENT, encoding="utf-8")
+    hit = tmp_path / "python-hit"
+    (root / "bin").mkdir()
+    fake = root / "bin" / "python3"
+    fake.write_text(f'#!/bin/sh\n: >> "{hit}"\nexec "{shutil.which("python3")}" "$@"\n', encoding="utf-8")
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+
+    done = _run(root, *args, env={"CREW_PYTHON": str(fake)})
+
+    assert not hit.exists(), "the repo's python ran before the trust decision"
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the interpreter stand-in is a POSIX script")
+def test_gate_an_open_incident_still_stands_the_gate_down_with_the_proved_python(tmp_path, store):
+    """MUST-ALLOW: the emergency lane is unchanged for an honest incident."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    (root / ".crew" / "incident.json").write_text(_INCIDENT, encoding="utf-8")
+
+    done = _run(root)
+
+    assert done.returncode == 0, done.stderr
+    assert not sentinel.exists()
+    assert (root / ".crew" / "incident-skips.log").is_file()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the fsmonitor hook is a POSIX script")
+@pytest.mark.parametrize("args", [(), ("--all",)])
+def test_gate_a_core_fsmonitor_hook_in_the_repo_config_never_runs_before_the_trust_decision(
+        tmp_path, store, args):
+    """MUST-BLOCK (verified, round 10): `git diff` and `git ls-files` run the
+    `core.fsmonitor` command named in `.git/config`."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    hit = tmp_path / "fsmonitor-hit"
+    hook = root / "hook.sh"
+    hook.write_text(f'#!/bin/sh\n: >> "{hit}"\n', encoding="utf-8")
+    hook.chmod(hook.stat().st_mode | stat.S_IXUSR)
+    _git(root, "config", "core.fsmonitor", str(hook))
+
+    done = _run(root, *args)
+
+    assert not hit.exists(), "the repo's core.fsmonitor command ran before the trust decision"
+    _expect_nothing_ran(done, args, sentinel)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX paths")
+def test_gate_an_inherited_git_dir_cannot_blank_the_changed_file_scan(tmp_path, store):
+    """MUST-BLOCK (round 10): GIT_DIR/GIT_WORK_TREE naming a clean repository emptied the
+    scan, and the gate exited 0 having verified nothing; the approved rule must still run."""
+    sentinel = tmp_path / "ran.txt"
+    root = _repo(tmp_path, sentinel)
+    _approve(root)
+    clean = tmp_path / "clean"
+    clean.mkdir()
+    _git(clean, "init", "-q")
+
+    done = _run(root, "--all", env={"GIT_DIR": str(clean / ".git"), "GIT_WORK_TREE": str(clean)})
+
+    assert done.returncode == 0, done.stderr
+    assert sentinel.is_file(), "the scan was pointed at another repository and ran nothing"
+
+
+def test_gate_the_documented_function_scrub_boundary_names_its_own_words():
+    """Round 10: the configuration reference states what the scrub does NOT cover."""
+    with open(os.path.join(_ROOT, "CONFIG.md"), encoding="utf-8") as handle:
+        text = handle.read()
+    assert "BASH_FUNC_compgen%%" in text and "BASH_FUNC_unset%%" in text
+    assert "removes every inherited function before anything is called" not in text
+    assert "every shell function it inherits" not in text

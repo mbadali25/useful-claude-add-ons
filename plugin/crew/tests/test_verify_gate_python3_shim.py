@@ -792,6 +792,10 @@ def test_matcher_producing_no_output_fails_closed_even_past_crew_py_strict(tmp_p
             "  printf '%s\\n' \"" + stub + "\"\n"
             "  exit 0\n"
             "fi\n"
+            # L-0888: the trust check runs on this same interpreter and now stops
+            # the gate itself (exit 2) when it prints nothing, before the matcher is
+            # reached. Answer it, so the defence under test is the one that runs.
+            "case \"$*\" in *verify_trust.py*) echo 'verify trust: trusted (stub)'; exit 0 ;; esac\n"
             "exit 0\n"
         )
     os.chmod(stub, 0o755)
