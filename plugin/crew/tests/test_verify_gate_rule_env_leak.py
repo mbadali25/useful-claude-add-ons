@@ -70,7 +70,7 @@ _ASSIGN_RE = re.compile(
     r"(?:^|[\s;&|(])(?:local\s+|readonly\s+)?([A-Za-z_][A-Za-z0-9_]*)=")
 _FOR_RE = re.compile(r"\bfor\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\b")
 _READ_RE = re.compile(r"\bread\s+(?:-[A-Za-z]+\s+)*((?:[A-Za-z_][A-Za-z0-9_]*\s*)+)")
-_SOURCED_RE = re.compile(r'^\s*\.\s+"\$\(dirname "\$\{BASH_SOURCE\[0\]\}"\)/([\w.-]+\.sh)"',
+_SOURCED_RE = re.compile(r'^\s*\.\s+"(?:\$\(dirname "\$\{BASH_SOURCE\[0\]\}"\)|\$_crew_srcdir)/([\w.-]+\.sh)"',
                          re.MULTILINE)
 
 # Exported by the gate ON PURPOSE, so a rule inherits it: `export PATH`

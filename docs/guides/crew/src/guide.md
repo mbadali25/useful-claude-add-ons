@@ -248,7 +248,7 @@ example `guards.overrides.roleWrites: report`. The twelve per-guard keys
 counts until `/crew:migrate` rewrites the layer. Each layer expands its own
 profile and overrides, and the narrower layer wins per guard.
 
-To run everything with no guard at all, set `guards.enabled: false` in the machine config layer, `~/.claude/crew/config.json` (crew 1.3.107), and confirm it as the owner (crew 1.3.107): like the `humanOnly.*` opt-out it takes the `/crew:confirm-config` double confirmation, so an agent's edit, a hand edit or a stray write leaves the guards on, and so does any later write to the file, even of the same bytes (the confirmation is bound to the file's content and modification time as you left it, crew 1.3.107; a copy that keeps the old time replays it, an accepted limit). It is a guardrail against accidents and agent drift, not a security boundary against a hostile agent running as the same user: that agent can forge the receipt, because it is a file you can write; the shell check also stays out of the way of normal commands (it looks at what a command writes TO, opens no script, and so a helper script run behind `cd`, `pytest`, `uv` or `make` is not caught). A session whose working directory is your home, or an ancestor of it, makes a confirmed switch do nothing: the machine config then lies inside the working directory, so every guard stays on. Once confirmed it stands down every guard hook (the cloud, environment, role-write, scope and promote guards, the verify gate, the completion audit and the context-watch Stop hook), so nothing blocks, whatever the profile, the overrides, `scope.mode` and `verifyGate` say. Only that layer counts: a `false` in `.crew/config.json` is ignored, so a checkout cannot turn every guard off, and a duplicate key or a typo leaves the guards on. `/crew:approve` and `/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. It needs python: with none, the bash launcher still fails closed in an armed repo. To turn it off, ask crew to propose it (`/crew:config`), then type `/crew:confirm-config <change_id>` twice, in two separate prompts; `--set guards.enabled=false` is refused (crew 1.3.108). A `--set` of another key keeps a confirmed switch in force; a restore, rebuild or migrate retires it (crew 1.3.108). It needs python: with none, the bash launcher still fails closed in an armed repo.
+To run everything with no guard at all, set `guards.enabled: false` in the machine config layer, `~/.claude/crew/config.json` (crew 1.3.111), and confirm it as the owner (crew 1.3.111): like the `humanOnly.*` opt-out it takes the `/crew:confirm-config` double confirmation, so an agent's edit, a hand edit or a stray write leaves the guards on, and so does any later write to the file, even of the same bytes (the confirmation is bound to the file's content and modification time as you left it, crew 1.3.111; a copy that keeps the old time replays it, an accepted limit). It is a guardrail against accidents and agent drift, not a security boundary against a hostile agent running as the same user: that agent can forge the receipt, because it is a file you can write; the shell check also stays out of the way of normal commands (it looks at what a command writes TO, opens no script, and so a helper script run behind `cd`, `pytest`, `uv` or `make` is not caught). A session whose working directory is your home, or an ancestor of it, makes a confirmed switch do nothing: the machine config then lies inside the working directory, so every guard stays on. Once confirmed it stands down every guard hook (the cloud, environment, role-write, scope and promote guards, the verify gate, the completion audit and the context-watch Stop hook), so nothing blocks, whatever the profile, the overrides, `scope.mode` and `verifyGate` say. Only that layer counts: a `false` in `.crew/config.json` is ignored, so a checkout cannot turn every guard off, and a duplicate key or a typo leaves the guards on. `/crew:approve` and `/crew:confirm-config` keep working, so the `humanOnly.*` opt-out does too. It needs python: with none, the bash launcher still fails closed in an armed repo.
 
 - **On by default:** the Stop verify gate (`verifyGate: true`) blocks when a
   verify rule fails.
@@ -256,9 +256,20 @@ To run everything with no guard at all, set `guards.enabled: false` in the machi
 **The scope guard** (`scope.mode`) runs before each Write, Edit, MultiEdit and
 NotebookEdit. It refuses an edit when the active ticket has no current
 approval, or when the target is outside Touch. It also refuses a shell command
-that tries to write the approval state. *What it cannot see:* `sed -i`, a
-redirect or a formatter writing a file. Those are shell writes, and the guard
-judges only the editing tools.
+that tries to write the approval state. That check is a textual deny-list: a
+command that names crew's state beside a redirect or a writing word (`cp`,
+`mv`, `rm`, `sed`, `tee`, `echo`, `python`) is refused. The one exemption is
+fail-closed: a command made only of ten read-only programs (`ls`, `cat`,
+`head`, `tail`, `wc`, `stat`, `grep`, `egrep`, `fgrep`, `find`), each with
+only options on its explicit allow-list and plain literal words (no `$` or
+backtick, even inside single quotes), so `ls .git/crew | grep python3`
+passes. The reader takes `2>/dev/null` and `2>&1` out of the word list wherever
+they stand, before it checks any option, because bash removes them before the
+program runs (a quoted look-alike is refused); shell builtins such as `test` and any unknown option (`find -rm`,
+`tail -f`, `tail +f`, `grep --pager`) keep the refusal; anything the
+guard cannot parse completely keeps the refusal. *What it cannot see:* `sed -i`,
+a redirect or a formatter writing a file outside crew's state. Those are shell
+writes, and the guard judges only the editing tools.
 
 **The completion audit** runs at Stop. It diffs the whole tree against the
 ticket's start (committed, staged, unstaged and untracked), so shell-made
