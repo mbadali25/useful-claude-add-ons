@@ -85,7 +85,8 @@ resolve to.
 **Who can write the receipts.** The double confirmation is recorded only by
 the prompt hook, from your own prompt. The scope guard (when `scope.mode` is
 not `off`) refuses every Write/Edit under `~/.claude/crew/confirm-config/` and
-every shell command that names that store beside a writing word. That is a
+every shell command that names that store beside a write VERB or a redirect (crew 1.3.123: a verb's
+spelling inside a file name, `Get-Content C:\tmp\confirm-config\echo.txt`, is a read). That is a
 textual tripwire, not a sandbox: a session that sets out to forge a receipt
 (`python -c`, an encoded command, a variable holding the path) still can, and
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
@@ -93,12 +94,12 @@ meaningful only with `scope.mode` `block`.
 
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.117) turns EVERY guard hook off: the promote
+`guards.enabled: false` (crew 1.3.123) turns EVERY guard hook off: the promote
 gate, the role-write, cloud, environment and scope guards, the verify gate, the
 completion audit and the context-watch Stop hook. None of them starts, so nothing
 is judged, refused, asked, warned or logged: with the switch off, nothing blocks. It
 beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mode`,
-`verifyGate`). Three things must all hold for it to count (crew 1.3.117):
+`verifyGate`). Three things must all hold for it to count (crew 1.3.123):
 
 - It is in the MACHINE layer (`~/.claude/crew/config.json`). A `false` in
   `.crew/config.json`, tracked or not, is ignored and the guards stay on (a
@@ -108,7 +109,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   applied `/crew:confirm-config` double confirmation backs it: two confirmations
   from two prompts the owner typed, and the digest of the machine file as the
   owner left it: its content (canonical JSON) AND its modification time (crew
-  1.3.117). An agent's Write or Edit, a hook-side write, a hand edit, a bare
+  1.3.123). An agent's Write or Edit, a hook-side write, a hand edit, a bare
   hand-written receipt, or ANY later write to the file (a restore, a rebuild, an
   unrelated edit, or a hand edit that sets the key `true` and a later one that
   writes the identical `false` back) leaves the guards ON; so does a missing,
@@ -132,7 +133,20 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   stream (`::$DATA`, `::$INDEX_ALLOCATION`), `/c/`, `/mnt/c/` and `/cygdrive/c/` drive folders, `\\?\`, an 8.3 short name (`CREW~1`), a link or junction, a brace expansion, and ANY glob that can
   match a receipt (`cc-1*.json`, `cc-?*`, `cc-[0-9]*`) or anything else below the store. `patch --dry-run` (`--check`,
   `-C`) writes nothing and passes. A word the shell cannot resolve (an unset variable, a `$` share) is judged by
-  how it ENDS, component by component. A command that only
+  how it ENDS, component by component. Escape characters are read the way each shell reads them (crew
+  1.3.123): a bash backslash (`confi\g.json`), a PowerShell backtick (``confi`g.json``) and a cmd caret
+  (`confi^g.json`) are stripped before the path is judged, in the command name and its options too (`r\m`,
+  ``Set-Cont`ent``), and a backtick command (`` `echo ~/.claude/crew`/config.json ``) is read as a command.
+  A write target the guard cannot resolve to one path FAILS CLOSED when it could be the owner's: a `$(...)`
+  or backtick substitution, a `$'...'` string with escapes, an unset variable, a `%VAR%` or `$env:` name, or a
+  word in a parenthesised expression (`Set-Content -Path (Join-Path $HOME ".claude/crew/config.json")`). It is
+  refused when what is spelled of it can only be the owner's (`~/.claude/crew/$NAME`, `~/$A/config.json`), and
+  when the command also names `.claude`, `confirm-config` or `crew/config.json` and the target could be the
+  owner's (a lone `$D`, `$(cat p)`, `$D/config.json`, a parenthesised path, or a relative path after a `cd`
+  aimed at a variable). The same unresolvable target in a command that never names the owner's folder, or a
+  name such as `$D/out.txt` that cannot end one of the owner's paths, passes. Comments do not count as naming
+  the folder. A write inside a script block, a loop, a condition, a `try` or a `case` arm is read as the
+  command it is (`foreach ($f in 1) { Set-Content ... }`, `for f in a; do rm ...; done`). A command that only
   MENTIONS them (a commit message, a PR body, `ls ~/.claude/crew/ > out.txt`,
   `cat config.json | tee out.json`) passes, and so does an unrelated write in the
   same line; reading them (`cat`, `jq`, `stat`, `crew_config.py --show`) passes.
@@ -146,10 +160,10 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   literal path, are read by their text only. A comma or a space inside a quoted .NET path is part of the path; inside a quoted cmdlet
   path (`Set-Content -LiteralPath 'a,b'`) a comma still splits it (accepted limit).
   Accepted limits, by the owner's decision ("fix the overblock, add the plain
-  verbs, stop there"): brace expansion, a path built by `Join-Path` or a
-  variable the command did not set, `perl`, `php`, `awk` or `os.system` inline
-  code, `find -exec` and `xargs`, and a helper script, launcher, 8.3 short name or
-  encoded code all still write the file. The switch is a guardrail against
+  verbs, stop there", amended by the 2026-11-15 decision to fail closed on dynamic paths): a
+  path built by arithmetic or by joining quoted pieces (`'.cl' + 'aude'`), `perl`, `php`, `awk` or `os.system` inline
+  code, `find -exec` and `xargs`, and a helper script, launcher, 8.3
+  short name or encoded code all still write the file. The switch is a guardrail against
   accidents and agent drift, not a boundary against a hostile agent of the same
   user.
 - It is unambiguous. Only the JSON literal `false` counts: an absent key, `null`,
@@ -166,7 +180,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   not skipped in silence (the receipt backs nothing anyway: it binds the file's
   content and modification time).
 
-It takes effect on the next hook call, with no reinstall. To turn it off, ask crew to propose it (`/crew:config`, which runs `crew_confirm_config.py propose --layer machine --key guards.enabled` and relays the change id), then type `/crew:confirm-config <change_id>` yourself, twice, in two separate prompts, within 15 minutes. `--set guards.enabled=false` is refused (crew 1.3.119). `approval-hook.sh` keeps
+It takes effect on the next hook call, with no reinstall. To turn it off, ask crew to propose it (`/crew:config`, which runs `crew_confirm_config.py propose --layer machine --key guards.enabled` and relays the change id), then type `/crew:confirm-config <change_id>` yourself, twice, in two separate prompts, within 15 minutes. `--set guards.enabled=false` is refused (crew 1.3.124). `approval-hook.sh` keeps
 running, so `/crew:approve` and `/crew:confirm-config` keep working and the
 `humanOnly.*` opt-out still works with the guards off. It needs python: with
 none, the bash launcher still fails closed in an armed repo (known limitation).
@@ -190,7 +204,7 @@ fine-grained one). Keep an
 untrusted agent out of the account rather than behind this key. A working
 directory equal to your home, or an ancestor of it, makes an owner-confirmed
 switch do nothing (the guards stay on, as for a HOME redirected into the project).
-What crew tells you matches what dispatch does (crew 1.3.119): `crew_confirm_config.py propose` refuses a
+What crew tells you matches what dispatch does (crew 1.3.124): `crew_confirm_config.py propose` refuses a
 machine file that is a symbolic link (the confirmation would name the target's path while the write
 replaces the link) and one inside the working directory or the project, and says why; a confirmation is
 reported `applied` only when the dispatcher's own reader honours its receipt, else `refused`; and

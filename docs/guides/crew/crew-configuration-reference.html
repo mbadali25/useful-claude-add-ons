@@ -208,7 +208,8 @@ resolve to.</p>
 <p><strong>Who can write the receipts.</strong> The double confirmation is recorded only by
 the prompt hook, from your own prompt. The scope guard (when <code>scope.mode</code> is
 not <code>off</code>) refuses every Write/Edit under <code>~/.claude/crew/confirm-config/</code> and
-every shell command that names that store beside a writing word. That is a
+every shell command that names that store beside a write VERB or a redirect (crew 1.3.123: a verb's
+spelling inside a file name, <code>Get-Content C:\tmp\confirm-config\echo.txt</code>, is a read). That is a
 textual tripwire, not a sandbox: a session that sets out to forge a receipt
 (<code>python -c</code>, an encoded command, a variable holding the path) still can, and
 <code>scope.mode: off</code> has no tripwire at all. Treat <code>humanOnly</code> opt-outs as
@@ -1066,7 +1067,7 @@ meaningful only with <code>scope.mode</code> <code>block</code>.</p>
 <td>machine-only</td>
 <td><code>true</code></td>
 <td><code>true</code> | <code>false</code> (checked in <code>plugin/crew/hooks/scripts/crew_hook.py</code>)</td>
-<td>1.3.119</td>
+<td>1.3.124</td>
 <td>The master switch for every guard hook, read from the machine file ALONE and counted only once the OWNER confirmed it. <code>false</code> there, backed by an applied <code>/crew:confirm-config</code> double confirmation (propose it with <code>crew_confirm_config.py propose --layer machine --key guards.enabled</code>), stands them all down (the cloud, environment, role-write, scope and promote guards, the completion audit, the verify gate, and the context-watch Stop hook): nothing is judged, refused, warned or logged, whatever <code>guards.profile</code>, <code>guards.overrides.*</code>, <code>scope.mode</code> or <code>verifyGate</code> say. A <code>false</code> that is not confirmed (a hand edit, an agent's write) leaves the guards on, and the scope guard refuses an agent's write to the file. The confirmation is bound to the machine file as the owner left it, content AND modification time: any later write (a hand edit, even one writing the same bytes back, <code>--restore</code>, <code>--rebuild</code> or <code>/crew:migrate</code>) leaves the guards on until it is confirmed again, while a crew <code>--set</code> of another key rebinds it. A write that puts the old modification time back (<code>cp -p</code>, an archive extract) replays the receipt: an accepted limit. A machine file that is a symbolic link or lies inside the working directory or the project is refused when proposed, and one that is not strict JSON is reported as such, never as unconfirmed. A guardrail against accidents and agent drift, NOT a security boundary against a hostile agent running as the same user. A <code>false</code> in <code>.crew/config.json</code> is refused by the writer and ignored by the dispatcher, so a checkout cannot turn every guard off. Only the JSON literal <code>false</code> turns them off (a duplicate key, <code>null</code>, a string or anything unreadable leaves them on). <code>/crew:approve</code> and <code>/crew:confirm-config</code> keep working, so the <code>humanOnly.*</code> opt-out does too. Needs python: with none the guards still fail closed.</td>
 </tr>
 </tbody>
