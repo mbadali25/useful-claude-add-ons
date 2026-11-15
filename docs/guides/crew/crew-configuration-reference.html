@@ -213,7 +213,7 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 (<code>python -c</code>, an encoded command, a variable holding the path) still can, and
 <code>scope.mode: off</code> has no tripwire at all. Treat <code>humanOnly</code> opt-outs as
 meaningful only with <code>scope.mode</code> <code>block</code>.</p>
-<h2 id="git-commands-guardsgitallow-crew-13106">Git Commands (<code>guards.git.allow</code>, Crew 1.3.106)</h2>
+<h2 id="git-commands-guardsgitallow-crew-13109">Git Commands (<code>guards.git.allow</code>, Crew 1.3.109)</h2>
 <p>The owner's switch that stops crew's command guards from blocking or asking on
 git commands, destructive ones included. Off by default (<code>null</code>, or <code>"off"</code>).</p>
 <table>
@@ -241,14 +241,14 @@ git commands, destructive ones included. Off by default (<code>null</code>, or <
 <p>A listed subcommand passes with every option it takes: listing <code>push</code> also lets
 <code>git push --force</code> and <code>git push origin +main</code> through, because the force-push
 rule is a finding on the <code>push</code> subcommand. To keep force pushes stopped, leave
-<code>push</code> out of the list.</p>
+<code>push</code> out of the list. The cloud guard reads git's abbreviated long options (<code>--force-with-leas</code>, <code>--mirr</code>) as the force pushes they are, and <code>--force-if-includes</code>, <code>--mirror</code> and <code>--delete</code> as force pushes too, with the switch on or off.</p>
 <p>What it loosens, and nothing else: the cloud guard's <code>guards.forcePush</code> rule
 (<code>git push --force</code>, <code>+ref</code>) and the promote gate, so a commit message or
 that merely mentions a declared deploy no longer trips it. A declared
 deploy that is itself a git command (<code>git push prod main</code>) stays gated: that
 is a deploy, not a git block. <code>gh</code> is not git: <code>gh pr merge --admin</code>
 (<code>guards.adminMerge</code>), workflow dispatches and <code>gh api</code> calls are untouched.</p>
-<p><strong>The line is ONE plain git command, fail-closed (crew 1.3.106).</strong> A command
+<p><strong>The line is ONE plain git command, fail-closed (crew 1.3.109).</strong> A command
 line is exempt only when it is a single simple command: exactly <code>git</code> - not a
 path (<code>/usr/bin/git</code>, <code>./git</code>, <code>git.exe</code>), not preceded by <code>command</code>, an
 assignment, <code>cd</code> or a function, alias or <code>shopt</code> that redefines git - followed
@@ -276,7 +276,7 @@ judge that line exactly as they did before the switch. That includes <code>$</co
 any form (<code>"$OPT"</code>, <code>${X:-...}</code>, <code>$'...'</code>, <code>$"..."</code>, <code>$env:X</code>, <code>$(...)</code>), a
 backtick substitution, a glob (<code>*</code>, <code>?</code>, <code>[</code>), a brace expansion, a leading
 <code>~</code>, a PowerShell <code>(expr)</code>, <code>@(...)</code>, <code>@splat</code>, <code>{ }</code> or <code>[type]</code>, <code>--%</code>, a
-<code>%NAME%</code>, a curly quote, and every chain such as <code>git add -A &amp;&amp; git commit -m
+<code>%NAME%</code> (or two <code>%</code> in a line with text between them, even across words), a curly quote, and every chain such as <code>git add -A &amp;&amp; git commit -m
 x</code>. Six review rounds each found a new shape of redirect, heredoc,
 continuation or expansion for a reader that tried to follow them (a command
 made only of redirects such as <code>&gt; $((_))</code>, a heredoc delimiter ending in a
@@ -298,7 +298,8 @@ subcommand that runs a command it is given (<code>rebase --exec</code>/<code>-x<
 --upload-pack</code>, <code>clone -u</code>/<code>-c</code>/<code>--template</code>, <code>init --template</code>, <code>grep -O</code>,
 <code>difftool --extcmd</code>, <code>filter-branch</code>, <code>instaweb</code>, <code>for-each-repo</code>,
 <code>web--browse</code>, <code>send-email --*-cmd</code>, <code>daemon --access-hook</code>), in any abbreviation git accepts (<code>--exe</code>,
-<code>--receive=...</code>); and a <code>git config</code> that is not plainly a read (<code>--get*</code>,
+<code>--receive=...</code>); an option that launches a helper program (<code>--paginate</code> and a leading <code>-p</code>, <code>--ext-diff</code>,
+<code>--textconv</code>, <code>--help</code>, <code>--open-files-in-pager</code>) and <code>git help</code>; and a <code>git config</code> that is not plainly a read (<code>--get*</code>,
 <code>-l</code>/<code>--list</code>, <code>get</code>, <code>list</code>, or one key alone, with only read options): a
 write may set <code>alias.*</code> or a program-valued key (<code>core.sshCommand</code>,
 <code>core.pager</code>, <code>core.editor</code>, <code>core.fsmonitor</code>, <code>core.hooksPath</code>,
@@ -1208,7 +1209,7 @@ Each pass is logged to <code>.crew/guard.log</code> with the policy <code>gitAll
 <td>both</td>
 <td><code>null</code></td>
 <td>null, <code>"off"</code>, <code>"all"</code> or a list of git subcommand names (coerced in <code>plugin/crew/hooks/scripts/crew_gitallow.py</code>)</td>
-<td>1.3.106</td>
+<td>1.3.109</td>
 <td>The owner's switch that stops crew's command guards blocking or asking on git commands: <code>"all"</code> lets a line of only plain git commands past the force-push rule and the promote gate (unless a declared deploy is itself a git command); a list of subcommands (<code>["commit", "push"]</code>) lets only those through, with every option they take (listing <code>push</code> lets <code>push --force</code> through). null or <code>"off"</code> changes nothing. Machine file only, and only after <code>/crew:confirm-config</code> twice (<code>crew_confirm_config.py propose --key guards.git.allow --value ...</code>); a value written any other way, or any later change to the machine file outside crew's config writer, reads as off, and a repo <code>"off"</code> or unreadable repo file vetoes it. FAIL-CLOSED ALLOWLIST: a line is exempt only when it is ONE command, exactly <code>git</code> with plain literal words (no <code>$</code>, backtick, glob, brace, leading <code>~</code>, parenthesis, PowerShell expression or <code>%NAME%</code>; no separator, redirection, heredoc, continuation or comment, so a chain is judged as before); a git command carrying <code>-c</code>, a command to run (<code>rebase --exec</code>, <code>push --receive-pack</code>, <code>submodule foreach</code>, ...) or a <code>git config</code> write is never exempt.</td>
 </tr>
 </tbody>
