@@ -237,8 +237,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.113**: The Pylint job no longer fails on the 3.12+ `isjunction` guard in `verify_trust.py`. `crew` 1.3.113: no behaviour change; a lint-only fix so the Pylint workflow passes again on main.
 - **crew 1.3.96**: The verify-trust store lock no longer fails a writer whose rival released the lock at the wrong moment. `crew` 1.3.96: with several writers at once, `verify_trust.py approve` could intermittently print `cannot take the store lock: OSError` and exit 1 (the approval was not recorded); a writer now waits and retries instead. No update was ever lost and the lock never admitted two writers.
-- **crew 1.3.95**: The verify-gate trust docs match what the junction check does, and the Windows short-name fallback is proven to accept. `crew` 1.3.95: the trust-store documentation no longer says a repository below a junctioned parent directory is always UNTRUSTED (only a linked worktree whose recorded path runs through a junction is), and a test now proves a genuine 8.3 short-name worktree is still trusted on Windows.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

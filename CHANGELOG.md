@@ -90,6 +90,12 @@ read entries under any `## [` heading.
 - crew 1.3.48: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Fixed — crew 1.3.113: the Pylint job no longer fails on the 3.12+ `isjunction` guard in `verify_trust.py`
+
+- **Summary.** `crew` 1.3.113: no behaviour change; a lint-only fix so the Pylint workflow passes again on main.
+- Fixed: after #679 merged, the Pylint workflow on push to main failed (run 43658945846, build 3.11, pylint 4.1.4) with `verify_trust.py:642:34: E1102: isjunction is not callable (not-callable)`. `os.path.isjunction` exists on 3.12+ only, so pylint on 3.11 infers `None` and cannot see the `is not None` guard. The call now carries the same narrow `# pylint: disable=not-callable` that `crew_migrate._is_link` and `gizmoduck` already use; behaviour is identical.
+- Docs: none - lint comment only, no behaviour change.
+
 ### Fixed — crew 1.3.96: the verify-trust store lock no longer fails a writer whose rival released the lock at the wrong moment (L-0888)
 
 - **Summary.** `crew` 1.3.96: with several writers at once, `verify_trust.py approve` could intermittently print `cannot take the store lock: OSError` and exit 1 (the approval was not recorded); a writer now waits and retries instead. No update was ever lost and the lock never admitted two writers.
