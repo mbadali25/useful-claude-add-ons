@@ -237,7 +237,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.121**: `guards.git.allow`, one switch that lets git commands past crew's command guards. `crew` 1.3.121: a new machine-only switch, `guards.git.allow`, stops crew's command guards from blocking or asking on git commands (`"all"`, destructive ones included, or a list of subcommands); it is off by default and takes effect only after the owner types `/crew:confirm-config` twice.
+- **crew 1.3.122**: `guards.git.allow`, one switch that lets git commands past crew's command guards. `crew` 1.3.122: a new machine-only switch, `guards.git.allow`, stops crew's command guards from blocking or asking on git commands (`"all"`, destructive ones included, or a list of subcommands); it is off by default and takes effect only after the owner types `/crew:confirm-config` twice.
 - **crew 1.3.96**: The verify-trust store lock no longer fails a writer whose rival released the lock at the wrong moment. `crew` 1.3.96: with several writers at once, `verify_trust.py approve` could intermittently print `cannot take the store lock: OSError` and exit 1 (the approval was not recorded); a writer now waits and retries instead. No update was ever lost and the lock never admitted two writers.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

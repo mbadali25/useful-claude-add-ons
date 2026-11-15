@@ -1,4 +1,4 @@
-"""crew 1.3.121: `guards.git.allow`, the owner's switch that lets git commands past
+"""crew 1.3.122: `guards.git.allow`, the owner's switch that lets git commands past
 crew's command guards (`crew_gitallow.py`).
 
 CLAUDE.md: a hook change that can block carries must-block and must-allow cases,
@@ -1296,7 +1296,7 @@ def test_a_powershell_stop_parsing_force_push_stays_refused_with_all(tmp_path, m
     assert not any(r[1].startswith("gitAllow") for r in result["rows"]), result
 
 
-# --- review round 4 (Codex gpt-6-sol, crew 1.3.121): a fail-closed allowlist -------------
+# --- review round 4 (Codex gpt-6-sol, crew 1.3.122): a fail-closed allowlist -------------
 #
 # The design change: `plain_commands` lists what is plain, and anything else is
 # not exempt. One reader serves the cloud guard (`line_plan`) and the promote
@@ -1664,7 +1664,7 @@ def test_round5_gate_still_gates_a_redirection_repro_with_all(tmp_path, machine,
     assert code == 2, err
 
 
-# --- review round 6 (Codex gpt-6-sol, crew 1.3.121): ONE plain command ------------------
+# --- review round 6 (Codex gpt-6-sol, crew 1.3.122): ONE plain command ------------------
 #
 # BLOCK 1: a WORD-LESS command (only redirects) skipped every redirect check:
 # `git status 'a[$(touch x)]'; > $((_))` ran the substitution through `$_`.
@@ -2280,7 +2280,7 @@ def test_round13_a_duplicate_deploy_key_is_not_promote_exempt_committed(
     assert crew_gitallow.promote_exempt("git push prod main", "bash", str(root)) is False
 
 
-# --- review round 14 (Codex gpt-6-sol re-review of crew 1.3.121) -------------------------
+# --- review round 14 (Codex gpt-6-sol re-review of crew 1.3.122) -------------------------
 
 def test_round14_the_cwd_repo_veto_is_read(tmp_path, machine):
     """BLOCK 1: a command with no `-C` runs in the directory the line runs in, and
