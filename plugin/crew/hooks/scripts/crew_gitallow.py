@@ -1,5 +1,5 @@
 """`guards.git.allow`: the owner's switch that stops crew's command guards from
-blocking or asking on git commands (crew 1.3.109).
+blocking or asking on git commands (crew 1.3.114).
 
 THE VALUES.
 
@@ -20,7 +20,7 @@ plain git commands:
 
 `gh` is not git: `gh pr merge --admin` and `gh api` keep their own keys.
 
-THE LINE IS ONE PLAIN COMMAND, FAIL-CLOSED (crew 1.3.109, PR #769 review
+THE LINE IS ONE PLAIN COMMAND, FAIL-CLOSED (crew 1.3.114, PR #769 review
 round 6). A line is exempt only when it is ONE simple command: exactly `git`
 (no path, no function, alias or `shopt`) followed by words that are plain
 literals as ONE reader (`plain_commands`) reads them: in bash only `_BASH_SAFE`
@@ -214,6 +214,9 @@ _RUNS = {
     "init": ("--template",),
     "ls-remote": ("--upload-pack", "--exec"),
     "archive": ("--exec",),
+    # `cat-file --filters` runs the path's configured smudge/clean filter
+    # (round 11, measured: a filter program ran; `cat-file blob` ran none).
+    "cat-file": ("--filters",),
     "grep": ("-O", "--open-files-in-pager"),
     "difftool": ("-x", "--extcmd"),
     "send-email": ("--to-cmd", "--cc-cmd", "--sendmail-cmd", "--smtp-server"),
@@ -239,7 +242,28 @@ _HELPER_OPTS = ("--paginate", "--ext-diff", "--textconv", "--help", "--open-file
 _HELPER_GLOBALS = frozenset(("-p", "--paginate", "--help"))
 # Subcommands that run a helper program whatever their options say: `help`
 # starts man or the browser.
-_HELPER_SUBS = frozenset(("help",))
+_HELPER_SUBS = frozenset(("help", "difftool", "mergetool", "credential"))
+# `git merge|pull|rebase -s <x>` / `--strategy <x>` runs `git-merge-<x>` from
+# PATH (round 11, measured with a git-merge-zzz on PATH). `-X` / `--strategy-option`
+# only passes a string to a built-in strategy and is not held.
+_STRATEGY_SUBS = frozenset(("merge", "pull", "rebase"))
+_SHORT_VALUE_LETTERS = "XmFSCx"
+
+
+def _strategy_hit(word):
+    """`word` is `-s`, `-sx`, a bundle holding `s` before any value-taking letter
+    (`-ns`), or an abbreviation of `--strategy` (`--strat`, `--strategy=x`)."""
+    if word.startswith("--"):
+        name = word.split("=", 1)[0]
+        return len(name) > 2 and "--strategy".startswith(name)
+    if not word.startswith("-") or len(word) < 2:
+        return False
+    for letter in word[1:]:
+        if letter == "s":
+            return True
+        if letter in _SHORT_VALUE_LETTERS:
+            return False
+    return False
 
 # `git config` (review round 4, FIX D): a write may set an alias (`alias.p
 # '!deploy-prod'`) or a program-valued key (`core.sshCommand`, `core.pager`,
@@ -336,6 +360,8 @@ def hold(args):
     for word in rest:
         if word == "--":
             break
+        if sub in _STRATEGY_SUBS and _strategy_hit(word):
+            return f"`git {sub} {word}` runs git-merge-<strategy> from PATH"
         helper = next((o for o in _HELPER_OPTS if _option_hit(word, o)), None)
         if helper:
             return f"`git {sub} {helper}` launches a helper program"
@@ -720,7 +746,7 @@ def backing(machine_path, global_path=None, store=None):
 
 # --- the one reader: is a whole line only plain git ----------------------------------
 #
-# A FAIL-CLOSED ALLOWLIST (crew 1.3.109, PR #769 review round 4). Four review
+# A FAIL-CLOSED ALLOWLIST (crew 1.3.114, PR #769 review round 4). Four review
 # rounds each found a new way to build a git word at run time (`"$OPT"`, a
 # brace expansion, `$'\x2d...'`, a PowerShell `(expr)`), so the reader no
 # longer lists what is dangerous: it lists what is plain, and anything else is

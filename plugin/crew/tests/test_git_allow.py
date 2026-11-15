@@ -1,4 +1,4 @@
-"""crew 1.3.109: `guards.git.allow`, the owner's switch that lets git commands past
+"""crew 1.3.114: `guards.git.allow`, the owner's switch that lets git commands past
 crew's command guards (`crew_gitallow.py`).
 
 CLAUDE.md: a hook change that can block carries must-block and must-allow cases,
@@ -1296,7 +1296,7 @@ def test_a_powershell_stop_parsing_force_push_stays_refused_with_all(tmp_path, m
     assert not any(r[1].startswith("gitAllow") for r in result["rows"]), result
 
 
-# --- review round 4 (Codex gpt-6-sol, crew 1.3.109): a fail-closed allowlist -------------
+# --- review round 4 (Codex gpt-6-sol, crew 1.3.114): a fail-closed allowlist -------------
 #
 # The design change: `plain_commands` lists what is plain, and anything else is
 # not exempt. One reader serves the cloud guard (`line_plan`) and the promote
@@ -1664,7 +1664,7 @@ def test_round5_gate_still_gates_a_redirection_repro_with_all(tmp_path, machine,
     assert code == 2, err
 
 
-# --- review round 6 (Codex gpt-6-sol, crew 1.3.109): ONE plain command ------------------
+# --- review round 6 (Codex gpt-6-sol, crew 1.3.114): ONE plain command ------------------
 #
 # BLOCK 1: a WORD-LESS command (only redirects) skipped every redirect check:
 # `git status 'a[$(touch x)]'; > $((_))` ran the substitution through `$_`.
@@ -1953,6 +1953,73 @@ def test_round10_an_ordinary_push_is_still_no_force_push(tmp_path, command):
     assert cloud_guard._git_force_push(command.split()[1:]) is None  # pylint: disable=protected-access
     root = make_repo(tmp_path, mode=None)
     assert not _rules(_evaluate(root, command), "forcePush"), command
+
+
+# --- review round 11 (Codex gpt-6-sol): remote deletion by other spellings, helper launchers ---
+
+DELETING_PUSH = [
+    "git push origin :b", "git push :b", "git push origin main :b", "git push -d origin b",
+    "git push -vd origin b", "git push --prune origin", "git push --all --prune",
+    "git push --all --prune origin", "git push --prun origin", "git --attr-source x push -f",
+    "git --attr-source x push origin :b", "git --super-prefix x push --delete origin b"]
+
+
+@pytest.mark.parametrize("command", DELETING_PUSH)
+def test_round11_the_cloud_guard_reads_a_push_that_deletes_a_remote_ref(tmp_path, command):
+    """Measured with git 2.56 against a throwaway bare remote: `:b`, `origin :c`,
+    `-d`, `--prune <refspec>` and `--all --prune` each deleted a remote branch."""
+    assert cloud_guard._git_force_push(command.split()[1:])  # pylint: disable=protected-access
+    root = make_repo(tmp_path, mode=None)
+    assert _rules(_evaluate(root, command), "forcePush"), command
+
+
+@pytest.mark.parametrize("command", [
+    "git push HEAD", "git push origin HEAD", "git push origin main", "git push origin main:main",
+    "git push --tags", "git push --follow-tags", "git push -u origin topic",
+    "git push --dry-run origin main", "git push -n origin main", "git push -v origin main",
+    "git push --porcelain origin main", "git --attr-source x push origin main",
+    "git push origin refs/heads/a:refs/heads/b"])
+def test_round11_an_ordinary_push_is_still_no_force_push(tmp_path, command):
+    assert cloud_guard._git_force_push(command.split()[1:]) is None  # pylint: disable=protected-access
+    root = make_repo(tmp_path, mode=None)
+    assert not _rules(_evaluate(root, command), "forcePush"), command
+
+
+def test_round11_the_two_global_value_option_sets_match():
+    assert cloud_guard._GIT_VALUE_OPTS == crew_gitallow._GIT_VALUE_OPTS  # pylint: disable=protected-access
+
+
+LAUNCHERS = [
+    ["difftool"], ["difftool", "-y"], ["mergetool"], ["mergetool", "-y"],
+    ["credential", "fill"], ["credential", "approve"],
+    ["merge", "-s", "zzz", "o"], ["merge", "-szzz", "o"], ["merge", "-ns", "zzz", "o"],
+    ["merge", "--strategy", "zzz", "o"], ["merge", "--strategy=zzz", "o"],
+    ["merge", "--strat", "zzz", "o"], ["pull", "-s", "zzz"], ["pull", "--strategy=zzz", "o"],
+    ["rebase", "-s", "zzz", "main"], ["rebase", "--strategy", "zzz", "main"],
+    ["-C", ".", "merge", "-s", "zzz", "o"], ["cat-file", "--filters", ":h.txt"],
+    ["cat-file", "--filter", ":h.txt"]]
+
+
+@pytest.mark.parametrize("args", LAUNCHERS)
+def test_round11_a_helper_launcher_is_held(args):
+    """Measured: with a `git-merge-zzz` on PATH, `merge|pull -s zzz` ran it;
+    `difftool`, `mergetool` and `credential fill` run the configured program."""
+    assert crew_gitallow.hold(args)
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_exempt("git " + " ".join(args), shell, "all") is False
+
+
+@pytest.mark.parametrize("args", [
+    ["merge", "o"], ["merge", "-X", "theirs", "o"], ["merge", "-Xours", "o"],
+    ["merge", "--strategy-option=ours", "o"], ["merge", "--squash", "o"], ["merge", "--stat", "o"],
+    ["merge", "--no-ff", "o"], ["merge", "-m", "msg", "o"], ["pull", "--ff-only"],
+    ["pull", "--rebase"], ["rebase", "main"], ["rebase", "-X", "ours", "main"],
+    ["rebase", "--abort"], ["status", "-s"], ["log", "-s"], ["diff", "--stat"],
+    ["show", "-s", "HEAD"], ["log", "--", "-s"], ["cat-file", "blob", ":h.txt"],
+    ["cat-file", "-p", "HEAD"], ["cat-file", "-t", "HEAD"]])
+def test_round11_an_ordinary_merge_or_read_is_not_a_launcher(args):
+    assert crew_gitallow.hold(args) is None
+    assert crew_gitallow.line_exempt("git " + " ".join(args), "bash", "all") is True
 
 
 # --- the mutation table ----------------------------------------------------------------

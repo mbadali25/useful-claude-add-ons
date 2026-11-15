@@ -46,7 +46,7 @@ NotADirectoryError, which never reaches `_dangles`), so they now name
 FileNotFoundError in on every host; a new mutation of the OSError branch names
 its POSIX twin.
 
-Review round 4 (Codex gpt-6-sol, crew 1.3.109) replaced the denylist with a
+Review round 4 (Codex gpt-6-sol, crew 1.3.114) replaced the denylist with a
 fail-closed allowlist read by ONE reader both paths ask (`plain_commands`), so
 it DELETED every mutation of the code that is gone: the cloud guard's own
 `hold` / `-C` / `Expands` marking, `finding_setting`, `_RUNTIME_RE`, the
@@ -60,7 +60,7 @@ cloud guard's `not fed` (an `xargs git` line is never only git), and
 `_ps_commands`' dangling-redirection check (the target word, if read as an
 argument instead, never makes a line exempt that dropping it would not).
 
-Review round 5 (Codex gpt-6-sol, crew 1.3.109) made redirections a fail-closed
+Review round 5 (Codex gpt-6-sol, crew 1.3.114) made redirections a fail-closed
 allowlist and taught the shared splitter bash's `>&-` and fd-prefix reading,
 and added one red mutation per rule (25: the redirection rules, the PowerShell
 parse-error refusals the differential test found, the splitter and the fd
@@ -74,7 +74,7 @@ check refuses every case it would, because raw text is never shorter than the
 word read from it; so is `_bash_redirect_problem`'s ASCII check on the fd
 (`_fd_prefix` never records a non-ASCII descriptor). The total is 109.
 
-Review round 6 (Codex gpt-6-sol, crew 1.3.109) replaced the bash and PowerShell
+Review round 6 (Codex gpt-6-sol, crew 1.3.114) replaced the bash and PowerShell
 readers with ONE plain command: no separator, redirection, heredoc,
 here-string, continuation, comment or subshell is read at all. It DELETED the
 mutations of the code that is gone (the splitter-driven `_bash_commands`,
@@ -303,7 +303,7 @@ GITALLOW_MUTATIONS = (
      "        if layer != \"machine\":\n            raise Refused(f\"{dotted} lives",
      "        if False:\n            raise Refused(f\"{dotted} lives",
      _T + "test_propose_refuses_what_it_cannot_confirm"),
-    # --- review round 4 (Codex gpt-6-sol, crew 1.3.109): the fail-closed allowlist ---
+    # --- review round 4 (Codex gpt-6-sol, crew 1.3.114): the fail-closed allowlist ---
     # bash reader (`_bash_plain_word`, `_bash_commands`)
     ("gitAllow r4: an unquoted $ is a plain character (BLOCK A)", GA,
      "_BASH_SAFE = frozenset(string.ascii_letters + string.digits + \"_-./:=+,@%^\")\n",
@@ -561,7 +561,47 @@ GITALLOW_MUTATIONS = (
      _T + "test_round10_the_cloud_guard_reads_an_abbreviated_force_push"),
     ("gitAllow r10: the cloud guard reads no --mirror or --delete", CG,
      "_FORCE_LONG_OPTS = (\"--force\", \"--force-with-lease\", \"--force-if-includes\", \"--mirror\",\n"
-     "                    \"--delete\")",
+     "                    \"--delete\", \"--prune\")",
      "_FORCE_LONG_OPTS = (\"--force\", \"--force-with-lease\", \"--force-if-includes\")",
      _T + "test_round10_the_cloud_guard_reads_an_abbreviated_force_push"),
+    ("gitAllow r11: the cloud guard misses --attr-source and --super-prefix", CG,
+     "                             \"--super-prefix\", \"--attr-source\"))",
+     "                             ))",
+     _T + "test_round11_the_cloud_guard_reads_a_push_that_deletes_a_remote_ref"),
+    ("gitAllow r11: the global value option sets differ", CG,
+     "                             \"--super-prefix\", \"--attr-source\"))",
+     "                             \"--super-prefix\"))",
+     _T + "test_round11_the_two_global_value_option_sets_match"),
+    ("gitAllow r11: --prune is not a deleting push", CG,
+     "                    \"--delete\", \"--prune\")",
+     "                    \"--delete\")",
+     _T + "test_round11_the_cloud_guard_reads_a_push_that_deletes_a_remote_ref"),
+    ("gitAllow r11: a leading-colon refspec is not a deleting push", CG,
+     "        if ref.startswith((\"+\", \":\")):",
+     "        if ref.startswith(\"+\"):",
+     _T + "test_round11_the_cloud_guard_reads_a_push_that_deletes_a_remote_ref"),
+    ("gitAllow r11: short -d is not a deleting push", CG,
+     "[a-zA-Z]*[fd][a-zA-Z]*$",
+     "[a-zA-Z]*f[a-zA-Z]*$",
+     _T + "test_round11_the_cloud_guard_reads_a_push_that_deletes_a_remote_ref"),
+    ("gitAllow r11: difftool, mergetool and credential are not held", GA,
+     "_HELPER_SUBS = frozenset((\"help\", \"difftool\", \"mergetool\", \"credential\"))",
+     "_HELPER_SUBS = frozenset((\"help\",))",
+     _T + "test_round11_a_helper_launcher_is_held"),
+    ("gitAllow r11: merge/pull/rebase -s is not held", GA,
+     "        if sub in _STRATEGY_SUBS and _strategy_hit(word):",
+     "        if False:",
+     _T + "test_round11_a_helper_launcher_is_held"),
+    ("gitAllow r11: --strategy abbreviations are not read", GA,
+     "        return len(name) > 2 and \"--strategy\".startswith(name)",
+     "        return name == \"--strategy\"",
+     _T + "test_round11_a_helper_launcher_is_held"),
+    ("gitAllow r11: a -X value is read as a -s strategy", GA,
+     "        if letter in _SHORT_VALUE_LETTERS:\n            return False",
+     "        if False:\n            return False",
+     _T + "test_round11_an_ordinary_merge_or_read_is_not_a_launcher"),
+    ("gitAllow r11: cat-file --filters is not held", GA,
+     "    \"cat-file\": (\"--filters\",),",
+     "    \"cat-file\": (),",
+     _T + "test_round11_a_helper_launcher_is_held"),
 )

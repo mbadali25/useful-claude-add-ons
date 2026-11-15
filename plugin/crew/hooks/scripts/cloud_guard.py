@@ -2039,7 +2039,8 @@ def _tf_environment(scope, cwd, state, cfg, sidecar=None):
 
 
 _GIT_VALUE_OPTS = frozenset(("-C", "-c", "--git-dir", "--work-tree",
-                             "--namespace", "--exec-path", "--config-env"))
+                             "--namespace", "--exec-path", "--config-env",
+                             "--super-prefix", "--attr-source"))
 
 
 # The long push options that overwrite or remove remote refs. git takes any
@@ -2047,7 +2048,7 @@ _GIT_VALUE_OPTS = frozenset(("-C", "-c", "--git-dir", "--work-tree",
 # the same options; every prefix counts here, ambiguous or not (git refuses an
 # ambiguous one, and over-reading only blocks).
 _FORCE_LONG_OPTS = ("--force", "--force-with-lease", "--force-if-includes", "--mirror",
-                    "--delete")
+                    "--delete", "--prune")
 
 
 def _force_long_option(arg):
@@ -2067,13 +2068,14 @@ def _git_force_push(args):
         if arg in ("--force", "-f", "--force-with-lease") \
                 or arg.startswith("--force-with-lease=") or _force_long_option(arg):
             return f"git push {arg}"
-        if re.match(r"^-[a-zA-Z]*f[a-zA-Z]*$", arg):
+        if re.match(r"^-[a-zA-Z]*[fd][a-zA-Z]*$", arg):
             return f"git push {arg}"
-    # A leading `+` on any refspec forces that ref. Every positional is
-    # checked, not only those after the remote: an option's value (`-o x`)
-    # shifts the count, and no remote is spelled with a leading `+`.
+    # A leading `+` on any refspec forces that ref; a leading `:` (`:topic`)
+    # deletes it on the remote. Every positional is checked, not only those
+    # after the remote: an option's value (`-o x`) shifts the count, and no
+    # remote is spelled with a leading `+` or `:`.
     for ref in (a for a in rest if not a.startswith("-")):
-        if ref.startswith("+"):
+        if ref.startswith(("+", ":")):
             return f"git push {ref}"
     return None
 
@@ -3121,7 +3123,7 @@ def _judge_one(root, finding, pins, problem, envs=None):
             return judge_dispatch(finding.scope, finding.what, lambda key: crew_config.guard_decision(
                 root, DEPLOY_RULE, key), finding.text, envs or {}, _approval_is_live)
         out = crew_config.guard_decision(root, finding.rule, finding.text)
-        # A git finding's scope (`crew_gitallow.SCOPE_KEY`, crew 1.3.109) is
+        # A git finding's scope (`crew_gitallow.SCOPE_KEY`, crew 1.3.114) is
         # not a terraform scope: it takes the plain route it took before.
         if finding.scope is not None and envs is not None \
                 and crew_gitallow.SCOPE_KEY not in finding.scope:
@@ -3185,7 +3187,7 @@ def evaluate(root, tool_name, command, data=None, mode="block"):
     for finding in findings:
         scope = finding.scope if isinstance(finding.scope, dict) else {}
         if crew_gitallow.SCOPE_KEY in scope:
-            # `guards.git.allow` (crew 1.3.109): the owner's double-confirmed
+            # `guards.git.allow` (crew 1.3.114): the owner's double-confirmed
             # switch lets a git command's own findings through, and logs that
             # it did -- only when the whole line is plain literal git commands
             # by the one reader the promote gate also uses (`line_plan`, an
