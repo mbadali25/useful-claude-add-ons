@@ -18,6 +18,8 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.103: re-bump only - interim number on the stop-audit-native-python branch (commit 9a1e6d2d7, PR #777) before main (crew 1.3.96, #679) was merged in and open PRs reached 1.3.109; the change is recorded under crew 1.3.99
+- crew 1.3.110: re-bump only - number on the stop-audit-native-python branch (PR #777) after merging main (crew 1.3.96, #679); the Stop-audit change is recorded under crew 1.3.99
 - crew 1.3.96: re-bump only - interim number on the stop-audit-native-python branch (commit 21c1dc6a6, PR #777) before the direct route had to defer to the wrapper for an unknown project directory and TMPDIR, and open PRs reached 1.3.98; the change is recorded under crew 1.3.99
 - crew 1.3.99: re-bump only - interim number on the stop-audit-native-python branch (PR #777) before the parity tests' skip guard also matched a loaded host's `UNKNOWN (no usable python` and the marker-name test's inner cap rose to 900 s (test-only; no behaviour change); the change is recorded under crew 1.3.103
 - crew 1.3.93: re-bump only - interim number on the L-0888 trust-store branch (commit 383d67d29, pushed) before CI showed the round-11 sabotage anchor and the opt-in inventory stale and a Windows-only failing control line in the new junction test; the change is recorded under crew 1.3.94

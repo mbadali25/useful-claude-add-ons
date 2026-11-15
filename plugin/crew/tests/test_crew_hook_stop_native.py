@@ -305,7 +305,8 @@ def test_a_stop_hook_active_stop_runs_nothing_and_ends_the_blocked_once_count(au
     spy = Spy(monkeypatch)
     payload = _stop(tmp_path, active=True)
     marker = _marker(tmp_path, tmp_path, payload)
-    open(marker, "w", encoding="utf-8").close()
+    with open(marker, "w", encoding="utf-8"):
+        pass
 
     code, _, _ = _dispatch(tmp_path, payload, tmp_path)
 
@@ -330,7 +331,8 @@ def test_a_verdict_ends_the_blocked_once_count(audit_only, monkeypatch, tmp_path
     payload = _stop(tmp_path)
     marker = _marker(tmp_path, tmp_path, payload)
     for code in (0, 2):
-        open(marker, "w", encoding="utf-8").close()
+        with open(marker, "w", encoding="utf-8"):
+            pass
         Spy(monkeypatch, lambda argv, c=code: _result(c))
 
         _dispatch(tmp_path, payload, tmp_path)
@@ -341,7 +343,8 @@ def test_a_verdict_ends_the_blocked_once_count(audit_only, monkeypatch, tmp_path
 def test_a_timeout_leaves_the_marker_as_the_wrapper_does(audit_only, monkeypatch, tmp_path):
     payload = _stop(tmp_path)
     marker = _marker(tmp_path, tmp_path, payload)
-    open(marker, "w", encoding="utf-8").close()
+    with open(marker, "w", encoding="utf-8"):
+        pass
     Spy(monkeypatch, lambda argv: _result(timed_out=True))
 
     _dispatch(tmp_path, payload, tmp_path)
@@ -362,7 +365,9 @@ def test_a_marker_that_cannot_be_removed_changes_nothing(audit_only, monkeypatch
 
 # --- the verdicts through the native route (must-block, must-allow) ----------------------------------
 
-pytestmark_git = pytest.mark.skipif(shutil.which("git") is None, reason="needs git: the native verdict cases were NOT run")
+pytestmark_git = pytest.mark.skipif(
+    shutil.which("git") is None, reason="needs git: the native verdict cases were NOT run"
+)
 
 
 def _repo(tmp_path):
