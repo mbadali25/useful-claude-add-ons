@@ -1,4 +1,4 @@
-"""crew 1.3.116: a DIFFERENTIAL test of `guards.git.allow`'s one reader
+"""crew 1.3.121: a DIFFERENTIAL test of `guards.git.allow`'s one reader
 (`crew_gitallow.line_git_commands`) against the real shells (PR #769 review
 round 5).
 
