@@ -385,7 +385,7 @@ def test_a_word_that_only_passes_through_the_owners_names_is_not_the_owners(home
         assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
 
 
-# --- round 9: escape characters and paths the guard cannot resolve (crew 1.3.120) ------------------------------------
+# --- round 9: escape characters and paths the guard cannot resolve (crew 1.3.123) ------------------------------------
 # Round 8 was refused for `confi\g.json`, ``confi`g.json`` and `confi^g.json` (each shell strips its escape
 # character before it uses the word) and for `Set-Content -Path (Join-Path $HOME ...)`. The owner's decision: stop
 # chasing spellings. A word with an escape is read as each shell reads it; a write target the guard cannot resolve to

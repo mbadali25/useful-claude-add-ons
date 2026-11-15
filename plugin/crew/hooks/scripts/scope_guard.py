@@ -11,7 +11,7 @@ the payload in, so the two shells cannot disagree.
    the key gets), or the cwd is no work tree -> exit 0 before anything else is
    read, EXCEPT that a Write/Edit of, or a shell write to, the owner's own
    files (the machine config `~/.claude/crew/config.json` and the
-   confirm-config store beside it) is still refused (crew 1.3.117): those hold
+   confirm-config store beside it) is still refused (crew 1.3.123): those hold
    `guards.enabled` and its receipts, and a guard that stood down with
    `scope.mode` would let an agent write both.
 2. A target under `<git-common-dir>/crew/` -- approval receipts, the review
@@ -218,7 +218,7 @@ _WRITES_RE = re.compile(
     r"python[0-9.]*|py|node|chmod|echo|printf|set-content|add-content|out-file|"
     r"new-item|copy-item|move-item|remove-item|rename-item|clear-content|set-item|ni|"
     r"sc|ac)\b", re.IGNORECASE)
-# The same words read as the COMMAND a shell word names (crew 1.3.120, round 9): the confirm-config store check asks
+# The same words read as the COMMAND a shell word names (crew 1.3.123, round 9): the confirm-config store check asks
 # for a write VERB, not for a verb's spelling inside a file name (`Get-Content C:\tmp\confirm-config\echo.txt` reads
 # a file called echo.txt; it does not run `echo`).
 _REDIRECT_RE = re.compile(r"(?<!>)>>?(?!>)(?!\s*(?:&\d|/dev/null\b|\$null\b))")
@@ -572,14 +572,14 @@ def confirm_store():
 
 def machine_config():
     """The machine config file (`~/.claude/crew/config.json`), which holds `guards.enabled`, the switch that
-    stands every guard down (crew 1.3.117). Like `confirm_store`, spelled here so this guard imports no config
+    stands every guard down (crew 1.3.123). Like `confirm_store`, spelled here so this guard imports no config
     module."""
     return os.path.join(os.path.expanduser("~"), ".claude", "crew", "config.json")
 
 
 def _owner_path(path):
     """True for the owner's own files: the double-confirmation store and the machine config, which holds
-    `guards.enabled` (crew 1.3.117)."""
+    `guards.enabled` (crew 1.3.123)."""
     return _under(path, confirm_store()) or os.path.normcase(path) == os.path.normcase(machine_config())
 
 
@@ -889,7 +889,7 @@ def _reading_refusal(command, written, common, top, agent_type=None):
     return _owner_command_refusal(command, top)
 
 
-# --- the owner's files, through a shell (crew 1.3.117, target-based since the round-3 owner decision) ------------
+# --- the owner's files, through a shell (crew 1.3.123, target-based since the round-3 owner decision) ------------
 # A command is refused when something in it WRITES TO the owner's files: a redirect, or the argument a write verb
 # aims at (`tee`, `cp`, `mv`, `rm`, `sed -i`, `Set-Content`, `curl -o`, `tar -C`, `git apply` ...), or inline code
 # (`python -c`, a heredoc) that names them beside a write call. A command that merely MENTIONS them -- a commit
@@ -985,7 +985,7 @@ def _balanced(text, start):
 
 
 _QUOTE_OPEN, _QUOTE_CLOSE = "\x01", "\x02"
-# What the splitter cannot read as text (crew 1.3.120, round 9): `_DYN` stands where a `$(...)` / `$'...'` produced
+# What the splitter cannot read as text (crew 1.3.123, round 9): `_DYN` stands where a `$(...)` / `$'...'` produced
 # characters, `_PAREN` starts a word that sits inside a parenthesised expression (`(Join-Path $HOME "x")`).
 _DYN, _PAREN = "\x03", "\x04"
 
@@ -1362,7 +1362,7 @@ def _could_be_suffix(parts, mode):
 
 
 def _dynamic_hit(word, shell, mode, forced):  # pylint: disable=too-many-return-statements
-    """Fail closed (crew 1.3.120, round 9) on a write target the guard cannot resolve to one concrete path: a
+    """Fail closed (crew 1.3.123, round 9) on a write target the guard cannot resolve to one concrete path: a
     substitution, an unknown variable, a backtick, a word in a parenthesised expression. It names the owner's files
     when what is spelled of it can only be theirs (`~/.claude/crew/$X`), or when it could be theirs and the command
     also names the owner's folder (`shell.hint`). A target in a command that never mentions the owner's folder stays
@@ -1618,7 +1618,7 @@ def _assign(raw, shell):
     return True
 
 
-# the words that only introduce a command: `do rm x`, `then rm x`, `if rm x`, `try { rm x }` (crew 1.3.120)
+# the words that only introduce a command: `do rm x`, `then rm x`, `if rm x`, `try { rm x }` (crew 1.3.123)
 _CONTROL = frozenset({"do", "then", "else", "elif", "if", "while", "until", "!", "{", "try", "finally"})
 
 
@@ -1938,7 +1938,7 @@ def _owner_lines(what):
 
 def _owner_files_only(tool, data, root):
     """What the guard still decides where it otherwise does nothing: `scope.mode` off (the default) or no work
-    tree (crew 1.3.117). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
+    tree (crew 1.3.123). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
     and the master switch are what make an owner-only change the owner's: a guard that stood down with
     `scope.mode` would let an agent write both the `false` and its receipt."""
     if tool in SHELLS:

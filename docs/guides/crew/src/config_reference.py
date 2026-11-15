@@ -242,7 +242,7 @@ resolve to.
 **Who can write the receipts.** The double confirmation is recorded only by
 the prompt hook, from your own prompt. The scope guard (when `scope.mode` is
 not `off`) refuses every Write/Edit under `~/.claude/crew/confirm-config/` and
-every shell command that names that store beside a write VERB or a redirect (crew 1.3.120: a verb's
+every shell command that names that store beside a write VERB or a redirect (crew 1.3.123: a verb's
 spelling inside a file name, `Get-Content C:\\tmp\\confirm-config\\echo.txt`, is a read). That is a
 textual tripwire, not a sandbox: a session that sets out to forge a receipt
 (`python -c`, an encoded command, a variable holding the path) still can, and
@@ -427,12 +427,12 @@ column:
 {human_only}
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.117) turns EVERY guard hook off: the promote
+`guards.enabled: false` (crew 1.3.123) turns EVERY guard hook off: the promote
 gate, the role-write, cloud, environment and scope guards, the verify gate, the
 completion audit and the context-watch Stop hook. None of them starts, so nothing
 is judged, refused, asked, warned or logged: with the switch off, nothing blocks. It
 beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mode`,
-`verifyGate`). Three things must all hold for it to count (crew 1.3.117):
+`verifyGate`). Three things must all hold for it to count (crew 1.3.123):
 
 - It is in the MACHINE layer (`~/.claude/crew/config.json`). A `false` in
   `.crew/config.json`, tracked or not, is ignored and the guards stay on (a
@@ -442,7 +442,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   applied `/crew:confirm-config` double confirmation backs it: two confirmations
   from two prompts the owner typed, and the digest of the machine file as the
   owner left it: its content (canonical JSON) AND its modification time (crew
-  1.3.117). An agent's Write or Edit, a hook-side write, a hand edit, a bare
+  1.3.123). An agent's Write or Edit, a hook-side write, a hand edit, a bare
   hand-written receipt, or ANY later write to the file (a restore, a rebuild, an
   unrelated edit, or a hand edit that sets the key `true` and a later one that
   writes the identical `false` back) leaves the guards ON; so does a missing,
@@ -467,7 +467,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   match a receipt (`cc-1*.json`, `cc-?*`, `cc-[0-9]*`) or anything else below the store. `patch --dry-run` (`--check`,
   `-C`) writes nothing and passes. A word the shell cannot resolve (an unset variable, a `$` share) is judged by
   how it ENDS, component by component. Escape characters are read the way each shell reads them (crew
-  1.3.120): a bash backslash (`confi\\g.json`), a PowerShell backtick (``confi`g.json``) and a cmd caret
+  1.3.123): a bash backslash (`confi\\g.json`), a PowerShell backtick (``confi`g.json``) and a cmd caret
   (`confi^g.json`) are stripped before the path is judged, in the command name and its options too (`r\\m`,
   ``Set-Cont`ent``), and a backtick command (`` `echo ~/.claude/crew`/config.json ``) is read as a command.
   A write target the guard cannot resolve to one path FAILS CLOSED when it could be the owner's: a `$(...)`

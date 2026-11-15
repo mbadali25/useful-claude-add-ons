@@ -76,7 +76,7 @@ GUARDS_MASTER_MUTATIONS = (
      '        if path and _layer_says_off(path) and owner_confirmed(path) and not os.path.exists(\n'
      '                os.path.join(root or "", ".crew", "config.json")):\n',
      _G + "test_a_true_in_the_repo_layer_cannot_switch_back_on_a_machine_false"),
-    # crew 1.3.117: context-watch, the owner's confirmation, duplicate keys, the BOM, a redirected HOME, the machine
+    # crew 1.3.123: context-watch, the owner's confirmation, duplicate keys, the BOM, a redirected HOME, the machine
     # config's protection, and the approval hook's fault path.
     ("context-watch keeps running with the guards off", HOOK,
      'STOOD_DOWN = frozenset({"context-watch.sh"})\n',
@@ -122,7 +122,7 @@ GUARDS_MASTER_MUTATIONS = (
      '    if not top:\n        return _owner_files_only(tool, data, root)\n',
      '    if not top:\n        return 0\n',
      _G + "test_the_owners_files_are_protected_outside_a_work_tree_too"),
-    # crew 1.3.117: the receipt is bound to the confirmations and to the file; the shell forms; the script runs.
+    # crew 1.3.123: the receipt is bound to the confirmations and to the file; the shell forms; the script runs.
     ("a receipt of another file's false counts (the target is not matched)", HOOK,
      'r.get("layer") == "machine" and r.get("target") == target and r.get("key") == MASTER_KEY\n',
      'r.get("layer") == "machine" and r.get("key") == MASTER_KEY\n',
@@ -199,7 +199,7 @@ GUARDS_MASTER_MUTATIONS = (
      r'''(?<![:\w-])confirm-config(?![\w-]|\.md)''',
      r'''(?<![\w-])confirm-config(?![\w-]|\.md)''',
      _G + "test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass"),
-    # crew 1.3.117, round 3: the shell check is target-based (a write AIMED AT the owner's file refuses; a mention,
+    # crew 1.3.123, round 3: the shell check is target-based (a write AIMED AT the owner's file refuses; a mention,
     # or an unrelated write in the same line, does not), no script is opened, the plain verbs are covered,
     # `\\?\` is refused,
     # and the receipt binds the file's modification time.
@@ -347,7 +347,7 @@ GUARDS_MASTER_MUTATIONS = (
      '    return f"{content}@{after}"\n',
      '    return content\n',
      _G + "test_the_round_trip_replay_does_not_count"),
-    # crew 1.3.117 (round 4): plain verbs in every option order, only a destination counts, the one-line .NET write.
+    # crew 1.3.123 (round 4): plain verbs in every option order, only a destination counts, the one-line .NET write.
     ("tar's mode letters are read only from the first word (-C before -xf)", SCOPE,
      '    bundles = [a for position, a in enumerate(args)\n               if '
      're.match(r"^-[A-Za-z]+$", a) or (position == 0 and a[:1].isalpha())]\n',
@@ -545,7 +545,7 @@ GUARDS_MASTER_MUTATIONS = (
      '        found = [(machine, False), (folder + "/confirm-config", True)]\n',
      '        found = [(machine, False), (folder + "/confirm-config", True), (folder, True)]\n',
      _M + "test_another_file_is_not_the_owners_whatever_the_verb"),
-    # crew 1.3.120, round 9: escape characters and paths the guard cannot resolve fail closed. One slip each.
+    # crew 1.3.123, round 9: escape characters and paths the guard cannot resolve fail closed. One slip each.
     ("bash's backslash escape is not stripped before the path is judged", SCOPE,
      '    for which in reading:\n        word = _ESCAPES[which].sub(r"\\1", word)\n',
      '    for which in [w for w in reading if w != 0]:\n        word = _ESCAPES[which].sub(r"\\1", word)\n',
