@@ -2042,6 +2042,20 @@ _GIT_VALUE_OPTS = frozenset(("-C", "-c", "--git-dir", "--work-tree",
                              "--namespace", "--exec-path", "--config-env"))
 
 
+# The long push options that overwrite or remove remote refs. git takes any
+# unambiguous prefix of a long option, so `--force-with-leas` and `--mirr` are
+# the same options; every prefix counts here, ambiguous or not (git refuses an
+# ambiguous one, and over-reading only blocks).
+_FORCE_LONG_OPTS = ("--force", "--force-with-lease", "--force-if-includes", "--mirror",
+                    "--delete")
+
+
+def _force_long_option(arg):
+    name = arg.split("=", 1)[0]
+    return (len(name) > 2 and name.startswith("--")
+            and any(opt.startswith(name) for opt in _FORCE_LONG_OPTS))
+
+
 def _git_force_push(args):
     index = 0
     while index < len(args) and args[index].startswith("-"):
@@ -2051,7 +2065,7 @@ def _git_force_push(args):
     rest = args[index + 1:]
     for arg in rest:
         if arg in ("--force", "-f", "--force-with-lease") \
-                or arg.startswith("--force-with-lease="):
+                or arg.startswith("--force-with-lease=") or _force_long_option(arg):
             return f"git push {arg}"
         if re.match(r"^-[a-zA-Z]*f[a-zA-Z]*$", arg):
             return f"git push {arg}"

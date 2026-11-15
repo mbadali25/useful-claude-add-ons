@@ -262,7 +262,7 @@ git commands, destructive ones included. Off by default (`null`, or `"off"`).
 A listed subcommand passes with every option it takes: listing `push` also lets
 `git push --force` and `git push origin +main` through, because the force-push
 rule is a finding on the `push` subcommand. To keep force pushes stopped, leave
-`push` out of the list.
+`push` out of the list. The cloud guard reads git's abbreviated long options (`--force-with-leas`, `--mirr`) as the force pushes they are, and `--force-if-includes`, `--mirror` and `--delete` as force pushes too, with the switch on or off.
 
 What it loosens, and nothing else: the cloud guard's `guards.forcePush` rule
 (`git push --force`, `+ref`) and the promote gate, so a commit message or
@@ -299,7 +299,7 @@ judge that line exactly as they did before the switch. That includes `$` in
 any form (`"$OPT"`, `${X:-...}`, `$'...'`, `$"..."`, `$env:X`, `$(...)`), a
 backtick substitution, a glob (`*`, `?`, `[`), a brace expansion, a leading
 `~`, a PowerShell `(expr)`, `@(...)`, `@splat`, `{ }` or `[type]`, `--%`, a
-`%NAME%`, a curly quote, and every chain such as `git add -A && git commit -m
+`%NAME%` (or two `%` in a line with text between them, even across words), a curly quote, and every chain such as `git add -A && git commit -m
 x`. Six review rounds each found a new shape of redirect, heredoc,
 continuation or expansion for a reader that tried to follow them (a command
 made only of redirects such as `> $((_))`, a heredoc delimiter ending in a
@@ -322,7 +322,8 @@ subcommand that runs a command it is given (`rebase --exec`/`-x`,
 --upload-pack`, `clone -u`/`-c`/`--template`, `init --template`, `grep -O`,
 `difftool --extcmd`, `filter-branch`, `instaweb`, `for-each-repo`,
 `web--browse`, `send-email --*-cmd`, `daemon --access-hook`), in any abbreviation git accepts (`--exe`,
-`--receive=...`); and a `git config` that is not plainly a read (`--get*`,
+`--receive=...`); an option that launches a helper program (`--paginate` and a leading `-p`, `--ext-diff`,
+`--textconv`, `--help`, `--open-files-in-pager`) and `git help`; and a `git config` that is not plainly a read (`--get*`,
 `-l`/`--list`, `get`, `list`, or one key alone, with only read options): a
 write may set `alias.*` or a program-valued key (`core.sshCommand`,
 `core.pager`, `core.editor`, `core.fsmonitor`, `core.hooksPath`,

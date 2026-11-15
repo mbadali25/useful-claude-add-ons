@@ -227,6 +227,20 @@ _RUNS_ALWAYS = frozenset(("filter-branch", "instaweb", "for-each-repo", "web--br
 # (subcommand, word) pairs: `git submodule foreach <cmd>`, `git bisect run <cmd>`.
 _RUNS_WORD = {"submodule": "foreach", "bisect": "run"}
 
+# Helper programs git launches for an option that is not a command line:
+# `-p` / `--paginate` (the pager), `--ext-diff` (the external diff driver),
+# `--textconv` (a textconv driver), `--help` (man, or the help browser) and
+# `--open-files-in-pager`. Held on any subcommand, abbreviations included (git
+# takes an unambiguous prefix); `--no-ext-diff` and the like are other words
+# and are not hits (review round 10, finding 2). A global `-p` is the pager,
+# but a subcommand's own `-p` is a patch (`git log -p`), so `-p` is read only
+# before the subcommand.
+_HELPER_OPTS = ("--paginate", "--ext-diff", "--textconv", "--help", "--open-files-in-pager")
+_HELPER_GLOBALS = frozenset(("-p", "--paginate", "--help"))
+# Subcommands that run a helper program whatever their options say: `help`
+# starts man or the browser.
+_HELPER_SUBS = frozenset(("help",))
+
 # `git config` (review round 4, FIX D): a write may set an alias (`alias.p
 # '!deploy-prod'`) or a program-valued key (`core.sshCommand`, `core.pager`,
 # `core.editor`, `core.fsmonitor`, `core.hooksPath`, `diff.external`,
@@ -305,8 +319,13 @@ def hold(args):
     for word in words:
         if word != "-C" and _INJECT_GLOBAL_RE.match(word):
             return f"it hands git config or a program of its own ({word.split('=', 1)[0]})"
+    for word in words:
+        if word in _HELPER_GLOBALS:
+            return f"it launches a helper program of its own (git {word})"
     sub = subcommand(args)
     rest = [a for a in args[index + 1:] if isinstance(a, str)]
+    if sub in _HELPER_SUBS:
+        return f"`git {sub}` launches a helper program"
     if sub in _RUNS_ALWAYS:
         return f"`git {sub}` runs a command it is handed"
     if sub in _RUNS_WORD and _RUNS_WORD[sub] in rest:
@@ -317,6 +336,9 @@ def hold(args):
     for word in rest:
         if word == "--":
             break
+        helper = next((o for o in _HELPER_OPTS if _option_hit(word, o)), None)
+        if helper:
+            return f"`git {sub} {helper}` launches a helper program"
         for option in _RUNS.get(sub, ()):
             if _option_hit(word, option):
                 return f"`git {sub} {option}` runs a command it is handed"
@@ -940,7 +962,11 @@ def _ps_commands(text):  # pylint: disable=too-many-branches
             return None
     if started:
         words.append("".join(word))
-    if not words or any(w == "--%" or _PS_PERCENT_RE.search(w) for w in words):
+    # A %...% pair is read across words too (%X Y% is one cmd.exe variable
+    # named X Y): any two % with text between them, in one word or in two,
+    # are refused, so --format=%h --format=%an is not exempt either (review
+    # round 10, finding 1).
+    if not words or "--%" in words or _PS_PERCENT_RE.search(" ".join(words)):
         return None
     return [words]
 

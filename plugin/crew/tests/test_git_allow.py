@@ -1887,6 +1887,74 @@ def test_round9_a_powershell_percent_variable_with_a_space_is_not_read(command):
         ["git", "log", "--format=%H"]]
 
 
+# --- review round 10 (Codex gpt-6-sol): %..% across words, helper options, abbreviated force ---
+
+@pytest.mark.parametrize("command", [
+    "git status %X Y%", "git log --format=%h --format=%an", "git log %A %B%",
+    "git log 'a %X' 'Y%'"])
+def test_round10_a_powershell_percent_pair_across_words_is_not_read(command):
+    """`%X Y%` is one cmd.exe variable named `X Y`; split over two words the
+    per-word `%[^%]+%` match saw neither half."""
+    assert crew_gitallow.plain_commands(command, "powershell") is None
+    assert crew_gitallow.line_exempt(command, "powershell", "all") is False
+
+
+@pytest.mark.parametrize("command", ["git log --format=%H", "git status 100%", "git log -p"])
+def test_round10_one_percent_or_none_is_still_read(command):
+    assert crew_gitallow.plain_commands(command, "powershell") is not None
+    assert crew_gitallow.line_exempt(command, "powershell", "all") is True
+
+
+HELPERS = [
+    ["status", "--help"], ["log", "--ext-diff"], ["diff", "--ext-diff"], ["show", "--ext-diff"],
+    ["diff", "--textconv"], ["blame", "--textconv", "f"], ["cat-file", "--textconv", "HEAD:f"],
+    ["log", "--paginate"], ["status", "--hel"], ["log", "--ext"], ["-p", "status"],
+    ["--paginate", "log"], ["--help", "status"], ["-C", ".", "-p", "diff"], ["help", "status"],
+    ["log", "--open-files-in-pager"]]
+
+
+@pytest.mark.parametrize("args", HELPERS)
+def test_round10_an_option_that_launches_a_helper_program_is_held(args):
+    assert crew_gitallow.hold(args)
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_exempt("git " + " ".join(args), shell, "all") is False
+
+
+@pytest.mark.parametrize("args", [
+    ["log", "-p"], ["diff", "--stat"], ["log", "--no-ext-diff"], ["diff", "--no-textconv"],
+    ["log", "--pretty=oneline", "--oneline"], ["show", "-p", "HEAD"], ["status", "-h"],
+    ["log", "--", "--help"]])
+def test_round10_an_ordinary_option_is_not_a_helper(args):
+    assert crew_gitallow.hold(args) is None
+    assert crew_gitallow.line_exempt("git " + " ".join(args), "bash", "all") is True
+
+
+ABBREVIATED_FORCE = [
+    "git push --force-with-leas origin main", "git push --force-with-lease=main origin main",
+    "git push --force-if-includes origin main", "git push --force-if origin main",
+    "git push --mirror", "git push --mirr origin", "git push --delete origin topic",
+    "git push --delet origin topic", "git push --forc origin main", "git push origin +main"]
+
+
+@pytest.mark.parametrize("command", ABBREVIATED_FORCE)
+def test_round10_the_cloud_guard_reads_an_abbreviated_force_push(tmp_path, command):
+    """git takes any unambiguous prefix of a long option, so `--force-with-leas`
+    is `--force-with-lease`; `--mirror` and `--delete` overwrite or remove refs."""
+    assert cloud_guard._git_force_push(command.split()[1:])  # pylint: disable=protected-access
+    root = make_repo(tmp_path, mode=None)
+    assert _rules(_evaluate(root, command), "forcePush"), command
+
+
+@pytest.mark.parametrize("command", [
+    "git push origin main", "git push -u origin topic", "git push --follow-tags",
+    "git push --dry-run origin main", "git push --no-verify origin main",
+    "git push --tags", "git push --set-upstream origin topic"])
+def test_round10_an_ordinary_push_is_still_no_force_push(tmp_path, command):
+    assert cloud_guard._git_force_push(command.split()[1:]) is None  # pylint: disable=protected-access
+    root = make_repo(tmp_path, mode=None)
+    assert not _rules(_evaluate(root, command), "forcePush"), command
+
+
 # --- the mutation table ----------------------------------------------------------------
 
 def test_every_mutation_anchor_is_present_exactly_once():
