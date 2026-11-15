@@ -93,9 +93,15 @@ import string
 import subprocess
 import time
 
+import _promote_match
 import crew_common
 import crew_humanonly
 import crew_state
+
+# The strict JSON reader every guard decision reads a map or config with: a
+# duplicate key (or two differing only by case) raises ValueError instead of
+# keeping the last value (review round 13, finding 3).
+strict_pairs = _promote_match.no_case_twins
 
 KEY = "guards.git.allow"
 OFF, ALL = "off", "all"
@@ -272,6 +278,32 @@ symbolic-ref tag unpack-file unpack-objects update-index update-ref update-serve
 url-parse var verify-commit verify-pack verify-tag version whatchanged worktree write-tree""".split())
 
 
+# Built-ins that only newer gits have (an older git runs `git-<name>` from PATH
+# for them, so a planted executable would run: measured on 2.53, which lacks
+# `format-rev`, `history`, `survey` and `url-parse`; round 13). They are held
+# unless the installed git lists them in `git --list-cmds=builtins`, probed once
+# per process and only when one of these names is used. Could not tell (git
+# missing, probe failed) is "not a built-in".
+_NEWER_BUILTINS = frozenset(("backfill", "diff-pairs", "format-rev", "history", "last-modified",
+                             "replay", "repo", "survey", "url-parse"))
+_PROBED = {}
+
+
+def _git_has_builtin(name):
+    if "set" not in _PROBED:
+        _PROBED["set"] = frozenset()
+        git = crew_common.resolve_tool("git")
+        if git is not None:
+            try:
+                proc = subprocess.run([git, "--list-cmds=builtins"], capture_output=True,
+                                      timeout=10, check=False, stdin=subprocess.DEVNULL)
+                if proc.returncode == 0:
+                    _PROBED["set"] = frozenset(proc.stdout.decode("utf-8", "replace").split())
+            except (OSError, subprocess.SubprocessError):
+                pass
+    return name in _PROBED["set"]
+
+
 def _strategy_hit(word):
     """`word` is `-s`, `-sx`, a bundle holding `s` before any value-taking letter
     (`-ns`), or an abbreviation of `--strategy` (`--strat`, `--strategy=x`)."""
@@ -355,6 +387,9 @@ def _option_hit(word, option):
     return word.startswith("-") and not word.startswith("--") and option[1] in word[1:]
 
 
+_HELPER_URL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9+.-]*::")
+
+
 def hold(args):
     """Why a git command may never be exempted, or None. `args` are its words
     after `git`, already read as plain literals by `plain_commands` (the one
@@ -365,8 +400,15 @@ def hold(args):
     for word in words:
         if word != "-C" and _INJECT_GLOBAL_RE.match(word):
             return f"it hands git config or a program of its own ({word.split('=', 1)[0]})"
+    # A value-taking global's value is not an option: `git -C -p status` runs in
+    # a directory named `-p` (round 13, finding 6).
+    skip = False
     for word in words:
-        if word in _HELPER_GLOBALS:
+        if skip:
+            skip = False
+        elif word in _GIT_VALUE_OPTS:
+            skip = True
+        elif word in _HELPER_GLOBALS:
             return f"it launches a helper program of its own (git {word})"
     sub = subcommand(args)
     rest = [a for a in args[index + 1:] if isinstance(a, str)]
@@ -376,6 +418,9 @@ def hold(args):
     if isinstance(named, str) and sub not in _BUILTINS and sub not in _RUNS_ALWAYS:
         return (f"`git {named}` is not a git built-in, so it is an alias or a `git-{named}` "
                 "program found on PATH")
+    if isinstance(named, str) and sub in _NEWER_BUILTINS and not _git_has_builtin(sub):
+        return (f"`git {named}` is not a built-in of the installed git, so it may be a "
+                f"`git-{named}` program found on PATH")
     if sub in _RUNS_ALWAYS:
         return f"`git {sub}` runs a command it is handed"
     if sub in _RUNS_WORD and _RUNS_WORD[sub] in rest:
@@ -383,6 +428,12 @@ def hold(args):
     if sub == "config" and not _config_is_read(rest):
         return ("`git config` that is not plainly a read may set an alias or a program "
                 "a later git command runs")
+    for word in rest:
+        # A remote-helper URL (`ext::cmd`, `fd::3`, `foo::bar` = git-remote-foo
+        # from PATH) runs a program, and sits anywhere a URL may: after `--`
+        # and behind `--opt=` too (review round 13, finding 1).
+        if _HELPER_URL_RE.match(word) or _HELPER_URL_RE.match(word.split("=", 1)[-1]):
+            return f"`{word.split('::', 1)[0]}::` is a remote-helper URL that runs a program"
     for word in rest:
         if word == "--":
             break
@@ -412,7 +463,9 @@ def target_dirs(args):
             return UNSEEN
         if word == "-C":
             value = words[position + 1] if position + 1 < len(words) else None
-            if not value or any(c in value for c in "$`~*?"):
+            # A tilde expands only at the start of a word: `foo~bar` and
+            # Windows' `PROGRA~1` are plain names (round 13, finding 6).
+            if not value or value.startswith("~") or any(c in value for c in "$`*?"):
                 return UNSEEN
             out.append(value)
     return tuple(out)
@@ -480,9 +533,9 @@ def read_layer(path):
         "appliedDigest": hashlib.sha256(raw).hexdigest(), "appliedSize": stat.st_size,
         "appliedMtimeNs": stat.st_mtime_ns, "appliedChangeNs": change}
     try:
-        cfg = json.loads(raw.decode("utf-8-sig"))
+        cfg = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=strict_pairs)
     except ValueError:
-        return UNREADABLE, "does not parse as UTF-8 JSON", binding
+        return UNREADABLE, "does not parse as UTF-8 JSON (or repeats a key)", binding
     if not isinstance(cfg, dict):
         return UNREADABLE, "is not a JSON object", binding
     guards = cfg.get("guards")
@@ -666,13 +719,23 @@ def _toplevel(directory):
         return None
     try:
         proc = subprocess.run([git, "-C", directory, "rev-parse", "--show-toplevel"],
-                              capture_output=True, text=True, timeout=10, check=False, env=env)
+                              capture_output=True, timeout=10, check=False, env=env)
     except (OSError, subprocess.SubprocessError):
         return None
     # Only the line terminator comes off: a repository directory may itself end
     # in a space (`git -C 'dir '`), and `strip()` read the veto from the wrong
     # directory (review round 12, finding 1).
-    top = re.sub(r"\r?\n$", "", proc.stdout) if proc.returncode == 0 else ""
+    # Bytes, not text mode: universal newlines turn a lone CR into LF, so a
+    # directory named `repo<CR>` read as its sibling `repo` and that repo's
+    # "off" was missed (round 13, finding 2). One trailing LF comes off, and
+    # a CR before it only on Windows, where a name cannot end in one.
+    top = ""
+    if proc.returncode == 0:
+        raw = proc.stdout
+        raw = raw[:-1] if raw.endswith(b"\n") else raw
+        if os.name == "nt" and raw.endswith(b"\r"):
+            raw = raw[:-1]
+        top = os.fsdecode(raw)
     return os.path.realpath(top) if top else None
 
 

@@ -1874,7 +1874,7 @@ def _tf_destroy(scope, cwd, root, state):
     sidecar_path = os.path.join(root, ".crew", "tfplan", digest + ".json")
     try:
         sidecar = json.loads(_read_small(sidecar_path, _SIDECAR_MAX_BYTES)
-                             .decode("utf-8"))
+                             .decode("utf-8"), object_pairs_hook=crew_gitallow.strict_pairs)
     except FileNotFoundError:
         return DESTROY_UNKNOWN, (f"no summary exists for these exact plan "
                                  f"bytes (sha256 {digest[:12]}): run "
@@ -2046,9 +2046,10 @@ _GIT_VALUE_OPTS = frozenset(("-C", "-c", "--git-dir", "--work-tree",
 # The long push options that overwrite or remove remote refs. git takes any
 # unambiguous prefix of a long option, so `--force-with-leas` and `--mirr` are
 # the same options; every prefix counts here, ambiguous or not (git refuses an
-# ambiguous one, and over-reading only blocks).
-_FORCE_LONG_OPTS = ("--force", "--force-with-lease", "--force-if-includes", "--mirror",
-                    "--delete", "--prune")
+# ambiguous one, and over-reading only blocks). `--force-if-includes` is not
+# here: git 2.56 rejects a non-fast-forward push that carries it without a lease
+# (verified), so alone it forces nothing (round 13, finding 5).
+_FORCE_LONG_OPTS = ("--force", "--force-with-lease", "--mirror", "--delete", "--prune")
 
 
 def _force_long_option(arg):
@@ -2057,24 +2058,52 @@ def _force_long_option(arg):
             and any(opt.startswith(name) for opt in _FORCE_LONG_OPTS))
 
 
+# `git push` options that take the next word as their value. Exact spellings
+# only: treating an abbreviation as value-taking when git does not would skip a
+# real refspec, which is the unsafe direction; an unknown abbreviation only
+# leaves its value to be read as a refspec (over-reading blocks, never allows).
+_PUSH_VALUE_OPTS = frozenset(("-o", "--push-option", "--receive-pack", "--exec", "--repo"))
+
+
 def _git_force_push(args):
     index = 0
     while index < len(args) and args[index].startswith("-"):
         index += 2 if args[index] in _GIT_VALUE_OPTS else 1
     if index >= len(args) or args[index] != "push":
         return None
-    rest = args[index + 1:]
-    for arg in rest:
-        if arg in ("--force", "-f", "--force-with-lease") \
+    refs, skip, ended = [], False, False
+    for arg in args[index + 1:]:
+        if skip:
+            skip = False  # an option's value (`-o +ticket=1`) is not a refspec
+            continue
+        if ended or not arg.startswith("-") or arg == "-":
+            refs.append(arg)
+            continue
+        if arg == "--":
+            ended = True
+            continue
+        if arg in ("--force", "--force-with-lease") \
                 or arg.startswith("--force-with-lease=") or _force_long_option(arg):
             return f"git push {arg}"
-        if re.match(r"^-[a-zA-Z]*[fd][a-zA-Z]*$", arg):
+        # The pattern sabotage_cloud.py's "clustered short flags (-uf)" row anchors on
+        # (a harness file, so this line keeps its shape). It also reads the `f` of an
+        # attached `-o` value (`-ofoo`) as `-f`: that only withholds.
+        if re.match(r"^-[a-zA-Z]*f[a-zA-Z]*$", arg):
             return f"git push {arg}"
+        if arg in _PUSH_VALUE_OPTS:
+            skip = True
+            continue
+        if not arg.startswith("--"):
+            for pos, letter in enumerate(arg[1:], 1):
+                if letter == "d":
+                    return f"git push {arg}"
+                if letter == "o":  # the rest of the word is -o's value
+                    skip = pos == len(arg) - 1
+                    break
     # A leading `+` on any refspec forces that ref; a leading `:` (`:topic`)
     # deletes it on the remote. Every positional is checked, not only those
-    # after the remote: an option's value (`-o x`) shifts the count, and no
-    # remote is spelled with a leading `+` or `:`.
-    for ref in (a for a in rest if not a.startswith("-")):
+    # after the remote: no remote is spelled with a leading `+` or `:`.
+    for ref in refs:
         if ref.startswith(("+", ":")):
             return f"git push {ref}"
     return None
@@ -2552,9 +2581,9 @@ def cloud_pins(root):
     except (OSError, ValueError) as exc:
         return empty, f".crew/config.json could not be read ({type(exc).__name__})"
     try:
-        cfg = json.loads(raw)
+        cfg = json.loads(raw, object_pairs_hook=crew_gitallow.strict_pairs)
     except ValueError:
-        return empty, ".crew/config.json does not parse as JSON"
+        return empty, ".crew/config.json does not parse as JSON (or repeats a key)"
     if not isinstance(cfg, dict) or "cloud" not in cfg:
         return empty, "" if isinstance(cfg, dict) else \
             ".crew/config.json is not a JSON object"
@@ -2581,7 +2610,7 @@ def environments_config(root):
     try:
         with open(path, encoding="utf-8-sig", errors="replace") as handle:
             raw = handle.read()
-        cfg = json.loads(raw)
+        cfg = json.loads(raw, object_pairs_hook=crew_gitallow.strict_pairs)
     except (FileNotFoundError, NotADirectoryError):
         cfg = {}
     except OSError as exc:

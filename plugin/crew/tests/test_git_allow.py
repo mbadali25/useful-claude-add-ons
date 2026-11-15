@@ -1931,7 +1931,6 @@ def test_round10_an_ordinary_option_is_not_a_helper(args):
 
 ABBREVIATED_FORCE = [
     "git push --force-with-leas origin main", "git push --force-with-lease=main origin main",
-    "git push --force-if-includes origin main", "git push --force-if origin main",
     "git push --mirror", "git push --mirr origin", "git push --delete origin topic",
     "git push --delet origin topic", "git push --forc origin main", "git push origin +main"]
 
@@ -2031,13 +2030,14 @@ def test_round12_toplevel_strips_only_the_line_terminator(monkeypatch, tmp_path)
 
     class Done:  # pylint: disable=too-few-public-methods
         returncode = 0
-        stdout = spaced + "\n"
+        stdout = (spaced + "\n").encode()
 
     monkeypatch.setattr(crew_gitallow.crew_common, "resolve_tool", lambda name: "git")
     monkeypatch.setattr(crew_gitallow.subprocess, "run", lambda *a, **k: Done())
     assert crew_gitallow._toplevel("x") == os.path.realpath(spaced)  # pylint: disable=protected-access
-    Done.stdout = spaced + "\r\n"
-    assert crew_gitallow._toplevel("x") == os.path.realpath(spaced)  # pylint: disable=protected-access
+    if os.name == "nt":  # a Windows name cannot end in CR, so CRLF is a line terminator there
+        Done.stdout = (spaced + "\r\n").encode()
+        assert crew_gitallow._toplevel("x") == os.path.realpath(spaced)  # pylint: disable=protected-access
 
 
 @pytest.mark.parametrize("environments", [
@@ -2093,6 +2093,191 @@ def test_round12_a_plus_in_the_destination_is_not_a_force_push(tmp_path, command
     assert cloud_guard._git_force_push(command.split()[1:]) is None  # pylint: disable=protected-access
     root = make_repo(tmp_path, mode=None)
     assert not _rules(_evaluate(root, command), "forcePush"), command
+
+
+# --- review round 13 (Codex gpt-6-sol, crew 1.3.116 re-review) ----------------------------
+
+HELPER_URLS = [
+    ["ls-remote", "ext::echo deploy-prod"], ["clone", "ext::sh -c id"], ["fetch", "fd::3"],
+    ["fetch", "foo::bar"], ["fetch", "--", "ext::x"], ["clone", "--upload-pack=a", "ext::x"],
+    ["ls-remote", "--repo=ext::x"], ["push", "origin", "ext::x"]]
+
+
+@pytest.mark.parametrize("args", HELPER_URLS)
+def test_round13_a_remote_helper_url_is_held(args):
+    """Measured with GIT_ALLOW_PROTOCOL=ext on git 2.56: `git ls-remote 'ext::echo x'` ran
+    echo. `fd::` and any `<helper>::` (git-remote-<helper> from PATH) run a program too."""
+    assert crew_gitallow.hold(args)
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_exempt("git " + " ".join(f"'{a}'" for a in args),
+                                         shell, "all") is False
+
+
+@pytest.mark.parametrize("args", [
+    ["ls-remote", "origin"], ["clone", "https://example.invalid/x.git"], ["log", "a:b"],
+    ["fetch", "git@example.invalid:x/y.git"], ["push", "origin", "main:main"]])
+def test_round13_an_ordinary_remote_is_not_a_helper_url(args):
+    assert crew_gitallow.hold(args) is None
+
+
+def test_round13_toplevel_reads_bytes_and_keeps_a_carriage_return(monkeypatch, tmp_path):
+    """Text mode turned a lone CR into LF before the strip, so `repo<CR>` resolved to its
+    sibling `repo` and that repo's `allow: off` was missed."""
+    seen = {}
+
+    class Done:  # pylint: disable=too-few-public-methods
+        returncode = 0
+        stdout = b""
+
+    def fake_run(*_args, **kwargs):
+        seen.update(kwargs)
+        return Done()
+
+    monkeypatch.setattr(crew_gitallow.crew_common, "resolve_tool", lambda name: "git")
+    monkeypatch.setattr(crew_gitallow.subprocess, "run", fake_run)
+    base = str(tmp_path / "repo").replace("\\", "/")
+    Done.stdout = base.encode() + b"\n"
+    assert crew_gitallow._toplevel("x") == os.path.realpath(base)  # pylint: disable=protected-access
+    assert not seen.get("text") and not seen.get("universal_newlines")
+    # A POSIX host, whatever this one is: the CR before the LF is part of the name.
+    monkeypatch.setattr(crew_gitallow.os, "name", "posix")
+    Done.stdout = base.encode() + b"\r\n"
+    assert crew_gitallow._toplevel("x") == os.path.realpath(base + "\r")  # pylint: disable=protected-access
+
+
+def test_round13_a_duplicate_deploy_key_is_not_promote_exempt(tmp_path, machine, monkeypatch):
+    """Plain json keeps the LAST duplicate: `deploy` read as `echo deploy-prod` while the
+    strict reader the gate uses refuses the map (CaseTwins)."""
+    import _promote_match  # pylint: disable=import-outside-toplevel
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    command = "git push prod main"
+    text = ('{"environments": {"prod": {"deploy": "git push prod main", '
+            '"deploy": "echo deploy-prod", "requireHuman": true, "rollback": "none", '
+            '"rollbackReason": "x", "requireReview": false, "reviewReason": "x"}}}')
+    (root / ".crew" / "verify.json").write_text(text, encoding="utf-8")
+    with pytest.raises(_promote_match.CaseTwins):
+        json.loads(text, object_pairs_hook=_promote_match.no_case_twins)
+    assert crew_gitallow.promote_exempt(command, "bash", str(root)) is False
+
+
+def test_round13_the_dispatch_reader_is_strict(tmp_path, monkeypatch):
+    import _promote_dispatch  # pylint: disable=import-outside-toplevel
+    import _promote_match  # pylint: disable=import-outside-toplevel
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".crew").mkdir()
+    (tmp_path / ".crew" / "verify.json").write_text(
+        '{"environments": {"p": {"deploy": "a", "deploy": "b"}}}', encoding="utf-8")
+    with pytest.raises(_promote_match.CaseTwins):
+        _promote_dispatch.working_envs()
+
+
+def test_round13_a_duplicate_key_in_the_machine_file_is_unreadable(tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"guards": {"git": {"allow": "off"}}, "guards": {"git": {"allow": "all"}}}',
+                    encoding="utf-8")
+    state, _value, _binding = crew_gitallow.read_layer(str(path))
+    assert state == crew_gitallow.UNREADABLE
+
+
+def test_round13_a_duplicate_key_in_the_repo_config_is_a_problem(tmp_path):
+    root = make_repo(tmp_path, mode=None)
+    (root / ".crew").mkdir(exist_ok=True)
+    (root / ".crew" / "config.json").write_text(
+        '{"environments": {"nonProd": ["dev"], "nonProd": ["*"]}}', encoding="utf-8")
+    assert "does not parse" in cloud_guard.environments_config(str(root))["problem"]
+
+
+@pytest.mark.parametrize("command", [
+    "git push --force-if-includes origin main", "git push --force-if origin main",
+    "git push -o +ticket=123 origin main", "git push --push-option +x origin main",
+    "git push -od x origin main", "git push origin -- -f", "git push -uo +x origin main",
+    "git push -o x origin main"])
+def test_round13_an_inert_option_or_an_option_value_is_no_force_push(tmp_path, command):
+    """git 2.56: `--force-if-includes` alone left a non-fast-forward push rejected (inert
+    without a lease); `-o`'s value is a push option, not a refspec."""
+    assert cloud_guard._git_force_push(command.split()[1:]) is None  # pylint: disable=protected-access
+    root = make_repo(tmp_path, mode=None)
+    assert not _rules(_evaluate(root, command), "forcePush"), command
+
+
+@pytest.mark.parametrize("command", [
+    "git push --force-if-includes --force-with-lease origin main", "git push -o x origin +main",
+    "git push -fo x origin main", "git push -o x -d origin b", "git push -- +main",
+    "git push origin -- :b"])
+def test_round13_a_force_after_an_option_value_is_still_a_force_push(tmp_path, command):
+    assert cloud_guard._git_force_push(command.split()[1:])  # pylint: disable=protected-access
+    root = make_repo(tmp_path, mode=None)
+    assert _rules(_evaluate(root, command), "forcePush"), command
+
+
+def test_round13_a_value_taking_global_value_is_not_a_pager_option():
+    assert crew_gitallow.hold(["-C", "-p", "status"]) is None
+    assert crew_gitallow.hold(["-p", "status"])
+    assert crew_gitallow.hold(["-C", "x", "-p", "status"])
+    assert crew_gitallow.line_exempt("git -C -p status", "bash", "all") is True
+
+
+def test_round13_a_tilde_inside_a_C_value_is_a_name_not_an_expansion():
+    for value in ("foo~bar", "PROGRA~1"):
+        commands = crew_gitallow.line_git_commands(f"git -C {value} status", "bash")
+        assert crew_gitallow.line_targets(commands, ".") is not None
+    assert crew_gitallow.line_targets([["-C", "~x", "status"]], ".") is None
+
+
+def test_round13_a_newer_builtin_is_held_when_the_installed_git_lacks_it(monkeypatch):
+    """git 2.53 lacks `format-rev`, `history`, `survey`, `url-parse`: they would run a
+    `git-<name>` found on PATH."""
+    monkeypatch.setattr(crew_gitallow, "_PROBED", {"set": frozenset(("status",))})
+    assert crew_gitallow.hold(["history", "x"])
+    monkeypatch.setattr(crew_gitallow, "_PROBED", {"set": frozenset(("history",))})
+    assert crew_gitallow.hold(["history", "x"]) is None
+    assert crew_gitallow.hold(["status"]) is None
+
+
+def test_round13_a_duplicate_key_in_the_pins_block_is_a_problem(tmp_path):
+    root = make_repo(tmp_path, mode=None)
+    (root / ".crew").mkdir(exist_ok=True)
+    (root / ".crew" / "config.json").write_text(
+        '{"cloud": {"aws": ["1"]}, "cloud": {"aws": ["*"]}}', encoding="utf-8")
+    assert "does not parse" in cloud_guard.cloud_pins(str(root))[1]
+
+
+def test_round13_a_duplicate_key_in_a_plan_summary_is_unknown(tmp_path):
+    import hashlib  # pylint: disable=import-outside-toplevel
+    data = b"saved plan bytes"
+    (tmp_path / ".crew" / "tfplan").mkdir(parents=True)
+    (tmp_path / "p.tfplan").write_bytes(data)
+    text = ('{"plan": "p.tfplan", "workspace": "qa", "environment": null, '
+            '"deletes": ["a.b"], "deletes": []}')
+    (tmp_path / ".crew" / "tfplan" / (hashlib.sha256(data).hexdigest() + ".json")).write_text(
+        text, encoding="utf-8")
+    ctx = {"cd": False, "switch": False, "engaged": True}
+    found = [f for f in cloud_guard.scan("bash", "terraform apply p.tfplan", ctx=ctx) if f.scope]
+    got = cloud_guard._tf_destroy(found[-1].scope, str(tmp_path), str(tmp_path), ctx)  # pylint: disable=protected-access
+    assert got[0] == "unknown", got
+
+
+def test_round13_a_duplicate_deploy_key_is_not_promote_exempt_committed(
+        tmp_path, machine, monkeypatch):
+    """The same duplicate key in the COMMITTED map (read from a blob while the working map
+    is dirty) must be refused by the strict reader too."""
+    import _promote_dispatch  # pylint: disable=import-outside-toplevel
+    import _promote_match  # pylint: disable=import-outside-toplevel
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    text = '{"environments": {"p": {"deploy": "git push prod main", "deploy": "echo x"}}}'
+    (root / "dup.json").write_text(text, encoding="utf-8")
+    blob = git(root, "hash-object", "-w", "dup.json")
+    monkeypatch.setenv("CREW_HEAD_MAP", blob)
+    monkeypatch.setenv("CREW_MAP_DIRTY", "1")
+    with pytest.raises(_promote_match.CaseTwins):
+        _promote_dispatch.committed_envs()
+    _arm(machine, "all")
+    assert crew_gitallow.promote_exempt("git push prod main", "bash", str(root)) is False
 
 
 # --- the mutation table ----------------------------------------------------------------

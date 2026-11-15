@@ -609,7 +609,7 @@ separator, redirection, heredoc, here-string, continuation or comment at all
 commit message is judged as before). Anything it cannot read whole is judged
 as before. A plain git command carrying <code>-c</code> or a command to run (<code>rebase
 --exec</code> or its abbreviation <code>--exe</code>, <code>push --receive-pack</code>, <code>init
---template</code>), a word that is not a git built-in (<code>git zzz</code>, <code>git svn</code>, an alias), or a <code>git config</code>
+--template</code>), a word that is not a git built-in (<code>git zzz</code>, <code>git svn</code>, an alias), a remote-helper URL (<code>ext::&lt;command&gt;</code>, <code>fd::3</code>), or a <code>git config</code>
 that is not plainly a read, is never exempt.
 Plain lines - <code>git commit -m "fix: x"</code>, <code>git push --force-with-lease origin
 topic</code>, <code>git rebase -i HEAD~3</code>, <code>git log --format=%H</code> - stay exempt. A

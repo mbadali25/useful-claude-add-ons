@@ -55,6 +55,7 @@ import shutil
 import subprocess
 import sys
 
+import _promote_match
 import crew_dispatch
 
 PLACEHOLDER = "SUBSTITUTED"
@@ -216,7 +217,10 @@ def committed_envs():
                           check=False, timeout=10, stdin=subprocess.DEVNULL)
     if proc.returncode != 0:
         raise Block("the committed .crew/verify.json could not be read")
-    return get_ci(json.loads(proc.stdout.decode("utf-8-sig", errors="replace")),
+    # The strict reader the gates use: a duplicate key keeps the last value
+    # under plain json, which is not the map the gate matched (round 13, F3).
+    return get_ci(json.loads(proc.stdout.decode("utf-8-sig", errors="replace"),
+                             object_pairs_hook=_promote_match.no_case_twins),
                   "environments", {})
 
 
@@ -224,7 +228,8 @@ def working_envs():
     if not os.path.exists(".crew/verify.json"):
         return None
     with open(".crew/verify.json", encoding="utf-8-sig", errors="replace") as fh:
-        return get_ci(json.load(fh), "environments", {})
+        return get_ci(json.load(fh, object_pairs_hook=_promote_match.no_case_twins),
+                      "environments", {})
 
 
 def without_declared(command, maps):

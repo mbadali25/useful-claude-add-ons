@@ -155,7 +155,7 @@ git commands, destructive ones included. Off by default (`null`, or `"off"`).
 A listed subcommand passes with every option it takes: listing `push` also lets
 `git push --force` and `git push origin +main` through, because the force-push
 rule is a finding on the `push` subcommand. To keep force pushes stopped, leave
-`push` out of the list. The cloud guard reads git's abbreviated long options (`--force-with-leas`, `--mirr`) as the force pushes they are, and `--force-if-includes`, `--mirror`, `--delete`/`-d` and `--prune` as force pushes too, and a refspec with a leading `:` (`git push origin :topic`, which deletes the remote branch) the same way, with the switch on or off. The cloud guard skips the global options that take a value (`-C`, `-c`, `--git-dir`, `--work-tree`, `--namespace`, `--exec-path`, `--config-env`, `--super-prefix`, `--attr-source`) when it finds the subcommand, the same set the switch reads. Known limit: a `-d` inside a bundle with an option's attached value (`-ofoo`) is read as `-d` too (it only withholds).
+`push` out of the list. The cloud guard reads git's abbreviated long options (`--force-with-leas`, `--mirr`) as the force pushes they are, and `--mirror`, `--delete`/`-d` and `--prune` as force pushes too, and a refspec with a leading `:` (`git push origin :topic`, which deletes the remote branch) the same way, with the switch on or off. The cloud guard skips the global options that take a value (`-C`, `-c`, `--git-dir`, `--work-tree`, `--namespace`, `--exec-path`, `--config-env`, `--super-prefix`, `--attr-source`) when it finds the subcommand, the same set the switch reads. `--force-if-includes` alone is not one (git 2.56 leaves a non-fast-forward push rejected without a lease; with `--force-with-lease` the lease is the finding), and an option's value is not read as a refspec: `git push -o +ticket=1 origin main` forces nothing (`-o` and `--push-option` take the next word, `-ofoo` carries it attached; `-fo x` is still `-f`, and the `f` of an attached value such as `-ofoo` is read as `-f` too, which only withholds).
 
 What it loosens, and nothing else: the cloud guard's `guards.forcePush` rule
 (`git push --force`, `+ref`) and the promote gate, so a commit message or
@@ -217,7 +217,7 @@ subcommand that runs a command it is given (`rebase --exec`/`-x`,
 `web--browse`, `send-email --*-cmd`, `daemon --access-hook`), in any abbreviation git accepts (`--exe`,
 `--receive=...`); an option that launches a helper program (`--paginate` and a leading `-p`, `--ext-diff`,
 `--textconv`, `--help`, `--open-files-in-pager`), `git help`, `git difftool`, `git mergetool`
-and `git credential` and `git cat-file --filters` (each runs a configured program), and `merge`/`pull`/`rebase` `-s`/`--strategy`
+and `git credential` and `git cat-file --filters` (each runs a configured program), a remote-helper URL wherever it sits (`ext::<command>`, `fd::3`, `foo::bar`, which runs `git-remote-foo` from PATH; also after `--` and behind `--opt=`), and `merge`/`pull`/`rebase` `-s`/`--strategy`
 (git runs `git-merge-<strategy>` from PATH; `-X`/`--strategy-option` only passes a string and is not held);
 and a `git config` that is not plainly a read (`--get*`,
 `-l`/`--list`, `get`, `list`, or one key alone, with only read options): a
@@ -234,7 +234,7 @@ differently) is judged as before. A subcommand is matched exactly as written:
 git runs an alias, or a `git-<word>` program it finds on PATH. A built-in this version of crew
 does not list is only held, never let through. A `deploy` in `.crew/verify.json` that is not a
 command or a list of commands (or an environment that is not an object) makes the promote gate
-exempt nothing, the same map the gate itself refuses to read.
+exempt nothing, the same map the gate itself refuses to read. A map or config that repeats a key, or holds two keys that differ only by case, is refused rather than read last-wins (`.crew/verify.json` for the promote exemption and the dispatch reader, the config files for `guards.git.allow`, the `cloud`/`environments` blocks and the saved-plan summary): the promote exemption then exempts nothing and the config reads as off. The value of a value-taking global option is not an option (`git -C -p status` runs in a directory named `-p`), and a `~` inside a `-C` value (`foo~bar`, `PROGRA~1`) is a name; only a leading `~` is an expansion crew cannot follow. A built-in that only newer gits have (`backfill`, `diff-pairs`, `format-rev`, `history`, `last-modified`, `replay`, `repo`, `survey`, `url-parse`) is held unless the installed git lists it in `git --list-cmds=builtins` (an older git runs a `git-<name>` from PATH instead); `git submodule` is a script in git's own exec directory, which git searches before PATH, so it is not held.
 
 Accepted residuals: a literal `git` is read as the git program, so a shell function named `git`
 that the shell inherited or exported (`export -f git`) would run instead of it, and crew cannot see
