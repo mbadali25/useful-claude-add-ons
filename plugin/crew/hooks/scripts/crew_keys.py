@@ -257,6 +257,22 @@ KEY_META = {
                                     "guard's row in the dispatcher's table, not a setting.",
                                     "type", since="1.3.41", source=_S + "_promote_gate.py",
                                     type_="number of seconds, or null"),
+    # --- verify (crew 1.3.117)
+    "verify.stopBudgetSeconds": _row("How many seconds the Stop row of the verify gate "
+                                     "(`verify-gate.sh`, `verify-gate.ps1`) may spend running "
+                                     "rules, cheapest first, before it defers the rest to CI "
+                                     "and names them. Default 60, which is what the gate used "
+                                     "before the key was settable. A write must be a whole "
+                                     "number from 1 to 600 (the Stop hook's own timeout); "
+                                     "anything else is refused, never stored as a value the "
+                                     "gate would quietly replace with 60. null removes the "
+                                     "setting. Repo file only: what a rule costs is a fact "
+                                     "about the checkout. `--all` and `--ci` ignore it. A "
+                                     "hand-edited value the gate cannot use (a string, a "
+                                     "boolean, a negative) still reads as 60, never as no "
+                                     "limit.", "type", since="1.3.117",
+                                     source=_S + "verify-gate.sh",
+                                     type_="whole number of seconds, 1 to 600, or null"),
     # --- reaper (crew 1.3.50)
     "reaper.enabled": _row('Whether scheduled and session-start passes of the orphan reaper '
                            '(`crew_reaper.py --scheduled`) do anything. false by default; a manual'

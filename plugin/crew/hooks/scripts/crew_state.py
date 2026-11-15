@@ -569,6 +569,16 @@ WORKTREES_DEFAULTS = {"root": None}
 # `_promote_gate.deadline_seconds` / `_promote_gate.configured_seconds`.
 PROMOTE_DEFAULTS = {"deadlineSeconds": None}
 
+# crew 1.3.117 `verify.stopBudgetSeconds`: the seconds the Stop row of the verify gate may spend
+# running rules before it defers the rest to CI. The default is the one `verify-gate.sh` and
+# `verify-gate.ps1` already use when the key is absent (60), so declaring the key moves nothing.
+# REPO ONLY (a rule's price is a fact about the checkout; `default_global_config` omits `verify`).
+# A write outside STOP_BUDGET_BOUNDS, or a non-integer, is REFUSED (`crew_config.value_allowed`);
+# the upper bound is the Stop row's hook timeout in `crew_hook.TABLE` (a test holds the two
+# together), since a budget at or above it could outlive its own hook.
+VERIFY_DEFAULTS = {"stopBudgetSeconds": 60}
+STOP_BUDGET_BOUNDS = (1, 600)
+
 # crew 1.3.50 `reaper.*`: the orphan reaper (crew_reaper.py). Defined there, beside the code that
 # reads it, and referenced here. Both layers declare it, but the reader takes the MACHINE file only.
 REAPER_DEFAULTS = crew_reaper.DEFAULTS

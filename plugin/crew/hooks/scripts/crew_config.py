@@ -308,6 +308,10 @@ def default_config():
         # both layers (a slow host is a fact of the machine; a repo may differ); null
         # derives it from the guard's hook timeout. Read by `_promote_gate.py`.
         "promote": copy.deepcopy(crew_state.PROMOTE_DEFAULTS),
+        # crew 1.3.117. The Stop row's verify budget, read by verify-gate.sh/.ps1. REPO ONLY: a
+        # rule's price is a fact about the checkout, so `default_global_config` omits `verify`.
+        # Writes are bounded by `crew_state.STOP_BUDGET_BOUNDS` (`value_allowed`).
+        "verify": copy.deepcopy(crew_state.VERIFY_DEFAULTS),
         # crew 1.3.50. The orphan reaper (crew_reaper.py): off by default, dry run when on.
         # Declared in both layers; the reader takes the machine file only.
         "reaper": copy.deepcopy(crew_state.REAPER_DEFAULTS),
@@ -3510,7 +3514,27 @@ def value_allowed(dotted, layer, value):
     if allowed is not None and not _in_values(value, allowed):
         return (f"{dotted} = {value!r} is not one of its values "
                 f"({_values_text(allowed)})")
-    return None
+    return bounds_problem(dotted, value)
+
+
+# Keys that take a whole number inside a closed range, by dotted path. A write outside it is
+# REFUSED rather than stored for the reader to turn into its default: the reader
+# (`verify-gate.sh`) falls back to 60 on a value it cannot use, and a fallback nobody sees is
+# how a typo'd budget would read as "tuned" while the gate kept running 60 s.
+INT_BOUNDS = {"verify.stopBudgetSeconds": crew_state.STOP_BUDGET_BOUNDS}
+
+
+def bounds_problem(dotted, value):
+    """None when `value` is a whole number inside `INT_BOUNDS[dotted]` (or the key has no bound),
+    else why not. `True == 1` and `60.0 == 60`, so the type is compared as well as the value."""
+    bounds = INT_BOUNDS.get(dotted)
+    if bounds is None:
+        return None
+    low, high = bounds
+    if type(value) is int and low <= value <= high:  # pylint: disable=unidiomatic-typecheck
+        return None
+    return (f"{dotted} = {value!r} is not a whole number from {low} to {high}; "
+            "null removes the setting and the gate uses its default")
 
 
 class _Unset:
