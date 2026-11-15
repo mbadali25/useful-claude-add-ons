@@ -499,7 +499,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   not skipped in silence (the receipt backs nothing anyway: it binds the file's
   content and modification time).
 
-It takes effect on the next hook call, with no reinstall. To turn it off, ask crew to propose it (`/crew:config`, which runs `crew_confirm_config.py propose --layer machine --key guards.enabled` and relays the change id), then type `/crew:confirm-config <change_id>` yourself, twice, in two separate prompts, within 15 minutes. `--set guards.enabled=false` is refused (crew 1.3.112). `approval-hook.sh` keeps
+It takes effect on the next hook call, with no reinstall. To turn it off, ask crew to propose it (`/crew:config`, which runs `crew_confirm_config.py propose --layer machine --key guards.enabled` and relays the change id), then type `/crew:confirm-config <change_id>` yourself, twice, in two separate prompts, within 15 minutes. `--set guards.enabled=false` is refused (crew 1.3.119). `approval-hook.sh` keeps
 running, so `/crew:approve` and `/crew:confirm-config` keep working and the
 `humanOnly.*` opt-out still works with the guards off. It needs python: with
 none, the bash launcher still fails closed in an armed repo (known limitation).
@@ -515,10 +515,21 @@ the owner's decision (the guard stays out of the way of normal commands): a help
 script that writes the file (written first, then run behind `cd`), a launcher such
 as `pytest`, `uv`, `make` or `python -m` that runs one, an 8.3 short name used
 through a shell, base64 or other encoded code, and a file copied back with its
-modification time kept all still write the file or replay a receipt. Keep an
+modification time kept all still write the file or replay a receipt. The
+last one includes a filesystem with coarse timestamps (FAT, some network
+shares): the same confirmed bytes written back within one timestamp tick still
+match the receipt's `<sha256>@<mtime_ns>` digest (inferred, not reproduced on a
+fine-grained one). Keep an
 untrusted agent out of the account rather than behind this key. A working
 directory equal to your home, or an ancestor of it, makes an owner-confirmed
 switch do nothing (the guards stay on, as for a HOME redirected into the project).
+What crew tells you matches what dispatch does (crew 1.3.119): `crew_confirm_config.py propose` refuses a
+machine file that is a symbolic link (the confirmation would name the target's path while the write
+replaces the link) and one inside the working directory or the project, and says why; a confirmation is
+reported `applied` only when the dispatcher's own reader honours its receipt, else `refused`; and
+`--explain` and `/crew:status` report a machine file the dispatcher cannot read as strict JSON (a duplicate
+key at any depth, malformed text, not an object, unreadable) as exactly that, not as "unconfirmed" and not
+as the default.
 
 ## Guard profiles
 

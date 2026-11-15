@@ -1988,7 +1988,7 @@ def _layer_supplies(layer, parts, defaults):
 
 _AUTOCLEAR_MACHINE_ONLY_PATHS = tuple(
     "context.autoClear." + key for key in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
-# Leaves a reader takes from the machine file ALONE: the auto-clear scopes, and `guards.enabled` (crew 1.3.112,
+# Leaves a reader takes from the machine file ALONE: the auto-clear scopes, and `guards.enabled` (crew 1.3.119,
 # owner decision 2026-11-13: a checkout must not be able to turn every guard off; `crew_hook.guards_switched_off`
 # reads the machine layer only). A repo copy is refused by the writers, named "not in effect" by `explain_config`
 # and reported by `inert_settings`.
@@ -2133,11 +2133,18 @@ def explain_config(root, path=None, all_keys=False):
                 "value": None if only_value is _MISSING else only_value,
                 "source": "global" if from_global else "default",
             }
-            if only_value is False and dotted == crew_humanonly.MASTER_KEY:
+            problem = (crew_humanonly.machine_file_problem(_global_label(path))
+                       if dotted == crew_humanonly.MASTER_KEY else None)
+            if problem:
+                # The dispatcher reads the file strictly and keeps every guard on when it cannot: a duplicate key
+                # or an unreadable file is its own cause, not "unconfirmed" and not the default (round 8).
+                row["invalid"] = problem
+            elif only_value is False and dotted == crew_humanonly.MASTER_KEY:
                 confirmed = crew_humanonly.master_confirmed(_global_label(path))
                 causes = crew_humanonly.machine_file_unread_causes(_global_label(path), root)
                 if causes:
-                    # the dispatcher does not read a machine file inside the working directory or the project
+                    # the dispatcher does not read a machine file inside the working directory or the project,
+                    # confirmed or not: the cause is named either way, so the advice matches dispatch
                     row["unconfirmed"], row["homeLimited"] = True, confirmed
                     row["homeCauses"] = causes
                 elif not confirmed:
@@ -3605,7 +3612,7 @@ def _content_problem(dotted, layer, value):
 def master_switch_problem(whole, layer, current=None):
     """Why a WHOLE-FILE replacement (`--rebuild`, `--restore`, `/crew:migrate`) may not carry
     `guards.enabled` as `whole` holds it, or None. Those paths take their content from a saved profile, a
-    backup or the file itself, not from one validated `--set`, so each must judge the key here (crew 1.3.112):
+    backup or the file itself, not from one validated `--set`, so each must judge the key here (crew 1.3.119):
 
     * repo file: only `true` (the template's own value) or absent. A repo `false` does nothing and a repo
       `null` or a string is a value no reader looks at; none of them is written back from a profile or a backup.
@@ -3857,7 +3864,7 @@ def write_global_config(updates, path=None, expect=None):
 
     def _restamp(_result):
         # The owner confirmed `guards.enabled: false` and this write left it alone: bind the receipt to the file
-        # as it now is, so an unrelated `--set` does not put the guards back on (crew 1.3.112). Read inside the
+        # as it now is, so an unrelated `--set` does not put the guards back on (crew 1.3.119). Read inside the
         # lock, right after the replace, so no other crew writer lands between the write and the digest.
         if out.get("backed"):
             crew_humanonly.restamp("machine", real_path, crew_humanonly.MASTER_KEY, global_path=path)
@@ -4163,8 +4170,14 @@ def apply_confirmed_optout(layer, dotted, path, expect, global_path=None, stamp_
     out = {}
 
     def _mutate(parsed):
+        if os.path.islink(path):
+            # A link made since the proposal (or one the proposal never saw): the replace would swap it for a
+            # regular file whose real path is not the one the receipt names, and the owner would be told it
+            # applied when no receipt matches it (round 8).
+            refused = GlobalWriteRefused if layer == "machine" else RepoWriteRefused
+            raise refused(f"{path} is a symbolic link; replace it with the file itself first")
         # Judged under the lock, on the bytes about to be replaced (round 3, N1).
-        out["backed"] = layer == "machine" and dotted != crew_humanonly.MASTER_KEY and crew_humanonly.master_confirmed(
+        out["backed"] = layer == "machine" and dotted !=crew_humanonly.MASTER_KEY and crew_humanonly.master_confirmed(
             path)
         global_cfg = None if layer == "machine" else machine_view(global_path)[0]
         out["plan"] = _plan_on(parsed, {dotted: False}, layer, path, global_cfg)
@@ -4573,7 +4586,7 @@ def _replace_layer_file(root, layer, data, global_path=None):
     with lock:
         stamp = crew_backup.backup(path)
         crew_config_files.replace_bytes(path, data)
-    # The owner confirmed the content that was there, not what replaced it (crew 1.3.112): retire its receipts, so
+    # The owner confirmed the content that was there, not what replaced it (crew 1.3.119): retire its receipts, so
     # a `false` the replacement carries, or one hand-written later, is not backed by them.
     # A revocation that cannot be written is reported on stderr, not dropped (round 3, N3).
     crew_humanonly.retire(layer, path, global_path=global_path, reason="--rebuild or --restore replaced the file")
@@ -4645,8 +4658,12 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
         # A machine `false` the owner never confirmed is NOT in force: the value column says so itself, so a reader
         # of this one column is not told `false` as if the guards were off (round 3).
         shown = json.dumps(row["value"]) + (
+            f" (NOT in effect: the machine file cannot be read as strict JSON ({row['invalid']}), every guard "
+            "still runs)" if row.get("invalid") else
             " (NOT in effect: the file lies inside the working directory or the project, every guard still runs)"
             if row.get("homeLimited") else
+            " (NOT in effect: unconfirmed, and the file lies inside the working directory or the project, every "
+            "guard still runs)" if row.get("unconfirmed") and row.get("homeCauses") else
             " (NOT in effect: unconfirmed, every guard still runs)" if row.get("unconfirmed") else "")
         print(f"{row['path'].ljust(width)}  {row['source'].ljust(8)}  {shown}"
               + (f"  ({', '.join(marks)})" if marks else ""))
@@ -4671,11 +4688,22 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
               "than your machine allows")
         print("  and be obeyed, and may ask for more and be refused.")
     for row in rows:
-        if row.get("homeLimited"):
+        if row.get("invalid"):
+            print()
+            print(f"! {row['path']}: the machine file cannot be read as strict JSON ({row['invalid']}), so the "
+                  "dispatcher keeps every guard on whatever the file says; the value above is read leniently "
+                  "and is NOT in effect. Fix the file (one value per key, valid JSON), then confirm again.")
+        elif row.get("homeLimited"):
             print()
             print(f"! {row['path']}: false in the machine file and confirmed, but that file lies inside the working "
                   "directory or the project, so it is NOT in effect: every guard still runs. "
                   + crew_humanonly.unread_advice(row.get("homeCauses", ())) + ".")
+        elif row.get("unconfirmed") and row.get("homeCauses"):
+            print()
+            print(f"! {row['path']}: false in the machine file, but it is NOT in effect: that file lies inside the "
+                  "working directory or the project (the dispatcher does not read it from there), and no applied "
+                  "/crew:confirm-config double confirmation backs it either. Confirming cannot help until that "
+                  "changes: " + crew_humanonly.unread_advice(row["homeCauses"]) + ".")
         elif row.get("unconfirmed"):
             print()
             print(f"! {row['path']}: false in the machine file, but no applied /crew:confirm-config double "
@@ -4703,10 +4731,17 @@ def _print_explain(rows, root=".", all_keys=False, findings=None):
         print()
         print(f"! {row['path']}: repo asks `{asked}`, but only "
               "the machine-global file's value is ever read for this key")
-        if row["path"] == "guards.enabled" and row.get("homeLimited"):
+        if row["path"] == "guards.enabled" and row.get("invalid"):
+            print("  -> the machine file cannot be read as strict JSON, so its value counts for nothing and every "
+                  "guard still runs. A repo file cannot stand a guard down.")
+        elif row["path"] == "guards.enabled" and row.get("homeLimited"):
             print("  -> the machine file's `false` is confirmed, but that file lies inside the working directory or "
                   "the project (the home-directory limit), so it is not in force either: every guard still runs. A "
                   "repo file cannot stand a guard down.")
+        elif row["path"] == "guards.enabled" and row.get("unconfirmed") and row.get("homeCauses"):
+            print("  -> the machine file's `false` is NOT confirmed, and that file lies inside the working "
+                  "directory or the project, so it is not in force either: every guard still runs. A repo file "
+                  "cannot stand a guard down.")
         elif row["path"] == "guards.enabled" and row.get("unconfirmed"):
             print("  -> the machine file's `false` is NOT confirmed, so it is not in force either: every guard "
                   "still runs. A repo file cannot stand a guard down, and a machine `false` counts only once the "

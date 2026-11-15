@@ -403,6 +403,9 @@ KEY_META = {
                            "`/crew:migrate`) leaves the guards on until it is confirmed again, while a crew "
                            "`--set` of another key rebinds it. A write that puts the old modification time back "
                            "(`cp -p`, an archive extract) replays the receipt: an accepted limit. "
+                           "A machine file that is a symbolic link or lies inside the working directory or "
+                           "the project is refused when proposed, and one that is not strict JSON is "
+                           "reported as such, never as unconfirmed. "
                            "A guardrail against accidents and agent drift, "
                            "NOT a security boundary against a hostile agent running as the same user. A `false` in "
                            "`.crew/config.json` is refused by the writer and ignored by the dispatcher, "
@@ -411,7 +414,7 @@ KEY_META = {
                            "anything unreadable leaves them on). `/crew:approve` and `/crew:confirm-config` "
                            "keep working, so the `humanOnly.*` opt-out does too. Needs python: with "
                            "none the guards still fail closed.", "branch", (True, False),
-                           "1.3.112", _S + "crew_hook.py"),
+                           "1.3.119", _S + "crew_hook.py"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),
     "production.hosts": _unv("Globs naming production hosts.", "0.19.30",
@@ -633,7 +636,7 @@ def values_of(key):
 # the request URL, so a cloned repo may not choose it).
 _MACHINE_ONLY = (tuple("context.autoClear." + k for k in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
                  + tuple("notify." + k for k in crew_notify.GLOBAL_ONLY_KEYS)
-                 + ("guards.enabled",))  # crew 1.3.112: a repo file cannot turn every guard off
+                 + ("guards.enabled",))  # crew 1.3.119: a repo file cannot turn every guard off
 
 
 def layer_of(key):

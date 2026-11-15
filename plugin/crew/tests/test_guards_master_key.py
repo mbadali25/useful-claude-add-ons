@@ -1,4 +1,4 @@
-"""`guards.enabled`, the guards master switch's key (crew 1.3.112): declared, validated, written only through the
+"""`guards.enabled`, the guards master switch's key (crew 1.3.119): declared, validated, written only through the
 owner's double confirmation, and judged by every planner that writes a whole file.
 
 The hook half (`crew_hook.guards_switched_off`, the receipt it requires, context-watch standing down, the duplicate
@@ -84,7 +84,7 @@ def _machine(home, cfg):
 
 
 def _receipt(path, state="applied", value=False, settled=None):
-    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.112): two typed-prompt confirmations and
+    """The record `crew_confirm_config.confirm` leaves behind (crew 1.3.119): two typed-prompt confirmations and
     `appliedDigest`, the canonical digest of the file as applied."""
     import crew_hook  # pylint: disable=import-outside-toplevel
     record = {"change_id": crew_humanonly.new_change_id(), "layer": "machine",
@@ -582,7 +582,7 @@ def test_explain_reports_a_repo_null_even_when_the_machine_file_holds_the_key(ho
     assert "repoIgnored" in rows[KEY] and rows[KEY]["repoIgnored"] is None
 
 
-# --- the receipt is bound to the file, and every route that replaces the file retires it (crew 1.3.112) --------------
+# --- the receipt is bound to the file, and every route that replaces the file retires it (crew 1.3.119) --------------
 
 def _confirmed(home, tmp_path, cfg=None):
     """A repo, and a machine file the owner switched off by the real propose / confirm / confirm route."""
@@ -695,7 +695,7 @@ def test_revoke_all_names_what_it_retired(home):
     assert crew_humanonly.revoke_all("repo", path, global_path=path) == []
 
 
-# --- a repo copy is never carried into a rewritten repo file (crew 1.3.112) ----------------------------------------
+# --- a repo copy is never carried into a rewritten repo file (crew 1.3.119) ----------------------------------------
 
 @pytest.mark.parametrize("value", [False, None, "false", 0])
 def test_an_upgrade_does_not_carry_a_repo_copy_of_the_switch_through(value):
@@ -716,7 +716,7 @@ def test_an_upgrade_leaves_the_default_true_and_the_machine_file_alone():
     assert machine["guards"]["enabled"] is False and not mnotes.get("repoSwitchRemoved")
 
 
-# --- the reports say the right thing (crew 1.3.112) ----------------------------------------------------------------
+# --- the reports say the right thing (crew 1.3.119) ----------------------------------------------------------------
 
 def test_status_does_not_claim_the_guards_still_run_when_the_machine_false_is_confirmed(home, tmp_path):
     """The finding: with a confirmed machine false AND a repo false, status said DISABLED and then 'so every guard
@@ -945,3 +945,154 @@ def test_migrating_a_repo_file_retires_its_human_only_receipts_like_rebuild_and_
     crew_migrate.apply_plan(plan)
     newest = crew_humanonly._newest_settled(store, "repo", config, "humanOnly.approve")  # pylint: disable=protected-access
     assert newest["state"] == "revoked", newest
+
+
+# --- round 8: what the owner is told must match what dispatch does ---------------------------------------------
+
+def _linked_machine_file(home, tmp_path, content=None):
+    """The machine path as a FILE symlink to a target outside the project (the dotfiles-repo layout)."""
+    target = tmp_path / "dotfiles" / "crew-config.json"
+    target.parent.mkdir()
+    target.write_text(json.dumps({} if content is None else content), encoding="utf-8")
+    link = home / ".claude" / "crew" / "config.json"
+    try:
+        os.symlink(target, link)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks need a privilege this host does not give")
+    return str(link), str(target)
+
+
+def _dispatch_says(tmp_path, home):
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    return crew_hook.guards_switched_off(_repo(tmp_path, {}, name="probe"), str(home))
+
+
+def test_propose_refuses_a_machine_file_that_is_a_symlink(home, tmp_path):
+    """(a) The receipt names the link's real path; the write replaces the link with a regular file, so no receipt
+    could ever match and the owner would be told it applied (reproduced before the fix)."""
+    link, target = _linked_machine_file(home, tmp_path)
+    with pytest.raises(crew_confirm_config.Refused) as caught:
+        crew_confirm_config.propose("machine", KEY, global_path=link, now=0)
+    assert "symbolic link" in str(caught.value)
+    assert os.path.islink(link) and _load(target) == {}, "a refused proposal changed nothing"
+
+
+def test_the_writer_refuses_a_link_made_after_the_proposal(home, tmp_path):
+    path = _machine(home, {})
+    cid = crew_confirm_config.propose("machine", KEY, global_path=path, now=0)["change_id"]
+    os.remove(path)
+    link, target = _linked_machine_file(home, tmp_path)
+    crew_confirm_config.confirm(cid, "user-prompt", "p1", global_path=link, now=1)
+    record = crew_confirm_config.confirm(cid, "user-prompt", "p2", global_path=link, now=2)
+    assert record["state"] == "refused" and "symbolic link" in record["reason"], record
+    assert os.path.islink(link) and _load(target) == {}, "the link and its target are untouched"
+
+
+def test_confirm_does_not_say_applied_when_the_dispatcher_would_not_honour_the_receipt(home, tmp_path, monkeypatch):
+    """(a) The post-check: whatever the cause, "applied" is only said when the dispatcher's own reader agrees."""
+    path = _machine(home, {})
+    monkeypatch.setattr(crew_humanonly, "master_confirmed", lambda _p: False)
+    record = _confirm_twice(path)
+    assert record["state"] == "refused" and "every guard is still on" in record["reason"], record
+    assert _dispatch_says(tmp_path, home) is None
+
+
+def test_confirm_still_says_applied_when_the_dispatcher_honours_it(home, tmp_path):
+    path = _machine(home, {})
+    assert _confirm_twice(path)["state"] == "applied"
+    assert _dispatch_says(tmp_path, home) == "machine"
+
+
+def test_propose_refuses_a_file_the_dispatcher_would_not_read_from_here(home, tmp_path, monkeypatch):
+    """(b) cwd == HOME: confirming twice could never switch the guards off, so the proposal says so up front."""
+    path = _machine(home, {})
+    monkeypatch.chdir(home)
+    with pytest.raises(crew_confirm_config.Refused) as caught:
+        crew_confirm_config.propose("machine", KEY, global_path=path, now=0)
+    assert "does not read" in str(caught.value) and "run crew from another directory" in str(caught.value).lower()
+
+
+def test_explain_names_the_location_when_an_unconfirmed_false_lies_inside_the_working_directory(
+        home, tmp_path, monkeypatch, capsys):
+    """(b) Unconfirmed AND unreadable from here: the advice is the location, not "confirm it twice"."""
+    root = _repo(tmp_path, {})
+    path = _machine(home, {"guards": {"enabled": False}})
+    monkeypatch.chdir(home)
+    rows = crew_config.explain_config(root, path=path, all_keys=True)
+    row = {r["path"]: r for r in rows}[KEY]
+    assert row["unconfirmed"] is True and row["homeLimited"] is False and row["homeCauses"] == ["cwd"]
+    crew_config._print_explain(rows, root=root, all_keys=True)  # pylint: disable=protected-access
+    out = capsys.readouterr().out
+    assert "Confirming cannot help until that changes" in out and "Run crew from another directory" in out
+    assert "inside the working directory or the project" in out
+
+
+def test_status_names_the_working_directory_for_an_unconfirmed_false_inside_it(home, tmp_path, monkeypatch):
+    root = _repo(tmp_path, {})
+    _machine(home, {"guards": {"enabled": False}})
+    monkeypatch.chdir(home)
+    line = crew_status._guards_line(root)  # pylint: disable=protected-access
+    assert "run crew from another directory" in line and "confirming cannot help" in line
+    assert "double confirmation" in line and "the owner confirmed it" not in line and "DISABLED" not in line
+
+
+DUPLICATE = '{"guards": {"enabled": true, "enabled": false}}'
+INVALID_TEXTS = [DUPLICATE, '{"guards": {"enabled": false}', "[]", "not json"]
+
+
+def _raw_machine(home, text):
+    path = _gpath(home)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+    return path
+
+
+@pytest.mark.parametrize("text", INVALID_TEXTS)
+def test_explain_reports_an_invalid_machine_file_as_its_own_cause(text, home, tmp_path, capsys):
+    """(c) The dispatcher rejects the file (guards stay on); the lenient reader took the last duplicate and said
+    "unconfirmed", or read the unreadable file as the default."""
+    root = _repo(tmp_path, {})
+    path = _raw_machine(home, text)
+    rows = crew_config.explain_config(root, path=path, all_keys=True)
+    row = {r["path"]: r for r in rows}[KEY]
+    assert row["invalid"] and "unconfirmed" not in row
+    crew_config._print_explain(rows, root=root, all_keys=True)  # pylint: disable=protected-access
+    out = capsys.readouterr().out
+    assert "cannot be read as strict JSON" in out
+    assert "NOT in effect: unconfirmed" not in out and "no applied /crew:confirm-config" not in out
+
+
+@pytest.mark.parametrize("text", INVALID_TEXTS)
+def test_status_reports_an_invalid_machine_file(text, home, tmp_path):
+    root = _repo(tmp_path, {})
+    _raw_machine(home, text)
+    line = crew_status._guards_line(root)  # pylint: disable=protected-access
+    assert line and "cannot be read as strict JSON" in line and "every guard on" in line
+
+
+def test_status_and_explain_report_a_machine_file_that_cannot_be_opened(home, tmp_path):
+    root = _repo(tmp_path, {})
+    path = _gpath(home)
+    os.mkdir(path)   # a directory where the file should be: unreadable, not absent
+    assert crew_humanonly.machine_file_problem(path)
+    assert "cannot be read as strict JSON" in crew_status._guards_line(root)  # pylint: disable=protected-access
+    row = {r["path"]: r for r in crew_config.explain_config(root, path=path, all_keys=True)}[KEY]
+    assert row["invalid"]
+
+
+def test_an_absent_or_valid_machine_file_is_not_a_problem(home, tmp_path):
+    root = _repo(tmp_path, {})
+    path = _gpath(home)
+    assert crew_humanonly.machine_file_problem(path) is None
+    _machine(home, {"guards": {"enabled": True}})
+    assert crew_humanonly.machine_file_problem(path) is None
+    assert crew_status._guards_line(root) is None  # pylint: disable=protected-access
+
+
+def test_the_problem_reader_agrees_with_the_dispatcher_on_what_it_rejects(home):
+    """One rule, two readers: whatever `machine_file_problem` flags, `crew_hook._layer_says_off` reads as ON."""
+    import crew_hook  # pylint: disable=import-outside-toplevel
+    for text in INVALID_TEXTS:
+        path = _raw_machine(home, text)
+        assert crew_humanonly.machine_file_problem(path)
+        assert crew_hook._layer_says_off(path) is False  # pylint: disable=protected-access

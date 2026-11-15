@@ -488,21 +488,36 @@ def _guards_line(root):
         if off:
             shown.append(f"DISABLED - guards.enabled is false in the {off} layer and the owner confirmed it, so no "
                          "guard runs and nothing blocks (context-watch included)")
-        elif (crew_hook.machine_switch_unconfirmed(root) and crew_hook.machine_config_path(root) is None
-              and crew_humanonly.master_confirmed(os.path.join(os.path.expanduser("~"), crew_hook.GLOBAL_CONFIG))):
-            causes = crew_humanonly.machine_file_unread_causes(
-                os.path.join(os.path.expanduser("~"), crew_hook.GLOBAL_CONFIG), root)
-            shown.append("guards.enabled is false in the machine file and the owner confirmed it, but it is NOT in "
-                         "effect: that file lies inside the working directory or the project, so every guard still "
-                         "runs; " + crew_humanonly.unread_advice(causes).lower())
-        elif crew_hook.machine_switch_unconfirmed(root):
-            shown.append("guards.enabled is false in the machine file but NOT in effect: no applied "
-                         "/crew:confirm-config double confirmation backs it at that file (or the file lies "
-                         "inside the project), so every guard still runs")
+        else:
+            machine = os.path.join(os.path.expanduser("~"), crew_hook.GLOBAL_CONFIG)
+            problem = crew_humanonly.machine_file_problem(machine)
+            unconfirmed = None if problem else crew_hook.machine_switch_unconfirmed(root)
+            if problem:
+                shown.append("guards.enabled: the machine file cannot be read as strict JSON (" + problem + "), so "
+                             "the dispatcher keeps every guard on whatever it says; fix the file (one value per "
+                             "key, valid JSON)")
+            elif unconfirmed is None:
+                shown.append("guards.enabled: could not tell whether the machine file switches the guards off")
+            elif unconfirmed:
+                causes = crew_humanonly.machine_file_unread_causes(machine, root)
+                confirmed = crew_humanonly.master_confirmed(machine)
+                if causes and confirmed:
+                    shown.append("guards.enabled is false in the machine file and the owner confirmed it, but it is "
+                                 "NOT in effect: that file lies inside the working directory or the project, so "
+                                 "every guard still runs; " + crew_humanonly.unread_advice(causes).lower())
+                elif causes:
+                    shown.append("guards.enabled is false in the machine file but NOT in effect: that file lies "
+                                 "inside the working directory or the project, so every guard still runs, and no "
+                                 "applied /crew:confirm-config double confirmation backs it either (confirming "
+                                 "cannot help until that changes); " + crew_humanonly.unread_advice(causes).lower())
+                else:
+                    shown.append("guards.enabled is false in the machine file but NOT in effect: no applied "
+                                 "/crew:confirm-config double confirmation backs it at that file, so every guard "
+                                 "still runs")
         for entry in crew_config.inert_settings(root):
             # Any repo copy but the default `true`, `null` included (the same entries `--inert` lists). Where the
             # machine switch IS in effect, the repo copy changes nothing either, and "every guard still runs"
-            # would be false (crew 1.3.112).
+            # would be false (crew 1.3.119).
             if entry["key"] == "guards.enabled" and entry["kind"] == "repo-ignored":
                 shown.append(f"guards.enabled is {json.dumps(entry['value'])} in .crew/config.json (ignored: only "
                              "the machine layer counts)" + ("" if off else ", so every guard still runs"))
