@@ -239,6 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 
 - **crew 1.3.106**: `guards.git.allow`, one switch that lets git commands past crew's command guards. `crew` 1.3.106: a new machine-only switch, `guards.git.allow`, stops crew's command guards from blocking or asking on git commands (`"all"`, destructive ones included, or a list of subcommands); it is off by default and takes effect only after the owner types `/crew:confirm-config` twice.
 - **crew 1.3.75**: The mass delete, create and change guard (`guards.mass`) is gone, not just off. `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
+- **crew 1.3.96**: The verify-trust store lock no longer fails a writer whose rival released the lock at the wrong moment. `crew` 1.3.96: with several writers at once, `verify_trust.py approve` could intermittently print `cannot take the store lock: OSError` and exit 1 (the approval was not recorded); a writer now waits and retries instead. No update was ever lost and the lock never admitted two writers.
+- **crew 1.3.95**: The verify-gate trust docs match what the junction check does, and the Windows short-name fallback is proven to accept. `crew` 1.3.95: the trust-store documentation no longer says a repository below a junctioned parent directory is always UNTRUSTED (only a linked worktree whose recorded path runs through a junction is), and a test now proves a genuine 8.3 short-name worktree is still trusted on Windows.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
