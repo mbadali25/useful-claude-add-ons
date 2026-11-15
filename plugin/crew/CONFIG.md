@@ -4,7 +4,7 @@ Generated from the code by `python3 docs/guides/crew/src/config_reference.py --w
 `python3 scripts/check-marketplace.py` fails when this file is stale. The
 reasoning behind the keys is in `docs/crew/config-rationale.md`.
 
-100 keys: 62 settable in the machine-global file, 38 repo-only.
+101 keys: 62 settable in the machine-global file, 39 repo-only.
 
 ## The two layers
 
@@ -174,7 +174,7 @@ SessionStart notice).
 
 | Family | Keys |
 |---|---|
-| `core` | 26 |
+| `core` | 27 |
 | `providers` | 18 |
 | `guards` | 2 |
 | `cloud` | 13 |
@@ -185,7 +185,7 @@ SessionStart notice).
 | `memory` | 2 |
 | `platform` | 4 |
 
-## `core` keys (26)
+## `core` keys (27)
 
 | Key | Layer | Default | Values | Summary |
 |---|---|---|---|---|
@@ -195,6 +195,7 @@ SessionStart notice).
 | `humanOnly.promoteMarker` | human-only opt-out | `null` | `null` \| `true` \| `false` (checked in `hooks/scripts/crew_humanonly.py`) | The same opt-out for the production promote marker `.crew/.approved-<env>-<sha>`, under the same rules. crew 1.3.9: no hook acts on it yet, and no hook today checks who created the marker. |
 | `worktrees.root` | both | `null` | absolute path or null (coerced in `hooks/scripts/crew_worktrees.py`) | The base directory for this repo's git worktrees, OUTSIDE the repo: they go in `<root>/<repo>-<digest>/<name>`. null is `~/.claude/crew/worktrees`; `~` is expanded, a relative path or one inside the repo is refused (never replaced by the default). It places the worktrees crew places (`/crew:emergency`, `crew_worktrees.py path`) and, once the owner registers the opt-in `WorktreeCreate` hook, the ones Claude Code creates; without the hook Claude Code keeps using `.claude/worktrees/`. |
 | `promote.deadlineSeconds` | both | `null` | number of seconds, or null (coerced in `hooks/scripts/_promote_gate.py`) | How many seconds the promote gate (`promote-gate.sh`) may run, counted from the moment its shell began, before it gives up and blocks (a hook that times out is not a block, so the gate stops itself first). null derives it from the guard's hook timeout less a 4 s margin: 16 s of the 20 s row. A number above the timeout less 2 s (18 s of 20) is clamped to that, so the setting can never let the gate outlive its hook; zero, a negative, a string or a boolean reads as null. The hook timeout is the guard's row in the dispatcher's table, not a setting. |
+| `verify.stopBudgetSeconds` | repo | `60` | whole number of seconds, 1 to 600, or null (coerced in `hooks/scripts/verify-gate.sh`) | How many seconds the Stop row of the verify gate (`verify-gate.sh`, `verify-gate.ps1`) may spend running rules, cheapest first, before it defers the rest to CI and names them. Default 60, which is what the gate used before the key was settable. A write must be a whole number from 1 to 600 (the Stop hook's own timeout); anything else is refused, never stored as a value the gate would quietly replace with 60. null removes the setting. Repo file only: what a rule costs is a fact about the checkout. `--all` and `--ci` ignore it. A hand-edited value the gate cannot use (a string, a boolean, a negative) still reads as 60, never as no limit. |
 | `reaper.enabled` | both | `false` | boolean (coerced in `hooks/scripts/crew_reaper.py`) | Whether scheduled and session-start passes of the orphan reaper (`crew_reaper.py --scheduled`) do anything. false by default; a manual `crew_reaper.py` run always works and is a dry run unless given `--apply`. Read from the machine file only: a repo value is ignored, because the reaper ends processes on this machine. |
 | `reaper.dryRun` | both | `true` | boolean (coerced in `hooks/scripts/crew_reaper.py`) | When true (the default) a scheduled or session-start pass only logs what it would end to `~/.claude/crew/reaper.log`; set false to let it end processes. Only a scheduled pass reads it; a manual run ends processes only with `--apply`. |
 | `reaper.spinCpuPct` | both | `50` | percent of one core (coerced in `hooks/scripts/crew_reaper.py`) | An orphan is SPINNING when it used at least this percentage of one core over the reaper's short sample (5 s) and is older than `spinMinAgeMin`. A number above 0; anything else reads as 50. |

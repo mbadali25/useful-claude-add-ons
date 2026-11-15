@@ -146,7 +146,7 @@ meaningful only with `scope.mode` `block`.
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:
 `python3 scripts/check-marketplace.py` fails when this file is stale.
 
-**100 keys**: 62 settable in the machine-global file, 38 repo-only.
+**101 keys**: 62 settable in the machine-global file, 39 repo-only.
 
 Columns:
 
@@ -267,6 +267,12 @@ Columns:
 | Setting | Layer | Default | Values | Since | Summary |
 |---|---|---|---|---|---|
 | `promote.deadlineSeconds` | both | `null` | number of seconds, or null (coerced in `plugin/crew/hooks/scripts/_promote_gate.py`) | 1.3.41 | How many seconds the promote gate (`promote-gate.sh`) may run, counted from the moment its shell began, before it gives up and blocks (a hook that times out is not a block, so the gate stops itself first). null derives it from the guard's hook timeout less a 4 s margin: 16 s of the 20 s row. A number above the timeout less 2 s (18 s of 20) is clamped to that, so the setting can never let the gate outlive its hook; zero, a negative, a string or a boolean reads as null. The hook timeout is the guard's row in the dispatcher's table, not a setting. |
+
+### `verify`
+
+| Setting | Layer | Default | Values | Since | Summary |
+|---|---|---|---|---|---|
+| `verify.stopBudgetSeconds` | repo | `60` | whole number of seconds, 1 to 600, or null (coerced in `plugin/crew/hooks/scripts/verify-gate.sh`) | 1.3.117 | How many seconds the Stop row of the verify gate (`verify-gate.sh`, `verify-gate.ps1`) may spend running rules, cheapest first, before it defers the rest to CI and names them. Default 60, which is what the gate used before the key was settable. A write must be a whole number from 1 to 600 (the Stop hook's own timeout); anything else is refused, never stored as a value the gate would quietly replace with 60. null removes the setting. Repo file only: what a rule costs is a fact about the checkout. `--all` and `--ci` ignore it. A hand-edited value the gate cannot use (a string, a boolean, a negative) still reads as 60, never as no limit. |
 
 ### `reaper`
 

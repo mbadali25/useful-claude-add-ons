@@ -1020,6 +1020,16 @@ anchor for this section: 170d4c4b2
 - JUDGEMENT `scope_guard.py`, `approval_hook.py` and `crew_hook.py` are review-harness paths (`HARNESS` in `scripts/check-tooling-pr.py`) that must land alone, so they carry no self-limit yet.
 - JUDGEMENT the host-local task `CrewOrphanCygpathSweep` lives outside this repo; the reaper covers its cygpath case through the `cygpath` allow-list entry but does not replace or edit it.
 
+## The Stop budget key (thd-jobs 5a, crew 1.3.117)
+
+anchor for this section: c1042aa2d
+
+- DERIVED `plugin/crew/hooks/scripts/crew_state.py:579` `VERIFY_DEFAULTS = {"stopBudgetSeconds": 60}` and `:580` `STOP_BUDGET_BOUNDS = (1, 600)`; `crew_config.py:314` declares the `verify` block in `default_config()` only, so `is_global_path("verify.stopBudgetSeconds")` is False (repo only).
+- DERIVED `crew_config.py:3524` `INT_BOUNDS` and `:3527` `bounds_problem` refuse anything but an `int` in range (`type(value) is int`, so `True` and `60.0` fail); `value_allowed` calls it last (`:3517`), after the null rule, so `null` is accepted and means unset. `_content_problem` does not call it: a file already holding an unusable value is not locked against unrelated writes.
+- DERIVED `plugin/crew/hooks/scripts/verify-gate.sh:1929` the reader is unchanged: `budget = 60`, replaced by a numeric non-bool `>= 0` value from `CREW_REPO_CONFIG`, else left at 60 (never None; None is `--all`/`--ci` only).
+- JUDGEMENT the upper bound 600 is the Stop row's `timeout` in `crew_hook.TABLE`; `test_verify_stop_budget_key.py` holds the two equal.
+- JUDGEMENT the reader still accepts 0 and decimals that the writer refuses; tightening that is a harness change (`verify-gate.sh` is in `HARNESS`) and was left out of this PR on purpose.
+
 ## `/crew:autopilot` (T-0004, crew 1.0.41)
 
 JUDGEMENT (carried, not re-verified at `bdde58724`, L-0928): the behaviour prose in this section is as of the commit it names, not re-read at `bdde58724`; only its `name` plus line citations were re-resolved by symbol against the `bdde58724` tree, and a line cited with no name beside it was not.
