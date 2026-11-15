@@ -336,7 +336,17 @@ repository (`git -C <dir>`) passes only when that repository's own file does
 not veto it either; one whose repository crew cannot tell (`--git-dir`,
 `--work-tree`, or a `-C ..` that follows a link, which git and Windows read
 differently) is judged as before. A subcommand is matched exactly as written:
-`git STATUS` is not `status`.
+`git STATUS` is not `status`. A word after `git` that is not one of git's own built-ins
+(`git zzz`, `git svn`, `git p4`, `git gui`, `git citool`, an alias such as `git co`) is held too:
+git runs an alias, or a `git-<word>` program it finds on PATH. A built-in this version of crew
+does not list is only held, never let through. A `deploy` in `.crew/verify.json` that is not a
+command or a list of commands (or an environment that is not an object) makes the promote gate
+exempt nothing, the same map the gate itself refuses to read.
+
+Accepted residuals: a literal `git` is read as the git program, so a shell function named `git`
+that the shell inherited or exported (`export -f git`) would run instead of it, and crew cannot see
+that from the command line (verified: with `git() { echo hijacked; }` exported, `git status` in a
+child bash prints `hijacked`).
 
 What stays exempt, for example: `git commit -m "fix: x"`, `git push
 --force-with-lease origin topic`, `git push -f origin topic`, `git rebase -i

@@ -26,6 +26,14 @@ PowerShell word reaches `hold`, whose run-time rule refuses the `$` first). The
 bash substitution reading keeps its mutation: a substitution in a redirection
 target (`git status > "$(deploy-prod)"`) is in no word `hold` sees.
 
+Review round 12 (Codex gpt-6-sol, crew 1.3.116) added six red mutations (the trailing space,
+the malformed deploy and non-object environment, the unknown subcommand, a built-in missing from
+`_BUILTINS`, a `+` in a push destination). It DELETED four rows the new unknown-subcommand hold
+shadows, measured STILL GREEN with the hold in place: `for-each-repo` and `web--browse` in
+`_RUNS_ALWAYS`, `git help` in `_HELPER_SUBS`, and `difftool`/`mergetool`/`credential` in
+`_HELPER_SUBS` (none of those names is in `_BUILTINS`, so `hold` refuses each before the old rule
+is reached). Their explicit entries stay as the stated reason. The total is 122.
+
 NOT wired into `sabotage.py`'s MUTATIONS: `sabotage*.py` is review harness
 (`scripts/check-tooling-pr.py` `HARNESS`), and a harness change lands alone. Until
 a harness-only change registers this table, run it with sabotage.py's own
@@ -515,14 +523,6 @@ GITALLOW_MUTATIONS = (
      "_git_allowed(as_sent):\n",
      "_git_allowed(command):\n",
      _T + "test_round9_a_carriage_return_is_refused_not_stripped_on_the_git_allow_path"),
-    ("gitAllow r9: for-each-repo is not held", GA,
-     "frozenset((\"filter-branch\", \"instaweb\", \"for-each-repo\", \"web--browse\"))",
-     "frozenset((\"filter-branch\", \"instaweb\", \"web--browse\"))",
-     _T + "test_round9_subcommands_that_run_a_git_or_a_program_are_held"),
-    ("gitAllow r9: web--browse is not held", GA,
-     "frozenset((\"filter-branch\", \"instaweb\", \"for-each-repo\", \"web--browse\"))",
-     "frozenset((\"filter-branch\", \"instaweb\", \"for-each-repo\"))",
-     _T + "test_round9_subcommands_that_run_a_git_or_a_program_are_held"),
     ("gitAllow r9: the subcommand is read in lower case", GA,
      "    sub = args[index]\n    return sub if",
      "    sub = args[index].lower()\n    return sub if",
@@ -550,10 +550,6 @@ GITALLOW_MUTATIONS = (
     ("gitAllow r10: a global -p / --paginate is not held", GA,
      "        if word in _HELPER_GLOBALS:\n",
      "        if word in ():\n",
-     _T + "test_round10_an_option_that_launches_a_helper_program_is_held"),
-    ("gitAllow r10: git help is not held", GA,
-     "    if sub in _HELPER_SUBS:\n",
-     "    if sub in ():\n",
      _T + "test_round10_an_option_that_launches_a_helper_program_is_held"),
     ("gitAllow r10: the cloud guard reads only whole force options", CG,
      "or arg.startswith(\"--force-with-lease=\") or _force_long_option(arg):",
@@ -584,10 +580,6 @@ GITALLOW_MUTATIONS = (
      "[a-zA-Z]*[fd][a-zA-Z]*$",
      "[a-zA-Z]*f[a-zA-Z]*$",
      _T + "test_round11_the_cloud_guard_reads_a_push_that_deletes_a_remote_ref"),
-    ("gitAllow r11: difftool, mergetool and credential are not held", GA,
-     "_HELPER_SUBS = frozenset((\"help\", \"difftool\", \"mergetool\", \"credential\"))",
-     "_HELPER_SUBS = frozenset((\"help\",))",
-     _T + "test_round11_a_helper_launcher_is_held"),
     ("gitAllow r11: merge/pull/rebase -s is not held", GA,
      "        if sub in _STRATEGY_SUBS and _strategy_hit(word):",
      "        if False:",
@@ -604,4 +596,30 @@ GITALLOW_MUTATIONS = (
      "    \"cat-file\": (\"--filters\",),",
      "    \"cat-file\": (),",
      _T + "test_round11_a_helper_launcher_is_held"),
+    ("gitAllow r12: _toplevel strips the repository path's trailing space", GA,
+     "    top = re.sub(r\"\\r?\\n$\", \"\", proc.stdout) if proc.returncode == 0 else \"\"\n",
+     "    top = proc.stdout.strip() if proc.returncode == 0 else \"\"\n",
+     _T + "test_round12_toplevel_strips_only_the_line_terminator"),
+    ("gitAllow r12: a malformed deploy value is skipped", GA,
+     "            if not isinstance(deploys, list) or not all(isinstance(d, str) for d in deploys):\n"
+     "                raise ValueError(\"a deploy is not a command or a list of commands\")\n",
+     "            if not isinstance(deploys, list):\n                deploys = []\n"
+     "            deploys = [d for d in deploys if isinstance(d, str)]\n",
+     _T + "test_round12_a_malformed_deploy_is_not_promote_exempt"),
+    ("gitAllow r12: an environment that is not an object is skipped", GA,
+     "                raise ValueError(\"an environment is not an object\")\n",
+     "                continue\n",
+     _T + "test_round12_a_malformed_deploy_is_not_promote_exempt"),
+    ("gitAllow r12: an unknown subcommand is not held", GA,
+     "sub not in _BUILTINS",
+     "False",
+     _T + "test_round12_an_unknown_subcommand_is_held"),
+    ("gitAllow r12: a built-in missing from the list is held", GA,
+     "stage stash status stripspace",
+     "stage stash stripspace",
+     _T + "test_round12_a_git_builtin_is_not_held_as_unknown"),
+    ("gitAllow r12: the cloud guard reads a + in a destination as a force push", CG,
+     "        if ref.startswith((\"+\", \":\")):",
+     "        if ref.startswith((\":\",)) or \"+\" in ref:",
+     _T + "test_round12_a_plus_in_the_destination_is_not_a_force_push"),
 )

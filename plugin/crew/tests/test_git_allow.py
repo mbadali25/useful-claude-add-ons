@@ -2022,6 +2022,79 @@ def test_round11_an_ordinary_merge_or_read_is_not_a_launcher(args):
     assert crew_gitallow.line_exempt("git " + " ".join(args), "bash", "all") is True
 
 
+# --- review round 12 (Codex gpt-6-sol): trailing space, malformed deploy, unknown subs ------
+
+def test_round12_toplevel_strips_only_the_line_terminator(monkeypatch, tmp_path):
+    """`git -C 'dir '` printed the path ending in a space then a newline; `strip()`
+    read the veto from the directory without the space."""
+    spaced = str(tmp_path / "dir ").replace("\\", "/")
+
+    class Done:  # pylint: disable=too-few-public-methods
+        returncode = 0
+        stdout = spaced + "\n"
+
+    monkeypatch.setattr(crew_gitallow.crew_common, "resolve_tool", lambda name: "git")
+    monkeypatch.setattr(crew_gitallow.subprocess, "run", lambda *a, **k: Done())
+    assert crew_gitallow._toplevel("x") == os.path.realpath(spaced)  # pylint: disable=protected-access
+    Done.stdout = spaced + "\r\n"
+    assert crew_gitallow._toplevel("x") == os.path.realpath(spaced)  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("environments", [
+    {"prod": {"deploy": None}}, {"prod": {"deploy": 5}}, {"prod": {"deploy": ["a", 3]}},
+    {"prod": {"deploy": {"x": "y"}}}, {"prod": "not-an-object"}])
+def test_round12_a_malformed_deploy_is_not_promote_exempt(
+        tmp_path, machine, monkeypatch, environments):
+    """The gate's `_promote_match.matching` refuses such a map (Unreadable); the
+    exemption used to skip the bad value and answer True for `git push prod main`."""
+    import _promote_match  # pylint: disable=import-outside-toplevel
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    command = "git push prod main"
+    assert crew_gitallow.promote_exempt(command, "bash", str(root)) is True
+    (root / ".crew" / "verify.json").write_text(
+        json.dumps({"environments": environments}), encoding="utf-8")
+    with pytest.raises(_promote_match.Unreadable):
+        _promote_match.matching(environments, True, command)
+    assert crew_gitallow.promote_exempt(command, "bash", str(root)) is False
+    assert crew_gitallow.promote_exempt("git status", "powershell", str(root)) is False
+
+
+UNKNOWN_SUBS = [
+    ["zzz"], ["svn", "dcommit"], ["p4", "submit"], ["gui"], ["citool"], ["Status"],
+    ["-C", ".", "zzz"], ["-c", "x=y", "zzz"], ["co", "main"], ["flow", "init"]]
+
+
+@pytest.mark.parametrize("args", UNKNOWN_SUBS)
+def test_round12_an_unknown_subcommand_is_held(args):
+    """Measured: a `git-zzz` on PATH ran for `git zzz`; an alias runs whatever it names."""
+    assert crew_gitallow.hold(args)
+    for shell in ("bash", "powershell"):
+        assert crew_gitallow.line_exempt("git " + " ".join(args), shell, "all") is False
+
+
+@pytest.mark.parametrize("args", [
+    ["status"], ["--version"], ["push", "origin", "main"], ["log", "--oneline"],
+    ["-C", ".", "commit", "-m", "x"], ["diff", "--stat"], ["cherry-pick", "x"],
+    ["rev-parse", "HEAD"], ["worktree", "list"], ["ls-remote", "origin"], ["switch", "-c", "b"]])
+def test_round12_a_git_builtin_is_not_held_as_unknown(args):
+    assert crew_gitallow.hold(args) is None
+    assert crew_gitallow.line_exempt("git " + " ".join(args), "bash", "all") is True
+
+
+@pytest.mark.parametrize("command", ["git push origin b:+b", "git push origin main:+main"])
+def test_round12_a_plus_in_the_destination_is_not_a_force_push(tmp_path, command):
+    """Measured with git 2.56 against a throwaway bare remote: `main:+b` created a branch
+    named `+b` and `main:+main` was rejected as a non-fast-forward of the branch `+main`;
+    only a leading `+` on the refspec forces. The cloud guard reads it the same way."""
+    assert cloud_guard._git_force_push(command.split()[1:]) is None  # pylint: disable=protected-access
+    root = make_repo(tmp_path, mode=None)
+    assert not _rules(_evaluate(root, command), "forcePush"), command
+
+
 # --- the mutation table ----------------------------------------------------------------
 
 def test_every_mutation_anchor_is_present_exactly_once():

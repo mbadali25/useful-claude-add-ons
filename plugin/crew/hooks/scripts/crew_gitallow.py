@@ -249,6 +249,28 @@ _HELPER_SUBS = frozenset(("help", "difftool", "mergetool", "credential"))
 _STRATEGY_SUBS = frozenset(("merge", "pull", "rebase"))
 _SHORT_VALUE_LETTERS = "XmFSCx"
 
+# The subcommands git itself implements (`git --list-cmds=builtins`, 2.56, plus
+# the names older versions carried). Any other word after `git` is an alias or
+# an executable named `git-<word>` that git finds on PATH (`git-zzz` ran when
+# measured; also `svn`, `p4`, `gui`, `citool`), so it is held (review round 12,
+# finding 5). A name this list lacks is only held, never let through. The ones
+# that run a program (`difftool`, `mergetool`, `credential*`, `remote-ext`,
+# `remote-fd`, `for-each-repo`) and `hook` are left off and are held.
+_BUILTINS = frozenset("""add am annotate apply archive backfill bisect blame branch bugreport
+bundle cat-file check-attr check-ignore check-mailmap check-ref-format checkout checkout-index
+cherry cherry-pick clean clone column commit commit-graph commit-tree config count-objects
+describe diagnose diff diff-files diff-index diff-pairs diff-tree fast-export fast-import fetch
+fetch-pack fmt-merge-msg for-each-ref format-patch format-rev fsck fsck-objects gc
+get-tar-commit-id grep hash-object history index-pack init init-db interpret-trailers
+last-modified log ls-files ls-remote ls-tree mailinfo mailsplit maintenance merge merge-base
+merge-file merge-index merge-ours merge-recursive merge-subtree merge-tree mktag mktree
+multi-pack-index mv name-rev notes pack-objects pack-redundant pack-refs patch-id pickaxe prune
+prune-packed pull push range-diff read-tree rebase receive-pack reflog refs remote repack replace
+replay repo rerere reset restore rev-list rev-parse revert rm send-pack shortlog show show-branch
+show-index show-ref sparse-checkout stage stash status stripspace submodule survey switch
+symbolic-ref tag unpack-file unpack-objects update-index update-ref update-server-info upload-archive upload-pack
+url-parse var verify-commit verify-pack verify-tag version whatchanged worktree write-tree""".split())
+
 
 def _strategy_hit(word):
     """`word` is `-s`, `-sx`, a bundle holding `s` before any value-taking letter
@@ -350,6 +372,10 @@ def hold(args):
     rest = [a for a in args[index + 1:] if isinstance(a, str)]
     if sub in _HELPER_SUBS:
         return f"`git {sub}` launches a helper program"
+    named = args[index] if index < len(args) else None
+    if isinstance(named, str) and sub not in _BUILTINS and sub not in _RUNS_ALWAYS:
+        return (f"`git {named}` is not a git built-in, so it is an alias or a `git-{named}` "
+                "program found on PATH")
     if sub in _RUNS_ALWAYS:
         return f"`git {sub}` runs a command it is handed"
     if sub in _RUNS_WORD and _RUNS_WORD[sub] in rest:
@@ -643,7 +669,10 @@ def _toplevel(directory):
                               capture_output=True, text=True, timeout=10, check=False, env=env)
     except (OSError, subprocess.SubprocessError):
         return None
-    top = proc.stdout.strip() if proc.returncode == 0 else ""
+    # Only the line terminator comes off: a repository directory may itself end
+    # in a space (`git -C 'dir '`), and `strip()` read the veto from the wrong
+    # directory (review round 12, finding 1).
+    top = re.sub(r"\r?\n$", "", proc.stdout) if proc.returncode == 0 else ""
     return os.path.realpath(top) if top else None
 
 
@@ -1103,11 +1132,15 @@ def _declared_deploys():
             raise ValueError("environments is not an object")
         for cfg in envs.values():
             if not isinstance(cfg, dict):
-                continue
+                raise ValueError("an environment is not an object")
             deploys = _promote_dispatch.get_ci(cfg, "deploy", [])
             deploys = [deploys] if isinstance(deploys, str) else deploys
-            if isinstance(deploys, list):
-                out.extend(d for d in deploys if isinstance(d, str) and d.strip())
+            # A `deploy` that is not a command or a list of commands is what
+            # `_promote_match.matching` refuses (Unreadable): an unknown must not
+            # read as "declares no git deploy", so it exempts nothing (round 12).
+            if not isinstance(deploys, list) or not all(isinstance(d, str) for d in deploys):
+                raise ValueError("a deploy is not a command or a list of commands")
+            out.extend(d for d in deploys if d.strip())
     return out
 
 
