@@ -956,6 +956,19 @@ the switch off NOTHING blocks, so it stands down with them.)
   and so is one that cannot, because a literal temp file there is refused too. `tests/test_guards_master_shell.py`
   is the corpus (every spelling x every verb x bash, PowerShell, cmd); on Windows each alias in it is checked
   against the real file system. The probe found `crew../` is not an alias; it is refused anyway.
+* A path the guard cannot resolve fails closed (round 9, the owner's decision of 2026-11-15: "stop chasing
+  individual spellings"). Round 8 was still refused for `confi\g.json` (bash strips the backslash), ``confi`g.json``
+  (PowerShell strips the backtick), `confi^g.json` (cmd strips the caret) and `Set-Content -Path (Join-Path $HOME
+  ...)`. Two rules replace more spellings. First, a word with an escape character is judged again as each shell reads
+  it, so the splitter never has to guess the shell (a backslash is also a Windows separator, so the original reading
+  stays too). Second, a write target that is a substitution, an unset variable, a backtick, an ANSI-C string or a
+  word in a parenthesised expression is refused when it could be the owner's: always when what is spelled of it can
+  only be theirs (`~/.claude/crew/$NAME`), and when the command also names `.claude`, `confirm-config` or
+  `crew/config.json` and the name could end one of their paths (`$D/config.json` yes, `$D/out.txt` no). A relative
+  target after a `cd` the guard could not follow counts the same way. The price is overblocking, listed in the
+  changelog: `cat ~/.claude/crew/config.json > $OUT` is refused, and so is `mv x y` after `cd $D` in such a command.
+  The confirm-config textual check (#679's) now asks for a write VERB as a command word, so a file called `echo.txt`
+  in the store is a read.
 * The machine file must be the machine's. A config path inside the project (or the working directory) never
   counts, because a `HOME`/`USERPROFILE` pointed at a fake home shipped in a repo would otherwise carry its own
   config and its own forged receipts.

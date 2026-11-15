@@ -218,6 +218,28 @@ _WRITES_RE = re.compile(
     r"python[0-9.]*|py|node|chmod|echo|printf|set-content|add-content|out-file|"
     r"new-item|copy-item|move-item|remove-item|rename-item|clear-content|set-item|ni|"
     r"sc|ac)\b", re.IGNORECASE)
+# The same words read as the COMMAND a shell word names (crew 1.3.120, round 9): the confirm-config store check asks
+# for a write VERB, not for a verb's spelling inside a file name (`Get-Content C:\tmp\confirm-config\echo.txt` reads
+# a file called echo.txt; it does not run `echo`).
+_REDIRECT_RE = re.compile(r"(?<!>)>>?(?!>)(?!\s*(?:&\d|/dev/null\b|\$null\b))")
+_VERB_WORD_RE = re.compile(
+    r"(?:tee|cp|mv|rm|ln|touch|mkdir|rmdir|install|dd|rsync|truncate|sed|perl|python[0-9.]*|py|node|chmod|echo|"
+    r"printf|set-content|add-content|out-file|new-item|copy-item|move-item|remove-item|rename-item|clear-content|"
+    r"set-item|ni|sc|ac)(?:\.exe)?", re.IGNORECASE)
+
+
+def _writes_by_verb(command):
+    """True when `command` redirects, or names a write verb as a COMMAND WORD (its basename, so `/bin/rm` counts
+    and `confirm-config/echo.txt` does not). A word that is itself a path into the confirm-config store is a file
+    name, never a verb."""
+    if _REDIRECT_RE.search(command):
+        return True
+    for word in re.split(r"[\s;&|()`'\"<>{},]+", command):
+        if (word and not _CONFIRM_STORE_RE.search(word)
+                and _VERB_WORD_RE.fullmatch(re.split(r"[\\/]", word)[-1])):
+            return True
+    return False
+
 
 # Fail-closed exemption from the word list above. The list is a deny-list on
 # purpose, so a command that merely NAMES `python3`/`echo` as an argument
@@ -861,7 +883,7 @@ def _reading_refusal(command, written, common, top, agent_type=None):
         return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
     store = os.path.normcase(confirm_store()).replace("\\", "/")
     if ((_CONFIRM_STORE_RE.search(command) or store in folded)
-            and _WRITES_RE.search(command) and not _read_only(command)):
+            and _writes_by_verb(command) and not _read_only(command)):
         return ("it writes under the confirm-config store, the receipts of the owner's "
                 "double confirmation")
     return _owner_command_refusal(command, top)
@@ -963,6 +985,9 @@ def _balanced(text, start):
 
 
 _QUOTE_OPEN, _QUOTE_CLOSE = "\x01", "\x02"
+# What the splitter cannot read as text (crew 1.3.120, round 9): `_DYN` stands where a `$(...)` / `$'...'` produced
+# characters, `_PAREN` starts a word that sits inside a parenthesised expression (`(Join-Path $HOME "x")`).
+_DYN, _PAREN = "\x03", "\x04"
 
 
 class _Segment:  # pylint: disable=too-few-public-methods
@@ -976,6 +1001,29 @@ class _Segment:  # pylint: disable=too-few-public-methods
         return bool(self.words or self.targets or self.subs or self.bodies)
 
 
+# the text between two backticks that is a COMMAND (bash) and not a character escaped twice (PowerShell): it holds a
+# space or a shell character and does not start with a space
+_BACKTICK_COMMAND_RE = re.compile(r"(?!\s)[^`]*[\s;|&<>()][^`]*")
+_ANSI_ESCAPE_RE = re.compile(r"\\(?:x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|[0-7]{1,3}|c.)")
+
+
+def _dq_substitutions(chunk, seg):
+    """The text of a double-quoted `chunk` with each `$(...)` replaced by `_DYN` (its body is `seg.subs`'s)."""
+    out, index = [], 0
+    for found in re.finditer(r"\$\(", chunk):
+        if found.start() < index:
+            continue
+        inner, after = _balanced(chunk, found.end())
+        seg.subs.append(inner)
+        out += [chunk[index:found.start()], _DYN]
+        index = after
+    rest = "".join(out) + chunk[index:]
+    for found in re.finditer(r"`([^`]*)`", rest):   # bash runs a backtick pair inside double quotes too
+        if _BACKTICK_COMMAND_RE.fullmatch(found.group(1)):
+            seg.subs.append(found.group(1))
+    return re.sub(r"`([^`]*)`", lambda m: _DYN if _BACKTICK_COMMAND_RE.fullmatch(m.group(1)) else m.group(0), rest)
+
+
 def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
     """The `_Segment`s of `text`, split at `;` `&&` `||` `|` `&` and newlines, outside quotes."""
     result, seg = [], _Segment()
@@ -983,11 +1031,16 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
     delims = []
     index, size = 0, len(text)
 
+    ansi = False   # the next quoted part is `$'...'`
+    parens = 0   # how deep the command is inside a parenthesised expression (not a statement-initial subshell)
+
     def flush():
         nonlocal buf, raw, has, mode
         if not has:
             return
         word, spelled, buf, raw, has = "".join(buf), "".join(raw), [], [], False
+        if parens and mode in (None, "target"):
+            word = _PAREN + word
         if mode == "heredoc":
             delims.append(word)
         elif mode == "target":
@@ -1012,9 +1065,10 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
                 end += 2 if (char == '"' and text[end] == "\\" and end + 1 < size and text[end + 1] == '"') else 1
             chunk = text[index + 1:end]
             if char == '"':
-                for found in re.finditer(r"\$\(", chunk):
-                    inner, _ = _balanced(chunk, found.end())
-                    seg.subs.append(inner)
+                chunk = _dq_substitutions(chunk, seg)
+            elif ansi:
+                chunk = _ANSI_ESCAPE_RE.sub(_DYN, chunk)   # `$'conf\x69g'`: the shell makes those characters
+            ansi = False
             buf.append(chunk)
             raw.append(_QUOTE_OPEN + chunk + _QUOTE_CLOSE)
             has = True
@@ -1022,6 +1076,24 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
         elif char == "$" and text[index + 1:index + 2] == "(":
             inner, index = _balanced(text, index + 2)
             seg.subs.append(inner)
+            buf.append(_DYN)
+            raw.append(_DYN)
+            has = True
+        elif char == "$" and text[index + 1:index + 2] in ("'", '"'):
+            ansi = text[index + 1] == "'"
+            index += 1
+        elif char == "`":
+            end = text.find("`", index + 1)
+            inner = text[index + 1:end] if end != -1 else ""
+            if _BACKTICK_COMMAND_RE.fullmatch(inner):   # bash runs a command here; PowerShell's escape is one character
+                seg.subs.append(inner)
+                buf.append(_DYN)
+                raw.append(_DYN)
+                index = end + 1
+            else:
+                buf.append(char)
+                raw.append(char)
+                index += 1
             has = True
         elif char == "#" and not has:
             while index < size and text[index] != "\n":
@@ -1086,7 +1158,14 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
             else:
                 mode = "skip"
         elif char in " \t\r()":
+            prior = "".join(buf)
             flush()
+            if char == "(" and (seg.words or seg.targets or mode == "target") and not re.search(r"::\w+$", prior):
+                parens += 1
+            elif char == ")" and parens:
+                parens -= 1
+            elif char == ")":
+                close()   # an unmatched `)` ends a `case` pattern (`a) rm x;;`) or a subshell
             index += 1
         else:
             buf.append(char)
@@ -1104,7 +1183,7 @@ def _canon(word, base):
     variable is still in it, or it is relative and there is no `base`."""
     path = word.replace("\\", "/")
     path = re.sub(r"^//[?.]/(unc/)?", lambda m: "//" if m.group(1) else "", path, flags=re.IGNORECASE).lower()
-    if "$" in path or "%" in path:
+    if any(mark in path for mark in ("$", "%", _DYN, _PAREN)) or re.search(r"`[^`]*`", path):
         return None
     # Git Bash, Cygwin and WSL spell a drive as a folder: `/c/Users/...`, `/cygdrive/c/...`, `/mnt/c/...`
     path = re.sub(r"^/(?:(?:cygdrive|mnt)/)?([a-z])(?=/|$)", r"\1:", path)
@@ -1139,6 +1218,16 @@ class _Shell:  # pylint: disable=too-few-public-methods
     def __init__(self, cwd):
         self.vars = {}
         self.cwd = _canon(cwd, None) if cwd else None
+        self.hint = False        # the command names the owner's folder: a target it cannot resolve may be theirs
+        self.cwd_lost = False    # a `cd` aimed somewhere that cannot be told: a relative target is then unknown
+        self.variant = False     # judging an escape-stripped reading: a plain relative word is no tail and no unknown
+
+    def fork(self):
+        """A copy to judge one reading of a segment with, so the original's variables and folder stay as they are."""
+        clone = _Shell(None)
+        clone.vars, clone.cwd, clone.cwd_lost, clone.hint = dict(self.vars), self.cwd, self.cwd_lost, self.hint
+        clone.variant = True
+        return clone
 
 
 def _expand(word, shell):
@@ -1246,18 +1335,63 @@ def _hit(word, shell, mode):
     path (this machine's home), not a suffix of it, so a file elsewhere named `.claude/crew/config.json` is not the
     owner's; and every spelling Win32, the MSYS drive letters and a brace expansion give one path is read as that
     path."""
-    word = _expand(word, shell)
-    word = re.sub(r"(?<=[^/\\:]):(?::\$\w+|[^/\\:]+)(?::\$\w+)?$", "", word)   # an NTFS stream: `f::$DATA`, `f:s`
+    forced = _PAREN in word   # inside a parenthesised expression: its value is whatever the expression gives
+    word = _expand(word.replace(_PAREN, ""), shell)
+    head = re.match(r"\$env:\w+", word)   # `$env:NAME` is a variable, its colon no stream
+    head = head.group(0) if head else ""
+    # an NTFS stream: `f::$DATA`, `f:s`
+    word = head + re.sub(r"(?<=[^/\\:]):(?::\$\w+|[^/\\:]+)(?::\$\w+)?$", "", word[len(head):])
     if not word or _IGNORED_TARGET_RE.match(word):
         return False
-    return any(_hit_word(one, shell, mode) for one in _braces(word))
+    return any(_hit_word(one, shell, mode, forced) for one in _braces(word))
 
 
-def _hit_word(word, shell, mode):
+# the parts of a word the shell fills in and the guard cannot read: a substitution, a variable that is still unknown,
+# a backtick (bash runs it, PowerShell escapes with it)
+_SPAN_RE = re.compile(r"\x03|\$\{[^}]*\}|\$env:\w+|\$\w+|\$[?!@*#$-]|%[A-Za-z_][^%\s/\\]*%|`[^`/\\]*`")
+
+
+def _could_be_suffix(parts, mode):
+    """True when the path components `parts` (globs allowed) could END one of the owner's paths, or lie below the
+    confirm-config store, were an unknown folder put in front of them."""
+    for target, under in _owner_targets(mode):
+        for start in range(len(target)):
+            if _glob_match(parts, target[start:], under):
+                return True
+    return False
+
+
+def _dynamic_hit(word, shell, mode, forced):  # pylint: disable=too-many-return-statements
+    """Fail closed (crew 1.3.120, round 9) on a write target the guard cannot resolve to one concrete path: a
+    substitution, an unknown variable, a backtick, a word in a parenthesised expression. It names the owner's files
+    when what is spelled of it can only be theirs (`~/.claude/crew/$X`), or when it could be theirs and the command
+    also names the owner's folder (`shell.hint`). A target in a command that never mentions the owner's folder stays
+    allowed."""
+    if not (forced or _SPAN_RE.search(word)):
+        return False
+    text = word.replace("\\", "/")
+    if forced or not _SPAN_RE.sub("", text).strip("/. "):   # nothing literal is left of it
+        return shell.hint
+    parts = ["**" if _SPAN_RE.fullmatch(part) else _SPAN_RE.sub("*", part) for part in text.split("/")]
+    if parts[0] == "**":   # the unknown part is the whole front of the path
+        rest = [_win32_names(part.lower()) for part in parts[1:] if part]
+        return shell.hint and _could_be_suffix(rest, mode)
+    path = _canon("/".join(parts), shell.cwd)
+    if path is None:
+        return shell.hint and shell.cwd_lost
+    return any(_glob_match(path.split("/"), target, under) for target, under in _owner_targets(mode))
+
+
+def _hit_word(word, shell, mode, forced=False):
     """`_hit` for one word with no brace expansion left."""
     path = _canon(word, shell.cwd)
     if path is None:
-        return _tail_hits(_win32_names(word.replace("\\", "/").lower()).split("/"))
+        # an escape-stripped reading of a plain relative word is often a garbled Windows path: only a word with a
+        # variable in it is judged by its tail there
+        return (((not shell.variant or _SPAN_RE.search(word))
+                 and _tail_hits(_win32_names(word.replace("\\", "/").lower()).split("/")))
+                or _dynamic_hit(word, shell, mode, forced)
+                or _relative_unknown(word, shell))
     spellings = [path]
     if not any(ch in path for ch in "*?[~"):
         real = _canon(os.path.realpath(path), None)   # a link, a junction or an 8.3 name that exists
@@ -1265,7 +1399,14 @@ def _hit_word(word, shell, mode):
             spellings.append(real)
     targets = _owner_targets(mode)
     return any(_glob_match(spelled.split("/"), target, under)
-               for spelled in spellings for target, under in targets)
+               for spelled in spellings for target, under in targets) or bool(forced and shell.hint)
+
+
+def _relative_unknown(word, shell):
+    """True when a relative `word` is judged from a folder a dynamic `cd` made unknown, in a command that names the
+    owner's folder: it could be theirs."""
+    return bool(shell.hint and shell.cwd_lost and not shell.variant and not _SPAN_RE.search(word)
+                and not word.startswith(("/", "~")) and not _DRIVE_RE.match(word.replace("\\", "/").lower()))
 
 
 def _in_owner_folder(shell):
@@ -1477,9 +1618,13 @@ def _assign(raw, shell):
     return True
 
 
+# the words that only introduce a command: `do rm x`, `then rm x`, `if rm x`, `try { rm x }` (crew 1.3.120)
+_CONTROL = frozenset({"do", "then", "else", "elif", "if", "while", "until", "!", "{", "try", "finally"})
+
+
 def _leading(words, shell):
-    """`words` without the assignments, wrappers and declarations before the command itself (recording the
-    variables they set)."""
+    """`words` without the assignments, wrappers, declarations and control words before the command itself
+    (recording the variables they set); a `{` glued to the command (`{Set-Content`) is cut off it."""
     words = list(words)
     while words:
         head = words[0]
@@ -1490,6 +1635,10 @@ def _leading(words, shell):
             name = head[5:] if lowered.startswith("$env:") else head[1:]
             shell.vars[name.lower()] = _expand(words[2], shell)
             words = words[3:]
+        elif lowered in _CONTROL:
+            words.pop(0)
+        elif head.startswith("{") and len(head) > 1:
+            words[0] = head[1:]
         elif lowered in _DECLARERS:
             words.pop(0)
             while words and (words[0].startswith("-") or _assign(words[0], shell)):
@@ -1609,14 +1758,45 @@ def _dotnet_refusal(raw, shell):
     return None
 
 
+def _split_block_end(words):
+    """`(words up to the one that closes a script block, the words after it)`: a `}` word, or a word ending in an
+    unmatched `}`, ends the command (`& {Set-Content x} ...`); a balanced `${x}` does not."""
+    for position, word in enumerate(words):
+        if word == "}":
+            return words[:position], words[position + 1:]
+        if word.endswith("}") and word.count("}") > word.count("{"):
+            return [*words[:position], word[:-1]], words[position + 1:]
+    return list(words), []
+
+
+def _unbrace(word):
+    """`word` without the `}` that closes a script block it ends (`& {Set-Content x}`); a balanced `${x}` stays."""
+    return word[:-1] if word.endswith("}") and word.count("}") > word.count("{") else word
+
+
 def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-statements
     """Why one simple command writes the owner's files, or None."""
     for target in seg.targets:
-        if _hit(target, shell, "file"):
+        if _hit(_unbrace(target), shell, "file"):
             return f"{OWNER_REASON}: a redirect aims at them"
-    words = _leading(seg.words, shell)
+    words, after = _split_block_end(_leading(seg.words, shell))
+    if after and depth <= 3:   # `try { rm x } catch { ... }`: what follows the block's `}` is a command of its own
+        tail = _Segment()
+        tail.words = tail.raws = after
+        refusal = _segment_refusal(tail, shell, depth + 1)
+        if refusal:
+            return refusal
     if not words:
         return None
+    for position in range(1, len(words)):   # a script block: `foreach (...) { Set-Content x }`, `& { rm x }`
+        word = words[position].lstrip(_PAREN)
+        if word.startswith("{") and depth <= 3:
+            inner = _Segment()
+            inner.words = ([word[1:]] if len(word) > 1 else []) + words[position + 1:]
+            inner.raws = list(inner.words)
+            refusal = _segment_refusal(inner, shell, depth + 1)
+            if refusal:
+                return refusal
     if words[0].lower().startswith(("[io.file]::", "[system.io.file]::")):   # a .NET write with the path spelled out
         return _dotnet_refusal(" ".join(seg.raws[len(seg.words) - len(words):]), shell)
     name = _command_name(_expand(words[0], shell))
@@ -1624,6 +1804,7 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
     if name in _CD:
         plain = [a for a in args if not a.startswith("-")]
         shell.cwd = _canon(plain[0] if plain else os.path.expanduser("~"), shell.cwd)
+        shell.cwd_lost = shell.cwd_lost or shell.cwd is None
         return None
     for body in seg.bodies:
         if name in _CODE_RUNNERS or name in _PWSH:
@@ -1651,15 +1832,82 @@ def _analyze(text, shell, depth=0):
             refusal = _analyze(sub, shell, depth + 1)
             if refusal:
                 return refusal
+        for variant in _escape_variants(seg):
+            refusal = _segment_refusal(variant, shell.fork(), depth)
+            if refusal:
+                return refusal
         refusal = _segment_refusal(seg, shell, depth)
         if refusal:
             return refusal
     return None
 
 
+# Each shell strips its own escape character before it uses a word: bash a backslash, PowerShell a backtick, cmd a
+# caret. `confi\g.json`, ``confi`g.json`` and `confi^g.json` are `config.json`. The splitter cannot tell which shell a
+# word is for (a backslash is also a Windows separator), so every segment with such a character is judged again as
+# each shell would read it, and a hit in any reading refuses.
+_ESCAPES = (re.compile(r"\\(.)", re.DOTALL), re.compile(r"`(.)", re.DOTALL), re.compile(r"\^(.)", re.DOTALL))
+_ESCAPE_READINGS = ((0,), (1,), (2,), (0, 1, 2))
+
+
+def _unescape(word, reading):
+    """`word` with the escape characters of the shells in `reading` (indexes into `_ESCAPES`) taken out."""
+    for which in reading:
+        word = _ESCAPES[which].sub(r"\1", word)
+    return word
+
+
+def _escape_variants(seg):
+    """The `_Segment`s `seg` is when a shell strips its escape characters (none when there is nothing to strip)."""
+    seen = {(tuple(seg.words), tuple(seg.targets))}
+    found = []
+    for reading in _ESCAPE_READINGS:
+        words = [_unescape(w, reading) for w in seg.words]
+        targets = [_unescape(t, reading) for t in seg.targets]
+        if (tuple(words), tuple(targets)) in seen:
+            continue
+        seen.add((tuple(words), tuple(targets)))
+        variant = _Segment()
+        variant.words, variant.targets = words, targets
+        variant.raws = [_unescape(r, reading) for r in seg.raws]
+        found.append(variant)
+    return found
+
+
+_HINT_RES = (re.compile(r"(?<![\w-])\.claude(?![\w-])"), re.compile(r"(?<![\w:-])confirm-config(?![\w-]|\.md)"),
+             re.compile(r"(?<![\w.-])crew/+config\.json\b"))
+
+
+def _command_text(text, depth=0):
+    """The words, redirect targets, `$(...)` bodies and heredocs of `text` as one string: what the command SAYS,
+    without its comments."""
+    if depth > 3:
+        return ""
+    pieces = []
+    for seg in _segments(text):
+        pieces += seg.words + seg.targets + seg.bodies
+        pieces += [_command_text(sub, depth + 1) for sub in seg.subs]
+    return "\n".join(pieces)
+
+
+def _owner_hint(command):
+    """True when the command names the owner's folder: `.claude` (the machine config and its store live under it),
+    the confirm-config store or `crew/config.json`, spelled plainly or with its escape characters, quotes and
+    markers taken out. A write target the guard cannot resolve is the owner's only in such a command
+    (`_dynamic_hit`)."""
+    said = _command_text(command)
+    for text in (said, re.sub(r"[\\`^'\"\x03\x04]", "", said)):
+        folded = _fold(text)
+        if any(r.search(folded) for r in _HINT_RES):
+            return True
+    return False
+
+
 def _owner_command_refusal(command, cwd=None):
     """Why a shell command may not write the owner's files (`_owner_path`), or None."""
-    return _analyze(command, _Shell(cwd))
+    shell = _Shell(cwd)
+    shell.hint = _owner_hint(command)
+    return _analyze(command, shell)
 
 
 def _plain_spelling(path):

@@ -383,3 +383,370 @@ def test_a_word_that_only_passes_through_the_owners_names_is_not_the_owners(home
     for command in ("echo x > $X/crew/config.json/sub", "echo x > $X/confirm-config.md",
                     "echo x > $X/.claude/crew/config.json.d/f"):
         assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
+
+
+# --- round 9: escape characters and paths the guard cannot resolve (crew 1.3.120) ------------------------------------
+# Round 8 was refused for `confi\g.json`, ``confi`g.json`` and `confi^g.json` (each shell strips its escape
+# character before it uses the word) and for `Set-Content -Path (Join-Path $HOME ...)`. The owner's decision: stop
+# chasing spellings. A word with an escape is read as each shell reads it; a write target the guard cannot resolve to
+# one path is refused when it could be the owner's. Reading, and writing elsewhere, still pass.
+
+# the same paths with an escape character the shell strips, in every place a name can hold one
+BASH_ESCAPES = (
+    "{h}/.claude/crew/confi\\g.json",
+    "{h}/.claude/crew/c\\onfig.json",
+    "{h}/.claude/crew/\\config.json",
+    "{h}/.claude/\\crew/config.json",
+    "{h}/.cl\\aude/crew/config.json",
+    "{h}/\\.claude/crew/config.json",
+    "{h}/.claude/crew/confirm\\-config/cc-ab.json",
+    "{h}/.claude/crew/\\confirm-config/cc-ab.json",
+    "{h}/.claude/crew/confirm-config/c\\c-ab.json",
+    "{h}/.claude/crew/confirm-config/cc-ab.js\\on",
+    "{h}/.claude/crew/confirm-config/cc-\\*.json",
+    "{h}/.claude/crew/confi\\g.j\\son",
+)
+PS_ESCAPES = tuple(spelled.replace("\\", "`") for spelled in BASH_ESCAPES) + (
+    "{h}\\.claude\\crew\\confi`g.json",
+    "{h}\\.claude\\crew\\confirm-config\\cc-a`b.json",
+    "{h}\\.claude\\cr`ew\\config.json",
+)
+CMD_ESCAPES = tuple(spelled.replace("\\", "^") for spelled in BASH_ESCAPES) + (
+    "{h}\\.claude\\crew\\confi^g.json",
+    "{h}\\.claude\\crew\\confirm-config\\cc-a^b.json",
+)
+
+
+@pytest.mark.parametrize("name, spellings, verbs, homes", [
+    ("bash escape", BASH_ESCAPES, BASH_VERBS, BASH_HOMES),
+    ("powershell escape", PS_ESCAPES, PS_VERBS, PS_HOMES),
+    ("cmd escape", CMD_ESCAPES, CMD_VERBS, CMD_HOMES),
+])
+def test_an_escape_character_does_not_hide_the_owners_file(name, spellings, verbs, homes, home):
+    """Every escape placement x every write verb of its shell x every way to reach home."""
+    slipped = _unrefused(_cells(spellings, verbs, homes))
+    assert not slipped, f"{len(slipped)} {name} cells were not refused:\n" + "\n".join(slipped[:60])
+
+
+def test_the_escape_of_one_shell_is_read_in_every_shell(home):
+    """The splitter cannot tell which shell a command is for, so an escape is read as any shell reads it."""
+    slipped = []
+    for spellings in (BASH_ESCAPES, PS_ESCAPES, CMD_ESCAPES):
+        for verbs in (BASH_VERBS, PS_VERBS, CMD_VERBS):
+            slipped += _unrefused(_cells(spellings, verbs, ("~",)))
+    assert not slipped, f"{len(slipped)} cells were not refused:\n" + "\n".join(slipped[:60])
+
+
+def test_an_escaped_verb_is_still_the_verb(home):
+    for command in ("r\\m ~/.claude/crew/config.json", "\\rm ~/.claude/crew/config.json",
+                    "c\\p x ~/.claude/crew/config.json", "Set-Cont`ent ~/.claude/crew/config.json x",
+                    "Remo`ve-Item ~/.claude/crew/config.json", "co^py x ~/.claude/crew/config.json",
+                    "echo x | te\\e ~/.claude/crew/config.json", "bash -c \"echo x > ~/.claude/crew/confi\\g.json\"",
+                    "pwsh -Command \"Set-Content ~/.claude/crew/confi`g.json x\"",
+                    "cmd /c \"echo x > ~\\.claude\\crew\\confi^g.json\""):
+        assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
+
+
+# a path the shell builds: the front of it, a piece of it, or all of it is a substitution, a variable the command did
+# not set, a backtick, an ANSI-C string or a parenthesised expression
+DYNAMIC = (
+    "~/.claude/crew/$NAME",
+    "~/.claude/crew/${NAME}",
+    "~/.claude/crew/conf$SUFFIX",
+    "~/.claude/crew/$(echo config.json)",
+    "~/.claude/crew/\"$(echo config).json\"",
+    "~/.claude/$A/config.json",
+    "~/.claude/crew/confirm-config/$R",
+    "~/.claude/crew/confirm-config/cc-$ID.json",
+    "~/.claude/crew/`echo config.json`",
+    "$(echo ~/.claude/crew)/config.json",
+    "\"$(printf %s ~/.claude/crew)/config.json\"",
+    "`echo ~/.claude/crew`/config.json",
+    "$'~/.claude/crew/conf\\x69g.json'",
+    "$'~/.claude/crew/\\143onfig.json'",
+    "~/.claude/crew/c\"$(true)\"onfig.json",
+    "~/.claude/crew/`date`",
+    "~/.claude/crew/conf$X\\ig.json",
+    "~/$A/config.json",
+    "~/$A/confirm-config/cc-ab.json",
+    "$UNSET/.claude/crew/config.json",
+    "${UNSET}/crew/confirm-config/cc-ab.json",
+    "%UNSET%\\.claude\\crew\\config.json",
+    "$env:UNSET\\.claude\\crew\\config.json",
+)
+# the same, where the command names the owner's folder elsewhere and the target is only a variable or a substitution
+DYNAMIC_IN_CONTEXT = (
+    "$D/config.json", "$D", "${D}", "\"$D\"", "$(cat p)", "\"$(cat p)/config.json\"", "$D/crew/config.json",
+    "%D%\\config.json", "$env:D\\config.json", "`cat p`", "$D/confirm-config/cc-ab.json", "$D/CONFIG.JSON",
+    "$D/config.json.", "$D/Crew/Config.Json", "$D/confirm-config/CC-AB.JSON", "$D/conf\\ig.json",
+)
+# beside the owner's folder in the command, but a name that cannot end one of the owner's paths: not the owner's
+UNKNOWN_FOLDER_OTHER_NAME = (
+    "$D/out.txt", "$D/notes.md", "$D/crew/config.json/sub", "$D/.claude/crew/config.json.d/f", "$D/confirm-config.md",
+    "\"$D/out.txt\"", "${D}/out.txt", "%D%\\out.txt", "$env:D\\out.txt", "$(cat p)/out.txt",
+)
+PS_PARENS = (
+    "(Join-Path $HOME \".claude/crew/config.json\")",
+    "(Join-Path $HOME '.claude\\crew\\config.json')",
+    "(Join-Path $env:USERPROFILE \".claude\\crew\\confirm-config\\cc-ab.json\")",
+    "(Join-Path (Join-Path $HOME \".claude\") \"crew\\config.json\")",
+    "(Join-Path (Join-Path $HOME '.claude') (Join-Path 'crew' 'config.json'))",
+    "($HOME + '\\.claude\\crew\\config.json')",
+    "(\"$HOME\\.claude\\crew\\config.json\")",
+    "(Resolve-Path ~/.claude/crew/config.json)",
+    "$($HOME)/.claude/crew/config.json",
+    "((Get-Item ~).FullName + '\\.claude\\crew\\config.json')",
+)
+
+
+def test_a_path_the_guard_cannot_resolve_is_refused_when_it_could_be_the_owners(home):
+    slipped = []
+    for shell_verbs, homes in ((BASH_VERBS, BASH_HOMES), (PS_VERBS, PS_HOMES), (CMD_VERBS, CMD_HOMES)):
+        slipped += _unrefused(_cells(DYNAMIC, shell_verbs, ("~",)))
+        slipped += _unrefused(_cells(DYNAMIC_IN_CONTEXT, [f"ls ~/.claude; {v}" for v in shell_verbs], homes[:1]))
+    assert not slipped, f"{len(slipped)} cells were not refused:\n" + "\n".join(slipped[:60])
+
+
+def test_a_parenthesised_path_is_refused_by_every_powershell_write(home):
+    slipped = _unrefused(_cells(PS_PARENS, PS_VERBS, ("~",)))
+    assert not slipped, f"{len(slipped)} cells were not refused:\n" + "\n".join(slipped[:60])
+
+
+def test_the_round_9_findings_are_refused_through_the_whole_guard(home):
+    """The four escape spellings and the parenthesised path, through `shell_refusal`, the hook's entry point."""
+    for command in ("echo x > ~/.claude/crew/confi\\g.json",
+                    "echo x > ~/.claude/crew/confirm-config/cc-ab.json".replace("confirm-config", "confirm\\-config"),
+                    "Set-Content ~\\.claude\\crew\\confi`g.json x",
+                    "echo x > %USERPROFILE%\\.claude\\crew\\confi^g.json",
+                    "Set-Content -Path (Join-Path $HOME \".claude/crew/config.json\") -Value x"):
+        assert scope_guard.shell_refusal(command, None), command
+
+
+# where nothing in the command names the owner's folder, an unresolvable target is just a target
+UNRELATED_TARGETS = (
+    "$D/out.txt", "$OUT", "\"$OUT\"", "${OUT}", "$(git rev-parse --show-toplevel)/out.txt", "`pwd`/out.txt",
+    "$X/config.json", "%TEMP%\\out.txt", "$env:TEMP\\out.txt", "$'/tmp/out\\x2etxt'", "/tmp/$NAME", "out-$ID.json",
+    "(Join-Path $PWD \"out.txt\")", "(Join-Path $env:TEMP 'out.txt')", "(Get-Location).Path", "$HOME/notes/$NAME",
+    "~/proj/$NAME", "~/proj/conf$SUFFIX", "~/.cache/$NAME",
+)
+
+
+def test_an_unresolvable_target_in_a_command_that_never_names_the_owner_is_allowed(home):
+    verbs = BASH_VERBS + PS_VERBS + CMD_VERBS
+    verbs = [v for v in verbs if "{t}.bak" not in v]   # `cp {t} {t}.bak` is two targets
+    hit = _refused(_cells(UNRELATED_TARGETS, verbs, ("~",)))
+    assert not hit, f"{len(hit)} cells refused a target that is not the owner's:\n" + "\n".join(hit[:60])
+
+
+def test_an_escape_in_another_file_is_not_the_owners(home):
+    elsewhere = [spelled.replace("config.json", "confi\\g.json") for spelled in ELSEWHERE if "config.json" in spelled]
+    elsewhere += [spelled.replace("cc-ab.json", "cc-a\\b.json") for spelled in ELSEWHERE if "cc-ab.json" in spelled]
+    hit = _refused(_cells(elsewhere, BASH_VERBS, ("~",)))
+    hit += _refused(_cells([e.replace("\\", "`") for e in elsewhere if "\\" in e and ":" not in e], PS_VERBS, ("~",)))
+    assert not hit, f"{len(hit)} cells refused a file that is not the owner's:\n" + "\n".join(hit[:60])
+
+
+def test_reading_through_an_escape_or_a_dynamic_path_is_not_writing(home):
+    sources = [spelled.replace("{h}", "~") for spelled in BASH_ESCAPES] + [
+        spelled.replace("{h}", "~") for spelled in PS_ESCAPES] + [
+        s for s in DYNAMIC + DYNAMIC_IN_CONTEXT if "{h}" not in s] + list(PS_PARENS)
+    reads = ["cat {t}", "cat {t} | grep x", "grep x {t}", "ls -l {t}", "head -n 1 {t}", "Get-Content {t}",
+             "Get-Item {t}", "Test-Path {t}", "type {t}", "echo {t} > out.txt", "cp {t} /tmp/out",
+             "Copy-Item -Path {t} -Destination out.txt"]
+    hit = _refused(_cells(sources, reads, ("~",)))
+    assert not hit, f"{len(hit)} read cells were refused:\n" + "\n".join(hit[:60])
+
+
+def test_a_dynamic_cd_makes_a_relative_target_unknown(home):
+    for command in ("cd $D; echo x > config.json; ls ~/.claude",
+                    "cd $(pwd)/x && rm confirm-config/cc-ab.json; ls ~/.claude",
+                    "Set-Location $env:UNSET; Set-Content config.json x; ls ~/.claude"):
+        assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
+    for command in ("cd $D; echo x > config.json", "cd /tmp/x; echo x > config.json; ls ~/.claude"):
+        assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
+
+
+def test_an_unknown_folder_in_front_of_a_name_that_cannot_be_the_owners_is_allowed_in_context(home):
+    verbs = [f"ls ~/.claude; {v}" for v in BASH_VERBS + PS_VERBS + CMD_VERBS if "{t}.bak" not in v]
+    hit = _refused(_cells(UNKNOWN_FOLDER_OTHER_NAME, verbs, ("~",)))
+    assert not hit, f"{len(hit)} cells refused a name that cannot be the owner's:\n" + "\n".join(hit[:60])
+
+
+def test_an_escape_stripped_reading_of_a_windows_path_is_not_the_owners(home):
+    """`C:\\proj\\out.txt` read with its backslashes taken out is a garbled relative word: from a folder a dynamic
+    `cd` made unknown it is no more the owner's than the path as written."""
+    targets = ("C:\\proj\\out.txt", "C:\\proj\\sub\\notes.md", "D:\\a\\b/.claude/crew/other.json")
+    # only verbs whose one relative word is the target: `mv x {t}` also names `x`, which that cd made unknown
+    verbs = [f"cd $D; ls ~/.claude; {v}" for v in (
+        "echo x > {t}", "echo x >> {t}", "cat a > {t}", "printf x | tee {t}", "Set-Content {t} x",
+        "Set-Content -Path {t} -Value x", "Add-Content {t} x", "Out-File {t}", "type x > {t}", "sc {t} x")]
+    hit = _refused(_cells(targets, verbs, ("~",)))
+    assert not hit, f"{len(hit)} cells refused a Windows path that is not the owner's:\n" + "\n".join(hit[:60])
+
+
+def test_a_relative_target_with_an_unknown_part_after_a_dynamic_cd_is_unknown(home):
+    for command in ("cd $D; echo x > sub/$N; ls ~/.claude", "cd $D; rm sub/$N.json; cat ~/.claude/crew/config.json"):
+        assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
+    for command in ("cd /tmp/x; echo x > sub/$N; ls ~/.claude", "cd $D; echo x > sub/$N", "echo x > sub/$N"):
+        assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
+
+
+def test_a_word_after_a_parenthesised_expression_is_a_plain_word(home):
+    """Only what sits INSIDE the parentheses is an expression; the next word is read as written."""
+    for command in ("Copy-Item (Get-Item ~/.claude/crew/config.json) out.txt",
+                    "Set-Content (Join-Path $PWD 'a.txt') x; Set-Content out.txt y",
+                    "Copy-Item -Path (Get-Item ~/.claude/crew/config.json) -Destination out.txt",
+                    "Copy-Item (Get-Item ~/.claude/crew/config.json) -Destination out.txt"):
+        assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("command", [
+    "[System.IO.File]::WriteAllText((Join-Path $HOME '.claude/crew/config.json'),'x')",
+    "[System.IO.File]::AppendAllText((Join-Path $HOME '.claude/crew/config.json'),'x')",
+    "[System.IO.File]::Delete((Join-Path $HOME '.claude/crew/config.json'))",
+    "[System.IO.File]::Create((Join-Path $HOME '.claude/crew/config.json'))",
+    "[System.IO.File]::Copy('x',(Join-Path $HOME '.claude/crew/config.json'))",
+    "[System.IO.File]::Move('x',(Join-Path $HOME '.claude/crew/config.json'))",
+    "[IO.File]::Delete((Join-Path $HOME '.claude/crew/config.json'))",
+    "[IO.File]::Create((Join-Path $HOME '.claude/crew/config.json'))",
+    "[IO.File]::Copy('x',(Join-Path $HOME '.claude/crew/config.json'))",
+    "[IO.File]::Move('x',(Join-Path $HOME '.claude/crew/config.json'))",
+    "[IO.File]::AppendAllText((Join-Path $HOME '.claude/crew/config.json'),'x')",
+    "pwsh -c \"[System.IO.File]::Delete((Join-Path $HOME '.claude/crew/config.json'))\"",
+    "pwsh -c \"if (1) { [System.IO.File]::Copy('x',(Join-Path $HOME '.claude/crew/config.json')) }\"",
+])
+def test_a_dotnet_write_to_a_built_path_is_refused(command, home):
+    """The destination is an expression, so only its text can say it is the owner's file."""
+    assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
+
+
+def test_a_dotnet_write_through_an_escape_is_the_owners_file(home):
+    for command in ("[System.IO.File]::WriteAllText('~/.claude/crew/confi`g.json', 'x')",
+                    "[IO.File]::AppendAllText(\"~/.claude/crew/confi`g.json\", 'x')",
+                    "[IO.File]::Delete('~\\.claude\\crew\\confi`g.json')"):
+        assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
+
+
+# a write inside a block, a loop or a condition is still a write: the verb is not the first word of the line
+PS_BLOCKS = (
+    "foreach ($f in 1) { <C> }", "if ($true) { <C> }", "1..3 | ForEach-Object { <C> }", "& { <C> }",
+    "try { <C> } catch { }", "& {<C>}", "$b = { <C> }; & $b", "while ($false) { <C> }", "if ($false) { } else { <C> }",
+    "foreach ($f in 1) {<C>}", "Invoke-Command -ScriptBlock { <C> }", ". { <C> }",
+)
+BASH_BLOCKS = (
+    "for f in a; do <C>; done", "if true; then <C>; fi", "while false; do <C>; done", "{ <C>; }", "if <C>; then :; fi",
+    "! <C>", "true && { <C>; }", "until true; do <C>; done", "if false; then :; else <C>; fi",
+    "for f in a; do for g in b; do <C>; done; done", "case x in x) <C>;; esac",
+    "case x in a) true;; b) <C>;; esac", "case x in a|b) <C>;; esac",
+)
+
+
+def test_a_write_inside_a_block_or_a_loop_is_a_write(home):
+    slipped = []
+    for blocks, verbs, home_prefix in ((PS_BLOCKS, PS_VERBS, "~"), (BASH_BLOCKS, BASH_VERBS, "~")):
+        for block in blocks:
+            for verb in verbs:
+                command = block.replace("<C>", verb.replace("{t}", f"{home_prefix}/.claude/crew/config.json"))
+                if scope_guard._owner_command_refusal(command) is None:  # pylint: disable=protected-access
+                    slipped.append(command)
+    assert not slipped, f"{len(slipped)} cells were not refused:\n" + "\n".join(slipped[:60])
+
+
+def test_a_read_or_another_file_inside_a_block_is_not_the_owners(home):
+    hit = []
+    for blocks, verbs in ((PS_BLOCKS, PS_VERBS), (BASH_BLOCKS, BASH_VERBS)):
+        for block in blocks:
+            for verb in verbs:
+                for target in ("/tmp/out.txt", "C:/other/.claude/crew/config.json"):
+                    command = block.replace("<C>", verb.replace("{t}", target))
+                    if scope_guard._owner_command_refusal(command):  # pylint: disable=protected-access
+                        hit.append(command)
+            for read in ("cat ~/.claude/crew/config.json", "Get-Content ~/.claude/crew/config.json",
+                         "echo ~/.claude/crew/config.json > out.txt"):
+                command = block.replace("<C>", read)
+                if scope_guard._owner_command_refusal(command):  # pylint: disable=protected-access
+                    hit.append(command)
+    assert not hit, f"{len(hit)} cells were refused:\n" + "\n".join(hit[:60])
+
+
+def test_a_brace_expansion_word_is_not_a_block(home):
+    for command in ("rm {a,b}", "rm {x} out.txt", "echo {Set-Content,x} out.txt", "cp ${HOME}/x /tmp/y"):
+        assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
+    for command in ("rm {x} ~/.claude/crew/config.json", "rm -f ${X} ~/.claude/crew/config.json",
+                    "cp x ${D} ~/.claude/crew/config.json", "echo ${H} > ~/.claude/crew/config.json"):
+        assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
+
+
+def test_a_variable_the_command_set_is_followed_not_guessed(home):
+    """With the folder named in the command, an unknown variable is refused; one the command SET is its value."""
+    for command in ("ls ~/.claude; X=/tmp/other; echo x > $X", "ls ~/.claude; X=/tmp/other; echo x > $X/config.json",
+                    "ls ~/.claude; export X=/tmp/other; rm -f $X/crew/config.json",
+                    "ls ~/.claude; $d = 'C:/other'; Set-Content $d/config.json x",
+                    "ls ~/.claude; set X=/tmp/other & echo x > %X%/config.json"):
+        assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
+    for command in ("X=~/.claude/crew; echo x > $X/config.json", "$d = '~/.claude/crew'; Set-Content $d/config.json x",
+                    "export X=~/.claude/crew/confirm-config; rm $X/cc-ab.json",
+                    "ls ~/.claude; X=$(pwd); echo x > $X"):
+        assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
+
+
+def test_a_relative_word_with_no_working_directory_is_judged_by_its_tail(home):
+    """No folder to join it to: the way it ENDS decides. With a folder (the hook always has one) it is joined."""
+    for command in ("echo x > crew/config.json", "rm confirm-config/cc-1.json", "cp x .claude/crew/config.json",
+                    "echo x > confirm-config/cc-ab.json"):
+        assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
+        assert scope_guard._owner_command_refusal(command, "/tmp/x") is None, command  # pylint: disable=protected-access
+    for command in ("echo x > other/config.json", "echo x > crewx/config.json", "echo x > config.json"):
+        assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
+
+
+def test_a_backtick_substitution_is_read_as_a_command(home):
+    for command in ("echo `rm ~/.claude/crew/config.json`", "echo \"`rm ~/.claude/crew/config.json`\"",
+                    "ls `echo x > ~/.claude/crew/confirm-config/cc-ab.json`"):
+        assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
+    assert scope_guard._owner_command_refusal("echo `date`") is None  # pylint: disable=protected-access
+
+
+def test_what_makes_a_command_name_the_owners_folder(home):
+    """The hint is `.claude`, the confirm-config store or `crew/config.json`, in what the command SAYS: a comment
+    is not said, and an escape character or a quote does not hide it."""
+    for command in ("ls ~/.claude; echo x > $D", "ls /tmp/confirm-config; echo x > $D",
+                    "cat crew/config.json; echo x > $D", "ls ~/.cl\\aude; echo x > $D",
+                    "ls ~/.cl`aude; echo x > $D", "ls ~/.cl^aude; echo x > $D", "ls ~/'.cl'aude; echo x > $D",
+                    "ls ~/.claude; Set-Content $D x", "ls ~/.claude; echo x > \"$(cat p)\""):
+        assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
+    for command in ("echo x > $D # ~/.claude/crew/config.json", "echo x > $D # confirm-config", "echo x > $D",
+                    "ls ~/.claudefoo; echo x > $D", "ls ~/not-confirm-config; echo x > $D",
+                    "ls ~/.claude.md; echo x > $D".replace(".claude.md", "claude-notes")):
+        assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
+
+
+# --- round 9, finding 3: the write reading belongs to the verb, not to a word in a file name ------------------------
+
+@pytest.mark.parametrize("command", [
+    "Get-Content C:\\tmp\\confirm-config\\echo.txt",
+    "Get-Content C:/tmp/confirm-config/echo.txt",
+    "cat /tmp/confirm-config/echo.txt",
+    "cat /tmp/confirm-config/printf.log | grep x",
+    "cat /tmp/confirm-config/echo",
+    "Get-Content C:\\tmp\\confirm-config\\echo",
+    "Get-Content ~/.claude/crew/confirm-config/echo.txt",
+    "ls /tmp/confirm-config/rm-list.txt",
+    "Select-String x C:\\tmp\\confirm-config\\sed.out",
+])
+def test_a_verb_inside_a_file_name_in_the_store_is_not_a_write(command, home):
+    assert scope_guard.shell_refusal(command, None) is None, command
+
+
+@pytest.mark.parametrize("command", [
+    "echo x /tmp/confirm-config/f",
+    "Set-Content C:\\tmp\\confirm-config\\echo.txt x",
+    "rm /tmp/confirm-config/echo.txt",
+    "/bin/rm /tmp/confirm-config/f",
+    "ls /tmp/confirm-config/f > x",
+    "ls /tmp/confirm-config/f; {rm,x}",
+    "cat /tmp/confirm-config/x | tee y",
+    "python3 -c pass /tmp/confirm-config/f",
+])
+def test_a_write_verb_beside_the_store_is_still_refused(command, home):
+    assert scope_guard.shell_refusal(command, None), command
