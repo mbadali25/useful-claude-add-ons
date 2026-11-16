@@ -11,7 +11,7 @@ the payload in, so the two shells cannot disagree.
    the key gets), or the cwd is no work tree -> exit 0 before anything else is
    read, EXCEPT that a Write/Edit of, or a shell write to, the owner's own
    files (the machine config `~/.claude/crew/config.json` and the
-   confirm-config store beside it) is still refused (crew 1.3.128): those hold
+   confirm-config store beside it) is still refused (crew 1.3.130): those hold
    `guards.enabled` and its receipts, and a guard that stood down with
    `scope.mode` would let an agent write both.
 2. A target under `<git-common-dir>/crew/` -- approval receipts, the review
@@ -207,8 +207,10 @@ _BASH_CONTINUATION_RE = re.compile(r"\\\r?\n")
 _PS_CONTINUATION_RE = re.compile(r"`\r?\n")
 _DOTGIT_CREW_RE = re.compile(r"\.git[\\/]+crew\b|git-common-dir\b.*\bcrew\b",
                              re.IGNORECASE | re.DOTALL)
-# The double-confirmation store (`crew_humanonly.store_dir`): a shell command naming `confirm-config/` beside a
-# writing word is refused (#679's check, restored in round 8: the merge had kept only the target-based check).
+# The double-confirmation store (`crew_humanonly.store_dir`): a shell command naming `confirm-config/` that WRITES
+# there is refused (#679's check, restored in round 8: the merge had kept only the check of the owner's real store).
+# Since round 11 (crew 1.3.130) `_store_write` judges where the command writes, as the owner's files are judged; until
+# then a write verb or a redirect anywhere in the command refused it, so `cp <receipt> /tmp/` was refused.
 _CONFIRM_STORE_RE = re.compile(r"confirm-config[\\/]", re.IGNORECASE)
 # A redirect (not into /dev/null, $null or another descriptor), or a word
 # that writes files. Reading crew's state -- `cat`, `Get-Content` -- passes.
@@ -218,27 +220,6 @@ _WRITES_RE = re.compile(
     r"python[0-9.]*|py|node|chmod|echo|printf|set-content|add-content|out-file|"
     r"new-item|copy-item|move-item|remove-item|rename-item|clear-content|set-item|ni|"
     r"sc|ac)\b", re.IGNORECASE)
-# The same words read as the COMMAND a shell runs (crew 1.3.128, rounds 9 and 10): the confirm-config store
-# check asks for a write VERB in command position, not for a verb's spelling inside a file name (`Get-Content
-# C:\tmp\confirm-config\echo.txt` reads a file called echo.txt) or as an argument (`grep echo <store>/x.json` searches
-# for the word echo; it does not run `echo`).
-_REDIRECT_RE = re.compile(r"(?<!>)>>?(?!>)(?!\s*(?:&\d|/dev/null\b|\$null\b))")
-_VERB_WORD_RE = re.compile(
-    r"(?:tee|cp|mv|rm|ln|touch|mkdir|rmdir|install|dd|rsync|truncate|sed|perl|python[0-9.]*|py|node|chmod|echo|"
-    r"printf|set-content|add-content|out-file|new-item|copy-item|move-item|remove-item|rename-item|clear-content|"
-    r"set-item|ni|sc|ac)(?:\.exe)?", re.IGNORECASE)
-
-
-def _writes_by_verb(command):
-    """True when `command` redirects, or RUNS a write verb: one of `_VERB_WORD_RE` in command position (`_ran`: the
-    first word of a simple command by its basename, so `/bin/rm` counts, and whatever a wrapper, `xargs`, `find
-    -exec`, `bash -c`, a `$(...)` or a script block hands on). A search term (`grep echo <store>/x.json`), any other
-    argument, and a word that is itself a path into the confirm-config store are not verbs."""
-    if _REDIRECT_RE.search(command):
-        return True
-    return any(_VERB_WORD_RE.fullmatch(name) for name in _ran(command))
-
-
 # Fail-closed exemption from the word list above. The list is a deny-list on
 # purpose, so a command that merely NAMES `python3`/`echo` as an argument
 # (`ls <state> | grep python3`) was refused. A command is read-only, and so
@@ -570,14 +551,14 @@ def confirm_store():
 
 def machine_config():
     """The machine config file (`~/.claude/crew/config.json`), which holds `guards.enabled`, the switch that
-    stands every guard down (crew 1.3.128). Like `confirm_store`, spelled here so this guard imports no config
+    stands every guard down (crew 1.3.130). Like `confirm_store`, spelled here so this guard imports no config
     module."""
     return os.path.join(os.path.expanduser("~"), ".claude", "crew", "config.json")
 
 
 def _owner_path(path):
     """True for the owner's own files: the double-confirmation store and the machine config, which holds
-    `guards.enabled` (crew 1.3.128)."""
+    `guards.enabled` (crew 1.3.130)."""
     return _under(path, confirm_store()) or os.path.normcase(path) == os.path.normcase(machine_config())
 
 
@@ -881,13 +862,13 @@ def _reading_refusal(command, written, common, top, agent_type=None):
         return "it writes under <git-common-dir>/crew/, crew's approval and ledger state"
     store = os.path.normcase(confirm_store()).replace("\\", "/")
     if ((_CONFIRM_STORE_RE.search(command) or store in folded)
-            and _writes_by_verb(command) and not _read_only(command)):
+            and not _read_only(command) and _store_write(command, top)):
         return ("it writes under the confirm-config store, the receipts of the owner's "
                 "double confirmation")
     return _owner_command_refusal(command, top)
 
 
-# --- the owner's files, through a shell (crew 1.3.128, target-based since the round-3 owner decision) ------------
+# --- the owner's files, through a shell (crew 1.3.130, target-based since the round-3 owner decision) ------------
 # A command is refused when something in it WRITES TO the owner's files: a redirect, or the argument a write verb
 # aims at (`tee`, `cp`, `mv`, `rm`, `sed -i`, `Set-Content`, `curl -o`, `tar -C`, `git apply` ...), or inline code
 # (`python -c`, a heredoc) that names them beside a write call. A command that merely MENTIONS them -- a commit
@@ -899,7 +880,7 @@ def _reading_refusal(command, written, common, top, agent_type=None):
 # user: a helper script behind `cd`, `pytest`/`uv`/`make`/`python -m` launchers, an 8.3 short name, base64 or a path
 # built by arithmetic still write the file, and CONFIG.md says so. No script is opened or sized (an unreadable or
 # huge file refuses nothing): the owner's order is that the crew runs every normal command.
-# Round 10 (crew 1.3.128) names the rest of that tail, also in CONFIG.md: an alias (`Set-Alias w Set-Content`), a
+# Round 10 (crew 1.3.130) names the rest of that tail, also in CONFIG.md: an alias (`Set-Alias w Set-Content`), a
 # splatted hashtable (`@a`), `[scriptblock]::Create(...)`, the content of a script file (`bash script.sh`), a string
 # built by concatenation and handed to `iex`, and `touch`/`chmod` (metadata only) are not read.
 OWNER_REASON = "it writes the owner's files"
@@ -917,7 +898,7 @@ _CODE_RUNNERS = frozenset({"python", "python3", "py", "node", "nodejs", "deno", 
 _CODE_FLAGS = frozenset({"-c", "-e", "-p", "-r", "-E", "--eval", "--command"})
 _POSIX_SHELLS = frozenset({"bash", "sh", "zsh", "dash", "ksh"})
 _PWSH = frozenset({"pwsh", "powershell"})
-# The words that only run another command (crew 1.3.128: `.`, `timeout`, `nice`, `stdbuf`, `ionice`, `setsid`,
+# The words that only run another command (crew 1.3.130: `.`, `timeout`, `nice`, `stdbuf`, `ionice`, `setsid`,
 # `busybox`, `wsl`). Named apart from the trust check's `_WRAPPERS` above: until round 10 this set carried that name
 # too, replaced it for the whole module, and so dropped `nice` from the trust check (`nice /tmp/x approve`).
 _OWNER_WRAPPERS = frozenset({"sudo", "env", "time", "command", "nohup", "exec", "builtin", "call", "start", "&", ".",
@@ -936,12 +917,14 @@ _XARGS_VALUES = frozenset({"-I", "-n", "-P", "-L", "-s", "-d", "-E", "-a", "--ma
                            "--delimiter", "--arg-file", "--max-lines", "--max-chars", "--eof"})
 _DECLARERS = frozenset({"export", "declare", "local", "typeset", "readonly", "set"})
 _CD = frozenset({"cd", "chdir", "set-location", "sl", "push-location", "pushd"})
+_PUSHD = frozenset({"pushd", "push-location"})
+_POPD = frozenset({"popd", "pop-location"})
 _REMOVERS = frozenset({"rm", "unlink", "shred", "del", "erase", "rd", "rmdir", "remove-item", "ri",
                        "mv", "move", "ren", "rename", "rename-item", "rni", "move-item", "mi"})
 _WRITERS = frozenset({"tee", "truncate", "clear-content", "set-content", "add-content", "out-file", "new-item", "ni",
                       "set-item", "sponge", "sc", "ac", "mklink", "clc", "tee-object", "export-csv", "epcsv",
                       "export-clixml"})
-# The programs that only READ what they are given (crew 1.3.128). The owner's file as an operand of one is a read, so
+# The programs that only READ what they are given (crew 1.3.130). The owner's file as an operand of one is a read, so
 # it does not make the command one that "names the owner's folder" (`_owner_hint`): `cat <owner file> > "$OUT"` writes
 # `$OUT`, not the owner's file. `echo` and `printf` are not here: they hand the name on (`echo <it> | xargs rm`).
 _READERS = frozenset({
@@ -950,8 +933,6 @@ _READERS = frozenset({
     "sha256sum", "cksum", "test", "[", "[[", "realpath", "readlink", "basename", "dirname", "du", "tree", "bat", "nl",
     "tac", "findstr", "where", "which", "get-content", "gc", "get-item", "gi", "get-childitem", "gci", "test-path",
     "select-string", "sls", "resolve-path", "rvpa", "get-filehash", "get-acl", "measure-object", "get-itemproperty"})
-# The commands that are handed another command as text: every such word is read as a command of its own.
-_RUNNERS = frozenset({"cmd", "eval", "iex", "invoke-expression", "trap", "start-process", "saps"})
 # The PowerShell cmdlets that bind their path from the pipeline when none is given (`Get-Item <f> | Remove-Item`).
 _PIPE_BOUND = frozenset({"remove-item", "ri", "rm", "del", "erase", "rd", "rmdir", "clear-content", "clc",
                          "set-content", "sc", "add-content", "ac", "move-item", "mi", "rename-item", "rni"})
@@ -963,7 +944,7 @@ _OPTION_RE = re.compile(r"^(?:-[^\s]|/[A-Za-z?]{1,2}(?::\S*)?$)")
 _ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.DOTALL)
 _VAR_RE = re.compile(r"\$env:(\w+)|\$\{(\w+)\}|\$(\w+)|%(\w+)%", re.IGNORECASE)
 # What is left of a variable once `_expand` has put in every value it knows: PowerShell's `${env:X}` and `$env:X`,
-# bash's `${X:-y}`. Its value is unknown, and its colon is no NTFS stream (`c${env:X}nfig.json`, crew 1.3.128).
+# bash's `${X:-y}`. Its value is unknown, and its colon is no NTFS stream (`c${env:X}nfig.json`, crew 1.3.130).
 _UNREAD_VAR_RE = re.compile(r"\$\{[^}]*\}|\$env:\w+", re.IGNORECASE)
 _DRIVE_RE = re.compile(r"^[a-z]:/")
 _IGNORED_TARGET_RE = re.compile(r"^(?:/dev/\w+|\$null|nul|&\d|-)$", re.IGNORECASE)
@@ -1020,10 +1001,10 @@ def _balanced(text, start):
 
 
 _QUOTE_OPEN, _QUOTE_CLOSE = "\x01", "\x02"
-# What the splitter cannot read as text (crew 1.3.128, round 9): `_DYN` stands where a `$(...)` / `$'...'` produced
+# What the splitter cannot read as text (crew 1.3.130, round 9): `_DYN` stands where a `$(...)` / `$'...'` produced
 # characters, `_PAREN` starts a word that sits inside a parenthesised expression (`(Join-Path $HOME "x")`).
 _DYN, _PAREN = "\x03", "\x04"
-# `_TAINT` (crew 1.3.128, round 10) is a `_DYN` whose source spells pieces of the owner's path (`_plausible`):
+# `_TAINT` (crew 1.3.130, round 10) is a `_DYN` whose source spells pieces of the owner's path (`_plausible`):
 # `$(echo ~/.claude/crew)`, a word of `(Join-Path $HOME ".claude/crew/config.json")`, a variable assigned from either.
 # A write target the guard cannot resolve fails closed when it carries one, whatever else the command says.
 _TAINT = "\x05"
@@ -1070,6 +1051,7 @@ class _Segment:  # pylint: disable=too-few-public-methods
         self.words, self.targets, self.subs, self.bodies = [], [], [], []
         self.raws = []   # each word again, with a quoted part wrapped in _QUOTE_OPEN ... _QUOTE_CLOSE
         self.piped = False
+        self.opens = self.closes = 0   # the subshells this command starts (`(cd x && ...`) and ends (`... )`)
 
     def __bool__(self):
         return bool(self.words or self.targets or self.subs or self.bodies)
@@ -1253,11 +1235,15 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
                 if not parens:
                     group = (len(seg.words), len(seg.targets))
                 parens += 1
+            elif char == "(":
+                seg.opens += 1   # statement-initial: a subshell, whose `cd` ends with it
             elif char == ")" and parens:
                 parens -= 1
                 if not parens:
                     end_group()
             elif char == ")":
+                ended = seg if seg else (result[-1] if result else seg)   # `(cd x; ls; )`: the command before it
+                ended.closes += 1
                 close()   # an unmatched `)` ends a `case` pattern (`a) rm x;;`) or a subshell
             index += 1
         else:
@@ -1317,12 +1303,49 @@ class _Shell:  # pylint: disable=too-few-public-methods
         self.cwd_taint = False   # that `cd` was aimed at something that spells pieces of the owner's path
         self.pipeline = []       # the words of the commands that feed this one through a pipe
         self.aliases = {}        # the aliases the command made: `Set-Alias w Set-Content`, `alias w=tee`
+        self.dirs = []           # (kind, folder) frames: "dir" a `pushd` left, "sub" a subshell started in, "case"
+        self.posh = False        # the command spells a cmdlet: its `( ... )` is an expression, no subshell
+        self.once = None         # the folder to go back to after this one command (`env -C <folder> <command>`)
+        self.store = None        # judging the confirm-config store rule: True when the store is spelled relatively
+
+    def where(self):
+        """The working directory as `back` restores it."""
+        return self.cwd, self.cwd_lost, self.cwd_taint
+
+    def back(self, state):
+        """Stand in the folder `where` recorded; with nothing recorded (`popd` on an empty stack) the folder is one
+        nobody can tell, so a relative target fails closed there in a command that names the owner's folder."""
+        self.cwd, self.cwd_lost, self.cwd_taint = state or (None, True, self.cwd_taint)
+
+    def popd(self):
+        """Back to the folder the last `pushd` left (a subshell's start and a `case` are not what `popd` undoes)."""
+        for index in range(len(self.dirs) - 1, -1, -1):
+            if self.dirs[index][0] == "dir":
+                return self.back(self.dirs.pop(index)[1])
+        return self.back(None)
+
+    def close(self):
+        """A `)`: the end of the innermost subshell, whose `cd` and `pushd` end with it. Inside a `case` that has
+        not reached its `esac`, and with no subshell open, it is a pattern's (`a) ls;;`) and nothing ends."""
+        kinds = [kind for kind, _ in self.dirs]
+        last = max((index for index, kind in enumerate(kinds) if kind != "dir"), default=-1)
+        if last != -1 and kinds[last] == "sub":
+            self.back(self.dirs[last][1])
+            del self.dirs[last:]
+
+    def esac(self):
+        """The end of the innermost `case`: the `)` after it is a subshell's again."""
+        for index in range(len(self.dirs) - 1, -1, -1):
+            if self.dirs[index][0] == "case":
+                del self.dirs[index:]
+                return
 
     def fork(self):
         """A copy to judge one reading of a segment with, so the original's variables and folder stay as they are."""
         clone = _Shell(None)
         clone.vars, clone.cwd, clone.cwd_lost, clone.hint = dict(self.vars), self.cwd, self.cwd_lost, self.hint
         clone.cwd_taint, clone.pipeline, clone.aliases = self.cwd_taint, list(self.pipeline), dict(self.aliases)
+        clone.dirs, clone.once, clone.store, clone.posh = list(self.dirs), self.once, self.store, self.posh
         clone.variant = True
         return clone
 
@@ -1447,7 +1470,33 @@ def _hit(word, shell, mode):
         return False
     if _PIPE_ITEM_RE.match(word):   # `Get-ChildItem <folder> | % { Set-Content $_.FullName x }`
         return _fed_hits(shell)
+    if shell.store is not None:
+        return any(_store_word(one, shell, forced) for one in _braces(word))
     return any(_hit_word(one, shell, mode, forced, tainted) for one in _braces(word))
+
+
+def _names_store(word):
+    """True when a component of the path `word` is (or, for a glob, can be) a `confirm-config` folder."""
+    return any(_comp_match(part, "confirm-config") for part in _win32_names(_fold(word)).split("/"))
+
+
+def _store_word(word, shell, forced=False):
+    """`_hit` for the confirm-config store rule (crew 1.3.130, round 11), which is about ANY folder spelled
+    `confirm-config/`, not only the owner's real one: True when `word` names such a folder or something in it, and,
+    failing closed, when it is a target nobody can resolve -- a variable, a substitution, a parenthesised expression,
+    a relative word with no known working directory -- or a relative word in a command that spells the store
+    relatively (`ls confirm-config/ > x` stands beside the store, in the owner's folder). A target that resolves to
+    a path elsewhere (`> /tmp/out.txt`, `cp <receipt> /tmp/`) is not a write to the store."""
+    if forced or _names_store(word):
+        return True
+    if _SPAN_RE.search(word) or any(mark in word for mark in _MARKS + "$%"):
+        return True
+    path = _canon(word, shell.cwd)
+    if path is not None and _names_store(path):   # a relative word, from a folder in the store
+        return True
+    if _canon(word, None) is not None:
+        return False
+    return bool(shell.store) or path is None
 
 
 # PowerShell's name for what the pipeline hands a script block: `$_`, `$PSItem` (and a property of it)
@@ -1468,7 +1517,7 @@ def _could_be_suffix(parts, mode):
 
 
 def _suspect(word, shell, tainted=False):
-    """True when a write target the guard cannot resolve may be the owner's (crew 1.3.128, round 10; narrowed from
+    """True when a write target the guard cannot resolve may be the owner's (crew 1.3.130, round 10; narrowed from
     "the command mentions `.claude`"): the command names the owner's folder outside a read (`shell.hint`), the target
     or the `cd` before it was built from pieces of the owner's path (`_TAINT`), or the command stands in the owner's
     folder."""
@@ -1476,7 +1525,7 @@ def _suspect(word, shell, tainted=False):
 
 
 def _dynamic_hit(word, shell, mode, forced, tainted=False):  # pylint: disable=too-many-return-statements
-    """Fail closed (crew 1.3.128, round 9) on a write target the guard cannot resolve to one concrete path: a
+    """Fail closed (crew 1.3.130, round 9) on a write target the guard cannot resolve to one concrete path: a
     substitution, an unknown variable, a backtick, a word in a parenthesised expression. It names the owner's files
     when what is spelled of it can only be theirs (`~/.claude/crew/$X`), or when it could be theirs and it is
     `_suspect`. A target in a command that never names the owner's folder as something to write stays allowed."""
@@ -1534,6 +1583,8 @@ def _in_owner_folder(shell):
     (`~/.claude/crew/worktrees/<repo>/<lane>`, where crew keeps ordinary checkouts) is not the owner's files."""
     if shell.cwd is None:
         return False
+    if shell.store is not None:
+        return _names_store(shell.cwd)
     folder = posixpath.dirname(_fold(machine_config()))
     store = folder + "/confirm-config"
     return shell.cwd in (folder, store) or shell.cwd.startswith(store + "/")
@@ -1575,18 +1626,40 @@ def _git_hits(args, shell):
     at it with `-C` / `--work-tree`."""
     where = _option_value(args, "-C", "--work-tree")
     sub = next((a for a in args if not a.startswith("-") and a != where), "")
+    if sub == "archive":   # `git archive -o <file>`, `--output=<file>`: the archive it writes
+        out = _option_value(args, "-o", "--output")
+        return out is not None and _hit(out, shell, "file")
     if sub not in _GIT_WRITES:
         return False
     return _hit(where, shell, "dir") if where is not None else _in_owner_folder(shell)
 
 
+# the short options of wget and of sort that take a value: in a bundle, what follows one is its value, not a flag
+_WGET_VALUES = "oaeitTwUlARDIXBQOP"
+_SORT_VALUES = "kSTto"
+
+
+def _bundled_value(args, letter, values):
+    """The value of the short option `letter` where it ends a bundle of flags (`wget -qO <file>`, `sort -uo <file>`,
+    `-qO<file>`): the rest of the word, or the next word. None when no bundle carries it. A bundle in which an
+    option that takes a value (`values`) comes first is that option and its value, and is not read."""
+    for position, arg in enumerate(args):
+        bundle = re.match(r"^-([A-Za-z0-9]*?)" + letter + r"(.*)$", arg, re.DOTALL)
+        if bundle and not arg.startswith("--") and not any(flag in values for flag in bundle.group(1)):
+            return bundle.group(2) or (args[position + 1] if position + 1 < len(args) else None)
+    return None
+
+
 def _download_hits(name, args, shell):
     """True when a downloader's output file (or, for wget -P, folder) is the owner's."""
     if name.startswith("wget"):
-        out = _option_value(args, "-O", "--output-document")
+        out = _option_value(args, "-O", "--output-document") or _bundled_value(args, "O", _WGET_VALUES)
         if out is not None:
             return _hit(out, shell, "file")
-        folder = _option_value(args, "-P", "--directory-prefix")
+        log = _option_value(args, "-o", "--output-file", "-a", "--append-output")   # the log it writes
+        if log is not None and _hit(log, shell, "file"):
+            return True
+        folder = _option_value(args, "-P", "--directory-prefix") or _bundled_value(args, "P", _WGET_VALUES)
         return folder is not None and _hit(folder, shell, "dir")
     out = _option_value(args, "-o", "--output", "-OutFile")
     remote_name = "-O" in args or "--remote-name" in args
@@ -1607,9 +1680,81 @@ def _download_hits(name, args, shell):
     return name.startswith("curl") and remote_name and _in_owner_folder(shell)
 
 
+# tar's short options that take a value (in a bundle each takes a word, in the order of the letters), and the long
+# options that say what it does, as the mode letter of each
+_TAR_VALUES = "fCbFgHIKLNTVX"
+_TAR_MODES = {"create": "c", "extract": "x", "get": "x", "append": "r", "update": "u", "catenate": "A",
+              "concatenate": "A", "delete": "D"}
+
+
+def _tar_options(args):
+    """`(the mode and flag letters, the archive file, the -C folder)` of a tar command line, however its options are
+    bundled (crew 1.3.130, round 11): `-cf <file>`, `-czf <file>`, old style `cf <file>` and `xfC <file> <folder>`,
+    `-xC <folder> -f <file>`, `-f<file>`, `--file=<file>`, `--directory <folder>`. A letter that takes a value takes
+    the rest of a dashed bundle, or the next word."""
+    letters, found, position = "", {}, 0
+    while position < len(args):
+        arg = args[position]
+        position += 1
+        if arg.startswith("--"):
+            option, sign, value = arg[2:].partition("=")
+            letters += _TAR_MODES.get(option, "")
+            if option in ("file", "directory"):
+                if not sign and position < len(args):
+                    value, position = args[position], position + 1
+                found["f" if option == "file" else "C"] = value
+        elif (arg.startswith("-") and len(arg) > 1) or (position == 1 and arg[:1].isalpha()):
+            dashed = arg.startswith("-")
+            bundle = arg.lstrip("-")
+            for index, letter in enumerate(bundle):
+                if letter not in _TAR_VALUES:
+                    letters += letter
+                    continue
+                rest = bundle[index + 1:] if dashed else ""
+                value = rest or (args[position] if position < len(args) else "")
+                position += 0 if rest else 1
+                if letter in "fC":
+                    found[letter] = value
+                if rest:
+                    break
+    return letters, found.get("f"), found.get("C")
+
+
+def _compress_destination(args):
+    """Where `Compress-Archive` writes its archive: `-DestinationPath` (any abbreviation), or the second positional
+    word (the first when `-Path`/`-LiteralPath` is named). None when it gives none."""
+    plain, named, position = [], False, 0
+    while position < len(args):
+        arg = args[position]
+        position += 1
+        if arg.startswith("-") and len(arg) > 1:
+            param, _, attached = arg[1:].partition(":")
+            param = param.lower()
+            if "destinationpath".startswith(param):
+                return attached or (args[position] if position < len(args) else None)
+            if any(switch.startswith(param) for switch in ("update", "force", "passthru", "whatif", "confirm",
+                                                           "verbose", "debug")):
+                continue
+            named = named or "path".startswith(param) or "literalpath".startswith(param)
+            position += 0 if attached else 1
+            while position < len(args) and args[position - 1].endswith(","):   # `-Path a, b`: one list
+                position += 1
+        elif plain and plain[-1].endswith(","):
+            plain[-1] += arg   # `a, b`: one list
+        else:
+            plain.append(arg)
+    index = 0 if named else 1
+    return plain[index] if len(plain) > index else None
+
+
 def _archive_hits(name, args, shell):
-    """True when an extraction lands in the owner's folder (or an archive is created as one of its files)."""
-    if name in ("unzip", "7z", "7za"):
+    """True when an extraction lands in the owner's folder, or an archive is created as (appended to, updated as)
+    one of its files."""
+    if name in _SEVEN_ZIP:
+        plain = [a for a in args if not a.startswith("-")]
+        if plain and plain[0].lower() in ("a", "u", "d", "rn"):   # add, update, delete, rename: it is rewritten
+            return len(plain) > 1 and _hit(plain[1], shell, "file")
+    if name == "unzip" or name in _SEVEN_ZIP:
         # 7z x a.7z -o<dir>; for unzip `-o` is the overwrite switch (`-oq`), never a destination
         attached = None if name == "unzip" else next((a[2:] for a in args if a.startswith("-o") and len(a) > 2), None)
         where = _option_value(args, "-d") or attached
@@ -1617,17 +1762,14 @@ def _archive_hits(name, args, shell):
     if name == "expand-archive":
         where = _option_value(args, "-DestinationPath", "-Dest")
         return where is not None and _hit(where, shell, "dir")
-    # the mode letters are a bundle (`xf`, `-xzf`) wherever the options put it: `-C dir -xf a.tar` too
-    bundles = [a for position, a in enumerate(args)
-               if re.match(r"^-[A-Za-z]+$", a) or (position == 0 and a[:1].isalpha())]
-    extracting = "--extract" in args or any("x" in b for b in bundles)
-    creating = "--create" in args or any("c" in b for b in bundles)
-    if extracting:
-        where = _option_value(args, "-C", "--directory")
-        return _hit(where, shell, "dir") if where else _in_owner_folder(shell)
-    if creating:
-        target = _option_value(args, "-f", "--file")
-        return target is not None and _hit(target, shell, "file")
+    if name == "compress-archive":
+        where = _compress_destination(args)
+        return where is not None and _hit(where, shell, "file")
+    letters, archive, folder = _tar_options(args)
+    if "x" in letters:
+        return _hit(folder, shell, "dir") if folder else _in_owner_folder(shell)
+    if any(mode in letters for mode in "cruAD"):   # create, append, update, catenate, delete: the archive is written
+        return bool(archive) and _hit(archive, shell, "file")
     return False
 
 
@@ -1642,6 +1784,7 @@ def _copy_hits(name, args, shell):
     return _hit(dest, shell, "dir")
 
 
+_SEVEN_ZIP = frozenset({"7z", "7za", "7zz", "7zr"})
 _PS_CMDLETS = frozenset({"clear-content", "set-content", "add-content", "out-file", "new-item", "ni", "set-item",
                          "sc", "ac"})
 # the switch parameters of the write cmdlets (own and common): they take no value, so the word after one is not theirs
@@ -1733,7 +1876,7 @@ def _covers_owner(start, shell):
     """True when the folder `start` holds the owner's files, or lies inside their receipts store: what a `find`
     that starts there walks."""
     path = _canon(start, shell.cwd)
-    if path is None:
+    if path is None or shell.store is not None:
         return _hit(start, shell, "destroy")
     parts = path.split("/")
     return any(_glob_match(parts, target[:len(parts)], False) or (under and _glob_match(parts, target, True))
@@ -1753,9 +1896,9 @@ def _find_hits(args, shell):
     if "-delete" not in tests and not hands_on:
         return False
     names = [tests[position + 1].lower() for position, test in enumerate(tests[:-1]) if test in ("-name", "-iname")]
-    if names and not any(name.startswith("cc-") or fnmatch.fnmatchcase(sample, _globify(name))
-                         for name in names for sample in _FIND_NAMES):
-        return False
+    if shell.store is None and names and not any(name.startswith("cc-") or fnmatch.fnmatchcase(sample, _globify(name))
+                                                 for name in names for sample in _FIND_NAMES):
+        return False   # (the store rule reads on: any name may be a file of a store that is not the owner's own)
     return any(_covers_owner(start, shell) for start in (starts or ["."]))
 
 
@@ -1787,8 +1930,16 @@ def _verb_hits(name, args, shell):  # pylint: disable=too-many-return-statements
     operands = [w for w in _operands(args) if w]
     if name in _REMOVERS:
         return any(_hit(w, shell, "destroy") for w in operands)
-    if name == "fsutil":   # `fsutil hardlink create <new link> <existing file>`; list and the rest only read
-        return lowered[:2] == ["hardlink", "create"] and len(operands) > 2 and _hit(operands[2], shell, "file")
+    if name == "fsutil":   # `fsutil hardlink create <new link> <existing file>`, `fsutil file createNew <file> <size>`
+        return (lowered[:2] in (["hardlink", "create"], ["file", "createnew"]) and len(operands) > 2
+                and _hit(operands[2], shell, "file"))
+    if name == "sort":   # `sort -o <file>`, `-uo <file>`, `-o<file>`, `--output=<file>` (and its abbreviations)
+        out = _bundled_value(args, "o", _SORT_VALUES)
+        for position, arg in enumerate(args):
+            long = re.fullmatch(r"--o(?:u(?:t(?:p(?:ut?)?)?)?)?(?:=(.*))?", arg, re.DOTALL)
+            if long and out is None:
+                out = long.group(1) if long.group(1) is not None else "".join(args[position + 1:position + 2])
+        return bool(out) and _hit(out, shell, "file")
     if name in _WRITERS:
         mode = "dir" if name == "mklink" or any(x in lowered for x in ("junction", "symboliclink", "hardlink")) \
             else "file"
@@ -1821,7 +1972,7 @@ def _verb_hits(name, args, shell):  # pylint: disable=too-many-return-statements
             _hit(where, shell, "dir") if where else _in_owner_folder(shell))
     if name in ("curl", "wget", "iwr", "irm", "invoke-webrequest", "invoke-restmethod"):
         return _download_hits(name, args, shell)
-    if name in ("tar", "bsdtar", "unzip", "7z", "7za", "expand-archive"):
+    if name in ("tar", "bsdtar", "unzip", "expand-archive", "compress-archive") or name in _SEVEN_ZIP:
         return _archive_hits(name, args, shell)
     return name == "git" and _git_hits(args, shell)
 
@@ -1835,7 +1986,7 @@ def _assign(raw, shell):
     return True
 
 
-# the words that only introduce a command: `do rm x`, `then rm x`, `if rm x`, `try { rm x }` (crew 1.3.128)
+# the words that only introduce a command: `do rm x`, `then rm x`, `if rm x`, `try { rm x }` (crew 1.3.130)
 _CONTROL = frozenset({"do", "then", "else", "elif", "if", "while", "until", "!", "{", "try", "finally"})
 _PS_ASSIGN_RE = re.compile(r"^\$(?:\w+:)?(\w+)(=?)(.*)$", re.DOTALL)
 
@@ -1901,13 +2052,26 @@ def _leading(words, shell):
             while words and (words[0].startswith("-") or _ASSIGN_RE.match(words[0])):
                 if _ASSIGN_RE.match(words[0]):
                     _assign(words[0], shell)
-                if words.pop(0) in values and words:
-                    words.pop(0)   # `nice -n 10 tee`, `timeout -s KILL 5 tee`: the option's value
+                option = words.pop(0)
+                folder = option[8:] if option.startswith("--chdir=") else None
+                if option in values and words:
+                    folder = words.pop(0)   # `nice -n 10 tee`, `timeout -s KILL 5 tee`: the option's value
+                if wrapper == "env" and folder is not None and option.startswith(("-C", "--chdir")):
+                    _stand_in(_expand(folder, shell), shell, once=True)   # `env -C <folder> tee config.json`
             if wrapper == "timeout" and words:
                 words.pop(0)   # the duration
         else:
             break
     return words
+
+
+def _stand_in(aimed, shell, once=False):
+    """Move `shell` into the folder `aimed` as a `cd` does; with `once`, for the one command being read."""
+    if once and shell.once is None:
+        shell.once = shell.where()
+    shell.cwd = _canon(aimed, shell.cwd)
+    shell.cwd_lost = shell.cwd_lost or shell.cwd is None
+    shell.cwd_taint = shell.cwd is None and (shell.cwd_taint or _TAINT in aimed)
 
 
 def _command_name(word):
@@ -1925,15 +2089,15 @@ def _nested(name, args, shell, depth):
                 code = " ".join(args[position + 1:]) if name in _PWSH else " ".join(args[position + 1:position + 2])
                 refusal = _code_refusal(code) if code else None
                 if not refusal and code and name in _PWSH:
-                    refusal = _analyze(code, shell, depth + 1)
+                    refusal = _child(code, shell, depth)
                 if refusal:
                     return refusal
                 break
     if name in _POSIX_SHELLS:
         for position, arg in enumerate(args):
             if re.match(r"^-[a-z]*c$", arg) and position + 1 < len(args):
-                return _analyze(args[position + 1], shell, depth + 1)
-    if name in ("eval", "iex", "invoke-expression"):   # `iex "..."` runs its text as `eval` does (crew 1.3.128)
+                return _child(args[position + 1], shell, depth)
+    if name in ("eval", "iex", "invoke-expression"):   # `iex "..."` runs its text as `eval` does (crew 1.3.130)
         plain = [a.lstrip(_MARKS) for a in args if a.lower() != "-command"]
         return _analyze(" ".join(plain), shell, depth + 1)
     if name.startswith("[scriptblock]::create"):   # `$sb = [scriptblock]::Create("<command>")`
@@ -1943,14 +2107,33 @@ def _nested(name, args, shell, depth):
         return _analyze(plain[0], shell, depth + 1) if plain else None
     if name in ("start-process", "saps"):   # the program and its `-ArgumentList`, read as one command line
         plain = [a.lstrip(_MARKS).replace(",", " ") for a in args if not re.fullmatch(r"-[A-Za-z]+", a)]
-        return _analyze(" ".join(plain), shell, depth + 1)
+        return _analyze(" ".join(plain), shell, depth + 1)   # the shell it starts is read as a child there
     if name == "cmd":
         for position, arg in enumerate(lowered):
             if arg in ("/c", "/k", "/r"):
-                return _analyze(" ".join(args[position + 1:]), shell, depth + 1)
+                return _child(" ".join(args[position + 1:]), shell, depth)
     if name == "xargs":
         return _xargs_refusal(_after_options(args, _XARGS_VALUES), shell, depth)
+    if name == "find":   # `find . -exec cp x <owner file> ;`: the command it runs is judged as written
+        for position, arg in enumerate(args):
+            if arg in _FIND_EXEC:
+                refusal = _exec_refusal(args[position + 1:], shell, depth)
+                if refusal:
+                    return refusal
     return None
+
+
+def _exec_refusal(words, shell, depth):
+    """Why the command `find -exec` runs (`words`, up to its `;` or `+`) writes the owner's files, or None. `{}` is
+    whatever find found, which `_find_hits` judges; here the words spelled out are (`cp x <owner file>`, `sh -c
+    "..."`)."""
+    inner = _Segment()
+    for word in words:
+        if word.lstrip(_MARKS) in (";", "\\;", "\\", "+"):
+            break
+        inner.words.append(word)
+    inner.raws = list(inner.words)
+    return _segment_refusal(inner, shell, depth + 1) if inner.words and depth <= 3 else None
 
 
 def _alias(name, args, shell):
@@ -2115,7 +2298,10 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
     for target in seg.targets:
         if _hit(_unbrace(target), shell, "file"):
             return f"{OWNER_REASON}: a redirect aims at them"
-    words, after = _split_block_end(_leading(seg.words, shell))
+    spelled = _braces(seg.words[0]) if seg.words else []
+    if len(spelled) > 1:   # a brace expansion where the command stands: `{rm,x}` is the command `rm x`
+        spelled += seg.words[1:]
+    words, after = _split_block_end(_leading(spelled if len(spelled) > 1 else seg.words, shell))
     if after and depth <= 3:   # `try { rm x } catch { ... }`: what follows the block's `}` is a command of its own
         tail = _Segment()
         tail.words = tail.raws = after
@@ -2137,6 +2323,8 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
         return _dotnet_refusal(" ".join(seg.raws[len(seg.words) - len(words):]), shell)
     name = _command_name(_expand(words[0], shell))
     args = [_expand(w, shell) for w in words[1:]]
+    if name.startswith("-"):   # the rest of a `find` after an escaped `;`: `... -exec true \\; -exec rm <file> \\;`
+        return _nested("find", [name] + args, shell, depth)
     if name in shell.aliases and depth <= 3:   # an alias the command made is the command it stands for
         named = _Segment()
         named.words = named.raws = shell.aliases[name].split() + list(words[1:])
@@ -2147,14 +2335,16 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
     if name == "read" or (name == "for" and args[1:2] == ["in"]):
         _bind(name, args, seg, shell)
         return None
+    if name in _POPD:   # back to the folder the matching `pushd` left
+        shell.popd()
+        return None
     if name in _CD:
         plain = [a for a in args if not a.startswith("-")]
         if len(plain) > 1 and plain[0].lower() == "/d":   # cmd's `cd /d <folder>`: the switch is not the folder
             plain = plain[1:]
-        aimed = plain[0] if plain else os.path.expanduser("~")
-        shell.cwd = _canon(aimed, shell.cwd)
-        shell.cwd_lost = shell.cwd_lost or shell.cwd is None
-        shell.cwd_taint = shell.cwd is None and (shell.cwd_taint or _TAINT in aimed)
+        if name in _PUSHD:
+            shell.dirs.append(("dir", shell.where()))
+        _stand_in(plain[0] if plain else os.path.expanduser("~"), shell)
         return None
     for body in seg.bodies:
         if name in _CODE_RUNNERS or name in _PWSH:
@@ -2162,7 +2352,7 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
             if refusal:
                 return refusal
         if name in _POSIX_SHELLS or name in _PWSH:
-            refusal = _analyze(body, shell, depth + 1)
+            refusal = _child(body, shell, depth)
             if refusal:
                 return refusal
     refusal = _nested(name, args, shell, depth) or _handed(name, shell, depth)
@@ -2170,6 +2360,8 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
         return refusal
     if _verb_hits(name, args, shell):
         return f"{OWNER_REASON}: `{name}` is aimed at them"
+    if shell.store is not None and _STORE_BLIND_RE.fullmatch(name) and any(_names_store(a) for a in args):
+        return f"{OWNER_REASON}: `{name}` is given a path in the store"
     if _piped_hits(name, args, shell):
         return f"{OWNER_REASON}: `{name}` is handed them by the pipeline"
     return None
@@ -2187,13 +2379,29 @@ def _analyze(text, shell, depth=0):
         shell.pipeline = outer
 
 
+def _child(text, shell, depth):
+    """`_analyze` for the text a child process or a subshell runs (`bash -c "..."`, `pwsh -Command`, `cmd /c`, a
+    `$(...)`, a heredoc fed to a shell): it starts in the folder the command stands in, and its own `cd` ends with
+    it (crew 1.3.130). `eval` and `iex` run in the shell itself, so they are read by `_analyze` and their `cd`
+    stays."""
+    before, stack, once = shell.where(), list(shell.dirs), shell.once
+    shell.once = None   # `env -C <folder> sh -c "..."`: the folder is the child's for all of its commands
+    try:
+        return _analyze(text, shell, depth + 1)
+    finally:
+        shell.back(before)
+        shell.dirs, shell.once = stack, once
+
+
 def _analyze_segments(text, shell, depth):
     """`_analyze`, one segment after the other."""
     for seg in _segments(text):
         if not seg.piped:
             shell.pipeline = []
+        if not shell.posh:   # a subshell starts: its `cd` ends with it (PowerShell's `( ... )` runs in the shell)
+            shell.dirs += [("sub", shell.where())] * seg.opens
         for sub in seg.subs:
-            refusal = _analyze(sub, shell, depth + 1)
+            refusal = _child(sub, shell, depth)
             if refusal:
                 return refusal
         for variant in _escape_variants(seg):
@@ -2203,6 +2411,16 @@ def _analyze_segments(text, shell, depth):
         refusal = _segment_refusal(seg, shell, depth)
         if refusal:
             return refusal
+        if shell.once is not None:   # `env -C <folder> <command>` stood there for that command only
+            shell.back(shell.once)
+            shell.once = None
+        plain = [word.lstrip(_MARKS).lower() for word in seg.words]
+        if any(word == "case" and plain[position + 2:position + 3] == ["in"] for position, word in enumerate(plain)):
+            shell.dirs.append(("case", None))   # `case <word> in a) ...`: each `)` up to `esac` is a pattern's
+        if "esac" in plain:
+            shell.esac()
+        for _ in range(seg.closes):
+            shell.close()
         shell.pipeline = shell.pipeline + [_expand(word, shell) for word in seg.words]
     return None
 
@@ -2274,7 +2492,7 @@ def _command_text(text, depth=0):
 
 
 def _owner_hint(command):
-    """True when the command names the owner's folder as something it may write (crew 1.3.128, round 10):
+    """True when the command names the owner's folder as something it may write (crew 1.3.130, round 10):
     `.claude/crew`, the confirm-config store or `crew/config.json` (`_HINT_RES`), spelled plainly or with its escape
     characters, quotes and markers taken out, anywhere but in a read (`_said_words`). `.claude` alone, crew's
     `worktrees/` folder, and the owner's file handed to `cat` do not count. A write target the guard cannot resolve
@@ -2282,43 +2500,39 @@ def _owner_hint(command):
     return _spells_owner(_command_text(command))
 
 
-def _ran(command, depth=0):
-    """The names of the commands `command` runs: the first word of each simple command (its basename, past
-    assignments, wrappers and control words), each alternative of a brace expansion standing there (`{rm,x}`), and
-    what it hands on -- `xargs <command>`, `find -exec <command>`, a script block, a `$(...)`, a heredoc, and every
-    word of a shell or `eval` (`bash -c "..."`), read as commands again. A word that is a path into the
-    confirm-config store is a file, never a command."""
-    if depth > 3:
-        return []
-    names = []
-    for seg in _segments(command):
-        for inner in seg.subs + seg.bodies:
-            names += _ran(inner, depth + 1)
-        queue = [[alternative, *seg.words[1:]] for alternative in _braces(seg.words[0])] if seg.words else []
-        while queue:
-            words = [word.lstrip(_MARKS) for word in _leading(queue.pop(), _Shell(None))]
-            if not words or _CONFIRM_STORE_RE.search(words[0]):
-                continue
-            name, args = _command_name(words[0]), words[1:]
-            names.append(name)
-            if name in _RUNNERS or name in _POSIX_SHELLS or name in _PWSH:
-                for arg in args:
-                    names += _ran(arg, depth + 1)
-            elif name == "xargs":
-                queue.append(_after_options(args, _XARGS_VALUES))
-            elif name == "find":
-                queue += [args[position + 1:] for position, arg in enumerate(args) if arg in _FIND_EXEC]
-            for position, arg in enumerate(args):
-                if arg.startswith("{"):   # a script block: `ForEach-Object { Remove-Item ... }`
-                    queue.append(([arg[1:]] if len(arg) > 1 else []) + args[position + 1:])
-    return names
+# What only PowerShell spells: a cmdlet (`Set-Location`, `Get-ChildItem`), `$env:`, `$_`, a .NET call. The splitter
+# cannot tell which shell a command is for; with one of these in it, `( ... )` is read as PowerShell's expression,
+# which runs in the shell itself, so a `cd` inside it stays (crew 1.3.130).
+_POSH_RE = re.compile(
+    r"(?<![\w./\\-])(?:get|set|new|remove|add|clear|copy|move|rename|out|push|pop|invoke|start|stop|test|select|"
+    r"foreach|where|write|read|import|export|compress|expand|tee|join|split|resolve|convertto|convertfrom|measure|"
+    r"format)-[a-z]+\b|\$env:|\$_(?!\w)|\$psitem\b|\[[\w.]+\]::|(?<![\w./\\-])(?:sl|gci)\s", re.IGNORECASE)
 
 
 def _owner_command_refusal(command, cwd=None):
     """Why a shell command may not write the owner's files (`_owner_path`), or None."""
     shell = _Shell(cwd)
     shell.hint = _owner_hint(command)
+    shell.posh = bool(_POSH_RE.search(command))
     return _analyze(command, shell)
+
+
+# The write verbs of the store rule that name no target the guard can single out (`echo`, `python3 x.py`, `touch`,
+# `sed` without -i): given a path in the store, they are refused as before round 11.
+_STORE_BLIND_RE = re.compile(r"touch|mkdir|chmod|echo|printf|python[0-9.]*|py|node|sed|perl", re.IGNORECASE)
+_STORE_SPELLED_RE = re.compile(r"[^\s'\"`;|&<>()=,]*confirm-config[\\/]", re.IGNORECASE)
+
+
+def _store_write(command, cwd=None):
+    """True when `command` WRITES TO a confirm-config store (crew 1.3.130, round 11): the same reading as the
+    owner's files get (`_analyze`: redirect targets, the argument each write verb aims at, `cd`, nested shells,
+    `xargs`, `find -exec`, script blocks), with `_store_word` as the judge of each target. A verb in a file name
+    (`Get-Content <store>/echo.txt`) or a search term (`grep echo <store>/x.json`) is no command, so no write."""
+    shell = _Shell(cwd)
+    shell.posh = bool(_POSH_RE.search(command))
+    blank = _Shell(None)
+    shell.store = any(_canon(_expand(spelled, blank), None) is None for spelled in _STORE_SPELLED_RE.findall(command))
+    return _analyze(command, shell) is not None
 
 
 def _plain_spelling(path):
@@ -2349,7 +2563,7 @@ def _owner_lines(what):
 
 def _owner_files_only(tool, data, root):
     """What the guard still decides where it otherwise does nothing: `scope.mode` off (the default) or no work
-    tree (crew 1.3.128). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
+    tree (crew 1.3.130). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
     and the master switch are what make an owner-only change the owner's: a guard that stood down with
     `scope.mode` would let an agent write both the `false` and its receipt."""
     if tool in SHELLS:

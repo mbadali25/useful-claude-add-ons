@@ -103,8 +103,8 @@ no: retry the call, and free memory or processes if it repeats. A real deny neve
   30-minute TTL) and names the owner's `crew_inflight.py clear`; `Lane state unknown` means it could
   not tell. `Approval waiting` is autopilot stopped at `approve`.
 - **Silence every guard at once:** set `guards.enabled: false` in the machine file `~/.claude/crew/config.json`
-  (crew 1.3.128) and confirm it as the owner with the `/crew:confirm-config` double confirmation (crew 1.3.128;
-  an unconfirmed `false` leaves the guards on, so does a file written after you confirmed it (even with the same bytes), and the scope guard refuses an agent's write to that file, not a command that only mentions it; a session started in your home directory, or above it, makes a confirmed switch do nothing, because the machine config then lies inside the working directory (crew refuses to propose it from there, and `--explain` and `/crew:status` say which folder to leave); a machine config that is a symbolic link is refused, and one that is not strict JSON (a duplicate key, malformed text) is reported as "cannot be read as strict JSON", never as unconfirmed (crew 1.3.129); this is a guardrail against accidents and drift, not a boundary against a hostile agent running as you). The
+  (crew 1.3.130) and confirm it as the owner with the `/crew:confirm-config` double confirmation (crew 1.3.130;
+  an unconfirmed `false` leaves the guards on, so does a file written after you confirmed it (even with the same bytes), and the scope guard refuses an agent's write to that file, not a command that only mentions it; a session started in your home directory, or above it, makes a confirmed switch do nothing, because the machine config then lies inside the working directory; this is a guardrail against accidents and drift, not a boundary against a hostile agent running as you). The
   dispatcher then starts no guard hook and no context-watch, so nothing is blocked, asked, warned or logged,
   whatever `guards.profile`, `guards.overrides.*`, `scope.mode` and `verifyGate` say; only the machine layer
   counts, a `false` in `.crew/config.json` is ignored. `/crew:approve` and `/crew:confirm-config` still work.
@@ -115,10 +115,13 @@ no: retry the call, and free memory or processes if it repeats. A real deny neve
   (`/crew:config`, `/crew:confirm-config`, or your own editor). It is refused in every `scope.mode`. A write
   target the guard cannot resolve (`$OUT`, `$(...)`, `(Join-Path ...)`) is refused only when the command names
   `.claude/crew` as something it may write, builds the target from pieces of that path, or runs in that folder
-  (crew 1.3.128). Reading the file (`cat ~/.claude/crew/config.json > "$OUT"`), a repo's own `.claude` folder and
+  (crew 1.3.130). Reading the file (`cat ~/.claude/crew/config.json > "$OUT"`), a repo's own `.claude` folder and
   crew's `~/.claude/crew/worktrees/` do not count. If an ordinary command is refused, spell the target out or set
   the variable in the same command (`OUT=/tmp/x; ... > "$OUT"`): a variable the command sets is followed, not
-  guessed. What the check does not read is listed in `plugin/crew/CONFIG.md`, "The guards master switch".
+  guessed. Since crew 1.3.130 a READ of a receipt beside a write elsewhere passes (`cp
+  ~/.claude/crew/confirm-config/cc-ab12.json /tmp/`), and a `cd` into the folder that ended with its `( ... )`
+  or its `popd` no longer makes a later relative write look like yours. What the check does not read is listed in
+  `plugin/crew/CONFIG.md`, "The guards master switch".
 - **Silence one hook without touching the rest:** set its own key. `guards.profile: off` (which leaves
   the role-write, cloud and environment guards off) and `scope.mode: off` are already the shipped defaults — a noisy session
   usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not

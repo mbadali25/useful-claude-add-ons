@@ -917,7 +917,7 @@ Twelve guards, one block, one ratchet, **three vocabularies**. What crew's comma
 
 The twelve are `terraformApply`, `forcePush`, `adminMerge`, `mergeGate`, `cloudDestructive`, `sqlDestructive`, `deployWorkflow`, `prodDatabase`, `prodServer`, `roleWrites`, `cloudGuard` and `envGuard`.
 
-### `guards.enabled` - the master switch (crew 1.3.128, L-0947)
+### `guards.enabled` - the master switch (crew 1.3.130, L-0947)
 
 The per-guard switches each turn one guard down and ratchet, so no combination of them is "run everything": the
 scope guard, the verify gate, the completion audit and the promote gate each have a key of their own, and the
@@ -933,7 +933,7 @@ the switch off NOTHING blocks, so it stands down with them.)
   machine layer is silent or `true`, and the guards stay on (`crew_hook.repo_switch_ignored` reports it so a status
   line can say so; nothing is blocked or logged on its account). This differs from `scope.mode: off`, which a repo
   file can still set, because that one switches off a single guard, not all of them.
-* The OWNER's `false` only (owner decision, 2026-11-13, crew 1.3.128): turning every guard off is a human step like
+* The OWNER's `false` only (owner decision, 2026-11-13, crew 1.3.130): turning every guard off is a human step like
   the `humanOnly.*` opt-out, so it reuses that mechanism rather than a weaker one. A machine `false` counts only
   when `crew_humanonly.receipt_backs` finds an applied double confirmation for `guards.enabled` at this very file
   (`/crew:confirm-config <change_id>` typed twice, in two prompts the owner typed). An unconfirmed `false`, whoever
@@ -942,7 +942,7 @@ the switch off NOTHING blocks, so it stands down with them.)
   `~/.claude/crew/config.json` and to the receipts beside it, in every `scope.mode`: with `scope.mode` off (the default) the
   scope guard otherwise does nothing, and an agent could write both the `false` and its receipt (verified: both passed
   before this change). The confirm-config store was protected in `block`/`auto` only; the config not at all.
-* The receipt is bound to the file and to the confirmations (crew 1.3.128, the Codex re-review: any JSON file shaped like a record used to count). `crew_hook.owner_confirmed` wants the newest settled record to be an applied `false` that carries two confirmations from two different typed prompts and `appliedDigest`, the canonical digest (sorted keys, no whitespace) of the machine file as the owner's second confirmation left it. A file changed after that (a hand edit, `--restore`, `--rebuild`, `/crew:migrate`, an unrelated key) no longer matches, so an older receipt cannot back a `false` written later by another route; a bare hand-written record carries neither field. The scope guard refuses a shell command that WRITES TO the owner's files, judged by TARGET (round 3, the owner's decision "fix the overblock, add the plain verbs, stop there"): a redirect, or the argument a write verb is aimed at (`tee`, `cp`, `mv`, `rm`, `sed -i`, `Set-Content`, `Out-File`, `Add-Content`, `copy`, `move`, `xcopy`, `robocopy`, `curl -o`, `wget -O`, `-OutFile`, `tar -C`, `unzip -d`, `Expand-Archive`, `patch`, `git apply`, `mklink /J`, `awk -i inplace`, `vim -es`), or inline code (`python -c`, a heredoc, `pwsh -Command`) that names them beside a write call. The command is cut into segments, quotes are honoured, `cd` and variables are followed, and `bash -c`, `$(...)` and shell heredocs are read as commands. A command that only MENTIONS the files (a commit message, a PR body) or writes something else in the same line passes (round 2 refused `git commit -m "... ~/.claude/crew/config.json -> off"`, `ls ~/.claude/crew/ > /tmp/ls.txt`, `cat ~/.claude/crew/config.json | tee out.json`, `grep -rn confirm-config plugin/crew > found.txt`: all reproduced before this fix). Reads still pass, and `crew_config.py --show --global-path` too.
+* The receipt is bound to the file and to the confirmations (crew 1.3.130, the Codex re-review: any JSON file shaped like a record used to count). `crew_hook.owner_confirmed` wants the newest settled record to be an applied `false` that carries two confirmations from two different typed prompts and `appliedDigest`, the canonical digest (sorted keys, no whitespace) of the machine file as the owner's second confirmation left it. A file changed after that (a hand edit, `--restore`, `--rebuild`, `/crew:migrate`, an unrelated key) no longer matches, so an older receipt cannot back a `false` written later by another route; a bare hand-written record carries neither field. The scope guard refuses a shell command that WRITES TO the owner's files, judged by TARGET (round 3, the owner's decision "fix the overblock, add the plain verbs, stop there"): a redirect, or the argument a write verb is aimed at (`tee`, `cp`, `mv`, `rm`, `sed -i`, `Set-Content`, `Out-File`, `Add-Content`, `copy`, `move`, `xcopy`, `robocopy`, `curl -o`, `wget -O`, `-OutFile`, `tar -C`, `unzip -d`, `Expand-Archive`, `patch`, `git apply`, `mklink /J`, `awk -i inplace`, `vim -es`), or inline code (`python -c`, a heredoc, `pwsh -Command`) that names them beside a write call. The command is cut into segments, quotes are honoured, `cd` and variables are followed, and `bash -c`, `$(...)` and shell heredocs are read as commands. A command that only MENTIONS the files (a commit message, a PR body) or writes something else in the same line passes (round 2 refused `git commit -m "... ~/.claude/crew/config.json -> off"`, `ls ~/.claude/crew/ > /tmp/ls.txt`, `cat ~/.claude/crew/config.json | tee out.json`, `grep -rn confirm-config plugin/crew > found.txt`: all reproduced before this fix). Reads still pass, and `crew_config.py --show --global-path` too.
 * LIMIT, stated plainly: this is a guardrail against accidents and agent drift, not a security boundary against a hostile agent running as the same user. Every receipt here is a file that user can write, and the scope guard reads command text, so an agent that builds a path the text never shows (`'.cl' + 'aude'`, a command fetched at run time) can forge the digest, the confirmations and the `false` together. Nothing in a file-based design closes that; a boundary needs the receipt held somewhere the agent's account cannot write. A working directory equal to your home, or an ancestor of it, makes the confirmed switch do nothing (the machine path then lies inside the working directory, so the guards stay on).
 * The writer half (crew 1.3.129): `crew_humanonly.write_refusal` refuses `guards.enabled: false` at both layers
   (`MASTER_REFUSAL`), `crew_confirm_config.propose` takes it at the machine layer only and prints a three-line relay
@@ -995,7 +995,7 @@ the switch off NOTHING blocks, so it stands down with them.)
   target after a `cd` the guard could not follow counts the same way. The price was overblocking, listed in the
   changelog: `cat ~/.claude/crew/config.json > $OUT` was refused, and so was `mv x y` after `cd $D` in such a
   command (round 10, below, narrows both). The confirm-config textual check (#679's) now asks for a write VERB as a
-  command word, so a file called `echo.txt` in the store is a read.
+  command word, so a file called `echo.txt` in the store is a read (round 11, below, makes it judge the target).
 * The fail-closed trigger is narrowed to the owner's folder, and the tail is written down (round 10, the owner's
   decision of 2026-11-15: "Fix BLOCKs, narrow overblocks, document tail"). Round 9's trigger was "the command
   mentions `.claude`". Every repo has a `.claude` folder and this one keeps its lanes under `.claude/worktrees/`, so
@@ -1030,6 +1030,34 @@ the switch off NOTHING blocks, so it stands down with them.)
   the receipt binds the modification time, so touching the machine file ends the confirmation and the guards come
   back ON. This list is asserted (`test_the_documented_tail_is_not_read`), so a case that starts being refused
   has to leave it.
+* Round 11 (review of 447f420b3 by two models; the owner's decision: "round 11, cheap fixes"; crew 1.3.130). Each
+  finding was re-run on that head first. Three kinds of change. (1) Bundled options. The verb table read `tar -f
+  <file> --create` and missed `tar -cf <file>`, because it looked for `-f` as a word of its own; `_tar_options` now
+  walks the bundle letter by letter, old style (`tar cf`) included, and gives each value letter its word in order.
+  The same idea reads `wget -qO <file>` and `sort -uo <file>` (`_bundled_value`: a value option that ends a bundle
+  of flags). An archive CREATED as the owner's file is a write: `7z a|u|d|rn`, `Compress-Archive`, `git archive -o`.
+  `find -exec <command>` is judged as the command it spells, `env -C <folder>` moves the one command it wraps, and
+  `fsutil file createNew` joins `hardlink create`. (2) The store rule judged THAT a command writes, not WHERE. It
+  came from this PR's own rounds 9 and 10 (`_writes_by_verb(command) and not _read_only(command)`), so `cp <receipt>
+  /tmp/` and `cat <receipt> | jq .x > /tmp/x` were refused: a copy of a receipt is a read of the store. `_store_write`
+  now runs the same reader as the owner-file check (`_analyze`) with `_store_word` as the judge of each target. The
+  rule is about ANY folder spelled `confirm-config/`, as #679 wrote it, so its four verdicts are kept: a target
+  nobody can resolve is refused beside the store, a store spelled relatively keeps a relative target refused (`ls
+  confirm-config/ > x` stands in the owner's folder), and the verbs that name no target of their own (`echo`,
+  `touch`, `python`) are refused when given a path in the store. (3) The working directory leaked. A `cd` inside
+  `( ... )`, a `$(...)` or a child shell, and a `pushd` before its `popd`, moved every command after it, so `(cd
+  ~/.claude/crew && ls); echo x > config.json` was refused though it writes the repo's own file. `_Shell.dirs` is
+  now a stack of frames: `sub` where a subshell started, `dir` what a `pushd` left, `case` from a `case <word> in`
+  to its `esac`. A `)` ends the innermost subshell unless a `case` opened after it, because there it is a
+  pattern's; without that, `(cd <folder>; case x in a) echo x > config.json;; esac)` would have been read as
+  written outside the subshell, a bypass this round would have added. PowerShell's `( ... )` is an expression in
+  the same shell, and the guard is not told which shell a command is for, so a command that spells a cmdlet,
+  `$env:` or `$_` opens no subshell frame (`_POSH_RE`) and stays refused; a `popd` with nothing to go back to
+  leaves an unknown folder, which fails closed only in a command that names the owner's folder. Left in the tail
+  on purpose: `yq -i`, `zip`, `uniq <in> <out>`, `[IO.Directory]::Delete`, `attrib`, `icacls`, a `find -exec` that
+  hands files to a script, and a parenthesised `cd` in a PowerShell command with no cmdlet in it. One overblock is
+  kept by design: `Get-ChildItem ~/.claude/crew | Remove-Item -WhatIf` is refused, because the guard does not read
+  `-WhatIf` and a wrong guess there deletes the receipts.
 * The machine file must be the machine's. A config path inside the project (or the working directory) never
   counts, because a `HOME`/`USERPROFILE` pointed at a fake home shipped in a repo would otherwise carry its own
   config and its own forged receipts.
