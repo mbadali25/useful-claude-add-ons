@@ -1,4 +1,4 @@
-"""The `guards.enabled` key/writer-half mutations (crew 1.3.124), in `sabotage.py`'s tuple shape:
+"""The `guards.enabled` key/writer-half mutations (crew 1.3.129), in `sabotage.py`'s tuple shape:
 (label, target, find, replace, test).
 
 Each puts back one way the master switch could be set, kept or reported wrongly, and names the case in
@@ -104,7 +104,7 @@ MASTER_KEY_MUTATIONS = (
      '            if entry["key"] == "guards.enabled" and entry["kind"] == "repo-ignored":\n',
      '            if False:\n',
      _K + "test_status_says_a_repo_false_is_ignored"),
-    # crew 1.3.124: the receipt is bound to the file; every route that replaces it retires the receipt.
+    # crew 1.3.129: the receipt is bound to the file; every route that replaces it retires the receipt.
     ("status says the guards still run when the confirmed machine false is in force", STATUS,
      '("" if off else ", so every guard still runs"))',
      '", so every guard still runs")',
@@ -208,7 +208,7 @@ MASTER_KEY_MUTATIONS = (
      '            elif scope == "repo" and item.get("replaces"):\n',
      '            elif False:\n',
      _K + "test_migrating_a_repo_file_retires_its_human_only_receipts_like_rebuild_and_restore_do"),
-    # crew 1.3.124 (round 4): --explain and /crew:status agree with dispatch when the machine file lies inside cwd.
+    # crew 1.3.129 (round 4): --explain and /crew:status agree with dispatch when the machine file lies inside cwd.
     ("--explain ignores the working-directory check the dispatcher makes", CFG,
      '                if causes:\n                    # the dispatcher',
      '                if False:\n                    # the dispatcher',
@@ -275,7 +275,7 @@ MASTER_KEY_MUTATIONS = (
      '    return "Run crew from another directory '
      '(the working directory is, or is above, your home directory)"\n',
      _K + 'test_the_advice_for_no_cause_says_it_could_not_tell_and_names_no_cure'),
-    # crew 1.3.124 (round 8): what the owner is told matches what dispatch does.
+    # crew 1.3.129 (round 8): what the owner is told matches what dispatch does.
     ("propose takes a machine file that is a symlink", CC,
      '    if os.path.islink(path):\n        raise Refused(',
      '    if False:\n        raise Refused(',

@@ -296,7 +296,8 @@ def test_a_real_patch_is_still_refused(command, home):
 def test_a_path_the_shell_cannot_resolve_is_still_judged_by_its_tail(home):
     """`$X` is unknown, so the folder cannot be told: the way the word ENDS decides, component by component."""
     for command in ("echo x > $X/crew/config.json", "echo x > $X/.claude/crew/confirm-config/cc-ab.json",
-                    "echo x > $X/crew./config.json", "rm $X/confirm-config/cc-1*", "rm $X/.claude/cr*/config.json"):
+                    "echo x > $X/crew./config.json", "rm $X/confirm-config/cc-1*", "rm $X/.claude/cr*/config.json",
+                    "echo x > crew./config.json", "rm .claude/crew/confirm-config./cc-ab.json"):
         assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
     for command in ("echo x > $X/config.json", "echo x > $X/crewx/config.json", "echo x > $X/other/config.json"):
         assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
@@ -385,7 +386,7 @@ def test_a_word_that_only_passes_through_the_owners_names_is_not_the_owners(home
         assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
 
 
-# --- round 9: escape characters and paths the guard cannot resolve (crew 1.3.123) ------------------------------------
+# --- round 9: escape characters and paths the guard cannot resolve (crew 1.3.128) ------------------------------------
 # Round 8 was refused for `confi\g.json`, ``confi`g.json`` and `confi^g.json` (each shell strips its escape
 # character before it uses the word) and for `Set-Content -Path (Join-Path $HOME ...)`. The owner's decision: stop
 # chasing spellings. A word with an escape is read as each shell reads it; a write target the guard cannot resolve to
@@ -474,7 +475,8 @@ DYNAMIC = (
     "%UNSET%\\.claude\\crew\\config.json",
     "$env:UNSET\\.claude\\crew\\config.json",
 )
-# the same, where the command names the owner's folder elsewhere and the target is only a variable or a substitution
+# the same, where the command names the owner's folder elsewhere (as something it may write: `NAMED`, not a read of
+# it) and the target is only a variable or a substitution
 DYNAMIC_IN_CONTEXT = (
     "$D/config.json", "$D", "${D}", "\"$D\"", "$(cat p)", "\"$(cat p)/config.json\"", "$D/crew/config.json",
     "%D%\\config.json", "$env:D\\config.json", "`cat p`", "$D/confirm-config/cc-ab.json", "$D/CONFIG.JSON",
@@ -499,11 +501,15 @@ PS_PARENS = (
 )
 
 
+# what makes a command one that NAMES the owner's folder (crew 1.3.128): `.claude/crew` outside a read
+NAMED = "mkdir -p ~/.claude/crew; "
+
+
 def test_a_path_the_guard_cannot_resolve_is_refused_when_it_could_be_the_owners(home):
     slipped = []
     for shell_verbs, homes in ((BASH_VERBS, BASH_HOMES), (PS_VERBS, PS_HOMES), (CMD_VERBS, CMD_HOMES)):
         slipped += _unrefused(_cells(DYNAMIC, shell_verbs, ("~",)))
-        slipped += _unrefused(_cells(DYNAMIC_IN_CONTEXT, [f"ls ~/.claude; {v}" for v in shell_verbs], homes[:1]))
+        slipped += _unrefused(_cells(DYNAMIC_IN_CONTEXT, [f"{NAMED}{v}" for v in shell_verbs], homes[:1]))
     assert not slipped, f"{len(slipped)} cells were not refused:\n" + "\n".join(slipped[:60])
 
 
@@ -558,16 +564,24 @@ def test_reading_through_an_escape_or_a_dynamic_path_is_not_writing(home):
 
 
 def test_a_dynamic_cd_makes_a_relative_target_unknown(home):
-    for command in ("cd $D; echo x > config.json; ls ~/.claude",
-                    "cd $(pwd)/x && rm confirm-config/cc-ab.json; ls ~/.claude",
-                    "Set-Location $env:UNSET; Set-Content config.json x; ls ~/.claude"):
+    for command in ("cd $D; echo x > config.json; mkdir -p ~/.claude/crew",
+                    "cd $D; echo x > ./config.json; mkdir -p ~/.claude/crew",
+                    "cd $(pwd)/x && rm confirm-config/cc-ab.json; mkdir -p ~/.claude/crew",
+                    "Set-Location $env:UNSET; Set-Content config.json x; mkdir -p ~/.claude/crew"):
         assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
-    for command in ("cd $D; echo x > config.json", "cd /tmp/x; echo x > config.json; ls ~/.claude"):
+    # ... but not from a folder that is known, not for a name that cannot end an owner path (`out.txt`, `mv x y`),
+    # and not where the command only reads the owner's file or mentions `.claude` (crew 1.3.128)
+    for command in ("cd $D; echo x > config.json", "cd /tmp/x; echo x > config.json; mkdir -p ~/.claude/crew",
+                    "cd $D; echo x > out.txt; mkdir -p ~/.claude/crew", "cd $D; mv x y; mkdir -p ~/.claude/crew",
+                    "cd $D; echo x > config.json; ls ~/.claude",
+                    "cd $D; echo x > config.json; cat ~/.claude/crew/config.json",
+                    "cd $D && cat ~/.claude/CLAUDE.md > out.txt",
+                    "cd $WT; sed -i s/a/b/ plugin/crew/foo.py; cat ~/.claude/crew/config.json"):
         assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
 
 
 def test_an_unknown_folder_in_front_of_a_name_that_cannot_be_the_owners_is_allowed_in_context(home):
-    verbs = [f"ls ~/.claude; {v}" for v in BASH_VERBS + PS_VERBS + CMD_VERBS if "{t}.bak" not in v]
+    verbs = [f"mkdir -p ~/.claude/crew; {v}" for v in BASH_VERBS + PS_VERBS + CMD_VERBS if "{t}.bak" not in v]
     hit = _refused(_cells(UNKNOWN_FOLDER_OTHER_NAME, verbs, ("~",)))
     assert not hit, f"{len(hit)} cells refused a name that cannot be the owner's:\n" + "\n".join(hit[:60])
 
@@ -577,7 +591,7 @@ def test_an_escape_stripped_reading_of_a_windows_path_is_not_the_owners(home):
     `cd` made unknown it is no more the owner's than the path as written."""
     targets = ("C:\\proj\\out.txt", "C:\\proj\\sub\\notes.md", "D:\\a\\b/.claude/crew/other.json")
     # only verbs whose one relative word is the target: `mv x {t}` also names `x`, which that cd made unknown
-    verbs = [f"cd $D; ls ~/.claude; {v}" for v in (
+    verbs = [f"cd $D; mkdir -p ~/.claude/crew; {v}" for v in (
         "echo x > {t}", "echo x >> {t}", "cat a > {t}", "printf x | tee {t}", "Set-Content {t} x",
         "Set-Content -Path {t} -Value x", "Add-Content {t} x", "Out-File {t}", "type x > {t}", "sc {t} x")]
     hit = _refused(_cells(targets, verbs, ("~",)))
@@ -585,9 +599,13 @@ def test_an_escape_stripped_reading_of_a_windows_path_is_not_the_owners(home):
 
 
 def test_a_relative_target_with_an_unknown_part_after_a_dynamic_cd_is_unknown(home):
-    for command in ("cd $D; echo x > sub/$N; ls ~/.claude", "cd $D; rm sub/$N.json; cat ~/.claude/crew/config.json"):
+    """Refused only when what is spelled of it could end one of the owner's paths (crew 1.3.128)."""
+    for command in ("cd $D; echo x > conf$N; mkdir -p ~/.claude/crew", "cd $D; rm crew/$N; mkdir -p ~/.claude/crew",
+                    "cd $D; rm confirm-config/$N.json; mkdir -p ~/.claude/crew"):
         assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
-    for command in ("cd /tmp/x; echo x > sub/$N; ls ~/.claude", "cd $D; echo x > sub/$N", "echo x > sub/$N"):
+    for command in ("cd /tmp/x; echo x > sub/$N; mkdir -p ~/.claude/crew", "cd $D; echo x > sub/$N", "echo x > sub/$N",
+                    "cd $D; echo x > sub/$N; mkdir -p ~/.claude/crew", "cd $D; echo x > conf$N; ls ~/.claude",
+                    "cd $D; rm sub/$N.json; cat ~/.claude/crew/config.json"):
         assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
 
 
@@ -596,7 +614,9 @@ def test_a_word_after_a_parenthesised_expression_is_a_plain_word(home):
     for command in ("Copy-Item (Get-Item ~/.claude/crew/config.json) out.txt",
                     "Set-Content (Join-Path $PWD 'a.txt') x; Set-Content out.txt y",
                     "Copy-Item -Path (Get-Item ~/.claude/crew/config.json) -Destination out.txt",
-                    "Copy-Item (Get-Item ~/.claude/crew/config.json) -Destination out.txt"):
+                    "Copy-Item (Get-Item ~/.claude/crew/config.json) -Destination out.txt",
+                    # ... also in a command that names the owner's folder, where an expression would be refused
+                    "mkdir -p ~/.claude/crew; Write-Output (Get-Date) > out.txt"):
         assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
 
 
@@ -679,14 +699,17 @@ def test_a_brace_expansion_word_is_not_a_block(home):
 
 def test_a_variable_the_command_set_is_followed_not_guessed(home):
     """With the folder named in the command, an unknown variable is refused; one the command SET is its value."""
-    for command in ("ls ~/.claude; X=/tmp/other; echo x > $X", "ls ~/.claude; X=/tmp/other; echo x > $X/config.json",
-                    "ls ~/.claude; export X=/tmp/other; rm -f $X/crew/config.json",
-                    "ls ~/.claude; $d = 'C:/other'; Set-Content $d/config.json x",
-                    "ls ~/.claude; set X=/tmp/other & echo x > %X%/config.json"):
-        assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
+    for command in ("X=/tmp/other; echo x > $X", "X=/tmp/other; echo x > $X/config.json",
+                    "export X=/tmp/other; rm -f $X/crew/config.json", "$d = 'C:/other'; Set-Content $d/config.json x",
+                    "$d='C:/other'; Set-Content $d/config.json x", "$d ='C:/other'; Set-Content $d/config.json x",
+                    "$env:D = 'C:/other'; Set-Content $env:D/config.json x",
+                    "$d = 'C:/other'; $d -replace 'x','y' | Out-Null; Set-Content $d/config.json x",
+                    "set X=/tmp/other & echo x > %X%/config.json",
+                    "for i in 1; do echo x > ~/.claude/crew/c$i.json; done"):
+        assert scope_guard._owner_command_refusal(NAMED + command) is None, command  # pylint: disable=protected-access
     for command in ("X=~/.claude/crew; echo x > $X/config.json", "$d = '~/.claude/crew'; Set-Content $d/config.json x",
                     "export X=~/.claude/crew/confirm-config; rm $X/cc-ab.json",
-                    "ls ~/.claude; X=$(pwd); echo x > $X"):
+                    "mkdir -p ~/.claude/crew; X=$(pwd); echo x > $X"):
         assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
 
 
@@ -708,16 +731,42 @@ def test_a_backtick_substitution_is_read_as_a_command(home):
 
 
 def test_what_makes_a_command_name_the_owners_folder(home):
-    """The hint is `.claude`, the confirm-config store or `crew/config.json`, in what the command SAYS: a comment
-    is not said, and an escape character or a quote does not hide it."""
-    for command in ("ls ~/.claude; echo x > $D", "ls /tmp/confirm-config; echo x > $D",
-                    "cat crew/config.json; echo x > $D", "ls ~/.cl\\aude; echo x > $D",
-                    "ls ~/.cl`aude; echo x > $D", "ls ~/.cl^aude; echo x > $D", "ls ~/'.cl'aude; echo x > $D",
-                    "ls ~/.claude; Set-Content $D x", "ls ~/.claude; echo x > \"$(cat p)\""):
+    """The hint is `.claude/crew`, the confirm-config store or `crew/config.json`, in what the command SAYS it may
+    write: a comment is not said, an escape character or a quote does not hide it, and a READ of the owner's file
+    (the operand of `cat`, `Get-Content`, the source of a copy) does not count (crew 1.3.128)."""
+    for command in ("mkdir -p ~/.claude/crew; echo x > $D", "mkdir /tmp/confirm-config; echo x > $D",
+                    "echo crew/config.json; echo x > $D", "mkdir ~/.cl\\aude/crew; echo x > $D",
+                    "mkdir ~/.cl`aude/crew; echo x > $D", "mkdir ~/.cl^aude/crew; echo x > $D",
+                    "mkdir ~/'.cl'aude/crew; echo x > $D", "mkdir ~\\.claude\\crew; echo x > $D",
+                    "mkdir -p ~/.claude/crew; Set-Content $D x", "mkdir -p ~/.claude/crew; echo x > \"$(cat p)\"",
+                    "cp x ~/.claude/crew/other.json; echo y > $D", "robocopy a ~/.claude/crew/sub x; echo y > $D",
+                    "Copy-Item -Destination ~/.claude/crew/other.json x; echo y > $D",
+                    "cp -t ~/.claude/crew/sub x; echo y > $D",
+                    "echo ~/.claude/crew/config.json > /tmp/p; echo x > \"$(cat /tmp/p)\"",
+                    "bash -c \"mkdir ~/.claude/crew\"; echo x > $D",
+                    "for f in a ~/.claude/crew/config.json; do echo x > $f; done"):
         assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
     for command in ("echo x > $D # ~/.claude/crew/config.json", "echo x > $D # confirm-config", "echo x > $D",
-                    "ls ~/.claudefoo; echo x > $D", "ls ~/not-confirm-config; echo x > $D",
-                    "ls ~/.claude.md; echo x > $D".replace(".claude.md", "claude-notes")):
+                    "mkdir ~/.claude/crewx; echo x > $D", "mkdir ~/not-confirm-config; echo x > $D",
+                    "mkdir ~/claude-notes/crew; echo x > $D",
+                    # `.claude` alone, and crew's worktrees folder, are not the owner's folder
+                    "ls ~/.claude; echo x > $D", "mkdir -p ~/.claude; echo x > $D", "cd .claude && echo x > $F",
+                    "mkdir -p ~/.claude/crew/worktrees/repo; echo x > $D",
+                    "git -C ~/.claude/crew/worktrees/repo/lane status; echo x > $D",
+                    # a read of the owner's file is not a write to it
+                    "cat ~/.claude/crew/config.json; echo x > $D", "cat ~/.claude/crew/config.json > \"$OUT\"",
+                    "cat ~/.claude/crew/config.json | tee \"$OUT\"",
+                    "ls -la ~/.claude/crew/confirm-config; echo x > $D",
+                    "Get-Content ~/.claude/crew/config.json | Set-Content $D",
+                    "cat ~/.claude/crew/config.json | jq .guards > \"$OUT\"", "grep x crew/config.json; echo x > $D",
+                    "cp ~/.claude/crew/config.json \"$BACKUP\"", "cp -f ~/.claude/crew/config.json $D",
+                    "Copy-Item ~/.claude/crew/config.json (Join-Path $PWD 'c.json')",
+                    "bash -c \"cat ~/.claude/crew/config.json\" > $OUT",
+                    "pwsh -Command \"Get-Content ~/.claude/crew/config.json\" > $OUT",
+                    "if test -f ~/.claude/crew/config.json; then echo yes > $OUT; fi",
+                    # a heredoc `cat` copies out is text, not something the command says it may write
+                    "cat <<EOF > \"$OUT\"\nsee ~/.claude/crew/config.json\nEOF",
+                    "cat > $OUT <<'EOF'\nthe receipts live in ~/.claude/crew/confirm-config/\nEOF"):
         assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
 
 
@@ -750,3 +799,600 @@ def test_a_verb_inside_a_file_name_in_the_store_is_not_a_write(command, home):
 ])
 def test_a_write_verb_beside_the_store_is_still_refused(command, home):
     assert scope_guard.shell_refusal(command, None), command
+
+
+# =====================================================================================================================
+# Round 10 (crew 1.3.128). Every case below runs twice: with no working directory, and with `top` SET to a repo root
+# as the real hook always has it -- several round-10 bypasses only showed with `top` set, where a relative word is
+# joined to the folder instead of being judged by its tail.
+# =====================================================================================================================
+
+@pytest.fixture(name="top", params=["no-top", "top"])
+def _top(request, tmp_path):
+    if request.param == "no-top":
+        return None
+    repo = tmp_path / "repo"
+    (repo / ".claude" / "worktrees").mkdir(parents=True)
+    return str(repo)
+
+
+def _slipped(commands, top):
+    return [c for c in commands if scope_guard.shell_refusal(c, None, top) is None]
+
+
+def _hit_by(commands, top):
+    return [f"{c}  =>  {scope_guard.shell_refusal(c, None, top)}" for c in commands
+            if scope_guard.shell_refusal(c, None, top)]
+
+
+def _report(found, what):
+    return f"{len(found)} commands {what}:\n" + "\n".join(found[:60])
+
+
+# a write verb whose one target is the relative word `{t}`: what a command writes after it has moved into a folder
+RELATIVE_VERBS = (
+    "echo x > {t}", "echo x >> {t}", "cat a > {t}", "printf x | tee {t}", "rm {t}", "rm -f {t}", "cp x {t}",
+    "mv x {t}", "sed -i s/a/b/ {t}", "truncate -s 0 {t}", "del {t}", "del /f /q {t}", "erase {t}", "copy /y x {t}",
+    "type x > {t}", "Set-Content {t} x", "Set-Content -Path {t} -Value x", "Add-Content {t} x", "Out-File {t}",
+    "Remove-Item {t}", "Clear-Content {t}", "New-Item {t} -Force",
+)
+
+
+# --- BLOCK 1: cmd's `cd /d <folder>`: the switch is not the folder ------------------------------------------------
+
+def _owner_folders(home):
+    """The owner's folder as cmd, PowerShell and bash spell it: by variable, by `~`, and by its absolute path."""
+    return ("%USERPROFILE%\\.claude\\crew", "~/.claude/crew", "$HOME/.claude/crew",
+            str(home / ".claude" / "crew"), str(home / ".claude" / "crew").replace("\\", "/"))
+
+
+CD_SWITCHES = ("cd /d {d}", "cd /D {d}", "chdir /d {d}", "cd /d \"{d}\"", "cd {d}", "pushd {d}", "Set-Location {d}")
+JOINERS = (" && ", " & ", "&&", "; ")
+
+
+def test_a_cmd_cd_switch_is_not_the_folder(home, top):
+    commands = []
+    for folder in _owner_folders(home):
+        for moved in CD_SWITCHES:
+            for joiner in JOINERS:
+                for verb in RELATIVE_VERBS:
+                    commands.append(moved.replace("{d}", folder) + joiner + verb.replace("{t}", "config.json"))
+        commands += [f"cmd /c \"cd /d {folder}&&echo x > config.json\"",
+                     f"cmd /c \"cd /d {folder} && del config.json\"",
+                     f"cmd.exe /c \"cd /D {folder} & type x > config.json\"",
+                     f"cd /d {folder}\\confirm-config && del cc-ab12.json",
+                     f"cd /d {folder} && echo x > confirm-config\\cc-ab12.json"]
+    slipped = _slipped(commands, top)
+    assert not slipped, _report(slipped, "were not refused")
+
+
+def test_a_cd_switch_to_another_folder_is_followed_there(home, top):
+    commands = [moved.replace("{d}", folder) + " && " + verb.replace("{t}", "config.json")
+                for folder in ("C:\\repos\\other", "C:/other/.claude/crew", "/tmp/x", "%TEMP%\\w")
+                for moved in CD_SWITCHES for verb in RELATIVE_VERBS]
+    hit = _hit_by(commands, top)
+    assert not hit, _report(hit, "were refused in a folder that is not the owner's")
+
+
+# --- BLOCK 2: a PowerShell variable assigned from an expression ---------------------------------------------------
+
+PS_VARIABLE_VERBS = tuple(v for v in PS_VERBS if "{t}" in v)
+# `$p` is the owner's file, built by an expression the guard cannot evaluate
+PS_ASSIGNED = (
+    "$p = Join-Path $HOME \".claude/crew/config.json\"",
+    "$p = Join-Path $HOME '.claude\\crew\\config.json'",
+    "$p = $HOME + \"\\.claude\\crew\\config.json\"",
+    "$p = \"$HOME\" + '/.claude/crew/config.json'",
+    "$p=Join-Path $HOME \".claude/crew/config.json\"",
+    "$p =Join-Path $HOME \".claude/crew/config.json\"",
+    "$p = (Join-Path $HOME \".claude/crew/config.json\")",
+    "$p = Join-Path (Join-Path $HOME \".claude\") \"crew\\config.json\"",
+    "$p = Join-Path $env:USERPROFILE \".claude\\crew\\confirm-config\\cc-ab12.json\"",
+    "$p = Resolve-Path ~/.claude/crew/config.json",
+    "$p = (Resolve-Path ~/.claude/crew/config.json).Path",
+    "$global:p = Join-Path $HOME \".claude/crew/config.json\"",
+    # in pieces: nothing in the command spells `.claude/crew`, the expression joins it
+    "$p = [IO.Path]::Combine($HOME, \".claude\", \"crew\", \"config.json\")",
+    "$p = Join-Path $HOME \".claude\" \"crew\" \"config.json\"",
+    "$p = $HOME, \".claude\", \"crew\", \"config.json\" -join \"/\"",
+    # a literal: followed, not guessed
+    "$p = \"$HOME/.claude/crew/config.json\"", "$p=\"$HOME/.claude/crew/config.json\"",
+    "$p = '~/.claude/crew/config.json'", "$p ='~/.claude/crew/config.json'",
+)
+PS_ASSIGNED_FOLDER = (
+    "$d = Join-Path $HOME \".claude/crew\"", "$d = $HOME + '\\.claude\\crew'", "$d=Join-Path $HOME .claude/crew",
+    "$d = [IO.Path]::Combine($HOME, \".claude\", \"crew\")", "$d = \"$HOME/.claude/crew\"",
+)
+BASH_ASSIGNED = (
+    "P=$(echo ~/.claude/crew/config.json)", "P=\"$(printf %s ~/.claude/crew)/config.json\"",
+    "P=`echo ~/.claude/crew/config.json`", "P=$(cat ~/.claude/crew/where.txt)",
+    "P=$(realpath ~/.claude/crew)/config.json",
+    "export P=$(echo ~/.claude/crew/config.json)", "P=~/.claude/crew/config.json",
+)
+# the same shapes, building a path that is not the owner's
+PS_ASSIGNED_ELSEWHERE = (
+    "$p = Join-Path $wt \"x.json\"", "$p = Join-Path $PWD \"out.txt\"", "$p = $env:TEMP + \"\\out.txt\"",
+    "$p = Join-Path $repo \"plugin/crew/README.md\"", "$p = Join-Path $root \".claude/rules/crew.md\"",
+    "$p = Join-Path $wt \".claude/worktrees/a/plugin/crew/x.py\"", "$p = Join-Path $wt \".claude/x.json\"",
+    "$p = (Get-Location).Path", "$p = [IO.Path]::Combine($PWD, \"out\", \"x.txt\")", "$p = \"C:/other/x.json\"",
+    "$p = New-TemporaryFile", "$p = Join-Path $HOME \".claude\" \"settings.json\"",
+)
+BASH_ASSIGNED_ELSEWHERE = (
+    "P=$(mktemp)", "P=$(pwd)/.claude/worktrees/a/f.txt", "P=$(git rev-parse --show-toplevel)/plugin/crew/x.py",
+    "P=/tmp/out.txt", "P=`pwd`/out.txt", "P=$(cat ~/.claude/settings.json)",
+)
+
+
+def test_a_powershell_variable_built_by_an_expression_fails_closed(home, top):
+    commands = [f"{assigned}; {verb.replace('{t}', target)}" for assigned in PS_ASSIGNED
+                for verb in PS_VARIABLE_VERBS for target in ("$p", "\"$p\"")]
+    commands += [f"{assigned}; {verb.replace('{t}', target)}" for assigned in PS_ASSIGNED_FOLDER
+                 for verb in PS_VARIABLE_VERBS for target in ("$d/config.json", "\"$d\\config.json\"",
+                                                             "(Join-Path $d \"config.json\")")]
+    commands += [f"{assigned}; {verb.replace('{t}', target)}" for assigned in BASH_ASSIGNED
+                 for verb in BASH_VERBS for target in ("$P", "\"$P\"", "${P}")]
+    slipped = _slipped(commands, top)
+    assert not slipped, _report(slipped, "were not refused")
+
+
+def test_a_variable_built_for_another_path_is_not_the_owners(home, top):
+    commands = [f"{assigned}; {verb.replace('{t}', '$p')}" for assigned in PS_ASSIGNED_ELSEWHERE
+                for verb in PS_VARIABLE_VERBS]
+    commands += [f"{assigned}; {verb.replace('{t}', '$P')}" for assigned in BASH_ASSIGNED_ELSEWHERE
+                 for verb in BASH_VERBS if "{t}.bak" not in verb]
+    hit = _hit_by(commands, top)
+    assert not hit, _report(hit, "were refused for a variable that is not the owner's path")
+
+
+def test_the_right_hand_side_of_an_assignment_is_a_command_too(home, top):
+    slipped = _slipped(["$r = Set-Content ~/.claude/crew/config.json x",
+                        "$null = Remove-Item ~/.claude/crew/config.json",
+                        "$r=Set-Content ~/.claude/crew/config.json x",
+                        "$ok = rm ~/.claude/crew/confirm-config/cc-ab12.json",
+                        "$t = [IO.File]::WriteAllText(\"$HOME/.claude/crew/config.json\", 'x')"], top)
+    assert not slipped, _report(slipped, "were not refused")
+    hit = _hit_by(["$c = Get-Content ~/.claude/crew/config.json", "$n = 5; Set-Content out.txt $n",
+                   "$x = \"rm\"; Write-Output $x", "$a -eq 1",
+                   "$files = Get-ChildItem *.tmp; $files | Remove-Item"], top)
+    assert not hit, _report(hit, "were refused")
+
+
+# --- BLOCK 3: `${env:X}` and its siblings inside a word ------------------------------------------------------------
+
+ENV_WORDS = (
+    "~/.claude/crew/c${env:Q}nfig.json", "~/.claude/crew/${env:Q}config.json", "~/.claude/crew/config${env:Q}.json",
+    "~/.claude/crew/config.json${env:Q}", "\"~/.claude/crew/${env:Q}config.json\"",
+    "~/.claude/crew/c$($env:Q)nfig.json",
+    "~/.claude/crew/c$env:Q.json", "~/.claude/crew/$env:Qconfig.json", "~/.claude/crew/c${Q}nfig.json",
+    "~/.claude/crew/c$Q.json", "~/.claude/crew/c${Q:-o}nfig.json", "~/.claude/crew/${env:NAME}",
+    "~/.claude/crew/c$([Environment]::GetEnvironmentVariable('X'))nfig.json",
+    "~/.claude/${env:D}/config.json", "~/.claude/crew/confirm-config/cc-${env:ID}.json",
+    "~/.claude/crew/confirm-config/${env:R}", "${env:USERPROFILE}/.claude/crew/config.json",
+    "${env:USERPROFILE}\\.claude\\crew\\config.json", "${env:HOME}/.claude/crew/confirm-config/cc-ab12.json",
+    "${env:UNSET}/.claude/crew/config.json", "~\\.claude\\crew\\c${env:Q}nfig.json",
+)
+ENV_WORDS_ELSEWHERE = (
+    "~/proj/c${env:X}nfig.json", "${env:TEMP}\\out.txt", "out-${env:ID}.json", "~/.cache/${env:NAME}",
+    "${env:USERPROFILE}/notes/out.txt", "~/.claude/projects/${env:P}/memory.md", "$env:TEMP\\x${env:N}.txt",
+    "~/.claude/crew/other${env:X}.txt", "~/.claude/crew/worktrees/${env:REPO}/config.json",
+)
+
+
+def test_an_environment_variable_in_braces_is_unknown_not_a_stream(home, top):
+    verbs = BASH_VERBS + PS_VERBS + CMD_VERBS
+    slipped = _slipped([v.replace("{t}", word) for word in ENV_WORDS for v in verbs], top)
+    assert not slipped, _report(slipped, "were not refused")
+
+
+def test_an_environment_variable_in_another_path_is_not_the_owners(home, top):
+    verbs = [v for v in BASH_VERBS + PS_VERBS + CMD_VERBS if "{t}.bak" not in v]
+    hit = _hit_by([v.replace("{t}", word) for word in ENV_WORDS_ELSEWHERE for v in verbs], top)
+    assert not hit, _report(hit, "were refused for a path that is not the owner's")
+
+
+# --- FIX 4: the write verbs and indirections round 10 named --------------------------------------------------------
+
+R10_TARGETS = (
+    "{h}/.claude/crew/config.json", "{h}\\.claude\\crew\\config.json", "{h}/.claude/crew/CONFIG.JSON",
+    "{h}/.claude/crew./config.json", "{h}/.claude/crew/confirm-config/cc-ab12.json",
+    "{h}/.claude/crew/confirm-config/cc-*.json",
+)
+R10_ELSEWHERE = (
+    "out.txt", "/tmp/out.txt", "C:/other/.claude/crew/config.json", "{h}/.claude/settings.json",
+    "{h}/.claude/crew/other.json", "{h}/.claude/crew/worktrees/repo/lane/config.json",
+    "{h}/repo/.claude/crew/config.json",
+)
+PS_R10_VERBS = (
+    "echo x | Tee-Object {t}", "echo x | Tee-Object -FilePath {t}", "echo x | Tee-Object -LiteralPath {t}",
+    "echo x | Tee-Object -Append -FilePath {t}", "Get-Process | Export-Csv {t}", "Get-Process | Export-Csv -Path {t}",
+    "Get-Process | Export-Csv -NoTypeInformation {t}", "Get-Process | epcsv {t}",
+    "Export-Clixml -Path {t} -InputObject 1", "Get-Date | Export-Clixml {t}", "clc {t}",
+    "Get-ChildItem {t} | Remove-Item", "Get-ChildItem {t} | Remove-Item -Force", "gci {t} | ri", "Get-Item {t} | del",
+    "Get-Item {t} | Clear-Content", "Get-ChildItem {t} | clc", "Get-Item {t} | Set-Content -Value x",
+    "Get-Item {t} | Add-Content -Value x", "Get-Item {t} | sc -Value x",
+    "Get-Item {t} | Move-Item -Destination out.txt",
+    "Get-Item {t} | Rename-Item -NewName c.bak", "Get-Item {t} |\n Remove-Item",
+    "gci {t} | % { Set-Content $_.FullName x }", "gci {t} | ForEach-Object { Remove-Item $_ }",
+    "gci {t} | ForEach-Object { Clear-Content $PSItem.FullName }", "gci {t} | % { $_ } | % { Remove-Item $_ }",
+    ". Set-Content {t} x", "iex \"Set-Content {t} x\"", "Invoke-Expression \"sc {t} x\"",
+    "Invoke-Expression -Command \"Set-Content {t} x\"", "\"Set-Content {t} x\" | iex",
+    "\"Set-Content {t} x\" | Invoke-Expression", "echo \"Set-Content {t} x\" | pwsh -",
+    "Start-Process pwsh -ArgumentList \"-c sc {t} x\"", "Start-Process pwsh -ArgumentList \"-c\",\"sc {t} x\"",
+    "Start-Process -FilePath pwsh -ArgumentList \"-Command Set-Content {t} x\" -Wait",
+    "saps cmd -ArgumentList \"/c echo x > {t}\"", "Set-Alias w Set-Content; w {t} x",
+    "New-Alias -Name w -Value Set-Content; w {t} x", "sal w Remove-Item; w {t}",
+    "$sb = [scriptblock]::Create(\"sc {t} x\"); & $sb", "$sb=[scriptblock]::Create('Remove-Item {t}'); & $sb",
+)
+BASH_R10_VERBS = (
+    "sed -n \"w {t}\" a", "sed -n 'w {t}' a", "sed -e \"1w {t}\" a", "sed -n -e p -e \"w {t}\" a",
+    "sed \"s/a/b/w {t}\" a", "sed \"s/a/b/gw {t}\" a", "sed --expression \"w {t}\" a", "cat a | sed -n \"w {t}\"",
+    "ex -sc \"w {t}|q\" a", "vim -es -c \"w! {t}\" -c q a", "vim \"+w {t}\" a",
+    "awk \"BEGIN{print 1 > \\\"{t}\\\"}\"", "awk '{print > \"{t}\"}' a", "gawk '{print >> \"{t}\"}' a",
+    "timeout 5 bash -c \"echo x > {t}\"", "timeout 5 tee {t}", "timeout -s KILL 5 tee {t}",
+    "timeout --foreground 5 rm {t}", "/usr/bin/timeout 5 tee {t}", "nice tee {t}", "nice -n 10 tee {t}",
+    "nice bash -c \"echo x > {t}\"", "stdbuf -oL tee {t}", "stdbuf -o L tee {t}", "ionice -c 3 cp x {t}",
+    "setsid rm {t}", "busybox tee {t}", "busybox rm -f {t}", "sudo -u root tee {t}", "env -u X tee {t}",
+    "wsl -e sh -c \"echo x > {t}\"", "wsl bash -c \"rm {t}\"", "wsl -d Ubuntu sh -c \"echo x > {t}\"",
+    "wsl.exe -e rm {t}", "echo x | xargs tee {t}", "xargs -a list rm {t}", "xargs tee {t} <<< x",
+    "echo {t} | xargs rm", "echo {t} | xargs -n 1 rm -f", "echo {t} | xargs -0 -r rm",
+    "printf '%s' {t} | xargs -I% cp x %",
+    "echo {t} | xargs sed -i s/a/b/", "echo {t} | xargs sh -c 'echo x > $0'", "eval \"echo x > {t}\"",
+    "trap \"rm {t}\" EXIT", "trap -- \"echo x > {t}\" EXIT", "bash <<< \"echo x > {t}\"", "sh <<< \"rm {t}\"",
+    "echo \"echo x > {t}\" | bash", "echo \"rm {t}\" | sh", "printf 'rm %s' x; echo \"rm -f {t}\" | bash -s",
+    "alias w=tee; echo x | w {t}", "alias w='tee -a'; echo x | w {t}", "for f in {t}; do echo x > $f; done",
+    "for f in {t}; do rm \"$f\"; done", "for f in a {t}; do rm $f; done", "for f in $(ls {t}); do rm $f; done",
+    "for f in a $(ls {t}); do rm $f; done", "ls {t} | while read f; do echo x > \"$f\"; done",
+    "ls {t} | while read -r f; do rm \"$f\"; done", "while read f; do echo x > $f; done <<< {t}",
+    "echo x > \"$(cat {t}.where)\"", "echo x > `cat {t}.where`", "echo x > \"`cat {t}.where`\"",
+    "P=$(cat {t}.where); echo x > $P",
+)
+# what walks or lists a FOLDER and writes what it finds there
+FOLDER_VERBS = (
+    "find {d} -name config.json -delete", "find {d} -name 'conf*' -delete", "find {d} -iname CONFIG.JSON -delete",
+    "find {d} -type f -delete", "find {d} -delete", "find {d} -name config.json -exec rm {} +",
+    "find {d} -name '*.json' -exec rm -f {} \\;", "find {d} -name '*.json' -execdir rm {} +",
+    "find {d} -name config.json -exec cp /tmp/a {} \\;", "find {d} -name '*.json' -exec sed -i s/a/b/ {} +",
+    "find {d} -type f -exec sh -c 'echo x > \"$1\"' _ {} \\;", "find {d} -name 'cc-1*' -delete",
+    "find {d} -name config.json | xargs rm", "find {d} -name config.json -print0 | xargs -0 rm -f",
+    "cd {d}; ls | xargs rm", "cd {d} && ls *.json | xargs -I{} cp /tmp/a {}",
+    "cd {d} && find . -name config.json -delete",
+    "cd {d} && find -name config.json -delete", "cd {d}; echo x > $F", "cd {d}; Get-ChildItem | Remove-Item",
+    "Get-ChildItem {d} | Remove-Item", "Get-ChildItem {d} | Remove-Item -Recurse -Force",
+    "Get-ChildItem {d} -Filter config.json | Remove-Item -Force", "gci {d} | % { Set-Content $_.FullName x }",
+    "ls {d}/*.json | while read f; do echo x > \"$f\"; done", "ls {d} | xargs rm",
+    # what writes into the folder it stands in
+    "cd {d} && unzip a.zip", "cd {d}; tar -xf a.tar", "cd {d} && git checkout -- .", "cd {d}; curl -sO http://x/y",
+    "cd {d} && patch -p1 < a.patch",
+)
+OWNER_FOLDERS = ("~/.claude/crew", "$HOME/.claude/crew", "~/.claude/crew/confirm-config", "~/.claude/crew/")
+# a `find` that starts ABOVE the owner's folder reaches it too, unless its `-name` rules the owner's names out
+FIND_ABOVE = (
+    "find ~/.claude -name config.json -delete", "find ~ -name 'config.json' -delete", "find ~/.claude -delete",
+    "find ~/.claude -name '*.json' -exec rm {} +", "find ~ -name 'cc-*.json' -delete",
+    "find ~/.claude/crew/confirm-config/old -type f -delete", "find ~/.claude ~/x -name config.json -delete",
+)
+
+
+def _spelled(verbs, targets, prefixes=("~", "$HOME")):
+    return [verb.replace("{t}", target) for target in _expand_spellings(targets, prefixes) for verb in verbs]
+
+
+def test_the_round_10_write_verbs_are_refused(home, top):
+    slipped = _slipped(_spelled(PS_R10_VERBS, R10_TARGETS, ("~", "$HOME", "$env:USERPROFILE")), top)
+    slipped += _slipped(_spelled(BASH_R10_VERBS, [t for t in R10_TARGETS if "\\" not in t]), top)
+    assert not slipped, _report(slipped, "were not refused")
+
+
+def test_the_round_10_write_verbs_on_another_file_are_allowed(home, top):
+    """Two kinds of verb are judged by what the command SAYS, not by one resolved target, and so stay refused for
+    another folder spelled `.claude/crew`: inline code handed to `pwsh -Command` (text only, as `python -c` is), and
+    a target that is only a variable a loop or a pipe fills (`$f`, `$0`), which fails closed in a command that names
+    that folder. Every other verb is judged by its target, and for those the folder's spelling does not matter."""
+    said = ("-Command", "pwsh -", "$f", "$0", "$P", "read f", "read -r f", "% cp x %", ".where")
+    by_target = [v for v in PS_R10_VERBS + BASH_R10_VERBS if not any(mark in v for mark in said)]
+    by_text = [v for v in PS_R10_VERBS + BASH_R10_VERBS if any(mark in v for mark in said)]
+    plain = [t for t in R10_ELSEWHERE if ".claude/crew" not in t]
+    hit = _hit_by(_spelled(by_target, R10_ELSEWHERE, ("~",)) + _spelled(by_text, plain, ("~",)), top)
+    assert not hit, _report(hit, "were refused for a file that is not the owner's")
+
+
+def test_what_walks_the_owners_folder_and_writes_is_refused(home, top):
+    slipped = _slipped([verb.replace("{d}", folder) for folder in OWNER_FOLDERS for verb in FOLDER_VERBS], top)
+    slipped += _slipped(FIND_ABOVE + (NAMED + "find $D -name config.json -delete",), top)
+    assert not slipped, _report(slipped, "were not refused")
+
+
+def test_what_walks_another_folder_is_allowed(home, top):
+    folders = ("build", ".", "/tmp/x", "~/proj", "~/.claude/projects", "~/.claude/crew/worktrees/repo/lane",
+               ".claude/worktrees/a", "C:/other/crew")
+    hit = _hit_by([verb.replace("{d}", folder) for folder in folders for verb in FOLDER_VERBS], top)
+    hit += _hit_by(["find ~/.claude -name '*.log' -delete", "find ~ -name '*.pyc' -delete",
+                    "find . -name config.json -delete",
+                    "find ~/.claude/crew -name config.json", "find ~/.claude/crew -name config.json -print",
+                    "find ~/.claude/crew -name config.json -exec cat {} +",
+                    "find ~/.claude/crew -type f -exec sed -n p {} +",
+                    "find ~/.claude/crew -name config.json | xargs cat", "ls ~/.claude/crew | xargs cat",
+                    "ls ~/.claude/crew | xargs -n 1 echo", "git ls-files -o | xargs rm", "ls | xargs rm -f",
+                    "echo ~/.claude/crew/config.json; git ls-files -o | xargs rm",
+                    "ls ~/.claude/crew; Get-ChildItem *.tmp | Remove-Item", "Get-ChildItem *.tmp | Remove-Item",
+                    "test -f ~/.claude/crew/config.json || ls build | xargs rm",
+                    "Get-ChildItem ~/.claude/projects | Select-Object Name",
+                    "Get-Item ~/.claude/crew/config.json | Set-Content out.txt",
+                    "Get-Content ~/.claude/crew/config.json | Set-Content $out",
+                    "Get-Content ~/.claude/crew/config.json | Add-Content -Path out.txt",
+                    "Get-Item ~/.claude/crew/config.json | Copy-Item -Destination out.txt",
+                    "Get-ChildItem .claude | ForEach-Object { Set-Content $_.FullName x }",
+                    "Get-ChildItem ~/.claude/crew | ForEach-Object { Write-Output $_ }",
+                    "Get-ChildItem ~/.claude/crew | % { Get-Content $_.FullName }",
+                    "Get-ChildItem build | % { $_ } | % { Remove-Item $_ }"], top)
+    assert not hit, _report(hit, "were refused")
+
+
+# --- the tilde forms bash expands itself ----------------------------------------------------------------------------
+
+def test_the_bash_tilde_forms_are_read(home, top):
+    user = home.name
+    commands = [verb.replace("{t}", target) for verb in BASH_VERBS for target in (
+        f"~root/../{user}/.claude/crew/config.json", "~someone/.claude/crew/config.json",
+        "~-/.claude/crew/config.json", "~other/.claude/crew/confirm-config/cc-ab12.json")]
+    commands += ["cd ~; " + verb.replace("{t}", "~+/.claude/crew/config.json") for verb in BASH_VERBS]
+    commands += ["cd ~/.claude && " + verb.replace("{t}", "~+/crew/config.json") for verb in BASH_VERBS]
+    commands.append(NAMED + "echo x > $D/../config.json")
+    slipped = _slipped(commands, top)
+    assert not slipped, _report(slipped, "were not refused")
+    hit = _hit_by(["echo x > ~someone/notes/out.txt", "cd /tmp/x; echo x > ~+/.claude/crew/config.json",
+                   "cat ~someone/.claude/crew/config.json", "rm '~$report.docx'", "echo x > ~+/out.txt"], top)
+    assert not hit, _report(hit, "were refused")
+
+
+# --- a path built from pieces: refused without the command naming the owner's folder --------------------------------
+
+PIECES = (
+    "Set-Content -Path (Join-Path $HOME \".claude\" \"crew\" \"config.json\") -Value x",
+    "Set-Content ([IO.Path]::Combine($HOME, '.claude', 'crew', 'config.json')) x",
+    "Remove-Item (Join-Path (Join-Path $HOME .claude) crew)",
+    "$p = [IO.Path]::Combine($HOME, \".claude\", \"crew\", \"config.json\"); Set-Content $p x",
+    "$d = Join-Path (Join-Path $HOME \".claude\") \"crew\"; Set-Content \"$d/config.json\" x",
+    "P=$(cat ~/.claude/crew/where.txt); echo x > $P", "echo x > \"$(cat ~/.claude/crew/where.txt)\"",
+    "echo x > `cat ~/.claude/crew/where.txt`", "echo x > \"`cat ~/.claude/crew/where.txt`\"",
+    "cd $(cat ~/.claude/crew/where.txt); echo x > config.json", "cd $(cat ~/.claude/crew/where.txt); echo x > conf$N",
+    "cd $(cat ~/.claude/crew/where.txt) && rm crew/config.json",
+    "cd ~/.claude/crew; echo x > $F", "cd ~/.claude/crew/confirm-config; rm $F",
+    "cd ~/.claude; cd crew; echo x > $F", "pushd ~/.claude; pushd crew; Set-Content $F x",
+    "cd ~/.claude/crew; Set-Content (Get-Name) x",
+    "for f in a $(ls ~/.claude/crew); do rm $f; done",
+)
+PIECES_ELSEWHERE = (
+    "Set-Content -Path (Join-Path $wt \".claude/x.json\") -Value hi",
+    "Set-Content -Path (Join-Path $repo \"plugin/crew/README.md\") -Value x",
+    "Set-Content -Path (Join-Path $root \".claude/rules/crew.md\") -Value $x",
+    "Set-Content -Path (Join-Path $wt \".claude/worktrees/a/plugin/crew/x.py\") -Value x",
+    "Set-Content -Path (Join-Path $HOME \".claude\" \"settings.json\") -Value x",
+    "P=$(cat ~/.claude/settings.json); echo x > $P", "cd $(cat ~/.claude/where.txt); echo x > config.json",
+    "cd $(cat ~/.claude/crew/where.txt); echo x > out.txt",
+    "cd $(cat ~/.claude/crew/where.txt); cd /tmp/x; echo x > $F",
+    "cd ~/.claude/crew/worktrees/repo/lane; echo x > $F", "cd ~/.claude; echo x > $F", "cd .claude && echo x > $F",
+    "W=$(pwd)/.claude/worktrees/a; cd $W && echo x > f.txt",
+    "cd $(git rev-parse --show-toplevel)/.claude/worktrees/x && cp a b",
+)
+
+
+def test_a_path_built_from_pieces_of_the_owners_fails_closed(home, top):
+    slipped = _slipped(PIECES, top)
+    assert not slipped, _report(slipped, "were not refused")
+
+
+def test_a_path_built_from_other_pieces_is_allowed(home, top):
+    hit = _hit_by(PIECES_ELSEWHERE, top)
+    assert not hit, _report(hit, "were refused")
+
+
+# --- the overblocks round 9 introduced, and ordinary commands: the must-allow set ---------------------------------
+
+# round 10's eight regressions against the 97fa35794 copy, word for word
+ROUND_10_OVERBLOCKS = (
+    "cd .claude && echo x > $F", "cd $D && cat ~/.claude/CLAUDE.md > out.txt",
+    "W=$(pwd)/.claude/worktrees/a; cd $W && echo x > f.txt",
+    "cd $(git rev-parse --show-toplevel)/.claude/worktrees/x && cp a b",
+    "cd $WT; sed -i s/a/b/ plugin/crew/foo.py; cat ~/.claude/crew/config.json",
+    "cat ~/.claude/crew/config.json > \"$OUT\"", "cat ~/.claude/crew/config.json | tee \"$OUT\"",
+    "Set-Content -Path (Join-Path $wt \".claude/x.json\") -Value hi",
+)
+# what a lane runs all day: reads, ordinary writes, worktree commands (also under crew's own worktrees folder)
+ORDINARY = (
+    "git status", "git diff main...HEAD", "ls -la", "ls ~/.claude/crew", "cat ~/.claude/crew/config.json",
+    "cat ~/.claude/crew/config.json | jq .", "grep -r foo plugin/", "python3 -m pytest plugin/crew/tests -q",
+    "python3 scripts/check-marketplace.py", "git log --oneline -5", "echo hello", "echo hi > /tmp/a.txt", "cp a b",
+    "rm -rf build", "npm test", "cd plugin/crew && ls", "cd $D && ls", "cd $D && echo hi > out.txt",
+    "cd \"$(git rev-parse --show-toplevel)\" && python3 scripts/gate-runner.py", "echo $HOME",
+    "X=$(date); echo $X > /tmp/x", "for f in *.py; do echo $f > /tmp/$f.out; done", "echo x > $TMPDIR/out",
+    "echo x > \"$OUT\"", "tee $LOG <<< x", "cp a \"$BACKUP\"", "git commit -m \"touch .claude/settings.json\"",
+    "gh pr view 774 --json headRefOid", "cat .claude/settings.json", "echo x > .claude/settings.local.json",
+    "Get-Content $HOME\\.claude\\crew\\config.json", "Get-ChildItem | Where-Object { $_.Name -like \"a*\" }",
+    "Set-Content $env:TEMP\\x.txt hi", "(Get-Content a.txt) | Set-Content b.txt", "Write-Output (Get-Date)",
+    "echo `date` > /tmp/d", "ls `pwd`", "cat a | grep \"foo|bar\" | wc -l", "curl -s http://x -o /tmp/y",
+    "git -C \"$REPO\" status", "sed -i s/a/b/ \"$FILE\"", "mkdir -p \"$D/sub\"",
+    "printf \"%s\\n\" \"$X\" > \"$D/out.txt\"",
+    "cd $WT && git commit -am x", "python3 -c \"print(1)\"", "bash -c \"echo hi\"", "pwsh -c \"Get-Date\"",
+    "Remove-Item $env:TEMP\\foo -Recurse", "ls {H}\\.claude\\projects", "echo x > {H}\\.claude\\projects\\memory\\a.md",
+    "cat C:\\tmp\\confirm-config\\echo.txt", "Get-Content C:\\tmp\\confirm-config\\echo.txt",
+    "cd $D && grep -r foo ~/.claude/crew/config.json", "cd ~/.claude/projects && ls",
+    "cd $D && python3 -m pytest .claude/x", "ls .claude/worktrees/foo", "cd .claude/worktrees/x && git status",
+    "cd .claude/worktrees/x && echo hi > out.txt", "cd \"$WT\" && git diff -- .claude/",
+    "for w in .claude/worktrees/*; do git -C $w status; done",
+    "for w in .claude/worktrees/*; do echo $w > /tmp/$(basename $w); done",
+    "git worktree add .claude/worktrees/a-$(date +%s) HEAD", "mkdir -p .claude/worktrees/\"$N\"",
+    "cp -r \"$SRC\" .claude/worktrees/x/", "rm -rf .claude/worktrees/\"$N\"", "rm -rf \"$WT/.claude/worktrees/$N\"",
+    "echo x > \"$WT/.claude/settings.local.json\"", "echo x > $REPO/.claude/crew/state.json",
+    "Set-Content \"$wt\\.claude\\x.json\" hi", "Get-ChildItem .claude | ForEach-Object { Set-Content $_.FullName x }",
+    "ls \"{H}\\.claude\\crew\" | ForEach-Object { Write-Output $_ }",
+    # crew's own worktrees live under the owner's folder: a checkout there is an ordinary checkout
+    "cd ~/.claude/crew/worktrees/repo/lane && git checkout main", "cd ~/.claude/crew/worktrees/repo/lane && git stash",
+    "cd ~/.claude/crew/worktrees/repo/lane && git pull --rebase",
+    "cd ~/.claude/crew/worktrees/repo/lane && echo x > $F",
+    "cd ~/.claude/crew/worktrees/repo/lane && patch -p1 < a.patch", "cd ~/.claude/crew/worktrees/r/w && unzip a.zip",
+    "cd ~/.claude/crew/worktrees/r/w && tar -xf a.tar", "cd ~/.claude/crew/worktrees/r/w && curl -sO http://x/y",
+    "git -C ~/.claude/crew/worktrees/repo/lane checkout main", "rm -rf ~/.claude/crew/worktrees/repo/lane",
+    "cd {H}/.claude/crew/worktrees/repo/lane && sed -i s/a/b/ config.json",
+    "git worktree add ~/.claude/crew/worktrees/repo/lane-$(date +%s) HEAD",
+    "cd ~/.claude/crew/worktrees/repo/lane; git ls-files -o | xargs rm",
+    "cd ~/.claude/crew/worktrees/repo/lane; find . -name '*.pyc' -delete",
+    # the round-10 verbs on ordinary files
+    "timeout 5 bash -c \"echo hi > out.txt\"", "nice -n 10 make", "timeout 300 python3 -m pytest -q", "stdbuf -oL make",
+    "echo x | Tee-Object out.txt", "Get-Process | Export-Csv out.csv", "sed -n \"w out.txt\" a", "iex \"Get-Date\"",
+    "cd /d C:\\repos && echo x > config.json", "echo \"ls\" | bash", "trap 'rm -f \"$tmp\"' EXIT",
+    "sed s/wow/now/ a > b", "sed -n '/crew\\/config.json/p' notes.txt",
+    "awk '$3 > 5 {print}' ~/.claude/crew/config.json",
+    "awk '{print $1}' ~/.claude/crew/config.json", "sed s/a/b/ ~/.claude/crew/config.json > out.txt",
+    "alias ll='ls -la'; ll ~/.claude/crew", "Set-Alias g git; g status", "$x = 1; Set-Content out.txt $x",
+    "alias ls='ls --color'; ls ~/.claude/crew", "ls | xargs", "ls ~/.claude/crew | xargs -n 1",
+    "git add .claude/settings.json plugin/crew/README.md && echo ok > \"$OUT\"",
+    "cat ~/.claude/crew/config.json | sort",
+    "Get-Content ~/.claude/crew/config.json | Measure-Object -Line", "ls ~/.claude/crew | wc -l",
+    "for d in build dist; do rm -rf $d; done",
+    "for i in 1 2 3; do echo $i > /tmp/$i.txt; done", "ls | while read f; do echo \"$f\" > /tmp/names; done",
+    "cat ~/.claude/crew/config.json | while read line; do echo \"$line\"; done",
+    "wsl -e ls", "busybox ls ~/.claude/crew", ". ./env.sh; make", "bash <<< \"echo hi\"",
+    "Start-Process pwsh -ArgumentList \"-c Get-Date\"", "$sb = [scriptblock]::Create(\"Get-Date\"); & $sb",
+    "cat ~/.claude/crew/config.json | jq .guards > \"$OUT\"", "cp ~/.claude/crew/config.json \"$BACKUP\"",
+    "Copy-Item ~/.claude/crew/config.json (Join-Path $PWD 'c.json')", "nice python verify_trust.py status",
+)
+
+
+def test_the_round_10_overblocks_are_allowed_again(home, top):
+    hit = _hit_by(ROUND_10_OVERBLOCKS, top)
+    assert not hit, _report(hit, "of the eight round-10 regressions are still refused")
+
+
+def test_ordinary_read_only_and_worktree_commands_are_allowed(home, top):
+    hit = _hit_by([command.replace("{H}", str(home)) for command in ORDINARY], top)
+    assert not hit, _report(hit, "ordinary commands were refused")
+
+
+# --- the confirm-config store check: a write VERB, in command position ------------------------------------------
+
+STORE_READS = (
+    "grep echo {s}/x.json", "rg printf {s}/", "cat {s}/x.json | grep echo", "Select-String echo {s}/x.json",
+    "ls {s}/ | grep sed", "git log --grep=install -- {s}/", "grep -c sed {s}/cc-ab12.json",
+    "Get-Content {s}/x.json | Select-String printf", "ls {s}/ | sort | grep -v tee",
+    "diff {s}/a.json {s}/b.json | grep rm",
+    "findstr echo {s}/x.json", "cat {s}/x.json | grep -E \"cp|mv|rm\"", "grep -rn \"python3\" {s}/",
+    "Get-ChildItem {s}/ | Where-Object { $_.Name -match \"touch\" }", "pwsh -c Get-Content {s}/echo",
+    "bash -c \"grep rm {s}/x.json\"",
+)
+STORE_WRITES = (
+    "find {s}/ -name x -exec rm {} +", "ls {s}/ | xargs rm", "ls {s}/ | xargs -n 1 rm -f", "sudo rm {s}/f",
+    "env A=1 rm {s}/f", "timeout 5 rm {s}/f", "nice -n 5 cp a {s}/f", "bash -c \"rm {s}/f\"", "sh -c 'touch {s}/f'",
+    "if true; then rm {s}/f; fi", "Get-ChildItem {s}/ | ForEach-Object { Remove-Item $_ }", "ls {s}/$(rm x)",
+    "cat \"$(rm {s}/f)\"",
+    "nice python3 x.py {s}/f", "cmd /c \"echo x {s}/f\"", "eval \"touch {s}/f\"", "bash <<EOF\nrm {s}/f\nEOF",
+    "A=1 rm {s}/f", "! rm {s}/f", "ls {s}/f; {rm,x}", "pwsh -Command \"Remove-Item {s}/f\"",
+    "pwsh -c \"echo x {s}/f\"",
+)
+
+
+def test_a_search_term_beside_the_store_is_not_a_write(home, top):
+    stores = ("~/.claude/crew/confirm-config", "/tmp/confirm-config", "C:\\tmp\\confirm-config")
+    hit = _hit_by([read.replace("{s}", store) for store in stores for read in STORE_READS], top)
+    assert not hit, _report(hit, "reads beside the store were refused")
+
+
+def test_a_write_verb_in_command_position_beside_the_store_is_refused(home, top):
+    # a store that is NOT the owner's real one, so only the string check can refuse
+    slipped = _slipped([write.replace("{s}", "/tmp/confirm-config") for write in STORE_WRITES], top)
+    assert not slipped, _report(slipped, "were not refused")
+
+
+# --- single cases the mutations in sabotage_guards_master.py need a test for ---------------------------------------
+
+def test_a_lone_slash_d_is_a_folder(home, top):
+    """`cd /d` with nothing after it is Git Bash's drive D:, not cmd's switch with the folder left out."""
+    hit = _hit_by(["cd /d && echo x > .claude/crew/config.json", "cd /d; rm -rf .claude"], top or "/tmp/x")
+    assert not hit, _report(hit, "were refused")
+
+
+def test_a_taint_is_carried_from_variable_to_variable(home, top):
+    built = "$d = [IO.Path]::Combine($HOME, \".claude\", \"crew\")"
+    slipped = _slipped([f"{built}; $p = Join-Path $d \"config.json\"; Set-Content $p x",
+                        f"{built}; $p = $d + \"\\config.json\"; Remove-Item $p",
+                        "D=$(cat ~/.claude/crew/where.txt); P=$D/config.json; echo x > $P"], top)
+    assert not slipped, _report(slipped, "were not refused")
+
+
+def test_an_assignment_before_a_read_still_names_the_folder(home, top):
+    """Only the OPERANDS of a read are left out of what the command says; what stands before it is still said."""
+    assert scope_guard.shell_refusal("D=~/.claude/crew cat x; echo y > $F", None, top)
+    assert scope_guard.shell_refusal("sudo -u x cat ~/.claude/crew/config.json; echo y > $F", None, top) is None
+
+
+def test_a_find_iname_narrows_like_a_name(home, top):
+    hit = _hit_by(["find ~/.claude -iname '*.LOG' -delete", "find ~ -iname '*.Pyc' -exec rm {} +"], top)
+    assert not hit, _report(hit, "were refused")
+    slipped = _slipped(["find ~/.claude -iname 'CONFIG.json' -delete"], top)
+    assert not slipped, _report(slipped, "were not refused")
+
+
+def test_xargs_hands_a_writer_what_the_pipe_names(home, top):
+    slipped = _slipped(["echo ~/.claude/crew/config.json | xargs tee",
+                        "echo ~/.claude/crew/config.json | xargs -n 1 truncate -s 0",
+                        "ls ~/.claude/crew/confirm-config/cc-ab12.json | xargs sponge"], top)
+    assert not slipped, _report(slipped, "were not refused")
+
+
+def test_a_pipe_of_both_streams_is_a_pipe(home, top):
+    slipped = _slipped(["echo ~/.claude/crew/config.json |& xargs rm",
+                        "ls ~/.claude/crew/config.json |& xargs rm -f"], top)
+    assert not slipped, _report(slipped, "were not refused")
+
+
+def test_a_substitution_inside_a_pipeline_does_not_cut_it(home, top):
+    """A `$(...)` in the command a pipe feeds is read as commands of its own; the pipeline it stands in is kept."""
+    slipped = _slipped(["echo ~/.claude/crew/config.json | xargs rm $(echo -f)",
+                        "Get-Item ~/.claude/crew/config.json | Remove-Item -Force:$(Get-Flag)"], top)
+    assert not slipped, _report(slipped, "were not refused")
+
+
+def test_only_a_shell_reads_the_pipe_as_a_script(home, top):
+    hit = _hit_by(["echo \"rm ~/.claude/crew/config.json\" | cat",
+                   "echo \"echo x > ~/.claude/crew/config.json\" | grep x",
+                   "echo \"Set-Content ~/.claude/crew/config.json x\" | tee notes.txt",
+                   "echo \"rm ~/.claude/crew/config.json\" | Select-String rm"], top)
+    assert not hit, _report(hit, "were refused")
+
+
+def test_read_is_fed_by_a_here_string_too(home, top):
+    slipped = _slipped(["read f <<< $(ls ~/.claude/crew/config.json); echo x > $f",
+                        "read -r f <<< \"$(ls ~/.claude/crew/config.json)\"; rm \"$f\""], top)
+    assert not slipped, _report(slipped, "were not refused")
+    hit = _hit_by(["read f <<< $(ls build/out.txt); echo x > $f", "read f <<< hello; echo x > $f"], top)
+    assert not hit, _report(hit, "were refused")
+
+
+# --- the trust check keeps its own wrappers -----------------------------------------------------------------------
+
+def test_the_trust_check_still_reads_past_nice(home, top):
+    """Until crew 1.3.128 the owner-file check's wrapper set carried the name of the trust check's and replaced it,
+    so `nice` was no wrapper there. The two sets are apart again: the trust check reads past its own wrappers, as on
+    main, and not past the owner-file check's (a dot call, `start`, `call`)."""
+    for command in ("nice /tmp/x approve", "nice -n 5 /tmp/x revoke", "env A=1 /tmp/x approve"):
+        assert scope_guard.shell_refusal(command, None, top), command
+    for command in ("nice python3 verify_trust.py status", ". ./env.sh approve", "start ./tool.cmd approve"):
+        assert scope_guard.shell_refusal(command, None, top) is None, command
+
+
+# --- the tail: what the guard does NOT read (CONFIG.md, "The guards master switch") ---------------------------------
+
+def test_the_documented_tail_is_not_read(home, top):
+    """Stated, not wished away: these still reach the owner's file. A guardrail against an accident, not a boundary.
+    A case that starts being refused belongs in the must-block lists, and out of CONFIG.md's list."""
+    tail = ("$a = @{Path=\"$HOME/.claude/crew/config.json\"}; Set-Content @a -Value x",
+            "bash script.sh", "python3 helper.py", "pwsh -File x.ps1", "pwsh -EncodedCommand cwBjACAAeAA=",
+            "touch ~/.claude/crew/config.json", "chmod 600 ~/.claude/crew/config.json",
+            "iex (\"sc ~/.claude/cr\" + \"ew/config.json x\")", "gtee ~/.claude/crew/config.json",
+            "git config --file ~/.claude/crew/config.json a b", "scp host:a ~/.claude/crew/config.json",
+            "(New-Object IO.StreamWriter(\"$HOME/.claude/crew/config.json\")).Write(\"x\")",
+            "python3 -c \"import os;os.system('echo x > ~/.claude/crew/config.json')\"",
+            "cmd /v:on /c \"set P=%USERPROFILE%\\.claude\\crew\\config.json&&echo x > !P!\"",
+            "ln -s ~/.claude/crew /tmp/l; echo x > /tmp/l/config.json", "cat list.txt | xargs rm")
+    for command in tail:
+        assert scope_guard._owner_command_refusal(command, top) is None, command  # pylint: disable=protected-access

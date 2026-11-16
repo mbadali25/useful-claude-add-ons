@@ -414,7 +414,7 @@ KEY_META = {
                            "anything unreadable leaves them on). `/crew:approve` and `/crew:confirm-config` "
                            "keep working, so the `humanOnly.*` opt-out does too. Needs python: with "
                            "none the guards still fail closed.", "branch", (True, False),
-                           "1.3.124", _S + "crew_hook.py"),
+                           "1.3.129", _S + "crew_hook.py"),
     "production.databases": _unv("Globs naming production databases.", "0.19.30",
                                  _S + "crew_config.py", "list of globs"),
     "production.hosts": _unv("Globs naming production hosts.", "0.19.30",
@@ -636,7 +636,7 @@ def values_of(key):
 # the request URL, so a cloned repo may not choose it).
 _MACHINE_ONLY = (tuple("context.autoClear." + k for k in crew_state.AUTOCLEAR_MACHINE_ONLY_KEYS)
                  + tuple("notify." + k for k in crew_notify.GLOBAL_ONLY_KEYS)
-                 + ("guards.enabled",))  # crew 1.3.124: a repo file cannot turn every guard off
+                 + ("guards.enabled",))  # crew 1.3.129: a repo file cannot turn every guard off
 
 
 def layer_of(key):

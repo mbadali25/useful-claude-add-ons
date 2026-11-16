@@ -226,7 +226,7 @@ _ROUND4_ATTACK = (
     pytest.param("env -u CLAUDECODE python3 verify_trust.py check", id="session-var-env-u"),
     pytest.param("python3 -c 'open(\"/root/.claude/crew/verify-\"+\"x.json\",\"w\").write(\"{}\")'",
                  id="store-dir-write"),
-    # Outside the owner's own folders, so the owner-file check cannot be what refuses it (crew 1.3.123 merge): the
+    # Outside the owner's own folders, so the owner-file check cannot be what refuses it (crew 1.3.128 merge): the
     # trust guard's own `crew/verify-*` rule is the only thing standing here.
     pytest.param("python3 -c 'open(\"/srv/crew/verify-\"+\"x.json\",\"w\").write(\"{}\")'",
                  id="store-dir-write-elsewhere"),
