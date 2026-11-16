@@ -2107,7 +2107,7 @@ def _nested(name, args, shell, depth):
         return _analyze(plain[0], shell, depth + 1) if plain else None
     if name in ("start-process", "saps"):   # the program and its `-ArgumentList`, read as one command line
         plain = [a.lstrip(_MARKS).replace(",", " ") for a in args if not re.fullmatch(r"-[A-Za-z]+", a)]
-        return _child(" ".join(plain), shell, depth)
+        return _analyze(" ".join(plain), shell, depth + 1)   # the shell it starts is read as a child there
     if name == "cmd":
         for position, arg in enumerate(lowered):
             if arg in ("/c", "/k", "/r"):
