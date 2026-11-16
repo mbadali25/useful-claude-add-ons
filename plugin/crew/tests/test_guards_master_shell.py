@@ -1054,6 +1054,7 @@ FOLDER_VERBS = (
     "find {d} -name '*.json' -exec rm -f {} \\;", "find {d} -name '*.json' -execdir rm {} +",
     "find {d} -name config.json -exec cp /tmp/a {} \\;", "find {d} -name '*.json' -exec sed -i s/a/b/ {} +",
     "find {d} -type f -exec sh -c 'echo x > \"$1\"' _ {} \\;", "find {d} -name 'cc-1*' -delete",
+    "find {d} -type f -exec sh ./wipe.sh {} \\;",   # a shell handed what find found: no `-c` text to read
     "find {d} -name config.json | xargs rm", "find {d} -name config.json -print0 | xargs -0 rm -f",
     "cd {d}; ls | xargs rm", "cd {d} && ls *.json | xargs -I{} cp /tmp/a {}",
     "cd {d} && find . -name config.json -delete",
@@ -1101,6 +1102,11 @@ def test_what_walks_the_owners_folder_and_writes_is_refused(home, top):
     slipped = _slipped([verb.replace("{d}", folder) for folder in OWNER_FOLDERS for verb in FOLDER_VERBS], top)
     slipped += _slipped(FIND_ABOVE + (NAMED + "find $D -name config.json -delete",), top)
     assert not slipped, _report(slipped, "were not refused")
+    # by the owner-file check itself, which is all that runs with `scope.mode: off` (the store rule, round 11,
+    # refuses a find inside a store spelled `confirm-config/` as well, and must not be what holds this up)
+    for command in ("find ~/.claude/crew/confirm-config/old -type f -delete",
+                    "find ~/.claude/crew/confirm-config -name 'cc-*' -delete"):
+        assert scope_guard._owner_command_refusal(command, top), command  # pylint: disable=protected-access
 
 
 def test_what_walks_another_folder_is_allowed(home, top):
