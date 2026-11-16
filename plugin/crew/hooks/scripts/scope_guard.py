@@ -11,7 +11,7 @@ the payload in, so the two shells cannot disagree.
    the key gets), or the cwd is no work tree -> exit 0 before anything else is
    read, EXCEPT that a Write/Edit of, or a shell write to, the owner's own
    files (the machine config `~/.claude/crew/config.json` and the
-   confirm-config store beside it) is still refused (crew 1.3.128): those hold
+   confirm-config store beside it) is still refused (crew 1.3.130): those hold
    `guards.enabled` and its receipts, and a guard that stood down with
    `scope.mode` would let an agent write both.
 2. A target under `<git-common-dir>/crew/` -- approval receipts, the review
@@ -551,14 +551,14 @@ def confirm_store():
 
 def machine_config():
     """The machine config file (`~/.claude/crew/config.json`), which holds `guards.enabled`, the switch that
-    stands every guard down (crew 1.3.128). Like `confirm_store`, spelled here so this guard imports no config
+    stands every guard down (crew 1.3.130). Like `confirm_store`, spelled here so this guard imports no config
     module."""
     return os.path.join(os.path.expanduser("~"), ".claude", "crew", "config.json")
 
 
 def _owner_path(path):
     """True for the owner's own files: the double-confirmation store and the machine config, which holds
-    `guards.enabled` (crew 1.3.128)."""
+    `guards.enabled` (crew 1.3.130)."""
     return _under(path, confirm_store()) or os.path.normcase(path) == os.path.normcase(machine_config())
 
 
@@ -868,7 +868,7 @@ def _reading_refusal(command, written, common, top, agent_type=None):
     return _owner_command_refusal(command, top)
 
 
-# --- the owner's files, through a shell (crew 1.3.128, target-based since the round-3 owner decision) ------------
+# --- the owner's files, through a shell (crew 1.3.130, target-based since the round-3 owner decision) ------------
 # A command is refused when something in it WRITES TO the owner's files: a redirect, or the argument a write verb
 # aims at (`tee`, `cp`, `mv`, `rm`, `sed -i`, `Set-Content`, `curl -o`, `tar -C`, `git apply` ...), or inline code
 # (`python -c`, a heredoc) that names them beside a write call. A command that merely MENTIONS them -- a commit
@@ -880,7 +880,7 @@ def _reading_refusal(command, written, common, top, agent_type=None):
 # user: a helper script behind `cd`, `pytest`/`uv`/`make`/`python -m` launchers, an 8.3 short name, base64 or a path
 # built by arithmetic still write the file, and CONFIG.md says so. No script is opened or sized (an unreadable or
 # huge file refuses nothing): the owner's order is that the crew runs every normal command.
-# Round 10 (crew 1.3.128) names the rest of that tail, also in CONFIG.md: an alias (`Set-Alias w Set-Content`), a
+# Round 10 (crew 1.3.130) names the rest of that tail, also in CONFIG.md: an alias (`Set-Alias w Set-Content`), a
 # splatted hashtable (`@a`), `[scriptblock]::Create(...)`, the content of a script file (`bash script.sh`), a string
 # built by concatenation and handed to `iex`, and `touch`/`chmod` (metadata only) are not read.
 OWNER_REASON = "it writes the owner's files"
@@ -898,7 +898,7 @@ _CODE_RUNNERS = frozenset({"python", "python3", "py", "node", "nodejs", "deno", 
 _CODE_FLAGS = frozenset({"-c", "-e", "-p", "-r", "-E", "--eval", "--command"})
 _POSIX_SHELLS = frozenset({"bash", "sh", "zsh", "dash", "ksh"})
 _PWSH = frozenset({"pwsh", "powershell"})
-# The words that only run another command (crew 1.3.128: `.`, `timeout`, `nice`, `stdbuf`, `ionice`, `setsid`,
+# The words that only run another command (crew 1.3.130: `.`, `timeout`, `nice`, `stdbuf`, `ionice`, `setsid`,
 # `busybox`, `wsl`). Named apart from the trust check's `_WRAPPERS` above: until round 10 this set carried that name
 # too, replaced it for the whole module, and so dropped `nice` from the trust check (`nice /tmp/x approve`).
 _OWNER_WRAPPERS = frozenset({"sudo", "env", "time", "command", "nohup", "exec", "builtin", "call", "start", "&", ".",
@@ -924,7 +924,7 @@ _REMOVERS = frozenset({"rm", "unlink", "shred", "del", "erase", "rd", "rmdir", "
 _WRITERS = frozenset({"tee", "truncate", "clear-content", "set-content", "add-content", "out-file", "new-item", "ni",
                       "set-item", "sponge", "sc", "ac", "mklink", "clc", "tee-object", "export-csv", "epcsv",
                       "export-clixml"})
-# The programs that only READ what they are given (crew 1.3.128). The owner's file as an operand of one is a read, so
+# The programs that only READ what they are given (crew 1.3.130). The owner's file as an operand of one is a read, so
 # it does not make the command one that "names the owner's folder" (`_owner_hint`): `cat <owner file> > "$OUT"` writes
 # `$OUT`, not the owner's file. `echo` and `printf` are not here: they hand the name on (`echo <it> | xargs rm`).
 _READERS = frozenset({
@@ -944,7 +944,7 @@ _OPTION_RE = re.compile(r"^(?:-[^\s]|/[A-Za-z?]{1,2}(?::\S*)?$)")
 _ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.DOTALL)
 _VAR_RE = re.compile(r"\$env:(\w+)|\$\{(\w+)\}|\$(\w+)|%(\w+)%", re.IGNORECASE)
 # What is left of a variable once `_expand` has put in every value it knows: PowerShell's `${env:X}` and `$env:X`,
-# bash's `${X:-y}`. Its value is unknown, and its colon is no NTFS stream (`c${env:X}nfig.json`, crew 1.3.128).
+# bash's `${X:-y}`. Its value is unknown, and its colon is no NTFS stream (`c${env:X}nfig.json`, crew 1.3.130).
 _UNREAD_VAR_RE = re.compile(r"\$\{[^}]*\}|\$env:\w+", re.IGNORECASE)
 _DRIVE_RE = re.compile(r"^[a-z]:/")
 _IGNORED_TARGET_RE = re.compile(r"^(?:/dev/\w+|\$null|nul|&\d|-)$", re.IGNORECASE)
@@ -1001,10 +1001,10 @@ def _balanced(text, start):
 
 
 _QUOTE_OPEN, _QUOTE_CLOSE = "\x01", "\x02"
-# What the splitter cannot read as text (crew 1.3.128, round 9): `_DYN` stands where a `$(...)` / `$'...'` produced
+# What the splitter cannot read as text (crew 1.3.130, round 9): `_DYN` stands where a `$(...)` / `$'...'` produced
 # characters, `_PAREN` starts a word that sits inside a parenthesised expression (`(Join-Path $HOME "x")`).
 _DYN, _PAREN = "\x03", "\x04"
-# `_TAINT` (crew 1.3.128, round 10) is a `_DYN` whose source spells pieces of the owner's path (`_plausible`):
+# `_TAINT` (crew 1.3.130, round 10) is a `_DYN` whose source spells pieces of the owner's path (`_plausible`):
 # `$(echo ~/.claude/crew)`, a word of `(Join-Path $HOME ".claude/crew/config.json")`, a variable assigned from either.
 # A write target the guard cannot resolve fails closed when it carries one, whatever else the command says.
 _TAINT = "\x05"
@@ -1517,7 +1517,7 @@ def _could_be_suffix(parts, mode):
 
 
 def _suspect(word, shell, tainted=False):
-    """True when a write target the guard cannot resolve may be the owner's (crew 1.3.128, round 10; narrowed from
+    """True when a write target the guard cannot resolve may be the owner's (crew 1.3.130, round 10; narrowed from
     "the command mentions `.claude`"): the command names the owner's folder outside a read (`shell.hint`), the target
     or the `cd` before it was built from pieces of the owner's path (`_TAINT`), or the command stands in the owner's
     folder."""
@@ -1525,7 +1525,7 @@ def _suspect(word, shell, tainted=False):
 
 
 def _dynamic_hit(word, shell, mode, forced, tainted=False):  # pylint: disable=too-many-return-statements
-    """Fail closed (crew 1.3.128, round 9) on a write target the guard cannot resolve to one concrete path: a
+    """Fail closed (crew 1.3.130, round 9) on a write target the guard cannot resolve to one concrete path: a
     substitution, an unknown variable, a backtick, a word in a parenthesised expression. It names the owner's files
     when what is spelled of it can only be theirs (`~/.claude/crew/$X`), or when it could be theirs and it is
     `_suspect`. A target in a command that never names the owner's folder as something to write stays allowed."""
@@ -1986,7 +1986,7 @@ def _assign(raw, shell):
     return True
 
 
-# the words that only introduce a command: `do rm x`, `then rm x`, `if rm x`, `try { rm x }` (crew 1.3.128)
+# the words that only introduce a command: `do rm x`, `then rm x`, `if rm x`, `try { rm x }` (crew 1.3.130)
 _CONTROL = frozenset({"do", "then", "else", "elif", "if", "while", "until", "!", "{", "try", "finally"})
 _PS_ASSIGN_RE = re.compile(r"^\$(?:\w+:)?(\w+)(=?)(.*)$", re.DOTALL)
 
@@ -2097,7 +2097,7 @@ def _nested(name, args, shell, depth):
         for position, arg in enumerate(args):
             if re.match(r"^-[a-z]*c$", arg) and position + 1 < len(args):
                 return _child(args[position + 1], shell, depth)
-    if name in ("eval", "iex", "invoke-expression"):   # `iex "..."` runs its text as `eval` does (crew 1.3.128)
+    if name in ("eval", "iex", "invoke-expression"):   # `iex "..."` runs its text as `eval` does (crew 1.3.130)
         plain = [a.lstrip(_MARKS) for a in args if a.lower() != "-command"]
         return _analyze(" ".join(plain), shell, depth + 1)
     if name.startswith("[scriptblock]::create"):   # `$sb = [scriptblock]::Create("<command>")`
@@ -2492,7 +2492,7 @@ def _command_text(text, depth=0):
 
 
 def _owner_hint(command):
-    """True when the command names the owner's folder as something it may write (crew 1.3.128, round 10):
+    """True when the command names the owner's folder as something it may write (crew 1.3.130, round 10):
     `.claude/crew`, the confirm-config store or `crew/config.json` (`_HINT_RES`), spelled plainly or with its escape
     characters, quotes and markers taken out, anywhere but in a read (`_said_words`). `.claude` alone, crew's
     `worktrees/` folder, and the owner's file handed to `cat` do not count. A write target the guard cannot resolve
@@ -2563,7 +2563,7 @@ def _owner_lines(what):
 
 def _owner_files_only(tool, data, root):
     """What the guard still decides where it otherwise does nothing: `scope.mode` off (the default) or no work
-    tree (crew 1.3.128). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
+    tree (crew 1.3.130). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
     and the master switch are what make an owner-only change the owner's: a guard that stood down with
     `scope.mode` would let an agent write both the `false` and its receipt."""
     if tool in SHELLS:

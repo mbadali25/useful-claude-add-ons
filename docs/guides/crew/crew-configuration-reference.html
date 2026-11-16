@@ -208,10 +208,16 @@ resolve to.</p>
 <p><strong>Who can write the receipts.</strong> The double confirmation is recorded only by
 the prompt hook, from your own prompt. The scope guard (when <code>scope.mode</code> is
 not <code>off</code>) refuses every Write/Edit under <code>~/.claude/crew/confirm-config/</code> and
-every shell command that names that store beside a redirect or a write VERB in command position (crew 1.3.128:
-a verb's spelling inside a file name, <code>Get-Content C:\tmp\confirm-config\echo.txt</code>, is a read, and so is a
-search term, <code>grep echo ~/.claude/crew/confirm-config/x.json</code>: the verb must be the command a shell runs,
-also behind a wrapper, <code>xargs</code>, <code>find -exec</code> or <code>bash -c</code>). That is a
+every shell command that WRITES TO that store. Since crew 1.3.130 the command is read the way the check of
+your machine config reads it, and the write's TARGET is judged: <code>cp ~/.claude/crew/confirm-config/cc-ab12.json
+/tmp/</code>, <code>cat &lt;receipt&gt; | jq .x &gt; /tmp/x</code> and <code>ls &lt;receipt&gt; &amp;&amp; echo ok &gt; /tmp/ok</code> pass (until then a redirect or
+a write verb anywhere in a command that named the store refused it). A verb's spelling inside a file name,
+<code>Get-Content C:\tmp\confirm-config\echo.txt</code>, is a read, and so is a search term,
+<code>grep echo ~/.claude/crew/confirm-config/x.json</code>: the verb must be the command a shell runs, also behind a
+wrapper, <code>xargs</code>, <code>find -exec</code> or <code>bash -c</code>. Still refused beside the store: a target nobody can resolve
+(<code>ls &lt;store&gt;/ &gt; $OUT</code>), a relative target when the store itself is spelled relatively (<code>ls confirm-config/ &gt; x</code>),
+and <code>echo</code>, <code>printf</code>, <code>touch</code>, <code>mkdir</code>, <code>chmod</code>, <code>sed</code>, <code>perl</code>, <code>python</code> or <code>node</code> given a path in the store.
+That is a
 textual tripwire, not a sandbox: a session that sets out to forge a receipt
 (<code>python -c</code>, an encoded command, a variable holding the path) still can, and
 <code>scope.mode: off</code> has no tripwire at all. Treat <code>humanOnly</code> opt-outs as

@@ -435,12 +435,12 @@ column:
 {human_only}
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.128) turns EVERY guard hook off: the promote
+`guards.enabled: false` (crew 1.3.130) turns EVERY guard hook off: the promote
 gate, the role-write, cloud, environment and scope guards, the verify gate, the
 completion audit and the context-watch Stop hook. None of them starts, so nothing
 is judged, refused, asked, warned or logged: with the switch off, nothing blocks. It
 beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mode`,
-`verifyGate`). Three things must all hold for it to count (crew 1.3.128):
+`verifyGate`). Three things must all hold for it to count (crew 1.3.130):
 
 - It is in the MACHINE layer (`~/.claude/crew/config.json`). A `false` in
   `.crew/config.json`, tracked or not, is ignored and the guards stay on (a
@@ -450,7 +450,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   applied `/crew:confirm-config` double confirmation backs it: two confirmations
   from two prompts the owner typed, and the digest of the machine file as the
   owner left it: its content (canonical JSON) AND its modification time (crew
-  1.3.128). An agent's Write or Edit, a hook-side write, a hand edit, a bare
+  1.3.130). An agent's Write or Edit, a hook-side write, a hand edit, a bare
   hand-written receipt, or ANY later write to the file (a restore, a rebuild, an
   unrelated edit, or a hand edit that sets the key `true` and a later one that
   writes the identical `false` back) leaves the guards ON; so does a missing,
@@ -475,17 +475,17 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   match a receipt (`cc-1*.json`, `cc-?*`, `cc-[0-9]*`) or anything else below the store. `patch --dry-run` (`--check`,
   `-C`) writes nothing and passes. A word the shell cannot resolve (an unset variable, a `$` share) is judged by
   how it ENDS, component by component. Escape characters are read the way each shell reads them (crew
-  1.3.128): a bash backslash (`confi\\g.json`), a PowerShell backtick (``confi`g.json``) and a cmd caret
+  1.3.130): a bash backslash (`confi\\g.json`), a PowerShell backtick (``confi`g.json``) and a cmd caret
   (`confi^g.json`) are stripped before the path is judged, in the command name and its options too (`r\\m`,
   ``Set-Cont`ent``), and a backtick command (`` `echo ~/.claude/crew`/config.json ``) is read as a command.
   A write target the guard cannot resolve to one path FAILS CLOSED when it could be the owner's: a `$(...)`
   or backtick substitution, a `$'...'` string with escapes, an unset variable, a `%VAR%`, `$env:` or `${{env:X}}`
-  name (crew 1.3.128: `c${{env:X}}nfig.json` was read as an NTFS stream and passed), a bash `~name/` or `~-/`, a
+  name (crew 1.3.130: `c${{env:X}}nfig.json` was read as an NTFS stream and passed), a bash `~name/` or `~-/`, a
   word in a parenthesised expression (`Set-Content -Path (Join-Path $HOME ".claude/crew/config.json")`), or a
-  variable the command assigned from anything but one literal word (crew 1.3.128: `$p = Join-Path $HOME
+  variable the command assigned from anything but one literal word (crew 1.3.130: `$p = Join-Path $HOME
   ".claude/crew/config.json"; Set-Content $p x` and `$p = $HOME + "\\.claude\\crew\\config.json"` passed; a loop
   variable and `read` count the same way). It is refused when what is spelled of it can only be the owner's
-  (`~/.claude/crew/$NAME`, `~/$A/config.json`), and otherwise only when it is SUSPECT (narrowed in crew 1.3.128,
+  (`~/.claude/crew/$NAME`, `~/$A/config.json`), and otherwise only when it is SUSPECT (narrowed in crew 1.3.130,
   owner decision 2026-11-15, "narrow overblocks"): the command names `.claude/crew`, the confirm-config store or
   `crew/config.json` as something it may write; or the target, the variable or the `cd` before it was built from
   pieces of that path (`.claude` and a `crew` folder in one expression or substitution); or the command stands in
@@ -499,9 +499,9 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   `cat ~/.claude/crew/config.json | tee "$OUT"` and `cp ~/.claude/crew/config.json "$BACKUP"` pass. A name such
   as `$D/out.txt` that cannot end one of the owner's paths passes in any command, and so does `mv x y` after
   `cd $D`. Comments do not count as naming the folder. cmd's `cd /d <folder>` is followed to the folder (crew
-  1.3.128: the switch was read as the folder, so `cd /d %USERPROFILE%\\.claude\\crew && echo x > config.json`
+  1.3.130: the switch was read as the folder, so `cd /d %USERPROFILE%\\.claude\\crew && echo x > config.json`
   passed).
-  Also read as writes since crew 1.3.128: `Tee-Object`, `Export-Csv`, `Export-Clixml`, `clc`; a PowerShell
+  Also read as writes since crew 1.3.130: `Tee-Object`, `Export-Csv`, `Export-Clixml`, `clc`; a PowerShell
   cmdlet that takes its path from the pipeline (`Get-ChildItem <it> | Remove-Item`, `| Clear-Content`,
   `Get-Item <it> | Set-Content -Value x`, `| % {{ Set-Content $_.FullName x }}`); `xargs <write verb>` fed a name
   of theirs or run in their folder (`ls | xargs rm`); `find <a folder that holds them> -delete` or
