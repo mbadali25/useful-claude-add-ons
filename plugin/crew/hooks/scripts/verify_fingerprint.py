@@ -78,6 +78,9 @@ try:
 except (AttributeError, ValueError):
     pass
 
+# `core.fsmonitor` off: a repo's `.git/config` can name a command that git runs
+# for `diff` and `ls-files`, and these run before the trust decision (L-0888).
+_GIT_QUIET = ("-c", "core.fsmonitor=false", "-c", "core.quotePath=false")
 _VERSION = b"crew-verify-fingerprint-v1"
 
 # Hashed alongside the changed files because they decide, respectively, WHICH
@@ -270,7 +273,7 @@ def _index_entries(root):
     """
     try:
         out = subprocess.run(
-            (crew_common.require_tool("git"), "-c", "core.quotePath=false", "ls-files", "-s", "-z"),
+            (crew_common.require_tool("git"), *_GIT_QUIET, "ls-files", "-s", "-z"),
             cwd=root, capture_output=True, text=True, check=False,
             stdin=subprocess.DEVNULL)
     except OSError:
@@ -310,7 +313,7 @@ def _sub_changed(root):
                  ("ls-files", "--others", "--exclude-standard")):
         try:
             done = subprocess.run(
-                (crew_common.require_tool("git"), "-c", "core.quotePath=false") + args, cwd=root,
+                (crew_common.require_tool("git"), *_GIT_QUIET) + args, cwd=root,
                 capture_output=True, text=True, check=False,
                 stdin=subprocess.DEVNULL)
         except OSError:

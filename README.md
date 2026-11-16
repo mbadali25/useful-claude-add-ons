@@ -9,13 +9,13 @@ One-line bootstrap — no `git clone` needed. Pulls the prerequisite installer s
 **Windows** (elevated PowerShell):
 
 ```powershell
-irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f860947a1e3dd45e7e38a5156d7d1793c6eb9651/scripts/install-prerequisites.ps1' | iex
+irm 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/34fa223570bc93bd30bfef758484dcce63d05ccf/scripts/install-prerequisites.ps1' | iex
 ```
 
 **Linux**:
 
 ```bash
-curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/f860947a1e3dd45e7e38a5156d7d1793c6eb9651/scripts/install-prerequisites.sh' | bash
+curl -fsSL 'https://raw.githubusercontent.com/mbadali25/useful-claude-add-ons/34fa223570bc93bd30bfef758484dcce63d05ccf/scripts/install-prerequisites.sh' | bash
 ```
 
 Both links are pinned to a specific commit SHA rather than `main`, so the exact script you're running is fixed and auditable — it can't silently change between when you review it and when you run it. **Update the SHA above whenever `scripts/install-prerequisites.*` changes**: after merging to `main`, run `git rev-parse HEAD` and swap it into both URLs.
@@ -115,7 +115,7 @@ Everything that can be a plugin **is** installed as one, using the CLI's own `cl
 | `-All` / `--all` | Select every menu item, no prompt. |
 | `-Select '1,3,7-9'` / `--select 1,3,7-9` | Select these menu items, no prompt. Item keys work too: `--select supabase,strix`. |
 | `-Skills 'cloudflare,drata'` / `--skills cloudflare,drata` | Install only these of this repo's skills, no sub-picker. Also accepts `all`, `none`, and numbers (`1,4-6`). Composes with `-All` / `-NonInteractive`. |
-| `-Team` / `--team`, `-Community` / `--community`, `-Plugins` / `--plugins` | The same for the other multi-item rows — items 4, 6 and 19. Each takes names, numbers, `all` or `none`, skips that row's sub-picker, and implies its parent item. Names match either the plugin key or the short label the picker shows. |
+| `-Team` / `--team`, `-Community` / `--community`, `-Plugins` / `--plugins`, `-SkillSets` / `--skillsets` | The same for the other multi-item rows — items 4, 6, 19 and 27. Each takes names, numbers, `all` or `none`, skips that row's sub-picker, and implies its parent item. Names match either the plugin key or the short label the picker shows. |
 | `-NonInteractive` / `--non-interactive` | Select the default set, no prompt — for unattended or CI runs. |
 | `-SkillUIGuide` / `--skillui-guide` | Print the SkillUI quick start after installing it, without being asked. |
 | `-NotifySetup` / `--notify-setup` | Scaffold `~/.config/notify/config.json` after installing the `notify` skill, without being asked. The prerequisites are printed either way. |
@@ -173,9 +173,11 @@ For this repo's own skills, [`scripts/check-marketplace.py`](scripts/check-marke
 | 24 Microsoft Learn | A remote HTTP endpoint (`https://learn.microsoft.com/api/mcp`). One server for three of this repo's domains — `learn.microsoft.com` carries the Azure, SharePoint and Power Automate / Power Platform documentation, so `intune-graph`, `power-automate-api` and the SharePoint skills all resolve against it rather than against three separate servers | `claude mcp add --transport http` |
 | 25 Perplexity | `npx -y @perplexity-ai/mcp-server`, registered with `--env PERPLEXITY_API_KEY=<key>` so the CLI has the key when it launches the server. Unlike row 21 this **does** write the key into the MCP registration — so it lands on disk in `~/.claude.json`, the same place row 12's bearer token goes, and the server gets it whatever environment the `claude` process was launched from. The key comes from `--perplexity-api-key` / `-PerplexityApiKey` or `PERPLEXITY_API_KEY`, is never printed, and with neither set the row explains how to get one and skips. This is the server the [`web-research`](skills/web-research/) skill calls | `claude mcp add` |
 
-`taste-skill` (`Leonxlnx/taste-skill`, pinned to v2.1.4) and `ui-ux-pro-max` (`nextlevelbuilder/ui-ux-pro-max-skill`, pinned to v2.15.0) are **unaudited third-party plugins and are opt-in** (unticked by default; tick them in the Community picker or pass `--community taste-skill,ui-ux-pro-max`). They are pinned to a tag because `marketplace add` rejects a full commit SHA as a ref, and a tag can be moved upstream, so they are not installed unless you ask. ui-ux-pro-max's design-skill scripts call `api.muapi.ai`, on explicit user action. taste-skill's scripts fetch images from Openverse, Wikimedia and the Art Institute, and drive a local Chrome. 
+`taste-skill` (`Leonxlnx/taste-skill`, pinned to v2.1.4) and `ui-ux-pro-max` (`nextlevelbuilder/ui-ux-pro-max-skill`, pinned to v2.15.0) are **unaudited third-party plugins and are opt-in** (unticked by default; tick them in the Community picker or pass `--community taste-skill,ui-ux-pro-max`). They are pinned to a tag because the CLI this was first written against rejected a full commit SHA as a ref (2.1.325 accepts one; see item 27), and a tag can be moved upstream, so they are not installed unless you ask. ui-ux-pro-max's design-skill scripts call `api.muapi.ai`, on explicit user action. taste-skill's scripts fetch images from Openverse, Wikimedia and the Art Institute, and drive a local Chrome. 
 
-Items 1–8 are the default set. Everything from 9 on is opt-in.
+Items 1–8 and 11 are the default set, plus item 27 (the skill sets below). Everything else is opt-in.
+
+**Item 27, skill sets** (ticked by default; → picks individually, `--skillsets` / `-SkillSets` narrows it) installs third-party plugins from three marketplaces, each pinned to a reviewed commit with `owner/repo#<sha>`: the five AWS plugins from `zxkane/aws-skills` (marketplace `aws-skills`: `aws-common`, `aws-iac`, `aws-cost-ops`, `serverless-eda`, `aws-agentic-ai`), `terraform` and `packer` from `hashicorp/agent-skills` (marketplace `hashicorp`), and only `fortinet` and `cisco-meraki` from `Servosity/msp-skills` (marketplace `msp-skills`, 111 plugins in all). `aws-cost-ops` and `aws-agentic-ai` declare MCP servers that Claude Code starts with an unpinned `uvx <awslabs package>@latest`; untick them if that is not wanted. Servosity's `fortinet-cli` / `cisco-meraki-cli` binaries are a separate install that the scripts never run (it is a third-party `install.sh` / `install.ps1`): read it first and run it with `DRY_RUN=1` before you install it yourself. A full-SHA `#ref` needs a CLI that accepts it (verified on 2.1.325); on an older one the marketplace step fails rather than falling back to an unpinned add.
 
 Full walkthrough, verification steps, and troubleshooting: [`INSTALLATION.md`](INSTALLATION.md).
 
@@ -239,6 +241,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 
 - **crew 1.3.106**: A workflow dispatch's `environment` input selects the environment in the promote gate. `crew` 1.3.106 stops the promote gate reading `gh workflow run deploy.yml -f environment=development` (or `qa`) as the production deploy when production's declared dispatch has no `environment` input; it now blocks as could-not-tell, naming the environment it selected, until every environment (production included) declares its own `environment` input; a production declared without it still matches by substring, but the selector block ends the gate first, so production's own checks do not run (they run beside the selected environment once that environment is declared).
 - **crew 1.3.75**: The mass delete, create and change guard (`guards.mass`) is gone, not just off. `crew` 1.3.75 removes the mass-operation guard entirely (the `guards.mass` keys, `/crew:approve-mass`, `crew_mass.py` and its hook path), because it was blocking production work; it will be re-reviewed and rebuilt before it ships again.
+- **crew 1.3.96**: The verify-trust store lock no longer fails a writer whose rival released the lock at the wrong moment. `crew` 1.3.96: with several writers at once, `verify_trust.py approve` could intermittently print `cannot take the store lock: OSError` and exit 1 (the approval was not recorded); a writer now waits and retries instead. No update was ever lost and the lock never admitted two writers.
+- **crew 1.3.95**: The verify-gate trust docs match what the junction check does, and the Windows short-name fallback is proven to accept. `crew` 1.3.95: the trust-store documentation no longer says a repository below a junctioned parent directory is always UNTRUSTED (only a linked worktree whose recorded path runs through a junction is), and a test now proves a genuine 8.3 short-name worktree is still trusted on Windows.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

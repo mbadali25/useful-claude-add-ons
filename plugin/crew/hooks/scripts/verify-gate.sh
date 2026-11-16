@@ -1,6 +1,46 @@
 #!/usr/bin/env bash
 
-. "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+# L-0888: an exported shell function (a `BASH_FUNC_git%%` or `BASH_FUNC_dirname%%`
+# variable, which a repo's settings `env` block can set) is imported by bash
+# before this line and would run repo code the first time the gate calls `git`
+# or `dirname`. The sweep below removes every function inherited at this point.
+# Its boundary, stated exactly (round 10): bash looks up the sweep's OWN two
+# command words, `compgen` and `unset`, as functions before the sweep can remove
+# anything, so an exported `BASH_FUNC_compgen%%` or `BASH_FUNC_unset%%` runs repo
+# code first (verified). Nothing a script can say first avoids that: every word,
+# `builtin` and `command` included, is itself looked up as a function. That, and
+# BASH_ENV, LD_PRELOAD and the like, run before any line here: code that already
+# controls the gate's launch environment is outside what this gate defends.
+for _crew_inherited_fn in $(compgen -A function); do unset -f "$_crew_inherited_fn"; done
+unset _crew_inherited_fn
+# Every inherited GATE_* variable is this script's own state, never input, and
+# the once-per-run cache is then set UNCONDITIONALLY: a repo's settings `env`
+# block can export a variable of any name, and a pre-seeded GATE_SAFE_DONE=1
+# with a GATE_SAFE_PY of its own would make the cache answer for the gate
+# (verified repro, round 9). Nothing inherited is read.
+for _crew_inherited_var in $(compgen -v GATE_); do unset "$_crew_inherited_var"; done
+unset _crew_inherited_var
+GATE_SAFE_DONE=0
+GATE_SAFE_RC=0
+GATE_SAFE_PY=""
+GATE_SAFE_PATH=""
+GATE_SAFE_MSG=""
+GATE_PATH_DONE=0
+GATE_PATH_RC=0
+# A repo's settings `env` block can also export GIT_DIR / GIT_WORK_TREE /
+# GIT_INDEX_FILE / GIT_COMMON_DIR, which would point every git call below at a
+# different, clean repository (an empty changed-file scan reads as a green run).
+# Removed for the whole run; the GIT_CONFIG_* variables are left alone (CI jobs
+# use them for safe.directory), and `core.fsmonitor` is forced off per call.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
+# This script's own directory by parameter expansion: `dirname` is an external
+# command found on PATH, which a repo's settings `env` block can set.
+_crew_src="${BASH_SOURCE[0]}"
+# Git Bash can hand over a native `D:\a\b\verify-gate.sh`, so both separators split.
+case "$_crew_src" in */*|*\\*) _crew_srcdir="${_crew_src%[/\\]*}" ;; *) _crew_srcdir="." ;; esac
+[ -n "$_crew_srcdir" ] || _crew_srcdir="/"
+
+. "$_crew_srcdir/_common.sh"
 # L-0733: every exit 2 leaves one line on STDOUT. Claude Code reads a Stop
 # hook that exits 2 with empty stdout and a stderr matching "no such file" or
 # "can't open" as a missing hook script and lets the turn through as
@@ -18,8 +58,208 @@ trap '_crew_gate_exit_line $?' EXIT
 # the gate cd's into the project. `pwd -W` is Git Bash's native form (D:/...),
 # which a native python can open; elsewhere it is not an option, so `pwd`.
 # CDPATH emptied: a match makes `cd` echo the directory into the value.
-GATE_PLUGIN_ROOT="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev/null 2>&1 &&
+GATE_PLUGIN_ROOT="$(CDPATH='' cd -- "$_crew_srcdir/../.." >/dev/null 2>&1 &&
   { pwd -W 2>/dev/null || pwd; })"
+# This script's own directory, resolved before the cd for the same reason (a
+# copy of the scripts need not sit at hooks/scripts under a plugin root).
+GATE_SCRIPT_DIR="$(CDPATH='' cd -- "$_crew_srcdir" >/dev/null 2>&1 &&
+  { pwd -W 2>/dev/null || pwd; })"
+
+# --- verify trust (L-0888) -------------------------------------------------
+# .crew/verify.json `run` strings reach `eval` and the smoke scripts reach
+# `bash`; both are repo-authored. verify_trust.py decides whether THIS machine
+# trusts this repo's bytes (hash-bound approval) or its remote owner
+# (allowlist). Anything but "trusted" - untrusted, changed, remote changed,
+# store unreadable, python missing where the smoke script would run - runs
+# NOTHING, writes no pass record, and says why. The caller exits 0 (Stop and
+# --all) or 1 (--price): an unknown is never read as trusted. A trust check
+# that could not run at all (status 14) is exit 2 on the Stop path, like a
+# matcher that cannot run (both calls exit 2 at once: the matcher is never reached on an interpreter
+# or script that could not even answer the trust question).
+# $1 is the directory holding verify_trust.py. --ci is exempt and says so: a CI job's
+# checkout is its own pipeline's trust and has no home store.
+gate_trust_broken() {
+  echo "VERIFY GATE: could not RUN the trust check (verify_trust.py exited ${GATE_TRUST_RC:-?}). Verification did NOT run. Work is not complete." >&2
+}
+GATE_TRUST_RC=""
+GATE_TRUST_BROKEN=0
+
+# gate_safe_path prints the PATH the gate may search for an interpreter before
+# it has decided to trust the repo: every relative entry and every directory
+# inside this repo (or the main checkout of a linked worktree) is stripped.
+# Returns 13 (and says why) when git cannot name the main checkout of a linked
+# worktree: an unknown is never read as "nothing to strip".
+gate_safe_path() {
+  local _tdir="$1" _tpd _tpr _tmain _tsafe _tentry
+  # The interpreter is found on a PATH stripped of every relative entry and every
+  # directory inside this repo: the repo's settings `env` block can set PATH, and
+  # even the probe that proves an interpreter runs it.
+  # A linked worktree's main checkout is repo-authored too: its root (the parent
+  # of the git common dir) is stripped as well as this directory.
+  _tpr=$(pwd -P)
+  _tmain=$(PATH="/usr/local/bin:/usr/bin:/bin:/mingw64/bin:/ucrt64/bin:/clangarm64/bin:/opt/homebrew/bin" git rev-parse --git-common-dir 2>/dev/null) || _tmain=""
+  case "$_tmain" in
+    /*/.git|[A-Za-z]:/*/.git) _tmain=$(CDPATH='' cd -- "${_tmain%/.git}" 2>/dev/null && pwd -P) || _tmain="" ;;
+    # A submodule's common dir is <superproject>/.git/modules/<name>: the
+    # superproject checkout is repo-authored too, and is what gets stripped.
+    /*/.git/modules/*|[A-Za-z]:/*/.git/modules/*) _tmain=$(CDPATH='' cd -- "${_tmain%%/.git/modules/*}" 2>/dev/null && pwd -P) || _tmain="" ;;
+    *) _tmain="" ;;
+  esac
+  # An empty _tmain means "no main checkout to strip" only when this directory
+  # is not a linked worktree. A linked worktree has a `.git` FILE, and when git
+  # could not tell us where the main checkout is (git missing from the fixed
+  # PATH, or it failed) leaving _tmain empty would keep a repo-authored
+  # directory on the interpreter search PATH: an unknown read as safe. It is an
+  # UNKNOWN. (Git for Windows prints the common dir as C:/..., hence the second
+  # pattern.) An ordinary checkout (a `.git` directory) has no main checkout.
+  if [ -z "$_tmain" ] && [ -f .git ]; then
+    echo "VERIFY GATE: UNKNOWN, not run - nothing was verified. This is a linked worktree or submodule and git could not say where its main checkout is (git is searched only in a fixed list: /mingw64/bin, /ucrt64/bin and /clangarm64/bin on Windows, /usr/local/bin, /usr/bin, /bin and /opt/homebrew/bin elsewhere)." >&2
+    return 13
+  fi
+  _tsafe="" _tentry=""
+  while IFS= read -r -d ':' _tentry || [ -n "$_tentry" ]; do
+    case "$_tentry" in /*|[A-Za-z]:*) ;; *) continue ;; esac
+    _tpd=$(CDPATH='' cd -- "$_tentry" 2>/dev/null && pwd -P) || continue
+    case "$_tpd/" in "$_tpr"/*) continue ;; esac
+    [ -n "$_tmain" ] && case "$_tpd/" in "$_tmain"/*) continue ;; esac
+    _tsafe="${_tsafe:+$_tsafe:}$_tentry"
+  done <<< "${GATE_USER_PATH-${PATH:-}}:"
+  printf '%s\n' "$_tsafe"
+}
+
+# gate_helper_py resolves the interpreter for the helpers that run BEFORE the
+# trust decision (fingerprint, scope report, record report, --price): a PROVED
+# interpreter found on the sanitized PATH alone, with CREW_PYTHON ignored and
+# every PYTHON* variable removed from the probe, so a hostile repo's settings
+# `env` block (CREW_PYTHON, a repo PATH entry, PYTHONPATH) cannot make the gate
+# run repo code ahead of the trust check. No such interpreter is an empty
+# answer, and every caller treats that as "skip this helper", never as a pass.
+# Callers run the script it finds with `-E -s`.
+gate_helper_py() {
+  [ "${GATE_SAFE_DONE:-0}" -eq 1 ] && [ -n "${GATE_SAFE_PY:-}" ] || return 1
+  printf '%s\n' "$GATE_SAFE_PY"
+}
+
+# gate_py_on_path "<path>": the PROVED interpreter on exactly that PATH, with
+# CREW_PYTHON ignored and every PYTHON* variable removed so a repo-set
+# PYTHONPATH cannot run a sitecustomize inside the probe's own `-c`.
+gate_py_on_path() {
+  (
+    for _hv in $(compgen -e); do case "$_hv" in PYTHON*) unset "$_hv" ;; esac; done
+    # No user site: `HOME=<repo>/home` would otherwise let a repo's usercustomize.py
+    # run inside the probe's own `-c` (verified repro, round 9). The variable is
+    # ours, set after every inherited PYTHON* variable was removed above.
+    PYTHONNOUSERSITE=1 CREW_PYTHON="" PATH="$1" crew_py_strict 2>/dev/null
+  )
+}
+
+# gate_prepare_safe works the sanitized PATH and the proved interpreter on it out
+# ONCE per gate run, in the main shell (never in a `$(...)`, which would lose the
+# cache): GATE_SAFE_PATH, GATE_SAFE_PY, GATE_SAFE_RC, GATE_SAFE_MSG. Both trust
+# checks and every pre-trust helper share the answer; each repeat used to walk
+# the PATH with a subshell per entry and start a proving python, and on Windows
+# a process is what the gate's wall clock pays for. Returns 13 when git cannot
+# name a linked worktree's main checkout (the message is in GATE_SAFE_MSG).
+gate_prepare_path() {
+  [ "${GATE_PATH_DONE:-0}" -eq 1 ] && return "$GATE_PATH_RC"
+  GATE_PATH_DONE=1 GATE_PATH_RC=0 GATE_SAFE_MSG=""
+  GATE_SAFE_PATH=$(gate_safe_path "${GATE_SCRIPT_DIR:-}" 2>&1) || GATE_PATH_RC=$?
+  if [ "$GATE_PATH_RC" -ne 0 ]; then
+    GATE_SAFE_MSG="$GATE_SAFE_PATH" GATE_SAFE_PATH=""
+  fi
+  return "$GATE_PATH_RC"
+}
+gate_prepare_safe() {
+  [ "${GATE_SAFE_DONE:-0}" -eq 1 ] && return "$GATE_SAFE_RC"
+  GATE_SAFE_DONE=1 GATE_SAFE_RC=0 GATE_SAFE_PY=""
+  gate_prepare_path || { GATE_SAFE_RC=$?; return "$GATE_SAFE_RC"; }
+  GATE_SAFE_PY=$(gate_py_on_path "$GATE_SAFE_PATH") || GATE_SAFE_PY=""
+  return 0
+}
+
+# gate_unsafe_python_present: succeeds when the gate COULD resolve a python the
+# sanitized lookup refused (a CREW_PYTHON, or a python-named executable in a
+# PATH entry that is relative or inside the repo). It only looks at file names:
+# nothing it finds is executed, because running an untrusted interpreter to
+# ask whether it works is itself running repo code ahead of the trust check.
+gate_unsafe_python_present() {
+  local _up_safe=":$1:" _up_entry _up_name _up_dir
+  [ -n "${CREW_PYTHON:-}" ] && return 0
+  while IFS= read -r -d ':' _up_entry || [ -n "$_up_entry" ]; do
+    case "$_up_safe" in *":$_up_entry:"*) continue ;; esac
+    _up_dir="${_up_entry:-.}"
+    for _up_name in "$_up_dir"/python "$_up_dir"/python3 "$_up_dir"/py "$_up_dir"/python3.* \
+                    "$_up_dir"/python.exe "$_up_dir"/python3.exe "$_up_dir"/py.exe; do
+      [ -e "$_up_name" ] && return 0
+    done
+  done <<< "${GATE_USER_PATH-${PATH:-}}:"
+  return 1
+}
+
+gate_trust_check() {
+  local _tdir="$1" _tp _tpd _tpr _tmain _tsafe _tentry _tpath _tenv _tmsg _trc=0
+  shift
+  gate_prepare_safe || { printf '%s\n' "$GATE_SAFE_MSG" >&2; return 13; }
+  _tsafe="$GATE_SAFE_PATH"
+  # CREW_PYTHON is environment, which a repo's settings `env` block can set, so
+  # it is emptied for this lookup: the interpreter that decides trust is found
+  # on the sanitized PATH alone.
+  _tp="$GATE_SAFE_PY"
+  if [ -z "$_tp" ] || [ ! -f "$_tdir/verify_trust.py" ]; then
+    # No python anywhere while a verify.json exists: the PY check further down
+    # exits 2 and nothing runs, so leave that message to it. But when the gate
+    # itself CAN resolve a python (CREW_PYTHON, or a PATH entry inside the repo)
+    # that the sanitized lookup refused (named by file name only, never run), the matcher would run on an interpreter
+    # nobody trusted and the rules would follow: that is UNKNOWN, not a pass.
+    if [ -z "$_tp" ] && [ -f .crew/verify.json ] && ! gate_unsafe_python_present "$_tsafe"; then
+      return 0
+    fi
+    echo "VERIFY GATE: UNKNOWN, not run - nothing was verified. The trust check could not run (no working python, or verify_trust.py is missing at $_tdir)." >&2
+    return 13
+  fi
+  # The interpreter runs isolated (-E: every PYTHON* variable ignored, -s: no
+  # user site) with a scrubbed environment and a fixed PATH. A repo's own
+  # settings `env` block reaches hook processes, so without this a hostile repo
+  # could point PYTHONPATH at a sitecustomize that answers "trusted" before
+  # verify_trust.py runs.
+  case "$(PATH="/usr/bin:/bin" uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*) _tpath="/mingw64/bin:/ucrt64/bin:/clangarm64/bin:/usr/bin:/bin" ;;
+    *) _tpath="/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin" ;;
+  esac
+  _tenv=/usr/bin/env
+  [ -x "$_tenv" ] || _tenv="env"
+  # Every PYTHON* variable (PYTHONPATH, PYTHONSTARTUP, PYTHONHOME, ...) is ignored
+  # by -E itself, so none is listed here: -E is the single guard for them.
+  _tmsg=$("$_tenv" \
+    -u BASH_ENV -u ENV -u CDPATH -u LD_PRELOAD -u LD_LIBRARY_PATH -u LD_AUDIT \
+    -u DYLD_INSERT_LIBRARIES -u DYLD_LIBRARY_PATH -u DYLD_FALLBACK_LIBRARY_PATH \
+    -u GIT_EXEC_PATH -u GIT_CONFIG_COUNT -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_SYSTEM \
+    -u GIT_SSH -u GIT_SSH_COMMAND -u GIT_ASKPASS -u GIT_EXTERNAL_DIFF -u GIT_PAGER \
+    -u GIT_TEMPLATE_DIR -u GIT_NAMESPACE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    PATH="$_tpath" \
+    "$_tp" -E -s "$_tdir/verify_trust.py" check --root "$PWD" "$@" 2>/dev/null) || _trc=$?
+  _tmsg=${_tmsg//$'\r'/}
+  if [ "$_trc" -eq 0 ]; then
+    # verify_trust.py prints one line for every verdict. A status 0 with no
+    # line is a script that did not run its check (an empty file, a stub).
+    [ -n "$_tmsg" ] && return 0
+    GATE_TRUST_RC="0 with no output"
+    return 14
+  fi
+  case "$_trc" in
+    10|11|12|13) ;;
+    *)
+      # verify_trust.py is the only thing that answers 0 or 10-13. Any other
+      # status means the interpreter or the script itself failed. The caller
+      # decides what to print (gate_trust_broken), because a python that
+      # cannot run at all is reported by the matcher's own, older message.
+      GATE_TRUST_RC="$_trc"
+      return 14 ;;
+  esac
+  [ -n "$_tmsg" ] || _tmsg="VERIFY GATE: UNKNOWN, not run - nothing was verified. The trust check printed nothing (exit $_trc)."
+  printf '%s\n' "$_tmsg" >&2
+  return "$_trc"
+}
 
 # --price is an OPERATOR command only, and is handled here, before ANYTHING
 # else in this file - before the stdin read below, which a terminal
@@ -33,8 +273,9 @@ GATE_PLUGIN_ROOT="$(CDPATH='' cd -- "$(dirname "${BASH_SOURCE[0]}")/../.." >/dev
 # against the real map unless you mean to commit the result.
 if [ "${1:-}" = "--price" ]; then
   cd "${CLAUDE_PROJECT_DIR:-.}" || exit 1
-  PRICE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  PRICE_PY=$(crew_py) || { echo "verify-gate --price: no python available" >&2; exit 1; }
+  PRICE_DIR="$(cd "$_crew_srcdir" && pwd)"
+  gate_prepare_safe || true
+  PRICE_PY=$(gate_helper_py) || { echo "verify-gate --price: no python available" >&2; exit 1; }
   shift
   PRICE_TARGET=".crew/verify.json"
   PRICE_FORCE=""
@@ -49,7 +290,27 @@ if [ "${1:-}" = "--price" ]; then
       *) PRICE_TARGET="$a" ;;
     esac
   done
-  "$PRICE_PY" "$PRICE_DIR/verify_price.py" "$PRICE_TARGET" $PRICE_FORCE
+  # L-0888: pricing RUNS every rule's command, so it needs the same trust the
+  # Stop gate does, for the map it is about to run. The repo's own map is
+  # judged like a Stop; any other file is judged by its own bytes (a hash
+  # approval of exactly those bytes, never the remote owner). A refusal exits
+  # 1, not 0: nothing was priced, and a 0 would read as a priced map.
+  # ACCEPTED RESIDUAL (owner decision 2026-10-25): the map is opened again after
+  # this one check, so a process running as the user that swaps it in between
+  # makes --price run the swapped bytes; the same user can edit the store.
+  _price_rc=0
+  case "$PRICE_TARGET" in */*) _price_dir="${PRICE_TARGET%/*}" _price_base="${PRICE_TARGET##*/}" ;; *) _price_dir="." _price_base="$PRICE_TARGET" ;; esac
+  [ -n "$_price_dir" ] || _price_dir="/"
+  if [ "$(cd "$_price_dir" 2>/dev/null && pwd -P)/$_price_base" = "$(pwd -P)/.crew/verify.json" ]; then
+    gate_trust_check "$GATE_SCRIPT_DIR" || _price_rc=$?
+  else
+    gate_trust_check "$GATE_SCRIPT_DIR" --verify-file "$PRICE_TARGET" || _price_rc=$?
+  fi
+  if [ "$_price_rc" -ne 0 ]; then
+    [ "$_price_rc" -eq 14 ] && gate_trust_broken
+    exit 1
+  fi
+  "$PRICE_PY" -E -s "$PRICE_DIR/verify_price.py" "$PRICE_TARGET" $PRICE_FORCE
   exit $?
 fi
 
@@ -193,17 +454,17 @@ _crew_gate_owed_filter() {
 # mode stdout goes through the filter above. The exit status is the script's.
 gate_record_report() {
   if [ "${CREW_GATE_QUIET:-0}" -eq 1 ]; then
-    "$1" "$2" report 2>/dev/null | _crew_gate_owed_filter
+    "$1" -E -s "$2" report 2>/dev/null | _crew_gate_owed_filter
     return "${PIPESTATUS[0]}"
   fi
-  "$1" "$2" report >&2 2>/dev/null
+  "$1" -E -s "$2" report >&2 2>/dev/null
 }
 gate_record_sync() {
   if [ "${CREW_GATE_QUIET:-0}" -eq 1 ]; then
-    "$1" "$2" sync | _crew_gate_owed_filter
+    "$1" -E -s "$2" sync | _crew_gate_owed_filter
     return "${PIPESTATUS[0]}"
   fi
-  "$1" "$2" sync >&2
+  "$1" -E -s "$2" sync >&2
 }
 _crew_gate_quiet_install() {
   [ "$CI_MODE" -eq 0 ] && [ "$CI_ALL_SEEN" -eq 0 ] && [ "$VERBOSE_ARG" -eq 0 ] || return 0
@@ -479,6 +740,21 @@ cd "${CLAUDE_PROJECT_DIR:-.}" || {
   [ "$CI_MODE" -eq 1 ] && { echo "verify-gate --ci: cannot cd into ${CLAUDE_PROJECT_DIR:-.} - nothing was checked" >&2; exit 2; }
   exit 0
 }
+# L-0888, round 10: from here to the trust decision every external command the
+# gate runs (git, grep, tr, sed, wc, cut, head, date) is found on the SAME sanitized
+# PATH the interpreter is: the user's PATH minus every relative entry and every
+# directory inside this repo (a repo's settings `env` block can set PATH, and a
+# `dirname`, `tr` or `git` planted in <repo>/bin would otherwise run before the
+# trust check; verified repro). The user's own PATH is put back once the repo is
+# trusted (or the run is --ci, which has no trust check and needs the job's
+# own PATH), so a rule runs exactly as before. When git cannot name the main
+# checkout the sanitized PATH is unknown and a fixed system list is used: that
+# run ends at the trust check with UNKNOWN anyway.
+GATE_USER_PATH="${PATH-}"
+if [ "$CI_MODE" -eq 0 ]; then
+  gate_prepare_path || true
+  PATH="${GATE_SAFE_PATH:-/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin:/mingw64/bin:/ucrt64/bin:/clangarm64/bin}"
+fi
 # The resolved repo config (T-0096's crew_repo_config_dir, L-0681): a linked
 # worktree with no config of its own reads the main checkout's, the file
 # review_gate.py reads too. When git cannot tell, it is this checkout's own.
@@ -538,6 +814,24 @@ gate_marker_text() {
   printf '%s' "$_mt"
 }
 
+# crew_incident_active, answered by the PROVED interpreter on the sanitized
+# PATH (round 10): the shared helper calls crew_py, which honours CREW_PYTHON and
+# every PYTHON* variable, so `.crew/incident.json` plus CREW_PYTHON=<repo>/bin/python3
+# ran a repo script before the trust check (verified repro). No such interpreter
+# means "no incident is active": a gate that cannot read its own state keeps gating.
+gate_incident_active() {
+  gate_prepare_safe || return 1
+  [ -n "${GATE_SAFE_PY:-}" ] || return 1
+  (
+    for _hv in $(compgen -e -X '!PYTHON*'); do unset "$_hv"; done
+    export PYTHONNOUSERSITE=1
+    PATH="$GATE_SAFE_PATH"
+    CREW_PYTHON=""
+    crew_py() { printf '%s\n' "$GATE_SAFE_PY"; }
+    crew_incident_active
+  )
+}
+
 # Emergency lane. An incident is open, so this turn is not blocked and the
 # checks do not run - that is the entire point of declaring one, since these
 # are the checks that take minutes. What would have run is written down
@@ -554,8 +848,8 @@ if [ "$CI_MODE" -eq 1 ]; then
   if [ -f .crew/incident.json ]; then
     echo "verify-gate --ci: .crew/incident.json is present - the emergency lane stands down only the Stop gate, so --ci runs the rules anyway" >&2
   fi
-elif crew_incident_active; then
-  CHANGED_N=$( { git -c core.quotePath=false diff --name-only HEAD 2>/dev/null; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; } | grep -c . )
+elif gate_incident_active; then
+  CHANGED_N=$( { git -c core.fsmonitor=false -c core.quotePath=false diff --name-only HEAD 2>/dev/null; git -c core.fsmonitor=false -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; } | grep -c . )
   crew_incident_log verify "stop gate stood down with $CHANGED_N changed file(s) unverified"
   if [ -f .crew/.deploy-in-flight ]; then
     read -r DENV DSHA <<< "$(gate_marker_line .crew/.deploy-in-flight)"
@@ -881,14 +1175,14 @@ if [ "$CI_ALL_SEEN" -eq 1 ] || [ "$CI_MODE" -eq 1 ]; then
   # the leading R### status column and `tr '\t' '\n'` splits the remaining
   # two paths onto their own lines, matching CHANGED's one-path-per-line
   # shape.
-  CHANGED=$(git -c core.quotePath=false ls-files 2>/dev/null; \
-            git -c core.quotePath=false diff --name-only --cached --diff-filter=D 2>/dev/null; \
-            git -c core.quotePath=false diff --name-only HEAD 2>/dev/null; \
-            git -c core.quotePath=false diff --name-status --cached -M --diff-filter=R 2>/dev/null | cut -f2- | tr '\t' '\n'; \
-            { [ "$CI_MODE" -eq 1 ] || git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; })
+  CHANGED=$(git -c core.fsmonitor=false -c core.quotePath=false ls-files 2>/dev/null; \
+            git -c core.fsmonitor=false -c core.quotePath=false diff --name-only --cached --diff-filter=D 2>/dev/null; \
+            git -c core.fsmonitor=false -c core.quotePath=false diff --name-only HEAD 2>/dev/null; \
+            git -c core.fsmonitor=false -c core.quotePath=false diff --name-status --cached -M --diff-filter=R 2>/dev/null | cut -f2- | tr '\t' '\n'; \
+            { [ "$CI_MODE" -eq 1 ] || git -c core.fsmonitor=false -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null; })
   # ^ --ci leaves untracked files out: see SCOPE in the CI_MODE header.
 else
-  CHANGED=$(git -c core.quotePath=false diff --name-only "$BASE" 2>/dev/null; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null)
+  CHANGED=$(git -c core.fsmonitor=false -c core.quotePath=false diff --name-only "$BASE" 2>/dev/null; git -c core.fsmonitor=false -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null)
 fi
 CHANGED=$(printf '%s\n' "$CHANGED" | sort -u | sed '/^$/d')
 if [ -z "$CHANGED" ]; then
@@ -907,8 +1201,9 @@ if [ -z "$CHANGED" ]; then
   # rule's own files last changed, it goes quiet with nobody told. Best
   # effort and read-only: no python, no script, or a corrupt record file
   # all mean "say nothing extra", never "invent a status".
-  REPORT_PY=$(crew_py 2>/dev/null) || REPORT_PY=""
-  REPORT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  gate_prepare_safe || true
+  REPORT_PY=$(gate_helper_py 2>/dev/null) || REPORT_PY=""
+  REPORT_DIR="$(cd "$_crew_srcdir" && pwd)"
   if [ -n "$REPORT_PY" ] && [ -f "$REPORT_DIR/verify_record.py" ]; then
     gate_record_report "$REPORT_PY" "$REPORT_DIR/verify_record.py" || true
   fi
@@ -1044,12 +1339,13 @@ fi
 # Neither --all nor --ci ever skips here: any non-empty BUDGET_FLAG means the
 # caller asked for the whole map, and a PR job that exits 0 on a fingerprint
 # left by an earlier run would pass a change it never looked at.
-FP_PY=$(crew_py 2>/dev/null) || FP_PY=""
-FP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+gate_prepare_safe || true
+FP_PY=$(gate_helper_py 2>/dev/null) || FP_PY=""
+FP_DIR="$(cd "$_crew_srcdir" && pwd)"
 FP_FILE=".crew/.verify-gate.fingerprint"
 FINGERPRINT=""
 if [ -n "$FP_PY" ] && [ -f "$FP_DIR/verify_fingerprint.py" ] && [ -z "$BUDGET_FLAG" ]; then
-  FINGERPRINT=$(printf '%s\n' "$CHANGED" | "$FP_PY" "$FP_DIR/verify_fingerprint.py" "$PWD" 2>/dev/null)
+  FINGERPRINT=$(printf '%s\n' "$CHANGED" | "$FP_PY" -E -s "$FP_DIR/verify_fingerprint.py" "$PWD" 2>/dev/null)
   if [ -n "$FINGERPRINT" ] && [ -f "$FP_FILE" ] \
      && [ "$FINGERPRINT" = "$(gate_marker_text "$FP_FILE")" ]; then
     echo "verify-gate: nothing the gate depends on has changed since the last CLEAN run (fingerprint $FINGERPRINT) - checks were SKIPPED, not re-run. Edit a file, or run the gate with --all, to force them." >&2
@@ -1249,7 +1545,7 @@ lock_owner_state() {
   case "$_os_stamp" in ''|*[!0-9]*) echo unknown; return ;; esac
   [ -n "$_os_token" ] && [ -z "$_os_extra" ] || { echo unknown; return; }
   [ "$_os_token" = "$(tr -d '\r\n' < "$LOCK/token" 2>/dev/null)" ] || { echo unknown; return; }
-  case "$("$FP_PY" "$FP_DIR/verify_record.py" owner-state "$_os_scheme" "$_os_pid" "$_os_stamp" 2>/dev/null | tr -d '\r')" in
+  case "$("$FP_PY" -E -s "$FP_DIR/verify_record.py" owner-state "$_os_scheme" "$_os_pid" "$_os_stamp" 2>/dev/null | tr -d '\r')" in
     alive) echo alive ;;
     dead) echo dead ;;
     *) echo unknown ;;
@@ -1447,8 +1743,10 @@ fi
 # earlier draft used "$DIR/scope_report.py", which expanded to "/scope_report.py"
 # and MSYS rewrote that to "C:\Program Files\Git\scope_report.py". The gate then
 # printed a python "No such file" line as its scope report. Resolve it here.
-SCOPE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCOPE_PY=$(crew_py 2>/dev/null) || SCOPE_PY=""
+SCOPE_DIR="$(cd "$_crew_srcdir" && pwd)"
+# The same interpreter the fingerprint helper resolved above: one proving probe, not two
+# (each probe is a process, and on Windows a process is what the gate's wall clock pays for).
+SCOPE_PY="$FP_PY"
 # The two preconditions are reported APART. Both used to fall into one
 # "(no python)" sentence, so a missing scope_report.py -- a different
 # cause with a different fix -- was announced as an absent interpreter.
@@ -1459,9 +1757,26 @@ elif [ ! -f "$SCOPE_DIR/scope_report.py" ]; then
   echo "outside-scope: (scope_report.py not found at $SCOPE_DIR/scope_report.py; scope not checked)" >&2
 else
   printf '%s
-' "$CHANGED" | "$SCOPE_PY" "$SCOPE_DIR/scope_report.py" "$PWD" || true
+' "$CHANGED" | "$SCOPE_PY" -E -s "$SCOPE_DIR/scope_report.py" "$PWD" || true
 fi
 : # keep the scope report from ever deciding this script's status
+
+if [ "$CI_MODE" -eq 1 ]; then
+  echo "verify-gate --ci: trust check exempt - a CI job's checkout is its own pipeline's trust (no Stop hook, no home trust store)" >&2
+elif [ -f .crew/verify.json ] || [ -f ./_verify/smoke.sh ] || [ -f ./scripts/smoke.sh ]; then
+  _trust_rc=0
+  # ACCEPTED RESIDUAL (owner decision 2026-10-25): bash reopens the smoke script
+  # after its hash check, so a process running as the user that swaps it in
+  # between runs the swapped bytes; the same user can edit the store.
+  gate_trust_check "$GATE_SCRIPT_DIR" || _trust_rc=$?
+  case "$_trust_rc" in
+    0) ;;
+    14) gate_trust_broken; exit 2 ;;
+    *) exit 0 ;;
+  esac
+fi
+# Trusted (or --ci, or nothing to run): the user's own PATH is back for the rules.
+PATH="$GATE_USER_PATH"
 
 if [ ! -f .crew/verify.json ]; then
   # _verify/ is the canonical home; scripts/smoke.sh is honoured as legacy.
@@ -1543,8 +1858,8 @@ if [ -n "$PY" ] && [ -f "$FP_DIR/verify_record.py" ]; then
   TREE_PRE=$("$PY" "$FP_DIR/verify_record.py" tree-snapshot --stable 2>/dev/null | tr -d '\r\n')
 fi
 
-MATCHED=$(CREW_REPO_CONFIG="$CREW_REPO_CONFIG" "$PY" - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" "$TREE_PRE" << 'PY'
-import json,sys,fnmatch,io,os,re
+MATCHED=$(CREW_REPO_CONFIG="$CREW_REPO_CONFIG" "$PY" -I - "$CHANGED_FILE" "$BUDGET_FLAG" "$FP_DIR" "$TREE_PRE" << 'PY'
+import json,sys,fnmatch,io,os,re,hashlib
 try:
     sys.stdout.reconfigure(newline="\n")
 except (AttributeError, ValueError):
@@ -1593,7 +1908,10 @@ def _classify_run_reach(run):
 
 changed=[l for l in io.open(sys.argv[1],encoding="utf-8").read().split("\n") if l.strip()]
 try:
-    cfg=json.load(open(".crew/verify.json"))
+    with open(".crew/verify.json", "rb") as _vf:
+        _verify_raw = _vf.read()
+    _verify_sha = hashlib.sha256(_verify_raw).hexdigest()
+    cfg=json.loads(_verify_raw.decode("utf-8"))
 except (OSError, ValueError) as e:
     print(f"PARSE_ERROR: {e}", file=sys.stderr)
     sys.exit(3)
@@ -2248,7 +2566,7 @@ for _ri in rule_order:
         "cmds": rule_cmds.get(_ri, []),
         "unknown": bool(truly_unknown.get(_ri)),
     })
-_extras = {"matched_rules": matched_rules, "budget": budget}
+_extras = {"matched_rules": matched_rules, "budget": budget, "verify_sha": _verify_sha}
 # Quiet Stop (L-0796): reach-excluded `always`/`default` commands are
 # NOT VERIFIED items too, and the repeat check hashes the IDENTITIES of what
 # was not run (rule keys by kind, fallback commands, deferred and reach
@@ -2360,7 +2678,26 @@ elif [ -z "$MATCHED" ]; then
   echo "VERIFY GATE: the matcher produced no output at all, even though it exited 0 and .crew/verify.json exists. This is the signature of a broken interpreter (for example a WindowsApps stub) succeeding without actually running any python code. Work is not complete. Install python (3.10+) on this machine, or set \"verifyGate\": false in .crew/config.json to stand this gate down deliberately (honoured at the top of this file)." >&2
   exit 2
 fi
-# \035 is the record separator the matcher wrote between the two records, and
+# The second trust check (L-0888, TOCTOU): the matcher read verify.json some
+# time after the first check. If the bytes moved in between, they are no
+# longer the bytes that were approved: run nothing.
+if [ "$CI_MODE" -eq 0 ]; then
+  _trust_rc=0
+  VERIFY_SHA=$(printf '%s' "$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 6p)" | sed -n 's/.*"verify_sha": "\([0-9a-f]*\)".*/\1/p' | head -1)
+  if [ -n "$VERIFY_SHA" ]; then
+    gate_trust_check "$GATE_SCRIPT_DIR" --expect-verify-sha "$VERIFY_SHA" || _trust_rc=$?
+  else
+    GATE_TRUST_RC="no parsed-bytes hash"; _trust_rc=14
+  fi
+  [ "$GATE_TRUST_BROKEN" -eq 0 ] || _trust_rc=14
+  case "$_trust_rc" in
+    0) ;;
+    14) gate_trust_broken; exit 2 ;;
+    *) exit 0 ;;
+  esac
+fi
+# \035 is the record separator the matcher wrote between its records (commands,
+# unmapped, notices, count, cost, extras, cover and tree-cache; read below), and
 # \036 the field separator inside each. `sed -n 1p` used to take the first
 # NEWLINE-delimited line, which is what a command containing a newline moved.
 CMDS=$(printf '%s\n' "$MATCHED" | tr '\035' '\n' | sed -n 1p | tr '\036' '\n')
@@ -2429,7 +2766,7 @@ fi
 CI_EXCLUDED_N=-1
 CI_NOTHING=""
 if [ "$CI_MODE" -eq 1 ]; then
-  CI_FIELDS=$(printf '%s' "$EXTRAS" | "$PY" -c '
+  CI_FIELDS=$(printf '%s' "$EXTRAS" | "$PY" -I -c '
 import json, sys
 try:
     d = json.loads(sys.stdin.read() or "{}")
@@ -2771,7 +3108,7 @@ while IFS= read -r IDENT; do
   # REAL AWS_PROFILE inherited from the caller's shell exported into the
   # check the pin exists to isolate from it.
   if [ -n "$PY" ]; then
-    SPLIT=$("$PY" -c '
+    SPLIT=$("$PY" -I -c '
 import sys
 ident = sys.argv[1]
 text, sep, envjson = ident.partition("\x1c")
@@ -2787,7 +3124,7 @@ print(text + "\x1e" + (envjson if sep else ""), end="")
     STATUS_AT[$POS]="covered"
     TREE_N=$((TREE_N + 1))
     # "tree" LAST, so the withdrawal after the loop can match it at end of line.
-    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0, "tree": True}))' "$IDENT" 2>/dev/null | tr -d '\r')
+    LOG_LINE=$("$PY" -I -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0, "tree": True}))' "$IDENT" 2>/dev/null | tr -d '\r')
     [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
 $LOG_LINE"
     continue
@@ -2797,7 +3134,7 @@ $LOG_LINE"
     gate_detail "verify-gate: COVERED by rules[${GUARD%%;*}] (passed this run): $c"
     STATUS_AT[$POS]="covered"
     COVERED_N=$((COVERED_N + 1))
-    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0}))' "$IDENT" 2>/dev/null | tr -d '\r')
+    LOG_LINE=$("$PY" -I -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": "covered", "elapsed": 0}))' "$IDENT" 2>/dev/null | tr -d '\r')
     [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
 $LOG_LINE"
     continue
@@ -2827,7 +3164,7 @@ $LOG_LINE"
   # live host) from silently riding along into a check nobody pointed there.
   PIN_REPORT=""
   if [ -n "$PY" ] && [ -n "$ENV_JSON" ]; then
-    ENV_LINES=$(printf '%s' "$ENV_JSON" | "$PY" -c '
+    ENV_LINES=$(printf '%s' "$ENV_JSON" | "$PY" -I -c '
 import json, sys
 try:
     spec = json.loads(sys.stdin.read() or "{}")
@@ -3098,7 +3435,7 @@ for v in ("ENV", "AWS_PROFILE", "AWS_DEFAULT_REGION", "KUBECONFIG", "TF_WORKSPAC
     # so the record-sync classification (which matches THIS log against
     # those lists) has to key on the same thing, or two rules sharing
     # command text under different env would collide back into one entry.
-    LOG_LINE=$("$PY" -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": sys.argv[2], "elapsed": int(sys.argv[3])}))' "$IDENT" "$CMD_STATUS" "$RULE_ELAPSED" 2>/dev/null | tr -d '\r')
+    LOG_LINE=$("$PY" -I -c 'import json,sys; print(json.dumps({"cmd": sys.argv[1], "status": sys.argv[2], "elapsed": int(sys.argv[3])}))' "$IDENT" "$CMD_STATUS" "$RULE_ELAPSED" 2>/dev/null | tr -d '\r')
     [ -n "$LOG_LINE" ] && CMD_LOG="$CMD_LOG
 $LOG_LINE"
   fi
@@ -3228,7 +3565,7 @@ if [ -n "$PY" ] && [ -n "$EXTRAS" ]; then
       echo "verify-gate: could not create a temp file for the record sync; NOT advancing the marker" >&2
     else
       printf '%s\n' "$EXTRAS" > "$EXTRAS_FILE"
-      "$PY" -c '
+      "$PY" -I -c '
 import json, sys
 try:
     sys.stdout.reconfigure(newline="\n")
