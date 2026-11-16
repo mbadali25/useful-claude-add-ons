@@ -1889,8 +1889,12 @@ GUARDS_MASTER_MUTATIONS = (
      '        last = max((index for index, kind in enumerate(kinds) if kind != "dir"), default=-1)\n',
      '        last = max((index for index, kind in enumerate(kinds) if kind != "case"), default=-1)\n',
      _M + "test_a_write_while_still_in_the_owners_folder_is_refused"),
-    ("`env -C <folder>` around a child shell ends inside the child (the commands after it stand there)", SCOPE,
+    ("`env -C <folder>` around a child shell ends after the child's first command", SCOPE,
      '    shell.once = None   # `env -C',
      '    pass   # `env -C',
+     _M + "test_the_round_11_extras_are_refused"),
+    ("the folder `env -C` left is forgotten when a child shell ends (the commands after it stay there)", SCOPE,
+     '        shell.dirs, shell.once = stack, once',
+     '        shell.dirs = stack',
      _M + "test_a_write_while_still_in_the_owners_folder_is_refused"),
 )

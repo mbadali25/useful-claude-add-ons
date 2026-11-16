@@ -1541,7 +1541,9 @@ EXTRA_READS = (
 )
 ENV_CHDIR = ("env -C {d} tee config.json", "env --chdir={d} tee config.json", "env --chdir {d} rm config.json",
              "env -C {d} sh -c 'echo x > config.json'", "env -u X -C {d} tee config.json",
-             "env A=1 -C {d} truncate -s 0 config.json")
+             "env A=1 -C {d} truncate -s 0 config.json",
+             # the folder is the child's for ALL of its commands, not only the first
+             "env -C {d} sh -c 'ls; echo x > config.json'", "env -C {d} bash -c 'true && rm config.json'")
 ENV_ELSEWHERE = (
     "env -C ~/.claude/crew ls; echo x > config.json", "env -C ~/.claude/crew ls && rm config.json",
     "env -C /tmp tee config.json", "env -C ~/.claude/crew cat config.json > out.json",
