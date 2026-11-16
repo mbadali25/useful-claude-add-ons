@@ -135,8 +135,10 @@ resolve to.
 **Who can write the receipts.** The double confirmation is recorded only by
 the prompt hook, from your own prompt. The scope guard (when `scope.mode` is
 not `off`) refuses every Write/Edit under `~/.claude/crew/confirm-config/` and
-every shell command that names that store beside a write VERB or a redirect (crew 1.3.123: a verb's
-spelling inside a file name, `Get-Content C:\tmp\confirm-config\echo.txt`, is a read). That is a
+every shell command that names that store beside a redirect or a write VERB in command position (crew 1.3.128:
+a verb's spelling inside a file name, `Get-Content C:\tmp\confirm-config\echo.txt`, is a read, and so is a
+search term, `grep echo ~/.claude/crew/confirm-config/x.json`: the verb must be the command a shell runs,
+also behind a wrapper, `xargs`, `find -exec` or `bash -c`). That is a
 textual tripwire, not a sandbox: a session that sets out to forge a receipt
 (`python -c`, an encoded command, a variable holding the path) still can, and
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
