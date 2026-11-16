@@ -218,9 +218,10 @@ _WRITES_RE = re.compile(
     r"python[0-9.]*|py|node|chmod|echo|printf|set-content|add-content|out-file|"
     r"new-item|copy-item|move-item|remove-item|rename-item|clear-content|set-item|ni|"
     r"sc|ac)\b", re.IGNORECASE)
-# The same words read as the COMMAND a shell word names (crew 1.3.123, round 9): the confirm-config store check asks
-# for a write VERB, not for a verb's spelling inside a file name (`Get-Content C:\tmp\confirm-config\echo.txt` reads
-# a file called echo.txt; it does not run `echo`).
+# The same words read as the COMMAND a shell runs (crew 1.3.123 round 9, 1.3.128 round 10): the confirm-config store
+# check asks for a write VERB in command position, not for a verb's spelling inside a file name (`Get-Content
+# C:\tmp\confirm-config\echo.txt` reads a file called echo.txt) or as an argument (`grep echo <store>/x.json` searches
+# for the word echo; it does not run `echo`).
 _REDIRECT_RE = re.compile(r"(?<!>)>>?(?!>)(?!\s*(?:&\d|/dev/null\b|\$null\b))")
 _VERB_WORD_RE = re.compile(
     r"(?:tee|cp|mv|rm|ln|touch|mkdir|rmdir|install|dd|rsync|truncate|sed|perl|python[0-9.]*|py|node|chmod|echo|"
@@ -229,16 +230,13 @@ _VERB_WORD_RE = re.compile(
 
 
 def _writes_by_verb(command):
-    """True when `command` redirects, or names a write verb as a COMMAND WORD (its basename, so `/bin/rm` counts
-    and `confirm-config/echo.txt` does not). A word that is itself a path into the confirm-config store is a file
-    name, never a verb."""
+    """True when `command` redirects, or RUNS a write verb: one of `_VERB_WORD_RE` in command position (`_ran`: the
+    first word of a simple command by its basename, so `/bin/rm` counts, and whatever a wrapper, `xargs`, `find
+    -exec`, `bash -c`, a `$(...)` or a script block hands on). A search term (`grep echo <store>/x.json`), any other
+    argument, and a word that is itself a path into the confirm-config store are not verbs."""
     if _REDIRECT_RE.search(command):
         return True
-    for word in re.split(r"[\s;&|()`'\"<>{},]+", command):
-        if (word and not _CONFIRM_STORE_RE.search(word)
-                and _VERB_WORD_RE.fullmatch(re.split(r"[\\/]", word)[-1])):
-            return True
-    return False
+    return any(_VERB_WORD_RE.fullmatch(name) for name in _ran(command))
 
 
 # Fail-closed exemption from the word list above. The list is a deny-list on
@@ -901,6 +899,9 @@ def _reading_refusal(command, written, common, top, agent_type=None):
 # user: a helper script behind `cd`, `pytest`/`uv`/`make`/`python -m` launchers, an 8.3 short name, base64 or a path
 # built by arithmetic still write the file, and CONFIG.md says so. No script is opened or sized (an unreadable or
 # huge file refuses nothing): the owner's order is that the crew runs every normal command.
+# Round 10 (crew 1.3.128) names the rest of that tail, also in CONFIG.md: an alias (`Set-Alias w Set-Content`), a
+# splatted hashtable (`@a`), `[scriptblock]::Create(...)`, the content of a script file (`bash script.sh`), a string
+# built by concatenation and handed to `iex`, and `touch`/`chmod` (metadata only) are not read.
 OWNER_REASON = "it writes the owner's files"
 # A write call inside inline code (`python -c`, a heredoc, `pwsh -Command`, `node -e`).
 _CODE_WRITES_RE = re.compile(
@@ -916,13 +917,44 @@ _CODE_RUNNERS = frozenset({"python", "python3", "py", "node", "nodejs", "deno", 
 _CODE_FLAGS = frozenset({"-c", "-e", "-p", "-r", "-E", "--eval", "--command"})
 _POSIX_SHELLS = frozenset({"bash", "sh", "zsh", "dash", "ksh"})
 _PWSH = frozenset({"pwsh", "powershell"})
-_WRAPPERS = frozenset({"sudo", "env", "time", "command", "nohup", "exec", "builtin", "call", "start", "&"})
+# The words that only run another command (crew 1.3.128: `.`, `timeout`, `nice`, `stdbuf`, `ionice`, `setsid`,
+# `busybox`, `wsl`). Named apart from the trust check's `_WRAPPERS` above: until round 10 this set carried that name
+# too, replaced it for the whole module, and so dropped `nice` from the trust check (`nice /tmp/x approve`).
+_OWNER_WRAPPERS = frozenset({"sudo", "env", "time", "command", "nohup", "exec", "builtin", "call", "start", "&", ".",
+                             "timeout", "nice", "stdbuf", "ionice", "setsid", "busybox", "wsl"})
+# the options of a wrapper that take a value of their own: the word after one is not the command
+_OWNER_WRAPPER_VALUES = {
+    "timeout": frozenset({"-s", "--signal", "-k", "--kill-after"}),
+    "nice": frozenset({"-n", "--adjustment"}),
+    "stdbuf": frozenset({"-i", "-o", "-e"}),
+    "ionice": frozenset({"-c", "-n", "-p"}),
+    "sudo": frozenset({"-u", "-g", "-h", "-p", "-C"}),
+    "env": frozenset({"-u", "--unset", "-C", "--chdir"}),
+    "wsl": frozenset({"-d", "--distribution", "-u", "--user", "--cd"}),
+}
+_XARGS_VALUES = frozenset({"-I", "-n", "-P", "-L", "-s", "-d", "-E", "-a", "--max-args", "--max-procs",
+                           "--delimiter", "--arg-file", "--max-lines", "--max-chars", "--eof"})
 _DECLARERS = frozenset({"export", "declare", "local", "typeset", "readonly", "set"})
 _CD = frozenset({"cd", "chdir", "set-location", "sl", "push-location", "pushd"})
 _REMOVERS = frozenset({"rm", "unlink", "shred", "del", "erase", "rd", "rmdir", "remove-item", "ri",
                        "mv", "move", "ren", "rename", "rename-item", "rni", "move-item", "mi"})
 _WRITERS = frozenset({"tee", "truncate", "clear-content", "set-content", "add-content", "out-file", "new-item", "ni",
-                      "set-item", "sponge", "sc", "ac", "mklink"})
+                      "set-item", "sponge", "sc", "ac", "mklink", "clc", "tee-object", "export-csv", "epcsv",
+                      "export-clixml"})
+# The programs that only READ what they are given (crew 1.3.128). The owner's file as an operand of one is a read, so
+# it does not make the command one that "names the owner's folder" (`_owner_hint`): `cat <owner file> > "$OUT"` writes
+# `$OUT`, not the owner's file. `echo` and `printf` are not here: they hand the name on (`echo <it> | xargs rm`).
+_READERS = frozenset({
+    "cat", "ls", "dir", "head", "tail", "wc", "stat", "file", "grep", "egrep", "fgrep", "rg", "ag", "less", "more",
+    "type", "diff", "cmp", "jq", "sort", "uniq", "cut", "od", "xxd", "hexdump", "strings", "md5sum", "sha1sum",
+    "sha256sum", "cksum", "test", "[", "[[", "realpath", "readlink", "basename", "dirname", "du", "tree", "bat", "nl",
+    "tac", "findstr", "where", "which", "get-content", "gc", "get-item", "gi", "get-childitem", "gci", "test-path",
+    "select-string", "sls", "resolve-path", "rvpa", "get-filehash", "get-acl", "measure-object", "get-itemproperty"})
+# The commands that are handed another command as text: every such word is read as a command of its own.
+_RUNNERS = frozenset({"cmd", "eval", "iex", "invoke-expression", "trap", "start-process", "saps"})
+# The PowerShell cmdlets that bind their path from the pipeline when none is given (`Get-Item <f> | Remove-Item`).
+_PIPE_BOUND = frozenset({"remove-item", "ri", "rm", "del", "erase", "rd", "rmdir", "clear-content", "clc",
+                         "set-content", "sc", "add-content", "ac", "move-item", "mi", "rename-item", "rni"})
 _COPIERS = frozenset({"cp", "copy", "copy-item", "cpi", "xcopy", "robocopy", "rsync", "install", "ln"})
 _EDITORS = frozenset({"vim", "vi", "nvim", "ex", "ed", "nano", "view"})
 _GIT_WRITES = frozenset({"apply", "am", "checkout", "restore", "reset", "clean", "stash", "merge", "pull", "rebase",
@@ -930,6 +962,9 @@ _GIT_WRITES = frozenset({"apply", "am", "checkout", "restore", "reset", "clean",
 _OPTION_RE = re.compile(r"^(?:-[^\s]|/[A-Za-z?]{1,2}(?::\S*)?$)")
 _ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.DOTALL)
 _VAR_RE = re.compile(r"\$env:(\w+)|\$\{(\w+)\}|\$(\w+)|%(\w+)%", re.IGNORECASE)
+# What is left of a variable once `_expand` has put in every value it knows: PowerShell's `${env:X}` and `$env:X`,
+# bash's `${X:-y}`. Its value is unknown, and its colon is no NTFS stream (`c${env:X}nfig.json`, crew 1.3.128).
+_UNREAD_VAR_RE = re.compile(r"\$\{[^}]*\}|\$env:\w+", re.IGNORECASE)
 _DRIVE_RE = re.compile(r"^[a-z]:/")
 _IGNORED_TARGET_RE = re.compile(r"^(?:/dev/\w+|\$null|nul|&\d|-)$", re.IGNORECASE)
 
@@ -988,14 +1023,53 @@ _QUOTE_OPEN, _QUOTE_CLOSE = "\x01", "\x02"
 # What the splitter cannot read as text (crew 1.3.123, round 9): `_DYN` stands where a `$(...)` / `$'...'` produced
 # characters, `_PAREN` starts a word that sits inside a parenthesised expression (`(Join-Path $HOME "x")`).
 _DYN, _PAREN = "\x03", "\x04"
+# `_TAINT` (crew 1.3.128, round 10) is a `_DYN` whose source spells pieces of the owner's path (`_plausible`):
+# `$(echo ~/.claude/crew)`, a word of `(Join-Path $HOME ".claude/crew/config.json")`, a variable assigned from either.
+# A write target the guard cannot resolve fails closed when it carries one, whatever else the command says.
+_TAINT = "\x05"
+_MARKS = _DYN + _PAREN + _TAINT
+
+# What spells the owner's folder: `.claude/crew` (not its `worktrees/` folder, where crew keeps ordinary checkouts),
+# `crew/config.json`, the confirm-config store. `.claude` alone does not: every repo has one.
+_HINT_RES = (re.compile(r"(?<![\w-])\.claude/+crew(?![\w.-])(?!/+worktrees(?![\w.-]))"),
+             re.compile(r"(?<![\w:-])confirm-config(?![\w-]|\.md)"),
+             re.compile(r"(?<![\w.-])crew/+config\.json\b"))
+# The same folder spelled in pieces, as an expression joins them: `.claude` and a `crew` folder in one expression.
+_PIECE_RES = (re.compile(r"(?<![\w-])\.claude(?![\w-])(?!/+(?:crew/+)?worktrees(?![\w.-]))"),
+              re.compile(r"(?<![\w.-])crew(?![\w.-])"))
+
+
+def _spells_owner(text, pieces=False):
+    """True when `text` spells the owner's folder (`_HINT_RES`), read plainly and again with its escape characters,
+    quotes and markers taken out; with `pieces`, also when it holds `.claude` and a `crew` folder apart."""
+    for reading in (text, re.sub(r"[\\`^'\"\x01-\x05]", "", text)):
+        folded = _win32_names(_fold(reading))   # `crew./config.json` is `crew/config.json`
+        if any(found.search(folded) for found in _HINT_RES):
+            return True
+        if pieces and all(found.search(folded) for found in _PIECE_RES):
+            return True
+    return False
+
+
+def _plausible(text):
+    """True when `text`, an expression or a substitution the guard cannot evaluate, could build the owner's path: it
+    spells the owner's folder, whole or in pieces."""
+    return _spells_owner(text, pieces=True)
+
+
+def _mark(inner):
+    """The marker that stands for a substitution whose body is `inner`."""
+    return _TAINT if _plausible(inner) else _DYN
 
 
 class _Segment:  # pylint: disable=too-few-public-methods
-    """One simple command: its words, the targets of its redirects, `$(...)` bodies, and heredoc bodies."""
+    """One simple command: its words, the targets of its redirects, `$(...)` bodies, and heredoc bodies (a
+    here-string is a body too). `piped` is True when a `|` feeds it."""
 
     def __init__(self):
         self.words, self.targets, self.subs, self.bodies = [], [], [], []
         self.raws = []   # each word again, with a quoted part wrapped in _QUOTE_OPEN ... _QUOTE_CLOSE
+        self.piped = False
 
     def __bool__(self):
         return bool(self.words or self.targets or self.subs or self.bodies)
@@ -1015,13 +1089,14 @@ def _dq_substitutions(chunk, seg):
             continue
         inner, after = _balanced(chunk, found.end())
         seg.subs.append(inner)
-        out += [chunk[index:found.start()], _DYN]
+        out += [chunk[index:found.start()], _mark(inner)]
         index = after
     rest = "".join(out) + chunk[index:]
     for found in re.finditer(r"`([^`]*)`", rest):   # bash runs a backtick pair inside double quotes too
         if _BACKTICK_COMMAND_RE.fullmatch(found.group(1)):
             seg.subs.append(found.group(1))
-    return re.sub(r"`([^`]*)`", lambda m: _DYN if _BACKTICK_COMMAND_RE.fullmatch(m.group(1)) else m.group(0), rest)
+    return re.sub(r"`([^`]*)`",
+                  lambda m: _mark(m.group(1)) if _BACKTICK_COMMAND_RE.fullmatch(m.group(1)) else m.group(0), rest)
 
 
 def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
@@ -1033,6 +1108,7 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
 
     ansi = False   # the next quoted part is `$'...'`
     parens = 0   # how deep the command is inside a parenthesised expression (not a statement-initial subshell)
+    group = (0, 0)   # where the words and the targets of the outermost open parenthesised expression start
 
     def flush():
         nonlocal buf, raw, has, mode
@@ -1043,6 +1119,8 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
             word = _PAREN + word
         if mode == "heredoc":
             delims.append(word)
+        elif mode == "herestring":
+            seg.bodies.append(word)   # `bash <<< "..."`: the text the command reads
         elif mode == "target":
             seg.targets.append(word)
         elif mode is None:
@@ -1050,12 +1128,22 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
             seg.raws.append(spelled)
         mode = None
 
-    def close():
-        nonlocal seg
+    def close(piped=False):
+        nonlocal seg, group
         flush()
+        piped = piped or (seg.piped and not seg)   # `a |` then a newline: the pipe still feeds the next command
         if seg:
             result.append(seg)
         seg = _Segment()
+        seg.piped = piped
+        group = (0, 0)
+
+    def end_group():
+        """The outermost parenthesised expression closed: when its words spell pieces of the owner's path
+        (`(Join-Path $HOME ".claude/crew/config.json")`), every one of them is marked `_TAINT`."""
+        if _plausible(" ".join(seg.words[group[0]:] + seg.targets[group[1]:])):
+            for words, start in ((seg.words, group[0]), (seg.targets, group[1])):
+                words[start:] = [_PAREN + _TAINT + word.lstrip(_PAREN) for word in words[start:]]
 
     while index < size:
         char = text[index]
@@ -1076,7 +1164,7 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
         elif char == "$" and text[index + 1:index + 2] == "(":
             inner, index = _balanced(text, index + 2)
             seg.subs.append(inner)
-            buf.append(_DYN)
+            buf.append(_mark(inner))
             raw.append(_DYN)
             has = True
         elif char == "$" and text[index + 1:index + 2] in ("'", '"'):
@@ -1087,7 +1175,7 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
             inner = text[index + 1:end] if end != -1 else ""
             if _BACKTICK_COMMAND_RE.fullmatch(inner):   # bash runs a command here; PowerShell's escape is one character
                 seg.subs.append(inner)
-                buf.append(_DYN)
+                buf.append(_mark(inner))
                 raw.append(_DYN)
                 index = end + 1
             else:
@@ -1115,10 +1203,11 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
             delims.clear()
             close()
         elif char in ";|":
-            close()
+            start = index
             index += 1
             while text[index:index + 1] == char or (char == "|" and text[index:index + 1] == "&"):
                 index += 1
+            close(piped=text[start:index] in ("|", "|&"))   # a pipe feeds the next command; `||` and `;` do not
         elif char == "&":
             if text[index + 1:index + 2] == ">":
                 flush()
@@ -1156,14 +1245,18 @@ def _segments(text):  # pylint: disable=too-many-branches,too-many-statements
                     index += 1
                 mode = "heredoc"
             else:
-                mode = "skip"
+                mode = "herestring" if count == 3 else "skip"
         elif char in " \t\r()":
             prior = "".join(buf)
             flush()
             if char == "(" and (seg.words or seg.targets or mode == "target") and not re.search(r"::\w+$", prior):
+                if not parens:
+                    group = (len(seg.words), len(seg.targets))
                 parens += 1
             elif char == ")" and parens:
                 parens -= 1
+                if not parens:
+                    end_group()
             elif char == ")":
                 close()   # an unmatched `)` ends a `case` pattern (`a) rm x;;`) or a subshell
             index += 1
@@ -1183,7 +1276,7 @@ def _canon(word, base):
     variable is still in it, or it is relative and there is no `base`."""
     path = word.replace("\\", "/")
     path = re.sub(r"^//[?.]/(unc/)?", lambda m: "//" if m.group(1) else "", path, flags=re.IGNORECASE).lower()
-    if any(mark in path for mark in ("$", "%", _DYN, _PAREN)) or re.search(r"`[^`]*`", path):
+    if any(mark in path for mark in ("$", "%", _DYN, _PAREN, _TAINT)) or re.search(r"`[^`]*`", path):
         return None
     # Git Bash, Cygwin and WSL spell a drive as a folder: `/c/Users/...`, `/cygdrive/c/...`, `/mnt/c/...`
     path = re.sub(r"^/(?:(?:cygdrive|mnt)/)?([a-z])(?=/|$)", r"\1:", path)
@@ -1220,18 +1313,23 @@ class _Shell:  # pylint: disable=too-few-public-methods
         self.cwd = _canon(cwd, None) if cwd else None
         self.hint = False        # the command names the owner's folder: a target it cannot resolve may be theirs
         self.cwd_lost = False    # a `cd` aimed somewhere that cannot be told: a relative target is then unknown
-        self.variant = False     # judging an escape-stripped reading: a plain relative word is no tail and no unknown
+        self.variant = False     # judging an escape-stripped reading: a plain relative word is not judged by its tail
+        self.cwd_taint = False   # that `cd` was aimed at something that spells pieces of the owner's path
+        self.pipeline = []       # the words of the commands that feed this one through a pipe
+        self.aliases = {}        # the aliases the command made: `Set-Alias w Set-Content`, `alias w=tee`
 
     def fork(self):
         """A copy to judge one reading of a segment with, so the original's variables and folder stay as they are."""
         clone = _Shell(None)
         clone.vars, clone.cwd, clone.cwd_lost, clone.hint = dict(self.vars), self.cwd, self.cwd_lost, self.hint
+        clone.cwd_taint, clone.pipeline, clone.aliases = self.cwd_taint, list(self.pipeline), dict(self.aliases)
         clone.variant = True
         return clone
 
 
 def _expand(word, shell):
-    """`word` with `~`, `$HOME`-style and the variables the command set substituted; an unknown variable stays."""
+    """`word` with `~`, `$HOME`-style and the variables the command set substituted; an unknown variable stays.
+    bash's `~+` is the working directory; `~name` and `~-` are folders the guard cannot tell (`_DYN`)."""
     home = os.path.expanduser("~")
 
     def sub(match):
@@ -1244,6 +1342,10 @@ def _expand(word, shell):
     word = _VAR_RE.sub(sub, word)
     if word == "~" or word.startswith(("~/", "~\\")):
         word = home + word[1:]
+    elif word.startswith(("~+/", "~+\\")):
+        word = "." + word[2:]
+    else:
+        word = re.sub(r"^~[\w.-]+(?=[/\\])", _DYN, word)
     return word
 
 
@@ -1336,19 +1438,23 @@ def _hit(word, shell, mode):
     owner's; and every spelling Win32, the MSYS drive letters and a brace expansion give one path is read as that
     path."""
     forced = _PAREN in word   # inside a parenthesised expression: its value is whatever the expression gives
-    word = _expand(word.replace(_PAREN, ""), shell)
-    head = re.match(r"\$env:\w+", word)   # `$env:NAME` is a variable, its colon no stream
-    head = head.group(0) if head else ""
+    tainted = word.startswith(_PAREN + _TAINT)   # ... and that expression spells pieces of the owner's path
+    word = _expand(word.replace(_PAREN, "")[1 if tainted else 0:], shell)
+    word = _UNREAD_VAR_RE.sub(_DYN, word)   # `${env:X}`, `$env:X`: a value nobody can tell, and no stream
     # an NTFS stream: `f::$DATA`, `f:s`
-    word = head + re.sub(r"(?<=[^/\\:]):(?::\$\w+|[^/\\:]+)(?::\$\w+)?$", "", word[len(head):])
+    word = re.sub(r"(?<=[^/\\:]):(?::\$\w+|[^/\\:]+)(?::\$\w+)?$", "", word)
     if not word or _IGNORED_TARGET_RE.match(word):
         return False
-    return any(_hit_word(one, shell, mode, forced) for one in _braces(word))
+    if _PIPE_ITEM_RE.match(word):   # `Get-ChildItem <folder> | % { Set-Content $_.FullName x }`
+        return _fed_hits(shell)
+    return any(_hit_word(one, shell, mode, forced, tainted) for one in _braces(word))
 
 
+# PowerShell's name for what the pipeline hands a script block: `$_`, `$PSItem` (and a property of it)
+_PIPE_ITEM_RE = re.compile(r"^\$(?:_|psitem)(?!\w)", re.IGNORECASE)
 # the parts of a word the shell fills in and the guard cannot read: a substitution, a variable that is still unknown,
 # a backtick (bash runs it, PowerShell escapes with it)
-_SPAN_RE = re.compile(r"\x03|\$\{[^}]*\}|\$env:\w+|\$\w+|\$[?!@*#$-]|%[A-Za-z_][^%\s/\\]*%|`[^`/\\]*`")
+_SPAN_RE = re.compile(r"[\x03\x05]|\$\{[^}]*\}|\$env:\w+|\$\w+|\$[?!@*#$-]|%[A-Za-z_][^%\s/\\]*%|`[^`/\\]*`")
 
 
 def _could_be_suffix(parts, mode):
@@ -1361,28 +1467,38 @@ def _could_be_suffix(parts, mode):
     return False
 
 
-def _dynamic_hit(word, shell, mode, forced):  # pylint: disable=too-many-return-statements
+def _suspect(word, shell, tainted=False):
+    """True when a write target the guard cannot resolve may be the owner's (crew 1.3.128, round 10; narrowed from
+    "the command mentions `.claude`"): the command names the owner's folder outside a read (`shell.hint`), the target
+    or the `cd` before it was built from pieces of the owner's path (`_TAINT`), or the command stands in the owner's
+    folder."""
+    return bool(shell.hint or tainted or _TAINT in word or shell.cwd_taint or _in_owner_folder(shell))
+
+
+def _dynamic_hit(word, shell, mode, forced, tainted=False):  # pylint: disable=too-many-return-statements
     """Fail closed (crew 1.3.123, round 9) on a write target the guard cannot resolve to one concrete path: a
     substitution, an unknown variable, a backtick, a word in a parenthesised expression. It names the owner's files
-    when what is spelled of it can only be theirs (`~/.claude/crew/$X`), or when it could be theirs and the command
-    also names the owner's folder (`shell.hint`). A target in a command that never mentions the owner's folder stays
-    allowed."""
+    when what is spelled of it can only be theirs (`~/.claude/crew/$X`), or when it could be theirs and it is
+    `_suspect`. A target in a command that never names the owner's folder as something to write stays allowed."""
     if not (forced or _SPAN_RE.search(word)):
         return False
+    suspect = _suspect(word, shell, tainted)
     text = word.replace("\\", "/")
     if forced or not _SPAN_RE.sub("", text).strip("/. "):   # nothing literal is left of it
-        return shell.hint
+        return suspect
     parts = ["**" if _SPAN_RE.fullmatch(part) else _SPAN_RE.sub("*", part) for part in text.split("/")]
     if parts[0] == "**":   # the unknown part is the whole front of the path
         rest = [_win32_names(part.lower()) for part in parts[1:] if part]
-        return shell.hint and _could_be_suffix(rest, mode)
+        while ".." in rest:   # `~root/../<user>/.claude/crew/config.json`: what follows the last `..` is the path
+            rest = rest[rest.index("..") + 1:]
+        return suspect and _could_be_suffix(rest, mode)
     path = _canon("/".join(parts), shell.cwd)
-    if path is None:
-        return shell.hint and shell.cwd_lost
+    if path is None:   # relative, from a folder a `cd` made unknown
+        return suspect and shell.cwd_lost and _could_be_suffix([part.lower() for part in parts if part], mode)
     return any(_glob_match(path.split("/"), target, under) for target, under in _owner_targets(mode))
 
 
-def _hit_word(word, shell, mode, forced=False):
+def _hit_word(word, shell, mode, forced=False, tainted=False):
     """`_hit` for one word with no brace expansion left."""
     path = _canon(word, shell.cwd)
     if path is None:
@@ -1390,8 +1506,8 @@ def _hit_word(word, shell, mode, forced=False):
         # variable in it is judged by its tail there
         return (((not shell.variant or _SPAN_RE.search(word))
                  and _tail_hits(_win32_names(word.replace("\\", "/").lower()).split("/")))
-                or _dynamic_hit(word, shell, mode, forced)
-                or _relative_unknown(word, shell))
+                or _dynamic_hit(word, shell, mode, forced, tainted)
+                or _relative_unknown(word, shell, mode))
     spellings = [path]
     if not any(ch in path for ch in "*?[~"):
         real = _canon(os.path.realpath(path), None)   # a link, a junction or an 8.3 name that exists
@@ -1399,22 +1515,28 @@ def _hit_word(word, shell, mode, forced=False):
             spellings.append(real)
     targets = _owner_targets(mode)
     return any(_glob_match(spelled.split("/"), target, under)
-               for spelled in spellings for target, under in targets) or bool(forced and shell.hint)
+               for spelled in spellings for target, under in targets) or bool(forced and _suspect(word, shell, tainted))
 
 
-def _relative_unknown(word, shell):
+def _relative_unknown(word, shell, mode):
     """True when a relative `word` is judged from a folder a dynamic `cd` made unknown, in a command that names the
-    owner's folder: it could be theirs."""
-    return bool(shell.hint and shell.cwd_lost and not shell.variant and not _SPAN_RE.search(word)
-                and not word.startswith(("/", "~")) and not _DRIVE_RE.match(word.replace("\\", "/").lower()))
+    owner's folder, and the word could end one of the owner's paths (`config.json`, not `out.txt`)."""
+    if not (shell.cwd_lost and (shell.hint or shell.cwd_taint)) or _SPAN_RE.search(word):
+        return False
+    folded = word.replace("\\", "/").lower()
+    if folded.startswith(("/", "~")) or _DRIVE_RE.match(folded):
+        return False
+    return _could_be_suffix([part for part in _win32_names(folded).split("/") if part not in ("", ".")], mode)
 
 
 def _in_owner_folder(shell):
-    """True when the working directory is the owner's folder or its receipts store."""
+    """True when the working directory is the owner's folder itself or its receipts store. A folder further down
+    (`~/.claude/crew/worktrees/<repo>/<lane>`, where crew keeps ordinary checkouts) is not the owner's files."""
     if shell.cwd is None:
         return False
     folder = posixpath.dirname(_fold(machine_config()))
-    return shell.cwd == folder or shell.cwd.startswith(folder + "/")
+    store = folder + "/confirm-config"
+    return shell.cwd in (folder, store) or shell.cwd.startswith(store + "/")
 
 
 # --- what each command does to the paths it is given -------------------------------------------------------------
@@ -1573,7 +1695,92 @@ def _ps_destinations(args):
     return found
 
 
-def _verb_hits(name, args, shell):  # pylint: disable=too-many-return-statements
+# A `w` command in a sed or ex script (`w file`, `1w file`, `s/a/b/w file`, `w! file`): the file is the rest of the
+# line.
+_SCRIPT_WRITE_RE = re.compile(r"(?:^|[;{\s\d$!]|/[gpIiMme\d]*)w!?[ \t]*([^\n;}|]+)")
+# what `find` hands each file to after `-exec`: a verb that writes or deletes, or a shell whose text is not read here
+_FIND_EXEC = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
+_FIND_NAMES = ("config.json", "cc-0a1b2c3d.json", "confirm-config", "crew", ".claude")
+# the file an awk program redirects its output to: `print > "<file>"`, `print >> "<file>"`
+_AWK_WRITE_RE = re.compile(r">>?\s*\"([^\"]+)\"")
+
+
+def _scripts(name, args):
+    """The words of `args` that may be a sed or ex SCRIPT: for sed every word that is no option (its script, its
+    `-e` values; a file name is read too and gives nothing); for an editor its `-c` values and `+command` words."""
+    if name == "sed":
+        return [arg for arg in args if not arg.startswith("-")]
+    scripts = [args[position + 1] for position, arg in enumerate(args[:-1]) if re.fullmatch(r"-[A-Za-z]*c", arg)]
+    return scripts + [arg for arg in args if arg.startswith("+")]
+
+
+def _script_writes(name, args):
+    """The files the `w` commands of a sed or ex script in `args` write."""
+    return [found.group(1).strip() for script in _scripts(name, args)
+            for found in _SCRIPT_WRITE_RE.finditer(script.lstrip("+"))]
+
+
+def _write_verb(name, args):
+    """True when `name` deletes, writes or copies onto the operands it is given (what `xargs` and `find -exec` hand
+    it): a remover, a writer, a copier, an in-place `sed`/`perl`, or a shell, whose text is not read here."""
+    inplace = any(re.match(r"^-[A-Za-z]*i", a) or a.startswith("--in-place") for a in args)
+    return (name in _REMOVERS or name in _WRITERS or name in _COPIERS or name in _POSIX_SHELLS or name in _PWSH
+            or (name in ("sed", "perl", "ruby") and inplace))
+
+
+def _covers_owner(start, shell):
+    """True when the folder `start` holds the owner's files, or lies inside their receipts store: what a `find`
+    that starts there walks."""
+    path = _canon(start, shell.cwd)
+    if path is None:
+        return _hit(start, shell, "destroy")
+    parts = path.split("/")
+    return any(_glob_match(parts, target[:len(parts)], False) or (under and _glob_match(parts, target, True))
+               for target, under in _owner_targets("file"))
+
+
+def _find_hits(args, shell):
+    """True when a `find` deletes what it finds (`-delete`), or hands it to a write verb (`-exec rm {} +`), and
+    what it finds may be the owner's files: it starts at a folder that holds them, with no `-name` that rules their
+    names out."""
+    args = [a.lstrip(_MARKS) for a in args]
+    first = next((position for position, a in enumerate(args) if a.startswith("-")), len(args))
+    starts, tests = args[:first], args[first:]
+    hands_on = any(test in _FIND_EXEC and position + 1 < len(tests)
+                   and _write_verb(_command_name(tests[position + 1]), tests[position + 2:])
+                   for position, test in enumerate(tests))
+    if "-delete" not in tests and not hands_on:
+        return False
+    names = [tests[position + 1].lower() for position, test in enumerate(tests[:-1]) if test in ("-name", "-iname")]
+    if names and not any(name.startswith("cc-") or fnmatch.fnmatchcase(sample, _globify(name))
+                         for name in names for sample in _FIND_NAMES):
+        return False
+    return any(_covers_owner(start, shell) for start in (starts or ["."]))
+
+
+def _fed_hits(shell):
+    """True when what a pipeline hands the command may be the owner's files: a word of the commands before it names
+    them (`Get-ChildItem <it> |`, `echo <it> |`, `find <folder> |`), or the command stands in the owner's folder
+    (`ls | xargs rm`). What the pipe really carries is not known, so the names said before it stand for it."""
+    return _in_owner_folder(shell) or any(
+        _hit(word, shell, "destroy") for word in shell.pipeline
+        if word and not _OPTION_RE.match(word) and not _PIPE_ITEM_RE.match(word.lstrip(_MARKS)))
+
+
+def _piped_hits(name, args, shell):
+    """True when a PowerShell cmdlet with no path of its own writes or deletes what the pipeline hands it
+    (`Get-ChildItem <owner file> | Remove-Item`, `Get-Item <it> | Set-Content -Value x`)."""
+    if name not in _PIPE_BOUND:
+        return False
+    if name in _PS_CMDLETS:
+        own = _ps_destinations(args)
+    else:   # where a move or a rename puts the item is not the item: `Get-Item <f> | Move-Item -Destination out.txt`
+        there = (_option_value(args, "-Destination"), _option_value(args, "-NewName"))
+        own = [w for w in args if w and not _OPTION_RE.match(w) and w not in there]
+    return not own and _fed_hits(shell)
+
+
+def _verb_hits(name, args, shell):  # pylint: disable=too-many-return-statements,too-many-branches
     """True when the command `name args` writes the owner's files (what it is aimed at, per verb)."""
     lowered = [a.lower() for a in args]
     operands = [w for w in _operands(args) if w]
@@ -1589,11 +1796,20 @@ def _verb_hits(name, args, shell):  # pylint: disable=too-many-return-statements
     if name in _COPIERS:
         return _copy_hits(name, args, shell) or (name == "ln" and any(_hit(w, shell, "file") for w in operands))
     if name in ("sed", "perl", "ruby", "awk", "gawk"):
+        if name == "sed" and any(_hit(w, shell, "file") for w in _script_writes(name, args)):
+            return True   # `sed -n "w <file>"`: the script's own write command
+        if name in ("awk", "gawk") and any(_hit(found.group(1), shell, "file")
+                                           for a in args for found in _AWK_WRITE_RE.finditer(a.replace('\\"', '"'))):
+            return True   # `awk '{print > "<file>"}'`
         inplace = any(re.match(r"^-[A-Za-z]*i", a) or a.startswith("--in-place") for a in args) or (
             name in ("awk", "gawk") and "inplace" in lowered)
         return inplace and any(_hit(w, shell, "file") for w in operands)
     if name in _EDITORS:
-        return any(_hit(w, shell, "file") for w in operands)
+        scripts = _scripts(name, args)
+        return any(_hit(w, shell, "file") for w in [w for w in operands if w not in scripts]
+                   + _script_writes(name, args))
+    if name == "find":
+        return _find_hits(args, shell)
     if name == "dd":
         return any(a.startswith("of=") and _hit(a[3:], shell, "file") for a in args)
     if name == "patch":
@@ -1620,21 +1836,56 @@ def _assign(raw, shell):
 
 # the words that only introduce a command: `do rm x`, `then rm x`, `if rm x`, `try { rm x }` (crew 1.3.123)
 _CONTROL = frozenset({"do", "then", "else", "elif", "if", "while", "until", "!", "{", "try", "finally"})
+_PS_ASSIGN_RE = re.compile(r"^\$(?:\w+:)?(\w+)(=?)(.*)$", re.DOTALL)
+
+
+def _ps_assignment(words):
+    """`(name, the words of the right-hand side)` when `words` start a PowerShell assignment (`$p = ...`, `$p=...`,
+    `$env:P = ...`), else None."""
+    match = _PS_ASSIGN_RE.match(words[0])
+    if not match:
+        return None
+    name, sign, rest = match.groups()
+    if sign:
+        return name, ([rest] if rest else []) + words[1:]
+    if rest or len(words) < 2 or not words[1].startswith("="):
+        return None
+    return name, ([words[1][1:]] if len(words[1]) > 1 else []) + words[2:]
+
+
+def _assigned(rhs, shell):
+    """The value a PowerShell assignment gives its variable: the one literal word, or, for anything that is not one
+    plain word (a command, a concatenation, a parenthesised expression: `Join-Path $HOME ".claude/crew/config.json"`,
+    `$HOME + "\\.claude\\crew\\config.json"`), a mark that the value cannot be told -- `_TAINT` when the expression
+    spells pieces of the owner's path, so a write aimed at the variable fails closed."""
+    if len(rhs) == 1:
+        return _expand(rhs[0], shell)
+    text = " ".join(_expand(word, shell) for word in rhs)   # a variable in it may carry a taint of its own
+    return _TAINT if _TAINT in text or _plausible(text) else _DYN
+
+
+def _after_options(words, values=()):
+    """`words` past the options at their front; an option in `values` takes the next word with it."""
+    position = 0
+    while position < len(words) and words[position].startswith("-") and len(words[position]) > 1:
+        position += 2 if words[position] in values else 1
+    return words[position:]
 
 
 def _leading(words, shell):
     """`words` without the assignments, wrappers, declarations and control words before the command itself
-    (recording the variables they set); a `{` glued to the command (`{Set-Content`) is cut off it."""
+    (recording the variables they set); a `{` glued to the command (`{Set-Content`) is cut off it. The right-hand
+    side of a PowerShell assignment stays: it is a command too (`$r = Set-Content <file> x` runs it)."""
     words = list(words)
     while words:
         head = words[0]
         lowered = head.lower()
+        assignment = _ps_assignment(words)
         if _assign(head, shell):
             words.pop(0)
-        elif lowered.startswith("$") and len(words) >= 3 and words[1] == "=":
-            name = head[5:] if lowered.startswith("$env:") else head[1:]
-            shell.vars[name.lower()] = _expand(words[2], shell)
-            words = words[3:]
+        elif assignment:
+            shell.vars[assignment[0].lower()] = _assigned(assignment[1], shell)
+            words = assignment[1]
         elif lowered in _CONTROL:
             words.pop(0)
         elif head.startswith("{") and len(head) > 1:
@@ -1643,12 +1894,16 @@ def _leading(words, shell):
             words.pop(0)
             while words and (words[0].startswith("-") or _assign(words[0], shell)):
                 words.pop(0)
-        elif lowered in _WRAPPERS:
-            words.pop(0)
+        elif _command_name(head) in _OWNER_WRAPPERS:
+            wrapper = _command_name(words.pop(0))
+            values = _OWNER_WRAPPER_VALUES.get(wrapper, ())
             while words and (words[0].startswith("-") or _ASSIGN_RE.match(words[0])):
                 if _ASSIGN_RE.match(words[0]):
                     _assign(words[0], shell)
-                words.pop(0)
+                if words.pop(0) in values and words:
+                    words.pop(0)   # `nice -n 10 tee`, `timeout -s KILL 5 tee`: the option's value
+            if wrapper == "timeout" and words:
+                words.pop(0)   # the duration
         else:
             break
     return words
@@ -1677,12 +1932,81 @@ def _nested(name, args, shell, depth):
         for position, arg in enumerate(args):
             if re.match(r"^-[a-z]*c$", arg) and position + 1 < len(args):
                 return _analyze(args[position + 1], shell, depth + 1)
-    if name == "eval":
-        return _analyze(" ".join(args), shell, depth + 1)
+    if name in ("eval", "iex", "invoke-expression"):   # `iex "..."` runs its text as `eval` does (crew 1.3.128)
+        plain = [a.lstrip(_MARKS) for a in args if a.lower() != "-command"]
+        return _analyze(" ".join(plain), shell, depth + 1)
+    if name.startswith("[scriptblock]::create"):   # `$sb = [scriptblock]::Create("<command>")`
+        return _analyze(" ".join(a.lstrip(_MARKS) for a in args), shell, depth + 1)
+    if name == "trap":   # `trap "<command>" EXIT`
+        plain = _after_options(args)
+        return _analyze(plain[0], shell, depth + 1) if plain else None
+    if name in ("start-process", "saps"):   # the program and its `-ArgumentList`, read as one command line
+        plain = [a.lstrip(_MARKS).replace(",", " ") for a in args if not re.fullmatch(r"-[A-Za-z]+", a)]
+        return _analyze(" ".join(plain), shell, depth + 1)
     if name == "cmd":
         for position, arg in enumerate(lowered):
             if arg in ("/c", "/k", "/r"):
                 return _analyze(" ".join(args[position + 1:]), shell, depth + 1)
+    if name == "xargs":
+        return _xargs_refusal(_after_options(args, _XARGS_VALUES), shell, depth)
+    return None
+
+
+def _alias(name, args, shell):
+    """Record the alias a command makes: PowerShell's `Set-Alias w Set-Content` (`New-Alias`, `sal`, `nal`, with or
+    without `-Name`/`-Value`) and bash's `alias w=tee`."""
+    if name == "alias":
+        for match in filter(None, map(_ASSIGN_RE.match, args)):
+            shell.aliases[match.group(1).lower()] = match.group(2)
+        return
+    plain = [a for a in args if not a.startswith("-")]
+    if len(plain) >= 2:
+        shell.aliases[plain[0].lower()] = plain[1]
+
+
+def _bind(name, args, seg, shell):
+    """Record the variable a loop fills: `for f in <one word>` is that word; `for f in <several>` and `read f` (fed
+    by a pipeline or a here-string) are values nobody can tell -- `_TAINT` when what feeds them spells pieces of the
+    owner's path (`ls <owner folder>/*.json | while read f; do echo x > "$f"; done`)."""
+    if name == "for":
+        items = args[2:]
+        if len(items) == 1:
+            shell.vars[args[0].lower()] = items[0]
+            return
+        fed, names = " ".join(items), args[:1]
+    else:
+        fed, names = " ".join(shell.pipeline + seg.bodies), args
+    for each in names:
+        shell.vars[each.lower()] = _TAINT if _TAINT in fed or _plausible(fed) else _DYN
+
+
+def _handed(name, shell, depth):
+    """The refusal of a script a pipeline hands a shell (`echo "<command>" | bash`, `"<command>" | iex`), or None:
+    every quoted word said before the pipe that holds a space is read as the commands it may be."""
+    if not (name in _POSIX_SHELLS or name in _PWSH or name in ("iex", "invoke-expression")):
+        return None
+    for word in shell.pipeline:
+        if re.search(r"\s", word):
+            refusal = _analyze(word.lstrip(_MARKS), shell, depth + 1)
+            if refusal:
+                return refusal
+    return None
+
+
+def _xargs_refusal(words, shell, depth):
+    """Why `xargs <command>` writes the owner's files, or None: the command is judged as written (`xargs tee <owner
+    file>`), and a write verb is also judged against what the pipeline hands it (`echo <it> | xargs rm`,
+    `ls | xargs rm` in the owner's folder)."""
+    if not words:
+        return None
+    inner = _Segment()
+    inner.words = inner.raws = list(words)
+    refusal = _segment_refusal(inner, shell, depth + 1)
+    if refusal:
+        return refusal
+    name = _command_name(words[0])
+    if _write_verb(name, words[1:]) and _fed_hits(shell):
+        return f"{OWNER_REASON}: `xargs {name}` is handed them"
     return None
 
 
@@ -1774,8 +2098,19 @@ def _unbrace(word):
     return word[:-1] if word.endswith("}") and word.count("}") > word.count("{") else word
 
 
-def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-statements
+def _tainted(seg):
+    """A copy of `seg` with every word of its parenthesised expressions marked `_TAINT`."""
+    copy = _Segment()
+    copy.subs, copy.bodies, copy.raws, copy.piped = seg.subs, seg.bodies, seg.raws, seg.piped
+    copy.words, copy.targets = ([_PAREN + _TAINT + word.lstrip(_MARKS) if _PAREN in word else word for word in words]
+                                for words in (seg.words, seg.targets))
+    return copy
+
+
+def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-statements,too-many-branches
     """Why one simple command writes the owner's files, or None."""
+    if any(_PAREN in word and _TAINT in _expand(word, shell) for word in seg.words + seg.targets):
+        seg = _tainted(seg)   # `(Join-Path $d "config.json")` where `$d` was built from pieces of the owner's path
     for target in seg.targets:
         if _hit(_unbrace(target), shell, "file"):
             return f"{OWNER_REASON}: a redirect aims at them"
@@ -1789,7 +2124,7 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
     if not words:
         return None
     for position in range(1, len(words)):   # a script block: `foreach (...) { Set-Content x }`, `& { rm x }`
-        word = words[position].lstrip(_PAREN)
+        word = words[position].lstrip(_MARKS)
         if word.startswith("{") and depth <= 3:
             inner = _Segment()
             inner.words = ([word[1:]] if len(word) > 1 else []) + words[position + 1:]
@@ -1801,10 +2136,24 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
         return _dotnet_refusal(" ".join(seg.raws[len(seg.words) - len(words):]), shell)
     name = _command_name(_expand(words[0], shell))
     args = [_expand(w, shell) for w in words[1:]]
+    if name in shell.aliases and depth <= 3:   # an alias the command made is the command it stands for
+        named = _Segment()
+        named.words = named.raws = shell.aliases[name].split() + list(words[1:])
+        return _segment_refusal(named, shell, depth + 1)
+    if name in ("alias", "set-alias", "new-alias", "sal", "nal"):
+        _alias(name, args, shell)
+        return None
+    if name == "read" or (name == "for" and args[1:2] == ["in"]):
+        _bind(name, args, seg, shell)
+        return None
     if name in _CD:
         plain = [a for a in args if not a.startswith("-")]
-        shell.cwd = _canon(plain[0] if plain else os.path.expanduser("~"), shell.cwd)
+        if len(plain) > 1 and plain[0].lower() == "/d":   # cmd's `cd /d <folder>`: the switch is not the folder
+            plain = plain[1:]
+        aimed = plain[0] if plain else os.path.expanduser("~")
+        shell.cwd = _canon(aimed, shell.cwd)
         shell.cwd_lost = shell.cwd_lost or shell.cwd is None
+        shell.cwd_taint = shell.cwd is None and (shell.cwd_taint or _TAINT in aimed)
         return None
     for body in seg.bodies:
         if name in _CODE_RUNNERS or name in _PWSH:
@@ -1815,19 +2164,33 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
             refusal = _analyze(body, shell, depth + 1)
             if refusal:
                 return refusal
-    refusal = _nested(name, args, shell, depth)
+    refusal = _nested(name, args, shell, depth) or _handed(name, shell, depth)
     if refusal:
         return refusal
     if _verb_hits(name, args, shell):
         return f"{OWNER_REASON}: `{name}` is aimed at them"
+    if _piped_hits(name, args, shell):
+        return f"{OWNER_REASON}: `{name}` is handed them by the pipeline"
     return None
 
 
 def _analyze(text, shell, depth=0):
-    """The first refusal in `text` read as shell commands, or None."""
+    """The first refusal in `text` read as shell commands, or None. `shell.pipeline` holds, for a command a `|`
+    feeds, the words of the commands before it; the caller's is put back when `text` has been read."""
     if depth > 3 or not isinstance(text, str):
         return None
+    outer = shell.pipeline
+    try:
+        return _analyze_segments(text, shell, depth)
+    finally:
+        shell.pipeline = outer
+
+
+def _analyze_segments(text, shell, depth):
+    """`_analyze`, one segment after the other."""
     for seg in _segments(text):
+        if not seg.piped:
+            shell.pipeline = []
         for sub in seg.subs:
             refusal = _analyze(sub, shell, depth + 1)
             if refusal:
@@ -1839,6 +2202,7 @@ def _analyze(text, shell, depth=0):
         refusal = _segment_refusal(seg, shell, depth)
         if refusal:
             return refusal
+        shell.pipeline = shell.pipeline + [_expand(word, shell) for word in seg.words]
     return None
 
 
@@ -1874,33 +2238,79 @@ def _escape_variants(seg):
     return found
 
 
-_HINT_RES = (re.compile(r"(?<![\w-])\.claude(?![\w-])"), re.compile(r"(?<![\w:-])confirm-config(?![\w-]|\.md)"),
-             re.compile(r"(?<![\w.-])crew/+config\.json\b"))
+def _said_words(words):
+    """`(the words of one simple command that could aim a write, True when the command only reads)`. What a
+    read-only program is given (`cat <file>`, `Get-Content <file>`) and what a copy reads from (`cp <file>
+    "$BACKUP"`) are reads: they are left out."""
+    lead = _leading(words, _Shell(None))
+    if not lead:
+        return list(words), False
+    before = list(words[:len(words) - len(lead)])
+    name = _command_name(lead[0].lstrip(_MARKS))
+    if name in _READERS:
+        return before, True
+    if name in _COPIERS and name != "robocopy" and _option_value(lead[1:], "-t", "--target-directory",
+                                                                 "-Destination") is None:
+        plain = [position for position, word in enumerate(lead) if position and not _OPTION_RE.match(word)]
+        return before + [word for position, word in enumerate(lead) if position not in plain[:-1]], False
+    return list(words), False
 
 
 def _command_text(text, depth=0):
-    """The words, redirect targets, `$(...)` bodies and heredocs of `text` as one string: what the command SAYS,
-    without its comments."""
+    """What the command SAYS it may write: the words (`_said_words`), redirect targets, `$(...)` bodies and
+    heredocs of `text` as one string, without its comments. A quoted word that holds a command of its own (`bash -c
+    "cat <file>"`) is read as one. A heredoc a read-only program is fed (`cat <<EOF > "$OUT"`) is text it copies,
+    not something it says."""
     if depth > 3:
         return ""
     pieces = []
     for seg in _segments(text):
-        pieces += seg.words + seg.targets + seg.bodies
+        words, reads = _said_words(seg.words)
+        pieces += [_command_text(word, depth + 1) if re.search(r"\s", word) else word for word in words]
+        pieces += seg.targets + ([] if reads else seg.bodies)
         pieces += [_command_text(sub, depth + 1) for sub in seg.subs]
     return "\n".join(pieces)
 
 
 def _owner_hint(command):
-    """True when the command names the owner's folder: `.claude` (the machine config and its store live under it),
-    the confirm-config store or `crew/config.json`, spelled plainly or with its escape characters, quotes and
-    markers taken out. A write target the guard cannot resolve is the owner's only in such a command
-    (`_dynamic_hit`)."""
-    said = _command_text(command)
-    for text in (said, re.sub(r"[\\`^'\"\x03\x04]", "", said)):
-        folded = _fold(text)
-        if any(r.search(folded) for r in _HINT_RES):
-            return True
-    return False
+    """True when the command names the owner's folder as something it may write (crew 1.3.128, round 10):
+    `.claude/crew`, the confirm-config store or `crew/config.json` (`_HINT_RES`), spelled plainly or with its escape
+    characters, quotes and markers taken out, anywhere but in a read (`_said_words`). `.claude` alone, crew's
+    `worktrees/` folder, and the owner's file handed to `cat` do not count. A write target the guard cannot resolve
+    is the owner's only in such a command, or when it is built from pieces of their path (`_suspect`)."""
+    return _spells_owner(_command_text(command))
+
+
+def _ran(command, depth=0):
+    """The names of the commands `command` runs: the first word of each simple command (its basename, past
+    assignments, wrappers and control words), each alternative of a brace expansion standing there (`{rm,x}`), and
+    what it hands on -- `xargs <command>`, `find -exec <command>`, a script block, a `$(...)`, a heredoc, and every
+    word of a shell or `eval` (`bash -c "..."`), read as commands again. A word that is a path into the
+    confirm-config store is a file, never a command."""
+    if depth > 3:
+        return []
+    names = []
+    for seg in _segments(command):
+        for inner in seg.subs + seg.bodies:
+            names += _ran(inner, depth + 1)
+        queue = [[alternative, *seg.words[1:]] for alternative in _braces(seg.words[0])] if seg.words else []
+        while queue:
+            words = [word.lstrip(_MARKS) for word in _leading(queue.pop(), _Shell(None))]
+            if not words or _CONFIRM_STORE_RE.search(words[0]):
+                continue
+            name, args = _command_name(words[0]), words[1:]
+            names.append(name)
+            if name in _RUNNERS or name in _POSIX_SHELLS or name in _PWSH:
+                for arg in args:
+                    names += _ran(arg, depth + 1)
+            elif name == "xargs":
+                queue.append(_after_options(args, _XARGS_VALUES))
+            elif name == "find":
+                queue += [args[position + 1:] for position, arg in enumerate(args) if arg in _FIND_EXEC]
+            for position, arg in enumerate(args):
+                if arg.startswith("{"):   # a script block: `ForEach-Object { Remove-Item ... }`
+                    queue.append(([arg[1:]] if len(arg) > 1 else []) + args[position + 1:])
+    return names
 
 
 def _owner_command_refusal(command, cwd=None):
