@@ -53,6 +53,15 @@ THREE rows wrong: two anchors lost to the rewrite, and the round 13 `-o` bundle 
 attached-value branch makes its mid-word case dead; that code was cut to the last-letter case and the row re-pointed.
 A promote-exempt row also stayed green until the escape branch required an escape to be present. The total is 159.
 
+Review round 15 (Codex gpt-6-sol re-review of crew 1.3.122) added 19 red mutations (the declared-deploy
+fail-closed test independent of the pattern match, the command-word scan, the six repo-redirecting variables
+one row each, the empty-value rule, the line_targets refusal, and the digit short-bundle pattern's three sides plus
+the original `-uf` line) and DELETED one: the r14 "a backtick is not stripped" row, STILL GREEN because a backtick
+is now also an expansion that `_hides_git` strips (a shadowed belt). One new row (`NAME=value`) first named the
+wrong test (a must-allow case cannot go red under a loosening); re-pointed. The `and re.search(digit)` condition on
+the new force-push pattern has no row: it exists so the harness-anchored `-uf` line stays the only reader of
+letters-only bundles (otherwise `sabotage_cloud.py`'s row would go STILL GREEN). The total is 177.
+
 NOT wired into `sabotage.py`'s MUTATIONS: `sabotage*.py` is review harness
 (`scripts/check-tooling-pr.py` `HARNESS`), and a harness change lands alone. Until
 a harness-only change registers this table, run it with sabotage.py's own
@@ -134,6 +143,18 @@ CFF = os.path.join(_SCRIPTS, "crew_config_files.py")
 CC = os.path.join(_SCRIPTS, "crew_confirm_config.py")
 GU = os.path.join(_SCRIPTS, "crew_guards.py")
 _T = "tests/test_git_allow.py::"
+
+_RV_ALL = ('_REDIRECT_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",\n'
+           '                  "GIT_INDEX_FILE", "GIT_NAMESPACE")\n')
+_RV_NAMES = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+             "GIT_INDEX_FILE", "GIT_NAMESPACE")
+
+
+def _rv_without(name):
+    """`_RV_ALL` with `name` dropped (the one-line form of the tuple)."""
+    kept = ", ".join(f'"{n}"' for n in _RV_NAMES if n != name)
+    return f"_REDIRECT_VARS = ({kept})\n"
+
 
 GITALLOW_MUTATIONS = (
     # --- the receipt is a WHOLE double confirmation (review finding 1) ---
@@ -739,9 +760,8 @@ GITALLOW_MUTATIONS = (
      '',
      _T + 'test_round14_the_cwd_repo_veto_is_read'),
     ('gitAllow r14: a deploy hiding git behind an escape or quote is not refused', GA,
-     ('            elif (_SHELL_ESCAPE_RE.search(declared)\n'
-      '                  and _GIT_IN_DEPLOY_RE.search(_SHELL_ESCAPE_RE.sub("", declared))):\n'),
-     '            elif False:\n',
+     '            if _hides_git(declared):\n',
+     '            if False:\n',
      _T + 'test_round14_an_escaped_git_deploy_is_not_promote_exempt'),
     ('gitAllow r14: a backslash is not stripped from a declared deploy', GA,
      '_SHELL_ESCAPE_RE = re.compile(r"[\\\\\'\\"`]")',
@@ -750,10 +770,6 @@ GITALLOW_MUTATIONS = (
     ('gitAllow r14: a quote is not stripped from a declared deploy', GA,
      '_SHELL_ESCAPE_RE = re.compile(r"[\\\\\'\\"`]")',
      '_SHELL_ESCAPE_RE = re.compile(r"[\\\\`]")',
-     _T + 'test_round14_an_escaped_git_deploy_is_not_promote_exempt'),
-    ('gitAllow r14: a backtick is not stripped from a declared deploy', GA,
-     '_SHELL_ESCAPE_RE = re.compile(r"[\\\\\'\\"`]")',
-     '_SHELL_ESCAPE_RE = re.compile(r"[\\\\\'\\"]")',
      _T + 'test_round14_an_escaped_git_deploy_is_not_promote_exempt'),
     ('gitAllow r14: a -C value is read as a config option', GA,
      '    skip = False\n    for word in words:\n        if skip:\n            skip = False\n        elif word != "-C"',
@@ -803,4 +819,80 @@ GITALLOW_MUTATIONS = (
      '            flags = arg[1:arg.index("o")]\n',
      '            flags = arg[1:]\n',
      _T + 'test_round14_an_attached_push_option_value_is_no_force_push'),
+    ('gitAllow r15: a declared git deploy that matches the pattern is exempted when hidden', GA,
+     '            if _hides_git(declared):\n',
+     '            if _hides_git(declared) and not _GIT_IN_DEPLOY_RE.search(declared):\n',
+     _T + 'test_round15_a_declared_git_deploy_hidden_by_any_spelling_exempts_nothing'),
+    ('gitAllow r15: an expansion in a command word is not read as hiding git', GA,
+     '    return any(_EXPANDS_RE.search(word) for word in _command_words(declared))\n',
+     '    return False\n',
+     _T + 'test_round15_a_declared_git_deploy_hidden_by_any_spelling_exempts_nothing'),
+    ('gitAllow r15: a wrapper word ends the command-word scan', GA,
+     '            if word not in _WRAPPERS:\n                break\n',
+     '            break\n',
+     _T + 'test_round15_a_declared_git_deploy_hidden_by_any_spelling_exempts_nothing'),
+    ('gitAllow r15: every word is a command word', GA,
+     '            if word not in _WRAPPERS:\n                break\n',
+     '            pass\n',
+     _T + 'test_round15_a_declared_deploy_that_is_not_git_leaves_the_exemption_alone'),
+    ('gitAllow r15: NAME=value words are command words', GA,
+     '                continue\n            yield word\n',
+     '                pass\n            yield word\n',
+     _T + 'test_round15_a_declared_git_deploy_hidden_by_any_spelling_exempts_nothing'),
+    ('gitAllow r15: a declared deploy is split on no separator', GA,
+     '    for segment in re.split(r"[;&|(\\n]", declared):\n',
+     '    for segment in [declared]:\n',
+     _T + 'test_round15_a_declared_git_deploy_hidden_by_any_spelling_exempts_nothing'),
+    ('gitAllow r15: a quote or escape is not stripped before the git pattern', GA,
+     '        stripped = _EXPANDS_RE.sub("", _SHELL_ESCAPE_RE.sub("", declared))\n',
+     '        stripped = declared\n',
+     _T + 'test_round14_an_escaped_git_deploy_is_not_promote_exempt'),
+    ('gitAllow r15: GIT_DIR in the hook env is not a redirect', GA,
+     _RV_ALL,
+     _rv_without('GIT_DIR'),
+     _T + 'test_round15_a_repo_redirecting_variable_in_the_hooks_env_reads_as_off'),
+    ('gitAllow r15: GIT_WORK_TREE in the hook env is not a redirect', GA,
+     _RV_ALL,
+     _rv_without('GIT_WORK_TREE'),
+     _T + 'test_round15_a_repo_redirecting_variable_in_the_hooks_env_reads_as_off'),
+    ('gitAllow r15: GIT_COMMON_DIR in the hook env is not a redirect', GA,
+     _RV_ALL,
+     _rv_without('GIT_COMMON_DIR'),
+     _T + 'test_round15_a_repo_redirecting_variable_in_the_hooks_env_reads_as_off'),
+    ('gitAllow r15: GIT_OBJECT_DIRECTORY in the hook env is not a redirect', GA,
+     _RV_ALL,
+     _rv_without('GIT_OBJECT_DIRECTORY'),
+     _T + 'test_round15_a_repo_redirecting_variable_in_the_hooks_env_reads_as_off'),
+    ('gitAllow r15: GIT_INDEX_FILE in the hook env is not a redirect', GA,
+     _RV_ALL,
+     _rv_without('GIT_INDEX_FILE'),
+     _T + 'test_round15_a_repo_redirecting_variable_in_the_hooks_env_reads_as_off'),
+    ('gitAllow r15: GIT_NAMESPACE in the hook env is not a redirect', GA,
+     _RV_ALL,
+     _rv_without('GIT_NAMESPACE'),
+     _T + 'test_round15_a_repo_redirecting_variable_in_the_hooks_env_reads_as_off'),
+    ('gitAllow r15: an empty redirect variable counts as set', GA,
+     '    return any(name.upper() in _REDIRECT_VARS and value\n',
+     '    return any(name.upper() in _REDIRECT_VARS\n',
+     _T + 'test_round15_a_repo_redirecting_variable_in_the_hooks_env_reads_as_off'),
+    ('gitAllow r15: a redirected env does not read the line as off', GA,
+     '    if _redirected():\n',
+     '    if False:\n',
+     _T + 'test_round15_a_repo_redirecting_variable_in_the_hooks_env_reads_as_off'),
+    ('gitAllow r15: a digit before the f of a short bundle is not a force push', CG,
+     '        if re.match(r"^-[a-zA-Z0-9]*f[a-zA-Z0-9]*$", arg) and re.search(r"[0-9]", arg):\n',
+     '        if re.match(r"^-[a-zA-Z]*f[a-zA-Z0-9]*$", arg) and re.search(r"[0-9]", arg):\n',
+     _T + 'test_round15_a_short_bundle_with_a_digit_is_still_a_force_push'),
+    ('gitAllow r15: a digit after the f of a short bundle is not a force push', CG,
+     '        if re.match(r"^-[a-zA-Z0-9]*f[a-zA-Z0-9]*$", arg) and re.search(r"[0-9]", arg):\n',
+     '        if re.match(r"^-[a-zA-Z0-9]*f[a-zA-Z]*$", arg) and re.search(r"[0-9]", arg):\n',
+     _T + 'test_round15_a_short_bundle_with_a_digit_is_still_a_force_push'),
+    ('gitAllow r15: a digit bundle is read as a force push without an f', CG,
+     '        if re.match(r"^-[a-zA-Z0-9]*f[a-zA-Z0-9]*$", arg) and re.search(r"[0-9]", arg):\n',
+     '        if re.match(r"^-[a-zA-Z0-9]*$", arg) and re.search(r"[0-9]", arg):\n',
+     _T + 'test_round15_a_short_bundle_with_a_digit_and_no_f_is_no_force_push'),
+    ('gitAllow r15: the letters-only bundle pattern is read by the original line', CG,
+     '        if re.match(r"^-[a-zA-Z]*f[a-zA-Z]*$", arg):\n',
+     '        if False:\n',
+     _T + 'test_round15_a_letters_only_bundle_is_still_read_by_the_original_pattern'),
 )

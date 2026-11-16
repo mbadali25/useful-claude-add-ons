@@ -2093,6 +2093,10 @@ def _git_force_push(args):
             if "f" in flags or "d" in flags:
                 return f"git push {arg}"
             continue
+        # Digits are short flags too (`-4`, `-6`: IPv4/IPv6): `-4f`, `-f4` and `-u4f` force
+        # the push. A separate pattern, so the harness-anchored line below keeps its shape.
+        if re.match(r"^-[a-zA-Z0-9]*f[a-zA-Z0-9]*$", arg) and re.search(r"[0-9]", arg):
+            return f"git push {arg}"
         # The pattern sabotage_cloud.py's "clustered short flags (-uf)" row anchors on
         # (a harness file, so this line keeps its shape).
         if re.match(r"^-[a-zA-Z]*f[a-zA-Z]*$", arg):

@@ -2400,6 +2400,126 @@ def test_round14_a_quoted_tilde_in_a_C_value_is_a_literal_name():
         assert crew_gitallow.line_git_commands("git -C ~repo status", shell) is None
 
 
+# --- review round 15 (Codex gpt-6-sol re-review of crew 1.3.122, head 67ea035f1) -----------
+
+def _declare(root, deploy):
+    verify = json.loads((root / ".crew" / "verify.json").read_text(encoding="utf-8"))
+    verify["environments"]["remote"]["deploy"] = deploy
+    (root / ".crew" / "verify.json").write_text(json.dumps(verify), encoding="utf-8")
+
+
+@pytest.mark.parametrize("deploy,shell", [
+    ('"git" push prod main', "bash"), ("$'git' push prod main", "bash"),
+    ("${x}it push prod main", "bash"), (r"\git push prod main", "bash"),
+    ("g$@it push prod main", "bash"), ("$(echo git) push prod main", "bash"),
+    ("`echo git` push prod main", "bash"), ("sudo ${x}it push prod main", "bash"),
+    ("FOO=1 $X push prod main", "bash"), ("cd x && ${x}it push prod main", "bash"),
+    ("git push prod main && echo \"done\"", "bash"),
+    ('"git" push prod main', "powershell"), ("& ${x}it push prod main", "powershell")])
+def test_round15_a_declared_git_deploy_hidden_by_any_spelling_exempts_nothing(
+        tmp_path, machine, monkeypatch, deploy, shell):
+    """BLOCK 1: the round 14 fail-closed branch was an `elif`, taken only when the pattern
+    did NOT match, so `"git"` and `$'git'` (which match) reached the containment test,
+    failed it and were exempted. The test no longer depends on the match."""
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    _declare(root, deploy)
+    assert crew_gitallow.promote_exempt("git push prod main", shell, str(root)) is False, deploy
+    assert crew_gitallow.promote_exempt("git status", shell, str(root)) is False, deploy
+
+
+@pytest.mark.parametrize("deploy", [
+    "deploy-prod --x", "./deploy.sh prod", r"d\eploy-prod --x", "deploy-prod --tag $VERSION",
+    "make -C \"infra dir\" deploy", "FOO=1 deploy-prod", "echo 'git is nice' > /dev/null"])
+def test_round15_a_declared_deploy_that_is_not_git_leaves_the_exemption_alone(
+        tmp_path, machine, monkeypatch, deploy):
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    _declare(root, deploy)
+    assert crew_gitallow.promote_exempt("git status", "bash", str(root)) is (
+        "git is nice" not in deploy), deploy
+
+
+def test_round15_a_plain_declared_git_deploy_still_exempts_what_it_does_not_contain(
+        tmp_path, machine, monkeypatch):
+    root = _gate_repo(tmp_path)
+    monkeypatch.chdir(root)
+    monkeypatch.setenv("CREW_HEAD_MAP", "")
+    monkeypatch.setenv("CREW_MAP_DIRTY", "")
+    _arm(machine, "all")
+    _declare(root, "git push prod main")
+    assert crew_gitallow.promote_exempt("git status", "bash", str(root)) is True
+    assert crew_gitallow.promote_exempt("git push prod main", "bash", str(root)) is False
+
+
+@pytest.mark.parametrize("name", ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR",
+                                  "GIT_OBJECT_DIRECTORY", "GIT_INDEX_FILE", "GIT_NAMESPACE"])
+def test_round15_a_repo_redirecting_variable_in_the_hooks_env_reads_as_off(
+        tmp_path, machine, monkeypatch, name):
+    """BLOCK 2: a plain `git push -f` the hook runs inherits GIT_DIR and its kin, so git
+    acts on the repo they name while `_toplevel` (which strips them) reads the cwd's.
+    Crew cannot tell whose veto applies: the line reads as off (fail closed)."""
+    project = make_repo(tmp_path, mode=None)
+    cwd_repo = make_repo(tmp_path, mode=None, name="cwdrepo")
+    _arm(machine, "all")
+    line = "git push -f origin main"
+    assert crew_gitallow.line_plan(line, "bash", str(project), str(cwd_repo))["allow"] == "all"
+    monkeypatch.setenv(name, str(tmp_path / "vetoed" / ".git"))
+    plan = crew_gitallow.line_plan(line, "bash", str(project), str(cwd_repo))
+    assert plan["allow"] == "off" and not plan["subs"], name
+    assert crew_gitallow.line_targets([["push"]], str(cwd_repo)) is None
+    result = cloud_guard.evaluate(str(project), "Bash", line, {"cwd": str(cwd_repo)}, "block")
+    assert result["decision"] == "deny", result
+    # an empty value does not redirect git (an empty GIT_OBJECT_DIRECTORY makes git itself
+    # fail with "gitfile does not point to a valid repository", so that one reads as off anyway)
+    monkeypatch.setenv(name, "")
+    want = "off" if name == "GIT_OBJECT_DIRECTORY" else "all"
+    assert crew_gitallow.line_plan(line, "bash", str(project), str(cwd_repo))["allow"] == want
+
+
+@pytest.mark.parametrize("command", [
+    "git push -4f origin main", "git push -f4 origin main", "git push -6f origin main",
+    "git push -46f origin main", "git push -u4f origin main", "git push origin main -4f"])
+def test_round15_a_short_bundle_with_a_digit_is_still_a_force_push(tmp_path, command):
+    """BLOCK 3 (pre-existing on main): `-4` and `-6` are real push flags, so `-4f` forces
+    the push; the bundle pattern read letters only."""
+    assert cloud_guard._git_force_push(command.split()[1:])  # pylint: disable=protected-access
+    root = make_repo(tmp_path, mode=None)
+    assert _rules(_evaluate(root, command), "forcePush"), command
+
+
+@pytest.mark.parametrize("command", [
+    "git push -4 origin main", "git push -46 origin main", "git push -u4 origin main",
+    "git push -4u origin main", "git push origin main"])
+def test_round15_a_short_bundle_with_a_digit_and_no_f_is_no_force_push(tmp_path, command):
+    assert cloud_guard._git_force_push(command.split()[1:]) is None  # pylint: disable=protected-access
+    root = make_repo(tmp_path, mode=None)
+    assert not _rules(_evaluate(root, command), "forcePush"), command
+
+
+def test_round15_a_letters_only_bundle_is_still_read_by_the_original_pattern():
+    """The digit pattern needs a digit, so `-uf` is caught only by the harness-anchored line."""
+    assert cloud_guard._git_force_push(["push", "-uf", "origin"])  # pylint: disable=protected-access
+    assert cloud_guard._git_force_push(["push", "-fu", "origin"])  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("args", [
+    ["-c", "remote.origin.mirror=true", "push", "origin"],
+    ["-c", "remote.origin.push=+HEAD:refs/heads/main", "push", "origin"]])
+def test_round15_a_config_that_forces_a_push_is_no_force_finding_but_is_held(args):
+    """FIX 4 (pre-existing residual, documented in CONFIG.md): the force is in config the
+    guard does not read, so there is no force finding; `hold` refuses any `-c`, so the
+    switch never exempts such a line."""
+    assert cloud_guard._git_force_push(args) is None  # pylint: disable=protected-access
+    assert crew_gitallow.hold(args)
+
+
 # --- the mutation table ----------------------------------------------------------------
 
 def test_every_mutation_anchor_is_present_exactly_once():

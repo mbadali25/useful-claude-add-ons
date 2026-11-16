@@ -742,6 +742,19 @@ def _repo_veto(top, label_):
     return None
 
 
+# The variables that point git at a repository other than the one its working directory
+# is in. A plain `git push -f` the hook runs inherits them, while `_toplevel` strips them
+# to find the cwd's own repo, so the veto read would be the wrong repo's (round 15, finding 2).
+_REDIRECT_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+                  "GIT_INDEX_FILE", "GIT_NAMESPACE")
+
+
+def _redirected():
+    """True when the hook's own environment points git at another repository."""
+    return any(name.upper() in _REDIRECT_VARS and value
+               for name, value in os.environ.items())
+
+
 def _toplevel(directory):
     """git's top level for `directory`, or None when git cannot tell (git
     not on PATH included: resolved with `crew_common.resolve_tool`, never a
@@ -1157,6 +1170,10 @@ def line_targets(git_commands, base):
     RUNS in is read too). None when one cannot be told: an unreadable `-C`, or
     no `base` for a command that needs it. `settings` then reads each as a repo
     that must be a work tree it can read."""
+    if _redirected():
+        # Which repository git acts on is then set by the environment, not by `base` or
+        # `-C` alone: crew cannot tell whose veto applies, so it reads as off (round 15).
+        return None
     out = []
     for args in git_commands:
         dirs = target_dirs(args)
@@ -1226,6 +1243,36 @@ _GIT_IN_DEPLOY_RE = re.compile(r"(?:^|[\s;&|(`'\"/\\])git(?:\.exe)?(?=[\s'\"]|$)
 _SHELL_ESCAPE_RE = re.compile(r"[\\'\"`]")
 
 
+_EXPANDS_RE = re.compile(r"[$`]")
+_WRAPPERS = frozenset(("sudo", "env", "exec", "command", "time", "nohup", "nice", "builtin",
+                       "xargs", "doas"))
+
+
+def _command_words(declared):
+    """The words of `declared` a shell would run as a command: the first word of each
+    segment (split on `;`, `&`, `|`, `(`, newline), past `NAME=value` words and the
+    wrappers in `_WRAPPERS`."""
+    for segment in re.split(r"[;&|(\n]", declared):
+        for word in segment.split():
+            if "=" in word and not word.startswith(("-", "=")) and word.split("=")[0].isidentifier():
+                continue
+            yield word
+            if word not in _WRAPPERS:
+                break
+
+
+def _hides_git(declared):
+    """True when a declared deploy may run `git` through quoting, an escape or an
+    expansion that `_GIT_IN_DEPLOY_RE` does not read as the word: the spelling is
+    unknowable, so the caller exempts nothing. Independent of whether the pattern
+    matches the raw text (round 15, finding 1: `"git"` and `$'git'` match it)."""
+    if _SHELL_ESCAPE_RE.search(declared) or _EXPANDS_RE.search(declared):
+        stripped = _EXPANDS_RE.sub("", _SHELL_ESCAPE_RE.sub("", declared))
+        if _GIT_IN_DEPLOY_RE.search(stripped):
+            return True
+    return any(_EXPANDS_RE.search(word) for word in _command_words(declared))
+
+
 def _declared_deploys():
     """Every declared `deploy` string in the working map and, when the map is
     dirty, the committed one (the maps the gates read). Raises on a map that
@@ -1268,14 +1315,14 @@ def promote_exempt(command, shell, root=".", global_path=None, store=None):
         import _promote_dispatch  # pylint: disable=import-outside-toplevel
         folded = _promote_dispatch.fold(command)
         for declared in _declared_deploys():
+            if _hides_git(declared):
+                # An escape, quote or expansion that only hides `git` from the pattern
+                # (`g\it`, `"git"`, `$'git'`, `${x}it`, `$(echo git)`). Crew does not compare
+                # spellings; it exempts nothing (rounds 14 and 15).
+                return False
             if _GIT_IN_DEPLOY_RE.search(declared):
                 if _promote_dispatch.fold(declared) in folded:
                     return False
-            elif (_SHELL_ESCAPE_RE.search(declared)
-                  and _GIT_IN_DEPLOY_RE.search(_SHELL_ESCAPE_RE.sub("", declared))):
-                # `g\it push prod main`: an escape or quote that only hides `git`
-                # from the pattern. Crew does not compare spellings; it fails closed.
-                return False
         return True
     except Exception:  # noqa: BLE001  # pylint: disable=broad-except
         return False
