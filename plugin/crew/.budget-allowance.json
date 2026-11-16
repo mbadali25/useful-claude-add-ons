@@ -8,6 +8,10 @@
     "lines": 167,
     "reason": "T8: to trim"
   },
+  "plugin/crew/commands/config.md": {
+    "lines": 126,
+    "reason": "raised: the guards.enabled master switch (L-0947, key half) is machine-only and owner-confirmed, so the command says how it is proposed (crew_confirm_config.py propose --layer machine) and why a repo copy is ignored"
+  },
   "plugin/crew/commands/gate.md": {
     "lines": 163,
     "reason": "T8: to trim"

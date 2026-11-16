@@ -741,7 +741,8 @@ def _guard_names() -> set[str] | None:
         return None
     # `guards.profile` and `guards.overrides` are the two keys the twelve guard
     # names collapsed into (L-0725); `guards.overrides.<guard>` still names a guard.
-    return set(crew_guards.ALL_GUARD_NAMES) | {"profile", "overrides"}
+    # `guards.enabled` is the master switch (L-0947), a key and not a guard.
+    return set(crew_guards.ALL_GUARD_NAMES) | {"profile", "overrides", "enabled"}
 
 
 def check_policy_ids(fail) -> None:
