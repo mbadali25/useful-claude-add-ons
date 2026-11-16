@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.133**: A workflow dispatch's `environment` input selects the environment in the promote gate. `crew` 1.3.133 stops the promote gate reading `gh workflow run deploy.yml -f environment=development` (or `qa`) as the production deploy when production's declared dispatch has no `environment` input; it now blocks as could-not-tell, naming the environment it selected, until every environment (production included) declares its own `environment` input; a production declared without it still matches by substring, but the selector block ends the gate first, so production's own checks do not run (they run beside the selected environment once that environment is declared).
 - **crew 1.3.96**: The verify-trust store lock no longer fails a writer whose rival released the lock at the wrong moment. `crew` 1.3.96: with several writers at once, `verify_trust.py approve` could intermittently print `cannot take the store lock: OSError` and exit 1 (the approval was not recorded); a writer now waits and retries instead. No update was ever lost and the lock never admitted two writers.
-- **crew 1.3.95**: The verify-gate trust docs match what the junction check does, and the Windows short-name fallback is proven to accept. `crew` 1.3.95: the trust-store documentation no longer says a repository below a junctioned parent directory is always UNTRUSTED (only a linked worktree whose recorded path runs through a junction is), and a test now proves a genuine 8.3 short-name worktree is still trusted on Windows.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
