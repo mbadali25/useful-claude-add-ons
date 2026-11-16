@@ -968,7 +968,7 @@ the switch off NOTHING blocks, so it stands down with them.)
   target after a `cd` the guard could not follow counts the same way. The price was overblocking, listed in the
   changelog: `cat ~/.claude/crew/config.json > $OUT` was refused, and so was `mv x y` after `cd $D` in such a
   command (round 10, below, narrows both). The confirm-config textual check (#679's) now asks for a write VERB as a
-  command word, so a file called `echo.txt` in the store is a read.
+  command word, so a file called `echo.txt` in the store is a read (round 11, below, makes it judge the target).
 * The fail-closed trigger is narrowed to the owner's folder, and the tail is written down (round 10, the owner's
   decision of 2026-11-15: "Fix BLOCKs, narrow overblocks, document tail"). Round 9's trigger was "the command
   mentions `.claude`". Every repo has a `.claude` folder and this one keeps its lanes under `.claude/worktrees/`, so
@@ -1003,6 +1003,34 @@ the switch off NOTHING blocks, so it stands down with them.)
   the receipt binds the modification time, so touching the machine file ends the confirmation and the guards come
   back ON. This list is asserted (`test_the_documented_tail_is_not_read`), so a case that starts being refused
   has to leave it.
+* Round 11 (review of 447f420b3 by two models; the owner's decision: "round 11, cheap fixes"; crew 1.3.130). Each
+  finding was re-run on that head first. Three kinds of change. (1) Bundled options. The verb table read `tar -f
+  <file> --create` and missed `tar -cf <file>`, because it looked for `-f` as a word of its own; `_tar_options` now
+  walks the bundle letter by letter, old style (`tar cf`) included, and gives each value letter its word in order.
+  The same idea reads `wget -qO <file>` and `sort -uo <file>` (`_bundled_value`: a value option that ends a bundle
+  of flags). An archive CREATED as the owner's file is a write: `7z a|u|d|rn`, `Compress-Archive`, `git archive -o`.
+  `find -exec <command>` is judged as the command it spells, `env -C <folder>` moves the one command it wraps, and
+  `fsutil file createNew` joins `hardlink create`. (2) The store rule judged THAT a command writes, not WHERE. It
+  came from this PR's own rounds 9 and 10 (`_writes_by_verb(command) and not _read_only(command)`), so `cp <receipt>
+  /tmp/` and `cat <receipt> | jq .x > /tmp/x` were refused: a copy of a receipt is a read of the store. `_store_write`
+  now runs the same reader as the owner-file check (`_analyze`) with `_store_word` as the judge of each target. The
+  rule is about ANY folder spelled `confirm-config/`, as #679 wrote it, so its four verdicts are kept: a target
+  nobody can resolve is refused beside the store, a store spelled relatively keeps a relative target refused (`ls
+  confirm-config/ > x` stands in the owner's folder), and the verbs that name no target of their own (`echo`,
+  `touch`, `python`) are refused when given a path in the store. (3) The working directory leaked. A `cd` inside
+  `( ... )`, a `$(...)` or a child shell, and a `pushd` before its `popd`, moved every command after it, so `(cd
+  ~/.claude/crew && ls); echo x > config.json` was refused though it writes the repo's own file. `_Shell.dirs` is
+  now a stack of frames: `sub` where a subshell started, `dir` what a `pushd` left, `case` from a `case <word> in`
+  to its `esac`. A `)` ends the innermost subshell unless a `case` opened after it, because there it is a
+  pattern's; without that, `(cd <folder>; case x in a) echo x > config.json;; esac)` would have been read as
+  written outside the subshell, a bypass this round would have added. PowerShell's `( ... )` is an expression in
+  the same shell, and the guard is not told which shell a command is for, so a command that spells a cmdlet,
+  `$env:` or `$_` opens no subshell frame (`_POSH_RE`) and stays refused; a `popd` with nothing to go back to
+  leaves an unknown folder, which fails closed only in a command that names the owner's folder. Left in the tail
+  on purpose: `yq -i`, `zip`, `uniq <in> <out>`, `[IO.Directory]::Delete`, `attrib`, `icacls`, a `find -exec` that
+  hands files to a script, and a parenthesised `cd` in a PowerShell command with no cmdlet in it. One overblock is
+  kept by design: `Get-ChildItem ~/.claude/crew | Remove-Item -WhatIf` is refused, because the guard does not read
+  `-WhatIf` and a wrong guess there deletes the receipts.
 * The machine file must be the machine's. A config path inside the project (or the working directory) never
   counts, because a `HOME`/`USERPROFILE` pointed at a fake home shipped in a repo would otherwise carry its own
   config and its own forged receipts.

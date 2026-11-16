@@ -118,7 +118,10 @@ no: retry the call, and free memory or processes if it repeats. A real deny neve
   (crew 1.3.128). Reading the file (`cat ~/.claude/crew/config.json > "$OUT"`), a repo's own `.claude` folder and
   crew's `~/.claude/crew/worktrees/` do not count. If an ordinary command is refused, spell the target out or set
   the variable in the same command (`OUT=/tmp/x; ... > "$OUT"`): a variable the command sets is followed, not
-  guessed. What the check does not read is listed in `plugin/crew/CONFIG.md`, "The guards master switch".
+  guessed. Since crew 1.3.130 a READ of a receipt beside a write elsewhere passes (`cp
+  ~/.claude/crew/confirm-config/cc-ab12.json /tmp/`), and a `cd` into the folder that ended with its `( ... )`
+  or its `popd` no longer makes a later relative write look like yours. What the check does not read is listed in
+  `plugin/crew/CONFIG.md`, "The guards master switch".
 - **Silence one hook without touching the rest:** set its own key. `guards.profile: off` (which leaves
   the role-write, cloud and environment guards off) and `scope.mode: off` are already the shipped defaults — a noisy session
   usually means one of these was turned on somewhere (repo or machine-global) and forgotten, not

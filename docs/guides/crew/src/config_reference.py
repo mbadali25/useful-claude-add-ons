@@ -242,10 +242,16 @@ resolve to.
 **Who can write the receipts.** The double confirmation is recorded only by
 the prompt hook, from your own prompt. The scope guard (when `scope.mode` is
 not `off`) refuses every Write/Edit under `~/.claude/crew/confirm-config/` and
-every shell command that names that store beside a redirect or a write VERB in command position (crew 1.3.128:
-a verb's spelling inside a file name, `Get-Content C:\\tmp\\confirm-config\\echo.txt`, is a read, and so is a
-search term, `grep echo ~/.claude/crew/confirm-config/x.json`: the verb must be the command a shell runs,
-also behind a wrapper, `xargs`, `find -exec` or `bash -c`). That is a
+every shell command that WRITES TO that store. Since crew 1.3.130 the command is read the way the check of
+your machine config reads it, and the write's TARGET is judged: `cp ~/.claude/crew/confirm-config/cc-ab12.json
+/tmp/`, `cat <receipt> | jq .x > /tmp/x` and `ls <receipt> && echo ok > /tmp/ok` pass (until then a redirect or
+a write verb anywhere in a command that named the store refused it). A verb's spelling inside a file name,
+`Get-Content C:\\tmp\\confirm-config\\echo.txt`, is a read, and so is a search term,
+`grep echo ~/.claude/crew/confirm-config/x.json`: the verb must be the command a shell runs, also behind a
+wrapper, `xargs`, `find -exec` or `bash -c`. Still refused beside the store: a target nobody can resolve
+(`ls <store>/ > $OUT`), a relative target when the store itself is spelled relatively (`ls confirm-config/ > x`),
+and `echo`, `printf`, `touch`, `mkdir`, `chmod`, `sed`, `perl`, `python` or `node` given a path in the store.
+That is a
 textual tripwire, not a sandbox: a session that sets out to forge a receipt
 (`python -c`, an encoded command, a variable holding the path) still can, and
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
@@ -505,6 +511,22 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   text run as a command by `iex` / `Invoke-Expression`, `trap`, `Start-Process <shell> -ArgumentList`,
   `[scriptblock]::Create("...")`, a here-string (`bash <<< "..."`) or a pipe into a shell (`echo "..." | bash`).
   The right-hand side of a PowerShell assignment is read as the command it runs (`$r = Set-Content <it> x`).
+  Also read as writes since crew 1.3.130 (round 11): `tar` however its options are bundled (`tar -cf <it> src`,
+  `-czf`, old-style `tar cf <it> src`, `-rf`, `-uf`, `--delete -f`, and an extraction into the folder,
+  `tar -xC <folder> -f a.tar`); `wget -qO <it>` (an output option at the end of a bundle of flags) and wget's
+  log file (`-o`, `-a`); `sort -o <it>` and `--output=<it>`; the archive `7z a|u|d|rn <it>`, `Compress-Archive`
+  (`-DestinationPath <it>` or the second positional word) and `git archive -o <it>` / `--output=<it>` create;
+  the command `find -exec` runs, as written (`find . -exec cp x <it> \\;`, a second `-exec` too);
+  `env -C <folder> <command>`; and `fsutil file createNew <it> <size>`. A tar, 7z or sort that only READS the
+  file (`tar -tf`, `7z l`, `sort <it>`, `tar -cf /tmp/a.tar <it>`) passes.
+  A `cd` ends where the shell ends it (crew 1.3.130): inside `( ... )`, a `$(...)`, `bash -c "..."`,
+  `pwsh -Command`, `cmd /c` or a heredoc fed to a shell it lasts until that closes, and a `pushd` lasts until its
+  `popd`, so `(cd ~/.claude/crew && ls); echo x > config.json` and `pushd ~/.claude/crew && ls && popd && echo b >
+  config.json` write the working directory's own `config.json` and pass (both were refused before). A `popd`
+  with no `pushd` before it leaves a folder nobody can tell: a relative target is refused there only in a command
+  that names your folder. A `)` that ends a `case` pattern ends no subshell. PowerShell's `( ... )` is an
+  expression that runs in the shell itself, so in a command that spells a cmdlet, `$env:` or `$_`
+  (`(Set-Location ~/.claude/crew); Set-Content config.json x`) the folder stays and the write is refused.
   A write inside a script block, a loop, a condition, a `try` or a `case` arm is read as the
   command it is (`foreach ($f in 1) {{ Set-Content ... }}`, `for f in a; do rm ...; done`). A command that only
   MENTIONS them (a commit message, a PR body, `ls ~/.claude/crew/ > out.txt`,
@@ -529,8 +551,14 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   than `[IO.File]` (`New-Object IO.StreamWriter`); a program the verb table does not know (`gtee`, `scp`,
   `git config --file`); cmd's delayed expansion (`!P!`); a link made earlier in the same command; a pipe or
   `xargs` fed from a file the command only reads (`cat list | xargs rm`); an 8.3 short name that does not start
-  with the name it stands for (the stem is what is read); and `touch` /
-  `chmod`, which change the file's metadata, not its content. The switch is a guardrail against
+  with the name it stands for (the stem is what is read); and `touch`, `chmod`, `attrib` and `icacls`, which
+  change the file's metadata or permissions, not its content. Named by the round-11 review and left here: an
+  in-place editor the verb table does not know (`yq -i`, also `zip <it> src` and `uniq <in> <it>`); .NET's
+  `[IO.Directory]::Delete` and `[IO.File]` siblings outside `[IO.File]`; a `find -exec` that hands what it found
+  to a script (`find . -exec python3 helper.py {{}} +`), since no script is opened; and a parenthesised `cd` run by
+  PowerShell in a command that spells nothing only PowerShell spells (`(cd <folder>) ; echo x > config.json` is
+  read as bash's subshell). The other way round, refused though it writes nothing, by design: the guard does not
+  read `-WhatIf`, so `Get-ChildItem ~/.claude/crew | Remove-Item -WhatIf` fails closed. The switch is a guardrail against
   accidents and agent drift, not a boundary against a hostile agent of the same
   user.
 - It is unambiguous. Only the JSON literal `false` counts: an absent key, `null`,
