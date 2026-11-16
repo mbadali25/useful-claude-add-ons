@@ -260,6 +260,7 @@ import review_metrics
 import review_patch
 import review_prompt
 import review_verdict
+import scope_base
 import verify_agents
 import webtest_guard
 
@@ -2619,6 +2620,14 @@ def prepare(args):  # pylint: disable=too-many-return-statements,too-many-branch
     base, refused = review_base(root_arg, root, ticket)
     if base is None:
         return refused
+    override = scope_base.env_override()
+    if override:
+        # Later receipt checks run with no flag and no env: keep the branch
+        # this review was measured against, keyed by its base commit.
+        try:
+            scope_base.persist_override(root, base, override)
+        except OSError as exc:
+            return _unknown(f"the base branch override ({exc.__class__.__name__}: {exc})")
     stamp, problem = dispatch_stamp(root)
     if stamp is None:
         return _unknown(f"the dispatch record ({problem})")

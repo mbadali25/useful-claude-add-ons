@@ -110,6 +110,8 @@ _REASON_RECORDED_FALLBACK = (
     "already past it when {ticket} was first recorded here, so the true "
     "start is unknown and this shows MORE")
 _REASON_NO_RECORD = "no scope base recorded for {ticket}"
+_REASON_OVERRIDE = ("the recorded start of {ticket} is ignored: this run is "
+                    "measured against the base branch override {value}")
 _REASON_GONE = ("could not tell where {ticket} started: start commit {sha} "
                 "not in this clone")
 _REASON_NOT_ANCESTOR = ("could not tell where {ticket} started: start commit "
@@ -138,9 +140,55 @@ def _is_ancestor(root, sha):
 
 
 BASE_BRANCH_ENV = "CREW_BASE_BRANCH"
+OVERRIDE_RECORD = os.path.join(".crew", ".review-base-branch")
 
 
-def read_base_branch(root):
+def env_override():
+    """The per-run base branch override, or "" when unset or blank."""
+    return (os.environ.get(BASE_BRANCH_ENV) or "").strip()
+
+
+def persist_override(root, base_sha, value):
+    """Remember that the review whose base is `base_sha` was prepared against
+    `value`, so later checks (receipt validation: `merged_main.resolve`,
+    `review_delta.landing`) measure against the same branch with no env var.
+    Keyed by the base commit, the one thing a later check always has."""
+    path = os.path.join(root, OVERRIDE_RECORD)
+    mapping = _read_overrides(root)
+    mapping[base_sha] = value
+    payload = json.dumps(mapping, indent=2, sort_keys=True) + "\n"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(payload)
+
+
+def _read_overrides(root):
+    text = crew_common.read_text(os.path.join(root, OVERRIDE_RECORD))
+    try:
+        data = json.loads(text) if text else {}
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def persisted_override(root, base_sha):
+    """The branch persisted for `base_sha`, or "" (none, or unreadable)."""
+    value = _read_overrides(root).get(base_sha) if base_sha else None
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _names_a_branch(root, value):
+    """True when `value` is a branch (local, or on a remote), not a SHA, tag or
+    HEAD: a SHA of HEAD as the base is an empty range."""
+    if value.split("/")[-1] == "HEAD":  # refs/remotes/origin/HEAD is a symref
+        return False
+    return any(
+        crew_common.git_out(root, "rev-parse", "--verify", "-q", ref) is not None
+        for ref in (f"refs/heads/{value}", f"refs/remotes/{value}",
+                    f"refs/remotes/origin/{value}"))
+
+
+def read_base_branch(root, base_sha=None):
     """`(value, problem)` for `tickets.baseBranch` in `.crew/config.json`.
 
     Absent file, absent `tickets` block or `null` is `(None, None)`: today's
@@ -152,7 +200,7 @@ def read_base_branch(root):
     A non-blank `CREW_BASE_BRANCH` in the environment is a per-run override
     (`review_run.py --prepare --base-branch`, for a PR that targets a branch
     other than the repo-wide one) and wins over the file."""
-    override = (os.environ.get(BASE_BRANCH_ENV) or "").strip()
+    override = env_override() or persisted_override(root, base_sha)
     if override:
         return override, None
     # The resolved repo config -- a worktree with no `.crew/` of its own reads
@@ -183,7 +231,7 @@ def read_base_branch(root):
     return value.strip(), None
 
 
-def base_branch(root):
+def base_branch(root, base_sha=None):
     """`(ref, problem)`: the branch ticket branches are cut from, as a ref
     that names a commit here. Named in every reason, since which one answered
     decides what the merge-base is.
@@ -193,9 +241,13 @@ def base_branch(root):
     commit is a problem, never a fall back to `origin/HEAD`. Unset, the first
     of `origin/HEAD` (as the ref it points at), `origin/main`, `main`, with
     `(None, None)` when none resolves (the working tree alone, as before)."""
-    value, problem = read_base_branch(root)
+    value, problem = read_base_branch(root, base_sha)
     if problem:
         return None, problem
+    overridden = bool(env_override() or persisted_override(root, base_sha))
+    if value and overridden and not _names_a_branch(root, value):
+        return None, (f"{BASE_BRANCH_ENV} {value!r} is not a branch (a SHA, tag or "
+                      "HEAD would give an empty or arbitrary range)")
     if value:
         candidates = []
         for ref in ([value] if "/" in value else []) + [f"origin/{value}", value]:
@@ -204,8 +256,7 @@ def base_branch(root):
         for ref in candidates:
             if _is_commit(root, ref):
                 return ref, None
-        source = (BASE_BRANCH_ENV if (os.environ.get(BASE_BRANCH_ENV) or "").strip()
-                  else "tickets.baseBranch")
+        source = BASE_BRANCH_ENV if overridden else "tickets.baseBranch"
         return None, (f"{source} {value!r} names no commit here "
                       f"(tried {', '.join(candidates)})")
     sym = crew_common.git_out(root, "symbolic-ref", "--short",
@@ -392,6 +443,10 @@ def resolve(root, ticket):
     other = _other_ref(root, entry) if entry else None
     if entry is None:
         why = _REASON_NO_RECORD.format(ticket=ticket)
+    elif env_override():
+        # A per-run override means the PR targets another branch than the one
+        # the record was cut for: the recorded start would omit commits.
+        why = _REASON_OVERRIDE.format(ticket=ticket, value=env_override())
     elif not _is_commit(root, entry["base"]):
         why = _REASON_GONE.format(ticket=ticket, sha=entry["base"][:12])
     elif not _is_ancestor(root, entry["base"]):

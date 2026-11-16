@@ -72,7 +72,7 @@ def test_a_fallback_base_equal_to_the_merge_base_changes_nothing(tmp_path):
 
 
 def _no_ref(monkeypatch, _root):
-    monkeypatch.setattr(scope_base, "base_branch", lambda root: (None, None))
+    monkeypatch.setattr(scope_base, "base_branch", lambda root, *_: (None, None))
 
 
 def _base_branch_names_no_commit(_monkeypatch, root):

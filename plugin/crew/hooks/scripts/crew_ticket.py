@@ -501,6 +501,7 @@ def in_touch(path, touch):
 # (scripts/check-tooling-pr.py HARNESS) and this module already is.
 CREW_BOOKKEEPING_PATHS = (
     ".crew/.scope-base",                  # scope_base.py:80 (RECORD)
+    ".crew/.review-base-branch",          # scope_base.py (OVERRIDE_RECORD), review_run.py --prepare
     ".crew/.verify-verified-at",          # crew_state.py:557, verify-gate.sh
     ".crew/.verify-gate.*",               # verify_record.py, verify_fingerprint.py:172-177
     ".crew/.verify-gate.lock/**",         # verify-gate.sh:535 (LOCK, a directory)

@@ -748,7 +748,7 @@ def landing(root, base, head):
     `merged_main.pinned` answer for `merge-base <head> <before>` -- the merged
     commit that round's bundle diffed against (L-0770). A fast-forward or
     rebase landing has no such merge: could not tell."""
-    ref, problem = scope_base.base_branch(root)
+    ref, problem = scope_base.base_branch(root, base)
     if problem or not ref:
         return None, None
     code, _out, err = _git(root, ["merge-base", "--is-ancestor", head, ref])

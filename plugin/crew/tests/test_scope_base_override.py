@@ -133,3 +133,55 @@ def test_base_branch_flag_needs_prepare(clone):
         [sys.executable, _REVIEW_RUN_PY, "--root", str(clone), "--base-branch", "qa"],
         capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
     assert done.returncode == 2 and "--base-branch" in done.stderr, done.stderr
+
+
+def _head_sha(clone):
+    return _git(clone, "rev-parse", "HEAD")
+
+
+def test_override_beats_an_existing_exact_record(clone, monkeypatch):
+    """BLOCK: a ticket started on development (exact record at that tip) then
+    PR'd to qa is measured against qa's merge-base, not the recorded start."""
+    _git(clone, "checkout", "-q", "-b", "fix/t-2", "origin/development")
+    dev_tip = _git(clone, "rev-parse", "origin/development")
+    scope_base._write(str(clone), {"T-1": {  # pylint: disable=protected-access
+        "base": dev_tip, "from": "HEAD", "recordedAt": "2026-01-01T00:00:00+00:00"}})
+    monkeypatch.setenv(_ENV, "qa")
+    base, source, reason = scope_base.resolve(str(clone), "T-1")
+    assert base == _git(clone, "merge-base", "HEAD", "origin/qa") != dev_tip, (
+        base, source, reason)
+    assert source != scope_base.RECORDED, (source, reason)
+    assert "origin/qa" in reason or "qa" in reason, reason
+
+
+def test_record_still_wins_without_an_override(clone):
+    """Unset env: an exact record is still the answer."""
+    seed = _git(clone, "rev-parse", "origin/main")
+    scope_base._write(str(clone), {"T-1": {  # pylint: disable=protected-access
+        "base": seed, "from": "HEAD", "recordedAt": "2026-01-01T00:00:00+00:00"}})
+    base, source, _ = scope_base.resolve(str(clone), "T-1")
+    assert (base, source) == (seed, scope_base.RECORDED)
+
+
+@pytest.mark.parametrize("spelling", ["HEAD", "head-sha", "short-sha"])
+def test_override_rejects_a_commit_that_is_not_a_branch(clone, monkeypatch, spelling):
+    """FIX: HEAD or a SHA as the base would give an empty range; refuse it."""
+    head = _head_sha(clone)
+    value = {"HEAD": "HEAD", "head-sha": head, "short-sha": head[:10]}[spelling]
+    monkeypatch.setenv(_ENV, value)
+    ref, problem = scope_base.base_branch(str(clone))
+    assert ref is None
+    assert problem and _ENV in problem and "branch" in problem, problem
+
+
+def test_prepare_persists_the_override_for_later_checks(clone):
+    """FIX: later receipt validation (merged_main.resolve, no env, no flag)
+    reads the same branch the review was prepared against."""
+    import merged_main  # pylint: disable=import-outside-toplevel
+    done = _prepare(clone, "--base-branch", "qa")
+    base = _git(clone, "rev-parse", "origin/qa")
+    assert f"BASE={base}" in done.stdout, (done.stdout, done.stderr)
+    assert merged_main.resolve(str(clone), base)["ref"] == "origin/qa"
+    # a base the override was not prepared for still reads the config
+    other = _git(clone, "rev-parse", "origin/main")
+    assert merged_main.resolve(str(clone), other)["ref"] == "origin/development"

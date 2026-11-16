@@ -1326,7 +1326,7 @@ def _merged(top, commit, ref):
 
 # crew's own machine-local state that lane-init's activate writes (scope_base.RECORD);
 # not lane work, so it does not keep a worktree.
-CREW_STATE = frozenset({".crew/.scope-base"})
+CREW_STATE = frozenset({".crew/.scope-base", ".crew/.review-base-branch"})
 
 
 def _dirt(worktree, main_top):

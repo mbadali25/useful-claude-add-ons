@@ -579,7 +579,7 @@ def test_cli_base_reads_a_failed_probe_as_could_not_tell(repo, monkeypatch):
     """Codex L-0770 r1: a probe that fails after resolve() answered must not
     hand back HEAD."""
     _git(repo, "checkout", "-q", "main")
-    monkeypatch.setattr(scope_base, "base_branch", lambda root: (None, "probe failed"))
+    monkeypatch.setattr(scope_base, "base_branch", lambda root, *_: (None, "probe failed"))
     reason = scope_base._empty_range_on_the_base_branch(  # pylint: disable=protected-access
         str(repo), _head(repo), "merge-base")
     assert reason and reason.startswith("could not tell")

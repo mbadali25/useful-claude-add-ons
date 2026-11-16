@@ -70,7 +70,7 @@ def resolve(root, base_sha, head="HEAD"):
     whose merge of the integration ref is asked about: HEAD for a bundle of the
     working state, a reviewed head when the delta gate rebuilds the bundle that
     round read (L-0522)."""
-    ref, problem = scope_base.base_branch(root)
+    ref, problem = scope_base.base_branch(root, base_sha)
     if problem:
         return {"ref": None, "commit": None, "applies": False,
                 "reason": f"{UNKNOWN}: {problem}; nothing dropped"}
