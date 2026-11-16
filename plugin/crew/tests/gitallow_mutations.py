@@ -26,7 +26,7 @@ PowerShell word reaches `hold`, whose run-time rule refuses the `$` first). The
 bash substitution reading keeps its mutation: a substitution in a redirection
 target (`git status > "$(deploy-prod)"`) is in no word `hold` sees.
 
-Review round 12 (Codex gpt-6-sol, crew 1.3.122) added six red mutations (the trailing space,
+Review round 12 (Codex gpt-6-sol, crew 1.3.125) added six red mutations (the trailing space,
 the malformed deploy and non-object environment, the unknown subcommand, a built-in missing from
 `_BUILTINS`, a `+` in a push destination). It DELETED four rows the new unknown-subcommand hold
 shadows, measured STILL GREEN with the hold in place: `for-each-repo` and `web--browse` in
@@ -53,7 +53,7 @@ THREE rows wrong: two anchors lost to the rewrite, and the round 13 `-o` bundle 
 attached-value branch makes its mid-word case dead; that code was cut to the last-letter case and the row re-pointed.
 A promote-exempt row also stayed green until the escape branch required an escape to be present. The total is 159.
 
-Review round 15 (Codex gpt-6-sol re-review of crew 1.3.122) added 19 red mutations (the declared-deploy
+Review round 15 (Codex gpt-6-sol re-review of crew 1.3.125) added 19 red mutations (the declared-deploy
 fail-closed test independent of the pattern match, the command-word scan, the six repo-redirecting variables
 one row each, the empty-value rule, the line_targets refusal, and the digit short-bundle pattern's three sides plus
 the original `-uf` line) and DELETED one: the r14 "a backtick is not stripped" row, STILL GREEN because a backtick
@@ -82,7 +82,7 @@ NotADirectoryError, which never reaches `_dangles`), so they now name
 FileNotFoundError in on every host; a new mutation of the OSError branch names
 its POSIX twin.
 
-Review round 4 (Codex gpt-6-sol, crew 1.3.122) replaced the denylist with a
+Review round 4 (Codex gpt-6-sol, crew 1.3.125) replaced the denylist with a
 fail-closed allowlist read by ONE reader both paths ask (`plain_commands`), so
 it DELETED every mutation of the code that is gone: the cloud guard's own
 `hold` / `-C` / `Expands` marking, `finding_setting`, `_RUNTIME_RE`, the
@@ -96,7 +96,7 @@ cloud guard's `not fed` (an `xargs git` line is never only git), and
 `_ps_commands`' dangling-redirection check (the target word, if read as an
 argument instead, never makes a line exempt that dropping it would not).
 
-Review round 5 (Codex gpt-6-sol, crew 1.3.122) made redirections a fail-closed
+Review round 5 (Codex gpt-6-sol, crew 1.3.125) made redirections a fail-closed
 allowlist and taught the shared splitter bash's `>&-` and fd-prefix reading,
 and added one red mutation per rule (25: the redirection rules, the PowerShell
 parse-error refusals the differential test found, the splitter and the fd
@@ -110,7 +110,7 @@ check refuses every case it would, because raw text is never shorter than the
 word read from it; so is `_bash_redirect_problem`'s ASCII check on the fd
 (`_fd_prefix` never records a non-ASCII descriptor). The total is 109.
 
-Review round 6 (Codex gpt-6-sol, crew 1.3.122) replaced the bash and PowerShell
+Review round 6 (Codex gpt-6-sol, crew 1.3.125) replaced the bash and PowerShell
 readers with ONE plain command: no separator, redirection, heredoc,
 here-string, continuation, comment or subshell is read at all. It DELETED the
 mutations of the code that is gone (the splitter-driven `_bash_commands`,
@@ -351,7 +351,7 @@ GITALLOW_MUTATIONS = (
      "        if layer != \"machine\":\n            raise Refused(f\"{dotted} lives",
      "        if False:\n            raise Refused(f\"{dotted} lives",
      _T + "test_propose_refuses_what_it_cannot_confirm"),
-    # --- review round 4 (Codex gpt-6-sol, crew 1.3.122): the fail-closed allowlist ---
+    # --- review round 4 (Codex gpt-6-sol, crew 1.3.125): the fail-closed allowlist ---
     # bash reader (`_bash_plain_word`, `_bash_commands`)
     ("gitAllow r4: an unquoted $ is a plain character (BLOCK A)", GA,
      "_BASH_SAFE = frozenset(string.ascii_letters + string.digits + \"_-./:=+,@%^\")\n",
