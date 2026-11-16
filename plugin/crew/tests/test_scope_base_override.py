@@ -174,6 +174,50 @@ def test_override_rejects_a_commit_that_is_not_a_branch(clone, monkeypatch, spel
     assert problem and _ENV in problem and "branch" in problem, problem
 
 
+def test_override_rejects_a_tag(clone, monkeypatch):
+    """A tag names a commit but is not a branch: refuse it as a base."""
+    _git(clone, "tag", "v1", "origin/qa")
+    monkeypatch.setenv(_ENV, "v1")
+    ref, problem = scope_base.base_branch(str(clone))
+    assert ref is None
+    assert problem and _ENV in problem and "branch" in problem, problem
+
+
+def test_override_accepts_a_fully_spelled_branch_ref(clone, monkeypatch):
+    monkeypatch.setenv(_ENV, "refs/remotes/origin/qa")
+    assert scope_base.base_branch(str(clone)) == ("refs/remotes/origin/qa", None)
+
+
+def test_persist_override_keeps_other_bases_and_survives_a_corrupt_file(clone):
+    root = str(clone)
+    path = os.path.join(root, scope_base.OVERRIDE_RECORD)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("{not json")
+    assert scope_base.persisted_override(root, "a" * 40) == ""
+    scope_base.persist_override(root, "a" * 40, "qa")
+    scope_base.persist_override(root, "b" * 40, "development")
+    assert scope_base.persisted_override(root, "a" * 40) == "qa"
+    assert scope_base.persisted_override(root, "b" * 40) == "development"
+    assert scope_base.persisted_override(root, None) == ""
+    assert scope_base.persisted_override(root, "c" * 40) == ""
+
+
+def test_landing_reads_the_persisted_override(clone):
+    """review_delta.landing measures against the branch the review was prepared
+    against: HEAD (qa's tip) is inside qa, so with the override persisted the
+    landing is looked for (could not tell: no merge), and without it the
+    configured `development` does not hold HEAD."""
+    import review_delta  # pylint: disable=import-outside-toplevel
+    root = str(clone)
+    base = _git(clone, "rev-parse", "origin/main")
+    head = _head_sha(clone)
+    assert review_delta.landing(root, base, head) == (None, None)
+    scope_base.persist_override(root, base, "qa")
+    landed, why = review_delta.landing(root, base, head)
+    assert landed is None and why and review_delta.COULD_NOT_TELL in why, (landed, why)
+
+
 def test_prepare_persists_the_override_for_later_checks(clone):
     """FIX: later receipt validation (merged_main.resolve, no env, no flag)
     reads the same branch the review was prepared against."""

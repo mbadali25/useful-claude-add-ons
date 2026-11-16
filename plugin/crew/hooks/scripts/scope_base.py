@@ -182,9 +182,10 @@ def _names_a_branch(root, value):
     HEAD: a SHA of HEAD as the base is an empty range."""
     if value.split("/")[-1] == "HEAD":  # refs/remotes/origin/HEAD is a symref
         return False
+    spelled = [value] if value.startswith(("refs/heads/", "refs/remotes/")) else []
     return any(
         crew_common.git_out(root, "rev-parse", "--verify", "-q", ref) is not None
-        for ref in (f"refs/heads/{value}", f"refs/remotes/{value}",
+        for ref in (*spelled, f"refs/heads/{value}", f"refs/remotes/{value}",
                     f"refs/remotes/origin/{value}"))
 
 

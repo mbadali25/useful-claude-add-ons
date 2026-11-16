@@ -23,6 +23,9 @@ HOOK_SH = os.path.join(_S, "approval-hook.sh")
 MERGED_MAIN = os.path.join(_S, "merged_main.py")
 # T-0061: the ticket base branch (`tickets.baseBranch`).
 SCOPE_BASE_PY = os.path.join(_S, "scope_base.py")
+REVIEW_RUN_PY = os.path.join(_S, "review_run.py")
+REVIEW_DELTA_PY = os.path.join(_S, "review_delta.py")
+_SO = "tests/test_scope_base_override.py::"
 # L-0711: the verify gate's `outside-scope:` line.
 SCOPE_REPORT = os.path.join(_S, "scope_report.py")
 VERIFY_SH = os.path.join(_S, "verify-gate.sh")
@@ -379,8 +382,8 @@ SCOPE_MUTATIONS = (
     # On T-0061's base branch: a configured `tickets.baseBranch` naming no
     # commit must stay could-not-tell, never fall back to origin/main.
     ("MERGED MAIN: a base branch naming no commit falls back to origin/main", MERGED_MAIN,
-     "    ref, problem = scope_base.base_branch(root)\n",
-     '    ref, problem = (scope_base.base_branch(root)[0] or "origin/main"), None\n',
+     "    ref, problem = scope_base.base_branch(root, base_sha)\n",
+     '    ref, problem = (scope_base.base_branch(root, base_sha)[0] or "origin/main"), None\n',
      _MM + "test_could_not_tell_drops_nothing[base-branch-names-no-commit]"),
     ("MERGED MAIN: the base branch's problem is not named", MERGED_MAIN,
      '                "reason": f"{UNKNOWN}: {problem}; nothing dropped"}\n',
@@ -451,8 +454,8 @@ SCOPE_MUTATIONS = (
         # chain -- the unknown collapsing into the reassuring answer.
         "a missing configured branch falls back to origin/HEAD",
         SCOPE_BASE_PY,
-        '        return None, (f"tickets.baseBranch {value!r} names no commit here "\n',
-        '        _lost = (f"tickets.baseBranch {value!r} names no commit here "\n',
+        '        return None, (f"{source} {value!r} names no commit here "\n',
+        '        _lost = (f"{source} {value!r} names no commit here "\n',
         ("tests/test_scope_base_branch.py::"
          "test_could_not_tell_never_falls_back_to_origin_head"),
     ),
@@ -514,6 +517,39 @@ SCOPE_MUTATIONS = (
         ("tests/test_scope_base_branch.py::"
          "test_an_orphan_branch_with_the_key_could_not_tell"),
     ),
+    # --- per-run review base override (CREW_BASE_BRANCH / --base-branch) -------------
+    ("the env base override is ignored", SCOPE_BASE_PY,
+     "    override = env_override() or persisted_override(root, base_sha)\n    if override:\n",
+     "    override = persisted_override(root, base_sha)\n    if override:\n",
+     _SO + "test_env_override_wins_over_the_repo_config"),
+    ("an exact record beats the base override", SCOPE_BASE_PY,
+     "    elif env_override():\n        # A per-run override means",
+     "    elif False:\n        # A per-run override means",
+     _SO + "test_override_beats_an_existing_exact_record"),
+    ("a HEAD, sha or tag is accepted as the base override", SCOPE_BASE_PY,
+     "    if value and overridden and not _names_a_branch(root, value):\n",
+     "    if False:\n",
+     _SO + "test_override_rejects_a_commit_that_is_not_a_branch"),
+    ("a tag is accepted as the base override", SCOPE_BASE_PY,
+     "    return any(\n        crew_common.git_out(root, \"rev-parse\", \"--verify\", \"-q\", ref) is not None\n",
+     "    return True or any(\n        crew_common.git_out(root, \"rev-parse\", \"--verify\", \"-q\", ref) is not None\n",
+     _SO + "test_override_rejects_a_tag"),
+    ("the persisted base override is never read", SCOPE_BASE_PY,
+     '    value = _read_overrides(root).get(base_sha) if base_sha else None\n',
+     "    value = None\n",
+     _SO + "test_prepare_persists_the_override_for_later_checks"),
+    ("prepare does not persist the base override", REVIEW_RUN_PY,
+     "            scope_base.persist_override(root, base, override)\n",
+     "            pass\n",
+     _SO + "test_prepare_persists_the_override_for_later_checks"),
+    ("a persisted override replaces the other bases' overrides", SCOPE_BASE_PY,
+     "    mapping = _read_overrides(root)\n    mapping[base_sha] = value\n",
+     "    mapping = {}\n    mapping[base_sha] = value\n",
+     _SO + "test_persist_override_keeps_other_bases_and_survives_a_corrupt_file"),
+    ("landing measures against the unpersisted base", REVIEW_DELTA_PY,
+     "    ref, problem = scope_base.base_branch(root, base)\n    if problem or not ref:\n        return None, None\n    code,",
+     "    ref, problem = scope_base.base_branch(root)\n    if problem or not ref:\n        return None, None\n    code,",
+     _SO + "test_landing_reads_the_persisted_override"),
     # --- T-0068: crew's own bookkeeping ---------------------------------------------
     ("the audit judges bookkeeping", AUDIT,
      '_ONLY = ["--", ".", ":(exclude).work"] + crew_ticket.bookkeeping_excludes()\n',
