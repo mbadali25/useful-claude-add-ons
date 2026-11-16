@@ -221,7 +221,10 @@ def test_the_two_halves_of_the_framing_contract_agree():
     assert r'"\x1d"' in emit[0], emit[0]
     assert r'"\x1e".join(cmds)' in emit[0], emit[0]
 
-    readers = [l for l in text.splitlines() if "tr '\\035'" in l]
+    # VERIFY_SHA (L-0888) re-reads record 6 (EXTRAS) for the second trust
+    # check; it is a second reader of an existing record, not a new record.
+    readers = [l for l in text.splitlines()
+               if "tr '\\035'" in l and "VERIFY_SHA=" not in l]
     # DERIVED from the writer, not hardcoded. This said `== 2` until the Stop
     # budget added a third record (the deferral notices) in 0.19.69, and a
     # hardcoded count fails on a correct change while proving nothing about
