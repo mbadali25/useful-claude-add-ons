@@ -1701,7 +1701,8 @@ _SCRIPT_WRITE_RE = re.compile(r"(?:^|[;{\s\d$!]|/[gpIiMme\d]*)w!?[ \t]*([^\n;}|]
 # what `find` hands each file to after `-exec`: a verb that writes or deletes, or a shell whose text is not read here
 _FIND_EXEC = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
 _FIND_NAMES = ("config.json", "cc-0a1b2c3d.json", "confirm-config", "crew", ".claude")
-# the file an awk program redirects its output to: `print > "<file>"`, `print >> "<file>"`
+# the file an awk program redirects its output to: `print > "<file>"`, `print >> "<file>"` (inside a double-quoted
+# program the quotes are escaped, `\"<file>\"`: the escape-stripped reading of the segment is the one that matches)
 _AWK_WRITE_RE = re.compile(r">>?\s*\"([^\"]+)\"")
 
 
@@ -1799,7 +1800,7 @@ def _verb_hits(name, args, shell):  # pylint: disable=too-many-return-statements
         if name == "sed" and any(_hit(w, shell, "file") for w in _script_writes(name, args)):
             return True   # `sed -n "w <file>"`: the script's own write command
         if name in ("awk", "gawk") and any(_hit(found.group(1), shell, "file")
-                                           for a in args for found in _AWK_WRITE_RE.finditer(a.replace('\\"', '"'))):
+                                           for a in args for found in _AWK_WRITE_RE.finditer(a)):
             return True   # `awk '{print > "<file>"}'`
         inplace = any(re.match(r"^-[A-Za-z]*i", a) or a.startswith("--in-place") for a in args) or (
             name in ("awk", "gawk") and "inplace" in lowered)

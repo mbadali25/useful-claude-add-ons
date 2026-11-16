@@ -296,7 +296,8 @@ def test_a_real_patch_is_still_refused(command, home):
 def test_a_path_the_shell_cannot_resolve_is_still_judged_by_its_tail(home):
     """`$X` is unknown, so the folder cannot be told: the way the word ENDS decides, component by component."""
     for command in ("echo x > $X/crew/config.json", "echo x > $X/.claude/crew/confirm-config/cc-ab.json",
-                    "echo x > $X/crew./config.json", "rm $X/confirm-config/cc-1*", "rm $X/.claude/cr*/config.json"):
+                    "echo x > $X/crew./config.json", "rm $X/confirm-config/cc-1*", "rm $X/.claude/cr*/config.json",
+                    "echo x > crew./config.json", "rm .claude/crew/confirm-config./cc-ab.json"):
         assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
     for command in ("echo x > $X/config.json", "echo x > $X/crewx/config.json", "echo x > $X/other/config.json"):
         assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
@@ -613,7 +614,9 @@ def test_a_word_after_a_parenthesised_expression_is_a_plain_word(home):
     for command in ("Copy-Item (Get-Item ~/.claude/crew/config.json) out.txt",
                     "Set-Content (Join-Path $PWD 'a.txt') x; Set-Content out.txt y",
                     "Copy-Item -Path (Get-Item ~/.claude/crew/config.json) -Destination out.txt",
-                    "Copy-Item (Get-Item ~/.claude/crew/config.json) -Destination out.txt"):
+                    "Copy-Item (Get-Item ~/.claude/crew/config.json) -Destination out.txt",
+                    # ... also in a command that names the owner's folder, where an expression would be refused
+                    "mkdir -p ~/.claude/crew; Write-Output (Get-Date) > out.txt"):
         assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
 
 
@@ -736,7 +739,7 @@ def test_what_makes_a_command_name_the_owners_folder(home):
                     "mkdir ~/.cl`aude/crew; echo x > $D", "mkdir ~/.cl^aude/crew; echo x > $D",
                     "mkdir ~/'.cl'aude/crew; echo x > $D", "mkdir ~\\.claude\\crew; echo x > $D",
                     "mkdir -p ~/.claude/crew; Set-Content $D x", "mkdir -p ~/.claude/crew; echo x > \"$(cat p)\"",
-                    "cp x ~/.claude/crew/other.json; echo y > $D", "robocopy a ~/.claude/crew x; echo y > $D",
+                    "cp x ~/.claude/crew/other.json; echo y > $D", "robocopy a ~/.claude/crew/sub x; echo y > $D",
                     "Copy-Item -Destination ~/.claude/crew/other.json x; echo y > $D",
                     "cp -t ~/.claude/crew/sub x; echo y > $D",
                     "echo ~/.claude/crew/config.json > /tmp/p; echo x > \"$(cat /tmp/p)\"",
@@ -1057,6 +1060,9 @@ FOLDER_VERBS = (
     "Get-ChildItem {d} | Remove-Item", "Get-ChildItem {d} | Remove-Item -Recurse -Force",
     "Get-ChildItem {d} -Filter config.json | Remove-Item -Force", "gci {d} | % { Set-Content $_.FullName x }",
     "ls {d}/*.json | while read f; do echo x > \"$f\"; done", "ls {d} | xargs rm",
+    # what writes into the folder it stands in
+    "cd {d} && unzip a.zip", "cd {d}; tar -xf a.tar", "cd {d} && git checkout -- .", "cd {d}; curl -sO http://x/y",
+    "cd {d} && patch -p1 < a.patch",
 )
 OWNER_FOLDERS = ("~/.claude/crew", "$HOME/.claude/crew", "~/.claude/crew/confirm-config", "~/.claude/crew/")
 # a `find` that starts ABOVE the owner's folder reaches it too, unless its `-name` rules the owner's names out
@@ -1117,7 +1123,8 @@ def test_what_walks_another_folder_is_allowed(home, top):
                     "Get-Item ~/.claude/crew/config.json | Copy-Item -Destination out.txt",
                     "Get-ChildItem .claude | ForEach-Object { Set-Content $_.FullName x }",
                     "Get-ChildItem ~/.claude/crew | ForEach-Object { Write-Output $_ }",
-                    "Get-ChildItem ~/.claude/crew | % { Get-Content $_.FullName }"], top)
+                    "Get-ChildItem ~/.claude/crew | % { Get-Content $_.FullName }",
+                    "Get-ChildItem build | % { $_ } | % { Remove-Item $_ }"], top)
     assert not hit, _report(hit, "were refused")
 
 
@@ -1280,6 +1287,7 @@ STORE_WRITES = (
     "cat \"$(rm {s}/f)\"",
     "nice python3 x.py {s}/f", "cmd /c \"echo x {s}/f\"", "eval \"touch {s}/f\"", "bash <<EOF\nrm {s}/f\nEOF",
     "A=1 rm {s}/f", "! rm {s}/f", "ls {s}/f; {rm,x}", "pwsh -Command \"Remove-Item {s}/f\"",
+    "pwsh -c \"echo x {s}/f\"",
 )
 
 
@@ -1364,10 +1372,12 @@ def test_read_is_fed_by_a_here_string_too(home, top):
 
 def test_the_trust_check_still_reads_past_nice(home, top):
     """Until crew 1.3.128 the owner-file check's wrapper set carried the name of the trust check's and replaced it,
-    so `nice` was no wrapper there."""
+    so `nice` was no wrapper there. The two sets are apart again: the trust check reads past its own wrappers, as on
+    main, and not past the owner-file check's (a dot call, `start`, `call`)."""
     for command in ("nice /tmp/x approve", "nice -n 5 /tmp/x revoke", "env A=1 /tmp/x approve"):
         assert scope_guard.shell_refusal(command, None, top), command
-    assert scope_guard.shell_refusal("nice python3 verify_trust.py status", None, top) is None
+    for command in ("nice python3 verify_trust.py status", ". ./env.sh approve", "start ./tool.cmd approve"):
+        assert scope_guard.shell_refusal(command, None, top) is None, command
 
 
 # --- the tail: what the guard does NOT read (CONFIG.md, "The guards master switch") ---------------------------------
