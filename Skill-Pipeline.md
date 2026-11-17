@@ -56,6 +56,7 @@ Use [`superpowers:requesting-code-review`](https://github.com/obra/superpowers) 
 
 ## Stage 4 — Merge
 
+- Land-prep first: `python3 scripts/land-pr.py <PR> --push` merges `main` into the branch and writes the version bump and every generated file as one commit, so an open branch carries neither. It never merges the PR. See [`docs/landing-prs.md`](docs/landing-prs.md).
 - Merge to `main` as a merge commit (`gh pr merge --merge`, never squash or rebase) once approved and Stage 2 checks are green.
 - Delete the branch after merge.
 

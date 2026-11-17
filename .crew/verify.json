@@ -398,6 +398,18 @@
       "reach": "local",
       "why": "Every version a branch sets owes a CHANGELOG.md entry or a `re-bump only` line. Suite only; the check itself runs in CI and gate-runner. Full rationale: docs/crew/verify-rationale.md#changelog-per-version" },
 
+    { "id": "land-pr", "paths": ["scripts/land-pr.py", "scripts/_test/land-pr.py"],
+      "seconds": 480,
+      "run": ["python3 scripts/_test/land-pr.py"],
+      "reach": "local",
+      "why": "Bump at land: the lander never merges, never forces, refuses main and a dirty tree, and bumps above every open PR head. Suite only, throwaway repos. Full rationale: docs/crew/verify-rationale.md#land-pr" },
+
+    { "id": "pending-at-land", "paths": ["scripts/pending-at-land.py", "scripts/_test/pending-at-land.py", ".github/workflows/marketplace.yml"],
+      "seconds": 15,
+      "run": ["python3 scripts/_test/pending-at-land.py"],
+      "reach": "local",
+      "why": "A draft PR's stale generated file is pending at land; nothing else is relaxed, and never on a ready PR's path. Full rationale: docs/crew/verify-rationale.md#pending-at-land" },
+
     { "id": "powershell-lint", "paths": ["**/*.ps1", "**/*.psm1"],
       "seconds": 5,
       "run": ["sh scripts/pwsh-isolated.sh -NoProfile -File ./scripts/check-powershell.ps1"],

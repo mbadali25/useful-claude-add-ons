@@ -155,10 +155,26 @@ jobs:
       # purpose (.pylintrc). Without markdown build.py --check exits 2, red.
       - name: Install the crew guide checks' dependency
         run: python -m pip install 'markdown==3.11'
+      # Bump at land: a DRAFT pull request carries no regenerated file until
+      # scripts/land-pr.py writes them in the land commit, so on a draft each
+      # generated-file check below has a twin step that reports a STALE result
+      # as "pending at land" (scripts/pending-at-land.py: exit 1 plus that
+      # check's own stale text; "did not run" and every other exit stay red).
+      # The plain step is unchanged and is the only one a ready PR, a push to
+      # main or a manual run takes, so the required `check` context is never
+      # reported by a relaxed run. scripts/_test/pending-at-land.py holds both.
       - name: Crew guide HTML is current
+        if: github.event.pull_request.draft != true
         run: python3 docs/guides/crew/src/build.py --check
+      - name: Crew guide HTML is current (draft PR, pending at land)
+        if: github.event.pull_request.draft == true
+        run: python3 scripts/pending-at-land.py --when '^stale:' -- python3 docs/guides/crew/src/build.py --check
       - name: Crew configuration reference is current
+        if: github.event.pull_request.draft != true
         run: python3 docs/guides/crew/src/config_reference.py --check
+      - name: Crew configuration reference is current (draft PR, pending at land)
+        if: github.event.pull_request.draft == true
+        run: python3 scripts/pending-at-land.py --when '^stale:' -- python3 docs/guides/crew/src/config_reference.py --check
       # L-0718: REVIEW.md, AGENTS.md's Code Review Rules block, .cursor/BUGBOT.md
       # and docs/review-rules/ are generated from crew's standards. Until this step
       # only the local verify.json rule `standards-export` compared them, so PR #754
@@ -169,7 +185,12 @@ jobs:
       - name: Standards export CI suite
         run: python3 scripts/_test/standards-export-ci.py
       - name: Standards exports are current
+        if: github.event.pull_request.draft != true
         run: python3 plugin/crew/hooks/scripts/crew_standards.py export --check --root .
+      # --never: the exporter exits 1 for a REFUSED export too, which is not staleness.
+      - name: Standards exports are current (draft PR, pending at land)
+        if: github.event.pull_request.draft == true
+        run: python3 scripts/pending-at-land.py --when 'standards export STALE:' --never 'REFUSED' -- python3 plugin/crew/hooks/scripts/crew_standards.py export --check --root .
       # scripts/ci-select.py decides which heavy suites a PR runs in
       # pytest-crew.yml, pylint.yml, shell-suites.yml and mcp-servers.yml
       # (C-0001). A wrong answer there is a suite skipped on a PR that needed
@@ -187,7 +208,11 @@ jobs:
       # mode is a check nobody runs, which is worse than no check: the blocks
       # carry a "generated" comment that says they are current.
       - name: Generated README blocks are current
+        if: github.event.pull_request.draft != true
         run: python3 scripts/sync-updates.py --check
+      - name: Generated README blocks are current (draft PR, pending at land)
+        if: github.event.pull_request.draft == true
+        run: python3 scripts/pending-at-land.py --when 'is stale -- run' -- python3 scripts/sync-updates.py --check
       # Must-block: a "What's new" that is not the newest two changelog
       # entries fails --check. Must-allow: a fresh render passes (L-1518).
       - name: sync-updates suite
@@ -195,9 +220,26 @@ jobs:
       # Every version a branch sets owes a CHANGELOG.md entry or a `re-bump only`
       # line. Must-fail and must-pass cases, sabotage-tested, in the suite below.
       - name: Changelog entry per version
+        if: github.event.pull_request.draft != true
         run: python3 scripts/check-changelog.py
+      # A draft that set interim numbers owes their `re-bump only` lines only at
+      # land (land-pr.py writes them); exit 77 (no base ref) stays red.
+      - name: Changelog entry per version (draft PR, pending at land)
+        if: github.event.pull_request.draft == true
+        run: python3 scripts/pending-at-land.py --when '^check-changelog:[ ]MISSING:' -- python3 scripts/check-changelog.py
       - name: check-changelog suite
         run: python3 scripts/_test/check-changelog.py
+      # The draft relaxation above: must-relax and must-stay-red cases, the
+      # workflow shape (every relaxed step is draft-only and has a plain twin),
+      # and mutations that must each turn a case red.
+      - name: pending-at-land suite
+        run: python3 scripts/_test/pending-at-land.py
+      # scripts/land-pr.py, the land half of bump-at-land, against throwaway
+      # repositories with a local bare remote: never merges, never forces,
+      # refuses main and a dirty tree, picks a version above every open head,
+      # and a second run changes nothing. No network, no gh.
+      - name: land-pr suite
+        run: python3 scripts/_test/land-pr.py
       - name: Shell syntax
         run: bash -n scripts/install-prerequisites.sh
       # An own-line `# shellcheck` comment ShellCheck cannot parse is SC1073, and

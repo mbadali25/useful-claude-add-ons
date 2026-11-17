@@ -151,6 +151,8 @@ def _bash_suite(name: str, path: str, workflow: str, phase: str = "cheap",
                 ci=((workflow, ci_cmd or f"bash {path}"),))
 
 
+_PENDING = "python3 scripts/pending-at-land.py "
+
 TABLE = (
     Step("check-marketplace", "cheap", (PY, "scripts/check-marketplace.py"),
          # L-0511: CI passes --pending-bump on a draft PR only. A lane runs the
@@ -178,30 +180,48 @@ TABLE = (
     _py_suite("ci-select", "scripts/_test/ci-select.py"),
     _py_suite("instruction-budgets-suite", "scripts/_test/instruction-budgets.py",
               "instruction-budgets.yml"),
+    # Bump at land: on a draft PR, CI runs each of the five generated-file checks
+    # below through scripts/pending-at-land.py (a stale result is "pending at
+    # land"). A lane runs the plain check (the stricter one), so the draft
+    # invocation is pinned here beside it, like --pending-bump above.
     Step("sync-updates", "cheap", (PY, "scripts/sync-updates.py", "--check"),
-         ci=(("marketplace.yml", "python3 scripts/sync-updates.py --check"),)),
+         ci=(("marketplace.yml", "python3 scripts/sync-updates.py --check"),
+             ("marketplace.yml", _PENDING + "--when 'is stale -- run' -- "
+              "python3 scripts/sync-updates.py --check"))),
     # L-0657: the committed crew guide HTML and the generated configuration
     # reference match their sources. build.py needs markdown: SKIP without it,
     # never PASS. config_reference.py imports only the standard library.
     Step("crew-guides-fresh", "cheap", (PY, "docs/guides/crew/src/build.py", "--check"),
          needs=("module:markdown",),
-         ci=(("marketplace.yml", "python3 docs/guides/crew/src/build.py --check"),)),
+         ci=(("marketplace.yml", "python3 docs/guides/crew/src/build.py --check"),
+             ("marketplace.yml", _PENDING + "--when '^stale:' -- "
+              "python3 docs/guides/crew/src/build.py --check"))),
     Step("crew-config-reference-fresh", "cheap",
          (PY, "docs/guides/crew/src/config_reference.py", "--check"),
-         ci=(("marketplace.yml", "python3 docs/guides/crew/src/config_reference.py --check"),)),
+         ci=(("marketplace.yml", "python3 docs/guides/crew/src/config_reference.py --check"),
+             ("marketplace.yml", _PENDING + "--when '^stale:' -- "
+              "python3 docs/guides/crew/src/config_reference.py --check"))),
     # L-0718: the generated review rules match crew's standards. Was local-only
     # (verify.json `standards-export`) until PR #754 went green with stale ones.
     _py_suite("standards-export-ci-suite", "scripts/_test/standards-export-ci.py"),
     Step("standards-export", "cheap",
          (PY, "plugin/crew/hooks/scripts/crew_standards.py", "export", "--check", "--root", "."),
          ci=(("marketplace.yml",
-              "python3 plugin/crew/hooks/scripts/crew_standards.py export --check --root ."),)),
+              "python3 plugin/crew/hooks/scripts/crew_standards.py export --check --root ."),
+             ("marketplace.yml", _PENDING + "--when 'standards export STALE:' --never 'REFUSED' -- "
+              "python3 plugin/crew/hooks/scripts/crew_standards.py export --check --root ."))),
     _py_suite("sync-updates-suite", "scripts/_test/sync-updates.py"),
     # Every version the branch sets owes a CHANGELOG.md entry or a `re-bump only`
     # line. A missing origin/main is exit 77, recorded as SKIP, never PASS.
     Step("check-changelog", "cheap", (PY, "scripts/check-changelog.py"),
-         ci=(("marketplace.yml", "python3 scripts/check-changelog.py"),)),
+         ci=(("marketplace.yml", "python3 scripts/check-changelog.py"),
+             ("marketplace.yml", _PENDING + "--when '^check-changelog:[ ]MISSING:' -- "
+              "python3 scripts/check-changelog.py"))),
     _py_suite("check-changelog-suite", "scripts/_test/check-changelog.py"),
+    _py_suite("pending-at-land-suite", "scripts/_test/pending-at-land.py"),
+    # scripts/land-pr.py: throwaway repositories with a local bare remote.
+    Step("land-pr-suite", "cheap", (PY, "scripts/_test/land-pr.py"), timeout=900,
+         ci=(("marketplace.yml", "python3 scripts/_test/land-pr.py"),)),
     Step("install-prerequisites-syntax", "cheap", ("bash", "-n", "scripts/install-prerequisites.sh"),
          needs=("bash",), ci=(("marketplace.yml", "bash -n scripts/install-prerequisites.sh"),)),
     _bash_suite("menu-groups", "scripts/_test/menu-groups.sh", "marketplace.yml",

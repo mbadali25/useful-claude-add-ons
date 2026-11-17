@@ -18,7 +18,9 @@ anything is wrong.
 
 ``--pending-bump`` (L-0511, REPO-03) is for a build branch, which carries no version bump
 until land: a version-drift finding prints as ``pending at land: ...`` and does not fail.
-Only that one check changes; every other check fails exactly as without the flag. It is
+So does an out-of-date ``crew-markdown-lines`` total (``plugin/crew/BUDGETS.md``), which
+``scripts/land-pr.py`` re-measures in the land commit along with the bump. Only those two
+findings change; every other check fails exactly as without the flag. It is
 ignored, with a ``note:`` line, when the checked-out branch is ``main``. CI passes it on a
 draft pull request only, so a ready pull request and every push to ``main`` run the full
 check and a content change with no bump still cannot merge.
@@ -723,8 +725,14 @@ def count_plugin_commands(name: str) -> int | None:
     return sum(1 for entry in listed if entry.endswith(".md"))
 
 
-def check_self_claims(entries, fail):
+def check_self_claims(entries, fail, stale=None):
     """Verify the numbers this repo states about itself, where they are marked.
+
+    `stale` (default: `fail`) receives one finding only: a `crew-markdown-lines`
+    total that is readable but out of date. Under --pending-bump main() passes
+    its pending-at-land sink, because scripts/land-pr.py re-measures that total
+    in the land commit; a marker that binds to nothing, or a count git could
+    not give, still goes to `fail`.
 
     Prose drifts. `28 skills` in README and INSTALLATION stayed four days behind
     a marketplace that had reached 34, and `plugin/PLUGINS.md`'s crew row sat at
@@ -937,7 +945,7 @@ def check_self_claims(entries, fail):
                         continue
                     stated = int(found.group(1).replace(",", ""))
                     if stated != actual:
-                        fail(
+                        (stale or fail)(
                             f"{path}:{index + 1}: claims {found.group(1)} plugin/crew "
                             f"Markdown lines, but plugin/crew/*.md currently totals {actual}"
                         )
@@ -2084,8 +2092,8 @@ def main(argv: list[str] | None = None) -> int:
     """Run every check and report."""
     parser = argparse.ArgumentParser(description="Check the marketplace is consistent.")
     parser.add_argument("--pending-bump", action="store_true",
-                        help="report version drift as pending at land (a build branch, REPO-03); "
-                             "ignored on branch main")
+                        help="report version drift and an out-of-date crew-markdown-lines total "
+                             "as pending at land (a build branch, REPO-03); ignored on branch main")
     args = parser.parse_args(argv)
     problems: list[str] = []
     pending: list[str] = []
@@ -2108,7 +2116,7 @@ def main(argv: list[str] | None = None) -> int:
     check_hook_commands(entries, fail)
     check_command_backtick_spans(fail)
     check_versions(entries, drift)
-    check_self_claims(entries, fail)
+    check_self_claims(entries, fail, drift)
     check_config_reference(fail)
     check_description_claims(entries, fail)
     check_catalog_claims(entries, fail)

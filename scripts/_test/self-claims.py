@@ -140,12 +140,14 @@ def run(
             CHECKER.ROOT = saved
 
 
-def run_markdown_lines(docs: dict[str, str], crew_files: dict[str, str]) -> list[str]:
+def run_markdown_lines(docs: dict[str, str], crew_files: dict[str, str],
+                       stale: list[str] | None = None) -> list[str]:
     """Run check_self_claims against a fixture carrying `plugin/crew/*.md`
     files, for the `crew-markdown-lines` claim -- the one kind `run()`'s
     fixture (a `plugin/widget` with no `plugin/crew` at all) cannot exercise,
     since `count_crew_markdown_lines` reads `plugin/crew/*.md` by a hardcoded
-    path rather than from `ENTRIES`.
+    path rather than from `ENTRIES`. With `stale` given, it is passed as the
+    pending-at-land sink (--pending-bump) and collects what went there.
     """
     with tempfile.TemporaryDirectory() as tmp:
         build(tmp, docs)
@@ -159,7 +161,10 @@ def run_markdown_lines(docs: dict[str, str], crew_files: dict[str, str]) -> list
         CHECKER.ROOT = tmp
         try:
             problems: list[str] = []
-            CHECKER.check_self_claims(ENTRIES, problems.append)
+            if stale is None:
+                CHECKER.check_self_claims(ENTRIES, problems.append)
+            else:
+                CHECKER.check_self_claims(ENTRIES, problems.append, stale.append)
             return problems
         finally:
             CHECKER.ROOT = saved
@@ -1506,6 +1511,33 @@ def main() -> int:
             print(f"       expected {expected} problem(s)"
                   + (f" containing {needle!r}" if needle else ""))
             print(f"       got {len(problems)}: {problems}")
+
+    # --pending-bump (bump at land): only an out-of-date total goes to the
+    # pending sink. (name, docs, crew files, problems, pending findings).
+    for name, docs, crew_files, want_problems, want_pending in (
+        ("pending sink: an out-of-date total is pending, not a problem",
+         {"README.md": "<!-- claim: crew-markdown-lines -->\n9 lines\n"},
+         {"a.md": "one\ntwo\nthree\n"}, 0, 1),
+        ("pending sink: a correct total reports nothing",
+         {"README.md": "<!-- claim: crew-markdown-lines -->\n3 lines\n"},
+         {"a.md": "one\ntwo\nthree\n"}, 0, 0),
+        ("pending sink: a marker that binds to nothing is still a problem",
+         {"README.md": "<!-- claim: crew-markdown-lines -->\nno number here\n"},
+         {"a.md": "one\ntwo\nthree\n"}, 1, 0),
+        ("pending sink: another claim kind's mismatch is still a problem",
+         {"README.md": "<!-- claim: skills-count -->\n99 skills\n"},
+         {"a.md": "one\n"}, 1, 0),
+    ):
+        stale: list[str] = []
+        problems = run_markdown_lines(docs, crew_files, stale)
+        if len(problems) == want_problems and len(stale) == want_pending:
+            passed += 1
+            print(f"  ok   {name}")
+        else:
+            failed += 1
+            print(f"  FAIL {name}")
+            print(f"       expected {want_problems} problem(s) and {want_pending} pending")
+            print(f"       got problems {problems}, pending {stale}")
 
     for name, docs, expected, needle, widget_skills in CASES_PLUGIN_SKILLS:
         problems = run(docs, widget_skills=widget_skills)
