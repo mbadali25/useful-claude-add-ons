@@ -92,6 +92,13 @@ read entries under any `## [` heading.
 - crew 1.3.106: re-bump only - interim number on the L-0948 branch (pushed, never on main); main moved to 1.3.96 and the open PRs reached 1.3.132 (#777), so the branch was merged with main and re-bumped above the highest open PR; the change is recorded under crew 1.3.133
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
+### Fixed — crew 1.3.136: two sabotage entries that stayed green now go red, and `sabotage.py` can run one entry (L-0958)
+
+- **Summary.** `crew` 1.3.136 makes the sabotage suite able to run a single entry (`--only`, `--list`, and a `--help` that no longer runs the suite and mutates the tree) and fixes two entries that reported STILL GREEN on a clean tree.
+- **What changed.** The promote-gate fail-closed entry now has a test that pins the sentence only the `VERDICT_STATUS` branch writes (the mutation still exited 2 through the generic message, so the old assertions could not tell). The declared-price entry now points at a new test that calls `verify_record._sync` alone, because the whole-gate test it named never needed the line: `progress` caches the same timing mid-run.
+- **Not changed.** No mutation was re-anchored; no gate, hook or production code changed. The promote-gate entry's label still says "stops failing closed", but the mutation only loses the specific message (the generic one still blocks).
+- **Tests.** `test_sabotage_harness.py` (select, `--help`, `--list`, unmatched `--only`), `test_verify_gate_stop_budget.py`, `test_promote_gate_fails_closed.py`.
+
 ### Fixed — crew 1.3.133: a workflow dispatch's `environment` input selects the environment in the promote gate (L-0948)
 
 - **Summary.** `crew` 1.3.133 stops the promote gate reading `gh workflow run deploy.yml -f environment=development` (or `qa`) as the production deploy when production's declared dispatch has no `environment` input; it now blocks as could-not-tell, naming the environment it selected, until every environment (production included) declares its own `environment` input; a production declared without it still matches by substring, but the selector block ends the gate first, so production's own checks do not run (they run beside the selected environment once that environment is declared).
