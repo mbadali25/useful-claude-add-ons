@@ -223,6 +223,21 @@ def test_the_marker_is_named_by_the_last_session_id_and_the_project(tmp_path):
     assert os.path.basename(crew_hook._audit_marker(spaced, env)).startswith("crew-completion-audit.nosession-")  # pylint: disable=protected-access
 
 
+def _path_without_python(tmp_path):
+    """A PATH that holds every tool the wrapper needs and no python, whatever the runner's layout. Git for Windows
+    keeps python out of its own bin and usr/bin; a Linux runner's /usr/bin holds python3, so there the tools are
+    linked one by one into a directory of their own, minus every name that could be an interpreter."""
+    bin_dir = os.path.dirname(h.BASH)
+    if sys.platform == "win32":
+        return os.pathsep.join([bin_dir, os.path.join(os.path.dirname(bin_dir), "usr", "bin")])
+    tools = tmp_path / "tools-without-python"
+    tools.mkdir()
+    for name in os.listdir(bin_dir):
+        if not name.lower().startswith(("python", "py", "pypy")):
+            os.symlink(os.path.join(bin_dir, name), str(tools / name))
+    return str(tools)
+
+
 @pytest.mark.skipif(h.BASH is None, reason="no bash: the wrapper's marker name was NOT compared")
 @crew_fixtures.SLOW
 def test_the_marker_name_is_the_one_the_wrapper_writes(tmp_path):
@@ -234,8 +249,7 @@ def test_the_marker_name_is_the_one_the_wrapper_writes(tmp_path):
     tmp = tmp_path / "tmp"
     tmp.mkdir()
     payload = _stop(project, session="sess-9")
-    bin_dir = os.path.dirname(h.BASH)
-    env = {"PATH": os.pathsep.join([bin_dir, os.path.join(os.path.dirname(bin_dir), "usr", "bin")]),
+    env = {"PATH": _path_without_python(tmp_path),
            "CLAUDE_PROJECT_DIR": str(project), "TMPDIR": str(tmp), "HOME": str(tmp_path)}
     done = subprocess.run([h.BASH, os.path.join(SCRIPTS, AUDIT).replace("\\", "/")], input=payload, env=env,
                           capture_output=True, cwd=str(project), timeout=900, check=False)
