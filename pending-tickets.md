@@ -148,6 +148,7 @@ himself. Each body (owner's words, inferred meanings, acceptance criteria, owner
 | _none yet_ | Allow `verify_trust.py` (trust approval) to be automated through the approval route | D | [automate-verify-trust-approval.md](docs/tickets/pending/automate-verify-trust-approval.md) | needs ticket |
 | _none yet_ | Allow the AWS IAM identity script to be automated through the approval route | D | [automate-aws-iam-identity-script.md](docs/tickets/pending/automate-aws-iam-identity-script.md) | needs ticket |
 | _none yet_ | Allow "touch and tag deployment" to be automated, including a full-automation mode | D | [automate-touch-and-tag-deployment.md](docs/tickets/pending/automate-touch-and-tag-deployment.md) | needs ticket |
+| _none yet_ | Allow `aws sns subscribe` for alert recipients to be run through the approval route | D | [automate-aws-sns-subscribe-alert-recipients.md](docs/tickets/pending/automate-aws-sns-subscribe-alert-recipients.md) | needs ticket |
 
 ### Open-item follow-ups 2026-11-17
 
