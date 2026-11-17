@@ -149,6 +149,23 @@ himself. Each body (owner's words, inferred meanings, acceptance criteria, owner
 | _none yet_ | Allow the AWS IAM identity script to be automated through the approval route | D | [automate-aws-iam-identity-script.md](docs/tickets/pending/automate-aws-iam-identity-script.md) | needs ticket |
 | _none yet_ | Allow "touch and tag deployment" to be automated, including a full-automation mode | D | [automate-touch-and-tag-deployment.md](docs/tickets/pending/automate-touch-and-tag-deployment.md) | needs ticket |
 
+### Open-item follow-ups 2026-11-17
+
+Open items from the owner's list, each with state read from `gh` on 2026-11-17. The priority is not set: the owner set D only for the three automation tickets above. Each body separates VERIFIED from INFERRED. Tickets only; the merges themselves are the owner's decision (approved order: #777, then #774 and #775 together, then #769; #776 has already merged).
+
+| ID | Title | Priority | Body | Status |
+|---|---|---|---|---|
+| _none yet_ | #775 own test and CI failures after its re-merge onto #774 | unassigned (owner to set) | [follow-up-775-own-failures-after-remerge.md](docs/tickets/pending/follow-up-775-own-failures-after-remerge.md) | needs ticket |
+| _none yet_ | Codex re-review owed on #774 (round 11) and #775 | unassigned (owner to set) | [codex-re-review-owed-774-775.md](docs/tickets/pending/codex-re-review-owed-774-775.md) | needs ticket |
+| _none yet_ | #777: read CI, measure Stop-path timing, finish the slow suite | unassigned (owner to set) | [follow-up-777-ci-timing-slow-suite.md](docs/tickets/pending/follow-up-777-ci-timing-slow-suite.md) | needs ticket |
+| _none yet_ | #780: full crew suite never completed, one failure unidentified | unassigned (owner to set) | [follow-up-780-full-suite-and-unidentified-failure.md](docs/tickets/pending/follow-up-780-full-suite-and-unidentified-failure.md) | needs ticket |
+| _none yet_ | #781: find out why 10 checks fail | unassigned (owner to set) | [investigate-781-ten-failing-checks.md](docs/tickets/pending/investigate-781-ten-failing-checks.md) | needs ticket |
+| _none yet_ | Promote gate `matching()` containment gap left open by #776 | unassigned (owner to set) | [promote-gate-matching-containment-gap-776.md](docs/tickets/pending/promote-gate-matching-containment-gap-776.md) | needs ticket |
+| _none yet_ | Triage of open draft PRs #770, #750, #753, #755, #647 | unassigned (owner to set) | [triage-open-draft-prs-770-750-753-755-647.md](docs/tickets/pending/triage-open-draft-prs-770-750-753-755-647.md) | needs ticket |
+| _none yet_ | Obsidian and Base Mode plan: nine small PRs, land #757 (recall harness) first | unassigned (owner to set) | [obsidian-basemode-nine-pr-plan-recall-harness-first.md](docs/tickets/pending/obsidian-basemode-nine-pr-plan-recall-harness-first.md) | needs ticket |
+| _none yet_ | Host hygiene: runaway bash and secrets-guard processes, leftover worktree directory | unassigned (owner to set) | [host-hygiene-processes-and-leftover-worktree.md](docs/tickets/pending/host-hygiene-processes-and-leftover-worktree.md) | needs ticket |
+| _none yet_ | Housekeeping: #679 breach note, vault entries, Configuration Guide refresh, stale dashboards | unassigned (owner to set) | [housekeeping-breach-note-vault-docs-dashboards.md](docs/tickets/pending/housekeeping-breach-note-vault-docs-dashboards.md) | needs ticket |
+
 ## Summary
 
 | # | Ticket | Title | Status | Blocked by |
