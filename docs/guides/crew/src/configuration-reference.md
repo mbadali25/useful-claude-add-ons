@@ -141,6 +141,75 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
 meaningful only with `scope.mode` `block`.
 
+## The owner-typed run approval (`approvals.run`, crew 1.3.137)
+
+A few commands are the owner's alone. Until crew 1.3.137 the only way to run
+one was a person at a terminal. With this route on, an agent can ASK and only
+the owner can answer: the refused command becomes a request, you type
+`/crew:allow-run <id>` in your own prompt, and the agent re-runs the exact
+command once with ` --receipt <id>`. First class, and the only one in this
+version: `verify-trust` (`verify_trust.py approve`, and `revoke`,
+`allow-owner`, `disallow-owner` when you open them).
+
+**The keys are read from the machine file only, and are off by default.**
+`crew_runapproval.settings` reads `~/.claude/crew/config.json` and nothing
+else: a repo file cannot turn the route on, a file with a duplicate key or a
+value of the wrong type is off, and a home directory inside the project is not
+the machine's. This version is the harness half only: the keys are not in the
+key registry, and the `/crew:allow-run` command file is not shipped yet (both
+are the next change, which may not ride with a harness change). So today you
+set the keys by hand in that file, `/crew:config` does not list them, a crew
+tool that lists unknown keys may name them (not checked for every tool), and
+whether Claude Code passes a slash command that has no command file to the
+prompt hook was not measured: treat the route as not usable from a prompt
+until the command file lands.
+
+| Key | Default | Values | What it does |
+|---|---|---|---|
+| `approvals.run.classes` | `[]` (off) | list holding `"verify-trust"` | Which command classes may use the route. Empty or absent: no request is recorded, `/crew:allow-run` gives no receipt, `--receipt` spends nothing, and every refusal reads as before. A name this version does not know is ignored. |
+| `approvals.run.ttlSeconds` | `900` | integer 60 to 3600 | How long a receipt lasts after you type the id. One use whatever the value. Out of range reads as 900. |
+| `approvals.run.verbs.verifyTrust` | `["approve"]` | subset of `approve`, `revoke`, `allow-owner`, `disallow-owner` | Which trust verbs may be requested. `allow-owner` trusts every repo of an owner, so it is not in the default. An unknown verb in the list reads as the default. |
+
+**What a receipt is bound to.** The exact command text (its sha256), the
+class, what the command does (the verb, the real `--root` or the owner, each
+`--under`), the worktree the session stands in, and the session that raised
+the request. For `approve` it also pins the digest of what the gate would run
+(the `.crew/verify.json` bytes): read when the request is raised, when you
+type the id and when the receipt is spent, so a map edited after you were
+asked ends the approval. A request waits 15 minutes; an unanswered one is a
+"no". A receipt is spent by its first use, matching or not, and a retry needs
+a new answer. Each request, receipt and use writes one line to
+`~/.claude/crew/run-approvals/audit.log`.
+
+**Only the plain form can be requested.** One line, every word a plain
+literal, this plugin's own script:
+`python3 <plugin>/hooks/scripts/verify_trust.py approve [--root DIR]` (and
+the other verbs with their own arguments). A command with a quote, a variable,
+a substitution, a redirect, a pipe, `&&`, `;`, `--yes`, or a copy of the
+script is refused as before and gets no request id.
+
+**The id is the one you type.** `/crew:allow-run` with no id, a mistyped id or
+two ids gives no receipt and lists the requests waiting in this session; even
+with exactly one waiting it never picks it, because a request is recorded on
+an agent's command. It is answered only in the session whose command was
+refused, so a prompt submitted in another session (which is what a child
+`claude -p "/crew:allow-run <id>"` started by the agent is) gets nothing.
+
+**What stops a session answering for you, and what does not.** In every
+`scope.mode`, `off` included, the scope guard refuses a Write/Edit under
+`~/.claude/crew/run-approvals/`, a shell command that names that store and is
+not a plain read, a command carrying `/crew:allow-run` with an id or a
+variable after it, code run beside `crew_runapproval`, and (while a class is
+on) a command naming the prompt hook or the hook launcher. `verify_trust.py
+--receipt` spends the receipt itself, so getting past the guard alone changes
+nothing. These are tripwires against drift, not a sandbox: the store and the
+hook payload are a file and a process of the same OS user, so a session that
+sets out to forge a receipt by a route the guard cannot read (a path held in a
+variable, an encoded string, a script file it wrote, a Claude process started
+with this session's id, keys typed into your own terminal) is not stopped
+here. Not measured: whether a child process can reuse a session id. Keep the
+class off on a machine where that matters more than the convenience.
+
 ## Reference (generated)
 
 Generated from the code by `python3 docs/guides/crew/src/config_reference.py --write`. Do not edit by hand:

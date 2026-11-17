@@ -18,7 +18,17 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DIR/_common.sh"
 
 INPUT=$(cat)
+# crew 1.3.137: `crew:allow-run` (the owner's one-run receipt) has no `approve` in it either, so
+# it is matched by name, ahead of the fast path below, and blocked the same way with no python.
+case "$INPUT" in *crew:allow-run*) ;; *)
 case "$INPUT" in *[Aa][Pp][Pp][Rr][Oo][Vv][Ee]*|*crew:confirm-config*) ;; *) exit 0 ;; esac
+;; esac
+case "$INPUT" in *crew:allow-run*)
+  crew_py_strict >/dev/null 2>&1 || {
+    echo "crew: /crew:allow-run gave NO receipt -- no usable python to record it." >&2
+    exit 2
+  } ;;
+esac
 
 PY=$(crew_py_strict) || {
   case "$INPUT" in

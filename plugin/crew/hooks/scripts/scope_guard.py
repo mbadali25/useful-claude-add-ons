@@ -129,6 +129,7 @@ import re
 import sys
 import time
 
+import crew_runapproval
 import crew_ticket
 import role_write_guard
 import verify_trust
@@ -890,11 +891,21 @@ def decide(data):
     tool = data.get("tool_name")
     if tool not in TOOLS and tool not in SHELLS:
         return 0
+    # crew 1.3.137: the run-approval stores, judged like the trust refusal, before the mode.
+    held = crew_runapproval.store_refusal(data, _joined, _read_only,
+                                          role_write_guard._resolve_real_target)  # pylint: disable=protected-access
+    if held:
+        return _deny([f"SCOPE GUARD: refused this {tool} call -- {held}."])
     trust = trust_refusal(data)
     if trust:
+        # The one release: the plain command re-run with the owner's typed receipt for this
+        # exact text (`crew_runapproval.guard_trust`). With the class off `more` is empty.
+        release, more = crew_runapproval.guard_trust(data, os.path.dirname(os.path.abspath(__file__)))
+        if release:
+            return 0
         return _deny([f"SCOPE GUARD: refused this {tool} call -- {trust}.",
                       "  Trust is given by the owner in a terminal: "
-                      "`python3 verify_trust.py approve --root <repo>`."])
+                      "`python3 verify_trust.py approve --root <repo>`."] + more)
     root = data.get("cwd") if isinstance(data.get("cwd"), str) else None
     root = root or os.environ.get("CLAUDE_PROJECT_DIR") or "."
     top = crew_ticket.toplevel(root)

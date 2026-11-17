@@ -213,6 +213,92 @@ textual tripwire, not a sandbox: a session that sets out to forge a receipt
 (<code>python -c</code>, an encoded command, a variable holding the path) still can, and
 <code>scope.mode: off</code> has no tripwire at all. Treat <code>humanOnly</code> opt-outs as
 meaningful only with <code>scope.mode</code> <code>block</code>.</p>
+<h2 id="the-owner-typed-run-approval-approvalsrun-crew-13137">The Owner-Typed Run Approval (<code>approvals.run</code>, Crew 1.3.137)</h2>
+<p>A few commands are the owner's alone. Until crew 1.3.137 the only way to run
+one was a person at a terminal. With this route on, an agent can ASK and only
+the owner can answer: the refused command becomes a request, you type
+<code>/crew:allow-run &lt;id&gt;</code> in your own prompt, and the agent re-runs the exact
+command once with <code>--receipt &lt;id&gt;</code>. First class, and the only one in this
+version: <code>verify-trust</code> (<code>verify_trust.py approve</code>, and <code>revoke</code>,
+<code>allow-owner</code>, <code>disallow-owner</code> when you open them).</p>
+<p><strong>The keys are read from the machine file only, and are off by default.</strong>
+<code>crew_runapproval.settings</code> reads <code>~/.claude/crew/config.json</code> and nothing
+else: a repo file cannot turn the route on, a file with a duplicate key or a
+value of the wrong type is off, and a home directory inside the project is not
+the machine's. This version is the harness half only: the keys are not in the
+key registry, and the <code>/crew:allow-run</code> command file is not shipped yet (both
+are the next change, which may not ride with a harness change). So today you
+set the keys by hand in that file, <code>/crew:config</code> does not list them, a crew
+tool that lists unknown keys may name them (not checked for every tool), and
+whether Claude Code passes a slash command that has no command file to the
+prompt hook was not measured: treat the route as not usable from a prompt
+until the command file lands.</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Values</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>approvals.run.classes</code></td>
+<td><code>[]</code> (off)</td>
+<td>list holding <code>"verify-trust"</code></td>
+<td>Which command classes may use the route. Empty or absent: no request is recorded, <code>/crew:allow-run</code> gives no receipt, <code>--receipt</code> spends nothing, and every refusal reads as before. A name this version does not know is ignored.</td>
+</tr>
+<tr>
+<td><code>approvals.run.ttlSeconds</code></td>
+<td><code>900</code></td>
+<td>integer 60 to 3600</td>
+<td>How long a receipt lasts after you type the id. One use whatever the value. Out of range reads as 900.</td>
+</tr>
+<tr>
+<td><code>approvals.run.verbs.verifyTrust</code></td>
+<td><code>["approve"]</code></td>
+<td>subset of <code>approve</code>, <code>revoke</code>, <code>allow-owner</code>, <code>disallow-owner</code></td>
+<td>Which trust verbs may be requested. <code>allow-owner</code> trusts every repo of an owner, so it is not in the default. An unknown verb in the list reads as the default.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>What a receipt is bound to.</strong> The exact command text (its sha256), the
+class, what the command does (the verb, the real <code>--root</code> or the owner, each
+<code>--under</code>), the worktree the session stands in, and the session that raised
+the request. For <code>approve</code> it also pins the digest of what the gate would run
+(the <code>.crew/verify.json</code> bytes): read when the request is raised, when you
+type the id and when the receipt is spent, so a map edited after you were
+asked ends the approval. A request waits 15 minutes; an unanswered one is a
+"no". A receipt is spent by its first use, matching or not, and a retry needs
+a new answer. Each request, receipt and use writes one line to
+<code>~/.claude/crew/run-approvals/audit.log</code>.</p>
+<p><strong>Only the plain form can be requested.</strong> One line, every word a plain
+literal, this plugin's own script:
+<code>python3 &lt;plugin&gt;/hooks/scripts/verify_trust.py approve [--root DIR]</code> (and
+the other verbs with their own arguments). A command with a quote, a variable,
+a substitution, a redirect, a pipe, <code>&amp;&amp;</code>, <code>;</code>, <code>--yes</code>, or a copy of the
+script is refused as before and gets no request id.</p>
+<p><strong>The id is the one you type.</strong> <code>/crew:allow-run</code> with no id, a mistyped id or
+two ids gives no receipt and lists the requests waiting in this session; even
+with exactly one waiting it never picks it, because a request is recorded on
+an agent's command. It is answered only in the session whose command was
+refused, so a prompt submitted in another session (which is what a child
+<code>claude -p "/crew:allow-run &lt;id&gt;"</code> started by the agent is) gets nothing.</p>
+<p><strong>What stops a session answering for you, and what does not.</strong> In every
+<code>scope.mode</code>, <code>off</code> included, the scope guard refuses a Write/Edit under
+<code>~/.claude/crew/run-approvals/</code>, a shell command that names that store and is
+not a plain read, a command carrying <code>/crew:allow-run</code> with an id or a
+variable after it, code run beside <code>crew_runapproval</code>, and (while a class is
+on) a command naming the prompt hook or the hook launcher. <code>verify_trust.py
+--receipt</code> spends the receipt itself, so getting past the guard alone changes
+nothing. These are tripwires against drift, not a sandbox: the store and the
+hook payload are a file and a process of the same OS user, so a session that
+sets out to forge a receipt by a route the guard cannot read (a path held in a
+variable, an encoded string, a script file it wrote, a Claude process started
+with this session's id, keys typed into your own terminal) is not stopped
+here. Not measured: whether a child process can reuse a session id. Keep the
+class off on a machine where that matters more than the convenience.</p>
 <h2 id="reference-generated">Reference (Generated)</h2>
 <p>Generated from the code by <code>python3 docs/guides/crew/src/config_reference.py --write</code>. Do not edit by hand:
 <code>python3 scripts/check-marketplace.py</code> fails when this file is stale.</p>

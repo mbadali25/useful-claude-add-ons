@@ -537,6 +537,20 @@ records nothing and lists the pending proposals, each with its id and the
 exact change, or says that none is pending and why. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.
 
+**The owner-typed run approval (crew 1.3.137, off by default).** Trusting a
+repo's verify map used to need you at a terminal. With
+`approvals.run.classes` naming `verify-trust` in the machine file, an agent
+can ask instead: its plain `verify_trust.py approve --root <repo>` is still
+refused, but the refusal carries a request id; you type
+`/crew:allow-run <id>` in your own prompt, and the agent may then run that one
+command once, with ` --receipt <id>`, within 15 minutes. The receipt covers
+that exact command, worktree, session and verify map and nothing else; no
+answer means no. This version ships the harness half only: the keys are set
+by hand in the machine file and the `/crew:allow-run` command file arrives
+with the next change, so the route is not usable from a prompt yet. It is a
+tripwire, not a sandbox; the configuration reference's "The owner-typed run
+approval" section says what it stops and what it does not.
+
 - `/crew:config` shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.
 - The [configuration reference](configuration-reference.md) lists every

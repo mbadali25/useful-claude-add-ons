@@ -88,9 +88,28 @@ prompt -- carries one more command, ONE line, raw or expanded exactly as
   writes, so "the only pending one" is a choice an agent can make for the
   owner; the id typed in the owner's prompt is what binds the change.
 
-The session can still pipe a forged payload into this script through its
-shell; `scope_guard.py` refuses a Bash/PowerShell command naming it, which
-stops drift, not a deliberate forgery (README "Scope and approval").
+## The owner's one-run receipt (crew 1.3.137)
+
+- `/crew:allow-run <request_id>`, ONE line, raw or expanded like the two
+  above, turns a request a guard recorded for one refused command into a
+  one-use receipt (`crew_runapproval.mint`). The id is the one the owner
+  typed: with no id, a malformed one, two of them, or exactly one request
+  pending, nothing is minted (the request store is written by a guard on an
+  agent's command, so "the only pending one" is an agent's choice). Minted only
+  from a `UserPromptSubmit` payload, only for a request raised in the SAME
+  `session_id` and worktree, only while its class is on in the machine config
+  (`approvals.run.classes`, default off). A prompt submitted in another
+  session -- which is what a child `claude -p "/crew:allow-run <id>"` started
+  by the session is -- names a request that is not its own and is refused.
+
+WHAT THIS DOES NOT STOP, for all three commands. The session can still pipe a
+forged payload into this script through its shell, or drive a Claude process
+it started with the requesting session's id: this hook cannot tell a payload
+the harness sent from one a same-user process wrote, because every field of it
+can be copied. `scope_guard.py` refuses a Bash/PowerShell command naming this
+script (in every mode while `approvals.run.classes` is on; otherwise in every
+mode but `off`) and one carrying `/crew:allow-run` with an id, which stops
+drift, not a deliberate forgery (README "Scope and approval").
 """
 import collections
 import hashlib
@@ -105,6 +124,7 @@ import crew_ticket
 
 COMMAND = "crew:approve"
 CONFIRM_COMMAND = "crew:confirm-config"
+ALLOW_RUN_COMMAND = "crew:allow-run"
 _CHANGE_ID_RE = re.compile(r"^cc-[0-9a-f]{8}$")
 CONFIRM_TOKEN = "--confirm"
 MAX_GROUP = 20
@@ -749,8 +769,49 @@ def _confirm_config(data, args):
     return 2
 
 
-def _user_command(data):
-    """Exit code when the prompt is `/crew:confirm-config`, else None."""
+def _emit_shown(text):
+    """`_emit`, with the same text as a `systemMessage` so the owner sees what
+    their prompt allowed, not only the session."""
+    sys.stdout.write(json.dumps({"systemMessage": text, "hookSpecificOutput": {
+        "hookEventName": "UserPromptSubmit", "additionalContext": text}}) + "\n")
+    return 0
+
+
+def _allow_run(data, root, args):
+    """One `/crew:allow-run <request_id>` from the user's own prompt: mint the
+    one-use receipt for that request, or refuse and show what is waiting."""
+    import crew_runapproval  # pylint: disable=import-outside-toplevel
+    session = _session(data)
+    try:
+        if len(args.split()) != 1 or not crew_runapproval.valid_id(args):
+            raise crew_runapproval.Refused(
+                "it needs exactly one request id: /crew:allow-run <id>, an id like "
+                "ar-1a2b3c4d5e6f. A request is never picked for you")
+        receipt = crew_runapproval.mint(args, session, data.get("prompt_id"), root)
+    except crew_runapproval.Refused as exc:
+        try:
+            listing = crew_runapproval.pending_text(session, root)
+        except Exception as err:  # pylint: disable=broad-except
+            listing = f"Could not tell which requests are waiting ({type(err).__name__})."
+        sys.stderr.write(f"crew: /{ALLOW_RUN_COMMAND} gave NO receipt -- {_clean(exc, 400)}\n"
+                         f"{listing}\n")
+        return 2
+    minutes = max(1, int((receipt["expires"] - receipt["minted"]) // 60))
+    command = _clean(receipt["command"], 400)
+    return _emit_shown(
+        f"crew: the owner allowed ONE run of this exact command ({_clean(receipt['class'], 40)}, "
+        f"receipt {receipt['id']}, good for {minutes} min, this worktree and session): "
+        f"{command} -- re-run it exactly as: {command} --receipt {receipt['id']}")
+
+
+def _user_command(data, root):
+    """Exit code when the prompt is `/crew:confirm-config` or
+    `/crew:allow-run`, else None."""
+    found, args = _command_args(data.get("prompt"), ALLOW_RUN_COMMAND)
+    if found:
+        if args.startswith("error:"):
+            return _refuse_command(ALLOW_RUN_COMMAND, args[len("error:"):].strip())
+        return _allow_run(data, root, args)
     found, args = _command_args(data.get("prompt"), CONFIRM_COMMAND)
     if not found:
         return None
@@ -765,7 +826,7 @@ def handle(data):
         return 0
     root = data.get("cwd") if isinstance(data.get("cwd"), str) else None
     root = os.path.abspath(root or os.environ.get("CLAUDE_PROJECT_DIR") or ".")
-    done = _user_command(data)
+    done = _user_command(data, root)
     if done is not None:
         return done
     request = parse(data.get("prompt"), root)
@@ -789,6 +850,9 @@ def main():
         # pass it as an unrelated prompt.
         if data is None and COMMAND.encode() in raw:
             return _refuse("the hook payload mentions it but is not a JSON object")
+        if data is None and ALLOW_RUN_COMMAND.encode() in raw:
+            return _refuse_command(ALLOW_RUN_COMMAND, "the hook payload mentions it but is "
+                                                      "not a JSON object")
         return handle(data)
     except Exception as exc:  # pylint: disable=broad-except
         return _refuse(f"the approval hook failed ({type(exc).__name__}: {exc})")
