@@ -47,7 +47,7 @@ import crew_state
 
 KEYS = ("approve", "promoteMarker")
 PATHS = tuple(f"humanOnly.{key}" for key in KEYS)
-# The guards master switch (crew 1.3.134) takes the SAME double confirmation: `guards.enabled: false` in the
+# The guards master switch (crew 1.3.135) takes the SAME double confirmation: `guards.enabled: false` in the
 # machine file counts only when an applied receipt backs it (`crew_hook.guards_switched_off` reads
 # `receipt_backs` for this key). It is not a `humanOnly` key (it has no repo layer, no `true` veto and no
 # `null`), so `is_path` stays humanOnly's; `is_confirmed_path` is "needs a receipt".
@@ -106,7 +106,7 @@ def write_refusal(dotted, layer, value):
     `crew_confirm_config`, the second is a hand edit. A value outside
     `VALUES` is left to the enum check, which names the values.
 
-    `guards.enabled` (crew 1.3.134): `true` is a plain write, `false` goes through `crew_confirm_config` at the
+    `guards.enabled` (crew 1.3.135): `true` is a plain write, `false` goes through `crew_confirm_config` at the
     machine layer and is refused outright at the repo layer; a removal is the guards-on default; anything
     else is left to the enum check."""
     if dotted == MASTER_KEY:
@@ -285,7 +285,7 @@ def _newest_settled(store, layer, path, dotted):
 
 def applied_digest(path):
     """The canonical digest of the file at `path` as the dispatcher reads it (`crew_hook.canonical_digest`), or
-    None when it cannot be taken. A confirmed `guards.enabled: false` is bound to it (crew 1.3.134)."""
+    None when it cannot be taken. A confirmed `guards.enabled: false` is bound to it (crew 1.3.135)."""
     try:
         import crew_hook  # pylint: disable=import-outside-toplevel
         return crew_hook.canonical_digest(path)
@@ -330,7 +330,7 @@ def machine_file_problem(path):
     The dispatcher reads the file strictly (`crew_hook._read_strict`: valid JSON, a duplicate key at any depth
     refused) and keeps every guard on whenever it cannot, so a report built on the lenient reader (last duplicate
     wins, an unreadable file read as the default) would call a file that never counts "unconfirmed" or say nothing:
-    an invalid or unreadable file is its own cause, not the safe-looking default (crew 1.3.134). A file that
+    an invalid or unreadable file is its own cause, not the safe-looking default (crew 1.3.135). A file that
     parses to something other than an object is not one the dispatcher can read a switch from either."""
     try:
         import crew_hook  # pylint: disable=import-outside-toplevel

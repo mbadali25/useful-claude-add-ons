@@ -6,7 +6,7 @@ disable-model-invocation: true
 ---
 
 The user typed `/crew:confirm-config $1`. A change that lifts a human step
-(`humanOnly.approve` or `humanOnly.promoteMarker` set to `false`, and, since crew 1.3.134, `guards.enabled` set to `false`, which turns every guard off) is
+(`humanOnly.approve` or `humanOnly.promoteMarker` set to `false`, and, since crew 1.3.135, `guards.enabled` set to `false`, which turns every guard off) is
 never written by `/crew:config` or `crew_config.py --set`. It is proposed with
 `crew_confirm_config.py propose`, which prints a change id, and it applies only
 after the owner types `/crew:confirm-config <change_id>` **twice, in two
@@ -19,7 +19,7 @@ the prompt the user typed (`approval_hook.py`): the first one reports "1 of 2",
 the second, from another prompt, applies the change. If the hook printed a
 refusal, relay it verbatim; the change `$1` is then still pending (or expired)
 and the human-only rules hold as before. `python3 ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/crew_confirm_config.py status $1`
-shows the change's state; read it and report it. A `guards.enabled` change is `applied` only when the dispatcher's own reader honours its receipt; `refused` with "the dispatcher does not honour it" means the guards are still on (crew 1.3.134), so say that, not that they are off. Typed with no id (or a wrong,
+shows the change's state; read it and report it. A `guards.enabled` change is `applied` only when the dispatcher's own reader honours its receipt; `refused` with "the dispatcher does not honour it" means the guards are still on (crew 1.3.135), so say that, not that they are off. Typed with no id (or a wrong,
 expired or used one), the hook refuses it, records nothing, and itself shows the
 owner the pending proposals, or says none is pending and why (crew 1.3.65).
 

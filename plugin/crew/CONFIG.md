@@ -242,7 +242,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   not skipped in silence (the receipt backs nothing anyway: it binds the file's
   content and modification time).
 
-It takes effect on the next hook call, with no reinstall. To turn it off, ask crew to propose it (`/crew:config`, which runs `crew_confirm_config.py propose --layer machine --key guards.enabled` and relays the change id), then type `/crew:confirm-config <change_id>` yourself, twice, in two separate prompts, within 15 minutes. `--set guards.enabled=false` is refused (crew 1.3.134). `approval-hook.sh` keeps
+It takes effect on the next hook call, with no reinstall. To turn it off, ask crew to propose it (`/crew:config`, which runs `crew_confirm_config.py propose --layer machine --key guards.enabled` and relays the change id), then type `/crew:confirm-config <change_id>` yourself, twice, in two separate prompts, within 15 minutes. `--set guards.enabled=false` is refused (crew 1.3.135). `approval-hook.sh` keeps
 running, so `/crew:approve` and `/crew:confirm-config` keep working and the
 `humanOnly.*` opt-out still works with the guards off. It needs python: with
 none, the bash launcher still fails closed in an armed repo (known limitation).
@@ -266,7 +266,7 @@ fine-grained one). Keep an
 untrusted agent out of the account rather than behind this key. A working
 directory equal to your home, or an ancestor of it, makes an owner-confirmed
 switch do nothing (the guards stay on, as for a HOME redirected into the project).
-What crew tells you matches what dispatch does (crew 1.3.134): `crew_confirm_config.py propose` refuses a
+What crew tells you matches what dispatch does (crew 1.3.135): `crew_confirm_config.py propose` refuses a
 machine file that is a symbolic link (the confirmation would name the target's path while the write
 replaces the link) and one inside the working directory or the project, and says why; a confirmation is
 reported `applied` only when the dispatcher's own reader honours its receipt, else `refused`; and
