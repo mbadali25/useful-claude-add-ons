@@ -2997,20 +2997,22 @@ def select(mutations, only):
 
 
 def main(argv=None):
-    """Run every mutation; return 0 only when all of them go red FOR REAL --
-    a genuine assertion failure in the named test, not merely a non-zero
-    exit code (finding 13)."""
+    """Run the selected mutations (every one unless --only narrows them);
+    return 0 only when all of them go red FOR REAL -- a genuine assertion
+    failure in the named test, not merely a non-zero exit code (finding 13).
+    --list prints the labels and runs nothing, but an unmatched --only is
+    refused (2) first, so it cannot read as a pass."""
     args = parse_args([] if argv is None else argv)
-    if args.list:
-        for entry in MUTATIONS:
-            print(entry[0])
-        return 0
     chosen, unmatched = select(MUTATIONS, args.only)
     if unmatched:
         for text in unmatched:
             print(f"REFUSING TO RUN -- --only {text!r} matches no mutation label "
                   f"(--list shows them)")
         return 2
+    if args.list:
+        for entry in MUTATIONS:
+            print(entry[0])
+        return 0
     targets = [m[1] for m in chosen]
 
     # Before anything is touched. A stale `.bak` means the tree already holds

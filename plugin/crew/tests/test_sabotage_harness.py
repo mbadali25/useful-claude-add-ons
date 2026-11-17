@@ -947,3 +947,14 @@ def test_an_unmatched_only_refuses_before_touching_anything(monkeypatch, capsys)
         monkeypatch.setattr(sabotage, name, boom)
     assert sabotage.main(["--only", "no such label anywhere"]) == 2
     assert "matches no mutation label" in capsys.readouterr().out
+
+
+def test_list_with_an_unmatched_only_still_refuses(monkeypatch, capsys):
+    def boom(*_a, **_k):
+        raise AssertionError("main() touched the tree")
+    for name in ("apply_mutation", "stale_backups", "install_exit_handlers", "run_test"):
+        monkeypatch.setattr(sabotage, name, boom)
+    assert sabotage.main(["--list", "--only", "zzz"]) == 2
+    out = capsys.readouterr().out
+    assert "matches no mutation label" in out
+    assert sabotage.MUTATIONS[0][0] not in out
