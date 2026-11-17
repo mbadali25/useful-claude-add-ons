@@ -7,8 +7,12 @@ verify.json rule `standards-export`, so a PR could carry stale exports with
 every CI check green (PR #754, recorded digest 2c5f9149 against a fresh
 216c55f6). marketplace.yml now runs the check. This suite proves two things:
 
-1. The step is in marketplace.yml with the exact command, unconditional, so a
-   later edit that drops it or guards it with `if:` goes red here.
+1. The step is in marketplace.yml with the exact command and runs on every
+   run, so a later edit that drops it or guards it with `if:` goes red here.
+   Since bump at land (docs/landing-prs.md) "every run" has one allowed
+   shape besides no `if:` at all: the plain step limited to everything but
+   draft PRs, beside a draft-only step that runs the same command through
+   scripts/pending-at-land.py (red on anything but a STALE export).
 2. The command it runs exits 0 on a current export and 1 on a stale one. Each
    case copies this repository's overlay and generated outputs into a
    throwaway root and runs the REAL script against it with --root; nothing in
@@ -61,25 +65,56 @@ def write(path, text):
         fh.write(text)
 
 
+READY_ONLY = "if: github.event.pull_request.draft != true"
+DRAFT_ONLY = "if: github.event.pull_request.draft == true"
+TWIN_PREFIX = "run: python3 scripts/pending-at-land.py "
+NOT_IN_STEP = object()
+
+
+def step_if(lines, i):
+    """The `if:` line (stripped) of the step holding line i, None when the step
+    has none, NOT_IN_STEP when line i is not inside a step."""
+    indent = len(lines[i]) - len(lines[i].lstrip())
+    # Walk back to the step's `- ` line; any `if:` between it and run: guards the step.
+    for j in range(i - 1, -1, -1):
+        prev = lines[j]
+        stripped = prev.strip()
+        prev_indent = len(prev) - len(prev.lstrip())
+        if stripped.startswith("if:") and prev_indent == indent:
+            return " ".join(stripped.split())
+        if stripped.startswith("- ") and prev_indent < indent:
+            if stripped[2:].startswith("if:"):
+                return " ".join(stripped[2:].split())
+            return None
+    return NOT_IN_STEP
+
+
 def step_problem(text):
-    """None when `text` (a workflow) runs COMMAND in a step with no `if:`, else why not."""
+    """None when `text` (a workflow) runs COMMAND on every run, else why not.
+
+    Every run means: a step with no `if:`; or (bump at land) a step limited to
+    everything but draft PRs (READY_ONLY) beside a draft-only step that runs the
+    same command through scripts/pending-at-land.py, which fails on anything
+    but a STALE export. Any other condition, or a ready-only step with no such
+    twin, is a check some run skips.
+    """
     lines = text.splitlines()
     for i, line in enumerate(lines):
         if line.strip() != f"run: {COMMAND}":
             continue
-        indent = len(line) - len(line.lstrip())
-        # Walk back to the step's `- ` line; any `if:` between it and run: guards the step.
-        for j in range(i - 1, -1, -1):
-            prev = lines[j]
-            stripped = prev.strip()
-            prev_indent = len(prev) - len(prev.lstrip())
-            if stripped.startswith("if:") and prev_indent == indent:
-                return f"the step is conditional ({stripped})"
-            if stripped.startswith("- ") and prev_indent < indent:
-                if stripped[2:].startswith("if:"):
-                    return f"the step is conditional ({stripped[2:]})"
-                return None
-        return "the run: line is not inside a step"
+        cond = step_if(lines, i)
+        if cond is NOT_IN_STEP:
+            return "the run: line is not inside a step"
+        if cond is None:
+            return None
+        if cond != READY_ONLY:
+            return f"the step is conditional ({cond})"
+        twins = [k for k, other in enumerate(lines)
+                 if other.strip().startswith(TWIN_PREFIX) and other.strip().endswith(f" -- {COMMAND}")]
+        if any(step_if(lines, k) == DRAFT_ONLY for k in twins):
+            return None
+        return ("the step skips draft PRs and no draft-only scripts/pending-at-land.py step "
+                "runs the same check")
     return f"no step runs `{COMMAND}`"
 
 
@@ -147,7 +182,7 @@ STALE = (
 def main():
     workflow = read(WORKFLOW)
     problem = step_problem(workflow)
-    check("marketplace.yml runs the export check unconditionally", problem is None, problem or "")
+    check("marketplace.yml runs the export check on every run", problem is None, problem or "")
 
     with tempfile.TemporaryDirectory() as tmp:
         base = os.path.join(tmp, "current")
@@ -169,10 +204,27 @@ def main():
     removed = "\n".join(line for line in workflow.splitlines()
                         if line.strip() != f"run: {COMMAND}")
     check("mutation: step removed is caught", step_problem(removed) is not None)
-    guarded = workflow.replace(f"        run: {COMMAND}",
-                               f"        if: false\n        run: {COMMAND}", 1)
+    lines = workflow.splitlines()  # line-wise: a CRLF checkout must not hide the mutation
+    at = next((i for i, line in enumerate(lines) if line.strip() == f"run: {COMMAND}"), 0)
+    guarded = lines[:at - 1] + ["        if: false"] + lines[at:]
     check("mutation: step guarded with if: is caught",
-          guarded != workflow and step_problem(guarded) is not None)
+          at > 0 and lines[at - 1].strip() == READY_ONLY
+          and step_problem("\n".join(guarded)) is not None)
+    # Bump at land: the ready-only condition is allowed only beside its draft twin.
+    plain = (f"      - name: x\n        run: {COMMAND}\n")
+    ready = (f"      - name: x\n        {READY_ONLY}\n        run: {COMMAND}\n")
+    twin = (f"      - name: y\n        {DRAFT_ONLY}\n        {TWIN_PREFIX}--when 'standards export "
+            f"STALE:' --never 'REFUSED' -- {COMMAND}\n")
+    check("shape: an unconditional step passes", step_problem(plain) is None)
+    check("shape: ready-only beside a draft-only pending-at-land twin passes",
+          step_problem(ready + twin) is None)
+    check("mutation: ready-only with no draft twin is caught", step_problem(ready) is not None)
+    check("mutation: a twin that is not draft-only is caught",
+          step_problem(ready + twin.replace(f"        {DRAFT_ONLY}\n", "")) is not None)
+    check("mutation: a twin that runs another command is caught",
+          step_problem(ready + twin.replace(COMMAND, COMMAND + " --dry-run")) is not None)
+    check("mutation: a draft-only plain step is caught",
+          step_problem(ready.replace(READY_ONLY, DRAFT_ONLY) + twin) is not None)
 
     print(f"\n{len(FAILURES)} failure(s)" if FAILURES else "\nall cases passed")
     return 1 if FAILURES else 0
