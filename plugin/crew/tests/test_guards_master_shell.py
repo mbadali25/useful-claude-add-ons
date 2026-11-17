@@ -10,7 +10,10 @@ home and must be the very file (`os.path.samefile`), so a spelling the corpus ca
 is caught as wrong the other way.
 """
 import os
+import pathlib
+import shutil
 import sys
+import tempfile
 
 import pytest
 
@@ -19,16 +22,46 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
 import scope_guard  # noqa: E402  pylint: disable=wrong-import-position
 
 
+ELSEWHERE_ROOT = "/tmp"   # the folder this corpus spells for "a file that is not the owner's"
+_HOME_ROOTS = ("/var/tmp", "/dev/shm")   # where the throwaway home goes when pytest's own folder is under /tmp
+
+
+def _below_elsewhere(folder):
+    """True when `/tmp` is an ancestor of `folder`, as spelled or as the file system resolves it."""
+    spellings = (scope_guard._canon(str(folder), None),  # pylint: disable=protected-access
+                 scope_guard._canon(os.path.realpath(str(folder)), None))  # pylint: disable=protected-access
+    return any(spelled is None or spelled.startswith(ELSEWHERE_ROOT + "/") for spelled in spellings)
+
+
+def _home_folder(tmp_path):
+    """The (folder, made here) the throwaway home lives in. On Linux pytest's `tmp_path` is under `/tmp`, the
+    folder this corpus uses for "elsewhere": with the home there, `echo x > /tmp/$NAME` and `find /tmp -exec sh ...`
+    MAY reach the owner's files and the guard is right to refuse them (crew 1.3.136;
+    `test_an_unresolvable_target_below_an_ancestor_of_home_is_refused` pins that), so the must-allow rows would be
+    asking for a hole. The home then goes to a folder `/tmp` is no ancestor of. No such folder is a failure, not
+    a skip and not a silent fall back to the home under `/tmp`."""
+    if not _below_elsewhere(tmp_path):
+        return tmp_path / "home", None
+    for root in _HOME_ROOTS:
+        if os.path.isdir(root) and os.access(root, os.W_OK) and not _below_elsewhere(root):
+            made = tempfile.mkdtemp(prefix="crew-guards-home-", dir=root)
+            return pathlib.Path(made) / "home", made
+    return pytest.fail(f"pytest's temporary folder {tmp_path} is under {ELSEWHERE_ROOT} and none of {_HOME_ROOTS} "
+                       "is a writable folder outside it: run with --basetemp=<a folder outside /tmp>")
+
+
 @pytest.fixture(name="home")
 def _home(tmp_path, monkeypatch):
-    home = tmp_path / "home"
+    home, made = _home_folder(tmp_path)
     store = home / ".claude" / "crew" / "confirm-config"
     store.mkdir(parents=True)
     (home / ".claude" / "crew" / "config.json").write_text("{}")
     (store / "cc-ab12.json").write_text("{}")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
-    return home
+    yield home
+    if made:
+        shutil.rmtree(made, ignore_errors=True)
 
 
 # --- the spellings ---------------------------------------------------------------------------------------------
@@ -542,6 +575,36 @@ def test_an_unresolvable_target_in_a_command_that_never_names_the_owner_is_allow
     verbs = [v for v in verbs if "{t}.bak" not in v]   # `cp {t} {t}.bak` is two targets
     hit = _refused(_cells(UNRELATED_TARGETS, verbs, ("~",)))
     assert not hit, f"{len(hit)} cells refused a target that is not the owner's:\n" + "\n".join(hit[:60])
+
+
+def test_an_unresolvable_target_below_an_ancestor_of_home_is_refused(home):
+    """The other side of the cell above (crew 1.3.136). `<folder>/$NAME` can be any path below `<folder>`, so when
+    the folder is an ANCESTOR of the owner's home the guard cannot tell the target from the owner's file and
+    refuses; so does a `find` that starts there and deletes, or hands what it finds to a shell. That is what the
+    Linux CI run showed when the throwaway home sat under `/tmp` (the fixture's fault, not the guard's). A folder
+    that only shares the ancestor's spelling as a prefix is not an ancestor and stays allowed, and a real write to
+    the owner's files is refused under this fixture as under any."""
+    above = str(home.parent).replace("\\", "/")
+    spelled = str(home).replace("\\", "/")
+    must_block = [f"echo x > {above}/$NAME", f"echo x >> {above}/$NAME", f"rm -f {above}/$NAME",
+                  f"printf x | tee {above}/$NAME", f"cp x {above}/$NAME", f"Set-Content {above}/$NAME x",
+                  f"Remove-Item {above}/$NAME", f"echo x > {above}/$(basename $w)",
+                  f"find {above} -exec sh -c 'echo x > {ELSEWHERE_ROOT}/out.bin' \\;", f"find {above} -delete",
+                  f"echo x > {spelled}/.claude/crew/config.json", "echo x > ~/.claude/crew/config.json",
+                  f"rm {spelled}/.claude/crew/confirm-config/cc-ab12.json",
+                  f"find {spelled}/.claude -name config.json -delete"]
+    missed = _unrefused([(command, None) for command in must_block])
+    assert not missed, f"{len(missed)} commands that may write the owner's files were allowed:\n" + "\n".join(missed)
+    must_allow = [f"echo x > {above}-other/$NAME", f"rm -f {above}x/$NAME", f"find {above}-other -delete",
+                  f"find {above}x -exec sh -c 'echo x > {ELSEWHERE_ROOT}/out.bin' \\;",
+                  f"echo x > {ELSEWHERE_ROOT}/$NAME", f"find {ELSEWHERE_ROOT} -delete"]
+    hit = _refused([(command, None) for command in must_allow])
+    assert not hit, f"{len(hit)} commands aimed beside the home's ancestor were refused:\n" + "\n".join(hit)
+
+
+def test_the_throwaway_home_is_not_below_the_folder_the_corpus_calls_elsewhere(home):
+    """The fixture's own promise: `/tmp` is no ancestor of the home, spelled or resolved."""
+    assert not _below_elsewhere(home), home
 
 
 def test_an_escape_in_another_file_is_not_the_owners(home):

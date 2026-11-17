@@ -1897,4 +1897,22 @@ GUARDS_MASTER_MUTATIONS = (
      '        shell.dirs, shell.once = stack, once',
      '        shell.dirs = stack',
      _M + "test_a_write_while_still_in_the_owners_folder_is_refused"),
+    # crew 1.3.136: the Linux CI run put the throwaway home under `/tmp`, where `/tmp/$NAME` MAY be the owner's file.
+    # The guard's refusal there is kept (the fixture moved), and these rows hold it from the ancestor's side
+    ("a variable below an ancestor of the owner's home is never the owner's file", SCOPE,
+     '    return any(_glob_match(path.split("/"), target, under) '
+     'for target, under in _owner_targets(mode))\n\n\ndef _hit_word',
+     '    return False\n\n\ndef _hit_word',
+     _M + "test_an_unresolvable_target_below_an_ancestor_of_home_is_refused"),
+    ("a find that starts at an ancestor of the owner's home does not reach their files", SCOPE,
+     '    return any(_glob_match(parts, target[:len(parts)], False) or (under and _glob_match(parts, targe'
+     't, True))\n',
+     '    return any(_glob_match(parts, target, False) or (under and _glob_match(parts, target, True))\n',
+     _M + "test_an_unresolvable_target_below_an_ancestor_of_home_is_refused"),
+    ("a folder that only shares an ancestor's spelling counts as the ancestor", SCOPE,
+     '    return any(_glob_match(parts, target[:len(parts)], False) or (under and _glob_match(parts, targe'
+     't, True))\n',
+     '    return any("/".join(target).startswith(path.rstrip("0123456789abcdefghijklmnopqrstuvwxyz_-")) or (under '
+     'and _glob_match(parts, target, True))\n',
+     _M + "test_an_unresolvable_target_below_an_ancestor_of_home_is_refused"),
 )

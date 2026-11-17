@@ -901,22 +901,86 @@ def test_the_repo_scripts_round_two_refused_run_again(home_env):
         assert scope_guard._owner_command_refusal(f"{launcher} {name}", root) is None, name  # pylint: disable=protected-access
 
 
-@pytest.mark.parametrize("path", [
-    "\\\\?\\{c}", "//?/{c}", "\\\\.\\{c}", "\\\\?\\{s}\\cc-00000000.json", "{c}.", "{c} ",
-    "{c_upper}", "{home}\\.claude\\crew\\..\\crew\\config.json", "{home}/./.claude/crew/config.json"])
+# the spellings that reach the owner's file through a BACKSLASH: a separator on Windows, an ordinary character of
+# a file name on posix (crew 1.3.136)
+BACKSLASH_SPELLINGS = ("\\\\?\\{c}", "\\\\.\\{c}", "\\\\?\\{s}\\cc-00000000.json",
+                       "{home}\\.claude\\crew\\..\\crew\\config.json")
+
+
+def _owner_spelling(path, home):
+    config = os.path.join(home, ".claude", "crew", "config.json")
+    store = os.path.join(home, ".claude", "crew", "confirm-config")
+    return path.format(c=config, s=store, c_upper=config.upper(), home=home)
+
+
+def _write_tool(tool, spelled, home):
+    import scope_guard  # pylint: disable=import-outside-toplevel
+    key = "notebook_path" if tool == "NotebookEdit" else "file_path"
+    payload = {"tool_name": tool, "tool_input": {key: spelled}, "cwd": home}
+    return scope_guard._owner_files_only(tool, payload, home)  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("path", BACKSLASH_SPELLINGS + (
+    "//?/{c}", "{c}.", "{c} ", "{c_upper}", "{home}/./.claude/crew/config.json"))
 @pytest.mark.parametrize("tool", ["Write", "Edit", "NotebookEdit"])
 def test_every_spelling_of_the_owners_path_is_refused_for_write_edit_and_notebookedit(tool, path, home_env):
-    import scope_guard  # pylint: disable=import-outside-toplevel
+    home = str(home_env)
+    if os.name != "nt" and path in ("{c}.", "{c} ", "{c_upper}"):
+        pytest.skip("trailing dots, spaces and case are the same file on Windows only")
+    if os.name != "nt" and path in BACKSLASH_SPELLINGS:
+        pytest.skip("a backslash is a separator on Windows only; on posix this spelling is another file, which "
+                    "test_a_backslash_spelling_is_another_file_on_posix proves by writing it")
+    assert _write_tool(tool, _owner_spelling(path, home), home) == 2, (tool, path)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="on Windows these spellings ARE the owner's file, and are refused: "
+                    "test_every_spelling_of_the_owners_path_is_refused_for_write_edit_and_notebookedit")
+@pytest.mark.parametrize("path", BACKSLASH_SPELLINGS)
+@pytest.mark.parametrize("tool", ["Write", "Edit", "NotebookEdit"])
+def test_a_backslash_spelling_is_another_file_on_posix(tool, path, home_env):
+    """On posix `\\` is a character of a file name, not a separator: `\\\\?\\<path>` is a relative path whose first
+    folder is named `\\\\?\\`, and `<home>\\.claude\\crew\\..\\crew\\config.json` is ONE file name beside the home.
+    Neither can be the owner's file, so the guard has nothing to refuse. This does not take the guard's word for
+    it: the path is written the way the tool would write it (a relative one from the payload's `cwd`), and the
+    owner's config and receipts store must be untouched and a different file. If a spelling here ever DID reach
+    them, the write below would show it and the guard's 0 would be the bug."""
     home = str(home_env)
     config = os.path.join(home, ".claude", "crew", "config.json")
     store = os.path.join(home, ".claude", "crew", "confirm-config")
-    if os.name != "nt" and path in ("{c}.", "{c} ", "{c_upper}"):
-        pytest.skip("trailing dots, spaces and case are the same file on Windows only")
-    spelled = path.format(c=config, s=store, c_upper=config.upper(), home=home)
-    key = "notebook_path" if tool == "NotebookEdit" else "file_path"
-    payload = {"tool_name": tool, "tool_input": {key: spelled}, "cwd": home}
-    code = scope_guard._owner_files_only(tool, payload, home)  # pylint: disable=protected-access
-    assert code == 2, (tool, spelled)
+    os.makedirs(store)
+    with open(config, "w", encoding="utf-8") as handle:
+        handle.write("{\"owner\": 1}")
+    spelled = _owner_spelling(path, home)
+    written = spelled if os.path.isabs(spelled) else os.path.join(home, spelled)
+    os.makedirs(os.path.dirname(written), exist_ok=True)
+    with open(written, "w", encoding="utf-8") as handle:
+        handle.write("agent")
+    with open(config, encoding="utf-8") as handle:
+        assert handle.read() == "{\"owner\": 1}", spelled
+    assert os.listdir(store) == [], spelled
+    assert not os.path.samefile(written, config), spelled
+    real = os.path.realpath(written)
+    assert real != os.path.realpath(config) and not real.startswith(os.path.realpath(store) + os.sep), spelled
+    assert _write_tool(tool, spelled, home) == 0, (tool, spelled)
+    # ... and the same file spelled the posix way is still refused, beside it
+    assert _write_tool(tool, config, home) == 2, tool
+    assert _write_tool(tool, os.path.join(store, "cc-00000000.json"), home) == 2, tool
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a folder named `\\\\?\\` cannot exist on Windows")
+@pytest.mark.parametrize("tool", ["Write", "Edit", "NotebookEdit"])
+def test_a_backslash_named_link_that_leads_to_the_owners_file_is_refused_on_posix(tool, home_env):
+    """The one way a backslash spelling DOES reach the owner's file on posix: the odd folder name is a link.
+    `<cwd>/\\\\?\\` linked to `/` makes `\\\\?\\<config>` the config itself, and the guard, which judges the
+    resolved path, refuses it."""
+    home = str(home_env)
+    config = os.path.join(home, ".claude", "crew", "config.json")
+    with open(config, "w", encoding="utf-8") as handle:
+        handle.write("{}")
+    os.symlink(os.sep, os.path.join(home, "\\\\?\\"))
+    spelled = "\\\\?\\" + config
+    assert os.path.samefile(os.path.join(home, spelled), config)
+    assert _write_tool(tool, spelled, home) == 2, (tool, spelled)
 
 
 def test_the_refusal_of_the_owners_files_does_not_offer_crew_approve(home_env, capsys):
