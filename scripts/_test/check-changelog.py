@@ -81,7 +81,9 @@ def repo(tmp):
 def run(module, root):
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        code = module.main(["--root", root])
+        # Explicit base: without it the checker reads GITHUB_BASE_REF, which on a stacked PR names
+        # the parent PR's branch, a ref that exists only in the real clone and never in these repos.
+        code = module.main(["--root", root, "--base", "origin/main"])
     return code, err.getvalue()
 
 

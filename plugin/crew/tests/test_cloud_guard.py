@@ -721,7 +721,9 @@ def test_disabled_guard_allows_everything(tmp_path, driver, repo_cfg):
 def test_default_config_ships_the_guard_off():
     import crew_config  # pylint: disable=import-outside-toplevel
     for cfg in (crew_config.default_config(), crew_config.default_global_config()):
-        assert cfg["guards"] == {"profile": "off", "overrides": {}}
+        # `enabled` is the master switch (crew 1.3.134): it ships ON, so every guard runs; the
+        # cloud guard itself still ships off (`profile: off`, no overrides).
+        assert cfg["guards"] == {"profile": "off", "overrides": {}, "enabled": True}
     assert crew_config.default_config()["cloud"] == {
         "awsProfiles": [], "awsRegions": [], "azureSubscriptions": []}
     assert "cloud" not in crew_config.default_global_config()
