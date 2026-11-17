@@ -906,3 +906,44 @@ def test_the_autopilot_command_target_is_resolved_through_first_file():
 
     assert "COMMAND = _first_file(" in source
     assert os.path.isfile(sabotage_autopilot.COMMAND)
+
+
+# ---- L-0958: the label filter ----------------------------------------------
+
+_FAKE = [("alpha one", "t", "f", "r", "x"), ("alpha two", "t", "f", "r", "x"),
+         ("beta", "t", "f", "r", "x")]
+
+
+def test_select_takes_an_exact_label_alone_and_else_every_substring():
+    assert sabotage.select(_FAKE, []) == (_FAKE, [])
+    assert sabotage.select(_FAKE, ["alpha one"]) == ([_FAKE[0]], [])
+    assert sabotage.select(_FAKE, ["alpha"]) == (_FAKE[:2], [])
+    assert sabotage.select(_FAKE, ["beta", "alpha one", "beta"]) == (
+        [_FAKE[2], _FAKE[0]], [])
+
+
+def test_select_reports_a_text_that_matches_nothing():
+    assert sabotage.select(_FAKE, ["alpha one", "gamma"]) == ([_FAKE[0]], ["gamma"])
+
+
+def test_help_and_list_run_nothing_and_touch_no_file(monkeypatch, capsys):
+    """`--help` used to run the whole suite. main() must return before any
+    backup, install_exit_handlers or mutation."""
+    def boom(*_a, **_k):
+        raise AssertionError("main() touched the tree")
+    for name in ("apply_mutation", "stale_backups", "install_exit_handlers", "run_test"):
+        monkeypatch.setattr(sabotage, name, boom)
+    with pytest.raises(SystemExit) as stop:
+        sabotage.main(["--help"])
+    assert stop.value.code == 0
+    assert sabotage.main(["--list"]) == 0
+    assert sabotage.MUTATIONS[0][0] in capsys.readouterr().out
+
+
+def test_an_unmatched_only_refuses_before_touching_anything(monkeypatch, capsys):
+    def boom(*_a, **_k):
+        raise AssertionError("main() touched the tree")
+    for name in ("apply_mutation", "stale_backups", "install_exit_handlers", "run_test"):
+        monkeypatch.setattr(sabotage, name, boom)
+    assert sabotage.main(["--only", "no such label anywhere"]) == 2
+    assert "matches no mutation label" in capsys.readouterr().out

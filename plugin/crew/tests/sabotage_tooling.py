@@ -352,7 +352,10 @@ TOOLING_MUTATIONS += (
         VERIFY_RECORD,
         '        if all(s == "pass" for s in statuses):\n',
         '        if rule.get("unknown") and all(s == "pass" for s in statuses):\n',
-        "tests/test_verify_gate_stop_budget.py::test_a_declared_rule_that_passes_is_measured[sh]",
+        # L-0958: pointed at the test that calls _sync alone. The whole-gate test
+        # it named before stayed green, because `progress` caches the same
+        # measurement mid-run and so never needed this line.
+        "tests/test_verify_gate_stop_budget.py::test_sync_itself_measures_a_declared_rule_that_passes",
     ),
     (
         "record: the tree-pass cache is read for any tree",

@@ -143,6 +143,13 @@ def test_the_gate_blocks_when_its_own_check_cannot_RUN(tmp_path):
     assert code == 2, f"an unevaluatable check must block, got exit {code}"
     assert "could not be evaluated" in err
     assert "This is not a pass" in err
+    # L-0958: the two lines above are in BOTH of the shell's closing messages,
+    # and the sabotage `if [ "$VERDICT_STATUS" -ne 0 ]` -> `-eq 999` fell through
+    # to the generic "failed to run" message (still exit 2) and stayed green.
+    # This sentence is written only by the VERDICT_STATUS branch, so asserting
+    # it (and the absence of the generic one) pins that branch.
+    assert "could not be read - a malformed 'last verified' date does" in err, err
+    assert "failed to run (exit" not in err, err
     assert not (root / ".crew" / ".deploy-in-flight").exists()
 
 

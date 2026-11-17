@@ -55,6 +55,7 @@ file: they proved things about a lock, a retry loop and a self-verifying write
 that an append-only directory cannot get wrong, and a suite still listing them
 would have read as concurrency coverage while testing nothing.
 """
+import argparse
 import atexit
 import hashlib
 import io
@@ -2962,11 +2963,55 @@ def restore(target):
     _LIVE.discard(target)
 
 
-def main():
+def parse_args(argv):
+    """The command line. Parsed BEFORE anything is touched: `--help` used to
+    be ignored and ran the whole suite, mutating the tree (L-0958)."""
+    parser = argparse.ArgumentParser(
+        prog="sabotage.py",
+        description="Mutate the code, run the named test, and require it to go red. "
+                    "With no options, runs every mutation.")
+    parser.add_argument(
+        "--only", action="append", default=[], metavar="TEXT",
+        help="run only the mutations whose label contains TEXT (repeatable; "
+             "an exact label wins over a substring). Exits 2 if a TEXT matches "
+             "nothing, so a typo cannot read as a pass.")
+    parser.add_argument(
+        "--list", action="store_true",
+        help="print every label and exit; nothing is run or modified.")
+    return parser.parse_args(argv)
+
+
+def select(mutations, only):
+    """(chosen entries, unmatched TEXTs). An exact label match is taken alone;
+    otherwise every label containing the text is."""
+    if not only:
+        return list(mutations), []
+    chosen, unmatched = [], []
+    for text in only:
+        exact = [m for m in mutations if m[0] == text]
+        hits = exact or [m for m in mutations if text in m[0]]
+        if not hits:
+            unmatched.append(text)
+        chosen.extend(m for m in hits if m not in chosen)
+    return chosen, unmatched
+
+
+def main(argv=None):
     """Run every mutation; return 0 only when all of them go red FOR REAL --
     a genuine assertion failure in the named test, not merely a non-zero
     exit code (finding 13)."""
-    targets = [m[1] for m in MUTATIONS]
+    args = parse_args([] if argv is None else argv)
+    if args.list:
+        for entry in MUTATIONS:
+            print(entry[0])
+        return 0
+    chosen, unmatched = select(MUTATIONS, args.only)
+    if unmatched:
+        for text in unmatched:
+            print(f"REFUSING TO RUN -- --only {text!r} matches no mutation label "
+                  f"(--list shows them)")
+        return 2
+    targets = [m[1] for m in chosen]
 
     # Before anything is touched. A stale `.bak` means the tree already holds
     # a mutation from a killed run, and the next `shutil.copy` would destroy
@@ -3010,7 +3055,7 @@ def main():
     _PRISTINE.update({target: digest(target) for target in sorted(set(targets))})
 
     ok, not_here = True, 0
-    for label, target, find, replace, test in MUTATIONS:
+    for label, target, find, replace, test in chosen:
         platforms = sabotage_platform.not_exercised_here(label)
         if platforms:
             # Never applied here: counted in the summary, not read as green.
@@ -3040,4 +3085,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

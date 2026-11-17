@@ -800,6 +800,29 @@ def test_an_unusable_measurement_leaves_the_declared_price(flavour, value, tmp_p
         "a cached " + repr(value) + " re-priced a declared rule. " + result.stderr)
 
 
+def test_sync_itself_measures_a_declared_rule_that_passes(tmp_path, monkeypatch):
+    """L-0958. The test below goes through the whole gate, and the gate's
+    `progress` step caches a clean rule's wall time mid-run, BEFORE `_sync`
+    runs. So that test stayed green with `_sync`'s own caching line sabotaged
+    (sabotage_tooling.py: "a rule with a declared price is never measured
+    again") -- it never needed the line. This one calls `_sync` alone, with an
+    empty timings file, so the only thing that can write the measurement is
+    the line the mutation guards. The rule carries `unknown: False`: a declared
+    price. A guard that measured only unpriced rules would leave it uncached."""
+    import verify_record  # pylint: disable=import-outside-toplevel
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".crew").mkdir()
+    matched = [{"key": "k-declared", "label": "declared", "kind": "normal",
+                "cmds": ["echo declared"], "unknown": False}]
+    cmd_log = [{"cmd": "echo declared", "status": "pass", "elapsed": 3}]
+
+    verify_record._sync("sha", matched, cmd_log)  # pylint: disable=protected-access
+
+    timings = json.loads((tmp_path / ".crew" / ".verify-gate.timings.json")
+                         .read_text(encoding="utf-8"))
+    assert timings["rules"] == {"k-declared": 3}, timings
+
+
 @pytest.mark.parametrize("flavour", _FLAVOURS)
 def test_a_declared_rule_that_passes_is_measured(flavour, tmp_path):
     """The other half: without a cache entry for declared rules there is
