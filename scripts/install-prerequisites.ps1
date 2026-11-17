@@ -38,7 +38,7 @@ Common switches:
     -Select '1,3,7-9'   select these menu items, no prompt (also accepts keys:
                         -Select 'strix,obsidian')
     -Skills 'a,b'       install only these of this repo's skills, no prompt
-    -Team / -Community / -Plugins   the same for menu items 4, 6 and 19
+    -Team / -Community / -Plugins / -SkillSets   the same for menu items 4, 6, 19 and 27
                         each accepts names, numbers, 'all' or 'none', and selecting any
                         of them implies its parent menu item
                         (-Skills 'all' | 'none' also work; implies the repo item)
@@ -73,6 +73,7 @@ param(
     [string]$Team,            # explicit team-plugin subset (menu item 4)
     [string]$Community,       # explicit community-plugin subset (menu item 6)
     [string]$Plugins,         # explicit subset of this repo's own plugins (menu item 19)
+    [string]$SkillSets,       # explicit subset of the AWS / Terraform + Packer / MSP skill sets (menu item 27)
     [switch]$SkillUIGuide,    # answer the SkillUI quick-start prompt up front
     [switch]$NotifySetup,     # answer the notify setup prompt up front
     [string]$ObsidianRepoRoot = 'C:\repos',  # root the Obsidian item suggests for the vault
@@ -1091,6 +1092,7 @@ $script:Catalog = @(
     [pscustomobject]@{ Key = 'perplexity-mcp';    Default = $false; Name = 'MCP server: Perplexity (web-grounded search for the web-research skill - needs an API key)' }
     [pscustomobject]@{ Key = 'lsp-plugins';       Default = $false; Name = 'LSP plugins: csharp, pyright, typescript (claude-plugins-official) + angular, bash, css, powershell, sql, terraform (this repo), with their language servers' }
     [pscustomobject]@{ Key = 'stack-tools';       Default = $false; Name = 'Stack tooling: tflint, ruff, sqlfluff (uv), shellcheck, PSScriptAnalyzer (Windows PowerShell 5.1 and 7; pwsh only on non-Windows)' }
+    [pscustomobject]@{ Key = 'skill-sets';        Default = $true;  Name = 'Skill sets: AWS (5 plugins), Terraform + Packer (HashiCorp), Fortinet + Cisco Meraki (Servosity)' }
 )
 
 $script:Selected = @{}
@@ -1229,8 +1231,8 @@ $script:CommunityCatalog = @(
     # so this row would re-add the marketplace on EVERY run while reporting success.
     [pscustomobject]@{ Key = 'eli5';              Selected = $true; Name = "eli5                    - Explain any topic like I'm 5: big visuals, few words";           Spec = 'eli5@claude-community|anthropics/claude-plugins-community|claude-community' }
     # taste-skill and ui-ux-pro-max are OPT-IN (Selected = $false, and [D] leaves them
-    # unticked via $script:CommunityOptIn): a tag can move and 'marketplace add' rejects a
-    # full SHA as a ref, so default-on would install movable, unaudited code. Reviewed
+    # unticked via $script:CommunityOptIn): a tag can move and 'marketplace add' (on the CLI
+    # this was written against) rejects a full SHA as a ref - 2.1.325 accepts one, see the skill-sets note - so default-on would install movable, unaudited code. Reviewed
     # 2026-10-23. They are unaudited third-party plugins, pinned to the tags
     # that were reviewed (marketplace add accepts owner/repo#ref): taste-skill v2.1.4 =
     # 6010f91a9935f1c167dfc500fb1a475681892e6b, ui-ux-pro-max-skill v2.15.0 =
@@ -1238,6 +1240,41 @@ $script:CommunityCatalog = @(
     # field (the local name), so the '#ref' in the source does not break idempotence.
     [pscustomobject]@{ Key = 'taste-skill';       Selected = $false; Name = "taste-skill             - art-direction skill for frontend design";                        Spec = 'taste-skill@taste-skill|Leonxlnx/taste-skill#v2.1.4|taste-skill' }
     [pscustomobject]@{ Key = 'ui-ux-pro-max';     Selected = $false; Name = "ui-ux-pro-max           - UI/UX styles, palettes, fonts and stacks";                       Spec = 'ui-ux-pro-max@ui-ux-pro-max-skill|nextlevelbuilder/ui-ux-pro-max-skill#v2.15.0|ui-ux-pro-max-skill' }
+)
+
+# --- Skill sets (menu item 27) -------------------------------------------------
+# Third-party marketplaces, each a different publisher. Owner request 2026-11-14. The
+# last field of every Spec is the name in that repo's own .claude-plugin/marketplace.json
+# and must be EXACT or the marketplace is re-added on every run (see the community
+# note above); each was read from the repo, not guessed:
+#   zxkane/aws-skills          -> 'aws-skills'  (plugins aws-common, aws-iac, aws-cost-ops,
+#                                 serverless-eda, aws-agentic-ai)
+#   hashicorp/agent-skills     -> 'hashicorp'   (plugins terraform, packer)
+#   Servosity/msp-skills       -> 'msp-skills'  (111 plugins; ONLY fortinet and
+#                                 cisco-meraki are listed here)
+# Every source is pinned with '#<full commit SHA>'. 'claude plugin marketplace add'
+# 2.1.325 accepts a full SHA there and checks that commit out (verified 2026-11-14 in a
+# throwaway CLAUDE_CONFIG_DIR: known_marketplaces.json recorded the SHA as the ref and the
+# clone's HEAD was that commit, and 'marketplace update' keeps it). An older CLI may
+# refuse it ("Remote branch <sha> not found", see the community note above); that fails
+# the marketplace step loudly, it never falls back to an unpinned add. Tags were not
+# usable: zxkane/aws-skills publishes none, hashicorp's only tag (v1.0.0) predates the
+# terraform/packer plugin layout, and Servosity's tags are per-plugin (zoom-phone-v*).
+# SHAs reviewed 2026-11-14 as the repos' HEAD; bump them deliberately after a fresh review.
+# aws-cost-ops and aws-agentic-ai declare MCP servers that start with an unpinned
+# 'uvx <awslabs package>@latest' when Claude Code loads the plugin.
+# Servosity's install.sh / install.ps1 (the fortinet-cli / cisco-meraki-cli binary
+# installers) are NEVER run here: the skills install without them.
+$script:SkillSetCatalog = @(
+    [pscustomobject]@{ Key = 'aws-common';     Selected = $true; Name = 'aws-common              - AWS shared skills (zxkane/aws-skills)';                                    Spec = 'aws-common@aws-skills|zxkane/aws-skills#68530c6f296ccd2f5e99c79782f3e0fbf962c51a|aws-skills' }
+    [pscustomobject]@{ Key = 'aws-iac';        Selected = $true; Name = 'aws-iac                 - AWS infrastructure as code: CDK, CloudFormation';                          Spec = 'aws-iac@aws-skills|zxkane/aws-skills#68530c6f296ccd2f5e99c79782f3e0fbf962c51a|aws-skills' }
+    [pscustomobject]@{ Key = 'aws-cost-ops';   Selected = $true; Name = 'aws-cost-ops            - AWS cost and operations (starts unpinned uvx @latest MCP servers)';        Spec = 'aws-cost-ops@aws-skills|zxkane/aws-skills#68530c6f296ccd2f5e99c79782f3e0fbf962c51a|aws-skills' }
+    [pscustomobject]@{ Key = 'serverless-eda'; Selected = $true; Name = 'serverless-eda          - AWS serverless and event-driven architecture';                             Spec = 'serverless-eda@aws-skills|zxkane/aws-skills#68530c6f296ccd2f5e99c79782f3e0fbf962c51a|aws-skills' }
+    [pscustomobject]@{ Key = 'aws-agentic-ai'; Selected = $true; Name = 'aws-agentic-ai          - AWS agentic AI (starts an unpinned uvx @latest MCP server)';               Spec = 'aws-agentic-ai@aws-skills|zxkane/aws-skills#68530c6f296ccd2f5e99c79782f3e0fbf962c51a|aws-skills' }
+    [pscustomobject]@{ Key = 'terraform';      Selected = $true; Name = 'terraform               - HashiCorp Terraform skills (hashicorp/agent-skills)';                      Spec = 'terraform@hashicorp|hashicorp/agent-skills#5e30fa5c867ba6777c37e4206babfd08049c396f|hashicorp' }
+    [pscustomobject]@{ Key = 'packer';         Selected = $true; Name = 'packer                  - HashiCorp Packer skills (hashicorp/agent-skills)';                         Spec = 'packer@hashicorp|hashicorp/agent-skills#5e30fa5c867ba6777c37e4206babfd08049c396f|hashicorp' }
+    [pscustomobject]@{ Key = 'fortinet';       Selected = $true; Name = 'fortinet                - Fortinet skill (Servosity/msp-skills, commit-pinned)';                     Spec = 'fortinet@msp-skills|Servosity/msp-skills#cc3f873bde09ffa06cd2a7e8e70f46cde1f95e11|msp-skills' }
+    [pscustomobject]@{ Key = 'cisco-meraki';   Selected = $true; Name = 'cisco-meraki            - Cisco Meraki skill (Servosity/msp-skills, commit-pinned)';                 Spec = 'cisco-meraki@msp-skills|Servosity/msp-skills#cc3f873bde09ffa06cd2a7e8e70f46cde1f95e11|msp-skills' }
 )
 
 # --- Sub-picker groups --------------------------------------------------------
@@ -1249,6 +1286,7 @@ $script:Groups = @(
     [pscustomobject]@{ MenuKey = 'team'; Single = 'team plugin';         Catalog = { $script:TeamCatalog };      Flag = '-Team';      Noun = 'team plugins';      Title = 'Pick team plugins';                     Label = 'Team plugins: {0} of {1} (superpowers, frontend-design, excalidraw, github)  >' }
     [pscustomobject]@{ MenuKey = 'community'; Single = 'community plugin';    Catalog = { $script:CommunityCatalog }; Flag = '-Community'; Noun = 'community plugins'; Title = 'Pick community plugins';                Label = 'Community marketplaces + {0} of {1} plugins  >' }
     [pscustomobject]@{ MenuKey = 'repo-plugins'; Single = 'plugin'; Catalog = { $script:PluginCatalog };    Flag = '-Plugins';   Noun = 'plugins';           Title = "Pick plugins from this repo";           Label = "This repo's plugins: {0} of {1} (ai-connect, angular-lsp, bash-lsp, crew, css-lsp, gizmoduck, localgpu, obsidian-vault, powershell-lsp, pwsh-lsp, rule-of-two, sql-lsp, terraform-lsp)  >" }
+    [pscustomobject]@{ MenuKey = 'skill-sets'; Single = 'skill set'; Catalog = { $script:SkillSetCatalog }; Flag = '-SkillSets'; Noun = 'skill sets'; Title = 'Pick skill sets'; Label = 'Skill sets: {0} of {1} (AWS, Terraform + Packer, Fortinet + Cisco Meraki; MSP skills pinned to a commit)  >' }
 )
 
 function Get-Group {
@@ -1708,7 +1746,7 @@ function Select-InstallItems {
     # group's list before anything is drawn, so it composes with -All and
     # -NonInteractive.
     $specs = @{ 'own-skills' = $Skills; 'team' = $Team; 'community' = $Community
-                'repo-plugins' = $Plugins }
+                'repo-plugins' = $Plugins; 'skill-sets' = $SkillSets }
     foreach ($group in $script:Groups) {
         $spec = $specs[$group.MenuKey]
         if (-not $spec) { continue }
@@ -2253,7 +2291,7 @@ function Invoke-SkillPreflights {
 }
 
 # Everything from here to the MCP servers needs the claude CLI on PATH.
-$claudeItems = @('own-skills', 'team', 'find-skills', 'community', 'claude-code-setup', 'supabase', 'repo-plugins')
+$claudeItems = @('own-skills', 'team', 'find-skills', 'community', 'claude-code-setup', 'supabase', 'repo-plugins', 'skill-sets')
 $needsClaude = @($claudeItems | Where-Object { Test-Selected $_ }).Count -gt 0
 
 if ($needsClaude -and -not (Test-ClaudeAvailable)) {
@@ -3556,6 +3594,24 @@ if (Test-Selected 'stack-tools') {
     Invoke-Step "sqlfluff (uv tool install sqlfluff)" { Install-Sqlfluff }
     Invoke-Step "shellcheck" { Install-Shellcheck }
     Invoke-Step "PSScriptAnalyzer (Windows PowerShell 5.1 and PowerShell 7)" { Install-PSScriptAnalyzer }
+}
+
+# --- 27. Skill sets: AWS, Terraform + Packer, Fortinet + Cisco Meraki ---------
+# The catalog is $script:SkillSetCatalog next to the menu, so Right on the row (or
+# -SkillSets) narrows it. Each source is pinned to a commit; see the note there.
+if (Test-Selected 'skill-sets') {
+    $group = Get-Group 'skill-sets'
+    if ((Get-GroupSelectedCount $group) -eq 0) {
+        Write-Warn2 "no skill sets selected - nothing installed for this item, and no marketplace registered."
+    }
+    Install-Group $group
+    if ((Test-GroupEntrySelected 'skill-sets' 'fortinet') -or (Test-GroupEntrySelected 'skill-sets' 'cisco-meraki')) {
+        # Printed, never acted on: the skill and the binary are separate installs.
+        Write-Warn2 "fortinet / cisco-meraki: only the skills were installed. Their fortinet-cli / cisco-meraki-cli binaries are a separate install this script never runs (it is Servosity's install.ps1, a download-and-run installer from a third party). Read the script first, run it with DRY_RUN=1, and only then install it yourself."
+    }
+    if ((Test-GroupEntrySelected 'skill-sets' 'aws-cost-ops') -or (Test-GroupEntrySelected 'skill-sets' 'aws-agentic-ai')) {
+        Write-Warn2 "aws-cost-ops / aws-agentic-ai declare MCP servers started with an unpinned 'uvx <package>@latest' when Claude Code loads the plugin (needs uv). Untick them in the Skill sets sub-picker (or leave them out of -SkillSets) if that is not wanted."
+    }
 }
 
 # --- Summary -----------------------------------------------------------------

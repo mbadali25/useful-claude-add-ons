@@ -46,8 +46,11 @@ One script per OS. Both are idempotent (safe to re-run) and, by default, also bo
 | 4 | superpowers, frontend-design, excalidraw-generator | `--team` / `-Team` |
 | 6 | the 5 community plugins | `--community` / `-Community` |
 | 19 | this repo's own plugins (`crew`, `gizmoduck`, `localgpu`, `obsidian-vault`) | `--plugins` / `-Plugins` |
+| 27 | the 9 skill-set plugins: 5 AWS (`zxkane/aws-skills`), `terraform` + `packer` (`hashicorp/agent-skills`), `fortinet` + `cisco-meraki` (`Servosity/msp-skills`); ticked by default, each marketplace pinned to a commit | `--skillsets` / `-SkillSets` |
 
 Each flag takes names, numbers, `all` or `none` — `--skills cloudflare,drata`, `--team 1,3`, `--community none`. A name matches either the plugin key or the short label the picker shows. Naming items inside a row also selects that row, which matters for the ones that are off by default (`--plugins crew`); it never overrides a choice you made at the menu. Only the marketplaces behind a ticked plugin get registered, so `--team excalidraw-generator` adds one marketplace rather than three.
+
+**Skill sets (row 27).** Three third-party marketplaces, each added with `owner/repo#<full commit SHA>` so an upstream change cannot reach you unreviewed (verified on Claude Code CLI 2.1.325; an older CLI may refuse a SHA ref, and the marketplace step then fails instead of installing unpinned): `zxkane/aws-skills` (marketplace `aws-skills`) for `aws-common`, `aws-iac`, `aws-cost-ops`, `serverless-eda` and `aws-agentic-ai`; `hashicorp/agent-skills` (marketplace `hashicorp`) for `terraform` and `packer`; and `Servosity/msp-skills` (marketplace `msp-skills`, 111 plugins) for **only** `fortinet` and `cisco-meraki`. `aws-cost-ops` and `aws-agentic-ai` declare MCP servers that Claude Code launches with an unpinned `uvx <awslabs package>@latest`, so they need `uv` and run whatever the latest release is; untick them in the sub-picker if that is not wanted. Servosity's `fortinet-cli` / `cisco-meraki-cli` binaries are a separate install that the scripts never run (it is a third-party `install.sh` / `install.ps1`): read it first and run it with `DRY_RUN=1` before you install it yourself.
 
 `--dry-run` / `-DryRun` settles the selection, prints it, and stops without installing anything — the quickest way to see what a set of flags resolves to.
 
@@ -129,7 +132,8 @@ claude plugin install anthropic-office-skills@claude-settings
 claude plugin install agent-browser@agent-browser
 claude plugin install ppt-master@ppt-master
 # Opt-in (unticked by default), unaudited third-party design plugins, pinned to the reviewed
-# tags (v2.1.4, v2.15.0); a full SHA is rejected as a ref and a tag can move.
+# tags (v2.1.4, v2.15.0); the CLI these were written against rejected a full SHA as a ref
+# (2.1.325 accepts one, as the skill sets below use) and a tag can move.
 claude plugin marketplace add Leonxlnx/taste-skill#v2.1.4
 claude plugin marketplace add nextlevelbuilder/ui-ux-pro-max-skill#v2.15.0
 claude plugin install taste-skill@taste-skill
