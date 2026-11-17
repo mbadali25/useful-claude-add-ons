@@ -211,8 +211,8 @@ def main():
           at > 0 and lines[at - 1].strip() == READY_ONLY
           and step_problem("\n".join(guarded)) is not None)
     # Bump at land: the ready-only condition is allowed only beside its draft twin.
-    plain = (f"      - name: x\n        run: {COMMAND}\n")
-    ready = (f"      - name: x\n        {READY_ONLY}\n        run: {COMMAND}\n")
+    plain = f"      - name: x\n        run: {COMMAND}\n"
+    ready = f"      - name: x\n        {READY_ONLY}\n        run: {COMMAND}\n"
     twin = (f"      - name: y\n        {DRAFT_ONLY}\n        {TWIN_PREFIX}--when 'standards export "
             f"STALE:' --never 'REFUSED' -- {COMMAND}\n")
     check("shape: an unconditional step passes", step_problem(plain) is None)
