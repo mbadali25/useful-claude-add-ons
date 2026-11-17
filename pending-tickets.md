@@ -137,6 +137,18 @@ Closed duplicates #520, #524, #532 are ignored. L-0522 (blocks L-0511 PR 2) has 
 | C-0064 | Sabotage entry "the scope base record loses its protection" (`sabotage_scope.py`) stays GREEN on main 4f4b89b5 too: vacuous; re-anchor or retire with a reason (harness) | H2a report | none | H lane (after 1.2.0) |
 | _filled as group reports arrive_ | | | | |
 
+### Owner request 2026-11-17: let agents run guard-gated commands after an approval (priority D)
+
+Owner asked for three tickets at priority D. "D" is the owner's label; its mapping to the repo scale is unconfirmed. The common rule: an
+agent sends the owner an approval prompt, the owner answers, and the guard then lets that exact command run; the owner does not run it
+himself. Each body (owner's words, inferred meanings, acceptance criteria, owner questions) is in the linked file.
+
+| ID | Title | Priority | Body | Status |
+|---|---|---|---|---|
+| _none yet_ | Allow `verify_trust.py` (trust approval) to be automated through the approval route | D | [automate-verify-trust-approval.md](docs/tickets/pending/automate-verify-trust-approval.md) | needs ticket |
+| _none yet_ | Allow the AWS IAM identity script to be automated through the approval route | D | [automate-aws-iam-identity-script.md](docs/tickets/pending/automate-aws-iam-identity-script.md) | needs ticket |
+| _none yet_ | Allow "touch and tag deployment" to be automated, including a full-automation mode | D | [automate-touch-and-tag-deployment.md](docs/tickets/pending/automate-touch-and-tag-deployment.md) | needs ticket |
+
 ## Summary
 
 | # | Ticket | Title | Status | Blocked by |
