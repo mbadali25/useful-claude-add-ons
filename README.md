@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.155**: The Pylint job no longer fails on the 3.12+ `isjunction` guard in `verify_trust.py`. `crew` 1.3.155: no behaviour change; a lint-only fix so the Pylint workflow passes again on main.
 - **crew 1.3.153**: `guards.git.allow`, one switch that lets git commands past crew's command guards. `crew` 1.3.153: a new machine-only switch, `guards.git.allow`, stops crew's command guards from blocking or asking on git commands (`"all"`, destructive ones included, or a list of subcommands); it is off by default and takes effect only after the owner types `/crew:confirm-config` twice.
-- **crew 1.3.133**: A workflow dispatch's `environment` input selects the environment in the promote gate. `crew` 1.3.133 stops the promote gate reading `gh workflow run deploy.yml -f environment=development` (or `qa`) as the production deploy when production's declared dispatch has no `environment` input; it now blocks as could-not-tell, naming the environment it selected, until every environment (production included) declares its own `environment` input; a production declared without it still matches by substring, but the selector block ends the gate first, so production's own checks do not run (they run beside the selected environment once that environment is declared).
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

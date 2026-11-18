@@ -18,6 +18,7 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
+- crew 1.3.113: re-bump only - interim number on the isjunction pylint branch (PR #779, commit c84fa5e31, pushed, never on main) before main reached 1.3.153 and open PR #774 held 1.3.154; the change is recorded under crew 1.3.155
 - crew 1.3.152: re-bump only - interim number on the guards.git.allow branch (PR #769, commit 1805ad4a2, pushed, never on main) before the review fix for `git rebase -ms <strategy>` changed plugin/crew after the version was set; the change is recorded under crew 1.3.153
 - crew 1.3.150: re-bump only - interim number on the guards.git.allow branch (PR #769, commit 02d1143b3, pushed, never on main) before main took #784 and open PR #774 reached 1.3.151; the change is recorded under crew 1.3.153
 - crew 1.3.146: re-bump only - interim number on the guards.git.allow branch (PR #769, commit 64f55ac21, pushed, never on main) before main reached 1.3.147 after #777 merged and open PR #774 held 1.3.149; the change is recorded under crew 1.3.153
@@ -125,6 +126,12 @@ read entries under any `## [` heading.
 - crew 1.3.142: re-bump only - interim number on the guards.git.allow branch (PR #769, commit 893b19248, pushed, never on main) before the review round 16 narrowing of `_hides_git` changed plugin/crew after the version was set; the highest other open PR is #777 at 1.3.141, so the branch moved to 1.3.143; the change is recorded under crew 1.3.146
 - crew 1.3.140: re-bump only - interim number on the guards.git.allow branch (PR #769, pushed, never on main); open PR #777 reached 1.3.141, so the branch was re-bumped above it; the change is recorded under crew 1.3.146
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
+
+### Fixed — crew 1.3.155: the Pylint job no longer fails on the 3.12+ `isjunction` guard in `verify_trust.py`
+
+- **Summary.** `crew` 1.3.155: no behaviour change; a lint-only fix so the Pylint workflow passes again on main.
+- Fixed: the Pylint workflow on push to main fails (build 3.11, pylint 4.1.4) with `verify_trust.py:642:34: E1102: isjunction is not callable (not-callable)`. `os.path.isjunction` exists on 3.12+ only, so pylint on 3.11 infers `None` and cannot see the `is not None` guard. The call now carries the same narrow `# pylint: disable=not-callable` that `crew_migrate._is_link` and `gizmoduck` already use; behaviour is identical.
+- Docs: none - lint comment only, no behaviour change.
 
 ### Added — crew 1.3.153: `guards.git.allow`, one switch that lets git commands past crew's command guards
 
