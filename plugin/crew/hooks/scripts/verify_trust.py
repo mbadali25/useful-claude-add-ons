@@ -8,7 +8,7 @@ verify map enough to run the commands it names?
     python3 verify_trust.py status  [--root DIR]
     python3 verify_trust.py allow-owner HOST/OWNER [--under DIR ...] [--yes]
     python3 verify_trust.py disallow-owner HOST/OWNER [--yes]
-    ... approve|revoke|allow-owner|disallow-owner ... --receipt ID   (crew 1.3.137)
+    ... approve|revoke|allow-owner|disallow-owner ... --receipt ID   (crew 1.3.148)
 
 `.crew/verify.json` is repo-authored text and its `run` strings reach `eval`;
 `_verify/smoke.sh` / `scripts/smoke.sh` reach `bash`. A clone of a hostile repo
@@ -966,7 +966,7 @@ def _grant(args, verb, **what):
 
 def _spend_receipt(grant, pin):
     """True only when the owner's typed receipt (`/crew:allow-run <id>`, crew
-    1.3.137) covers exactly this action here and now. The receipt is spent by
+    1.3.148) covers exactly this action here and now. The receipt is spent by
     this call whatever it answers, so a second run finds nothing. Anything
     this cannot read, match or import is a refusal: nothing was changed."""
     ident, action = grant

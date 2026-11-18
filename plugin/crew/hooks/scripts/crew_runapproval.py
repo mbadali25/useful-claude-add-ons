@@ -1,4 +1,4 @@
-"""Owner-typed run approvals: one request, one receipt, one use (crew 1.3.137).
+"""Owner-typed run approvals: one request, one receipt, one use (crew 1.3.148).
 
 A few commands are the owner's alone (today: the verify trust store's
 `approve`, `revoke`, `allow-owner`, `disallow-owner`). Until now the only way
@@ -35,13 +35,20 @@ read, parse or match. An unanswered request is never an allow; it expires.
 
 WHAT THIS IS NOT (README "Scope and approval"). The stores are files of the
 same OS user the session runs as. `scope_guard.py` refuses a command that
-names the store, carries the owner's command text, or (class on) names the
-prompt hook, and refuses a Write/Edit under the store: a tripwire that stops
-drift. A session that sets out to forge a receipt by a route the tripwire does
-not read (a path held in a variable, an encoded string, a script file) is not
-stopped here, and neither is one that types into the owner's own terminal.
+names the store, in full or through a glob or an unexpanded variable beside
+it (`run-*`, `run-appro[v]als`, `${d}-approvals`), carries the owner's command
+text, or (class on) names the prompt hook or starts Claude on an existing
+session, and refuses a Write/Edit under the store: a tripwire that stops
+drift. A check that raises refuses the call. A session that sets out to forge
+a receipt by a route the tripwire does not read (a whole path held in a
+variable set by an earlier command, an encoded or concatenated string, a
+script file) is not stopped here, and neither is one that types into the
+owner's own terminal.
 The binding to the requesting session stops a prompt submitted in ANOTHER
-session, which is what a child `claude -p "/crew:allow-run <id>"` is.
+session, which is what a plain child `claude -p "/crew:allow-run <id>"` is.
+It does NOT stop a child that RESUMES this session: measured on claude
+2.1.326, the prompt hook of `claude -p --resume <sid>` (prompt as an argument
+or on stdin) is handed <sid>. Only the tripwire stands in front of that.
 """
 import hashlib
 import json
@@ -66,11 +73,14 @@ STORE_NAME = "run-approvals"
 CONFIG = os.path.join(".claude", "crew", "config.json")
 TRUST_SCRIPT = "verify_trust.py"
 
-_ID_RE = re.compile(r"^ar-[0-9a-f]{12}$")
-_OWNER_RE = re.compile(r"^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/[a-z0-9_][a-z0-9_.-]*$")
-_PYTHON_RE = re.compile(r"^(?:python[0-9.]*|py)(?:\.exe)?$", re.IGNORECASE)
+# Each of these four is asked through `_whole` (a fullmatch) and never through
+# `.match` with a `$`: `$` also matches BEFORE a trailing newline, so
+# `ar-0123456789ab\n` read as an id and `x\n` as a plain word.
+_ID_RE = re.compile(r"ar-[0-9a-f]{12}")
+_OWNER_RE = re.compile(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?/[a-z0-9_][a-z0-9_.-]*")
+_PYTHON_RE = re.compile(r"(?:python[0-9.]*|py)(?:\.exe)?", re.IGNORECASE)
 # One plain literal word: nothing a shell expands, quotes, escapes or splits.
-_PLAIN_RE = re.compile(r"^[A-Za-z0-9_./:=,@%+-]+$")
+_PLAIN_RE = re.compile(r"[A-Za-z0-9_./:=,@%+-]+")
 _STORE_NAME_RE = re.compile(r"run[-_]approvals", re.IGNORECASE)
 _MODULE_RE = re.compile(r"crew[-_]runapproval", re.IGNORECASE)
 # The owner's command WITH something that can stand for an id after it: a
@@ -83,6 +93,24 @@ _RUNS_CODE_RE = re.compile(r"(?:^|[\s;&|(/\\])(?:python[0-9.]*|pypy[0-9.]*|py)(?
                            r"|\b(?:import|runpy)\b", re.IGNORECASE)
 _PROMPT_HOOK_RE = re.compile(r"approval[_-]hook|crew[_-]hook(?:\.py|\.sh|\.ps1)?\b", re.IGNORECASE)
 _QUOTE_RE = re.compile(r"[\"'\\`^]")
+# What a shell replaces before the command runs, so the text does not say what
+# the word will be: a variable, a substitution, a brace list, an extended glob.
+_EXPANSION_RE = re.compile(r"\$\{[^}]*\}|\$\([^)]*\)|`[^`]*`|[?*+@!]\([^)]*\)|\{[^{}]*\}"
+                           r"|\$(?:env:)?[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%|\$")
+_WORD_SPLIT_RE = re.compile(r"[\s;&|<>()\"'=]+")
+_ANY = "\x00"
+_GLOB_RE = re.compile(r"[~*?\[\]]")
+_STORE_PARENT = (".claude", "crew")
+_STORE_CHILDREN = ("receipts", "requests", "audit.log")
+_CREW_DIR_RE = re.compile(r"\.claude[/\\]+crew(?![\w.-])", re.IGNORECASE)
+# Claude started as a command, and the flags that put its prompt in a session
+# that already exists (measured, claude 2.1.326: the prompt hook of
+# `claude -p --resume <sid>` is handed <sid> itself).
+_CLAUDE_RE = re.compile(r"(?:^|[\s;&|(/\\])claude(?:-code)?(?:\.exe|\.cmd|\.bat|\.ps1)?(?=\s|$)",
+                        re.IGNORECASE)
+_RESUME_RE = re.compile(r"(?:^|\s)(?:--(?:resume|continue|session-id|fork-session|from-pr|teleport)"
+                        r"|-[A-Za-z]*[rc][A-Za-z]*)(?=[\s=]|$)")
+_UNREAD_RE = re.compile(r"[$`]|%[A-Za-z_][A-Za-z0-9_]*%")
 _UNPRINTABLE_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 
 
@@ -172,8 +200,13 @@ def _file(root, kind, ident):
     return os.path.join(store_dir(root), kind, ident + ".json")
 
 
+def _whole(pattern, text):
+    """True when `pattern` covers ALL of `text`, a trailing newline included."""
+    return pattern.fullmatch(text) is not None
+
+
 def valid_id(ident):
-    return isinstance(ident, str) and bool(_ID_RE.match(ident))
+    return isinstance(ident, str) and _whole(_ID_RE, ident)
 
 
 def _write(path, data):
@@ -300,16 +333,20 @@ def parse_trust_command(command, cwd, scripts):
         <python> [-B] <path>/verify_trust.py allow-owner HOST/OWNER [--under DIR]... [--receipt ID]
         <python> [-B] <path>/verify_trust.py disallow-owner HOST/OWNER [--receipt ID]
 
-    one line, every word a plain literal (no quote, variable, substitution,
-    redirect, pipe or separator), the script being THIS plugin's own
+    one line (a command holding a line feed or a carriage return anywhere,
+    its end included, is never this form: a shell runs each line), every word
+    a plain literal (no quote, variable, substitution, redirect, pipe or
+    separator), the script being THIS plugin's own
     `verify_trust.py`, `--receipt` last. `base` is the text without the
     trailing ` --receipt ID`: the request is recorded for it, so the first run
     and the re-run name the same command. Anything else is not requestable."""
     if not isinstance(command, str) or not isinstance(cwd, str):
         return None
+    if "\n" in command or "\r" in command:
+        return None
     text = command.strip()
     words = text.split(" ")
-    if any(not _PLAIN_RE.match(word) for word in words):
+    if any(not _whole(_PLAIN_RE, word) for word in words):
         return None
     receipt = None
     if len(words) >= 2 and words[-2] == "--receipt":
@@ -320,7 +357,7 @@ def parse_trust_command(command, cwd, scripts):
         words = words[:-2]
     else:
         base = text
-    if not words or not _PYTHON_RE.match(os.path.basename(words[0].replace("\\", "/"))):
+    if not words or not _whole(_PYTHON_RE, os.path.basename(words[0].replace("\\", "/"))):
         return None
     rest = words[1:]
     if rest[:1] == ["-B"]:
@@ -337,7 +374,7 @@ def parse_trust_command(command, cwd, scripts):
         if args and (len(args) != 2 or args[0] != "--root"):
             return None
         return trust_action(verb, root=args[1] if args else ".", cwd=cwd), receipt, base
-    if not args or not _OWNER_RE.match(args[0].lower()):
+    if not args or not _whole(_OWNER_RE, args[0].lower()):
         return None
     under, tail = [], args[1:]
     if verb == "disallow-owner" and tail:
@@ -612,12 +649,17 @@ def store_refusal(data, readings, read_only, real):
 
     A shell command is refused when, in any reading, as written or with its
     quotes deleted, it is not a read-only command and it names the store
-    (`run-approvals`), carries the owner's command with an id or an expansion
-    after it (`crew:allow-run ar-...`: a child `claude -p`, a piped hook
-    payload, keys sent to a terminal), or runs code
-    beside this module's name; and, while a class is on, when it names the
-    prompt hook or the hook launcher. A Write/Edit is refused when its real or
-    named path lies under the store or has `run-approvals` as a segment."""
+    (`run-approvals`), may name it through a glob or an unexpanded variable or
+    substitution (`_veiled_store`: `run-*`, `run-appro[v]als`, `run-approva?s`,
+    `${d}-approvals`, `.claude/crew/*`), carries the owner's command with an id
+    or an expansion after it (`crew:allow-run ar-...`: a child `claude -p`, a
+    piped hook payload, keys sent to a terminal), or runs code beside this
+    module's name; and, while a class is on, when it names the prompt hook or
+    the hook launcher, or starts Claude on an existing session
+    (`claude -p --resume <sid> < prompt.txt`) or with arguments the text does
+    not settle. A Write/Edit is refused when its real or named path lies under
+    the store or has `run-approvals` as a segment. This function may raise;
+    `scope_guard.decide` turns that into a refusal."""
     tool_input = data.get("tool_input")
     if data.get("tool_name") in ("Bash", "PowerShell"):
         command = tool_input.get("command") if isinstance(tool_input, dict) else None
@@ -626,8 +668,9 @@ def store_refusal(data, readings, read_only, real):
         for reading in readings(command):
             for text in (reading, _QUOTE_RE.sub("", reading)):
                 reason = _shell_reason(text, data)
-                # `~` only expands to a home directory; the read-only parser has no word for it.
-                if reason and not read_only(reading.replace("~", "_")):
+                # `~` only expands to a home directory and a glob to file names: neither
+                # makes a read a write, and the read-only parser has no word for them.
+                if reason and not read_only(_GLOB_RE.sub("_", reading)):
                     return reason
         return None
     try:
@@ -650,6 +693,9 @@ def _shell_reason(text, data):
     if _STORE_NAME_RE.search(text):
         return ("it names the run-approval store; only the owner's typed /crew:allow-run "
                 "gives a receipt")
+    if _veiled_store(text, data.get("cwd")):
+        return ("it may name the run-approval store through a glob or an unexpanded variable; "
+                "only the owner's typed /crew:allow-run gives a receipt")
     if _OWNER_COMMAND_RE.search(text):
         return ("it carries `/crew:allow-run` with an id, which only the owner types, in "
                 "their own prompt")
@@ -660,7 +706,86 @@ def _shell_reason(text, data):
         if settings(cwd)["classes"]:
             return ("it names the prompt hook, which only the owner's own prompt may drive "
                     "(approvals.run.classes is on)")
+    started = _CLAUDE_RE.search(text)
+    if started and (_RESUME_RE.search(text[started.end():]) or _UNREAD_RE.search(text)):
+        cwd = data.get("cwd") if isinstance(data.get("cwd"), str) else None
+        if settings(cwd)["classes"]:
+            return ("it starts Claude on an existing session (--resume, --continue, "
+                    "--session-id) or with arguments the text does not settle; a prompt "
+                    "submitted there counts as this session's (approvals.run.classes is on)")
     return None
+
+
+def _segment(segment):
+    """`(regex, literals, veiled)` for one path segment read as a shell
+    pattern. `*`, an expansion and anything unknown match any text, `?` and a
+    bracket expression any one character: an over-reading, on purpose."""
+    out, literals, veiled, i = [], 0, False, 0
+    while i < len(segment):
+        char = segment[i]
+        close = segment.find("]", i + 2) if char == "[" else -1
+        if char in (_ANY, "*"):
+            out.append(".*")
+        elif char == "?" or close > 0:
+            out.append(".")
+            i = max(i, close)
+        else:
+            out.append(re.escape(char))
+            literals += 1
+            i += 1
+            continue
+        veiled = True
+        i += 1
+    return "".join(out), literals, veiled
+
+
+def _could_be(segment, name, least):
+    """True when `segment` is `name`, or is a pattern that can expand to it and
+    spells at least `least` of its characters."""
+    if segment.lower() == name:
+        return True
+    pattern, literals, veiled = _segment(segment)
+    return bool(veiled and literals >= least
+                and re.fullmatch(pattern, name, re.IGNORECASE | re.DOTALL))
+
+
+def _veiled_store(text, cwd=None):
+    """True when a word of `text` may expand to the store's path although it
+    does not spell `run-approvals`: a segment holding a glob character or an
+    unexpanded variable or substitution that can stand for the store's name,
+    AND one thing that puts it at the store: four or more of the name's own
+    characters (`run-*`, `run-appro[v]als`, `${d}-approvals`), a store child
+    after it (`$X/receipts/a.json`), `.claude/crew` before it (in the word, or
+    as the directory the command runs in), or `.claude/crew` named anywhere
+    else in the command. Unknown is read as "may": this over-refuses near the
+    store and says nothing about a bare `rm *` elsewhere."""
+    veiled = _EXPANSION_RE.sub(_ANY, text)
+    named = bool(_CREW_DIR_RE.search(text))
+    base = [s for s in re.split(r"[/\\]+", cwd) if s] if isinstance(cwd, str) else []
+    for word in _WORD_SPLIT_RE.split(veiled):
+        if not word:
+            continue
+        rooted = word[0] in "/\\~" + _ANY or word[1:2] == ":"
+        parts = [] if rooted else list(base)
+        for part in re.split(r"[/\\]+", word):
+            if part == "..":
+                del parts[-1:]
+            elif part and part != ".":
+                parts.append(part)
+        lowered = [p.lower() for p in parts]
+        inside = any(tuple(lowered[i:i + 2]) == _STORE_PARENT for i in range(len(lowered)))
+        for i, part in enumerate(parts):
+            pattern, literals, is_veiled = _segment(part)
+            if not is_veiled or not re.fullmatch(pattern, STORE_NAME, re.IGNORECASE | re.DOTALL):
+                continue
+            if literals >= 4 or (named and not inside):
+                return True
+            if i + 1 < len(parts) and any(_could_be(parts[i + 1], c, 3) for c in _STORE_CHILDREN):
+                return True
+            if i >= 2 and _could_be(parts[i - 1], "crew", 2) and _could_be(parts[i - 2],
+                                                                           ".claude", 3):
+                return True
+    return False
 
 
 def _targets(tool_input):

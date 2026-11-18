@@ -1,4 +1,4 @@
-"""The owner-typed run approval (crew 1.3.137): `crew_runapproval.py`, the
+"""The owner-typed run approval (crew 1.3.148): `crew_runapproval.py`, the
 `/crew:allow-run` branch of `approval_hook.py`, the release and the store
 protection in `scope_guard.py`, and `verify_trust.py --receipt`.
 
@@ -19,15 +19,20 @@ MUST-BLOCK
   other arguments, another worktree, another class, an expired or future-dated
   receipt, a verb the owner did not open, a verify.json edited after the
   receipt, a forged or unknown id, two spenders at once;
-- the stores: a shell command naming the store, a Write/Edit under it, a
-  command carrying `/crew:allow-run` with an id (a child `claude -p`, a piped
-  payload, keys sent to a terminal), code run beside the module and, with the
-  class on, a command naming the prompt hook: all in `scope.mode: off` too.
+- the stores: a shell command naming the store, in full or through a glob or
+  an unexpanded variable beside it, a Write/Edit under it, a command carrying
+  `/crew:allow-run` with an id (a child `claude -p`, a piped payload, keys
+  sent to a terminal), code run beside the module and, with the class on, a
+  command naming the prompt hook or starting Claude on an existing session:
+  all in `scope.mode: off` too, and a store check that raises refuses there;
+- line breaks: an id, a word or a command followed by one is not the plain
+  form, gets no request and spends nothing.
 
 MUST-ALLOW
 - the owner's exact prompt, raw and expanded, then one spend inside the window;
-- `status` and `check`, a read of the store, a commit message or grep that only
-  mentions the command, every shape the trust suite already allows.
+- `status` and `check`, a read of the store (a globbed one too), a commit
+  message or grep that only mentions the command, a glob or a variable that
+  is nowhere near the store, every shape the trust suite already allows.
 """
 import importlib.util
 import json
@@ -317,6 +322,58 @@ def test_anything_but_the_plain_opened_form_is_refused_with_no_request(repo, cap
     code, err = guard(capsys, shell(repo, command))
 
     assert (code, _ID.search(err), records("requests")) == (2, None, [])
+
+
+@pytest.mark.parametrize("make", [
+    lambda: APPROVE + "\n",
+    lambda: APPROVE + "\r",
+    lambda: APPROVE + "\r\n",
+    lambda: "\n" + APPROVE,
+    lambda: f"python3 {TRUST} approve --root x\n --receipt ar-0123456789ab",
+    lambda: f"python3 {TRUST} approve --root .\n",
+], ids=["trailing-line-feed", "trailing-carriage-return", "trailing-crlf", "leading-line-feed",
+        "line-feed-before-receipt", "line-feed-after-root"])
+def test_a_command_holding_a_line_break_gets_no_request(repo, capsys, make):
+    """A shell runs each line: `approve --root x\\n --receipt ID` is two
+    commands, and `$` alone read `x\\n` as one plain word."""
+    turn_on()
+    command = make()
+
+    code, err = guard(capsys, shell(repo, command))
+
+    assert (code, _ID.search(err), records("requests"),
+            ra.parse_trust_command(command, str(repo), SCRIPTS)) == (2, None, [], None)
+
+
+def test_a_receipt_does_not_release_its_command_with_a_line_added(repo, capsys):
+    turn_on()
+    ident = receipt_for(capsys, repo)
+
+    code, _ = guard(capsys, shell(repo, f"{APPROVE} --receipt {ident}\nrm -rf x"))
+
+    assert (code, records("receipts")) == (2, [ident + ".json"])
+
+
+@pytest.mark.parametrize("ident", ["ar-0123456789ab\n", "ar-0123456789ab\r", "ar-0123456789ab\r\n",
+                                   "\nar-0123456789ab", "ar-0123456789ab "],
+                         ids=["line-feed", "carriage-return", "crlf", "leading", "space"])
+def test_an_id_with_a_line_break_is_not_an_id(repo, ident):
+    turn_on()
+
+    assert (ra.valid_id(ident), tool("approve", "--root", ".", "--receipt", ident),
+            trusted()) == (False, 1, {})
+
+
+@pytest.mark.parametrize("pattern,text", [
+    ("_ID_RE", "ar-0123456789ab\n"),
+    ("_OWNER_RE", "github.com/someone\n"),
+    ("_PYTHON_RE", "python3\n"),
+    ("_PLAIN_RE", "x\n"),
+])
+def test_no_pattern_reads_a_trailing_line_feed_as_the_end(pattern, text):
+    whole = ra._whole  # pylint: disable=protected-access
+
+    assert (whole(getattr(ra, pattern), text), whole(getattr(ra, pattern), text[:-1])) == (False, True)
 
 
 def test_a_separator_glued_to_a_word_gets_no_request(repo, capsys):
@@ -681,6 +738,166 @@ def test_a_shell_command_naming_the_store_is_refused_with_the_guard_off(repo, ca
     code, err = guard(capsys, shell(repo, command, tool=tool_name))
 
     assert (code, "run-approval store" in err) == (2, True)
+
+
+_CREW = "~/.claude/crew"
+
+
+@pytest.mark.parametrize("tool_name,command", [
+    ("Bash", f"echo x > {_CREW}/run-*/receipts/a.json"),
+    ("Bash", f"touch {_CREW}/run-appro[v]als/receipts/a.json"),
+    ("Bash", f"touch {_CREW}/run-approva?s/receipts/a.json"),
+    ("Bash", f"d={_CREW}/run; touch ${{d}}-approvals/receipts/a.json"),
+    ("Bash", "d=run; touch $HOME/.claude/crew/$d-approvals/receipts/a.json"),
+    ("Bash", f"touch {_CREW}/$(echo run)-approvals/receipts/a.json"),
+    ("Bash", f"touch {_CREW}/`echo run`-approvals/receipts/a.json"),
+    ("Bash", f"touch {_CREW}/*/receipts/a.json"),
+    ("Bash", f"rm -rf {_CREW}/*"),
+    ("Bash", f"rm -rf {_CREW}/r*"),
+    ("Bash", f"cp r.json {_CREW}/{{run,x}}-approvals/receipts/"),
+    ("Bash", f"touch {_CREW}/run-+(approvals)/receipts/a.json"),
+    ("Bash", f"touch {_CREW}/r'u'n-*/receipts/a.json"),
+    ("Bash", f"touch {_CREW}/x/../run-*/a.json"),
+    ("Bash", f"d={_CREW}; touch $d/$n/a.json"),
+    ("Bash", f"cd {_CREW} && rm -rf *"),
+    ("Bash", "touch $X/receipts/ar-0123456789ab.json"),
+    ("Bash", "cp r.json */requests/"),
+    ("Bash", "rm -rf run-*"),
+    ("Bash", "touch *-approvals/receipts/a.json"),
+    ("PowerShell", "Set-Content $HOME\\.claude\\crew\\run-*\\receipts\\x.json '{}'"),
+    ("PowerShell", "Set-Content $env:USERPROFILE\\.claude\\crew\\$name\\receipts\\x.json '{}'"),
+    ("PowerShell", "Remove-Item -Recurse %USERPROFILE%\\.claude\\crew\\run-app*"),
+    ("Bash", f"cat {_CREW}/run-*/audit.log > copy.txt"),
+], ids=["star", "bracket", "question-mark", "braced-variable", "bare-variable", "substitution",
+        "backticks", "whole-segment-star", "crew-dir-star", "one-letter-star", "brace-list",
+        "extended-glob", "quotes-in-glob", "dot-dot", "variable-beside-crew-dir", "cd-then-star",
+        "variable-before-receipts", "star-before-requests", "bare-run-star", "star-approvals",
+        "ps-star", "ps-variable-segment", "cmd-variable", "globbed-read-with-redirect"])
+def test_a_shell_command_veiling_the_store_name_is_refused_with_the_guard_off(repo, capsys,
+                                                                             tool_name, command):
+    """The store's name need not be spelled: a glob or a variable the shell
+    fills in reaches it. Unknown beside the store is read as the store."""
+    code, err = guard(capsys, shell(repo, command, tool=tool_name))
+
+    assert (code, "run-approval store" in err) == (2, True)
+
+
+@pytest.mark.parametrize("cwd,command", [
+    (".claude/crew", "rm -rf *"),
+    (".claude/crew", "touch r*/receipts/a.json"),
+    (".claude", "rm -rf crew/*"),
+    ("", "rm -rf .claude/crew/*"),
+], ids=["in-crew-dir", "in-crew-dir-child", "in-claude-dir", "in-home"])
+def test_a_relative_glob_is_read_from_the_directory_the_command_runs_in(repo, capsys, cwd, command):
+    payload = shell(repo, command)
+    payload["cwd"] = str(_home() / cwd)
+
+    code, err = guard(capsys, payload)
+
+    assert (code, "run-approval store" in err) == (2, True)
+
+
+@pytest.mark.parametrize("tool_name,command", [
+    ("Bash", f"cat {_CREW}/run-*/audit.log"),
+    ("Bash", f"ls -la {_CREW}/*"),
+    ("Bash", f"mkdir -p {_CREW}"),
+    ("Bash", "rm -rf build/*"),
+    ("Bash", "rm -f *.pyc"),
+    ("Bash", "rm plugin/crew/r*"),
+    ("Bash", "git add plugin/crew/*"),
+    ("Bash", "git add .claude-plugin/marketplace.json plugin/crew/*"),
+    ("Bash", "cp $SRC/$NAME $DST"),
+    ("Bash", "echo $HOME > out.txt"),
+    ("Bash", "for f in *.md; do wc -l $f >> counts.txt; done"),
+    ("Bash", "touch src/receipts/a.json"),
+    ("PowerShell", "Remove-Item $a\\$b\\$c"),
+    ("PowerShell", "Get-ChildItem *.py | ForEach-Object { $_.Name } | Set-Content names.txt"),
+    ("Bash", "claude -p --resume 5f1c < prompt.txt"),
+], ids=["globbed-read", "globbed-ls", "mkdir-crew-dir", "build-star", "pyc", "plugin-crew-r-star",
+        "git-add-plugin-crew", "marketplace-and-plugin-crew", "variables", "home-redirect",
+        "for-loop", "receipts-elsewhere", "ps-variables", "ps-pipeline", "claude-resume-class-off"])
+def test_a_glob_or_a_variable_nowhere_near_the_store_is_allowed(repo, capsys, tool_name, command):
+    assert guard(capsys, shell(repo, command, tool=tool_name)) == (0, "")
+
+
+@pytest.mark.parametrize("tool_name,command", [
+    ("Bash", "claude -p --resume 5f1c < prompt.txt"),
+    ("Bash", "cat prompt.txt | claude --print -r 5f1c"),
+    ("Bash", "claude -c -p < prompt.txt"),
+    ("Bash", "claude --continue --print < prompt.txt"),
+    ("Bash", "claude -p --session-id 5f1c0000-0000-4000-8000-000000000000 < prompt.txt"),
+    ("Bash", "claude -p --fork-session --resume 5f1c < prompt.txt"),
+    ("Bash", "claude -p '--res''ume' 5f1c < prompt.txt"),
+    ("Bash", "claude -p $FLAGS < prompt.txt"),
+    ("Bash", "npx @anthropic-ai/claude-code -p --resume=5f1c < prompt.txt"),
+    ("PowerShell", "Get-Content prompt.txt | claude.exe -p --resume 5f1c"),
+], ids=["resume-stdin", "short-r", "short-c", "continue", "session-id", "fork", "quotes-in-flag",
+        "flags-in-a-variable", "npx", "powershell"])
+def test_with_a_class_on_claude_started_on_an_existing_session_is_refused_with_the_guard_off(
+        repo, capsys, tool_name, command):
+    """Measured on claude 2.1.326: the prompt hook of `claude -p --resume
+    <sid>` is handed <sid>, so the session binding does not tell that child
+    from the owner. The prompt is in a file; the text shows only the flag."""
+    turn_on()
+
+    code, err = guard(capsys, shell(repo, command, tool=tool_name))
+
+    assert (code, "existing session" in err) == (2, True)
+
+
+@pytest.mark.parametrize("command", [
+    "claude -p 'summarise the diff'",
+    "claude --version",
+    "git log --oneline -r -c | head",
+    "ls ~/.claude/projects",
+], ids=["new-session", "version", "flags-of-another-command", "claude-dir"])
+def test_with_a_class_on_claude_started_fresh_is_allowed(repo, capsys, command):
+    turn_on()
+
+    assert guard(capsys, shell(repo, command)) == (0, "")
+
+
+def _through_main(monkeypatch, capsys, payload):
+    """(exit code, stderr) of `scope_guard.main` for one payload: the level
+    at which an exception inside `decide` is allowed under warn and off."""
+    monkeypatch.setattr(scope_guard, "_read_payload", lambda: payload)
+    capsys.readouterr()
+    return scope_guard.main(), capsys.readouterr().err
+
+
+def _broken(*_args, **_kwargs):
+    raise RuntimeError("forced")
+
+
+@pytest.mark.parametrize("payload", [
+    lambda root: shell(root, "touch notes.txt"),
+    lambda root: shell(root, "Set-Content notes.txt x", tool="PowerShell"),
+    lambda root: {"tool_name": "Write", "cwd": str(root), "tool_input": {"file_path": "notes.txt"}},
+    lambda root: {"tool_name": "Edit", "cwd": str(root), "tool_input": {"file_path": "notes.txt"}},
+], ids=["bash", "powershell", "write", "edit"])
+def test_a_store_check_that_raises_refuses_the_call_with_the_guard_off(repo, capsys, monkeypatch,
+                                                                       payload):
+    """`main` allows a call `decide` could not judge when `scope.mode` is off
+    or report. The store check is not one of those: it fails closed."""
+    monkeypatch.setattr(ra, "store_refusal", _broken)
+
+    code, err = _through_main(monkeypatch, capsys, payload(repo))
+
+    assert (code, "could not judge it (RuntimeError)" in err) == (2, True)
+
+
+def test_a_store_check_that_raises_inside_the_module_refuses_too(repo, capsys, monkeypatch):
+    monkeypatch.setattr(ra, "_shell_reason", _broken)
+
+    code, err = _through_main(monkeypatch, capsys, shell(repo, "touch notes.txt"))
+
+    assert (code, "could not judge it (RuntimeError)" in err) == (2, True)
+
+
+def test_a_store_check_that_raises_still_lets_a_plain_read_through(repo, capsys, monkeypatch):
+    monkeypatch.setattr(ra, "store_refusal", _broken)
+
+    assert _through_main(monkeypatch, capsys, shell(repo, "ls -la")) == (0, "")
 
 
 @pytest.mark.parametrize("tool_name", ["Write", "Edit", "MultiEdit", "NotebookEdit"])

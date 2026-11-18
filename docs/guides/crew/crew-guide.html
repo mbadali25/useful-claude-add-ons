@@ -594,7 +594,7 @@ read by no hook. Since crew 1.3.69, <code>/crew:confirm-config</code> typed with
 records nothing and lists the pending proposals, each with its id and the
 exact change, or says that none is pending and why. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.</p>
-<p><strong>The owner-typed run approval (crew 1.3.137, off by default).</strong> Trusting a
+<p><strong>The owner-typed run approval (crew 1.3.148, off by default).</strong> Trusting a
 repo's verify map used to need you at a terminal. With
 <code>approvals.run.classes</code> naming <code>verify-trust</code> in the machine file, an agent
 can ask instead: its plain <code>verify_trust.py approve --root &lt;repo&gt;</code> is still
@@ -605,8 +605,10 @@ that exact command, worktree, session and verify map and nothing else; no
 answer means no. This version ships the harness half only: the keys are set
 by hand in the machine file and the <code>/crew:allow-run</code> command file arrives
 with the next change, so the route is not usable from a prompt yet. It is a
-tripwire, not a sandbox; the configuration reference's "The owner-typed run
-approval" section says what it stops and what it does not.</p>
+tripwire, not a sandbox: a child Claude that resumes your session is handed
+your session's id, and only the guard's refusal of that command stands in
+front of it. The configuration reference's "The owner-typed run approval"
+section says what it stops and what it does not.</p>
 <ul>
 <li><code>/crew:config</code> shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.</li>

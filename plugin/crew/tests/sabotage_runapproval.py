@@ -1,4 +1,4 @@
-"""The owner-typed run approval mutations (crew 1.3.137). Same tuple shape as
+"""The owner-typed run approval mutations (crew 1.3.148). Same tuple shape as
 `sabotage.py`'s MUTATIONS -- (label, target, find, replace, test) -- and
 appended to it there. Run `sabotage.py`, not this file.
 
@@ -7,8 +7,11 @@ reintroduces one way a session could give itself that release or stretch one
 it was given: the one use dropped, a binding dropped (command text, worktree,
 class, session, the verify.json pin), the window dropped, a request answered
 by an id nobody typed or by a payload that is not the owner's prompt, the
-default-off dropped, a store left writable, the owner's command carried to
-another process. Every target is a case in `test_allow_run.py`.
+default-off dropped, a store left writable (its name spelled, or veiled by a
+glob or a variable), the owner's command carried to another process, Claude
+resumed on this session, a line break read as the end of a word, a store
+check that raises read as an allow. Every target is a case in
+`test_allow_run.py`.
 """
 import os
 
@@ -19,6 +22,7 @@ HOOK = os.path.join(_S, "approval_hook.py")
 WRAPPER = os.path.join(_S, "approval-hook.sh")
 DISPATCHER = os.path.join(_S, "crew_hook.py")
 TRUST = os.path.join(_S, "verify_trust.py")
+GUARD = os.path.join(_S, "scope_guard.py")
 CHECKER = os.path.join(os.path.dirname(os.path.dirname(CREW)), "scripts", "check-tooling-pr.py")
 
 _T = "tests/test_allow_run.py::"
@@ -106,7 +110,7 @@ RUNAPPROVAL_MUTATIONS = (
      "            parsed = json.load(handle)\n",
      _T + "test_a_machine_config_that_does_not_say_so_plainly_is_off[duplicate-run-on-last]"),
     ("run approval: a word a shell would split or expand passes as plain", MODULE,
-     "    if any(not _PLAIN_RE.match(word) for word in words):\n        return None\n",
+     "    if any(not _whole(_PLAIN_RE, word) for word in words):\n        return None\n",
      "    if False:\n        return None\n",
      _T + "test_a_separator_glued_to_a_word_gets_no_request"),
     ("run approval: a copy of the trust script under another path gets a request", MODULE,
@@ -122,10 +126,56 @@ RUNAPPROVAL_MUTATIONS = (
      "            for text in (reading,):\n",
      _T + "test_a_shell_command_naming_the_store_is_refused_with_the_guard_off[quotes-in-name]"),
     ("run approval: a store command with a redirect passes as a read", MODULE,
-     '                if reason and not read_only(reading.replace("~", "_")):\n',
+     '                if reason and not read_only(_GLOB_RE.sub("_", reading)):\n',
      '                if reason and "cat " not in reading:\n',
      _T + "test_a_shell_command_naming_the_store_is_refused_with_the_guard_off"
           "[read-with-redirect]"),
+    ("run approval: a store name veiled by a glob or a variable is not read", MODULE,
+     '    if _veiled_store(text, data.get("cwd")):\n', "    if False:\n",
+     _T + "test_a_shell_command_veiling_the_store_name_is_refused_with_the_guard_off[star]"),
+    ("run approval: an unexpanded variable is read as a literal word", MODULE,
+     '    veiled = _EXPANSION_RE.sub(_ANY, text)\n', "    veiled = text\n",
+     _T + "test_a_shell_command_veiling_the_store_name_is_refused_with_the_guard_off"
+          "[braced-variable]"),
+    ("run approval: a bracket expression is read as literal characters", MODULE,
+     '        elif char == "?" or close > 0:\n', '        elif char == "?":\n',
+     _T + "test_a_shell_command_veiling_the_store_name_is_refused_with_the_guard_off[bracket]"),
+    ("run approval: a glob spelling four letters of the store name passes on its own", MODULE,
+     "            if literals >= 4 or (named and not inside):\n",
+     "            if named and not inside:\n",
+     _T + "test_a_shell_command_veiling_the_store_name_is_refused_with_the_guard_off[bare-run-star]"),
+    ("run approval: a variable beside a named crew dir is not read as the store", MODULE,
+     "            if literals >= 4 or (named and not inside):\n", "            if literals >= 4:\n",
+     _T + "test_a_shell_command_veiling_the_store_name_is_refused_with_the_guard_off"
+          "[variable-beside-crew-dir]"),
+    ("run approval: a variable before a store child is not read as the store", MODULE,
+     "            if i + 1 < len(parts) and any(", "            if False and any(",
+     _T + "test_a_shell_command_veiling_the_store_name_is_refused_with_the_guard_off"
+          "[variable-before-receipts]"),
+    ("run approval: a glob right under .claude/crew is not read as the store", MODULE,
+     '            if i >= 2 and _could_be(parts[i - 1], "crew", 2)',
+     '            if False and _could_be(parts[i - 1], "crew", 2)',
+     _T + "test_a_shell_command_veiling_the_store_name_is_refused_with_the_guard_off[crew-dir-star]"),
+    ("run approval: a relative glob is not read from the directory the command runs in", MODULE,
+     "        parts = [] if rooted else list(base)\n", "        parts = []\n",
+     _T + "test_a_relative_glob_is_read_from_the_directory_the_command_runs_in[in-crew-dir]"),
+    ("run approval: with a class on, claude resumed with its prompt in a file is allowed", MODULE,
+     "    if started and (_RESUME_RE.search(text[started.end():]) or _UNREAD_RE.search(text)):\n",
+     "    if False:\n",
+     _T + "test_with_a_class_on_claude_started_on_an_existing_session_is_refused_with_the_guard_off"
+          "[resume-stdin]"),
+    ("run approval: `$` reads a trailing line feed as the end of an id or a word", MODULE,
+     "    return pattern.fullmatch(text) is not None\n",
+     '    return re.match("^(?:" + pattern.pattern + ")$", text, pattern.flags) is not None\n',
+     _T + "test_an_id_with_a_line_break_is_not_an_id[line-feed]"),
+    ("run approval: a command holding a line break is read as one line", MODULE,
+     '    if "\\n" in command or "\\r" in command:\n        return None\n', "",
+     _T + "test_a_command_holding_a_line_break_gets_no_request[trailing-line-feed]"),
+    ("run approval: a store check that raises is allowed outside block and auto", GUARD,
+     "    except Exception as exc:  # pylint: disable=broad-except\n        unjudged = (",
+     "    except Exception as exc:  # pylint: disable=broad-except\n        raise\n"
+     "        unjudged = (",
+     _T + "test_a_store_check_that_raises_refuses_the_call_with_the_guard_off[bash]"),
     ("run approval: a Write or Edit under the store is allowed", MODULE,
      "    for target in _targets(tool_input):\n", "    for target in []:\n",
      _T + "test_a_write_or_edit_under_the_store_is_refused_with_the_guard_off"),
@@ -139,7 +189,8 @@ RUNAPPROVAL_MUTATIONS = (
      "    if _MODULE_RE.search(text) and _RUNS_CODE_RE.search(text):\n", "    if False:\n",
      _T + "test_code_run_beside_the_module_is_refused[dash-m]"),
     ("run approval: with a class on, a command naming the prompt hook is allowed", MODULE,
-     '        if settings(cwd)["classes"]:\n', "        if False:\n",
+     '        if settings(cwd)["classes"]:\n            return ("it names the prompt hook',
+     '        if False:\n            return ("it names the prompt hook',
      _T + "test_with_a_class_on_a_command_naming_the_prompt_hook_is_refused_with_the_guard_off"
           "[approval-hook]"),
     ("run approval: a receipt may claim a life longer than the maximum", MODULE,

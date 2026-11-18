@@ -88,7 +88,7 @@ prompt -- carries one more command, ONE line, raw or expanded exactly as
   writes, so "the only pending one" is a choice an agent can make for the
   owner; the id typed in the owner's prompt is what binds the change.
 
-## The owner's one-run receipt (crew 1.3.137)
+## The owner's one-run receipt (crew 1.3.148)
 
 - `/crew:allow-run <request_id>`, ONE line, raw or expanded like the two
   above, turns a request a guard recorded for one refused command into a

@@ -884,6 +884,27 @@ def _broken_pointer(top, root, source):
     return _note(f"scope-guard (report, would block): {reason}. ({why})")
 
 
+def _store_held(data):
+    """Why the call is refused for the run-approval stores, or None. A check
+    that RAISES is a refusal in every `scope.mode`, `off` included: `main`
+    allows an unjudged call outside block/auto, and an unjudged call must not
+    reach the stores. One relief, so a broken check still leaves a session
+    able to look: a shell command every reading of which is read-only."""
+    try:
+        return crew_runapproval.store_refusal(data, _joined, _read_only,
+                                              role_write_guard._resolve_real_target)  # pylint: disable=protected-access
+    except Exception as exc:  # pylint: disable=broad-except
+        unjudged = (f"the run-approval store check could not judge it ({type(exc).__name__}), "
+                    "and a call it cannot judge is refused in every scope.mode")
+    try:
+        command = (data.get("tool_input") or {}).get("command")
+        if data.get("tool_name") in SHELLS and all(_read_only(r) for r in _joined(command)):
+            return None
+    except Exception:  # pylint: disable=broad-except
+        pass
+    return unjudged
+
+
 def decide(data):
     """The exit code for one payload. Writes its own stderr/stdout."""
     if data is None:
@@ -891,9 +912,8 @@ def decide(data):
     tool = data.get("tool_name")
     if tool not in TOOLS and tool not in SHELLS:
         return 0
-    # crew 1.3.137: the run-approval stores, judged like the trust refusal, before the mode.
-    held = crew_runapproval.store_refusal(data, _joined, _read_only,
-                                          role_write_guard._resolve_real_target)  # pylint: disable=protected-access
+    # The run-approval stores, judged like the trust refusal, before the mode.
+    held = _store_held(data)
     if held:
         return _deny([f"SCOPE GUARD: refused this {tool} call -- {held}."])
     trust = trust_refusal(data)

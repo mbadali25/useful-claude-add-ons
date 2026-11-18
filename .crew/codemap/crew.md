@@ -962,7 +962,7 @@ calls `confirm`; both are harness (`scripts/check-tooling-pr.py` `HARNESS`:
 `plugin/crew/tests/humanonly_mutations.py` (16, run alone until PR 2 wires
 them into `sabotage.py`).
 
-## The owner-typed run approval (crew 1.3.137, harness half)
+## The owner-typed run approval (crew 1.3.148, harness half)
 
 DERIVED on `feat/approval-core` (cut from main `127df0155`); this section does
 not move the anchor. One module, `plugin/crew/hooks/scripts/crew_runapproval.py`,
@@ -994,7 +994,13 @@ raw from the machine file and are not in `crew_keys`; no `commands/allow-run.md`
 exists (a command file drags `crew_help.GROUPS`, the install scripts and three
 skill files, none of them harness or `ALONGSIDE`), so both wait for the
 non-harness half. The store protection and the session binding are tripwires:
-the stores and the hook payload belong to the same OS user. Tests:
+the stores and the hook payload belong to the same OS user. The store name is
+also read through globs and unexpanded variables beside it
+(`crew_runapproval._veiled_store`), a check that raises is a refusal in every
+mode (`scope_guard._store_held`), and the binding does not stop a child that
+resumes the session (measured, claude 2.1.326: `claude -p --resume <sid>`
+hands the prompt hook `<sid>`), so with a class on the guard refuses that
+command (`_RESUME_RE`). Tests:
 `plugin/crew/tests/test_allow_run.py`; mutations
 `plugin/crew/tests/sabotage_runapproval.py`, appended to `sabotage.MUTATIONS`.
 
