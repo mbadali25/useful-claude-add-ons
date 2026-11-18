@@ -269,7 +269,7 @@ no: retry the call, and free memory or processes if it repeats. A real deny neve
   30-minute TTL) and names the owner's <code>crew_inflight.py clear</code>; <code>Lane state unknown</code> means it could
   not tell. <code>Approval waiting</code> is autopilot stopped at <code>approve</code>.</li>
 <li><strong>Silence every guard at once:</strong> set <code>guards.enabled: false</code> in the machine file <code>~/.claude/crew/config.json</code>
-  (crew 1.3.151) and confirm it as the owner with the <code>/crew:confirm-config</code> double confirmation (crew 1.3.151;
+  (crew 1.3.154) and confirm it as the owner with the <code>/crew:confirm-config</code> double confirmation (crew 1.3.154;
   an unconfirmed <code>false</code> leaves the guards on, so does a file written after you confirmed it (even with the same bytes), and the scope guard refuses an agent's write to that file, not a command that only mentions it; a session started in your home directory, or above it, makes a confirmed switch do nothing, because the machine config then lies inside the working directory; this is a guardrail against accidents and drift, not a boundary against a hostile agent running as you). The
   dispatcher then starts no guard hook and no context-watch, so nothing is blocked, asked, warned or logged,
   whatever <code>guards.profile</code>, <code>guards.overrides.*</code>, <code>scope.mode</code> and <code>verifyGate</code> say; only the machine layer
@@ -281,12 +281,12 @@ no: retry the call, and free memory or processes if it repeats. A real deny neve
   (<code>/crew:config</code>, <code>/crew:confirm-config</code>, or your own editor). It is refused in every <code>scope.mode</code>. A write
   target the guard cannot resolve (<code>$OUT</code>, <code>$(...)</code>, <code>(Join-Path ...)</code>) is refused only when the command names
   <code>.claude/crew</code> as something it may write, builds the target from pieces of that path, or runs in that folder
-  (crew 1.3.151). Reading the file (<code>cat ~/.claude/crew/config.json &gt; "$OUT"</code>), a repo's own <code>.claude</code> folder and
+  (crew 1.3.154). Reading the file (<code>cat ~/.claude/crew/config.json &gt; "$OUT"</code>), a repo's own <code>.claude</code> folder and
   crew's <code>~/.claude/crew/worktrees/</code> do not count. If an ordinary command is refused, spell the target out or set
   the variable in the same command (<code>OUT=/tmp/x; ... &gt; "$OUT"</code>): a variable the command sets is followed, not
-  guessed. Since crew 1.3.151 a READ of a receipt beside a write elsewhere passes (<code>cp
+  guessed. Since crew 1.3.154 a READ of a receipt beside a write elsewhere passes (<code>cp
   ~/.claude/crew/confirm-config/cc-ab12.json /tmp/</code>), and a <code>cd</code> into the folder that ended with its <code>( ... )</code>
-  or its <code>popd</code> no longer makes a later relative write look like yours. Since crew 1.3.151 the same refusal covers
+  or its <code>popd</code> no longer makes a later relative write look like yours. Since crew 1.3.154 the same refusal covers
   what the check cannot finish reading: text nested more than three commands deep (<code>bash -c</code> in <code>bash -c</code>, a
   <code>$(...)</code> in a <code>$(...)</code>) in a command that names your folder or whose unread part holds a variable or a
   wildcard, a command of more than 131,072 characters, and bash's <code>'it'\''s'</code> quoting beside your folder. Un-nest
