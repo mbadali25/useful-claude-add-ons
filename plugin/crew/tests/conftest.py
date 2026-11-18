@@ -110,6 +110,10 @@ def _no_real_global_config(tmp_path, tmp_path_factory, _crew_isolation_patch):
     # test_python_probe_signals.py went 44 red on Linux with it set, green
     # without. A test of the shortcut itself sets it explicitly and still wins.
     monkeypatch.delenv("CREW_PYTHON", raising=False)
+    # And for the `/tmp` the same launcher hands the dispatcher (crew 1.3.145): a
+    # suite run from verify-gate inherits it, and a real-env dispatch would then
+    # take the native Stop route where the case means the wrapper's.
+    monkeypatch.delenv("CREW_HOOK_POSIX_TMP", raising=False)
 
     # Third channel: the developer's GLOBAL git config reaches every fixture
     # `git commit`, and with `commit.gpgsign=true` each one runs their signing
@@ -385,7 +389,7 @@ def _isolate_home():
     # ambient CLAUDE_CONFIG_DIR naming the operator's real `.claude`.
     # CREW_PYTHON for the same reason: the per-test fixture clears it, a module
     # fixture spawning a hook before that must not inherit the launcher's.
-    for name in ("CLAUDE_CONFIG_DIR", "CLAUDE_PROJECT_DIR", "CREW_PYTHON"):
+    for name in ("CLAUDE_CONFIG_DIR", "CLAUDE_PROJECT_DIR", "CREW_PYTHON", "CREW_HOOK_POSIX_TMP"):
         _HOME_PREVIOUS.setdefault(name, os.environ.get(name))
         os.environ.pop(name, None)
     # The in-process half: `GLOBAL_CONFIG_PATH` was computed from the real

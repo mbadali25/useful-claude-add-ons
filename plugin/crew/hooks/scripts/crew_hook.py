@@ -32,7 +32,6 @@ import re
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from collections import namedtuple
@@ -576,29 +575,53 @@ def _posix_cksum(data):
     return ~crc & 0xFFFFFFFF
 
 
+POSIX_TMP = "CREW_HOOK_POSIX_TMP"
+
+
+def _audit_tmp(env):
+    """The directory the wrapper's `${TMPDIR:-/tmp}` names, as this process can open it, or "" when that cannot
+    be told. TMPDIR set: that directory (one that does not exist is "": the wrapper fails open there, "no marker
+    could be written", where a python fallback to the system temp directory would block). TMPDIR unset or empty
+    is the ordinary case (MEASURED: a non-login Git Bash, which is what runs the Stop hook, has no TMPDIR), and
+    there the wrapper names `/tmp`. Python cannot derive that directory: Git Bash mounts `/tmp` from its own
+    mount table (MEASURED: it stayed at one directory while TMP and TEMP were pointed at two others, so
+    tempfile.gettempdir() is a different answer). Only bash can say, and crew-hook.sh does: it starts this
+    process with CREW_HOOK_POSIX_TMP=/tmp, which the MSYS runtime rewrites to the Windows directory on the way
+    into a native python, and which stays `/tmp` on POSIX. A value that is missing (another launcher), not
+    absolute, or still drive-less on Windows (conversion switched off by MSYS_NO_PATHCONV or
+    MSYS2_ENV_CONV_EXCL) is "", and so is one that is not a directory. An unknown is not the safe-looking
+    value: a clear in the wrong directory would leave the wrapper's marker, and the next wrapper failure would
+    read it as "already blocked" and fail open. Not distinguished: a wrapper run by a second MSYS install whose
+    `/tmp` differs from the launcher's."""
+    tmp = env.get("TMPDIR") or ""
+    if tmp:
+        return tmp if os.path.isdir(tmp) else ""
+    tmp = env.get(POSIX_TMP) or ""
+    if not os.path.isabs(tmp) or (os.name == "nt" and not os.path.splitdrive(tmp)[0]):
+        return ""
+    return tmp if os.path.isdir(tmp) else ""
+
+
 def _audit_scope_unknown(env):
     """True when the wrapper's marker cannot be named from `env` alone, so the direct route must not guess:
     the wrapper hashes `${CLAUDE_PROJECT_DIR:-$PWD}` (a POSIX path python cannot reproduce from os.getcwd()), and
-    with TMPDIR set to a directory that does not exist it fails open ("no marker could be written") where a
-    python fallback to the system temp directory would block. With TMPDIR unset or empty the wrapper names
-    `/tmp`, a POSIX path whose Windows directory python cannot know (it is %TEMP% on the measured Git Bash, not
-    proven everywhere); a native clear under tempfile.gettempdir() could miss the wrapper's marker and the next
-    wrapper failure would then read it as "already blocked" and fail open. An unknown is not the safe-looking
-    value."""
+    its temp directory is one only `_audit_tmp` can name."""
     if not env.get("CLAUDE_PROJECT_DIR"):
         return True
-    tmp = env.get("TMPDIR") or ""
-    return not tmp or not os.path.isdir(tmp)
+    return not _audit_tmp(env)
 
 
 def _audit_marker(raw, env):
     """The path completion-audit.sh's `_marker` names: one per session and project in the temp directory.
-    Only called where `_audit_scope_unknown` is False, so CLAUDE_PROJECT_DIR is set."""
+    Only called where `_audit_scope_unknown` is False, so CLAUDE_PROJECT_DIR is set. The project is hashed as
+    its UTF-8 bytes, which is what bash holds (the wrapper itself is the oracle in the tests, with a non-ASCII
+    path too); a path python cannot encode (a lone surrogate) raises ValueError, so nothing is cleared."""
     found = _SESSION_ID.match(_flat(raw))
     sid = found.group(1).decode("ascii") if found else "nosession"
     project = env.get("CLAUDE_PROJECT_DIR") or ""
-    tmp = env.get("TMPDIR") or ""
-    tmp = tmp if tmp and os.path.isdir(tmp) else tempfile.gettempdir()  # the unset case never gets here: see above
+    tmp = _audit_tmp(env)
+    if not tmp:
+        raise ValueError("the wrapper's temp directory cannot be told")  # never a path relative to the cwd
     return os.path.join(tmp, f"crew-completion-audit.{sid}-{_posix_cksum(project.encode('utf-8'))}")
 
 

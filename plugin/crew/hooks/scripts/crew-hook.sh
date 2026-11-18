@@ -294,8 +294,10 @@ _dispatch() {
   local args=("$EVENT")
   [ "$HARNESS" = codex ] && args+=(--harness codex)
   # CREW_PYTHON exports the interpreter this launcher resolved for the guards the dispatcher starts;
-  # nothing reads it yet (PR B makes crew_py_strict consume it)
-  CREW_PYTHON="$1" PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$1" "$DIR/crew_hook.py" "${args[@]}" <&3 &
+  # nothing reads it yet (PR B makes crew_py_strict consume it). CREW_HOOK_POSIX_TMP tells the dispatcher
+  # where THIS bash's /tmp is: the MSYS runtime rewrites the value to the Windows directory on the way into
+  # a native python (no fork), and python cannot derive it. Without it the Stop audit keeps its wrapper.
+  CREW_HOOK_POSIX_TMP=/tmp CREW_PYTHON="$1" PYTHONUTF8=1 PYTHONIOENCODING=utf-8 "$1" "$DIR/crew_hook.py" "${args[@]}" <&3 &
   local pypid=$!
   _watchdog "$((remaining + 2))" "$pypid"
   wait "$pypid"
