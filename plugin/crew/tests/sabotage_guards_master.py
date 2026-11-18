@@ -76,7 +76,7 @@ GUARDS_MASTER_MUTATIONS = (
      '        if path and _layer_says_off(path) and owner_confirmed(path) and not os.path.exists(\n'
      '                os.path.join(root or "", ".crew", "config.json")):\n',
      _G + "test_a_true_in_the_repo_layer_cannot_switch_back_on_a_machine_false"),
-    # crew 1.3.149: context-watch, the owner's confirmation, duplicate keys, the BOM, a redirected HOME, the machine
+    # crew 1.3.151: context-watch, the owner's confirmation, duplicate keys, the BOM, a redirected HOME, the machine
     # config's protection, and the approval hook's fault path.
     ("context-watch keeps running with the guards off", HOOK,
      'STOOD_DOWN = frozenset({"context-watch.sh"})\n',
@@ -122,7 +122,7 @@ GUARDS_MASTER_MUTATIONS = (
      '    if not top:\n        return _owner_files_only(tool, data, root)\n',
      '    if not top:\n        return 0\n',
      _G + "test_the_owners_files_are_protected_outside_a_work_tree_too"),
-    # crew 1.3.149: the receipt is bound to the confirmations and to the file; the shell forms; the script runs.
+    # crew 1.3.151: the receipt is bound to the confirmations and to the file; the shell forms; the script runs.
     ("a receipt of another file's false counts (the target is not matched)", HOOK,
      'r.get("layer") == "machine" and r.get("target") == target and r.get("key") == MASTER_KEY\n',
      'r.get("layer") == "machine" and r.get("key") == MASTER_KEY\n',
@@ -199,7 +199,7 @@ GUARDS_MASTER_MUTATIONS = (
      r'''(?<![:\w-])confirm-config(?![\w-]|\.md)''',
      r'''(?<![\w-])confirm-config(?![\w-]|\.md)''',
      _G + "test_reading_the_owners_files_and_the_rest_of_the_shell_still_pass"),
-    # crew 1.3.149, round 3: the shell check is target-based (a write AIMED AT the owner's file refuses; a mention,
+    # crew 1.3.151, round 3: the shell check is target-based (a write AIMED AT the owner's file refuses; a mention,
     # or an unrelated write in the same line, does not), no script is opened, the plain verbs are covered,
     # `\\?\` is refused,
     # and the receipt binds the file's modification time.
@@ -348,7 +348,7 @@ GUARDS_MASTER_MUTATIONS = (
      '    return f"{content}@{after}"\n',
      '    return content\n',
      _G + "test_the_round_trip_replay_does_not_count"),
-    # crew 1.3.149 (round 4): plain verbs in every option order, only a destination counts, the one-line .NET write.
+    # crew 1.3.151 (round 4): plain verbs in every option order, only a destination counts, the one-line .NET write.
     ("curl's bundled short flags (-sSo) are not read", SCOPE,
      '            bundle = re.match(r"^-[sSLkvfiIgGJNZ#]*([oO])(.*)$", arg)\n',
      '            bundle = None\n',
@@ -526,7 +526,7 @@ GUARDS_MASTER_MUTATIONS = (
      '        found = [(machine, False), (folder + "/confirm-config", True)]\n',
      '        found = [(machine, False), (folder + "/confirm-config", True), (folder, True)]\n',
      _M + "test_another_file_is_not_the_owners_whatever_the_verb"),
-    # crew 1.3.149, round 9: escape characters and paths the guard cannot resolve fail closed. One slip each.
+    # crew 1.3.151, round 9: escape characters and paths the guard cannot resolve fail closed. One slip each.
     ("bash's backslash escape is not stripped before the path is judged", SCOPE,
      '    for which in reading:\n        word = _ESCAPES[which].sub(r"\\1", word)\n',
      '    for which in [w for w in reading if w != 0]:\n        word = _ESCAPES[which].sub(r"\\1", word)\n',
@@ -741,7 +741,7 @@ GUARDS_MASTER_MUTATIONS = (
      '        if _hit(_unbrace(target), shell, "file"):\n',
      '        if _hit(target, shell, "file"):\n',
      _M + "test_a_write_inside_a_block_or_a_loop_is_a_write"),
-    # crew 1.3.149 (round 10): cmd's `cd /d`, a PowerShell variable built by an expression, `${env:X}`, the write
+    # crew 1.3.151 (round 10): cmd's `cd /d`, a PowerShell variable built by an expression, `${env:X}`, the write
     # verbs and indirections round 10 named (Tee-Object, Export-Csv, a pipeline-bound path, `sed w`, `find -delete`,
     # xargs, wrappers, `iex`, aliases), the narrowed fail-closed trigger (`.claude/crew` outside a read, or a path
     # built from its pieces), and the store check's verb in command position.
@@ -1422,7 +1422,7 @@ GUARDS_MASTER_MUTATIONS = (
      '    elif stands is not None:   # an alias',
      '    elif False:   # an alias',
      _M + "test_the_round_10_write_verbs_are_refused"),
-    # "an alias of itself is followed for ever" is deleted, not re-anchored (crew 1.3.149): it removed the depth
+    # "an alias of itself is followed for ever" is deleted, not re-anchored (crew 1.3.151): it removed the depth
     # cap on the alias branch, and that cap is gone on purpose. `alias ls='ls --color'` is now expanded once, and
     # past the depth limit a command is refused (`_deeper`), not silently judged as written. The row that holds
     # the new behaviour is "an alias of its own name is expanded until the depth limit, then refused" in
@@ -1486,7 +1486,7 @@ GUARDS_MASTER_MUTATIONS = (
      '        word = re.sub(r"^~[\\w.-]+(?=[/\\\\])", _DYN, word)\n',
      '        pass\n',
      _M + "test_the_bash_tilde_forms_are_read"),
-    # crew 1.3.149, round 11. First the rows whose anchor moved with the code (the same slip, re-pointed): tar's
+    # crew 1.3.151, round 11. First the rows whose anchor moved with the code (the same slip, re-pointed): tar's
     # options are read by `_tar_options`, a `cd` by `_stand_in`, and the confirm-config store rule judges the
     # target (`_store_write`), so the rows that mutated the old verb scan (`_ran`) went with it.
     ("tar's mode letters are read only from the first word (-C before -xf)", SCOPE,
@@ -1898,7 +1898,7 @@ GUARDS_MASTER_MUTATIONS = (
      '        shell.dirs, shell.once = stack, once',
      '        shell.dirs = stack',
      _M + "test_a_write_while_still_in_the_owners_folder_is_refused"),
-    # crew 1.3.149: the Linux CI run put the throwaway home under `/tmp`, where `/tmp/$NAME` MAY be the owner's file.
+    # crew 1.3.151: the Linux CI run put the throwaway home under `/tmp`, where `/tmp/$NAME` MAY be the owner's file.
     # The guard's refusal there is kept (the fixture moved), and these rows hold it from the ancestor's side
     ("a variable below an ancestor of the owner's home is never the owner's file", SCOPE,
      '    return any(_glob_match(path.split("/"), target, under) '

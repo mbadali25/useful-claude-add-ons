@@ -226,7 +226,7 @@ _ROUND4_ATTACK = (
     pytest.param("env -u CLAUDECODE python3 verify_trust.py check", id="session-var-env-u"),
     pytest.param("python3 -c 'open(\"/root/.claude/crew/verify-\"+\"x.json\",\"w\").write(\"{}\")'",
                  id="store-dir-write"),
-    # Outside the owner's own folders, so the owner-file check cannot be what refuses it (crew 1.3.149 merge): the
+    # Outside the owner's own folders, so the owner-file check cannot be what refuses it (crew 1.3.151 merge): the
     # trust guard's own `crew/verify-*` rule is the only thing standing here.
     pytest.param("python3 -c 'open(\"/srv/crew/verify-\"+\"x.json\",\"w\").write(\"{}\")'",
                  id="store-dir-write-elsewhere"),
@@ -244,7 +244,7 @@ def test_a_write_of_the_store_is_refused_when_the_store_location_env_is_relative
 
     reason = scope_guard.trust_refusal({"tool_name": "Write", "tool_input": {"file_path": path}})
 
-    # the store's own refusal, not the one `trust_refusal` gives when its check raised (crew 1.3.149): with an
+    # the store's own refusal, not the one `trust_refusal` gives when its check raised (crew 1.3.151): with an
     # unreadable location the check must still run, because a check that raises refuses every write
     assert reason is not None and reason.startswith("it writes the verify trust store")
 
