@@ -272,6 +272,9 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   "promote": {
     "deadlineSeconds": null
   },
+  "verify": {
+    "stopBudgetSeconds": 60
+  },
   "reaper": {
     "enabled": false,
     "dryRun": true,
@@ -314,7 +317,10 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   },
   "guards": {
     "profile": "off",
-    "overrides": {}
+    "overrides": {},
+    "git": {
+      "allow": null
+    }
   },
   "production": {
     "databases": [],

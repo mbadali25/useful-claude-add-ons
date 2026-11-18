@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.148**: An owner-typed, one-use receipt lets an agent run a trust command you approved (harness half, off by default). `crew` 1.3.148 adds the core of an approval route an agent can use and cannot complete: a refused `verify_trust.py approve` becomes a request, you type `/crew:allow-run <id>`, and that exact command may run once. It is off by default, and the command file and config keys that make it usable from a prompt ship in the next change.
-- **crew 1.3.133**: A workflow dispatch's `environment` input selects the environment in the promote gate. `crew` 1.3.133 stops the promote gate reading `gh workflow run deploy.yml -f environment=development` (or `qa`) as the production deploy when production's declared dispatch has no `environment` input; it now blocks as could-not-tell, naming the environment it selected, until every environment (production included) declares its own `environment` input; a production declared without it still matches by substring, but the selector block ends the gate first, so production's own checks do not run (they run beside the selected environment once that environment is declared).
+- **crew 1.3.158**: `verify.stopBudgetSeconds` is a settable, documented, bounded config key (thd-jobs 5a). `crew` 1.3.158: the Stop gate's verify budget can now be tuned with `/crew:config verify.stopBudgetSeconds 120` instead of hand-editing the file; the default stays 60 and a value that is not a whole number from 1 to 540 is refused.
+- **crew 1.3.155**: The Pylint job no longer fails on the 3.12+ `isjunction` guard in `verify_trust.py`. `crew` 1.3.155: no behaviour change; a lint-only fix so the Pylint workflow passes again on main.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 

@@ -456,6 +456,7 @@ worktree:</p>
   PR; only autopilot's ship step does, under <code>autopilot.ship</code>.</li>
 <li><strong>Where worktrees live (crew 1.3.19).</strong> <code>worktrees.root</code> (either layer, the repo wins; null is <code>~/.claude/crew/worktrees</code>) is the one place outside the repo for crew's worktrees, laid out as <code>&lt;root&gt;/&lt;repo&gt;-&lt;digest&gt;/&lt;name&gt;</code>; a value that is relative or inside the repo is refused, never swapped for the default. Claude Code's own agent worktrees (<code>claude --worktree</code>, an Agent with <code>isolation: worktree</code>) stay under <code>.claude/worktrees/</code>: it has no setting for another place, and the one redirect it supports is a <code>WorktreeCreate</code> hook, which replaces git's creation, so crew prints the block (<code>/crew:worktrees hook</code>) and registers nothing. <code>/crew:worktrees list</code> is a read-only survey of every worktree; <code>remove &lt;path&gt;</code> needs your <code>--yes</code>, takes one path and never forces. Nothing existing is moved.</li>
 <li><strong>How long the promote gate may run (crew 1.3.41).</strong> <code>promote.deadlineSeconds</code> (either layer, the repo wins; null derives it from the guard's hook timeout less 4 s, so 16 s of the 20 s row) is the one deadline <code>promote-gate.sh</code> keeps for its whole decision, counted from the moment its shell began. A value above the hook timeout less 2 s is clamped to that, and a value that is not a positive number reads as null.</li>
+<li><strong>How long the Stop gate may spend on rules (crew 1.3.158).</strong> <code>verify.stopBudgetSeconds</code> (repo layer only, default 60) is now a key you can set (<code>/crew:config verify.stopBudgetSeconds 120</code>): the seconds the verify gate spends running rules at Stop, cheapest first, before it defers the rest to CI. It takes a whole number from 1 to 540; zero, a negative, a number over 540, a decimal, a string or a boolean is refused with the range named instead of being stored, and <code>null</code> removes it. <code>--all</code> and <code>--ci</code> ignore it.</li>
 <li><strong>Check before assuming a diff is yours.</strong> Another session may have
   changed the tree, a branch or the stash (root <code>CLAUDE.md</code>, "Lessons").</li>
 </ul>
@@ -594,21 +595,37 @@ read by no hook. Since crew 1.3.69, <code>/crew:confirm-config</code> typed with
 records nothing and lists the pending proposals, each with its id and the
 exact change, or says that none is pending and why. The configuration reference's "The
 human-only opt-out" section has the rules and their limits.</p>
-<p><strong>The owner-typed run approval (crew 1.3.148, off by default).</strong> Trusting a
-repo's verify map used to need you at a terminal. With
-<code>approvals.run.classes</code> naming <code>verify-trust</code> in the machine file, an agent
-can ask instead: its plain <code>verify_trust.py approve --root &lt;repo&gt;</code> is still
-refused, but the refusal carries a request id; you type
-<code>/crew:allow-run &lt;id&gt;</code> in your own prompt, and the agent may then run that one
-command once, with <code>--receipt &lt;id&gt;</code>, within 15 minutes. The receipt covers
-that exact command, worktree, session and verify map and nothing else; no
-answer means no. This version ships the harness half only: the keys are set
-by hand in the machine file and the <code>/crew:allow-run</code> command file arrives
-with the next change, so the route is not usable from a prompt yet. It is a
-tripwire, not a sandbox: a child Claude that resumes your session is handed
-your session's id, and only the guard's refusal of that command stands in
-front of it. The configuration reference's "The owner-typed run approval"
-section says what it stops and what it does not.</p>
+<p><strong>Git commands (crew 1.3.153).</strong> <code>guards.git.allow</code> is the owner's switch that
+stops the command guards blocking or asking on git commands, destructive ones
+included: <code>"all"</code>, or a list of subcommands such as <code>["commit", "push"]</code>.
+A listed subcommand passes with every option it takes: listing <code>push</code> also
+lets <code>git push --force</code> through. It loosens the force-push rule and the
+promote gate, and only for a line that is ONE plain git command, fail-closed:
+the command must be exactly <code>git</code> (no path, no other command on the
+line; a <code>git</code> function the shell already exported is invisible to crew) and every word a plain literal as one shared reader
+reads it - no <code>$</code> in any form, backtick, glob, brace expansion, leading <code>~</code>,
+subshell, PowerShell <code>(expr)</code>, <code>@(...)</code>, splat, <code>--%</code> or <code>%NAME%</code>, and no
+separator, redirection, heredoc, here-string, continuation or comment at all
+(a chain such as <code>git add -A &amp;&amp; git commit</code>, <code>git status 2&gt;&amp;1</code> or a heredoc
+commit message is judged as before). Anything it cannot read whole is judged
+as before. A plain git command carrying <code>-c</code> or a command to run (<code>rebase
+--exec</code> or its abbreviation <code>--exe</code>, <code>push --receive-pack</code>, <code>init
+--template</code>, <code>merge-index &lt;program&gt;</code>), a word that is not a git built-in (<code>git zzz</code>, <code>git svn</code>, an alias), a remote-helper URL (<code>ext::&lt;command&gt;</code>, <code>fd::3</code>, <code>zzz://host/x</code>), or a <code>git config</code>
+that is not plainly a read, is never exempt.
+Plain lines - <code>git commit -m "fix: x"</code>, <code>git push --force-with-lease origin
+topic</code>, <code>git rebase -i HEAD~3</code>, <code>git log --format=%H</code> - stay exempt. A
+declared deploy that is itself a git command stays gated. A declared deploy that computes its ref with a read-only value (<code>-f ref=$(git rev-parse HEAD)</code>, also <code>--short[=N]</code> or <code>--abbrev-ref</code>, as the last part of a word) is not read as hiding git, so the switch still works in that repo; any other substitution, a backtick, a redirection, a second line or a code-running git option in a declared deploy still exempts nothing there. <code>gh</code>
+(<code>--admin</code> merges, branch protection, workflow dispatches) is untouched. It
+is off by default, lives in the machine file only, and takes effect only
+after you type <code>/crew:confirm-config &lt;id&gt;</code> twice for a proposal
+(<code>crew_confirm_config.py propose --layer machine --key guards.git.allow
+--value '"all"'</code>), and only while the machine file is still the file that
+confirmation left: a hand edit turns it off, and so does a copy put back
+with <code>cp -p</code> (on Windows a <code>Copy-Item</code> copy put back is the one restore crew
+cannot tell apart). The receipts are protected from an agent's writes only
+while <code>scope.mode</code> is on, and <code>"all"</code> does not stop git's own hooks, aliases
+or <code>core.sshCommand</code> set earlier in a config file: those run as if crew were
+absent. The configuration reference's "Git commands" section has the rules.</p>
 <ul>
 <li><code>/crew:config</code> shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.</li>
