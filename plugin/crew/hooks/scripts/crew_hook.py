@@ -583,11 +583,13 @@ def _audit_tmp(env):
     be told. TMPDIR set: that directory (one that does not exist is "": the wrapper fails open there, "no marker
     could be written", where a python fallback to the system temp directory would block). TMPDIR unset or empty
     is the ordinary case (MEASURED: a non-login Git Bash, which is what runs the Stop hook, has no TMPDIR), and
-    there the wrapper names `/tmp`. Python cannot derive that directory: Git Bash mounts `/tmp` from its own
-    mount table (MEASURED: it stayed at one directory while TMP and TEMP were pointed at two others, so
-    tempfile.gettempdir() is a different answer). Only bash can say, and crew-hook.sh does: it starts this
+    there the wrapper names `/tmp`. Python cannot derive that directory: Git Bash mounts `/tmp` from a mount
+    table its running processes share, fixed by whichever started first (MEASURED: it stayed at one directory
+    while TMP and TEMP were pointed at two others, and on CI it was another test's TEMP), so
+    tempfile.gettempdir() is a different answer. Only bash can say, and crew-hook.sh does: it starts this
     process with CREW_HOOK_POSIX_TMP=/tmp, which the MSYS runtime rewrites to the Windows directory on the way
-    into a native python, and which stays `/tmp` on POSIX. A value that is missing (another launcher), not
+    into a native python, and which stays `/tmp` on POSIX. The launcher's bash is this process's parent and
+    outlives it, so a wrapper started from here shares its table. A value that is missing (another launcher), not
     absolute, or still drive-less on Windows (conversion switched off by MSYS_NO_PATHCONV or
     MSYS2_ENV_CONV_EXCL) is "", and so is one that is not a directory. An unknown is not the safe-looking
     value: a clear in the wrong directory would leave the wrapper's marker, and the next wrapper failure would

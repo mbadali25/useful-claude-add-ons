@@ -363,15 +363,15 @@ CREW_HOOK_MUTATIONS = (
      '    direct = (windows and env.get("CREW_HOOK_DIRECT") != "0") if direct is None else direct\n',
      '    direct = (env.get("CREW_HOOK_DIRECT") != "0") if direct is None else direct\n',
      _N + "test_off_windows_the_audit_still_runs_through_its_wrapper"),
-    # crew 1.3.145 (review of #777): a non-login Git Bash has no TMPDIR, so the native route was never taken on
+    # crew 1.3.147 (review of #777): a non-login Git Bash has no TMPDIR, so the native route was never taken on
     # an ordinary Windows Stop. The launcher now names its own /tmp; each entry puts back the old miss or a guess.
     ("the launcher's /tmp is ignored (every ordinary Windows Stop pays the wrapper again)", HOOK,
      '    tmp = env.get(POSIX_TMP) or ""\n',
      '    tmp = ""\n',
      _N + "test_with_tmpdir_unset_the_audit_runs_natively_where_the_launcher_named_tmp[unset]"),
     ("the sh launcher stops handing the dispatcher its /tmp", SH,
-     'CREW_HOOK_POSIX_TMP=/tmp CREW_PYTHON="$1"',
-     'CREW_PYTHON="$1"',
+     'PYTHONIOENCODING=utf-8 CREW_HOOK_POSIX_TMP=/tmp "$1"',
+     'PYTHONIOENCODING=utf-8 "$1"',
      _N + "test_the_sh_launcher_hands_the_dispatcher_its_own_slash_tmp"),
     ("an unset TMPDIR with no launcher /tmp is guessed (a clear the wrapper's marker never sees)", HOOK,
      '    tmp = env.get(POSIX_TMP) or ""\n',

@@ -244,7 +244,7 @@ row `completion-audit.sh` is also in `DIRECT` (accept `(0, 2)`); the dispatcher 
 `crew-completion-audit.<session>-<cksum>` file, a Python POSIX cksum), skips python on a `stop_hook_active` continuation and clears the
 marker on that and on a verdict, never on a timeout. `_audit_scope_unknown` (`CLAUDE_PROJECT_DIR` unset/empty, or `_audit_tmp` cannot
 name the wrapper's `${TMPDIR:-/tmp}`: `TMPDIR` set to a missing directory, or unset/empty without an absolute, drive-qualified `CREW_HOOK_POSIX_TMP`
-directory, which `crew-hook.sh` sets to `/tmp` on the dispatcher's command line since crew 1.3.145) makes `direct_plan` return None, so the wrapper keeps the whole sequence. Test: `plugin/crew/tests/test_crew_hook_stop_native.py`.
+directory, which `crew-hook.sh` sets to `/tmp` on the dispatcher's command line since crew 1.3.147) makes `direct_plan` return None, so the wrapper keeps the whole sequence. Test: `plugin/crew/tests/test_crew_hook_stop_native.py`.
 Tests: `test_crew_hook_direct.py`. With no usable python `crew-hook.sh` runs the event's `.sh` scripts directly from a static
 list and `crew-hook.ps1` fails an armed repo closed on the three blocking events. Tests:
 `plugin/crew/tests/test_crew_hook_parity.py`, `test_crew_hook_merge.py`, `test_crew_hook_faults.py`,

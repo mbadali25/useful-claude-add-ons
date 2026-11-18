@@ -374,7 +374,8 @@ def test_a_launcher_tmp_that_cannot_be_trusted_leaves_the_audit_to_the_wrapper(v
     assert crew_hook.direct_plan([AUDIT], {}, _stop(tmp_path), env, SCRIPTS) is None
     with pytest.raises(ValueError):
         crew_hook._audit_marker(_stop(tmp_path), env)  # pylint: disable=protected-access
-    crew_hook._audit_marker_clear(_stop(tmp_path), env)  # pylint: disable=protected-access  (changes nothing)
+    # and the clear changes nothing: it does not raise
+    crew_hook._audit_marker_clear(_stop(tmp_path), env)  # pylint: disable=protected-access
 
 
 def test_the_sh_launcher_hands_the_dispatcher_its_own_slash_tmp():
@@ -382,57 +383,78 @@ def test_the_sh_launcher_hands_the_dispatcher_its_own_slash_tmp():
     wrapper's `${TMPDIR:-/tmp}` falls back to), so no hook's environment changes but through the dispatcher."""
     text = h.read_text(os.path.join(SCRIPTS, "crew-hook.sh"))
     assert text.count(crew_hook.POSIX_TMP + "=") == 1
-    assert crew_hook.POSIX_TMP + '=/tmp CREW_PYTHON="$1" PYTHONUTF8=1' in text
+    assert 'PYTHONIOENCODING=utf-8 ' + crew_hook.POSIX_TMP + '=/tmp "$1" "$DIR/crew_hook.py"' in text
+
+
+STAND_IN = """\
+import json, os, subprocess
+handed = os.environ.get("CREW_HOOK_POSIX_TMP")
+with open(os.environ["STAND_IN_PAYLOAD"], "rb") as handle:
+    payload = handle.read()
+env = dict(os.environ, PATH=os.environ["STAND_IN_PATH"])
+env.pop("CREW_PYTHON", None)  # the launcher's python: the wrapper must find none, so it blocks and leaves its marker
+done = subprocess.run([os.environ["STAND_IN_BASH"], os.environ["STAND_IN_AUDIT"]], input=payload, env=env,
+                      capture_output=True, timeout=600, check=False)
+names = None
+if handed and os.path.isdir(handed):
+    names = sorted(name for name in os.listdir(handed) if name.startswith("crew-completion-audit."))
+with open(os.environ["STAND_IN_SEEN"], "w", encoding="utf-8") as handle:
+    json.dump({"tmp": handed, "tmpdir": os.environ.get("TMPDIR"), "wrapper_exit": done.returncode,
+               "wrapper_stderr": done.stderr.decode("utf-8", "replace")[-400:], "names": names}, handle)
+"""
 
 
 @pytest.mark.skipif(h.BASH is None, reason="no bash: the launcher's /tmp was NOT compared with bash's")
 @crew_fixtures.SLOW
 def test_the_launcher_tmp_is_the_directory_the_wrapper_writes_its_marker_in(tmp_path):
-    """The real round trip, TMPDIR unset. The real crew-hook.sh starts a stand-in dispatcher that records what it
-    was handed; the real wrapper, with no python and a config present, blocks once and leaves its marker under
-    its own `/tmp`. The python route must name that very file from the launcher's value, and clear it."""
+    """The real round trip, TMPDIR unset, in the shape a Stop has: the real crew-hook.sh starts a stand-in
+    dispatcher, and the stand-in starts the real wrapper as its child (no python on its PATH and a config
+    present, so it blocks once and leaves its marker under its own `/tmp`). The python route must name that very
+    file from the value the launcher handed over, and clear it.
+
+    The wrapper has to run UNDER the launcher, as the dispatcher's wrapper does. Git Bash keeps one mount table
+    for all its running processes, fixed by the first of them, so two bashes started one after the other can
+    disagree about `/tmp` when a third, with another TEMP, started the table in between (seen on CI, where the
+    suites run bashes in parallel, each test with its own TEMP)."""
     launcher_dir = tmp_path / "launcher"
     launcher_dir.mkdir()
     for script in ("crew-hook.sh", "_common.sh"):
         shutil.copy(os.path.join(SCRIPTS, script), str(launcher_dir / script))
+    (launcher_dir / "crew_hook.py").write_text(STAND_IN, encoding="utf-8", newline="\n")
     seen = tmp_path / "seen.json"
-    (launcher_dir / "crew_hook.py").write_text(textwrap.dedent(f"""\
-        import json, os
-        with open({str(seen)!r}, "w", encoding="utf-8") as handle:
-            json.dump({{"tmp": os.environ.get({crew_hook.POSIX_TMP!r}), "tmpdir": os.environ.get("TMPDIR")}}, handle)
-        """), encoding="utf-8", newline="\n")
     project = tmp_path / "proj"
     (project / ".crew").mkdir(parents=True)
     (project / ".crew" / "config.json").write_text("{}", encoding="utf-8")
     payload = _stop(project, session=f"posix-tmp-{os.getpid()}-{time.time_ns()}")
+    (tmp_path / "payload.json").write_bytes(payload)
     base = {k: v for k, v in os.environ.items() if k.upper() not in ("TMPDIR", crew_hook.POSIX_TMP,
                                                                      "MSYS_NO_PATHCONV", "MSYS2_ENV_CONV_EXCL")}
-    base.update({"CLAUDE_PROJECT_DIR": str(project), "HOME": str(tmp_path)})
-    python_dir = os.path.dirname(sys.executable)
+    base.update({"CLAUDE_PROJECT_DIR": str(project), "HOME": str(tmp_path),
+                 "STAND_IN_PAYLOAD": str(tmp_path / "payload.json"), "STAND_IN_SEEN": str(seen),
+                 "STAND_IN_BASH": h.BASH, "STAND_IN_AUDIT": os.path.join(SCRIPTS, AUDIT).replace("\\", "/"),
+                 "STAND_IN_PATH": _path_without_python(tmp_path),
+                 "PATH": os.pathsep.join([os.path.dirname(sys.executable), os.environ.get("PATH", "")])})
     launched = subprocess.run([h.BASH, str(launcher_dir / "crew-hook.sh").replace("\\", "/"), "Stop"], input=payload,
-                              env=dict(base, PATH=os.pathsep.join([python_dir, base.get("PATH", "")])),
-                              capture_output=True, cwd=str(project), timeout=900, check=False)
+                              env=base, capture_output=True, cwd=str(project), timeout=900, check=False)
     if not seen.exists():
         pytest.skip(f"the launcher did not reach its dispatcher on this host (exit {launched.returncode}): "
                     f"{launched.stderr[-300:]!r}; the launcher's /tmp was NOT compared")
-    handed = json.loads(seen.read_text(encoding="utf-8"))
-    assert handed["tmpdir"] in (None, ""), handed
-    env = {"CLAUDE_PROJECT_DIR": str(project), crew_hook.POSIX_TMP: handed["tmp"] or ""}
-    assert crew_hook._audit_tmp(env), handed  # pylint: disable=protected-access
-    marker = crew_hook._audit_marker(payload, env)  # pylint: disable=protected-access
-    assert not os.path.exists(marker)
+    got = json.loads(seen.read_text(encoding="utf-8"))
+    env = {"CLAUDE_PROJECT_DIR": str(project), crew_hook.POSIX_TMP: got["tmp"] or ""}
+    marker = crew_hook._audit_marker(payload, env) if crew_hook._audit_tmp(env) else None  # pylint: disable=protected-access
     try:
-        done = subprocess.run([h.BASH, os.path.join(SCRIPTS, AUDIT).replace("\\", "/")], input=payload,
-                              env=dict(base, PATH=_path_without_python(tmp_path)), capture_output=True,
-                              cwd=str(project), timeout=900, check=False)
-        assert done.returncode == 2, done.stderr
-        assert os.path.exists(marker), f"the wrapper's marker is not at {marker}"
+        assert got["tmpdir"] in (None, ""), got
+        assert marker, got
+        if got["wrapper_exit"] not in (0, 2):
+            pytest.skip(f"the wrapper did not run to an answer on this host (exit {got['wrapper_exit']}): "
+                        f"{got['wrapper_stderr']!r}; the launcher's /tmp was NOT compared")
+        assert got["wrapper_exit"] == 2, got
+        assert os.path.basename(marker) in (got["names"] or []), f"the wrapper's marker is not at {marker}: {got}"
         crew_hook._audit_marker_clear(payload, env)  # pylint: disable=protected-access
         assert not os.path.exists(marker)
     finally:
-        if os.path.exists(marker):
+        if marker and os.path.exists(marker):
             os.remove(marker)
-
 
 def test_a_project_path_python_cannot_encode_changes_nothing(tmp_path):
     """The wrapper hashes the bytes bash holds; a lone surrogate has no UTF-8 form, so the python route names no

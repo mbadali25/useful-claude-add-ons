@@ -214,13 +214,16 @@ must-block and must-allow cases through the native route, the marker name agains
 wrapper, the timing, and a hung child; its mutations are in `sabotage_crew_hook.py`. `verify-gate.sh` and
 `context-watch.sh` are the Stop rows that still start Git Bash, and are not changed here.
 
-### Correction, 2026-11-17 (crew 1.3.145): `TMPDIR` is unset on the ordinary path
+### Correction, 2026-11-17 (crew 1.3.147): `TMPDIR` is unset on the ordinary path
 
 As first written the direct route deferred to the wrapper whenever `TMPDIR` was unset or empty, and the
 non-login Git Bash that runs the Stop hook never sets it (measured: `TMPDIR=[]`; a launcher run with the Stop
 table cut to this row took the wrapper branch). So the route was not taken on an ordinary Windows Stop. Python
-cannot derive bash's `/tmp`: Git Bash mounts it from its own mount table, and it stayed at one directory while
-`TMP` and `TEMP` were pointed at two others, so `tempfile.gettempdir()` is a different answer. Only bash can
+cannot derive bash's `/tmp`: Git Bash mounts it from a mount table its running processes share, fixed by
+whichever started first. It stayed at one directory while `TMP` and `TEMP` were pointed at two others, and on CI
+(bashes in parallel, each test with its own `TEMP`) a launcher and a wrapper started one after the other named
+two directories; a wrapper started under the launcher, as the dispatcher's is, shares the launcher's table.
+So `tempfile.gettempdir()` is a different answer. Only bash can
 say, so `crew-hook.sh` now starts the dispatcher with `CREW_HOOK_POSIX_TMP=/tmp`: the MSYS runtime rewrites the
 value to the Windows directory on the way into a native python, with no fork, and it stays `/tmp` on POSIX.
 `_audit_tmp` uses it only when `TMPDIR` is unset or empty, and only when it is an absolute directory with a

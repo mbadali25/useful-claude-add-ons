@@ -110,7 +110,7 @@ def _no_real_global_config(tmp_path, tmp_path_factory, _crew_isolation_patch):
     # test_python_probe_signals.py went 44 red on Linux with it set, green
     # without. A test of the shortcut itself sets it explicitly and still wins.
     monkeypatch.delenv("CREW_PYTHON", raising=False)
-    # And for the `/tmp` the same launcher hands the dispatcher (crew 1.3.145): a
+    # And for the `/tmp` the same launcher hands the dispatcher (crew 1.3.147): a
     # suite run from verify-gate inherits it, and a real-env dispatch would then
     # take the native Stop route where the case means the wrapper's.
     monkeypatch.delenv("CREW_HOOK_POSIX_TMP", raising=False)
