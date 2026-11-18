@@ -148,7 +148,7 @@ def test_default_global_config_returns_a_fresh_object_each_call():
     first["pm"]["authority"] = "act"
     first["qa"]["codex"]["model"] = "mutated"
     assert crew_config.default_global_config()["pm"]["authority"] == "report-only"
-    assert crew_config.default_global_config()["qa"]["codex"]["model"] is None
+    assert crew_config.default_global_config()["qa"]["codex"]["model"] == "gpt-6.2-sol"
 
 
 def test_default_config_matches_crew_setup_skill_md_inline_copy():
@@ -398,7 +398,7 @@ def test_default_config_returns_a_fresh_object_each_call():
     assert second["graph"]["out"] == "graphify-out"
     # A nested dict too: a shallow copy would pass the two above and still
     # let one caller mutate every later caller's `qa.codex`.
-    assert second["qa"]["codex"]["model"] is None
+    assert second["qa"]["codex"]["model"] == "gpt-6.2-sol"
 
 
 def test_default_config_json_round_trips():
@@ -1459,6 +1459,9 @@ def test_a_repo_null_does_not_shadow_a_global_value():
     """
     defaults = crew_config.default_config()
     template = _committed_template()
+    # qa.codex.model is pinned to gpt-6.2-sol in the template from crew 1.3.166; a legacy
+    # repo still spells it null, so that key is exercised with an explicit null instead.
+    template["qa"]["codex"]["model"] = None
     for parts in _NULLABLE_GLOBAL_KEYS:
         assert _dig_plain(template, parts) is None, (
             f"{'.'.join(parts)} stopped being null in the template; this test's premise is "
