@@ -257,7 +257,7 @@ KEY_META = {
                                     "guard's row in the dispatcher's table, not a setting.",
                                     "type", since="1.3.41", source=_S + "_promote_gate.py",
                                     type_="number of seconds, or null"),
-    # --- verify (crew 1.3.157)
+    # --- verify (crew 1.3.158)
     "verify.stopBudgetSeconds": _row("How many seconds the Stop row of the verify gate "
                                      "(`verify-gate.sh`) may spend running "
                                      "rules, cheapest first, before it defers the rest to CI "
@@ -272,7 +272,7 @@ KEY_META = {
                                      "hand-edited string, boolean or negative reads as 60, "
                                      "never as no limit (a number the writer would refuse, "
                                      "such as 0 or 1e9, is still taken as written).",
-                                     "type", since="1.3.157",
+                                     "type", since="1.3.158",
                                      source=_S + "verify-gate.sh",
                                      type_="whole number of seconds, 1 to 540, or null"),
     # --- reaper (crew 1.3.50)

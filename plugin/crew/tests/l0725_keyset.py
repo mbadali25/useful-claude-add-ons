@@ -3,7 +3,7 @@ plus the two `humanOnly` keys crew 1.3.9 added, the `worktrees.root` key crew 1.
 the `environments.preProduction` key crew 1.3.23 added,
 the `promote.deadlineSeconds` key crew 1.3.41 added, the eight
 `reaper.*` keys crew 1.3.50 added and the repo-only `verify.stopBudgetSeconds`
-key crew 1.3.157 added:
+key crew 1.3.158 added:
 102, 98 and 63) and the
 60 keys it drops. Generated once from the reviewed Disposition in
 `.work/tickets/L-0725/spec.md`; changing a key here is a spec amendment, not a
@@ -112,7 +112,7 @@ L0725_KEYS = frozenset((
     "unattendedCloud.aws.readOnly.identity",
     "unattendedCloud.aws.readOnly.profile",
     "unattendedCloud.aws.readOnly.region",
-    "verify.stopBudgetSeconds",  # crew 1.3.157, the Stop row's verify budget (repo only)
+    "verify.stopBudgetSeconds",  # crew 1.3.158, the Stop row's verify budget (repo only)
     "verifyGate",
 ))
 
@@ -213,7 +213,7 @@ L0725_REPO_KEYS = frozenset((
     "secondOpinion.provider",
     "tickets.baseBranch",
     "tracker",
-    "verify.stopBudgetSeconds",  # crew 1.3.157, the Stop row's verify budget (repo only)
+    "verify.stopBudgetSeconds",  # crew 1.3.158, the Stop row's verify budget (repo only)
     "verifyGate",
 ))
 

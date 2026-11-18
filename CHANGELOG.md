@@ -115,7 +115,8 @@ read entries under any `## [` heading.
 - crew 1.3.5: re-bump only - drift-check bump after merging main's crew test change (commit 42251fce6)
 - crew 1.3.7: re-bump only - re-bump above main's crew 1.2.122 (commit 2f019af34); the change is recorded under crew 1.3.9
 - crew 1.3.8: re-bump only - the human-only opt-out re-versioned so installs update (commit 438b1869c); recorded under crew 1.3.9
-- crew 1.3.127: re-bump only - interim number on the verify.stopBudgetSeconds branch (PR #780, commit f53d6532e, pushed, never on main); main reached 1.3.155 and the open PRs reached 1.3.156 (#774), so the branch was merged with main and re-bumped above both; the change is recorded under crew 1.3.157
+- crew 1.3.157: re-bump only - interim number on the verify.stopBudgetSeconds branch (PR #780, commits 3b924641d and a24b6abec, pushed, never on main); review fixes changed plugin/crew after the number was set and PR #774 took 1.3.157, so the branch moved above it; the change is recorded under crew 1.3.158
+- crew 1.3.127: re-bump only - interim number on the verify.stopBudgetSeconds branch (PR #780, commit f53d6532e, pushed, never on main); main reached 1.3.155 and the open PRs reached 1.3.156 (#774), so the branch was merged with main and re-bumped above both; the change is recorded under crew 1.3.158
 - crew 1.3.12: re-bump only - BUDGETS line count re-measured after merging main's crew 1.3.11 (commits 7da7edd4f, d855b22c1)
 - crew 1.3.14: re-bump only - re-bump after merging main's crew 1.3.13 (commit d413f2d7e); the change is recorded under crew 1.3.15
 - crew 1.3.49: re-bump only - interim number on the orphan-reaper branch (pushed, never on main); the change is recorded under crew 1.3.50
@@ -128,9 +129,9 @@ read entries under any `## [` heading.
 - crew 1.3.140: re-bump only - interim number on the guards.git.allow branch (PR #769, pushed, never on main); open PR #777 reached 1.3.141, so the branch was re-bumped above it; the change is recorded under crew 1.3.146
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Added — crew 1.3.157: `verify.stopBudgetSeconds` is a settable, documented, bounded config key (thd-jobs 5a)
+### Added — crew 1.3.158: `verify.stopBudgetSeconds` is a settable, documented, bounded config key (thd-jobs 5a)
 
-- **Summary.** `crew` 1.3.157: the Stop gate's verify budget can now be tuned with `/crew:config verify.stopBudgetSeconds 120` instead of hand-editing the file; the default stays 60 and a value that is not a whole number from 1 to 540 is refused.
+- **Summary.** `crew` 1.3.158: the Stop gate's verify budget can now be tuned with `/crew:config verify.stopBudgetSeconds 120` instead of hand-editing the file; the default stays 60 and a value that is not a whole number from 1 to 540 is refused.
 - **Cause (verified, on origin/main 1.3.96).** `verify-gate.sh` read `verify.stopBudgetSeconds` but no template declared it, so `crew_config.value_allowed("verify.stopBudgetSeconds", "repo", 30)` returned "not a settable leaf of .crew/config.json" and every write was refused.
 - **Fix.** `crew_state.VERIFY_DEFAULTS` (`{"stopBudgetSeconds": 60}`, the number the gate already fell back to) is declared in `crew_config.default_config()` only, so the key is repo-only; `crew_config.bounds_problem` (`INT_BOUNDS`) refuses anything but a whole number in `crew_state.STOP_BUDGET_BOUNDS` (1 to 540: the Stop row's 600 s hook timeout in `crew_hook.TABLE` less the gate's 60 s `DEADLINE_MARGIN`, both held by a test, so a budget spent to the last second still leaves the gate time to defer the rest and write its markers before the hook is killed) with the value and the range named, and the file is left as it was. `null` removes the key. A key row, both templates and `crew-setup`'s copy carry it.
 - **Not changed.** The reader (`verify-gate.sh`, a review-harness path that must land alone, owner rule T-0087) still turns a hand-edited value it cannot use into 60, never into no limit, and is still wider than the writer (it takes 0, decimals and numbers over 540); narrowing it to the writer's bounds is a separate harness-only change, not part of this PR.

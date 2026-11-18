@@ -1077,7 +1077,7 @@ anchor for this section: 170d4c4b2
 - JUDGEMENT `scope_guard.py`, `approval_hook.py` and `crew_hook.py` are review-harness paths (`HARNESS` in `scripts/check-tooling-pr.py`) that must land alone, so they carry no self-limit yet.
 - JUDGEMENT the host-local task `CrewOrphanCygpathSweep` lives outside this repo; the reaper covers its cygpath case through the `cygpath` allow-list entry but does not replace or edit it.
 
-## The Stop budget key (thd-jobs 5a, crew 1.3.157)
+## The Stop budget key (thd-jobs 5a, crew 1.3.158)
 
 anchor for this section: c1042aa2d
 
