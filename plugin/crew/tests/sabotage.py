@@ -2724,7 +2724,8 @@ MUTATIONS += (__import__("sabotage_reach_notice").REACH_NOTICE_MUTATIONS + __imp
               + __import__("sabotage_crew_hook").CREW_HOOK_MUTATIONS
               + __import__("sabotage_guards_master").GUARDS_MASTER_MUTATIONS
               + __import__("sabotage_trust").TRUST_MUTATIONS
-              + __import__("sabotage_deadline").DEADLINE_MUTATIONS)
+              + __import__("sabotage_deadline").DEADLINE_MUTATIONS
+              + __import__("sabotage_guards_depth").GUARDS_DEPTH_MUTATIONS)
 
 # pytest's own exit codes: 0 all passed, 1 a test FAILED, 2 interrupted, 3
 # internal error, 4 usage error (what a collection failure produces), 5 nothing

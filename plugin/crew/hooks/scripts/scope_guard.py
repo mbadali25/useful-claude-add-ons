@@ -788,7 +788,18 @@ def trust_refusal(data):
     Judged before the scope mode is read and whether or not the directory is a
     git repo: a mode of `off` (a config key a session can write) switches the
     scope guard off, and must not switch off the one rule that keeps a model
-    from trusting a repo for itself."""
+    from trusting a repo for itself. A payload this check fails on is refused
+    (crew 1.3.146): `main` allows what it could not judge when the mode is
+    off or report, and "could not tell" is not "does not touch the store"."""
+    try:
+        return _trust_refusal(data)
+    except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
+        return ("the guard could not tell whether it changes the verify trust store "
+                f"({type(exc).__name__}), which only a person at a terminal may change")
+
+
+def _trust_refusal(data):
+    """`trust_refusal`'s answer; it may raise."""
     tool = data.get("tool_name")
     tool_input = data.get("tool_input")
     if tool in SHELLS:
@@ -1291,6 +1302,21 @@ def _win32_names(path):
     return "/".join(parts)
 
 
+# How much of one command the guard reads (crew 1.3.146). Each limit used to end the reading in silence, which let
+# the write past: text nested more than `_DEPTH_LIMIT` commands deep was not read at all, and a command that took
+# longer than the hook is given was killed by the dispatcher, which allows a guard it killed in a repo that is not
+# armed. Past `_DEPTH_LIMIT` the text is now judged unread (`_unread`); past any other limit `_Unread` is raised and
+# the two entry points (`_owner_command_refusal`, `_store_write`) refuse.
+_DEPTH_LIMIT = 3
+_COMMAND_LIMIT = 131072   # characters: the longest single argument Linux hands a program (MAX_ARG_STRLEN)
+_STEP_LIMIT = 20000       # simple commands judged for one command, every reading and nesting level counted
+_WORD_LIMIT = _COMMAND_LIMIT   # characters of one word after its variables are filled in (`A=$A$A` doubles it)
+
+
+class _Unread(Exception):
+    """The command is more than the guard reads in the time a hook has: the caller fails closed."""
+
+
 class _Shell:  # pylint: disable=too-few-public-methods
     """What the command so far has set: variables, and the working directory (None when it cannot be told)."""
 
@@ -1307,6 +1333,8 @@ class _Shell:  # pylint: disable=too-few-public-methods
         self.posh = False        # the command spells a cmdlet: its `( ... )` is an expression, no subshell
         self.once = None         # the folder to go back to after this one command (`env -C <folder> <command>`)
         self.store = None        # judging the confirm-config store rule: True when the store is spelled relatively
+        self.deep = False        # the command spells the owner's folder anywhere, whole or in pieces (`_unread`)
+        self.work = [0]          # the simple commands judged so far, shared with every `fork` (`_STEP_LIMIT`)
 
     def where(self):
         """The working directory as `back` restores it."""
@@ -1346,6 +1374,7 @@ class _Shell:  # pylint: disable=too-few-public-methods
         clone.vars, clone.cwd, clone.cwd_lost, clone.hint = dict(self.vars), self.cwd, self.cwd_lost, self.hint
         clone.cwd_taint, clone.pipeline, clone.aliases = self.cwd_taint, list(self.pipeline), dict(self.aliases)
         clone.dirs, clone.once, clone.store, clone.posh = list(self.dirs), self.once, self.store, self.posh
+        clone.deep, clone.work = self.deep, self.work
         clone.variant = True
         return clone
 
@@ -1363,6 +1392,8 @@ def _expand(word, shell):
         return home if name.lower() in _HOME_VARS else match.group(0)
 
     word = _VAR_RE.sub(sub, word)
+    if len(word) > _WORD_LIMIT:   # `A=$A$A; A=$A$A; ...` doubles the value with every command
+        raise _Unread("a word grows past what a command line can hold")
     if word == "~" or word.startswith(("~/", "~\\")):
         word = home + word[1:]
     elif word.startswith(("~+/", "~+\\")):
@@ -2133,7 +2164,7 @@ def _exec_refusal(words, shell, depth):
             break
         inner.words.append(word)
     inner.raws = list(inner.words)
-    return _segment_refusal(inner, shell, depth + 1) if inner.words and depth <= 3 else None
+    return _deeper(inner, shell, depth) if inner.words else None
 
 
 def _alias(name, args, shell):
@@ -2293,6 +2324,9 @@ def _tainted(seg):
 
 def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-statements,too-many-branches
     """Why one simple command writes the owner's files, or None."""
+    shell.work[0] += 1
+    if shell.work[0] > _STEP_LIMIT:
+        raise _Unread(f"it holds more than {_STEP_LIMIT} commands to judge")
     if any(_PAREN in word and _TAINT in _expand(word, shell) for word in seg.words + seg.targets):
         seg = _tainted(seg)   # `(Join-Path $d "config.json")` where `$d` was built from pieces of the owner's path
     for target in seg.targets:
@@ -2302,21 +2336,21 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
     if len(spelled) > 1:   # a brace expansion where the command stands: `{rm,x}` is the command `rm x`
         spelled += seg.words[1:]
     words, after = _split_block_end(_leading(spelled if len(spelled) > 1 else seg.words, shell))
-    if after and depth <= 3:   # `try { rm x } catch { ... }`: what follows the block's `}` is a command of its own
+    if after:   # `try { rm x } catch { ... }`: what follows the block's `}` is a command of its own
         tail = _Segment()
         tail.words = tail.raws = after
-        refusal = _segment_refusal(tail, shell, depth + 1)
+        refusal = _deeper(tail, shell, depth)
         if refusal:
             return refusal
     if not words:
         return None
     for position in range(1, len(words)):   # a script block: `foreach (...) { Set-Content x }`, `& { rm x }`
         word = words[position].lstrip(_MARKS)
-        if word.startswith("{") and depth <= 3:
+        if word.startswith("{"):
             inner = _Segment()
             inner.words = ([word[1:]] if len(word) > 1 else []) + words[position + 1:]
             inner.raws = list(inner.words)
-            refusal = _segment_refusal(inner, shell, depth + 1)
+            refusal = _deeper(inner, shell, depth)
             if refusal:
                 return refusal
     if words[0].lower().startswith(("[io.file]::", "[system.io.file]::")):   # a .NET write with the path spelled out
@@ -2325,10 +2359,13 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
     args = [_expand(w, shell) for w in words[1:]]
     if name.startswith("-"):   # the rest of a `find` after an escaped `;`: `... -exec true \\; -exec rm <file> \\;`
         return _nested("find", [name] + args, shell, depth)
-    if name in shell.aliases and depth <= 3:   # an alias the command made is the command it stands for
+    stands = shell.aliases[name].split() if name in shell.aliases else None
+    if stands and _command_name(_expand(stands[0], shell)) == name:
+        args = [_expand(w, shell) for w in stands[1:]] + args   # `alias ls='ls --color'`: a name is expanded once
+    elif stands is not None:   # an alias the command made is the command it stands for
         named = _Segment()
-        named.words = named.raws = shell.aliases[name].split() + list(words[1:])
-        return _segment_refusal(named, shell, depth + 1)
+        named.words = named.raws = stands + list(words[1:])
+        return _deeper(named, shell, depth)
     if name in ("alias", "set-alias", "new-alias", "sal", "nal"):
         _alias(name, args, shell)
         return None
@@ -2367,11 +2404,42 @@ def _segment_refusal(seg, shell, depth):  # pylint: disable=too-many-return-stat
     return None
 
 
+# What an unread text holds when the shell, not the guard, decides what it names: a substitution, a variable, a
+# backtick (`_SPAN_RE`), a wildcard, or one of the guard's own markers for those.
+_UNREAD_RE = re.compile(_SPAN_RE.pattern + r"|\$\(|[*?\[\x03-\x05]")
+
+
+def _unread(text, shell):
+    """Why `text`, nested more than `_DEPTH_LIMIT` commands deep and so never read, is refused, or None (crew
+    1.3.146). It used to pass whatever it held: `bash -c` four deep around a redirect to the machine config, five
+    `$(...)`, a sixth script block, a chain of aliases. Unread text passes only when it cannot be the owner's: the
+    command spells nothing of their folder (`shell.deep`, `shell.hint`), stands nowhere near it, and the text is
+    plain words, with no wildcard and nothing the shell fills in. A read counts too: nobody read it to tell."""
+    if not text.strip():
+        return None
+    named = shell.deep or shell.hint or _plausible(text)
+    near = shell.store is not None or shell.cwd_taint or _in_owner_folder(shell)
+    if named or near or _UNREAD_RE.search(text):
+        return (f"{OWNER_REASON}: what it nests more than {_DEPTH_LIMIT} commands deep is not read, and it "
+                "names their folder or holds a part only the shell can fill in")
+    return None
+
+
+def _deeper(seg, shell, depth):
+    """`_segment_refusal` for a command found inside another (a script block, what follows one, an alias, a `find
+    -exec`), one level down; past `_DEPTH_LIMIT` it is `_unread`."""
+    if depth > _DEPTH_LIMIT:
+        return _unread(" ".join(seg.words), shell)
+    return _segment_refusal(seg, shell, depth + 1)
+
+
 def _analyze(text, shell, depth=0):
     """The first refusal in `text` read as shell commands, or None. `shell.pipeline` holds, for a command a `|`
     feeds, the words of the commands before it; the caller's is put back when `text` has been read."""
-    if depth > 3 or not isinstance(text, str):
+    if not isinstance(text, str):
         return None
+    if depth > _DEPTH_LIMIT:
+        return _unread(text, shell)
     outer = shell.pipeline
     try:
         return _analyze_segments(text, shell, depth)
@@ -2509,12 +2577,33 @@ _POSH_RE = re.compile(
     r"format)-[a-z]+\b|\$env:|\$_(?!\w)|\$psitem\b|\[[\w.]+\]::|(?<![\w./\\-])(?:sl|gci)\s", re.IGNORECASE)
 
 
+_TOO_LONG = (f"{OWNER_REASON}: at more than {_COMMAND_LIMIT} characters it is longer than the guard reads, so it "
+             "cannot tell that it does not (put the script in a file and run that)")
+
+
 def _owner_command_refusal(command, cwd=None):
-    """Why a shell command may not write the owner's files (`_owner_path`), or None."""
-    shell = _Shell(cwd)
-    shell.hint = _owner_hint(command)
-    shell.posh = bool(_POSH_RE.search(command))
-    return _analyze(command, shell)
+    """Why a shell command may not write the owner's files (`_owner_path`), or None. A command the guard cannot
+    finish reading (`_Unread`), or one its own reading fails on, is refused (crew 1.3.146): "could not tell" is
+    not "does not write them", and outside `scope.mode` block nothing downstream would refuse it."""
+    if len(command) > _COMMAND_LIMIT:
+        return _TOO_LONG
+    try:
+        shell = _Shell(cwd)
+        shell.hint = _owner_hint(command)
+        shell.deep = _plausible(command)
+        shell.posh = bool(_POSH_RE.search(command))
+        if shell.deep and "\\'" in command:
+            # `echo 'it'\''s' > <owner file>`: bash ends the quote, takes `\'` as a quote mark and starts a new
+            # quote. The splitter (frozen until it is replaced) keeps a backslash as a Windows separator, pairs
+            # the marks differently and loses the redirect, so the words it hands on are not the command's.
+            return (f"{OWNER_REASON}: it names their folder and quotes with `\\'`, which the guard does not read "
+                    "the way bash does")
+        return _analyze(command, shell)
+    except _Unread as exc:
+        return f"{OWNER_REASON}: the guard cannot read all of it ({exc}), so it cannot tell that it does not"
+    except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
+        return (f"{OWNER_REASON}: the guard could not judge it ({type(exc).__name__}), so it cannot tell that it "
+                "does not")
 
 
 # The write verbs of the store rule that name no target the guard can single out (`echo`, `python3 x.py`, `touch`,
@@ -2528,11 +2617,17 @@ def _store_write(command, cwd=None):
     owner's files get (`_analyze`: redirect targets, the argument each write verb aims at, `cd`, nested shells,
     `xargs`, `find -exec`, script blocks), with `_store_word` as the judge of each target. A verb in a file name
     (`Get-Content <store>/echo.txt`) or a search term (`grep echo <store>/x.json`) is no command, so no write."""
-    shell = _Shell(cwd)
-    shell.posh = bool(_POSH_RE.search(command))
-    blank = _Shell(None)
-    shell.store = any(_canon(_expand(spelled, blank), None) is None for spelled in _STORE_SPELLED_RE.findall(command))
-    return _analyze(command, shell) is not None
+    if len(command) > _COMMAND_LIMIT:
+        return True
+    try:
+        shell = _Shell(cwd)
+        shell.posh = bool(_POSH_RE.search(command))
+        blank = _Shell(None)
+        shell.store = any(_canon(_expand(spelled, blank), None) is None
+                          for spelled in _STORE_SPELLED_RE.findall(command))
+        return _analyze(command, shell) is not None
+    except Exception:  # noqa: BLE001  pylint: disable=broad-except
+        return True   # unread (`_Unread`) or unjudged: a command that names the store and writes is refused
 
 
 def _plain_spelling(path):
@@ -2549,9 +2644,12 @@ def _plain_spelling(path):
 
 def _owner_target(absolute):
     """True when a Write/Edit `absolute` path is, or resolves to, one of the owner's files."""
-    absolute = _plain_spelling(absolute)
-    real = role_write_guard._resolve_real_target(absolute)  # pylint: disable=protected-access
-    return any(_owner_path(p) for p in (_plain_spelling(real), os.path.normpath(absolute)))
+    try:
+        absolute = _plain_spelling(absolute)
+        real = role_write_guard._resolve_real_target(absolute)  # pylint: disable=protected-access
+        return any(_owner_path(p) for p in (_plain_spelling(real), os.path.normpath(absolute)))
+    except Exception:  # noqa: BLE001  pylint: disable=broad-except
+        return True   # a path that cannot be resolved cannot be shown not to be theirs (crew 1.3.146)
 
 
 def _owner_lines(what):
@@ -2565,7 +2663,17 @@ def _owner_files_only(tool, data, root):
     """What the guard still decides where it otherwise does nothing: `scope.mode` off (the default) or no work
     tree (crew 1.3.137). The owner's own files (`_owner_path`) are refused in EVERY mode, because the receipts
     and the master switch are what make an owner-only change the owner's: a guard that stood down with
-    `scope.mode` would let an agent write both the `false` and its receipt."""
+    `scope.mode` would let an agent write both the `false` and its receipt. A call this check fails on is
+    refused (crew 1.3.146): `main` allows what it could not judge in this mode, and this is the one rule left."""
+    try:
+        return _owner_files_decision(tool, data, root)
+    except Exception as exc:  # noqa: BLE001  pylint: disable=broad-except
+        return _deny(_owner_lines(f"could not tell whether this {tool} call writes the owner's files "
+                                  f"({type(exc).__name__}), so it is refused"))
+
+
+def _owner_files_decision(tool, data, root):
+    """`_owner_files_only`'s decision; it may raise."""
     if tool in SHELLS:
         tool_input = data.get("tool_input")
         command = tool_input.get("command") if isinstance(tool_input, dict) else None
@@ -2624,6 +2732,10 @@ def decide(data):
     tool = data.get("tool_name")
     if tool not in TOOLS and tool not in SHELLS:
         return 0
+    tool_input = data.get("tool_input")
+    command = tool_input.get("command") if tool in SHELLS and isinstance(tool_input, dict) else None
+    if isinstance(command, str) and len(command) > _COMMAND_LIMIT:   # before anything reads it: reading is the cost
+        return _deny(_owner_lines(f"refused this {tool} command -- {_TOO_LONG}"))
     trust = trust_refusal(data)
     if trust:
         return _deny([f"SCOPE GUARD: refused this {tool} call -- {trust}.",

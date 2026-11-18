@@ -541,6 +541,19 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   ambiguous parameter abbreviation and a .NET call whose destination is an expression, not a
   literal path, are read by their text only. A comma or a space inside a quoted .NET path is part of the path; inside a quoted cmdlet
   path (`Set-Content -LiteralPath 'a,b'`) a comma still splits it (accepted limit).
+  What the check cannot finish reading is refused, not passed (crew 1.3.146). It reads three commands deep
+  (`bash -c "bash -c '...'"`, a `$(...)` in a `$(...)`, a script block after a script block, an alias of an
+  alias); text nested deeper is not read, and passes only when it plainly cannot be yours: the command spells
+  nothing of `.claude/crew`, whole or in pieces, does not stand in that folder, and the unread text holds no
+  variable, substitution, backtick or wildcard (a redirect to the machine config four `bash -c` deep passed
+  before). A command of more than 131,072 characters, one that makes the guard judge more than 20,000 commands,
+  and a variable that doubles with every command (`A=$A$A; A=$A$A; ...`) are refused within about a second:
+  before, the guard ran past the 15 s the dispatcher gives it and was killed, and a killed guard blocks only in
+  an armed repo. A command that names your folder and quotes with bash's `'it'\\''s'` is refused unsplit: the
+  splitter pairs those quote marks differently from bash and lost the redirect after them
+  (`echo 'it'\\''s' > ~/.claude/crew/config.json` passed). And when the check fails on its own input, the call
+  is refused in every `scope.mode` (`off` and `report` used to allow what could not be judged); the verify trust
+  store check does the same.
   Accepted limits, by the owner's decisions ("fix the overblock, add the plain
   verbs, stop there"; 2026-11-15 "fail closed on dynamic paths", then "fix BLOCKs, narrow overblocks, document
   tail"). THE TAIL: these still write the file and are NOT refused. A path built by arithmetic or by joining

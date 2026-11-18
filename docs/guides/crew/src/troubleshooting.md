@@ -120,7 +120,11 @@ no: retry the call, and free memory or processes if it repeats. A real deny neve
   the variable in the same command (`OUT=/tmp/x; ... > "$OUT"`): a variable the command sets is followed, not
   guessed. Since crew 1.3.137 a READ of a receipt beside a write elsewhere passes (`cp
   ~/.claude/crew/confirm-config/cc-ab12.json /tmp/`), and a `cd` into the folder that ended with its `( ... )`
-  or its `popd` no longer makes a later relative write look like yours. What the check does not read is listed in
+  or its `popd` no longer makes a later relative write look like yours. Since crew 1.3.146 the same refusal covers
+  what the check cannot finish reading: text nested more than three commands deep (`bash -c` in `bash -c`, a
+  `$(...)` in a `$(...)`) in a command that names your folder or whose unread part holds a variable or a
+  wildcard, a command of more than 131,072 characters, and bash's `'it'\''s'` quoting beside your folder. Un-nest
+  the command, or put it in a script file and run that. What the check does not read is listed in
   `plugin/crew/CONFIG.md`, "The guards master switch".
 - **Silence one hook without touching the rest:** set its own key. `guards.profile: off` (which leaves
   the role-write, cloud and environment guards off) and `scope.mode: off` are already the shipped defaults — a noisy session
