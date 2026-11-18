@@ -639,7 +639,9 @@ def _reparse(path):
     if os.path.islink(path):
         return True
     isjunction = getattr(os.path, "isjunction", None)
-    if isjunction is not None and isjunction(path):
+    # os.path.isjunction exists on 3.12+ only; pylint on 3.11 infers None and
+    # cannot see the guard (same disable as crew_migrate._is_link).
+    if isjunction is not None and isjunction(path):  # pylint: disable=not-callable
         return True
     return bool(_attrs(path) & _REPARSE_POINT)
 
