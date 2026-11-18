@@ -407,9 +407,9 @@ Each pass is logged to `.crew/guard.log` with the policy `gitAllow:<value>`.
 """
 
 RUN_APPROVAL_SECTION = """\
-## The owner-typed run approval (`approvals.run`, crew 1.3.148)
+## The owner-typed run approval (`approvals.run`, crew 1.3.160)
 
-A few commands are the owner's alone. Until crew 1.3.148 the only way to run
+A few commands are the owner's alone. Until crew 1.3.160 the only way to run
 one was a person at a terminal. With this route on, an agent can ASK and only
 the owner can answer: the refused command becomes a request, you type
 `/crew:allow-run <id>` in your own prompt, and the agent re-runs the exact
@@ -468,19 +468,23 @@ also worked while another process was in the middle of a turn on the same
 session. The session binding does not stop that child; only the guard's
 refusals below stand in front of it.
 
-**What stops a session answering for you, and what does not.** In every
-`scope.mode`, `off` included, the scope guard refuses a Write/Edit under
-`~/.claude/crew/run-approvals/`, a shell command that names that store and is
-not a plain read, a command carrying `/crew:allow-run` with an id or a
-variable after it, code run beside `crew_runapproval`, and (while a class is
-on) a command naming the prompt hook or the hook launcher, or starting Claude
-on an existing session (`--resume`, `-r`, `--continue`, `-c`, `--session-id`,
+**What stops a session answering for you, and what does not.** Only while
+a class is on. With `approvals.run.classes` empty or absent (the default) the
+scope guard judges none of what follows and refuses nothing it did not refuse
+before: no receipt is honoured then, so there is nothing to protect. With a
+class on, in every `scope.mode`, `off` included, the scope guard refuses a
+Write/Edit under `~/.claude/crew/run-approvals/`, a shell command that names
+that store and is not a plain read, a command carrying `/crew:allow-run` with
+an id or a variable after it, code run beside `crew_runapproval`, a command
+naming the prompt hook or the hook launcher, and one starting Claude on an
+existing session (`--resume`, `-r`, `--continue`, `-c`, `--session-id`,
 `--fork-session`, or arguments held in a variable). `verify_trust.py
 --receipt` spends the receipt itself, so getting past the guard alone changes
 nothing.
 
-**Globs and variables beside the store.** The store's name need not be
-spelled for a shell to reach it, so the guard also refuses a command that is
+**Globs and variables beside the store (class on only).** The store's name
+need not be spelled for a shell to reach it, so the guard also refuses a
+command that is
 not a plain read and holds a word a shell could expand to the store: a glob
 (`*`, `?`, `[...]`, a brace list) or an unexpanded variable or substitution
 standing where the name goes, together with one thing that puts it at the
@@ -488,19 +492,28 @@ store. That is four or more of the name's own characters (`run-*`,
 `run-appro[v]als`, `run-approva?s`, `${d}-approvals`), a store child after it
 (`$X/receipts/a.json`), `.claude/crew` before it (`~/.claude/crew/*`, or a
 relative glob run from that directory), or `.claude/crew` named anywhere else
-in the command. Unknown is read as the store, so this over-refuses near it:
-`rm -rf run-*` is refused in any directory, and so is a command that names
-`~/.claude/crew` and also holds a variable. Run those yourself. A glob or a
-variable nowhere near the store (`rm -f *.pyc`, `git add plugin/crew/*`,
-`cp $SRC $DST`) is not touched. If the store check itself fails, the call is
-refused in every `scope.mode`; only a plain read still passes.
+in the command. Unknown is read as the store, so with a class on this
+over-refuses near it: `rm -rf run-*` is refused in any directory, and so is a
+command that names `~/.claude/crew` and also holds a variable. Run those
+yourself, or turn the class off. A glob or a variable nowhere near the store
+(`rm -f *.pyc`, `git add plugin/crew/*`, `cp $SRC $DST`) is not touched. If
+the store check itself fails while a class is on, the call is refused in
+every `scope.mode`; only a plain read still passes. With no class on the
+check is not run at all.
 
 These are tripwires against drift, not a sandbox: the store and the hook
 payload are a file and a process of the same OS user, so a session that sets
 out to forge a receipt by a route the guard cannot read (a whole path held in
 a variable set by an earlier command, an encoded or concatenated string, a
 script file it wrote, Claude resumed through a launcher the guard does not
-know, keys typed into your own terminal) is not stopped here. Not measured:
+know, keys typed into your own terminal) is not stopped here. Neither is a
+receipt file written by hand while the class was off, when nothing guards the
+store. Such a file must name the session that will use it, the worktree and
+the exact command, and its window is an hour wide at most, but its writer
+picks the hour, so it can be dated for a day you have the class on. Just
+before you turn a class on, delete `~/.claude/crew/run-approvals/` (keep its
+`audit.log` if you want the history; every request and receipt in it is at
+most an hour from dead). Not measured:
 a resume against an interactive (not `-p`) session, and a receipt minted end
 to end by a resumed child. Keep the class off on a machine where that matters
 more than the convenience.

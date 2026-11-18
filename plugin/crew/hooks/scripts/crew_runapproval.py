@@ -1,4 +1,4 @@
-"""Owner-typed run approvals: one request, one receipt, one use (crew 1.3.148).
+"""Owner-typed run approvals: one request, one receipt, one use (crew 1.3.160).
 
 A few commands are the owner's alone (today: the verify trust store's
 `approve`, `revoke`, `allow-owner`, `disallow-owner`). Until now the only way
@@ -34,12 +34,16 @@ UNKNOWN IS A REFUSAL. Every reader answers "refused" for anything it cannot
 read, parse or match. An unanswered request is never an allow; it expires.
 
 WHAT THIS IS NOT (README "Scope and approval"). The stores are files of the
-same OS user the session runs as. `scope_guard.py` refuses a command that
-names the store, in full or through a glob or an unexpanded variable beside
-it (`run-*`, `run-appro[v]als`, `${d}-approvals`), carries the owner's command
-text, or (class on) names the prompt hook or starts Claude on an existing
-session, and refuses a Write/Edit under the store: a tripwire that stops
-drift. A check that raises refuses the call. A session that sets out to forge
+same OS user the session runs as. While a class is on, and only then,
+`scope_guard.py` refuses a command that names the store, in full or through a
+glob or an unexpanded variable beside it (`run-*`, `run-appro[v]als`,
+`${d}-approvals`), carries the owner's command text, names the prompt hook or
+starts Claude on an existing session, and refuses a Write/Edit under the
+store: a tripwire that stops drift. A check that raises refuses the call.
+With no class on none of this is judged (`store_refusal`), so a receipt file
+written by hand then is held back by nothing but what it must name: this
+session's id, the worktree, the command's sha and a window an hour wide at
+most, which its writer may date for any day. A session that sets out to forge
 a receipt by a route the tripwire does not read (a whole path held in a
 variable set by an earlier command, an encoded or concatenated string, a
 script file) is not stopped here, and neither is one that types into the
@@ -135,20 +139,21 @@ def _inside(path, folder):
     return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
 
 
-def _machine_path(tail, root):
+def _machine_path(tail, root, anywhere=False):
     """`~/<tail>`, or None when that path lies inside the project `root` or the
     working directory: a HOME pointed at a directory a repo ships is not the
-    machine's, so nothing there is read as the owner's."""
+    machine's, so nothing there is read as the owner's. `anywhere` skips that
+    test, for the one reader that only ever ADDS a refusal (`store_refusal`)."""
     path = os.path.join(os.path.expanduser("~"), tail)
     if not os.path.isabs(path):
         return None
-    for folder in (root, os.getcwd()):
+    for folder in () if anywhere else (root, os.getcwd()):
         if folder and _inside(path, folder):
             return None
     return path
 
 
-def settings(root=None):
+def settings(root=None, anywhere=False):
     """`{"classes", "ttl", "verbs"}` from the MACHINE config file alone. Never
     raises: a file that is missing, unreadable, not an object, or holds a
     duplicate key is "off" (no class). A `classes` that is not a list of
@@ -156,12 +161,12 @@ def settings(root=None):
     `ttlSeconds` or `verbs.verifyTrust` reads as its default."""
     off = {"classes": frozenset(), "ttl": DEFAULT_TTL, "verbs": DEFAULT_TRUST_VERBS}
     try:
-        path = _machine_path(CONFIG, root)
+        path = _machine_path(CONFIG, root, anywhere)
         if path is None:
             return off
         with open(path, encoding="utf-8-sig") as handle:
             parsed = json.load(handle, object_pairs_hook=_no_duplicate_keys)
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):  # RecursionError: a file nested too deep
         return off
     run = parsed.get("approvals") if isinstance(parsed, dict) else None
     run = run.get("run") if isinstance(run, dict) else None
@@ -391,7 +396,10 @@ def parse_trust_command(command, cwd, scripts):
 
 def _well_formed(record, kind):
     """True for a record this module wrote: every bound field present and of
-    its type. A file with anything missing binds nothing and is refused."""
+    its type, the sha the one of the command text it shows, and a life no
+    longer than this module gives (REQUEST_TTL for a request, MAX_TTL for a
+    receipt). A file with anything missing binds nothing and is refused; so
+    is one whose shown command is not the command its sha releases."""
     if not isinstance(record, dict) or record.get("version") != VERSION:
         return False
     strings = ("id", "class", "command", "command_sha256", "worktree", "session_id")
@@ -401,13 +409,15 @@ def _well_formed(record, kind):
         return False
     if record.get("pin") is not None and not isinstance(record.get("pin"), str):
         return False
+    if record["command_sha256"] != command_sha(record["command"]):
+        return False
     stamps = ("created", "expires") if kind == "requests" else ("minted", "expires")
     if not all(_number(record.get(k)) for k in stamps):
         return False
     if kind == "receipts":
         return (record.get("via") == USER_PROMPT and record.get("uses") == 1
                 and 0 < record["expires"] - record["minted"] <= MAX_TTL)
-    return True
+    return 0 < record["expires"] - record["created"] <= REQUEST_TTL
 
 
 def _records(root, kind):
@@ -647,6 +657,15 @@ def store_refusal(data, readings, read_only, real):
     readings of a command, its read-only test, its real-path resolver), handed
     in so this module imports no guard.
 
+    ONLY WHILE A CLASS IS ON (`approvals.run.classes` in the machine file).
+    With none on -- the default -- this returns None before it reads a word of
+    the call: no receipt is honoured then (`mint`, `check` and `spend` each
+    read the same setting), so there is nothing here to protect, and a guard
+    nobody turned on must not refuse `rm -rf run-*` or a commit message.
+    What that leaves open is in CONFIG.md: a receipt file written by hand
+    while the class is off, dated for the hour its writer expects the class
+    to be on, and used in the session whose id it names.
+
     A shell command is refused when, in any reading, as written or with its
     quotes deleted, it is not a read-only command and it names the store
     (`run-approvals`), may name it through a glob or an unexpanded variable or
@@ -660,6 +679,10 @@ def store_refusal(data, readings, read_only, real):
     not settle. A Write/Edit is refused when its real or named path lies under
     the store or has `run-approvals` as a segment. This function may raise;
     `scope_guard.decide` turns that into a refusal."""
+    # `anywhere`: a session standing in `~` or `~/.claude/crew` has the machine file INSIDE its
+    # working directory, where `settings` reads "off"; the store is no less the store there.
+    if not settings(anywhere=True)["classes"]:
+        return None
     tool_input = data.get("tool_input")
     if data.get("tool_name") in ("Bash", "PowerShell"):
         command = tool_input.get("command") if isinstance(tool_input, dict) else None

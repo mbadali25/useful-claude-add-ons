@@ -88,7 +88,7 @@ prompt -- carries one more command, ONE line, raw or expanded exactly as
   writes, so "the only pending one" is a choice an agent can make for the
   owner; the id typed in the owner's prompt is what binds the change.
 
-## The owner's one-run receipt (crew 1.3.148)
+## The owner's one-run receipt (crew 1.3.160)
 
 - `/crew:allow-run <request_id>`, ONE line, raw or expanded like the two
   above, turns a request a guard recorded for one refused command into a
@@ -108,7 +108,8 @@ it started with the requesting session's id: this hook cannot tell a payload
 the harness sent from one a same-user process wrote, because every field of it
 can be copied. `scope_guard.py` refuses a Bash/PowerShell command naming this
 script (in every mode while `approvals.run.classes` is on; otherwise in every
-mode but `off`) and one carrying `/crew:allow-run` with an id, which stops
+mode but `off`) and, while a class is on, one carrying `/crew:allow-run` with
+an id, which stops
 drift, not a deliberate forgery (README "Scope and approval").
 """
 import collections

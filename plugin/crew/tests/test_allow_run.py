@@ -1,4 +1,4 @@
-"""The owner-typed run approval (crew 1.3.148): `crew_runapproval.py`, the
+"""The owner-typed run approval (crew 1.3.160): `crew_runapproval.py`, the
 `/crew:allow-run` branch of `approval_hook.py`, the release and the store
 protection in `scope_guard.py`, and `verify_trust.py --receipt`.
 
@@ -19,10 +19,10 @@ MUST-BLOCK
   other arguments, another worktree, another class, an expired or future-dated
   receipt, a verb the owner did not open, a verify.json edited after the
   receipt, a forged or unknown id, two spenders at once;
-- the stores: a shell command naming the store, in full or through a glob or
-  an unexpanded variable beside it, a Write/Edit under it, a command carrying
-  `/crew:allow-run` with an id (a child `claude -p`, a piped payload, keys
-  sent to a terminal), code run beside the module and, with the class on, a
+- the stores, WHILE A CLASS IS ON: a shell command naming the store, in full
+  or through a glob or an unexpanded variable beside it, a Write/Edit under
+  it, a command carrying `/crew:allow-run` with an id (a child `claude -p`, a
+  piped payload, keys sent to a terminal), code run beside the module, a
   command naming the prompt hook or starting Claude on an existing session:
   all in `scope.mode: off` too, and a store check that raises refuses there;
 - line breaks: an id, a word or a command followed by one is not the plain
@@ -32,7 +32,9 @@ MUST-ALLOW
 - the owner's exact prompt, raw and expanded, then one spend inside the window;
 - `status` and `check`, a read of the store (a globbed one too), a commit
   message or grep that only mentions the command, a glob or a variable that
-  is nowhere near the store, every shape the trust suite already allows.
+  is nowhere near the store, every shape the trust suite already allows;
+- with NO class on (the default), every one of the store refusals above: a
+  guard nobody turned on refuses nothing, and a fault in it is never reached.
 """
 import importlib.util
 import json
@@ -735,6 +737,8 @@ _STORE = "~/.claude/crew/run-approvals"
         "ps-new-item", "read-with-redirect"])
 def test_a_shell_command_naming_the_store_is_refused_with_the_guard_off(repo, capsys, tool_name,
                                                                          command):
+    turn_on()
+
     code, err = guard(capsys, shell(repo, command, tool=tool_name))
 
     assert (code, "run-approval store" in err) == (2, True)
@@ -777,6 +781,8 @@ def test_a_shell_command_veiling_the_store_name_is_refused_with_the_guard_off(re
                                                                              tool_name, command):
     """The store's name need not be spelled: a glob or a variable the shell
     fills in reaches it. Unknown beside the store is read as the store."""
+    turn_on()
+
     code, err = guard(capsys, shell(repo, command, tool=tool_name))
 
     assert (code, "run-approval store" in err) == (2, True)
@@ -789,6 +795,7 @@ def test_a_shell_command_veiling_the_store_name_is_refused_with_the_guard_off(re
     ("", "rm -rf .claude/crew/*"),
 ], ids=["in-crew-dir", "in-crew-dir-child", "in-claude-dir", "in-home"])
 def test_a_relative_glob_is_read_from_the_directory_the_command_runs_in(repo, capsys, cwd, command):
+    turn_on()
     payload = shell(repo, command)
     payload["cwd"] = str(_home() / cwd)
 
@@ -812,11 +819,12 @@ def test_a_relative_glob_is_read_from_the_directory_the_command_runs_in(repo, ca
     ("Bash", "touch src/receipts/a.json"),
     ("PowerShell", "Remove-Item $a\\$b\\$c"),
     ("PowerShell", "Get-ChildItem *.py | ForEach-Object { $_.Name } | Set-Content names.txt"),
-    ("Bash", "claude -p --resume 5f1c < prompt.txt"),
 ], ids=["globbed-read", "globbed-ls", "mkdir-crew-dir", "build-star", "pyc", "plugin-crew-r-star",
         "git-add-plugin-crew", "marketplace-and-plugin-crew", "variables", "home-redirect",
-        "for-loop", "receipts-elsewhere", "ps-variables", "ps-pipeline", "claude-resume-class-off"])
+        "for-loop", "receipts-elsewhere", "ps-variables", "ps-pipeline"])
 def test_a_glob_or_a_variable_nowhere_near_the_store_is_allowed(repo, capsys, tool_name, command):
+    turn_on()
+
     assert guard(capsys, shell(repo, command, tool=tool_name)) == (0, "")
 
 
@@ -879,6 +887,7 @@ def test_a_store_check_that_raises_refuses_the_call_with_the_guard_off(repo, cap
                                                                        payload):
     """`main` allows a call `decide` could not judge when `scope.mode` is off
     or report. The store check is not one of those: it fails closed."""
+    turn_on()
     monkeypatch.setattr(ra, "store_refusal", _broken)
 
     code, err = _through_main(monkeypatch, capsys, payload(repo))
@@ -887,6 +896,7 @@ def test_a_store_check_that_raises_refuses_the_call_with_the_guard_off(repo, cap
 
 
 def test_a_store_check_that_raises_inside_the_module_refuses_too(repo, capsys, monkeypatch):
+    turn_on()
     monkeypatch.setattr(ra, "_shell_reason", _broken)
 
     code, err = _through_main(monkeypatch, capsys, shell(repo, "touch notes.txt"))
@@ -894,7 +904,19 @@ def test_a_store_check_that_raises_inside_the_module_refuses_too(repo, capsys, m
     assert (code, "could not judge it (RuntimeError)" in err) == (2, True)
 
 
+def test_with_the_class_off_a_broken_store_check_is_never_reached(repo, capsys, monkeypatch):
+    """The setting is read before a word of the call: a fault in a check
+    nobody turned on refuses nothing."""
+    monkeypatch.setattr(ra, "_shell_reason", _broken)
+    monkeypatch.setattr(ra, "_targets", _broken)
+
+    assert _through_main(monkeypatch, capsys, shell(repo, "touch notes.txt")) == (0, "")
+    assert _through_main(monkeypatch, capsys, {
+        "tool_name": "Write", "cwd": str(repo), "tool_input": {"file_path": "notes.txt"}}) == (0, "")
+
+
 def test_a_store_check_that_raises_still_lets_a_plain_read_through(repo, capsys, monkeypatch):
+    turn_on()
     monkeypatch.setattr(ra, "store_refusal", _broken)
 
     assert _through_main(monkeypatch, capsys, shell(repo, "ls -la")) == (0, "")
@@ -905,6 +927,7 @@ def test_a_store_check_that_raises_still_lets_a_plain_read_through(repo, capsys,
                                   "audit.log"])
 def test_a_write_or_edit_under_the_store_is_refused_with_the_guard_off(repo, capsys, tool_name,
                                                                        tail):
+    turn_on()
     target = str(store() / tail)
     key = "notebook_path" if tool_name == "NotebookEdit" else "file_path"
     tool_input = {"edits": [{"file_path": target}]} if tool_name == "MultiEdit" else {key: target}
@@ -915,6 +938,7 @@ def test_a_write_or_edit_under_the_store_is_refused_with_the_guard_off(repo, cap
 
 
 def test_a_write_under_a_store_in_another_home_is_refused(repo, capsys, tmp_path):
+    turn_on()
     target = str(tmp_path / "elsewhere" / ".claude" / "crew" / "run-approvals" / "receipts" / "x.json")
 
     code, _ = guard(capsys, {"tool_name": "Write", "cwd": str(repo),
@@ -940,6 +964,8 @@ def test_a_write_under_a_store_in_another_home_is_refused(repo, capsys, tmp_path
         "stdin-prompt", "powershell", "quotes-in-command", "expanded-form"])
 def test_a_command_carrying_the_owners_command_and_an_id_is_refused(repo, capsys, tool_name,
                                                                     command):
+    turn_on()
+
     code, err = guard(capsys, shell(repo, command, tool=tool_name))
 
     assert (code, "only the owner types" in err) == (2, True)
@@ -952,6 +978,8 @@ def test_a_command_carrying_the_owners_command_and_an_id_is_refused(repo, capsys
     "py -3 plugin/crew/hooks/scripts/crew_runapproval.py",
 ], ids=["import-mint", "dash-m", "from-import", "run-as-script"])
 def test_code_run_beside_the_module_is_refused(repo, capsys, command):
+    turn_on()
+
     code, err = guard(capsys, shell(repo, command))
 
     assert (code, "crew_runapproval" in err) == (2, True)
@@ -975,6 +1003,113 @@ def test_with_a_class_on_a_command_naming_the_prompt_hook_is_refused_with_the_gu
 @pytest.mark.parametrize("command", _HOOK_COMMANDS, ids=["approval-hook", "launcher", "dispatcher"])
 def test_with_the_class_off_the_guard_off_repo_is_as_it_was(repo, capsys, command):
     assert guard(capsys, shell(repo, command)) == (0, "")
+
+
+# --- must-allow: with no class on, none of the store refusals is judged ---------------
+
+@pytest.mark.parametrize("tool_name,command", [
+    ("Bash", "rm -rf run-*"),
+    ("Bash", f"rm -rf {_CREW}/tmp-*"),
+    ("Bash", f"d={_CREW}; ls $d > listing.txt"),
+    ("Bash", f"cp $SRC {_CREW}/config.json.bak"),
+    ("Bash", f"cd {_CREW} && rm -rf *"),
+    ("Bash", "git commit -m 'docs: the run-approvals store and /crew:allow-run ar-0123456789ab'"),
+    ("Bash", "git commit -m \"docs: /crew:allow-run costs $5\""),
+    ("Bash", "python3 -m pylint plugin/crew/hooks/scripts/crew_runapproval.py"),
+    ("Bash", "python3 -m pytest plugin/crew/tests/test_allow_run.py > run-approvals.log"),
+    ("Bash", f"touch {_STORE}/receipts/ar-0123456789ab.json"),
+    ("Bash", 'claude -p "/crew:allow-run $ID"'),
+    ("Bash", "claude -p --resume 5f1c < prompt.txt"),
+    ("PowerShell", "Remove-Item -Recurse $env:USERPROFILE\\.claude\\crew\\run-*"),
+    ("PowerShell", "Set-Content $HOME\\.claude\\crew\\notes.txt $text"),
+], ids=["bare-run-star", "crew-dir-glob", "crew-dir-variable", "variable-to-crew-dir",
+        "cd-then-star", "commit-message", "commit-message-dollar", "pylint-the-module",
+        "log-named-like-the-store", "store-named", "owner-command-variable", "claude-resume",
+        "ps-glob", "ps-variable"])
+def test_with_the_class_off_no_store_refusal_applies(repo, capsys, tool_name, command):
+    """A guard nobody turned on refuses nothing: with `approvals.run.classes`
+    empty no receipt is honoured, so there is no store to protect, and every
+    command reads as it did before this module existed."""
+    assert guard(capsys, shell(repo, command, tool=tool_name)) == (0, "")
+
+
+@pytest.mark.parametrize("tool_name", ["Write", "Edit"])
+def test_with_the_class_off_a_write_under_the_store_is_as_it_was(repo, capsys, tool_name):
+    target = str(store() / "receipts" / "ar-0123456789ab.json")
+
+    assert guard(capsys, {"tool_name": tool_name, "cwd": str(repo),
+                          "tool_input": {"file_path": target}}) == (0, "")
+
+
+def test_a_receipt_written_by_hand_cannot_claim_more_than_an_hour(repo, capsys):
+    """What the class-off allowance leaves open, and the one bound on it: a
+    forged receipt's window is MAX_TTL wide at most. WHEN it opens is the
+    forger's choice (CONFIG.md says so), which no test here can close."""
+    turn_on()
+    ident = receipt_for(capsys, repo)
+    path = store("receipts") / f"{ident}.json"
+    forged = json.loads(path.read_text(encoding="utf-8"))
+    forged["expires"] = forged["minted"] + ra.MAX_TTL + 1
+    path.write_text(json.dumps(forged), encoding="utf-8")
+
+    code, err = guard(capsys, shell(repo, f"{APPROVE} --receipt {ident}"))
+
+    assert (code, "not one the owner's prompt wrote" in err) == (2, True)
+
+
+def _forged_request(capsys, repo, **changes):
+    """A real request, rewritten in place the way a session with a shell could."""
+    ident = ask(capsys, repo)
+    path = store("requests") / f"{ident}.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record.update(changes)
+    path.write_text(json.dumps(record), encoding="utf-8")
+    return ident
+
+
+def test_a_request_showing_one_command_and_carrying_the_sha_of_another_mints_nothing(repo, capsys):
+    """The owner is shown `command`; the guard releases `command_sha256`."""
+    turn_on()
+    ident = _forged_request(capsys, repo, command=f"python3 {TRUST} approve --root ./docs")
+
+    assert typed(repo, f"/crew:allow-run {ident}") == 2
+    assert "not a record crew wrote" in capsys.readouterr().err
+    assert records("receipts") == []
+
+
+def test_a_request_claiming_a_longer_life_than_its_window_mints_nothing(repo, capsys):
+    turn_on()
+    ident = _forged_request(capsys, repo)
+    path = store("requests") / f"{ident}.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["expires"] = record["created"] + ra.REQUEST_TTL + 1
+    path.write_text(json.dumps(record), encoding="utf-8")
+
+    assert typed(repo, f"/crew:allow-run {ident}") == 2
+    assert records("receipts") == []
+
+
+def test_a_receipt_showing_one_command_and_carrying_the_sha_of_another_releases_nothing(repo, capsys):
+    turn_on()
+    ident = receipt_for(capsys, repo)
+    path = store("receipts") / f"{ident}.json"
+    forged = json.loads(path.read_text(encoding="utf-8"))
+    forged["command"] = f"python3 {TRUST} approve --root ./docs"
+    path.write_text(json.dumps(forged), encoding="utf-8")
+
+    code, err = guard(capsys, shell(repo, f"{APPROVE} --receipt {ident}"))
+
+    assert (code, "not one the owner's prompt wrote" in err) == (2, True)
+
+
+def test_a_machine_config_nested_too_deep_to_parse_is_off_and_refuses_nothing(repo, capsys):
+    """`settings` never raises: a file `json` cannot walk is "off", not a
+    store check that could not judge the call."""
+    path = turn_on()
+    path.write_text("[" * 100000 + "]" * 100000, encoding="utf-8")
+
+    assert ra.settings(str(repo))["classes"] == frozenset()
+    assert guard(capsys, shell(repo, "rm -rf run-*")) == (0, "")
 
 
 # --- the wrappers reach the hook for a prompt with no `approve` in it ---------------

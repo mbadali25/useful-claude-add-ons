@@ -885,7 +885,10 @@ def _broken_pointer(top, root, source):
 
 
 def _store_held(data):
-    """Why the call is refused for the run-approval stores, or None. A check
+    """Why the call is refused for the run-approval stores, or None. None
+    whenever no approval class is on (`crew_runapproval.store_refusal` reads
+    the machine setting before the call), so this adds no refusal to a
+    machine that never turned the route on. With a class on, a check
     that RAISES is a refusal in every `scope.mode`, `off` included: `main`
     allows an unjudged call outside block/auto, and an unjudged call must not
     reach the stores. One relief, so a broken check still leaves a session
@@ -912,7 +915,8 @@ def decide(data):
     tool = data.get("tool_name")
     if tool not in TOOLS and tool not in SHELLS:
         return 0
-    # The run-approval stores, judged like the trust refusal, before the mode.
+    # The run-approval stores (only while a class is on), judged like the trust refusal,
+    # before the mode.
     held = _store_held(data)
     if held:
         return _deny([f"SCOPE GUARD: refused this {tool} call -- {held}."])
