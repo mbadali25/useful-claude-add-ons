@@ -60,6 +60,7 @@ import shutil
 import subprocess
 import sys
 
+import _promote_match
 import crew_dispatch
 
 PLACEHOLDER = "SUBSTITUTED"
@@ -254,7 +255,10 @@ def committed_envs():
                           check=False, timeout=10, stdin=subprocess.DEVNULL)
     if proc.returncode != 0:
         raise Block("the committed .crew/verify.json could not be read")
-    return get_ci(json.loads(proc.stdout.decode("utf-8-sig", errors="replace")),
+    # The strict reader the gates use: a duplicate key keeps the last value
+    # under plain json, which is not the map the gate matched (round 13, F3).
+    return get_ci(json.loads(proc.stdout.decode("utf-8-sig", errors="replace"),
+                             object_pairs_hook=_promote_match.no_case_twins),
                   "environments", {})
 
 
@@ -262,7 +266,8 @@ def working_envs():
     if not os.path.exists(".crew/verify.json"):
         return None
     with open(".crew/verify.json", encoding="utf-8-sig", errors="replace") as fh:
-        return get_ci(json.load(fh), "environments", {})
+        return get_ci(json.load(fh, object_pairs_hook=_promote_match.no_case_twins),
+                      "environments", {})
 
 
 def without_declared(command, maps):
@@ -328,6 +333,17 @@ def _decide(command, shell, maps):
     return []
 
 
+def _git_allowed(command):
+    """`crew_gitallow.promote_exempt` for promote-gate.ps1 (crew 1.3.125): the
+    PowerShell flavour's one python call answers it too, so the switch costs
+    no extra process start. False whenever it cannot be told."""
+    try:
+        import crew_gitallow  # pylint: disable=import-outside-toplevel
+        return crew_gitallow.promote_exempt(command, "powershell", os.getcwd())
+    except Exception:  # pylint: disable=broad-except  # noqa: BLE001
+        return False
+
+
 def main(argv):
     shell = "bash"
     if len(argv) > 2 and argv[1] == "--shell" and argv[2] in ("bash", "powershell"):
@@ -335,7 +351,15 @@ def main(argv):
     command = argv[1] if len(argv) > 1 else ""
     if command == "-":
         command = sys.stdin.read()
+    # guards.git.allow reads the command as it arrived, minus only its final line
+    # terminator: a CR inside it (`git status\rgh workflow run prod`) is refused
+    # there, never stripped into one word (PR #769 review round 9).
+    as_sent = command[:-2] if command.endswith("\r\n") else command.rstrip("\n")
     command = command.replace("\r", "").rstrip("\n")
+    if shell == "powershell" and command.strip() and _git_allowed(as_sent):
+        # promote-gate.ps1 exits 0 on this record, before any other is read.
+        print("allow\tguards.git.allow")
+        return 0
     try:
         records = decide(command, shell) if command.strip() else []
     except Block as why:

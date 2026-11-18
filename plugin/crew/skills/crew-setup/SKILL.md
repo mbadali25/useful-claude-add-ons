@@ -314,7 +314,10 @@ deleting a global `find-skills`. Setup itself still writes only the repo file.
   },
   "guards": {
     "profile": "off",
-    "overrides": {}
+    "overrides": {},
+    "git": {
+      "allow": null
+    }
   },
   "production": {
     "databases": [],
