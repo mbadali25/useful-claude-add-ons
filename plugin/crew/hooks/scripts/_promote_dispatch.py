@@ -40,6 +40,11 @@ THE RULE.
   declared dispatch names it and whose declared literal inputs all appear in
   the command with the same value; extra inputs are allowed (U3). Exactly one
   environment must fit. None, or several, blocks.
+- The `environment` input is a selector, not an extra (L-0948): a command that
+  gives it where a declared dispatch does not list it fits only the environment
+  of that name (case ignored), so a development or qa dispatch is never read
+  as the production deploy whose declaration omits `environment`; with no
+  environment of that name declared it is could-not-tell, which blocks.
 - Could not tell, which blocks: a dispatch-shaped command the reader refuses;
   a command input the reader cannot name or read; one input given two
   values; a workflow that is not a file name; a declared dispatch the reader
@@ -55,14 +60,21 @@ import shutil
 import subprocess
 import sys
 
+import _promote_match
 import crew_dispatch
 
 PLACEHOLDER = "SUBSTITUTED"
+SELECTOR = "environment"
 _WORKFLOW_DIR = ".github/workflows/"
 
 
 class Block(Exception):
     """The gate must block, for the reason carried."""
+
+
+class Selector(Block):
+    """The command selects an `environment` no declared deploy of its
+    workflow names (L-0948)."""
 
 
 def fold(text):
@@ -163,9 +175,18 @@ def declared(envs):
     return found, unsure
 
 
-def fits(scope_inputs, decl):
+def fits(scope_inputs, decl, env=None):
     """Whether every literal input the declared dispatch gives is in the
-    command with the same value."""
+    command with the same value.
+
+    L-0948: the `environment` input is a SELECTOR, not an extra. A command
+    that gives one the declared dispatch does not list fits only the
+    environment of that very name, so `-f environment=development` is never
+    read as the production deploy whose declaration leaves `environment` out."""
+    if SELECTOR in scope_inputs and env is not None and not any(
+            name == SELECTOR for name, _value, _why in decl.get("inputs", [])):
+        if fold(scope_inputs[SELECTOR]) != fold(env):
+            return False
     for name, value, why in decl.get("inputs", []):
         if value is None or name == "*":
             raise Block(f"a declared deploy's input cannot be read: {why}")
@@ -193,14 +214,32 @@ def match(scopes, envs, label):
         if workflow not in names:
             continue
         inputs = command_inputs(scope)
-        fit = sorted({env for env, decl in names[workflow] if fits(inputs, decl)})
+        fit = sorted({env for env, decl in names[workflow] if fits(inputs, decl, env)})
         if len(fit) != 1:
             which = ("no declared environment" if not fit else
                      "more than one declared environment (" + ", ".join(fit) + ")")
-            raise Block(f"the dispatch of `{workflow}` fits {which} in {label}, "
-                        "so which environment's preconditions apply cannot be "
-                        "told. Give the inputs a declared deploy gives, "
-                        "literally")
+            # Only when NO declared deploy of the workflow names the selected
+            # environment (by its name or its own `environment` input): a
+            # mismatch on another input is the plain message (L-0948 r1 NIT).
+            chosen = inputs.get(SELECTOR)
+            known = chosen is not None and any(
+                fold(env) == fold(chosen) or any(
+                    name == SELECTOR and value == chosen
+                    for name, value, _why in decl.get("inputs", []))
+                for env, decl in names[workflow])
+            named = (f" (the command selects environment `{chosen}`, "
+                     "which no declared deploy of this workflow names: declare "
+                     "that environment's deploy with the same input)"
+                     if not fit and chosen is not None and not known else "")
+            # A command that selects an environment and fits none never takes
+            # the retry that strips declared deploys (L-0948 r2 BLOCK): the
+            # remainder would read as no dispatch and leave only containment's
+            # substring hit to judge it.
+            raise (Selector if not fit and chosen is not None else Block)(
+                        f"the dispatch of `{workflow}` fits {which} in {label}"
+                        f"{named}, so which environment's preconditions apply "
+                        "cannot be told. Give the inputs a declared deploy "
+                        "gives, literally")
         hits += [env for env in fit if env not in hits]
     return hits
 
@@ -216,7 +255,10 @@ def committed_envs():
                           check=False, timeout=10, stdin=subprocess.DEVNULL)
     if proc.returncode != 0:
         raise Block("the committed .crew/verify.json could not be read")
-    return get_ci(json.loads(proc.stdout.decode("utf-8-sig", errors="replace")),
+    # The strict reader the gates use: a duplicate key keeps the last value
+    # under plain json, which is not the map the gate matched (round 13, F3).
+    return get_ci(json.loads(proc.stdout.decode("utf-8-sig", errors="replace"),
+                             object_pairs_hook=_promote_match.no_case_twins),
                   "environments", {})
 
 
@@ -224,7 +266,8 @@ def working_envs():
     if not os.path.exists(".crew/verify.json"):
         return None
     with open(".crew/verify.json", encoding="utf-8-sig", errors="replace") as fh:
-        return get_ci(json.load(fh), "environments", {})
+        return get_ci(json.load(fh, object_pairs_hook=_promote_match.no_case_twins),
+                      "environments", {})
 
 
 def without_declared(command, maps):
@@ -264,6 +307,10 @@ def decide(command, shell="bash"):
         return []
     try:
         return _decide(command, shell, maps)
+    except Selector:
+        # L-0948: the command's own `environment` contradicts the declared
+        # deploy it contains; stripping that deploy would hide the selector.
+        raise
     except Block:
         rest = without_declared(command, maps)
         if rest == command:
@@ -286,6 +333,17 @@ def _decide(command, shell, maps):
     return []
 
 
+def _git_allowed(command):
+    """`crew_gitallow.promote_exempt` for promote-gate.ps1 (crew 1.3.125): the
+    PowerShell flavour's one python call answers it too, so the switch costs
+    no extra process start. False whenever it cannot be told."""
+    try:
+        import crew_gitallow  # pylint: disable=import-outside-toplevel
+        return crew_gitallow.promote_exempt(command, "powershell", os.getcwd())
+    except Exception:  # pylint: disable=broad-except  # noqa: BLE001
+        return False
+
+
 def main(argv):
     shell = "bash"
     if len(argv) > 2 and argv[1] == "--shell" and argv[2] in ("bash", "powershell"):
@@ -293,7 +351,15 @@ def main(argv):
     command = argv[1] if len(argv) > 1 else ""
     if command == "-":
         command = sys.stdin.read()
+    # guards.git.allow reads the command as it arrived, minus only its final line
+    # terminator: a CR inside it (`git status\rgh workflow run prod`) is refused
+    # there, never stripped into one word (PR #769 review round 9).
+    as_sent = command[:-2] if command.endswith("\r\n") else command.rstrip("\n")
     command = command.replace("\r", "").rstrip("\n")
+    if shell == "powershell" and command.strip() and _git_allowed(as_sent):
+        # promote-gate.ps1 exits 0 on this record, before any other is read.
+        print("allow\tguards.git.allow")
+        return 0
     try:
         records = decide(command, shell) if command.strip() else []
     except Block as why:
