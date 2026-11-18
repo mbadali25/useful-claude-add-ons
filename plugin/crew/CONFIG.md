@@ -4,7 +4,7 @@ Generated from the code by `python3 docs/guides/crew/src/config_reference.py --w
 `python3 scripts/check-marketplace.py` fails when this file is stale. The
 reasoning behind the keys is in `docs/crew/config-rationale.md`.
 
-100 keys: 62 settable in the machine-global file, 38 repo-only.
+101 keys: 63 settable in the machine-global file, 38 repo-only.
 
 ## The two layers
 
@@ -85,189 +85,168 @@ resolve to.
 **Who can write the receipts.** The double confirmation is recorded only by
 the prompt hook, from your own prompt. The scope guard (when `scope.mode` is
 not `off`) refuses every Write/Edit under `~/.claude/crew/confirm-config/` and
-every shell command that WRITES TO that store. Since crew 1.3.154 the command is read the way the check of
-your machine config reads it, and the write's TARGET is judged: `cp ~/.claude/crew/confirm-config/cc-ab12.json
-/tmp/`, `cat <receipt> | jq .x > /tmp/x` and `ls <receipt> && echo ok > /tmp/ok` pass (until then a redirect or
-a write verb anywhere in a command that named the store refused it). A verb's spelling inside a file name,
-`Get-Content C:\tmp\confirm-config\echo.txt`, is a read, and so is a search term,
-`grep echo ~/.claude/crew/confirm-config/x.json`: the verb must be the command a shell runs, also behind a
-wrapper, `xargs`, `find -exec` or `bash -c`. Still refused beside the store: a target nobody can resolve
-(`ls <store>/ > $OUT`), a relative target when the store itself is spelled relatively (`ls confirm-config/ > x`),
-and `echo`, `printf`, `touch`, `mkdir`, `chmod`, `sed`, `perl`, `python` or `node` given a path in the store.
-That is a
+every shell command that names that store beside a writing word. That is a
 textual tripwire, not a sandbox: a session that sets out to forge a receipt
 (`python -c`, an encoded command, a variable holding the path) still can, and
 `scope.mode: off` has no tripwire at all. Treat `humanOnly` opt-outs as
 meaningful only with `scope.mode` `block`.
 
-## The guards master switch
+## Git commands (`guards.git.allow`, crew 1.3.153)
 
-`guards.enabled: false` (crew 1.3.154) turns EVERY guard hook off: the promote
-gate, the role-write, cloud, environment and scope guards, the verify gate, the
-completion audit and the context-watch Stop hook. None of them starts, so nothing
-is judged, refused, asked, warned or logged: with the switch off, nothing blocks. It
-beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mode`,
-`verifyGate`). Three things must all hold for it to count (crew 1.3.154):
+The owner's switch that stops crew's command guards from blocking or asking on
+git commands, destructive ones included. Off by default (`null`, or `"off"`).
 
-- It is in the MACHINE layer (`~/.claude/crew/config.json`). A `false` in
-  `.crew/config.json`, tracked or not, is ignored and the guards stay on (a
-  checkout must not be able to turn every guard off), and a repo `true` cannot
-  switch a machine `false` back on.
-- It is the OWNER's. Like the `humanOnly.*` opt-out, a `false` counts only when an
-  applied `/crew:confirm-config` double confirmation backs it: two confirmations
-  from two prompts the owner typed, and the digest of the machine file as the
-  owner left it: its content (canonical JSON) AND its modification time (crew
-  1.3.154). An agent's Write or Edit, a hook-side write, a hand edit, a bare
-  hand-written receipt, or ANY later write to the file (a restore, a rebuild, an
-  unrelated edit, or a hand edit that sets the key `true` and a later one that
-  writes the identical `false` back) leaves the guards ON; so does a missing,
-  revoked or unreadable receipt. The modification time is what ends that
-  round trip, because no hand edit writes a revoke and the hook may not write
-  one; a copy that puts the old time back (`cp -p`, an archive extract,
-  `os.utime`) replays it, an accepted limit (below). The scope guard refuses an
-  agent's Write or Edit of the machine config file and the receipts beside it
-  (every spelling: case, `..`, a trailing dot or space, a junction, a UNC path,
-  the `\\?\` prefix), and a shell command that WRITES TO them: a redirect, `tee`,
-  `cp`, `mv`, `rm`, `sed -i`, `Set-Content`, `Out-File`, `Add-Content`, `copy`,
-  `move`, `xcopy`, `robocopy`, `curl -o` (also `-sSo` and `-O --output-dir`), `wget -O`,
-  `-OutFile`, `tar -C` (before or after `-xf`), `unzip -d` (or `unzip` run in that folder; its `-o` is the overwrite switch), `7z -o<dir>`,
-  `Expand-Archive`, `patch`, `git apply`, `mklink /J`, `fsutil hardlink create`, `awk -i
-  inplace`, a `[IO.File]::WriteAllText` (or `[System.IO.File]::`, any write member: `AppendAll*`, `Copy`, `Move`, `Delete`, `Create`, `Replace`, and `Open` with a write mode such as `Create`, `Append` or `ReadWrite`) with the path spelled out, aimed at them (spelled out, or through `cd`, a variable,
-  a glob or a path built from `.claude`, `crew` and `config.json`), or inline
-  code (`python -c`, a heredoc, `pwsh -Command`) that names them beside a write
-  call, in every `scope.mode` (`off`, the default, included). A shell word is judged against the owner's REAL
-  path (this machine's home), never a suffix of it, so `C:/other/.claude/crew/config.json` is another file. Every
-  spelling of one path is read as that path: trailing dots and spaces on any folder (`crew.\config.json`), an NTFS
-  stream (`::$DATA`, `::$INDEX_ALLOCATION`), `/c/`, `/mnt/c/` and `/cygdrive/c/` drive folders, `\\?\`, an 8.3 short name (`CREW~1`), a link or junction, a brace expansion, and ANY glob that can
-  match a receipt (`cc-1*.json`, `cc-?*`, `cc-[0-9]*`) or anything else below the store. `patch --dry-run` (`--check`,
-  `-C`) writes nothing and passes. A word the shell cannot resolve (an unset variable, a `$` share) is judged by
-  how it ENDS, component by component. Escape characters are read the way each shell reads them (crew
-  1.3.154): a bash backslash (`confi\g.json`), a PowerShell backtick (``confi`g.json``) and a cmd caret
-  (`confi^g.json`) are stripped before the path is judged, in the command name and its options too (`r\m`,
-  ``Set-Cont`ent``), and a backtick command (`` `echo ~/.claude/crew`/config.json ``) is read as a command.
-  A write target the guard cannot resolve to one path FAILS CLOSED when it could be the owner's: a `$(...)`
-  or backtick substitution, a `$'...'` string with escapes, an unset variable, a `%VAR%`, `$env:` or `${env:X}`
-  name (crew 1.3.154: `c${env:X}nfig.json` was read as an NTFS stream and passed), a bash `~name/` or `~-/`, a
-  word in a parenthesised expression (`Set-Content -Path (Join-Path $HOME ".claude/crew/config.json")`), or a
-  variable the command assigned from anything but one literal word (crew 1.3.154: `$p = Join-Path $HOME
-  ".claude/crew/config.json"; Set-Content $p x` and `$p = $HOME + "\.claude\crew\config.json"` passed; a loop
-  variable and `read` count the same way). It is refused when what is spelled of it can only be the owner's
-  (`~/.claude/crew/$NAME`, `~/$A/config.json`), and otherwise only when it is SUSPECT (narrowed in crew 1.3.154,
-  owner decision 2026-11-15, "narrow overblocks"): the command names `.claude/crew`, the confirm-config store or
-  `crew/config.json` as something it may write; or the target, the variable or the `cd` before it was built from
-  pieces of that path (`.claude` and a `crew` folder in one expression or substitution); or the command stands in
-  the owner's folder. Then a lone `$D`, `$(cat p)`, a parenthesised path, `$D/config.json`, and, after a `cd`
-  aimed at a variable, a relative name that could end one of the owner's paths are refused.
-  What does NOT make a target suspect any more: `.claude` alone (every repo has one: `cd .claude && echo x > $F`
-  and `Set-Content -Path (Join-Path $wt ".claude/x.json")` pass); crew's own worktrees folder,
-  `~/.claude/crew/worktrees/...`, where a checkout is an ordinary checkout (`git checkout`, `patch`, `unzip`
-  there pass); and a READ of the owner's file. The operand of `cat`, `grep`, `ls`, `jq`, `Get-Content` and the
-  like, and the source of a copy, are not writes, so `cat ~/.claude/crew/config.json > "$OUT"`,
-  `cat ~/.claude/crew/config.json | tee "$OUT"` and `cp ~/.claude/crew/config.json "$BACKUP"` pass. A name such
-  as `$D/out.txt` that cannot end one of the owner's paths passes in any command, and so does `mv x y` after
-  `cd $D`. Comments do not count as naming the folder. cmd's `cd /d <folder>` is followed to the folder (crew
-  1.3.154: the switch was read as the folder, so `cd /d %USERPROFILE%\.claude\crew && echo x > config.json`
-  passed).
-  Also read as writes since crew 1.3.154: `Tee-Object`, `Export-Csv`, `Export-Clixml`, `clc`; a PowerShell
-  cmdlet that takes its path from the pipeline (`Get-ChildItem <it> | Remove-Item`, `| Clear-Content`,
-  `Get-Item <it> | Set-Content -Value x`, `| % { Set-Content $_.FullName x }`); `xargs <write verb>` fed a name
-  of theirs or run in their folder (`ls | xargs rm`); `find <a folder that holds them> -delete` or
-  `-exec <write verb>` (a `-name` that rules their names out passes); sed's and ex's own `w <file>` command and
-  awk's `print > "<file>"`; a command behind `timeout`, `nice`, `stdbuf`, `ionice`, `setsid`, `busybox`, `wsl`,
-  a dot call (`. Set-Content`) or an alias the command itself made (`Set-Alias w Set-Content; w <it> x`); and
-  text run as a command by `iex` / `Invoke-Expression`, `trap`, `Start-Process <shell> -ArgumentList`,
-  `[scriptblock]::Create("...")`, a here-string (`bash <<< "..."`) or a pipe into a shell (`echo "..." | bash`).
-  The right-hand side of a PowerShell assignment is read as the command it runs (`$r = Set-Content <it> x`).
-  Also read as writes since crew 1.3.154 (round 11): `tar` however its options are bundled (`tar -cf <it> src`,
-  `-czf`, old-style `tar cf <it> src`, `-rf`, `-uf`, `--delete -f`, and an extraction into the folder,
-  `tar -xC <folder> -f a.tar`); `wget -qO <it>` (an output option at the end of a bundle of flags) and wget's
-  log file (`-o`, `-a`); `sort -o <it>` and `--output=<it>`; the archive `7z a|u|d|rn <it>`, `Compress-Archive`
-  (`-DestinationPath <it>` or the second positional word) and `git archive -o <it>` / `--output=<it>` create;
-  the command `find -exec` runs, as written (`find . -exec cp x <it> \;`, a second `-exec` too);
-  `env -C <folder> <command>`; and `fsutil file createNew <it> <size>`. A tar, 7z or sort that only READS the
-  file (`tar -tf`, `7z l`, `sort <it>`, `tar -cf /tmp/a.tar <it>`) passes.
-  A `cd` ends where the shell ends it (crew 1.3.154): inside `( ... )`, a `$(...)`, `bash -c "..."`,
-  `pwsh -Command`, `cmd /c` or a heredoc fed to a shell it lasts until that closes, and a `pushd` lasts until its
-  `popd`, so `(cd ~/.claude/crew && ls); echo x > config.json` and `pushd ~/.claude/crew && ls && popd && echo b >
-  config.json` write the working directory's own `config.json` and pass (both were refused before). A `popd`
-  with no `pushd` before it leaves a folder nobody can tell: a relative target is refused there only in a command
-  that names your folder. A `)` that ends a `case` pattern ends no subshell. PowerShell's `( ... )` is an
-  expression that runs in the shell itself, so in a command that spells a cmdlet, `$env:` or `$_`
-  (`(Set-Location ~/.claude/crew); Set-Content config.json x`) the folder stays and the write is refused.
-  A write inside a script block, a loop, a condition, a `try` or a `case` arm is read as the
-  command it is (`foreach ($f in 1) { Set-Content ... }`, `for f in a; do rm ...; done`). A command that only
-  MENTIONS them (a commit message, a PR body, `ls ~/.claude/crew/ > out.txt`,
-  `cat config.json | tee out.json`) passes, and so does an unrelated write in the
-  same line; reading them (`cat`, `jq`, `stat`, `crew_config.py --show`) passes.
-  The crew runs every normal command: no script is opened or sized, so one that
-  cannot be read or is large refuses nothing. Only the word a verb WRITES TO
-  counts: `Set-Content -Path out.txt -Value '<the machine config path>'` passes, as do
-  `[IO.File]::ReadAllText('<it>')` and `fsutil hardlink list <it>`. The PowerShell switches
-  (`-Verbose`, `-Debug`, `-Force`, `-WhatIf` and the rest, abbreviated or not) take no value, and a
-  comma-separated `-Path` list is read item by item. PowerShell's `--%` stop-parsing token, an
-  ambiguous parameter abbreviation and a .NET call whose destination is an expression, not a
-  literal path, are read by their text only. A comma or a space inside a quoted .NET path is part of the path; inside a quoted cmdlet
-  path (`Set-Content -LiteralPath 'a,b'`) a comma still splits it (accepted limit).
-  What the check cannot finish reading is refused, not passed (crew 1.3.154). It reads three commands deep
-  (`bash -c "bash -c '...'"`, a `$(...)` in a `$(...)`, a script block after a script block, an alias of an
-  alias); text nested deeper is not read, and passes only when it plainly cannot be yours: the command spells
-  nothing of `.claude/crew`, whole or in pieces, does not stand in that folder, and the unread text holds no
-  variable, substitution, backtick or wildcard (a redirect to the machine config four `bash -c` deep passed
-  before). A command of more than 131,072 characters, one that makes the guard judge more than 20,000 commands,
-  and a variable that doubles with every command (`A=$A$A; A=$A$A; ...`) are refused within about a second:
-  before, the guard ran past the 15 s the dispatcher gives it and was killed, and a killed guard blocks only in
-  an armed repo. A command that names your folder and quotes with bash's `'it'\''s'` is refused unsplit: the
-  splitter pairs those quote marks differently from bash and lost the redirect after them
-  (`echo 'it'\''s' > ~/.claude/crew/config.json` passed). And when the check fails on its own input, the call
-  is refused in every `scope.mode` (`off` and `report` used to allow what could not be judged); the verify trust
-  store check does the same.
-  Accepted limits, by the owner's decisions ("fix the overblock, add the plain
-  verbs, stop there"; 2026-11-15 "fail closed on dynamic paths", then "fix BLOCKs, narrow overblocks, document
-  tail"). THE TAIL: these still write the file and are NOT refused. A path built by arithmetic or by joining
-  quoted pieces (`'.cl' + 'aude'`), also when the joined string is handed to `iex`; a splatted hashtable
-  (`Set-Content @a`); the content of a script file (`bash script.sh`, `pwsh -File x.ps1`, a script written first
-  and run after) and encoded code (`pwsh -EncodedCommand`); a launcher (`pytest`, `uv`, `make`, `python -m`);
-  inline code whose write is not a write call the guard knows (`os.system(...)`, perl's `open`); a .NET type other
-  than `[IO.File]` (`New-Object IO.StreamWriter`); a program the verb table does not know (`gtee`, `scp`,
-  `git config --file`); cmd's delayed expansion (`!P!`); a link made earlier in the same command; a pipe or
-  `xargs` fed from a file the command only reads (`cat list | xargs rm`); an 8.3 short name that does not start
-  with the name it stands for (the stem is what is read); and `touch`, `chmod`, `attrib` and `icacls`, which
-  change the file's metadata or permissions, not its content. Named by the round-11 review and left here: an
-  in-place editor the verb table does not know (`yq -i`, also `zip <it> src` and `uniq <in> <it>`); .NET's
-  `[IO.Directory]::Delete` and `[IO.File]` siblings outside `[IO.File]`; a `find -exec` that hands what it found
-  to a script (`find . -exec python3 helper.py {} +`), since no script is opened; and a parenthesised `cd` run by
-  PowerShell in a command that spells nothing only PowerShell spells (`(cd <folder>) ; echo x > config.json` is
-  read as bash's subshell). The other way round, refused though it writes nothing, by design: the guard does not
-  read `-WhatIf`, so `Get-ChildItem ~/.claude/crew | Remove-Item -WhatIf` fails closed. The switch is a guardrail against
-  accidents and agent drift, not a boundary against a hostile agent of the same
-  user.
-- It is unambiguous. Only the JSON literal `false` counts: an absent key, `null`,
-  `true`, a string, a corrupt file, a `guards` that is not an object, a file
-  with a duplicate key (`{"enabled": true, "enabled": false}` is read differently
-  by different parsers) all leave the guards on. A machine config path inside the
-  project or the working directory (a HOME redirected into a checkout) never
-  counts.
+| Value | What passes |
+|---|---|
+| `null` / `"off"` | nothing changes: every guard judges git as before |
+| `"all"` | a line made only of plain git commands |
+| `["commit", "push", ...]` | such a line whose every git command's subcommand is listed; every other line keeps today's checks |
 
-It takes effect on the next hook call, with no reinstall. `approval-hook.sh` keeps
-running, so `/crew:approve` and `/crew:confirm-config` keep working and the
-`humanOnly.*` opt-out still works with the guards off. It needs python: with
-none, the bash launcher still fails closed in an armed repo (known limitation).
-To go back, delete the key or set it to `true` in the machine file.
+A listed subcommand passes with every option it takes: listing `push` also lets
+`git push --force` and `git push origin +main` through, because the force-push
+rule is a finding on the `push` subcommand. To keep force pushes stopped, leave
+`push` out of the list. The cloud guard reads git's abbreviated long options (`--force-with-leas`, `--mirr`) as the force pushes they are, and `--mirror`, `--delete`/`-d` and `--prune` as force pushes too, and a refspec with a leading `:` (`git push origin :topic`, which deletes the remote branch) the same way, with the switch on or off. The cloud guard skips the global options that take a value (`-C`, `-c`, `--git-dir`, `--work-tree`, `--namespace`, `--exec-path`, `--config-env`, `--super-prefix`, `--attr-source`) when it finds the subcommand, the same set the switch reads. `--force-if-includes` alone is not one (git 2.56 leaves a non-fast-forward push rejected without a lease; with `--force-with-lease` the lease is the finding), and an option's value is not read as a refspec: `git push -o +ticket=1 origin main` forces nothing (`-o` and `--push-option` take the next word, `-ofoo` carries it attached; `-fo x` is still `-f`; in an attached value such as `-ofoo` only the letters before the `o` are flags, so `-ofoo` is no `-f` while `-fofoo` is). A digit is a short flag too (`-4` and `-6` are the IPv4/IPv6 options), so `-4f`, `-f4`, `-6f`, `-46f` and `-u4f` are force pushes: the finding was missed before, with the switch off as well as on, and only real force pushes are newly reported (`-4`, `-46`, `-u4` and `-4u` are not). Residual: a force that git reads from configuration the guard does not read (`git -c remote.origin.mirror=true push origin`, `git -c remote.origin.push=+HEAD:refs/heads/main push origin`) gives no force finding; `guards.git.allow` still never exempts such a line, because any `-c` is held, and no cheap read of git's config for this exists.
 
-**What this is, and is not.** The master switch is a guardrail against accidents
-and agent drift, not a security boundary against a hostile agent running as the
-same user. The receipt and the machine file are files that user can write, and the
-scope guard reads command text: an agent that builds a path in a way the text
-never shows (`'.cl' + 'aude'`, a command fetched at run time) can forge the whole
-receipt and the `false` together, and nothing here stops it. Accepted limits, by
-the owner's decision (the guard stays out of the way of normal commands): a helper
-script that writes the file (written first, then run behind `cd`), a launcher such
-as `pytest`, `uv`, `make` or `python -m` that runs one, an 8.3 short name used
-through a shell, base64 or other encoded code, and a file copied back with its
-modification time kept all still write the file or replay a receipt. Keep an
-untrusted agent out of the account rather than behind this key. A working
-directory equal to your home, or an ancestor of it, makes an owner-confirmed
-switch do nothing (the guards stay on, as for a HOME redirected into the project).
+What it loosens, and nothing else: the cloud guard's `guards.forcePush` rule
+(`git push --force`, `+ref`) and the promote gate, so a commit message or
+that merely mentions a declared deploy no longer trips it. A declared
+deploy that is itself a git command (`git push prod main`) stays gated: that
+is a deploy, not a git block. A declared deploy that computes its ref with a read-only value (`-f ref=$(git rev-parse HEAD)`, also `--short[=N]` or `--abbrev-ref`, as the last part of a word) is not read as hiding git, so the switch still works in that repo; any other substitution, a backtick, a redirection, a second line or a code-running git option in a declared deploy still exempts nothing there. `gh` is not git: `gh pr merge --admin`
+(`guards.adminMerge`), workflow dispatches and `gh api` calls are untouched.
+
+**The line is ONE plain git command, fail-closed (crew 1.3.153).** A command
+line is exempt only when it is a single simple command: exactly `git` - not a
+path (`/usr/bin/git`, `./git`, `git.exe`), not preceded by `command`, an
+assignment, `cd` or a function, alias or `shopt` that redefines git - followed
+by plain literal words, read by ONE reader that both the cloud guard and the
+promote gate use. Nothing else is read at all:
+
+- NO separator: `;`, `&`, `&&`, `||`, `|`, or a second line. A newline counts
+  only inside a quoted word (a multi-line commit message).
+- NO redirection of any kind (`>`, `>>`, `<`, `2>&1`, `&>`, `{v}>`), no
+  heredoc, no here-string, no line continuation, no comment, no subshell
+  `( )`, group `{ }` or command with only a redirection.
+- bash words: unquoted letters, digits and `_ - . / : = + , @ % ^`, a `~`
+  that is not at the start (`HEAD~3`), git's `@{...}` (`@{u}`, `HEAD@{1}`) with
+  no `,` or `..` inside; whole `'...'` runs; `"..."` runs with no `$` or
+  backtick; a backslash escaping one character.
+- PowerShell words: unquoted letters, digits and `_ - . / : = + \ ^ % ~ @` (no
+  leading `~`, `@` only inside a word); a whole `'...'` or `"..."` word (a
+  double-quoted one holding no `$`); a backtick only before one of
+  `- . / : = _ +` (never before a letter or digit, `` `u{2d} `` is a `-`, and
+  never before `*`, `?` or `[`, which PowerShell still expands as a wildcard
+  for a native command's arguments); an unquoted first word.
+
+Anything else is "cannot tell", and cannot tell is never exempt: the guards
+judge that line exactly as they did before the switch. That includes `$` in
+any form (`"$OPT"`, `${X:-...}`, `$'...'`, `$"..."`, `$env:X`, `$(...)`), a
+backtick substitution, a glob (`*`, `?`, `[`), a brace expansion, a leading
+`~`, a PowerShell `(expr)`, `@(...)`, `@splat`, `{ }` or `[type]`, `--%`, a
+`%NAME%` (or two `%` in a line with text between them, even across words), a curly quote, and every chain such as `git add -A && git commit -m
+x`. Six review rounds each found a new shape of redirect, heredoc,
+continuation or expansion for a reader that tried to follow them (a command
+made only of redirects such as `> $((_))`, a heredoc delimiter ending in a
+backslash, a continuation splitting `2>&1`, a backtick before `*`); the reader
+now follows none of them, so a form nobody has thought of yet is judged, not
+exempt. The convenience cost is that a chain, a redirect or a heredoc commit
+message is judged as before (run the commands as separate calls, and pass a
+message with `-m '...'`). A differential test
+(`tests/test_git_allow_differential.py`) runs every line of a generated
+corpus that the allowlist accepts under real bash and PowerShell 7 with a
+shim `git` that logs its argv, and fails when git is handed anything other
+than the argv crew read.
+
+Never exempt even when every word is plain: a git command that hands git
+config or a command of its own - a global `-c` (an alias `!cmd`,
+`core.sshCommand`, `core.pager`), `--config-env` or `--exec-path`; an option or
+subcommand that runs a command it is given (`rebase --exec`/`-x`,
+`submodule foreach`, `bisect run`, `push`/`send-pack --receive-pack`/`--exec`,
+`fetch-pack --upload-pack`/`--exec`, `fetch`/`pull`/`clone`/`ls-remote
+--upload-pack`, `clone -u`/`-c`/`--template`, `init`/`init-db --template`, `grep -O`,
+`difftool --extcmd`, `filter-branch`, `instaweb`, `for-each-repo`,
+`web--browse`, `merge-index` (it runs the program it is handed, once per unmerged path), `send-email --*-cmd`, `daemon --access-hook`), in any abbreviation git accepts (`--exe`,
+`--receive=...`); an option that launches a helper program (`--paginate` and a leading `-p`, `--ext-diff`,
+`--textconv`, `--help`, `--open-files-in-pager`), `git help`, `git difftool`, `git mergetool`,
+`git bisect visualize`/`view` (gitk), `git maintenance start`/`stop` (the scheduler program)
+and `git credential` and `git cat-file --filters` (each runs a configured program), a remote-helper URL wherever it sits (`ext::<command>`, `fd::3`, `foo::bar`, which runs `git-remote-foo` from PATH; also after `--` and behind `--opt=`), a URL of any scheme but `file`, `git`, `ssh`, `git+ssh`, `ssh+git`, `http` and `https` (`zzz://host/x` runs `git-remote-zzz` from PATH), and `merge`/`pull`/`rebase` `-s`/`--strategy` and `cherry-pick`/`revert --strategy`
+(git runs `git-merge-<strategy>` from PATH; `-X`/`--strategy-option` only passes a string and is not held);
+and a `git config` that is not plainly a read (`--get*`,
+`-l`/`--list`, `get`, `list`, or one key alone, with only read options): a
+write may set `alias.*` or a program-valued key (`core.sshCommand`,
+`core.pager`, `core.editor`, `core.fsmonitor`, `core.hooksPath`,
+`diff.external`, `credential.helper`, `sequence.editor`, `gpg.program`, ...)
+that a later git command on the same line runs. A git command aimed at another
+repository (`git -C <dir>`) passes only when that repository's own file does
+not veto it either, and a git command with no `-C` runs in the directory the hook
+reports as its cwd (the promote gate: the project directory), so that repository's
+file is read too: a veto there, or a cwd that is not a git work tree crew can read,
+reads as off; one whose repository crew cannot tell (`--git-dir`,
+`--work-tree`, or a `-C ..` that follows a link, which git and Windows read
+differently) is judged as before. A subcommand is matched exactly as written:
+`git STATUS` is not `status`. A word after `git` that is not one of git's own built-ins
+(`git zzz`, `git svn`, `git p4`, `git gui`, `git citool`, an alias such as `git co`) is held too:
+git runs an alias, or a `git-<word>` program it finds on PATH. A built-in this version of crew
+does not list is only held, never let through. A `deploy` in `.crew/verify.json` that is not a
+command or a list of commands (or an environment that is not an object) makes the promote gate
+exempt nothing, the same map the gate itself refuses to read. A map or config that repeats a key, or holds two keys that differ only by case, is refused rather than read last-wins (`.crew/verify.json` for the promote exemption and the dispatch reader, the config files for `guards.git.allow`, the `cloud`/`environments` blocks and the saved-plan summary): the promote exemption then exempts nothing and the config reads as off. The value of a value-taking global option is not an option (`git -C -p status` runs in a directory named `-p`, `git -C -c status` in one named `-c`), and a `~` inside a `-C` value (`foo~bar`, `PROGRA~1`) is a name. An unquoted word that starts with `~` expands and exempts nothing; a QUOTED one (`git -C '~repo' status`) is a literal directory name and is read as one. A push option's value (`git push -o --receive-pack=x origin main`, `-o ext::echo`, `--push-option <v>`, `-ofoo`) is a string the remote reads, not an option or a URL, so it is not held. A declared deploy that reads as git only once its backslashes, quotes or backticks are dropped (`g\it push prod main`) exempts nothing: crew does not compare the two spellings, it fails closed. That holds whether or not the raw text already matches `git` (round 15: `"git" push prod main`, `$'git' push prod main`, `${x}it push prod main`, `$(echo git) push prod main` and `g$@it push prod main` all exempt nothing), and a declared deploy whose command word (past `NAME=value` words and `sudo`/`env`-style wrappers) holds a `$` or backtick exempts nothing either; a plain declared `git push prod main` exempts what it does not contain, as before. When the hook's own environment sets `GIT_DIR`, `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_OBJECT_DIRECTORY`, `GIT_INDEX_FILE` or `GIT_NAMESPACE` to a non-empty value, a plain `git` the hook runs would act on the repository those name, not the working directory's, so crew cannot tell whose veto applies and reads `guards.git.allow` as off for that line (an env prefix on the line itself was already refused). A built-in that only newer gits have (`backfill`, `diff-pairs`, `format-rev`, `history`, `last-modified`, `replay`, `repo`, `survey`, `url-parse`) is held unless the installed git lists it in `git --list-cmds=builtins` (an older git runs a `git-<name>` from PATH instead); `git submodule` is a script in git's own exec directory, which git searches before PATH, so it is not held.
+
+Accepted residuals: a literal `git` is read as the git program, so a shell function named `git`
+that the shell inherited or exported (`export -f git`) would run instead of it, and crew cannot see
+that from the command line (verified: with `git() { echo hijacked; }` exported, `git status` in a
+child bash prints `hijacked`).
+
+What stays exempt, for example: `git commit -m "fix: x"`, `git push
+--force-with-lease origin topic`, `git push -f origin topic`, `git rebase -i
+HEAD~3`, `git -C <path> status`, `git log --format=%H`, `git log @{u}..HEAD`
+and `git config user.name`. What no longer is: `git commit -m "$(...)"` (a
+substitution), a line with anything but one git command on it (`git push -f &&
+rm x`, `git add -A && git commit`, `FOO=1 git push`, `git status 2>&1`, `git
+commit -F - <<'EOF' ... EOF`), `/usr/bin/git ...`, and `git config <key>
+<value>`.
+
+Who can turn it on: the machine file only, and only through the double
+confirmation. `crew_confirm_config.py propose --layer machine --key
+guards.git.allow --value '"all"'` (or `'["commit","push"]'`) records the change
+and prints an id; you type `/crew:confirm-config <change_id>` twice, in two
+prompts, within 15 minutes. A value counts only while the newest settled
+receipt for that file is a whole double confirmation (two confirmations from
+two distinct prompts you typed, inside the proposal's window, for that file)
+of exactly that value, AND the machine file is still the file that
+confirmation left: the same bytes, size, modification time and change time
+(the metadata-change time: POSIX `ctime`, NTFS ChangeTime on Windows). crew's own
+config writer (`crew_config.py --set`, `/crew:config`, a confirmed `humanOnly`
+change) carries the receipt over when it changes another key. Any other change
+to the machine file turns the switch off until you confirm it again: a hand
+edit, an agent's Edit, a restore from backup, even setting `"off"` by hand and
+then the same `"all"` back, or putting a copy of the confirmed file back with
+`cp -p` (bytes and modification time restored; the change time still moves).
+One gap, on Windows only: a copy made AND put back with a Windows file copy
+(`Copy-Item`, Explorer, `shutil.copy2`) carries the change time over with the
+bytes, so crew cannot tell it from the confirmed file. `crew_config.py --set` and `/crew:config` refuse
+every value but `"off"` and null, and a crew write back to `"off"` revokes the
+receipt. A repo file can never turn it on; a repo `"off"`, a malformed repo
+value, or a repo `.crew/config.json` crew cannot read or parse (a link that
+does not resolve, or a `.crew` that is a file, included) vetoes it.
+Anything crew cannot read - a value outside the table, a store it cannot read,
+a line it cannot read whole - is off.
+
+What a receipt cannot prove: the store (`~/.claude/crew/confirm-config/`) is
+plain files. It is protected from an agent's writes ONLY while `scope.mode` is
+on: then the scope guard refuses a Write/Edit into it, and a shell command
+naming it beside a writing word. With `scope.mode` off nothing stops an agent
+writing a receipt, and even with it on a process that runs arbitrary code as
+you can write a whole, well-formed record. And `"all"` does not stop what git
+runs from its own persistent configuration: hooks (`.git/hooks/`,
+`core.hooksPath`), aliases (`alias.*` set in a config file earlier, by an
+earlier command line), and `core.sshCommand`, `core.pager`, `core.editor`,
+filters and the like all run under `"all"` exactly as they would with crew
+absent. That includes the editor git opens for `commit`, `rebase -i`, `tag -a`,
+`notes edit` and `replace --edit` (from `core.editor`, `GIT_EDITOR` or `$EDITOR`):
+those subcommands are not held, so a program set in config or the environment
+runs when they do (inferred from git's documented behaviour, not measured here). crew reads only the command line, never git's config files or hooks.
+
+`python3 hooks/scripts/crew_gitallow.py --root .` prints what is in force.
+Each pass is logged to `.crew/guard.log` with the policy `gitAllow:<value>`.
 
 ## Guard profiles
 
@@ -354,7 +333,7 @@ SessionStart notice).
 |---|---|
 | `core` | 26 |
 | `providers` | 18 |
-| `guards` | 2 |
+| `guards` | 3 |
 | `cloud` | 13 |
 | `trackers` | 5 |
 | `autopilot` | 15 |
@@ -417,12 +396,13 @@ SessionStart notice).
 | `secondOpinion.mode` | both | `"cli"` | not validated - read by `skills/crew-providers/SKILL.md` (expects string) | How the second opinion is reached. |
 | `secondOpinion.model` | both | `null` | not validated - read by `skills/crew-providers/SKILL.md` (expects string or null) | Second-opinion model. |
 
-## `guards` keys (2)
+## `guards` keys (3)
 
 | Key | Layer | Default | Values | Summary |
 |---|---|---|---|---|
 | `guards.profile` | both, ratchet | `"off"` | `off` \| `standard` \| `strict` | One word for the twelve guards: `off` (today's defaults), `standard` or `strict`. Expands per layer; each guard's ratchet then runs on the expanded values. |
 | `guards.overrides` | both, ratchet | `{}` | object of guard name to tier (checked in `hooks/scripts/crew_guards.py`) | `guards.overrides.<guard>`: one guard's tier, replacing the profile's value for it. Each entry is checked against that guard's own tiers; a bad one reads as the floor. |
+| `guards.git.allow` | both | `null` | null, `"off"`, `"all"` or a list of git subcommand names (coerced in `hooks/scripts/crew_gitallow.py`) | The owner's switch that stops crew's command guards blocking or asking on git commands: `"all"` lets a line of only plain git commands past the force-push rule and the promote gate (unless a declared deploy is itself a git command); a list of subcommands (`["commit", "push"]`) lets only those through, with every option they take (listing `push` lets `push --force` through). null or `"off"` changes nothing. Machine file only, and only after `/crew:confirm-config` twice (`crew_confirm_config.py propose --key guards.git.allow --value ...`); a value written any other way, or any later change to the machine file outside crew's config writer, reads as off, and a repo `"off"` or unreadable repo file vetoes it. FAIL-CLOSED ALLOWLIST: a line is exempt only when it is ONE command, exactly `git` with plain literal words (no `$`, backtick, glob, brace, leading `~`, parenthesis, PowerShell expression or `%NAME%`; no separator, redirection, heredoc, continuation or comment, so a chain is judged as before); a git command carrying `-c`, a command to run (`rebase --exec`, `push --receive-pack`, `submodule foreach`, ...) or a `git config` write is never exempt. |
 
 ## `cloud` keys (13)
 
