@@ -242,7 +242,7 @@ resolve to.
 **Who can write the receipts.** The double confirmation is recorded only by
 the prompt hook, from your own prompt. The scope guard (when `scope.mode` is
 not `off`) refuses every Write/Edit under `~/.claude/crew/confirm-config/` and
-every shell command that WRITES TO that store. Since crew 1.3.137 the command is read the way the check of
+every shell command that WRITES TO that store. Since crew 1.3.149 the command is read the way the check of
 your machine config reads it, and the write's TARGET is judged: `cp ~/.claude/crew/confirm-config/cc-ab12.json
 /tmp/`, `cat <receipt> | jq .x > /tmp/x` and `ls <receipt> && echo ok > /tmp/ok` pass (until then a redirect or
 a write verb anywhere in a command that named the store refused it). A verb's spelling inside a file name,
@@ -435,12 +435,12 @@ column:
 {human_only}
 ## The guards master switch
 
-`guards.enabled: false` (crew 1.3.137) turns EVERY guard hook off: the promote
+`guards.enabled: false` (crew 1.3.149) turns EVERY guard hook off: the promote
 gate, the role-write, cloud, environment and scope guards, the verify gate, the
 completion audit and the context-watch Stop hook. None of them starts, so nothing
 is judged, refused, asked, warned or logged: with the switch off, nothing blocks. It
 beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mode`,
-`verifyGate`). Three things must all hold for it to count (crew 1.3.137):
+`verifyGate`). Three things must all hold for it to count (crew 1.3.149):
 
 - It is in the MACHINE layer (`~/.claude/crew/config.json`). A `false` in
   `.crew/config.json`, tracked or not, is ignored and the guards stay on (a
@@ -450,7 +450,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   applied `/crew:confirm-config` double confirmation backs it: two confirmations
   from two prompts the owner typed, and the digest of the machine file as the
   owner left it: its content (canonical JSON) AND its modification time (crew
-  1.3.137). An agent's Write or Edit, a hook-side write, a hand edit, a bare
+  1.3.149). An agent's Write or Edit, a hook-side write, a hand edit, a bare
   hand-written receipt, or ANY later write to the file (a restore, a rebuild, an
   unrelated edit, or a hand edit that sets the key `true` and a later one that
   writes the identical `false` back) leaves the guards ON; so does a missing,
@@ -475,17 +475,17 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   match a receipt (`cc-1*.json`, `cc-?*`, `cc-[0-9]*`) or anything else below the store. `patch --dry-run` (`--check`,
   `-C`) writes nothing and passes. A word the shell cannot resolve (an unset variable, a `$` share) is judged by
   how it ENDS, component by component. Escape characters are read the way each shell reads them (crew
-  1.3.137): a bash backslash (`confi\\g.json`), a PowerShell backtick (``confi`g.json``) and a cmd caret
+  1.3.149): a bash backslash (`confi\\g.json`), a PowerShell backtick (``confi`g.json``) and a cmd caret
   (`confi^g.json`) are stripped before the path is judged, in the command name and its options too (`r\\m`,
   ``Set-Cont`ent``), and a backtick command (`` `echo ~/.claude/crew`/config.json ``) is read as a command.
   A write target the guard cannot resolve to one path FAILS CLOSED when it could be the owner's: a `$(...)`
   or backtick substitution, a `$'...'` string with escapes, an unset variable, a `%VAR%`, `$env:` or `${{env:X}}`
-  name (crew 1.3.137: `c${{env:X}}nfig.json` was read as an NTFS stream and passed), a bash `~name/` or `~-/`, a
+  name (crew 1.3.149: `c${{env:X}}nfig.json` was read as an NTFS stream and passed), a bash `~name/` or `~-/`, a
   word in a parenthesised expression (`Set-Content -Path (Join-Path $HOME ".claude/crew/config.json")`), or a
-  variable the command assigned from anything but one literal word (crew 1.3.137: `$p = Join-Path $HOME
+  variable the command assigned from anything but one literal word (crew 1.3.149: `$p = Join-Path $HOME
   ".claude/crew/config.json"; Set-Content $p x` and `$p = $HOME + "\\.claude\\crew\\config.json"` passed; a loop
   variable and `read` count the same way). It is refused when what is spelled of it can only be the owner's
-  (`~/.claude/crew/$NAME`, `~/$A/config.json`), and otherwise only when it is SUSPECT (narrowed in crew 1.3.137,
+  (`~/.claude/crew/$NAME`, `~/$A/config.json`), and otherwise only when it is SUSPECT (narrowed in crew 1.3.149,
   owner decision 2026-11-15, "narrow overblocks"): the command names `.claude/crew`, the confirm-config store or
   `crew/config.json` as something it may write; or the target, the variable or the `cd` before it was built from
   pieces of that path (`.claude` and a `crew` folder in one expression or substitution); or the command stands in
@@ -499,9 +499,9 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   `cat ~/.claude/crew/config.json | tee "$OUT"` and `cp ~/.claude/crew/config.json "$BACKUP"` pass. A name such
   as `$D/out.txt` that cannot end one of the owner's paths passes in any command, and so does `mv x y` after
   `cd $D`. Comments do not count as naming the folder. cmd's `cd /d <folder>` is followed to the folder (crew
-  1.3.137: the switch was read as the folder, so `cd /d %USERPROFILE%\\.claude\\crew && echo x > config.json`
+  1.3.149: the switch was read as the folder, so `cd /d %USERPROFILE%\\.claude\\crew && echo x > config.json`
   passed).
-  Also read as writes since crew 1.3.137: `Tee-Object`, `Export-Csv`, `Export-Clixml`, `clc`; a PowerShell
+  Also read as writes since crew 1.3.149: `Tee-Object`, `Export-Csv`, `Export-Clixml`, `clc`; a PowerShell
   cmdlet that takes its path from the pipeline (`Get-ChildItem <it> | Remove-Item`, `| Clear-Content`,
   `Get-Item <it> | Set-Content -Value x`, `| % {{ Set-Content $_.FullName x }}`); `xargs <write verb>` fed a name
   of theirs or run in their folder (`ls | xargs rm`); `find <a folder that holds them> -delete` or
@@ -511,7 +511,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   text run as a command by `iex` / `Invoke-Expression`, `trap`, `Start-Process <shell> -ArgumentList`,
   `[scriptblock]::Create("...")`, a here-string (`bash <<< "..."`) or a pipe into a shell (`echo "..." | bash`).
   The right-hand side of a PowerShell assignment is read as the command it runs (`$r = Set-Content <it> x`).
-  Also read as writes since crew 1.3.137 (round 11): `tar` however its options are bundled (`tar -cf <it> src`,
+  Also read as writes since crew 1.3.149 (round 11): `tar` however its options are bundled (`tar -cf <it> src`,
   `-czf`, old-style `tar cf <it> src`, `-rf`, `-uf`, `--delete -f`, and an extraction into the folder,
   `tar -xC <folder> -f a.tar`); `wget -qO <it>` (an output option at the end of a bundle of flags) and wget's
   log file (`-o`, `-a`); `sort -o <it>` and `--output=<it>`; the archive `7z a|u|d|rn <it>`, `Compress-Archive`
@@ -519,7 +519,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   the command `find -exec` runs, as written (`find . -exec cp x <it> \\;`, a second `-exec` too);
   `env -C <folder> <command>`; and `fsutil file createNew <it> <size>`. A tar, 7z or sort that only READS the
   file (`tar -tf`, `7z l`, `sort <it>`, `tar -cf /tmp/a.tar <it>`) passes.
-  A `cd` ends where the shell ends it (crew 1.3.137): inside `( ... )`, a `$(...)`, `bash -c "..."`,
+  A `cd` ends where the shell ends it (crew 1.3.149): inside `( ... )`, a `$(...)`, `bash -c "..."`,
   `pwsh -Command`, `cmd /c` or a heredoc fed to a shell it lasts until that closes, and a `pushd` lasts until its
   `popd`, so `(cd ~/.claude/crew && ls); echo x > config.json` and `pushd ~/.claude/crew && ls && popd && echo b >
   config.json` write the working directory's own `config.json` and pass (both were refused before). A `popd`
@@ -541,7 +541,7 @@ beats every per-guard setting (`guards.profile`, `guards.overrides.*`, `scope.mo
   ambiguous parameter abbreviation and a .NET call whose destination is an expression, not a
   literal path, are read by their text only. A comma or a space inside a quoted .NET path is part of the path; inside a quoted cmdlet
   path (`Set-Content -LiteralPath 'a,b'`) a comma still splits it (accepted limit).
-  What the check cannot finish reading is refused, not passed (crew 1.3.146). It reads three commands deep
+  What the check cannot finish reading is refused, not passed (crew 1.3.149). It reads three commands deep
   (`bash -c "bash -c '...'"`, a `$(...)` in a `$(...)`, a script block after a script block, an alias of an
   alias); text nested deeper is not read, and passes only when it plainly cannot be yours: the command spells
   nothing of `.claude/crew`, whole or in pieces, does not stand in that folder, and the unread text holds no

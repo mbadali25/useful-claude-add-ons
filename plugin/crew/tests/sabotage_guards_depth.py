@@ -1,4 +1,4 @@
-"""What the owner's-files shell check does past what it reads (crew 1.3.146). Same tuple shape as `sabotage.py`'s
+"""What the owner's-files shell check does past what it reads (crew 1.3.149). Same tuple shape as `sabotage.py`'s
 MUTATIONS -- (label, target, find, replace, test) -- appended to it there. Run `sabotage.py`, not this file.
 
 Every limit in that check used to end in an allow: text nested a fourth level down was passed unread, a command
