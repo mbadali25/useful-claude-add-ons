@@ -244,7 +244,9 @@ def test_a_write_of_the_store_is_refused_when_the_store_location_env_is_relative
 
     reason = scope_guard.trust_refusal({"tool_name": "Write", "tool_input": {"file_path": path}})
 
-    assert reason is not None
+    # the store's own refusal, not the one `trust_refusal` gives when its check raised (crew 1.3.149): with an
+    # unreadable location the check must still run, because a check that raises refuses every write
+    assert reason is not None and reason.startswith("it writes the verify trust store")
 
 
 def test_a_write_of_another_file_is_allowed_when_the_store_location_env_is_relative(monkeypatch):
