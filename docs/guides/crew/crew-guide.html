@@ -626,6 +626,21 @@ cannot tell apart). The receipts are protected from an agent's writes only
 while <code>scope.mode</code> is on, and <code>"all"</code> does not stop git's own hooks, aliases
 or <code>core.sshCommand</code> set earlier in a config file: those run as if crew were
 absent. The configuration reference's "Git commands" section has the rules.</p>
+<p><strong>The owner-typed run approval (crew 1.3.160, off by default).</strong> Trusting a
+repo's verify map used to need you at a terminal. With
+<code>approvals.run.classes</code> naming <code>verify-trust</code> in the machine file, an agent
+can ask instead: its plain <code>verify_trust.py approve --root &lt;repo&gt;</code> is still
+refused, but the refusal carries a request id; you type
+<code>/crew:allow-run &lt;id&gt;</code> in your own prompt, and the agent may then run that one
+command once, with <code>--receipt &lt;id&gt;</code>, within 15 minutes. The receipt covers
+that exact command, worktree, session and verify map and nothing else; no
+answer means no. This version ships the harness half only: the keys are set
+by hand in the machine file and the <code>/crew:allow-run</code> command file arrives
+with the next change, so the route is not usable from a prompt yet. It is a
+tripwire, not a sandbox: a child Claude that resumes your session is handed
+your session's id, and only the guard's refusal of that command stands in
+front of it. The configuration reference's "The owner-typed run approval"
+section says what it stops and what it does not.</p>
 <ul>
 <li><code>/crew:config</code> shows where every value comes from, and sets either file
   through a validated, dry-run-first menu.</li>

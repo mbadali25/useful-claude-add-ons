@@ -962,7 +962,7 @@
     ]
    }
   ],
-  "mutations_total": 3360,
+  "mutations_total": 3421,
   "stays_in_core": [
    ".crew/codemap/install-scripts.md",
    ".crew/verify.json",
@@ -1032,6 +1032,7 @@
    "plugin/crew/hooks/scripts/crew_refresh_check.py",
    "plugin/crew/hooks/scripts/crew_resume.py",
    "plugin/crew/hooks/scripts/crew_route.py",
+   "plugin/crew/hooks/scripts/crew_runapproval.py",
    "plugin/crew/hooks/scripts/crew_shell.py",
    "plugin/crew/hooks/scripts/crew_sleep.py",
    "plugin/crew/hooks/scripts/crew_standards.py",
