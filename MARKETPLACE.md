@@ -120,6 +120,17 @@ claude plugin install anthropic-office-skills@claude-settings
 claude plugin install agent-browser@agent-browser
 claude plugin install ppt-master@ppt-master
 
+# Skill sets (menu item 27, ticked by default): third-party marketplaces, each pinned to a reviewed commit.
+claude plugin marketplace add zxkane/aws-skills#68530c6f296ccd2f5e99c79782f3e0fbf962c51a    # registers as 'aws-skills'
+claude plugin install aws-common@aws-skills     # also aws-iac, aws-cost-ops, serverless-eda, aws-agentic-ai
+claude plugin marketplace add hashicorp/agent-skills#5e30fa5c867ba6777c37e4206babfd08049c396f  # registers as 'hashicorp'
+claude plugin install terraform@hashicorp       # also packer@hashicorp
+claude plugin marketplace add Servosity/msp-skills#cc3f873bde09ffa06cd2a7e8e70f46cde1f95e11    # registers as 'msp-skills'; 111 plugins, only these two are installed
+claude plugin install fortinet@msp-skills       # also cisco-meraki@msp-skills
+# aws-cost-ops and aws-agentic-ai start MCP servers with an unpinned 'uvx <package>@latest'.
+# The scripts never run Servosity's install.sh / install.ps1 (the fortinet-cli / cisco-meraki-cli
+# binaries): read it, run it with DRY_RUN=1, and only then install it yourself.
+
 # find-skills - lets Claude discover and install skills from the community index on demand.
 # Not a plugin: the 'skills' CLI drops it in ~/.claude/skills/, so there's no marketplace to
 # add. The install scripts prompt before running this, and detect it on disk first.

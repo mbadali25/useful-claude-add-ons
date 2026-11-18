@@ -151,7 +151,11 @@ def test_a_declared_workflow_fitting_no_environment_blocks(flavour, repo):
 
 def test_a_declared_workflow_fitting_two_environments_blocks(flavour, repo):
     doc = json.loads(json.dumps(MAP))
-    doc["environments"]["qa"] = {"deploy": "gh workflow run deploy.yml",
+    # L-0948: a bare dispatch (no `environment` input) no longer fits a command
+    # that selects another environment, so the second environment must declare
+    # the same selector to be ambiguous with prod.
+    doc["environments"]["qa"] = {"deploy": "gh workflow run deploy.yml "
+                                           "-f environment=production",
                                  "rollback": "none", "rollbackReason": "fixture", **_NO_REVIEW}
     _write_map(repo, doc)
     code, err = gate(repo, REST.format(env="production"), flavour)
@@ -323,4 +327,66 @@ def test_ps1_without_python_and_no_dispatch_deploy_declared_passes(tmp_path, mon
     for a dispatch-looking command."""
     repo = tree.Repo(tmp_path / "r")
     code, err = _gate_without_python(repo, "gh workflow run x.yml", tmp_path, monkeypatch)
+    assert code == 0, err
+
+
+# --- L-0948: `environment` selects the environment, it is never an extra ------
+
+SITE = "gh workflow run manual-website-deploy.yaml -f website=thdmarketplace.com"
+ONLY_PROD = {"environments": {
+    "production": {"deploy": SITE, "requireHuman": True, "rollback": "none",
+                   "rollbackReason": "fixture", **_NO_REVIEW}}}
+
+
+@pytest.mark.parametrize("command", [
+    SITE + " -f environment=development",
+    "gh workflow run manual-website-deploy.yaml -f environment=development "
+    "-f website=thdmarketplace.com",
+    "gh workflow run manual-website-deploy.yaml --field "
+    "website=thdmarketplace.com --field environment=qa",
+])
+def test_a_dev_or_qa_dispatch_is_never_read_as_the_prod_that_omits_environment(
+        flavour, tmp_path, command):
+    """must-block: production declares no `environment` input, so
+    `environment=development` used to fit it (extra inputs allowed) and the
+    gate demanded production's rows. It is could-not-tell now, naming the
+    environment the command selected."""
+    made = tree.Repo(tmp_path)
+    _write_map(made, ONLY_PROD)
+    code, err = gate(made, command, flavour)
+    assert code == 2, err
+    assert CNT in err and "selects environment" in err
+    # no production precondition is demanded for it (the header may still carry
+    # containment's substring hit; the reason is the could-not-tell above)
+    assert "requires explicit human approval" not in err
+    assert "all-pass row" not in err
+
+
+def test_the_prod_dispatch_naming_its_own_environment_still_reaches_prod(
+        flavour, tmp_path):
+    """must-allow-through-to-the-checks: `environment=production` fits the
+    production whose declaration omits the input, so prod's preconditions run."""
+    made = tree.Repo(tmp_path)
+    _write_map(made, ONLY_PROD)
+    code, err = gate(made, SITE + " -f environment=production", flavour)
+    assert code == 2, err
+    assert "PROMOTION BLOCKED (production" in err
+
+
+def test_a_dev_dispatch_runs_once_dev_declares_its_own_environment(
+        flavour, tmp_path):
+    """must-allow: with development declared the workaround shape, the dev
+    dispatch is development and runs."""
+    doc = json.loads(json.dumps(ONLY_PROD))
+    # every environment declares its selector, production included: a declared
+    # production WITHOUT it is a substring of the dev command, so the
+    # containment match would add production beside development (not changed
+    # here; see the L-0948 PR body).
+    doc["environments"]["production"]["deploy"] = SITE + " -f environment=production"
+    doc["environments"]["development"] = {
+        "deploy": SITE + " -f environment=development", "rollback": "none",
+        "rollbackReason": "fixture", **_NO_REVIEW}
+    made = tree.Repo(tmp_path)
+    _write_map(made, doc)
+    code, err = gate(made, SITE + " -f environment=development", flavour)
     assert code == 0, err

@@ -119,7 +119,7 @@ group_entry_selected PLUGIN crew && got=yes || got=no
 check "crew with the row off" no  "$got"
 
 echo "5. every SPEC entry is plugin@marketplace|source|name"
-for prefix in SKILL TEAM COMMUNITY PLUGIN; do
+for prefix in SKILL TEAM COMMUNITY PLUGIN SKILLSET; do
   n="$(group_count "$prefix")"
   bad=0
   for (( j=0; j<n; j++ )); do
@@ -197,6 +197,51 @@ one="$(CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
   bash "$SCRIPT" --select community --community ppt-master 2>&1 \
   | sed 's/\x1b\[[0-9;]*m//g' | grep -c '^==> Marketplace:')"
 check "one plugin -> one marketplace step"         "1" "$one"
+
+echo "7b. the skill-sets row: three pinned marketplaces, nine plugins, no binary installer"
+# A stub 'claude' (records its calls to a FILE) so nothing real is added or installed.
+# Asserts the three things this row must get right: each marketplace is added ONCE with
+# a '#<full SHA>' ref, the plugin specs name the marketplace's exact local name (so a
+# re-run does not re-add it), and only fortinet and cisco-meraki come from msp-skills.
+cat > "$TMP/bin/claude" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$*" >> "$CLAUDE_STUB_LOG"
+exit 0
+STUB
+chmod +x "$TMP/bin/claude"
+export CLAUDE_STUB_LOG="$TMP/ss-calls"
+: > "$CLAUDE_STUB_LOG"
+CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
+  bash "$SCRIPT" --select skill-sets --skillsets all >"$TMP/ss-out" 2>&1
+check "three marketplace adds"             3 "$(grep -c '^plugin marketplace add ' "$CLAUDE_STUB_LOG")"
+check "nine plugin installs"               9 "$(grep -c '^plugin install ' "$CLAUDE_STUB_LOG")"
+check "every marketplace add carries a full 40-hex SHA ref" 3 \
+  "$(grep -cE '^plugin marketplace add [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9a-f]{40} ' "$CLAUDE_STUB_LOG")"
+check "msp-skills pinned to cc3f873bd" 1 \
+  "$(grep -c '^plugin marketplace add Servosity/msp-skills#cc3f873bde09ffa06cd2a7e8e70f46cde1f95e11 ' "$CLAUDE_STUB_LOG")"
+check "exactly two plugins come from msp-skills" 2 "$(grep -c '^plugin install .*@msp-skills ' "$CLAUDE_STUB_LOG")"
+check "fortinet and cisco-meraki are those two" 2 \
+  "$(grep -cE '^plugin install (fortinet|cisco-meraki)@msp-skills ' "$CLAUDE_STUB_LOG")"
+check "terraform and packer install from 'hashicorp'" 2 \
+  "$(grep -cE '^plugin install (terraform|packer)@hashicorp ' "$CLAUDE_STUB_LOG")"
+check "the five AWS plugins install from 'aws-skills'" 5 "$(grep -c '^plugin install .*@aws-skills ' "$CLAUDE_STUB_LOG")"
+check "nothing but 'claude' plugin commands ran (no installer, no curl)" 0 \
+  "$(grep -cvE '^(plugin|mcp|--version|-v) ' "$CLAUDE_STUB_LOG")"
+check "the binary-installer note is printed"  yes \
+  "$(grep -q 'never runs' "$TMP/ss-out" && echo yes || echo no)"
+check "the unpinned-uvx MCP note is printed"  yes \
+  "$(grep -q "unpinned 'uvx" "$TMP/ss-out" && echo yes || echo no)"
+: > "$CLAUDE_STUB_LOG"
+CLAUDE_CONFIG_DIR="$TMP/cfg" PATH="$TMP/bin:$PATH" \
+  bash "$SCRIPT" --select skill-sets --skillsets fortinet >"$TMP/ss-out" 2>&1
+check "--skillsets fortinet: one marketplace, one plugin" "1 1" \
+  "$(printf '%s %s' "$(grep -c '^plugin marketplace add ' "$CLAUDE_STUB_LOG")" "$(grep -c '^plugin install ' "$CLAUDE_STUB_LOG")")"
+check "and no AWS note when no AWS plugin is chosen" no \
+  "$(grep -q "unpinned 'uvx" "$TMP/ss-out" && echo yes || echo no)"
+out="$(CLAUDE_CONFIG_DIR="$TMP/cfg" bash "$SCRIPT" --dry-run --non-interactive 2>&1)"
+case "$out" in *"Skill sets: 9 of 9"*) got=yes ;; *) got=no ;; esac
+check "the default set includes the skill-sets row, all 9 ticked" yes "$got"
+unset CLAUDE_STUB_LOG
 
 echo "8. the Perplexity row registers with a key, and never prints one"
 # This row is the only one that takes a secret on the command line, so the cases that
