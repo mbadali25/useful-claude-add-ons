@@ -259,7 +259,7 @@ KEY_META = {
                                     type_="number of seconds, or null"),
     # --- verify (crew 1.3.157)
     "verify.stopBudgetSeconds": _row("How many seconds the Stop row of the verify gate "
-                                     "(`verify-gate.sh`, `verify-gate.ps1`) may spend running "
+                                     "(`verify-gate.sh`) may spend running "
                                      "rules, cheapest first, before it defers the rest to CI "
                                      "and names them. Default 60, which is what the gate used "
                                      "before the key was settable. A write must be a whole "
@@ -269,9 +269,9 @@ KEY_META = {
                                      "gate would quietly replace with 60. null removes the "
                                      "setting. Repo file only: what a rule costs is a fact "
                                      "about the checkout. `--all` and `--ci` ignore it. A "
-                                     "hand-edited value the gate cannot use (a string, a "
-                                     "boolean, a negative) still reads as 60, never as no "
-                                     "limit.",
+                                     "hand-edited string, boolean or negative reads as 60, "
+                                     "never as no limit (a number the writer would refuse, "
+                                     "such as 0 or 1e9, is still taken as written).",
                                      "type", since="1.3.157",
                                      source=_S + "verify-gate.sh",
                                      type_="whole number of seconds, 1 to 540, or null"),

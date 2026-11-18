@@ -516,8 +516,8 @@ A rule that runs inside the budget and fails still exits 2, whatever was deferre
 raise the budget instead of editing code: `/crew:config verify.stopBudgetSeconds 120`. It takes a whole
 number from 1 to 540 (the Stop hook's timeout is 600 s; the gate keeps a 60 s margin) and refuses anything else, naming the range.
 If a write is refused with "not a settable leaf" you are on a crew older than 1.3.157. A value you typed
-into `.crew/config.json` by hand that the gate cannot use (a string, a boolean, a negative) is read as
-60, never as no limit.
+into `.crew/config.json` by hand that is a string, a boolean or a negative is read as
+60, never as no limit (a number the writer would refuse, such as 0 or 1e9, is still taken as written).
 
 Since crew 1.3.0 the gate also keeps the **hook deadline** (`CREW_HOOK_DEADLINE`, the Stop hook's
 600s limit), because the budget works from estimates and an estimate can be wrong (measured: 862s

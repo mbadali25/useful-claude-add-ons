@@ -4,7 +4,7 @@ the `environments.preProduction` key crew 1.3.23 added,
 the `promote.deadlineSeconds` key crew 1.3.41 added, the eight
 `reaper.*` keys crew 1.3.50 added and the repo-only `verify.stopBudgetSeconds`
 key crew 1.3.157 added:
-101, 97 and 62) and the
+102, 98 and 63) and the
 60 keys it drops. Generated once from the reviewed Disposition in
 `.work/tickets/L-0725/spec.md`; changing a key here is a spec amendment, not a
 test fix. `guards.profile` and `guards.overrides` replace the twelve

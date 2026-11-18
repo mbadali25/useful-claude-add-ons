@@ -89,6 +89,15 @@ def test_null_is_accepted_and_means_unset():
     assert crew_config.value_allowed(KEY, "repo", None) is None
 
 
+def test_writing_null_clears_the_value_so_the_gate_uses_its_default(tmp_path):
+    root = _repo(tmp_path)
+    crew_config.write_repo_config(str(root), {KEY: 120}, str(tmp_path / "g.json"))
+    assert json.loads(_bytes(root))["verify"]["stopBudgetSeconds"] == 120
+    crew_config.write_repo_config(str(root), {KEY: None}, str(tmp_path / "g.json"))
+    # The repo layer's convention: null is stored and means "unset" (the gate reads null as 60).
+    assert json.loads(_bytes(root))["verify"]["stopBudgetSeconds"] is None
+
+
 @pytest.mark.parametrize("value", [
     0, -1, 541, 600, 601, 10 ** 9,  # outside 1..540 (600 is the hook's own timeout)
     60.0, 59.5, float("nan"),  # not a whole number (60.0 == 60 in Python)
@@ -123,6 +132,8 @@ def test_verify_stop_budget_key_sabotage(monkeypatch):
     # Bug 1: the bound check is gone, so a typo is stored and the gate quietly runs its 60.
     monkeypatch.setattr(crew_config, "bounds_problem", lambda dotted, value: None)
     assert crew_config.value_allowed(KEY, "repo", -5) is None  # what the suite must catch
+    for bad in (0, 541, 600, 60.0, True, "60"):  # the must-reject cases above would all go red
+        assert crew_config.value_allowed(KEY, "repo", bad) is None, bad
     monkeypatch.undo()
     assert crew_config.value_allowed(KEY, "repo", -5) is not None
     # Bug 2: the key is not declared, so it is "not a settable leaf" (the original defect).

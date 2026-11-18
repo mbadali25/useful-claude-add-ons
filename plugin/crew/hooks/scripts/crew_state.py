@@ -570,8 +570,8 @@ WORKTREES_DEFAULTS = {"root": None}
 PROMOTE_DEFAULTS = {"deadlineSeconds": None}
 
 # crew 1.3.157 `verify.stopBudgetSeconds`: the seconds the Stop row of the verify gate may spend
-# running rules before it defers the rest to CI. The default is the one `verify-gate.sh` and
-# `verify-gate.ps1` already use when the key is absent (60), so declaring the key moves nothing.
+# running rules before it defers the rest to CI. The default is the one `verify-gate.sh`
+# already uses when the key is absent (60), so declaring the key moves nothing.
 # REPO ONLY (a rule's price is a fact about the checkout; `default_global_config` omits `verify`).
 # A write outside STOP_BUDGET_BOUNDS, or a non-integer, is REFUSED (`crew_config.value_allowed`);
 # the upper bound is the Stop row's hook timeout in `crew_hook.TABLE` LESS `DEADLINE_MARGIN` in
