@@ -1772,3 +1772,30 @@ def test_a_popd_with_nothing_to_go_back_to_fails_closed_only_beside_the_owners_f
 def test_a_whatif_delete_handed_the_owners_folder_fails_closed(home, top):
     """`-WhatIf` deletes nothing; the guard does not read it and refuses. Documented as an overblock, by design."""
     assert scope_guard.shell_refusal("Get-ChildItem ~/.claude/crew | Remove-Item -WhatIf", None, top)
+
+
+# --- a file sed is given is not its script (crew 1.3.151) ----------------------------------------------------------
+
+SED_READS = ("sed s/a/b/ {t}", "sed -n p {t} > out.txt", "sed -e s/a/b/ -e p {t}", "sed -n -f script.sed {t}",
+             "sed --expression=p {t}", "sed -n -l 5 l {t}", "cat {t} | sed -n p")
+SED_WRITES = ('sed -n "w {t}" a', 'sed -e "1w {t}" a', 'sed --expression="w {t}" a', 'sed -n -e p -e "w {t}" a',
+              "sed -i s/a/b/ {t}", 'cat a | sed -n "w {t}"')
+
+
+@pytest.mark.parametrize("folder", ["crew-guards-home-icha1w_6", "x1w", "0w0", "plain"])
+def test_a_file_sed_reads_is_not_its_script_whatever_the_homes_path_spells(folder, tmp_path, monkeypatch):
+    """The PR's Linux run put the throwaway home at `/var/tmp/crew-guards-home-icha1w_6/home` (the name is
+    `mkdtemp`'s) and every `sed` cell of the read corpus was refused: each word of a `sed` was read as a script, and
+    in that path `1w_6/home/.claude/crew/config.json` is the command `1w <file>`. The script is the `-e` values or
+    the first word, never the files; the write forms stay refused under the same home."""
+    home = tmp_path / folder / "home"
+    (home / ".claude" / "crew" / "confirm-config").mkdir(parents=True)
+    (home / ".claude" / "crew" / "config.json").write_text("{}")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    spelled = str(home / ".claude" / "crew" / "config.json").replace("\\", "/")
+    for target in ("~/.claude/crew/config.json", spelled):
+        for command in (form.replace("{t}", target) for form in SED_READS):
+            assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
+        for command in (form.replace("{t}", target) for form in SED_WRITES):
+            assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access

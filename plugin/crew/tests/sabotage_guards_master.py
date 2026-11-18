@@ -1117,7 +1117,7 @@ GUARDS_MASTER_MUTATIONS = (
      '_SCRIPT_WRITE_RE = re.compile(r"(?:^|[;{\\s\\d$!]|/[gpIiMme\\d]*)w[ \\t]*([^\\n;}|]+)")\n',
      _M + "test_the_round_10_write_verbs_are_refused"),
     ("sed's script words are not read (only options are)", SCOPE,
-     '        return [arg for arg in args if not arg.startswith("-")]\n',
+     '        return scripts if scripts or named else plain[:1]\n',
      '        return []\n',
      _M + "test_the_round_10_write_verbs_are_refused"),
     ("an editor's `-c` script is not read for its `w <file>`", SCOPE,

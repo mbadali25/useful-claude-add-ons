@@ -105,4 +105,13 @@ GUARDS_DEPTH_MUTATIONS = (
      '        return _trust_refusal(data)\n    ' + _BROAD,
      '        return _trust_refusal(data)\n    ' + _NARROW,
      _D + "test_the_trust_check_refuses_when_it_cannot_judge"),
+    # found by the PR's own Linux run: a file sed reads was read as its script
+    ("every word of a sed is read as a script again (a home with `1w` in its path refuses a read)", SCOPE,
+     '        return scripts if scripts or named else plain[:1]\n',
+     '        return scripts + plain\n',
+     _M + "test_a_file_sed_reads_is_not_its_script_whatever_the_homes_path_spells"),
+    ("the values of sed's `-e` are not its script (`sed -n -e p -e \"w <owner file>\" a` passes)", SCOPE,
+     '                scripts += args[position + 1:position + 2]\n',
+     '                pass\n',
+     _M + "test_a_file_sed_reads_is_not_its_script_whatever_the_homes_path_spells"),
 )

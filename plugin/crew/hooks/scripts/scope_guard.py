@@ -1872,6 +1872,8 @@ def _ps_destinations(args):
 # A `w` command in a sed or ex script (`w file`, `1w file`, `s/a/b/w file`, `w! file`): the file is the rest of the
 # line.
 _SCRIPT_WRITE_RE = re.compile(r"(?:^|[;{\s\d$!]|/[gpIiMme\d]*)w!?[ \t]*([^\n;}|]+)")
+# a sed option whose value is the next word: a script (`-e`), a script file (`-f`), a line length (`-l`)
+_SED_VALUE_RE = re.compile(r"--(?:expression|file|line-length)|-[A-Za-z]*[efl]")
 # what `find` hands each file to after `-exec`: a verb that writes or deletes, or a shell whose text is not read here
 _FIND_EXEC = frozenset({"-exec", "-execdir", "-ok", "-okdir"})
 _FIND_NAMES = ("config.json", "cc-0a1b2c3d.json", "confirm-config", "crew", ".claude")
@@ -1881,10 +1883,23 @@ _AWK_WRITE_RE = re.compile(r">>?\s*\"([^\"]+)\"")
 
 
 def _scripts(name, args):
-    """The words of `args` that may be a sed or ex SCRIPT: for sed every word that is no option (its script, its
-    `-e` values; a file name is read too and gives nothing); for an editor its `-c` values and `+command` words."""
+    """The words of `args` that are a sed or ex SCRIPT: for sed its `-e` values, or with none of those (and no
+    `-f`) its first word that is no option; for an editor its `-c` values and `+command` words. The files sed is
+    given are not scripts (crew 1.3.151): every word used to be read as one, and a path that holds a digit before
+    a `w` (`/var/tmp/home-1w_6/.claude/crew/config.json`) was read as the command `1w <file>`, so a plain read of
+    the owner's file was refused under such a home."""
     if name == "sed":
-        return [arg for arg in args if not arg.startswith("-")]
+        scripts, plain, named = [], [], False
+        for position, arg in enumerate(args):
+            if arg.startswith("--expression="):
+                scripts.append(arg.split("=", 1)[1])
+            elif arg == "--expression" or re.fullmatch(r"-[A-Za-z]*e", arg):
+                scripts += args[position + 1:position + 2]
+            elif arg in ("--file", "-f") or arg.startswith("--file=") or re.fullmatch(r"-[A-Za-z]*f", arg):
+                named = True
+            elif not arg.startswith("-") and (not position or not _SED_VALUE_RE.fullmatch(args[position - 1])):
+                plain.append(arg)
+        return scripts if scripts or named else plain[:1]
     scripts = [args[position + 1] for position, arg in enumerate(args[:-1]) if re.fullmatch(r"-[A-Za-z]*c", arg)]
     return scripts + [arg for arg in args if arg.startswith("+")]
 
