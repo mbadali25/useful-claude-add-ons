@@ -570,7 +570,7 @@ while `scope.mode` is on, and `"all"` does not stop git's own hooks, aliases
 or `core.sshCommand` set earlier in a config file: those run as if crew were
 absent. The configuration reference's "Git commands" section has the rules.
 
-**The owner-typed run approval (crew 1.3.160, off by default).** Trusting a
+**The owner-typed run approval (crew 1.3.161, off by default).** Trusting a
 repo's verify map used to need you at a terminal. With
 `approvals.run.classes` naming `verify-trust` in the machine file, an agent
 can ask instead: its plain `verify_trust.py approve --root <repo>` is still

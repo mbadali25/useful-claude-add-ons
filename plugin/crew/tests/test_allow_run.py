@@ -1,4 +1,4 @@
-"""The owner-typed run approval (crew 1.3.160): `crew_runapproval.py`, the
+"""The owner-typed run approval (crew 1.3.161): `crew_runapproval.py`, the
 `/crew:allow-run` branch of `approval_hook.py`, the release and the store
 protection in `scope_guard.py`, and `verify_trust.py --receipt`.
 

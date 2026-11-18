@@ -248,9 +248,9 @@ runs when they do (inferred from git's documented behaviour, not measured here).
 `python3 hooks/scripts/crew_gitallow.py --root .` prints what is in force.
 Each pass is logged to `.crew/guard.log` with the policy `gitAllow:<value>`.
 
-## The owner-typed run approval (`approvals.run`, crew 1.3.160)
+## The owner-typed run approval (`approvals.run`, crew 1.3.161)
 
-A few commands are the owner's alone. Until crew 1.3.160 the only way to run
+A few commands are the owner's alone. Until crew 1.3.161 the only way to run
 one was a person at a terminal. With this route on, an agent can ASK and only
 the owner can answer: the refused command becomes a request, you type
 `/crew:allow-run <id>` in your own prompt, and the agent re-runs the exact

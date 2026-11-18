@@ -68,7 +68,7 @@ HARNESS = (
     "plugin/crew/hooks/scripts/approval_hook.py",
     "plugin/crew/hooks/scripts/approval-hook.sh",
     "plugin/crew/hooks/scripts/approval-hook.ps1",
-    # crew 1.3.160: the owner-typed run approval. The module records the requests, mints the
+    # crew 1.3.161: the owner-typed run approval. The module records the requests, mints the
     # receipts the prompt hook asks for and decides what scope_guard releases, so it is harness
     # like the three files that call it (approval_hook.py, scope_guard.py, verify_trust.py).
     "plugin/crew/hooks/scripts/crew_runapproval.py",

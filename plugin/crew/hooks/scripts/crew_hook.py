@@ -487,7 +487,7 @@ _SKIP = "skip"
 
 def _approval_wanted(raw):
     """approval-hook.sh's own pre-filter: the word `approve` in any case, `crew:confirm-config` or
-    `crew:allow-run` (crew 1.3.160). A prompt with none exits 0 before any python is looked for."""
+    `crew:allow-run` (crew 1.3.161). A prompt with none exits 0 before any python is looked for."""
     if b"crew:allow-run" in raw:
         return True
     return re.search(rb"approve", raw, re.IGNORECASE) is not None or b"crew:confirm-config" in raw

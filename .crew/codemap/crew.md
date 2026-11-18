@@ -968,7 +968,7 @@ calls `confirm`; both are harness (`scripts/check-tooling-pr.py` `HARNESS`:
 `plugin/crew/tests/humanonly_mutations.py` (16, run alone until PR 2 wires
 them into `sabotage.py`).
 
-## The owner-typed run approval (crew 1.3.160, harness half)
+## The owner-typed run approval (crew 1.3.161, harness half)
 
 DERIVED on `feat/approval-core` (cut from main `127df0155`); this section does
 not move the anchor. One module, `plugin/crew/hooks/scripts/crew_runapproval.py`,

@@ -1,4 +1,4 @@
-"""The owner-typed run approval mutations (crew 1.3.160). Same tuple shape as
+"""The owner-typed run approval mutations (crew 1.3.161). Same tuple shape as
 `sabotage.py`'s MUTATIONS -- (label, target, find, replace, test) -- and
 appended to it there. Run `sabotage.py`, not this file.
 

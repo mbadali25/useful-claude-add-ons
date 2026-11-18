@@ -1,4 +1,4 @@
-"""Owner-typed run approvals: one request, one receipt, one use (crew 1.3.160).
+"""Owner-typed run approvals: one request, one receipt, one use (crew 1.3.161).
 
 A few commands are the owner's alone (today: the verify trust store's
 `approve`, `revoke`, `allow-owner`, `disallow-owner`). Until now the only way
