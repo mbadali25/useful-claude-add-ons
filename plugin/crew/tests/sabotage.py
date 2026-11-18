@@ -3013,7 +3013,11 @@ def main(argv=None):
         for entry in MUTATIONS:
             print(entry[0])
         return 0
-    targets = [m[1] for m in chosen]
+    # EVERY mutation target, not only the selected ones: `--only` narrows what
+    # runs, never what the tree must be clean of. A live mutation left in an
+    # unselected file by a killed run would otherwise make the selected test go
+    # red for the wrong reason and read as proof of coverage.
+    targets = [m[1] for m in MUTATIONS]
 
     # Before anything is touched. A stale `.bak` means the tree already holds
     # a mutation from a killed run, and the next `shutil.copy` would destroy

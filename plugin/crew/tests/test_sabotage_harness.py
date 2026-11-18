@@ -345,6 +345,53 @@ def test_main_refuses_to_start_when_a_backup_is_present(tmp_path, monkeypatch,
     assert _text(target) == "mutated\n"
 
 
+def _two_targets(tmp_path, monkeypatch):
+    first = _target(tmp_path, "alpha\nbeta\n")
+    other = str(tmp_path / "other.py")
+    with open(other, "w", encoding="utf-8") as handle:
+        handle.write("one\ntwo\n")
+    monkeypatch.setattr(sabotage, "MUTATIONS", (
+        ("first label", first, "beta", "gamma", "test_nothing"),
+        ("other label", other, "two", "three", "test_nothing"),
+    ))
+    return first, other
+
+
+def test_only_still_refuses_for_a_stale_backup_in_an_unselected_target(
+        tmp_path, monkeypatch, capsys):
+    """must-refuse (L-0958 round 2). `--only` narrows which mutations run, not
+    which files must be clean: a leftover `.bak` beside a target the selection
+    does not touch means the tree holds a foreign mutation."""
+    first, other = _two_targets(tmp_path, monkeypatch)
+    with open(other + ".bak", "w", encoding="utf-8") as handle:
+        handle.write("one\ntwo\n")
+
+    def _never(_test):
+        raise AssertionError("a refused run must not execute a test")
+
+    monkeypatch.setattr(sabotage, "run_test", _never)
+
+    assert sabotage.main(["--only", "first label"]) == 2
+    printed = capsys.readouterr().out
+    assert "REFUSING TO RUN" in printed
+    assert f"{other}.bak" in printed
+    assert _text(first) == "alpha\nbeta\n"
+
+
+def test_only_runs_on_a_clean_tree_and_baselines_every_target(
+        tmp_path, monkeypatch, capsys):
+    """must-allow. A clean tree with `--only` still runs the selected entry,
+    and the pristine baseline covers the unselected target too."""
+    first, other = _two_targets(tmp_path, monkeypatch)
+    monkeypatch.setattr(sabotage, "run_test", _caught)
+
+    assert sabotage.main(["--only", "first label"]) == 0
+    assert "SABOTAGE SUITE: PASS" in capsys.readouterr().out
+    assert set(sabotage._PRISTINE) == {first, other}  # pylint: disable=protected-access
+    assert _text(first) == "alpha\nbeta\n"
+    assert not os.path.exists(first + ".bak")
+
+
 def test_main_reports_a_restore_that_did_not_take(tmp_path, monkeypatch,
                                                   capsys):
     """Defect 3. The mutation goes red as it should, so `ok` from the mutation
