@@ -239,7 +239,7 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
-- **crew 1.3.160**: The Stop budget reader agrees with the writer (harness-only). `crew` 1.3.160: a hand-edited `verify.stopBudgetSeconds` that `/crew:config` would refuse (0, a negative, a decimal, a string, a boolean, null, a number over 540, or the key written twice) now reads as the 60 s default in `verify-gate.sh`, instead of being taken as written.
+- **crew 1.3.162**: The Stop budget reader agrees with the writer (harness-only). `crew` 1.3.162: a hand-edited `verify.stopBudgetSeconds` that `/crew:config` would refuse (0, a negative, a decimal, a string, a boolean, null, a number over 540, or the key written twice) now reads as the 60 s default in `verify-gate.sh`, instead of being taken as written.
 - **crew 1.3.158**: `verify.stopBudgetSeconds` is a settable, documented, bounded config key (thd-jobs 5a). `crew` 1.3.158: the Stop gate's verify budget can now be tuned with `/crew:config verify.stopBudgetSeconds 120` instead of hand-editing the file; the default stays 60 and a value that is not a whole number from 1 to 540 is refused.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).

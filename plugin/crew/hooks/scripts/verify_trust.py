@@ -8,6 +8,7 @@ verify map enough to run the commands it names?
     python3 verify_trust.py status  [--root DIR]
     python3 verify_trust.py allow-owner HOST/OWNER [--under DIR ...] [--yes]
     python3 verify_trust.py disallow-owner HOST/OWNER [--yes]
+    ... approve|revoke|allow-owner|disallow-owner ... --receipt ID   (crew 1.3.161)
 
 `.crew/verify.json` is repo-authored text and its `run` strings reach `eval`;
 `_verify/smoke.sh` / `scripts/smoke.sh` reach `bash`. A clone of a hostile repo
@@ -45,7 +46,12 @@ temp file and `os.replace` under a lock, mode 0600. It is not a crew config
 key: the allowlist is never read from a repo file, so a hostile repo cannot
 widen it. `scope_guard.py` refuses a model-run command that approves, allows,
 disallows or revokes, and refuses a Write/Edit of the store, so only a person
-at a terminal grows trust.
+at a terminal grows trust -- or, with `approvals.run.classes` naming
+`verify-trust` in the machine config (default off), the owner's typed
+`/crew:allow-run <id>`: `--receipt ID` spends that one-use receipt here
+(`crew_runapproval.spend`), bound to this verb, its arguments, the worktree
+and, for `approve`, the digest being approved. With `--receipt` nothing else
+confirms: a receipt that does not match changes nothing.
 
 Not covered, by design: scripts a `run` string calls (the hash binds the map,
 not `python3 scripts/foo.py`); `--ci`, which is a CI job's own pipeline.
@@ -952,7 +958,36 @@ def _rule_count(root):
         return None
 
 
-def _confirm(prompt, yes):
+def _grant(args, verb, **what):
+    """`(receipt id, action)` when the command carries `--receipt`, else None."""
+    if not getattr(args, "receipt", None):
+        return None
+    import crew_runapproval  # pylint: disable=import-outside-toplevel
+    return args.receipt, crew_runapproval.trust_action(verb, **what)
+
+
+def _spend_receipt(grant, pin):
+    """True only when the owner's typed receipt (`/crew:allow-run <id>`, crew
+    1.3.161) covers exactly this action here and now. The receipt is spent by
+    this call whatever it answers, so a second run finds nothing. Anything
+    this cannot read, match or import is a refusal: nothing was changed."""
+    ident, action = grant
+    try:
+        import crew_runapproval  # pylint: disable=import-outside-toplevel
+        crew_runapproval.spend(ident, crew_runapproval.CLASS_TRUST, action,
+                               crew_runapproval.worktree_of(os.getcwd()), pin=pin,
+                               root=os.getcwd())
+    except Exception as exc:  # noqa: BLE001  pylint: disable=broad-exception-caught
+        print(f"verify_trust: refused - the receipt does not allow this ({exc}). Nothing was "
+              "changed.", file=sys.stderr)
+        return False
+    return True
+
+
+def _confirm(prompt, yes, grant=None, pin=None):
+    if grant is not None:
+        # `--receipt` is the whole answer: it never falls through to --yes or a terminal.
+        return _spend_receipt(grant, pin)
     if "CLAUDECODE" in os.environ:
         print("verify_trust: refused - this is running inside a Claude Code session, and trust is "
               "the owner's, given in their own terminal. Nothing was changed.", file=sys.stderr)
@@ -1059,7 +1094,8 @@ def cmd_approve(args):
     # URL cannot carry terminal control sequences into the confirmation prompt.
     print("remotes: " + (", ".join(json.dumps(url) for url in remotes)
                          if remotes else "(none readable)"))
-    if not _confirm("The gate will run the commands in this file on every Stop.", args.yes):
+    if not _confirm("The gate will run the commands in this file on every Stop.", args.yes,
+                    _grant(args, "approve", root=args.root), current):
         return 1
 
     def add(st):
@@ -1085,6 +1121,9 @@ def cmd_revoke(args):
         identity, _top = repo_identity(root)
     except TrustError as exc:
         print(f"verify_trust: {exc}. Nothing was revoked.", file=sys.stderr)
+        return 1
+    grant = _grant(args, "revoke", root=args.root)
+    if grant is not None and not _spend_receipt(grant, None):
         return 1
     found = []
 
@@ -1115,7 +1154,8 @@ def cmd_allow_owner(args):
     if not under:
         print("warning: without --under, any directory whose git config names this owner is "
               "trusted on first sight.")
-    if not _confirm(f"Trust every repo whose remotes are {owner}, {where}.", args.yes):
+    if not _confirm(f"Trust every repo whose remotes are {owner}, {where}.", args.yes,
+                    _grant(args, "allow-owner", owner=owner, under=args.under or [])):
         return 1
 
     def add(st):
@@ -1132,7 +1172,8 @@ def cmd_allow_owner(args):
 def cmd_disallow_owner(args):
     owner = args.owner.strip().lower()
     found = []
-    if not _confirm(f"Stop trusting every repo whose remotes are {owner}.", args.yes):
+    if not _confirm(f"Stop trusting every repo whose remotes are {owner}.", args.yes,
+                    _grant(args, "disallow-owner", owner=owner)):
         return 1
 
     def drop(st):
@@ -1163,6 +1204,8 @@ def build_parser():
         p.add_argument("--root", default=".")
         if name == "approve":
             p.add_argument("--yes", action="store_true")
+        if name in ("approve", "revoke"):
+            p.add_argument("--receipt")
         if name == "check":
             p.add_argument("--verify-file")
             p.add_argument("--expect-verify-sha")
@@ -1171,10 +1214,12 @@ def build_parser():
     allow.add_argument("owner")
     allow.add_argument("--under", action="append")
     allow.add_argument("--yes", action="store_true")
+    allow.add_argument("--receipt")
     allow.set_defaults(func=cmd_allow_owner)
     deny = sub.add_parser("disallow-owner")
     deny.add_argument("owner")
     deny.add_argument("--yes", action="store_true")
+    deny.add_argument("--receipt")
     deny.set_defaults(func=cmd_disallow_owner)
     return parser
 
