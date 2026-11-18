@@ -134,10 +134,10 @@ read entries under any `## [` heading.
 
 ### Changed — crew 1.3.164: Codex `gpt-6.2-sol` is the pinned default for `qa.codex.model`
 
-- **Summary.** `crew` 1.3.164 makes Codex `gpt-6.2-sol` the default review model (`qa.codex.model`), where before the default was `null` and the Codex CLI chose; repos that spell `"model": null` in their config keep `null` until you edit it.
+- **Summary.** `crew` 1.3.164 makes Codex `gpt-6.2-sol` the default review model (`qa.codex.model`), where before the default was `null` and the Codex CLI chose; a repo that spells `"model": null` keeps `null` (no flag) unless a machine-wide config supplies a model, which then wins over that `null`; a new `/crew:init` repo writes the pin itself, so it overrides a custom machine-wide `qa.codex.model` until you remove the repo key.
 - **What changed.** `crew_state.QA_DEFAULTS["codex"]["model"]` is now `CODEX_DEFAULT_MODEL` (`gpt-6.2-sol`); `templates/config.template.json` and `templates/global.template.json` carry it for new `/crew:init` repos and new machines; the `qa.codex.model` row in `CONFIG.md` and the Configuration Guide shows the new default; `skills/crew-setup/SKILL.md` no longer says the null default is deliberate.
 - **What did not change.** `qa.codex.reasoningEffort` stays `null`. `dev.codex.model` stays `null`. The per-role `gpt-6-astra` pins (`dev.roles.developer`, `dev.roles.security` in the crew-setup offer table, and the rule-of-two Codex reviewer) are separate choices and are not touched; whether they move to `gpt-6.2-sol` is an open owner decision.
-- **For you.** A repo initialised before this version has `"model": null` written out in `.crew/config.json`, and an explicit `null` beats the new default, so it keeps passing no flag. Run `/crew:model qa.codex.model gpt-6.2-sol` there to take the pin. The published Claude Docs "Configuration Guide" still needs the same one-row update.
+- **For you.** A repo initialised before this version has `"model": null` written out in `.crew/config.json`, and an explicit `null` beats the built-in default, so it keeps passing no flag unless your machine-wide config sets a model. Run `/crew:model qa.codex.model gpt-6.2-sol` there to take the pin. The published Claude Docs "Configuration Guide" still needs the same one-row update.
 
 ### Added — crew 1.3.161: an owner-typed, one-use receipt lets an agent run a trust command you approved (harness half, off by default)
 

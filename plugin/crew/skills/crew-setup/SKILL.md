@@ -396,7 +396,7 @@ whose block is not configured, is skipped out loud — never silently.
 `qa.codex.model` / `qa.codex.reasoningEffort`: `model` defaults to `gpt-6.2-sol` from
 crew 1.3.164 (owner decision); before that it was `null`. A repo whose config already
 spells `"model": null` keeps `null`, which means "pass no flag", i.e. whatever the Codex
-CLI itself defaults to, so an existing repo changes only when you edit that key.
+CLI itself defaults to, so an existing repo changes only when you edit that key (a machine-wide model still wins over that `null`).
 `reasoningEffort` stays `null`. Set it to `"high"` for a materially harder review at
 higher latency and cost; set `model` to pin a different Codex model. Read at call time,
 never hardcoded in the command.
