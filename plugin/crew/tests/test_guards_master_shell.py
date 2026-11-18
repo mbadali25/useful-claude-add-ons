@@ -36,7 +36,7 @@ def _below_elsewhere(folder):
 def _home_folder(tmp_path):
     """The (folder, made here) the throwaway home lives in. On Linux pytest's `tmp_path` is under `/tmp`, the
     folder this corpus uses for "elsewhere": with the home there, `echo x > /tmp/$NAME` and `find /tmp -exec sh ...`
-    MAY reach the owner's files and the guard is right to refuse them (crew 1.3.156;
+    MAY reach the owner's files and the guard is right to refuse them (crew 1.3.157;
     `test_an_unresolvable_target_below_an_ancestor_of_home_is_refused` pins that), so the must-allow rows would be
     asking for a hole. The home then goes to a folder `/tmp` is no ancestor of. No such folder is a failure, not
     a skip and not a silent fall back to the home under `/tmp`."""
@@ -419,7 +419,7 @@ def test_a_word_that_only_passes_through_the_owners_names_is_not_the_owners(home
         assert scope_guard._owner_command_refusal(command) is None, command  # pylint: disable=protected-access
 
 
-# --- round 9: escape characters and paths the guard cannot resolve (crew 1.3.156) ------------------------------------
+# --- round 9: escape characters and paths the guard cannot resolve (crew 1.3.157) ------------------------------------
 # Round 8 was refused for `confi\g.json`, ``confi`g.json`` and `confi^g.json` (each shell strips its escape
 # character before it uses the word) and for `Set-Content -Path (Join-Path $HOME ...)`. The owner's decision: stop
 # chasing spellings. A word with an escape is read as each shell reads it; a write target the guard cannot resolve to
@@ -534,7 +534,7 @@ PS_PARENS = (
 )
 
 
-# what makes a command one that NAMES the owner's folder (crew 1.3.156): `.claude/crew` outside a read
+# what makes a command one that NAMES the owner's folder (crew 1.3.157): `.claude/crew` outside a read
 NAMED = "mkdir -p ~/.claude/crew; "
 
 
@@ -578,7 +578,7 @@ def test_an_unresolvable_target_in_a_command_that_never_names_the_owner_is_allow
 
 
 def test_an_unresolvable_target_below_an_ancestor_of_home_is_refused(home):
-    """The other side of the cell above (crew 1.3.156). `<folder>/$NAME` can be any path below `<folder>`, so when
+    """The other side of the cell above (crew 1.3.157). `<folder>/$NAME` can be any path below `<folder>`, so when
     the folder is an ANCESTOR of the owner's home the guard cannot tell the target from the owner's file and
     refuses; so does a `find` that starts there and deletes, or hands what it finds to a shell. That is what the
     Linux CI run showed when the throwaway home sat under `/tmp` (the fixture's fault, not the guard's). A folder
@@ -633,7 +633,7 @@ def test_a_dynamic_cd_makes_a_relative_target_unknown(home):
                     "Set-Location $env:UNSET; Set-Content config.json x; mkdir -p ~/.claude/crew"):
         assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
     # ... but not from a folder that is known, not for a name that cannot end an owner path (`out.txt`, `mv x y`),
-    # and not where the command only reads the owner's file or mentions `.claude` (crew 1.3.156)
+    # and not where the command only reads the owner's file or mentions `.claude` (crew 1.3.157)
     for command in ("cd $D; echo x > config.json", "cd /tmp/x; echo x > config.json; mkdir -p ~/.claude/crew",
                     "cd $D; echo x > out.txt; mkdir -p ~/.claude/crew", "cd $D; mv x y; mkdir -p ~/.claude/crew",
                     "cd $D; echo x > config.json; ls ~/.claude",
@@ -662,7 +662,7 @@ def test_an_escape_stripped_reading_of_a_windows_path_is_not_the_owners(home):
 
 
 def test_a_relative_target_with_an_unknown_part_after_a_dynamic_cd_is_unknown(home):
-    """Refused only when what is spelled of it could end one of the owner's paths (crew 1.3.156)."""
+    """Refused only when what is spelled of it could end one of the owner's paths (crew 1.3.157)."""
     for command in ("cd $D; echo x > conf$N; mkdir -p ~/.claude/crew", "cd $D; rm crew/$N; mkdir -p ~/.claude/crew",
                     "cd $D; rm confirm-config/$N.json; mkdir -p ~/.claude/crew"):
         assert scope_guard._owner_command_refusal(command), command  # pylint: disable=protected-access
@@ -796,7 +796,7 @@ def test_a_backtick_substitution_is_read_as_a_command(home):
 def test_what_makes_a_command_name_the_owners_folder(home):
     """The hint is `.claude/crew`, the confirm-config store or `crew/config.json`, in what the command SAYS it may
     write: a comment is not said, an escape character or a quote does not hide it, and a READ of the owner's file
-    (the operand of `cat`, `Get-Content`, the source of a copy) does not count (crew 1.3.156)."""
+    (the operand of `cat`, `Get-Content`, the source of a copy) does not count (crew 1.3.157)."""
     for command in ("mkdir -p ~/.claude/crew; echo x > $D", "mkdir /tmp/confirm-config; echo x > $D",
                     "echo crew/config.json; echo x > $D", "mkdir ~/.cl\\aude/crew; echo x > $D",
                     "mkdir ~/.cl`aude/crew; echo x > $D", "mkdir ~/.cl^aude/crew; echo x > $D",
@@ -866,7 +866,7 @@ def test_a_write_verb_beside_the_store_is_still_refused(command, home):
 
 
 # =====================================================================================================================
-# Round 10 (crew 1.3.156). Every case below runs twice: with no working directory, and with `top` SET to a repo root
+# Round 10 (crew 1.3.157). Every case below runs twice: with no working directory, and with `top` SET to a repo root
 # as the real hook always has it -- several round-10 bypasses only showed with `top` set, where a relative word is
 # joined to the folder instead of being judged by its tail.
 # =====================================================================================================================
@@ -1441,7 +1441,7 @@ def test_read_is_fed_by_a_here_string_too(home, top):
 # --- the trust check keeps its own wrappers -----------------------------------------------------------------------
 
 def test_the_trust_check_still_reads_past_nice(home, top):
-    """Until crew 1.3.156 the owner-file check's wrapper set carried the name of the trust check's and replaced it,
+    """Until crew 1.3.157 the owner-file check's wrapper set carried the name of the trust check's and replaced it,
     so `nice` was no wrapper there. The two sets are apart again: the trust check reads past its own wrappers, as on
     main, and not past the owner-file check's (a dot call, `start`, `call`)."""
     for command in ("nice /tmp/x approve", "nice -n 5 /tmp/x revoke", "env A=1 /tmp/x approve"):
@@ -1476,7 +1476,7 @@ def test_the_documented_tail_is_not_read(home, top):
 
 
 # =====================================================================================================================
-# Round 11 (crew 1.3.156): the bundled options of the archive and download tools, the store rule judged by its
+# Round 11 (crew 1.3.157): the bundled options of the archive and download tools, the store rule judged by its
 # target, and a `cd` that ends with its subshell or its `popd`. As in round 10, every case runs with and without
 # `top`.
 # =====================================================================================================================
@@ -1774,7 +1774,7 @@ def test_a_whatif_delete_handed_the_owners_folder_fails_closed(home, top):
     assert scope_guard.shell_refusal("Get-ChildItem ~/.claude/crew | Remove-Item -WhatIf", None, top)
 
 
-# --- a file sed is given is not its script (crew 1.3.156) ----------------------------------------------------------
+# --- a file sed is given is not its script (crew 1.3.157) ----------------------------------------------------------
 
 SED_READS = ("sed s/a/b/ {t}", "sed -n p {t} > out.txt", "sed -e s/a/b/ -e p {t}", "sed -n -f script.sed {t}",
              "sed --expression=p {t}", "sed -n -l 5 l {t}", "cat {t} | sed -n p")

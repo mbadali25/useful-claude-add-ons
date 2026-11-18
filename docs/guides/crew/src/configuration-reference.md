@@ -135,7 +135,7 @@ resolve to.
 **Who can write the receipts.** The double confirmation is recorded only by
 the prompt hook, from your own prompt. The scope guard (when `scope.mode` is
 not `off`) refuses every Write/Edit under `~/.claude/crew/confirm-config/` and
-every shell command that WRITES TO that store. Since crew 1.3.156 the command is read the way the check of
+every shell command that WRITES TO that store. Since crew 1.3.157 the command is read the way the check of
 your machine config reads it, and the write's TARGET is judged: `cp ~/.claude/crew/confirm-config/cc-ab12.json
 /tmp/`, `cat <receipt> | jq .x > /tmp/x` and `ls <receipt> && echo ok > /tmp/ok` pass (until then a redirect or
 a write verb anywhere in a command that named the store refused it). A verb's spelling inside a file name,

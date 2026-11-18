@@ -1,4 +1,4 @@
-"""The owner's files past what the shell check reads (crew 1.3.156).
+"""The owner's files past what the shell check reads (crew 1.3.157).
 
 The check reads a command three levels deep, a bounded number of commands, and a bounded length. Each of those
 limits used to end in silence: text nested a fourth level down was passed unread (`bash -c` four deep around a

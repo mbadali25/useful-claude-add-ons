@@ -239,8 +239,8 @@ Don't want the plugin machinery? See [`MARKETPLACE.md`](MARKETPLACE.md) §2 for 
 <!-- Generated from CHANGELOG.md by scripts/sync-updates.py. Edit the changelog, then run it. -->
 <!-- BEGIN CHANGELOG.md -->
 
+- **crew 1.3.157**: `guards.enabled`, one switch that turns every guard hook off. `crew` 1.3.157 makes the hook dispatcher honour `guards.enabled: false`: set it in the machine config layer (`~/.claude/crew/config.json`), confirm it with the owner's `/crew:confirm-config` double confirmation, and none of crew's guards runs and nothing blocks, with no downgrade and no reinstall. A repo file, an agent's write, a hand edit or an unconfirmed `false` cannot switch the guards off.
 - **crew 1.3.155**: The Pylint job no longer fails on the 3.12+ `isjunction` guard in `verify_trust.py`. `crew` 1.3.155: no behaviour change; a lint-only fix so the Pylint workflow passes again on main.
-- **crew 1.3.153**: `guards.git.allow`, one switch that lets git commands past crew's command guards. `crew` 1.3.153: a new machine-only switch, `guards.git.allow`, stops crew's command guards from blocking or asking on git commands (`"all"`, destructive ones included, or a list of subcommands); it is off by default and takes effect only after the owner types `/crew:confirm-config` twice.
 
 Full history: [CHANGELOG.md](CHANGELOG.md).
 
