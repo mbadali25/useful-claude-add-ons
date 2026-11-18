@@ -1995,6 +1995,7 @@ LAUNCHERS = [
     ["merge", "--strategy", "zzz", "o"], ["merge", "--strategy=zzz", "o"],
     ["merge", "--strat", "zzz", "o"], ["pull", "-s", "zzz"], ["pull", "--strategy=zzz", "o"],
     ["rebase", "-s", "zzz", "main"], ["rebase", "--strategy", "zzz", "main"],
+    ["rebase", "-ms", "zzz", "main"], ["rebase", "-mszzz", "main"], ["rebase", "-ims", "zzz", "main"],
     ["-C", ".", "merge", "-s", "zzz", "o"], ["cat-file", "--filters", ":h.txt"],
     ["cat-file", "--filter", ":h.txt"]]
 
@@ -2012,7 +2013,7 @@ def test_round11_a_helper_launcher_is_held(args):
     ["merge", "o"], ["merge", "-X", "theirs", "o"], ["merge", "-Xours", "o"],
     ["merge", "--strategy-option=ours", "o"], ["merge", "--squash", "o"], ["merge", "--stat", "o"],
     ["merge", "--no-ff", "o"], ["merge", "-m", "msg", "o"], ["pull", "--ff-only"],
-    ["pull", "--rebase"], ["rebase", "main"], ["rebase", "-X", "ours", "main"],
+    ["pull", "--rebase"], ["rebase", "main"], ["rebase", "-m", "main"], ["rebase", "-X", "ours", "main"],
     ["rebase", "--abort"], ["status", "-s"], ["log", "-s"], ["diff", "--stat"],
     ["show", "-s", "HEAD"], ["log", "--", "-s"], ["cat-file", "blob", ":h.txt"],
     ["cat-file", "-p", "HEAD"], ["cat-file", "-t", "HEAD"]])

@@ -275,6 +275,9 @@ _STRATEGY_SUBS = frozenset(("merge", "pull", "rebase"))
 # (which merge a revert uses is the sequencer's choice, not the line's).
 _LONG_STRATEGY_SUBS = frozenset(("cherry-pick", "revert"))
 _SHORT_VALUE_LETTERS = "XmFSCx"
+# `git rebase -m` is `--merge` and takes no value, so `-ms zzz` is `-m -s zzz` (review of
+# round 18, Claude Opus 5.5): a bundle past `m` is still read for rebase.
+_SHORT_VALUE_LETTERS_REBASE = "XFSCx"
 
 # The subcommands git itself implements (`git --list-cmds=builtins`, 2.56, plus
 # the names older versions carried). Any other word after `git` is an alias or
@@ -325,7 +328,7 @@ def _git_has_builtin(name):
     return name in _PROBED["set"]
 
 
-def _strategy_hit(word):
+def _strategy_hit(word, sub="merge"):
     """`word` is `-s`, `-sx`, a bundle holding `s` before any value-taking letter
     (`-ns`), or an abbreviation of `--strategy` (`--strat`, `--strategy=x`)."""
     if word.startswith("--"):
@@ -333,10 +336,11 @@ def _strategy_hit(word):
         return len(name) > 2 and "--strategy".startswith(name)
     if not word.startswith("-") or len(word) < 2:
         return False
+    value_letters = _SHORT_VALUE_LETTERS_REBASE if sub == "rebase" else _SHORT_VALUE_LETTERS
     for letter in word[1:]:
         if letter == "s":
             return True
-        if letter in _SHORT_VALUE_LETTERS:
+        if letter in value_letters:
             return False
     return False
 
@@ -515,7 +519,7 @@ def hold(args):
     for word in rest:
         if word == "--":
             break
-        if sub in _STRATEGY_SUBS and _strategy_hit(word):
+        if sub in _STRATEGY_SUBS and _strategy_hit(word, sub):
             return f"`git {sub} {word}` runs git-merge-<strategy> from PATH"
         if sub in _LONG_STRATEGY_SUBS and word.startswith("--") and _strategy_hit(word):
             return f"`git {sub} {word}` runs git-merge-<strategy> from PATH"
