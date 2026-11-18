@@ -1005,3 +1005,17 @@ def test_list_with_an_unmatched_only_still_refuses(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "matches no mutation label" in out
     assert sabotage.MUTATIONS[0][0] not in out
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_an_empty_only_refuses_instead_of_selecting_every_label(
+        monkeypatch, capsys, value):
+    """must-refuse (L-0958 round 3). `"" in label` is true for every label, so
+    an unset `$LABEL` used to run the whole suite and mutate the whole tree."""
+    def boom(*_a, **_k):
+        raise AssertionError("main() touched the tree")
+    for name in ("apply_mutation", "stale_backups", "install_exit_handlers", "run_test"):
+        monkeypatch.setattr(sabotage, name, boom)
+    assert sabotage.main(["--only", value]) == 2
+    assert "is empty" in capsys.readouterr().out
+    assert sabotage.main(["--list", "--only", value]) == 2

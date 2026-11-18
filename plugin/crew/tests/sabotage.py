@@ -3003,6 +3003,13 @@ def main(argv=None):
     --list prints the labels and runs nothing, but an unmatched --only is
     refused (2) first, so it cannot read as a pass."""
     args = parse_args([] if argv is None else argv)
+    blank = [text for text in args.only if not text.strip()]
+    if blank:
+        # `"" in label` is true for every label, so an unset `$LABEL` would
+        # select the whole suite and mutate the whole tree.
+        print(f"REFUSING TO RUN -- --only {blank[0]!r} is empty, which would "
+              f"match every mutation label (--list shows them)")
+        return 2
     chosen, unmatched = select(MUTATIONS, args.only)
     if unmatched:
         for text in unmatched:
