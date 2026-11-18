@@ -1042,7 +1042,7 @@ heredoc delimiter ending in a dangling backslash (`_dangling_backslash` `:1554`)
 `line_git_commands` (`:920`) needs every command to be exactly `git` and `hold` (`:292`:
 `-c`, `--config-env`, `--exec-path`, an option that runs a command in any prefix git takes
 `_option_hit` `:277`, a `git config` that is not plainly a read `_config_is_read` `:241`; since
-crew 1.3.150 also a built-in whose job is to run a handed program, `_RUNS_PROGRAM` = `merge-index`,
+crew 1.3.152 also a built-in whose job is to run a handed program, `_RUNS_PROGRAM` = `merge-index`,
 a subcommand word that starts a helper, `_HELPER_WORDS`, and a URL scheme git hands to a
 `git-remote-<scheme>` program, `_helper_scheme`; re-find each by name) to
 say nothing; `line_exempt` (`:950`) adds the setting. The cloud guard: `_classify`
