@@ -394,7 +394,7 @@ and hard-fail instead of falling back.
 whose block is not configured, is skipped out loud — never silently.
 
 `qa.codex.model` / `qa.codex.reasoningEffort`: `model` defaults to `gpt-6.2-sol` from
-crew 1.3.165 (owner decision); before that it was `null`. A repo whose config already
+crew 1.3.166 (owner decision); before that it was `null`. A repo whose config already
 spells `"model": null` keeps `null`, which means "pass no flag", i.e. whatever the Codex
 CLI itself defaults to, so an existing repo changes only when you edit that key (a machine-wide model still wins over that `null`).
 `reasoningEffort` stays `null`. Set it to `"high"` for a materially harder review at

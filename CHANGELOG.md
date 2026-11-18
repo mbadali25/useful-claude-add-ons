@@ -18,7 +18,8 @@ read entries under any `## [` heading.
 
 ## [Unreleased]
 
-- crew 1.3.164: re-bump only - interim number on the Codex gpt-6.2-sol pin branch (PR #790, pushed, never on main) before plugin/crew changed again in review; the change is recorded under crew 1.3.165
+- crew 1.3.164: re-bump only - interim number on the Codex gpt-6.2-sol pin branch (PR #790, pushed, never on main) before plugin/crew changed again in review; the change is recorded under crew 1.3.166
+- crew 1.3.165: re-bump only - interim number on the Codex gpt-6.2-sol pin branch (PR #790, pushed, never on main) before a pylint line-length fix changed plugin/crew again; the change is recorded under crew 1.3.166
 - crew 1.3.113: re-bump only - interim number on the isjunction pylint branch (PR #779, commit c84fa5e31, pushed, never on main) before main reached 1.3.153 and open PR #774 held 1.3.154; the change is recorded under crew 1.3.155
 - crew 1.3.152: re-bump only - interim number on the guards.git.allow branch (PR #769, commit 1805ad4a2, pushed, never on main) before the review fix for `git rebase -ms <strategy>` changed plugin/crew after the version was set; the change is recorded under crew 1.3.153
 - crew 1.3.150: re-bump only - interim number on the guards.git.allow branch (PR #769, commit 02d1143b3, pushed, never on main) before main took #784 and open PR #774 reached 1.3.151; the change is recorded under crew 1.3.153
@@ -133,9 +134,9 @@ read entries under any `## [` heading.
 - crew 1.3.140: re-bump only - interim number on the guards.git.allow branch (PR #769, pushed, never on main); open PR #777 reached 1.3.141, so the branch was re-bumped above it; the change is recorded under crew 1.3.146
 - crew 1.3.36: re-bump only - interim number on the promote-gate branch before main reached 1.3.40; the change is recorded under crew 1.3.41
 
-### Changed — crew 1.3.165: Codex `gpt-6.2-sol` is the pinned default for `qa.codex.model`
+### Changed — crew 1.3.166: Codex `gpt-6.2-sol` is the pinned default for `qa.codex.model`
 
-- **Summary.** `crew` 1.3.165 makes Codex `gpt-6.2-sol` the default review model (`qa.codex.model`), where before the default was `null` and the Codex CLI chose; a repo that spells `"model": null` keeps `null` (no flag) unless a machine-wide config supplies a model, which then wins over that `null`; a new `/crew:init` repo writes the pin itself, so it overrides a custom machine-wide `qa.codex.model` until you remove the repo key.
+- **Summary.** `crew` 1.3.166 makes Codex `gpt-6.2-sol` the default review model (`qa.codex.model`), where before the default was `null` and the Codex CLI chose; a repo that spells `"model": null` keeps `null` (no flag) unless a machine-wide config supplies a model, which then wins over that `null`; a new `/crew:init` repo writes the pin itself, so it overrides a custom machine-wide `qa.codex.model` until you remove the repo key.
 - **What changed.** `crew_state.QA_DEFAULTS["codex"]["model"]` is now `CODEX_DEFAULT_MODEL` (`gpt-6.2-sol`); `templates/config.template.json` and `templates/global.template.json` carry it for new `/crew:init` repos and new machines; the `qa.codex.model` row in `CONFIG.md` and the Configuration Guide shows the new default; `skills/crew-setup/SKILL.md` no longer says the null default is deliberate.
 - **What did not change.** `qa.codex.reasoningEffort` stays `null`. `dev.codex.model` stays `null`. The per-role `gpt-6-astra` pins (`dev.roles.developer`, `dev.roles.security` in the crew-setup offer table, and the rule-of-two Codex reviewer) are separate choices and are not touched; whether they move to `gpt-6.2-sol` is an open owner decision.
 - **For you.** A repo initialised before this version has `"model": null` written out in `.crew/config.json`, and an explicit `null` beats the built-in default, so it keeps passing no flag unless your machine-wide config sets a model. Run `/crew:model qa.codex.model gpt-6.2-sol` there to take the pin. The published Claude Docs "Configuration Guide" still needs the same one-row update.

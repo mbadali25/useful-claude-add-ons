@@ -1459,7 +1459,7 @@ def test_a_repo_null_does_not_shadow_a_global_value():
     """
     defaults = crew_config.default_config()
     template = _committed_template()
-    # qa.codex.model is pinned to gpt-6.2-sol in the template from crew 1.3.165; a legacy
+    # qa.codex.model is pinned to gpt-6.2-sol in the template from crew 1.3.166; a legacy
     # repo still spells it null, so that key is exercised with an explicit null instead.
     template["qa"]["codex"]["model"] = None
     for parts in _NULLABLE_GLOBAL_KEYS:
